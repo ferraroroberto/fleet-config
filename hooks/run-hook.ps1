@@ -5,7 +5,7 @@
 .DESCRIPTION
     Claude Code invokes hooks as shell commands, passing the hook payload on
     stdin. On this Windows machine Claude Code routes through Git Bash, which
-    strips backslashes in `settings.json` command strings — so all hook
+    strips backslashes in `settings.json` command strings -- so all hook
     commands point at this PowerShell script (forward-slash path) and pass
     the hook name as a parameter.
 
@@ -35,7 +35,7 @@ $hookPath  = Join-Path $scriptDir "$Hook.py"
 
 if (-not (Test-Path $hookPath)) {
     Write-Error "Hook module not found: $hookPath"
-    exit 0   # missing hook is a config bug, not a tool-call problem — don't block
+    exit 0   # missing hook is a config bug, not a tool-call problem -- don't block
 }
 
 $payload = [Console]::In.ReadToEnd()
@@ -48,7 +48,7 @@ foreach ($name in @('py', 'python')) {
 }
 
 if (-not $pythonCmd) {
-    Write-Error "Neither 'py' nor 'python' is on PATH — claude-config hooks cannot run."
+    Write-Error "Neither 'py' nor 'python' is on PATH -- claude-config hooks cannot run."
     exit 0
 }
 

@@ -5,10 +5,10 @@
 .DESCRIPTION
     Reads ~/.claude/.claude-config-installed.json and removes each recorded
     junction/hardlink, then deletes the manifest. Never touches anything not
-    in the manifest — real files and unrelated directories under ~/.claude/
+    in the manifest -- real files and unrelated directories under ~/.claude/
     are left untouched.
 
-    Does NOT modify ~/.claude/settings.json — remove the hooks block yourself
+    Does NOT modify ~/.claude/settings.json -- remove the hooks block yourself
     if you want it gone.
 #>
 
@@ -21,7 +21,7 @@ $ClaudeHome   = Join-Path $env:USERPROFILE '.claude'
 $ManifestPath = Join-Path $ClaudeHome '.claude-config-installed.json'
 
 if (-not (Test-Path $ManifestPath)) {
-    Write-Host "No manifest at $ManifestPath — nothing to uninstall." -ForegroundColor Yellow
+    Write-Host "No manifest at $ManifestPath -- nothing to uninstall." -ForegroundColor Yellow
     return
 }
 
@@ -43,7 +43,7 @@ foreach ($prop in $manifest.PSObject.Properties) {
 
     $info = Get-Item $target -Force
     if ($info.LinkType -notin @('Junction', 'SymbolicLink', 'HardLink')) {
-        Write-Host "SKIP    $target (not a link any more — leaving alone)" -ForegroundColor Yellow
+        Write-Host "SKIP    $target (not a link any more -- leaving alone)" -ForegroundColor Yellow
         $skipped++
         continue
     }

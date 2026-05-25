@@ -25,6 +25,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import ssl
 import subprocess
 import sys
 import time
@@ -105,14 +106,22 @@ def _git_head(cwd: Path) -> Optional[str]:
     return (res.stdout or "").strip() or None
 
 
+_INSECURE_CTX = ssl._create_unverified_context()  # self-signed certs are normal in our fleet
+
+
 def _fetch_version(port: int, path: str, timeout: float = 2.0) -> Optional[dict]:
-    url = "http://127.0.0.1:" + str(port) + path
-    try:
-        with urllib.request.urlopen(url, timeout=timeout) as resp:
-            raw = resp.read().decode("utf-8", errors="replace")
-            return json.loads(raw)
-    except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError, json.JSONDecodeError, ConnectionError, OSError):
-        return None
+    # Most fleet apps serve HTTPS with a self-signed cert on the same port,
+    # but a few (e.g. local-llm-hub) serve plain HTTP. Try HTTPS first, then HTTP.
+    for scheme in ("https", "http"):
+        url = scheme + "://127.0.0.1:" + str(port) + path
+        try:
+            ctx = _INSECURE_CTX if scheme == "https" else None
+            with urllib.request.urlopen(url, timeout=timeout, context=ctx) as resp:
+                raw = resp.read().decode("utf-8", errors="replace")
+                return json.loads(raw)
+        except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError, json.JSONDecodeError, ConnectionError, OSError):
+            continue
+    return None
 
 
 def _start_tray(tray_cmd: str, cwd: Path) -> None:

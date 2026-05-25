@@ -32,14 +32,21 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import _lib  # noqa: E402
 
 
-# ----- Blanket-python-kill patterns (the "you'll nuke sister hubs" set) -----
-BLANKET_KILL_PATTERNS = (
+# Blanket-python-kill patterns, split by which shell can actually execute them.
+# A `Stop-Process` literal inside a Bash `echo '...'` is a string, not a kill -
+# only flag PowerShell patterns when the tool is PowerShell, and vice-versa for
+# Bash patterns. `taskkill` is valid in either shell.
+POWERSHELL_BLANKET_KILL = (
     r"\bStop-Process\b[^\n|;]*-Name\s+['\"]?pythonw?['\"]?(?!\.exe)",
     r"\bStop-Process\b[^\n|;]*-Name\s+['\"]?python['\"]?\b",
-    r"\btaskkill\b[^\n]*\s/IM\s+pythonw?\.exe",
     r"\bGet-Process\b[^\n|;]*\bpython[w\*]*\b[^\n]*\|\s*Stop-Process",
+)
+BASH_BLANKET_KILL = (
     r"\bpkill\b[^\n]*\bpython\b",
     r"\bkillall\b[^\n]*\bpython\b",
+)
+COMMON_BLANKET_KILL = (
+    r"\btaskkill\b[^\n]*\s/IM\s+pythonw?\.exe",
 )
 
 # ----- git safety bypasses -----
@@ -87,8 +94,16 @@ def main() -> None:
     if not cmd:
         _lib.allow()
 
-    # 1) Blanket python kills
-    for pattern in BLANKET_KILL_PATTERNS:
+    # 1) Blanket python kills - dispatch by shell so an `echo` of a kill string
+    #    in the other shell doesn't false-positive.
+    tn = _lib.tool_name(payload)
+    patterns: list[str] = list(COMMON_BLANKET_KILL)
+    if tn == "PowerShell":
+        patterns.extend(POWERSHELL_BLANKET_KILL)
+    elif tn == "Bash":
+        patterns.extend(BASH_BLANKET_KILL)
+
+    for pattern in patterns:
         if re.search(pattern, cmd, re.IGNORECASE):
             _lib.block(
                 "Blocked: blanket python(w?) kill detected (matched: " + pattern + "). "
@@ -115,8 +130,8 @@ def main() -> None:
             "If you really mean to do this, ask the user first."
         )
 
-    # 4) Port-scoped kills against protected ports
-    targeted = _scan_port_kills(cmd)
+    # 4) Port-scoped kills against protected ports - PowerShell-only patterns
+    targeted = _scan_port_kills(cmd) if tn == "PowerShell" else []
     if targeted:
         reg = _lib.load_registry()
         forbidden = set(reg.globals.never_kill_ports)

@@ -6,7 +6,7 @@
     Creates a junction from C:/Users/<you>/.claude/hooks -> <repo>/hooks so edits
     in either path appear in the other instantly (no copy step).
 
-    Junctions on Windows do NOT need admin or Developer Mode — they work for
+    Junctions on Windows do NOT need admin or Developer Mode -- they work for
     directories on the same NTFS volume.
 
     The install is idempotent:

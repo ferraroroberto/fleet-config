@@ -41,16 +41,21 @@ ACTIVATE_PATTERNS = (
     r"\bsource\s+[^\s;|&]*venv/bin/activate\b",
 )
 
-# 3) Bare `python` / `pip` invocation. We only block when a project .venv exists.
-#    Matches `python ...`, `python3 ...`, `pip install ...`, etc., but NOT
-#    `& .\.venv\Scripts\python.exe ...` (path-scoped) and NOT `py -m ...`
-#    (the launcher is acceptable for one-off tooling like py_compile).
+# 3) Bare `python` / `pip` invocation. We only block when:
+#      (a) the token appears at a command boundary (start of line, or after
+#          `;`/`&&`/`||`/`|`/`& `), NOT deep inside a quoted string;
+#      (b) a project `.venv` exists at or above cwd.
+#
+# Matches `python ...`, `python3 ...`, `pip install ...`. Does NOT match
+# `& .\.venv\Scripts\python.exe ...` (path-scoped) or `py -m ...` (the
+# launcher is fine for one-off tooling like py_compile).
+_BOUNDARY = r"(?:^|[\r\n;]|&&|\|\||\||&\s)\s*"
 BARE_PYTHON_RE = re.compile(
-    r"(?<![\w./\\])python\d*(?:\.exe)?(?=\s|$)",
+    _BOUNDARY + r"python\d*(?:\.exe)?(?=\s|$)",
     re.IGNORECASE,
 )
 BARE_PIP_RE = re.compile(
-    r"(?<![\w./\\])pip\d*(?:\.exe)?(?=\s|$)",
+    _BOUNDARY + r"pip\d*(?:\.exe)?(?=\s|$)",
     re.IGNORECASE,
 )
 
