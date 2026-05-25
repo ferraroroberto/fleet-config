@@ -34,7 +34,8 @@ $ManifestPath   = Join-Path $ClaudeHome '.claude-config-installed.json'
 # What to install. Each entry: { kind = 'junction'|'hardlink'; source = <relative to repo>; target = <relative to ~/.claude> }
 $Items = @(
     @{ kind = 'junction'; source = 'hooks';    target = 'hooks' },
-    @{ kind = 'junction'; source = 'commands'; target = 'commands' }
+    @{ kind = 'junction'; source = 'commands'; target = 'commands' },
+    @{ kind = 'junction'; source = 'skills';   target = 'skills' }
 )
 
 if (-not (Test-Path $ClaudeHome)) {
