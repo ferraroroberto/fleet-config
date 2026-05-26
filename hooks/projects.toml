@@ -37,7 +37,7 @@ tray_cmd            = "tray.bat"
 
 # Sister hubs that MUST survive every port-scoped kill, fleet-wide.
 # 8000  = local-llm-hub FastAPI hub
-# 8090  = whisper-server (shared by voice-transcriber + audio/transcribe_voice)
+# 8090  = whisper-server (voice-transcriber)
 # 8446  = app-launcher session-host (kill kills every PTY/Claude session)
 [global]
 never_kill_ports = [8000, 8090, 8446]
