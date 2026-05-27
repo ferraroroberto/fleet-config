@@ -22,6 +22,12 @@ The hooks here are project-aware via a single `hooks/projects.toml` registry: ge
 
 Tier 2 (browser-stealth lint, `pwsh`-stub warn, session-start fleet status, etc.) and Tier 3 (preference enforcement) are tracked as follow-up issues — they earn their slot only after a week of Tier 1 in production.
 
+### Skills
+
+Beyond the issue-workflow trio (`/issue-add`, `/issue-start`, `/issue-finish`) and `/handoff-commit`, this repo also ships:
+
+- **`/codebase-audit`** — read-only quality sweep of the resting codebase against its `CLAUDE.md` and senior-dev standards. Bundles findings into at most 5 GitHub issues (one per fixed bucket: duplication, stale/dead code, CLAUDE.md drift, maintainability, bugs), self-assigned, deduped against open issues. Complements the diff-scoped `/code-review` / `/simplify` / `/security-review`.
+
 ## Layout
 
 ```
@@ -42,7 +48,7 @@ claude-config/
 │   ├── py_syntax_check.py        + .ps1 shim
 │   └── restart_and_verify_webapp.py + .ps1 shim   (also exposed as /restart-webapp)
 ├── commands/                       # junction → ~/.claude/commands (slash commands)
-├── skills/                         # junction → ~/.claude/skills (issue-* workflow, handoff-commit, screen, …)
+├── skills/                         # junction → ~/.claude/skills (issue-* workflow, handoff-commit, codebase-audit, screen, …)
 ├── tests/run_acceptance.py         # drives each hook with a sample stdin payload
 └── settings.template.json          # the `hooks` block to merge into your ~/.claude/settings.json
 ```
