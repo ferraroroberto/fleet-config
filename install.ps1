@@ -1,19 +1,23 @@
 <#
 .SYNOPSIS
-    Install claude-config into ~/.claude/ via Windows junctions and hardlinks.
+    Install claude-config into ~/.claude/ via Windows junctions, hardlinks, and symlinks.
 
 .DESCRIPTION
-    Creates a junction from C:/Users/<you>/.claude/hooks -> <repo>/hooks so edits
+    Creates a link from C:/Users/<you>/.claude/<name> -> <repo>/<name> so edits
     in either path appear in the other instantly (no copy step).
 
-    Junctions on Windows do NOT need admin or Developer Mode -- they work for
-    directories on the same NTFS volume.
+    Link kinds:
+      - 'junction' for directories. Cross-volume OK. No admin needed.
+      - 'hardlink' for files on the SAME NTFS volume. No admin needed.
+      - 'symlink'  for files cross-volume (or when hardlink won't do). Requires
+                   admin (or Developer Mode). The script self-elevates with a
+                   single UAC prompt only when symlink work is actually pending.
 
     The install is idempotent:
-      - Existing junction pointing at the repo path  -> no-op (reports OK)
-      - Existing junction pointing elsewhere         -> refuses with the existing target
-      - Existing real directory                      -> refuses with "rename then re-run"
-      - Nothing there                                -> creates the junction
+      - Existing link pointing at the repo path  -> no-op (reports OK)
+      - Existing link pointing elsewhere         -> refuses with the existing target
+      - Existing real file/directory             -> refuses with "rename then re-run"
+      - Nothing there                            -> creates the link
 
     Records every link it creates in ~/.claude/.claude-config-installed.json so
     uninstall.ps1 can remove exactly what it added.
@@ -31,15 +35,50 @@ $RepoRoot       = Split-Path -Parent $MyInvocation.MyCommand.Path
 $ClaudeHome     = Join-Path $env:USERPROFILE '.claude'
 $ManifestPath   = Join-Path $ClaudeHome '.claude-config-installed.json'
 
-# What to install. Each entry: { kind = 'junction'|'hardlink'; source = <relative to repo>; target = <relative to ~/.claude> }
+# What to install. Each entry: { kind = 'junction'|'hardlink'|'symlink'; source = <relative to repo>; target = <relative to ~/.claude> }
 $Items = @(
-    @{ kind = 'junction'; source = 'hooks';    target = 'hooks' },
-    @{ kind = 'junction'; source = 'commands'; target = 'commands' },
-    @{ kind = 'junction'; source = 'skills';   target = 'skills' }
+    @{ kind = 'junction'; source = 'hooks';                  target = 'hooks' },
+    @{ kind = 'junction'; source = 'commands';               target = 'commands' },
+    @{ kind = 'junction'; source = 'skills';                 target = 'skills' },
+    @{ kind = 'symlink';  source = 'statusline-command.ps1'; target = 'statusline-command.ps1' },
+    @{ kind = 'symlink';  source = 'global-CLAUDE.md';       target = 'CLAUDE.md' }
 )
 
 if (-not (Test-Path $ClaudeHome)) {
     New-Item -ItemType Directory -Path $ClaudeHome | Out-Null
+}
+
+# Self-elevation pre-pass: file symlinks require admin (or Developer Mode) on Windows.
+# Junctions and hardlinks do not. So we only relaunch under UAC if there is real
+# symlink work pending. Reinstalls that find the symlinks already in place stay UAC-free.
+function Test-IsElevated {
+    $id = [Security.Principal.WindowsIdentity]::GetCurrent()
+    (New-Object Security.Principal.WindowsPrincipal $id).IsInRole(
+        [Security.Principal.WindowsBuiltinRole]::Administrator
+    )
+}
+
+$needsElevation = $false
+foreach ($item in $Items) {
+    if ($item.kind -ne 'symlink') { continue }
+    $sourceAbs = Join-Path $RepoRoot   $item.source
+    $targetAbs = Join-Path $ClaudeHome $item.target
+    if (-not (Test-Path $sourceAbs)) { continue }
+    if (-not (Test-Path $targetAbs)) { $needsElevation = $true; break }
+    $existing = Get-Item $targetAbs -Force
+    if ($existing.LinkType -ne 'SymbolicLink') { $needsElevation = $true; break }
+    $linkTarget = $existing.Target
+    $linkTargetStr = if ($linkTarget -is [array]) { $linkTarget[0] } else { $linkTarget }
+    $resolved = (Resolve-Path $linkTargetStr -ErrorAction SilentlyContinue).Path
+    if ($resolved -ne (Resolve-Path $sourceAbs).Path) { $needsElevation = $true; break }
+}
+
+if ($needsElevation -and -not (Test-IsElevated)) {
+    Write-Host "Symlink creation requires admin (cross-volume file linking). Requesting UAC..." -ForegroundColor Yellow
+    $psExe   = 'C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe'
+    $psArgs  = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $PSCommandPath)
+    $proc    = Start-Process -FilePath $psExe -ArgumentList $psArgs -Verb RunAs -Wait -PassThru
+    exit $proc.ExitCode
 }
 
 # Load (or initialize) manifest
@@ -107,6 +146,10 @@ foreach ($item in $Items) {
         'hardlink' {
             New-Item -ItemType HardLink -Path $targetAbs -Target $sourceAbs | Out-Null
             Write-Host "LINKED  $targetAbs  ->  $sourceAbs  (hardlink)" -ForegroundColor Cyan
+        }
+        'symlink' {
+            New-Item -ItemType SymbolicLink -Path $targetAbs -Target $sourceAbs | Out-Null
+            Write-Host "LINKED  $targetAbs  ->  $sourceAbs  (symlink)" -ForegroundColor Cyan
         }
         default {
             throw "Unknown link kind: $($item.kind)"

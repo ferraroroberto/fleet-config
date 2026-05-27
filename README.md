@@ -1,6 +1,6 @@
 # claude-config
 
-Versioned home for my user-scope [Claude Code](https://docs.claude.com/en/docs/claude-code) configuration — the hooks, helpers, and (eventually) skills + global `CLAUDE.md` that live in `~/.claude/` and shape how Claude behaves across every project on my machine.
+Versioned home for my user-scope [Claude Code](https://docs.claude.com/en/docs/claude-code) configuration — the hooks, helpers, skills, slash commands, statusline, and global `CLAUDE.md` that live in `~/.claude/` and shape how Claude behaves across every project on my machine.
 
 The hooks here are project-aware via a single `hooks/projects.toml` registry: generic at code level, per-project nuance (ports, pre-ship gate triggers, "never kill these ports") in one TOML file.
 
@@ -28,10 +28,12 @@ Tier 2 (browser-stealth lint, `pwsh`-stub warn, session-start fleet status, etc.
 claude-config/
 ├── README.md
 ├── CLAUDE.md                       # short — tells future-Claude how this repo works
+├── global-CLAUDE.md                # exposed as ~/.claude/CLAUDE.md (symlink) — user-scope global instructions
+├── statusline-command.ps1          # exposed as ~/.claude/statusline-command.ps1 (symlink) — custom statusline
 ├── .gitignore
-├── install.ps1                     # creates junction: C:/Users/<you>/.claude/hooks → repo/hooks
-├── uninstall.ps1                   # removes the junction, leaves ~/.claude/ otherwise untouched
-├── hooks/
+├── install.ps1                     # creates junctions/symlinks: ~/.claude/<name> → repo/<name>
+├── uninstall.ps1                   # removes only the links install.ps1 created, leaves ~/.claude/ otherwise untouched
+├── hooks/                          # junction → ~/.claude/hooks
 │   ├── _lib.py                     # shared: project detection, port→PID, stdin-JSON, projects.toml loader
 │   ├── projects.toml               # per-project nuance (ports, gate triggers, never-kill ports)
 │   ├── pre_commit_no_ai_trailer.py + .ps1 shim
@@ -39,6 +41,9 @@ claude-config/
 │   ├── venv_discipline.py        + .ps1 shim
 │   ├── py_syntax_check.py        + .ps1 shim
 │   └── restart_and_verify_webapp.py + .ps1 shim   (also exposed as /restart-webapp)
+├── commands/                       # junction → ~/.claude/commands (slash commands)
+├── skills/                         # junction → ~/.claude/skills (issue-* workflow, handoff-commit, screen, …)
+├── tests/run_acceptance.py         # drives each hook with a sample stdin payload
 └── settings.template.json          # the `hooks` block to merge into your ~/.claude/settings.json
 ```
 
@@ -54,13 +59,29 @@ cd claude-config
 .\install.ps1
 ```
 
-`install.ps1` creates a **junction** (a transparent two-way directory pointer) from `C:/Users/<you>/.claude/hooks` to `<repo>/hooks`. Edits on either side are visible on the other instantly — no copy step, no install/sync dance.
+`install.ps1` exposes the repo's contents inside `~/.claude/` via three link kinds:
 
-Junctions on Windows don't need admin or Developer Mode. The installer is idempotent:
-- existing junction → no-op
-- existing real directory → refuses and prints a one-line "rename it, then re-run"
+- **Junctions** for the directory entries (`hooks/`, `commands/`, `skills/`). Cross-volume OK, no admin.
+- **Symlinks** for the single-file entries (`global-CLAUDE.md` → `~/.claude/CLAUDE.md`, `statusline-command.ps1`). Cross-volume file linking on Windows requires admin or Developer Mode, so the installer self-elevates with **one UAC prompt** the first time it needs to create them. Reinstalls that find the symlinks already in place stay UAC-free.
 
-After `install.ps1`, merge the `hooks` block from `settings.template.json` into your `~/.claude/settings.json`. Restart Claude Code to pick up the new hooks.
+Edits on either side are visible on the other instantly — no copy step, no sync ritual. The installer is idempotent:
+- existing link pointing at the repo → no-op
+- existing real file/directory → refuses and prints a one-line "rename it, then re-run"
+
+After `install.ps1`, merge the `hooks` block from `settings.template.json` into your `~/.claude/settings.json` and ensure `statusLine.command` runs `~/.claude/statusline-command.ps1`. Restart Claude Code to pick up the new hooks.
+
+### Migrating an existing `~/.claude/`
+
+If you already have `~/.claude/CLAUDE.md` or `~/.claude/statusline-command.ps1` as real files, the installer refuses with "rename it, then re-run". Move them aside, install, then delete:
+
+```powershell
+Move-Item $env:USERPROFILE\.claude\CLAUDE.md              $env:USERPROFILE\.claude\CLAUDE.md.old
+Move-Item $env:USERPROFILE\.claude\statusline-command.ps1 $env:USERPROFILE\.claude\statusline-command.ps1.old
+.\install.ps1   # UAC prompt
+# verify both symlinks resolve to the repo, then:
+Remove-Item $env:USERPROFILE\.claude\CLAUDE.md.old
+Remove-Item $env:USERPROFILE\.claude\statusline-command.ps1.old
+```
 
 ## Uninstall
 
