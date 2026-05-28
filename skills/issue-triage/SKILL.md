@@ -47,6 +47,7 @@ Notes:
 - `--include-prs=false` keeps PRs out of the result set.
 - `--limit 300` is well above the realistic backlog; if the result is exactly 300, mention that the cap may have been hit.
 - If a single-repo filter was passed, **mentally** filter the JSON by `repository.name == <arg>` when grouping in step 3 — don't shell out a second tool to filter it.
+- **Drop ledger / metadata issues.** Ignore any issue carrying the `audit-meta` label (the `/codebase-audit` per-repo ledger). It is never actionable work — filter it out model-side when grouping, exactly like the single-repo filter above. Don't add a `gh` query qualifier for it (a leading `-label:` dash trips arg parsing); just skip those rows.
 
 If the result is empty, print "No open issues across the fleet 🎉" and stop.
 

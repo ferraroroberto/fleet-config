@@ -42,7 +42,9 @@ Run in parallel:
   stop and say so.
 - **Pick mode:** `gh issue list --state open --json number,title,labels` and
   present the open issues with the AskUserQuestion tool (number + title). Never
-  auto-pick.
+  auto-pick. **Exclude any issue labelled `audit-meta`** (the `/codebase-audit`
+  ledger — not actionable work); filter it out model-side rather than adding a
+  `gh` query qualifier.
 
 ### 3. Read the issue and project conventions
 

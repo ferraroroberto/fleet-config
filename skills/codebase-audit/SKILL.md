@@ -64,7 +64,45 @@ In parallel:
 If a scope path was passed, resolve it against the repo root and verify it
 exists. If not, stop with a one-line error.
 
-### 2. Load the rubric
+### 2. Ledger gate — skip if nothing changed
+
+**Whole-repo audits only.** If a scope path was passed (step "Arguments"),
+skip this entire step *and* step 9 — the ledger tracks whole-repo audits, so a
+scoped run always executes and never reads or writes the ledger.
+
+Before reading a single source file, check whether this repo changed since the
+last audit. The ledger is a per-repo cache: the commit SHA is the key, a hash
+of the rubric busts it when the grading criteria change.
+
+The ledger lives in **one issue per repo** — title `codebase-audit ledger`,
+label `audit-meta`, `--assignee @me`, never closed. Its body carries a
+machine-readable block:
+
+```
+<!-- audit-ledger -->
+last-audited-sha: <full HEAD sha at last audit>
+last-audited-at: <YYYY-MM-DD>
+rubric-sha: <sha256 of global + project CLAUDE.md concatenated>
+```
+
+Steps:
+
+- Find the ledger: `gh issue list --label audit-meta --state open --json number,body`.
+  If none exists, this is a first run — skip the gate (the ledger is created in
+  step 9) and continue to step 3.
+- Compute the current `rubric-sha`: sha256 over the concatenation of the global
+  CLAUDE.md and the project CLAUDE.md (the same two files step 3 loads); a
+  missing file contributes the empty string.
+- Read `last-audited-sha` from the block and run
+  `git rev-list <last-audited-sha>..HEAD --count`.
+- **Skip condition:** the count is `0` **and** the current `rubric-sha` equals
+  the stored one. When it holds, stop immediately:
+  `No changes since last audit (<short-sha> on <date>) — skipped.` Read no
+  files, file nothing. A re-run over an unchanged repo then costs one `gh` call
+  and one `git` call — that is the efficiency win the ledger exists for.
+- Otherwise continue to step 3.
+
+### 3. Load the rubric
 
 Read both CLAUDE.md files in full:
 - Global: `~/.claude/CLAUDE.md` (or `$env:USERPROFILE/.claude/CLAUDE.md` on
@@ -77,7 +115,7 @@ Claude` trailer", "tests must hit a real database", "use `.venv` not `venv`",
 "forward slashes in `settings.json` commands"). These are the inputs to
 bucket 3.
 
-### 3. Inventory the files to read
+### 4. Inventory the files to read
 
 `git ls-files` (or `git ls-files <scope-path>`) to get the tracked-file list.
 This automatically respects `.gitignore`.
@@ -97,7 +135,7 @@ If the file list is large (>~150 files), prioritize:
 State the prioritization in the final report so the user knows what was
 inspected.
 
-### 4. Read systematically and take notes by bucket
+### 5. Read systematically and take notes by bucket
 
 Read each file in the inventory. As you go, maintain a working list keyed by
 bucket. For every finding capture:
@@ -118,7 +156,7 @@ worth a future developer's time to fix." If you can already imagine the
 user reading the finding and going "...so?", drop it before it gets
 written down.
 
-### 5. Dedupe against existing open issues
+### 6. Dedupe against existing open issues
 
 ```
 gh issue list --state open --limit 200 --json number,title,body
@@ -131,7 +169,7 @@ strict string match), **drop it from the bucket** and remember it as
 
 Do not file an issue that re-litigates an open one.
 
-### 6. Ensure labels exist
+### 7. Ensure labels exist
 
 The five bucket labels are: `duplication`, `stale`, `claude-md-drift`,
 `maintainability`, `bug`. `bug` typically already exists. For each bucket
@@ -150,7 +188,7 @@ gh label create claude-md-drift   --color 'd876e3' --description 'Violates a CLA
 gh label create maintainability   --color 'a2eeef' --description 'Modularity / clarity / slop'           || true
 ```
 
-### 7. File one issue per non-empty bucket
+### 8. File one issue per non-empty bucket
 
 For each non-empty bucket (max 5 iterations), write the issue body to a
 temp file and create:
@@ -192,7 +230,22 @@ Title style — `audit: <bucket> findings (<N> items)`. Examples:
 Use a temp file (`E:/tmp/audit-<bucket>.md` on Windows, `/tmp/audit-<bucket>.md`
 elsewhere) so multi-line markdown isn't mangled by shell escaping.
 
-### 8. Final report
+### 9. Update the ledger
+
+**Whole-repo audits only** — skip if a scope path was passed.
+
+Upsert the per-repo ledger issue so the next run can short-circuit at step 2:
+
+- Ensure the `audit-meta` label exists (idempotent):
+  `gh label create audit-meta --color '5319e7' --description 'codebase-audit ledger / metadata — not actionable work' || true`
+- Build the block with the current HEAD sha (`git rev-parse HEAD`), today's
+  date, and the `rubric-sha` computed in step 2.
+- If a ledger issue exists, `gh issue edit <N> --body-file <tmp>`; otherwise
+  `gh issue create --title 'codebase-audit ledger' --body-file <tmp> --label audit-meta --assignee @me`.
+- This runs on **every** non-skipped path — including a clean pass that filed
+  zero issues — so an unchanged repo is correctly skipped next time.
+
+### 10. Final report
 
 Print one summary table and stop. Exact shape:
 
@@ -296,5 +349,10 @@ rot, or concrete failure modes are.
   or a performance audit (different rubric, different tooling). Don't
   expand scope into either.
 - If the user reruns the skill the next day after fixing nothing, the
-  dedupe step means no new issues get filed — the open issues from the
-  previous run still cover the findings. That's the intended behavior.
+  **ledger gate (step 2)** short-circuits before any files are read — HEAD
+  is unchanged, so the run stops at one `gh` + one `git` call. Even when the
+  gate is bypassed (first run, scoped run, or the rubric changed), the dedupe
+  step still prevents re-filing the same findings. That layered idempotency
+  is the intended behavior.
+- The ledger issue is labelled `audit-meta` precisely so it never shows up as
+  actionable work — `/issue-triage` and `/issue-start` filter that label out.
