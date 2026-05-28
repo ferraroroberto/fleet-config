@@ -227,8 +227,16 @@ Title style — `audit: <bucket> findings (<N> items)`. Examples:
 - `audit: claude-md-drift findings (2 items)`
 - `audit: maintainability findings (5 items)`
 
-Use a temp file (`E:/tmp/audit-<bucket>.md` on Windows, `/tmp/audit-<bucket>.md`
-elsewhere) so multi-line markdown isn't mangled by shell escaping.
+Use a **repo-scoped, unique** temp file so multi-line markdown isn't mangled
+by shell escaping *and* concurrent audits never clobber each other's scratch:
+`E:/tmp/audit-<owner>-<repo>-<short-sha>-<bucket>.md` on Windows
+(`/tmp/audit-<owner>-<repo>-<short-sha>-<bucket>.md` elsewhere), where
+`<owner>-<repo>` is the `OWNER/REPO` from step 1 with the slash replaced by a
+hyphen, and `<short-sha>` is `git rev-parse --short HEAD`. **Do not** use a
+fixed `E:/tmp/audit-<bucket>.md` — when `/audit-fleet` fans many repos out to
+parallel sub-agents at once they share `E:/tmp`, and a fixed name is a race
+where one agent overwrites another's body mid-run (see the global CLAUDE.md
+tmp-file-reuse gotcha).
 
 ### 9. Update the ledger
 
@@ -240,8 +248,10 @@ Upsert the per-repo ledger issue so the next run can short-circuit at step 2:
   `gh label create audit-meta --color '5319e7' --description 'codebase-audit ledger / metadata — not actionable work' || true`
 - Build the block with the current HEAD sha (`git rev-parse HEAD`), today's
   date, and the `rubric-sha` computed in step 2.
-- If a ledger issue exists, `gh issue edit <N> --body-file <tmp>`; otherwise
-  `gh issue create --title 'codebase-audit ledger' --body-file <tmp> --label audit-meta --assignee @me`.
+- Write the body to a repo-scoped temp file (same convention as step 8, e.g.
+  `E:/tmp/audit-<owner>-<repo>-ledger.md`) — never a fixed shared name.
+- If a ledger issue exists, `gh issue edit <N> --body-file <tmpfile>`; otherwise
+  `gh issue create --title 'codebase-audit ledger' --body-file <tmpfile> --label audit-meta --assignee @me`.
 - This runs on **every** non-skipped path — including a clean pass that filed
   zero issues — so an unchanged repo is correctly skipped next time.
 
