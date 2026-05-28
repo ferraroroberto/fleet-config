@@ -67,7 +67,7 @@ When work in a sister project produces a *generalizable convention* (a testing p
 - `gemma4-e4b-it` → llama-server on `:8086` (8 B, edge tier)
 - `gemma4-26b-a4b-it` → llama-server on `:8087` (25 B / 3.8 B-active MoE, quality tier)
 
-Plus a whisper-server at `127.0.0.1:8090` (`ggml-large-v3-turbo.bin`, OpenAI-compatible `/v1/audio/transcriptions`). The hub does **not** proxy audio — clients POST to `:8090` directly. Port 8090 is mutex-shared with `automation/audio/transcribe_voice`.
+Plus a whisper-server at `127.0.0.1:8090` (`ggml-large-v3-turbo.bin`, OpenAI-compatible `/v1/audio/transcriptions`). The hub **also proxies audio** on `127.0.0.1:8000` (`/v1/audio/transcriptions` + `/v1/audio/translations`, see `src/server.py`) so requests land in the observability ring; clients can still POST directly to `:8090` for lower overhead, but those direct hits are invisible to the admin UI. Port 8090 is mutex-shared with `automation/audio/transcribe_voice`.
 
 **Calling it:**
 
