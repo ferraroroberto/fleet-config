@@ -1,6 +1,6 @@
 ---
 name: codebase-audit
-description: Audit the resting state of a codebase against its CLAUDE.md and senior-dev maintainability standards — looks for duplication, stale/dead code, drift from CLAUDE.md conventions, sloppy/unmaintainable patterns, and bugs spotted while reading. Bundles findings into at most 5 GitHub issues (one per fixed bucket), self-assigned, deduped against open issues. Use when the user wants a whole-repo quality sweep — e.g. "/codebase-audit", "/codebase-audit app/", "audit the codebase", "find duplication and stale code", "check this repo against its CLAUDE.md", "review the codebase for slop".
+description: Audit the resting state of a codebase against its CLAUDE.md and senior-dev maintainability standards — looks for duplication, stale/dead code, drift from CLAUDE.md conventions, sloppy/unmaintainable patterns, bugs spotted while reading, and documentation problems (README/docs that drift from CLAUDE.md, repeat themselves, go stale, or omit a shipped feature). Bundles findings into at most 6 GitHub issues (one per fixed bucket), self-assigned, deduped against open issues. Use when the user wants a whole-repo quality sweep — e.g. "/codebase-audit", "/codebase-audit app/", "audit the codebase", "find duplication and stale code", "check the docs against its CLAUDE.md", "review the codebase for slop".
 ---
 
 # codebase-audit
@@ -9,14 +9,14 @@ description: Audit the resting state of a codebase against its CLAUDE.md and sen
 perfectionist developer would, and surface the resting-state quality problems
 that the diff-scoped reviewers (`/code-review`, `/simplify`,
 `/security-review`, ultrareview) never see. Bundle the findings into a small,
-predictable set of GitHub issues — **at most 5 per run** — so `/issue-start`
+predictable set of GitHub issues — **at most 6 per run** — so `/issue-start`
 can chew through them later.
 
 **This skill produces GitHub issues, not code edits.** Never edit files in the
 working tree. Never commit, push, or restart anything. Filing issues is the
 only side effect.
 
-**The five fixed buckets.** Every finding belongs to exactly one of:
+**The six fixed buckets.** Every finding belongs to exactly one of:
 
 1. **Duplication** — repeated logic, parallel implementations, copy-pasted
    blocks, two helpers doing the same thing under different names.
@@ -34,8 +34,27 @@ only side effect.
 5. **Bugs** — actual correctness issues spotted while reading. Off-by-one,
    wrong default, race condition, missing await, wrong type, broken
    invariant. Only file what you'd bet money on — speculation goes nowhere.
+6. **Documentation** — the content, structure, and coverage of `README.md`
+   and `docs/`, judged as documentation. Three sub-checks: (a) **CLAUDE.md
+   compliance** — the docs break a doc-discipline rule in the global or
+   project `CLAUDE.md` (e.g. a dated `docs/YYYY-MM-DD-*.md` retrospective the
+   doc-lifecycle rules forbid, hard-wrapped paragraphs in rendered markdown,
+   `docs/` content that's a changelog rather than durable reference); (b)
+   **stale / duplicated sections** — a section documents a removed feature,
+   wrong command, or outdated config/port, or the same content is duplicated
+   across `README` and `docs/` (or within one file) and has begun to diverge;
+   (c) **missing crucial features** — a shipped, user-facing feature / command
+   / config knob with no documentation a new reader could find. Cite the rule
+   (sub-check a) or the feature + where it should be documented (sub-check c).
 
-One issue per non-empty bucket. **Hard cap: 5 issues per run.** Empty buckets
+   **Boundary against buckets 1–3 (read this — it's the part that goes wrong):**
+   anything whose *subject* is `README.md` / `docs/` prose goes here, in bucket
+   6 — including a doc that violates a CLAUDE.md doc rule, a duplicated doc
+   section, or a stale doc section. `duplication`, `stale`, and
+   `claude-md-drift` stay about **code/config/workflow**. Don't double-file a
+   doc problem into both a code bucket and this one.
+
+One issue per non-empty bucket. **Hard cap: 6 issues per run.** Empty buckets
 are simply skipped. Findings inside an issue go on a checklist with
 `file:line` citations and a one-line fix shape.
 
@@ -139,17 +158,28 @@ inspected.
 
 Read each file in the inventory. As you go, maintain a working list keyed by
 bucket. For every finding capture:
-- **Bucket** (one of the 5)
+- **Bucket** (one of the 6)
 - **File:line** (or file range)
 - **What's wrong** (one sentence, concrete)
 - **Fix shape** (one sentence — what the patch would do, not the patch itself)
 - For bucket 3 (CLAUDE.md drift): **which rule** was broken (quote it)
+- For bucket 6 (documentation): **which sub-check** (CLAUDE.md compliance /
+  stale-or-duplicated / missing feature) and the rule or feature it concerns
 
 When you see the same pattern twice in two files, that's bucket 1
 (duplication), not two separate bucket-4 findings.
 
+**Read `README.md` and `docs/` twice — once for context, once for bucket 6.**
+The first pass mines them for code-side staleness (a doc that references a
+removed module is a lead for bucket 2). The second pass judges them *as
+documentation* against bucket 6's three sub-checks: walk the shipped,
+user-facing surface you saw in the code (commands, flags, ports, config keys,
+entry points) and confirm the docs cover it, don't contradict it, and don't
+repeat themselves. A feature in the code with no mention in `README`/`docs` is
+the canonical "missing crucial features" finding.
+
 **Apply the materiality bar (see Hard rules) to every finding as you take
-it.** When in doubt, leave it out — across all five buckets. For bucket 5
+it.** When in doubt, leave it out — across all six buckets. For bucket 5
 specifically the bar is "I'd bet money on this"; speculation pollutes the
 issue. For buckets 1–4 the bar is "a senior developer would agree this is
 worth a future developer's time to fix." If you can already imagine the
@@ -171,9 +201,10 @@ Do not file an issue that re-litigates an open one.
 
 ### 7. Ensure labels exist
 
-The five bucket labels are: `duplication`, `stale`, `claude-md-drift`,
-`maintainability`, `bug`. `bug` typically already exists. For each bucket
-that has surviving findings, ensure its label exists:
+The six bucket labels are: `duplication`, `stale`, `claude-md-drift`,
+`maintainability`, `bug`, `documentation`. `bug` and `documentation` are
+GitHub defaults that typically already exist. For each bucket that has
+surviving findings, ensure its label exists:
 
 ```
 gh label list --json name -q '.[].name'
@@ -186,11 +217,12 @@ gh label create duplication       --color 'fbca04' --description 'Repeated logic
 gh label create stale             --color 'cfd3d7' --description 'Dead/unused code or stale references'  || true
 gh label create claude-md-drift   --color 'd876e3' --description 'Violates a CLAUDE.md convention'       || true
 gh label create maintainability   --color 'a2eeef' --description 'Modularity / clarity / slop'           || true
+gh label create documentation     --color '0075ca' --description 'README / docs quality, coverage, drift' || true
 ```
 
 ### 8. File one issue per non-empty bucket
 
-For each non-empty bucket (max 5 iterations), write the issue body to a
+For each non-empty bucket (max 6 iterations), write the issue body to a
 temp file and create:
 
 ```
@@ -226,6 +258,7 @@ Title style — `audit: <bucket> findings (<N> items)`. Examples:
 - `audit: duplication findings (3 items)`
 - `audit: claude-md-drift findings (2 items)`
 - `audit: maintainability findings (5 items)`
+- `audit: documentation findings (4 items)`
 
 Use a **repo-scoped, unique** temp file so multi-line markdown isn't mangled
 by shell escaping *and* concurrent audits never clobber each other's scratch:
@@ -269,6 +302,7 @@ Print one summary table and stop. Exact shape:
   claude-md-drift          2   https://github.com/<owner>/<repo>/issues/<N>
   maintainability          5   https://github.com/<owner>/<repo>/issues/<N>
   bug                      0   (no findings)
+  documentation            4   https://github.com/<owner>/<repo>/issues/<N>
 
   skipped as duplicates:
     - <file>:<line> — dupe of #<N>
@@ -282,19 +316,19 @@ findings. Codebase passes the audit.` — and stop.
 
 ## Hard rules
 
-- **Materiality bar — applies to ALL FIVE buckets.** Before filing a
+- **Materiality bar — applies to ALL SIX buckets.** Before filing a
   finding, ask: *"Would a senior, perfectionist developer reading this
   agree it's worth a future developer's time to fix?"* If you hesitate
   for more than a second, drop it. Empty buckets are the **right answer**
   when there's no material rot — `No actionable findings. Codebase passes
   the audit.` is a successful run, not a failed one. **Do not file
   findings to look thorough.** The user would rather get zero issues from
-  a clean codebase than five issues full of noise they have to triage
+  a clean codebase than six issues full of noise they have to triage
   out. Bias is toward filing *fewer*, not more. For bucket 5 (bugs)
   specifically the bar is even higher — only file what you'd bet money
   on; false-positive bug reports erode trust in the whole skill.
 - **Never edit files.** This skill files issues; it does not patch code.
-- **Cap is 5 issues per run, period.** Don't split a bucket into multiple
+- **Cap is 6 issues per run, period.** Don't split a bucket into multiple
   issues. If a bucket has 30 findings, file one issue with 30 checklist
   items — the user can triage which to fix via `/issue-start`.
 - **Dedupe is not optional.** Always check open issues first. Re-filing
@@ -343,8 +377,16 @@ Concrete anti-examples. If a candidate finding looks like any of these,
   concrete scenario: not a finding. "This will mis-handle empty input
   because line N reads `xs[0]` with no guard": **yes** — name the
   input, name the line, name the failure.
+- **Documentation.** One sentence in the README that's slightly stale, a
+  flag the docs describe in fractionally outdated wording, a missing entry
+  for a trivial internal helper: not a finding. A whole README section
+  documenting a removed subsystem, a headline user-facing command/feature
+  absent from the docs entirely, the same setup steps duplicated across
+  `README` and a `docs/` file that now disagree on the port, or a dated
+  `docs/2026-…-retrospective.md` the project's own doc-lifecycle rule
+  forbids: **yes** — name the file/section and the rule or missing feature.
 
-The pattern across all five: **scale and impact matter**. One-off
+The pattern across all six: **scale and impact matter**. One-off
 cosmetic blemishes are not findings. Systematic problems, structural
 rot, or concrete failure modes are.
 

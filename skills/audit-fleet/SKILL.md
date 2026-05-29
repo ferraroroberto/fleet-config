@@ -121,8 +121,9 @@ Run a resting-state codebase audit on the <name> repo.
 1. cd to <path>.
 2. Execute the procedure in
    E:\automation\claude-config\skills\codebase-audit\SKILL.md against this repo,
-   whole-repo scope. That skill files at most 5 GitHub issues bucketed by
-   finding type, dedupes against open issues, and updates the repo's audit-meta
+   whole-repo scope. That skill files at most 6 GitHub issues bucketed by
+   finding type (one bucket reviews README/docs quality), dedupes against open
+   issues, and updates the repo's audit-meta
    ledger. Follow it exactly — including its own ledger gate (step 2): if it
    decides nothing changed, that is a valid result, report it.
 3. Do NOT edit source, commit, push, or restart anything. Filing issues and
