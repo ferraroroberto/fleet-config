@@ -49,4 +49,5 @@ tray_cmd            = "tray.bat"
 # 8446  = app-launcher session-host (kill kills every PTY/Claude session)
 [global]
 never_kill_ports = [8000, 8090, 8446]
-# slack_notify_channel = "C0123ABCD"   # fleet-wide fallback for notify_on_idle (opt-in; off while commented)
+slack_notify_channel = "C0B76GBA0LS"   # fleet-wide fallback for notify_on_idle
+slack_notify_user    = "U0B71PQEL6S"   # Slack user id to @mention — required for mobile push

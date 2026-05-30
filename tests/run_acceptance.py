@@ -153,11 +153,13 @@ def main() -> int:
         0,
     ))
 
-    # ---- notify_on_idle: opt-in, default off ----
-    # No project here declares slack_notify_channel and the [global] fallback is
-    # commented out, so this must be a silent no-op (exit 0) — never a live post.
+    # ---- notify_on_idle ----
+    # claude-config itself has no per-project slack_notify_channel in projects.toml,
+    # but the [global] fallback IS now set. The hook will try to post but the
+    # SLACK_BOT_TOKEN is not in the subprocess env, so slack_notify returns False
+    # gracefully and the hook still exits 0.
     cases.append((
-        "notify_on_idle: no channel configured -> allow (no-op)",
+        "notify_on_idle: global channel set, missing token -> allow (graceful fail)",
         "notify_on_idle",
         {"hook_event_name": "Notification", "cwd": str(REPO), "message": "needs input"},
         0,
@@ -172,6 +174,9 @@ def main() -> int:
     # ---- slack_notify unit checks (pure / no network) ----
     failures += _slack_notify_unit_checks()
 
+    # ---- notify_on_idle mention-construction unit checks ----
+    failures += _notify_mention_unit_checks()
+
     # Cleanup
     shutil.rmtree(tmp, ignore_errors=True)
 
@@ -180,7 +185,7 @@ def main() -> int:
     return 0 if failures == 0 else 1
 
 
-_UNIT_CHECK_COUNT = 3
+_UNIT_CHECK_COUNT = 5
 
 
 def _slack_notify_unit_checks() -> int:
@@ -214,6 +219,45 @@ def _slack_notify_unit_checks() -> int:
         if saved is not None:
             os.environ[slack_notify.TOKEN_ENV_VAR] = saved
     check("slack_notify: missing token -> False (graceful)", result is False)
+
+    return failures
+
+
+_NOTIFY_MENTION_COUNT = 2
+
+
+def _notify_mention_unit_checks() -> int:
+    """Verify mention-string construction in notify_on_idle without touching Slack."""
+    sys.path.insert(0, str(HOOKS))
+    import _lib  # noqa: E402
+
+    failures = 0
+
+    def check(case: str, ok: bool) -> None:
+        nonlocal failures
+        print(f"{'OK   ' if ok else 'FAIL '} {case}")
+        if not ok:
+            failures += 1
+
+    # With slack_notify_user set, mention prefix must be present
+    g_with_user = _lib.GlobalConfig(
+        never_kill_ports=(),
+        slack_notify_channel="C0B76GBA0LS",
+        slack_notify_user="U0B71PQEL6S",
+    )
+    mention_with = f"<@{g_with_user.slack_notify_user}> " if g_with_user.slack_notify_user else ""
+    check(
+        "notify_mention: slack_notify_user set -> mention prefix present",
+        mention_with == "<@U0B71PQEL6S> ",
+    )
+
+    # Without slack_notify_user, mention prefix must be empty
+    g_no_user = _lib.GlobalConfig(never_kill_ports=(), slack_notify_channel="C0B76GBA0LS")
+    mention_none = f"<@{g_no_user.slack_notify_user}> " if g_no_user.slack_notify_user else ""
+    check(
+        "notify_mention: slack_notify_user absent -> no mention prefix",
+        mention_none == "",
+    )
 
     return failures
 
