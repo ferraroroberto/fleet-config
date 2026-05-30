@@ -5,6 +5,14 @@
 # match against `cwd_prefix`. Add a new project by adding a new [<name>] table.
 #
 # Paths use forward slashes throughout (cross-shell compatibility on Windows).
+#
+# Optional per-project key:
+#   slack_notify_channel = "C0123ABCD"   # bare Slack channel id (or a user id for a DM)
+# When set, the notify_on_idle hook pings this channel when a live session in
+# that project needs attention. Omit it (the default) to keep that project quiet.
+# A [global] slack_notify_channel below acts as a fleet-wide fallback. Both are
+# opt-in: with neither set, notify_on_idle is a silent no-op. The bot token lives
+# in ~/.claude/settings.json env (SLACK_BOT_TOKEN), never here. See docs/slack-workflow.md.
 
 [app-launcher]
 cwd_prefix          = "E:/automation/app-launcher"
@@ -41,3 +49,4 @@ tray_cmd            = "tray.bat"
 # 8446  = app-launcher session-host (kill kills every PTY/Claude session)
 [global]
 never_kill_ports = [8000, 8090, 8446]
+# slack_notify_channel = "C0123ABCD"   # fleet-wide fallback for notify_on_idle (opt-in; off while commented)

@@ -153,18 +153,69 @@ def main() -> int:
         0,
     ))
 
+    # ---- notify_on_idle: opt-in, default off ----
+    # No project here declares slack_notify_channel and the [global] fallback is
+    # commented out, so this must be a silent no-op (exit 0) — never a live post.
+    cases.append((
+        "notify_on_idle: no channel configured -> allow (no-op)",
+        "notify_on_idle",
+        {"hook_event_name": "Notification", "cwd": str(REPO), "message": "needs input"},
+        0,
+    ))
+
     failures = 0
     for name, hook, payload, expected in cases:
         code, _stdout, stderr = run(hook, payload)
         if not assert_exit(name, expected, code, stderr):
             failures += 1
 
+    # ---- slack_notify unit checks (pure / no network) ----
+    failures += _slack_notify_unit_checks()
+
     # Cleanup
     shutil.rmtree(tmp, ignore_errors=True)
 
     print()
-    print(f"Total: {len(cases)} | Failed: {failures}")
+    print(f"Total: {len(cases) + _UNIT_CHECK_COUNT} | Failed: {failures}")
     return 0 if failures == 0 else 1
+
+
+_UNIT_CHECK_COUNT = 3
+
+
+def _slack_notify_unit_checks() -> int:
+    """Exercise slack_notify without touching the network. Returns failure count."""
+    sys.path.insert(0, str(HOOKS))
+    import slack_notify  # noqa: E402
+
+    failures = 0
+
+    def check(case: str, ok: bool) -> None:
+        nonlocal failures
+        print(f"{'OK   ' if ok else 'FAIL '} {case}")
+        if not ok:
+            failures += 1
+
+    check(
+        "slack_notify: archive URL -> bare id",
+        slack_notify.parse_channel("https://x.slack.com/archives/C0B76GBA0LS") == "C0B76GBA0LS",
+    )
+    check(
+        "slack_notify: bare id passes through",
+        slack_notify.parse_channel("  C0B76GBA0LS  ") == "C0B76GBA0LS",
+    )
+
+    # Missing token must return False (never raise, never post). Force-unset the
+    # env var around the call so a real token on the dev box can't trigger a post.
+    saved = os.environ.pop(slack_notify.TOKEN_ENV_VAR, None)
+    try:
+        result = slack_notify.notify("test", channel="C0B76GBA0LS", token=None)
+    finally:
+        if saved is not None:
+            os.environ[slack_notify.TOKEN_ENV_VAR] = saved
+    check("slack_notify: missing token -> False (graceful)", result is False)
+
+    return failures
 
 
 if __name__ == "__main__":
