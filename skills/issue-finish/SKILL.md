@@ -83,3 +83,19 @@ If the project has no tray, skip this step.
 
 Summarize: issue closed, PR merged, branch deleted, docs updated (or why not),
 gate result, and the live build line.
+
+### 8. Slack notification
+
+After the summary, fire a completion ping so the user knows the work is done
+while away from the terminal.
+
+Read `slack_notify_channel` and `slack_notify_user` from the `[global]` table
+in `~/.claude/hooks/projects.toml`. If the channel key is absent, skip silently.
+If both are present, run:
+
+```
+py C:/Users/rober/.claude/hooks/slack_notify.py --channel <channel> --text "<@<user>> ✅ Done: #<N> <title> — PR merged · <pr-url>"
+```
+
+Never let a notification failure block or delay anything — if the command
+errors, log the error and continue.
