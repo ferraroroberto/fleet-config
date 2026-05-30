@@ -44,7 +44,15 @@ def main() -> None:
 
     name = project.name if project is not None else "claude"
     message = str(payload.get("message") or "needs your attention").strip()
-    slack_notify.notify(f"🔔 [{name}] {message}", channel=str(channel))
+
+    user = None
+    if project is not None:
+        user = project.extra.get("slack_notify_user")
+    if not user:
+        user = registry.globals.slack_notify_user
+
+    mention = f"<@{user}> " if user else ""
+    slack_notify.notify(f"{mention}🔔 [{name}] {message}", channel=str(channel))
     _lib.allow()
 
 

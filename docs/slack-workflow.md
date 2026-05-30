@@ -50,12 +50,16 @@ Wired to Claude Code's `Notification` event (Claude needs input / a permission /
 [content-management]
 cwd_prefix           = "E:/automation/content-management"
 slack_notify_channel = "C0123ABCD"   # bare channel id (or a user id for a DM)
+slack_notify_user    = "U0123ABCD"   # optional: @mention this user for mobile push
 
 [global]
 slack_notify_channel = "C0123ABCD"   # fleet-wide fallback
+slack_notify_user    = "U0123ABCD"   # fleet-wide mention fallback
 ```
 
-With neither set, the hook is a silent no-op — that keeps notification noise off by default. It hooks `Notification` (not `Stop`) deliberately, so it doesn't ping on every turn-end.
+With neither channel set, the hook is a silent no-op — that keeps notification noise off by default. It hooks `Notification` (not `Stop`) deliberately, so it doesn't ping on every turn-end.
+
+**`slack_notify_user` is required for reliable mobile push.** Slack only delivers phone notifications for @mentions and DMs — a bare channel message is silently delivered without a push. Set `slack_notify_user` to your Slack user id (find it in your Slack profile → *Copy member ID*) and every fleet notification will @mention you, guaranteeing the push.
 
 ## 3. Native "Claude in Slack" (remote control)
 

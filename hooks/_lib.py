@@ -126,6 +126,7 @@ class ProjectConfig:
 class GlobalConfig:
     never_kill_ports: Sequence[int]
     slack_notify_channel: Optional[str] = None
+    slack_notify_user: Optional[str] = None
 
 
 @dataclass(frozen=True)
@@ -148,6 +149,7 @@ def load_registry(path: Path = PROJECTS_TOML) -> Registry:
     globals_table = data.pop("global", {}) if isinstance(data.get("global"), dict) else {}
     never_kill = tuple(int(p) for p in globals_table.get("never_kill_ports", []))
     slack_channel = globals_table.get("slack_notify_channel") or None
+    slack_user = globals_table.get("slack_notify_user") or None
 
     projects: List[ProjectConfig] = []
     for name, table in data.items():
@@ -175,7 +177,7 @@ def load_registry(path: Path = PROJECTS_TOML) -> Registry:
 
     return Registry(
         projects=projects,
-        globals=GlobalConfig(never_kill_ports=never_kill, slack_notify_channel=slack_channel),
+        globals=GlobalConfig(never_kill_ports=never_kill, slack_notify_channel=slack_channel, slack_notify_user=slack_user),
     )
 
 
