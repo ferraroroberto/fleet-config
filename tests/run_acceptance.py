@@ -195,7 +195,7 @@ def main() -> int:
     return 0 if failures == 0 else 1
 
 
-_UNIT_CHECK_COUNT = 24
+_UNIT_CHECK_COUNT = 26
 
 
 def _slack_notify_unit_checks() -> int:
@@ -272,7 +272,7 @@ def _notify_mention_unit_checks() -> int:
     return failures
 
 
-_NOTIFY_CLASSIFY_COUNT = 12
+_NOTIFY_CLASSIFY_COUNT = 14
 
 
 def _notify_classify_unit_checks() -> int:
@@ -332,8 +332,16 @@ def _notify_classify_unit_checks() -> int:
     old_done = {"bot_id": "B1", "text": f"<@{user}> ✅ Done", "ts": str(now - 9999)}
     filed = {"bot_id": "B1", "text": f"<@{user}> 🆕 Filed #5", "ts": str(now - 10)}
     ready = {"bot_id": "B1", "text": f"<@{user}> 🚦 #5 ready", "ts": str(now - 10)}
+    # Slack re-encodes posted unicode emoji as :shortcode: text in history — the
+    # form the idle hook actually reads back. These guard the real-world bug.
+    done_shortcode = {"bot_id": "B1", "text": f"<@{user}> :white_check_mark: Done #5 — PR merged", "ts": str(now - 30)}
+    shipped_shortcode = {"bot_id": "B1", "text": f"<@{user}> :rocket: Shipped #5 — PR", "ts": str(now - 30)}
     check("recent_completion: fresh done latest -> suppress",
           slack_notify._is_recent_completion([done], user, now, 600) is True)
+    check("recent_completion: shortcode done (as read from history) -> suppress",
+          slack_notify._is_recent_completion([done_shortcode], user, now, 600) is True)
+    check("recent_completion: shortcode rocket (as read from history) -> suppress",
+          slack_notify._is_recent_completion([shipped_shortcode], user, now, 600) is True)
     check("recent_completion: add mark latest -> suppress",
           slack_notify._is_recent_completion([filed], user, now, 600) is True)
     check("recent_completion: start mark latest -> suppress",

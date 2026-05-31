@@ -50,8 +50,24 @@ _ARCHIVE_RE = re.compile(r"/archives/([A-Z0-9]+)", re.IGNORECASE)
 # notify_complete) leads with one of these marks; an attention ping
 # (notify_on_idle) leads with 🔔 / 💤. The idle hook keys off this to tell "a job
 # just finished" from "Claude is mid-task and stuck", and suppress the redundant
-# follow-up idle ping. Keep in sync with notify_complete's message formats.
-_TERMINAL_MARKS = ("✅", "🆕", "🚦", "🏁", "🚀")
+# follow-up idle ping.
+#
+# Each mark is kept as a (unicode, slack-shortcode) pair: notify_complete *sends*
+# the unicode form, but Slack's ``conversations.history`` re-encodes posted emoji
+# as ``:shortcode:`` text, so a ping read back from history reads
+# ``:white_check_mark: Done …`` — matching only the unicode form silently fails
+# to recognise it. The idle hook reads history, so it must match BOTH forms.
+# Keep in sync with notify_complete's message formats.
+_TERMINAL_MARKS = (
+    ("✅", ":white_check_mark:"),        # finish
+    ("🆕", ":new:"),                     # add
+    ("🚦", ":vertical_traffic_light:"),  # start
+    ("🏁", ":checkered_flag:"),          # batch
+    ("🚀", ":rocket:"),                  # yolo
+)
+
+# Flat tuple of every token (unicode + shortcode) that leads a completion ping.
+_TERMINAL_TOKENS = tuple(token for pair in _TERMINAL_MARKS for token in pair)
 
 
 def parse_channel(raw: str) -> str:
@@ -144,7 +160,7 @@ def _is_recent_completion(
             ts = float(message.get("ts", "0"))
         except (TypeError, ValueError):
             ts = 0.0
-        leads_terminal = any(mark in text for mark in _TERMINAL_MARKS)
+        leads_terminal = any(token in text for token in _TERMINAL_TOKENS)
         return leads_terminal and (now - ts) < within_seconds
     return False
 
@@ -153,12 +169,14 @@ def recent_completion(
     channel: str,
     user: str,
     token: Optional[str] = None,
-    within_seconds: float = 600.0,
+    within_seconds: float = 1800.0,
 ) -> bool:
     """True if a completion ping just landed in ``channel`` for ``user``.
 
     Used by the idle hook to suppress the redundant "waiting for your input"
-    notification that otherwise fires ~60 s after an issue-finish "Done" ping.
+    notification that otherwise fires after an issue-finish "Done" ping. The
+    30-minute window covers both the immediate ~60 s idle and the longer tail
+    (a second idle ~12 min later was observed leaking past a tighter window).
     Reads Slack centrally (``conversations.history``) so it works regardless of
     whether the Done ping came from a local or a cloud/bridge session. Never
     raises — any missing token, scope, or network error returns False so the
