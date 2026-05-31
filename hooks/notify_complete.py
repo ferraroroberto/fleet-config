@@ -20,6 +20,13 @@ Usage::
     py ~/.claude/hooks/notify_complete.py --kind yolo   --issue 30 --pr 31 --pr-url https://github.com/owner/repo/pull/31
     py ~/.claude/hooks/notify_complete.py --kind batch  --passed 2 --total 3
     py ~/.claude/hooks/notify_complete.py --kind audit  --comment-url https://github.com/ferraroroberto/claude-config/issues/18#issuecomment-123 --summary "3 audited, 2 issues filed, 24 unchanged"
+    py ~/.claude/hooks/notify_complete.py --kind cleanup --summary documentation --merged 5 --review 2
+
+For ``--kind cleanup`` (the closing roll-up of a ``/cleanup-fleet`` swarm) pass
+``--summary`` (the bucket name), ``--merged`` (sonnet issues YOLO'd to a merged
+PR) and ``--review`` (opus issues built and awaiting ``/issue-finish``). This is
+the *final* aggregate ping — the per-issue ``🚀 Shipped`` pings each sonnet
+agent already fired (carrying their own PR links) are kept, not suppressed.
 
 Pass ``--pr-url`` whenever the full PR URL is already known (e.g. from ``gh pr
 create`` output). The helper will use that URL directly and look up the title
@@ -119,6 +126,8 @@ def build_message(
     summary: Optional[str] = None,
     passed: Optional[str] = None,
     total: Optional[str] = None,
+    merged: Optional[str] = None,
+    review: Optional[str] = None,
 ) -> str:
     """Assemble the canonical ping text (no @mention prefix). Pure / testable.
 
@@ -142,6 +151,16 @@ def build_message(
     if kind == "audit":
         summary_part = f" — {summary}" if summary else ""
         return f"📊 Fleet audit{summary_part}{link}"
+    if kind == "cleanup":
+        bucket = f" {summary.strip()}" if summary and summary.strip() else ""
+        parts: List[str] = []
+        if merged is not None:
+            parts.append(f"{merged} merged")
+        # Easy/silent runs spawn no opus agents, so a 0 review count is noise — drop it.
+        if review is not None and str(review).strip() not in ("", "0"):
+            parts.append(f"{review} awaiting review")
+        tail = f": {', '.join(parts)}" if parts else ""
+        return f"🧹 Cleanup{bucket}{tail}"
     return f"✅ Done #{issue}{name}{link}"  # defensive fallback
 
 
@@ -150,7 +169,8 @@ def main(argv: Optional[List[str]] = None) -> int:
         description="Send a deterministic skill-completion Slack ping."
     )
     parser.add_argument(
-        "--kind", required=True, choices=["add", "start", "finish", "yolo", "batch", "audit"]
+        "--kind", required=True,
+        choices=["add", "start", "finish", "yolo", "batch", "audit", "cleanup"]
     )
     parser.add_argument("--issue", help="Issue number (shown as #N).")
     parser.add_argument("--pr", help="PR number, for finish/yolo (linked).")
@@ -169,6 +189,8 @@ def main(argv: Optional[List[str]] = None) -> int:
     parser.add_argument("--summary", help="One concise summary line, for start/audit.")
     parser.add_argument("--passed", help="Passed count, for batch.")
     parser.add_argument("--total", help="Total count, for batch.")
+    parser.add_argument("--merged", help="Merged-PR count, for cleanup.")
+    parser.add_argument("--review", help="Awaiting-review count, for cleanup.")
     args = parser.parse_args(argv)
 
     logging.basicConfig(level=logging.INFO, format="%(message)s", stream=sys.stderr)
@@ -178,7 +200,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         return 0  # opt-in: not configured → silent no-op
 
     title, url = (None, None)
-    if args.kind not in ("batch",):
+    if args.kind not in ("batch", "cleanup"):
         title, url = lookup(
             args.kind, args.issue, args.pr,
             pr_url=args.pr_url, comment_url=getattr(args, "comment_url", None),
@@ -192,6 +214,8 @@ def main(argv: Optional[List[str]] = None) -> int:
         summary=args.summary,
         passed=args.passed,
         total=args.total,
+        merged=args.merged,
+        review=args.review,
     )
     mention = f"<@{user}> " if user else ""
     slack_notify.notify(f"{mention}{text}", channel=str(channel))
