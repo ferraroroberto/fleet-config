@@ -91,3 +91,21 @@ the project's plan-mode default in `CLAUDE.md`. Resolve real ambiguity with
 questions first.
 
 When the work, validation, and review are done, finish with `/issue-finish`.
+
+### 7. Notify when control returns to the user
+
+At the point where the ball is back in the user's court — the **plan is
+presented for approval** (plan mode), or the **fast-mode build is complete and
+ready to validate** — fire the completion ping so they can act from their phone:
+
+```
+py C:/Users/rober/.claude/hooks/notify_complete.py --kind start --issue <N> --summary "<one concise line: the single next action>"
+```
+
+The `--summary` is the only free-form part — keep it to one short imperative
+line (e.g. `review the diff, then /issue-finish` or `approve the plan to
+proceed`). The helper resolves the channel/user, pulls the issue title + link
+from `gh`, emits the canonical format, and suppresses the follow-up idle ping.
+Silent no-op if no channel is configured; always exits 0. Skip it only if the
+work ran straight through to `/issue-finish` without ever pausing for the user
+(that flow fires its own ping).

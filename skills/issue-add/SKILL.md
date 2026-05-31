@@ -128,9 +128,19 @@ isn't mangled by shell escaping.
 Print the new issue number and URL, a one-line summary of what was filed, and
 the label applied.
 
-- **Default:** mention that `/issue-start <N>` will pick it up, and stop.
-- **One-shot mode (`now`):** do **not** stop — immediately proceed to the
-  `/issue-start <N> now` flow on the same turn (pre-flight, sync main, cut
-  branch, build straight away, per that skill's steps 1–6). Skip the
-  plan-approval gate regardless of label, since `now` was explicit. Only pause
-  if a step fails or a genuinely expensive/ambiguous decision surfaces.
+- **Default:** mention that `/issue-start <N>` will pick it up. Then fire the
+  completion ping (canonical format, real issue link, suppresses the follow-up
+  idle ping) and stop:
+
+  ```
+  py C:/Users/rober/.claude/hooks/notify_complete.py --kind add --issue <N>
+  ```
+
+  Pass only the issue number; the helper pulls the title + URL from `gh`. Silent
+  no-op if no channel is configured; always exits 0.
+- **One-shot mode (`now`):** do **not** stop and do **not** fire the add ping —
+  immediately proceed to the `/issue-start <N> now` flow on the same turn
+  (pre-flight, sync main, cut branch, build straight away, per that skill's
+  steps 1–6). Skip the plan-approval gate regardless of label, since `now` was
+  explicit. Only pause if a step fails or a genuinely expensive/ambiguous
+  decision surfaces. The start ping fires at the end of that flow instead.

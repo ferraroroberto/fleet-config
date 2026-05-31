@@ -205,15 +205,16 @@ Then stop. Do not poll, do not sleep, do not check on progress — the harness r
 
 As each background sub-agent finishes, surface its report verbatim in the chat with a short header (`✅` if verification passed, `⚠️` if skipped, `❌` if failed).
 
-After **all** agents have returned, fire a Slack notification so the user knows
-action is needed. Read `slack_notify_channel` and `slack_notify_user` from the
-`[global]` table in `~/.claude/hooks/projects.toml`. If present, run:
+After **all** agents have returned, fire the batch-complete ping with the
+deterministic helper (canonical format, resolves channel/user from
+`projects.toml`, suppresses the follow-up idle ping). Run:
 
 ```
-py C:/Users/rober/.claude/hooks/slack_notify.py --channel <channel> --text "<@<user>> 🏁 Batch done: <pass>/<total> passed — /issue-finish each branch to ship"
+py C:/Users/rober/.claude/hooks/notify_complete.py --kind batch --passed <pass> --total <total>
 ```
 
-If the channel key is absent or the command errors, skip silently and continue.
+If no channel is configured it's a silent no-op; it always exits 0, so a
+notification failure can't block or delay anything.
 
 Then finish with one summary block:
 

@@ -196,6 +196,25 @@ def detect_project(cwd_path: Path, registry: Optional[Registry] = None) -> Optio
     return best
 
 
+def resolve_slack_target(
+    cwd_path: Path, registry: Optional[Registry] = None
+) -> "tuple[Optional[str], Optional[str], str]":
+    """Resolve ``(channel, user, project_name)`` for a Slack ping from ``cwd_path``.
+
+    A project's own ``slack_notify_channel`` / ``slack_notify_user`` override the
+    ``[global]`` fallback; ``name`` is the project key, or ``"claude"`` when
+    ``cwd_path`` matches no registered project. Shared by ``notify_on_idle`` (the
+    hook) and ``notify_complete`` (the skill-completion helper) so both resolve
+    the channel, mention, and project name identically.
+    """
+    reg = registry or load_registry()
+    project = detect_project(cwd_path, reg)
+    channel = (project.extra.get("slack_notify_channel") if project else None) or reg.globals.slack_notify_channel
+    user = (project.extra.get("slack_notify_user") if project else None) or reg.globals.slack_notify_user
+    name = project.name if project else "claude"
+    return channel, user, name
+
+
 # ------------------------------------------------------------------- .venv
 
 

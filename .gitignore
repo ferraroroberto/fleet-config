@@ -12,6 +12,9 @@ Thumbs.db
 .vscode/
 .idea/
 
+# App-launcher scratch (pasted images, transient run artifacts)
+.launcher-tmp/
+
 # Python
 __pycache__/
 *.pyc

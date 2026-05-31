@@ -33,15 +33,25 @@ import logging
 import os
 import re
 import sys
+import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from typing import List, Optional
 
 logger = logging.getLogger("slack_notify")
 
 SLACK_POST_MESSAGE_URL = "https://slack.com/api/chat.postMessage"
+SLACK_HISTORY_URL = "https://slack.com/api/conversations.history"
 TOKEN_ENV_VAR = "SLACK_BOT_TOKEN"
 _ARCHIVE_RE = re.compile(r"/archives/([A-Z0-9]+)", re.IGNORECASE)
+
+# A skill-completion ping (issue-add / start / finish / yolo / batch, sent via
+# notify_complete) leads with one of these marks; an attention ping
+# (notify_on_idle) leads with 🔔 / 💤. The idle hook keys off this to tell "a job
+# just finished" from "Claude is mid-task and stuck", and suppress the redundant
+# follow-up idle ping. Keep in sync with notify_complete's message formats.
+_TERMINAL_MARKS = ("✅", "🆕", "🚦", "🏁", "🚀")
 
 
 def parse_channel(raw: str) -> str:
@@ -111,6 +121,73 @@ def notify(
 
     logger.info("✅ Slack notification posted to %s", channel)
     return True
+
+
+def _is_recent_completion(
+    messages: list, user: str, now: float, within_seconds: float
+) -> bool:
+    """Decide, from newest-first channel history, whether the latest ping *we*
+    sent to ``user`` is a fresh completion.
+
+    Pure logic split out from :func:`recent_completion` so it can be unit-tested
+    without the network. Looks at the most recent message that is ours (has a
+    ``bot_id`` and @mentions ``user``): True only if that one leads with the
+    completion mark and landed within ``within_seconds``. A 🔔/💤 attention ping
+    as the latest means we're genuinely waiting, so → False.
+    """
+    mention = f"<@{user}>"
+    for message in messages:  # Slack returns newest-first
+        text = message.get("text") or ""
+        if not message.get("bot_id") or mention not in text:
+            continue
+        try:
+            ts = float(message.get("ts", "0"))
+        except (TypeError, ValueError):
+            ts = 0.0
+        leads_terminal = any(mark in text for mark in _TERMINAL_MARKS)
+        return leads_terminal and (now - ts) < within_seconds
+    return False
+
+
+def recent_completion(
+    channel: str,
+    user: str,
+    token: Optional[str] = None,
+    within_seconds: float = 600.0,
+) -> bool:
+    """True if a completion ping just landed in ``channel`` for ``user``.
+
+    Used by the idle hook to suppress the redundant "waiting for your input"
+    notification that otherwise fires ~60 s after an issue-finish "Done" ping.
+    Reads Slack centrally (``conversations.history``) so it works regardless of
+    whether the Done ping came from a local or a cloud/bridge session. Never
+    raises — any missing token, scope, or network error returns False so the
+    idle ping still goes out (fail open: a stray ping beats a silent miss).
+    """
+    token = token or os.getenv(TOKEN_ENV_VAR)
+    if not token or not channel or not user:
+        return False
+
+    query = urllib.parse.urlencode({"channel": parse_channel(channel), "limit": "8"})
+    request = urllib.request.Request(
+        f"{SLACK_HISTORY_URL}?{query}",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=10) as response:
+            body = json.loads(response.read().decode("utf-8"))
+    except urllib.error.URLError as exc:
+        logger.error("❌ Slack history request failed: %s", exc)
+        return False
+    except (ValueError, OSError) as exc:
+        logger.error("❌ Slack history response unreadable: %s", exc)
+        return False
+
+    if not body.get("ok"):
+        logger.error("❌ Slack history API error: %s", body.get("error", "unknown"))
+        return False
+
+    return _is_recent_completion(body.get("messages", []), user, time.time(), within_seconds)
 
 
 def _read_text(arg_text: Optional[str]) -> str:

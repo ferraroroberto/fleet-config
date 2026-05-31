@@ -40,6 +40,28 @@ slack_notify.notify("done", channel="https://x.slack.com/archives/C0123ABCD")  #
 
 `--channel` / `channel=` accepts a bare channel id, a user id (for a DM), or a pasted archive URL (the id is parsed out). The call **never raises**: a missing token, bad channel, network error, or Slack API error logs to stderr and returns `False` / a non-zero exit, so an unattended job keeps running.
 
+**Manual / conversational pings go here too.** When I ask a session to "ping me on Slack" or "notify me like you do when you finish a job" — *outside* a skill — the answer is still this CLI, **not** the Slack MCP connector. The `@mention` (`<@U…>`) is mandatory; without it Slack delivers no mobile push.
+
+```bash
+py ~/.claude/hooks/slack_notify.py --channel C0123ABCD --text "<@U0123ABCD> ✅ [project] <message>"
+```
+
+A model that reaches for `mcp__claude_ai_Slack__send_message` instead has made the classic mistake below: it posts as me and pings nobody.
+
+### Completion pings — `notify_complete.py`
+
+The `issue-*` skills don't hand-assemble their "done" message — that invites paraphrase, a wrong/missing PR link, or a dropped ping. They call `notify_complete.py` with structured args, and the **canonical format + the real GitHub URL are built in Python** (via `gh pr view` / `gh issue view`), so every completion ping is byte-identical and correctly linked. The model only passes the numbers it already has.
+
+```bash
+py ~/.claude/hooks/notify_complete.py --kind finish --issue 30 --pr 31     # ✅ Done #30 <title> — PR merged · <pr-url>
+py ~/.claude/hooks/notify_complete.py --kind add    --issue 30             # 🆕 Filed #30 <title> · <issue-url>
+py ~/.claude/hooks/notify_complete.py --kind start  --issue 30 --summary "review the diff, then /issue-finish"   # 🚦 #30 <title> — ready to validate. …
+py ~/.claude/hooks/notify_complete.py --kind yolo   --issue 30 --pr 31     # 🚀 Shipped #30 <title> — PR · <pr-url>
+py ~/.claude/hooks/notify_complete.py --kind batch  --passed 2 --total 3   # 🏁 Batch done: 2/3 passed — …
+```
+
+Every kind **leads with a terminal mark** (`✅ 🆕 🚦 🏁 🚀`) — the signal the idle hook reads to suppress the redundant follow-up idle ping. It resolves channel/user via the shared `_lib.resolve_slack_target()` (project override → `[global]` fallback), is a silent no-op when no channel is configured, and always exits 0 — a notification failure can never block a skill. The one thing it can't force is the model remembering to *call* it; making the firing itself deterministic would need a merge-detecting hook, which is more brittle than it's worth.
+
 ## 2. Session hook — `notify_on_idle.py`
 
 Wired to Claude Code's `Notification` event (Claude needs input / a permission / has gone idle). It rides `slack_notify`, so an AFK human gets a phone notification instead of a toast.
@@ -59,7 +81,15 @@ slack_notify_user    = "U0123ABCD"   # fleet-wide mention fallback
 
 With neither channel set, the hook is a silent no-op — that keeps notification noise off by default. It hooks `Notification` (not `Stop`) deliberately, so it doesn't ping on every turn-end.
 
+**Verify it's actually wired.** `settings.template.json` carries the `Notification` block, but `install.ps1` merges it into your live `~/.claude/settings.json` *once* — there's no re-sync, so the live file can silently drift and lose the block (then idle/permission pings just never fire). Confirm with `py -c "import json;print(list(json.load(open(r'C:/Users/rober/.claude/settings.json'))['hooks']))"` — `Notification` must be in the list. After re-adding it, restart Claude Code (or open `/hooks` once) so the harness reloads settings.
+
 **`slack_notify_user` is required for reliable mobile push.** Slack only delivers phone notifications for @mentions and DMs — a bare channel message is silently delivered without a push. Set `slack_notify_user` to your Slack user id (find it in your Slack profile → *Copy member ID*) and every fleet notification will @mention you, guaranteeing the push.
+
+**What the ping can and can't say.** The payload carries only `notification_type` (`permission_prompt` / `idle_prompt`) and a generic `message`; the hook icons by type — 🔔 for a permission prompt, 💤 for an idle wait. A `permission_prompt` is reworded to `Claude awaits your input` (it's as often an `AskUserQuestion` as a real permission gate, so "needs your permission" overclaims); idle and other types pass the message through. It can't say *what* Claude is waiting on: in a remote-control / bridge session the tool being gated lives in the cloud transcript, and the local `transcript_path` holds only bridge metadata (no `tool_use`), so a question (`AskUserQuestion`) and a real permission gate are indistinguishable locally. Don't add transcript-tool-sniffing here expecting it to work from the phone — it won't.
+
+**Deep-link back into the session.** A bridge session's transcript opens with a `bridge-session` entry whose `bridgeSessionId` (`cse_01H…`) maps to `https://claude.ai/code/session_01H…` (drop the `cse_` prefix). The hook appends that URL to the ping (`… · https://claude.ai/code/session_…`) so you can tap the notification and resume on the web. Local terminal sessions have no bridge entry, so no link is appended.
+
+**No idle ping right after a completion.** When a `notify_complete` ping (which leads with a terminal mark `✅ 🆕 🚦 🏁 🚀`) just landed, the follow-up 60s-idle "waiting for your input" is pure noise. Before sending an `idle_prompt`, the hook reads the channel (`conversations.history`, needs the bot's `channels:history`/`groups:history` scope) and skips if the latest ping it sent you leads with a terminal mark within the last 10 minutes. This works across local and cloud/bridge sessions because Slack is the shared medium — the completion ping may originate in the cloud while the idle hook runs locally. It fails open: any missing scope or network error lets the idle ping through.
 
 ## 3. Native "Claude in Slack" (remote control)
 

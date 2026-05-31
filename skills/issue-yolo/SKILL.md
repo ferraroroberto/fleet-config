@@ -157,6 +157,10 @@ Only reachable on a fully-green Phase 3. Run the full `/issue-finish` skill:
 9. Tray restart per project `CLAUDE.md` if a tray exists — surgically (kill
    the project port's PID only, never blanket `pythonw`).
 
+**Do not fire `/issue-finish`'s own Slack ping (its step 8) during this phase** —
+Phase 5 sends a single `--kind yolo` ping instead, so the run produces exactly
+one completion notification, not two.
+
 ### Phase 5 — Final report
 
 Single concise summary:
@@ -166,6 +170,16 @@ Single concise summary:
 - PR URL
 - Build line from the version endpoint (if the project has one)
 - Live tray status (if applicable)
+
+Then fire the single completion ping with the deterministic helper — canonical
+format, real PR title + URL from `gh`, suppresses the follow-up idle ping:
+
+```
+py C:/Users/rober/.claude/hooks/notify_complete.py --kind yolo --issue <N> --pr <PR>
+```
+
+Silent no-op if no channel is configured; always exits 0, so it can never block
+or delay the finish.
 
 ## Notes on safety
 

@@ -86,16 +86,16 @@ gate result, and the live build line.
 
 ### 8. Slack notification
 
-After the summary, fire a completion ping so the user knows the work is done
-while away from the terminal.
-
-Read `slack_notify_channel` and `slack_notify_user` from the `[global]` table
-in `~/.claude/hooks/projects.toml`. If the channel key is absent, skip silently.
-If both are present, run:
+After the summary, fire the completion ping with the deterministic helper. It
+resolves the channel/user from `projects.toml`, pulls the **real** PR title +
+URL from `gh` itself, and emits the one canonical format — so every Done ping is
+byte-identical and correctly linked, with no chance of a paraphrased or missing
+link. It also suppresses the redundant follow-up idle ping. Run:
 
 ```
-py C:/Users/rober/.claude/hooks/slack_notify.py --channel <channel> --text "<@<user>> ✅ Done: #<N> <title> — PR merged · <pr-url>"
+py C:/Users/rober/.claude/hooks/notify_complete.py --kind finish --issue <N> --pr <PR>
 ```
 
-Never let a notification failure block or delay anything — if the command
-errors, log the error and continue.
+Pass the issue number and the PR number — nothing else; the helper derives the
+rest. If no channel is configured it's a silent no-op, and it always exits 0, so
+a notification failure can never block or delay anything.

@@ -1,9 +1,9 @@
 """Ping Slack when a live session needs attention — so you can stop babysitting.
 
-Wired to Claude Code's ``Notification`` event (fires when Claude needs your
-input / a permission / has gone idle). It rides the `slack_notify` transport, so
-an AFK human gets a real phone notification instead of a desktop toast nobody
-sees.
+Wired to Claude Code's ``Notification`` event (fires when Claude needs a
+permission or has gone idle waiting for input). It rides the `slack_notify`
+transport, so an AFK human gets a real phone notification instead of a desktop
+toast nobody sees.
 
 **Opt-in, default off.** It does nothing unless the current project declares a
 ``slack_notify_channel`` in ``hooks/projects.toml`` (or a ``[global]
@@ -15,12 +15,68 @@ A Notification hook only advises — it never blocks, and always exits 0.
 
 from __future__ import annotations
 
+import json
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import _lib  # noqa: E402
 import slack_notify  # noqa: E402
+
+# Glanceable icon per notification kind. A real permission gate (action needed)
+# reads differently from an idle wait; anything else falls back to the bell.
+_ICONS = {"permission_prompt": "🔔", "idle_prompt": "💤"}
+
+# Only the head of the transcript is read for the bridge link — the bridge-session
+# metadata is written at session start, so it's always near the top.
+_TRANSCRIPT_HEAD_BYTES = 65536
+
+
+def classify(payload: dict) -> tuple[str, str]:
+    """Map a Notification payload to an (icon, text) pair for the Slack ping.
+
+    The payload only reliably carries ``notification_type`` and a generic
+    ``message`` — in a remote/bridge session the tool being gated lives in the
+    cloud transcript, not locally, so finer classification (question vs
+    permission) isn't possible here. Icon by type; idle/other pass the message
+    through, but a permission prompt is reworded to "awaits your input" because
+    it's just as often a question (AskUserQuestion) as a real permission gate.
+    """
+    if payload.get("notification_type") == "permission_prompt":
+        return "🔔", "Claude awaits your input"
+    raw = str(payload.get("message") or "needs your attention").strip()
+    return _ICONS.get(payload.get("notification_type"), "🔔"), raw
+
+
+def session_link(transcript_path: object) -> str | None:
+    """Web URL for a remote-control session, or None for a local one.
+
+    A bridged (phone / claude.ai) session records a ``bridge-session`` entry
+    near the top of its local transcript with ``bridgeSessionId`` like
+    ``cse_01H…``; the web session lives at
+    ``https://claude.ai/code/session_01H…`` (the ``cse_`` prefix dropped). Lets
+    the ping deep-link straight back into the conversation. Returns None for a
+    local terminal session (no bridge entry) or on any read error.
+    """
+    if not transcript_path:
+        return None
+    try:
+        with open(transcript_path, "rb") as handle:
+            head = handle.read(_TRANSCRIPT_HEAD_BYTES).decode("utf-8", "ignore")
+    except (OSError, TypeError, ValueError):
+        return None
+
+    for line in head.splitlines():
+        try:
+            entry = json.loads(line)
+        except ValueError:
+            continue  # partial trailing line from the head cut, or non-JSON
+        if entry.get("type") == "bridge-session":
+            bridge_id = entry.get("bridgeSessionId") or ""
+            session_id = bridge_id[4:] if bridge_id.startswith("cse_") else bridge_id
+            if session_id:
+                return f"https://claude.ai/code/session_{session_id}"
+    return None
 
 
 def main() -> None:
@@ -31,28 +87,21 @@ def main() -> None:
     if payload.get("stop_hook_active"):
         _lib.allow()
 
-    registry = _lib.load_registry()
-    project = _lib.detect_project(_lib.cwd(payload), registry)
-
-    channel = None
-    if project is not None:
-        channel = project.extra.get("slack_notify_channel")
-    if not channel:
-        channel = registry.globals.slack_notify_channel
+    channel, user, name = _lib.resolve_slack_target(_lib.cwd(payload))
     if not channel:
         _lib.allow()  # opt-in: not configured for this project → silent no-op
 
-    name = project.name if project is not None else "claude"
-    message = str(payload.get("message") or "needs your attention").strip()
-
-    user = None
-    if project is not None:
-        user = project.extra.get("slack_notify_user")
-    if not user:
-        user = registry.globals.slack_notify_user
+    # Don't ping "Claude is waiting for your input" right after a job-done ping —
+    # the completion message already told you to come look.
+    if payload.get("notification_type") == "idle_prompt" and user:
+        if slack_notify.recent_completion(str(channel), str(user)):
+            _lib.allow()
 
     mention = f"<@{user}> " if user else ""
-    slack_notify.notify(f"{mention}🔔 [{name}] {message}", channel=str(channel))
+    icon, text = classify(payload)
+    link = session_link(payload.get("transcript_path"))
+    suffix = f" · {link}" if link else ""
+    slack_notify.notify(f"{mention}{icon} [{name}] {text}{suffix}", channel=str(channel))
     _lib.allow()
 
 
