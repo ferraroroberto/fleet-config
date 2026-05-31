@@ -1,6 +1,6 @@
 ---
 name: issue-yolo
-description: One-shot the full GitHub-issue workflow end-to-end — file the issue, cut the branch, build, validate hard, then ship (PR, CI, merge, delete branch, tray restart). Use only when you genuinely want a single unbroken run with no approval checkpoints. The validation phase is non-negotiable; YOLO means "no plan gate", not "no safety". Example: "/issue-yolo <paste your idea or transcript>".
+description: One-shot the full GitHub-issue workflow end-to-end — file the issue, cut the branch, build, validate hard, then ship (PR, CI, merge, delete branch, tray restart). Pass a number ("/issue-yolo 34") to work an existing issue without re-filing it; pass text to file a new issue first. The validation phase is non-negotiable; YOLO means "no plan gate", not "no safety".
 ---
 
 # issue-yolo
@@ -30,8 +30,12 @@ Do **not** use this for:
 
 ## Argument
 
-Everything after `/issue-yolo` is the raw idea/transcript. If nothing was
-pasted, ask once and stop.
+- **Number** (`/issue-yolo 34`) — existing issue. Skip Phase 1 entirely; use
+  that issue number for Phases 2–5. Verify it is open via `gh issue view <N>`;
+  stop if it is closed or not found.
+- **Text / transcript** — raw idea. Run Phase 1 to file the issue first, then
+  continue.
+- **Nothing** — ask once and stop.
 
 ## Steps
 
@@ -39,7 +43,10 @@ Run in order. Any failure stops the whole run — no partial finish.
 
 ### Phase 1 — File the issue (`/issue-add` flow)
 
-Run the full `/issue-add` skill steps 1–8 verbatim:
+**Skip this phase if an existing issue number was passed as the argument.**
+Jump directly to Phase 2 using that number.
+
+Otherwise run the full `/issue-add` skill steps 1–8 verbatim:
 1. Repo + convention context.
 2. Extract the real intent.
 3. Research the codebase.
