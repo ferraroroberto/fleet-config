@@ -74,9 +74,10 @@ unchanged repo never costs a sub-agent spawn):
    record as `skipped (dirty / off-branch)` and move on. Never sync over it.
 2. **Sync.** `git -C <path> fetch origin` then `git -C <path> pull --ff-only`.
    If the pull is not a fast-forward → record `skipped (non-ff)` and move on.
-3. **Ledger gate.** Read the ledger:
-   `gh issue list -R ferraroroberto/<name> --label audit-meta --state open --json number,body`.
-   - No ledger issue → **audit** (first run).
+3. **Ledger gate.** Read the ledger by its marker (not the bare `audit-meta`
+   label, which also tags the digest issue):
+   `py C:/Users/rober/.claude/skills/_lib/audit_issue.py get --repo ferraroroberto/<name> --kind ledger`.
+   - `number` is `null` → **audit** (first run).
    - Else parse `last-audited-sha` + `rubric-sha`. Compute the repo's current
      `rubric-sha` = sha256 of the global CLAUDE.md (step 1) concatenated with
      `<path>/CLAUDE.md` (empty string if absent). If
@@ -140,8 +141,9 @@ returned, proceed to the digest. (A sub-agent that errors out is recorded as
 ### 6. Build the diff-based digest
 
 Read the digest-state ledger first so the recap is week-over-week, not a
-re-list: `gh issue list -R ferraroroberto/claude-config --label audit-meta --state open --json number,title,body`,
-find the issue titled `audit-fleet digest state`, parse its block:
+re-list:
+`py C:/Users/rober/.claude/skills/_lib/audit_issue.py get --repo ferraroroberto/claude-config --kind digest`.
+Parse the `<!-- audit-fleet-digest -->` block from the returned `body`:
 
 ```
 <!-- audit-fleet-digest -->
@@ -166,19 +168,29 @@ rendered:
   delta — list them at the top so the email leads with what changed, not
   standing backlog.
 
-Then upsert the digest-state ledger issue (create with label `audit-meta`,
-title `audit-fleet digest state`, `--assignee @me` if absent) with today's date
-and the current per-repo open-audit-issue counts, so next week can diff.
+Then upsert the digest-state ledger issue with today's date and the current
+per-repo open-audit-issue counts, so next week can diff. The helper handles
+create-vs-edit, collapses strays, and stamps the marker (keep the
+`<!-- audit-fleet-digest -->` block intact):
+
+```
+py C:/Users/rober/.claude/skills/_lib/audit_issue.py upsert \
+  --repo ferraroroberto/claude-config --kind digest --label audit-meta \
+  --title "audit-fleet digest state" --body-file <tmpfile>
+```
+
+Capture its printed URL as `DIGEST_ISSUE_URL` and use that for the comment in
+step 7 — never a hardcoded issue number.
 
 ### 7. Deliver the digest
 
 Two channels. stdout is the reliable one (a scheduled run captures it in app-launcher's job history); the GitHub comment is the durable record that the Slack ping links to.
 
 - **stdout:** print the full markdown digest. Always.
-- **GitHub comment:** post the digest as a comment on the `audit-fleet digest state` issue (#18 in `ferraroroberto/claude-config`) — this turns the ledger issue into a running log of every weekly run. Use the `gh issue comment` output URL:
+- **GitHub comment:** post the digest as a comment on the `audit-fleet digest state` issue in `ferraroroberto/claude-config` — the one step 6 upserted (`DIGEST_ISSUE_URL`), never a hardcoded id — turning that issue into a running log of every weekly run. Use the `gh issue comment` output URL:
 
   ```bash
-  COMMENT_URL=$(gh issue comment 18 --repo ferraroroberto/claude-config --body "$DIGEST_MARKDOWN")
+  COMMENT_URL=$(gh issue comment "$DIGEST_ISSUE_URL" --repo ferraroroberto/claude-config --body "$DIGEST_MARKDOWN")
   # gh issue comment prints the URL of the created comment on stdout
   ```
 

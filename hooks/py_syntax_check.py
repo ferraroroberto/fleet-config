@@ -35,15 +35,26 @@ def main() -> None:
         _lib.allow()
 
     # Find the right Python interpreter. Prefer the project's .venv, then `py`,
-    # then `python` on PATH.
+    # then `python` on PATH. Validate each candidate before committing (a broken
+    # venv has a python.exe stub that exists on disk but fails to launch when the
+    # base installation has been removed).
     interpreter: str | None = None
+
+    def _interpreter_works(path: str) -> bool:
+        try:
+            r = subprocess.run([path, "--version"], capture_output=True, timeout=5)
+            return r.returncode == 0
+        except (OSError, subprocess.TimeoutExpired):
+            return False
+
     venv_py = _lib.find_venv_python(target.parent)
-    if venv_py is not None:
+    if venv_py is not None and _interpreter_works(str(venv_py)):
         interpreter = str(venv_py)
-    else:
+
+    if interpreter is None:
         for name in ("py", "python"):
             resolved = shutil.which(name)
-            if resolved:
+            if resolved and _interpreter_works(resolved):
                 interpreter = resolved
                 break
 

@@ -187,6 +187,9 @@ def main() -> int:
     # ---- notify_complete deterministic message assembly + resolver ----
     failures += _notify_complete_unit_checks()
 
+    # ---- audit_issue helper pure-logic tests (skills/_lib) ----
+    failures += _audit_issue_unit_check()
+
     # Cleanup
     shutil.rmtree(tmp, ignore_errors=True)
 
@@ -195,7 +198,7 @@ def main() -> int:
     return 0 if failures == 0 else 1
 
 
-_UNIT_CHECK_COUNT = 28
+_UNIT_CHECK_COUNT = 29
 
 
 def _slack_notify_unit_checks() -> int:
@@ -357,6 +360,24 @@ def _notify_classify_unit_checks() -> int:
 
 
 _NOTIFY_COMPLETE_COUNT = 9
+
+
+def _audit_issue_unit_check() -> int:
+    """Run skills/_lib/audit_issue.py's pure-logic tests as a subprocess.
+
+    Kept standalone (not inlined here) so the helper's marker / title-adoption /
+    keep-close logic is testable on its own, and reachable from the one gate.
+    """
+    proc = subprocess.run(
+        [PYTHON, str(REPO / "tests" / "test_audit_issue.py")],
+        capture_output=True, text=True, encoding="utf-8", errors="replace",
+    )
+    ok = proc.returncode == 0
+    print(f"{'OK   ' if ok else 'FAIL '} audit_issue: pure-logic unit tests")
+    if not ok:
+        for line in (proc.stdout or "").strip().splitlines():
+            print(f"        | {line}")
+    return 0 if ok else 1
 
 
 def _notify_complete_unit_checks() -> int:

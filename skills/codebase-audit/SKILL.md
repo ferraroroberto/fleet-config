@@ -94,10 +94,11 @@ last audit. The ledger is a per-repo cache: the commit SHA is the key, a hash
 of the rubric busts it when the grading criteria change.
 
 The ledger lives in **one issue per repo** — title `codebase-audit ledger`,
-label `audit-meta`, `--assignee @me`, never closed. Its body carries a
-machine-readable block:
+label `audit-meta`, `--assignee @me`, never closed. Its body carries a hidden
+identity marker on the first line **and** a machine-readable block:
 
 ```
+<!-- audit-managed: kind=ledger -->
 <!-- audit-ledger -->
 last-audited-sha: <full HEAD sha at last audit>
 last-audited-at: <YYYY-MM-DD>
@@ -106,9 +107,12 @@ rubric-sha: <sha256 of global + project CLAUDE.md concatenated>
 
 Steps:
 
-- Find the ledger: `gh issue list --label audit-meta --state open --json number,body`.
-  If none exists, this is a first run — skip the gate (the ledger is created in
-  step 9) and continue to step 3.
+- Find the ledger by its marker (not the bare `audit-meta` label, which also
+  tags the `audit-fleet digest state` issue):
+  `py C:/Users/rober/.claude/skills/_lib/audit_issue.py get --repo <OWNER/REPO> --kind ledger`.
+  It prints `{"number": N|null, "body": "...", "duplicates": [...]}`. If
+  `number` is `null`, this is a first run — skip the gate (the ledger is created
+  in step 9) and continue to step 3.
 - Compute the current `rubric-sha`: sha256 over the concatenation of the global
   CLAUDE.md and the project CLAUDE.md (the same two files step 3 loads); a
   missing file contributes the empty string.
@@ -192,12 +196,16 @@ written down.
 gh issue list --state open --limit 200 --json number,title,body
 ```
 
-For each finding, scan the open issues. If a finding's substance is already
-covered by an open issue (matched on title keywords + body content, not
-strict string match), **drop it from the bucket** and remember it as
-"skipped: dupe of #N" for the summary.
+This catches only **cross-issue** duplicates — a finding already tracked by a
+*hand-filed* issue or a *different* bucket. Re-filing the same bucket every run
+is no longer a risk: step 8 reuses the one managed issue per bucket and merges
+into it, so do **not** drop a finding just because last run's audit issue for
+*this* bucket already lists it — that issue is the one you're about to update.
 
-Do not file an issue that re-litigates an open one.
+For each finding, scan the open issues. If a finding's substance is already
+covered by an issue that is **not** this bucket's managed audit issue (matched
+on title keywords + body content, not strict string match), **drop it** and
+remember it as "skipped: dupe of #N" for the summary.
 
 ### 7. Ensure labels exist
 
@@ -220,24 +228,56 @@ gh label create maintainability   --color 'a2eeef' --description 'Modularity / c
 gh label create documentation     --color '0075ca' --description 'README / docs quality, coverage, drift' || true
 ```
 
-### 8. File one issue per non-empty bucket
+### 8. Upsert one issue per non-empty bucket
 
-For each non-empty bucket (max 6 iterations), write the issue body to a
-temp file and create:
+There is **exactly one** managed issue per (repo, bucket), reused across runs.
+You never `gh issue create` directly — the helper owns identity so a re-run can
+never spawn a duplicate. For each non-empty bucket (max 6 iterations):
+
+**1. Fetch the existing issue** for this bucket:
 
 ```
-gh issue create \
-  --title "audit: <bucket> findings (<N> items)" \
-  --body-file <tmpfile> \
-  --label <bucket-label> \
-  --assignee @me
+py C:/Users/rober/.claude/skills/_lib/audit_issue.py get --repo <OWNER/REPO> --kind <bucket>
 ```
 
-**Body shape** (use this template, no hard wraps in paragraphs — the global
-CLAUDE.md "Markdown that will be rendered" rule applies):
+It prints `{"number": N|null, "body": "...", "duplicates": [...]}`.
+
+**2. Build the merged body.** If `number` is `null`, write a fresh body from the
+template below. If it exists, **merge** this run's findings into the returned
+body — the issue is a *living backlog*, so:
+
+- **Preserve every already-ticked checkbox** (`- [x]`) verbatim — the user
+  fixed those; never reset them.
+- **Match by file path first.** A finding for a file already listed is the same
+  finding even if the line number moved — update the line to this run's value
+  (re-verified while reading) and keep the existing checkbox state. Append a
+  finding as new only when no item for that file + problem already exists.
+- **Keep items this run didn't re-surface** (don't delete them); flag them in
+  the run log as "not re-surfaced (verify)".
+- **Never tick or close anything yourself**, and never add `Closes #` — multiple
+  PRs may chip at one audit issue without closing it; closing is the user's call
+  via `/issue-finish` once all boxes are checked.
+- Append a dated bullet to the `## Audit run log` section:
+  `<YYYY-MM-DD> @ <short-sha>: +A new, B carried, C not re-surfaced`.
+
+**3. Upsert** (creates if absent, edits if present, collapses any strays):
+
+```
+py C:/Users/rober/.claude/skills/_lib/audit_issue.py upsert \
+  --repo <OWNER/REPO> --kind <bucket> --label <bucket-label> \
+  --title "audit: <bucket> findings" --body-file <tmpfile>
+```
+
+The helper stamps the `<!-- audit-managed: kind=<bucket> -->` marker, applies
+the label, and prints the canonical issue URL. **Titles are stable** — no
+`(N items)` count (it lives in the body), so the title never changes run to run.
+
+**Body shape** for a fresh issue (no hard wraps in paragraphs — the global
+CLAUDE.md "Markdown that will be rendered" rule applies; the helper prepends the
+marker, don't write it yourself):
 
 ```markdown
-Surfaced by `/codebase-audit` on <YYYY-MM-DD>. Scope: <whole repo | path>.
+Surfaced by `/codebase-audit`, kept up to date across runs. Scope: <whole repo | path>.
 
 ## Findings
 
@@ -252,13 +292,15 @@ matter together, anything the next `/issue-start` should know.>
 
 <For bucket 3 (claude-md-drift), additionally list the rules that were
 broken, quoting the CLAUDE.md passage.>
+
+## Audit run log
+
+- <YYYY-MM-DD> @ <short-sha>: initial.
 ```
 
-Title style — `audit: <bucket> findings (<N> items)`. Examples:
-- `audit: duplication findings (3 items)`
-- `audit: claude-md-drift findings (2 items)`
-- `audit: maintainability findings (5 items)`
-- `audit: documentation findings (4 items)`
+Title style — stable, no count: `audit: <bucket> findings`. Examples:
+`audit: duplication findings`, `audit: claude-md-drift findings`,
+`audit: maintainability findings`, `audit: documentation findings`.
 
 Use a **repo-scoped, unique** temp file so multi-line markdown isn't mangled
 by shell escaping *and* concurrent audits never clobber each other's scratch:
@@ -277,14 +319,22 @@ tmp-file-reuse gotcha).
 
 Upsert the per-repo ledger issue so the next run can short-circuit at step 2:
 
-- Ensure the `audit-meta` label exists (idempotent):
-  `gh label create audit-meta --color '5319e7' --description 'codebase-audit ledger / metadata — not actionable work' || true`
-- Build the block with the current HEAD sha (`git rev-parse HEAD`), today's
-  date, and the `rubric-sha` computed in step 2.
+- Build the body: the `<!-- audit-ledger -->` block with the current HEAD sha
+  (`git rev-parse HEAD`), today's date, and the `rubric-sha` from step 2. The
+  helper prepends the `<!-- audit-managed: kind=ledger -->` marker — don't write
+  it yourself. Keep the `<!-- audit-ledger -->` block intact; the step-2 gate
+  parses it.
 - Write the body to a repo-scoped temp file (same convention as step 8, e.g.
   `E:/tmp/audit-<owner>-<repo>-ledger.md`) — never a fixed shared name.
-- If a ledger issue exists, `gh issue edit <N> --body-file <tmpfile>`; otherwise
-  `gh issue create --title 'codebase-audit ledger' --body-file <tmpfile> --label audit-meta --assignee @me`.
+- Upsert via the helper (creates, edits, or collapses strays — and ensures the
+  `audit-meta` label):
+
+  ```
+  py C:/Users/rober/.claude/skills/_lib/audit_issue.py upsert \
+    --repo <OWNER/REPO> --kind ledger --label audit-meta \
+    --title "codebase-audit ledger" --body-file <tmpfile>
+  ```
+
 - This runs on **every** non-skipped path — including a clean pass that filed
   zero issues — so an unchanged repo is correctly skipped next time.
 
@@ -331,8 +381,16 @@ findings. Codebase passes the audit.` — and stop.
 - **Cap is 6 issues per run, period.** Don't split a bucket into multiple
   issues. If a bucket has 30 findings, file one issue with 30 checklist
   items — the user can triage which to fix via `/issue-start`.
-- **Dedupe is not optional.** Always check open issues first. Re-filing
-  the same finding every audit run defeats the purpose.
+- **One managed issue per (repo, bucket) — the helper owns identity.**
+  Never `gh issue create` / `gh issue edit` a managed issue by hand; always go
+  through `skills/_lib/audit_issue.py` (`get` then `upsert`). It reuses the one
+  issue, merges into it, and collapses any strays. Hand-rolling a create is what
+  spawned duplicates in the first place.
+- **Never auto-close or auto-tick an audit issue.** It's a living backlog;
+  multiple PRs may chip at it. Closing and checking boxes are the user's call.
+- **Cross-issue dedupe still applies.** Drop a finding already covered by a
+  *different* (hand-filed or other-bucket) open issue; record it as
+  "skipped: dupe of #N".
 - **Citations or it didn't happen.** Every finding must point at a real
   `file:line`. "Lots of duplication in the auth module" is not a finding.
 - **Don't audit `node_modules/`, `.venv/`, `dist/`, generated code, or

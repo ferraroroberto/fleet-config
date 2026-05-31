@@ -36,10 +36,11 @@ This is required for `notify_on_idle` to show the correct project name in Slack 
 ## Verification
 
 ```powershell
-# 1. Byte-compile every hook
-& py -m py_compile hooks/*.py
+# 1. Byte-compile every hook and shared skill helper
+& py -m py_compile hooks/*.py skills/_lib/*.py
 
-# 2. Run the acceptance matrix (drives each hook with a sample stdin payload)
+# 2. Run the acceptance matrix (drives each hook with a sample stdin payload;
+#    the final case runs the audit-issue helper's pure-logic unit tests)
 & py tests/run_acceptance.py
 ```
 
