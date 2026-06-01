@@ -87,6 +87,9 @@ cwd_prefix = "E:/automation/illustration-color-edit"
 [inspiration-system]
 cwd_prefix = "E:/automation/inspiration-system"
 
+[life-os]
+cwd_prefix = "E:/automation/life-os"
+
 [mass-html-to-markdown]
 cwd_prefix = "E:/automation/mass-html-to-markdown"
 
