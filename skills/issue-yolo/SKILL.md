@@ -179,7 +179,7 @@ Single concise summary:
 - Live tray status (if applicable)
 
 Then fire the single completion ping with the deterministic helper — canonical
-format, real PR title + URL from `gh`, suppresses the follow-up idle ping:
+format, real PR title + URL from `gh`:
 
 ```
 py C:/Users/rober/.claude/hooks/notify_complete.py --kind yolo --issue <N> --pr <PR> --pr-url <PR_URL>

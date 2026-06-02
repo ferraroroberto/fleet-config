@@ -130,4 +130,5 @@ cwd_prefix = "E:/automation/website"
 [global]
 never_kill_ports = [8000, 8090, 8446]
 slack_notify_channel = "C0B76GBA0LS"   # fleet-wide fallback for notify_on_idle
-slack_notify_user    = "U0B71PQEL6S"   # Slack user id to @mention — required for mobile push
+slack_notify_user    = "U0B71PQEL6S"   # Slack user id, @mention'd only when slack_notify_mention is on
+slack_notify_mention = false           # default off: the channel pushes to mobile without a tag, so the @mention was redundant noise. Flip to true to re-tag every ping.

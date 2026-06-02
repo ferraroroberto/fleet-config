@@ -207,7 +207,7 @@ As each background sub-agent finishes, surface its report verbatim in the chat w
 
 After **all** agents have returned, fire the batch-complete ping with the
 deterministic helper (canonical format, resolves channel/user from
-`projects.toml`, suppresses the follow-up idle ping). Run:
+`projects.toml`). Run:
 
 ```
 py C:/Users/rober/.claude/hooks/notify_complete.py --kind batch --passed <pass> --total <total>

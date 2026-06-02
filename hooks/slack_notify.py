@@ -33,43 +33,16 @@ import logging
 import os
 import re
 import sys
-import time
 import urllib.error
-import urllib.parse
 import urllib.request
+from pathlib import Path
 from typing import List, Optional
 
 logger = logging.getLogger("slack_notify")
 
 SLACK_POST_MESSAGE_URL = "https://slack.com/api/chat.postMessage"
-SLACK_HISTORY_URL = "https://slack.com/api/conversations.history"
 TOKEN_ENV_VAR = "SLACK_BOT_TOKEN"
 _ARCHIVE_RE = re.compile(r"/archives/([A-Z0-9]+)", re.IGNORECASE)
-
-# A skill-completion ping (issue-add / start / finish / yolo / batch, sent via
-# notify_complete) leads with one of these marks; an attention ping
-# (notify_on_idle) leads with 🔔 / 💤. The idle hook keys off this to tell "a job
-# just finished" from "Claude is mid-task and stuck", and suppress the redundant
-# follow-up idle ping.
-#
-# Each mark is kept as a (unicode, slack-shortcode) pair: notify_complete *sends*
-# the unicode form, but Slack's ``conversations.history`` re-encodes posted emoji
-# as ``:shortcode:`` text, so a ping read back from history reads
-# ``:white_check_mark: Done …`` — matching only the unicode form silently fails
-# to recognise it. The idle hook reads history, so it must match BOTH forms.
-# Keep in sync with notify_complete's message formats.
-_TERMINAL_MARKS = (
-    ("✅", ":white_check_mark:"),        # finish
-    ("🆕", ":new:"),                     # add
-    ("🚦", ":vertical_traffic_light:"),  # start
-    ("🏁", ":checkered_flag:"),          # batch
-    ("🚀", ":rocket:"),                  # yolo
-    ("📊", ":bar_chart:"),               # audit
-    ("🔄", ":arrows_counterclockwise:"), # recap
-)
-
-# Flat tuple of every token (unicode + shortcode) that leads a completion ping.
-_TERMINAL_TOKENS = tuple(token for pair in _TERMINAL_MARKS for token in pair)
 
 
 def parse_channel(raw: str) -> str:
@@ -85,13 +58,51 @@ def parse_channel(raw: str) -> str:
     return match.group(1) if match else raw
 
 
+def _global_mention_toggle() -> bool:
+    """Read the ``[global] slack_notify_mention`` toggle (default off).
+
+    Imported lazily inside a try/except so this transport module stays
+    import-safe and never crashes a ping if ``_lib`` / the config is unreadable —
+    a missing toggle simply means "don't mention".
+    """
+    try:
+        import _lib  # local import keeps the transport dependency-free at module load
+        return bool(_lib.load_registry().globals.slack_notify_mention)
+    except Exception:  # pragma: no cover - defensive: never break a ping on config error
+        return False
+
+
+def _resolve_mention(override: Optional[bool]) -> bool:
+    """Whether to @mention: an explicit ``override`` wins, else the global toggle."""
+    return override if override is not None else _global_mention_toggle()
+
+
+def _mention_prefix(user: Optional[str], enabled: bool) -> str:
+    """``'<@user> '`` when mentioning is enabled and a user id is known, else ``''``.
+
+    The single source of the @mention decision: every fleet ping flows through
+    :func:`notify`, so no caller hand-assembles ``<@U…>``. Mentioning defaults
+    **off** (the ``[global] slack_notify_mention`` toggle) because the target
+    channel delivers a mobile push regardless — the tag was redundant noise.
+    """
+    return f"<@{user}> " if (enabled and user) else ""
+
+
 def notify(
     text: str,
     channel: str,
     token: Optional[str] = None,
     thread_ts: Optional[str] = None,
+    *,
+    user: Optional[str] = None,
+    mention: Optional[bool] = None,
 ) -> bool:
     """Post ``text`` to ``channel`` as the Slack bot. Return True on success.
+
+    When ``user`` is given and mentioning is enabled, a ``<@user> `` prefix is
+    prepended **here** — the one place the mention decision lives. ``mention``
+    overrides per-call (``True``/``False``); left ``None`` it follows the
+    ``[global] slack_notify_mention`` toggle (default off).
 
     Never raises. A missing token, a malformed channel, a network failure, or a
     Slack API error is logged and reported as ``False`` so an unattended caller
@@ -110,6 +121,7 @@ def notify(
         logger.error("❌ Empty message text — nothing to send.")
         return False
 
+    text = _mention_prefix(user, _resolve_mention(mention)) + text
     payload = {"channel": channel, "text": text}
     if thread_ts:
         payload["thread_ts"] = thread_ts
@@ -141,75 +153,6 @@ def notify(
     return True
 
 
-def _is_recent_completion(
-    messages: list, user: str, now: float, within_seconds: float
-) -> bool:
-    """Decide, from newest-first channel history, whether the latest ping *we*
-    sent to ``user`` is a fresh completion.
-
-    Pure logic split out from :func:`recent_completion` so it can be unit-tested
-    without the network. Looks at the most recent message that is ours (has a
-    ``bot_id`` and @mentions ``user``): True only if that one leads with the
-    completion mark and landed within ``within_seconds``. A 🔔/💤 attention ping
-    as the latest means we're genuinely waiting, so → False.
-    """
-    mention = f"<@{user}>"
-    for message in messages:  # Slack returns newest-first
-        text = message.get("text") or ""
-        if not message.get("bot_id") or mention not in text:
-            continue
-        try:
-            ts = float(message.get("ts", "0"))
-        except (TypeError, ValueError):
-            ts = 0.0
-        leads_terminal = any(token in text for token in _TERMINAL_TOKENS)
-        return leads_terminal and (now - ts) < within_seconds
-    return False
-
-
-def recent_completion(
-    channel: str,
-    user: str,
-    token: Optional[str] = None,
-    within_seconds: float = 1800.0,
-) -> bool:
-    """True if a completion ping just landed in ``channel`` for ``user``.
-
-    Used by the idle hook to suppress the redundant "waiting for your input"
-    notification that otherwise fires after an issue-finish "Done" ping. The
-    30-minute window covers both the immediate ~60 s idle and the longer tail
-    (a second idle ~12 min later was observed leaking past a tighter window).
-    Reads Slack centrally (``conversations.history``) so it works regardless of
-    whether the Done ping came from a local or a cloud/bridge session. Never
-    raises — any missing token, scope, or network error returns False so the
-    idle ping still goes out (fail open: a stray ping beats a silent miss).
-    """
-    token = token or os.getenv(TOKEN_ENV_VAR)
-    if not token or not channel or not user:
-        return False
-
-    query = urllib.parse.urlencode({"channel": parse_channel(channel), "limit": "8"})
-    request = urllib.request.Request(
-        f"{SLACK_HISTORY_URL}?{query}",
-        headers={"Authorization": f"Bearer {token}"},
-    )
-    try:
-        with urllib.request.urlopen(request, timeout=10) as response:
-            body = json.loads(response.read().decode("utf-8"))
-    except urllib.error.URLError as exc:
-        logger.error("❌ Slack history request failed: %s", exc)
-        return False
-    except (ValueError, OSError) as exc:
-        logger.error("❌ Slack history response unreadable: %s", exc)
-        return False
-
-    if not body.get("ok"):
-        logger.error("❌ Slack history API error: %s", body.get("error", "unknown"))
-        return False
-
-    return _is_recent_completion(body.get("messages", []), user, time.time(), within_seconds)
-
-
 def _read_text(arg_text: Optional[str]) -> str:
     """Message text from ``--text`` or, failing that, piped stdin."""
     if arg_text:
@@ -232,6 +175,16 @@ def main(argv: Optional[List[str]] = None) -> int:
     parser.add_argument(
         "--thread-ts", help="Optional parent message ts to reply in-thread."
     )
+    mention = parser.add_mutually_exclusive_group()
+    mention.add_argument(
+        "--mention", dest="mention", action="store_true", default=None,
+        help="@mention the configured user (id resolved from projects.toml). "
+             "Default follows the [global] slack_notify_mention toggle.",
+    )
+    mention.add_argument(
+        "--no-mention", dest="mention", action="store_false",
+        help="Never @mention, regardless of the global toggle.",
+    )
     args = parser.parse_args(argv)
 
     logging.basicConfig(level=logging.INFO, format="%(message)s", stream=sys.stderr)
@@ -241,7 +194,19 @@ def main(argv: Optional[List[str]] = None) -> int:
         logger.error("❌ No message text (pass --text or pipe via stdin).")
         return 2
 
-    ok = notify(text, channel=args.channel, thread_ts=args.thread_ts)
+    # Resolve the user id to mention from projects.toml — never hardcoded — so a
+    # manual caller can't drift by hand-typing a stale ``<@U…>`` into --text.
+    user: Optional[str] = None
+    try:
+        import _lib  # local import keeps the transport import-safe if _lib is absent
+        _channel, user, _name = _lib.resolve_slack_target(Path(os.getcwd()))
+    except Exception:  # pragma: no cover - defensive: still send without a mention
+        user = None
+
+    ok = notify(
+        text, channel=args.channel, thread_ts=args.thread_ts,
+        user=user, mention=args.mention,
+    )
     return 0 if ok else 1
 
 

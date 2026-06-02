@@ -87,8 +87,8 @@ gate result, and the live build line.
 ### 8. Slack notification
 
 After the summary, fire the completion ping with the deterministic helper. It
-resolves the channel/user from `projects.toml`, emits the one canonical format,
-and suppresses the redundant follow-up idle ping. Run:
+resolves the channel/user from `projects.toml` and emits the one canonical
+format. Run:
 
 ```
 py C:/Users/rober/.claude/hooks/notify_complete.py --kind finish --issue <N> --pr <PR> --pr-url <PR_URL>

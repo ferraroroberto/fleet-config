@@ -129,8 +129,7 @@ Print the new issue number and URL, a one-line summary of what was filed, and
 the label applied.
 
 - **Default:** mention that `/issue-start <N>` will pick it up. Then fire the
-  completion ping (canonical format, real issue link, suppresses the follow-up
-  idle ping) and stop:
+  completion ping (canonical format, real issue link) and stop:
 
   ```
   py C:/Users/rober/.claude/hooks/notify_complete.py --kind add --issue <N>

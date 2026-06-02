@@ -168,6 +168,23 @@ def main() -> int:
         {"hook_event_name": "Notification", "cwd": str(REPO), "message": "needs input"},
         0,
     ))
+    # idle_prompt is now a deliberate no-op (the 💤 nag was dropped). It must exit
+    # 0 without attempting a post — exercises the early-return guard.
+    cases.append((
+        "notify_on_idle: idle_prompt -> allow (no-op, idle nag dropped)",
+        "notify_on_idle",
+        {"hook_event_name": "Notification", "notification_type": "idle_prompt",
+         "cwd": str(REPO), "message": "Claude is waiting for your input"},
+        0,
+    ))
+    # permission_prompt still pings — with no token it takes the graceful-fail path.
+    cases.append((
+        "notify_on_idle: permission_prompt -> allow (ping attempted, graceful fail)",
+        "notify_on_idle",
+        {"hook_event_name": "Notification", "notification_type": "permission_prompt",
+         "cwd": str(REPO), "message": "needs permission"},
+        0,
+    ))
 
     failures = 0
     for name, hook, payload, expected in cases:
@@ -198,7 +215,9 @@ def main() -> int:
     return 0 if failures == 0 else 1
 
 
-_UNIT_CHECK_COUNT = 33
+# Sum of the unit checks below: slack_notify (3) + mention (5) + classify (6) +
+# notify_complete (14) + audit_issue (1).
+_UNIT_CHECK_COUNT = 29
 
 
 def _slack_notify_unit_checks() -> int:
@@ -236,13 +255,14 @@ def _slack_notify_unit_checks() -> int:
     return failures
 
 
-_NOTIFY_MENTION_COUNT = 2
-
-
 def _notify_mention_unit_checks() -> int:
-    """Verify mention-string construction in notify_on_idle without touching Slack."""
+    """The single-sourced @mention decision in slack_notify (off by default).
+
+    Mentioning now lives in exactly one place — ``slack_notify.notify()`` — via
+    two pure helpers. No caller hand-assembles ``<@U…>`` anymore.
+    """
     sys.path.insert(0, str(HOOKS))
-    import _lib  # noqa: E402
+    import slack_notify  # noqa: E402
 
     failures = 0
 
@@ -252,38 +272,27 @@ def _notify_mention_unit_checks() -> int:
         if not ok:
             failures += 1
 
-    # With slack_notify_user set, mention prefix must be present
-    g_with_user = _lib.GlobalConfig(
-        never_kill_ports=(),
-        slack_notify_channel="C0B76GBA0LS",
-        slack_notify_user="U0B71PQEL6S",
-    )
-    mention_with = f"<@{g_with_user.slack_notify_user}> " if g_with_user.slack_notify_user else ""
-    check(
-        "notify_mention: slack_notify_user set -> mention prefix present",
-        mention_with == "<@U0B71PQEL6S> ",
-    )
-
-    # Without slack_notify_user, mention prefix must be empty
-    g_no_user = _lib.GlobalConfig(never_kill_ports=(), slack_notify_channel="C0B76GBA0LS")
-    mention_none = f"<@{g_no_user.slack_notify_user}> " if g_no_user.slack_notify_user else ""
-    check(
-        "notify_mention: slack_notify_user absent -> no mention prefix",
-        mention_none == "",
-    )
+    check("mention_prefix: enabled + user -> tag",
+          slack_notify._mention_prefix("U0B71PQEL6S", True) == "<@U0B71PQEL6S> ")
+    check("mention_prefix: disabled -> no tag",
+          slack_notify._mention_prefix("U0B71PQEL6S", False) == "")
+    check("mention_prefix: enabled but no user -> no tag",
+          slack_notify._mention_prefix(None, True) == "")
+    check("resolve_mention: explicit override wins",
+          slack_notify._resolve_mention(True) is True
+          and slack_notify._resolve_mention(False) is False)
+    # None -> read the [global] slack_notify_mention toggle, which ships off.
+    check("resolve_mention: None -> global toggle (off by default)",
+          slack_notify._resolve_mention(None) is False)
 
     return failures
 
 
-_NOTIFY_CLASSIFY_COUNT = 14
-
-
 def _notify_classify_unit_checks() -> int:
-    """Per-type icon/wording, bridge session-link parsing, and idle-after-done
-    suppression — the three deterministic pieces of the notification logic."""
+    """Per-type icon/wording and bridge session-link parsing — the two
+    deterministic pieces of the notification logic."""
     sys.path.insert(0, str(HOOKS))
     import notify_on_idle  # noqa: E402
-    import slack_notify  # noqa: E402
 
     failures = 0
 
@@ -327,39 +336,7 @@ def _notify_classify_unit_checks() -> int:
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 
-    # ---- _is_recent_completion: suppress idle only after a fresh ✅ ----
-    now = 1_000_000.0
-    user = "U0B71PQEL6S"
-    done = {"bot_id": "B1", "text": f"<@{user}> ✅ Done: #5 — merged", "ts": str(now - 30)}
-    idle = {"bot_id": "B1", "text": f"<@{user}> 🔔 [p] needs permission", "ts": str(now - 30)}
-    old_done = {"bot_id": "B1", "text": f"<@{user}> ✅ Done", "ts": str(now - 9999)}
-    filed = {"bot_id": "B1", "text": f"<@{user}> 🆕 Filed #5", "ts": str(now - 10)}
-    ready = {"bot_id": "B1", "text": f"<@{user}> 🚦 #5 ready", "ts": str(now - 10)}
-    # Slack re-encodes posted unicode emoji as :shortcode: text in history — the
-    # form the idle hook actually reads back. These guard the real-world bug.
-    done_shortcode = {"bot_id": "B1", "text": f"<@{user}> :white_check_mark: Done #5 — PR merged", "ts": str(now - 30)}
-    shipped_shortcode = {"bot_id": "B1", "text": f"<@{user}> :rocket: Shipped #5 — PR", "ts": str(now - 30)}
-    check("recent_completion: fresh done latest -> suppress",
-          slack_notify._is_recent_completion([done], user, now, 600) is True)
-    check("recent_completion: shortcode done (as read from history) -> suppress",
-          slack_notify._is_recent_completion([done_shortcode], user, now, 600) is True)
-    check("recent_completion: shortcode rocket (as read from history) -> suppress",
-          slack_notify._is_recent_completion([shipped_shortcode], user, now, 600) is True)
-    check("recent_completion: add mark latest -> suppress",
-          slack_notify._is_recent_completion([filed], user, now, 600) is True)
-    check("recent_completion: start mark latest -> suppress",
-          slack_notify._is_recent_completion([ready], user, now, 600) is True)
-    check("recent_completion: attention ping latest -> don't suppress",
-          slack_notify._is_recent_completion([idle, done], user, now, 600) is False)
-    check("recent_completion: stale done -> don't suppress",
-          slack_notify._is_recent_completion([old_done], user, now, 600) is False)
-    check("recent_completion: no bot messages -> don't suppress",
-          slack_notify._is_recent_completion([], user, now, 600) is False)
-
     return failures
-
-
-_NOTIFY_COMPLETE_COUNT = 11
 
 
 def _audit_issue_unit_check() -> int:
@@ -399,6 +376,9 @@ def _notify_complete_unit_checks() -> int:
           bm("add", issue="5", title="T", url="http://u") == "🆕 Filed #5 T · http://u")
     check("build: start -> ready-to-validate + summary",
           bm("start", issue="5", title="T", summary="do X") == "🚦 #5 T — ready to validate. do X")
+    check("build: start -> ready-to-validate + summary + issue link",
+          bm("start", issue="5", title="T", url="http://u", summary="do X")
+          == "🚦 #5 T — ready to validate. do X · http://u")
     check("build: finish -> done + PR link",
           bm("finish", issue="5", title="T", url="http://u") == "✅ Done #5 T — PR merged · http://u")
     check("build: yolo -> shipped + PR link",

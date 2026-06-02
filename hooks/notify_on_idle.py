@@ -1,9 +1,10 @@
 """Ping Slack when a live session needs attention — so you can stop babysitting.
 
-Wired to Claude Code's ``Notification`` event (fires when Claude needs a
-permission or has gone idle waiting for input). It rides the `slack_notify`
-transport, so an AFK human gets a real phone notification instead of a desktop
-toast nobody sees.
+Wired to Claude Code's ``Notification`` event. It pings only on the
+``permission_prompt`` sub-type (a permission gate or an ``AskUserQuestion`` —
+the "come look, I'm blocked" push) and **no-ops on ``idle_prompt``** (the 💤
+"gone idle" nag is noise). It rides the `slack_notify` transport, so an AFK
+human gets a real phone notification instead of a desktop toast nobody sees.
 
 **Opt-in, default off.** It does nothing unless the current project declares a
 ``slack_notify_channel`` in ``hooks/projects.toml`` (or a ``[global]
@@ -91,17 +92,18 @@ def main() -> None:
     if not channel:
         _lib.allow()  # opt-in: not configured for this project → silent no-op
 
-    # Don't ping "Claude is waiting for your input" right after a job-done ping —
-    # the completion message already told you to come look.
-    if payload.get("notification_type") == "idle_prompt" and user:
-        if slack_notify.recent_completion(str(channel), str(user)):
-            _lib.allow()
+    # Only the "come look, I'm blocked" prompt is worth a phone push. The 💤
+    # idle nag is noise — a session left idle is rarely something you need to
+    # run back to — so no-op on it.
+    if payload.get("notification_type") == "idle_prompt":
+        _lib.allow()
 
-    mention = f"<@{user}> " if user else ""
     icon, text = classify(payload)
     link = session_link(payload.get("transcript_path"))
     suffix = f" · {link}" if link else ""
-    slack_notify.notify(f"{mention}{icon} [{name}] {text}{suffix}", channel=str(channel))
+    # The @mention decision is single-sourced in slack_notify.notify() (off by
+    # default); pass the resolved user id and let it decide.
+    slack_notify.notify(f"{icon} [{name}] {text}{suffix}", channel=str(channel), user=user)
     _lib.allow()
 
 

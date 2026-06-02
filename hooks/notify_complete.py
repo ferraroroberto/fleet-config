@@ -3,9 +3,8 @@
 Each ``issue-*`` skill ends by calling this with structured args instead of
 hand-assembling a message. The format and the real GitHub URL are built **here,
 in Python** — not by the model — so every completion ping is byte-identical and
-carries a correct, live link. The leading mark (✅ 🆕 🚦 🏁 🚀 📊) also tells
-``notify_on_idle`` a job just finished, so it suppresses the redundant idle ping
-that would otherwise follow ~60 s later. See `docs/slack-workflow.md`.
+carries a correct, live link. The leading mark (✅ 🆕 🚦 🏁 🚀 📊 🔄) is a
+glanceable status cue. See `docs/slack-workflow.md`.
 
 Opt-in: a silent no-op unless a ``slack_notify_channel`` is configured (project
 table or ``[global]``) in ``hooks/projects.toml``. Never blocks — any gh,
@@ -132,9 +131,8 @@ def build_message(
 ) -> str:
     """Assemble the canonical ping text (no @mention prefix). Pure / testable.
 
-    Leads with a terminal mark so ``notify_on_idle`` suppresses the follow-up
-    idle ping. A missing ``title`` or ``url`` is dropped cleanly — no dangling
-    " · " or double spaces.
+    Leads with a glanceable status mark. A missing ``title`` or ``url`` is
+    dropped cleanly — no dangling " · " or double spaces.
     """
     name = f" {title}" if title else ""
     link = f" · {url}" if url else ""
@@ -142,7 +140,7 @@ def build_message(
         return f"🆕 Filed #{issue}{name}{link}"
     if kind == "start":
         tail = f" {summary.strip()}" if summary and summary.strip() else ""
-        return f"🚦 #{issue}{name} — ready to validate.{tail}"
+        return f"🚦 #{issue}{name} — ready to validate.{tail}{link}"
     if kind == "finish":
         return f"✅ Done #{issue}{name} — PR merged{link}"
     if kind == "yolo":
@@ -221,8 +219,9 @@ def main(argv: Optional[List[str]] = None) -> int:
         merged=args.merged,
         review=args.review,
     )
-    mention = f"<@{user}> " if user else ""
-    slack_notify.notify(f"{mention}{text}", channel=str(channel))
+    # The @mention decision is single-sourced in slack_notify.notify() (off by
+    # default); pass the resolved user id and let it decide.
+    slack_notify.notify(text, channel=str(channel), user=user)
     return 0
 
 
