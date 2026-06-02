@@ -204,6 +204,9 @@ def main() -> int:
     # ---- notify_complete deterministic message assembly + resolver ----
     failures += _notify_complete_unit_checks()
 
+    # ---- conversation_capture session-dedup logic ----
+    failures += _conversation_capture_unit_checks()
+
     # ---- audit_issue helper pure-logic tests (skills/_lib) ----
     failures += _audit_issue_unit_check()
 
@@ -216,8 +219,8 @@ def main() -> int:
 
 
 # Sum of the unit checks below: slack_notify (3) + mention (5) + classify (6) +
-# notify_complete (14) + audit_issue (1).
-_UNIT_CHECK_COUNT = 29
+# notify_complete (14) + conversation_capture (5) + audit_issue (1).
+_UNIT_CHECK_COUNT = 34
 
 
 def _slack_notify_unit_checks() -> int:
@@ -355,6 +358,47 @@ def _audit_issue_unit_check() -> int:
         for line in (proc.stdout or "").strip().splitlines():
             print(f"        | {line}")
     return 0 if ok else 1
+
+
+def _conversation_capture_unit_checks() -> int:
+    """The per-session dedup logic: stable token, filename shape, and the
+    supersede-prior sweep that collapses a session's many Stop captures to one."""
+    sys.path.insert(0, str(HOOKS))
+    import conversation_capture as cc  # noqa: E402
+
+    failures = 0
+
+    def check(case: str, ok: bool) -> None:
+        nonlocal failures
+        print(f"{'OK   ' if ok else 'FAIL '} {case}")
+        if not ok:
+            failures += 1
+
+    check("session_token: last 8 alnum of a uuid-ish id",
+          cc.session_token("01HNYE6TF-AbCd-1234") == "abcd1234")
+    check("session_token: no id -> empty (dedup skipped)",
+          cc.session_token("") == "" and cc.session_token(None) == "")
+    check("capture_filename: token appended when present",
+          cc.capture_filename("2026-06-02-2020", "day-today", "abcd1234")
+          == "2026-06-02-2020-day-today-abcd1234.md")
+    check("capture_filename: no token -> plain timestamped name",
+          cc.capture_filename("2026-06-02-2020", "day-today", "")
+          == "2026-06-02-2020-day-today.md")
+
+    # supersede_prior removes this session's earlier captures, leaves others.
+    tmp = Path(tempfile.mkdtemp(prefix="cc_dedup_"))
+    try:
+        (tmp / "2026-06-02-2016-session-abcd1234.md").write_text("early", encoding="utf-8")
+        (tmp / "2026-06-02-2018-other-abcd1234.md").write_text("mid", encoding="utf-8")
+        (tmp / "2026-06-02-2020-real-deadbeef.md").write_text("other session", encoding="utf-8")
+        cc.supersede_prior(tmp, "abcd1234")
+        remaining = sorted(p.name for p in tmp.iterdir())
+        check("supersede_prior: drops same-session files, keeps other sessions",
+              remaining == ["2026-06-02-2020-real-deadbeef.md"])
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+    return failures
 
 
 def _notify_complete_unit_checks() -> int:
