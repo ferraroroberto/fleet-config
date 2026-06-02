@@ -17,8 +17,13 @@ Output file format:
   - Blank line, then a fenced markdown block of all user/assistant turns
     in order (verbatim — no summarising).
 
-Idempotent: the session id is embedded in the filename so a second run on the
-same JSONL produces a file with the same name and overwrites safely.
+One file per session: the ``Stop`` hook fires at every turn-end (not once per
+session), so a single session triggers several captures — e.g. a cold-start
+readiness-ack turn, then the real work. Each run derives a stable token from
+the session id, removes any earlier capture of the same session, and writes the
+latest, fullest transcript — collapsing the session to a single file. Without a
+session id we can't identify siblings, so we fall back to a plain timestamped
+name (no dedup).
 
 Invoked by the ``Stop`` hook in ``life-os/.claude/settings.json``.
 """
@@ -172,6 +177,42 @@ def make_slug(description: str) -> str:
     return "-".join(significant[:3]) if significant else "session"
 
 
+def session_token(session_id: str) -> str:
+    """Short, filename-safe, stable token identifying this session.
+
+    The ``Stop`` hook fires at every turn-end, so one session produces several
+    captures. A token derived from the (stable) session id lets each capture
+    recognise and supersede its predecessors. Empty when no session id is
+    available — the caller then skips dedup.
+    """
+    cleaned = re.sub(r"[^a-z0-9]", "", (session_id or "").lower())
+    return cleaned[-8:]
+
+
+def capture_filename(timestamp: str, slug: str, token: str) -> str:
+    """Build the capture filename. The session token is appended when present
+    so :func:`supersede_prior` can find and remove this session's earlier files."""
+    if token:
+        return f"{timestamp}-{slug}-{token}.md"
+    return f"{timestamp}-{slug}.md"
+
+
+def supersede_prior(out_dir: Path, token: str) -> None:
+    """Delete earlier captures of this session before writing the new one.
+
+    No-op without a token. Matching is by the ``-<token>.md`` suffix, so a
+    readiness-only first capture is replaced by the full final one rather than
+    left behind as a duplicate.
+    """
+    if not token:
+        return
+    for prior in out_dir.glob(f"*-{token}.md"):
+        try:
+            prior.unlink()
+        except OSError:
+            pass
+
+
 def render_markdown(description: str, messages: list[tuple[str, str]]) -> str:
     lines = [description, ""]
     for role, text in messages:
@@ -228,8 +269,13 @@ def main() -> int:
     description = make_description(messages)
     slug = make_slug(description)
     timestamp = datetime.now().strftime("%Y-%m-%d-%H%M")
-    filename = f"{timestamp}-{slug}.md"
     content = render_markdown(description, messages)
+
+    # The Stop hook fires at every turn-end, so collapse this session's earlier
+    # captures (e.g. a cold-start readiness-ack turn) into one up-to-date file.
+    token = session_token(session_id)
+    supersede_prior(out_dir, token)
+    filename = capture_filename(timestamp, slug, token)
 
     out_path = out_dir / filename
     try:
