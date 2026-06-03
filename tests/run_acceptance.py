@@ -207,6 +207,9 @@ def main() -> int:
     # ---- conversation_capture session-dedup logic ----
     failures += _conversation_capture_unit_checks()
 
+    # ---- restart_and_verify_webapp restart-strategy + recovery hint ----
+    failures += _restart_webapp_unit_checks()
+
     # ---- audit_issue helper pure-logic tests (skills/_lib) ----
     failures += _audit_issue_unit_check()
 
@@ -219,8 +222,9 @@ def main() -> int:
 
 
 # Sum of the unit checks below: slack_notify (3) + mention (5) + classify (6) +
-# notify_complete (14) + conversation_capture (5) + audit_issue (1).
-_UNIT_CHECK_COUNT = 34
+# notify_complete (14) + conversation_capture (5) + restart_webapp (6) +
+# audit_issue (1).
+_UNIT_CHECK_COUNT = 40
 
 
 def _slack_notify_unit_checks() -> int:
@@ -397,6 +401,49 @@ def _conversation_capture_unit_checks() -> int:
               remaining == ["2026-06-02-2020-real-deadbeef.md"])
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
+
+    return failures
+
+
+def _restart_webapp_unit_checks() -> int:
+    """The tray-owned restart strategy: projects.toml carries a `restart_cmd`
+    for the three tray apps, and the recovery hint stays actionable and
+    :8446-safe. Both are pure (no tray needed), so they're gate-testable."""
+    sys.path.insert(0, str(HOOKS))
+    import restart_and_verify_webapp as rw  # noqa: E402
+    import _lib  # noqa: E402
+
+    failures = 0
+
+    def check(case: str, ok: bool) -> None:
+        nonlocal failures
+        print(f"{'OK   ' if ok else 'FAIL '} {case}")
+        if not ok:
+            failures += 1
+
+    reg = _lib.load_registry()
+    by_name = {p.name: p for p in reg.projects}
+
+    check("restart_cmd: app-launcher respawns through WebappManager",
+          "WebappManager" in (by_name["app-launcher"].restart_cmd or ""))
+    check("restart_cmd: voice-transcriber now has webapp_port 8443 + respawn cmd",
+          by_name["voice-transcriber"].webapp_port == 8443
+          and "WebappManager" in (by_name["voice-transcriber"].restart_cmd or ""))
+    check("restart_cmd: local-llm-hub keeps the tray_cmd path (no restart_cmd)",
+          by_name["local-llm-hub"].restart_cmd is None)
+
+    hint = rw.recovery_hint(
+        "app-launcher", 8445, Path("E:/automation/app-launcher"),
+        by_name["app-launcher"].restart_cmd, "tray.bat",
+    )
+    check("recovery_hint: leads with the manager respawn + flags it :8446-safe",
+          "WebappManager" in hint and "spares :8446" in hint)
+    check("recovery_hint: tray --restart present but flagged a :8446-destroying last resort",
+          "tray.bat --restart" in hint and "destroys :8446" in hint)
+
+    tray_only = rw.recovery_hint("local-llm-hub", 8000, Path("E:/automation/local-llm-hub"), None, "tray.bat")
+    check("recovery_hint: no restart_cmd -> option 1 is the tray, no respawn line",
+          "WebappManager" not in tray_only and "1) Full clean restart" in tray_only)
 
     return failures
 

@@ -7,6 +7,17 @@
 # Paths use forward slashes throughout (cross-shell compatibility on Windows).
 #
 # Optional per-project key:
+#   restart_cmd = '...'                  # webapp restart invocation for tray-owned apps
+# When set, restart_and_verify_webapp.py prefers this over the default
+# "kill the port PID + relaunch tray_cmd" sequence. The default does not fit
+# apps whose webapp runs as a uvicorn child of a long-lived `launcher.py tray`:
+# an idempotent tray.bat no-ops while the tray lives, so the webapp is never
+# respawned. The respawn-through-the-manager one-liner below spawns a fresh
+# uvicorn that the tray adopts, and never touches the :8446 session-host (unlike
+# `tray.bat --restart`, which cascades a /T kill onto live PTY sessions). See
+# issue #51.
+#
+# Optional per-project key:
 #   slack_notify_channel = "C0123ABCD"   # bare Slack channel id (or a user id for a DM)
 # When set, the notify_on_idle hook pings this channel when a live session in
 # that project needs attention. Omit it (the default) to keep that project quiet.
@@ -21,6 +32,7 @@ session_host_port   = 8446
 gate_trigger_globs  = ["app/webapp/**", "src/launcher.py", "src/session_host*.py"]
 gate_cmd            = "pwsh -File scripts/verify-before-ship.ps1"
 tray_cmd            = "tray.bat"
+restart_cmd         = '& .\.venv\Scripts\python.exe -c "from app.webapp.manager import WebappManager; WebappManager().start(wait=True)"'
 api_version_path    = "/api/version"
 
 [photo-ocr]
@@ -29,12 +41,16 @@ webapp_port         = 8444
 gate_trigger_globs  = ["app/webapp/**"]
 gate_cmd            = "pwsh -File scripts/verify-before-ship.ps1"
 tray_cmd            = "tray.bat"
+restart_cmd         = '& .\.venv\Scripts\python.exe -c "from app.webapp.manager import WebappManager; WebappManager().start(wait=True)"'
 api_version_path    = "/api/version"
 
 [voice-transcriber]
 cwd_prefix          = "E:/automation/voice-transcriber"
+webapp_port         = 8443
 gate_cmd            = "pwsh -File scripts/verify-before-ship.ps1"
 tray_cmd            = "tray.bat"
+restart_cmd         = '& .\.venv\Scripts\python.exe -c "from app.webapp.manager import WebappManager; WebappManager().start(wait=True)"'
+api_version_path    = "/api/version"
 
 [local-llm-hub]
 cwd_prefix          = "E:/automation/local-llm-hub"

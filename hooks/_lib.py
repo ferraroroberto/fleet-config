@@ -118,6 +118,7 @@ class ProjectConfig:
     gate_trigger_globs: Sequence[str]
     gate_cmd: Optional[str]
     tray_cmd: Optional[str]
+    restart_cmd: Optional[str]
     api_version_path: Optional[str]
     extra: Dict[str, Any]  # any other key from the [project] table
 
@@ -169,10 +170,11 @@ def load_registry(path: Path = PROJECTS_TOML) -> Registry:
                 gate_trigger_globs=tuple(table.get("gate_trigger_globs", []) or []),
                 gate_cmd=table.get("gate_cmd"),
                 tray_cmd=table.get("tray_cmd"),
+                restart_cmd=table.get("restart_cmd"),
                 api_version_path=table.get("api_version_path"),
                 extra={k: v for k, v in table.items() if k not in {
                     "cwd_prefix", "webapp_port", "gate_trigger_globs",
-                    "gate_cmd", "tray_cmd", "api_version_path",
+                    "gate_cmd", "tray_cmd", "restart_cmd", "api_version_path",
                 }},
             )
         )
