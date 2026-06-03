@@ -1,6 +1,6 @@
 ---
 name: screen
-description: Attach recent screenshots from E:\downloads\snaps to the conversation without manual copy-paste. Invoke whenever the user's message contains the literal token `/screen` — at the start OR anywhere mid-sentence (e.g. "check this /screen 1" or "/screen 3 what changed?"). Forms: `/screen` (just the latest screenshot), `/screen N` (last N screenshots), `/screen Nm` (screenshots from the last N minutes). Any other text in the user message is their actual prompt about the attached screenshots.
+description: Attach recent screenshots from E:\downloads\snaps to the conversation without manual copy-paste. Invoke whenever the user's message contains the literal token `/screen` — at the start OR anywhere mid-sentence (e.g. "check this /screen 1" or "/screen 3 what changed?"). Forms — `/screen` (just the latest screenshot), `/screen N` (last N screenshots), `/screen Nm` (screenshots from the last N minutes). Any other text in the user message is their actual prompt about the attached screenshots.
 ---
 
 # screen
