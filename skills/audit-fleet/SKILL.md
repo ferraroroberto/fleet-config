@@ -1,11 +1,11 @@
 ---
 name: audit-fleet
-description: Run /codebase-audit across every repo in the E:\automation fleet in one pass — enumerate the local ferraroroberto repos, skip the ones unchanged since their last audit (per-repo ledger gate), fan the changed ones out to parallel sub-agents that each run the full audit, then emit one diff-based weekly digest as a GitHub comment on the audit-fleet ledger issue + a Slack ping with the link (and to stdout). Also catalogs each repo's hard-won reusable solutions into one cross-fleet "practices ledger" issue in project-scaffolding. Built to run unattended on a weekly schedule. Use when the user wants a whole-fleet quality sweep — e.g. "/audit-fleet", "audit the whole fleet", "weekly codebase audit across all repos".
+description: Run /codebase-audit across every repo in the E:\automation fleet in one pass — enumerate the local ferraroroberto repos, skip the ones unchanged since their last audit (per-repo ledger gate), audit the changed ones one at a time via sequential sub-agents that each run the full audit, then emit one diff-based weekly digest as a GitHub comment on the audit-fleet ledger issue + a Slack ping with the link (and to stdout). Also catalogs each repo's hard-won reusable solutions into one cross-fleet "practices ledger" issue in project-scaffolding. Built to run unattended on a weekly schedule. Use when the user wants a whole-fleet quality sweep — e.g. "/audit-fleet", "audit the whole fleet", "weekly codebase audit across all repos".
 ---
 
 # audit-fleet
 
-**Goal:** A fleet-wide, idempotent, scatter-gather wrapper around `/codebase-audit`. Walk every repo under `E:\automation\`, cheaply skip the ones that haven't changed since their last audit, fan the changed ones out to **parallel sub-agents** (one per repo) that each run the full `/codebase-audit` procedure, then collect the results into **one diff-based digest** posted as a GitHub comment on the `audit-fleet digest state` ledger issue in `claude-config` (the running log) and printed to stdout (so a scheduled run captures it in history). A Slack ping with the comment link is sent deterministically via `notify_complete.py --kind audit`.
+**Goal:** A fleet-wide, idempotent, scatter-gather wrapper around `/codebase-audit`. Walk every repo under `E:\automation\`, cheaply skip the ones that haven't changed since their last audit, audit the changed ones **one at a time via sequential sub-agents** (one per repo) that each run the full `/codebase-audit` procedure, then collect the results into **one diff-based digest** posted as a GitHub comment on the `audit-fleet digest state` ledger issue in `claude-config` (the running log) and printed to stdout (so a scheduled run captures it in history). A Slack ping with the comment link is sent deterministically via `notify_complete.py --kind audit`.
 
 **This skill files no issues itself.** The only writes are (a) the audit issues that each sub-agent's `/codebase-audit` files, (b) the per-repo `audit-meta` ledger those audits update, (c) one `audit-fleet digest state` ledger issue in `claude-config` for week-over-week deltas, (d) the digest comment on that issue, and (e) one cross-fleet `fleet practices ledger` issue in `project-scaffolding` cataloguing reusable solutions. It never edits source, commits, pushes, or restarts anything.
 
@@ -28,7 +28,7 @@ Anything else → treat as no argument.
   identically in it. Do not use PowerShell syntax (`&`, `$env:`, here-strings)
   in Bash. Windows paths map as `/e/automation/...`.
 - **The orchestrator only does cheap, safe work:** enumeration, the per-repo
-  ledger gate, fast-forward syncs, fan-out, collection, the digest. **All file
+  ledger gate, fast-forward syncs, sequential dispatch, collection, the digest. **All file
   reading happens inside sub-agents** — this is what keeps the orchestrator's
   context (and the weekly token spend) bounded.
 - **Never disturb in-progress work.** A repo that is dirty or not on its default
@@ -85,7 +85,7 @@ unchanged repo never costs a sub-agent spawn):
      `rubric-sha` is unchanged → record `unchanged (skipped)`. Otherwise →
      **audit**.
 
-Print a one-line plan before fan-out, e.g.:
+Print a one-line plan before dispatch, e.g.:
 
 ```
 Fleet audit plan — 3 to audit, 24 unchanged, 2 skipped (dirty)
@@ -96,12 +96,22 @@ Fleet audit plan — 3 to audit, 24 unchanged, 2 skipped (dirty)
 If nothing is to be audited, jump to step 6 with an empty result set (the digest
 still goes out so the weekly run always produces a record).
 
-### 4. Fan out — one background sub-agent per repo to audit
+### 4. Audit each repo — one sub-agent at a time (sequential)
 
-Spawn all sub-agents in a **single message** with multiple parallel `Agent`
-calls, each `run_in_background: true`, `subagent_type: "general-purpose"`,
-`model: "opus"`. No git worktrees: `/codebase-audit` is read-only and only
-files issues, so agents in different repo directories cannot collide.
+Process the to-audit list **sequentially**: dispatch one `Agent` call for the
+next repo, **wait for it to return**, record its report, then dispatch the next.
+Use a foreground call (`run_in_background` omitted/`false`),
+`subagent_type: "general-purpose"`, `model: "opus"`. No git worktrees:
+`/codebase-audit` is read-only and only files issues, so agents in different repo
+directories cannot collide.
+
+**Do not spawn them all at once.** A single-message parallel fan-out across the
+whole fleet (one Opus sub-agent per repo, ~27 at once) trips Anthropic's
+server-side burst limit (`Server is temporarily limiting requests · Rate
+limited`) — the 2026-06-03 run completed only 3 of 27 repos for exactly this
+reason (see the digest comment on the ledger issue). Sequential dispatch trades
+wall-clock time for reliability, which is the right trade for an unattended
+weekly job: the whole fleet gets audited instead of ~3 random repos.
 
 Prompt template (substitute `<name>` / `<path>`):
 
@@ -130,16 +140,19 @@ Report back in this exact shape so the orchestrator can build the digest:
   - Note: <one line if anything surprising came up>
 ```
 
-Then print a confirmation block listing every sub-agent dispatched and stop
-spawning. Do **not** poll or sleep — the harness re-invokes you as each
-background agent completes.
+Dispatch the next repo only once the current sub-agent has returned and its
+report is recorded. Print a one-line progress marker per repo as you go (e.g.
+`[3/12] photo-ocr — AUDITED`) so a scheduled run's console shows forward
+motion. Do **not** sleep between repos — start the next dispatch immediately
+after the previous returns.
 
 ### 5. Collect results
 
-As each sub-agent returns, hold its structured report. When **all** have
-returned, proceed to the practices ledger (5b) then the digest. (A sub-agent
-that errors out is recorded as `ERROR` for its repo and does not block the
-others.)
+Hold each sub-agent's structured report as it returns. When the **last** repo
+in the sequential loop has returned, proceed to the practices ledger (5b) then
+the digest. (A sub-agent that errors out — including a rate-limit error — is
+recorded as `ERROR` for its repo and does not block the remaining repos; the
+loop simply moves on to the next.)
 
 ### 5b. Upsert the fleet practices ledger
 
@@ -280,8 +293,12 @@ One concise block: the plan line from step 3, per-repo results, where the digest
   write target outside `claude-config` — still an issue, never source.
 - **Never disturb in-progress work.** Dirty or off-default-branch repos are
   skipped and reported, never stashed or force-switched.
-- **One sub-agent per repo, parallel, background, opus.** No worktrees (audits
-  don't collide). Don't read repo source in the orchestrator.
+- **One sub-agent per repo, sequential (one at a time), opus.** Dispatch the
+  next only after the current returns — never a single-message parallel
+  fan-out across the fleet. A simultaneous ~27-wide Opus spawn trips Anthropic's
+  server-side burst limit and leaves most repos un-audited (the 2026-06-03
+  incident). No worktrees (audits don't collide). Don't read repo source in the
+  orchestrator.
 - **Degrade, don't block.** Built for unattended `claude -p`. A per-repo failure
   is reported and skipped; only a pre-flight failure stops the whole run. Never
   wait on an interactive prompt.
