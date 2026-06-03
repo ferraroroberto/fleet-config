@@ -56,7 +56,7 @@ claude-config/
 │   ├── slack_notify.py              # shared Slack-notify transport (importable + CLI, stdlib-only)
 │   └── notify_complete.py           # deterministic skill-completion ping (issue-* skills call this)
 ├── commands/                       # junction → ~/.claude/commands (slash commands)
-├── skills/                         # junction → ~/.claude/skills (issue-* workflow, handoff-commit, codebase-audit, screen, …)
+├── skills/                         # junction → ~/.claude/skills AND ~/.agents/skills (Codex) — issue-* workflow, handoff-commit, codebase-audit, screen, …
 ├── docs/slack-workflow.md          # Slack ↔ Claude reference: bot helper, session hook, native integration
 ├── tests/run_acceptance.py         # drives each hook with a sample stdin payload
 └── settings.template.json          # the `hooks` block to merge into your ~/.claude/settings.json
@@ -76,7 +76,7 @@ cd claude-config
 
 `install.ps1` exposes the repo's contents inside `~/.claude/` via three link kinds:
 
-- **Junctions** for the directory entries (`hooks/`, `commands/`, `skills/`). Cross-volume OK, no admin.
+- **Junctions** for the directory entries (`hooks/`, `commands/`, `skills/`). Cross-volume OK, no admin. `skills/` is junctioned into **two** homes: `~/.claude/skills` (Claude Code) and `~/.agents/skills` (the cross-agent location [Codex](https://developers.openai.com/codex/) reads), so both agents load the *same live files* and the skill set can never drift between them.
 - **Symlinks** for the single-file entries (`global-CLAUDE.md` → `~/.claude/CLAUDE.md`, `statusline-command.ps1`). Cross-volume file linking on Windows requires admin or Developer Mode, so the installer self-elevates with **one UAC prompt** the first time it needs to create them. Reinstalls that find the symlinks already in place stay UAC-free.
 
 Edits on either side are visible on the other instantly — no copy step, no sync ritual. The installer is idempotent:
@@ -96,6 +96,15 @@ Move-Item $env:USERPROFILE\.claude\statusline-command.ps1 $env:USERPROFILE\.clau
 # verify both symlinks resolve to the repo, then:
 Remove-Item $env:USERPROFILE\.claude\CLAUDE.md.old
 Remove-Item $env:USERPROFILE\.claude\statusline-command.ps1.old
+```
+
+Same story for `~/.agents/skills` (the Codex location): if Codex previously *migrated* the skills there as real copies, the installer refuses to clobber the real directory. Move it aside, install, then delete:
+
+```powershell
+Move-Item $env:USERPROFILE\.agents\skills $env:USERPROFILE\.agents\skills.old
+.\install.ps1   # creates the ~/.agents/skills junction (no UAC — junctions need none)
+# verify ~/.agents/skills resolves to the repo, then:
+Remove-Item $env:USERPROFILE\.agents\skills.old -Recurse -Force
 ```
 
 ## Uninstall

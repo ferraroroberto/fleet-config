@@ -33,19 +33,39 @@ $ErrorActionPreference = 'Stop'
 
 $RepoRoot       = Split-Path -Parent $MyInvocation.MyCommand.Path
 $ClaudeHome     = Join-Path $env:USERPROFILE '.claude'
+$AgentsHome     = Join-Path $env:USERPROFILE '.agents'
 $ManifestPath   = Join-Path $ClaudeHome '.claude-config-installed.json'
 
-# What to install. Each entry: { kind = 'junction'|'hardlink'|'symlink'; source = <relative to repo>; target = <relative to ~/.claude> }
+# Link targets live under a base home. 'claude' (default) -> ~/.claude; 'agents' -> ~/.agents
+# (the cross-agent skills location Codex reads). Keep targets base-relative so one repo
+# source can be linked into more than one home.
+function Get-BaseHome([string]$base) {
+    switch ($base) {
+        'agents' { $AgentsHome }
+        default  { $ClaudeHome }
+    }
+}
+
+# A manifest key must be unique across bases: the bare target 'skills' is used by both
+# ~/.claude/skills and ~/.agents/skills, so non-default bases get a 'base/target' key.
+function Get-ManifestKey($item) {
+    if ($item.base -and $item.base -ne 'claude') { "$($item.base)/$($item.target)" } else { $item.target }
+}
+
+# What to install. Each entry: { kind = 'junction'|'hardlink'|'symlink'; source = <relative to repo>; target = <relative to base home>; base = 'claude'|'agents' (default 'claude') }
 $Items = @(
     @{ kind = 'junction'; source = 'hooks';                  target = 'hooks' },
     @{ kind = 'junction'; source = 'commands';               target = 'commands' },
     @{ kind = 'junction'; source = 'skills';                 target = 'skills' },
+    @{ kind = 'junction'; source = 'skills';                 target = 'skills'; base = 'agents' },
     @{ kind = 'symlink';  source = 'statusline-command.ps1'; target = 'statusline-command.ps1' },
     @{ kind = 'symlink';  source = 'global-CLAUDE.md';       target = 'CLAUDE.md' }
 )
 
-if (-not (Test-Path $ClaudeHome)) {
-    New-Item -ItemType Directory -Path $ClaudeHome | Out-Null
+foreach ($baseDir in @($ClaudeHome, $AgentsHome)) {
+    if (-not (Test-Path $baseDir)) {
+        New-Item -ItemType Directory -Path $baseDir | Out-Null
+    }
 }
 
 # Self-elevation pre-pass: file symlinks require admin (or Developer Mode) on Windows.
@@ -61,8 +81,8 @@ function Test-IsElevated {
 $needsElevation = $false
 foreach ($item in $Items) {
     if ($item.kind -ne 'symlink') { continue }
-    $sourceAbs = Join-Path $RepoRoot   $item.source
-    $targetAbs = Join-Path $ClaudeHome $item.target
+    $sourceAbs = Join-Path $RepoRoot          $item.source
+    $targetAbs = Join-Path (Get-BaseHome $item.base) $item.target
     if (-not (Test-Path $sourceAbs)) { continue }
     if (-not (Test-Path $targetAbs)) { $needsElevation = $true; break }
     $existing = Get-Item $targetAbs -Force
@@ -101,8 +121,9 @@ $skipped  = 0
 $blocked  = 0
 
 foreach ($item in $Items) {
-    $sourceAbs = Join-Path $RepoRoot   $item.source
-    $targetAbs = Join-Path $ClaudeHome $item.target
+    $sourceAbs   = Join-Path $RepoRoot               $item.source
+    $targetAbs   = Join-Path (Get-BaseHome $item.base) $item.target
+    $manifestKey = Get-ManifestKey $item
 
     if (-not (Test-Path $sourceAbs)) {
         Write-Warning "Source missing, skipping: $sourceAbs"
@@ -122,7 +143,7 @@ foreach ($item in $Items) {
 
             if ($linkTargetStr -and ((Resolve-Path $linkTargetStr -ErrorAction SilentlyContinue).Path -eq $sourceFull)) {
                 Write-Host "OK      $targetAbs (already linked to repo)" -ForegroundColor Green
-                $manifest[$item.target] = @{ kind = $item.kind; source = $sourceAbs; installed_at = (Get-Date -Format 'o') }
+                $manifest[$manifestKey] = @{ kind = $item.kind; source = $sourceAbs; target = $targetAbs; installed_at = (Get-Date -Format 'o') }
                 $skipped++
                 continue
             } else {
@@ -156,7 +177,7 @@ foreach ($item in $Items) {
         }
     }
 
-    $manifest[$item.target] = @{ kind = $item.kind; source = $sourceAbs; installed_at = (Get-Date -Format 'o') }
+    $manifest[$manifestKey] = @{ kind = $item.kind; source = $sourceAbs; target = $targetAbs; installed_at = (Get-Date -Format 'o') }
     $created++
 }
 

@@ -32,7 +32,9 @@ $missing = 0
 $skipped = 0
 
 foreach ($prop in $manifest.PSObject.Properties) {
-    $target    = Join-Path $ClaudeHome $prop.Name
+    # Prefer the absolute target recorded by install.ps1 (handles non-~/.claude bases like
+    # ~/.agents); fall back to the legacy ~/.claude-relative key for older manifests.
+    $target    = if ($prop.Value.target) { $prop.Value.target } else { Join-Path $ClaudeHome $prop.Name }
     $entryKind = $prop.Value.kind
 
     if (-not (Test-Path $target)) {
