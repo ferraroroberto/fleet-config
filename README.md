@@ -132,7 +132,12 @@ Move-Item $env:USERPROFILE\.codex\AGENTS.md  $env:USERPROFILE\.codex\AGENTS.md.o
 Move-Item $env:USERPROFILE\.codex\hooks      $env:USERPROFILE\.codex\hooks.old
 Move-Item $env:USERPROFILE\.codex\hooks.json $env:USERPROFILE\.codex\hooks.json.old
 .\install.ps1   # one UAC prompt for the AGENTS.md + hooks.json symlinks; the hooks/ + prompts/ junctions need none
-# verify ~/.codex/AGENTS.md, hooks/, prompts/, hooks.json all resolve to the repo, then:
+
+# confirm every ~/.codex link resolves back to the repo before deleting the .old copies:
+'AGENTS.md','hooks','prompts','hooks.json' | ForEach-Object {
+    $p = "$env:USERPROFILE\.codex\$_"; "{0,-11} -> {1}" -f $_, (Get-Item $p -Force).Target
+}
+
 Remove-Item $env:USERPROFILE\.codex\AGENTS.md.old, $env:USERPROFILE\.codex\hooks.json.old -Force
 Remove-Item $env:USERPROFILE\.codex\hooks.old -Recurse -Force
 ```
