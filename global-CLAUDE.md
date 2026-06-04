@@ -35,6 +35,14 @@ Three global skills in `~/.claude/skills/` automate the user's standard GitHub-i
 
 Both stay generic and read each project's CLAUDE.md for the gate command, ports, and tray procedure.
 
+### Spawning sub-agents — cap concurrent Opus at 3
+
+When a skill or session fans out **background sub-agents that run on Opus**, keep at most **3 in flight** at once (a sliding window): dispatch up to 3, and each time one returns, dispatch the next pending one until the queue drains. Fewer than 3 pending → just spawn that many (1 item = 1 agent). Every fleet fan-out skill — `audit-fleet`, `cleanup-fleet`, `issue-batch` — references this cap rather than re-hardcoding the number, so the limit lives in exactly one place.
+
+- **Sonnet sub-agents are exempt** — they may fan out freely. In a mixed run only the Opus agents count against the window of 3 (Sonnet agents run alongside, uncounted). Sonnet is the "smaller model" half of the documented mitigation.
+- **Why:** Anthropic's server-side burst limiter rejects the 4th–5th+ simultaneous Opus sub-agent bootstrap with `Server is temporarily limiting requests (not your usage limit) · Rate limited`. The empirical ceiling is 3–4 concurrent (anthropics/claude-code#53922 — the first 3–4 succeed, the rest fail); there is no officially published number, so 3 is the conservative floor. The official 429 guidance is to "avoid running many parallel subagents" or switch to a smaller model for high-volume runs (https://code.claude.com/docs/en/errors). Two unattended runs lost most of their work to this — the 2026-06-03 `/audit-fleet` (only 3 of 27 repos completed) and a later `/cleanup-fleet`.
+- **Not** `CLAUDE_CODE_MAX_TOOL_USE_CONCURRENCY` — that env var bounds parallel *tool calls within a single session*, not the number of sub-agents in flight. The only place to cap sub-agent count is the orchestrating skill's dispatch logic (a bounded window), which is what this rule mandates.
+
 ## Project fleet
 
 ### `project-scaffolding` is the canonical master

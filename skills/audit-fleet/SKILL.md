@@ -1,11 +1,11 @@
 ---
 name: audit-fleet
-description: Run /codebase-audit across every repo in the E:\automation fleet in one pass — enumerate the local ferraroroberto repos, skip the ones unchanged since their last audit (per-repo ledger gate), audit the changed ones one at a time via sequential sub-agents that each run the full audit, then emit one diff-based weekly digest as a GitHub comment on the audit-fleet ledger issue + a Slack ping with the link (and to stdout). Also catalogs each repo's hard-won reusable solutions into one cross-fleet "practices ledger" issue in project-scaffolding. Built to run unattended on a weekly schedule. Use when the user wants a whole-fleet quality sweep — e.g. "/audit-fleet", "audit the whole fleet", "weekly codebase audit across all repos".
+description: Run /codebase-audit across every repo in the E:\automation fleet in one pass — enumerate the local ferraroroberto repos, skip the ones unchanged since their last audit (per-repo ledger gate), audit the changed ones through a bounded window of up to 3 concurrent sub-agents (the global Opus concurrency cap) that each run the full audit, then emit one diff-based weekly digest as a GitHub comment on the audit-fleet ledger issue + a Slack ping with the link (and to stdout). Also catalogs each repo's hard-won reusable solutions into one cross-fleet "practices ledger" issue in project-scaffolding. Built to run unattended on a weekly schedule. Use when the user wants a whole-fleet quality sweep — e.g. "/audit-fleet", "audit the whole fleet", "weekly codebase audit across all repos".
 ---
 
 # audit-fleet
 
-**Goal:** A fleet-wide, idempotent, scatter-gather wrapper around `/codebase-audit`. Walk every repo under `E:\automation\`, cheaply skip the ones that haven't changed since their last audit, audit the changed ones **one at a time via sequential sub-agents** (one per repo) that each run the full `/codebase-audit` procedure, then collect the results into **one diff-based digest** posted as a GitHub comment on the `audit-fleet digest state` ledger issue in `claude-config` (the running log) and printed to stdout (so a scheduled run captures it in history). A Slack ping with the comment link is sent deterministically via `notify_complete.py --kind audit`.
+**Goal:** A fleet-wide, idempotent, scatter-gather wrapper around `/codebase-audit`. Walk every repo under `E:\automation\`, cheaply skip the ones that haven't changed since their last audit, audit the changed ones **through a bounded window of up to 3 concurrent sub-agents** (one per repo, the global Opus concurrency cap) that each run the full `/codebase-audit` procedure, then collect the results into **one diff-based digest** posted as a GitHub comment on the `audit-fleet digest state` ledger issue in `claude-config` (the running log) and printed to stdout (so a scheduled run captures it in history). A Slack ping with the comment link is sent deterministically via `notify_complete.py --kind audit`.
 
 **This skill files no issues itself.** The only writes are (a) the audit issues that each sub-agent's `/codebase-audit` files, (b) the per-repo `audit-meta` ledger those audits update, (c) one `audit-fleet digest state` ledger issue in `claude-config` for week-over-week deltas, (d) the digest comment on that issue, and (e) one cross-fleet `fleet practices ledger` issue in `project-scaffolding` cataloguing reusable solutions. It never edits source, commits, pushes, or restarts anything.
 
@@ -28,7 +28,7 @@ Anything else → treat as no argument.
   identically in it. Do not use PowerShell syntax (`&`, `$env:`, here-strings)
   in Bash. Windows paths map as `/e/automation/...`.
 - **The orchestrator only does cheap, safe work:** enumeration, the per-repo
-  ledger gate, fast-forward syncs, sequential dispatch, collection, the digest. **All file
+  ledger gate, fast-forward syncs, windowed dispatch, collection, the digest. **All file
   reading happens inside sub-agents** — this is what keeps the orchestrator's
   context (and the weekly token spend) bounded.
 - **Never disturb in-progress work.** A repo that is dirty or not on its default
@@ -96,22 +96,27 @@ Fleet audit plan — 3 to audit, 24 unchanged, 2 skipped (dirty)
 If nothing is to be audited, jump to step 6 with an empty result set (the digest
 still goes out so the weekly run always produces a record).
 
-### 4. Audit each repo — one sub-agent at a time (sequential)
+### 4. Audit each repo — a bounded window of up to 3 sub-agents
 
-Process the to-audit list **sequentially**: dispatch one `Agent` call for the
-next repo, **wait for it to return**, record its report, then dispatch the next.
-Use a foreground call (`run_in_background` omitted/`false`),
-`subagent_type: "general-purpose"`, `model: "opus"`. No git worktrees:
-`/codebase-audit` is read-only and only files issues, so agents in different repo
-directories cannot collide.
+Process the to-audit list through a **bounded concurrency window of up to 3
+sub-agents** (the global Opus concurrency cap — see `~/.claude/CLAUDE.md`,
+"Spawning sub-agents — cap concurrent Opus at 3"). Dispatch up to 3 background
+`Agent` calls (`run_in_background: true`, `subagent_type: "general-purpose"`,
+`model: "opus"`); each time one returns and its report is recorded, dispatch the
+next repo from the to-audit list — never more than **3 in flight**. Fewer than 3
+repos left → dispatch just that many. No git worktrees: `/codebase-audit` is
+read-only and only files issues, so agents in different repo directories cannot
+collide.
 
-**Do not spawn them all at once.** A single-message parallel fan-out across the
-whole fleet (one Opus sub-agent per repo, ~27 at once) trips Anthropic's
-server-side burst limit (`Server is temporarily limiting requests · Rate
-limited`) — the 2026-06-03 run completed only 3 of 27 repos for exactly this
-reason (see the digest comment on the ledger issue). Sequential dispatch trades
-wall-clock time for reliability, which is the right trade for an unattended
-weekly job: the whole fleet gets audited instead of ~3 random repos.
+**Never fan out the whole fleet at once.** A single-message parallel spawn of
+one Opus sub-agent per repo (~27 at once) trips Anthropic's server-side burst
+limit (`Server is temporarily limiting requests · Rate limited`) — the
+2026-06-03 run completed only 3 of 27 repos for exactly this reason (see the
+digest comment on the ledger issue). The 3-wide window stays under the
+documented 3–4 burst ceiling (anthropics/claude-code#53922) while still auditing
+up to 3 repos in parallel — trading a little wall-clock for reliability, the
+right trade for an unattended weekly job: the whole fleet gets audited instead
+of ~3 random repos.
 
 Prompt template (substitute `<name>` / `<path>`):
 
@@ -140,19 +145,21 @@ Report back in this exact shape so the orchestrator can build the digest:
   - Note: <one line if anything surprising came up>
 ```
 
-Dispatch the next repo only once the current sub-agent has returned and its
-report is recorded. Print a one-line progress marker per repo as you go (e.g.
+Keep the window full: each time a sub-agent returns and its report is recorded,
+immediately dispatch the next pending repo (up to the 3-in-flight cap). Print a
+one-line progress marker per repo as it completes (e.g.
 `[3/12] photo-ocr — AUDITED`) so a scheduled run's console shows forward
-motion. Do **not** sleep between repos — start the next dispatch immediately
-after the previous returns.
+motion. Do **not** sleep between dispatches — refill the window the moment a
+slot frees.
 
 ### 5. Collect results
 
 Hold each sub-agent's structured report as it returns. When the **last** repo
-in the sequential loop has returned, proceed to the practices ledger (5b) then
-the digest. (A sub-agent that errors out — including a rate-limit error — is
-recorded as `ERROR` for its repo and does not block the remaining repos; the
-loop simply moves on to the next.)
+in the window has returned (the to-audit list is drained and no agent is still
+in flight), proceed to the practices ledger (5b) then the digest. (A sub-agent
+that errors out — including a rate-limit error — is recorded as `ERROR` for its
+repo and does not block the remaining repos; the window simply refills with the
+next pending repo.)
 
 ### 5b. Upsert the fleet practices ledger
 
@@ -293,12 +300,16 @@ One concise block: the plan line from step 3, per-repo results, where the digest
   write target outside `claude-config` — still an issue, never source.
 - **Never disturb in-progress work.** Dirty or off-default-branch repos are
   skipped and reported, never stashed or force-switched.
-- **One sub-agent per repo, sequential (one at a time), opus.** Dispatch the
-  next only after the current returns — never a single-message parallel
-  fan-out across the fleet. A simultaneous ~27-wide Opus spawn trips Anthropic's
-  server-side burst limit and leaves most repos un-audited (the 2026-06-03
-  incident). No worktrees (audits don't collide). Don't read repo source in the
-  orchestrator.
+- **One sub-agent per repo, opus, through a ≤3 sliding window.** Keep at most 3
+  Opus sub-agents in flight (the global Opus concurrency cap — see
+  `~/.claude/CLAUDE.md`); refill the window as each returns. Never a
+  single-message parallel fan-out across the fleet: a simultaneous ~27-wide Opus
+  spawn trips Anthropic's server-side burst limit and leaves most repos
+  un-audited (the 2026-06-03 incident; ceiling is 3–4 per
+  anthropics/claude-code#53922). #57 first fixed this by going strictly
+  sequential (1 at a time) — the window of 3 refines that, restoring throughput
+  while staying under the burst ceiling. No worktrees (audits don't collide).
+  Don't read repo source in the orchestrator.
 - **Degrade, don't block.** Built for unattended `claude -p`. A per-repo failure
   is reported and skipped; only a pre-flight failure stops the whole run. Never
   wait on an interactive prompt.
