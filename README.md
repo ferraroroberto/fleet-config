@@ -99,6 +99,8 @@ The same files drive Claude Code and Codex; editing once is live in both. The se
 
 **Validated:** Codex (gpt-5.5) loads and runs these skills live — e.g. invoking the `screen` skill executed `skills/screen/SKILL.md` straight from the repo. One Codex-vs-Claude nuance: Codex's client only treats a message as a slash command when the *whole* message is a registered client command, so a bare `/screen` line is rejected by the client — invoke a skill mid-message (`check this /screen 3`) or in natural language (`run the codebase audit`) and it fires.
 
+**Codex Browser plugin.** Codex's bundled Browser plugin loads its *instructions* even when its *runtime backend* isn't live — `agent.browsers.list()` can return `[]` despite the plugin being enabled in `config.toml`. That backend is Codex-client/runtime state, not a dependency this repo installs. [`docs/codex-browser.md`](docs/codex-browser.md) is the durable note: how to diagnose `iab` availability from a session, why installed plugin files don't mean a registered backend, and the restart-and-check recovery path.
+
 Edits on either side are visible on the other instantly — no copy step, no sync ritual. The installer is idempotent:
 - existing link pointing at the repo → no-op
 - existing real file/directory → refuses and prints a one-line "rename it, then re-run"
