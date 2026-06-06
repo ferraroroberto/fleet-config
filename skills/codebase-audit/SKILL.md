@@ -91,7 +91,14 @@ scoped run always executes and never reads or writes the ledger.
 
 Before reading a single source file, check whether this repo changed since the
 last audit. The ledger is a per-repo cache: the commit SHA is the key, a hash
-of the rubric busts it when the grading criteria change.
+of **this repo's own** rubric (its project CLAUDE.md) busts it when that repo's
+grading criteria change. The global `~/.claude/CLAUDE.md` is deliberately **not**
+part of the hash — folding it in meant any edit to that shared, frequently-touched
+file busted every repo's cache at once and re-audited the whole fleet (the
+2026-06-06 incident: 28 repos re-graded on a global-file edit, not on real
+change). A repo is still graded against the current global conventions at audit
+time (step 3 reads the global rubric); it just isn't force-re-audited by a global
+edit.
 
 The ledger lives in **one issue per repo** — title `codebase-audit ledger`,
 label `audit-meta`, `--assignee @me`, never closed. Its body carries a hidden
@@ -102,7 +109,7 @@ identity marker on the first line **and** a machine-readable block:
 <!-- audit-ledger -->
 last-audited-sha: <full HEAD sha at last audit>
 last-audited-at: <YYYY-MM-DD>
-rubric-sha: <sha256 of global + project CLAUDE.md concatenated>
+rubric-sha: <sha256 of this repo's project CLAUDE.md (empty string if absent)>
 ```
 
 Steps:
@@ -113,9 +120,11 @@ Steps:
   It prints `{"number": N|null, "body": "...", "duplicates": [...]}`. If
   `number` is `null`, this is a first run — skip the gate (the ledger is created
   in step 9) and continue to step 3.
-- Compute the current `rubric-sha`: sha256 over the concatenation of the global
-  CLAUDE.md and the project CLAUDE.md (the same two files step 3 loads); a
-  missing file contributes the empty string.
+- Compute the current `rubric-sha`: sha256 over the project CLAUDE.md alone
+  (`<repo-root>/CLAUDE.md`); a missing file contributes the empty string. The
+  global `~/.claude/CLAUDE.md` is **not** part of this hash — only the repo's own
+  rubric busts its own cache, so an edit to the shared global file no longer
+  re-audits the fleet.
 - Read `last-audited-sha` from the block and run
   `git rev-list <last-audited-sha>..HEAD --count`.
 - **Skip condition:** the count is `0` **and** the current `rubric-sha` equals
@@ -332,7 +341,8 @@ tmp-file-reuse gotcha).
 Upsert the per-repo ledger issue so the next run can short-circuit at step 2:
 
 - Build the body: the `<!-- audit-ledger -->` block with the current HEAD sha
-  (`git rev-parse HEAD`), today's date, and the `rubric-sha` from step 2. The
+  (`git rev-parse HEAD`), today's date, and the `rubric-sha` from step 2 (the
+  sha256 of the project CLAUDE.md alone). The
   helper prepends the `<!-- audit-managed: kind=ledger -->` marker — don't write
   it yourself. Keep the `<!-- audit-ledger -->` block intact; the step-2 gate
   parses it.
