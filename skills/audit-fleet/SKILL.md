@@ -44,8 +44,10 @@ the whole run. Only a pre-flight failure (step 1) stops everything.
 - `gh auth status` — must be authenticated as `ferraroroberto`. If not, stop:
   "Not authenticated — run `gh auth login`."
 - Confirm `E:\automation\` exists (the fleet root). Else stop.
-- Read the global rubric once: `~/.claude/CLAUDE.md` (or
-  `$HOME/.claude/CLAUDE.md`). Hold its bytes for the rubric-hash in step 3.
+- No need to read the global `~/.claude/CLAUDE.md` here: the step-3 gate hashes
+  each repo's **own** project CLAUDE.md, not the global file, so a global edit
+  never busts a cache. Sub-agents still read the global rubric when they grade
+  (`/codebase-audit` step 3).
 
 ### 2. Enumerate fleet repos
 
@@ -79,8 +81,9 @@ unchanged repo never costs a sub-agent spawn):
    `py C:/Users/rober/.claude/skills/_lib/audit_issue.py get --repo ferraroroberto/<name> --kind ledger`.
    - `number` is `null` → **audit** (first run).
    - Else parse `last-audited-sha` + `rubric-sha`. Compute the repo's current
-     `rubric-sha` = sha256 of the global CLAUDE.md (step 1) concatenated with
-     `<path>/CLAUDE.md` (empty string if absent). If
+     `rubric-sha` = sha256 of `<path>/CLAUDE.md` alone (empty string if absent) —
+     the project rubric only, **not** the global CLAUDE.md, so a global-file edit
+     never busts this cache. If
      `git -C <path> rev-list <last-audited-sha>..HEAD --count` is `0` **and**
      `rubric-sha` is unchanged → record `unchanged (skipped)`. Otherwise →
      **audit**.
@@ -291,8 +294,10 @@ One concise block: the plan line from step 3, per-repo results, where the digest
 
 - **The ledger is the source of truth for "changed".** The orchestrator's cheap
   gate (step 3) must apply the identical skip condition to `/codebase-audit`
-  step 2 — HEAD count `0` **and** rubric-sha unchanged. If you change one, change
-  both, or they will disagree and either re-audit needlessly or skip wrongly.
+  step 2 — HEAD count `0` **and** rubric-sha unchanged, where `rubric-sha` is the
+  sha256 of the **project CLAUDE.md only** (not the global file) in both skills.
+  If you change one, change both, or they will disagree and either re-audit
+  needlessly or skip wrongly.
 - **Read-only on source.** This skill and its sub-agents never edit code,
   commit, push, or restart. The only writes are audit issues, the per-repo
   ledger, the digest-state issue, the digest comment, and the cross-fleet
@@ -325,7 +330,12 @@ One concise block: the plan line from step 3, per-repo results, where the digest
 - **Why a ledger gate and not "just re-audit":** most weeks most repos are
   unchanged. The gate turns an unchanged repo into one `gh` + one `git` call
   instead of a full read + a sub-agent spawn. The commit SHA is the cache key;
-  the rubric hash busts the cache when the grading criteria themselves change.
+  the rubric hash (sha256 of the repo's **own** project CLAUDE.md) busts that
+  one repo's cache when its grading criteria change. The shared global
+  `~/.claude/CLAUDE.md` is deliberately excluded from the hash — folding it in
+  re-audited the entire fleet on every edit to that frequently-touched file
+  (the 2026-06-06 incident); a deliberate fleet-wide re-grade is now an explicit
+  act (clear the ledgers' `last-audited-sha`), not an accidental side effect.
 - **Per-category trend data lives in the per-repo ledger.** Each whole-repo
   audit posts a counts-only `<!-- audit-snapshot -->` comment on that repo's
   `codebase-audit ledger` issue (see `/codebase-audit` step 9). Open a repo's
