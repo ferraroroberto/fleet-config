@@ -2,7 +2,7 @@
 *.local.*
 settings.local.json
 
-# Installer state (records which junctions/hardlinks were created)
+# Installer state (records which junctions/symlinks were created)
 .claude-config-installed.json
 
 # OS / editor noise

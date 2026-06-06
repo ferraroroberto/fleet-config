@@ -21,7 +21,7 @@ The hooks here are project-aware via a single `hooks/projects.toml` registry: ge
 | `restart_and_verify_webapp.py` | slash command `/restart-webapp` | Project-aware: looks up the webapp port from `projects.toml`, kills only that PID, then brings the webapp back — via the project's `restart_cmd` (a `WebappManager` respawn the tray adopts, for tray-owned apps) or `tray.bat` — and polls `/api/version` until `git_sha == HEAD`, reporting the new `asset_hash`. Never touches the `:8446` session-host. |
 | `notify_on_idle.py` | `Notification` | Opt-in (off unless a project/`[global]` `slack_notify_channel` is set): pings Slack via `slack_notify` when a live session is **blocked** on input (a permission gate or `AskUserQuestion`), so an AFK human gets a phone notification. No-ops on the 💤 idle nag. |
 
-Alongside the hooks, `hooks/slack_notify.py` is a shared **Slack-notify transport** (importable + CLI, stdlib-only) any skill / hook / unattended job can call to fire a real bot-identity notification — zero install via the `hooks/` junction. On top of it, `hooks/notify_complete.py` is the **deterministic skill-completion ping** the `issue-*` / fleet skills call (`--kind add|start|finish|yolo|batch|audit|cleanup`): it builds the one canonical message and pulls the real GitHub link from `gh` in Python rather than letting the model paraphrase. The mention decision is single-sourced in `slack_notify.notify()` and defaults off (the `[global] slack_notify_mention` toggle). The full Slack story (bot helper vs session hook vs the native "Claude in Slack" remote control, plus one-time setup) is in [`docs/slack-workflow.md`](docs/slack-workflow.md).
+Alongside the hooks, `hooks/slack_notify.py` is a shared **Slack-notify transport** (importable + CLI, stdlib-only) any skill / hook / unattended job can call to fire a real bot-identity notification — zero install via the `hooks/` junction. On top of it, `hooks/notify_complete.py` is the **deterministic skill-completion ping** the `issue-*` / fleet skills call (`--kind add|start|finish|yolo|batch|audit|cleanup|recap`): it builds the one canonical message and pulls the real GitHub link from `gh` in Python rather than letting the model paraphrase. The mention decision is single-sourced in `slack_notify.notify()` and defaults off (the `[global] slack_notify_mention` toggle). The full Slack story (bot helper vs session hook vs the native "Claude in Slack" remote control, plus one-time setup) is in [`docs/slack-workflow.md`](docs/slack-workflow.md).
 
 Tier 2 (browser-stealth lint, `pwsh`-stub warn, session-start fleet status, etc.) and Tier 3 (preference enforcement) are tracked as follow-up issues — they earn their slot only after a week of Tier 1 in production.
 
@@ -54,7 +54,8 @@ claude-config/
 │   ├── restart_and_verify_webapp.py + .ps1 shim   (also exposed as /restart-webapp)
 │   ├── notify_on_idle.py            # Notification hook (via run-hook.ps1): opt-in Slack ping
 │   ├── slack_notify.py              # shared Slack-notify transport (importable + CLI, stdlib-only)
-│   └── notify_complete.py           # deterministic skill-completion ping (issue-* skills call this)
+│   ├── notify_complete.py           # deterministic skill-completion ping (issue-* skills call this)
+│   └── conversation_capture.py     # Stop hook: captures life-os skill sessions as markdown (wired from life-os's own settings.json, not user-scope)
 ├── commands/                       # junction → ~/.claude/commands AND ~/.codex/prompts (Codex prompts)
 ├── skills/                         # junction → ~/.claude/skills AND ~/.agents/skills (Codex) — issue-* workflow, handoff-commit, codebase-audit, screen, …
 ├── docs/slack-workflow.md          # Slack ↔ Claude reference: bot helper, session hook, native integration
@@ -154,7 +155,7 @@ Keeping `codex-hooks.json` byte-identical to the `hooks.json` Codex already trus
 .\uninstall.ps1
 ```
 
-Removes only the junctions/hardlinks the installer created (recorded in `~/.claude/.claude-config-installed.json`). Never touches real data.
+Removes only the junctions/symlinks the installer created (recorded in `~/.claude/.claude-config-installed.json`). Never touches real data.
 
 ## Inspiration
 

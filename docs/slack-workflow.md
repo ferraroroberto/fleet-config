@@ -61,6 +61,7 @@ py ~/.claude/hooks/notify_complete.py --kind add    --issue 30             # �
 py ~/.claude/hooks/notify_complete.py --kind start  --issue 30 --summary "review the diff, then /issue-finish"   # 🚦 #30 <title> — ready to validate. … · <issue-url>
 py ~/.claude/hooks/notify_complete.py --kind yolo   --issue 30 --pr 31     # 🚀 Shipped #30 <title> — PR · <pr-url>
 py ~/.claude/hooks/notify_complete.py --kind batch  --passed 2 --total 3   # 🏁 Batch done: 2/3 passed — …
+py ~/.claude/hooks/notify_complete.py --kind recap  --summary "5 skills swept, 3 proposals"   # 🔄 Weekly recap — …
 ```
 
 Every kind **leads with a status mark** (`✅ 🆕 🚦 🏁 🚀 📊 🔄`) as a glanceable cue. It resolves channel/user via the shared `_lib.resolve_slack_target()` (project override → `[global]` fallback), passes the user id to `notify()` (which decides the mention), is a silent no-op when no channel is configured, and always exits 0 — a notification failure can never block a skill. The one thing it can't force is the model remembering to *call* it; making the firing itself deterministic would need a merge-detecting hook, which is more brittle than it's worth.
