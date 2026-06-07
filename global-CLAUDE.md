@@ -31,7 +31,7 @@ Three global skills automate the user's standard GitHub-issue workflow across al
 
 - **`/issue-add`** — paste a rough idea/transcript; researches the codebase and files one well-formed self-contained issue (senior-dev style), labelled from the repo's existing label set, self-assigned. Creates directly, no checkpoint.
 - **`/issue-start`** — pick issue (number, or list-and-pick for `next`/no-arg), sync `main`, cut branch, load context. Mode chosen from the issue's type label: `bug`/`chore`/`documentation` → **fast mode** (build straight away); `enhancement` → **plan mode** (plan-approval gate). Override with `now` (force fast) or `plan` (force plan).
-- **`/issue-finish`** — confirm acceptance, update README if it changed, verification gate, push, PR with `Closes #N`, wait for CI, auto-merge (merge commit + delete branch), land on main, safe tray restart. Does **not** write dated changelog files into `docs/`.
+- **`/issue-finish`** — confirm acceptance, update README if it changed, verification gate, push, PR with `Closes #N`, wait for CI (skipped when the change is provably CI-unrelated), auto-merge (merge commit + delete branch), land on main, safe tray restart. Does **not** write dated changelog files into `docs/`.
 
 Both stay generic and read each project's CLAUDE.md for the gate command, ports, and tray procedure.
 

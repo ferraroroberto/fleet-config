@@ -139,7 +139,8 @@ Repo root: E:\automation\<repo>. You are the only agent touching this repo.
 2. Run the /issue-yolo <N> flow in full (it skips Phase 1 since the issue
    already exists): Phase 2 branch + build, Phase 3 validate HARD (the
    non-negotiable phase — do not weaken it), Phase 4 ship (PR, wait for CI
-   green, merge --delete-branch, land on main, tray restart per the repo's
+   green unless the diff is provably CI-unrelated per /issue-yolo step 7,
+   merge --delete-branch, land on main, tray restart per the repo's
    CLAUDE.md), Phase 5 fire the /issue-yolo completion ping.
    KEEP Phase 5's ping — it carries this issue's PR link and must go out.
 3. If validation (Phase 3) fails at any point: STOP, do not push/merge, leave

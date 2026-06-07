@@ -1,6 +1,6 @@
 ---
 name: issue-finish
-description: Finish a GitHub issue cleanly — confirm acceptance, update docs/README, run the verification gate, push, open a PR that closes the issue, wait for CI, auto-merge, delete the branch, and restart the project's tray safely. Use when work on an issue branch is complete, e.g. "/issue-finish". Pairs with /issue-start.
+description: Finish a GitHub issue cleanly — confirm acceptance, update docs/README, run the verification gate, push, open a PR that closes the issue, wait for CI (skipped when the change is provably CI-unrelated), auto-merge, delete the branch, and restart the project's tray safely. Use when work on an issue branch is complete, e.g. "/issue-finish". Pairs with /issue-start.
 ---
 
 # issue-finish
@@ -54,10 +54,22 @@ passed when there are none.
   line (what gate ran and its result), and `Closes #<N>` so the issue
   auto-closes on merge. Match the PR-body style of recent merged PRs in the repo.
 
-### 5. Wait for CI, then merge
+### 5. Merge (wait for CI unless provably unrelated)
 
-- `gh pr checks <PR> --watch` — wait for all required checks to go green. If a
-  check fails, stop and report — don't merge red.
+- **Classify the diff first.** It is **CI-unrelated** only if *every* changed
+  file is one CI never executes — `*.md`, `docs/`, `LICENSE`, images/assets, or
+  pure code-comment edits — **AND** `.github/workflows/` contains no job that
+  targets them (no markdownlint, link-checker, docs/site build). Actually read
+  the workflow files to confirm — never assume.
+- **If CI-unrelated:** skip the watch and merge immediately (next bullet). State
+  it in the summary, e.g. `CI not awaited — docs-only change, no docs CI job.`
+  If the merge is rejected because a branch-protection *required* check is still
+  pending/failing, fall back to `--watch` and proceed as below.
+- **Otherwise** (any source/test/config/dependency/build touch, or any doubt
+  about what the workflows cover): `gh pr checks <PR> --watch` — wait for all
+  required checks to go green. If a check fails, stop and report — don't merge
+  red. This skips only the *remote CI wait*; it never skips the verification
+  gate in step 2, which always runs.
 - `gh pr merge <PR> --merge --delete-branch` — merge commit; branch deleted on
   both remote and local.
 - `git checkout <main>` then `git pull --ff-only` to land the merge locally.

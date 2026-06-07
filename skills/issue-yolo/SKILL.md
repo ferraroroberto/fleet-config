@@ -158,7 +158,18 @@ Only reachable on a fully-green Phase 3. Run the full `/issue-finish` skill:
 5. `git push -u origin <branch>`.
 6. `gh pr create` — body with **Summary**, **Validation** (concretely what
    you ran in Phase 3 and what its outputs were), and `Closes #<N>`.
-7. `gh pr checks <PR> --watch` — green only. CI red → **stop**, do not merge.
+7. **Wait for CI unless the diff is provably CI-unrelated.** It is unrelated
+   only if *every* changed file is one CI never executes — `*.md`, `docs/`,
+   `LICENSE`, images/assets, or pure code-comment edits — **AND**
+   `.github/workflows/` has no job targeting them (no markdownlint, link-check,
+   docs build). Read the workflow files to confirm; never assume.
+   - **Unrelated** → skip the watch, merge immediately (step 8), and note it:
+     `CI not awaited — docs-only change, no docs CI job.` If the merge is
+     rejected for a pending/failing *required* check, fall back to `--watch`.
+   - **Related or any doubt** → `gh pr checks <PR> --watch`, green only. CI red
+     → **stop**, do not merge.
+   This skips only the *remote CI wait* — never the Phase 3 local gate, which is
+   non-negotiable and always runs.
 8. `gh pr merge <PR> --merge --delete-branch`. Land on main locally
    (`git checkout main && git pull --ff-only`). Confirm the issue auto-closed.
 9. Tray restart per project `CLAUDE.md` if a tray exists. Run the deterministic
