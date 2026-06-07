@@ -68,14 +68,20 @@ passed when there are none.
 
 If the project's `CLAUDE.md` describes a tray or long-running local process,
 follow that procedure **exactly**. The non-negotiables:
-- Kill **only** the specific process listening on the project's port — find it
-  with `Get-NetTCPConnection -LocalPort <port>` and stop that PID. **Never** a
-  blanket `python`/`pythonw` kill: sister apps and other services must survive.
-- Relaunch via the project's start script (e.g. `tray.bat`) — these are usually
-  start-only and won't restart a live instance, so kill first, then relaunch.
-- Confirm the new build is live via the project's version endpoint (e.g.
-  `GET /api/version`): the git SHA should match `HEAD` and the asset hash should
-  have changed. Report that build line.
+- **Prefer the deterministic restart.** If the project ships a `tray.bat`
+  with a `--restart` flag (the canonical orphan-proof reclaim-then-start —
+  every fleet tray has one), run **`tray.bat --restart`** and nothing else.
+  That single command does the subtree kill + per-`.venv` port reclaim + start
+  atomically. **Do not** hand-roll a `Get-NetTCPConnection`/`taskkill` kill:
+  a by-hand kill only catches the one listener it finds and misses the orphan
+  the reclaim sweep exists to kill, then re-runs a start-only script.
+- **Fallback only** for a project with no `--restart`: kill **only** the
+  specific process listening on the project's port (`Get-NetTCPConnection
+  -LocalPort <port>`, stop that PID — **never** a blanket `python`/`pythonw`
+  kill), then relaunch via its start script.
+- Confirm the new build is live via the project's version/health endpoint
+  (e.g. `GET /api/version`): the git SHA should match `HEAD` and the asset hash
+  should have changed. Report that build line.
 
 If the project has no tray, skip this step.
 

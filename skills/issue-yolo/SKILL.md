@@ -161,8 +161,13 @@ Only reachable on a fully-green Phase 3. Run the full `/issue-finish` skill:
 7. `gh pr checks <PR> --watch` — green only. CI red → **stop**, do not merge.
 8. `gh pr merge <PR> --merge --delete-branch`. Land on main locally
    (`git checkout main && git pull --ff-only`). Confirm the issue auto-closed.
-9. Tray restart per project `CLAUDE.md` if a tray exists — surgically (kill
-   the project port's PID only, never blanket `pythonw`).
+9. Tray restart per project `CLAUDE.md` if a tray exists. Run the deterministic
+   **`tray.bat --restart`** (the canonical orphan-proof reclaim-then-start — it
+   does the subtree kill + per-`.venv` port reclaim + start atomically). Do
+   **not** hand-roll a `Get-NetTCPConnection`/`taskkill` kill: it misses the
+   orphan the reclaim sweep exists to kill. Manual port-PID kill is a fallback
+   only for the rare app with no `--restart`. Then confirm the new build via the
+   version/health endpoint.
 
 **Do not fire `/issue-finish`'s own Slack ping (its step 8) during this phase** —
 Phase 5 sends a single `--kind yolo` ping instead, so the run produces exactly
