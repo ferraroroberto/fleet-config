@@ -177,8 +177,16 @@ Only reachable on a fully-green Phase 3. Run the full `/issue-finish` skill:
    does the subtree kill + per-`.venv` port reclaim + start atomically). Do
    **not** hand-roll a `Get-NetTCPConnection`/`taskkill` kill: it misses the
    orphan the reclaim sweep exists to kill. Manual port-PID kill is a fallback
-   only for the rare app with no `--restart`. Then confirm the new build via the
-   version/health endpoint.
+   only for the rare app with no `--restart`. **Safety caveat:** `--restart`'s
+   `/T` subtree kill is safe only for a tray whose linked-but-independent
+   children (a session-host + its PTY shells) are spawned detached + re-adopted
+   on start (scaffold `docs/windows-tray.md`). For a tray that still hosts them
+   in-subtree (today: `app-launcher`), `--restart` kills the user's open Coding
+   sessions — and an unattended YOLO run **must not** restart it without
+   confirmation; that tray's `CLAUDE.md` flags this. Then confirm the new build
+   with a **bounded** poll of the version endpoint (hard timeout + attempt cap,
+   fail loud): `git_sha` must match `HEAD` (a `/healthz` 200 is not enough — a
+   stale process passes it).
 
 **Do not fire `/issue-finish`'s own Slack ping (its step 8) during this phase** —
 Phase 5 sends a single `--kind yolo` ping instead, so the run produces exactly
