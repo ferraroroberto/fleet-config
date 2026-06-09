@@ -222,9 +222,9 @@ def main() -> int:
 
 
 # Sum of the unit checks below: slack_notify (3) + mention (5) + classify (6) +
-# notify_complete (14) + conversation_capture (9) + restart_webapp (6) +
+# notify_complete (14) + conversation_capture (13) + restart_webapp (6) +
 # audit_issue (1).
-_UNIT_CHECK_COUNT = 44
+_UNIT_CHECK_COUNT = 48
 
 
 def _slack_notify_unit_checks() -> int:
@@ -405,6 +405,30 @@ def _conversation_capture_unit_checks() -> int:
           cc.content_signature(orig) == cc.content_signature(resumed) != "")
     check("content_signature: preamble-only turn -> empty (falls back to session token)",
           cc.content_signature([preamble]) == "")
+
+    # conversation_slug keys off the WHOLE conversation's salient words, not the
+    # opener — issue #84. A vague opening line ("tell me about your day") must not
+    # decide the slug when a topic word recurs throughout the exchange.
+    convo = [
+        preamble,
+        ("user", "Let me tell you about my day, I want to share what happened"),
+        ("assistant", "Sure — how was the ferry crossing?"),
+        ("user", "The ferry crossing was rough and the licenses paperwork slipped"),
+        ("assistant", "Did you sort the ferry licenses after the crossing?"),
+        ("user", "Yes, renewed the licenses once the ferry crossing ended"),
+    ]
+    slug = cc.conversation_slug(convo)
+    check("conversation_slug: topic words beat the vague opener",
+          "ferry" in slug and "licenses" in slug and "share" not in slug)
+    check("conversation_slug: frequency ordering, ties by first appearance",
+          slug == "ferry-crossing-licenses")
+    check("conversation_slug: no significant words -> first-turn fallback",
+          cc.conversation_slug([preamble]) == "session")
+    check("conversation_slug: command tags / preamble stripped before counting",
+          cc.conversation_slug([
+              preamble,
+              ("user", "<command-name>/journal-daily</command-name> logbook logbook entries"),
+          ]) == "logbook-entries")
 
     # supersede_prior removes this session's earlier captures, leaves others.
     tmp = Path(tempfile.mkdtemp(prefix="cc_dedup_"))

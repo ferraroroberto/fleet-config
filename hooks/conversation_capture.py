@@ -161,10 +161,12 @@ def _is_preamble(text: str) -> bool:
 def first_real_turn(messages: list[tuple[str, str]]) -> str:
     """Cleaned full text of the first substantive user turn, or ``""`` if none.
 
-    Skips skill-loading preamble and command-tag injections. Both the
-    description/slug and the dedup content signature key off this single turn, so
+    Skips skill-loading preamble and command-tag injections. The one-line
+    description and the dedup content signature both key off this single turn, so
     they always move together — and because ``claude --resume`` copies this turn
-    forward verbatim, it is the conversation's only resume-stable identity.
+    forward verbatim, it is the conversation's only resume-stable identity. (The
+    filename *slug* is derived separately from the whole conversation — see
+    :func:`conversation_slug`.)
     """
     for role, text in messages:
         if role != "user":
@@ -191,15 +193,59 @@ def make_description(messages: list[tuple[str, str]]) -> str:
     return cut + "…"
 
 
+# Words too generic to make a representative slug: grammatical glue plus the
+# conversational filler ("today", "really", "think", …) that dominates a casual
+# Life OS chat. Topic-bearing nouns survive the filter; "day"/"today" are dropped
+# deliberately — issue #84 cites "day-today-which" as a canonical bad slug.
+_STOPWORDS = {
+    "i", "a", "an", "the", "and", "or", "to", "in", "on", "of", "is", "it",
+    "my", "me", "we", "you", "he", "she", "ok", "okay", "want", "have", "had",
+    "was", "are", "for", "with", "that", "this", "so", "but", "not", "be",
+    "today", "day", "just", "really", "think", "know", "like", "yeah", "well",
+    "going", "get", "got", "thing", "things", "stuff", "kind", "sort", "much",
+    "more", "also", "then", "what", "when", "which", "how", "why", "can",
+    "will", "would", "could", "should", "did", "does", "make", "way", "about",
+    "here", "there", "now", "all", "let", "tell", "said", "say", "were", "been",
+    "your", "our", "their", "into", "from", "yes", "maybe", "actually", "sure",
+    "gonna", "wanna", "some", "one", "out", "they", "them", "his", "her",
+}
+
+
+def _significant_words(text: str) -> list[str]:
+    """Lowercase alphabetic words from ``text``, minus stopwords and short noise."""
+    words = re.findall(r"[a-z]+", text.lower())
+    return [w for w in words if w not in _STOPWORDS and len(w) > 2]
+
+
 def make_slug(description: str) -> str:
-    """2-3 significant words from the description, hyphen-joined."""
-    words = re.findall(r"[a-z]+", description.lower())
-    stopwords = {"i", "a", "an", "the", "and", "or", "to", "in", "on", "of",
-                 "is", "it", "my", "me", "we", "you", "he", "she", "ok", "okay",
-                 "want", "have", "had", "was", "are", "for", "with", "that",
-                 "this", "so", "but", "not", "be"}
-    significant = [w for w in words if w not in stopwords and len(w) > 2]
+    """2-3 significant words from a single string, hyphen-joined (fallback path)."""
+    significant = _significant_words(description)
     return "-".join(significant[:3]) if significant else "session"
+
+
+def conversation_slug(messages: list[tuple[str, str]]) -> str:
+    """Slug from the *whole* conversation's most salient words, not just its opener.
+
+    Counts significant words across every non-preamble user/assistant turn and
+    keeps the three most frequent — the recurring topic words a conversation
+    keeps returning to, rather than the vague line it happened to open with
+    (issue #84). Ties break by first appearance, so the result is deterministic
+    and stable. Falls back to the first-turn heuristic when the conversation
+    holds no significant words yet (e.g. a cold-start readiness-ack capture)."""
+    counts: dict[str, int] = {}
+    first_seen: dict[str, int] = {}
+    for index, (role, text) in enumerate(messages):
+        if role == "user":
+            if _is_preamble(text):
+                continue
+            text = _strip_command_tags(text)
+        for word in _significant_words(text):
+            counts[word] = counts.get(word, 0) + 1
+            first_seen.setdefault(word, index)
+    if not counts:
+        return make_slug(make_description(messages))
+    ranked = sorted(counts, key=lambda w: (-counts[w], first_seen[w]))
+    return "-".join(ranked[:3])
 
 
 def session_token(session_id: str) -> str:
@@ -323,7 +369,7 @@ def main() -> int:
     if not messages:
         return 0  # nothing to capture (pure setup/command sessions)
     description = make_description(messages)
-    slug = make_slug(description)
+    slug = conversation_slug(messages)
     timestamp = datetime.now().strftime("%Y-%m-%d-%H%M")
     content = render_markdown(description, messages)
 
