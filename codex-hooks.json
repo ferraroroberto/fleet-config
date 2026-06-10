@@ -7,6 +7,10 @@
           {
             "type": "command",
             "command": "C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File 'C:\\Users\\rober\\.codex\\hooks\\run-hook.ps1' -Hook pre_commit_no_ai_trailer"
+          },
+          {
+            "type": "command",
+            "command": "C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File 'C:\\Users\\rober\\.codex\\hooks\\run-hook.ps1' -Hook secret_scan_guard"
           }
         ]
       },

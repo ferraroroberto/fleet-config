@@ -23,6 +23,13 @@ HOOKS    = REPO / "hooks"
 # Resolve a Python interpreter that can run the hooks
 PYTHON   = shutil.which("py") or shutil.which("python") or sys.executable
 
+# A synthetic Slack-token-shaped string for the secret_scan_guard cases. It is
+# assembled from fragments at runtime so the literal `xoxb-` token body never
+# sits in this source file — a contiguous literal would trip GitHub's push
+# protection (and the very guard under test). The assembled value still matches
+# secret_scan_guard's regex `xoxb-\d{6,}-\d{6,}-[A-Za-z0-9]{8,}`.
+FAKE_XOXB = "-".join(("xo" + "xb", "2444556677", "8899001122", "AbCdEfGhIjKlMnOpQrStUvWx"))
+
 
 def run(hook: str, payload: Dict[str, Any]) -> Tuple[int, str, str]:
     # Strip SLACK_BOT_TOKEN so a hook that posts to Slack (notify_on_idle) takes
@@ -68,6 +75,30 @@ def main() -> int:
         ("pre_commit: non-commit Bash -> allow",
          "pre_commit_no_ai_trailer",
          {"tool_name": "Bash", "tool_input": {"command": 'git status'}},
+         0),
+
+        # ---- secret_scan_guard ----
+        # cwd is a non-repo tempdir so `git diff --cached` is empty and only the
+        # command string is scanned (keeps the case hermetic / git-state-free).
+        ("secret_scan: live xoxb- token in commit one-liner -> block",
+         "secret_scan_guard",
+         {"tool_name": "Bash", "cwd": tempfile.gettempdir(),
+          "tool_input": {"command": f'git add config.toml && git commit -m "wip: SLACK_BOT_TOKEN = {FAKE_XOXB}"'}},
+         2),
+        ("secret_scan: xoxb- placeholder (docs ellipsis) -> allow",
+         "secret_scan_guard",
+         {"tool_name": "Bash", "cwd": tempfile.gettempdir(),
+          "tool_input": {"command": 'git commit -m "docs: show xoxb-… placeholder in slack-workflow.md"'}},
+         0),
+        ("secret_scan: clean commit message -> allow",
+         "secret_scan_guard",
+         {"tool_name": "Bash", "cwd": tempfile.gettempdir(),
+          "tool_input": {"command": 'git commit -m "feat: clean message"'}},
+         0),
+        ("secret_scan: non-commit Bash with a token -> allow (only guards commits)",
+         "secret_scan_guard",
+         {"tool_name": "Bash", "cwd": tempfile.gettempdir(),
+          "tool_input": {"command": f'echo {FAKE_XOXB}'}},
          0),
 
         # ---- safe_kill_guard ----
