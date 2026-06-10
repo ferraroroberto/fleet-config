@@ -109,6 +109,17 @@ follow that procedure **exactly**. The non-negotiables:
   atomically. **Do not** hand-roll a `Get-NetTCPConnection`/`taskkill` kill:
   a by-hand kill only catches the one listener it finds and misses the orphan
   the reclaim sweep exists to kill, then re-runs a start-only script.
+- **Invoke it through a real Windows shell — never Git Bash's nested `cmd /c`.**
+  Run the restart via the harness PowerShell tool, or
+  `C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe -Command "& '<repo>\tray.bat' --restart"`
+  (forward-slash exe path, per the Git-Bash-strips-backslashes rule). Launched
+  through the Bash tool as `cmd /c "tray.bat --restart"`, the batch's embedded
+  `powershell.exe` tray-detection is mangled by the nested quoting: the call
+  emits only the `cmd` banner, none of the batch's own `Stopping previous…`
+  echoes, kills nothing, and `--restart` silently degrades to a plain start that
+  **adopts the still-running old-build webapp**. Fire it non-blocking (the tray
+  holds its console — a foreground launch never returns), then move to the
+  bounded poll below.
 - **Safety caveat — linked children.** `tray.bat --restart` does a `/T` subtree
   kill, so it is safe only for a tray whose linked-but-independent children
   (a session-host + its PTY-backed shells) are spawned **detached** and
@@ -126,6 +137,14 @@ follow that procedure **exactly**. The non-negotiables:
   (≤30 s / fixed attempts), then **fail loud** — never an open-ended wait. The
   git SHA must match `HEAD` (a `/healthz` 200 is not enough — a stale process
   passes it) and the asset hash should have changed. Report that build line.
+- **On a `git_sha` ≠ `HEAD` mismatch (a silent adopt-stale), stop and surface it
+  to the user — do not improvise process kills.** A by-hand `taskkill`/
+  `Get-NetTCPConnection` kill during recovery is exactly what the safe-restart
+  rules warn against: it catches the one listener it finds, misses the orphan,
+  and a mistimed single-PID kill can take the server fully down. The robust
+  reclaim is the tray's job (`project-scaffolding#54` hardens `--restart` to
+  reclaim and self-verify); the finisher's contract is to invoke it correctly
+  and **report** a mismatch, not to hand-fix it.
 
 If the project has no tray, skip this step.
 
