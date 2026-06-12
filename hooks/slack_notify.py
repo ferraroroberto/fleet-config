@@ -35,12 +35,16 @@ import re
 import sys
 import urllib.error
 import urllib.request
+import uuid
 from pathlib import Path
 from typing import List, Optional
+from urllib.parse import urlencode
 
 logger = logging.getLogger("slack_notify")
 
 SLACK_POST_MESSAGE_URL = "https://slack.com/api/chat.postMessage"
+SLACK_GET_UPLOAD_URL = "https://slack.com/api/files.getUploadURLExternal"
+SLACK_COMPLETE_UPLOAD_URL = "https://slack.com/api/files.completeUploadExternal"
 TOKEN_ENV_VAR = "SLACK_BOT_TOKEN"
 _ARCHIVE_RE = re.compile(r"/archives/([A-Z0-9]+)", re.IGNORECASE)
 
@@ -153,6 +157,107 @@ def notify(
     return True
 
 
+def _slack_api(url: str, token: str, payload: dict) -> dict:
+    """POST a JSON body to a Slack Web API method; return the parsed response.
+
+    Raises on transport/JSON errors so :func:`upload_file` can convert them into
+    a logged ``False`` — matching :func:`notify`'s never-raise contract.
+    """
+    request = urllib.request.Request(
+        url,
+        data=json.dumps(payload).encode("utf-8"),
+        method="POST",
+        headers={
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json; charset=utf-8",
+        },
+    )
+    with urllib.request.urlopen(request, timeout=30) as response:
+        return json.loads(response.read().decode("utf-8"))
+
+
+def upload_file(
+    path: str,
+    channel: str,
+    token: Optional[str] = None,
+    *,
+    title: Optional[str] = None,
+    comment: Optional[str] = None,
+) -> bool:
+    """Upload a file (e.g. the system-map PNG) to ``channel`` as the bot.
+
+    Uses Slack's current external-upload flow (``files.upload`` is retired):
+    ``getUploadURLExternal`` → POST the bytes → ``completeUploadExternal``. The
+    optional ``comment`` becomes the message that carries the file. Never raises —
+    a missing token/file or any API error is logged and reported as ``False`` so
+    an unattended caller keeps running.
+    """
+    token = token or os.getenv(TOKEN_ENV_VAR)
+    if not token:
+        logger.error("❌ %s not set — cannot upload to Slack.", TOKEN_ENV_VAR)
+        return False
+    channel = parse_channel(channel)
+    if not channel:
+        logger.error("❌ No Slack channel given — cannot upload.")
+        return False
+    file_path = Path(path)
+    if not file_path.is_file():
+        logger.error("❌ File not found: %s", path)
+        return False
+
+    data = file_path.read_bytes()
+    filename = file_path.name
+    try:
+        # 1. reserve an upload URL
+        q = urlencode({"filename": filename, "length": len(data)})
+        req = urllib.request.Request(
+            f"{SLACK_GET_UPLOAD_URL}?{q}",
+            method="GET",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            got = json.loads(resp.read().decode("utf-8"))
+        if not got.get("ok"):
+            logger.error("❌ getUploadURLExternal failed: %s", got.get("error"))
+            return False
+        upload_url, file_id = got["upload_url"], got["file_id"]
+
+        # 2. POST the raw bytes to the one-time URL (multipart/form-data)
+        boundary = f"----slacknotify{uuid.uuid4().hex}"
+        body = (
+            f"--{boundary}\r\n"
+            f'Content-Disposition: form-data; name="file"; filename="{filename}"\r\n'
+            "Content-Type: application/octet-stream\r\n\r\n"
+        ).encode("utf-8") + data + f"\r\n--{boundary}--\r\n".encode("utf-8")
+        up = urllib.request.Request(
+            upload_url, data=body, method="POST",
+            headers={"Content-Type": f"multipart/form-data; boundary={boundary}"},
+        )
+        with urllib.request.urlopen(up, timeout=60):
+            pass  # a 200 with body "OK" means the bytes landed
+
+        # 3. publish the uploaded file into the channel
+        payload = {
+            "files": [{"id": file_id, "title": title or filename}],
+            "channel_id": channel,
+        }
+        if comment and comment.strip():
+            payload["initial_comment"] = comment
+        done = _slack_api(SLACK_COMPLETE_UPLOAD_URL, token, payload)
+    except urllib.error.URLError as exc:
+        logger.error("❌ Slack upload request failed: %s", exc)
+        return False
+    except (ValueError, OSError, KeyError) as exc:
+        logger.error("❌ Slack upload response unreadable: %s", exc)
+        return False
+
+    if not done.get("ok"):
+        logger.error("❌ completeUploadExternal failed: %s", done.get("error", "unknown"))
+        return False
+    logger.info("✅ Slack file uploaded to %s", channel)
+    return True
+
+
 def _read_text(arg_text: Optional[str]) -> str:
     """Message text from ``--text`` or, failing that, piped stdin."""
     if arg_text:
@@ -171,7 +276,11 @@ def main(argv: Optional[List[str]] = None) -> int:
         required=True,
         help="Channel id, user id (for a DM), or a pasted archive URL.",
     )
-    parser.add_argument("--text", help="Message text. If omitted, read from stdin.")
+    parser.add_argument("--text", help="Message text (or caption with --file). If omitted, read from stdin.")
+    parser.add_argument(
+        "--file", help="Path to a file to upload (e.g. a PNG). --text becomes its caption.",
+    )
+    parser.add_argument("--title", help="Optional title for an uploaded --file.")
     parser.add_argument(
         "--thread-ts", help="Optional parent message ts to reply in-thread."
     )
@@ -188,6 +297,12 @@ def main(argv: Optional[List[str]] = None) -> int:
     args = parser.parse_args(argv)
 
     logging.basicConfig(level=logging.INFO, format="%(message)s", stream=sys.stderr)
+
+    if args.file:
+        ok = upload_file(
+            args.file, channel=args.channel, title=args.title, comment=args.text,
+        )
+        return 0 if ok else 1
 
     text = _read_text(args.text)
     if not text.strip():
