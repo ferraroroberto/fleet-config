@@ -259,10 +259,20 @@ def upload_file(
 
 
 def _read_text(arg_text: Optional[str]) -> str:
-    """Message text from ``--text`` or, failing that, piped stdin."""
+    """Message text from ``--text`` or, failing that, piped stdin.
+
+    Reads piped stdin as raw bytes and decodes UTF-8 explicitly: on Windows
+    ``sys.stdin``'s default cp1252 mis-decodes a UTF-8 pipe (emoji, em-dash,
+    bullet), and the misread text then double-encodes on the way to Slack
+    (🧠 -> ``ðŸ§ ``, — -> ``â€"``). ``--text`` comes from argv already decoded,
+    so it is left alone.
+    """
     if arg_text:
         return arg_text
     if not sys.stdin.isatty():
+        raw = getattr(sys.stdin, "buffer", None)
+        if raw is not None:
+            return raw.read().decode("utf-8", errors="replace")
         return sys.stdin.read()
     return ""
 
@@ -299,8 +309,13 @@ def main(argv: Optional[List[str]] = None) -> int:
     logging.basicConfig(level=logging.INFO, format="%(message)s", stream=sys.stderr)
 
     if args.file:
+        # Caption follows the same rule as a plain message: --text wins, else
+        # piped stdin (UTF-8). Lets a multi-line digest ride along as the file's
+        # comment without fragile shell quoting. Existing callers pass --text, so
+        # _read_text returns immediately and never touches stdin for them.
         ok = upload_file(
-            args.file, channel=args.channel, title=args.title, comment=args.text,
+            args.file, channel=args.channel, title=args.title,
+            comment=_read_text(args.text) or None,
         )
         return 0 if ok else 1
 
