@@ -343,5 +343,5 @@ One concise block: the plan line from step 3, per-repo results, where the digest
   aggregate (per-repo totals, week-over-week) by design.
 - **The weekly job** that schedules this lives in app-launcher
   (`config/jobs.json`, a `weekly` schedule, `visible: true` console) and calls a
-  thin `audit-fleet.bat` wrapper in this repo. See that repo for the trigger;
-  this skill is the work.
+  thin `skills/audit-fleet/run-weekly.bat` wrapper in this repo. See that repo
+  for the trigger; this skill is the work.
