@@ -137,12 +137,14 @@ The **work layer**, enabled by L2. Most mature ones are **web apps exposing an A
 
 ## L4 — Governance (on top of everything)
 
-The meta-layer that keeps the whole fleet consistent — it sits *above* the apps because it governs them.
+The meta-layer that keeps the whole fleet consistent — it sits *above* the apps because it governs them. **Two boxes, one boundary line:** `project-scaffolding` owns *what goes **inside** a project*; `claude-config` owns *what sits **above** all projects*. Every "where does this live?" question answers itself from that line.
 
-| Project | What it is |
-|---|---|
-| 📐 **project-scaffolding** | The **canonical master**: the scaffold + `CLAUDE.md` every sister project derives from. Conventions flow *down* from here; divergence is the thing it prevents. |
-| ⚙️ **claude-config** | **Fleet-wide Claude Code config**: user-scope hooks, skills, and the issue workflow, installed across every repo. The Slack idle-pings and commit guards live here. |
+> 🧭 **Why two repos, not one (boundary rule — durable decision home).** They have **opposite lifecycles**: `project-scaffolding` is a *clone-per-project seed* (the thing you copy to start a project), while `claude-config` is a *singleton* installed once via junctions into `~/.claude` / `~/.codex` / `~/.agents` (your machine's live hooks and global rules). Merging them was considered and **decided against** — it would force one repo to be both, dragging the whole governance apparatus into every leaf app. So the rule is the boundary, not the merge: *inside-a-project* content lives in scaffolding, *above-all-projects* content lives in claude-config, and neither re-states the other's.
+
+| Project | Scope | What it is |
+|---|---|---|
+| 📐 **project-scaffolding** | what ships **inside** each project | The **canonical master**: the scaffold + `CLAUDE.md` every sister project derives from. Conventions flow *down* from here; divergence is the thing it prevents. |
+| ⚙️ **claude-config** | what governs the **machine**, above all projects | **Fleet-wide Claude Code config**: user-scope hooks, skills, and the issue workflow, installed once via junctions into `~/.claude`. The Slack idle-pings and commit guards live here. |
 
 Plus cross-cutting shared helpers (single source of truth per concern, reused by every app that needs them): the **Chrome stealth + persistent-profile-lock** launch helpers (anti-bot browser automation), and the **tray + PWA + Cloudflare-tunnel** app pattern shared by the launcher / voice / photo / grocery webapps.
 
