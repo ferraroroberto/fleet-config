@@ -10,11 +10,12 @@ The hooks here are project-aware via a single `hooks/projects.toml` registry: ge
 
 ## What's in here today (Tier 1)
 
-6 hooks under `hooks/` that enforce the rituals I kept correcting Claude on, across the home-stack fleet:
+7 hooks under `hooks/` that enforce the rituals I kept correcting Claude on, across the home-stack fleet:
 
 | Hook | Event | What it does |
 |---|---|---|
 | `pre_commit_no_ai_trailer.py` | `PreToolUse` on `Bash` | Blocks `git commit` messages that include `Co-Authored-By: Claude`, `Generated with Claude Code`, etc. |
+| `secret_scan_guard.py` | `PreToolUse` on `Bash` | Blocks `git commit` when a live credential is staged — scans `git diff --cached` and the command string for real Slack bot tokens (`xoxb-…`); placeholder forms (`xoxb-…`, `xoxb-<token>`) in docs are deliberately allowed and never trip it. |
 | `safe_kill_guard.py` | `PreToolUse` on `Bash` / `PowerShell` | Blocks blanket `Stop-Process -Name python(w)?` (would nuke sister hubs), `git push --force` to main, `--no-verify`. Port-scoped kills against the project's own webapp port pass through. |
 | `venv_discipline.py` | `PreToolUse` on `Bash` / `PowerShell` | Blocks `python -m venv venv` (the user's canonical name is `.venv`), `.\.venv\Scripts\activate`, bare `python`/`pip` when a project `.venv` exists. |
 | `py_syntax_check.py` | `PostToolUse` on `Edit` / `Write` for `*.py` | Runs `py_compile` against the project's `.venv` and surfaces syntax errors inline. ~50 ms per edit. |
@@ -51,11 +52,13 @@ claude-config/
 ├── hooks/                          # junction → ~/.claude/hooks AND ~/.codex/hooks (Codex)
 │   ├── _lib.py                     # shared: project detection, port→PID, stdin-JSON, projects.toml loader
 │   ├── projects.toml               # per-project nuance (ports, gate triggers, never-kill ports)
-│   ├── pre_commit_no_ai_trailer.py + .ps1 shim
-│   ├── safe_kill_guard.py        + .ps1 shim
-│   ├── venv_discipline.py        + .ps1 shim
-│   ├── py_syntax_check.py        + .ps1 shim
-│   ├── restart_and_verify_webapp.py + .ps1 shim   (also exposed as /restart-webapp)
+│   ├── run-hook.ps1                # single shared shim — every hook is wired through this via settings.template.json / codex-hooks.json
+│   ├── pre_commit_no_ai_trailer.py
+│   ├── secret_scan_guard.py
+│   ├── safe_kill_guard.py
+│   ├── venv_discipline.py
+│   ├── py_syntax_check.py
+│   ├── restart_and_verify_webapp.py   # also exposed as /restart-webapp
 │   ├── notify_on_idle.py            # Notification hook (via run-hook.ps1): opt-in Slack ping
 │   ├── slack_notify.py              # shared Slack-notify transport (importable + CLI, stdlib-only)
 │   ├── notify_complete.py           # deterministic skill-completion ping (issue-* skills call this)

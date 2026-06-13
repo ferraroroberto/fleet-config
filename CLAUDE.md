@@ -17,7 +17,7 @@ Exit plan mode only after I explicitly approve.
 ## Repo-specific conventions
 
 - **Hooks are user-scope, fleet-wide.** Don't write a hook tuned to a single project's quirk — put the quirk in `hooks/projects.toml` and keep the hook code generic. Project keys in `projects.toml` are detected by `cwd` prefix.
-- **Hooks are wired into `~/.claude/settings.json` via `.ps1` shims** that call into Python (the user's system Python, not a `.venv`). The `.ps1` shim path uses **forward slashes** — `C:/Users/rober/.claude/hooks/<name>.ps1` — because Claude Code on this Windows machine routes hook commands through Git Bash, which strips backslashes. Never write Windows-style backslashes into a `settings.json` command string.
+- **Hooks are wired into `~/.claude/settings.json` via the shared `run-hook.ps1` shim** that dispatches to the named Python module (the user's system Python, not a `.venv`). The shim path uses **forward slashes** — `C:/Users/rober/.claude/hooks/run-hook.ps1` — because Claude Code on this Windows machine routes hook commands through Git Bash, which strips backslashes. Never write Windows-style backslashes into a `settings.json` command string.
 - **Always use the absolute Windows PowerShell 5.1 path** in `settings.json` commands: `C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe`. The default `pwsh` on PATH is a 0-byte WindowsApps reparse stub that fails non-interactively.
 - **Hooks block by exit-code 2** with a single short reason on stderr. Non-blocking hooks print a single nudge line on stdout and exit 0.
 - **Hooks read stdin as JSON** via `_lib.stdin_json()`. PowerShell shims use `[Console]::In.ReadToEnd()` (per the global gotcha) and pipe straight to the Python module.
