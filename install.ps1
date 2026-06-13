@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-    Install claude-config into ~/.claude/ via Windows junctions, hardlinks, and symlinks.
+    Install claude-config into ~/.claude/ via Windows junctions and symlinks.
 
 .DESCRIPTION
     Creates a link from C:/Users/<you>/.claude/<name> -> <repo>/<name> so edits
@@ -8,10 +8,9 @@
 
     Link kinds:
       - 'junction' for directories. Cross-volume OK. No admin needed.
-      - 'hardlink' for files on the SAME NTFS volume. No admin needed.
-      - 'symlink'  for files cross-volume (or when hardlink won't do). Requires
-                   admin (or Developer Mode). The script self-elevates with a
-                   single UAC prompt only when symlink work is actually pending.
+      - 'symlink'  for files cross-volume. Requires admin (or Developer Mode).
+                   The script self-elevates with a single UAC prompt only when
+                   symlink work is actually pending.
 
     The install is idempotent:
       - Existing link pointing at the repo path  -> no-op (reports OK)
@@ -55,7 +54,7 @@ function Get-ManifestKey($item) {
     if ($item.base -and $item.base -ne 'claude') { "$($item.base)/$($item.target)" } else { $item.target }
 }
 
-# What to install. Each entry: { kind = 'junction'|'hardlink'|'symlink'; source = <relative to repo>; target = <relative to base home>; base = 'claude'|'agents' (default 'claude') }
+# What to install. Each entry: { kind = 'junction'|'symlink'; source = <relative to repo>; target = <relative to base home>; base = 'claude'|'agents' (default 'claude') }
 $Items = @(
     @{ kind = 'junction'; source = 'hooks';                  target = 'hooks' },
     @{ kind = 'junction'; source = 'commands';               target = 'commands' },
@@ -172,10 +171,6 @@ foreach ($item in $Items) {
         'junction' {
             New-Item -ItemType Junction -Path $targetAbs -Target $sourceAbs | Out-Null
             Write-Host "LINKED  $targetAbs  ->  $sourceAbs  (junction)" -ForegroundColor Cyan
-        }
-        'hardlink' {
-            New-Item -ItemType HardLink -Path $targetAbs -Target $sourceAbs | Out-Null
-            Write-Host "LINKED  $targetAbs  ->  $sourceAbs  (hardlink)" -ForegroundColor Cyan
         }
         'symlink' {
             New-Item -ItemType SymbolicLink -Path $targetAbs -Target $sourceAbs | Out-Null

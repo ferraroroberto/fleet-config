@@ -240,9 +240,3 @@ def find_venv_python(start: Path) -> Optional[Path]:
                 return candidate
     return None
 
-
-# --------------------------------------------------------- string matching
-
-
-def matches_any(pattern_list: Sequence[str], text: str, flags: int = re.IGNORECASE) -> bool:
-    return any(re.search(p, text, flags) for p in pattern_list)
