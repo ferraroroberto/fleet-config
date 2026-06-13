@@ -263,6 +263,9 @@ def main() -> int:
     # ---- system-map: fleet ↔ data ↔ doc coverage (architecture/) ----
     failures += _system_map_coverage_check()
 
+    # ---- settings: live ~/.claude/settings.json ⊇ template hook wiring ----
+    failures += _settings_template_sync_check()
+
     # Cleanup
     shutil.rmtree(tmp, ignore_errors=True)
 
@@ -273,8 +276,9 @@ def main() -> int:
 
 # Sum of the unit checks below: slack_notify (3) + mention (5) + classify (6) +
 # notify_complete (16) + conversation_capture (13) + conversation_index (6) +
-# restart_webapp (6) + gh_body_file_guard (6) + audit_issue (1) + system_map (3).
-_UNIT_CHECK_COUNT = 65
+# restart_webapp (6) + gh_body_file_guard (6) + audit_issue (1) + system_map (3) +
+# settings_template_sync (1).
+_UNIT_CHECK_COUNT = 66
 
 
 def _system_map_coverage_check() -> int:
@@ -326,6 +330,47 @@ def _system_map_coverage_check() -> int:
     check(f"system_map: every mapped repo is in ARCHITECTURE.md (missing: {doc_missing or 'none'})", not doc_missing)
 
     return failures
+
+
+def _settings_template_sync_check() -> int:
+    """Every hook wired in settings.template.json must also be wired in the live
+    ~/.claude/settings.json.
+
+    The live file is machine-local and NOT version-controlled (it carries
+    permissions + secrets), so it can silently drift from the template — a hook
+    can ship in the repo yet never actually run. This guard fails loudly when a
+    template-wired `(event, hook)` is missing from the live file. Direction is
+    template ⊆ live only: machine-local *extra* hooks are legitimate and don't
+    fail. Skips gracefully (one line, exit 0) when the live file is absent, so
+    it never breaks on a machine without it. Prints exactly one line either way.
+    """
+    import re
+
+    hook_re = re.compile(r"-Hook\s+(\w+)")
+
+    def wired(path: Path) -> set[tuple[str, str]]:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        pairs: set[tuple[str, str]] = set()
+        for event, blocks in data.get("hooks", {}).items():
+            for block in blocks:
+                for hook in block.get("hooks", []):
+                    m = hook_re.search(hook.get("command", ""))
+                    if m:
+                        pairs.add((event, m.group(1)))
+        return pairs
+
+    live_path = Path.home() / ".claude" / "settings.json"
+    if not live_path.exists():
+        print("OK    settings_sync: no live ~/.claude/settings.json (skipped)")
+        return 0
+
+    template = wired(REPO / "settings.template.json")
+    live = wired(live_path)
+    missing = sorted(template - live)
+    ok = not missing
+    print(f"{'OK   ' if ok else 'FAIL '} settings_sync: template hooks all wired live "
+          f"(missing: {missing or 'none'})")
+    return 0 if ok else 1
 
 
 def _slack_notify_unit_checks() -> int:
