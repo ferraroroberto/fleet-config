@@ -1,6 +1,10 @@
 {
-  "_comment": "Merge the 'hooks' block below into your live ~/.claude/settings.json. Don't replace the whole file — it carries machine-local permissions and secrets that belong to you, not to this repo.",
+  "_comment": "Merge the 'hooks' and 'env' blocks below into your live ~/.claude/settings.json. Don't replace the whole file — it carries machine-local permissions and secrets (e.g. SLACK_BOT_TOKEN) that belong to you, not to this repo.",
   "_paths": "All command paths use forward slashes and the absolute Windows PowerShell 5.1 binary on purpose. Claude Code on Windows routes hook commands through Git Bash, which strips backslashes; and the default 'pwsh' on PATH is a 0-byte WindowsApps reparse stub that fails non-interactively.",
+  "_env": "CLAUDE_AUTOCOMPACT_PCT_OVERRIDE fires auto-compaction at this percentage of the ACTIVE context window — 40% = 400k on the 1M Opus window (= 80k on a 200k-window session). The override only works in the earlier-compaction direction; the default (~83%) can't be raised. Read at startup, so restart Claude Code after changing it.",
+  "env": {
+    "CLAUDE_AUTOCOMPACT_PCT_OVERRIDE": "40"
+  },
   "hooks": {
     "PreToolUse": [
       {

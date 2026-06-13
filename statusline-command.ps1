@@ -1,6 +1,6 @@
 # Claude Code status line — Windows PowerShell
 # Reads the status JSON from stdin and prints one line.
-# Format: app-launcher (main) | Claude Opus 4.7 | 78% | cc 48k^ 3kv
+# Format: 4% | app-launcher (main) | Claude Opus 4.8   (context % USED first, color-coded)
 
 $input_text = [Console]::In.ReadToEnd()
 if (-not $input_text) { exit 0 }
@@ -36,59 +36,25 @@ if ($data.model -and $data.model.display_name) {
     $model = $data.model.display_name
 }
 
-# --- remaining context % (pre-calculated field; omit when absent or no messages yet) ---
+# --- used context % (pre-calculated field; omit when absent or no messages yet) ---
+# Color-coded against the 400k auto-compact line (CLAUDE_AUTOCOMPACT_PCT_OVERRIDE=40):
+#   green <30, yellow 30-34, red >=35 — red means "wrap up before auto-compact fires at 40%".
+# used_percentage is null early in a session and right after a /compact; omit the segment then.
 $ctx_seg = ''
-$remaining = $data.context_window.remaining_percentage
-if ($remaining -ne $null) {
-    $ctx_seg = [string][math]::Round($remaining) + '%'
+$used = $data.context_window.used_percentage
+if ($used -ne $null) {
+    $pct = [int][math]::Round($used)
+    $esc = [char]27
+    if     ($pct -ge 35) { $col = "$esc[31m" }   # red
+    elseif ($pct -ge 30) { $col = "$esc[33m" }   # yellow
+    else                 { $col = "$esc[32m" }   # green
+    $ctx_seg = "$col$pct%$esc[0m"
 }
 
-# --- today's Claude Code token totals (parsed from ~/.claude/projects JSONL files) ---
-$tok_seg = ''
-if ($dir) {
-    try {
-        # Encode the path the same way Claude Code does:
-        # E:\automation\local-llm-hub  →  E--automation-local-llm-hub
-        $encoded = $dir -replace ':\\', '--' -replace '\\', '-' -replace '/', '-'
-        $proj_dir = Join-Path $env:USERPROFILE ".claude\projects\$encoded"
-        if (Test-Path $proj_dir -ErrorAction SilentlyContinue) {
-            $today_utc = (Get-Date).ToUniversalTime().Date
-            $total_in  = 0
-            $total_out = 0
-            Get-ChildItem $proj_dir -Filter '*.jsonl' -ErrorAction SilentlyContinue |
-                Where-Object { $_.LastWriteTimeUtc.Date -ge $today_utc } |
-                ForEach-Object {
-                    Get-Content $_.FullName -ErrorAction SilentlyContinue |
-                        ForEach-Object {
-                            try {
-                                $obj = $_ | ConvertFrom-Json
-                                if ($obj.type -eq 'assistant' -and $obj.message.usage) {
-                                    $u = $obj.message.usage
-                                    $total_in  += [int]($u.input_tokens)             +
-                                                  [int]($u.cache_creation_input_tokens)
-                                    $total_out += [int]($u.output_tokens)
-                                }
-                            } catch {}
-                        }
-                }
-            if ($total_in -gt 0 -or $total_out -gt 0) {
-                $inv = [System.Globalization.CultureInfo]::InvariantCulture
-                function fmt_k([long]$n) {
-                    if ($n -ge 1000000) { return [string]::Format($inv, '{0:0.#}M', $n / 1000000.0) }
-                    if ($n -ge 1000)    { return [string]::Format($inv, '{0:0.#}k', $n / 1000.0) }
-                    return $n.ToString()
-                }
-                $tok_seg = 'cc ' + (fmt_k $total_in) + '^ ' + (fmt_k $total_out) + 'v'
-            }
-        }
-    } catch {}
-}
-
-# --- assemble segments, skipping empty ones ---
+# --- assemble segments, skipping empty ones (context % first for cut-off mobile views) ---
 $segments = @()
+if ($ctx_seg) { $segments += $ctx_seg }
 if ($dir_seg) { $segments += $dir_seg }
 if ($model)   { $segments += $model }
-if ($ctx_seg) { $segments += $ctx_seg }
-if ($tok_seg) { $segments += $tok_seg }
 
 Write-Host ($segments -join ' | ')

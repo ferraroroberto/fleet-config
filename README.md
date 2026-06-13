@@ -119,7 +119,7 @@ Edits on either side are visible on the other instantly — no copy step, no syn
 - existing link pointing at the repo → no-op
 - existing real file/directory → refuses and prints a one-line "rename it, then re-run"
 
-After `install.ps1`, merge the `hooks` block from `settings.template.json` into your `~/.claude/settings.json` and ensure `statusLine.command` runs `~/.claude/statusline-command.ps1`. Restart Claude Code to pick up the new hooks.
+After `install.ps1`, merge the `hooks` and `env` blocks from `settings.template.json` into your `~/.claude/settings.json` and ensure `statusLine.command` runs `~/.claude/statusline-command.ps1`. Restart Claude Code to pick up the new hooks. The `env` block sets `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE=40`, which fires auto-compaction at 40% of the active context window (≈ 400k on the 1M Opus window); the statusline shows the **used** context % color-coded green/yellow/red as you approach that line.
 
 ### Migrating an existing `~/.claude/`
 
