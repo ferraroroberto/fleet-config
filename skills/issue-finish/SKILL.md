@@ -53,6 +53,7 @@ passed when there are none.
 - `gh pr create` with a body containing: a short **Summary**, a **Validation**
   line (what gate ran and its result), and `Closes #<N>` so the issue
   auto-closes on merge. Match the PR-body style of recent merged PRs in the repo.
+  Do **not** include the `🤖 Generated with [Claude Code]` line at the bottom of the PR body.
 
 ### 5. Merge (CI is advisory — skip the wait when it adds no signal)
 

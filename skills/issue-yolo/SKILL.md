@@ -158,6 +158,7 @@ Only reachable on a fully-green Phase 3. Run the full `/issue-finish` skill:
 5. `git push -u origin <branch>`.
 6. `gh pr create` — body with **Summary**, **Validation** (concretely what
    you ran in Phase 3 and what its outputs were), and `Closes #<N>`.
+   Do **not** include the `🤖 Generated with [Claude Code]` line at the bottom of the PR body.
 7. **Wait for CI unless the diff is provably CI-unrelated.** It is unrelated
    only if *every* changed file is one CI never executes — `*.md`, `docs/`,
    `LICENSE`, images/assets, or pure code-comment edits — **AND**
