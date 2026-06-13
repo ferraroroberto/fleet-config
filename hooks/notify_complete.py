@@ -70,7 +70,13 @@ def gh_json(args: List[str]) -> dict:
     crashing a skill mid-run.
     """
     try:
-        proc = subprocess.run(["gh", *args], capture_output=True, text=True, timeout=20)
+        # Decode gh's stdout as UTF-8 explicitly: on Windows text=True falls back
+        # to cp1252, which mis-decodes a UTF-8 title (em-dash — -> â€", emoji ->
+        # ðŸ§) before it ever reaches Slack. Mirrors slack_notify._read_text.
+        proc = subprocess.run(
+            ["gh", *args], capture_output=True, text=True,
+            encoding="utf-8", errors="replace", timeout=20,
+        )
     except (OSError, subprocess.SubprocessError) as exc:
         logger.error("gh call failed: %s", exc)
         return {}
