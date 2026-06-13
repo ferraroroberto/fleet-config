@@ -254,6 +254,9 @@ def main() -> int:
     # ---- restart_and_verify_webapp restart-strategy + recovery hint ----
     failures += _restart_webapp_unit_checks()
 
+    # ---- gh_body_file_guard: warn-only stdout assertions ----
+    failures += _gh_body_file_guard_unit_checks()
+
     # ---- audit_issue helper pure-logic tests (skills/_lib) ----
     failures += _audit_issue_unit_check()
 
@@ -270,8 +273,8 @@ def main() -> int:
 
 # Sum of the unit checks below: slack_notify (3) + mention (5) + classify (6) +
 # notify_complete (16) + conversation_capture (13) + conversation_index (6) +
-# restart_webapp (6) + audit_issue (1) + system_map (3).
-_UNIT_CHECK_COUNT = 59
+# restart_webapp (6) + gh_body_file_guard (6) + audit_issue (1) + system_map (3).
+_UNIT_CHECK_COUNT = 65
 
 
 def _system_map_coverage_check() -> int:
@@ -440,6 +443,40 @@ def _notify_classify_unit_checks() -> int:
         check("session_link: missing path -> None", notify_on_idle.session_link(None) is None)
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
+
+    return failures
+
+
+def _gh_body_file_guard_unit_checks() -> int:
+    """The warn-only nudge fires on the two payload traps and stays silent
+    otherwise. Exit is always 0, so these assert on STDOUT, not the exit code:
+    a nudge present (non-empty stdout) for the risky forms, empty for the safe
+    ones."""
+    failures = 0
+
+    def check(case: str, ok: bool) -> None:
+        nonlocal failures
+        print(f"{'OK   ' if ok else 'FAIL '} {case}")
+        if not ok:
+            failures += 1
+
+    def stdout_for(command: str) -> str:
+        code, out, _err = run("gh_body_file_guard", {"tool_name": "Bash", "tool_input": {"command": command}})
+        # warn-only: the hook must never block (exit non-zero) regardless of input.
+        return out.strip() if code == 0 else f"__NONZERO_EXIT_{code}__"
+
+    check("gh_guard: gh pr create --body with backtick -> nudge",
+          bool(stdout_for('gh pr create --title x --body "see `uname -a`"')))
+    check("gh_guard: gh issue comment --body with heredoc -> nudge",
+          bool(stdout_for('gh issue comment 5 --body "$(cat <<EOF\nhi\nEOF\n)"')))
+    check("gh_guard: PowerShell here-string through Bash -> nudge",
+          bool(stdout_for("printf '%s' @'\nhello\n'@")))
+    check("gh_guard: gh pr create --body-file -> silent",
+          stdout_for("gh pr create --title x --body-file E:/tmp/pr-116.md") == "")
+    check("gh_guard: gh issue list (read) -> silent",
+          stdout_for("gh issue list --state open --limit 20") == "")
+    check("gh_guard: gh pr create plain inline body (no risky construct) -> silent",
+          stdout_for('gh pr create --title x --body "plain text, nothing to expand"') == "")
 
     return failures
 
