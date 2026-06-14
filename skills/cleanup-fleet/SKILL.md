@@ -143,6 +143,10 @@ Repo root: E:\automation\<repo>. You are the only agent touching this repo.
    merge --delete-branch, land on main, tray restart per the repo's
    CLAUDE.md), Phase 5 fire the /issue-yolo completion ping.
    KEEP Phase 5's ping — it carries this issue's PR link and must go out.
+   notify_complete.py is the ONLY sanctioned way to send it: do NOT use any MCP
+   Slack tool (search/send/etc.) to find a channel or post the ping — the helper
+   resolves the channel from projects.toml; choosing one yourself is a security
+   violation and may post to the wrong channel.
 3. If validation (Phase 3) fails at any point: STOP, do not push/merge, leave
    the branch in place, and report the failure. YOLO means "no plan gate", not
    "no safety".
@@ -199,6 +203,8 @@ py C:/Users/rober/.claude/hooks/notify_complete.py \
 ```
 
 (In easy mode `--review 0` — the helper drops the review clause.) Silent no-op if no Slack channel is configured; always exits 0.
+
+**`notify_complete.py` is the ONLY sanctioned way to send this roll-up ping — do NOT use any MCP Slack tool (search/send/etc.) to find a channel or post the ping.** The helper resolves the destination channel deterministically from `projects.toml`; picking a channel yourself is both a security violation (an agent-inferred external write destination) and wrong (it may post to the wrong channel). A silent no-op when no channel is configured is the correct outcome — do not "fix" it by reaching for Slack tools.
 
 Then print the final summary block:
 

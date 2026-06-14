@@ -170,3 +170,11 @@ the title/URL lookup CWD-independent so it works correctly from subagent
 contexts where the shell's working directory may differ from the project root.
 If no channel is configured it's a silent no-op, and it always exits 0, so a
 notification failure can never block or delay anything.
+
+**`notify_complete.py` is the ONLY sanctioned way to send this ping — do NOT use
+any MCP Slack tool (search/send/etc.) to find a channel or post the ping.** The
+helper resolves the destination channel deterministically from `projects.toml`;
+picking a channel yourself is both a security violation (an agent-inferred
+external write destination) and wrong (it may post to the wrong channel). If the
+helper is a silent no-op because no channel is configured, that is the correct
+outcome — do not "fix" it by reaching for Slack tools.

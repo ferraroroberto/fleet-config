@@ -82,7 +82,11 @@ You are the only agent touching this checkout.
    with --merge --delete-branch, land on main, and restart the project's tray
    per its CLAUDE.md if it has one.
 3. Fire /issue-finish's own completion ping (✅ Done #<N> … — PR merged) — KEEP
-   it, it carries this branch's PR link.
+   it, it carries this branch's PR link. notify_complete.py is the ONLY
+   sanctioned way to send it: do NOT use any MCP Slack tool (search/send/etc.)
+   to find a channel or post the ping — the helper resolves the channel from
+   projects.toml; choosing one yourself is a security violation and may post to
+   the wrong channel.
 4. If you hit a genuine blocker — merge conflict, CI red on a diff that DOES
    touch e2e surface, or the verification gate fails — STOP. Do NOT guess-fix,
    weaken the gate, or force the merge. Leave the branch in place and report
@@ -113,6 +117,8 @@ py C:/Users/rober/.claude/hooks/notify_complete.py \
 ```
 
 (A `0`/empty `--blocked` drops the clause.) Silent no-op if no Slack channel is configured; always exits 0.
+
+**`notify_complete.py` is the ONLY sanctioned way to send this roll-up ping — do NOT use any MCP Slack tool (search/send/etc.) to find a channel or post the ping.** The helper resolves the destination channel deterministically from `projects.toml`; picking a channel yourself is both a security violation (an agent-inferred external write destination) and wrong (it may post to the wrong channel). A silent no-op when no channel is configured is the correct outcome — do not "fix" it by reaching for Slack tools.
 
 Then print the final summary block:
 
