@@ -1,6 +1,6 @@
 # Claude Code status line — Windows PowerShell
 # Reads the status JSON from stdin and prints one line.
-# Format: 4% | app-launcher (main) | Claude Opus 4.8   (context % USED first, color-coded)
+# Format: 4% | sonnet | app-launcher (main)   (context % USED first, color-coded)
 
 $input_text = [Console]::In.ReadToEnd()
 if (-not $input_text) { exit 0 }
@@ -30,10 +30,14 @@ if ($basename -and $branch) {
     $dir_seg = $basename
 }
 
-# --- model display name ---
+# --- model display name (family only: sonnet / opus / haiku) ---
 $model = ''
 if ($data.model -and $data.model.display_name) {
-    $model = $data.model.display_name
+    $raw = $data.model.display_name
+    if     ($raw -match 'opus')   { $model = 'opus' }
+    elseif ($raw -match 'sonnet') { $model = 'sonnet' }
+    elseif ($raw -match 'haiku')  { $model = 'haiku' }
+    else                          { $model = $raw }
 }
 
 # --- used context % (pre-calculated field; omit when absent or no messages yet) ---
@@ -51,10 +55,10 @@ if ($used -ne $null) {
     $ctx_seg = "$col$pct%$esc[0m"
 }
 
-# --- assemble segments, skipping empty ones (context % first for cut-off mobile views) ---
+# --- assemble segments, skipping empty ones (context % first, then model, then dir/branch) ---
 $segments = @()
 if ($ctx_seg) { $segments += $ctx_seg }
-if ($dir_seg) { $segments += $dir_seg }
 if ($model)   { $segments += $model }
+if ($dir_seg) { $segments += $dir_seg }
 
 Write-Host ($segments -join ' | ')
