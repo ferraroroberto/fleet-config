@@ -102,6 +102,17 @@ When a downstream app needs Claude/local-LLM access, route through the hub via s
 - Audio → POST directly to `http://127.0.0.1:8090/v1/audio/transcriptions`.
 - Hub lacks a feature you need → write a plan for `claude-local-calls` to add it; don't bypass the hub from the downstream app.
 
+### Prefer scripts over session-injected MCP connectors for automation
+
+For unattended/automation workflows, prefer a **thin Python script** (standard SDK or REST) over a **session-injected MCP connector**. Reserve connectors for genuinely interactive, exploratory, one-off use. Keep the **default** session connector set minimal — every enabled connector is a fleet-wide, every-session context cost regardless of whether a given session uses it.
+
+**Why:** a fleet-wide MCP audit (`ferraroroberto/claude-config#128`) measured real connector usage across 945 session transcripts: 97% of the injected tool surface was unused, and five connectors (Google Drive, Spotify, Supabase, Uber Eats, Zoom — 53 schemas) were invoked zero times ever. The pattern already proven in the fleet: Slack automation runs through `claude-config/hooks/slack_notify.py`, not the Slack connector; `inspiration-system/src/notion_client.py` hits the Notion REST API directly. Connectors were the convenient default, not the efficient one. (`ferraroroberto/life-os#29` is the first migration off a connector onto a REST script.)
+
+**How to apply:**
+- New automation needs an external service → reach for a script via the standard SDK/REST first; only use a connector if the work is genuinely interactive/exploratory and one-off.
+- Keep the account-level default connector set minimal; toggle a connector on for the session that needs it rather than leaving it on for the whole fleet.
+- When a connector becomes a recurring automation dependency, that is the signal to scriptify it and then disable the connector by default.
+
 ## Recurring gotchas
 
 ### Git Bash strips backslashes in `settings.json` commands *(Claude Code only — skip on other agents)*
