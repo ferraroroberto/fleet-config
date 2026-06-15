@@ -47,6 +47,8 @@ except (AttributeError, ValueError):  # pragma: no cover
 HELPER = Path(__file__).resolve().parents[1] / "_lib" / "audit_issue.py"
 ARCHIVE_HEADER = "## Decision / discovery archive"
 HORIZON_HEADER = "## Horizon → next week"
+# The fleet architecture map regenerated weekly by /system-map (cross-linked, not owned here).
+FLEET_MAP_URL = "https://github.com/ferraroroberto/claude-config/blob/main/architecture/system-map.png"
 
 # Canonical work-type buckets, in display order. PR titles are conventional-
 # commit prefixed; issues carry type labels. Both map onto the same set so a
@@ -129,10 +131,13 @@ def build_ledger_body(prior_body: str, today: str, horizon: str, discoveries: st
         f"last-run-at: {today}\n\n"
         "# Learning log — fleet\n\n"
         "The fleet's weekly learning journal — what shipped, what we learned, and "
-        "what's next — from merged PRs + closed issues, mined per work-type bucket by "
-        "`/learning-log`. The week-by-week narrative + productivity tables live in this "
-        "issue's comments; this body is the durable archive + the live horizon. One "
-        "canonical issue (durable knowledge lands here, not in `docs/`).\n\n"
+        "what's next — from merged PRs + closed issues across the **public** repos, "
+        "mined per work-type bucket by `/learning-log`. The week-by-week narrative + "
+        "productivity tables live in this issue's comments; this body is the durable "
+        "archive + the live horizon. One canonical issue (durable knowledge lands here, "
+        "not in `docs/`).\n\n"
+        f"**Fleet map:** [architecture / system map]({FLEET_MAP_URL}) — the roadmap this "
+        "journey moves across, regenerated weekly by `/system-map`.\n\n"
         f"## Horizon → next week (set {today})\n{horizon_md}\n\n"
         f"{ARCHIVE_HEADER}\n{archive_md}\n"
     )
@@ -233,7 +238,10 @@ def _gh_json(args: list[str]) -> list | dict:
 
 
 def list_repos(owner: str) -> list[str]:
-    data = _gh_json(["repo", "list", owner, "--no-archived", "--source", "--limit", "200", "--json", "name"])
+    # Public repos only — the learning log + its stats are published in a public
+    # ledger issue, so private-repo activity (and its names) is never in scope.
+    data = _gh_json(["repo", "list", owner, "--no-archived", "--source", "--visibility", "public",
+                     "--limit", "200", "--json", "name"])
     return [r["name"] for r in data] if isinstance(data, list) else []
 
 

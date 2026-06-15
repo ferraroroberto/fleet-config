@@ -21,6 +21,7 @@ description: Turn the fleet's GitHub work stream into a weekly learning log + fo
 ## Execution rules (read first)
 
 - **Run from the `claude-config` repo root** (`E:/automation/claude-config`) so helper paths resolve.
+- **Public repos only.** The digest and its stats are published in a public ledger issue, so `gather.py` lists with `--visibility public` — private-repo activity (and even repo names) is never gathered, counted, or narrated. A sub-agent must never cite a `repo#N` outside the public set it was handed.
 - **Read-only on GitHub except three writes:** the `kind=learning` ledger issue (upsert), the weekly comment on it, and the Slack ping. Never edits source, commits, pushes, or restarts.
 - **Stats are deterministic — never let the model invent numbers.** Every count and LOC figure comes from `gather.py` (Python over `gh` JSON), pasted verbatim. The sub-agents narrate *insight*, not statistics.
 - **Sub-agents are Sonnet, fan out freely** (exempt from the 3-Opus cap). One per non-empty bucket. They are READ-ONLY analysts — they file nothing and change no state.
@@ -75,7 +76,7 @@ Compose the weekly digest as markdown (single long lines, no hard wraps). Order:
 
 ### 4. Assemble the ledger body + upsert
 
-Write the new horizon bullets to `horizon.md` and the discovery bullets to `discoveries.md` (in `OUT_DIR`), then let Python preserve the durable archive + stamp `last-run-at`:
+Write the new horizon bullets to `horizon.md` and the discovery bullets to `discoveries.md` (in `OUT_DIR`), then let Python preserve the durable archive + stamp `last-run-at`. `build_ledger_body` also renders a fixed **Fleet map** link near the top of the body — the `architecture/system-map.png` produced by `/system-map` (cross-linked, never regenerated here):
 
 ```
 py skills/learning-log/gather.py assemble-ledger \
