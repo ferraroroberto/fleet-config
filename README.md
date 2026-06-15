@@ -71,7 +71,7 @@ claude-config/
 │   └── hub_client.py               # shared stdlib-urllib client for the local LLM hub (OpenAI-shape, fail-open)
 ├── commands/                       # junction → ~/.claude/commands AND ~/.codex/prompts (Codex prompts)
 ├── skills/                         # junction → ~/.claude/skills AND ~/.agents/skills (Codex) — issue-* workflow, handoff-commit, codebase-audit, screen, …
-├── docs/slack-workflow.md          # Slack ↔ Claude reference: bot helper, session hook, native integration
+├── docs/                           # references: slack-workflow, codex-browser, mcp-context-audit
 ├── tests/run_acceptance.py         # drives each hook with a sample stdin payload
 ├── settings.template.json          # the `hooks` block to merge into your ~/.claude/settings.json (Claude)
 └── codex-hooks.json                # exposed as ~/.codex/hooks.json (symlink) — Codex's hooks wiring (same run-hook.ps1 shim)
