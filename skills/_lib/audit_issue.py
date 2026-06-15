@@ -1,8 +1,9 @@
 """Deterministic identity for audit-managed GitHub issues.
 
-The audit skills (`/codebase-audit`, `/audit-fleet`) keep exactly one open issue
-per *kind* per repo: a ledger, a digest, the cross-fleet practices ledger, and
-one per finding bucket. Idempotency
+The audit + weekly skills (`/codebase-audit`, `/audit-fleet`, `/learning-log`)
+keep exactly one open issue per *kind* per repo: a ledger, a digest, the
+cross-fleet practices ledger, the weekly learning-log, and one per finding
+bucket. Idempotency
 used to ride on LLM judgment, which slips under the unattended `claude -p` path
 and spawns duplicates. This helper moves the create-vs-reuse decision into Python,
 keyed on a hidden marker in the issue body, so duplication is structurally
@@ -43,6 +44,7 @@ KINDS = (
     "ledger",
     "digest",
     "practices",
+    "learning",
     "duplication",
     "stale",
     "claude-md-drift",
@@ -63,7 +65,16 @@ def marker_for(kind: str) -> str:
 
 
 def has_marker(body: str, kind: str) -> bool:
-    return any(m.group(1) == kind for m in _MARKER_RE.finditer(body or ""))
+    """True only when the kind marker is the FIRST line of the body.
+
+    `ensure_marker` always stamps the marker at the top, so a managed issue has
+    it on line 1. Matching it *anywhere* would mis-adopt an issue that merely
+    QUOTES the marker in prose or a code block (e.g. a planning issue that
+    documents the ledger format) — that bug once clobbered a planning issue. The
+    top-anchored match identifies the managed issue without that collision.
+    """
+    m = _MARKER_RE.match((body or "").lstrip())
+    return bool(m) and m.group(1) == kind
 
 
 def ensure_marker(body: str, kind: str) -> str:
@@ -85,6 +96,8 @@ def title_matches(title: str, kind: str) -> bool:
         return t == "audit-fleet digest state"
     if kind == "practices":
         return t == "fleet practices ledger"
+    if kind == "learning":
+        return t == "learning log — fleet"
     # bucket kinds: "audit: <kind> findings ..." (trailing count suffix tolerated)
     return re.match(r"^audit:\s*" + re.escape(kind) + r"\s+findings\b", t) is not None
 

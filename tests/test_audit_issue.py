@@ -28,6 +28,12 @@ check(ai.marker_for("bug") == "<!-- audit-managed: kind=bug -->", "marker_for")
 check(ai.has_marker("<!-- audit-managed: kind=bug -->\n\nx", "bug"), "has_marker positive")
 check(not ai.has_marker("<!-- audit-managed: kind=bug -->", "stale"), "has_marker wrong kind")
 check(not ai.has_marker("plain body", "bug"), "has_marker absent")
+# a marker merely QUOTED later in the body (e.g. a planning issue documenting the
+# format) must NOT be adopted — only a top-of-body marker identifies a managed issue.
+check(not ai.has_marker("Intro prose.\n\n```\n<!-- audit-managed: kind=learning -->\n```\nmore", "learning"),
+      "has_marker ignores a buried/quoted marker")
+check(ai.has_marker("  \n<!-- audit-managed: kind=learning -->\n\nbody", "learning"),
+      "has_marker tolerates leading blank lines before a top marker")
 
 # ensure_marker: prepend when missing
 em = ai.ensure_marker("hello", "duplication")
@@ -51,6 +57,8 @@ check(ai.title_matches("codebase-audit ledger", "ledger"), "title ledger")
 check(ai.title_matches("audit-fleet digest state", "digest"), "title digest")
 check(ai.title_matches("fleet practices ledger", "practices"), "title practices")
 check(not ai.title_matches("fleet practices ledger", "ledger"), "title practices not ledger")
+check(ai.title_matches("learning log — fleet", "learning"), "title learning")
+check(not ai.title_matches("learning log — fleet", "practices"), "title learning not practices")
 check(ai.title_matches("audit: bug findings (3 items)", "bug"), "title bucket w/ count")
 check(ai.title_matches("audit: bug findings", "bug"), "title bucket no count")
 check(ai.title_matches("audit: claude-md-drift findings (2 items)", "claude-md-drift"), "title hyphen kind")
@@ -91,6 +99,7 @@ check(keep == 30 and close == [40], "plan local-llm-hub dup")
 # kinds list sanity
 check("ledger" in ai.KINDS and "documentation" in ai.KINDS, "KINDS populated")
 check("practices" in ai.KINDS, "KINDS has practices")
+check("learning" in ai.KINDS, "KINDS has learning")
 
 if _fails:
     print("FAIL test_audit_issue:")
