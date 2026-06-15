@@ -23,6 +23,7 @@ Usage::
     py ~/.claude/hooks/notify_complete.py --kind cleanup --summary documentation --merged 5 --review 2
     py ~/.claude/hooks/notify_complete.py --kind recap --summary "3 skills swept - alt-text +2, journal-daily +1"   # automatic sweep (no proposals)
     py ~/.claude/hooks/notify_complete.py --kind recap --summary "2 skills consolidated, 4 promoted"               # explicit consolidation
+    py ~/.claude/hooks/notify_complete.py --kind learning --comment-url https://github.com/ferraroroberto/claude-config/issues/131#issuecomment-456 --summary "12 PRs / 8 issues distilled · 2/3 horizon shipped"
 
 For ``--kind cleanup`` (the closing roll-up of a ``/cleanup-fleet`` swarm) pass
 ``--summary`` (the bucket name), ``--merged`` (sonnet issues YOLO'd to a merged
@@ -46,6 +47,11 @@ For ``--kind audit`` pass ``--comment-url`` (the GitHub comment permalink posted
 by ``/audit-fleet``) and ``--summary`` (e.g. "3 audited, 2 issues filed"). The
 Slack ping links directly to the comment so the user reaches the full digest in
 one click.
+
+``--kind learning`` is the same contract as ``audit`` — the weekly ``/learning-log``
+run posts its narrative as a comment on the learning-log ledger issue, then fires
+this ping with that ``--comment-url`` and a one-line ``--summary`` (PRs/issues
+distilled · horizon grade) so the phone push links straight to the full log.
 """
 
 from __future__ import annotations
@@ -114,7 +120,7 @@ def lookup(
     comment_url directly with no title lookup. ``(None, None)`` on any gh /
     network error so the message still goes out link-less.
     """
-    if kind == "audit":
+    if kind in ("audit", "learning"):
         return None, comment_url
     if kind in _PR_KINDS:
         if pr_url:
@@ -168,6 +174,9 @@ def build_message(
     if kind == "recap":
         summary_part = f" — {summary}" if summary else ""
         return f"🔄 Weekly recap{summary_part}"
+    if kind == "learning":
+        summary_part = f" — {summary}" if summary else ""
+        return f"📓 Learning log{summary_part}{link}"
     if kind == "cleanup":
         bucket = f" {summary.strip()}" if summary and summary.strip() else ""
         parts: List[str] = []
@@ -196,7 +205,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     )
     parser.add_argument(
         "--kind", required=True,
-        choices=["add", "start", "finish", "yolo", "batch", "audit", "cleanup", "recap", "finish-batch"]
+        choices=["add", "start", "finish", "yolo", "batch", "audit", "cleanup", "recap", "finish-batch", "learning"]
     )
     parser.add_argument("--issue", help="Issue number (shown as #N).")
     parser.add_argument("--pr", help="PR number, for finish/yolo (linked).")
@@ -210,9 +219,9 @@ def main(argv: Optional[List[str]] = None) -> int:
     parser.add_argument(
         "--comment-url",
         dest="comment_url",
-        help="Full GitHub comment permalink, for audit. Linked directly in the ping.",
+        help="Full GitHub comment permalink, for audit / learning. Linked directly in the ping.",
     )
-    parser.add_argument("--summary", help="One concise summary line, for start/audit.")
+    parser.add_argument("--summary", help="One concise summary line, for start/audit/learning.")
     parser.add_argument("--passed", help="Passed count, for batch.")
     parser.add_argument("--total", help="Total count, for batch.")
     parser.add_argument("--merged", help="Merged-PR count, for cleanup / finish-batch.")

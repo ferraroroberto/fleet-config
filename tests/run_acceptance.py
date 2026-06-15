@@ -260,6 +260,9 @@ def main() -> int:
     # ---- audit_issue helper pure-logic tests (skills/_lib) ----
     failures += _audit_issue_unit_check()
 
+    # ---- learning-log report.py pure helpers (skills/learning-log) ----
+    failures += _learning_log_unit_checks()
+
     # ---- system-map: fleet ↔ data ↔ doc coverage (architecture/) ----
     failures += _system_map_coverage_check()
 
@@ -275,10 +278,10 @@ def main() -> int:
 
 
 # Sum of the unit checks below: slack_notify (3) + mention (5) + classify (6) +
-# notify_complete (16) + conversation_capture (13) + conversation_index (6) +
-# restart_webapp (6) + gh_body_file_guard (6) + audit_issue (1) + system_map (3) +
-# settings_template_sync (1).
-_UNIT_CHECK_COUNT = 66
+# notify_complete (18) + conversation_capture (13) + conversation_index (6) +
+# restart_webapp (6) + gh_body_file_guard (6) + audit_issue (1) + learning_log (14) +
+# system_map (3) + settings_template_sync (1).
+_UNIT_CHECK_COUNT = 82
 
 
 def _system_map_coverage_check() -> int:
@@ -544,6 +547,88 @@ def _audit_issue_unit_check() -> int:
     return 0 if ok else 1
 
 
+def _learning_log_unit_checks() -> int:
+    """The pure window/section/ledger-assembly logic of learning-log/report.py.
+
+    No gh, no hub — exercises last-run-at parsing, window resolution, section
+    slicing, and the archive-growing ledger body assembly that the unattended
+    weekly run depends on."""
+    import datetime as dt
+
+    sys.path.insert(0, str(REPO / "skills" / "learning-log"))
+    import report as ll  # noqa: E402
+
+    failures = 0
+
+    def check(case: str, ok: bool) -> None:
+        nonlocal failures
+        print(f"{'OK   ' if ok else 'FAIL '} {case}")
+        if not ok:
+            failures += 1
+
+    # ---- last-run-at parsing ----
+    check("learning_log: parse_last_run reads the stamp",
+          ll.parse_last_run("<!-- learning-log-state -->\nlast-run-at: 2026-06-12\n") == "2026-06-12")
+    check("learning_log: parse_last_run absent -> None",
+          ll.parse_last_run("no stamp here") is None)
+
+    # ---- window resolution: arg > ledger > trailing 7d ----
+    today = dt.date(2026, 6, 15)
+    check("learning_log: resolve_since explicit arg wins",
+          ll.resolve_since("2026-05-01", "last-run-at: 2026-06-12", today) == "2026-05-01")
+    check("learning_log: resolve_since falls to ledger last-run-at",
+          ll.resolve_since(None, "last-run-at: 2026-06-12", today) == "2026-06-12")
+    check("learning_log: resolve_since first run -> trailing 7d",
+          ll.resolve_since(None, "", today) == "2026-06-08")
+
+    # ---- section slicing ----
+    text = "## TL;DR\n- a\n- b\n\n## Horizon → next week\n- [ ] x\n- [ ] y\n"
+    check("learning_log: slice_section bounded by next H2",
+          ll.slice_section(text, "## TL;DR") == "- a\n- b")
+    check("learning_log: slice_section missing header -> ''",
+          ll.slice_section(text, "## Nope") == "")
+
+    # ---- discovery bullets get dated, non-bullets dropped ----
+    bullets = ll.dated_discovery_bullets("- learned X (repo#1)\n- learned Y (repo#2)\nnoise", "2026-06-15")
+    check("learning_log: dated_discovery_bullets dates + drops non-bullets",
+          bullets == ["- 2026-06-15: learned X (repo#1)", "- 2026-06-15: learned Y (repo#2)"])
+
+    # ---- conventional-commit type extraction + per-repo rollup ----
+    check("learning_log: _type_prefix reads feat(scope)! prefix",
+          ll._type_prefix("feat(api)!: add x") == "feat")
+    check("learning_log: _type_prefix no prefix -> 'other'",
+          ll._type_prefix("just a title") == "other")
+    rollup = ll.summarize_window(
+        [{"number": 1, "title": "feat: a", "repository": {"name": "app"}, "closedAt": "2026-06-10"},
+         {"number": 2, "title": "fix: b", "repository": {"name": "app"}, "closedAt": "2026-06-11"},
+         {"number": 3, "title": "chore: c", "repository": {"name": "web"}, "closedAt": "2026-06-09"}],
+        [{"number": 9, "title": "bug x", "repository": {"name": "app"},
+          "closedAt": "2026-06-08", "labels": [{"name": "bug"}]}],
+    )
+    check("learning_log: summarize_window counts + type breakdown + label, busiest repo first",
+          "### app — 2 PRs" in rollup and "1 feat" in rollup and "1 fix" in rollup
+          and "issue #9: bug x [bug]" in rollup
+          and rollup.index("### app") < rollup.index("### web"))
+
+    # ---- ledger body: new stamp + horizon, new discoveries prepended, old preserved ----
+    prior = ("<!-- learning-log-state -->\nlast-run-at: 2026-06-08\n\n"
+             "## Horizon → next week (set 2026-06-08)\n- [ ] old item\n\n"
+             "## Decision / discovery archive\n- 2026-06-08: prior learning (repo#9)\n")
+    body = ll.build_ledger_body(prior, "2026-06-15",
+                                "- [ ] new horizon a\n- [ ] new horizon b",
+                                "- fresh learning (repo#3)")
+    check("learning_log: build_ledger_body stamps new last-run-at",
+          "last-run-at: 2026-06-15" in body)
+    check("learning_log: build_ledger_body carries the next horizon",
+          "- [ ] new horizon a" in body and "## Horizon → next week (set 2026-06-15)" in body)
+    check("learning_log: build_ledger_body prepends new discovery, preserves prior archive",
+          "- 2026-06-15: fresh learning (repo#3)" in body
+          and "- 2026-06-08: prior learning (repo#9)" in body
+          and body.index("2026-06-15: fresh") < body.index("2026-06-08: prior learning"))
+
+    return failures
+
+
 def _conversation_capture_unit_checks() -> int:
     """The per-session dedup logic: stable token, filename shape, and the
     supersede-prior sweep that collapses a session's many Stop captures to one."""
@@ -790,6 +875,11 @@ def _notify_complete_unit_checks() -> int:
           bm("recap", summary="5 skills swept, 3 proposals") == "🔄 Weekly recap — 5 skills swept, 3 proposals")
     check("build: recap with no summary degrades cleanly",
           bm("recap") == "🔄 Weekly recap")
+    check("build: learning -> log + summary + comment link",
+          bm("learning", summary="12 PRs / 8 issues · 2/3 horizon", url="http://gh/c")
+          == "📓 Learning log — 12 PRs / 8 issues · 2/3 horizon · http://gh/c")
+    check("build: learning with no url degrades cleanly",
+          bm("learning", summary="quiet week") == "📓 Learning log — quiet week")
     check("build: finish-batch -> merged + blocked counts",
           bm("finish-batch", merged="4", blocked="1") == "🏁 Finished batch: 4 merged, 1 blocked")
     check("build: finish-batch (0 blocked) drops the blocked clause",
