@@ -50,7 +50,22 @@ py skills/system-map/render.py
 
 This measures the page and screenshots `architecture/system-map.png` at 2× with placeholders forced. On a render failure it prints the real Chrome/console error — fix the `DATA`/HTML and re-run (the page logs a single `DIMS w h` line on success).
 
-### 4. Commit when the map changed
+### 4. Compute the week-over-week change line
+
+Before committing (so `HEAD` still points at the previous run), capture the
+one-line "what changed" summary for the Slack post:
+
+```
+py skills/system-map/whatchanged.py
+```
+
+This diffs the freshly-reconciled working `architecture/fleet.data.js` against
+the previously-committed one (`git show HEAD:…`) and prints a single line —
+`+whatsapp-radar, −suna, 3 repos updated` (added/removed repos named, in-place
+edits counted). A no-op week prints `no fleet changes`; the very first run (no
+prior snapshot) prints `baseline`. Keep this string for step 6.
+
+### 5. Commit when the map changed
 
 ```
 git status --porcelain architecture/
@@ -65,22 +80,22 @@ git commit -m "docs: refresh system map (<YYYY-MM-DD>)"
 
 If the current branch is `main` (the scheduled unattended case), also `git push`. On a feature branch, leave pushing to the normal PR/`issue-finish` flow.
 
-### 5. Post the image to Slack (every run)
+### 6. Post the image to Slack (every run)
 
-Resolve the channel from `hooks/projects.toml` `[global] slack_notify_channel`, then:
+Resolve the channel from `hooks/projects.toml` `[global] slack_notify_channel`, then post, folding in the change line from step 4 so the recurring run reads as alive:
 
 ```
 py hooks/slack_notify.py --channel <slack_notify_channel> \
    --file architecture/system-map.png \
    --title "Roberto's System — architecture" \
-   --text "🛠️ Fleet architecture map — refreshed <YYYY-MM-DD>. <changed|unchanged this week>."
+   --text "🛠️ Fleet architecture map — refreshed <YYYY-MM-DD>. <change line from step 4>."
 ```
 
 Always post — on-demand *and* scheduled — so the fresh picture lands on the phone. The helper never raises; a missing token just logs and exits non-zero.
 
-### 6. Report
+### 7. Report
 
-Print: projects added/removed (if any), whether a commit was made (and pushed), and the Slack post result. Keep it to a few lines.
+Print: the change line from step 4, projects added/removed (if any), whether a commit was made (and pushed), and the Slack post result. Keep it to a few lines.
 
 ## Wiring the weekly schedule
 
