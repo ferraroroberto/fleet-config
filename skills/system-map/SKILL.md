@@ -1,6 +1,6 @@
 ---
 name: system-map
-description: Regenerate the fleet architecture map — crawl every repo under E:\automation (from hooks/projects.toml, minus the architecture_ignore list), reconcile it against the layered source-of-truth doc (architecture/ARCHITECTURE.md) and the visual's data (architecture/system-map.html), render the light, horizontal, Janis-style infographic to architecture/system-map.png with headless Chrome (placeholder specs only — real hardware specs stay in the gitignored system-map.local.js), commit the diff when the map changed, and post the fresh image to Slack on every run. Use when the user wants to refresh or see the system architecture diagram — e.g. "/system-map", "update the architecture map", "regenerate the system diagram". Built to also run unattended on a weekly schedule.
+description: Regenerate the fleet architecture map (crawl every repo under E:\automation, render to architecture/system-map.png) and post the refreshed image to Slack. Use when the user wants to refresh or see the system architecture diagram — e.g. "/system-map", "update the architecture map", "regenerate the system diagram". Also runs unattended on a weekly schedule.
 ---
 
 # system-map

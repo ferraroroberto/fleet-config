@@ -1,6 +1,6 @@
 ---
 name: codebase-audit
-description: Audit the resting state of a codebase against its CLAUDE.md and senior-dev maintainability standards — looks for duplication, stale/dead code, drift from CLAUDE.md conventions, sloppy/unmaintainable patterns, bugs spotted while reading, and documentation problems (README/docs that drift from CLAUDE.md, repeat themselves, go stale, or omit a shipped feature). Bundles findings into at most 6 GitHub issues (one per fixed bucket), self-assigned, deduped against open issues. Use when the user wants a whole-repo quality sweep — e.g. "/codebase-audit", "/codebase-audit app/", "audit the codebase", "find duplication and stale code", "check the docs against its CLAUDE.md", "review the codebase for slop".
+description: Audit a codebase's resting state against its CLAUDE.md and senior-dev maintainability standards — duplication, stale/dead code, convention drift, bugs spotted while reading, and doc problems — bundling findings into at most 6 self-assigned GitHub issues. Use when the user wants a whole-repo quality sweep — e.g. "/codebase-audit", "/codebase-audit app/", "audit the codebase", "find duplication and stale code", "check the docs against its CLAUDE.md", "review the codebase for slop".
 ---
 
 # codebase-audit

@@ -1,6 +1,6 @@
 ---
 name: insights-weekly
-description: Refresh Claude Code's built-in /insights report, then diff the newest report HTML against the previous one via the local LLM hub to produce a concise, personal "what changed this week" note — saved as a dated, traceable file under ~/.claude/usage-data/weekly/ and posted to Slack. The /insights command already writes a dated report-<timestamp>.html on every run, so that series is the history; this skill compares newest-vs-previous (no raw-JSON re-aggregation) and degrades to a baseline on the first run. Use when the user wants to see how their Claude Code usage is changing week-over-week — e.g. "/insights-weekly", "what changed in my insights this week", "weekly insights diff". Built to also run unattended on a weekly schedule.
+description: Diff Claude Code's newest /insights report against the previous one (via the local LLM hub) into a concise weekly "what changed" note posted to Slack. Use when the user wants to see how their Claude Code usage is changing week-over-week — e.g. "/insights-weekly", "what changed in my insights this week", "weekly insights diff". Also runs unattended on a weekly schedule.
 ---
 
 # insights-weekly
