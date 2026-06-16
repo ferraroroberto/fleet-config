@@ -70,8 +70,8 @@ cwd_prefix = "E:/automation/arboldelossuenos"
 [automation]
 cwd_prefix = "E:/automation/automation"
 
-[claude-config]
-cwd_prefix = "E:/automation/claude-config"
+[fleet-config]
+cwd_prefix = "E:/automation/fleet-config"
 
 [closed-company-accounting]
 cwd_prefix = "E:/automation/closed-company-accounting"

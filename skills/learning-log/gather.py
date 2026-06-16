@@ -48,7 +48,7 @@ HELPER = Path(__file__).resolve().parents[1] / "_lib" / "audit_issue.py"
 ARCHIVE_HEADER = "## Decision / discovery archive"
 HORIZON_HEADER = "## Horizon → next week"
 # The fleet architecture map regenerated weekly by /system-map (cross-linked, not owned here).
-FLEET_MAP_URL = "https://github.com/ferraroroberto/claude-config/blob/main/architecture/system-map.png"
+FLEET_MAP_URL = "https://github.com/ferraroroberto/fleet-config/blob/main/architecture/system-map.png"
 
 # Canonical work-type buckets, in display order. PR titles are conventional-
 # commit prefixed; issues carry type labels. Both map onto the same set so a
@@ -362,11 +362,11 @@ def main(argv: list[str] | None = None) -> int:
     g = sub.add_parser("gather")
     g.add_argument("--since")
     g.add_argument("--owner", default="ferraroroberto")
-    g.add_argument("--repo", default="ferraroroberto/claude-config")
+    g.add_argument("--repo", default="ferraroroberto/fleet-config")
     g.add_argument("--out-dir", dest="out_dir", default=None)
 
     a = sub.add_parser("assemble-ledger")
-    a.add_argument("--repo", default="ferraroroberto/claude-config")
+    a.add_argument("--repo", default="ferraroroberto/fleet-config")
     a.add_argument("--horizon-file", dest="horizon_file")
     a.add_argument("--discoveries-file", dest="discoveries_file")
     a.add_argument("--out", required=True)

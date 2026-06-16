@@ -1,4 +1,4 @@
-# claude-config
+# fleet-config
 
 Versioned home for my user-scope [Claude Code](https://docs.claude.com/en/docs/claude-code) configuration — the hooks, helpers, skills, slash commands, statusline, and global `CLAUDE.md` that live in `~/.claude/` and shape how Claude behaves across every project on my machine.
 
@@ -44,7 +44,7 @@ Beyond the issue-workflow trio (`/issue-add`, `/issue-start`, `/issue-finish`) a
 ## Layout
 
 ```
-claude-config/
+fleet-config/
 ├── README.md
 ├── CLAUDE.md                       # short — tells future-Claude how this repo works
 ├── global-CLAUDE.md                # exposed as ~/.claude/CLAUDE.md AND ~/.codex/AGENTS.md (symlinks) — agent-neutral global instructions
@@ -85,8 +85,8 @@ The live `~/.claude/settings.json` is **not** in this repo — it carries machin
 Windows + PowerShell 7+ (or 5.1):
 
 ```powershell
-git clone https://github.com/ferraroroberto/claude-config.git
-cd claude-config
+git clone https://github.com/ferraroroberto/fleet-config.git
+cd fleet-config
 .\install.ps1
 ```
 
@@ -110,7 +110,7 @@ The same files drive Claude Code and Codex; editing once is live in both. The se
 
 `global-CLAUDE.md` is **agent-neutral**: it reads correctly as either file, and the few genuinely Claude-specific sections (the 3-wide Opus sub-agent cap; the Git-Bash-strips-backslashes-in-`settings.json` gotcha) are marked *(Claude Code only — skip on other agents)*. Unlike Claude's `settings.json` (which mixes in machine-local secrets and so stays a manual merge), Codex's `hooks.json` is hooks-only, so it is symlinked live from `codex-hooks.json` — the same `run-hook.ps1` shim runs on both agents (Codex does **not** route hooks through Git Bash, so its command paths may use backslashes).
 
-**Why Codex skills live in `~/.agents/skills`, not `~/.codex/skills`.** This trips people up because Codex *does* have a `~/.codex/skills/` directory — but that's Codex-owned: it holds Codex's own bundled skills under `~/.codex/skills/.system/` (imagegen, skill-creator, skill-installer, …), marked with a `.codex-system-skills.marker`. The [official skills doc](https://developers.openai.com/codex/skills) lists `$HOME/.agents/skills` as *the* USER skill location — `~/.codex/skills` is **not** a documented user path. So the `~/.agents/skills` junction is correct, and we deliberately do **not** also junction into `~/.codex/skills`: it can't be a whole-directory junction anyway (the installer won't clobber the real `.system/` dir), and exposing each skill via two scanned roots would double-list every skill in Codex's selector (Codex doesn't merge same-named skills — both appear). If you see Codex *guess* a `~/.codex/skills/.system/<name>/SKILL.md` path and 404 before reading the skill from `E:\…\claude-config\skills`, that's the model fumbling the path once and self-correcting, not a broken link — the skill still loads.
+**Why Codex skills live in `~/.agents/skills`, not `~/.codex/skills`.** This trips people up because Codex *does* have a `~/.codex/skills/` directory — but that's Codex-owned: it holds Codex's own bundled skills under `~/.codex/skills/.system/` (imagegen, skill-creator, skill-installer, …), marked with a `.codex-system-skills.marker`. The [official skills doc](https://developers.openai.com/codex/skills) lists `$HOME/.agents/skills` as *the* USER skill location — `~/.codex/skills` is **not** a documented user path. So the `~/.agents/skills` junction is correct, and we deliberately do **not** also junction into `~/.codex/skills`: it can't be a whole-directory junction anyway (the installer won't clobber the real `.system/` dir), and exposing each skill via two scanned roots would double-list every skill in Codex's selector (Codex doesn't merge same-named skills — both appear). If you see Codex *guess* a `~/.codex/skills/.system/<name>/SKILL.md` path and 404 before reading the skill from `E:\…\fleet-config\skills`, that's the model fumbling the path once and self-correcting, not a broken link — the skill still loads.
 
 **Validated:** Codex (gpt-5.5) loads and runs these skills live — e.g. invoking the `screen` skill executed `skills/screen/SKILL.md` straight from the repo. One Codex-vs-Claude nuance: Codex's client only treats a message as a slash command when the *whole* message is a registered client command, so a bare `/screen` line is rejected by the client — invoke a skill mid-message (`check this /screen 3`) or in natural language (`run the codebase audit`) and it fires.
 
@@ -169,7 +169,7 @@ Keeping `codex-hooks.json` byte-identical to the `hooks.json` Codex already trus
 .\uninstall.ps1
 ```
 
-Removes only the junctions/symlinks the installer created (recorded in `~/.claude/.claude-config-installed.json`). Never touches real data.
+Removes only the junctions/symlinks the installer created (recorded in `~/.claude/.fleet-config-installed.json`). Never touches real data.
 
 ## Inspiration
 

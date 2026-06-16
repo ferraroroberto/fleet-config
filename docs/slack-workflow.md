@@ -1,6 +1,6 @@
 # Slack ↔ Claude workflow
 
-How I get Claude and my unattended agents to reach me on Slack, and how I drive work from Slack. This is the durable reference for the capability built in `claude-config` (issue #26) plus the one Anthropic-hosted piece that isn't code.
+How I get Claude and my unattended agents to reach me on Slack, and how I drive work from Slack. This is the durable reference for the capability built in `fleet-config` (issue #26) plus the one Anthropic-hosted piece that isn't code.
 
 ## Why Slack at all, working solo
 
