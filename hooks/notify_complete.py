@@ -74,6 +74,28 @@ logger = logging.getLogger("notify_complete")
 # Kinds that link a pull request (read from gh pr) vs. an issue (gh issue view).
 _PR_KINDS = ("finish", "yolo")
 
+# Action-needed kinds — the ping is a call to action the user must respond to,
+# so it routes to the "attention" channel, not the activity log (issue #139).
+# `cleanup` is conditional: it's action-needed only when issues await review.
+# Everything else (add, finish, yolo, audit, recap, learning, finish-batch) is a
+# completed-work record → the "log" channel.
+_ATTENTION_KINDS = ("start", "batch")
+
+
+def category_for(kind: str, *, review: Optional[str] = None) -> str:
+    """Map a completion ``--kind`` to its routing category ("attention" / "log").
+
+    Pure / testable. ``start`` (🚦 ready to validate) and ``batch`` (🏁 finish
+    each branch) are calls to action despite coming from the completion helper;
+    a ``cleanup`` roll-up is action-needed only when ``review`` (issues awaiting
+    a human) is a non-zero count.
+    """
+    if kind in _ATTENTION_KINDS:
+        return "attention"
+    if kind == "cleanup" and review is not None and str(review).strip() not in ("", "0"):
+        return "attention"
+    return "log"
+
 
 def gh_json(args: List[str]) -> dict:
     """Run ``gh <args>`` and parse its JSON stdout. Returns ``{}`` on any error.
@@ -231,7 +253,8 @@ def main(argv: Optional[List[str]] = None) -> int:
 
     logging.basicConfig(level=logging.INFO, format="%(message)s", stream=sys.stderr)
 
-    channel, user, _name = _lib.resolve_slack_target(Path(os.getcwd()))
+    category = category_for(args.kind, review=args.review)
+    channel, user, _name = _lib.resolve_slack_target(Path(os.getcwd()), category=category)
     if not channel:
         return 0  # opt-in: not configured → silent no-op
 

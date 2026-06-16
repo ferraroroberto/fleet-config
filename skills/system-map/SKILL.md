@@ -82,10 +82,10 @@ If the current branch is `main` (the scheduled unattended case), also `git push`
 
 ### 6. Post the image to Slack (every run)
 
-Resolve the channel from `hooks/projects.toml` `[global] slack_notify_channel`, then post, folding in the change line from step 4 so the recurring run reads as alive:
+Post the refreshed map, folding in the change line from step 4 so the recurring run reads as alive. This is **activity-log** traffic, so route it with `--category log` (the helper resolves the `#log` channel from `hooks/projects.toml` — never hardcode a channel id):
 
 ```
-py hooks/slack_notify.py --channel <slack_notify_channel> \
+py hooks/slack_notify.py --category log \
    --file architecture/system-map.png \
    --title "Roberto's System — architecture" \
    --text "🛠️ Fleet architecture map — refreshed <YYYY-MM-DD>. <change line from step 4>."

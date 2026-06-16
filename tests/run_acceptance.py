@@ -245,6 +245,9 @@ def main() -> int:
     # ---- notify_complete deterministic message assembly + resolver ----
     failures += _notify_complete_unit_checks()
 
+    # ---- slack category -> channel routing (issue #139) ----
+    failures += _slack_routing_unit_checks()
+
     # ---- conversation_capture session-dedup logic ----
     failures += _conversation_capture_unit_checks()
 
@@ -281,10 +284,11 @@ def main() -> int:
 
 
 # Sum of the unit checks below: slack_notify (3) + mention (5) + classify (6) +
-# notify_complete (18) + conversation_capture (13) + conversation_index (6) +
-# restart_webapp (6) + gh_body_file_guard (6) + audit_issue (1) + learning_log (16) +
-# system_map (3) + system_map_whatchanged (7) + settings_template_sync (1).
-_UNIT_CHECK_COUNT = 91
+# notify_complete (18) + slack_routing (10) + conversation_capture (13) +
+# conversation_index (6) + restart_webapp (6) + gh_body_file_guard (6) +
+# audit_issue (1) + learning_log (16) + system_map (3) +
+# system_map_whatchanged (7) + settings_template_sync (1).
+_UNIT_CHECK_COUNT = 101
 
 
 def _system_map_coverage_check() -> int:
@@ -951,6 +955,67 @@ def _notify_complete_unit_checks() -> int:
     ch, usr, nm = _lib.resolve_slack_target(Path("E:/does/not/match/anything"))
     check("resolve_slack_target: global fallback + claude name",
           ch == "C0B76GBA0LS" and usr == "U0B71PQEL6S" and nm == "claude")
+
+    return failures
+
+
+def _slack_routing_unit_checks() -> int:
+    """Category → channel routing (issue #139): the resolver picks the dedicated
+    channel per category, falls back to the single channel when a category is
+    unset, and the kind → category map sends action-needed pings to attention."""
+    sys.path.insert(0, str(HOOKS))
+    import _lib  # noqa: E402
+    import notify_complete  # noqa: E402
+
+    failures = 0
+
+    def check(case: str, ok: bool) -> None:
+        nonlocal failures
+        print(f"{'OK   ' if ok else 'FAIL '} {case}")
+        if not ok:
+            failures += 1
+
+    cwd = Path("E:/does/not/match/anything")  # global-only resolution
+
+    # ---- category routes to its dedicated [global] channel ----
+    ch, _u, _n = _lib.resolve_slack_target(cwd, category="attention")
+    check("route: attention -> #attention channel", ch == "C0BAGNEQ163")
+    ch, _u, _n = _lib.resolve_slack_target(cwd, category="log")
+    check("route: log -> #log channel", ch == "C0BARRUBG03")
+    # No category -> the plain channel (back-compat: existing callers unchanged).
+    ch, _u, _n = _lib.resolve_slack_target(cwd)
+    check("route: no category -> slack_notify_channel", ch == "C0B76GBA0LS")
+
+    # ---- graceful degradation: category channels unset -> single-channel fallback ----
+    single = _lib.Registry(
+        projects=[],
+        globals=_lib.GlobalConfig(never_kill_ports=(), slack_notify_channel="C_ONLY"),
+    )
+    ch, _u, _n = _lib.resolve_slack_target(cwd, registry=single, category="attention")
+    check("route: unset category channel -> falls back to single channel", ch == "C_ONLY")
+
+    # ---- per-project override of a category channel wins over [global] ----
+    proj = _lib.ProjectConfig(
+        name="x", cwd_prefix=Path("E:/automation/x"), webapp_port=None,
+        gate_trigger_globs=(), gate_cmd=None, tray_cmd=None, restart_cmd=None,
+        api_version_path=None, extra={"slack_channel_log": "C_PROJ_LOG"},
+    )
+    reg = _lib.Registry(
+        projects=[proj],
+        globals=_lib.GlobalConfig(never_kill_ports=(), slack_notify_channel="C_G",
+                                  slack_channel_log="C_GLOBAL_LOG"),
+    )
+    ch, _u, _n = _lib.resolve_slack_target(Path("E:/automation/x"), registry=reg, category="log")
+    check("route: per-project category channel overrides [global]", ch == "C_PROJ_LOG")
+
+    # ---- kind -> category map ----
+    cat = notify_complete.category_for
+    check("category_for: start -> attention", cat("start") == "attention")
+    check("category_for: batch -> attention", cat("batch") == "attention")
+    check("category_for: cleanup with review>0 -> attention", cat("cleanup", review="2") == "attention")
+    check("category_for: cleanup with review=0 -> log", cat("cleanup", review="0") == "log")
+    check("category_for: log kinds -> log",
+          all(cat(k) == "log" for k in ("add", "finish", "yolo", "audit", "recap", "learning", "finish-batch")))
 
     return failures
 

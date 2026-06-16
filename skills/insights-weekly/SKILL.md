@@ -38,10 +38,10 @@ It finds the newest two `report-*.html`, strips each to clean text (`extract.py`
 
 ### 3. Post the digest to Slack
 
-Resolve the channel from `hooks/projects.toml` `[global] slack_notify_channel`, then post the digest **as the caption of the dated report file** — so the phone push shows the at-a-glance summary *and* the full markdown is attached to open on mobile. Pass the **absolute** report path `report.py` printed on line 1 to `--file`, and pipe the digest body via stdin (it carries emoji / em-dash / bullet cleanly — `slack_notify` decodes stdin as UTF-8):
+Post the digest **as the caption of the dated report file** — so the phone push shows the at-a-glance summary *and* the full markdown is attached to open on mobile. This is **activity-log** traffic, so route it with `--category log` (the helper resolves the `#log` channel from `hooks/projects.toml` — never hardcode a channel id). Pass the **absolute** report path `report.py` printed on line 1 to `--file`, and pipe the digest body via stdin (it carries emoji / em-dash / bullet cleanly — `slack_notify` decodes stdin as UTF-8):
 
 ```
-cat <<'EOF' | py hooks/slack_notify.py --channel <slack_notify_channel> \
+cat <<'EOF' | py hooks/slack_notify.py --category log \
    --file <absolute insights-diff-YYYY-MM-DD.md path from report.py line 1> \
    --title "Claude Code Insights — weekly <diff|baseline> <YYYY-MM-DD>"
 🧠 Weekly Claude Code insights — <diff|baseline> <YYYY-MM-DD>

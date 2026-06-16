@@ -129,6 +129,13 @@ class GlobalConfig:
     slack_notify_channel: Optional[str] = None
     slack_notify_user: Optional[str] = None
     slack_notify_mention: bool = False
+    # Per-category channels (issue #139). A ping carries a category — "attention"
+    # ("come look": blocked / awaiting input / ready-to-validate) vs "log"
+    # (activity record: filed / shipped / merged / digests). When the category's
+    # channel is unset, routing falls back to `slack_notify_channel`, so a single
+    # channel keeps working and the split can roll out one channel at a time.
+    slack_channel_attention: Optional[str] = None
+    slack_channel_log: Optional[str] = None
 
 
 @dataclass(frozen=True)
@@ -153,6 +160,8 @@ def load_registry(path: Path = PROJECTS_TOML) -> Registry:
     slack_channel = globals_table.get("slack_notify_channel") or None
     slack_user = globals_table.get("slack_notify_user") or None
     slack_mention = bool(globals_table.get("slack_notify_mention", False))
+    slack_attention = globals_table.get("slack_channel_attention") or None
+    slack_log = globals_table.get("slack_channel_log") or None
 
     projects: List[ProjectConfig] = []
     for name, table in data.items():
@@ -186,6 +195,8 @@ def load_registry(path: Path = PROJECTS_TOML) -> Registry:
             slack_notify_channel=slack_channel,
             slack_notify_user=slack_user,
             slack_notify_mention=slack_mention,
+            slack_channel_attention=slack_attention,
+            slack_channel_log=slack_log,
         ),
     )
 
@@ -205,21 +216,49 @@ def detect_project(cwd_path: Path, registry: Optional[Registry] = None) -> Optio
     return best
 
 
+# A ping's intent category → the projects.toml channel key that routes it
+# (issue #139). Both keys are valid as a [global] entry and as a per-project
+# override. An unset category channel falls back to `slack_notify_channel`.
+SLACK_CATEGORY_KEYS = {
+    "attention": "slack_channel_attention",
+    "log": "slack_channel_log",
+}
+
+
 def resolve_slack_target(
-    cwd_path: Path, registry: Optional[Registry] = None
+    cwd_path: Path,
+    registry: Optional[Registry] = None,
+    *,
+    category: Optional[str] = None,
 ) -> "tuple[Optional[str], Optional[str], str]":
     """Resolve ``(channel, user, project_name)`` for a Slack ping from ``cwd_path``.
 
-    A project's own ``slack_notify_channel`` / ``slack_notify_user`` override the
-    ``[global]`` fallback; ``name`` is the project key, or ``"claude"`` when
-    ``cwd_path`` matches no registered project. Shared by ``notify_on_idle`` (the
-    hook) and ``notify_complete`` (the skill-completion helper) so both resolve
-    the channel, mention, and project name identically.
+    A project's own override wins over the ``[global]`` fallback at every level;
+    ``name`` is the project key, or ``"claude"`` when ``cwd_path`` matches no
+    registered project. Shared by ``notify_on_idle`` (the hook) and
+    ``notify_complete`` (the skill-completion helper) so both resolve the
+    channel, mention, and project name identically.
+
+    ``category`` ("attention" / "log", issue #139) routes the ping to a
+    dedicated channel: the per-category key is tried first (project override,
+    then ``[global]``); when it is unset the channel **falls back to
+    ``slack_notify_channel``**. That fallback is what keeps a single-channel
+    setup working unchanged and lets the split roll out one channel at a time.
     """
     reg = registry or load_registry()
     project = detect_project(cwd_path, reg)
-    channel = (project.extra.get("slack_notify_channel") if project else None) or reg.globals.slack_notify_channel
-    user = (project.extra.get("slack_notify_user") if project else None) or reg.globals.slack_notify_user
+
+    def pick(key: str, global_value: Optional[str]) -> Optional[str]:
+        return (project.extra.get(key) if project else None) or global_value
+
+    channel: Optional[str] = None
+    cat_key = SLACK_CATEGORY_KEYS.get(category) if category else None
+    if cat_key:
+        channel = pick(cat_key, getattr(reg.globals, cat_key, None))
+    if not channel:
+        channel = pick("slack_notify_channel", reg.globals.slack_notify_channel)
+
+    user = pick("slack_notify_user", reg.globals.slack_notify_user)
     name = project.name if project else "claude"
     return channel, user, name
 
