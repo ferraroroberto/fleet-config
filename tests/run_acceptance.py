@@ -266,6 +266,9 @@ def main() -> int:
     # ---- system-map: fleet ↔ data ↔ doc coverage (architecture/) ----
     failures += _system_map_coverage_check()
 
+    # ---- system-map: week-over-week 'what changed' diff (whatchanged.py) ----
+    failures += _system_map_whatchanged_check()
+
     # ---- settings: live ~/.claude/settings.json ⊇ template hook wiring ----
     failures += _settings_template_sync_check()
 
@@ -280,8 +283,8 @@ def main() -> int:
 # Sum of the unit checks below: slack_notify (3) + mention (5) + classify (6) +
 # notify_complete (18) + conversation_capture (13) + conversation_index (6) +
 # restart_webapp (6) + gh_body_file_guard (6) + audit_issue (1) + learning_log (16) +
-# system_map (3) + settings_template_sync (1).
-_UNIT_CHECK_COUNT = 84
+# system_map (3) + system_map_whatchanged (7) + settings_template_sync (1).
+_UNIT_CHECK_COUNT = 91
 
 
 def _system_map_coverage_check() -> int:
@@ -331,6 +334,52 @@ def _system_map_coverage_check() -> int:
     doc = (arch / "ARCHITECTURE.md").read_text(encoding="utf-8")
     doc_missing = sorted(r for r in mapped if r not in doc)
     check(f"system_map: every mapped repo is in ARCHITECTURE.md (missing: {doc_missing or 'none'})", not doc_missing)
+
+    return failures
+
+
+def _system_map_whatchanged_check() -> int:
+    """The /system-map week-over-week diff (skills/system-map/whatchanged.py).
+
+    Pure-logic guard on the diff that feeds the one-line Slack summary: added /
+    removed repos are named, in-place edits are counted, a no-op week and a
+    first run read sensibly. Returns the failure count.
+    """
+    import importlib.util
+
+    failures = 0
+
+    def check(case: str, ok: bool) -> None:
+        nonlocal failures
+        print(f"{'OK   ' if ok else 'FAIL '} {case}")
+        if not ok:
+            failures += 1
+
+    wc_path = REPO / "skills" / "system-map" / "whatchanged.py"
+    spec = importlib.util.spec_from_file_location("system_map_whatchanged", wc_path)
+    wc = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(wc)  # type: ignore[union-attr]
+
+    prev = 'window.FLEET = {"web":[{"nm":"a","ds":"x"},{"nm":"b","ds":"y"}],"pipe":[{"nm":"c","ds":"z"}]};'
+    # add d, remove b, edit a's description, c unchanged.
+    cur = 'window.FLEET = {"web":[{"nm":"a","ds":"X2"},{"nm":"d","ds":"w"}],"pipe":[{"nm":"c","ds":"z"}]};'
+    diff = wc.diff_fleet(prev, cur)
+    check("system_map_whatchanged: detects an added repo", diff["added"] == ["d"])
+    check("system_map_whatchanged: detects a removed repo", diff["removed"] == ["b"])
+    check("system_map_whatchanged: counts edited cards, ignores unchanged", diff["updated"] == ["a"])
+
+    # repo-keyed card (display name differs from repo) is keyed by `repo`.
+    repo_prev = 'window.FLEET = {"web":[{"nm":"grocery","repo":"grocery-shopping-automation","ds":"x"}]};'
+    repo_cur = 'window.FLEET = {"web":[]};'
+    check("system_map_whatchanged: keys cards by repo-or-nm",
+          wc.diff_fleet(repo_prev, repo_cur)["removed"] == ["grocery-shopping-automation"])
+
+    check("system_map_whatchanged: format_line composes named adds/removes + count",
+          wc.format_line(diff) == "+d, −b, 1 repo updated")
+    check("system_map_whatchanged: empty diff reads 'no fleet changes'",
+          wc.format_line({"added": [], "removed": [], "updated": []}) == "no fleet changes")
+    check("system_map_whatchanged: no prior snapshot reads 'baseline'",
+          wc.summarize(None, cur) == "baseline")
 
     return failures
 
