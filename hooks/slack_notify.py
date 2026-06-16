@@ -283,8 +283,15 @@ def main(argv: Optional[List[str]] = None) -> int:
     )
     parser.add_argument(
         "--channel",
-        required=True,
-        help="Channel id, user id (for a DM), or a pasted archive URL.",
+        help="Channel id, user id (for a DM), or a pasted archive URL. "
+             "Optional when --category is given.",
+    )
+    parser.add_argument(
+        "--category",
+        choices=["attention", "log"],
+        help="Resolve the destination channel from projects.toml by intent "
+             "(issue #139) instead of hardcoding an id: 'attention' (come-look) "
+             "or 'log' (activity record). Ignored when --channel is given.",
     )
     parser.add_argument("--text", help="Message text (or caption with --file). If omitted, read from stdin.")
     parser.add_argument(
@@ -308,13 +315,33 @@ def main(argv: Optional[List[str]] = None) -> int:
 
     logging.basicConfig(level=logging.INFO, format="%(message)s", stream=sys.stderr)
 
+    # Resolve the destination channel + the user id to mention, both from
+    # projects.toml so nothing is hardcoded. --channel wins (back-compat);
+    # otherwise route by --category through the shared resolver (issue #139).
+    # The user id (for the single-sourced @mention) always comes from the
+    # resolver regardless of how the channel was chosen.
+    channel: Optional[str] = args.channel
+    user: Optional[str] = None
+    try:
+        import _lib  # local import keeps the transport import-safe if _lib is absent
+        resolved_channel, user, _name = _lib.resolve_slack_target(
+            Path(os.getcwd()), category=args.category
+        )
+        channel = channel or resolved_channel
+    except Exception:  # pragma: no cover - defensive: still send with an explicit --channel
+        pass
+
+    if not channel:
+        logger.error("❌ No channel: pass --channel or --category.")
+        return 2
+
     if args.file:
         # Caption follows the same rule as a plain message: --text wins, else
         # piped stdin (UTF-8). Lets a multi-line digest ride along as the file's
         # comment without fragile shell quoting. Existing callers pass --text, so
         # _read_text returns immediately and never touches stdin for them.
         ok = upload_file(
-            args.file, channel=args.channel, title=args.title,
+            args.file, channel=channel, title=args.title,
             comment=_read_text(args.text) or None,
         )
         return 0 if ok else 1
@@ -324,17 +351,8 @@ def main(argv: Optional[List[str]] = None) -> int:
         logger.error("❌ No message text (pass --text or pipe via stdin).")
         return 2
 
-    # Resolve the user id to mention from projects.toml — never hardcoded — so a
-    # manual caller can't drift by hand-typing a stale ``<@U…>`` into --text.
-    user: Optional[str] = None
-    try:
-        import _lib  # local import keeps the transport import-safe if _lib is absent
-        _channel, user, _name = _lib.resolve_slack_target(Path(os.getcwd()))
-    except Exception:  # pragma: no cover - defensive: still send without a mention
-        user = None
-
     ok = notify(
-        text, channel=args.channel, thread_ts=args.thread_ts,
+        text, channel=channel, thread_ts=args.thread_ts,
         user=user, mention=args.mention,
     )
     return 0 if ok else 1

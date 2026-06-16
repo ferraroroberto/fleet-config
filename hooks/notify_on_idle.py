@@ -88,7 +88,8 @@ def main() -> None:
     if payload.get("stop_hook_active"):
         _lib.allow()
 
-    channel, user, name = _lib.resolve_slack_target(_lib.cwd(payload))
+    # A "come look, I'm blocked" prompt is action-needed → the attention channel.
+    channel, user, name = _lib.resolve_slack_target(_lib.cwd(payload), category="attention")
     if not channel:
         _lib.allow()  # opt-in: not configured for this project → silent no-op
 

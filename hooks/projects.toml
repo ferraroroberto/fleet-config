@@ -24,6 +24,16 @@
 # A [global] slack_notify_channel below acts as a fleet-wide fallback. Both are
 # opt-in: with neither set, notify_on_idle is a silent no-op. The bot token lives
 # in ~/.claude/settings.json env (SLACK_BOT_TOKEN), never here. See docs/slack-workflow.md.
+#
+# Notification channel routing by intent (issue #139):
+#   slack_channel_attention = "C0123ABCD"   # "come look": blocked / awaiting input / ready-to-validate / batch-ready
+#   slack_channel_log       = "C0456DEFG"   # activity record: filed / shipped / merged / digests / system-map image
+# Each ping carries a category; the resolver (_lib.resolve_slack_target) routes
+# "attention" vs "log" to these channels, and FALLS BACK to slack_notify_channel
+# when a category channel is unset — so a single-channel setup keeps working and
+# the split can roll out one channel at a time. Both keys are also valid as a
+# per-project override. Skills that post directly use `slack_notify.py
+# --category {attention,log}` instead of a hardcoded --channel id.
 
 [app-launcher]
 cwd_prefix          = "E:/automation/app-launcher"
@@ -156,9 +166,11 @@ cwd_prefix = "E:/automation/whatsapp-radar"
 # 8446  = app-launcher session-host (kill kills every PTY/Claude session)
 [global]
 never_kill_ports = [8000, 8090, 8446]
-slack_notify_channel = "C0B76GBA0LS"   # fleet-wide fallback for notify_on_idle
+slack_notify_channel = "C0B76GBA0LS"   # fleet-wide fallback (used when a category channel below is unset)
 slack_notify_user    = "U0B71PQEL6S"   # Slack user id, @mention'd only when slack_notify_mention is on
 slack_notify_mention = false           # default off: the channel pushes to mobile without a tag, so the @mention was redundant noise. Flip to true to re-tag every ping.
+slack_channel_attention = "C0BAGNEQ163"   # #attention — come-look pings (blocked / awaiting input / ready-to-validate / batch-ready)
+slack_channel_log       = "C0BARRUBG03"   # #log — activity record (filed / shipped / merged / weekly digests / system-map image)
 
 # Repos excluded from the architecture map (architecture/ARCHITECTURE.md + the
 # generated visual). One maintainable list: vendored/external, legacy, or

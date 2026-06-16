@@ -18,6 +18,28 @@ The **bot helper is the pipe**. The **session hook is an automatic trigger** tha
 
 Not to be confused with the **claude.ai Slack MCP connector** (`mcp__claude_ai_Slack__*`): that posts *as me*, and Slack never notifies me about my own messages, so it can't deliver a notification. That's exactly why the bot helper exists.
 
+## Channel routing by intent — attention vs log (issue #139)
+
+One channel mixing "come look, I'm blocked" pings with "shipped, FYI" pings becomes unscannable: ten `🔔 awaits your input` interleaved with a `🚀 Shipped` hides what actually needs action. So every machine→me ping carries an **intent category** and routes to a dedicated channel. The split axis is *"do I need to act now?"* — **not** which hook emitted it.
+
+| Category | Channel | Pings |
+|---|---|---|
+| **`attention`** — act now | `#attention` (`slack_channel_attention`) | `notify_on_idle` 🔔 awaits-your-input; `notify_complete` `start` (🚦 ready to validate), `batch` (🏁), `cleanup` *when issues await review* |
+| **`log`** — activity record | `#log` (`slack_channel_log`) | `notify_complete` `add` 🆕 / `finish` ✅ / `yolo` 🚀 / `audit` 📊 / `recap` 🔄 / `learning` 📓 / `finish-batch` 🏁; the `/system-map` image; the `/insights-weekly` digest |
+
+Note `start` and `batch` are calls-to-action that come out of the *completion* helper, so routing-by-hook would misfile them — they go to `#attention`.
+
+**The routing is single-sourced** in `_lib.resolve_slack_target(cwd, category=…)`. It tries the per-category channel (project override → `[global]`) and **falls back to `slack_notify_channel` when that category channel is unset**. That fallback is what keeps a single-channel setup working unchanged and lets the split roll out one channel at a time. Config (in `hooks/projects.toml`):
+
+```toml
+[global]
+slack_notify_channel    = "C0B76GBA0LS"   # fallback (used when a category channel is unset)
+slack_channel_attention = "C0BAGNEQ163"   # #attention — come-look pings
+slack_channel_log       = "C0BARRUBG03"   # #log — activity record
+```
+
+Both category keys are also valid as a per-project override. The bot must be a member of each channel (`conversations.join` or `/invite`).
+
 ## 1. Bot helper — `slack_notify.py`
 
 Lives at `hooks/slack_notify.py`, reachable fleet-wide as `~/.claude/hooks/slack_notify.py` via the `hooks/` junction — zero install. Uses stdlib `urllib` (hooks run on system Python, no venv, no `requests`).
@@ -39,6 +61,14 @@ slack_notify.notify("done", channel="https://x.slack.com/archives/C0123ABCD")  #
 ```
 
 `--channel` / `channel=` accepts a bare channel id, a user id (for a DM), or a pasted archive URL (the id is parsed out). The call **never raises**: a missing token, bad channel, network error, or Slack API error logs to stderr and returns `False` / a non-zero exit, so an unattended job keeps running.
+
+Instead of a hardcoded `--channel`, a caller can pass `--category {attention,log}` to route by intent (see *Channel routing by intent* above) — the helper resolves the channel from `projects.toml`. The `/system-map` and `/insights-weekly` skills post their image/digest with `--category log`:
+
+```bash
+py ~/.claude/hooks/slack_notify.py --category log --file architecture/system-map.png --text "🛠️ Fleet map"
+```
+
+`--channel` still wins when both are given (back-compat); with neither, the CLI errors.
 
 **Manual / conversational pings go here too.** When I ask a session to "ping me on Slack" or "notify me like you do when you finish a job" — *outside* a skill — the answer is still this CLI, **not** the Slack MCP connector. Don't hand-type a `<@U…>` tag into `--text`: the mention decision is single-sourced inside `notify()` and **defaults off** (see below). If a specific ping should tag me, pass `--mention` and the helper resolves my user id from `projects.toml` itself — never hardcode it.
 
@@ -65,7 +95,7 @@ py ~/.claude/hooks/notify_complete.py --kind recap  --summary "3 skills swept �
 py ~/.claude/hooks/notify_complete.py --kind recap  --summary "2 skills consolidated, 4 promoted"   # 🔄 Weekly recap — explicit consolidation
 ```
 
-Every kind **leads with a status mark** (`✅ 🆕 🚦 🏁 🚀 📊 🔄`) as a glanceable cue. It resolves channel/user via the shared `_lib.resolve_slack_target()` (project override → `[global]` fallback), passes the user id to `notify()` (which decides the mention), is a silent no-op when no channel is configured, and always exits 0 — a notification failure can never block a skill. The one thing it can't force is the model remembering to *call* it; making the firing itself deterministic would need a merge-detecting hook, which is more brittle than it's worth.
+Every kind **leads with a status mark** (`✅ 🆕 🚦 🏁 🚀 📊 🔄`) as a glanceable cue. It maps each `--kind` to an intent category (`category_for()` — `start`/`batch`/`cleanup`-with-review → `attention`, the rest → `log`) and resolves channel/user via the shared `_lib.resolve_slack_target(cwd, category=…)` (project override → `[global]` category channel → `slack_notify_channel` fallback), passes the user id to `notify()` (which decides the mention), is a silent no-op when no channel is configured, and always exits 0 — a notification failure can never block a skill. The one thing it can't force is the model remembering to *call* it; making the firing itself deterministic would need a merge-detecting hook, which is more brittle than it's worth.
 
 ## 2. Session hook — `notify_on_idle.py`
 
@@ -84,7 +114,7 @@ slack_notify_user    = "U0123ABCD"   # user id, only @mention'd when slack_notif
 slack_notify_mention = false         # default off — channel pushes without a tag
 ```
 
-With neither channel set, the hook is a silent no-op — that keeps notification noise off by default. It hooks `Notification` (not `Stop`) deliberately, so it doesn't ping on every turn-end.
+The hook posts with `category="attention"`, so when `slack_channel_attention` is set (see *Channel routing by intent* above) its pings land in `#attention`; otherwise they fall back to `slack_notify_channel`. With no channel set at all, the hook is a silent no-op — that keeps notification noise off by default. It hooks `Notification` (not `Stop`) deliberately, so it doesn't ping on every turn-end.
 
 **Verify it's actually wired.** `settings.template.json` carries the `Notification` block, but `install.ps1` merges it into your live `~/.claude/settings.json` *once* — there's no re-sync, so the live file can silently drift and lose the block (then idle/permission pings just never fire). Confirm with `py -c "import json;print(list(json.load(open(r'C:/Users/rober/.claude/settings.json'))['hooks']))"` — `Notification` must be in the list. After re-adding it, restart Claude Code (or open `/hooks` once) so the harness reloads settings.
 
