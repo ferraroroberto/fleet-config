@@ -1,9 +1,9 @@
 <#
 .SYNOPSIS
-    Uninstall claude-config: remove only the links install.ps1 created.
+    Uninstall fleet-config: remove only the links install.ps1 created.
 
 .DESCRIPTION
-    Reads ~/.claude/.claude-config-installed.json and removes each recorded
+    Reads ~/.claude/.fleet-config-installed.json and removes each recorded
     junction/hardlink, then deletes the manifest. Never touches anything not
     in the manifest -- real files and unrelated directories under ~/.claude/
     are left untouched.
@@ -18,7 +18,7 @@ param()
 $ErrorActionPreference = 'Stop'
 
 $ClaudeHome   = Join-Path $env:USERPROFILE '.claude'
-$ManifestPath = Join-Path $ClaudeHome '.claude-config-installed.json'
+$ManifestPath = Join-Path $ClaudeHome '.fleet-config-installed.json'
 
 if (-not (Test-Path $ManifestPath)) {
     Write-Host "No manifest at $ManifestPath -- nothing to uninstall." -ForegroundColor Yellow

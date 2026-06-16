@@ -19,11 +19,11 @@ Usage::
     py ~/.claude/hooks/notify_complete.py --kind yolo   --issue 30 --pr 31 --pr-url https://github.com/owner/repo/pull/31
     py ~/.claude/hooks/notify_complete.py --kind batch  --passed 2 --total 3
     py ~/.claude/hooks/notify_complete.py --kind finish-batch --merged 4 --blocked 1
-    py ~/.claude/hooks/notify_complete.py --kind audit  --comment-url https://github.com/ferraroroberto/claude-config/issues/18#issuecomment-123 --summary "3 audited, 2 issues filed, 24 unchanged"
+    py ~/.claude/hooks/notify_complete.py --kind audit  --comment-url https://github.com/ferraroroberto/fleet-config/issues/18#issuecomment-123 --summary "3 audited, 2 issues filed, 24 unchanged"
     py ~/.claude/hooks/notify_complete.py --kind cleanup --summary documentation --merged 5 --review 2
     py ~/.claude/hooks/notify_complete.py --kind recap --summary "3 skills swept - alt-text +2, journal-daily +1"   # automatic sweep (no proposals)
     py ~/.claude/hooks/notify_complete.py --kind recap --summary "2 skills consolidated, 4 promoted"               # explicit consolidation
-    py ~/.claude/hooks/notify_complete.py --kind learning --comment-url https://github.com/ferraroroberto/claude-config/issues/131#issuecomment-456 --summary "12 PRs / 8 issues distilled · 2/3 horizon shipped"
+    py ~/.claude/hooks/notify_complete.py --kind learning --comment-url https://github.com/ferraroroberto/fleet-config/issues/131#issuecomment-456 --summary "12 PRs / 8 issues distilled · 2/3 horizon shipped"
 
 For ``--kind cleanup`` (the closing roll-up of a ``/cleanup-fleet`` swarm) pass
 ``--summary`` (the bucket name), ``--merged`` (sonnet issues YOLO'd to a merged

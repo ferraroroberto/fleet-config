@@ -1,4 +1,4 @@
-"""Shared helpers for the claude-config hooks.
+"""Shared helpers for the fleet-config hooks.
 
 Every hook in this directory:
 

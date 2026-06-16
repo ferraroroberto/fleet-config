@@ -48,4 +48,4 @@ If `list()` is still `[]` after a restart with the plugin enabled, treat the bro
 
 ## What this repo does and doesn't own
 
-`install.ps1` links this repo's shared assets into `~/.codex` (see the [Codex parity section in the README](../README.md#codex-parity--one-source-both-agents)). It deliberately does **not** install or manage the OpenAI-bundled Browser plugin runtime — that bundle is Codex-managed state outside this repo. Fixing an empty `list()` is always a Codex-client action, never a change to `claude-config`.
+`install.ps1` links this repo's shared assets into `~/.codex` (see the [Codex parity section in the README](../README.md#codex-parity--one-source-both-agents)). It deliberately does **not** install or manage the OpenAI-bundled Browser plugin runtime — that bundle is Codex-managed state outside this repo. Fixing an empty `list()` is always a Codex-client action, never a change to `fleet-config`.

@@ -11,7 +11,7 @@ description: Refresh Claude Code's built-in /insights report, then diff the newe
 
 ## Execution rules (read first)
 
-- **Run from the `claude-config` repo root** (`E:/automation/claude-config`) so the helper paths resolve.
+- **Run from the `fleet-config` repo root** (`E:/automation/fleet-config`) so the helper paths resolve.
 - **Never commit insights data or reports.** The output lands under `~/.claude/usage-data/weekly/`, entirely outside the repo. Don't copy it in.
 - **The model is the hub's job.** `report.py` POSTs to the hub via stdlib `urllib` (zero-install) — never re-implement a `claude -p` wrapper. Default model `claude_sonnet` (reliably up via the hub's claude backend); override with `INSIGHTS_DIFF_MODEL` (e.g. `gemma4_26b`, `qwen3.5-4b`, `gemini_flash`) when that backend is loaded.
 - **Degrade gracefully, never block on a prompt** (this runs unattended): first run with one report → baseline, not a diff; hub unreachable → surface the error and skip Slack rather than hang.
@@ -64,4 +64,4 @@ Add an **app-launcher Jobs** entry (Windows Task Scheduler under `\AppLauncher\`
 claude -p "/insights-weekly" --permission-mode bypassPermissions
 ```
 
-cwd = `E:/automation/claude-config`. Same executor as every other scheduled job (`/system-map`, `/audit-fleet`); the skill handles refresh + hub diff + Slack itself. (Alternatively a scheduled cloud agent invoking the same line.)
+cwd = `E:/automation/fleet-config`. Same executor as every other scheduled job (`/system-map`, `/audit-fleet`); the skill handles refresh + hub diff + Slack itself. (Alternatively a scheduled cloud agent invoking the same line.)

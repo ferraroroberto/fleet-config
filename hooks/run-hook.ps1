@@ -48,7 +48,7 @@ foreach ($name in @('py', 'python')) {
 }
 
 if (-not $pythonCmd) {
-    Write-Error "Neither 'py' nor 'python' is on PATH -- claude-config hooks cannot run."
+    Write-Error "Neither 'py' nor 'python' is on PATH -- fleet-config hooks cannot run."
     exit 0
 }
 

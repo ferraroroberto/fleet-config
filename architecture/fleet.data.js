@@ -8,7 +8,7 @@
 window.FLEET = {
   "governance": [
     {"ic": "📐", "nm": "project-scaffolding", "ds": "Canonical master — the scaffold &amp; CLAUDE.md every project derives from."},
-    {"ic": "⚙️", "nm": "claude-config", "ds": "Fleet-wide Claude Code hooks, skills &amp; the issue workflow."}
+    {"ic": "⚙️", "nm": "fleet-config", "ds": "Fleet-wide Claude Code hooks, skills &amp; the issue workflow."}
   ],
   "access": [
     {"ic": "📱", "nm": "iPhone", "ds": "Phone-first — one tap launches anything."},

@@ -6,7 +6,7 @@ settings.local.json
 
 # Secrets — never track. The Slack bot token lives in ~/.codex/config.toml and
 # ~/.claude/settings.json (secret-managed, env-var injected), never in this repo.
-# Belt-and-braces against an accidental copy landing here (claude-config#74);
+# Belt-and-braces against an accidental copy landing here (fleet-config#74);
 # the real wire is the secret_scan_guard hook, which blocks the commit itself.
 .env
 *.env
@@ -14,7 +14,7 @@ config.toml
 .codex/
 
 # Installer state (records which junctions/symlinks were created)
-.claude-config-installed.json
+.fleet-config-installed.json
 
 # OS / editor noise
 .DS_Store

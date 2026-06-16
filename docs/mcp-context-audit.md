@@ -1,6 +1,6 @@
 # MCP connector audit — context cost vs. actual usage
 
-**Audit date:** 2026-06-15 · **Issue:** [#128](https://github.com/ferraroroberto/claude-config/issues/128) · **First migration:** [life-os#29](https://github.com/ferraroroberto/life-os/issues/29)
+**Audit date:** 2026-06-15 · **Issue:** [#128](https://github.com/ferraroroberto/fleet-config/issues/128) · **First migration:** [life-os#29](https://github.com/ferraroroberto/life-os/issues/29)
 
 The question this answers: *how many MCP servers feed my sessions, how much context do they cost, how often is each actually used across the whole `E:\automation` fleet, and what should move off MCP onto plain scripts/CLI?*
 

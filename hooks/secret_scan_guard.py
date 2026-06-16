@@ -5,7 +5,7 @@ the **staged diff** (`git diff --cached`) — and the command string itself — 
 a real credential. Today the one pattern that matters across this fleet is a
 Slack **bot token** (`xoxb-…`): the user keeps Slack creds in a secret-managed
 location (`.env` / `SLACK_BOT_TOKEN`), never in a tracked file. This is the wire
-that catches the mistake before a token lands in `git log` (claude-config#74).
+that catches the mistake before a token lands in `git log` (fleet-config#74).
 
 Why scan the staged diff, not just the command string: the no-AI-trailer guard
 only needs the commit *message*, which lives in the command. A leaked secret

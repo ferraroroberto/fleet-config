@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-    Install claude-config into ~/.claude/ via Windows junctions and symlinks.
+    Install fleet-config into ~/.claude/ via Windows junctions and symlinks.
 
 .DESCRIPTION
     Creates a link from C:/Users/<you>/.claude/<name> -> <repo>/<name> so edits
@@ -18,7 +18,7 @@
       - Existing real file/directory             -> refuses with "rename then re-run"
       - Nothing there                            -> creates the link
 
-    Records every link it creates in ~/.claude/.claude-config-installed.json so
+    Records every link it creates in ~/.claude/.fleet-config-installed.json so
     uninstall.ps1 can remove exactly what it added.
 
 .NOTES
@@ -34,7 +34,7 @@ $RepoRoot       = Split-Path -Parent $MyInvocation.MyCommand.Path
 $ClaudeHome     = Join-Path $env:USERPROFILE '.claude'
 $AgentsHome     = Join-Path $env:USERPROFILE '.agents'
 $CodexHome      = Join-Path $env:USERPROFILE '.codex'
-$ManifestPath   = Join-Path $ClaudeHome '.claude-config-installed.json'
+$ManifestPath   = Join-Path $ClaudeHome '.fleet-config-installed.json'
 
 # Link targets live under a base home. 'claude' (default) -> ~/.claude; 'agents' -> ~/.agents
 # (the cross-agent skills location Codex reads); 'codex' -> ~/.codex (Codex's own home, for

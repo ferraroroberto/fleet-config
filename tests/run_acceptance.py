@@ -164,7 +164,7 @@ def main() -> int:
     ]
 
     # ---- py_syntax_check needs real files ----
-    tmp = Path(tempfile.mkdtemp(prefix="claude-config-test-"))
+    tmp = Path(tempfile.mkdtemp(prefix="fleet-config-test-"))
     broken = tmp / "broken.py"
     good   = tmp / "good.py"
     broken.write_text("def foo(:\n    pass\n", encoding="utf-8")
@@ -190,7 +190,7 @@ def main() -> int:
     ))
 
     # ---- notify_on_idle ----
-    # claude-config itself has no per-project slack_notify_channel in projects.toml,
+    # fleet-config itself has no per-project slack_notify_channel in projects.toml,
     # but the [global] fallback IS now set. The hook will try to post but the
     # SLACK_BOT_TOKEN is not in the subprocess env, so slack_notify returns False
     # gracefully and the hook still exits 0.

@@ -20,7 +20,7 @@ description: Turn the fleet's GitHub work stream into a weekly learning log + fo
 
 ## Execution rules (read first)
 
-- **Run from the `claude-config` repo root** (`E:/automation/claude-config`) so helper paths resolve.
+- **Run from the `fleet-config` repo root** (`E:/automation/fleet-config`) so helper paths resolve.
 - **Public repos only.** The digest and its stats are published in a public ledger issue, so `gather.py` lists with `--visibility public` — private-repo activity (and even repo names) is never gathered, counted, or narrated. A sub-agent must never cite a `repo#N` outside the public set it was handed.
 - **Read-only on GitHub except three writes:** the `kind=learning` ledger issue (upsert), the weekly comment on it, and the Slack ping. Never edits source, commits, pushes, or restarts.
 - **Stats are deterministic — never let the model invent numbers.** Every count and LOC figure comes from `gather.py` (Python over `gh` JSON), pasted verbatim. The sub-agents narrate *insight*, not statistics.
@@ -80,7 +80,7 @@ Write the new horizon bullets to `horizon.md` and the discovery bullets to `disc
 
 ```
 py skills/learning-log/gather.py assemble-ledger \
-  --repo ferraroroberto/claude-config \
+  --repo ferraroroberto/fleet-config \
   --horizon-file <OUT_DIR>/horizon.md --discoveries-file <OUT_DIR>/discoveries.md \
   --out <OUT_DIR>/ledger-body.md
 ```
@@ -88,14 +88,14 @@ py skills/learning-log/gather.py assemble-ledger \
 Then upsert the one canonical `kind=learning` ledger (deduped by `skills/_lib/audit_issue.py`; title `learning log — fleet`; label `audit-meta` so `/issue-triage` filters it out):
 
 ```
-py skills/_lib/audit_issue.py upsert --repo ferraroroberto/claude-config \
+py skills/_lib/audit_issue.py upsert --repo ferraroroberto/fleet-config \
   --kind learning --label audit-meta --title "learning log — fleet" --body-file <OUT_DIR>/ledger-body.md
 ```
 
 Capture `LEDGER_URL`. Post the digest as a comment (the running week-by-week log):
 
 ```
-COMMENT_URL=$(gh issue comment "<LEDGER_URL>" --repo ferraroroberto/claude-config --body-file <digest file>)
+COMMENT_URL=$(gh issue comment "<LEDGER_URL>" --repo ferraroroberto/fleet-config --body-file <digest file>)
 ```
 
 ### 5. Slack completion ping
@@ -117,7 +117,7 @@ A few lines: window, grand totals, buckets analysed (+ any agent that errored), 
 - **Why a ledger issue, not `docs/`:** the global `CLAUDE.md` rule — durable knowledge lives in *one canonical issue with a dated decision log*. The issue body is the deduped durable archive + live horizon; its comments are the week-by-week record (narrative + tables).
 - **Why anchor the window to `last-run-at`:** a missed/late run never drops a week — the next run widens. First run with no ledger falls back to trailing 7 days.
 - **Buckets** are by work type — PRs by conventional-commit prefix (`feat`/`fix`/`chore`/`docs`/`refactor`/…), issues by type label. Items with neither land in **Other** (a known limitation; tighten with keyword heuristics in `gather.py` if it grows).
-- **Separate from `/system-map`** (cross-linked, not modified) and from claude-config#95.
+- **Separate from `/system-map`** (cross-linked, not modified) and from fleet-config#95.
 
 ## Wiring the weekly schedule
 
@@ -127,4 +127,4 @@ An app-launcher Job (`config/jobs.json`, weekly, `visible: true`) calls `skills/
 claude -p "/learning-log" --model claude-sonnet-4-6 --permission-mode bypassPermissions
 ```
 
-cwd = `E:/automation/claude-config`. The Sonnet orchestrator gathers, fans out the Sonnet bucket sub-agents, aggregates, and writes the ledger + comment + Slack itself.
+cwd = `E:/automation/fleet-config`. The Sonnet orchestrator gathers, fans out the Sonnet bucket sub-agents, aggregates, and writes the ledger + comment + Slack itself.

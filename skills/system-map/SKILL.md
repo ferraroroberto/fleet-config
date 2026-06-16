@@ -11,11 +11,11 @@ description: Regenerate the fleet architecture map — crawl every repo under E:
 
 **Designed for unattended runs.** A weekly job invokes it via
 `claude -p "/system-map" --permission-mode bypassPermissions` from the
-`claude-config` repo. Every step must degrade gracefully, never block on a prompt.
+`fleet-config` repo. Every step must degrade gracefully, never block on a prompt.
 
 ## Execution rules (read first)
 
-- **Run from the `claude-config` repo root** (`E:/automation/claude-config`). All paths below are relative to it.
+- **Run from the `fleet-config` repo root** (`E:/automation/fleet-config`). All paths below are relative to it.
 - **Never leak hardware specs.** The render always forces `?placeholders=1`, so the committed PNG shows `<model> · <NN> GB` placeholders even though a local `system-map.local.js` exists. Do not put real specs into `ARCHITECTURE.md`, the `DATA` object, or the commit. (See `architecture/README.md`.)
 - **Keep `DATA` and `ARCHITECTURE.md` in lockstep.** Any project add/remove/edit happens in *both* files in the same run.
 - **Don't disturb in-progress work.** Only touch `architecture/` and only commit those paths.
@@ -105,4 +105,4 @@ Add an **app-launcher Jobs** entry (Windows Task Scheduler under `\AppLauncher\`
 claude -p "/system-map" --permission-mode bypassPermissions
 ```
 
-cwd = `E:/automation/claude-config`. Same executor as every other scheduled job; the skill handles render + commit-if-changed + Slack itself. (Alternatively a scheduled cloud agent invoking the same line.)
+cwd = `E:/automation/fleet-config`. Same executor as every other scheduled job; the skill handles render + commit-if-changed + Slack itself. (Alternatively a scheduled cloud agent invoking the same line.)

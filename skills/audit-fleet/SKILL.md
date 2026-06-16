@@ -5,9 +5,9 @@ description: Run /codebase-audit across every repo in the E:\automation fleet in
 
 # audit-fleet
 
-**Goal:** A fleet-wide, idempotent, scatter-gather wrapper around `/codebase-audit`. Walk every repo under `E:\automation\`, cheaply skip the ones that haven't changed since their last audit, audit the changed ones **through a bounded window of up to 3 concurrent sub-agents** (one per repo, the global Opus concurrency cap) that each run the full `/codebase-audit` procedure, then collect the results into **one diff-based digest** posted as a GitHub comment on the `audit-fleet digest state` ledger issue in `claude-config` (the running log) and printed to stdout (so a scheduled run captures it in history). A Slack ping with the comment link is sent deterministically via `notify_complete.py --kind audit`.
+**Goal:** A fleet-wide, idempotent, scatter-gather wrapper around `/codebase-audit`. Walk every repo under `E:\automation\`, cheaply skip the ones that haven't changed since their last audit, audit the changed ones **through a bounded window of up to 3 concurrent sub-agents** (one per repo, the global Opus concurrency cap) that each run the full `/codebase-audit` procedure, then collect the results into **one diff-based digest** posted as a GitHub comment on the `audit-fleet digest state` ledger issue in `fleet-config` (the running log) and printed to stdout (so a scheduled run captures it in history). A Slack ping with the comment link is sent deterministically via `notify_complete.py --kind audit`.
 
-**This skill files no issues itself.** The only writes are (a) the audit issues that each sub-agent's `/codebase-audit` files, (b) the per-repo `audit-meta` ledger those audits update, (c) one `audit-fleet digest state` ledger issue in `claude-config` for week-over-week deltas, (d) the digest comment on that issue, and (e) one cross-fleet `fleet practices ledger` issue in `project-scaffolding` cataloguing reusable solutions. It never edits source, commits, pushes, or restarts anything.
+**This skill files no issues itself.** The only writes are (a) the audit issues that each sub-agent's `/codebase-audit` files, (b) the per-repo `audit-meta` ledger those audits update, (c) one `audit-fleet digest state` ledger issue in `fleet-config` for week-over-week deltas, (d) the digest comment on that issue, and (e) one cross-fleet `fleet practices ledger` issue in `project-scaffolding` cataloguing reusable solutions. It never edits source, commits, pushes, or restarts anything.
 
 **Designed for unattended runs.** A weekly app-launcher job invokes this via
 `claude -p "/audit-fleet" --model claude-opus-4-7 --effort high
@@ -128,7 +128,7 @@ Run a resting-state codebase audit on the <name> repo.
 
 1. cd to <path>.
 2. Execute the procedure in
-   E:\automation\claude-config\skills\codebase-audit\SKILL.md against this repo,
+   E:\automation\fleet-config\skills\codebase-audit\SKILL.md against this repo,
    whole-repo scope. That skill files at most 6 GitHub issues bucketed by
    finding type (one bucket reviews README/docs quality), dedupes against open
    issues, and updates the repo's audit-meta
@@ -218,7 +218,7 @@ fails (e.g. no access to `project-scaffolding`), note `practices: skipped
 
 Read the digest-state ledger first so the recap is week-over-week, not a
 re-list:
-`py C:/Users/rober/.claude/skills/_lib/audit_issue.py get --repo ferraroroberto/claude-config --kind digest`.
+`py C:/Users/rober/.claude/skills/_lib/audit_issue.py get --repo ferraroroberto/fleet-config --kind digest`.
 Parse the `<!-- audit-fleet-digest -->` block from the returned `body`:
 
 ```
@@ -254,7 +254,7 @@ create-vs-edit, collapses strays, and stamps the marker (keep the
 
 ```
 py C:/Users/rober/.claude/skills/_lib/audit_issue.py upsert \
-  --repo ferraroroberto/claude-config --kind digest --label audit-meta \
+  --repo ferraroroberto/fleet-config --kind digest --label audit-meta \
   --title "audit-fleet digest state" --body-file <tmpfile>
 ```
 
@@ -266,10 +266,10 @@ step 7 — never a hardcoded issue number.
 Two channels. stdout is the reliable one (a scheduled run captures it in app-launcher's job history); the GitHub comment is the durable record that the Slack ping links to.
 
 - **stdout:** print the full markdown digest. Always.
-- **GitHub comment:** post the digest as a comment on the `audit-fleet digest state` issue in `ferraroroberto/claude-config` — the one step 6 upserted (`DIGEST_ISSUE_URL`), never a hardcoded id — turning that issue into a running log of every weekly run. Use the `gh issue comment` output URL:
+- **GitHub comment:** post the digest as a comment on the `audit-fleet digest state` issue in `ferraroroberto/fleet-config` — the one step 6 upserted (`DIGEST_ISSUE_URL`), never a hardcoded id — turning that issue into a running log of every weekly run. Use the `gh issue comment` output URL:
 
   ```bash
-  COMMENT_URL=$(gh issue comment "$DIGEST_ISSUE_URL" --repo ferraroroberto/claude-config --body "$DIGEST_MARKDOWN")
+  COMMENT_URL=$(gh issue comment "$DIGEST_ISSUE_URL" --repo ferraroroberto/fleet-config --body "$DIGEST_MARKDOWN")
   # gh issue comment prints the URL of the created comment on stdout
   ```
 
@@ -302,7 +302,7 @@ One concise block: the plan line from step 3, per-repo results, where the digest
   commit, push, or restart. The only writes are audit issues, the per-repo
   ledger, the digest-state issue, the digest comment, and the cross-fleet
   practices ledger in `project-scaffolding`. The practices ledger is the one
-  write target outside `claude-config` — still an issue, never source.
+  write target outside `fleet-config` — still an issue, never source.
 - **Never disturb in-progress work.** Dirty or off-default-branch repos are
   skipped and reported, never stashed or force-switched.
 - **One sub-agent per repo, opus, through a ≤3 sliding window.** Keep at most 3
