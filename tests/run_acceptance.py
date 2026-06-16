@@ -263,6 +263,9 @@ def main() -> int:
     # ---- audit_issue helper pure-logic tests (skills/_lib) ----
     failures += _audit_issue_unit_check()
 
+    # ---- worktree_claim helper pure-logic tests (skills/_lib) ----
+    failures += _worktree_claim_unit_check()
+
     # ---- learning-log report.py pure helpers (skills/learning-log) ----
     failures += _learning_log_unit_checks()
 
@@ -286,9 +289,9 @@ def main() -> int:
 # Sum of the unit checks below: slack_notify (3) + mention (5) + classify (6) +
 # notify_complete (18) + slack_routing (10) + conversation_capture (13) +
 # conversation_index (6) + restart_webapp (6) + gh_body_file_guard (6) +
-# audit_issue (1) + learning_log (16) + system_map (3) +
+# audit_issue (1) + worktree_claim (1) + learning_log (16) + system_map (3) +
 # system_map_whatchanged (7) + settings_template_sync (1).
-_UNIT_CHECK_COUNT = 101
+_UNIT_CHECK_COUNT = 102
 
 
 def _system_map_coverage_check() -> int:
@@ -594,6 +597,25 @@ def _audit_issue_unit_check() -> int:
     )
     ok = proc.returncode == 0
     print(f"{'OK   ' if ok else 'FAIL '} audit_issue: pure-logic unit tests")
+    if not ok:
+        for line in (proc.stdout or "").strip().splitlines():
+            print(f"        | {line}")
+    return 0 if ok else 1
+
+
+def _worktree_claim_unit_check() -> int:
+    """Run skills/_lib/worktree_claim.py's pure-logic tests as a subprocess.
+
+    Standalone (like test_audit_issue) so the claim FSM — atomic acquire, the
+    worktree fallback when held, TTL stale-reclaim, and the sibling-path
+    convention — is testable on its own and reachable from the one gate.
+    """
+    proc = subprocess.run(
+        [PYTHON, str(REPO / "tests" / "test_worktree_claim.py")],
+        capture_output=True, text=True, encoding="utf-8", errors="replace",
+    )
+    ok = proc.returncode == 0
+    print(f"{'OK   ' if ok else 'FAIL '} worktree_claim: pure-logic unit tests")
     if not ok:
         for line in (proc.stdout or "").strip().splitlines():
             print(f"        | {line}")

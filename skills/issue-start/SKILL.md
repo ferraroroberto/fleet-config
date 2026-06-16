@@ -23,18 +23,50 @@ Without `now`/`plan`, the mode is chosen from the issue's type label (step 6).
 ## Steps
 
 Run in order. If a step fails, print a short error and stop — don't leave a
-half-made branch behind.
+half-made branch (or worktree) behind. If you abort *after* step 0 claimed
+`MODE=primary` (e.g. the issue turns out closed), release the claim before
+stopping so the repo isn't blocked for the 8h TTL:
+`py C:/Users/rober/.claude/skills/_lib/worktree_claim.py release <repo>`.
+
+### 0. Claim the repo (concurrency-safe start)
+
+**The very first action, before reading the issue or studying any code.** Two
+sessions on the same repo collide during the minutes-long *study* phase, long
+before either cuts a branch — so the claim has to be dropped up front. Run from
+the repo root (`<repo>` = current working directory; `--issue` is optional
+diagnostic metadata, omit it in pick mode):
+
+```
+py C:/Users/rober/.claude/skills/_lib/worktree_claim.py acquire <repo> --issue <N>
+```
+
+Read the printed `MODE=`:
+- **`MODE=primary`** — you are the first session here. Work **in place** on the
+  primary checkout, exactly as the steps below describe.
+- **`MODE=worktree`** — another live session already owns the primary checkout.
+  You will build in an **isolated sibling worktree** (`<repo>-wt-<N>`, `.venv`
+  junctioned from the primary). Steps 1, 4 and 5 branch on this; nothing you do
+  touches the other session's tree.
+
+This is the single concurrency primitive — `/issue-yolo`, `/issue-batch`
+in-place, and `/cleanup-fleet` all inherit it because they route through this
+skill. The claim is released by `/issue-finish` (or auto-expires after 8h if a
+session crashes). See `skills/_lib/worktree_claim.py` and README "Concurrent
+same-repo work".
 
 ### 1. Pre-flight
 
 Run in parallel:
 - `git rev-parse --is-inside-work-tree` — must be `true`, else stop:
   "Not inside a git repository."
-- `git status --porcelain` — must be empty. If the working tree is dirty, stop:
-  "Uncommitted changes — commit, stash, or discard them before starting a new
-  issue." Never switch branches over dirty state.
-- `git branch --show-current` — if already on a `feat/`/`fix/`/`ci/`/`docs/`
-  branch, warn that another issue looks in-flight and ask whether to continue.
+- **Primary mode only** — `git status --porcelain` must be empty. If the working
+  tree is dirty, stop: "Uncommitted changes — commit, stash, or discard them
+  before starting a new issue." Never switch branches over dirty state. In
+  **worktree mode** skip this: you build in a fresh isolated tree, so the
+  primary's state is irrelevant (its being busy is *why* you got worktree mode).
+- `git branch --show-current` — **primary mode only**: if already on a
+  `feat/`/`fix/`/`ci/`/`docs/` branch, warn that another issue looks in-flight
+  and ask whether to continue.
 
 ### 2. Choose the issue
 
@@ -55,19 +87,36 @@ In parallel:
 
 ### 4. Sync the main branch
 
-- Detect the main branch: `git symbolic-ref refs/remotes/origin/HEAD` → strip
-  `origin/`; fall back to `main`.
-- `git checkout <main>` then `git pull --ff-only`. If the pull is not a
-  fast-forward, stop and report — don't merge or rebase blindly.
+- **Worktree mode:** skip the checkout/pull entirely — never `git checkout
+  <main>` in a worktree session (the primary checkout owns `main`; switching it
+  is the exact collision this skill prevents). Just `git fetch origin` so the
+  worktree (cut in step 5) starts off the latest `origin/main`.
+- **Primary mode:**
+  - Detect the main branch: `git symbolic-ref refs/remotes/origin/HEAD` → strip
+    `origin/`; fall back to `main`.
+  - `git checkout <main>` then `git pull --ff-only`. If the pull is not a
+    fast-forward, stop and report — don't merge or rebase blindly.
 
 ### 5. Cut the feature branch
 
+Compute the branch name the same way in both modes:
 - Prefix: `fix/` if the issue carries a `bug` label, else `feat/` (use `ci/` or
   `docs/` when the issue is plainly that kind of work).
 - Slug: lowercase the issue title, keep alphanumerics, collapse the rest to
   single hyphens, trim to ~4 words.
 - Branch name: `<prefix>/<N>-<slug>` — e.g. `feat/35-running-session-rename`.
-- `git checkout -b <branch>`. Report the branch name.
+
+Then:
+- **Primary mode:** `git checkout -b <branch>`. Report the branch name.
+- **Worktree mode:** create the isolated worktree (off latest `origin/main`,
+  with the primary's `.venv` junctioned in) and move into it:
+  ```
+  py C:/Users/rober/.claude/skills/_lib/worktree_claim.py setup-worktree <repo> <N> <branch>
+  ```
+  `cd` into the printed `WORKTREE=` path. **All remaining work happens there.**
+  Report the branch name **and** the worktree path. (Never hand-roll `git
+  worktree add` + a `.venv` junction — the helper owns that, and owns the
+  reparse-safe teardown in `/issue-finish`.)
 
 ### 6. Hand off to work
 

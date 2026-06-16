@@ -57,10 +57,16 @@ List local git repos under the fleet root that have a `ferraroroberto` remote:
 
 ```
 for d in /e/automation/*/; do
+  [ -d "$d/.git" ] || continue   # skip linked worktrees (<repo>-wt-N): their .git is a FILE, not a dir
   url=$(git -C "$d" remote get-url origin 2>/dev/null) || continue
   case "$url" in *ferraroroberto/*) echo "$(basename "$d")";; esac
 done
 ```
+
+The `.git`-is-a-directory guard excludes the transient `<repo>-wt-<N>` worktrees
+that `/issue-start`'s concurrency path leaves around mid-flight — a linked
+worktree shares the repo's `ferraroroberto` remote, so without the guard it
+would surface in the digest as a spurious off-branch repo.
 
 If the single-repo argument was passed, keep only that name. Hold the resulting
 list of `(name, path)` pairs.

@@ -18,6 +18,13 @@ Run in parallel; stop on any failure:
   If the branch carries no number, ask which issue this closes.
 - Read the project's `CLAUDE.md` — verification gate command, docs discipline,
   any tray/restart procedure.
+- **Detect the checkout mode** (drives the merge-land + cleanup in step 5):
+  ```
+  py C:/Users/rober/.claude/skills/_lib/worktree_claim.py mode <repo>
+  ```
+  prints `primary` (work in the shared checkout) or `worktree` (a linked
+  `<repo>-wt-<N>` created by `/issue-start`'s concurrency path). Remember which;
+  the two modes finish differently.
 
 ## Steps
 
@@ -95,7 +102,22 @@ convention is `ferraroroberto/project-scaffolding#52`).
   only the *remote CI wait*; it never skips the verification gate in step 3.
 - `gh pr merge <PR> --merge --delete-branch` — merge commit; branch deleted on
   both remote and local.
-- `git checkout <main>` then `git pull --ff-only` to land the merge locally.
+- **Land + clean up, by checkout mode** (from pre-flight):
+  - **Primary checkout:** `git checkout <main>` then `git pull --ff-only` to land
+    the merge locally, then release the concurrency claim so the next session can
+    own the primary:
+    ```
+    py C:/Users/rober/.claude/skills/_lib/worktree_claim.py release <repo>
+    ```
+  - **Linked worktree:** do **not** `git checkout <main>` — the primary checkout
+    may belong to another live session; the merge is already authoritative on the
+    remote. Instead `cd` out to the primary repo path (`<repo>`) and remove this
+    worktree (the helper strips the `.venv` junction *before* `git worktree
+    remove`, so the primary's real venv is never touched):
+    ```
+    py C:/Users/rober/.claude/skills/_lib/worktree_claim.py remove-worktree <repo>-wt-<N>
+    ```
+    A worktree session holds no primary claim, so there is nothing to release.
 - Confirm the issue closed (`gh issue view <N>` → `CLOSED`). If it didn't
   auto-close, close it manually with a comment referencing the merge commit.
 
