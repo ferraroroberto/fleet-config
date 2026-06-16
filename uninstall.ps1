@@ -50,12 +50,12 @@ foreach ($prop in $manifest.PSObject.Properties) {
         continue
     }
 
-    # Remove the link itself, not the target
-    [System.IO.Directory]::Delete($target, $false) 2>$null
-    if (Test-Path $target) {
-        # Fallback for hardlinks on files
-        Remove-Item -LiteralPath $target -Force
-    }
+    # Remove the link itself, not the target. The .NET delete call is type-specific:
+    # Directory::Delete handles junctions and directory symlinks; File::Delete handles
+    # file symlinks and hardlinks. Using Directory::Delete on a file reparse point throws
+    # "The directory name is invalid." (see #136), so branch on the type we already fetched.
+    if ($info.PSIsContainer) { [System.IO.Directory]::Delete($target, $false) }
+    else                     { [System.IO.File]::Delete($target) }
     Write-Host "REMOVED $target ($entryKind)" -ForegroundColor Cyan
     $removed++
 }
