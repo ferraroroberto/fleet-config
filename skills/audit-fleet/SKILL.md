@@ -1,6 +1,6 @@
 ---
 name: audit-fleet
-description: Run /codebase-audit across every repo in the E:\automation fleet in one pass — enumerate the local ferraroroberto repos, skip the ones unchanged since their last audit (per-repo ledger gate), audit the changed ones through a bounded window of up to 3 concurrent sub-agents (the global Opus concurrency cap) that each run the full audit, then emit one diff-based weekly digest as a GitHub comment on the audit-fleet ledger issue + a Slack ping with the link (and to stdout). Also catalogs each repo's hard-won reusable solutions into one cross-fleet "practices ledger" issue in project-scaffolding. Built to run unattended on a weekly schedule. Use when the user wants a whole-fleet quality sweep — e.g. "/audit-fleet", "audit the whole fleet", "weekly codebase audit across all repos".
+description: Run /codebase-audit across every repo in the E:\automation fleet in one pass and emit one weekly digest (GitHub comment + Slack ping). Use when the user wants a whole-fleet quality sweep — e.g. "/audit-fleet", "audit the whole fleet", "weekly codebase audit across all repos". Also runs unattended on a weekly schedule.
 ---
 
 # audit-fleet

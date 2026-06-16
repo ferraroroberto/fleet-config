@@ -1,6 +1,6 @@
 ---
 name: learning-log
-description: Turn the fleet's GitHub work stream into a weekly learning log + forward horizon + productivity stats. Gather every merged PR and closed issue across the ferraroroberto fleet per repo since the last run (full window, no cap), compute exact productivity tables (PRs / issues / LOC by project and by work-type bucket), fan out one Sonnet sub-agent per bucket to EXTRACT INSIGHTS (patterns, decisions, durable lessons) in a fixed format, aggregate into a themed narrative + horizon grading, and keep it all in one canonical learning-log ledger issue (durable archive in the body, weekly narrative + tables in the comments) with a Slack ping. Reads NO source code — purely the GitHub work stream. Use when the user wants the week's learning journey + productivity distilled — e.g. "/learning-log", "weekly learning log", "what did we ship and learn this week". Built to also run unattended on a weekly schedule.
+description: Weekly learning log + forward horizon + productivity stats distilled from the fleet's GitHub work stream (merged PRs and closed issues, no source code). Use when the user wants the week's learning journey and productivity distilled — e.g. "/learning-log", "weekly learning log", "what did we ship and learn this week". Also runs unattended on a weekly schedule.
 ---
 
 # learning-log

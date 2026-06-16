@@ -1,6 +1,6 @@
 ---
 name: cleanup-fleet
-description: Take one bucket of audit findings (a label like documentation, claude-md-drift, bug, …), gather every open issue carrying it across the E:\automation fleet, score each for complexity, and fan out a swarm of one background agent per repo — Sonnet for easy issues (full YOLO → merged), Opus for complex ones (build → stop for your review, capped at 3 Opus agents in flight via the global Opus concurrency window). The fix-half of /audit-fleet. Use when the user wants to clear a whole category of audit work in one pass — e.g. "/cleanup-fleet documentation", "/cleanup-fleet drift", "clean up all the bugs", "/cleanup-fleet docs easy".
+description: Take one bucket of audit findings (a label like documentation, drift or bug) and fan out one background agent per repo to fix every open issue carrying it across the E:\automation fleet. The fix-half of /audit-fleet. Use to clear a whole category of audit work in one pass — e.g. "/cleanup-fleet documentation", "/cleanup-fleet drift", "clean up all the bugs", "/cleanup-fleet docs easy".
 ---
 
 # cleanup-fleet

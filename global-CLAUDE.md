@@ -2,11 +2,123 @@
 
 User-level memory loaded into every coding-agent session on this machine. This one file is the single source of truth for **both** agents: Claude Code reads it as `~/.claude/CLAUDE.md`, Codex reads it as `~/.codex/AGENTS.md` (same file, linked). Guidance applies to whichever agent is reading it; the few sections that are genuinely specific to one agent are marked *(… only — skip on other agents)*.
 
+> **What lives here vs in a project.** This file owns everything **universal** — true for *every* repo on the machine, including a one-off with no UI, no tray, no launcher. **Shape-specific** guidance (Streamlit, tray/daemon, end-to-end UI testing, GitHub-Actions CI, the per-project restart recipe) lives in `project-scaffolding`'s `CLAUDE.md` and is inherited only by projects of that shape. The test for any directive: *"would this still apply to a bare repo with no app?"* Yes → here. No → the scaffold. Nothing belongs in both. (Boundary recorded in `ferraroroberto/project-scaffolding#68`; the `/context-audit` skill enforces it weekly.)
+
+## Working method
+
+How to approach any task, regardless of project shape.
+
+### Plan mode is the default
+
+Every non-trivial request starts in plan mode. Non-trivial = anything beyond a one-line fix, a typo, or a question answerable without touching code.
+
+In plan mode:
+- Do NOT edit files, run destructive commands, or commit anything.
+- Investigate as needed (read files, search, run read-only commands).
+- Resolve ambiguity through questions *before* proposing a plan.
+- Present the plan only when confident it reflects what the user actually wants.
+- Stay in plan mode across rejections — if the user pushes back, revise and re-present; don't bail out to execution.
+
+Recommended in a project's `.claude/settings.json`: `{ "permissions": { "defaultMode": "plan" } }`. Exit plan mode only after explicit approval; approval transitions straight to execution in the same turn.
+
+### Ask before assuming
+
+Ask whenever a decision would be expensive to undo or is genuinely ambiguous. One sharp question beats three filler ones. Use multi-choice (2–4 options) when the choice space is bounded — much faster to answer than prose. If multiple reasonable approaches exist, present them as options with tradeoffs; don't pick silently.
+
+Always ask before assuming: file/module location for new code; data shape or schema; data source (upload, local file, DB via secrets); error and empty-state handling; whether to add tests, and at what level.
+
+Don't ask about things determinable by reading the code, things already specified, or process meta-questions like "is the plan ready?" — that's what plan approval is for.
+
+### Before editing
+
+- Re-read any file before modifying it. Don't trust memory across long sessions. For files >500 LOC, read in chunks.
+- When renaming a symbol, search separately for: direct calls, type references, string literals, dynamic imports, re-exports, and tests.
+- Reproduce before fixing: for any non-trivial bug, write a repro (script, failing test, or documented sequence) before the fix. Forces real understanding; stops "I think this fixes it" → ship → rollback.
+- Re-verify the issue's premise: spend a few minutes confirming the symptom still reproduces and the code matches the issue before starting. Stale briefs waste PRs.
+- `git log -- <file>` the area first. Prior attempts at the same fix are the cheapest source of truth.
+
+### While fixing
+
+- Empirical proof for retry/timeout/backoff logic. Loops that react to return values encode assumptions about API semantics — verify the assumption with a 10-line probe before shipping.
+- Distinct error messages for distinct conditions. "Down" and "in flight past timeout" need different messages — same-message-different-cause is how users stack orphan state.
+- Don't bundle independently-revertable bugs in one PR. If bug-A's commit can revert without breaking bug-B's fix, ship two PRs.
+- Leave log breadcrumbs after a hard bug. The next occurrence should be diagnosable from logs, not screenshots. Add the info-level log in the same commit as the fix.
+- Test-plan checkboxes are observed, not aspirational. `[x]` means "I ran this and saw it pass." If a box can't be checked now, the PR isn't ready now.
+
+### Execution: scope up front, then carry it through
+
+- Front-load the questions. Settle scope, ambiguity, and hard-to-undo decisions *before* starting — that is the main control point.
+- Once scope is agreed, execute end-to-end to a verified, shippable state. Don't stop for per-phase approval; "large" is not "stop".
+- Checkpoint on risk, not size. Pause mid-task only for what the agreed scope didn't cover: a real ambiguity, an unforeseen decision, or a finding that contradicts the plan.
+
+### Chaining connected work
+
+- Issues are split for tracking but are often sequential. After finishing and verifying a unit, check the related open issues.
+- If the next step is a natural continuation, state it and proceed — new branch off freshly-merged `main`. Pause for approval only when it's risky, ambiguous, or materially bigger than discussed.
+- One branch per coherent unit. Keep commits and branches separable so any piece reviews and reverts on its own.
+
+### Verify before declaring done
+
+Verify every unit before calling it done, using the project's actual tooling (byte-compile, lint, tests). If no checker exists for a project, say so explicitly — don't claim "tests pass" when there are no tests. Report failures faithfully with the output; never report done on a step that was skipped.
+
+### Senior-dev check
+
+Before finishing, ask: "What would a senior, perfectionist dev reject in review?" If the answer points at duplicated state, inconsistent patterns, or broken architecture *within the file you're already editing*, fix it. Don't expand scope to unrelated files.
+
+## Conventions
+
+Universal code & config conventions (project-specific layout and stack live in the project's own README/CLAUDE.md).
+
+- **Read the README first.** Don't assume `/app/`, `/src/`, `launch_app.bat`, or any specific path exists — the project's layout is documented in its own `README.md`.
+- **Config & secrets:** project config in `config.json` or similar; secrets always in `.env`, never committed. The canonical env filename is `.env` (`.venv` is the venv directory, not the env file).
+- **Virtual environment:** use the existing `.venv`. Never create `venv`. Never activate — invoke via `& .\.venv\Scripts\python.exe ...` on Windows, `./.venv/bin/python ...` on POSIX.
+- **Logging:** use the language's logging facility (Python: `logging`, not `print()`). Emojis welcome in log messages: ℹ️ ⚠️ ❌ ✅
+- **Naming:** snake_case for files/functions (Python), PascalCase for classes, UPPER_CASE for constants. **Imports:** stdlib → third-party → local.
+- **Versioning policy:** follow the existing style in `requirements.txt` / `package.json` — keep `==` where the file pins, `>=` where it uses lower bounds. Don't change the policy unless asked.
+- **Type hints** on all public Python functions. Use `Optional[T]`, never bare `None` returns.
+- **No hardcoded paths or credentials.**
+- Implement only what was asked. No nice-to-haves.
+- Three similar lines beats a premature abstraction. Add a helper on the third caller, not the second. Don't wrap framework scaffolds on day one.
+
 ## Workflow defaults
 
 ### Commit messages — no AI attribution
 
 Do not add `Co-Authored-By: Claude …`, `Co-Authored-By: Codex …`, or any other AI/Anthropic/OpenAI attribution trailer to git commit messages. The user explicitly rejected this. Use only the conventional `type: subject` line and bullet body.
+
+### Git discipline
+
+Never auto-commit or push, and never stage files, without being asked. When a task is done, prepare a ready-to-copy commit message; the user runs it. Use conventional prefixes (`feat:` `fix:` `refactor:` `docs:` `chore:` `test:` `perf:`) — makes `git log --oneline` scannable and PR-body commit tables possible. Multi-line body: first line ≤72 chars, blank line, then bullets explaining *why* not *what*.
+
+### Branch & PR pipeline
+
+`main` is always shippable. One issue → one branch → one PR → merge → branch deleted, issue closed.
+
+Branch naming: `<type>/<issue-N>-<short-slug>` — e.g. `fix/28-terminal-reconnect`, `feat/30-osc-title`. Type matches the commit prefix.
+
+**Lifecycle:** open the branch off latest `main` → first push opens the PR as **draft** with the issue's acceptance checklist in the body → commits land freely while in draft → promote to ready when acceptance checks pass → squash-merge by default + auto-delete branch → `git checkout main && git pull && git branch -d <branch>`, `git fetch --prune`, confirm the issue auto-closed. (Some sister projects use a local-merge flow instead of squash-merge — follow the project's own pipeline where it differs.)
+
+**Hard rules:** never commit to `main` directly; never force-push a branch someone else or a CI run might have pulled; never stack a second feature branch on an unmerged first (rebase or wait); one feature/fix per branch — if mid-branch you find an unrelated bug, file an issue and start a new branch, don't smuggle it in. **Never stack hotfixes on hotfixes** — if a fix exposes a new bug, revert before adding a third change; if three same-day PRs interact badly, roll back to last known-good and re-introduce one at a time.
+
+**PR body discipline:** single-commit PR → `Summary` + `Test plan` checklist + `Closes #N`. Multi-commit / cumulative PR → per-commit table (`SHA | What | Why`) + `Closed in this PR` + `Still open`. A **cumulative branch** (branch stays alive across rounds) is the exception, not the default — allowed only for rapid iterative rounds where each commit is verified end-to-end; document the policy in the PR body and default back to one-issue-one-branch when the round closes.
+
+### Planning & documentation
+
+**Plans, roadmaps, proposed features live as GitHub issues** on the relevant repo, never as files in the tree. One issue per topic, self-contained enough to hand off cold (the cold-handoff test: executable by a fresh LLM/human with zero session context). The issue + the PR that closes it + `git log` *are* the changelog — do not also drop a dated `docs/YYYY-MM-DD-*.md` retrospective per merge.
+
+- **One canonical issue per decision-bearing topic.** Reproduce durable content rather than depending on links. Other repos get one-line *pointer* issues to the canonical one.
+- **Decision log:** inside long-lived issues, keep dated distilled bullets recording why the plan turned (not raw transcripts).
+- **Supersede explicitly:** when a new decision overrides an old issue, comment on the old one linking the new, then close it — never silently diverge.
+
+**`gh issue create` defaults:** always pass `--assignee @me` and at least one type label (`bug`, `enhancement`, `refactor`, `docs`, `chore`, `test`, `perf` — mirroring commit prefixes; `meta` for cumulative/rollback context). Create the label first if missing. No untagged, unassigned issues.
+
+**Issue template (non-trivial work):** **Why** (or **Symptom** + **Root cause** for bugs) · **Scope** (what's in) · **Out of scope** (explicit non-goals) · **How to verify** (concrete acceptance steps) · **Constraints worth knowing** (env, gotchas, file refs not obvious from code).
+
+**Decompose:** if it can't be one PR, split into "Step N/M" sub-issues, each independently shippable. Don't ship "phase 1 of 4" PRs. **Cross-repo:** if a bug lives in a shared script/pattern, file the same issue in each affected sister repo and cross-link by URL. **Closing:** `Closes #N` in the PR body for auto-close; for issues closed by direct commit, paste the SHA in a closing comment; close not-planned with a comment explaining the empirical disproof — no zombie issues. **On rollback:** file a `meta`-labelled issue capturing what was attempted, what worked/didn't, why, plus a checkbox list of items "conceptually still open"; reference rollback SHA + base-of-truth SHA explicitly.
+
+**What `docs/` is for:** durable *reference* material a future reader will actually re-open — design records, architecture overviews, integration guides, shared playbooks (e.g. `project-scaffolding/docs/playwright-ui-testing.md`, `local-llm-hub/docs/model-comparison.md`). Filenames describe the topic, not a date. If you wouldn't re-read it next quarter, it doesn't belong here. **Never** put plans/roadmaps/TODOs (→ issues) or dated per-PR changelog files in `docs/`.
+
+**For feature work:** update `README.md` if usage, config, or output changed; add a topic-named `docs/<topic>.md` only when the change introduces a durable concept worth re-reading. For one-line fixes and typos: just commit. **Rotation / expiration dates go in README, not memory** — certs, tokens, API deprecations, vendor deadlines get a calendar-anchored line in README (memory decays; READMEs get read).
 
 ### Markdown that will be rendered — no hard wraps
 
@@ -15,15 +127,6 @@ When writing markdown for a renderer (GitHub issue/PR bodies, GitHub comments, N
 **Why:** the user reads on a vertical PTI terminal — hard-wrapped paragraphs render as awkward forced line breaks that fight the terminal's own wrapping, producing very short ragged lines.
 
 Does **not** apply to: source code, plain `.md` files viewed as source in a repo, commit messages (wrap at 72), terminal-only output.
-
-### Planning artifacts lifecycle
-
-- **Future-work plan** → a GitHub *issue* (never a `docs/` file). The issue + the PR that closes it + `git log` are the changelog — do **not** also drop a dated `docs/YYYY-MM-DD-*.md` retrospective per merge. Triplicating the same information into `docs/` is busywork that ages badly.
-- **What `docs/` is for:** durable *reference* material a future reader will actually re-open — design records, architecture overviews, integration guides, shared playbooks (e.g. `project-scaffolding/docs/playwright-ui-testing.md`, `local-llm-hub/docs/model-comparison.md`). Filenames should describe the topic, not a date. If you wouldn't re-read it next quarter, it doesn't belong here.
-- **One canonical issue per decision-bearing topic.** Make it self-contained (reproduce durable content rather than depending on links). Other repos get one-line *pointer* issues to the canonical one.
-- **Decision log:** inside long-lived issues, keep dated distilled bullets recording why the plan turned (not raw transcripts).
-- **Supersede explicitly:** when a new decision overrides an old issue, comment on the old one linking the new, then close it — never silently diverge.
-- **Cold-handoff test:** every planning issue must be executable by a fresh LLM/human with zero session context.
 
 ### Issue workflow skills
 
@@ -42,6 +145,11 @@ When a skill or session fans out **background sub-agents that run on Opus**, kee
 - **Sonnet sub-agents are exempt** — they may fan out freely. In a mixed run only the Opus agents count against the window of 3 (Sonnet agents run alongside, uncounted). Sonnet is the "smaller model" half of the documented mitigation.
 - **Why:** Anthropic's server-side burst limiter rejects the 4th–5th+ simultaneous Opus sub-agent bootstrap with `Server is temporarily limiting requests (not your usage limit) · Rate limited`. The empirical ceiling is 3–4 concurrent (anthropics/claude-code#53922 — the first 3–4 succeed, the rest fail); there is no officially published number, so 3 is the conservative floor. The official 429 guidance is to "avoid running many parallel subagents" or switch to a smaller model for high-volume runs (https://code.claude.com/docs/en/errors). Two unattended runs lost most of their work to this — the 2026-06-03 `/audit-fleet` (only 3 of 27 repos completed) and a later `/cleanup-fleet`.
 - **Not** `CLAUDE_CODE_MAX_TOOL_USE_CONCURRENCY` — that env var bounds parallel *tool calls within a single session*, not the number of sub-agents in flight. The only place to cap sub-agent count is the orchestrating skill's dispatch logic (a bounded window), which is what this rule mandates.
+
+### Project hygiene
+
+- Restart the minimum. If a project runs multiple long-lived processes, document a one-line restart matrix in its README (touched X → restart Y). Restarting more than necessary loses warm state and breaks sister processes.
+- Pinned known-good worktree for risky work. For architectural changes, keep a parallel checkout pinned at the last known-good commit for live A/B comparison; don't touch the pinned tree until the risky work re-stabilizes on main.
 
 ## Project fleet
 
