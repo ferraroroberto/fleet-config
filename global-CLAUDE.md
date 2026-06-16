@@ -102,6 +102,8 @@ Branch naming: `<type>/<issue-N>-<short-slug>` — e.g. `fix/28-terminal-reconne
 
 **PR body discipline:** single-commit PR → `Summary` + `Test plan` checklist + `Closes #N`. Multi-commit / cumulative PR → per-commit table (`SHA | What | Why`) + `Closed in this PR` + `Still open`. A **cumulative branch** (branch stays alive across rounds) is the exception, not the default — allowed only for rapid iterative rounds where each commit is verified end-to-end; document the policy in the PR body and default back to one-issue-one-branch when the round closes.
 
+**Concurrent same-repo work:** two sessions sharing one checkout collide (a `git checkout` in one rewrites the other's tree mid-build). The convention is **first come, first owns `main`**: the first session to start work on a repo claims its primary checkout; every session after builds in an isolated `git worktree` (`<repo>-wt-<N>`, venv junctioned) on its own branch. The `issue-*` skills automate this via `fleet-config`'s `skills/_lib/worktree_claim.py` (claim on `/issue-start`, release/teardown on `/issue-finish`); mechanics + the junction-teardown footgun are documented in that repo's README ("Concurrent same-repo work").
+
 ### Planning & documentation
 
 **Plans, roadmaps, proposed features live as GitHub issues** on the relevant repo, never as files in the tree. One issue per topic, self-contained enough to hand off cold (the cold-handoff test: executable by a fresh LLM/human with zero session context). The issue + the PR that closes it + `git log` *are* the changelog — do not also drop a dated `docs/YYYY-MM-DD-*.md` retrospective per merge.

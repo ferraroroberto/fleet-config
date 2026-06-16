@@ -93,16 +93,17 @@ Example: bug #23 titled "WS handshake retry fails on reconnect" → `fix/23-ws-h
 
 ### 6. Create worktrees (worktree mode only)
 
-For each worktree-mode issue:
+For each worktree-mode issue, use the shared concurrency helper (the same one `/issue-start` uses) so the worktree gets its `.venv` junctioned from the primary and the reparse-safe teardown is owned in one place:
 
 ```
-git -C E:\automation\<repo> worktree add E:\automation\<repo>-wt-<N> -b <branch> origin/main
+git -C E:\automation\<repo> fetch origin
+py C:/Users/rober/.claude/skills/_lib/worktree_claim.py setup-worktree E:\automation\<repo> <N> <branch>
 ```
 
 Notes:
-- Worktree path convention: **sibling** to the repo root, named `<repo>-wt-<N>`. Stable, easy to spot, easy to `git worktree remove` later.
-- The branch is cut off `origin/main` (latest remote), not local `main` — so the worktree doesn't depend on the primary checkout's branch state.
-- If a worktree path already exists, stop with a clear message (probably stale from a prior run; user runs `git worktree remove --force <path>` to clean up).
+- The helper creates the **sibling** worktree `E:\automation\<repo>-wt-<N>` off latest `origin/main` on `<branch>`, then junctions the primary's `.venv` into it — so a Python repo's verification gate (`& .\.venv\Scripts\python.exe …`) resolves inside the worktree without a per-worktree reinstall.
+- Do **not** hand-roll `git worktree add` + a `.venv` junction here; the helper owns both creation and the junction-strip-before-`git worktree remove` teardown (the junction footgun that wiped a real venv in fleet-config#143).
+- If a worktree path already exists the helper stops with a clear message (probably stale from a prior run; clean with the `remove-worktree <path>` command in step 9).
 
 Run these sequentially per repo (worktree creation modifies repo metadata; safer not to parallelize).
 
@@ -227,9 +228,11 @@ All <N> sub-agents complete.
 Next: review each branch, then ship — either `/issue-finish-batch <branches>`
 to fan out parallel Sonnet finishers once you're happy with several, or
 `/issue-finish` one at a time (sequential merges avoid CI pile-up and
-tray-restart races). Remember: after a worktree-mode branch merges, clean up
-with `git worktree remove <wt-path>` (run from the primary checkout, not from
-inside the worktree).
+tray-restart races). `/issue-finish` removes a worktree-mode branch's worktree
+for you (it detects the linked worktree and runs the reparse-safe teardown). To
+clean one up by hand, run from the primary checkout, never from inside the
+worktree: `py C:/Users/rober/.claude/skills/_lib/worktree_claim.py
+remove-worktree <wt-path>`.
 ```
 
 ### 10. Stop
