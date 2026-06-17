@@ -173,6 +173,12 @@ When work in a sister project produces a *generalizable convention* (a testing p
 - Check for an existing `project-scaffolding` issue first; comment/pin if one covers the area, otherwise file a new issue (master's issue template + label + `--assignee @me`).
 - If the user asks, also draft the master CLAUDE.md/doc change — on a proper branch via `project-scaffolding`'s draft-PR pipeline, one issue per branch.
 
+### Every repo carries a `.fleet.toml`
+
+Every fleet repo declares its own architecture-map card in a root **`.fleet.toml`** (`layer` ∈ governance | enabling | working-web | working-pipe, `icon`, `description`; optional `display_name` / `port` / `chips` / `tag`). The `/system-map` generator in `fleet-config` *aggregates* these per-repo declarations into the map — the central `architecture/fleet.residual.json` is only the fallback for repos that haven't adopted one yet, plus the non-repo structure. A new repo thus appears on the map automatically, with no central edit. (Schema + reasoning: `fleet-config/architecture/README.md`; decision record `ferraroroberto/fleet-config#148`.)
+
+**Keep it current — this is the anti-staleness contract:** update `.fleet.toml` in the **same PR** as any material change to the repo (port, layer, role, one-line description, exposed services). It lives in the repo precisely so it's right there when you change the thing it describes. `fleet-config`'s drift test fails loud if an adopted repo loses its `.fleet.toml`, so metadata can't silently rot. `project-scaffolding` ships a `.fleet.toml` so every cloned repo inherits the convention by default.
+
 ## Local infrastructure
 
 ### `claude-local-calls` local LLM hub
