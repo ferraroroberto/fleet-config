@@ -176,6 +176,20 @@ If the project has no tray, skip this step.
 Summarize: issue closed, PR merged, branch deleted, docs updated (or why not),
 gate result, and the live build line.
 
+Then append the **work-summary** — the file/LOC shape of what shipped — by
+running the deterministic helper and echoing its output verbatim into the
+report:
+
+```
+py C:/Users/rober/.claude/hooks/work_summary.py --pr <PR_URL>
+```
+
+It prints the roll-up (`📊 +N −M · K files` + new/changed/deleted buckets) and a
+churn-sorted per-file table (status · file · + · −) that renders here in chat. No
+LLM, all from `gh`; it prints nothing on any `gh` error, so just skip the block
+if it comes back empty. The same roll-up rides the Slack ping in step 8 — don't
+re-assemble it by hand.
+
 ### 8. Slack notification
 
 After the summary, fire the completion ping with the deterministic helper. It

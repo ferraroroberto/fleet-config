@@ -202,6 +202,11 @@ Single concise summary:
 - PR URL
 - Build line from the version endpoint (if the project has one)
 - Live tray status (if applicable)
+- **Work-summary** — run `py C:/Users/rober/.claude/hooks/work_summary.py --pr
+  <PR_URL>` and echo its output verbatim: the roll-up (`📊 +N −M · K files` +
+  new/changed/deleted buckets) and the churn-sorted per-file table. Deterministic
+  from `gh`, no LLM; prints nothing on a `gh` error, so skip it if empty. The
+  same roll-up rides the Phase 5 ping below — don't hand-assemble it.
 
 Then fire the single completion ping with the deterministic helper — canonical
 format, real PR title + URL from `gh`:
