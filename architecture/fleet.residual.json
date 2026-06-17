@@ -1,6 +1,31 @@
 {
   "_adopted": [
-    "fleet-config"
+    "accounting-quarterly",
+    "app-launcher",
+    "automation",
+    "closed-company-accounting",
+    "content-management",
+    "copilot-studio-transcripts",
+    "email-archiver",
+    "facilitation-shuffle",
+    "family-accounting",
+    "fleet-config",
+    "grocery-shopping-automation",
+    "illustration-color-edit",
+    "inspiration-system",
+    "life-os",
+    "mass-html-to-markdown",
+    "mathgamesforkids",
+    "mcp-personal-onedrive",
+    "pdf-to-markdown",
+    "photo-ocr",
+    "project-scaffolding",
+    "pvgis",
+    "social-media-analytics",
+    "vibe-coding-workshop",
+    "voice-transcriber",
+    "website",
+    "whatsapp-radar"
   ],
   "governance": [
     {
