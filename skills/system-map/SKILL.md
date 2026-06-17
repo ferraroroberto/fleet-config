@@ -7,7 +7,7 @@ description: Regenerate the fleet architecture map (crawl every repo under E:\au
 
 **Goal:** Keep one always-current, shareable picture of the whole personal fleet. Crawl the fleet, reconcile it against the written architecture, render the visual, commit when it changed, and drop the fresh image in Slack — every run, on-demand or scheduled.
 
-**One machine-readable source of truth: `architecture/fleet.data.js`** (`window.FLEET = { …strict JSON… };`). The visual (`architecture/system-map.html`) is a pure renderer that reads it; `architecture/ARCHITECTURE.md` is the human-readable narrative that must agree with it. The acceptance matrix (`tests/run_acceptance.py`) fails loud if the fleet, the data file, and the doc ever drift apart — so keeping them in sync is enforced, not hoped for.
+**The map is self-describing: each repo declares its own card in a root `.fleet.toml`, and `skills/system-map/build_data.py` aggregates those into `architecture/fleet.data.js`** (`window.FLEET = { …strict JSON… };`, the *generated* file the renderer reads). The hand-maintained input is `architecture/fleet.residual.json` — the non-repo structure (access/edge/compute/external/principles), every repo's fallback card in curated order, and an `_adopted` registry of repos that MUST carry a `.fleet.toml`. The visual (`architecture/system-map.html`) is a pure renderer that reads the generated `fleet.data.js`; `architecture/ARCHITECTURE.md` is the human-readable narrative that must agree with it. The acceptance matrix (`tests/run_acceptance.py`) fails loud if the fleet, the data file, the per-repo `.fleet.toml`s, and the doc ever drift apart — so keeping them in sync is enforced, not hoped for.
 
 **Designed for unattended runs.** A weekly job invokes it via
 `claude -p "/system-map" --permission-mode bypassPermissions` from the
@@ -17,30 +17,39 @@ description: Regenerate the fleet architecture map (crawl every repo under E:\au
 
 - **Run from the `fleet-config` repo root** (`E:/automation/fleet-config`). All paths below are relative to it.
 - **Never leak hardware specs.** The render always forces `?placeholders=1`, so the committed PNG shows `<model> · <NN> GB` placeholders even though a local `system-map.local.js` exists. Do not put real specs into `ARCHITECTURE.md`, the `DATA` object, or the commit. (See `architecture/README.md`.)
-- **Keep `DATA` and `ARCHITECTURE.md` in lockstep.** Any project add/remove/edit happens in *both* files in the same run.
+- **Keep the residual and `ARCHITECTURE.md` in lockstep.** Any project add/remove/edit happens in `architecture/fleet.residual.json` (or the repo's `.fleet.toml`) *and* `ARCHITECTURE.md` in the same run, then regenerate `fleet.data.js` with `build_data.py`. Never hand-edit `fleet.data.js`.
 - **Don't disturb in-progress work.** Only touch `architecture/` and only commit those paths.
 
 ## Steps
 
 Run in order. A failure on one step prints a short error and stops.
 
-### 1. Load the three sources
+### 1. Load the sources
 
 - `hooks/projects.toml` → the fleet: every `[<name>]` table's bare name is a repo; the `[global] architecture_ignore` array lists repos to exclude (vendored/legacy/out-of-scope). The fleet set = all repo names − `architecture_ignore`.
-- `architecture/fleet.data.js` → the current map data (`window.FLEET`, strict JSON; `repo` set only where the display name differs).
+- each repo's `<cwd_prefix>/.fleet.toml` → that repo's self-declared card (authoritative when present). Schema in `architecture/README.md`.
+- `architecture/fleet.residual.json` → the hand-maintained input: non-repo structure (access/edge/compute/external/principles) + fallback cards (curated order) + the `_adopted` registry.
+- `architecture/fleet.data.js` → the **generated** map data (`window.FLEET`); never hand-edit it.
 - `architecture/ARCHITECTURE.md` → the current layer assignment + prose descriptions.
 
-### 2. Reconcile the fleet against the map
+### 2. Reconcile the fleet, then regenerate
 
 Compute the difference between the fleet set (step 1) and the projects currently represented in the map:
 
-- **New repo** (in the fleet, absent from the map): read its `E:/automation/<repo>/README.md` (first paragraph) and `CLAUDE.md` if present; write **one concise sentence** the way the existing cards read; assign a layer (default **L3 working — pipelines** unless it is plainly a *shared* enabling tool used by more than one app, in which case **L2**, with a fuller description). Add it to **both** `architecture/fleet.data.js` (the matching array: `enabling` / `web` / `pipe`; set `"repo"` when the display `nm` differs from the repo name) and `ARCHITECTURE.md` (the right layer table).
-- **Departed repo** (in the map, no longer in the fleet, or newly in `architecture_ignore`): remove it from **both** files.
-- **Otherwise**: no content change — proceed to render (specs/date may still refresh).
+- **New repo** (in the fleet, absent from the map): prefer its own `<cwd_prefix>/.fleet.toml` — if present, the card comes from there automatically. If it has none, read its `README.md` (first paragraph) and `CLAUDE.md`, write **one concise sentence** in the existing card voice, assign a layer (default **working — pipelines** unless it is plainly a *shared* enabling tool used by more than one app), and add a fallback card to `architecture/fleet.residual.json` (the matching array: `enabling` / `web` / `pipe`; set `"repo"` when the display `nm` differs). Also add it to `ARCHITECTURE.md`. (Ideally the repo then adopts a `.fleet.toml` via the standard fan-out so the central fallback can be dropped.)
+- **Departed repo** (in the map, no longer in the fleet, or newly in `architecture_ignore`): remove it from `fleet.residual.json`, `ARCHITECTURE.md`, and its `_adopted` entry if any.
+- **Otherwise**: no content change — proceed to regenerate (specs/date may still refresh).
 
-Keep edits minimal and in the existing card voice: shared/reused pieces get a real description; self-explanatory leaf apps get one short line. Don't restructure layers or rewrite untouched cards.
+Keep edits minimal and in the existing card voice. Don't restructure layers or rewrite untouched cards.
 
-After editing, run `py tests/run_acceptance.py` — the `system_map:` checks fail loud if the fleet, `fleet.data.js`, and `ARCHITECTURE.md` disagree (a forgotten repo, a stale entry, or a doc that omits a mapped repo). Fix any failure before rendering.
+Then regenerate the data file and validate:
+
+```
+py skills/system-map/build_data.py     # residual + per-repo .fleet.toml → fleet.data.js
+py tests/run_acceptance.py
+```
+
+The `system_map:` checks fail loud if the fleet, `fleet.data.js`, the per-repo `.fleet.toml`s, and `ARCHITECTURE.md` disagree (a forgotten repo, a stale entry, an adopted repo that lost its `.fleet.toml`, a malformed declaration, or a doc that omits a mapped repo). Fix any failure before rendering.
 
 ### 3. Render the visual
 

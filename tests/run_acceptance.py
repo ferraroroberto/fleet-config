@@ -272,6 +272,9 @@ def main() -> int:
     # ---- system-map: fleet ↔ data ↔ doc coverage (architecture/) ----
     failures += _system_map_coverage_check()
 
+    # ---- system-map: per-repo .fleet.toml aggregation + anti-staleness ----
+    failures += _fleet_toml_check()
+
     # ---- system-map: week-over-week 'what changed' diff (whatchanged.py) ----
     failures += _system_map_whatchanged_check()
 
@@ -290,8 +293,8 @@ def main() -> int:
 # notify_complete (18) + slack_routing (10) + conversation_capture (13) +
 # conversation_index (6) + restart_webapp (6) + gh_body_file_guard (6) +
 # audit_issue (1) + worktree_claim (1) + learning_log (16) + system_map (3) +
-# system_map_whatchanged (7) + settings_template_sync (1).
-_UNIT_CHECK_COUNT = 102
+# fleet_toml (3) + system_map_whatchanged (7) + settings_template_sync (1).
+_UNIT_CHECK_COUNT = 105
 
 
 def _system_map_coverage_check() -> int:
@@ -341,6 +344,65 @@ def _system_map_coverage_check() -> int:
     doc = (arch / "ARCHITECTURE.md").read_text(encoding="utf-8")
     doc_missing = sorted(r for r in mapped if r not in doc)
     check(f"system_map: every mapped repo is in ARCHITECTURE.md (missing: {doc_missing or 'none'})", not doc_missing)
+
+    return failures
+
+
+def _fleet_toml_check() -> int:
+    """Per-repo `.fleet.toml` aggregation is fresh and can't silently go stale.
+
+    Guards the self-describing map (`build_data.py`: residual + per-repo
+    `.fleet.toml` → `fleet.data.js`):
+      1. `fleet.data.js` is exactly what `build_data.py` regenerates — a forgotten
+         regen, a hand-edit, or an un-committed `.fleet.toml` change fails loud;
+      2. every repo in the residual's `_adopted` registry still carries a
+         `.fleet.toml` — deleting one (which would silently revert to the central
+         fallback) fails loud;
+      3. every present `.fleet.toml` is a valid declaration (parses, `layer` in
+         the enum, required fields set).
+    Returns the failure count.
+    """
+    import importlib.util
+    import tomllib
+    from pathlib import Path
+
+    failures = 0
+
+    def check(case: str, ok: bool) -> None:
+        nonlocal failures
+        print(f"{'OK   ' if ok else 'FAIL '} {case}")
+        if not ok:
+            failures += 1
+
+    bd_path = REPO / "skills" / "system-map" / "build_data.py"
+    spec = importlib.util.spec_from_file_location("system_map_build_data", bd_path)
+    bd = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(bd)
+
+    committed = (REPO / "architecture" / "fleet.data.js").read_text(encoding="utf-8")
+    try:
+        fresh = bd.regenerate() == committed
+        regen_err = ""
+    except Exception as exc:  # noqa: BLE001 - surface a malformed declaration cleanly
+        fresh, regen_err = False, f" ({exc})"
+    check(f"fleet_toml: fleet.data.js matches build_data.py output{regen_err}", fresh)
+
+    residual = bd.load_residual()
+    repos = bd.fleet_repos()
+    adopted = residual.get("_adopted", [])
+    missing = [r for r in adopted if not (repos.get(r, Path("/nonexistent")) / ".fleet.toml").is_file()]
+    check(f"fleet_toml: every adopted repo still has a .fleet.toml (missing: {sorted(missing) or 'none'})", not missing)
+
+    invalid = []
+    for name, repo_dir in sorted(repos.items()):
+        path = repo_dir / ".fleet.toml"
+        if not path.is_file():
+            continue
+        try:
+            bd.card_from_toml(name, tomllib.loads(path.read_text(encoding="utf-8")))
+        except Exception as exc:  # noqa: BLE001
+            invalid.append(f"{name}: {exc}")
+    check(f"fleet_toml: every present .fleet.toml is valid (invalid: {invalid or 'none'})", not invalid)
 
     return failures
 

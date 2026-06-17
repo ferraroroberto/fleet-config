@@ -1,0 +1,289 @@
+{
+  "_adopted": [
+    "fleet-config"
+  ],
+  "governance": [
+    {
+      "ic": "📐",
+      "nm": "project-scaffolding",
+      "ds": "Canonical master — the scaffold &amp; CLAUDE.md every project derives from."
+    },
+    {
+      "ic": "⚙️",
+      "nm": "fleet-config",
+      "ds": "Fleet-wide Claude Code hooks, skills &amp; the issue workflow."
+    }
+  ],
+  "access": [
+    {
+      "ic": "📱",
+      "nm": "iPhone",
+      "ds": "Phone-first — one tap launches anything."
+    },
+    {
+      "ic": "💻",
+      "nm": "Laptop",
+      "ds": "The other machine I work from — remote, over Tailscale."
+    },
+    {
+      "ic": "🖥️",
+      "nm": "Home PC",
+      "ds": "The server itself; also where I work locally."
+    }
+  ],
+  "edge": [
+    {
+      "ic": "🔒",
+      "nm": "Tailscale",
+      "ds": "Private mesh — only path for sensitive surfaces."
+    },
+    {
+      "ic": "☁️",
+      "nm": "Cloudflare",
+      "ds": "Public, bearer-token-gated named tunnels."
+    },
+    {
+      "ic": "📶",
+      "nm": "Local Wi-Fi",
+      "ds": "Direct https://&lt;host&gt;:84xx on the same network."
+    }
+  ],
+  "compute": {
+    "gpu": "GPU · &lt;model&gt; · &lt;NN&gt; GB",
+    "cpu": "CPU · &lt;model&gt; · &lt;n&gt;c/&lt;n&gt;t",
+    "ram": "RAM · &lt;NN&gt; GB"
+  },
+  "enabling": [
+    {
+      "ic": "🚀",
+      "nm": "app-launcher",
+      "port": ":8445",
+      "ds": "<b>Where I live</b> — the central hub. Coding · Apps · Jobs · automation · Life OS, all from the phone. Born from one goal: do <i>everything</i> on the PC from mobile. The entry point to it all."
+    },
+    {
+      "ic": "🧠",
+      "nm": "local-llm-hub",
+      "port": ":8000",
+      "ds": "Shared LLM gateway — routes to local models or claude -p.",
+      "chips": [
+        "claude -p",
+        "qwen :8081",
+        "glm :8082",
+        "gemma-e4b :8086",
+        "gemma-26b :8087"
+      ]
+    },
+    {
+      "ic": "🎙️",
+      "nm": "voice-transcriber",
+      "port": ":8443",
+      "ds": "Always-on voice→text (F8). Owns whisper :8090.",
+      "chips": [
+        "whisper :8090"
+      ]
+    },
+    {
+      "ic": "📷",
+      "nm": "photo-ocr",
+      "port": ":8444",
+      "ds": "Mobile OCR — photos → clean text. Reusable capture surface."
+    }
+  ],
+  "web": [
+    {
+      "ic": "🛒",
+      "nm": "grocery",
+      "repo": "grocery-shopping-automation",
+      "ds": "Inventory + shopping PWA, voice-audit mode.",
+      "tag": [
+        "uses",
+        "hub + whisper"
+      ]
+    },
+    {
+      "ic": "💬",
+      "nm": "whatsapp-radar",
+      "ds": "Cut attention load from busy chats.",
+      "tag": [
+        "uses",
+        "hub"
+      ]
+    },
+    {
+      "ic": "🎲",
+      "nm": "facilitation-shuffle",
+      "ds": "1-2-4-all breakout shuffler for Zoom."
+    },
+    {
+      "ic": "💶",
+      "nm": "family-accounting",
+      "ds": "Shared household-expense tracker."
+    },
+    {
+      "ic": "🧮",
+      "nm": "mathgamesforkids",
+      "ds": "Educational games & HTML experiments."
+    },
+    {
+      "ic": "🌐",
+      "nm": "website",
+      "ds": "Multi-workshop landing site."
+    },
+    {
+      "ic": "🎓",
+      "nm": "vibe-coding-workshop",
+      "ds": "Python workshop + exercises."
+    },
+    {
+      "ic": "🌱",
+      "nm": "life-os",
+      "ds": "Productivity skills — diary, prep, muse.",
+      "tag": [
+        "via",
+        "launcher"
+      ]
+    }
+  ],
+  "pipe": [
+    {
+      "ic": "💳",
+      "nm": "accounting-quarterly",
+      "ds": "Stripe payments → quarterly reports.",
+      "tag": [
+        "→",
+        "Stripe"
+      ]
+    },
+    {
+      "ic": "📊",
+      "nm": "social-media-analytics",
+      "ds": "Predict content performance."
+    },
+    {
+      "ic": "💡",
+      "nm": "inspiration-system",
+      "ds": "Idea → 10 illustration ideas.",
+      "tag": [
+        "→",
+        "Notion"
+      ]
+    },
+    {
+      "ic": "📝",
+      "nm": "content-management",
+      "ds": "Four content pipelines.",
+      "tag": [
+        "→",
+        "Notion"
+      ]
+    },
+    {
+      "ic": "📧",
+      "nm": "email-archiver",
+      "ds": "Outlook → OneDrive archive.",
+      "tag": [
+        "→",
+        "OneDrive"
+      ]
+    },
+    {
+      "ic": "📄",
+      "nm": "pdf-to-markdown",
+      "ds": "PDF → clean Markdown for LLMs."
+    },
+    {
+      "ic": "🧾",
+      "nm": "mass-html-to-markdown",
+      "ds": "HTML → SQLite → Markdown."
+    },
+    {
+      "ic": "🎨",
+      "nm": "illustration-color-edit",
+      "ds": "SVG pipelines for book art."
+    },
+    {
+      "ic": "☀️",
+      "nm": "pvgis",
+      "ds": "Solar-PV output estimate."
+    },
+    {
+      "ic": "🗂️",
+      "nm": "copilot-studio-transcripts",
+      "ds": "Copilot Studio workbench."
+    },
+    {
+      "ic": "📚",
+      "nm": "closed-company-accounting",
+      "ds": "Accounting for a closed company."
+    },
+    {
+      "ic": "🤖",
+      "nm": "automation",
+      "ds": "Python automation grab-bag."
+    },
+    {
+      "ic": "📁",
+      "nm": "mcp-personal-onedrive",
+      "ds": "Read-only MCP to browse OneDrive.",
+      "tag": [
+        "→",
+        "OneDrive"
+      ]
+    }
+  ],
+  "external": [
+    {
+      "ic": "💬",
+      "nm": "Slack",
+      "fr": "from app-launcher (orchestration)"
+    },
+    {
+      "ic": "🔔",
+      "nm": "Pushover",
+      "fr": "from launcher jobs"
+    },
+    {
+      "ic": "📔",
+      "nm": "Notion",
+      "fr": "inspiration · content · automation"
+    },
+    {
+      "ic": "💳",
+      "nm": "Stripe",
+      "fr": "accounting-quarterly"
+    },
+    {
+      "ic": "📁",
+      "nm": "OneDrive",
+      "fr": "email-archiver · onedrive-mcp"
+    },
+    {
+      "ic": "🐙",
+      "nm": "GitHub",
+      "fr": "all repos · PRs · CI"
+    },
+    {
+      "ic": "🎥",
+      "nm": "Zoom",
+      "fr": "facilitation-shuffle"
+    }
+  ],
+  "principles": [
+    [
+      "Phone-first",
+      "one tap on the iPhone, not a desktop session"
+    ],
+    [
+      "Compose",
+      "mature apps are web apps with APIs others consume"
+    ],
+    [
+      "One hub",
+      "every LLM/voice call routes through the hub — never re-implemented"
+    ],
+    [
+      "Don't diverge",
+      "conventions flow up into project-scaffolding"
+    ]
+  ]
+}

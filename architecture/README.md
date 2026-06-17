@@ -1,14 +1,46 @@
 # architecture/ — fleet system map
 
-Self-portrait of the whole `E:/automation` fleet. Tracked in #94 — **design iteration**, not yet the finished `/system-map` skill.
+Self-portrait of the whole `E:/automation` fleet. Built in #94; made **self-describing** in #148 (each repo declares its own card).
 
-**Source of truth is [`ARCHITECTURE.md`](ARCHITECTURE.md)** — the layered, fixed-schema description of the system (compute → connectivity → enabling tools → working apps → governance). The visual is generated *from* that doc, so the knowledge lives in words first and the picture can't go stale.
+**Source of truth is distributed:** each repo declares its own map card in a root **`.fleet.toml`**, and **`skills/system-map/build_data.py`** aggregates those into the generated `fleet.data.js`. The layered narrative [`ARCHITECTURE.md`](ARCHITECTURE.md) (compute → connectivity → enabling tools → working apps → governance) is the human-readable companion the data must agree with. So a new repo appears on the map automatically, correct, with zero central editing — and the picture can't go stale.
 
 ## The visual: `system-map.html` → `system-map.png`
 
 A **light-theme, horizontal, Janis-style** infographic — grouped zone panels, every project a card with a one-line description. Built as **hand-authored HTML/CSS**, chosen over Mermaid so each block carries real text and the layout is fully controlled.
 
-**Single source of truth:** all map content lives in **`fleet.data.js`** (`window.FLEET = { …strict JSON… }`: governance / access / edge / compute / enabling / web / pipe / external + principles). `system-map.html` is a pure renderer that reads it (CSS + a small `render()`); it holds no data of its own. The body is strict JSON on purpose so Python reads it too — the `/system-map` skill regenerates it from `hooks/projects.toml` (membership + `architecture_ignore`), each repo's README/CLAUDE.md (descriptions), and `ARCHITECTURE.md` (layers), and `tests/run_acceptance.py` asserts the fleet, the data file, and the doc never drift apart.
+**Data flow:** `fleet.data.js` (`window.FLEET = { …strict JSON… }`: governance / access / edge / compute / enabling / web / pipe / external + principles) is the file `system-map.html` renders — but it is **generated**, never hand-edited. `build_data.py` assembles it from two inputs:
+
+- each repo's root **`.fleet.toml`** — that repo's self-declared card, authoritative when present;
+- **`fleet.residual.json`** — hand-maintained: the non-repo structure (access/edge/compute/external/principles), a fallback card per repo in curated order, and an `_adopted` registry listing repos that MUST self-describe.
+
+`tests/run_acceptance.py` asserts the fleet, the generated data, the per-repo `.fleet.toml`s, and `ARCHITECTURE.md` never drift apart — including that `fleet.data.js` is exactly what `build_data.py` regenerates and that no `_adopted` repo has lost its `.fleet.toml` (so per-repo metadata can't silently go stale).
+
+### Per-repo `.fleet.toml` schema
+
+Each repo carries a `.fleet.toml` at its root declaring its one card on the map. Parsed with stdlib `tomllib` (no dependency). Required: `layer`, `icon`, `description`. Optional, used only where the card needs them:
+
+```toml
+layer       = "working-pipe"   # governance | enabling | working-web | working-pipe
+icon        = "📄"             # emoji shown on the card
+description  = "PDF → clean Markdown for LLMs."   # one line; injected as innerHTML
+# --- optional ---
+display_name = "grocery"        # when the card label ≠ repo directory name
+port         = ":8444"          # fixed loopback port the app serves (enabling tier)
+chips        = ["whisper :8090"] # sub-services shown as chips (enabling tier)
+tag          = ["→", "Notion"]  # [relation, target] edge annotation (working tiers)
+```
+
+| Field | Required | Maps to | Notes |
+|---|---|---|---|
+| `layer` | ✓ | section (`governance`/`enabling`/`web`/`pipe`) | enum above; `working-web`→`web`, `working-pipe`→`pipe` |
+| `icon` | ✓ | `ic` | one emoji |
+| `description` | ✓ | `ds` | injected as innerHTML — write `&amp;`/`<b>` exactly as it should render |
+| `display_name` | | `nm` (+ `repo`) | only when the label differs from the repo dir name |
+| `port` | | `port` | enabling cards render it; `:NNNN` form |
+| `chips` | | `chips` | enabling cards |
+| `tag` | | `tag` | working cards; `[relation, target]` |
+
+**Keep it current:** update `.fleet.toml` in the same PR as any material change (layer, port, role, one-line description, exposed services). A repo listed in the residual's `_adopted` registry whose `.fleet.toml` goes missing fails the drift test. After editing any `.fleet.toml`, run `py skills/system-map/build_data.py` to regenerate `fleet.data.js`.
 
 ### Local specs — kept out of git 🔒
 
@@ -22,7 +54,7 @@ So a local render shows your real specs; anything pushed (PNG, HTML, the issue, 
 
 ### Render
 
-Data is inline, so **no web server is needed** (unlike a `fetch()`-based page) — render straight from `file://`:
+Regenerate the data first if any `.fleet.toml` or the residual changed: `py skills/system-map/build_data.py`. Data is then inline, so **no web server is needed** (unlike a `fetch()`-based page) — render straight from `file://`:
 
 ```powershell
 cd architecture
