@@ -158,7 +158,12 @@ cwd_prefix = "E:/automation/vibe-coding-workshop"
 cwd_prefix = "E:/automation/website"
 
 [whatsapp-radar]
-cwd_prefix = "E:/automation/whatsapp-radar"
+cwd_prefix          = "E:/automation/whatsapp-radar"
+webapp_port         = 8455
+gate_cmd            = "pwsh -File scripts/verify-before-ship.ps1"
+tray_cmd            = "tray.bat"
+restart_cmd         = '& .\.venv\Scripts\python.exe -c "from app.webapp.manager import WebappManager; WebappManager().start(wait=True)"'
+api_version_path    = "/api/version"
 
 # Sister hubs that MUST survive every port-scoped kill, fleet-wide.
 # 8000  = local-llm-hub FastAPI hub
