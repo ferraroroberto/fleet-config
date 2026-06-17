@@ -10,6 +10,9 @@ inputs:
   MUST self-describe via a root ``.fleet.toml``.
 * each fleet repo's root ``.fleet.toml`` — authoritative for that repo's card
   when present (overrides the residual fallback in place, so curated order holds).
+  Read from the repo's **committed default branch** (``git show <origin/HEAD>``),
+  not the working tree — so the map and the drift gate are independent of whatever
+  branch each repo happens to be checked out on.
 
 Why a registry instead of deleting fallback cards on adoption: keeping the card
 in place preserves the curated map order, and ``_adopted`` is what makes a
@@ -38,6 +41,7 @@ from __future__ import annotations
 import argparse
 import copy
 import json
+import subprocess
 import sys
 import tomllib
 from pathlib import Path
@@ -95,6 +99,42 @@ def fleet_repos(projects_toml: Path = PROJECTS_TOML) -> dict[str, Path]:
     }
 
 
+def _default_ref(repo_dir: Path) -> str | None:
+    """The ref to read a repo's committed ``.fleet.toml`` from (its default branch).
+
+    Resolves ``origin/HEAD`` (e.g. ``origin/main``); falls back through common
+    default-branch names. Uses remote-tracking refs so the result is independent
+    of which branch the repo is checked out on, and needs no network.
+    """
+    def _git(*args: str) -> subprocess.CompletedProcess:
+        return subprocess.run(["git", "-C", str(repo_dir), *args], capture_output=True)
+
+    head = _git("rev-parse", "--abbrev-ref", "origin/HEAD")
+    if head.returncode == 0 and head.stdout.strip():
+        return head.stdout.decode("utf-8", "replace").strip()
+    for cand in ("origin/main", "origin/master", "main", "master"):
+        if _git("rev-parse", "--verify", "--quiet", cand).returncode == 0:
+            return cand
+    return None
+
+
+def read_fleet_toml(repo_dir: Path) -> str | None:
+    """Return the ``.fleet.toml`` text committed on ``repo_dir``'s default branch.
+
+    Reads ``git show <default-ref>:.fleet.toml`` (not the working tree) so a repo
+    parked on a feature branch that predates the file still reports its real card.
+    Returns ``None`` when the repo has no default ref or no committed ``.fleet.toml``.
+    """
+    ref = _default_ref(repo_dir)
+    if ref is None:
+        return None
+    shown = subprocess.run(
+        ["git", "-C", str(repo_dir), "show", f"{ref}:.fleet.toml"],
+        capture_output=True,
+    )
+    return shown.stdout.decode("utf-8") if shown.returncode == 0 else None
+
+
 def card_from_toml(repo_name: str, meta: dict) -> tuple[str, dict]:
     """Build ``(section, card)`` from a parsed ``.fleet.toml``.
 
@@ -139,11 +179,10 @@ def build(residual: dict, repos: dict[str, Path]) -> dict:
     data = copy.deepcopy(residual)
     data.pop("_adopted", None)
     for repo_name, repo_dir in sorted(repos.items()):
-        toml_path = repo_dir / ".fleet.toml"
-        if not toml_path.is_file():
+        text = read_fleet_toml(repo_dir)
+        if text is None:
             continue  # fallback: keep whatever the residual already has
-        meta = tomllib.loads(toml_path.read_text(encoding="utf-8"))
-        section, card = card_from_toml(repo_name, meta)
+        section, card = card_from_toml(repo_name, tomllib.loads(text))
         bucket = data.setdefault(section, [])
         for i, entry in enumerate(bucket):
             if _card_repo(entry) == repo_name:

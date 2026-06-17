@@ -360,15 +360,14 @@ def _fleet_toml_check() -> int:
       1. `fleet.data.js` is exactly what `build_data.py` regenerates — a forgotten
          regen, a hand-edit, or an un-committed `.fleet.toml` change fails loud;
       2. every repo in the residual's `_adopted` registry still carries a
-         `.fleet.toml` — deleting one (which would silently revert to the central
-         fallback) fails loud;
+         `.fleet.toml` on its committed default branch — deleting one (which would
+         silently revert to the central fallback) fails loud;
       3. every present `.fleet.toml` is a valid declaration (parses, `layer` in
          the enum, required fields set).
     Returns the failure count.
     """
     import importlib.util
     import tomllib
-    from pathlib import Path
 
     failures = 0
 
@@ -394,16 +393,16 @@ def _fleet_toml_check() -> int:
     residual = bd.load_residual()
     repos = bd.fleet_repos()
     adopted = residual.get("_adopted", [])
-    missing = [r for r in adopted if not (repos.get(r, Path("/nonexistent")) / ".fleet.toml").is_file()]
+    missing = [r for r in adopted if r not in repos or bd.read_fleet_toml(repos[r]) is None]
     check(f"fleet_toml: every adopted repo still has a .fleet.toml (missing: {sorted(missing) or 'none'})", not missing)
 
     invalid = []
     for name, repo_dir in sorted(repos.items()):
-        path = repo_dir / ".fleet.toml"
-        if not path.is_file():
+        text = bd.read_fleet_toml(repo_dir)
+        if text is None:
             continue
         try:
-            bd.card_from_toml(name, tomllib.loads(path.read_text(encoding="utf-8")))
+            bd.card_from_toml(name, tomllib.loads(text))
         except Exception as exc:  # noqa: BLE001
             invalid.append(f"{name}: {exc}")
     check(f"fleet_toml: every present .fleet.toml is valid (invalid: {invalid or 'none'})", not invalid)
