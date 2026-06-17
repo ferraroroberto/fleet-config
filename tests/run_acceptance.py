@@ -245,6 +245,9 @@ def main() -> int:
     # ---- notify_complete deterministic message assembly + resolver ----
     failures += _notify_complete_unit_checks()
 
+    # ---- work_summary roll-up block + per-file table (pure, no gh) ----
+    failures += _work_summary_unit_checks()
+
     # ---- slack category -> channel routing (issue #139) ----
     failures += _slack_routing_unit_checks()
 
@@ -290,11 +293,12 @@ def main() -> int:
 
 
 # Sum of the unit checks below: slack_notify (3) + mention (5) + classify (6) +
-# notify_complete (18) + slack_routing (10) + conversation_capture (13) +
-# conversation_index (6) + restart_webapp (6) + gh_body_file_guard (6) +
-# audit_issue (1) + worktree_claim (1) + learning_log (16) + system_map (3) +
-# fleet_toml (3) + system_map_whatchanged (7) + settings_template_sync (1).
-_UNIT_CHECK_COUNT = 105
+# notify_complete (18) + work_summary (5) + slack_routing (10) +
+# conversation_capture (13) + conversation_index (6) + restart_webapp (6) +
+# gh_body_file_guard (6) + audit_issue (1) + worktree_claim (1) +
+# learning_log (16) + system_map (3) + fleet_toml (3) +
+# system_map_whatchanged (7) + settings_template_sync (1).
+_UNIT_CHECK_COUNT = 110
 
 
 def _system_map_coverage_check() -> int:
@@ -1039,6 +1043,73 @@ def _notify_complete_unit_checks() -> int:
     ch, usr, nm = _lib.resolve_slack_target(Path("E:/does/not/match/anything"))
     check("resolve_slack_target: global fallback + claude name",
           ch == "C0B76GBA0LS" and usr == "U0B71PQEL6S" and nm == "claude")
+
+    return failures
+
+
+def _work_summary_unit_checks() -> int:
+    """The work-summary roll-up block + per-file table (hooks/work_summary.py).
+
+    Pure / no gh: feed the formatters a synthetic ``gh pr view`` payload (an
+    added/modified/renamed/deleted mix) and assert the exact rendered roll-up and
+    table, the empty-bucket drop, and the no-files degrade-to-empty path that
+    keeps a finish ping block-less instead of crashing."""
+    sys.path.insert(0, str(HOOKS))
+    import work_summary as ws  # noqa: E402
+
+    failures = 0
+
+    def check(case: str, ok: bool) -> None:
+        nonlocal failures
+        print(f"{'OK   ' if ok else 'FAIL '} {case}")
+        if not ok:
+            failures += 1
+
+    M = ws.MINUS  # U+2212, as the formatters emit
+
+    # changeType → bucket, source-agnostic (GraphQL DELETED + REST removed both deleted).
+    check("work_summary: bucket_for maps add/copy→new, del/removed→deleted, else→changed",
+          ws.bucket_for("ADDED") == "new" and ws.bucket_for("COPIED") == "new"
+          and ws.bucket_for("DELETED") == "deleted" and ws.bucket_for("removed") == "deleted"
+          and ws.bucket_for("MODIFIED") == "changed" and ws.bucket_for("RENAMED") == "changed"
+          and ws.bucket_for(None) == "changed")
+
+    # Consistent synthetic PR: 2 new (+210), 2 changed (+98 −40), 1 deleted (−7).
+    data = {
+        "additions": 308, "deletions": 47, "changedFiles": 5,
+        "files": [
+            {"path": "a_new.py", "additions": 110, "deletions": 0, "changeType": "ADDED"},
+            {"path": "b_new.py", "additions": 100, "deletions": 0, "changeType": "ADDED"},
+            {"path": "c_mod.py", "additions": 50, "deletions": 30, "changeType": "MODIFIED"},
+            {"path": "d_ren.py", "additions": 48, "deletions": 10, "changeType": "RENAMED"},
+            {"path": "e_del.py", "additions": 0, "deletions": 7, "changeType": "DELETED"},
+        ],
+    }
+    check("work_summary: format_block renders the exact roll-up",
+          ws.format_block(data) ==
+          f"📊 +308 {M}47 · 5 files\n"
+          f"   🆕 2 new (+210)  ✏️ 2 changed (+98 {M}40)  🗑️ 1 deleted ({M}7)")
+
+    check("work_summary: format_table is churn-sorted with status icons",
+          ws.format_table(data) ==
+          "| | File | + | − |\n"
+          "|---|---|--:|--:|\n"
+          f"| 🆕 | `a_new.py` | +110 | {M}0 |\n"
+          f"| 🆕 | `b_new.py` | +100 | {M}0 |\n"
+          f"| ✏️ | `c_mod.py` | +50 | {M}30 |\n"
+          f"| ✏️ | `d_ren.py` | +48 | {M}10 |\n"
+          f"| 🗑️ | `e_del.py` | +0 | {M}7 |")
+
+    # Single modified file: empty new/deleted buckets dropped, singular "1 file".
+    one = {"additions": 8, "deletions": 1, "changedFiles": 1,
+           "files": [{"path": "x.py", "additions": 8, "deletions": 1, "changeType": "MODIFIED"}]}
+    check("work_summary: empty buckets dropped + singular 'file'",
+          ws.format_block(one) == f"📊 +8 {M}1 · 1 file\n   ✏️ 1 changed (+8 {M}1)")
+
+    # Degrade path: no files (or a {} from a failed gh call) → "" both renderings.
+    check("work_summary: no files → empty block and empty table",
+          ws.format_block({}) == "" and ws.format_table({}) == ""
+          and ws.format_block({"files": []}) == "")
 
     return failures
 

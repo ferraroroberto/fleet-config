@@ -68,6 +68,7 @@ from typing import List, Optional, Tuple
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import _lib  # noqa: E402
 import slack_notify  # noqa: E402
+import work_summary  # noqa: E402
 
 logger = logging.getLogger("notify_complete")
 
@@ -277,6 +278,16 @@ def main(argv: Optional[List[str]] = None) -> int:
         review=args.review,
         blocked=args.blocked,
     )
+    # A merged PR (finish / yolo) carries a compact work-summary roll-up under the
+    # canonical line — the file/LOC shape of the change. Built in work_summary
+    # (never raises → "" on any gh error), so a stats hiccup degrades to the plain
+    # ping. The per-file table is chat-only (Slack mrkdwn has no tables); only the
+    # roll-up rides the ping. build_message stays untouched (its exact output is
+    # asserted in tests) — the block is appended here.
+    if args.kind in _PR_KINDS:
+        block = work_summary.block_for(args.pr_url or args.pr or "")
+        if block:
+            text = f"{text}\n{block}"
     # The @mention decision is single-sourced in slack_notify.notify() (off by
     # default); pass the resolved user id and let it decide.
     slack_notify.notify(text, channel=str(channel), user=user)
