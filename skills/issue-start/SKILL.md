@@ -33,11 +33,11 @@ stopping so the repo isn't blocked for the 8h TTL:
 **The very first action, before reading the issue or studying any code.** Two
 sessions on the same repo collide during the minutes-long *study* phase, long
 before either cuts a branch — so the claim has to be dropped up front. Run from
-the repo root (`<repo>` = current working directory; `--issue` is optional
-diagnostic metadata, omit it in pick mode):
+the repo root. Pass `.` as `<repo>` (current working directory); `--issue` is optional
+diagnostic metadata, omit it in pick mode:
 
 ```
-py C:/Users/rober/.claude/skills/_lib/worktree_claim.py acquire <repo> --issue <N>
+py C:/Users/rober/.claude/skills/_lib/worktree_claim.py acquire . --issue <N>
 ```
 
 Read the printed `MODE=`:

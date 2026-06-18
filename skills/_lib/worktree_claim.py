@@ -224,6 +224,11 @@ def remove_worktree(wt: Path) -> None:
 def _resolve_repo(arg: str) -> Path:
     repo = Path(arg).resolve()
     if not repo.exists():
+        # Agents often pass the repo name instead of "." or an absolute path.
+        # When CWD's basename matches, they clearly mean CWD (fleet-config#162).
+        cwd = Path.cwd()
+        if cwd.name.casefold() == Path(arg).name.casefold() and not Path(arg).is_absolute():
+            return cwd
         sys.exit(f"No such repo path: {repo}")
     return repo
 
