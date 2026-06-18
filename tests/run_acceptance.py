@@ -290,7 +290,7 @@ def main() -> int:
     # ---- worktree_claim helper pure-logic tests (skills/_lib) ----
     failures += _worktree_claim_unit_check()
 
-    # ---- learning-log report.py pure helpers (skills/learning-log) ----
+    # ---- learning-log report.py pure helpers (.claude/skills/learning-log) ----
     failures += _learning_log_unit_checks()
 
     # ---- system-map: fleet ↔ data ↔ doc coverage (architecture/) ----
@@ -398,7 +398,7 @@ def _fleet_toml_check() -> int:
         if not ok:
             failures += 1
 
-    bd_path = REPO / "skills" / "system-map" / "build_data.py"
+    bd_path = REPO / ".claude" / "skills" / "system-map" / "build_data.py"
     spec = importlib.util.spec_from_file_location("system_map_build_data", bd_path)
     bd = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(bd)
@@ -432,7 +432,7 @@ def _fleet_toml_check() -> int:
 
 
 def _system_map_whatchanged_check() -> int:
-    """The /system-map week-over-week diff (skills/system-map/whatchanged.py).
+    """The /system-map week-over-week diff (.claude/skills/system-map/whatchanged.py).
 
     Pure-logic guard on the diff that feeds the one-line Slack summary: added /
     removed repos are named, in-place edits are counted, a no-op week and a
@@ -448,7 +448,7 @@ def _system_map_whatchanged_check() -> int:
         if not ok:
             failures += 1
 
-    wc_path = REPO / "skills" / "system-map" / "whatchanged.py"
+    wc_path = REPO / ".claude" / "skills" / "system-map" / "whatchanged.py"
     spec = importlib.util.spec_from_file_location("system_map_whatchanged", wc_path)
     wc = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(wc)  # type: ignore[union-attr]
@@ -790,7 +790,7 @@ def _learning_log_unit_checks() -> int:
     depends on."""
     import datetime as dt
 
-    sys.path.insert(0, str(REPO / "skills" / "learning-log"))
+    sys.path.insert(0, str(REPO / ".claude" / "skills" / "learning-log"))
     import gather as ll  # noqa: E402
 
     failures = 0

@@ -44,7 +44,7 @@ try:
 except (AttributeError, ValueError):  # pragma: no cover
     pass
 
-HELPER = Path(__file__).resolve().parents[1] / "_lib" / "audit_issue.py"
+HELPER = Path(__file__).resolve().parents[3] / "skills" / "_lib" / "audit_issue.py"
 ARCHIVE_HEADER = "## Decision / discovery archive"
 HORIZON_HEADER = "## Horizon → next week"
 # The fleet architecture map regenerated weekly by /system-map (cross-linked, not owned here).

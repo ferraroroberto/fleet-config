@@ -32,11 +32,14 @@ import sys
 from pathlib import Path
 
 # Repo root = .../fleet-config ; fleet root = .../automation (its parent).
-REPO_ROOT = Path(__file__).resolve().parents[2]
+REPO_ROOT = Path(__file__).resolve().parents[3]
 FLEET_ROOT = REPO_ROOT.parent
 GLOBAL_FILE = REPO_ROOT / "global-CLAUDE.md"
 SCAFFOLD_FILE = FLEET_ROOT / "project-scaffolding" / "CLAUDE.md"
-SKILLS_DIR = REPO_ROOT / "skills"
+# Skills live in two roots: `skills/` (junctioned → ~/.claude/skills, always-on
+# everywhere) and `.claude/skills/` (project-scoped, loads only in fleet-config).
+# Both cost description tokens in-session, so the word-count cap audits both.
+SKILLS_DIRS = [REPO_ROOT / "skills", REPO_ROOT / ".claude" / "skills"]
 
 DEFAULT_CAP = 50  # words; the ~50-word skill-description prose cap (#137).
 # Deliberate one-offs that do NOT derive from project-scaffolding — drift vs the
@@ -86,7 +89,8 @@ def _norm(line: str) -> str:
 
 def scan_skills(cap: int) -> list[dict]:
     rows: list[dict] = []
-    for skill_md in sorted(SKILLS_DIR.glob("*/SKILL.md")):
+    skill_mds = [m for d in SKILLS_DIRS for m in d.glob("*/SKILL.md")]
+    for skill_md in sorted(skill_mds, key=lambda p: p.parent.name):
         desc = _frontmatter_description(_read(skill_md))
         if not desc:
             continue

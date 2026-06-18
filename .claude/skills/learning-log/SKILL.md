@@ -85,10 +85,10 @@ py skills/learning-log/gather.py assemble-ledger \
   --out <OUT_DIR>/ledger-body.md
 ```
 
-Then upsert the one canonical `kind=learning` ledger (deduped by `skills/_lib/audit_issue.py`; title `learning log — fleet`; label `audit-meta` so `/issue-triage` filters it out):
+Then upsert the one canonical `kind=learning` ledger (deduped by `C:/Users/rober/.claude/skills/_lib/audit_issue.py`; title `learning log — fleet`; label `audit-meta` so `/issue-triage` filters it out):
 
 ```
-py skills/_lib/audit_issue.py upsert --repo ferraroroberto/fleet-config \
+py C:/Users/rober/.claude/skills/_lib/audit_issue.py upsert --repo ferraroroberto/fleet-config \
   --kind learning --label audit-meta --title "learning log — fleet" --body-file <OUT_DIR>/ledger-body.md
 ```
 
