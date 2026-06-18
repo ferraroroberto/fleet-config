@@ -2,7 +2,7 @@
 
 Routes a single-turn text completion through the hub's OpenAI-shape
 ``/v1/chat/completions`` endpoint via stdlib ``urllib`` — zero-install (mirrors
-``slack_notify`` and ``skills/insights-weekly/report.py``), never an inline
+``slack_notify`` and ``.claude/skills/insights-weekly/report.py``), never an inline
 ``claude -p`` wrapper. The model is the hub's job; this just asks.
 
 Best-effort by contract: any connection error, timeout, non-200, or malformed

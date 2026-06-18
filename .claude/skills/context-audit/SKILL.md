@@ -63,7 +63,7 @@ Read the manifest and classify, concisely:
 Build a short markdown digest (single long lines): the manifest totals, the top offenders per category, and the week-over-week budget delta. Keep the durable archive (per-run totals) in the body; put the weekly narrative in a comment — same shape as `/audit-fleet` and `/learning-log`.
 
 ```
-py skills/_lib/audit_issue.py upsert --repo ferraroroberto/fleet-config \
+py C:/Users/rober/.claude/skills/_lib/audit_issue.py upsert --repo ferraroroberto/fleet-config \
   --kind context-audit --label audit-meta \
   --title "context-audit — always-on surface" --body-file <digest path>
 ```

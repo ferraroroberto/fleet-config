@@ -1,5 +1,5 @@
 # .fleet.toml — this repo's entry on the fleet architecture map.
-# Aggregated by /system-map (skills/system-map/build_data.py); the central
+# Aggregated by /system-map (.claude/skills/system-map/build_data.py); the central
 # architecture/fleet.data.js is the fallback. Schema: architecture/README.md.
 # Keep current: update this in the same PR as any material change (layer, port,
 # role, one-line description, exposed services).

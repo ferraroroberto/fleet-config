@@ -25,7 +25,7 @@ import uuid
 from pathlib import Path
 
 CHROME = r"C:/Program Files/Google/Chrome/Application/chrome.exe"
-REPO_ROOT = Path(__file__).resolve().parents[2]
+REPO_ROOT = Path(__file__).resolve().parents[3]
 DEFAULT_HTML = REPO_ROOT / "architecture" / "system-map.html"
 DEFAULT_OUT = REPO_ROOT / "architecture" / "system-map.png"
 DIMS_RE = re.compile(rb"DIMS (\d+) (\d+)")
