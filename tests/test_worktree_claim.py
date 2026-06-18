@@ -11,6 +11,7 @@ Run: `py tests/test_worktree_claim.py`  (also invoked by tests/run_acceptance.py
 
 from __future__ import annotations
 
+import os
 import shutil
 import sys
 import tempfile
@@ -79,6 +80,43 @@ try:
     check(wc.read_meta(lock).get("issue") == "147", "stale reclaim: new holder recorded")
 finally:
     shutil.rmtree(base, ignore_errors=True)
+
+
+# ---- _resolve_path_arg: bare-name tolerance (#162 repo name, #165 sibling) ----
+
+# Build a real on-disk parent with a repo dir and a sibling worktree dir, then
+# resolve from inside the repo. No git needed — _resolve_path_arg is pure path
+# logic over Path.cwd().
+rbase = Path(tempfile.mkdtemp(prefix="wtresolve_"))
+_prev_cwd = os.getcwd()
+try:
+    repo_dir = rbase / "fleet-config"
+    sibling_wt = rbase / "fleet-config-wt-7"
+    repo_dir.mkdir()
+    sibling_wt.mkdir()
+    os.chdir(repo_dir)
+
+    # #162: the repo's own name from inside it -> CWD
+    check(wc._resolve_path_arg("fleet-config") == repo_dir.resolve(),
+          "_resolve_path_arg: repo's own name -> CWD (#162)")
+    # #165: a sibling worktree name from inside the repo -> parent/<name>
+    check(wc._resolve_path_arg("fleet-config-wt-7") == sibling_wt.resolve(),
+          "_resolve_path_arg: sibling worktree name -> CWD.parent/<name> (#165)")
+    # "." still resolves to CWD
+    check(wc._resolve_path_arg(".") == repo_dir.resolve(),
+          "_resolve_path_arg: '.' -> CWD")
+    # absolute path that exists still wins
+    check(wc._resolve_path_arg(str(sibling_wt)) == sibling_wt.resolve(),
+          "_resolve_path_arg: absolute existing path -> itself")
+    # a genuinely missing bare name -> None (no double-append rescue)
+    check(wc._resolve_path_arg("does-not-exist-anywhere") is None,
+          "_resolve_path_arg: missing bare name -> None")
+    # a name with directory components does NOT get the bare-name fallback
+    check(wc._resolve_path_arg("sub/fleet-config-wt-7") is None,
+          "_resolve_path_arg: name with dir components -> None")
+finally:
+    os.chdir(_prev_cwd)
+    shutil.rmtree(rbase, ignore_errors=True)
 
 
 if _fails:

@@ -221,16 +221,35 @@ def remove_worktree(wt: Path) -> None:
 
 # ---- CLI ------------------------------------------------------------------
 
-def _resolve_repo(arg: str) -> Path:
+def _resolve_path_arg(arg: str) -> Optional[Path]:
+    """Resolve a path-ish CLI arg, tolerating the bare-name forms agents pass.
+
+    Returns the resolved existing path, or None if nothing plausible exists.
+    Three shapes are accepted: an ordinary relative/absolute path; the current
+    repo's own name from inside it (-> CWD, fleet-config#162); and a sibling
+    worktree name from the parent repo (-> CWD.parent/<name>, fleet-config#165 —
+    e.g. `remove-worktree fleet-config-wt-7` run from inside `fleet-config`).
+    """
     repo = Path(arg).resolve()
-    if not repo.exists():
-        # Agents often pass the repo name instead of "." or an absolute path.
-        # When CWD's basename matches, they clearly mean CWD (fleet-config#162).
+    if repo.exists():
+        return repo
+    # Only a bare, non-absolute name (no directory components) gets the fallback.
+    p = Path(arg)
+    if not p.is_absolute() and p.parent == Path("."):
         cwd = Path.cwd()
-        if cwd.name.casefold() == Path(arg).name.casefold() and not Path(arg).is_absolute():
+        if cwd.name.casefold() == arg.casefold():
             return cwd
-        sys.exit(f"No such repo path: {repo}")
-    return repo
+        sibling = cwd.parent / arg
+        if sibling.exists():
+            return sibling
+    return None
+
+
+def _resolve_repo(arg: str) -> Path:
+    resolved = _resolve_path_arg(arg)
+    if resolved is None:
+        sys.exit(f"No such repo path: {Path(arg).resolve()}")
+    return resolved
 
 
 def cmd_acquire(args: argparse.Namespace) -> int:
@@ -271,7 +290,11 @@ def cmd_release(args: argparse.Namespace) -> int:
 
 
 def cmd_remove_worktree(args: argparse.Namespace) -> int:
-    remove_worktree(Path(args.worktree_path).resolve())
+    # Tolerate the bare sibling-name form (fleet-config#165). When nothing
+    # resolves, hand the literal resolved path to remove_worktree so it prints
+    # its honest "already gone" message rather than exiting.
+    resolved = _resolve_path_arg(args.worktree_path)
+    remove_worktree(resolved or Path(args.worktree_path).resolve())
     return 0
 
 
