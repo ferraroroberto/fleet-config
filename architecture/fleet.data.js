@@ -40,7 +40,8 @@ window.FLEET = {
     {"ic": "🧮", "nm": "mathgamesforkids", "ds": "Educational games & HTML experiments."},
     {"ic": "🌐", "nm": "website", "ds": "Multi-workshop landing site."},
     {"ic": "🎓", "nm": "vibe-coding-workshop", "ds": "Python workshop + exercises."},
-    {"ic": "🌱", "nm": "life-os", "ds": "Productivity skills — diary, prep, muse.", "tag": ["via", "launcher"]}
+    {"ic": "🌱", "nm": "life-os", "ds": "Productivity skills — diary, prep, muse.", "tag": ["via", "launcher"]},
+    {"ic": "🌡️", "nm": "home-automation", "ds": "Control Mitsubishi HVAC via MELCloud Home."}
   ],
   "pipe": [
     {"ic": "💳", "nm": "accounting-quarterly", "ds": "Stripe payments → quarterly reports.", "tag": ["→", "Stripe"]},

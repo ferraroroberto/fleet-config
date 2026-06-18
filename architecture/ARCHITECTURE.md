@@ -109,6 +109,7 @@ The **work layer**, enabled by L2. Most mature ones are **web apps exposing an A
 |---|---|---|---|
 | 🛒 **grocery-shopping-automation** | Household grocery inventory + shopping-list PWA, with a **voice-narrated audit mode**. | `:8502` FastAPI+PWA | hub + whisper (L2) |
 | 💬 **whatsapp-radar** | Local-first spike to cut attention load from high-volume WhatsApp chats (monitor → process only new → deliver). | local app | hub (L2) |
+| 🌡️ **home-automation** | Read + control Mitsubishi Electric HVAC units via **MELCloud Home**; PoC ahead of solar load-balancing automation. | Streamlit | — (MELCloud Home) |
 | 🎲 **facilitation-shuffle** | Randomises workshop participants into 1-2-4-all breakout groups for Zoom. | Streamlit | — (Zoom) |
 | 💶 **family-accounting** | Local shared household-expense tracker (import bank exports → classify). | Streamlit | — |
 | 🧮 **mathgamesforkids** | Educational games + math tools + HTML experiments. | static | — |
