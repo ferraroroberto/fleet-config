@@ -11,6 +11,7 @@
     "family-accounting",
     "fleet-config",
     "grocery-shopping-automation",
+    "home-automation",
     "illustration-color-edit",
     "inspiration-system",
     "life-os",
@@ -167,6 +168,15 @@
       "tag": [
         "via",
         "launcher"
+      ]
+    },
+    {
+      "ic": "🌡️",
+      "nm": "home-automation",
+      "ds": "Control Mitsubishi HVAC via MELCloud Home.",
+      "tag": [
+        "→",
+        "MELCloud Home"
       ]
     }
   ],

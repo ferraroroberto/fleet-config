@@ -107,6 +107,9 @@ cwd_prefix = "E:/automation/family-accounting"
 [grocery-shopping-automation]
 cwd_prefix = "E:/automation/grocery-shopping-automation"
 
+[home-automation]
+cwd_prefix = "E:/automation/home-automation"
+
 [illustration-color-edit]
 cwd_prefix = "E:/automation/illustration-color-edit"
 
