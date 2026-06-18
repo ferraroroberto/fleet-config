@@ -36,6 +36,15 @@
             "command": "C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File C:/Users/rober/.claude/hooks/run-hook.ps1 -Hook venv_discipline"
           }
         ]
+      },
+      {
+        "matcher": "Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File C:/Users/rober/.claude/hooks/run-hook.ps1 -Hook docs_dated_filename_guard"
+          }
+        ]
       }
     ],
     "PostToolUse": [
@@ -45,6 +54,14 @@
           {
             "type": "command",
             "command": "C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File C:/Users/rober/.claude/hooks/run-hook.ps1 -Hook py_syntax_check"
+          },
+          {
+            "type": "command",
+            "command": "C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File C:/Users/rober/.claude/hooks/run-hook.ps1 -Hook hub_bypass_warn"
+          },
+          {
+            "type": "command",
+            "command": "C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File C:/Users/rober/.claude/hooks/run-hook.ps1 -Hook browser_stealth_lint"
           }
         ]
       }

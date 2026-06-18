@@ -161,6 +161,24 @@ def main() -> int:
          "venv_discipline",
          {"tool_name": "Bash", "cwd": tempfile.gettempdir(), "tool_input": {"command": "python --version"}},
          0),
+
+        # ---- docs_dated_filename_guard (block hook; no disk read needed) ----
+        ("docs_guard: Write docs/2026-06-18-x.md -> block",
+         "docs_dated_filename_guard",
+         {"tool_name": "Write", "tool_input": {"file_path": "E:/automation/foo/docs/2026-06-18-retro.md"}},
+         2),
+        ("docs_guard: Write docs/architecture.md (topic name) -> allow",
+         "docs_dated_filename_guard",
+         {"tool_name": "Write", "tool_input": {"file_path": "E:/automation/foo/docs/architecture.md"}},
+         0),
+        ("docs_guard: dated file NOT under docs/ -> allow",
+         "docs_dated_filename_guard",
+         {"tool_name": "Write", "tool_input": {"file_path": "E:/automation/foo/src/2026-06-18-x.md"}},
+         0),
+        ("docs_guard: Edit (not Write) a dated docs file -> allow",
+         "docs_dated_filename_guard",
+         {"tool_name": "Edit", "tool_input": {"file_path": "E:/automation/foo/docs/2026-06-18-retro.md"}},
+         0),
     ]
 
     # ---- py_syntax_check needs real files ----
@@ -263,6 +281,9 @@ def main() -> int:
     # ---- gh_body_file_guard: warn-only stdout assertions ----
     failures += _gh_body_file_guard_unit_checks()
 
+    # ---- Tier 2/3 hooks: docs-guard env override + warn-hook stdout (issue #158) ----
+    failures += _tier23_hooks_unit_checks()
+
     # ---- audit_issue helper pure-logic tests (skills/_lib) ----
     failures += _audit_issue_unit_check()
 
@@ -295,10 +316,10 @@ def main() -> int:
 # Sum of the unit checks below: slack_notify (3) + mention (5) + classify (6) +
 # notify_complete (18) + work_summary (5) + slack_routing (10) +
 # conversation_capture (13) + conversation_index (6) + restart_webapp (6) +
-# gh_body_file_guard (6) + audit_issue (1) + worktree_claim (1) +
-# learning_log (16) + system_map (3) + fleet_toml (3) +
+# gh_body_file_guard (6) + tier23_hooks (10) + audit_issue (1) +
+# worktree_claim (1) + learning_log (16) + system_map (3) + fleet_toml (3) +
 # system_map_whatchanged (7) + settings_template_sync (1).
-_UNIT_CHECK_COUNT = 110
+_UNIT_CHECK_COUNT = 120
 
 
 def _system_map_coverage_check() -> int:
@@ -646,6 +667,78 @@ def _gh_body_file_guard_unit_checks() -> int:
           stdout_for("gh issue list --state open --limit 20") == "")
     check("gh_guard: gh pr create plain inline body (no risky construct) -> silent",
           stdout_for('gh pr create --title x --body "plain text, nothing to expand"') == "")
+
+    return failures
+
+
+def _tier23_hooks_unit_checks() -> int:
+    """The three Tier 2/3 hooks (issue #158): docs-guard env override, plus the
+    two warn-only hooks whose output is on STDOUT (exit always 0), so these
+    assert nudge-present / silent rather than the exit code. The warn hooks read
+    the file from disk, so each case writes a real temp file first.
+    """
+    failures = 0
+
+    def check(case: str, ok: bool) -> None:
+        nonlocal failures
+        print(f"{'OK   ' if ok else 'FAIL '} {case}")
+        if not ok:
+            failures += 1
+
+    # ---- docs_dated_filename_guard: env override flips block -> allow ----
+    os.environ["CLAUDE_HOOKS_ALLOW_DATED_DOCS"] = "1"
+    try:
+        code, _out, _err = run("docs_dated_filename_guard",
+                               {"tool_name": "Write",
+                                "tool_input": {"file_path": "E:/automation/foo/docs/2026-06-18-retro.md"}})
+        check("docs_guard: CLAUDE_HOOKS_ALLOW_DATED_DOCS=1 -> allow (override)", code == 0)
+    finally:
+        os.environ.pop("CLAUDE_HOOKS_ALLOW_DATED_DOCS", None)
+
+    tmp = Path(tempfile.mkdtemp(prefix="tier23_"))
+    try:
+        def nudged(hook: str, path: Path, body: str) -> bool:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(body, encoding="utf-8")
+            code, out, _err = run(hook, {"tool_name": "Write", "tool_input": {"file_path": str(path)}})
+            return code == 0 and bool(out.strip())
+
+        # ---- hub_bypass_warn ----
+        check("hub_bypass: inline `claude -p` command string -> nudge",
+              nudged("hub_bypass_warn", tmp / "wrapper.py",
+                     'import subprocess\nsubprocess.run("claude -p hello", shell=True)\n'))
+        check("hub_bypass: argv-form ['claude','-p'] -> nudge",
+              nudged("hub_bypass_warn", tmp / "argv.py",
+                     'from subprocess import Popen\nPopen(["claude", "-p", "hi"])\n'))
+        check("hub_bypass: subprocess but no claude -p -> silent",
+              not nudged("hub_bypass_warn", tmp / "other.py",
+                         'import subprocess\nsubprocess.run(["ls", "-la"])\n'))
+        check("hub_bypass: inside the hub repo -> silent",
+              not nudged("hub_bypass_warn", tmp / "local-llm-hub" / "server.py",
+                         'import subprocess\nsubprocess.run("claude -p hello", shell=True)\n'))
+
+        # ---- browser_stealth_lint ----
+        bare_launch = 'ctx = p.chromium.launch_persistent_context(user_data_dir="x")\n'
+        full_launch = (
+            'ctx = p.chromium.launch_persistent_context(\n'
+            '    user_data_dir="x", channel="chrome",\n'
+            '    ignore_default_args=["--enable-automation"],\n'
+            '    args=["--disable-blink-features=AutomationControlled"],\n'
+            ')\n'
+            'page.add_init_script("Object.defineProperty(navigator, \'webdriver\', {get: () => undefined})")\n'
+        )
+        check("browser_stealth: chrome_launch.py missing markers -> nudge",
+              nudged("browser_stealth_lint", tmp / "chrome_launch.py", bare_launch))
+        check("browser_stealth: chrome_launch.py with all markers -> silent",
+              not nudged("browser_stealth_lint", tmp / "ok_launch" / "chrome_launch.py", full_launch))
+        check("browser_stealth: *_session.py with a launch missing a marker -> nudge",
+              nudged("browser_stealth_lint", tmp / "x_session.py", bare_launch + 'channel="chrome"\n'))
+        check("browser_stealth: watched name but no launch call -> silent",
+              not nudged("browser_stealth_lint", tmp / "browser.py", "PORT = 9222\n"))
+        check("browser_stealth: non-watched filename with a launch -> silent",
+              not nudged("browser_stealth_lint", tmp / "helper.py", bare_launch))
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
 
     return failures
 

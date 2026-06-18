@@ -8,9 +8,9 @@ The hooks here are project-aware via a single `hooks/projects.toml` registry: ge
 
 `~/.claude/` is a kitchen sink — cache, transcripts, plans — so it can't all be a git repo. But the *config* inside it (hooks, skills, the global `CLAUDE.md`) is real source code: it shapes every Claude session, breaks silently when typoed, and needs to be reviewed, diffed, and reverted like any other code. Before this repo, edits to `~/.claude/hooks/*` and friends were unversioned. Now they aren't.
 
-## What's in here today (Tier 1)
+## What's in here today
 
-8 hooks under `hooks/` that enforce the rituals I kept correcting Claude on, across the home-stack fleet:
+11 hooks under `hooks/` that enforce the rituals I kept correcting Claude on, across the home-stack fleet:
 
 | Hook | Event | What it does |
 |---|---|---|
@@ -20,6 +20,9 @@ The hooks here are project-aware via a single `hooks/projects.toml` registry: ge
 | `safe_kill_guard.py` | `PreToolUse` on `Bash` / `PowerShell` | Blocks blanket `Stop-Process -Name python(w)?` (would nuke sister hubs), `git push --force` to main, `--no-verify`. Port-scoped kills against the project's own webapp port pass through. |
 | `venv_discipline.py` | `PreToolUse` on `Bash` / `PowerShell` | Blocks `python -m venv venv` (the user's canonical name is `.venv`), `.\.venv\Scripts\activate`, bare `python`/`pip` when a project `.venv` exists. |
 | `py_syntax_check.py` | `PostToolUse` on `Edit` / `Write` for `*.py` | Runs `py_compile` against the project's `.venv` and surfaces syntax errors inline. ~50 ms per edit. |
+| `docs_dated_filename_guard.py` | `PreToolUse` on `Write` | Blocks a `Write` of a `YYYY-MM-DD-`prefixed file under a `docs/` directory — `docs/` is durable reference, not dated retrospectives (the issue + PR + `git log` are the changelog). Override with `CLAUDE_HOOKS_ALLOW_DATED_DOCS=1`. |
+| `hub_bypass_warn.py` | `PostToolUse` on `Edit` / `Write` for `*.py` | Non-blocking nudge when a `*.py` outside the LLM-hub repo spawns an inline `claude -p` subprocess → route through the local hub at `127.0.0.1:8000` via the standard SDKs instead. |
+| `browser_stealth_lint.py` | `PostToolUse` on `Edit` / `Write` | Non-blocking nudge when a browser-launch file (`chrome_launch.py` / `browser.py` / `*_session.py`) launches Chrome but is missing a stealth marker (`--enable-automation` strip, `navigator.webdriver` init, `channel="chrome"`, `AutomationControlled`) → import the project's single-source launch helper. |
 | `restart_and_verify_webapp.py` | slash command `/restart-webapp` | Project-aware: looks up the webapp port from `projects.toml`, kills only that PID, then brings the webapp back — via the project's `restart_cmd` (a `WebappManager` respawn the tray adopts, for tray-owned apps) or `tray.bat` — and polls `/api/version` until `git_sha == HEAD`, reporting the new `asset_hash`. Never touches the `:8446` session-host. |
 | `notify_on_idle.py` | `Notification` | Opt-in (off unless a project/`[global]` `slack_notify_channel` is set): pings Slack via `slack_notify` when a live session is **blocked** on input (a permission gate or `AskUserQuestion`), so an AFK human gets a phone notification — routed to the `#attention` channel (issue #139). No-ops on the 💤 idle nag. |
 
@@ -27,7 +30,7 @@ Alongside the hooks, `hooks/slack_notify.py` is a shared **Slack-notify transpor
 
 Two more **project-wired** hooks (opt-in per project via `projects.toml` `capture = true`; currently just life-os, and wired from that project's own `settings.json` rather than user-scope) form a **conversation-memory engine**. `conversation_capture.py` (Stop) writes each finished session to markdown; `session_index.py` (SessionStart) lazily runs `conversation_index.py` to digest *settled* captures — once per conversation, after it ends — into a per-folder `index.md` (topic / decisions / open loops, pointing back at the raw capture), so a consumer knows what happened recently without bulk-loading transcripts. The digest goes through `hooks/hub_client.py`, the shared stdlib-`urllib` client for the local LLM hub (OpenAI-shape, fail-open — mirrors `slack_notify`). Routing is config-driven: `capture_routing = "flat"` (one `conversations/` + `index.md` per project, the default) or `"skills"` (per-skill dirs, routed by an `active_marker`; life-os's setup). Generic by design — any repo opts in with one `projects.toml` block.
 
-Tier 2 (browser-stealth lint, `pwsh`-stub warn, session-start fleet status, etc.) and Tier 3 (preference enforcement) are tracked as follow-up issues — they earn their slot only after a week of Tier 1 in production.
+The original Tier 2 / Tier 3 follow-up plan was triaged once Tier 1 had burned in (fleet-config#158): the three hooks that still earned their slot — `docs_dated_filename_guard`, `hub_bypass_warn`, `browser_stealth_lint` — shipped into the table above; the rest were dropped as low-signal or deferred (session-start fleet status → the Fleet Board work in #91).
 
 ### Skills
 
@@ -70,6 +73,9 @@ fleet-config/
 │   ├── safe_kill_guard.py
 │   ├── venv_discipline.py
 │   ├── py_syntax_check.py
+│   ├── docs_dated_filename_guard.py   # PreToolUse on Write: block dated YYYY-MM-DD- filenames under docs/
+│   ├── hub_bypass_warn.py             # PostToolUse on *.py: nudge inline `claude -p` → route through the local hub
+│   ├── browser_stealth_lint.py        # PostToolUse: nudge a browser-launch file missing the anti-bot stealth kwargs
 │   ├── restart_and_verify_webapp.py   # also exposed as /restart-webapp
 │   ├── notify_on_idle.py            # Notification hook (via run-hook.ps1): opt-in Slack ping
 │   ├── slack_notify.py              # shared Slack-notify transport (importable + CLI, stdlib-only)
