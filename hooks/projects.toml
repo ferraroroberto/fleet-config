@@ -62,6 +62,13 @@ tray_cmd            = "tray.bat"
 restart_cmd         = '& .\.venv\Scripts\python.exe -c "from app.webapp.manager import WebappManager; WebappManager().start(wait=True)"'
 api_version_path    = "/api/version"
 
+[home-automation]
+cwd_prefix          = "E:/automation/home-automation"
+webapp_port         = 8447
+tray_cmd            = "tray.bat"
+restart_cmd         = '& .\.venv\Scripts\python.exe -c "from app.tray.manager import WebappManager; WebappManager().start(wait=True)"'
+api_version_path    = "/api/version"
+
 [local-llm-hub]
 cwd_prefix          = "E:/automation/local-llm-hub"
 webapp_port         = 8000
@@ -106,9 +113,6 @@ cwd_prefix = "E:/automation/family-accounting"
 
 [grocery-shopping-automation]
 cwd_prefix = "E:/automation/grocery-shopping-automation"
-
-[home-automation]
-cwd_prefix = "E:/automation/home-automation"
 
 [illustration-color-edit]
 cwd_prefix = "E:/automation/illustration-color-edit"
