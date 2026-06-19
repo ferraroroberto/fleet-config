@@ -41,7 +41,7 @@ window.FLEET = {
     {"ic": "🌐", "nm": "website", "ds": "Multi-workshop landing site."},
     {"ic": "🎓", "nm": "vibe-coding-workshop", "ds": "Python workshop + exercises."},
     {"ic": "🌱", "nm": "life-os", "ds": "Productivity skills — diary, prep, muse.", "tag": ["via", "launcher"]},
-    {"ic": "🌡️", "nm": "home-automation", "ds": "Control Mitsubishi HVAC via MELCloud Home."}
+    {"ic": "🌡️", "nm": "home-automation", "port": 8447, "ds": "Home automation suite (ac/power)."}
   ],
   "pipe": [
     {"ic": "💳", "nm": "accounting-quarterly", "ds": "Stripe payments → quarterly reports.", "tag": ["→", "Stripe"]},
