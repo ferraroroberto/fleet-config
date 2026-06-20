@@ -35,7 +35,8 @@ Subcommands:
   acquire <repo-root> [--issue N] [--branch B] [--ttl-hours H]
       Atomically claim the primary checkout. Prints `MODE=primary` (work in
       place) or `MODE=worktree` (caller then calls setup-worktree). Reclaims a
-      claim older than the TTL.
+      claim older than the TTL, or one whose recorded branch no longer exists
+      (merged-and-deleted => leaked claim, self-heals on the next acquire).
 
   setup-worktree <repo-root> <issue-N> <branch>
       `git worktree add <repo>-wt-<N> -b <branch> <origin-main>` + junction the
@@ -64,7 +65,7 @@ import subprocess
 import sys
 import time
 from pathlib import Path
-from typing import Optional, Tuple
+from typing import Callable, Optional, Tuple
 
 if hasattr(sys.stdout, "reconfigure"):  # UTF-8 even when stdout is captured (cp1252 fallback)
     sys.stdout.reconfigure(encoding="utf-8")  # type: ignore[union-attr]
@@ -87,21 +88,40 @@ def worktree_path(repo_root: Path, issue: str) -> Path:
     return repo_root.parent / f"{repo_root.name}-wt-{issue}"
 
 
-def is_stale(meta: Optional[dict], now: float, ttl_hours: float) -> bool:
-    """A claim is stale once it ages past the TTL (or if its meta is unreadable).
+def is_stale(
+    meta: Optional[dict],
+    now: float,
+    ttl_hours: float,
+    branch_exists: Optional["Callable[[str], bool]"] = None,
+) -> bool:
+    """A claim is stale once it ages past the TTL, its meta is unreadable, or its
+    recorded branch no longer exists.
 
     No PID-liveness check: a one-shot helper invocation can't capture the
     long-lived agent-session PID, and Windows PID checks are unreliable. The TTL
     is the crash-safety valve — a generous default so a legitimately long build
     is never reclaimed out from under itself.
+
+    `branch_exists` is an injected predicate (`branch -> bool`) so this stays a
+    pure, git-free function for the unit tests; the CLI wires in a git-backed
+    one. When a claim records a `branch` and that branch is already
+    merged-and-deleted, the claim is definitionally done — treat it as stale so a
+    leaked claim self-heals on the next `acquire` instead of blocking for the
+    full TTL (fleet-config#174). A claim with no recorded branch, or when no
+    predicate is supplied, falls back to the TTL alone.
     """
     if not meta:
         return True
     created = meta.get("created")
     try:
-        return (now - float(created)) > ttl_hours * 3600.0
+        if (now - float(created)) > ttl_hours * 3600.0:
+            return True
     except (TypeError, ValueError):
         return True
+    branch = meta.get("branch")
+    if branch and branch_exists is not None and not branch_exists(branch):
+        return True
+    return False
 
 
 def read_meta(lock_dir: Path) -> Optional[dict]:
@@ -115,16 +135,24 @@ def write_meta(lock_dir: Path, meta: dict) -> None:
     (lock_dir / META_NAME).write_text(json.dumps(meta, indent=2), encoding="utf-8")
 
 
-def try_acquire(lock_dir: Path, meta: dict, now: float, ttl_hours: float) -> Tuple[str, dict]:
+def try_acquire(
+    lock_dir: Path,
+    meta: dict,
+    now: float,
+    ttl_hours: float,
+    branch_exists: Optional["Callable[[str], bool]"] = None,
+) -> Tuple[str, dict]:
     """Atomically claim `lock_dir`. Returns ('primary', meta) on win, else
     ('worktree', holder-meta). Reclaims a stale lock; loses a reclaim race
-    gracefully to worktree mode. Pure filesystem — hermetic, no git.
+    gracefully to worktree mode. Pure filesystem — hermetic, no git; the
+    optional `branch_exists` predicate (passed straight to `is_stale`) is the
+    only seam where the CLI injects git, so the tests stay hermetic.
     """
     try:
         lock_dir.mkdir(parents=False)  # atomic: FileExistsError if already held
     except FileExistsError:
         holder = read_meta(lock_dir)
-        if not is_stale(holder, now, ttl_hours):
+        if not is_stale(holder, now, ttl_hours, branch_exists):
             return "worktree", holder or {}
         # Stale -> reclaim. rmtree + re-mkdir isn't atomic as a pair, so a
         # concurrent reclaimer may win the re-mkdir; that racer's FileExistsError
@@ -164,6 +192,27 @@ def main_ref(repo: Path) -> str:
     if res.returncode == 0 and ref:
         return ref.replace("refs/remotes/", "", 1)
     return "origin/main"
+
+
+def branch_exists_on_remote(repo: Path, branch: str) -> bool:
+    """True if `branch` still exists on origin (or as a local ref).
+
+    Used to detect a leaked claim whose branch is already merged-and-deleted
+    (fleet-config#174). Shells to `git ls-remote` — stdlib + git CLI only, per
+    the module contract; no new dependency. On any git failure (offline, no
+    remote, transient error) we return True: an inability to *prove* the branch
+    is gone must never reclaim a possibly-live claim out from under a peer.
+    """
+    if not branch:
+        return True
+    res = _git(repo, "ls-remote", "--heads", "origin", branch, check=False)
+    if res.returncode != 0:
+        return True  # can't tell -> assume present, fall back to the TTL
+    if res.stdout.strip():
+        return True
+    # Not on the remote — it may be a local-only branch not yet pushed.
+    local = _git(repo, "rev-parse", "--verify", "--quiet", f"refs/heads/{branch}", check=False)
+    return local.returncode == 0
 
 
 def is_primary_checkout(repo: Path) -> bool:
@@ -262,7 +311,10 @@ def cmd_acquire(args: argparse.Namespace) -> int:
         "branch": args.branch,
         "repo": str(repo),
     }
-    mode, holder = try_acquire(lock, meta, time.time(), args.ttl_hours)
+    mode, holder = try_acquire(
+        lock, meta, time.time(), args.ttl_hours,
+        branch_exists=lambda b: branch_exists_on_remote(repo, b),
+    )
     print(f"MODE={mode}")
     if mode == "worktree" and holder:
         print(f"# primary held since {holder.get('created_iso', '?')} "

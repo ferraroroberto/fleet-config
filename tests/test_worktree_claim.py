@@ -47,6 +47,33 @@ check(wc.is_stale({"created": now - 3600}, now, 8) is False, "is_stale: 1h old, 
 check(wc.is_stale({"created": now - 9 * 3600}, now, 8) is True, "is_stale: 9h old, 8h ttl -> stale")
 check(wc.is_stale({"created": now - 8 * 3600 - 1}, now, 8) is True, "is_stale: just past ttl -> stale")
 
+# ---- is_stale: branch-existence reclaim (#174, injected predicate; no git) ----
+
+gone = lambda b: False   # branch no longer exists on the remote
+alive = lambda b: True   # branch still exists
+fresh_with_branch = {"created": now - 3600, "branch": "fix/174-x"}
+check(wc.is_stale(fresh_with_branch, now, 8, branch_exists=gone) is True,
+      "is_stale: fresh but branch gone -> stale (#174)")
+check(wc.is_stale(fresh_with_branch, now, 8, branch_exists=alive) is False,
+      "is_stale: fresh and branch alive -> fresh")
+check(wc.is_stale(fresh_with_branch, now, 8) is False,
+      "is_stale: no predicate -> branch check skipped, TTL only")
+check(wc.is_stale({"created": now - 3600}, now, 8, branch_exists=gone) is False,
+      "is_stale: no recorded branch -> branch check skipped")
+# TTL still wins regardless of branch state
+check(wc.is_stale({"created": now - 9 * 3600, "branch": "fix/174-x"}, now, 8, branch_exists=alive) is True,
+      "is_stale: aged-out beats a live branch -> stale")
+# try_acquire honors the predicate: a held-but-branch-gone claim is reclaimed
+_b = Path(tempfile.mkdtemp(prefix="wtclaim_branch_"))
+try:
+    _lock = _b / wc.LOCK_NAME
+    wc.try_acquire(_lock, {"created": time.time(), "branch": "fix/174-x"}, time.time(), 8)
+    mode, _ = wc.try_acquire(_lock, {"created": time.time(), "branch": "fix/174-y"},
+                             time.time(), 8, branch_exists=gone)
+    check(mode == "primary", "try_acquire: branch-gone holder reclaimed -> primary (#174)")
+finally:
+    shutil.rmtree(_b, ignore_errors=True)
+
 # ---- try_acquire FSM (hermetic tempdir as the git-common-dir) ----
 
 base = Path(tempfile.mkdtemp(prefix="wtclaim_"))
