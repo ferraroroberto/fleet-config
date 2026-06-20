@@ -173,6 +173,14 @@ Only reachable on a fully-green Phase 3. Run the full `/issue-finish` skill:
    non-negotiable and always runs.
 8. `gh pr merge <PR> --merge --delete-branch`. Land on main locally
    (`git checkout main && git pull --ff-only`). Confirm the issue auto-closed.
+   Then **release the concurrency claim** — Phase 2 acquired a primary claim via
+   the `/issue-start now` flow, and an inline-merge YOLO run has no separate
+   `/issue-finish` to free it, so it must be released here or it leaks until the
+   8h TTL (fleet-config#174). Idempotent, so it's safe even if no claim was held:
+   ```
+   py C:/Users/rober/.claude/skills/_lib/worktree_claim.py release <repo>
+   ```
+   Confirm it freed with `worktree_claim.py status <repo>` → `CLAIM=free`.
 9. Tray restart per project `CLAUDE.md` if a tray exists. Run the deterministic
    **`tray.bat --restart`** (the canonical orphan-proof reclaim-then-start — it
    does the subtree kill + per-`.venv` port reclaim + start atomically). Do

@@ -109,6 +109,17 @@ convention is `ferraroroberto/project-scaffolding#52`).
     ```
     py C:/Users/rober/.claude/skills/_lib/worktree_claim.py release <repo>
     ```
+    **Verify the release** — this is a hard acceptance step, not optional prose:
+    a finisher that is not the acquiring session (build-and-stop → separate
+    finisher, `/cleanup-fleet`, `/issue-finish-batch`) or an abbreviated finish
+    must not silently skip it and leak the claim until the 8h TTL
+    (fleet-config#174). Immediately run:
+    ```
+    py C:/Users/rober/.claude/skills/_lib/worktree_claim.py status <repo>
+    ```
+    and confirm it prints `CLAIM=free`. If it still shows `CLAIM=held`, the
+    release did not take — re-run `release <repo>` and re-check before reporting
+    the finish done.
   - **Linked worktree:** do **not** `git checkout <main>` — the primary checkout
     may belong to another live session; the merge is already authoritative on the
     remote. Instead `cd` out to the primary repo path (`<repo>`) and remove this
