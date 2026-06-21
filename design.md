@@ -67,6 +67,13 @@ components:
   nav-tab:        { textColor: "{colors.fg-muted}", rounded: "{rounded.pill}", height: 48px }
   nav-tab-active: { backgroundColor: "{colors.canvas-subtle}", textColor: "{colors.accent}" }
   disclosure:     { align: left, chevron: right }   # collapsible details/summary header
+icons:
+  set:     "Lucide"               # canonical fleet icon set — https://lucide.dev
+  url:     "https://lucide.dev"
+  grid:    24px                   # 24×24 viewBox
+  stroke:  2px                    # outline weight
+  format:  SVG                    # inline SVG — no icon-font / web-font payload
+  license: ISC
 ---
 
 ## Overview
@@ -138,7 +145,7 @@ identically; treat every bullet as a hard requirement, not a suggestion.
 - **The nav hides whenever a modal/overlay is open** (`body:has(dialog[open])`) so
   it never floats above a dialog.
 - **Tap targets ≥ 44px.** Tabs show an icon **and** a short label, never
-  icon-only.
+  icon-only. The icon is a **Lucide** glyph (see Icons).
 - **Desktop / fine pointers** may render the same tabs inline at the top; the
   behavior (single active tab, persistence) is unchanged — only the placement
   differs.
@@ -183,14 +190,42 @@ Mapping for the controls this fleet uses:
 When a new component is needed, model it on the matching shadcn component and apply
 the tokens — that is how every app stays visually *and* behaviorally identical.
 
+## Icons
+
+One icon set, fleet-wide: **Lucide** (<https://lucide.dev>). This is the
+consistent choice rather than a new dependency — Lucide is shadcn/ui's default
+icon set, and the spec already endorses shadcn as the structural reference for
+every interactive component, so the glyphs and the component shapes come from the
+same vocabulary. Lucide ships ~1,600 icons under the permissive **ISC** license
+on a **24×24** grid with a **2px** outline stroke — the calm, GitHub-mobile
+line-icon style this identity is modelled on — and it ships as plain **SVG**, so
+it drops into these vanilla HTML/CSS/JS PWAs with **no React and no build step**.
+Unlike an icon font it carries no web-font payload, consistent with the
+system-font, instant-first-paint typography choice above. Radix Icons (the set
+behind the Radix UI reference above) was considered and rejected: ~300 glyphs at
+15×15 is too small a library to dress a multi-app fleet.
+
+Use Lucide everywhere the fleet shows an icon: the bottom-nav **tabs** (icon +
+label, per the Navigation contract), the **disclosure** header glyph (with the
+chevron pinned right), and the Home-screen **icon tiles**. Reach for the matching
+Lucide icon the same way you reach for the matching shadcn component — never mix a
+second icon set or hand-draw a one-off glyph.
+
+**Adoption:** vendor only the handful of SVGs an app actually uses into
+`project-scaffolding` and import them from there — exactly the model used for the
+nav/UI snippets ("Reuse the **vendored** nav/UI snippets from
+`project-scaffolding`" above). Apps do not each pull the whole Lucide library.
+
 ## Do's and Don'ts
 
 - **Do** use the one blue accent for all interactive emphasis.
 - **Do** model every interactive component on its shadcn component (structure + ARIA), then skin it with the fleet tokens.
+- **Do** draw every icon from **Lucide** — the shadcn-native set — vendored through `project-scaffolding`.
 - **Do** keep the bottom nav identical across apps — same radius, blur, and
   persistence behavior.
 - **Do** reserve bottom padding for the fixed nav so content is never occluded.
 - **Don't** hand-roll a primitive (switch, select, dialog, tabs…) that shadcn already defines.
+- **Don't** mix a second icon set or hand-draw a one-off glyph — use the matching Lucide icon.
 - **Don't** introduce a second accent or per-app navigation variants.
 - **Don't** use status colors decoratively — they signal state only.
 - **Don't** apply this spec to Streamlit POC spikes.
