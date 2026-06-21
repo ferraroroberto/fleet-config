@@ -70,6 +70,7 @@ Before finishing, ask: "What would a senior, perfectionist dev reject in review?
 Universal code & config conventions (project-specific layout and stack live in the project's own README/CLAUDE.md).
 
 - **Read the README first.** Don't assume `/app/`, `/src/`, `launch_app.bat`, or any specific path exists — the project's layout is documented in its own `README.md`.
+- **Web-app UI work consults the fleet design system.** Any web-app (FastAPI + static PWA) UI work — colors, typography, spacing, and especially navigation/interaction — must follow `~/.claude/design.md` (light) + `~/.claude/design.dark.md` (dark), the fleet's canonical visual identity and navigation contract (the floating bottom-tab pill behavior). `/design-sync` reports drift from it. Streamlit POC spikes are exempt.
 - **Config & secrets:** project config in `config.json` or similar; secrets always in `.env`, never committed. The canonical env filename is `.env` (`.venv` is the venv directory, not the env file).
 - **Virtual environment:** use the existing `.venv`. Never create `venv`. Never activate — invoke via `& .\.venv\Scripts\python.exe ...` on Windows, `./.venv/bin/python ...` on POSIX.
 - **Logging:** use the language's logging facility (Python: `logging`, not `print()`). Emojis welcome in log messages: ℹ️ ⚠️ ❌ ✅
