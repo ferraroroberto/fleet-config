@@ -131,13 +131,23 @@ The same files drive Claude Code and Codex; editing once is live in both. The se
 | Hooks (wiring) | `settings.json` (merge `settings.template.json`) | `~/.codex/hooks.json` | symlink → `codex-hooks.json` |
 | Skills | `~/.claude/skills/` | `~/.agents/skills/` | junction → `skills/` |
 | Slash commands / prompts | `~/.claude/commands/` | `~/.codex/prompts/` | junction → `commands/` |
-| Statusline | `~/.claude/statusline-command.ps1` | *(no equivalent)* | Claude only |
+| Statusline | `~/.claude/statusline-command.ps1` | native TUI footer via `~/.codex/config.toml` `tui.status_line` | separate surfaces |
 
 `global-CLAUDE.md` is **agent-neutral**: it reads correctly as either file, and the few genuinely Claude-specific sections (the 3-wide Opus sub-agent cap; the Git-Bash-strips-backslashes-in-`settings.json` gotcha) are marked *(Claude Code only — skip on other agents)*. Unlike Claude's `settings.json` (which mixes in machine-local secrets and so stays a manual merge), Codex's `hooks.json` is hooks-only, so it is symlinked live from `codex-hooks.json` — the same `run-hook.ps1` shim runs on both agents (Codex does **not** route hooks through Git Bash, so its command paths may use backslashes).
 
 **Why Codex skills live in `~/.agents/skills`, not `~/.codex/skills`.** This trips people up because Codex *does* have a `~/.codex/skills/` directory — but that's Codex-owned: it holds Codex's own bundled skills under `~/.codex/skills/.system/` (imagegen, skill-creator, skill-installer, …), marked with a `.codex-system-skills.marker`. The [official skills doc](https://developers.openai.com/codex/skills) lists `$HOME/.agents/skills` as *the* USER skill location — `~/.codex/skills` is **not** a documented user path. So the `~/.agents/skills` junction is correct, and we deliberately do **not** also junction into `~/.codex/skills`: it can't be a whole-directory junction anyway (the installer won't clobber the real `.system/` dir), and exposing each skill via two scanned roots would double-list every skill in Codex's selector (Codex doesn't merge same-named skills — both appear). If you see Codex *guess* a `~/.codex/skills/.system/<name>/SKILL.md` path and 404 before reading the skill from `E:\…\fleet-config\skills`, that's the model fumbling the path once and self-correcting, not a broken link — the skill still loads.
 
 **Validated:** Codex (gpt-5.5) loads and runs these skills live — e.g. invoking the `screen` skill executed `skills/screen/SKILL.md` straight from the repo. One Codex-vs-Claude nuance: Codex's client only treats a message as a slash command when the *whole* message is a registered client command, so a bare `/screen` line is rejected by the client — invoke a skill mid-message (`check this /screen 3`) or in natural language (`run the codebase audit`) and it fires.
+
+**Codex statusline parity.** Claude Code's statusline is a custom command (`statusline-command.ps1`) that receives a JSON payload including `context_window.used_percentage`, so it can render `used % | model | project (branch)` with color thresholds. Codex does not use that command surface; it has a native TUI footer configured by `/statusline` or by `~/.codex/config.toml`:
+
+```toml
+[tui]
+status_line = ["context-used", "model", "current-dir", "git-branch"]
+terminal_title = ["project", "git-branch", "model"]
+```
+
+This is the closest supported Codex shape today: context first, then model, current directory, and branch. It deliberately uses Codex's built-in `context-used` item because Codex does not currently expose a custom statusline command payload or a bare percentage item equivalent to Claude's compact `0%` segment. To validate locally, restart/open a fresh Codex TUI session and confirm the footer shows those four segments in that order; use `/statusline` inside Codex if you want to inspect or reorder the saved footer interactively.
 
 **Codex Browser plugin.** Codex's bundled Browser plugin loads its *instructions* even when its *runtime backend* isn't live — `agent.browsers.list()` can return `[]` despite the plugin being enabled in `config.toml`. That backend is Codex-client/runtime state, not a dependency this repo installs. [`docs/codex-browser.md`](docs/codex-browser.md) is the durable note: how to diagnose `iab` availability from a session, why installed plugin files don't mean a registered backend, and the restart-and-check recovery path.
 
