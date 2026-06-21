@@ -56,12 +56,16 @@ spacing:
   md: 16px
   lg: 24px
   xl: 32px
+  gutter: 12px    # uniform gap between cards/tiles and from the page edges
 components:
   card:           { backgroundColor: "{colors.card}", textColor: "{colors.fg}", rounded: "{rounded.lg}", padding: "{spacing.md}" }
   button-primary: { backgroundColor: "{colors.accent}", textColor: "{colors.accent-fg}", rounded: "{rounded.md}", typography: "{typography.label}", height: 48px }
-  nav-bar:        { backgroundColor: "{colors.card}", rounded: "{rounded.nav}", height: 60px }
+  control:        { height: 36px, rounded: "{rounded.md}", backgroundColor: "{colors.canvas-subtle}", borderColor: "{colors.border}", textColor: "{colors.fg}" }   # shared height for inline select / input so a row of controls lines up
+  switch:         { width: 44px, height: 26px, rounded: "{rounded.pill}", thumbSize: 20px, trackOff: "{colors.border}", trackOn: "{colors.accent}", thumbColor: "{colors.accent-fg}" }   # shadcn base Switch — no text label
+  nav-bar:        { backgroundColor: "{colors.card}", rounded: "{rounded.nav}", height: 56px, margin: "{spacing.gutter}" }
   nav-tab:        { textColor: "{colors.fg-muted}", rounded: "{rounded.pill}", height: 48px }
   nav-tab-active: { backgroundColor: "{colors.canvas-subtle}", textColor: "{colors.accent}" }
+  disclosure:     { align: left, chevron: right }   # collapsible details/summary header
 ---
 
 ## Overview
@@ -115,9 +119,11 @@ behavior rendered inline at the top on fine pointers. The dark theme changes the
 
 ## Components
 
-Unchanged from the Light theme — `button-primary`, `card`, `nav-bar`, `nav-tab` per
-the contract above, with the vendored snippets from `project-scaffolding` reused
-verbatim.
+Unchanged from the Light theme — `button-primary`, `card`, `control`, `switch`,
+`nav-bar`, `nav-tab`, `disclosure` per the contract above, with the vendored
+snippets from `project-scaffolding` reused verbatim. The **Base UI — derive from
+shadcn** rule in `design.md` applies here unchanged: every interactive component
+derives from its shadcn base-UI variant, then is skinned with the (dark) tokens.
 
 ## Do's and Don'ts
 

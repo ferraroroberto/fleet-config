@@ -57,12 +57,16 @@ spacing:
   md: 16px
   lg: 24px
   xl: 32px
+  gutter: 12px    # uniform gap between cards/tiles and from the page edges
 components:
   card:           { backgroundColor: "{colors.card}", textColor: "{colors.fg}", rounded: "{rounded.lg}", padding: "{spacing.md}" }
   button-primary: { backgroundColor: "{colors.accent}", textColor: "{colors.accent-fg}", rounded: "{rounded.md}", typography: "{typography.label}", height: 48px }
-  nav-bar:        { backgroundColor: "{colors.card}", rounded: "{rounded.nav}", height: 60px }
+  control:        { height: 36px, rounded: "{rounded.md}", backgroundColor: "{colors.canvas-subtle}", borderColor: "{colors.border}", textColor: "{colors.fg}" }   # shared height for inline select / input so a row of controls lines up
+  switch:         { width: 44px, height: 26px, rounded: "{rounded.pill}", thumbSize: 20px, trackOff: "{colors.border}", trackOn: "{colors.accent}", thumbColor: "{colors.accent-fg}" }   # shadcn base Switch — no text label
+  nav-bar:        { backgroundColor: "{colors.card}", rounded: "{rounded.nav}", height: 56px, margin: "{spacing.gutter}" }
   nav-tab:        { textColor: "{colors.fg-muted}", rounded: "{rounded.pill}", height: 48px }
   nav-tab-active: { backgroundColor: "{colors.canvas-subtle}", textColor: "{colors.accent}" }
+  disclosure:     { align: left, chevron: right }   # collapsible details/summary header
 ---
 
 ## Overview
@@ -93,9 +97,14 @@ hierarchy. The five roles cover every text need: don't introduce ad-hoc sizes.
 
 ## Layout
 
-Card grid on a quiet canvas. Content column max ~480px on phones, centered.
+Card grid on a quiet canvas. Content column max ~480px on phones, centered. A
+single **`spacing.gutter` (12px)** sets every gap — between cards/tiles *and* from
+the page edges — so the spacing reads uniform in every direction.
 **Reserve bottom padding equal to the nav height + safe-area inset** so the fixed
-bar never covers content (`padding-bottom: calc(60px + env(safe-area-inset-bottom))`).
+bar never covers content (`padding-bottom: calc(56px + env(safe-area-inset-bottom))`).
+Installable PWAs lock to a fixed scale: viewport
+`maximum-scale=1, user-scalable=no` + `touch-action: manipulation` on the body —
+no pinch, no double-tap zoom.
 
 ## Elevation & Depth
 
@@ -118,7 +127,9 @@ identically; treat every bullet as a hard requirement, not a suggestion.
   (`@media (pointer: coarse)`): `position: fixed`, anchored to the *viewport*
   bottom via `100dvh` + `env(safe-area-inset-bottom)` (never the content bottom —
   that is the iOS-PWA footgun), `rounded.nav` corners, backdrop blur, an
-  equal-width grid of tabs.
+  equal-width grid of tabs. The bar stands **56px** tall and sits with **equal
+  `spacing.gutter` (12px) margins on left, right, and bottom** so it reads
+  centered and breathes evenly.
 - **One active tab at a time.** The active tab takes the subtle surface + accent
   text and sits at `tabindex 0`; the others are `tabindex -1`, with
   `aria-selected` tracked so it is announced correctly.
@@ -135,16 +146,48 @@ identically; treat every bullet as a hard requirement, not a suggestion.
 ## Components
 
 `button-primary` for the one main action per view; `card` for every content group;
-`nav-bar` + `nav-tab` per the contract above. Reuse the **vendored** nav/UI
-snippets from `project-scaffolding` verbatim — do not re-author them per app (the
-same model as `single_instance.py` / `tray_lifecycle.ps1`).
+`nav-bar` + `nav-tab` per the contract above. Inline form controls (`select`,
+`input`) share the `control` height (36px) so they line up on a row. The on/off
+`switch` is the shadcn base Switch — a compact track + sliding thumb, **no text
+label** (state is read from thumb position + track color; `role="switch"` +
+`aria-checked` carry it for assistive tech), one canonical size everywhere. Its
+track is the accent when on; a **state** toggle (power on/off, alarm bypass) may
+substitute the relevant status color instead. Collapsible `details/summary`
+headers (`disclosure`) left-align the icon + title with the chevron pinned right.
+Reuse the **vendored** nav/UI snippets from `project-scaffolding` verbatim — do
+not re-author them per app (the same model as `single_instance.py` /
+`tray_lifecycle.ps1`).
+
+## Base UI — derive from shadcn
+
+Every interactive component is **derived from its shadcn base-UI variant**
+(<https://ui.shadcn.com/docs/components/base>) — the canonical primitive for
+structure, markup, accessibility, and interaction. Before hand-authoring any
+control, **check it against the shadcn base component** and start from that, then
+skin it with the fleet tokens above (colors, radii, spacing, and the
+`control` / `switch` dimensions). Don't invent a primitive shadcn already defines.
+
+Mapping for the controls this fleet uses:
+
+- **Switch** → shadcn `switch` (the on/off toggle above — track + thumb, no label).
+- **Select** / **Input** → shadcn `select` / `input`, sized to `control` (36px).
+- **Button** → shadcn `button` (`button-primary` is its `default` variant).
+- **Dialog** → shadcn `dialog` (the detail / rename modals).
+- **Tabs** → shadcn `tabs` (rendered as the floating bottom-nav pill on coarse
+  pointers per the Navigation contract).
+- **Tooltip / Checkbox / Radio / Accordion …** → the matching shadcn base variant.
+
+When a new component is needed, start from the shadcn base variant and apply the
+tokens — that is how every app stays visually *and* behaviorally identical.
 
 ## Do's and Don'ts
 
 - **Do** use the one blue accent for all interactive emphasis.
+- **Do** derive every interactive component from its shadcn base-UI variant, then skin it with the fleet tokens.
 - **Do** keep the bottom nav identical across apps — same radius, blur, and
   persistence behavior.
 - **Do** reserve bottom padding for the fixed nav so content is never occluded.
+- **Don't** hand-roll a primitive (switch, select, dialog, tabs…) that shadcn already defines.
 - **Don't** introduce a second accent or per-app navigation variants.
 - **Don't** use status colors decoratively — they signal state only.
 - **Don't** apply this spec to Streamlit POC spikes.
