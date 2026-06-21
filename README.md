@@ -65,7 +65,7 @@ fleet-config/
 ├── README.md
 ├── CLAUDE.md                       # short — tells future-Claude how this repo works
 ├── global-CLAUDE.md                # exposed as ~/.claude/CLAUDE.md AND ~/.codex/AGENTS.md (symlinks) — agent-neutral global instructions
-├── design.md                       # exposed as ~/.claude/design.md (symlink) — fleet web-app design system (light); navigation + interaction contract
+├── design.md                       # exposed as ~/.claude/design.md (symlink) — fleet web-app design system (light); navigation + interaction contract (rationale + references: docs/design-system.md)
 ├── design.dark.md                  # exposed as ~/.claude/design.dark.md (symlink) — same token names, dark values (Vercel light/dark convention)
 ├── statusline-command.ps1          # exposed as ~/.claude/statusline-command.ps1 (symlink) — custom statusline (Claude only)
 ├── .gitignore
@@ -96,7 +96,7 @@ fleet-config/
 ├── commands/                       # junction → ~/.claude/commands AND ~/.codex/prompts (Codex prompts)
 ├── skills/                         # junction → ~/.claude/skills AND ~/.agents/skills (Codex) — GLOBAL tier: issue-* workflow, handoff-commit, codebase-audit, design-sync, screen, _lib/, …
 ├── .claude/skills/                 # project-scoped — FLEET-ONLY tier, loads only in fleet-config: audit-fleet, cleanup-fleet, context-audit, insights-weekly, learning-log, system-map (fleet-config#161)
-├── docs/                           # references: slack-workflow, codex-browser, mcp-context-audit
+├── docs/                           # references: slack-workflow, codex-browser, mcp-context-audit, design-system
 ├── tests/run_acceptance.py         # drives each hook with a sample stdin payload
 ├── settings.template.json          # the `hooks` block to merge into your ~/.claude/settings.json (Claude)
 └── codex-hooks.json                # exposed as ~/.codex/hooks.json (symlink) — Codex's hooks wiring (same run-hook.ps1 shim)
