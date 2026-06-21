@@ -62,7 +62,7 @@ components:
   card:           { backgroundColor: "{colors.card}", textColor: "{colors.fg}", rounded: "{rounded.lg}", padding: "{spacing.md}" }
   button-primary: { backgroundColor: "{colors.accent}", textColor: "{colors.accent-fg}", rounded: "{rounded.md}", typography: "{typography.label}", height: 48px }
   control:        { height: 36px, rounded: "{rounded.md}", backgroundColor: "{colors.canvas-subtle}", borderColor: "{colors.border}", textColor: "{colors.fg}" }   # shared height for inline select / input so a row of controls lines up
-  switch:         { width: 44px, height: 26px, rounded: "{rounded.pill}", thumbSize: 20px, trackOff: "{colors.border}", trackOn: "{colors.accent}", thumbColor: "{colors.accent-fg}" }   # shadcn base Switch — no text label
+  switch:         { width: 44px, height: 26px, rounded: "{rounded.pill}", thumbSize: 20px, trackOff: "{colors.border}", trackOn: "{colors.accent}", thumbColor: "{colors.accent-fg}" }   # shadcn Switch — no text label
   nav-bar:        { backgroundColor: "{colors.card}", rounded: "{rounded.nav}", height: 56px, margin: "{spacing.gutter}" }
   nav-tab:        { textColor: "{colors.fg-muted}", rounded: "{rounded.pill}", height: 48px }
   nav-tab-active: { backgroundColor: "{colors.canvas-subtle}", textColor: "{colors.accent}" }
@@ -148,7 +148,7 @@ identically; treat every bullet as a hard requirement, not a suggestion.
 `button-primary` for the one main action per view; `card` for every content group;
 `nav-bar` + `nav-tab` per the contract above. Inline form controls (`select`,
 `input`) share the `control` height (36px) so they line up on a row. The on/off
-`switch` is the shadcn base Switch — a compact track + sliding thumb, **no text
+`switch` is the shadcn Switch — a compact track + sliding thumb, **no text
 label** (state is read from thumb position + track color; `role="switch"` +
 `aria-checked` carry it for assistive tech), one canonical size everywhere. Its
 track is the accent when on; a **state** toggle (power on/off, alarm bypass) may
@@ -158,14 +158,17 @@ Reuse the **vendored** nav/UI snippets from `project-scaffolding` verbatim — d
 not re-author them per app (the same model as `single_instance.py` /
 `tray_lifecycle.ps1`).
 
-## Base UI — derive from shadcn
+## Base UI — model components on shadcn
 
-Every interactive component is **derived from its shadcn base-UI variant**
-(<https://ui.shadcn.com/docs/components/base>) — the canonical primitive for
-structure, markup, accessibility, and interaction. Before hand-authoring any
-control, **check it against the shadcn base component** and start from that, then
-skin it with the fleet tokens above (colors, radii, spacing, and the
-`control` / `switch` dimensions). Don't invent a primitive shadcn already defines.
+shadcn/ui (<https://ui.shadcn.com/docs/components>) is the reference for component
+**structure, markup, accessibility, and interaction** — its primitives encode the
+WAI-ARIA patterns correctly (on whichever backend you pick: Radix or Base UI). But
+**these apps are vanilla HTML/CSS/JS, not React**, so you do not install shadcn —
+you copy its *markup shape and interaction semantics* (the element structure, ARIA
+roles/states, keyboard behavior) by hand, then skin them with the fleet tokens
+above (colors, radii, spacing, and the `control` / `switch` dimensions). Before
+hand-rolling any control, read its shadcn component page and mirror that structure;
+don't reinvent interaction semantics shadcn already gets right.
 
 Mapping for the controls this fleet uses:
 
@@ -175,15 +178,15 @@ Mapping for the controls this fleet uses:
 - **Dialog** → shadcn `dialog` (the detail / rename modals).
 - **Tabs** → shadcn `tabs` (rendered as the floating bottom-nav pill on coarse
   pointers per the Navigation contract).
-- **Tooltip / Checkbox / Radio / Accordion …** → the matching shadcn base variant.
+- **Tooltip / Checkbox / Radio / Accordion …** → the matching shadcn component.
 
-When a new component is needed, start from the shadcn base variant and apply the
-tokens — that is how every app stays visually *and* behaviorally identical.
+When a new component is needed, model it on the matching shadcn component and apply
+the tokens — that is how every app stays visually *and* behaviorally identical.
 
 ## Do's and Don'ts
 
 - **Do** use the one blue accent for all interactive emphasis.
-- **Do** derive every interactive component from its shadcn base-UI variant, then skin it with the fleet tokens.
+- **Do** model every interactive component on its shadcn component (structure + ARIA), then skin it with the fleet tokens.
 - **Do** keep the bottom nav identical across apps — same radius, blur, and
   persistence behavior.
 - **Do** reserve bottom padding for the fixed nav so content is never occluded.

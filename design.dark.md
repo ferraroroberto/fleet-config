@@ -61,7 +61,7 @@ components:
   card:           { backgroundColor: "{colors.card}", textColor: "{colors.fg}", rounded: "{rounded.lg}", padding: "{spacing.md}" }
   button-primary: { backgroundColor: "{colors.accent}", textColor: "{colors.accent-fg}", rounded: "{rounded.md}", typography: "{typography.label}", height: 48px }
   control:        { height: 36px, rounded: "{rounded.md}", backgroundColor: "{colors.canvas-subtle}", borderColor: "{colors.border}", textColor: "{colors.fg}" }   # shared height for inline select / input so a row of controls lines up
-  switch:         { width: 44px, height: 26px, rounded: "{rounded.pill}", thumbSize: 20px, trackOff: "{colors.border}", trackOn: "{colors.accent}", thumbColor: "{colors.accent-fg}" }   # shadcn base Switch — no text label
+  switch:         { width: 44px, height: 26px, rounded: "{rounded.pill}", thumbSize: 20px, trackOff: "{colors.border}", trackOn: "{colors.accent}", thumbColor: "{colors.accent-fg}" }   # shadcn Switch — no text label
   nav-bar:        { backgroundColor: "{colors.card}", rounded: "{rounded.nav}", height: 56px, margin: "{spacing.gutter}" }
   nav-tab:        { textColor: "{colors.fg-muted}", rounded: "{rounded.pill}", height: 48px }
   nav-tab-active: { backgroundColor: "{colors.canvas-subtle}", textColor: "{colors.accent}" }
@@ -121,9 +121,10 @@ behavior rendered inline at the top on fine pointers. The dark theme changes the
 
 Unchanged from the Light theme — `button-primary`, `card`, `control`, `switch`,
 `nav-bar`, `nav-tab`, `disclosure` per the contract above, with the vendored
-snippets from `project-scaffolding` reused verbatim. The **Base UI — derive from
-shadcn** rule in `design.md` applies here unchanged: every interactive component
-derives from its shadcn base-UI variant, then is skinned with the (dark) tokens.
+snippets from `project-scaffolding` reused verbatim. The **Base UI — model
+components on shadcn** rule in `design.md` applies here unchanged: every
+interactive component is modelled on its shadcn component (structure + ARIA), then
+skinned with the (dark) tokens.
 
 ## Do's and Don'ts
 
