@@ -1,9 +1,9 @@
 """Deterministic identity for audit-managed GitHub issues.
 
-The audit + weekly skills (`/codebase-audit`, `/audit-fleet`, `/learning-log`)
-keep exactly one open issue per *kind* per repo: a ledger, a digest, the
-cross-fleet practices ledger, the weekly learning-log, and one per finding
-bucket. Idempotency
+The audit + weekly skills (`/codebase-audit`, `/audit-fleet`, `/learning-log`,
+`/design-sync`) keep exactly one open issue per *kind* per repo: a ledger, a
+digest, the cross-fleet practices ledger, the weekly learning-log, and one per
+finding bucket (incl. the web-app `design-drift` bucket). Idempotency
 used to ride on LLM judgment, which slips under the unattended `claude -p` path
 and spawns duplicates. This helper moves the create-vs-reuse decision into Python,
 keyed on a hidden marker in the issue body, so duplication is structurally
@@ -51,6 +51,7 @@ KINDS = (
     "maintainability",
     "bug",
     "documentation",
+    "design-drift",
 )
 
 _MARKER_RE = re.compile(

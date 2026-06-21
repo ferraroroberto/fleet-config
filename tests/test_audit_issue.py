@@ -100,6 +100,11 @@ check(keep == 30 and close == [40], "plan local-llm-hub dup")
 check("ledger" in ai.KINDS and "documentation" in ai.KINDS, "KINDS populated")
 check("practices" in ai.KINDS, "KINDS has practices")
 check("learning" in ai.KINDS, "KINDS has learning")
+check("design-drift" in ai.KINDS, "KINDS has design-drift")
+# design-drift round-trips through the marker + adopts its bucket title like any bucket kind
+dd = ai.ensure_marker("## Findings\n- x", "design-drift")
+check(ai.has_marker(dd, "design-drift"), "design-drift marker round-trip")
+check(ai.title_matches("audit: design-drift findings", "design-drift"), "title design-drift bucket")
 
 if _fails:
     print("FAIL test_audit_issue:")

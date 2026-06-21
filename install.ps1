@@ -62,6 +62,8 @@ $Items = @(
     @{ kind = 'junction'; source = 'skills';                 target = 'skills';                 base = 'agents' },
     @{ kind = 'symlink';  source = 'statusline-command.ps1'; target = 'statusline-command.ps1' },
     @{ kind = 'symlink';  source = 'global-CLAUDE.md';       target = 'CLAUDE.md' },
+    @{ kind = 'symlink';  source = 'design.md';              target = 'design.md' },
+    @{ kind = 'symlink';  source = 'design.dark.md';         target = 'design.dark.md' },
     # Codex (~/.codex): mirror the same source files into Codex's own home so editing once is
     # live in both agents. Skills already reach Codex via the ~/.agents/skills junction above.
     @{ kind = 'junction'; source = 'hooks';                  target = 'hooks';                  base = 'codex' },
