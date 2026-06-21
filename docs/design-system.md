@@ -74,6 +74,7 @@ Grouped by *what kind of resource it is*, so when you re-open one you know what 
 | Resource | What it is | Why it mattered |
 |---|---|---|
 | [shadcn/ui · components](https://ui.shadcn.com/docs/components) | Copy-in React/Tailwind components over Radix **or** Base UI primitives. | The reference for component structure + ARIA; the per-component page is what you mirror by hand for each vanilla control (Switch, Select, Input, Button, Dialog, Tabs, …). |
+| Headless primitives — [Radix UI](https://www.radix-ui.com/primitives), [Base UI](https://base-ui.com/), [Headless UI](https://headlessui.com/) | Unstyled, behaviour-only component libraries: the ARIA roles/states + keyboard interaction with no visual skin (Radix & Base UI are shadcn's two backends; Headless UI is Tailwind Labs' separate one). | A *more direct* reference than shadcn's pages when hand-rolling vanilla controls — you want the raw accessibility/keyboard contract, not the React/Tailwind wrapper around it. Same caveat as shadcn: take the *semantics*, not the code (all are React/Vue). |
 
 ### Design-inspiration galleries — *what good looks like, browse before you build*
 
@@ -83,6 +84,17 @@ Grouped by *what kind of resource it is*, so when you re-open one you know what 
 | [Neuform · featured](https://neuform.ai/community/featured) | Gallery of AI-generated HTML/UI design templates, mobile-app-shaped. | Browse for layout/component ideas an agent could start from. |
 | [Refero · styles](https://styles.refero.design/) | 2,000+ AI-readable design systems extracted from real products — each with colors, typography, spacing, components, **and a downloadable DESIGN.md**; plus Refero MCP for agents to search real screens. | Both an example library *and* a study-before-you-build tool; closest external analogue to what we built. |
 
+### Tools — *extract / generate a design.md from a real product*
+
+Paste a URL (or point a browser extension at a live page) and get a DESIGN.md back — colors, typography, spacing, CSS variables, tokens — ready for an AI agent to match that look. This is the concrete realisation of the "study real screens before building" horizon idea below: rather than eyeballing a reference site, you extract its design.md and diff against ours. Note: [designmd.app](https://designmd.app/what-is-design-md) (in *Format & spec* above) is the ecosystem hub but does **not** itself do URL extraction — these third-party tools do.
+
+| Resource | What it is | Why it mattered |
+|---|---|---|
+| [Design Extractor](https://www.design-extractor.com/) | Paste a URL → DESIGN.md + Tailwind v4 + design tokens for your AI agent. | The cleanest single-purpose URL→design.md extractor. |
+| [Context.dev · design.md generator](https://www.context.dev/free-tools/design-md-generator) | Enter a domain → design.md with colors, fonts, components, and visual rules. | Domain-level extraction with a components pass. |
+| [DESIGN.md Generator (Chrome extension)](https://chromewebstore.google.com/detail/designmd-generator/jbgahjopiacfecejenojopjpljocdigb) | Click the extension on any live page → DESIGN.md or SKILL.md for Claude Code / Cursor / Codex. | Extract from a page you're actually browsing, including login-walled ones a URL fetcher can't reach. |
+| [MYDESIGN.MD](https://www.mydesignmd.com/) | Public URL → DESIGN.md + CSS variables + JSON tokens + Tailwind config. | Broadest output set (tokens + CSS vars + Tailwind in one pass). |
+
 ## Ideas not yet incorporated (open horizon)
 
 Things the references take seriously that our spec / workflow does **not** (yet) — recorded so a future pass can decide whether to adopt them, not as TODOs:
@@ -91,5 +103,5 @@ Things the references take seriously that our spec / workflow does **not** (yet)
 - **The official `@google/design.md` CLI** (`lint`, `diff`, `export`, `spec`). We hand-author the spec and built our own `/design-sync` drift detector for *apps*. The official `lint` (structure + broken **token** references — note: it validates `{path.to.token}` refs, *not* external doc URLs, so it would **not** have caught our 404) and `diff` (regressions between versions) are adjacent tooling we could run on the spec itself.
 - **`export` to Tailwind / W3C Design Tokens.** An interop path to other token formats. Low relevance while our apps use vanilla CSS custom properties, but recorded as an option if a React app ever joins the fleet.
 - **Motion / animation tokens.** Neither Stitch's 8 canonical sections nor our spec cover transitions, durations, or easing — yet our nav already animates. A `motion` token group + a Motion prose section is the most natural next addition.
-- **"Study real screens before building"** (Mobbin / Refero MCP). The idea that an agent searches real product screens before it builds. We rely on the static spec and do inspiration manually/ad-hoc; folding a screen-study step into the design workflow is an option.
+- **"Study real screens before building"** (Mobbin / Refero MCP). The idea that an agent searches real product screens before it builds. We rely on the static spec and do inspiration manually/ad-hoc; folding a screen-study step into the design workflow is an option. The tooling for this now exists off-the-shelf — the *Tools — extract/generate a design.md* references above turn any reference URL into a design.md you can diff against ours, so the open part is the *workflow* (when/where to invoke one), not the capability.
 - **Versioning discipline.** We stamp `version: alpha` but don't bump or `diff` across changes. If the identity starts evolving, the CLI `diff` exists for exactly that.

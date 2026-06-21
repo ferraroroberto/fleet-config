@@ -162,7 +162,7 @@ not re-author them per app (the same model as `single_instance.py` /
 
 shadcn/ui (<https://ui.shadcn.com/docs/components>) is the reference for component
 **structure, markup, accessibility, and interaction** — its primitives encode the
-WAI-ARIA patterns correctly (on whichever backend you pick: Radix or Base UI). But
+WAI-ARIA patterns correctly (on whichever backend you pick: [Radix UI](https://www.radix-ui.com/primitives) or [Base UI](https://base-ui.com/)). But
 **these apps are vanilla HTML/CSS/JS, not React**, so you do not install shadcn —
 you copy its *markup shape and interaction semantics* (the element structure, ARIA
 roles/states, keyboard behavior) by hand, then skin them with the fleet tokens
