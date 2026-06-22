@@ -541,14 +541,40 @@ def _slack_notify_unit_checks() -> int:
     )
 
     # Missing token must return False (never raise, never post). Force-unset the
-    # env var around the call so a real token on the dev box can't trigger a post.
+    # env var AND neutralize the settings.json fallback around the call, so
+    # neither a real token in the dev box's env nor one in ~/.claude/settings.json
+    # can trigger a post — this exercises the genuine "no token anywhere" path.
     saved = os.environ.pop(slack_notify.TOKEN_ENV_VAR, None)
+    saved_from_settings = slack_notify._token_from_settings
+    slack_notify._token_from_settings = lambda: None
     try:
         result = slack_notify.notify("test", channel="C0B76GBA0LS", token=None)
     finally:
+        slack_notify._token_from_settings = saved_from_settings
         if saved is not None:
             os.environ[slack_notify.TOKEN_ENV_VAR] = saved
     check("slack_notify: missing token -> False (graceful)", result is False)
+
+    # The settings.json fallback resolves a token when the env var is unset —
+    # this is the launcher-agnostic behaviour (#192). Stub the file reader so the
+    # check is hermetic (independent of whether the dev box's settings.json has a
+    # token) and confirm the resolution order: env var wins, else settings.json.
+    saved_env = os.environ.pop(slack_notify.TOKEN_ENV_VAR, None)
+    saved_reader = slack_notify._token_from_settings
+    slack_notify._token_from_settings = lambda: "xoxb-from-settings"
+    try:
+        from_settings = slack_notify._resolve_token(None)
+        os.environ[slack_notify.TOKEN_ENV_VAR] = "xoxb-from-env"
+        env_wins = slack_notify._resolve_token(None)
+    finally:
+        slack_notify._token_from_settings = saved_reader
+        os.environ.pop(slack_notify.TOKEN_ENV_VAR, None)
+        if saved_env is not None:
+            os.environ[slack_notify.TOKEN_ENV_VAR] = saved_env
+    check("slack_notify: settings.json fallback resolves token when env unset",
+          from_settings == "xoxb-from-settings")
+    check("slack_notify: env var wins over settings.json fallback",
+          env_wins == "xoxb-from-env")
 
     return failures
 

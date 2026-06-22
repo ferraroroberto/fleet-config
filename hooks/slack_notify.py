@@ -19,8 +19,12 @@ the user*, and Slack never notifies you about your own messages — so escalatio
 pings land silently. A separate bot identity (`chat.postMessage` with an
 `xoxb-` token) actually triggers a notification. See `docs/slack-workflow.md`.
 
-The bot token is read from the ``SLACK_BOT_TOKEN`` environment variable, which
-lives in ``~/.claude/settings.json``'s ``env`` block (never committed). The HTTP
+The bot token is resolved in three steps: an explicit ``token=`` argument, then
+the ``SLACK_BOT_TOKEN`` environment variable, then — as a fallback — a direct
+read of ``~/.claude/settings.json``'s ``env`` block (never committed). Claude
+Code injects that ``env`` block into everything it spawns, but other launchers
+(PI, Codex, GitHub Copilot, a bare terminal, a scheduled ``.bat``) don't, so the
+file fallback is what makes this transport truly launcher-agnostic. The HTTP
 call uses **stdlib urllib** on purpose: hooks run on system Python with no venv,
 so there is no `requests` to rely on.
 """
@@ -46,7 +50,37 @@ SLACK_POST_MESSAGE_URL = "https://slack.com/api/chat.postMessage"
 SLACK_GET_UPLOAD_URL = "https://slack.com/api/files.getUploadURLExternal"
 SLACK_COMPLETE_UPLOAD_URL = "https://slack.com/api/files.completeUploadExternal"
 TOKEN_ENV_VAR = "SLACK_BOT_TOKEN"
+SETTINGS_JSON_PATH = Path.home() / ".claude" / "settings.json"
 _ARCHIVE_RE = re.compile(r"/archives/([A-Z0-9]+)", re.IGNORECASE)
+
+
+def _token_from_settings() -> Optional[str]:
+    """Read ``SLACK_BOT_TOKEN`` from ``~/.claude/settings.json``'s ``env`` block.
+
+    The token lives in that file's ``env`` block, which Claude Code injects into
+    the environment of everything it spawns — but other launchers (PI, Codex,
+    GitHub Copilot, a bare terminal, a scheduled ``.bat``) don't read it, so the
+    env var is absent there. Reading the file directly makes the transport
+    launcher-agnostic. Never raises: a missing/unreadable/malformed file or a
+    blank token just means "no token from this source".
+    """
+    try:
+        with SETTINGS_JSON_PATH.open("r", encoding="utf-8") as fh:
+            settings = json.load(fh)
+        token = settings.get("env", {}).get(TOKEN_ENV_VAR)
+        return token or None
+    except (OSError, ValueError, AttributeError):
+        return None
+
+
+def _resolve_token(token: Optional[str]) -> Optional[str]:
+    """Resolve the bot token: explicit arg → env var → settings.json fallback.
+
+    Single source of token resolution for both :func:`notify` and
+    :func:`upload_file` so every launcher (Claude Code, PI, Codex, Copilot, a
+    bare terminal, a scheduled ``.bat``) finds the token identically.
+    """
+    return token or os.getenv(TOKEN_ENV_VAR) or _token_from_settings()
 
 
 def parse_channel(raw: str) -> str:
@@ -112,7 +146,7 @@ def notify(
     Slack API error is logged and reported as ``False`` so an unattended caller
     keeps running instead of crashing mid-job.
     """
-    token = token or os.getenv(TOKEN_ENV_VAR)
+    token = _resolve_token(token)
     if not token:
         logger.error("❌ %s not set — cannot send Slack notification.", TOKEN_ENV_VAR)
         return False
@@ -192,7 +226,7 @@ def upload_file(
     a missing token/file or any API error is logged and reported as ``False`` so
     an unattended caller keeps running.
     """
-    token = token or os.getenv(TOKEN_ENV_VAR)
+    token = _resolve_token(token)
     if not token:
         logger.error("❌ %s not set — cannot upload to Slack.", TOKEN_ENV_VAR)
         return False

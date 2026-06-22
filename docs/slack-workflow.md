@@ -156,7 +156,7 @@ The bot helper (mechanism 1) and native integration are independent and solve op
    { "env": { "SLACK_BOT_TOKEN": "xoxb-…" } }
    ```
 
-   That one place reaches every hook, skill, and venv subprocess (they inherit Claude Code's environment).
+   That one place reaches every hook, skill, and venv subprocess (they inherit Claude Code's environment). `slack_notify.py` also reads this file directly as a fallback when `SLACK_BOT_TOKEN` is absent from the environment — so it works the same under launchers that don't inject the `env` block (PI, Codex, GitHub Copilot, a bare terminal, a scheduled `.bat`), not just Claude Code.
 4. Verify with a live ping:
 
    ```bash
