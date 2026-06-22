@@ -143,6 +143,20 @@ The same files drive Claude Code and Codex; editing once is live in both. The se
 
 **Validated:** Codex (gpt-5.5) loads and runs these skills live — e.g. invoking the `screen` skill executed `skills/screen/SKILL.md` straight from the repo. One Codex-vs-Claude nuance: Codex's client only treats a message as a slash command when the *whole* message is a registered client command, so a bare `/screen` line is rejected by the client — invoke a skill mid-message (`check this /screen 3`) or in natural language (`run the codebase audit`) and it fires.
 
+**Codex sandbox verification.** Sandboxed `codex exec` depends on Codex's Windows sandbox helper binaries under `%LOCALAPPDATA%\OpenAI\Codex\bin\<hash>\`, which are managed by Codex rather than this repo. If sandboxed sub-agent delegation starts failing with `orchestrator_helper_launch_failed` or `codex-windows-sandbox-setup.exe ... error=program not found`, verify the live runtime path instead of guessing from files on disk:
+
+```powershell
+.\install.ps1 -VerifyCodexSandbox
+```
+
+That opt-in check runs a real `codex exec --sandbox workspace-write` probe and fails loudly if the helper cannot launch. The same probe can be run directly when debugging:
+
+```powershell
+codex exec --sandbox workspace-write "Print exactly: codex-sandbox-ok"
+```
+
+If `workspace-write` is broken but Codex still needs to be spawned for urgent fleet work, `--sandbox danger-full-access` is the temporary helper-free fallback. Treat that as a workaround to unblock the run, then repair or update the Codex install and re-run the workspace-write verification before relying on sandboxed sub-agents again.
+
 **Codex statusline parity.** Claude Code's statusline is a custom command (`statusline-command.ps1`) that receives a JSON payload including `context_window.used_percentage`, so it can render `used % | model | project (branch)` with color thresholds. Codex does not use that command surface; it has a native TUI footer configured by `/statusline` or by `~/.codex/config.toml`:
 
 ```toml
