@@ -114,8 +114,25 @@ mode. Pick the smallest mode that genuinely covers the change:
 - **UI change** (Streamlit, FastAPI/Flask + browser, Electron, phone webapp):
   use the **`verify` skill** to launch the app and drive the feature in a real
   browser. Headed Playwright (or Playwright MCP) so the actual feature is
-  exercised, not a mock. Capture a screenshot of the working result for the PR
-  body.
+  exercised, not a mock. **Inspect the screenshot in-session only** — save it to
+  a local scratch path; **never attach it to the PR body, an issue, or a
+  comment** (assume every repo is public — an uploaded UI screenshot is an
+  information breach). Put a text-only result line in the PR instead. Then, when
+  this is a **web-app UX diff**, run the **design-conformance gate**
+  (`project-scaffolding#83`):
+
+  ```
+  py C:/Users/rober/.claude/skills/_lib/ux_surface.py check .
+  ```
+
+  If `SPEC_APPLIES=yes` and `TOUCHED=yes`, also (a) **token check, fix-now** —
+  compare the touched CSS custom properties (light **and** dark) and the nav
+  contract to `~/.claude/design.md` + `design.dark.md` and fix material drift
+  in-branch now (don't file-and-defer; that's `/design-sync`'s periodic job);
+  and (b) apply the **design-conformance lens** to the screenshot you just took
+  (nav pill, layout, palette per spec). Overrides: `ux`/`design` force it,
+  `no-ux` skips it, `ux-full` checks every `KEY_VIEWS`. `SPEC_APPLIES=no` /
+  `TOUCHED=no` → nothing to do here.
 - **CLI change:** invoke the CLI with realistic arguments against realistic
   input. Show the actual output. Don't trust that "the function returns X" —
   show the binary printing X.
@@ -196,6 +213,11 @@ Only reachable on a fully-green Phase 3. Run the full `/issue-finish` skill:
    with a **bounded** poll of the version endpoint (hard timeout + attempt cap,
    fail loud): `git_sha` must match `HEAD` (a `/healthz` 200 is not enough — a
    stale process passes it).
+
+**The `/issue-finish` UX-conformance gate (its step 3b) is already satisfied by
+Phase 3e above** — do not re-run `ux_surface.py check` or re-screenshot in this
+phase; any drift was fixed and the text-only conformance line already belongs in
+the PR body from step 6.
 
 **Do not fire `/issue-finish`'s own Slack ping (its step 8) during this phase** —
 Phase 5 sends a single `--kind yolo` ping instead, so the run produces exactly
