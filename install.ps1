@@ -92,7 +92,7 @@ function Invoke-CodexSandboxVerification {
     Write-Host "OK      Codex workspace-write sandbox completed." -ForegroundColor Green
 }
 
-# What to install. Each entry: { kind = 'junction'|'symlink'; source = <relative to repo>; target = <relative to base home>; base = 'claude'|'agents' (default 'claude') }
+# What to install. Each entry: { kind = 'junction'|'symlink'; source = <relative to repo>; target = <relative to base home>; base = 'claude'|'agents'|'codex'|'pi'|'copilot' (default 'claude') }
 $Items = @(
     @{ kind = 'junction'; source = 'hooks';                  target = 'hooks' },
     @{ kind = 'junction'; source = 'commands';               target = 'commands' },
@@ -112,11 +112,13 @@ $Items = @(
     @{ kind = 'symlink';  source = 'global-CLAUDE.md';       target = 'AGENTS.md';              base = 'codex' },
     @{ kind = 'symlink';  source = 'codex-hooks.json';       target = 'hooks.json';             base = 'codex' },
     # Pi (~/.pi/agent) and Copilot (~/.copilot): link the one global context file into each
-    # agent's user-scope path so a single edit reaches them too. Pi/Copilot expose no hook or
-    # statusline surface and their settings files are tool-managed -- documented non-goals (#189).
+    # agent's user-scope path so a single edit reaches them too. Pi also auto-discovers global
+    # extensions from ~/.pi/agent/extensions, so its Claude-style footer/statusline is junctioned
+    # from this repo (#188). Pi/Copilot settings files are tool-managed -- documented non-goals (#189).
     # Skills, however, ARE wired: Pi reads ~/.agents/skills (junctioned above); Copilot scans its
     # own ~/.copilot/skills/<name>/SKILL.md (auto-discovered, no enable step), junctioned below (#160).
     @{ kind = 'symlink';  source = 'global-CLAUDE.md';       target = 'AGENTS.md';              base = 'pi' },
+    @{ kind = 'junction'; source = 'pi/extensions';          target = 'extensions';             base = 'pi' },
     @{ kind = 'symlink';  source = 'global-CLAUDE.md';       target = 'copilot-instructions.md'; base = 'copilot' },
     @{ kind = 'junction'; source = 'skills';                 target = 'skills';                 base = 'copilot' }
 )
