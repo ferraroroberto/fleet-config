@@ -103,17 +103,22 @@ $Items = @(
     @{ kind = 'symlink';  source = 'design.md';              target = 'design.md' },
     @{ kind = 'symlink';  source = 'design.dark.md';         target = 'design.dark.md' },
     # Codex (~/.codex): mirror the same source files into Codex's own home so editing once is
-    # live in both agents. Skills already reach Codex via the ~/.agents/skills junction above.
+    # live in both agents. Skills reach Codex AND Pi via the ~/.agents/skills junction above --
+    # that is the documented user-skills path both scan (Codex per developers.openai.com/codex/skills;
+    # Pi per pi.dev/docs/skills, which also reads ~/.agents/skills). All four agents use the same
+    # SKILL.md format, so a junction is the whole port -- no per-agent translation (#160).
     @{ kind = 'junction'; source = 'hooks';                  target = 'hooks';                  base = 'codex' },
     @{ kind = 'junction'; source = 'commands';               target = 'prompts';                base = 'codex' },
     @{ kind = 'symlink';  source = 'global-CLAUDE.md';       target = 'AGENTS.md';              base = 'codex' },
     @{ kind = 'symlink';  source = 'codex-hooks.json';       target = 'hooks.json';             base = 'codex' },
     # Pi (~/.pi/agent) and Copilot (~/.copilot): link the one global context file into each
-    # agent's user-scope path so a single edit reaches them too. These agents expose no hook,
-    # statusline, or linkable settings surface (their settings files are tool-managed), so the
-    # context file is the only config class wired here -- the rest are documented non-goals (#189).
+    # agent's user-scope path so a single edit reaches them too. Pi/Copilot expose no hook or
+    # statusline surface and their settings files are tool-managed -- documented non-goals (#189).
+    # Skills, however, ARE wired: Pi reads ~/.agents/skills (junctioned above); Copilot scans its
+    # own ~/.copilot/skills/<name>/SKILL.md (auto-discovered, no enable step), junctioned below (#160).
     @{ kind = 'symlink';  source = 'global-CLAUDE.md';       target = 'AGENTS.md';              base = 'pi' },
-    @{ kind = 'symlink';  source = 'global-CLAUDE.md';       target = 'copilot-instructions.md'; base = 'copilot' }
+    @{ kind = 'symlink';  source = 'global-CLAUDE.md';       target = 'copilot-instructions.md'; base = 'copilot' },
+    @{ kind = 'junction'; source = 'skills';                 target = 'skills';                 base = 'copilot' }
 )
 
 foreach ($baseDir in @($ClaudeHome, $AgentsHome, $CodexHome, $PiAgentHome, $CopilotHome)) {
