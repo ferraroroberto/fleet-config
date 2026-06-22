@@ -17,6 +17,9 @@ off to the implementation. This skill sets up — it does **not** implement.
   → **force fast mode**: skip the plan-approval gate regardless of label.
 - The word `plan` anywhere in the args → **force plan mode**: present a plan
   and wait for approval regardless of label.
+- The word `ux` (or `design`) anywhere in the args → **force the design-aware
+  load** (step 6) even if the issue doesn't look UX-shaped; `no-ux` suppresses
+  it. These ride through to the conformance gate in `/issue-finish`.
 
 Without `now`/`plan`, the mode is chosen from the issue's type label (step 6).
 
@@ -138,6 +141,21 @@ a question if there is genuine, expensive, or hard-to-undo ambiguity.
 In **plan mode**: present an implementation plan and wait for approval, per
 the project's plan-mode default in `CLAUDE.md`. Resolve real ambiguity with
 questions first.
+
+**Design-aware load (web-app UX work).** Before building, check whether this
+repo even has a design-gated UX surface (convention: `project-scaffolding#83`):
+
+```
+py C:/Users/rober/.claude/skills/_lib/ux_surface.py applies .
+```
+
+If it prints `SPEC_APPLIES=yes` **and** the issue plausibly touches the web UI
+(CSS, templates, view JS, the nav), read `~/.claude/design.md` +
+`design.dark.md` into context **now** — two file reads, no browser. Building
+design-aware from the start is what stops end-of-flow rework; the actual
+conformance gate runs later in `/issue-finish`. `SPEC_APPLIES=no` (non-web repo
+or a Streamlit spike) → skip. The `ux`/`design` arg forces the load; `no-ux`
+suppresses it.
 
 When the work, validation, and review are done, finish with `/issue-finish`.
 

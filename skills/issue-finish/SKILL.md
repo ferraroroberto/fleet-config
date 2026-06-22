@@ -54,6 +54,44 @@ Run the gate the project's `CLAUDE.md` specifies (e.g.
 a red gate. If the project has no checker, say so explicitly — never claim tests
 passed when there are none.
 
+### 3b. UX-conformance gate (web-app UX diffs only)
+
+When the diff touches the web app's UX, confirm it still conforms to the fleet
+design system **and** isn't visually broken — *before* the PR, so a drift-fix
+commit lands in it. Convention + contract: `project-scaffolding#83`. The trigger
+is deterministic, not a judgment call:
+
+```
+py C:/Users/rober/.claude/skills/_lib/ux_surface.py check .
+```
+
+- `SPEC_APPLIES=no` (non-web repo / Streamlit spike) **or** `TOUCHED=no` → the
+  gate is a no-op. **State it** in the step-7 summary (`no UX surface touched`)
+  and go to step 4. This is the common case and costs nothing.
+- `TOUCHED=yes` → run both legs against the files in `MATCHED`:
+  - **Token check (fix-now).** Compare the touched CSS custom properties (light
+    **and** dark) and the nav contract to `~/.claude/design.md` +
+    `design.dark.md`, and **fix material drift in this branch now**, committing
+    it — do *not* file-and-defer a `design-drift` issue (that is `/design-sync`'s
+    job for the periodic sweep; this gate's job is to not *introduce* drift).
+    Materiality bar: a wrong canvas color, a missing dark theme, a hand-rolled
+    nav, or a broken layout is a blocker; a 1-unit radius nitpick is not.
+  - **Visual check (in-session only — never attach the image).** Launch the
+    feature-branch working tree and look at the touched view via the `verify`
+    skill (with `ux-full`, every `KEY_VIEWS` entry, not just the touched one).
+    Inspect the render against the spec — nav pill, layout, palette. **The
+    screenshot is for your eyes in this session only:** save it to a local
+    scratch path, never commit it, and **never attach it to the PR body, an
+    issue, or a comment.** Assume every repo is public — an uploaded UI
+    screenshot is an information breach. Put a **text-only** conformance line in
+    the PR instead (e.g. `Visual: touched view renders per spec — nav pill,
+    layout, palette conform`).
+
+**Overrides** (words in the finish invocation): `ux`/`design` forces the gate
+even if `TOUCHED=no`; `no-ux` skips it; `ux-full` checks every `KEY_VIEWS`
+entry. Always **state** the gate decision (ran / skipped / `ux-full`, plus any
+drift fixed) in the step-7 summary so the user can veto.
+
 ### 4. Push and open the PR
 
 - `git push -u origin <branch>`.
@@ -185,7 +223,8 @@ If the project has no tray, skip this step.
 ### 7. Report
 
 Summarize: issue closed, PR merged, branch deleted, docs updated (or why not),
-gate result, and the live build line.
+gate result, the UX-conformance gate decision (ran / skipped / `ux-full`, plus
+any drift fixed — step 3b), and the live build line.
 
 Then append the **work-summary** — the file/LOC shape of what shipped — by
 running the deterministic helper and echoing its output verbatim into the
