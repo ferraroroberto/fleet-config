@@ -36,17 +36,24 @@ $RepoRoot       = Split-Path -Parent $MyInvocation.MyCommand.Path
 $ClaudeHome     = Join-Path $env:USERPROFILE '.claude'
 $AgentsHome     = Join-Path $env:USERPROFILE '.agents'
 $CodexHome      = Join-Path $env:USERPROFILE '.codex'
+# Pi's config dir is ~/.pi/agent (PI_CODING_AGENT_DIR), where it reads a user-scope AGENTS.md;
+# Copilot reads ~/.copilot/copilot-instructions.md. Both verified empirically (#189).
+$PiAgentHome    = Join-Path (Join-Path $env:USERPROFILE '.pi') 'agent'
+$CopilotHome    = Join-Path $env:USERPROFILE '.copilot'
 $ManifestPath   = Join-Path $ClaudeHome '.fleet-config-installed.json'
 
 # Link targets live under a base home. 'claude' (default) -> ~/.claude; 'agents' -> ~/.agents
 # (the cross-agent skills location Codex reads); 'codex' -> ~/.codex (Codex's own home, for
-# AGENTS.md, hooks/, prompts/, hooks.json). Keep targets base-relative so one repo source can
-# be linked into more than one home.
+# AGENTS.md, hooks/, prompts/, hooks.json); 'pi' -> ~/.pi/agent and 'copilot' -> ~/.copilot
+# (each agent's user-scope context-file home, #189). Keep targets base-relative so one repo
+# source can be linked into more than one home.
 function Get-BaseHome([string]$base) {
     switch ($base) {
-        'agents' { $AgentsHome }
-        'codex'  { $CodexHome }
-        default  { $ClaudeHome }
+        'agents'  { $AgentsHome }
+        'codex'   { $CodexHome }
+        'pi'      { $PiAgentHome }
+        'copilot' { $CopilotHome }
+        default   { $ClaudeHome }
     }
 }
 
@@ -100,10 +107,16 @@ $Items = @(
     @{ kind = 'junction'; source = 'hooks';                  target = 'hooks';                  base = 'codex' },
     @{ kind = 'junction'; source = 'commands';               target = 'prompts';                base = 'codex' },
     @{ kind = 'symlink';  source = 'global-CLAUDE.md';       target = 'AGENTS.md';              base = 'codex' },
-    @{ kind = 'symlink';  source = 'codex-hooks.json';       target = 'hooks.json';             base = 'codex' }
+    @{ kind = 'symlink';  source = 'codex-hooks.json';       target = 'hooks.json';             base = 'codex' },
+    # Pi (~/.pi/agent) and Copilot (~/.copilot): link the one global context file into each
+    # agent's user-scope path so a single edit reaches them too. These agents expose no hook,
+    # statusline, or linkable settings surface (their settings files are tool-managed), so the
+    # context file is the only config class wired here -- the rest are documented non-goals (#189).
+    @{ kind = 'symlink';  source = 'global-CLAUDE.md';       target = 'AGENTS.md';              base = 'pi' },
+    @{ kind = 'symlink';  source = 'global-CLAUDE.md';       target = 'copilot-instructions.md'; base = 'copilot' }
 )
 
-foreach ($baseDir in @($ClaudeHome, $AgentsHome, $CodexHome)) {
+foreach ($baseDir in @($ClaudeHome, $AgentsHome, $CodexHome, $PiAgentHome, $CopilotHome)) {
     if (-not (Test-Path $baseDir)) {
         New-Item -ItemType Directory -Path $baseDir | Out-Null
     }

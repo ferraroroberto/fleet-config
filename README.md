@@ -68,12 +68,12 @@ Two Windows specifics, both load-bearing. **The `.venv`** — worktrees don't sh
 fleet-config/
 ├── README.md
 ├── CLAUDE.md                       # short — tells future-Claude how this repo works
-├── global-CLAUDE.md                # exposed as ~/.claude/CLAUDE.md AND ~/.codex/AGENTS.md (symlinks) — agent-neutral global instructions
+├── global-CLAUDE.md                # exposed as ~/.claude/CLAUDE.md, ~/.codex/AGENTS.md, ~/.pi/agent/AGENTS.md, ~/.copilot/copilot-instructions.md (symlinks) — agent-neutral global instructions
 ├── design.md                       # exposed as ~/.claude/design.md (symlink) — fleet web-app design system (light); navigation + interaction contract (rationale + references: docs/design-system.md)
 ├── design.dark.md                  # exposed as ~/.claude/design.dark.md (symlink) — same token names, dark values (Vercel light/dark convention)
 ├── statusline-command.ps1          # exposed as ~/.claude/statusline-command.ps1 (symlink) — custom statusline (Claude only)
 ├── .gitignore
-├── install.ps1                     # creates junctions/symlinks into three homes: ~/.claude, ~/.agents, ~/.codex
+├── install.ps1                     # creates junctions/symlinks into the agent homes: ~/.claude, ~/.agents, ~/.codex, ~/.pi/agent, ~/.copilot
 ├── uninstall.ps1                   # removes only the links install.ps1 created, leaves the homes otherwise untouched
 ├── hooks/                          # junction → ~/.claude/hooks AND ~/.codex/hooks (Codex)
 │   ├── _lib.py                     # shared: project detection, port→PID, stdin-JSON, projects.toml loader
@@ -118,26 +118,37 @@ cd fleet-config
 .\install.ps1
 ```
 
-`install.ps1` exposes the repo's contents inside **three homes** — `~/.claude` (Claude Code), `~/.agents` (the cross-agent skills location), and `~/.codex` ([Codex](https://developers.openai.com/codex/)'s own home) — via two link kinds:
+`install.ps1` exposes the repo's contents inside the supported **agent homes** — `~/.claude` (Claude Code), `~/.agents` (the cross-agent skills location), `~/.codex` ([Codex](https://developers.openai.com/codex/)'s own home), `~/.pi/agent` ([Pi](https://github.com/parallel-web/pi)'s config dir), and `~/.copilot` ([GitHub Copilot CLI](https://docs.github.com/en/copilot/github-copilot-in-the-cli)) — via two link kinds:
 
 - **Junctions** for the directory entries. Cross-volume OK, no admin. `hooks/` and `commands/` are each junctioned into **both** `~/.claude` and `~/.codex`, and `skills/` into `~/.claude/skills` + `~/.agents/skills` — so both agents load the *same live files* and nothing can drift between them.
-- **Symlinks** for the single-file entries (`global-CLAUDE.md` → both `~/.claude/CLAUDE.md` and `~/.codex/AGENTS.md`; `codex-hooks.json` → `~/.codex/hooks.json`; `statusline-command.ps1`). Cross-volume file linking on Windows requires admin or Developer Mode, so the installer self-elevates with **one UAC prompt** the first time it needs to create them. Reinstalls that find the symlinks already in place stay UAC-free.
+- **Symlinks** for the single-file entries (`global-CLAUDE.md` → `~/.claude/CLAUDE.md`, `~/.codex/AGENTS.md`, `~/.pi/agent/AGENTS.md`, and `~/.copilot/copilot-instructions.md`; `codex-hooks.json` → `~/.codex/hooks.json`; `statusline-command.ps1`). Cross-volume file linking on Windows requires admin or Developer Mode, so the installer self-elevates with **one UAC prompt** the first time it needs to create them. Reinstalls that find the symlinks already in place stay UAC-free.
 
-### Codex parity — one source, both agents
+### Cross-agent parity — one source, every agent
 
-The same files drive Claude Code and Codex; editing once is live in both. The seams:
+One install, one source of truth: editing a hook, the global `CLAUDE.md`, the statusline, or a skill **once** should be live in every coding agent that can read it. The full matrix — what each agent supports, what is wired, and where a class is a deliberate non-goal (#189):
 
-| What | Claude Code | Codex | Link |
-|---|---|---|---|
-| Global instructions | `~/.claude/CLAUDE.md` | `~/.codex/AGENTS.md` | symlink → `global-CLAUDE.md` |
-| Design system | `~/.claude/design.md` + `~/.claude/design.dark.md` | *(read via `~/.claude`)* | symlink → `design.md` / `design.dark.md` |
-| Hooks (code) | `~/.claude/hooks/` | `~/.codex/hooks/` | junction → `hooks/` |
-| Hooks (wiring) | `settings.json` (merge `settings.template.json`) | `~/.codex/hooks.json` | symlink → `codex-hooks.json` |
-| Skills | `~/.claude/skills/` | `~/.agents/skills/` | junction → `skills/` |
-| Slash commands / prompts | `~/.claude/commands/` | `~/.codex/prompts/` | junction → `commands/` |
-| Statusline | `~/.claude/statusline-command.ps1` | native TUI footer via `~/.codex/config.toml` `tui.status_line` | separate surfaces |
+| Config class | Claude Code | Codex | Pi | Copilot | Antigravity |
+|---|---|---|---|---|---|
+| **Global instructions** (context file) | `~/.claude/CLAUDE.md` | `~/.codex/AGENTS.md` | `~/.pi/agent/AGENTS.md` | `~/.copilot/copilot-instructions.md` | — *(IDE; no user-home context file)* |
+| **Design system** | `~/.claude/design.md` + `design.dark.md` | *(read via `~/.claude`)* | *(read via `~/.claude`)* | *(read via `~/.claude`)* | — |
+| **Hooks** (code + wiring) | `~/.claude/hooks/` + `settings.json` | `~/.codex/hooks/` + `~/.codex/hooks.json` | ❌ no hook surface | ❌ no hook surface | ❌ (IDE) |
+| **Skills / prompts** | `~/.claude/skills/` + `commands/` | `~/.agents/skills/` + `~/.codex/prompts/` | discovers skills (format porting → #160) | (format porting → #160) | — |
+| **Statusline** | `~/.claude/statusline-command.ps1` | native TUI footer (`config.toml` `tui.status_line`) | own footer → #188 | ❌ none | ❌ (IDE) |
+| **Settings / permissions** | `settings.json` (manual merge — holds secrets) | `~/.codex/config.toml` | `~/.pi/agent/settings.json` *(tool-managed)* | `~/.copilot/config.json` *(tool-managed)* | VS Code settings |
 
-`global-CLAUDE.md` is **agent-neutral**: it reads correctly as either file, and the few genuinely Claude-specific sections (the 3-wide Opus sub-agent cap; the Git-Bash-strips-backslashes-in-`settings.json` gotcha) are marked *(Claude Code only — skip on other agents)*. Unlike Claude's `settings.json` (which mixes in machine-local secrets and so stays a manual merge), Codex's `hooks.json` is hooks-only, so it is symlinked live from `codex-hooks.json` — the same `run-hook.ps1` shim runs on both agents (Codex does **not** route hooks through Git Bash, so its command paths may use backslashes).
+The **wired** classes (a single repo source linked into each home) are the context file (all four CLI agents) and, for Claude+Codex, hooks/skills/prompts/design. The links: `global-CLAUDE.md` → `~/.claude/CLAUDE.md`, `~/.codex/AGENTS.md`, `~/.pi/agent/AGENTS.md`, `~/.copilot/copilot-instructions.md`; `codex-hooks.json` → `~/.codex/hooks.json`; `hooks/`, `commands/`, `skills/` junctioned per the table.
+
+**`global-CLAUDE.md` is agent-neutral**: it reads correctly as any of those files, and the few genuinely Claude-specific sections (the 3-wide Opus sub-agent cap; the Git-Bash-strips-backslashes-in-`settings.json` gotcha) are marked *(Claude Code only — skip on other agents)*. Unlike Claude's `settings.json` (which mixes in machine-local secrets and so stays a manual merge), Codex's `hooks.json` is hooks-only, so it is symlinked live from `codex-hooks.json` — the same `run-hook.ps1` shim runs on both agents (Codex does **not** route hooks through Git Bash, so its command paths may use backslashes).
+
+**Pi and Copilot context paths were verified empirically, not assumed** (#189): a sentinel context file was placed in each candidate location and the agent run non-interactively (`pi -p` / `copilot -p`) from a neutral cwd to see which path it actually read. Pi reads `~/.pi/agent/AGENTS.md` (its `PI_CODING_AGENT_DIR` config dir — it ignores `~/.pi/AGENTS.md` and a home-dir `~/AGENTS.md`); Copilot reads `~/.copilot/copilot-instructions.md` (not `~/.copilot/AGENTS.md`). Both load plain markdown, so `global-CLAUDE.md` links verbatim with no format translation.
+
+**Documented non-goals** (intentionally *not* wired, so this doesn't get re-attempted):
+
+- **Hooks for Pi / Copilot / Antigravity** — none of them expose a lifecycle-hook mechanism (`pi --help` / `copilot --help` have no hook surface; Antigravity is an IDE). Hooks remain a Claude-Code + Codex-only capability.
+- **Settings / permissions for Pi and Copilot** — their settings files (`~/.pi/agent/settings.json`, `~/.copilot/config.json`) are **rewritten by the tool itself**, so symlinking a repo source over them would break the tool or be clobbered on next launch. Left to each tool to manage.
+- **Statusline beyond Claude/Codex** — Copilot and Antigravity have no statusline surface; Pi's footer is tracked separately in **#188**.
+- **Skills format-porting** — Pi/Copilot/Antigravity skill formats differ from Claude's; that translation is **#160**'s scope, not this install/link plumbing.
+- **Antigravity** — a VS Code-fork IDE (extensions + `argv.json`), with no user-home context/hook/statusline file to link. Revisit if it grows a CLI surface.
 
 **Why Codex skills live in `~/.agents/skills`, not `~/.codex/skills`.** This trips people up because Codex *does* have a `~/.codex/skills/` directory — but that's Codex-owned: it holds Codex's own bundled skills under `~/.codex/skills/.system/` (imagegen, skill-creator, skill-installer, …), marked with a `.codex-system-skills.marker`. The [official skills doc](https://developers.openai.com/codex/skills) lists `$HOME/.agents/skills` as *the* USER skill location — `~/.codex/skills` is **not** a documented user path. So the `~/.agents/skills` junction is correct, and we deliberately do **not** also junction into `~/.codex/skills`: it can't be a whole-directory junction anyway (the installer won't clobber the real `.system/` dir), and exposing each skill via two scanned roots would double-list every skill in Codex's selector (Codex doesn't merge same-named skills — both appear). If you see Codex *guess* a `~/.codex/skills/.system/<name>/SKILL.md` path and 404 before reading the skill from `E:\…\fleet-config\skills`, that's the model fumbling the path once and self-correcting, not a broken link — the skill still loads.
 
