@@ -212,8 +212,9 @@ Lucide icon the same way you reach for the matching shadcn component — never m
 second icon set or hand-draw a one-off glyph.
 
 **Adoption:** vendor only the handful of SVGs an app actually uses into
-`project-scaffolding` and import them from there — exactly the model used for the
-nav/UI snippets ("Reuse the **vendored** nav/UI snippets from
+`project-scaffolding`'s `app/webapp/static/_vendored/icons/` (an inline Lucide
+sprite + `icons.js` helper) and import them from there — exactly the model used
+for the nav/UI snippets ("Reuse the **vendored** nav/UI snippets from
 `project-scaffolding`" above). Apps do not each pull the whole Lucide library.
 
 ## Do's and Don'ts
