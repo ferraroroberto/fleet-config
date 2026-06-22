@@ -133,7 +133,7 @@ Does **not** apply to: source code, plain `.md` files viewed as source in a repo
 
 ### Issue workflow skills
 
-Three global skills automate the user's standard GitHub-issue workflow across all sister projects (in `~/.claude/skills/` for Claude Code, reaching Codex via the `~/.agents/skills/` junction):
+Three global skills automate the user's standard GitHub-issue workflow across all sister projects. They use the `SKILL.md` format that Claude Code, Codex, Pi, and Copilot have all converged on, so one `fleet-config/skills` source — junctioned into each agent's auto-scanned user-skills dir (`~/.claude/skills` for Claude; `~/.agents/skills` for Codex + Pi; `~/.copilot/skills` for Copilot) — reaches every agent with no per-agent translation. Antigravity (`agy`) has no native user-skills directory (plugin-only) and is a documented non-goal (#160):
 
 - **`/issue-add`** — paste a rough idea/transcript; researches the codebase and files one well-formed self-contained issue (senior-dev style), labelled from the repo's existing label set, self-assigned. Creates directly, no checkpoint.
 - **`/issue-start`** — pick issue (number, or list-and-pick for `next`/no-arg), sync `main`, cut branch, load context. Mode chosen from the issue's type label: `bug`/`chore`/`documentation` → **fast mode** (build straight away); `enhancement` → **plan mode** (plan-approval gate). Override with `now` (force fast) or `plan` (force plan).
