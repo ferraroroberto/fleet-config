@@ -26,7 +26,9 @@
 #>
 
 [CmdletBinding()]
-param()
+param(
+    [switch]$VerifyCodexSandbox
+)
 
 $ErrorActionPreference = 'Stop'
 
@@ -52,6 +54,35 @@ function Get-BaseHome([string]$base) {
 # ~/.claude/skills and ~/.agents/skills, so non-default bases get a 'base/target' key.
 function Get-ManifestKey($item) {
     if ($item.base -and $item.base -ne 'claude') { "$($item.base)/$($item.target)" } else { $item.target }
+}
+
+function Invoke-CodexSandboxVerification {
+    $codex = Get-Command codex -ErrorAction SilentlyContinue
+    if (-not $codex) {
+        throw "Codex CLI not found on PATH; cannot verify sandbox startup."
+    }
+    $codexPath = $codex.Source
+
+    Write-Host ""
+    Write-Host "Verifying Codex workspace-write sandbox..." -ForegroundColor Cyan
+
+    $probe = 'Print exactly: codex-sandbox-ok'
+    $output = & $codexPath exec --sandbox workspace-write $probe 2>&1
+    $exitCode = $LASTEXITCODE
+    $text = $output | Out-String
+    $trimmedText = $text.TrimEnd()
+
+    if ($exitCode -ne 0) {
+        Write-Host $trimmedText
+        throw "Codex workspace-write sandbox verification failed with exit code $exitCode. Use --sandbox danger-full-access only as a temporary fallback."
+    }
+
+    if ($text -notmatch 'codex-sandbox-ok') {
+        Write-Host $trimmedText
+        throw "Codex workspace-write sandbox ran, but the sentinel output was missing."
+    }
+
+    Write-Host "OK      Codex workspace-write sandbox completed." -ForegroundColor Green
 }
 
 # What to install. Each entry: { kind = 'junction'|'symlink'; source = <relative to repo>; target = <relative to base home>; base = 'claude'|'agents' (default 'claude') }
@@ -193,6 +224,9 @@ $manifest | ConvertTo-Json -Depth 5 | Set-Content -Path $ManifestPath -Encoding 
 Write-Host ""
 Write-Host "Done. created=$created skipped=$skipped blocked=$blocked" -ForegroundColor Cyan
 Write-Host "Manifest: $ManifestPath"
+if ($VerifyCodexSandbox) {
+    Invoke-CodexSandboxVerification
+}
 Write-Host ""
 Write-Host "Next step: merge the 'hooks' block from settings.template.json into ~/.claude/settings.json,"
 Write-Host "then restart Claude Code so the new hooks load."
