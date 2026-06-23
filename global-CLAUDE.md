@@ -61,6 +61,8 @@ Don't ask about things determinable by reading the code, things already specifie
 
 Verify every unit before calling it done, using the project's actual tooling (byte-compile, lint, tests). If no checker exists for a project, say so explicitly — don't claim "tests pass" when there are no tests. Report failures faithfully with the output; never report done on a step that was skipped.
 
+If the repo's own instructions declare a restart/refresh recipe for a long-lived local process, use that declared safe recipe after code changes so the verified change is actually live, unless the user explicitly opted out. Do not ask for a second permission just because the recipe restarts something; the local `CLAUDE.md` owns the command, scope, and build-identity check. If no recipe exists, or the recipe itself says confirm first, stop and say exactly what is missing instead of improvising process kills.
+
 ### Senior-dev check
 
 Before finishing, ask: "What would a senior, perfectionist dev reject in review?" If the answer points at duplicated state, inconsistent patterns, or broken architecture *within the file you're already editing*, fix it. Don't expand scope to unrelated files.
@@ -151,7 +153,7 @@ When a skill or session fans out **background sub-agents that run on Opus**, kee
 
 ### Project hygiene
 
-- Restart the minimum. If a project runs multiple long-lived processes, document a one-line restart matrix in its README (touched X → restart Y). Restarting more than necessary loses warm state and breaks sister processes.
+- Restart the minimum. If a project runs multiple long-lived processes, document a one-line restart matrix in its README (touched X → restart Y). Restarting more than necessary loses warm state and breaks sister processes. This is a scope guard, not an opt-out from the repo-declared safe restart after code changes.
 - Pinned known-good worktree for risky work. For architectural changes, keep a parallel checkout pinned at the last known-good commit for live A/B comparison; don't touch the pinned tree until the risky work re-stabilizes on main.
 
 ## Project fleet

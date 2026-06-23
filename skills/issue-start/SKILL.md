@@ -157,7 +157,7 @@ conformance gate runs later in `/issue-finish`. `SPEC_APPLIES=no` (non-web repo
 or a Streamlit spike) → skip. The `ux`/`design` arg forces the load; `no-ux`
 suppresses it.
 
-When the work, validation, and review are done, finish with `/issue-finish`.
+When the work, validation, and review are done, finish with `/issue-finish`. For fast-mode work that changes code in a repo with a declared long-lived-process restart recipe, do not hand off a stale running app: either complete the repo-declared safe restart + bounded build-identity verification before reporting ready, or make `/issue-finish` the immediate next action that will do it.
 
 ### 7. Notify when control returns to the user
 
