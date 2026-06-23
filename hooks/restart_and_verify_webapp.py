@@ -8,7 +8,7 @@ the webapp back, then polls `<api_version_path>` until `git_sha` matches
 
 Two restart strategies, chosen per project:
 
-* **`restart_cmd` (tray-owned apps — app-launcher / photo-ocr / voice-transcriber).**
+* **`restart_cmd` (tray-owned apps — app-launcher / home-automation / photo-ocr / voice-transcriber).**
   Their webapp runs as a uvicorn *child* of a long-lived `launcher.py tray`.
   An idempotent `tray.bat` no-ops while that tray lives, so it never respawns
   the webapp — the old "kill PID + run tray_cmd" sequence left the webapp dead
