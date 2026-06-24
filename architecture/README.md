@@ -74,3 +74,24 @@ cd architecture
 3. Verify legibility by cropping the rendered PNG to full-res regions (e.g. with PIL) and inspecting — the on-screen thumbnail downscales too far to trust.
 
 > History: an earlier dark, vertical **Mermaid** auto-layout lost too much information and was retired in favour of this doc-first HTML/CSS approach.
+
+## The config & convention map: `config-map.html` → `config-map.png`
+
+A second weekly map, the **descriptive** companion to `/context-audit` (which is prescriptive — it flags drift). Where the system map answers *"what runs in the fleet?"*, the config map answers *"what configuration does each coding agent get, and what's universal vs repo-specific?"* — the per-agent capability matrix (Claude Code · Codex · Pi · Copilot · Antigravity), the skill inventory (universal / fleet-orchestration / repo-specific), the hook inventory (blocking vs nudge, the Claude-full vs Codex-subset split), and the convention surface (`global-CLAUDE.md`, the design system, the single-home-by-altitude rule). Built in #207.
+
+**Derived, not declared.** Unlike the system map (per-repo `.fleet.toml` cards aggregated), config is centralized in `fleet-config`, so [`.claude/skills/config-map/build_data.py`](../.claude/skills/config-map/build_data.py) *introspects* it into the generated `config.data.js` (`window.CONFIG = { …strict JSON… }`):
+
+- the per-agent matrix wiring → parsed from `install.ps1`'s `$Items` link table + which 5 hooks Codex wires in `codex-hooks.json`;
+- universal skills → `skills/*/SKILL.md`; fleet-orchestration skills → `.claude/skills/*/SKILL.md` (+ `run-weekly.bat` = the scheduled flag);
+- hooks → `hooks/*.py` (purpose from the module docstring, blocking from a `block(`/`exit(2)` call) + wiring from `settings.template.json`;
+- repo-specific skills → a git sweep of each fleet repo's committed `.claude/skills` (same committed-state read the system map uses for `.fleet.toml`);
+- convention coverage → committed `CLAUDE.md` / `.fleet.toml` per repo.
+
+The thin hand-maintained input is [`config.residual.json`](config.residual.json) — only what can't be derived: the agent columns, the matrix row structure (non-derivable cells carry an `annot`), the universal-skill scope set, the project-wired hooks, and the conventions prose. `tests/run_acceptance.py` asserts `config.data.js` is exactly what `build_data.py` regenerates, so it can't go stale. **By construction the dataset holds only wiring/structure — never a secret** (`build_data.py` reads the committed `settings.template.json`, never the live `~/.claude/settings.json`).
+
+Regenerate + render the same way as the system map:
+
+```powershell
+py .claude/skills/config-map/build_data.py     # introspect → config.data.js
+py .claude/skills/config-map/render.py          # config-map.html → config-map.png (2×)
+```

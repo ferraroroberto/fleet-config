@@ -1,0 +1,237 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<style>
+  :root{
+    --ink:#1f2937; --muted:#6b7280; --faint:#9ca3af;
+    --canvas:#eef1f5; --card:#ffffff; --line:#e5e7eb;
+    --yes:#059669; --yes-bg:#d8f5e8;
+    --soft:#0284c7; --soft-bg:#e0f2fe;
+    --no:#b91c1c;  --no-bg:#fde8e8;
+    --enable:#4f46e5; --enable-bg:#e8e9ff;
+    --amber:#d97706; --amber-bg:#fdf0d8;
+    --slate:#475569; --slate-bg:#f1f5f9;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;background:var(--canvas);color:var(--ink);
+    font-family:"Segoe UI",Inter,system-ui,sans-serif;-webkit-font-smoothing:antialiased;}
+  #page{width:1600px;padding:34px 40px 30px;}
+  header{display:flex;align-items:baseline;gap:16px;margin-bottom:4px;}
+  h1{font-size:30px;margin:0;letter-spacing:-.4px;}
+  .crumb{color:var(--faint);font-size:15px;}
+  .stamp{margin-left:auto;color:var(--faint);font-size:13px;}
+  .lede{color:var(--muted);font-size:15px;margin:0 0 18px;}
+  /* zone shell */
+  .zone{background:var(--card);border:1px solid var(--line);border-radius:14px;
+    box-shadow:0 1px 2px rgba(16,24,40,.04);padding:14px 16px;margin-bottom:14px;}
+  .zlabel{display:flex;align-items:center;gap:8px;font-size:11px;font-weight:700;
+    letter-spacing:.7px;text-transform:uppercase;color:var(--muted);margin:0 0 12px;}
+  .zlabel .dot{width:9px;height:9px;border-radius:50%;}
+  .zlabel .sub{font-weight:600;letter-spacing:.2px;text-transform:none;color:var(--faint);}
+  /* matrix table */
+  table.mx{border-collapse:separate;border-spacing:0;width:100%;font-size:12px;}
+  table.mx th,table.mx td{padding:7px 9px;text-align:left;vertical-align:top;
+    border-bottom:1px solid var(--line);}
+  table.mx thead th{font-size:12.5px;font-weight:700;color:var(--ink);
+    border-bottom:2px solid var(--line);}
+  table.mx thead th .ag{display:flex;align-items:center;gap:6px;}
+  table.mx tbody tr:last-child td{border-bottom:none;}
+  .cls{font-weight:650;font-size:12.5px;}
+  .cls .s{display:block;font-weight:500;color:var(--faint);font-size:10.5px;margin-top:1px;}
+  .cell{font:600 11px/1.3 ui-monospace,SFMono-Regular,Menlo,monospace;
+    border-radius:6px;padding:4px 7px;display:inline-block;}
+  .cell.yes{color:var(--yes);background:var(--yes-bg);}
+  .cell.soft{color:var(--soft);background:var(--soft-bg);font-family:"Segoe UI",sans-serif;font-weight:600;}
+  .cell.no{color:var(--no);background:var(--no-bg);font-family:"Segoe UI",sans-serif;font-weight:600;}
+  .cell.na{color:var(--faint);background:transparent;font-family:"Segoe UI",sans-serif;}
+  /* generic card grids */
+  .grid{display:grid;gap:9px;}
+  .g4{grid-template-columns:repeat(4,1fr);}
+  .g3{grid-template-columns:repeat(3,1fr);}
+  .card{border:1px solid var(--line);border-radius:10px;padding:9px 11px;background:#fff;}
+  .card .nm{font-weight:650;font-size:13px;display:flex;align-items:center;gap:7px;flex-wrap:wrap;}
+  .card .ds{color:var(--muted);font-size:11px;line-height:1.4;margin-top:4px;}
+  .badge{font:700 9px/1 "Segoe UI",sans-serif;letter-spacing:.4px;text-transform:uppercase;
+    padding:3px 6px;border-radius:5px;}
+  .b-fleet{color:var(--enable);background:var(--enable-bg);}
+  .b-repo{color:var(--slate);background:var(--slate-bg);}
+  .b-sched{color:var(--amber);background:var(--amber-bg);}
+  .b-dual{color:var(--yes);background:var(--yes-bg);}
+  .b-solo{color:var(--slate);background:var(--slate-bg);}
+  .mono{font:600 10px/1 ui-monospace,Menlo,monospace;color:var(--slate);background:var(--slate-bg);
+    border-radius:5px;padding:3px 6px;}
+  /* sub-group label */
+  .grp{margin-top:12px;}
+  .grp:first-child{margin-top:0;}
+  .grp-label{font-size:10.5px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;
+    color:var(--muted);margin:0 0 8px;display:flex;align-items:center;gap:7px;}
+  .grp-label .bar{width:14px;height:3px;border-radius:2px;}
+  .grp-label .n{color:var(--faint);font-weight:600;}
+  /* two-column zone split */
+  .split{display:grid;grid-template-columns:1fr 1fr;gap:14px;}
+  /* repo-specific list */
+  .repo{border:1px solid var(--line);border-radius:10px;padding:9px 11px;background:#fff;margin-bottom:9px;}
+  .repo .rh{font-weight:650;font-size:12.5px;margin-bottom:6px;}
+  .repo .rh .n{color:var(--faint);font-weight:600;font-size:11px;}
+  .chips{display:flex;flex-wrap:wrap;gap:5px;}
+  .chip{font:600 10px/1 ui-monospace,Menlo,monospace;color:#3730a3;background:#eef0ff;
+    border:1px solid #e0e3fb;border-radius:5px;padding:4px 6px;}
+  .chip.help{color:var(--slate);background:var(--slate-bg);border-color:var(--line);}
+  /* coverage strip */
+  .cov{display:flex;gap:10px;flex-wrap:wrap;margin-top:10px;}
+  .stat{font-size:11.5px;color:var(--muted);background:var(--slate-bg);border:1px solid var(--line);
+    border-radius:8px;padding:6px 10px;}
+  .stat b{color:var(--ink);}
+  /* footer */
+  .foot{display:flex;gap:22px;align-items:center;flex-wrap:wrap;margin-top:4px;
+    padding-top:13px;border-top:1px solid var(--line);font-size:11.5px;color:var(--muted);}
+  .foot .pr{display:flex;gap:6px;align-items:center;}
+  .foot b{color:var(--ink);}
+</style>
+</head>
+<body>
+<div id="page">
+  <header>
+    <h1>🗺️ Fleet Config &amp; Conventions</h1>
+    <span class="crumb">cross-agent surface · one source, every agent</span>
+    <span class="stamp" id="stamp"></span>
+  </header>
+  <p class="lede">Everything versioned in <b>fleet-config</b>, junctioned into each agent's home — so one edit is live everywhere. Capability degrades per agent: Claude Code gets it all; the others bottom out at their own surface.</p>
+
+  <!-- PER-AGENT MATRIX -->
+  <div class="zone">
+    <div class="zlabel"><span class="dot" style="background:var(--enable)"></span>Per-agent capability matrix <span class="sub">— what each agent gets, and from where</span></div>
+    <table class="mx"><thead id="mx-head"></thead><tbody id="mx-body"></tbody></table>
+  </div>
+
+  <!-- SKILLS -->
+  <div class="zone">
+    <div class="zlabel"><span class="dot" style="background:var(--soft)"></span>Skills <span class="sub">— two homes: universal (every agent) · fleet-orchestration (Claude, fleet-config only) · repo-specific</span></div>
+    <div class="grp">
+      <div class="grp-label"><span class="bar" style="background:var(--soft)"></span>Universal — junctioned into all four agents <span class="n" id="n-univ"></span></div>
+      <div class="grid g4" id="univ"></div>
+    </div>
+    <div class="grp">
+      <div class="grp-label"><span class="bar" style="background:var(--enable)"></span>Fleet-orchestration — Claude-only, scoped to fleet-config <span class="n" id="n-fleet"></span></div>
+      <div class="grid g3" id="fleet"></div>
+    </div>
+    <div class="grp">
+      <div class="grp-label"><span class="bar" style="background:var(--slate)"></span>Repo-specific — live only in their own repo <span class="n" id="n-repo"></span></div>
+      <div id="repo"></div>
+    </div>
+  </div>
+
+  <!-- HOOKS + CONVENTIONS -->
+  <div class="split">
+    <div class="zone" style="margin-bottom:0">
+      <div class="zlabel"><span class="dot" style="background:var(--no)"></span>Hooks <span class="sub">— Claude Code + Codex only</span></div>
+      <div class="grp">
+        <div class="grp-label"><span class="bar" style="background:var(--no)"></span>Blocking — exit&nbsp;2 <span class="n" id="n-block"></span></div>
+        <div class="grid" style="grid-template-columns:1fr 1fr" id="block"></div>
+      </div>
+      <div class="grp">
+        <div class="grp-label"><span class="bar" style="background:var(--soft)"></span>Non-blocking — nudge / utility <span class="n" id="n-nudge"></span></div>
+        <div class="grid" style="grid-template-columns:1fr 1fr" id="nudge"></div>
+      </div>
+      <div class="grp">
+        <div class="grp-label"><span class="bar" style="background:var(--slate)"></span>Shared helpers <span class="n" id="n-help"></span></div>
+        <div class="chips" id="help"></div>
+      </div>
+    </div>
+    <div class="zone" style="margin-bottom:0">
+      <div class="zlabel"><span class="dot" style="background:var(--yes)"></span>Conventions &amp; meta <span class="sub">— the always-on doctrine</span></div>
+      <div class="grid" style="grid-template-columns:1fr;gap:9px" id="conv"></div>
+      <div class="cov" id="cov"></div>
+    </div>
+  </div>
+
+  <div class="foot" id="foot"></div>
+</div>
+
+<script src="config.data.js"></script>
+<script>
+const D = window.CONFIG || {};
+const byKey = {}; (D.agents||[]).forEach(a=>byKey[a.key]=a);
+
+function cellClass(v){
+  if(v.indexOf("❌")===0) return "no";
+  if(v.indexOf("—")===0) return "na";
+  if(v.startsWith("via")||v.indexOf("tool-managed")>-1||v.indexOf("native")>-1||v.indexOf("VS Code")>-1||v.indexOf("holds secrets")>-1||v==="config.toml"||v==="settings.json") return "soft";
+  return "yes";
+}
+
+// matrix head
+document.getElementById("mx-head").innerHTML =
+  "<tr><th>Config class</th>" + (D.agents||[]).map(a=>
+    `<th><span class="ag">${a.ic} ${a.nm}</span></th>`).join("") + "</tr>";
+// matrix body
+document.getElementById("mx-body").innerHTML = (D.matrix||[]).map(row=>{
+  const cells = (D.agents||[]).map(a=>{
+    const v = (row.cells&&row.cells[a.key])||"—";
+    return `<td><span class="cell ${cellClass(v)}">${v}</span></td>`;
+  }).join("");
+  return `<tr><td class="cls">${row.cls}<span class="s">${row.sub||""}</span></td>${cells}</tr>`;
+}).join("");
+
+// skills — universal
+document.getElementById("n-univ").textContent = "(" + (D.skills_universal||[]).length + ")";
+document.getElementById("univ").innerHTML = (D.skills_universal||[]).map(s=>{
+  const b = s.scope==="fleet"
+    ? `<span class="badge b-fleet">fleet-wide</span>`
+    : `<span class="badge b-repo">per-repo</span>`;
+  return `<div class="card"><div class="nm">${s.nm} ${b}</div><div class="ds">${s.ds}</div></div>`;
+}).join("");
+// skills — fleet-orchestration
+document.getElementById("n-fleet").textContent = "(" + (D.skills_fleet||[]).length + ")";
+document.getElementById("fleet").innerHTML = (D.skills_fleet||[]).map(s=>{
+  const b = s.sched ? `<span class="badge b-sched">⏰ weekly</span>` : "";
+  return `<div class="card"><div class="nm">${s.nm} ${b}</div><div class="ds">${s.ds}</div></div>`;
+}).join("");
+// skills — repo-specific
+const repos = D.skills_repo||[];
+document.getElementById("n-repo").textContent =
+  "(" + repos.reduce((n,r)=>n+(r.items||[]).length,0) + " across " + repos.length + " repos)";
+document.getElementById("repo").innerHTML = repos.map(r=>
+  `<div class="repo"><div class="rh">${r.repo} <span class="n">· ${(r.items||[]).length}</span></div>
+   <div class="chips">${(r.items||[]).map(i=>`<span class="chip">${i}</span>`).join("")}</div></div>`).join("");
+
+// hooks
+const hooks = D.hooks||[];
+function hookCard(h){
+  const reach = h.reach==="Claude + Codex"
+    ? `<span class="badge b-dual">C+Cx</span>`
+    : `<span class="badge b-solo">Claude</span>`;
+  return `<div class="card"><div class="nm">${h.nm} ${reach}</div>
+    <div class="ds"><span class="mono">${h.ev}</span></div>
+    <div class="ds">${h.ds}</div></div>`;
+}
+const blocking = hooks.filter(h=>h.block), nudges = hooks.filter(h=>!h.block);
+document.getElementById("n-block").textContent = "("+blocking.length+")";
+document.getElementById("n-nudge").textContent = "("+nudges.length+")";
+document.getElementById("block").innerHTML = blocking.map(hookCard).join("");
+document.getElementById("nudge").innerHTML = nudges.map(hookCard).join("");
+document.getElementById("n-help").textContent = "("+(D.hooks_helpers||[]).length+")";
+document.getElementById("help").innerHTML = (D.hooks_helpers||[]).map(h=>
+  `<span class="chip help">${h.nm}</span>`).join("");
+
+// conventions
+document.getElementById("conv").innerHTML = (D.conventions||[]).map(c=>
+  `<div class="card"><div class="nm">${c.ic} ${c.nm} <span class="badge b-repo">${c.reach}</span></div>
+   <div class="ds">${c.ds}</div></div>`).join("");
+const cov = D.coverage||{};
+document.getElementById("cov").innerHTML =
+  `<span class="stat">fleet repos <b>${cov.total||"?"}</b></span>` +
+  `<span class="stat">root CLAUDE.md <b>${cov.claude_md||"?"}</b></span>` +
+  `<span class="stat">.fleet.toml <b>${cov.fleet_toml||"?"}</b></span>`;
+
+// footer principles
+document.getElementById("foot").innerHTML = (D.principles||[]).map(p=>
+  `<span class="pr">●&nbsp;<b>${p[0]}</b> — ${p[1]}</span>`).join("");
+
+document.getElementById("stamp").textContent = new Date().toISOString().slice(0,10);
+document.title="RENDER_DONE";
+console.error("DIMS " + Math.ceil(document.getElementById("page").scrollWidth) + " " + Math.ceil(document.getElementById("page").scrollHeight));
+</script>
+</body>
+</html>

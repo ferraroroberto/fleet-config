@@ -1,0 +1,82 @@
+{
+  "_note": "Hand-maintained INPUT for the /config-map skill. Holds only what build_data.py cannot derive from install.ps1, the skill/hook dirs, and the per-repo git sweep: the agent columns, the capability-matrix row structure (link-backed cells are derived; non-derivable cells carry an `annot`), the universal-skill scope set, the project-wired (non-globally-wired) hooks, and the conventions panel + principles prose. Everything else in config.data.js is GENERATED. Edit this, then run `py .claude/skills/config-map/build_data.py`.",
+  "agents": [
+    { "key": "claude", "nm": "Claude Code", "ic": "🟧" },
+    { "key": "codex", "nm": "Codex", "ic": "🔷" },
+    { "key": "pi", "nm": "Pi", "ic": "🥧" },
+    { "key": "copilot", "nm": "Copilot", "ic": "🐙" },
+    { "key": "agy", "nm": "Antigravity", "ic": "🌌" }
+  ],
+  "matrix_rows": [
+    {
+      "cls": "Global instructions",
+      "sub": "the always-on context file",
+      "src": "global-CLAUDE.md",
+      "annot": { "agy": "— (IDE, no home file)" }
+    },
+    {
+      "cls": "Design system",
+      "sub": "design.md + design.dark.md",
+      "src": "design.md",
+      "annot": { "codex": "via ~/.claude", "pi": "via ~/.claude", "copilot": "via ~/.claude", "agy": "—" }
+    },
+    {
+      "cls": "Skills",
+      "sub": "auto-scanned SKILL.md dir",
+      "src": "skills",
+      "annot": { "agy": "❌ plugin-only (#160)" }
+    },
+    {
+      "cls": "Commands / prompts",
+      "sub": "slash-command bodies",
+      "src": "commands",
+      "annot": { "pi": "—", "copilot": "—", "agy": "—" }
+    },
+    {
+      "cls": "Hooks",
+      "sub": "lifecycle code + wiring",
+      "src": "hooks",
+      "annot": { "pi": "❌ no hook surface", "copilot": "❌ no hook surface", "agy": "❌ (IDE)" }
+    },
+    {
+      "cls": "Statusline",
+      "sub": "session footer",
+      "annot": {
+        "claude": "statusline-command.ps1",
+        "codex": "native TUI footer (config.toml)",
+        "pi": "extensions/statusline.ts",
+        "copilot": "❌",
+        "agy": "❌"
+      }
+    },
+    {
+      "cls": "Settings / permissions",
+      "sub": "tool config",
+      "annot": {
+        "claude": "settings.json (holds secrets)",
+        "codex": "config.toml",
+        "pi": "settings.json (tool-managed)",
+        "copilot": "config.json (tool-managed)",
+        "agy": "VS Code settings"
+      }
+    }
+  ],
+  "fleet_wide_skills": ["issue-batch", "issue-finish-batch", "issue-triage"],
+  "hooks_extra": [
+    { "nm": "restart_and_verify_webapp", "ev": "/restart-webapp (slash command)" },
+    { "nm": "conversation_capture", "ev": "Stop (opt-in per project)" },
+    { "nm": "session_index", "ev": "SessionStart (opt-in per project)" }
+  ],
+  "conventions": [
+    { "ic": "📜", "nm": "global-CLAUDE.md", "reach": "all 4 agents", "ds": "Working method, conventions, git/PR pipeline, fleet doctrine &amp; gotchas — one file symlinked into every agent home." },
+    { "ic": "🎨", "nm": "design.md + design.dark.md", "reach": "Claude (others via ~/.claude)", "ds": "Canonical visual identity + the floating bottom-tab nav contract for every web app." },
+    { "ic": "🏔️", "nm": "single-home by altitude", "reach": "rule", "ds": "Universal → global-CLAUDE.md · shape-specific → project-scaffolding · instance → the repo's own CLAUDE.md. Enforced weekly by /context-audit." },
+    { "ic": "📐", "nm": "project-scaffolding", "reach": "governance master", "ds": "The canonical scaffold every sister repo derives its CLAUDE.md from — conventions flow up, never diverge." }
+  ],
+  "principles": [
+    ["One source", "edit in fleet-config, live in every agent home via junctions"],
+    ["Derive, don't declare", "the map introspects install.ps1 + the dirs — it can't go stale"],
+    ["Describe vs enforce", "config-map is the weekly photo · /context-audit flags the drift"],
+    ["Degrade per agent", "hooks, statusline &amp; design bottom out at each agent's surface"]
+  ]
+}

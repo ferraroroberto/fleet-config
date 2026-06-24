@@ -308,6 +308,9 @@ def main() -> int:
     # ---- system-map: week-over-week 'what changed' diff (whatchanged.py) ----
     failures += _system_map_whatchanged_check()
 
+    # ---- config-map: introspected config.data.js freshness + whatchanged ----
+    failures += _config_map_check()
+
     # ---- settings: live ~/.claude/settings.json ⊇ template hook wiring ----
     failures += _settings_template_sync_check()
 
@@ -324,8 +327,9 @@ def main() -> int:
 # conversation_capture (13) + conversation_index (6) + restart_webapp (6) +
 # gh_body_file_guard (6) + tier23_hooks (10) + audit_issue (1) +
 # worktree_claim (1) + ux_surface (1) + learning_log (16) + system_map (3) +
-# fleet_toml (3) + system_map_whatchanged (7) + settings_template_sync (1).
-_UNIT_CHECK_COUNT = 121
+# fleet_toml (3) + system_map_whatchanged (7) + config_map (8) +
+# settings_template_sync (1).
+_UNIT_CHECK_COUNT = 129
 
 
 def _system_map_coverage_check() -> int:
@@ -478,6 +482,72 @@ def _system_map_whatchanged_check() -> int:
     check("system_map_whatchanged: empty diff reads 'no fleet changes'",
           wc.format_line({"added": [], "removed": [], "updated": []}) == "no fleet changes")
     check("system_map_whatchanged: no prior snapshot reads 'baseline'",
+          wc.summarize(None, cur) == "baseline")
+
+    return failures
+
+
+def _config_map_check() -> int:
+    """The /config-map data is fresh, and its week-over-week diff behaves.
+
+    Guards the introspected config map (`.claude/skills/config-map`):
+      1. `config.data.js` is exactly what `build_data.py` regenerates — a forgotten
+         regen, a hand-edit, a new skill/hook, or a re-wired `install.ps1` link
+         fails loud (same anti-staleness contract as `/system-map`);
+      2. `whatchanged.py` pure-logic: adds/removes are named across every
+         dimension (skills/hooks/matrix/conventions), edits are counted, repo
+         keys collapse to a short label, and the no-op / first-run lines read
+         sensibly.
+    Returns the failure count.
+    """
+    import importlib.util
+
+    failures = 0
+
+    def check(case: str, ok: bool) -> None:
+        nonlocal failures
+        print(f"{'OK   ' if ok else 'FAIL '} {case}")
+        if not ok:
+            failures += 1
+
+    cm_dir = REPO / ".claude" / "skills" / "config-map"
+    bd_spec = importlib.util.spec_from_file_location("config_map_build_data", cm_dir / "build_data.py")
+    bd = importlib.util.module_from_spec(bd_spec)
+    bd_spec.loader.exec_module(bd)  # type: ignore[union-attr]
+
+    committed = (REPO / "architecture" / "config.data.js").read_text(encoding="utf-8")
+    try:
+        fresh = bd.regenerate() == committed
+        regen_err = ""
+    except Exception as exc:  # noqa: BLE001
+        fresh, regen_err = False, f" ({exc})"
+    check(f"config_map: config.data.js matches build_data.py output{regen_err}", fresh)
+
+    wc_spec = importlib.util.spec_from_file_location("config_map_whatchanged", cm_dir / "whatchanged.py")
+    wc = importlib.util.module_from_spec(wc_spec)
+    wc_spec.loader.exec_module(wc)  # type: ignore[union-attr]
+
+    prev = ('window.CONFIG = {"skills_universal":[{"nm":"a","ds":"x"},{"nm":"b","ds":"y"}],'
+            '"hooks":[{"nm":"h1","ds":"z"}]};')
+    # add skill c, remove skill b, edit a's description, hook h1 unchanged.
+    cur = ('window.CONFIG = {"skills_universal":[{"nm":"a","ds":"X2"},{"nm":"c","ds":"w"}],'
+           '"hooks":[{"nm":"h1","ds":"z"}]};')
+    diff = wc.diff_config(prev, cur)
+    check("config_map_whatchanged: detects an added entry", diff["added"] == ["skill:c"])
+    check("config_map_whatchanged: detects a removed entry", diff["removed"] == ["skill:b"])
+    check("config_map_whatchanged: counts edited entries, ignores unchanged", diff["updated"] == ["skill:a"])
+    check("config_map_whatchanged: format_line composes named adds/removes + count",
+          wc.format_line(diff) == "+c, −b, 1 updated")
+
+    # repo-specific skills flatten to repo:<repo>/<item>; the label drops the path.
+    rp = 'window.CONFIG = {"skills_repo":[{"repo":"life-os","items":["j1","j2"]}]};'
+    rc = 'window.CONFIG = {"skills_repo":[{"repo":"life-os","items":["j1"]}]};'
+    check("config_map_whatchanged: keys repo skills by path, labels by short name",
+          wc.format_line(wc.diff_config(rp, rc)) == "−j2")
+
+    check("config_map_whatchanged: empty diff reads 'no config changes'",
+          wc.format_line({"added": [], "removed": [], "updated": []}) == "no config changes")
+    check("config_map_whatchanged: no prior snapshot reads 'baseline'",
           wc.summarize(None, cur) == "baseline")
 
     return failures
