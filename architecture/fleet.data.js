@@ -50,7 +50,7 @@ window.FLEET = {
     {"ic": "📝", "nm": "content-management", "ds": "Four content pipelines.", "tag": ["→", "Notion"]},
     {"ic": "📧", "nm": "email-archiver", "ds": "Outlook → OneDrive archive.", "tag": ["→", "OneDrive"]},
     {"ic": "📄", "nm": "pdf-to-markdown", "ds": "PDF → clean Markdown for LLMs."},
-    {"ic": "🧾", "nm": "mass-html-to-markdown", "ds": "HTML → SQLite → Markdown."},
+    {"ic": "🧾", "nm": "mass-html-to-markdown", "ds": "HTML → SQLite → Markdown (+ LLM-shortened variant)."},
     {"ic": "🎨", "nm": "illustration-color-edit", "ds": "SVG pipelines for book art."},
     {"ic": "☀️", "nm": "pvgis", "ds": "Solar-PV output estimate."},
     {"ic": "🗂️", "nm": "copilot-studio-transcripts", "ds": "Copilot Studio workbench."},
