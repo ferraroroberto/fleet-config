@@ -208,7 +208,7 @@ client.messages.create(model="claude-haiku-4-5", ...)
 curl -F file=@clip.wav http://127.0.0.1:8090/v1/audio/transcriptions
 ```
 
-**Limitations to verify before using** (as of late April 2026): image / document / extended-thinking content blocks are dropped at the shape boundary; no streaming; all local backends are text-only (no vision-capable local model); Anthropic-shape tool-use to qwen/glm is not implemented (OpenAI-shape works via llama-server `--jinja`). Re-read the repo's README and `docs/model-comparison.md` before relying on a specific model id — the latest-only policy means model entries get replaced when newer ones ship.
+**Limitations to verify before using** (as of late June 2026): **image / document content blocks ARE supported** on the `claude-*` and `gemini-*` subscription paths — but only via the Anthropic `POST /v1/messages` shape, which base64-decodes each block to a per-request temp dir and feeds it to the vision-capable subscription CLI (`--add-dir`); local `llama-server` backends (qwen/gemma) are still text-only and 400 on image input. Gaps that remain: the OpenAI-shape `POST /v1/chat/completions` → claude path silently drops `image_url` parts (text only); URL image sources are forwarded as a text reference, not fetched; extended-thinking blocks are still dropped at the shape boundary; no streaming on `/v1/messages`; Anthropic-shape tool-use to qwen/glm is not implemented (OpenAI-shape works via llama-server `--jinja`). Re-read the repo's README and `docs/model-comparison.md` before relying on a specific model id — the latest-only policy means model entries get replaced when newer ones ship.
 
 ### Don't duplicate hub functionality in downstream apps
 
