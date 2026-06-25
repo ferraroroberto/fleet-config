@@ -296,6 +296,9 @@ def main() -> int:
     # ---- ux_surface helper pure-logic tests (skills/_lib) ----
     failures += _ux_surface_unit_check()
 
+    # ---- cert_drift helper pure-logic tests (skills/_lib) ----
+    failures += _cert_drift_unit_check()
+
     # ---- learning-log report.py pure helpers (.claude/skills/learning-log) ----
     failures += _learning_log_unit_checks()
 
@@ -326,10 +329,10 @@ def main() -> int:
 # notify_complete (18) + work_summary (5) + slack_routing (10) +
 # conversation_capture (13) + conversation_index (6) + restart_webapp (6) +
 # gh_body_file_guard (6) + tier23_hooks (10) + audit_issue (1) +
-# worktree_claim (1) + ux_surface (1) + learning_log (16) + system_map (3) +
-# fleet_toml (3) + system_map_whatchanged (7) + config_map (8) +
-# settings_template_sync (1).
-_UNIT_CHECK_COUNT = 129
+# worktree_claim (1) + ux_surface (1) + cert_drift (1) + learning_log (16) +
+# system_map (3) + fleet_toml (3) + system_map_whatchanged (7) +
+# config_map (8) + settings_template_sync (1).
+_UNIT_CHECK_COUNT = 130
 
 
 def _system_map_coverage_check() -> int:
@@ -896,6 +899,26 @@ def _ux_surface_unit_check() -> int:
     )
     ok = proc.returncode == 0
     print(f"{'OK   ' if ok else 'FAIL '} ux_surface: pure-logic unit tests")
+    if not ok:
+        for line in (proc.stdout or "").strip().splitlines():
+            print(f"        | {line}")
+    return 0 if ok else 1
+
+
+def _cert_drift_unit_check() -> int:
+    """Run skills/_lib/cert_drift.py's pure-logic tests as a subprocess.
+
+    Standalone (like test_ux_surface) so the tailnet-cert drift truth table —
+    LAN-only stays clean, an already-migrated app stays clean, only a
+    tailnet-reachable self-signed-only app trips — is testable on its own and
+    reachable from the one gate. (fleet-config#210)
+    """
+    proc = subprocess.run(
+        [PYTHON, str(REPO / "tests" / "test_cert_drift.py")],
+        capture_output=True, text=True, encoding="utf-8", errors="replace",
+    )
+    ok = proc.returncode == 0
+    print(f"{'OK   ' if ok else 'FAIL '} cert_drift: pure-logic unit tests")
     if not ok:
         for line in (proc.stdout or "").strip().splitlines():
             print(f"        | {line}")

@@ -15,9 +15,20 @@ the values that have **drifted** from the spec, and files exactly one deduped
 all at once with `/cleanup-fleet design-drift`. With `apply`, it also writes the
 aligned token values into the working tree for you to review.
 
+**It also runs one adjacent infra check on the same web-app population: tailnet-cert
+conformance** (step 1b). A Tailscale-reachable app that still provisions HTTPS only
+via a self-signed CA + `/install-ca` trust dance — instead of the `tailscale cert`
+(real Let's Encrypt) standard — is convention drift; the check files a separate,
+deduped `cert-drift` issue per repo pointing at the standard's decision record
+(`ferraroroberto/project-scaffolding#89`). It rides design-sync because design-sync
+already enumerates exactly these repos; it is independent of the CSS comparison and
+never mixes into the `design-drift` issue.
+
 **Default mode files an issue; it does not edit code.** Reporting + upserting the
-`design-drift` issue is the only side effect unless you pass `apply` (step 8).
-Never commit, push, or restart anything.
+`design-drift` issue (and, separately, any `cert-drift` issue) is the only side
+effect unless you pass `apply` (step 8). Never commit, push, or restart anything.
+`apply` only ever touches CSS — the cert migration is never auto-applied (that is a
+later `/cleanup-fleet cert-drift` run).
 
 ## Arguments
 
@@ -44,6 +55,83 @@ In parallel, from the target repo root:
 - `gh repo view --json nameWithOwner -q .nameWithOwner` — capture `OWNER/REPO`.
   If it fails, stop: "No GitHub remote — this skill files issues, can't run
   without one."
+
+### 1b. Tailnet-cert conformance (independent of the CSS check)
+
+Run this **before** step 2's web-app gate, so a repo that later short-circuits on
+"no token CSS" still gets cert-checked. It is self-gating: a non-web, LAN-only, or
+already-migrated repo reports clean and files nothing, so it is safe to run on any
+target design-sync is pointed at.
+
+Detect whether this is a Tailscale-reachable app still on the self-signed-CA dance:
+
+```
+py C:/Users/rober/.claude/skills/_lib/cert_drift.py detect <repo-root>
+```
+
+It prints `CERT_DRIFT=yes|no`, `REASON=...`, and the `TAILNET` / `SELF_SIGNED` /
+`TS_CERT` evidence (`file:line`, or `-`). The verdict is a fixed truth table over
+three signals — a `*.ts.net`/Tailscale mention in `README.md`/`CLAUDE.md`/`docs/**`,
+a `gen_ssl_cert.py`-style provisioner or `/install-ca` route, and the absence of a
+`gen_tailscale_cert.py`-style provisioner — so it is deterministic, not a judgment
+call. `CERT_DRIFT=no` → note "cert: ok" for the final report and move on.
+
+On `CERT_DRIFT=yes`, file a **separate** deduped `cert-drift` issue (never folded
+into `design-drift`):
+
+1. **Ensure the label** (idempotent):
+
+   ```
+   gh label create cert-drift --color 'b60205' --description 'Tailnet PWA still on self-signed CA instead of the tailscale-cert standard' || true
+   ```
+
+2. **Fetch the existing issue:**
+
+   ```
+   py C:/Users/rober/.claude/skills/_lib/audit_issue.py get --repo <OWNER/REPO> --kind cert-drift
+   ```
+
+3. **Build the body.** Fresh → use the template below (fill the evidence from the
+   `detect` output). Existing → preserve every ticked `- [x]`, append a dated bullet
+   to `## Run log`, never tick/close anything, never add `Closes #`.
+
+4. **Upsert** (creates / edits / collapses strays, stamps the marker):
+
+   ```
+   py C:/Users/rober/.claude/skills/_lib/audit_issue.py upsert \
+     --repo <OWNER/REPO> --kind cert-drift --label cert-drift \
+     --title "audit: cert-drift findings" --body-file <tmpfile>
+   ```
+
+   Use a repo-scoped, unique temp file: `E:/tmp/cert-drift-<owner>-<repo>-<short-sha>.md`
+   (`<owner>-<repo>` = `OWNER/REPO` with the slash → hyphen). Never a fixed shared name.
+
+**Body shape** for a fresh issue (no hard-wrapped paragraphs — the global CLAUDE.md
+rendered-markdown rule applies; the helper prepends the marker):
+
+```markdown
+Surfaced by `/design-sync` (tailnet-cert conformance), kept up to date across runs.
+
+## Finding
+
+- [ ] This app is reached over Tailscale and still provisions HTTPS only via a self-signed CA + `/install-ca` mobileconfig trust dance. Migrate to `tailscale cert` (real Let's Encrypt) per the fleet standard. Fix: adopt a `scripts/gen_tailscale_cert.py` (`--check` auto-renew) + webapp wire-up, dropping the self-signed dance.
+
+## Evidence
+
+- tailnet signal: `<file:line>`
+- self-signed provisioner: `<file:line | file>`
+- tailscale-cert provisioner: absent
+
+## Standard
+
+Canonical decision record: `ferraroroberto/project-scaffolding#89`. Reference impl: `ferraroroberto/grocery-shopping-automation` — `scripts/gen_tailscale_cert.py` (`--check` auto-renew) + `webapp.bat` wire-up.
+
+## Run log
+
+- <YYYY-MM-DD> @ <short-sha>: initial.
+```
+
+Title is **stable** — `audit: cert-drift findings`, no count suffix.
 
 ### 2. Detect a web app — else skip
 
@@ -215,22 +303,29 @@ Print one summary and stop:
   dark         <n>         <n>      <n>
 
   nav contract: <ok | drifted: ...>
+  cert: <ok | drift, filed #N>   (tailnet-cert conformance, step 1b)
   filed: https://github.com/<owner>/<repo>/issues/<N>   (design-drift)
   applied: <n files changed | not applied (report-only)>
 ```
 
-If there is zero drift and the nav contract holds, say
-`In sync with design.md — no drift.` and still no-op the issue (don't file an
-empty one; if a prior issue exists with all boxes now satisfiable, leave it for
-the user to close).
+The `cert:` line always appears (the step-1b check runs on every target). If there
+is zero CSS drift and the nav contract holds, say `In sync with design.md — no
+drift.` and still no-op the design-drift issue (don't file an empty one; if a prior
+issue exists with all boxes now satisfiable, leave it for the user to close) — the
+cert verdict is reported independently regardless.
 
 ## Hard rules
 
 - **Default mode never edits code.** Only `apply` writes files, and even then it
   never commits, pushes, or restarts.
-- **One managed issue per repo — the helper owns identity.** Always go through
-  `skills/_lib/audit_issue.py` (`get` then `upsert`, `--kind design-drift`).
-  Never hand-roll a `gh issue create` — that is what spawns duplicates.
+- **One managed issue per repo per kind — the helper owns identity.** Always go
+  through `skills/_lib/audit_issue.py` (`get` then `upsert`) — `--kind design-drift`
+  for CSS, `--kind cert-drift` for the step-1b cert finding. Never hand-roll a
+  `gh issue create` — that is what spawns duplicates.
+- **Keep cert-drift out of design-drift.** The tailnet-cert finding is its own
+  bucket/issue (so `/cleanup-fleet cert-drift` targets it cleanly and it points at
+  `project-scaffolding#89`); never fold a cert finding into the CSS `design-drift`
+  issue, and never auto-apply the cert migration.
 - **Skip Streamlit POC spikes** — never report or apply against them.
 - **Never re-author navigation/components.** Reuse the vendored snippets from
   `project-scaffolding` verbatim (the same model as `single_instance.py` /
@@ -249,10 +344,16 @@ the user to close).
 
 - This is the per-repo detector. A fleet-wide weekly sweep (loop every web app,
   one digest) + `/audit-fleet` digest integration for the `design-drift` bucket
-  are tracked as a follow-up — until then run `/design-sync` per repo.
-- `design-drift` is a first-class audit bucket (`skills/_lib/audit_issue.py`
-  `KINDS`), so `/cleanup-fleet design-drift` already fans out fixers across the
-  fleet, and `/issue-triage` treats the issue like any other.
+  are tracked as a follow-up (`fleet-config#180`) — until then run `/design-sync`
+  per repo. The step-1b cert check rides that same sweep when it lands, so the
+  weekly audit gains tailnet-cert detection for free.
+- `design-drift` and `cert-drift` are both first-class audit buckets
+  (`skills/_lib/audit_issue.py` `KINDS`), so `/cleanup-fleet design-drift` and
+  `/cleanup-fleet cert-drift` each fan out fixers across the fleet, and
+  `/issue-triage` treats both issues like any other.
+- The tailnet-cert convention itself lives in `project-scaffolding#89`, not here —
+  this skill only *detects* drift from it. The heuristic is in the pure, unit-tested
+  `skills/_lib/cert_drift.py` (`detect`), the same `_lib` contract as `ux_surface.py`.
 - The spec, not this skill, is the source of truth for *what* the look should be.
   Refine `design.md` / `design.dark.md` when the identity itself should change;
   this skill only measures and (optionally) applies conformance to it.
