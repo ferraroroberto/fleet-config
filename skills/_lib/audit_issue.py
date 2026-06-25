@@ -52,6 +52,7 @@ KINDS = (
     "bug",
     "documentation",
     "design-drift",
+    "cert-drift",
 )
 
 _MARKER_RE = re.compile(
