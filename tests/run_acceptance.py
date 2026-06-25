@@ -710,7 +710,7 @@ def _notify_classify_unit_checks() -> int:
         {"notification_type": "permission_prompt", "message": "Claude needs your permission"}
     )
     check("classify: permission -> bell icon + 'awaits your input'",
-          icon == "🔔" and text == "Claude awaits your input")
+          icon == "🔔" and text == "Claude Code awaits your input")
     icon, text = notify_on_idle.classify(
         {"notification_type": "idle_prompt", "message": "Claude is waiting for your input"}
     )
