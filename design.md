@@ -63,8 +63,8 @@ components:
   button-primary: { backgroundColor: "{colors.accent}", textColor: "{colors.accent-fg}", rounded: "{rounded.md}", typography: "{typography.label}", height: 48px }
   control:        { height: 36px, rounded: "{rounded.md}", backgroundColor: "{colors.canvas-subtle}", borderColor: "{colors.border}", textColor: "{colors.fg}" }   # shared height for inline select / input so a row of controls lines up
   switch:         { width: 44px, height: 26px, rounded: "{rounded.pill}", thumbSize: 20px, trackOff: "{colors.border}", trackOn: "{colors.accent}", thumbColor: "{colors.accent-fg}" }   # shadcn Switch — no text label
-  nav-bar:        { backgroundColor: "{colors.card}", rounded: "{rounded.nav}", height: 56px, margin: "{spacing.gutter}" }
-  nav-tab:        { textColor: "{colors.fg-muted}", rounded: "{rounded.pill}", height: 48px }
+  nav-bar:        { backgroundColor: "{colors.card}", rounded: "{rounded.nav}", height: 61px, margin: 21px }
+  nav-tab:        { textColor: "{colors.fg-muted}", rounded: "{rounded.pill}", height: 53px }
   nav-tab-active: { backgroundColor: "{colors.canvas-subtle}", textColor: "{colors.accent}" }
   disclosure:     { align: left, chevron: right }   # collapsible details/summary header
 icons:
@@ -108,7 +108,7 @@ Card grid on a quiet canvas. Content column max ~480px on phones, centered. A
 single **`spacing.gutter` (12px)** sets every gap — between cards/tiles *and* from
 the page edges — so the spacing reads uniform in every direction.
 **Reserve bottom padding equal to the nav height + safe-area inset** so the fixed
-bar never covers content (`padding-bottom: calc(56px + env(safe-area-inset-bottom))`).
+bar never covers content (`padding-bottom: calc(61px + env(safe-area-inset-bottom))`).
 Installable PWAs lock to a fixed scale: viewport
 `maximum-scale=1, user-scalable=no` + `touch-action: manipulation` on the body —
 no pinch, no double-tap zoom.
@@ -134,8 +134,8 @@ identically; treat every bullet as a hard requirement, not a suggestion.
   (`@media (pointer: coarse)`): `position: fixed`, anchored to the *viewport*
   bottom via `100dvh` + `env(safe-area-inset-bottom)` (never the content bottom —
   that is the iOS-PWA footgun), `rounded.nav` corners, backdrop blur, an
-  equal-width grid of tabs. The bar stands **56px** tall and sits with **equal
-  `spacing.gutter` (12px) margins on left, right, and bottom** so it reads
+  equal-width grid of tabs. The bar stands **61px** tall and sits with **equal
+  21px margins on left, right, and bottom** so it reads
   centered and breathes evenly.
 - **One active tab at a time.** The active tab takes the subtle surface + accent
   text and sits at `tabindex 0`; the others are `tabindex -1`, with
