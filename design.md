@@ -66,7 +66,7 @@ components:
   nav-bar:        { backgroundColor: "{colors.card}", rounded: "{rounded.nav}", height: 61px, margin: 21px }
   nav-tab:        { textColor: "{colors.fg-muted}", rounded: "{rounded.pill}", height: 53px }
   nav-tab-active: { backgroundColor: "{colors.canvas-subtle}", textColor: "{colors.accent}" }
-  disclosure:     { align: left, chevron: right }   # collapsible details/summary header
+  disclosure:     { align: left, chevron: right, closedHeight: 52px }   # collapsible details/summary header — the summary owns the height so a stack of cards aligns when closed
 icons:
   set:     "Lucide"               # canonical fleet icon set — https://lucide.dev
   url:     "https://lucide.dev"
@@ -160,7 +160,11 @@ label** (state is read from thumb position + track color; `role="switch"` +
 `aria-checked` carry it for assistive tech), one canonical size everywhere. Its
 track is the accent when on; a **state** toggle (power on/off, alarm bypass) may
 substitute the relevant status color instead. Collapsible `details/summary`
-headers (`disclosure`) left-align the icon + title with the chevron pinned right.
+headers (`disclosure`) left-align the icon + title with the chevron pinned right,
+and share one fixed **closed height** (`disclosure.closedHeight`, 52px): the
+`summary` owns the header padding and the card's own `padding` is zeroed, so a
+vertical stack of collapsible cards lines up exactly when collapsed (a card that
+keeps its own padding stands taller than its neighbours — the bug this prevents).
 Reuse the **vendored** nav/UI snippets from `project-scaffolding` verbatim — do
 not re-author them per app (the same model as `single_instance.py` /
 `tray_lifecycle.ps1`).

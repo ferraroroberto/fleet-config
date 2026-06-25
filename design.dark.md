@@ -65,7 +65,7 @@ components:
   nav-bar:        { backgroundColor: "{colors.card}", rounded: "{rounded.nav}", height: 61px, margin: 21px }
   nav-tab:        { textColor: "{colors.fg-muted}", rounded: "{rounded.pill}", height: 53px }
   nav-tab-active: { backgroundColor: "{colors.canvas-subtle}", textColor: "{colors.accent}" }
-  disclosure:     { align: left, chevron: right }   # collapsible details/summary header
+  disclosure:     { align: left, chevron: right, closedHeight: 52px }   # collapsible details/summary header — structural, identical to Light (see design.md)
 ---
 
 ## Overview
