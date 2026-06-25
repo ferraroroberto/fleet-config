@@ -1,10 +1,18 @@
 """Ping Slack when a live session needs attention — so you can stop babysitting.
 
-Wired to Claude Code's ``Notification`` event. It pings only on the
-``permission_prompt`` sub-type (a permission gate or an ``AskUserQuestion`` —
-the "come look, I'm blocked" push) and **no-ops on ``idle_prompt``** (the 💤
-"gone idle" nag is noise). It rides the `slack_notify` transport, so an AFK
-human gets a real phone notification instead of a desktop toast nobody sees.
+**Claude Code only.** This hook is wired *solely* into Claude Code's
+``Notification`` event (``settings.template.json``) — no other agent has an
+equivalent event surface (Codex's ``hooks.json`` is PreToolUse/PostToolUse only;
+Pi exposes no hook surface), so the agent label below is the deterministic
+constant ``"Claude Code"`` rather than something inferred. Extending the
+"awaits your input" ping to Codex and Pi (and parametrizing the label once a
+second caller exists) is tracked separately in fleet-config#213.
+
+It pings only on the ``permission_prompt`` sub-type (a permission gate or an
+``AskUserQuestion`` — the "come look, I'm blocked" push) and **no-ops on
+``idle_prompt``** (the 💤 "gone idle" nag is noise). It rides the `slack_notify`
+transport, so an AFK human gets a real phone notification instead of a desktop
+toast nobody sees.
 
 **Opt-in, default off.** It does nothing unless the current project declares a
 ``slack_notify_channel`` in ``hooks/projects.toml`` (or a ``[global]
@@ -42,9 +50,11 @@ def classify(payload: dict) -> tuple[str, str]:
     permission) isn't possible here. Icon by type; idle/other pass the message
     through, but a permission prompt is reworded to "awaits your input" because
     it's just as often a question (AskUserQuestion) as a real permission gate.
+    The agent name is hardcoded "Claude Code" because this hook only ever fires
+    from Claude Code (see module docstring; Codex/Pi are fleet-config#213).
     """
     if payload.get("notification_type") == "permission_prompt":
-        return "🔔", "Claude awaits your input"
+        return "🔔", "Claude Code awaits your input"
     raw = str(payload.get("message") or "needs your attention").strip()
     return _ICONS.get(payload.get("notification_type"), "🔔"), raw
 
