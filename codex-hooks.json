@@ -24,6 +24,10 @@
           {
             "type": "command",
             "command": "C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File 'C:\\Users\\rober\\.codex\\hooks\\run-hook.ps1' -Hook venv_discipline"
+          },
+          {
+            "type": "command",
+            "command": "C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File 'C:\\Users\\rober\\.codex\\hooks\\run-hook.ps1' -Hook context_filter_hook"
           }
         ]
       }

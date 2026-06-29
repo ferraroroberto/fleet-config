@@ -273,6 +273,13 @@ window.CONFIG = {
       "ds": "Enforce the project's `.venv` discipline."
     },
     {
+      "nm": "context_filter_hook",
+      "ev": "PreToolUse · Bash·PowerShell",
+      "block": false,
+      "reach": "Claude + Codex",
+      "ds": "PreToolUse adapter for the local fleet context filter."
+    },
+    {
       "nm": "docs_dated_filename_guard",
       "ev": "PreToolUse · Write",
       "block": true,
@@ -333,6 +340,14 @@ window.CONFIG = {
     {
       "nm": "_lib",
       "ds": "Shared helpers for the fleet-config hooks."
+    },
+    {
+      "nm": "context_filter",
+      "ds": "Local command-output compression for the fleet hook layer."
+    },
+    {
+      "nm": "context_filter_cli",
+      "ds": "CLI entrypoint for the fleet context filter."
     },
     {
       "nm": "conversation_index",

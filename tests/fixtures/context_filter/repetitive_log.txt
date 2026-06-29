@@ -1,0 +1,21 @@
+2026-06-27T09:00:01.001Z INFO request id=2f79f7cf-1111-4111-8111-8e5200000001 path=/api/projects duration=18ms status=200
+2026-06-27T09:00:02.002Z INFO request id=2f79f7cf-1111-4111-8111-8e5200000002 path=/api/projects duration=19ms status=200
+2026-06-27T09:00:03.003Z INFO request id=2f79f7cf-1111-4111-8111-8e5200000003 path=/api/projects duration=17ms status=200
+2026-06-27T09:00:04.004Z INFO request id=2f79f7cf-1111-4111-8111-8e5200000004 path=/api/projects duration=20ms status=200
+2026-06-27T09:00:05.005Z INFO request id=2f79f7cf-1111-4111-8111-8e5200000005 path=/api/projects duration=18ms status=200
+2026-06-27T09:00:06.006Z INFO request id=2f79f7cf-1111-4111-8111-8e5200000006 path=/api/projects duration=19ms status=200
+2026-06-27T09:00:07.007Z INFO request id=2f79f7cf-1111-4111-8111-8e5200000007 path=/api/projects duration=17ms status=200
+2026-06-27T09:00:08.008Z INFO request id=2f79f7cf-1111-4111-8111-8e5200000008 path=/api/projects duration=20ms status=200
+2026-06-27T09:00:09.009Z INFO request id=2f79f7cf-1111-4111-8111-8e5200000009 path=/api/projects duration=18ms status=200
+2026-06-27T09:00:10.010Z INFO request id=2f79f7cf-1111-4111-8111-8e5200000010 path=/api/projects duration=19ms status=200
+2026-06-27T09:00:11.011Z INFO request id=2f79f7cf-1111-4111-8111-8e5200000011 path=/api/projects duration=17ms status=200
+2026-06-27T09:00:12.012Z INFO request id=2f79f7cf-1111-4111-8111-8e5200000012 path=/api/projects duration=20ms status=200
+2026-06-27T09:01:00.000Z WARN database retry attempt=1 host=db.internal error=timeout
+2026-06-27T09:01:05.000Z WARN database retry attempt=2 host=db.internal error=timeout
+2026-06-27T09:01:10.000Z ERROR database retry exhausted host=db.internal error=timeout
+Traceback (most recent call last):
+  File "app/db.py", line 88, in connect
+    return pool.acquire(timeout=5)
+TimeoutError: database connection timed out
+2026-06-27T09:01:11.001Z INFO request id=2f79f7cf-1111-4111-8111-8e5200000013 path=/api/projects duration=21ms status=200
+2026-06-27T09:01:12.002Z INFO request id=2f79f7cf-1111-4111-8111-8e5200000014 path=/api/projects duration=18ms status=200
