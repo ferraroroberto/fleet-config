@@ -299,6 +299,9 @@ def main() -> int:
     # ---- cert_drift helper pure-logic tests (skills/_lib) ----
     failures += _cert_drift_unit_check()
 
+    # ---- audit_retry helper pure-logic tests (skills/_lib) ----
+    failures += _audit_retry_unit_check()
+
     # ---- learning-log report.py pure helpers (.claude/skills/learning-log) ----
     failures += _learning_log_unit_checks()
 
@@ -919,6 +922,26 @@ def _cert_drift_unit_check() -> int:
     )
     ok = proc.returncode == 0
     print(f"{'OK   ' if ok else 'FAIL '} cert_drift: pure-logic unit tests")
+    if not ok:
+        for line in (proc.stdout or "").strip().splitlines():
+            print(f"        | {line}")
+    return 0 if ok else 1
+
+
+def _audit_retry_unit_check() -> int:
+    """Run skills/_lib/audit_retry.py's pure-logic tests as a subprocess.
+
+    Standalone (like test_cert_drift) so the /audit-fleet self-relaunch state
+    machine — launch counting, the arm/final boundary at the retry cap, and the
+    clear-resets-the-chain contract — is testable on its own, with no Task
+    Scheduler writes, and reachable from the one gate. (fleet-config#222)
+    """
+    proc = subprocess.run(
+        [PYTHON, str(REPO / "tests" / "test_audit_retry.py")],
+        capture_output=True, text=True, encoding="utf-8", errors="replace",
+    )
+    ok = proc.returncode == 0
+    print(f"{'OK   ' if ok else 'FAIL '} audit_retry: pure-logic unit tests")
     if not ok:
         for line in (proc.stdout or "").strip().splitlines():
             print(f"        | {line}")
