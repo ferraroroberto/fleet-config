@@ -32,10 +32,12 @@ PYTHON   = shutil.which("py") or shutil.which("python") or sys.executable
 FAKE_XOXB = "-".join(("xo" + "xb", "2444556677", "8899001122", "AbCdEfGhIjKlMnOpQrStUvWx"))
 
 
-def run(hook: str, payload: Dict[str, Any]) -> Tuple[int, str, str]:
+def run(hook: str, payload: Dict[str, Any], extra_env: Dict[str, str] | None = None) -> Tuple[int, str, str]:
     # Strip SLACK_BOT_TOKEN so a hook that posts to Slack (notify_on_idle) takes
     # the graceful-fail path instead of firing a real ping on every test run.
     env = {k: v for k, v in os.environ.items() if k != "SLACK_BOT_TOKEN"}
+    if extra_env:
+        env.update(extra_env)
     res = subprocess.run(
         [PYTHON, str(HOOKS / f"{hook}.py")],
         input=json.dumps(payload),
@@ -179,6 +181,12 @@ def main() -> int:
          "docs_dated_filename_guard",
          {"tool_name": "Edit", "tool_input": {"file_path": "E:/automation/foo/docs/2026-06-18-retro.md"}},
          0),
+
+        # ---- context_filter_hook (disabled unless env opts in) ----
+        ("context_filter_hook: default off -> allow",
+         "context_filter_hook",
+         {"tool_name": "PowerShell", "cwd": str(REPO), "tool_input": {"command": "git status --short"}},
+         0),
     ]
 
     # ---- py_syntax_check needs real files ----
@@ -250,6 +258,9 @@ def main() -> int:
         code, _stdout, stderr = run(hook, payload)
         if not assert_exit(name, expected, code, stderr):
             failures += 1
+
+    # ---- context filter hook JSON + fixture eval ----
+    failures += _context_filter_unit_checks()
 
     # ---- slack_notify unit checks (pure / no network) ----
     failures += _slack_notify_unit_checks()
@@ -328,14 +339,72 @@ def main() -> int:
     return 0 if failures == 0 else 1
 
 
-# Sum of the unit checks below: slack_notify (3) + mention (5) + classify (6) +
-# notify_complete (18) + work_summary (5) + slack_routing (10) +
+# Sum of the unit checks below: context_filter (3) + slack_notify (3) +
+# mention (5) + classify (6) + notify_complete (18) + work_summary (5) + slack_routing (10) +
 # conversation_capture (13) + conversation_index (6) + restart_webapp (6) +
 # gh_body_file_guard (6) + tier23_hooks (10) + audit_issue (1) +
 # worktree_claim (1) + ux_surface (1) + cert_drift (1) + learning_log (16) +
 # system_map (3) + fleet_toml (3) + system_map_whatchanged (7) +
 # config_map (8) + settings_template_sync (1).
-_UNIT_CHECK_COUNT = 130
+_UNIT_CHECK_COUNT = 133
+
+
+def _context_filter_unit_checks() -> int:
+    failures = 0
+
+    def check(case: str, ok: bool, detail: str = "") -> None:
+        nonlocal failures
+        print(f"{'OK   ' if ok else 'FAIL '} {case}")
+        if not ok:
+            failures += 1
+            if detail:
+                for line in detail.strip().splitlines():
+                    print(f"        | {line}")
+
+    payload = {
+        "tool_name": "PowerShell",
+        "cwd": str(REPO),
+        "tool_input": {"command": "git status --short"},
+    }
+    code, stdout, stderr = run("context_filter_hook", payload, {"FLEET_CONTEXT_FILTER_MODE": "rewrite"})
+    check(
+        "context_filter_hook: rewrite mode emits updatedInput",
+        code == 0 and "context_filter_cli.py" in stdout and "updatedInput" in stdout,
+        stdout + stderr,
+    )
+
+    streaming = {
+        "tool_name": "PowerShell",
+        "cwd": str(REPO),
+        "tool_input": {"command": "npm run dev -- --watch"},
+    }
+    code, stdout, stderr = run("context_filter_hook", streaming, {"FLEET_CONTEXT_FILTER_MODE": "rewrite"})
+    check(
+        "context_filter_hook: streaming command passthrough",
+        code == 0 and stdout.strip() == "",
+        stdout + stderr,
+    )
+
+    res = subprocess.run(
+        [
+            PYTHON,
+            str(HOOKS / "context_filter_cli.py"),
+            "eval",
+            "--fixtures",
+            str(REPO / "tests" / "fixtures" / "context_filter"),
+            "--min-median-reduction",
+            "35",
+        ],
+        capture_output=True,
+        text=True,
+        timeout=15,
+    )
+    check(
+        "context_filter_eval: fixture benchmark passes",
+        res.returncode == 0 and "median reduction:" in res.stdout,
+        res.stdout + res.stderr,
+    )
+    return failures
 
 
 def _system_map_coverage_check() -> int:

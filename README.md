@@ -10,7 +10,7 @@ The hooks here are project-aware via a single `hooks/projects.toml` registry: ge
 
 ## What's in here today
 
-11 hooks under `hooks/` that enforce the rituals I kept correcting Claude on, across the home-stack fleet:
+12 hooks under `hooks/` that enforce the rituals I kept correcting Claude on, across the home-stack fleet:
 
 | Hook | Event | What it does |
 |---|---|---|
@@ -23,10 +23,19 @@ The hooks here are project-aware via a single `hooks/projects.toml` registry: ge
 | `docs_dated_filename_guard.py` | `PreToolUse` on `Write` | Blocks a `Write` of a `YYYY-MM-DD-`prefixed file under a `docs/` directory — `docs/` is durable reference, not dated retrospectives (the issue + PR + `git log` are the changelog). Override with `CLAUDE_HOOKS_ALLOW_DATED_DOCS=1`. |
 | `hub_bypass_warn.py` | `PostToolUse` on `Edit` / `Write` for `*.py` | Non-blocking nudge when a `*.py` outside the LLM-hub repo spawns an inline `claude -p` subprocess → route through the local hub at `127.0.0.1:8000` via the standard SDKs instead. |
 | `browser_stealth_lint.py` | `PostToolUse` on `Edit` / `Write` | Non-blocking nudge when a browser-launch file (`chrome_launch.py` / `browser.py` / `*_session.py`) launches Chrome but is missing a stealth marker (`--enable-automation` strip, `navigator.webdriver` init, `channel="chrome"`, `AutomationControlled`) → import the project's single-source launch helper. |
+| `context_filter_hook.py` | `PreToolUse` on `Bash` / `PowerShell` | Dormant by default token-reduction hook. Set `FLEET_CONTEXT_FILTER_MODE=shadow` to execute through the local wrapper while returning raw output and logging would-save metrics; set `rewrite` to return compressed output with a local raw-output retrieval key. The compressor is pure Python (`context_filter.py` + `context_filter_cli.py`), skips streaming/destructive/pipe-heavy commands, fails open, and carries a reproducible fixture eval. |
 | `restart_and_verify_webapp.py` | slash command `/restart-webapp` | Project-aware: looks up the webapp port from `projects.toml`, kills only that PID, then brings the webapp back — via the project's `restart_cmd` (a `WebappManager` respawn the tray adopts, for tray-owned apps) or `tray.bat` — and polls `/api/version` until `git_sha == HEAD`, reporting the new `asset_hash`. Never touches the `:8446` session-host. |
 | `notify_on_idle.py` | `Notification` | **Claude Code only** (no other agent exposes this event — Codex/Pi coverage tracked in #213). Opt-in (off unless a project/`[global]` `slack_notify_channel` is set): pings Slack via `slack_notify` when a live session is **blocked** on input (a permission gate or `AskUserQuestion`) with `🔔 Claude Code awaits your input`, so an AFK human gets a phone notification — routed to the `#attention` channel (issue #139). No-ops on the 💤 idle nag. |
 
 `hooks/pi_usage_stats.py` is the Pi usage bridge for Coding stats. It reads Pi's native JSONL sessions under `~/.pi/agent/sessions/` and emits content-free telemetry — agent=`pi`, cwd/project, provider, model, message/tool-call counts, and token/cost totals from each assistant message's `usage` block. Example: `py hooks/pi_usage_stats.py --json --include-sessions`. This is the source app-launcher (or any fleet stats job) should ingest for Pi instead of scraping terminal transcripts; prompt/response text is deliberately omitted.
+
+The context-filter spike is validated by a fixture benchmark, not vendor claims. Reproduce it with:
+
+```powershell
+py hooks/context_filter_cli.py eval --fixtures tests/fixtures/context_filter
+```
+
+The benchmark reports raw vs compressed token estimates, line counts, latency, and golden-string failures for representative outputs (`pytest`, `npm test`, `git status`, logs, JSON). Shadow-mode telemetry writes JSONL to `%USERPROFILE%\.fleet-context-filter\shadow.jsonl`; rewrite mode caches raw outputs under `%USERPROFILE%\.fleet-context-filter\blobs\` unless the output looks secret-like.
 
 Alongside the hooks, `hooks/slack_notify.py` is a shared **Slack-notify transport** (importable + CLI, stdlib-only) any skill / hook / unattended job can call to fire a real bot-identity notification — zero install via the `hooks/` junction. It posts text (`chat.postMessage`) or **uploads a file** (`--file`, via Slack's external-upload flow) — e.g. `/system-map` posts its rendered PNG with it. On top of it, `hooks/notify_complete.py` is the **deterministic skill-completion ping** the `issue-*` / fleet skills call (`--kind add|start|finish|yolo|batch|audit|cleanup|recap|finish-batch|learning`): it builds the one canonical message and pulls the real GitHub link from `gh` in Python rather than letting the model paraphrase. Every machine→me ping carries an **intent category** routed to a dedicated channel (issue #139) — `#attention` for act-now pings (blocked-on-input, `start`/`batch`/`cleanup`-with-review) vs `#log` for the activity record (filed/shipped/merged, the `/system-map` image, the `/insights-weekly` digest) — single-sourced in `_lib.resolve_slack_target(cwd, category=…)`, which falls back to `slack_notify_channel` when a category channel is unset. The PR-shipping kinds (`finish` / `yolo`) append a **work-summary roll-up** under the canonical line — the file/LOC shape of the merged change (`📊 +N −M · K files` + new/changed/deleted buckets) — computed deterministically by `hooks/work_summary.py` from `gh pr view` (no LLM). Its CLI (`py hooks/work_summary.py --pr <N|url>`) additionally prints a churn-sorted **per-file table** that `/issue-finish` and `/issue-yolo` echo into the chat report; the table is chat-only (Slack mrkdwn has no tables). Both degrade to nothing on any `gh` error, so a stats hiccup never blocks a finish. The mention decision is single-sourced in `slack_notify.notify()` and defaults off (the `[global] slack_notify_mention` toggle). The full Slack story (bot helper vs session hook vs the native "Claude in Slack" remote control, plus one-time setup) is in [`docs/slack-workflow.md`](docs/slack-workflow.md).
 
@@ -91,6 +100,9 @@ fleet-config/
 │   ├── docs_dated_filename_guard.py   # PreToolUse on Write: block dated YYYY-MM-DD- filenames under docs/
 │   ├── hub_bypass_warn.py             # PostToolUse on *.py: nudge inline `claude -p` → route through the local hub
 │   ├── browser_stealth_lint.py        # PostToolUse: nudge a browser-launch file missing the anti-bot stealth kwargs
+│   ├── context_filter.py              # local deterministic output compressor used by the context-filter hook/eval
+│   ├── context_filter_cli.py          # wrapper/eval CLI: shadow, rewrite, retrieve, fixture benchmark
+│   ├── context_filter_hook.py         # dormant PreToolUse rewriter; enable with FLEET_CONTEXT_FILTER_MODE=shadow|rewrite
 │   ├── restart_and_verify_webapp.py   # also exposed as /restart-webapp
 │   ├── notify_on_idle.py            # Notification hook (via run-hook.ps1): opt-in Slack ping
 │   ├── slack_notify.py              # shared Slack-notify transport (importable + CLI, stdlib-only)

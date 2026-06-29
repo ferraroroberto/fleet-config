@@ -1,0 +1,48 @@
+============================= test session starts =============================
+platform win32 -- Python 3.12.4, pytest-8.4.0, pluggy-1.5.0
+rootdir: E:\automation\family-accounting
+collected 312 items
+
+tests/test_accounts.py .................................................. [ 16%]
+tests/test_categories.py ................................................. [ 32%]
+tests/test_importer.py .................................................. [ 48%]
+tests/test_reports.py ................................................... [ 64%]
+tests/test_billing.py ........F.......................................... [ 81%]
+tests/test_exports.py ................................................... [ 97%]
+tests/test_smoke.py ......                                                [100%]
+
+================================== FAILURES ===================================
+____________________________ test_invoice_total _____________________________
+
+    def test_invoice_total() -> None:
+        invoice = build_invoice([Decimal("10.00"), Decimal("12.00")], tax=Decimal("4.62"))
+>       assert invoice.total == Decimal("26.63")
+E       AssertionError: assert Decimal('26.62') == Decimal('26.63')
+E        +  where Decimal('26.62') = Invoice(total=Decimal('26.62')).total
+E        +  and   Decimal('26.63') = Decimal('26.63')
+
+tests/test_billing.py:42: AssertionError
+---------------------------- Captured stdout call -----------------------------
+loading account 1001 from fixture row 1
+loading account 1001 from fixture row 2
+loading account 1001 from fixture row 3
+loading account 1001 from fixture row 4
+loading account 1001 from fixture row 5
+loading account 1001 from fixture row 6
+loading account 1001 from fixture row 7
+loading account 1001 from fixture row 8
+loading account 1001 from fixture row 9
+loading account 1001 from fixture row 10
+loading account 1001 from fixture row 11
+loading account 1001 from fixture row 12
+loading account 1001 from fixture row 13
+loading account 1001 from fixture row 14
+loading account 1001 from fixture row 15
+loading account 1001 from fixture row 16
+loading account 1001 from fixture row 17
+loading account 1001 from fixture row 18
+loading account 1001 from fixture row 19
+loading account 1001 from fixture row 20
+=========================== short test summary info ===========================
+FAILED tests/test_billing.py::test_invoice_total - AssertionError: assert Decimal('26.62') == Decimal('26.63')
+======================== 1 failed, 311 passed in 18.72s ========================

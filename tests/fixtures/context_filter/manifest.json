@@ -1,0 +1,39 @@
+{
+  "cases": [
+    {
+      "name": "pytest failure",
+      "command": "pytest",
+      "fixture": "pytest_failure.txt",
+      "min_reduction_pct": 35,
+      "must_contain": ["FAILED tests/test_billing.py::test_invoice_total", "AssertionError", "tests/test_billing.py:42"]
+    },
+    {
+      "name": "npm success",
+      "command": "npm test",
+      "fixture": "npm_success.txt",
+      "min_reduction_pct": 55,
+      "must_contain": ["all visible test suites passed", "72 PASS lines"]
+    },
+    {
+      "name": "git status",
+      "command": "git status --short",
+      "fixture": "git_status.txt",
+      "min_reduction_pct": 20,
+      "must_contain": ["modified: hooks/context_filter.py", "new file: tests/fixtures/context_filter/manifest.json"]
+    },
+    {
+      "name": "repetitive log",
+      "command": "cat app.log",
+      "fixture": "repetitive_log.txt",
+      "min_reduction_pct": 45,
+      "must_contain": ["database retry exhausted", "Traceback (most recent call last)"]
+    },
+    {
+      "name": "large json",
+      "command": "gh pr list --json number,title,author,labels",
+      "fixture": "large_json.txt",
+      "min_reduction_pct": 70,
+      "must_contain": ["JSON array: 12 items", "author", "labels"]
+    }
+  ]
+}
