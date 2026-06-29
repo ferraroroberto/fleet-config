@@ -31,7 +31,7 @@ claude -p "/insights" --permission-mode bypassPermissions
 ### 2. Diff the two newest reports via the hub
 
 ```
-py skills/insights-weekly/report.py
+py .claude/skills/insights-weekly/report.py
 ```
 
 It finds the newest two `report-*.html`, strips each to clean text (`extract.py`), asks the hub to narrate the week-over-week delta, and writes `~/.claude/usage-data/weekly/insights-diff-<YYYY-MM-DD>.md`. It prints **the dated file path on line 1**, a blank line, then the **`TL;DR` digest** — capture both. On the first run (only one report) it writes a **baseline** instead and says so. Exit 3 means the hub call failed (model/backend down): report it, skip step 3, stop.

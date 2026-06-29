@@ -10,8 +10,8 @@ Pure logic, no I/O in the diff functions, so ``tests/run_acceptance.py`` can
 exercise them. The CLI at the bottom does the git read and is what the skill
 invokes::
 
-    py skills/system-map/whatchanged.py            # vs HEAD, default file
-    py skills/system-map/whatchanged.py --ref main # vs another ref
+    py .claude/skills/system-map/whatchanged.py            # vs HEAD, default file
+    py .claude/skills/system-map/whatchanged.py --ref main # vs another ref
 
 Repo identity matches the drift guard in ``run_acceptance.py``: a card's key is
 its ``repo`` field when present, else its ``nm``. Only the repo-bearing sections

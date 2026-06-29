@@ -44,7 +44,7 @@ Three fleet audit lenses, kept distinct so each stays sharp:
 ### 1. Measure the surface
 
 ```
-py skills/context-audit/audit.py
+py .claude/skills/context-audit/audit.py
 ```
 
 Prints a `MANIFEST:` line (skills / over-cap / claude_mds / leaks / total_est_tokens) then four blocks — skill-description word counts vs the cap, the always-on token budget per `CLAUDE.md` (+ fleet total), single-home leaks (project lines duplicated verbatim from `global-CLAUDE.md`), and header overlap with the scaffold master. Capture it. `--json` emits the full structured report; `--cap N` overrides the word cap.

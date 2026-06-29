@@ -465,7 +465,7 @@ One concise block: the plan line from step 3, per-repo results, where the digest
   aggregate (per-repo totals, week-over-week) by design.
 - **The weekly job** that schedules this lives in app-launcher
   (`config/jobs.json`, a `weekly` schedule, `visible: true` console) and calls a
-  thin `skills/audit-fleet/run-weekly.bat` wrapper in this repo. See that repo
+  thin `.claude/skills/audit-fleet/run-weekly.bat` wrapper in this repo. See that repo
   for the trigger; this skill is the work.
 - **Why a dead-man's switch and not a session-% gate** (fleet-config#222): the
   obvious "read my session % and wait" cannot work headless — Claude Code feeds
