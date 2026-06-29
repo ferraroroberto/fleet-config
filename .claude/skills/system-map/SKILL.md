@@ -7,7 +7,7 @@ description: Regenerate the fleet architecture map (crawl every repo under E:\au
 
 **Goal:** Keep one always-current, shareable picture of the whole personal fleet. Crawl the fleet, reconcile it against the written architecture, render the visual, commit when it changed, and drop the fresh image in Slack — every run, on-demand or scheduled.
 
-**The map is self-describing: each repo declares its own card in a root `.fleet.toml`, and `skills/system-map/build_data.py` aggregates those into `architecture/fleet.data.js`** (`window.FLEET = { …strict JSON… };`, the *generated* file the renderer reads). The hand-maintained input is `architecture/fleet.residual.json` — the non-repo structure (access/edge/compute/external/principles), every repo's fallback card in curated order, and an `_adopted` registry of repos that MUST carry a `.fleet.toml`. The visual (`architecture/system-map.html`) is a pure renderer that reads the generated `fleet.data.js`; `architecture/ARCHITECTURE.md` is the human-readable narrative that must agree with it. The acceptance matrix (`tests/run_acceptance.py`) fails loud if the fleet, the data file, the per-repo `.fleet.toml`s, and the doc ever drift apart — so keeping them in sync is enforced, not hoped for.
+**The map is self-describing: each repo declares its own card in a root `.fleet.toml`, and `.claude/skills/system-map/build_data.py` aggregates those into `architecture/fleet.data.js`** (`window.FLEET = { …strict JSON… };`, the *generated* file the renderer reads). The hand-maintained input is `architecture/fleet.residual.json` — the non-repo structure (access/edge/compute/external/principles), every repo's fallback card in curated order, and an `_adopted` registry of repos that MUST carry a `.fleet.toml`. The visual (`architecture/system-map.html`) is a pure renderer that reads the generated `fleet.data.js`; `architecture/ARCHITECTURE.md` is the human-readable narrative that must agree with it. The acceptance matrix (`tests/run_acceptance.py`) fails loud if the fleet, the data file, the per-repo `.fleet.toml`s, and the doc ever drift apart — so keeping them in sync is enforced, not hoped for.
 
 **Designed for unattended runs.** A weekly job invokes it via
 `claude -p "/system-map" --permission-mode bypassPermissions` from the
@@ -45,7 +45,7 @@ Keep edits minimal and in the existing card voice. Don't restructure layers or r
 Then regenerate the data file and validate:
 
 ```
-py skills/system-map/build_data.py     # residual + per-repo .fleet.toml → fleet.data.js
+py .claude/skills/system-map/build_data.py     # residual + per-repo .fleet.toml → fleet.data.js
 py tests/run_acceptance.py
 ```
 
@@ -54,7 +54,7 @@ The `system_map:` checks fail loud if the fleet, `fleet.data.js`, the per-repo `
 ### 3. Render the visual
 
 ```
-py skills/system-map/render.py
+py .claude/skills/system-map/render.py
 ```
 
 This measures the page and screenshots `architecture/system-map.png` at 2× with placeholders forced. On a render failure it prints the real Chrome/console error — fix the `DATA`/HTML and re-run (the page logs a single `DIMS w h` line on success).
@@ -65,7 +65,7 @@ Before committing (so `HEAD` still points at the previous run), capture the
 one-line "what changed" summary for the Slack post:
 
 ```
-py skills/system-map/whatchanged.py
+py .claude/skills/system-map/whatchanged.py
 ```
 
 This diffs the freshly-reconciled working `architecture/fleet.data.js` against

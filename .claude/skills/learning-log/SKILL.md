@@ -33,8 +33,8 @@ description: Weekly learning log + forward horizon + productivity stats distille
 ### 1. Gather + stat the work stream
 
 ```
-py skills/learning-log/gather.py gather              # scheduled: auto window
-py skills/learning-log/gather.py gather --since 2026-05-01   # override (backfill/validation)
+py .claude/skills/learning-log/gather.py gather              # scheduled: auto window
+py .claude/skills/learning-log/gather.py gather --since 2026-05-01   # override (backfill/validation)
 ```
 
 It lists every fleet repo (`gh repo list`), reads each repo's merged PRs + closed issues **per repo** (`gh pr list` / `gh issue list` — REST, so the full window is covered with no cap and no search rate-limit), buckets each item by work type, computes exact stats, and writes into `<OUT_DIR>`: `stats.md` (the productivity tables), `prior-horizon.md`, and one `bucket-<slug>.md` per non-empty bucket. It prints a **manifest** — capture every line:
@@ -79,7 +79,7 @@ Compose the weekly digest as markdown (single long lines, no hard wraps). Order:
 Write the new horizon bullets to `horizon.md` and the discovery bullets to `discoveries.md` (in `OUT_DIR`), then let Python preserve the durable archive + stamp `last-run-at`. `build_ledger_body` also renders a fixed **Fleet map** link near the top of the body — the `architecture/system-map.png` produced by `/system-map` (cross-linked, never regenerated here):
 
 ```
-py skills/learning-log/gather.py assemble-ledger \
+py .claude/skills/learning-log/gather.py assemble-ledger \
   --repo ferraroroberto/fleet-config \
   --horizon-file <OUT_DIR>/horizon.md --discoveries-file <OUT_DIR>/discoveries.md \
   --out <OUT_DIR>/ledger-body.md
@@ -121,7 +121,7 @@ A few lines: window, grand totals, buckets analysed (+ any agent that errored), 
 
 ## Wiring the weekly schedule
 
-An app-launcher Job (`config/jobs.json`, weekly, `visible: true`) calls `skills/learning-log/run-weekly.bat`, staggered clear of the other Friday claude-runs:
+An app-launcher Job (`config/jobs.json`, weekly, `visible: true`) calls `.claude/skills/learning-log/run-weekly.bat`, staggered clear of the other Friday claude-runs:
 
 ```
 claude -p "/learning-log" --model claude-sonnet-4-6 --permission-mode bypassPermissions

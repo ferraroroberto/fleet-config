@@ -7,8 +7,8 @@ in the real hardware specs from a local ``system-map.local.js``.
 
 Used by the ``/system-map`` skill; also runnable by hand::
 
-    py skills/system-map/render.py            # defaults to architecture/system-map.{html,png}
-    py skills/system-map/render.py --scale 3  # crisper
+    py .claude/skills/system-map/render.py            # defaults to architecture/system-map.{html,png}
+    py .claude/skills/system-map/render.py --scale 3  # crisper
 
 Chrome and a working tmp dir are the only requirements (no extra Python deps).
 """
