@@ -41,7 +41,7 @@ window.FLEET = {
     {"ic": "🌐", "nm": "website", "ds": "Multi-workshop landing site."},
     {"ic": "🎓", "nm": "vibe-coding-workshop", "ds": "Python workshop + exercises."},
     {"ic": "🌱", "nm": "life-os", "ds": "Productivity skills — diary, prep, muse.", "tag": ["via", "launcher"]},
-    {"ic": "🌡️", "nm": "home-automation", "port": 8447, "ds": "Home automation suite: AC control, solar/energy monitoring, and home-network health.", "chips": ["FastAPI", "PWA", "MELCloud", "SMA", "Tuya", "Network"]}
+    {"ic": "🌡️", "nm": "home-automation", "port": 8447, "ds": "Home automation suite: AC control, solar/energy monitoring, and home-network health.", "chips": ["FastAPI", "PWA", "MELCloud", "SMA", "Tuya", "Network", "Telegram"]}
   ],
   "pipe": [
     {"ic": "💳", "nm": "accounting-quarterly", "ds": "Stripe payments → quarterly reports.", "tag": ["→", "Stripe"]},
@@ -56,7 +56,8 @@ window.FLEET = {
     {"ic": "🗂️", "nm": "copilot-studio-transcripts", "ds": "Copilot Studio workbench."},
     {"ic": "📚", "nm": "closed-company-accounting", "ds": "Accounting for a closed company."},
     {"ic": "🤖", "nm": "automation", "ds": "Python automation grab-bag."},
-    {"ic": "📁", "nm": "mcp-personal-onedrive", "ds": "Read-only MCP to browse OneDrive.", "tag": ["→", "OneDrive"]}
+    {"ic": "📁", "nm": "mcp-personal-onedrive", "ds": "Read-only MCP to browse OneDrive.", "tag": ["→", "OneDrive"]},
+    {"ic": "☁️", "nm": "Oracle to GCP", "repo": "oracle-to-gcp", "ds": "Local Oracle SQL to BigQuery translator prototype with a SQLite-backed mock validation loop."}
   ],
   "external": [
     {"ic": "💬", "nm": "Slack", "fr": "from app-launcher (orchestration)"},

@@ -143,6 +143,9 @@ cwd_prefix = "E:/automation/mcp-personal-onedrive"
 [notion-automation-files]
 cwd_prefix = "E:/automation/notion-automation-files"
 
+[oracle-to-gcp]
+cwd_prefix = "E:/automation/oracle-to-gcp"
+
 [pdf-to-markdown]
 cwd_prefix = "E:/automation/pdf-to-markdown"
 

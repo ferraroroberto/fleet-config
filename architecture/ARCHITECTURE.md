@@ -127,6 +127,7 @@ The **work layer**, enabled by L2. Most mature ones are **web apps exposing an A
 | 📧 **email-archiver** | Index + archive Outlook emails into a structured OneDrive tree. | pipeline | **Outlook → OneDrive** |
 | 📄 **pdf-to-markdown** | PDF → clean, token-efficient Markdown for LLM consumption. | pipeline/lib | — |
 | 🧾 **mass-html-to-markdown** | Ingest HTML comparison pages → SQLite → Markdown. | pipeline | — |
+| ☁️ **oracle-to-gcp** | Oracle SQL → BigQuery translator prototype with mock dual-engine validation. | Streamlit/pipeline | hub |
 | 🎨 **illustration-color-edit** | Industrial SVG conversion pipelines for book illustrations. | pipeline | — |
 | ☀️ **pvgis** | Estimate a house's solar-PV output via the EU PVGIS service. | tool | (PVGIS API) |
 | 🗂️ **copilot-studio-transcripts** | Streamlit workbench for Copilot Studio transcripts. | Streamlit | — |
