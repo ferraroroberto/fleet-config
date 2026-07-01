@@ -41,7 +41,7 @@ window.FLEET = {
     {"ic": "🌐", "nm": "website", "ds": "Multi-workshop landing site."},
     {"ic": "🎓", "nm": "vibe-coding-workshop", "ds": "Python workshop + exercises."},
     {"ic": "🌱", "nm": "life-os", "ds": "Productivity skills — diary, prep, muse.", "tag": ["via", "launcher"]},
-    {"ic": "🌡️", "nm": "home-automation", "port": 8447, "ds": "Home automation suite: AC control, solar/energy monitoring, and home-network health.", "chips": ["FastAPI", "PWA", "MELCloud", "SMA", "Tuya", "Network", "Telegram"]}
+    {"ic": "🌡️", "nm": "home-automation", "port": 8447, "ds": "Home automation suite: AC, solar, alarm, network health, and native Home Assistant entities.", "chips": ["FastAPI", "PWA", "MELCloud", "SMA", "Tuya", "HA", "Telegram"]}
   ],
   "pipe": [
     {"ic": "💳", "nm": "accounting-quarterly", "ds": "Stripe payments → quarterly reports.", "tag": ["→", "Stripe"]},
