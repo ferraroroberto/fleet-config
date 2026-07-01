@@ -55,8 +55,19 @@ if hasattr(sys.stdout, "reconfigure"):  # UTF-8 even when stdout is captured (cp
 
 # ---- pure helpers (unit-tested without git) -------------------------------
 
+# The section heading may carry a descriptive suffix — `## UX surface — diff-keyed
+# design-conformance gate` (as the canonical scaffold does) or `## UX surface: home
+# views` — as long as it still starts with the exact `## UX surface` token. A word
+# boundary after `surface` keeps `## UX surfaces` (and other words) from matching.
+_UX_HEADING = re.compile(r"^##\s+UX surface(?:\b.*)?$")
+
+
 def parse_ux_surface_block(text: str) -> Optional[Dict[str, object]]:
     """Parse the `## UX surface` block out of a CLAUDE.md body.
+
+    The heading may carry a descriptive suffix (e.g. `## UX surface — diff-keyed
+    design-conformance gate`), so the canonical scaffold can keep its rich heading
+    on a *live* block; `## UX surfaces` and unrelated words do not match.
 
     Returns `{"spec_applies": bool, "paths": [...], "key_views": [...]}`, or
     `None` when the file has no such block. Structure is read by indentation:
@@ -76,7 +87,7 @@ def parse_ux_surface_block(text: str) -> Optional[Dict[str, object]]:
         if stripped.startswith("```") or stripped.startswith("~~~"):
             in_fence = not in_fence
             continue
-        if not in_fence and line.strip() == "## UX surface":
+        if not in_fence and _UX_HEADING.match(line.strip()):
             start = i + 1
             break
     if start is None:

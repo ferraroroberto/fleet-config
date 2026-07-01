@@ -85,6 +85,39 @@ That's the whole file — no live block.
 """
 check(ux.parse_ux_surface_block(FENCED) is None, "fenced template heading is ignored")
 
+# a heading with a descriptive suffix (as the canonical scaffold carries) still
+# parses as a live block, so a de-fenced scaffold heading is not silently dropped.
+SUFFIXED = """\
+## UX surface — diff-keyed design-conformance gate
+- design spec applies: yes
+- paths:
+  - app/webapp/static/**/*.css
+"""
+parsed_suffixed = ux.parse_ux_surface_block(SUFFIXED)
+check(parsed_suffixed is not None, "suffixed heading parses")
+assert parsed_suffixed is not None
+check(parsed_suffixed["spec_applies"] is True, "suffixed heading: spec applies parsed")
+check(parsed_suffixed["paths"] == ["app/webapp/static/**/*.css"], "suffixed heading: paths parsed")
+
+# a colon-style suffix is also tolerated
+check(ux.parse_ux_surface_block("## UX surface: home views\n- design spec applies: yes\n")
+      is not None, "colon-suffixed heading parses")
+
+# but a different word starting with the same prefix must NOT match
+check(ux.parse_ux_surface_block("## UX surfaces\n- design spec applies: yes\n") is None,
+      "'## UX surfaces' is not a UX surface block")
+
+# a fenced *suffixed* template heading is still ignored, like the bare one
+FENCED_SUFFIXED = """\
+Copy-paste default:
+
+```markdown
+## UX surface — diff-keyed design-conformance gate
+- design spec applies: yes
+```
+"""
+check(ux.parse_ux_surface_block(FENCED_SUFFIXED) is None, "fenced suffixed heading is ignored")
+
 
 # ---- brace expansion ----
 
