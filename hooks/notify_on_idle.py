@@ -98,6 +98,16 @@ def main() -> None:
     if payload.get("stop_hook_active"):
         _lib.allow()
 
+    # Persist the board state row (fleet-config#91) before any opt-in gating —
+    # a blocked/idle session must surface on the Fleet Board even for projects
+    # with Slack pings off, and a persistence failure must never touch the ping.
+    try:
+        import session_state
+        status = "idle" if payload.get("notification_type") == "idle_prompt" else "needs-you"
+        session_state.upsert_from_payload(payload, status)
+    except Exception:  # noqa: BLE001
+        pass
+
     # A "come look, I'm blocked" prompt is action-needed → the attention channel.
     channel, user, name = _lib.resolve_slack_target(_lib.cwd(payload), category="attention")
     if not channel:

@@ -41,3 +41,8 @@ venv/
 
 # Runtime logs (hook/automation output)
 logs/
+
+# Fleet Board session state (fleet-config#91) — written at runtime by
+# hooks/session_state.py; lands in the tree because ~/.claude/hooks is a
+# junction into this repo.
+hooks/state/
