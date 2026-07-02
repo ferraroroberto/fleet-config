@@ -315,6 +315,13 @@ window.CONFIG = {
       "ds": "Ping Slack when a live session needs attention — so you can stop babysitting."
     },
     {
+      "nm": "session_state",
+      "ev": "UserPromptSubmit",
+      "block": false,
+      "reach": "Claude only",
+      "ds": "Persist per-session state for the Fleet Board (fleet-config#91)."
+    },
+    {
       "nm": "restart_and_verify_webapp",
       "ev": "/restart-webapp (slash command)",
       "block": false,

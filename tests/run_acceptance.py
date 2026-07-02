@@ -271,6 +271,9 @@ def main() -> int:
     # ---- notify_on_idle classify / session-link / idle-suppression ----
     failures += _notify_classify_unit_checks()
 
+    # ---- session_state board-row persistence (fleet-config#91) ----
+    failures += _session_state_unit_checks()
+
     # ---- notify_complete deterministic message assembly + resolver ----
     failures += _notify_complete_unit_checks()
 
@@ -340,13 +343,14 @@ def main() -> int:
 
 
 # Sum of the unit checks below: context_filter (3) + slack_notify (3) +
-# mention (5) + classify (6) + notify_complete (18) + work_summary (5) + slack_routing (10) +
+# mention (5) + classify (6) + session_state (9) + notify_complete (18) +
+# work_summary (5) + slack_routing (10) +
 # conversation_capture (13) + conversation_index (6) + restart_webapp (6) +
 # gh_body_file_guard (6) + tier23_hooks (10) + audit_issue (1) +
 # worktree_claim (1) + ux_surface (1) + cert_drift (1) + learning_log (16) +
 # system_map (3) + fleet_toml (3) + system_map_whatchanged (7) +
 # config_map (8) + settings_template_sync (1).
-_UNIT_CHECK_COUNT = 133
+_UNIT_CHECK_COUNT = 142
 
 
 def _context_filter_unit_checks() -> int:
@@ -809,6 +813,95 @@ def _notify_classify_unit_checks() -> int:
               notify_on_idle.session_link(transcript({"type": "user"})) is None)
         check("session_link: missing path -> None", notify_on_idle.session_link(None) is None)
     finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+    return failures
+
+
+def _session_state_unit_checks() -> int:
+    """sessions-state.json persistence (fleet-config#91): event → status mapping,
+    same-session flip, pruning, corrupt-file recovery, and the notify_on_idle
+    piggyback — all against a temp CLAUDE_HOOKS_STATE_DIR so nothing touches the
+    real ~/.claude/hooks/state."""
+    sys.path.insert(0, str(HOOKS))
+    import session_state  # noqa: E402
+
+    failures = 0
+
+    def check(case: str, ok: bool) -> None:
+        nonlocal failures
+        print(f"{'OK   ' if ok else 'FAIL '} {case}")
+        if not ok:
+            failures += 1
+
+    tmp = Path(tempfile.mkdtemp(prefix="session_state_"))
+    env = {"CLAUDE_HOOKS_STATE_DIR": str(tmp)}
+    state_path = tmp / session_state.STATE_FILENAME
+
+    def rows() -> Dict[str, Any]:
+        try:
+            return json.loads(state_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return {}
+
+    saved_env = os.environ.get("CLAUDE_HOOKS_STATE_DIR")
+    os.environ["CLAUDE_HOOKS_STATE_DIR"] = str(tmp)
+    try:
+        # ---- subprocess: the two wired events, same session flips status ----
+        payload = {"hook_event_name": "UserPromptSubmit", "session_id": "sid-1",
+                   "transcript_path": str(tmp / "t.jsonl"), "cwd": str(tmp)}
+        code, _out, _err = run("session_state", payload, extra_env=env)
+        row = rows().get("sid-1") or {}
+        check("session_state: UserPromptSubmit -> exit 0 + row 'working' with cwd",
+              code == 0 and row.get("status") == "working" and row.get("cwd") == str(tmp))
+
+        code, _out, _err = run("session_state", {**payload, "hook_event_name": "Stop"}, extra_env=env)
+        check("session_state: Stop flips the same session to 'needs-you'",
+              code == 0 and (rows().get("sid-1") or {}).get("status") == "needs-you")
+
+        code, _out, _err = run("session_state", {"hook_event_name": "Stop", "cwd": str(tmp)}, extra_env=env)
+        check("session_state: missing session_id -> exit 0, no row added",
+              code == 0 and set(rows()) == {"sid-1"})
+
+        code, _out, _err = run("session_state", {**payload, "hook_event_name": "PreToolUse"}, extra_env=env)
+        check("session_state: unwired event -> exit 0, state untouched",
+              code == 0 and (rows().get("sid-1") or {}).get("status") == "needs-you")
+
+        # ---- in-process: multi-row, pruning, corrupt-file recovery ----
+        session_state.upsert("sid-2", status="working", project="p2",
+                             transcript_path=None, cwd_path=str(tmp))
+        check("session_state: second session -> two distinct rows", set(rows()) == {"sid-1", "sid-2"})
+
+        stale = rows()
+        stale["sid-old"] = {"project": "old", "status": "idle", "transcript_path": None,
+                            "cwd": str(tmp), "updated_at": "2020-01-01T00:00:00Z"}
+        state_path.write_text(json.dumps(stale), encoding="utf-8")
+        session_state.upsert("sid-2", status="needs-you", project="p2",
+                             transcript_path=None, cwd_path=str(tmp))
+        check("session_state: >24h-old row pruned on next write", "sid-old" not in rows())
+
+        state_path.write_text("{not json", encoding="utf-8")
+        session_state.upsert("sid-3", status="working", project="p3",
+                             transcript_path=None, cwd_path=str(tmp))
+        check("session_state: corrupt state file recovered by next upsert",
+              (rows().get("sid-3") or {}).get("status") == "working")
+
+        # ---- notify_on_idle piggyback: persists the row, ping path unchanged ----
+        idle_payload = {"session_id": "sid-4", "transcript_path": str(tmp / "t.jsonl"),
+                        "cwd": str(tmp), "notification_type": "permission_prompt",
+                        "message": "Claude needs your permission"}
+        code, _out, _err = run("notify_on_idle", idle_payload, extra_env=env)
+        check("notify_on_idle: permission_prompt persists a 'needs-you' row (exit 0)",
+              code == 0 and (rows().get("sid-4") or {}).get("status") == "needs-you")
+
+        code, _out, _err = run("notify_on_idle", {**idle_payload, "notification_type": "idle_prompt"}, extra_env=env)
+        check("notify_on_idle: idle_prompt persists 'idle' yet stays ping-silent (exit 0)",
+              code == 0 and (rows().get("sid-4") or {}).get("status") == "idle")
+    finally:
+        if saved_env is None:
+            os.environ.pop("CLAUDE_HOOKS_STATE_DIR", None)
+        else:
+            os.environ["CLAUDE_HOOKS_STATE_DIR"] = saved_env
         shutil.rmtree(tmp, ignore_errors=True)
 
     return failures
