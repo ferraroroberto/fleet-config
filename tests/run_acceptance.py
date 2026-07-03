@@ -343,14 +343,14 @@ def main() -> int:
 
 
 # Sum of the unit checks below: context_filter (3) + slack_notify (3) +
-# mention (5) + classify (6) + session_state (9) + notify_complete (18) +
+# mention (5) + classify (6) + session_state (11) + notify_complete (18) +
 # work_summary (5) + slack_routing (10) +
 # conversation_capture (13) + conversation_index (6) + restart_webapp (6) +
 # gh_body_file_guard (6) + tier23_hooks (10) + audit_issue (1) +
 # worktree_claim (1) + ux_surface (1) + cert_drift (1) + learning_log (16) +
 # system_map (3) + fleet_toml (3) + system_map_whatchanged (7) +
 # config_map (8) + settings_template_sync (1).
-_UNIT_CHECK_COUNT = 142
+_UNIT_CHECK_COUNT = 144
 
 
 def _context_filter_unit_checks() -> int:
@@ -897,6 +897,24 @@ def _session_state_unit_checks() -> int:
         code, _out, _err = run("notify_on_idle", {**idle_payload, "notification_type": "idle_prompt"}, extra_env=env)
         check("notify_on_idle: idle_prompt persists 'idle' yet stays ping-silent (exit 0)",
               code == 0 and (rows().get("sid-4") or {}).get("status") == "idle")
+
+        # ---- SessionEnd (#241): deletes the row instead of leaving it to the 24h prune ----
+        code, _out, _err = run(
+            "session_state",
+            {"hook_event_name": "SessionEnd", "session_id": "sid-1", "cwd": str(tmp)},
+            extra_env=env,
+        )
+        check("session_state: SessionEnd removes the row (exit 0)",
+              code == 0 and "sid-1" not in rows())
+
+        before = set(rows())
+        code, _out, _err = run(
+            "session_state",
+            {"hook_event_name": "SessionEnd", "session_id": "sid-does-not-exist", "cwd": str(tmp)},
+            extra_env=env,
+        )
+        check("session_state: SessionEnd for an unknown sid -> exit 0, file untouched",
+              code == 0 and set(rows()) == before)
     finally:
         if saved_env is None:
             os.environ.pop("CLAUDE_HOOKS_STATE_DIR", None)

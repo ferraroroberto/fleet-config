@@ -6,10 +6,14 @@ the hook payload's ``session_id`` — so the app-launcher Board tab
 (app-launcher#164) can render a "what needs me now" column without owning any
 hook plumbing. The board only *reads* the file; this module is the only writer.
 
-Wired into two Claude Code events (``settings.template.json``):
+Wired into three Claude Code events (``settings.template.json``):
 
 * ``UserPromptSubmit`` → status ``working`` (the user handed Claude the turn).
 * ``Stop`` → status ``needs-you`` (Claude finished; the ball is back with you).
+* ``SessionEnd`` → **deletes** the row (the session is gone, not waiting on
+  anyone). Fires on clean exit (``/exit``, ``clear``, ``logout``, prompt-input
+  exit); a hard kill (taskkill, crash) never fires it, so those rows still age
+  out via the 24h prune below (#241).
 
 ``notify_on_idle`` (the ``Notification`` hook) additionally upserts
 ``needs-you`` on a permission prompt and ``idle`` on the idle nag, so a blocked
@@ -160,12 +164,35 @@ def upsert_from_payload(payload: Dict[str, Any], status: str) -> None:
     )
 
 
+def remove(session_id: str) -> None:
+    """Delete one session's row (SessionEnd); silent no-op if the row is absent."""
+    path = state_file()
+    if not path.exists():
+        return
+    rows = _read_rows(path)
+    if str(session_id) not in rows:
+        return
+    del rows[str(session_id)]
+    _write_rows(path, rows)
+
+
+def remove_from_payload(payload: Dict[str, Any]) -> None:
+    """Delete the payload's session row; silent no-op without a session_id."""
+    session_id = payload.get("session_id")
+    if isinstance(session_id, str) and session_id:
+        remove(session_id)
+
+
 def main() -> None:
     try:
         payload = _lib.read_stdin_json()
-        status = _EVENT_STATUS.get(str(payload.get("hook_event_name") or ""))
-        if status:
-            upsert_from_payload(payload, status)
+        event = str(payload.get("hook_event_name") or "")
+        if event == "SessionEnd":
+            remove_from_payload(payload)
+        else:
+            status = _EVENT_STATUS.get(event)
+            if status:
+                upsert_from_payload(payload, status)
     except Exception:  # noqa: BLE001 — state is advisory; never disturb the session
         pass
     _lib.allow()
