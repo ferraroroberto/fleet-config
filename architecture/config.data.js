@@ -128,12 +128,12 @@ window.CONFIG = {
     },
     {
       "nm": "handoff-commit",
-      "ds": "Generate a copy-paste markdown prompt that hands off a specific GitHub commit to another LLM, instructing it to apply the same lo…",
+      "ds": "Generate a copy-paste prompt handing off a GitHub commit to another LLM, instructing it to apply the same change to a sister proj…",
       "scope": "repo"
     },
     {
       "nm": "issue-add",
-      "ds": "Turn a rough idea, brain-dump, or transcript into a well-formed, self-contained GitHub issue — researches the codebase for contex…",
+      "ds": "Turn a rough idea, brain-dump, or transcript into a well-formed GitHub issue — researches the codebase, drafts it the way a senio…",
       "scope": "repo"
     },
     {
@@ -148,27 +148,27 @@ window.CONFIG = {
     },
     {
       "nm": "issue-finish-batch",
-      "ds": "Ship a set of already-built, already-reviewed issue branches in parallel — fan out one background Sonnet agent per branch, each r…",
+      "ds": "Ship reviewed issue branches in parallel — fan out one background Sonnet agent per branch running /issue-finish one-shot (push, P…",
       "scope": "fleet"
     },
     {
       "nm": "issue-start",
-      "ds": "Start work on a GitHub issue — pick the issue, sync the main branch, cut a feature branch, load project context, then either pres…",
+      "ds": "Start work on a GitHub issue — pick it, sync main, cut a feature branch, load project context, then present a plan (enhancements)…",
       "scope": "repo"
     },
     {
       "nm": "issue-triage",
-      "ds": "Pull every open GitHub issue across all repos owned by ferraroroberto, score each one Small/Medium/Large by reading title + body,…",
+      "ds": "Pull every open GitHub issue across all repos owned by ferraroroberto, score each Small/Medium/Large, and present a per-project m…",
       "scope": "fleet"
     },
     {
       "nm": "issue-yolo",
-      "ds": "One-shot the full GitHub-issue workflow end-to-end — file the issue, cut the branch, build, validate hard, then ship (PR, CI, mer…",
+      "ds": "One-shot the GitHub-issue workflow end-to-end — file the issue, cut the branch, build, validate hard, then ship (PR, CI, merge, d…",
       "scope": "repo"
     },
     {
       "nm": "screen",
-      "ds": "Attach recent screenshots from E:\\downloads\\snaps to the conversation without manual copy-paste.",
+      "ds": "Attach recent screenshots from E:\\downloads\\snaps without manual copy-paste.",
       "scope": "repo"
     }
   ],
@@ -180,12 +180,12 @@ window.CONFIG = {
     },
     {
       "nm": "cleanup-fleet",
-      "ds": "Take one bucket of audit findings (a label like documentation, drift or bug) and fan out one background agent per repo to fix eve…",
+      "ds": "Take one bucket of audit findings (a label like documentation, drift, or bug) and fan out one background agent per repo to fix ev…",
       "sched": false
     },
     {
       "nm": "config-map",
-      "ds": "Regenerate the fleet config &amp; convention map (introspect install.ps1 + the skill/hook dirs + a per-repo git sweep, render to arch…",
+      "ds": "Regenerate the fleet config &amp; convention map (introspect install.ps1, the skill/hook dirs, a per-repo git sweep; render to archit…",
       "sched": true
     },
     {

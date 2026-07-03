@@ -22,7 +22,7 @@ REPO     = Path(__file__).resolve().parent.parent
 HOOKS    = REPO / "hooks"
 
 # Resolve a Python interpreter that can run the hooks
-PYTHON   = shutil.which("py") or shutil.which("python") or sys.executable
+PYTHON   = sys.executable
 
 # A synthetic Slack-token-shaped string for the secret_scan_guard cases. It is
 # assembled from fragments at runtime so the literal `xoxb-` token body never
@@ -1507,8 +1507,8 @@ def _work_summary_unit_checks() -> int:
 
     M = ws.MINUS  # U+2212, as the formatters emit
 
-    # changeType → bucket, source-agnostic (GraphQL DELETED + REST removed both deleted).
-    check("work_summary: bucket_for maps add/copy→new, del/removed→deleted, else→changed",
+    # changeType -> bucket, source-agnostic (GraphQL DELETED + REST removed both deleted).
+    check("work_summary: bucket_for maps add/copy->new, del/removed->deleted, else->changed",
           ws.bucket_for("ADDED") == "new" and ws.bucket_for("COPIED") == "new"
           and ws.bucket_for("DELETED") == "deleted" and ws.bucket_for("removed") == "deleted"
           and ws.bucket_for("MODIFIED") == "changed" and ws.bucket_for("RENAMED") == "changed"
@@ -1546,8 +1546,8 @@ def _work_summary_unit_checks() -> int:
     check("work_summary: empty buckets dropped + singular 'file'",
           ws.format_block(one) == f"📊 +8 {M}1 · 1 file\n   ✏️ 1 changed (+8 {M}1)")
 
-    # Degrade path: no files (or a {} from a failed gh call) → "" both renderings.
-    check("work_summary: no files → empty block and empty table",
+    # Degrade path: no files (or a {} from a failed gh call) -> "" both renderings.
+    check("work_summary: no files -> empty block and empty table",
           ws.format_block({}) == "" and ws.format_table({}) == ""
           and ws.format_block({"files": []}) == "")
 

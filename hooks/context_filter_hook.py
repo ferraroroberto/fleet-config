@@ -21,7 +21,7 @@ import context_filter  # noqa: E402
 
 
 def _python_command() -> str:
-    return shutil.which("py") or shutil.which("python") or sys.executable
+    return _quote_path(Path(sys.executable))
 
 
 def _quote_path(path: Path) -> str:

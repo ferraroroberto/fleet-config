@@ -52,11 +52,8 @@ def main() -> None:
         interpreter = str(venv_py)
 
     if interpreter is None:
-        for name in ("py", "python"):
-            resolved = shutil.which(name)
-            if resolved and _interpreter_works(resolved):
-                interpreter = resolved
-                break
+        if _interpreter_works(sys.executable):
+            interpreter = sys.executable
 
     if interpreter is None:
         # Can't check; don't block.

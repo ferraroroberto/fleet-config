@@ -1,6 +1,6 @@
 ---
 name: issue-start
-description: Start work on a GitHub issue — pick the issue, sync the main branch, cut a feature branch, load project context, then either present a plan (for enhancements) or build straight away (for bugs/chores). Use when beginning a new issue, e.g. "/issue-start 35", "/issue-start next", "/issue-start", "/issue-start 35 now" (force fast), or "/issue-start 35 plan" (force plan). Pairs with /issue-finish.
+description: Start work on a GitHub issue — pick it, sync main, cut a feature branch, load project context, then present a plan (enhancements) or build straight away (bugs/chores). Use when beginning a new issue, e.g. "/issue-start 35", "/issue-start next", "/issue-start", "/issue-start 35 now" (force fast), or "/issue-start 35 plan" (force plan). Pairs with /issue-finish.
 ---
 
 # issue-start

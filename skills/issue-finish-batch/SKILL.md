@@ -1,6 +1,6 @@
 ---
 name: issue-finish-batch
-description: Ship a set of already-built, already-reviewed issue branches in parallel — fan out one background Sonnet agent per branch, each running the full /issue-finish flow one-shot (push, PR, CI-advisory, merge, delete branch, tray restart), reporting back only when it hits a genuine blocker a human must resolve. The parallel-finish step after /cleanup-fleet or /issue-batch. Use when you've reviewed several branches and want them all shipped without the serial slog — e.g. "/issue-finish-batch app-launcher#71 reporting#12", bare "/issue-finish-batch 71 12", or just "finish them all" after a fan-out run.
+description: Ship reviewed issue branches in parallel — fan out one background Sonnet agent per branch running /issue-finish one-shot (push, PR, merge, delete branch, tray restart), reporting back only on a genuine blocker. The parallel-finish step after /cleanup-fleet or /issue-batch. Use to ship several branches without the serial slog — e.g. "/issue-finish-batch app-launcher#71 reporting#12", bare "/issue-finish-batch 71 12", or just "finish them all" after a fan-out run.
 ---
 
 # issue-finish-batch

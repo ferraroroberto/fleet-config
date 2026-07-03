@@ -1,6 +1,6 @@
 ---
 name: issue-triage
-description: Pull every open GitHub issue across all repos owned by ferraroroberto, score each one Small/Medium/Large by reading title + body, and present a per-project markdown table plus a one-line "suggested start" pick per project so the user can decide where to focus next. Use when the user wants a fleet-wide view of work in flight — e.g. "/issue-triage" or "/issue-triage <repo>" to filter to one repo.
+description: Pull every open GitHub issue across all repos owned by ferraroroberto, score each Small/Medium/Large, and present a per-project markdown table plus a one-line "suggested start" pick per project. Use for a fleet-wide view of work in flight — e.g. "/issue-triage" or "/issue-triage <repo>" to filter to one repo.
 ---
 
 # issue-triage
