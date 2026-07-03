@@ -60,11 +60,16 @@ foreach ($path in $candidates) {
 
 if (-not $pythonCmd) {
     foreach ($name in @('py', 'python')) {
-        $cmd = Get-Command $name -ErrorAction SilentlyContinue
-        if ($cmd -and $cmd.Source -notlike "*\WindowsApps\*") {
-            $pythonCmd = $cmd.Source
-            break
+        $cmds = Get-Command $name -All -ErrorAction SilentlyContinue
+        if ($cmds) {
+            foreach ($c in $cmds) {
+                if ($c.Source -notlike "*\WindowsApps\*") {
+                    $pythonCmd = $c.Source
+                    break
+                }
+            }
         }
+        if ($pythonCmd) { break }
     }
 }
 

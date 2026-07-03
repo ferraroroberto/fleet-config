@@ -105,6 +105,15 @@ check("design-drift" in ai.KINDS, "KINDS has design-drift")
 dd = ai.ensure_marker("## Findings\n- x", "design-drift")
 check(ai.has_marker(dd, "design-drift"), "design-drift marker round-trip")
 check(ai.title_matches("audit: design-drift findings", "design-drift"), "title design-drift bucket")
+check("context-audit" in ai.KINDS, "KINDS has context-audit")
+# context-audit round-trips through the marker like any other kind
+ca = ai.ensure_marker("## Runs\n- x", "context-audit")
+check(ai.has_marker(ca, "context-audit"), "context-audit marker round-trip")
+check(not ai.has_marker(ca, "ledger"), "context-audit marker not ledger")
+check(ai.title_matches("context-audit — always-on surface", "context-audit"),
+      "title context-audit stable title")
+check(not ai.title_matches("context-audit — always-on surface", "ledger"),
+      "title context-audit not ledger")
 
 if _fails:
     print("FAIL test_audit_issue:")
