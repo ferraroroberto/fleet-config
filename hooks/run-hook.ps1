@@ -43,8 +43,18 @@ $payload = [Console]::In.ReadToEnd()
 # Prefer the Python launcher (`py`), fall back to `python` on PATH.
 $pythonCmd = $null
 foreach ($name in @('py', 'python')) {
-    $cmd = Get-Command $name -ErrorAction SilentlyContinue
-    if ($cmd) { $pythonCmd = $cmd.Source; break }
+    $cmds = Get-Command $name -All -ErrorAction SilentlyContinue
+    if ($cmds) {
+        foreach ($c in $cmds) {
+            $len = 0
+            try { $len = (Get-Item $c.Source -ErrorAction Stop).Length } catch { }
+            if ($len -gt 0) {
+                $pythonCmd = $c.Source
+                break
+            }
+        }
+    }
+    if ($pythonCmd) { break }
 }
 
 if (-not $pythonCmd) {
