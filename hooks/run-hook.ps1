@@ -40,21 +40,37 @@ if (-not (Test-Path $hookPath)) {
 
 $payload = [Console]::In.ReadToEnd()
 
-# Prefer the Python launcher (`py`), fall back to `python` on PATH.
+# Prefer a real Python executable. WindowsApps aliases for `py` / `python` can
+# hang in non-interactive hook processes, so skip those stubs if they appear
+# first on PATH.
 $pythonCmd = $null
-foreach ($name in @('py', 'python')) {
-    $cmds = Get-Command $name -All -ErrorAction SilentlyContinue
-    if ($cmds) {
-        foreach ($c in $cmds) {
-            $len = 0
-            try { $len = (Get-Item $c.Source -ErrorAction Stop).Length } catch { }
-            if ($len -gt 0) {
-                $pythonCmd = $c.Source
-                break
+$candidates = @(
+    "$env:LOCALAPPDATA\Python\bin\python.exe",
+    "$env:LOCALAPPDATA\Programs\Python\Python314\python.exe",
+    "$env:LOCALAPPDATA\Programs\Python\Python313\python.exe",
+    "$env:LOCALAPPDATA\Programs\Python\Python312\python.exe"
+)
+
+foreach ($path in $candidates) {
+    if ($path -and (Test-Path -LiteralPath $path)) {
+        $pythonCmd = $path
+        break
+    }
+}
+
+if (-not $pythonCmd) {
+    foreach ($name in @('py', 'python')) {
+        $cmds = Get-Command $name -All -ErrorAction SilentlyContinue
+        if ($cmds) {
+            foreach ($c in $cmds) {
+                if ($c.Source -notlike "*\WindowsApps\*") {
+                    $pythonCmd = $c.Source
+                    break
+                }
             }
         }
+        if ($pythonCmd) { break }
     }
-    if ($pythonCmd) { break }
 }
 
 if (-not $pythonCmd) {

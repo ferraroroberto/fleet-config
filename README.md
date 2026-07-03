@@ -91,7 +91,7 @@ fleet-config/
 ├── hooks/                          # junction → ~/.claude/hooks AND ~/.codex/hooks (Codex)
 │   ├── _lib.py                     # shared: project detection, port→PID, stdin-JSON, projects.toml loader
 │   ├── projects.toml               # per-project nuance (ports, gate triggers, never-kill ports)
-│   ├── run-hook.ps1                # single shared shim — every hook is wired through this via settings.template.json / codex-hooks.json
+│   ├── run-hook.ps1                # Claude Code shim — settings.template.json routes hooks through this
 │   ├── pre_commit_no_ai_trailer.py
 │   ├── secret_scan_guard.py
 │   ├── gh_body_file_guard.py       # PreToolUse on Bash: nudge gh --body heredocs/backticks → --body-file; PowerShell here-strings in Bash
@@ -121,7 +121,7 @@ fleet-config/
 ├── docs/                           # references: slack-workflow, codex-browser, mcp-context-audit, design-system
 ├── tests/run_acceptance.py         # drives each hook with a sample stdin payload
 ├── settings.template.json          # the `hooks` block to merge into your ~/.claude/settings.json (Claude)
-└── codex-hooks.json                # exposed as ~/.codex/hooks.json (symlink) — Codex's hooks wiring (same run-hook.ps1 shim)
+└── codex-hooks.json                # exposed as ~/.codex/hooks.json (symlink) — Codex hook wiring (direct Python commands)
 ```
 
 The live `~/.claude/settings.json` is **not** in this repo — it carries machine-local permissions and secrets. Only `settings.template.json` ships, showing the `hooks` block to copy in.
@@ -156,7 +156,7 @@ One install, one source of truth: editing a hook, the global `CLAUDE.md`, the st
 
 The **wired** classes (a single repo source linked into each home) are the context file (all four CLI agents), hooks/prompts/design for Claude+Codex, Pi's footer extension, and **skills for all four CLI agents** — Claude (`~/.claude/skills`), Codex + Pi (the shared `~/.agents/skills` junction), and Copilot (its own `~/.copilot/skills` junction). The links: `global-CLAUDE.md` → `~/.claude/CLAUDE.md`, `~/.codex/AGENTS.md`, `~/.pi/agent/AGENTS.md`, `~/.copilot/copilot-instructions.md`; `codex-hooks.json` → `~/.codex/hooks.json`; `hooks/`, `commands/`, `skills/`, and `pi/extensions/` junctioned per the table.
 
-**`global-CLAUDE.md` is agent-neutral**: it reads correctly as any of those files, and the few genuinely Claude-specific sections (the 3-wide Opus sub-agent cap; the Git-Bash-strips-backslashes-in-`settings.json` gotcha) are marked *(Claude Code only — skip on other agents)*. Unlike Claude's `settings.json` (which mixes in machine-local secrets and so stays a manual merge), Codex's `hooks.json` is hooks-only, so it is symlinked live from `codex-hooks.json` — the same `run-hook.ps1` shim runs on both agents (Codex does **not** route hooks through Git Bash, so its command paths may use backslashes).
+**`global-CLAUDE.md` is agent-neutral**: it reads correctly as any of those files, and the few genuinely Claude-specific sections (the 3-wide Opus sub-agent cap; the Git-Bash-strips-backslashes-in-`settings.json` gotcha) are marked *(Claude Code only — skip on other agents)*. Unlike Claude's `settings.json` (which mixes in machine-local secrets and so stays a manual merge), Codex's `hooks.json` is hooks-only, so it is symlinked live from `codex-hooks.json`. Claude Code routes hooks through `run-hook.ps1` because its settings commands pass through Git Bash on this machine. Codex invokes the Python hook modules directly with short per-hook timeouts, avoiding an unnecessary PowerShell stdin shim and preventing a hook bug from burning Codex's default 600-second timeout.
 
 **Pi and Copilot context paths were verified empirically, not assumed** (#189): a sentinel context file was placed in each candidate location and the agent run non-interactively (`pi -p` / `copilot -p`) from a neutral cwd to see which path it actually read. Pi reads `~/.pi/agent/AGENTS.md` (its `PI_CODING_AGENT_DIR` config dir — it ignores `~/.pi/AGENTS.md` and a home-dir `~/AGENTS.md`); Copilot reads `~/.copilot/copilot-instructions.md` (not `~/.copilot/AGENTS.md`). Both load plain markdown, so `global-CLAUDE.md` links verbatim with no format translation.
 
@@ -246,7 +246,7 @@ Remove-Item $env:USERPROFILE\.codex\AGENTS.md.old, $env:USERPROFILE\.codex\hooks
 Remove-Item $env:USERPROFILE\.codex\hooks.old -Recurse -Force
 ```
 
-Keeping `codex-hooks.json` byte-identical to the `hooks.json` Codex already trusts means the symlink swap doesn't re-trigger Codex's hook-trust prompt.
+On the first install, keeping `codex-hooks.json` byte-identical to the `hooks.json` Codex already trusts means the symlink swap doesn't re-trigger Codex's hook-trust prompt. Later edits to the hook command strings can still require a one-time Codex trust confirmation, which is expected.
 
 ## Uninstall
 

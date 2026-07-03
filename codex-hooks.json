@@ -6,11 +6,15 @@
         "hooks": [
           {
             "type": "command",
-            "command": "C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File 'C:\\Users\\rober\\.codex\\hooks\\run-hook.ps1' -Hook pre_commit_no_ai_trailer"
+            "command": "C:/Users/rober/AppData/Local/Python/bin/python.exe C:/Users/rober/.codex/hooks/pre_commit_no_ai_trailer.py",
+            "timeout": 15,
+            "statusMessage": "Checking commit message"
           },
           {
             "type": "command",
-            "command": "C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File 'C:\\Users\\rober\\.codex\\hooks\\run-hook.ps1' -Hook secret_scan_guard"
+            "command": "C:/Users/rober/AppData/Local/Python/bin/python.exe C:/Users/rober/.codex/hooks/secret_scan_guard.py",
+            "timeout": 15,
+            "statusMessage": "Checking staged secrets"
           }
         ]
       },
@@ -19,15 +23,21 @@
         "hooks": [
           {
             "type": "command",
-            "command": "C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File 'C:\\Users\\rober\\.codex\\hooks\\run-hook.ps1' -Hook safe_kill_guard"
+            "command": "C:/Users/rober/AppData/Local/Python/bin/python.exe C:/Users/rober/.codex/hooks/safe_kill_guard.py",
+            "timeout": 15,
+            "statusMessage": "Checking command safety"
           },
           {
             "type": "command",
-            "command": "C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File 'C:\\Users\\rober\\.codex\\hooks\\run-hook.ps1' -Hook venv_discipline"
+            "command": "C:/Users/rober/AppData/Local/Python/bin/python.exe C:/Users/rober/.codex/hooks/venv_discipline.py",
+            "timeout": 15,
+            "statusMessage": "Checking venv usage"
           },
           {
             "type": "command",
-            "command": "C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File 'C:\\Users\\rober\\.codex\\hooks\\run-hook.ps1' -Hook context_filter_hook"
+            "command": "C:/Users/rober/AppData/Local/Python/bin/python.exe C:/Users/rober/.codex/hooks/context_filter_hook.py",
+            "timeout": 15,
+            "statusMessage": "Checking context filter"
           }
         ]
       }
@@ -38,7 +48,9 @@
         "hooks": [
           {
             "type": "command",
-            "command": "C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File 'C:\\Users\\rober\\.codex\\hooks\\run-hook.ps1' -Hook py_syntax_check"
+            "command": "C:/Users/rober/AppData/Local/Python/bin/python.exe C:/Users/rober/.codex/hooks/py_syntax_check.py",
+            "timeout": 15,
+            "statusMessage": "Checking Python syntax"
           }
         ]
       }

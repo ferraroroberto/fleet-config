@@ -11,7 +11,6 @@ from __future__ import annotations
 import base64
 import json
 import os
-import shutil
 import sys
 from pathlib import Path
 
@@ -21,7 +20,7 @@ import context_filter  # noqa: E402
 
 
 def _python_command() -> str:
-    return shutil.which("py") or shutil.which("python") or sys.executable
+    return _lib.find_python_executable() or sys.executable
 
 
 def _quote_path(path: Path) -> str:

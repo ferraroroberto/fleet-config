@@ -12,7 +12,6 @@ per edit is a small price for surfacing the problem at the moment of edit.
 
 from __future__ import annotations
 
-import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -52,11 +51,9 @@ def main() -> None:
         interpreter = str(venv_py)
 
     if interpreter is None:
-        for name in ("py", "python"):
-            resolved = shutil.which(name)
-            if resolved and _interpreter_works(resolved):
-                interpreter = resolved
-                break
+        resolved = _lib.find_python_executable()
+        if resolved and _interpreter_works(resolved):
+            interpreter = resolved
 
     if interpreter is None:
         # Can't check; don't block.

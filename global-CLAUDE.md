@@ -236,7 +236,7 @@ For unattended/automation workflows, prefer a **thin Python script** (standard S
 
 ### Git Bash strips backslashes in `settings.json` commands *(Claude Code only — skip on other agents)*
 
-Claude Code on this Windows machine executes `settings.json` commands (statusLine, hooks) through **Git Bash**, not cmd or PowerShell directly. Git Bash treats `\` as an escape character, so any Windows path in a command string must use **forward slashes** — `C:/Windows/...`, not `C:\Windows\...` — or bash strips the backslashes (`C:\Windows` → `C:Windows`) and the command silently fails. (Codex does **not** route hooks through Git Bash — its `hooks.json` command paths may safely use backslashes, which is why the two agents share the same `run-hook.ps1` shim but wire it up through different config files.)
+Claude Code on this Windows machine executes `settings.json` commands (statusLine, hooks) through **Git Bash**, not cmd or PowerShell directly. Git Bash treats `\` as an escape character, so any Windows path in a command string must use **forward slashes** — `C:/Windows/...`, not `C:\Windows\...` — or bash strips the backslashes (`C:\Windows` → `C:Windows`) and the command silently fails. Codex does **not** route hooks through Git Bash; its `hooks.json` invokes the Python hook modules directly with short per-hook timeouts, so it does not need the PowerShell `run-hook.ps1` shim.
 
 Working statusLine / hook command form (in `settings.json`):
 
@@ -247,7 +247,7 @@ C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe -NoProfile -NonInterac
 ### Windows PowerShell in spawned commands (any agent)
 
 - **Avoid `pwsh`** in spawned commands. The default `pwsh` on PATH is a WindowsApps execution alias (a 0-byte reparse stub) that fails when spawned non-interactively. Use the absolute Windows PowerShell 5.1 path (`C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe`) instead.
-- **PowerShell scripts that read the agent's stdin JSON** (hooks on either agent) should use `[Console]::In.ReadToEnd()` — `$input` is unreliable across the shell → powershell.exe pipe.
+- **PowerShell scripts that read the agent's stdin JSON** (Claude Code hooks, or any future PowerShell-based hook shim) should use `[Console]::In.ReadToEnd()` — `$input` is unreliable across the shell → powershell.exe pipe.
 - **Avoid arithmetic-vs-string ambiguity in PowerShell.** `[math]::Round(x) + '%'` is parsed as arithmetic and throws on `'%'`; cast first: `[string][math]::Round(x) + '%'`.
 
 ### PYTHONPATH for out-of-tree Python scripts
