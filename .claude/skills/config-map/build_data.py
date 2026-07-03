@@ -320,10 +320,28 @@ def _parse_wiring(path: Path) -> list[tuple[str, str, str]]:
         for block in blocks:
             matcher = block.get("matcher", "")
             for hook in block.get("hooks", []):
-                m = re.search(r"-Hook\s+(\w+)", hook.get("command", ""))
-                if m:
-                    wiring.append((m.group(1), event, matcher))
+                command = hook.get("command", "")
+                name = _hook_name_from_command(command)
+                if name:
+                    wiring.append((name, event, matcher))
     return wiring
+
+
+def _hook_name_from_command(command: str) -> str | None:
+    """Extract the hook module from Claude's shim form or Codex's direct-Python form."""
+    m = re.search(r"-Hook\s+(\w+)", command)
+    if m:
+        return m.group(1)
+
+    m = re.search(
+        r"(?:^|\s)(?:py|python(?:\.exe)?|[^'\"\s]*[/\\]python(?:\.exe)?)\s+['\"]?[^'\"\s]*[/\\]hooks[/\\](\w+)\.py\b",
+        command,
+        re.IGNORECASE,
+    )
+    if m:
+        return m.group(1)
+
+    return None
 
 
 def hooks_inventory(residual: dict) -> tuple[list[dict], list[dict]]:

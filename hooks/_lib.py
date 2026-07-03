@@ -17,6 +17,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import shutil
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -68,6 +69,43 @@ def warn(message: str) -> "NoReturn":
 def allow() -> "NoReturn":
     """Exit 0 silently → action proceeds, Claude sees nothing."""
     sys.exit(0)
+
+
+# --------------------------------------------------------- Python resolution
+
+
+def _is_windowsapps_alias(path: str) -> bool:
+    return "\\windowsapps\\" in path.replace("/", "\\").lower()
+
+
+def find_python_executable() -> Optional[str]:
+    """Return a real Python executable, avoiding WindowsApps aliases.
+
+    On this machine the WindowsApps ``py.exe`` / ``python.exe`` aliases can hang
+    when spawned non-interactively from hooks. Hook code should use this helper
+    instead of trusting PATH order.
+    """
+    local_appdata = os.environ.get("LOCALAPPDATA")
+    candidates: list[str] = []
+    if local_appdata:
+        candidates.extend(
+            [
+                str(Path(local_appdata) / "Python" / "bin" / "python.exe"),
+                str(Path(local_appdata) / "Programs" / "Python" / "Python314" / "python.exe"),
+                str(Path(local_appdata) / "Programs" / "Python" / "Python313" / "python.exe"),
+                str(Path(local_appdata) / "Programs" / "Python" / "Python312" / "python.exe"),
+            ]
+        )
+    candidates.append(sys.executable)
+    for name in ("py", "python"):
+        resolved = shutil.which(name)
+        if resolved:
+            candidates.append(resolved)
+
+    for candidate in candidates:
+        if candidate and not _is_windowsapps_alias(candidate) and Path(candidate).exists():
+            return candidate
+    return None
 
 
 # --------------------------------------------------------- Payload extraction

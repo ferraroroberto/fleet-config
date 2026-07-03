@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -18,11 +19,36 @@ import time
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
 
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8")
+    sys.stderr.reconfigure(encoding="utf-8")
+
 REPO     = Path(__file__).resolve().parent.parent
 HOOKS    = REPO / "hooks"
 
-# Resolve a Python interpreter that can run the hooks
-PYTHON   = shutil.which("py") or shutil.which("python") or sys.executable
+def _is_windowsapps_alias(path: str) -> bool:
+    return "\\windowsapps\\" in path.replace("/", "\\").lower()
+
+
+def _python_for_hooks() -> str:
+    local_appdata = os.environ.get("LOCALAPPDATA")
+    candidates: list[str] = []
+    if local_appdata:
+        candidates.append(str(Path(local_appdata) / "Python" / "bin" / "python.exe"))
+    candidates.append(sys.executable)
+    for name in ("py", "python"):
+        resolved = shutil.which(name)
+        if resolved:
+            candidates.append(resolved)
+    for candidate in candidates:
+        if candidate and not _is_windowsapps_alias(candidate) and Path(candidate).exists():
+            return candidate
+    return sys.executable
+
+
+# Resolve a Python interpreter that can run the hooks without hitting
+# non-interactive WindowsApps aliases.
+PYTHON = _python_for_hooks()
 
 # A synthetic Slack-token-shaped string for the secret_scan_guard cases. It is
 # assembled from fragments at runtime so the literal `xoxb-` token body never
@@ -331,6 +357,9 @@ def main() -> int:
     # ---- config-map: introspected config.data.js freshness + whatchanged ----
     failures += _config_map_check()
 
+    # ---- Codex hook wiring: direct Python commands with bounded timeouts ----
+    failures += _codex_hooks_config_check()
+
     # ---- settings: live ~/.claude/settings.json ⊇ template hook wiring ----
     failures += _settings_template_sync_check()
 
@@ -349,8 +378,8 @@ def main() -> int:
 # gh_body_file_guard (6) + tier23_hooks (10) + audit_issue (1) +
 # worktree_claim (1) + ux_surface (1) + cert_drift (1) + learning_log (16) +
 # system_map (3) + fleet_toml (3) + system_map_whatchanged (7) +
-# config_map (8) + settings_template_sync (1).
-_UNIT_CHECK_COUNT = 144
+# config_map (8) + codex_hooks_config (4) + settings_template_sync (1).
+_UNIT_CHECK_COUNT = 148
 
 
 def _context_filter_unit_checks() -> int:
@@ -671,6 +700,83 @@ def _settings_template_sync_check() -> int:
     print(f"{'OK   ' if ok else 'FAIL '} settings_sync: template hooks all wired live "
           f"(missing: {missing or 'none'})")
     return 0 if ok else 1
+
+
+def _codex_hooks_config_check() -> int:
+    """Codex hooks should run Python directly and fail fast.
+
+    The Claude side still goes through ``run-hook.ps1`` because Claude Code runs
+    settings commands through Git Bash on this Windows machine. Codex does not
+    need that shim, and routing it through PowerShell caused all PreToolUse
+    hooks to hang until Codex's default 600-second timeout. This check keeps the
+    Codex wiring on the direct-Python path and proves the configured commands
+    return promptly when driven with a minimal hook payload.
+    """
+    failures = 0
+
+    def check(case: str, ok: bool, detail: str = "") -> None:
+        nonlocal failures
+        print(f"{'OK   ' if ok else 'FAIL '} {case}")
+        if not ok:
+            failures += 1
+            if detail:
+                for line in detail.strip().splitlines():
+                    print(f"        | {line}")
+
+    data = json.loads((REPO / "codex-hooks.json").read_text(encoding="utf-8"))
+    hook_entries = [
+        hook
+        for blocks in data.get("hooks", {}).values()
+        for block in blocks
+        for hook in block.get("hooks", [])
+    ]
+    commands = [str(hook.get("command", "")) for hook in hook_entries]
+    timeouts = [hook.get("timeout") for hook in hook_entries]
+
+    check(
+        "codex_hooks: every hook has a <=15s timeout",
+        bool(hook_entries) and all(isinstance(t, int) and 1 <= t <= 15 for t in timeouts),
+        f"timeouts: {timeouts}",
+    )
+    check(
+        "codex_hooks: commands bypass run-hook.ps1 / PowerShell",
+        all("run-hook.ps1" not in c and "powershell" not in c.lower() for c in commands),
+        "\n".join(commands),
+    )
+    check(
+        "codex_hooks: commands invoke hook modules directly",
+        all(re.search(r"^C:/Users/rober/AppData/Local/Python/bin/python\.exe\s+C:/Users/rober/\.codex/hooks/\w+\.py$", c) for c in commands),
+        "\n".join(commands),
+    )
+
+    env = {k: v for k, v in os.environ.items() if k != "SLACK_BOT_TOKEN"}
+    smoke_failures: list[str] = []
+    for command in commands:
+        try:
+            res = subprocess.run(
+                command,
+                input="{}",
+                capture_output=True,
+                text=True,
+                timeout=5,
+                env=env,
+                shell=True,
+            )
+        except subprocess.TimeoutExpired:
+            smoke_failures.append(f"{command} -> timed out")
+            continue
+        if res.returncode != 0:
+            smoke_failures.append(
+                f"{command} -> exit {res.returncode}: {(res.stderr or res.stdout).strip()}"
+            )
+
+    check(
+        "codex_hooks: configured commands return promptly",
+        not smoke_failures,
+        "\n".join(smoke_failures),
+    )
+
+    return failures
 
 
 def _slack_notify_unit_checks() -> int:
