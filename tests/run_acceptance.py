@@ -1613,14 +1613,14 @@ def _work_summary_unit_checks() -> int:
 
     M = ws.MINUS  # U+2212, as the formatters emit
 
-    # changeType → bucket, source-agnostic (GraphQL DELETED + REST removed both deleted).
-    check("work_summary: bucket_for maps add/copy→new, del/removed→deleted, else→changed",
+    # changeType -> bucket, source-agnostic (GraphQL DELETED + REST removed both deleted).
+    check("work_summary: bucket_for maps add/copy->new, del/removed->deleted, else->changed",
           ws.bucket_for("ADDED") == "new" and ws.bucket_for("COPIED") == "new"
           and ws.bucket_for("DELETED") == "deleted" and ws.bucket_for("removed") == "deleted"
           and ws.bucket_for("MODIFIED") == "changed" and ws.bucket_for("RENAMED") == "changed"
           and ws.bucket_for(None) == "changed")
 
-    # Consistent synthetic PR: 2 new (+210), 2 changed (+98 −40), 1 deleted (−7).
+    # Consistent synthetic PR: 2 new (+210), 2 changed (+98 -40), 1 deleted (-7).
     data = {
         "additions": 308, "deletions": 47, "changedFiles": 5,
         "files": [
