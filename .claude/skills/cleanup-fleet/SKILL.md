@@ -1,6 +1,6 @@
 ---
 name: cleanup-fleet
-description: Take one bucket of audit findings (a label like documentation, drift or bug) and fan out one background agent per repo to fix every open issue carrying it across the E:\automation fleet. The fix-half of /audit-fleet. Use to clear a whole category of audit work in one pass — e.g. "/cleanup-fleet documentation", "/cleanup-fleet drift", "clean up all the bugs", "/cleanup-fleet docs easy".
+description: Take one bucket of audit findings (a label like documentation, drift, or bug) and fan out one background agent per repo to fix every open issue carrying it fleet-wide. The fix-half of /audit-fleet. Use to clear a category of audit work in one pass — e.g. "/cleanup-fleet documentation", "/cleanup-fleet drift", "clean up all the bugs", "/cleanup-fleet docs easy".
 ---
 
 # cleanup-fleet

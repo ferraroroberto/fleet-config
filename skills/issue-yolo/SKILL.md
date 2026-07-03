@@ -1,6 +1,6 @@
 ---
 name: issue-yolo
-description: One-shot the full GitHub-issue workflow end-to-end — file the issue, cut the branch, build, validate hard, then ship (PR, CI, merge, delete branch, tray restart). Pass a number ("/issue-yolo 34") to work an existing issue without re-filing it; pass text to file a new issue first. The validation phase is non-negotiable; YOLO means "no plan gate", not "no safety".
+description: One-shot the GitHub-issue workflow end-to-end — file the issue, cut the branch, build, validate hard, then ship (PR, CI, merge, delete branch, tray restart). Pass a number ("/issue-yolo 34") to work an existing issue without re-filing; pass text to file one first. Validation is non-negotiable; YOLO means "no plan gate", not "no safety".
 ---
 
 # issue-yolo

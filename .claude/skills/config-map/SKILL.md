@@ -1,6 +1,6 @@
 ---
 name: config-map
-description: Regenerate the fleet config & convention map (introspect install.ps1 + the skill/hook dirs + a per-repo git sweep, render to architecture/config-map.png) and post the refreshed image to Slack. Use when the user wants to see or refresh the cross-agent configuration picture — e.g. "/config-map", "update the config map", "what skills/hooks does each agent get". The descriptive companion to /context-audit (which enforces drift). Also runs unattended on a weekly schedule.
+description: Regenerate the fleet config & convention map (introspect install.ps1, the skill/hook dirs, a per-repo git sweep; render to architecture/config-map.png) and post it to Slack. Use to see or refresh the cross-agent configuration picture — e.g. "/config-map", "update the config map", "what skills/hooks does each agent get". Companion to /context-audit (which enforces drift). Runs weekly unattended.
 ---
 
 # config-map

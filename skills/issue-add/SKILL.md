@@ -1,6 +1,6 @@
 ---
 name: issue-add
-description: Turn a rough idea, brain-dump, or transcript into a well-formed, self-contained GitHub issue — researches the codebase for context, drafts it the way a senior developer would, labels it, self-assigns, and creates it. Use when capturing new work, e.g. "/issue-add <paste your idea or transcript>" or "/issue-add now <idea>" to file the issue and start building it in one shot. Pairs with /issue-start and /issue-finish.
+description: Turn a rough idea, brain-dump, or transcript into a well-formed GitHub issue — researches the codebase, drafts it the way a senior developer would, labels it, self-assigns, and creates it. Use when capturing new work, e.g. "/issue-add <paste your idea or transcript>" or "/issue-add now <idea>" to file and start building in one shot. Pairs with /issue-start and /issue-finish.
 ---
 
 # issue-add
