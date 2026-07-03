@@ -1,6 +1,6 @@
 ---
 name: handoff-commit
-description: Generate a copy-paste markdown prompt that hands off a specific GitHub commit to another LLM, instructing it to apply the same logical change to a sister project. Use when the user works on a public repo and wants the same change replicated in a private fork (or vice versa) without copy-pasting code. Defaults to HEAD; accepts a commit-ish argument (SHA, HEAD~N, branch).
+description: Generate a copy-paste prompt handing off a GitHub commit to another LLM to apply the same change to a sister project. Use on a public repo to replicate a change in a private fork or vice versa, without copy-pasting code. Defaults to HEAD; accepts a commit-ish argument (SHA, HEAD~N, branch).
 ---
 
 # handoff-commit

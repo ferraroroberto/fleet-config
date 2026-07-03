@@ -59,10 +59,6 @@ git commit -m "type: short description
 - detail 2"
 ```
 
-## Senior-dev check
-
-Before finishing, ask: "What would a senior, perfectionist dev reject in review?" If the answer points at duplicated state, inconsistent patterns, or broken architecture *within the file you're already editing*, fix it. Don't expand scope to unrelated files.
-
 ---
 
 See `README.md` for install, layout, and the Tier 1 hook list.
