@@ -391,6 +391,9 @@ def main() -> int:
     # ---- system-map: per-repo .fleet.toml aggregation + anti-staleness ----
     failures += _fleet_toml_check()
 
+    # ---- system-map: Mermaid companion render (render_mermaid.py) freshness ----
+    failures += _mermaid_check()
+
     # ---- system-map: week-over-week 'what changed' diff (whatchanged.py) ----
     failures += _system_map_whatchanged_check()
 
@@ -418,9 +421,9 @@ def main() -> int:
 # gh_body_file_guard (6) + bash_cmdexe_syntax_guard (8) + tier23_hooks (10) +
 # audit_issue (1) + fleet_audit_scan (1) + worktree_claim (1) + ux_surface (1) +
 # cert_drift (1) + rate_gate (1) + dirty_tree_check (1) + learning_log (16) +
-# system_map (3) + fleet_toml (3) + system_map_whatchanged (7) + config_map (8) +
+# system_map (3) + fleet_toml (3) + mermaid (2) + system_map_whatchanged (7) + config_map (8) +
 # codex_hooks_config (4) + settings_template_sync (1).
-_UNIT_CHECK_COUNT = 158
+_UNIT_CHECK_COUNT = 160
 
 
 def _context_filter_unit_checks() -> int:
@@ -586,6 +589,48 @@ def _fleet_toml_check() -> int:
         except Exception as exc:  # noqa: BLE001
             invalid.append(f"{name}: {exc}")
     check(f"fleet_toml: every present .fleet.toml is valid (invalid: {invalid or 'none'})", not invalid)
+
+    return failures
+
+
+def _mermaid_check() -> int:
+    """The Mermaid companion render (`render_mermaid.py`) can't silently go stale.
+
+    Guards the text-native fleet map the same way `_fleet_toml_check` guards
+    `fleet.data.js`:
+      1. `system-map.mmd` is exactly what `render_mermaid.py` regenerates from
+         the current `fleet.data.js` — a forgotten regen fails loud;
+      2. the marked `<!-- system-map:mermaid:start -->…:end` block inside
+         `global-CLAUDE.md` embeds that same flowchart body verbatim.
+    Returns the failure count.
+    """
+    import importlib.util
+
+    failures = 0
+
+    def check(case: str, ok: bool) -> None:
+        nonlocal failures
+        print(f"{'OK   ' if ok else 'FAIL '} {case}")
+        if not ok:
+            failures += 1
+
+    rm_path = REPO / ".claude" / "skills" / "system-map" / "render_mermaid.py"
+    spec = importlib.util.spec_from_file_location("system_map_render_mermaid", rm_path)
+    rm = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(rm)
+
+    data = rm.load_data((REPO / "architecture" / "fleet.data.js").read_text(encoding="utf-8"))
+    rendered = rm.render(data)
+    flowchart_body = rm.render_flowchart(data)
+
+    committed = (REPO / "architecture" / "system-map.mmd").read_text(encoding="utf-8")
+    check("mermaid: system-map.mmd matches render_mermaid.py output", rendered == committed)
+
+    claude_md = (REPO / "global-CLAUDE.md").read_text(encoding="utf-8")
+    check(
+        "mermaid: global-CLAUDE.md fleet-map block matches the current flowchart",
+        rm.CLAUDE_MD_START in claude_md and f"```mermaid\n{flowchart_body}```" in claude_md,
+    )
 
     return failures
 

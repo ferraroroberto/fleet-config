@@ -7,7 +7,7 @@ description: Regenerate the fleet architecture map (crawl every repo under E:\au
 
 **Goal:** Keep one always-current, shareable picture of the whole personal fleet. Crawl the fleet, reconcile it against the written architecture, render the visual, commit when it changed, and drop the fresh image in Slack — every run, on-demand or scheduled.
 
-**The map is self-describing: each repo declares its own card in a root `.fleet.toml`, and `.claude/skills/system-map/build_data.py` aggregates those into `architecture/fleet.data.js`** (`window.FLEET = { …strict JSON… };`, the *generated* file the renderer reads). The hand-maintained input is `architecture/fleet.residual.json` — the non-repo structure (access/edge/compute/external/principles), every repo's fallback card in curated order, and an `_adopted` registry of repos that MUST carry a `.fleet.toml`. The visual (`architecture/system-map.html`) is a pure renderer that reads the generated `fleet.data.js`; `architecture/ARCHITECTURE.md` is the human-readable narrative that must agree with it. The acceptance matrix (`tests/run_acceptance.py`) fails loud if the fleet, the data file, the per-repo `.fleet.toml`s, and the doc ever drift apart — so keeping them in sync is enforced, not hoped for.
+**The map is self-describing: each repo declares its own card in a root `.fleet.toml`, and `.claude/skills/system-map/build_data.py` aggregates those into `architecture/fleet.data.js`** (`window.FLEET = { …strict JSON… };`, the *generated* file the renderer reads). The hand-maintained input is `architecture/fleet.residual.json` — the non-repo structure (access/edge/compute/external/principles), every repo's fallback card in curated order, and an `_adopted` registry of repos that MUST carry a `.fleet.toml`. The visual (`architecture/system-map.html`) is a pure renderer that reads the generated `fleet.data.js`; `architecture/ARCHITECTURE.md` is the human-readable narrative that must agree with it. `.claude/skills/system-map/render_mermaid.py` is a second, text-native renderer of the same `fleet.data.js` — a Mermaid flowchart committed to `architecture/system-map.mmd` and also embedded in `global-CLAUDE.md` (the every-session context file), so an agent gets a compact fleet-relationship picture for free, no browser required. The acceptance matrix (`tests/run_acceptance.py`) fails loud if the fleet, the data file, the per-repo `.fleet.toml`s, and the doc ever drift apart — so keeping them in sync is enforced, not hoped for.
 
 **Designed for unattended runs.** A weekly job invokes it via
 `claude -p "/system-map" --permission-mode bypassPermissions` from the
@@ -18,7 +18,7 @@ description: Regenerate the fleet architecture map (crawl every repo under E:\au
 - **Run from the `fleet-config` repo root** (`E:/automation/fleet-config`). All paths below are relative to it.
 - **Never leak hardware specs.** The render always forces `?placeholders=1`, so the committed PNG shows `<model> · <NN> GB` placeholders even though a local `system-map.local.js` exists. Do not put real specs into `ARCHITECTURE.md`, the `DATA` object, or the commit. (See `architecture/README.md`.)
 - **Keep the residual and `ARCHITECTURE.md` in lockstep.** Any project add/remove/edit happens in `architecture/fleet.residual.json` (or the repo's `.fleet.toml`) *and* `ARCHITECTURE.md` in the same run, then regenerate `fleet.data.js` with `build_data.py`. Never hand-edit `fleet.data.js`.
-- **Don't disturb in-progress work.** Only touch `architecture/` and only commit those paths.
+- **Don't disturb in-progress work.** Only touch `architecture/` and the marked fleet-map block in `global-CLAUDE.md`, and only commit those paths.
 
 ## Steps
 
@@ -59,6 +59,14 @@ C:/Users/rober/AppData/Local/Python/bin/python.exe .claude/skills/system-map/ren
 
 This measures the page and screenshots `architecture/system-map.png` at 2× with placeholders forced. On a render failure it prints the real Chrome/console error — fix the `DATA`/HTML and re-run (the page logs a single `DIMS w h` line on success).
 
+Then render the **text-native** companion — a second, independent consumer of the same `fleet.data.js`, no new crawl logic:
+
+```
+C:/Users/rober/AppData/Local/Python/bin/python.exe .claude/skills/system-map/render_mermaid.py
+```
+
+This regenerates `architecture/system-map.mmd` (a Mermaid flowchart — icons + names only, edges from each card's `tag` field) *and* refreshes the marked `<!-- system-map:mermaid:start -->…:end` block inside `global-CLAUDE.md`'s "Project fleet" section in the same run, so the always-on context an agent loads at session start stays in sync with the map. Both writes are idempotent — an unchanged week touches neither file.
+
 ### 4. Compute the week-over-week change line
 
 Before committing (so `HEAD` still points at the previous run), capture the
@@ -77,13 +85,13 @@ prior snapshot) prints `baseline`. Keep this string for step 6.
 ### 5. Commit when the map changed
 
 ```
-git status --porcelain architecture/
+git status --porcelain architecture/ global-CLAUDE.md
 ```
 
-If nothing under `architecture/` changed, **skip the commit** (idempotent — a no-op week makes no commit). If it did:
+If nothing changed, **skip the commit** (idempotent — a no-op week makes no commit). If it did:
 
 ```
-git add architecture/
+git add architecture/ global-CLAUDE.md
 git commit -m "docs: refresh system map (<YYYY-MM-DD>)"
 ```
 

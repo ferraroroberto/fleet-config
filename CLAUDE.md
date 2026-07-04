@@ -23,6 +23,10 @@ Exit plan mode only after I explicitly approve.
 - **Hooks read stdin as JSON** via `_lib.stdin_json()`. PowerShell shims use `[Console]::In.ReadToEnd()` (per the global gotcha) and pipe straight to the Python module.
 - **Scheduled-skill launchers live *with* the skill.** A skill that runs unattended on a schedule (via an app-launcher Job → Windows Task Scheduler `\AppLauncher\`) gets a thin launcher at **`skills/<skill>/run-weekly.bat`** — co-located in the skill's own folder, named `run-weekly.bat`, never at the repo root. Body is exactly: `cd /d <working-dir>` then `claude -p "/<skill>" [flags] --permission-mode bypassPermissions`. The working dir is the skill's repo (`cd /d E:\automation\fleet-config`), or a broader root when the skill is genuinely fleet-wide (`/audit-fleet` → `cd /d E:\automation`). `bypassPermissions` because a scheduled run has no human to answer prompts; add `--model`/`--effort`/`--verbose` only when the skill needs them. **Sister repos that own a scheduled skill follow the same shape in their own tree** — e.g. life-os `.claude/skills/_recap/run-weekly.bat`. The app-launcher Job's `script_path` points at this file; the live `jobs.json` is machine-local, `jobs.sample.json` carries the committed example.
 
+## Internal architecture
+
+[`docs/architecture.mmd`](docs/architecture.mmd) is a hand-authored Mermaid diagram of this repo's own internal structure (hooks/, the two skill tiers, `architecture/`, `tests/`) — the per-repo counterpart to the fleet-wide diagram `/system-map` generates into `global-CLAUDE.md`. Update it in the same PR as any material structural change (a new skill tier, a hook added/moved, a script relocated) — same anti-staleness contract as a `.fleet.toml` `description` field. It is not auto-generated and not covered by `tests/run_acceptance.py`.
+
 ## Adding a new fleet project
 
 When a new repo is created under `E:/automation/`, **always** add a minimal entry to `hooks/projects.toml` before the `[global]` block:
