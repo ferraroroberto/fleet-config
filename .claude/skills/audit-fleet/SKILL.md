@@ -5,31 +5,26 @@ description: Run /codebase-audit across every repo in the E:\automation fleet in
 
 # audit-fleet
 
-**Goal:** A fleet-wide, idempotent, scatter-gather wrapper around `/codebase-audit`. Walk every repo under `E:\automation\`, cheaply skip the ones that haven't changed since their last audit, audit the changed ones **through a bounded window of up to 3 concurrent sub-agents** (one per repo, the global Opus concurrency cap) that each run the full `/codebase-audit` procedure, then collect the results into **one diff-based digest** posted as a GitHub comment on the `audit-fleet digest state` ledger issue in `fleet-config` (the running log) and printed to stdout (so a scheduled run captures it in history). A Slack ping with the comment link is sent deterministically via `notify_complete.py --kind audit`.
+**Goal:** A fleet-wide, idempotent, scatter-gather wrapper around `/codebase-audit`. Walk every repo under `E:\automation\`, cheaply skip the ones that haven't changed since their last audit, audit the changed ones **through a bounded window of up to 3 concurrent sub-agents** (one per repo — a session-token-budget pacing default, see below) that each run the full `/codebase-audit` procedure, then collect the results into **one diff-based digest** posted as a GitHub comment on the `audit-fleet digest state` ledger issue in `fleet-config` (the running log) and printed to stdout (so a scheduled run captures it in history). A Slack ping with the comment link is sent deterministically via `notify_complete.py --kind audit`.
 
 **Scope boundary — source code, not context.** This audits *project source code* quality. The fleet's *always-on context surface* (CLAUDE.md token budgets, skill-description word counts, single-home violations) is a separate lens: `/context-audit`.
 
 **This skill files no issues itself.** The only writes are (a) the audit issues that each sub-agent's `/codebase-audit` files, (b) the per-repo `audit-meta` ledger those audits update, (c) one `audit-fleet digest state` ledger issue in `fleet-config` for week-over-week deltas, (d) the digest comment on that issue, and (e) one cross-fleet `fleet practices ledger` issue in `project-scaffolding` cataloguing reusable solutions. It never edits source, commits, pushes, or restarts anything.
 
 **Designed for unattended runs.** A weekly app-launcher job invokes this via
-`claude -p "/audit-fleet" --model claude-opus-4-7 --effort high
+`claude -p "/audit-fleet" --model claude-sonnet-5 --effort high
 --permission-mode bypassPermissions`. Every step must therefore degrade
-gracefully rather than block on a prompt.
+gracefully rather than block on a prompt. (The orchestrator itself only does
+cheap enumeration/gating/dispatch — see "Execution rules" below — so it runs at
+`hard` tier, not `extreme`; see `docs/model-tiers.md`.)
 
 ## Arguments
 
-- No argument → the whole fleet, **as a fresh run** (resets the retry chain — see
-  the rate-limit-resilience design below).
+- No argument → the whole fleet.
 - One argument that looks like a repo name (e.g. `/audit-fleet app-launcher`) →
   restrict to that single repo. Match the bare repo name.
-- `resume` → this run is a **scheduled-retry continuation** of a prior run that
-  was cut short by a session rate limit. It audits the whole fleet exactly like
-  the no-argument case (the ledger gate already skips repos audited last time);
-  the only difference is it **continues the existing retry chain** instead of
-  resetting it. Set by the self-relaunch task (`run-weekly.bat resume`); a human
-  may also pass it to force-continue a chain.
 
-Anything else → treat as no argument (fresh run).
+Anything else → treat as no argument (whole fleet).
 
 ## Execution rules (read before running any command)
 
@@ -43,31 +38,40 @@ Anything else → treat as no argument (fresh run).
 - **Never disturb in-progress work.** A repo that is dirty or not on its default
   branch is skipped and reported — never stashed, never force-switched.
 
-## Surviving session rate limits (read before steps 1, 4, 6, 7)
+## Self-pacing against the live session budget (read before steps 1, 4, 5, 6)
 
-A full fleet sweep (this orchestrator's own turns plus the 3-wide sub-agent
-window) can exhaust the rolling **5-hour session rate limit** mid-run. When that
-happens the sub-agents 429 or this process dies outright, and the rest of the
-fleet is silently dropped until next week (the failure this design fixes,
-fleet-config#222). **You cannot read your live session %** to pre-empt it: Claude
-Code feeds it to the statusline via stdin JSON only at TUI render time, never
-persists it to disk, and the statusline does not render under headless
-`claude -p` — so there is nothing to poll. Instead this skill leans on two
-mechanisms, wired into the steps below:
+A full fleet sweep (this orchestrator's own turns plus the sub-agent window) can
+exhaust the rolling **5-hour session rate limit** mid-run. `statusline-command.ps1`
+now caches the live `rate_limits.five_hour` usage % (plus `resets_at`) to
+`~/.claude/hooks/state/rate-limits.json` on every statusline render
+(fleet-config#259), so this skill reads it and **pauses dispatch proactively,
+before hitting the wall, then waits in place and resumes** — all within the same
+run, no relaunch required. This replaces the older dead-man's-switch design
+(fleet-config#222's original fix, retired in fleet-config#261) now that a live
+reading is actually available. Full design: `docs/rate-gate.md`.
 
-- **Idempotent resume.** Every audited repo updates its per-repo ledger (step 3),
-  so a re-run skips already-done repos for free — a resume costs almost nothing.
-- **Dead-man's switch.** At the start of the heavy phase (step 4) you *arm* a
-  one-shot Windows scheduled task ~4h out via
-  `C:/Users/rober/AppData/Local/Python/bin/python.exe C:/Users/rober/.claude/skills/_lib/audit_retry.py arm …`. If this process
-  dies of a session limit, the task still fires and re-launches the audit as
-  `/audit-fleet resume`, which resumes via the ledger gate. A **clean finish
-  disarms it** (step 6/7 `… clear`). A retry-count guard (default 3 launches → 2
-  retries) caps the chain so a persistently-limited window can't loop forever.
+Mechanics, wired into step 4:
 
-The helper owns all of this (state file + task registration); you only call
-`arm` / `clear` and read the printed `ATTEMPT=n/M` + `ARMED=yes|no`. Never try to
-schedule tasks or track the count yourself.
+- Before each dispatch/refill of the sub-agent window, call
+  `C:/Users/rober/AppData/Local/Python/bin/python.exe C:/Users/rober/.claude/skills/_lib/rate_gate.py check --threshold 70`.
+  `DECISION=OK` or `UNKNOWN` → dispatch as normal. `DECISION=PAUSE` → stop
+  dispatching new sub-agents (let in-flight ones finish), wait via the `Monitor`
+  tool's until-loop pattern against the printed `WAIT_SECONDS`/`RESETS_AT`, then
+  re-check and resume.
+- **Reactive fallback:** if a sub-agent failure still carries a rate-limit
+  signature ("Server is temporarily limiting requests", "usage limit", "rate
+  limit", "429", "Overloaded") despite the proactive gate — the cache was stale
+  or missing — handle it the same way: pause and wait-until-reset, then resume.
+- **Bounded safety net:** cap this run at **3 pause cycles**. If a 4th pause
+  would be needed, stop waiting — mark every not-yet-completed repo
+  `SKIPPED (session limit — exceeded pause retries)` and proceed to the digest
+  (step 6) with that noted. The per-repo ledger (step 3) makes next week's run
+  pick these up for free, exactly as before — idempotency is what makes this
+  safe to bound rather than wait forever.
+
+This is simpler than the old design: no OS-level scheduling, no `resume`
+argument, no partial-digest branching — a run always ends by building and
+delivering one full digest.
 
 ## Steps
 
@@ -83,12 +87,6 @@ the whole run. Only a pre-flight failure (step 1) stops everything.
   each repo's **own** project CLAUDE.md, not the global file, so a global edit
   never busts a cache. Sub-agents still read the global rubric when they grade
   (`/codebase-audit` step 3).
-- **Reset the retry chain on a fresh run.** If the argument is **not** `resume`
-  (a normal weekly run or a manual `/audit-fleet`), zero any stale chain left by
-  a prior cut-off and cancel a stale pending relaunch task:
-  `C:/Users/rober/AppData/Local/Python/bin/python.exe C:/Users/rober/.claude/skills/_lib/audit_retry.py clear`. This guarantees a
-  fresh run starts attempt 1, never inheriting a capped chain. **Skip this when
-  the argument is `resume`** — that run must keep counting the existing chain.
 
 ### 2. Enumerate fleet repos
 
@@ -146,43 +144,41 @@ Fleet audit plan — 3 to audit, 24 unchanged, 2 skipped (dirty)
 If nothing is to be audited, jump to step 6 with an empty result set (the digest
 still goes out so the weekly run always produces a record).
 
-### 4. Audit each repo — a bounded window of up to 3 sub-agents
+### 4. Audit each repo — a bounded window, self-paced against the live session budget
 
-**First, arm the dead-man's switch** (only if the to-audit list is non-empty —
-nothing to be cut short otherwise). Before dispatching any sub-agent:
+Process the to-audit list through a **bounded concurrency window of up to 3
+sub-agents** — a session-token-budget pacing default and a natural cadence for
+re-checking the live rate-limit % (see "Self-pacing against the live session
+budget" above), not an Opus-burst-limiter workaround: audit sub-agents run at
+**`hard` tier** (bounded-but-judgment-heavy grading work — not `extreme`; see
+`docs/model-tiers.md`), which resolves to `model: "sonnet"` on Claude Code today.
 
-```
-C:/Users/rober/AppData/Local/Python/bin/python.exe C:/Users/rober/.claude/skills/_lib/audit_retry.py arm \
-  --hours 4 --max 3 \
-  --bat "E:\automation\fleet-config\.claude\skills\audit-fleet\run-weekly.bat"
-```
+Before each dispatch/refill, call
+`C:/Users/rober/AppData/Local/Python/bin/python.exe C:/Users/rober/.claude/skills/_lib/rate_gate.py check --threshold 70`
+and branch on `DECISION`:
 
-Read its output: `ATTEMPT=<n>/<max>` and `ARMED=<yes|no>`. Hold `IS_FINAL =
-(ARMED == no)`. `ARMED=yes` means a one-shot relaunch is now scheduled ~4h out
-as a safety net should this process die mid-sweep; `ARMED=no` means the retry cap
-is reached and this is the **final** attempt (no further retry will fire). This
-arming is what makes the session-limit-kills-the-process case recoverable — do
-not skip it.
+- **`OK` / `UNKNOWN`** → dispatch the next repo. Dispatch up to 3 background
+  `Agent` calls (`run_in_background: true`, `subagent_type: "general-purpose"`,
+  `model: "sonnet"`); each time one returns and its report is recorded, dispatch
+  the next repo from the to-audit list — never more than **3 in flight**. Fewer
+  than 3 repos left → dispatch just that many. No git worktrees: `/codebase-audit`
+  is read-only and only files issues, so agents in different repo directories
+  cannot collide.
+- **`PAUSE`** → stop dispatching new sub-agents (let in-flight ones finish),
+  then wait via the `Monitor` tool's until-loop pattern against the printed
+  `WAIT_SECONDS`/`RESETS_AT`, then re-check and resume. Count this as one pause
+  cycle for this run (see the bounded-safety-net rule above — cap at 3 pause
+  cycles per run, after which mark the remaining repos `SKIPPED (session limit
+  — exceeded pause retries)` and move on to the digest).
 
-Then process the to-audit list through a **bounded concurrency window of up to 3
-sub-agents** (the global Opus concurrency cap — see `~/.claude/CLAUDE.md`,
-"Spawning sub-agents — cap concurrent Opus at 3"). Dispatch up to 3 background
-`Agent` calls (`run_in_background: true`, `subagent_type: "general-purpose"`,
-`model: "opus"`); each time one returns and its report is recorded, dispatch the
-next repo from the to-audit list — never more than **3 in flight**. Fewer than 3
-repos left → dispatch just that many. No git worktrees: `/codebase-audit` is
-read-only and only files issues, so agents in different repo directories cannot
-collide.
-
-**Never fan out the whole fleet at once.** A single-message parallel spawn of
-one Opus sub-agent per repo (~27 at once) trips Anthropic's server-side burst
-limit (`Server is temporarily limiting requests · Rate limited`) — the
-2026-06-03 run completed only 3 of 27 repos for exactly this reason (see the
-digest comment on the ledger issue). The 3-wide window stays under the
-documented 3–4 burst ceiling (anthropics/claude-code#53922) while still auditing
-up to 3 repos in parallel — trading a little wall-clock for reliability, the
-right trade for an unattended weekly job: the whole fleet gets audited instead
-of ~3 random repos.
+**Reactive fallback.** If a sub-agent failure still carries a rate-limit
+signature ("Server is temporarily limiting requests", "usage limit", "rate
+limit", "429", "Overloaded") despite the proactive gate — e.g. the cache was
+stale — treat it the same as a `PAUSE`: stop dispatching, wait (re-running
+`rate_gate.py check` for a fresh `WAIT_SECONDS`, or a conservative fallback wait
+if it still reads `UNKNOWN`), then resume. A failure *without* a rate-limit
+signature stays an ordinary per-repo `ERROR` (a genuine single-repo problem, not
+a pause trigger) exactly as before, and the window keeps refilling.
 
 Prompt template (substitute `<name>` / `<path>`):
 
@@ -212,41 +208,25 @@ Report back in this exact shape so the orchestrator can build the digest:
 ```
 
 Keep the window full: each time a sub-agent returns and its report is recorded,
-immediately dispatch the next pending repo (up to the 3-in-flight cap). Print a
-one-line progress marker per repo as it completes (e.g.
-`[3/12] photo-ocr — AUDITED`) so a scheduled run's console shows forward
-motion. Do **not** sleep between dispatches — refill the window the moment a
-slot frees.
-
-**Rate-limit cut-off — stop dispatching, defer the rest.** A sub-agent failure
-whose error or report carries a session-rate-limit signature — "Server is
-temporarily limiting requests", "usage limit", "rate limit", "429", or
-"Overloaded" — means the shared 5h session budget is spent; **every remaining
-dispatch will fail the same way**. So on the **first** such failure: stop
-dispatching, and mark that repo **plus all not-yet-completed repos** as `DEFERRED
-(rate-limited)`. Do not burn the rest of the budget on dispatches that will all
-429 — the deferred repos are what the step-6/7 retry path resumes. A failure
-*without* a rate-limit signature stays an ordinary per-repo `ERROR` (a real
-single-repo problem, not retried) exactly as before, and the window keeps
-refilling.
+immediately dispatch the next pending repo (up to the 3-in-flight cap, subject
+to the `rate_gate.py check` above). Print a one-line progress marker per repo as
+it completes (e.g. `[3/12] photo-ocr — AUDITED`) so a scheduled run's console
+shows forward motion. Do **not** sleep between dispatches when the gate reads
+`OK` — refill the window the moment a slot frees.
 
 ### 5. Collect results
 
-Hold each sub-agent's structured report as it returns. When the run reaches its
-end — either the to-audit list is drained with no agent still in flight, **or**
-dispatch was stopped early by a rate-limit cut-off (step 4) — proceed to the
-practices ledger (5b) then the digest. Track three terminal buckets so step 6/7
-can branch:
+Hold each sub-agent's structured report as it returns. When the to-audit list is
+drained with no agent still in flight (whether or not one or more pause cycles
+happened along the way), proceed to the practices ledger (5b) then the digest.
+Track two terminal buckets:
 
 - A sub-agent that errors out **without** a rate-limit signature is recorded as
   `ERROR` for its repo (a genuine single-repo failure); it does not block the
   others and the window refills as normal.
-- Repos left unaudited by the rate-limit cut-off are `DEFERRED (rate-limited)` —
-  these are what the retry path resumes, **not** failures.
-- Everything else is its normal `AUDITED` / `CLEAN` / `SKIPPED-BY-LEDGER` result.
-
-Let **`DEFERRED`** = the set of rate-limited repos; step 6/7 keys the whole
-clean-vs-cut-short decision off whether it is empty.
+- Everything else is its normal `AUDITED` / `CLEAN` / `SKIPPED-BY-LEDGER` result
+  — or, only if the 3-pause safety net (step 4) was hit, `SKIPPED (session
+  limit — exceeded pause retries)` for whatever repos were left.
 
 ### 5b. Upsert the fleet practices ledger
 
@@ -298,31 +278,17 @@ Capture the printed URL as `PRACTICES_LEDGER_URL` for the digest. If the upsert
 fails (e.g. no access to `project-scaffolding`), note `practices: skipped
 (<reason>)` and carry on — **never fail the run over the ledger.**
 
-### 6. Decide the outcome, then build the digest
+### 6. Build the digest
 
-Branch on `DEFERRED` (from step 5) and `IS_FINAL` (from step 4's `arm`):
-
-1. **Clean completion** — `DEFERRED` is empty (the fleet was fully swept).
-   **Disarm** the switch and reset the chain, then build + deliver the full
-   digest exactly as below / step 7:
-   `C:/Users/rober/AppData/Local/Python/bin/python.exe C:/Users/rober/.claude/skills/_lib/audit_retry.py clear`.
-2. **Cut short, retry pending** — `DEFERRED` is non-empty **and** `IS_FINAL` is
-   false (a relaunch is armed and will fire ~4h out). Go **quiet** to avoid
-   multiplying the weekly Slack/comment: do **not** upsert the digest-state
-   ledger (leave it untouched so the eventual completing run still diffs against
-   the true prior week), do **not** post the GitHub comment or Slack ping. Print
-   one stdout line for the job history — e.g. `audit-fleet cut short by session
-   rate limit: audited X/Y, N deferred — retry armed (attempt n/max), ~4h.` —
-   then **skip to step 8**. Do not call `clear` (the armed task must survive).
-3. **Cut short, cap reached** — `DEFERRED` is non-empty **and** `IS_FINAL` is
-   true (no further retry will fire). Give up gracefully: `clear` the chain, then
-   build + deliver a **partial** digest (header flags `M repos deferred (session
-   limit) after the retry cap — not retried`, and include a `Deferred
-   (rate-limited)` section listing them so they are visible, not silently
-   missed). The Slack ping still goes out so you know the weekly audit landed
-   partial.
-
-For paths 1 and 3 only, continue building the digest now.
+A run always reaches this step with a complete result set — every repo is
+`AUDITED` / `CLEAN` / `SKIPPED-BY-LEDGER` / `ERROR`, or (only if the step-4
+3-pause safety net was hit) `SKIPPED (session limit — exceeded pause retries)`.
+There is no separate "cut short, retry pending" path to branch on any more — a
+run that had to pause for the session budget just took longer wall-clock,
+resumed, and finished normally. Build and deliver the full digest below / step 7
+in every case; if any repos were skipped for the session-limit safety net, the
+digest header simply flags it (see the "Skipped" bullet below) so they're
+visible, not silently dropped — next week's ledger gate picks them up for free.
 
 Read the digest-state ledger first so the recap is week-over-week, not a
 re-list:
@@ -348,9 +314,10 @@ rendered:
   counts). Repos that came back CLEAN or SKIPPED-BY-LEDGER get a one-liner.
 - **Skipped section:** repos skipped for dirty / off-branch / non-ff, so the
   user knows they were intentionally left out (not silently missed).
-- **Deferred (rate-limited) section** *(partial digest only — path 3)*: repos
-  left unaudited when the session limit was hit and the retry cap was reached, so
-  they are visibly outstanding rather than silently dropped.
+- **Session-limit section** *(only when non-empty)*: repos left unaudited
+  because the step-4 3-pause safety net was hit, so they are visibly
+  outstanding rather than silently dropped — next week's ledger gate picks
+  them up for free.
 - **What's new this week:** the issues filed *this run* are by definition the
   delta — list them at the top so the email leads with what changed, not
   standing backlog.
@@ -373,9 +340,6 @@ Capture its printed URL as `DIGEST_ISSUE_URL` and use that for the comment in
 step 7 — never a hardcoded issue number.
 
 ### 7. Deliver the digest
-
-*(Paths 1 and 3 only — a path-2 "retry pending" run already printed its one-line
-stdout note in step 6 and skipped straight to step 8, so it never reaches here.)*
 
 Two channels. stdout is the reliable one (a scheduled run captures it in app-launcher's job history); the GitHub comment is the durable record that the Slack ping links to.
 
@@ -419,27 +383,23 @@ One concise block: the plan line from step 3, per-repo results, where the digest
   write target outside `fleet-config` — still an issue, never source.
 - **Never disturb in-progress work.** Dirty or off-default-branch repos are
   skipped and reported, never stashed or force-switched.
-- **One sub-agent per repo, opus, through a ≤3 sliding window.** Keep at most 3
-  Opus sub-agents in flight (the global Opus concurrency cap — see
-  `~/.claude/CLAUDE.md`); refill the window as each returns. Never a
-  single-message parallel fan-out across the fleet: a simultaneous ~27-wide Opus
-  spawn trips Anthropic's server-side burst limit and leaves most repos
-  un-audited (the 2026-06-03 incident; ceiling is 3–4 per
-  anthropics/claude-code#53922). #57 first fixed this by going strictly
-  sequential (1 at a time) — the window of 3 refines that, restoring throughput
-  while staying under the burst ceiling. No worktrees (audits don't collide).
-  Don't read repo source in the orchestrator.
+- **One sub-agent per repo, `hard` tier (Sonnet on Claude Code today), through a
+  ≤3 sliding window.** Keep at most 3 sub-agents in flight, refilling the window
+  as each returns — a session-token-budget pacing default and a natural cadence
+  for re-checking the live rate-limit %, not an Opus-burst-limiter workaround
+  (see `docs/model-tiers.md` — `hard` no longer resolves to Opus, so the
+  historical 2026-06-03 burst-limit incident doesn't directly apply to the
+  default path any more, but the window stays as a conservative default; a wider
+  window is a separate, empirically-driven follow-up). No worktrees (audits
+  don't collide). Don't read repo source in the orchestrator.
 - **Degrade, don't block.** Built for unattended `claude -p`. A per-repo failure
   is reported and skipped; only a pre-flight failure stops the whole run. Never
   wait on an interactive prompt.
-- **Never poll your own session %; never sleep waiting for a reset.** The live
-  rate-limit % is not readable headless (it is fed to the statusline only, never
-  persisted). Survive limits the idempotent way: arm the dead-man's switch
-  (step 4), stop dispatching on the first rate-limit signature (step 4), and let
-  the bounded self-relaunch resume the rest. A clean run disarms; a fresh run
-  resets the chain (step 1). All retry state and task scheduling live in
-  `audit_retry.py` — never hand-roll `schtasks` or a counter, and never block the
-  process for hours waiting on a window.
+- **Self-pace against the live session %, don't die-and-hope.** Check
+  `rate_gate.py` before each dispatch/refill (step 4); on `PAUSE`, wait in place
+  via the `Monitor` tool's until-loop pattern and resume — capped at 3 pause
+  cycles per run (the bounded safety net). No OS-level scheduling, no `resume`
+  argument — see `docs/rate-gate.md`.
 - **No AI attribution; no hard-wrapped digest paragraphs.** (Per global
   CLAUDE.md.)
 
@@ -467,17 +427,13 @@ One concise block: the plan line from step 3, per-repo results, where the digest
   (`config/jobs.json`, a `weekly` schedule, `visible: true` console) and calls a
   thin `.claude/skills/audit-fleet/run-weekly.bat` wrapper in this repo. See that repo
   for the trigger; this skill is the work.
-- **Why a dead-man's switch and not a session-% gate** (fleet-config#222): the
-  obvious "read my session % and wait" cannot work headless — Claude Code feeds
+- **Why a proactive gate now, and not a dead-man's switch** (fleet-config#222
+  originally, redesigned in fleet-config#261): the original "read my session %
+  and wait" was impossible headless, because Claude Code fed
   `rate_limits.five_hour.used_percentage` to the statusline via stdin JSON only
-  at TUI render time and never persists it, and the statusline does not render
-  under `claude -p`, so there is no value to poll in the run that actually hits
-  the limit. Arming the relaunch *before* the heavy phase (rather than scheduling
-  it *after* detecting a 429) is deliberate: the worst case is the orchestrator
-  process dying outright on a session limit, which leaves no chance to run a
-  "schedule a retry" step at the end — so the safety net must already be set, and
-  a clean finish simply cancels it. The ~4h delay lets the rolling 5h window
-  recover; if a retry still lands too early it re-arms and the staircase
-  converges within the cap. The retry chain self-relaunches as `resume` so the
-  ledger gate skips repos already audited earlier in the chain — a resume is
-  near-free, which is what makes a multi-attempt chain cheap.
+  at TUI render time and never persisted it — hence the arm-a-scheduled-task
+  workaround. That constraint is gone: `statusline-command.ps1` now caches the
+  same numbers to `~/.claude/hooks/state/rate-limits.json` on every render
+  (fleet-config#259), so this skill can read them directly and pause-then-wait
+  in place instead of dying and hoping an OS-level relaunch resumes the rest.
+  See `docs/rate-gate.md` for the full design and `rate_gate.py`'s contract.

@@ -5,14 +5,14 @@ description: Take one bucket of audit findings (a label like documentation, drif
 
 # cleanup-fleet
 
-**Goal:** `/audit-fleet` *finds* problems and files them, bucketed into six labels. This skill *fixes* one bucket across the whole fleet in a single pass. Pick a bucket → gather every open issue carrying that label → score each issue for complexity → deploy **one background sub-agent per repo**, model-sized to the work (Sonnet for easy, Opus for complex) — then aggregate the results.
+**Goal:** `/audit-fleet` *finds* problems and files them, bucketed into six labels. This skill *fixes* one bucket across the whole fleet in a single pass. Pick a bucket → gather every open issue carrying that label → score each issue for complexity → deploy **one background sub-agent per repo**, sized to the work via the fleet's easy/hard tier policy (`docs/model-tiers.md`) — then aggregate the results.
 
 **Why one agent per repo, never two:** the audit files **exactly one managed issue per (repo, bucket)**, so a bucket is naturally *at most one issue per repo*. One issue → one repo → one agent → one branch → one PR. Two agents in the same repo would collide on the working tree and produce redundant/conflicting branches, so the skill **hard-caps at one agent per repo per run** and defers any extras.
 
 **Two execution paths, both delegating to existing skills — don't reinvent them:**
 
-- **Easy → Sonnet → full YOLO.** The agent runs the **`/issue-yolo <N>`** flow end-to-end: branch, build, validate hard, PR, wait for CI, merge, delete branch, tray restart. No human gate. Each agent fires its own `🚀 Shipped #N — PR · <url>` ping (the per-PR link is valuable — **not** suppressed).
-- **Complex → Opus → build-and-stop.** The agent runs **`/issue-start <N> now`** → build → run the verification gate → **STOP before push/PR** (the `/issue-batch` in-place contract). You validate, then ship each with `/issue-finish`.
+- **Easy tier → full YOLO.** The agent runs the **`/issue-yolo <N>`** flow end-to-end: branch, build, validate hard, PR, wait for CI, merge, delete branch, tray restart. No human gate. Each agent fires its own `🚀 Shipped #N — PR · <url>` ping (the per-PR link is valuable — **not** suppressed).
+- **Hard tier → build-and-stop.** The agent runs **`/issue-start <N> now`** → build → run the verification gate → **STOP before push/PR** (the `/issue-batch` in-place contract). Instead of a diff to review, the agent hands back a plain-English rationale summary — what it did, why, and why it believes the change is correct (see prompt 8b) — so you approve or push back on the logic, not by reading code. You then ship each with `/issue-finish`.
 
 ## Arguments
 
@@ -31,10 +31,10 @@ description: Take one bucket of audit findings (a label like documentation, drif
 
 If **no bucket** is given → run step 2's count query, then `AskUserQuestion` listing the six buckets each with its **live open-issue count**, and let the user pick.
 
-**Mode** — `hard` (default) or `easy` / `silent`:
+**Mode** — `hard` (default) or `easy` / `silent`. (This is the CLI argument, distinct from the per-issue complexity *tier* below — always read as "`hard` mode" vs. "hard-tier issue" to keep the two straight.)
 
-- **`hard`** (default) — full sweep: Sonnet issues take the easy path, Opus issues build-and-stop. The plan is **presented for approval first**.
-- **`easy` / `silent`** — only the Sonnet-scored issues, fully unattended (no approval gate). Opus-scored issues are **listed but never run** ("left for a hard run"). This is the mode to run alongside `/audit-fleet` on a schedule. Safety property: easy mode can *only ever* auto-merge work that scored genuinely simple — any hard finding routes to Opus, which easy mode never executes.
+- **`hard` mode** (default) — full sweep: easy-tier issues take the YOLO path, hard-tier issues build-and-stop for review. The plan is **presented for approval first**.
+- **`easy` / `silent` mode** — only the easy-tier issues, fully unattended (no approval gate). Hard-tier issues are **listed but never run** ("left for a hard run"). This is the mode to run alongside `/audit-fleet` on a schedule. Safety property: easy mode can *only ever* auto-merge work that scored genuinely simple — any hard-tier finding is never executed in this mode.
 
 ## Execution rules (read before running any command)
 
@@ -80,14 +80,14 @@ Bucket the surviving issues by `repository.name`. For each repo:
 - **Exactly one candidate** → that's the issue for this repo.
 - **More than one** (e.g. the audit-managed bucket issue *plus* a hand-filed one) → **select one** and **defer the rest** to keep a single branch per repo. Preference: (1) the audit-managed bucket issue (body contains `<!-- audit-managed:`) — it's the curated checklist; else (2) the smallest / clearest-acceptance one. Record the deferred issues for the plan ("caught next run").
 
-### 5. Score each selected issue → Sonnet (easy) or Opus (complex)
+### 5. Score each selected issue → easy tier or hard tier
 
-Read each selected issue's title + body (for an audit bucket issue, also weigh the checklist length and the nature of its items). Two tiers, same spirit as `/issue-triage`'s S/M/L calibration collapsed to two:
+Read each selected issue's title + body (for an audit bucket issue, also weigh the checklist length and the nature of its items). Two tiers, same spirit as `/issue-triage`'s S/M/L calibration collapsed to two (see `docs/model-tiers.md` for how each tier resolves to a model):
 
-- **easy → Sonnet:** narrow surface, mechanical, clear acceptance, no design decision. Doc fixes, a handful of stale-code deletions, a missing README flag, a rename, a few tightly-scoped checklist items.
-- **complex → Opus:** multi-module, real design choices, a refactor, an unbounded body, or a **mixed** checklist (trivial *and* hard items together → treat the whole issue as complex; Opus absorbs the easy parts too).
+- **easy tier:** narrow surface, mechanical, clear acceptance, no design decision. Doc fixes, a handful of stale-code deletions, a missing README flag, a rename, a few tightly-scoped checklist items.
+- **hard tier:** multi-module, real design choices, a refactor, an unbounded body, or a **mixed** checklist (trivial *and* hard items together → treat the whole issue as hard-tier; it absorbs the easy parts too).
 
-When genuinely on the fence, round **up** to Opus in `hard` mode (a human will still review it) and **down**-or-defer in `easy` mode (never auto-merge something you weren't sure about).
+When genuinely on the fence, round **up** to hard-tier in `hard` mode (a human will still review it) and **down**-or-defer in `easy`/`silent` mode (never auto-merge something you weren't sure about).
 
 ### 6. Build + present the plan
 
@@ -99,20 +99,22 @@ Render one table and the headline counts:
   repo              #    title                          tier     model   path
   ----------------  ---  -----------------------------  -------  ------  -----------------
   photo-ocr         44   audit: documentation findings  easy     sonnet  YOLO → merged
-  app-launcher      71   audit: documentation findings  complex  opus    build → review
+  app-launcher      71   audit: documentation findings  hard     sonnet  build → review
   reporting         12   README missing --watch flag    easy     sonnet  YOLO → merged
 
-  7 issues: 5 sonnet (YOLO → merged), 2 opus (build → review)
+  7 issues: 5 easy-tier (YOLO → merged), 2 hard-tier (build → review)
   deferred (1+ per repo): grocery-shopping#9 (hand-filed, next run)
   skipped (dirty/off-branch): website
 ```
 
-- **hard mode:** present this plan and **wait for explicit approval** before spawning. The user may deselect issues or retier them. Do **not** spawn until approved.
-- **easy / silent mode:** print the plan to stdout (run-log record), **skip the approval gate**, and proceed with **only the Sonnet rows**. List the Opus rows as "left for a hard run" — never spawn them.
+Note the `model` column shows `sonnet` for both tiers on Claude Code today — the tier split now drives *execution shape* (full-autonomy vs. review-gated), not model choice; see `docs/model-tiers.md`.
+
+- **`hard` mode:** present this plan and **wait for explicit approval** before spawning. The user may deselect issues or retier them. Do **not** spawn until approved.
+- **`easy`/`silent` mode:** print the plan to stdout (run-log record), **skip the approval gate**, and proceed with **only the easy-tier rows**. List the hard-tier rows as "left for a hard run" — never spawn them.
 
 ### 7. Pre-flight per selected repo
 
-For each repo with a selected (and, in easy mode, Sonnet) issue:
+For each repo with a selected (and, in `easy`/`silent` mode, easy-tier) issue:
 
 - `E:\automation\<repo>` exists. Else skip + report.
 - `git -C E:\automation\<repo> status --porcelain` empty. Else **skip + report** (never stash) — drop it from the run.
@@ -122,14 +124,20 @@ No worktrees: one branch per repo means each agent works the primary checkout in
 
 ### 8. Fan out — one background sub-agent per selected issue
 
-Dispatch one background sub-agent per selected issue (`run_in_background: true`, `subagent_type: "general-purpose"`, **`model` set per the score** — `model: "sonnet"` for easy, `model: "opus"` for complex), but **bound the Opus concurrency**:
+Before the mass easy-tier dispatch below, call
+`C:/Users/rober/AppData/Local/Python/bin/python.exe C:/Users/rober/.claude/skills/_lib/rate_gate.py check --threshold 70`
+once. `DECISION=PAUSE` → wait via the `Monitor` tool's until-loop pattern against
+the printed `WAIT_SECONDS`/`RESETS_AT` before firing the batch (see
+`docs/rate-gate.md`); `OK`/`UNKNOWN` → proceed immediately.
 
-- **Sonnet (easy) agents are exempt** — spawn them all at once in a single message.
-- **Opus (complex) agents go through the global Opus concurrency window** (≤3 in flight — see `~/.claude/CLAUDE.md`, "Spawning sub-agents — cap concurrent Opus at 3"): dispatch up to 3, and each time one returns dispatch the next pending Opus issue until the Opus queue drains. In a mixed run only Opus agents count against the window of 3; the Sonnet swarm runs alongside, uncounted. Fewer than 3 complex issues → just spawn that many.
+Dispatch one background sub-agent per selected issue (`run_in_background: true`, `subagent_type: "general-purpose"`, **`model` resolved from the tier** — `model: "sonnet"` for both easy and hard tier on Claude Code today, see `docs/model-tiers.md`), but **bound whichever tier resolves to Opus on the current host**:
 
-A single-message fan-out of many Opus agents at once trips Anthropic's server-side burst limit (`Server is temporarily limiting requests · Rate limited`; ceiling 3–4 per anthropics/claude-code#53922) — the same failure that cost the 2026-06-03 `/audit-fleet` run most of its repos.
+- **Easy-tier agents are exempt** — spawn them all at once in a single message (after the rate-gate check above).
+- **Any tier that resolves to Opus on the current host goes through the global Opus concurrency window** (≤3 in flight — see `~/.claude/CLAUDE.md`, "Spawning sub-agents — cap concurrent Opus at 3"): dispatch up to 3, and each time one returns dispatch the next pending issue of that tier until the queue drains. On Claude Code today, hard-tier resolves to Sonnet — so **this window is dormant by default**; it only binds a future `extreme`-tier escalation (not built in this issue — see `docs/model-tiers.md`'s note on why a third scoring bucket is out of scope here).
 
-#### 8a. Sonnet / easy prompt
+A single-message fan-out of many Opus agents at once trips Anthropic's server-side burst limit (`Server is temporarily limiting requests · Rate limited`; ceiling 3–4 per anthropics/claude-code#53922) — the same failure that cost the 2026-06-03 `/audit-fleet` run most of its repos. That's still the reason for the window above whenever a tier does resolve to Opus; it just isn't the common case any more.
+
+#### 8a. Easy-tier prompt
 
 ```
 You are clearing GitHub issue #<N> in the <repo> repo, end-to-end, in YOLO mode.
@@ -159,7 +167,7 @@ Report back, in this exact shape:
   - Validation: <one line — what you ran in Phase 3>
 ```
 
-#### 8b. Opus / complex prompt
+#### 8b. Hard-tier prompt
 
 ```
 You are working GitHub issue #<N> in the <repo> repo, then STOPPING for review.
@@ -172,14 +180,19 @@ Repo root: E:\automation\<repo>. You are the only agent touching this repo.
 4. Run the project's verification gate (per its CLAUDE.md — e.g.
    `pwsh -File scripts/verify-before-ship.ps1`).
 5. STOP. Do NOT push, open a PR, merge, or run /issue-finish. This issue is
-   complex enough that the user validates the approach before it ships.
+   hard-tier enough that the user validates the approach before it ships. The
+   user will NOT read the diff — they review your summary below, so make it
+   count.
 
 Report back, in this exact shape:
   - Issue: <repo>#<N> — <title>
   - Branch: <branch>
-  - Files changed: <list>
   - Verification: PASS / SKIPPED (<reason>) / FAIL (<short reason>)
-  - Notes: <one or two lines if anything surprising came up>
+  - What I did & why: <2-4 plain-English sentences aimed at someone who will
+    NOT read the diff — the decision you made and the reasoning behind it, not
+    a code walkthrough>
+  - Why I believe this is correct: <1-2 sentences — what gives confidence:
+    what you tested/verified, what edge cases you considered>
 
 If verification FAILS, leave the branch as-is for the user to inspect — do NOT
 try to "fix" the failure by guessing; just report.
@@ -189,40 +202,43 @@ Substitute every `<…>` placeholder with the concrete value from steps 2–7.
 
 ### 9. Confirm fan-out and stand by
 
-Print a single confirmation block listing every sub-agent dispatched (repo, #N, model, path) — and, if any complex issues are still queued behind the Opus window, note how many are pending. Then **stop** — do not poll, sleep, or check progress. The harness re-invokes you automatically as each background agent completes; on each Opus completion, refill the window with the next pending Opus issue (step 8) until the queue drains.
+Print a single confirmation block listing every sub-agent dispatched (repo, #N, model, path) — and, if any hard-tier issues are still queued behind the Opus window (dormant by default today — see step 8), note how many are pending. Then **stop** — do not poll, sleep, or check progress. The harness re-invokes you automatically as each background agent completes; on each Opus-tier completion, refill that window with the next pending issue (step 8) until the queue drains.
 
 ### 10. Aggregate as agents return, then the closing ping
 
-As each sub-agent finishes, surface its report with a status mark: `✅` merged / `❌` failed for Sonnet; `📋 ready for review` / `⚠️ verification skipped` / `❌ failed` for Opus. Opus reports arrive ≤3 at a time (the window); each time one lands, dispatch the next pending Opus issue per step 8 until the complex queue is drained.
+As each sub-agent finishes, surface its report with a status mark: `✅` merged / `❌` failed for easy-tier; `📋 ready for review` / `⚠️ verification skipped` / `❌ failed` for hard-tier. **For every hard-tier report, surface its "What I did & why" and "Why I believe this is correct" text directly, right next to the `📋 ready for review` line** — the user's approve/ship decision is made from that summary, not by opening the diff, so don't just point at a branch name.
 
-When **all** agents have returned, fire **one final** roll-up ping — the closing message for the run. The per-issue `🚀 Shipped` pings the Sonnet agents already fired are kept; this is *in addition*:
+When **all** agents have returned, fire **one final** roll-up ping — the closing message for the run. The per-issue `🚀 Shipped` pings the easy-tier agents already fired are kept; this is *in addition*:
 
 ```
 C:/Users/rober/AppData/Local/Python/bin/python.exe C:/Users/rober/.claude/hooks/notify_complete.py \
-  --kind cleanup --summary "<bucket>" --merged <sonnet-merged-count> --review <opus-review-count>
+  --kind cleanup --summary "<bucket>" --merged <easy-tier-merged-count> --review <hard-tier-review-count>
 ```
 
 (In easy mode `--review 0` — the helper drops the review clause.) Silent no-op if no Slack channel is configured; always exits 0.
 
 **`notify_complete.py` is the ONLY sanctioned way to send this roll-up ping — do NOT use any MCP Slack tool (search/send/etc.) to find a channel or post the ping.** The helper resolves the destination channel deterministically from `projects.toml`; picking a channel yourself is both a security violation (an agent-inferred external write destination) and wrong (it may post to the wrong channel). A silent no-op when no channel is configured is the correct outcome — do not "fix" it by reaching for Slack tools.
 
-Then print the final summary block:
+Then print the final summary block, with each hard-tier review row carrying its rationale summary inline:
 
 ```
 Cleanup complete — <bucket> (<mode> mode)
   ✅ merged:  <repo>#<N> <pr-url>, …
-  📋 review:  <repo>#<N> — cd E:\automation\<repo> && /issue-finish, …
+  📋 review:  <repo>#<N> — cd E:\automation\<repo> && /issue-finish
+              What I did & why: <the agent's summary, verbatim>
+              Why correct: <the agent's confidence summary, verbatim>
+              …
   ❌ failed:  <repo>#<N> — <reason> (branch left for inspection)
   deferred:  <repo>#<N> (next run)
 
-Next: validate + /issue-finish each opus branch, one at a time.
+Next: read each review row's summary above, then /issue-finish the ones you approve.
 ```
 
 ### 11. Stop
 
-No follow-up actions. The user reviews each Opus branch, then ships them. Two ways, user's choice — **never auto-launch either**:
+No follow-up actions. The user reads each hard-tier row's rationale summary (not the diff) and decides, then ships the ones they approve. Two ways, user's choice — **never auto-launch either**:
 
-- **`/issue-finish-batch <branches>`** — once happy with several branches, fan out one background Sonnet finisher per branch (all at once; Sonnet is exempt from the Opus cap), each running `/issue-finish` one-shot and reporting back only on a genuine blocker. The parallel path.
+- **`/issue-finish-batch <branches>`** — once happy with several branches, fan out one background finisher per branch (all at once — this is easy-tier work itself, exempt from the Opus cap), each running `/issue-finish` one-shot and reporting back only on a genuine blocker. The parallel path.
 - **`/issue-finish`** per branch, one at a time — the always-available manual fallback.
 
 Do **not** auto-launch either: the batch finish is user-triggered, exactly like the manual one.
@@ -230,12 +246,13 @@ Do **not** auto-launch either: the batch finish is user-triggered, exactly like 
 ## Hard rules
 
 - **One agent per repo, period.** A bucket is at most one issue per repo by construction; if a repo has extras, defer them — never two agents on one checkout.
-- **Sonnet path is full-YOLO-to-merged; Opus path always stops before push/PR.** Never let an Opus agent merge; never make a Sonnet agent stop early in `hard`/`easy` mode (that's what Opus is for).
-- **Opus agents dispatch through the global Opus concurrency window (≤3 in flight); Sonnet agents are exempt.** Refill the window as each Opus agent returns; never a single-message fan-out of many Opus agents at once — it trips Anthropic's server-side burst rate limit (see `~/.claude/CLAUDE.md`, "Spawning sub-agents — cap concurrent Opus at 3").
-- **easy / silent mode never spawns Opus and never merges hard-scored work.** Opus rows are listed only. This is the unattended-safety guarantee.
+- **Easy-tier path is full-YOLO-to-merged; hard-tier path always stops before push/PR.** Never let a hard-tier agent merge; never make an easy-tier agent stop early in `hard`/`easy` mode (that's what the hard tier is for).
+- **Whichever tier resolves to Opus on the current host dispatches through the global Opus concurrency window (≤3 in flight); every other tier is exempt.** On Claude Code today hard-tier resolves to Sonnet, so this window is dormant by default — it only binds a future `extreme`-tier escalation. Refill the window as each capped agent returns; never a single-message fan-out of many Opus agents at once — it trips Anthropic's server-side burst rate limit (see `~/.claude/CLAUDE.md`, "Spawning sub-agents — cap concurrent Opus at 3").
+- **`easy`/`silent` mode never spawns hard-tier work and never merges hard-scored work.** Hard-tier rows are listed only. This is the unattended-safety guarantee.
+- **Hard-tier review is by rationale summary, not diff.** Prompt 8b's agent must return "What I did & why" / "Why I believe this is correct"; the orchestrator surfaces both verbatim next to every `📋 ready for review` row (steps 9-10) — that's what the user reviews, not the code.
 - **The orchestrator never edits source, commits, pushes, or merges.** Every write happens inside a spawned agent.
 - **Never disturb in-progress work.** Dirty / off-default-branch repos are skipped and reported, never stashed or force-switched.
-- **Keep per-issue pings.** Sonnet agents fire their own `/issue-yolo` ping (PR link); the orchestrator's `--kind cleanup` ping is an *additional* closing roll-up, not a replacement.
+- **Keep per-issue pings.** Easy-tier agents fire their own `/issue-yolo` ping (PR link); the orchestrator's `--kind cleanup` ping is an *additional* closing roll-up, not a replacement.
 - **Degrade, don't block.** A per-repo failure is reported and skipped; only a pre-flight failure stops the whole run. `easy`/`silent` must never wait on an interactive prompt.
 - **No AI attribution; no hard-wrapped issue/PR-body paragraphs.** (Per global CLAUDE.md.)
 
