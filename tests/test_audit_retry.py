@@ -5,7 +5,7 @@ directly (``decide`` / ``load_state`` / ``save_state``), and the ``arm`` / ``cle
 CLI is driven with a temp ``--state`` file and ``--dry-run`` so the scheduling
 side effect is printed, not executed.
 
-Run: `py tests/test_audit_retry.py`  (also invoked by tests/run_acceptance.py)
+Run: `C:/Users/rober/AppData/Local/Python/bin/python.exe tests/test_audit_retry.py`  (also invoked by tests/run_acceptance.py)
 """
 
 from __future__ import annotations

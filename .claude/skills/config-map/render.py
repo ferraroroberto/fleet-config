@@ -6,10 +6,12 @@ clipped. The ``?placeholders=1`` flag is forced for parity with ``/system-map`` 
 the config dataset carries only wiring/structure (never a secret), so it is a
 reserved no-op safety net here rather than a spec-hider.
 
-Used by the ``/config-map`` skill; also runnable by hand::
+Used by the ``/config-map`` skill; also runnable by hand (invoke the resolved
+Python path directly — a bare ``py``/``python`` is not reliably on ``PATH`` on
+this machine; see ``_lib.find_python_executable``)::
 
-    py .claude/skills/config-map/render.py            # architecture/config-map.{html,png}
-    py .claude/skills/config-map/render.py --scale 3  # crisper
+    C:/Users/rober/AppData/Local/Python/bin/python.exe .claude/skills/config-map/render.py            # architecture/config-map.{html,png}
+    C:/Users/rober/AppData/Local/Python/bin/python.exe .claude/skills/config-map/render.py --scale 3  # crisper
 
 Chrome and a working tmp dir are the only requirements (no extra Python deps).
 """

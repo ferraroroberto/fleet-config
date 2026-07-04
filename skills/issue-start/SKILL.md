@@ -29,7 +29,7 @@ Run in order. If a step fails, print a short error and stop — don't leave a
 half-made branch (or worktree) behind. If you abort *after* step 0 claimed
 `MODE=primary` (e.g. the issue turns out closed), release the claim before
 stopping so the repo isn't blocked for the 8h TTL:
-`py C:/Users/rober/.claude/skills/_lib/worktree_claim.py release <repo>`.
+`C:/Users/rober/AppData/Local/Python/bin/python.exe C:/Users/rober/.claude/skills/_lib/worktree_claim.py release <repo>`.
 
 ### 0. Claim the repo (concurrency-safe start)
 
@@ -40,7 +40,7 @@ the repo root. Pass `.` as `<repo>` (current working directory); `--issue` is op
 diagnostic metadata, omit it in pick mode:
 
 ```
-py C:/Users/rober/.claude/skills/_lib/worktree_claim.py acquire . --issue <N>
+C:/Users/rober/AppData/Local/Python/bin/python.exe C:/Users/rober/.claude/skills/_lib/worktree_claim.py acquire . --issue <N>
 ```
 
 Read the printed `MODE=`:
@@ -114,7 +114,7 @@ Then:
 - **Worktree mode:** create the isolated worktree (off latest `origin/main`,
   with the primary's `.venv` junctioned in) and move into it:
   ```
-  py C:/Users/rober/.claude/skills/_lib/worktree_claim.py setup-worktree <repo> <N> <branch>
+  C:/Users/rober/AppData/Local/Python/bin/python.exe C:/Users/rober/.claude/skills/_lib/worktree_claim.py setup-worktree <repo> <N> <branch>
   ```
   `cd` into the printed `WORKTREE=` path. **All remaining work happens there.**
   Report the branch name **and** the worktree path. (Never hand-roll `git
@@ -146,7 +146,7 @@ questions first.
 repo even has a design-gated UX surface (convention: `project-scaffolding#83`):
 
 ```
-py C:/Users/rober/.claude/skills/_lib/ux_surface.py applies .
+C:/Users/rober/AppData/Local/Python/bin/python.exe C:/Users/rober/.claude/skills/_lib/ux_surface.py applies .
 ```
 
 If it prints `SPEC_APPLIES=yes` **and** the issue plausibly touches the web UI
@@ -166,7 +166,7 @@ presented for approval** (plan mode), or the **fast-mode build is complete and
 ready to validate** — fire the completion ping so they can act from their phone:
 
 ```
-py C:/Users/rober/.claude/hooks/notify_complete.py --kind start --issue <N> --summary "<one concise line: the single next action>"
+C:/Users/rober/AppData/Local/Python/bin/python.exe C:/Users/rober/.claude/hooks/notify_complete.py --kind start --issue <N> --summary "<one concise line: the single next action>"
 ```
 
 The `--summary` is the only free-form part — keep it to one short imperative

@@ -25,8 +25,8 @@ Run in order. A failure on one step prints a short error and stops.
 ### 1. Regenerate the data
 
 ```
-py .claude/skills/config-map/build_data.py     # introspect → architecture/config.data.js
-py tests/run_acceptance.py
+C:/Users/rober/AppData/Local/Python/bin/python.exe .claude/skills/config-map/build_data.py     # introspect → architecture/config.data.js
+C:/Users/rober/AppData/Local/Python/bin/python.exe tests/run_acceptance.py
 ```
 
 The `config_map:` checks fail loud if `config.data.js` is stale (not what `build_data.py` regenerates) or a `whatchanged` invariant breaks. Fix any failure before rendering. If a new agent, config class, statusline kind or project-wired hook appeared that the introspection can't derive, add it to `architecture/config.residual.json` first, then regenerate.
@@ -34,7 +34,7 @@ The `config_map:` checks fail loud if `config.data.js` is stale (not what `build
 ### 2. Render the visual
 
 ```
-py .claude/skills/config-map/render.py
+C:/Users/rober/AppData/Local/Python/bin/python.exe .claude/skills/config-map/render.py
 ```
 
 Measures the page and screenshots `architecture/config-map.png` at 2×. On a render failure it prints the real Chrome/console error — fix the data/HTML and re-run (the page logs a single `DIMS w h` line on success).
@@ -44,7 +44,7 @@ Measures the page and screenshots `architecture/config-map.png` at 2×. On a ren
 Before committing (so `HEAD` still points at the previous run):
 
 ```
-py .claude/skills/config-map/whatchanged.py
+C:/Users/rober/AppData/Local/Python/bin/python.exe .claude/skills/config-map/whatchanged.py
 ```
 
 Diffs the freshly-built working `config.data.js` against the previously-committed one and prints one line — `+config-map, −old-hook, 3 updated` (added/removed entries named across skills/hooks/matrix/conventions, in-place edits counted). A no-op week prints `no config changes`; the first run prints `baseline`. Keep this string for step 5.
@@ -69,7 +69,7 @@ If the current branch is `main` (the scheduled unattended case), also `git push`
 Activity-log traffic, so route with `--category log` (the helper resolves the `#log` channel from `hooks/projects.toml` — never hardcode a channel id):
 
 ```
-py hooks/slack_notify.py --category log \
+C:/Users/rober/AppData/Local/Python/bin/python.exe hooks/slack_notify.py --category log \
    --file architecture/config-map.png \
    --title "Fleet config & conventions" \
    --text "🗺️ Cross-agent config map — refreshed <YYYY-MM-DD>. <change line from step 3>."

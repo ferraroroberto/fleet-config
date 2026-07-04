@@ -59,7 +59,7 @@ mechanisms, wired into the steps below:
   so a re-run skips already-done repos for free — a resume costs almost nothing.
 - **Dead-man's switch.** At the start of the heavy phase (step 4) you *arm* a
   one-shot Windows scheduled task ~4h out via
-  `py C:/Users/rober/.claude/skills/_lib/audit_retry.py arm …`. If this process
+  `C:/Users/rober/AppData/Local/Python/bin/python.exe C:/Users/rober/.claude/skills/_lib/audit_retry.py arm …`. If this process
   dies of a session limit, the task still fires and re-launches the audit as
   `/audit-fleet resume`, which resumes via the ledger gate. A **clean finish
   disarms it** (step 6/7 `… clear`). A retry-count guard (default 3 launches → 2
@@ -86,7 +86,7 @@ the whole run. Only a pre-flight failure (step 1) stops everything.
 - **Reset the retry chain on a fresh run.** If the argument is **not** `resume`
   (a normal weekly run or a manual `/audit-fleet`), zero any stale chain left by
   a prior cut-off and cancel a stale pending relaunch task:
-  `py C:/Users/rober/.claude/skills/_lib/audit_retry.py clear`. This guarantees a
+  `C:/Users/rober/AppData/Local/Python/bin/python.exe C:/Users/rober/.claude/skills/_lib/audit_retry.py clear`. This guarantees a
   fresh run starts attempt 1, never inheriting a capped chain. **Skip this when
   the argument is `resume`** — that run must keep counting the existing chain.
 
@@ -125,7 +125,7 @@ unchanged repo never costs a sub-agent spawn):
    If the pull is not a fast-forward → record `skipped (non-ff)` and move on.
 3. **Ledger gate.** Read the ledger by its marker (not the bare `audit-meta`
    label, which also tags the digest issue):
-   `py C:/Users/rober/.claude/skills/_lib/audit_issue.py get --repo ferraroroberto/<name> --kind ledger`.
+   `C:/Users/rober/AppData/Local/Python/bin/python.exe C:/Users/rober/.claude/skills/_lib/audit_issue.py get --repo ferraroroberto/<name> --kind ledger`.
    - `number` is `null` → **audit** (first run).
    - Else parse `last-audited-sha` + `rubric-sha`. Compute the repo's current
      `rubric-sha` = sha256 of `<path>/CLAUDE.md` alone (empty string if absent) —
@@ -152,7 +152,7 @@ still goes out so the weekly run always produces a record).
 nothing to be cut short otherwise). Before dispatching any sub-agent:
 
 ```
-py C:/Users/rober/.claude/skills/_lib/audit_retry.py arm \
+C:/Users/rober/AppData/Local/Python/bin/python.exe C:/Users/rober/.claude/skills/_lib/audit_retry.py arm \
   --hours 4 --max 3 \
   --bat "E:\automation\fleet-config\.claude\skills\audit-fleet\run-weekly.bat"
 ```
@@ -261,7 +261,7 @@ Read the existing ledger, then merge — same discipline as `/codebase-audit`
 step 8:
 
 ```
-py C:/Users/rober/.claude/skills/_lib/audit_issue.py get \
+C:/Users/rober/AppData/Local/Python/bin/python.exe C:/Users/rober/.claude/skills/_lib/audit_issue.py get \
   --repo ferraroroberto/project-scaffolding --kind practices
 ```
 
@@ -289,7 +289,7 @@ Write to a repo-scoped temp file (never a fixed shared name — see the global
 tmp-file gotcha; e.g. `E:/tmp/audit-practices-ledger.md`) and upsert:
 
 ```
-py C:/Users/rober/.claude/skills/_lib/audit_issue.py upsert \
+C:/Users/rober/AppData/Local/Python/bin/python.exe C:/Users/rober/.claude/skills/_lib/audit_issue.py upsert \
   --repo ferraroroberto/project-scaffolding --kind practices --label audit-meta \
   --title "fleet practices ledger" --body-file <tmpfile>
 ```
@@ -305,7 +305,7 @@ Branch on `DEFERRED` (from step 5) and `IS_FINAL` (from step 4's `arm`):
 1. **Clean completion** — `DEFERRED` is empty (the fleet was fully swept).
    **Disarm** the switch and reset the chain, then build + deliver the full
    digest exactly as below / step 7:
-   `py C:/Users/rober/.claude/skills/_lib/audit_retry.py clear`.
+   `C:/Users/rober/AppData/Local/Python/bin/python.exe C:/Users/rober/.claude/skills/_lib/audit_retry.py clear`.
 2. **Cut short, retry pending** — `DEFERRED` is non-empty **and** `IS_FINAL` is
    false (a relaunch is armed and will fire ~4h out). Go **quiet** to avoid
    multiplying the weekly Slack/comment: do **not** upsert the digest-state
@@ -326,7 +326,7 @@ For paths 1 and 3 only, continue building the digest now.
 
 Read the digest-state ledger first so the recap is week-over-week, not a
 re-list:
-`py C:/Users/rober/.claude/skills/_lib/audit_issue.py get --repo ferraroroberto/fleet-config --kind digest`.
+`C:/Users/rober/AppData/Local/Python/bin/python.exe C:/Users/rober/.claude/skills/_lib/audit_issue.py get --repo ferraroroberto/fleet-config --kind digest`.
 Parse the `<!-- audit-fleet-digest -->` block from the returned `body`:
 
 ```
@@ -364,7 +364,7 @@ create-vs-edit, collapses strays, and stamps the marker (keep the
 `<!-- audit-fleet-digest -->` block intact):
 
 ```
-py C:/Users/rober/.claude/skills/_lib/audit_issue.py upsert \
+C:/Users/rober/AppData/Local/Python/bin/python.exe C:/Users/rober/.claude/skills/_lib/audit_issue.py upsert \
   --repo ferraroroberto/fleet-config --kind digest --label audit-meta \
   --title "audit-fleet digest state" --body-file <tmpfile>
 ```
@@ -392,7 +392,7 @@ Two channels. stdout is the reliable one (a scheduled run captures it in app-lau
 - **Slack ping:** call `notify_complete.py --kind audit` with the captured comment URL and a one-line summary. This is deterministic — the skill hands the hook exact structured args; the hook assembles the message:
 
   ```
-  py C:/Users/rober/.claude/hooks/notify_complete.py \
+  C:/Users/rober/AppData/Local/Python/bin/python.exe C:/Users/rober/.claude/hooks/notify_complete.py \
     --kind audit \
     --comment-url "$COMMENT_URL" \
     --summary "<N> audited, <M> issues filed, <K> unchanged"

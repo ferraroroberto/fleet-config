@@ -40,7 +40,7 @@ tag          = ["→", "Notion"]  # [relation, target] edge annotation (working 
 | `chips` | | `chips` | enabling cards |
 | `tag` | | `tag` | working cards; `[relation, target]` |
 
-**Keep it current:** update `.fleet.toml` in the same PR as any material change (layer, port, role, one-line description, exposed services). A repo listed in the residual's `_adopted` registry whose `.fleet.toml` goes missing fails the drift test. After editing any `.fleet.toml`, run `py .claude/skills/system-map/build_data.py` to regenerate `fleet.data.js`.
+**Keep it current:** update `.fleet.toml` in the same PR as any material change (layer, port, role, one-line description, exposed services). A repo listed in the residual's `_adopted` registry whose `.fleet.toml` goes missing fails the drift test. After editing any `.fleet.toml`, run `C:/Users/rober/AppData/Local/Python/bin/python.exe .claude/skills/system-map/build_data.py` to regenerate `fleet.data.js`.
 
 ### Local specs — kept out of git 🔒
 
@@ -54,7 +54,7 @@ So a local render shows your real specs; anything pushed (PNG, HTML, the issue, 
 
 ### Render
 
-Regenerate the data first if any `.fleet.toml` or the residual changed: `py .claude/skills/system-map/build_data.py`. Data is then inline, so **no web server is needed** (unlike a `fetch()`-based page) — render straight from `file://`:
+Regenerate the data first if any `.fleet.toml` or the residual changed: `C:/Users/rober/AppData/Local/Python/bin/python.exe .claude/skills/system-map/build_data.py`. Data is then inline, so **no web server is needed** (unlike a `fetch()`-based page) — render straight from `file://`:
 
 ```powershell
 cd architecture
@@ -92,6 +92,6 @@ The thin hand-maintained input is [`config.residual.json`](config.residual.json)
 Regenerate + render the same way as the system map:
 
 ```powershell
-py .claude/skills/config-map/build_data.py     # introspect → config.data.js
-py .claude/skills/config-map/render.py          # config-map.html → config-map.png (2×)
+C:/Users/rober/AppData/Local/Python/bin/python.exe .claude/skills/config-map/build_data.py     # introspect → config.data.js
+C:/Users/rober/AppData/Local/Python/bin/python.exe .claude/skills/config-map/render.py          # config-map.html → config-map.png (2×)
 ```

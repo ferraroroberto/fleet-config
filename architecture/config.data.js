@@ -3,7 +3,7 @@
 // it derives from (install.ps1, skills/, hooks/, settings.template.json,
 // codex-hooks.json, each repo's .claude/skills) or the hand-maintained
 // architecture/config.residual.json, then regenerate:
-//   py .claude/skills/config-map/build_data.py
+//   C:/Users/rober/AppData/Local/Python/bin/python.exe .claude/skills/config-map/build_data.py
 // Loaded as plain JS (works under file://, no CORS): sets window.CONFIG.
 // The body is strict JSON so Python (build_data.py + the drift test in
 // tests/run_acceptance.py) can read it too: strip "window.CONFIG =" + trailing ";".

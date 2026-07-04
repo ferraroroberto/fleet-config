@@ -22,7 +22,7 @@ This invokes `~/.claude/hooks/restart_and_verify_webapp.py`, which:
 Run this from the project root (so `cwd` resolves to the right project in `projects.toml`):
 
 ```powershell
-& py "C:/Users/rober/.claude/hooks/restart_and_verify_webapp.py"
+& C:/Users/rober/AppData/Local/Python/bin/python.exe "C:/Users/rober/.claude/hooks/restart_and_verify_webapp.py"
 ```
 
 Report the script's output verbatim — the user wants to see the build line (`git_sha=... asset_hash=...`) before considering the restart done. If the script exits non-zero, surface the stderr and stop.

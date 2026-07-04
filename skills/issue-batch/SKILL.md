@@ -97,7 +97,7 @@ For each worktree-mode issue, use the shared concurrency helper (the same one `/
 
 ```
 git -C E:\automation\<repo> fetch origin
-py C:/Users/rober/.claude/skills/_lib/worktree_claim.py setup-worktree E:\automation\<repo> <N> <branch>
+C:/Users/rober/AppData/Local/Python/bin/python.exe C:/Users/rober/.claude/skills/_lib/worktree_claim.py setup-worktree E:\automation\<repo> <N> <branch>
 ```
 
 Notes:
@@ -211,7 +211,7 @@ deterministic helper (canonical format, resolves channel/user from
 `projects.toml`). Run:
 
 ```
-py C:/Users/rober/.claude/hooks/notify_complete.py --kind batch --passed <pass> --total <total>
+C:/Users/rober/AppData/Local/Python/bin/python.exe C:/Users/rober/.claude/hooks/notify_complete.py --kind batch --passed <pass> --total <total>
 ```
 
 If no channel is configured it's a silent no-op; it always exits 0, so a
@@ -231,7 +231,7 @@ to fan out parallel Sonnet finishers once you're happy with several, or
 tray-restart races). `/issue-finish` removes a worktree-mode branch's worktree
 for you (it detects the linked worktree and runs the reparse-safe teardown). To
 clean one up by hand, run from the primary checkout, never from inside the
-worktree: `py C:/Users/rober/.claude/skills/_lib/worktree_claim.py
+worktree: `C:/Users/rober/AppData/Local/Python/bin/python.exe C:/Users/rober/.claude/skills/_lib/worktree_claim.py
 remove-worktree <wt-path>`.
 ```
 

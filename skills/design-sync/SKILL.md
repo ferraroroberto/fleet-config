@@ -66,7 +66,7 @@ target design-sync is pointed at.
 Detect whether this is a Tailscale-reachable app still on the self-signed-CA dance:
 
 ```
-py C:/Users/rober/.claude/skills/_lib/cert_drift.py detect <repo-root>
+C:/Users/rober/AppData/Local/Python/bin/python.exe C:/Users/rober/.claude/skills/_lib/cert_drift.py detect <repo-root>
 ```
 
 It prints `CERT_DRIFT=yes|no`, `REASON=...`, and the `TAILNET` / `SELF_SIGNED` /
@@ -88,7 +88,7 @@ into `design-drift`):
 2. **Fetch the existing issue:**
 
    ```
-   py C:/Users/rober/.claude/skills/_lib/audit_issue.py get --repo <OWNER/REPO> --kind cert-drift
+   C:/Users/rober/AppData/Local/Python/bin/python.exe C:/Users/rober/.claude/skills/_lib/audit_issue.py get --repo <OWNER/REPO> --kind cert-drift
    ```
 
 3. **Build the body.** Fresh → use the template below (fill the evidence from the
@@ -98,7 +98,7 @@ into `design-drift`):
 4. **Upsert** (creates / edits / collapses strays, stamps the marker):
 
    ```
-   py C:/Users/rober/.claude/skills/_lib/audit_issue.py upsert \
+   C:/Users/rober/AppData/Local/Python/bin/python.exe C:/Users/rober/.claude/skills/_lib/audit_issue.py upsert \
      --repo <OWNER/REPO> --kind cert-drift --label cert-drift \
      --title "audit: cert-drift findings" --body-file <tmpfile>
    ```
@@ -225,7 +225,7 @@ mechanics to `/codebase-audit`'s bucket issues. Never `gh issue create` by hand.
 2. **Fetch the existing issue:**
 
    ```
-   py C:/Users/rober/.claude/skills/_lib/audit_issue.py get --repo <OWNER/REPO> --kind design-drift
+   C:/Users/rober/AppData/Local/Python/bin/python.exe C:/Users/rober/.claude/skills/_lib/audit_issue.py get --repo <OWNER/REPO> --kind design-drift
    ```
 
    It prints `{"number": N|null, "body": "...", "duplicates": [...]}`.
@@ -240,7 +240,7 @@ mechanics to `/codebase-audit`'s bucket issues. Never `gh issue create` by hand.
 4. **Upsert** (creates / edits / collapses strays, stamps the marker):
 
    ```
-   py C:/Users/rober/.claude/skills/_lib/audit_issue.py upsert \
+   C:/Users/rober/AppData/Local/Python/bin/python.exe C:/Users/rober/.claude/skills/_lib/audit_issue.py upsert \
      --repo <OWNER/REPO> --kind design-drift --label design-drift \
      --title "audit: design-drift findings" --body-file <tmpfile>
    ```

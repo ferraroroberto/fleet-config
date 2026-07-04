@@ -24,9 +24,11 @@ Two restart strategies, chosen per project:
 
 Replaces the manual ritual from `feedback_restart_webapp_after_changes.md`.
 
-Usage (called by the /restart-webapp slash command, but runnable directly):
+Usage (called by the /restart-webapp slash command, but runnable directly).
+Invoke the resolved Python path directly — a bare ``py``/``python`` is not
+reliably on ``PATH`` on this machine (see ``_lib.find_python_executable``):
 
-    py C:/Users/rober/.claude/hooks/restart_and_verify_webapp.py [--cwd <path>]
+    C:/Users/rober/AppData/Local/Python/bin/python.exe C:/Users/rober/.claude/hooks/restart_and_verify_webapp.py [--cwd <path>]
 
 Exit codes:
     0 on success (and prints the version line)

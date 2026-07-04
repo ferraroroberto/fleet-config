@@ -6,7 +6,7 @@ trees (the walk fallback, so no git init needed). The drift/clean trees here ARE
 the acceptance cases: a tailnet self-signed-only app trips it; a LAN-only app and
 an already-migrated app come back clean.
 
-Run: `py tests/test_cert_drift.py`  (also invoked by tests/run_acceptance.py)
+Run: `C:/Users/rober/AppData/Local/Python/bin/python.exe tests/test_cert_drift.py`  (also invoked by tests/run_acceptance.py)
 """
 
 from __future__ import annotations

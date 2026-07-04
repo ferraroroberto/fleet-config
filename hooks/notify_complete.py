@@ -11,19 +11,20 @@ table or ``[global]``) in ``hooks/projects.toml``. Never blocks — any gh,
 network, or config error is logged and the process still exits 0, so a
 notification failure can't break or delay a skill.
 
-Usage::
+Usage (invoke the resolved Python path directly — a bare ``py``/``python`` is
+not reliably on ``PATH`` on this machine; see ``_lib.find_python_executable``)::
 
-    py ~/.claude/hooks/notify_complete.py --kind finish --issue 30 --pr 31 --pr-url https://github.com/owner/repo/pull/31
-    py ~/.claude/hooks/notify_complete.py --kind add    --issue 30
-    py ~/.claude/hooks/notify_complete.py --kind start  --issue 30 --summary "review the diff, then /issue-finish"
-    py ~/.claude/hooks/notify_complete.py --kind yolo   --issue 30 --pr 31 --pr-url https://github.com/owner/repo/pull/31
-    py ~/.claude/hooks/notify_complete.py --kind batch  --passed 2 --total 3
-    py ~/.claude/hooks/notify_complete.py --kind finish-batch --merged 4 --blocked 1
-    py ~/.claude/hooks/notify_complete.py --kind audit  --comment-url https://github.com/ferraroroberto/fleet-config/issues/18#issuecomment-123 --summary "3 audited, 2 issues filed, 24 unchanged"
-    py ~/.claude/hooks/notify_complete.py --kind cleanup --summary documentation --merged 5 --review 2
-    py ~/.claude/hooks/notify_complete.py --kind recap --summary "3 skills swept - alt-text +2, journal-daily +1"   # automatic sweep (no proposals)
-    py ~/.claude/hooks/notify_complete.py --kind recap --summary "2 skills consolidated, 4 promoted"               # explicit consolidation
-    py ~/.claude/hooks/notify_complete.py --kind learning --comment-url https://github.com/ferraroroberto/fleet-config/issues/131#issuecomment-456 --summary "12 PRs / 8 issues distilled · 2/3 horizon shipped"
+    C:/Users/rober/AppData/Local/Python/bin/python.exe ~/.claude/hooks/notify_complete.py --kind finish --issue 30 --pr 31 --pr-url https://github.com/owner/repo/pull/31
+    C:/Users/rober/AppData/Local/Python/bin/python.exe ~/.claude/hooks/notify_complete.py --kind add    --issue 30
+    C:/Users/rober/AppData/Local/Python/bin/python.exe ~/.claude/hooks/notify_complete.py --kind start  --issue 30 --summary "review the diff, then /issue-finish"
+    C:/Users/rober/AppData/Local/Python/bin/python.exe ~/.claude/hooks/notify_complete.py --kind yolo   --issue 30 --pr 31 --pr-url https://github.com/owner/repo/pull/31
+    C:/Users/rober/AppData/Local/Python/bin/python.exe ~/.claude/hooks/notify_complete.py --kind batch  --passed 2 --total 3
+    C:/Users/rober/AppData/Local/Python/bin/python.exe ~/.claude/hooks/notify_complete.py --kind finish-batch --merged 4 --blocked 1
+    C:/Users/rober/AppData/Local/Python/bin/python.exe ~/.claude/hooks/notify_complete.py --kind audit  --comment-url https://github.com/ferraroroberto/fleet-config/issues/18#issuecomment-123 --summary "3 audited, 2 issues filed, 24 unchanged"
+    C:/Users/rober/AppData/Local/Python/bin/python.exe ~/.claude/hooks/notify_complete.py --kind cleanup --summary documentation --merged 5 --review 2
+    C:/Users/rober/AppData/Local/Python/bin/python.exe ~/.claude/hooks/notify_complete.py --kind recap --summary "3 skills swept - alt-text +2, journal-daily +1"   # automatic sweep (no proposals)
+    C:/Users/rober/AppData/Local/Python/bin/python.exe ~/.claude/hooks/notify_complete.py --kind recap --summary "2 skills consolidated, 4 promoted"               # explicit consolidation
+    C:/Users/rober/AppData/Local/Python/bin/python.exe ~/.claude/hooks/notify_complete.py --kind learning --comment-url https://github.com/ferraroroberto/fleet-config/issues/131#issuecomment-456 --summary "12 PRs / 8 issues distilled · 2/3 horizon shipped"
 
 For ``--kind cleanup`` (the closing roll-up of a ``/cleanup-fleet`` swarm) pass
 ``--summary`` (the bucket name), ``--merged`` (sonnet issues YOLO'd to a merged

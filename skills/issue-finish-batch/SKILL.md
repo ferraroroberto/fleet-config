@@ -112,7 +112,7 @@ As each agent returns, surface its report with a status mark: `‚úÖ merged` / `‚ù
 When **all** agents have returned, fire **one final** roll-up ping:
 
 ```
-py C:/Users/rober/.claude/hooks/notify_complete.py \
+C:/Users/rober/AppData/Local/Python/bin/python.exe C:/Users/rober/.claude/hooks/notify_complete.py \
   --kind finish-batch --merged <merged-count> --blocked <blocked-count>
 ```
 

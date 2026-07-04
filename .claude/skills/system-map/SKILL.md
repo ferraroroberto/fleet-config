@@ -45,8 +45,8 @@ Keep edits minimal and in the existing card voice. Don't restructure layers or r
 Then regenerate the data file and validate:
 
 ```
-py .claude/skills/system-map/build_data.py     # residual + per-repo .fleet.toml → fleet.data.js
-py tests/run_acceptance.py
+C:/Users/rober/AppData/Local/Python/bin/python.exe .claude/skills/system-map/build_data.py     # residual + per-repo .fleet.toml → fleet.data.js
+C:/Users/rober/AppData/Local/Python/bin/python.exe tests/run_acceptance.py
 ```
 
 The `system_map:` checks fail loud if the fleet, `fleet.data.js`, the per-repo `.fleet.toml`s, and `ARCHITECTURE.md` disagree (a forgotten repo, a stale entry, an adopted repo that lost its `.fleet.toml`, a malformed declaration, or a doc that omits a mapped repo). Fix any failure before rendering.
@@ -54,7 +54,7 @@ The `system_map:` checks fail loud if the fleet, `fleet.data.js`, the per-repo `
 ### 3. Render the visual
 
 ```
-py .claude/skills/system-map/render.py
+C:/Users/rober/AppData/Local/Python/bin/python.exe .claude/skills/system-map/render.py
 ```
 
 This measures the page and screenshots `architecture/system-map.png` at 2× with placeholders forced. On a render failure it prints the real Chrome/console error — fix the `DATA`/HTML and re-run (the page logs a single `DIMS w h` line on success).
@@ -65,7 +65,7 @@ Before committing (so `HEAD` still points at the previous run), capture the
 one-line "what changed" summary for the Slack post:
 
 ```
-py .claude/skills/system-map/whatchanged.py
+C:/Users/rober/AppData/Local/Python/bin/python.exe .claude/skills/system-map/whatchanged.py
 ```
 
 This diffs the freshly-reconciled working `architecture/fleet.data.js` against
@@ -94,7 +94,7 @@ If the current branch is `main` (the scheduled unattended case), also `git push`
 Post the refreshed map, folding in the change line from step 4 so the recurring run reads as alive. This is **activity-log** traffic, so route it with `--category log` (the helper resolves the `#log` channel from `hooks/projects.toml` — never hardcode a channel id):
 
 ```
-py hooks/slack_notify.py --category log \
+C:/Users/rober/AppData/Local/Python/bin/python.exe hooks/slack_notify.py --category log \
    --file architecture/system-map.png \
    --title "Roberto's System — architecture" \
    --text "🛠️ Fleet architecture map — refreshed <YYYY-MM-DD>. <change line from step 4>."
