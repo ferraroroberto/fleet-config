@@ -14,6 +14,7 @@ Pairs with `/issue-triage` (pick what to work on) and `/issue-finish` (ship each
 - **Read-only on GitHub.** This skill never creates issues, pushes, opens PRs, or merges. All shipping is deferred to manual `/issue-finish` per branch.
 - **Shell:** Bash tool is **Git Bash** on this machine. Do not use PowerShell syntax (`&`, `$env:`, here-strings) in Bash. The only shell commands this skill needs are `gh` and `git`, both of which work identically in Bash.
 - **All git plumbing runs in the orchestrator (main conversation), not the sub-agents.** Worktree creation, main-branch sync, and branch cutting happen here — sequentially and safely — *before* sub-agents launch. Sub-agents inherit a ready-to-edit workspace.
+- **The post-flight dirty-tree check (step 9) also runs in the orchestrator, never the sub-agent** — it only corrects the reported status, never blocks, auto-commits, or auto-fixes.
 
 ## Arguments
 
@@ -204,7 +205,15 @@ Then stop. Do not poll, do not sleep, do not check on progress — the harness r
 
 ### 9. Report each completion (as agents return)
 
-As each background sub-agent finishes, surface its report verbatim in the chat with a short header (`✅` if verification passed, `⚠️` if skipped, `❌` if failed).
+**Before surfacing a completion as verified, run the post-flight dirty-tree check yourself — never trust the agent's self-reported `Files changed:`/`Verification:` lines alone.** Every issue-batch sub-agent is build-and-stop (it never merges), so this is always `--mode built`:
+
+```
+C:/Users/rober/AppData/Local/Python/bin/python.exe C:/Users/rober/.claude/skills/_lib/dirty_tree_check.py check <path> --mode built --expect-branch <branch>
+```
+
+(`<path>` is the worktree path in worktree mode, or `E:\automation\<repo>` in-place.) `STATUS=DIRTY` → keep the agent's verification mark but append an explicit `⚠️ post-flight: <REASON>` note to that repo's line — this catches HEAD unexpectedly back on the default branch, a branch mismatch, or the agent reporting changed files it never actually saved. This check only reports; it never blocks the run, never auto-commits, and never auto-fixes.
+
+As each background sub-agent finishes, surface its report verbatim in the chat with a short header (`✅` if verification passed, `⚠️` if skipped or post-flight flagged something, `❌` if failed).
 
 After **all** agents have returned, fire the batch-complete ping with the
 deterministic helper (canonical format, resolves channel/user from
@@ -223,6 +232,7 @@ Then finish with one summary block:
 All <N> sub-agents complete.
   ✅ <repo>#<N> ready for review — `cd <path> && /issue-finish`
   ✅ <repo>#<N> ready for review — `cd <path> && /issue-finish`
+  ⚠️ <repo>#<N> ready for review, post-flight: <reason> — inspect before `/issue-finish`
   ❌ <repo>#<N> verification failed — inspect <path>
 
 Next: review each branch, then ship — either `/issue-finish-batch <branches>`

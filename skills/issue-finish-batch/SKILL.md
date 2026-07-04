@@ -107,7 +107,15 @@ Print a single confirmation block listing every agent dispatched (repo, #N, bran
 
 ### 6. Aggregate, then the closing ping
 
-As each agent returns, surface its report with a status mark: `✅ merged` / `❌ blocked`. The per-issue `✅ Done` pings the finishers already fired are kept — this is *in addition*.
+**Before marking a branch merged, run the post-flight dirty-tree check yourself — never trust the agent's self-reported `Result: MERGED` alone.** This is the highest-cost place for a false "shipped" report, since the whole point of this skill is landing a branch cleanly:
+
+```
+C:/Users/rober/AppData/Local/Python/bin/python.exe C:/Users/rober/.claude/skills/_lib/dirty_tree_check.py check <path> --mode merged
+```
+
+`STATUS=DIRTY` → downgrade that branch's status from `✅ merged` to `⚠️ merged but dirty tree — inspect <repo>` (carry the `REASON=` line) instead of the plain `✅ merged` mark. This check only reports; it never blocks the run, never auto-commits, and never auto-fixes.
+
+As each agent returns, surface its report with a status mark: `✅ merged` / `⚠️ merged but dirty tree` / `❌ blocked`. The per-issue `✅ Done` pings the finishers already fired are kept — this is *in addition*.
 
 When **all** agents have returned, fire **one final** roll-up ping:
 
@@ -125,6 +133,7 @@ Then print the final summary block:
 ```
 Finish-batch complete
   ✅ merged:   <repo>#<N> <pr-url>, …
+  ⚠️ merged but dirty tree — inspect <repo> (<reason>)
   ❌ blocked:  <repo>#<N> — <reason> · cd E:\automation\<repo> && /issue-finish
 
 Next: resolve each blocked branch, then re-run /issue-finish-batch on it (or /issue-finish manually).
@@ -138,6 +147,7 @@ No follow-up actions. Blocked branches are left in place for you to inspect and 
 
 - **One agent per branch/checkout, period.** Never two against the same working tree or worktree.
 - **Agents finish only — never re-build.** The branch is reviewed; this skill ships it.
+- **Post-flight dirty-tree check (step 6) runs in the orchestrator, never the agent, before a branch is marked merged.** It only corrects the reported status — never blocks, auto-commits, or auto-fixes.
 - **Sonnet by default, fanned out all at once; Opus only on explicit override (then the ≤3 window applies).** Per `~/.claude/CLAUDE.md`, "Spawning sub-agents — cap concurrent Opus at 3" — Sonnet is exempt.
 - **Blocker-only escalation.** Agents ship the happy path silently and report; they escalate (BLOCKED, leave branch) only on a real blocker, never guess-fixing or weakening the gate.
 - **Keep per-issue pings.** Each `/issue-finish` fires its own `✅ Done` ping (PR link); the `--kind finish-batch` roll-up is an *additional* closing aggregate, not a replacement. (Per `~/.claude/CLAUDE.md`, "keep per-item pings with aggregate".)
