@@ -87,3 +87,64 @@ if ($model)     { $segments += $model }
 if ($dir_seg)   { $segments += $dir_seg }
 
 Write-Host ($segments -join ' | ')
+
+# --- rate-limits cache (app-launcher#326 / fleet-config#259) ---
+# Pure additive side effect: cache the same 5h/7d numbers this script just
+# printed (plus each window's reset epoch, which the printed line omits) to
+# a shared JSON file so a non-statusline process (the app-launcher Board /
+# Coding tabs) can read current usage without being the statusline itself.
+# rate_limits is absent entirely before the first API response in a new
+# session (per Claude Code's own statusline docs) — in that case $data.rate_limits
+# is $null and both window reads below just come back $null, which is exactly
+# the "unavailable window" shape the cache is meant to tolerate. Any failure
+# here is swallowed — this must never break the statusline itself, which has
+# already printed by this point regardless of what follows.
+try {
+    $five_h_resets  = $data.rate_limits.five_hour.resets_at
+    $seven_d_resets = $data.rate_limits.seven_day.resets_at
+
+    $five_h_window = $null
+    if ($five_h -ne $null -or $five_h_resets -ne $null) {
+        $five_h_window = [ordered]@{ used_percentage = $five_h; resets_at = $five_h_resets }
+    }
+    $seven_d_window = $null
+    if ($seven_d -ne $null -or $seven_d_resets -ne $null) {
+        $seven_d_window = [ordered]@{ used_percentage = $seven_d; resets_at = $seven_d_resets }
+    }
+
+    $cache = [ordered]@{
+        five_hour    = $five_h_window
+        seven_day    = $seven_d_window
+        captured_at  = (Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')
+    }
+
+    # CLAUDE_HOOKS_STATE_DIR overrides the directory, same env var
+    # hooks/session_state.py already honors — so tests never touch the real
+    # shared file (and can't race a live session's own concurrent write).
+    $stateDir = $env:CLAUDE_HOOKS_STATE_DIR
+    if (-not $stateDir) { $stateDir = Join-Path $HOME '.claude\hooks\state' }
+    if (-not (Test-Path $stateDir)) { New-Item -ItemType Directory -Force -Path $stateDir | Out-Null }
+    $target = Join-Path $stateDir 'rate-limits.json'
+    $json = $cache | ConvertTo-Json -Depth 4
+
+    # tmp+move-force, retried — this file is written by every concurrently
+    # running Claude Code session's statusline re-render, so a naive direct
+    # write risks a reader seeing a torn write (mirrors session_state.py's
+    # _write_rows tmp+os.replace-with-retry pattern). [System.IO.File]::Replace
+    # was tried first but throws "The path is empty" on this PowerShell
+    # 5.1 / .NET Framework combo regardless of backup-path value (verified
+    # empirically) — Move-Item -Force reliably overwrites an existing target.
+    for ($attempt = 0; $attempt -lt 3; $attempt++) {
+        $tmp = Join-Path $stateDir ("rate-limits.json.tmp.$([guid]::NewGuid().ToString('N'))")
+        try {
+            [System.IO.File]::WriteAllText($tmp, $json, [System.Text.Encoding]::UTF8)
+            Move-Item -LiteralPath $tmp -Destination $target -Force
+            break
+        } catch {
+            Remove-Item -LiteralPath $tmp -Force -ErrorAction SilentlyContinue
+            Start-Sleep -Milliseconds (50 * ($attempt + 1))
+        }
+    }
+} catch {
+    # Advisory-only — never let a cache-write failure surface to the user.
+}
