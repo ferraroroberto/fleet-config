@@ -90,49 +90,46 @@ skip this entire step *and* step 9 — the ledger tracks whole-repo audits, so a
 scoped run always executes and never reads or writes the ledger.
 
 Before reading a single source file, check whether this repo changed since the
-last audit. The ledger is a per-repo cache: the commit SHA is the key, a hash
-of **this repo's own** rubric (its project CLAUDE.md) busts it when that repo's
-grading criteria change. The global `~/.claude/CLAUDE.md` is deliberately **not**
-part of the hash — folding it in meant any edit to that shared, frequently-touched
-file busted every repo's cache at once and re-audited the whole fleet (the
-2026-06-06 incident: 28 repos re-graded on a global-file edit, not on real
-change). A repo is still graded against the current global conventions at audit
-time (step 3 reads the global rubric); it just isn't force-re-audited by a global
-edit.
+last audit. This decision is **one deterministic Python call, not LLM
+judgment** — `skills/_lib/audit_issue.py`'s `evaluate_repo` is the single
+implementation both this skill and `/audit-fleet` call, so there is exactly
+one place the skip/audit/self-fix decision lives:
 
+```
+C:/Users/rober/AppData/Local/Python/bin/python.exe C:/Users/rober/.claude/skills/_lib/audit_issue.py gate --repo <OWNER/REPO> --repo-path <repo-root-from-step-1>
+```
+
+It prints `{"decision": "SKIP"|"AUDIT"|"SKIP_SELF_FIX", "reason": ..., ...}`.
 The ledger lives in **one issue per repo** — title `codebase-audit ledger`,
-label `audit-meta`, `--assignee @me`, never closed. Its body carries a hidden
-identity marker on the first line **and** a machine-readable block:
+label `audit-meta`, `--assignee @me`, never closed, with a hidden identity
+marker and a machine-readable `<!-- audit-ledger -->` block (`last-audited-sha`,
+`last-audited-at`, `rubric-sha` — the rubric hash is sha256 of this repo's own
+project CLAUDE.md alone; the global `~/.claude/CLAUDE.md` is deliberately
+**not** part of it, so an edit to that shared, frequently-touched file never
+busts every repo's cache at once, per the 2026-06-06 incident). `evaluate_repo`
+computes and compares all of this internally — no separate rev-list/rubric-hash
+prose is needed here anymore.
 
-```
-<!-- audit-managed: kind=ledger -->
-<!-- audit-ledger -->
-last-audited-sha: <full HEAD sha at last audit>
-last-audited-at: <YYYY-MM-DD>
-rubric-sha: <sha256 of this repo's project CLAUDE.md (empty string if absent)>
-```
+Branch on the decision:
 
-Steps:
-
-- Find the ledger by its marker (not the bare `audit-meta` label, which also
-  tags the `audit-fleet digest state` issue):
-  `C:/Users/rober/AppData/Local/Python/bin/python.exe C:/Users/rober/.claude/skills/_lib/audit_issue.py get --repo <OWNER/REPO> --kind ledger`.
-  It prints `{"number": N|null, "body": "...", "duplicates": [...]}`. If
-  `number` is `null`, this is a first run — skip the gate (the ledger is created
-  in step 9) and continue to step 3.
-- Compute the current `rubric-sha`: sha256 over the project CLAUDE.md alone
-  (`<repo-root>/CLAUDE.md`); a missing file contributes the empty string. The
-  global `~/.claude/CLAUDE.md` is **not** part of this hash — only the repo's own
-  rubric busts its own cache, so an edit to the shared global file no longer
-  re-audits the fleet.
-- Read `last-audited-sha` from the block and run
-  `git rev-list <last-audited-sha>..HEAD --count`.
-- **Skip condition:** the count is `0` **and** the current `rubric-sha` equals
-  the stored one. When it holds, stop immediately:
+- **`SKIP`** — nothing changed. Stop immediately:
   `No changes since last audit (<short-sha> on <date>) — skipped.` Read no
-  files, file nothing. A re-run over an unchanged repo then costs one `gh` call
-  and one `git` call — that is the efficiency win the ledger exists for.
-- Otherwise continue to step 3.
+  files, file nothing.
+- **`SKIP_SELF_FIX`** — every commit since the last audit closes only this
+  repo's own audit-managed findings (detected via merged-PR
+  `closingIssuesReferences` against the bucket issues, entirely in Python —
+  see `audit_issue.py`'s `evaluate_repo`/`audit_only_churn`). The ledger has
+  **already been advanced** by the gate call itself (HEAD sha, today's date,
+  same rubric-sha) and a `<!-- audit-self-fix -->` comment already posted to
+  the ledger issue — no further action needed here. Stop immediately:
+  `Skipped — commits since last audit only close this repo's own audit
+  findings (#N, #M); ledger advanced, no organic change.` This is what stops a
+  repo from being endlessly re-flagged just because `/cleanup-fleet` (or a
+  manual fix) landed its own findings.
+- **`AUDIT`** — continue to step 3.
+
+A re-run over an unchanged (`SKIP`) repo costs one `gh` call and one `git`
+call — that is the efficiency win the ledger exists for.
 
 ### 3. Load the rubric
 
@@ -271,10 +268,29 @@ body — the issue is a *living backlog*, so:
   fixed those; never reset them.
 - **Match by file path first.** A finding for a file already listed is the same
   finding even if the line number moved — update the line to this run's value
-  (re-verified while reading) and keep the existing checkbox state. Append a
-  finding as new only when no item for that file + problem already exists.
-- **Keep items this run didn't re-surface** (don't delete them); flag them in
-  the run log as "not re-surfaced (verify)".
+  (re-verified while reading) and keep the existing checkbox state.
+- **Tag each item's re-verification status inline — don't bury it in the run
+  log.** A stale checklist item must not read identically to a freshly
+  discovered one:
+  - **New this run** (no item for that file + problem existed before): append
+    as-is, no suffix — it correctly reads as freshly discovered.
+  - **Re-matched this run** (found again, same file + problem): silently bump
+    its hidden `last-seen` date, no visible tag — a re-confirmed item reads as
+    a normal, currently-live finding.
+  - **Not re-surfaced this run:** keep the line (never delete), append
+    *inline on the same line* (a bare HTML comment on its own line risks
+    GitHub treating it as breaking the list):
+    `_(carried — not re-verified since <date>)_<!-- last-seen: <date> -->`.
+  - **Escalation, free of new state:** fetch the ledger's *previous*
+    `last-audited-at` (`audit_issue.py get --repo <OWNER/REPO> --kind ledger`,
+    read before step 9 overwrites it this run). For an item not re-surfaced
+    this run, compare its existing `last-seen` against that previous date: if
+    equal, this is its first miss (use the plain tag above); if earlier, it
+    already missed last run too — escalate to
+    `_(carried — not re-verified since <date>; flag for pruning)_<!-- last-seen: <date> -->`.
+    Two audits on the same calendar day degrade to "no escalation" — a safe
+    default, not a bug. Pruning stays a human decision (never auto-close/tick)
+    — this only makes staleness visible on the item itself.
 - **Never tick or close anything yourself**, and never add `Closes #` — multiple
   PRs may chip at one audit issue without closing it; closing is the user's call
   via `/issue-finish` once all boxes are checked.
@@ -405,14 +421,17 @@ Print one summary table and stop. Exact shape:
 ```
 /codebase-audit summary — <repo>  (scope: <whole repo | path>)
 
-  bucket             findings  filed
-  -----------------  --------  --------------------------------------------
-  duplication              3   https://github.com/<owner>/<repo>/issues/<N>
-  stale                    0   (no findings)
-  claude-md-drift          2   https://github.com/<owner>/<repo>/issues/<N>
-  maintainability          5   https://github.com/<owner>/<repo>/issues/<N>
-  bug                      0   (no findings)
-  documentation            4   https://github.com/<owner>/<repo>/issues/<N>
+  bucket             findings  new  carried  stale*  filed
+  -----------------  --------  ---  -------  ------  --------------------------------------------
+  duplication              3    1        2       0   https://github.com/<owner>/<repo>/issues/<N>
+  stale                    0    0        0       0   (no findings)
+  claude-md-drift          2    0        2       0   https://github.com/<owner>/<repo>/issues/<N>
+  maintainability          5    2        2       1   https://github.com/<owner>/<repo>/issues/<N>
+  bug                      0    0        0       0   (no findings)
+  documentation            4    1        1       2   https://github.com/<owner>/<repo>/issues/<N>
+
+  * stale = carried from an earlier run, not re-verified this pass — kept on
+    the checklist and flagged for review, not deleted.
 
   skipped as duplicates:
     - <file>:<line> — dupe of #<N>
@@ -424,6 +443,14 @@ Print one summary table and stop. Exact shape:
     - asset:      <repo-relative path / module> — <one-line capability>
     - convention: <convention> — generalizable because <…>
 ```
+
+The `new`/`carried`/`stale` columns are the **same counts** step 8 already
+computed for that bucket's `## Audit run log` bullet — never recomputed here,
+so they can't drift from what the issue body says. `findings` stays the total
+surviving-after-dedup count exactly as before (step 9's ledger-snapshot
+comment still reads this column unchanged). This breakdown is what
+`/audit-fleet`'s digest uses to separate genuinely new findings from standing
+backlog.
 
 The `promotion candidates spotted:` block is the only place these surface — it
 carries no issue, files nothing, and is what `/audit-fleet` reads to feed the
@@ -444,7 +471,14 @@ findings. Codebase passes the audit.` — and stop.
   a clean codebase than six issues full of noise they have to triage
   out. Bias is toward filing *fewer*, not more. For bucket 5 (bugs)
   specifically the bar is even higher — only file what you'd bet money
-  on; false-positive bug reports erode trust in the whole skill.
+  on; false-positive bug reports erode trust in the whole skill. For
+  bucket 6 (documentation) the bar is likewise raised: a finding must concern
+  a *headline, user-facing* surface — a shipped command, config knob, or setup
+  step a new reader would actually hit — not an internal helper, a single
+  stale sentence, or a doc section whose subject is already about to change
+  from other in-flight work. Bugs and documentation are the two buckets that
+  historically re-surface the same low-value findings run after run, so hold
+  them to a stricter bar than the other four.
 - **Never edit files.** This skill files issues; it does not patch code.
 - **Promotion candidates never become issues or foreign-repo writes.** They are
   the inverse of a finding (an asset to preserve, not rot to fix) and are
@@ -513,7 +547,11 @@ Concrete anti-examples. If a candidate finding looks like any of these,
 - **Bugs.** "This *might* race under high concurrency" without a
   concrete scenario: not a finding. "This will mis-handle empty input
   because line N reads `xs[0]` with no guard": **yes** — name the
-  input, name the line, name the failure.
+  input, name the line, name the failure. Also not a finding: a bug in code
+  already superseded by other in-flight work, or one you can't point to a
+  *currently reachable* call path for from a real entry point — reachability
+  from something that actually runs today is required, not just "the line
+  looks wrong."
 - **Documentation.** One sentence in the README that's slightly stale, a
   flag the docs describe in fractionally outdated wording, a missing entry
   for a trivial internal helper: not a finding. A whole README section
@@ -522,6 +560,10 @@ Concrete anti-examples. If a candidate finding looks like any of these,
   `README` and a `docs/` file that now disagree on the port, or a dated
   `docs/2026-…-retrospective.md` the project's own doc-lifecycle rule
   forbids: **yes** — name the file/section and the rule or missing feature.
+  Also not a finding: a documentation gap for an internal/dev-only helper, or
+  a single outdated example a reader would self-correct in context — bucket 6
+  is reserved for headline surfaces a new user/dev would actually go looking
+  for and not find.
 
 The pattern across all six: **scale and impact matter**. One-off
 cosmetic blemishes are not findings. Systematic problems, structural
@@ -539,9 +581,15 @@ rot, or concrete failure modes are.
   expand scope into either.
 - If the user reruns the skill the next day after fixing nothing, the
   **ledger gate (step 2)** short-circuits before any files are read — HEAD
-  is unchanged, so the run stops at one `gh` + one `git` call. Even when the
-  gate is bypassed (first run, scoped run, or the rubric changed), the dedupe
-  step still prevents re-filing the same findings. That layered idempotency
-  is the intended behavior.
+  is unchanged, so the run stops at one `gh` + one `git` call. If instead the
+  only thing that happened is `/cleanup-fleet` (or a manual fix) landing this
+  repo's own audit findings, the gate returns `SKIP_SELF_FIX` — still no files
+  read, and the ledger is advanced automatically so the repo doesn't get
+  endlessly re-flagged for its own fix commits. Even when the gate returns
+  `AUDIT` (first run, scoped run, the rubric changed, or genuine organic
+  drift), the dedupe step still prevents re-filing the same findings. That
+  layered idempotency is the intended behavior. Both decisions are made by one
+  Python function (`audit_issue.py`'s `evaluate_repo`), not LLM judgment — see
+  `tests/test_audit_issue.py` for the unit-tested cases.
 - The ledger issue is labelled `audit-meta` precisely so it never shows up as
   actionable work — `/issue-triage` and `/issue-start` filter that label out.

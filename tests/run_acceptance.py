@@ -331,6 +331,9 @@ def main() -> int:
     # ---- audit_issue helper pure-logic tests (skills/_lib) ----
     failures += _audit_issue_unit_check()
 
+    # ---- fleet_audit_scan helper pure-logic tests (skills/_lib) ----
+    failures += _fleet_audit_scan_unit_check()
+
     # ---- worktree_claim helper pure-logic tests (skills/_lib) ----
     failures += _worktree_claim_unit_check()
 
@@ -377,10 +380,11 @@ def main() -> int:
 # work_summary (5) + slack_routing (10) +
 # conversation_capture (13) + conversation_index (6) + restart_webapp (6) +
 # gh_body_file_guard (6) + tier23_hooks (10) + audit_issue (1) +
-# worktree_claim (1) + ux_surface (1) + cert_drift (1) + learning_log (16) +
-# system_map (3) + fleet_toml (3) + system_map_whatchanged (7) +
-# config_map (8) + codex_hooks_config (4) + settings_template_sync (1).
-_UNIT_CHECK_COUNT = 148
+# fleet_audit_scan (1) + worktree_claim (1) + ux_surface (1) + cert_drift (1) +
+# learning_log (16) + system_map (3) + fleet_toml (3) +
+# system_map_whatchanged (7) + config_map (8) + codex_hooks_config (4) +
+# settings_template_sync (1).
+_UNIT_CHECK_COUNT = 149
 
 
 def _context_filter_unit_checks() -> int:
@@ -1150,6 +1154,24 @@ def _audit_issue_unit_check() -> int:
     )
     ok = proc.returncode == 0
     print(f"{'OK   ' if ok else 'FAIL '} audit_issue: pure-logic unit tests")
+    if not ok:
+        for line in (proc.stdout or "").strip().splitlines():
+            print(f"        | {line}")
+    return 0 if ok else 1
+
+
+def _fleet_audit_scan_unit_check() -> int:
+    """Run skills/_lib/fleet_audit_scan.py's pure-logic tests as a subprocess.
+
+    Standalone (like test_audit_issue) so `is_fleet_repo` is testable on its
+    own and reachable from the one gate.
+    """
+    proc = subprocess.run(
+        [PYTHON, str(REPO / "tests" / "test_fleet_audit_scan.py")],
+        capture_output=True, text=True, encoding="utf-8", errors="replace",
+    )
+    ok = proc.returncode == 0
+    print(f"{'OK   ' if ok else 'FAIL '} fleet_audit_scan: pure-logic unit tests")
     if not ok:
         for line in (proc.stdout or "").strip().splitlines():
             print(f"        | {line}")
