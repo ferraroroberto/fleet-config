@@ -1,0 +1,81 @@
+%% docs/architecture.mmd — fleet-config's own internal structure.
+%% Hand-authored, not generated — unlike architecture/system-map.mmd (the
+%% mechanically-aggregated fleet-wide picture), this repo's own internal shape
+%% is semantic and can't be crawled the same way. Update this diagram in the
+%% same PR as any material structural change (a new skill tier, a hook added
+%% or moved, a script relocated) — same anti-staleness contract as a repo's
+%% own `.fleet.toml` `description` field. See global-CLAUDE.md's "Every repo
+%% carries a `.fleet.toml`" section for the general convention.
+
+flowchart TB
+  subgraph install["install.ps1 / uninstall.ps1"]
+    INSTALL["junctions: hooks/, skills/, commands/, pi/extensions/\nsymlinks: global-CLAUDE.md, design.md, design.dark.md,\nstatusline-command.ps1, codex-hooks.json"]
+  end
+
+  subgraph homes["Agent homes"]
+    CLAUDE["~/.claude (Claude Code)"]
+    CODEX["~/.codex (Codex)"]
+    PIHOME["~/.pi/agent (Pi)"]
+    COPILOT["~/.copilot (Copilot CLI)"]
+  end
+
+  INSTALL --> CLAUDE
+  INSTALL --> CODEX
+  INSTALL --> PIHOME
+  INSTALL --> COPILOT
+
+  subgraph hooks["hooks/ — junctioned into Claude + Codex only"]
+    LIBPY["_lib.py\nproject detection, stdin-JSON, projects.toml loader"]
+    PROJECTS["projects.toml\nper-project ports/gates/never-kill ports"]
+    RUNHOOK["run-hook.ps1 — Claude Code shim (Git Bash routes through it)"]
+    HOOKFILES["pre_commit_no_ai_trailer · secret_scan_guard · safe_kill_guard ·\nvenv_discipline · py_syntax_check · notify_on_idle · session_state · …"]
+    SLACKPY["slack_notify.py -> notify_complete.py -> work_summary.py"]
+  end
+  hooks --> CLAUDE
+  hooks --> CODEX
+  HOOKFILES --> LIBPY
+  HOOKFILES --> PROJECTS
+  RUNHOOK --> HOOKFILES
+
+  subgraph gskills["skills/ — GLOBAL tier (every session, every repo)"]
+    ISSUEADD["issue-add"] --> ISSUESTART["issue-start"] --> ISSUEFINISH["issue-finish"]
+    ISSUEEXTRA["issue-batch · issue-finish-batch · issue-triage · issue-yolo"]
+    OTHERGLOBAL["codebase-audit · design-sync · handoff-commit · screen"]
+    LIB["_lib/ — worktree_claim.py · ux_surface.py · audit_issue.py ·\ncert_drift.py · rate_gate.py · dirty_tree_check.py"]
+  end
+  gskills --> CLAUDE
+  gskills --> CODEX
+  gskills --> PIHOME
+  gskills --> COPILOT
+  ISSUESTART --> LIB
+  ISSUEFINISH --> LIB
+  ISSUEEXTRA --> LIB
+  OTHERGLOBAL --> LIB
+
+  subgraph fskills[".claude/skills/ — FLEET-ONLY tier (cwd-scoped to fleet-config)"]
+    SYSTEMMAP["system-map\nbuild_data.py · render.py · render_mermaid.py · whatchanged.py"]
+    AUDITFLEET["audit-fleet"] --> CLEANUPFLEET["cleanup-fleet"]
+    CONTEXTAUDIT["context-audit"]
+    CONFIGMAP["config-map"]
+    OTHERFLEET["insights-weekly · learning-log"]
+  end
+  fskills -.->|cwd-scoped, Claude Code only| CLAUDE
+  AUDITFLEET -->|invokes per repo| OTHERGLOBAL
+  CLEANUPFLEET -->|fans out fixes for| OTHERGLOBAL
+  CLEANUPFLEET --> ISSUEEXTRA
+
+  ARCH["architecture/\nfleet.data.js · system-map.{html,png,mmd} · config.data.js · ARCHITECTURE.md"]
+  GCMDFILE["global-CLAUDE.md"]
+  SYSTEMMAP --> ARCH
+  SYSTEMMAP -->|marked block| GCMDFILE
+  CONFIGMAP --> ARCH
+  CONTEXTAUDIT -->|measures| GCMDFILE
+  CONTEXTAUDIT -->|measures| gskills
+  CONTEXTAUDIT -->|measures| fskills
+
+  subgraph tests["tests/run_acceptance.py"]
+    TESTS["hook payload matrix + _lib unit tests +\nsystem-map / config-map drift guards"]
+  end
+  TESTS --> HOOKFILES
+  TESTS --> LIB
+  TESTS --> ARCH
