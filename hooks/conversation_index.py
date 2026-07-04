@@ -18,12 +18,14 @@ with ``capture = true`` and a ``capture_routing`` of ``"flat"`` (one
 conversations dir) or ``"skills"`` (per-skill dirs). Fail-open: if the hub is
 unreachable an entry is skipped and retried next run (see :mod:`hub_client`).
 
-Usage (from anywhere)::
+Usage (from anywhere — invoke the resolved Python path directly, not a bare
+``py``/``python``, which is not reliably on ``PATH`` on this machine; see
+``_lib.find_python_executable``)::
 
-    py hooks/conversation_index.py --project life-os      # one project by name
-    py hooks/conversation_index.py --cwd E:/automation/life-os
-    py hooks/conversation_index.py --all                  # every opted-in project
-    py hooks/conversation_index.py --all --force          # ignore settle, re-digest
+    C:/Users/rober/AppData/Local/Python/bin/python.exe hooks/conversation_index.py --project life-os      # one project by name
+    C:/Users/rober/AppData/Local/Python/bin/python.exe hooks/conversation_index.py --cwd E:/automation/life-os
+    C:/Users/rober/AppData/Local/Python/bin/python.exe hooks/conversation_index.py --all                  # every opted-in project
+    C:/Users/rober/AppData/Local/Python/bin/python.exe hooks/conversation_index.py --all --force          # ignore settle, re-digest
 """
 
 from __future__ import annotations

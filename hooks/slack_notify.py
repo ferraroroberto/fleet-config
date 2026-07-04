@@ -4,10 +4,12 @@ This is the **transport** for machine→human alerts across the fleet. Any skill
 hook, or unattended job — in any project, with zero install — can reach it two
 ways:
 
-* As a CLI (e.g. from a skill's instructions or a `.bat` job)::
+* As a CLI (e.g. from a skill's instructions or a `.bat` job) — invoke the
+  resolved Python path directly, not a bare ``py``/``python`` (not reliably on
+  ``PATH`` on this machine; see ``_lib.find_python_executable``)::
 
-      py ~/.claude/hooks/slack_notify.py --channel C0123ABCD --text "stuck, come look"
-      echo "long body" | py ~/.claude/hooks/slack_notify.py --channel C0123ABCD
+      C:/Users/rober/AppData/Local/Python/bin/python.exe ~/.claude/hooks/slack_notify.py --channel C0123ABCD --text "stuck, come look"
+      echo "long body" | C:/Users/rober/AppData/Local/Python/bin/python.exe ~/.claude/hooks/slack_notify.py --channel C0123ABCD
 
 * As an import (from another hook / Python tool)::
 

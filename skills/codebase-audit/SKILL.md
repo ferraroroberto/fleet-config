@@ -116,7 +116,7 @@ Steps:
 
 - Find the ledger by its marker (not the bare `audit-meta` label, which also
   tags the `audit-fleet digest state` issue):
-  `py C:/Users/rober/.claude/skills/_lib/audit_issue.py get --repo <OWNER/REPO> --kind ledger`.
+  `C:/Users/rober/AppData/Local/Python/bin/python.exe C:/Users/rober/.claude/skills/_lib/audit_issue.py get --repo <OWNER/REPO> --kind ledger`.
   It prints `{"number": N|null, "body": "...", "duplicates": [...]}`. If
   `number` is `null`, this is a first run — skip the gate (the ledger is created
   in step 9) and continue to step 3.
@@ -258,7 +258,7 @@ never spawn a duplicate. For each non-empty bucket (max 6 iterations):
 **1. Fetch the existing issue** for this bucket:
 
 ```
-py C:/Users/rober/.claude/skills/_lib/audit_issue.py get --repo <OWNER/REPO> --kind <bucket>
+C:/Users/rober/AppData/Local/Python/bin/python.exe C:/Users/rober/.claude/skills/_lib/audit_issue.py get --repo <OWNER/REPO> --kind <bucket>
 ```
 
 It prints `{"number": N|null, "body": "...", "duplicates": [...]}`.
@@ -284,7 +284,7 @@ body — the issue is a *living backlog*, so:
 **3. Upsert** (creates if absent, edits if present, collapses any strays):
 
 ```
-py C:/Users/rober/.claude/skills/_lib/audit_issue.py upsert \
+C:/Users/rober/AppData/Local/Python/bin/python.exe C:/Users/rober/.claude/skills/_lib/audit_issue.py upsert \
   --repo <OWNER/REPO> --kind <bucket> --label <bucket-label> \
   --title "audit: <bucket> findings" --body-file <tmpfile>
 ```
@@ -352,7 +352,7 @@ Upsert the per-repo ledger issue so the next run can short-circuit at step 2:
   `audit-meta` label):
 
   ```
-  py C:/Users/rober/.claude/skills/_lib/audit_issue.py upsert \
+  C:/Users/rober/AppData/Local/Python/bin/python.exe C:/Users/rober/.claude/skills/_lib/audit_issue.py upsert \
     --repo <OWNER/REPO> --kind ledger --label audit-meta \
     --title "codebase-audit ledger" --body-file <tmpfile>
   ```

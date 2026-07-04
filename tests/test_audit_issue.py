@@ -3,7 +3,7 @@
 No live `gh` — these exercise marker handling, title adoption, and the
 keep/close decision that guarantees one audit issue per (repo, kind).
 
-Run: `py tests/test_audit_issue.py`  (also invoked by tests/run_acceptance.py)
+Run: `C:/Users/rober/AppData/Local/Python/bin/python.exe tests/test_audit_issue.py`  (also invoked by tests/run_acceptance.py)
 """
 
 from __future__ import annotations

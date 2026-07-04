@@ -198,7 +198,7 @@ As each sub-agent finishes, surface its report with a status mark: `✅` merged 
 When **all** agents have returned, fire **one final** roll-up ping — the closing message for the run. The per-issue `🚀 Shipped` pings the Sonnet agents already fired are kept; this is *in addition*:
 
 ```
-py C:/Users/rober/.claude/hooks/notify_complete.py \
+C:/Users/rober/AppData/Local/Python/bin/python.exe C:/Users/rober/.claude/hooks/notify_complete.py \
   --kind cleanup --summary "<bucket>" --merged <sonnet-merged-count> --review <opus-review-count>
 ```
 

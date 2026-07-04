@@ -15,8 +15,8 @@ structural change).
 Pure logic, no I/O in the diff functions, so ``tests/run_acceptance.py`` can
 exercise them. The CLI at the bottom does the git read::
 
-    py .claude/skills/config-map/whatchanged.py            # vs HEAD, default file
-    py .claude/skills/config-map/whatchanged.py --ref main # vs another ref
+    C:/Users/rober/AppData/Local/Python/bin/python.exe .claude/skills/config-map/whatchanged.py            # vs HEAD, default file
+    C:/Users/rober/AppData/Local/Python/bin/python.exe .claude/skills/config-map/whatchanged.py --ref main # vs another ref
 """
 
 from __future__ import annotations

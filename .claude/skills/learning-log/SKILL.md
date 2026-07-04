@@ -33,8 +33,8 @@ description: Weekly learning log + forward horizon + productivity stats distille
 ### 1. Gather + stat the work stream
 
 ```
-py .claude/skills/learning-log/gather.py gather              # scheduled: auto window
-py .claude/skills/learning-log/gather.py gather --since 2026-05-01   # override (backfill/validation)
+C:/Users/rober/AppData/Local/Python/bin/python.exe .claude/skills/learning-log/gather.py gather              # scheduled: auto window
+C:/Users/rober/AppData/Local/Python/bin/python.exe .claude/skills/learning-log/gather.py gather --since 2026-05-01   # override (backfill/validation)
 ```
 
 It lists every fleet repo (`gh repo list`), reads each repo's merged PRs + closed issues **per repo** (`gh pr list` / `gh issue list` — REST, so the full window is covered with no cap and no search rate-limit), buckets each item by work type, computes exact stats, and writes into `<OUT_DIR>`: `stats.md` (the productivity tables), `prior-horizon.md`, and one `bucket-<slug>.md` per non-empty bucket. It prints a **manifest** — capture every line:
@@ -79,7 +79,7 @@ Compose the weekly digest as markdown (single long lines, no hard wraps). Order:
 Write the new horizon bullets to `horizon.md` and the discovery bullets to `discoveries.md` (in `OUT_DIR`), then let Python preserve the durable archive + stamp `last-run-at`. `build_ledger_body` also renders a fixed **Fleet map** link near the top of the body — the `architecture/system-map.png` produced by `/system-map` (cross-linked, never regenerated here):
 
 ```
-py .claude/skills/learning-log/gather.py assemble-ledger \
+C:/Users/rober/AppData/Local/Python/bin/python.exe .claude/skills/learning-log/gather.py assemble-ledger \
   --repo ferraroroberto/fleet-config \
   --horizon-file <OUT_DIR>/horizon.md --discoveries-file <OUT_DIR>/discoveries.md \
   --out <OUT_DIR>/ledger-body.md
@@ -88,7 +88,7 @@ py .claude/skills/learning-log/gather.py assemble-ledger \
 Then upsert the one canonical `kind=learning` ledger (deduped by `C:/Users/rober/.claude/skills/_lib/audit_issue.py`; title `learning log — fleet`; label `audit-meta` so `/issue-triage` filters it out):
 
 ```
-py C:/Users/rober/.claude/skills/_lib/audit_issue.py upsert --repo ferraroroberto/fleet-config \
+C:/Users/rober/AppData/Local/Python/bin/python.exe C:/Users/rober/.claude/skills/_lib/audit_issue.py upsert --repo ferraroroberto/fleet-config \
   --kind learning --label audit-meta --title "learning log — fleet" --body-file <OUT_DIR>/ledger-body.md
 ```
 
@@ -101,7 +101,7 @@ COMMENT_URL=$(gh issue comment "<LEDGER_URL>" --repo ferraroroberto/fleet-config
 ### 5. Slack completion ping
 
 ```
-py hooks/notify_complete.py --kind learning --comment-url "<COMMENT_URL>" \
+C:/Users/rober/AppData/Local/Python/bin/python.exe hooks/notify_complete.py --kind learning --comment-url "<COMMENT_URL>" \
   --summary "<N> PRs / <M> issues across <K> repos · <one-line horizon grade>"
 ```
 

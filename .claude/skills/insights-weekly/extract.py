@@ -9,7 +9,7 @@ markup.
 
 Stdlib only; no dependencies. Usage::
 
-    py extract.py <path-to-report.html>      # -> markdown on stdout
+    C:/Users/rober/AppData/Local/Python/bin/python.exe extract.py <path-to-report.html>      # -> markdown on stdout
 
 Exit codes: 0 ok, 1 file not found, 2 bad usage.
 """

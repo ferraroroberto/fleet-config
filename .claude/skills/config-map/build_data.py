@@ -33,10 +33,11 @@ exactly what this script regenerates — same anti-staleness contract as
 By construction this reads only *wiring and structure*, never the live
 ``~/.claude/settings.json``, so no secret value can ever enter the dataset.
 
-Usage::
+Usage (invoke the resolved Python path directly — a bare ``py``/``python`` is
+not reliably on ``PATH`` on this machine; see ``_lib.find_python_executable``)::
 
-    py .claude/skills/config-map/build_data.py            # regenerate config.data.js
-    py .claude/skills/config-map/build_data.py --check     # exit 1 if the file is stale
+    C:/Users/rober/AppData/Local/Python/bin/python.exe .claude/skills/config-map/build_data.py            # regenerate config.data.js
+    C:/Users/rober/AppData/Local/Python/bin/python.exe .claude/skills/config-map/build_data.py --check     # exit 1 if the file is stale
 """
 
 from __future__ import annotations
@@ -74,7 +75,7 @@ HEADER = """\
 // it derives from (install.ps1, skills/, hooks/, settings.template.json,
 // codex-hooks.json, each repo's .claude/skills) or the hand-maintained
 // architecture/config.residual.json, then regenerate:
-//   py .claude/skills/config-map/build_data.py
+//   C:/Users/rober/AppData/Local/Python/bin/python.exe .claude/skills/config-map/build_data.py
 // Loaded as plain JS (works under file://, no CORS): sets window.CONFIG.
 // The body is strict JSON so Python (build_data.py + the drift test in
 // tests/run_acceptance.py) can read it too: strip "window.CONFIG =" + trailing ";".
@@ -461,7 +462,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.check:
         if rendered != current:
             print("build_data: config.data.js is STALE — run "
-                  "`py .claude/skills/config-map/build_data.py` and commit.", file=sys.stderr)
+                  "`C:/Users/rober/AppData/Local/Python/bin/python.exe .claude/skills/config-map/build_data.py` and commit.", file=sys.stderr)
             return 1
         print("build_data: config.data.js is up to date.")
         return 0

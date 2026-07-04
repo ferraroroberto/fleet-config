@@ -2,7 +2,7 @@
 // .claude/skills/system-map/build_data.py — DO NOT hand-edit. Edit each repo's root
 // `.fleet.toml` (authoritative) or `architecture/fleet.residual.json` (the
 // non-repo structure + fallback cards), then regenerate:
-//   py .claude/skills/system-map/build_data.py
+//   C:/Users/rober/AppData/Local/Python/bin/python.exe .claude/skills/system-map/build_data.py
 // Loaded as plain JS (works under file://, no CORS): sets window.FLEET.
 // The body is strict JSON so Python (build_data.py, the /system-map skill, and
 // the drift test in tests/run_acceptance.py) can read it too: strip

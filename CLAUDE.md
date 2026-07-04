@@ -38,12 +38,14 @@ This is required for `notify_on_idle` to show the correct project name in Slack 
 
 ```powershell
 # 1. Byte-compile every hook and shared skill helper
-& py -m py_compile hooks/*.py skills/_lib/*.py
+& C:/Users/rober/AppData/Local/Python/bin/python.exe -m py_compile hooks/*.py skills/_lib/*.py
 
 # 2. Run the acceptance matrix (drives each hook with a sample stdin payload;
 #    the final case runs the audit-issue helper's pure-logic unit tests)
-& py tests/run_acceptance.py
+& C:/Users/rober/AppData/Local/Python/bin/python.exe tests/run_acceptance.py
 ```
+
+Invoke the resolved Python path directly (`C:/Users/rober/AppData/Local/Python/bin/python.exe`), not a bare `py`/`python` — the `py` launcher is not reliably on `PATH` on this machine (confirmed absent from both Git Bash and PowerShell), so a literal `py <script>` silently fails wherever a skill or doc tells the agent to run it (fleet-config#256).
 
 If a hook regresses, the matrix fails loudly. Don't claim a hook works without driving it through `tests/run_acceptance.py`.
 

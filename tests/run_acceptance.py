@@ -1,7 +1,8 @@
 """Drive each hook with a sample payload and assert the expected exit code.
 
-Run from the repo root:
-    py tests/run_acceptance.py
+Run from the repo root (invoke the resolved Python path directly — a bare
+``py``/``python`` is not reliably on ``PATH`` on this machine):
+    C:/Users/rober/AppData/Local/Python/bin/python.exe tests/run_acceptance.py
 
 Exit 0 if all cases pass, 1 otherwise. Prints a single line per case.
 """
