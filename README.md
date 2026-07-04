@@ -187,6 +187,8 @@ codex exec --sandbox workspace-write "Print exactly: codex-sandbox-ok"
 
 If `workspace-write` is broken but Codex still needs to be spawned for urgent fleet work, `--sandbox danger-full-access` is the temporary helper-free fallback. Treat that as a workaround to unblock the run, then repair or update the Codex install and re-run the workspace-write verification before relying on sandboxed sub-agents again.
 
+**Rate-limits cache (fleet-config#259 / app-launcher#326).** `statusline-command.ps1` also caches the payload's `rate_limits.five_hour`/`seven_day` (`used_percentage` + `resets_at`) plus a `captured_at` stamp to `~/.claude/hooks/state/rate-limits.json` on every render — a pure additive side effect, written atomically (tmp file + `Move-Item -Force`, retried) so app-launcher's Board and Coding tabs can show current Claude usage % without being the statusline process themselves. `rate_limits` is account-wide, so any active session's render refreshes it for every consumer; either window may be `null` if Claude Code hasn't reported it yet (e.g. before the first API response in a session). Written with a BOM-less UTF-8 encoding (`New-Object System.Text.UTF8Encoding($false)`) — the default `[System.Text.Encoding]::UTF8` emits a BOM that breaks a plain `json.loads` on the reader side.
+
 **Codex statusline parity.** Claude Code's statusline is a custom command (`statusline-command.ps1`) that receives a JSON payload including `context_window.used_percentage`, so it can render `used % | model | project (branch)` with color thresholds. Codex does not use that command surface; it has a native TUI footer configured by `/statusline` or by `~/.codex/config.toml`:
 
 ```toml
