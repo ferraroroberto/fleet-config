@@ -325,6 +325,9 @@ def main() -> int:
     # ---- gh_body_file_guard: warn-only stdout assertions ----
     failures += _gh_body_file_guard_unit_checks()
 
+    # ---- bash_cmdexe_syntax_guard: warn-only stdout assertions (issue #264) ----
+    failures += _bash_cmdexe_syntax_guard_unit_checks()
+
     # ---- Tier 2/3 hooks: docs-guard env override + warn-hook stdout (issue #158) ----
     failures += _tier23_hooks_unit_checks()
 
@@ -379,12 +382,12 @@ def main() -> int:
 # mention (5) + classify (6) + session_state (11) + notify_complete (18) +
 # work_summary (5) + slack_routing (10) +
 # conversation_capture (13) + conversation_index (6) + restart_webapp (6) +
-# gh_body_file_guard (6) + tier23_hooks (10) + audit_issue (1) +
-# fleet_audit_scan (1) + worktree_claim (1) + ux_surface (1) + cert_drift (1) +
-# learning_log (16) + system_map (3) + fleet_toml (3) +
+# gh_body_file_guard (6) + bash_cmdexe_syntax_guard (8) + tier23_hooks (10) +
+# audit_issue (1) + fleet_audit_scan (1) + worktree_claim (1) + ux_surface (1) +
+# cert_drift (1) + learning_log (16) + system_map (3) + fleet_toml (3) +
 # system_map_whatchanged (7) + config_map (8) + codex_hooks_config (4) +
 # settings_template_sync (1).
-_UNIT_CHECK_COUNT = 149
+_UNIT_CHECK_COUNT = 157
 
 
 def _context_filter_unit_checks() -> int:
@@ -1066,6 +1069,44 @@ def _gh_body_file_guard_unit_checks() -> int:
           stdout_for("gh issue list --state open --limit 20") == "")
     check("gh_guard: gh pr create plain inline body (no risky construct) -> silent",
           stdout_for('gh pr create --title x --body "plain text, nothing to expand"') == "")
+
+    return failures
+
+
+def _bash_cmdexe_syntax_guard_unit_checks() -> int:
+    """The warn-only nudge fires on cmd.exe-only syntax and stays silent on
+    Bash-native equivalents. Exit is always 0, so these assert on STDOUT, not
+    the exit code: a nudge present (non-empty stdout) for the risky forms,
+    empty for the safe ones."""
+    failures = 0
+
+    def check(case: str, ok: bool) -> None:
+        nonlocal failures
+        print(f"{'OK   ' if ok else 'FAIL '} {case}")
+        if not ok:
+            failures += 1
+
+    def stdout_for(command: str) -> str:
+        code, out, _err = run("bash_cmdexe_syntax_guard", {"tool_name": "Bash", "tool_input": {"command": command}})
+        # warn-only: the hook must never block (exit non-zero) regardless of input.
+        return out.strip() if code == 0 else f"__NONZERO_EXIT_{code}__"
+
+    check("cmdexe_guard: %VAR% env reference -> nudge",
+          bool(stdout_for("echo %USERPROFILE%")))
+    check("cmdexe_guard: dir /s -> nudge",
+          bool(stdout_for("dir /s")))
+    check("cmdexe_guard: del /f -> nudge",
+          bool(stdout_for("del /f file.txt")))
+    check("cmdexe_guard: caret line-continuation -> nudge",
+          bool(stdout_for("echo hello ^\necho world")))
+    check("cmdexe_guard: printf %s (bare percent, no close) -> silent",
+          stdout_for('printf "%s\\n" hello') == "")
+    check("cmdexe_guard: URL path with /s (no cmd builtin) -> silent",
+          stdout_for("curl https://example.com/s/path") == "")
+    check("cmdexe_guard: date +%Y%m%d (single-letter format run) -> silent",
+          stdout_for("date +%Y%m%d") == "")
+    check("cmdexe_guard: plain git log -> silent",
+          stdout_for("git log --oneline") == "")
 
     return failures
 
