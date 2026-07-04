@@ -21,6 +21,12 @@
             "command": "C:/Users/rober/AppData/Local/Python/bin/python.exe C:/Users/rober/.codex/hooks/bash_cmdexe_syntax_guard.py",
             "timeout": 15,
             "statusMessage": "Checking cmd.exe syntax"
+          },
+          {
+            "type": "command",
+            "command": "C:/Users/rober/AppData/Local/Python/bin/python.exe C:/Users/rober/.codex/hooks/bash_windows_path_guard.py",
+            "timeout": 15,
+            "statusMessage": "Checking Windows paths"
           }
         ]
       },
