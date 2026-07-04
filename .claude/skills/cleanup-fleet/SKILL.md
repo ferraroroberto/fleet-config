@@ -206,6 +206,21 @@ Print a single confirmation block listing every sub-agent dispatched (repo, #N, 
 
 ### 10. Aggregate as agents return, then the closing ping
 
+**Before marking any repo complete, run the post-flight dirty-tree check yourself — never trust the agent's self-report.** The agent that reports the result is the same actor that might have forgotten a commit or left something dirty, so this runs in the orchestrator:
+
+- **Easy-tier (reported `MERGED`):**
+  ```
+  C:/Users/rober/AppData/Local/Python/bin/python.exe C:/Users/rober/.claude/skills/_lib/dirty_tree_check.py check E:\automation\<repo> --mode merged
+  ```
+  `STATUS=DIRTY` → downgrade the status from `✅ merged` to `⚠️ merged but dirty tree — inspect <repo>` and carry the `REASON=` line, instead of trusting `Result: MERGED`.
+- **Hard-tier (build-and-stop):**
+  ```
+  C:/Users/rober/AppData/Local/Python/bin/python.exe C:/Users/rober/.claude/skills/_lib/dirty_tree_check.py check E:\automation\<repo> --mode built --expect-branch <branch>
+  ```
+  `STATUS=DIRTY` → keep the `📋 ready for review` mark but append an explicit `⚠️ post-flight: <REASON>` line right next to it, distinct from the rationale summary — this catches HEAD silently back on `main`, a branch mismatch, or the agent reporting changes it never actually saved.
+
+This check only reports — it never blocks the run, never auto-commits, and never auto-fixes. A per-repo failure never stops the aggregation of the rest.
+
 As each sub-agent finishes, surface its report with a status mark: `✅` merged / `❌` failed for easy-tier; `📋 ready for review` / `⚠️ verification skipped` / `❌ failed` for hard-tier. **For every hard-tier report, surface its "What I did & why" and "Why I believe this is correct" text directly, right next to the `📋 ready for review` line** — the user's approve/ship decision is made from that summary, not by opening the diff, so don't just point at a branch name.
 
 When **all** agents have returned, fire **one final** roll-up ping — the closing message for the run. The per-issue `🚀 Shipped` pings the easy-tier agents already fired are kept; this is *in addition*:
@@ -219,14 +234,16 @@ C:/Users/rober/AppData/Local/Python/bin/python.exe C:/Users/rober/.claude/hooks/
 
 **`notify_complete.py` is the ONLY sanctioned way to send this roll-up ping — do NOT use any MCP Slack tool (search/send/etc.) to find a channel or post the ping.** The helper resolves the destination channel deterministically from `projects.toml`; picking a channel yourself is both a security violation (an agent-inferred external write destination) and wrong (it may post to the wrong channel). A silent no-op when no channel is configured is the correct outcome — do not "fix" it by reaching for Slack tools.
 
-Then print the final summary block, with each hard-tier review row carrying its rationale summary inline:
+Then print the final summary block, with each hard-tier review row carrying its rationale summary inline, and any post-flight dirty-tree finding called out as its own line rather than folded silently into a clean-looking status:
 
 ```
 Cleanup complete — <bucket> (<mode> mode)
   ✅ merged:  <repo>#<N> <pr-url>, …
+  ⚠️ merged but dirty tree — inspect <repo> (<reason>)
   📋 review:  <repo>#<N> — cd E:\automation\<repo> && /issue-finish
               What I did & why: <the agent's summary, verbatim>
               Why correct: <the agent's confidence summary, verbatim>
+              ⚠️ post-flight: <reason, only when the check flagged this repo>
               …
   ❌ failed:  <repo>#<N> — <reason> (branch left for inspection)
   deferred:  <repo>#<N> (next run)
@@ -252,6 +269,7 @@ Do **not** auto-launch either: the batch finish is user-triggered, exactly like 
 - **Hard-tier review is by rationale summary, not diff.** Prompt 8b's agent must return "What I did & why" / "Why I believe this is correct"; the orchestrator surfaces both verbatim next to every `📋 ready for review` row (steps 9-10) — that's what the user reviews, not the code.
 - **The orchestrator never edits source, commits, pushes, or merges.** Every write happens inside a spawned agent.
 - **Never disturb in-progress work.** Dirty / off-default-branch repos are skipped and reported, never stashed or force-switched.
+- **Post-flight dirty-tree check runs in the orchestrator, never the sub-agent, right before a repo is marked complete (step 10).** It only corrects the reported status (downgrades `✅`/`📋` on a mismatch) — it never blocks, auto-commits, or auto-fixes.
 - **Keep per-issue pings.** Easy-tier agents fire their own `/issue-yolo` ping (PR link); the orchestrator's `--kind cleanup` ping is an *additional* closing roll-up, not a replacement.
 - **Degrade, don't block.** A per-repo failure is reported and skipped; only a pre-flight failure stops the whole run. `easy`/`silent` must never wait on an interactive prompt.
 - **No AI attribution; no hard-wrapped issue/PR-body paragraphs.** (Per global CLAUDE.md.)
