@@ -145,6 +145,8 @@ Both stay generic and read each project's CLAUDE.md for the gate command, ports,
 
 ### Spawning sub-agents — cap concurrent Opus at 3 *(Claude Code only — skip on other agents)*
 
+This cap is a property of Anthropic's Opus-specific server-side burst limiter, not of any skill's abstract "hard"/"complex" tier — see `fleet-config/docs/model-tiers.md` for the fleet's tier vocabulary and per-host model mapping (single source; don't restate a tier table here).
+
 When a skill or session fans out **background sub-agents that run on Opus**, keep at most **3 in flight** at once (a sliding window): dispatch up to 3, and each time one returns, dispatch the next pending one until the queue drains. Fewer than 3 pending → just spawn that many (1 item = 1 agent). Every fleet fan-out skill — `audit-fleet`, `cleanup-fleet`, `issue-batch` — references this cap rather than re-hardcoding the number, so the limit lives in exactly one place.
 
 - **Sonnet sub-agents are exempt** — they may fan out freely. In a mixed run only the Opus agents count against the window of 3 (Sonnet agents run alongside, uncounted). Sonnet is the "smaller model" half of the documented mitigation.
