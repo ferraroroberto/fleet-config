@@ -137,7 +137,15 @@ try {
     for ($attempt = 0; $attempt -lt 3; $attempt++) {
         $tmp = Join-Path $stateDir ("rate-limits.json.tmp.$([guid]::NewGuid().ToString('N'))")
         try {
-            [System.IO.File]::WriteAllText($tmp, $json, [System.Text.Encoding]::UTF8)
+            # [System.Text.Encoding]::UTF8 (the static instance) writes a UTF-8
+            # BOM by default — that BOM breaks Python's json.loads on the
+            # reader side (json.JSONDecodeError on the leading ﻿), which
+            # would make every read_rate_limits() call see this as a "corrupt
+            # file" forever (verified empirically). A `New-Object
+            # System.Text.UTF8Encoding($false)` instance writes plain UTF-8
+            # with no preamble.
+            $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+            [System.IO.File]::WriteAllText($tmp, $json, $utf8NoBom)
             Move-Item -LiteralPath $tmp -Destination $target -Force
             break
         } catch {
