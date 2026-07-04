@@ -259,6 +259,13 @@ window.CONFIG = {
       "ds": "Nudge away from the two cross-shell payload traps that mangle GitHub bodies."
     },
     {
+      "nm": "bash_cmdexe_syntax_guard",
+      "ev": "PreToolUse · Bash",
+      "block": false,
+      "reach": "Claude + Codex",
+      "ds": "Nudge away from cmd.exe-only syntax passed to the Bash tool."
+    },
+    {
       "nm": "safe_kill_guard",
       "ev": "PreToolUse · Bash·PowerShell",
       "block": true,
