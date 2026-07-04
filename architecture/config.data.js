@@ -266,6 +266,13 @@ window.CONFIG = {
       "ds": "Nudge away from cmd.exe-only syntax passed to the Bash tool."
     },
     {
+      "nm": "bash_windows_path_guard",
+      "ev": "PreToolUse · Bash",
+      "block": true,
+      "reach": "Claude + Codex",
+      "ds": "Block unquoted Windows drive-letter backslash paths in Bash commands."
+    },
+    {
       "nm": "safe_kill_guard",
       "ev": "PreToolUse · Bash·PowerShell",
       "block": true,
