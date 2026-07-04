@@ -10,13 +10,14 @@ The hooks here are project-aware via a single `hooks/projects.toml` registry: ge
 
 ## What's in here today
 
-12 hooks under `hooks/` that enforce the rituals I kept correcting Claude on, across the home-stack fleet:
+13 hooks under `hooks/` that enforce the rituals I kept correcting Claude on, across the home-stack fleet:
 
 | Hook | Event | What it does |
 |---|---|---|
 | `pre_commit_no_ai_trailer.py` | `PreToolUse` on `Bash` | Blocks `git commit` messages that include `Co-Authored-By: Claude`, `Generated with Claude Code`, etc. |
 | `secret_scan_guard.py` | `PreToolUse` on `Bash` | Blocks `git commit` when a live credential is staged — scans `git diff --cached` and the command string for real Slack bot tokens (`xoxb-…`); placeholder forms (`xoxb-…`, `xoxb-<token>`) in docs are deliberately allowed and never trip it. |
 | `gh_body_file_guard.py` | `PreToolUse` on `Bash` | Non-blocking nudge: an inline `gh issue/pr create\|comment\|edit --body` carrying a heredoc/backtick (Bash mangles it) → use `--body-file <tmp>`; a PowerShell here-string (`@'…'@`) run through the Bash tool → wrong shell. `--body-file`/`-F` and plain `gh` reads pass silently. |
+| `bash_cmdexe_syntax_guard.py` | `PreToolUse` on `Bash` | Non-blocking nudge for cmd.exe-only syntax passed to the Bash tool (which runs Git Bash, not cmd.exe): `%VAR%` env references, a cmd-only builtin+flag (`dir /s`, `del /f`, `copy /y`), or a caret (`^`) line-continuation. A bare `%s` printf spec, a `date +%Y%m%d` format string, or a `/s`-shaped URL path pass silently. |
 | `safe_kill_guard.py` | `PreToolUse` on `Bash` / `PowerShell` | Blocks blanket `Stop-Process -Name python(w)?` (would nuke sister hubs), `git push --force` to main, `--no-verify`. Port-scoped kills against the project's own webapp port pass through. |
 | `venv_discipline.py` | `PreToolUse` on `Bash` / `PowerShell` | Blocks `python -m venv venv` (the user's canonical name is `.venv`), `.\.venv\Scripts\activate`, bare `python`/`pip` when a project `.venv` exists. |
 | `py_syntax_check.py` | `PostToolUse` on `Edit` / `Write` for `*.py` | Runs `py_compile` against the project's `.venv` and surfaces syntax errors inline. ~50 ms per edit. |
@@ -95,6 +96,7 @@ fleet-config/
 │   ├── pre_commit_no_ai_trailer.py
 │   ├── secret_scan_guard.py
 │   ├── gh_body_file_guard.py       # PreToolUse on Bash: nudge gh --body heredocs/backticks → --body-file; PowerShell here-strings in Bash
+│   ├── bash_cmdexe_syntax_guard.py # PreToolUse on Bash: nudge cmd.exe-only syntax (%VAR%, dir /s, caret continuation) — Bash tool runs Git Bash, not cmd.exe
 │   ├── safe_kill_guard.py
 │   ├── venv_discipline.py
 │   ├── py_syntax_check.py
