@@ -34,6 +34,15 @@
 # the split can roll out one channel at a time. Both keys are also valid as a
 # per-project override. Skills that post directly use `slack_notify.py
 # --category {attention,log}` instead of a hardcoded --channel id.
+#
+# Optional per-project key (fleet-config#242):
+#   board_url = "https://<pc>.<tailnet>.ts.net:8445"   # app-launcher Board base URL
+# When set, notify_on_idle appends a "📋 Open on the Board" deep link
+# (`?board=<transcript_uuid>`) to a needs-you ping. Use the Tailscale URL, not
+# loopback — the link is tapped from a phone. A [global] board_url below acts
+# as a fleet-wide fallback. Omit it (the default) to keep the ping unchanged.
+# Left unset here until app-launcher#307 (resolving the transcript UUID to a
+# card) ships — otherwise the tapped link toasts "session not on the board".
 
 [app-launcher]
 cwd_prefix          = "E:/automation/app-launcher"

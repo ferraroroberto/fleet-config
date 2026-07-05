@@ -19,6 +19,12 @@ toast nobody sees.
 slack_notify_channel`` fallback is set). That keeps notification noise off by
 default and lets you flip it on per project. See `docs/slack-workflow.md`.
 
+**Board deep link (fleet-config#242).** When ``board_url`` is also configured,
+the ping appends a second line linking straight to the session's Fleet-Board
+card (`?board=<transcript_uuid>`) — see `board_link()` and
+`docs/slack-workflow.md`. Unset by default, so this is a no-op until you
+configure it.
+
 A Notification hook only advises — it never blocks, and always exits 0.
 """
 
@@ -90,6 +96,26 @@ def session_link(transcript_path: object) -> str | None:
     return None
 
 
+def board_link(payload: dict, registry: object | None = None) -> str | None:
+    """Slack mrkdwn line deep-linking to the session's Fleet-Board card, or None.
+
+    Needs both the payload's ``session_id`` (Claude's transcript UUID —
+    ``session_state.py`` persists the same id as the board row's key) and a
+    configured ``board_url`` (fleet-config#242) — absent either, this is a
+    silent no-op so the ping stays byte-identical to today. Note: until
+    app-launcher#307 (resolving this transcript UUID to a card's claimed
+    ``state_sid``) ships, a tapped link toasts "session not on the board" —
+    that's why ``board_url`` is left unset in `projects.toml` for now.
+    """
+    session_id = payload.get("session_id")
+    if not isinstance(session_id, str) or not session_id:
+        return None
+    base_url = _lib.resolve_board_url(_lib.cwd(payload), registry)
+    if not base_url:
+        return None
+    return f"📋 <{base_url.rstrip('/')}/?board={session_id}|Open on the Board>"
+
+
 def main() -> None:
     payload = _lib.read_stdin_json()
 
@@ -122,9 +148,13 @@ def main() -> None:
     icon, text = classify(payload)
     link = session_link(payload.get("transcript_path"))
     suffix = f" · {link}" if link else ""
+    message = f"{icon} [{name}] {text}{suffix}"
+    board = board_link(payload)
+    if board:
+        message += f"\n{board}"
     # The @mention decision is single-sourced in slack_notify.notify() (off by
     # default); pass the resolved user id and let it decide.
-    slack_notify.notify(f"{icon} [{name}] {text}{suffix}", channel=str(channel), user=user)
+    slack_notify.notify(message, channel=str(channel), user=user)
     _lib.allow()
 
 
