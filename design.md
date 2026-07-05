@@ -66,7 +66,7 @@ components:
   nav-bar:        { backgroundColor: "{colors.card}", rounded: "{rounded.nav}", height: 61px, margin: 21px }
   nav-tab:        { textColor: "{colors.fg-muted}", rounded: "{rounded.pill}", height: 53px }
   nav-tab-active: { backgroundColor: "{colors.canvas-subtle}", textColor: "{colors.accent}" }
-  disclosure:     { align: left, chevron: right, closedHeight: 52px }   # collapsible details/summary header — the summary owns the height so a stack of cards aligns when closed
+  disclosure:     { align: left, chevron: right, closedHeight: 52px, summaryPadding: "0 14px", bodyPadding: "12px 14px 14px" }   # collapsible details/summary header — the summary owns height+padding; the card's own padding is zeroed so cards align when closed
 icons:
   set:     "Lucide"               # canonical fleet icon set — https://lucide.dev
   url:     "https://lucide.dev"
@@ -161,10 +161,20 @@ label** (state is read from thumb position + track color; `role="switch"` +
 track is the accent when on; a **state** toggle (power on/off, alarm bypass) may
 substitute the relevant status color instead. Collapsible `details/summary`
 headers (`disclosure`) left-align the icon + title with the chevron pinned right,
-and share one fixed **closed height** (`disclosure.closedHeight`, 52px): the
-`summary` owns the header padding and the card's own `padding` is zeroed, so a
-vertical stack of collapsible cards lines up exactly when collapsed (a card that
-keeps its own padding stands taller than its neighbours — the bug this prevents).
+and follow one fixed structural contract so a vertical stack of collapsible
+cards is pixel-identical whether open or closed: the **card's own `padding` is
+zeroed** (it must not double up with the summary's padding — the root cause of
+every past regression), the `summary` owns the closed-state box at
+`disclosure.closedHeight` (52px) with `disclosure.summaryPadding` (`0 14px`), the
+open state adds a `border-bottom: 1px solid {colors.border-muted}` on
+`[open] > summary` as the only divider, and the open body content uses
+`disclosure.bodyPadding` (`12px 14px 14px` for a plain content block; drop the
+top value to `0` when the body's first child is a list whose own items already
+carry top padding) so text isn't flush against the left edge while the right
+edge keeps matching margin. Prefer bundling all four rules into **one shared
+modifier class** (e.g. `.card--collapsible`) applied to the card, rather than
+hand-listing every card's selector across separate padding/height/divider rules
+— that per-selector enumeration is exactly how the contract drifts per new card.
 Reuse the **vendored** nav/UI snippets from `project-scaffolding` verbatim — do
 not re-author them per app (the same model as `single_instance.py` /
 `tray_lifecycle.ps1`).
