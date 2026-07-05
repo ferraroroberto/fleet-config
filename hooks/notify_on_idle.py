@@ -9,10 +9,14 @@ constant ``"Claude Code"`` rather than something inferred. Extending the
 second caller exists) is tracked separately in fleet-config#213.
 
 It pings only on the ``permission_prompt`` sub-type (a permission gate or an
-``AskUserQuestion`` — the "come look, I'm blocked" push) and **no-ops on
-``idle_prompt``** (the 💤 "gone idle" nag is noise). It rides the `slack_notify`
-transport, so an AFK human gets a real phone notification instead of a desktop
-toast nobody sees.
+``AskUserQuestion`` — the "come look, I'm blocked" push) and **no-ops on**
+``idle_prompt`` (the 💤 "gone idle" nag is noise) **and on the background
+sub-agent types** ``agent_needs_input`` / ``agent_completed`` (fleet-config#274
+— fired per Task/Agent-tool spawn since a Claude Code update added them; a
+fan-out skill like ``/issue-batch`` or ``/cleanup-fleet`` spawns many of these,
+and only the parent session's own prompt is worth a phone push). It rides the
+`slack_notify` transport, so an AFK human gets a real phone notification
+instead of a desktop toast nobody sees.
 
 **Opt-in, default off.** It does nothing unless the current project declares a
 ``slack_notify_channel`` in ``hooks/projects.toml`` (or a ``[global]
@@ -42,6 +46,12 @@ import slack_notify  # noqa: E402
 # Glanceable icon per notification kind. A real permission gate (action needed)
 # reads differently from an idle wait; anything else falls back to the bell.
 _ICONS = {"permission_prompt": "🔔", "idle_prompt": "💤"}
+
+# Sub-types that never warrant a phone push (fleet-config#274): the idle nag,
+# plus the background sub-agent lifecycle events a Claude Code update added
+# (fired once per Task/Agent-tool spawn) — only the parent session's own
+# permission_prompt is worth surfacing.
+_NOOP_TYPES = {"idle_prompt", "agent_needs_input", "agent_completed"}
 
 # Only the head of the transcript is read for the bridge link — the bridge-session
 # metadata is written at session start, so it's always near the top.
@@ -152,9 +162,11 @@ def main() -> None:
         _lib.allow()  # opt-in: not configured for this project → silent no-op
 
     # Only the "come look, I'm blocked" prompt is worth a phone push. The 💤
-    # idle nag is noise — a session left idle is rarely something you need to
-    # run back to — so no-op on it.
-    if payload.get("notification_type") == "idle_prompt":
+    # idle nag and the background sub-agent lifecycle events are noise — a
+    # session left idle is rarely something you need to run back to, and a
+    # sub-agent needing input or completing isn't the parent session asking
+    # for you — so no-op on all of them (fleet-config#274).
+    if payload.get("notification_type") in _NOOP_TYPES:
         _lib.allow()
 
     icon, text = classify(payload)

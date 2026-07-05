@@ -300,6 +300,24 @@ def main() -> int:
          "cwd": str(REPO), "message": "needs permission"},
         0,
     ))
+    # agent_needs_input / agent_completed (fleet-config#274) are background
+    # sub-agent lifecycle events, not the parent session asking for you — a
+    # deliberate no-op, same treatment as idle_prompt. Must exit 0 without
+    # attempting a post.
+    cases.append((
+        "notify_on_idle: agent_needs_input -> allow (no-op, sub-agent noise dropped)",
+        "notify_on_idle",
+        {"hook_event_name": "Notification", "notification_type": "agent_needs_input",
+         "cwd": str(REPO), "message": "needs input"},
+        0,
+    ))
+    cases.append((
+        "notify_on_idle: agent_completed -> allow (no-op, sub-agent noise dropped)",
+        "notify_on_idle",
+        {"hook_event_name": "Notification", "notification_type": "agent_completed",
+         "cwd": str(REPO), "message": "Agent completed"},
+        0,
+    ))
 
     # ---- session_index: opt-in gating ----
     # A project not opted into capture must be a silent no-op (no indexer spawn).
