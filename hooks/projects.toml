@@ -41,8 +41,11 @@
 # (`?board=<transcript_uuid>`) to a needs-you ping. Use the Tailscale URL, not
 # loopback — the link is tapped from a phone. A [global] board_url below acts
 # as a fleet-wide fallback. Omit it (the default) to keep the ping unchanged.
-# Left unset here until app-launcher#307 (resolving the transcript UUID to a
-# card) ships — otherwise the tapped link toasts "session not on the board".
+# The real hostname is set via the FLEET_BOARD_URL environment variable
+# instead (e.g. in ~/.claude/settings.json's `env` block), NOT here —
+# fleet-config is a public repo, and a real Tailscale hostname would leak a
+# device name + tailnet id into public git history (fleet-config#271). The
+# env var is checked between this per-project override and [global] below.
 
 [app-launcher]
 cwd_prefix          = "E:/automation/app-launcher"

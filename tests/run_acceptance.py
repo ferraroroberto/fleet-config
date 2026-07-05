@@ -1055,6 +1055,25 @@ def _notify_board_link_unit_checks() -> int:
     check("resolve_board_url: per-project override wins over [global]",
           _lib.resolve_board_url(Path("E:/automation/x"), registry=reg) == "https://proj.example:8445")
 
+    # ---- resolve_board_url: FLEET_BOARD_URL env var precedence (fleet-config#271) ----
+    # public-repo-safe indirection: env var sits between the project override
+    # and the committed [global] fallback.
+    env_key = _lib.BOARD_URL_ENV_VAR
+    old_env = os.environ.pop(env_key, None)
+    try:
+        os.environ[env_key] = "https://env.example:8445"
+        check("resolve_board_url: env var alone -> resolves",
+              _lib.resolve_board_url(Path("E:/does/not/match"), registry=unset) == "https://env.example:8445")
+        check("resolve_board_url: env var wins over [global]",
+              _lib.resolve_board_url(Path("E:/does/not/match"), registry=glob_only) == "https://env.example:8445")
+        check("resolve_board_url: per-project override still wins over env var",
+              _lib.resolve_board_url(Path("E:/automation/x"), registry=reg) == "https://proj.example:8445")
+    finally:
+        if old_env is None:
+            os.environ.pop(env_key, None)
+        else:
+            os.environ[env_key] = old_env
+
     # ---- board_link: configured + session_id -> mrkdwn deep link ----
     payload = {"session_id": "abc-123", "cwd": "E:/automation/x"}
     check("board_link: configured -> Slack mrkdwn deep link",

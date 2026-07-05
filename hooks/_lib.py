@@ -308,16 +308,28 @@ def resolve_slack_target(
     return channel, user, name
 
 
+BOARD_URL_ENV_VAR = "FLEET_BOARD_URL"
+
+
 def resolve_board_url(cwd_path: Path, registry: Optional[Registry] = None) -> Optional[str]:
     """Resolve the app-launcher Fleet Board base URL for a ``?board=<sid>`` deep
-    link (fleet-config#242). A project's own ``board_url`` override wins over
-    ``[global] board_url``; ``None`` when neither is set, which the caller must
-    treat as "omit the link line" — never fall back to a guessed URL.
+    link (fleet-config#242). Precedence: a project's own ``board_url`` override,
+    then the ``FLEET_BOARD_URL`` environment variable, then the committed
+    ``[global] board_url`` — ``None`` when nothing resolves, which the caller
+    must treat as "omit the link line", never a guessed URL.
+
+    The real value (a Tailscale hostname) is set via ``FLEET_BOARD_URL``, not
+    ``[global] board_url``, because fleet-config is a **public** repo
+    (fleet-config#271) — same reasoning as ``SLACK_BOT_TOKEN`` staying out of
+    ``projects.toml``. Claude Code always injects its ``env`` block into hook
+    subprocesses, so a bare env-var read is enough here (unlike
+    ``slack_notify``'s extra settings.json-file fallback, needed only because
+    that transport must also work from non-Claude launchers).
     """
     reg = registry or load_registry()
     project = detect_project(cwd_path, reg)
     project_value = project.extra.get("board_url") if project else None
-    return project_value or reg.globals.board_url
+    return project_value or os.environ.get(BOARD_URL_ENV_VAR) or reg.globals.board_url
 
 
 # ------------------------------------------------------------------- .venv
