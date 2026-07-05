@@ -208,8 +208,27 @@ finding whose fix is to **adopt the vendored nav snippet from
 `project-scaffolding`** (do not re-author it). If that vendored library does not
 exist yet, cite the follow-up that tracks it rather than hand-rolling a nav.
 
+Also check the **collapsible-card (`disclosure`) component contract**
+(fleet-config#231): find every `details`/`summary`-based collapsible card (or an
+equivalent `.collapse-summary`-style header) and verify, per theme where
+relevant:
+- the card's own container has its `padding` reset to `0` (not inheriting the
+  base `card` component's padding — that alone adds extra height *and* a left
+  indent),
+- the `summary` matches `disclosure.closedHeight` (52px) and
+  `disclosure.summaryPadding` (`0 14px`),
+- the open state (`[open] > summary`) carries the one-line divider
+  (`border-bottom: 1px solid {colors.border-muted}`) and nothing heavier,
+- the open body content uses `disclosure.bodyPadding` (`12px 14px 14px`, or
+  `0 14px 14px` when the body's first child is a list with its own item padding)
+  rather than sitting flush against the left edge.
+
+A card missing any of these is a **card-structure** finding — the exact drift
+that bit `home-automation` twice (#235, #162) before this check existed.
+
 Apply a materiality bar: a 1-unit radius nitpick is not a finding; a wrong canvas
-color, a missing dark theme, or a hand-rolled nav is.
+color, a missing dark theme, a hand-rolled nav, or a collapsible card missing the
+padding-zero/height/divider contract is.
 
 ### 7. Dedupe and upsert the `design-drift` issue
 
@@ -261,6 +280,7 @@ Surfaced by `/design-sync`, kept up to date across runs. Spec: `~/.claude/design
 - [ ] **<file>:<line>** — `--<var>` (role `<spec token>`, <light|dark>): app `<value>` ≠ spec `<value>`. Fix: set to `<spec value>`.
 - [ ] **<file>** — missing dark theme block; spec defines `design.dark.md`. Fix: add `[data-theme="dark"]` with the spec's dark values.
 - [ ] **<file>** — bottom nav re-implemented, diverges from the spec contract. Fix: adopt the vendored nav snippet from `project-scaffolding`.
+- [ ] **<file>:<line>** — collapsible card `.<class>` doesn't match the `disclosure` contract (card padding not zeroed / summary height-padding / missing open divider / body padding). Fix: align to `design.md` Components → collapsible cards.
 
 ## Token map (spec role → app var)
 
@@ -303,6 +323,7 @@ Print one summary and stop:
   dark         <n>         <n>      <n>
 
   nav contract: <ok | drifted: ...>
+  cards: <ok | drifted: ...>   (collapsible-card / disclosure contract)
   cert: <ok | drift, filed #N>   (tailnet-cert conformance, step 1b)
   filed: https://github.com/<owner>/<repo>/issues/<N>   (design-drift)
   applied: <n files changed | not applied (report-only)>
@@ -357,3 +378,6 @@ cert verdict is reported independently regardless.
 - The spec, not this skill, is the source of truth for *what* the look should be.
   Refine `design.md` / `design.dark.md` when the identity itself should change;
   this skill only measures and (optionally) applies conformance to it.
+- The collapsible-card (`disclosure`) structural check (step 6) folds into the
+  same `design-drift` issue as token drift — it's a separate finding type, not a
+  separate bucket/label (fleet-config#231).
