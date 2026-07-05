@@ -1030,37 +1030,41 @@ def _notify_board_link_unit_checks() -> int:
         if not ok:
             failures += 1
 
-    # ---- resolve_board_url: unset -> None (byte-identical default behavior) ----
-    unset = _lib.Registry(projects=[], globals=_lib.GlobalConfig(never_kill_ports=()))
-    check("resolve_board_url: neither set -> None",
-          _lib.resolve_board_url(Path("E:/does/not/match"), registry=unset) is None)
-
-    # ---- resolve_board_url: [global] fallback ----
-    glob_only = _lib.Registry(
-        projects=[], globals=_lib.GlobalConfig(never_kill_ports=(), board_url="https://global.example:8445"),
-    )
-    check("resolve_board_url: [global] fallback",
-          _lib.resolve_board_url(Path("E:/does/not/match"), registry=glob_only) == "https://global.example:8445")
-
-    # ---- resolve_board_url: per-project override wins ----
-    proj = _lib.ProjectConfig(
-        name="x", cwd_prefix=Path("E:/automation/x"), webapp_port=None,
-        gate_trigger_globs=(), gate_cmd=None, tray_cmd=None, restart_cmd=None,
-        api_version_path=None, extra={"board_url": "https://proj.example:8445"},
-    )
-    reg = _lib.Registry(
-        projects=[proj],
-        globals=_lib.GlobalConfig(never_kill_ports=(), board_url="https://global.example:8445"),
-    )
-    check("resolve_board_url: per-project override wins over [global]",
-          _lib.resolve_board_url(Path("E:/automation/x"), registry=reg) == "https://proj.example:8445")
-
-    # ---- resolve_board_url: FLEET_BOARD_URL env var precedence (fleet-config#271) ----
-    # public-repo-safe indirection: env var sits between the project override
-    # and the committed [global] fallback.
+    # The real machine may have FLEET_BOARD_URL genuinely set (fleet-config#271
+    # is meant to be configured this way) — clear it for the duration of these
+    # checks so "unset"/"[global] fallback" expectations aren't at the mercy of
+    # the ambient environment, then restore whatever was there.
     env_key = _lib.BOARD_URL_ENV_VAR
     old_env = os.environ.pop(env_key, None)
     try:
+        # ---- resolve_board_url: unset -> None (byte-identical default behavior) ----
+        unset = _lib.Registry(projects=[], globals=_lib.GlobalConfig(never_kill_ports=()))
+        check("resolve_board_url: neither set -> None",
+              _lib.resolve_board_url(Path("E:/does/not/match"), registry=unset) is None)
+
+        # ---- resolve_board_url: [global] fallback ----
+        glob_only = _lib.Registry(
+            projects=[], globals=_lib.GlobalConfig(never_kill_ports=(), board_url="https://global.example:8445"),
+        )
+        check("resolve_board_url: [global] fallback",
+              _lib.resolve_board_url(Path("E:/does/not/match"), registry=glob_only) == "https://global.example:8445")
+
+        # ---- resolve_board_url: per-project override wins ----
+        proj = _lib.ProjectConfig(
+            name="x", cwd_prefix=Path("E:/automation/x"), webapp_port=None,
+            gate_trigger_globs=(), gate_cmd=None, tray_cmd=None, restart_cmd=None,
+            api_version_path=None, extra={"board_url": "https://proj.example:8445"},
+        )
+        reg = _lib.Registry(
+            projects=[proj],
+            globals=_lib.GlobalConfig(never_kill_ports=(), board_url="https://global.example:8445"),
+        )
+        check("resolve_board_url: per-project override wins over [global]",
+              _lib.resolve_board_url(Path("E:/automation/x"), registry=reg) == "https://proj.example:8445")
+
+        # ---- resolve_board_url: FLEET_BOARD_URL env var precedence (fleet-config#271) ----
+        # public-repo-safe indirection: env var sits between the project override
+        # and the committed [global] fallback.
         os.environ[env_key] = "https://env.example:8445"
         check("resolve_board_url: env var alone -> resolves",
               _lib.resolve_board_url(Path("E:/does/not/match"), registry=unset) == "https://env.example:8445")
@@ -1068,33 +1072,42 @@ def _notify_board_link_unit_checks() -> int:
               _lib.resolve_board_url(Path("E:/does/not/match"), registry=glob_only) == "https://env.example:8445")
         check("resolve_board_url: per-project override still wins over env var",
               _lib.resolve_board_url(Path("E:/automation/x"), registry=reg) == "https://proj.example:8445")
+        os.environ.pop(env_key, None)
+
+        # ---- board_link: configured + session_id -> mrkdwn deep link ----
+        payload = {"session_id": "abc-123", "cwd": "E:/automation/x"}
+        check("board_link: configured -> Slack mrkdwn deep link",
+              notify_on_idle.board_link(payload, registry=reg)
+              == "📋 <https://proj.example:8445/?board=abc-123|Open on the Board>")
+
+        # ---- board_link: trailing slash on board_url is stripped ----
+        trailing = _lib.Registry(
+            projects=[], globals=_lib.GlobalConfig(never_kill_ports=(), board_url="https://global.example:8445/"),
+        )
+        check("board_link: trailing slash on board_url stripped",
+              notify_on_idle.board_link(payload, registry=trailing)
+              == "📋 <https://global.example:8445/?board=abc-123|Open on the Board>")
+
+        # ---- board_link: board_url with an existing query string merges, not concatenates (fleet-config#273) ----
+        tokened = _lib.Registry(
+            projects=[], globals=_lib.GlobalConfig(never_kill_ports=(), board_url="https://global.example:8445?token=secret"),
+        )
+        check("board_link: existing ?token= on board_url survives alongside ?board=",
+              notify_on_idle.board_link(payload, registry=tokened)
+              == "📋 <https://global.example:8445/?token=secret&board=abc-123|Open on the Board>")
+
+        # ---- board_link: unconfigured -> None (default, current behavior unchanged) ----
+        check("board_link: board_url unset -> None",
+              notify_on_idle.board_link(payload, registry=unset) is None)
+
+        # ---- board_link: missing session_id -> None, even when configured ----
+        check("board_link: missing session_id -> None",
+              notify_on_idle.board_link({"cwd": "E:/automation/x"}, registry=reg) is None)
     finally:
         if old_env is None:
             os.environ.pop(env_key, None)
         else:
             os.environ[env_key] = old_env
-
-    # ---- board_link: configured + session_id -> mrkdwn deep link ----
-    payload = {"session_id": "abc-123", "cwd": "E:/automation/x"}
-    check("board_link: configured -> Slack mrkdwn deep link",
-          notify_on_idle.board_link(payload, registry=reg)
-          == "📋 <https://proj.example:8445/?board=abc-123|Open on the Board>")
-
-    # ---- board_link: trailing slash on board_url is stripped ----
-    trailing = _lib.Registry(
-        projects=[], globals=_lib.GlobalConfig(never_kill_ports=(), board_url="https://global.example:8445/"),
-    )
-    check("board_link: trailing slash on board_url stripped",
-          notify_on_idle.board_link(payload, registry=trailing)
-          == "📋 <https://global.example:8445/?board=abc-123|Open on the Board>")
-
-    # ---- board_link: unconfigured -> None (default, current behavior unchanged) ----
-    check("board_link: board_url unset -> None",
-          notify_on_idle.board_link(payload, registry=unset) is None)
-
-    # ---- board_link: missing session_id -> None, even when configured ----
-    check("board_link: missing session_id -> None",
-          notify_on_idle.board_link({"cwd": "E:/automation/x"}, registry=reg) is None)
 
     return failures
 
