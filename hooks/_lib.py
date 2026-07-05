@@ -174,6 +174,11 @@ class GlobalConfig:
     # channel keeps working and the split can roll out one channel at a time.
     slack_channel_attention: Optional[str] = None
     slack_channel_log: Optional[str] = None
+    # Base URL for the app-launcher Fleet Board (fleet-config#242), e.g. a
+    # Tailscale address so a phone tap resolves outside the LAN. Unset by
+    # default — notify_on_idle omits the board deep-link line entirely until
+    # this is configured (see resolve_board_url).
+    board_url: Optional[str] = None
 
 
 @dataclass(frozen=True)
@@ -200,6 +205,7 @@ def load_registry(path: Path = PROJECTS_TOML) -> Registry:
     slack_mention = bool(globals_table.get("slack_notify_mention", False))
     slack_attention = globals_table.get("slack_channel_attention") or None
     slack_log = globals_table.get("slack_channel_log") or None
+    board_url = globals_table.get("board_url") or None
 
     projects: List[ProjectConfig] = []
     for name, table in data.items():
@@ -235,6 +241,7 @@ def load_registry(path: Path = PROJECTS_TOML) -> Registry:
             slack_notify_mention=slack_mention,
             slack_channel_attention=slack_attention,
             slack_channel_log=slack_log,
+            board_url=board_url,
         ),
     )
 
@@ -299,6 +306,18 @@ def resolve_slack_target(
     user = pick("slack_notify_user", reg.globals.slack_notify_user)
     name = project.name if project else "claude"
     return channel, user, name
+
+
+def resolve_board_url(cwd_path: Path, registry: Optional[Registry] = None) -> Optional[str]:
+    """Resolve the app-launcher Fleet Board base URL for a ``?board=<sid>`` deep
+    link (fleet-config#242). A project's own ``board_url`` override wins over
+    ``[global] board_url``; ``None`` when neither is set, which the caller must
+    treat as "omit the link line" — never fall back to a guessed URL.
+    """
+    reg = registry or load_registry()
+    project = detect_project(cwd_path, reg)
+    project_value = project.extra.get("board_url") if project else None
+    return project_value or reg.globals.board_url
 
 
 # ------------------------------------------------------------------- .venv

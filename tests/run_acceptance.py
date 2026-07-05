@@ -328,6 +328,9 @@ def main() -> int:
     # ---- notify_on_idle classify / session-link / idle-suppression ----
     failures += _notify_classify_unit_checks()
 
+    # ---- notify_on_idle Fleet-Board deep link (fleet-config#242) ----
+    failures += _notify_board_link_unit_checks()
+
     # ---- session_state board-row persistence (fleet-config#91) ----
     failures += _session_state_unit_checks()
 
@@ -1006,6 +1009,73 @@ def _notify_classify_unit_checks() -> int:
         check("session_link: missing path -> None", notify_on_idle.session_link(None) is None)
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
+
+    return failures
+
+
+def _notify_board_link_unit_checks() -> int:
+    """Fleet-Board deep-link line (fleet-config#242): _lib.resolve_board_url's
+    project-override/global-fallback/unset resolution, and notify_on_idle's
+    board_link() message assembly — all against synthetic registries so
+    nothing touches the real projects.toml."""
+    sys.path.insert(0, str(HOOKS))
+    import _lib  # noqa: E402
+    import notify_on_idle  # noqa: E402
+
+    failures = 0
+
+    def check(case: str, ok: bool) -> None:
+        nonlocal failures
+        print(f"{'OK   ' if ok else 'FAIL '} {case}")
+        if not ok:
+            failures += 1
+
+    # ---- resolve_board_url: unset -> None (byte-identical default behavior) ----
+    unset = _lib.Registry(projects=[], globals=_lib.GlobalConfig(never_kill_ports=()))
+    check("resolve_board_url: neither set -> None",
+          _lib.resolve_board_url(Path("E:/does/not/match"), registry=unset) is None)
+
+    # ---- resolve_board_url: [global] fallback ----
+    glob_only = _lib.Registry(
+        projects=[], globals=_lib.GlobalConfig(never_kill_ports=(), board_url="https://global.example:8445"),
+    )
+    check("resolve_board_url: [global] fallback",
+          _lib.resolve_board_url(Path("E:/does/not/match"), registry=glob_only) == "https://global.example:8445")
+
+    # ---- resolve_board_url: per-project override wins ----
+    proj = _lib.ProjectConfig(
+        name="x", cwd_prefix=Path("E:/automation/x"), webapp_port=None,
+        gate_trigger_globs=(), gate_cmd=None, tray_cmd=None, restart_cmd=None,
+        api_version_path=None, extra={"board_url": "https://proj.example:8445"},
+    )
+    reg = _lib.Registry(
+        projects=[proj],
+        globals=_lib.GlobalConfig(never_kill_ports=(), board_url="https://global.example:8445"),
+    )
+    check("resolve_board_url: per-project override wins over [global]",
+          _lib.resolve_board_url(Path("E:/automation/x"), registry=reg) == "https://proj.example:8445")
+
+    # ---- board_link: configured + session_id -> mrkdwn deep link ----
+    payload = {"session_id": "abc-123", "cwd": "E:/automation/x"}
+    check("board_link: configured -> Slack mrkdwn deep link",
+          notify_on_idle.board_link(payload, registry=reg)
+          == "📋 <https://proj.example:8445/?board=abc-123|Open on the Board>")
+
+    # ---- board_link: trailing slash on board_url is stripped ----
+    trailing = _lib.Registry(
+        projects=[], globals=_lib.GlobalConfig(never_kill_ports=(), board_url="https://global.example:8445/"),
+    )
+    check("board_link: trailing slash on board_url stripped",
+          notify_on_idle.board_link(payload, registry=trailing)
+          == "📋 <https://global.example:8445/?board=abc-123|Open on the Board>")
+
+    # ---- board_link: unconfigured -> None (default, current behavior unchanged) ----
+    check("board_link: board_url unset -> None",
+          notify_on_idle.board_link(payload, registry=unset) is None)
+
+    # ---- board_link: missing session_id -> None, even when configured ----
+    check("board_link: missing session_id -> None",
+          notify_on_idle.board_link({"cwd": "E:/automation/x"}, registry=reg) is None)
 
     return failures
 
