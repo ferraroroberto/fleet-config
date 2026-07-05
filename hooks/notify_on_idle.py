@@ -101,11 +101,11 @@ def board_link(payload: dict, registry: object | None = None) -> str | None:
 
     Needs both the payload's ``session_id`` (Claude's transcript UUID —
     ``session_state.py`` persists the same id as the board row's key) and a
-    configured ``board_url`` (fleet-config#242) — absent either, this is a
-    silent no-op so the ping stays byte-identical to today. Note: until
-    app-launcher#307 (resolving this transcript UUID to a card's claimed
-    ``state_sid``) ships, a tapped link toasts "session not on the board" —
-    that's why ``board_url`` is left unset in `projects.toml` for now.
+    configured ``board_url`` (fleet-config#242, resolved via
+    ``_lib.resolve_board_url`` — the real value comes from the
+    ``FLEET_BOARD_URL`` env var, not `projects.toml`, since this repo is
+    public — see fleet-config#271) — absent either, this is a silent no-op so
+    the ping stays byte-identical to today.
     """
     session_id = payload.get("session_id")
     if not isinstance(session_id, str) or not session_id:
