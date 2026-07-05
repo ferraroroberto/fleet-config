@@ -33,6 +33,7 @@ from __future__ import annotations
 import json
 import sys
 from pathlib import Path
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import _lib  # noqa: E402
@@ -106,6 +107,13 @@ def board_link(payload: dict, registry: object | None = None) -> str | None:
     ``FLEET_BOARD_URL`` env var, not `projects.toml`, since this repo is
     public — see fleet-config#271) — absent either, this is a silent no-op so
     the ping stays byte-identical to today.
+
+    ``board_url`` may already carry its own query string — e.g. a bearer
+    ``?token=...`` baked in the same way app-launcher's tray "Copy Tailscale
+    URL" menu item does, so the tapped link authenticates without a login
+    overlay (fleet-config#273). ``board=<session_id>`` is merged in via
+    ``urllib.parse`` rather than concatenated, so an existing query string
+    survives intact.
     """
     session_id = payload.get("session_id")
     if not isinstance(session_id, str) or not session_id:
@@ -113,7 +121,11 @@ def board_link(payload: dict, registry: object | None = None) -> str | None:
     base_url = _lib.resolve_board_url(_lib.cwd(payload), registry)
     if not base_url:
         return None
-    return f"📋 <{base_url.rstrip('/')}/?board={session_id}|Open on the Board>"
+    parts = urlsplit(base_url)
+    query = parse_qsl(parts.query, keep_blank_values=True)
+    query.append(("board", session_id))
+    url = urlunsplit((parts.scheme, parts.netloc, parts.path or "/", urlencode(query), ""))
+    return f"📋 <{url}|Open on the Board>"
 
 
 def main() -> None:
