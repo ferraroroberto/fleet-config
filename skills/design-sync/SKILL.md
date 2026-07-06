@@ -1,19 +1,29 @@
 ---
 name: design-sync
-description: Check a web app's CSS custom properties (light + dark) against the fleet design system (~/.claude/design.md + design.dark.md), report token drift, and file a deduped design-drift issue so /cleanup-fleet design-drift can fix it later — optionally applying the alignment to the working tree. Skips Streamlit POC spikes. Use when aligning a web app to the fleet look, e.g. "/design-sync", "/design-sync app-launcher", "check design drift", "sync this app to design.md", or "/design-sync apply" to write the aligned tokens.
+description: Check a web app against the fleet design system (~/.claude/design.md + design.dark.md) with the deterministic design_lint helper — token drift (light + dark), per-family token-adoption ratios, component-contract conformance, vendored-component byte-verification, and sibling-consistency — then file a deduped design-drift issue so /cleanup-fleet design-drift can fix it later, optionally applying the token alignment to the working tree. Skips Streamlit POC spikes. Use when aligning a web app to the fleet look, e.g. "/design-sync", "/design-sync app-launcher", "check design drift", "sync this app to design.md", or "/design-sync apply" to write the aligned tokens.
 ---
 
 # design-sync
 
 **Goal:** Keep every fleet web app (FastAPI + static PWA) true to the one shared
 visual identity, navigation, and interaction language in `~/.claude/design.md`
-(light) + `~/.claude/design.dark.md` (dark). The skill reads the spec, maps its
-tokens onto a target app's CSS custom properties (light **and** dark), surfaces
-the values that have **drifted** from the spec, and files exactly one deduped
+(light) + `~/.claude/design.dark.md` (dark). The skill runs the **deterministic
+lint** (`skills/_lib/design_lint.py`) — token mapping + drift (light **and**
+dark), per-family token-adoption ratios, component-contract checks,
+vendored-component byte-verification, and sibling duplicate detection — then
+applies LLM judgment only where measurement can't reach (alias leftovers,
+materiality, sibling arbitration), and files exactly one deduped
 `design-drift` issue per repo — the same audit→bucket→cleanup machinery as
 `/codebase-audit`. So a weekly run produces a bucket of drift issues you can clear
 all at once with `/cleanup-fleet design-drift`. With `apply`, it also writes the
 aligned token values into the working tree for you to review.
+
+**Measure with the helper, never by eye.** Everything mechanically checkable is
+computed by `design_lint.py` (pure, unit-tested in `tests/test_design_lint.py`,
+the same `_lib` contract as `cert_drift.py`); do not re-derive a ratio, a token
+comparison, or a byte-diff by reading CSS yourself. The LLM's job is confined to:
+resolving the `unmapped` variable leftovers, applying the materiality bar,
+judging which sibling variant is the canonical one, and writing the issue.
 
 **It also runs one adjacent infra check on the same web-app population: tailnet-cert
 conformance** (step 1b). A Tailscale-reachable app that still provisions HTTPS only
@@ -26,7 +36,7 @@ never mixes into the `design-drift` issue.
 
 **Default mode files an issue; it does not edit code.** Reporting + upserting the
 `design-drift` issue (and, separately, any `cert-drift` issue) is the only side
-effect unless you pass `apply` (step 8). Never commit, push, or restart anything.
+effect unless you pass `apply` (step 6). Never commit, push, or restart anything.
 `apply` only ever touches CSS — the cert migration is never auto-applied (that is a
 later `/cleanup-fleet cert-drift` run).
 
@@ -37,7 +47,7 @@ later `/cleanup-fleet cert-drift` run).
   relative to `E:/automation/<name>` or as a path; must be a git repo).
 - The word `apply` anywhere in the args (`/design-sync apply`,
   `/design-sync app-launcher apply`) → after reporting, **apply** the spec values
-  to the app's CSS in the working tree (step 8). Without it, the run is read-only
+  to the app's CSS in the working tree (step 6). Without it, the run is read-only
   on code and only files the issue.
 
 More than one path argument → say only one target is accepted and stop.
@@ -151,86 +161,79 @@ If no token-bearing, non-Streamlit stylesheet remains, stop with:
 `<repo> is not a token-styled web app (or is Streamlit-only) — nothing to sync.`
 File nothing.
 
-### 3. Load the spec (light + dark)
+### 3. Run the deterministic lint
 
-Read both spec files in full from the user home (they are junctioned there):
-- `~/.claude/design.md` — light values.
-- `~/.claude/design.dark.md` — dark values.
+One command computes every mechanically checkable dimension (JSON to stdout):
 
-(On Windows: `$env:USERPROFILE/.claude/design.md` / `design.dark.md`.)
+```
+C:/Users/rober/AppData/Local/Python/bin/python.exe C:/Users/rober/.claude/skills/_lib/design_lint.py all <repo-root>
+```
 
-Parse the frontmatter token groups — `colors`, `typography`, `rounded`,
-`spacing`, `components` — into a light map and a dark map keyed by token name
-(the names are identical across the two files; only values differ).
+(Reads the spec from `~/.claude/design.md` + `design.dark.md` — the junctioned
+canonical copies; `--scaffold` overrides the project-scaffolding root for the
+vendored compare, default `E:/automation/project-scaffolding`.)
 
-### 4. Parse the app's CSS custom properties
+The five sections it returns, and what each means:
 
-From the stylesheets kept in step 2, extract the app's custom properties for both
-themes:
-- **Light** — the base `:root { … }` block.
-- **Dark** — the `[data-theme="dark"]`, `:root[data-theme="dark"]`, or
-  `@media (prefers-color-scheme: dark)` block.
+- **`tokens`** — spec-role → app-var mapping via the built-in alias table
+  (`--bg`→`colors.canvas`, `--ink`→`colors.fg`, `--on`→`colors.success`, …),
+  compared per theme. `matched` needs no action; every `drift` entry
+  (`value-drift` or `missing-theme-value`) and `missing` role is a candidate
+  finding; `unmapped` is the list the LLM resolves (step 4a).
+- **`adoption`** — per family (color, font-size, radius, spacing):
+  `tokenized / total` declaration ratio + up to 40 escapee `file:line`s + the
+  literal-value histogram. This is the "how much, where" lens (#234): a
+  correct-*valued* token used nowhere still scores low here. Ratios trend
+  across weekly sweeps (#180).
+- **`contracts`** — PASS/WARN/FAIL/NA per design.md-v2 component contract:
+  tokenized `:focus-visible` ring, `prefers-reduced-motion`, the centered
+  772px desktop measure, **switch on-track = success (green — FAIL if it is
+  the accent)**, no native checkboxes, the disclosure closed-box trio
+  (52px / `0 14px` / open divider), native `<dialog>` vs hand-rolled overlay,
+  the nav-contract signals (`body:has(dialog[open])` hide, `100dvh`,
+  safe-area), and icon px sizes vs the spec's `icons.size` steps
+  (spec-driven — the allowed set is parsed from the spec, not hardcoded).
+- **`vendored`** — byte-hash comparison of the app's
+  `_vendored/<component>/` copies against project-scaffolding's canonical
+  files: `IDENTICAL` / `FORKED` (the vendor-verbatim rule broken — always a
+  finding) / `NOT_ADOPTED` (informational; adoption is rollout work, not
+  drift).
+- **`siblings`** — top-level JS definitions with the same name in ≥2 files
+  (the 7×-duplicated `schedule(ms)` of home-automation#369). Detection is
+  mechanical; *which variant is canonical* is step 4c.
 
-Record each `--var: value;` with its file:line, per theme.
+### 4. LLM judgment layer (only where measurement can't reach)
 
-### 5. Map spec tokens onto the app's variables (by role)
+- **(a) Resolve the `unmapped` leftovers.** For each app variable the alias
+  table didn't claim, decide from its name, comment, and usage whether it maps
+  to a spec role (then compare values yourself and add a finding on mismatch)
+  or is a legitimate derived/app-specific token (`--input-bg: var(--card-off)`,
+  the nav geometry vars — fine, note nothing). If an alias is genuinely
+  fleet-common, extend `ALIASES` in `design_lint.py` in a proper branch — never
+  fudge the mapping ad hoc.
+- **(b) Materiality bar** over everything the lint surfaced: a 1-unit
+  radius/spacing nitpick or a shadow's `#000` is not a finding; a wrong canvas
+  color, a missing dark theme, a `FORKED` vendored file, an accent-colored
+  switch, or a FAILed contract is. Spacing adoption is expected to score low
+  fleet-wide (never unified — report the ratio, don't inflate findings from
+  it); font-size/radius should be near 1.0 on a canon app.
+- **(c) Sibling arbitration.** For each `siblings` duplicate (and any repeated
+  CSS component pattern you notice while reading), identify the app's
+  **dominant/correct variant** and flag the deviants — this is the technique
+  that found the missing busy-flag guard (home-automation#368: `vm.js` had the
+  pattern `security-alarm.js`/`plugs.js` lacked). A duplicate that is
+  byte-identical everywhere is a dedup candidate; one that *diverges* is a
+  consistency bug candidate — say which.
+- **(d) What the greps can't see.** The nav contract beyond its grep signals
+  (single active tab, `localStorage` persistence, ≥44px targets) and the
+  disclosure body-padding nuance (`12px 14px 14px`, top dropped when the first
+  child is a list) still need a read of the actual code when the lint flags
+  the area. A re-implemented or divergent nav is a finding whose fix is to
+  **adopt the vendored component from `project-scaffolding`'s `_vendored/`**
+  (nav, card, disclosure, modal, empty-state, switch, icon-tile — all shipped)
+  — never re-author it.
 
-The app's variable names will differ from the spec's token names (e.g. an app's
-`--bg` is the spec's `colors.canvas`; `--text` is `colors.fg`; `--link`/`--accent`
-is `colors.accent`). Map by **semantic role**, using the variable name, its
-inline comment, and how it's used. Cover at least:
-
-- surface roles → `colors.canvas`, `colors.canvas-subtle`, `colors.card`
-- line roles → `colors.border`, `colors.border-muted`
-- text roles → `colors.fg`, `colors.fg-muted`
-- accent / CTA / link → `colors.accent` (+ `colors.accent-fg` for on-accent text)
-- state → `colors.success`, `colors.danger`, `colors.attention`
-- radii → `rounded.*`; spacing scale → `spacing.*`
-
-A spec token with **no** corresponding app variable is a *missing-token* finding;
-an app variable whose value differs from the mapped spec value is a *drift*
-finding. Note your mapping in the issue so a fixer can trust it.
-
-### 6. Compute drift (light and dark)
-
-For every mapped role, compare the app's value to the spec value **in both
-themes**. A finding is:
-- **drift** — mapped variable's value ≠ spec value (e.g. `--bg: #0a0f1a` vs
-  `colors.canvas: #0d1117` in dark), or
-- **missing** — a spec token with no app variable for that role.
-
-Also check the **navigation/interaction contract** (the part the spec cares most
-about): does the app implement the fixed bottom-tab pill per the spec's
-*Navigation & interaction* section (viewport-anchored via `100dvh` + safe-area,
-`rounded.nav`, backdrop blur, single active tab, `localStorage` persistence,
-hide-under-open-`dialog`, ≥44px targets)? A re-implemented or divergent nav is a
-finding whose fix is to **adopt the vendored nav snippet from
-`project-scaffolding`** (do not re-author it). If that vendored library does not
-exist yet, cite the follow-up that tracks it rather than hand-rolling a nav.
-
-Also check the **collapsible-card (`disclosure`) component contract**
-(fleet-config#231): find every `details`/`summary`-based collapsible card (or an
-equivalent `.collapse-summary`-style header) and verify, per theme where
-relevant:
-- the card's own container has its `padding` reset to `0` (not inheriting the
-  base `card` component's padding — that alone adds extra height *and* a left
-  indent),
-- the `summary` matches `disclosure.closedHeight` (52px) and
-  `disclosure.summaryPadding` (`0 14px`),
-- the open state (`[open] > summary`) carries the one-line divider
-  (`border-bottom: 1px solid {colors.border-muted}`) and nothing heavier,
-- the open body content uses `disclosure.bodyPadding` (`12px 14px 14px`, or
-  `0 14px 14px` when the body's first child is a list with its own item padding)
-  rather than sitting flush against the left edge.
-
-A card missing any of these is a **card-structure** finding — the exact drift
-that bit `home-automation` twice (#235, #162) before this check existed.
-
-Apply a materiality bar: a 1-unit radius nitpick is not a finding; a wrong canvas
-color, a missing dark theme, a hand-rolled nav, or a collapsible card missing the
-padding-zero/height/divider contract is.
-
-### 7. Dedupe and upsert the `design-drift` issue
+### 5. Dedupe and upsert the `design-drift` issue
 
 Exactly one managed `design-drift` issue per repo, reused across runs — identical
 mechanics to `/codebase-audit`'s bucket issues. Never `gh issue create` by hand.
@@ -273,18 +276,40 @@ mechanics to `/codebase-audit`'s bucket issues. Never `gh issue create` by hand.
 CLAUDE.md rendered-markdown rule applies; the helper prepends the marker):
 
 ```markdown
-Surfaced by `/design-sync`, kept up to date across runs. Spec: `~/.claude/design.md` (+ `design.dark.md`).
+Surfaced by `/design-sync`, kept up to date across runs. Spec: `~/.claude/design.md` (+ `design.dark.md`). Measured by `skills/_lib/design_lint.py` (deterministic); judgment items marked.
 
 ## Findings
 
 - [ ] **<file>:<line>** — `--<var>` (role `<spec token>`, <light|dark>): app `<value>` ≠ spec `<value>`. Fix: set to `<spec value>`.
 - [ ] **<file>** — missing dark theme block; spec defines `design.dark.md`. Fix: add `[data-theme="dark"]` with the spec's dark values.
-- [ ] **<file>** — bottom nav re-implemented, diverges from the spec contract. Fix: adopt the vendored nav snippet from `project-scaffolding`.
-- [ ] **<file>:<line>** — collapsible card `.<class>` doesn't match the `disclosure` contract (card padding not zeroed / summary height-padding / missing open divider / body padding). Fix: align to `design.md` Components → collapsible cards.
+- [ ] **<contract-id> FAIL** — <detail from the lint>. Fix: <align to the design.md v2 contract / adopt the vendored component>.
+- [ ] **_vendored/<component>/<file> FORKED** — the vendored copy diverges from project-scaffolding's canonical bytes. Fix: re-vendor verbatim (or upstream the change to the scaffold first).
+- [ ] **<file>** — bottom nav re-implemented, diverges from the spec contract. Fix: adopt the vendored nav from `project-scaffolding`.
+
+## Token adoption
+
+| family | tokenized/total | ratio | top escapees |
+|---|---|---|---|
+| color | <n>/<n> | <0.xx> | <file:line value, …> |
+| font-size | <n>/<n> | <0.xx> | … |
+| radius | <n>/<n> | <0.xx> | … |
+| spacing | <n>/<n> | <0.xx> | … (informational — never unified fleet-wide) |
+
+## Contracts
+
+<one line per lint contract check: `PASS|WARN|FAIL id — detail @ evidence`>
+
+## Vendored components
+
+<one line per component: `IDENTICAL | FORKED (files…) | NOT_ADOPTED` — NOT_ADOPTED is informational, not a finding>
+
+## Sibling consistency
+
+- <name> defined in <n> files (<sites>) — <dedup candidate | deviates: which variant is canonical and why>
 
 ## Token map (spec role → app var)
 
-<one line per mapped role, so a fixer can trust the comparison>
+<one line per mapped role the LLM resolved beyond the built-in alias table — the table's own mappings need no restating>
 
 ## Context
 
@@ -297,7 +322,7 @@ Surfaced by `/design-sync`, kept up to date across runs. Spec: `~/.claude/design
 
 Titles are **stable** — `audit: design-drift findings`, no count suffix.
 
-### 8. Optionally apply (only when `apply` was passed)
+### 6. Optionally apply (only when `apply` was passed)
 
 When `apply` is in the args, write the spec values into the app's CSS in the
 working tree so the user can review the diff:
@@ -310,7 +335,7 @@ working tree so the user can review the diff:
 - Leave the working tree dirty for the user to review; **never commit, push, or
   restart.** Re-state which files changed.
 
-### 9. Final report
+### 7. Final report
 
 Print one summary and stop:
 
@@ -322,21 +347,31 @@ Print one summary and stop:
   light        <n>         <n>      <n>
   dark         <n>         <n>      <n>
 
+  adoption: color <0.xx> · font-size <0.xx> · radius <0.xx> · spacing <0.xx>
+  contracts: <n> PASS · <n> WARN · <n> FAIL   (<failing ids>)
+  vendored: <n> identical · <n> forked · <n> not adopted
+  siblings: <n> duplicate names (<top names>)
   nav contract: <ok | drifted: ...>
-  cards: <ok | drifted: ...>   (collapsible-card / disclosure contract)
   cert: <ok | drift, filed #N>   (tailnet-cert conformance, step 1b)
   filed: https://github.com/<owner>/<repo>/issues/<N>   (design-drift)
   applied: <n files changed | not applied (report-only)>
 ```
 
-The `cert:` line always appears (the step-1b check runs on every target). If there
-is zero CSS drift and the nav contract holds, say `In sync with design.md — no
-drift.` and still no-op the design-drift issue (don't file an empty one; if a prior
-issue exists with all boxes now satisfiable, leave it for the user to close) — the
-cert verdict is reported independently regardless.
+The `cert:` line always appears (the step-1b check runs on every target). If the
+lint reports zero drift, zero contract FAILs, and no forked vendored files, say
+`In sync with design.md — no drift.` and still no-op the design-drift issue
+(don't file an empty one; if a prior issue exists with all boxes now
+satisfiable, leave it for the user to close) — the cert verdict and the
+adoption ratios are reported regardless (ratios are the trend signal for #180
+even on a clean app).
 
 ## Hard rules
 
+- **Measure with `design_lint.py`, never by eye.** Ratios, token comparisons,
+  contract greps, vendored byte-diffs, and sibling detection come from the
+  helper (step 3) — the LLM never re-derives them. LLM judgment is confined to
+  step 4 (alias leftovers, materiality, sibling arbitration, prose-only
+  contract nuances).
 - **Default mode never edits code.** Only `apply` writes files, and even then it
   never commits, pushes, or restarts.
 - **One managed issue per repo per kind — the helper owns identity.** Always go
@@ -375,9 +410,16 @@ cert verdict is reported independently regardless.
 - The tailnet-cert convention itself lives in `project-scaffolding#89`, not here —
   this skill only *detects* drift from it. The heuristic is in the pure, unit-tested
   `skills/_lib/cert_drift.py` (`detect`), the same `_lib` contract as `ux_surface.py`.
+- The deterministic lenses live in `skills/_lib/design_lint.py` (unit-tested in
+  `tests/test_design_lint.py`, wired into `tests/run_acceptance.py`) — same
+  `_lib` contract as `cert_drift.py`. The icon-size step set, contract targets,
+  and switch on-color are all read from / driven by the spec, so a spec change
+  propagates without touching the helper. v2 provenance: #277 (the two #234
+  lenses) + #278 (the component contracts it checks) + project-scaffolding#120
+  (the vendored components it byte-verifies).
 - The spec, not this skill, is the source of truth for *what* the look should be.
   Refine `design.md` / `design.dark.md` when the identity itself should change;
   this skill only measures and (optionally) applies conformance to it.
-- The collapsible-card (`disclosure`) structural check (step 6) folds into the
-  same `design-drift` issue as token drift — it's a separate finding type, not a
-  separate bucket/label (fleet-config#231).
+- All structural findings (contracts, vendored forks, siblings) fold into the
+  same `design-drift` issue as token drift — separate finding types, not
+  separate buckets/labels (fleet-config#231).

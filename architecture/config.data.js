@@ -123,7 +123,7 @@ window.CONFIG = {
     },
     {
       "nm": "design-sync",
-      "ds": "Check a web app's CSS custom properties (light + dark) against the fleet design system (~/.claude/design.md + design.dark.md), re…",
+      "ds": "Check a web app against the fleet design system (~/.claude/design.md + design.dark.md) with the deterministic design_lint helper…",
       "scope": "repo"
     },
     {
