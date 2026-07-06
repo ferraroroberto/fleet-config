@@ -75,7 +75,7 @@ icons:
     inline:  16px                 # inline with body text / row affordances
     title:   18px                 # section-title & disclosure leading glyph
     feature: 24px                 # empty-state, icon tiles, large standalone (== grid)
-    nav-tab: 24px                 # bottom-nav tab glyph
+    nav-tab: 20px                 # bottom-nav tab glyph (--bottom-tabs-icon — phone-validated geometry, home-automation#118)
 ---
 
 ## Overview
