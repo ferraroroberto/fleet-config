@@ -5,8 +5,8 @@ frontmatter parser (inline maps, nesting, {token} refs), the custom-prop
 extractor (theme split, comment/P3 immunity — the real home-automation bug),
 the alias mapper (match/drift/missing/unmapped), the adoption-ratio counter
 (exemptions), the contract checks (the green-switch decision, focus ring,
-checkbox detection), the vendored byte-compare, and the sibling duplicate
-detector.
+checkbox detection, the nav standalone-shell architecture — fleet-config#282),
+the vendored byte-compare, and the sibling duplicate detector.
 
 Run: `C:/Users/rober/AppData/Local/Python/bin/python.exe tests/test_design_lint.py`  (also invoked by tests/run_acceptance.py)
 """
@@ -180,6 +180,9 @@ GOOD_CSS = """
 .toggle.on { background: var(--on); }
 body:has(dialog[open]) .tabs { visibility: hidden; }
 .tabs { height: 100dvh; padding-bottom: env(safe-area-inset-bottom); }
+@media (display-mode: standalone) {
+  .app { position: fixed; top: 0; height: 100vh; height: 100lvh; overflow-y: auto; }
+}
 """
 good = run_contracts(GOOD_CSS, "<dialog class=\"d\"></dialog>")
 check(good["focus-visible-ring"]["status"] == "PASS", "tokenized focus ring PASS")
@@ -188,7 +191,51 @@ check(good["desktop-measure"]["status"] == "PASS", "772px measure PASS")
 check(good["switch-on-green"]["status"] == "PASS", "green on-track PASS")
 check(good["no-native-checkbox"]["status"] == "PASS", "no checkboxes PASS")
 check(good["native-dialog"]["status"] == "PASS", "native dialog PASS")
-check(good["nav-contract"]["status"] == "PASS", "nav signals PASS")
+check(good["nav-contract"]["status"] == "PASS", "nav signals + shell PASS")
+check("hand-carried" in good["nav-contract"]["detail"],
+      "hand-carried nav with the full architecture passes on merit (#282)")
+
+# signal-passing hand-carried nav WITHOUT the standalone shell — the exact
+# app-launcher false-PASS that motivated fleet-config#282: must cap at WARN.
+NO_SHELL_CSS = """
+body:has(dialog[open]) .tabs { visibility: hidden; }
+.tabs { height: 100dvh; padding-bottom: env(safe-area-inset-bottom); }
+"""
+noshell = run_contracts(NO_SHELL_CSS)
+check(noshell["nav-contract"]["status"] == "WARN",
+      "all grep signals but no standalone shell -> WARN, never PASS (#282)")
+check("standalone fixed-inset scroller" in noshell["nav-contract"]["detail"],
+      "no-shell WARN names the missing scroller + the vendored fix")
+
+# vendored nav present but the app-side shell missing -> still WARN (the shell
+# lives in the consuming app's CSS, so vendored presence alone can't PASS).
+t = Path(tempfile.mkdtemp(prefix="dl-nav-"))
+try:
+    (t / "s.css").write_text(NO_SHELL_CSS, encoding="utf-8")
+    vend = t / "app/webapp/static/_vendored/nav"
+    vend.mkdir(parents=True)
+    (vend / "nav-tabs.css").write_text("/* vendored */", encoding="utf-8")
+    out = {c["id"]: c for c in dl.contracts(t, [t / "s.css"], [], [], {})}
+    check(out["nav-contract"]["status"] == "WARN",
+          "vendored nav without the app-side shell -> WARN (#282)")
+finally:
+    shutil.rmtree(t, ignore_errors=True)
+
+# standalone_shell_present: the #303 markers must all sit inside a
+# display-mode:standalone block; nesting inside another @media is fine.
+NESTED = ("@media (pointer: coarse) and (max-width: 520px) {"
+          " @media (display-mode: standalone) {"
+          " .app { position: fixed; height: 100lvh; overflow-y: auto; } } }")
+check(dl.standalone_shell_present(NESTED), "shell detected in nested @media")
+check(not dl.standalone_shell_present(
+    "@media (display-mode: standalone) { .app { position: fixed; height: 100lvh; } }"),
+    "no overflow-y: auto -> not the scroller architecture")
+check(not dl.standalone_shell_present(
+    "@media (display-mode: standalone) { .app { position: fixed; overflow-y: auto; height: 100vh; } }"),
+    "no 100lvh sizing -> not the #303 architecture")
+check(not dl.standalone_shell_present(
+    ".app { position: fixed; height: 100lvh; overflow-y: auto; }"),
+    "markers outside a standalone media block don't count")
 
 BAD_CSS = """
 .toggle.on { background: var(--accent); }
