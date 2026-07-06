@@ -191,7 +191,11 @@ The five sections it returns, and what each means:
   the accent)**, no native checkboxes, the disclosure closed-box trio
   (52px / `0 14px` / open divider), native `<dialog>` vs hand-rolled overlay,
   the nav-contract signals (`body:has(dialog[open])` hide, `100dvh`,
-  safe-area), and icon px sizes vs the spec's `icons.size` steps
+  safe-area, **and the standalone fixed-inset `.app` scroller** — the
+  home-automation#303 architecture that removes the iOS pill-drift cause;
+  a nav missing it caps at WARN even when every grep signal passes and even
+  when `_vendored/nav/` is present, because the shell lives app-side), and
+  icon px sizes vs the spec's `icons.size` steps
   (spec-driven — the allowed set is parsed from the spec, not hardcoded).
 - **`vendored`** — byte-hash comparison of the app's
   `_vendored/<component>/` copies against project-scaffolding's canonical
@@ -231,7 +235,12 @@ The five sections it returns, and what each means:
   the area. A re-implemented or divergent nav is a finding whose fix is to
   **adopt the vendored component from `project-scaffolding`'s `_vendored/`**
   (nav, card, disclosure, modal, empty-state, switch, icon-tile — all shipped)
-  — never re-author it.
+  — never re-author it. **A nav-contract WARN/FAIL is always a finding, never
+  demoted by judgment** — in particular the missing standalone fixed-inset
+  scroller (fleet-config#282): the scroll-up/down pill drift persists on any
+  app without it, and the settled conclusion (decision on fleet-config#279,
+  2026-07-06) is to adopt `_vendored/nav/` verbatim **plus** the app-side
+  fixed-inset `.app` shell as one piece. Do not re-litigate this per run.
 
 ### 5. Dedupe and upsert the `design-drift` issue
 
@@ -284,7 +293,7 @@ Surfaced by `/design-sync`, kept up to date across runs. Spec: `~/.claude/design
 - [ ] **<file>** — missing dark theme block; spec defines `design.dark.md`. Fix: add `[data-theme="dark"]` with the spec's dark values.
 - [ ] **<contract-id> FAIL** — <detail from the lint>. Fix: <align to the design.md v2 contract / adopt the vendored component>.
 - [ ] **_vendored/<component>/<file> FORKED** — the vendored copy diverges from project-scaffolding's canonical bytes. Fix: re-vendor verbatim (or upstream the change to the scaffold first).
-- [ ] **<file>** — bottom nav re-implemented, diverges from the spec contract. Fix: adopt the vendored nav from `project-scaffolding`.
+- [ ] **<file>** — bottom nav re-implemented, diverges from the spec contract (or lacks the standalone fixed-inset `.app` scroller, home-automation#303). Fix: adopt the vendored nav from `project-scaffolding` plus the app-side fixed-inset shell — one piece, never re-authored.
 
 ## Token adoption
 

@@ -168,6 +168,15 @@ identically; treat every bullet as a hard requirement, not a suggestion.
   the app reopens on the tab you left.
 - **The nav hides whenever a modal/overlay is open** (`body:has(dialog[open])`) so
   it never floats above a dialog.
+- **Installed PWA: the app shell is the scroller, never the window.** Inside
+  `@media (display-mode: standalone)` the content wrapper (`.app`) becomes a
+  fixed-inset element scroller — `position: fixed; top/left/right: 0`, sized
+  with the **large viewport unit** (`height: 100vh` fallback, then `100lvh`),
+  `overflow-y: auto` — so all real scrolling happens inside `.app` and a
+  momentum bounce can never move the visual viewport and drag the bar
+  (home-automation#303 — this removes the pill-drift *cause*; #300 proved a
+  measured JS transform "correction" is actively harmful in standalone, so the
+  bar takes **no JS translate** there — CSS owns its position).
 - **Tap targets ≥ 44px.** Tabs show an icon **and** a short label, never
   icon-only. The icon is a **Lucide** glyph (see Icons).
 - **Desktop / fine pointers** may render the same tabs inline at the top; the

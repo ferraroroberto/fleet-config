@@ -489,6 +489,32 @@ def _find_line(text: str, pattern: str, flags: int = 0) -> Optional[int]:
     return text[: m.start()].count("\n") + 1 if m else None
 
 
+_STANDALONE_MEDIA_RE = re.compile(r"@media[^{]*display-mode:\s*standalone[^{]*\{")
+
+
+def standalone_shell_present(css: str) -> bool:
+    """True when a `(display-mode: standalone)` media block makes the app shell
+    the scroller: position: fixed + 100lvh sizing + overflow-y: auto — the
+    home-automation#303 architecture the design.md nav contract requires (all
+    real scrolling inside `.app`, never the window; removes the pill-drift
+    cause). Works on comment-stripped CSS; nesting inside another @media is
+    fine (the inner standalone block is matched directly)."""
+    for m in _STANDALONE_MEDIA_RE.finditer(css):
+        depth, i = 1, m.end()
+        start = i
+        while i < len(css) and depth:
+            if css[i] == "{":
+                depth += 1
+            elif css[i] == "}":
+                depth -= 1
+            i += 1
+        block = css[start:i]
+        if (re.search(r"position:\s*fixed", block) and "100lvh" in block
+                and re.search(r"overflow-y:\s*auto", block)):
+            return True
+    return False
+
+
 def contracts(
     root: Path,
     css_files: List[Path],
@@ -599,23 +625,35 @@ def contracts(
     else:
         add("native-dialog", "NA", "no dialogs found")
 
-    # 8. nav contract signals (vendored copy, or the load-bearing rules)
-    if (root / "app/webapp/static/_vendored/nav/nav-tabs.css").exists():
-        add("nav-contract", "PASS", "vendored nav present (_vendored/nav/)")
+    # 8. nav contract signals — architecture decides, not provenance. A vendored
+    #    copy still needs the app-side standalone shell (#303), and a hand-carried
+    #    nav with the full architecture passes on merit (home-automation is the
+    #    reference and is hand-carried). Provenance is the `vendored` lens's job.
+    signals = {
+        "hide-under-dialog (body:has(dialog[open]))": r"body:has\(dialog\[open\]\)",
+        "viewport anchor (100dvh)": r"100dvh",
+        "safe-area inset": r"safe-area-inset-bottom",
+    }
+    missing = [name for name, pat in signals.items()
+               if not re.search(pat, css_all)]
+    shell_ok = standalone_shell_present(css_all)
+    n_signals = len(signals) + 1  # + the standalone shell
+    vendored_nav = (root / "app/webapp/static/_vendored/nav/nav-tabs.css").exists()
+    provenance = "vendored" if vendored_nav else "hand-carried"
+    if not missing and shell_ok:
+        add("nav-contract", "PASS",
+            f"nav contract signals + standalone fixed-inset shell all present ({provenance})")
+    elif not missing and not shell_ok:
+        add("nav-contract", "WARN",
+            "app shell lacks the standalone fixed-inset scroller (design.md nav "
+            "contract, home-automation#303) — the scroll bug persists; adopt "
+            "_vendored/nav/ plus the fixed-inset .app shell")
+    elif len(missing) + (0 if shell_ok else 1) < n_signals:
+        if not shell_ok:
+            missing.append("standalone fixed-inset .app scroller (#303)")
+        add("nav-contract", "WARN", "nav contract partially present — missing: " + ", ".join(missing))
     else:
-        signals = {
-            "hide-under-dialog (body:has(dialog[open]))": r"body:has\(dialog\[open\]\)",
-            "viewport anchor (100dvh)": r"100dvh",
-            "safe-area inset": r"safe-area-inset-bottom",
-        }
-        missing = [name for name, pat in signals.items()
-                   if not re.search(pat, css_all)]
-        if not missing:
-            add("nav-contract", "PASS", "nav contract signals all present (hand-carried)")
-        elif len(missing) < len(signals):
-            add("nav-contract", "WARN", "nav contract partially present — missing: " + ", ".join(missing))
-        else:
-            add("nav-contract", "FAIL", "no nav-contract signals — adopt the vendored nav from project-scaffolding")
+        add("nav-contract", "FAIL", "no nav-contract signals — adopt the vendored nav from project-scaffolding")
 
     # 9. icon-size strays vs the spec's icons.size steps
     allowed = set()
