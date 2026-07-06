@@ -62,11 +62,15 @@ components:
   card:           { backgroundColor: "{colors.card}", textColor: "{colors.fg}", rounded: "{rounded.lg}", padding: "{spacing.md}" }
   button-primary: { backgroundColor: "{colors.accent}", textColor: "{colors.accent-fg}", rounded: "{rounded.md}", typography: "{typography.label}", height: 48px }
   control:        { height: 36px, rounded: "{rounded.md}", backgroundColor: "{colors.canvas-subtle}", borderColor: "{colors.border}", textColor: "{colors.fg}" }   # shared height for inline select / input so a row of controls lines up
-  switch:         { width: 44px, height: 26px, rounded: "{rounded.pill}", thumbSize: 20px, trackOff: "{colors.border}", trackOn: "{colors.accent}", thumbColor: "{colors.accent-fg}" }   # shadcn Switch — no text label
+  switch:         { width: 44px, height: 26px, rounded: "{rounded.pill}", thumbSize: 20px, trackOff: "{colors.border}", trackOn: "{colors.success}", thumbColor: "{colors.accent-fg}" }   # shadcn Switch — no text label; on = green (success), the universal on-state
   nav-bar:        { backgroundColor: "{colors.card}", rounded: "{rounded.nav}", height: 61px, margin: 21px }
   nav-tab:        { textColor: "{colors.fg-muted}", rounded: "{rounded.pill}", height: 53px }
   nav-tab-active: { backgroundColor: "{colors.canvas-subtle}", textColor: "{colors.accent}" }
   disclosure:     { align: left, chevron: right, closedHeight: 52px, summaryPadding: "0 14px", bodyPadding: "12px 14px 14px" }   # collapsible details/summary header — the summary owns height+padding; the card's own padding is zeroed so cards align when closed
+  modal:          { rounded: "{rounded.lg}", closeSize: 34px, rowPadding: "12px 0", primaryButton: "{components.button-primary}" }   # editor <dialog> — heading-lg title + × close, label/value rows on a top-border divider, one full-width primary
+  empty-state:    { iconSize: "{icons.size.feature}", gap: "{spacing.sm}", padding: "{spacing.xl} {spacing.md}", actionMinWidth: 96px, textColor: "{colors.fg-muted}" }   # icon + one-line reason + optional action, centered
+  icon-tile:      { rounded: "{rounded.md}", iconSize: "{icons.size.feature}", iconColor: "{colors.accent-fg}" }   # Home-screen rounded-square — one tile-* fill, centered Lucide glyph
+focus:            { outline: "2px solid {colors.accent}", offset: 2px }   # one tokenized :focus-visible ring app-wide (a control overrides only where it draws a custom ring)
 icons:
   set:     "Lucide"               # canonical fleet icon set — https://lucide.dev
   url:     "https://lucide.dev"
@@ -74,6 +78,11 @@ icons:
   stroke:  2px                    # outline weight
   format:  SVG                    # inline SVG — no icon-font / web-font payload
   license: ISC
+  size:                           # the canonical icon-size steps (closes the census gap — was 16 distinct sizes)
+    inline:  16px                 # inline with body text / row affordances
+    title:   18px                 # section-title & disclosure leading glyph
+    feature: 24px                 # empty-state, icon tiles, large standalone (== grid)
+    nav-tab: 24px                 # bottom-nav tab glyph
 ---
 
 ## Overview
@@ -104,7 +113,10 @@ hierarchy. The five roles cover every text need: don't introduce ad-hoc sizes.
 
 ## Layout
 
-Card grid on a quiet canvas. Content column max ~480px on phones, centered. A
+Card grid on a quiet canvas. Content column max ~480px on phones, centered. On
+wider viewports the same column stays **centered at `max-width: 772px`
+(`margin: 0 auto`)** rather than stretching full-bleed — the phone-first
+proportions hold on desktop, so an app reads the same at any width. A
 single **`spacing.gutter` (12px)** sets every gap — between cards/tiles *and* from
 the page edges — so the spacing reads uniform in every direction.
 **Reserve bottom padding equal to the nav height + safe-area inset** so the fixed
@@ -124,6 +136,18 @@ backdrop blur, because it is the only thing that floats over scrolling content.
 `rounded.lg` (16px) for cards, `rounded.md` (12px) for buttons and inputs,
 `rounded.pill` for chips and the active nav tab, `rounded.nav` (30px) for the nav
 bar itself. Icon tiles are squircles at `rounded.md`.
+
+## Motion
+
+Motion is functional, not decorative: a short transition on a state change (a
+switch flipping, a tab activating, a disclosure opening), never ambient
+animation. **Honor the OS "reduce motion" preference** — under
+`@media (prefers-reduced-motion: reduce)`, collapse every authored transition
+and animation to near-instant (`0.01ms`, not `0` — some engines skip the
+`transitionend`/`animationend` event at `0s`, and code that waits on it would
+hang). Leave *functional* delays untouched: a wait that lets the viewport settle
+before revealing the nav is a timing dependency, not decoration, so it is not
+motion to reduce.
 
 ## Navigation & interaction (fleet contract — the part that must feel identical)
 
@@ -149,6 +173,13 @@ identically; treat every bullet as a hard requirement, not a suggestion.
 - **Desktop / fine pointers** may render the same tabs inline at the top; the
   behavior (single active tab, persistence) is unchanged — only the placement
   differs.
+- **Focus is visible and identical everywhere.** One tokenized rule —
+  `:focus-visible { outline: 2px solid {colors.accent}; outline-offset: 2px }` —
+  covers *every* interactive element (button, input, switch, summary, tab)
+  app-wide. Do not leave focus to the browser default: on Windows Chrome that
+  default is themed off the OS accent, so an unauthored ring renders in the
+  wrong color. A control overrides this only where it draws its own custom ring
+  (via `:focus-visible` / `:focus-within` on itself), never by suppressing it.
 
 ## Components
 
@@ -158,8 +189,10 @@ identically; treat every bullet as a hard requirement, not a suggestion.
 `switch` is the shadcn Switch — a compact track + sliding thumb, **no text
 label** (state is read from thumb position + track color; `role="switch"` +
 `aria-checked` carry it for assistive tech), one canonical size everywhere. Its
-track is the accent when on; a **state** toggle (power on/off, alarm bypass) may
-substitute the relevant status color instead. Collapsible `details/summary`
+track is **green (`success`) when on** — green is the universal "on / active"
+read, so it is the fleet default rather than the blue accent; a **state** toggle
+(alarm armed, a destructive mode) may substitute another status color
+(`danger` / `attention`) where that state carries its own meaning. Collapsible `details/summary`
 headers (`disclosure`) left-align the icon + title with the chevron pinned right,
 and follow one fixed structural contract so a vertical stack of collapsible
 cards is pixel-identical whether open or closed: the **card's own `padding` is
@@ -178,6 +211,38 @@ hand-listing every card's selector across separate padding/height/divider rules
 Reuse the **vendored** nav/UI snippets from `project-scaffolding` verbatim — do
 not re-author them per app (the same model as `single_instance.py` /
 `tray_lifecycle.ps1`).
+
+### Component contracts
+
+Beyond the nav and the switch/disclosure above, these are the recurring
+composite components — each a fixed contract so the same pattern is
+pixel-identical across apps. All dimensions reference the tokens above; none are
+hand-picked per app.
+
+- **card** (`card`) — the base content group: `rounded.lg` (16px) surface at
+  `spacing.md` padding on a hairline border. Its **header** is one row: a
+  leading `icons.size.title` glyph + a bold title (`label`/`body` weight 700),
+  optional muted meta (`caption`, `fg-muted`), and a right-pinned chevron *or*
+  meta value. A card that is collapsible drops its own padding to `0` and
+  delegates to the disclosure contract (above).
+- **editor modal** (`modal`) — a native `<dialog>` for detail/rename/settings
+  editing. **Header:** a `heading-lg` title on the left, a square `modal.closeSize`
+  (34px) × button on the right (an `icons.size.title` glyph, `rounded.md`,
+  muted). **Body:** stacked label/value rows, each `modal.rowPadding` (`12px 0`)
+  on a `border-muted` top divider, the value control filling ≥55% of the row.
+  **Footer:** exactly one full-width `button-primary`. Its **disabled** state
+  must clear AA contrast in *both* themes (never the browser default, which
+  drops sub-AA). The nav hides while it is open (`body:has(dialog[open])`), and
+  on mobile the dialog is top-anchored so it never jumps on open/close.
+- **empty-state block** (`empty-state`) — for any list/grid that can legitimately
+  render zero items: a centered column of a `icons.size.feature` (24px) muted
+  glyph + a one-line reason (`body`, `fg-muted`) + an *optional* single action
+  (`actionMinWidth` 96px). One canonical block — never a bare "—" or a silent
+  empty container.
+- **icon tile** (`icon-tile`) — the Home-screen rounded-square (`rounded.md`
+  squircle) filled with **one** of the five `tile-*` colors (the only saturated
+  surfaces), a centered `icons.size.feature` Lucide glyph in `accent-fg`. The
+  fill signals category, not state; never use a `tile-*` color elsewhere.
 
 ## Base UI — model components on shadcn
 
@@ -239,8 +304,13 @@ for the nav/UI snippets ("Reuse the **vendored** nav/UI snippets from
 - **Do** keep the bottom nav identical across apps — same radius, blur, and
   persistence behavior.
 - **Do** reserve bottom padding for the fixed nav so content is never occluded.
+- **Do** give every interactive element the one tokenized `:focus-visible` ring — never leave focus to the browser default.
+- **Do** color a switch's on-track green (`success`) — the universal on-state.
+- **Do** size every glyph from the canonical `icons.size` steps (16 / 18 / 24) — don't hand-pick a one-off size.
+- **Do** honor `prefers-reduced-motion` — collapse authored animation to near-instant.
 - **Don't** hand-roll a primitive (switch, select, dialog, tabs…) that shadcn already defines.
 - **Don't** mix a second icon set or hand-draw a one-off glyph — use the matching Lucide icon.
 - **Don't** introduce a second accent or per-app navigation variants.
+- **Don't** stretch content full-bleed on desktop — keep the centered 772px measure.
 - **Don't** use status colors decoratively — they signal state only.
 - **Don't** apply this spec to Streamlit POC spikes.

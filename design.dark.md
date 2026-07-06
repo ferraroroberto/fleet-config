@@ -61,11 +61,21 @@ components:
   card:           { backgroundColor: "{colors.card}", textColor: "{colors.fg}", rounded: "{rounded.lg}", padding: "{spacing.md}" }
   button-primary: { backgroundColor: "{colors.accent}", textColor: "{colors.accent-fg}", rounded: "{rounded.md}", typography: "{typography.label}", height: 48px }
   control:        { height: 36px, rounded: "{rounded.md}", backgroundColor: "{colors.canvas-subtle}", borderColor: "{colors.border}", textColor: "{colors.fg}" }   # shared height for inline select / input so a row of controls lines up
-  switch:         { width: 44px, height: 26px, rounded: "{rounded.pill}", thumbSize: 20px, trackOff: "{colors.border}", trackOn: "{colors.accent}", thumbColor: "{colors.accent-fg}" }   # shadcn Switch — no text label
+  switch:         { width: 44px, height: 26px, rounded: "{rounded.pill}", thumbSize: 20px, trackOff: "{colors.border}", trackOn: "{colors.success}", thumbColor: "{colors.accent-fg}" }   # shadcn Switch — no text label; on = green (success), the universal on-state
   nav-bar:        { backgroundColor: "{colors.card}", rounded: "{rounded.nav}", height: 61px, margin: 21px }
   nav-tab:        { textColor: "{colors.fg-muted}", rounded: "{rounded.pill}", height: 53px }
   nav-tab-active: { backgroundColor: "{colors.canvas-subtle}", textColor: "{colors.accent}" }
   disclosure:     { align: left, chevron: right, closedHeight: 52px, summaryPadding: "0 14px", bodyPadding: "12px 14px 14px" }   # collapsible details/summary header — structural, identical to Light (see design.md)
+  modal:          { rounded: "{rounded.lg}", closeSize: 34px, rowPadding: "12px 0", primaryButton: "{components.button-primary}" }   # editor <dialog> — structural, identical to Light (see design.md)
+  empty-state:    { iconSize: "{icons.size.feature}", gap: "{spacing.sm}", padding: "{spacing.xl} {spacing.md}", actionMinWidth: 96px, textColor: "{colors.fg-muted}" }   # icon + one-line reason + optional action, centered
+  icon-tile:      { rounded: "{rounded.md}", iconSize: "{icons.size.feature}", iconColor: "{colors.accent-fg}" }   # Home-screen rounded-square — one tile-* fill, centered Lucide glyph
+focus:            { outline: "2px solid {colors.accent}", offset: 2px }   # one tokenized :focus-visible ring app-wide — identical behavior to Light, brighter accent value
+icons:
+  size:                           # theme-independent; the full icon spec (set/grid/stroke/license) is in design.md
+    inline:  16px                 # inline with body text / row affordances
+    title:   18px                 # section-title & disclosure leading glyph
+    feature: 24px                 # empty-state, icon tiles, large standalone (== grid)
+    nav-tab: 24px                 # bottom-nav tab glyph
 ---
 
 ## Overview
@@ -107,21 +117,35 @@ drop shadow to separate from content.
 Unchanged from the Light theme: `rounded.lg` cards, `rounded.md` buttons/inputs,
 `rounded.pill` chips and active tab, `rounded.nav` nav bar, squircle icon tiles.
 
+## Motion
+
+Unchanged from the Light theme: motion is functional, not decorative, and
+`@media (prefers-reduced-motion: reduce)` collapses every authored transition and
+animation to near-instant (`0.01ms`) while leaving functional timing delays
+alone. See `design.md` for the full note.
+
 ## Navigation & interaction (fleet contract — the part that must feel identical)
 
 Identical to the [Light theme contract](design.md): fixed floating bottom-tab pill
 on coarse pointers, viewport-anchored via `100dvh` + `env(safe-area-inset-bottom)`,
 one active tab at a time (subtle surface + accent text, `aria-selected` tracked),
 `localStorage`-persisted selection, hidden under an open modal
-(`body:has(dialog[open])`), tap targets ≥ 44px with icon + label, and the same
+(`body:has(dialog[open])`), tap targets ≥ 44px with icon + label, the same
+tokenized `:focus-visible` ring on every interactive element, and the same
 behavior rendered inline at the top on fine pointers. The dark theme changes the
-*colors* of these elements, never their *behavior*.
+*colors* of these elements (the focus ring uses the brighter dark `accent`),
+never their *behavior*.
 
 ## Components
 
-Unchanged from the Light theme — `button-primary`, `card`, `control`, `switch`,
-`nav-bar`, `nav-tab`, `disclosure` per the contract above, with the vendored
-snippets from `project-scaffolding` reused verbatim. The **Base UI — model
+Structurally unchanged from the Light theme — `button-primary`, `card`,
+`control`, `switch`, `nav-bar`, `nav-tab`, `disclosure`, plus the `modal`,
+`empty-state`, and `icon-tile` **Component contracts** and the `icons.size` steps
+defined in `design.md` — all with the vendored snippets from
+`project-scaffolding` reused verbatim. Only values change for dark: the `switch`
+on-track is still **green (`success`)**, at the brighter dark `success` value;
+the `modal` disabled recipe holds AA on the dark surface (~5.5:1); the
+`icon-tile` fills use the brighter dark `tile-*` values. The **Base UI — model
 components on shadcn** rule in `design.md` applies here unchanged: every
 interactive component is modelled on its shadcn component (structure + ARIA), then
 skinned with the (dark) tokens.
@@ -131,6 +155,7 @@ skinned with the (dark) tokens.
 - **Do** keep behavior byte-for-byte identical to the Light theme — only values change.
 - **Do** lean on surface lightness, not shadow, for elevation on the dark canvas.
 - **Do** reserve bottom padding for the fixed nav so content is never occluded.
+- **Do** hold AA contrast on the dark surface for disabled controls and muted text — use the authored disabled recipe, never the browser default (which drops sub-AA).
 - **Don't** introduce a second accent or per-app navigation variants.
 - **Don't** use status colors decoratively — they signal state only.
 - **Don't** apply this spec to Streamlit POC spikes.
