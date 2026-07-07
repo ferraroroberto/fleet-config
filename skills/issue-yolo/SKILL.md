@@ -176,15 +176,23 @@ Only reachable on a fully-green Phase 3. Run the full `/issue-finish` skill:
 6. `gh pr create` — body with **Summary**, **Validation** (concretely what
    you ran in Phase 3 and what its outputs were), and `Closes #<N>`.
    Do **not** include the `🤖 Generated with [Claude Code]` line at the bottom of the PR body.
-7. **Wait for CI unless the diff is provably CI-unrelated.** It is unrelated
-   only if *every* changed file is one CI never executes — `*.md`, `docs/`,
-   `LICENSE`, images/assets, or pure code-comment edits — **AND**
-   `.github/workflows/` has no job targeting them (no markdownlint, link-check,
-   docs build). Read the workflow files to confirm; never assume.
-   - **Unrelated** → skip the watch, merge immediately (step 8), and note it:
-     `CI not awaited — docs-only change, no docs CI job.` If the merge is
-     rejected for a pending/failing *required* check, fall back to `--watch`.
-   - **Related or any doubt** → `gh pr checks <PR> --watch`, green only. CI red
+7. **Wait for CI unless local e2e + pytest already proved it, or the diff is
+   provably CI-unrelated.**
+   - **Local e2e + pytest green this run** → if Phase 3c (unit/integration
+     tests) and Phase 3d/3e (end-to-end suite / behavioural verification)
+     already ran and passed, CI's only signal beyond that — the e2e leg, also
+     the known-flaky one — has already been produced locally. Skip the watch,
+     merge immediately (step 8), and note it: `CI not awaited — local e2e +
+     pytest green this run.`
+   - **Otherwise, CI-unrelated diff** → unrelated only if *every* changed file
+     is one CI never executes — `*.md`, `docs/`, `LICENSE`, images/assets, or
+     pure code-comment edits — **AND** `.github/workflows/` has no job
+     targeting them (no markdownlint, link-check, docs build). Read the
+     workflow files to confirm; never assume. → skip the watch, merge
+     immediately (step 8), and note it: `CI not awaited — docs-only change, no
+     docs CI job.` If the merge is rejected for a pending/failing *required*
+     check, fall back to `--watch`.
+   - **Neither applies** → `gh pr checks <PR> --watch`, green only. CI red
      → **stop**, do not merge.
    This skips only the *remote CI wait* — never the Phase 3 local gate, which is
    non-negotiable and always runs.

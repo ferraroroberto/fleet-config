@@ -1,6 +1,6 @@
 ---
 name: issue-finish
-description: Finish a GitHub issue — confirm acceptance, update docs/README, run the verification gate, push, open a closing PR, handle CI as advisory (skip on no e2e surface; rerun a flake once), auto-merge, delete the branch, restart the tray. Use when an issue branch is complete, e.g. "/issue-finish". Pairs with /issue-start.
+description: Finish a GitHub issue — confirm acceptance, update docs/README, run the verification gate, push, open a closing PR, handle CI as advisory (skip whenever local e2e + pytest are green this session, or on no e2e surface touched; rerun a flake once), auto-merge, delete the branch, restart the tray. Use when an issue branch is complete, e.g. "/issue-finish". Pairs with /issue-start.
 ---
 
 # issue-finish
@@ -104,22 +104,33 @@ drift fixed) in the step-7 summary so the user can veto.
 
 **CI is advisory, not a required gate.** The local verification gate (step 3) is
 the contract; CI is supplementary. Its **only** signal beyond the local gate is
-the **e2e suite** (the local gate skips it — it needs browsers + a live webapp),
-which is also the known-flaky leg. So a diff that touches none of the e2e surface
-gains nothing from waiting, and a wedged browser can block the merge for nothing.
-The decision below is driven by the project's `## CI expectations` block (the
-convention is `ferraroroberto/project-scaffolding#52`).
+the **e2e suite** (when the local gate itself doesn't run it — it needs browsers
++ a live webapp), which is also the known-flaky leg. So a diff that touches none
+of the e2e surface gains nothing from waiting, and neither does a diff whose
+e2e coverage was already proven **locally, in this session** — a wedged remote
+browser can block the merge for nothing either way. The decision below is driven
+by the project's `## CI expectations` block (the convention is
+`ferraroroberto/project-scaffolding#52`).
 
 - **Read the project's `## CI expectations` block in `CLAUDE.md`.** It declares
   the workflow/job, the typical-green duration + investigate/wedged thresholds,
   the documented flaky leg, and the **e2e surface** paths. **Absent → fall back
-  to the conservative behavior: always `--watch` (skip nothing).** Do not invent
-  thresholds or surface paths the block doesn't state.
-- **Skip-the-wait keyed on the e2e surface.** If the diff touches **none** of the
-  declared e2e-surface paths and the local gate (step 3) is green → skip the
-  watch and merge immediately. **State it** in the summary, e.g. `CI not awaited
-  — store-only diff, no e2e surface touched`. (This generalizes the old narrow
-  `*.md`-only rule: e2e is the only thing CI runs that the local gate skipped.)
+  to the conservative behavior: always `--watch` (skip nothing)**, subject to
+  the local-e2e-proof rule below. Do not invent thresholds or surface paths the
+  block doesn't state.
+- **Skip-the-wait when local e2e + pytest already proved it this session.** If
+  step 3's gate is green **and** the project's end-to-end suite was actually run
+  and passed in this same session (a local `verify`-style pass, or a gate
+  command that itself boots the app and runs e2e) → skip the watch and merge
+  immediately, **regardless of whether the diff touches declared e2e-surface
+  paths** — CI's only signal beyond the local gate has already been produced
+  locally. **State it** in the summary, e.g. `CI not awaited — local e2e +
+  pytest green this session`.
+- **Otherwise, skip-the-wait keyed on the e2e surface.** If local e2e did *not*
+  run this session, fall back to the narrower rule: if the diff touches **none**
+  of the declared e2e-surface paths and the local gate (step 3) is green → skip
+  the watch and merge immediately. **State it** in the summary, e.g. `CI not
+  awaited — store-only diff, no e2e surface touched`.
 - **Otherwise watch — but proactively, not passively.** Run `gh pr checks <PR>
   --watch`. The moment elapsed crosses the block's **investigate threshold**,
   stop waiting passively: inspect the run (`gh run view <run-id> --job <job>`)
