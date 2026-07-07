@@ -344,3 +344,11 @@ Every Playwright / automated-browser launch in any project must present as a rea
 ### Shared Chrome profiles: serialize access, never kill a live holder
 
 A persistent Chrome profile allows only **one live instance**. When two unattended jobs share one profile (e.g. a scrape + a reporting job on the same `chrome_user_data`), the second to launch gets Playwright's *"Opening in existing browser session"* and dies. Do **not** "self-heal" by killing the holder — it's usually a legitimately-running sibling, and killing it corrupts that run. Instead **wait** with exponential backoff (60→120→240→480 s), re-attempting the launch each cycle, and raise a precise error only if still held after the schedule (a >15-min holder is genuinely hung). On Windows the profile lock is a live-process kernel object, **not** the POSIX `SingletonLock`/`Cookie`/`Socket` files — deleting those does nothing. Put the detect-holder + wait-with-backoff wrapper in one helper every session imports (e.g. `config/chrome_profile_lock.py`); never re-inline a launch-with-retry.
+
+### GitHub's `Closes #N` keyword matches on substrings, not standalone clauses
+
+A PR body containing "Closes #355 findings for the checkbox→switch conversion" auto-closed issue #355 mid-migration — three more phases were still open, and the intent was only to *reference* the issue, not close it. GitHub's issue-closing keyword parser (`close(s|d)?` / `fix(es|ed)?` / `resolve(s|d)?` followed by `#N`) matches anywhere in the text, including mid-sentence — it does not require the phrase to stand alone.
+
+**Why:** discovered during `app-launcher#355` (a multi-PR design-drift migration, `ferraroroberto/app-launcher`, 2026-07-06) — the issue silently closed after the third of six PRs merged, and the mistake wasn't caught until the final wrap-up review. Had to reopen it, reconcile the checklist, and re-close it properly.
+
+**How to apply:** when a PR advances *one* finding of a multi-PR tracking issue without finishing it, phrase the reference to avoid the keyword entirely — "Part of #N", "Addresses one of #N's findings", "Progresses #N" — never "Closes #N ..." or "Fixes #N ..." even as a lead-in to more text. Reserve the literal `Closes #N` / `Fixes #N` for the one PR that actually finishes the issue.
