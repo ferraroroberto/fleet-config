@@ -5,9 +5,9 @@ description: Take one bucket of audit findings (a label like documentation, drif
 
 # cleanup-fleet
 
-**Goal:** `/audit-fleet` *finds* problems and files them, bucketed into six labels. This skill *fixes* one bucket across the whole fleet in a single pass. Pick a bucket → gather every open issue carrying that label → score each issue for complexity → deploy **one background sub-agent per repo**, sized to the work via the fleet's easy/hard tier policy (`docs/model-tiers.md`) — then aggregate the results.
+**Goal:** `/audit-fleet` *finds* and files, bucketed into six labels; this skill *fixes* one bucket fleet-wide in a single pass. Pick a bucket → gather every open issue carrying that label → score each for complexity → deploy **one background sub-agent per repo**, sized via the easy/hard tier policy (`docs/model-tiers.md`) → aggregate.
 
-**Why one agent per repo, never two:** the audit files **exactly one managed issue per (repo, bucket)**, so a bucket is naturally *at most one issue per repo*. One issue → one repo → one agent → one branch → one PR. Two agents in the same repo would collide on the working tree and produce redundant/conflicting branches, so the skill **hard-caps at one agent per repo per run** and defers any extras.
+**One agent per repo, never two:** the audit files exactly one managed issue per (repo, bucket), so one issue → one repo → one agent → one branch → one PR. Two agents on one checkout collide, so the skill hard-caps at one agent per repo per run and defers extras.
 
 **Two execution paths, both delegating to existing skills — don't reinvent them:**
 
@@ -133,9 +133,7 @@ the printed `WAIT_SECONDS`/`RESETS_AT` before firing the batch (see
 Dispatch one background sub-agent per selected issue (`run_in_background: true`, `subagent_type: "general-purpose"`, **`model` resolved from the tier** — `model: "sonnet"` for both easy and hard tier on Claude Code today, see `docs/model-tiers.md`), but **bound whichever tier resolves to Opus on the current host**:
 
 - **Easy-tier agents are exempt** — spawn them all at once in a single message (after the rate-gate check above).
-- **Any tier that resolves to Opus on the current host goes through the global Opus concurrency window** (≤3 in flight — see `~/.claude/CLAUDE.md`, "Spawning sub-agents — cap concurrent Opus at 3"): dispatch up to 3, and each time one returns dispatch the next pending issue of that tier until the queue drains. On Claude Code today, hard-tier resolves to Sonnet — so **this window is dormant by default**; it only binds a future `extreme`-tier escalation (not built in this issue — see `docs/model-tiers.md`'s note on why a third scoring bucket is out of scope here).
-
-A single-message fan-out of many Opus agents at once trips Anthropic's server-side burst limit (`Server is temporarily limiting requests · Rate limited`; ceiling 3–4 per anthropics/claude-code#53922) — the same failure that cost the 2026-06-03 `/audit-fleet` run most of its repos. That's still the reason for the window above whenever a tier does resolve to Opus; it just isn't the common case any more.
+- **Any tier that resolves to Opus on the current host goes through the global Opus concurrency window** (≤3 in flight — `~/.claude/CLAUDE.md`, "Spawning sub-agents — cap concurrent Opus at 3"): dispatch up to 3, refill as each returns until the queue drains. On Claude Code today hard-tier resolves to Sonnet, so **this window is dormant by default** — it only binds a future `extreme`-tier escalation (`docs/model-tiers.md`). A single-message fan-out of many Opus agents trips Anthropic's burst limiter (ceiling 3–4, anthropics/claude-code#53922) — that remains the reason for the window whenever a tier does resolve to Opus.
 
 #### 8a. Easy-tier prompt
 
@@ -276,7 +274,7 @@ Do **not** auto-launch either: the batch finish is user-triggered, exactly like 
 
 ## Notes
 
-- **Where this sits:** `/codebase-audit` (per repo) and `/audit-fleet` (whole fleet) *find and file* — read-only on source. `/cleanup-fleet` *fixes* one bucket — write-capable via its agents. The split keeps both stages reviewable. `/issue-triage` remains the read-only fleet overview across *all* buckets.
-- **Noise control starts at filing time, not here.** `/codebase-audit`'s materiality bar (tightened further for the bug and documentation buckets specifically — fleet-config#251) is the primary gate on what becomes a checklist item at all; this skill no longer exists to deselect low-value findings after the fact. This skill's complexity triage and (in hard mode) the approval gate are about execution *shape* — which issues are simple enough to YOLO unattended vs. which need a human to review the approach before it ships — and about safety, not about catching noise the audit should never have filed in the first place.
-- **Why compose `/issue-yolo` and `/issue-start`+gate rather than re-implement:** those skills already own the branch/build/validate/ship choreography and the per-project gate + tray logic. This skill is just the bucket selection, complexity tiering, and fan-out around them.
-- **Scheduling `easy` mode:** because it degrades rather than blocks and never merges hard work, `claude -p "/cleanup-fleet documentation easy" --permission-mode bypassPermissions` is safe to run after a weekly `/audit-fleet` — the audit files the findings, the easy pass clears the mechanical ones, the rest wait for an attended `hard` run.
+- **Where this sits:** `/codebase-audit` / `/audit-fleet` find and file (read-only on source); `/cleanup-fleet` fixes one bucket (write-capable via its agents); `/issue-triage` stays the read-only overview across all buckets.
+- **Noise control starts at filing time, not here** — `/codebase-audit`'s materiality bar (fleet-config#251) gates what becomes a checklist item; this skill's triage and approval gate are about execution *shape* and safety, not deselecting noise the audit shouldn't have filed.
+- **Compose `/issue-yolo` and `/issue-start`+gate rather than re-implement** — they own the branch/build/validate/ship choreography; this skill is just bucket selection, tiering, and fan-out.
+- **Scheduling `easy` mode:** it degrades rather than blocks and never merges hard work, so `claude -p "/cleanup-fleet documentation easy" --permission-mode bypassPermissions` is safe after a weekly `/audit-fleet` — the easy pass clears the mechanical findings, the rest wait for an attended `hard` run.

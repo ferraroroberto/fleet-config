@@ -55,7 +55,7 @@ flowchart TB
   subgraph fskills[".claude/skills/ — FLEET-ONLY tier (cwd-scoped to fleet-config)"]
     SYSTEMMAP["system-map\nbuild_data.py · render.py · render_mermaid.py · whatchanged.py"]
     AUDITFLEET["audit-fleet"] --> CLEANUPFLEET["cleanup-fleet"]
-    CONTEXTAUDIT["context-audit"]
+    CONTEXTAUDIT["context-audit"] --> CONTEXTPURGE["context-purge\ncheck.py"]
     CONFIGMAP["config-map"]
     OTHERFLEET["insights-weekly · learning-log"]
   end
@@ -72,6 +72,8 @@ flowchart TB
   CONTEXTAUDIT -->|measures| GCMDFILE
   CONTEXTAUDIT -->|measures| gskills
   CONTEXTAUDIT -->|measures| fskills
+  CONTEXTPURGE -->|compresses| GCMDFILE
+  CONTEXTPURGE -->|compresses| gskills
 
   subgraph tests["tests/run_acceptance.py"]
     TESTS["hook payload matrix + _lib unit tests +\nsystem-map / config-map drift guards"]

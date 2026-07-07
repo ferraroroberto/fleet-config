@@ -5,16 +5,14 @@ description: Audit a codebase's resting state against its CLAUDE.md and senior-d
 
 # codebase-audit
 
-**Goal:** Walk the codebase (or a scoped subtree), read it the way a senior
-perfectionist developer would, and surface the resting-state quality problems
-that the diff-scoped reviewers (`/code-review`, `/simplify`,
-`/security-review`, ultrareview) never see. Bundle the findings into a small,
-predictable set of GitHub issues — **at most 6 per run** — so `/issue-start`
-can chew through them later.
+**Goal:** Read the codebase (or a scoped subtree) the way a senior
+perfectionist developer would and surface the resting-state quality problems
+the diff-scoped reviewers (`/code-review`, `/simplify`, `/security-review`,
+ultrareview) never see — bundled into **at most 6 GitHub issues per run** for
+`/issue-start` to chew through later.
 
-**This skill produces GitHub issues, not code edits.** Never edit files in the
-working tree. Never commit, push, or restart anything. Filing issues is the
-only side effect.
+**Issues, not code edits.** Never edit files, commit, push, or restart
+anything — filing issues is the only side effect.
 
 **The six fixed buckets.** Every finding belongs to exactly one of:
 
@@ -89,11 +87,10 @@ exists. If not, stop with a one-line error.
 skip this entire step *and* step 9 — the ledger tracks whole-repo audits, so a
 scoped run always executes and never reads or writes the ledger.
 
-Before reading a single source file, check whether this repo changed since the
-last audit. This decision is **one deterministic Python call, not LLM
-judgment** — `skills/_lib/audit_issue.py`'s `evaluate_repo` is the single
-implementation both this skill and `/audit-fleet` call, so there is exactly
-one place the skip/audit/self-fix decision lives:
+Before reading a single source file, check whether the repo changed since the
+last audit — **one deterministic Python call, not LLM judgment**
+(`skills/_lib/audit_issue.py`'s `evaluate_repo`, the single implementation
+this skill and `/audit-fleet` share):
 
 ```
 C:/Users/rober/AppData/Local/Python/bin/python.exe C:/Users/rober/.claude/skills/_lib/audit_issue.py gate --repo <OWNER/REPO> --repo-path <repo-root-from-step-1>
@@ -103,12 +100,10 @@ It prints `{"decision": "SKIP"|"AUDIT"|"SKIP_SELF_FIX", "reason": ..., ...}`.
 The ledger lives in **one issue per repo** — title `codebase-audit ledger`,
 label `audit-meta`, `--assignee @me`, never closed, with a hidden identity
 marker and a machine-readable `<!-- audit-ledger -->` block (`last-audited-sha`,
-`last-audited-at`, `rubric-sha` — the rubric hash is sha256 of this repo's own
-project CLAUDE.md alone; the global `~/.claude/CLAUDE.md` is deliberately
-**not** part of it, so an edit to that shared, frequently-touched file never
-busts every repo's cache at once, per the 2026-06-06 incident). `evaluate_repo`
-computes and compares all of this internally — no separate rev-list/rubric-hash
-prose is needed here anymore.
+`last-audited-at`, `rubric-sha` — sha256 of the project CLAUDE.md **alone**; the
+global `~/.claude/CLAUDE.md` is deliberately excluded so an edit to that shared
+file never busts every repo's cache at once). `evaluate_repo` computes and
+compares all of this internally.
 
 Branch on the decision:
 
@@ -116,20 +111,14 @@ Branch on the decision:
   `No changes since last audit (<short-sha> on <date>) — skipped.` Read no
   files, file nothing.
 - **`SKIP_SELF_FIX`** — every commit since the last audit closes only this
-  repo's own audit-managed findings (detected via merged-PR
-  `closingIssuesReferences` against the bucket issues, entirely in Python —
-  see `audit_issue.py`'s `evaluate_repo`/`audit_only_churn`). The ledger has
-  **already been advanced** by the gate call itself (HEAD sha, today's date,
-  same rubric-sha) and a `<!-- audit-self-fix -->` comment already posted to
-  the ledger issue — no further action needed here. Stop immediately:
+  repo's own audit-managed findings (merged-PR `closingIssuesReferences`,
+  entirely in Python — `evaluate_repo`/`audit_only_churn`). The gate call has
+  **already advanced the ledger** and posted the `<!-- audit-self-fix -->`
+  comment. Stop immediately:
   `Skipped — commits since last audit only close this repo's own audit
-  findings (#N, #M); ledger advanced, no organic change.` This is what stops a
-  repo from being endlessly re-flagged just because `/cleanup-fleet` (or a
-  manual fix) landed its own findings.
+  findings (#N, #M); ledger advanced, no organic change.` This stops a repo
+  from being endlessly re-flagged for fixing its own findings.
 - **`AUDIT`** — continue to step 3.
-
-A re-run over an unchanged (`SKIP`) repo costs one `gh` call and one `git`
-call — that is the efficiency win the ledger exists for.
 
 ### 3. Load the rubric
 
@@ -180,33 +169,28 @@ When you see the same pattern twice in two files, that's bucket 1
 (duplication), not two separate bucket-4 findings.
 
 **Read `README.md` and `docs/` twice — once for context, once for bucket 6.**
-The first pass mines them for code-side staleness (a doc that references a
-removed module is a lead for bucket 2). The second pass judges them *as
-documentation* against bucket 6's three sub-checks: walk the shipped,
-user-facing surface you saw in the code (commands, flags, ports, config keys,
+Pass one mines them for code-side staleness leads (bucket 2). Pass two judges
+them *as documentation* against bucket 6's three sub-checks: walk the shipped
+user-facing surface seen in the code (commands, flags, ports, config keys,
 entry points) and confirm the docs cover it, don't contradict it, and don't
-repeat themselves. A feature in the code with no mention in `README`/`docs` is
-the canonical "missing crucial features" finding.
+repeat themselves. A feature with no mention in `README`/`docs` is the
+canonical "missing crucial features" finding.
 
 **Apply the materiality bar (see Hard rules) to every finding as you take
-it.** When in doubt, leave it out — across all six buckets. For bucket 5
-specifically the bar is "I'd bet money on this"; speculation pollutes the
-issue. For buckets 1–4 the bar is "a senior developer would agree this is
-worth a future developer's time to fix." If you can already imagine the
-user reading the finding and going "...so?", drop it before it gets
-written down.
+it.** When in doubt, leave it out — across all six buckets. Bucket 5's bar is
+"I'd bet money on this"; buckets 1–4: "a senior developer would agree this is
+worth a future developer's time to fix." If you can imagine the user reading
+the finding and going "...so?", drop it.
 
-**Promotion candidates (a second lens on the same read — not a bucket).** While
-reading, also jot anything *worth preserving fleet-wide* — the inverse of a
-finding: (a) a **fleet-worthy asset** — a hard-won, reusable, well-built
-solution another repo would want to copy (an infra setup, a stealth-browser
-helper, a notable architectural pattern), noting *where it lives*; (b) a
-**generalizable-convention candidate** — a project-local convention that ought
-to propagate up to `project-scaffolding` per the global CLAUDE.md rule. Same
-materiality bar, even higher: only what a senior dev would actually reach for
-later. These are **never issues and never a write to another repo** — they are
-surfaced in the final report only (step 10), where `/audit-fleet` collects them
-into the cross-fleet practices ledger. Most runs will have zero; that is fine.
+**Promotion candidates (a second lens on the same read — not a bucket).** Also
+jot anything *worth preserving fleet-wide* — the inverse of a finding: (a) a
+**fleet-worthy asset** — a hard-won, reusable solution another repo would want
+to copy, noting *where it lives*; (b) a **generalizable-convention candidate**
+that ought to propagate up to `project-scaffolding` per the global CLAUDE.md
+rule. Same materiality bar, even higher. These are **never issues and never a
+write to another repo** — surfaced in the final report only (step 10), where
+`/audit-fleet` collects them into the cross-fleet practices ledger. Most runs
+have zero; that is fine.
 
 ### 6. Dedupe against existing open issues
 
@@ -215,15 +199,12 @@ gh issue list --state open --limit 200 --json number,title,body
 ```
 
 This catches only **cross-issue** duplicates — a finding already tracked by a
-*hand-filed* issue or a *different* bucket. Re-filing the same bucket every run
-is no longer a risk: step 8 reuses the one managed issue per bucket and merges
-into it, so do **not** drop a finding just because last run's audit issue for
-*this* bucket already lists it — that issue is the one you're about to update.
-
-For each finding, scan the open issues. If a finding's substance is already
-covered by an issue that is **not** this bucket's managed audit issue (matched
-on title keywords + body content, not strict string match), **drop it** and
-remember it as "skipped: dupe of #N" for the summary.
+*hand-filed* issue or a *different* bucket. Do **not** drop a finding just
+because this bucket's own managed audit issue already lists it — that issue is
+the one step 8 merges into. If a finding's substance is covered by an issue
+that is **not** this bucket's managed issue (matched on title keywords + body
+content, not strict string match), **drop it** and record it as
+"skipped: dupe of #N" for the summary.
 
 ### 7. Ensure labels exist
 
@@ -341,14 +322,10 @@ Title style — stable, no count: `audit: <bucket> findings`. Examples:
 
 Use a **repo-scoped, unique** temp file so multi-line markdown isn't mangled
 by shell escaping *and* concurrent audits never clobber each other's scratch:
-`E:/tmp/audit-<owner>-<repo>-<short-sha>-<bucket>.md` on Windows
-(`/tmp/audit-<owner>-<repo>-<short-sha>-<bucket>.md` elsewhere), where
-`<owner>-<repo>` is the `OWNER/REPO` from step 1 with the slash replaced by a
-hyphen, and `<short-sha>` is `git rev-parse --short HEAD`. **Do not** use a
-fixed `E:/tmp/audit-<bucket>.md` — when `/audit-fleet` fans many repos out to
-parallel sub-agents at once they share `E:/tmp`, and a fixed name is a race
-where one agent overwrites another's body mid-run (see the global CLAUDE.md
-tmp-file-reuse gotcha).
+`E:/tmp/audit-<owner>-<repo>-<short-sha>-<bucket>.md` (slash in `OWNER/REPO` →
+hyphen; `<short-sha>` = `git rev-parse --short HEAD`). **Never** a fixed
+`E:/tmp/audit-<bucket>.md` — `/audit-fleet`'s parallel sub-agents share
+`E:/tmp`, and a fixed name is a race.
 
 ### 9. Update the ledger
 
@@ -379,13 +356,11 @@ Upsert the per-repo ledger issue so the next run can short-circuit at step 2:
 - This runs on **every** non-skipped path — including a clean pass that filed
   zero issues — so an unchanged repo is correctly skipped next time.
 
-Then **post one per-category snapshot comment** on the ledger issue — an
-append-only telemetry log so a reader who opens the ledger sees the *trajectory*
-of findings per repo, not just the last sweep's date. The comment carries
-**counts only** (never finding text — the bucket issues from step 8 are the
-single source of truth for *what* was found; this is *how many*, per category).
-Because it lives in a comment, it stays off the step-2 gate's hot path, which
-only ever reads the ledger *body*:
+Then **post one per-category snapshot comment** on the ledger issue —
+append-only telemetry showing the findings *trajectory* per repo. **Counts
+only** (never finding text — the bucket issues are the single source of truth
+for *what*; this is *how many*). Living in a comment keeps it off the step-2
+gate's hot path, which only reads the ledger *body*:
 
 - Use the per-bucket **findings-surfaced-this-run** counts — the exact same
   numbers as the step-10 summary table's `findings` column. No recomputation.
@@ -444,41 +419,31 @@ Print one summary table and stop. Exact shape:
     - convention: <convention> — generalizable because <…>
 ```
 
-The `new`/`carried`/`stale` columns are the **same counts** step 8 already
-computed for that bucket's `## Audit run log` bullet — never recomputed here,
-so they can't drift from what the issue body says. `findings` stays the total
-surviving-after-dedup count exactly as before (step 9's ledger-snapshot
-comment still reads this column unchanged). This breakdown is what
-`/audit-fleet`'s digest uses to separate genuinely new findings from standing
-backlog.
-
-The `promotion candidates spotted:` block is the only place these surface — it
-carries no issue, files nothing, and is what `/audit-fleet` reads to feed the
-cross-fleet practices ledger. Omit it when there are none.
+The `new`/`carried`/`stale` columns are the **same counts** step 8 computed
+for the `## Audit run log` bullets — never recomputed here. `findings` is the
+total surviving-after-dedup count (step 9's snapshot comment reads this
+column). `/audit-fleet`'s digest uses the breakdown to separate genuinely new
+findings from standing backlog. The `promotion candidates spotted:` block is
+the only place those surface (no issue, no writes) — `/audit-fleet` reads it
+for the practices ledger; omit when none.
 
 If every bucket was empty after dedupe, say so explicitly: `No actionable
 findings. Codebase passes the audit.` — and stop.
 
 ## Hard rules
 
-- **Materiality bar — applies to ALL SIX buckets.** Before filing a
-  finding, ask: *"Would a senior, perfectionist developer reading this
-  agree it's worth a future developer's time to fix?"* If you hesitate
-  for more than a second, drop it. Empty buckets are the **right answer**
-  when there's no material rot — `No actionable findings. Codebase passes
-  the audit.` is a successful run, not a failed one. **Do not file
-  findings to look thorough.** The user would rather get zero issues from
-  a clean codebase than six issues full of noise they have to triage
-  out. Bias is toward filing *fewer*, not more. For bucket 5 (bugs)
-  specifically the bar is even higher — only file what you'd bet money
-  on; false-positive bug reports erode trust in the whole skill. For
-  bucket 6 (documentation) the bar is likewise raised: a finding must concern
-  a *headline, user-facing* surface — a shipped command, config knob, or setup
-  step a new reader would actually hit — not an internal helper, a single
-  stale sentence, or a doc section whose subject is already about to change
-  from other in-flight work. Bugs and documentation are the two buckets that
-  historically re-surface the same low-value findings run after run, so hold
-  them to a stricter bar than the other four.
+- **Materiality bar — applies to ALL SIX buckets.** Before filing, ask:
+  *"Would a senior, perfectionist developer agree this is worth a future
+  developer's time to fix?"* Hesitate more than a second → drop it. Empty
+  buckets are the **right answer** when there's no material rot —
+  `No actionable findings. Codebase passes the audit.` is a successful run.
+  **Do not file findings to look thorough**; bias toward *fewer*. Bucket 5
+  (bugs): only what you'd bet money on — false positives erode trust in the
+  whole skill. Bucket 6 (documentation): only *headline, user-facing*
+  surfaces — a shipped command, config knob, or setup step a new reader would
+  hit — not an internal helper, a single stale sentence, or a section already
+  changing from in-flight work. Bugs and documentation historically re-surface
+  low-value findings, so hold both to a stricter bar than the other four.
 - **Never edit files.** This skill files issues; it does not patch code.
 - **Promotion candidates never become issues or foreign-repo writes.** They are
   the inverse of a finding (an asset to preserve, not rot to fix) and are
@@ -571,25 +536,16 @@ rot, or concrete failure modes are.
 
 ## Notes
 
-- The audit is intentionally **read-only and bundled**. The split between
-  "find problems" (this skill) and "fix problems" (`/issue-start` →
-  `/simplify` / manual) keeps both stages reviewable.
-- Each project's own CLAUDE.md is the rubric for bucket 3. If a project
-  doesn't have one, bucket 3 will usually be empty — that's fine.
-- This skill is **not** a security audit (`/security-review` covers that)
-  or a performance audit (different rubric, different tooling). Don't
+- Intentionally **read-only and bundled** — "find problems" (this skill) stays
+  separate from "fix problems" (`/issue-start` → `/simplify` / manual).
+- The project's own CLAUDE.md is the rubric for bucket 3; no file → bucket 3
+  usually empty, that's fine.
+- **Not** a security audit (`/security-review`) or performance audit — don't
   expand scope into either.
-- If the user reruns the skill the next day after fixing nothing, the
-  **ledger gate (step 2)** short-circuits before any files are read — HEAD
-  is unchanged, so the run stops at one `gh` + one `git` call. If instead the
-  only thing that happened is `/cleanup-fleet` (or a manual fix) landing this
-  repo's own audit findings, the gate returns `SKIP_SELF_FIX` — still no files
-  read, and the ledger is advanced automatically so the repo doesn't get
-  endlessly re-flagged for its own fix commits. Even when the gate returns
-  `AUDIT` (first run, scoped run, the rubric changed, or genuine organic
-  drift), the dedupe step still prevents re-filing the same findings. That
-  layered idempotency is the intended behavior. Both decisions are made by one
-  Python function (`audit_issue.py`'s `evaluate_repo`), not LLM judgment — see
-  `tests/test_audit_issue.py` for the unit-tested cases.
-- The ledger issue is labelled `audit-meta` precisely so it never shows up as
-  actionable work — `/issue-triage` and `/issue-start` filter that label out.
+- Layered idempotency: an unchanged repo `SKIP`s at one `gh` + one `git` call;
+  self-fix-only churn returns `SKIP_SELF_FIX` with the ledger auto-advanced;
+  even on `AUDIT`, dedupe prevents re-filing. Both gate decisions are one
+  Python function (`evaluate_repo`; unit-tested in
+  `tests/test_audit_issue.py`), not LLM judgment.
+- The ledger is labelled `audit-meta` so it never shows up as actionable —
+  `/issue-triage` and `/issue-start` filter it out.

@@ -1,44 +1,36 @@
 ---
 name: design-sync
-description: Check a web app against the fleet design system (~/.claude/design.md + design.dark.md) with the deterministic design_lint helper — token drift (light + dark), per-family token-adoption ratios, component-contract conformance, vendored-component byte-verification, and sibling-consistency — then file a deduped design-drift issue so /cleanup-fleet design-drift can fix it later, optionally applying the token alignment to the working tree. Skips Streamlit POC spikes. Use when aligning a web app to the fleet look, e.g. "/design-sync", "/design-sync app-launcher", "check design drift", "sync this app to design.md", or "/design-sync apply" to write the aligned tokens.
+description: Check a web app against the fleet design system with the deterministic design_lint helper — token drift (light + dark), component contracts, vendored-component bytes, sibling consistency — then file a deduped design-drift issue for /cleanup-fleet. Skips Streamlit POC spikes. E.g. "/design-sync", "/design-sync app-launcher", "check design drift", "sync this app to design.md", or "/design-sync apply" to write aligned tokens.
 ---
 
 # design-sync
 
-**Goal:** Keep every fleet web app (FastAPI + static PWA) true to the one shared
-visual identity, navigation, and interaction language in `~/.claude/design.md`
-(light) + `~/.claude/design.dark.md` (dark). The skill runs the **deterministic
-lint** (`skills/_lib/design_lint.py`) — token mapping + drift (light **and**
-dark), per-family token-adoption ratios, component-contract checks,
-vendored-component byte-verification, and sibling duplicate detection — then
-applies LLM judgment only where measurement can't reach (alias leftovers,
-materiality, sibling arbitration), and files exactly one deduped
-`design-drift` issue per repo — the same audit→bucket→cleanup machinery as
-`/codebase-audit`. So a weekly run produces a bucket of drift issues you can clear
-all at once with `/cleanup-fleet design-drift`. With `apply`, it also writes the
-aligned token values into the working tree for you to review.
+**Goal:** Keep every fleet web app (FastAPI + static PWA) true to the shared
+visual identity in `~/.claude/design.md` (light) + `~/.claude/design.dark.md`
+(dark). Run the **deterministic lint** (`skills/_lib/design_lint.py`) — token
+mapping + drift (light **and** dark), per-family adoption ratios, component
+contracts, vendored-component byte-verification, sibling duplicates — apply
+LLM judgment only where measurement can't reach, and file exactly one deduped
+`design-drift` issue per repo (the same audit→bucket→cleanup machinery as
+`/codebase-audit`, cleared later by `/cleanup-fleet design-drift`). With
+`apply`, also write the aligned token values into the working tree for review.
 
-**Measure with the helper, never by eye.** Everything mechanically checkable is
-computed by `design_lint.py` (pure, unit-tested in `tests/test_design_lint.py`,
-the same `_lib` contract as `cert_drift.py`); do not re-derive a ratio, a token
-comparison, or a byte-diff by reading CSS yourself. The LLM's job is confined to:
-resolving the `unmapped` variable leftovers, applying the materiality bar,
-judging which sibling variant is the canonical one, and writing the issue.
+**Measure with the helper, never by eye.** Everything mechanically checkable
+comes from `design_lint.py` (pure, unit-tested); never re-derive a ratio,
+token comparison, or byte-diff by reading CSS. LLM judgment is confined to:
+`unmapped` variable leftovers, the materiality bar, sibling arbitration, and
+writing the issue.
 
-**It also runs one adjacent infra check on the same web-app population: tailnet-cert
-conformance** (step 1b). A Tailscale-reachable app that still provisions HTTPS only
-via a self-signed CA + `/install-ca` trust dance — instead of the `tailscale cert`
-(real Let's Encrypt) standard — is convention drift; the check files a separate,
-deduped `cert-drift` issue per repo pointing at the standard's decision record
-(`ferraroroberto/project-scaffolding#89`). It rides design-sync because design-sync
-already enumerates exactly these repos; it is independent of the CSS comparison and
-never mixes into the `design-drift` issue.
+**One adjacent infra check rides the same population: tailnet-cert
+conformance** (step 1b). A Tailscale-reachable app still provisioning HTTPS
+via a self-signed CA + `/install-ca` trust dance instead of the `tailscale
+cert` standard (`ferraroroberto/project-scaffolding#89`) is convention drift —
+filed as a **separate** deduped `cert-drift` issue, never mixed into
+`design-drift`.
 
-**Default mode files an issue; it does not edit code.** Reporting + upserting the
-`design-drift` issue (and, separately, any `cert-drift` issue) is the only side
-effect unless you pass `apply` (step 6). Never commit, push, or restart anything.
-`apply` only ever touches CSS — the cert migration is never auto-applied (that is a
-later `/cleanup-fleet cert-drift` run).
+**Default mode files issues; it does not edit code.** Only `apply` (step 6)
+writes — and only CSS; the cert migration is never auto-applied. Never commit,
+push, or restart anything.
 
 ## Arguments
 
@@ -68,12 +60,9 @@ In parallel, from the target repo root:
 
 ### 1b. Tailnet-cert conformance (independent of the CSS check)
 
-Run this **before** step 2's web-app gate, so a repo that later short-circuits on
-"no token CSS" still gets cert-checked. It is self-gating: a non-web, LAN-only, or
-already-migrated repo reports clean and files nothing, so it is safe to run on any
-target design-sync is pointed at.
-
-Detect whether this is a Tailscale-reachable app still on the self-signed-CA dance:
+Run this **before** step 2's web-app gate, so a repo that short-circuits on
+"no token CSS" still gets cert-checked. Self-gating: a non-web, LAN-only, or
+already-migrated repo reports clean and files nothing.
 
 ```
 C:/Users/rober/AppData/Local/Python/bin/python.exe C:/Users/rober/.claude/skills/_lib/cert_drift.py detect <repo-root>
@@ -407,28 +396,21 @@ even on a clean app).
 
 ## Notes
 
-- This is the per-repo detector. A fleet-wide weekly sweep (loop every web app,
-  one digest) + `/audit-fleet` digest integration for the `design-drift` bucket
-  are tracked as a follow-up (`fleet-config#180`) — until then run `/design-sync`
-  per repo. The step-1b cert check rides that same sweep when it lands, so the
-  weekly audit gains tailnet-cert detection for free.
+- This is the per-repo detector; the fleet-wide weekly sweep + `/audit-fleet`
+  digest integration are a follow-up (`fleet-config#180`) — until then run it
+  per repo. The step-1b cert check rides that sweep when it lands.
 - `design-drift` and `cert-drift` are both first-class audit buckets
-  (`skills/_lib/audit_issue.py` `KINDS`), so `/cleanup-fleet design-drift` and
-  `/cleanup-fleet cert-drift` each fan out fixers across the fleet, and
-  `/issue-triage` treats both issues like any other.
-- The tailnet-cert convention itself lives in `project-scaffolding#89`, not here —
-  this skill only *detects* drift from it. The heuristic is in the pure, unit-tested
-  `skills/_lib/cert_drift.py` (`detect`), the same `_lib` contract as `ux_surface.py`.
-- The deterministic lenses live in `skills/_lib/design_lint.py` (unit-tested in
-  `tests/test_design_lint.py`, wired into `tests/run_acceptance.py`) — same
-  `_lib` contract as `cert_drift.py`. The icon-size step set, contract targets,
-  and switch on-color are all read from / driven by the spec, so a spec change
-  propagates without touching the helper. v2 provenance: #277 (the two #234
-  lenses) + #278 (the component contracts it checks) + project-scaffolding#120
-  (the vendored components it byte-verifies).
-- The spec, not this skill, is the source of truth for *what* the look should be.
-  Refine `design.md` / `design.dark.md` when the identity itself should change;
-  this skill only measures and (optionally) applies conformance to it.
+  (`audit_issue.py` `KINDS`) — `/cleanup-fleet` fans out fixers for each, and
+  `/issue-triage` treats both like any other issue.
+- The cert convention lives in `project-scaffolding#89`; the heuristic in the
+  pure, unit-tested `skills/_lib/cert_drift.py`. The lint lenses live in
+  `skills/_lib/design_lint.py` (unit-tested, wired into `run_acceptance.py`);
+  icon steps, contract targets, and the switch on-color are spec-driven, so a
+  spec change propagates without touching the helper. v2 provenance: #277 +
+  #278 + project-scaffolding#120.
+- The spec, not this skill, owns *what* the look should be — refine
+  `design.md` / `design.dark.md` to change the identity; this skill only
+  measures and (optionally) applies conformance.
 - All structural findings (contracts, vendored forks, siblings) fold into the
   same `design-drift` issue as token drift — separate finding types, not
   separate buckets/labels (fleet-config#231).

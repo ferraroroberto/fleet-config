@@ -1,6 +1,6 @@
 ---
 name: issue-finish
-description: Finish a GitHub issue — confirm acceptance, update docs/README, run the verification gate, push, open a closing PR, handle CI as advisory (skip whenever local e2e + pytest are green this session, or on no e2e surface touched; rerun a flake once), auto-merge, delete the branch, restart the tray. Use when an issue branch is complete, e.g. "/issue-finish". Pairs with /issue-start.
+description: Finish an issue — confirm acceptance, update docs/README, run the verification gate, push, open a closing PR, treat CI as advisory (skip when local e2e + pytest are green this session or no e2e surface touched; flake reruns once), auto-merge, delete branch, restart tray. Use "/issue-finish"; pairs with /issue-start.
 ---
 
 # issue-finish

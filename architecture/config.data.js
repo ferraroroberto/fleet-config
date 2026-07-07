@@ -123,7 +123,7 @@ window.CONFIG = {
     },
     {
       "nm": "design-sync",
-      "ds": "Check a web app against the fleet design system (~/.claude/design.md + design.dark.md) with the deterministic design_lint helper…",
+      "ds": "Check a web app against the fleet design system with the deterministic design_lint helper — token drift (light + dark), component…",
       "scope": "repo"
     },
     {
@@ -143,7 +143,7 @@ window.CONFIG = {
     },
     {
       "nm": "issue-finish",
-      "ds": "Finish a GitHub issue — confirm acceptance, update docs/README, run the verification gate, push, open a closing PR, handle CI as…",
+      "ds": "Finish an issue — confirm acceptance, update docs/README, run the verification gate, push, open a closing PR, treat CI as advisor…",
       "scope": "repo"
     },
     {
@@ -192,6 +192,11 @@ window.CONFIG = {
       "nm": "context-audit",
       "ds": "Audit the fleet's always-on context surface — CLAUDE.md token budgets, skill-description word counts, and single-home-by-altitude…",
       "sched": true
+    },
+    {
+      "nm": "context-purge",
+      "ds": "Compress the fleet's markdown context files — CLAUDE.md files and SKILL.md files — removing prose while preserving every directiv…",
+      "sched": false
     },
     {
       "nm": "insights-weekly",
