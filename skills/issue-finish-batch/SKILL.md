@@ -77,10 +77,13 @@ You are the only agent touching this checkout.
    update README/docs only if usage/config/output changed, run the project's
    verification gate (per its CLAUDE.md), commit any doc edits with a
    conventional message (no AI-attribution trailer), push, open a PR whose body
-   ends with "Closes #<N>", handle CI as advisory (skip the wait only when the
-   diff is provably CI-unrelated; rerun a single documented flake once), merge
-   with --merge --delete-branch, land on main, and restart the project's tray
-   per its CLAUDE.md if it has one.
+   ends with "Closes #<N>", handle CI as advisory (skip the wait whenever local
+   e2e + pytest are green — either from this run's own gate, or from the prior
+   build/review's report *if and only if* it recorded a genuine PASS on the
+   e2e/behavioural leg, never a SKIPPED one; otherwise skip only when the diff
+   is provably CI-unrelated; rerun a single documented flake once), merge with
+   --merge --delete-branch, land on main, and restart the project's tray per
+   its CLAUDE.md if it has one.
 3. Fire /issue-finish's own completion ping (✅ Done #<N> … — PR merged) — KEEP
    it, it carries this branch's PR link. notify_complete.py is the ONLY
    sanctioned way to send it: do NOT use any MCP Slack tool (search/send/etc.)
