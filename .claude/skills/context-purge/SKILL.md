@@ -12,9 +12,25 @@ Fleet-only tier by design: a global skill's description would load into every se
 ## Modes
 
 - **`/context-purge`** (default) — the fleet-config-owned surface: `global-CLAUDE.md`, `fleet-config/CLAUDE.md`, and `SKILL.md` files in both tiers (`skills/`, `.claude/skills/`). One branch/PR in this repo.
-- **`/context-purge fleet`** — the fleet-wide sweep: enumerate every git repo under `E:\automation\` (skip linked worktrees — `.git` must be a directory), and for each repo assess its `CLAUDE.md` + any `.claude/skills/*/SKILL.md` against this baseline. Compress only where there are real savings; skip clean/lean files. **One branch + PR per repo**, each with its own validation report, routed through the normal issue workflow (file a pointer issue per repo, or reference the canonical fleet-config issue). Respect the model-tier policy (`docs/model-tiers.md`) if fanning out sub-agents.
+- **`/context-purge fleet`** — the fleet-wide sweep: the default surface **plus** every sister git repo under `E:\automation\` (skip linked worktrees — `.git` must be a directory): each repo's `CLAUDE.md` + any `.claude/skills/*/SKILL.md`. Compress only where there are real savings; skip clean/lean files. **One branch + PR per repo**, each with its own validation report. Respect the model-tier policy (`docs/model-tiers.md`) if fanning out sub-agents.
 
 Both modes ship to **review, not merge**: the PR carries the validation report; the user merges.
+
+## Skip-unchanged ledger (run the gate first, always)
+
+A file is re-assessed **only when its bytes changed** since it was last assessed — never rewrite the same unchanged file week after week. `gate.py` keys on content hashes (sha256/12) recorded in one `kind=context-purge` ledger issue in `fleet-config` (title `context-purge ledger`, label `audit-meta`, managed via `audit_issue.py`):
+
+```
+C:/Users/rober/AppData/Local/Python/bin/python.exe .claude/skills/context-purge/gate.py gate [--fleet]
+```
+
+Prints `TO_PURGE` lines + a `SUMMARY:` — only those files are read at all. `to_purge=0` → report "surface unchanged since last run" and stop (a valid, successful run). After the run, record every **assessed** file — both the rewritten ones and the ones judged already-lean (both count; neither should re-surface until edited):
+
+```
+C:/Users/rober/AppData/Local/Python/bin/python.exe .claude/skills/context-purge/gate.py advance [--fleet]
+```
+
+`advance` merges over the existing ledger (entries outside the scanned surface are preserved) and upserts the issue.
 
 ## Priorities (highest value first)
 
@@ -47,8 +63,23 @@ Both modes ship to **review, not merge**: the PR carries the validation report; 
 
 ## Steps (default mode)
 
-1. Branch off fresh `main` (normal issue workflow; never purge on `main`).
-2. Snapshot originals + `audit.py --json` baseline to the scratchpad.
-3. Purge files in priority order per the compression contract.
-4. Run the validation harness; restore-and-re-probe on any regression.
-5. Open the PR (draft) with the validation report. Stop — the user merges.
+1. **Gate:** `gate.py gate` — `to_purge=0` → report "surface unchanged" and stop. Otherwise only the listed files proceed.
+2. Branch off fresh `main` (normal issue workflow; never purge on `main`).
+3. Snapshot originals + `audit.py --json` baseline to the scratchpad.
+4. Purge the gated files in priority order per the compression contract.
+5. Run the validation harness; restore-and-re-probe on any regression.
+6. **Advance the ledger** (`gate.py advance`) for every assessed file.
+7. Open the PR (draft) with the validation report. Stop — the user merges.
+
+Fleet mode is the same loop with `--fleet` on both gate and advance, grouping the to-purge files by repo (one branch + PR per repo). Designed to degrade, not block — a per-repo failure is reported and skipped so the scheduled run always finishes.
+
+## Wiring the weekly schedule
+
+An app-launcher Job (Windows Task Scheduler `\AppLauncher\`) runs the fleet sweep weekly — Saturdays 01:00, on Opus — via the co-located launcher `.claude/skills/context-purge/run-weekly.bat` (per this repo's scheduled-skill convention):
+
+```
+cd /d E:\automation\fleet-config
+claude -p "/context-purge fleet" --model opus --permission-mode bypassPermissions
+```
+
+The ledger gate makes the scheduled run cheap: an unchanged week costs one `gh` read and stops.

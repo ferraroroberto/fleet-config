@@ -196,7 +196,7 @@ window.CONFIG = {
     {
       "nm": "context-purge",
       "ds": "Compress the fleet's markdown context files — CLAUDE.md files and SKILL.md files — removing prose while preserving every directiv…",
-      "sched": false
+      "sched": true
     },
     {
       "nm": "insights-weekly",

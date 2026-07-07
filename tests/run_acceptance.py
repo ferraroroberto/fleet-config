@@ -400,6 +400,9 @@ def main() -> int:
     # ---- context-purge check.py pure-logic tests (.claude/skills/context-purge) ----
     failures += _context_purge_check_unit_check()
 
+    # ---- context-purge gate.py ledger pure-logic tests ----
+    failures += _context_purge_gate_unit_check()
+
     # ---- design_lint helper pure-logic tests (skills/_lib) ----
     failures += _design_lint_unit_check()
 
@@ -447,10 +450,10 @@ def main() -> int:
 # conversation_capture (13) + conversation_index (6) + restart_webapp (6) +
 # gh_body_file_guard (6) + bash_cmdexe_syntax_guard (8) + tier23_hooks (10) +
 # audit_issue (1) + fleet_audit_scan (1) + worktree_claim (1) + ux_surface (1) +
-# cert_drift (1) + context_purge_check (1) + design_lint (1) + rate_gate (1) + dirty_tree_check (1) + learning_log (16) +
+# cert_drift (1) + context_purge_check (1) + context_purge_gate (1) + design_lint (1) + rate_gate (1) + dirty_tree_check (1) + learning_log (16) +
 # system_map (3) + fleet_toml (3) + mermaid (2) + system_map_whatchanged (7) + config_map (8) +
 # codex_hooks_config (4) + settings_template_sync (1).
-_UNIT_CHECK_COUNT = 162
+_UNIT_CHECK_COUNT = 163
 
 
 def _context_filter_unit_checks() -> int:
@@ -1456,6 +1459,24 @@ def _context_purge_check_unit_check() -> int:
     )
     ok = proc.returncode == 0
     print(f"{'OK   ' if ok else 'FAIL '} context_purge_check: pure-logic unit tests")
+    if not ok:
+        for line in (proc.stdout or "").strip().splitlines():
+            print(f"        | {line}")
+    return 0 if ok else 1
+
+
+def _context_purge_gate_unit_check() -> int:
+    """Run .claude/skills/context-purge/gate.py's pure-logic tests as a subprocess.
+
+    The skip-unchanged ledger's parse/render/diff core, testable without gh —
+    same standalone pattern as test_context_purge_check. (fleet-config#287)
+    """
+    proc = subprocess.run(
+        [PYTHON, str(REPO / "tests" / "test_context_purge_gate.py")],
+        capture_output=True, text=True, encoding="utf-8", errors="replace",
+    )
+    ok = proc.returncode == 0
+    print(f"{'OK   ' if ok else 'FAIL '} context_purge_gate: pure-logic unit tests")
     if not ok:
         for line in (proc.stdout or "").strip().splitlines():
             print(f"        | {line}")
