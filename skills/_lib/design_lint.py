@@ -751,26 +751,25 @@ def contracts(
             col = decls.get("color")
             if col and col != "var(--accent)":
                 tint_off.append(f"{sel} {{ color: {col[:30]} }}")
+    bits = []
+    if hardcoded:
+        bits.append(f"{len(hardcoded)} hardcoded button color(s): "
+                    + "; ".join(hardcoded[:4]))
+    if ghost_inverted:
+        bits.append(f"{len(ghost_inverted)} ghost class(es) with a fill "
+                    "(ghost = transparent; a tinted fill is the tint tier): "
+                    + "; ".join(ghost_inverted[:4]))
+    if solid_strays:
+        bits.append("solid accent fill outside the primary: "
+                    + ", ".join(solid_strays[:6]))
+    if tint_off:
+        bits.append("tint fill without accent text: "
+                    + "; ".join(tint_off[:4]))
     if n_btn == 0:
         add("button-tiers", "NA", "no button rules found")
     elif hardcoded or ghost_inverted:
-        bits = []
-        if hardcoded:
-            bits.append(f"{len(hardcoded)} hardcoded button color(s): "
-                        + "; ".join(hardcoded[:4]))
-        if ghost_inverted:
-            bits.append(f"{len(ghost_inverted)} ghost class(es) with a fill "
-                        "(ghost = transparent; a tinted fill is the tint tier): "
-                        + "; ".join(ghost_inverted[:4]))
         add("button-tiers", "FAIL", " | ".join(bits))
-    elif solid_strays or tint_off:
-        bits = []
-        if solid_strays:
-            bits.append("solid accent fill outside the primary: "
-                        + ", ".join(solid_strays[:6]))
-        if tint_off:
-            bits.append("tint fill without accent text: "
-                        + "; ".join(tint_off[:4]))
+    elif bits:
         add("button-tiers", "WARN", " | ".join(bits))
     else:
         add("button-tiers", "PASS",
