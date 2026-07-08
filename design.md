@@ -76,6 +76,7 @@ components:
   nav-tab-active: { backgroundColor: "{colors.canvas-subtle}", textColor: "{colors.accent}" }
   disclosure:     { align: left, chevron: right, closedHeight: 52px, summaryPadding: "0 14px", bodyPadding: "12px 14px 14px" }   # collapsible details/summary header — the summary owns height+padding; the card's own padding is zeroed so cards align when closed
   modal:          { rounded: "{rounded.lg}", closeSize: 34px, rowPadding: "12px 0", primaryButton: "{components.button-primary}" }   # editor <dialog> — heading-lg title + × close, label/value rows on a top-border divider, one full-width primary
+  list-row:       { rowPadding: "{components.modal.rowPadding}", divider: "{colors.border-muted}" }   # repeating entries inside a card — flat full-bleed rows on a top hairline, never nested canvas-subtle cards (photo-ocr .history-item, post-photo-ocr#73)
   empty-state:    { iconSize: "{icons.size.feature}", gap: "{spacing.sm}", padding: "{spacing.xl} {spacing.md}", actionMinWidth: 96px, textColor: "{colors.fg-muted}" }   # icon + one-line reason + optional action, centered
   icon-tile:      { rounded: "{rounded.md}", iconSize: "{icons.size.feature}", iconColor: "{colors.accent-fg}" }   # Home-screen rounded-square — one tile-* fill, centered Lucide glyph
 focus:            { outline: "2px solid {colors.accent}", offset: 2px }   # one tokenized :focus-visible ring app-wide (a control overrides only where it draws a custom ring)
@@ -148,6 +149,15 @@ bar never covers content (`padding-bottom: calc(61px + env(safe-area-inset-botto
 Installable PWAs lock to a fixed scale: viewport
 `maximum-scale=1, user-scalable=no` + `touch-action: manipulation` on the body —
 no pinch, no double-tap zoom.
+**Single-column stack containers pin their track to `minmax(0, 1fr)`** — any
+`display: grid` wrapper around vertically-stacked content (a pane, pane-body,
+or list container) that can hold a no-wrap or horizontally scrollable child
+must declare `grid-template-columns: minmax(0, 1fr)`, never a bare
+`1fr`/`auto`/implicit track. Grid items default to `min-width: auto`, so an
+implicit or bare track inherits the widest descendant's min-content and the
+page grows past the viewport — the child's own `overflow-x: auto` never
+engages because its container already widened (grocery `0a68b0a`,
+fleet-config#294).
 
 ## Elevation & Depth
 
@@ -278,6 +288,14 @@ hand-picked per app.
   must clear AA contrast in *both* themes (never the browser default, which
   drops sub-AA). The nav hides while it is open (`body:has(dialog[open])`), and
   on mobile the dialog is top-anchored so it never jumps on open/close.
+- **list-row** (`list-row`) — how a card renders a **repeating list** of entries
+  (history, activity, request log): flat full-bleed rows, `list-row.rowPadding`
+  (`12px 0`, shared vocabulary with the modal), separated by a 1px `divider`
+  (`border-muted`) top hairline on every row after the first (`.row + .row`) —
+  **never** nested `canvas-subtle` cards with their own border/radius per entry.
+  Row internals (meta line, badges, action buttons) are unconstrained by this
+  rule. Reference impl: photo-ocr `styles.css` `.history-item` — first built as
+  per-entry cards, rejected on-device as too heavy, rebuilt flat (photo-ocr#73).
 - **empty-state block** (`empty-state`) — for any list/grid that can legitimately
   render zero items: a centered column of a `icons.size.feature` (24px) muted
   glyph + a one-line reason (`body`, `fg-muted`) + an *optional* single action
@@ -353,6 +371,8 @@ for the nav/UI snippets ("Reuse the **vendored** nav/UI snippets from
 - **Do** size every glyph from the canonical `icons.size` steps (16 / 18 / 24) — don't hand-pick a one-off size.
 - **Do** honor `prefers-reduced-motion` — collapse authored animation to near-instant.
 - **Do** ship the user-selectable theme: pre-paint `data-theme` boot script + persisted sun/moon toggle on the main view — never dark-only or OS-only.
+- **Do** render a repeating list of entries (history, activity log) as flat full-bleed rows on a hairline divider — never nested cards per entry.
+- **Do** pin every single-column stack grid's track to `minmax(0, 1fr)` — never a bare `1fr`/`auto`/implicit track behind a no-wrap or scrollable child.
 - **Don't** hand-roll a primitive (switch, select, dialog, tabs…) that shadcn already defines.
 - **Don't** mix a second icon set or hand-draw a one-off glyph — use the matching Lucide icon.
 - **Don't** put a solid accent fill on any button except the view's primary action — secondary emphasis is the tint, never a second solid.
