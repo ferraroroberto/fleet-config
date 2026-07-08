@@ -445,7 +445,7 @@ def main() -> int:
 
 
 # Sum of the unit checks below: context_filter (3) + slack_notify (3) +
-# mention (5) + classify (6) + session_state (11) + notify_complete (18) +
+# mention (5) + classify (6) + session_state (14) + notify_complete (18) +
 # work_summary (5) + slack_routing (10) +
 # conversation_capture (13) + conversation_index (6) + restart_webapp (6) +
 # gh_body_file_guard (6) + bash_cmdexe_syntax_guard (8) + tier23_hooks (10) +
@@ -453,7 +453,7 @@ def main() -> int:
 # cert_drift (1) + context_purge_check (1) + context_purge_gate (1) + design_lint (1) + rate_gate (1) + dirty_tree_check (1) + learning_log (16) +
 # system_map (3) + fleet_toml (3) + mermaid (2) + system_map_whatchanged (7) + config_map (8) +
 # codex_hooks_config (4) + settings_template_sync (1).
-_UNIT_CHECK_COUNT = 163
+_UNIT_CHECK_COUNT = 166
 
 
 def _context_filter_unit_checks() -> int:
@@ -1141,9 +1141,10 @@ def _notify_board_link_unit_checks() -> int:
 
 def _session_state_unit_checks() -> int:
     """sessions-state.json persistence (fleet-config#91): event → status mapping,
-    same-session flip, pruning, corrupt-file recovery, and the notify_on_idle
-    piggyback — all against a temp CLAUDE_HOOKS_STATE_DIR so nothing touches the
-    real ~/.claude/hooks/state."""
+    same-session flip, pruning, corrupt-file recovery, the notify_on_idle
+    piggyback, and the live session-name lookup (fleet-config#302) — all
+    against a temp CLAUDE_HOOKS_STATE_DIR / CLAUDE_SESSIONS_DIR so nothing
+    touches the real ~/.claude/hooks/state or ~/.claude/sessions."""
     sys.path.insert(0, str(HOOKS))
     import session_state  # noqa: E402
 
@@ -1156,7 +1157,8 @@ def _session_state_unit_checks() -> int:
             failures += 1
 
     tmp = Path(tempfile.mkdtemp(prefix="session_state_"))
-    env = {"CLAUDE_HOOKS_STATE_DIR": str(tmp)}
+    sessions_dir = Path(tempfile.mkdtemp(prefix="session_state_sessions_"))
+    env = {"CLAUDE_HOOKS_STATE_DIR": str(tmp), "CLAUDE_SESSIONS_DIR": str(sessions_dir)}
     state_path = tmp / session_state.STATE_FILENAME
 
     def rows() -> Dict[str, Any]:
@@ -1165,8 +1167,24 @@ def _session_state_unit_checks() -> int:
         except (OSError, ValueError):
             return {}
 
+    # A live per-process registry fixture (~/.claude/sessions/<pid>.json-style):
+    # one file whose sessionId matches "sid-1" (the generic-fallback case,
+    # nameSource:"derived") and one unrelated file that must not match.
+    (sessions_dir / "70212.json").write_text(json.dumps({
+        "pid": 70212, "sessionId": "sid-1", "cwd": str(tmp), "kind": "interactive",
+        "entrypoint": "cli", "name": "fleet-config-c4", "nameSource": "derived",
+        "status": "busy",
+    }), encoding="utf-8")
+    (sessions_dir / "99999.json").write_text(json.dumps({
+        "pid": 99999, "sessionId": "sid-unrelated", "name": "other-session",
+    }), encoding="utf-8")
+    # A malformed fixture alongside the good ones must not break the scan.
+    (sessions_dir / "bad.json").write_text("{not json", encoding="utf-8")
+
     saved_env = os.environ.get("CLAUDE_HOOKS_STATE_DIR")
+    saved_sessions_env = os.environ.get("CLAUDE_SESSIONS_DIR")
     os.environ["CLAUDE_HOOKS_STATE_DIR"] = str(tmp)
+    os.environ["CLAUDE_SESSIONS_DIR"] = str(sessions_dir)
     try:
         # ---- subprocess: the two wired events, same session flips status ----
         payload = {"hook_event_name": "UserPromptSubmit", "session_id": "sid-1",
@@ -1175,23 +1193,51 @@ def _session_state_unit_checks() -> int:
         row = rows().get("sid-1") or {}
         check("session_state: UserPromptSubmit -> exit 0 + row 'working' with cwd",
               code == 0 and row.get("status") == "working" and row.get("cwd") == str(tmp))
+        check("session_state: matching sessionId -> row carries live name + nameSource (#302)",
+              row.get("name") == "fleet-config-c4" and row.get("name_source") == "derived")
+
+        # ---- no matching sessionId in the registry -> name/name_source stay None ----
+        code, _out, _err = run(
+            "session_state",
+            {"hook_event_name": "UserPromptSubmit", "session_id": "sid-no-match",
+             "transcript_path": str(tmp / "t2.jsonl"), "cwd": str(tmp)},
+            extra_env=env,
+        )
+        no_match_row = rows().get("sid-no-match") or {}
+        check("session_state: no matching sessionId -> name/name_source omitted (None)",
+              code == 0 and no_match_row.get("name") is None and no_match_row.get("name_source") is None)
+
+        # ---- missing sessions registry directory entirely -> still exit 0, no name ----
+        missing_dir = sessions_dir / "does-not-exist"
+        code, _out, _err = run(
+            "session_state",
+            {"hook_event_name": "UserPromptSubmit", "session_id": "sid-no-registry",
+             "transcript_path": str(tmp / "t3.jsonl"), "cwd": str(tmp)},
+            extra_env={**env, "CLAUDE_SESSIONS_DIR": str(missing_dir)},
+        )
+        no_registry_row = rows().get("sid-no-registry") or {}
+        check("session_state: missing sessions registry dir -> exit 0, name omitted",
+              code == 0 and no_registry_row.get("name") is None)
 
         code, _out, _err = run("session_state", {**payload, "hook_event_name": "Stop"}, extra_env=env)
         check("session_state: Stop flips the same session to 'needs-you'",
               code == 0 and (rows().get("sid-1") or {}).get("status") == "needs-you")
 
+        rows_before_missing_sid = set(rows())
         code, _out, _err = run("session_state", {"hook_event_name": "Stop", "cwd": str(tmp)}, extra_env=env)
         check("session_state: missing session_id -> exit 0, no row added",
-              code == 0 and set(rows()) == {"sid-1"})
+              code == 0 and set(rows()) == rows_before_missing_sid)
 
         code, _out, _err = run("session_state", {**payload, "hook_event_name": "PreToolUse"}, extra_env=env)
         check("session_state: unwired event -> exit 0, state untouched",
               code == 0 and (rows().get("sid-1") or {}).get("status") == "needs-you")
 
         # ---- in-process: multi-row, pruning, corrupt-file recovery ----
+        rows_before_sid2 = set(rows())
         session_state.upsert("sid-2", status="working", project="p2",
                              transcript_path=None, cwd_path=str(tmp))
-        check("session_state: second session -> two distinct rows", set(rows()) == {"sid-1", "sid-2"})
+        check("session_state: second session -> two distinct rows",
+              set(rows()) == rows_before_sid2 | {"sid-2"})
 
         stale = rows()
         stale["sid-old"] = {"project": "old", "status": "idle", "transcript_path": None,
@@ -1241,7 +1287,12 @@ def _session_state_unit_checks() -> int:
             os.environ.pop("CLAUDE_HOOKS_STATE_DIR", None)
         else:
             os.environ["CLAUDE_HOOKS_STATE_DIR"] = saved_env
+        if saved_sessions_env is None:
+            os.environ.pop("CLAUDE_SESSIONS_DIR", None)
+        else:
+            os.environ["CLAUDE_SESSIONS_DIR"] = saved_sessions_env
         shutil.rmtree(tmp, ignore_errors=True)
+        shutil.rmtree(sessions_dir, ignore_errors=True)
 
     return failures
 

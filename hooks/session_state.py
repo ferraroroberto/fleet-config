@@ -1,10 +1,23 @@
 """Persist per-session state for the Fleet Board (fleet-config#91).
 
 Maintains ``sessions-state.json`` — one row per recent Claude Code session
-(``project``, ``status``, ``transcript_path``, ``cwd``, ``updated_at``) keyed by
-the hook payload's ``session_id`` — so the app-launcher Board tab
-(app-launcher#164) can render a "what needs me now" column without owning any
-hook plumbing. The board only *reads* the file; this module is the only writer.
+(``project``, ``status``, ``transcript_path``, ``cwd``, ``updated_at``, plus the
+live session ``name``/``name_source`` when available — see below) keyed by the
+hook payload's ``session_id`` — so the app-launcher Board tab (app-launcher#164)
+can render a "what needs me now" column without owning any hook plumbing. The
+board only *reads* the file; this module is the only writer.
+
+**Session name (fleet-config#302).** Claude Code maintains a live per-process
+registry file at ``~/.claude/sessions/<pid>.json`` (one per running ``claude``
+process), whose ``sessionId`` field is the exact same UUID as the hook
+payload's ``session_id``. On each write this module scans that directory for
+the matching entry and, when found, copies its ``name`` (the title shown in the
+prompt box / ``/resume`` picker / terminal title) and ``nameSource`` (present
+as ``"derived"`` only for the generic ``<project>-N`` fallback; absent once the
+session has a real title) into the row as ``name`` / ``name_source``. Advisory
+like everything else here: a missing directory, a missing/malformed per-PID
+file, or no matching ``sessionId`` all just leave both fields ``None`` — never
+raises, never blocks.
 
 Wired into three Claude Code events (``settings.template.json``):
 
@@ -30,7 +43,9 @@ Like every hook here this is advisory-only: any failure is swallowed and the
 hook exits 0. The state file lives under ``~/.claude/hooks/state/`` (a junction
 into this repo's working tree — the directory is gitignored);
 ``CLAUDE_HOOKS_STATE_DIR`` overrides the directory so acceptance tests stay
-hermetic. Rows untouched for 24h are pruned on each write.
+hermetic, and ``CLAUDE_SESSIONS_DIR`` likewise overrides the
+``~/.claude/sessions/`` registry directory the name lookup reads. Rows
+untouched for 24h are pruned on each write.
 """
 
 from __future__ import annotations
@@ -64,6 +79,47 @@ def state_file() -> Path:
     root = os.environ.get("CLAUDE_HOOKS_STATE_DIR")
     base = Path(root) if root else Path.home() / ".claude" / "hooks" / "state"
     return base / STATE_FILENAME
+
+
+def sessions_registry_dir() -> Path:
+    """Resolve Claude Code's live per-process session registry directory at call
+    time so the env override always wins (same pattern as ``state_file()``).
+
+    Defaults to ``~/.claude/sessions``, one ``<pid>.json`` file per running
+    ``claude`` process; ``CLAUDE_SESSIONS_DIR`` overrides it so acceptance
+    tests stay hermetic.
+    """
+    root = os.environ.get("CLAUDE_SESSIONS_DIR")
+    return Path(root) if root else Path.home() / ".claude" / "sessions"
+
+
+def _lookup_session_name(session_id: str) -> "tuple[Optional[str], Optional[str]]":
+    """Best-effort ``(name, name_source)`` for ``session_id`` from the live
+    per-process session registry (fleet-config#302). Scans every
+    ``<pid>.json`` file in ``sessions_registry_dir()`` for the entry whose
+    ``sessionId`` matches; returns ``(None, None)`` on any miss — missing
+    directory, unreadable/malformed file, or no matching session — never
+    raises."""
+    try:
+        registry_dir = sessions_registry_dir()
+        if not registry_dir.is_dir():
+            return None, None
+        for entry in registry_dir.glob("*.json"):
+            try:
+                data = json.loads(entry.read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                continue
+            if not isinstance(data, dict) or data.get("sessionId") != session_id:
+                continue
+            name = data.get("name")
+            name_source = data.get("nameSource")
+            return (
+                name if isinstance(name, str) and name else None,
+                name_source if isinstance(name_source, str) and name_source else None,
+            )
+    except Exception:  # noqa: BLE001 — advisory only, never break the write path
+        pass
+    return None, None
 
 
 def _now() -> datetime:
@@ -123,8 +179,15 @@ def upsert(
     project: Optional[str],
     transcript_path: Optional[str],
     cwd_path: Optional[str],
+    name: Optional[str] = None,
+    name_source: Optional[str] = None,
 ) -> None:
-    """Write/refresh one session row and prune rows stale past 24h."""
+    """Write/refresh one session row and prune rows stale past 24h.
+
+    ``name``/``name_source`` (fleet-config#302) are the live Claude Code
+    session title looked up from ``~/.claude/sessions/<pid>.json``, when a
+    caller has one; both default to ``None`` so existing callers are unaffected.
+    """
     path = state_file()
     path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -134,6 +197,8 @@ def upsert(
         "status": status,
         "transcript_path": transcript_path,
         "cwd": cwd_path,
+        "name": name,
+        "name_source": name_source,
         "updated_at": _isoformat(_now()),
     }
 
@@ -155,12 +220,15 @@ def upsert_from_payload(payload: Dict[str, Any], status: str) -> None:
     cwd_path = _lib.cwd(payload)
     project = _lib.detect_project(cwd_path)
     transcript = payload.get("transcript_path")
+    name, name_source = _lookup_session_name(session_id)
     upsert(
         session_id,
         status=status,
         project=project.name if project else cwd_path.name,
         transcript_path=transcript if isinstance(transcript, str) and transcript else None,
         cwd_path=str(cwd_path),
+        name=name,
+        name_source=name_source,
     )
 
 
