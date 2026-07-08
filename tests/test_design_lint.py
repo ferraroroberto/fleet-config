@@ -159,7 +159,7 @@ finally:
 # ---- contract checks ----
 
 def run_contracts(css: str, markup: str = "", spec_light: dict | None = None,
-                  html_name: str = "i.html") -> dict:
+                  html_name: str = "i.html", spec_dark: dict | None = None) -> dict:
     t = Path(tempfile.mkdtemp(prefix="dl-con-"))
     try:
         (t / "s.css").write_text(css, encoding="utf-8")
@@ -168,7 +168,8 @@ def run_contracts(css: str, markup: str = "", spec_light: dict | None = None,
             (t / html_name).write_text(markup, encoding="utf-8")
             html = [t / html_name]
         out = dl.contracts(t, [t / "s.css"], html, [],
-                           spec_light if spec_light is not None else {"icons.size.inline": "16px"})
+                           spec_light if spec_light is not None else {"icons.size.inline": "16px"},
+                           spec_dark)
         return {c["id"]: c for c in out}
     finally:
         shutil.rmtree(t, ignore_errors=True)
@@ -325,6 +326,74 @@ bt_tint_ok = run_contracts(
     "border: 1px solid var(--accent-border-soft); }")
 check(bt_tint_ok["button-tiers"]["status"] == "PASS", "canonical tint recipe PASSes")
 
+# ---- user-selectable theme (fleet-config#290) ----
+
+TT_SPEC = {"icons.size.inline": "16px", "colors.canvas": "#ffffff"}
+TT_DARK = {"colors.canvas": "#0d1117"}
+TT_BOOT = ("<head><script>(function(){"
+           "var t = localStorage.getItem('app.theme');"
+           "var dark = t ? t === 'dark' : window.matchMedia('(prefers-color-scheme: dark)').matches;"
+           "document.documentElement.dataset.theme = dark ? 'dark' : 'light';"
+           "})();</script>")
+TT_METAS = ('<meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">'
+            '<meta name="theme-color" content="#0d1117" media="(prefers-color-scheme: dark)">')
+TT_TOGGLE = ('</head><body><button id="themeToggle"></button>'
+             "<script>localStorage.setItem('app.theme', 'dark');</script></body>")
+tt = run_contracts(GOOD_CSS, TT_BOOT + TT_METAS + TT_TOGGLE, spec_light=TT_SPEC,
+                   spec_dark=TT_DARK, html_name="index.html")
+check(tt["theme-toggle"]["status"] == "PASS", "canonical theme mechanism PASS")
+
+# grocery shape: setAttribute stamp, media-before-content self-closing metas,
+# kebab-case button id — structurally divergent but contract-conformant.
+TT_G = ('<head><script>(function(){'
+        'var t = localStorage.getItem("grocery.theme");'
+        'document.documentElement.setAttribute("data-theme", t ? t : '
+        '(window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light"));'
+        '})();</script>'
+        '<meta name="theme-color" media="(prefers-color-scheme: light)" content="#ffffff" />'
+        '<meta name="theme-color" media="(prefers-color-scheme: dark)" content="#0d1117" />'
+        '</head><body><button id="theme-toggle"></button>'
+        '<script>localStorage.setItem("grocery.theme", "light");</script></body>')
+tt_g = run_contracts(GOOD_CSS, TT_G, spec_light=TT_SPEC, spec_dark=TT_DARK,
+                     html_name="index.html")
+check(tt_g["theme-toggle"]["status"] == "PASS",
+      "setAttribute stamp + attr-order-divergent metas still PASS (grocery shape)")
+
+# home-automation shape: the toggle writes through a theme-named constant,
+# not a `.theme` string literal.
+TT_K = (TT_BOOT + TT_METAS
+        + "</head><body><script>"
+        + "localStorage.setItem(THEME_KEY, dark ? 'dark' : 'light');"
+        + "</script></body>")
+tt_k = run_contracts(GOOD_CSS, TT_K, spec_light=TT_SPEC, spec_dark=TT_DARK,
+                     html_name="index.html")
+check(tt_k["theme-toggle"]["status"] == "PASS",
+      "setItem via a theme-named constant PASSes (home-automation shape)")
+
+tt_noboot = run_contracts(GOOD_CSS, "<head>" + TT_METAS + TT_TOGGLE,
+                          spec_light=TT_SPEC, spec_dark=TT_DARK, html_name="index.html")
+check(tt_noboot["theme-toggle"]["status"] == "FAIL",
+      "missing pre-paint boot script FAIL")
+
+tt_notoggle = run_contracts(GOOD_CSS, TT_BOOT + TT_METAS + "</head><body></body>",
+                            spec_light=TT_SPEC, spec_dark=TT_DARK, html_name="index.html")
+check(tt_notoggle["theme-toggle"]["status"] == "FAIL",
+      "boot without a persisted toggle (no .theme setItem) FAIL")
+
+tt_nometa = run_contracts(GOOD_CSS, TT_BOOT + TT_TOGGLE, spec_light=TT_SPEC,
+                          spec_dark=TT_DARK, html_name="index.html")
+check(tt_nometa["theme-toggle"]["status"] == "WARN",
+      "mechanism present but theme-color meta pair missing WARN")
+
+TT_OFFSPEC = TT_METAS.replace("#ffffff", "#fafafa")
+tt_drift = run_contracts(GOOD_CSS, TT_BOOT + TT_OFFSPEC + TT_TOGGLE,
+                         spec_light=TT_SPEC, spec_dark=TT_DARK, html_name="index.html")
+check(tt_drift["theme-toggle"]["status"] == "WARN"
+      and "#fafafa" in tt_drift["theme-toggle"]["detail"],
+      "theme-color meta off the spec canvas WARNs with the literal")
+
+check(good["theme-toggle"]["status"] == "NA", "no index.html -> theme-toggle NA")
+
 
 # ---- vendored byte-compare ----
 
@@ -394,6 +463,12 @@ if real_spec.is_file():
           "real design.md: button-tint fill resolves to accent-soft")
     check(parsed.get("components.button-ghost.backgroundColor") == "transparent",
           "real design.md: ghost = transparent (the settled vocabulary, #296)")
+
+real_dark = Path.home() / ".claude" / "design.dark.md"
+if real_dark.is_file():
+    parsed_dark = dl.parse_spec(real_dark.read_text(encoding="utf-8", errors="replace"))
+    check(parsed_dark.get("colors.canvas") == "#0d1117",
+          "real design.dark.md: dark canvas parses (the dark theme-color meta, #290)")
 
 
 if _fails:

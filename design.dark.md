@@ -103,6 +103,11 @@ interactive emphasis; status colors signal state only; the five `tile-*` fills a
 the only saturated surfaces. Every saturated color ships a `*-p3` `oklch()` twin
 under the same token name — consume it behind `@media (color-gamut: p3)`.
 
+The user-selectable theme-switching contract (pre-paint boot script, persisted
+sun/moon toggle, dual `theme-color` metas) is defined in the
+[Light theme](design.md) and applies unchanged; this theme's `canvas`
+(`#0d1117`) is the dark `theme-color` meta value.
+
 ## Typography
 
 Unchanged from the Light theme — same system font stack and the same five roles.

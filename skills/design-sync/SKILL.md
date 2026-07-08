@@ -188,10 +188,14 @@ The five sections it returns, and what each means:
   (spec-driven — the allowed set is parsed from the spec, not hardcoded),
   the **viewport zoom lock** (`user-scalable=no` + `maximum-scale=1` — plus
   `viewport-fit=cover` — on every `index.html`; PWAs are never pinch-zoomable,
-  fleet-config#296), and the **button-tier vocabulary** (hardcoded button
+  fleet-config#296), the **button-tier vocabulary** (hardcoded button
   fills and a filled "ghost" FAIL; a solid accent outside the primary class
   and a tint without accent text WARN — the tiers live in design.md
-  `components`, #296).
+  `components`, #296), and the **user-selectable theme** (pre-paint
+  `data-theme` boot script in `<head>` + a persisted `.theme` localStorage
+  toggle — either missing FAILs; a missing or spec-drifted scheme-gated
+  `theme-color` meta pair WARNs, compared against the two specs' `canvas` —
+  spec-driven, #290).
 - **`vendored`** — byte-hash comparison of the app's
   `_vendored/<component>/` copies against project-scaffolding's canonical
   files: `IDENTICAL` / `FORKED` (the vendor-verbatim rule broken — always a
