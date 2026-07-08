@@ -80,6 +80,23 @@ def rel(root: Path, path: Path) -> str:
         return path.as_posix()
 
 
+def find_vendored_root(root: Path) -> Optional[Path]:
+    """Locate the app-side `static/_vendored` dir regardless of layout.
+
+    project-scaffolding's own `app/webapp/static/` is one layout among several
+    the fleet actually uses (`app/static/` — grocery; `app_web/static/` —
+    local-llm-hub), so this searches rather than hardcoding the scaffold's
+    path (fleet-config#291, #292). Bounded to two path segments ahead of
+    `static/_vendored` — deeper nesting isn't a layout seen in the fleet.
+    """
+    candidates = sorted(p for p in root.glob("*/static/_vendored") if p.is_dir())
+    candidates += sorted(p for p in root.glob("*/*/static/_vendored") if p.is_dir())
+    for c in candidates:
+        if not any(part in SKIP_DIR_PARTS for part in c.parts):
+            return c
+    return None
+
+
 # ------------------------------------------------------------- spec parsing
 
 _INLINE_MAP_RE = re.compile(r"^\{(.*)\}$", re.S)
@@ -645,7 +662,8 @@ def contracts(
                if not re.search(pat, css_all)]
     shell_ok = standalone_shell_present(css_all)
     n_signals = len(signals) + 1  # + the standalone shell
-    vendored_nav = (root / "app/webapp/static/_vendored/nav/nav-tabs.css").exists()
+    vendored_root = find_vendored_root(root)
+    vendored_nav = vendored_root is not None and (vendored_root / "nav" / "nav-tabs.css").exists()
     provenance = "vendored" if vendored_nav else "hand-carried"
     if not missing and shell_ok:
         add("nav-contract", "PASS",
@@ -851,19 +869,19 @@ def contracts(
 
 def vendored(root: Path, scaffold: Path) -> Dict[str, object]:
     """Byte-compare the app's _vendored component copies against the scaffold."""
-    app_dir = root / "app/webapp/static/_vendored"
+    app_dir = find_vendored_root(root)
     ref_dir = scaffold / "app/webapp/static/_vendored"
     if not ref_dir.is_dir():
         return {"error": f"scaffold _vendored not found at {ref_dir}"}
-    result: Dict[str, object] = {"components": {}, "app_has_vendored_dir": app_dir.is_dir()}
+    result: Dict[str, object] = {"components": {}, "app_has_vendored_dir": app_dir is not None}
     comps: Dict[str, object] = result["components"]  # type: ignore[assignment]
 
     def digest(p: Path) -> str:
         return hashlib.sha256(p.read_bytes()).hexdigest()
 
     for comp in sorted(d for d in ref_dir.iterdir() if d.is_dir()):
-        app_comp = app_dir / comp.name
-        if not app_comp.is_dir():
+        app_comp = (app_dir / comp.name) if app_dir else None
+        if not app_comp or not app_comp.is_dir():
             comps[comp.name] = {"status": "NOT_ADOPTED", "files": {}}
             continue
         files: Dict[str, str] = {}

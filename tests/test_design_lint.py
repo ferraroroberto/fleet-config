@@ -424,6 +424,45 @@ finally:
     shutil.rmtree(approot, ignore_errors=True)
 
 
+# ---- vendored-root discovery: non-scaffold static layouts (fleet-config#291, #292) ----
+
+for _layout_name, _static_prefix in (("app_web/static", "app_web/static"),  # local-llm-hub (#291)
+                                       ("app/static", "app/static")):        # grocery (#292)
+    _scaf = Path(tempfile.mkdtemp(prefix="dl-scaf2-"))
+    _app = Path(tempfile.mkdtemp(prefix="dl-app2-"))
+    try:
+        _ref = _scaf / "app/webapp/static/_vendored/switch"
+        _ref.mkdir(parents=True)
+        (_ref / "switch.css").write_text(".toggle{}", encoding="utf-8")
+
+        _mine = _app / _static_prefix / "_vendored/switch"
+        _mine.mkdir(parents=True)
+        (_mine / "switch.css").write_text(".toggle{}", encoding="utf-8")
+
+        _res = dl.vendored(_app, _scaf)
+        check(_res["app_has_vendored_dir"] is True,
+              f"{_layout_name}: discovered without the hardcoded app/webapp/static/ prefix")
+        check(_res["components"]["switch"]["status"] == "IDENTICAL",
+              f"{_layout_name}: byte-identical vendored copy reports IDENTICAL, not NOT_ADOPTED")
+    finally:
+        shutil.rmtree(_scaf, ignore_errors=True)
+        shutil.rmtree(_app, ignore_errors=True)
+
+# nav-contract provenance follows the same discovery, not just the vendored lens (#291)
+_t = Path(tempfile.mkdtemp(prefix="dl-nav2-"))
+try:
+    (_t / "s.css").write_text(GOOD_CSS, encoding="utf-8")
+    _vend = _t / "app_web/static/_vendored/nav"
+    _vend.mkdir(parents=True)
+    (_vend / "nav-tabs.css").write_text("/* vendored */", encoding="utf-8")
+    _out = {c["id"]: c for c in dl.contracts(_t, [_t / "s.css"], [], [], {})}
+    check(_out["nav-contract"]["status"] == "PASS", "app_web/static layout: nav signals + shell PASS")
+    check("vendored" in _out["nav-contract"]["detail"],
+          "app_web/static layout: nav-contract provenance reads vendored, not hand-carried (#291)")
+finally:
+    shutil.rmtree(_t, ignore_errors=True)
+
+
 # ---- sibling duplicate detection ----
 
 sib = Path(tempfile.mkdtemp(prefix="dl-sib-"))
