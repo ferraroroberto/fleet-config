@@ -240,6 +240,19 @@ The five sections it returns, and what each means:
   app without it, and the settled conclusion (decision on fleet-config#279,
   2026-07-06) is to adopt `_vendored/nav/` verbatim **plus** the app-side
   fixed-inset `.app` shell as one piece. Do not re-litigate this per run.
+  **The list-row nested-card anti-pattern** (fleet-config#293): a repeating
+  list (history, activity, request log) built as per-entry `canvas-subtle`
+  cards instead of flat `list-row` hairline rows. Cross-selector reasoning a
+  grep can't do reliably, so it's a judgment call when reading the CSS/markup
+  for a list-shaped view — flag it as a finding, fix is to adopt the
+  `list-row` contract from `design.md`. **The stack-track overflow class of
+  bug** (fleet-config#294): a single-column `display: grid` stack container
+  (a pane/pane-body/list wrapper) without an explicit `minmax(0, ...)` track
+  that has a no-wrap or `overflow-x` descendant — the same reasoning gap, so
+  it's a judgment call, not a lint check. The deterministic
+  `scrollWidth <= innerWidth` measurement itself needs a live app + real
+  browsers and belongs to the app's own e2e suite / the shared Playwright
+  canon in `project-scaffolding`, not this static lint.
 
 ### 5. Dedupe and upsert the `design-drift` issue
 
