@@ -527,6 +527,7 @@ def contracts(
     html_files: List[Path],
     js_files: List[Path],
     spec_light: Dict[str, str],
+    spec_dark: Optional[Dict[str, str]] = None,
 ) -> List[dict]:
     css_all = "\n".join(f"/*FILE {rel(root, p)}*/\n" + strip_comments(read_text(p), "css")
                         for p in css_files)
@@ -775,6 +776,74 @@ def contracts(
         add("button-tiers", "PASS",
             f"{n_btn} button rule(s) conform to the tier vocabulary")
 
+    # 12. user-selectable theme — pre-paint data-theme boot + persisted .theme
+    #     toggle + dual scheme-gated theme-color metas (design.md Colors "Theme
+    #     switching"; fleet-config#290). Grep-level only — whether the glyph
+    #     shows the action stays LLM judgment in /design-sync step 4. Both
+    #     stamp idioms (dataset.theme / setAttribute) and both key shapes
+    #     (`.theme` literal / a theme-named constant) are canonical.
+    if not index_files:
+        add("theme-toggle", "NA", "no index.html found")
+    else:
+        stamp_re = r"dataset\.theme|setAttribute\(\s*['\"]data-theme['\"]"
+        toggle_re = (r"localStorage\.setItem\(\s*"
+                     r"(?:['\"][^'\"]*\.theme['\"]|\w*theme\w*\s*,)")
+        missing_boot: List[str] = []
+        meta_gaps: List[str] = []
+        for p in index_files:
+            text = strip_comments(read_text(p), "html")
+            body_at = text.lower().find("<body")
+            head = text[:body_at] if body_at >= 0 else text
+            boot = (re.search(stamp_re, head)
+                    and re.search(r"localStorage\.getItem\(\s*['\"][^'\"]*\.theme['\"]", head)
+                    and "prefers-color-scheme" in head)
+            if not boot:
+                missing_boot.append(rel(root, p))
+                continue
+            light_meta = dark_meta = None
+            for mm in re.finditer(r"<meta\b[^>]*name=[\"']theme-color[\"'][^>]*>",
+                                  text, re.I):
+                tag = mm.group(0)
+                media = re.search(r"media=[\"']([^\"']*)[\"']", tag)
+                content = re.search(r"content=[\"']([^\"']*)[\"']", tag)
+                if not media or "prefers-color-scheme" not in media.group(1):
+                    continue
+                if "light" in media.group(1):
+                    light_meta = content.group(1) if content else ""
+                elif "dark" in media.group(1):
+                    dark_meta = content.group(1) if content else ""
+            if light_meta is None or dark_meta is None:
+                meta_gaps.append(f"{rel(root, p)} (missing the scheme-gated "
+                                 "theme-color meta pair)")
+                continue
+            want_light = normalize_value(spec_light.get("colors.canvas", ""))
+            want_dark = normalize_value((spec_dark or {}).get("colors.canvas", ""))
+            if want_light and normalize_value(light_meta) != want_light:
+                meta_gaps.append(f"{rel(root, p)} (light theme-color "
+                                 f"{light_meta} != spec canvas {want_light})")
+            if want_dark and normalize_value(dark_meta) != want_dark:
+                meta_gaps.append(f"{rel(root, p)} (dark theme-color "
+                                 f"{dark_meta} != spec dark canvas {want_dark})")
+        if missing_boot:
+            add("theme-toggle", "FAIL",
+                "no pre-paint data-theme boot script in <head> (localStorage "
+                ".theme key + prefers-color-scheme fallback — design.md Colors "
+                "theme switching, fleet-config#290): " + ", ".join(missing_boot))
+        elif not re.search(toggle_re, markup_all, re.I):
+            add("theme-toggle", "FAIL",
+                "boot script present but no persisted theme toggle — no "
+                "localStorage setItem on a .theme key (or theme-named constant) "
+                "anywhere (design.md Colors theme switching, fleet-config#290)")
+        elif meta_gaps:
+            add("theme-toggle", "WARN",
+                "theme mechanism present but the theme-color metas drift: "
+                + "; ".join(meta_gaps))
+        else:
+            add("theme-toggle", "PASS",
+                "pre-paint boot + persisted .theme toggle + dual theme-color "
+                f"metas on {len(index_files)} index.html",
+                evidence(markup_all, toggle_re, re.I))
+
     return checks
 
 
@@ -900,7 +969,8 @@ def main(argv: Optional[List[str]] = None) -> int:
     if args.command in ("adoption", "all"):
         out["adoption"] = adoption(root, css_files)
     if args.command in ("contracts", "all"):
-        out["contracts"] = contracts(root, css_files, html_files, js_files, spec_light)
+        out["contracts"] = contracts(root, css_files, html_files, js_files,
+                                     spec_light, spec_dark)
     if args.command in ("vendored", "all"):
         out["vendored"] = vendored(root, Path(args.scaffold))
     if args.command in ("siblings", "all"):

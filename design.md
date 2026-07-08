@@ -113,6 +113,22 @@ behind `@media (color-gamut: p3)` so wide-gamut displays render the richer color
 and sRGB displays fall back to the hex value. Neutrals (canvas, card, border,
 text) are sRGB-only by design — they gain nothing from wide gamut.
 
+### Theme switching (user-selectable)
+
+Every app ships **both** themes, user-selectable — never dark-only or OS-only. A
+**pre-paint inline `<head>` boot script** stamps `html[data-theme]` from a
+per-app localStorage key ending **`.theme`** (e.g. `app-launcher.theme`),
+falling back to `prefers-color-scheme` — before first paint, so no flash of the
+wrong theme. A **persisted sun/moon Lucide icon-button toggle reachable from
+the main view** flips it and writes the same key. The glyph shows the *action*
+(sun = switch to light, moon = switch to dark), realized either as a JS glyph
+swap or as both glyphs shipped and CSS-keyed on `[data-theme]` — both
+canonical, as are `dataset.theme` and `setAttribute('data-theme', …)` for the
+stamp. Ship **dual `theme-color` metas**, media-gated on `prefers-color-scheme`:
+light = `canvas` `#ffffff`, dark = the dark theme's `canvas` `#0d1117`.
+Reference impls: home-automation `app/webapp/static/index.html` + `main.js`
+(JS swap); app-launcher `app/webapp/static/index.html` + `main.js` (CSS swap).
+
 ## Typography
 
 System font stack everywhere (no web-font payload, instant first paint). Bold,
@@ -336,6 +352,7 @@ for the nav/UI snippets ("Reuse the **vendored** nav/UI snippets from
 - **Do** color a switch's on-track green (`success`) — the universal on-state.
 - **Do** size every glyph from the canonical `icons.size` steps (16 / 18 / 24) — don't hand-pick a one-off size.
 - **Do** honor `prefers-reduced-motion` — collapse authored animation to near-instant.
+- **Do** ship the user-selectable theme: pre-paint `data-theme` boot script + persisted sun/moon toggle on the main view — never dark-only or OS-only.
 - **Don't** hand-roll a primitive (switch, select, dialog, tabs…) that shadcn already defines.
 - **Don't** mix a second icon set or hand-draw a one-off glyph — use the matching Lucide icon.
 - **Don't** put a solid accent fill on any button except the view's primary action — secondary emphasis is the tint, never a second solid.
