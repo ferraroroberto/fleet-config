@@ -309,6 +309,9 @@ ALIASES: Dict[str, List[str]] = {
     "colors.fg-muted": ["muted", "fg-muted", "text-muted"],
     "colors.accent": ["accent", "link", "primary"],
     "colors.accent-fg": ["accent-fg", "on-accent"],
+    "colors.accent-soft": ["accent-soft"],
+    "colors.accent-border-soft": ["accent-border-soft"],
+    "colors.accent-border-strong": ["accent-border-strong"],
     "colors.success": ["on", "success", "ok"],
     "colors.danger": ["deficit", "danger", "error"],
     "colors.attention": ["attention", "warning"],
@@ -345,6 +348,9 @@ OPTIONAL_ROLES = {
     "icons.size.inline", "icons.size.title", "icons.size.feature",
     "colors.tile-green", "colors.tile-blue", "colors.tile-purple",
     "colors.tile-orange", "colors.tile-yellow",
+    # accent derivatives — only apps that ship a tint tier define them (#296)
+    "colors.accent-soft", "colors.accent-border-soft",
+    "colors.accent-border-strong",
 }
 
 
@@ -681,6 +687,94 @@ def contracts(
             add("icon-sizes", "PASS", "all fixed icon sizes on the icons.size steps")
     else:
         add("icon-sizes", "NA", "spec defines no icons.size steps")
+
+    # 10. viewport zoom lock — installable PWAs pin the scale (design.md Layout;
+    #     fleet-config#296): user-scalable=no + maximum-scale=1, plus
+    #     viewport-fit=cover for the safe-area insets the nav contract needs.
+    index_files = [p for p in html_files if p.name == "index.html"]
+    if not index_files:
+        add("viewport-lock", "NA", "no index.html found")
+    else:
+        broken: List[str] = []
+        uncovered: List[str] = []
+        for p in index_files:
+            text = strip_comments(read_text(p), "html")
+            m = re.search(r"<meta[^>]+name=[\"']viewport[\"'][^>]*>", text, re.I)
+            tag = m.group(0) if m else ""
+            if not m or "user-scalable=no" not in tag or "maximum-scale=1" not in tag:
+                broken.append(rel(root, p))
+            elif "viewport-fit=cover" not in tag:
+                uncovered.append(rel(root, p))
+        if broken:
+            add("viewport-lock", "FAIL",
+                "viewport meta lacks the zoom lock (user-scalable=no + "
+                "maximum-scale=1 — design.md Layout, fleet-config#296): "
+                + ", ".join(broken))
+        elif uncovered:
+            add("viewport-lock", "WARN",
+                "zoom lock present but viewport-fit=cover missing (safe-area "
+                "insets need it): " + ", ".join(uncovered))
+        else:
+            add("viewport-lock", "PASS",
+                f"zoom lock (user-scalable=no, maximum-scale=1, viewport-fit=cover) on {len(index_files)} index.html")
+
+    # 11. button tiers — the fleet button vocabulary (design.md Components;
+    #     fleet-config#296). Hardcoded fills and a filled "ghost" are FAILs;
+    #     a solid accent outside the primary and a tint without accent text
+    #     are WARNs for /design-sync's judgment layer to arbitrate.
+    hardcoded: List[str] = []
+    ghost_inverted: List[str] = []
+    solid_strays: List[str] = []
+    tint_off: List[str] = []
+    n_btn = 0
+    for bm in _BLOCK_RE.finditer(css_all):
+        sel = bm.group(1).strip().splitlines()[-1].strip()
+        if not re.search(r"btn|button", sel, re.I):
+            continue
+        n_btn += 1
+        decls = {p.lower(): v.strip()
+                 for p, v in _ANY_DECL_RE.findall(bm.group(2) + ";")}
+        for prop in ("background", "background-color", "color", "border",
+                     "border-color", "border-top", "border-bottom"):
+            v = decls.get(prop)
+            if v and "var(" not in v and _COLOR_LITERAL_RE.search(v):
+                hardcoded.append(f"{sel} {{ {prop}: {v[:40]} }}")
+        bg = decls.get("background", decls.get("background-color", ""))
+        # base ghost rule only — a trailing state class (.copied, .danger-flash)
+        # or pseudo is a legitimate state flash, not the resting recipe
+        if (re.search(r"\.[A-Za-z0-9_-]*ghost[A-Za-z0-9_-]*$", sel) and bg
+                and bg.split()[0] not in ("transparent", "none")):
+            ghost_inverted.append(f"{sel} {{ background: {bg[:40]} }}")
+        if bg == "var(--accent)" and not re.search(r"detail-save|primary", sel):
+            solid_strays.append(sel)
+        if "var(--accent-soft)" in bg:
+            col = decls.get("color")
+            if col and col != "var(--accent)":
+                tint_off.append(f"{sel} {{ color: {col[:30]} }}")
+    if n_btn == 0:
+        add("button-tiers", "NA", "no button rules found")
+    elif hardcoded or ghost_inverted:
+        bits = []
+        if hardcoded:
+            bits.append(f"{len(hardcoded)} hardcoded button color(s): "
+                        + "; ".join(hardcoded[:4]))
+        if ghost_inverted:
+            bits.append(f"{len(ghost_inverted)} ghost class(es) with a fill "
+                        "(ghost = transparent; a tinted fill is the tint tier): "
+                        + "; ".join(ghost_inverted[:4]))
+        add("button-tiers", "FAIL", " | ".join(bits))
+    elif solid_strays or tint_off:
+        bits = []
+        if solid_strays:
+            bits.append("solid accent fill outside the primary: "
+                        + ", ".join(solid_strays[:6]))
+        if tint_off:
+            bits.append("tint fill without accent text: "
+                        + "; ".join(tint_off[:4]))
+        add("button-tiers", "WARN", " | ".join(bits))
+    else:
+        add("button-tiers", "PASS",
+            f"{n_btn} button rule(s) conform to the tier vocabulary")
 
     return checks
 

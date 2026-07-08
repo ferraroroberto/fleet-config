@@ -19,6 +19,10 @@ colors:
   fg-muted:      "#656d76"   # secondary text
   accent:        "#0969da"   # links, primary CTA
   accent-fg:     "#ffffff"   # text/icon on an accent fill
+  # accent derivatives — theme-independent color-mix over the per-theme accent (same strings in design.dark.md)
+  accent-soft:          "color-mix(in srgb, var(--accent) 16%, transparent)"   # tinted fill (button-tint)
+  accent-border-soft:   "color-mix(in srgb, var(--accent) 24%, transparent)"   # hairline on a tinted fill
+  accent-border-strong: "color-mix(in srgb, var(--accent) 28%, transparent)"   # hairline on a solid accent fill
   success:       "#1a7f37"
   danger:        "#cf222e"
   attention:     "#9a6700"
@@ -60,7 +64,11 @@ spacing:
   gutter: 12px    # uniform gap between cards/tiles and from the page edges
 components:
   card:           { backgroundColor: "{colors.card}", textColor: "{colors.fg}", rounded: "{rounded.lg}", padding: "{spacing.md}" }
-  button-primary: { backgroundColor: "{colors.accent}", textColor: "{colors.accent-fg}", rounded: "{rounded.md}", typography: "{typography.label}", height: 48px }
+  button-primary: { backgroundColor: "{colors.accent}", textColor: "{colors.accent-fg}", borderColor: "{colors.accent-border-strong}", rounded: "{rounded.md}", typography: "{typography.label}", height: 48px }
+  button-tint:     { backgroundColor: "{colors.accent-soft}", textColor: "{colors.accent}", borderColor: "{colors.accent-border-soft}", rounded: "{rounded.md}", fontWeight: 700, height: 48px }   # secondary emphasis — the accent-tinted action (home-automation .big-btn)
+  button-ghost:    { backgroundColor: transparent, borderColor: "{colors.border}", textColor: "{colors.fg-muted}", rounded: "{rounded.md}" }   # quiet tertiary action — ghost = TRANSPARENT fill on a hairline border, never a tinted fill
+  button-surface:  { backgroundColor: "{colors.canvas-subtle}", borderColor: "{colors.border}", textColor: "{colors.fg-muted}", rounded: "{rounded.md}", height: "{components.control.height}" }   # utility/toolbar/icon button at the control height
+  button-disabled: { backgroundColor: "{colors.canvas-subtle}", borderColor: "{colors.border}", textColor: "{colors.fg-muted}" }   # ONE disabled recipe for every tier, both themes (home-automation#362) — never opacity on a solid fill
   control:        { height: 36px, rounded: "{rounded.md}", backgroundColor: "{colors.canvas-subtle}", borderColor: "{colors.border}", textColor: "{colors.fg}" }   # shared height for inline select / input so a row of controls lines up
   switch:         { width: 44px, height: 26px, rounded: "{rounded.pill}", thumbSize: 20px, trackOff: "{colors.border}", trackOn: "{colors.success}", thumbColor: "{colors.accent-fg}" }   # shadcn Switch — no text label; on = green (success), the universal on-state
   nav-bar:        { backgroundColor: "{colors.card}", rounded: "{rounded.nav}", height: 61px, margin: 21px }
@@ -192,8 +200,19 @@ identically; treat every bullet as a hard requirement, not a suggestion.
 
 ## Components
 
-`button-primary` for the one main action per view; `card` for every content group;
-`nav-bar` + `nav-tab` per the contract above. Inline form controls (`select`,
+**Four button tiers cover every action** — the vocabulary is fixed
+(fleet-config#296 settled it after a fleet sweep found the same class names
+meaning different buttons per app): `button-primary` (solid accent) for the
+one main action per view; `button-tint` (accent-soft fill, accent text, soft
+accent border) for secondary emphasis; `button-ghost` for quiet tertiary
+actions — *ghost means transparent* on a hairline border; a tinted fill is a
+*tint*, never a "ghost"; `button-surface` (subtle surface at the `control`
+height) for toolbar, utility, and icon buttons. Every tier shares the **one
+`button-disabled` recipe** (the flat `canvas-subtle` / `border` / `fg-muted`
+trio — AA in both themes, home-automation#362), never opacity on a solid fill.
+A destructive action may restate the tint recipe on `danger`
+(border/text/shade); status colors never fill a non-status button. `card` for
+every content group; `nav-bar` + `nav-tab` per the contract above. Inline form controls (`select`,
 `input`) share the `control` height (36px) so they line up on a row. The on/off
 `switch` is the shadcn Switch — a compact track + sliding thumb, **no text
 label** (state is read from thumb position + track color; `role="switch"` +
@@ -319,6 +338,7 @@ for the nav/UI snippets ("Reuse the **vendored** nav/UI snippets from
 - **Do** honor `prefers-reduced-motion` — collapse authored animation to near-instant.
 - **Don't** hand-roll a primitive (switch, select, dialog, tabs…) that shadcn already defines.
 - **Don't** mix a second icon set or hand-draw a one-off glyph — use the matching Lucide icon.
+- **Don't** put a solid accent fill on any button except the view's primary action — secondary emphasis is the tint, never a second solid.
 - **Don't** introduce a second accent or per-app navigation variants.
 - **Don't** stretch content full-bleed on desktop — keep the centered 772px measure.
 - **Don't** use status colors decoratively — they signal state only.

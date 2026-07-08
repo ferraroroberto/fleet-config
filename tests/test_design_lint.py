@@ -158,14 +158,15 @@ finally:
 
 # ---- contract checks ----
 
-def run_contracts(css: str, markup: str = "", spec_light: dict | None = None) -> dict:
+def run_contracts(css: str, markup: str = "", spec_light: dict | None = None,
+                  html_name: str = "i.html") -> dict:
     t = Path(tempfile.mkdtemp(prefix="dl-con-"))
     try:
         (t / "s.css").write_text(css, encoding="utf-8")
         html: list[Path] = []
         if markup:
-            (t / "i.html").write_text(markup, encoding="utf-8")
-            html = [t / "i.html"]
+            (t / html_name).write_text(markup, encoding="utf-8")
+            html = [t / html_name]
         out = dl.contracts(t, [t / "s.css"], html, [],
                            spec_light if spec_light is not None else {"icons.size.inline": "16px"})
         return {c["id"]: c for c in out}
@@ -275,6 +276,55 @@ commented = run_contracts(GOOD_CSS, "<!-- <input type=\"checkbox\"> --><dialog><
 check(commented["no-native-checkbox"]["status"] == "PASS",
       "checkbox inside an HTML comment is ignored")
 
+# ---- viewport zoom lock (fleet-config#296) ----
+
+VP_LOCKED = ('<meta name="viewport" content="width=device-width, initial-scale=1, '
+             'maximum-scale=1, user-scalable=no, viewport-fit=cover">')
+VP_UNLOCKED = '<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">'
+VP_NO_COVER = ('<meta name="viewport" content="width=device-width, initial-scale=1, '
+               'maximum-scale=1, user-scalable=no">')
+vp = run_contracts(GOOD_CSS, VP_LOCKED, html_name="index.html")
+check(vp["viewport-lock"]["status"] == "PASS", "locked viewport meta PASS")
+vp2 = run_contracts(GOOD_CSS, VP_UNLOCKED, html_name="index.html")
+check(vp2["viewport-lock"]["status"] == "FAIL",
+      "zoomable viewport (no user-scalable=no / maximum-scale=1) FAIL")
+vp3 = run_contracts(GOOD_CSS, VP_NO_COVER, html_name="index.html")
+check(vp3["viewport-lock"]["status"] == "WARN",
+      "locked but missing viewport-fit=cover WARN")
+vp4 = run_contracts(GOOD_CSS, "<dialog></dialog>", html_name="index.html")
+check(vp4["viewport-lock"]["status"] == "FAIL", "index.html without any viewport meta FAIL")
+check(good["viewport-lock"]["status"] == "NA", "no index.html -> viewport-lock NA")
+
+# ---- button tiers (fleet-config#296) ----
+
+check(good["button-tiers"]["status"] == "NA", "no button rules -> button-tiers NA")
+bt_hard = run_contracts(".photo-warning .retake-btn { background: #d29922; color: #000; }")
+check(bt_hard["button-tiers"]["status"] == "FAIL"
+      and "#d29922" in bt_hard["button-tiers"]["detail"],
+      "hardcoded button fill FAILs with the literal in the detail")
+bt_ghost = run_contracts(".ghost-btn { background: var(--accent-soft); color: var(--accent); }")
+check(bt_ghost["button-tiers"]["status"] == "FAIL",
+      "a filled ghost class FAILs (ghost = transparent — the inversion detector)")
+bt_state = run_contracts(
+    ".ghost-btn { background: transparent; border: 1px solid var(--line); color: var(--muted); }\n"
+    ".ghost-btn.copied { background: var(--on); color: var(--accent-fg); }")
+check(bt_state["button-tiers"]["status"] == "PASS",
+      "a state flash on a ghost (.copied) is not an inversion")
+bt_solid = run_contracts(".run-btn { background: var(--accent); color: var(--accent-fg); }")
+check(bt_solid["button-tiers"]["status"] == "WARN"
+      and ".run-btn" in bt_solid["button-tiers"]["detail"],
+      "solid accent outside the primary WARNs with the selector")
+bt_primary = run_contracts(".detail-save-btn { background: var(--accent); color: var(--accent-fg); }")
+check(bt_primary["button-tiers"]["status"] == "PASS",
+      "the primary class may carry the solid accent")
+bt_tint_off = run_contracts(".big-btn { background: var(--accent-soft); color: var(--muted); }")
+check(bt_tint_off["button-tiers"]["status"] == "WARN",
+      "tint fill without accent text WARNs")
+bt_tint_ok = run_contracts(
+    ".big-btn { background: var(--accent-soft); color: var(--accent); "
+    "border: 1px solid var(--accent-border-soft); }")
+check(bt_tint_ok["button-tiers"]["status"] == "PASS", "canonical tint recipe PASSes")
+
 
 # ---- vendored byte-compare ----
 
@@ -337,6 +387,13 @@ if real_spec.is_file():
           "real design.md: switch trackOn resolves to success (the green decision)")
     check(parsed.get("icons.size.nav-tab") == "20px",
           "real design.md: nav-tab icon step is the phone-validated 20px")
+    check((parsed.get("colors.accent-soft") or "").startswith("color-mix("),
+          "real design.md: accent-soft is the color-mix derivation (#296)")
+    check(parsed.get("components.button-tint.backgroundColor")
+          == parsed.get("colors.accent-soft"),
+          "real design.md: button-tint fill resolves to accent-soft")
+    check(parsed.get("components.button-ghost.backgroundColor") == "transparent",
+          "real design.md: ghost = transparent (the settled vocabulary, #296)")
 
 
 if _fails:

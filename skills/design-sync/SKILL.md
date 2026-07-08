@@ -183,9 +183,15 @@ The five sections it returns, and what each means:
   safe-area, **and the standalone fixed-inset `.app` scroller** — the
   home-automation#303 architecture that removes the iOS pill-drift cause;
   a nav missing it caps at WARN even when every grep signal passes and even
-  when `_vendored/nav/` is present, because the shell lives app-side), and
+  when `_vendored/nav/` is present, because the shell lives app-side),
   icon px sizes vs the spec's `icons.size` steps
-  (spec-driven — the allowed set is parsed from the spec, not hardcoded).
+  (spec-driven — the allowed set is parsed from the spec, not hardcoded),
+  the **viewport zoom lock** (`user-scalable=no` + `maximum-scale=1` — plus
+  `viewport-fit=cover` — on every `index.html`; PWAs are never pinch-zoomable,
+  fleet-config#296), and the **button-tier vocabulary** (hardcoded button
+  fills and a filled "ghost" FAIL; a solid accent outside the primary class
+  and a tint without accent text WARN — the tiers live in design.md
+  `components`, #296).
 - **`vendored`** — byte-hash comparison of the app's
   `_vendored/<component>/` copies against project-scaffolding's canonical
   files: `IDENTICAL` / `FORKED` (the vendor-verbatim rule broken — always a

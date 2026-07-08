@@ -18,6 +18,10 @@ colors:
   fg-muted:      "#7d8590"   # secondary text
   accent:        "#2f81f7"   # links, primary CTA
   accent-fg:     "#ffffff"   # text/icon on an accent fill
+  # accent derivatives — theme-independent color-mix over the per-theme accent (same strings as design.md)
+  accent-soft:          "color-mix(in srgb, var(--accent) 16%, transparent)"   # tinted fill (button-tint)
+  accent-border-soft:   "color-mix(in srgb, var(--accent) 24%, transparent)"   # hairline on a tinted fill
+  accent-border-strong: "color-mix(in srgb, var(--accent) 28%, transparent)"   # hairline on a solid accent fill
   success:       "#3fb950"
   danger:        "#f85149"
   attention:     "#d29922"
@@ -59,7 +63,11 @@ spacing:
   gutter: 12px    # uniform gap between cards/tiles and from the page edges
 components:
   card:           { backgroundColor: "{colors.card}", textColor: "{colors.fg}", rounded: "{rounded.lg}", padding: "{spacing.md}" }
-  button-primary: { backgroundColor: "{colors.accent}", textColor: "{colors.accent-fg}", rounded: "{rounded.md}", typography: "{typography.label}", height: 48px }
+  button-primary: { backgroundColor: "{colors.accent}", textColor: "{colors.accent-fg}", borderColor: "{colors.accent-border-strong}", rounded: "{rounded.md}", typography: "{typography.label}", height: 48px }
+  button-tint:     { backgroundColor: "{colors.accent-soft}", textColor: "{colors.accent}", borderColor: "{colors.accent-border-soft}", rounded: "{rounded.md}", fontWeight: 700, height: 48px }   # secondary emphasis — structural, identical to Light (see design.md)
+  button-ghost:    { backgroundColor: transparent, borderColor: "{colors.border}", textColor: "{colors.fg-muted}", rounded: "{rounded.md}" }   # ghost = TRANSPARENT fill on a hairline border — structural, identical to Light
+  button-surface:  { backgroundColor: "{colors.canvas-subtle}", borderColor: "{colors.border}", textColor: "{colors.fg-muted}", rounded: "{rounded.md}", height: "{components.control.height}" }   # utility/toolbar/icon button at the control height
+  button-disabled: { backgroundColor: "{colors.canvas-subtle}", borderColor: "{colors.border}", textColor: "{colors.fg-muted}" }   # ONE disabled recipe for every tier, both themes (home-automation#362)
   control:        { height: 36px, rounded: "{rounded.md}", backgroundColor: "{colors.canvas-subtle}", borderColor: "{colors.border}", textColor: "{colors.fg}" }   # shared height for inline select / input so a row of controls lines up
   switch:         { width: 44px, height: 26px, rounded: "{rounded.pill}", thumbSize: 20px, trackOff: "{colors.border}", trackOn: "{colors.success}", thumbColor: "{colors.accent-fg}" }   # shadcn Switch — no text label; on = green (success), the universal on-state
   nav-bar:        { backgroundColor: "{colors.card}", rounded: "{rounded.nav}", height: 61px, margin: 21px }
@@ -138,7 +146,10 @@ never their *behavior*.
 
 ## Components
 
-Structurally unchanged from the Light theme — `button-primary`, `card`,
+Structurally unchanged from the Light theme — the four button tiers
+(`button-primary` / `button-tint` / `button-ghost` / `button-surface`, one
+shared `button-disabled` recipe; the accent derivatives are the same
+`color-mix` strings over the brighter dark accent), `card`,
 `control`, `switch`, `nav-bar`, `nav-tab`, `disclosure`, plus the `modal`,
 `empty-state`, and `icon-tile` **Component contracts** and the `icons.size` steps
 defined in `design.md` — all with the vendored snippets from
