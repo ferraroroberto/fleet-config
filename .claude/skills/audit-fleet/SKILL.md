@@ -37,6 +37,18 @@ Anything else → treat as no argument (whole fleet).
   context (and the weekly token spend) bounded.
 - **Never disturb in-progress work.** A repo that is dirty or not on its default
   branch is skipped and reported — never stashed, never force-switched.
+- **Never background a tool call in this skill.** This orchestrator runs
+  headless via `run-weekly.bat`'s `claude -p "/audit-fleet" ...` — a one-shot
+  invocation with no persistent turn loop and no human attending it. There is
+  no wake-up mechanism to resume the session after a turn ends, so launching
+  any command (the step 2 `fleet_audit_scan.py` sweep, a sub-agent dispatch,
+  the rate-gate wait) with `run_in_background: true` and then ending the turn
+  to "wait for it" silently kills the entire run: the CLI exits immediately on
+  that clean turn-end, reporting `exit_code: 0` (false success) while nothing
+  past that point ever happened (`fleet-config#314`). Every command here —
+  including the step 3 rate-limit pause — must run synchronously (foreground)
+  or poll to completion within the same turn (e.g. the `Monitor` tool's
+  until-loop pattern), never fire-and-forget.
 
 ## Self-pacing against the live session budget
 
