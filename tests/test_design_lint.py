@@ -509,6 +509,103 @@ check(rh_spec["row-height-scale"]["status"] == "PASS",
       "spec-driven rows.* override the hardcoded default scale")
 
 
+# ---- editor-modal contract (design.md `modal` component, fleet-config#307) ----
+# Fixtures mirror the real app-launcher#70 before/after (job-editor dialog):
+# pre-fix `.stacked` styled only under `.settings-card`, a raw unstyled
+# `.job-chain-fieldset`, a footer Cancel button instead of a header close,
+# two always-visible footer actions, and no max-height/scroll; post-fix adopts
+# the dialog-scoped stacked rows, drops the fieldset for a `.dialog-section`,
+# moves Cancel into a header `.dialog-close`, collapses the footer to one
+# full-width solid-accent primary, and top-anchors with an internal scroll.
+
+PRE_MODAL_HTML = """
+<dialog id="jobDialog" class="rename-dialog">
+  <form id="jobForm">
+    <h2 id="jobDialogTitle">Add job</h2>
+    <label class="stacked"><span>Name</span><input type="text" required></label>
+    <fieldset class="job-chain-fieldset"><legend>Run on success</legend></fieldset>
+    <div class="row dialog-actions">
+      <button type="button" id="jobCancel" class="ghost-btn">Cancel</button>
+      <button type="button" id="jobSaveAnyway" class="big-btn warn" hidden>Save anyway</button>
+      <button type="submit" id="jobSaveBtn" class="big-btn">Add and verify</button>
+    </div>
+  </form>
+</dialog>
+"""
+PRE_MODAL_CSS = """
+.settings-card .stacked { display: flex; flex-direction: column; }
+.job-params-fieldset { border: 1px solid var(--line); padding: 10px 12px; }
+.rename-dialog { padding: 18px; max-width: 560px; }
+.dialog-actions { justify-content: flex-end; gap: 8px; }
+"""
+pre_modal = run_contracts(PRE_MODAL_CSS, PRE_MODAL_HTML)
+check(pre_modal["modal-unstyled-rows"]["status"] == "FAIL",
+      "label.stacked styled only under .settings-card -> FAIL (the #70 root cause)")
+check(pre_modal["modal-raw-fieldset"]["status"] == "FAIL",
+      "raw .job-chain-fieldset with zero authored CSS -> FAIL")
+check(pre_modal["modal-header"]["status"] == "FAIL",
+      "no header close button + footer Cancel -> FAIL")
+check(pre_modal["modal-footer"]["status"] == "FAIL",
+      "two always-visible footer actions (Cancel + Add and verify) -> FAIL")
+check(pre_modal["modal-top-anchor"]["status"] == "FAIL",
+      "no max-height/overflow on .rename-dialog -> FAIL")
+
+POST_MODAL_HTML = """
+<dialog id="jobDialog" class="rename-dialog">
+  <form id="jobForm">
+    <div class="dialog-head">
+      <h2 id="jobDialogTitle">Add job</h2>
+      <button type="button" id="jobCancel" class="dialog-close" aria-label="Close">
+        <svg class="icon"><use href="#i-x"></use></svg>
+      </button>
+    </div>
+    <label class="stacked"><span>Name</span><input type="text" required></label>
+    <section class="dialog-section"><h3 class="dialog-section-title">Run on success</h3></section>
+    <div class="dialog-actions dialog-actions--stacked">
+      <button type="button" id="jobSaveAnyway" class="big-btn warn" hidden>Save anyway</button>
+      <button type="submit" id="jobSaveBtn" class="big-btn">Add and verify</button>
+    </div>
+  </form>
+</dialog>
+"""
+POST_MODAL_CSS = """
+.rename-dialog { margin-top: 16px; max-height: calc(100dvh - 32px); overflow-y: auto; }
+.rename-dialog .stacked {
+  display: flex; flex-direction: column; padding: 12px 0;
+  border-top: 1px solid var(--line-muted);
+}
+.dialog-actions { display: flex; align-items: center; justify-content: flex-end; gap: 8px; }
+.dialog-actions--stacked { flex-direction: column; align-items: stretch; padding-top: 12px; }
+.rename-dialog .dialog-actions .big-btn:not(.warn) {
+  background: var(--accent); color: var(--accent-fg); min-height: 48px;
+}
+"""
+post_modal = run_contracts(POST_MODAL_CSS, POST_MODAL_HTML)
+check(post_modal["modal-unstyled-rows"]["status"] == "PASS",
+      "dialog-scoped .rename-dialog .stacked rule -> PASS")
+check(post_modal["modal-raw-fieldset"]["status"] == "PASS",
+      "no <fieldset> left (replaced by .dialog-section) -> PASS")
+check(post_modal["modal-header"]["status"] == "PASS",
+      "header .dialog-close (aria-label=Close), no footer Cancel -> PASS")
+check(post_modal["modal-footer"]["status"] == "PASS",
+      "one always-visible full-width solid-accent primary -> PASS")
+check(post_modal["modal-top-anchor"]["status"] == "PASS",
+      "max-height + overflow-y: auto on .rename-dialog -> PASS")
+
+# a dialog with no <form>/inputs is not an "editor modal" -> NA across the board
+NON_FORM_DIALOG = '<dialog class="scan-dialog"><p>Are you sure?</p><button type="button">OK</button></dialog>'
+non_form = run_contracts(GOOD_CSS, NON_FORM_DIALOG)
+for _cid in ("modal-unstyled-rows", "modal-raw-fieldset", "modal-header",
+             "modal-footer", "modal-top-anchor"):
+    check(non_form[_cid]["status"] == "NA", f"{_cid}: non-form dialog -> NA, not a finding")
+
+# no <dialog> at all -> NA across the board
+no_dialog = run_contracts(GOOD_CSS)
+for _cid in ("modal-unstyled-rows", "modal-raw-fieldset", "modal-header",
+             "modal-footer", "modal-top-anchor"):
+    check(no_dialog[_cid]["status"] == "NA", f"{_cid}: no dialog in the app -> NA")
+
+
 # ---- vendored byte-compare ----
 
 scaffold = Path(tempfile.mkdtemp(prefix="dl-scaf-"))

@@ -606,6 +606,112 @@ def find_emoji_sites(root: Path, html_files: List[Path], js_files: List[Path]
     return sites
 
 
+# ------------------------------------------------------------ editor modal
+#
+# A native <dialog> containing a <form> with real inputs is an "editor
+# modal" and held to design.md's `modal` component contract (fleet-config#307
+# — the app-launcher#70 root cause: `.stacked` was styled only inside
+# `.settings-card`, so the same class fell back to unstyled inline labels
+# inside <dialog> forms, and raw <fieldset> groups had no CSS at all).
+
+_DIALOG_RE = re.compile(r"<dialog\b([^>]*)>(.*?)</dialog>", re.S | re.I)
+_LABEL_CLASS_RE = re.compile(r"<label\b[^>]*\bclass=[\"']([^\"']*)[\"']", re.I)
+_FIELDSET_OPEN_RE = re.compile(r"<fieldset\b([^>]*)>", re.I)
+_BUTTON_RE = re.compile(r"<button\b([^>]*)>(.*?)</button>", re.S | re.I)
+_FOOTER_CONTAINER_RE = re.compile(r"<(div|footer)\b([^>]*)>(.*?)</\1>", re.S | re.I)
+_FIELDSET_TAG_PAT = re.compile(r"^fieldset(?:[.:#\[]|$)", re.I)
+
+
+def _editor_modals(root: Path, html_files: List[Path]) -> List[dict]:
+    """`<dialog>` blocks that contain a `<form>` with a real input/select/
+    textarea — i.e. detail/rename/settings editors, not a plain alert or
+    results dialog."""
+    modals: List[dict] = []
+    for p in html_files:
+        text = strip_comments(read_text(p), "html")
+        for m in _DIALOG_RE.finditer(text):
+            attrs, inner = m.group(1), m.group(2)
+            if not (re.search(r"<form\b", inner, re.I)
+                    and re.search(r"<input\b|<select\b|<textarea\b", inner, re.I)):
+                continue
+            cls_m = _TAG_CLASS_RE.search(attrs)
+            classes = set(cls_m.group(1).split()) if cls_m else set()
+            line = text.count("\n", 0, m.start()) + 1
+            modals.append({"file": rel(root, p), "line": line, "classes": classes,
+                           "inner": inner, "text": text, "inner_start": m.start(2)})
+    return modals
+
+
+def _loc_in_modal(modal: dict, local_pos: int) -> str:
+    abs_pos = modal["inner_start"] + local_pos
+    line = modal["text"].count("\n", 0, abs_pos) + 1
+    return f"{modal['file']}:{line}"
+
+
+def _last_selector_line(sel_group: str) -> str:
+    lines = sel_group.strip().splitlines()
+    return lines[-1].strip() if lines else ""
+
+
+def _split_top_level_commas(sel_line: str) -> List[str]:
+    parts: List[str] = []
+    buf: List[str] = []
+    depth = 0
+    for ch in sel_line:
+        if ch == "(":
+            depth += 1
+        elif ch == ")":
+            depth -= 1
+        if ch == "," and depth == 0:
+            parts.append("".join(buf))
+            buf = []
+        else:
+            buf.append(ch)
+    if buf:
+        parts.append("".join(buf))
+    return [p.strip() for p in parts if p.strip()]
+
+
+def _compounds(selector: str) -> List[str]:
+    return [c for c in re.split(r"\s*[>+~]\s*|\s+", selector.strip()) if c]
+
+
+def _selector_hits(css_all: str, rightmost_pattern: "re.Pattern[str]"
+                    ) -> List[Tuple[str, List[str], str]]:
+    """`(selector, ancestor_compounds, declaration_body)` for every selector
+    whose rightmost (target) compound matches `rightmost_pattern`.
+    `::backdrop` pseudo-elements are excluded — they never carry the layout
+    declarations these checks look for."""
+    hits: List[Tuple[str, List[str], str]] = []
+    for bm in _BLOCK_RE.finditer(css_all):
+        sel_line = _last_selector_line(bm.group(1))
+        if not sel_line or sel_line.startswith("@") or sel_line.startswith("*/"):
+            continue
+        for sel in _split_top_level_commas(sel_line):
+            if "::backdrop" in sel:
+                continue
+            comps = _compounds(sel)
+            if comps and rightmost_pattern.search(comps[-1]):
+                hits.append((sel, comps[:-1], bm.group(2)))
+    return hits
+
+
+def _class_scope_status(css_all: str, class_name: str) -> set:
+    """Where a class is styled: `global` (bare/unscoped), `dialog` (an
+    ancestor compound mentions "dialog"), `other` (scoped to some unrelated
+    ancestor, e.g. `.settings-card .stacked` — the app-launcher#70 bug)."""
+    pat = re.compile(r"\." + re.escape(class_name) + r"\b")
+    scopes: set = set()
+    for _, ancestors, _body in _selector_hits(css_all, pat):
+        if not ancestors:
+            scopes.add("global")
+        elif any("dialog" in a.lower() for a in ancestors):
+            scopes.add("dialog")
+        else:
+            scopes.add("other")
+    return scopes
+
+
 def contracts(
     root: Path,
     css_files: List[Path],
@@ -1041,6 +1147,173 @@ def contracts(
             f"all fixed row/action-rail heights on the {', '.join(sorted(allowed_row_px))} scale")
     else:
         add("row-height-scale", "NA", "no row/action-rail height rules found")
+
+    # 16-20. Editor-modal contract (design.md `modal` component;
+    #     fleet-config#307) — a <dialog> containing a real <form> is held to
+    #     the header/rows/fieldset/footer/top-anchor contract.
+    modals = _editor_modals(root, html_files)
+    if not modals:
+        for cid in ("modal-unstyled-rows", "modal-raw-fieldset", "modal-header",
+                    "modal-footer", "modal-top-anchor"):
+            add(cid, "NA", "no editor-modal <dialog> found")
+    else:
+        # 16. unstyled dialog rows — a row class used inside a dialog that is
+        #     only ever styled under some other, unrelated scope.
+        unstyled: List[str] = []
+        for modal in modals:
+            for lm in _LABEL_CLASS_RE.finditer(modal["inner"]):
+                for cls in lm.group(1).split():
+                    scopes = _class_scope_status(css_all, cls)
+                    if "global" in scopes or "dialog" in scopes:
+                        continue
+                    loc = _loc_in_modal(modal, lm.start())
+                    why = "styled only outside dialogs" if scopes else "never styled"
+                    unstyled.append(f"{loc} label.{cls} ({why})")
+        if unstyled:
+            add("modal-unstyled-rows", "FAIL",
+                f"{len(unstyled)} dialog row class(es) with no dialog-scoped "
+                "styling (design.md modal contract): " + "; ".join(unstyled[:6]))
+        else:
+            add("modal-unstyled-rows", "PASS",
+                "every dialog row class is styled globally or in a dialog-scoped rule")
+
+        # 17. raw <fieldset> — a fieldset/legend with no authored CSS at all,
+        #     rendering as a raw browser legend box.
+        raw_fieldsets: List[str] = []
+        for modal in modals:
+            for fm in _FIELDSET_OPEN_RE.finditer(modal["inner"]):
+                cls_m = _TAG_CLASS_RE.search(fm.group(1))
+                classes = cls_m.group(1).split() if cls_m else []
+                if classes:
+                    authored = any(_class_scope_status(css_all, c) for c in classes)
+                else:
+                    authored = bool(_selector_hits(css_all, _FIELDSET_TAG_PAT))
+                if not authored:
+                    raw_fieldsets.append(_loc_in_modal(modal, fm.start()))
+        if raw_fieldsets:
+            add("modal-raw-fieldset", "FAIL",
+                f"{len(raw_fieldsets)} <fieldset> with no authored CSS — raw "
+                "browser legend box (design.md modal wants titled plain "
+                "sections, never a fieldset): " + ", ".join(raw_fieldsets[:6]))
+        else:
+            add("modal-raw-fieldset", "PASS", "no unstyled <fieldset> found in editor modals")
+
+        # 18. header contract — a title needs a square × close button; a
+        #     footer "Cancel" button in its place is the anti-pattern.
+        header_bad: List[str] = []
+        header_checked = 0
+        for modal in modals:
+            if not re.search(r"<h[1-6]\b", modal["inner"], re.I):
+                continue
+            header_checked += 1
+            has_close = False
+            has_cancel = False
+            for bm2 in _BUTTON_RE.finditer(modal["inner"]):
+                battrs, btext = bm2.group(1), bm2.group(2)
+                if (re.search(r'aria-label=["\']close["\']', battrs, re.I)
+                        or re.search(r'class=["\'][^"\']*\bclose\b[^"\']*["\']', battrs, re.I)):
+                    has_close = True
+                text_clean = re.sub(r"<[^>]+>", "", btext).strip()
+                if re.fullmatch(r"cancel", text_clean, re.I):
+                    has_cancel = True
+            if not has_close or has_cancel:
+                reasons = []
+                if not has_close:
+                    reasons.append("no square x close button")
+                if has_cancel:
+                    reasons.append("footer Cancel button in its place")
+                header_bad.append(f"{modal['file']}:{modal['line']} " + " + ".join(reasons))
+        if header_checked == 0:
+            add("modal-header", "NA", "no titled editor-modal <dialog> found")
+        elif header_bad:
+            add("modal-header", "FAIL",
+                "editor-modal header contract violated (design.md modal wants "
+                "a heading-lg title + square x close, never a footer Cancel): "
+                + "; ".join(header_bad[:6]))
+        else:
+            add("modal-header", "PASS", "editor-modal header(s) carry a square x close, no footer Cancel")
+
+        # 19. footer contract — exactly one always-visible action, styled as
+        #     the full-width solid-accent primary.
+        footer_bad: List[str] = []
+        footer_checked = 0
+        for modal in modals:
+            footer = None
+            for fm2 in _FOOTER_CONTAINER_RE.finditer(modal["inner"]):
+                fattrs, fbody = fm2.group(2), fm2.group(3)
+                fcls_m = _TAG_CLASS_RE.search(fattrs)
+                fclasses = fcls_m.group(1).split() if fcls_m else []
+                if any(re.search(r"actions|footer", c, re.I) for c in fclasses):
+                    footer = (fclasses, fbody)
+                    break
+            if footer is None:
+                continue
+            footer_checked += 1
+            fclasses, fbody = footer
+            visible = [bm2 for bm2 in _BUTTON_RE.finditer(fbody)
+                       if not re.search(r"(^|\s)hidden(\s|=|$)", bm2.group(1), re.I)]
+            if len(visible) > 1:
+                footer_bad.append(f"{modal['file']}:{modal['line']} "
+                                   f"{len(visible)} always-visible footer actions")
+                continue
+            if len(visible) == 0:
+                continue
+            btn_cls_m = _TAG_CLASS_RE.search(visible[0].group(1))
+            btn_classes = btn_cls_m.group(1).split() if btn_cls_m else []
+            is_accent = False
+            is_full_width = False
+            for c in btn_classes:
+                for _, _anc, body in _selector_hits(css_all, re.compile(r"\." + re.escape(c) + r"\b")):
+                    if re.search(r"background(-color)?:\s*var\(--accent\)", body):
+                        is_accent = True
+                    if re.search(r"width:\s*100%|flex:\s*1\b|align-self:\s*stretch", body):
+                        is_full_width = True
+            for c in fclasses:
+                for _, _anc, body in _selector_hits(css_all, re.compile(r"\." + re.escape(c) + r"\b")):
+                    if (re.search(r"flex-direction:\s*column", body)
+                            and re.search(r"align-items:\s*stretch", body)):
+                        is_full_width = True
+            if not (is_accent and is_full_width):
+                missing = []
+                if not is_accent:
+                    missing.append("not the solid-accent primary recipe")
+                if not is_full_width:
+                    missing.append("not full-width")
+                footer_bad.append(f"{modal['file']}:{modal['line']} primary " + " + ".join(missing))
+        if footer_checked == 0:
+            add("modal-footer", "NA", "no locatable footer/actions container in any editor modal")
+        elif footer_bad:
+            add("modal-footer", "FAIL",
+                "editor-modal footer contract violated (design.md modal wants "
+                "exactly one full-width solid-accent primary): "
+                + "; ".join(footer_bad[:6]))
+        else:
+            add("modal-footer", "PASS",
+                "editor-modal footer(s) carry exactly one full-width solid-accent primary")
+
+        # 20. top-anchoring — a tall form must not jump vertically as
+        #     conditional rows toggle; the dialog itself scrolls internally.
+        top_anchor_bad: List[str] = []
+        for modal in modals:
+            ok = False
+            for c in modal["classes"]:
+                for _, _anc, body in _selector_hits(css_all, re.compile(r"\." + re.escape(c) + r"\b")):
+                    if re.search(r"max-height", body) and re.search(r"overflow(-y)?:\s*auto", body):
+                        ok = True
+            if not ok:
+                for _, _anc, body in _selector_hits(css_all, re.compile(r"^dialog(?:[.:#\[]|$)", re.I)):
+                    if re.search(r"max-height", body) and re.search(r"overflow(-y)?:\s*auto", body):
+                        ok = True
+            if not ok:
+                top_anchor_bad.append(f"{modal['file']}:{modal['line']}")
+        if top_anchor_bad:
+            add("modal-top-anchor", "FAIL",
+                "editor-modal(s) with no max-height + internal scroll — a tall "
+                "form jumps as conditional rows toggle (design.md modal: "
+                "top-anchored on mobile): " + ", ".join(top_anchor_bad[:6]))
+        else:
+            add("modal-top-anchor", "PASS",
+                "editor-modal(s) are top-anchored with internal scroll")
 
     return checks
 
