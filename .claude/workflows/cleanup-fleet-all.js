@@ -149,7 +149,12 @@ async function processIssue(bucket, issue) {
   return { bucket, issue, status: 'escalated', round: MAX_ROUNDS, branch: lastBranch, reason: 'exhausted retries' }
 }
 
-const issuesByBucket = (args && args.issuesByBucket) || {}
+// Workaround: in this environment, an object passed as Workflow's `args` has
+// been observed arriving here as a JSON-stringified value rather than the
+// parsed object the tool docs describe (reproduced with a trivial payload,
+// so it's not content-dependent) — handle both shapes defensively.
+const rawArgs = typeof args === 'string' ? JSON.parse(args) : args
+const issuesByBucket = (rawArgs && rawArgs.issuesByBucket) || {}
 const bucketNames = Object.keys(issuesByBucket)
 const allResults = []
 

@@ -85,8 +85,10 @@ C:/Users/rober/AppData/Local/Python/bin/python.exe C:/Users/rober/.claude/skills
 
 Build `issuesByBucket` — `{ "<bucket>": [{ repo, number, title, body }, ...], ... }` — from the surviving, pre-flighted issues (step 5's skips already removed).
 
+**Invoke with the inline `script` parameter (paste the full contents of `.claude/workflows/cleanup-fleet-all.js`), not `scriptPath`.** `scriptPath` has been observed to fail in this environment — the permission-approval layer rejects it with a false-positive "script contains control characters" error even against a byte-clean file (confirmed via `node --check` and a raw byte/Unicode-category scan finding nothing). Read the script file fresh each invocation so edits are picked up.
+
 ```
-Workflow({ scriptPath: ".claude/workflows/cleanup-fleet-all.js", args: { issuesByBucket } })
+Workflow({ script: "<full contents of .claude/workflows/cleanup-fleet-all.js>", args: { issuesByBucket } })
 ```
 
 This returns a task id immediately. **Do not stop and wait for a notification** — per the Execution rules, immediately enter a blocking poll loop:
@@ -162,4 +164,5 @@ No follow-up actions and no auto-launch of anything. A human deals with escalate
 
 - **Relationship to `/cleanup-fleet`:** that skill stays exactly as-is for attended, single-bucket, human-gated runs. This skill doesn't replace it — it's a different tool for a different situation (nobody watching, want every bucket covered).
 - **Compose, don't reinvent:** the build agent's mechanics reuse `/issue-start <N> now`; the execute agent's mechanics reuse `/issue-finish`'s push/PR/CI/merge/tray-restart sequence — same as `/cleanup-fleet` and `/issue-finish-batch` already do.
-- **First run should be attended.** This repo has no prior use of the `Workflow` tool. Before trusting the `run-weekly.bat` schedule, run `/cleanup-fleet-all <one-bucket>` interactively at least once and confirm the `TaskOutput` poll loop actually carries the run to completion.
+- **Validated attended, once, against the `stale` bucket** (4 repos: whatsapp-radar, photo-ocr, local-llm-hub, app-launcher) — all 4 merged on the first round, no retries needed, post-flight `dirty_tree_check.py` confirmed all four trees clean on `main`. Two environment bugs surfaced and were worked around: `scriptPath` invocation (see step 7) and `args` arriving inside the workflow script as a JSON string rather than a parsed object — `.claude/workflows/cleanup-fleet-all.js` defensively `JSON.parse`s it when it comes through as a string. Neither bug is specific to this skill's content (both reproduced with trivial scripts/payloads); worth re-testing if the harness changes.
+- **Before trusting the full unattended schedule**, run at least one more attended pass covering a bucket with a validator rejection (to prove the retry loop, not just the happy path) before wiring `run-weekly.bat` into a scheduled job.
