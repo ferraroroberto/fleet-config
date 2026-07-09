@@ -63,6 +63,56 @@ function Get-ManifestKey($item) {
     if ($item.base -and $item.base -ne 'claude') { "$($item.base)/$($item.target)" } else { $item.target }
 }
 
+function Install-OtelProjectProfileHook {
+    # fleet-config#310: wires shell/claude-otel-project.ps1 into $PROFILE for
+    # both PowerShell 7 (pwsh) and Windows PowerShell 5.1, so `claude`
+    # auto-tags OTEL_RESOURCE_ATTRIBUTES with the current repo name regardless
+    # of which host launches it. Explicit paths (not the ambient $PROFILE)
+    # because this function can run inside the elevated Windows PowerShell
+    # 5.1 relaunch below, whose $PROFILE would otherwise point at the wrong
+    # host's profile file, silently wiring the hook into the wrong shell.
+    $sourceScript = Join-Path $RepoRoot 'shell\claude-otel-project.ps1'
+    if (-not (Test-Path $sourceScript)) {
+        Write-Warning "Source missing, skipping OTel project-attribution hook: $sourceScript"
+        return
+    }
+
+    $markerBegin   = '# fleet-config:claude-otel-project BEGIN (docs/otel-project-attribution.md, fleet-config#310)'
+    $markerEnd     = '# fleet-config:claude-otel-project END'
+    $dotSourceLine = ". `"$sourceScript`""
+
+    $profiles = @(
+        (Join-Path $env:USERPROFILE 'Documents\PowerShell\Microsoft.PowerShell_profile.ps1'),
+        (Join-Path $env:USERPROFILE 'Documents\WindowsPowerShell\Microsoft.PowerShell_profile.ps1')
+    )
+
+    foreach ($profilePath in $profiles) {
+        $profileDir = Split-Path -Parent $profilePath
+        if (-not (Test-Path $profileDir)) {
+            New-Item -ItemType Directory -Path $profileDir -Force | Out-Null
+        }
+        if (-not (Test-Path $profilePath)) {
+            New-Item -ItemType File -Path $profilePath | Out-Null
+        }
+
+        $content = Get-Content -Path $profilePath -Raw -ErrorAction SilentlyContinue
+        if ($null -eq $content) { $content = '' }
+
+        if ($content.Contains($markerBegin)) {
+            if ($content.Contains($dotSourceLine)) {
+                Write-Host "OK      $profilePath (OTel project hook already wired)" -ForegroundColor Green
+            } else {
+                Write-Host "BLOCKED $profilePath (OTel project hook marker present but points elsewhere)" -ForegroundColor Yellow
+            }
+            continue
+        }
+
+        $block = "`n$markerBegin`n$dotSourceLine`n$markerEnd`n"
+        Add-Content -Path $profilePath -Value $block -Encoding UTF8
+        Write-Host "LINKED  $profilePath  ->  $sourceScript  (profile dot-source)" -ForegroundColor Cyan
+    }
+}
+
 function Invoke-CodexSandboxVerification {
     $codex = Get-Command codex -ErrorAction SilentlyContinue
     if (-not $codex) {
@@ -240,6 +290,9 @@ foreach ($item in $Items) {
 
 # Persist manifest
 $manifest | ConvertTo-Json -Depth 5 | Set-Content -Path $ManifestPath -Encoding UTF8
+
+Write-Host ""
+Install-OtelProjectProfileHook
 
 Write-Host ""
 Write-Host "Done. created=$created skipped=$skipped blocked=$blocked" -ForegroundColor Cyan
