@@ -203,10 +203,23 @@ The five sections it returns, and what each means:
   WARN when emoji sit alongside an adopted sprite — one icon set, never
   hand-drawn/mixed, #284), **chevron-placement** (a disclosure `<summary>`
   whose chevron glyph/icon sits before its title text — the fleet contract
-  pins it right, #284/app-launcher#362), and **row-height-scale** (fixed
+  pins it right, #284/app-launcher#362), **row-height-scale** (fixed
   `height`/`min-height` literals on row/action-rail selectors outside the
   spec's `rows` 3-step scale — 44px/52px/60px by default, spec-driven —
-  WARN, #284/app-launcher#365).
+  WARN, #284/app-launcher#365), and the **editor-modal contract** (design.md
+  `modal` component, #307) applied to every `<dialog>` that contains a real
+  `<form>` (an "editor modal", vs. a plain alert/results dialog):
+  `modal-unstyled-rows` (a row class, e.g. `label.stacked`, used inside a
+  dialog but only ever styled under some other, unrelated ancestor scope —
+  the app-launcher#70 root cause, where `.stacked` was styled only under
+  `.settings-card`), `modal-raw-fieldset` (a `<fieldset>`/`<legend>` with
+  zero authored CSS — a raw browser legend box instead of a titled plain
+  section), `modal-header` (a titled dialog with no square × close button,
+  or a footer "Cancel" button standing in its place), `modal-footer` (more
+  than one always-visible footer action, or a sole primary that isn't the
+  full-width solid-accent recipe), and `modal-top-anchor` (no `max-height` +
+  internal scroll, so a tall form jumps vertically as conditional rows
+  toggle).
 - **`vendored`** — byte-hash comparison of the app's
   `_vendored/<component>/` copies against project-scaffolding's canonical
   files: `IDENTICAL` / `FORKED` (the vendor-verbatim rule broken — always a
