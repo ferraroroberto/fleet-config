@@ -81,7 +81,7 @@ def evaluate(
 def _run_git(repo_path: Path, *args: str) -> str:
     proc = subprocess.run(
         ["git", "-C", str(repo_path), *args],
-        capture_output=True, text=True,
+        capture_output=True, text=True, encoding="utf-8", errors="replace",
     )
     return proc.stdout.strip()
 
