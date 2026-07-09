@@ -96,7 +96,7 @@ this skill and `/audit-fleet` share):
 C:/Users/rober/AppData/Local/Python/bin/python.exe C:/Users/rober/.claude/skills/_lib/audit_issue.py gate --repo <OWNER/REPO> --repo-path <repo-root-from-step-1>
 ```
 
-It prints `{"decision": "SKIP"|"AUDIT"|"SKIP_SELF_FIX", "reason": ..., ...}`.
+It prints `{"decision": "SKIP"|"AUDIT"|"SKIP_SELF_FIX"|"SKIP_BELOW_THRESHOLD", "reason": ..., ...}`.
 The ledger lives in **one issue per repo** — title `codebase-audit ledger`,
 label `audit-meta`, `--assignee @me`, never closed, with a hidden identity
 marker and a machine-readable `<!-- audit-ledger -->` block (`last-audited-sha`,
@@ -118,6 +118,14 @@ Branch on the decision:
   `Skipped — commits since last audit only close this repo's own audit
   findings (#N, #M); ledger advanced, no organic change.` This stops a repo
   from being endlessly re-flagged for fixing its own findings.
+- **`SKIP_BELOW_THRESHOLD`** — real organic commits exist, but their
+  weighted-LOC significance (feature/refactor commits count fully,
+  docs/test count nothing, fix/chore count partially — `audit_issue.py`'s
+  `PR_TYPE_WEIGHTS`) hasn't crossed `DEFAULT_SIGNIFICANCE_THRESHOLD` (1000)
+  yet. The ledger is **not** advanced, so this keeps accumulating across
+  runs. Stop immediately: `Skipped — organic change since last audit is
+  below the significance threshold (<significance>/<threshold> weighted
+  lines); accumulating, not yet audited.` Read no files, file nothing.
 - **`AUDIT`** — continue to step 3.
 
 ### 3. Load the rubric
@@ -544,8 +552,10 @@ rot, or concrete failure modes are.
   expand scope into either.
 - Layered idempotency: an unchanged repo `SKIP`s at one `gh` + one `git` call;
   self-fix-only churn returns `SKIP_SELF_FIX` with the ledger auto-advanced;
-  even on `AUDIT`, dedupe prevents re-filing. Both gate decisions are one
-  Python function (`evaluate_repo`; unit-tested in
+  organic churn below the weighted-LOC significance threshold returns
+  `SKIP_BELOW_THRESHOLD`, also without advancing the ledger, so it keeps
+  accumulating; even on `AUDIT`, dedupe prevents re-filing. All these gate
+  decisions are one Python function (`evaluate_repo`; unit-tested in
   `tests/test_audit_issue.py`), not LLM judgment.
 - The ledger is labelled `audit-meta` so it never shows up as actionable —
   `/issue-triage` and `/issue-start` filter it out.

@@ -88,6 +88,7 @@ It prints one JSON object:
 {"to_audit": [{"repo": "...", "path": "..."}, ...],
  "unchanged": ["repo1", "repo2", ...],
  "self_fix": [{"repo": "...", "path": "...", "decision": "SKIP_SELF_FIX", "closed_issues": [...], ...}, ...],
+ "below_threshold": [{"repo": "...", "path": "...", "decision": "SKIP_BELOW_THRESHOLD", "significance": N, "threshold": M, ...}, ...],
  "skipped": [{"repo": "...", "reason": "dirty"|"off-branch"|"non-ff"}, ...],
  "errors": [{"repo": "...", "reason": "..."}, ...]}
 ```
@@ -95,16 +96,27 @@ It prints one JSON object:
 For every `self_fix` entry, the script has **already** advanced that repo's
 ledger (HEAD sha + today's date, same rubric-sha) and posted a
 `<!-- audit-self-fix -->` comment on its ledger issue — no further write
-needed here. If the single-repo argument was passed, `--only <name>` restricts
-the whole sweep to it.
+needed here. A `below_threshold` entry is the opposite of a silent skip: the
+repo has real organic (non-self-fix) commits since its last audit, but their
+weighted-LOC significance (`skills/_lib/audit_issue.py`'s
+`unexplained_weighted_loc` — feature/refactor commits count fully,
+docs/test count nothing, fix/chore count partially) hasn't crossed the
+threshold yet. Its ledger sha is **not** advanced, so next week's check
+covers the same (growing) commit range plus whatever lands meanwhile — small
+changes accumulate quietly until the total is enough to justify a real
+whole-repo audit, at which point it moves to `to_audit` and that audit covers
+everything back to the ledger sha, so nothing is ever lost. If the
+single-repo argument was passed, `--only <name>` restricts the whole sweep
+to it.
 
 Print a one-line plan from the JSON, e.g.:
 
 ```
-Fleet audit plan — 3 to audit, 24 unchanged, 1 self-fix, 2 skipped (dirty)
-  audit:     app-launcher, photo-ocr, local-llm-hub
-  self-fix:  website (closed #71, #64 — ledger advanced, no organic change)
-  skipped:   reporting (dirty), site (off-branch)
+Fleet audit plan — 3 to audit, 24 unchanged, 1 self-fix, 2 below-threshold, 2 skipped (dirty)
+  audit:            app-launcher, photo-ocr, local-llm-hub
+  self-fix:         website (closed #71, #64 — ledger advanced, no organic change)
+  below-threshold:  accounting-quarterly (591/1000), pvgis (85/1000)
+  skipped:          reporting (dirty), site (off-branch)
 ```
 
 If `to_audit` is empty, jump to step 5 with an empty result set (the digest
@@ -189,9 +201,9 @@ shows forward motion. Do **not** sleep between dispatches when the gate reads
 Hold each sub-agent's structured report as it returns. When the to-audit list is
 drained with no agent still in flight (whether or not one or more pause cycles
 happened along the way), proceed to the practices ledger (4b) then the digest.
-Track two terminal buckets, plus the `self_fix` and `skipped` buckets already
-decided by step 2's Python sweep (carried through unchanged — no sub-agent
-touches those repos):
+Track two terminal buckets, plus the `self_fix`, `below_threshold`, and
+`skipped` buckets already decided by step 2's Python sweep (carried through
+unchanged — no sub-agent touches those repos):
 
 - A sub-agent that errors out **without** a rate-limit signature is recorded as
   `ERROR` for its repo (a genuine single-repo failure); it does not block the
@@ -253,12 +265,13 @@ fails (e.g. no access to `project-scaffolding`), note `practices: skipped
 ### 5. Build the digest
 
 A run always reaches this step with a complete result set — every repo is
-`AUDITED` / `CLEAN` / `SKIPPED-BY-LEDGER` / `SELF-FIX` / `ERROR`, or (only if
-the 3-pause safety net was hit) `SKIPPED (session limit — exceeded pause
-retries)`. `SELF-FIX` repos were decided entirely by step 2's sweep — no
-sub-agent ran, ledger already advanced. Build and deliver the full digest in
-every case; session-limit skips are flagged in the digest, not silently
-dropped.
+`AUDITED` / `CLEAN` / `SKIPPED-BY-LEDGER` / `SELF-FIX` / `BELOW-THRESHOLD` /
+`ERROR`, or (only if the 3-pause safety net was hit) `SKIPPED (session limit —
+exceeded pause retries)`. `SELF-FIX` and `BELOW-THRESHOLD` repos were both
+decided entirely by step 2's sweep — no sub-agent ran, and for
+`BELOW-THRESHOLD` the ledger is deliberately **not** advanced (see step 2).
+Build and deliver the full digest in every case; session-limit skips are
+flagged in the digest, not silently dropped.
 
 Read the digest-state ledger first so the recap is week-over-week, not a
 re-list:
@@ -278,7 +291,7 @@ is attached to the email as a `.md` file; step 6 also renders it to HTML for the
 email body. Structure it so the per-repo results form a clean table when
 rendered:
 
-- **Header:** date, counts — `N repos audited, M issues filed, K unchanged, L self-fix, J skipped`.
+- **Header:** date, counts — `N repos audited, M issues filed, K unchanged, L self-fix, B below-threshold, J skipped`.
 - **Per audited repo:** result line + the issues filed this run (bucket → URL),
   and the **delta vs last week** (`+2 since last week` from the digest-state
   counts). Repos that came back CLEAN or SKIPPED-BY-LEDGER get a one-liner.
@@ -286,6 +299,13 @@ rendered:
   `SELF-FIX` — one line each naming the closed issue numbers (`website:
   closed #71, #64 — ledger advanced, no organic change`), so it's visible that
   these repos were deliberately *not* re-audited rather than silently skipped.
+- **Below-threshold section** *(only when non-empty)*: repos step 2's sweep
+  classified `SKIP_BELOW_THRESHOLD` — one line each with the accumulated vs.
+  threshold weighted-LOC (`accounting-quarterly: 591/1000 weighted lines
+  since 2026-07-04 — accumulating, not yet audited`), so quiet accumulation
+  stays visible instead of turning into a silent cap. These repos are NOT
+  counted toward "standing backlog" below — they have no open audit findings
+  from this, just unaudited organic change.
 - **Skipped section:** repos skipped for dirty / off-branch / non-ff, so the
   user knows they were intentionally left out (not silently missed).
 - **Session-limit section** *(only when non-empty)*: repos left unaudited
@@ -403,6 +423,19 @@ One concise block: the plan line from step 2, per-repo results, where the digest
   recognized as self-fix, so the repo re-audits. Telling those apart would need
   provenance tagging at issue-filing time across multiple skills; an occasional
   unnecessary re-audit is the safer failure mode. Known limitation, not a bug.
+- **Not every non-self-fix commit re-audits immediately** (fleet-config#315):
+  once `evaluate_repo` decides a repo isn't pure self-fix, it doesn't
+  unconditionally fall to `AUDIT` — it weighs the unexplained commits'
+  `additions + deletions` by conventional branch-type (`feat`/`refactor` full
+  weight, `fix`/`chore` partial, `docs`/`test` none — `audit_issue.py`'s
+  `PR_TYPE_WEIGHTS`) and only audits once the accumulated total crosses
+  `DEFAULT_SIGNIFICANCE_THRESHOLD` (1000). Below that, `SKIP_BELOW_THRESHOLD`
+  leaves the ledger sha untouched, so small organic changes batch up across
+  however many weekly runs it takes rather than forcing a full re-audit over a
+  single low-risk commit — proven necessary when a one-time fleet-wide
+  docs-only rollout (#256) flipped 28 of 31 repos to "needs audit" in one run.
+  A repo that does cross the threshold is still audited whole-repo, covering
+  everything back to the ledger sha — nothing is lost, only batched.
 - **Per-category trend data lives in the per-repo ledger** (`<!-- audit-snapshot -->`
   comments, `/codebase-audit` step 9); this fleet digest stays aggregate by design.
 - **The weekly job** lives in app-launcher (`config/jobs.json`) and calls this

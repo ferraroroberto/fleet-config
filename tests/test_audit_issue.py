@@ -199,6 +199,92 @@ check(ai.ledger_decision(3, "abc", "def", self_fix=False) == "AUDIT",
 check(ai.ledger_decision(None, "abc", "abc") == "AUDIT", "ledger_decision: unparseable count -> AUDIT")
 check(ai.ledger_decision(0, None, "abc") == "AUDIT", "ledger_decision: unparseable ledger -> AUDIT")
 
+# ---- pr_weight ----
+
+check(ai.pr_weight("feat/12-add-thing") == 1.0, "pr_weight: feat -> 1.0")
+check(ai.pr_weight("refactor/12-x") == 1.0, "pr_weight: refactor -> 1.0")
+check(ai.pr_weight("perf/12-x") == 0.5, "pr_weight: perf -> 0.5")
+check(ai.pr_weight("fix/12-x") == 0.3, "pr_weight: fix -> 0.3")
+check(ai.pr_weight("chore/12-x") == 0.2, "pr_weight: chore -> 0.2")
+check(ai.pr_weight("docs/12-x") == 0.0, "pr_weight: docs -> 0.0")
+check(ai.pr_weight("test/12-x") == 0.0, "pr_weight: test -> 0.0")
+check(ai.pr_weight("claude/some-agent-branch-XYZ") == 1.0,
+      "pr_weight: unrecognized prefix fails open to 1.0")
+check(ai.pr_weight("no-slash-branch") == 1.0, "pr_weight: no slash at all -> 1.0 (fail open)")
+check(ai.pr_weight("") == 1.0, "pr_weight: empty branch -> 1.0 (fail open)")
+
+# ---- unexplained_weighted_loc ----
+
+def _pr(oid, additions, deletions, branch, closes=None):
+    return {
+        "mergeCommit": {"oid": oid},
+        "additions": additions,
+        "deletions": deletions,
+        "headRefName": branch,
+        "closingIssuesReferences": [{"number": n} for n in (closes or [])],
+    }
+
+# a self-fix-explained commit contributes nothing, regardless of type/LOC
+_prs_self_fix_big = [_pr("sha1", 900, 900, "feat/12-huge-self-fix", closes=[71])]
+check(ai.unexplained_weighted_loc(["sha1"], _prs_self_fix_big, {71}) == 0.0,
+      "unexplained_weighted_loc: self-fix-explained commit -> 0 regardless of size/type")
+
+# a docs-only unexplained commit contributes 0 weighted LOC (weight 0.0) even though real LOC > 0
+_prs_docs = [_pr("sha2", 50, 10, "docs/13-fix-readme")]
+check(ai.unexplained_weighted_loc(["sha2"], _prs_docs, {71}) == 0.0,
+      "unexplained_weighted_loc: unexplained docs-only commit -> 0.0 (docs weight)")
+
+# a fix-only unexplained commit contributes at 0.3 weight
+_prs_fix = [_pr("sha3", 100, 0, "fix/14-bug")]
+check(ai.unexplained_weighted_loc(["sha3"], _prs_fix, {71}) == 30.0,
+      "unexplained_weighted_loc: unexplained fix commit -> 100 * 0.3 = 30.0")
+
+# a feat commit contributes at full weight
+_prs_feat = [_pr("sha4", 200, 50, "feat/15-new-thing")]
+check(ai.unexplained_weighted_loc(["sha4"], _prs_feat, {71}) == 250.0,
+      "unexplained_weighted_loc: unexplained feat commit -> full 250 LOC")
+
+# mixed: self-fix (0) + docs (0) + fix (0.3x) + feat (1.0x) accumulate
+_prs_mixed_sig = [
+    _pr("sha1", 900, 900, "feat/12-huge-self-fix", closes=[71]),
+    _pr("sha2", 50, 10, "docs/13-fix-readme"),
+    _pr("sha3", 100, 0, "fix/14-bug"),
+    _pr("sha4", 200, 50, "feat/15-new-thing"),
+]
+check(ai.unexplained_weighted_loc(["sha1", "sha2", "sha3", "sha4"], _prs_mixed_sig, {71}) == 30.0 + 250.0,
+      "unexplained_weighted_loc: sums only unexplained commits' weighted LOC")
+
+# a PR closing a mix of managed + unmanaged issues is NOT self-fix-explained -> counts fully
+_prs_mixed_refs = [_pr("sha5", 40, 0, "fix/16-x", closes=[71, 999])]
+check(ai.unexplained_weighted_loc(["sha5"], _prs_mixed_refs, {71}) == 12.0,
+      "unexplained_weighted_loc: PR closing managed+unmanaged mix counts fully at its own weight")
+
+# a commit with no matching PR at all (direct push) fails open to infinity
+check(ai.unexplained_weighted_loc(["sha_orphan"], _prs_feat, {71}) == float("inf"),
+      "unexplained_weighted_loc: no matching PR -> inf (fail open, forces AUDIT past any threshold)")
+
+# empty commit list -> 0.0
+check(ai.unexplained_weighted_loc([], _prs_feat, {71}) == 0.0,
+      "unexplained_weighted_loc: no commits -> 0.0")
+
+# ---- ledger_decision: significance threshold ----
+
+check(ai.ledger_decision(3, "abc", "abc", self_fix=False, significance=500.0, threshold=1000.0)
+      == "SKIP_BELOW_THRESHOLD",
+      "ledger_decision: significance below threshold -> SKIP_BELOW_THRESHOLD")
+check(ai.ledger_decision(3, "abc", "abc", self_fix=False, significance=1000.0, threshold=1000.0)
+      == "AUDIT",
+      "ledger_decision: significance at threshold -> AUDIT (>= crosses)")
+check(ai.ledger_decision(3, "abc", "abc", self_fix=False, significance=1500.0, threshold=1000.0)
+      == "AUDIT",
+      "ledger_decision: significance above threshold -> AUDIT")
+check(ai.ledger_decision(3, "abc", "abc", self_fix=False, significance=None) == "AUDIT",
+      "ledger_decision: significance not computed (None) -> AUDIT (pre-threshold behavior preserved)")
+check(ai.ledger_decision(3, "abc", "abc", self_fix=True, significance=999999.0) == "SKIP_SELF_FIX",
+      "ledger_decision: self_fix=True wins regardless of significance value")
+check(ai.ledger_decision(0, "abc", "abc", significance=0.0) == "SKIP",
+      "ledger_decision: zero commits -> significance is irrelevant, rubric decides")
+
 if _fails:
     print("FAIL test_audit_issue:")
     for f in _fails:
