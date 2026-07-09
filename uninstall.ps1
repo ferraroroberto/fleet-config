@@ -8,6 +8,11 @@
     in the manifest -- real files and unrelated directories under ~/.claude/
     are left untouched.
 
+    Also removes the OTel project-attribution $PROFILE block (fleet-config#310)
+    from both the pwsh and Windows PowerShell 5.1 profile files, if present --
+    this isn't a junction/symlink so it isn't in the manifest, but it's the
+    other piece of state install.ps1 writes outside ~/.claude.
+
     Does NOT modify ~/.claude/settings.json -- remove the hooks block yourself
     if you want it gone.
 #>
@@ -20,8 +25,51 @@ $ErrorActionPreference = 'Stop'
 $ClaudeHome   = Join-Path $env:USERPROFILE '.claude'
 $ManifestPath = Join-Path $ClaudeHome '.fleet-config-installed.json'
 
+function Remove-OtelProjectProfileHook {
+    # Mirrors Install-OtelProjectProfileHook's marker in install.ps1 --
+    # strips exactly the BEGIN..END block, leaving the rest of the profile
+    # (if the user has added anything else to it by then) untouched.
+    $markerBegin = '# fleet-config:claude-otel-project BEGIN (docs/otel-project-attribution.md, fleet-config#310)'
+    $markerEnd   = '# fleet-config:claude-otel-project END'
+
+    $profiles = @(
+        (Join-Path $env:USERPROFILE 'Documents\PowerShell\Microsoft.PowerShell_profile.ps1'),
+        (Join-Path $env:USERPROFILE 'Documents\WindowsPowerShell\Microsoft.PowerShell_profile.ps1')
+    )
+
+    foreach ($profilePath in $profiles) {
+        if (-not (Test-Path $profilePath)) {
+            Write-Host "MISSING $profilePath (no profile file -- nothing to remove)" -ForegroundColor DarkGray
+            continue
+        }
+
+        $lines = Get-Content -Path $profilePath
+        $beginIdx = [array]::IndexOf($lines, $markerBegin)
+        if ($beginIdx -lt 0) {
+            Write-Host "SKIP    $profilePath (OTel project hook not present)" -ForegroundColor DarkGray
+            continue
+        }
+        $endIdx = [array]::IndexOf($lines, $markerEnd)
+        if ($endIdx -lt $beginIdx) {
+            Write-Host "SKIP    $profilePath (marker found but END missing -- leaving alone, edit by hand)" -ForegroundColor Yellow
+            continue
+        }
+
+        $kept = @()
+        for ($i = 0; $i -lt $lines.Count; $i++) {
+            if ($i -ge $beginIdx -and $i -le $endIdx) { continue }
+            $kept += $lines[$i]
+        }
+        Set-Content -Path $profilePath -Value $kept -Encoding UTF8
+        Write-Host "REMOVED OTel project hook from $profilePath" -ForegroundColor Cyan
+    }
+}
+
+Remove-OtelProjectProfileHook
+Write-Host ""
+
 if (-not (Test-Path $ManifestPath)) {
-    Write-Host "No manifest at $ManifestPath -- nothing to uninstall." -ForegroundColor Yellow
+    Write-Host "No manifest at $ManifestPath -- nothing else to uninstall." -ForegroundColor Yellow
     return
 }
 
@@ -61,6 +109,7 @@ foreach ($prop in $manifest.PSObject.Properties) {
 }
 
 Remove-Item -LiteralPath $ManifestPath -Force
+
 Write-Host ""
 Write-Host "Done. removed=$removed missing=$missing skipped=$skipped" -ForegroundColor Cyan
 Write-Host "Reminder: edit ~/.claude/settings.json by hand if you want the 'hooks' block gone too."

@@ -90,8 +90,10 @@ fleet-config/
 ├── design.dark.md                  # exposed as ~/.claude/design.dark.md (symlink) — same token names, dark values (Vercel light/dark convention)
 ├── statusline-command.ps1          # exposed as ~/.claude/statusline-command.ps1 (symlink) — custom statusline (Claude only)
 ├── .gitignore
-├── install.ps1                     # creates junctions/symlinks into the agent homes: ~/.claude, ~/.agents, ~/.codex, ~/.pi/agent, ~/.copilot
-├── uninstall.ps1                   # removes only the links install.ps1 created, leaves the homes otherwise untouched
+├── install.ps1                     # creates junctions/symlinks into the agent homes: ~/.claude, ~/.agents, ~/.codex, ~/.pi/agent, ~/.copilot; also wires shell/claude-otel-project.ps1 into $PROFILE
+├── uninstall.ps1                   # removes only the links install.ps1 created (+ the $PROFILE OTel hook block), leaves the homes otherwise untouched
+├── shell/
+│   └── claude-otel-project.ps1     # dot-sourced from $PROFILE — wraps `claude` to auto-tag OTEL_RESOURCE_ATTRIBUTES with the repo name (docs/otel-project-attribution.md)
 ├── hooks/                          # junction → ~/.claude/hooks AND ~/.codex/hooks (Codex)
 │   ├── _lib.py                     # shared: project detection, port→PID, stdin-JSON, projects.toml loader
 │   ├── projects.toml               # per-project nuance (ports, gate triggers, never-kill ports)
@@ -206,6 +208,8 @@ terminal_title = ["project", "git-branch", "model"]
 This is the closest supported Codex shape today: context first, then model, current directory, and branch. It deliberately uses Codex's built-in `context-used` item because Codex does not currently expose a custom statusline command payload or a bare percentage item equivalent to Claude's compact `0%` segment. To validate locally, restart/open a fresh Codex TUI session and confirm the footer shows those four segments in that order; use `/statusline` inside Codex if you want to inspect or reorder the saved footer interactively.
 
 **Pi statusline parity.** Pi exposes footer replacement through its extension API, so this repo ships `pi/extensions/statusline.ts`, installed as `~/.pi/agent/extensions/statusline.ts`. It renders the Claude-style compact footer: `ctx% | model | dir (branch)`, with the same context thresholds (`<30` success/green, `30–34` warning/yellow, `>=35` error/red) and model-family normalization (`opus` / `sonnet` / `haiku`). Known gap: Pi reports context usage as unknown immediately after compaction and before the next usage-bearing response; in that state the extension omits the context segment rather than faking a percentage, matching Claude's "null means omit" behavior. To validate locally, run `install.ps1`, restart/open a fresh Pi TUI session, and confirm the footer shows the compact three-segment line once context usage is available.
+
+**OTel project attribution for Claude Code (fleet-config#310).** `install.ps1` also wires `shell/claude-otel-project.ps1` into both the pwsh and Windows PowerShell 5.1 `$PROFILE`s: a `claude` function that auto-tags `OTEL_RESOURCE_ATTRIBUTES` with the current git repo's name before calling the real `claude.exe`. This is host-level infrastructure with exactly one current consumer — `local-llm-hub`'s OTel receiver, which surfaces a per-project column in its admin panel ([local-llm-hub#234](https://github.com/ferraroroberto/local-llm-hub/issues/234)) — **not** a generic fleet requirement; see [`docs/otel-project-attribution.md`](docs/otel-project-attribution.md) for the full why/how, verification steps, and troubleshooting. Requires a fresh shell after install (`$PROFILE` only loads at shell startup).
 
 **Codex Browser plugin.** Codex's bundled Browser plugin loads its *instructions* even when its *runtime backend* isn't live — `agent.browsers.list()` can return `[]` despite the plugin being enabled in `config.toml`. That backend is Codex-client/runtime state, not a dependency this repo installs. [`docs/codex-browser.md`](docs/codex-browser.md) is the durable note: how to diagnose `iab` availability from a session, why installed plugin files don't mean a registered backend, and the restart-and-check recovery path.
 
