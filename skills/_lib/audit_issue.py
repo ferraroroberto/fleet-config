@@ -235,11 +235,76 @@ def audit_only_churn(commit_shas: list[str], prs: list[dict], managed_numbers: s
     return True
 
 
+PR_TYPE_WEIGHTS = {
+    "feat": 1.0,
+    "refactor": 1.0,
+    "perf": 0.5,
+    "fix": 0.3,
+    "chore": 0.2,
+    "docs": 0.0,
+    "test": 0.0,
+}
+
+DEFAULT_SIGNIFICANCE_THRESHOLD = 1000.0
+
+
+def pr_weight(branch: str) -> float:
+    """Significance multiplier for a PR from its conventional branch-prefix type.
+
+    This fleet enforces `<type>/<issue-N>-<slug>` branch naming globally, so
+    the type is already present on every PR with no new convention needed.
+    Fails open (weight 1.0) for any prefix outside the known low-risk types —
+    an unrecognized branch never silently under-counts.
+    """
+    prefix = branch.split("/", 1)[0] if branch else ""
+    return PR_TYPE_WEIGHTS.get(prefix, 1.0)
+
+
+def unexplained_weighted_loc(commit_shas: list[str], prs: list[dict], managed_numbers: set[int]) -> float:
+    """Weighted LOC of the commits NOT explained as this repo's own self-fix churn.
+
+    Mirrors `audit_only_churn`'s per-commit self-fix check, but instead of
+    failing closed to a bool, sums a significance score for every commit
+    that ISN'T explained — weighted by its PR's conventional branch-type
+    (`PR_TYPE_WEIGHTS`), so a docs-only or bug-fix-only commit contributes
+    little or nothing while a feature or refactor contributes fully.
+    Self-fix-explained commits (merge-commit of a PR whose
+    closingIssuesReferences are entirely within `managed_numbers`)
+    contribute nothing, regardless of type.
+
+    A commit with no matching PR at all (a direct push — never expected in
+    this fleet's PR-only workflow) has no reliable LOC data, so it fails
+    open to `float("inf")`: guaranteed to cross any finite threshold rather
+    than silently under-counting, exactly like `audit_only_churn`'s own
+    fail-closed behavior for the same case.
+    """
+    by_sha = {}
+    for pr in prs:
+        merge_commit = pr.get("mergeCommit") or {}
+        oid = merge_commit.get("oid")
+        if oid:
+            by_sha[oid] = pr
+
+    total = 0.0
+    for sha in commit_shas:
+        pr = by_sha.get(sha)
+        if pr is None:
+            return float("inf")
+        refs = {r["number"] for r in (pr.get("closingIssuesReferences") or [])}
+        if refs and refs.issubset(managed_numbers):
+            continue
+        loc = pr.get("additions", 0) + pr.get("deletions", 0)
+        total += loc * pr_weight(pr.get("headRefName", ""))
+    return total
+
+
 def ledger_decision(
     commit_count: int | None,
     stored_rubric_sha: str | None,
     current_rubric_sha: str,
     self_fix: bool = False,
+    significance: float | None = None,
+    threshold: float = DEFAULT_SIGNIFICANCE_THRESHOLD,
 ) -> str:
     """The one place the skip/audit call is made. Never LLM prose again.
 
@@ -250,15 +315,26 @@ def ledger_decision(
     With commits, the rubric is NOT checked independently: self_fix already
     means every commit — including any that edited the rubric file itself,
     e.g. fixing a claude-md-drift finding — is explained as a fix for this
-    repo's own audit findings, so it's still SKIP_SELF_FIX. Only when
-    self_fix is False (some commit isn't explained as a self-fix) does it
-    fall to AUDIT.
+    repo's own audit findings, so it's still SKIP_SELF_FIX.
+
+    When self_fix is False, `significance` (the weighted-LOC total of the
+    unexplained commits — see `unexplained_weighted_loc`) decides between
+    SKIP_BELOW_THRESHOLD (organic change accumulates quietly, ledger sha
+    stays put so next time's check covers the same growing range) and AUDIT
+    (crossed threshold — a full whole-repo audit fires and covers
+    everything back to the ledger sha, so nothing is ever lost, only
+    batched). `significance=None` (the caller didn't compute it) preserves
+    the pre-threshold behavior: any unexplained commit means AUDIT.
     """
     if commit_count is None or stored_rubric_sha is None:
         return "AUDIT"
     if commit_count == 0:
         return "SKIP" if stored_rubric_sha == current_rubric_sha else "AUDIT"
-    return "SKIP_SELF_FIX" if self_fix else "AUDIT"
+    if self_fix:
+        return "SKIP_SELF_FIX"
+    if significance is not None and significance < threshold:
+        return "SKIP_BELOW_THRESHOLD"
+    return "AUDIT"
 
 
 # ---- gh plumbing ----------------------------------------------------------
@@ -361,7 +437,7 @@ def cmd_upsert(repo: str, kind: str, title: str, body: str, label: str | None) -
 def _fetch_merged_prs(repo: str) -> list[dict]:
     out = _gh([
         "pr", "list", "--repo", repo, "--state", "merged", "--limit", "100",
-        "--json", "number,mergeCommit,closingIssuesReferences",
+        "--json", "number,mergeCommit,closingIssuesReferences,headRefName,additions,deletions",
     ])
     return json.loads(out) if out else []
 
@@ -371,8 +447,8 @@ def evaluate_repo(repo: str, repo_path: str, dry_run: bool = False) -> dict:
 
     Reused by both the standalone `gate` CLI (one repo) and
     `fleet_audit_scan.py` (the whole fleet, one repo at a time). This is the
-    ONE place that decides SKIP / AUDIT / SKIP_SELF_FIX — no LLM prose
-    duplicates it anywhere else.
+    ONE place that decides SKIP / AUDIT / SKIP_SELF_FIX / SKIP_BELOW_THRESHOLD
+    — no LLM prose duplicates it anywhere else.
     """
     current_rubric = rubric_sha_of_path(repo_path)
 
@@ -387,6 +463,7 @@ def evaluate_repo(repo: str, repo_path: str, dry_run: bool = False) -> dict:
 
     commit_count = int(_git(["-C", repo_path, "rev-list", f"{ledger['sha']}..HEAD", "--count"]))
     closed_issues: list[int] = []
+    significance: float | None = None
 
     if commit_count == 0:
         # Nothing landed at all. A rubric mismatch here would mean the
@@ -434,7 +511,11 @@ def evaluate_repo(repo: str, repo_path: str, dry_run: bool = False) -> dict:
         closed_issues = sorted(referenced & managed)
 
         self_fix = audit_only_churn(commit_shas, prs, managed)
-        decision = ledger_decision(commit_count, ledger["rubric"], current_rubric, self_fix=self_fix)
+        if not self_fix:
+            significance = unexplained_weighted_loc(commit_shas, prs, managed)
+        decision = ledger_decision(
+            commit_count, ledger["rubric"], current_rubric, self_fix=self_fix, significance=significance
+        )
 
     result = {
         "decision": decision,
@@ -443,6 +524,8 @@ def evaluate_repo(repo: str, repo_path: str, dry_run: bool = False) -> dict:
         "commit_count": commit_count,
         "closed_issues": closed_issues,
         "dry_run": dry_run,
+        "significance": significance,
+        "threshold": DEFAULT_SIGNIFICANCE_THRESHOLD if significance is not None else None,
     }
 
     if decision == "SKIP_SELF_FIX" and not dry_run:

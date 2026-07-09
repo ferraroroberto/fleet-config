@@ -10,7 +10,11 @@ the LLM no reason to be more careful than prose. This script does the whole
 fleet in **one process**: enumerate every `ferraroroberto` repo under a root,
 skip dirty/off-branch ones, sync the rest, run `evaluate_repo` per repo, and
 print one JSON object bucketing every repo into `to_audit` / `unchanged` /
-`self_fix` / `skipped` / `errors`. The orchestrator just reads the output —
+`self_fix` / `below_threshold` / `skipped` / `errors`. `below_threshold` is a
+repo whose organic (non-self-fix) change since its last audit hasn't yet
+crossed `audit_issue.py`'s weighted-LOC significance threshold — it carries
+the same `significance`/`threshold` numbers `evaluate_repo` returns, so the
+digest can show how close it is. The orchestrator just reads the output —
 no per-repo `git`/`gh` tool calls needed for the gating step at all.
 
 CLI
@@ -64,7 +68,9 @@ def _current_branch(repo_path: str) -> str | None:
 
 
 def scan(root: str, only: str | None = None, dry_run: bool = False) -> dict:
-    results: dict = {"to_audit": [], "unchanged": [], "self_fix": [], "skipped": [], "errors": []}
+    results: dict = {
+        "to_audit": [], "unchanged": [], "self_fix": [], "below_threshold": [], "skipped": [], "errors": [],
+    }
 
     for d in sorted(Path(root).iterdir()):
         if not d.is_dir():
@@ -125,6 +131,8 @@ def scan(root: str, only: str | None = None, dry_run: bool = False) -> dict:
             results["unchanged"].append(name)
         elif decision == "SKIP_SELF_FIX":
             results["self_fix"].append({"repo": name, "path": repo_path, **outcome})
+        elif decision == "SKIP_BELOW_THRESHOLD":
+            results["below_threshold"].append({"repo": name, "path": repo_path, **outcome})
         else:
             results["to_audit"].append({"repo": name, "path": repo_path})
 
