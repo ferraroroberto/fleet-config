@@ -183,24 +183,38 @@ The five sections it returns, and what each means:
   safe-area, **and the standalone fixed-inset `.app` scroller** — the
   home-automation#303 architecture that removes the iOS pill-drift cause;
   a nav missing it caps at WARN even when every grep signal passes and even
-  when `_vendored/nav/` is present, because the shell lives app-side),
-  icon px sizes vs the spec's `icons.size` steps
+  when `_vendored/nav/` is present, because the shell lives app-side; folded
+  into the same check is **nav-nesting** — `<nav class="tabs">` found as a
+  DOM descendant of `<main class="app">` instead of a `<body>` sibling always
+  FAILs on its own, home-automation#232/app-launcher#369), icon px sizes vs
+  the spec's `icons.size` steps
   (spec-driven — the allowed set is parsed from the spec, not hardcoded),
   the **viewport zoom lock** (`user-scalable=no` + `maximum-scale=1` — plus
   `viewport-fit=cover` — on every `index.html`; PWAs are never pinch-zoomable,
   fleet-config#296), the **button-tier vocabulary** (hardcoded button
   fills and a filled "ghost" FAIL; a solid accent outside the primary class
   and a tint without accent text WARN — the tiers live in design.md
-  `components`, #296), and the **user-selectable theme** (pre-paint
+  `components`, #296), the **user-selectable theme** (pre-paint
   `data-theme` boot script in `<head>` + a persisted `.theme` localStorage
   toggle — either missing FAILs; a missing or spec-drifted scheme-gated
   `theme-color` meta pair WARNs, compared against the two specs' `canvas` —
-  spec-driven, #290).
+  spec-driven, #290), the **icon-set** (emoji glyphs in rendered markup text
+  or JS UI-copy strings — FAIL when no vendored Lucide sprite is adopted,
+  WARN when emoji sit alongside an adopted sprite — one icon set, never
+  hand-drawn/mixed, #284), **chevron-placement** (a disclosure `<summary>`
+  whose chevron glyph/icon sits before its title text — the fleet contract
+  pins it right, #284/app-launcher#362), and **row-height-scale** (fixed
+  `height`/`min-height` literals on row/action-rail selectors outside the
+  spec's `rows` 3-step scale — 44px/52px/60px by default, spec-driven —
+  WARN, #284/app-launcher#365).
 - **`vendored`** — byte-hash comparison of the app's
   `_vendored/<component>/` copies against project-scaffolding's canonical
   files: `IDENTICAL` / `FORKED` (the vendor-verbatim rule broken — always a
   finding) / `NOT_ADOPTED` (informational; adoption is rollout work, not
-  drift).
+  drift). `icons-sprite.html` is compared **per `<symbol id>`**, not
+  whole-file — the icons component sanctions per-app trimming, so a subset
+  whose kept symbols are byte-identical reports `IDENTICAL (trimmed)`, never
+  a false `FORKED` (#284).
 - **`siblings`** — top-level JS definitions with the same name in ≥2 files
   (the 7×-duplicated `schedule(ms)` of home-automation#369). Detection is
   mechanical; *which variant is canonical* is step 4c.

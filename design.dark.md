@@ -61,6 +61,10 @@ spacing:
   lg: 24px
   xl: 32px
   gutter: 12px    # uniform gap between cards/tiles and from the page edges
+rows:
+  sm: 44px        # compact row (inline control lockstep) — structural, identical to Light
+  md: 52px        # standard list-row / disclosure closed height
+  lg: 60px        # spacious row — meta line + action rail
 components:
   card:           { backgroundColor: "{colors.card}", textColor: "{colors.fg}", rounded: "{rounded.lg}", padding: "{spacing.md}" }
   button-primary: { backgroundColor: "{colors.accent}", textColor: "{colors.accent-fg}", borderColor: "{colors.accent-border-strong}", rounded: "{rounded.md}", typography: "{typography.label}", height: 48px }
