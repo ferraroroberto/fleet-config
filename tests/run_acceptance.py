@@ -58,11 +58,21 @@ PYTHON = _python_for_hooks()
 # secret_scan_guard's regex `xoxb-\d{6,}-\d{6,}-[A-Za-z0-9]{8,}`.
 FAKE_XOXB = "-".join(("xo" + "xb", "2444556677", "8899001122", "AbCdEfGhIjKlMnOpQrStUvWx"))
 
+# A path that never exists on disk. slack_notify._token_from_settings() reads
+# ~/.claude/settings.json as a fallback when SLACK_BOT_TOKEN isn't in the env —
+# straight off disk via Path.home(), which on Windows resolves through the OS
+# profile API and finds the real file even when a test subprocess's env dict
+# omits SLACK_BOT_TOKEN (and even USERPROFILE). Without this override, every
+# acceptance run posted real Slack pings to the real attention channel
+# (fleet-config#<pending>).
+NO_SETTINGS_JSON = str(Path(tempfile.gettempdir()) / "fleet-config-test-no-settings.json")
+
 
 def run(hook: str, payload: Dict[str, Any], extra_env: Dict[str, str] | None = None) -> Tuple[int, str, str]:
     # Strip SLACK_BOT_TOKEN so a hook that posts to Slack (notify_on_idle) takes
     # the graceful-fail path instead of firing a real ping on every test run.
     env = {k: v for k, v in os.environ.items() if k != "SLACK_BOT_TOKEN"}
+    env["CLAUDE_SETTINGS_JSON_PATH"] = NO_SETTINGS_JSON
     if extra_env:
         env.update(extra_env)
     res = subprocess.run(
@@ -274,9 +284,10 @@ def main() -> int:
 
     # ---- notify_on_idle ----
     # fleet-config itself has no per-project slack_notify_channel in projects.toml,
-    # but the [global] fallback IS now set. The hook will try to post but the
-    # SLACK_BOT_TOKEN is not in the subprocess env, so slack_notify returns False
-    # gracefully and the hook still exits 0.
+    # but the [global] fallback IS now set. The hook will try to post but neither
+    # SLACK_BOT_TOKEN nor a readable settings.json is in reach (both routed to
+    # NO_SETTINGS_JSON above), so slack_notify returns False gracefully and the
+    # hook still exits 0 without ever reaching the network.
     cases.append((
         "notify_on_idle: global channel set, missing token -> allow (graceful fail)",
         "notify_on_idle",
@@ -866,6 +877,7 @@ def _codex_hooks_config_check() -> int:
     )
 
     env = {k: v for k, v in os.environ.items() if k != "SLACK_BOT_TOKEN"}
+    env["CLAUDE_SETTINGS_JSON_PATH"] = NO_SETTINGS_JSON
     smoke_failures: list[str] = []
     for command in commands:
         try:
@@ -1158,7 +1170,11 @@ def _session_state_unit_checks() -> int:
 
     tmp = Path(tempfile.mkdtemp(prefix="session_state_"))
     sessions_dir = Path(tempfile.mkdtemp(prefix="session_state_sessions_"))
-    env = {"CLAUDE_HOOKS_STATE_DIR": str(tmp), "CLAUDE_SESSIONS_DIR": str(sessions_dir)}
+    env = {
+        "CLAUDE_HOOKS_STATE_DIR": str(tmp),
+        "CLAUDE_SESSIONS_DIR": str(sessions_dir),
+        "CLAUDE_SETTINGS_JSON_PATH": NO_SETTINGS_JSON,
+    }
     state_path = tmp / session_state.STATE_FILENAME
 
     def rows() -> Dict[str, Any]:
