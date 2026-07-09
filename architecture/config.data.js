@@ -184,6 +184,11 @@ window.CONFIG = {
       "sched": false
     },
     {
+      "nm": "cleanup-fleet-all",
+      "ds": "Unattended, all-bucket sibling of /cleanup-fleet — builds, independently validates, and ships every open cleanup issue across all…",
+      "sched": true
+    },
+    {
       "nm": "config-map",
       "ds": "Regenerate the fleet config &amp; convention map (introspect install.ps1, the skill/hook dirs, a per-repo git sweep; render to archit…",
       "sched": true
@@ -215,6 +220,12 @@ window.CONFIG = {
     }
   ],
   "skills_repo": [
+    {
+      "repo": "accounting-quarterly",
+      "items": [
+        "close-quarter"
+      ]
+    },
     {
       "repo": "content-management",
       "items": [
