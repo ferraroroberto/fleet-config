@@ -538,6 +538,74 @@ def standalone_shell_present(css: str) -> bool:
     return False
 
 
+_VOID_TAGS = {"area", "base", "br", "col", "embed", "hr", "img", "input",
+              "link", "meta", "param", "source", "track", "wbr"}
+_TAG_STREAM_RE = re.compile(r"<(/?)([a-zA-Z][a-zA-Z0-9-]*)([^>]*)>")
+_TAG_CLASS_RE = re.compile(r"class=[\"']([^\"']*)[\"']", re.I)
+
+
+def nav_nested_in_app(html_files: List[Path]) -> bool:
+    """True when a `<nav class="tabs">` is a DOM descendant of `<main
+    class="app">` — the _vendored/nav/README.md load-bearing rule is that
+    they must be `<body>` siblings; an installed iOS PWA can capture a fixed
+    nav inside a scroll container and anchor it there instead of the
+    viewport (home-automation#232, app-launcher#369)."""
+    for p in html_files:
+        text = strip_comments(read_text(p), "html")
+        stack: List[Tuple[str, set]] = []
+        for m in _TAG_STREAM_RE.finditer(text):
+            closing, tag, attrs = m.group(1), m.group(2).lower(), m.group(3)
+            if closing:
+                for i in range(len(stack) - 1, -1, -1):
+                    if stack[i][0] == tag:
+                        del stack[i:]
+                        break
+                continue
+            cls_m = _TAG_CLASS_RE.search(attrs)
+            classes = set(cls_m.group(1).split()) if cls_m else set()
+            if tag == "nav" and "tabs" in classes:
+                if any(t == "main" and "app" in c for t, c in stack):
+                    return True
+            self_closing = attrs.rstrip().endswith("/") or tag in _VOID_TAGS
+            if not self_closing:
+                stack.append((tag, classes))
+    return False
+
+
+_EMOJI_RE = re.compile(
+    "["
+    "\U0001F000-\U0001FAFF"   # mahjong/cards, symbols & pictographs, transport, supplemental, emoticons
+    "\U0001F1E6-\U0001F1FF"   # regional indicators (flags)
+    "⌀-⏿"           # misc technical (e.g. the branch glyph U+2387)
+    "☀-➿"           # misc symbols + dingbats (e.g. U+2605 star, U+2600 sun)
+    "⬀-⯿"           # misc symbols and arrows
+    "]"
+)
+_TAG_RE = re.compile(r"<[^>]*>")
+
+
+def find_emoji_sites(root: Path, html_files: List[Path], js_files: List[Path]
+                      ) -> List[str]:
+    """`file:line` for emoji glyphs in rendered text — HTML text nodes (tags
+    stripped so attribute values don't count) and JS source (string literals
+    used as UI copy, e.g. an empty-state message baked into a .js file, are
+    indistinguishable from other JS text at grep level, so the whole file is
+    scanned — app-launcher#368)."""
+    sites: List[str] = []
+    for p in html_files:
+        text = strip_comments(read_text(p), "html")
+        text_nodes = _TAG_RE.sub(" ", text)
+        for m in _EMOJI_RE.finditer(text_nodes):
+            line = text_nodes.count("\n", 0, m.start()) + 1
+            sites.append(f"{rel(root, p)}:{line}")
+    for p in js_files:
+        text = strip_comments(read_text(p), "js")
+        for m in _EMOJI_RE.finditer(text):
+            line = text.count("\n", 0, m.start()) + 1
+            sites.append(f"{rel(root, p)}:{line}")
+    return sites
+
+
 def contracts(
     root: Path,
     css_files: List[Path],
@@ -560,6 +628,12 @@ def contracts(
         fh = blob.rfind("/*FILE ", 0, m.start())
         fname = blob[fh + 7: blob.find("*/", fh)] if fh >= 0 else "?"
         line = blob.count("\n", blob.find("*/", fh) + 2 if fh >= 0 else 0, m.start()) + 1
+        return f"{fname}:{line}"
+
+    def loc_at(blob: str, pos: int) -> str:
+        fh = blob.rfind("/*FILE ", 0, pos)
+        fname = blob[fh + 7: blob.find("*/", fh)] if fh >= 0 else "?"
+        line = blob.count("\n", blob.find("*/", fh) + 2 if fh >= 0 else 0, pos) + 1
         return f"{fname}:{line}"
 
     checks: List[dict] = []
@@ -665,9 +739,20 @@ def contracts(
     vendored_root = find_vendored_root(root)
     vendored_nav = vendored_root is not None and (vendored_root / "nav" / "nav-tabs.css").exists()
     provenance = "vendored" if vendored_nav else "hand-carried"
-    if not missing and shell_ok:
+    # nav-nesting: nav.tabs must be a <body> sibling of main.app, never a
+    # descendant (_vendored/nav/README.md; app-launcher#369) — a structural
+    # violation the CSS signals above can't see, so it FAILs on its own
+    # regardless of everything else passing.
+    index_files_nc = [p for p in html_files if p.name == "index.html"]
+    if nav_nested_in_app(index_files_nc):
+        add("nav-contract", "FAIL",
+            "nav-nesting: nested-inside-app — <nav class=\"tabs\"> must be a "
+            "direct <body> sibling of <main class=\"app\">, never nested "
+            "inside it (_vendored/nav/README.md; app-launcher#369)")
+    elif not missing and shell_ok:
         add("nav-contract", "PASS",
-            f"nav contract signals + standalone fixed-inset shell all present ({provenance})")
+            f"nav-nesting: sibling (PASS); nav contract signals + standalone "
+            f"fixed-inset shell all present ({provenance})")
     elif not missing and not shell_ok:
         add("nav-contract", "WARN",
             "app shell lacks the standalone fixed-inset scroller (design.md nav "
@@ -862,10 +947,136 @@ def contracts(
                 f"metas on {len(index_files)} index.html",
                 evidence(markup_all, toggle_re, re.I))
 
+    # 13. icon-set — one set, vendored Lucide sprite, never hand-drawn/mixed
+    #     (design.md Icons). Emoji glyphs anywhere in rendered UI-chrome text
+    #     (markup text nodes or JS string literals) are the anti-pattern; the
+    #     lucide-sprite adoption signal is the vendored `icons/` component
+    #     (fleet-config#284, app-launcher#355/#368).
+    lucide_adopted = (vendored_root is not None
+                       and (vendored_root / "icons").is_dir())
+    emoji_sites = find_emoji_sites(root, html_files, js_files)
+    if emoji_sites and not lucide_adopted:
+        add("icon-set", "FAIL",
+            f"icon-set: emoji-glyphs ({len(emoji_sites)} site(s)) / "
+            "lucide-sprite: NOT_ADOPTED (design.md Icons — one set, never "
+            "hand-drawn/mixed): " + ", ".join(emoji_sites[:8]))
+    elif emoji_sites and lucide_adopted:
+        add("icon-set", "WARN",
+            f"icon-set: emoji-glyphs ({len(emoji_sites)} site(s)) alongside "
+            "an adopted lucide-sprite — mixed icon set: " + ", ".join(emoji_sites[:8]))
+    elif lucide_adopted:
+        add("icon-set", "PASS",
+            "icon-set: lucide-sprite adopted, no emoji glyphs in rendered text")
+    else:
+        add("icon-set", "NA", "no emoji glyphs and no vendored icons/ component found")
+
+    # 14. chevron placement — disclosure summaries pin the chevron right,
+    #     never a leading arrow (design.md disclosure.chevron: right;
+    #     app-launcher#362 shipped a leading `›` the lint never caught).
+    leading_chevrons: List[str] = []
+    trailing_ok = 0
+    for sm in re.finditer(r"<summary\b[^>]*>(.*?)</summary>", markup_all, re.S | re.I):
+        content = sm.group(1)
+        chevron_m = (re.search(r'class=["\'][^"\']*chevron[^"\']*["\']', content, re.I)
+                     or re.search(r"[›⌄▾▸❱➤]", content))
+        if not chevron_m:
+            continue
+        title_m = None
+        for tm in re.finditer(r">([^<>]*[A-Za-z0-9][^<>]*)<", content):
+            text_run = tm.group(1)
+            if (re.fullmatch(r"[\s›⌄▾▸❱➤]*", text_run)):
+                continue  # the chevron glyph's own text run
+            title_m = tm
+            break
+        if title_m is None:
+            continue
+        if chevron_m.start() < title_m.start():
+            leading_chevrons.append(loc_at(markup_all, sm.start(1) + chevron_m.start()))
+        else:
+            trailing_ok += 1
+    if leading_chevrons:
+        add("chevron-placement", "FAIL",
+            f"{len(leading_chevrons)} disclosure(s) with a leading chevron "
+            "(design.md disclosure.chevron: right — never a leading arrow): "
+            + ", ".join(leading_chevrons[:6]))
+    elif trailing_ok:
+        add("chevron-placement", "PASS",
+            f"chevron right-pinned on {trailing_ok} disclosure(s)")
+    else:
+        add("chevron-placement", "NA", "no chevron-bearing disclosures found")
+
+    # 15. row-height scale — repeating list/action-rail rows draw their
+    #     height from the 3-step scale (rows.sm 44px / rows.md 52px /
+    #     rows.lg 60px), not an ad hoc literal (design.md Components
+    #     list-row; app-launcher#365/PR#380).
+    allowed_row_px = set()
+    for key, val in spec_light.items():
+        if key.startswith("rows.") and val.endswith("px"):
+            allowed_row_px.add(val)
+    if not allowed_row_px:
+        allowed_row_px = {"44px", "52px", "60px"}
+    row_strays: Dict[str, int] = {}
+    n_row_rules = 0
+    for bm in _BLOCK_RE.finditer(css_all):
+        selector = bm.group(1)
+        sel_low = selector.lower()
+        if "row" not in sel_low and "action-rail" not in sel_low:
+            continue
+        n_row_rules += 1
+        for dm in re.finditer(r"\b(?:min-height|height):\s*([^;]+);", bm.group(2)):
+            val = dm.group(1).strip()
+            if val.startswith("var(") or "calc(" in val:
+                continue
+            if not re.fullmatch(r"\d+px", val):
+                continue
+            if val not in allowed_row_px:
+                row_strays[val] = row_strays.get(val, 0) + 1
+    if row_strays:
+        top = ", ".join(f"{k}x{v}" for k, v in sorted(row_strays.items(), key=lambda kv: -kv[1])[:8])
+        add("row-height-scale", "WARN",
+            f"row/action-rail heights outside the {', '.join(sorted(allowed_row_px))} "
+            f"scale: {top}")
+    elif n_row_rules:
+        add("row-height-scale", "PASS",
+            f"all fixed row/action-rail heights on the {', '.join(sorted(allowed_row_px))} scale")
+    else:
+        add("row-height-scale", "NA", "no row/action-rail height rules found")
+
     return checks
 
 
 # ---------------------------------------------------------------- vendored
+
+_SPRITE_SYMBOL_RE = re.compile(
+    r'<symbol\b[^>]*\bid=["\']([^"\']+)["\'][^>]*>.*?</symbol>', re.S)
+
+
+def _sprite_symbols(text: str) -> Dict[str, str]:
+    return {m.group(1): m.group(0) for m in _SPRITE_SYMBOL_RE.finditer(text)}
+
+
+def compare_icon_sprite(app_text: str, ref_text: str) -> Optional[str]:
+    """Per-symbol compare for `icons-sprite.html`, not whole-file digest.
+
+    The icons component's own README sanctions per-app symbol-set trimming
+    (an app only inlines the Lucide glyphs it actually uses) — a whole-file
+    byte-compare flags any trimmed sprite as FORKED even when every symbol it
+    kept is byte-identical to the scaffold's (fleet-config#284 finding 4).
+    Returns None (caller falls back to a whole-file digest) when either side
+    has no `<symbol id="...">` elements to compare.
+    """
+    app_syms = _sprite_symbols(app_text)
+    ref_syms = _sprite_symbols(ref_text)
+    if not app_syms or not ref_syms:
+        return None
+    mismatched = [sid for sid, body in app_syms.items()
+                  if ref_syms.get(sid) != body]
+    if mismatched:
+        return "FORKED"
+    if len(app_syms) < len(ref_syms):
+        return "IDENTICAL (trimmed)"
+    return "IDENTICAL"
+
 
 def vendored(root: Path, scaffold: Path) -> Dict[str, object]:
     """Byte-compare the app's _vendored component copies against the scaffold."""
@@ -894,6 +1105,12 @@ def vendored(root: Path, scaffold: Path) -> Dict[str, object]:
             if not app_file.is_file():
                 files[relf] = "MISSING"
                 forked = True
+                continue
+            sprite_status = (compare_icon_sprite(read_text(app_file), read_text(ref_file))
+                              if relf == "icons-sprite.html" else None)
+            if sprite_status is not None:
+                files[relf] = sprite_status
+                forked = forked or sprite_status == "FORKED"
             elif digest(app_file) == digest(ref_file):
                 files[relf] = "IDENTICAL"
             else:

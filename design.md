@@ -62,6 +62,10 @@ spacing:
   lg: 24px
   xl: 32px
   gutter: 12px    # uniform gap between cards/tiles and from the page edges
+rows:
+  sm: 44px        # compact row (inline control lockstep)
+  md: 52px        # standard list-row / disclosure closed height
+  lg: 60px        # spacious row — meta line + action rail
 components:
   card:           { backgroundColor: "{colors.card}", textColor: "{colors.fg}", rounded: "{rounded.lg}", padding: "{spacing.md}" }
   button-primary: { backgroundColor: "{colors.accent}", textColor: "{colors.accent-fg}", borderColor: "{colors.accent-border-strong}", rounded: "{rounded.md}", typography: "{typography.label}", height: 48px }
@@ -296,6 +300,11 @@ hand-picked per app.
   Row internals (meta line, badges, action buttons) are unconstrained by this
   rule. Reference impl: photo-ocr `styles.css` `.history-item` — first built as
   per-entry cards, rejected on-device as too heavy, rebuilt flat (photo-ocr#73).
+  **Row heights** (list-row, action-rail, and other repeating-row selectors)
+  draw from the `rows` 3-step scale (`rows.sm` 44px / `rows.md` 52px /
+  `rows.lg` 60px — `disclosure.closedHeight` is `rows.md`) via `var(--row-*)`
+  or a `calc()` derivation, never an ad hoc literal — consolidated from five
+  prior ad hoc heights (30/40/44/52/60px) in app-launcher#365/PR#380.
 - **empty-state block** (`empty-state`) — for any list/grid that can legitimately
   render zero items: a centered column of a `icons.size.feature` (24px) muted
   glyph + a one-line reason (`body`, `fg-muted`) + an *optional* single action

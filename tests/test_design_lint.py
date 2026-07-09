@@ -395,6 +395,120 @@ check(tt_drift["theme-toggle"]["status"] == "WARN"
 check(good["theme-toggle"]["status"] == "NA", "no index.html -> theme-toggle NA")
 
 
+# ---- icon-set: emoji vs Lucide (design.md Icons, fleet-config#284) ----
+
+_ic = Path(tempfile.mkdtemp(prefix="dl-icon-"))
+try:
+    (_ic / "s.css").write_text("", encoding="utf-8")
+    (_ic / "i.html").write_text(
+        '<button class="tab-emoji">\U0001F3E0</button><span>Home</span>', encoding="utf-8")
+    out = {c["id"]: c for c in dl.contracts(_ic, [_ic / "s.css"], [_ic / "i.html"], [], {})}
+    check(out["icon-set"]["status"] == "FAIL",
+          "emoji glyph + no vendored lucide sprite -> FAIL")
+    check("emoji-glyphs (1 site" in out["icon-set"]["detail"],
+          "icon-set FAIL reports the emoji site count")
+
+    vend = _ic / "app/webapp/static/_vendored/icons"
+    vend.mkdir(parents=True)
+    (vend / "icons-sprite.html").write_text('<symbol id="i-home"></symbol>', encoding="utf-8")
+    out2 = {c["id"]: c for c in dl.contracts(_ic, [_ic / "s.css"], [_ic / "i.html"], [], {})}
+    check(out2["icon-set"]["status"] == "WARN",
+          "emoji glyph alongside an adopted lucide sprite -> WARN (mixed set)")
+
+    (_ic / "i.html").write_text('<span>Home</span>', encoding="utf-8")
+    out3 = {c["id"]: c for c in dl.contracts(_ic, [_ic / "s.css"], [_ic / "i.html"], [], {})}
+    check(out3["icon-set"]["status"] == "PASS",
+          "lucide sprite adopted, no emoji -> PASS")
+finally:
+    shutil.rmtree(_ic, ignore_errors=True)
+
+# emoji baked into a JS string literal (app-launcher#368), not markup — the
+# scan target is rendered text content generally, not just tag positions.
+_icjs = Path(tempfile.mkdtemp(prefix="dl-iconjs-"))
+try:
+    (_icjs / "s.css").write_text("", encoding="utf-8")
+    (_icjs / "app.js").write_text(
+        "el.textContent = 'Nothing here \U0001F389';", encoding="utf-8")
+    out = {c["id"]: c for c in dl.contracts(_icjs, [_icjs / "s.css"], [], [_icjs / "app.js"], {})}
+    check(out["icon-set"]["status"] == "FAIL",
+          "emoji baked into a JS string literal is caught (app-launcher#368)")
+finally:
+    shutil.rmtree(_icjs, ignore_errors=True)
+
+check(run_contracts(GOOD_CSS)["icon-set"]["status"] == "NA",
+      "no emoji and no vendored icons/ component -> NA")
+
+
+# ---- chevron placement (design.md disclosure.chevron: right, fleet-config#284) ----
+
+_lead = run_contracts(
+    "", '<details><summary><span class="chevron">›</span><span>Title</span></summary></details>')
+check(_lead["chevron-placement"]["status"] == "FAIL",
+      "leading chevron before the title text -> FAIL (app-launcher#362)")
+check("1 disclosure" in _lead["chevron-placement"]["detail"],
+      "chevron-placement FAIL reports the count")
+
+_trail = run_contracts(
+    "", '<details><summary><span>Title</span><span class="chevron">›</span></summary></details>')
+check(_trail["chevron-placement"]["status"] == "PASS",
+      "trailing chevron after the title text -> PASS")
+
+_none = run_contracts("", '<details><summary>Plain title, no chevron</summary></details>')
+check(_none["chevron-placement"]["status"] == "NA",
+      "no chevron-bearing disclosure -> NA")
+
+
+# ---- nav-nesting: nav.tabs must be a <body> sibling of main.app, never
+#      nested inside it (_vendored/nav/README.md; app-launcher#369, #284) ----
+
+_nn = Path(tempfile.mkdtemp(prefix="dl-navnest-"))
+try:
+    (_nn / "s.css").write_text(GOOD_CSS, encoding="utf-8")
+    (_nn / "index.html").write_text(
+        '<body><main class="app">stuff<nav class="tabs">tabs</nav></main></body>',
+        encoding="utf-8")
+    out = {c["id"]: c for c in dl.contracts(_nn, [_nn / "s.css"], [_nn / "index.html"], [], {})}
+    check(out["nav-contract"]["status"] == "FAIL",
+          "nav.tabs nested inside main.app -> FAIL regardless of other signals (#369)")
+    check("nested-inside-app" in out["nav-contract"]["detail"],
+          "nav-nesting FAIL names the structural violation")
+
+    (_nn / "index.html").write_text(
+        '<body><nav class="tabs">tabs</nav><main class="app">stuff</main></body>',
+        encoding="utf-8")
+    out2 = {c["id"]: c for c in dl.contracts(_nn, [_nn / "s.css"], [_nn / "index.html"], [], {})}
+    check(out2["nav-contract"]["status"] == "PASS",
+          "nav.tabs as a body sibling of main.app -> PASS")
+    check("nav-nesting: sibling" in out2["nav-contract"]["detail"],
+          "nav-nesting PASS notes the sibling relationship")
+finally:
+    shutil.rmtree(_nn, ignore_errors=True)
+
+
+# ---- row-height-scale (design.md rows scale, fleet-config#284/app-launcher#365) ----
+
+rh_bad = run_contracts(".list-row { height: 47px; }")
+check(rh_bad["row-height-scale"]["status"] == "WARN",
+      "row height outside the 44/52/60 scale -> WARN")
+check("47px" in rh_bad["row-height-scale"]["detail"], "WARN names the stray literal")
+
+rh_ok = run_contracts(".list-row { height: 52px; }")
+check(rh_ok["row-height-scale"]["status"] == "PASS", "row height on the scale -> PASS")
+
+rh_var = run_contracts(".list-row { height: var(--row-md); }")
+check(rh_var["row-height-scale"]["status"] == "PASS",
+      "var(--row-*) reference never flagged as a stray")
+
+rh_na = run_contracts(".card { padding: 12px; }")
+check(rh_na["row-height-scale"]["status"] == "NA",
+      "no row/action-rail selectors -> NA")
+
+rh_spec = run_contracts(".list-row { height: 46px; }",
+                        spec_light={"icons.size.inline": "16px", "rows.sm": "46px"})
+check(rh_spec["row-height-scale"]["status"] == "PASS",
+      "spec-driven rows.* override the hardcoded default scale")
+
+
 # ---- vendored byte-compare ----
 
 scaffold = Path(tempfile.mkdtemp(prefix="dl-scaf-"))
@@ -422,6 +536,50 @@ try:
 finally:
     shutil.rmtree(scaffold, ignore_errors=True)
     shutil.rmtree(approot, ignore_errors=True)
+
+
+# ---- vendored icons-sprite: per-symbol compare, not whole-file (#284 finding 4) ----
+
+_spr_scaf = Path(tempfile.mkdtemp(prefix="dl-sprscaf-"))
+_spr_app = Path(tempfile.mkdtemp(prefix="dl-sprapp-"))
+try:
+    _sref = _spr_scaf / "app/webapp/static/_vendored/icons"
+    _sref.mkdir(parents=True)
+    (_sref / "icons-sprite.html").write_text(
+        '<symbol id="i-home"><path d="M0 0"/></symbol>'
+        '<symbol id="i-star"><path d="M1 1"/></symbol>',
+        encoding="utf-8")
+
+    _sapp = _spr_app / "app/webapp/static/_vendored/icons"
+    _sapp.mkdir(parents=True)
+    # trimmed subset, byte-identical to the scaffold's matching symbol
+    (_sapp / "icons-sprite.html").write_text(
+        '<symbol id="i-home"><path d="M0 0"/></symbol>', encoding="utf-8")
+
+    _sres = dl.vendored(_spr_app, _spr_scaf)
+    check(_sres["components"]["icons"]["files"]["icons-sprite.html"] == "IDENTICAL (trimmed)",
+          "trimmed-but-identical sprite subset -> IDENTICAL (trimmed), not FORKED")
+    check(_sres["components"]["icons"]["status"] == "IDENTICAL",
+          "a trimmed-identical sprite doesn't fork the whole icons component")
+
+    # a hand-edited symbol IS a genuine fork
+    (_sapp / "icons-sprite.html").write_text(
+        '<symbol id="i-home"><path d="M9 9"/></symbol>', encoding="utf-8")
+    _sres2 = dl.vendored(_spr_app, _spr_scaf)
+    check(_sres2["components"]["icons"]["files"]["icons-sprite.html"] == "FORKED",
+          "a hand-edited symbol is still genuinely FORKED")
+
+    # untrimmed, fully identical set — no "(trimmed)" suffix
+    (_sapp / "icons-sprite.html").write_text(
+        '<symbol id="i-home"><path d="M0 0"/></symbol>'
+        '<symbol id="i-star"><path d="M1 1"/></symbol>',
+        encoding="utf-8")
+    _sres3 = dl.vendored(_spr_app, _spr_scaf)
+    check(_sres3["components"]["icons"]["files"]["icons-sprite.html"] == "IDENTICAL",
+          "a full, untrimmed identical set reports plain IDENTICAL")
+finally:
+    shutil.rmtree(_spr_scaf, ignore_errors=True)
+    shutil.rmtree(_spr_app, ignore_errors=True)
 
 
 # ---- vendored-root discovery: non-scaffold static layouts (fleet-config#291, #292) ----
