@@ -53,6 +53,7 @@ SLACK_GET_UPLOAD_URL = "https://slack.com/api/files.getUploadURLExternal"
 SLACK_COMPLETE_UPLOAD_URL = "https://slack.com/api/files.completeUploadExternal"
 TOKEN_ENV_VAR = "SLACK_BOT_TOKEN"
 SETTINGS_JSON_PATH = Path.home() / ".claude" / "settings.json"
+SETTINGS_JSON_PATH_ENV_VAR = "CLAUDE_SETTINGS_JSON_PATH"
 _ARCHIVE_RE = re.compile(r"/archives/([A-Z0-9]+)", re.IGNORECASE)
 
 
@@ -65,9 +66,17 @@ def _token_from_settings() -> Optional[str]:
     env var is absent there. Reading the file directly makes the transport
     launcher-agnostic. Never raises: a missing/unreadable/malformed file or a
     blank token just means "no token from this source".
+
+    ``CLAUDE_SETTINGS_JSON_PATH`` overrides the path so acceptance tests can
+    point this at a nonexistent file and get a true graceful-fail. Stripping
+    ``SLACK_BOT_TOKEN`` from the subprocess env alone doesn't work here, since
+    this fallback reads the file straight off disk via ``Path.home()``, which
+    on Windows resolves through the OS profile API and ignores an env dict
+    that merely omits ``USERPROFILE``.
     """
+    path = Path(os.environ.get(SETTINGS_JSON_PATH_ENV_VAR) or SETTINGS_JSON_PATH)
     try:
-        with SETTINGS_JSON_PATH.open("r", encoding="utf-8") as fh:
+        with path.open("r", encoding="utf-8") as fh:
             settings = json.load(fh)
         token = settings.get("env", {}).get(TOKEN_ENV_VAR)
         return token or None
