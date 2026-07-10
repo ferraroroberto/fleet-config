@@ -41,8 +41,8 @@ if ($data.model -and $data.model.display_name) {
 }
 
 # --- context window % ---
-# Color-coded against the 400k auto-compact line (CLAUDE_AUTOCOMPACT_PCT_OVERRIDE=40):
-#   green <30, yellow 30-34, red >=35 — red means "wrap up before auto-compact fires at 40%".
+# Color-coded against the 500k auto-compact line (CLAUDE_AUTOCOMPACT_PCT_OVERRIDE=50):
+#   green <30, yellow 30-34, red >=35 — red means "wrap up before auto-compact fires at 50%".
 # used_percentage is null early in a session and right after a /compact; omit then.
 $ctx_str = ''
 $used = $data.context_window.used_percentage
