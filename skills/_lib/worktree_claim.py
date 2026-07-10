@@ -15,12 +15,14 @@ The fix is first-come-first-served, claimed at the **very first action**:
     object store. Separate HEAD + separate files ⇒ no checkout/HEAD race.
   - `release` (on finish, from the primary) frees the claim for the next session.
 
-The claim is a directory created with an **atomic** `mkdir` under the repo's
-*common* git dir (`git rev-parse --git-common-dir`), which every worktree of the
-repo shares — so the claim is visible from the primary checkout and from every
-linked worktree. Exactly one racer wins the `mkdir`; the rest fall through to
-worktree mode. A crashed session's claim is reclaimed once it ages past the TTL
-(no fragile PID-liveness check on Windows).
+The claim is a directory published **atomically, fully populated** (meta.json
+included) via a temp-dir-then-`rename` under the repo's *common* git dir
+(`git rev-parse --git-common-dir`), which every worktree of the repo shares —
+so the claim is visible from the primary checkout and from every linked
+worktree (see `_publish_claim`; a bare `mkdir`-then-write-`meta.json` let two
+racers both win, fleet-config#334). Exactly one racer wins the rename; the
+rest fall through to worktree mode. A crashed session's claim is reclaimed
+once it ages past the TTL (no fragile PID-liveness check on Windows).
 
 Windows-specific by design (the fleet is Windows): worktree `.venv` is a
 **junction** to the primary's `.venv` (`mklink /J`) — worktrees don't share
@@ -138,6 +140,35 @@ def write_meta(lock_dir: Path, meta: dict) -> None:
     (lock_dir / META_NAME).write_text(json.dumps(meta, indent=2), encoding="utf-8")
 
 
+def _publish_claim(lock_dir: Path, meta: dict) -> bool:
+    """Atomically create `lock_dir` **fully populated** with meta.json.
+
+    `mkdir` then a separate `write_meta` (the pre-#334 shape) leaves a window
+    where `lock_dir` exists but meta.json doesn't yet — a concurrent racer that
+    hits `FileExistsError` on its own `mkdir` in that window reads `None` meta,
+    treats it as stale, and reclaims (`rmtree` + re-`mkdir`) out from under the
+    first winner, which then blindly overwrites meta and *also* returns
+    "primary" (fleet-config#334: two sessions both got MODE=primary on the same
+    repo, silently losing one session's uncommitted work).
+
+    Fix: write meta into a private temp dir first (invisible to every other
+    process — its name is never guessed), then publish with one `Path.rename`.
+    On Windows `os.rename` never replaces an existing destination — it raises
+    if `lock_dir` already exists — so the rename is the single atomic
+    compare-and-swap: `lock_dir` is only ever observed either fully absent or
+    fully populated, never in between.
+    """
+    tmp_dir = lock_dir.with_name(f"{lock_dir.name}.tmp-{os.getpid()}-{time.time_ns()}")
+    tmp_dir.mkdir(parents=False)
+    write_meta(tmp_dir, meta)
+    try:
+        tmp_dir.rename(lock_dir)
+        return True
+    except OSError:
+        shutil.rmtree(tmp_dir, ignore_errors=True)
+        return False
+
+
 def try_acquire(
     lock_dir: Path,
     meta: dict,
@@ -151,22 +182,18 @@ def try_acquire(
     optional `branch_exists` predicate (passed straight to `is_stale`) is the
     only seam where the CLI injects git, so the tests stay hermetic.
     """
-    try:
-        lock_dir.mkdir(parents=False)  # atomic: FileExistsError if already held
-    except FileExistsError:
-        holder = read_meta(lock_dir)
-        if not is_stale(holder, now, ttl_hours, branch_exists):
-            return "worktree", holder or {}
-        # Stale -> reclaim. rmtree + re-mkdir isn't atomic as a pair, so a
-        # concurrent reclaimer may win the re-mkdir; that racer's FileExistsError
-        # below sends it to worktree mode. Net: exactly one ends up primary.
-        shutil.rmtree(lock_dir, ignore_errors=True)
-        try:
-            lock_dir.mkdir(parents=False)
-        except FileExistsError:
-            return "worktree", read_meta(lock_dir) or {}
-    write_meta(lock_dir, meta)
-    return "primary", meta
+    if _publish_claim(lock_dir, meta):
+        return "primary", meta
+    holder = read_meta(lock_dir)
+    if not is_stale(holder, now, ttl_hours, branch_exists):
+        return "worktree", holder or {}
+    # Stale -> reclaim. rmtree + re-publish isn't atomic as a pair, so a
+    # concurrent reclaimer may win the re-publish; that racer's failed rename
+    # below sends it to worktree mode. Net: exactly one ends up primary.
+    shutil.rmtree(lock_dir, ignore_errors=True)
+    if _publish_claim(lock_dir, meta):
+        return "primary", meta
+    return "worktree", read_meta(lock_dir) or {}
 
 
 # ---- git / junction ops (Windows; thin subprocess wrappers) ---------------

@@ -15,6 +15,7 @@ import os
 import shutil
 import sys
 import tempfile
+import threading
 import time
 from pathlib import Path
 
@@ -143,6 +144,63 @@ try:
 finally:
     os.chdir(_prev_cwd)
     shutil.rmtree(rbase, ignore_errors=True)
+
+
+# ---- try_acquire: concurrent-acquire race (fleet-config#334) --------------
+# Two sessions racing `acquire` on the same repo must never both win "primary"
+# -- that's the exact collision that silently wiped a session's uncommitted
+# work. Force the precise interleave that let the pre-fix mkdir-then-write_meta
+# implementation double-win: pause the first racer's meta write (simulating the
+# window between claiming the slot and populating it) until the second racer
+# has fully run its own acquire attempt against the still-meta-less claim, then
+# release the first. Against the fixed `_publish_claim` (temp-dir + rename),
+# the first racer's meta is invisible to the second until the rename publishes
+# it, so this same interleave still yields exactly one primary.
+race_base = Path(tempfile.mkdtemp(prefix="wtclaim_race_"))
+try:
+    race_lock = race_base / wc.LOCK_NAME
+    first_meta_pending = threading.Event()
+    release_first = threading.Event()
+    real_write_meta = wc.write_meta
+
+    def paced_write_meta(lock_dir: Path, meta: dict) -> None:
+        if meta.get("issue") == "A" and not first_meta_pending.is_set():
+            first_meta_pending.set()
+            release_first.wait(timeout=5)
+        real_write_meta(lock_dir, meta)
+
+    race_results: dict = {}
+
+    def racer_a() -> None:
+        race_results["a"] = wc.try_acquire(
+            race_lock, {"created": time.time(), "issue": "A"}, time.time(), 8)[0]
+
+    def racer_b() -> None:
+        first_meta_pending.wait(timeout=5)
+        race_results["b"] = wc.try_acquire(
+            race_lock, {"created": time.time(), "issue": "B"}, time.time(), 8)[0]
+        release_first.set()
+
+    wc.write_meta = paced_write_meta
+    try:
+        ta = threading.Thread(target=racer_a)
+        tb = threading.Thread(target=racer_b)
+        ta.start()
+        tb.start()
+        ta.join(timeout=10)
+        tb.join(timeout=10)
+    finally:
+        wc.write_meta = real_write_meta
+
+    check(not ta.is_alive() and not tb.is_alive(), "race: both racers finished (no deadlock)")
+    modes = list(race_results.values())
+    check(modes.count("primary") == 1,
+          "race: concurrent acquirers -> exactly one primary (#334)")
+    check(sorted(modes) == ["primary", "worktree"],
+          "race: the loser falls back to worktree, not a second primary (#334)")
+finally:
+    wc.write_meta = real_write_meta
+    shutil.rmtree(race_base, ignore_errors=True)
 
 
 _h.report_and_exit("test_worktree_claim")
