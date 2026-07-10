@@ -9,7 +9,7 @@
 
 flowchart TB
   subgraph install["install.ps1 / uninstall.ps1"]
-    INSTALL["junctions: hooks/, skills/, commands/, pi/extensions/\nsymlinks: global-CLAUDE.md, design.md, design.dark.md,\nstatusline-command.ps1, codex-hooks.json"]
+    INSTALL["junctions: hooks/, skills/, commands/, pi/extensions/, tray/\nsymlinks: global-CLAUDE.md, design.md, design.dark.md,\nstatusline-command.ps1, codex-hooks.json"]
   end
 
   subgraph homes["Agent homes"]
@@ -36,6 +36,11 @@ flowchart TB
   HOOKFILES --> LIBPY
   HOOKFILES --> PROJECTS
   RUNHOOK --> HOOKFILES
+
+  subgraph tray["tray/ — junctioned into ~/.claude/tray (fleet-config#153)"]
+    TRAYPS1["tray_lifecycle.ps1\nONE machine-local copy; every sister tray.bat calls it by path\ncanonical source: project-scaffolding"]
+  end
+  tray --> CLAUDE
 
   subgraph gskills["skills/ — GLOBAL tier (every session, every repo)"]
     ISSUEADD["issue-add"] --> ISSUESTART["issue-start"] --> ISSUEFINISH["issue-finish"]
