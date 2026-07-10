@@ -42,6 +42,46 @@ tag          = ["→", "Notion"]  # [relation, target] edge annotation (working 
 
 **Keep it current:** update `.fleet.toml` in the same PR as any material change (layer, port, role, one-line description, exposed services). A repo listed in the residual's `_adopted` registry whose `.fleet.toml` goes missing fails the drift test. After editing any `.fleet.toml`, run `C:/Users/rober/AppData/Local/Python/bin/python.exe .claude/skills/system-map/build_data.py` to regenerate `fleet.data.js`.
 
+### Optional per-repo `[vendored]` table (fleet-config#338)
+
+An adopter of a `project-scaffolding`-sourced component — the `_vendored/` UI
+library (`app/webapp/static/_vendored/<component>/`) or a machine-local
+primitive like the tray lifecycle (`app/tray/tray_lifecycle.ps1` and kin) —
+records that fact in its own `.fleet.toml`, one entry per component:
+
+```toml
+[vendored]
+nav = { src = "app/webapp/static/_vendored/nav", sha = "<scaffold commit>", dest = "app/webapp/static/_vendored/nav" }
+```
+
+| Field | Meaning |
+|---|---|
+| `src`  | path inside `project-scaffolding` the component lives at (a directory for a UI component, a single file for a tray primitive) |
+| `sha`  | the scaffold commit this adopter's copy was last vendored from |
+| `dest` | path inside the adopter repo the component was copied to — usually identical to `src` |
+
+**Written by the skill, not by hand.** `/propagate-vendored` (`skills/propagate-vendored/`)
+writes the entry on first adoption and bumps `sha` on every successful
+re-vendor; a human never hand-edits it. This is the same anti-staleness
+contract as the rest of `.fleet.toml` ("keep it current in the same PR as the
+change") — here "the change" *is* the propagation PR, so the invariant holds
+by construction rather than by discipline. `skills/_lib/vendored_drift.py`
+reads every adopter's `[vendored]` table across the fleet to answer "who's
+behind" as a query instead of a periodic manual audit.
+
+**Why `.fleet.toml`, not a separate `VENDORED.lock`:** the map-build machinery
+(`.claude/skills/system-map/build_data.py`'s `card_from_toml`) already parses
+`.fleet.toml` with `tomllib.loads` and only ever reads its own named keys via
+`dict.get(...)` — confirmed empirically (`card_from_toml` on a `.fleet.toml`
+carrying an extra `[vendored]` table returns the same card as one without it,
+no `KeyError`, no drift-test failure). An unrecognized top-level table is
+silently ignored, so adding `[vendored]` costs nothing on the map-build path.
+One file per repo to read instead of two, and it's already the place every
+repo declares its map card — a second propagation-status file would just be
+one more thing to keep in sync with reality. Full decision writeup, including
+what would have flipped the answer to `VENDORED.lock`, is in
+`skills/propagate-vendored/README.md`.
+
 ### Local specs — kept out of git 🔒
 
 The committed `DATA.compute` (and the committed `system-map.png`) show **placeholder** hardware specs. Real GPU/CPU/RAM are personal detail, so they live in **`system-map.local.js`** (gitignored via `*.local.*`). `system-map.html` loads it with a plain `<script>` tag — works under `file://`, no CORS — and merges `window.LOCAL` over the placeholders. Missing on a fresh checkout → harmless 404, placeholders stay.
