@@ -21,12 +21,11 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "skills" / "_lib"))
 import worktree_claim as wc  # noqa: E402
 
-_fails: list[str] = []
+sys.path.insert(0, str(Path(__file__).resolve().parent / "_lib"))
+from check_harness import CheckHarness  # noqa: E402
 
-
-def check(cond: bool, msg: str) -> None:
-    if not cond:
-        _fails.append(msg)
+_h = CheckHarness()
+check = _h.check
 
 
 # ---- worktree_path: sibling convention, prefix-matches cwd_prefix ----
@@ -146,9 +145,4 @@ finally:
     shutil.rmtree(rbase, ignore_errors=True)
 
 
-if _fails:
-    print("FAIL test_worktree_claim:")
-    for f in _fails:
-        print("  - " + f)
-    sys.exit(1)
-print("test_worktree_claim: all checks pass")
+_h.report_and_exit("test_worktree_claim")

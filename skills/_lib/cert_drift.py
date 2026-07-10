@@ -42,10 +42,12 @@ from __future__ import annotations
 import argparse
 import os
 import re
-import subprocess
 import sys
 from pathlib import Path
 from typing import Dict, List, Optional
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import git_run  # noqa: E402
 
 if hasattr(sys.stdout, "reconfigure"):  # UTF-8 even when stdout is captured (cp1252 fallback)
     sys.stdout.reconfigure(encoding="utf-8")  # type: ignore[union-attr]
@@ -142,10 +144,7 @@ def _list_files(repo_root: Path) -> List[str]:
     """Tracked files as posix relpaths. Prefer `git ls-files` (respects
     .gitignore — never scans `.venv`); fall back to a pruned walk for a
     non-git tree (keeps the helper testable over a plain temp dir)."""
-    res = subprocess.run(
-        ["git", "-C", str(repo_root), "ls-files"],
-        capture_output=True, text=True, encoding="utf-8", errors="replace",
-    )
+    res = git_run.run_git(["-C", str(repo_root), "ls-files"])
     if res.returncode == 0 and res.stdout.strip():
         return [ln.strip().replace("\\", "/") for ln in res.stdout.splitlines() if ln.strip()]
 

@@ -14,12 +14,11 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "skills" / "_lib"))
 import ux_surface as ux  # noqa: E402
 
-_fails: list[str] = []
+sys.path.insert(0, str(Path(__file__).resolve().parent / "_lib"))
+from check_harness import CheckHarness  # noqa: E402
 
-
-def check(cond: bool, msg: str) -> None:
-    if not cond:
-        _fails.append(msg)
+_h = CheckHarness()
+check = _h.check
 
 
 # ---- block parsing ----
@@ -167,10 +166,4 @@ check(ux.touched_paths(["app/server.py", "README.md"], PATHS) == [],
       "code/docs-only diff touches no UX surface")
 
 
-if _fails:
-    print(f"FAILED {len(_fails)} check(s):")
-    for f in _fails:
-        print(f"  - {f}")
-    raise SystemExit(1)
-print("ux_surface: all pure-logic checks passed")
-raise SystemExit(0)
+_h.report_and_exit("ux_surface")

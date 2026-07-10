@@ -6,6 +6,10 @@ The skill calls this after reconciling the map, diffing the freshly-edited
 working file against the previously-committed one (``git show HEAD:…``), so the
 line summarises exactly what moved since the last run.
 
+The generic diff/CLI scaffolding (shared with ``/config-map``'s twin) lives in
+``skills/_lib/snapshot_diff.py`` — this module supplies only the
+fleet-specific ``parse_fleet``/``format_line``.
+
 Pure logic, no I/O in the diff functions, so ``tests/run_acceptance.py`` can
 exercise them. The CLI at the bottom does the git read and is what the skill
 invokes::
@@ -26,13 +30,12 @@ import sys
 from pathlib import Path
 from typing import Dict, Optional
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "skills" / "_lib"))
+import snapshot_diff  # noqa: E402
+
 # The sections of fleet.data.js whose cards are real fleet repos (same set the
 # drift guard in tests/run_acceptance.py reconciles against projects.toml).
 _SECTIONS = ("governance", "enabling", "web", "pipe")
-
-# U+2212 MINUS SIGN for removals (reads cleaner than a hyphen, which looks like a
-# CLI flag) — matches the issue's '+whatsapp-radar, −suna' example.
-_MINUS = "−"
 
 
 def parse_fleet(js_text: str) -> Dict[str, dict]:
@@ -56,15 +59,7 @@ def diff_fleet(prev_js: str, cur_js: str) -> dict:
     * ``updated`` — repos in both snapshots whose card content changed (a tweaked
       description, port, layer move within a section, …).
     """
-    prev = parse_fleet(prev_js)
-    cur = parse_fleet(cur_js)
-    added = sorted(set(cur) - set(prev))
-    removed = sorted(set(prev) - set(cur))
-    updated = sorted(
-        k for k in set(cur) & set(prev)
-        if json.dumps(cur[k], sort_keys=True) != json.dumps(prev[k], sort_keys=True)
-    )
-    return {"added": added, "removed": removed, "updated": updated}
+    return snapshot_diff.diff_entries(parse_fleet(prev_js), parse_fleet(cur_js))
 
 
 def format_line(diff: dict) -> str:
@@ -74,7 +69,7 @@ def format_line(diff: dict) -> str:
     week) reads ``no fleet changes``.
     """
     parts = [f"+{r}" for r in diff["added"]]
-    parts += [f"{_MINUS}{r}" for r in diff["removed"]]
+    parts += [f"{snapshot_diff.MINUS}{r}" for r in diff["removed"]]
     n = len(diff["updated"])
     if n:
         parts.append(f"{n} repo{'s' if n != 1 else ''} updated")
@@ -87,42 +82,17 @@ def summarize(prev_js: Optional[str], cur_js: str) -> str:
     The first run (no committed ``fleet.data.js`` at the ref) has nothing to
     diff against, so it reports ``baseline`` rather than a misleading all-added.
     """
-    if not prev_js:
-        return "baseline"
-    return format_line(diff_fleet(prev_js, cur_js))
+    return snapshot_diff.summarize(prev_js, cur_js, parse_fleet, format_line)
 
 
 def main(argv: Optional[list[str]] = None) -> int:
-    import argparse
-    import subprocess
-
-    # Captured stdout falls back to cp1252 on Windows, which can't encode the
-    # U+2212 minus sign — force UTF-8 so the line survives the skill's capture.
-    try:
-        sys.stdout.reconfigure(encoding="utf-8")  # type: ignore[attr-defined]
-    except Exception:  # noqa: BLE001 - best-effort; real terminals are already utf-8
-        pass
-
-    ap = argparse.ArgumentParser(
-        description="Print the /system-map week-over-week change line."
+    return snapshot_diff.run_cli(
+        "Print the /system-map week-over-week change line.",
+        "architecture/fleet.data.js",
+        parse_fleet,
+        format_line,
+        argv,
     )
-    ap.add_argument("--file", default="architecture/fleet.data.js",
-                    help="working fleet.data.js (the current snapshot)")
-    ap.add_argument("--ref", default="HEAD",
-                    help="git ref to diff against (the previous snapshot)")
-    args = ap.parse_args(argv)
-
-    cur = Path(args.file).read_text(encoding="utf-8")
-    try:
-        prev: Optional[str] = subprocess.run(
-            ["git", "show", f"{args.ref}:{args.file}"],
-            capture_output=True, text=True, encoding="utf-8", check=True,
-        ).stdout
-    except subprocess.CalledProcessError:
-        prev = None  # file absent at that ref → first run / baseline
-
-    print(summarize(prev, cur))
-    return 0
 
 
 if __name__ == "__main__":

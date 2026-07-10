@@ -43,6 +43,9 @@ import sys
 import tempfile
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import git_run  # noqa: E402
+
 KINDS = (
     "ledger",
     "digest",
@@ -358,10 +361,7 @@ def _gh(args: list[str]) -> str:
 
 
 def _git(args: list[str]) -> str:
-    r = subprocess.run(
-        ["git", *args], capture_output=True, text=True,
-        encoding="utf-8", errors="replace",
-    )
+    r = git_run.run_git(args)
     if r.returncode != 0:
         sys.stderr.write(r.stderr or "")
         raise SystemExit(f"git {' '.join(args)} failed (exit {r.returncode})")
