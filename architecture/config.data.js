@@ -167,6 +167,11 @@ window.CONFIG = {
       "scope": "repo"
     },
     {
+      "nm": "propagate-vendored",
+      "ds": "Fan out a byte-for-byte re-vendor of one project-scaffolding component to every adopter in its [vendored] manifest — copy, hash-v…",
+      "scope": "repo"
+    },
+    {
       "nm": "screen",
       "ds": "Attach recent screenshots from E:\\downloads\\snaps without manual copy-paste.",
       "scope": "repo"

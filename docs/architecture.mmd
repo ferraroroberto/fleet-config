@@ -41,7 +41,8 @@ flowchart TB
     ISSUEADD["issue-add"] --> ISSUESTART["issue-start"] --> ISSUEFINISH["issue-finish"]
     ISSUEEXTRA["issue-batch · issue-finish-batch · issue-triage · issue-yolo"]
     OTHERGLOBAL["codebase-audit · design-sync · handoff-commit · screen"]
-    LIB["_lib/ — worktree_claim.py · ux_surface.py · audit_issue.py ·\ncert_drift.py · rate_gate.py · dirty_tree_check.py · design_lint.py ·\ngit_run.py · snapshot_diff.py · fleet_repo_scan.py"]
+    PROPVENDORED["propagate-vendored\n[vendored] manifest fan-out + dry-run drift report"]
+    LIB["_lib/ — worktree_claim.py · ux_surface.py · audit_issue.py ·\ncert_drift.py · rate_gate.py · dirty_tree_check.py · design_lint.py ·\ngit_run.py · snapshot_diff.py · fleet_repo_scan.py · vendored_drift.py"]
   end
   gskills --> CLAUDE
   gskills --> CODEX
@@ -51,6 +52,7 @@ flowchart TB
   ISSUEFINISH --> LIB
   ISSUEEXTRA --> LIB
   OTHERGLOBAL --> LIB
+  PROPVENDORED --> LIB
 
   subgraph fskills[".claude/skills/ — FLEET-ONLY tier (cwd-scoped to fleet-config)"]
     SYSTEMMAP["system-map\nbuild_data.py · render.py · render_mermaid.py · whatchanged.py"]

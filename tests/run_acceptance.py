@@ -436,6 +436,9 @@ def main() -> int:
     # ---- dirty_tree_check helper pure-logic tests (skills/_lib) ----
     run_unit(_dirty_tree_check_unit_check)
 
+    # ---- vendored_drift helper pure-logic tests (skills/_lib) ----
+    run_unit(_vendored_drift_unit_check)
+
     # ---- learning-log report.py pure helpers (.claude/skills/learning-log) ----
     run_unit(_learning_log_unit_checks)
 
@@ -492,11 +495,11 @@ class _Checker:
 
 def _subprocess_unit_check(label: str, test_file: str) -> Tuple[int, int]:
     """Run a standalone pure-logic test file as a subprocess and report it as
-    one pass/fail check — the shared body behind the ten `_x_unit_check`
+    one pass/fail check — the shared body behind the eleven `_x_unit_check`
     wrappers (audit_issue, fleet_audit_scan, worktree_claim, ux_surface,
     cert_drift, context_purge_check, context_purge_gate, design_lint,
-    rate_gate, dirty_tree_check) that each just point it at their own test
-    file under tests/. Returns (failures, total=1)."""
+    rate_gate, dirty_tree_check, vendored_drift) that each just point it at
+    their own test file under tests/. Returns (failures, total=1)."""
     proc = subprocess.run(
         [PYTHON, str(REPO / "tests" / test_file)],
         capture_output=True, text=True, encoding="utf-8", errors="replace",
@@ -1518,6 +1521,18 @@ def _dirty_tree_check_unit_check() -> Tuple[int, int]:
     real throwaway git repo, and reachable from the one gate. (fleet-config#247)
     """
     return _subprocess_unit_check("dirty_tree_check", "test_dirty_tree_check.py")
+
+
+def _vendored_drift_unit_check() -> Tuple[int, int]:
+    """Run skills/_lib/vendored_drift.py's pure-logic tests as a subprocess.
+
+    Standalone (like test_dirty_tree_check) so the /propagate-vendored
+    [vendored]-manifest drift core -- manifest parsing, the hash-diff/classify
+    local-drift-vs-behind-HEAD signals, and an end-to-end scan_fleet against a
+    real throwaway scaffold + adopter repos -- is testable on its own and
+    reachable from the one gate. (fleet-config#338)
+    """
+    return _subprocess_unit_check("vendored_drift", "test_vendored_drift.py")
 
 
 def _learning_log_unit_checks() -> Tuple[int, int]:
