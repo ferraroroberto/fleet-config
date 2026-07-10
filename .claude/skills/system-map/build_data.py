@@ -47,6 +47,9 @@ import sys
 import tomllib
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "skills" / "_lib"))
+import fleet_repo_scan  # noqa: E402
+
 REPO_ROOT = Path(__file__).resolve().parents[3]
 DATA_JS = REPO_ROOT / "architecture" / "fleet.data.js"
 RESIDUAL = REPO_ROOT / "architecture" / "fleet.residual.json"
@@ -90,14 +93,7 @@ def fleet_repos(projects_toml: Path = PROJECTS_TOML) -> dict[str, Path]:
     Fleet = every ``[<name>]`` table carrying a ``cwd_prefix`` − the
     ``[global] architecture_ignore`` list (vendored / legacy / out-of-scope).
     """
-    toml = tomllib.loads(projects_toml.read_text(encoding="utf-8"))
-    ignore = set(toml.get("global", {}).get("architecture_ignore", []))
-    return {
-        name: Path(tbl["cwd_prefix"])
-        for name, tbl in toml.items()
-        if name != "global" and isinstance(tbl, dict) and "cwd_prefix" in tbl
-        and name not in ignore
-    }
+    return fleet_repo_scan.fleet_repos(projects_toml)
 
 
 def _default_ref(repo_dir: Path) -> str | None:
@@ -107,16 +103,7 @@ def _default_ref(repo_dir: Path) -> str | None:
     default-branch names. Uses remote-tracking refs so the result is independent
     of which branch the repo is checked out on, and needs no network.
     """
-    def _git(*args: str) -> subprocess.CompletedProcess:
-        return subprocess.run(["git", "-C", str(repo_dir), *args], capture_output=True)
-
-    head = _git("rev-parse", "--abbrev-ref", "origin/HEAD")
-    if head.returncode == 0 and head.stdout.strip():
-        return head.stdout.decode("utf-8", "replace").strip()
-    for cand in ("origin/main", "origin/master", "main", "master"):
-        if _git("rev-parse", "--verify", "--quiet", cand).returncode == 0:
-            return cand
-    return None
+    return fleet_repo_scan.default_ref(repo_dir)
 
 
 def read_fleet_toml(repo_dir: Path) -> str | None:

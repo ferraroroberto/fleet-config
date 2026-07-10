@@ -15,12 +15,11 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "skills" / "_lib"))
 import fleet_audit_scan as fas  # noqa: E402
 
-_fails: list[str] = []
+sys.path.insert(0, str(Path(__file__).resolve().parent / "_lib"))
+from check_harness import CheckHarness  # noqa: E402
 
-
-def check(cond: bool, msg: str) -> None:
-    if not cond:
-        _fails.append(msg)
+_h = CheckHarness()
+check = _h.check
 
 
 check(fas.is_fleet_repo("https://github.com/ferraroroberto/fleet-config.git") is True,
@@ -34,9 +33,4 @@ check(fas.is_fleet_repo("https://github.com/other-org/unrelated.git") is False,
 check(fas.is_fleet_repo(None) is False, "is_fleet_repo: no remote -> False")
 check(fas.is_fleet_repo("") is False, "is_fleet_repo: empty remote -> False")
 
-if _fails:
-    print("FAIL test_fleet_audit_scan:")
-    for f in _fails:
-        print("  - " + f)
-    sys.exit(1)
-print("test_fleet_audit_scan: all checks pass")
+_h.report_and_exit("test_fleet_audit_scan")

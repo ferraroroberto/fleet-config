@@ -67,6 +67,9 @@ import time
 from pathlib import Path
 from typing import Callable, Optional, Tuple
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import git_run  # noqa: E402
+
 if hasattr(sys.stdout, "reconfigure"):  # UTF-8 even when stdout is captured (cp1252 fallback)
     sys.stdout.reconfigure(encoding="utf-8")  # type: ignore[union-attr]
     sys.stderr.reconfigure(encoding="utf-8")  # type: ignore[union-attr]
@@ -169,10 +172,7 @@ def try_acquire(
 # ---- git / junction ops (Windows; thin subprocess wrappers) ---------------
 
 def _git(repo: Path, *args: str, check: bool = True) -> subprocess.CompletedProcess:
-    return subprocess.run(
-        ["git", "-C", str(repo), *args],
-        capture_output=True, text=True, encoding="utf-8", errors="replace", check=check,
-    )
+    return git_run.run_git(["-C", str(repo), *args], check=check)
 
 
 def common_dir(repo: Path) -> Path:

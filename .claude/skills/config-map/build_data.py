@@ -48,8 +48,10 @@ import json
 import re
 import subprocess
 import sys
-import tomllib
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "skills" / "_lib"))
+import fleet_repo_scan  # noqa: E402
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 DATA_JS = REPO_ROOT / "architecture" / "config.data.js"
@@ -154,14 +156,7 @@ def _module_blocks(py: Path) -> bool:
 def fleet_repos(projects_toml: Path = PROJECTS_TOML) -> dict[str, Path]:
     """``{repo_name: repo_dir}`` — every ``[<name>]`` with a ``cwd_prefix`` minus
     ``[global] architecture_ignore`` (the same fleet set ``/system-map`` uses)."""
-    toml = tomllib.loads(projects_toml.read_text(encoding="utf-8"))
-    ignore = set(toml.get("global", {}).get("architecture_ignore", []))
-    return {
-        name: Path(tbl["cwd_prefix"])
-        for name, tbl in toml.items()
-        if name != "global" and isinstance(tbl, dict) and "cwd_prefix" in tbl
-        and name not in ignore
-    }
+    return fleet_repo_scan.fleet_repos(projects_toml)
 
 
 def _git(repo_dir: Path, *args: str) -> subprocess.CompletedProcess:
@@ -170,13 +165,7 @@ def _git(repo_dir: Path, *args: str) -> subprocess.CompletedProcess:
 
 def _default_ref(repo_dir: Path) -> str | None:
     """The committed default branch ref to read a repo's state from."""
-    head = _git(repo_dir, "rev-parse", "--abbrev-ref", "origin/HEAD")
-    if head.returncode == 0 and head.stdout.strip():
-        return head.stdout.decode("utf-8", "replace").strip()
-    for cand in ("origin/main", "origin/master", "main", "master"):
-        if _git(repo_dir, "rev-parse", "--verify", "--quiet", cand).returncode == 0:
-            return cand
-    return None
+    return fleet_repo_scan.default_ref(repo_dir)
 
 
 def _committed_skills(repo_dir: Path, ref: str) -> list[str]:

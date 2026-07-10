@@ -39,10 +39,12 @@ independent of the git plumbing around it. stdlib only.
 from __future__ import annotations
 
 import argparse
-import subprocess
 import sys
 from pathlib import Path
 from typing import NamedTuple, Optional
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import git_run  # noqa: E402
 
 
 class Result(NamedTuple):
@@ -79,11 +81,7 @@ def evaluate(
 
 
 def _run_git(repo_path: Path, *args: str) -> str:
-    proc = subprocess.run(
-        ["git", "-C", str(repo_path), *args],
-        capture_output=True, text=True, encoding="utf-8", errors="replace",
-    )
-    return proc.stdout.strip()
+    return git_run.run_git(["-C", str(repo_path), *args]).stdout.strip()
 
 
 def detect_default_branch(repo_path: Path) -> str:

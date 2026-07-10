@@ -15,12 +15,11 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "skills" / "_lib"))
 import audit_issue as ai  # noqa: E402
 
-_fails: list[str] = []
+sys.path.insert(0, str(Path(__file__).resolve().parent / "_lib"))
+from check_harness import CheckHarness  # noqa: E402
 
-
-def check(cond: bool, msg: str) -> None:
-    if not cond:
-        _fails.append(msg)
+_h = CheckHarness()
+check = _h.check
 
 
 # ---- marker handling ----
@@ -285,9 +284,4 @@ check(ai.ledger_decision(3, "abc", "abc", self_fix=True, significance=999999.0) 
 check(ai.ledger_decision(0, "abc", "abc", significance=0.0) == "SKIP",
       "ledger_decision: zero commits -> significance is irrelevant, rubric decides")
 
-if _fails:
-    print("FAIL test_audit_issue:")
-    for f in _fails:
-        print("  - " + f)
-    sys.exit(1)
-print("test_audit_issue: all checks pass")
+_h.report_and_exit("test_audit_issue")

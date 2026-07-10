@@ -20,12 +20,11 @@ REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO / "skills" / "_lib"))
 import rate_gate as rg  # noqa: E402
 
-_fails: list[str] = []
+sys.path.insert(0, str(REPO / "tests" / "_lib"))
+from check_harness import CheckHarness  # noqa: E402
 
-
-def check(cond: bool, msg: str) -> None:
-    if not cond:
-        _fails.append(msg)
+_h = CheckHarness()
+check = _h.check
 
 
 NOW = dt.datetime(2026, 7, 4, 12, 0, 0, tzinfo=dt.timezone.utc)
@@ -124,9 +123,4 @@ finally:
     import shutil
     shutil.rmtree(tmp, ignore_errors=True)
 
-if _fails:
-    print("FAIL test_rate_gate:")
-    for f in _fails:
-        print("  - " + f)
-    sys.exit(1)
-print("test_rate_gate: all checks pass")
+_h.report_and_exit("test_rate_gate")

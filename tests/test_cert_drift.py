@@ -19,12 +19,11 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "skills" / "_lib"))
 import cert_drift as cd  # noqa: E402
 
-_fails: list[str] = []
+sys.path.insert(0, str(Path(__file__).resolve().parent / "_lib"))
+from check_harness import CheckHarness  # noqa: E402
 
-
-def check(cond: bool, msg: str) -> None:
-    if not cond:
-        _fails.append(msg)
+_h = CheckHarness()
+check = _h.check
 
 
 # ---- classify truth table ----
@@ -148,10 +147,4 @@ finally:
         shutil.rmtree(t, ignore_errors=True)
 
 
-if _fails:
-    print(f"FAILED {len(_fails)} check(s):")
-    for f in _fails:
-        print(f"  - {f}")
-    raise SystemExit(1)
-print("cert_drift: all pure-logic checks passed")
-raise SystemExit(0)
+_h.report_and_exit("cert_drift")
