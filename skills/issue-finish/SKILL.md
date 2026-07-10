@@ -207,11 +207,16 @@ follow that procedure **exactly**. The non-negotiables:
 - **Safety caveat — linked children.** `tray.bat --restart` does a `/T` subtree
   kill, so it is safe only for a tray whose linked-but-independent children
   (a session-host + its PTY-backed shells) are spawned **detached** and
-  re-adopted on start (scaffold `docs/windows-tray.md`). For a tray that still
-  hosts such children *in its subtree* (today: `app-launcher`), `--restart`
-  kills the user's open Coding sessions — and your own, if you're running inside
-  one. That tray's `CLAUDE.md` flags it: **confirm with the user first**, or use
-  its non-destructive path (kill only the webapp port, let the tray re-adopt).
+  re-adopted on start (scaffold `docs/windows-tray.md`). Read the target repo's
+  `CLAUDE.md` to know which case you're in — don't assume by app name. A tray
+  that declares its linked children detach-compliant (e.g. `app-launcher`, per
+  `project-scaffolding#35`: its `:8446` session-host is spawned via `cmd /c
+  start` and re-adopted, so `--restart` preserves open Coding sessions and is
+  safe even from inside one) is fine to restart. A tray that still hosts such
+  children *in its subtree* — or is silent on the point — must be treated as
+  unsafe: `--restart` would kill the user's open Coding sessions, and your own
+  if you're inside one, so **confirm with the user first**, or use its
+  non-destructive path (kill only the webapp port, let the tray re-adopt).
 - **Fallback only** for a project with no `--restart`: kill **only** the
   specific process listening on the project's port (`Get-NetTCPConnection
   -LocalPort <port>`, stop that PID — **never** a blanket `python`/`pythonw`

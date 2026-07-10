@@ -214,10 +214,15 @@ Only reachable on a fully-green Phase 3. Run the full `/issue-finish` skill:
    only for the rare app with no `--restart`. **Safety caveat:** `--restart`'s
    `/T` subtree kill is safe only for a tray whose linked-but-independent
    children (a session-host + its PTY shells) are spawned detached + re-adopted
-   on start (scaffold `docs/windows-tray.md`). For a tray that still hosts them
-   in-subtree (today: `app-launcher`), `--restart` kills the user's open Coding
-   sessions — and an unattended YOLO run **must not** restart it without
-   confirmation; that tray's `CLAUDE.md` flags this. Then confirm the new build
+   on start (scaffold `docs/windows-tray.md`). Read the target repo's `CLAUDE.md`
+   to know which case applies — don't assume by app name. A tray that declares
+   its linked children detach-compliant (e.g. `app-launcher`, per
+   `project-scaffolding#35`: its `:8446` session-host is re-parented via `cmd /c
+   start` and re-adopted, so `--restart` preserves open Coding sessions) is fine
+   to restart unattended. A tray that still hosts them in-subtree, or is silent
+   on the point, must be treated as unsafe: `--restart` kills the user's open
+   Coding sessions, so an unattended YOLO run **must not** restart it without
+   confirmation. Then confirm the new build
    with a **bounded** poll of the version endpoint (hard timeout + attempt cap,
    fail loud): `git_sha` must match `HEAD` (a `/healthz` 200 is not enough — a
    stale process passes it).
