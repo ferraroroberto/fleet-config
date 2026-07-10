@@ -18,7 +18,7 @@ import sys
 import tempfile
 import time
 from pathlib import Path
-from typing import Any, Dict, List, Tuple
+from typing import Any, Callable, Dict, List, Tuple
 
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")
@@ -340,144 +340,177 @@ def main() -> int:
     ))
 
     failures = 0
+    total_checks = len(cases)
+
+    def run_unit(check_fn: Callable[[], Tuple[int, int]]) -> None:
+        """Call one `_x_unit_checks()` function and fold its own
+        `(failures, total)` into the running tally — the acceptance-matrix
+        total is summed from real checks executed, never a hand-maintained
+        constant that drifts silently when a check is added or removed
+        (fleet-config#320)."""
+        nonlocal failures, total_checks
+        f, t = check_fn()
+        failures += f
+        total_checks += t
+
     for name, hook, payload, expected in cases:
         code, _stdout, stderr = run(hook, payload)
         if not assert_exit(name, expected, code, stderr):
             failures += 1
 
     # ---- context filter hook JSON + fixture eval ----
-    failures += _context_filter_unit_checks()
+    run_unit(_context_filter_unit_checks)
 
     # ---- slack_notify unit checks (pure / no network) ----
-    failures += _slack_notify_unit_checks()
+    run_unit(_slack_notify_unit_checks)
 
     # ---- notify_on_idle mention-construction unit checks ----
-    failures += _notify_mention_unit_checks()
+    run_unit(_notify_mention_unit_checks)
 
     # ---- notify_on_idle classify / session-link / idle-suppression ----
-    failures += _notify_classify_unit_checks()
+    run_unit(_notify_classify_unit_checks)
 
     # ---- notify_on_idle Fleet-Board deep link (fleet-config#242) ----
-    failures += _notify_board_link_unit_checks()
+    run_unit(_notify_board_link_unit_checks)
 
     # ---- session_state board-row persistence (fleet-config#91) ----
-    failures += _session_state_unit_checks()
+    run_unit(_session_state_unit_checks)
 
     # ---- notify_complete deterministic message assembly + resolver ----
-    failures += _notify_complete_unit_checks()
+    run_unit(_notify_complete_unit_checks)
 
     # ---- work_summary roll-up block + per-file table (pure, no gh) ----
-    failures += _work_summary_unit_checks()
+    run_unit(_work_summary_unit_checks)
 
     # ---- Pi usage collector parses model/provider/token telemetry (pure) ----
-    failures += _pi_usage_stats_unit_checks()
+    run_unit(_pi_usage_stats_unit_checks)
 
     # ---- slack category -> channel routing (issue #139) ----
-    failures += _slack_routing_unit_checks()
+    run_unit(_slack_routing_unit_checks)
 
     # ---- conversation_capture session-dedup logic ----
-    failures += _conversation_capture_unit_checks()
+    run_unit(_conversation_capture_unit_checks)
 
     # ---- conversation capture/index config-driven routing + indexing ----
-    failures += _conversation_index_unit_checks()
+    run_unit(_conversation_index_unit_checks)
 
     # ---- restart_and_verify_webapp restart-strategy + recovery hint ----
-    failures += _restart_webapp_unit_checks()
+    run_unit(_restart_webapp_unit_checks)
 
     # ---- gh_body_file_guard: warn-only stdout assertions ----
-    failures += _gh_body_file_guard_unit_checks()
+    run_unit(_gh_body_file_guard_unit_checks)
 
     # ---- bash_cmdexe_syntax_guard: warn-only stdout assertions (issue #264) ----
-    failures += _bash_cmdexe_syntax_guard_unit_checks()
+    run_unit(_bash_cmdexe_syntax_guard_unit_checks)
 
     # ---- Tier 2/3 hooks: docs-guard env override + warn-hook stdout (issue #158) ----
-    failures += _tier23_hooks_unit_checks()
+    run_unit(_tier23_hooks_unit_checks)
 
     # ---- audit_issue helper pure-logic tests (skills/_lib) ----
-    failures += _audit_issue_unit_check()
+    run_unit(_audit_issue_unit_check)
 
     # ---- fleet_audit_scan helper pure-logic tests (skills/_lib) ----
-    failures += _fleet_audit_scan_unit_check()
+    run_unit(_fleet_audit_scan_unit_check)
 
     # ---- worktree_claim helper pure-logic tests (skills/_lib) ----
-    failures += _worktree_claim_unit_check()
+    run_unit(_worktree_claim_unit_check)
 
     # ---- ux_surface helper pure-logic tests (skills/_lib) ----
-    failures += _ux_surface_unit_check()
+    run_unit(_ux_surface_unit_check)
 
     # ---- cert_drift helper pure-logic tests (skills/_lib) ----
-    failures += _cert_drift_unit_check()
+    run_unit(_cert_drift_unit_check)
 
     # ---- context-purge check.py pure-logic tests (.claude/skills/context-purge) ----
-    failures += _context_purge_check_unit_check()
+    run_unit(_context_purge_check_unit_check)
 
     # ---- context-purge gate.py ledger pure-logic tests ----
-    failures += _context_purge_gate_unit_check()
+    run_unit(_context_purge_gate_unit_check)
 
     # ---- design_lint helper pure-logic tests (skills/_lib) ----
-    failures += _design_lint_unit_check()
+    run_unit(_design_lint_unit_check)
 
     # ---- rate_gate helper pure-logic tests (skills/_lib) ----
-    failures += _rate_gate_unit_check()
+    run_unit(_rate_gate_unit_check)
 
     # ---- dirty_tree_check helper pure-logic tests (skills/_lib) ----
-    failures += _dirty_tree_check_unit_check()
+    run_unit(_dirty_tree_check_unit_check)
 
     # ---- learning-log report.py pure helpers (.claude/skills/learning-log) ----
-    failures += _learning_log_unit_checks()
+    run_unit(_learning_log_unit_checks)
 
     # ---- system-map: fleet ↔ data ↔ doc coverage (architecture/) ----
-    failures += _system_map_coverage_check()
+    run_unit(_system_map_coverage_check)
 
     # ---- system-map: per-repo .fleet.toml aggregation + anti-staleness ----
-    failures += _fleet_toml_check()
+    run_unit(_fleet_toml_check)
 
     # ---- system-map: Mermaid companion render (render_mermaid.py) freshness ----
-    failures += _mermaid_check()
+    run_unit(_mermaid_check)
 
     # ---- system-map: week-over-week 'what changed' diff (whatchanged.py) ----
-    failures += _system_map_whatchanged_check()
+    run_unit(_system_map_whatchanged_check)
 
     # ---- config-map: introspected config.data.js freshness + whatchanged ----
-    failures += _config_map_check()
+    run_unit(_config_map_check)
 
     # ---- Codex hook wiring: direct Python commands with bounded timeouts ----
-    failures += _codex_hooks_config_check()
+    run_unit(_codex_hooks_config_check)
 
     # ---- settings: live ~/.claude/settings.json ⊇ template hook wiring ----
-    failures += _settings_template_sync_check()
+    run_unit(_settings_template_sync_check)
 
     # Cleanup
     shutil.rmtree(tmp, ignore_errors=True)
 
     print()
-    print(f"Total: {len(cases) + _UNIT_CHECK_COUNT} | Failed: {failures}")
+    print(f"Total: {total_checks} | Failed: {failures}")
     return 0 if failures == 0 else 1
 
 
-# Sum of the unit checks below: context_filter (3) + slack_notify (3) +
-# mention (5) + classify (6) + session_state (14) + notify_complete (18) +
-# work_summary (5) + slack_routing (10) +
-# conversation_capture (13) + conversation_index (6) + restart_webapp (6) +
-# gh_body_file_guard (6) + bash_cmdexe_syntax_guard (8) + tier23_hooks (10) +
-# audit_issue (1) + fleet_audit_scan (1) + worktree_claim (1) + ux_surface (1) +
-# cert_drift (1) + context_purge_check (1) + context_purge_gate (1) + design_lint (1) + rate_gate (1) + dirty_tree_check (1) + learning_log (16) +
-# system_map (3) + fleet_toml (3) + mermaid (2) + system_map_whatchanged (7) + config_map (8) +
-# codex_hooks_config (4) + settings_template_sync (1).
-_UNIT_CHECK_COUNT = 166
+class _Checker:
+    """Print + count one OK/FAIL case — the shared body every
+    `_x_unit_checks()` function below used to hand-roll as a local `check()`
+    closure plus a `nonlocal failures` counter. Centralizing it means each
+    function's own `(failures, total)` return is the real count of checks it
+    ran, so `main()` can sum the acceptance-matrix total at call time instead
+    of the hand-maintained `_UNIT_CHECK_COUNT` constant (fleet-config#320)."""
 
+    def __init__(self) -> None:
+        self.failures = 0
+        self.total = 0
 
-def _context_filter_unit_checks() -> int:
-    failures = 0
-
-    def check(case: str, ok: bool, detail: str = "") -> None:
-        nonlocal failures
+    def __call__(self, case: str, ok: bool, detail: str = "") -> None:
+        self.total += 1
         print(f"{'OK   ' if ok else 'FAIL '} {case}")
         if not ok:
-            failures += 1
+            self.failures += 1
             if detail:
                 for line in detail.strip().splitlines():
                     print(f"        | {line}")
+
+
+def _subprocess_unit_check(label: str, test_file: str) -> Tuple[int, int]:
+    """Run a standalone pure-logic test file as a subprocess and report it as
+    one pass/fail check — the shared body behind the ten `_x_unit_check`
+    wrappers (audit_issue, fleet_audit_scan, worktree_claim, ux_surface,
+    cert_drift, context_purge_check, context_purge_gate, design_lint,
+    rate_gate, dirty_tree_check) that each just point it at their own test
+    file under tests/. Returns (failures, total=1)."""
+    proc = subprocess.run(
+        [PYTHON, str(REPO / "tests" / test_file)],
+        capture_output=True, text=True, encoding="utf-8", errors="replace",
+    )
+    ok = proc.returncode == 0
+    print(f"{'OK   ' if ok else 'FAIL '} {label}: pure-logic unit tests")
+    if not ok:
+        for line in (proc.stdout or "").strip().splitlines():
+            print(f"        | {line}")
+    return (0 if ok else 1), 1
+
+
+def _context_filter_unit_checks() -> Tuple[int, int]:
+    check = _Checker()
 
     payload = {
         "tool_name": "PowerShell",
@@ -522,10 +555,10 @@ def _context_filter_unit_checks() -> int:
         res.returncode == 0 and "median reduction:" in res.stdout,
         res.stdout + res.stderr,
     )
-    return failures
+    return check.failures, check.total
 
 
-def _system_map_coverage_check() -> int:
+def _system_map_coverage_check() -> Tuple[int, int]:
     """The system map must cover exactly the fleet, and the doc must agree.
 
     Guards the `/system-map` single source of truth (architecture/fleet.data.js)
@@ -539,13 +572,7 @@ def _system_map_coverage_check() -> int:
     import json
     import tomllib
 
-    failures = 0
-
-    def check(case: str, ok: bool) -> None:
-        nonlocal failures
-        print(f"{'OK   ' if ok else 'FAIL '} {case}")
-        if not ok:
-            failures += 1
+    check = _Checker()
 
     arch = REPO / "architecture"
     toml = tomllib.loads((REPO / "hooks" / "projects.toml").read_text(encoding="utf-8"))
@@ -573,10 +600,10 @@ def _system_map_coverage_check() -> int:
     doc_missing = sorted(r for r in mapped if r not in doc)
     check(f"system_map: every mapped repo is in ARCHITECTURE.md (missing: {doc_missing or 'none'})", not doc_missing)
 
-    return failures
+    return check.failures, check.total
 
 
-def _fleet_toml_check() -> int:
+def _fleet_toml_check() -> Tuple[int, int]:
     """Per-repo `.fleet.toml` aggregation is fresh and can't silently go stale.
 
     Guards the self-describing map (`build_data.py`: residual + per-repo
@@ -593,13 +620,7 @@ def _fleet_toml_check() -> int:
     import importlib.util
     import tomllib
 
-    failures = 0
-
-    def check(case: str, ok: bool) -> None:
-        nonlocal failures
-        print(f"{'OK   ' if ok else 'FAIL '} {case}")
-        if not ok:
-            failures += 1
+    check = _Checker()
 
     bd_path = REPO / ".claude" / "skills" / "system-map" / "build_data.py"
     spec = importlib.util.spec_from_file_location("system_map_build_data", bd_path)
@@ -631,10 +652,10 @@ def _fleet_toml_check() -> int:
             invalid.append(f"{name}: {exc}")
     check(f"fleet_toml: every present .fleet.toml is valid (invalid: {invalid or 'none'})", not invalid)
 
-    return failures
+    return check.failures, check.total
 
 
-def _mermaid_check() -> int:
+def _mermaid_check() -> Tuple[int, int]:
     """The Mermaid companion render (`render_mermaid.py`) can't silently go stale.
 
     Guards the text-native fleet map the same way `_fleet_toml_check` guards
@@ -647,13 +668,7 @@ def _mermaid_check() -> int:
     """
     import importlib.util
 
-    failures = 0
-
-    def check(case: str, ok: bool) -> None:
-        nonlocal failures
-        print(f"{'OK   ' if ok else 'FAIL '} {case}")
-        if not ok:
-            failures += 1
+    check = _Checker()
 
     rm_path = REPO / ".claude" / "skills" / "system-map" / "render_mermaid.py"
     spec = importlib.util.spec_from_file_location("system_map_render_mermaid", rm_path)
@@ -673,10 +688,10 @@ def _mermaid_check() -> int:
         rm.CLAUDE_MD_START in claude_md and f"```mermaid\n{flowchart_body}```" in claude_md,
     )
 
-    return failures
+    return check.failures, check.total
 
 
-def _system_map_whatchanged_check() -> int:
+def _system_map_whatchanged_check() -> Tuple[int, int]:
     """The /system-map week-over-week diff (.claude/skills/system-map/whatchanged.py).
 
     Pure-logic guard on the diff that feeds the one-line Slack summary: added /
@@ -685,13 +700,7 @@ def _system_map_whatchanged_check() -> int:
     """
     import importlib.util
 
-    failures = 0
-
-    def check(case: str, ok: bool) -> None:
-        nonlocal failures
-        print(f"{'OK   ' if ok else 'FAIL '} {case}")
-        if not ok:
-            failures += 1
+    check = _Checker()
 
     wc_path = REPO / ".claude" / "skills" / "system-map" / "whatchanged.py"
     spec = importlib.util.spec_from_file_location("system_map_whatchanged", wc_path)
@@ -719,10 +728,10 @@ def _system_map_whatchanged_check() -> int:
     check("system_map_whatchanged: no prior snapshot reads 'baseline'",
           wc.summarize(None, cur) == "baseline")
 
-    return failures
+    return check.failures, check.total
 
 
-def _config_map_check() -> int:
+def _config_map_check() -> Tuple[int, int]:
     """The /config-map data is fresh, and its week-over-week diff behaves.
 
     Guards the introspected config map (`.claude/skills/config-map`):
@@ -737,13 +746,7 @@ def _config_map_check() -> int:
     """
     import importlib.util
 
-    failures = 0
-
-    def check(case: str, ok: bool) -> None:
-        nonlocal failures
-        print(f"{'OK   ' if ok else 'FAIL '} {case}")
-        if not ok:
-            failures += 1
+    check = _Checker()
 
     cm_dir = REPO / ".claude" / "skills" / "config-map"
     bd_spec = importlib.util.spec_from_file_location("config_map_build_data", cm_dir / "build_data.py")
@@ -785,10 +788,10 @@ def _config_map_check() -> int:
     check("config_map_whatchanged: no prior snapshot reads 'baseline'",
           wc.summarize(None, cur) == "baseline")
 
-    return failures
+    return check.failures, check.total
 
 
-def _settings_template_sync_check() -> int:
+def _settings_template_sync_check() -> Tuple[int, int]:
     """Every hook wired in settings.template.json must also be wired in the live
     ~/.claude/settings.json.
 
@@ -798,7 +801,8 @@ def _settings_template_sync_check() -> int:
     template-wired `(event, hook)` is missing from the live file. Direction is
     template ⊆ live only: machine-local *extra* hooks are legitimate and don't
     fail. Skips gracefully (one line, exit 0) when the live file is absent, so
-    it never breaks on a machine without it. Prints exactly one line either way.
+    it never breaks on a machine without it. Prints exactly one line either way
+    — always one check, whether skipped or run.
     """
     import re
 
@@ -818,7 +822,7 @@ def _settings_template_sync_check() -> int:
     live_path = Path.home() / ".claude" / "settings.json"
     if not live_path.exists():
         print("OK    settings_sync: no live ~/.claude/settings.json (skipped)")
-        return 0
+        return 0, 1
 
     template = wired(REPO / "settings.template.json")
     live = wired(live_path)
@@ -826,10 +830,10 @@ def _settings_template_sync_check() -> int:
     ok = not missing
     print(f"{'OK   ' if ok else 'FAIL '} settings_sync: template hooks all wired live "
           f"(missing: {missing or 'none'})")
-    return 0 if ok else 1
+    return (0 if ok else 1), 1
 
 
-def _codex_hooks_config_check() -> int:
+def _codex_hooks_config_check() -> Tuple[int, int]:
     """Codex hooks should run Python directly and fail fast.
 
     The Claude side still goes through ``run-hook.ps1`` because Claude Code runs
@@ -839,16 +843,7 @@ def _codex_hooks_config_check() -> int:
     Codex wiring on the direct-Python path and proves the configured commands
     return promptly when driven with a minimal hook payload.
     """
-    failures = 0
-
-    def check(case: str, ok: bool, detail: str = "") -> None:
-        nonlocal failures
-        print(f"{'OK   ' if ok else 'FAIL '} {case}")
-        if not ok:
-            failures += 1
-            if detail:
-                for line in detail.strip().splitlines():
-                    print(f"        | {line}")
+    check = _Checker()
 
     data = json.loads((REPO / "codex-hooks.json").read_text(encoding="utf-8"))
     hook_entries = [
@@ -904,21 +899,15 @@ def _codex_hooks_config_check() -> int:
         "\n".join(smoke_failures),
     )
 
-    return failures
+    return check.failures, check.total
 
 
-def _slack_notify_unit_checks() -> int:
+def _slack_notify_unit_checks() -> Tuple[int, int]:
     """Exercise slack_notify without touching the network. Returns failure count."""
     sys.path.insert(0, str(HOOKS))
     import slack_notify  # noqa: E402
 
-    failures = 0
-
-    def check(case: str, ok: bool) -> None:
-        nonlocal failures
-        print(f"{'OK   ' if ok else 'FAIL '} {case}")
-        if not ok:
-            failures += 1
+    check = _Checker()
 
     check(
         "slack_notify: archive URL -> bare id",
@@ -965,10 +954,10 @@ def _slack_notify_unit_checks() -> int:
     check("slack_notify: env var wins over settings.json fallback",
           env_wins == "xoxb-from-env")
 
-    return failures
+    return check.failures, check.total
 
 
-def _notify_mention_unit_checks() -> int:
+def _notify_mention_unit_checks() -> Tuple[int, int]:
     """The single-sourced @mention decision in slack_notify (off by default).
 
     Mentioning now lives in exactly one place — ``slack_notify.notify()`` — via
@@ -977,13 +966,7 @@ def _notify_mention_unit_checks() -> int:
     sys.path.insert(0, str(HOOKS))
     import slack_notify  # noqa: E402
 
-    failures = 0
-
-    def check(case: str, ok: bool) -> None:
-        nonlocal failures
-        print(f"{'OK   ' if ok else 'FAIL '} {case}")
-        if not ok:
-            failures += 1
+    check = _Checker()
 
     check("mention_prefix: enabled + user -> tag",
           slack_notify._mention_prefix("U0B71PQEL6S", True) == "<@U0B71PQEL6S> ")
@@ -998,22 +981,16 @@ def _notify_mention_unit_checks() -> int:
     check("resolve_mention: None -> global toggle (off by default)",
           slack_notify._resolve_mention(None) is False)
 
-    return failures
+    return check.failures, check.total
 
 
-def _notify_classify_unit_checks() -> int:
+def _notify_classify_unit_checks() -> Tuple[int, int]:
     """Per-type icon/wording and bridge session-link parsing — the two
     deterministic pieces of the notification logic."""
     sys.path.insert(0, str(HOOKS))
     import notify_on_idle  # noqa: E402
 
-    failures = 0
-
-    def check(case: str, ok: bool) -> None:
-        nonlocal failures
-        print(f"{'OK   ' if ok else 'FAIL '} {case}")
-        if not ok:
-            failures += 1
+    check = _Checker()
 
     # ---- classify: icon per notification_type, message passed through ----
     icon, text = notify_on_idle.classify(
@@ -1049,10 +1026,10 @@ def _notify_classify_unit_checks() -> int:
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 
-    return failures
+    return check.failures, check.total
 
 
-def _notify_board_link_unit_checks() -> int:
+def _notify_board_link_unit_checks() -> Tuple[int, int]:
     """Fleet-Board deep-link line (fleet-config#242): _lib.resolve_board_url's
     project-override/global-fallback/unset resolution, and notify_on_idle's
     board_link() message assembly — all against synthetic registries so
@@ -1061,13 +1038,7 @@ def _notify_board_link_unit_checks() -> int:
     import _lib  # noqa: E402
     import notify_on_idle  # noqa: E402
 
-    failures = 0
-
-    def check(case: str, ok: bool) -> None:
-        nonlocal failures
-        print(f"{'OK   ' if ok else 'FAIL '} {case}")
-        if not ok:
-            failures += 1
+    check = _Checker()
 
     # The real machine may have FLEET_BOARD_URL genuinely set (fleet-config#271
     # is meant to be configured this way) — clear it for the duration of these
@@ -1148,10 +1119,10 @@ def _notify_board_link_unit_checks() -> int:
         else:
             os.environ[env_key] = old_env
 
-    return failures
+    return check.failures, check.total
 
 
-def _session_state_unit_checks() -> int:
+def _session_state_unit_checks() -> Tuple[int, int]:
     """sessions-state.json persistence (fleet-config#91): event → status mapping,
     same-session flip, pruning, corrupt-file recovery, the notify_on_idle
     piggyback, and the live session-name lookup (fleet-config#302) — all
@@ -1160,13 +1131,7 @@ def _session_state_unit_checks() -> int:
     sys.path.insert(0, str(HOOKS))
     import session_state  # noqa: E402
 
-    failures = 0
-
-    def check(case: str, ok: bool) -> None:
-        nonlocal failures
-        print(f"{'OK   ' if ok else 'FAIL '} {case}")
-        if not ok:
-            failures += 1
+    check = _Checker()
 
     tmp = Path(tempfile.mkdtemp(prefix="session_state_"))
     sessions_dir = Path(tempfile.mkdtemp(prefix="session_state_sessions_"))
@@ -1310,21 +1275,15 @@ def _session_state_unit_checks() -> int:
         shutil.rmtree(tmp, ignore_errors=True)
         shutil.rmtree(sessions_dir, ignore_errors=True)
 
-    return failures
+    return check.failures, check.total
 
 
-def _gh_body_file_guard_unit_checks() -> int:
+def _gh_body_file_guard_unit_checks() -> Tuple[int, int]:
     """The warn-only nudge fires on the two payload traps and stays silent
     otherwise. Exit is always 0, so these assert on STDOUT, not the exit code:
     a nudge present (non-empty stdout) for the risky forms, empty for the safe
     ones."""
-    failures = 0
-
-    def check(case: str, ok: bool) -> None:
-        nonlocal failures
-        print(f"{'OK   ' if ok else 'FAIL '} {case}")
-        if not ok:
-            failures += 1
+    check = _Checker()
 
     def stdout_for(command: str) -> str:
         code, out, _err = run("gh_body_file_guard", {"tool_name": "Bash", "tool_input": {"command": command}})
@@ -1344,21 +1303,15 @@ def _gh_body_file_guard_unit_checks() -> int:
     check("gh_guard: gh pr create plain inline body (no risky construct) -> silent",
           stdout_for('gh pr create --title x --body "plain text, nothing to expand"') == "")
 
-    return failures
+    return check.failures, check.total
 
 
-def _bash_cmdexe_syntax_guard_unit_checks() -> int:
+def _bash_cmdexe_syntax_guard_unit_checks() -> Tuple[int, int]:
     """The warn-only nudge fires on cmd.exe-only syntax and stays silent on
     Bash-native equivalents. Exit is always 0, so these assert on STDOUT, not
     the exit code: a nudge present (non-empty stdout) for the risky forms,
     empty for the safe ones."""
-    failures = 0
-
-    def check(case: str, ok: bool) -> None:
-        nonlocal failures
-        print(f"{'OK   ' if ok else 'FAIL '} {case}")
-        if not ok:
-            failures += 1
+    check = _Checker()
 
     def stdout_for(command: str) -> str:
         code, out, _err = run("bash_cmdexe_syntax_guard", {"tool_name": "Bash", "tool_input": {"command": command}})
@@ -1382,22 +1335,16 @@ def _bash_cmdexe_syntax_guard_unit_checks() -> int:
     check("cmdexe_guard: plain git log -> silent",
           stdout_for("git log --oneline") == "")
 
-    return failures
+    return check.failures, check.total
 
 
-def _tier23_hooks_unit_checks() -> int:
+def _tier23_hooks_unit_checks() -> Tuple[int, int]:
     """The three Tier 2/3 hooks (issue #158): docs-guard env override, plus the
     two warn-only hooks whose output is on STDOUT (exit always 0), so these
     assert nudge-present / silent rather than the exit code. The warn hooks read
     the file from disk, so each case writes a real temp file first.
     """
-    failures = 0
-
-    def check(case: str, ok: bool) -> None:
-        nonlocal failures
-        print(f"{'OK   ' if ok else 'FAIL '} {case}")
-        if not ok:
-            failures += 1
+    check = _Checker()
 
     # ---- docs_dated_filename_guard: env override flips block -> allow ----
     os.environ["CLAUDE_HOOKS_ALLOW_DATED_DOCS"] = "1"
@@ -1454,65 +1401,38 @@ def _tier23_hooks_unit_checks() -> int:
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 
-    return failures
+    return check.failures, check.total
 
 
-def _audit_issue_unit_check() -> int:
+def _audit_issue_unit_check() -> Tuple[int, int]:
     """Run skills/_lib/audit_issue.py's pure-logic tests as a subprocess.
 
     Kept standalone (not inlined here) so the helper's marker / title-adoption /
     keep-close logic is testable on its own, and reachable from the one gate.
     """
-    proc = subprocess.run(
-        [PYTHON, str(REPO / "tests" / "test_audit_issue.py")],
-        capture_output=True, text=True, encoding="utf-8", errors="replace",
-    )
-    ok = proc.returncode == 0
-    print(f"{'OK   ' if ok else 'FAIL '} audit_issue: pure-logic unit tests")
-    if not ok:
-        for line in (proc.stdout or "").strip().splitlines():
-            print(f"        | {line}")
-    return 0 if ok else 1
+    return _subprocess_unit_check("audit_issue", "test_audit_issue.py")
 
 
-def _fleet_audit_scan_unit_check() -> int:
+def _fleet_audit_scan_unit_check() -> Tuple[int, int]:
     """Run skills/_lib/fleet_audit_scan.py's pure-logic tests as a subprocess.
 
     Standalone (like test_audit_issue) so `is_fleet_repo` is testable on its
     own and reachable from the one gate.
     """
-    proc = subprocess.run(
-        [PYTHON, str(REPO / "tests" / "test_fleet_audit_scan.py")],
-        capture_output=True, text=True, encoding="utf-8", errors="replace",
-    )
-    ok = proc.returncode == 0
-    print(f"{'OK   ' if ok else 'FAIL '} fleet_audit_scan: pure-logic unit tests")
-    if not ok:
-        for line in (proc.stdout or "").strip().splitlines():
-            print(f"        | {line}")
-    return 0 if ok else 1
+    return _subprocess_unit_check("fleet_audit_scan", "test_fleet_audit_scan.py")
 
 
-def _worktree_claim_unit_check() -> int:
+def _worktree_claim_unit_check() -> Tuple[int, int]:
     """Run skills/_lib/worktree_claim.py's pure-logic tests as a subprocess.
 
     Standalone (like test_audit_issue) so the claim FSM — atomic acquire, the
     worktree fallback when held, TTL stale-reclaim, and the sibling-path
     convention — is testable on its own and reachable from the one gate.
     """
-    proc = subprocess.run(
-        [PYTHON, str(REPO / "tests" / "test_worktree_claim.py")],
-        capture_output=True, text=True, encoding="utf-8", errors="replace",
-    )
-    ok = proc.returncode == 0
-    print(f"{'OK   ' if ok else 'FAIL '} worktree_claim: pure-logic unit tests")
-    if not ok:
-        for line in (proc.stdout or "").strip().splitlines():
-            print(f"        | {line}")
-    return 0 if ok else 1
+    return _subprocess_unit_check("worktree_claim", "test_worktree_claim.py")
 
 
-def _context_purge_check_unit_check() -> int:
+def _context_purge_check_unit_check() -> Tuple[int, int]:
     """Run .claude/skills/context-purge/check.py's pure-logic tests as a subprocess.
 
     Standalone (like test_audit_issue / test_ux_surface) so the purge's
@@ -1520,37 +1440,19 @@ def _context_purge_check_unit_check() -> int:
     trigger survival in SKILL.md descriptions — are testable on their own and
     reachable from the one gate. (fleet-config#287)
     """
-    proc = subprocess.run(
-        [PYTHON, str(REPO / "tests" / "test_context_purge_check.py")],
-        capture_output=True, text=True, encoding="utf-8", errors="replace",
-    )
-    ok = proc.returncode == 0
-    print(f"{'OK   ' if ok else 'FAIL '} context_purge_check: pure-logic unit tests")
-    if not ok:
-        for line in (proc.stdout or "").strip().splitlines():
-            print(f"        | {line}")
-    return 0 if ok else 1
+    return _subprocess_unit_check("context_purge_check", "test_context_purge_check.py")
 
 
-def _context_purge_gate_unit_check() -> int:
+def _context_purge_gate_unit_check() -> Tuple[int, int]:
     """Run .claude/skills/context-purge/gate.py's pure-logic tests as a subprocess.
 
     The skip-unchanged ledger's parse/render/diff core, testable without gh —
     same standalone pattern as test_context_purge_check. (fleet-config#287)
     """
-    proc = subprocess.run(
-        [PYTHON, str(REPO / "tests" / "test_context_purge_gate.py")],
-        capture_output=True, text=True, encoding="utf-8", errors="replace",
-    )
-    ok = proc.returncode == 0
-    print(f"{'OK   ' if ok else 'FAIL '} context_purge_gate: pure-logic unit tests")
-    if not ok:
-        for line in (proc.stdout or "").strip().splitlines():
-            print(f"        | {line}")
-    return 0 if ok else 1
+    return _subprocess_unit_check("context_purge_gate", "test_context_purge_gate.py")
 
 
-def _ux_surface_unit_check() -> int:
+def _ux_surface_unit_check() -> Tuple[int, int]:
     """Run skills/_lib/ux_surface.py's pure-logic tests as a subprocess.
 
     Standalone (like test_audit_issue / test_worktree_claim) so the UX-gate
@@ -1558,19 +1460,10 @@ def _ux_surface_unit_check() -> int:
     the diff intersection — is testable on its own and reachable from the one
     gate. (fleet-config#195)
     """
-    proc = subprocess.run(
-        [PYTHON, str(REPO / "tests" / "test_ux_surface.py")],
-        capture_output=True, text=True, encoding="utf-8", errors="replace",
-    )
-    ok = proc.returncode == 0
-    print(f"{'OK   ' if ok else 'FAIL '} ux_surface: pure-logic unit tests")
-    if not ok:
-        for line in (proc.stdout or "").strip().splitlines():
-            print(f"        | {line}")
-    return 0 if ok else 1
+    return _subprocess_unit_check("ux_surface", "test_ux_surface.py")
 
 
-def _cert_drift_unit_check() -> int:
+def _cert_drift_unit_check() -> Tuple[int, int]:
     """Run skills/_lib/cert_drift.py's pure-logic tests as a subprocess.
 
     Standalone (like test_ux_surface) so the tailnet-cert drift truth table —
@@ -1578,19 +1471,10 @@ def _cert_drift_unit_check() -> int:
     tailnet-reachable self-signed-only app trips — is testable on its own and
     reachable from the one gate. (fleet-config#210)
     """
-    proc = subprocess.run(
-        [PYTHON, str(REPO / "tests" / "test_cert_drift.py")],
-        capture_output=True, text=True, encoding="utf-8", errors="replace",
-    )
-    ok = proc.returncode == 0
-    print(f"{'OK   ' if ok else 'FAIL '} cert_drift: pure-logic unit tests")
-    if not ok:
-        for line in (proc.stdout or "").strip().splitlines():
-            print(f"        | {line}")
-    return 0 if ok else 1
+    return _subprocess_unit_check("cert_drift", "test_cert_drift.py")
 
 
-def _design_lint_unit_check() -> int:
+def _design_lint_unit_check() -> Tuple[int, int]:
     """Run skills/_lib/design_lint.py's pure-logic tests as a subprocess.
 
     Standalone (like test_cert_drift) so /design-sync v2's deterministic
@@ -1599,19 +1483,10 @@ def _design_lint_unit_check() -> int:
     byte-compare, and sibling duplicate detection — are testable on their own
     and reachable from the one gate. (fleet-config#277)
     """
-    proc = subprocess.run(
-        [PYTHON, str(REPO / "tests" / "test_design_lint.py")],
-        capture_output=True, text=True, encoding="utf-8", errors="replace",
-    )
-    ok = proc.returncode == 0
-    print(f"{'OK   ' if ok else 'FAIL '} design_lint: pure-logic unit tests")
-    if not ok:
-        for line in (proc.stdout or "").strip().splitlines():
-            print(f"        | {line}")
-    return 0 if ok else 1
+    return _subprocess_unit_check("design_lint", "test_design_lint.py")
 
 
-def _rate_gate_unit_check() -> int:
+def _rate_gate_unit_check() -> Tuple[int, int]:
     """Run skills/_lib/rate_gate.py's pure-logic tests as a subprocess.
 
     Standalone (like test_cert_drift) so /audit-fleet's and /cleanup-fleet's
@@ -1620,19 +1495,10 @@ def _rate_gate_unit_check() -> int:
     its own, with no real rate-limits.json touched, and reachable from the one
     gate. Replaces the retired audit_retry dead-man's-switch check. (fleet-config#261)
     """
-    proc = subprocess.run(
-        [PYTHON, str(REPO / "tests" / "test_rate_gate.py")],
-        capture_output=True, text=True, encoding="utf-8", errors="replace",
-    )
-    ok = proc.returncode == 0
-    print(f"{'OK   ' if ok else 'FAIL '} rate_gate: pure-logic unit tests")
-    if not ok:
-        for line in (proc.stdout or "").strip().splitlines():
-            print(f"        | {line}")
-    return 0 if ok else 1
+    return _subprocess_unit_check("rate_gate", "test_rate_gate.py")
 
 
-def _dirty_tree_check_unit_check() -> int:
+def _dirty_tree_check_unit_check() -> Tuple[int, int]:
     """Run skills/_lib/dirty_tree_check.py's pure-logic tests as a subprocess.
 
     Standalone (like test_rate_gate) so the post-flight dirty-tree decision --
@@ -1640,19 +1506,10 @@ def _dirty_tree_check_unit_check() -> int:
     feature branch with real evidence of work -- is testable on its own, with a
     real throwaway git repo, and reachable from the one gate. (fleet-config#247)
     """
-    proc = subprocess.run(
-        [PYTHON, str(REPO / "tests" / "test_dirty_tree_check.py")],
-        capture_output=True, text=True, encoding="utf-8", errors="replace",
-    )
-    ok = proc.returncode == 0
-    print(f"{'OK   ' if ok else 'FAIL '} dirty_tree_check: pure-logic unit tests")
-    if not ok:
-        for line in (proc.stdout or "").strip().splitlines():
-            print(f"        | {line}")
-    return 0 if ok else 1
+    return _subprocess_unit_check("dirty_tree_check", "test_dirty_tree_check.py")
 
 
-def _learning_log_unit_checks() -> int:
+def _learning_log_unit_checks() -> Tuple[int, int]:
     """The pure window / section / bucketing / stats / ledger logic of
     learning-log/gather.py.
 
@@ -1665,13 +1522,7 @@ def _learning_log_unit_checks() -> int:
     sys.path.insert(0, str(REPO / ".claude" / "skills" / "learning-log"))
     import gather as ll  # noqa: E402
 
-    failures = 0
-
-    def check(case: str, ok: bool) -> None:
-        nonlocal failures
-        print(f"{'OK   ' if ok else 'FAIL '} {case}")
-        if not ok:
-            failures += 1
+    check = _Checker()
 
     # ---- last-run-at parsing ----
     check("learning_log: parse_last_run reads the stamp",
@@ -1744,22 +1595,16 @@ def _learning_log_unit_checks() -> int:
           and "- 2026-06-08: prior learning (repo#9)" in body
           and body.index("2026-06-15: fresh") < body.index("2026-06-08: prior learning"))
 
-    return failures
+    return check.failures, check.total
 
 
-def _conversation_capture_unit_checks() -> int:
+def _conversation_capture_unit_checks() -> Tuple[int, int]:
     """The per-session dedup logic: stable token, filename shape, and the
     supersede-prior sweep that collapses a session's many Stop captures to one."""
     sys.path.insert(0, str(HOOKS))
     import conversation_capture as cc  # noqa: E402
 
-    failures = 0
-
-    def check(case: str, ok: bool) -> None:
-        nonlocal failures
-        print(f"{'OK   ' if ok else 'FAIL '} {case}")
-        if not ok:
-            failures += 1
+    check = _Checker()
 
     check("session_token: last 8 alnum of a uuid-ish id",
           cc.session_token("01HNYE6TF-AbCd-1234") == "abcd1234")
@@ -1841,10 +1686,10 @@ def _conversation_capture_unit_checks() -> int:
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 
-    return failures
+    return check.failures, check.total
 
 
-def _conversation_index_unit_checks() -> int:
+def _conversation_index_unit_checks() -> Tuple[int, int]:
     """Config-driven capture routing + the indexer's digest/upsert/decay logic.
 
     Hermetic: the hub is stubbed, so no network is touched. Covers the opt-in
@@ -1855,13 +1700,7 @@ def _conversation_index_unit_checks() -> int:
     import conversation_index as ci  # noqa: E402
     import hub_client  # noqa: E402
 
-    failures = 0
-
-    def check(case: str, ok: bool) -> None:
-        nonlocal failures
-        print(f"{'OK   ' if ok else 'FAIL '} {case}")
-        if not ok:
-            failures += 1
+    check = _Checker()
 
     # ---- config resolution / opt-in gate ----
     lo = cc.resolve_capture_config({"cwd": "E:/automation/life-os"})
@@ -1903,10 +1742,10 @@ def _conversation_index_unit_checks() -> int:
         ci.hub_client.complete = saved
         shutil.rmtree(tmp, ignore_errors=True)
 
-    return failures
+    return check.failures, check.total
 
 
-def _restart_webapp_unit_checks() -> int:
+def _restart_webapp_unit_checks() -> Tuple[int, int]:
     """The tray-owned restart strategy: projects.toml carries a `restart_cmd`
     for the three tray apps, and the recovery hint stays actionable and
     :8446-safe. Both are pure (no tray needed), so they're gate-testable."""
@@ -1914,13 +1753,7 @@ def _restart_webapp_unit_checks() -> int:
     import restart_and_verify_webapp as rw  # noqa: E402
     import _lib  # noqa: E402
 
-    failures = 0
-
-    def check(case: str, ok: bool) -> None:
-        nonlocal failures
-        print(f"{'OK   ' if ok else 'FAIL '} {case}")
-        if not ok:
-            failures += 1
+    check = _Checker()
 
     reg = _lib.load_registry()
     by_name = {p.name: p for p in reg.projects}
@@ -1946,22 +1779,16 @@ def _restart_webapp_unit_checks() -> int:
     check("recovery_hint: no restart_cmd -> option 1 is the tray, no respawn line",
           "WebappManager" not in tray_only and "1) Full clean restart" in tray_only)
 
-    return failures
+    return check.failures, check.total
 
 
-def _notify_complete_unit_checks() -> int:
+def _notify_complete_unit_checks() -> Tuple[int, int]:
     """Canonical per-kind message assembly + the shared slack-target resolver."""
     sys.path.insert(0, str(HOOKS))
     import notify_complete  # noqa: E402
     import _lib  # noqa: E402
 
-    failures = 0
-
-    def check(case: str, ok: bool) -> None:
-        nonlocal failures
-        print(f"{'OK   ' if ok else 'FAIL '} {case}")
-        if not ok:
-            failures += 1
+    check = _Checker()
 
     bm = notify_complete.build_message
     check("build: add -> filed + issue link",
@@ -2008,10 +1835,10 @@ def _notify_complete_unit_checks() -> int:
     check("resolve_slack_target: global fallback + claude name",
           ch == "C0B76GBA0LS" and usr == "U0B71PQEL6S" and nm == "claude")
 
-    return failures
+    return check.failures, check.total
 
 
-def _work_summary_unit_checks() -> int:
+def _work_summary_unit_checks() -> Tuple[int, int]:
     """The work-summary roll-up block + per-file table (hooks/work_summary.py).
 
     Pure / no gh: feed the formatters a synthetic ``gh pr view`` payload (an
@@ -2021,13 +1848,7 @@ def _work_summary_unit_checks() -> int:
     sys.path.insert(0, str(HOOKS))
     import work_summary as ws  # noqa: E402
 
-    failures = 0
-
-    def check(case: str, ok: bool) -> None:
-        nonlocal failures
-        print(f"{'OK   ' if ok else 'FAIL '} {case}")
-        if not ok:
-            failures += 1
+    check = _Checker()
 
     M = ws.MINUS  # U+2212, as the formatters emit
 
@@ -2075,21 +1896,15 @@ def _work_summary_unit_checks() -> int:
           ws.format_block({}) == "" and ws.format_table({}) == ""
           and ws.format_block({"files": []}) == "")
 
-    return failures
+    return check.failures, check.total
 
 
-def _pi_usage_stats_unit_checks() -> int:
+def _pi_usage_stats_unit_checks() -> Tuple[int, int]:
     """Pi JSONL usage collector: model/provider + tokens, no prompt text."""
     sys.path.insert(0, str(HOOKS))
     import pi_usage_stats as pi_stats  # noqa: E402
 
-    failures = 0
-
-    def check(case: str, ok: bool) -> None:
-        nonlocal failures
-        print(f"{'OK   ' if ok else 'FAIL '} {case}")
-        if not ok:
-            failures += 1
+    check = _Checker()
 
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp) / "sessions"
@@ -2114,10 +1929,10 @@ def _pi_usage_stats_unit_checks() -> int:
         check("pi_usage_stats: JSON rows omit prompt text",
               "content" not in row.as_dict() and "message" not in row.as_dict())
 
-    return failures
+    return check.failures, check.total
 
 
-def _slack_routing_unit_checks() -> int:
+def _slack_routing_unit_checks() -> Tuple[int, int]:
     """Category → channel routing (issue #139): the resolver picks the dedicated
     channel per category, falls back to the single channel when a category is
     unset, and the kind → category map sends action-needed pings to attention."""
@@ -2125,13 +1940,7 @@ def _slack_routing_unit_checks() -> int:
     import _lib  # noqa: E402
     import notify_complete  # noqa: E402
 
-    failures = 0
-
-    def check(case: str, ok: bool) -> None:
-        nonlocal failures
-        print(f"{'OK   ' if ok else 'FAIL '} {case}")
-        if not ok:
-            failures += 1
+    check = _Checker()
 
     cwd = Path("E:/does/not/match/anything")  # global-only resolution
 
@@ -2175,7 +1984,7 @@ def _slack_routing_unit_checks() -> int:
     check("category_for: log kinds -> log",
           all(cat(k) == "log" for k in ("add", "finish", "yolo", "audit", "recap", "learning", "finish-batch")))
 
-    return failures
+    return check.failures, check.total
 
 
 if __name__ == "__main__":

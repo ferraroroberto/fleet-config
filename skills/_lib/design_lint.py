@@ -36,8 +36,9 @@ import json
 import re
 import subprocess
 import sys
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Callable, Dict, List, Optional, Tuple
 
 # --------------------------------------------------------------------- files
 
@@ -712,127 +713,147 @@ def _class_scope_status(css_all: str, class_name: str) -> set:
     return scopes
 
 
-def contracts(
-    root: Path,
-    css_files: List[Path],
-    html_files: List[Path],
-    js_files: List[Path],
-    spec_light: Dict[str, str],
-    spec_dark: Optional[Dict[str, str]] = None,
-) -> List[dict]:
-    css_all = "\n".join(f"/*FILE {rel(root, p)}*/\n" + strip_comments(read_text(p), "css")
-                        for p in css_files)
-    markup_all = "\n".join(
-        f"/*FILE {rel(root, p)}*/\n"
-        + strip_comments(read_text(p), "html" if p.suffix == ".html" else "js")
-        for p in html_files + js_files)
+@dataclass
+class _ContractsCtx:
+    """Shared, precomputed state read by every individual contract check —
+    built once in `contracts()` so each `_check_*` function stays a thin,
+    independently readable unit instead of a 600-line inline body."""
+    root: Path
+    css_all: str
+    markup_all: str
+    spec_light: Dict[str, str]
+    spec_dark: Optional[Dict[str, str]]
+    html_files: List[Path]
+    js_files: List[Path]
+    index_files: List[Path]
+    vendored_root: Optional[Path]
+    modals: List[dict]
 
-    def evidence(blob: str, pattern: str, flags: int = 0) -> Optional[str]:
-        m = re.search(pattern, blob, flags)
-        if not m:
-            return None
-        fh = blob.rfind("/*FILE ", 0, m.start())
-        fname = blob[fh + 7: blob.find("*/", fh)] if fh >= 0 else "?"
-        line = blob.count("\n", blob.find("*/", fh) + 2 if fh >= 0 else 0, m.start()) + 1
-        return f"{fname}:{line}"
 
-    def loc_at(blob: str, pos: int) -> str:
-        fh = blob.rfind("/*FILE ", 0, pos)
-        fname = blob[fh + 7: blob.find("*/", fh)] if fh >= 0 else "?"
-        line = blob.count("\n", blob.find("*/", fh) + 2 if fh >= 0 else 0, pos) + 1
-        return f"{fname}:{line}"
+def _evidence(blob: str, pattern: str, flags: int = 0) -> Optional[str]:
+    m = re.search(pattern, blob, flags)
+    if not m:
+        return None
+    fh = blob.rfind("/*FILE ", 0, m.start())
+    fname = blob[fh + 7: blob.find("*/", fh)] if fh >= 0 else "?"
+    line = blob.count("\n", blob.find("*/", fh) + 2 if fh >= 0 else 0, m.start()) + 1
+    return f"{fname}:{line}"
 
-    checks: List[dict] = []
 
-    def add(check_id: str, status: str, detail: str, ev: Optional[str] = None) -> None:
-        checks.append({"id": check_id, "status": status, "detail": detail,
-                       "evidence": ev})
+def _loc_at(blob: str, pos: int) -> str:
+    fh = blob.rfind("/*FILE ", 0, pos)
+    fname = blob[fh + 7: blob.find("*/", fh)] if fh >= 0 else "?"
+    line = blob.count("\n", blob.find("*/", fh) + 2 if fh >= 0 else 0, pos) + 1
+    return f"{fname}:{line}"
 
+
+def _result(check_id: str, status: str, detail: str, ev: Optional[str] = None) -> dict:
+    return {"id": check_id, "status": status, "detail": detail, "evidence": ev}
+
+
+# Each `_check_*` below owns exactly one design.md v2 component-contract check
+# (or, for the editor-modal group, several checks that share one `modals`
+# scan) and returns its own `checks` entries — `contracts()` is a thin
+# orchestrator over `_CONTRACT_CHECKS`, run in numbered order.
+
+def _check_focus_visible_ring(ctx: _ContractsCtx) -> List[dict]:
     # 1. tokenized :focus-visible ring
+    css_all = ctx.css_all
     fv = re.search(r":focus-visible[^{}]*\{([^{}]*)\}", css_all)
     if not fv:
-        add("focus-visible-ring", "FAIL", "no :focus-visible rule — keyboard focus falls to the browser default (design.md v2 focus contract)")
-    elif "var(--" in fv.group(1) and "outline" in fv.group(1):
-        add("focus-visible-ring", "PASS", "tokenized :focus-visible outline present",
-            evidence(css_all, r":focus-visible[^{}]*\{"))
-    else:
-        add("focus-visible-ring", "WARN", "a :focus-visible rule exists but its outline is not tokenized",
-            evidence(css_all, r":focus-visible[^{}]*\{"))
+        return [_result("focus-visible-ring", "FAIL", "no :focus-visible rule — keyboard focus falls to the browser default (design.md v2 focus contract)")]
+    if "var(--" in fv.group(1) and "outline" in fv.group(1):
+        return [_result("focus-visible-ring", "PASS", "tokenized :focus-visible outline present",
+                         _evidence(css_all, r":focus-visible[^{}]*\{"))]
+    return [_result("focus-visible-ring", "WARN", "a :focus-visible rule exists but its outline is not tokenized",
+                     _evidence(css_all, r":focus-visible[^{}]*\{"))]
 
+
+def _check_reduced_motion(ctx: _ContractsCtx) -> List[dict]:
     # 2. prefers-reduced-motion
+    css_all = ctx.css_all
     if re.search(r"@media[^{]*prefers-reduced-motion", css_all):
-        add("reduced-motion", "PASS", "prefers-reduced-motion block present",
-            evidence(css_all, r"@media[^{]*prefers-reduced-motion"))
-    else:
-        add("reduced-motion", "FAIL", "no prefers-reduced-motion handling (design.md v2 Motion section)")
+        return [_result("reduced-motion", "PASS", "prefers-reduced-motion block present",
+                         _evidence(css_all, r"@media[^{]*prefers-reduced-motion"))]
+    return [_result("reduced-motion", "FAIL", "no prefers-reduced-motion handling (design.md v2 Motion section)")]
 
+
+def _check_desktop_measure(ctx: _ContractsCtx) -> List[dict]:
     # 3. desktop measure (centered 772px column)
+    css_all = ctx.css_all
     if re.search(r"max-width:\s*772px", css_all):
-        add("desktop-measure", "PASS", "content measure capped at the fleet 772px",
-            evidence(css_all, r"max-width:\s*772px"))
-    else:
-        near = re.search(r"max-width:\s*(6\d\d|7\d\d|8\d\d)px", css_all)
-        if near:
-            add("desktop-measure", "WARN",
-                f"content capped at {near.group(0).split(':')[1].strip()} — spec is 772px",
-                evidence(css_all, r"max-width:\s*(6\d\d|7\d\d|8\d\d)px"))
-        else:
-            add("desktop-measure", "FAIL", "no desktop content cap found — spec: centered max-width 772px")
+        return [_result("desktop-measure", "PASS", "content measure capped at the fleet 772px",
+                         _evidence(css_all, r"max-width:\s*772px"))]
+    near = re.search(r"max-width:\s*(6\d\d|7\d\d|8\d\d)px", css_all)
+    if near:
+        return [_result("desktop-measure", "WARN",
+                         f"content capped at {near.group(0).split(':')[1].strip()} — spec is 772px",
+                         _evidence(css_all, r"max-width:\s*(6\d\d|7\d\d|8\d\d)px"))]
+    return [_result("desktop-measure", "FAIL", "no desktop content cap found — spec: centered max-width 772px")]
 
+
+def _check_switch_on_green(ctx: _ContractsCtx) -> List[dict]:
     # 4. switch on-track color (THE green decision)
+    css_all = ctx.css_all
     sw = re.search(r"\.toggle\.on[^{}]*\{([^{}]*)\}", css_all)
     if not sw:
-        add("switch-on-green", "NA", "no .toggle.on rule found (app may not ship a switch)")
-    else:
-        body = sw.group(1)
-        ev = evidence(css_all, r"\.toggle\.on[^{}]*\{")
-        if re.search(r"var\(--(on|success)\b", body):
-            add("switch-on-green", "PASS", "switch on-track uses the success token", ev)
-        elif "var(--accent" in body:
-            add("switch-on-green", "FAIL", "switch on-track is the accent — design.md v2 says success (green)", ev)
-        else:
-            add("switch-on-green", "WARN", f"switch on-track is not tokenized: {body.strip()[:60]}", ev)
+        return [_result("switch-on-green", "NA", "no .toggle.on rule found (app may not ship a switch)")]
+    body = sw.group(1)
+    ev = _evidence(css_all, r"\.toggle\.on[^{}]*\{")
+    if re.search(r"var\(--(on|success)\b", body):
+        return [_result("switch-on-green", "PASS", "switch on-track uses the success token", ev)]
+    if "var(--accent" in body:
+        return [_result("switch-on-green", "FAIL", "switch on-track is the accent — design.md v2 says success (green)", ev)]
+    return [_result("switch-on-green", "WARN", f"switch on-track is not tokenized: {body.strip()[:60]}", ev)]
 
+
+def _check_no_native_checkbox(ctx: _ContractsCtx) -> List[dict]:
     # 5. native checkboxes (the one-boolean-control rule)
+    markup_all = ctx.markup_all
     cb = re.search(r"type=[\"']checkbox[\"']", markup_all)
     if cb:
         n = len(re.findall(r"type=[\"']checkbox[\"']", markup_all))
-        add("no-native-checkbox", "FAIL",
-            f"{n} native checkbox(es) — the fleet boolean control is the switch",
-            evidence(markup_all, r"type=[\"']checkbox[\"']"))
-    else:
-        add("no-native-checkbox", "PASS", "no native checkboxes")
+        return [_result("no-native-checkbox", "FAIL",
+                         f"{n} native checkbox(es) — the fleet boolean control is the switch",
+                         _evidence(markup_all, r"type=[\"']checkbox[\"']"))]
+    return [_result("no-native-checkbox", "PASS", "no native checkboxes")]
 
+
+def _check_disclosure_box(ctx: _ContractsCtx) -> List[dict]:
     # 6. disclosure closed-box contract (only if the app has disclosures)
-    if re.search(r"<details|\.collapse-summary|details\[open\]", css_all + markup_all):
-        h = re.search(r"height:\s*52px", css_all)
-        p = re.search(r"padding:\s*0 14px", css_all)
-        d = re.search(r"\[open\][^{}]*summary[^{}]*\{[^{}]*border-bottom", css_all)
-        missing = [name for name, hit in
-                   (("closedHeight 52px", h), ("summaryPadding 0 14px", p),
-                    ("open divider", d)) if not hit]
-        if not missing:
-            add("disclosure-box", "PASS", "52px closed box + 0 14px padding + open divider all present",
-                evidence(css_all, r"height:\s*52px"))
-        else:
-            add("disclosure-box", "FAIL", "disclosure contract incomplete — missing: " + ", ".join(missing))
-    else:
-        add("disclosure-box", "NA", "no details/summary disclosures found")
+    css_all, markup_all = ctx.css_all, ctx.markup_all
+    if not re.search(r"<details|\.collapse-summary|details\[open\]", css_all + markup_all):
+        return [_result("disclosure-box", "NA", "no details/summary disclosures found")]
+    h = re.search(r"height:\s*52px", css_all)
+    p = re.search(r"padding:\s*0 14px", css_all)
+    d = re.search(r"\[open\][^{}]*summary[^{}]*\{[^{}]*border-bottom", css_all)
+    missing = [name for name, hit in
+               (("closedHeight 52px", h), ("summaryPadding 0 14px", p),
+                ("open divider", d)) if not hit]
+    if not missing:
+        return [_result("disclosure-box", "PASS", "52px closed box + 0 14px padding + open divider all present",
+                         _evidence(css_all, r"height:\s*52px"))]
+    return [_result("disclosure-box", "FAIL", "disclosure contract incomplete — missing: " + ", ".join(missing))]
 
+
+def _check_native_dialog(ctx: _ContractsCtx) -> List[dict]:
     # 7. native <dialog> vs hand-rolled overlay
+    markup_all = ctx.markup_all
     if re.search(r"<dialog|\.showModal\(", markup_all):
-        add("native-dialog", "PASS", "native <dialog> / showModal() in use",
-            evidence(markup_all, r"<dialog|\.showModal\("))
-    elif re.search(r"class=[\"'][^\"']*(modal|overlay)", markup_all):
-        add("native-dialog", "WARN", "modal/overlay classes without native <dialog> — hand-rolled dialog suspected",
-            evidence(markup_all, r"class=[\"'][^\"']*(modal|overlay)"))
-    else:
-        add("native-dialog", "NA", "no dialogs found")
+        return [_result("native-dialog", "PASS", "native <dialog> / showModal() in use",
+                         _evidence(markup_all, r"<dialog|\.showModal\("))]
+    if re.search(r"class=[\"'][^\"']*(modal|overlay)", markup_all):
+        return [_result("native-dialog", "WARN", "modal/overlay classes without native <dialog> — hand-rolled dialog suspected",
+                         _evidence(markup_all, r"class=[\"'][^\"']*(modal|overlay)"))]
+    return [_result("native-dialog", "NA", "no dialogs found")]
 
+
+def _check_nav_contract(ctx: _ContractsCtx) -> List[dict]:
     # 8. nav contract signals — architecture decides, not provenance. A vendored
     #    copy still needs the app-side standalone shell (#303), and a hand-carried
     #    nav with the full architecture passes on merit (home-automation is the
     #    reference and is hand-carried). Provenance is the `vendored` lens's job.
+    css_all = ctx.css_all
     signals = {
         "hide-under-dialog (body:has(dialog[open]))": r"body:has\(dialog\[open\]\)",
         "viewport anchor (100dvh)": r"100dvh",
@@ -842,96 +863,98 @@ def contracts(
                if not re.search(pat, css_all)]
     shell_ok = standalone_shell_present(css_all)
     n_signals = len(signals) + 1  # + the standalone shell
-    vendored_root = find_vendored_root(root)
+    vendored_root = ctx.vendored_root
     vendored_nav = vendored_root is not None and (vendored_root / "nav" / "nav-tabs.css").exists()
     provenance = "vendored" if vendored_nav else "hand-carried"
     # nav-nesting: nav.tabs must be a <body> sibling of main.app, never a
     # descendant (_vendored/nav/README.md; app-launcher#369) — a structural
     # violation the CSS signals above can't see, so it FAILs on its own
     # regardless of everything else passing.
-    index_files_nc = [p for p in html_files if p.name == "index.html"]
-    if nav_nested_in_app(index_files_nc):
-        add("nav-contract", "FAIL",
-            "nav-nesting: nested-inside-app — <nav class=\"tabs\"> must be a "
-            "direct <body> sibling of <main class=\"app\">, never nested "
-            "inside it (_vendored/nav/README.md; app-launcher#369)")
-    elif not missing and shell_ok:
-        add("nav-contract", "PASS",
-            f"nav-nesting: sibling (PASS); nav contract signals + standalone "
-            f"fixed-inset shell all present ({provenance})")
-    elif not missing and not shell_ok:
-        add("nav-contract", "WARN",
-            "app shell lacks the standalone fixed-inset scroller (design.md nav "
-            "contract, home-automation#303) — the scroll bug persists; adopt "
-            "_vendored/nav/ plus the fixed-inset .app shell")
-    elif len(missing) + (0 if shell_ok else 1) < n_signals:
+    if nav_nested_in_app(ctx.index_files):
+        return [_result("nav-contract", "FAIL",
+                         "nav-nesting: nested-inside-app — <nav class=\"tabs\"> must be a "
+                         "direct <body> sibling of <main class=\"app\">, never nested "
+                         "inside it (_vendored/nav/README.md; app-launcher#369)")]
+    if not missing and shell_ok:
+        return [_result("nav-contract", "PASS",
+                         f"nav-nesting: sibling (PASS); nav contract signals + standalone "
+                         f"fixed-inset shell all present ({provenance})")]
+    if not missing and not shell_ok:
+        return [_result("nav-contract", "WARN",
+                         "app shell lacks the standalone fixed-inset scroller (design.md nav "
+                         "contract, home-automation#303) — the scroll bug persists; adopt "
+                         "_vendored/nav/ plus the fixed-inset .app shell")]
+    if len(missing) + (0 if shell_ok else 1) < n_signals:
         if not shell_ok:
             missing.append("standalone fixed-inset .app scroller (#303)")
-        add("nav-contract", "WARN", "nav contract partially present — missing: " + ", ".join(missing))
-    else:
-        add("nav-contract", "FAIL", "no nav-contract signals — adopt the vendored nav from project-scaffolding")
+        return [_result("nav-contract", "WARN", "nav contract partially present — missing: " + ", ".join(missing))]
+    return [_result("nav-contract", "FAIL", "no nav-contract signals — adopt the vendored nav from project-scaffolding")]
 
+
+def _check_icon_sizes(ctx: _ContractsCtx) -> List[dict]:
     # 9. icon-size strays vs the spec's icons.size steps
+    css_all, spec_light = ctx.css_all, ctx.spec_light
     allowed = set()
     for key, val in spec_light.items():
         if key.startswith("icons.size.") and val.endswith("px"):
             allowed.add(val)
-    if allowed:
-        strays: Dict[str, int] = {}
-        for bm in _BLOCK_RE.finditer(css_all):
-            selector = bm.group(1)
-            if "icon" not in selector:
-                continue
-            # `.header-icon-btn { width: 40px }` is a BUTTON box, not a glyph —
-            # icon-named button/control selectors are not icon-size findings.
-            if re.search(r"btn|button", selector):
-                continue
-            for dm in re.finditer(r"\b(?:width|height):\s*(\d+px)", bm.group(2)):
-                if dm.group(1) not in allowed:
-                    strays[dm.group(1)] = strays.get(dm.group(1), 0) + 1
-        if strays:
-            top = ", ".join(f"{k}x{v}" for k, v in sorted(strays.items(), key=lambda kv: -kv[1])[:8])
-            add("icon-sizes", "WARN",
-                f"icon px sizes outside the icons.size steps ({', '.join(sorted(allowed))}): {top}")
-        else:
-            add("icon-sizes", "PASS", "all fixed icon sizes on the icons.size steps")
-    else:
-        add("icon-sizes", "NA", "spec defines no icons.size steps")
+    if not allowed:
+        return [_result("icon-sizes", "NA", "spec defines no icons.size steps")]
+    strays: Dict[str, int] = {}
+    for bm in _BLOCK_RE.finditer(css_all):
+        selector = bm.group(1)
+        if "icon" not in selector:
+            continue
+        # `.header-icon-btn { width: 40px }` is a BUTTON box, not a glyph —
+        # icon-named button/control selectors are not icon-size findings.
+        if re.search(r"btn|button", selector):
+            continue
+        for dm in re.finditer(r"\b(?:width|height):\s*(\d+px)", bm.group(2)):
+            if dm.group(1) not in allowed:
+                strays[dm.group(1)] = strays.get(dm.group(1), 0) + 1
+    if strays:
+        top = ", ".join(f"{k}x{v}" for k, v in sorted(strays.items(), key=lambda kv: -kv[1])[:8])
+        return [_result("icon-sizes", "WARN",
+                         f"icon px sizes outside the icons.size steps ({', '.join(sorted(allowed))}): {top}")]
+    return [_result("icon-sizes", "PASS", "all fixed icon sizes on the icons.size steps")]
 
+
+def _check_viewport_lock(ctx: _ContractsCtx) -> List[dict]:
     # 10. viewport zoom lock — installable PWAs pin the scale (design.md Layout;
     #     fleet-config#296): user-scalable=no + maximum-scale=1, plus
     #     viewport-fit=cover for the safe-area insets the nav contract needs.
-    index_files = [p for p in html_files if p.name == "index.html"]
+    index_files = ctx.index_files
     if not index_files:
-        add("viewport-lock", "NA", "no index.html found")
-    else:
-        broken: List[str] = []
-        uncovered: List[str] = []
-        for p in index_files:
-            text = strip_comments(read_text(p), "html")
-            m = re.search(r"<meta[^>]+name=[\"']viewport[\"'][^>]*>", text, re.I)
-            tag = m.group(0) if m else ""
-            if not m or "user-scalable=no" not in tag or "maximum-scale=1" not in tag:
-                broken.append(rel(root, p))
-            elif "viewport-fit=cover" not in tag:
-                uncovered.append(rel(root, p))
-        if broken:
-            add("viewport-lock", "FAIL",
-                "viewport meta lacks the zoom lock (user-scalable=no + "
-                "maximum-scale=1 — design.md Layout, fleet-config#296): "
-                + ", ".join(broken))
-        elif uncovered:
-            add("viewport-lock", "WARN",
-                "zoom lock present but viewport-fit=cover missing (safe-area "
-                "insets need it): " + ", ".join(uncovered))
-        else:
-            add("viewport-lock", "PASS",
-                f"zoom lock (user-scalable=no, maximum-scale=1, viewport-fit=cover) on {len(index_files)} index.html")
+        return [_result("viewport-lock", "NA", "no index.html found")]
+    broken: List[str] = []
+    uncovered: List[str] = []
+    for p in index_files:
+        text = strip_comments(read_text(p), "html")
+        m = re.search(r"<meta[^>]+name=[\"']viewport[\"'][^>]*>", text, re.I)
+        tag = m.group(0) if m else ""
+        if not m or "user-scalable=no" not in tag or "maximum-scale=1" not in tag:
+            broken.append(rel(ctx.root, p))
+        elif "viewport-fit=cover" not in tag:
+            uncovered.append(rel(ctx.root, p))
+    if broken:
+        return [_result("viewport-lock", "FAIL",
+                         "viewport meta lacks the zoom lock (user-scalable=no + "
+                         "maximum-scale=1 — design.md Layout, fleet-config#296): "
+                         + ", ".join(broken))]
+    if uncovered:
+        return [_result("viewport-lock", "WARN",
+                         "zoom lock present but viewport-fit=cover missing (safe-area "
+                         "insets need it): " + ", ".join(uncovered))]
+    return [_result("viewport-lock", "PASS",
+                     f"zoom lock (user-scalable=no, maximum-scale=1, viewport-fit=cover) on {len(index_files)} index.html")]
 
+
+def _check_button_tiers(ctx: _ContractsCtx) -> List[dict]:
     # 11. button tiers — the fleet button vocabulary (design.md Components;
     #     fleet-config#296). Hardcoded fills and a filled "ghost" are FAILs;
     #     a solid accent outside the primary and a tint without accent text
     #     are WARNs for /design-sync's judgment layer to arbitrate.
+    css_all = ctx.css_all
     hardcoded: List[str] = []
     ghost_inverted: List[str] = []
     solid_strays: List[str] = []
@@ -976,109 +999,115 @@ def contracts(
         bits.append("tint fill without accent text: "
                     + "; ".join(tint_off[:4]))
     if n_btn == 0:
-        add("button-tiers", "NA", "no button rules found")
-    elif hardcoded or ghost_inverted:
-        add("button-tiers", "FAIL", " | ".join(bits))
-    elif bits:
-        add("button-tiers", "WARN", " | ".join(bits))
-    else:
-        add("button-tiers", "PASS",
-            f"{n_btn} button rule(s) conform to the tier vocabulary")
+        return [_result("button-tiers", "NA", "no button rules found")]
+    if hardcoded or ghost_inverted:
+        return [_result("button-tiers", "FAIL", " | ".join(bits))]
+    if bits:
+        return [_result("button-tiers", "WARN", " | ".join(bits))]
+    return [_result("button-tiers", "PASS",
+                     f"{n_btn} button rule(s) conform to the tier vocabulary")]
 
+
+def _check_theme_toggle(ctx: _ContractsCtx) -> List[dict]:
     # 12. user-selectable theme — pre-paint data-theme boot + persisted .theme
     #     toggle + dual scheme-gated theme-color metas (design.md Colors "Theme
     #     switching"; fleet-config#290). Grep-level only — whether the glyph
     #     shows the action stays LLM judgment in /design-sync step 4. Both
     #     stamp idioms (dataset.theme / setAttribute) and both key shapes
     #     (`.theme` literal / a theme-named constant) are canonical.
+    index_files, markup_all = ctx.index_files, ctx.markup_all
+    spec_light, spec_dark = ctx.spec_light, ctx.spec_dark
     if not index_files:
-        add("theme-toggle", "NA", "no index.html found")
-    else:
-        stamp_re = r"dataset\.theme|setAttribute\(\s*['\"]data-theme['\"]"
-        toggle_re = (r"localStorage\.setItem\(\s*"
-                     r"(?:['\"][^'\"]*\.theme['\"]|\w*theme\w*\s*,)")
-        missing_boot: List[str] = []
-        meta_gaps: List[str] = []
-        for p in index_files:
-            text = strip_comments(read_text(p), "html")
-            body_at = text.lower().find("<body")
-            head = text[:body_at] if body_at >= 0 else text
-            boot = (re.search(stamp_re, head)
-                    and re.search(r"localStorage\.getItem\(\s*['\"][^'\"]*\.theme['\"]", head)
-                    and "prefers-color-scheme" in head)
-            if not boot:
-                missing_boot.append(rel(root, p))
+        return [_result("theme-toggle", "NA", "no index.html found")]
+    stamp_re = r"dataset\.theme|setAttribute\(\s*['\"]data-theme['\"]"
+    toggle_re = (r"localStorage\.setItem\(\s*"
+                 r"(?:['\"][^'\"]*\.theme['\"]|\w*theme\w*\s*,)")
+    missing_boot: List[str] = []
+    meta_gaps: List[str] = []
+    for p in index_files:
+        text = strip_comments(read_text(p), "html")
+        body_at = text.lower().find("<body")
+        head = text[:body_at] if body_at >= 0 else text
+        boot = (re.search(stamp_re, head)
+                and re.search(r"localStorage\.getItem\(\s*['\"][^'\"]*\.theme['\"]", head)
+                and "prefers-color-scheme" in head)
+        if not boot:
+            missing_boot.append(rel(ctx.root, p))
+            continue
+        light_meta = dark_meta = None
+        for mm in re.finditer(r"<meta\b[^>]*name=[\"']theme-color[\"'][^>]*>",
+                              text, re.I):
+            tag = mm.group(0)
+            media = re.search(r"media=[\"']([^\"']*)[\"']", tag)
+            content = re.search(r"content=[\"']([^\"']*)[\"']", tag)
+            if not media or "prefers-color-scheme" not in media.group(1):
                 continue
-            light_meta = dark_meta = None
-            for mm in re.finditer(r"<meta\b[^>]*name=[\"']theme-color[\"'][^>]*>",
-                                  text, re.I):
-                tag = mm.group(0)
-                media = re.search(r"media=[\"']([^\"']*)[\"']", tag)
-                content = re.search(r"content=[\"']([^\"']*)[\"']", tag)
-                if not media or "prefers-color-scheme" not in media.group(1):
-                    continue
-                if "light" in media.group(1):
-                    light_meta = content.group(1) if content else ""
-                elif "dark" in media.group(1):
-                    dark_meta = content.group(1) if content else ""
-            if light_meta is None or dark_meta is None:
-                meta_gaps.append(f"{rel(root, p)} (missing the scheme-gated "
-                                 "theme-color meta pair)")
-                continue
-            want_light = normalize_value(spec_light.get("colors.canvas", ""))
-            want_dark = normalize_value((spec_dark or {}).get("colors.canvas", ""))
-            if want_light and normalize_value(light_meta) != want_light:
-                meta_gaps.append(f"{rel(root, p)} (light theme-color "
-                                 f"{light_meta} != spec canvas {want_light})")
-            if want_dark and normalize_value(dark_meta) != want_dark:
-                meta_gaps.append(f"{rel(root, p)} (dark theme-color "
-                                 f"{dark_meta} != spec dark canvas {want_dark})")
-        if missing_boot:
-            add("theme-toggle", "FAIL",
-                "no pre-paint data-theme boot script in <head> (localStorage "
-                ".theme key + prefers-color-scheme fallback — design.md Colors "
-                "theme switching, fleet-config#290): " + ", ".join(missing_boot))
-        elif not re.search(toggle_re, markup_all, re.I):
-            add("theme-toggle", "FAIL",
-                "boot script present but no persisted theme toggle — no "
-                "localStorage setItem on a .theme key (or theme-named constant) "
-                "anywhere (design.md Colors theme switching, fleet-config#290)")
-        elif meta_gaps:
-            add("theme-toggle", "WARN",
-                "theme mechanism present but the theme-color metas drift: "
-                + "; ".join(meta_gaps))
-        else:
-            add("theme-toggle", "PASS",
-                "pre-paint boot + persisted .theme toggle + dual theme-color "
-                f"metas on {len(index_files)} index.html",
-                evidence(markup_all, toggle_re, re.I))
+            if "light" in media.group(1):
+                light_meta = content.group(1) if content else ""
+            elif "dark" in media.group(1):
+                dark_meta = content.group(1) if content else ""
+        if light_meta is None or dark_meta is None:
+            meta_gaps.append(f"{rel(ctx.root, p)} (missing the scheme-gated "
+                             "theme-color meta pair)")
+            continue
+        want_light = normalize_value(spec_light.get("colors.canvas", ""))
+        want_dark = normalize_value((spec_dark or {}).get("colors.canvas", ""))
+        if want_light and normalize_value(light_meta) != want_light:
+            meta_gaps.append(f"{rel(ctx.root, p)} (light theme-color "
+                             f"{light_meta} != spec canvas {want_light})")
+        if want_dark and normalize_value(dark_meta) != want_dark:
+            meta_gaps.append(f"{rel(ctx.root, p)} (dark theme-color "
+                             f"{dark_meta} != spec dark canvas {want_dark})")
+    if missing_boot:
+        return [_result("theme-toggle", "FAIL",
+                         "no pre-paint data-theme boot script in <head> (localStorage "
+                         ".theme key + prefers-color-scheme fallback — design.md Colors "
+                         "theme switching, fleet-config#290): " + ", ".join(missing_boot))]
+    if not re.search(toggle_re, markup_all, re.I):
+        return [_result("theme-toggle", "FAIL",
+                         "boot script present but no persisted theme toggle — no "
+                         "localStorage setItem on a .theme key (or theme-named constant) "
+                         "anywhere (design.md Colors theme switching, fleet-config#290)")]
+    if meta_gaps:
+        return [_result("theme-toggle", "WARN",
+                         "theme mechanism present but the theme-color metas drift: "
+                         + "; ".join(meta_gaps))]
+    return [_result("theme-toggle", "PASS",
+                     "pre-paint boot + persisted .theme toggle + dual theme-color "
+                     f"metas on {len(index_files)} index.html",
+                     _evidence(markup_all, toggle_re, re.I))]
 
+
+def _check_icon_set(ctx: _ContractsCtx) -> List[dict]:
     # 13. icon-set — one set, vendored Lucide sprite, never hand-drawn/mixed
     #     (design.md Icons). Emoji glyphs anywhere in rendered UI-chrome text
     #     (markup text nodes or JS string literals) are the anti-pattern; the
     #     lucide-sprite adoption signal is the vendored `icons/` component
     #     (fleet-config#284, app-launcher#355/#368).
+    vendored_root = ctx.vendored_root
     lucide_adopted = (vendored_root is not None
                        and (vendored_root / "icons").is_dir())
-    emoji_sites = find_emoji_sites(root, html_files, js_files)
+    emoji_sites = find_emoji_sites(ctx.root, ctx.html_files, ctx.js_files)
     if emoji_sites and not lucide_adopted:
-        add("icon-set", "FAIL",
-            f"icon-set: emoji-glyphs ({len(emoji_sites)} site(s)) / "
-            "lucide-sprite: NOT_ADOPTED (design.md Icons — one set, never "
-            "hand-drawn/mixed): " + ", ".join(emoji_sites[:8]))
-    elif emoji_sites and lucide_adopted:
-        add("icon-set", "WARN",
-            f"icon-set: emoji-glyphs ({len(emoji_sites)} site(s)) alongside "
-            "an adopted lucide-sprite — mixed icon set: " + ", ".join(emoji_sites[:8]))
-    elif lucide_adopted:
-        add("icon-set", "PASS",
-            "icon-set: lucide-sprite adopted, no emoji glyphs in rendered text")
-    else:
-        add("icon-set", "NA", "no emoji glyphs and no vendored icons/ component found")
+        return [_result("icon-set", "FAIL",
+                         f"icon-set: emoji-glyphs ({len(emoji_sites)} site(s)) / "
+                         "lucide-sprite: NOT_ADOPTED (design.md Icons — one set, never "
+                         "hand-drawn/mixed): " + ", ".join(emoji_sites[:8]))]
+    if emoji_sites and lucide_adopted:
+        return [_result("icon-set", "WARN",
+                         f"icon-set: emoji-glyphs ({len(emoji_sites)} site(s)) alongside "
+                         "an adopted lucide-sprite — mixed icon set: " + ", ".join(emoji_sites[:8]))]
+    if lucide_adopted:
+        return [_result("icon-set", "PASS",
+                         "icon-set: lucide-sprite adopted, no emoji glyphs in rendered text")]
+    return [_result("icon-set", "NA", "no emoji glyphs and no vendored icons/ component found")]
 
+
+def _check_chevron_placement(ctx: _ContractsCtx) -> List[dict]:
     # 14. chevron placement — disclosure summaries pin the chevron right,
     #     never a leading arrow (design.md disclosure.chevron: right;
     #     app-launcher#362 shipped a leading `›` the lint never caught).
+    markup_all = ctx.markup_all
     leading_chevrons: List[str] = []
     trailing_ok = 0
     for sm in re.finditer(r"<summary\b[^>]*>(.*?)</summary>", markup_all, re.S | re.I):
@@ -1097,24 +1126,26 @@ def contracts(
         if title_m is None:
             continue
         if chevron_m.start() < title_m.start():
-            leading_chevrons.append(loc_at(markup_all, sm.start(1) + chevron_m.start()))
+            leading_chevrons.append(_loc_at(markup_all, sm.start(1) + chevron_m.start()))
         else:
             trailing_ok += 1
     if leading_chevrons:
-        add("chevron-placement", "FAIL",
-            f"{len(leading_chevrons)} disclosure(s) with a leading chevron "
-            "(design.md disclosure.chevron: right — never a leading arrow): "
-            + ", ".join(leading_chevrons[:6]))
-    elif trailing_ok:
-        add("chevron-placement", "PASS",
-            f"chevron right-pinned on {trailing_ok} disclosure(s)")
-    else:
-        add("chevron-placement", "NA", "no chevron-bearing disclosures found")
+        return [_result("chevron-placement", "FAIL",
+                         f"{len(leading_chevrons)} disclosure(s) with a leading chevron "
+                         "(design.md disclosure.chevron: right — never a leading arrow): "
+                         + ", ".join(leading_chevrons[:6]))]
+    if trailing_ok:
+        return [_result("chevron-placement", "PASS",
+                         f"chevron right-pinned on {trailing_ok} disclosure(s)")]
+    return [_result("chevron-placement", "NA", "no chevron-bearing disclosures found")]
 
+
+def _check_row_height_scale(ctx: _ContractsCtx) -> List[dict]:
     # 15. row-height scale — repeating list/action-rail rows draw their
     #     height from the 3-step scale (rows.sm 44px / rows.md 52px /
     #     rows.lg 60px), not an ad hoc literal (design.md Components
     #     list-row; app-launcher#365/PR#380).
+    css_all, spec_light = ctx.css_all, ctx.spec_light
     allowed_row_px = set()
     for key, val in spec_light.items():
         if key.startswith("rows.") and val.endswith("px"):
@@ -1139,182 +1170,246 @@ def contracts(
                 row_strays[val] = row_strays.get(val, 0) + 1
     if row_strays:
         top = ", ".join(f"{k}x{v}" for k, v in sorted(row_strays.items(), key=lambda kv: -kv[1])[:8])
-        add("row-height-scale", "WARN",
-            f"row/action-rail heights outside the {', '.join(sorted(allowed_row_px))} "
-            f"scale: {top}")
-    elif n_row_rules:
-        add("row-height-scale", "PASS",
-            f"all fixed row/action-rail heights on the {', '.join(sorted(allowed_row_px))} scale")
-    else:
-        add("row-height-scale", "NA", "no row/action-rail height rules found")
+        return [_result("row-height-scale", "WARN",
+                         f"row/action-rail heights outside the {', '.join(sorted(allowed_row_px))} "
+                         f"scale: {top}")]
+    if n_row_rules:
+        return [_result("row-height-scale", "PASS",
+                         f"all fixed row/action-rail heights on the {', '.join(sorted(allowed_row_px))} scale")]
+    return [_result("row-height-scale", "NA", "no row/action-rail height rules found")]
 
+
+def _check_editor_modal_contract(ctx: _ContractsCtx) -> List[dict]:
     # 16-20. Editor-modal contract (design.md `modal` component;
     #     fleet-config#307) — a <dialog> containing a real <form> is held to
-    #     the header/rows/fieldset/footer/top-anchor contract.
-    modals = _editor_modals(root, html_files)
+    #     the header/rows/fieldset/footer/top-anchor contract. All five share
+    #     the one `modals` scan, so they live in one function rather than
+    #     re-deriving it per check.
+    css_all = ctx.css_all
+    modals = ctx.modals
     if not modals:
-        for cid in ("modal-unstyled-rows", "modal-raw-fieldset", "modal-header",
-                    "modal-footer", "modal-top-anchor"):
-            add(cid, "NA", "no editor-modal <dialog> found")
+        return [_result(cid, "NA", "no editor-modal <dialog> found")
+                for cid in ("modal-unstyled-rows", "modal-raw-fieldset", "modal-header",
+                            "modal-footer", "modal-top-anchor")]
+
+    results: List[dict] = []
+
+    # 16. unstyled dialog rows — a row class used inside a dialog that is
+    #     only ever styled under some other, unrelated scope.
+    unstyled: List[str] = []
+    for modal in modals:
+        for lm in _LABEL_CLASS_RE.finditer(modal["inner"]):
+            for cls in lm.group(1).split():
+                scopes = _class_scope_status(css_all, cls)
+                if "global" in scopes or "dialog" in scopes:
+                    continue
+                loc = _loc_in_modal(modal, lm.start())
+                why = "styled only outside dialogs" if scopes else "never styled"
+                unstyled.append(f"{loc} label.{cls} ({why})")
+    if unstyled:
+        results.append(_result("modal-unstyled-rows", "FAIL",
+            f"{len(unstyled)} dialog row class(es) with no dialog-scoped "
+            "styling (design.md modal contract): " + "; ".join(unstyled[:6])))
     else:
-        # 16. unstyled dialog rows — a row class used inside a dialog that is
-        #     only ever styled under some other, unrelated scope.
-        unstyled: List[str] = []
-        for modal in modals:
-            for lm in _LABEL_CLASS_RE.finditer(modal["inner"]):
-                for cls in lm.group(1).split():
-                    scopes = _class_scope_status(css_all, cls)
-                    if "global" in scopes or "dialog" in scopes:
-                        continue
-                    loc = _loc_in_modal(modal, lm.start())
-                    why = "styled only outside dialogs" if scopes else "never styled"
-                    unstyled.append(f"{loc} label.{cls} ({why})")
-        if unstyled:
-            add("modal-unstyled-rows", "FAIL",
-                f"{len(unstyled)} dialog row class(es) with no dialog-scoped "
-                "styling (design.md modal contract): " + "; ".join(unstyled[:6]))
-        else:
-            add("modal-unstyled-rows", "PASS",
-                "every dialog row class is styled globally or in a dialog-scoped rule")
+        results.append(_result("modal-unstyled-rows", "PASS",
+            "every dialog row class is styled globally or in a dialog-scoped rule"))
 
-        # 17. raw <fieldset> — a fieldset/legend with no authored CSS at all,
-        #     rendering as a raw browser legend box.
-        raw_fieldsets: List[str] = []
-        for modal in modals:
-            for fm in _FIELDSET_OPEN_RE.finditer(modal["inner"]):
-                cls_m = _TAG_CLASS_RE.search(fm.group(1))
-                classes = cls_m.group(1).split() if cls_m else []
-                if classes:
-                    authored = any(_class_scope_status(css_all, c) for c in classes)
-                else:
-                    authored = bool(_selector_hits(css_all, _FIELDSET_TAG_PAT))
-                if not authored:
-                    raw_fieldsets.append(_loc_in_modal(modal, fm.start()))
-        if raw_fieldsets:
-            add("modal-raw-fieldset", "FAIL",
-                f"{len(raw_fieldsets)} <fieldset> with no authored CSS — raw "
-                "browser legend box (design.md modal wants titled plain "
-                "sections, never a fieldset): " + ", ".join(raw_fieldsets[:6]))
-        else:
-            add("modal-raw-fieldset", "PASS", "no unstyled <fieldset> found in editor modals")
+    # 17. raw <fieldset> — a fieldset/legend with no authored CSS at all,
+    #     rendering as a raw browser legend box.
+    raw_fieldsets: List[str] = []
+    for modal in modals:
+        for fm in _FIELDSET_OPEN_RE.finditer(modal["inner"]):
+            cls_m = _TAG_CLASS_RE.search(fm.group(1))
+            classes = cls_m.group(1).split() if cls_m else []
+            if classes:
+                authored = any(_class_scope_status(css_all, c) for c in classes)
+            else:
+                authored = bool(_selector_hits(css_all, _FIELDSET_TAG_PAT))
+            if not authored:
+                raw_fieldsets.append(_loc_in_modal(modal, fm.start()))
+    if raw_fieldsets:
+        results.append(_result("modal-raw-fieldset", "FAIL",
+            f"{len(raw_fieldsets)} <fieldset> with no authored CSS — raw "
+            "browser legend box (design.md modal wants titled plain "
+            "sections, never a fieldset): " + ", ".join(raw_fieldsets[:6])))
+    else:
+        results.append(_result("modal-raw-fieldset", "PASS", "no unstyled <fieldset> found in editor modals"))
 
-        # 18. header contract — a title needs a square × close button; a
-        #     footer "Cancel" button in its place is the anti-pattern.
-        header_bad: List[str] = []
-        header_checked = 0
-        for modal in modals:
-            if not re.search(r"<h[1-6]\b", modal["inner"], re.I):
-                continue
-            header_checked += 1
-            has_close = False
-            has_cancel = False
-            for bm2 in _BUTTON_RE.finditer(modal["inner"]):
-                battrs, btext = bm2.group(1), bm2.group(2)
-                if (re.search(r'aria-label=["\']close["\']', battrs, re.I)
-                        or re.search(r'class=["\'][^"\']*\bclose\b[^"\']*["\']', battrs, re.I)):
-                    has_close = True
-                text_clean = re.sub(r"<[^>]+>", "", btext).strip()
-                if re.fullmatch(r"cancel", text_clean, re.I):
-                    has_cancel = True
-            if not has_close or has_cancel:
-                reasons = []
-                if not has_close:
-                    reasons.append("no square x close button")
-                if has_cancel:
-                    reasons.append("footer Cancel button in its place")
-                header_bad.append(f"{modal['file']}:{modal['line']} " + " + ".join(reasons))
-        if header_checked == 0:
-            add("modal-header", "NA", "no titled editor-modal <dialog> found")
-        elif header_bad:
-            add("modal-header", "FAIL",
-                "editor-modal header contract violated (design.md modal wants "
-                "a heading-lg title + square x close, never a footer Cancel): "
-                + "; ".join(header_bad[:6]))
-        else:
-            add("modal-header", "PASS", "editor-modal header(s) carry a square x close, no footer Cancel")
+    # 18. header contract — a title needs a square × close button; a
+    #     footer "Cancel" button in its place is the anti-pattern.
+    header_bad: List[str] = []
+    header_checked = 0
+    for modal in modals:
+        if not re.search(r"<h[1-6]\b", modal["inner"], re.I):
+            continue
+        header_checked += 1
+        has_close = False
+        has_cancel = False
+        for bm2 in _BUTTON_RE.finditer(modal["inner"]):
+            battrs, btext = bm2.group(1), bm2.group(2)
+            if (re.search(r'aria-label=["\']close["\']', battrs, re.I)
+                    or re.search(r'class=["\'][^"\']*\bclose\b[^"\']*["\']', battrs, re.I)):
+                has_close = True
+            text_clean = re.sub(r"<[^>]+>", "", btext).strip()
+            if re.fullmatch(r"cancel", text_clean, re.I):
+                has_cancel = True
+        if not has_close or has_cancel:
+            reasons = []
+            if not has_close:
+                reasons.append("no square x close button")
+            if has_cancel:
+                reasons.append("footer Cancel button in its place")
+            header_bad.append(f"{modal['file']}:{modal['line']} " + " + ".join(reasons))
+    if header_checked == 0:
+        results.append(_result("modal-header", "NA", "no titled editor-modal <dialog> found"))
+    elif header_bad:
+        results.append(_result("modal-header", "FAIL",
+            "editor-modal header contract violated (design.md modal wants "
+            "a heading-lg title + square x close, never a footer Cancel): "
+            + "; ".join(header_bad[:6])))
+    else:
+        results.append(_result("modal-header", "PASS", "editor-modal header(s) carry a square x close, no footer Cancel"))
 
-        # 19. footer contract — exactly one always-visible action, styled as
-        #     the full-width solid-accent primary.
-        footer_bad: List[str] = []
-        footer_checked = 0
-        for modal in modals:
-            footer = None
-            for fm2 in _FOOTER_CONTAINER_RE.finditer(modal["inner"]):
-                fattrs, fbody = fm2.group(2), fm2.group(3)
-                fcls_m = _TAG_CLASS_RE.search(fattrs)
-                fclasses = fcls_m.group(1).split() if fcls_m else []
-                if any(re.search(r"actions|footer", c, re.I) for c in fclasses):
-                    footer = (fclasses, fbody)
-                    break
-            if footer is None:
-                continue
-            footer_checked += 1
-            fclasses, fbody = footer
-            visible = [bm2 for bm2 in _BUTTON_RE.finditer(fbody)
-                       if not re.search(r"(^|\s)hidden(\s|=|$)", bm2.group(1), re.I)]
-            if len(visible) > 1:
-                footer_bad.append(f"{modal['file']}:{modal['line']} "
-                                   f"{len(visible)} always-visible footer actions")
-                continue
-            if len(visible) == 0:
-                continue
-            btn_cls_m = _TAG_CLASS_RE.search(visible[0].group(1))
-            btn_classes = btn_cls_m.group(1).split() if btn_cls_m else []
-            is_accent = False
-            is_full_width = False
-            for c in btn_classes:
-                for _, _anc, body in _selector_hits(css_all, re.compile(r"\." + re.escape(c) + r"\b")):
-                    if re.search(r"background(-color)?:\s*var\(--accent\)", body):
-                        is_accent = True
-                    if re.search(r"width:\s*100%|flex:\s*1\b|align-self:\s*stretch", body):
-                        is_full_width = True
-            for c in fclasses:
-                for _, _anc, body in _selector_hits(css_all, re.compile(r"\." + re.escape(c) + r"\b")):
-                    if (re.search(r"flex-direction:\s*column", body)
-                            and re.search(r"align-items:\s*stretch", body)):
-                        is_full_width = True
-            if not (is_accent and is_full_width):
-                missing = []
-                if not is_accent:
-                    missing.append("not the solid-accent primary recipe")
-                if not is_full_width:
-                    missing.append("not full-width")
-                footer_bad.append(f"{modal['file']}:{modal['line']} primary " + " + ".join(missing))
-        if footer_checked == 0:
-            add("modal-footer", "NA", "no locatable footer/actions container in any editor modal")
-        elif footer_bad:
-            add("modal-footer", "FAIL",
-                "editor-modal footer contract violated (design.md modal wants "
-                "exactly one full-width solid-accent primary): "
-                + "; ".join(footer_bad[:6]))
-        else:
-            add("modal-footer", "PASS",
-                "editor-modal footer(s) carry exactly one full-width solid-accent primary")
+    # 19. footer contract — exactly one always-visible action, styled as
+    #     the full-width solid-accent primary.
+    footer_bad: List[str] = []
+    footer_checked = 0
+    for modal in modals:
+        footer = None
+        for fm2 in _FOOTER_CONTAINER_RE.finditer(modal["inner"]):
+            fattrs, fbody = fm2.group(2), fm2.group(3)
+            fcls_m = _TAG_CLASS_RE.search(fattrs)
+            fclasses = fcls_m.group(1).split() if fcls_m else []
+            if any(re.search(r"actions|footer", c, re.I) for c in fclasses):
+                footer = (fclasses, fbody)
+                break
+        if footer is None:
+            continue
+        footer_checked += 1
+        fclasses, fbody = footer
+        visible = [bm2 for bm2 in _BUTTON_RE.finditer(fbody)
+                   if not re.search(r"(^|\s)hidden(\s|=|$)", bm2.group(1), re.I)]
+        if len(visible) > 1:
+            footer_bad.append(f"{modal['file']}:{modal['line']} "
+                               f"{len(visible)} always-visible footer actions")
+            continue
+        if len(visible) == 0:
+            continue
+        btn_cls_m = _TAG_CLASS_RE.search(visible[0].group(1))
+        btn_classes = btn_cls_m.group(1).split() if btn_cls_m else []
+        is_accent = False
+        is_full_width = False
+        for c in btn_classes:
+            for _, _anc, body in _selector_hits(css_all, re.compile(r"\." + re.escape(c) + r"\b")):
+                if re.search(r"background(-color)?:\s*var\(--accent\)", body):
+                    is_accent = True
+                if re.search(r"width:\s*100%|flex:\s*1\b|align-self:\s*stretch", body):
+                    is_full_width = True
+        for c in fclasses:
+            for _, _anc, body in _selector_hits(css_all, re.compile(r"\." + re.escape(c) + r"\b")):
+                if (re.search(r"flex-direction:\s*column", body)
+                        and re.search(r"align-items:\s*stretch", body)):
+                    is_full_width = True
+        if not (is_accent and is_full_width):
+            missing = []
+            if not is_accent:
+                missing.append("not the solid-accent primary recipe")
+            if not is_full_width:
+                missing.append("not full-width")
+            footer_bad.append(f"{modal['file']}:{modal['line']} primary " + " + ".join(missing))
+    if footer_checked == 0:
+        results.append(_result("modal-footer", "NA", "no locatable footer/actions container in any editor modal"))
+    elif footer_bad:
+        results.append(_result("modal-footer", "FAIL",
+            "editor-modal footer contract violated (design.md modal wants "
+            "exactly one full-width solid-accent primary): "
+            + "; ".join(footer_bad[:6])))
+    else:
+        results.append(_result("modal-footer", "PASS",
+            "editor-modal footer(s) carry exactly one full-width solid-accent primary"))
 
-        # 20. top-anchoring — a tall form must not jump vertically as
-        #     conditional rows toggle; the dialog itself scrolls internally.
-        top_anchor_bad: List[str] = []
-        for modal in modals:
-            ok = False
-            for c in modal["classes"]:
-                for _, _anc, body in _selector_hits(css_all, re.compile(r"\." + re.escape(c) + r"\b")):
-                    if re.search(r"max-height", body) and re.search(r"overflow(-y)?:\s*auto", body):
-                        ok = True
-            if not ok:
-                for _, _anc, body in _selector_hits(css_all, re.compile(r"^dialog(?:[.:#\[]|$)", re.I)):
-                    if re.search(r"max-height", body) and re.search(r"overflow(-y)?:\s*auto", body):
-                        ok = True
-            if not ok:
-                top_anchor_bad.append(f"{modal['file']}:{modal['line']}")
-        if top_anchor_bad:
-            add("modal-top-anchor", "FAIL",
-                "editor-modal(s) with no max-height + internal scroll — a tall "
-                "form jumps as conditional rows toggle (design.md modal: "
-                "top-anchored on mobile): " + ", ".join(top_anchor_bad[:6]))
-        else:
-            add("modal-top-anchor", "PASS",
-                "editor-modal(s) are top-anchored with internal scroll")
+    # 20. top-anchoring — a tall form must not jump vertically as
+    #     conditional rows toggle; the dialog itself scrolls internally.
+    top_anchor_bad: List[str] = []
+    for modal in modals:
+        ok = False
+        for c in modal["classes"]:
+            for _, _anc, body in _selector_hits(css_all, re.compile(r"\." + re.escape(c) + r"\b")):
+                if re.search(r"max-height", body) and re.search(r"overflow(-y)?:\s*auto", body):
+                    ok = True
+        if not ok:
+            for _, _anc, body in _selector_hits(css_all, re.compile(r"^dialog(?:[.:#\[]|$)", re.I)):
+                if re.search(r"max-height", body) and re.search(r"overflow(-y)?:\s*auto", body):
+                    ok = True
+        if not ok:
+            top_anchor_bad.append(f"{modal['file']}:{modal['line']}")
+    if top_anchor_bad:
+        results.append(_result("modal-top-anchor", "FAIL",
+            "editor-modal(s) with no max-height + internal scroll — a tall "
+            "form jumps as conditional rows toggle (design.md modal: "
+            "top-anchored on mobile): " + ", ".join(top_anchor_bad[:6])))
+    else:
+        results.append(_result("modal-top-anchor", "PASS",
+            "editor-modal(s) are top-anchored with internal scroll"))
 
+    return results
+
+
+_CONTRACT_CHECKS: Tuple[Callable[["_ContractsCtx"], List[dict]], ...] = (
+    _check_focus_visible_ring,
+    _check_reduced_motion,
+    _check_desktop_measure,
+    _check_switch_on_green,
+    _check_no_native_checkbox,
+    _check_disclosure_box,
+    _check_native_dialog,
+    _check_nav_contract,
+    _check_icon_sizes,
+    _check_viewport_lock,
+    _check_button_tiers,
+    _check_theme_toggle,
+    _check_icon_set,
+    _check_chevron_placement,
+    _check_row_height_scale,
+    _check_editor_modal_contract,
+)
+
+
+def contracts(
+    root: Path,
+    css_files: List[Path],
+    html_files: List[Path],
+    js_files: List[Path],
+    spec_light: Dict[str, str],
+    spec_dark: Optional[Dict[str, str]] = None,
+) -> List[dict]:
+    """Greppable design.md v2 component-contract checks (focus ring, reduced
+    motion, desktop measure, switch on-color, native checkboxes, disclosure
+    box, native <dialog>, nav rules, icon-size strays, ...). Thin orchestrator
+    over `_CONTRACT_CHECKS`: builds the shared `_ContractsCtx` once, then runs
+    each check in numbered order and concatenates its `checks` entries."""
+    css_all = "\n".join(f"/*FILE {rel(root, p)}*/\n" + strip_comments(read_text(p), "css")
+                        for p in css_files)
+    markup_all = "\n".join(
+        f"/*FILE {rel(root, p)}*/\n"
+        + strip_comments(read_text(p), "html" if p.suffix == ".html" else "js")
+        for p in html_files + js_files)
+    index_files = [p for p in html_files if p.name == "index.html"]
+    ctx = _ContractsCtx(
+        root=root,
+        css_all=css_all,
+        markup_all=markup_all,
+        spec_light=spec_light,
+        spec_dark=spec_dark,
+        html_files=html_files,
+        js_files=js_files,
+        index_files=index_files,
+        vendored_root=find_vendored_root(root),
+        modals=_editor_modals(root, html_files),
+    )
+    checks: List[dict] = []
+    for check_fn in _CONTRACT_CHECKS:
+        checks.extend(check_fn(ctx))
     return checks
 
 
