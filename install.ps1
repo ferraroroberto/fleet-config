@@ -147,6 +147,11 @@ $Items = @(
     @{ kind = 'junction'; source = 'hooks';                  target = 'hooks' },
     @{ kind = 'junction'; source = 'commands';               target = 'commands' },
     @{ kind = 'junction'; source = 'skills';                 target = 'skills' },
+    # fleet-config#153: the ONE machine-local copy of tray_lifecycle.ps1 --
+    # every sister app's tray.bat calls it at this stable path instead of
+    # vendoring a byte-copy into each repo. Junction, not symlink: it is a
+    # directory entry, same mechanism as hooks/ and skills/ above.
+    @{ kind = 'junction'; source = 'tray';                   target = 'tray' },
     @{ kind = 'junction'; source = 'skills';                 target = 'skills';                 base = 'agents' },
     @{ kind = 'symlink';  source = 'statusline-command.ps1'; target = 'statusline-command.ps1' },
     @{ kind = 'symlink';  source = 'global-CLAUDE.md';       target = 'CLAUDE.md' },
