@@ -1358,10 +1358,11 @@ def _tier23_hooks_unit_checks() -> Tuple[int, int]:
 
     tmp = Path(tempfile.mkdtemp(prefix="tier23_"))
     try:
-        def nudged(hook: str, path: Path, body: str) -> bool:
+        def nudged(hook: str, path: Path, body: str, extra_env: Dict[str, str] | None = None) -> bool:
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text(body, encoding="utf-8")
-            code, out, _err = run(hook, {"tool_name": "Write", "tool_input": {"file_path": str(path)}})
+            code, out, _err = run(hook, {"tool_name": "Write", "tool_input": {"file_path": str(path)}},
+                                   extra_env=extra_env)
             return code == 0 and bool(out.strip())
 
         # ---- hub_bypass_warn ----
@@ -1374,9 +1375,19 @@ def _tier23_hooks_unit_checks() -> Tuple[int, int]:
         check("hub_bypass: subprocess but no claude -p -> silent",
               not nudged("hub_bypass_warn", tmp / "other.py",
                          'import subprocess\nsubprocess.run(["ls", "-la"])\n'))
-        check("hub_bypass: inside the hub repo -> silent",
+        # Points hub_bypass_warn.py at a throwaway projects.toml (via
+        # CLAUDE_HOOKS_PROJECTS_TOML) flagging tmp/local-llm-hub as `is_hub`,
+        # so the exemption is exercised through the real cwd_prefix-match path
+        # instead of a hardcoded directory-name check.
+        hub_projects_toml = tmp / "hub_projects.toml"
+        hub_projects_toml.write_text(
+            '[hub]\ncwd_prefix = "%s"\nis_hub = true\n' % (tmp / "local-llm-hub").as_posix(),
+            encoding="utf-8",
+        )
+        check("hub_bypass: inside a repo flagged is_hub in projects.toml -> silent",
               not nudged("hub_bypass_warn", tmp / "local-llm-hub" / "server.py",
-                         'import subprocess\nsubprocess.run("claude -p hello", shell=True)\n'))
+                         'import subprocess\nsubprocess.run("claude -p hello", shell=True)\n',
+                         extra_env={"CLAUDE_HOOKS_PROJECTS_TOML": str(hub_projects_toml)}))
 
         # ---- browser_stealth_lint ----
         bare_launch = 'ctx = p.chromium.launch_persistent_context(user_data_dir="x")\n'

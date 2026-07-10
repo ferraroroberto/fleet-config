@@ -87,6 +87,10 @@ webapp_port         = 8000
 whisper_port        = 8090
 gate_cmd            = "pwsh -File scripts/verify-before-ship.ps1"
 tray_cmd            = "tray.bat"
+# Legitimately owns a `claude -p` subprocess wrapper — exempts it from
+# hub_bypass_warn.py's "don't re-implement the hub inline" nudge. A second
+# hub-owning repo would set the same flag.
+is_hub              = true
 
 # ---- remaining fleet projects (cwd_prefix only — for notify_on_idle name resolution) ----
 

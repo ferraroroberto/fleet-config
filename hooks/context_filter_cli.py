@@ -32,7 +32,7 @@ def _powershell_exe() -> str:
     win_ps = "C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe"
     if Path(win_ps).exists():
         return win_ps
-    return shutil.which("powershell") or shutil.which("pwsh") or "powershell"
+    return shutil.which("powershell") or "powershell"
 
 
 def _run_command(tool: str, command: str, cwd: str | None) -> subprocess.CompletedProcess[str]:

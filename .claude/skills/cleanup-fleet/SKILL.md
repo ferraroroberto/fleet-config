@@ -176,7 +176,7 @@ Repo root: E:\automation\<repo>. You are the only agent touching this repo.
    read, main sync, branch cut, hand-off to implementation in fast mode.
 3. Build the change.
 4. Run the project's verification gate (per its CLAUDE.md — e.g.
-   `pwsh -File scripts/verify-before-ship.ps1`).
+   `C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe -File scripts/verify-before-ship.ps1`).
 5. STOP. Do NOT push, open a PR, merge, or run /issue-finish. This issue is
    hard-tier enough that the user validates the approach before it ships. The
    user will NOT read the diff — they review your summary below, so make it

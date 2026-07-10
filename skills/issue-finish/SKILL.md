@@ -50,7 +50,8 @@ Run in parallel; stop on any failure:
 ### 3. Verification gate
 
 Run the gate the project's `CLAUDE.md` specifies (e.g.
-`pwsh -File scripts/verify-before-ship.ps1`). It must exit 0. Do not proceed on
+`C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe -File scripts/verify-before-ship.ps1`).
+It must exit 0. Do not proceed on
 a red gate. If the project has no checker, say so explicitly — never claim tests
 passed when there are none.
 

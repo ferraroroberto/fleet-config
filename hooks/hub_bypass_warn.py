@@ -4,12 +4,12 @@ Triggers on `PostToolUse` for `Edit`/`Write`/`MultiEdit`. **Non-blocking** —
 emits a single one-line nudge on stdout (exit 0) and lets the edit stand. The
 user decides whether the call is a legitimate one-off.
 
-Fires when the edited file is a `*.py` anywhere EXCEPT inside the hub repo
-itself (`local-llm-hub` / `claude-local-calls`) and its on-disk content spawns
-an inline `claude -p` subprocess. Reason: the global "Don't duplicate hub
-functionality" rule — downstream apps should route through the hub at
-`http://127.0.0.1:8000` via the standard Anthropic/OpenAI SDKs, not re-roll a
-`claude -p` subprocess wrapper.
+Fires when the edited file is a `*.py` anywhere EXCEPT inside a repo flagged
+`is_hub = true` in `hooks/projects.toml` (the hub itself, e.g. `local-llm-hub`)
+and its on-disk content spawns an inline `claude -p` subprocess. Reason: the
+global "Don't duplicate hub functionality" rule — downstream apps should route
+through the hub at `http://127.0.0.1:8000` via the standard Anthropic/OpenAI
+SDKs, not re-roll a `claude -p` subprocess wrapper.
 
 Reads the file from disk (the PostToolUse target already exists), matching
 `py_syntax_check.py`.
@@ -24,9 +24,6 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import _lib  # noqa: E402
 
-
-# Repos that legitimately own a `claude -p` subprocess wrapper — the hub itself.
-HUB_DIR_SEGMENTS = {"local-llm-hub", "claude-local-calls"}
 
 # A subprocess-spawning indicator in the file.
 SUBPROCESS_RE = re.compile(r"\b(?:subprocess|Popen|os\.system|check_output|check_call|getoutput)\b")
@@ -45,8 +42,8 @@ def main() -> None:
     if target is None or target.suffix.lower() != ".py" or not target.exists():
         _lib.allow()
 
-    parts = {p.lower() for p in target.parts}
-    if parts & HUB_DIR_SEGMENTS:
+    project = _lib.detect_project(target)
+    if project is not None and project.extra.get("is_hub"):
         _lib.allow()
 
     try:
