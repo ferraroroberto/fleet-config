@@ -31,6 +31,7 @@ except ModuleNotFoundError:  # pragma: no cover - fallback for older Pythons
 
 HOOKS_DIR = Path(__file__).resolve().parent
 PROJECTS_TOML = HOOKS_DIR / "projects.toml"
+PROJECTS_TOML_ENV_VAR = "CLAUDE_HOOKS_PROJECTS_TOML"
 
 
 # --------------------------------------------------------------------------- I/O
@@ -191,7 +192,16 @@ def _normalize(p: str) -> str:
     return str(Path(p)).replace("\\", "/").rstrip("/").lower()
 
 
-def load_registry(path: Path = PROJECTS_TOML) -> Registry:
+def load_registry(path: Optional[Path] = None) -> Registry:
+    """Load the project registry from ``projects.toml``.
+
+    ``CLAUDE_HOOKS_PROJECTS_TOML`` overrides the path (same pattern as
+    ``slack_notify``'s ``CLAUDE_SETTINGS_JSON_PATH``) so acceptance tests can
+    point this at a throwaway file with a ``cwd_prefix`` under a temp dir,
+    instead of writing test fixtures into the real fleet paths.
+    """
+    if path is None:
+        path = Path(os.environ.get(PROJECTS_TOML_ENV_VAR) or PROJECTS_TOML)
     if not path.exists():
         return Registry(projects=[], globals=GlobalConfig(never_kill_ports=()))
 

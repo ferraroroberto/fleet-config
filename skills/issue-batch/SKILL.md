@@ -136,7 +136,8 @@ Workflow (mirrors /issue-start steps 3 + 6, plus verification):
 5. Build the change. Fast mode (no plan-approval gate) — the user has
    already approved this batch.
 6. Run the project's verification gate (per its CLAUDE.md — for
-   app-launcher it's `pwsh -File scripts/verify-before-ship.ps1`).
+   app-launcher it's
+   `C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe -File scripts/verify-before-ship.ps1`).
    IMPORTANT: the gate must run isolated. If the gate would conflict with
    parallel runs (shared port, shared file), report that you skipped it
    and why. The app-launcher gate boots its own ephemeral webapp + session
