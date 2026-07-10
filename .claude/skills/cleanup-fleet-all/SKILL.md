@@ -1,6 +1,6 @@
 ---
 name: cleanup-fleet-all
-description: Unattended, all-bucket sibling of /cleanup-fleet — builds, independently validates, and ships every open cleanup issue across all six audit buckets in one overnight pass, no human in the loop. Use when the user wants a fully unattended fleet-wide cleanup run — e.g. "/cleanup-fleet-all", "clean up the whole fleet overnight", "run cleanup on all buckets unattended". Designed to run headless via a scheduled claude -p job.
+description: Unattended, all-bucket sibling of /cleanup-fleet — builds, validates, and ships every open cleanup issue across all six audit buckets in one overnight pass, no human in the loop. Use for a fully unattended fleet-wide cleanup run — e.g. "/cleanup-fleet-all", "clean up the whole fleet overnight", "run cleanup on all buckets unattended". Runs headless via a scheduled claude -p job.
 ---
 
 # cleanup-fleet-all
