@@ -199,7 +199,11 @@ public static class LoopbackCertBypass {
     static bool IsLoopback(string h) { return h == "127.0.0.1" || h == "localhost" || h == "::1"; }
     static bool Validate(object s, X509Certificate c, X509Chain ch, SslPolicyErrors e) {
         HttpWebRequest r = s as HttpWebRequest;
-        return r != null && IsLoopback(r.RequestUri.Host);
+        if (r != null && IsLoopback(r.RequestUri.Host)) return true;
+        // Non-loopback: this callback REPLACES .NET's own chain validation, so a
+        // bare `false` here would reject every valid remote cert too (#151). Defer
+        // to the policy errors .NET already computed instead of hardcoding reject.
+        return e == SslPolicyErrors.None;
     }
     public static RemoteCertificateValidationCallback Previous;
     public static void Install() {
