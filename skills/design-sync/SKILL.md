@@ -206,9 +206,12 @@ The five sections it returns, and what each means:
   pins it right, #284/app-launcher#362), **row-height-scale** (fixed
   `height`/`min-height` literals on row/action-rail selectors outside the
   spec's `rows` 3-step scale — 44px/52px/60px by default, spec-driven —
-  WARN, #284/app-launcher#365), and the **editor-modal contract** (design.md
+  WARN, #284/app-launcher#365), the **editor-modal contract** (design.md
   `modal` component, #307) applied to every `<dialog>` that contains a real
-  `<form>` (an "editor modal", vs. a plain alert/results dialog):
+  editable field (`input`/`select`/`textarea`) — a `<form>` wrapper is
+  **not** required (#342: home-automation#409's JS-managed editors carry
+  bare fields and a plain `type="button"` Save; a field-less alert/results
+  dialog stays NA):
   `modal-unstyled-rows` (a row class, e.g. `label.stacked`, used inside a
   dialog but only ever styled under some other, unrelated ancestor scope —
   the app-launcher#70 root cause, where `.stacked` was styled only under
@@ -219,7 +222,24 @@ The five sections it returns, and what each means:
   than one always-visible footer action, or a sole primary that isn't the
   full-width solid-accent recipe), and `modal-top-anchor` (no `max-height` +
   internal scroll, so a tall form jumps vertically as conditional rows
-  toggle).
+  toggle), plus the four **mobile interaction contracts** promoted from
+  home-automation#409 (#342 — all conservative static views of design.md's
+  Async data & feedback / Touch targets / Charts sections):
+  **hit-target** (spec-driven from `components.hit-target.min`, 44px — a
+  fixed-size compact interactive rule below the floor with no `::before`
+  hit-area expansion on its own class and no co-applied expansion utility
+  in the markup WARNs; NA when the spec lacks the token or the app authors
+  no compact fixed-size controls), **chart-tick-budget** (Chart.js present
+  with no authored `maxTicksLimit`/`autoSkip` WARNs — phone x-axes collide;
+  NA with no Chart.js), **chart-noncolor-cue** (≥2 colour-assigned datasets
+  with no `borderDash`/`pointStyle`/`fill` second channel WARN — colour
+  must never be the only series cue; NA for single-series apps), and
+  **async-lifecycle** (literal `data-state` values checked against the
+  canonical `loading/ready/empty/stale/error` vocabulary — shadcn-style
+  interaction states like `open`/`closed` are a different channel and
+  exempt; non-canonical lifecycle synonyms WARN, and lifecycle states with
+  no `role="status"` live region WARN; NA when the app never uses
+  `data-state`).
 - **`vendored`** — byte-hash comparison of the app's
   `_vendored/<component>/` copies against project-scaffolding's canonical
   files: `IDENTICAL` / `FORKED` (the vendor-verbatim rule broken — always a
@@ -231,6 +251,20 @@ The five sections it returns, and what each means:
 - **`siblings`** — top-level JS definitions with the same name in ≥2 files
   (the 7×-duplicated `schedule(ms)` of home-automation#369). Detection is
   mechanical; *which variant is canonical* is step 4c.
+
+**Static PASS is not rendered conformance.** The lint proves *authored*
+facts — tokens, markup shape, component CSS, vendored bytes. Effective hit
+rectangles and their non-overlap, chart tick/label collision, canvas-driven
+page overflow, and behavior across the 320/390/430/772px × light/dark
+matrix are **rendered-DOM facts** that only a browser harness can prove
+(home-automation#409 verified them deterministically in Playwright;
+the canonical shared geometry helper is project-scaffolding#157). When the
+target repo ships that harness, run it and report its results alongside the
+static sections; when it doesn't, **report the rendered leg as `unmeasured`**
+in the findings and the final report — never let a clean static scan read as
+whole-UX conformance. home-automation#409/PR#427 is the reference pattern
+for what the rendered leg covers; consult it as a pattern, never hardcode
+its selectors or APIs into checks.
 
 ### 4. LLM judgment layer (only where measurement can't reach)
 
@@ -397,6 +431,7 @@ Print one summary and stop:
 
   adoption: color <0.xx> · font-size <0.xx> · radius <0.xx> · spacing <0.xx>
   contracts: <n> PASS · <n> WARN · <n> FAIL   (<failing ids>)
+  rendered leg: <ran (harness results) | unmeasured — no rendered-geometry harness (project-scaffolding#157)>
   vendored: <n> identical · <n> forked · <n> not adopted
   siblings: <n> duplicate names (<top names>)
   nav contract: <ok | drifted: ...>

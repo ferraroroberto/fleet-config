@@ -83,6 +83,7 @@ components:
   list-row:       { rowPadding: "{components.modal.rowPadding}", divider: "{colors.border-muted}" }   # repeating entries inside a card — flat full-bleed rows on a top hairline, never nested canvas-subtle cards (photo-ocr .history-item, post-photo-ocr#73)
   empty-state:    { iconSize: "{icons.size.feature}", gap: "{spacing.sm}", padding: "{spacing.xl} {spacing.md}", actionMinWidth: 96px, textColor: "{colors.fg-muted}" }   # icon + one-line reason + optional action, centered
   icon-tile:      { rounded: "{rounded.md}", iconSize: "{icons.size.feature}", iconColor: "{colors.accent-fg}" }   # Home-screen rounded-square — one tile-* fill, centered Lucide glyph
+  hit-target:     { min: 44px }   # minimum effective pointer-target square, app-wide — see Touch targets
 focus:            { outline: "2px solid {colors.accent}", offset: 2px }   # one tokenized :focus-visible ring app-wide (a control overrides only where it draws a custom ring)
 icons:
   set:     "Lucide"               # canonical fleet icon set — https://lucide.dev
@@ -186,6 +187,71 @@ and animation to near-instant (`0.01ms`, not `0` — some engines skip the
 hang). Leave *functional* delays untouched: a wait that lets the viewport settle
 before revealing the nav is a timing dependency, not decoration, so it is not
 motion to reduce.
+
+## Async data & feedback
+
+Every data-backed surface declares exactly one of **five lifecycle states** —
+`loading` / `ready` / `empty` / `stale` / `error` — and that five-word set is
+the whole `data-state` vocabulary for async surfaces (home-automation#409):
+
+- **loading** says what it is reading (`Reading security status…`) via the
+  canonical `empty-state` block — never a blank pane.
+- **empty** is the *true-empty* message ("no schedules yet"), also the
+  `empty-state` block — visually distinct from loading and from failure.
+- **stale** (a background refresh failed *after* a good read) **preserves the
+  last-known content**, labels it inline
+  `Last updated <time> · live data unavailable`, and **disables
+  freshness-sensitive actions** — stale state is never actionable (an
+  arm/disarm button acting on stale data is a hazard, not a convenience).
+- **error** (no good data yet) is an `empty-state` block with a Lucide glyph,
+  a one-line reason, and **at most one** concise Retry action.
+
+Feedback stays at the right altitude: **passive/background status renders
+inline beside the affected surface; a global toast is reserved for
+user-initiated command progress/results.** Announce state changes through a
+`role="status"` live region (`aria-live="polite"`, `assertive` only for
+errors) without moving focus. Failure copy is sanitized — no hostnames, URLs,
+exception classes, or timeout internals in user-facing text (logs keep the
+detail) — and repeated background failures dedupe to one notice per
+healthy→failing transition.
+
+## Touch targets
+
+**Every non-navigation pointer target presents an effective hit area of at
+least `components.hit-target.min` (44×44px)** — the nav contract's 44px
+floor, generalized app-wide. Two canonical ways to reach it:
+
+- **Isolated compact control** — keep the compact visual (e.g. a 34×34 icon
+  button) and expand the hit area invisibly with one shared utility class
+  (canonical name `.hit-target`): `position: relative` on the control plus
+  `::before { content: ""; position: absolute; inset: -5px }` (34 + 2×5 = 44).
+  Ship the utility once and co-apply the class — never re-inline the
+  expansion per control.
+- **Adjacent cluster** — controls that sit side by side (weekday selectors,
+  action rows, d-pads) get **real 44px geometry or grid tracks**, because
+  expanded rectangles must **never overlap**: an overlap makes taps land on
+  the wrong control, which is worse than a small target.
+
+Inline form controls at the `control` height (36px) reach the floor by the
+same two routes. Effective rectangles and non-overlap are rendered-layout
+facts: static lint verifies the authored patterns; only the browser-leg e2e
+harness proves the geometry.
+
+## Charts
+
+Charts are responsive citizens of the card grid, never a page-overflow source:
+
+- **Viewport-aware tick budget** — cap x-axis labels (`maxTicksLimit` ~4 at
+  phone widths / ~8 at desktop) with `autoSkip` and **zero label rotation**
+  (`maxRotation: 0`), recomputed in the chart's own resize hook — no reload.
+- **The canvas never drives horizontal page overflow** — it sizes to its card.
+- **Every colour-distinguished series carries a non-colour second channel**:
+  border dash + point style + fill treatment (e.g. solid/circle/area,
+  long-dash/diamond/area, dotted/triangle/no-fill), with the legend rendering
+  point styles so the cue is learnable at a glance.
+- **Tooltips remain the precise-value path**; axes give the overview.
+- Series colours draw from the status/accent tokens — never new decorative
+  colours.
 
 ## Navigation & interaction (fleet contract — the part that must feel identical)
 
@@ -292,6 +358,9 @@ hand-picked per app.
   must clear AA contrast in *both* themes (never the browser default, which
   drops sub-AA). The nav hides while it is open (`body:has(dialog[open])`), and
   on mobile the dialog is top-anchored so it never jumps on open/close.
+  A `<form>` wrapper is **optional** — a JS-managed editor whose Save reads
+  bare `input`/`select`/`textarea` fields is equally canonical; what makes a
+  dialog an *editor* is the presence of editable fields, not the wrapper.
 - **list-row** (`list-row`) — how a card renders a **repeating list** of entries
   (history, activity, request log): flat full-bleed rows, `list-row.rowPadding`
   (`12px 0`, shared vocabulary with the modal), separated by a 1px `divider`
@@ -305,6 +374,18 @@ hand-picked per app.
   `rows.lg` 60px — `disclosure.closedHeight` is `rows.md`) via `var(--row-*)`
   or a `calc()` derivation, never an ad hoc literal — consolidated from five
   prior ad hoc heights (30/40/44/52/60px) in app-launcher#365/PR#380.
+- **dense collection** — how a card renders **saved automation/settings
+  items** (schedules, pairings, overrides): each item is a flat `list-row`
+  **summary row** — a compact human-readable summary line + the entry's
+  `switch` + an edit affordance — and Add/Edit opens a **staged editor
+  modal** (the `modal` contract above). **Save is the only persistence
+  boundary**: Escape, backdrop click, and the × all discard; focus returns to
+  the opener on close; a destructive Delete is a labelled `danger` action in
+  the dialog **body**, never a competing footer primary. The API/data shape
+  stays independent of presentation — this is presentation-only composition.
+  Reference impl: home-automation security schedules / scene pairings /
+  overrides (home-automation#409), which replaced always-expanded inline
+  forms with summary rows + dialogs and changed no backend payloads.
 - **empty-state block** (`empty-state`) — for any list/grid that can legitimately
   render zero items: a centered column of a `icons.size.feature` (24px) muted
   glyph + a one-line reason (`body`, `fg-muted`) + an *optional* single action
@@ -382,10 +463,14 @@ for the nav/UI snippets ("Reuse the **vendored** nav/UI snippets from
 - **Do** ship the user-selectable theme: pre-paint `data-theme` boot script + persisted sun/moon toggle on the main view — never dark-only or OS-only.
 - **Do** render a repeating list of entries (history, activity log) as flat full-bleed rows on a hairline divider — never nested cards per entry.
 - **Do** pin every single-column stack grid's track to `minmax(0, 1fr)` — never a bare `1fr`/`auto`/implicit track behind a no-wrap or scrollable child.
+- **Do** give every non-navigation pointer target a ≥44×44px *effective* hit area — invisible expansion for isolated compact controls, real geometry for adjacent clusters; expanded rectangles never overlap.
+- **Do** preserve and label last-known data when a background refresh fails (`Last updated … · live data unavailable`) and disable freshness-sensitive actions — stale state is never actionable.
+- **Do** pair every colour-distinguished chart series with a non-colour cue (dash / point style / fill) and a viewport-aware tick budget.
 - **Don't** hand-roll a primitive (switch, select, dialog, tabs…) that shadcn already defines.
 - **Don't** mix a second icon set or hand-draw a one-off glyph — use the matching Lucide icon.
 - **Don't** put a solid accent fill on any button except the view's primary action — secondary emphasis is the tint, never a second solid.
 - **Don't** introduce a second accent or per-app navigation variants.
 - **Don't** stretch content full-bleed on desktop — keep the centered 772px measure.
 - **Don't** use status colors decoratively — they signal state only.
+- **Don't** put raw infrastructure detail (hostnames, URLs, exception text) in user-facing failure copy — sanitize it; logs keep the detail.
 - **Don't** apply this spec to Streamlit POC spikes.

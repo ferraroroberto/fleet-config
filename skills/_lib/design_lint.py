@@ -609,11 +609,16 @@ def find_emoji_sites(root: Path, html_files: List[Path], js_files: List[Path]
 
 # ------------------------------------------------------------ editor modal
 #
-# A native <dialog> containing a <form> with real inputs is an "editor
-# modal" and held to design.md's `modal` component contract (fleet-config#307
-# — the app-launcher#70 root cause: `.stacked` was styled only inside
+# A native <dialog> containing real editable fields is an "editor modal" and
+# held to design.md's `modal` component contract (fleet-config#307 — the
+# app-launcher#70 root cause: `.stacked` was styled only inside
 # `.settings-card`, so the same class fell back to unstyled inline labels
 # inside <dialog> forms, and raw <fieldset> groups had no CSS at all).
+# A <form> wrapper is NOT required (fleet-config#342): home-automation#409's
+# three JS-managed editors carry bare input/select fields with a plain
+# type="button" Save, and the old form-based classifier NA'd every modal-*
+# check for them. What makes a dialog an editor is the fields, not the
+# wrapper; a field-less alert/results dialog stays out of scope.
 
 _DIALOG_RE = re.compile(r"<dialog\b([^>]*)>(.*?)</dialog>", re.S | re.I)
 _LABEL_CLASS_RE = re.compile(r"<label\b[^>]*\bclass=[\"']([^\"']*)[\"']", re.I)
@@ -621,19 +626,23 @@ _FIELDSET_OPEN_RE = re.compile(r"<fieldset\b([^>]*)>", re.I)
 _BUTTON_RE = re.compile(r"<button\b([^>]*)>(.*?)</button>", re.S | re.I)
 _FOOTER_CONTAINER_RE = re.compile(r"<(div|footer)\b([^>]*)>(.*?)</\1>", re.S | re.I)
 _FIELDSET_TAG_PAT = re.compile(r"^fieldset(?:[.:#\[]|$)", re.I)
+# a persistence boundary: submit buttons or save/apply/confirm/done-named
+# controls — what separates a *staged* editor from a live-control dialog.
+_SAVE_AFFORDANCE_RE = re.compile(
+    r'type=["\']submit["\']|(?:id|class)=["\'][^"\']*(?:save|submit|apply|confirm|done)[^"\']*["\']',
+    re.I)
 
 
 def _editor_modals(root: Path, html_files: List[Path]) -> List[dict]:
-    """`<dialog>` blocks that contain a `<form>` with a real input/select/
-    textarea — i.e. detail/rename/settings editors, not a plain alert or
-    results dialog."""
+    """`<dialog>` blocks that contain a real input/select/textarea — i.e.
+    detail/rename/settings editors, not a plain alert or results dialog.
+    A `<form>` wrapper is optional (fleet-config#342)."""
     modals: List[dict] = []
     for p in html_files:
         text = strip_comments(read_text(p), "html")
         for m in _DIALOG_RE.finditer(text):
             attrs, inner = m.group(1), m.group(2)
-            if not (re.search(r"<form\b", inner, re.I)
-                    and re.search(r"<input\b|<select\b|<textarea\b", inner, re.I)):
+            if not re.search(r"<input\b|<select\b|<textarea\b", inner, re.I):
                 continue
             cls_m = _TAG_CLASS_RE.search(attrs)
             classes = set(cls_m.group(1).split()) if cls_m else set()
@@ -697,16 +706,22 @@ def _selector_hits(css_all: str, rightmost_pattern: "re.Pattern[str]"
     return hits
 
 
-def _class_scope_status(css_all: str, class_name: str) -> set:
+def _class_scope_status(css_all: str, class_name: str,
+                        dialog_classes: frozenset = frozenset()) -> set:
     """Where a class is styled: `global` (bare/unscoped), `dialog` (an
-    ancestor compound mentions "dialog"), `other` (scoped to some unrelated
-    ancestor, e.g. `.settings-card .stacked` — the app-launcher#70 bug)."""
+    ancestor compound mentions "dialog" or carries a class that appears on/in
+    a known editor `<dialog>` — e.g. `.detail-card .row`, where the wrapper
+    class lives inside the dialog, fleet-config#342), `other` (scoped to some
+    unrelated ancestor, e.g. `.settings-card .stacked` — the app-launcher#70
+    bug)."""
     pat = re.compile(r"\." + re.escape(class_name) + r"\b")
     scopes: set = set()
     for _, ancestors, _body in _selector_hits(css_all, pat):
         if not ancestors:
             scopes.add("global")
-        elif any("dialog" in a.lower() for a in ancestors):
+        elif any("dialog" in a.lower()
+                 or set(re.findall(r"\.([A-Za-z0-9_-]+)", a)) & dialog_classes
+                 for a in ancestors):
             scopes.add("dialog")
         else:
             scopes.add("other")
@@ -1181,8 +1196,9 @@ def _check_row_height_scale(ctx: _ContractsCtx) -> List[dict]:
 
 def _check_editor_modal_contract(ctx: _ContractsCtx) -> List[dict]:
     # 16-20. Editor-modal contract (design.md `modal` component;
-    #     fleet-config#307) — a <dialog> containing a real <form> is held to
-    #     the header/rows/fieldset/footer/top-anchor contract. All five share
+    #     fleet-config#307) — a <dialog> containing real editable fields
+    #     (<form> wrapper optional, fleet-config#342) is held to the
+    #     header/rows/fieldset/footer/top-anchor contract. All five share
     #     the one `modals` scan, so they live in one function rather than
     #     re-deriving it per check.
     css_all = ctx.css_all
@@ -1194,18 +1210,32 @@ def _check_editor_modal_contract(ctx: _ContractsCtx) -> List[dict]:
 
     results: List[dict] = []
 
-    # 16. unstyled dialog rows — a row class used inside a dialog that is
-    #     only ever styled under some other, unrelated scope.
+    # classes carried by the <dialog> tags themselves and by elements inside
+    # them — a rule scoped under any of these is dialog-scoped even when the
+    # ancestor name has no "dialog" in it (`.detail-card .row`, #342).
+    dialog_classes_set: set = set()
+    for modal in modals:
+        dialog_classes_set |= modal["classes"]
+        for cm in _TAG_CLASS_RE.finditer(modal["inner"]):
+            dialog_classes_set.update(cm.group(1).split())
+    dialog_classes = frozenset(dialog_classes_set)
+
+    # 16. unstyled dialog rows — a dialog row (label) whose classes are only
+    #     ever styled under some other, unrelated scope. Judged per label,
+    #     not per class: one properly styled class makes the row styled — an
+    #     unstyled *modifier* riding a styled base class is fine (#342).
     unstyled: List[str] = []
     for modal in modals:
         for lm in _LABEL_CLASS_RE.finditer(modal["inner"]):
-            for cls in lm.group(1).split():
-                scopes = _class_scope_status(css_all, cls)
-                if "global" in scopes or "dialog" in scopes:
-                    continue
-                loc = _loc_in_modal(modal, lm.start())
-                why = "styled only outside dialogs" if scopes else "never styled"
-                unstyled.append(f"{loc} label.{cls} ({why})")
+            classes = lm.group(1).split()
+            statuses = [_class_scope_status(css_all, cls, dialog_classes)
+                        for cls in classes]
+            if any("global" in s or "dialog" in s for s in statuses):
+                continue
+            loc = _loc_in_modal(modal, lm.start())
+            why = ("styled only outside dialogs" if any(statuses)
+                   else "never styled")
+            unstyled.append(f"{loc} label.{'.'.join(classes)} ({why})")
     if unstyled:
         results.append(_result("modal-unstyled-rows", "FAIL",
             f"{len(unstyled)} dialog row class(es) with no dialog-scoped "
@@ -1271,18 +1301,30 @@ def _check_editor_modal_contract(ctx: _ContractsCtx) -> List[dict]:
         results.append(_result("modal-header", "PASS", "editor-modal header(s) carry a square x close, no footer Cancel"))
 
     # 19. footer contract — exactly one always-visible action, styled as
-    #     the full-width solid-accent primary.
+    #     the full-width solid-accent primary. Applies only to *staged*
+    #     editors (a Save/submit persistence boundary exists): a live-control
+    #     dialog with fields but no Save (a camera PTZ surface, a filter
+    #     panel) has action rails, not a persistence footer (#342).
     footer_bad: List[str] = []
     footer_checked = 0
     for modal in modals:
+        if not _SAVE_AFFORDANCE_RE.search(modal["inner"]):
+            continue
         footer = None
         for fm2 in _FOOTER_CONTAINER_RE.finditer(modal["inner"]):
             fattrs, fbody = fm2.group(2), fm2.group(3)
             fcls_m = _TAG_CLASS_RE.search(fattrs)
             fclasses = fcls_m.group(1).split() if fcls_m else []
-            if any(re.search(r"actions|footer", c, re.I) for c in fclasses):
-                footer = (fclasses, fbody)
-                break
+            if not any(re.search(r"actions|footer", c, re.I) for c in fclasses):
+                continue
+            # the footer is terminal — interactive content after the
+            # container means this is a mid-body action rail, not the
+            # persistence footer (#342, the camera live-view rail).
+            if re.search(r"<(button|input|select|textarea|label)\b",
+                         modal["inner"][fm2.end():], re.I):
+                continue
+            footer = (fclasses, fbody)
+            break
         if footer is None:
             continue
         footer_checked += 1
@@ -1318,7 +1360,8 @@ def _check_editor_modal_contract(ctx: _ContractsCtx) -> List[dict]:
                 missing.append("not full-width")
             footer_bad.append(f"{modal['file']}:{modal['line']} primary " + " + ".join(missing))
     if footer_checked == 0:
-        results.append(_result("modal-footer", "NA", "no locatable footer/actions container in any editor modal"))
+        results.append(_result("modal-footer", "NA",
+            "no staged editor modal with a Save affordance + locatable footer/actions container"))
     elif footer_bad:
         results.append(_result("modal-footer", "FAIL",
             "editor-modal footer contract violated (design.md modal wants "
@@ -1355,6 +1398,193 @@ def _check_editor_modal_contract(ctx: _ContractsCtx) -> List[dict]:
     return results
 
 
+_PSEUDO_CLASS_RE = re.compile(r"\.([A-Za-z0-9_-]+)::?(?:before|after)\b")
+_CLASS_ATTR_RE = re.compile(r'class=["\']([^"\']+)["\']')
+_INTERACTIVE_COMPOUND_RE = re.compile(
+    r"(^|[.#\[])(button|[\w-]*(?:btn|button|close|toggle|action|step|del)(?:[\w-]*)?)\b", re.I)
+
+
+def _check_hit_target(ctx: _ContractsCtx) -> List[dict]:
+    # 21. effective touch targets — every non-navigation pointer target
+    #     presents >= components.hit-target.min (44px) effective (design.md
+    #     Touch targets; home-automation#409). Static view only: a compact
+    #     authored square (explicit sub-min width AND height on an
+    #     interactive-looking selector) must pair with an invisible-expansion
+    #     pseudo on the same class or a co-applied expansion utility in the
+    #     markup. Effective rectangles and non-overlap are rendered facts —
+    #     the browser leg (project-scaffolding#157) proves the geometry.
+    css_all, markup_all = ctx.css_all, ctx.markup_all
+    min_m = re.match(r"(\d+)px", ctx.spec_light.get("components.hit-target.min", ""))
+    if not min_m:
+        return [_result("hit-target", "NA", "spec declares no components.hit-target token")]
+    min_px = int(min_m.group(1))
+
+    # classes that carry a negative-inset ::before/::after hit expansion
+    expansion_classes: set = set()
+    for bm in _BLOCK_RE.finditer(css_all):
+        sel_line = _last_selector_line(bm.group(1))
+        body = bm.group(2)
+        if not (re.search(r"inset:\s*-", body)
+                or (re.search(r"(?<![-\w])top:\s*-", body)
+                    and re.search(r"(?<![-\w])left:\s*-", body))):
+            continue
+        expansion_classes.update(_PSEUDO_CLASS_RE.findall(sel_line))
+
+    markup_class_sets = [set(mm.group(1).split())
+                         for mm in _CLASS_ATTR_RE.finditer(markup_all)]
+
+    flagged: List[str] = []
+    n_candidates = 0
+    for bm in _BLOCK_RE.finditer(css_all):
+        sel_line = _last_selector_line(bm.group(1))
+        if sel_line.startswith("@") or "nav" in sel_line.lower():
+            continue
+        body = bm.group(2)
+        for sel in _split_top_level_commas(sel_line):
+            comps = _compounds(sel)
+            if not comps or "::" in comps[-1]:
+                continue
+            if not _INTERACTIVE_COMPOUND_RE.search(comps[-1]):
+                continue
+            w_m = re.search(r"(?<![-\w])width:\s*(\d+)px", body)
+            h_m = re.search(r"(?<![-\w])height:\s*(\d+)px", body)
+            if not (w_m and h_m):
+                continue
+            n_candidates += 1
+            if int(w_m.group(1)) >= min_px and int(h_m.group(1)) >= min_px:
+                continue
+            # mitigation: min-* floor in the same body
+            minw = re.search(r"min-width:\s*(\d+)px", body)
+            minh = re.search(r"min-height:\s*(\d+)px", body)
+            if minw and minh and int(minw.group(1)) >= min_px and int(minh.group(1)) >= min_px:
+                continue
+            own_classes = set(re.findall(r"\.([A-Za-z0-9_-]+)", comps[-1]))
+            # mitigation: expansion pseudo on one of the control's own classes
+            if own_classes & expansion_classes:
+                continue
+            # mitigation: expansion utility co-applied in the markup
+            if any(cs & own_classes and cs & expansion_classes
+                   for cs in markup_class_sets):
+                continue
+            flagged.append(f"{_loc_at(css_all, bm.start())} {comps[-1]} "
+                           f"{w_m.group(1)}x{h_m.group(1)}px")
+    if flagged:
+        return [_result("hit-target", "WARN",
+            f"{len(flagged)} compact control(s) authored below the "
+            f"{min_px}px effective floor with no ::before expansion or "
+            "co-applied hit-area utility (design.md Touch targets): "
+            + "; ".join(flagged[:6]))]
+    if n_candidates:
+        return [_result("hit-target", "PASS",
+            f"every fixed-size compact control reaches the {min_px}px "
+            "effective floor (authored size, min-* floor, or invisible "
+            "expansion) — rendered rectangles/overlap need the browser leg")]
+    return [_result("hit-target", "NA",
+        "no fixed-size compact pointer-target rules found")]
+
+
+def _check_chart_tick_budget(ctx: _ContractsCtx) -> List[dict]:
+    # 22. chart tick budget — Chart.js axes cap their label count
+    #     (maxTicksLimit / autoSkip) with zero rotation so phone-width
+    #     x-axes never collide or rotate (design.md Charts;
+    #     home-automation#409).
+    markup_all = ctx.markup_all
+    if not re.search(r"\bnew\s+Chart\s*\(", markup_all):
+        return [_result("chart-tick-budget", "NA", "no Chart.js usage found")]
+    knobs = [k for k in ("maxTicksLimit", "autoSkip", "maxRotation")
+             if re.search(rf"\b{k}\b", markup_all)]
+    if "maxTicksLimit" not in knobs and "autoSkip" not in knobs:
+        return [_result("chart-tick-budget", "WARN",
+            "Chart.js used with no authored tick budget (maxTicksLimit / "
+            "autoSkip) — phone-width x-axis labels collide (design.md Charts)",
+            _evidence(markup_all, r"\bnew\s+Chart\s*\("))]
+    detail = "tick budget authored (" + ", ".join(knobs) + ")"
+    if "maxRotation" not in knobs:
+        detail += "; no maxRotation — labels may rotate on narrow viewports"
+    return [_result("chart-tick-budget", "PASS", detail,
+                    _evidence(markup_all, r"\bmaxTicksLimit\b|\bautoSkip\b"))]
+
+
+def _check_chart_noncolor_cue(ctx: _ContractsCtx) -> List[dict]:
+    # 23. non-colour series cue — every colour-distinguished Chart.js series
+    #     carries a second visual channel (borderDash / pointStyle / fill
+    #     treatment), per WCAG 2.2 Use of Color (design.md Charts;
+    #     home-automation#409).
+    markup_all = ctx.markup_all
+    if not re.search(r"\bnew\s+Chart\s*\(", markup_all):
+        return [_result("chart-noncolor-cue", "NA", "no Chart.js usage found")]
+    n_colored = len(re.findall(r"\bborderColor\b", markup_all))
+    if n_colored < 2:
+        return [_result("chart-noncolor-cue", "NA",
+            "fewer than two colour-assigned dataset sites — single-series "
+            "charts need no second channel")]
+    cue_pat = r"\bborderDash\b|\bpointStyle\b|\bfill\s*:"
+    cues = [k for k, p in (("borderDash", r"\bborderDash\b"),
+                           ("pointStyle", r"\bpointStyle\b"),
+                           ("fill", r"\bfill\s*:"))
+            if re.search(p, markup_all)]
+    if cues:
+        return [_result("chart-noncolor-cue", "PASS",
+            f"{n_colored} colour-assigned dataset sites carry non-colour "
+            "cue(s): " + ", ".join(cues),
+            _evidence(markup_all, cue_pat))]
+    return [_result("chart-noncolor-cue", "WARN",
+        f"{n_colored} colour-assigned Chart.js dataset sites with no "
+        "borderDash / pointStyle / fill second channel — colour is the only "
+        "series cue (design.md Charts; WCAG Use of Color)",
+        _evidence(markup_all, r"\bborderColor\b"))]
+
+
+_LIFECYCLE_VOCAB = {"loading", "ready", "empty", "stale", "error"}
+# shadcn-convention interaction states ride the same data-state attribute but
+# are a different channel from the async lifecycle — never lifecycle strays.
+_INTERACTION_STATES = {"open", "closed", "checked", "unchecked", "on", "off",
+                       "active", "inactive", "expanded", "collapsed",
+                       "visible", "hidden", "selected"}
+
+
+def _check_async_lifecycle(ctx: _ContractsCtx) -> List[dict]:
+    # 24. async lifecycle vocabulary — data surfaces declare the five-state
+    #     set loading/ready/empty/stale/error on data-state and announce
+    #     changes via a role="status" live region (design.md Async data &
+    #     feedback; home-automation#409). Static view: literal data-state
+    #     values in markup/JS/CSS; runtime-only assignments are the rendered
+    #     leg's problem.
+    markup_all, css_all = ctx.markup_all, ctx.css_all
+    found: Dict[str, str] = {}
+    for pat, blob in (
+        (r'data-state=["\']([\w-]+)["\']', markup_all),
+        (r'dataset\.state\s*=\s*["\']([\w-]+)["\']', markup_all),
+        (r'\[data-state=["\']?([\w-]+)', css_all),
+    ):
+        for mm in re.finditer(pat, blob):
+            found.setdefault(mm.group(1), _loc_at(blob, mm.start()))
+    if not found:
+        return [_result("async-lifecycle", "NA",
+                        "no data-state lifecycle surface found")]
+    lifecycle = sorted(v for v in found if v in _LIFECYCLE_VOCAB)
+    strays = sorted(v for v in found
+                    if v not in _LIFECYCLE_VOCAB and v not in _INTERACTION_STATES)
+    if not lifecycle:
+        return [_result("async-lifecycle", "NA",
+            "data-state carries only interaction states ("
+            + ", ".join(sorted(found)) + ") — the async lifecycle vocabulary "
+            "(loading/ready/empty/stale/error) is not adopted")]
+    if strays:
+        return [_result("async-lifecycle", "WARN",
+            "lifecycle data-state mixes non-canonical values — the async "
+            "vocabulary is exactly loading/ready/empty/stale/error "
+            "(design.md Async data & feedback): "
+            + "; ".join(f"{v} at {found[v]}" for v in strays[:6]))]
+    if not re.search(r'role=["\']status["\']', markup_all, re.I):
+        return [_result("async-lifecycle", "WARN",
+            'lifecycle states used with no role="status" live region — '
+            "state changes are not announced (design.md Async data & feedback)")]
+    return [_result("async-lifecycle", "PASS",
+        "lifecycle vocabulary (" + ", ".join(lifecycle) + ") within the "
+        'canonical five states; role="status" live region present')]
+
+
 _CONTRACT_CHECKS: Tuple[Callable[["_ContractsCtx"], List[dict]], ...] = (
     _check_focus_visible_ring,
     _check_reduced_motion,
@@ -1372,6 +1602,10 @@ _CONTRACT_CHECKS: Tuple[Callable[["_ContractsCtx"], List[dict]], ...] = (
     _check_chevron_placement,
     _check_row_height_scale,
     _check_editor_modal_contract,
+    _check_hit_target,
+    _check_chart_tick_budget,
+    _check_chart_noncolor_cue,
+    _check_async_lifecycle,
 )
 
 
