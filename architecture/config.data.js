@@ -255,6 +255,12 @@ window.CONFIG = {
         "sparring-work",
         "visual-muse"
       ]
+    },
+    {
+      "repo": "local-llm-hub",
+      "items": [
+        "frontier-refresh"
+      ]
     }
   ],
   "hooks": [
