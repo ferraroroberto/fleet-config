@@ -82,6 +82,7 @@ components:
   list-row:       { rowPadding: "{components.modal.rowPadding}", divider: "{colors.border-muted}" }   # repeating entries inside a card — structural, identical to Light (see design.md)
   empty-state:    { iconSize: "{icons.size.feature}", gap: "{spacing.sm}", padding: "{spacing.xl} {spacing.md}", actionMinWidth: 96px, textColor: "{colors.fg-muted}" }   # icon + one-line reason + optional action, centered
   icon-tile:      { rounded: "{rounded.md}", iconSize: "{icons.size.feature}", iconColor: "{colors.accent-fg}" }   # Home-screen rounded-square — one tile-* fill, centered Lucide glyph
+  hit-target:     { min: 44px }   # minimum effective pointer-target square — structural, identical to Light (see design.md Touch targets)
 focus:            { outline: "2px solid {colors.accent}", offset: 2px }   # one tokenized :focus-visible ring app-wide — identical behavior to Light, brighter accent value
 icons:
   size:                           # theme-independent; the full icon spec (set/grid/stroke/license) is in design.md
@@ -169,7 +170,11 @@ the `modal` disabled recipe holds AA on the dark surface (~5.5:1); the
 `icon-tile` fills use the brighter dark `tile-*` values. The **Base UI — model
 components on shadcn** rule in `design.md` applies here unchanged: every
 interactive component is modelled on its shadcn component (structure + ARIA), then
-skinned with the (dark) tokens.
+skinned with the (dark) tokens. The **Async data & feedback**, **Touch
+targets**, and **Charts** contracts and the **dense collection** composition
+in `design.md` are behavioral and **theme-invariant** — they apply here
+unchanged (`hit-target.min` is the same 44px in both themes); only the colours
+they reference resolve to the dark values.
 
 ## Do's and Don'ts
 
