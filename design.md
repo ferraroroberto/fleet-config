@@ -77,7 +77,7 @@ components:
   switch:         { width: 44px, height: 26px, rounded: "{rounded.pill}", thumbSize: 20px, trackOff: "{colors.border}", trackOn: "{colors.success}", thumbColor: "{colors.accent-fg}" }   # shadcn Switch — no text label; on = green (success), the universal on-state
   nav-bar:        { backgroundColor: "{colors.card}", rounded: "{rounded.nav}", height: 61px, margin: 21px }
   nav-tab:        { textColor: "{colors.fg-muted}", rounded: "{rounded.pill}", height: 53px }
-  nav-tab-active: { backgroundColor: "{colors.canvas-subtle}", textColor: "{colors.accent}" }
+  nav-tab-active: { backgroundColor: "{colors.accent-soft}", borderColor: "{colors.accent-border-soft}", textColor: "{colors.accent}" }   # accent-soft tint, not canvas-subtle — the inset surface reads as a black hole in dark mode (project-scaffolding#159)
   disclosure:     { align: left, chevron: right, closedHeight: 52px, summaryPadding: "0 14px", bodyPadding: "12px 14px 14px" }   # collapsible details/summary header — the summary owns height+padding; the card's own padding is zeroed so cards align when closed
   modal:          { rounded: "{rounded.lg}", closeSize: 34px, rowPadding: "12px 0", primaryButton: "{components.button-primary}" }   # editor <dialog> — heading-lg title + × close, label/value rows on a top-border divider, one full-width primary
   list-row:       { rowPadding: "{components.modal.rowPadding}", divider: "{colors.border-muted}" }   # repeating entries inside a card — flat full-bleed rows on a top hairline, never nested canvas-subtle cards (photo-ocr .history-item, post-photo-ocr#73)
@@ -265,7 +265,7 @@ identically; treat every bullet as a hard requirement, not a suggestion.
   equal-width grid of tabs. The bar stands **61px** tall and sits with **equal
   21px margins on left, right, and bottom** so it reads
   centered and breathes evenly.
-- **One active tab at a time.** The active tab takes the subtle surface + accent
+- **One active tab at a time.** The active tab takes the accent-soft tint + accent
   text and sits at `tabindex 0`; the others are `tabindex -1`, with
   `aria-selected` tracked so it is announced correctly.
 - **Selection persists** across reloads and PWA relaunch via `localStorage`, so

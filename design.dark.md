@@ -76,7 +76,7 @@ components:
   switch:         { width: 44px, height: 26px, rounded: "{rounded.pill}", thumbSize: 20px, trackOff: "{colors.border}", trackOn: "{colors.success}", thumbColor: "{colors.accent-fg}" }   # shadcn Switch — no text label; on = green (success), the universal on-state
   nav-bar:        { backgroundColor: "{colors.card}", rounded: "{rounded.nav}", height: 61px, margin: 21px }
   nav-tab:        { textColor: "{colors.fg-muted}", rounded: "{rounded.pill}", height: 53px }
-  nav-tab-active: { backgroundColor: "{colors.canvas-subtle}", textColor: "{colors.accent}" }
+  nav-tab-active: { backgroundColor: "{colors.accent-soft}", borderColor: "{colors.accent-border-soft}", textColor: "{colors.accent}" }   # accent-soft tint, not canvas-subtle — the inset surface (true black here) reads as a black hole (project-scaffolding#159)
   disclosure:     { align: left, chevron: right, closedHeight: 52px, summaryPadding: "0 14px", bodyPadding: "12px 14px 14px" }   # collapsible details/summary header — structural, identical to Light (see design.md)
   modal:          { rounded: "{rounded.lg}", closeSize: 34px, rowPadding: "12px 0", primaryButton: "{components.button-primary}" }   # editor <dialog> — structural, identical to Light (see design.md)
   list-row:       { rowPadding: "{components.modal.rowPadding}", divider: "{colors.border-muted}" }   # repeating entries inside a card — structural, identical to Light (see design.md)
@@ -147,7 +147,7 @@ alone. See `design.md` for the full note.
 
 Identical to the [Light theme contract](design.md): fixed floating bottom-tab pill
 on coarse pointers, viewport-anchored via `100dvh` + `env(safe-area-inset-bottom)`,
-one active tab at a time (subtle surface + accent text, `aria-selected` tracked),
+one active tab at a time (accent-soft tint + accent text, `aria-selected` tracked),
 `localStorage`-persisted selection, hidden under an open modal
 (`body:has(dialog[open])`), tap targets ≥ 44px with icon + label, the same
 tokenized `:focus-visible` ring on every interactive element, and the same
