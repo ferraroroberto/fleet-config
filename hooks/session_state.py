@@ -1,8 +1,9 @@
 """Persist per-session state for the Fleet Board (fleet-config#91).
 
 Maintains ``sessions-state.json`` — one row per recent Claude Code session
-(``project``, ``status``, ``transcript_path``, ``cwd``, ``updated_at``, plus the
-live session ``name``/``name_source`` when available — see below) keyed by the
+(``project``, ``status``, ``transcript_path``, ``cwd``, ``updated_at``, explicit
+``agent``, optional ``launcher_session_id``, plus the live session
+``name``/``name_source`` when available — see below) keyed by the
 hook payload's ``session_id`` — so the app-launcher Board tab (app-launcher#164)
 can render a "what needs me now" column without owning any hook plumbing. The
 board only *reads* the file; this module is the only writer.
@@ -34,10 +35,11 @@ session surfaces even mid-turn — Slack pings are unchanged.
 
 Status meanings the board relies on: ``working`` | ``needs-you`` | ``idle``.
 
-The join key caveat: this ``session_id`` is Claude Code's transcript UUID, which
-never matches the launcher session-host's own session ids — consumers join rows
-to live sessions by normalized ``cwd`` prefix, so ``cwd`` is the load-bearing
-field, not the key.
+The hook payload's ``session_id`` is Claude Code's transcript UUID, not the
+launcher session-host id. App Launcher injects its exact identity as inherited
+``APP_LAUNCHER_SESSION_ID`` / ``APP_LAUNCHER_AGENT`` values; when present this
+writer persists them for an exact agent-aware consumer join. External sessions
+have no launcher id and retain the normalized-cwd fallback.
 
 Like every hook here this is advisory-only: any failure is swallowed and the
 hook exits 0. The state file lives under ``~/.claude/hooks/state/`` (a junction
@@ -181,6 +183,8 @@ def upsert(
     cwd_path: Optional[str],
     name: Optional[str] = None,
     name_source: Optional[str] = None,
+    agent: str = "claude",
+    launcher_session_id: Optional[str] = None,
 ) -> None:
     """Write/refresh one session row and prune rows stale past 24h.
 
@@ -199,6 +203,8 @@ def upsert(
         "cwd": cwd_path,
         "name": name,
         "name_source": name_source,
+        "agent": agent,
+        "launcher_session_id": launcher_session_id,
         "updated_at": _isoformat(_now()),
     }
 
@@ -221,6 +227,10 @@ def upsert_from_payload(payload: Dict[str, Any], status: str) -> None:
     project = _lib.detect_project(cwd_path)
     transcript = payload.get("transcript_path")
     name, name_source = _lookup_session_name(session_id)
+    launcher_session_id = (
+        os.environ.get("APP_LAUNCHER_SESSION_ID", "").strip() or None
+    )
+    agent = os.environ.get("APP_LAUNCHER_AGENT", "").strip().lower() or "claude"
     upsert(
         session_id,
         status=status,
@@ -229,6 +239,8 @@ def upsert_from_payload(payload: Dict[str, Any], status: str) -> None:
         cwd_path=str(cwd_path),
         name=name,
         name_source=name_source,
+        agent=agent,
+        launcher_session_id=launcher_session_id,
     )
 
 

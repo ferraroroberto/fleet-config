@@ -1142,6 +1142,10 @@ def _session_state_unit_checks() -> Tuple[int, int]:
         "CLAUDE_HOOKS_STATE_DIR": str(tmp),
         "CLAUDE_SESSIONS_DIR": str(sessions_dir),
         "CLAUDE_SETTINGS_JSON_PATH": NO_SETTINGS_JSON,
+        # Keep the fixture external by default even when this acceptance run
+        # itself was started inside App Launcher.
+        "APP_LAUNCHER_SESSION_ID": "",
+        "APP_LAUNCHER_AGENT": "",
     }
     state_path = tmp / session_state.STATE_FILENAME
 
@@ -1173,12 +1177,19 @@ def _session_state_unit_checks() -> Tuple[int, int]:
         # ---- subprocess: the two wired events, same session flips status ----
         payload = {"hook_event_name": "UserPromptSubmit", "session_id": "sid-1",
                    "transcript_path": str(tmp / "t.jsonl"), "cwd": str(tmp)}
-        code, _out, _err = run("session_state", payload, extra_env=env)
+        launcher_env = {
+            **env,
+            "APP_LAUNCHER_SESSION_ID": "launcher-abc",
+            "APP_LAUNCHER_AGENT": "claude",
+        }
+        code, _out, _err = run("session_state", payload, extra_env=launcher_env)
         row = rows().get("sid-1") or {}
         check("session_state: UserPromptSubmit -> exit 0 + row 'working' with cwd",
               code == 0 and row.get("status") == "working" and row.get("cwd") == str(tmp))
         check("session_state: matching sessionId -> row carries live name + nameSource (#302)",
               row.get("name") == "fleet-config-c4" and row.get("name_source") == "derived")
+        check("session_state: launcher env -> exact launcher id + agent (#345)",
+              row.get("launcher_session_id") == "launcher-abc" and row.get("agent") == "claude")
 
         # ---- no matching sessionId in the registry -> name/name_source stay None ----
         code, _out, _err = run(
@@ -1190,6 +1201,8 @@ def _session_state_unit_checks() -> Tuple[int, int]:
         no_match_row = rows().get("sid-no-match") or {}
         check("session_state: no matching sessionId -> name/name_source omitted (None)",
               code == 0 and no_match_row.get("name") is None and no_match_row.get("name_source") is None)
+        check("session_state: external Claude row -> explicit agent, no launcher id (#345)",
+              no_match_row.get("agent") == "claude" and no_match_row.get("launcher_session_id") is None)
 
         # ---- missing sessions registry directory entirely -> still exit 0, no name ----
         missing_dir = sessions_dir / "does-not-exist"
@@ -1203,9 +1216,16 @@ def _session_state_unit_checks() -> Tuple[int, int]:
         check("session_state: missing sessions registry dir -> exit 0, name omitted",
               code == 0 and no_registry_row.get("name") is None)
 
-        code, _out, _err = run("session_state", {**payload, "hook_event_name": "Stop"}, extra_env=env)
+        code, _out, _err = run(
+            "session_state", {**payload, "hook_event_name": "Stop"},
+            extra_env=launcher_env,
+        )
+        stopped_row = rows().get("sid-1") or {}
         check("session_state: Stop flips the same session to 'needs-you'",
-              code == 0 and (rows().get("sid-1") or {}).get("status") == "needs-you")
+              code == 0 and stopped_row.get("status") == "needs-you")
+        check("session_state: Stop retains exact launcher identity (#345)",
+              stopped_row.get("launcher_session_id") == "launcher-abc"
+              and stopped_row.get("agent") == "claude")
 
         rows_before_missing_sid = set(rows())
         code, _out, _err = run("session_state", {"hook_event_name": "Stop", "cwd": str(tmp)}, extra_env=env)
