@@ -117,8 +117,17 @@ mode. Pick the smallest mode that genuinely covers the change:
   exercised, not a mock. **Inspect the screenshot in-session only** — save it to
   a local scratch path; **never attach it to the PR body, an issue, or a
   comment** (assume every repo is public — an uploaded UI screenshot is an
-  information breach). Put a text-only result line in the PR instead. Then, when
-  this is a **web-app UX diff**, run the **design-conformance gate**
+  information breach). Put a text-only result line in the PR instead.
+  **Browser-backend preflight (Codex — no live `iab`):** prefer the in-app
+  Browser (`iab`) when `agent.browsers.list()` includes it; when it returns
+  `[]`, fall back to installed Playwright with real Chrome — `iab` absence does
+  **not** skip the visual leg (fleet-config#351). The deterministic plan
+  (backend, venv, `channel="chrome"` launch kwargs honoring the browser-safety
+  contract, the `KEY_VIEWS` × {light, dark} capture list, and the distinct
+  Playwright-missing / Chrome-missing / app-unreachable / profile-lock failure
+  messages) comes from `browser_verify.py plan . --base-url <app-root>
+  --iab-available <yes|no>`; background + recovery in `docs/codex-browser.md`.
+  Then, when this is a **web-app UX diff**, run the **design-conformance gate**
   (`project-scaffolding#83`):
 
   ```
