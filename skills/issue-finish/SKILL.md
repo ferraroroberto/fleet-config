@@ -20,7 +20,7 @@ Run in parallel; stop on any failure:
   any tray/restart procedure.
 - **Detect the checkout mode** (drives the merge-land + cleanup in step 5):
   ```
-  C:/Users/rober/AppData/Local/Python/bin/python.exe C:/Users/rober/.claude/skills/_lib/worktree_claim.py mode <repo>
+  E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/worktree_claim.py mode <repo>
   ```
   prints `primary` (work in the shared checkout) or `worktree` (a linked
   `<repo>-wt-<N>` created by `/issue-start`'s concurrency path). Remember which;
@@ -63,7 +63,7 @@ commit lands in it. Convention + contract: `project-scaffolding#83`. The trigger
 is deterministic, not a judgment call:
 
 ```
-C:/Users/rober/AppData/Local/Python/bin/python.exe C:/Users/rober/.claude/skills/_lib/ux_surface.py check .
+E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/ux_surface.py check .
 ```
 
 - `SPEC_APPLIES=no` (non-web repo / Streamlit spike) **or** `TOUCHED=no` → the
@@ -96,7 +96,7 @@ C:/Users/rober/AppData/Local/Python/bin/python.exe C:/Users/rober/.claude/skills
       the `KEY_VIEWS` × {light, dark} capture list, and the distinct
       capability-failure messages) from:
       ```
-      C:/Users/rober/AppData/Local/Python/bin/python.exe C:/Users/rober/.claude/skills/_lib/browser_verify.py plan . --base-url <app-root> --iab-available <yes|no>
+      E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/browser_verify.py plan . --base-url <app-root> --iab-available <yes|no>
       ```
       A missing Playwright, missing Chrome, unreachable app, or exhausted
       profile-lock each report distinctly (never one generic error). Background
@@ -173,7 +173,7 @@ by the project's `## CI expectations` block (the convention is
     the merge locally, then release the concurrency claim so the next session can
     own the primary:
     ```
-    C:/Users/rober/AppData/Local/Python/bin/python.exe C:/Users/rober/.claude/skills/_lib/worktree_claim.py release <repo>
+    E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/worktree_claim.py release <repo>
     ```
     **Verify the release** — this is a hard acceptance step, not optional prose:
     a finisher that is not the acquiring session (build-and-stop → separate
@@ -181,7 +181,7 @@ by the project's `## CI expectations` block (the convention is
     must not silently skip it and leak the claim until the 8h TTL
     (fleet-config#174). Immediately run:
     ```
-    C:/Users/rober/AppData/Local/Python/bin/python.exe C:/Users/rober/.claude/skills/_lib/worktree_claim.py status <repo>
+    E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/worktree_claim.py status <repo>
     ```
     and confirm it prints `CLAIM=free`. If it still shows `CLAIM=held`, the
     release did not take — re-run `release <repo>` and re-check before reporting
@@ -192,7 +192,7 @@ by the project's `## CI expectations` block (the convention is
     worktree (the helper strips the `.venv` junction *before* `git worktree
     remove`, so the primary's real venv is never touched):
     ```
-    C:/Users/rober/AppData/Local/Python/bin/python.exe C:/Users/rober/.claude/skills/_lib/worktree_claim.py remove-worktree <repo>-wt-<N>
+    E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/worktree_claim.py remove-worktree <repo>-wt-<N>
     ```
     A worktree session holds no primary claim, so there is nothing to release.
 - Confirm the issue closed (`gh issue view <N>` → `CLOSED`). If it didn't
@@ -264,7 +264,7 @@ running the deterministic helper and echoing its output verbatim into the
 report:
 
 ```
-C:/Users/rober/AppData/Local/Python/bin/python.exe C:/Users/rober/.claude/hooks/work_summary.py --pr <PR_URL>
+E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/hooks/work_summary.py --pr <PR_URL>
 ```
 
 It prints the roll-up (`📊 +N −M · K files` + new/changed/deleted buckets) and a
@@ -280,7 +280,7 @@ resolves the channel/user from `projects.toml` and emits the one canonical
 format. Run:
 
 ```
-C:/Users/rober/AppData/Local/Python/bin/python.exe C:/Users/rober/.claude/hooks/notify_complete.py --kind finish --issue <N> --pr <PR> --pr-url <PR_URL>
+E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/hooks/notify_complete.py --kind finish --issue <N> --pr <PR> --pr-url <PR_URL>
 ```
 
 `<PR_URL>` is the full PR URL (e.g. `https://github.com/owner/repo/pull/31`) —

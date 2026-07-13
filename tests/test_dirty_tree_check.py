@@ -5,7 +5,7 @@ end-to-end against a throwaway local git repo (a real `upstream` + clone, so
 `origin/HEAD` resolves like it would in a real fleet repo). No real fleet repo
 is touched.
 
-Run: `C:/Users/rober/AppData/Local/Python/bin/python.exe tests/test_dirty_tree_check.py`  (also invoked by tests/run_acceptance.py)
+Run: `E:/automation/fleet-config/.venv/Scripts/python.exe tests/test_dirty_tree_check.py`  (also invoked by tests/run_acceptance.py)
 """
 
 from __future__ import annotations

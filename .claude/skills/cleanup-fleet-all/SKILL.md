@@ -76,7 +76,7 @@ No worktrees — each selected issue's build agent works its repo's primary chec
 ### 6. Rate-gate check
 
 ```
-C:/Users/rober/AppData/Local/Python/bin/python.exe C:/Users/rober/.claude/skills/_lib/rate_gate.py check --threshold 70
+E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/rate_gate.py check --threshold 70
 ```
 
 `DECISION=PAUSE` → wait via the `Monitor` tool's until-loop pattern against the printed `WAIT_SECONDS`/`RESETS_AT` before proceeding (per the Execution rules above — this must resolve within the same turn). `OK`/`UNKNOWN` → proceed immediately.
@@ -104,7 +104,7 @@ Re-issue this call (each blocks up to 10 minutes) until the returned status is `
 For every issue with `status: "merged"`:
 
 ```
-C:/Users/rober/AppData/Local/Python/bin/python.exe C:/Users/rober/.claude/skills/_lib/dirty_tree_check.py check E:\automation\<repo> --mode merged
+E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/dirty_tree_check.py check E:\automation\<repo> --mode merged
 ```
 
 `STATUS=DIRTY` → downgrade from `✅ merged` to `⚠️ merged but dirty tree — inspect <repo>` and carry the `REASON=` line.
@@ -112,7 +112,7 @@ C:/Users/rober/AppData/Local/Python/bin/python.exe C:/Users/rober/.claude/skills
 For every issue with `status: "escalated"` (branch left built but not shipped):
 
 ```
-C:/Users/rober/AppData/Local/Python/bin/python.exe C:/Users/rober/.claude/skills/_lib/dirty_tree_check.py check E:\automation\<repo> --mode built --expect-branch <branch>
+E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/dirty_tree_check.py check E:\automation\<repo> --mode built --expect-branch <branch>
 ```
 
 `STATUS=DIRTY` → append `⚠️ post-flight: <REASON>` next to the escalation line. This check only reports — it never blocks, auto-commits, or auto-fixes, and a per-repo failure never stops aggregating the rest.
@@ -122,7 +122,7 @@ C:/Users/rober/AppData/Local/Python/bin/python.exe C:/Users/rober/.claude/skills
 Per bucket, once all its issues have a final status:
 
 ```
-C:/Users/rober/AppData/Local/Python/bin/python.exe C:/Users/rober/.claude/hooks/notify_complete.py \
+E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/hooks/notify_complete.py \
   --kind cleanup --summary "<bucket> (all-mode)" --merged <merged-count> --review <escalated-count>
 ```
 

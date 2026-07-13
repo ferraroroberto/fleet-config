@@ -28,7 +28,7 @@ Usage (called by the /restart-webapp slash command, but runnable directly).
 Invoke the resolved Python path directly — a bare ``py``/``python`` is not
 reliably on ``PATH`` on this machine (see ``_lib.find_python_executable``):
 
-    C:/Users/rober/AppData/Local/Python/bin/python.exe C:/Users/rober/.claude/hooks/restart_and_verify_webapp.py [--cwd <path>]
+    E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/hooks/restart_and_verify_webapp.py [--cwd <path>]
 
 Exit codes:
     0 on success (and prints the version line)

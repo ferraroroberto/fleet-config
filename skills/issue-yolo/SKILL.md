@@ -131,7 +131,7 @@ mode. Pick the smallest mode that genuinely covers the change:
   (`project-scaffolding#83`):
 
   ```
-  C:/Users/rober/AppData/Local/Python/bin/python.exe C:/Users/rober/.claude/skills/_lib/ux_surface.py check .
+  E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/ux_surface.py check .
   ```
 
   If `SPEC_APPLIES=yes` and `TOUCHED=yes`, also (a) **token check, fix-now** —
@@ -212,7 +212,7 @@ Only reachable on a fully-green Phase 3. Run the full `/issue-finish` skill:
    `/issue-finish` to free it, so it must be released here or it leaks until the
    8h TTL (fleet-config#174). Idempotent, so it's safe even if no claim was held:
    ```
-   C:/Users/rober/AppData/Local/Python/bin/python.exe C:/Users/rober/.claude/skills/_lib/worktree_claim.py release <repo>
+   E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/worktree_claim.py release <repo>
    ```
    Confirm it freed with `worktree_claim.py status <repo>` → `CLAIM=free`.
 9. Tray restart per project `CLAUDE.md` if a tray exists. Run the deterministic
@@ -254,7 +254,7 @@ Single concise summary:
 - PR URL
 - Build line from the version endpoint (if the project has one)
 - Live tray status (if applicable)
-- **Work-summary** — run `C:/Users/rober/AppData/Local/Python/bin/python.exe C:/Users/rober/.claude/hooks/work_summary.py --pr
+- **Work-summary** — run `E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/hooks/work_summary.py --pr
   <PR_URL>` and echo its output verbatim: the roll-up (`📊 +N −M · K files` +
   new/changed/deleted buckets) and the churn-sorted per-file table. Deterministic
   from `gh`, no LLM; prints nothing on a `gh` error, so skip it if empty. The
@@ -264,7 +264,7 @@ Then fire the single completion ping with the deterministic helper — canonical
 format, real PR title + URL from `gh`:
 
 ```
-C:/Users/rober/AppData/Local/Python/bin/python.exe C:/Users/rober/.claude/hooks/notify_complete.py --kind yolo --issue <N> --pr <PR> --pr-url <PR_URL>
+E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/hooks/notify_complete.py --kind yolo --issue <N> --pr <PR> --pr-url <PR_URL>
 ```
 
 `<PR_URL>` is the full PR URL (e.g. `https://github.com/owner/repo/pull/31`) —

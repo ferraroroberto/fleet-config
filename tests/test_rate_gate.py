@@ -4,7 +4,7 @@ Exercises `decide` directly with synthetic cache dicts and a fixed `now`, plus
 the `check` CLI end-to-end against a temp `--state-dir` file (no real
 `~/.claude/hooks/state/rate-limits.json` is touched).
 
-Run: `C:/Users/rober/AppData/Local/Python/bin/python.exe tests/test_rate_gate.py`  (also invoked by tests/run_acceptance.py)
+Run: `E:/automation/fleet-config/.venv/Scripts/python.exe tests/test_rate_gate.py`  (also invoked by tests/run_acceptance.py)
 """
 
 from __future__ import annotations

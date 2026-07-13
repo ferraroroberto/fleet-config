@@ -7,7 +7,7 @@ git repo (two commits of a component, so `local_drift` and `behind_head` can
 each be proven true and false) with a fake manifest — no real fleet repo is
 touched.
 
-Run: `C:/Users/rober/AppData/Local/Python/bin/python.exe tests/test_vendored_drift.py`  (also invoked by tests/run_acceptance.py)
+Run: `E:/automation/fleet-config/.venv/Scripts/python.exe tests/test_vendored_drift.py`  (also invoked by tests/run_acceptance.py)
 """
 
 from __future__ import annotations

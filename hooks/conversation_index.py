@@ -22,10 +22,10 @@ Usage (from anywhere — invoke the resolved Python path directly, not a bare
 ``py``/``python``, which is not reliably on ``PATH`` on this machine; see
 ``_lib.find_python_executable``)::
 
-    C:/Users/rober/AppData/Local/Python/bin/python.exe hooks/conversation_index.py --project life-os      # one project by name
-    C:/Users/rober/AppData/Local/Python/bin/python.exe hooks/conversation_index.py --cwd E:/automation/life-os
-    C:/Users/rober/AppData/Local/Python/bin/python.exe hooks/conversation_index.py --all                  # every opted-in project
-    C:/Users/rober/AppData/Local/Python/bin/python.exe hooks/conversation_index.py --all --force          # ignore settle, re-digest
+    E:/automation/fleet-config/.venv/Scripts/python.exe hooks/conversation_index.py --project life-os      # one project by name
+    E:/automation/fleet-config/.venv/Scripts/python.exe hooks/conversation_index.py --cwd E:/automation/life-os
+    E:/automation/fleet-config/.venv/Scripts/python.exe hooks/conversation_index.py --all                  # every opted-in project
+    E:/automation/fleet-config/.venv/Scripts/python.exe hooks/conversation_index.py --all --force          # ignore settle, re-digest
 """
 
 from __future__ import annotations

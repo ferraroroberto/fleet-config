@@ -20,7 +20,7 @@ Measured surfaces:
      overlap with the project-scaffolding master, for drift review. Projects in
      the ignore-list (deliberate one-offs) are still measured but tagged.
 
-stdlib only. Run from the `fleet-config` repo root: `C:/Users/rober/AppData/Local/Python/bin/python.exe .claude/skills/context-audit/audit.py`.
+stdlib only. Run from the `fleet-config` repo root: `E:/automation/fleet-config/.venv/Scripts/python.exe .claude/skills/context-audit/audit.py`.
 """
 
 from __future__ import annotations

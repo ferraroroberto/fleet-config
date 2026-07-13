@@ -6,7 +6,7 @@ convention. The git/junction ops are Windows-side and proven by the live
 two-terminal check; this guards the decision logic that decides primary vs
 worktree.
 
-Run: `C:/Users/rober/AppData/Local/Python/bin/python.exe tests/test_worktree_claim.py`  (also invoked by tests/run_acceptance.py)
+Run: `E:/automation/fleet-config/.venv/Scripts/python.exe tests/test_worktree_claim.py`  (also invoked by tests/run_acceptance.py)
 """
 
 from __future__ import annotations

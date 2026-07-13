@@ -45,8 +45,8 @@ Keep edits minimal and in the existing card voice. Don't restructure layers or r
 Then regenerate the data file and validate:
 
 ```
-C:/Users/rober/AppData/Local/Python/bin/python.exe .claude/skills/system-map/build_data.py     # residual + per-repo .fleet.toml → fleet.data.js
-C:/Users/rober/AppData/Local/Python/bin/python.exe tests/run_acceptance.py
+E:/automation/fleet-config/.venv/Scripts/python.exe .claude/skills/system-map/build_data.py     # residual + per-repo .fleet.toml → fleet.data.js
+E:/automation/fleet-config/.venv/Scripts/python.exe tests/run_acceptance.py
 ```
 
 The `system_map:` checks fail loud if the fleet, `fleet.data.js`, the per-repo `.fleet.toml`s, and `ARCHITECTURE.md` disagree (a forgotten repo, a stale entry, an adopted repo that lost its `.fleet.toml`, a malformed declaration, or a doc that omits a mapped repo). Fix any failure before rendering.
@@ -54,7 +54,7 @@ The `system_map:` checks fail loud if the fleet, `fleet.data.js`, the per-repo `
 ### 3. Render the visual
 
 ```
-C:/Users/rober/AppData/Local/Python/bin/python.exe .claude/skills/system-map/render.py
+E:/automation/fleet-config/.venv/Scripts/python.exe .claude/skills/system-map/render.py
 ```
 
 This measures the page and screenshots `architecture/system-map.png` at 2× with placeholders forced. On a render failure it prints the real Chrome/console error — fix the `DATA`/HTML and re-run (the page logs a single `DIMS w h` line on success).
@@ -62,7 +62,7 @@ This measures the page and screenshots `architecture/system-map.png` at 2× with
 Then render the **text-native** companion — a second, independent consumer of the same `fleet.data.js`, no new crawl logic:
 
 ```
-C:/Users/rober/AppData/Local/Python/bin/python.exe .claude/skills/system-map/render_mermaid.py
+E:/automation/fleet-config/.venv/Scripts/python.exe .claude/skills/system-map/render_mermaid.py
 ```
 
 This regenerates `architecture/system-map.mmd` (a Mermaid flowchart — icons + names only, edges from each card's `tag` field) *and* refreshes the marked `<!-- system-map:mermaid:start -->…:end` block inside `global-CLAUDE.md`'s "Project fleet" section in the same run, so the always-on context an agent loads at session start stays in sync with the map. Both writes are idempotent — an unchanged week touches neither file.
@@ -73,7 +73,7 @@ Before committing (so `HEAD` still points at the previous run), capture the
 one-line "what changed" summary for the Slack post:
 
 ```
-C:/Users/rober/AppData/Local/Python/bin/python.exe .claude/skills/system-map/whatchanged.py
+E:/automation/fleet-config/.venv/Scripts/python.exe .claude/skills/system-map/whatchanged.py
 ```
 
 This diffs the freshly-reconciled working `architecture/fleet.data.js` against
@@ -102,7 +102,7 @@ If the current branch is `main` (the scheduled unattended case), also `git push`
 Post the refreshed map, folding in the change line from step 4 so the recurring run reads as alive. This is **activity-log** traffic, so route it with `--category log` (the helper resolves the `#log` channel from `hooks/projects.toml` — never hardcode a channel id):
 
 ```
-C:/Users/rober/AppData/Local/Python/bin/python.exe hooks/slack_notify.py --category log \
+E:/automation/fleet-config/.venv/Scripts/python.exe hooks/slack_notify.py --category log \
    --file architecture/system-map.png \
    --title "Roberto's System — architecture" \
    --text "🛠️ Fleet architecture map — refreshed <YYYY-MM-DD>. <change line from step 4>."

@@ -125,7 +125,7 @@ No worktrees: one branch per repo means each agent works the primary checkout in
 ### 8. Fan out — one background sub-agent per selected issue
 
 Before the mass easy-tier dispatch below, call
-`C:/Users/rober/AppData/Local/Python/bin/python.exe C:/Users/rober/.claude/skills/_lib/rate_gate.py check --threshold 70`
+`E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/rate_gate.py check --threshold 70`
 once. `DECISION=PAUSE` → wait via the `Monitor` tool's until-loop pattern against
 the printed `WAIT_SECONDS`/`RESETS_AT` before firing the batch (see
 `docs/rate-gate.md`); `OK`/`UNKNOWN` → proceed immediately.
@@ -208,12 +208,12 @@ Print a single confirmation block listing every sub-agent dispatched (repo, #N, 
 
 - **Easy-tier (reported `MERGED`):**
   ```
-  C:/Users/rober/AppData/Local/Python/bin/python.exe C:/Users/rober/.claude/skills/_lib/dirty_tree_check.py check E:\automation\<repo> --mode merged
+  E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/dirty_tree_check.py check E:\automation\<repo> --mode merged
   ```
   `STATUS=DIRTY` → downgrade the status from `✅ merged` to `⚠️ merged but dirty tree — inspect <repo>` and carry the `REASON=` line, instead of trusting `Result: MERGED`.
 - **Hard-tier (build-and-stop):**
   ```
-  C:/Users/rober/AppData/Local/Python/bin/python.exe C:/Users/rober/.claude/skills/_lib/dirty_tree_check.py check E:\automation\<repo> --mode built --expect-branch <branch>
+  E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/dirty_tree_check.py check E:\automation\<repo> --mode built --expect-branch <branch>
   ```
   `STATUS=DIRTY` → keep the `📋 ready for review` mark but append an explicit `⚠️ post-flight: <REASON>` line right next to it, distinct from the rationale summary — this catches HEAD silently back on `main`, a branch mismatch, or the agent reporting changes it never actually saved.
 
@@ -224,7 +224,7 @@ As each sub-agent finishes, surface its report with a status mark: `✅` merged 
 When **all** agents have returned, fire **one final** roll-up ping — the closing message for the run. The per-issue `🚀 Shipped` pings the easy-tier agents already fired are kept; this is *in addition*:
 
 ```
-C:/Users/rober/AppData/Local/Python/bin/python.exe C:/Users/rober/.claude/hooks/notify_complete.py \
+E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/hooks/notify_complete.py \
   --kind cleanup --summary "<bucket>" --merged <easy-tier-merged-count> --review <hard-tier-review-count>
 ```
 

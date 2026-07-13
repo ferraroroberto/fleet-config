@@ -89,7 +89,7 @@ No component argument → stop: "Pass a component name, e.g.
 ### 2. Run the drift scan (always — dry-run and real runs both start here)
 
 ```
-C:/Users/rober/AppData/Local/Python/bin/python.exe C:/Users/rober/.claude/skills/_lib/vendored_drift.py scan --component <component>
+E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/vendored_drift.py scan --component <component>
 ```
 
 Prints one JSON object: `adopters` (every fleet repo with a
@@ -144,7 +144,7 @@ launches:
 
 ```
 git -C E:\automation\<repo> fetch origin
-C:/Users/rober/AppData/Local/Python/bin/python.exe C:/Users/rober/.claude/skills/_lib/worktree_claim.py acquire E:\automation\<repo>
+E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/worktree_claim.py acquire E:\automation\<repo>
 ```
 
 `MODE=primary` → work in place on `main`. `MODE=worktree` → 

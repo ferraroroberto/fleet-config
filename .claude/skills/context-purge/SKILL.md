@@ -21,13 +21,13 @@ Both modes ship to **review, not merge**: the PR carries the validation report; 
 A file is re-assessed **only when its bytes changed** since it was last assessed — never rewrite the same unchanged file week after week. `gate.py` keys on content hashes (sha256/12) recorded in one `kind=context-purge` ledger issue in `fleet-config` (title `context-purge ledger`, label `audit-meta`, managed via `audit_issue.py`):
 
 ```
-C:/Users/rober/AppData/Local/Python/bin/python.exe .claude/skills/context-purge/gate.py gate [--fleet]
+E:/automation/fleet-config/.venv/Scripts/python.exe .claude/skills/context-purge/gate.py gate [--fleet]
 ```
 
 Prints `TO_PURGE` lines + a `SUMMARY:` — only those files are read at all. `to_purge=0` → report "surface unchanged since last run" and stop (a valid, successful run). After the run, record every **assessed** file — both the rewritten ones and the ones judged already-lean (both count; neither should re-surface until edited):
 
 ```
-C:/Users/rober/AppData/Local/Python/bin/python.exe .claude/skills/context-purge/gate.py advance [--fleet]
+E:/automation/fleet-config/.venv/Scripts/python.exe .claude/skills/context-purge/gate.py advance [--fleet]
 ```
 
 `advance` merges over the existing ledger (entries outside the scanned surface are preserved) and upserts the issue.
@@ -54,7 +54,7 @@ C:/Users/rober/AppData/Local/Python/bin/python.exe .claude/skills/context-purge/
 
 1. **Deterministic** — for every touched file:
    ```
-   git show HEAD:<file> > <scratch>/before && C:/Users/rober/AppData/Local/Python/bin/python.exe .claude/skills/context-purge/check.py <scratch>/before <file>
+   git show HEAD:<file> > <scratch>/before && E:/automation/fleet-config/.venv/Scripts/python.exe .claude/skills/context-purge/check.py <scratch>/before <file>
    ```
    must exit 0 (marked blocks byte-identical, quoted triggers preserved) and prints the token delta. Then re-run `audit.py`: totals down, no new over-cap descriptions, no new single-home leaks. Then the repo gate (`py_compile` + `tests/run_acceptance.py`).
 2. **Directive inventory** — walk each file's saved inventory item by item against the rewrite; every item must still be discharged (verbatim or semantically intact).

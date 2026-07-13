@@ -45,6 +45,10 @@ $payload = [Console]::In.ReadToEnd()
 # first on PATH.
 $pythonCmd = $null
 $candidates = @(
+    # fleet-config owns these hooks and ships its own project .venv
+    # (fleet-config#350); prefer it, falling back to a system Python if the
+    # venv is ever absent (the Test-Path guard below keeps this safe).
+    "E:\automation\fleet-config\.venv\Scripts\python.exe",
     "$env:LOCALAPPDATA\Python\bin\python.exe",
     "$env:LOCALAPPDATA\Programs\Python\Python314\python.exe",
     "$env:LOCALAPPDATA\Programs\Python\Python313\python.exe",

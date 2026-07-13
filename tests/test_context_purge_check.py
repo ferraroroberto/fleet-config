@@ -4,7 +4,7 @@ Standalone (like test_audit_issue / test_ux_surface) so the purge's mechanical
 preservation rules — marked-block byte-identity and quoted-trigger survival —
 are testable on their own and reachable from the one acceptance gate.
 
-Run: C:/Users/rober/AppData/Local/Python/bin/python.exe tests/test_context_purge_check.py
+Run: E:/automation/fleet-config/.venv/Scripts/python.exe tests/test_context_purge_check.py
 Exit 0 = all pass.
 """
 

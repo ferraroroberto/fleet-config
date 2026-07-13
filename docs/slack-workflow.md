@@ -47,8 +47,8 @@ Lives at `hooks/slack_notify.py`, reachable fleet-wide as `~/.claude/hooks/slack
 CLI:
 
 ```bash
-C:/Users/rober/AppData/Local/Python/bin/python.exe ~/.claude/hooks/slack_notify.py --channel C0123ABCD --text "stuck on twitter, come look"
-echo "a longer body" | C:/Users/rober/AppData/Local/Python/bin/python.exe ~/.claude/hooks/slack_notify.py --channel C0123ABCD
+E:/automation/fleet-config/.venv/Scripts/python.exe ~/.claude/hooks/slack_notify.py --channel C0123ABCD --text "stuck on twitter, come look"
+echo "a longer body" | E:/automation/fleet-config/.venv/Scripts/python.exe ~/.claude/hooks/slack_notify.py --channel C0123ABCD
 ```
 
 Import:
@@ -65,7 +65,7 @@ slack_notify.notify("done", channel="https://x.slack.com/archives/C0123ABCD")  #
 Instead of a hardcoded `--channel`, a caller can pass `--category {attention,log}` to route by intent (see *Channel routing by intent* above) — the helper resolves the channel from `projects.toml`. The `/system-map` and `/insights-weekly` skills post their image/digest with `--category log`:
 
 ```bash
-C:/Users/rober/AppData/Local/Python/bin/python.exe ~/.claude/hooks/slack_notify.py --category log --file architecture/system-map.png --text "🛠️ Fleet map"
+E:/automation/fleet-config/.venv/Scripts/python.exe ~/.claude/hooks/slack_notify.py --category log --file architecture/system-map.png --text "🛠️ Fleet map"
 ```
 
 `--channel` still wins when both are given (back-compat); with neither, the CLI errors.
@@ -73,8 +73,8 @@ C:/Users/rober/AppData/Local/Python/bin/python.exe ~/.claude/hooks/slack_notify.
 **Manual / conversational pings go here too.** When I ask a session to "ping me on Slack" or "notify me like you do when you finish a job" — *outside* a skill — the answer is still this CLI, **not** the Slack MCP connector. Don't hand-type a `<@U…>` tag into `--text`: the mention decision is single-sourced inside `notify()` and **defaults off** (see below). If a specific ping should tag me, pass `--mention` and the helper resolves my user id from `projects.toml` itself — never hardcode it.
 
 ```bash
-C:/Users/rober/AppData/Local/Python/bin/python.exe ~/.claude/hooks/slack_notify.py --channel C0123ABCD --text "✅ [project] <message>"
-C:/Users/rober/AppData/Local/Python/bin/python.exe ~/.claude/hooks/slack_notify.py --channel C0123ABCD --text "🔔 [project] urgent" --mention   # force a tag
+E:/automation/fleet-config/.venv/Scripts/python.exe ~/.claude/hooks/slack_notify.py --channel C0123ABCD --text "✅ [project] <message>"
+E:/automation/fleet-config/.venv/Scripts/python.exe ~/.claude/hooks/slack_notify.py --channel C0123ABCD --text "🔔 [project] urgent" --mention   # force a tag
 ```
 
 **On the `@mention`, single-sourced and off by default.** Every path — the bot CLI, `notify_complete`, `notify_on_idle` — funnels through `slack_notify.notify()`, which is the *one* place that decides whether to prepend `<@U…>`. It reads the `[global] slack_notify_mention` toggle in `projects.toml` (default `false`), overridable per call with `--mention` / `--no-mention`. The default is **no tag**: the target channel `C0B76GBA0LS` delivers a mobile push regardless, so the tag was redundant noise. The toggle exists to flip it back in one line (no code edit) if a Slack notification-pref change ever breaks that "channel pushes without a tag" assumption.
@@ -86,13 +86,13 @@ A model that reaches for `mcp__claude_ai_Slack__send_message` instead has made t
 The `issue-*` skills don't hand-assemble their "done" message — that invites paraphrase, a wrong/missing PR link, or a dropped ping. They call `notify_complete.py` with structured args, and the **canonical format + the real GitHub URL are built in Python** (via `gh pr view` / `gh issue view`), so every completion ping is byte-identical and correctly linked. The model only passes the numbers it already has.
 
 ```bash
-C:/Users/rober/AppData/Local/Python/bin/python.exe ~/.claude/hooks/notify_complete.py --kind finish --issue 30 --pr 31     # ✅ Done #30 <title> — PR merged · <pr-url>
-C:/Users/rober/AppData/Local/Python/bin/python.exe ~/.claude/hooks/notify_complete.py --kind add    --issue 30             # 🆕 Filed #30 <title> · <issue-url>
-C:/Users/rober/AppData/Local/Python/bin/python.exe ~/.claude/hooks/notify_complete.py --kind start  --issue 30 --summary "review the diff, then /issue-finish"   # 🚦 #30 <title> — ready to validate. … · <issue-url>
-C:/Users/rober/AppData/Local/Python/bin/python.exe ~/.claude/hooks/notify_complete.py --kind yolo   --issue 30 --pr 31     # 🚀 Shipped #30 <title> — PR · <pr-url>
-C:/Users/rober/AppData/Local/Python/bin/python.exe ~/.claude/hooks/notify_complete.py --kind batch  --passed 2 --total 3   # 🏁 Batch done: 2/3 passed — …
-C:/Users/rober/AppData/Local/Python/bin/python.exe ~/.claude/hooks/notify_complete.py --kind recap  --summary "3 skills swept — alt-text +2"   # 🔄 Weekly recap — automatic sweep (no proposals)
-C:/Users/rober/AppData/Local/Python/bin/python.exe ~/.claude/hooks/notify_complete.py --kind recap  --summary "2 skills consolidated, 4 promoted"   # 🔄 Weekly recap — explicit consolidation
+E:/automation/fleet-config/.venv/Scripts/python.exe ~/.claude/hooks/notify_complete.py --kind finish --issue 30 --pr 31     # ✅ Done #30 <title> — PR merged · <pr-url>
+E:/automation/fleet-config/.venv/Scripts/python.exe ~/.claude/hooks/notify_complete.py --kind add    --issue 30             # 🆕 Filed #30 <title> · <issue-url>
+E:/automation/fleet-config/.venv/Scripts/python.exe ~/.claude/hooks/notify_complete.py --kind start  --issue 30 --summary "review the diff, then /issue-finish"   # 🚦 #30 <title> — ready to validate. … · <issue-url>
+E:/automation/fleet-config/.venv/Scripts/python.exe ~/.claude/hooks/notify_complete.py --kind yolo   --issue 30 --pr 31     # 🚀 Shipped #30 <title> — PR · <pr-url>
+E:/automation/fleet-config/.venv/Scripts/python.exe ~/.claude/hooks/notify_complete.py --kind batch  --passed 2 --total 3   # 🏁 Batch done: 2/3 passed — …
+E:/automation/fleet-config/.venv/Scripts/python.exe ~/.claude/hooks/notify_complete.py --kind recap  --summary "3 skills swept — alt-text +2"   # 🔄 Weekly recap — automatic sweep (no proposals)
+E:/automation/fleet-config/.venv/Scripts/python.exe ~/.claude/hooks/notify_complete.py --kind recap  --summary "2 skills consolidated, 4 promoted"   # 🔄 Weekly recap — explicit consolidation
 ```
 
 Every kind **leads with a status mark** (`✅ 🆕 🚦 🏁 🚀 📊 🔄`) as a glanceable cue. It maps each `--kind` to an intent category (`category_for()` — `start`/`batch`/`cleanup`-with-review → `attention`, the rest → `log`) and resolves channel/user via the shared `_lib.resolve_slack_target(cwd, category=…)` (project override → `[global]` category channel → `slack_notify_channel` fallback), passes the user id to `notify()` (which decides the mention), is a silent no-op when no channel is configured, and always exits 0 — a notification failure can never block a skill. The one thing it can't force is the model remembering to *call* it; making the firing itself deterministic would need a merge-detecting hook, which is more brittle than it's worth.
@@ -116,7 +116,7 @@ slack_notify_mention = false         # default off — channel pushes without a 
 
 The hook posts with `category="attention"`, so when `slack_channel_attention` is set (see *Channel routing by intent* above) its pings land in `#attention`; otherwise they fall back to `slack_notify_channel`. With no channel set at all, the hook is a silent no-op — that keeps notification noise off by default. It hooks `Notification` (not `Stop`) deliberately, so it doesn't ping on every turn-end.
 
-**Verify it's actually wired.** `settings.template.json` carries the `Notification` block, but `install.ps1` merges it into your live `~/.claude/settings.json` *once* — there's no re-sync, so the live file can silently drift and lose the block (then idle/permission pings just never fire). Confirm with `C:/Users/rober/AppData/Local/Python/bin/python.exe -c "import json;print(list(json.load(open(r'C:/Users/rober/.claude/settings.json'))['hooks']))"` — `Notification` must be in the list. After re-adding it, restart Claude Code (or open `/hooks` once) so the harness reloads settings.
+**Verify it's actually wired.** `settings.template.json` carries the `Notification` block, but `install.ps1` merges it into your live `~/.claude/settings.json` *once* — there's no re-sync, so the live file can silently drift and lose the block (then idle/permission pings just never fire). Confirm with `E:/automation/fleet-config/.venv/Scripts/python.exe -c "import json;print(list(json.load(open(r'C:/Users/rober/.claude/settings.json'))['hooks']))"` — `Notification` must be in the list. After re-adding it, restart Claude Code (or open `/hooks` once) so the harness reloads settings.
 
 **The `@mention` is off by default — the channel pushes without it.** Conventional Slack wisdom is that only @mentions and DMs trigger a phone push, but in practice the configured channel (`C0B76GBA0LS`) delivers a mobile push to a bare message too, so tagging me on every ping was redundant noise. The mention is now single-sourced in `slack_notify.notify()` and gated on `[global] slack_notify_mention` (default `false`). `slack_notify_user` is still read — it's the id `notify()` tags *when* mentioning is on (flip the toggle, or pass `--mention` to the CLI). If a Slack pref change ever stops bare-channel pushes from reaching the phone, set `slack_notify_mention = true` and every ping tags me again — a one-line config flip, no code edit.
 
@@ -166,7 +166,7 @@ The bot helper (mechanism 1) and native integration are independent and solve op
 4. Verify with a live ping:
 
    ```bash
-   C:/Users/rober/AppData/Local/Python/bin/python.exe ~/.claude/hooks/slack_notify.py --channel C0123ABCD --text "✅ slack_notify is live"
+   E:/automation/fleet-config/.venv/Scripts/python.exe ~/.claude/hooks/slack_notify.py --channel C0123ABCD --text "✅ slack_notify is live"
    ```
 
 ## Consumers

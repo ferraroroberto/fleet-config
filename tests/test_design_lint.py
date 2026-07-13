@@ -8,7 +8,7 @@ the alias mapper (match/drift/missing/unmapped), the adoption-ratio counter
 checkbox detection, the nav standalone-shell architecture — fleet-config#282),
 the vendored byte-compare, and the sibling duplicate detector.
 
-Run: `C:/Users/rober/AppData/Local/Python/bin/python.exe tests/test_design_lint.py`  (also invoked by tests/run_acceptance.py)
+Run: `E:/automation/fleet-config/.venv/Scripts/python.exe tests/test_design_lint.py`  (also invoked by tests/run_acceptance.py)
 """
 
 from __future__ import annotations

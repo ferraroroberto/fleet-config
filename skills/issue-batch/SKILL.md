@@ -98,7 +98,7 @@ For each worktree-mode issue, use the shared concurrency helper (the same one `/
 
 ```
 git -C E:\automation\<repo> fetch origin
-C:/Users/rober/AppData/Local/Python/bin/python.exe C:/Users/rober/.claude/skills/_lib/worktree_claim.py setup-worktree E:\automation\<repo> <N> <branch>
+E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/worktree_claim.py setup-worktree E:\automation\<repo> <N> <branch>
 ```
 
 Notes:
@@ -209,7 +209,7 @@ Then stop. Do not poll, do not sleep, do not check on progress — the harness r
 **Before surfacing a completion as verified, run the post-flight dirty-tree check yourself — never trust the agent's self-reported `Files changed:`/`Verification:` lines alone.** Every issue-batch sub-agent is build-and-stop (it never merges), so this is always `--mode built`:
 
 ```
-C:/Users/rober/AppData/Local/Python/bin/python.exe C:/Users/rober/.claude/skills/_lib/dirty_tree_check.py check <path> --mode built --expect-branch <branch>
+E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/dirty_tree_check.py check <path> --mode built --expect-branch <branch>
 ```
 
 (`<path>` is the worktree path in worktree mode, or `E:\automation\<repo>` in-place.) `STATUS=DIRTY` → keep the agent's verification mark but append an explicit `⚠️ post-flight: <REASON>` note to that repo's line — this catches HEAD unexpectedly back on the default branch, a branch mismatch, or the agent reporting changed files it never actually saved. This check only reports; it never blocks the run, never auto-commits, and never auto-fixes.
@@ -221,7 +221,7 @@ deterministic helper (canonical format, resolves channel/user from
 `projects.toml`). Run:
 
 ```
-C:/Users/rober/AppData/Local/Python/bin/python.exe C:/Users/rober/.claude/hooks/notify_complete.py --kind batch --passed <pass> --total <total>
+E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/hooks/notify_complete.py --kind batch --passed <pass> --total <total>
 ```
 
 If no channel is configured it's a silent no-op; it always exits 0, so a
@@ -242,7 +242,7 @@ to fan out parallel Sonnet finishers once you're happy with several, or
 tray-restart races). `/issue-finish` removes a worktree-mode branch's worktree
 for you (it detects the linked worktree and runs the reparse-safe teardown). To
 clean one up by hand, run from the primary checkout, never from inside the
-worktree: `C:/Users/rober/AppData/Local/Python/bin/python.exe C:/Users/rober/.claude/skills/_lib/worktree_claim.py
+worktree: `E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/worktree_claim.py
 remove-worktree <wt-path>`.
 ```
 

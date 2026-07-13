@@ -22,8 +22,8 @@ still carries one, so per-repo metadata can never silently go stale.
 Usage (invoke the resolved Python path directly — a bare ``py``/``python`` is
 not reliably on ``PATH`` on this machine; see ``_lib.find_python_executable``)::
 
-    C:/Users/rober/AppData/Local/Python/bin/python.exe .claude/skills/system-map/build_data.py            # regenerate fleet.data.js
-    C:/Users/rober/AppData/Local/Python/bin/python.exe .claude/skills/system-map/build_data.py --check     # exit 1 if the file is stale
+    E:/automation/fleet-config/.venv/Scripts/python.exe .claude/skills/system-map/build_data.py            # regenerate fleet.data.js
+    E:/automation/fleet-config/.venv/Scripts/python.exe .claude/skills/system-map/build_data.py --check     # exit 1 if the file is stale
 
 ``.fleet.toml`` schema (full reference: architecture/README.md)::
 
@@ -68,7 +68,7 @@ HEADER = """\
 // .claude/skills/system-map/build_data.py — DO NOT hand-edit. Edit each repo's root
 // `.fleet.toml` (authoritative) or `architecture/fleet.residual.json` (the
 // non-repo structure + fallback cards), then regenerate:
-//   C:/Users/rober/AppData/Local/Python/bin/python.exe .claude/skills/system-map/build_data.py
+//   E:/automation/fleet-config/.venv/Scripts/python.exe .claude/skills/system-map/build_data.py
 // Loaded as plain JS (works under file://, no CORS): sets window.FLEET.
 // The body is strict JSON so Python (build_data.py, the /system-map skill, and
 // the drift test in tests/run_acceptance.py) can read it too: strip
@@ -219,7 +219,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.check:
         if rendered != current:
             print("build_data: fleet.data.js is STALE — run "
-                  "`C:/Users/rober/AppData/Local/Python/bin/python.exe .claude/skills/system-map/build_data.py` and commit.", file=sys.stderr)
+                  "`E:/automation/fleet-config/.venv/Scripts/python.exe .claude/skills/system-map/build_data.py` and commit.", file=sys.stderr)
             return 1
         print("build_data: fleet.data.js is up to date.")
         return 0
