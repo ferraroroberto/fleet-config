@@ -19,8 +19,8 @@ config-specific ``parse_config``/``format_line``.
 Pure logic, no I/O in the diff functions, so ``tests/run_acceptance.py`` can
 exercise them. The CLI at the bottom does the git read::
 
-    C:/Users/rober/AppData/Local/Python/bin/python.exe .claude/skills/config-map/whatchanged.py            # vs HEAD, default file
-    C:/Users/rober/AppData/Local/Python/bin/python.exe .claude/skills/config-map/whatchanged.py --ref main # vs another ref
+    E:/automation/fleet-config/.venv/Scripts/python.exe .claude/skills/config-map/whatchanged.py            # vs HEAD, default file
+    E:/automation/fleet-config/.venv/Scripts/python.exe .claude/skills/config-map/whatchanged.py --ref main # vs another ref
 """
 
 from __future__ import annotations

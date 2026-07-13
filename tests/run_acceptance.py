@@ -2,7 +2,7 @@
 
 Run from the repo root (invoke the resolved Python path directly — a bare
 ``py``/``python`` is not reliably on ``PATH`` on this machine):
-    C:/Users/rober/AppData/Local/Python/bin/python.exe tests/run_acceptance.py
+    E:/automation/fleet-config/.venv/Scripts/python.exe tests/run_acceptance.py
 
 Exit 0 if all cases pass, 1 otherwise. Prints a single line per case.
 """
@@ -176,9 +176,12 @@ def main() -> int:
          "venv_discipline",
          {"tool_name": "PowerShell", "cwd": str(REPO), "tool_input": {"command": "python -m venv venv"}},
          2),
+        # cwd is a .venv-free dir (not REPO — this repo now ships its own .venv,
+        # which would trip the bare-python rule): isolates the correct-name
+        # creation form against the wrong-name rule (fleet-config#350).
         ("venv: python -m venv .venv -> allow",
          "venv_discipline",
-         {"tool_name": "PowerShell", "cwd": str(REPO), "tool_input": {"command": "python -m venv .venv"}},
+         {"tool_name": "PowerShell", "cwd": tempfile.gettempdir(), "tool_input": {"command": "python -m venv .venv"}},
          0),
         ("venv: activate.ps1 -> block",
          "venv_discipline",
@@ -876,7 +879,7 @@ def _codex_hooks_config_check() -> Tuple[int, int]:
     )
     check(
         "codex_hooks: commands invoke hook modules directly",
-        all(re.search(r"^C:/Users/rober/AppData/Local/Python/bin/python\.exe\s+C:/Users/rober/\.codex/hooks/\w+\.py$", c) for c in commands),
+        all(re.search(r"^E:/automation/fleet-config/\.venv/Scripts/python\.exe\s+C:/Users/rober/\.codex/hooks/\w+\.py$", c) for c in commands),
         "\n".join(commands),
     )
 

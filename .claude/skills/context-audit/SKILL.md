@@ -44,7 +44,7 @@ Three fleet audit lenses, kept distinct so each stays sharp:
 ### 1. Measure the surface
 
 ```
-C:/Users/rober/AppData/Local/Python/bin/python.exe .claude/skills/context-audit/audit.py
+E:/automation/fleet-config/.venv/Scripts/python.exe .claude/skills/context-audit/audit.py
 ```
 
 Prints a `MANIFEST:` line (skills / over-cap / claude_mds / leaks / total_est_tokens) then four blocks — skill-description word counts vs the cap, the always-on token budget per `CLAUDE.md` (+ fleet total), single-home leaks (project lines duplicated verbatim from `global-CLAUDE.md`), and header overlap with the scaffold master. Capture it. `--json` emits the full structured report; `--cap N` overrides the word cap.
@@ -63,7 +63,7 @@ Read the manifest and classify, concisely:
 Build a short markdown digest (single long lines): the manifest totals, the top offenders per category, and the week-over-week budget delta. Keep the durable archive (per-run totals) in the body; put the weekly narrative in a comment — same shape as `/audit-fleet` and `/learning-log`.
 
 ```
-C:/Users/rober/AppData/Local/Python/bin/python.exe C:/Users/rober/.claude/skills/_lib/audit_issue.py upsert --repo ferraroroberto/fleet-config \
+E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/audit_issue.py upsert --repo ferraroroberto/fleet-config \
   --kind context-audit --label audit-meta \
   --title "context-audit — always-on surface" --body-file <digest path>
 ```
@@ -75,7 +75,7 @@ Then add the weekly narrative as a comment on the returned issue.
 Activity-log traffic → `--category log` (the resolver picks the channel from `hooks/projects.toml`; never hardcode an id). Caption = the TL;DR (top numbers + biggest offender), with the digest attached:
 
 ```
-cat <<'EOF' | C:/Users/rober/AppData/Local/Python/bin/python.exe hooks/slack_notify.py --category log \
+cat <<'EOF' | E:/automation/fleet-config/.venv/Scripts/python.exe hooks/slack_notify.py --category log \
    --title "context-audit — always-on surface <YYYY-MM-DD>"
 🧮 Weekly context-audit — <total>k always-on tokens, <N> over-cap descriptions, <M> single-home leaks
 <the TL;DR>

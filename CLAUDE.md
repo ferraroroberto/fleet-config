@@ -7,7 +7,7 @@ The global instructions (plan-mode default, git discipline, no AI attribution) a
 ## Repo-specific conventions
 
 - **Hooks are user-scope, fleet-wide.** Don't write a hook tuned to a single project's quirk — put the quirk in `hooks/projects.toml` (project keys detected by `cwd` prefix) and keep the hook code generic.
-- **Hooks are wired into `~/.claude/settings.json` via the shared `run-hook.ps1` shim** dispatching to the named Python module (the user's system Python, not a `.venv`). The shim path uses **forward slashes** — `C:/Users/rober/.claude/hooks/run-hook.ps1` — because Claude Code routes hook commands through Git Bash, which strips backslashes. Never write backslashes into a `settings.json` command string.
+- **Hooks are wired into `~/.claude/settings.json` via the shared `run-hook.ps1` shim** dispatching to the named Python module through this repo's own project `.venv` (fleet-config#350; the shim falls back to a system Python if the venv is ever absent). The shim path uses **forward slashes** — `C:/Users/rober/.claude/hooks/run-hook.ps1` — because Claude Code routes hook commands through Git Bash, which strips backslashes. Never write backslashes into a `settings.json` command string.
 - **Always the absolute Windows PowerShell 5.1 path** in `settings.json` commands: `C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe` (`pwsh` on PATH is a 0-byte WindowsApps stub that fails non-interactively).
 - **Hooks block by exit-code 2** with a single short reason on stderr; non-blocking hooks print a single nudge line on stdout and exit 0.
 - **Hooks read stdin as JSON** via `_lib.read_stdin_json()`; PowerShell shims use `[Console]::In.ReadToEnd()` and pipe straight to the Python module.
@@ -32,13 +32,13 @@ Required for `notify_on_idle` to name the right project in Slack pings (else it 
 
 ```powershell
 # 1. Byte-compile every hook and shared skill helper
-& C:/Users/rober/AppData/Local/Python/bin/python.exe -m py_compile hooks/*.py skills/_lib/*.py
+& E:/automation/fleet-config/.venv/Scripts/python.exe -m py_compile hooks/*.py skills/_lib/*.py
 
 # 2. Run the acceptance matrix (sample stdin payloads per hook + the helper unit tests)
-& C:/Users/rober/AppData/Local/Python/bin/python.exe tests/run_acceptance.py
+& E:/automation/fleet-config/.venv/Scripts/python.exe tests/run_acceptance.py
 ```
 
-Invoke the resolved Python path directly — a bare `py`/`python` is not reliably on `PATH` on this machine, so it silently fails wherever a skill or doc uses it (fleet-config#256). Don't claim a hook works without driving it through `tests/run_acceptance.py`.
+Invoke this repo's `.venv` interpreter directly by its absolute path (as above) — a bare `py`/`python` is not reliably on `PATH` on this machine, so it silently fails wherever a skill or doc uses it (fleet-config#256). Create the venv once with `py -m venv .venv` (or any Python ≥3.12); it is stdlib-only, so nothing needs installing. Don't claim a hook works without driving it through `tests/run_acceptance.py`.
 
 ## Git
 

@@ -82,7 +82,7 @@ Enumeration + per-repo gating is **one deterministic Python sweep** — a single
 tool call whose JSON the orchestrator reads, never a per-repo LLM loop:
 
 ```
-C:/Users/rober/AppData/Local/Python/bin/python.exe C:/Users/rober/.claude/skills/_lib/fleet_audit_scan.py --root E:\automation [--only <repo-name>]
+E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/fleet_audit_scan.py --root E:\automation [--only <repo-name>]
 ```
 
 The script (`skills/_lib/fleet_audit_scan.py`, built on `audit_issue.py`'s
@@ -143,7 +143,7 @@ re-check cadence, not an Opus-burst-limiter workaround: audit sub-agents run at
 `model: "sonnet"` on Claude Code today.
 
 Before each dispatch/refill, call
-`C:/Users/rober/AppData/Local/Python/bin/python.exe C:/Users/rober/.claude/skills/_lib/rate_gate.py check --threshold 70`
+`E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/rate_gate.py check --threshold 70`
 and branch on `DECISION`:
 
 - **`OK` / `UNKNOWN`** → dispatch the next repo. Dispatch up to 3 background
@@ -237,7 +237,7 @@ Read the existing ledger, then merge — same discipline as `/codebase-audit`
 step 8:
 
 ```
-C:/Users/rober/AppData/Local/Python/bin/python.exe C:/Users/rober/.claude/skills/_lib/audit_issue.py get \
+E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/audit_issue.py get \
   --repo ferraroroberto/project-scaffolding --kind practices
 ```
 
@@ -265,7 +265,7 @@ Write to a repo-scoped temp file (never a fixed shared name — see the global
 tmp-file gotcha; e.g. `E:/tmp/audit-practices-ledger.md`) and upsert:
 
 ```
-C:/Users/rober/AppData/Local/Python/bin/python.exe C:/Users/rober/.claude/skills/_lib/audit_issue.py upsert \
+E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/audit_issue.py upsert \
   --repo ferraroroberto/project-scaffolding --kind practices --label audit-meta \
   --title "fleet practices ledger" --body-file <tmpfile>
 ```
@@ -287,7 +287,7 @@ flagged in the digest, not silently dropped.
 
 Read the digest-state ledger first so the recap is week-over-week, not a
 re-list:
-`C:/Users/rober/AppData/Local/Python/bin/python.exe C:/Users/rober/.claude/skills/_lib/audit_issue.py get --repo ferraroroberto/fleet-config --kind digest`.
+`E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/audit_issue.py get --repo ferraroroberto/fleet-config --kind digest`.
 Parse the `<!-- audit-fleet-digest -->` block from the returned `body`:
 
 ```
@@ -345,7 +345,7 @@ create-vs-edit, collapses strays, and stamps the marker (keep the
 `<!-- audit-fleet-digest -->` block intact):
 
 ```
-C:/Users/rober/AppData/Local/Python/bin/python.exe C:/Users/rober/.claude/skills/_lib/audit_issue.py upsert \
+E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/audit_issue.py upsert \
   --repo ferraroroberto/fleet-config --kind digest --label audit-meta \
   --title "audit-fleet digest state" --body-file <tmpfile>
 ```
@@ -370,7 +370,7 @@ Two channels. stdout is the reliable one (a scheduled run captures it in app-lau
 - **Slack ping:** call `notify_complete.py --kind audit` with the captured comment URL and a one-line summary. This is deterministic — the skill hands the hook exact structured args; the hook assembles the message:
 
   ```
-  C:/Users/rober/AppData/Local/Python/bin/python.exe C:/Users/rober/.claude/hooks/notify_complete.py \
+  E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/hooks/notify_complete.py \
     --kind audit \
     --comment-url "$COMMENT_URL" \
     --summary "<N> audited, <M> issues filed, <K> unchanged"

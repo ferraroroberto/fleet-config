@@ -132,7 +132,7 @@ the label applied.
   completion ping (canonical format, real issue link) and stop:
 
   ```
-  C:/Users/rober/AppData/Local/Python/bin/python.exe C:/Users/rober/.claude/hooks/notify_complete.py --kind add --issue <N>
+  E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/hooks/notify_complete.py --kind add --issue <N>
   ```
 
   Pass only the issue number; the helper pulls the title + URL from `gh`. Silent

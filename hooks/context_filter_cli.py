@@ -2,9 +2,9 @@
 
 Usage (invoke the resolved Python path directly — a bare ``py``/``python`` is
 not reliably on ``PATH`` on this machine; see ``_lib.find_python_executable``):
-    C:/Users/rober/AppData/Local/Python/bin/python.exe hooks/context_filter_cli.py eval --fixtures tests/fixtures/context_filter
-    C:/Users/rober/AppData/Local/Python/bin/python.exe hooks/context_filter_cli.py run --tool PowerShell --mode rewrite --encoded <b64>
-    C:/Users/rober/AppData/Local/Python/bin/python.exe hooks/context_filter_cli.py retrieve <key>
+    E:/automation/fleet-config/.venv/Scripts/python.exe hooks/context_filter_cli.py eval --fixtures tests/fixtures/context_filter
+    E:/automation/fleet-config/.venv/Scripts/python.exe hooks/context_filter_cli.py run --tool PowerShell --mode rewrite --encoded <b64>
+    E:/automation/fleet-config/.venv/Scripts/python.exe hooks/context_filter_cli.py retrieve <key>
 """
 
 from __future__ import annotations

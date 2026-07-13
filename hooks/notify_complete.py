@@ -14,17 +14,17 @@ notification failure can't break or delay a skill.
 Usage (invoke the resolved Python path directly — a bare ``py``/``python`` is
 not reliably on ``PATH`` on this machine; see ``_lib.find_python_executable``)::
 
-    C:/Users/rober/AppData/Local/Python/bin/python.exe ~/.claude/hooks/notify_complete.py --kind finish --issue 30 --pr 31 --pr-url https://github.com/owner/repo/pull/31
-    C:/Users/rober/AppData/Local/Python/bin/python.exe ~/.claude/hooks/notify_complete.py --kind add    --issue 30
-    C:/Users/rober/AppData/Local/Python/bin/python.exe ~/.claude/hooks/notify_complete.py --kind start  --issue 30 --summary "review the diff, then /issue-finish"
-    C:/Users/rober/AppData/Local/Python/bin/python.exe ~/.claude/hooks/notify_complete.py --kind yolo   --issue 30 --pr 31 --pr-url https://github.com/owner/repo/pull/31
-    C:/Users/rober/AppData/Local/Python/bin/python.exe ~/.claude/hooks/notify_complete.py --kind batch  --passed 2 --total 3
-    C:/Users/rober/AppData/Local/Python/bin/python.exe ~/.claude/hooks/notify_complete.py --kind finish-batch --merged 4 --blocked 1
-    C:/Users/rober/AppData/Local/Python/bin/python.exe ~/.claude/hooks/notify_complete.py --kind audit  --comment-url https://github.com/ferraroroberto/fleet-config/issues/18#issuecomment-123 --summary "3 audited, 2 issues filed, 24 unchanged"
-    C:/Users/rober/AppData/Local/Python/bin/python.exe ~/.claude/hooks/notify_complete.py --kind cleanup --summary documentation --merged 5 --review 2
-    C:/Users/rober/AppData/Local/Python/bin/python.exe ~/.claude/hooks/notify_complete.py --kind recap --summary "3 skills swept - alt-text +2, journal-daily +1"   # automatic sweep (no proposals)
-    C:/Users/rober/AppData/Local/Python/bin/python.exe ~/.claude/hooks/notify_complete.py --kind recap --summary "2 skills consolidated, 4 promoted"               # explicit consolidation
-    C:/Users/rober/AppData/Local/Python/bin/python.exe ~/.claude/hooks/notify_complete.py --kind learning --comment-url https://github.com/ferraroroberto/fleet-config/issues/131#issuecomment-456 --summary "12 PRs / 8 issues distilled · 2/3 horizon shipped"
+    E:/automation/fleet-config/.venv/Scripts/python.exe ~/.claude/hooks/notify_complete.py --kind finish --issue 30 --pr 31 --pr-url https://github.com/owner/repo/pull/31
+    E:/automation/fleet-config/.venv/Scripts/python.exe ~/.claude/hooks/notify_complete.py --kind add    --issue 30
+    E:/automation/fleet-config/.venv/Scripts/python.exe ~/.claude/hooks/notify_complete.py --kind start  --issue 30 --summary "review the diff, then /issue-finish"
+    E:/automation/fleet-config/.venv/Scripts/python.exe ~/.claude/hooks/notify_complete.py --kind yolo   --issue 30 --pr 31 --pr-url https://github.com/owner/repo/pull/31
+    E:/automation/fleet-config/.venv/Scripts/python.exe ~/.claude/hooks/notify_complete.py --kind batch  --passed 2 --total 3
+    E:/automation/fleet-config/.venv/Scripts/python.exe ~/.claude/hooks/notify_complete.py --kind finish-batch --merged 4 --blocked 1
+    E:/automation/fleet-config/.venv/Scripts/python.exe ~/.claude/hooks/notify_complete.py --kind audit  --comment-url https://github.com/ferraroroberto/fleet-config/issues/18#issuecomment-123 --summary "3 audited, 2 issues filed, 24 unchanged"
+    E:/automation/fleet-config/.venv/Scripts/python.exe ~/.claude/hooks/notify_complete.py --kind cleanup --summary documentation --merged 5 --review 2
+    E:/automation/fleet-config/.venv/Scripts/python.exe ~/.claude/hooks/notify_complete.py --kind recap --summary "3 skills swept - alt-text +2, journal-daily +1"   # automatic sweep (no proposals)
+    E:/automation/fleet-config/.venv/Scripts/python.exe ~/.claude/hooks/notify_complete.py --kind recap --summary "2 skills consolidated, 4 promoted"               # explicit consolidation
+    E:/automation/fleet-config/.venv/Scripts/python.exe ~/.claude/hooks/notify_complete.py --kind learning --comment-url https://github.com/ferraroroberto/fleet-config/issues/131#issuecomment-456 --summary "12 PRs / 8 issues distilled · 2/3 horizon shipped"
 
 For ``--kind cleanup`` (the closing roll-up of a ``/cleanup-fleet`` swarm) pass
 ``--summary`` (the bucket name), ``--merged`` (sonnet issues YOLO'd to a merged

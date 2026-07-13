@@ -17,7 +17,7 @@ It also prints the before/after token delta (~4 chars/token, the same estimate
 audit.py trends on) so the purge report quotes exact numbers.
 
 stdlib only. CLI:
-    C:/Users/rober/AppData/Local/Python/bin/python.exe .claude/skills/context-purge/check.py <before-file> <after-file>
+    E:/automation/fleet-config/.venv/Scripts/python.exe .claude/skills/context-purge/check.py <before-file> <after-file>
 Exit 0 = all preservation checks pass; exit 2 = at least one failed (reasons on
 stdout). The semantic directive-inventory check stays with the orchestrator.
 """

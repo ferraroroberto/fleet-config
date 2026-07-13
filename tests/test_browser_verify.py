@@ -4,7 +4,7 @@ No live browser / app — these exercise backend selection, the browser-safety
 launch kwargs, the KEY_VIEWS x light/dark capture plan, the distinct capability
 failures, and the venv/probe command construction.
 
-Run: `C:/Users/rober/AppData/Local/Python/bin/python.exe tests/test_browser_verify.py`  (also invoked by tests/run_acceptance.py)
+Run: `E:/automation/fleet-config/.venv/Scripts/python.exe tests/test_browser_verify.py`  (also invoked by tests/run_acceptance.py)
 """
 
 from __future__ import annotations

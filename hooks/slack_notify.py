@@ -8,8 +8,8 @@ ways:
   resolved Python path directly, not a bare ``py``/``python`` (not reliably on
   ``PATH`` on this machine; see ``_lib.find_python_executable``)::
 
-      C:/Users/rober/AppData/Local/Python/bin/python.exe ~/.claude/hooks/slack_notify.py --channel C0123ABCD --text "stuck, come look"
-      echo "long body" | C:/Users/rober/AppData/Local/Python/bin/python.exe ~/.claude/hooks/slack_notify.py --channel C0123ABCD
+      E:/automation/fleet-config/.venv/Scripts/python.exe ~/.claude/hooks/slack_notify.py --channel C0123ABCD --text "stuck, come look"
+      echo "long body" | E:/automation/fleet-config/.venv/Scripts/python.exe ~/.claude/hooks/slack_notify.py --channel C0123ABCD
 
 * As an import (from another hook / Python tool)::
 

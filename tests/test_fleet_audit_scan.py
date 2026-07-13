@@ -3,7 +3,7 @@
 No live git/gh — this exercises only `is_fleet_repo`, the one piece of
 correctness-critical logic that doesn't need filesystem/network I/O.
 
-Run: `C:/Users/rober/AppData/Local/Python/bin/python.exe tests/test_fleet_audit_scan.py`
+Run: `E:/automation/fleet-config/.venv/Scripts/python.exe tests/test_fleet_audit_scan.py`
 (also invoked by tests/run_acceptance.py)
 """
 

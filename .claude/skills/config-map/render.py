@@ -10,8 +10,8 @@ Used by the ``/config-map`` skill; also runnable by hand (invoke the resolved
 Python path directly — a bare ``py``/``python`` is not reliably on ``PATH`` on
 this machine; see ``_lib.find_python_executable``)::
 
-    C:/Users/rober/AppData/Local/Python/bin/python.exe .claude/skills/config-map/render.py            # architecture/config-map.{html,png}
-    C:/Users/rober/AppData/Local/Python/bin/python.exe .claude/skills/config-map/render.py --scale 3  # crisper
+    E:/automation/fleet-config/.venv/Scripts/python.exe .claude/skills/config-map/render.py            # architecture/config-map.{html,png}
+    E:/automation/fleet-config/.venv/Scripts/python.exe .claude/skills/config-map/render.py --scale 3  # crisper
 
 Chrome and a working tmp dir are the only requirements (no extra Python deps).
 """

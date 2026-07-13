@@ -53,7 +53,7 @@ A missing `iab` backend used to force the agent onto non-browser verification, w
 The decision is deterministic and single-sourced in [`skills/_lib/browser_verify.py`](../skills/_lib/browser_verify.py). Preflight `iab`; when it's unavailable, drive Playwright with real Chrome against the live feature-branch app:
 
 ```
-C:/Users/rober/AppData/Local/Python/bin/python.exe skills/_lib/browser_verify.py plan <repo> --base-url <app-root> --iab-available no
+E:/automation/fleet-config/.venv/Scripts/python.exe skills/_lib/browser_verify.py plan <repo> --base-url <app-root> --iab-available no
 ```
 
 It prints (KEY=VALUE, JSON where structured):

@@ -93,7 +93,7 @@ last audit — **one deterministic Python call, not LLM judgment**
 this skill and `/audit-fleet` share):
 
 ```
-C:/Users/rober/AppData/Local/Python/bin/python.exe C:/Users/rober/.claude/skills/_lib/audit_issue.py gate --repo <OWNER/REPO> --repo-path <repo-root-from-step-1>
+E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/audit_issue.py gate --repo <OWNER/REPO> --repo-path <repo-root-from-step-1>
 ```
 
 It prints `{"decision": "SKIP"|"AUDIT"|"SKIP_SELF_FIX"|"SKIP_BELOW_THRESHOLD", "reason": ..., ...}`.
@@ -244,7 +244,7 @@ never spawn a duplicate. For each non-empty bucket (max 6 iterations):
 **1. Fetch the existing issue** for this bucket:
 
 ```
-C:/Users/rober/AppData/Local/Python/bin/python.exe C:/Users/rober/.claude/skills/_lib/audit_issue.py get --repo <OWNER/REPO> --kind <bucket>
+E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/audit_issue.py get --repo <OWNER/REPO> --kind <bucket>
 ```
 
 It prints `{"number": N|null, "body": "...", "duplicates": [...]}`.
@@ -289,7 +289,7 @@ body — the issue is a *living backlog*, so:
 **3. Upsert** (creates if absent, edits if present, collapses any strays):
 
 ```
-C:/Users/rober/AppData/Local/Python/bin/python.exe C:/Users/rober/.claude/skills/_lib/audit_issue.py upsert \
+E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/audit_issue.py upsert \
   --repo <OWNER/REPO> --kind <bucket> --label <bucket-label> \
   --title "audit: <bucket> findings" --body-file <tmpfile>
 ```
@@ -353,7 +353,7 @@ Upsert the per-repo ledger issue so the next run can short-circuit at step 2:
   `audit-meta` label):
 
   ```
-  C:/Users/rober/AppData/Local/Python/bin/python.exe C:/Users/rober/.claude/skills/_lib/audit_issue.py upsert \
+  E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/audit_issue.py upsert \
     --repo <OWNER/REPO> --kind ledger --label audit-meta \
     --title "codebase-audit ledger" --body-file <tmpfile>
   ```

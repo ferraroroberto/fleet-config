@@ -113,7 +113,7 @@ Print a single confirmation block listing every agent dispatched (repo, #N, bran
 **Before marking a branch merged, run the post-flight dirty-tree check yourself — never trust the agent's self-reported `Result: MERGED` alone.** This is the highest-cost place for a false "shipped" report, since the whole point of this skill is landing a branch cleanly:
 
 ```
-C:/Users/rober/AppData/Local/Python/bin/python.exe C:/Users/rober/.claude/skills/_lib/dirty_tree_check.py check <path> --mode merged
+E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/dirty_tree_check.py check <path> --mode merged
 ```
 
 `STATUS=DIRTY` → downgrade that branch's status from `✅ merged` to `⚠️ merged but dirty tree — inspect <repo>` (carry the `REASON=` line) instead of the plain `✅ merged` mark. This check only reports; it never blocks the run, never auto-commits, and never auto-fixes.
@@ -123,7 +123,7 @@ As each agent returns, surface its report with a status mark: `✅ merged` / `�
 When **all** agents have returned, fire **one final** roll-up ping:
 
 ```
-C:/Users/rober/AppData/Local/Python/bin/python.exe C:/Users/rober/.claude/hooks/notify_complete.py \
+E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/hooks/notify_complete.py \
   --kind finish-batch --merged <merged-count> --blocked <blocked-count>
 ```
 

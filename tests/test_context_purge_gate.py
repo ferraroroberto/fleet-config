@@ -3,7 +3,7 @@
 Covers the skip-unchanged ledger's mechanical core — block parse/render
 round-trip and the hash diff — without touching gh or the filesystem surface.
 
-Run: C:/Users/rober/AppData/Local/Python/bin/python.exe tests/test_context_purge_gate.py
+Run: E:/automation/fleet-config/.venv/Scripts/python.exe tests/test_context_purge_gate.py
 Exit 0 = all pass.
 """
 

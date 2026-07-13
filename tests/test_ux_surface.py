@@ -3,7 +3,7 @@
 No live git — these exercise the `## UX surface` block parser, brace expansion,
 glob→regex translation, and the diff-intersection that gates the design check.
 
-Run: `C:/Users/rober/AppData/Local/Python/bin/python.exe tests/test_ux_surface.py`  (also invoked by tests/run_acceptance.py)
+Run: `E:/automation/fleet-config/.venv/Scripts/python.exe tests/test_ux_surface.py`  (also invoked by tests/run_acceptance.py)
 """
 
 from __future__ import annotations
