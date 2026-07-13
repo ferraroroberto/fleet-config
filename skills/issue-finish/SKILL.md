@@ -87,6 +87,22 @@ C:/Users/rober/AppData/Local/Python/bin/python.exe C:/Users/rober/.claude/skills
     screenshot is an information breach. Put a **text-only** conformance line in
     the PR instead (e.g. `Visual: touched view renders per spec — nav pill,
     layout, palette conform`).
+    - **Browser-backend preflight (Codex — no live `iab`).** Before the drive,
+      pick the backend deterministically: prefer the in-app Browser (`iab`) when
+      `agent.browsers.list()` includes it; when it returns `[]`, fall back to
+      installed Playwright with real Chrome — `iab` absence is **not** a reason
+      to skip the visual leg (fleet-config#351). Get the plan (backend, venv,
+      `channel="chrome"` launch kwargs honoring the browser-safety contract,
+      the `KEY_VIEWS` × {light, dark} capture list, and the distinct
+      capability-failure messages) from:
+      ```
+      C:/Users/rober/AppData/Local/Python/bin/python.exe C:/Users/rober/.claude/skills/_lib/browser_verify.py plan . --base-url <app-root> --iab-available <yes|no>
+      ```
+      A missing Playwright, missing Chrome, unreachable app, or exhausted
+      profile-lock each report distinctly (never one generic error). Background
+      + recovery: `docs/codex-browser.md`. On Claude Code the `verify` skill's
+      MCP browser is the `iab`-equivalent path — the fallback is for hosts with
+      no live in-app backend.
 
 **Overrides** (words in the finish invocation): `ux`/`design` forces the gate
 even if `TOUCHED=no`; `no-ux` skips it; `ux-full` checks every `KEY_VIEWS`

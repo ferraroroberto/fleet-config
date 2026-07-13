@@ -421,6 +421,9 @@ def main() -> int:
     # ---- ux_surface helper pure-logic tests (skills/_lib) ----
     run_unit(_ux_surface_unit_check)
 
+    # ---- browser_verify helper pure-logic tests (skills/_lib) ----
+    run_unit(_browser_verify_unit_check)
+
     # ---- cert_drift helper pure-logic tests (skills/_lib) ----
     run_unit(_cert_drift_unit_check)
 
@@ -1624,6 +1627,17 @@ def _ux_surface_unit_check() -> Tuple[int, int]:
     gate. (fleet-config#195)
     """
     return _subprocess_unit_check("ux_surface", "test_ux_surface.py")
+
+
+def _browser_verify_unit_check() -> Tuple[int, int]:
+    """Run skills/_lib/browser_verify.py's pure-logic tests as a subprocess.
+
+    Standalone (like test_ux_surface) so the visual-gate fallback — iab-preferred
+    backend selection, the browser-safety launch kwargs, the KEY_VIEWS x
+    light/dark capture plan, and the distinct capability failures — is testable
+    on its own and reachable from the one gate. (fleet-config#351)
+    """
+    return _subprocess_unit_check("browser_verify", "test_browser_verify.py")
 
 
 def _cert_drift_unit_check() -> Tuple[int, int]:
