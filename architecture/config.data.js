@@ -414,6 +414,14 @@ window.CONFIG = {
       "ds": "Pi coding-agent usage collector."
     },
     {
+      "nm": "session_state_codex",
+      "ds": "Codex adapter for the Fleet Board session-state writer (fleet-config#349)."
+    },
+    {
+      "nm": "session_state_pi",
+      "ds": "Pi adapter for the Fleet Board session-state writer (fleet-config#349)."
+    },
+    {
       "nm": "slack_notify",
       "ds": "Fleet-wide Slack notifier — fire a real, bot-identity Slack notification."
     },

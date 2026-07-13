@@ -218,8 +218,16 @@ def upsert(
     _write_rows(path, kept)
 
 
-def upsert_from_payload(payload: Dict[str, Any], status: str) -> None:
-    """Upsert straight from a hook payload; silent no-op without a session_id."""
+def upsert_from_payload(
+    payload: Dict[str, Any], status: str, *, default_agent: str = "claude"
+) -> None:
+    """Upsert straight from a hook payload; silent no-op without a session_id.
+
+    ``default_agent`` (fleet-config#349) is the agent to record when the
+    process carries no ``APP_LAUNCHER_AGENT`` — true for a Codex/Pi session
+    opened outside App Launcher, which would otherwise misreport as
+    ``claude`` (the historical default, kept for Claude's own callers).
+    """
     session_id = payload.get("session_id")
     if not isinstance(session_id, str) or not session_id:
         return
@@ -230,7 +238,7 @@ def upsert_from_payload(payload: Dict[str, Any], status: str) -> None:
     launcher_session_id = (
         os.environ.get("APP_LAUNCHER_SESSION_ID", "").strip() or None
     )
-    agent = os.environ.get("APP_LAUNCHER_AGENT", "").strip().lower() or "claude"
+    agent = os.environ.get("APP_LAUNCHER_AGENT", "").strip().lower() or default_agent
     upsert(
         session_id,
         status=status,

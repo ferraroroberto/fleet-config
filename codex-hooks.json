@@ -66,6 +66,45 @@
           }
         ]
       }
+    ],
+    "UserPromptSubmit": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "C:/Users/rober/AppData/Local/Python/bin/python.exe C:/Users/rober/.codex/hooks/session_state_codex.py",
+            "timeout": 15,
+            "statusMessage": "Updating Fleet Board state"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "C:/Users/rober/AppData/Local/Python/bin/python.exe C:/Users/rober/.codex/hooks/session_state_codex.py",
+            "timeout": 15,
+            "statusMessage": "Updating Fleet Board state"
+          }
+        ]
+      }
+    ],
+    "PermissionRequest": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "C:/Users/rober/AppData/Local/Python/bin/python.exe C:/Users/rober/.codex/hooks/session_state_codex.py",
+            "timeout": 15,
+            "statusMessage": "Updating Fleet Board state"
+          }
+        ]
+      }
     ]
   }
 }

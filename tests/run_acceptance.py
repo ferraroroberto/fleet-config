@@ -376,6 +376,9 @@ def main() -> int:
     # ---- session_state board-row persistence (fleet-config#91) ----
     run_unit(_session_state_unit_checks)
 
+    # ---- session_state_codex / session_state_pi adapters (fleet-config#349) ----
+    run_unit(_session_state_agent_adapter_unit_checks)
+
     # ---- notify_complete deterministic message assembly + resolver ----
     run_unit(_notify_complete_unit_checks)
 
@@ -1297,6 +1300,122 @@ def _session_state_unit_checks() -> Tuple[int, int]:
             os.environ["CLAUDE_SESSIONS_DIR"] = saved_sessions_env
         shutil.rmtree(tmp, ignore_errors=True)
         shutil.rmtree(sessions_dir, ignore_errors=True)
+
+    return check.failures, check.total
+
+
+def _session_state_agent_adapter_unit_checks() -> Tuple[int, int]:
+    """session_state_codex / session_state_pi (fleet-config#349): each
+    adapter's own event->status map, the default_agent fallback when no
+    launcher env is present, launcher env still winning when it is, and an
+    unwired/unknown event staying a no-op — against a temp
+    CLAUDE_HOOKS_STATE_DIR so nothing touches the real state file."""
+    check = _Checker()
+
+    tmp = Path(tempfile.mkdtemp(prefix="session_state_agents_"))
+    env = {
+        "CLAUDE_HOOKS_STATE_DIR": str(tmp),
+        "CLAUDE_SESSIONS_DIR": str(tmp / "no-sessions-dir"),
+        "CLAUDE_SETTINGS_JSON_PATH": NO_SETTINGS_JSON,
+        "APP_LAUNCHER_SESSION_ID": "",
+        "APP_LAUNCHER_AGENT": "",
+    }
+    state_path = tmp / "sessions-state.json"
+
+    def rows() -> Dict[str, Any]:
+        try:
+            return json.loads(state_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return {}
+
+    try:
+        # ---- Codex: UserPromptSubmit -> working, default_agent applied ----
+        codex_payload = {"hook_event_name": "UserPromptSubmit", "session_id": "codex-1",
+                          "cwd": str(tmp), "transcript_path": None}
+        code, _out, _err = run("session_state_codex", codex_payload, extra_env=env)
+        row = rows().get("codex-1") or {}
+        check("session_state_codex: UserPromptSubmit -> working, agent defaults to codex",
+              code == 0 and row.get("status") == "working" and row.get("agent") == "codex")
+
+        code, _out, _err = run(
+            "session_state_codex", {**codex_payload, "hook_event_name": "Stop"}, extra_env=env,
+        )
+        check("session_state_codex: Stop -> needs-you",
+              code == 0 and (rows().get("codex-1") or {}).get("status") == "needs-you")
+
+        code, _out, _err = run(
+            "session_state_codex", {**codex_payload, "hook_event_name": "PermissionRequest"}, extra_env=env,
+        )
+        check("session_state_codex: PermissionRequest -> needs-you",
+              code == 0 and (rows().get("codex-1") or {}).get("status") == "needs-you")
+
+        code, _out, _err = run(
+            "session_state_codex", {**codex_payload, "hook_event_name": "PreToolUse"}, extra_env=env,
+        )
+        check("session_state_codex: unwired event -> exit 0, state untouched",
+              code == 0 and (rows().get("codex-1") or {}).get("status") == "needs-you")
+
+        launcher_env = {**env, "APP_LAUNCHER_SESSION_ID": "launcher-codex", "APP_LAUNCHER_AGENT": "codex"}
+        code, _out, _err = run(
+            "session_state_codex",
+            {**codex_payload, "hook_event_name": "UserPromptSubmit", "session_id": "codex-2"},
+            extra_env=launcher_env,
+        )
+        codex2_row = rows().get("codex-2") or {}
+        check("session_state_codex: launcher env still wins over the default_agent fallback",
+              code == 0 and codex2_row.get("agent") == "codex"
+              and codex2_row.get("launcher_session_id") == "launcher-codex")
+
+        # ---- Pi: input -> working, agent_settled -> needs-you, default_agent ----
+        pi_event = {"event": "input", "session_id": "pi-1", "cwd": str(tmp)}
+        code, _out, _err = run("session_state_pi", pi_event, extra_env=env)
+        pi_row = rows().get("pi-1") or {}
+        check("session_state_pi: input -> working, agent defaults to pi",
+              code == 0 and pi_row.get("status") == "working" and pi_row.get("agent") == "pi")
+
+        code, _out, _err = run(
+            "session_state_pi", {**pi_event, "event": "agent_settled"}, extra_env=env,
+        )
+        check("session_state_pi: agent_settled -> needs-you",
+              code == 0 and (rows().get("pi-1") or {}).get("status") == "needs-you")
+
+        code, _out, _err = run(
+            "session_state_pi", {**pi_event, "event": "some_unwired_event"}, extra_env=env,
+        )
+        check("session_state_pi: unwired event -> exit 0, state untouched",
+              code == 0 and (rows().get("pi-1") or {}).get("status") == "needs-you")
+
+        # ---- Pi: session_shutdown removes the row (the Codex adapter has no analog) ----
+        code, _out, _err = run(
+            "session_state_pi", {**pi_event, "event": "session_shutdown"}, extra_env=env,
+        )
+        check("session_state_pi: session_shutdown removes the row",
+              code == 0 and "pi-1" not in rows())
+
+        before = set(rows())
+        code, _out, _err = run(
+            "session_state_pi", {"event": "session_shutdown", "session_id": "pi-does-not-exist", "cwd": str(tmp)},
+            extra_env=env,
+        )
+        check("session_state_pi: session_shutdown for an unknown sid -> exit 0, file untouched",
+              code == 0 and set(rows()) == before)
+
+        # Two agents in the same project stay independent rows (fleet-config#349
+        # acceptance: "Two agents in one project remain independent") — same
+        # cwd, distinct session ids and agent fields, neither writer clobbers
+        # the other's row.
+        code, _out, _err = run(
+            "session_state_pi", {"event": "input", "session_id": "pi-2", "cwd": str(tmp)}, extra_env=env,
+        )
+        codex2_after = rows().get("codex-2") or {}
+        pi2_row = rows().get("pi-2") or {}
+        check("session_state: Codex and Pi rows for the same cwd stay independent",
+              code == 0 and codex2_after.get("agent") == "codex" and pi2_row.get("agent") == "pi"
+              and codex2_after.get("cwd") == pi2_row.get("cwd") == str(tmp))
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+    return check.failures, check.total
 
     return check.failures, check.total
 
