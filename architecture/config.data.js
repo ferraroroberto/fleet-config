@@ -232,6 +232,12 @@ window.CONFIG = {
       ]
     },
     {
+      "repo": "app-launcher",
+      "items": [
+        "verify"
+      ]
+    },
+    {
       "repo": "content-management",
       "items": [
         "schedule-autoheal"
