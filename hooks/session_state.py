@@ -30,10 +30,17 @@ Wired into three Claude Code events (``settings.template.json``):
   out via the 24h prune below (#241).
 
 ``notify_on_idle`` (the ``Notification`` hook) additionally upserts
-``needs-you`` on a permission prompt and ``idle`` on the idle nag, so a blocked
-session surfaces even mid-turn — Slack pings are unchanged.
+``needs-you`` on a permission prompt, so a blocked session surfaces even
+mid-turn. It deliberately does **not** write anything for the periodic
+``idle_prompt`` re-announcement (fleet-config#354) — that sub-type fires
+~60s after ``Stop`` already recorded ``needs-you`` with nothing having
+changed, so writing ``idle`` there silently downgraded an already-correct
+row until the user replied or a fresh ``permission_prompt`` fired. Slack
+pings are unchanged either way.
 
-Status meanings the board relies on: ``working`` | ``needs-you`` | ``idle``.
+Status meanings the board relies on: ``working`` | ``needs-you`` | ``idle``
+(``idle`` is currently never written by a hook here; it's reserved for a
+future genuine idle-workspace signal, not the ``idle_prompt`` nag).
 
 The hook payload's ``session_id`` is Claude Code's transcript UUID, not the
 launcher session-host id. App Launcher injects its exact identity as inherited

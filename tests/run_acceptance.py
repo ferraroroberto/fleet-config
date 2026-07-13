@@ -1268,9 +1268,19 @@ def _session_state_unit_checks() -> Tuple[int, int]:
         check("notify_on_idle: permission_prompt persists a 'needs-you' row (exit 0)",
               code == 0 and (rows().get("sid-4") or {}).get("status") == "needs-you")
 
+        # fleet-config#354: idle_prompt is a periodic "still waiting on you" nag,
+        # not a new state -- it must not downgrade an existing 'needs-you' row.
         code, _out, _err = run("notify_on_idle", {**idle_payload, "notification_type": "idle_prompt"}, extra_env=env)
-        check("notify_on_idle: idle_prompt persists 'idle' yet stays ping-silent (exit 0)",
-              code == 0 and (rows().get("sid-4") or {}).get("status") == "idle")
+        check("notify_on_idle: idle_prompt after needs-you -> row stays 'needs-you' (exit 0)",
+              code == 0 and (rows().get("sid-4") or {}).get("status") == "needs-you")
+
+        # Also true from a cold start (no prior row at all) -- idle_prompt writes nothing.
+        cold_payload = {"session_id": "sid-5", "transcript_path": str(tmp / "t2.jsonl"),
+                        "cwd": str(tmp), "notification_type": "idle_prompt",
+                        "message": "Claude is waiting for your input"}
+        code, _out, _err = run("notify_on_idle", cold_payload, extra_env=env)
+        check("notify_on_idle: idle_prompt with no prior row -> exit 0, no row created",
+              code == 0 and "sid-5" not in rows())
 
         # ---- SessionEnd (#241): deletes the row instead of leaving it to the 24h prune ----
         code, _out, _err = run(

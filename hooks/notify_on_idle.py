@@ -147,14 +147,22 @@ def main() -> None:
         _lib.allow()
 
     # Persist the board state row (fleet-config#91) before any opt-in gating —
-    # a blocked/idle session must surface on the Fleet Board even for projects
-    # with Slack pings off, and a persistence failure must never touch the ping.
-    try:
-        import session_state
-        status = "idle" if payload.get("notification_type") == "idle_prompt" else "needs-you"
-        session_state.upsert_from_payload(payload, status)
-    except Exception:  # noqa: BLE001
-        pass
+    # a blocked session must surface on the Fleet Board even for projects with
+    # Slack pings off, and a persistence failure must never touch the ping.
+    #
+    # idle_prompt is a periodic "still waiting on you" re-announcement, not a
+    # new state — Stop already wrote needs-you when the turn ended, and
+    # idle_prompt fires ~60s later while nothing has changed. Writing "idle"
+    # here silently downgraded that needs-you row until the user replied or a
+    # fresh permission_prompt fired, dropping a genuinely-waiting session off
+    # the Board's "Your turn" column (fleet-config#354). So it's a no-op here,
+    # same as the Slack-ping side already treats it (_NOOP_TYPES below).
+    if payload.get("notification_type") != "idle_prompt":
+        try:
+            import session_state
+            session_state.upsert_from_payload(payload, "needs-you")
+        except Exception:  # noqa: BLE001
+            pass
 
     # A "come look, I'm blocked" prompt is action-needed → the attention channel.
     channel, user, name = _lib.resolve_slack_target(_lib.cwd(payload), category="attention")
