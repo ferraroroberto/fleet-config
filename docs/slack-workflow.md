@@ -24,7 +24,7 @@ One channel mixing "come look, I'm blocked" pings with "shipped, FYI" pings beco
 
 | Category | Channel | Pings |
 |---|---|---|
-| **`attention`** — act now | `#attention` (`slack_channel_attention`) | `notify_on_idle` 🔔 awaits-your-input; `notify_complete` `start` (🚦 ready to validate), `batch` (🏁), `cleanup` *when issues await review* |
+| **`attention`** — act now | `#attention` (`slack_channel_attention`) | `notify_on_idle` 🔔 awaits-your-input; `notify_complete` `start` (🚦 ready to validate), `batch` (🏁), `security` (🔒 audit self-healed a security gap — review the fix), `cleanup` *when issues await review* |
 | **`log`** — activity record | `#log` (`slack_channel_log`) | `notify_complete` `add` 🆕 / `finish` ✅ / `yolo` 🚀 / `audit` 📊 / `recap` 🔄 / `learning` 📓 / `finish-batch` 🏁; the `/system-map` image; the `/insights-weekly` digest |
 
 Note `start` and `batch` are calls-to-action that come out of the *completion* helper, so routing-by-hook would misfile them — they go to `#attention`.
@@ -90,6 +90,7 @@ E:/automation/fleet-config/.venv/Scripts/python.exe ~/.claude/hooks/notify_compl
 E:/automation/fleet-config/.venv/Scripts/python.exe ~/.claude/hooks/notify_complete.py --kind add    --issue 30             # 🆕 Filed #30 <title> · <issue-url>
 E:/automation/fleet-config/.venv/Scripts/python.exe ~/.claude/hooks/notify_complete.py --kind start  --issue 30 --summary "review the diff, then /issue-finish"   # 🚦 #30 <title> — ready to validate. … · <issue-url>
 E:/automation/fleet-config/.venv/Scripts/python.exe ~/.claude/hooks/notify_complete.py --kind yolo   --issue 30 --pr 31     # 🚀 Shipped #30 <title> — PR · <pr-url>
+E:/automation/fleet-config/.venv/Scripts/python.exe ~/.claude/hooks/notify_complete.py --kind security --issue 42 --pr 43 --summary "auto-merged, review the diff"   # 🔒 Security #42 <title> — auto-merged, review the diff · <pr-url>
 E:/automation/fleet-config/.venv/Scripts/python.exe ~/.claude/hooks/notify_complete.py --kind batch  --passed 2 --total 3   # 🏁 Batch done: 2/3 passed — …
 E:/automation/fleet-config/.venv/Scripts/python.exe ~/.claude/hooks/notify_complete.py --kind recap  --summary "3 skills swept — alt-text +2"   # 🔄 Weekly recap — automatic sweep (no proposals)
 E:/automation/fleet-config/.venv/Scripts/python.exe ~/.claude/hooks/notify_complete.py --kind recap  --summary "2 skills consolidated, 4 promoted"   # 🔄 Weekly recap — explicit consolidation

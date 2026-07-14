@@ -9,7 +9,7 @@ description: Run /codebase-audit across every repo in the E:\automation fleet in
 
 **Scope boundary — source code, not context.** This audits *project source code* quality. The fleet's *always-on context surface* (CLAUDE.md token budgets, skill-description word counts, single-home violations) is a separate lens: `/context-audit`.
 
-**This skill files no issues itself.** The only writes are (a) the audit issues that each sub-agent's `/codebase-audit` files, (b) the per-repo `audit-meta` ledger those audits update, (c) one `audit-fleet digest state` ledger issue in `fleet-config` for week-over-week deltas, (d) the digest comment on that issue, and (e) one cross-fleet `fleet practices ledger` issue in `project-scaffolding` cataloguing reusable solutions. It never edits source, commits, pushes, or restarts anything.
+**This skill files no issues itself.** The only writes *this orchestrator* makes are (a) the audit issues that each sub-agent's `/codebase-audit` files, (b) the per-repo `audit-meta` ledger those audits update, (c) one `audit-fleet digest state` ledger issue in `fleet-config` for week-over-week deltas, (d) the digest comment on that issue, and (e) one cross-fleet `fleet practices ledger` issue in `project-scaffolding` cataloguing reusable solutions. The orchestrator itself never edits source, commits, pushes, or restarts anything. **One narrow exception lives inside the sub-agents:** `/codebase-audit`'s step 8b self-heals a **security** finding in place (redacted issue + auto-fix + auto-merge), the only code-writing path in the whole audit flow — scoped to security, gated on its own safety rules (claim, mandatory regression test, generic artifacts, green-gate-only merge). See that skill's step 8b; this orchestrator just carries the counts-only result into the digest.
 
 **Designed for unattended runs.** A weekly app-launcher job invokes this via
 `claude -p "/audit-fleet" --model claude-sonnet-5 --effort high
@@ -176,18 +176,27 @@ Run a resting-state codebase audit on the <name> repo.
 1. cd to <path>.
 2. Execute the procedure in
    E:\automation\fleet-config\skills\codebase-audit\SKILL.md against this repo,
-   whole-repo scope. That skill files at most 6 GitHub issues bucketed by
-   finding type (one bucket reviews README/docs quality), dedupes against open
-   issues, and updates the repo's audit-meta
+   whole-repo scope. That skill files at most 7 GitHub issues bucketed by
+   finding type (one bucket reviews README/docs quality, one flags AI-slop
+   bloat), dedupes against open issues, and updates the repo's audit-meta
    ledger. Follow it exactly — including its own ledger gate (step 2): if it
    decides nothing changed, that is a valid result, report it.
-3. Do NOT edit source, commit, push, or restart anything. Filing issues and
-   updating the ledger are the only writes.
+3. Do NOT edit source, commit, push, or restart anything — with the SINGLE
+   exception that skill spells out in its step 8b: a SECURITY finding is
+   self-healed in place (redacted issue + auto-fix + auto-merge, or escalate on
+   failure). That is the only code-writing path; obey step 8b's rules exactly
+   (claim the repo, mandatory regression test, generic commit/PR/test text,
+   auto-merge only on a green gate, fire the private --kind security alert).
+   Never name the vulnerability in any public text. For every non-security
+   bucket, filing issues and updating the ledger remain the only writes.
 
 Report back in this exact shape so the orchestrator can build the digest:
   - Repo: <name>
   - Result: AUDITED (<N> issues filed) | CLEAN (no findings) | SKIPPED-BY-LEDGER
   - Filed: <bucket → issue URL (<new> new, <carried> carried, <stale> not re-surfaced), one per line; omit if none>
+  - Security: <NONE | HEALED (<count> gap(s), PR merged, private alert sent) |
+    ESCALATED (<count>, branch left for manual /issue-finish)> — a bare count +
+    disposition, NEVER any detail, file, or vulnerability class
   - Skipped-as-dupe: <count>
   - Files inspected: <count>
   - Promotion candidates: <the `promotion candidates spotted:` block from
@@ -303,10 +312,18 @@ is attached to the email as a `.md` file; step 6 also renders it to HTML for the
 email body. Structure it so the per-repo results form a clean table when
 rendered:
 
-- **Header:** date, counts — `N repos audited, M issues filed, K unchanged, L self-fix, B below-threshold, J skipped`.
+- **Header:** date, counts — `N repos audited, M issues filed, K unchanged, L self-fix, B below-threshold, J skipped`, plus `S security fixes` when any sub-agent reported a `Security:` result other than `NONE`.
 - **Per audited repo:** result line + the issues filed this run (bucket → URL),
   and the **delta vs last week** (`+2 since last week` from the digest-state
   counts). Repos that came back CLEAN or SKIPPED-BY-LEDGER get a one-liner.
+- **Security section** *(only when any sub-agent reported a non-`NONE`
+  `Security:` line)*: one line per repo, **counts + disposition only, never any
+  detail** — `<repo>: 1 gap self-healed, PR merged (private alert sent)` or
+  `<repo>: 1 gap ESCALATED — branch left for manual /issue-finish`. This mirrors
+  the per-repo ledger's counts-only `sec` telemetry; the vulnerability, file,
+  and class live nowhere in the digest, the ledger, or any commit. An
+  `ESCALATED` line is the digest's flag that a security gap needs a human — the
+  private `--kind security` alert already pinged, this makes it durable.
 - **Self-fix section** *(only when non-empty)*: repos step 2's sweep classified
   `SELF-FIX` — one line each naming the closed issue numbers (`website:
   closed #71, #64 — ledger advanced, no organic change`), so it's visible that
@@ -390,11 +407,16 @@ One concise block: the plan line from step 2, per-repo results, where the digest
   the skip/audit/self-fix decision, so there is nothing left for two prose
   copies to disagree about. Unit-tested independent of `gh`/`git` in
   `tests/test_audit_issue.py`.
-- **Read-only on source.** This skill and its sub-agents never edit code,
-  commit, push, or restart. The only writes are audit issues, the per-repo
-  ledger, the digest-state issue, the digest comment, and the cross-fleet
-  practices ledger in `project-scaffolding`. The practices ledger is the one
-  write target outside `fleet-config` — still an issue, never source.
+- **Read-only on source — except a sub-agent's security self-heal.** This
+  orchestrator never edits code, commits, pushes, or restarts. Its sub-agents
+  are read-only too **except** for `/codebase-audit`'s step 8b security
+  self-heal (redacted issue + auto-fix + auto-merge), the single code-writing
+  path in the flow — scoped to security, gated on that skill's rules (claim,
+  mandatory regression test, generic artifacts, green-gate-only merge, escalate
+  on failure). Every other write is an audit issue, the per-repo ledger, the
+  digest-state issue, the digest comment, or the cross-fleet practices ledger in
+  `project-scaffolding` (the one issue-write target outside `fleet-config` —
+  still an issue, never source).
 - **Never disturb in-progress work.** Dirty or off-default-branch repos are
   skipped and reported, never stashed or force-switched.
 - **One sub-agent per repo, `hard` tier (Sonnet on Claude Code today), through a

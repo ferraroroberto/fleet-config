@@ -55,6 +55,8 @@ KINDS = (
     "stale",
     "claude-md-drift",
     "maintainability",
+    "slop",
+    "security",
     "bug",
     "documentation",
     "design-drift",
@@ -67,14 +69,22 @@ _MARKER_RE = re.compile(
     r"^[ \t]*<!--[ \t]*audit-managed:[ \t]*kind=([\w-]+)[ \t]*-->[ \t]*$", re.MULTILINE
 )
 
-# The six /codebase-audit finding buckets — never the ledger/digest/practices/
+# The /codebase-audit finding buckets — never the ledger/digest/practices/
 # design-drift/cert-drift kinds. Used to decide whether a merged PR closed one
 # of *this repo's own audit findings* (self-fix churn) vs. something else.
+# `security` belongs here too even though its managed issue is *closed* on
+# fix-merge (unlike the other buckets, which stay open as living backlogs): the
+# self-fix check in `evaluate_repo` re-adopts a closed referenced issue by its
+# `audit: security findings` title, so its own auto-fix PR is recognized as
+# self-fix churn and never triggers a needless re-audit next week
+# (fleet-config#361).
 BUCKET_KINDS = (
     "duplication",
     "stale",
     "claude-md-drift",
     "maintainability",
+    "slop",
+    "security",
     "bug",
     "documentation",
 )

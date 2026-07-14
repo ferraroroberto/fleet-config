@@ -101,6 +101,17 @@ check("ledger" in ai.KINDS and "documentation" in ai.KINDS, "KINDS populated")
 check("practices" in ai.KINDS, "KINDS has practices")
 check("learning" in ai.KINDS, "KINDS has learning")
 check("design-drift" in ai.KINDS, "KINDS has design-drift")
+# slop + security are finding buckets (fleet-config#361): registered kinds AND
+# in BUCKET_KINDS, so their fix PRs are recognized as this repo's own self-fix
+# churn (security's issue is closed on merge, re-adopted by title — see the
+# BUCKET_KINDS comment).
+check("slop" in ai.KINDS and "security" in ai.KINDS, "KINDS has slop + security")
+check("slop" in ai.BUCKET_KINDS and "security" in ai.BUCKET_KINDS,
+      "BUCKET_KINDS has slop + security")
+check(ai.has_marker(ai.ensure_marker("## Findings\n- x", "slop"), "slop"),
+      "slop marker round-trip")
+check(ai.title_matches("audit: slop findings", "slop"), "title slop bucket")
+check(ai.title_matches("audit: security findings", "security"), "title security bucket")
 # design-drift round-trips through the marker + adopts its bucket title like any bucket kind
 dd = ai.ensure_marker("## Findings\n- x", "design-drift")
 check(ai.has_marker(dd, "design-drift"), "design-drift marker round-trip")
