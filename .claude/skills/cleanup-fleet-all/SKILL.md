@@ -1,11 +1,11 @@
 ---
 name: cleanup-fleet-all
-description: Unattended, all-bucket sibling of /cleanup-fleet — builds, validates, and ships every open cleanup issue across all six audit buckets in one overnight pass, no human in the loop. Use for a fully unattended fleet-wide cleanup run — e.g. "/cleanup-fleet-all", "clean up the whole fleet overnight", "run cleanup on all buckets unattended". Runs headless via a scheduled claude -p job.
+description: Unattended, all-bucket sibling of /cleanup-fleet — builds, validates, and ships every open cleanup issue across all seven queued audit buckets in one overnight pass, no human in the loop. Use for a fully unattended fleet-wide cleanup run — e.g. "/cleanup-fleet-all", "clean up the whole fleet overnight", "run cleanup on all buckets unattended". Runs headless via a scheduled claude -p job.
 ---
 
 # cleanup-fleet-all
 
-**Goal:** `/cleanup-fleet` processes one bucket at a time and, in its default `hard` mode, stops for a human to approve the plan and to review hard-tier work before merge. This skill is the genuinely unattended sibling: it walks **all six** audit buckets, serially, and ships every issue with **no human review gate at all** — replaced by an independent validator agent instead of a human. No single agent both builds and ships its own work unchecked.
+**Goal:** `/cleanup-fleet` processes one bucket at a time and, in its default `hard` mode, stops for a human to approve the plan and to review hard-tier work before merge. This skill is the genuinely unattended sibling: it walks **all seven queued** audit buckets, serially, and ships every issue with **no human review gate at all** — replaced by an independent validator agent instead of a human. No single agent both builds and ships its own work unchecked. (The eighth audit kind, `security`, is never queued — `/codebase-audit` self-heals it inline; nothing here touches it.)
 
 **Three agents per issue, never fewer:**
 
@@ -21,9 +21,9 @@ All of the actual retry/ship decision-making lives in **`.claude/workflows/clean
 
 ## Arguments
 
-`/cleanup-fleet-all [<bucket>...]` — zero or more bucket names, fuzzy-matched via the same synonym table `/cleanup-fleet` uses (`documentation`/`docs`, `claude-md-drift`/`drift`, `duplication`/`dupes`, `stale`/`dead`, `maintainability`/`maint`/`slop`, `bug`/`bugs`).
+`/cleanup-fleet-all [<bucket>...]` — zero or more bucket names, fuzzy-matched via the same synonym table `/cleanup-fleet` uses (`documentation`/`docs`, `claude-md-drift`/`drift`, `duplication`/`dupes`, `stale`/`dead`, `maintainability`/`maint`, `slop`/`bloat`, `bug`/`bugs`).
 
-- **No arguments** → all six buckets, the intended unattended shape.
+- **No arguments** → all seven queued buckets, the intended unattended shape.
 - **One or more bucket names** → restrict to just those — use this for an attended dry run of a small slice before trusting a full overnight sweep.
 
 ## Execution rules (read before running any command)
@@ -43,7 +43,7 @@ All of the actual retry/ship decision-making lives in **`.claude/workflows/clean
 
 ### 2. Resolve buckets
 
-Parse args through the synonym table (see "Arguments"). No args → all six canonical labels (`documentation`, `claude-md-drift`, `duplication`, `stale`, `maintainability`, `bug`). Unrecognized tokens are ignored with a one-line note, not a hard stop.
+Parse args through the synonym table (see "Arguments"). No args → all seven queued canonical labels (`documentation`, `claude-md-drift`, `duplication`, `stale`, `maintainability`, `slop`, `bug`). `security` is never in this set — it's self-healed inline by `/codebase-audit`, never queued. Unrecognized tokens are ignored with a one-line note, not a hard stop.
 
 ### 3. Fetch every bucket — one `gh` call
 
@@ -97,7 +97,7 @@ This returns a task id immediately. **Do not stop and wait for a notification** 
 TaskOutput(task_id: <id>, block: true, timeout: 600000)
 ```
 
-Re-issue this call (each blocks up to 10 minutes) until the returned status is `completed`, as consecutive tool calls within this same turn — this may take many calls over several hours for a full six-bucket run, and that's expected. The workflow's own return value is an array of `{ bucket, results: [{ issue, status, round, branch, pr?, mergeSha?, reason? }, ...] }` — `status` is one of `merged`, `escalated`, `failed`.
+Re-issue this call (each blocks up to 10 minutes) until the returned status is `completed`, as consecutive tool calls within this same turn — this may take many calls over several hours for a full seven-bucket run, and that's expected. The workflow's own return value is an array of `{ bucket, results: [{ issue, status, round, branch, pr?, mergeSha?, reason? }, ...] }` — `status` is one of `merged`, `escalated`, `failed`.
 
 ### 8. Post-flight verification (never trust the agent's self-report)
 
@@ -126,7 +126,7 @@ E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/hooks
   --kind cleanup --summary "<bucket> (all-mode)" --merged <merged-count> --review <escalated-count>
 ```
 
-(`--review` here means "escalated after 2 failed validation rounds," reusing the existing `--kind cleanup` semantics exactly — no code changes needed.) After every bucket has reported: fire one final roll-up call summing merged/escalated across all six buckets, same `--kind cleanup` shape with `--summary "all buckets"`.
+(`--review` here means "escalated after 2 failed validation rounds," reusing the existing `--kind cleanup` semantics exactly — no code changes needed.) After every bucket has reported: fire one final roll-up call summing merged/escalated across all seven buckets, same `--kind cleanup` shape with `--summary "all buckets"`.
 
 **`notify_complete.py` is the only sanctioned way to send these pings** — never use an MCP Slack tool to pick a channel; the helper resolves it from `projects.toml`. A silent no-op with no channel configured is correct, not a bug to route around.
 

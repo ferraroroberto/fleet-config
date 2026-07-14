@@ -5,7 +5,9 @@ description: Take one bucket of audit findings (a label like documentation, drif
 
 # cleanup-fleet
 
-**Goal:** `/audit-fleet` *finds* and files, bucketed into six labels; this skill *fixes* one bucket fleet-wide in a single pass. Pick a bucket → gather every open issue carrying that label → score each for complexity → deploy **one background sub-agent per repo**, sized via the easy/hard tier policy (`docs/model-tiers.md`) → aggregate.
+**Goal:** `/audit-fleet` *finds* and files, bucketed into seven labels; this skill *fixes* one bucket fleet-wide in a single pass. Pick a bucket → gather every open issue carrying that label → score each for complexity → deploy **one background sub-agent per repo**, sized via the easy/hard tier policy (`docs/model-tiers.md`) → aggregate.
+
+**`security` is not a cleanup bucket.** `/codebase-audit` now has seven finding buckets plus a `security` kind. The seven finding buckets (incl. the new `slop`) are all queued here for fixing; `security` is the exception — self-healed inline by `/codebase-audit` itself (step 8b — redacted issue + auto-fix + auto-merge, or escalate on failure), never queued for this skill. So the buckets this skill operates on are the seven *queued* ones below; a `security` label never appears here.
 
 **One agent per repo, never two:** the audit files exactly one managed issue per (repo, bucket), so one issue → one repo → one agent → one branch → one PR. Two agents on one checkout collide, so the skill hard-caps at one agent per repo per run and defers extras.
 
@@ -18,7 +20,7 @@ description: Take one bucket of audit findings (a label like documentation, drif
 
 `/cleanup-fleet [<bucket>] [<mode>]` — both optional, order-independent.
 
-**Bucket** — fuzzy-matched to one of the six audit labels (case-insensitive; voice-dictation friendly):
+**Bucket** — fuzzy-matched to one of the seven *queued* audit labels (case-insensitive; voice-dictation friendly):
 
 | Says | Label |
 |------|-------|
@@ -26,10 +28,13 @@ description: Take one bucket of audit findings (a label like documentation, drif
 | `drift`, `claude-drift`, `cloud drift`, `claude-md-drift`, `md-drift` | `claude-md-drift` |
 | `duplication`, `dupes`, `dup`, `dupe` | `duplication` |
 | `stale`, `dead`, `dead-code` | `stale` |
-| `maintainability`, `maint`, `slop` | `maintainability` |
+| `maintainability`, `maint`, `structure` | `maintainability` |
+| `slop`, `bloat`, `ai-slop` | `slop` |
 | `bug`, `bugs` | `bug` |
 
-If **no bucket** is given → run step 2's count query, then `AskUserQuestion` listing the six buckets each with its **live open-issue count**, and let the user pick.
+(`security` is intentionally absent — it's self-healed inline by `/codebase-audit`, never queued here.)
+
+If **no bucket** is given → run step 2's count query, then `AskUserQuestion` listing the seven queued buckets each with its **live open-issue count**, and let the user pick.
 
 **Mode** — `hard` (default) or `easy` / `silent`. (This is the CLI argument, distinct from the per-issue complexity *tier* below — always read as "`hard` mode" vs. "hard-tier issue" to keep the two straight.)
 
@@ -61,7 +66,7 @@ gh search issues --owner ferraroroberto --state open --include-prs=false --limit
   --json repository,number,labels
 ```
 
-Tally open issues per bucket label (drop `audit-meta` rows), then `AskUserQuestion` listing the six buckets with counts.
+Tally open issues per bucket label (drop `audit-meta` rows; a `security` row should never appear — it's self-healed inline, not queued — but drop it too if one somehow exists), then `AskUserQuestion` listing the seven queued buckets with counts.
 
 ### 3. Fetch candidates — one `gh` call
 

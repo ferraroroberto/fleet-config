@@ -25,6 +25,7 @@ not reliably on ``PATH`` on this machine; see ``_lib.find_python_executable``)::
     E:/automation/fleet-config/.venv/Scripts/python.exe ~/.claude/hooks/notify_complete.py --kind recap --summary "3 skills swept - alt-text +2, journal-daily +1"   # automatic sweep (no proposals)
     E:/automation/fleet-config/.venv/Scripts/python.exe ~/.claude/hooks/notify_complete.py --kind recap --summary "2 skills consolidated, 4 promoted"               # explicit consolidation
     E:/automation/fleet-config/.venv/Scripts/python.exe ~/.claude/hooks/notify_complete.py --kind learning --comment-url https://github.com/ferraroroberto/fleet-config/issues/131#issuecomment-456 --summary "12 PRs / 8 issues distilled · 2/3 horizon shipped"
+    E:/automation/fleet-config/.venv/Scripts/python.exe ~/.claude/hooks/notify_complete.py --kind security --issue 42 --pr 43 --pr-url https://github.com/owner/repo/pull/43 --summary "auto-merged, review the diff"
 
 For ``--kind cleanup`` (the closing roll-up of a ``/cleanup-fleet`` swarm) pass
 ``--summary`` (the bucket name), ``--merged`` (sonnet issues YOLO'd to a merged
@@ -74,14 +75,18 @@ import work_summary  # noqa: E402
 logger = logging.getLogger("notify_complete")
 
 # Kinds that link a pull request (read from gh pr) vs. an issue (gh issue view).
-_PR_KINDS = ("finish", "yolo")
+# `security` links its (auto-merged) fix PR and carries the work-summary block so
+# the private review channel shows the file/LOC shape of the change to inspect.
+_PR_KINDS = ("finish", "yolo", "security")
 
 # Action-needed kinds — the ping is a call to action the user must respond to,
 # so it routes to the "attention" channel, not the activity log (issue #139).
 # `cleanup` is conditional: it's action-needed only when issues await review.
+# `security` is always action-needed — an audit auto-fix shipped to a public repo
+# and the private after-the-fact diff review is the whole point (fleet-config#361).
 # Everything else (add, finish, yolo, audit, recap, learning, finish-batch) is a
 # completed-work record → the "log" channel.
-_ATTENTION_KINDS = ("start", "batch")
+_ATTENTION_KINDS = ("start", "batch", "security")
 
 
 def category_for(kind: str, *, review: Optional[str] = None) -> str:
@@ -190,6 +195,13 @@ def build_message(
         return f"✅ Done #{issue}{name} — PR merged{link}"
     if kind == "yolo":
         return f"🚀 Shipped #{issue}{name} — PR{link}"
+    if kind == "security":
+        # No vulnerability detail here — the redacted issue title + generic PR
+        # title are all that ride. The call to action is the private diff review
+        # (fleet-config#361); a public repo can't hide the fix commit, so the
+        # mitigation is a short window + this after-the-fact review, not secrecy.
+        tail = f" — {summary.strip()}" if summary and summary.strip() else " — review the diff"
+        return f"🔒 Security #{issue}{name}{tail}{link}"
     if kind == "batch":
         return f"🏁 Batch done: {passed}/{total} passed — /issue-finish each branch to ship"
     if kind == "audit":
@@ -229,7 +241,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     )
     parser.add_argument(
         "--kind", required=True,
-        choices=["add", "start", "finish", "yolo", "batch", "audit", "cleanup", "recap", "finish-batch", "learning"]
+        choices=["add", "start", "finish", "yolo", "batch", "audit", "cleanup", "recap", "finish-batch", "learning", "security"]
     )
     parser.add_argument("--issue", help="Issue number (shown as #N).")
     parser.add_argument("--pr", help="PR number, for finish/yolo (linked).")

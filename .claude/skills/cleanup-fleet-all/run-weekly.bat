@@ -9,7 +9,7 @@ REM orchestrator, not a light single-pass skill); bypassPermissions because a
 REM scheduled run has no human to answer permission prompts. --verbose streams
 REM turn-by-turn activity to stdout so a visible console shows live progress.
 REM
-REM Optional %1 is forwarded as the skill argument: empty for all six buckets,
+REM Optional %1 is forwarded as the skill argument: empty for all seven queued buckets,
 REM or one or more bucket names to restrict the run (see SKILL.md's Arguments).
 cd /d E:\automation\fleet-config
 claude -p "/cleanup-fleet-all %~1" --model claude-sonnet-5 --effort high --permission-mode bypassPermissions --verbose

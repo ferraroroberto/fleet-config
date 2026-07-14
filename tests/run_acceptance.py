@@ -2021,6 +2021,11 @@ def _notify_complete_unit_checks() -> Tuple[int, int]:
           bm("finish-batch", merged="4", blocked="1") == "🏁 Finished batch: 4 merged, 1 blocked")
     check("build: finish-batch (0 blocked) drops the blocked clause",
           bm("finish-batch", merged="5", blocked="0") == "🏁 Finished batch: 5 merged")
+    check("build: security -> lock + summary + PR link",
+          bm("security", issue="42", title="audit: security findings", url="http://pr", summary="auto-merged, review the diff")
+          == "🔒 Security #42 audit: security findings — auto-merged, review the diff · http://pr")
+    check("build: security with no summary defaults to review-the-diff",
+          bm("security", issue="42", url="http://pr") == "🔒 Security #42 — review the diff · http://pr")
 
     # The shared resolver: unknown cwd -> [global] channel/user + 'claude' name.
     ch, usr, nm = _lib.resolve_slack_target(Path("E:/does/not/match/anything"))
@@ -2171,6 +2176,7 @@ def _slack_routing_unit_checks() -> Tuple[int, int]:
     cat = notify_complete.category_for
     check("category_for: start -> attention", cat("start") == "attention")
     check("category_for: batch -> attention", cat("batch") == "attention")
+    check("category_for: security -> attention", cat("security") == "attention")
     check("category_for: cleanup with review>0 -> attention", cat("cleanup", review="2") == "attention")
     check("category_for: cleanup with review=0 -> log", cat("cleanup", review="0") == "log")
     check("category_for: log kinds -> log",
