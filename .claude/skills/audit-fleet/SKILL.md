@@ -16,7 +16,8 @@ description: Run /codebase-audit across every repo in the E:\automation fleet in
 --permission-mode bypassPermissions`. Every step must therefore degrade
 gracefully rather than block on a prompt. (The orchestrator itself only does
 cheap enumeration/gating/dispatch — see "Execution rules" below — so it runs at
-`hard` tier, not `extreme`; see `docs/model-tiers.md`.)
+`easy` tier, not `hard`; the per-repo sweep sub-agents dispatched in step 3 are
+the ones that run at `hard` tier. See `docs/model-tiers.md`.)
 
 ## Arguments
 
@@ -138,9 +139,9 @@ still goes out so the weekly run always produces a record).
 
 Process the to-audit list through a **bounded concurrency window of up to 3
 sub-agents** — a session-token-budget pacing default and a natural rate-limit
-re-check cadence, not an Opus-burst-limiter workaround: audit sub-agents run at
-**`hard` tier** (see `docs/model-tiers.md`), which resolves to
-`model: "sonnet"` on Claude Code today.
+re-check cadence, which now doubles as the live Opus burst-limiter cap: audit
+sub-agents run at **`hard` tier** (see `docs/model-tiers.md`), which resolves to
+`model: "opus"` on Claude Code today.
 
 Before each dispatch/refill, call
 `E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/rate_gate.py check --threshold 70`
@@ -148,7 +149,7 @@ and branch on `DECISION`:
 
 - **`OK` / `UNKNOWN`** → dispatch the next repo. Dispatch up to 3 background
   `Agent` calls (`run_in_background: true`, `subagent_type: "general-purpose"`,
-  `model: "sonnet"`); each time one returns and its report is recorded, dispatch
+  `model: "opus"`); each time one returns and its report is recorded, dispatch
   the next repo from the to-audit list — never more than **3 in flight**. Fewer
   than 3 repos left → dispatch just that many. No git worktrees: `/codebase-audit`
   is read-only and only files issues, so agents in different repo directories
@@ -419,11 +420,11 @@ One concise block: the plan line from step 2, per-repo results, where the digest
   still an issue, never source).
 - **Never disturb in-progress work.** Dirty or off-default-branch repos are
   skipped and reported, never stashed or force-switched.
-- **One sub-agent per repo, `hard` tier (Sonnet on Claude Code today), through a
+- **One sub-agent per repo, `hard` tier (Opus on Claude Code today), through a
   ≤3 sliding window.** Refill as each returns — a session-token-budget pacing
-  default, not an Opus-burst-limiter workaround (`hard` no longer resolves to
-  Opus; the window stays as a conservative default, widening it is an
-  empirically-driven follow-up — `docs/model-tiers.md`). No worktrees (audits
+  default that now also doubles as the live Opus burst-limiter cap (`hard`
+  resolves to Opus again as of 2026-07-16; widening the window beyond 3 would
+  need to respect that cap — `docs/model-tiers.md`). No worktrees (audits
   don't collide). Don't read repo source in the orchestrator.
 - **Degrade, don't block.** Built for unattended `claude -p`. A per-repo failure
   is reported and skipped; only a pre-flight failure stops the whole run. Never

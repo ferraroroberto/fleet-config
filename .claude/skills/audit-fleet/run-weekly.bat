@@ -4,9 +4,9 @@ REM (job id "codebase-audit-fleet", weekly THU 22:00, visible console).
 REM Runs the /audit-fleet skill headless on the local Claude subscription.
 REM Sonnet 5 + high effort; bypassPermissions because a scheduled run has
 REM no human to answer permission prompts. The orchestrator only does cheap
-REM enumeration/dispatch work (see SKILL.md's Execution rules) — hard tier,
-REM not extreme, per docs/model-tiers.md; Opus is reserved for the rare
-REM extreme-tier escalation a sub-agent might make, never the top-level
+REM enumeration/dispatch work (see SKILL.md's Execution rules) — easy tier,
+REM not hard, per docs/model-tiers.md; the per-repo sweep sub-agents dispatched
+REM in step 3 are the ones running hard tier (Opus), never the top-level
 REM launcher. --verbose streams the turn-by-turn activity to stdout so the
 REM visible console shows live progress instead of sitting on one line until
 REM claude -p flushes its buffered result at the end.
