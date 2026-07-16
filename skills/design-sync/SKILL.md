@@ -9,7 +9,8 @@ description: Check a web app against the fleet design system with the determinis
 visual identity in `~/.claude/design.md` (light) + `~/.claude/design.dark.md`
 (dark). Run the **deterministic lint** (`skills/_lib/design_lint.py`) — token
 mapping + drift (light **and** dark), per-family adoption ratios, component
-contracts, vendored-component byte-verification, sibling duplicates — apply
+contracts (including the PWA app-icon family), vendored-component
+byte-verification, sibling duplicates — apply
 LLM judgment only where measurement can't reach, and file exactly one deduped
 `design-drift` issue per repo (the same audit→bucket→cleanup machinery as
 `/codebase-audit`, cleared later by `/cleanup-fleet design-drift`). With
@@ -201,7 +202,11 @@ The five sections it returns, and what each means:
   spec-driven, #290), the **icon-set** (emoji glyphs in rendered markup text
   or JS UI-copy strings — FAIL when no vendored Lucide sprite is adopted,
   WARN when emoji sit alongside an adopted sprite — one icon set, never
-  hand-drawn/mixed, #284), **chevron-placement** (a disclosure `<summary>`
+  hand-drawn/mixed, #284), the **app-icon-family** (an installable PWA must
+  adopt `project-scaffolding`'s `brand_gen.render_set`, commit the spec-named
+  Apple 180 / regular 192+512 / separate maskable 512 / favicon assets, link
+  Apple touch + favicon from `index.html`, and keep `any` and `maskable` as
+  distinct manifest purposes — #369), **chevron-placement** (a disclosure `<summary>`
   whose chevron glyph/icon sits before its title text — the fleet contract
   pins it right, #284/app-launcher#362), **row-height-scale** (fixed
   `height`/`min-height` literals on row/action-rail selectors outside the

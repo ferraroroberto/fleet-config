@@ -15,7 +15,7 @@ Subcommands (all print JSON):
   contracts <root>   greppable design.md v2 component-contract checks
                      (focus ring, reduced motion, desktop measure, switch
                      on-color, native checkboxes, disclosure box, native
-                     <dialog>, nav rules, icon-size strays).
+                      <dialog>, nav rules, icon-size strays, PWA icon family).
   vendored  <root>   byte-compare the app's _vendored/ copies against
                      project-scaffolding's canonical files.
   siblings  <root>   same-name top-level JS definitions across >=2 files
@@ -1118,6 +1118,109 @@ def _check_icon_set(ctx: _ContractsCtx) -> List[dict]:
     return [_result("icon-set", "NA", "no emoji glyphs and no vendored icons/ component found")]
 
 
+def _check_app_icon_family(ctx: _ContractsCtx) -> List[dict]:
+    """Check the installable PWA identity family from design.md's app-icon map."""
+    required = {
+        key: ctx.spec_light.get(f"app-icon.{key}", "")
+        for key in ("apple", "regular-small", "regular-large", "maskable", "favicon")
+    }
+    generator = ctx.spec_light.get("app-icon.generator", "")
+    if not generator or not all(required.values()):
+        return [_result("app-icon-family", "NA", "spec defines no complete app-icon contract")]
+    if not ctx.index_files:
+        return [_result("app-icon-family", "NA", "no index.html found")]
+
+    manifest_hrefs: List[str] = []
+    missing_manifest_link: List[str] = []
+    missing_apple_link: List[str] = []
+    missing_favicon_link: List[str] = []
+    for path in ctx.index_files:
+        text = strip_comments(read_text(path), "html")
+        path_manifest_hrefs: List[str] = []
+        path_apple_linked = False
+        path_favicon_linked = False
+        for tag in re.findall(r"<link\b[^>]*>", text, re.I):
+            rel_m = re.search(r"\brel=[\"']([^\"']+)[\"']", tag, re.I)
+            href_m = re.search(r"\bhref=[\"']([^\"']+)[\"']", tag, re.I)
+            rel_value = rel_m.group(1).lower().split() if rel_m else []
+            href = href_m.group(1) if href_m else ""
+            if "manifest" in rel_value and href:
+                path_manifest_hrefs.append(href)
+            if "apple-touch-icon" in rel_value and required["apple"] in href:
+                path_apple_linked = True
+            if "icon" in rel_value and required["favicon"] in href:
+                path_favicon_linked = True
+        manifest_hrefs.extend(path_manifest_hrefs)
+        if not path_manifest_hrefs:
+            missing_manifest_link.append(rel(ctx.root, path))
+        if not path_apple_linked:
+            missing_apple_link.append(rel(ctx.root, path))
+        if not path_favicon_linked:
+            missing_favicon_link.append(rel(ctx.root, path))
+
+    problems: List[str] = []
+    if missing_manifest_link:
+        problems.append("no rel=manifest link: " + ", ".join(missing_manifest_link))
+    if missing_apple_link:
+        problems.append(f"no {required['apple']} apple-touch-icon link: "
+                        + ", ".join(missing_apple_link))
+    if missing_favicon_link:
+        problems.append(f"no {required['favicon']} favicon link: "
+                        + ", ".join(missing_favicon_link))
+
+    asset_files = repo_files(ctx.root, (".png", ".ico", ".svg"))
+    asset_names = {path.name for path in asset_files}
+    missing_assets = [name for name in required.values() if name not in asset_names]
+    if missing_assets:
+        problems.append("missing canonical asset(s): " + ", ".join(missing_assets))
+
+    manifest_names = {Path(href.split("?", 1)[0]).name for href in manifest_hrefs}
+    source_files = repo_files(ctx.root, (".webmanifest", ".json", ".py"))
+    manifest_parts: List[str] = []
+    for path in source_files:
+        text = read_text(path)
+        if (path.name in manifest_names
+                or any(name and name in text for name in manifest_names)):
+            manifest_parts.append(text)
+    manifest_blob = "\n".join(manifest_parts)
+    purpose_values = [
+        match.group(1).strip().lower().split()
+        for match in re.finditer(
+            r"[\"']purpose[\"']\s*:\s*[\"']([^\"']+)[\"']", manifest_blob, re.I
+        )
+    ]
+    if any("any" in value and "maskable" in value for value in purpose_values):
+        problems.append("one manifest icon combines purpose 'any maskable'")
+    if not any(value == ["any"] for value in purpose_values):
+        problems.append("manifest has no distinct purpose 'any' entry")
+    if not any(value == ["maskable"] for value in purpose_values):
+        problems.append("manifest has no distinct purpose 'maskable' entry")
+    for key in ("regular-small", "regular-large", "maskable"):
+        if required[key] not in manifest_blob:
+            problems.append(f"manifest does not reference {required[key]}")
+
+    generator_adopted = False
+    for path in repo_files(ctx.root, (".py",)):
+        if "scripts" not in path.parts:
+            continue
+        text = read_text(path)
+        if generator in text and re.search(r"\brender_set\s*\(", text):
+            generator_adopted = True
+            break
+    if not generator_adopted:
+        problems.append(f"shared {generator}.render_set generator not adopted")
+
+    if problems:
+        return [_result("app-icon-family", "FAIL", " | ".join(problems),
+                        rel(ctx.root, ctx.index_files[0]))]
+    return [_result(
+        "app-icon-family", "PASS",
+        "canonical brand_gen family: Apple 180 + regular 192/512 + distinct "
+        "maskable 512 + favicon; index and manifest wiring present",
+        rel(ctx.root, ctx.index_files[0]),
+    )]
+
+
 def _check_chevron_placement(ctx: _ContractsCtx) -> List[dict]:
     # 14. chevron placement — disclosure summaries pin the chevron right,
     #     never a leading arrow (design.md disclosure.chevron: right;
@@ -1599,6 +1702,7 @@ _CONTRACT_CHECKS: Tuple[Callable[["_ContractsCtx"], List[dict]], ...] = (
     _check_button_tiers,
     _check_theme_toggle,
     _check_icon_set,
+    _check_app_icon_family,
     _check_chevron_placement,
     _check_row_height_scale,
     _check_editor_modal_contract,

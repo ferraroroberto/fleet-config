@@ -97,6 +97,13 @@ icons:
     title:   18px                 # section-title & disclosure leading glyph
     feature: 24px                 # empty-state, icon tiles, large standalone (== grid)
     nav-tab: 20px                 # bottom-nav tab glyph (--bottom-tabs-icon — phone-validated geometry, home-automation#118)
+app-icon:
+  generator: brand_gen            # project-scaffolding/scripts/brand_gen.py — one Lucide master, no bespoke raster drawing
+  apple: icon-180.png             # opaque Apple touch icon
+  regular-small: icon-192.png     # manifest purpose: any
+  regular-large: icon-512.png     # manifest purpose: any
+  maskable: icon-512-maskable.png # separate safe-zone asset; never combine any + maskable on one source
+  favicon: favicon.ico
 ---
 
 ## Overview
@@ -448,11 +455,25 @@ sprite + `icons.js` helper) and import them from there — exactly the model use
 for the nav/UI snippets ("Reuse the **vendored** nav/UI snippets from
 `project-scaffolding`" above). Apps do not each pull the whole Lucide library.
 
+**App identity surfaces:** an installable fleet PWA derives its complete icon
+family from one Lucide SVG master through
+`project-scaffolding/scripts/brand_gen.py`. Commit the generated 180px Apple
+touch icon, 192px + 512px regular manifest icons, separate 512px maskable icon,
+and multi-size favicon; link the Apple touch icon and favicon from `index.html`.
+Regular and maskable manifest entries are distinct — never declare one source as
+both `any` and `maskable`, because the maskable safe-zone padding is deliberately
+different. The stable monochrome brand tile does not switch with the app's light
+or dark theme. A tray icon may add a state colour (recording, unhealthy, and so
+on), but it keeps the same master silhouette and optical box rather than becoming
+a second app identity. Generated raster assets are per-app outputs, not vendored
+byte-for-byte components.
+
 ## Do's and Don'ts
 
 - **Do** use the one blue accent for all interactive emphasis.
 - **Do** model every interactive component on its shadcn component (structure + ARIA), then skin it with the fleet tokens.
 - **Do** draw every icon from **Lucide** — the shadcn-native set — vendored through `project-scaffolding`.
+- **Do** generate every installable app's Apple/PWA/favicon family from one Lucide master through `brand_gen`, with distinct regular and maskable assets.
 - **Do** keep the bottom nav identical across apps — same radius, blur, and
   persistence behavior.
 - **Do** reserve bottom padding for the fixed nav so content is never occluded.
@@ -468,6 +489,7 @@ for the nav/UI snippets ("Reuse the **vendored** nav/UI snippets from
 - **Do** pair every colour-distinguished chart series with a non-colour cue (dash / point style / fill) and a viewport-aware tick budget.
 - **Don't** hand-roll a primitive (switch, select, dialog, tabs…) that shadcn already defines.
 - **Don't** mix a second icon set or hand-draw a one-off glyph — use the matching Lucide icon.
+- **Don't** declare one manifest icon as both `any` and `maskable`, or redraw the app identity independently for the tray.
 - **Don't** put a solid accent fill on any button except the view's primary action — secondary emphasis is the tint, never a second solid.
 - **Don't** introduce a second accent or per-app navigation variants.
 - **Don't** stretch content full-bleed on desktop — keep the centered 772px measure.
