@@ -33,7 +33,7 @@ window.FLEET = {
     {"ic": "📷", "nm": "photo-ocr", "port": ":8444", "ds": "Mobile OCR — photos → clean text. Reusable capture surface."}
   ],
   "web": [
-    {"ic": "🛒", "nm": "grocery", "repo": "grocery-shopping-automation", "port": 8502, "ds": "Inventory + shopping PWA, voice-audit mode.", "tag": ["uses", "hub + whisper"]},
+    {"ic": "🛒", "nm": "grocery", "repo": "grocery-shopping-automation", "port": 8502, "ds": "Inventory + shopping PWA, voice audit, HA voice commands + product search.", "tag": ["uses", "hub + whisper"]},
     {"ic": "💬", "nm": "whatsapp-radar", "ds": "Cut attention load from busy chats.", "tag": ["uses", "hub"]},
     {"ic": "🎲", "nm": "facilitation-shuffle", "ds": "1-2-4-all breakout shuffler for Zoom."},
     {"ic": "💶", "nm": "family-accounting", "ds": "Shared household-expense tracker."},

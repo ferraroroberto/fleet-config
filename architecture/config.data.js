@@ -251,6 +251,7 @@ window.CONFIG = {
         "_template",
         "alt-text",
         "geek-out",
+        "general",
         "ip-check",
         "is-this-ai",
         "journal-daily",
