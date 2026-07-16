@@ -159,7 +159,7 @@ finally:
 
 def run_contracts(css: str, markup: str = "", spec_light: dict | None = None,
                   html_name: str = "i.html", spec_dark: dict | None = None,
-                  js: str = "") -> dict:
+                  js: str = "", files: dict[str, str] | None = None) -> dict:
     t = Path(tempfile.mkdtemp(prefix="dl-con-"))
     try:
         (t / "s.css").write_text(css, encoding="utf-8")
@@ -171,6 +171,10 @@ def run_contracts(css: str, markup: str = "", spec_light: dict | None = None,
         if js:
             (t / "s.js").write_text(js, encoding="utf-8")
             js_files = [t / "s.js"]
+        for name, body in (files or {}).items():
+            path = t / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(body, encoding="utf-8")
         out = dl.contracts(t, [t / "s.css"], html, js_files,
                            spec_light if spec_light is not None else {"icons.size.inline": "16px"},
                            spec_dark)
@@ -441,6 +445,84 @@ finally:
 
 check(run_contracts(GOOD_CSS)["icon-set"]["status"] == "NA",
       "no emoji and no vendored icons/ component -> NA")
+
+
+# ---- app-icon-family: one generated Lucide master across install surfaces (#369) ----
+
+APP_ICON_SPEC = {
+    "icons.size.inline": "16px",
+    "app-icon.generator": "brand_gen",
+    "app-icon.apple": "icon-180.png",
+    "app-icon.regular-small": "icon-192.png",
+    "app-icon.regular-large": "icon-512.png",
+    "app-icon.maskable": "icon-512-maskable.png",
+    "app-icon.favicon": "favicon.ico",
+}
+APP_ICON_INDEX = """
+<head>
+  <link rel="manifest" href="/static/manifest.webmanifest">
+  <link rel="apple-touch-icon" href="/static/icon-180.png">
+  <link rel="icon" href="/static/favicon.ico" sizes="any">
+</head><body></body>
+"""
+APP_ICON_MANIFEST = """
+{"icons": [
+  {"src": "/static/icon-192.png", "sizes": "192x192", "purpose": "any"},
+  {"src": "/static/icon-512.png", "sizes": "512x512", "purpose": "any"},
+  {"src": "/static/icon-512-maskable.png", "sizes": "512x512", "purpose": "maskable"}
+]}
+"""
+APP_ICON_FILES = {
+    "static/manifest.webmanifest": APP_ICON_MANIFEST,
+    "static/icon-180.png": "asset",
+    "static/icon-192.png": "asset",
+    "static/icon-512.png": "asset",
+    "static/icon-512-maskable.png": "asset",
+    "static/favicon.ico": "asset",
+    "scripts/gen_icons.py": "from brand_gen import render_set\nrender_set(master='house.svg')\n",
+}
+app_icons_ok = run_contracts(
+    GOOD_CSS, APP_ICON_INDEX, spec_light=APP_ICON_SPEC,
+    html_name="index.html", files=APP_ICON_FILES,
+)
+check(app_icons_ok["app-icon-family"]["status"] == "PASS",
+      "canonical generated PWA icon family -> PASS")
+
+legacy_files = dict(APP_ICON_FILES)
+legacy_files["scripts/gen_icons.py"] = "def draw_mic(): pass\n"
+app_icons_legacy = run_contracts(
+    GOOD_CSS, APP_ICON_INDEX, spec_light=APP_ICON_SPEC,
+    html_name="index.html", files=legacy_files,
+)
+check(app_icons_legacy["app-icon-family"]["status"] == "FAIL"
+      and "brand_gen.render_set" in app_icons_legacy["app-icon-family"]["detail"],
+      "bespoke legacy generator -> FAIL with shared-generator evidence")
+
+combined_files = dict(APP_ICON_FILES)
+combined_files["static/manifest.webmanifest"] = """
+{"icons": [{"src": "/static/icon-512.png", "purpose": "any maskable"}]}
+"""
+app_icons_combined = run_contracts(
+    GOOD_CSS, APP_ICON_INDEX, spec_light=APP_ICON_SPEC,
+    html_name="index.html", files=combined_files,
+)
+check(app_icons_combined["app-icon-family"]["status"] == "FAIL"
+      and "combines purpose 'any maskable'" in app_icons_combined["app-icon-family"]["detail"],
+      "one source declared any+maskable -> FAIL")
+
+missing_files = {
+    "static/manifest.webmanifest": APP_ICON_MANIFEST,
+    "scripts/gen_icons.py": APP_ICON_FILES["scripts/gen_icons.py"],
+}
+app_icons_missing = run_contracts(
+    GOOD_CSS, '<head><link rel="manifest" href="/static/manifest.webmanifest"></head>',
+    spec_light=APP_ICON_SPEC, html_name="index.html", files=missing_files,
+)
+check(app_icons_missing["app-icon-family"]["status"] == "FAIL"
+      and "missing canonical asset(s)" in app_icons_missing["app-icon-family"]["detail"]
+      and "apple-touch-icon" in app_icons_missing["app-icon-family"]["detail"]
+      and "favicon" in app_icons_missing["app-icon-family"]["detail"],
+      "missing assets and index links -> one actionable FAIL")
 
 
 # ---- chevron placement (design.md disclosure.chevron: right, fleet-config#284) ----
@@ -954,6 +1036,12 @@ if real_dark.is_file():
     parsed_dark = dl.parse_spec(real_dark.read_text(encoding="utf-8", errors="replace"))
     check(parsed_dark.get("colors.canvas") == "#0d1117",
           "real design.dark.md: dark canvas parses (the dark theme-color meta, #290)")
+
+source_spec = Path(__file__).resolve().parent.parent / "design.md"
+parsed_source = dl.parse_spec(source_spec.read_text(encoding="utf-8", errors="replace"))
+check(parsed_source.get("app-icon.generator") == "brand_gen"
+      and parsed_source.get("app-icon.maskable") == "icon-512-maskable.png",
+      "source design.md: app-icon family contract parses")
 
 
 _h.report_and_exit("design_lint")
