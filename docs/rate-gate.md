@@ -62,8 +62,9 @@ another process consumed the fresh window first), loop again.
 ## Who calls it
 
 - **`/audit-fleet`** — before each dispatch/refill of its ≤3-wide sub-agent
-  window (a check that's now a session-budget pacing default, not an
-  Opus-burst-limiter workaround — see `docs/model-tiers.md`). On `PAUSE`, stop
+  window (a check that's a session-budget pacing default and, since `hard`
+  tier resolves to Opus again, also the live Opus-burst-limiter cap — see
+  `docs/model-tiers.md`). On `PAUSE`, stop
   dispatching new sub-agents (let in-flight ones finish), wait via the pattern
   above, then resume. The same handling applies **reactively** if a sub-agent
   failure still carries a rate-limit signature despite the proactive check (a

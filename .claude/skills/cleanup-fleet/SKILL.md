@@ -104,7 +104,7 @@ Render one table and the headline counts:
   repo              #    title                          tier     model   path
   ----------------  ---  -----------------------------  -------  ------  -----------------
   photo-ocr         44   audit: documentation findings  easy     sonnet  YOLO → merged
-  app-launcher      71   audit: documentation findings  hard     sonnet  build → review
+  app-launcher      71   audit: documentation findings  hard     opus    build → review
   reporting         12   README missing --watch flag    easy     sonnet  YOLO → merged
 
   7 issues: 5 easy-tier (YOLO → merged), 2 hard-tier (build → review)
@@ -112,7 +112,7 @@ Render one table and the headline counts:
   skipped (dirty/off-branch): website
 ```
 
-Note the `model` column shows `sonnet` for both tiers on Claude Code today — the tier split now drives *execution shape* (full-autonomy vs. review-gated), not model choice; see `docs/model-tiers.md`.
+Note the `model` column shows `sonnet` for easy-tier and `opus` for hard-tier on Claude Code today — the tier split drives both *execution shape* (full-autonomy vs. review-gated) and model choice; see `docs/model-tiers.md`.
 
 - **`hard` mode:** present this plan and **wait for explicit approval** before spawning. The user may deselect issues or retier them. Do **not** spawn until approved.
 - **`easy`/`silent` mode:** print the plan to stdout (run-log record), **skip the approval gate**, and proceed with **only the easy-tier rows**. List the hard-tier rows as "left for a hard run" — never spawn them.
@@ -135,10 +135,10 @@ once. `DECISION=PAUSE` → wait via the `Monitor` tool's until-loop pattern agai
 the printed `WAIT_SECONDS`/`RESETS_AT` before firing the batch (see
 `docs/rate-gate.md`); `OK`/`UNKNOWN` → proceed immediately.
 
-Dispatch one background sub-agent per selected issue (`run_in_background: true`, `subagent_type: "general-purpose"`, **`model` resolved from the tier** — `model: "sonnet"` for both easy and hard tier on Claude Code today, see `docs/model-tiers.md`), but **bound whichever tier resolves to Opus on the current host**:
+Dispatch one background sub-agent per selected issue (`run_in_background: true`, `subagent_type: "general-purpose"`, **`model` resolved from the tier** — `model: "sonnet"` for easy tier, `model: "opus"` for hard tier on Claude Code today, see `docs/model-tiers.md`), but **bound whichever tier resolves to Opus on the current host**:
 
 - **Easy-tier agents are exempt** — spawn them all at once in a single message (after the rate-gate check above).
-- **Any tier that resolves to Opus on the current host goes through the global Opus concurrency window** (≤3 in flight — `~/.claude/CLAUDE.md`, "Spawning sub-agents — cap concurrent Opus at 3"): dispatch up to 3, refill as each returns until the queue drains. On Claude Code today hard-tier resolves to Sonnet, so **this window is dormant by default** — it only binds a future `extreme`-tier escalation (`docs/model-tiers.md`). A single-message fan-out of many Opus agents trips Anthropic's burst limiter (ceiling 3–4, anthropics/claude-code#53922) — that remains the reason for the window whenever a tier does resolve to Opus.
+- **Any tier that resolves to Opus on the current host goes through the global Opus concurrency window** (≤3 in flight — `~/.claude/CLAUDE.md`, "Spawning sub-agents — cap concurrent Opus at 3"): dispatch up to 3, refill as each returns until the queue drains. On Claude Code today **hard-tier resolves to Opus, so this window is live** for every hard-tier dispatch, not just a future `extreme`-tier escalation (`docs/model-tiers.md`). A single-message fan-out of many Opus agents trips Anthropic's burst limiter (ceiling 3–4, anthropics/claude-code#53922) — that is the reason for the window.
 
 #### 8a. Easy-tier prompt
 
@@ -205,7 +205,7 @@ Substitute every `<…>` placeholder with the concrete value from steps 2–7.
 
 ### 9. Confirm fan-out and stand by
 
-Print a single confirmation block listing every sub-agent dispatched (repo, #N, model, path) — and, if any hard-tier issues are still queued behind the Opus window (dormant by default today — see step 8), note how many are pending. Then **stop** — do not poll, sleep, or check progress. The harness re-invokes you automatically as each background agent completes; on each Opus-tier completion, refill that window with the next pending issue (step 8) until the queue drains.
+Print a single confirmation block listing every sub-agent dispatched (repo, #N, model, path) — and, if any hard-tier issues are still queued behind the Opus window (see step 8), note how many are pending. Then **stop** — do not poll, sleep, or check progress. The harness re-invokes you automatically as each background agent completes; on each Opus-tier completion, refill that window with the next pending issue (step 8) until the queue drains.
 
 ### 10. Aggregate as agents return, then the closing ping
 
@@ -267,7 +267,7 @@ Do **not** auto-launch either: the batch finish is user-triggered, exactly like 
 
 - **One agent per repo, period.** A bucket is at most one issue per repo by construction; if a repo has extras, defer them — never two agents on one checkout.
 - **Easy-tier path is full-YOLO-to-merged; hard-tier path always stops before push/PR.** Never let a hard-tier agent merge; never make an easy-tier agent stop early in `hard`/`easy` mode (that's what the hard tier is for).
-- **Whichever tier resolves to Opus on the current host dispatches through the global Opus concurrency window (≤3 in flight); every other tier is exempt.** On Claude Code today hard-tier resolves to Sonnet, so this window is dormant by default — it only binds a future `extreme`-tier escalation. Refill the window as each capped agent returns; never a single-message fan-out of many Opus agents at once — it trips Anthropic's server-side burst rate limit (see `~/.claude/CLAUDE.md`, "Spawning sub-agents — cap concurrent Opus at 3").
+- **Whichever tier resolves to Opus on the current host dispatches through the global Opus concurrency window (≤3 in flight); every other tier is exempt.** On Claude Code today hard-tier resolves to Opus, so this window is live for every hard-tier dispatch. Refill the window as each capped agent returns; never a single-message fan-out of many Opus agents at once — it trips Anthropic's server-side burst rate limit (see `~/.claude/CLAUDE.md`, "Spawning sub-agents — cap concurrent Opus at 3").
 - **`easy`/`silent` mode never spawns hard-tier work and never merges hard-scored work.** Hard-tier rows are listed only. This is the unattended-safety guarantee.
 - **Hard-tier review is by rationale summary, not diff.** Prompt 8b's agent must return "What I did & why" / "Why I believe this is correct"; the orchestrator surfaces both verbatim next to every `📋 ready for review` row (steps 9-10) — that's what the user reviews, not the code.
 - **The orchestrator never edits source, commits, pushes, or merges.** Every write happens inside a spawned agent.
