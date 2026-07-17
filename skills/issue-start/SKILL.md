@@ -121,6 +121,20 @@ Then:
   worktree add` + a `.venv` junction — the helper owns that, and owns the
   reparse-safe teardown in `/issue-finish`.)
 
+After either mode has a ready branch, publish its active-issue marker for the
+Fleet Board:
+
+```
+E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/active_issue.py add <repo-or-worktree> <N> <branch>
+```
+
+Pass the actual checkout path (`<repo>` in primary mode, the printed
+`WORKTREE=` path in worktree mode). The helper resolves the canonical repo name
+from git, so a sibling `-wt-<N>` directory never becomes a different Board key.
+If the marker write fails, tear down the branch/worktree just created, release
+the primary claim when applicable, and stop; do not begin work with an
+unpublished lifecycle marker.
+
 ### 6. Hand off to work
 
 Investigate the codebase for what the issue needs and decide on an approach.
