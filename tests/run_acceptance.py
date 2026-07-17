@@ -421,6 +421,9 @@ def main() -> int:
     # ---- worktree_claim helper pure-logic tests (skills/_lib) ----
     run_unit(_worktree_claim_unit_check)
 
+    # ---- active_issue helper + issue-workflow lifecycle wiring ----
+    run_unit(_active_issue_unit_check)
+
     # ---- ux_surface helper pure-logic tests (skills/_lib) ----
     run_unit(_ux_surface_unit_check)
 
@@ -1599,6 +1602,15 @@ def _worktree_claim_unit_check() -> Tuple[int, int]:
     convention — is testable on its own and reachable from the one gate.
     """
     return _subprocess_unit_check("worktree_claim", "test_worktree_claim.py")
+
+
+def _active_issue_unit_check() -> Tuple[int, int]:
+    """Run active-issue state + workflow wiring tests as a subprocess.
+
+    The helper's tolerant/pruned/concurrent JSON lifecycle and every workflow
+    path that adds or removes a marker stay reachable from the one gate.
+    """
+    return _subprocess_unit_check("active_issue", "test_active_issue.py")
 
 
 def _context_purge_check_unit_check() -> Tuple[int, int]:

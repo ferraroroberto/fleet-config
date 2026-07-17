@@ -99,12 +99,18 @@ For each worktree-mode issue, use the shared concurrency helper (the same one `/
 ```
 git -C E:\automation\<repo> fetch origin
 E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/worktree_claim.py setup-worktree E:\automation\<repo> <N> <branch>
+E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/active_issue.py add <printed-WORKTREE-path> <N> <branch>
 ```
 
 Notes:
 - The helper creates the **sibling** worktree `E:\automation\<repo>-wt-<N>` off latest `origin/main` on `<branch>`, then junctions the primary's `.venv` into it — so a Python repo's verification gate (`& .\.venv\Scripts\python.exe …`) resolves inside the worktree without a per-worktree reinstall.
 - Do **not** hand-roll `git worktree add` + a `.venv` junction here; the helper owns both creation and the junction-strip-before-`git worktree remove` teardown (the junction footgun that wiped a real venv in fleet-config#143).
 - If a worktree path already exists the helper stops with a clear message (probably stale from a prior run; clean with the `remove-worktree <path>` command in step 9).
+- The active-issue write is the worktree-mode equivalent of `/issue-start`
+  step 5. In-place agents inherit it by invoking `/issue-start`. If the write
+  fails, immediately remove that newly-created worktree with
+  `worktree_claim.py remove-worktree <path>` and stop the batch rather than
+  dispatching unmarked work.
 
 Run these sequentially per repo (worktree creation modifies repo metadata; safer not to parallelize).
 

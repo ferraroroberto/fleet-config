@@ -207,6 +207,13 @@ Only reachable on a fully-green Phase 3. Run the full `/issue-finish` skill:
    non-negotiable and always runs.
 8. `gh pr merge <PR> --merge --delete-branch`. Land on main locally
    (`git checkout main && git pull --ff-only`). Confirm the issue auto-closed.
+   Clear the issue's Fleet Board marker only after that successful merge (a
+   validation/CI stop leaves it active):
+   ```
+   E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/active_issue.py remove <repo> <N>
+   ```
+   `ACTIVE_ISSUE=absent` is an idempotent success; retry a helper error once
+   and stop if the shared state still cannot be updated.
    Then **release the concurrency claim** — Phase 2 acquired a primary claim via
    the `/issue-start now` flow, and an inline-merge YOLO run has no separate
    `/issue-finish` to free it, so it must be released here or it leaks until the

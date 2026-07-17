@@ -197,6 +197,14 @@ by the project's `## CI expectations` block (the convention is
     A worktree session holds no primary claim, so there is nothing to release.
 - Confirm the issue closed (`gh issue view <N>` → `CLOSED`). If it didn't
   auto-close, close it manually with a comment referencing the merge commit.
+- Clear the issue's Fleet Board marker now that the merge is authoritative:
+  ```
+  E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/active_issue.py remove <repo> <N>
+  ```
+  This runs **after** a successful merge, never when verification or CI stops
+  the finish early — a failed finish is still in flight and must remain marked.
+  The remove is idempotent (`ACTIVE_ISSUE=absent` is success), but a helper
+  error is not: retry once and stop if it still cannot update the shared file.
 
 ### 6. Restart the tray (only if the project runs one)
 
