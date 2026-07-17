@@ -7,4 +7,4 @@ REM insights, aggregates the learning log + horizon, upserts the learning-log
 REM ledger issue + posts the weekly digest as a comment, and fires a Slack ping.
 REM No source code is read; the auto window anchors to the ledger's last-run-at.
 cd /d E:\automation\fleet-config
-claude -p "/learning-log" --model claude-sonnet-4-6 --permission-mode bypassPermissions
+E:\automation\fleet-config\.venv\Scripts\python.exe E:\automation\fleet-config\skills\_lib\claude_progress.py "/learning-log" --model claude-sonnet-4-6 --permission-mode bypassPermissions

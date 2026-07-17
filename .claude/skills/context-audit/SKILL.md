@@ -90,8 +90,6 @@ Print: the manifest totals, the biggest offender per category, the budget delta 
 
 Add an **app-launcher Jobs** entry (Windows Task Scheduler under `\AppLauncher\`) running weekly — same executor as `/insights-weekly` and `/audit-fleet`:
 
-```
-claude -p "/context-audit" --permission-mode bypassPermissions
-```
+Target `.claude/skills/context-audit/run-weekly.bat`; it preserves `/context-audit` plus bypass permissions and streams filtered milestones through `claude_progress.py`.
 
 cwd = `E:/automation/fleet-config`. The skill handles measure + judge + ledger + Slack itself.

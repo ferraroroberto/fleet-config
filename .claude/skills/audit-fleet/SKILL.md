@@ -11,9 +11,7 @@ description: Run /codebase-audit across every repo in the E:\automation fleet in
 
 **This skill files no issues itself.** The only writes *this orchestrator* makes are (a) the audit issues that each sub-agent's `/codebase-audit` files, (b) the per-repo `audit-meta` ledger those audits update, (c) one `audit-fleet digest state` ledger issue in `fleet-config` for week-over-week deltas, (d) the digest comment on that issue, and (e) one cross-fleet `fleet practices ledger` issue in `project-scaffolding` cataloguing reusable solutions. The orchestrator itself never edits source, commits, pushes, or restarts anything. **One narrow exception lives inside the sub-agents:** `/codebase-audit`'s step 8b self-heals a **security** finding in place (redacted issue + auto-fix + auto-merge), the only code-writing path in the whole audit flow — scoped to security, gated on its own safety rules (claim, mandatory regression test, generic artifacts, green-gate-only merge). See that skill's step 8b; this orchestrator just carries the counts-only result into the digest.
 
-**Designed for unattended runs.** A weekly app-launcher job invokes this via
-`claude -p "/audit-fleet" --model claude-sonnet-5 --effort high
---permission-mode bypassPermissions`. Every step must therefore degrade
+**Designed for unattended runs.** A weekly app-launcher job invokes the co-located `run-weekly.bat`, which routes `/audit-fleet` plus its Sonnet/high-effort/bypass-permissions flags through the shared `claude_progress.py` stream adapter. Every step must therefore degrade
 gracefully rather than block on a prompt. (The orchestrator itself only does
 cheap enumeration/gating/dispatch — see "Execution rules" below — so it runs at
 `easy` tier, not `hard`; the per-repo sweep sub-agents dispatched in step 3 are
@@ -39,8 +37,8 @@ Anything else → treat as no argument (whole fleet).
 - **Never disturb in-progress work.** A repo that is dirty or not on its default
   branch is skipped and reported — never stashed, never force-switched.
 - **Never background a tool call in this skill.** This orchestrator runs
-  headless via `run-weekly.bat`'s `claude -p "/audit-fleet" ...` — a one-shot
-  invocation with no persistent turn loop and no human attending it. There is
+  headless via `run-weekly.bat`'s one-shot Claude process, with no persistent
+  turn loop and no human attending it. There is
   no wake-up mechanism to resume the session after a turn ends, so launching
   any command (the step 2 `fleet_audit_scan.py` sweep, a sub-agent dispatch,
   the rate-gate wait) with `run_in_background: true` and then ending the turn

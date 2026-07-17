@@ -77,9 +77,6 @@ Fleet mode is the same loop with `--fleet` on both gate and advance, grouping th
 
 An app-launcher Job (Windows Task Scheduler `\AppLauncher\`) runs the fleet sweep weekly — Saturdays 01:00, on Opus — via the co-located launcher `.claude/skills/context-purge/run-weekly.bat` (per this repo's scheduled-skill convention):
 
-```
-cd /d E:\automation\fleet-config
-claude -p "/context-purge fleet" --model opus --permission-mode bypassPermissions
-```
+The wrapper preserves `/context-purge fleet`, Opus, and bypass permissions while streaming filtered milestones through `claude_progress.py`.
 
 The ledger gate makes the scheduled run cheap: an unchanged week costs one `gh` read and stops.

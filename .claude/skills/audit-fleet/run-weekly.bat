@@ -7,11 +7,10 @@ REM no human to answer permission prompts. The orchestrator only does cheap
 REM enumeration/dispatch work (see SKILL.md's Execution rules) — easy tier,
 REM not hard, per docs/model-tiers.md; the per-repo sweep sub-agents dispatched
 REM in step 3 are the ones running hard tier (Opus), never the top-level
-REM launcher. --verbose streams the turn-by-turn activity to stdout so the
-REM visible console shows live progress instead of sitting on one line until
-REM claude -p flushes its buffered result at the end.
+REM launcher. claude_progress.py converts Claude's verbose stream-json into
+REM flushed, human-readable milestones for app-launcher's live Jobs pane.
 REM
 REM Optional %1 is forwarded as the skill argument: empty for the whole fleet,
 REM or a bare repo name to restrict to a single repo (see SKILL.md's Arguments).
 cd /d E:\automation\fleet-config
-claude -p "/audit-fleet %~1" --model claude-sonnet-5 --effort high --permission-mode bypassPermissions --verbose
+E:\automation\fleet-config\.venv\Scripts\python.exe E:\automation\fleet-config\skills\_lib\claude_progress.py "/audit-fleet %~1" --model claude-sonnet-5 --effort high --permission-mode bypassPermissions

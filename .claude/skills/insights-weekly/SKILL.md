@@ -60,8 +60,6 @@ Print: which two reports were compared (or "baseline"), the dated file path, the
 
 Add an **app-launcher Jobs** entry (Windows Task Scheduler under `\AppLauncher\`) that runs weekly — **target the first run for a Friday**:
 
-```
-claude -p "/insights-weekly" --permission-mode bypassPermissions
-```
+Target `.claude/skills/insights-weekly/run-weekly.bat`; it preserves `/insights-weekly` plus bypass permissions and streams filtered milestones through `claude_progress.py`.
 
-cwd = `E:/automation/fleet-config`. Same executor as every other scheduled job (`/system-map`, `/audit-fleet`); the skill handles refresh + hub diff + Slack itself. (Alternatively a scheduled cloud agent invoking the same line.)
+cwd = `E:/automation/fleet-config`. Same executor as every other scheduled job (`/system-map`, `/audit-fleet`); the skill handles refresh + hub diff + Slack itself. (Alternatively a scheduled cloud agent invoking the same skill.)

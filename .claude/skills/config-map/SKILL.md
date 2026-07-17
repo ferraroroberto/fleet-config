@@ -9,7 +9,7 @@ description: Regenerate the fleet config & convention map (introspect install.ps
 
 **The map is derived, not declared.** Unlike `/system-map` (which aggregates self-describing per-repo `.fleet.toml` cards), almost all config is centralized in `fleet-config`, so `.claude/skills/config-map/build_data.py` *introspects* it: the per-agent matrix from `install.ps1`'s link table + `codex-hooks.json`; the skills from `skills/` and `.claude/skills/`; the hooks from `hooks/*.py` + `settings.template.json`; the repo-specific skills from a git sweep of each fleet repo's committed `.claude/skills`. The thin hand-maintained input is `architecture/config.residual.json` — the agent columns, the matrix row structure (non-derivable cells only), the universal-skill scope set, the project-wired hooks, and the conventions prose. The visual (`architecture/config-map.html`) is a pure renderer over the generated `architecture/config.data.js` (`window.CONFIG = { …strict JSON… }`). The acceptance matrix (`tests/run_acceptance.py`) fails loud if `config.data.js` is not exactly what `build_data.py` regenerates — so the picture can't go stale.
 
-**Designed for unattended runs.** A weekly job invokes it via `claude -p "/config-map" --permission-mode bypassPermissions` from the `fleet-config` repo. Every step degrades gracefully, never blocks on a prompt.
+**Designed for unattended runs.** A weekly job invokes the co-located `run-weekly.bat` from the `fleet-config` repo; that wrapper routes `/config-map` through the shared `claude_progress.py` adapter with bypass permissions. Every step degrades gracefully, never blocks on a prompt.
 
 ## Execution rules (read first)
 
@@ -85,8 +85,6 @@ Print: the change line from step 3, whether a commit was made (and pushed), and 
 
 Add an **app-launcher Jobs** entry (Windows Task Scheduler under `\AppLauncher\`) that runs weekly via the co-located launcher `.claude/skills/config-map/run-weekly.bat`:
 
-```
-claude -p "/config-map" --permission-mode bypassPermissions
-```
+The wrapper preserves `/config-map` plus bypass permissions and streams filtered milestones through `claude_progress.py`.
 
 cwd = `E:/automation/fleet-config`. **Stagger it off `/system-map`'s Friday 01:00 slot** (e.g. Friday 02:30) so the two weekly map refreshes don't collide.
