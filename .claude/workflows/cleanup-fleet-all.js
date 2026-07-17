@@ -64,7 +64,7 @@ function buildPrompt(issue, priorFeedback) {
 5. STOP. Do NOT push, open a PR, merge, or run /issue-finish — a separate agent validates this before anything ships.${retryNote}
 
 Issue #${issue.number}: ${issue.title}
-${issue.body || '(no body)'}
+The full issue text is already read by /issue-start. If needed, fetch the current text with \`gh issue view ${issue.number} --repo ferraroroberto/${issue.repo}\`.
 
 Report via the required schema. If verification is FAIL or SKIPPED, judge \`retryable\` yourself: true only if a second attempt has a real chance of fixing it (e.g. a straightforward bug in your own change); false for anything structural (no verification gate exists for this repo, the issue itself is unclear or unreproducible, or the real scope is bigger than one retry can close).`
 }
@@ -73,12 +73,12 @@ function validatePrompt(issue, build) {
   return `You are independently validating GitHub issue #${issue.number} in the ${issue.repo} repo. Repo root: E:\\automation\\${issue.repo}, branch: ${build.branch}. You did NOT write this change — you have no memory of building it, review it fresh and adversarially, but leniently.
 
 1. cd to E:\\automation\\${issue.repo}, confirm you're on branch ${build.branch}.
-2. Read the diff against the repo's default branch (e.g. \`git diff origin/main...${build.branch}\`).
-3. Independently re-run the project's verification gate yourself per its CLAUDE.md — do not just trust the builder's report of PASS.
-4. Judge whether this diff plausibly and reasonably addresses the issue's acceptance criteria below.
+2. Fetch the current issue text with \`gh issue view ${issue.number} --repo ferraroroberto/${issue.repo}\` and use it as the acceptance-criteria source.
+3. Read the diff against the repo's default branch (e.g. \`git diff origin/main...${build.branch}\`).
+4. Independently re-run the project's verification gate yourself per its CLAUDE.md — do not just trust the builder's report of PASS.
+5. Judge whether this diff plausibly and reasonably addresses the fetched acceptance criteria.
 
 Issue #${issue.number}: ${issue.title}
-${issue.body || '(no body)'}
 
 Be LENIENT — this is a sanity check that a human reviewer would rubber-stamp, not a nitpicky code review. Default to pass=true unless something is clearly broken, incomplete, or wrong (verification actually fails, the diff doesn't touch what the issue asked for, an obvious bug). Never fail an issue over style preferences, naming, or anything you'd only raise as an optional PR comment.
 
