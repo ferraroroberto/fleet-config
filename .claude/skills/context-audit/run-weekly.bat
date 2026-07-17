@@ -6,4 +6,4 @@ REM counts, single-home-by-altitude violations), upserts the context-audit
 REM ledger issue + weekly comment, and posts a Slack digest. bypassPermissions
 REM because a scheduled run has no human to answer permission prompts.
 cd /d E:\automation\fleet-config
-claude -p "/context-audit" --permission-mode bypassPermissions
+E:\automation\fleet-config\.venv\Scripts\python.exe E:\automation\fleet-config\skills\_lib\claude_progress.py "/context-audit" --permission-mode bypassPermissions

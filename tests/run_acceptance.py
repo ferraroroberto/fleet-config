@@ -424,6 +424,9 @@ def main() -> int:
     # ---- active_issue helper + issue-workflow lifecycle wiring ----
     run_unit(_active_issue_unit_check)
 
+    # ---- claude_progress stream parser + scheduled-wrapper wiring ----
+    run_unit(_claude_progress_unit_check)
+
     # ---- ux_surface helper pure-logic tests (skills/_lib) ----
     run_unit(_ux_surface_unit_check)
 
@@ -507,11 +510,9 @@ class _Checker:
 
 def _subprocess_unit_check(label: str, test_file: str) -> Tuple[int, int]:
     """Run a standalone pure-logic test file as a subprocess and report it as
-    one pass/fail check — the shared body behind the eleven `_x_unit_check`
-    wrappers (audit_issue, fleet_audit_scan, worktree_claim, ux_surface,
-    cert_drift, context_purge_check, context_purge_gate, design_lint,
-    rate_gate, dirty_tree_check, vendored_drift) that each just point it at
-    their own test file under tests/. Returns (failures, total=1)."""
+    one pass/fail check — the shared body behind the `_x_unit_check` wrappers
+    that each point it at one focused file under tests/. Returns
+    (failures, total=1)."""
     proc = subprocess.run(
         [PYTHON, str(REPO / "tests" / test_file)],
         capture_output=True, text=True, encoding="utf-8", errors="replace",
@@ -1611,6 +1612,15 @@ def _active_issue_unit_check() -> Tuple[int, int]:
     path that adds or removes a marker stay reachable from the one gate.
     """
     return _subprocess_unit_check("active_issue", "test_active_issue.py")
+
+
+def _claude_progress_unit_check() -> Tuple[int, int]:
+    """Run the scheduled Claude stream adapter's focused tests.
+
+    Covers parser filtering/deduplication, child exit-code propagation, and the
+    checked-in contract that every run-weekly.bat uses the shared adapter.
+    """
+    return _subprocess_unit_check("claude_progress", "test_claude_progress.py")
 
 
 def _context_purge_check_unit_check() -> Tuple[int, int]:

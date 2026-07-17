@@ -9,9 +9,7 @@ description: Regenerate the fleet architecture map (crawl every repo under E:\au
 
 **The map is self-describing: each repo declares its own card in a root `.fleet.toml`, and `.claude/skills/system-map/build_data.py` aggregates those into `architecture/fleet.data.js`** (`window.FLEET = { …strict JSON… };`, the *generated* file the renderer reads). The hand-maintained input is `architecture/fleet.residual.json` — the non-repo structure (access/edge/compute/external/principles), every repo's fallback card in curated order, and an `_adopted` registry of repos that MUST carry a `.fleet.toml`. The visual (`architecture/system-map.html`) is a pure renderer that reads the generated `fleet.data.js`; `architecture/ARCHITECTURE.md` is the human-readable narrative that must agree with it. `.claude/skills/system-map/render_mermaid.py` is a second, text-native renderer of the same `fleet.data.js` — a Mermaid flowchart committed to `architecture/system-map.mmd` and also embedded in `global-CLAUDE.md` (the every-session context file), so an agent gets a compact fleet-relationship picture for free, no browser required. The acceptance matrix (`tests/run_acceptance.py`) fails loud if the fleet, the data file, the per-repo `.fleet.toml`s, and the doc ever drift apart — so keeping them in sync is enforced, not hoped for.
 
-**Designed for unattended runs.** A weekly job invokes it via
-`claude -p "/system-map" --permission-mode bypassPermissions` from the
-`fleet-config` repo. Every step must degrade gracefully, never block on a prompt.
+**Designed for unattended runs.** A weekly job invokes the co-located `run-weekly.bat` from the `fleet-config` repo; that wrapper routes `/system-map` through the shared `claude_progress.py` adapter with bypass permissions. Every step must degrade gracefully, never block on a prompt.
 
 ## Execution rules (read first)
 
@@ -118,8 +116,6 @@ Print: the change line from step 4, projects added/removed (if any), whether a c
 
 Add an **app-launcher Jobs** entry (Windows Task Scheduler under `\AppLauncher\`) that runs weekly:
 
-```
-claude -p "/system-map" --permission-mode bypassPermissions
-```
+Target `.claude/skills/system-map/run-weekly.bat`; it preserves `/system-map` plus bypass permissions and streams filtered milestones through `claude_progress.py`.
 
-cwd = `E:/automation/fleet-config`. Same executor as every other scheduled job; the skill handles render + commit-if-changed + Slack itself. (Alternatively a scheduled cloud agent invoking the same line.)
+cwd = `E:/automation/fleet-config`. Same executor as every other scheduled job; the skill handles render + commit-if-changed + Slack itself. (Alternatively a scheduled cloud agent invoking the same skill.)

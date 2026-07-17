@@ -11,7 +11,7 @@ description: Weekly learning log + forward horizon + productivity stats distille
 
 **Scatter-gather, like `/audit-fleet`.** A deterministic Python helper (`gather.py`) does the GitHub gather + the exact stats + the per-bucket partition; the orchestrator fans out **Sonnet** sub-agents (one per bucket — Sonnet is exempt from the Opus concurrency cap, so they run in parallel), each returning a **fixed format** so the aggregate is uniform. The orchestrator never reads source; it weaves the bucket insights, grades the horizon, and assembles the digest.
 
-**Designed for unattended runs.** A weekly app-launcher job invokes this via `claude -p "/learning-log" --model claude-sonnet-4-6 --permission-mode bypassPermissions`. Every step degrades gracefully rather than block on a prompt.
+**Designed for unattended runs.** A weekly app-launcher job invokes the co-located `run-weekly.bat`, which routes `/learning-log` plus its Sonnet/bypass-permissions flags through the shared `claude_progress.py` adapter. Every step degrades gracefully rather than block on a prompt.
 
 ## Arguments
 
@@ -123,8 +123,6 @@ A few lines: window, grand totals, buckets analysed (+ any agent that errored), 
 
 An app-launcher Job (`config/jobs.json`, weekly, `visible: true`) calls `.claude/skills/learning-log/run-weekly.bat`, staggered clear of the other Friday claude-runs:
 
-```
-claude -p "/learning-log" --model claude-sonnet-4-6 --permission-mode bypassPermissions
-```
+The wrapper preserves `/learning-log`, `claude-sonnet-4-6`, and bypass permissions while streaming filtered milestones through `claude_progress.py`.
 
 cwd = `E:/automation/fleet-config`. The Sonnet orchestrator gathers, fans out the Sonnet bucket sub-agents, aggregates, and writes the ledger + comment + Slack itself.
