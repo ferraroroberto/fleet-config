@@ -47,7 +47,7 @@ flowchart TB
     ISSUEEXTRA["issue-batch · issue-finish-batch · issue-triage · issue-yolo"]
     OTHERGLOBAL["codebase-audit · design-sync · handoff-commit · screen"]
     PROPVENDORED["propagate-vendored\n[vendored] manifest fan-out + dry-run drift report"]
-    LIB["_lib/ — worktree_claim.py · active_issue.py · claude_progress.py · ux_surface.py ·\nbrowser_verify.py · audit_issue.py · cert_drift.py · rate_gate.py · dirty_tree_check.py ·\ndesign_lint.py · git_run.py · snapshot_diff.py · fleet_repo_scan.py · vendored_drift.py"]
+    LIB["_lib/ — worktree_claim.py · active_issue.py · claude_progress.py · ux_surface.py ·\nbrowser_verify.py · audit_issue.py · cert_drift.py · rate_gate.py · dirty_tree_check.py ·\ndesign_lint.py · design_sweep_scan.py · git_run.py · snapshot_diff.py · fleet_repo_scan.py · vendored_drift.py"]
   end
   gskills --> CLAUDE
   gskills --> CODEX
@@ -63,13 +63,17 @@ flowchart TB
     SYSTEMMAP["system-map\nbuild_data.py · render.py · render_mermaid.py · whatchanged.py"]
     AUDITFLEET["audit-fleet"] --> CLEANUPFLEET["cleanup-fleet\n(attended, single-bucket, human-gated)"]
     CLEANUPFLEET --> CLEANUPFLEETALL["cleanup-fleet-all\n(unattended, all-bucket, agent-validated)"]
+    DESIGNSWEEP["design-sweep\nOpus orchestrator · Sonnet workers\ndesign_sweep_scan.py web-app gate"]
     CONTEXTAUDIT["context-audit"] --> CONTEXTPURGE["context-purge\ncheck.py · gate.py"]
     CONFIGMAP["config-map"]
     OTHERFLEET["insights-weekly · learning-log"]
-    SCHEDULED["run-weekly.bat ×8\nscheduled Claude launchers"]
+    SCHEDULED["run-weekly.bat ×9\nscheduled Claude launchers"]
   end
   fskills -.->|cwd-scoped, Claude Code only| CLAUDE
   AUDITFLEET -->|invokes per repo| OTHERGLOBAL
+  DESIGNSWEEP -->|invokes /design-sync per web app| OTHERGLOBAL
+  DESIGNSWEEP -->|web-app gate| LIB
+  AUDITFLEET -.->|reports design-drift bucket count| DESIGNSWEEP
   CLEANUPFLEET -->|fans out fixes for| OTHERGLOBAL
   CLEANUPFLEET --> ISSUEEXTRA
 

@@ -486,9 +486,10 @@ even on a clean app).
 
 ## Notes
 
-- This is the per-repo detector; the fleet-wide weekly sweep + `/audit-fleet`
-  digest integration are a follow-up (`fleet-config#180`) — until then run it
-  per repo. The step-1b cert check rides that sweep when it lands.
+- This is the per-repo detector; the fleet-wide weekly sweep that runs it across
+  every web app is `/design-sweep` (fleet-only tier), with the `design-drift`
+  bucket surfaced in the `/audit-fleet` digest (`fleet-config#180`). The step-1b
+  cert check rides that sweep. Run this skill directly for a single repo.
 - `design-drift` and `cert-drift` are both first-class audit buckets
   (`audit_issue.py` `KINDS`) — `/cleanup-fleet` fans out fixers for each, and
   `/issue-triage` treats both like any other issue.

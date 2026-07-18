@@ -209,6 +209,11 @@ window.CONFIG = {
       "sched": true
     },
     {
+      "nm": "design-sweep",
+      "ds": "Run /design-sync across every FastAPI + static-PWA web app in the E:\\automation fleet in one pass and emit one combined digest (s…",
+      "sched": true
+    },
+    {
       "nm": "insights-weekly",
       "ds": "Diff Claude Code's newest /insights report against the previous one (via the local LLM hub) into a concise weekly \"what changed\"…",
       "sched": true

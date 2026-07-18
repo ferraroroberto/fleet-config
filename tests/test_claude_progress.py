@@ -165,13 +165,14 @@ wrapper_expectations = {
     "config-map": ('"/config-map"',),
     "context-audit": ('"/context-audit"',),
     "context-purge": ('"/context-purge fleet"', "--model opus"),
+    "design-sweep": ('"/design-sweep %~1"', "--model opus", "--effort high"),
     "insights-weekly": ('"/insights-weekly"',),
     "learning-log": ('"/learning-log"', "--model claude-sonnet-4-6"),
     "system-map": ('"/system-map"',),
 }
 wrappers = sorted((ROOT / ".claude" / "skills").glob("*/run-weekly.bat"))
-check(len(wrappers) == len(wrapper_expectations) == 8,
-      "the wiring test covers all eight scheduled wrappers")
+check(len(wrappers) == len(wrapper_expectations) == 9,
+      "the wiring test covers all nine scheduled wrappers")
 for wrapper in wrappers:
     text = wrapper.read_text(encoding="utf-8")
     expected = wrapper_expectations.get(wrapper.parent.name, ())
