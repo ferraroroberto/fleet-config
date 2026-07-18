@@ -1,6 +1,6 @@
 @echo off
 REM Weekly fleet design-drift sweep, fired by the app-launcher Jobs tab
-REM (job id "design-sweep-fleet", weekly SAT 22:00, visible console).
+REM (job id "design-sweep-fleet", weekly THU 10:00, visible console).
 REM Runs the /design-sweep skill headless on the local Claude subscription.
 REM
 REM Opus + high effort for the ORCHESTRATOR: unlike /audit-fleet (whose top-level
@@ -16,5 +16,5 @@ REM for app-launcher's live Jobs pane.
 REM
 REM Optional %1 is forwarded as the skill argument: empty for the whole fleet,
 REM or a bare repo name to restrict to a single repo (see SKILL.md's Arguments).
-cd /d E:\automation
+cd /d E:\automation\fleet-config
 E:\automation\fleet-config\.venv\Scripts\python.exe E:\automation\fleet-config\skills\_lib\claude_progress.py "/design-sweep %~1" --model opus --effort high --permission-mode bypassPermissions
