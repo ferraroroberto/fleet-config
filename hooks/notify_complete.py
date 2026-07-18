@@ -26,6 +26,7 @@ not reliably on ``PATH`` on this machine; see ``_lib.find_python_executable``)::
     E:/automation/fleet-config/.venv/Scripts/python.exe ~/.claude/hooks/notify_complete.py --kind recap --summary "2 skills consolidated, 4 promoted"               # explicit consolidation
     E:/automation/fleet-config/.venv/Scripts/python.exe ~/.claude/hooks/notify_complete.py --kind learning --comment-url https://github.com/ferraroroberto/fleet-config/issues/131#issuecomment-456 --summary "12 PRs / 8 issues distilled · 2/3 horizon shipped"
     E:/automation/fleet-config/.venv/Scripts/python.exe ~/.claude/hooks/notify_complete.py --kind security --issue 42 --pr 43 --pr-url https://github.com/owner/repo/pull/43 --summary "auto-merged, review the diff"
+    E:/automation/fleet-config/.venv/Scripts/python.exe ~/.claude/hooks/notify_complete.py --kind design  --summary "8 swept · 3 drifted · 11 findings filed"
 
 For ``--kind cleanup`` (the closing roll-up of a ``/cleanup-fleet`` swarm) pass
 ``--summary`` (the bucket name), ``--merged`` (sonnet issues YOLO'd to a merged
@@ -84,8 +85,8 @@ _PR_KINDS = ("finish", "yolo", "security")
 # `cleanup` is conditional: it's action-needed only when issues await review.
 # `security` is always action-needed — an audit auto-fix shipped to a public repo
 # and the private after-the-fact diff review is the whole point (fleet-config#361).
-# Everything else (add, finish, yolo, audit, recap, learning, finish-batch) is a
-# completed-work record → the "log" channel.
+# Everything else (add, finish, yolo, audit, recap, learning, finish-batch,
+# design) is a completed-work record → the "log" channel.
 _ATTENTION_KINDS = ("start", "batch", "security")
 
 
@@ -210,6 +211,9 @@ def build_message(
     if kind == "recap":
         summary_part = f" — {summary}" if summary else ""
         return f"🔄 Weekly recap{summary_part}"
+    if kind == "design":
+        summary_part = f" — {summary}" if summary else ""
+        return f"🎨 Design sweep{summary_part}"
     if kind == "learning":
         summary_part = f" — {summary}" if summary else ""
         return f"📓 Learning log{summary_part}{link}"
@@ -241,7 +245,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     )
     parser.add_argument(
         "--kind", required=True,
-        choices=["add", "start", "finish", "yolo", "batch", "audit", "cleanup", "recap", "finish-batch", "learning", "security"]
+        choices=["add", "start", "finish", "yolo", "batch", "audit", "cleanup", "recap", "finish-batch", "learning", "security", "design"]
     )
     parser.add_argument("--issue", help="Issue number (shown as #N).")
     parser.add_argument("--pr", help="PR number, for finish/yolo (linked).")
@@ -257,7 +261,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         dest="comment_url",
         help="Full GitHub comment permalink, for audit / learning. Linked directly in the ping.",
     )
-    parser.add_argument("--summary", help="One concise summary line, for start/audit/learning.")
+    parser.add_argument("--summary", help="One concise summary line, for start/audit/learning/design.")
     parser.add_argument("--passed", help="Passed count, for batch.")
     parser.add_argument("--total", help="Total count, for batch.")
     parser.add_argument("--merged", help="Merged-PR count, for cleanup / finish-batch.")

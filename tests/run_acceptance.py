@@ -418,6 +418,9 @@ def main() -> int:
     # ---- fleet_audit_scan helper pure-logic tests (skills/_lib) ----
     run_unit(_fleet_audit_scan_unit_check)
 
+    # ---- design_sweep_scan helper pure-logic tests (skills/_lib) ----
+    run_unit(_design_sweep_scan_unit_check)
+
     # ---- worktree_claim helper pure-logic tests (skills/_lib) ----
     run_unit(_worktree_claim_unit_check)
 
@@ -1595,6 +1598,17 @@ def _fleet_audit_scan_unit_check() -> Tuple[int, int]:
     return _subprocess_unit_check("fleet_audit_scan", "test_fleet_audit_scan.py")
 
 
+def _design_sweep_scan_unit_check() -> Tuple[int, int]:
+    """Run skills/_lib/design_sweep_scan.py's pure-logic tests as a subprocess.
+
+    Standalone (like test_fleet_audit_scan / test_cert_drift) so the fleet-wide
+    web-app gate — `classify_web_app` over synthetic trees, the FastAPI-vs-
+    Streamlit disambiguation, and the reuse of design_lint's token detection —
+    is testable on its own and reachable from the one gate. (fleet-config#180)
+    """
+    return _subprocess_unit_check("design_sweep_scan", "test_design_sweep_scan.py")
+
+
 def _worktree_claim_unit_check() -> Tuple[int, int]:
     """Run skills/_lib/worktree_claim.py's pure-logic tests as a subprocess.
 
@@ -2034,6 +2048,13 @@ def _notify_complete_unit_checks() -> Tuple[int, int]:
           bm("recap", summary="5 skills swept, 3 proposals") == "🔄 Weekly recap — 5 skills swept, 3 proposals")
     check("build: recap with no summary degrades cleanly",
           bm("recap") == "🔄 Weekly recap")
+    check("build: design -> design sweep + summary",
+          bm("design", summary="8 swept · 3 drifted · 11 findings filed")
+          == "🎨 Design sweep — 8 swept · 3 drifted · 11 findings filed")
+    check("build: design with no summary degrades cleanly",
+          bm("design") == "🎨 Design sweep")
+    check("category: design routes to the activity log, not attention",
+          notify_complete.category_for("design") == "log")
     check("build: learning -> log + summary + comment link",
           bm("learning", summary="12 PRs / 8 issues · 2/3 horizon", url="http://gh/c")
           == "📓 Learning log — 12 PRs / 8 issues · 2/3 horizon · http://gh/c")

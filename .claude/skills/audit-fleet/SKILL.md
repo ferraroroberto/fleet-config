@@ -7,7 +7,7 @@ description: Run /codebase-audit across every repo in the E:\automation fleet in
 
 **Goal:** A fleet-wide, idempotent, scatter-gather wrapper around `/codebase-audit`. Walk every repo under `E:\automation\`, cheaply skip the unchanged ones, audit the changed ones through a **bounded window of up to 3 concurrent sub-agents** (one per repo), then collect the results into **one diff-based digest**: a GitHub comment on the `audit-fleet digest state` ledger issue in `fleet-config` + stdout (so a scheduled run captures it), with a Slack ping via `notify_complete.py --kind audit`.
 
-**Scope boundary — source code, not context.** This audits *project source code* quality. The fleet's *always-on context surface* (CLAUDE.md token budgets, skill-description word counts, single-home violations) is a separate lens: `/context-audit`.
+**Scope boundary — source code, not context.** This audits *project source code* quality. The fleet's *always-on context surface* (CLAUDE.md token budgets, skill-description word counts, single-home violations) is a separate lens: `/context-audit`. Web-app *visual conformance* to the fleet design system is a third lens, swept by `/design-sweep` (which files the `design-drift`/`cert-drift` issues); this digest only *reports* that bucket's open counts week-over-week (step 5), it never runs the design lint itself.
 
 **This skill files no issues itself.** The only writes *this orchestrator* makes are (a) the audit issues that each sub-agent's `/codebase-audit` files, (b) the per-repo `audit-meta` ledger those audits update, (c) one `audit-fleet digest state` ledger issue in `fleet-config` for week-over-week deltas, (d) the digest comment on that issue, and (e) one cross-fleet `fleet practices ledger` issue in `project-scaffolding` cataloguing reusable solutions. The orchestrator itself never edits source, commits, pushes, or restarts anything. **One narrow exception lives inside the sub-agents:** `/codebase-audit`'s step 8b self-heals a **security** finding in place (redacted issue + auto-fix + auto-merge), the only code-writing path in the whole audit flow — scoped to security, gated on its own safety rules (claim, mandatory regression test, generic artifacts, green-gate-only merge). See that skill's step 8b; this orchestrator just carries the counts-only result into the digest.
 
@@ -303,7 +303,39 @@ Parse the `<!-- audit-fleet-digest -->` block from the returned `body`:
 last-run-at: <YYYY-MM-DD>
 <name>: <open-audit-issue-count>
 ...
+design-drift-last-run-at: <YYYY-MM-DD>
+design-drift:<name>: <open-design-drift-count>
+cert-drift:<name>: <open-cert-drift-count>
+...
 ```
+
+The code-bucket per-repo lines are the bare `<name>: <count>` ones; the
+`design-drift:` / `cert-drift:`-prefixed keys below the
+`design-drift-last-run-at:` marker are the **design bucket's own accounting**,
+kept separate so a design-drift issue never inflates a repo's code-finding
+count or its `+N since last week` code delta (`fleet-config#180`). Treat a
+ledger with no `design-drift-last-run-at:` line (a pre-#180 state) as an empty
+design baseline — every current design/cert count is then "new" only in the
+sense of first-observation, not a spurious weekly spike; note it as the initial
+design snapshot rather than a delta.
+
+**Count the design-drift bucket (read-only).** `design-drift` and `cert-drift`
+issues are filed by `/design-sweep` / `/design-sync`, never by an audit
+sub-agent, so no sub-agent report carries them — count the open issues directly
+with two fleet-wide searches (read-only, no repo reading):
+
+```bash
+gh search issues --owner ferraroroberto --label design-drift --state open --json repository --limit 200
+gh search issues --owner ferraroroberto --label cert-drift  --state open --json repository --limit 200
+```
+
+Group each result by `repository.name` into per-repo open counts. This is the
+one place the fleet's design-drift accounting is tallied week-over-week — one
+ledger, alongside the six code buckets, never conflated with them. `/audit-fleet`
+is the unified reporter; `/design-sweep` is the doer that keeps those issues
+current. If either `gh search` fails, note `design-drift: count skipped
+(<reason>)`, carry the last ledger snapshot forward unchanged, and never fail
+the run over it.
 
 Compose the digest as markdown (single long lines per paragraph, no hard
 wraps). This markdown is the canonical artifact: it goes to stdout verbatim and
@@ -311,7 +343,7 @@ is attached to the email as a `.md` file; step 6 also renders it to HTML for the
 email body. Structure it so the per-repo results form a clean table when
 rendered:
 
-- **Header:** date, counts — `N repos audited, M issues filed, K unchanged, L self-fix, B below-threshold, J skipped`, plus `S security fixes` when any sub-agent reported a `Security:` result other than `NONE`.
+- **Header:** date, counts — `N repos audited, M issues filed, K unchanged, L self-fix, B below-threshold, J skipped`, plus `S security fixes` when any sub-agent reported a `Security:` result other than `NONE`, and `D design-drift / C cert-drift open` from the step-5 bucket count.
 - **Per audited repo:** result line + the issues filed this run (bucket → URL),
   and the **delta vs last week** (`+2 since last week` from the digest-state
   counts). Repos that came back CLEAN or SKIPPED-BY-LEDGER get a one-liner.
@@ -354,10 +386,23 @@ rendered:
 - **New fleet assets this week:** the promotion candidates added to the practices
   ledger this run (asset/convention one-liners), with the `PRACTICES_LEDGER_URL`.
   If none were added, one line: `No new fleet assets catalogued this week.`
+- **Design & cert drift:** the `design-drift` bucket, reported *alongside* the
+  six code buckets but never mixed into their counts. One line with the
+  fleet-wide open total and its week-over-week delta from the
+  `design-drift-last-run-at:` baseline (`6 open design-drift across 3 apps
+  (+2 since last week); 1 cert-drift`), then — only for repos whose count
+  **changed** since the baseline — a per-repo delta line (`home-automation: 4
+  (+2)`). Steady repos are folded into the total, not enumerated (same
+  anti-noise discipline as standing backlog). `/design-sweep` is what files and
+  refreshes these issues; this line is the durable week-over-week record.
 
 Then upsert the digest-state ledger issue with today's date and the current
-per-repo open-audit-issue counts, so next week can diff. The helper handles
-create-vs-edit, collapses strays, and stamps the marker (keep the
+per-repo open-audit-issue counts **plus** the design/cert bucket counts under
+their `design-drift-last-run-at:` marker (stamp today's date on that marker
+too), so next week can diff both. Keep the two account groups distinct in the
+body — the bare `<name>: <count>` code lines and the `design-drift:` /
+`cert-drift:`-prefixed lines — never fold a design count into a code line. The
+helper handles create-vs-edit, collapses strays, and stamps the marker (keep the
 `<!-- audit-fleet-digest -->` block intact):
 
 ```
