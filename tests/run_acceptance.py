@@ -406,7 +406,7 @@ def main() -> int:
     # ---- gh_body_file_guard: warn-only stdout assertions ----
     run_unit(_gh_body_file_guard_unit_checks)
 
-    # ---- bash_cmdexe_syntax_guard: warn-only stdout assertions (issue #264) ----
+    # ---- bash_cmdexe_syntax_guard: block + warn assertions (#264, #385) ----
     run_unit(_bash_cmdexe_syntax_guard_unit_checks)
 
     # ---- Tier 2/3 hooks: docs-guard env override + warn-hook stdout (issue #158) ----
@@ -1472,16 +1472,50 @@ def _gh_body_file_guard_unit_checks() -> Tuple[int, int]:
 
 
 def _bash_cmdexe_syntax_guard_unit_checks() -> Tuple[int, int]:
-    """The warn-only nudge fires on cmd.exe-only syntax and stays silent on
-    Bash-native equivalents. Exit is always 0, so these assert on STDOUT, not
-    the exit code: a nudge present (non-empty stdout) for the risky forms,
-    empty for the safe ones."""
+    """The guard blocks MSYS-mangled cmd /c, nudges cmd-only syntax, and stays
+    silent on Bash-native or explicitly MSYS-safe equivalents."""
     check = _Checker()
 
     def stdout_for(command: str) -> str:
         code, out, _err = run("bash_cmdexe_syntax_guard", {"tool_name": "Bash", "tool_input": {"command": command}})
-        # warn-only: the hook must never block (exit non-zero) regardless of input.
+        # These legacy syntax checks remain warn-only; cmd.exe /c is exercised
+        # separately below because that caller shape is now a hard block.
         return out.strip() if code == 0 else f"__NONZERO_EXIT_{code}__"
+
+    code, out, err = run(
+        "bash_cmdexe_syntax_guard",
+        {"tool_name": "Bash", "tool_input": {"command": 'cmd.exe /c "tray.bat --restart" 2>&1'}},
+    )
+    check("cmdexe_guard: Bash cmd.exe /c tray restart -> block with root cause",
+          code == 2 and not out and "C:/" in err and "PowerShell" in err,
+          out + err)
+
+    code, _out, _err = run(
+        "bash_cmdexe_syntax_guard",
+        {"tool_name": "Bash", "tool_input": {"command": 'cmd.exe /d /s /c "echo safe"'}},
+    )
+    check("cmdexe_guard: Bash cmd.exe with leading flags then /c -> block", code == 2)
+
+    code, out, err = run(
+        "bash_cmdexe_syntax_guard",
+        {"tool_name": "Bash", "tool_input": {"command": 'cmd.exe //d //c "echo safe"'}},
+    )
+    check("cmdexe_guard: Bash cmd.exe //c MSYS-safe spelling -> silent allow",
+          code == 0 and not out and not err, out + err)
+
+    code, out, err = run(
+        "bash_cmdexe_syntax_guard",
+        {"tool_name": "Bash", "tool_input": {"command": 'rg -n "cmd.exe /c" skills'}},
+    )
+    check("cmdexe_guard: quoted search text containing cmd.exe /c -> silent allow",
+          code == 0 and not out and not err, out + err)
+
+    code, out, err = run(
+        "bash_cmdexe_syntax_guard",
+        {"tool_name": "PowerShell", "tool_input": {"command": 'cmd.exe /c "tray.bat --restart"'}},
+    )
+    check("cmdexe_guard: PowerShell cmd.exe /c -> outside Bash guard",
+          code == 0 and not out and not err, out + err)
 
     check("cmdexe_guard: %VAR% env reference -> nudge",
           bool(stdout_for("echo %USERPROFILE%")))
@@ -1499,6 +1533,11 @@ def _bash_cmdexe_syntax_guard_unit_checks() -> Tuple[int, int]:
           stdout_for("date +%Y%m%d") == "")
     check("cmdexe_guard: plain git log -> silent",
           stdout_for("git log --oneline") == "")
+
+    yolo_skill = (REPO / "skills" / "issue-yolo" / "SKILL.md").read_text(encoding="utf-8")
+    yolo_skill_flat = re.sub(r"\s+", " ", yolo_skill.replace("**", ""))
+    check("cmdexe_guard: issue-yolo mandates a real Windows shell for tray restart",
+          "real Windows shell" in yolo_skill_flat and "cmd /c" in yolo_skill_flat)
 
     return check.failures, check.total
 

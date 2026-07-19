@@ -219,15 +219,14 @@ follow that procedure **exactly**. The non-negotiables:
   the reclaim sweep exists to kill, then re-runs a start-only script.
 - **Invoke it through a real Windows shell — never Git Bash's nested `cmd /c`.**
   Run the restart via the harness PowerShell tool, or
-  `C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe -Command "& '<repo>\tray.bat' --restart"`
+  `C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe -Command "& '<repo>/tray.bat' --restart"`
   (forward-slash exe path, per the Git-Bash-strips-backslashes rule). Launched
-  through the Bash tool as `cmd /c "tray.bat --restart"`, the batch's embedded
-  `powershell.exe` tray-detection is mangled by the nested quoting: the call
-  emits only the `cmd` banner, none of the batch's own `Stopping previous…`
-  echoes, kills nothing, and `--restart` silently degrades to a plain start that
-  **adopts the still-running old-build webapp**. Fire it non-blocking (the tray
-  holds its console — a foreground launch never returns), then move to the
-  bounded poll below.
+  through the Bash tool as `cmd /c "tray.bat --restart"`, Git Bash/MSYS rewrites
+  `/c` to `C:/`; `cmd.exe` opens an interactive prompt and the batch/helper never
+  runs. The call emits only the `cmd` banner, none of the batch's own `Stopping
+  previous…` echoes, and leaves the old build untouched. Fire the PowerShell
+  invocation non-blocking (the tray holds its console — a foreground launch
+  never returns), then move to the bounded poll below.
 - **Safety caveat — linked children.** `tray.bat --restart` does a `/T` subtree
   kill, so it is safe only for a tray whose linked-but-independent children
   (a session-host + its PTY-backed shells) are spawned **detached** and

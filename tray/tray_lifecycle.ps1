@@ -19,14 +19,18 @@
     Why a committed .ps1 instead of cmd-side lifecycle logic
     (project-scaffolding#54): the old batch shape first embedded CIM/port logic
     in `powershell.exe -Command "..."`, then moved that logic to `-File` but
-    still captured detect output through `for /f usebackq`. Launched
-    non-interactively through a nested shell (Git Bash -> `cmd /c "tray.bat
-    --restart"`, or a finisher skill's Bash tool), that cmd capture can return
-    empty even when this helper works standalone. The result is the same silent
-    stale-build failure: no tray kill, no port reclaim, a plain start that adopts
-    the old webapp, and exit 0. The `launch` action below owns the whole detect
-    -> kill -> reclaim -> start -> verify sequence inside one PowerShell
-    process, so tray.bat does not parse helper output at all.
+    still captured detect output through `for /f usebackq`. That cmd capture
+    could return empty under non-interactive callers even when the helper worked
+    standalone. The `launch` action below removes that failure mode by owning
+    the whole detect -> kill -> reclaim -> start -> verify sequence inside one
+    PowerShell process, so tray.bat does not parse helper output at all.
+
+    A separate outer-shell hazard happens before this file can run
+    (fleet-config#385): Git Bash/MSYS rewrites `cmd.exe /c` to `cmd.exe C:/`.
+    That opens an interactive cmd prompt, so tray.bat and this helper are never
+    entered. Automation must invoke tray.bat through a real PowerShell caller
+    (or use the MSYS-safe `cmd.exe //c` spelling); the fleet Bash hook and issue
+    workflow skills enforce the PowerShell path.
 
     Keep this file ASCII-only: a stray non-ASCII char breaks Windows PowerShell
     5.1 parsing (scaffold docs/windows-tray.md, "Platform gotcha").
