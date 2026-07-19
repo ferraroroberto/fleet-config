@@ -1770,16 +1770,26 @@ def compare_icon_sprite(app_text: str, ref_text: str) -> Optional[str]:
     kept is byte-identical to the scaffold's (fleet-config#284 finding 4).
     Returns None (caller falls back to a whole-file digest) when either side
     has no `<symbol id="...">` elements to compare.
+
+    Comparison is restricted to symbol ids present in BOTH files. Different
+    apps vendor different Lucide subsets, so an app-only symbol (present in
+    the app's sprite, absent from the reference) is expected, sanctioned
+    trimming — not drift — and must not by itself force FORKED (fleet-
+    config#389: local-llm-hub's sprite barely overlaps the reference set, so
+    every symbol they *do* share was byte-identical yet the file still
+    reported FORKED). A reference symbol missing from the app's file is the
+    pre-existing "not (yet) vendored" case and is still reflected via the
+    symbol-count comparison below.
     """
     app_syms = _sprite_symbols(app_text)
     ref_syms = _sprite_symbols(ref_text)
     if not app_syms or not ref_syms:
         return None
-    mismatched = [sid for sid, body in app_syms.items()
-                  if ref_syms.get(sid) != body]
+    common_ids = app_syms.keys() & ref_syms.keys()
+    mismatched = [sid for sid in common_ids if app_syms[sid] != ref_syms[sid]]
     if mismatched:
         return "FORKED"
-    if len(app_syms) < len(ref_syms):
+    if app_syms.keys() != ref_syms.keys():
         return "IDENTICAL (trimmed)"
     return "IDENTICAL"
 
