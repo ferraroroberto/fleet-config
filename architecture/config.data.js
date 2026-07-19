@@ -184,6 +184,11 @@ window.CONFIG = {
       "sched": true
     },
     {
+      "nm": "chief",
+      "ds": "Standing conversational fleet chief — the brain of the app-launcher Board's chat mode (app-launcher#245).",
+      "sched": false
+    },
+    {
       "nm": "cleanup-fleet",
       "ds": "Take one bucket of audit findings (a label like documentation, drift, or bug) and fan out one background agent per repo to fix ev…",
       "sched": false
