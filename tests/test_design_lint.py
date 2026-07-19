@@ -947,6 +947,30 @@ try:
     _sres3 = dl.vendored(_spr_app, _spr_scaf)
     check(_sres3["components"]["icons"]["files"]["icons-sprite.html"] == "IDENTICAL",
           "a full, untrimmed identical set reports plain IDENTICAL")
+
+    # app-only symbol absent from the reference (local-llm-hub scenario, #389):
+    # every shared symbol is byte-identical, but the app also vendors a
+    # glyph the reference sprite never had -> still IDENTICAL (trimmed),
+    # not FORKED, since the extra symbol isn't drift by itself.
+    (_sapp / "icons-sprite.html").write_text(
+        '<symbol id="i-home"><path d="M0 0"/></symbol>'
+        '<symbol id="i-only-in-app"><path d="M2 2"/></symbol>',
+        encoding="utf-8")
+    _sres4 = dl.vendored(_spr_app, _spr_scaf)
+    check(_sres4["components"]["icons"]["files"]["icons-sprite.html"] == "IDENTICAL (trimmed)",
+          "app-only symbol absent from reference -> IDENTICAL (trimmed), not FORKED (#389)")
+    check(_sres4["components"]["icons"]["status"] == "IDENTICAL",
+          "an app-only extra symbol doesn't fork the whole icons component (#389)")
+
+    # a genuinely different shared symbol must still fork, even with an
+    # unrelated app-only extra symbol present alongside it.
+    (_sapp / "icons-sprite.html").write_text(
+        '<symbol id="i-home"><path d="M9 9"/></symbol>'
+        '<symbol id="i-only-in-app"><path d="M2 2"/></symbol>',
+        encoding="utf-8")
+    _sres5 = dl.vendored(_spr_app, _spr_scaf)
+    check(_sres5["components"]["icons"]["files"]["icons-sprite.html"] == "FORKED",
+          "a genuinely-diverged shared symbol still forks, even alongside an app-only extra (#389)")
 finally:
     shutil.rmtree(_spr_scaf, ignore_errors=True)
     shutil.rmtree(_spr_app, ignore_errors=True)
