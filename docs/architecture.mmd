@@ -42,6 +42,15 @@ flowchart TB
   end
   tray --> CLAUDE
 
+  subgraph streamdeck["stream-deck/ — self-contained Node/TS Stream Deck plugin (fleet-config#370)"]
+    SDREGISTRY["registry/targets.json\ncommitted tray-target registry"]
+    SDSYNC["scripts/sync-assets.mjs\nvalidates + copies sister-repo icons,\ncross-checks hooks/projects.toml at build time"]
+    SDACTIONS["src/actions/\nlaunch-target · open-coding · back"]
+    SDMANIFEST["manifest.json + bundled\nread-only Fleet Coding XL profile"]
+    SDREGISTRY --> SDSYNC --> SDACTIONS --> SDMANIFEST
+  end
+  SDREGISTRY -->|validated against| PROJECTS
+
   subgraph gskills["skills/ — GLOBAL tier (every session, every repo)"]
     ISSUEADD["issue-add"] --> ISSUESTART["issue-start"] --> ISSUEFINISH["issue-finish"]
     ISSUEEXTRA["issue-batch · issue-finish-batch · issue-triage · issue-yolo"]

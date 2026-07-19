@@ -1,0 +1,54 @@
+{
+  "$schemaVersion": 1,
+  "targets": [
+    {
+      "id": "app-launcher",
+      "kind": "tray",
+      "label": "App Launcher",
+      "projectsTomlKey": "app-launcher",
+      "iconSource": "E:/automation/app-launcher/assets/stream-deck/app-launcher-144.png"
+    },
+    {
+      "id": "photo-ocr",
+      "kind": "tray",
+      "label": "Photo OCR",
+      "projectsTomlKey": "photo-ocr",
+      "iconSource": "E:/automation/photo-ocr/assets/stream-deck/photo-ocr-144.png"
+    },
+    {
+      "id": "voice-transcriber",
+      "kind": "tray",
+      "label": "Voice Transcriber",
+      "projectsTomlKey": "voice-transcriber",
+      "iconSource": "E:/automation/voice-transcriber/assets/stream-deck/voice-transcriber-144.png"
+    },
+    {
+      "id": "home-automation",
+      "kind": "tray",
+      "label": "Home Automation",
+      "projectsTomlKey": "home-automation",
+      "iconSource": "E:/automation/home-automation/assets/stream-deck/home-automation-144.png"
+    },
+    {
+      "id": "local-llm-hub",
+      "kind": "tray",
+      "label": "Local LLM Hub",
+      "projectsTomlKey": "local-llm-hub",
+      "iconSource": "E:/automation/local-llm-hub/assets/stream-deck/local-llm-hub-144.png"
+    },
+    {
+      "id": "whatsapp-radar",
+      "kind": "tray",
+      "label": "WhatsApp Radar",
+      "projectsTomlKey": "whatsapp-radar",
+      "iconSource": "E:/automation/whatsapp-radar/assets/stream-deck/whatsapp-radar-144.png"
+    },
+    {
+      "id": "grocery-shopping-automation",
+      "kind": "tray",
+      "label": "Grocery Automation",
+      "projectsTomlKey": "grocery-shopping-automation",
+      "iconSource": "E:/automation/grocery-shopping-automation/assets/stream-deck/grocery-shopping-automation-144.png"
+    }
+  ]
+}
