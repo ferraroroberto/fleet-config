@@ -227,7 +227,12 @@ Only reachable on a fully-green Phase 3. Run the full `/issue-finish` skill:
    does the subtree kill + per-`.venv` port reclaim + start atomically). Do
    **not** hand-roll a `Get-NetTCPConnection`/`taskkill` kill: it misses the
    orphan the reclaim sweep exists to kill. Manual port-PID kill is a fallback
-   only for the rare app with no `--restart`. **Safety caveat:** `--restart`'s
+   only for the rare app with no `--restart`. Invoke it through a **real Windows
+   shell**, exactly as `/issue-finish` step 6 requires — never Git Bash's nested
+   `cmd /c`. Git Bash/MSYS rewrites `/c` to `C:/`, opens an interactive cmd
+   prompt, and never runs the batch/helper. Use the PowerShell tool or the
+   absolute `powershell.exe -Command "& '<repo>/tray.bat' --restart"` form.
+   **Safety caveat:** `--restart`'s
    `/T` subtree kill is safe only for a tray whose linked-but-independent
    children (a session-host + its PTY shells) are spawned detached + re-adopted
    on start (scaffold `docs/windows-tray.md`). Read the target repo's `CLAUDE.md`

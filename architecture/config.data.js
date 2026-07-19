@@ -305,9 +305,9 @@ window.CONFIG = {
     {
       "nm": "bash_cmdexe_syntax_guard",
       "ev": "PreToolUse · Bash",
-      "block": false,
+      "block": true,
       "reach": "Claude + Codex",
-      "ds": "Nudge away from cmd.exe-only syntax passed to the Bash tool."
+      "ds": "Reject or nudge cmd.exe-only syntax passed to the Bash tool."
     },
     {
       "nm": "bash_windows_path_guard",

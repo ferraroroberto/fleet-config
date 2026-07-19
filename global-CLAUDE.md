@@ -288,6 +288,7 @@ C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe -NoProfile -NonInterac
 ### Windows PowerShell in spawned commands (any agent)
 
 - **Avoid `pwsh`** in spawned commands — the PATH `pwsh` is a 0-byte WindowsApps reparse stub that fails non-interactively. Use the absolute path `C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe`.
+- **Never call native `cmd.exe /c` from Git Bash.** MSYS rewrites the single-slash switch to `C:/`, so cmd opens interactively and never runs the requested command (fleet-config#385). Use the PowerShell tool/absolute `powershell.exe` path; if Bash must call cmd, the MSYS-safe spelling is `cmd.exe //c`.
 - **PowerShell scripts reading the agent's stdin JSON** use `[Console]::In.ReadToEnd()` — `$input` is unreliable across the shell → powershell.exe pipe.
 - `[math]::Round(x) + '%'` parses as arithmetic and throws — cast first: `[string][math]::Round(x) + '%'`.
 
