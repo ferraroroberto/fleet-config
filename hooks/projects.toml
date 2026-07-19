@@ -129,6 +129,7 @@ cwd_prefix = "E:/automation/family-accounting"
 
 [grocery-shopping-automation]
 cwd_prefix = "E:/automation/grocery-shopping-automation"
+tray_cmd   = "tray.bat"
 
 [illustration-color-edit]
 cwd_prefix = "E:/automation/illustration-color-edit"

@@ -1,0 +1,79 @@
+{
+	"Name": "Fleet Coding",
+	"Version": "1.0.0.0",
+	"Author": "Roberto Ferraro",
+	"Actions": [
+		{
+			"Name": "Launch Target",
+			"UUID": "com.ferraroroberto.fleetcoding.launch-target",
+			"Icon": "imgs/actions/launch-target/icon",
+			"Tooltip": "Launches a fleet tray target chosen via its Property Inspector.",
+			"PropertyInspectorPath": "pi/launch-target.html",
+			"Controllers": [
+				"Keypad"
+			],
+			"States": [
+				{
+					"Image": "imgs/actions/launch-target/key"
+				}
+			]
+		},
+		{
+			"Name": "Open Coding",
+			"UUID": "com.ferraroroberto.fleetcoding.open-coding",
+			"Icon": "imgs/actions/open-coding/icon",
+			"Tooltip": "Switches to the bundled Fleet Coding XL profile.",
+			"Controllers": [
+				"Keypad"
+			],
+			"States": [
+				{
+					"Image": "imgs/actions/open-coding/key",
+					"TitleAlignment": "bottom"
+				}
+			]
+		},
+		{
+			"Name": "Back",
+			"UUID": "com.ferraroroberto.fleetcoding.back",
+			"Icon": "imgs/actions/back/icon",
+			"Tooltip": "Returns to the profile that was active before Open Coding.",
+			"Controllers": [
+				"Keypad"
+			],
+			"States": [
+				{
+					"Image": "imgs/actions/back/key",
+					"TitleAlignment": "bottom"
+				}
+			]
+		}
+	],
+	"Category": "Fleet Coding",
+	"CategoryIcon": "imgs/plugin/category-icon",
+	"CodePath": "bin/plugin.js",
+	"Description": "Source-controlled Fleet Coding control surface — fleet tray launchers, Open Coding, and Back (fleet-config#370).",
+	"Icon": "imgs/plugin/icon",
+	"SDKVersion": 2,
+	"Software": {
+		"MinimumVersion": "6.5"
+	},
+	"OS": [
+		{
+			"Platform": "windows",
+			"MinimumVersion": "10"
+		}
+	],
+	"Nodejs": {
+		"Version": "20"
+	},
+	"Profiles": [
+		{
+			"Name": "profiles/fleet-coding-xl",
+			"DeviceType": 2,
+			"Readonly": true,
+			"DontAutoSwitchWhenInstalled": true
+		}
+	],
+	"UUID": "com.ferraroroberto.fleetcoding"
+}
