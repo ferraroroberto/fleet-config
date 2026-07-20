@@ -237,10 +237,98 @@ def strip_comments(text: str, kind: str) -> str:
     if kind == "css":
         return re.sub(r"/\*.*?\*/", nl, text, flags=re.S)
     if kind == "js":
-        return re.sub(r"/\*.*?\*/", nl, text, flags=re.S)
+        return _strip_js_comments(text)
     if kind == "html":
         return re.sub(r"<!--.*?-->", nl, text, flags=re.S)
     return text
+
+
+_REGEX_DISALLOWED_PRECEDING = frozenset("_$)]")
+
+
+def _regex_literal_ok(last_sig: Optional[str]) -> bool:
+    """True when a bare `/` at this point plausibly opens a regex literal
+    rather than being a division operator — the standard lexer heuristic:
+    only an identifier/`)`/`]` (a value just produced) means division."""
+    if last_sig is None:
+        return True
+    return not (last_sig.isalnum() or last_sig in _REGEX_DISALLOWED_PRECEDING)
+
+
+def _strip_js_comments(text: str) -> str:
+    """Blank out `//` line comments and `/* */` block comments, tracking
+    string/template-literal state so a `//` inside a URL or quoted string
+    (e.g. `'see https://example.com'`) isn't mistaken for a comment opener
+    (fleet-config#394 — a bare per-line regex was over-flagging emoji sites
+    inside `//` comments as rendered-text glyphs).
+
+    Regex literals (`/[^`]/g`) are skipped wholesale rather than fed through
+    the quote/backtick tracker above — a quote or backtick inside a regex's
+    character class would otherwise open a phantom string that swallows
+    every real comment for the rest of the file.
+    """
+    out: List[str] = []
+    i, n = 0, len(text)
+    in_str: Optional[str] = None
+    last_sig: Optional[str] = None
+    while i < n:
+        c = text[i]
+        if in_str:
+            out.append(c)
+            if c == "\\" and i + 1 < n:
+                out.append(text[i + 1])
+                i += 2
+                continue
+            if c == in_str:
+                in_str = None
+                last_sig = "x"
+            i += 1
+            continue
+        if c in ("'", '"', "`"):
+            in_str = c
+            out.append(c)
+            i += 1
+            continue
+        if c == "/" and text[i + 1:i + 2] == "/":
+            j = text.find("\n", i)
+            i = n if j == -1 else j
+            continue
+        if c == "/" and text[i + 1:i + 2] == "*":
+            end = text.find("*/", i + 2)
+            end = n if end == -1 else end + 2
+            out.append("\n" * text.count("\n", i, end))
+            i = end
+            continue
+        if c == "/" and _regex_literal_ok(last_sig):
+            j, in_class, closed = i + 1, False, False
+            while j < n:
+                cj = text[j]
+                if cj == "\\":
+                    j += 2
+                    continue
+                if cj == "\n":
+                    break
+                if cj == "[":
+                    in_class = True
+                elif cj == "]":
+                    in_class = False
+                elif cj == "/" and not in_class:
+                    closed = True
+                    j += 1
+                    break
+                j += 1
+            if closed:
+                while j < n and text[j].isalpha():
+                    j += 1
+                out.append(text[i:j])
+                i = j
+                last_sig = "x"
+                continue
+        out.append(c)
+        if not c.isspace():
+            last_sig = c
+        i += 1
+    return "".join(out)
 
 
 _BLOCK_RE = re.compile(r"([^{}]+)\{([^{}]*)\}")
