@@ -219,6 +219,11 @@ window.CONFIG = {
       "sched": true
     },
     {
+      "nm": "fleet-health",
+      "ds": "Weekly hardware health checkup of every machine in the fleet — capture each box's real resource envelope through its own hub, ana…",
+      "sched": true
+    },
+    {
       "nm": "insights-weekly",
       "ds": "Diff Claude Code's newest /insights report against the previous one (via the local LLM hub) into a concise weekly \"what changed\"…",
       "sched": true

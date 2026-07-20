@@ -75,8 +75,9 @@ flowchart TB
     DESIGNSWEEP["design-sweep\nOpus orchestrator · Sonnet workers\ndesign_sweep_scan.py web-app gate"]
     CONTEXTAUDIT["context-audit"] --> CONTEXTPURGE["context-purge\ncheck.py · gate.py"]
     CONFIGMAP["config-map"]
+    FLEETHEALTH["fleet-health\ncapture.py · ledger.py"]
     OTHERFLEET["insights-weekly · learning-log"]
-    SCHEDULED["run-weekly.bat ×9\nscheduled Claude launchers"]
+    SCHEDULED["run-weekly.bat ×10\nscheduled Claude launchers"]
   end
   fskills -.->|cwd-scoped, Claude Code only| CLAUDE
   AUDITFLEET -->|invokes per repo| OTHERGLOBAL
@@ -97,6 +98,10 @@ flowchart TB
   SYSTEMMAP --> ARCH
   SYSTEMMAP -->|marked block| GCMDFILE
   CONFIGMAP --> ARCH
+  HUB["local-llm-hub :8000 (external)\nper-machine /admin/api/diagnostics/*"]
+  HEALTHLEDGER["~/.claude/fleet-health/\nledger + run annexes — never committed"]
+  FLEETHEALTH -->|discovers + captures each machine via its own hub| HUB
+  FLEETHEALTH -->|appends| HEALTHLEDGER
   CONTEXTAUDIT -->|measures| GCMDFILE
   CONTEXTAUDIT -->|measures| gskills
   CONTEXTAUDIT -->|measures| fskills
