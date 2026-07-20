@@ -447,6 +447,56 @@ check(run_contracts(GOOD_CSS)["icon-set"]["status"] == "NA",
       "no emoji and no vendored icons/ component -> NA")
 
 
+# ---- #394: `//` line comments must not count as emoji-glyph sites ----
+
+check("⎇" not in dl.strip_comments("// header ⎇ status button\ncode();", "js"),
+      "strip_comments(js): // line comment emoji is blanked")
+check("\U0001F389" in dl.strip_comments(
+    "// see https://example.com\nconst s = 'hi \U0001F389';", "js"),
+    "strip_comments(js): a // comment's URL doesn't over-strip a later string literal")
+
+_ic394 = Path(tempfile.mkdtemp(prefix="dl-iconjs394-"))
+try:
+    (_ic394 / "s.css").write_text("", encoding="utf-8")
+    (_ic394 / "app.js").write_text(
+        "// The header ⎇ status button: re-fetch fresh data (#139)\n"
+        "export function fetchGitStatus() {}\n", encoding="utf-8")
+    out = {c["id"]: c for c in dl.contracts(_ic394, [_ic394 / "s.css"], [], [_ic394 / "app.js"], {})}
+    check(out["icon-set"]["status"] == "NA",
+          "emoji glyph inside a // comment is not a rendered-text site (#394, the real apps.js:242 case)")
+finally:
+    shutil.rmtree(_ic394, ignore_errors=True)
+
+# a regex literal's character class can contain a quote/backtick (e.g. the
+# real life-os.js `.replace(/`([^`]+)`/g, ...)` markdown-code-span rule) —
+# the odd backtick count must NOT be read as opening a template literal that
+# then swallows every real // comment for the rest of the file.
+check(dl.strip_comments(
+    "s.replace(/`([^`]+)`/g, '<code>$1</code>');\n"
+    "// header ⎇ status button\n"
+    "code();", "js") == (
+    "s.replace(/`([^`]+)`/g, '<code>$1</code>');\n"
+    "\n"
+    "code();"),
+    "strip_comments(js): a backtick inside a regex char class doesn't fake-open a "
+    "template literal that swallows the following // comment (life-os.js real case)")
+
+# adjacent HTML `<!--...-->` blocks, each carrying an emoji — locks in that
+# the non-greedy <!--.*?--> regex pairs each opener with its own closer
+# rather than bleeding across blocks (investigated as part of #394; not
+# reproducible against the real app-launcher fixture at HEAD, but worth a
+# permanent regression guard).
+_html394 = ('<!-- attach flow, same as the outer-bar \U0001F5BC button --><button>x</button>'
+            '<!-- dismiss (or ✕) --><span>ok</span>')
+_htree394 = Path(tempfile.mkdtemp(prefix="dl-html394-"))
+try:
+    (_htree394 / "i.html").write_text(_html394, encoding="utf-8")
+    sites394 = dl.find_emoji_sites(_htree394, [_htree394 / "i.html"], [])
+    check(sites394 == [], "adjacent HTML comment blocks each fully stripped, no bleed-through (#394)")
+finally:
+    shutil.rmtree(_htree394, ignore_errors=True)
+
+
 # ---- app-icon-family: one generated Lucide master across install surfaces (#369) ----
 
 APP_ICON_SPEC = {
