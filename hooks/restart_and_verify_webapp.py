@@ -167,7 +167,10 @@ def _start_tray(tray_cmd: str, cwd: Path) -> None:
     subprocess.Popen(
         ["cmd", "/c", "start", "", tray_cmd],
         cwd=str(cwd),
-        creationflags=getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0),
+        creationflags=(
+            getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
+            | getattr(subprocess, "CREATE_NO_WINDOW", 0)
+        ),
     )
 
 

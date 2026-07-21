@@ -2088,6 +2088,21 @@ def _restart_webapp_unit_checks() -> Tuple[int, int]:
     check("recovery_hint: no restart_cmd -> option 1 is the tray, no respawn line",
           "WebappManager" not in tray_only and "1) Full clean restart" in tray_only)
 
+    captured = {}
+    saved_popen = rw.subprocess.Popen
+    rw.subprocess.Popen = lambda *a, **kw: captured.update(kw)
+    try:
+        rw._start_tray("tray.bat", Path("E:/automation/app-launcher"))
+    finally:
+        rw.subprocess.Popen = saved_popen
+    flags = captured.get("creationflags", 0)
+    check(
+        "_start_tray: creationflags carries both CREATE_NEW_PROCESS_GROUP and "
+        "CREATE_NO_WINDOW (fleet-config#409)",
+        bool(flags & getattr(rw.subprocess, "CREATE_NEW_PROCESS_GROUP", 0))
+        and bool(flags & getattr(rw.subprocess, "CREATE_NO_WINDOW", 0)),
+    )
+
     return check.failures, check.total
 
 
