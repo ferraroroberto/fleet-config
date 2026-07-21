@@ -63,6 +63,7 @@ KINDS = (
     "cert-drift",
     "context-audit",
     "context-purge",
+    "sota-watch",
 )
 
 _MARKER_RE = re.compile(
@@ -139,6 +140,8 @@ def title_matches(title: str, kind: str) -> bool:
         return t == "context-audit — always-on surface"
     if kind == "context-purge":
         return t == "context-purge ledger"
+    if kind == "sota-watch":
+        return t == "sota-watch ledger"
     # bucket kinds: "audit: <kind> findings ..." (trailing count suffix tolerated)
     return re.match(r"^audit:\s*" + re.escape(kind) + r"\s+findings\b", t) is not None
 

@@ -169,11 +169,12 @@ wrapper_expectations = {
     "fleet-health": ('"/fleet-health"',),
     "insights-weekly": ('"/insights-weekly"',),
     "learning-log": ('"/learning-log"', "--model claude-sonnet-4-6"),
+    "sota-watch": ('"/sota-watch"',),
     "system-map": ('"/system-map"',),
 }
 wrappers = sorted((ROOT / ".claude" / "skills").glob("*/run-weekly.bat"))
-check(len(wrappers) == len(wrapper_expectations) == 10,
-      "the wiring test covers all ten scheduled wrappers")
+check(len(wrappers) == len(wrapper_expectations) == 11,
+      "the wiring test covers all eleven scheduled wrappers")
 for wrapper in wrappers:
     text = wrapper.read_text(encoding="utf-8")
     expected = wrapper_expectations.get(wrapper.parent.name, ())

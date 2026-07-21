@@ -234,6 +234,11 @@ window.CONFIG = {
       "sched": true
     },
     {
+      "nm": "sota-watch",
+      "ds": "Recurring state-of-the-art watch over the fleet's adopted tooling, model, and practice choices — walk the watchlist, deep-researc…",
+      "sched": true
+    },
+    {
       "nm": "system-map",
       "ds": "Regenerate the fleet architecture map (crawl every repo under E:\\automation, render to architecture/system-map.png) and post the…",
       "sched": true
