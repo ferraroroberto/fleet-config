@@ -319,3 +319,18 @@ A persistent Chrome profile allows one live instance; a second launch gets Playw
 ### GitHub's `Closes #N` keyword matches on substrings, not standalone clauses
 
 GitHub's issue-closing parser (`close(s|d)?` / `fix(es|ed)?` / `resolve(s|d)?` + `#N`) matches anywhere in the text, including mid-sentence — "Closes #355 findings for …" auto-closed a tracking issue mid-migration (`app-launcher#355`, 2026-07-06). When a PR advances one finding of a multi-PR issue without finishing it, avoid the keyword entirely — "Part of #N", "Addresses one of #N's findings", "Progresses #N" — and reserve the literal `Closes #N` / `Fixes #N` for the one PR that actually finishes the issue.
+
+### Subprocess spawns must suppress the console window (Windows)
+
+Any `subprocess.Popen`/`.run`/`.call`/`.check_output`/`.check_call` that launches an external executable (ffmpeg, ssh, docker, tailscale, nvidia-smi, clip, a helper script, …) must pass `creationflags=subprocess.CREATE_NO_WINDOW` on Windows — parents with no console of their own (pythonw, a tray app, a scheduled task, a daemon) otherwise get a new console window flashed on screen for every spawn. Default to suppressing it; only omit the flag when the window is meant to be visible to the user (rare — e.g. a deliberately-opened interactive terminal). Already hit six times piecemeal before being written down here (`local-llm-hub`#317, #282, #174, #169 + its own `claude_cli.py` fix; `voice-transcriber`#147) — `fleet-config`#399 has the fleet-wide gap audit.
+
+Canonical pattern (short-lived, no signaling needed):
+```python
+creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
+```
+For a long-lived child that later needs `CTRL_BREAK_EVENT` or graceful termination, combine with a process group:
+```python
+if sys.platform == "win32":
+    kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_NO_WINDOW
+```
+`DETACHED_PROCESS` and `CREATE_NO_WINDOW` are mutually exclusive — never combine them (see `local-llm-hub`#282). Repos with 3+ call sites should factor this into one `_no_window_flags()` / `NO_WINDOW` helper (see `local-llm-hub/scripts/_lib.py`, `whatsapp-radar/src/subprocess_flags.py`) rather than repeating the ternary at every call site.
