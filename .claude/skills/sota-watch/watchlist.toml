@@ -1,0 +1,96 @@
+# SOTA watchlist — the declarative input to /sota-watch (fleet-config#393).
+#
+# One [areas.<name>] block per watched area. Fields:
+#   adopted          — the fleet's current choice for this area
+#   verdict          — the recorded conclusion, one line
+#   verdict_date     — when that verdict was reached (bare TOML date)
+#   links            — issue refs / docs that hold the full evidence
+#   disqualifiers    — what would have to change for a challenger to win;
+#                      the research prompt tests candidates against these
+#   check_every_days — per-area cadence; the weekly run only researches an
+#                      area whose interval has elapsed
+#   delegate         — optional: an external always-open ledger that OWNS the
+#                      area (e.g. local-llm-hub's /frontier-refresh). Delegated
+#                      areas are never re-researched here — /sota-watch reads
+#                      the delegate's latest comment and only flags staleness
+#                      (no run within check_every_days).
+#
+# Run state (last_checked per area) deliberately does NOT live here — a
+# headless scheduled run must never commit to the repo. It lives in
+# ~/.claude/sota-watch/state.json (see watchlist.py). Until an area is first
+# marked, its verdict_date is the baseline.
+
+[areas.token-reduction]
+adopted = "native context_filter PreToolUse hook (fleet-owned, zero third-party trust)"
+verdict = "keep — chop 0% on failing pytest, RTK auto-rewrite WSL-only, MCP tools re-add the trimmed surface; native filter wins on trust + Windows fit"
+verdict_date = 2026-07-20
+links = ["fleet-config#219", "docs/token-reduction-eval.md"]
+disqualifiers = [
+    "chop compresses failing pytest runs (was 0.0%) AND passes the pinned-source trust gate (source audit + network capture)",
+    "a third-party filter beats the native hook's measured 93.5% corpus reduction without new trust surface",
+]
+check_every_days = 45
+
+[areas.model-tiers]
+adopted = "host-neutral easy/hard/extreme tiers; Claude mapping Sonnet=easy, Opus=hard, Opus+xhigh=extreme"
+verdict = "keep — tier vocabulary + per-host mapping single-sourced in docs/model-tiers.md"
+verdict_date = 2026-07-20
+links = ["docs/model-tiers.md"]
+disqualifiers = [
+    "a new model family shifts the capability/cost frontier for sub-agent work (e.g. a Sonnet-class model at Haiku cost, or Claude 5 tiers becoming available for Agent-tool spawns)",
+    "per-call effort control lands on the Agent tool, unlocking finer tier mapping",
+]
+check_every_days = 30
+
+[areas.mcp-context-surface]
+adopted = "minimal-connector doctrine — thin Python scripts via SDK/REST over session-injected MCP connectors"
+verdict = "keep — 945-transcript audit found 97% of injected tool surface unused; scripts own automation"
+verdict_date = 2026-06-15
+links = ["fleet-config#128", "docs/mcp-context-audit.md"]
+disqualifiers = [
+    "connector tool schemas become lazily loaded account-wide (deferred/on-demand, near-zero standing cost per session)",
+    "a recurring automation genuinely needs interactive MCP state a script cannot replicate",
+]
+check_every_days = 60
+
+[areas.memory-systems]
+adopted = "Claude Code file-based auto-memory (per-project MEMORY.md index + one-fact files); no third-party memory layer"
+verdict = "seeded as current choice — no formal evaluation spike run yet"
+verdict_date = 2026-07-20
+links = []
+disqualifiers = [
+    "a cross-agent memory layer (shared by Claude/Codex/Pi/Copilot) proves durable recall without per-session context cost",
+    "native memory ships semantic recall across projects that the file-based index cannot match",
+]
+check_every_days = 45
+
+[areas.skills-ecosystem]
+adopted = "one fleet-config/skills source of SKILL.md skills, junctioned into each agent's auto-scanned dir (Claude/Codex/Pi/Copilot)"
+verdict = "seeded as current choice — same-format-everywhere holds; Antigravity documented non-goal (#160)"
+verdict_date = 2026-07-20
+links = ["fleet-config#160"]
+disqualifiers = [
+    "a cross-agent skill/plugin standard emerges that the junction pattern cannot express (per-agent capability manifests, marketplace distribution)",
+    "an agent the fleet adopts stops reading SKILL.md-format skills",
+]
+check_every_days = 45
+
+[areas.local-model-frontier]
+adopted = "local-llm-hub's bi-weekly /frontier-refresh owns this area end-to-end"
+verdict = "relay-only — 2026-07-12 run: agentic_light keep, agentic_heavy keep, audio_translate watch; audio_transcribe runtime_upgrade disproven on-box (local-llm-hub#274), stays whisper.cpp"
+verdict_date = 2026-07-12
+links = ["local-llm-hub#272"]
+delegate = "ferraroroberto/local-llm-hub#272"
+disqualifiers = []
+check_every_days = 21
+
+[areas.fleet-inference-capacity]
+adopted = "docs/fleet-inference-capacity.md — measured per-node envelopes + open-weight fit classes"
+verdict = "surveyed 2026-07-20 across pc-cuda / gaming / mac-mini-m4 / openclaw"
+verdict_date = 2026-07-20
+links = ["fleet-config#400", "docs/fleet-inference-capacity.md"]
+disqualifiers = [
+    "an open-weight release materially changes what a node class can carry (e.g. a frontier-quality MoE under 8 GB, or unified-memory-first models for the M4)",
+    "node hardware changes (gaming RAM upgrade, NVIDIA driver install, new machine enrolled)",
+]
+check_every_days = 60

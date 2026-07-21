@@ -76,8 +76,9 @@ flowchart TB
     CONTEXTAUDIT["context-audit"] --> CONTEXTPURGE["context-purge\ncheck.py · gate.py"]
     CONFIGMAP["config-map"]
     FLEETHEALTH["fleet-health\ncapture.py · ledger.py"]
+    SOTAWATCH["sota-watch\nwatchlist.toml · watchlist.py"]
     OTHERFLEET["insights-weekly · learning-log"]
-    SCHEDULED["run-weekly.bat ×10\nscheduled Claude launchers"]
+    SCHEDULED["run-weekly.bat ×11\nscheduled Claude launchers"]
   end
   fskills -.->|cwd-scoped, Claude Code only| CLAUDE
   AUDITFLEET -->|invokes per repo| OTHERGLOBAL
@@ -102,6 +103,9 @@ flowchart TB
   HEALTHLEDGER["~/.claude/fleet-health/\nledger + run annexes — never committed"]
   FLEETHEALTH -->|discovers + captures each machine via its own hub| HUB
   FLEETHEALTH -->|appends| HEALTHLEDGER
+  SOTALEDGER["sota-watch ledger issue (audit-managed)\n+ ~/.claude/sota-watch/state.json — never committed"]
+  SOTAWATCH -->|deterministic upsert via audit_issue.py| LIB
+  SOTAWATCH -->|run digest comments| SOTALEDGER
   CONTEXTAUDIT -->|measures| GCMDFILE
   CONTEXTAUDIT -->|measures| gskills
   CONTEXTAUDIT -->|measures| fskills

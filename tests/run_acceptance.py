@@ -457,6 +457,9 @@ def main() -> int:
     # ---- vendored_drift helper pure-logic tests (skills/_lib) ----
     run_unit(_vendored_drift_unit_check)
 
+    # ---- sota-watch watchlist.py pure-logic tests (.claude/skills/sota-watch) ----
+    run_unit(_watchlist_unit_check)
+
     # ---- learning-log report.py pure helpers (.claude/skills/learning-log) ----
     run_unit(_learning_log_unit_checks)
 
@@ -1774,6 +1777,16 @@ def _vendored_drift_unit_check() -> Tuple[int, int]:
     reachable from the one gate. (fleet-config#338)
     """
     return _subprocess_unit_check("vendored_drift", "test_vendored_drift.py")
+
+
+def _watchlist_unit_check() -> Tuple[int, int]:
+    """Run .claude/skills/sota-watch/watchlist.py's pure-logic tests.
+
+    Standalone file, same pattern as the other helpers, so the due/fresh/
+    delegated cadence logic and the seed watchlist's shape are testable on
+    their own and reachable from the one gate. (fleet-config#393)
+    """
+    return _subprocess_unit_check("watchlist", "test_watchlist.py")
 
 
 def _learning_log_unit_checks() -> Tuple[int, int]:
