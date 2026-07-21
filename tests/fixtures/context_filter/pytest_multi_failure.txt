@@ -1,0 +1,64 @@
+============================= test session starts =============================
+platform win32 -- Python 3.12.4, pytest-8.4.0, pluggy-1.5.0
+rootdir: E:\automation\family-accounting
+collected 512 items
+
+tests/test_accounts.py .................................................. [ 20%]
+tests/test_billing.py ....F.......F..................................... [ 45%]
+tests/test_importer.py ................................................. [ 70%]
+tests/test_reports.py .........................F....................... [ 95%]
+tests/test_smoke.py .....                                                [100%]
+
+================================== FAILURES ===================================
+____________________________ test_invoice_total _____________________________
+
+    def test_invoice_total() -> None:
+        invoice = build_invoice([Decimal("10.00"), Decimal("12.00")], tax=Decimal("4.62"))
+>       assert invoice.total == Decimal("26.63")
+E       AssertionError: assert Decimal('26.62') == Decimal('26.63')
+E        +  where Decimal('26.62') = Invoice(total=Decimal('26.62')).total
+E        +  and   Decimal('26.63') = Decimal('26.63')
+
+tests/test_billing.py:42: AssertionError
+---------------------------- Captured stdout call -----------------------------
+loading account 1001 from fixture row 1
+loading account 1001 from fixture row 2
+loading account 1001 from fixture row 3
+loading account 1001 from fixture row 4
+loading account 1001 from fixture row 5
+loading account 1001 from fixture row 6
+loading account 1001 from fixture row 7
+loading account 1001 from fixture row 8
+____________________________ test_tax_rounding ______________________________
+
+    def test_tax_rounding() -> None:
+        rate = tax_rate_for("NL")
+>       assert apply_tax(Decimal("100"), rate) == Decimal("121.00")
+E       AssertionError: assert Decimal('120.99') == Decimal('121.00')
+E        +  where Decimal('120.99') = apply_tax(Decimal('100'), Decimal('0.2099'))
+E        +  and   Decimal('121.00') = Decimal('121.00')
+
+tests/test_billing.py:87: AssertionError
+---------------------------- Captured stdout call -----------------------------
+resolving tax table for region NL
+resolving tax table for region NL
+resolving tax table for region NL
+____________________________ test_report_totals _____________________________
+
+    def test_report_totals() -> None:
+        report = build_report(period="2026-Q2")
+>       assert report.grand_total == Decimal("9812.44")
+E       AssertionError: assert Decimal('9811.90') == Decimal('9812.44')
+E        +  where Decimal('9811.90') = Report(period='2026-Q2').grand_total
+
+tests/test_reports.py:130: AssertionError
+---------------------------- Captured stdout call -----------------------------
+aggregating 312 ledger rows
+aggregating 312 ledger rows
+aggregating 312 ledger rows
+aggregating 312 ledger rows
+=========================== short test summary info ===========================
+FAILED tests/test_billing.py::test_invoice_total - AssertionError: assert Deci...
+FAILED tests/test_billing.py::test_tax_rounding - AssertionError: assert Decim...
+FAILED tests/test_reports.py::test_report_totals - AssertionError: assert Deci...
+========================= 3 failed, 509 passed in 12.41s ======================
