@@ -20,6 +20,7 @@ TOKEN_DIVISOR = 4
 DEFAULT_MAX_LINES = 80
 DEFAULT_MAX_CHARS = 12_000
 SMALL_OUTPUT_CHARS = 1_800
+GIT_LOG_HEAD_LINES = 40
 
 SIGNAL_RE = re.compile(
     r"("
@@ -230,19 +231,40 @@ def _git_status(lines: list[str]) -> Optional[list[str]]:
     return interesting or None
 
 
+PYTEST_FAILURE_HEADER_RE = re.compile(r"^_{4,}\s*\S")
+
+
 def _pytest(lines: list[str]) -> Optional[list[str]]:
+    """RTK-shaped pytest summary: per failure keep the first error line + every
+    ``file:line`` anchor, plus the short summary and counts. The lossy part is
+    dropping the ``E   +  where/and`` continuation explosion and captured
+    stdout/stderr noise that dominate a many-failure run without adding signal.
+    """
     keep: list[str] = []
+    seen_error_line = False
     for line in lines:
         stripped = line.rstrip()
+        # A new ``____ test_name ____`` block resets the first-error tracking so
+        # each failure contributes its own summary line.
+        if PYTEST_FAILURE_HEADER_RE.match(stripped.strip()):
+            seen_error_line = False
+            continue
         if (
             " short test summary info " in stripped
             or stripped.startswith(("FAILED ", "ERROR "))
-            or stripped.startswith(("E   ", "F   "))
-            or "Traceback (most recent call last)" in stripped
             or re.search(r"\b\d+\s+(failed|passed|error|errors|skipped)\b", stripped)
+            or "Traceback (most recent call last)" in stripped
             or re.search(r"\b[A-Za-z0-9_./\\-]+\.py:\d+:", stripped)
         ):
             keep.append(stripped)
+            continue
+        # Keep only the first ``E   ``/``F   `` line of each failure block — the
+        # assertion/error message itself — and drop its ``+  where/and`` tail.
+        if stripped.startswith(("E   ", "F   ")):
+            if not seen_error_line:
+                keep.append(stripped)
+                seen_error_line = True
+            continue
     return keep or None
 
 
@@ -267,11 +289,28 @@ def _npm(lines: list[str]) -> Optional[list[str]]:
     return keep or None
 
 
+def _git_log(lines: list[str]) -> Optional[list[str]]:
+    """Head-cap a long history: keep the most-recent commits verbatim (SHAs and
+    subjects intact — never templated away) and trim only the older tail the
+    agent did not scroll to. Signal-preserving by construction; the win comes
+    entirely from dropping old history on an unbounded ``git log``.
+    """
+    nonblank = [line.rstrip() for line in lines if line.strip()]
+    if len(nonblank) <= GIT_LOG_HEAD_LINES:
+        return None
+    omitted = len(nonblank) - GIT_LOG_HEAD_LINES
+    return nonblank[:GIT_LOG_HEAD_LINES] + [
+        f"[fleet-context-filter: {omitted} earlier commits omitted]"
+    ]
+
+
 def command_specific_lines(command: str, lines: list[str]) -> Optional[list[str]]:
     base = command_base(command)
     lower = command.lower()
     if base == "git" and " status" in f" {lower} ":
         return _git_status(lines)
+    if base == "git" and " log" in f" {lower} " and ("--oneline" in lower or "format:oneline" in lower):
+        return _git_log(lines)
     if base == "pytest" or " pytest" in f" {lower} ":
         return _pytest(lines)
     if base in {"npm", "pnpm", "yarn", "bun"} and re.search(r"\b(test|run\s+test)\b", lower):

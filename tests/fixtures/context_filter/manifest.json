@@ -8,6 +8,20 @@
       "must_contain": ["FAILED tests/test_billing.py::test_invoice_total", "AssertionError", "tests/test_billing.py:42"]
     },
     {
+      "name": "pytest multi-failure",
+      "command": "pytest tests",
+      "fixture": "pytest_multi_failure.txt",
+      "min_reduction_pct": 50,
+      "must_contain": ["FAILED tests/test_billing.py::test_invoice_total", "FAILED tests/test_reports.py::test_report_totals", "tests/test_billing.py:87", "AssertionError"]
+    },
+    {
+      "name": "git log oneline (long history)",
+      "command": "git log --oneline -200",
+      "fixture": "git_log_oneline.txt",
+      "min_reduction_pct": 50,
+      "must_contain": ["a1b2c00 feat: add weekly digest (#200)", "earlier commits omitted"]
+    },
+    {
       "name": "npm success",
       "command": "npm test",
       "fixture": "npm_success.txt",
