@@ -546,6 +546,35 @@ def _context_filter_unit_checks() -> Tuple[int, int]:
         stdout + stderr,
     )
 
+    rewritten_command = ""
+    if code == 0 and stdout.strip():
+        rewritten_command = json.loads(stdout)["hookSpecificOutput"]["updatedInput"]["command"]
+    check(
+        "context_filter_hook: rewritten command has no raw backslash paths (fleet-config#405)",
+        code == 0 and "\\" not in rewritten_command,
+        rewritten_command,
+    )
+    check(
+        "context_filter_hook: PowerShell rewrite uses the call operator (fleet-config#405)",
+        rewritten_command.startswith("& "),
+        rewritten_command,
+    )
+
+    bash_payload = {
+        "tool_name": "Bash",
+        "cwd": str(REPO),
+        "tool_input": {"command": "git status --short"},
+    }
+    code, stdout, stderr = run("context_filter_hook", bash_payload, {"FLEET_CONTEXT_FILTER_MODE": "rewrite"})
+    bash_rewritten = ""
+    if code == 0 and stdout.strip():
+        bash_rewritten = json.loads(stdout)["hookSpecificOutput"]["updatedInput"]["command"]
+    check(
+        "context_filter_hook: Bash rewrite has no raw backslashes and no call operator (fleet-config#405)",
+        code == 0 and "\\" not in bash_rewritten and not bash_rewritten.startswith("&"),
+        bash_rewritten,
+    )
+
     streaming = {
         "tool_name": "PowerShell",
         "cwd": str(REPO),

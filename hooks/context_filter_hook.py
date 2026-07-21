@@ -44,7 +44,12 @@ def main() -> None:
 
     encoded = base64.b64encode(command.encode("utf-8")).decode("ascii")
     cli = Path(__file__).resolve().parent / "context_filter_cli.py"
-    py_cmd = _python_command()
+    py_cmd = _quote_path(Path(_python_command()))
+    if tool.lower() == "powershell":
+        # A quoted path as a bare statement isn't invocable in PowerShell
+        # without the call operator -- unlike Bash, which strips the quotes
+        # and executes directly.
+        py_cmd = f"& {py_cmd}"
     cwd = str(_lib.cwd(payload))
     rewritten = (
         f'{py_cmd} {_quote_path(cli)} run --tool {tool} --mode {mode} '
