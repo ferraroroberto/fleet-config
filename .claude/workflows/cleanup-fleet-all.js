@@ -1,6 +1,6 @@
 export const meta = {
   name: 'cleanup-fleet-all',
-  description: 'Build, independently validate, and ship fleet cleanup issues across all seven queued audit buckets, serially, with a bounded build/validate retry loop',
+  description: 'Build, independently validate, and ship fleet cleanup issues across all eight queued audit buckets, serially, with a bounded build/validate retry loop',
   phases: [
     { title: 'Build' },
     { title: 'Validate' },

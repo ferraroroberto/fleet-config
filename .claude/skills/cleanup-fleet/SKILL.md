@@ -5,9 +5,9 @@ description: Take one bucket of audit findings (a label like documentation, drif
 
 # cleanup-fleet
 
-**Goal:** `/audit-fleet` *finds* and files, bucketed into seven labels; this skill *fixes* one bucket fleet-wide in a single pass. Pick a bucket → gather every open issue carrying that label → score each for complexity → deploy **one background sub-agent per repo**, sized via the easy/hard tier policy (`docs/model-tiers.md`) → aggregate.
+**Goal:** `/audit-fleet` *finds* and files codebase findings, bucketed into seven labels, and `/design-sweep` files an eighth (`design-drift`); this skill *fixes* one bucket fleet-wide in a single pass. Pick a bucket → gather every open issue carrying that label → score each for complexity → deploy **one background sub-agent per repo**, sized via the easy/hard tier policy (`docs/model-tiers.md`) → aggregate.
 
-**`security` is not a cleanup bucket.** `/codebase-audit` now has seven finding buckets plus a `security` kind. The seven finding buckets (incl. the new `slop`) are all queued here for fixing; `security` is the exception — self-healed inline by `/codebase-audit` itself (step 8b — redacted issue + auto-fix + auto-merge, or escalate on failure), never queued for this skill. So the buckets this skill operates on are the seven *queued* ones below; a `security` label never appears here.
+**`security` is not a cleanup bucket.** `/codebase-audit` has seven finding buckets plus a `security` kind. The seven finding buckets (incl. `slop`) are all queued here for fixing; `security` is the exception — self-healed inline by `/codebase-audit` itself (step 8b — redacted issue + auto-fix + auto-merge, or escalate on failure), never queued for this skill. `/design-sync` contributes an eighth queued bucket, `design-drift` (web-app CSS/token/nav drift); its sibling `cert-drift` kind is **review-only** — never queued here, since a tailnet-cert migration must never be auto-applied (see `/design-sync`). So the buckets this skill operates on are the eight *queued* ones below; a `security` or `cert-drift` label never appears here.
 
 **One agent per repo, never two:** the audit files exactly one managed issue per (repo, bucket), so one issue → one repo → one agent → one branch → one PR. Two agents on one checkout collide, so the skill hard-caps at one agent per repo per run and defers extras.
 
@@ -20,7 +20,7 @@ description: Take one bucket of audit findings (a label like documentation, drif
 
 `/cleanup-fleet [<bucket>] [<mode>]` — both optional, order-independent.
 
-**Bucket** — fuzzy-matched to one of the seven *queued* audit labels (case-insensitive; voice-dictation friendly):
+**Bucket** — fuzzy-matched to one of the eight *queued* audit labels (case-insensitive; voice-dictation friendly):
 
 | Says | Label |
 |------|-------|
@@ -31,10 +31,11 @@ description: Take one bucket of audit findings (a label like documentation, drif
 | `maintainability`, `maint`, `structure` | `maintainability` |
 | `slop`, `bloat`, `ai-slop` | `slop` |
 | `bug`, `bugs` | `bug` |
+| `design`, `design-drift`, `css`, `css-drift` | `design-drift` |
 
-(`security` is intentionally absent — it's self-healed inline by `/codebase-audit`, never queued here.)
+(`security` is intentionally absent — self-healed inline by `/codebase-audit`; `cert-drift` is likewise absent — it's `/design-sync`'s review-only kind, never auto-fixed here.)
 
-If **no bucket** is given → run step 2's count query, then `AskUserQuestion` listing the seven queued buckets each with its **live open-issue count**, and let the user pick.
+If **no bucket** is given → run step 2's count query, then `AskUserQuestion` listing the eight queued buckets each with its **live open-issue count**, and let the user pick.
 
 **Mode** — `hard` (default) or `easy` / `silent`. (This is the CLI argument, distinct from the per-issue complexity *tier* below — always read as "`hard` mode" vs. "hard-tier issue" to keep the two straight.)
 
@@ -66,7 +67,7 @@ gh search issues --owner ferraroroberto --state open --include-prs=false --limit
   --json repository,number,labels
 ```
 
-Tally open issues per bucket label (drop `audit-meta` rows; a `security` row should never appear — it's self-healed inline, not queued — but drop it too if one somehow exists), then `AskUserQuestion` listing the seven queued buckets with counts.
+Tally open issues per bucket label (drop `audit-meta` rows; a `security` or `cert-drift` row should never appear — neither is queued here — but drop them too if one somehow exists), then `AskUserQuestion` listing the eight queued buckets with counts.
 
 ### 3. Fetch candidates — one `gh` call
 
@@ -91,6 +92,7 @@ Read each selected issue's title + body (for an audit bucket issue, also weigh t
 
 - **easy tier:** narrow surface, mechanical, clear acceptance, no design decision. Doc fixes, a handful of stale-code deletions, a missing README flag, a rename, a few tightly-scoped checklist items.
 - **hard tier:** multi-module, real design choices, a refactor, an unbounded body, or a **mixed** checklist (trivial *and* hard items together → treat the whole issue as hard-tier; it absorbs the easy parts too).
+- **`design-drift` specifically:** pure token/palette/spacing drift is easy-tier; any **structural** finding — a hand-rolled nav, a forked or re-authored vendored component, a layout rewrite — is hard-tier. `/design-sync`'s rule is *never re-author nav/components* (reuse the vendored snippet, don't rewrite), so a `design-drift` issue carrying one is worked build-and-stop for review, never auto-merged.
 
 When genuinely on the fence, round **up** to hard-tier in `hard` mode (a human will still review it) and **down**-or-defer in `easy`/`silent` mode (never auto-merge something you weren't sure about).
 

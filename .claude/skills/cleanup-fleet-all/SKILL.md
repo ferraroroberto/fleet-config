@@ -1,11 +1,11 @@
 ---
 name: cleanup-fleet-all
-description: Unattended, all-bucket sibling of /cleanup-fleet — builds, validates, and ships every open cleanup issue across all seven queued audit buckets in one overnight pass, no human in the loop. Use for a fully unattended fleet-wide cleanup run — e.g. "/cleanup-fleet-all", "clean up the whole fleet overnight", "run cleanup on all buckets unattended". Runs headless via a scheduled claude -p job.
+description: Unattended, all-bucket sibling of /cleanup-fleet — builds, validates, and ships every open cleanup issue across all eight queued audit buckets in one overnight pass, no human in the loop. Use for a fully unattended fleet-wide cleanup run — e.g. "/cleanup-fleet-all", "clean up the whole fleet overnight", "run cleanup on all buckets unattended". Runs headless via a scheduled claude -p job.
 ---
 
 # cleanup-fleet-all
 
-**Goal:** `/cleanup-fleet` processes one bucket at a time and, in its default `hard` mode, stops for a human to approve the plan and to review hard-tier work before merge. This skill is the genuinely unattended sibling: it walks **all seven queued** audit buckets, serially, and ships every issue with **no human review gate at all** — replaced by an independent validator agent instead of a human. No single agent both builds and ships its own work unchecked. (The eighth audit kind, `security`, is never queued — `/codebase-audit` self-heals it inline; nothing here touches it.)
+**Goal:** `/cleanup-fleet` processes one bucket at a time and, in its default `hard` mode, stops for a human to approve the plan and to review hard-tier work before merge. This skill is the genuinely unattended sibling: it walks **all eight queued** audit buckets, serially, and ships every issue with **no human review gate at all** — replaced by an independent validator agent instead of a human. No single agent both builds and ships its own work unchecked. (`security` is never queued — `/codebase-audit` self-heals it inline — and `cert-drift`, `/design-sync`'s other kind, is review-only, never auto-migrated; nothing here touches either.)
 
 **Three agents per issue, never fewer:**
 
@@ -21,9 +21,9 @@ All of the actual retry/ship decision-making lives in **`.claude/workflows/clean
 
 ## Arguments
 
-`/cleanup-fleet-all [<bucket>...]` — zero or more bucket names, fuzzy-matched via the same synonym table `/cleanup-fleet` uses (`documentation`/`docs`, `claude-md-drift`/`drift`, `duplication`/`dupes`, `stale`/`dead`, `maintainability`/`maint`, `slop`/`bloat`, `bug`/`bugs`).
+`/cleanup-fleet-all [<bucket>...]` — zero or more bucket names, fuzzy-matched via the same synonym table `/cleanup-fleet` uses (`documentation`/`docs`, `claude-md-drift`/`drift`, `duplication`/`dupes`, `stale`/`dead`, `maintainability`/`maint`, `slop`/`bloat`, `bug`/`bugs`, `design-drift`/`design`).
 
-- **No arguments** → all seven queued buckets, the intended unattended shape.
+- **No arguments** → all eight queued buckets, the intended unattended shape.
 - **One or more bucket names** → restrict to just those — use this for an attended dry run of a small slice before trusting a full overnight sweep.
 
 ## Execution rules (read before running any command)
@@ -43,7 +43,7 @@ All of the actual retry/ship decision-making lives in **`.claude/workflows/clean
 
 ### 2. Resolve buckets
 
-Parse args through the synonym table (see "Arguments"). No args → all seven queued canonical labels (`documentation`, `claude-md-drift`, `duplication`, `stale`, `maintainability`, `slop`, `bug`). `security` is never in this set — it's self-healed inline by `/codebase-audit`, never queued. Unrecognized tokens are ignored with a one-line note, not a hard stop.
+Parse args through the synonym table (see "Arguments"). No args → all eight queued canonical labels (`documentation`, `claude-md-drift`, `duplication`, `stale`, `maintainability`, `slop`, `bug`, `design-drift`). `security` and `cert-drift` are never in this set — `security` is self-healed inline by `/codebase-audit`, and `cert-drift` is `/design-sync`'s review-only kind (a tailnet-cert migration is never auto-applied unattended). Unrecognized tokens are ignored with a one-line note, not a hard stop.
 
 ### 3. Fetch every bucket — one `gh` call
 
@@ -126,7 +126,7 @@ E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/hooks
   --kind cleanup --summary "<bucket> (all-mode)" --merged <merged-count> --review <escalated-count>
 ```
 
-(`--review` here means "escalated after 2 failed validation rounds," reusing the existing `--kind cleanup` semantics exactly — no code changes needed.) After every bucket has reported: fire one final roll-up call summing merged/escalated across all seven buckets, same `--kind cleanup` shape with `--summary "all buckets"`.
+(`--review` here means "escalated after 2 failed validation rounds," reusing the existing `--kind cleanup` semantics exactly — no code changes needed.) After every bucket has reported: fire one final roll-up call summing merged/escalated across all eight buckets, same `--kind cleanup` shape with `--summary "all buckets"`.
 
 **`notify_complete.py` is the only sanctioned way to send these pings** — never use an MCP Slack tool to pick a channel; the helper resolves it from `projects.toml`. A silent no-op with no channel configured is correct, not a bug to route around.
 
@@ -155,6 +155,7 @@ No follow-up actions and no auto-launch of anything. A human deals with escalate
 - **Three agents per issue: build, validate, execute. The gate between them is deterministic code in the workflow script, never a fourth LLM call re-interpreting an already-decided verdict.**
 - **This skill never edits source, commits, pushes, or merges.** Every write happens inside a spawned agent.
 - **Never disturb in-progress work.** Dirty/off-default-branch repos are skipped and reported, never stashed or force-switched.
+- **`design-drift` fixes obey `/design-sync`'s structural rule.** The build agent may auto-fix token/palette/spacing drift, but must **never re-author navigation or components** — reuse the vendored `project-scaffolding` snippet verbatim. A structural finding it cannot resolve by re-vendoring must fail validation and **escalate** (branch left for a human), never auto-merge a hand-rolled rewrite. `cert-drift` is not a bucket here at all — its migration is never auto-applied.
 - **Never background a tool call and end the turn expecting a resume — this includes the `Workflow` call itself.** Poll `TaskOutput` to completion within the same turn.
 - **Post-flight dirty-tree check runs here, in this skill, never inside a spawned agent**, right before a repo's status is trusted.
 - **Max 2 build/validate rounds per issue. A second failure escalates — it never force-merges and never silently drops the issue from the final report.**
