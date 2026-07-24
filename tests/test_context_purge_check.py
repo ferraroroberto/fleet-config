@@ -71,6 +71,21 @@ ok("description dropped entirely -> fail",
 ok("plain file without frontmatter -> description rule not applied",
    cp.check("no frontmatter here\n", "still none\n") == [])
 
+# Apostrophes are not quoting. Rewording prose around a possessive must not read
+# as a lost trigger, as long as every double-quoted phrase survives.
+SKILL_APOSTROPHE_BEFORE = (
+    '---\nname: foo\ndescription: Capture each box\'s envelope against last week\'s entry, e.g. "/foo".\n---\n\n# foo\n'
+)
+SKILL_APOSTROPHE_AFTER = (
+    '---\nname: foo\ndescription: Capture the machine\'s envelope, diffed weekly, e.g. "/foo".\n---\n\n# foo\n'
+)
+ok("possessives reworded, double-quoted triggers intact -> pass",
+   cp.check(SKILL_APOSTROPHE_BEFORE, SKILL_APOSTROPHE_AFTER) == [])
+ok("possessives reworded but a real trigger lost -> still fails",
+   any("trigger phrase" in f for f in cp.check(
+       SKILL_APOSTROPHE_BEFORE,
+       '---\nname: foo\ndescription: Capture the machine\'s envelope weekly.\n---\n\n# foo\n')))
+
 # ---- token estimate ----
 ok("est_tokens ~ chars/4", cp.est_tokens("x" * 400) == 100)
 

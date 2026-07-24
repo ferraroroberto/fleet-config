@@ -1,6 +1,6 @@
 ---
 name: design-sweep
-description: Run /design-sync across every FastAPI + static-PWA web app in the E:\automation fleet in one pass and emit one combined digest (stdout + Slack ping). The fleet-wide, unattended half of /design-sync. Use when the user wants a whole-fleet design-drift sweep — e.g. "/design-sweep", "sweep the fleet for design drift", "weekly design sync across all apps". Also runs unattended on a weekly schedule.
+description: Run /design-sync across every FastAPI + static-PWA web app in the E:\automation fleet in one pass, emitting one combined digest (stdout + Slack ping). The fleet-wide, unattended half of /design-sync — e.g. "/design-sweep", "sweep the fleet for design drift", "weekly design sync across all apps". Also runs weekly unattended.
 ---
 
 # design-sweep

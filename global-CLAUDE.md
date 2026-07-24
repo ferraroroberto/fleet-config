@@ -1,16 +1,15 @@
 # Global instructions
 
-Loaded into every coding-agent session on this machine — the single source of truth for every agent that reads a user-scope context file: Claude Code (`~/.claude/CLAUDE.md`), Codex (`~/.codex/AGENTS.md`), Pi (`~/.pi/agent/AGENTS.md`), Copilot CLI (`~/.copilot/copilot-instructions.md`) — one file, symlinked into each home by `fleet-config/install.ps1`; edit once, live everywhere. Hooks, statusline, and tool settings are Claude-Code + Codex-only (per-agent matrix and non-goals: `fleet-config` README). Sections specific to one agent are marked *(… only — skip on other agents)*.
+One file, symlinked by `fleet-config/install.ps1` into every agent's user-scope context path — Claude Code (`~/.claude/CLAUDE.md`), Codex (`~/.codex/AGENTS.md`), Pi (`~/.pi/agent/AGENTS.md`), Copilot CLI (`~/.copilot/copilot-instructions.md`). Hooks, statusline, and tool settings are Claude-Code + Codex-only (matrix: `fleet-config` README). Agent-specific sections are marked *(… only — skip on other agents)*.
 
-> **What lives here vs in a project.** This file owns the **universal** — true for every repo, including a one-off with no UI/tray/launcher. **Shape-specific** guidance (Streamlit, tray/daemon, e2e UI testing, GitHub-Actions CI, restart recipes) lives in `project-scaffolding`'s `CLAUDE.md`. The test: *"would this still apply to a bare repo with no app?"* Yes → here. No → the scaffold. Nothing in both. (Boundary: `ferraroroberto/project-scaffolding#68`; `/context-audit` enforces weekly.)
+> **Here vs project.** This file owns the **universal** — true for every repo, including a one-off with no UI/tray/launcher. Shape-specific guidance (Streamlit, tray/daemon, e2e UI testing, GitHub-Actions CI, restart recipes) lives in `project-scaffolding`'s `CLAUDE.md`. Test: *"would this still apply to a bare repo with no app?"* Yes → here, no → the scaffold, never both. (`ferraroroberto/project-scaffolding#68`; `/context-audit` enforces weekly.)
 
 ## Working method
 
 ### Plan mode is the default
 
-Every non-trivial request starts in plan mode. Non-trivial = anything beyond a one-line fix, a typo, or a question answerable without touching code.
+Every non-trivial request starts in plan mode — non-trivial = anything beyond a one-line fix, a typo, or a question answerable without touching code. In plan mode:
 
-In plan mode:
 - Do NOT edit files, run destructive commands, or commit anything.
 - Investigate as needed (read files, search, run read-only commands).
 - Resolve ambiguity through questions *before* proposing a plan; present it only when confident it reflects what the user wants.
@@ -137,11 +136,11 @@ All stay generic and read each project's CLAUDE.md for the gate command, ports, 
 
 ### Spawning sub-agents — cap concurrent Opus at 3 *(Claude Code only — skip on other agents)*
 
-When fanning out **background sub-agents on Opus**, keep at most **3 in flight** (sliding window: dispatch up to 3, refill as each returns). **Sonnet sub-agents are exempt** — they fan out freely and don't count against the window. The cap is a property of Anthropic's Opus-specific server-side burst limiter (4th–5th+ concurrent bootstrap gets rate-limited; anthropics/claude-code#53922, https://code.claude.com/docs/en/errors — two unattended fleet runs lost most of their work to it). It is **not** `CLAUDE_CODE_MAX_TOOL_USE_CONCURRENCY` (that bounds parallel tool calls in one session, not sub-agents) — the only place to cap sub-agent count is the orchestrating skill's dispatch logic. Every fleet fan-out skill references this cap; tier vocabulary and per-host model mapping live in `fleet-config/docs/model-tiers.md` (single source — don't restate a tier table).
+Keep at most **3 background Opus sub-agents in flight** (sliding window: dispatch up to 3, refill as each returns). **Sonnet sub-agents are exempt** — they fan out freely and don't count against the window. The cap works around Anthropic's Opus-specific server-side burst limiter: the 4th–5th+ concurrent bootstrap gets rate-limited (anthropics/claude-code#53922, https://code.claude.com/docs/en/errors) — two unattended fleet runs lost most of their work to it. It is **not** `CLAUDE_CODE_MAX_TOOL_USE_CONCURRENCY` (that bounds parallel tool calls in one session, not sub-agents) — the only place to cap sub-agent count is the orchestrating skill's dispatch logic. Tier vocabulary and per-host model mapping live in `fleet-config/docs/model-tiers.md` (single source — don't restate a tier table).
 
-**A sub-agent does not self-resume when its own background task finishes — only the top-level session gets that wake-up.** Surfaced dispatching parallel `/issue-yolo` sub-agents (fleet propagation of `project-scaffolding#124`): a sub-agent that launched a long-running background step (e.g. the e2e leg of its verification gate) and then ended its turn with "I'll wait for it to finish" just stopped — nothing woke it back up, because the auto-resume-on-background-completion mechanism only fires for whoever is tracking the task at the orchestrating level, not for a nested background task a sub-agent spawned inside itself. The fix each time was the orchestrator resuming the stalled sub-agent with an explicit instruction to poll synchronously (`BashOutput`/`Monitor`) *within its own turn* rather than ending the turn to "wait." When briefing a sub-agent that must run a long background step as part of its task, tell it up front: it will not be auto-woken — it must poll to completion before ending its turn.
+**A sub-agent does not self-resume when its own background task finishes** — only the top-level session gets that wake-up, so a sub-agent that backgrounds a step (e.g. the e2e leg of its verification gate) and ends its turn with "I'll wait for it to finish" just stops (`project-scaffolding#124`). When briefing a sub-agent that must run a long background step, tell it up front: it will not be auto-woken — it must poll (`BashOutput`/`Monitor`) to completion *within its own turn* before ending.
 
-**A headless top-level `claude -p` session has no wake-up mechanism at all — backgrounding-and-waiting there is fatal, not just stalled.** Every scheduled fleet skill (`audit-fleet`, `context-audit`, `config-map`, `system-map`, `insights-weekly`, `learning-log`, …) runs via its own `run-weekly.bat` calling `claude -p "/<skill>" ... --permission-mode bypassPermissions` — a one-shot invocation with no persistent turn loop and no human attending it. `fleet-config#314`: `/audit-fleet` twice backgrounded a mid-skill tool call (the step-2 repo-sync sweep once, a dispatch step the other time) and ended its turn with "I'll wait for that notification" — the CLI exited immediately on that clean turn-end, reporting `exit_code: 0` (false success in app-launcher's Jobs tab) while the skill never got past that step: no digest, no audits, nothing. Unlike the nested-sub-agent case above, there is no orchestrator watching this session to resume it — the process is just gone. Any command inside a skill meant for unattended/scheduled execution must run synchronously (foreground) or poll to completion within the same turn; never fire-and-forget a tool call and end the turn expecting to be resumed.
+**A headless top-level `claude -p` session has no wake-up mechanism at all** — backgrounding-and-waiting there is fatal, not just stalled: the CLI exits on the clean turn-end and reports `exit_code: 0`, false success over a skill that never ran (`fleet-config#314`, `/audit-fleet` twice — no digest, no audits). Every scheduled fleet skill runs this way, via its own `run-weekly.bat` calling `claude -p "/<skill>" ... --permission-mode bypassPermissions`, with no human attending and no orchestrator to resume it. Any command inside a skill meant for unattended/scheduled execution must run synchronously (foreground) or poll to completion within the same turn; never fire-and-forget a tool call and end the turn expecting to be resumed.
 
 ### Project hygiene
 
@@ -156,7 +155,7 @@ When fanning out **background sub-agents on Opus**, keep at most **3 in flight**
 
 ### Propagate generalizable conventions up to scaffolding
 
-When sister-project work produces a *generalizable convention* (testing pattern, CLAUDE.md rule, workflow), route it up to `project-scaffolding` so every project inherits it — the user called this "very important"; ad-hoc per-project divergence was explicitly rejected.
+Sister-project work producing a *generalizable convention* (testing pattern, CLAUDE.md rule, workflow) routes up to `project-scaffolding` so every project inherits it — "very important"; ad-hoc per-project divergence was explicitly rejected.
 
 - Per-project *instances* (real script names, paths) stay in the project's own CLAUDE.md; the reusable *concept* goes to scaffolding.
 - Check for an existing `project-scaffolding` issue first; otherwise file one (master's template + label + `--assignee @me`).
@@ -257,11 +256,11 @@ client.messages.create(model="claude-haiku-4-5", ...)
 curl -F file=@clip.wav http://127.0.0.1:8090/v1/audio/transcriptions
 ```
 
-**Limitations to verify before using** (as of late June 2026): image/document content blocks ARE supported on the `claude-*` / `gemini-*` subscription paths — but only via the Anthropic `/v1/messages` shape (base64-decoded to a per-request temp dir, fed via `--add-dir`); llama-server backends (qwen/gemma) are text-only and 400 on image input. Remaining gaps: OpenAI-shape → claude silently drops `image_url` parts; URL image sources are passed as a text reference, not fetched; extended-thinking blocks are dropped at the shape boundary; no streaming on `/v1/messages`; Anthropic-shape tool-use to qwen/glm unimplemented (OpenAI-shape works via `--jinja`). Re-read the repo's README + `docs/model-comparison.md` before relying on a model id — the latest-only policy replaces entries when newer models ship.
+**Limitations** (as of late June 2026): image/document content blocks work on the `claude-*` / `gemini-*` subscription paths, but only via the Anthropic `/v1/messages` shape (base64-decoded to a per-request temp dir, fed via `--add-dir`); llama-server backends (qwen/gemma) are text-only and 400 on image input. Remaining gaps: OpenAI-shape → claude silently drops `image_url` parts; URL image sources are passed as a text reference, not fetched; extended-thinking blocks are dropped at the shape boundary; no streaming on `/v1/messages`; Anthropic-shape tool-use to qwen/glm unimplemented (OpenAI-shape works via `--jinja`). Re-read the repo's README + `docs/model-comparison.md` before relying on a model id — the latest-only policy replaces entries when newer models ship.
 
 ### Don't duplicate hub functionality in downstream apps
 
-Downstream apps needing Claude/local-LLM access route through the hub via standard SDKs — never re-implement inline `claude -p` subprocess wrappers (the user rejected that as duplicated engineering; the hub owns subprocess management, prompt assembly, multi-turn flattening, host-routing, and the observability story).
+Route downstream Claude/local-LLM access through the hub via standard SDKs — never re-implement inline `claude -p` subprocess wrappers (rejected as duplicated engineering; the hub owns subprocess management, prompt assembly, multi-turn flattening, host-routing, and observability).
 
 - LLM call → `Anthropic(api_key="local-dummy", base_url="http://127.0.0.1:8000")` or `OpenAI(api_key="local-dummy", base_url="http://127.0.0.1:8000/v1")`.
 - Audio → POST directly to `http://127.0.0.1:8090/v1/audio/transcriptions`.
@@ -322,7 +321,7 @@ GitHub's issue-closing parser (`close(s|d)?` / `fix(es|ed)?` / `resolve(s|d)?` +
 
 ### Subprocess spawns must suppress the console window (Windows)
 
-Any `subprocess.Popen`/`.run`/`.call`/`.check_output`/`.check_call` that launches an external executable (ffmpeg, ssh, docker, tailscale, nvidia-smi, clip, a helper script, …) must pass `creationflags=subprocess.CREATE_NO_WINDOW` on Windows — parents with no console of their own (pythonw, a tray app, a scheduled task, a daemon) otherwise get a new console window flashed on screen for every spawn. Default to suppressing it; only omit the flag when the window is meant to be visible to the user (rare — e.g. a deliberately-opened interactive terminal). Already hit six times piecemeal before being written down here (`local-llm-hub`#317, #282, #174, #169 + its own `claude_cli.py` fix; `voice-transcriber`#147) — `fleet-config`#399 has the fleet-wide gap audit.
+Any `subprocess.Popen`/`.run`/`.call`/`.check_output`/`.check_call` that launches an external executable (ffmpeg, ssh, docker, tailscale, nvidia-smi, clip, a helper script, …) must pass `creationflags=subprocess.CREATE_NO_WINDOW` on Windows — parents with no console of their own (pythonw, a tray app, a scheduled task, a daemon) otherwise get a new console window flashed on screen for every spawn. Default to suppressing it; only omit the flag when the window is meant to be visible to the user (rare — e.g. a deliberately-opened interactive terminal). Prior instances: `local-llm-hub`#317, #282, #174, #169 + its own `claude_cli.py` fix, `voice-transcriber`#147; fleet-wide gap audit `fleet-config`#399.
 
 Canonical pattern (short-lived, no signaling needed):
 ```python

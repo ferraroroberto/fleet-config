@@ -32,7 +32,11 @@ from pathlib import Path
 _MARKED_BLOCK = re.compile(
     r"<!--\s*([\w-]+:[\w-]+):start\s*-->.*?<!--\s*\1:end\s*-->", re.S
 )
-_QUOTED = re.compile(r"\"[^\"]+\"|'[^']+'")
+# Trigger phrases are double-quoted by fleet convention (verified across all 25
+# skill descriptions). Matching `'...'` too only ever spanned apostrophes — a
+# possessive pair like "box's … week's" read as one lost "trigger" and failed
+# any rewrite that touched it.
+_QUOTED = re.compile(r"\"[^\"]+\"")
 
 
 def est_tokens(text: str) -> int:
