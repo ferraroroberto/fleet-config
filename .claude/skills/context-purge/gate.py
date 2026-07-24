@@ -87,6 +87,24 @@ def diff_ledger(current: dict[str, str], ledger: dict[str, str]) -> tuple[list[s
     return to_purge, unchanged
 
 
+def select_assessed(current: dict[str, str], only: list[str] | None) -> dict[str, str]:
+    """Narrow `current` to the files actually assessed this run.
+
+    A fleet run is normally partial — the skill says to skip already-lean
+    files and to degrade rather than block — so recording the whole surface
+    would mark never-read files as assessed and silently suppress them from
+    every future run. `advance --only` records just what was assessed.
+    Unknown keys are an error, not a silent no-op (a typo'd path would
+    otherwise record nothing and read as success).
+    """
+    if only is None:
+        return current
+    unknown = sorted(set(only) - set(current))
+    if unknown:
+        raise KeyError(f"not in the scanned surface: {', '.join(unknown)}")
+    return {k: current[k] for k in only}
+
+
 # ---- surface enumeration ---------------------------------------------------
 
 def _is_linked_worktree(repo_dir: Path) -> bool:
@@ -170,6 +188,11 @@ def main() -> int:
     a = sub.add_parser("advance", help="record current hashes for the surface")
     a.add_argument("--fleet", action="store_true")
     a.add_argument("--date", default=_dt.date.today().isoformat())
+    a.add_argument(
+        "--only", nargs="+", metavar="PATH",
+        help="record only these ledger keys (the files actually assessed this "
+             "run); default records the whole scanned surface",
+    )
     args = ap.parse_args()
 
     current = current_hashes(args.fleet)
@@ -185,10 +208,15 @@ def main() -> int:
             print(f"SUMMARY: to_purge={len(to_purge)} unchanged={len(unchanged)} surface={len(current)}")
         return 0
 
-    # advance: merge scanned keys over the existing ledger, keep foreign keys.
-    merged = {**read_ledger(), **current}
+    # advance: merge assessed keys over the existing ledger, keep foreign keys.
+    try:
+        assessed = select_assessed(current, args.only)
+    except KeyError as exc:
+        print(f"advance: {exc}", file=sys.stderr)
+        return 1
+    merged = {**read_ledger(), **assessed}
     url = write_ledger(merged, args.date)
-    print(f"ADVANCED: {len(current)} file(s) recorded — {url}")
+    print(f"ADVANCED: {len(assessed)} file(s) recorded — {url}")
     return 0
 
 
