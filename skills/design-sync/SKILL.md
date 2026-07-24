@@ -202,7 +202,11 @@ The five sections it returns, and what each means:
   spec-driven, #290), the **icon-set** (emoji glyphs in rendered markup text
   or JS UI-copy strings — FAIL when no vendored Lucide sprite is adopted,
   WARN when emoji sit alongside an adopted sprite — one icon set, never
-  hand-drawn/mixed, #284), the **app-icon-family** (an installable PWA must
+  hand-drawn/mixed, #284; comments (#394), JS **regex literals**, and
+  third-party `vendor/` bundles are not rendered text and are excluded —
+  a char class matching glyphs coming *in* off a terminal draws none, and a
+  vendored bundle's glyph table isn't the adopting app's icon choice, #416),
+  the **app-icon-family** (an installable PWA must
   adopt `project-scaffolding`'s `brand_gen.render_set`, commit the spec-named
   Apple 180 / regular 192+512 / separate maskable 512 / favicon assets, link
   Apple touch + favicon from `index.html`, and keep `any` and `maskable` as
@@ -243,8 +247,11 @@ The five sections it returns, and what each means:
   canonical `loading/ready/empty/stale/error` vocabulary — shadcn-style
   interaction states like `open`/`closed` are a different channel and
   exempt; non-canonical lifecycle synonyms WARN, and lifecycle states with
-  no `role="status"` live region WARN; NA when the app never uses
-  `data-state`).
+  no `role="status"` live region WARN — the region counts whether it is
+  declared in markup or set from JS (`setAttribute('role', 'status')`,
+  `el.role = 'status'`), since a JS-rendered drawer is exactly the surface
+  this contract is for and the check already reads `dataset.state` the same
+  way, #416; NA when the app never uses `data-state`).
 - **`vendored`** — byte-hash comparison of the app's
   `_vendored/<component>/` copies against project-scaffolding's canonical
   files: `IDENTICAL` / `FORKED` (the vendor-verbatim rule broken — always a

@@ -224,12 +224,18 @@ def parse_spec(text: str) -> Dict[str, str]:
 
 # ------------------------------------------------------- CSS custom props
 
-def strip_comments(text: str, kind: str) -> str:
+def strip_comments(text: str, kind: str, *,
+                    blank_regex_literals: bool = False) -> str:
     """Blank out comments, preserving newlines so file:line stays correct.
 
     Without this, a `/* ... @media (color-gamut: p3) ... */` prose comment
     makes the media scanner swallow the following `:root` block (the bug this
     fixed against home-automation's real stylesheet).
+
+    `blank_regex_literals` (js only) additionally drops regex literals. It is
+    opt-in, for the scanners that read JS source as *rendered output* — a
+    regex's character class is input matching, the exact opposite of UI copy
+    (#416). Every other caller wants the pattern text left alone.
     """
     def nl(m: "re.Match[str]") -> str:
         return "\n" * m.group(0).count("\n")
@@ -237,7 +243,7 @@ def strip_comments(text: str, kind: str) -> str:
     if kind == "css":
         return re.sub(r"/\*.*?\*/", nl, text, flags=re.S)
     if kind == "js":
-        return _strip_js_comments(text)
+        return _strip_js_comments(text, blank_regex_literals=blank_regex_literals)
     if kind == "html":
         return re.sub(r"<!--.*?-->", nl, text, flags=re.S)
     return text
@@ -255,7 +261,7 @@ def _regex_literal_ok(last_sig: Optional[str]) -> bool:
     return not (last_sig.isalnum() or last_sig in _REGEX_DISALLOWED_PRECEDING)
 
 
-def _strip_js_comments(text: str) -> str:
+def _strip_js_comments(text: str, *, blank_regex_literals: bool = False) -> str:
     """Blank out `//` line comments and `/* */` block comments, tracking
     string/template-literal state so a `//` inside a URL or quoted string
     (e.g. `'see https://example.com'`) isn't mistaken for a comment opener
@@ -265,7 +271,9 @@ def _strip_js_comments(text: str) -> str:
     Regex literals (`/[^`]/g`) are skipped wholesale rather than fed through
     the quote/backtick tracker above — a quote or backtick inside a regex's
     character class would otherwise open a phantom string that swallows
-    every real comment for the rest of the file.
+    every real comment for the rest of the file. `blank_regex_literals` also
+    drops the literal from the output, for callers reading the source as
+    rendered text (#416).
     """
     out: List[str] = []
     i, n = 0, len(text)
@@ -320,7 +328,10 @@ def _strip_js_comments(text: str) -> str:
             if closed:
                 while j < n and text[j].isalpha():
                     j += 1
-                out.append(text[i:j])
+                # A regex literal never spans lines (the scan above breaks on
+                # "\n"), so dropping one is newline-neutral and file:line
+                # stays exact — the invariant find_emoji_sites relies on.
+                out.append("" if blank_regex_literals else text[i:j])
                 i = j
                 last_sig = "x"
                 continue
@@ -673,22 +684,43 @@ _EMOJI_RE = re.compile(
 _TAG_RE = re.compile(r"<[^>]*>")
 
 
+_VENDOR_DIR_PARTS = {"vendor", "vendors"}
+
+
+def _is_third_party(path: Path) -> bool:
+    """A bundled third-party library under `vendor/`. Distinct from the
+    fleet's own `_vendored/` component family, which stays in scope — those
+    are fleet-authored and byte-compared by the `vendored` lens."""
+    return any(part.lower() in _VENDOR_DIR_PARTS for part in path.parts)
+
+
 def find_emoji_sites(root: Path, html_files: List[Path], js_files: List[Path]
                       ) -> List[str]:
     """`file:line` for emoji glyphs in rendered text — HTML text nodes (tags
     stripped so attribute values don't count) and JS source (string literals
     used as UI copy, e.g. an empty-state message baked into a .js file, are
     indistinguishable from other JS text at grep level, so the whole file is
-    scanned — app-launcher#368)."""
+    scanned — app-launcher#368).
+
+    Two things are *not* rendered text and are excluded (#416): JS regex
+    literals, whose character classes match glyphs coming *in* off a terminal
+    rather than drawing any (app-launcher's `/^[●⏺•◉○]$/` reply-block parser),
+    and third-party `vendor/` bundles, whose internal glyph tables aren't the
+    adopting app's icon choice and can't be fixed there anyway (xterm.js's
+    VT100 DEC Special Graphics map)."""
     sites: List[str] = []
     for p in html_files:
+        if _is_third_party(p):
+            continue
         text = strip_comments(read_text(p), "html")
         text_nodes = _TAG_RE.sub(" ", text)
         for m in _EMOJI_RE.finditer(text_nodes):
             line = text_nodes.count("\n", 0, m.start()) + 1
             sites.append(f"{rel(root, p)}:{line}")
     for p in js_files:
-        text = strip_comments(read_text(p), "js")
+        if _is_third_party(p):
+            continue
+        text = strip_comments(read_text(p), "js", blank_regex_literals=True)
         for m in _EMOJI_RE.finditer(text):
             line = text.count("\n", 0, m.start()) + 1
             sites.append(f"{rel(root, p)}:{line}")
@@ -1732,6 +1764,15 @@ _LIFECYCLE_VOCAB = {"loading", "ready", "empty", "stale", "error"}
 _INTERACTION_STATES = {"open", "closed", "checked", "unchecked", "on", "off",
                        "active", "inactive", "expanded", "collapsed",
                        "visible", "hidden", "selected"}
+# The live region can be declared in markup or set from JS — a JS-rendered
+# drawer/toast is exactly the surface this contract exists for, and the
+# lifecycle half of the same check already reads `dataset.state = '...'`.
+# Grepping only the markup spelling made those surfaces unpassable (#416).
+_ROLE_STATUS_RE = re.compile(
+    r'role=["\']status["\']'
+    r'|setAttribute\(\s*["\']role["\']\s*,\s*["\']status["\']\s*\)'
+    r'|\.role\s*=\s*["\']status["\']',
+    re.I)
 
 
 def _check_async_lifecycle(ctx: _ContractsCtx) -> List[dict]:
@@ -1767,7 +1808,7 @@ def _check_async_lifecycle(ctx: _ContractsCtx) -> List[dict]:
             "vocabulary is exactly loading/ready/empty/stale/error "
             "(design.md Async data & feedback): "
             + "; ".join(f"{v} at {found[v]}" for v in strays[:6]))]
-    if not re.search(r'role=["\']status["\']', markup_all, re.I):
+    if not _ROLE_STATUS_RE.search(markup_all):
         return [_result("async-lifecycle", "WARN",
             'lifecycle states used with no role="status" live region — '
             "state changes are not announced (design.md Async data & feedback)")]
