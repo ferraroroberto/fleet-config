@@ -497,6 +497,75 @@ finally:
     shutil.rmtree(_htree394, ignore_errors=True)
 
 
+# ---- #416: a regex char class is input matching, never rendered UI copy ----
+
+# The real app-launcher terminal-readback.js constructs: character classes that
+# match the glyphs Claude Code's TUI emits *into* the PTY (turn bullets, spinner
+# marks, tool-result gutter arrows). The parser must byte-match them, so the
+# "replace with a Lucide icon" remedy the icon-set finding prescribes would
+# break read-aloud outright — they are not icon choices at all.
+_RB_JS = (
+    "const BULLET_RE = /^[●⏺•◉○]$/;\n"
+    "const SPINNER_LINE_RE = /^\\s*[*✶✻✽✢✱·•∗⁘]?\\s*[A-Z][a-z]+(?:…|\\.\\.\\.)\\s*\\(/;\n"
+    "const TIP_RESULT_RE = /^\\s*[⎿└╰⤷↳]\\s*Tip\\b/i;\n"
+)
+check("●" not in dl.strip_comments(_RB_JS, "js", blank_regex_literals=True),
+      "strip_comments(js, blank_regex_literals): regex char-class glyphs dropped (#416)")
+check("●" in dl.strip_comments(_RB_JS, "js"),
+      "strip_comments(js): regex literals still preserved by default — every "
+      "other contract reads pattern text as source (#416)")
+
+_rb = Path(tempfile.mkdtemp(prefix="dl-regex416-"))
+try:
+    (_rb / "s.css").write_text("", encoding="utf-8")
+    (_rb / "readback.js").write_text(_RB_JS, encoding="utf-8")
+    check(dl.find_emoji_sites(_rb, [], [_rb / "readback.js"]) == [],
+          "parser regex char classes are not emoji sites (#416, real "
+          "app-launcher terminal-readback.js case)")
+    out416 = {c["id"]: c for c in dl.contracts(_rb, [_rb / "s.css"], [], [_rb / "readback.js"], {})}
+    check(out416["icon-set"]["status"] == "NA",
+          "a file of nothing but parser regexes -> icon-set NA, not FAIL (#416)")
+
+    # ...but an emoji in real UI copy *beside* those regexes is still caught:
+    # blanking regex literals must not become a blanket amnesty for the file.
+    (_rb / "readback.js").write_text(
+        _RB_JS + "el.textContent = 'Nothing here \U0001F389';\n", encoding="utf-8")
+    sites_mixed = dl.find_emoji_sites(_rb, [], [_rb / "readback.js"])
+    check(len(sites_mixed) == 1 and sites_mixed[0].endswith(":4"),
+          "an emoji in UI copy alongside parser regexes is still flagged, at "
+          "its true line (#416 must not over-suppress; line numbers preserved)")
+finally:
+    shutil.rmtree(_rb, ignore_errors=True)
+
+
+# ---- #416: third-party vendor/ bundles are not the app's icon choice ----
+
+# xterm.js ships the VT100 DEC Special Graphics scan-line table (U+23BA-U+23BD)
+# inside its minified bundle. Not authored UI copy, and unfixable in the repo
+# that vendored it. The fleet's own `_vendored/` family stays in scope.
+_vend = Path(tempfile.mkdtemp(prefix="dl-vendor416-"))
+try:
+    (_vend / "s.css").write_text("", encoding="utf-8")
+    third = _vend / "app/webapp/static/vendor"
+    third.mkdir(parents=True)
+    (third / "xterm.js").write_text(
+        'var t={j:"┘",o:"⎺",p:"⎻",r:"⎼",s:"⎽"};', encoding="utf-8")
+    fleet = _vend / "app/webapp/static/_vendored/nav"
+    fleet.mkdir(parents=True)
+    (fleet / "nav-tabs.js").write_text(
+        "b.textContent = 'Home \U0001F3E0';", encoding="utf-8")
+    js416 = [third / "xterm.js", fleet / "nav-tabs.js"]
+    sites_v = dl.find_emoji_sites(_vend, [], js416)
+    check(all("vendor/xterm.js" not in s for s in sites_v),
+          "third-party vendor/ bundle glyphs are not emoji sites (#416, "
+          "xterm.js DEC Special Graphics table)")
+    check(len(sites_v) == 1 and "_vendored/nav" in sites_v[0],
+          "the fleet's own _vendored/ family stays in scope — `vendor` must "
+          "not be read as a prefix of `_vendored` (#416)")
+finally:
+    shutil.rmtree(_vend, ignore_errors=True)
+
+
 # ---- app-icon-family: one generated Lucide master across install surfaces (#369) ----
 
 APP_ICON_SPEC = {
@@ -927,6 +996,39 @@ check("busy" in lc_mixed["async-lifecycle"]["detail"],
 lc_silent = run_contracts(GOOD_CSS, '<main data-state="loading"></main>')
 check(lc_silent["async-lifecycle"]["status"] == "WARN",
       "async-lifecycle: lifecycle states but no role=status live region -> WARN")
+
+# ---- #416: the live region may be set from JS, not just declared in markup ----
+
+# The real app-launcher board.js drawer: both halves of the contract are set
+# through the DOM API. The check already read `dataset.state = '...'` for the
+# lifecycle values, so demanding a markup-literal role="status" made every
+# JS-rendered surface — exactly what this contract is for — unpassable.
+LC_JS_DOM = ("exchange.dataset.state = 'loading';\n"
+             "exchange.setAttribute('role', 'status');\n"
+             "exchange.setAttribute('aria-live', 'polite');\n")
+lc_jsdom = run_contracts(GOOD_CSS, js=LC_JS_DOM)
+check(lc_jsdom["async-lifecycle"]["status"] == "PASS",
+      "async-lifecycle: setAttribute('role', 'status') satisfies the live "
+      "region (#416, real app-launcher board.js:222-224)")
+
+# the reflected IDL property spelling, and irregular whitespace
+check(run_contracts(GOOD_CSS, js="p.dataset.state = 'error';\np.role = 'status';"
+                    )["async-lifecycle"]["status"] == "PASS",
+      "async-lifecycle: the `el.role = 'status'` IDL spelling also counts (#416)")
+check(run_contracts(GOOD_CSS, js='x.dataset.state="ready";\n'
+                    'x.setAttribute( "role" , "status" );'
+                    )["async-lifecycle"]["status"] == "PASS",
+      "async-lifecycle: setAttribute spacing/quote style is not load-bearing (#416)")
+
+# a JS surface that sets lifecycle state but no live region at all still WARNs —
+# widening the spellings must not turn the check into a rubber stamp.
+check(run_contracts(GOOD_CSS, js="pane.dataset.state = 'loading';"
+                    )["async-lifecycle"]["status"] == "WARN",
+      "async-lifecycle: JS lifecycle with no live region in any spelling still WARNs (#416)")
+check(run_contracts(GOOD_CSS, js="pane.dataset.state = 'loading';\n"
+                    "pane.setAttribute('role', 'alert');"
+                    )["async-lifecycle"]["status"] == "WARN",
+      "async-lifecycle: a different ARIA role is not a status live region (#416)")
 
 
 # ---- vendored byte-compare ----
