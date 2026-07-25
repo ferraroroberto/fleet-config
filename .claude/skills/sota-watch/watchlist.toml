@@ -75,6 +75,19 @@ disqualifiers = [
 ]
 check_every_days = 45
 
+[areas.agent-messaging]
+adopted = "launcher Board chat + /chief (app-launcher#245) + Slack hooks + vendored Telegram notifier (project-scaffolding#100); fleet-config#177 open as the inbound-bridge candidate"
+verdict = "watch, don't adopt — Buzz (github.com/block/buzz) evaluated at launch: mobile/push unfinished for a phone-first user, 4-service Docker stack vs native-process posture, duplicates three working surfaces, Nostr Git collides with GitHub-as-OS"
+verdict_date = 2026-07-25
+links = ["fleet-config#422", "fleet-config#177", "app-launcher#245", "project-scaffolding#100"]
+disqualifiers = [
+    "challenger's mobile client + push notifications are production-ready",
+    "Claude Code agent harness proven on native Windows without a multi-service Docker stack (or the fleet explicitly accepts Docker)",
+    "coexists with GitHub as source of truth — no Git-hosting migration required",
+    "beats fleet-config#177's Socket-Mode design on attack surface, not just features",
+]
+check_every_days = 60
+
 [areas.local-model-frontier]
 adopted = "local-llm-hub's bi-weekly /frontier-refresh owns this area end-to-end"
 verdict = "relay-only — 2026-07-12 run: agentic_light keep, agentic_heavy keep, audio_translate watch; audio_transcribe runtime_upgrade disproven on-box (local-llm-hub#274), stays whisper.cpp"
