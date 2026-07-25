@@ -1,8 +1,6 @@
 # Project Instructions
 
-This repo is the versioned home for user-scope coding-agent configuration. After `install.ps1`, the contents of `hooks/` are visible at `~/.claude/hooks/` (and vice-versa) via a Windows junction — no copy step, no sync ritual.
-
-The global instructions (plan-mode default, git discipline, no AI attribution) are this repo's own `global-CLAUDE.md` and apply here in full — below is only what's specific to this repo.
+Versioned home for user-scope coding-agent configuration. After `install.ps1`, `hooks/` is visible at `~/.claude/hooks/` (and vice-versa) via a Windows junction — no copy step, no sync ritual. This repo's own `global-CLAUDE.md` supplies the global instructions (plan-mode default, git discipline, no AI attribution) and applies here in full; below is only what's repo-specific.
 
 ## Repo-specific conventions
 
@@ -43,14 +41,6 @@ Invoke this repo's `.venv` interpreter directly by its absolute path (as above) 
 ## Git
 
 Global git discipline applies (never auto-commit/push/stage unasked; prepare a ready-to-copy conventional commit message). Repo nuance: the very first hook here blocks AI attribution trailers, so you'd trip your own wire.
-
-```bash
-git add <files>
-git commit -m "type: short description
-
-- detail 1
-- detail 2"
-```
 
 ---
 

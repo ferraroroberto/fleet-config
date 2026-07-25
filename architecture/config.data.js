@@ -215,12 +215,12 @@ window.CONFIG = {
     },
     {
       "nm": "design-sweep",
-      "ds": "Run /design-sync across every FastAPI + static-PWA web app in the E:\\automation fleet in one pass and emit one combined digest (s…",
+      "ds": "Run /design-sync across every FastAPI + static-PWA web app in the E:\\automation fleet in one pass, emitting one combined digest (…",
       "sched": true
     },
     {
       "nm": "fleet-health",
-      "ds": "Weekly hardware health checkup of every machine in the fleet — capture each box's real resource envelope through its own hub, ana…",
+      "ds": "Weekly hardware health checkup of every fleet machine — capture each box's resource envelope through its own hub, diff against la…",
       "sched": true
     },
     {

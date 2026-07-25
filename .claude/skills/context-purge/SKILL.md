@@ -27,10 +27,10 @@ E:/automation/fleet-config/.venv/Scripts/python.exe .claude/skills/context-purge
 Prints `TO_PURGE` lines + a `SUMMARY:` — only those files are read at all. `to_purge=0` → report "surface unchanged since last run" and stop (a valid, successful run). After the run, record every **assessed** file — both the rewritten ones and the ones judged already-lean (both count; neither should re-surface until edited):
 
 ```
-E:/automation/fleet-config/.venv/Scripts/python.exe .claude/skills/context-purge/gate.py advance [--fleet]
+E:/automation/fleet-config/.venv/Scripts/python.exe .claude/skills/context-purge/gate.py advance [--fleet] --only <path> [<path> ...]
 ```
 
-`advance` merges over the existing ledger (entries outside the scanned surface are preserved) and upserts the issue.
+`advance` merges over the existing ledger (entries outside the scanned surface are preserved) and upserts the issue. **Pass `--only` with the files you actually assessed.** A fleet run is normally partial — the surface is large, lean files are skipped by design, and a per-repo failure is reported and skipped — so a bare `advance` would record files nobody read and silently suppress them from every future run until someone edits them. Bare `advance` (whole surface) is correct only when the run genuinely assessed every gated file. Unknown paths are a hard error, not a silent no-op.
 
 ## Priorities (highest value first)
 

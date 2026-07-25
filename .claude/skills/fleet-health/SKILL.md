@@ -1,6 +1,6 @@
 ---
 name: fleet-health
-description: Weekly hardware health checkup of every machine in the fleet — capture each box's real resource envelope through its own hub, analyse it against last week's entry, and append to one incremental ledger. Use when the user wants to know what their machines are actually carrying — e.g. "/fleet-health", "check the fleet hardware health", "what's running on my machines", "what crept in since last week". Also runs unattended on a weekly schedule.
+description: Weekly hardware health checkup of every fleet machine — capture each box's resource envelope through its own hub, diff against last week's entry, append to one incremental ledger. Use for what the machines are actually carrying — e.g. "/fleet-health", "check the fleet hardware health", "what's running on my machines", "what crept in since last week". Also runs weekly unattended.
 ---
 
 # fleet-health

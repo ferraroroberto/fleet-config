@@ -59,6 +59,24 @@ ok("diff: modified file re-enters to_purge", "life-os/CLAUDE.md" in to_purge)
 ok("diff: never-assessed file is to_purge", "photo-ocr/CLAUDE.md" in to_purge)
 ok("diff: untouched file stays unchanged", unchanged == ["fleet-config/global-CLAUDE.md"])
 
+# ---- select_assessed (advance --only) ----
+# A fleet run is normally partial, so recording the whole surface would mark
+# never-read files as assessed and hide them from every future run.
+SURFACE = {"a/CLAUDE.md": "aaaaaaaaaaaa", "b/CLAUDE.md": "bbbbbbbbbbbb",
+           "c/CLAUDE.md": "cccccccccccc"}
+ok("select: no --only -> whole surface", gate.select_assessed(SURFACE, None) == SURFACE)
+ok("select: --only narrows to the assessed files",
+   gate.select_assessed(SURFACE, ["a/CLAUDE.md", "c/CLAUDE.md"])
+   == {"a/CLAUDE.md": "aaaaaaaaaaaa", "c/CLAUDE.md": "cccccccccccc"})
+ok("select: unassessed file is left out (stays in next run's to_purge)",
+   "b/CLAUDE.md" not in gate.select_assessed(SURFACE, ["a/CLAUDE.md"]))
+ok("select: empty --only records nothing", gate.select_assessed(SURFACE, []) == {})
+try:
+    gate.select_assessed(SURFACE, ["a/CLAUDE.md", "typo/CLAUDE.md"])
+    ok("select: unknown key raises", False)
+except KeyError as exc:
+    ok("select: unknown key raises, naming it", "typo/CLAUDE.md" in str(exc))
+
 # ---- hash shape ----
 ok("file_hash: 12 lowercase hex chars", len(gate.file_hash(b"x")) == 12
    and all(c in "0123456789abcdef" for c in gate.file_hash(b"x")))
