@@ -71,10 +71,16 @@ E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skill
 
 It prints `CERT_DRIFT=yes|no`, `REASON=...`, and the `TAILNET` / `SELF_SIGNED` /
 `TS_CERT` evidence (`file:line`, or `-`). The verdict is a fixed truth table over
-three signals — a `*.ts.net`/Tailscale mention in `README.md`/`CLAUDE.md`/`docs/**`,
-a `gen_ssl_cert.py`-style provisioner or `/install-ca` route, and the absence of a
-`gen_tailscale_cert.py`-style provisioner — so it is deterministic, not a judgment
-call. `CERT_DRIFT=no` → note "cert: ok" for the final report and move on.
+three signals — real tailnet-exposure evidence (a `*.ts.net` URL, a `tailscale
+serve`/`funnel` invocation, or a tailnet CGNAT IP) in `README.md`/`CLAUDE.md`/`docs/**`
+(a bare prose mention of the word "tailscale" alone does NOT qualify —
+fleet-config#418), a `gen_ssl_cert.py`-style provisioner or `/install-ca` route,
+and the absence of a `gen_tailscale_cert.py`-style provisioner — so it is
+deterministic, not a judgment call. A repo that has triaged and disproved a
+finding can declare a durable `[cert]` opt-out in its own `.fleet.toml`
+(`architecture/README.md`); that always reports `CERT_DRIFT=no`, so a
+closed-as-not-planned issue doesn't get refiled next sweep. `CERT_DRIFT=no` →
+note "cert: ok" for the final report and move on.
 
 On `CERT_DRIFT=yes`, file a **separate** deduped `cert-drift` issue (never folded
 into `design-drift`):

@@ -82,6 +82,33 @@ one more thing to keep in sync with reality. Full decision writeup, including
 what would have flipped the answer to `VENDORED.lock`, is in
 `skills/propagate-vendored/README.md`.
 
+### Optional per-repo `[cert]` table (fleet-config#418)
+
+A repo that has triaged and disproved a `cert-drift` finding — `skills/_lib/cert_drift.py`
+flagging it as tailnet-reachable and still self-signed-only, when it structurally
+isn't (e.g. `tailscale cert` can't serve its loopback SANs) — declares that verdict
+once, durably, instead of relying on prose the detector re-parses every sweep:
+
+```toml
+[cert]
+not_applicable = true
+reason         = "tailscale cert cannot serve this app's loopback SANs"
+disproof       = "https://github.com/<owner>/<repo>/issues/151"
+```
+
+| Field | Meaning |
+|---|---|
+| `not_applicable` | must be `true` to opt out; any other value is ignored |
+| `reason` | one line, folded into the `REASON=` output of `cert_drift.py detect` |
+| `disproof` | link to the issue/comment where the finding was triaged |
+
+`classify()` treats this as the highest-precedence signal — always `clean`,
+before the three tailnet/self-signed/ts-cert signals are even consulted. This
+is the only guard against `audit_issue.py` refiling a closed-as-not-planned
+`cert-drift` issue: its dedup only queries *open* issues, so a closed verdict
+is otherwise invisible to the next sweep. Same silent-if-unrecognized parsing
+as `[vendored]` above — adding `[cert]` costs nothing on the map-build path.
+
 ### Local specs — kept out of git 🔒
 
 The committed `DATA.compute` (and the committed `system-map.png`) show **placeholder** hardware specs. Real GPU/CPU/RAM are personal detail, so they live in **`system-map.local.js`** (gitignored via `*.local.*`). `system-map.html` loads it with a plain `<script>` tag — works under `file://`, no CORS — and merges `window.LOCAL` over the placeholders. Missing on a fresh checkout → harmless 404, placeholders stay.

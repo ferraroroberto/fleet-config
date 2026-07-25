@@ -13,15 +13,38 @@ Reference impl (migrated, must read CLEAN): `ferraroroberto/grocery-shopping-aut
 (`scripts/gen_tailscale_cert.py` + webapp wire-up).
 
 The three signals (gathered from the repo's tracked files):
-  - **tailnet_reachable** — `README.md` / `CLAUDE.md` / `docs/**/*.md` mention a
-    `*.ts.net` URL or Tailscale access (docs/ is in scope because a real target
-    documents its tailnet exposure there, not in the README). A genuinely LAN-only
-    app has no such signal, so its self-signed path is legitimate and must NOT trip
-    the check.
+  - **tailnet_reachable** — `README.md` / `CLAUDE.md` / `docs/**/*.md` document
+    real tailnet exposure: a `*.ts.net` URL, a `tailscale serve`/`tailscale
+    funnel` invocation, or a tailnet CGNAT IP (`100.64.0.0/10`). docs/ is in
+    scope because a real target documents its tailnet exposure there, not in
+    the README. A bare prose mention of the word "tailscale" — e.g. naming it
+    as an incidental cause in a troubleshooting table — does NOT qualify on
+    its own (fleet-config#418: this false-positived voice-transcriber off a
+    `README.md` row about a dropped-connection bug, not a docs claim). A
+    genuinely LAN-only app has no real-exposure signal, so its self-signed
+    path is legitimate and must NOT trip the check.
   - **self_signed_present** — a `gen_ssl_cert.py`-style provisioner, or an
     `/install-ca` route / `.mobileconfig` trust dance.
   - **ts_cert_present** — a `gen_tailscale_cert.py`-style provisioner, or a
     `tailscale cert` invocation. Its presence means the app already migrated.
+
+A repo that has triaged a finding and disproved it (e.g. `tailscale cert`
+structurally cannot serve its loopback SANs) can declare a durable non-adopter
+opt-out in its own `.fleet.toml`:
+
+    [cert]
+    not_applicable = true
+    reason         = "tailscale cert cannot serve this app's loopback SANs"
+    disproof       = "https://github.com/<owner>/<repo>/issues/151"
+
+`classify()` treats the opt-out as the highest-precedence signal — it always
+reports `clean` regardless of the three signals above, so a triaged verdict
+survives even if the repo's docs still happen to mention Tailscale prose
+elsewhere. This is the only refiling guard: `audit_issue.py` dedups against
+*open* issues only, so a closed-as-not-planned `cert-drift` issue is invisible
+to the next sweep and would otherwise be refiled forever. Declaring the
+opt-out marker is deliberately simpler than teaching every audit kind's dedup
+to consult closed-issue state reasons via `gh`.
 
 Subcommand:
 
@@ -43,6 +66,7 @@ import argparse
 import os
 import re
 import sys
+import tomllib
 from pathlib import Path
 from typing import Dict, List, Optional
 
@@ -56,9 +80,19 @@ if hasattr(sys.stdout, "reconfigure"):  # UTF-8 even when stdout is captured (cp
 
 # ---- pure signal predicates (unit-tested without git) ---------------------
 
-# A *.ts.net URL or a plain "tailscale" mention (case-insensitive). Scoped to
-# README/CLAUDE at the IO layer so an incidental mention elsewhere can't trip it.
-TAILNET_RE = re.compile(r"\.ts\.net\b|\btailscale\b", re.IGNORECASE)
+# Real tailnet-exposure evidence only — a *.ts.net hostname, a `tailscale
+# serve`/`tailscale funnel` invocation, or a tailnet CGNAT IP (100.64.0.0/10).
+# A bare prose mention of the word "tailscale" alone must NOT match: it can't
+# distinguish "reachable at host.tailnet.ts.net" from "a dropped Tailscale
+# handoff can surface as WinError 64" (fleet-config#418). Scoped to
+# README/CLAUDE/docs at the IO layer so an incidental mention elsewhere can't
+# trip it either.
+TAILNET_RE = re.compile(
+    r"\.ts\.net\b"
+    r"|\btailscale\b['\"\s,]+(?:serve|funnel)\b"
+    r"|\b100\.(?:6[4-9]|[7-9]\d|1[01]\d|12[0-7])\.\d{1,3}\.\d{1,3}\b",
+    re.IGNORECASE,
+)
 
 # The self-signed trust dance: the `/install-ca` route, an `install_ca` handler,
 # or a `.mobileconfig` profile served to phones.
@@ -83,7 +117,8 @@ TS_CERT_SCRIPT_RE = re.compile(
 
 
 def has_tailnet_signal(text: str) -> bool:
-    """True if the text mentions a *.ts.net URL or Tailscale."""
+    """True for real tailnet-exposure evidence; a bare "tailscale" word mention
+    with no host/IP/command alongside it does NOT qualify (fleet-config#418)."""
     return bool(TAILNET_RE.search(text))
 
 
@@ -107,17 +142,30 @@ def is_tailscale_cert_script(basename: str) -> bool:
     return bool(TS_CERT_SCRIPT_RE.search(basename))
 
 
-def classify(tailnet_reachable: bool, self_signed_present: bool, ts_cert_present: bool) -> tuple[str, str]:
+def classify(
+    tailnet_reachable: bool,
+    self_signed_present: bool,
+    ts_cert_present: bool,
+    opted_out: bool = False,
+    opt_out_reason: str = "",
+) -> tuple[str, str]:
     """The fixed truth table: ('drift'|'clean', reason).
 
     Order matters — each early return encodes one no-false-positive guarantee:
+      0. a triaged non-adopter opt-out is declared -> always clean, before any
+         signal is even consulted (a disproved finding must stay disproved);
       1. no self-signed provisioning at all -> nothing to migrate;
       2. no Tailscale signal -> LAN-only, self-signed is the correct choice;
       3. a tailscale-cert provisioner exists -> already migrated (clean even if a
          legacy self-signed script still lingers).
     Only a tailnet-reachable app that is *still* self-signed-only, with no
-    `tailscale cert` provisioner, is drift.
+    `tailscale cert` provisioner, and with no opt-out declared, is drift.
     """
+    if opted_out:
+        reason = "triaged non-adopter opt-out declared in .fleet.toml"
+        if opt_out_reason:
+            reason += f" — {opt_out_reason}"
+        return ("clean", reason)
     if not self_signed_present:
         return ("clean", "no self-signed HTTPS provisioning — nothing to migrate")
     if not tailnet_reachable:
@@ -208,12 +256,51 @@ def gather_signals(repo_root: Path) -> Dict[str, Dict[str, object]]:
     return {"tailnet": tailnet, "self_signed": self_signed, "ts_cert": ts_cert}
 
 
+def read_cert_optout(repo_root: Path) -> Optional[Dict[str, str]]:
+    """Read an optional `[cert]` non-adopter opt-out from the repo's `.fleet.toml`.
+
+    A repo that has triaged and disproved a cert-drift finding (e.g. a
+    loopback-only app that `tailscale cert` structurally cannot serve)
+    declares it once, durably:
+
+        [cert]
+        not_applicable = true
+        reason         = "tailscale cert cannot serve this app's loopback SANs"
+        disproof       = "https://github.com/<owner>/<repo>/issues/151"
+
+    Returns `None` if `.fleet.toml` is absent, unreadable, or `not_applicable`
+    is not truthy — callers then fall back to signal-based classification.
+    """
+    toml_path = repo_root / ".fleet.toml"
+    if not toml_path.is_file():
+        return None
+    try:
+        data = tomllib.loads(toml_path.read_text(encoding="utf-8"))
+    except (OSError, tomllib.TOMLDecodeError):
+        return None
+    cert = data.get("cert")
+    if not isinstance(cert, dict) or not cert.get("not_applicable"):
+        return None
+    return {
+        "reason": str(cert.get("reason", "")).strip(),
+        "disproof": str(cert.get("disproof", "")).strip(),
+    }
+
+
+def _format_optout_reason(optout: Dict[str, str]) -> str:
+    parts = [p for p in (optout.get("reason"), optout.get("disproof")) if p]
+    return " — ".join(parts)
+
+
 def cmd_detect(repo_root: Path) -> int:
+    optout = read_cert_optout(repo_root)
     sig = gather_signals(repo_root)
     verdict, reason = classify(
         bool(sig["tailnet"]["present"]),
         bool(sig["self_signed"]["present"]),
         bool(sig["ts_cert"]["present"]),
+        opted_out=optout is not None,
+        opt_out_reason=_format_optout_reason(optout) if optout else "",
     )
     print(f"CERT_DRIFT={'yes' if verdict == 'drift' else 'no'}")
     print(f"REASON={reason}")

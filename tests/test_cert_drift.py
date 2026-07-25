@@ -47,12 +47,31 @@ reasons = {
 }
 check(len(reasons) == 4, "each verdict branch has a distinct reason")
 
+# ---- opt-out precedence (fleet-config#418) ----
+
+check(cd.classify(True, True, False, opted_out=True)[0] == "clean",
+      "opt-out -> clean even though the signals alone would be drift")
+check("triaged non-adopter opt-out" in cd.classify(True, True, False, opted_out=True)[1],
+      "opt-out reason names itself as a triaged non-adopter opt-out")
+check("loopback SANs" in cd.classify(True, True, False, opted_out=True, opt_out_reason="loopback SANs")[1],
+      "opt-out reason string is folded into the verdict reason")
+check(cd.classify(False, False, False, opted_out=True)[0] == "clean",
+      "opt-out is clean regardless of any underlying signal combination")
+
 
 # ---- content signal predicates ----
 
 check(cd.has_tailnet_signal("Reach it at https://myapp.tail1234.ts.net/"), "ts.net URL -> tailnet")
-check(cd.has_tailnet_signal("Served over Tailscale on the home tailnet"), "Tailscale word -> tailnet")
+check(cd.has_tailnet_signal("tailscale serve https / 8443 / http://127.0.0.1:8000"), "tailscale serve -> tailnet")
+check(cd.has_tailnet_signal("tailscale funnel 443 on"), "tailscale funnel -> tailnet")
+check(cd.has_tailnet_signal("Bind to --host 100.101.102.103 on the tailnet"), "tailnet CGNAT IP -> tailnet")
+check(not cd.has_tailnet_signal("Served over Tailscale on the home tailnet"),
+      "bare Tailscale word, no host/IP/command -> NOT tailnet (fleet-config#418, was a false positive)")
+check(not cd.has_tailnet_signal(
+    "a dropped Wi-Fi/Tailscale handoff or a browser tab closed mid-handshake surfaces as WinError 64"),
+    "Tailscale named as an incidental troubleshooting-table cause -> NOT tailnet (the voice-transcriber#151 false positive)")
 check(not cd.has_tailnet_signal("Runs on http://127.0.0.1:8000 on the LAN"), "LAN-only text -> no tailnet")
+check(not cd.has_tailnet_signal("Uses 192.168.1.50 on the home LAN"), "non-tailnet private IP -> no tailnet")
 
 check(cd.has_install_ca('@app.get("/install-ca")'), "install-ca route -> self-signed")
 check(cd.has_install_ca("return FileResponse('trust.mobileconfig')"), "mobileconfig -> self-signed")
@@ -105,12 +124,42 @@ lan_tree = make_tree({
     "app/server.py": '@app.get("/install-ca")\ndef install_ca(): ...\n',
 })
 
-# a tailnet app whose Tailscale exposure is documented under docs/ (not the
-# README) — the voice-transcriber shape. Must still register the tailnet signal.
+# a tailnet app whose *real* exposure evidence is documented under docs/ (not
+# the README) — must still register the tailnet signal from that location.
 docs_tree = make_tree({
     "README.md": "# Voice\n\nLocal transcription web app.\n",
-    "docs/webapp-architecture.md": "Reach it at home over Tailscale on the tailnet.\n",
+    "docs/webapp-architecture.md": "Reachable at https://voice.tail1234.ts.net/ from your phone.\n",
     "scripts/gen_ssl_cert.py": "# self-signed CA generator\n",
+})
+
+# the actual fleet-config#418 false positive: Tailscale named only as an
+# incidental cause in a troubleshooting-table row, no real exposure evidence
+# anywhere -> must report CLEAN, not drift.
+false_positive_tree = make_tree({
+    "README.md": (
+        "# Voice\n\n"
+        "| Symptom | Cause |\n"
+        "|---|---|\n"
+        "| Webapp goes completely unresponsive | a dropped Wi-Fi/Tailscale handoff "
+        "or a browser tab closed mid-handshake surfaces as WinError 64 |\n"
+    ),
+    "scripts/gen_ssl_cert.py": "# self-signed CA generator\n",
+})
+
+# a repo that would otherwise be drift, but has triaged and declared the
+# non-adopter opt-out in its own .fleet.toml -> must report CLEAN.
+optout_tree = make_tree({
+    "README.md": "# Voice\n\nReachable at https://voice.tail1234.ts.net/ from your phone.\n",
+    "scripts/gen_ssl_cert.py": "# self-signed CA generator\n",
+    ".fleet.toml": (
+        "layer = \"enabling\"\n"
+        "icon = \"\U0001F399\"\n"
+        "description = \"Voice.\"\n\n"
+        "[cert]\n"
+        "not_applicable = true\n"
+        "reason = \"tailscale cert cannot serve this app's loopback SANs\"\n"
+        "disproof = \"https://github.com/ferraroroberto/voice-transcriber/issues/151\"\n"
+    ),
 })
 
 try:
@@ -142,8 +191,32 @@ try:
     check(cd.classify(bool(dv["tailnet"]["present"]), bool(dv["self_signed"]["present"]),
                       bool(dv["ts_cert"]["present"]))[0] == "drift",
           "docs-documented tailnet app -> drift (would be missed by README-only scan)")
+
+    fp = cd.gather_signals(false_positive_tree)
+    check(not fp["tailnet"]["present"],
+          "false-positive tree: incidental troubleshooting-table mention does NOT register as tailnet")
+    check(cd.classify(bool(fp["tailnet"]["present"]), bool(fp["self_signed"]["present"]),
+                      bool(fp["ts_cert"]["present"]))[0] == "clean",
+          "the actual fleet-config#418 shape -> clean, no longer refiled (voice-transcriber#151)")
+
+    optout = cd.read_cert_optout(optout_tree)
+    check(optout is not None and "loopback SANs" in optout["reason"],
+          "optout tree: .fleet.toml [cert] not_applicable table is read back")
+    check(optout is not None and "voice-transcriber/issues/151" in optout["disproof"],
+          "optout tree: disproof URL is read back")
+    ov = cd.gather_signals(optout_tree)
+    check(bool(ov["tailnet"]["present"]) and bool(ov["self_signed"]["present"]),
+          "optout tree: signals alone would classify as drift (ts.net URL + self-signed, no ts-cert)")
+    check(cd.classify(bool(ov["tailnet"]["present"]), bool(ov["self_signed"]["present"]),
+                      bool(ov["ts_cert"]["present"]),
+                      opted_out=optout is not None,
+                      opt_out_reason=cd._format_optout_reason(optout) if optout else "")[0] == "clean",
+          "optout tree: the .fleet.toml opt-out overrides otherwise-drift signals -> clean")
+
+    check(cd.read_cert_optout(drift_tree) is None,
+          "a repo with no .fleet.toml [cert] table -> no opt-out, falls back to signal classification")
 finally:
-    for t in (drift_tree, migrated_tree, lan_tree, docs_tree):
+    for t in (drift_tree, migrated_tree, lan_tree, docs_tree, false_positive_tree, optout_tree):
         shutil.rmtree(t, ignore_errors=True)
 
 
