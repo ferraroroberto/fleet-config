@@ -40,6 +40,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Dict, List, Optional, Tuple
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from no_window import NO_WINDOW  # noqa: E402
+
 # --------------------------------------------------------------------- files
 
 SKIP_DIR_PARTS = {".git", ".venv", "node_modules", "__pycache__", "spike", "spikes"}
@@ -51,7 +54,7 @@ def repo_files(root: Path, suffixes: Tuple[str, ...]) -> List[Path]:
         out = subprocess.run(
             ["git", "-C", str(root), "ls-files"],
             capture_output=True, text=True, encoding="utf-8", errors="replace",
-            timeout=15,
+            timeout=15, creationflags=NO_WINDOW,
         )
         if out.returncode == 0:
             names = [ln.strip() for ln in out.stdout.splitlines() if ln.strip()]

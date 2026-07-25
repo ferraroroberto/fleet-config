@@ -18,6 +18,7 @@ import json
 import os
 import re
 import shutil
+import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -32,6 +33,25 @@ except ModuleNotFoundError:  # pragma: no cover - fallback for older Pythons
 HOOKS_DIR = Path(__file__).resolve().parent
 PROJECTS_TOML = HOOKS_DIR / "projects.toml"
 PROJECTS_TOML_ENV_VAR = "CLAUDE_HOOKS_PROJECTS_TOML"
+
+
+# ------------------------------------------------------- subprocess spawning
+
+# Pass this as `creationflags=` on **every** subprocess spawn in this directory,
+# per the global CLAUDE.md convention "Subprocess spawns must suppress the
+# console window (Windows)" (fleet-config#399): a parent with no console of its
+# own — pythonw, a tray app, a scheduled task, a daemon — otherwise gets a
+# console window flashed on screen for each spawn. Hooks fire under exactly such
+# parents, including the headless `claude -p` of every scheduled fleet job.
+#
+# `subprocess.CREATE_NO_WINDOW` is Windows-only; the conditional expression
+# evaluates the platform test first, so the attribute is never touched on POSIX.
+# The skill tier keeps its own copy in `skills/_lib/no_window.py` (the two trees
+# are junctioned into the agent homes independently, and a hook must stay
+# importable with nothing but its own directory on `sys.path`);
+# `tests/run_acceptance.py` asserts the two agree. Never combine this with
+# `DETACHED_PROCESS` — mutually exclusive (`local-llm-hub`#282).
+NO_WINDOW = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
 
 
 # --------------------------------------------------------------------------- I/O

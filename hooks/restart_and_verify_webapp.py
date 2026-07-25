@@ -83,6 +83,7 @@ def _run_ps(
         timeout=timeout,
         cwd=str(cwd) if cwd else None,
         env=env,
+        creationflags=_lib.NO_WINDOW,
     )
 
 
@@ -135,6 +136,7 @@ def _git_head(cwd: Path) -> Optional[str]:
             capture_output=True,
             text=True,
             timeout=5,
+            creationflags=_lib.NO_WINDOW,
         )
     except (subprocess.TimeoutExpired, OSError):
         return None
@@ -167,10 +169,9 @@ def _start_tray(tray_cmd: str, cwd: Path) -> None:
     subprocess.Popen(
         ["cmd", "/c", "start", "", tray_cmd],
         cwd=str(cwd),
-        creationflags=(
-            getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
-            | getattr(subprocess, "CREATE_NO_WINDOW", 0)
-        ),
+        # NEW_PROCESS_GROUP so the tray survives this hook's own console going
+        # away; NO_WINDOW so a console-less parent doesn't flash one (#409).
+        creationflags=getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0) | _lib.NO_WINDOW,
     )
 
 

@@ -50,6 +50,10 @@ from pathlib import Path
 SKILL_DIR = Path(__file__).resolve().parent
 REPO_ROOT = SKILL_DIR.parents[2]
 FLEET_ROOT = REPO_ROOT.parent
+
+sys.path.insert(0, str(REPO_ROOT / "skills" / "_lib"))
+from no_window import NO_WINDOW  # noqa: E402
+
 AUDIT_ISSUE = Path.home() / ".claude" / "skills" / "_lib" / "audit_issue.py"
 LEDGER_REPO = "ferraroroberto/fleet-config"
 KIND = "context-purge"
@@ -148,6 +152,7 @@ def _audit_issue(*args: str) -> str:
     res = subprocess.run(
         [sys.executable, str(AUDIT_ISSUE), *args],
         capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=120,
+        creationflags=NO_WINDOW,
     )
     if res.returncode != 0:
         raise RuntimeError(f"audit_issue.py {args[0]} failed: {(res.stderr or res.stdout).strip()}")

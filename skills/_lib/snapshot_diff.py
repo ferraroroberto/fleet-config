@@ -27,6 +27,9 @@ import sys
 from pathlib import Path
 from typing import Callable, Dict, Optional
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from no_window import NO_WINDOW  # noqa: E402
+
 # U+2212 MINUS SIGN for removals (reads cleaner than a hyphen, which looks like
 # a CLI flag) — matches both skills' '+added, −removed' examples.
 MINUS = "−"
@@ -67,6 +70,7 @@ def read_git_snapshot(file_path: str, ref: str) -> Optional[str]:
         return subprocess.run(
             ["git", "show", f"{ref}:{file_path}"],
             capture_output=True, text=True, encoding="utf-8", check=True,
+            creationflags=NO_WINDOW,
         ).stdout
     except subprocess.CalledProcessError:
         return None

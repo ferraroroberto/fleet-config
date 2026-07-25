@@ -57,6 +57,7 @@ def _staged_diff(repo_cwd: Path) -> str:
             encoding="utf-8",
             errors="replace",
             timeout=10,
+            creationflags=_lib.NO_WINDOW,
         )
     except (OSError, subprocess.SubprocessError):
         return ""

@@ -21,12 +21,12 @@ from statistics import median
 from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+import _lib  # noqa: E402
 import context_filter  # noqa: E402
 
 DEFAULT_TIMEOUT_SECONDS = 600
 # How long to wait for the output pipes to close once the tree has been killed.
 KILL_GRACE_SECONDS = 10
-NO_WINDOW = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
 
 
 def _decode_command(encoded: str) -> str:
@@ -91,7 +91,7 @@ def _kill_tree(process: subprocess.Popen[str]) -> None:
                 ["taskkill", "/T", "/F", "/PID", str(process.pid)],
                 capture_output=True,
                 timeout=KILL_GRACE_SECONDS,
-                creationflags=NO_WINDOW,
+                creationflags=_lib.NO_WINDOW,
             )
             return
         except (OSError, subprocess.SubprocessError):
@@ -127,7 +127,7 @@ def _run_command(tool: str, command: str, cwd: str | None) -> subprocess.Complet
         encoding="utf-8",
         errors="replace",
         shell=(len(args) == 1),
-        creationflags=NO_WINDOW,
+        creationflags=_lib.NO_WINDOW,
     )
     try:
         stdout, stderr = process.communicate(timeout=timeout)

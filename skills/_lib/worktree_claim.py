@@ -71,6 +71,7 @@ from typing import Callable, Optional, Tuple
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import git_run  # noqa: E402
+from no_window import NO_WINDOW  # noqa: E402
 
 if hasattr(sys.stdout, "reconfigure"):  # UTF-8 even when stdout is captured (cp1252 fallback)
     sys.stdout.reconfigure(encoding="utf-8")  # type: ignore[union-attr]
@@ -257,7 +258,10 @@ def _strip_junction(path: Path) -> None:
     keeps the primary's real .venv intact (fleet-config#136 / #143).
     """
     if path.exists() or path.is_symlink():
-        subprocess.run(["cmd", "/c", "rmdir", str(path)], capture_output=True, text=True)
+        subprocess.run(
+            ["cmd", "/c", "rmdir", str(path)],
+            capture_output=True, text=True, creationflags=NO_WINDOW,
+        )
 
 
 def setup_worktree(repo: Path, issue: str, branch: str) -> Path:
@@ -272,7 +276,7 @@ def setup_worktree(repo: Path, issue: str, branch: str) -> Path:
         link = wt / ".venv"
         res = subprocess.run(
             ["cmd", "/c", "mklink", "/J", str(link), str(venv)],
-            capture_output=True, text=True,
+            capture_output=True, text=True, creationflags=NO_WINDOW,
         )
         if res.returncode != 0 or not link.exists():
             # Roll back the half-made worktree so we never leave a broken one

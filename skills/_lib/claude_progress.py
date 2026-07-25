@@ -31,7 +31,11 @@ import sys
 import threading
 import time
 from collections.abc import Callable, Iterable, Sequence
+from pathlib import Path
 from typing import Any, Optional, TextIO
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from no_window import NO_WINDOW  # noqa: E402
 
 MAX_SUMMARY_CHARS = 180
 SUMMARY_KEYS = (
@@ -56,7 +60,6 @@ STALL_FLAG = "--stall-timeout"
 # timeout, and observed gaps between stream events run to a few minutes at most.
 DEFAULT_STALL_TIMEOUT_SECONDS = 2700.0
 STALL_EXIT_CODE = 124
-NO_WINDOW = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
 
 _ANSI_RE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
 _SECRET_RE = re.compile(
@@ -406,6 +409,12 @@ def run_process(
         errors="replace",
         bufsize=1,
         env=child_env,
+        # This adapter *is* the scheduled-job parent the convention names: every
+        # `run-weekly.bat` calls it from an app-launcher job with no console, so
+        # an unsuppressed `claude -p` here flashes a window (fleet-config#412).
+        # Plain NO_WINDOW, not a new process group — the stall watchdog kills the
+        # tree with `taskkill /T`, so no CTRL_BREAK_EVENT signalling is needed.
+        creationflags=NO_WINDOW,
     )
     assert process.stdout is not None
     assert process.stderr is not None
