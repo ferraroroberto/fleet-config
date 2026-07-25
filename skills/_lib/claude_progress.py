@@ -13,6 +13,11 @@ Usage::
 The parser deliberately consumes only a small, stable subset of the evolving
 stream schema. Unknown and malformed records are counted, never echoed raw,
 and never allowed to terminate a long unattended run.
+
+A stall watchdog kills the run and exits ``124`` if the stream goes silent for
+``--stall-timeout`` seconds (default 45 minutes; ``0`` disables, and
+``CLAUDE_PROGRESS_STALL_TIMEOUT`` sets the fleet-wide default). The flag is
+consumed here and never forwarded to ``claude``.
 """
 
 from __future__ import annotations
@@ -42,6 +47,16 @@ SUMMARY_KEYS = (
     "bucket",
 )
 RESERVED_FLAGS = ("-p", "--print", "--output-format", "--include-partial-messages")
+STALL_FLAG = "--stall-timeout"
+
+# A wedged run is worse than a failed one: it holds the job slot, reports
+# nothing, and is only noticed when a human looks (fleet-config#411 sat idle for
+# eight hours). 45 minutes is far above any legitimate quiet stretch — every
+# Bash/PowerShell call is itself bounded by the context-filter wrapper's own
+# timeout, and observed gaps between stream events run to a few minutes at most.
+DEFAULT_STALL_TIMEOUT_SECONDS = 2700.0
+STALL_EXIT_CODE = 124
+NO_WINDOW = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
 
 _ANSI_RE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
 _SECRET_RE = re.compile(
@@ -102,6 +117,7 @@ class ProgressFormatter:
     ) -> None:
         self._clock = clock
         self._started_at = clock()
+        self._last_activity = self._started_at
         self._emit_raw = emit or (lambda line: print(line, flush=True))
         self._emit_lock = threading.Lock()
         self._tools: dict[str, str] = {}
@@ -114,11 +130,26 @@ class ProgressFormatter:
     def _prefix(self) -> str:
         return f"[{_elapsed(self._clock() - self._started_at)}]"
 
+    def _touch(self) -> None:
+        """Record that the child produced output just now.
+
+        Deliberately driven by *received* child output rather than by ``emit``,
+        so the watchdog's own stall message can never reset its own deadline.
+        """
+        with self._emit_lock:
+            self._last_activity = self._clock()
+
+    def seconds_since_activity(self) -> float:
+        """Seconds since the child last produced any output."""
+        with self._emit_lock:
+            return max(0.0, self._clock() - self._last_activity)
+
     def emit(self, message: str) -> None:
         with self._emit_lock:
             self._emit_raw(f"{self._prefix()} {message}")
 
     def emit_stderr(self, line: str) -> None:
+        self._touch()
         clean = _one_line(line)
         if not clean:
             return
@@ -128,6 +159,7 @@ class ProgressFormatter:
         stripped = line.strip()
         if not stripped:
             return
+        self._touch()
         try:
             event = json.loads(stripped)
         except (json.JSONDecodeError, TypeError):
@@ -233,14 +265,17 @@ class ProgressFormatter:
         self._result_error = event.get("is_error") is True or event.get("subtype") == "error"
         self._emit_assistant_text(event.get("result"))
 
-    def finish(self, exit_code: int) -> None:
+    def finish(self, exit_code: int, stalled: bool = False) -> None:
         if self._malformed or self._unknown:
             self.emit(
                 "⚠ ignored "
                 f"{self._malformed} malformed and {self._unknown} unknown stream record(s)"
             )
-        failed = exit_code != 0 or self._result_error
-        status = "❌ failed" if failed else "✅ completed"
+        failed = stalled or exit_code != 0 or self._result_error
+        if stalled:
+            status = "⏱ stalled"
+        else:
+            status = "❌ failed" if failed else "✅ completed"
         result_note = " · no terminal result event" if not self._saw_result else ""
         self.emit(f"{status} · exit {exit_code}{result_note}")
 
@@ -258,13 +293,106 @@ def build_command(arguments: Sequence[str], executable: Optional[str] = None) ->
     return [claude, "-p", *arguments, "--output-format", "stream-json", "--verbose"]
 
 
+def parse_adapter_flags(arguments: Sequence[str]) -> tuple[list[str], Optional[float]]:
+    """Split adapter-owned flags out of the caller's Claude arguments.
+
+    ``--stall-timeout`` configures *this* process's watchdog and must never be
+    forwarded to ``claude``, which would reject it as an unknown flag.
+    """
+    remaining: list[str] = []
+    stall: Optional[float] = None
+    index = 0
+    while index < len(arguments):
+        argument = arguments[index]
+        if argument == STALL_FLAG:
+            if index + 1 >= len(arguments):
+                raise ValueError(f"{STALL_FLAG} requires a value in seconds")
+            value = arguments[index + 1]
+            index += 2
+        elif argument.startswith(STALL_FLAG + "="):
+            value = argument.split("=", 1)[1]
+            index += 1
+        else:
+            remaining.append(argument)
+            index += 1
+            continue
+        try:
+            stall = float(value)
+        except (TypeError, ValueError):
+            raise ValueError(f"{STALL_FLAG} expects seconds, got {value!r}") from None
+    return remaining, stall
+
+
+def resolve_stall_timeout(explicit: Optional[float] = None) -> float:
+    """Flag beats env beats built-in default; ``<= 0`` disables the watchdog."""
+    if explicit is not None:
+        return max(0.0, explicit)
+    raw = os.environ.get("CLAUDE_PROGRESS_STALL_TIMEOUT", "")
+    try:
+        return max(0.0, float(raw))
+    except (TypeError, ValueError):
+        return DEFAULT_STALL_TIMEOUT_SECONDS
+
+
+def _kill_process_tree(process: "subprocess.Popen[str]") -> None:
+    """Kill the Claude child *and every descendant*.
+
+    ``Popen.kill()`` alone leaves the sub-processes Claude spawned running, and
+    they hold the stdout pipe open — so the read loop here would never see EOF
+    and this adapter would wedge alongside the run it just tried to end.
+    """
+    if sys.platform == "win32":
+        try:
+            subprocess.run(
+                ["taskkill", "/T", "/F", "/PID", str(process.pid)],
+                capture_output=True,
+                timeout=30,
+                creationflags=NO_WINDOW,
+            )
+            return
+        except (OSError, subprocess.SubprocessError):
+            pass  # fall through to the direct-child kill below
+    try:
+        process.kill()
+    except OSError:
+        pass
+
+
+def _watch_for_stall(
+    process: "subprocess.Popen[str]",
+    progress: ProgressFormatter,
+    stall_timeout: float,
+    stop_event: threading.Event,
+    state: dict[str, bool],
+) -> None:
+    """Kill the run once its stream has been silent longer than ``stall_timeout``."""
+    poll_seconds = max(1.0, min(30.0, stall_timeout / 10))
+    while not stop_event.wait(poll_seconds):
+        idle = progress.seconds_since_activity()
+        if idle < stall_timeout:
+            continue
+        state["stalled"] = True
+        progress.emit(
+            f"⏱ no stream activity for {_elapsed(idle)} "
+            f"(limit {_elapsed(stall_timeout)}) — killing the stalled run"
+        )
+        _kill_process_tree(process)
+        return
+
+
 def run_process(
     command: Sequence[str],
     *,
     formatter: Optional[ProgressFormatter] = None,
     env: Optional[dict[str, str]] = None,
+    stall_timeout: float = DEFAULT_STALL_TIMEOUT_SECONDS,
 ) -> int:
-    """Run one JSONL-producing child and return its exit code unchanged."""
+    """Run one JSONL-producing child and return its exit code unchanged.
+
+    Returns ``STALL_EXIT_CODE`` instead if the watchdog had to kill the child for
+    going silent — a wedged unattended run must surface as a failed job rather
+    than hold its slot indefinitely (fleet-config#411).
+    """
     progress = formatter or ProgressFormatter()
     child_env = os.environ.copy()
     if env:
@@ -293,11 +421,29 @@ def run_process(
         daemon=True,
     )
     stderr_thread.start()
+
+    stall_state = {"stalled": False}
+    watchdog_stop = threading.Event()
+    watchdog: Optional[threading.Thread] = None
+    if stall_timeout > 0:
+        watchdog = threading.Thread(
+            target=_watch_for_stall,
+            args=(process, progress, stall_timeout, watchdog_stop, stall_state),
+            name="claude-progress-watchdog",
+            daemon=True,
+        )
+        watchdog.start()
+
     for stdout_line in process.stdout:
         progress.handle_line(stdout_line)
     exit_code = process.wait()
+    watchdog_stop.set()
     stderr_thread.join(timeout=5)
-    progress.finish(exit_code)
+    if watchdog is not None:
+        watchdog.join(timeout=5)
+    if stall_state["stalled"]:
+        exit_code = STALL_EXIT_CODE
+    progress.finish(exit_code, stalled=stall_state["stalled"])
     return exit_code
 
 
@@ -306,12 +452,15 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
     arguments = list(sys.argv[1:] if argv is None else argv)
     progress = ProgressFormatter()
     try:
+        arguments, stall_flag = parse_adapter_flags(arguments)
         command = build_command(arguments)
     except ValueError as exc:
         progress.emit(f"❌ usage error: {_one_line(exc)}")
         return 2
     try:
-        return run_process(command, formatter=progress)
+        return run_process(
+            command, formatter=progress, stall_timeout=resolve_stall_timeout(stall_flag)
+        )
     except OSError as exc:
         progress.emit(f"❌ Claude Code failed to start: {_one_line(exc)}")
         progress.finish(127)

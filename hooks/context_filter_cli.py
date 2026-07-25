@@ -23,6 +23,11 @@ from typing import Any
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import context_filter  # noqa: E402
 
+DEFAULT_TIMEOUT_SECONDS = 600
+# How long to wait for the output pipes to close once the tree has been killed.
+KILL_GRACE_SECONDS = 10
+NO_WINDOW = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
+
 
 def _decode_command(encoded: str) -> str:
     return base64.b64decode(encoded.encode("ascii")).decode("utf-8", "replace")
@@ -35,6 +40,68 @@ def _powershell_exe() -> str:
     return shutil.which("powershell") or "powershell"
 
 
+class WrapperTimeout(Exception):
+    """The wrapped command exceeded the wrapper timeout and was killed.
+
+    Carries whatever output was recovered plus whether the post-kill collection
+    itself had to be abandoned, so the caller can report the two conditions
+    distinctly instead of collapsing them into one message.
+    """
+
+    def __init__(self, timeout: int, output: str, pipes_abandoned: bool) -> None:
+        super().__init__(f"timed out after {timeout}s")
+        self.timeout = timeout
+        self.output = output
+        self.pipes_abandoned = pipes_abandoned
+
+    def reason(self, command: str) -> str:
+        if self.pipes_abandoned:
+            return (
+                f"command timed out after {self.timeout}s; process tree killed but a "
+                f"descendant still held the output pipes — capture abandoned: {command}"
+            )
+        return f"command timed out after {self.timeout}s; process tree killed: {command}"
+
+
+def _timeout_seconds() -> int:
+    """Wrapper timeout, tolerating a malformed env override.
+
+    This wrapper sits in front of *every* Bash/PowerShell tool call fleet-wide,
+    so a bad env value must degrade to the default rather than crash the hook.
+    """
+    raw = os.environ.get("FLEET_CONTEXT_FILTER_TIMEOUT", "")
+    try:
+        value = int(raw)
+    except (TypeError, ValueError):
+        return DEFAULT_TIMEOUT_SECONDS
+    return value if value > 0 else DEFAULT_TIMEOUT_SECONDS
+
+
+def _kill_tree(process: subprocess.Popen[str]) -> None:
+    """Kill the wrapped command *and every descendant*.
+
+    A bare ``Popen.kill()`` only reaps the direct child. Any grandchild that
+    inherited the stdout/stderr pipes keeps their write handles open, and the
+    post-kill collection then blocks on a pipe that never reaches EOF — which is
+    exactly how a scheduled run wedged for eight hours (fleet-config#411).
+    """
+    if sys.platform == "win32":
+        try:
+            subprocess.run(
+                ["taskkill", "/T", "/F", "/PID", str(process.pid)],
+                capture_output=True,
+                timeout=KILL_GRACE_SECONDS,
+                creationflags=NO_WINDOW,
+            )
+            return
+        except (OSError, subprocess.SubprocessError):
+            pass  # fall through to the direct-child kill below
+    try:
+        process.kill()
+    except OSError:
+        pass
+
+
 def _run_command(tool: str, command: str, cwd: str | None) -> subprocess.CompletedProcess[str]:
     if tool.lower() == "powershell":
         args = [_powershell_exe(), "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", command]
@@ -43,25 +110,48 @@ def _run_command(tool: str, command: str, cwd: str | None) -> subprocess.Complet
         args = [bash, "-lc", command] if bash else [command]
     else:
         args = [command]
-    return subprocess.run(
+    timeout = _timeout_seconds()
+    # Popen + a bounded two-phase collection rather than subprocess.run(timeout=):
+    # run() reacts to a timeout by killing only the direct child and then calling
+    # communicate() with NO timeout, which deadlocks whenever a surviving
+    # grandchild still holds the pipes (fleet-config#411).
+    process = subprocess.Popen(
         args,
         cwd=cwd or None,
-        capture_output=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
         text=True,
+        # Explicit UTF-8: bare text=True decodes with the locale codec (cp1252
+        # here), so any command emitting emoji or box-drawing characters killed
+        # the reader thread with UnicodeDecodeError and lost its whole output.
+        encoding="utf-8",
+        errors="replace",
         shell=(len(args) == 1),
-        timeout=int(os.environ.get("FLEET_CONTEXT_FILTER_TIMEOUT", "600")),
+        creationflags=NO_WINDOW,
     )
+    try:
+        stdout, stderr = process.communicate(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        _kill_tree(process)
+        try:
+            stdout, stderr = process.communicate(timeout=KILL_GRACE_SECONDS)
+        except subprocess.TimeoutExpired:
+            # Reader threads are daemons, so abandoning the pipes lets this
+            # process exit instead of hanging forever on a handle it can't close.
+            process.poll()
+            raise WrapperTimeout(timeout, "", pipes_abandoned=True) from None
+        raise WrapperTimeout(timeout, (stdout or "") + (stderr or ""), pipes_abandoned=False) from None
+    return subprocess.CompletedProcess(args, process.returncode, stdout, stderr)
 
 
 def run_wrapped(args: argparse.Namespace) -> int:
     command = _decode_command(args.encoded)
     try:
         result = _run_command(args.tool, command, args.cwd)
-    except subprocess.TimeoutExpired as exc:
-        raw = (exc.stdout or "") + (exc.stderr or "")
-        if raw:
-            sys.stdout.write(raw)
-        print(f"fleet-context-filter: command timed out after wrapper timeout: {command}", file=sys.stderr)
+    except WrapperTimeout as exc:
+        if exc.output:
+            sys.stdout.write(exc.output)
+        print(f"fleet-context-filter: {exc.reason(command)}", file=sys.stderr)
         return 124
 
     raw = (result.stdout or "") + (result.stderr or "")
