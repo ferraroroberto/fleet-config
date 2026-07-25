@@ -9,6 +9,7 @@ Exit 0 if all cases pass, 1 otherwise. Prints a single line per case.
 
 from __future__ import annotations
 
+import base64
 import json
 import os
 import re
@@ -606,6 +607,57 @@ def _context_filter_unit_checks() -> Tuple[int, int]:
         res.returncode == 0 and "median reduction:" in res.stdout,
         res.stdout + res.stderr,
     )
+
+    # ---- wrapper timeout must not outlive a pipe-holding grandchild (#411) ----
+    # subprocess.run(capture_output, timeout=) reacts to a timeout by killing only
+    # the direct child, then collecting output with NO timeout — so a surviving
+    # grandchild that inherited the pipes blocks it forever. That wedged a
+    # scheduled run for eight hours. The wrapper must kill the tree and return
+    # 124 well before the grandchild would have exited on its own.
+    with tempfile.TemporaryDirectory() as tmp:
+        probe = Path(tmp) / "hold_pipe.py"
+        probe.write_text(
+            "import subprocess, sys, time\n"
+            "subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(120)'])\n"
+            "time.sleep(120)\n",
+            encoding="utf-8",
+        )
+        command = f'& "{PYTHON.replace(chr(92), "/")}" "{str(probe).replace(chr(92), "/")}"'
+        encoded = base64.b64encode(command.encode("utf-8")).decode("ascii")
+        started = time.monotonic()
+        timed_out = False
+        try:
+            res = subprocess.run(
+                [
+                    PYTHON,
+                    str(HOOKS / "context_filter_cli.py"),
+                    "run",
+                    "--tool",
+                    "PowerShell",
+                    "--mode",
+                    "shadow",
+                    "--encoded",
+                    encoded,
+                ],
+                capture_output=True,
+                text=True,
+                env={**os.environ, "FLEET_CONTEXT_FILTER_TIMEOUT": "3"},
+                timeout=60,
+            )
+        except subprocess.TimeoutExpired:
+            timed_out = True
+        elapsed = time.monotonic() - started
+        check(
+            "context_filter_cli: pipe-holding grandchild does not outlive the wrapper timeout (fleet-config#411)",
+            not timed_out and res.returncode == 124 and elapsed < 45,
+            f"timed_out={timed_out} elapsed={elapsed:.1f}s "
+            + ("" if timed_out else f"rc={res.returncode} stderr={res.stderr.strip()}"),
+        )
+        check(
+            "context_filter_cli: timeout message names the tree kill",
+            not timed_out and "process tree killed" in res.stderr,
+            "" if timed_out else res.stderr.strip(),
+        )
     return check.failures, check.total
 
 
