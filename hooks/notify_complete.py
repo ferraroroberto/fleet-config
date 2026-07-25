@@ -119,6 +119,7 @@ def gh_json(args: List[str]) -> dict:
         proc = subprocess.run(
             ["gh", *args], capture_output=True, text=True,
             encoding="utf-8", errors="replace", timeout=20,
+            creationflags=_lib.NO_WINDOW,
         )
     except (OSError, subprocess.SubprocessError) as exc:
         logger.error("gh call failed: %s", exc)

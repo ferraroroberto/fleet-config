@@ -45,6 +45,10 @@ except (AttributeError, ValueError):  # pragma: no cover
     pass
 
 HELPER = Path(__file__).resolve().parents[3] / "skills" / "_lib" / "audit_issue.py"
+
+sys.path.insert(0, str(HELPER.parent))
+from no_window import NO_WINDOW  # noqa: E402
+
 ARCHIVE_HEADER = "## Decision / discovery archive"
 HORIZON_HEADER = "## Horizon → next week"
 # The fleet architecture map regenerated weekly by /system-map (cross-linked, not owned here).
@@ -224,7 +228,8 @@ def render_stats(stats: dict, since: str, today: str) -> str:
 def _gh_json(args: list[str]) -> list | dict:
     try:
         proc = subprocess.run(["gh", *args], capture_output=True, text=True,
-                              encoding="utf-8", errors="replace", timeout=120)
+                              encoding="utf-8", errors="replace", timeout=120,
+                              creationflags=NO_WINDOW)
     except (OSError, subprocess.SubprocessError) as exc:
         print(f"gh {' '.join(args[:3])}… failed: {exc}", file=sys.stderr)
         return []
@@ -293,7 +298,8 @@ def write_bucket_files(out_dir: Path, prs: list[dict], issues: list[dict]) -> li
 def read_ledger_body(repo: str) -> str:
     try:
         proc = subprocess.run([sys.executable, str(HELPER), "get", "--repo", repo, "--kind", "learning"],
-                              capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=60)
+                              capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=60,
+                              creationflags=NO_WINDOW)
         if proc.returncode == 0:
             return json.loads(proc.stdout or "{}").get("body") or ""
     except (OSError, subprocess.SubprocessError, ValueError) as exc:

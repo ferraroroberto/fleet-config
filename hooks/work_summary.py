@@ -34,7 +34,11 @@ import json
 import logging
 import subprocess
 import sys
+from pathlib import Path
 from typing import Dict, List, Optional
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import _lib  # noqa: E402
 
 logger = logging.getLogger("work_summary")
 
@@ -151,6 +155,7 @@ def _gh_pr(ref: str) -> Dict:
              "files,additions,deletions,changedFiles"],
             capture_output=True, text=True,
             encoding="utf-8", errors="replace", timeout=20,
+            creationflags=_lib.NO_WINDOW,
         )
     except (OSError, subprocess.SubprocessError) as exc:
         logger.error("gh call failed: %s", exc)

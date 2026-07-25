@@ -59,6 +59,7 @@ from typing import Dict, List, Optional
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import fleet_repo_scan  # noqa: E402
 import git_run  # noqa: E402
+from no_window import NO_WINDOW  # noqa: E402
 
 if hasattr(sys.stdout, "reconfigure"):  # UTF-8 even when stdout is captured (cp1252 fallback)
     sys.stdout.reconfigure(encoding="utf-8")  # type: ignore[union-attr]
@@ -141,7 +142,7 @@ def _git_show_bytes(repo: Path, ref: str, relpath: str) -> Optional[bytes]:
     `None` on any git failure (bad ref, path absent at that commit, ...)."""
     proc = subprocess.run(
         ["git", "-C", str(repo), "show", f"{ref}:{relpath}"],
-        capture_output=True, check=False,
+        capture_output=True, check=False, creationflags=NO_WINDOW,
     )
     return proc.stdout if proc.returncode == 0 else None
 

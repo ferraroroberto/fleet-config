@@ -43,6 +43,7 @@ def main() -> int:
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
             cwd=str(HOOKS_DIR),
+            creationflags=_lib.NO_WINDOW,
         )
     except OSError:
         pass  # fail-open — a failed index must never break session start

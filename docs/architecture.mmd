@@ -25,7 +25,7 @@ flowchart TB
   INSTALL --> COPILOT
 
   subgraph hooks["hooks/ — junctioned into Claude + Codex only"]
-    LIBPY["_lib.py\nproject detection, stdin-JSON, projects.toml loader"]
+    LIBPY["_lib.py\nproject detection, stdin-JSON, projects.toml loader, NO_WINDOW spawn flag"]
     PROJECTS["projects.toml\nper-project ports/gates/never-kill ports"]
     RUNHOOK["run-hook.ps1 — Claude Code shim (Git Bash routes through it)"]
     HOOKFILES["pre_commit_no_ai_trailer · secret_scan_guard · safe_kill_guard ·\nvenv_discipline · py_syntax_check · notify_on_idle · session_state · …"]
@@ -56,7 +56,7 @@ flowchart TB
     ISSUEEXTRA["issue-batch · issue-finish-batch · issue-triage · issue-yolo"]
     OTHERGLOBAL["codebase-audit · design-sync · handoff-commit · screen"]
     PROPVENDORED["propagate-vendored\n[vendored] manifest fan-out + dry-run drift report"]
-    LIB["_lib/ — worktree_claim.py · active_issue.py · claude_progress.py · ux_surface.py ·\nbrowser_verify.py · audit_issue.py · cert_drift.py · rate_gate.py · dirty_tree_check.py ·\ndesign_lint.py · design_sweep_scan.py · git_run.py · snapshot_diff.py · fleet_repo_scan.py · vendored_drift.py"]
+    LIB["_lib/ — worktree_claim.py · active_issue.py · claude_progress.py · ux_surface.py ·\nbrowser_verify.py · audit_issue.py · cert_drift.py · rate_gate.py · dirty_tree_check.py ·\ndesign_lint.py · design_sweep_scan.py · git_run.py · snapshot_diff.py · fleet_repo_scan.py ·\nvendored_drift.py · no_window.py"]
   end
   gskills --> CLAUDE
   gskills --> CODEX

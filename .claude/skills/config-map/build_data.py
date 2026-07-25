@@ -52,6 +52,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "skills" / "_lib"))
 import fleet_repo_scan  # noqa: E402
+from no_window import NO_WINDOW  # noqa: E402
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 DATA_JS = REPO_ROOT / "architecture" / "config.data.js"
@@ -160,7 +161,10 @@ def fleet_repos(projects_toml: Path = PROJECTS_TOML) -> dict[str, Path]:
 
 
 def _git(repo_dir: Path, *args: str) -> subprocess.CompletedProcess:
-    return subprocess.run(["git", "-C", str(repo_dir), *args], capture_output=True)
+    return subprocess.run(
+        ["git", "-C", str(repo_dir), *args],
+        capture_output=True, creationflags=NO_WINDOW,
+    )
 
 
 def _default_ref(repo_dir: Path) -> str | None:

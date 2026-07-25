@@ -27,6 +27,9 @@ import tempfile
 import uuid
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "skills" / "_lib"))
+from no_window import NO_WINDOW  # noqa: E402
+
 CHROME = r"C:/Program Files/Google/Chrome/Application/chrome.exe"
 REPO_ROOT = Path(__file__).resolve().parents[3]
 DEFAULT_HTML = REPO_ROOT / "architecture" / "config-map.html"
@@ -42,7 +45,7 @@ def _file_url(html: Path) -> str:
 def _run_chrome(args: list[str]) -> subprocess.CompletedProcess:
     return subprocess.run(
         [CHROME, "--headless=new", "--disable-gpu", "--hide-scrollbars", *args],
-        capture_output=True, timeout=120,
+        capture_output=True, timeout=120, creationflags=NO_WINDOW,
     )
 
 

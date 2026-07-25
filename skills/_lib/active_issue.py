@@ -20,12 +20,16 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 import tempfile
 import time
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, Iterator, Optional
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from no_window import NO_WINDOW  # noqa: E402
 
 STATE_FILENAME = "active-issues.json"
 PRUNE_AFTER = timedelta(hours=24)
@@ -161,6 +165,7 @@ def _remote_repo_name(repo_path: Path) -> Optional[str]:
         encoding="utf-8",
         errors="replace",
         check=False,
+        creationflags=NO_WINDOW,
     )
     if result.returncode != 0:
         return None

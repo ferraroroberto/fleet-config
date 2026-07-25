@@ -41,7 +41,10 @@ def main() -> None:
 
     def _interpreter_works(path: str) -> bool:
         try:
-            r = subprocess.run([path, "--version"], capture_output=True, timeout=5)
+            r = subprocess.run(
+                [path, "--version"], capture_output=True, timeout=5,
+                creationflags=_lib.NO_WINDOW,
+            )
             return r.returncode == 0
         except (OSError, subprocess.TimeoutExpired):
             return False
@@ -65,6 +68,7 @@ def main() -> None:
             capture_output=True,
             text=True,
             timeout=10,
+            creationflags=_lib.NO_WINDOW,
         )
     except (subprocess.TimeoutExpired, OSError):
         _lib.allow()
