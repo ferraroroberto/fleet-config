@@ -151,6 +151,16 @@ def run_wrapped(args: argparse.Namespace) -> int:
     except WrapperTimeout as exc:
         if exc.output:
             sys.stdout.write(exc.output)
+            if not exc.output.endswith("\n"):
+                sys.stdout.write("\n")
+        # In-band on stdout, not just stderr: a consumer parsing stdout as the
+        # command's output (e.g. JSON from a fleet sweep helper) must not be
+        # able to mistake truncated content for a complete, well-formed
+        # result (fleet-config#424).
+        sys.stdout.write(
+            f"[fleet-context-filter: OUTPUT TRUNCATED - killed after {exc.timeout}s; "
+            "content above may be incomplete]\n"
+        )
         print(f"fleet-context-filter: {exc.reason(command)}", file=sys.stderr)
         return 124
 

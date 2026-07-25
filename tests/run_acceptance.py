@@ -658,6 +658,69 @@ def _context_filter_unit_checks() -> Tuple[int, int]:
             not timed_out and "process tree killed" in res.stderr,
             "" if timed_out else res.stderr.strip(),
         )
+
+    # ---- timed-out stdout must carry an in-band truncation marker (#424) ----
+    # A consumer reading stdout as the command's output (e.g. JSON from a fleet
+    # sweep helper) must not be able to mistake a wrapper-timeout truncation for
+    # complete output. The marker has to land on stdout itself, not just stderr.
+    with tempfile.TemporaryDirectory() as tmp:
+        probe = Path(tmp) / "slow_stdout.py"
+        probe.write_text(
+            "import sys, time\n"
+            "for i in range(30):\n"
+            "    sys.stdout.write(str(i) + chr(10))\n"
+            "    sys.stdout.flush()\n"
+            "    time.sleep(1)\n",
+            encoding="utf-8",
+        )
+        command = f'& "{PYTHON.replace(chr(92), "/")}" "{str(probe).replace(chr(92), "/")}"'
+        encoded = base64.b64encode(command.encode("utf-8")).decode("ascii")
+        res = subprocess.run(
+            [
+                PYTHON,
+                str(HOOKS / "context_filter_cli.py"),
+                "run",
+                "--tool",
+                "PowerShell",
+                "--mode",
+                "shadow",
+                "--encoded",
+                encoded,
+            ],
+            capture_output=True,
+            text=True,
+            env={**os.environ, "FLEET_CONTEXT_FILTER_TIMEOUT": "3"},
+            timeout=60,
+        )
+        check(
+            "context_filter_cli: timed-out stdout carries an in-band truncation marker (fleet-config#424)",
+            res.returncode == 124 and "OUTPUT TRUNCATED" in res.stdout and "0" in res.stdout,
+            res.stdout.strip() + " | " + res.stderr.strip(),
+        )
+
+    # ---- known long-running fleet sweep helpers are never wrapped (#424) ----
+    # skills/_lib/*.py sweep helpers (fleet_audit_scan.py, design_sweep_scan.py,
+    # ...) produce a single JSON payload the orchestrator parses directly;
+    # wrapping them risks exactly the truncation this issue is about, for no
+    # compression upside, so the hook must pass them through untouched.
+    sweep_helper_payload = {
+        "tool_name": "PowerShell",
+        "cwd": str(REPO),
+        "tool_input": {
+            "command": (
+                '& "E:/automation/fleet-config/.venv/Scripts/python.exe" '
+                '"skills/_lib/fleet_audit_scan.py" --root E:\\automation'
+            )
+        },
+    }
+    code, stdout, stderr = run(
+        "context_filter_hook", sweep_helper_payload, {"FLEET_CONTEXT_FILTER_MODE": "rewrite"}
+    )
+    check(
+        "context_filter_hook: skills/_lib sweep helper passthrough, not wrapped (fleet-config#424)",
+        code == 0 and stdout.strip() == "",
+        stdout + stderr,
+    )
     return check.failures, check.total
 
 
