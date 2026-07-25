@@ -41,6 +41,13 @@ SECRET_RE = re.compile(
     r")"
 )
 
+# Deterministic fleet sweep helpers (fleet_audit_scan.py, design_sweep_scan.py,
+# fleet_repo_scan.py, cert_drift.py, ...) walk the whole fleet and are read by
+# the orchestrator as a single JSON payload — compressing or truncating them
+# has no upside and a wrapper-timeout truncation is strictly worse than the
+# uncompressed command timing out on its own terms (fleet-config#424).
+SWEEP_HELPER_RE = re.compile(r"skills[/\\]_lib[/\\][^\s'\"]+\.py", re.IGNORECASE)
+
 TIMESTAMP_RE = re.compile(
     r"\b(?:\d{4}-\d{2}-\d{2}[T ][0-9:.+-]+|\d{2}:\d{2}:\d{2}(?:\.\d+)?)\b"
 )
@@ -138,6 +145,8 @@ def rewrite_decision(command: str) -> RewriteDecision:
         return RewriteDecision(False, "empty", command)
     if "fleet_context_filter" in cmd or "context_filter_cli.py" in cmd:
         return RewriteDecision(False, "already wrapped", command)
+    if SWEEP_HELPER_RE.search(cmd):
+        return RewriteDecision(False, "known long-running fleet sweep helper", command)
     if is_streaming_or_interactive(cmd):
         return RewriteDecision(False, "streaming/interactive", command)
     if re.search(r"\b(git\s+push|npm\s+publish|twine\s+upload|docker\s+push)\b", cmd, re.I):
