@@ -308,6 +308,7 @@ Every Playwright / automated-browser launch must present as a real human Chrome 
 - Real Chrome (`channel="chrome"`), not bundled Chromium.
 - Persistent profile, viewport 1280×900, `--disable-blink-features=AutomationControlled`.
 - Also `--disable-features=Translate`, `--no-default-browser-check`, `--no-first-run`.
+- `chromium_sandbox=True` on `launch` / `launch_persistent_context` — Playwright's default (`False`) injects `--no-sandbox`, which pops Chrome's *"the `--no-sandbox` flag you are using is not supported"* infobar, itself a bot tell of the same class as the automation bar above. Setting it `True` enables the sandbox and drops the flag.
 
 **Single source per project:** launch kwargs + init-script live in one helper (e.g. `config/chrome_launch.py`, `automation/browser.py`); every module imports it — never re-inline launch args. If the user reports a captcha or "unusual activity", suspect a stealth regression first.
 
