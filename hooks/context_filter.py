@@ -46,7 +46,15 @@ SECRET_RE = re.compile(
 # the orchestrator as a single JSON payload — compressing or truncating them
 # has no upside and a wrapper-timeout truncation is strictly worse than the
 # uncompressed command timing out on its own terms (fleet-config#424).
-SWEEP_HELPER_RE = re.compile(r"skills[/\\]_lib[/\\][^\s'\"]+\.py", re.IGNORECASE)
+#
+# Matches a .py under *any* skill directory, not just the shared `_lib` one
+# (fleet-config#427): fleet-only skills keep their helpers beside the skill, and
+# those are the longest-running of the lot — `.claude/skills/fleet-health/
+# capture.py` blocks for `POLL_CHUNK_S = 540` seconds by design, 60s under the
+# 600s wrapper cap, and `.claude/skills/system-map/build_data.py` crawls every
+# repo in the fleet. The invariant is "a Python helper shipped with a skill",
+# which the `_lib` path segment only partially expressed.
+SWEEP_HELPER_RE = re.compile(r"skills[/\\][^\s'\"/\\]+[/\\][^\s'\"]+\.py", re.IGNORECASE)
 
 TIMESTAMP_RE = re.compile(
     r"\b(?:\d{4}-\d{2}-\d{2}[T ][0-9:.+-]+|\d{2}:\d{2}:\d{2}(?:\.\d+)?)\b"

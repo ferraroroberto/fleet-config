@@ -698,29 +698,37 @@ def _context_filter_unit_checks() -> Tuple[int, int]:
             res.stdout.strip() + " | " + res.stderr.strip(),
         )
 
-    # ---- known long-running fleet sweep helpers are never wrapped (#424) ----
-    # skills/_lib/*.py sweep helpers (fleet_audit_scan.py, design_sweep_scan.py,
-    # ...) produce a single JSON payload the orchestrator parses directly;
-    # wrapping them risks exactly the truncation this issue is about, for no
-    # compression upside, so the hook must pass them through untouched.
-    sweep_helper_payload = {
-        "tool_name": "PowerShell",
-        "cwd": str(REPO),
-        "tool_input": {
-            "command": (
-                '& "E:/automation/fleet-config/.venv/Scripts/python.exe" '
-                '"skills/_lib/fleet_audit_scan.py" --root E:\\automation'
-            )
-        },
-    }
-    code, stdout, stderr = run(
-        "context_filter_hook", sweep_helper_payload, {"FLEET_CONTEXT_FILTER_MODE": "rewrite"}
-    )
-    check(
-        "context_filter_hook: skills/_lib sweep helper passthrough, not wrapped (fleet-config#424)",
-        code == 0 and stdout.strip() == "",
-        stdout + stderr,
-    )
+    # ---- skill helpers are never wrapped; ordinary commands still are ----
+    # A helper shipped with a skill produces one payload the orchestrator parses
+    # directly, so wrapping it risks the #424 truncation for no compression
+    # upside. #427 widened the rule from skills/_lib to every skill directory —
+    # the longest-running helpers live beside their own skill (fleet-health's
+    # capture.py blocks 540s against the 600s cap; system-map's build_data.py
+    # crawls the whole fleet). The negative rows are the point of the table:
+    # widening the pattern must not swallow ordinary work.
+    python_prefix = '& "E:/automation/fleet-config/.venv/Scripts/python.exe" '
+    skill_dir = '"E:/automation/fleet-config/.claude/skills/'
+    passthrough_cases = [
+        ("skills/_lib sweep helper",
+         python_prefix + '"skills/_lib/fleet_audit_scan.py" --root E:\\automation', True, 424),
+        ("fleet-health capture.py",
+         python_prefix + skill_dir + 'fleet-health/capture.py" --minutes 9', True, 427),
+        ("system-map build_data.py",
+         python_prefix + skill_dir + 'system-map/build_data.py"', True, 427),
+        ("ordinary python -c", python_prefix + '-c "print(1)"', False, 427),
+        ("ordinary git", "git status --short", False, 427),
+    ]
+    for label, command, expect_passthrough, issue in passthrough_cases:
+        payload = {"tool_name": "PowerShell", "cwd": str(REPO), "tool_input": {"command": command}}
+        code, stdout, stderr = run(
+            "context_filter_hook", payload, {"FLEET_CONTEXT_FILTER_MODE": "rewrite"}
+        )
+        verb = "passthrough, not wrapped" if expect_passthrough else "still wrapped"
+        check(
+            f"context_filter_hook: {label} {verb} (fleet-config#{issue})",
+            code == 0 and (stdout.strip() == "") == expect_passthrough,
+            stdout + stderr,
+        )
     return check.failures, check.total
 
 
