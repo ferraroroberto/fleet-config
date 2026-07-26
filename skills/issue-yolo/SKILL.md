@@ -1,6 +1,6 @@
 ---
 name: issue-yolo
-description: One-shot the GitHub-issue workflow end-to-end — file the issue, cut the branch, build, validate hard, then ship (PR, CI, merge, delete branch, tray restart). Pass a number ("/issue-yolo 34") to work an existing issue without re-filing; pass text to file one first. Validation is non-negotiable; YOLO means "no plan gate", not "no safety".
+description: One-shot the GitHub-issue workflow end-to-end — file the issue, cut the branch, build, validate hard (including an independent fresh-agent review with no memory of the build), then ship (PR, CI, merge, delete branch, tray restart). Pass a number ("/issue-yolo 34") to work an existing issue without re-filing; pass text to file one first. Validation is non-negotiable; YOLO means "no plan gate", not "no safety".
 ---
 
 # issue-yolo
@@ -165,13 +165,55 @@ perfectionist reviewer reject?" — per scaffolding `CLAUDE.md`'s Senior-dev
 check. Fix anything obvious *now*. The reviewer in this run is you.
 
 **If anything in 3a–3g fails — stop.** Report the failure, leave the branch
-in place, let the user inspect. Do **not** continue to Phase 4. Do **not**
-soft-pass with caveats. A YOLO run that ships a half-broken change defeats
-the whole structure.
+in place, let the user inspect. Do **not** continue to 3h or Phase 4. Do
+**not** soft-pass with caveats. A YOLO run that ships a half-broken change
+defeats the whole structure.
+
+**3h. Independent review — a fresh agent with no memory of the build.** Only
+reached once 3a–3g are all green. Self-review (3a–3g) is still done by the
+same context that wrote the code — it cannot be the last checkpoint before a
+merge with no human in the loop. Per the fleet's
+[independent-review-gate convention](../../docs/independent-review-gate.md)
+(fleet-config#408), `/issue-yolo` is that convention's first adopter, with
+**stop-and-report** failure handling (not `cleanup-fleet-all.js`'s
+retry-then-escalate) — this run is interactive, so a human is already present
+to decide on a retry, unlike that unattended context.
+
+Spawn the review as a genuinely separate agent invocation — **not** a forked
+continuation of this conversation (a fork inherits this session's own
+context, which defeats the point: the reviewer must not be able to
+rationalize its own prior reasoning). On Claude Code, use the `Agent` tool
+with a fresh subagent (e.g. `general-purpose`) rather than `subagent_type:
+"fork"`. Brief it with only what it needs to do the review cold — the issue
+number, the branch name, and the repo path — not a summary of what you built
+or why; let it discover that itself:
+
+1. **Fetch the issue's acceptance criteria itself** — `gh issue view <N>` —
+   never trust this run's own restatement of them.
+2. **Read the diff** against the base branch — `git diff <main>...<branch>`.
+3. **Independently re-run the project's verification gate** — never trust
+   Phase 3's report of PASS; a fresh `PASS` from a fresh run is the only
+   trustworthy signal.
+4. **Judge** whether the diff plausibly and reasonably satisfies the fetched
+   acceptance criteria **and** conforms to the repo's own `CLAUDE.md`
+   conventions — not just "did the gate pass". Lenient by default (per
+   `docs/independent-review-gate.md`): fail only on something a human
+   reviewer would actually reject (the gate genuinely fails, the diff doesn't
+   touch what the issue asked for, an obvious bug) — never on style
+   preference.
+5. Have it report a schema-validated verdict: `pass: boolean`, `feedback:
+   string` (always filled in, briefly even on a pass).
+
+**On `pass: false` — stop and report.** Surface the reviewer's `feedback`
+verbatim, leave the branch as-is, and let the user decide whether to retry,
+adjust scope, or abandon. **Do not** auto-retry the build and do **not**
+continue to Phase 4 on a rejected verdict — that silent-second-round shape is
+`cleanup-fleet-all.js`'s job, not this one.
 
 ### Phase 4 — Ship (`/issue-finish` flow)
 
-Only reachable on a fully-green Phase 3. Run the full `/issue-finish` skill:
+Only reachable on a fully-green Phase 3 (3a–3h, including the independent
+review's `pass: true`). Run the full `/issue-finish` skill:
 1. Re-confirm every acceptance point on the issue is actually met.
 2. Update `README.md` if usage / config / output changed. Do not write a
    dated `docs/YYYY-MM-DD-*.md` file — per the project doc-discipline
@@ -262,7 +304,9 @@ one completion notification, not two.
 Single concise summary:
 - Issue number + title + URL
 - Branch name + merge commit SHA
-- Validation: which Phase 3 gates ran and their results (one line each)
+- Validation: which Phase 3 gates ran and their results (one line each),
+  **plus the 3h independent-review verdict** (`pass: true` + a one-line
+  summary of the reviewer's `feedback`)
 - PR URL
 - Build line from the version endpoint (if the project has one)
 - Live tray status (if applicable)

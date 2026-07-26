@@ -64,16 +64,19 @@ choice wholesale.
 A skill is a candidate if it both **builds and ships** in the same run with no
 mandatory human checkpoint in between. Concretely:
 
-- **Clear fit: `/issue-yolo`.** Its Phase 3 ("Validate hard") is explicitly
-  self-review — the same agent that wrote the code runs every gate, and step
-  3g says outright "the reviewer in this run is you." It is the highest-blast-
-  radius unattended-*shipping* flow in the fleet workflow set (it merges to
-  `main` with no human checkpoint) and currently has zero independent review.
-  Decision: **adopt** — see fleet-config#433 for the concrete follow-up scoping
-  this change. Failure handling: **stop-and-report**, matching Phase 3's
-  existing "if anything fails, stop" ethos — `/issue-yolo` is invoked
-  interactively, so there is already a human on the other end of the run to
-  decide on a retry, unlike `cleanup-fleet-all`'s unattended context.
+- **Adopted: `/issue-yolo`** (fleet-config#433). Its Phase 3 ("Validate hard")
+  was explicitly self-review — the same agent that wrote the code ran every
+  gate, and step 3g said outright "the reviewer in this run is you." It was
+  the highest-blast-radius unattended-*shipping* flow in the fleet workflow
+  set (it merges to `main` with no human checkpoint) with zero independent
+  review. Phase 3h now spawns a genuinely fresh agent (not a forked
+  continuation of the build's own context) once 3a–3g pass: it fetches the
+  issue itself, re-runs the verification gate independently, and judges the
+  diff against the issue **and** the repo's `CLAUDE.md`. Failure handling:
+  **stop-and-report**, matching Phase 3's existing "if anything fails, stop"
+  ethos — `/issue-yolo` is invoked interactively, so there is already a human
+  on the other end of the run to decide on a retry, unlike `cleanup-fleet-all`'s
+  unattended context.
 - **Already effectively covered: `/issue-finish`'s hard-tier path via
   `/cleanup-fleet` and `/issue-batch`.** These build-and-stop for human review
   before `/issue-finish` ships — the human *is* the independent reviewer here,
@@ -94,3 +97,9 @@ mandatory human checkpoint in between. Concretely:
   of scope entirely. Failure handling for `/issue-yolo` specifically:
   stop-and-report, not retry-then-escalate, because it runs interactively with
   a human already present.
+- **2026-07-26 (fleet-config#433):** Wired the decision above into
+  `skills/issue-yolo/SKILL.md` as Phase 3h — a fresh, non-forked agent
+  invocation between the existing self-review gates (3a–3g) and Phase 4
+  ("Ship"), gating on a schema-validated `pass`/`feedback` verdict. A rejected
+  verdict stops the run and surfaces the reviewer's feedback; Phase 4 only
+  runs on `pass: true`.
