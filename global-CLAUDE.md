@@ -334,3 +334,22 @@ if sys.platform == "win32":
     kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_NO_WINDOW
 ```
 `DETACHED_PROCESS` and `CREATE_NO_WINDOW` are mutually exclusive — never combine them (see `local-llm-hub`#282). Repos with 3+ call sites should factor this into one `_no_window_flags()` / `NO_WINDOW` helper (see `local-llm-hub/scripts/_lib.py`, `whatsapp-radar/src/subprocess_flags.py`) rather than repeating the ternary at every call site.
+
+### Windows ephemeral port exhaustion takes down the whole fleet at once
+
+Symptom: **all** local web apps unresponsive at once (any subset of app-launcher/home-automation/whatsapp-radar/voice-transcriber/local-llm-hub), dead 1–4 min, self-heals with no restart, no code change. Simultaneity across independent processes is the tell — a shared kernel resource, not one app's diff. Cause: dynamic port range `49152–65535` (16,384 ports), `TcpTimedWaitDelay` unset → every closed outbound connection parks in `TIME_WAIT` ~120 s; a burst drains the range and **no process on the box can open an outbound socket** until it drains. (`fleet-config`#440, observed 2026-07-25/26.)
+
+**Diagnose in one minute:**
+```powershell
+Get-WinEvent -FilterHashtable @{LogName='System'; ProviderName='Tcpip'} -MaxEvents 20 | Select TimeCreated, Id, Message
+Get-NetTCPConnection | Group-Object State | Sort-Object Count -Descending
+netsh int ipv4 show dynamicport tcp
+```
+Event IDs 4231 (TCP)/4266 (UDP) = "ephemeral port space ... all such ports being in use"; Windows rate-limits these, so absence doesn't rule it out — corroborate with the `TIME_WAIT` count (observed oscillating 335→434→796→806 minutes apart on a normal afternoon; live-verified on this host at 324, top state in the table).
+
+**Fix hierarchy — cheapest and most targeted first:**
+1. Fix the leak: find and stop whatever opens short-lived outbound connections in a burst/loop (a poller with no backoff, retry-without-backoff, a health check with no session reuse).
+2. Pool connections: module-level `requests.Session` (or equivalent), never a bare `requests.get`/`urlopen` per call inside a loop; back off a failing endpoint instead of retrying at full rate; never point an e2e suite at a live production app.
+3. Last resort, machine-level, needs elevation + a reboot — **Roberto's call, never applied unattended by an agent:** `TcpTimedWaitDelay = 30` at `HKLM\SYSTEM\CurrentControlSet\Services\Tcpip\Parameters` (valid 30–300), ~4x effective capacity without touching the range. Microsoft-documented; re-measure its effect on the Windows 11 stack after applying, don't assume it.
+
+**Never narrow the range downward** — `netsh int ipv4 set dynamicport tcp start=10000` (seen circulated, wrong) hands out this machine's 16 fixed listeners as ephemeral ports: cloudflared `20241-3`, tailscaled `40746`, OneDrive `42050`, MouseWithoutBorders `15100/1`, llama-server `18093`, StreamDeck `28196/8`, MSI services `26822/32683/33683`, logioptionsplus `19010`, hwinfo `10000` — turning a visible, self-healing outage into intermittent bind failures that are far harder to diagnose. Safe floor on this host if the range must widen: `netsh int ipv4 set dynamicport tcp start=44000 num=21535` (clears every observed fixed listener) — still machine-level tuning, still Roberto's call.
