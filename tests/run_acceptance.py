@@ -434,6 +434,9 @@ def main() -> int:
     # ---- ux_surface helper pure-logic tests (skills/_lib) ----
     run_unit(_ux_surface_unit_check)
 
+    # ---- e2e_test_audit helper pure-logic tests (skills/_lib, fleet-config#406) ----
+    run_unit(_e2e_test_audit_unit_check)
+
     # ---- browser_verify helper pure-logic tests (skills/_lib) ----
     run_unit(_browser_verify_unit_check)
 
@@ -1997,6 +2000,17 @@ def _ux_surface_unit_check() -> Tuple[int, int]:
     gate. (fleet-config#195)
     """
     return _subprocess_unit_check("ux_surface", "test_ux_surface.py")
+
+
+def _e2e_test_audit_unit_check() -> Tuple[int, int]:
+    """Run skills/_lib/e2e_test_audit.py's pure-logic tests as a subprocess.
+
+    Standalone (like test_ux_surface) so the `/e2e-audit` skill's measurement
+    layer — CI-expectations e2e-surface parsing, test-dir resolution, near-
+    duplicate-name clustering, size-outlier and coverage-gap detection — is
+    testable on its own and reachable from the one gate. (fleet-config#406)
+    """
+    return _subprocess_unit_check("e2e_test_audit", "test_e2e_test_audit.py")
 
 
 def _browser_verify_unit_check() -> Tuple[int, int]:

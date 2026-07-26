@@ -127,6 +127,11 @@ window.CONFIG = {
       "scope": "repo"
     },
     {
+      "nm": "e2e-audit",
+      "ds": "On-demand audit of a repo's e2e/regression test suite for redundancy, bloat, and coverage gaps against project-scaffolding's \"&lt;15…",
+      "scope": "repo"
+    },
+    {
       "nm": "handoff-commit",
       "ds": "Generate a copy-paste prompt handing off a GitHub commit to another LLM to apply the same change to a sister project.",
       "scope": "repo"
