@@ -127,6 +127,11 @@ window.CONFIG = {
       "scope": "repo"
     },
     {
+      "nm": "docs-shots",
+      "ds": "Judgment + orchestration for a repo's visual-docs screenshots — decides which features a diff actually touched (or takes named/al…",
+      "scope": "repo"
+    },
+    {
       "nm": "e2e-audit",
       "ds": "On-demand audit of a repo's e2e/regression test suite for redundancy, bloat, and coverage gaps against project-scaffolding's \"&lt;15…",
       "scope": "repo"

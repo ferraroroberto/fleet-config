@@ -47,6 +47,26 @@ Run in parallel; stop on any failure:
   re-open (architecture, testing strategy, etc.), not per-PR changelogs.
 - Commit any documentation changes.
 
+### 2b. Visual docs (`/docs-shots` sub-step — repos with a screenshot manifest only)
+
+Deterministic discovery + diff-intersection, no LLM re-derivation:
+
+```
+E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/docs_shots_plan.py check <repo-root>
+```
+
+`MANIFEST=absent` → this step is a **silent no-op**, most repos every time —
+skip straight to step 3. `MANIFEST=<path>` with an empty `STALE` → also a
+no-op (say so in the finish summary: `docs-shots: no visual-docs feature
+touched by this diff`). A non-empty `STALE` → run the full `/docs-shots`
+judgment + propose-then-capture flow (`skills/docs-shots/SKILL.md`) **inside
+this run**: show the stale set + reasons, wait for the user's explicit OK,
+and on approval invoke the repo's own doc-capture engine for just those
+features, fold the result into the finish summary. Also surface any
+`UNMAPPED` changed files for the user to add a manifest entry for — never
+guess one. On decline, note the refresh was skipped and continue to step 3 —
+never block the finish over it.
+
 ### 3. Verification gate
 
 Run the gate the project's `CLAUDE.md` specifies (e.g.
