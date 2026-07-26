@@ -440,6 +440,9 @@ def main() -> int:
     # ---- html_shot helper pure-logic tests (skills/_lib, fleet-config#96) ----
     run_unit(_html_shot_unit_check)
 
+    # ---- docs_shots_plan helper pure-logic tests (skills/_lib, fleet-config#93) ----
+    run_unit(_docs_shots_plan_unit_check)
+
     # ---- browser_verify helper pure-logic tests (skills/_lib) ----
     run_unit(_browser_verify_unit_check)
 
@@ -2025,6 +2028,17 @@ def _html_shot_unit_check() -> Tuple[int, int]:
     reachable from the one gate. (fleet-config#96)
     """
     return _subprocess_unit_check("html_shot", "test_html_shot.py")
+
+
+def _docs_shots_plan_unit_check() -> Tuple[int, int]:
+    """Run skills/_lib/docs_shots_plan.py's pure-logic tests as a subprocess.
+
+    Standalone (like test_ux_surface) so the `/docs-shots` discovery +
+    diff-intersection layer — manifest discovery, source_globs matching, the
+    unmapped-surface heuristic, and the README-marker precondition check — is
+    testable on its own and reachable from the one gate. (fleet-config#93)
+    """
+    return _subprocess_unit_check("docs_shots_plan", "test_docs_shots_plan.py")
 
 
 def _browser_verify_unit_check() -> Tuple[int, int]:
