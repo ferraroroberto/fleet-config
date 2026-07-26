@@ -732,6 +732,38 @@ def _context_filter_unit_checks() -> Tuple[int, int]:
             code == 0 and (stdout.strip() == "") == expect_passthrough,
             stdout + stderr,
         )
+
+    # ---- wrapper stdout re-emission survives non-cp1252 output (#426) ----
+    # The wrapped child's own output is decoded as explicit UTF-8 in
+    # _run_command, but context_filter_cli.py's own sys.stdout.write of that
+    # output falls back to the locale codec (cp1252 here) unless reconfigured
+    # to UTF-8 up front. An emoji/astral codepoint used to crash the wrapper
+    # with UnicodeEncodeError instead of passing the output through.
+    emoji_command = "Write-Output ([System.Char]::ConvertFromUtf32(0x1F4CA))"
+    encoded = base64.b64encode(emoji_command.encode("utf-8")).decode("ascii")
+    for mode in ("shadow", "rewrite"):
+        res = subprocess.run(
+            [
+                PYTHON,
+                str(HOOKS / "context_filter_cli.py"),
+                "run",
+                "--tool",
+                "PowerShell",
+                "--mode",
+                mode,
+                "--encoded",
+                encoded,
+            ],
+            capture_output=True,
+            text=True,
+            env={**os.environ, "PYTHONUTF8": "0"},
+            timeout=30,
+        )
+        check(
+            f"context_filter_cli: {mode} mode survives non-cp1252 output (fleet-config#426)",
+            res.returncode == 0 and "UnicodeEncodeError" not in res.stderr,
+            res.stdout.strip() + " | " + res.stderr.strip(),
+        )
     return check.failures, check.total
 
 
