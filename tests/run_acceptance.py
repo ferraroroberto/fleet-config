@@ -437,6 +437,9 @@ def main() -> int:
     # ---- e2e_test_audit helper pure-logic tests (skills/_lib, fleet-config#406) ----
     run_unit(_e2e_test_audit_unit_check)
 
+    # ---- html_shot helper pure-logic tests (skills/_lib, fleet-config#96) ----
+    run_unit(_html_shot_unit_check)
+
     # ---- browser_verify helper pure-logic tests (skills/_lib) ----
     run_unit(_browser_verify_unit_check)
 
@@ -2011,6 +2014,17 @@ def _e2e_test_audit_unit_check() -> Tuple[int, int]:
     testable on its own and reachable from the one gate. (fleet-config#406)
     """
     return _subprocess_unit_check("e2e_test_audit", "test_e2e_test_audit.py")
+
+
+def _html_shot_unit_check() -> Tuple[int, int]:
+    """Run skills/_lib/html_shot.py's pure-logic tests as a subprocess.
+
+    Standalone (like test_ux_surface) so the shared headless-Chrome
+    measure-then-shoot helper — URL-scheme detection, file:// URL building,
+    query appending, and the DIMS-log parser — is testable on its own and
+    reachable from the one gate. (fleet-config#96)
+    """
+    return _subprocess_unit_check("html_shot", "test_html_shot.py")
 
 
 def _browser_verify_unit_check() -> Tuple[int, int]:
