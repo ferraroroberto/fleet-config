@@ -173,7 +173,7 @@ window.CONFIG = {
     },
     {
       "nm": "issue-yolo",
-      "ds": "One-shot the GitHub-issue workflow end-to-end — file the issue, cut the branch, build, validate hard, then ship (PR, CI, merge, d…",
+      "ds": "One-shot the GitHub-issue workflow end-to-end — file the issue, cut the branch, build, validate hard (including an independent fr…",
       "scope": "repo"
     },
     {
