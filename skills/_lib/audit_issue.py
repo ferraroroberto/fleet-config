@@ -65,6 +65,7 @@ KINDS = (
     "context-audit",
     "context-purge",
     "sota-watch",
+    "e2e-redundancy",
 )
 
 _MARKER_RE = re.compile(
