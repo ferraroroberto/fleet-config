@@ -294,6 +294,14 @@ def retrieve(args: argparse.Namespace) -> int:
 
 
 def main() -> int:
+    # The wrapped child's own output is decoded as explicit UTF-8 (see
+    # _run_command), but re-emitting it via sys.stdout.write still falls back
+    # to the locale codec (cp1252 on this machine) unless reconfigured here —
+    # any emoji or box-drawing character in that output otherwise crashes the
+    # wrapper instead of passing through (fleet-config#426).
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+
     parser = argparse.ArgumentParser(description="Fleet command-output context filter")
     sub = parser.add_subparsers(dest="cmd", required=True)
 
