@@ -241,6 +241,17 @@ As each agent returns, surface its report with a status mark (`✅ merged` /
 - **Vendor verbatim.** Never hand-edit a copied file — a re-vendor that needs
   a local tweak means the tweak belongs upstream in `project-scaffolding`
   first, not in the adopter's copy (`_vendored/README.md`'s rule).
+- **Vendoring standardizes whatever you vendor, including mistakes — review
+  the component's user-facing wording as carefully as its mechanism before
+  propagating it fleet-wide.** Byte-identical + hash-verified means a
+  locally-softened copy registers as *drift*, so a bad default reads as the
+  safe choice everywhere it lands. This bit the fleet once: a vendored
+  component's docstring and user-facing exit message prescribed "kill +
+  fresh restart" on repos whose ports host a daily-driver tray and the Board
+  itself — caught only because one adopter stopped to ask instead of
+  applying it. Before a real (non-`--dry-run`) propagation wave, confirm the
+  scaffold source's wording actually matches its own cited reference
+  implementation, not just that the bytes hash-match.
 - **Hash-verify before bumping the manifest sha.** A copy that doesn't
   byte-match the scaffold source is a bug in this skill, not something to
   paper over by writing the sha anyway.
