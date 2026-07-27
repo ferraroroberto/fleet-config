@@ -512,6 +512,9 @@ def main() -> int:
     # ---- dirty_tree_check helper pure-logic tests (skills/_lib) ----
     run_unit(_dirty_tree_check_unit_check)
 
+    # ---- deploy_coverage helper pure-logic tests (skills/_lib, fleet-config#459) ----
+    run_unit(_deploy_coverage_unit_check)
+
     # ---- vendored_drift helper pure-logic tests (skills/_lib) ----
     run_unit(_vendored_drift_unit_check)
 
@@ -2170,6 +2173,18 @@ def _ux_surface_unit_check() -> Tuple[int, int]:
     gate. (fleet-config#195)
     """
     return _subprocess_unit_check("ux_surface", "test_ux_surface.py")
+
+
+def _deploy_coverage_unit_check() -> Tuple[int, int]:
+    """Run skills/_lib/deploy_coverage.py's pure-logic tests as a subprocess.
+
+    Standalone (like test_ux_surface) so /issue-finish's deploy-coverage gate —
+    the declared-component parser (fence-skipping, the four-bullet template),
+    the path-token filter, the diff-touch matcher, and the three-state
+    (`yes`/`no`/`unknown`) touch decision — is testable on its own and
+    reachable from the one gate. (fleet-config#459)
+    """
+    return _subprocess_unit_check("deploy_coverage", "test_deploy_coverage.py")
 
 
 def _e2e_test_audit_unit_check() -> Tuple[int, int]:
