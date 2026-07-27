@@ -58,6 +58,12 @@ Subcommands:
   release <repo-root>
       Remove the primary claim. Idempotent. (Worktree sessions never hold it.)
 
+  assert-owner <repo-root> <issue-N>
+      Guard before a primary-tree `git checkout <main>` (issue-finish step 5,
+      issue-start step 4): refuses (exit 1) if the tree is dirty or the claim
+      is held by a *different* issue; passes (exit 0) if the tree is clean and
+      the claim is free or already owned by <issue-N>. Fleet-config#473.
+
   remove-worktree <worktree-path>
       Reparse-safe teardown: strip the .venv junction, then
       `git worktree remove --force` + `git worktree prune`.
@@ -179,6 +185,26 @@ def _publish_claim(lock_dir: Path, meta: dict) -> bool:
     except OSError:
         shutil.rmtree(tmp_dir, ignore_errors=True)
         return False
+
+
+def owner_check(holder: Optional[dict], issue: str, dirty: bool) -> Tuple[bool, str]:
+    """Decide whether `issue` may switch this checkout's primary tree to main.
+
+    Pure decision for the `assert-owner` guard (fleet-config#473): a checkout
+    that lands a merge (`/issue-finish` step 5) or syncs main (`/issue-start`
+    step 4) must refuse rather than blindly `git checkout <main>` when either
+    (a) the tree is dirty — uncommitted work that isn't this session's to
+    switch out from under, or (b) the claim is live and held by a *different*
+    issue. Passes when the tree is clean and the claim is free or already
+    owned by `issue`. Returns `(ok, reason)`; `reason` is the human-readable
+    line the CLI prints either way.
+    """
+    if dirty:
+        return False, "working tree has uncommitted changes"
+    if holder and str(holder.get("issue")) != str(issue):
+        return False, (f"primary held since {holder.get('created_iso', '?')} "
+                        f"by issue {holder.get('issue', '?')} on {holder.get('branch', '?')}")
+    return True, ("free" if not holder else "owned")
 
 
 def try_acquire(
@@ -426,6 +452,30 @@ def cmd_remove_worktree(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_assert_owner(args: argparse.Namespace) -> int:
+    """Refuse a `git checkout <main>` unless it's safe for `<issue>` to run it.
+
+    Called immediately before the checkout in `/issue-finish` step 5 and
+    `/issue-start` step 4 (fleet-config#473) — the claim system routes a
+    *second* session into a worktree, but says nothing about whether the
+    process about to switch the primary tree's HEAD is actually the claim
+    holder. Exits 0 (`ASSERT_OWNER=pass`) when the tree is clean and the claim
+    is free or owned by this issue; exits 1 (`ASSERT_OWNER=refuse: <reason>`)
+    otherwise, printing the same "primary held since ..." shape the claim
+    system already uses so a human or chief sees why the checkout stopped.
+    """
+    repo = _resolve_repo(args.repo_root)
+    lock = lock_dir_for(repo)
+    holder = read_meta(lock) if lock.exists() else None
+    dirty = bool(_git(repo, "status", "--porcelain").stdout.strip())
+    ok, reason = owner_check(holder, args.issue, dirty)
+    if ok:
+        print(f"ASSERT_OWNER=pass ({reason})")
+        return 0
+    print(f"ASSERT_OWNER=refuse: {reason}", file=sys.stderr)
+    return 1
+
+
 def cmd_mode(args: argparse.Namespace) -> int:
     """Print `primary` or `worktree` for the current checkout — the deterministic
     primary-vs-linked-worktree decision /issue-finish keys its teardown on."""
@@ -471,6 +521,11 @@ def main(argv: Optional[list] = None) -> int:
     rw = sub.add_parser("remove-worktree", help="reparse-safe worktree teardown")
     rw.add_argument("worktree_path")
     rw.set_defaults(func=cmd_remove_worktree)
+
+    ao = sub.add_parser("assert-owner", help="refuse a main checkout unless it's safe for <issue>")
+    ao.add_argument("repo_root")
+    ao.add_argument("issue")
+    ao.set_defaults(func=cmd_assert_owner)
 
     md = sub.add_parser("mode", help="print 'primary' or 'worktree' for the cwd checkout")
     md.add_argument("repo_root")
