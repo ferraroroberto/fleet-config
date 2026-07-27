@@ -97,6 +97,14 @@ In parallel:
 - **Primary mode:**
   - Detect the main branch: `git symbolic-ref refs/remotes/origin/HEAD` → strip
     `origin/`; fall back to `main`.
+  - Belt-and-suspenders guard before switching (fleet-config#473) — the
+    acquire→sync window is normally seconds, but confirm it stayed that way:
+    ```
+    E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/worktree_claim.py assert-owner . <N>
+    ```
+    `ASSERT_OWNER=pass` → proceed. `ASSERT_OWNER=refuse: <reason>` → stop and
+    report the reason — do not checkout or pull; something else claimed this
+    tree, or it went dirty, between step 0's `acquire` and here.
   - `git checkout <main>` then `git pull --ff-only`. If the pull is not a
     fast-forward, stop and report — don't merge or rebase blindly.
 

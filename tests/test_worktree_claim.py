@@ -203,4 +203,23 @@ finally:
     shutil.rmtree(race_base, ignore_errors=True)
 
 
+# ---- owner_check: assert-owner guard decision (#473) -----------------------
+
+check(wc.owner_check(None, "473", dirty=False) == (True, "free"),
+      "owner_check: free claim -> pass")
+check(wc.owner_check({"issue": "473", "branch": "fix/473-x"}, "473", dirty=False) == (True, "owned"),
+      "owner_check: matching-issue claim -> pass")
+check(wc.owner_check({"issue": 473, "branch": "fix/473-x"}, "473", dirty=False) == (True, "owned"),
+      "owner_check: matching-issue claim, int vs str -> pass")
+ok, reason = wc.owner_check(
+    {"issue": "469", "branch": "fix/469-x", "created_iso": "2026-07-27T21:33:02"}, "473", dirty=False)
+check(ok is False, "owner_check: different-issue claim -> refuse")
+check("469" in reason and "fix/469-x" in reason,
+      "owner_check: refusal names the holder issue + branch")
+check(wc.owner_check(None, "473", dirty=True) == (False, "working tree has uncommitted changes"),
+      "owner_check: dirty tree, free claim -> refuse")
+check(wc.owner_check({"issue": "473"}, "473", dirty=True)[0] is False,
+      "owner_check: dirty tree beats a matching-issue claim -> refuse")
+
+
 _h.report_and_exit("test_worktree_claim")

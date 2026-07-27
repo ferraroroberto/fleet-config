@@ -189,9 +189,20 @@ by the project's `## CI expectations` block (the convention is
 - `gh pr merge <PR> --merge --delete-branch` — merge commit; branch deleted on
   both remote and local.
 - **Land + clean up, by checkout mode** (from pre-flight):
-  - **Primary checkout:** `git checkout <main>` then `git pull --ff-only` to land
-    the merge locally, then release the concurrency claim so the next session can
-    own the primary:
+  - **Primary checkout:** before switching, guard against landing this merge on
+    top of a tree that isn't this session's to touch (fleet-config#473 — the
+    claim system routes a *second* session into a worktree, but never re-checks
+    who holds the claim at the moment something actually runs `git checkout
+    <main>` here):
+    ```
+    E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/worktree_claim.py assert-owner <repo> <N>
+    ```
+    `ASSERT_OWNER=pass` (tree clean, claim free or owned by `<N>`) → proceed.
+    `ASSERT_OWNER=refuse: <reason>` (dirty tree, or another issue's claim is
+    live) → **stop immediately, do not checkout or pull** — surface the refusal
+    reason to the user rather than improvising a recovery. Only on a pass:
+    `git checkout <main>` then `git pull --ff-only` to land the merge locally,
+    then release the concurrency claim so the next session can own the primary:
     ```
     E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/worktree_claim.py release <repo>
     ```
