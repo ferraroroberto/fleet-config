@@ -160,6 +160,16 @@ restriction, some didn't). Include these four points in the text you
    but the judgment of "there's already a session here, should I nudge it
    instead of starting a new one" is yours — check
    `chief_ops.py sessions` first.
+5. **`AskUserQuestion` is hard-blocked, not just discouraged, in a
+   chief-managed session (fleet-config#463).** A `PreToolUse` hook refuses
+   the tool outright — it renders only in the worker's own PTY, so you can
+   never see the question or attribute an answer to it. Tell the worker
+   plainly: state any question and its options as ordinary output text
+   instead (that reaches `chief_ops.py exchange`), then proceed on its own
+   best judgment or wait — you relay a decision via `chief_ops.py say` if one
+   is needed. This closes a real incident where an `AskUserQuestion` chief
+   never saw got answered by something unattributable, and that answer
+   authorised stopping the live orchestrator session itself.
 
 ## Managing the backlog and parked work
 
