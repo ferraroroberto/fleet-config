@@ -280,11 +280,53 @@ follow that procedure **exactly**. The non-negotiables:
 
 If the project has no tray, skip this step.
 
+### 6b. Deploy-coverage check (repos with declared not-fully-covered components only)
+
+A merged PR and a restarted process only prove the component the restart
+actually touched is live — not every runtime component the repo owns.
+Convention + declared shape: `project-scaffolding#199`/`#200`; reference
+implementation: `app-launcher#615`. The trigger is deterministic:
+
+```
+E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/deploy_coverage.py check .
+```
+
+- `DECLARED=no` → **no-op**, the common case for ~every repo today (a repo
+  with no `## <component>` block carrying a `liveness signal:` bullet in its
+  `CLAUDE.md`). Skip straight to step 7 and say nothing — this must never get
+  slower or noisier for a repo that hasn't declared anything.
+- `DECLARED=yes` with every component `TOUCHED=no` → still a no-op, but
+  **state it** in the step-7 summary (`deploy-coverage: N component(s)
+  declared, none touched by this diff`).
+- `DECLARED=yes` with a component `TOUCHED=yes` **or** `TOUCHED=unknown` (no
+  parseable path in its declaration — treat this as touched, never as a
+  silent "no": a flow that can't tell whether it was touched must not assume
+  it wasn't) → check that component's printed `LIVENESS` field against the
+  actual running target. Where step 6 already polled a build-identity
+  endpoint (e.g. `GET /api/version`) as part of the restart, read the
+  matching sub-block out of that same response — don't issue a second
+  request. Three outcomes, and only the wording changes; **never** block,
+  hang, or prompt for confirmation, and never skip closing the issue or
+  merging over this check:
+  - **Live** (the field confirms the loaded build matches current `HEAD`) →
+    step 7 states `confirmed live: <component>`.
+  - **Stale** (the field says otherwise) → step 7 states **`merged but not
+    yet live: <component> — requires <UPDATE_CMD>`**, never "shipped".
+  - **Unresolvable** (endpoint unreachable, no matching field, or no local
+    restart happened at all to poll from) → step 7 states **`unknown:
+    <LIVENESS> could not be checked`** — never assume fine.
+- Do **not** invoke `UPDATE_CMD` yourself. Where the declaration says it's
+  confirmation-gated or destructive (e.g. a manual session-host restart that
+  would kill live PTYs), it is a human/operator action only — report what's
+  needed, don't attempt it as a side effect of finishing an issue.
+
 ### 7. Report
 
 Summarize: issue closed, PR merged, branch deleted, docs updated (or why not),
 gate result, the UX-conformance gate decision (ran / skipped / `ux-full`, plus
-any drift fixed — step 3b), and the live build line.
+any drift fixed — step 3b), the deploy-coverage decision (n/a / not touched /
+confirmed live / merged but not yet live / unknown — step 6b), and the live
+build line.
 
 Then append the **work-summary** — the file/LOC shape of what shipped — by
 running the deterministic helper and echoing its output verbatim into the
