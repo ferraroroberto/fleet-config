@@ -35,6 +35,7 @@ A Notification hook only advises — it never blocks, and always exits 0.
 from __future__ import annotations
 
 import json
+import logging
 import os
 import subprocess
 import sys
@@ -46,6 +47,8 @@ from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import _lib  # noqa: E402
 import slack_notify  # noqa: E402
+
+logger = logging.getLogger("notify_on_idle")
 
 # fleet-config#443: hooks/ and skills/_lib/ are two independent trees by
 # convention (a hook must stay importable with nothing but its own directory
@@ -208,12 +211,37 @@ def notify_chief(text: str) -> bool:
             stdin=subprocess.DEVNULL, creationflags=_lib.NO_WINDOW,
             cwd=str(FLEET_CONFIG_ROOT), timeout=_CHIEF_OPS_TIMEOUT_S, check=False,
         )
-    except (OSError, subprocess.TimeoutExpired):
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        # Couldn't even invoke chief_ops.py -- distinct from "no chief found"
+        # below, since the board was never reached to check (fleet-config#456).
+        logger.warning("notify_chief: chief-sid lookup failed to run (%s) -- falling back to Slack ping", exc)
+        return False
+    if sid_proc.returncode == 1:
+        # cmd_chief_sid's own "board reachable, no live chief-labeled session"
+        # exit -- this is the routing-miss case fleet-config#456 is about: a
+        # chief-managed worker is blocked and chief-sid genuinely found
+        # nothing wearing the chief label. Distinguishable at a glance from
+        # the rc==2 branch below (couldn't even query the board) and from
+        # ordinary silence (this line only appears when the fallback fires,
+        # not on every ping).
+        logger.info("notify_chief: chief-sid found no live chief session -- falling back to Slack ping")
         return False
     if sid_proc.returncode != 0:
+        # rc==2 is chief_ops.py's own ValueError/URLError catch (app-launcher
+        # unreachable, board fetch failed, ...) -- a query failure, not "no
+        # chief running", so it gets its own message.
+        stderr_tail = (sid_proc.stderr or "").strip()
+        logger.warning(
+            "notify_chief: chief-sid query errored (rc=%d): %s -- falling back to Slack ping",
+            sid_proc.returncode, stderr_tail,
+        )
         return False
     chief_sid = parse_chief_sid(sid_proc.stdout)
     if not chief_sid:
+        # Defense in depth: cmd_chief_sid's contract is exit 0 only when sid
+        # is truthy, so this would be a parse/contract mismatch, not the
+        # routing-miss above.
+        logger.warning("notify_chief: chief-sid exited 0 but printed no sid -- falling back to Slack ping")
         return False
 
     fd, tmp_name = tempfile.mkstemp(prefix="chief-ping-", suffix=".txt")
@@ -237,6 +265,7 @@ def notify_chief(text: str) -> bool:
 
 
 def main() -> None:
+    logging.basicConfig(level=logging.INFO, format="%(message)s", stream=sys.stderr)
     payload = _lib.read_stdin_json()
 
     # Defensive re-entrancy guard. A Notification hook can't loop Claude, but if
