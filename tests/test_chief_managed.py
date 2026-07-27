@@ -8,6 +8,8 @@ Run: `E:/automation/fleet-config/.venv/Scripts/python.exe tests/test_chief_manag
 
 from __future__ import annotations
 
+import os
+import subprocess
 import sys
 import tempfile
 from datetime import datetime, timedelta, timezone
@@ -60,6 +62,20 @@ try:
     except ValueError:
         empty_sid_raised = True
     check(empty_sid_raised, "mark raises on an empty sid")
+
+    # CLI entry point (fleet-config#474) -- the shape an out-of-tree caller
+    # (app-launcher's board.py, a different repo) shells out to, since it
+    # cannot import this module directly across the repo boundary.
+    cli_env = dict(os.environ)
+    cli_env["CLAUDE_HOOKS_STATE_DIR"] = str(tmp)
+    cli_result = subprocess.run(
+        [sys.executable, str(REPO / "skills" / "_lib" / "chief_managed.py"),
+         "mark", "sid-cli", "app-launcher", "641"],
+        capture_output=True, text=True, env=cli_env,
+    )
+    check(cli_result.returncode == 0, f"CLI mark exits 0 (stderr={cli_result.stderr!r})")
+    check("MARKED sid=sid-cli" in cli_result.stdout, "CLI mark prints MARKED line")
+    check(cm.is_managed("sid-cli", path=target) is True, "CLI mark lands in the shared state file")
 finally:
     import shutil
     shutil.rmtree(tmp, ignore_errors=True)
