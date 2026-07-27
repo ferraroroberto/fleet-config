@@ -238,6 +238,35 @@ had to be corrected immediately — it changed whether Roberto would act on a
 real process gap. Don't let an earlier soft guess sit uncorrected once you
 know better.
 
+**Never run a repo's gate, test suite, or any mutating command in a repo
+that currently has a live worker session — that repo's gate belongs to its
+worker.** On 2026-07-27 chief ran `tests/run_acceptance.py` against
+fleet-config's own working tree while a worker was actively editing files in
+it; two consecutive runs reported a different failure count, not because the
+suite was flaky but because chief was racing the worker's writes. That's
+noise presented as a signal, and it cost a round trip to walk back. This
+doesn't narrow what you can inspect — `git status`, `git log`, reading
+files, reading committed state, querying `gh` all stay fine and encouraged,
+including in a repo with a live worker. The line is running the repo's own
+tooling: a gate, a test suite, a byte-compile, anything that writes
+`__pycache__` or otherwise mutates a tree someone else is actively changing
+— that can neither be trusted (it's reading a moving target) nor safely
+repeated (a second run against different mid-edit state is a different
+question, not confirmation).
+
+When you genuinely doubt a worker's report — and you should keep doubting;
+the failure here was the method, not the impulse — verify one of these ways
+instead:
+
+- Against `origin/main` or a specific commit, never the live working tree.
+- Against an artefact the change produced, rather than by re-running the
+  process that produced it. The same morning chief validated a worker's live
+  `settings.json` edit exactly this way: parsing the file, listing its hook
+  events, scanning for backslash paths in command strings, and running
+  `chief_ops.py chief-sid` to confirm the mechanism actually resolved — all
+  read-only, all independent of the worker, all conclusive.
+- Ask the worker to re-run its own gate and report back.
+
 ## Safety rails (non-negotiable)
 
 1. **Default verb is the safe one.** Issue starts use `mode: "start"`;
