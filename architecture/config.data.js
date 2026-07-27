@@ -372,13 +372,6 @@ window.CONFIG = {
       "ds": "Block dated retrospective filenames under a `docs/` directory."
     },
     {
-      "nm": "branch_before_edit_guard",
-      "ev": "PreToolUse · Edit·Write",
-      "block": true,
-      "reach": "Claude only",
-      "ds": "Block an `Edit`/`Write` on `main`/`master` from a launcher-dispatched worker."
-    },
-    {
       "nm": "py_syntax_check",
       "ev": "PostToolUse · Edit·Write·MultiEdit",
       "block": true,
