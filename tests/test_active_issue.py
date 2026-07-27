@@ -3,16 +3,20 @@
 from __future__ import annotations
 
 import json
+import os
 import shutil
+import subprocess
 import sys
 import tempfile
 import threading
+import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "skills" / "_lib"))
 import active_issue as ai  # noqa: E402
+from no_window import NO_WINDOW  # noqa: E402
 
 sys.path.insert(0, str(Path(__file__).resolve().parent / "_lib"))
 from check_harness import CheckHarness  # noqa: E402
@@ -87,6 +91,66 @@ try:
               "concurrent writers preserve all unrelated markers")
     finally:
         ai.resolve_repo_name = original_resolver
+
+    # state_lock() stale-reclaim correctness (#469): age alone must never
+    # displace a still-live holder, a genuinely abandoned lock must still be
+    # reclaimable, and release must never delete a lock some other reclaimer
+    # is now holding.
+    slow_target = tmp / "slow-lock.json"
+    order = []
+
+    def _slow_holder() -> None:
+        with ai.state_lock(slow_target, stale_after_seconds=0.05, timeout_seconds=5.0):
+            order.append("A-enter")
+            time.sleep(0.3)
+            order.append("A-exit")
+
+    def _contender() -> None:
+        time.sleep(0.1)  # let A hold well past stale_after_seconds first
+        with ai.state_lock(slow_target, stale_after_seconds=0.05, timeout_seconds=5.0):
+            order.append("B-enter")
+
+    t_a = threading.Thread(target=_slow_holder)
+    t_b = threading.Thread(target=_contender)
+    t_a.start()
+    t_b.start()
+    t_a.join(timeout=10)
+    t_b.join(timeout=10)
+    check(not t_a.is_alive() and not t_b.is_alive(), "slow-holder test threads finish")
+    check(order == ["A-enter", "A-exit", "B-enter"],
+          "slow-but-alive holder is never displaced by stale-reclaim")
+
+    dead_target = tmp / "dead-lock.json"
+    dead_lock_dir = dead_target.with_name(dead_target.name + ".lock")
+    dead_proc = subprocess.Popen(
+        [sys.executable, "-c", "pass"], creationflags=NO_WINDOW
+    )
+    dead_proc.wait(timeout=10)
+    dead_lock_dir.mkdir(parents=True)
+    (dead_lock_dir / f"owner.{dead_proc.pid}.abandoned").touch()
+    old_stamp = time.time() - 60
+    os.utime(dead_lock_dir, (old_stamp, old_stamp))
+    entered = False
+    with ai.state_lock(dead_target, stale_after_seconds=0.05, timeout_seconds=5.0):
+        entered = True
+    check(entered, "a genuinely abandoned lock (dead pid) is still reclaimed")
+
+    tamper_target = tmp / "tamper-lock.json"
+    tamper_lock_dir = tamper_target.with_name(tamper_target.name + ".lock")
+    cm = ai.state_lock(tamper_target, stale_after_seconds=30.0, timeout_seconds=5.0)
+    cm.__enter__()
+    # Simulate a reclaimer that decided we were dead: it wipes our marker and
+    # writes its own, exactly as the stale-reclaim path does.
+    for entry in tamper_lock_dir.iterdir():
+        entry.unlink()
+    reclaimer_owner = {"pid": os.getpid(), "token": "reclaimers-token"}
+    (tamper_lock_dir / f"owner.{reclaimer_owner['pid']}.{reclaimer_owner['token']}").touch()
+    cm.__exit__(None, None, None)
+    check(tamper_lock_dir.exists(),
+          "release never deletes a lock a reclaimer took over while held")
+    check(ai._read_lock_owner(tamper_lock_dir) == reclaimer_owner,
+          "the reclaimer's own owner record survives our release")
+    shutil.rmtree(tamper_lock_dir, ignore_errors=True)
 
     # The checked-in skills are the executable lifecycle contract; pin every
     # branch that bypasses another workflow instead of relying on prose review.
