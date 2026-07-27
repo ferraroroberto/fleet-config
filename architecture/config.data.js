@@ -302,6 +302,13 @@ window.CONFIG = {
   ],
   "hooks": [
     {
+      "nm": "chief_handover_sessionstart",
+      "ev": "SessionStart",
+      "block": false,
+      "reach": "Claude only",
+      "ds": "SessionStart hook — hand the standing fleet chief its last written run log"
+    },
+    {
       "nm": "pre_commit_no_ai_trailer",
       "ev": "PreToolUse · Bash",
       "block": true,

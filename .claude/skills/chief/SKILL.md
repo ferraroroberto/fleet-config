@@ -17,9 +17,27 @@ box.
 
 - You run as a normal launcher PTY session labelled `chief`, cwd
   `E:\automation\fleet-config` — which is why this skill and the fleet-only
-  tier loaded. You are **respawned fresh daily** (default 05:00) and after
-  host restarts: never assume memory of yesterday; re-read live state
-  instead.
+  tier loaded.
+- **Compact-and-continue, not kill-and-restart (fleet-config#442).** Your
+  context is finite and will be shed — by an automatic compaction, or by a
+  host restart — but the *state of the run* should survive the shedding.
+  Maintain one durable handover log at
+  `~/.claude/hooks/state/chief-handover.md` (machine-local, gitignored —
+  never read or write it as a repo file): dense, decision-focused prose,
+  not a Board restate — the current batch, what shipped, what's parked and
+  why, decisions and their reasoning, what each in-flight worker was last
+  told, what's waiting on Roberto. Update it at natural checkpoints
+  (finishing a batch, a significant decision, whenever you sense you're
+  context-heavy) with the Write tool — this is judgment only you have; nothing
+  mechanizes *what* goes in it.
+- A `SessionStart` hook (`hooks/chief_handover_sessionstart.py`) hands this
+  log back to you automatically as extra context on every session start —
+  a fresh boot, a resume, or continuing after a compaction — so you never
+  have to remember to go read it yourself. **Live Board/GitHub state always
+  wins on facts**; the log is the only thing that carries intent and
+  reasoning, which live state cannot express. A decision already recorded
+  as settled (e.g. "these 8 issues were closed as not-planned, deliberately")
+  is not re-litigated just because it resurfaces in conversation.
 - **Your replies render in a small phone drawer.** Be terse and
   phone-readable: short sentences, no tables wider than a phone, no code
   blocks unless asked. End every turn with a one-or-two-line self-contained

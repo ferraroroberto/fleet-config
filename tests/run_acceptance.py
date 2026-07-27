@@ -360,6 +360,25 @@ def main() -> int:
         0,
     ))
 
+    # ---- chief_handover_sessionstart: cwd gating (fleet-config#442) ----
+    # A session outside fleet-config is a silent no-op regardless of any
+    # handover log's presence -- chief only ever runs cwd'd in fleet-config.
+    cases.append((
+        "chief_handover_sessionstart: non-fleet-config cwd -> no-op exit 0",
+        "chief_handover_sessionstart",
+        {"hook_event_name": "SessionStart", "source": "startup", "cwd": tempfile.gettempdir()},
+        0,
+    ))
+    # fleet-config cwd but (almost certainly) no real handover log yet on this
+    # machine -- still exit 0 either way; the content-bearing case is covered
+    # by the dedicated unit-check function below with an isolated state dir.
+    cases.append((
+        "chief_handover_sessionstart: fleet-config cwd, no log -> exit 0",
+        "chief_handover_sessionstart",
+        {"hook_event_name": "SessionStart", "source": "startup", "cwd": str(REPO)},
+        0,
+    ))
+
     failures = 0
     total_checks = len(cases)
 
@@ -396,6 +415,9 @@ def main() -> int:
 
     # ---- notify_on_idle chief-managed routing (fleet-config#443) ----
     run_unit(_notify_chief_routing_unit_checks)
+
+    # ---- chief_handover_sessionstart pure logic + end-to-end (fleet-config#442) ----
+    run_unit(_chief_handover_sessionstart_unit_checks)
 
     # ---- session_state board-row persistence (fleet-config#91) ----
     run_unit(_session_state_unit_checks)
@@ -1519,6 +1541,67 @@ def _notify_chief_routing_unit_checks() -> Tuple[int, int]:
           notify_on_idle.parse_chief_sid("some other output\n") == "")
     check("parse_chief_sid: line among other output -> still extracted",
           notify_on_idle.parse_chief_sid("noise\nCHIEF_SID=xyz-789\nmore noise\n") == "xyz-789")
+
+    return check.failures, check.total
+
+
+def _chief_handover_sessionstart_unit_checks() -> Tuple[int, int]:
+    """`build_context`/`handover_path` pure logic, plus one real end-to-end
+    hook run with an isolated state dir (fleet-config#442).
+
+    Unlike `notify_on_idle`'s chief-routing, this hook has no network or
+    subprocess call at all -- a plain file read + one `print()` -- so the
+    end-to-end case below carries none of that module's live-side-effect
+    risk and is exercised fully via `run()`.
+    """
+    sys.path.insert(0, str(HOOKS))
+    import chief_handover_sessionstart as chs  # noqa: E402
+
+    check = _Checker()
+
+    # ---- build_context: pure string assembly + tail-truncation ----
+    short = chs.build_context("current batch: #442, #443 shipped.", Path("X:/log.md"))
+    check("build_context: short content passes through, carries the fleet-config#442 preamble",
+          "current batch: #442, #443 shipped." in short and "fleet-config#442" in short)
+
+    log_path = Path("X:/log.md")
+    long_content = "x" * (chs.MAX_INLINE_CHARS + 500)
+    truncated = chs.build_context(long_content, log_path)
+    check("build_context: over-ceiling content is truncated to the tail",
+          truncated.count("x") <= chs.MAX_INLINE_CHARS + 20)  # + a little preamble slop, never the full length
+    check("build_context: truncation points at the full-log path",
+          str(log_path) in truncated)  # str(Path) renders with the platform's own separator
+
+    # ---- handover_path: CLAUDE_HOOKS_STATE_DIR override (mirrors session_state.py) ----
+    saved_env = os.environ.get("CLAUDE_HOOKS_STATE_DIR")
+    try:
+        os.environ["CLAUDE_HOOKS_STATE_DIR"] = "X:/fake-state-dir"
+        check("handover_path: honors CLAUDE_HOOKS_STATE_DIR",
+              chs.handover_path() == Path("X:/fake-state-dir") / "chief-handover.md")
+    finally:
+        if saved_env is None:
+            os.environ.pop("CLAUDE_HOOKS_STATE_DIR", None)
+        else:
+            os.environ["CLAUDE_HOOKS_STATE_DIR"] = saved_env
+
+    # ---- end-to-end: fleet-config cwd + a real handover file -> additionalContext ----
+    tmp = Path(tempfile.mkdtemp(prefix="chief_handover_e2e_"))
+    try:
+        (tmp / "chief-handover.md").write_text(
+            "## 2026-07-27\ncurrent batch: #445 shipped, #443 in review.\n", encoding="utf-8"
+        )
+        code, stdout, stderr = run(
+            "chief_handover_sessionstart",
+            {"hook_event_name": "SessionStart", "source": "compact", "cwd": str(REPO)},
+            extra_env={"CLAUDE_HOOKS_STATE_DIR": str(tmp)},
+        )
+        check(f"chief_handover_sessionstart e2e: exits 0 ({stderr.strip()})", code == 0)
+        check("chief_handover_sessionstart e2e: stdout carries the SessionStart hookSpecificOutput envelope",
+              '"hookEventName": "SessionStart"' in stdout)
+        check("chief_handover_sessionstart e2e: additionalContext carries the log content",
+              "#445 shipped, #443 in review" in stdout)
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
 
     return check.failures, check.total
 
