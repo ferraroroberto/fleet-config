@@ -125,6 +125,50 @@ instead of Slack (see the next section).
 After a dispatch, confirm back with the repo, issue number/goal, and the
 returned session so the user can find the card.
 
+## Standard dispatch brief (fold into every worker brief, fleet-config#444)
+
+The 2026-07-25/26 sweep (~18h, one session, ~20 dispatched workers across 9
+repos) hit the same failure modes often enough that they belong in every
+brief by default, not re-typed ad-hoc (which drifted — some briefs got the
+restriction, some didn't). Include these four points in the text you
+`say`/dispatch to a worker, adapted to its wording but never dropped:
+
+1. **Poll background work to completion inside your own turn; never end a
+   turn waiting to be resumed.** Nothing wakes a top-level worker session —
+   this hit at least four times in the sweep (a fork re-run, a buffered
+   pytest run, a background review agent, work it simply couldn't do). This
+   is already in the global `CLAUDE.md` for sub-agents, but a
+   chief-dispatched top-level worker needs it stated explicitly too.
+2. **Suspect buffering before a hang.** "Zero output for 20 minutes" is
+   usually stdout block-buffered under capture, not a stuck process — re-run
+   in the foreground with `PYTHONUTF8=1`/`PYTHONUNBUFFERED=1` before
+   concluding something is actually stuck.
+3. **Restate any read-only sub-agent restriction, every time.** A
+   fleet-config sub-agent once built/committed/pushed/merged on its own
+   initiative despite a read-only brief — honored by convention, not
+   enforced, so it must be re-stated in the brief itself each dispatch, not
+   assumed carried over from a prior one.
+4. **Check repo occupancy before dispatching, and reuse an idle session
+   already in that repo rather than opening a second.** `chief_ops.py
+   dispatch` refuses a mechanically-occupied repo (see the safety rails),
+   but the judgment of "there's already a session here, should I nudge it
+   instead of starting a new one" is yours — check
+   `chief_ops.py sessions` first.
+
+## Managing the backlog and parked work
+
+- **Decomposition makes "backlog zero" recede — say so, don't treat it as
+  failure.** A dispatched spike can legitimately generate several child
+  issues; that's correct engineering surfacing real scope, not the backlog
+  growing because work is going badly. When reporting backlog counts, note
+  this rather than letting a rising number read as a bad sign.
+- **Parked work needs a durable, machine-visible reason.** When an issue is
+  blocked on hardware, a physical dependency, or a deliberate "not now,"
+  leave an explicit comment saying so and why — this is what stops the same
+  parked issue from being re-litigated on a later sweep (it happened five
+  times to one local-llm-hub issue before this became a standard move).
+  Don't rely on remembering it was already discussed.
+
 ## Incoming worker notifications (fleet-config#443)
 
 When a **chief-dispatched** worker hits a real "blocked, needs input"
@@ -173,6 +217,20 @@ reports completion, before you relay that completion onward to Roberto:
 - `STATUS=DIRTY` (exit 1) means the self-report doesn't match reality —
   don't relay it as done; say what `REASON=` gave you and investigate
   (read the branch/PR yourself) before deciding what to tell Roberto.
+
+**Verify from outside; never arbitrate between two agents' conflicting
+accounts.** When a fleet-config worker reported that a fork had overstepped
+its brief, the right move was checking independently — the PR contents,
+`git log`, the working tree, and the repo's own gate — rather than trying
+to referee which of two narratives was right. You are the one party in a
+position to check; use that instead of picking a side.
+
+**Correct a wrong hedge fast, once you have better information.** Chief
+initially told Roberto the fork incident was "likely a narration artifact";
+the worker then restated it flatly with direct visibility, and the hedge
+had to be corrected immediately — it changed whether Roberto would act on a
+real process gap. Don't let an earlier soft guess sit uncorrected once you
+know better.
 
 ## Safety rails (non-negotiable)
 
