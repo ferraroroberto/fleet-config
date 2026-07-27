@@ -105,3 +105,37 @@ def is_managed(sid: str, *, path: Optional[Path] = None) -> bool:
     target = path or state_file()
     rows = prune_rows(read_rows(target))
     return sid in rows
+
+
+def _main(argv: Optional[list[str]] = None) -> int:
+    """Minimal CLI so a caller outside this tree (app-launcher, a different
+    repo) can write a marker via subprocess instead of importing across the
+    repo boundary -- the same hooks/skills_lib subprocess convention this
+    module's docstring already follows for the read side (fleet-config#474).
+
+    ``mark <sid> <repo> <number>`` is the only subcommand; it mirrors
+    `chief_ops.py cmd_dispatch`'s existing best-effort call so both the CLI
+    dispatch path and a direct launcher-endpoint dispatch land in the same
+    state file the same way.
+    """
+    import argparse
+
+    parser = argparse.ArgumentParser(prog="chief_managed.py")
+    sub = parser.add_subparsers(dest="cmd", required=True)
+    mark_parser = sub.add_parser("mark", help="record sid as chief-managed")
+    mark_parser.add_argument("sid")
+    mark_parser.add_argument("repo")
+    mark_parser.add_argument("number", type=int)
+    args = parser.parse_args(argv)
+
+    try:
+        mark(args.sid, args.repo, args.number)
+    except ValueError as exc:
+        print(f"ERROR={exc}", file=sys.stderr)
+        return 1
+    print(f"MARKED sid={args.sid} repo={args.repo} number={args.number}")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(_main())
