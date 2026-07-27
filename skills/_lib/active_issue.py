@@ -15,6 +15,7 @@ another's rows.
 from __future__ import annotations
 
 import argparse
+import ctypes
 import json
 import os
 import re
@@ -23,6 +24,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import uuid
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -36,6 +38,70 @@ PRUNE_AFTER = timedelta(hours=24)
 LOCK_TIMEOUT_SECONDS = 5.0
 STALE_LOCK_AFTER_SECONDS = 30.0
 _REPLACE_ATTEMPTS = 3
+_LOCK_OWNER_PREFIX = "owner"
+_WIN_PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+_WIN_STILL_ACTIVE = 259
+
+
+def _pid_alive(pid: int) -> bool:
+    """Best-effort liveness check for a lock's recorded holder pid.
+
+    A pid can be reused by an unrelated process after a fast crash+respawn,
+    which would read as a false "alive" -- an accepted gap, since the failure
+    mode this guards against (displacing a still-live holder) is worse than
+    occasionally waiting out a lock a little longer than strictly necessary.
+    """
+    if pid <= 0:
+        return False
+    if sys.platform == "win32":
+        handle = ctypes.windll.kernel32.OpenProcess(  # type: ignore[attr-defined]
+            _WIN_PROCESS_QUERY_LIMITED_INFORMATION, False, pid
+        )
+        if not handle:
+            return False
+        try:
+            exit_code = ctypes.c_ulong()
+            if not ctypes.windll.kernel32.GetExitCodeProcess(  # type: ignore[attr-defined]
+                handle, ctypes.byref(exit_code)
+            ):
+                return False
+            return exit_code.value == _WIN_STILL_ACTIVE
+        finally:
+            ctypes.windll.kernel32.CloseHandle(handle)  # type: ignore[attr-defined]
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    except OSError:
+        return False
+    return True
+
+
+def _read_lock_owner(lock_dir: Path) -> Optional[Dict[str, Any]]:
+    """Identify the marker file by name only -- never open it.
+
+    The owner's pid and token live in the filename itself (``owner.<pid>.
+    <token>``), so a staleness check is a directory listing, not a file
+    open. A file read here would race the true holder's own open/close of
+    that same name on Windows (``WinError 32``, "used by another process"),
+    which is exactly the flake this design avoids.
+    """
+    try:
+        entries = list(lock_dir.iterdir())
+    except (FileNotFoundError, PermissionError, NotADirectoryError):
+        return None
+    for entry in entries:
+        parts = entry.name.split(".", 2)
+        if len(parts) == 3 and parts[0] == _LOCK_OWNER_PREFIX and parts[1].isdigit():
+            return {"pid": int(parts[1]), "token": parts[2]}
+    return None
+
+
+def _write_lock_owner(lock_dir: Path, token: str) -> None:
+    marker = lock_dir / f"{_LOCK_OWNER_PREFIX}.{os.getpid()}.{token}"
+    marker.touch(exist_ok=False)
 
 
 def state_file() -> Path:
@@ -126,13 +192,20 @@ def state_lock(
 ) -> Iterator[None]:
     """Serialize one state-file read-modify-write transaction.
 
-    ``mkdir`` is atomic on Windows and POSIX.  A crashed writer's empty lock
-    directory is reclaimable after a short horizon; ordinary mutations hold it
-    only for the milliseconds needed to parse and replace one small JSON file.
+    ``mkdir`` is atomic on Windows and POSIX.  The holder's pid and a random
+    token are recorded inside the lock directory on acquire.  A contender
+    only reclaims the directory once it is *both* older than
+    ``stale_after_seconds`` *and* its recorded pid is confirmed dead --  age
+    alone can't tell a crashed holder from one that is merely slow, and a
+    slow-but-alive holder must never be displaced.  Release verifies the
+    lock directory still carries this call's own token before removing it,
+    so a holder that was reclaimed while it slept past the stale horizon
+    can't turn around and delete the reclaimer's lock out from under it.
     """
     path.parent.mkdir(parents=True, exist_ok=True)
     lock_dir = path.with_name(path.name + ".lock")
     deadline = time.monotonic() + timeout_seconds
+    token = uuid.uuid4().hex
     while True:
         try:
             lock_dir.mkdir()
@@ -144,7 +217,9 @@ def state_lock(
             # rather than "already exists") — treat it identically: retry.
             try:
                 age = time.time() - lock_dir.stat().st_mtime
-                if age > stale_after_seconds:
+                owner = _read_lock_owner(lock_dir)
+                holder_alive = owner is not None and _pid_alive(owner.get("pid", -1))
+                if age > stale_after_seconds and not holder_alive:
                     shutil.rmtree(lock_dir)
                     continue
             except (FileNotFoundError, PermissionError):
@@ -153,12 +228,19 @@ def state_lock(
                 raise TimeoutError(f"timed out waiting for active-issue state lock: {lock_dir}")
             time.sleep(0.025)
     try:
+        _write_lock_owner(lock_dir, token)
         yield
     finally:
-        try:
-            lock_dir.rmdir()
-        except FileNotFoundError:
-            pass
+        owner = _read_lock_owner(lock_dir)
+        if owner is None or owner.get("token") == token:
+            try:
+                shutil.rmtree(lock_dir)
+            except FileNotFoundError:
+                pass
+        # else: someone else reclaimed this lock directory while we held it
+        # past the stale horizon (should not happen given the liveness check
+        # above, but this is the last line of defense) -- removing it here
+        # would delete the reclaimer's live lock, not ours.
 
 
 def _remote_repo_name(repo_path: Path) -> Optional[str]:
