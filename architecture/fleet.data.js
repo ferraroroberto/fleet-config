@@ -57,6 +57,7 @@ window.FLEET = {
     {"ic": "📚", "nm": "closed-company-accounting", "ds": "Accounting for a closed company."},
     {"ic": "🤖", "nm": "automation", "ds": "Python automation grab-bag."},
     {"ic": "📁", "nm": "mcp-personal-onedrive", "ds": "Read-only MCP to browse OneDrive.", "tag": ["→", "OneDrive"]},
+    {"ic": "⛏️", "nm": "minecraft-bedrock-bot", "ds": "Headless Node bot that joins a Minecraft Bedrock Realm over NetherNet.", "tag": ["→", "Minecraft Realm"]},
     {"ic": "☁️", "nm": "Oracle to GCP", "repo": "oracle-to-gcp", "ds": "Local Oracle SQL to BigQuery translator prototype with a SQLite-backed mock validation loop."}
   ],
   "external": [

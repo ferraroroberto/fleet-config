@@ -157,6 +157,10 @@ cwd_prefix = "E:/automation/mathgamesforkids"
 [mcp-personal-onedrive]
 cwd_prefix = "E:/automation/mcp-personal-onedrive"
 
+[minecraft-bedrock-bot]
+cwd_prefix          = "E:/automation/minecraft-bedrock-bot"
+gate_cmd            = "npm run verify"
+
 [notion-automation-files]
 cwd_prefix = "E:/automation/notion-automation-files"
 

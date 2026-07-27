@@ -212,6 +212,7 @@ flowchart LR
     closed_company_accounting["📚 closed-company-accounting"]
     automation["🤖 automation"]
     mcp_personal_onedrive["📁 mcp-personal-onedrive"]
+    minecraft_bedrock_bot["⛏️ minecraft-bedrock-bot"]
     oracle_to_gcp["☁️ Oracle to GCP"]
   end
   subgraph targets["Referenced"]
@@ -221,6 +222,7 @@ flowchart LR
     t_stripe["Stripe"]
     t_notion["Notion"]
     t_onedrive["OneDrive"]
+    t_minecraft_realm["Minecraft Realm"]
   end
   grocery_shopping_automation -->|uses| t_hub_whisper
   whatsapp_radar -->|uses| t_hub
@@ -230,6 +232,7 @@ flowchart LR
   content_management -->|→| t_notion
   email_archiver -->|→| t_onedrive
   mcp_personal_onedrive -->|→| t_onedrive
+  minecraft_bedrock_bot -->|→| t_minecraft_realm
 ```
 <!-- system-map:mermaid:end -->
 
