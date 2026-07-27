@@ -58,6 +58,8 @@ Verify every unit with the project's actual tooling (byte-compile, lint, tests).
 
 If the repo declares a restart/refresh recipe for a long-lived local process, use it after code changes so the verified change is actually live (unless the user opted out). Don't ask a second permission just because the recipe restarts something — the local `CLAUDE.md` owns the command, scope, and build-identity check. No recipe, or the recipe says confirm first → stop and say exactly what's missing; never improvise process kills.
 
+Any check, gate, health probe, or classifier that can fail to establish a fact must report that as its own state — `unknown` / `not confirmed` — never folded into the passing state. A null, a stale cache, or an unresolved probe is not "fine," and a write acknowledged is not an outcome confirmed; both are the same false "done" this section already warns against. Applies to health checks, verification gates, deploy-coverage checks, and delivery/status classifiers alike — when a check can't tell, say so.
+
 ### Senior-dev check
 
 Before finishing, ask: "What would a senior, perfectionist dev reject in review?" Fix duplicated state, inconsistent patterns, or broken architecture *within the file you're already editing* — don't expand scope to unrelated files.
