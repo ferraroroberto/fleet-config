@@ -137,13 +137,17 @@ def state_lock(
         try:
             lock_dir.mkdir()
             break
-        except FileExistsError:
+        except (FileExistsError, PermissionError):
+            # Windows can surface PermissionError instead of FileExistsError
+            # when this mkdir() races another thread's rmdir() on the same
+            # path (NTFS reports "access denied" for a directory mid-deletion
+            # rather than "already exists") — treat it identically: retry.
             try:
                 age = time.time() - lock_dir.stat().st_mtime
                 if age > stale_after_seconds:
                     shutil.rmtree(lock_dir)
                     continue
-            except FileNotFoundError:
+            except (FileNotFoundError, PermissionError):
                 continue
             if time.monotonic() >= deadline:
                 raise TimeoutError(f"timed out waiting for active-issue state lock: {lock_dir}")
