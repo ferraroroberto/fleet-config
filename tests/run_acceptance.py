@@ -416,6 +416,9 @@ def main() -> int:
     # ---- notify_on_idle chief-managed routing (fleet-config#443) ----
     run_unit(_notify_chief_routing_unit_checks)
 
+    # ---- block_askuserquestion_chief: enforce, don't just discourage (fleet-config#463) ----
+    run_unit(_block_askuserquestion_chief_unit_checks)
+
     # ---- chief_handover_sessionstart pure logic + end-to-end (fleet-config#442) ----
     run_unit(_chief_handover_sessionstart_unit_checks)
 
@@ -1547,6 +1550,71 @@ def _notify_chief_routing_unit_checks() -> Tuple[int, int]:
           notify_on_idle.parse_chief_sid("some other output\n") == "")
     check("parse_chief_sid: line among other output -> still extracted",
           notify_on_idle.parse_chief_sid("noise\nCHIEF_SID=xyz-789\nmore noise\n") == "xyz-789")
+
+    return check.failures, check.total
+
+
+def _block_askuserquestion_chief_unit_checks() -> Tuple[int, int]:
+    """`block_askuserquestion_chief.py` (fleet-config#463): drives the real
+    hook subprocess against a temp `CLAUDE_HOOKS_STATE_DIR` carrying a
+    `chief-managed.json` marker, so a managed sid's `AskUserQuestion` blocks
+    (exit 2) while everything else -- an unmanaged sid, a non-`AskUserQuestion`
+    tool, a missing `session_id`, and a corrupt state file -- fails open
+    (exit 0), never stranding an ordinary session over a bad read.
+    """
+    check = _Checker()
+
+    tmp = Path(tempfile.mkdtemp(prefix="block_askuserquestion_"))
+    try:
+        marker = tmp / "chief-managed.json"
+        marker.write_text(json.dumps({
+            "sid-managed": {"repo": "fleet-config", "number": 463,
+                             "dispatched_at": "2026-07-27T12:00:00Z"},
+        }), encoding="utf-8")
+        env = {"CLAUDE_HOOKS_STATE_DIR": str(tmp)}
+
+        code, _out, stderr = run(
+            "block_askuserquestion_chief",
+            {"tool_name": "AskUserQuestion", "session_id": "sid-managed"},
+            extra_env=env,
+        )
+        check("block_askuserquestion: managed sid + AskUserQuestion -> block (exit 2)", code == 2)
+        check("block_askuserquestion: block reason mentions the say/exchange fallback",
+              "chief_ops.py say" in stderr or "say" in stderr.lower())
+
+        code, _out, _err = run(
+            "block_askuserquestion_chief",
+            {"tool_name": "AskUserQuestion", "session_id": "sid-unmanaged"},
+            extra_env=env,
+        )
+        check("block_askuserquestion: unmanaged sid -> allow (exit 0)", code == 0)
+
+        code, _out, _err = run(
+            "block_askuserquestion_chief",
+            {"tool_name": "Bash", "session_id": "sid-managed"},
+            extra_env=env,
+        )
+        check("block_askuserquestion: managed sid but non-AskUserQuestion tool -> allow (exit 0)", code == 0)
+
+        code, _out, _err = run(
+            "block_askuserquestion_chief",
+            {"tool_name": "AskUserQuestion"},
+            extra_env=env,
+        )
+        check("block_askuserquestion: missing session_id -> allow (exit 0)", code == 0)
+
+        corrupt = tmp / "corrupt"
+        corrupt.mkdir()
+        corrupt_marker = corrupt / "chief-managed.json"
+        corrupt_marker.write_text("{not json", encoding="utf-8")
+        code, _out, _err = run(
+            "block_askuserquestion_chief",
+            {"tool_name": "AskUserQuestion", "session_id": "sid-managed"},
+            extra_env={"CLAUDE_HOOKS_STATE_DIR": str(corrupt)},
+        )
+        check("block_askuserquestion: corrupt state file -> fail open, allow (exit 0)", code == 0)
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
 
     return check.failures, check.total
 
