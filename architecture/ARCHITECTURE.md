@@ -134,6 +134,7 @@ The **work layer**, enabled by L2. Most mature ones are **web apps exposing an A
 | 📚 **closed-company-accounting** | Accounting tooling for a closed company. | pipeline | — |
 | 🤖 **automation** | Grab-bag of Python automation tools (audio, image, video, email, Notion, system). | scripts | Notion, etc. |
 | 🌱 **life-os** | Personal productivity suite as Claude Code skills (diary, meeting prep, sparring, visual muse, …). Launched from the app-launcher's Life OS tab. | skills | app-launcher (L2) |
+| ⛏️ **minecraft-bedrock-bot** | Headless Node.js bot that joins a Minecraft Bedrock Realm over NetherNet (BedrockX), with reconnect/supervision. | scripts (Node) | Minecraft Realm |
 
 ---
 
