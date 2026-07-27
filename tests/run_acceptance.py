@@ -315,6 +315,23 @@ def main() -> int:
          "cwd": str(REPO), "message": "needs permission"},
         0,
     ))
+    # fleet-config#443: a session_id present but NOT chief-managed (this fake id
+    # can never appear in the real chief-managed.json) must fall straight through
+    # to the existing human-ping path without ever invoking notify_chief's
+    # subprocess/network call — exercises the new gate at exactly the boundary
+    # that matters (present-but-unmanaged) with zero risk of reaching a real
+    # live chief session. The genuinely chief-managed branch is covered by
+    # direct unit tests on is_chief_managed/parse_chief_sid below instead —
+    # deliberately never end-to-end here, since that would require a real
+    # chief-managed.json entry and would let notify_chief actually shell out.
+    cases.append((
+        "notify_on_idle: permission_prompt with an unmanaged session_id -> allow (falls through to human ping)",
+        "notify_on_idle",
+        {"hook_event_name": "Notification", "notification_type": "permission_prompt",
+         "cwd": str(REPO), "message": "needs permission",
+         "session_id": "fleet-config-test-fixture-sid-not-chief-managed"},
+        0,
+    ))
     # agent_needs_input / agent_completed (fleet-config#274) are background
     # sub-agent lifecycle events, not the parent session asking for you — a
     # deliberate no-op, same treatment as idle_prompt. Must exit 0 without
@@ -376,6 +393,9 @@ def main() -> int:
 
     # ---- notify_on_idle Fleet-Board deep link (fleet-config#242) ----
     run_unit(_notify_board_link_unit_checks)
+
+    # ---- notify_on_idle chief-managed routing (fleet-config#443) ----
+    run_unit(_notify_chief_routing_unit_checks)
 
     # ---- session_state board-row persistence (fleet-config#91) ----
     run_unit(_session_state_unit_checks)
@@ -463,6 +483,9 @@ def main() -> int:
 
     # ---- chief_ops helper pure-logic tests (skills/_lib, fleet-config#445) ----
     run_unit(_chief_ops_unit_check)
+
+    # ---- chief_managed helper pure-logic tests (skills/_lib, fleet-config#443) ----
+    run_unit(_chief_managed_unit_check)
 
     # ---- dirty_tree_check helper pure-logic tests (skills/_lib) ----
     run_unit(_dirty_tree_check_unit_check)
@@ -1445,6 +1468,61 @@ def _notify_board_link_unit_checks() -> Tuple[int, int]:
     return check.failures, check.total
 
 
+def _notify_chief_routing_unit_checks() -> Tuple[int, int]:
+    """`is_chief_managed`/`parse_chief_sid` — the pure decision logic behind
+    routing a chief-dispatched worker's blocked-on-input notification to
+    chief instead of Slack (fleet-config#443).
+
+    Deliberately does NOT exercise `notify_chief`'s live subprocess/network
+    call here (or via a `run()` end-to-end hook invocation with a genuinely
+    chief-managed sid): doing so would require a real `chief-managed.json`
+    entry and could actually shell out to `chief_ops.py chief-sid`/`say`
+    against whatever launcher happens to be listening on 127.0.0.1:8445 on
+    the machine running this suite — risking a real post into a real live
+    chief session as a side effect of a unit test. The two pure functions
+    below are the entire decision surface; the I/O wrapper composing them is
+    exercised by hand against a real launcher, the same way `chief_ops.py`'s
+    own network-touching CLI commands are.
+    """
+    sys.path.insert(0, str(HOOKS))
+    import notify_on_idle  # noqa: E402
+
+    check = _Checker()
+
+    # ---- is_chief_managed: file-based, fully isolated from the real state dir ----
+    tmp = Path(tempfile.mkdtemp(prefix="chief_managed_route_"))
+    try:
+        target = tmp / "chief-managed.json"
+        check("is_chief_managed: missing state file -> False",
+              notify_on_idle.is_chief_managed("sid-1", path=target) is False)
+
+        target.write_text(json.dumps({"sid-1": {"repo": "app-launcher", "number": 528,
+                                                  "dispatched_at": "2026-07-27T12:00:00Z"}}),
+                           encoding="utf-8")
+        check("is_chief_managed: marked sid -> True",
+              notify_on_idle.is_chief_managed("sid-1", path=target) is True)
+        check("is_chief_managed: unrelated sid -> False",
+              notify_on_idle.is_chief_managed("sid-2", path=target) is False)
+
+        target.write_text("{not json", encoding="utf-8")
+        check("is_chief_managed: corrupt state file -> False (no crash)",
+              notify_on_idle.is_chief_managed("sid-1", path=target) is False)
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+    # ---- parse_chief_sid: pure stdout-line parsing ----
+    check("parse_chief_sid: CHIEF_SID=<sid> -> the sid",
+          notify_on_idle.parse_chief_sid("CHIEF_SID=abc-123\n") == "abc-123")
+    check("parse_chief_sid: CHIEF_SID=none -> empty (no chief live)",
+          notify_on_idle.parse_chief_sid("CHIEF_SID=none\n") == "")
+    check("parse_chief_sid: no matching line -> empty",
+          notify_on_idle.parse_chief_sid("some other output\n") == "")
+    check("parse_chief_sid: line among other output -> still extracted",
+          notify_on_idle.parse_chief_sid("noise\nCHIEF_SID=xyz-789\nmore noise\n") == "xyz-789")
+
+    return check.failures, check.total
+
+
 def _session_state_unit_checks() -> Tuple[int, int]:
     """sessions-state.json persistence (fleet-config#91): event → status mapping,
     same-session flip, pruning, corrupt-file recovery, the notify_on_idle
@@ -2101,6 +2179,17 @@ def _chief_ops_unit_check() -> Tuple[int, int]:
     and reachable from the one gate. (fleet-config#445)
     """
     return _subprocess_unit_check("chief_ops", "test_chief_ops.py")
+
+
+def _chief_managed_unit_check() -> Tuple[int, int]:
+    """Run skills/_lib/chief_managed.py's pure-logic tests as a subprocess.
+
+    Standalone (like test_chief_ops) so the chief-managed session marker --
+    mark/is_managed, cross-sid isolation, and the 24h TTL prune -- is
+    testable on its own, with no real chief-managed.json touched, and
+    reachable from the one gate. (fleet-config#443)
+    """
+    return _subprocess_unit_check("chief_managed", "test_chief_managed.py")
 
 
 def _dirty_tree_check_unit_check() -> Tuple[int, int]:

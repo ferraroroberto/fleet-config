@@ -10,6 +10,8 @@ Run: `E:/automation/fleet-config/.venv/Scripts/python.exe tests/test_chief_ops.p
 
 from __future__ import annotations
 
+import argparse
+import os
 import subprocess
 import sys
 import tempfile
@@ -17,6 +19,7 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO / "skills" / "_lib"))
+import chief_managed  # noqa: E402
 import chief_ops as co  # noqa: E402
 
 sys.path.insert(0, str(REPO / "tests" / "_lib"))
@@ -82,6 +85,31 @@ count_dead = co.alive_worker_count({
     "your_turn": [],
 })
 check(count_dead == 0, "alive_worker_count excludes dead cards")
+
+
+# ---- find_chief_session (fleet-config#443) -----------------------------------
+
+chief_sid = co.find_chief_session({
+    "claude_turn": [
+        _session_card(project="fleet-config", label="chief", session_id="chief-sid-1"),
+        _session_card(project="fleet-config", label="", session_id="dev-sid-2"),
+    ],
+    "your_turn": [],
+})
+check(
+    chief_sid == "chief-sid-1",
+    "find_chief_session picks the label=='chief' card even when a plain "
+    "dev session shares the same repo",
+)
+
+check(
+    co.find_chief_session({"claude_turn": [_session_card(label="chief", alive=False)], "your_turn": []}) is None,
+    "find_chief_session ignores a dead chief card",
+)
+check(
+    co.find_chief_session({"claude_turn": [_session_card(label="")], "your_turn": []}) is None,
+    "find_chief_session returns None when no chief card is present",
+)
 
 
 # ---- refuse_dispatch: the three acceptance-criteria refusals -----------------
@@ -251,6 +279,50 @@ try:
 finally:
     import shutil
     shutil.rmtree(tmp, ignore_errors=True)
+
+
+# ---- cmd_dispatch marks the new session chief-managed (fleet-config#443) -----
+
+_state_tmp = Path(tempfile.mkdtemp(prefix="chief_ops_dispatch_"))
+_prior_state_dir = os.environ.get("CLAUDE_HOOKS_STATE_DIR")
+os.environ["CLAUDE_HOOKS_STATE_DIR"] = str(_state_tmp)
+_prior_request = co._request
+try:
+    _calls = []
+
+    def _fake_request(base_url, path, method="GET", body=None, timeout=10.0):
+        _calls.append((path, method, body))
+        if path == "/api/board":
+            return {"columns": {"claude_turn": [], "your_turn": []}}
+        if path == "/api/board/chief/settings":
+            return {"settings": {"worker_cap": 3}}
+        if path == "/api/board/issues/start":
+            return {"session": {"session_id": "new-sid-99"}}
+        raise AssertionError(f"unexpected path: {path}")
+
+    co._request = _fake_request
+    args = argparse.Namespace(
+        repo="app-launcher", number=528, mode="start", model=None,
+        yolo_confirmed=False, base_url=co.DEFAULT_BASE_URL,
+    )
+    rc = co.cmd_dispatch(args)
+    check(rc == 0, "cmd_dispatch (fake transport) exits 0 on a clear dispatch")
+    check(
+        chief_managed.is_managed("new-sid-99"),
+        "cmd_dispatch marks the newly-spawned session chief-managed",
+    )
+    check(
+        any(p == "/api/board/issues/start" for p, _, _ in _calls),
+        "cmd_dispatch actually posted /api/board/issues/start",
+    )
+finally:
+    co._request = _prior_request
+    if _prior_state_dir is None:
+        os.environ.pop("CLAUDE_HOOKS_STATE_DIR", None)
+    else:
+        os.environ["CLAUDE_HOOKS_STATE_DIR"] = _prior_state_dir
+    import shutil
+    shutil.rmtree(_state_tmp, ignore_errors=True)
 
 
 _h.report_and_exit("test_chief_ops")

@@ -35,13 +35,29 @@ A Notification hook only advises — it never blocks, and always exits 0.
 from __future__ import annotations
 
 import json
+import os
+import subprocess
 import sys
+import tempfile
 from pathlib import Path
+from typing import Optional
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import _lib  # noqa: E402
 import slack_notify  # noqa: E402
+
+# fleet-config#443: hooks/ and skills/_lib/ are two independent trees by
+# convention (a hook must stay importable with nothing but its own directory
+# on sys.path), so chief_ops.py is reached via subprocess here, never a
+# Python import -- same cross-tier pattern chief_ops.py's own `escalate`
+# subcommand uses in reverse to reach hooks/slack_notify.py. `hooks/` is
+# physically inside the fleet-config repo (junctioned elsewhere too), so
+# this resolves the fleet-config root without hardcoding a machine path.
+FLEET_CONFIG_ROOT = Path(__file__).resolve().parent.parent
+CHIEF_OPS = FLEET_CONFIG_ROOT / "skills" / "_lib" / "chief_ops.py"
+CHIEF_OPS_PYTHON = FLEET_CONFIG_ROOT / ".venv" / "Scripts" / "python.exe"
+_CHIEF_OPS_TIMEOUT_S = 10.0
 
 # Glanceable icon per notification kind. A real permission gate (action needed)
 # reads differently from an idle wait; anything else falls back to the bell.
@@ -138,6 +154,88 @@ def board_link(payload: dict, registry: object | None = None) -> str | None:
     return f"📋 <{url}|Open on the Board>"
 
 
+def is_chief_managed(sid: str, path: Optional[Path] = None) -> bool:
+    """True if `sid` has a live chief-managed marker (fleet-config#443).
+
+    A tiny independent reader of the same `hooks/state/chief-managed.json`
+    `skills/_lib/chief_managed.py` writes -- deliberately its own read
+    logic, not an import, per the hooks/skills_lib tree-independence
+    convention. Tolerant of a missing/corrupt file (not managed, never a
+    hook-breaking error); no TTL re-check here since a marker outliving its
+    session is harmless -- worst case is one extra `chief-sid` lookup that
+    finds nothing.
+    """
+    if path is None:
+        root = os.environ.get("CLAUDE_HOOKS_STATE_DIR")
+        base = Path(root) if root else Path.home() / ".claude" / "hooks" / "state"
+        path = base / "chief-managed.json"
+    try:
+        data = json.loads(path.read_text(encoding="utf-8-sig"))
+    except (OSError, ValueError):
+        return False
+    return isinstance(data, dict) and sid in data
+
+
+def parse_chief_sid(stdout: str) -> str:
+    """Pull the sid out of `chief_ops.py chief-sid`'s `CHIEF_SID=...` line.
+
+    Returns `""` for "no chief live" (`CHIEF_SID=none`) or a missing/absent
+    line -- pure string logic, split out so it's unit-testable without a
+    live launcher or a subprocess call.
+    """
+    sid_line = next((l for l in stdout.splitlines() if l.startswith("CHIEF_SID=")), "")
+    chief_sid = sid_line.split("=", 1)[1].strip() if sid_line else ""
+    return "" if chief_sid == "none" else chief_sid
+
+
+def notify_chief(text: str) -> bool:
+    """Push `text` into the live standing chief's session via `chief_ops.py`.
+
+    Returns True only on confirmed delivery. The caller must fall back to
+    the normal human ping on False -- never retry (fleet-config#443's
+    cross-repo constraint note: a retry here would mask a real app-launcher
+    delivery defect rather than surface it). Two short subprocess calls,
+    each bounded and never inheriting stdin, reusing `chief_ops.py`'s own
+    vetted transport (`chief-sid` then `say`) rather than hand-rolling a
+    second HTTP client here.
+    """
+    if not CHIEF_OPS_PYTHON.is_file() or not CHIEF_OPS.is_file():
+        return False
+    try:
+        sid_proc = subprocess.run(
+            [str(CHIEF_OPS_PYTHON), str(CHIEF_OPS), "chief-sid"],
+            capture_output=True, text=True, encoding="utf-8", errors="replace",
+            stdin=subprocess.DEVNULL, creationflags=_lib.NO_WINDOW,
+            cwd=str(FLEET_CONFIG_ROOT), timeout=_CHIEF_OPS_TIMEOUT_S, check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+    if sid_proc.returncode != 0:
+        return False
+    chief_sid = parse_chief_sid(sid_proc.stdout)
+    if not chief_sid:
+        return False
+
+    fd, tmp_name = tempfile.mkstemp(prefix="chief-ping-", suffix=".txt")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            handle.write(text)
+        say_proc = subprocess.run(
+            [str(CHIEF_OPS_PYTHON), str(CHIEF_OPS), "say", chief_sid, "--file", tmp_name],
+            capture_output=True, text=True, encoding="utf-8", errors="replace",
+            stdin=subprocess.DEVNULL, creationflags=_lib.NO_WINDOW,
+            cwd=str(FLEET_CONFIG_ROOT), timeout=_CHIEF_OPS_TIMEOUT_S, check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+    finally:
+        try:
+            os.unlink(tmp_name)
+        except OSError:
+            pass
+    return say_proc.returncode == 0
+
+
 def main() -> None:
     payload = _lib.read_stdin_json()
 
@@ -163,6 +261,27 @@ def main() -> None:
             session_state.upsert_from_payload(payload, "needs-you")
         except Exception:  # noqa: BLE001
             pass
+
+    # A chief-dispatched worker's "come look, I'm blocked" is chief's problem
+    # first, not the human's (fleet-config#443) — chief wrote the brief and
+    # can usually unblock it without paging Roberto. Tried *before* the
+    # channel-configured check below, since this path doesn't need Slack at
+    # all. Falls through to the normal human ping on any failure (session not
+    # found, delivery failed) — never silently drops a real blocked-worker
+    # notification, and never retries (a retry here would mask a real #607
+    # delivery defect rather than surface it).
+    sid = payload.get("session_id")
+    if (
+        payload.get("notification_type") == "permission_prompt"
+        and isinstance(sid, str)
+        and sid
+        and is_chief_managed(sid)
+    ):
+        icon, text = classify(payload)
+        chief_message = f"{icon} chief-managed worker needs input: {text}"
+        chief_message = chief_message.replace("\n", " ")[:300]
+        if notify_chief(chief_message):
+            _lib.allow()  # delivered to chief -- no human ping for this one
 
     # A "come look, I'm blocked" prompt is action-needed → the attention channel.
     channel, user, name = _lib.resolve_slack_target(_lib.cwd(payload), category="attention")

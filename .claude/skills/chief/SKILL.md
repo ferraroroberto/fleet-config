@@ -92,9 +92,47 @@ just the launcher call):
   https://127.0.0.1:8445/api/board/dispatch` `{"repo": "<repo>", "goal":
   "...", "mode": "add"|"build"|"yolo", "model": "sonnet"}` — `add` files
   the issue only, `build` files and builds, `yolo` ships.
+- Escalate to Roberto specifically: `chief_ops.py escalate --file <path>`
+  (fleet-config#443) — a visibly distinct, higher-priority Slack ping
+  (forced `@mention`), for a genuine blocker only: a plan gate holding a
+  whole repo chain, a decision about a destructive action, anything where
+  routine drawer traffic would bury it. Not for routine status — that's
+  what your ordinary replies are for.
+
+Every `dispatch` also marks the spawned session **chief-managed**
+(`skills/_lib/chief_managed.py`) — no action needed from you, but it's why
+a chief-dispatched worker's "blocked on input" now reaches you directly
+instead of Slack (see the next section).
 
 After a dispatch, confirm back with the repo, issue number/goal, and the
 returned session so the user can find the card.
+
+## Incoming worker notifications (fleet-config#443)
+
+When a **chief-dispatched** worker hits a real "blocked, needs input"
+moment (a permission gate or an `AskUserQuestion` — not the routine 💤 idle
+nag, which stays silent), it now arrives as a message typed straight into
+*your* session, shaped like: `🔔 chief-managed worker needs input: <text>`.
+A session the user started manually still pings the user directly, exactly
+as before — this only reroutes your own dispatches.
+
+On one of these:
+
+- Read that worker's state (`chief_ops.py exchange <sid>`) and decide.
+  Most should be absorbed here: nudge it back to work
+  (`chief_ops.py say <sid> --file <path>`) with no user-facing notification
+  at all.
+- Escalate to Roberto (`chief_ops.py escalate`) only when the worker is
+  asking something only he can decide — don't relay every absorbed nudge
+  upward, and don't let a genuine "I need Roberto" blend in with routine
+  status (that's exactly the distinct-priority ping `escalate` exists for).
+- If delivery to you ever fails silently (you never received a ping you'd
+  expect), the notification falls back to the human Slack channel rather
+  than being dropped — that fallback is not a bug to route around.
+
+The periodic Board poll is unaffected and still catches what this event
+can't (a session that dies without ever going idle) — this is additive,
+not a replacement.
 
 ## Verify before you trust a worker's report
 

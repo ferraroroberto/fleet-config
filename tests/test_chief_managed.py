@@ -1,0 +1,68 @@
+"""Unit tests for skills/_lib/chief_managed.py (fleet-config#443).
+
+Exercises `mark`/`is_managed`/`prune_rows` directly against a throwaway
+state file — no real `~/.claude/hooks/state/chief-managed.json` touched.
+
+Run: `E:/automation/fleet-config/.venv/Scripts/python.exe tests/test_chief_managed.py`  (also invoked by tests/run_acceptance.py)
+"""
+
+from __future__ import annotations
+
+import sys
+import tempfile
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
+
+REPO = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(REPO / "skills" / "_lib"))
+import chief_managed as cm  # noqa: E402
+
+sys.path.insert(0, str(REPO / "tests" / "_lib"))
+from check_harness import CheckHarness  # noqa: E402
+
+_h = CheckHarness()
+check = _h.check
+
+NOW = datetime(2026, 7, 27, 12, 0, 0, tzinfo=timezone.utc)
+
+
+tmp = Path(tempfile.mkdtemp(prefix="chief_managed_"))
+try:
+    target = tmp / cm.STATE_FILENAME
+
+    check(cm.is_managed("sid-1", path=target) is False, "missing state file -> not managed")
+
+    row = cm.mark("sid-1", "app-launcher", 528, now=NOW, path=target)
+    check(row["repo"] == "app-launcher" and row["number"] == 528, "mark records repo/number")
+    check(cm.is_managed("sid-1", path=target) is True, "mark -> is_managed True")
+    check(cm.is_managed("sid-2", path=target) is False, "unrelated sid -> not managed")
+
+    # A second mark for a different sid must not clobber the first.
+    cm.mark("sid-2", "photo-ocr", 12, now=NOW, path=target)
+    check(cm.is_managed("sid-1", path=target) is True, "second mark preserves the first sid")
+    check(cm.is_managed("sid-2", path=target) is True, "second mark is itself recorded")
+
+    # A marker older than the 24h TTL is pruned away.
+    stale_now = NOW + timedelta(hours=25)
+    check(cm.is_managed("sid-1", path=target) is True, "sanity: still fresh relative to NOW")
+    rows = cm.read_rows(target)
+    pruned = cm.prune_rows(rows, now=stale_now)
+    check("sid-1" not in pruned and "sid-2" not in pruned, "25h-old markers are pruned")
+
+    # mark() itself re-prunes on write -- a fresh mark at a later time drops stale peers.
+    cm.mark("sid-3", "whatsapp-radar", 7, now=stale_now, path=target)
+    rows_after = cm.read_rows(target)
+    check(set(rows_after) == {"sid-3"}, "mark() prunes stale rows as a side effect of writing")
+
+    try:
+        cm.mark("", "app-launcher", 1, path=target)
+        empty_sid_raised = False
+    except ValueError:
+        empty_sid_raised = True
+    check(empty_sid_raised, "mark raises on an empty sid")
+finally:
+    import shutil
+    shutil.rmtree(tmp, ignore_errors=True)
+
+
+_h.report_and_exit("test_chief_managed")
