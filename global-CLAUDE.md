@@ -112,7 +112,10 @@ Branch naming: `<type>/<issue-N>-<short-slug>` — e.g. `fix/28-terminal-reconne
 
 **`gh issue create` defaults:** always `--assignee @me` + at least one type label (`bug`, `enhancement`, `refactor`, `docs`, `chore`, `test`, `perf`; `meta` for cumulative/rollback context). Create the label first if missing.
 
-**Issue template (non-trivial):** **Why** (or **Symptom** + **Root cause** for bugs) · **Scope** · **Out of scope** · **How to verify** · **Constraints worth knowing**.
+**Issue body format:** owned by the `/issue-add` skill (its step 6 is the one
+canonical template — title style, section list, `file:line` grounding). Filing
+without invoking that skill? Use it anyway — `/issue-add` — rather than
+improvising a section list here.
 
 **Decompose:** can't be one PR → "Step N/M" sub-issues, each independently shippable; no "phase 1 of 4" PRs. **Cross-repo:** a shared-pattern bug gets the same issue in each affected repo, cross-linked by URL. **Closing:** `Closes #N` in the PR body; direct-commit closes paste the SHA in a comment; not-planned closes explain the disproof — no zombie issues. **On rollback:** file a `meta` issue capturing what was attempted, what worked/didn't, a checkbox list of items still open, and the rollback + base-of-truth SHAs.
 
