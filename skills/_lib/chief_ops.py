@@ -32,11 +32,15 @@ one `_request()` that calls `assert_loopback` first: the tool refuses to
 ever become a remote-control surface, even if a future caller passes a
 `--base-url` override.
 
-`issues` is the one exception: it shells to `gh issue view` (no batched
-"view many issues" API exists), one process per ref, `stdin=DEVNULL` +
+`issues` is one exception: it shells to `gh issue view` (no batched "view
+many issues" API exists), one process per ref, `stdin=DEVNULL` +
 `creationflags=NO_WINDOW`. The win there is "chief runs one command", not
 "one HTTP request" — the multi-repo loop is finally something the tool
-owns instead of the model re-typing it.
+owns instead of the model re-typing it. `escalate` is the other: it shells
+to `hooks/slack_notify.py` (its own docstring documents exactly this
+standalone-CLI usage) rather than re-implementing Slack posting here —
+hooks/ and skills/_lib/ are two independent trees by convention, so this
+crosses that boundary via subprocess, never an import.
 
 Subcommands
 -----------
@@ -60,7 +64,15 @@ Subcommands
            [--yolo-confirmed] [--base-url URL]
       Refuses (exit 1, no POST) on an occupied repo, an at/over-cap
       worker count, or `yolo` without `--yolo-confirmed`; otherwise POSTs
-      `/api/board/issues/start`.
+      `/api/board/issues/start` and marks the new session chief-managed
+      (`skills/_lib/chief_managed.py`, fleet-config#443) so
+      `hooks/notify_on_idle.py` can route its blocked-on-input
+      notifications to chief instead of Slack.
+
+  chief-sid [--base-url URL]
+      Prints `CHIEF_SID=<sid>` (or `none`) for the live standing chief —
+      the lookup `notify_on_idle.py` shells out to before pushing a
+      chief-managed worker's notification into chief's own session.
 
   say <sid> [--file PATH] [--base-url URL]
       Sends `--file`'s content (or stdin) as session input. Never accepts
@@ -69,6 +81,11 @@ Subcommands
 
   stop <sid> [--kill] [--base-url URL]
       `quit` by default; `--kill` must be explicit.
+
+  escalate [--file PATH]
+      A visibly distinct, higher-priority Slack ping ("chief needs
+      Roberto specifically") — forces `--mention` and the `attention`
+      category via `hooks/slack_notify.py`, never a routine worker status.
 
   verify <repo> --expect merged|built [--branch NAME]
          [--default-branch NAME]
@@ -97,6 +114,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+import chief_managed  # noqa: E402
 import dirty_tree_check  # noqa: E402
 import fleet_repo_scan  # noqa: E402
 from no_window import NO_WINDOW  # noqa: E402
@@ -158,6 +176,25 @@ def alive_worker_count(columns: Dict[str, Any]) -> int:
     """Alive session cards, excluding the standing chief's own card."""
     cards = list(columns.get("claude_turn") or []) + list(columns.get("your_turn") or [])
     return sum(1 for c in cards if c.get("alive") and c.get("label") != "chief")
+
+
+def find_chief_session(columns: Dict[str, Any]) -> Optional[str]:
+    """The live standing chief's session id, or None.
+
+    Unlike `repo_occupancy` (deduped by repo, for dispatch gating), this
+    scans every card without dedup — fleet-config can simultaneously host
+    the standing chief *and* an ordinary dev/worker session (both would
+    report `project == "fleet-config"`), so only the `label == "chief"`
+    card is actually chief. Used by `chief-sid` so `hooks/notify_on_idle.py`
+    can push a chief-managed worker's blocked-on-input notification into
+    chief's own session instead of Slack (fleet-config#443).
+    """
+    cards = list(columns.get("claude_turn") or []) + list(columns.get("your_turn") or [])
+    for card in cards:
+        if card.get("alive") and card.get("label") == "chief":
+            sid = card.get("session_id")
+            return str(sid) if sid else None
+    return None
 
 
 def refuse_dispatch(
@@ -410,8 +447,20 @@ def cmd_dispatch(args: argparse.Namespace) -> int:
         body["model"] = args.model
     result = _request(args.base_url, "/api/board/issues/start", method="POST", body=body)
     sid = (result.get("session") or {}).get("session_id")
+    if sid:
+        try:
+            chief_managed.mark(str(sid), args.repo, args.number)
+        except OSError:
+            pass  # best-effort -- a marking failure must never undo a real dispatch
     print(f"DISPATCHED session={sid} repo={args.repo} issue={args.number}")
     return 0
+
+
+def cmd_chief_sid(args: argparse.Namespace) -> int:
+    board = _request(args.base_url, "/api/board")
+    sid = find_chief_session(board.get("columns") or {})
+    print(f"CHIEF_SID={sid or 'none'}")
+    return 0 if sid else 1
 
 
 def cmd_say(args: argparse.Namespace) -> int:
@@ -432,6 +481,36 @@ def cmd_stop(args: argparse.Namespace) -> int:
     )
     print(f"STOPPED sid={args.sid} mode={mode}")
     return 0
+
+
+def cmd_escalate(args: argparse.Namespace) -> int:
+    """Post a visibly distinct, higher-priority Slack ping — "chief needs
+    Roberto specifically", never a routine worker status (fleet-config#443).
+
+    Shells to the existing `hooks/slack_notify.py` transport (its own
+    module docstring documents exactly this standalone-CLI usage) rather
+    than re-implementing Slack posting here — same cross-tier-via-subprocess
+    pattern `hooks/notify_on_idle.py` uses to reach `chief_ops.py`. Routes to
+    the `attention` category channel and forces `--mention` regardless of
+    the `[global] slack_notify_mention` default, so it reads and *sounds*
+    different from a routine ping.
+    """
+    text = read_brief(args.file)
+    message = f"🚨 CHIEF ESCALATION 🚨\n{text}"
+    repo_root = Path(__file__).resolve().parent.parent.parent
+    slack_notify_path = repo_root / "hooks" / "slack_notify.py"
+    proc = subprocess.run(
+        [sys.executable, str(slack_notify_path), "--category", "attention",
+         "--mention", "--text", message],
+        capture_output=True, text=True, encoding="utf-8", errors="replace",
+        stdin=subprocess.DEVNULL, creationflags=NO_WINDOW,
+        cwd=str(repo_root), check=False,
+    )
+    ok = proc.returncode == 0
+    print(f"ESCALATED={'yes' if ok else 'no'}")
+    if not ok:
+        print(proc.stderr.strip() or proc.stdout.strip(), file=sys.stderr)
+    return 0 if ok else 1
 
 
 def cmd_verify(args: argparse.Namespace) -> int:
@@ -482,6 +561,10 @@ def main(argv: Optional[List[str]] = None) -> int:
     d.add_argument("--base-url", default=DEFAULT_BASE_URL)
     d.set_defaults(func=cmd_dispatch)
 
+    cs = sub.add_parser("chief-sid", help="find the standing chief's live session id")
+    cs.add_argument("--base-url", default=DEFAULT_BASE_URL)
+    cs.set_defaults(func=cmd_chief_sid)
+
     say_p = sub.add_parser("say", help="send input to a live session")
     say_p.add_argument("sid")
     say_p.add_argument("--file", default=None)
@@ -493,6 +576,10 @@ def main(argv: Optional[List[str]] = None) -> int:
     st.add_argument("--kill", action="store_true")
     st.add_argument("--base-url", default=DEFAULT_BASE_URL)
     st.set_defaults(func=cmd_stop)
+
+    esc = sub.add_parser("escalate", help="high-priority Slack ping (fleet-config#443)")
+    esc.add_argument("--file", default=None)
+    esc.set_defaults(func=cmd_escalate)
 
     v = sub.add_parser("verify", help="post-flight dirty-tree check (fleet-config#247)")
     v.add_argument("repo")
