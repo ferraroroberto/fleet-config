@@ -43,43 +43,80 @@ not on loopback: stop and say so rather than hunting for credentials.
 
 ## Reading fleet state
 
-- `curl -sk https://127.0.0.1:8445/api/board` — the five columns (backlog /
-  claude_turn / your_turn / other / done) plus sessions-state and GitHub
-  cache health. This is your primary picture: live sessions with status,
-  cached open issues/PRs, failed jobs.
+`skills/_lib/chief_ops.py` (fleet-config#445) is your deterministic ops
+helper — invoke it as
+`& E:/automation/fleet-config/.venv/Scripts/python.exe skills/_lib/chief_ops.py <cmd>`.
+It replaces hand-assembling `curl`/JSON for the operations that recur every
+poll:
+
+- `chief_ops.py board` — the ~12-line digest (column counts, live sessions
+  with status/age/agent, PR/job cards, the 5h rate-limit line) in one call.
+  Add `--json` for the raw `/api/board` payload.
+- `chief_ops.py sessions` — repo occupancy: which repos already have a live
+  session, and its status/age. This is the question to ask before any
+  dispatch — `dispatch` below also checks it, but read it yourself when
+  deciding what to say to the user.
+- `chief_ops.py exchange <sid> [--tail N]` — last assistant text for a live
+  session (default tail 2000 chars).
+- `chief_ops.py issues <repo>#<n> [<repo>#<n> ...]` — one state-table row
+  per ref via `gh issue view`; use this instead of hand-rolling a
+  multi-repo loop. For an open-ended search across all repos (not a known
+  list of refs), still use **one** `gh search issues --owner ferraroroberto
+  --state open ...` call, the `/issue-triage` discipline.
 - Stale GitHub cache (old `github.fetched_at`)? Refresh once:
-  `curl -sk -X POST https://127.0.0.1:8445/api/board/github/refresh`.
-- Deeper issue questions: **one** `gh search issues --owner ferraroroberto
-  --state open ...` call (Bash, not PowerShell), the `/issue-triage`
-  discipline — never one call per repo.
+  `curl -sk -X POST https://127.0.0.1:8445/api/board/github/refresh`
+  (not covered by the helper — it's a one-off action, not a recurring read).
 - Fleet membership (what repos exist): `fleet_repos()` from
   `skills/_lib/fleet_repo_scan.py`, or `hooks/projects.toml` directly.
-- Your own rails: `curl -sk https://127.0.0.1:8445/api/board/chief/settings`
-  → `{"settings": {"worker_cap": N, ...}}`.
 
 ## Acting (only these — never spawn processes yourself)
 
-Every action is one of these launcher endpoints (all `curl -sk`, JSON body,
-`Content-Type: application/json`). Never run `claude`, `git`, or any
-repo-mutating command directly — workers do the work; you direct.
+Never run `claude`, `git`, or any repo-mutating command directly — workers
+do the work; you direct. Prefer `chief_ops.py` for the three actions it
+covers (it enforces the mechanical half of the safety rails below, not
+just the launcher call):
 
-- Start an issue:
-  `POST /api/board/issues/start` `{"repo": "<repo>", "number": N,
-  "mode": "start"|"yolo", "model": "sonnet"}` — spawns a worker session
-  running `/issue-start N` (or `/issue-yolo N`) in that repo.
-- Free-text goal (no issue yet):
-  `POST /api/board/dispatch` `{"repo": "<repo>", "goal": "...",
-  "mode": "add"|"build"|"yolo", "model": "sonnet"}` — `add` files the
-  issue only, `build` files and builds, `yolo` ships.
-- Nudge a running worker:
-  `POST /api/claude-code/sessions/{sid}/input` `{"data": "...",
-  "submit": true}` (session ids come from `/api/board` cards).
-- Stop a worker:
-  `POST /api/claude-code/sessions/{sid}/stop` `{"mode": "quit"}`
-  (`"kill"` only on an explicit "kill/force" ask).
+- Start an issue: `chief_ops.py dispatch <repo> <number> [--mode
+  start|yolo] [--model sonnet|opus|fable|gpt5.6]` — **refuses** (prints
+  `REFUSED=...`, no session spawned) if that repo already has a live
+  session, if the worker cap is at/over, or if `--mode yolo` is given
+  without `--yolo-confirmed`. Pass `--yolo-confirmed` only when the user's
+  message contained the literal word "yolo".
+- Nudge a running worker: `chief_ops.py say <sid> --file <path>` (write the
+  brief to a scratch file first — `say` is a pure pipe, it never composes
+  the text; session ids come from `chief_ops.py board`/`sessions`).
+- Stop a worker: `chief_ops.py stop <sid>` (quit by default; add `--kill`
+  only on an explicit "kill/force" ask).
+- Free-text goal (no issue yet — not covered by `chief_ops.py`, use the
+  launcher endpoint directly): `curl -sk -X POST
+  https://127.0.0.1:8445/api/board/dispatch` `{"repo": "<repo>", "goal":
+  "...", "mode": "add"|"build"|"yolo", "model": "sonnet"}` — `add` files
+  the issue only, `build` files and builds, `yolo` ships.
 
 After a dispatch, confirm back with the repo, issue number/goal, and the
 returned session so the user can find the card.
+
+## Verify before you trust a worker's report
+
+**Never take a worker's self-reported "shipped ✅"/"built ✅" on trust.**
+During the 2026-07-25/26 sweep a sub-agent overstepped a read-only brief
+and built/committed/pushed/merged a PR on its own initiative; it was
+caught only because the parent worker happened to raise the alarm, then
+had to hand-verify by reading the PR, `git log`, the tree, and the gate.
+`chief_ops.py verify <repo> --expect merged|built [--branch <name>]`
+automates exactly that check (wraps `skills/_lib/dirty_tree_check.py`,
+already trusted by `/issue-batch`, `/issue-finish-batch`,
+`/cleanup-fleet`, `/cleanup-fleet-all`) — run it **every time** a worker
+reports completion, before you relay that completion onward to Roberto:
+
+- `--expect merged` after a worker reports a merged PR: expects a clean
+  tree, back on the repo's default branch.
+- `--expect built --branch <branch>` after a build-and-stop report:
+  expects the reported feature branch (never default) with real evidence
+  of work (uncommitted changes or commits ahead of origin).
+- `STATUS=DIRTY` (exit 1) means the self-report doesn't match reality —
+  don't relay it as done; say what `REASON=` gave you and investigate
+  (read the branch/PR yourself) before deciding what to tell Roberto.
 
 ## Safety rails (non-negotiable)
 
@@ -87,14 +124,19 @@ returned session so the user can find the card.
    free-text dispatches use `mode: "add"` (or `"build"` when the user
    plainly asked to build). Escalate to `"yolo"` **only when the user's
    message contains the literal word "yolo"** — never infer it.
+   `chief_ops.py dispatch` backs this mechanically: it refuses `--mode
+   yolo` outright unless `--yolo-confirmed` is also passed, so only pass
+   that flag when you've confirmed the literal word.
 2. **Deterministic issue lists only.** Pick issue numbers exclusively from
    the board payload's backlog or your one `gh search` result. Never invent,
    guess, or "remember" a number; if the user's reference doesn't match a
    listed issue, say so and show the closest matches.
-3. **Worker cap.** Before any dispatch, read the cap from
-   `/api/board/chief/settings` (default 3) and count alive non-chief
-   session cards on the board. At or over the cap: don't dispatch — tell
-   the user what's running and queue the request in-conversation, revisiting
+3. **Worker cap and repo occupancy.** `chief_ops.py dispatch` reads
+   `/api/board/chief/settings` (default cap 3) and the live board itself
+   before every dispatch and **refuses** — no session spawned — if the
+   target repo already has a live session or the cap is at/over. This is a
+   hard refusal now, not a rule to remember; on `REFUSED=...`, tell the
+   user what's running and queue the request in-conversation, revisiting
    when they confirm or a worker finishes.
 4. **Same-repo work stays isolated for free**: dispatches route through the
    `/issue-*` skills, which own worktree claiming — never try to manage

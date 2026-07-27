@@ -461,6 +461,9 @@ def main() -> int:
     # ---- rate_gate helper pure-logic tests (skills/_lib) ----
     run_unit(_rate_gate_unit_check)
 
+    # ---- chief_ops helper pure-logic tests (skills/_lib, fleet-config#445) ----
+    run_unit(_chief_ops_unit_check)
+
     # ---- dirty_tree_check helper pure-logic tests (skills/_lib) ----
     run_unit(_dirty_tree_check_unit_check)
 
@@ -2085,6 +2088,19 @@ def _rate_gate_unit_check() -> Tuple[int, int]:
     gate. Replaces the retired audit_retry dead-man's-switch check. (fleet-config#261)
     """
     return _subprocess_unit_check("rate_gate", "test_rate_gate.py")
+
+
+def _chief_ops_unit_check() -> Tuple[int, int]:
+    """Run skills/_lib/chief_ops.py's pure-logic tests as a subprocess.
+
+    Standalone (like test_rate_gate) so the fleet chief's deterministic
+    ops helper -- repo occupancy, the alive-worker count, the three
+    dispatch refusals (occupied repo, at/over worker cap, unconfirmed
+    yolo), the non-loopback-host guard, and the board-digest formatting --
+    is testable on its own, with no live launcher or `gh` call required,
+    and reachable from the one gate. (fleet-config#445)
+    """
+    return _subprocess_unit_check("chief_ops", "test_chief_ops.py")
 
 
 def _dirty_tree_check_unit_check() -> Tuple[int, int]:
