@@ -455,6 +455,9 @@ def main() -> int:
     # ---- Tier 2/3 hooks: docs-guard env override + warn-hook stdout (issue #158) ----
     run_unit(_tier23_hooks_unit_checks)
 
+    # ---- branch_before_edit_guard: real temp git repos x launcher env (fleet-config#464) ----
+    run_unit(_branch_before_edit_guard_unit_checks)
+
     # ---- audit_issue helper pure-logic tests (skills/_lib) ----
     run_unit(_audit_issue_unit_check)
 
@@ -2083,6 +2086,94 @@ def _tier23_hooks_unit_checks() -> Tuple[int, int]:
               not nudged("browser_stealth_lint", tmp / "helper.py", bare_launch))
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
+
+    return check.failures, check.total
+
+
+def _branch_before_edit_guard_unit_checks() -> Tuple[int, int]:
+    """branch_before_edit_guard.py: real temp git repos on main/master/a
+    feature branch, crossed with APP_LAUNCHER_SESSION_ID presence and the
+    CLAUDE_HOOKS_ALLOW_MAIN_EDIT override (fleet-config#464)."""
+    sys.path.insert(0, str(HOOKS))
+    import _lib  # noqa: E402
+
+    check = _Checker()
+    launcher_env = {"APP_LAUNCHER_SESSION_ID": "launcher-test"}
+
+    def git_repo(branch: str, *, commit: bool = True) -> Path:
+        repo = Path(tempfile.mkdtemp(prefix="branch_guard_"))
+        subprocess.run(["git", "init", "-q"], cwd=repo, check=True, creationflags=_lib.NO_WINDOW)
+        if commit:
+            subprocess.run(
+                ["git", "config", "user.email", "35553560+ferraroroberto@users.noreply.github.com"],
+                cwd=repo, check=True, creationflags=_lib.NO_WINDOW,
+            )
+            subprocess.run(["git", "config", "user.name", "test"], cwd=repo, check=True, creationflags=_lib.NO_WINDOW)
+        subprocess.run(["git", "checkout", "-q", "-b", branch], cwd=repo, check=True, creationflags=_lib.NO_WINDOW)
+        if commit:
+            subprocess.run(
+                ["git", "commit", "-q", "--allow-empty", "-m", "init"],
+                cwd=repo, check=True, creationflags=_lib.NO_WINDOW,
+            )
+        return repo
+
+    def edit_payload(repo: Path, tool: str = "Edit") -> Dict[str, Any]:
+        return {"tool_name": tool, "cwd": str(repo), "tool_input": {"file_path": str(repo / "f.py")}}
+
+    main_repo = git_repo("main")
+    try:
+        code, _out, err = run("branch_before_edit_guard", edit_payload(main_repo), extra_env=launcher_env)
+        check("branch_guard: main + launcher env -> block", code == 2, err)
+
+        # Explicit empty-string override (not just an omitted extra_env) --
+        # the ambient session this suite runs under may itself carry a real
+        # APP_LAUNCHER_SESSION_ID, which `run()` would otherwise pass through.
+        code, _out, _err = run(
+            "branch_before_edit_guard", edit_payload(main_repo),
+            extra_env={"APP_LAUNCHER_SESSION_ID": ""},
+        )
+        check("branch_guard: main + no launcher env -> allow", code == 0)
+
+        code, _out, _err = run(
+            "branch_before_edit_guard", edit_payload(main_repo),
+            extra_env={**launcher_env, "CLAUDE_HOOKS_ALLOW_MAIN_EDIT": "1"},
+        )
+        check("branch_guard: main + launcher env + override -> allow", code == 0)
+
+        code, _out, err = run(
+            "branch_before_edit_guard", edit_payload(main_repo, tool="Write"), extra_env=launcher_env
+        )
+        check("branch_guard: Write tool covered same as Edit -> block", code == 2, err)
+
+        code, _out, _err = run(
+            "branch_before_edit_guard", edit_payload(main_repo, tool="Bash"), extra_env=launcher_env
+        )
+        check("branch_guard: Bash tool_name -> allow (only guards Edit/Write)", code == 0)
+    finally:
+        shutil.rmtree(main_repo, ignore_errors=True)
+
+    master_repo = git_repo("master")
+    try:
+        code, _out, err = run("branch_before_edit_guard", edit_payload(master_repo), extra_env=launcher_env)
+        check("branch_guard: master + launcher env -> block", code == 2, err)
+    finally:
+        shutil.rmtree(master_repo, ignore_errors=True)
+
+    feature_repo = git_repo("feat/464-x")
+    try:
+        code, _out, _err = run(
+            "branch_before_edit_guard", edit_payload(feature_repo), extra_env=launcher_env
+        )
+        check("branch_guard: feature branch + launcher env -> allow", code == 0)
+    finally:
+        shutil.rmtree(feature_repo, ignore_errors=True)
+
+    non_repo = Path(tempfile.mkdtemp(prefix="branch_guard_norepo_"))
+    try:
+        code, _out, _err = run("branch_before_edit_guard", edit_payload(non_repo), extra_env=launcher_env)
+        check("branch_guard: non-git cwd -> allow (fail open)", code == 0)
+    finally:
+        shutil.rmtree(non_repo, ignore_errors=True)
 
     return check.failures, check.total
 
