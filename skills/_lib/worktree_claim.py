@@ -32,6 +32,15 @@ The teardown order is load-bearing: a junction MUST be stripped with
 delete follows the junction and wipes the *real* venv (proven the hard way; same
 junction footgun as uninstall.ps1, fleet-config#136).
 
+`git worktree add` populates tracked files only, so a repo's own gitignored
+runtime config (`config/webapp_config.json`, `config/apps.json`, ... whatever
+each repo's own `config.json`-pattern requires) never makes it into the new
+worktree. Left unfixed, an e2e suite that boots a disposable webapp+session-host
+hits its own missing-config guard for nearly every test and mass-skips silently
+-- the pre-ship gate still reports green (fleet-config#470). `setup_worktree`
+copies the primary's `config/*.json` (excluding `*.sample.json` templates) into
+the worktree right after the checkout is created.
+
 Subcommands:
 
   acquire <repo-root> [--issue N] [--branch B] [--ttl-hours H]
@@ -42,7 +51,9 @@ Subcommands:
 
   setup-worktree <repo-root> <issue-N> <branch>
       `git worktree add <repo>-wt-<N> -b <branch> <origin-main>` + junction the
-      primary's .venv into it. Prints `WORKTREE=<path>`.
+      primary's .venv into it, then copy the primary's gitignored
+      `config/*.json` runtime config (excluding `*.sample.json` templates,
+      which are already tracked) into the worktree. Prints `WORKTREE=<path>`.
 
   release <repo-root>
       Remove the primary claim. Idempotent. (Worktree sessions never hold it.)
@@ -264,12 +275,46 @@ def _strip_junction(path: Path) -> None:
         )
 
 
+def copy_runtime_config(repo: Path, wt: Path) -> list:
+    """Copy the primary's gitignored `config/*.json` into a fresh worktree.
+
+    `git worktree add` populates tracked files only, so a repo's own
+    gitignored runtime config (`config/webapp_config.json`, `config/apps.json`,
+    ...) never lands in the new worktree. An e2e suite that boots a disposable
+    webapp+session-host then hits its own missing-config guard for nearly
+    every test and mass-skips silently, while the pre-ship gate still reports
+    green (fleet-config#470). `*.sample.json` templates are already tracked
+    and excluded; a destination file that already exists (e.g. a prior partial
+    setup) is left alone rather than overwritten. No-op if the repo has no
+    `config/` dir. Returns the list of copied destination paths.
+    """
+    copied = []
+    src_dir = repo / "config"
+    if not src_dir.is_dir():
+        return copied
+    dst_dir = wt / "config"
+    for src in sorted(src_dir.glob("*.json")):
+        if src.name.endswith(".sample.json"):
+            continue
+        dst = dst_dir / src.name
+        if dst.exists():
+            continue
+        dst_dir.mkdir(exist_ok=True)
+        shutil.copy2(src, dst)
+        copied.append(dst)
+    return copied
+
+
 def setup_worktree(repo: Path, issue: str, branch: str) -> Path:
     wt = worktree_path(repo, issue)
     if wt.exists():
         sys.exit(f"Worktree path already exists: {wt}\n"
                  f"Probably stale — clean with: git -C {repo} worktree remove --force {wt}")
     _git(repo, "worktree", "add", str(wt), "-b", branch, main_ref(repo))
+    copied = copy_runtime_config(repo, wt)
+    if copied:
+        print(f"CONFIG_COPIED={len(copied)}: "
+              f"{', '.join(p.name for p in copied)}", file=sys.stderr)
 
     venv = repo / ".venv"
     if venv.is_dir():
