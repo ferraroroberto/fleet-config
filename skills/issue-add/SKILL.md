@@ -79,15 +79,25 @@ over-engineering, no padding.
   `audio/transcribe: handle empty whisper response`. Lowercase verb after the
   colon, no trailing period, ≤72 chars. This is the canonical style — don't
   imitate older issues if they diverge.
-- **Body:** self-contained and LLM-handoff-ready. Use as many of these sections
-  as the issue genuinely needs — a tiny issue needs only the first two:
-  - **What & why** — the goal in clean prose, and the motivation.
+- **Body:** self-contained and LLM-handoff-ready. This is the **one canonical
+  section list** for an issue body fleet-wide (fleet-config#446 reconciled a
+  second, conflicting list that used to live in `global-CLAUDE.md` — that file
+  now only points here). Use as many of these as the issue genuinely needs — a
+  tiny issue needs only the first two:
+  - **What & why** (or **Symptom** + **Root cause** for a bug) — the goal in
+    clean prose, and the motivation.
   - **Current state** — how it works today, with concrete `file:line`
     references from step 3.
+  - **Scope** — what's included, when that isn't obvious from "what & why"
+    alone.
   - **Proposed approach** — a concrete, sensible direction; note real
     alternatives only when they matter. Don't design the whole implementation.
   - **Acceptance criteria** — a short checklist of "done".
+  - **How to verify** — the concrete steps/commands that prove the acceptance
+    criteria hold, when they aren't self-evident from the checklist alone.
   - **Out of scope** — only if needed to head off scope creep.
+  - **Constraints worth knowing** — non-obvious limits, conventions, or
+    gotchas a cold implementer needs to not violate.
 - Keep it tight. A one-line fix gets a few sentences, not a template dump.
 
 ### 7. Label
