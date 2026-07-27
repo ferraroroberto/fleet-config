@@ -372,6 +372,13 @@ window.CONFIG = {
       "ds": "Block dated retrospective filenames under a `docs/` directory."
     },
     {
+      "nm": "block_askuserquestion_chief",
+      "ev": "PreToolUse · AskUserQuestion",
+      "block": true,
+      "reach": "Claude only",
+      "ds": "Block `AskUserQuestion` from a chief-managed worker (fleet-config#463)."
+    },
+    {
       "nm": "py_syntax_check",
       "ev": "PostToolUse · Edit·Write·MultiEdit",
       "block": true,
