@@ -10,7 +10,7 @@ The hooks here are project-aware via a single `hooks/projects.toml` registry: ge
 
 ## What's in here today
 
-16 hooks under `hooks/` that enforce the rituals I kept correcting Claude on, across the home-stack fleet:
+15 hooks under `hooks/` that enforce the rituals I kept correcting Claude on, across the home-stack fleet:
 
 | Hook | Event | What it does |
 |---|---|---|
@@ -23,7 +23,6 @@ The hooks here are project-aware via a single `hooks/projects.toml` registry: ge
 | `venv_discipline.py` | `PreToolUse` on `Bash` / `PowerShell` | Blocks `python -m venv venv` (the user's canonical name is `.venv`), `.\.venv\Scripts\activate`, bare `python`/`pip` when a project `.venv` exists. |
 | `py_syntax_check.py` | `PostToolUse` on `Edit` / `Write` for `*.py` | Runs `py_compile` against the project's `.venv` and surfaces syntax errors inline. ~50 ms per edit. |
 | `docs_dated_filename_guard.py` | `PreToolUse` on `Write` | Blocks a `Write` of a `YYYY-MM-DD-`prefixed file under a `docs/` directory — `docs/` is durable reference, not dated retrospectives (the issue + PR + `git log` are the changelog). Override with `CLAUDE_HOOKS_ALLOW_DATED_DOCS=1`. |
-| `branch_before_edit_guard.py` | `PreToolUse` on `Edit` / `Write` | Blocks an edit while HEAD is `main`/`master` **and** the session is launcher-dispatched (`APP_LAUNCHER_SESSION_ID` set) — closes the gap that let a dispatched worker slide from research into editing without cutting a branch first. Fails open on a non-repo cwd, detached HEAD, or any interactive session (the env var is unset for Roberto typing directly, so `/design-sync apply`'s deliberate main-branch writes are untouched). Override with `CLAUDE_HOOKS_ALLOW_MAIN_EDIT=1`. |
 | `block_askuserquestion_chief.py` | `PreToolUse` on `AskUserQuestion` | Blocks `AskUserQuestion` outright when the calling session is chief-managed (same `hooks/state/chief-managed.json` marker `notify_on_idle.py` reads) — the tool renders only in the worker's own PTY, so chief can never see the question or attribute an answer to it. No-ops for an ordinary interactive session, a non-`AskUserQuestion` tool, a missing `session_id`, or a missing/corrupt state file (fails open rather than stranding a worker). Instructs the model to state the question and options as plain output text instead and wait for chief to relay a decision via `chief_ops.py say`. |
 | `hub_bypass_warn.py` | `PostToolUse` on `Edit` / `Write` for `*.py` | Non-blocking nudge when a `*.py` outside the LLM-hub repo spawns an inline `claude -p` subprocess → route through the local hub at `127.0.0.1:8000` via the standard SDKs instead. |
 | `browser_stealth_lint.py` | `PostToolUse` on `Edit` / `Write` | Non-blocking nudge when a browser-launch file (`chrome_launch.py` / `browser.py` / `*_session.py`) launches Chrome but is missing a stealth marker (`--enable-automation` strip, `navigator.webdriver` init, `channel="chrome"`, `AutomationControlled`) → import the project's single-source launch helper. |
@@ -138,7 +137,6 @@ fleet-config/
 │   ├── venv_discipline.py
 │   ├── py_syntax_check.py
 │   ├── docs_dated_filename_guard.py   # PreToolUse on Write: block dated YYYY-MM-DD- filenames under docs/
-│   ├── branch_before_edit_guard.py    # PreToolUse on Edit|Write: block launcher-dispatched edits on main/master
 │   ├── block_askuserquestion_chief.py # PreToolUse on AskUserQuestion: block for chief-managed sessions — enforce, don't just discourage
 │   ├── hub_bypass_warn.py             # PostToolUse on *.py: nudge inline `claude -p` → route through the local hub
 │   ├── browser_stealth_lint.py        # PostToolUse: nudge a browser-launch file missing the anti-bot stealth kwargs
