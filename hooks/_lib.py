@@ -276,19 +276,46 @@ def load_registry(path: Optional[Path] = None) -> Registry:
     )
 
 
-def detect_project(cwd_path: Path, registry: Optional[Registry] = None) -> Optional[ProjectConfig]:
-    """Pick the project whose `cwd_prefix` is the longest match of `cwd_path`."""
-    reg = registry or load_registry()
-    cwd_norm = _normalize(str(cwd_path))
+_WORKTREE_SUFFIX_RE = re.compile(r"-wt-\d+$")
+
+
+def _strip_worktree_suffix(normalized_path: str) -> str:
+    """Strip a trailing `-wt-<N>` suffix from every path segment.
+
+    `worktree_claim.py`'s sibling-worktree naming (`<repo>-wt-<N>`) has no
+    path separator before the suffix, so it never prefix-matches the
+    primary checkout's `cwd_prefix` as-is (fleet-config#471).
+    """
+    return "/".join(_WORKTREE_SUFFIX_RE.sub("", segment) for segment in normalized_path.split("/"))
+
+
+def _match_project(cwd_norm: str, projects: List[ProjectConfig]) -> Optional[ProjectConfig]:
     best: Optional[ProjectConfig] = None
     best_len = -1
-    for project in reg.projects:
+    for project in projects:
         pref_norm = _normalize(str(project.cwd_prefix))
         if cwd_norm == pref_norm or cwd_norm.startswith(pref_norm + "/"):
             if len(pref_norm) > best_len:
                 best = project
                 best_len = len(pref_norm)
     return best
+
+
+def detect_project(cwd_path: Path, registry: Optional[Registry] = None) -> Optional[ProjectConfig]:
+    """Pick the project whose `cwd_prefix` is the longest match of `cwd_path`.
+
+    Tries the raw cwd first so a repo whose real name happens to contain a
+    `-wt-<N>`-shaped segment still matches directly; only falls back to a
+    worktree-suffix-stripped retry when the raw path matches nothing, so a
+    `<repo>-wt-<N>` sibling worktree resolves to the same project as its
+    primary checkout.
+    """
+    reg = registry or load_registry()
+    cwd_norm = _normalize(str(cwd_path))
+    match = _match_project(cwd_norm, reg.projects)
+    if match is not None:
+        return match
+    return _match_project(_strip_worktree_suffix(cwd_norm), reg.projects)
 
 
 # A ping's intent category → the projects.toml channel key that routes it

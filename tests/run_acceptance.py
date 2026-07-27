@@ -419,6 +419,9 @@ def main() -> int:
     # ---- block_askuserquestion_chief: enforce, don't just discourage (fleet-config#463) ----
     run_unit(_block_askuserquestion_chief_unit_checks)
 
+    # ---- _lib.detect_project: worktree-sibling cwd resolution (fleet-config#471) ----
+    run_unit(_lib_detect_project_unit_checks)
+
     # ---- chief_handover_sessionstart pure logic + end-to-end (fleet-config#442) ----
     run_unit(_chief_handover_sessionstart_unit_checks)
 
@@ -1612,6 +1615,50 @@ def _block_askuserquestion_chief_unit_checks() -> Tuple[int, int]:
         check("block_askuserquestion: corrupt state file -> fail open, allow (exit 0)", code == 0)
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
+
+    return check.failures, check.total
+
+
+def _lib_detect_project_unit_checks() -> Tuple[int, int]:
+    """`_lib.detect_project` resolves a `<repo>-wt-<N>` sibling worktree cwd
+    (`worktree_claim.py setup-worktree`'s naming convention for every second
+    session on a claimed repo) to the same project as its primary checkout
+    (fleet-config#471)."""
+    sys.path.insert(0, str(HOOKS))
+    import _lib  # noqa: E402
+
+    check = _Checker()
+
+    registry = _lib.Registry(
+        projects=[
+            _lib.ProjectConfig(
+                name="fleet-config", cwd_prefix=Path("E:/automation/fleet-config"),
+                webapp_port=None, gate_trigger_globs=(), gate_cmd=None,
+                tray_cmd=None, restart_cmd=None, api_version_path=None, extra={},
+            ),
+            _lib.ProjectConfig(
+                name="app-launcher", cwd_prefix=Path("E:/automation/app-launcher"),
+                webapp_port=None, gate_trigger_globs=(), gate_cmd=None,
+                tray_cmd=None, restart_cmd=None, api_version_path=None, extra={},
+            ),
+        ],
+        globals=_lib.GlobalConfig(never_kill_ports=()),
+    )
+
+    def name_of(cwd: str) -> Any:
+        project = _lib.detect_project(Path(cwd), registry)
+        return project.name if project else None
+
+    check("detect_project: primary checkout still matches",
+          name_of("E:/automation/fleet-config") == "fleet-config")
+    check("detect_project: sibling worktree root resolves to the primary project",
+          name_of("E:/automation/fleet-config-wt-464") == "fleet-config")
+    check("detect_project: nested path inside a sibling worktree still resolves",
+          name_of("E:/automation/fleet-config-wt-464/hooks") == "fleet-config")
+    check("detect_project: unrelated sibling worktree does not cross-match",
+          name_of("E:/automation/app-launcher-wt-9") == "app-launcher")
+    check("detect_project: no match for a path outside every prefix",
+          name_of("E:/automation/unrelated-repo") is None)
 
     return check.failures, check.total
 
