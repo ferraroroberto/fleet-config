@@ -102,7 +102,13 @@ just the launcher call):
   message contained the literal word "yolo".
 - Nudge a running worker: `chief_ops.py say <sid> --file <path>` (write the
   brief to a scratch file first — `say` is a pure pipe, it never composes
-  the text; session ids come from `chief_ops.py board`/`sessions`).
+  the text; session ids come from `chief_ops.py board`/`sessions`). Add
+  `--verify` when unsticking an idle/`needs-you` session — the endpoint has
+  reported `{"ok": true}` for a message that never actually submitted
+  (fleet-config#453); `--verify` polls the exchange and reports
+  DELIVERED/UNKNOWN/STRANDED instead of trusting the response. It never
+  auto-retries on a non-delivered result — a STRANDED or UNKNOWN send is
+  your call, not a resend.
 - Stop a worker: `chief_ops.py stop <sid>` (quit by default; add `--kill`
   only on an explicit "kill/force" ask).
 - Free-text goal (no issue yet — not covered by `chief_ops.py`, use the

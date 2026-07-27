@@ -74,10 +74,16 @@ Subcommands
       the lookup `notify_on_idle.py` shells out to before pushing a
       chief-managed worker's notification into chief's own session.
 
-  say <sid> [--file PATH] [--base-url URL]
+  say <sid> [--file PATH] [--verify] [--timeout SECS] [--poll-interval SECS]
+      [--base-url URL]
       Sends `--file`'s content (or stdin) as session input. Never accepts
       prose as a bare CLI arg — `say` is a pure pipe, it never composes
-      the brief.
+      the brief. `--verify` (fleet-config#453) polls the session's exchange
+      after posting and reports one of DELIVERED / UNKNOWN / STRANDED
+      instead of trusting the endpoint's `{"ok": true}` — the endpoint
+      reported success on 2026-07-27 for messages that were never
+      submitted, twice, in two different ways. Never auto-retries on a
+      non-delivered result; that is the caller's call.
 
   stop <sid> [--kill] [--base-url URL]
       `quit` by default; `--kill` must be explicit.
@@ -107,9 +113,11 @@ import json
 import ssl
 import subprocess
 import sys
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -126,6 +134,8 @@ if hasattr(sys.stdout, "reconfigure"):  # UTF-8 even when stdout is captured (cp
 DEFAULT_BASE_URL = "https://127.0.0.1:8445"
 DEFAULT_OWNER = "ferraroroberto"
 DEFAULT_TAIL = 2000
+DEFAULT_VERIFY_TIMEOUT = 20.0
+DEFAULT_VERIFY_POLL_INTERVAL = 2.0
 
 LOOPBACK_HOSTS = {"127.0.0.1", "::1", "localhost"}
 
@@ -195,6 +205,64 @@ def find_chief_session(columns: Dict[str, Any]) -> Optional[str]:
             sid = card.get("session_id")
             return str(sid) if sid else None
     return None
+
+
+def parse_exchange_timestamp(ts: Any) -> Optional[datetime]:
+    """Parse an exchange `assistant.timestamp` into an aware `datetime`, or
+    None if it's missing/unparseable. `board_exchange.py`'s launcher-fallback
+    source reports `available: True` with `assistant.timestamp: None`
+    (no per-keystroke timestamp exists in that path) — that must read as
+    "can't tell", never as fresh evidence of delivery."""
+    if not ts:
+        return None
+    try:
+        parsed = datetime.fromisoformat(str(ts).replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed
+
+
+def classify_exchange_marker(available: bool, timestamp: Any, send_time: datetime) -> str:
+    """"delivered" if the exchange carries a parseable assistant timestamp
+    newer than `send_time`; "pending" otherwise. An unreadable exchange
+    (unavailable, or a source with no timestamp) must never read as
+    delivered — it just means the poll keeps waiting (fleet-config#453)."""
+    if not available:
+        return "pending"
+    parsed = parse_exchange_timestamp(timestamp)
+    if parsed is None:
+        return "pending"
+    return "delivered" if parsed > send_time else "pending"
+
+
+def find_session_status(columns: Dict[str, Any], sid: str) -> Optional[str]:
+    """Status of the live session card matching `sid` (any column), or None
+    if no card matches. Used to tell a busy target from a stuck one before
+    calling a non-advancing exchange "stranded"."""
+    for bucket in (columns.get("claude_turn"), columns.get("your_turn"), columns.get("other")):
+        for card in bucket or []:
+            if str(card.get("session_id") or "") == sid:
+                return card.get("status")
+    return None
+
+
+def finalize_delivery(last_marker_state: str, target_status: Optional[str]) -> str:
+    """The caller-facing verdict once the poll budget is exhausted: one of
+    "delivered", "unknown", "stranded".
+
+    A `working` target may simply not have finished its current turn yet —
+    "no timestamp movement" is not proof of loss there, so it reads as
+    "unknown", not "stranded" (a busy session isn't the case that needs
+    unsticking anyway). Any other status — idle, needs-you, or a target this
+    board snapshot can't find at all — makes non-movement a real signal.
+    """
+    if last_marker_state == "delivered":
+        return "delivered"
+    if target_status == "working":
+        return "unknown"
+    return "stranded"
 
 
 def refuse_dispatch(
@@ -366,6 +434,26 @@ def fetch_issue_state(repo: str, number: int, owner: str = DEFAULT_OWNER) -> Dic
     return data
 
 
+def fetch_exchange_marker(base_url: str, sid: str) -> Dict[str, Any]:
+    """`{"available": bool, "timestamp": Any}` for `sid`'s current exchange.
+
+    A transport error or an unparseable response both collapse to
+    `available: False` — the same "can't tell" outcome `classify_exchange_marker`
+    treats as pending, never as delivered. The read-path itself has known
+    defects (app-launcher#610, #613: another session's content, raw frames,
+    `capture_unparseable`); this wrapper doesn't try to detect those, it just
+    refuses to promote an unreadable read into a delivery signal.
+    """
+    try:
+        result = _request(base_url, f"/api/board/sessions/{sid}/exchange")
+    except (urllib.error.URLError, ValueError):
+        return {"available": False, "timestamp": None}
+    if not result.get("available"):
+        return {"available": False, "timestamp": None}
+    assistant = result.get("assistant") or {}
+    return {"available": True, "timestamp": assistant.get("timestamp")}
+
+
 def read_brief(file_arg: Optional[str]) -> str:
     """`--file`'s content, or stdin when omitted. `say` never accepts prose
     as a bare CLI arg — it carries the brief the model already composed,
@@ -465,12 +553,49 @@ def cmd_chief_sid(args: argparse.Namespace) -> int:
 
 def cmd_say(args: argparse.Namespace) -> int:
     text = read_brief(args.file)
+
+    if not args.verify:
+        _request(
+            args.base_url, f"/api/claude-code/sessions/{args.sid}/input",
+            method="POST", body={"data": text, "submit": True},
+        )
+        print(f"SENT sid={args.sid} chars={len(text)}")
+        return 0
+
+    send_time = datetime.now(timezone.utc)
     _request(
         args.base_url, f"/api/claude-code/sessions/{args.sid}/input",
         method="POST", body={"data": text, "submit": True},
     )
-    print(f"SENT sid={args.sid} chars={len(text)}")
-    return 0
+
+    state = "pending"
+    deadline = time.monotonic() + args.timeout
+    while True:
+        marker = fetch_exchange_marker(args.base_url, args.sid)
+        state = classify_exchange_marker(marker["available"], marker["timestamp"], send_time)
+        if state == "delivered" or time.monotonic() >= deadline:
+            break
+        time.sleep(args.poll_interval)
+
+    if state != "delivered":
+        board = _request(args.base_url, "/api/board")
+        target_status = find_session_status(board.get("columns") or {}, args.sid)
+        state = finalize_delivery(state, target_status)
+
+    if state == "delivered":
+        print(f"DELIVERED sid={args.sid} chars={len(text)}")
+        return 0
+    if state == "unknown":
+        print(
+            f"UNKNOWN sid={args.sid} chars={len(text)} "
+            "reason=target busy or exchange unreadable, delivery unconfirmed"
+        )
+        return 1
+    print(
+        f"STRANDED sid={args.sid} chars={len(text)} "
+        "reason=exchange never advanced past send; not resent, operator decides"
+    )
+    return 1
 
 
 def cmd_stop(args: argparse.Namespace) -> int:
@@ -568,6 +693,12 @@ def main(argv: Optional[List[str]] = None) -> int:
     say_p = sub.add_parser("say", help="send input to a live session")
     say_p.add_argument("sid")
     say_p.add_argument("--file", default=None)
+    say_p.add_argument(
+        "--verify", action="store_true",
+        help="poll the exchange after posting and report DELIVERED/UNKNOWN/STRANDED (fleet-config#453)",
+    )
+    say_p.add_argument("--timeout", type=float, default=DEFAULT_VERIFY_TIMEOUT)
+    say_p.add_argument("--poll-interval", type=float, default=DEFAULT_VERIFY_POLL_INTERVAL)
     say_p.add_argument("--base-url", default=DEFAULT_BASE_URL)
     say_p.set_defaults(func=cmd_say)
 

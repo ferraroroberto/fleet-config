@@ -15,6 +15,7 @@ import os
 import subprocess
 import sys
 import tempfile
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
@@ -110,6 +111,127 @@ check(
     co.find_chief_session({"claude_turn": [_session_card(label="")], "your_turn": []}) is None,
     "find_chief_session returns None when no chief card is present",
 )
+
+
+# ---- say --verify delivery detection (fleet-config#453) ----------------------
+
+_send_time = datetime(2026, 7, 27, 12, 0, 0, tzinfo=timezone.utc)
+_before = (_send_time - timedelta(minutes=1)).isoformat().replace("+00:00", "Z")
+_after = (_send_time + timedelta(seconds=5)).isoformat().replace("+00:00", "Z")
+
+check(
+    co.parse_exchange_timestamp(_after) == _send_time + timedelta(seconds=5),
+    "parse_exchange_timestamp parses a Z-suffixed ISO8601 timestamp",
+)
+check(co.parse_exchange_timestamp(None) is None, "parse_exchange_timestamp tolerates None")
+check(co.parse_exchange_timestamp("not-a-timestamp") is None, "parse_exchange_timestamp tolerates garbage")
+
+check(
+    co.classify_exchange_marker(True, _after, _send_time) == "delivered",
+    "classify_exchange_marker: available + timestamp after send_time -> delivered",
+)
+check(
+    co.classify_exchange_marker(True, _before, _send_time) == "pending",
+    "classify_exchange_marker: available + timestamp before send_time -> pending",
+)
+check(
+    co.classify_exchange_marker(False, None, _send_time) == "pending",
+    "classify_exchange_marker: unavailable -> pending, never delivered",
+)
+check(
+    co.classify_exchange_marker(True, None, _send_time) == "pending",
+    "classify_exchange_marker: available with no timestamp (launcher fallback) -> pending",
+)
+
+check(
+    co.find_session_status(
+        {"claude_turn": [_session_card(session_id="target-1", status="needs-you")], "your_turn": []},
+        "target-1",
+    ) == "needs-you",
+    "find_session_status finds a matching card by session_id",
+)
+check(
+    co.find_session_status({"claude_turn": [], "your_turn": []}, "no-such-sid") is None,
+    "find_session_status returns None when no card matches",
+)
+
+check(co.finalize_delivery("delivered", "working") == "delivered", "finalize_delivery: delivered stays delivered")
+check(
+    co.finalize_delivery("pending", "working") == "unknown",
+    "finalize_delivery: non-movement on a busy target -> unknown, not stranded",
+)
+check(
+    co.finalize_delivery("pending", "needs-you") == "stranded",
+    "finalize_delivery: non-movement on an idle/needs-you target -> stranded",
+)
+check(
+    co.finalize_delivery("pending", None) == "stranded",
+    "finalize_delivery: non-movement with no matching card -> stranded",
+)
+
+
+def _run_say_verify(exchange_responses, board_status="needs-you", timeout=0.15, poll_interval=0.05):
+    """Drive `cmd_say --verify` against a stubbed transport. `exchange_responses`
+    is consumed in order (one per poll iteration); the last value repeats once
+    exhausted so a short timeout never IndexErrors."""
+    calls = {"input": 0, "exchange": 0}
+
+    def _fake_request(base_url, path, method="GET", body=None, timeout=10.0):
+        if path.endswith("/input"):
+            calls["input"] += 1
+            return {"ok": True}
+        if path.endswith("/exchange"):
+            idx = min(calls["exchange"], len(exchange_responses) - 1)
+            calls["exchange"] += 1
+            return exchange_responses[idx]
+        if path == "/api/board":
+            return {"columns": {
+                "claude_turn": [_session_card(session_id="target-1", status=board_status)],
+                "your_turn": [],
+            }}
+        raise AssertionError(f"unexpected path: {path}")
+
+    prior = co._request
+    co._request = _fake_request
+    try:
+        args = argparse.Namespace(
+            sid="target-1", file=None, verify=True, timeout=timeout,
+            poll_interval=poll_interval, base_url=co.DEFAULT_BASE_URL,
+        )
+        import io
+        prior_stdin = sys.stdin
+        sys.stdin = io.StringIO("brief text")
+        try:
+            rc = co.cmd_say(args)
+        finally:
+            sys.stdin = prior_stdin
+    finally:
+        co._request = prior
+    return rc, calls
+
+
+# `cmd_say` stamps `send_time` from the real wall clock, so these must be
+# real-clock-relative too -- comfortably past/before "now" regardless of how
+# long the test process takes to reach the comparison.
+_now = datetime.now(timezone.utc)
+_real_after = (_now + timedelta(days=1)).isoformat().replace("+00:00", "Z")
+_real_before = (_now - timedelta(days=1)).isoformat().replace("+00:00", "Z")
+
+rc, calls = _run_say_verify([{"available": True, "assistant": {"timestamp": _real_after}}])
+check(rc == 0, "cmd_say --verify exits 0 when the exchange advances past send time")
+check(calls["input"] == 1, "cmd_say --verify posts the input exactly once (no auto-retry)")
+
+rc, _ = _run_say_verify([{"available": False}], board_status="needs-you")
+check(rc == 1, "cmd_say --verify: unreadable exchange on an idle target -> failure (stranded)")
+
+rc, _ = _run_say_verify([{"available": False}], board_status="working")
+check(rc == 1, "cmd_say --verify: unreadable exchange on a working target -> failure (unknown, not stranded)")
+
+rc, calls = _run_say_verify(
+    [{"available": True, "assistant": {"timestamp": _real_before}}], board_status="needs-you",
+)
+check(rc == 1, "cmd_say --verify: exchange present but never advances -> failure")
+check(calls["input"] == 1, "cmd_say --verify still posts exactly once even on a stranded result")
 
 
 # ---- refuse_dispatch: the three acceptance-criteria refusals -----------------
