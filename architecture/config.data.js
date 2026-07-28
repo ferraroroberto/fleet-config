@@ -379,6 +379,13 @@ window.CONFIG = {
       "ds": "Block `AskUserQuestion` from a chief-managed worker (fleet-config#463)."
     },
     {
+      "nm": "branch_before_edit_guard",
+      "ev": "PreToolUse · Edit·Write·MultiEdit",
+      "block": true,
+      "reach": "Claude only",
+      "ds": "Block an `Edit`/`Write`/`MultiEdit` on the default branch from a launcher-"
+    },
+    {
       "nm": "py_syntax_check",
       "ev": "PostToolUse · Edit·Write·MultiEdit",
       "block": true,

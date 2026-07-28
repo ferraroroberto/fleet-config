@@ -10,7 +10,7 @@ The hooks here are project-aware via a single `hooks/projects.toml` registry: ge
 
 ## What's in here today
 
-15 hooks under `hooks/` that enforce the rituals I kept correcting Claude on, across the home-stack fleet:
+16 hooks under `hooks/` that enforce the rituals I kept correcting Claude on, across the home-stack fleet:
 
 | Hook | Event | What it does |
 |---|---|---|
@@ -24,6 +24,7 @@ The hooks here are project-aware via a single `hooks/projects.toml` registry: ge
 | `py_syntax_check.py` | `PostToolUse` on `Edit` / `Write` for `*.py` | Runs `py_compile` against the project's `.venv` and surfaces syntax errors inline. ~50 ms per edit. |
 | `docs_dated_filename_guard.py` | `PreToolUse` on `Write` | Blocks a `Write` of a `YYYY-MM-DD-`prefixed file under a `docs/` directory — `docs/` is durable reference, not dated retrospectives (the issue + PR + `git log` are the changelog). Override with `CLAUDE_HOOKS_ALLOW_DATED_DOCS=1`. |
 | `block_askuserquestion_chief.py` | `PreToolUse` on `AskUserQuestion` | Blocks `AskUserQuestion` outright when the calling session is chief-managed (same `hooks/state/chief-managed.json` marker `notify_on_idle.py` reads) — the tool renders only in the worker's own PTY, so chief can never see the question or attribute an answer to it. No-ops for an ordinary interactive session, a non-`AskUserQuestion` tool, a missing `session_id`, or a missing/corrupt state file (fails open rather than stranding a worker). Instructs the model to state the question and options as plain output text instead and wait for chief to relay a decision via `chief_ops.py say`. |
+| `branch_before_edit_guard.py` | `PreToolUse` on `Edit` / `Write` / `MultiEdit` | Blocks a launcher-dispatched session (`APP_LAUNCHER_SESSION_ID` set, same signal `session_state.py` reads) from editing while the **target file's own directory** resolves to its repo's default branch (`main`/`master`, via `skills/_lib/git_run.resolve_default_branch_ref`) — resolved from the file being written, not the session's cwd, so a worktree worker on its own feature branch and a write to a path outside any repo both pass through untouched. Fails open on any git ambiguity (non-repo target, detached HEAD, git error). A bare interactive session is never touched. Override with `CLAUDE_HOOKS_ALLOW_MAIN_EDIT=1`. (fleet-config#464; take 2 after PR #472/#477 — the first version resolved from session cwd and was reverted for exactly those two false positives.) |
 | `hub_bypass_warn.py` | `PostToolUse` on `Edit` / `Write` for `*.py` | Non-blocking nudge when a `*.py` outside the LLM-hub repo spawns an inline `claude -p` subprocess → route through the local hub at `127.0.0.1:8000` via the standard SDKs instead. |
 | `browser_stealth_lint.py` | `PostToolUse` on `Edit` / `Write` | Non-blocking nudge when a browser-launch file (`chrome_launch.py` / `browser.py` / `*_session.py`) launches Chrome but is missing a stealth marker (`--enable-automation` strip, `navigator.webdriver` init, `channel="chrome"`, `AutomationControlled`) → import the project's single-source launch helper. |
 | `context_filter_hook.py` | `PreToolUse` on `Bash` / `PowerShell` | Token-reduction hook, switched by `FLEET_CONTEXT_FILTER_MODE` (set in the `env` block of `settings.template.json` / live `settings.json`). Currently **`shadow`** fleet-wide (#392): each supported command runs through the local wrapper, the agent still gets **raw** output, and would-save metrics are logged to `~/.fleet-context-filter/shadow.jsonl` — a measurement week before the `rewrite` flip. `rewrite` returns compressed output with a local raw-output retrieval key; `off` (or removing the line) is the kill-switch. The compressor is pure Python (`context_filter.py` + `context_filter_cli.py`), skips streaming/destructive/pipe-heavy commands, fails open, and carries a reproducible fixture eval. |
@@ -138,6 +139,7 @@ fleet-config/
 │   ├── py_syntax_check.py
 │   ├── docs_dated_filename_guard.py   # PreToolUse on Write: block dated YYYY-MM-DD- filenames under docs/
 │   ├── block_askuserquestion_chief.py # PreToolUse on AskUserQuestion: block for chief-managed sessions — enforce, don't just discourage
+│   ├── branch_before_edit_guard.py    # PreToolUse on Edit|Write|MultiEdit: block launcher-dispatched edits on the default branch, resolved from the target path
 │   ├── hub_bypass_warn.py             # PostToolUse on *.py: nudge inline `claude -p` → route through the local hub
 │   ├── browser_stealth_lint.py        # PostToolUse: nudge a browser-launch file missing the anti-bot stealth kwargs
 │   ├── context_filter.py              # local deterministic output compressor used by the context-filter hook/eval

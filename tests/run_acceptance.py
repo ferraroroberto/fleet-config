@@ -461,6 +461,9 @@ def main() -> int:
     # ---- Tier 2/3 hooks: docs-guard env override + warn-hook stdout (issue #158) ----
     run_unit(_tier23_hooks_unit_checks)
 
+    # ---- branch_before_edit_guard: real temp git repos/worktrees x launcher env, target-path resolution (fleet-config#464) ----
+    run_unit(_branch_before_edit_guard_unit_checks)
+
     # ---- audit_issue helper pure-logic tests (skills/_lib) ----
     run_unit(_audit_issue_unit_check)
 
@@ -2201,6 +2204,137 @@ def _tier23_hooks_unit_checks() -> Tuple[int, int]:
               not nudged("browser_stealth_lint", tmp / "helper.py", bare_launch))
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
+
+    return check.failures, check.total
+
+
+def _branch_before_edit_guard_unit_checks() -> Tuple[int, int]:
+    """branch_before_edit_guard.py: real temp git repos/worktrees on
+    main/master/a feature branch, crossed with APP_LAUNCHER_SESSION_ID
+    presence and the CLAUDE_HOOKS_ALLOW_MAIN_EDIT override (fleet-config#464,
+    take 2). Every fixture below deliberately sets `cwd` and the edit
+    `file_path`'s directory to *different* paths — the take-1 guard resolved
+    the branch from `cwd` and was reverted for exactly the false positives
+    that shape hides: a worktree worker judged by the primary checkout's
+    branch, and a write outside any repo blocked by the session's cwd repo.
+    None of these fixtures configure a git remote, so the master-branch case
+    also proves `resolve_default_branch_ref`'s candidate probing (not
+    `dirty_tree_check`'s `candidates=()` variant) still detects `master` as
+    the protected branch with no `origin` configured."""
+    sys.path.insert(0, str(HOOKS))
+    import _lib  # noqa: E402
+
+    check = _Checker()
+    launcher_env = {"APP_LAUNCHER_SESSION_ID": "launcher-test"}
+
+    def git_repo(branch: str) -> Path:
+        repo = Path(tempfile.mkdtemp(prefix="branch_guard_"))
+        subprocess.run(["git", "init", "-q"], cwd=repo, check=True, creationflags=_lib.NO_WINDOW)
+        subprocess.run(
+            ["git", "config", "user.email", "35553560+ferraroroberto@users.noreply.github.com"],
+            cwd=repo, check=True, creationflags=_lib.NO_WINDOW,
+        )
+        subprocess.run(["git", "config", "user.name", "test"], cwd=repo, check=True, creationflags=_lib.NO_WINDOW)
+        subprocess.run(["git", "checkout", "-q", "-b", branch], cwd=repo, check=True, creationflags=_lib.NO_WINDOW)
+        subprocess.run(
+            ["git", "commit", "-q", "--allow-empty", "-m", "init"],
+            cwd=repo, check=True, creationflags=_lib.NO_WINDOW,
+        )
+        (repo / "sub").mkdir(exist_ok=True)
+        return repo
+
+    def edit_payload(cwd: Path, target_dir: Path, tool: str = "Edit") -> Dict[str, Any]:
+        # cwd (session dir) and the edit target's directory are deliberately
+        # different paths — see the docstring above.
+        return {"tool_name": tool, "cwd": str(cwd), "tool_input": {"file_path": str(target_dir / "f.py")}}
+
+    main_repo = git_repo("main")
+    try:
+        code, _out, err = run(
+            "branch_before_edit_guard", edit_payload(main_repo, main_repo / "sub"), extra_env=launcher_env
+        )
+        check("branch_guard: main (target != cwd dir) + launcher env -> block", code == 2, err)
+
+        # Explicit empty-string override (not just an omitted extra_env) --
+        # the ambient session this suite runs under may itself carry a real
+        # APP_LAUNCHER_SESSION_ID, which `run()` would otherwise pass through.
+        code, _out, _err = run(
+            "branch_before_edit_guard", edit_payload(main_repo, main_repo / "sub"),
+            extra_env={"APP_LAUNCHER_SESSION_ID": ""},
+        )
+        check("branch_guard: main + no launcher env -> allow", code == 0)
+
+        code, _out, _err = run(
+            "branch_before_edit_guard", edit_payload(main_repo, main_repo / "sub"),
+            extra_env={**launcher_env, "CLAUDE_HOOKS_ALLOW_MAIN_EDIT": "1"},
+        )
+        check("branch_guard: main + launcher env + override -> allow", code == 0)
+
+        code, _out, err = run(
+            "branch_before_edit_guard", edit_payload(main_repo, main_repo / "sub", tool="Write"), extra_env=launcher_env
+        )
+        check("branch_guard: Write tool covered same as Edit -> block", code == 2, err)
+
+        code, _out, err = run(
+            "branch_before_edit_guard", edit_payload(main_repo, main_repo / "sub", tool="MultiEdit"), extra_env=launcher_env
+        )
+        check("branch_guard: MultiEdit tool covered same as Edit -> block", code == 2, err)
+
+        code, _out, _err = run(
+            "branch_before_edit_guard", edit_payload(main_repo, main_repo / "sub", tool="Bash"), extra_env=launcher_env
+        )
+        check("branch_guard: Bash tool_name -> allow (only guards Edit/Write/MultiEdit)", code == 0)
+
+        # ---- take-1's actual bug: a worktree worker judged by the primary's branch ----
+        worktree = main_repo.parent / f"{main_repo.name}-wt-1"
+        subprocess.run(
+            ["git", "worktree", "add", "-q", "-b", "feat/464-x", str(worktree)],
+            cwd=main_repo, check=True, creationflags=_lib.NO_WINDOW,
+        )
+        try:
+            # cwd is the PRIMARY repo (still on main) -- the exact shape that
+            # broke take 1. file_path targets the worktree, on its own branch.
+            code, _out, _err = run(
+                "branch_before_edit_guard", edit_payload(main_repo, worktree), extra_env=launcher_env
+            )
+            check("branch_guard: worktree target on feature branch, cwd=primary(main) -> allow", code == 0)
+        finally:
+            subprocess.run(
+                ["git", "worktree", "remove", "-f", str(worktree)],
+                cwd=main_repo, check=False, creationflags=_lib.NO_WINDOW,
+            )
+
+        # ---- take-1's other bug: a write target entirely outside any repo ----
+        non_repo = Path(tempfile.mkdtemp(prefix="branch_guard_norepo_"))
+        try:
+            # cwd is a repo on main (e.g. chief's cwd); file_path targets a
+            # plain non-git directory (e.g. E:\tmp\chief).
+            code, _out, _err = run(
+                "branch_before_edit_guard", edit_payload(main_repo, non_repo), extra_env=launcher_env
+            )
+            check("branch_guard: non-git target dir, cwd=repo(main) -> allow (fail open)", code == 0)
+        finally:
+            shutil.rmtree(non_repo, ignore_errors=True)
+    finally:
+        shutil.rmtree(main_repo, ignore_errors=True)
+
+    master_repo = git_repo("master")
+    try:
+        code, _out, err = run(
+            "branch_before_edit_guard", edit_payload(master_repo, master_repo / "sub"), extra_env=launcher_env
+        )
+        check("branch_guard: master (no origin configured) + launcher env -> block", code == 2, err)
+    finally:
+        shutil.rmtree(master_repo, ignore_errors=True)
+
+    feature_repo = git_repo("feat/464-x")
+    try:
+        code, _out, _err = run(
+            "branch_before_edit_guard", edit_payload(feature_repo, feature_repo / "sub"), extra_env=launcher_env
+        )
+        check("branch_guard: feature branch + launcher env -> allow", code == 0)
+    finally:
+        shutil.rmtree(feature_repo, ignore_errors=True)
 
     return check.failures, check.total
 
