@@ -140,14 +140,7 @@ def readme_has_markers(readme_text: str) -> bool:
 
 def _default_base(repo: Path) -> str:
     """The repo's main branch to diff against (prefer the remote's default)."""
-    res = git_run.run_git(["-C", str(repo), "symbolic-ref", "refs/remotes/origin/HEAD"])
-    ref = res.stdout.strip()
-    if res.returncode == 0 and ref:
-        return ref.replace("refs/remotes/", "", 1)
-    for cand in ("origin/main", "main", "master"):
-        if git_run.run_git(["-C", str(repo), "rev-parse", "--verify", "--quiet", cand]).returncode == 0:
-            return cand
-    return "main"
+    return git_run.resolve_default_branch_ref(repo)
 
 
 def _changed_files(repo: Path, base: str) -> List[str]:

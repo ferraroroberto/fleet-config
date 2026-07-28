@@ -43,3 +43,28 @@ def run_git(args: Sequence[str], *, check: bool = False) -> subprocess.Completed
         encoding="utf-8", errors="replace", check=check,
         creationflags=NO_WINDOW,
     )
+
+
+def resolve_default_branch_ref(
+    repo_path: Path,
+    candidates: Sequence[str] = ("origin/main", "main", "master"),
+    final_fallback: str = "main",
+) -> str:
+    """The repo's default branch, preferring the remote's own `origin/HEAD`.
+
+    On `symbolic-ref refs/remotes/origin/HEAD` success, returns the ref with
+    the `refs/remotes/` prefix stripped (e.g. `origin/main`). On failure,
+    probes `candidates` in order via `rev-parse --verify --quiet` and returns
+    the first that resolves; if none do (or `candidates` is empty), returns
+    `final_fallback`. `candidates`/`final_fallback` are parameterized so a
+    caller with different fallback semantics (fleet-config#485) can reproduce
+    its own exact behavior on top of this one implementation.
+    """
+    res = run_git(["-C", str(repo_path), "symbolic-ref", "refs/remotes/origin/HEAD"])
+    ref = res.stdout.strip()
+    if res.returncode == 0 and ref:
+        return ref.replace("refs/remotes/", "", 1)
+    for cand in candidates:
+        if run_git(["-C", str(repo_path), "rev-parse", "--verify", "--quiet", cand]).returncode == 0:
+            return cand
+    return final_fallback
