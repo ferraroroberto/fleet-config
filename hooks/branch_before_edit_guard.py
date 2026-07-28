@@ -1,0 +1,110 @@
+"""Block an `Edit`/`Write`/`MultiEdit` on the default branch from a launcher-
+dispatched worker.
+
+Triggers on `PreToolUse` for `Edit`/`Write`/`MultiEdit`. **Blocks** (exit 2)
+when the *target file's own directory* resolves to the repo's default branch
+(`main`/`master`, or whatever `origin/HEAD` says) **and** the process is a
+launcher-dispatched session (the `APP_LAUNCHER_SESSION_ID` env var App
+Launcher injects into Board/Job children — same idiom `session_state.py`
+reads). A bare interactive session (Roberto typing in a terminal) carries no
+such env var and is never touched.
+
+Why: `global-CLAUDE.md`'s "never commit to `main` directly" rule already
+exists; this closes the enforcement gap that let two launcher-dispatched
+workers start editing files on the default branch without cutting a branch
+first (fleet-config#442, fleet-config#464).
+
+**Take 2.** The first attempt (PR #472) resolved the branch from the
+session's `cwd` and was reverted the same evening (PR #477) for two live
+fleet-wide false positives: it judged a worktree worker by the *primary*
+checkout's branch, and it blocked writes to paths entirely outside any repo
+(e.g. the standing chief writing scratch files under `E:\\tmp\\chief`) because
+the session's cwd repo happened to sit on `main`. This version resolves
+strictly from the directory containing the file actually being written —
+a worktree's own directory naturally resolves that worktree's own HEAD, and a
+non-repo target naturally fails the git call and allows, with no
+special-casing for either failure mode.
+
+Escape hatch: set `CLAUDE_HOOKS_ALLOW_MAIN_EDIT=1` for the rare case a
+launcher-dispatched flow needs a deliberate default-branch write.
+"""
+
+from __future__ import annotations
+
+import os
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import _lib  # noqa: E402
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "skills" / "_lib"))
+import git_run  # noqa: E402
+
+
+GUARDED_TOOLS = ("Edit", "Write", "MultiEdit")
+
+
+def _current_branch(target_dir: Path) -> "str | None":
+    """Return the checked-out branch for `target_dir`, or `None` on any
+    failure — a non-repo directory, detached HEAD, or a git error all fail
+    open the same way. This single call is also the "is this a repo at all"
+    check: `rev-parse` on a non-repo path simply returns non-zero.
+    """
+    res = git_run.run_git(["-C", str(target_dir), "rev-parse", "--abbrev-ref", "HEAD"])
+    if res.returncode != 0:
+        return None
+    branch = res.stdout.strip()
+    if not branch or branch == "HEAD":  # detached HEAD marker
+        return None
+    return branch
+
+
+def _default_branch(target_dir: Path) -> str:
+    """Bare default-branch name for `target_dir`'s repo.
+
+    Uses `git_run.resolve_default_branch_ref`'s default candidate-probing
+    (`origin/main`, `main`, `master`) rather than `dirty_tree_check`'s
+    `candidates=()` variant — that variant skips probing on `symbolic-ref`
+    failure and would default every repo with no `origin` configured to
+    `"main"`, silently losing `master` detection for a remote-less repo
+    (including this guard's own unit-test fixtures).
+    """
+    ref = git_run.resolve_default_branch_ref(target_dir)
+    return ref[len("origin/"):] if ref.startswith("origin/") else ref
+
+
+def main() -> None:
+    payload = _lib.read_stdin_json()
+    if _lib.tool_name(payload) not in GUARDED_TOOLS:
+        _lib.allow()
+
+    if os.environ.get("CLAUDE_HOOKS_ALLOW_MAIN_EDIT") == "1":
+        _lib.allow()
+
+    target = _lib.file_path(payload)
+    if target is None:
+        _lib.allow()
+
+    target_dir = target.parent
+    branch = _current_branch(target_dir)
+    if branch is None:
+        _lib.allow()
+
+    default_branch = _default_branch(target_dir)
+    if branch != default_branch:
+        _lib.allow()
+
+    if not os.environ.get("APP_LAUNCHER_SESSION_ID", "").strip():
+        _lib.allow()
+
+    _lib.block(
+        f"Blocked: editing on '{branch}' from a launcher-dispatched session. "
+        "Cut a branch first — git checkout -b <type>/<issue-N>-<slug> — before "
+        "editing (global-CLAUDE.md: never commit to main directly). Set "
+        "CLAUDE_HOOKS_ALLOW_MAIN_EDIT=1 to override for a deliberate default-branch write."
+    )
+
+
+if __name__ == "__main__":
+    main()
