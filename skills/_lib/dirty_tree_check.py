@@ -85,10 +85,11 @@ def _run_git(repo_path: Path, *args: str) -> str:
 
 
 def detect_default_branch(repo_path: Path) -> str:
-    ref = _run_git(repo_path, "symbolic-ref", "refs/remotes/origin/HEAD")
-    if ref.startswith("refs/remotes/origin/"):
-        return ref[len("refs/remotes/origin/"):]
-    return "main"
+    """Bare branch name, no candidate probing on `symbolic-ref` failure (unlike
+    `git_run.resolve_default_branch_ref`'s other callers) -- `candidates=()`
+    reproduces that quirk on top of the shared helper (fleet-config#485)."""
+    ref = git_run.resolve_default_branch_ref(repo_path, candidates=(), final_fallback="main")
+    return ref[len("origin/"):] if ref.startswith("origin/") else ref
 
 
 def gather(repo_path: Path, default_branch: str) -> tuple[str, bool, int]:

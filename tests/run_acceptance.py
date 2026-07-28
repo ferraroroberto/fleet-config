@@ -518,6 +518,9 @@ def main() -> int:
     # ---- dirty_tree_check helper pure-logic tests (skills/_lib) ----
     run_unit(_dirty_tree_check_unit_check)
 
+    # ---- git_run helper pure-logic tests (skills/_lib, fleet-config#485) ----
+    run_unit(_git_run_unit_check)
+
     # ---- deploy_coverage helper pure-logic tests (skills/_lib, fleet-config#459) ----
     run_unit(_deploy_coverage_unit_check)
 
@@ -2414,6 +2417,18 @@ def _dirty_tree_check_unit_check() -> Tuple[int, int]:
     real throwaway git repo, and reachable from the one gate. (fleet-config#247)
     """
     return _subprocess_unit_check("dirty_tree_check", "test_dirty_tree_check.py")
+
+
+def _git_run_unit_check() -> Tuple[int, int]:
+    """Run skills/_lib/git_run.py's pure-logic tests as a subprocess.
+
+    Standalone (like test_dirty_tree_check) so the shared
+    `resolve_default_branch_ref` helper -- symbolic-ref success, candidate
+    probing, terminal fallback, and the `candidates=()` shape
+    `dirty_tree_check.py` depends on -- is testable on its own, with a real
+    throwaway git repo, and reachable from the one gate. (fleet-config#485)
+    """
+    return _subprocess_unit_check("git_run", "test_git_run.py")
 
 
 def _vendored_drift_unit_check() -> Tuple[int, int]:
