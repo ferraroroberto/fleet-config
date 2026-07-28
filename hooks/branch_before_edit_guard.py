@@ -25,6 +25,17 @@ a worktree's own directory naturally resolves that worktree's own HEAD, and a
 non-repo target naturally fails the git call and allows, with no
 special-casing for either failure mode.
 
+**Take 2's own false positive (fleet-config#489).** Resolving from the target
+directory fixed writes *outside* a repo but still blocked writes *inside* one
+that git deliberately ignores — `life-os`'s `/journal-daily` could not write
+its gitignored `.active-skill` marker, and the standing chief could not write
+`hooks/state/chief-handover.md` (gitignored, but reached through a junction so
+the guard sees a `fleet-config` file on `main`). Both share the property that
+makes take-1's non-repo case safe: the write can never become a commit, so the
+rule this guard enforces cannot be broken by it. `_is_ignored` therefore
+exempts gitignored targets — and only those. An untracked-but-not-ignored new
+file *can* be committed to the default branch, so it stays blocked.
+
 Escape hatch: set `CLAUDE_HOOKS_ALLOW_MAIN_EDIT=1` for the rare case a
 launcher-dispatched flow needs a deliberate default-branch write.
 """
@@ -74,6 +85,28 @@ def _default_branch(target_dir: Path) -> str:
     return ref[len("origin/"):] if ref.startswith("origin/") else ref
 
 
+def _is_ignored(target: Path) -> bool:
+    """Whether git ignores `target`, i.e. whether writing it could ever become
+    a commit on the branch this guard protects.
+
+    `check-ignore` matches a *pathname* against the ignore rules and does not
+    require the file to exist, so a `Write` creating a brand-new gitignored
+    file resolves correctly. Exit 0 means ignored, 1 means not ignored; any
+    other exit (128, a git error) is *not* treated as ignored — by this point
+    the caller has already established a repo on the default branch, so an
+    unresolvable probe must fail closed rather than silently open the gate.
+
+    `target` must already be junction-resolved (see `main`): unlike `-C`, which
+    git follows through a Windows junction on its own, the *pathname argument*
+    is matched lexically against the worktree root, so the junction spelling
+    `C:\\Users\\rober\\.claude\\hooks\\state\\chief-handover.md` exits 128 with
+    "is outside repository at 'E:/automation/fleet-config'" — the fail-closed
+    path, which would have left fleet-config#489's second live repro blocked.
+    """
+    res = git_run.run_git(["-C", str(target.parent), "check-ignore", "-q", str(target)])
+    return res.returncode == 0
+
+
 def main() -> None:
     payload = _lib.read_stdin_json()
     if _lib.tool_name(payload) not in GUARDED_TOOLS:
@@ -86,6 +119,18 @@ def main() -> None:
     if target is None:
         _lib.allow()
 
+    # Resolve junctions/symlinks up front. `~/.claude/hooks/` is a junction
+    # into this repo, so the chief's own writes arrive spelled under
+    # `C:\\Users\\rober\\...` while living in `E:\\automation\\fleet-config` —
+    # non-strict, so a path that doesn't exist yet (every creating `Write`)
+    # still resolves. This sits ahead of every other check, so a pathological
+    # path that made `resolve()` raise would crash the hook for *all*
+    # launcher-dispatched edits; fall back to the raw path instead, which is
+    # exactly the pre-#489 behavior.
+    try:
+        target = target.resolve()
+    except OSError:
+        pass
     target_dir = target.parent
     branch = _current_branch(target_dir)
     if branch is None:
@@ -96,6 +141,9 @@ def main() -> None:
         _lib.allow()
 
     if not os.environ.get("APP_LAUNCHER_SESSION_ID", "").strip():
+        _lib.allow()
+
+    if _is_ignored(target):
         _lib.allow()
 
     _lib.block(

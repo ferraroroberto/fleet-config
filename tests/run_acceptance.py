@@ -2220,7 +2220,9 @@ def _branch_before_edit_guard_unit_checks() -> Tuple[int, int]:
     None of these fixtures configure a git remote, so the master-branch case
     also proves `resolve_default_branch_ref`'s candidate probing (not
     `dirty_tree_check`'s `candidates=()` variant) still detects `master` as
-    the protected branch with no `origin` configured."""
+    the protected branch with no `origin` configured. The gitignored-target
+    fixtures cover take 2's own false positive (fleet-config#489) and pin the
+    exemption to ignored paths only."""
     sys.path.insert(0, str(HOOKS))
     import _lib  # noqa: E402
 
@@ -2303,6 +2305,74 @@ def _branch_before_edit_guard_unit_checks() -> Tuple[int, int]:
                 ["git", "worktree", "remove", "-f", str(worktree)],
                 cwd=main_repo, check=False, creationflags=_lib.NO_WINDOW,
             )
+
+        # ---- take-2's own bug (fleet-config#489): a gitignored target *inside*
+        # the repo, on the default branch. Both live repros are covered: a
+        # single-file rule (life-os's `.active-skill`) and a directory rule
+        # (fleet-config's `hooks/state/`, reached by the chief through a
+        # junction). Neither file exists on disk -- `check-ignore` matches the
+        # pathname, which is what makes a creating `Write` resolve correctly.
+        (main_repo / ".gitignore").write_text(".active-skill\nstate/\n", encoding="utf-8")
+        subprocess.run(["git", "add", "-A"], cwd=main_repo, check=True, creationflags=_lib.NO_WINDOW)
+        subprocess.run(
+            ["git", "commit", "-q", "-m", "ignore rules"],
+            cwd=main_repo, check=True, creationflags=_lib.NO_WINDOW,
+        )
+        (main_repo / "state").mkdir(exist_ok=True)
+
+        def payload_for(target: Path) -> Dict[str, Any]:
+            return {"tool_name": "Write", "cwd": str(main_repo), "tool_input": {"file_path": str(target)}}
+
+        code, _out, _err = run(
+            "branch_before_edit_guard", payload_for(main_repo / ".active-skill"), extra_env=launcher_env
+        )
+        check("branch_guard: gitignored file target on main + launcher env -> allow", code == 0)
+
+        code, _out, _err = run(
+            "branch_before_edit_guard", payload_for(main_repo / "state" / "chief-handover.md"),
+            extra_env=launcher_env,
+        )
+        check("branch_guard: target under a gitignored directory rule -> allow", code == 0)
+
+        # The exemption is gitignored-only: an untracked, non-ignored new file
+        # in the same repo can still be committed to main, so it must block.
+        code, _out, err = run(
+            "branch_before_edit_guard", payload_for(main_repo / "state.py"), extra_env=launcher_env
+        )
+        check("branch_guard: untracked but NOT ignored target on main -> still block", code == 2, err)
+
+        # ---- the junction shape (fleet-config#489's second live repro) ----
+        # `~/.claude/hooks/` is a junction into this repo, so the chief's write
+        # to its gitignored handover file arrives spelled under the junction.
+        # git follows a junction for `-C` but matches the *pathname argument*
+        # lexically against the worktree root, so the unresolved spelling exits
+        # 128 ("is outside repository at ...") -- the fail-closed path. Only
+        # the guard's `target.resolve()` keeps this case allowed.
+        if sys.platform == "win32":
+            link = main_repo.parent / f"{main_repo.name}-junction"
+            mk = subprocess.run(
+                ["cmd", "/c", "mklink", "/J", str(link), str(main_repo)],
+                capture_output=True, text=True, creationflags=_lib.NO_WINDOW,
+            )
+            check("branch_guard: junction fixture created", mk.returncode == 0, mk.stdout + mk.stderr)
+            if mk.returncode == 0:
+                try:
+                    code, _out, _err = run(
+                        "branch_before_edit_guard",
+                        payload_for(link / "state" / "chief-handover.md"), extra_env=launcher_env,
+                    )
+                    check("branch_guard: gitignored target via a junction path -> allow", code == 0)
+
+                    code, _out, err = run(
+                        "branch_before_edit_guard",
+                        payload_for(link / "tracked.py"), extra_env=launcher_env,
+                    )
+                    check("branch_guard: non-ignored target via a junction path -> still block", code == 2, err)
+                finally:
+                    subprocess.run(
+                        ["cmd", "/c", "rmdir", str(link)],
+                        capture_output=True, creationflags=_lib.NO_WINDOW,
+                    )
 
         # ---- take-1's other bug: a write target entirely outside any repo ----
         non_repo = Path(tempfile.mkdtemp(prefix="branch_guard_norepo_"))
