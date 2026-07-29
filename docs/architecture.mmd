@@ -17,15 +17,17 @@ flowchart TB
     CODEX["~/.codex (Codex)"]
     PIHOME["~/.pi/agent (Pi)"]
     COPILOT["~/.copilot (Copilot CLI)"]
+    GROK["~/.grok (Grok Build)\nno links — reads ~/.claude via [compat.claude]"]
   end
 
   INSTALL --> CLAUDE
   INSTALL --> CODEX
   INSTALL --> PIHOME
   INSTALL --> COPILOT
+  CLAUDE -.->|"compat scan: rules, skills, hooks"| GROK
 
-  subgraph hooks["hooks/ — junctioned into Claude + Codex only"]
-    LIBPY["_lib.py\nproject detection, stdin-JSON, projects.toml loader, NO_WINDOW spawn flag"]
+  subgraph hooks["hooks/ — junctioned into Claude + Codex; reached by Grok via compat"]
+    LIBPY["_lib.py\nproject detection, stdin-JSON, projects.toml loader, NO_WINDOW spawn flag\nnormalize_payload: Grok camelCase -> Claude shape (#491)"]
     PROJECTS["projects.toml\nper-project ports/gates/never-kill ports"]
     RUNHOOK["run-hook.ps1 — Claude Code shim (Git Bash routes through it)"]
     HOOKFILES["pre_commit_no_ai_trailer · secret_scan_guard · safe_kill_guard ·\nvenv_discipline · py_syntax_check · notify_on_idle · session_state ·\nblock_askuserquestion_chief · chief_handover_sessionstart · …"]

@@ -27,7 +27,8 @@
 
 [CmdletBinding()]
 param(
-    [switch]$VerifyCodexSandbox
+    [switch]$VerifyCodexSandbox,
+    [switch]$VerifyGrokCompat
 )
 
 $ErrorActionPreference = 'Stop'
@@ -142,7 +143,80 @@ function Invoke-CodexSandboxVerification {
     Write-Host "OK      Codex workspace-write sandbox completed." -ForegroundColor Green
 }
 
+function Invoke-GrokCompatVerification {
+    # fleet-config#491: Grok Build gets NO links of its own. It reaches the
+    # global instructions, the fleet skills, and every hook in this repo through
+    # its own Claude-compatibility scanning, which is on by default. That makes
+    # those defaults load-bearing config we do not own -- if xAI flips a cell,
+    # or a managed/requirements layer turns one off, Grok silently loses the
+    # fleet's guards with nothing in this repo changing. So verify the reach
+    # itself rather than a link that deliberately does not exist.
+    $grok = Get-Command grok -ErrorAction SilentlyContinue
+    if (-not $grok) {
+        $fallback = Join-Path $env:USERPROFILE '.grok\bin\grok.exe'
+        if (Test-Path $fallback) { $grokPath = $fallback }
+        else { throw "Grok CLI not found on PATH or at $fallback; cannot verify compat reach." }
+    } else {
+        $grokPath = $grok.Source
+    }
+
+    Write-Host ""
+    Write-Host "Verifying Grok Claude-compatibility reach..." -ForegroundColor Cyan
+
+    $raw = & $grokPath inspect --json 2>&1
+    if ($LASTEXITCODE -ne 0) {
+        throw "grok inspect --json failed with exit code $LASTEXITCODE."
+    }
+
+    try { $report = ($raw | Out-String) | ConvertFrom-Json }
+    catch { throw "grok inspect --json returned unparseable output." }
+
+    $problems = @()
+
+    # 1. The compat cells this repo's reach depends on must be enabled.
+    foreach ($surface in @('rules', 'agents', 'skills', 'hooks')) {
+        $cell = $report.externalCompat.cells |
+            Where-Object { $_.vendor -eq 'claude' -and $_.surface -eq $surface }
+        if (-not $cell) {
+            $problems += "compat.claude.$surface : not reported by grok inspect"
+        } elseif (-not $cell.enabled) {
+            $problems += "compat.claude.$surface : DISABLED (source: $($cell.source))"
+        } else {
+            Write-Host "OK      compat.claude.$surface enabled (source: $($cell.source))" -ForegroundColor Green
+        }
+    }
+
+    # 2. The global instructions must actually resolve, not merely be scannable.
+    $claudeMd = $report.projectInstructions |
+        Where-Object { $_.scope -eq 'global' -and $_.path -like '*\.claude\*' }
+    if ($claudeMd) {
+        Write-Host "OK      global instructions reach Grok ($($claudeMd[0].path), ~$($claudeMd[0].approxTokens) tokens)" -ForegroundColor Green
+    } else {
+        $problems += "global instructions: no ~/.claude context file resolved"
+    }
+
+    # 3. The fleet skills must resolve through one of the scanned roots.
+    $fleetSkills = $report.skills | Where-Object {
+        $_.source.path -like '*\.claude\skills\*' -or $_.source.path -like '*\.agents\skills\*'
+    }
+    if ($fleetSkills.Count -gt 0) {
+        Write-Host "OK      $($fleetSkills.Count) fleet skill(s) resolve inside Grok" -ForegroundColor Green
+    } else {
+        $problems += "skills: no fleet skill resolved from ~/.claude/skills or ~/.agents/skills"
+    }
+
+    if ($problems.Count -gt 0) {
+        foreach ($p in $problems) { Write-Host "FAILED  $p" -ForegroundColor Red }
+        throw "Grok compat reach is broken -- the fleet's hooks/skills/instructions may not be active in Grok sessions. See docs/adding-a-coding-harness.md."
+    }
+
+    Write-Host "OK      Grok reaches the fleet config through Claude compatibility." -ForegroundColor Green
+}
+
 # What to install. Each entry: { kind = 'junction'|'symlink'; source = <relative to repo>; target = <relative to base home>; base = 'claude'|'agents'|'codex'|'pi'|'copilot' (default 'claude') }
+# NOTE: Grok Build (~/.grok) deliberately has NO entry here -- it reads ~/.claude
+# directly via [compat.claude]. Verify that reach with -VerifyGrokCompat rather
+# than adding a duplicate link (fleet-config#491).
 $Items = @(
     @{ kind = 'junction'; source = 'hooks';                  target = 'hooks' },
     @{ kind = 'junction'; source = 'commands';               target = 'commands' },
@@ -304,6 +378,9 @@ Write-Host "Done. created=$created skipped=$skipped blocked=$blocked" -Foregroun
 Write-Host "Manifest: $ManifestPath"
 if ($VerifyCodexSandbox) {
     Invoke-CodexSandboxVerification
+}
+if ($VerifyGrokCompat) {
+    Invoke-GrokCompatVerification
 }
 Write-Host ""
 Write-Host "Next step: merge the 'hooks' block from settings.template.json into ~/.claude/settings.json,"
