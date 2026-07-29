@@ -131,7 +131,11 @@ gh issue create --title "<title>" --body-file <tmpfile> --label <label> --assign
 ```
 
 Write the body to a temp file (or use a here-string) so multi-line markdown
-isn't mangled by shell escaping.
+isn't mangled by shell escaping. Capture the repo the issue actually landed in
+right here — `gh repo view --json nameWithOwner -q .nameWithOwner` — rather
+than assuming it later; that value feeds the `--repo` flag in step 9 so the
+completion ping can't drift to a different repo than the one just filed into
+(fleet-config#497).
 
 ### 9. Report
 
@@ -142,11 +146,14 @@ the label applied.
   completion ping (canonical format, real issue link) and stop:
 
   ```
-  E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/hooks/notify_complete.py --kind add --issue <N>
+  E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/hooks/notify_complete.py --kind add --issue <N> --repo <owner/name>
   ```
 
-  Pass only the issue number; the helper pulls the title + URL from `gh`. Silent
-  no-op if no channel is configured; always exits 0.
+  `<owner/name>` is the value captured in step 8, not re-derived from CWD —
+  this is what keeps the ping pinned to the repo the issue was actually filed
+  into even if the session's CWD is elsewhere by the time this fires
+  (fleet-config#497). The helper pulls the title + URL from `gh -R <owner/name>`.
+  Silent no-op if no channel is configured; always exits 0.
 - **One-shot mode (`now`):** do **not** stop and do **not** fire the add ping —
   immediately proceed to the `/issue-start <N> now` flow on the same turn
   (pre-flight, sync main, cut branch, build straight away, per that skill's

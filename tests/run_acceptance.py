@@ -3096,6 +3096,31 @@ def _notify_complete_unit_checks() -> Tuple[int, int]:
     check("resolve_slack_target: global fallback + claude name",
           ch == "C0B76GBA0LS" and usr == "U0B71PQEL6S" and nm == "claude")
 
+    # lookup(): --repo threads onto the gh invocation as `-R repo`, for both the
+    # issue path and the pr-by-number path, so a cross-repo ping can't silently
+    # resolve against the caller's CWD repo instead (fleet-config#497).
+    captured_args = []
+    saved_gh_json = notify_complete.gh_json
+    notify_complete.gh_json = lambda a: (captured_args.append(a), {"title": "T", "url": "http://u"})[1]
+    try:
+        notify_complete.lookup("add", "496", None, repo="ferraroroberto/fleet-config")
+        check("lookup: issue path threads -R <repo> onto gh issue view",
+              captured_args[-1] == ["issue", "view", "496", "-R", "ferraroroberto/fleet-config", "--json", "title,url"])
+
+        notify_complete.lookup("add", "30", None)
+        check("lookup: issue path omits -R when repo not supplied (CWD-relative, unchanged)",
+              captured_args[-1] == ["issue", "view", "30", "--json", "title,url"])
+
+        notify_complete.lookup("finish", None, "31", repo="ferraroroberto/fleet-config")
+        check("lookup: pr-by-number path threads -R <repo> onto gh pr view",
+              captured_args[-1] == ["pr", "view", "31", "-R", "ferraroroberto/fleet-config", "--json", "title,url"])
+
+        notify_complete.lookup("finish", None, None, pr_url="http://pr", repo="ferraroroberto/fleet-config")
+        check("lookup: pr_url path ignores repo (absolute URL already CWD-independent)",
+              captured_args[-1] == ["pr", "view", "http://pr", "--json", "title"])
+    finally:
+        notify_complete.gh_json = saved_gh_json
+
     return check.failures, check.total
 
 

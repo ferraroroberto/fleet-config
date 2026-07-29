@@ -16,6 +16,7 @@ not reliably on ``PATH`` on this machine; see ``_lib.find_python_executable``)::
 
     E:/automation/fleet-config/.venv/Scripts/python.exe ~/.claude/hooks/notify_complete.py --kind finish --issue 30 --pr 31 --pr-url https://github.com/owner/repo/pull/31
     E:/automation/fleet-config/.venv/Scripts/python.exe ~/.claude/hooks/notify_complete.py --kind add    --issue 30
+    E:/automation/fleet-config/.venv/Scripts/python.exe ~/.claude/hooks/notify_complete.py --kind add    --issue 496 --repo ferraroroberto/fleet-config
     E:/automation/fleet-config/.venv/Scripts/python.exe ~/.claude/hooks/notify_complete.py --kind start  --issue 30 --summary "review the diff, then /issue-finish"
     E:/automation/fleet-config/.venv/Scripts/python.exe ~/.claude/hooks/notify_complete.py --kind yolo   --issue 30 --pr 31 --pr-url https://github.com/owner/repo/pull/31
     E:/automation/fleet-config/.venv/Scripts/python.exe ~/.claude/hooks/notify_complete.py --kind batch  --passed 2 --total 3
@@ -45,6 +46,13 @@ create`` output). The helper will use that URL directly and look up the title
 via the absolute URL — which works regardless of the caller's CWD. Without
 ``--pr-url`` the helper falls back to a CWD-relative ``gh pr view <N>`` lookup,
 which fails silently when CWD is not the project repo.
+
+Pass ``--repo owner/name`` whenever the issue (or PR-by-number) being pinged
+does not necessarily live in the caller's CWD repo — e.g. a skill that just
+filed or acted on an issue in an explicitly-named repo. It is threaded onto
+the ``gh issue view`` / ``gh pr view`` call as ``-R owner/name`` so the lookup
+targets the right repo regardless of CWD. Omitting it preserves today's
+CWD-relative inference exactly.
 
 For ``--kind audit`` pass ``--comment-url`` (the GitHub comment permalink posted
 by ``/audit-fleet``) and ``--summary`` (e.g. "3 audited, 2 issues filed"). The
@@ -140,30 +148,33 @@ def lookup(
     pr: Optional[str],
     pr_url: Optional[str] = None,
     comment_url: Optional[str] = None,
+    repo: Optional[str] = None,
 ) -> Tuple[Optional[str], Optional[str]]:
     """Best-effort ``(title, url)`` from GitHub for this ping.
 
     PR-linking kinds: if ``pr_url`` is supplied the URL is used as-is and the
-    title is looked up via the absolute URL (works from any CWD). Without
-    ``pr_url`` falls back to a CWD-relative ``gh pr view <N>`` which fails
-    silently when the caller is not inside the project repo. Issue-linking kinds
-    always use a CWD-relative ``gh issue view`` lookup. Audit kind returns the
-    comment_url directly with no title lookup. ``(None, None)`` on any gh /
-    network error so the message still goes out link-less.
+    title is looked up via the absolute URL (works from any CWD, ``repo`` is
+    irrelevant there). Without ``pr_url`` falls back to a ``gh pr view <N>``
+    lookup, and issue-linking kinds use ``gh issue view <N>`` — both CWD-relative
+    unless ``repo`` (``owner/name``) is supplied, in which case it is passed as
+    ``-R repo`` so the lookup targets the right repo regardless of CWD. Audit
+    kind returns the comment_url directly with no title lookup. ``(None, None)``
+    on any gh / network error so the message still goes out link-less.
     """
     if kind in ("audit", "learning"):
         return None, comment_url
+    repo_args = ["-R", repo] if repo else []
     if kind in _PR_KINDS:
         if pr_url:
             # Absolute URL: works from any directory.
             data = gh_json(["pr", "view", pr_url, "--json", "title"])
             return data.get("title"), pr_url
         if pr:
-            data = gh_json(["pr", "view", str(pr), "--json", "title,url"])
+            data = gh_json(["pr", "view", str(pr), *repo_args, "--json", "title,url"])
             return data.get("title"), data.get("url")
         return None, None
     if issue:
-        data = gh_json(["issue", "view", str(issue), "--json", "title,url"])
+        data = gh_json(["issue", "view", str(issue), *repo_args, "--json", "title,url"])
         return data.get("title"), data.get("url")
     return None, None
 
@@ -262,6 +273,12 @@ def main(argv: Optional[List[str]] = None) -> int:
         dest="comment_url",
         help="Full GitHub comment permalink, for audit / learning. Linked directly in the ping.",
     )
+    parser.add_argument(
+        "--repo",
+        help="Repo the --issue / --pr lives in, as owner/name. Passed as `-R` to the "
+             "gh issue view / gh pr view lookup so it works regardless of the caller's "
+             "CWD. Omit to keep today's CWD-relative inference.",
+    )
     parser.add_argument("--summary", help="One concise summary line, for start/audit/learning/design.")
     parser.add_argument("--passed", help="Passed count, for batch.")
     parser.add_argument("--total", help="Total count, for batch.")
@@ -282,6 +299,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         title, url = lookup(
             args.kind, args.issue, args.pr,
             pr_url=args.pr_url, comment_url=getattr(args, "comment_url", None),
+            repo=args.repo,
         )
 
     text = build_message(
