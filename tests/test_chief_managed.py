@@ -25,7 +25,18 @@ from check_harness import CheckHarness  # noqa: E402
 _h = CheckHarness()
 check = _h.check
 
-NOW = datetime(2026, 7, 27, 12, 0, 0, tzinfo=timezone.utc)
+# Anchored to the real clock, deliberately — NOT a pinned instant (fleet-config#493).
+# `is_managed()` reads back through `prune_rows(read_rows(...))` with no `now=`, so it
+# always judges freshness against the *real* current time and the 24h TTL. A hardcoded
+# NOW therefore ages out: the four "is this marker live" assertions below passed on the
+# day the test was written and began failing ~24h later, leaving the acceptance gate
+# standing red at 2/341. Freshness assertions must be relative to now for the same
+# reason the code they exercise is.
+#
+# Determinism is not lost: every assertion that depends on a *specific* elapsed
+# interval still passes an explicit `now=` (see `stale_now` below), which is the part
+# that genuinely needs to be time-independent. Do not re-pin this to a literal date.
+NOW = datetime.now(timezone.utc)
 
 
 tmp = Path(tempfile.mkdtemp(prefix="chief_managed_"))
