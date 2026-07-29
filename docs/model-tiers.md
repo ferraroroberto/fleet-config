@@ -67,6 +67,38 @@ parallel doc.
 Same as Codex: no verified model/effort convention, no known background
 fan-out surface in this repo today. Serial/manual fallback, same as above.
 
+### Grok (Grok Build)
+
+Verified against grok 0.2.114 by probing the CLI itself, not from docs alone.
+
+| Tier | Model | Effort | Execution shape |
+|---|---|---|---|
+| `easy` | `grok-4.5` | `low` | full autonomy |
+| `hard` | `grok-4.5` | `high` | build-and-stop for human review |
+| `extreme` | `grok-4.5` | `high` (ceiling) | rare escalation; human-reviewed by construction |
+
+One model, tiered by **reasoning effort** rather than by model id — the local
+install advertises a single `grok-4.5` whose menu exposes `low`/`medium`/`high`,
+defaulting to `high`. Effort is settable both in the TUI and headless
+(`grok -p --effort <level>`), which makes Grok the only non-Claude host where
+the tier ladder is actually *enforceable* today rather than aspirational.
+
+**`hard` and `extreme` deliberately resolve to the same effort.** Grok's docs list
+a canonical ladder up to `xhigh`/`max`, but this model does not advertise those
+levels and the CLI **rejects them at argument-parse time** — `--effort xhigh` exits
+non-zero with `unknown effort level 'xhigh'; use one of: high, medium, low`
+(measured, not read). So `high` is the ceiling here, and `extreme` buys no extra
+reasoning: what still separates the two tiers is the *execution shape*, which was
+always the point (see "The three tiers" above — the review gate exists because the
+work is consequential, not because the model is expensive). Revisit if a future
+model id advertises more.
+
+**Background fan-out is available but unverified.** Grok exposes `spawn_subagent`
+plus `SubagentStart`/`SubagentStop` hooks, so a scatter-gather skill is plausible
+here — but no fleet skill has been driven through it, so the Codex/Pi
+serial-fallback rule stands until someone verifies it. The ≤3-concurrent-Opus cap
+is a Claude-specific server-side limiter and does **not** apply to Grok.
+
 ### Antigravity
 
 No skills surface at all today (see `README.md`'s cross-agent capability matrix

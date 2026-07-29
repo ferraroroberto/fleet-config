@@ -234,6 +234,14 @@ def upsert_from_payload(
     process carries no ``APP_LAUNCHER_AGENT`` — true for a Codex/Pi session
     opened outside App Launcher, which would otherwise misreport as
     ``claude`` (the historical default, kept for Claude's own callers).
+
+    Attribution precedence (fleet-config#491):
+    ``APP_LAUNCHER_AGENT`` → the payload's own harness hint → ``default_agent``.
+    The launcher-injected value still always wins (#345). The middle term is new:
+    a Grok session reaches this module through Claude's *own* hook wiring (Grok
+    scans ``~/.claude/settings.json`` by default), so without it every Grok row
+    would be stamped ``claude`` — fabricating an agent identity, exactly the
+    class of confident-wrong answer the capability matrix exists to prevent.
     """
     session_id = payload.get("session_id")
     if not isinstance(session_id, str) or not session_id:
@@ -245,7 +253,11 @@ def upsert_from_payload(
     launcher_session_id = (
         os.environ.get("APP_LAUNCHER_SESSION_ID", "").strip() or None
     )
-    agent = os.environ.get("APP_LAUNCHER_AGENT", "").strip().lower() or default_agent
+    agent = (
+        os.environ.get("APP_LAUNCHER_AGENT", "").strip().lower()
+        or _lib.payload_agent(payload)
+        or default_agent
+    )
     upsert(
         session_id,
         status=status,

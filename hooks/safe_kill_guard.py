@@ -95,12 +95,16 @@ def main() -> None:
         _lib.allow()
 
     # 1) Blanket python kills - dispatch by shell so an `echo` of a kill string
-    #    in the other shell doesn't false-positive.
+    #    in the other shell doesn't false-positive. A harness with a single,
+    #    shell-agnostic terminal tool (Grok) gets *both* sets: we cannot observe
+    #    which shell it will use, and a missed blanket kill costs far more than
+    #    an over-eager block on an echoed kill string (fleet-config#491).
     tn = _lib.tool_name(payload)
+    ambiguous = _lib.shell_is_ambiguous(payload)
     patterns: list[str] = list(COMMON_BLANKET_KILL)
-    if tn == "PowerShell":
+    if tn == "PowerShell" or ambiguous:
         patterns.extend(POWERSHELL_BLANKET_KILL)
-    elif tn == "Bash":
+    if tn == "Bash" or ambiguous:
         patterns.extend(BASH_BLANKET_KILL)
 
     for pattern in patterns:
@@ -131,7 +135,7 @@ def main() -> None:
         )
 
     # 4) Port-scoped kills against protected ports - PowerShell-only patterns
-    targeted = _scan_port_kills(cmd) if tn == "PowerShell" else []
+    targeted = _scan_port_kills(cmd) if (tn == "PowerShell" or ambiguous) else []
     if targeted:
         reg = _lib.load_registry()
         forbidden = set(reg.globals.never_kill_ports)

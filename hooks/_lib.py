@@ -54,6 +54,170 @@ PROJECTS_TOML_ENV_VAR = "CLAUDE_HOOKS_PROJECTS_TOML"
 NO_WINDOW = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
 
 
+# ------------------------------------------- foreign-harness payload normalization
+
+# Grok Build (xAI's CLI) scans `~/.claude/settings.json` for hooks by default
+# (`[compat.claude] hooks = true`), so every hook in this directory already runs
+# inside a Grok session — verified live against grok 0.2.114: its debug log
+# reports `hooks: loaded from global source source=...settings.json count=19`
+# and then actually executes them. But Grok's stdin envelope is **camelCase**
+# (`hookEventName` / `toolName` / `toolInput`) where Claude Code's is snake_case,
+# and its event *values* are lower_snake (`pre_tool_use`) where Claude's are
+# PascalCase (`PreToolUse`). The result was a double mismatch that made the hooks
+# fire and silently do nothing: 6 of 7 guards A/B-tested blocked under a Claude
+# payload and allowed the identical dangerous command under a Grok one, while
+# still looking healthy in `/hooks` (fleet-config#491).
+#
+# Normalizing here — the one entry point every hook already routes through —
+# fixes all of them at once, rather than duplicating a translation in each hook
+# or shipping a parallel Grok adapter per hook. A payload that is already in
+# Claude shape is returned **unchanged and identical** (same object), so this is
+# a strict pass-through for Claude Code and cannot alter existing behaviour.
+
+AGENT_HINT_KEY = "_fleet_agent"
+SHELL_AMBIGUOUS_KEY = "_fleet_shell_ambiguous"
+
+# Grok exposes exactly one shell tool, which can run PowerShell *or* bash syntax
+# (nothing stops it invoking `bash -c`). Claude Code splits `Bash` and
+# `PowerShell` into separate tools, and `safe_kill_guard` relies on that split to
+# avoid false-positiving on an `echo` of the other shell's kill string. Rather
+# than guess a shell we cannot observe, normalization flags the ambiguity and the
+# one guard that discriminates widens to both rule sets — per the fleet rule that
+# a check which cannot establish a fact must say so rather than fold it into the
+# passing state.
+_SHELL_AGNOSTIC_TOOLS = {"run_terminal_command", "run_terminal_cmd"}
+
+# Grok's lower_snake event values → Claude Code's PascalCase names.
+_GROK_EVENTS = {
+    "session_start": "SessionStart",
+    "user_prompt_submit": "UserPromptSubmit",
+    "pre_tool_use": "PreToolUse",
+    "post_tool_use": "PostToolUse",
+    "permission_denied": "PermissionDenied",
+    "notification": "Notification",
+    "stop": "Stop",
+    "subagent_start": "SubagentStart",
+    "subagent_stop": "SubagentStop",
+    "pre_compact": "PreCompact",
+    "post_compact": "PostCompact",
+    "session_end": "SessionEnd",
+}
+
+# Grok's internal tool ids → the Claude tool names every matcher and guard here
+# is written against. Grok's own `matcher` aliasing goes the other way (it maps
+# `Bash` → `run_terminal_command` so a Claude matcher fires); this completes the
+# round trip so the hook *body* sees the name it expects.
+#
+# `search_replace` → `Write`, not `Edit`, and the choice is load-bearing. Grok
+# collapses Claude's `Edit`/`Write`/`MultiEdit` into that one tool, so any single
+# mapping loses a distinction some guard may rely on. Surveying the actual call
+# sites decides it: four hooks accept the whole `{Edit, Write, MultiEdit}` family
+# (`py_syntax_check`, `hub_bypass_warn`, `browser_stealth_lint`,
+# `branch_before_edit_guard`), exactly one demands a specific member —
+# `docs_dated_filename_guard`, which requires `Write` — and **none** requires
+# `Edit`. So `Write` satisfies all five and `Edit` would silently disarm the
+# dated-docs guard under Grok.
+_GROK_TOOLS = {
+    "run_terminal_command": "Bash",
+    "run_terminal_cmd": "Bash",
+    "read_file": "Read",
+    "search_replace": "Write",
+    "grep": "Grep",
+    "list_dir": "Glob",
+    "web_search": "WebSearch",
+    "spawn_subagent": "Task",
+}
+
+# camelCase → snake_case for the envelope fields hooks here actually read.
+# Anything else falls through the generic converter below, so a field xAI adds
+# later still arrives under a predictable name instead of vanishing.
+_GROK_KEYS = {
+    "hookEventName": "hook_event_name",
+    "sessionId": "session_id",
+    "toolName": "tool_name",
+    "toolInput": "tool_input",
+    "toolResult": "tool_response",
+    "toolUseId": "tool_use_id",
+    "transcriptPath": "transcript_path",
+    "workspaceRoot": "workspace_root",
+    "permissionMode": "permission_mode",
+    "stopHookActive": "stop_hook_active",
+    "lastAssistantMessage": "last_assistant_message",
+}
+
+_CAMEL_BOUNDARY = re.compile(r"(?<!^)(?=[A-Z])")
+
+# The harness whose payload this process is currently handling, set by
+# `normalize_payload()`. A hook is a one-payload, one-shot process, so a module
+# global is the whole lifetime — this exists so `block()` can speak the calling
+# harness's refusal dialect without threading the payload through the ~40
+# `_lib.block(...)` call sites across the hooks directory.
+_ACTIVE_AGENT: Optional[str] = None
+
+
+def _camel_to_snake(key: str) -> str:
+    return _CAMEL_BOUNDARY.sub("_", key).lower()
+
+
+def normalize_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
+    """Translate a foreign-harness hook payload into Claude Code's shape.
+
+    Claude Code payloads (and the Pi adapter's ``{"event": ...}`` envelope) are
+    returned **unchanged** — same object, no copy — so this is a no-op for every
+    caller that existed before fleet-config#491. Only a payload carrying Grok's
+    ``hookEventName`` key is rewritten; that key is the reliable tell, since
+    Grok sends it on every event and Claude Code never does.
+
+    The rewritten payload also carries an :data:`AGENT_HINT_KEY` entry naming
+    the originating harness, so :mod:`session_state` can attribute the row to
+    ``grok`` instead of silently defaulting to ``claude`` (the latent
+    mis-attribution the compat shim would otherwise cause).
+    """
+    global _ACTIVE_AGENT
+
+    if not isinstance(payload, dict) or "hookEventName" not in payload:
+        return payload
+
+    _ACTIVE_AGENT = "grok"
+    out: Dict[str, Any] = {}
+    for key, value in payload.items():
+        out[_GROK_KEYS.get(key) or _camel_to_snake(key)] = value
+
+    event = str(out.get("hook_event_name") or "")
+    # Grok fires a second, observe-only Stop at session end (`reason` is
+    # "channel_closed"/"shutdown", not "end_turn") *after* SessionEnd has already
+    # fired. Mapping that to Claude's `Stop` would resurrect the row SessionEnd
+    # just deleted, stranding a dead session on the Board as `needs-you` until
+    # the 24h prune. It has no Claude equivalent, so it maps to a name no hook
+    # matches and stays inert. (grok docs, user-guide/10-hooks.md.)
+    reason = out.get("reason")
+    if event == "stop" and isinstance(reason, str) and reason and reason != "end_turn":
+        out["hook_event_name"] = "StopAtSessionEnd"
+    else:
+        out["hook_event_name"] = _GROK_EVENTS.get(event, event)
+
+    raw_tool = out.get("tool_name")
+    if isinstance(raw_tool, str) and raw_tool:
+        out["tool_name"] = _GROK_TOOLS.get(raw_tool, raw_tool)
+        if raw_tool in _SHELL_AGNOSTIC_TOOLS:
+            out[SHELL_AMBIGUOUS_KEY] = True
+
+    out[AGENT_HINT_KEY] = "grok"
+    return out
+
+
+def payload_agent(payload: Dict[str, Any]) -> Optional[str]:
+    """The harness that produced this payload, when normalization identified one."""
+    hint = payload.get(AGENT_HINT_KEY)
+    return hint if isinstance(hint, str) and hint else None
+
+
+def shell_is_ambiguous(payload: Dict[str, Any]) -> bool:
+    """True when the payload's shell tool could be running either PowerShell or
+    bash, so a shell-discriminating rule must apply both sets rather than pick."""
+    return payload.get(SHELL_AMBIGUOUS_KEY) is True
+
+
 # --------------------------------------------------------------------------- I/O
 
 
@@ -62,6 +226,9 @@ def read_stdin_json() -> Dict[str, Any]:
 
     Returns an empty dict if stdin is empty or unparseable — that lets the
     hook short-circuit to "allow" rather than crash inside Claude's tool loop.
+
+    A non-Claude harness's payload is translated into Claude's shape first (see
+    :func:`normalize_payload`), so every hook downstream reads one vocabulary.
     """
     raw = sys.stdin.read()
     if not raw or not raw.strip():
@@ -72,11 +239,28 @@ def read_stdin_json() -> Dict[str, Any]:
         return {}
     if not isinstance(data, dict):
         return {}
-    return data
+    return normalize_payload(data)
 
 
 def block(reason: str) -> "NoReturn":
-    """Exit 2 with a single-line reason on stderr → Claude treats it as a block."""
+    """Refuse the tool call, in whatever dialect the calling harness understands.
+
+    Claude Code blocks on **exit 2 with the reason on stderr**, and that stays
+    the contract here. Grok nominally accepts exit 2 as well, but a live
+    grok 0.2.114 session showed the code arriving at its runner as ``1`` — which
+    Grok treats as a *hook failure*, and hook failures fail open. The guard
+    printed its refusal and the dangerous command ran anyway: the worst possible
+    shape, a block that reports success while protecting nothing
+    (fleet-config#491).
+
+    Grok's documented escape hatch is that for ``PreToolUse`` a ``deny``
+    decision on **stdout is honored regardless of exit code**, so a Grok-sourced
+    payload also gets the JSON decision. Claude Code never reaches that branch —
+    it is gated on the agent :func:`normalize_payload` identified — so Claude's
+    stdout stays clean and its behaviour is byte-for-byte unchanged.
+    """
+    if _ACTIVE_AGENT == "grok":
+        print(json.dumps({"decision": "deny", "reason": reason}), flush=True)
     print(reason, file=sys.stderr, flush=True)
     sys.exit(2)
 

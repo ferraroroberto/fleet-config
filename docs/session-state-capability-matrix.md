@@ -1,18 +1,24 @@
 # Fleet Board session-state capability matrix
 
 `sessions-state.json` (`hooks/session_state.py`, fleet-config#91) is the one
-writer behind the app-launcher Board's "what needs me now" column. Three
+writer behind the app-launcher Board's "what needs me now" column. Four
 agents write rows into it today, each through its own event surface — this
 is the per-agent map of which semantic states each can actually *prove*
 without inferring from process age, transcript text, or directory alone
 (explicitly out of scope, fleet-config#349).
 
-| Semantic state | Claude Code | Codex | Pi |
-|---|---|---|---|
-| `working` | `UserPromptSubmit` hook | `UserPromptSubmit` hook | `input` extension event |
-| `needs-you` | `Stop` hook, or the `Notification` hook's permission-prompt piggyback (`notify_on_idle.py`) | `Stop` hook, or `PermissionRequest` hook (the Codex analog of Claude's permission-prompt piggyback) | `agent_settled` extension event ("fires when Pi will not continue running automatically" — the closest available analog to Claude's `Stop`) |
-| `idle` | `Notification` hook's idle-nag piggyback (`notify_on_idle.py`) | not available — Codex exposes no idle-nag-shaped event today | not available — Pi's docs state no event distinguishes idle from active work |
-| row removal on session end | `SessionEnd` hook | not available — Codex's hook vocabulary (`SessionStart, SubagentStart, PreToolUse, PermissionRequest, PostToolUse, PreCompact, PostCompact, UserPromptSubmit, SubagentStop, Stop`) has no session-end-shaped event; a Codex row ages out via the writer's existing 24h prune, same as any hard-killed session | `session_shutdown` extension event |
+| Semantic state | Claude Code | Codex | Pi | Grok |
+|---|---|---|---|---|
+| `working` | `UserPromptSubmit` hook | `UserPromptSubmit` hook | `input` extension event | `UserPromptSubmit` hook, reached through Grok's own Claude-settings compat scan (see below) — **verified live** |
+| `needs-you` | `Stop` hook, or the `Notification` hook's permission-prompt piggyback (`notify_on_idle.py`) | `Stop` hook, or `PermissionRequest` hook (the Codex analog of Claude's permission-prompt piggyback) | `agent_settled` extension event ("fires when Pi will not continue running automatically" — the closest available analog to Claude's `Stop`) | `Stop` hook — **verified live** |
+| `idle` | `Notification` hook's idle-nag piggyback (`notify_on_idle.py`) | not available — Codex exposes no idle-nag-shaped event today | not available — Pi's docs state no event distinguishes idle from active work | **not proven.** Grok *does* expose `Notification` and `PermissionDenied`, so the signal exists in principle — but `notify_on_idle.py`'s classifier is written against Claude's notification sub-type vocabulary and has not been verified against Grok's payload, so nothing is written. Degrades to the Board's `unknown` rather than being guessed. |
+| row removal on session end | `SessionEnd` hook | not available — Codex's hook vocabulary (`SessionStart, SubagentStart, PreToolUse, PermissionRequest, PostToolUse, PreCompact, PostCompact, UserPromptSubmit, SubagentStop, Stop`) has no session-end-shaped event; a Codex row ages out via the writer's existing 24h prune, same as any hard-killed session | `session_shutdown` extension event | `SessionEnd` hook — **verified live** |
+
+"Verified live" above means exactly that: a real `grok -p` session against
+grok 0.2.114, polled at 60 ms, produced the transition
+`working` → `needs-you` → row deleted, every row carrying `agent: "grok"`.
+The `idle` cell stays unproven on purpose — an unverified state is recorded as
+unavailable, never inferred.
 
 ## Why the gaps are safe
 
@@ -37,12 +43,28 @@ code on either side of the join.
   event rather than duplicating the atomic-write/prune logic in TypeScript —
   `session_state.py` documents itself as the sole writer, and this keeps
   that true for all three agents.
+- **Grok** — *no adapter module at all*, deliberately. Grok scans
+  `~/.claude/settings.json` for hooks by default (`[compat.claude] hooks`), so
+  `session_state.py` is already wired into Grok's `UserPromptSubmit` / `Stop` /
+  `SessionEnd` through Claude's own entry. What was missing was not plumbing but
+  translation: Grok's stdin envelope is camelCase with lower_snake event values
+  (`hookEventName: "user_prompt_submit"`) where Claude's is snake_case with
+  PascalCase (`hook_event_name: "UserPromptSubmit"`), so the writer saw an
+  unrecognized event and silently wrote nothing. `_lib.normalize_payload()`
+  translates once, at the single `read_stdin_json()` entry point every hook
+  shares (fleet-config#491). A fourth adapter would have duplicated wiring that
+  already existed.
 
-Both adapters pass a `default_agent` (`"codex"` / `"pi"`) into
-`session_state.upsert_from_payload()`, which only applies when the process
-carries no `APP_LAUNCHER_SESSION_ID`/`APP_LAUNCHER_AGENT` (a session opened
-outside App Launcher) — a launcher-injected agent value always wins, exactly
-as it already does for Claude (fleet-config#345).
+The Codex and Pi adapters pass a `default_agent` (`"codex"` / `"pi"`) into
+`session_state.upsert_from_payload()`; Grok instead carries its identity in the
+normalized payload itself. Attribution precedence is `APP_LAUNCHER_AGENT` →
+payload harness hint → `default_agent` → `claude`, so a launcher-injected agent
+value always wins, exactly as it already does for Claude (fleet-config#345), and
+a session opened outside App Launcher still reports its real harness. That middle
+term is load-bearing precisely because Grok arrives through *Claude's* own
+wiring: without it, every external Grok row would confidently claim to be a
+Claude session — a fabricated identity of exactly the kind this matrix exists to
+prevent.
 
 ## Composing with existing notifications
 
@@ -64,3 +86,20 @@ Both CLIs skip turn-boundary hooks in their non-interactive/print modes
 (Pi) paths are verified by unit tests plus the officially documented payload
 schema, not by a live one-shot trigger — a real interactive session is the
 next spot-check if this ever needs re-confirming.
+
+**Grok is the exception**: unlike Codex and Pi, it fires the full turn-boundary
+set in headless `grok -p` mode, so every claimed cell above was confirmed
+end-to-end against a live grok 0.2.114 session rather than from the schema.
+Two behaviours only that live run could have surfaced:
+
+- Grok fires a second, observe-only `Stop` at session end (`reason` is
+  `channel_closed`/`shutdown`) **after** `SessionEnd` has already fired. Taken at
+  face value it re-creates the row `SessionEnd` just deleted, stranding a dead
+  session on the Board as `needs-you` until the 24h prune. `normalize_payload()`
+  maps that fire to a name no hook matches, so it stays inert.
+- Grok's hook runner reported our exit code `2` as `1`, and it fails *open* on any
+  code other than 2 — so a guard printed its refusal and the dangerous command
+  ran anyway. Grok's documented escape hatch (a `deny` decision on stdout is
+  honored regardless of exit code) is what `_lib.block()` now also emits for a
+  Grok-sourced payload. A green unit test would never have caught this; only
+  watching a real session get blocked did.
