@@ -90,6 +90,20 @@ try:
         ref == "zzz-unprobed",
         f"candidates=() returns final_fallback even though 'main' exists (no probing occurred): got {ref!r}",
     )
+
+    # ---- run_git_checked: success returns stripped stdout, failure raises SystemExit ----
+    sha = git_run.run_git_checked(["-C", str(bare), "rev-parse", "HEAD"])
+    check(len(sha) == 40 and sha.strip() == sha,
+          f"run_git_checked: success returns the stripped stdout (a 40-char sha), got {sha!r}")
+
+    raised = False
+    try:
+        git_run.run_git_checked(["-C", str(bare), "rev-parse", "does-not-exist"])
+    except SystemExit as exc:
+        raised = True
+        check("git" in str(exc) and "failed" in str(exc),
+              f"run_git_checked: SystemExit message names the failed git command, got {exc!r}")
+    check(raised, "run_git_checked: a non-zero exit raises SystemExit instead of returning")
 finally:
     import shutil
     shutil.rmtree(tmp, ignore_errors=True)

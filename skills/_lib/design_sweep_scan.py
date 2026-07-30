@@ -37,9 +37,9 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-import audit_issue  # noqa: E402
 import design_lint  # noqa: E402
 import fleet_audit_scan  # noqa: E402
+import git_run  # noqa: E402
 
 
 def _token_css_files(root: Path) -> list[Path]:
@@ -113,7 +113,7 @@ def scan(root: str, only: str | None = None) -> dict:
             continue
 
         try:
-            remote = audit_issue._git(["-C", str(d), "remote", "get-url", "origin"])
+            remote = git_run.run_git_checked(["-C", str(d), "remote", "get-url", "origin"])
         except SystemExit:
             continue
         if not fleet_audit_scan.is_fleet_repo(remote):
