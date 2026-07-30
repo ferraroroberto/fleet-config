@@ -452,6 +452,7 @@ def main() -> int:
 
     failures = 0
     total_checks = len(cases)
+    skipped_checks = 0
 
     def run_unit(check_fn: Callable[[], Tuple[int, int]]) -> None:
         """Call one `_x_unit_checks()` function and fold its own
@@ -629,7 +630,12 @@ def main() -> int:
     run_unit(_codex_hooks_config_check)
 
     # ---- settings: live ~/.claude/settings.json ⊇ template hook wiring ----
-    run_unit(_settings_template_sync_check)
+    # Not run_unit: this check has a third state (skipped, when the live file
+    # is absent) that must never fold into total_checks/failures (fleet-config#501).
+    _stsc_f, _stsc_t, _stsc_s = _settings_template_sync_check()
+    failures += _stsc_f
+    total_checks += _stsc_t
+    skipped_checks += _stsc_s
 
     # ---- Windows console suppression on every runtime spawn (#399 / #412) ----
     run_unit(_no_window_unit_check)
@@ -638,7 +644,7 @@ def main() -> int:
     shutil.rmtree(tmp, ignore_errors=True)
 
     print()
-    print(f"Total: {total_checks} | Failed: {failures}")
+    print(f"Total: {total_checks} | Failed: {failures} | Skipped: {skipped_checks}")
     return 0 if failures == 0 else 1
 
 
@@ -1146,7 +1152,7 @@ def _config_map_check() -> Tuple[int, int]:
     return check.failures, check.total
 
 
-def _settings_template_sync_check() -> Tuple[int, int]:
+def _settings_template_sync_check() -> Tuple[int, int, int]:
     """Every hook wired in settings.template.json must also be wired in the live
     ~/.claude/settings.json.
 
@@ -1157,7 +1163,10 @@ def _settings_template_sync_check() -> Tuple[int, int]:
     template ⊆ live only: machine-local *extra* hooks are legitimate and don't
     fail. Skips gracefully (one line, exit 0) when the live file is absent, so
     it never breaks on a machine without it. Prints exactly one line either way
-    — always one check, whether skipped or run.
+    — always one check, whether skipped or run — but a skip is its own state:
+    it contributes to neither Total nor Failed, only to the separate Skipped
+    counter, so a run that couldn't verify the live file never reads identical
+    to one that actually verified it and passed (fleet-config#461, #501).
     """
     import re
 
@@ -1176,8 +1185,8 @@ def _settings_template_sync_check() -> Tuple[int, int]:
 
     live_path = Path.home() / ".claude" / "settings.json"
     if not live_path.exists():
-        print("OK    settings_sync: no live ~/.claude/settings.json (skipped)")
-        return 0, 1
+        print("SKIP  settings_sync: no live ~/.claude/settings.json (skipped)")
+        return 0, 0, 1
 
     template = wired(REPO / "settings.template.json")
     live = wired(live_path)
@@ -1185,7 +1194,7 @@ def _settings_template_sync_check() -> Tuple[int, int]:
     ok = not missing
     print(f"{'OK   ' if ok else 'FAIL '} settings_sync: template hooks all wired live "
           f"(missing: {missing or 'none'})")
-    return (0 if ok else 1), 1
+    return (0 if ok else 1), 1, 0
 
 
 # Directories whose Python is *runtime* code — it spawns executables under a

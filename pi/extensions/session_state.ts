@@ -23,7 +23,7 @@ function report(event: string, sessionId: string | undefined, cwd: string | unde
 		// Advisory-only, fire-and-forget: a reporting failure must never
 		// disturb the session, so stdout/stderr are ignored and any spawn
 		// error is swallowed rather than surfaced.
-		const child = spawn(PYTHON, [SCRIPT], { stdio: ["pipe", "ignore", "ignore"] });
+		const child = spawn(PYTHON, [SCRIPT], { stdio: ["pipe", "ignore", "ignore"], windowsHide: true });
 		child.on("error", () => {});
 		child.stdin.end(payload);
 	} catch {
