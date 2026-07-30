@@ -295,4 +295,72 @@ check(ai.ledger_decision(3, "abc", "abc", self_fix=True, significance=999999.0) 
 check(ai.ledger_decision(0, "abc", "abc", significance=0.0) == "SKIP",
       "ledger_decision: zero commits -> significance is irrelevant, rubric decides")
 
+# ---- _gh: retries once on a transient (5xx/timeout) failure, never on 4xx (fleet-config#506) ----
+
+class _FakeCompleted:
+    def __init__(self, returncode, stdout="", stderr=""):
+        self.returncode = returncode
+        self.stdout = stdout
+        self.stderr = stderr
+
+
+_original_run = ai._run
+_original_sleep = ai.time.sleep
+ai.time.sleep = lambda seconds: None  # skip the real backoff delay in tests
+_gh_calls = {"n": 0}
+
+
+def _fake_run(_expected_stderr, _fail_times):
+    def _run(args):
+        _gh_calls["n"] += 1
+        if _gh_calls["n"] <= _fail_times:
+            return _FakeCompleted(1, stderr=_expected_stderr)
+        return _FakeCompleted(0, stdout="ok-after-retry")
+    return _run
+
+
+_gh_calls["n"] = 0
+ai._run = _fake_run("HTTP 502: Bad Gateway (https://api.github.com/graphql)", 1)
+try:
+    result = ai._gh(["issue", "list"])
+    check(result == "ok-after-retry", "_gh retries once on a transient HTTP 5xx failure and returns")
+    check(_gh_calls["n"] == 2, "_gh made exactly two attempts for a one-time transient failure")
+finally:
+    ai._run = _original_run
+
+_gh_calls["n"] = 0
+ai._run = _fake_run("i/o timeout", 1)
+try:
+    result = ai._gh(["issue", "list"])
+    check(result == "ok-after-retry", "_gh retries once on a transient timeout failure and returns")
+finally:
+    ai._run = _original_run
+
+_gh_calls["n"] = 0
+ai._run = _fake_run("HTTP 401: Bad credentials", 99)
+try:
+    try:
+        ai._gh(["issue", "list"])
+        raised = False
+    except SystemExit:
+        raised = True
+    check(raised, "_gh does not retry a non-transient (4xx/auth) failure")
+    check(_gh_calls["n"] == 1, "_gh made exactly one attempt for a non-transient failure")
+finally:
+    ai._run = _original_run
+
+_gh_calls["n"] = 0
+ai._run = _fake_run("HTTP 503: Service Unavailable", 99)
+try:
+    try:
+        ai._gh(["issue", "list"])
+        raised = False
+    except SystemExit:
+        raised = True
+    check(raised, "_gh gives up after one retry if the failure is still transient")
+    check(_gh_calls["n"] == 2, "_gh caps at exactly one retry (two attempts total)")
+finally:
+    ai._run = _original_run
+    ai.time.sleep = _original_sleep
+
 _h.report_and_exit("test_audit_issue")

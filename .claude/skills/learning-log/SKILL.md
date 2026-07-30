@@ -46,7 +46,7 @@ It lists every fleet repo (`gh repo list`), reads each repo's merged PRs + close
 
 ### 2. Scatter — one Sonnet sub-agent per bucket
 
-For each `BUCKET=` line, dispatch a **background `Agent`** (`subagent_type: general-purpose`, `model: sonnet`) — all in parallel (Sonnet is exempt from the Opus cap). Each reads only its `bucket-<slug>.md` and EXTRACTS INSIGHTS in this exact format (so the aggregate is uniform):
+For each `BUCKET=` line, dispatch a **background `Agent`** (`run_in_background: true`, `subagent_type: general-purpose`, `model: sonnet`) — all in parallel (Sonnet is exempt from the Opus cap). Then, in this same turn, block on `TaskOutput` (`block: true`) for every dispatched task — do not end the turn to "wait for it". This orchestrator runs headless via `run-weekly.bat` with no wake-up mechanism: an unpolled background task is silently killed at the CLI's background-task ceiling and the run reports a false `exit 0` (`fleet-config#506`, the same gap `fleet-config#314` already closed for this skill's own gather/upsert calls, just never stated for this bucket fan-out). If a `TaskOutput` call times out before a task finishes, re-issue the same blocking call — the turn must never end while any bucket agent is still dispatched. Each reads only its `bucket-<slug>.md` and EXTRACTS INSIGHTS in this exact format (so the aggregate is uniform):
 
 ```
 ### <Bucket name>

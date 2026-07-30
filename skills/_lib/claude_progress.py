@@ -18,6 +18,12 @@ A stall watchdog kills the run and exits ``124`` if the stream goes silent for
 ``--stall-timeout`` seconds (default 45 minutes; ``0`` disables, and
 ``CLAUDE_PROGRESS_STALL_TIMEOUT`` sets the fleet-wide default). The flag is
 consumed here and never forwarded to ``claude``.
+
+Claude Code's own ``--print`` mode kills any sub-agents still in flight when a
+background-task ceiling elapses (currently 600s) and exits ``0`` anyway — a
+false success that looks identical to a clean run unless something reads
+stderr (fleet-config#506). This adapter watches for that stderr signature and
+exits ``125`` instead, even when the child process itself reported ``0``.
 """
 
 from __future__ import annotations
@@ -61,6 +67,20 @@ STALL_FLAG = "--stall-timeout"
 DEFAULT_STALL_TIMEOUT_SECONDS = 2700.0
 STALL_EXIT_CODE = 124
 
+# Claude Code's own background-task ceiling (currently 600s) kills any sub-agent
+# still in flight and exits 0 regardless — the exact false-success shape #314
+# already fixed for this adapter's own Bash/Monitor calls, just one layer up in
+# the child process itself (fleet-config#506). Detected by substring rather
+# than an exact-wording regex so a ceiling/wording tweak upstream doesn't
+# silently stop tripping this.
+KILL_SIGNATURE_TERMS = ("background tasks still running", "terminat")
+BACKGROUND_KILL_EXIT_CODE = 125
+
+# A burst of unknown-typed stream records right at shutdown is the secondary
+# symptom of the same kill — informational only, never fails a run by itself.
+UNKNOWN_BURST_WINDOW_SECONDS = 15.0
+UNKNOWN_BURST_THRESHOLD = 3
+
 _ANSI_RE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
 _SECRET_RE = re.compile(
     r"(?i)("
@@ -69,6 +89,12 @@ _SECRET_RE = re.compile(
     r"|(?:api[_-]?key|token|password|secret)\s*[:=]\s*[^\s,;]+"
     r")"
 )
+
+
+def _is_background_kill_signature(text: str) -> bool:
+    """True for the stderr line Claude prints when it kills in-flight tasks."""
+    lower = text.lower()
+    return all(term in lower for term in KILL_SIGNATURE_TERMS)
 
 
 def _configure_output() -> None:
@@ -127,8 +153,14 @@ class ProgressFormatter:
         self._assistant_texts: set[str] = set()
         self._malformed = 0
         self._unknown = 0
+        self._unknown_timestamps: list[float] = []
         self._result_error = False
         self._saw_result = False
+        self._saw_kill_signature = False
+
+    @property
+    def saw_kill_signature(self) -> bool:
+        return self._saw_kill_signature
 
     def _prefix(self) -> str:
         return f"[{_elapsed(self._clock() - self._started_at)}]"
@@ -151,11 +183,17 @@ class ProgressFormatter:
         with self._emit_lock:
             self._emit_raw(f"{self._prefix()} {message}")
 
+    def _mark_unknown(self) -> None:
+        self._unknown += 1
+        self._unknown_timestamps.append(self._clock())
+
     def emit_stderr(self, line: str) -> None:
         self._touch()
         clean = _one_line(line)
         if not clean:
             return
+        if _is_background_kill_signature(clean):
+            self._saw_kill_signature = True
         self.emit(f"⚠ Claude stderr: {clean}")
 
     def handle_line(self, line: str) -> None:
@@ -186,7 +224,7 @@ class ProgressFormatter:
         elif event_type in {"rate_limit_event", "prompt_suggestion"}:
             return
         else:
-            self._unknown += 1
+            self._mark_unknown()
 
     def _handle_system(self, event: dict[str, Any]) -> None:
         subtype = event.get("subtype")
@@ -206,13 +244,13 @@ class ProgressFormatter:
             summary = _tool_summary(event)
             self.emit(f"{label}{f' · {summary}' if summary else ''}")
             return
-        self._unknown += 1
+        self._mark_unknown()
 
     def _handle_assistant(self, event: dict[str, Any]) -> None:
         message = event.get("message")
         content = message.get("content") if isinstance(message, dict) else None
         if not isinstance(content, list):
-            self._unknown += 1
+            self._mark_unknown()
             return
         for block in content:
             if not isinstance(block, dict):
@@ -227,7 +265,7 @@ class ProgressFormatter:
             if block_type == "tool_use":
                 self._start_tool(block)
                 continue
-            self._unknown += 1
+            self._mark_unknown()
 
     def _start_tool(self, block: dict[str, Any]) -> None:
         tool_id = block.get("id")
@@ -241,11 +279,11 @@ class ProgressFormatter:
         message = event.get("message")
         content = message.get("content") if isinstance(message, dict) else None
         if not isinstance(content, list):
-            self._unknown += 1
+            self._mark_unknown()
             return
         for block in content:
             if not isinstance(block, dict) or block.get("type") != "tool_result":
-                self._unknown += 1
+                self._mark_unknown()
                 continue
             tool_id = block.get("tool_use_id")
             name = self._tools.pop(tool_id, "tool") if isinstance(tool_id, str) else "tool"
@@ -274,9 +312,23 @@ class ProgressFormatter:
                 "⚠ ignored "
                 f"{self._malformed} malformed and {self._unknown} unknown stream record(s)"
             )
-        failed = stalled or exit_code != 0 or self._result_error
+        now = self._clock()
+        recent_unknown = sum(
+            1 for seen_at in self._unknown_timestamps if now - seen_at <= UNKNOWN_BURST_WINDOW_SECONDS
+        )
+        if recent_unknown >= UNKNOWN_BURST_THRESHOLD:
+            self.emit(
+                f"⚠ burst of {recent_unknown} unknown stream record(s) near shutdown "
+                "— possible truncated/killed stream"
+            )
+        failed = stalled or exit_code != 0 or self._result_error or self._saw_kill_signature
         if stalled:
             status = "⏱ stalled"
+        elif self._saw_kill_signature:
+            status = (
+                "❌ failed · background tasks killed after timeout — orchestrator "
+                "likely ended its turn with agents in flight"
+            )
         else:
             status = "❌ failed" if failed else "✅ completed"
         result_note = " · no terminal result event" if not self._saw_result else ""
@@ -452,6 +504,8 @@ def run_process(
         watchdog.join(timeout=5)
     if stall_state["stalled"]:
         exit_code = STALL_EXIT_CODE
+    elif progress.saw_kill_signature and exit_code == 0:
+        exit_code = BACKGROUND_KILL_EXIT_CODE
     progress.finish(exit_code, stalled=stall_state["stalled"])
     return exit_code
 

@@ -191,6 +191,63 @@ check("❌ failed · exit 7" in process_output,
       "non-zero child exit is visible in the terminal milestone")
 
 
+# ---- background-task kill signature: false success at the 600s ceiling (fleet-config#506) ----
+
+kill_script = (
+    "import json,sys; "
+    "print(json.dumps({'type':'system','subtype':'init','claude_code_version':'test',"
+    "'model':'fixture'}), flush=True); "
+    "print('Background tasks still running after 600s; terminating', file=sys.stderr, flush=True); "
+    "sys.exit(0)"
+)
+kill_lines: list[str] = []
+kill_formatter = cp.ProgressFormatter(emit=kill_lines.append)
+kill_exit = cp.run_process(
+    [sys.executable, "-c", kill_script],
+    formatter=kill_formatter,
+)
+kill_output = "\n".join(kill_lines)
+check(kill_exit == cp.BACKGROUND_KILL_EXIT_CODE,
+      "a background-task kill signature forces a non-zero exit even though the child exited 0")
+check(kill_formatter.saw_kill_signature,
+      "the formatter records that it saw the kill signature")
+check("❌ failed" in kill_output and "background tasks killed after timeout" in kill_output,
+      "the terminal milestone names the kill-signature cause distinctly")
+
+# Unit-level check on the exact observed incident wording, independent of run_process.
+direct_lines: list[str] = []
+direct_formatter = cp.ProgressFormatter(emit=direct_lines.append)
+direct_formatter.emit_stderr("Background tasks still running after 600s; terminating")
+direct_formatter.finish(0)
+direct_output = "\n".join(direct_lines)
+check(direct_formatter.saw_kill_signature,
+      "emit_stderr detects the exact observed incident wording")
+check("❌ failed" in direct_output and "exit 0" in direct_output,
+      "finish() reports failed even when passed exit_code=0 directly")
+check("✅ completed" not in direct_output, "a killed run is never reported as completed")
+
+
+# ---- unknown-record burst near shutdown is a warning, never a failure by itself ----
+
+burst_lines: list[str] = []
+burst_formatter = cp.ProgressFormatter(emit=burst_lines.append, clock=lambda: 0.0)
+for _ in range(cp.UNKNOWN_BURST_THRESHOLD):
+    burst_formatter.handle_line(json.dumps({"type": "future_event"}))
+burst_formatter.finish(0)
+burst_output = "\n".join(burst_lines)
+check("burst of" in burst_output and "unknown stream record" in burst_output,
+      "a burst of unknown records near shutdown is flagged")
+check("✅ completed" in burst_output, "the burst warning alone does not fail a clean run")
+
+quiet_lines: list[str] = []
+quiet_formatter = cp.ProgressFormatter(emit=quiet_lines.append, clock=lambda: 0.0)
+for _ in range(cp.UNKNOWN_BURST_THRESHOLD - 1):
+    quiet_formatter.handle_line(json.dumps({"type": "future_event"}))
+quiet_formatter.finish(0)
+check("burst of" not in "\n".join(quiet_lines),
+      "fewer than the threshold of unknown records stays silent")
+
+
 # ---- stall watchdog: a silent run is killed, not left wedged (fleet-config#411) ----
 
 # The child leaves a grandchild holding the inherited stdout pipe and then goes

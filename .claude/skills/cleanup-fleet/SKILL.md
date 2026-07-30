@@ -50,6 +50,7 @@ If **no bucket** is given → run step 2's count query, then `AskUserQuestion` l
 - **One agent per repo, period.** Never spawn two agents against the same checkout.
 - **Never disturb in-progress work.** A repo that is dirty or off its default branch is skipped and reported — never stashed, never force-switched.
 - **Degrade, don't block** (so `easy`/`silent` can run unattended via `claude -p`): a per-repo failure is reported and skipped; only a pre-flight failure stops the whole run.
+- **In `easy`/`silent` mode, never background-and-wait.** An attended `hard`-mode run is a normal top-level Claude Code session, and the harness *does* re-invoke it as each background sub-agent completes (step 9's "stop and stand by" is correct there). But `easy`/`silent` mode is designed to run headless via `claude -p` (see the Notes' scheduling example) — a headless run has **no** wake-up mechanism at all, so stopping to "wait for the harness" in that mode silently kills the run: the CLI exits `0` immediately and every dispatched agent gets killed at the background-task ceiling with nothing collected (`fleet-config#506`, `fleet-config#314`). In `easy`/`silent` mode, step 9 must instead block on `TaskOutput` (`block: true`) for every in-flight agent within the same turn, re-issuing on timeout, and never end the turn until the selected-issue list is fully drained.
 
 ## Steps
 
@@ -205,9 +206,12 @@ try to "fix" the failure by guessing; just report.
 
 Substitute every `<…>` placeholder with the concrete value from steps 2–7.
 
-### 9. Confirm fan-out and stand by
+### 9. Confirm fan-out, then either stand by (attended) or poll in-turn (unattended)
 
-Print a single confirmation block listing every sub-agent dispatched (repo, #N, model, path) — and, if any hard-tier issues are still queued behind the Opus window (see step 8), note how many are pending. Then **stop** — do not poll, sleep, or check progress. The harness re-invokes you automatically as each background agent completes; on each Opus-tier completion, refill that window with the next pending issue (step 8) until the queue drains.
+Print a single confirmation block listing every sub-agent dispatched (repo, #N, model, path) — and, if any hard-tier issues are still queued behind the Opus window (see step 8), note how many are pending.
+
+- **`hard` mode (attended, a normal top-level session):** then **stop** — do not poll, sleep, or check progress. The harness re-invokes you automatically as each background agent completes; on each Opus-tier completion, refill that window with the next pending issue (step 8) until the queue drains.
+- **`easy`/`silent` mode (designed to also run headless via `claude -p`):** a headless run has no re-invocation to rely on, so instead **block on `TaskOutput` (`block: true`) for every in-flight agent within this same turn**, re-issuing on timeout; refill the window as each returns (step 8); never end the turn until every selected issue has a final status (`fleet-config#506`).
 
 ### 10. Aggregate as agents return, then the closing ping
 
