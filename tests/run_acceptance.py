@@ -39,33 +39,9 @@ from acceptance.architecture_guards import (  # noqa: E402
     _system_map_coverage_check,
     _system_map_whatchanged_check,
 )
+from acceptance.shared import _subprocess_unit_check  # noqa: E402
 from acceptance.spawn_scanner import _no_window_unit_check  # noqa: E402
-from acceptance.standalone_dispatch import (  # noqa: E402
-    _active_issue_unit_check,
-    _audit_issue_unit_check,
-    _browser_verify_unit_check,
-    _cert_drift_unit_check,
-    _chief_managed_unit_check,
-    _chief_ops_unit_check,
-    _claude_progress_unit_check,
-    _context_purge_check_unit_check,
-    _context_purge_gate_unit_check,
-    _deploy_coverage_unit_check,
-    _design_lint_unit_check,
-    _design_sweep_scan_unit_check,
-    _dirty_tree_check_unit_check,
-    _docs_shots_plan_unit_check,
-    _e2e_test_audit_unit_check,
-    _fleet_audit_scan_unit_check,
-    _git_run_unit_check,
-    _html_shot_unit_check,
-    _payload_normalization_unit_check,
-    _rate_gate_unit_check,
-    _ux_surface_unit_check,
-    _vendored_drift_unit_check,
-    _watchlist_unit_check,
-    _worktree_claim_unit_check,
-)
+from acceptance.standalone_dispatch import _STANDALONE_UNIT_CHECKS  # noqa: E402
 from acceptance.unit_checks import (  # noqa: E402
     _bash_cmdexe_syntax_guard_unit_checks,
     _block_askuserquestion_chief_unit_checks,
@@ -178,77 +154,13 @@ def main() -> int:
     # ---- branch_before_edit_guard: real temp git repos/worktrees x launcher env, target-path resolution (fleet-config#464) ----
     run_unit(_branch_before_edit_guard_unit_checks)
 
-    # ---- audit_issue helper pure-logic tests (skills/_lib) ----
-    run_unit(_audit_issue_unit_check)
-
-    # ---- fleet_audit_scan helper pure-logic tests (skills/_lib) ----
-    run_unit(_fleet_audit_scan_unit_check)
-
-    # ---- design_sweep_scan helper pure-logic tests (skills/_lib) ----
-    run_unit(_design_sweep_scan_unit_check)
-
-    # ---- worktree_claim helper pure-logic tests (skills/_lib) ----
-    run_unit(_worktree_claim_unit_check)
-
-    # ---- active_issue helper + issue-workflow lifecycle wiring ----
-    run_unit(_active_issue_unit_check)
-
-    # ---- claude_progress stream parser + scheduled-wrapper wiring ----
-    run_unit(_claude_progress_unit_check)
-
-    # ---- ux_surface helper pure-logic tests (skills/_lib) ----
-    run_unit(_ux_surface_unit_check)
-
-    # ---- e2e_test_audit helper pure-logic tests (skills/_lib, fleet-config#406) ----
-    run_unit(_e2e_test_audit_unit_check)
-
-    # ---- html_shot helper pure-logic tests (skills/_lib, fleet-config#96) ----
-    run_unit(_html_shot_unit_check)
-
-    # ---- docs_shots_plan helper pure-logic tests (skills/_lib, fleet-config#93) ----
-    run_unit(_docs_shots_plan_unit_check)
-
-    # ---- browser_verify helper pure-logic tests (skills/_lib) ----
-    run_unit(_browser_verify_unit_check)
-
-    # ---- cert_drift helper pure-logic tests (skills/_lib) ----
-    run_unit(_cert_drift_unit_check)
-
-    # ---- context-purge check.py pure-logic tests (.claude/skills/context-purge) ----
-    run_unit(_context_purge_check_unit_check)
-
-    # ---- context-purge gate.py ledger pure-logic tests ----
-    run_unit(_context_purge_gate_unit_check)
-
-    # ---- design_lint helper pure-logic tests (skills/_lib) ----
-    run_unit(_design_lint_unit_check)
-
-    # ---- rate_gate helper pure-logic tests (skills/_lib) ----
-    run_unit(_rate_gate_unit_check)
-
-    # ---- chief_ops helper pure-logic tests (skills/_lib, fleet-config#445) ----
-    run_unit(_chief_ops_unit_check)
-
-    # ---- chief_managed helper pure-logic tests (skills/_lib, fleet-config#443) ----
-    run_unit(_chief_managed_unit_check)
-
-    # ---- dirty_tree_check helper pure-logic tests (skills/_lib) ----
-    run_unit(_dirty_tree_check_unit_check)
-
-    # ---- git_run helper pure-logic tests (skills/_lib, fleet-config#485) ----
-    run_unit(_git_run_unit_check)
-
-    # ---- foreign-harness payload normalization (fleet-config#491) ----
-    run_unit(_payload_normalization_unit_check)
-
-    # ---- deploy_coverage helper pure-logic tests (skills/_lib, fleet-config#459) ----
-    run_unit(_deploy_coverage_unit_check)
-
-    # ---- vendored_drift helper pure-logic tests (skills/_lib) ----
-    run_unit(_vendored_drift_unit_check)
-
-    # ---- sota-watch watchlist.py pure-logic tests (.claude/skills/sota-watch) ----
-    run_unit(_watchlist_unit_check)
+    # ---- standalone pure-logic test-file dispatch: one row per suite in
+    # acceptance/standalone_dispatch.py's table -- new suite = one row added
+    # there, no new wrapper/import/registration here (fleet-config#505) ----
+    for _label, _test_file, _why in _STANDALONE_UNIT_CHECKS:
+        f, t = _subprocess_unit_check(_label, _test_file)
+        failures += f
+        total_checks += t
 
     # ---- learning-log report.py pure helpers (.claude/skills/learning-log) ----
     run_unit(_learning_log_unit_checks)
