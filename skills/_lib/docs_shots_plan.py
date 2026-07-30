@@ -51,10 +51,9 @@ from typing import Any, Dict, List, Optional
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import git_run  # noqa: E402
 from ux_surface import matches_any  # noqa: E402
+from utf8_stdio import ensure_utf8_stdio  # noqa: E402
 
-if hasattr(sys.stdout, "reconfigure"):  # UTF-8 even when stdout is captured (cp1252 fallback)
-    sys.stdout.reconfigure(encoding="utf-8")  # type: ignore[union-attr]
-    sys.stderr.reconfigure(encoding="utf-8")  # type: ignore[union-attr]
+ensure_utf8_stdio()
 
 MANIFEST_REL_PATH = "docs/screenshots/manifest.json"
 README_MARKER_START = "<!-- docs-shots:start -->"

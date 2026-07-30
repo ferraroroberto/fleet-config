@@ -126,10 +126,9 @@ import chief_managed  # noqa: E402
 import dirty_tree_check  # noqa: E402
 import fleet_repo_scan  # noqa: E402
 from no_window import NO_WINDOW  # noqa: E402
+from utf8_stdio import ensure_utf8_stdio  # noqa: E402
 
-if hasattr(sys.stdout, "reconfigure"):  # UTF-8 even when stdout is captured (cp1252 fallback)
-    sys.stdout.reconfigure(encoding="utf-8")  # type: ignore[union-attr]
-    sys.stderr.reconfigure(encoding="utf-8")  # type: ignore[union-attr]
+ensure_utf8_stdio()
 
 DEFAULT_BASE_URL = "https://127.0.0.1:8445"
 DEFAULT_OWNER = "ferraroroberto"

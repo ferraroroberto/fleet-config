@@ -41,6 +41,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import audit_issue  # noqa: E402
+import git_run  # noqa: E402
 
 
 def is_fleet_repo(remote_url: str | None) -> bool:
@@ -53,11 +54,14 @@ def is_fleet_repo(remote_url: str | None) -> bool:
 
 
 def _default_branch(repo_path: str) -> str | None:
-    try:
-        ref = audit_issue._git(["-C", repo_path, "symbolic-ref", "--short", "refs/remotes/origin/HEAD"])
-    except SystemExit:
+    """Bare branch name (e.g. ``main``), no candidate probing on failure --
+    routed through the shared `git_run.resolve_default_branch_ref` resolver
+    with `candidates=()` to reproduce that pre-existing symbolic-ref-only
+    contract (fleet-config#500)."""
+    ref = git_run.resolve_default_branch_ref(Path(repo_path), candidates=(), final_fallback="")
+    if not ref:
         return None
-    return ref.split("/")[-1] if ref else None
+    return ref[len("origin/"):] if ref.startswith("origin/") else ref
 
 
 def _current_branch(repo_path: str) -> str | None:

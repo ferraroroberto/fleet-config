@@ -89,10 +89,9 @@ from typing import Callable, Optional, Tuple
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import git_run  # noqa: E402
 from no_window import NO_WINDOW  # noqa: E402
+from utf8_stdio import ensure_utf8_stdio  # noqa: E402
 
-if hasattr(sys.stdout, "reconfigure"):  # UTF-8 even when stdout is captured (cp1252 fallback)
-    sys.stdout.reconfigure(encoding="utf-8")  # type: ignore[union-attr]
-    sys.stderr.reconfigure(encoding="utf-8")  # type: ignore[union-attr]
+ensure_utf8_stdio()
 
 LOCK_NAME = "issue-claim.lock"
 META_NAME = "meta.json"
@@ -251,12 +250,13 @@ def lock_dir_for(repo: Path) -> Path:
 
 
 def main_ref(repo: Path) -> str:
-    """origin's default branch, e.g. 'origin/main'. Falls back to origin/main."""
-    res = _git(repo, "symbolic-ref", "refs/remotes/origin/HEAD", check=False)
-    ref = res.stdout.strip()
-    if res.returncode == 0 and ref:
-        return ref.replace("refs/remotes/", "", 1)
-    return "origin/main"
+    """origin's default branch, e.g. 'origin/main'. Falls back to origin/main.
+
+    Routed through the shared `git_run.resolve_default_branch_ref` resolver
+    (fleet-config#500); `candidates=()` + `final_fallback="origin/main"`
+    reproduce this helper's own pre-existing symbolic-ref-only contract.
+    """
+    return git_run.resolve_default_branch_ref(repo, candidates=(), final_fallback="origin/main")
 
 
 def branch_exists_on_remote(repo: Path, branch: str) -> bool:
