@@ -119,10 +119,20 @@ Process the `web_apps` list through a **bounded concurrency window of up to 4
 Sonnet sub-agents** (one per repo). This window is a token-pacing default, not a
 rate limiter — Sonnet is exempt from the ≤3-Opus cap. Dispatch up to 4
 background `Agent` calls (`run_in_background: true`,
-`subagent_type: "general-purpose"`, **`model: "sonnet"`**); each time one
-returns and its report is recorded, dispatch the next repo — never more than 4
-in flight. No git worktrees: `/design-sync` (report-only) never edits a tree, so
-agents in different repo directories cannot collide.
+`subagent_type: "general-purpose"`, **`model: "sonnet"`**) to fill the window,
+then **stay in this same turn and block on `TaskOutput` (`block: true`) for
+every task now in flight** — do not end the turn to "wait for it". This
+orchestrator runs headless via `run-weekly.bat` with no wake-up mechanism (see
+"Never background a tool call in this skill" above); an unpolled background
+task is silently killed at the CLI's background-task ceiling and the run
+reports a false `exit 0` (`fleet-config#506`, the same gap `fleet-config#314`
+closed for this skill's own Python-sweep/digest calls, just never stated for
+this specific `Agent`-dispatch loop). If a `TaskOutput` call times out before a
+task finishes, re-issue the same blocking call. As each task returns, record
+its report and immediately dispatch the next repo — never more than 4 in
+flight, and the turn must never end while any task is still dispatched. No
+git worktrees: `/design-sync` (report-only) never edits a tree, so agents in
+different repo directories cannot collide.
 
 Prompt template (substitute `<name>` / `<path>`):
 
@@ -156,7 +166,9 @@ Keep the window full: each time a sub-agent returns and its report is recorded,
 immediately dispatch the next pending repo (up to the 4-in-flight cap). Print a
 one-line progress marker per repo as it completes (e.g.
 `[3/8] home-automation — DRIFT (4)`) so a scheduled run's console shows forward
-motion.
+motion. This entire loop runs inside one turn: block on `TaskOutput` for the
+in-flight window, refill on each return, repeat until `web_apps` is drained —
+the turn never ends with a sub-agent still dispatched (`fleet-config#506`).
 
 ### 4. Collect results
 

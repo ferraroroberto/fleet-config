@@ -41,6 +41,7 @@ import re
 import subprocess
 import sys
 import tempfile
+import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -370,10 +371,26 @@ def _run(args: list[str]) -> subprocess.CompletedProcess:
     )
 
 
-def _gh(args: list[str]) -> str:
+# A 5xx / timeout-shaped gh failure is the server or the network, not our
+# request — retrying once after a short backoff clears it in practice (seen
+# for pdf-to-markdown during a fleet sweep, fleet-config#506). A genuine 4xx
+# (auth, not-found, bad args) is never transient, so it still fails on the
+# first attempt.
+_TRANSIENT_GH_RE = re.compile(
+    r"(?i)(http\s*5\d\d|timed?\s*out|timeout|connection\s*reset|i/o\s*timeout|"
+    r"deadline\s*exceeded|temporarily\s*unavailable|EOF)"
+)
+_GH_RETRY_BACKOFF_SECONDS = 2.0
+
+
+def _gh(args: list[str], *, _retried: bool = False) -> str:
     r = _run(args)
     if r.returncode != 0:
-        sys.stderr.write(r.stderr or "")
+        stderr = r.stderr or ""
+        if not _retried and _TRANSIENT_GH_RE.search(stderr):
+            time.sleep(_GH_RETRY_BACKOFF_SECONDS)
+            return _gh(args, _retried=True)
+        sys.stderr.write(stderr)
         raise SystemExit(f"gh {' '.join(args)} failed (exit {r.returncode})")
     return (r.stdout or "").strip()
 

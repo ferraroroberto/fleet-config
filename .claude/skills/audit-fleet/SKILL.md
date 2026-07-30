@@ -147,10 +147,23 @@ and branch on `DECISION`:
 
 - **`OK` / `UNKNOWN`** → dispatch the next repo. Dispatch up to 3 background
   `Agent` calls (`run_in_background: true`, `subagent_type: "general-purpose"`,
-  `model: "opus"`); each time one returns and its report is recorded, dispatch
-  the next repo from the to-audit list — never more than **3 in flight**. Fewer
-  than 3 repos left → dispatch just that many. No git worktrees: `/codebase-audit`
-  is read-only and only files issues, so agents in different repo directories
+  `model: "opus"`) to fill the window, then **stay in this same turn and block
+  on `TaskOutput` (`block: true`) for every task now in flight** — do not end
+  the turn to "wait for it". This orchestrator runs headless via
+  `run-weekly.bat` with no wake-up mechanism (see "Never background a tool
+  call in this skill" above); a background task nobody is polling in-turn just
+  gets silently killed at the CLI's 600s background-task ceiling, and the run
+  reports a false `exit 0` success — exactly what happened on the 2026-07-30
+  11:00 scheduled run (0/10 repos actually audited, `fleet-config#506`; the
+  same class of gap `fleet-config#314` closed for this skill's own
+  Bash/Monitor calls, just never stated for this specific `Agent`-dispatch
+  loop). If a `TaskOutput` call times out before a task finishes, re-issue the
+  same blocking call — never move on with a task still unresolved. As each
+  task returns, record its report and immediately dispatch the next repo from
+  the to-audit list to refill the window — never more than **3 in flight**,
+  and the turn must never end while any task is still dispatched. Fewer than 3
+  repos left → dispatch just that many. No git worktrees: `/codebase-audit` is
+  read-only and only files issues, so agents in different repo directories
   cannot collide.
 - **`PAUSE`** → stop dispatching new sub-agents (let in-flight ones finish),
   wait via the `Monitor` tool's until-loop pattern against the printed
@@ -214,7 +227,10 @@ immediately dispatch the next pending repo (up to the 3-in-flight cap, subject
 to the `rate_gate.py check` above). Print a one-line progress marker per repo as
 it completes (e.g. `[3/12] photo-ocr — AUDITED`) so a scheduled run's console
 shows forward motion. Do **not** sleep between dispatches when the gate reads
-`OK` — refill the window the moment a slot frees.
+`OK` — refill the window the moment a slot frees. This entire loop runs inside
+one turn: block on `TaskOutput` for the in-flight window, refill on each
+return, repeat until the to-audit list is drained — the turn never ends with a
+sub-agent still dispatched (`fleet-config#506`).
 
 ### 4. Collect results
 
@@ -469,6 +485,14 @@ One concise block: the plan line from step 2, per-repo results, where the digest
   resolves to Opus again as of 2026-07-16; widening the window beyond 3 would
   need to respect that cap — `docs/model-tiers.md`). No worktrees (audits
   don't collide). Don't read repo source in the orchestrator.
+- **Block on `TaskOutput` for every in-flight sub-agent, same turn, always.**
+  Dispatching with `run_in_background: true` and then ending the turn to "wait
+  for it" is not a valid pattern anywhere in this skill — a headless `claude
+  -p` run has no wake-up mechanism, so an unpolled background task is silently
+  killed at the CLI's background-task ceiling and the run reports a false
+  `exit 0` (`fleet-config#506`). Step 3's dispatch loop blocks in-turn on every
+  task it launches and never returns control until the to-audit list is fully
+  drained.
 - **Degrade, don't block.** Built for unattended `claude -p`. A per-repo failure
   is reported and skipped; only a pre-flight failure stops the whole run. Never
   wait on an interactive prompt.
