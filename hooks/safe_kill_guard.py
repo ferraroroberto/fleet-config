@@ -11,7 +11,7 @@ Triggers on `PreToolUse` for `Bash` and `PowerShell`. Blocks:
   * Port-scoped kills targeting a port in `[global].never_kill_ports`
     (sister hubs like :8000 LLM hub, :8090 whisper, :8446 session-host).
 
-  * `git push --force[-with-lease]` to `main` or `master`.
+  * `git push --force[-with-lease]` (or the short `-f`) to `main` or `master`.
 
   * Git safety bypass flags: `--no-verify`, `--no-gpg-sign`,
     `-c commit.gpgsign=false`.
@@ -42,8 +42,8 @@ POWERSHELL_BLANKET_KILL = (
     r"\bGet-Process\b[^\n|;]*\bpython[w\*]*\b[^\n]*\|\s*Stop-Process",
 )
 BASH_BLANKET_KILL = (
-    r"\bpkill\b[^\n]*\bpython\b",
-    r"\bkillall\b[^\n]*\bpython\b",
+    r"\bpkill\b[^\n]*\bpython(?:3|w)?\b",
+    r"\bkillall\b[^\n]*\bpython(?:3|w)?\b",
 )
 COMMON_BLANKET_KILL = (
     r"\btaskkill\b[^\n]*\s/IM\s+pythonw?\.exe",
@@ -57,9 +57,12 @@ GIT_BYPASS_PATTERNS = (
 )
 
 # ----- git force-push to main/master -----
-# Matches `git push ... --force` or `--force-with-lease` AND a main/master target.
+# Matches `git push ... --force`, `--force-with-lease`, or the short `-f` AND a
+# main/master target. The trailing `\b` on `-f` keeps it from matching inside a
+# longer token (e.g. `--foo`) — the boundary fails whenever the next char is
+# itself a word char.
 GIT_FORCE_PUSH_RE = re.compile(
-    r"\bgit\s+push\b(?=[^\n;|&]*--force(?:-with-lease)?\b)"
+    r"\bgit\s+push\b(?=[^\n;|&]*(?:--force(?:-with-lease)?|-f)\b)"
     r"(?=[^\n;|&]*\b(?:origin|upstream|github)\b)?"
     r"(?=[^\n;|&]*\b(?:main|master)\b)",
     re.IGNORECASE,

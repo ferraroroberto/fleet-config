@@ -41,17 +41,28 @@ if ($data.model -and $data.model.display_name) {
 }
 
 # --- context window % ---
-# Color-coded against the 500k auto-compact line (CLAUDE_AUTOCOMPACT_PCT_OVERRIDE=50):
-#   green <30, yellow 30-34, red >=35 — red means "wrap up before auto-compact fires at 50%".
+# Color-coded against the live auto-compact line, read from
+# $env:CLAUDE_AUTOCOMPACT_PCT_OVERRIDE (falls back to Claude Code's own ~83%
+# default when unset/unparseable) — red fires 15 points before that threshold,
+# yellow 20 points before, so the indicator self-recalibrates whenever the
+# override changes instead of silently desyncing (fleet-config#503).
+$autocompact_pct = 83
+$parsed_override = 0
+if ($env:CLAUDE_AUTOCOMPACT_PCT_OVERRIDE -and [int]::TryParse($env:CLAUDE_AUTOCOMPACT_PCT_OVERRIDE, [ref]$parsed_override) -and $parsed_override -gt 0) {
+    $autocompact_pct = $parsed_override
+}
+$red_threshold = $autocompact_pct - 15
+$yellow_threshold = $autocompact_pct - 20
+
 # used_percentage is null early in a session and right after a /compact; omit then.
 $ctx_str = ''
 $used = $data.context_window.used_percentage
 if ($used -ne $null) {
     $pct = [int][math]::Round($used)
     $esc = [char]27
-    if     ($pct -ge 35) { $col = "$esc[31m" }   # red
-    elseif ($pct -ge 30) { $col = "$esc[33m" }   # yellow
-    else                 { $col = "$esc[32m" }   # green
+    if     ($pct -ge $red_threshold)    { $col = "$esc[31m" }   # red
+    elseif ($pct -ge $yellow_threshold) { $col = "$esc[33m" }   # yellow
+    else                                 { $col = "$esc[32m" }   # green
     $ctx_str = "$col${pct}%c$esc[0m"
 }
 

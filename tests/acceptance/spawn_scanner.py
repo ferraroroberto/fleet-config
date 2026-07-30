@@ -26,10 +26,57 @@ _SPAWN_SCAN_DIRS = ("hooks", "skills", ".claude/skills")
 _SPAWN_ATTRS = {"run", "Popen", "call", "check_output", "check_call"}
 
 
+def _resolves_to_no_window(node) -> bool:
+    """True if a `creationflags=` value provably resolves to the shared
+    `NO_WINDOW` constant (directly, via attribute access, or OR'd into a
+    combined-flags expression like `CREATE_NEW_PROCESS_GROUP | _lib.NO_WINDOW`
+    for a long-lived child, cf. CLAUDE.md's `_no_window_flags()` pattern).
+
+    Deliberately conservative: a bare `0`, a re-inlined
+    `subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0` ternary (the
+    exact drift CLAUDE.md forbids), or any other expression that isn't provably
+    `NO_WINDOW` does NOT resolve, so it's reported as an offender rather than
+    silently trusted (fleet-config#503)."""
+    import ast
+
+    if isinstance(node, ast.Name):
+        return node.id == "NO_WINDOW"
+    if isinstance(node, ast.Attribute):
+        return node.attr == "NO_WINDOW"
+    if isinstance(node, ast.BinOp) and isinstance(node.op, ast.BitOr):
+        return _resolves_to_no_window(node.left) or _resolves_to_no_window(node.right)
+    return False
+
+
+def _missing_creationflags_in_tree(tree, label: str) -> "list[str]":
+    """Every `subprocess.<spawn>(...)` call in a parsed `tree` that either omits
+    `creationflags=` entirely or passes a value that doesn't provably resolve to
+    `NO_WINDOW`, as `label:line` strings. Shared by the real file scan below and
+    by the in-memory unit-test cases so both exercise the identical logic."""
+    import ast
+
+    offenders: list[str] = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        fn = node.func
+        # `from subprocess import Popen` would evade this Attribute match;
+        # `_spawn_import_style_offenders` below asserts nobody uses it.
+        if not (isinstance(fn, ast.Attribute) and fn.attr in _SPAWN_ATTRS
+                and isinstance(fn.value, ast.Name) and fn.value.id == "subprocess"):
+            continue
+        kw = next((kw for kw in node.keywords if kw.arg == "creationflags"), None)
+        if kw is not None and _resolves_to_no_window(kw.value):
+            continue
+        offenders.append(f"{label}:{node.lineno}")
+    return offenders
+
+
 def _spawn_sites_missing_flags() -> "list[str]":
     """Every `subprocess.<spawn>(...)` under `_SPAWN_SCAN_DIRS` that omits
-    `creationflags=`, as `path:line` strings. Parsed with `ast`, so a commented-
-    out or string-literal example can't produce a false positive."""
+    `creationflags=` or passes a value that doesn't provably resolve to
+    `NO_WINDOW`, as `path:line` strings. Parsed with `ast`, so a commented-out or
+    string-literal example can't produce a false positive."""
     import ast
 
     offenders: list[str] = []
@@ -42,18 +89,7 @@ def _spawn_sites_missing_flags() -> "list[str]":
             except (OSError, SyntaxError) as exc:  # pragma: no cover - byte-compile catches these first
                 offenders.append(f"{py.relative_to(REPO).as_posix()}: unparseable ({exc})")
                 continue
-            for node in ast.walk(tree):
-                if not isinstance(node, ast.Call):
-                    continue
-                fn = node.func
-                # `from subprocess import Popen` would evade this Attribute match;
-                # `_spawn_import_style_offenders` below asserts nobody uses it.
-                if not (isinstance(fn, ast.Attribute) and fn.attr in _SPAWN_ATTRS
-                        and isinstance(fn.value, ast.Name) and fn.value.id == "subprocess"):
-                    continue
-                if any(kw.arg == "creationflags" for kw in node.keywords):
-                    continue
-                offenders.append(f"{py.relative_to(REPO).as_posix()}:{node.lineno}")
+            offenders.extend(_missing_creationflags_in_tree(tree, py.relative_to(REPO).as_posix()))
     return offenders
 
 
@@ -113,9 +149,37 @@ def _no_window_unit_check() -> Tuple[int, int]:
 
     offenders = _spawn_sites_missing_flags()
     check(f"no_window: every subprocess spawn in {', '.join(_SPAWN_SCAN_DIRS)} "
-          "passes creationflags",
+          "passes creationflags resolving to NO_WINDOW",
           not offenders,
-          "missing creationflags=NO_WINDOW at:\n" + "\n".join(offenders))
+          "missing/non-NO_WINDOW creationflags at:\n" + "\n".join(offenders))
+
+    # Negative cases (fleet-config#503): the matcher must reject a value that
+    # merely *has* the `creationflags` keyword but doesn't provably resolve to
+    # NO_WINDOW — `creationflags=0` and the exact re-inlined ternary CLAUDE.md
+    # forbids — while still accepting the two legitimate shapes.
+    import ast
+
+    negative_src = (
+        "import subprocess\n"
+        "import sys\n"
+        "subprocess.run(cmd, creationflags=0)\n"
+        "subprocess.run(cmd, creationflags=(subprocess.CREATE_NO_WINDOW if sys.platform == 'win32' else 0))\n"
+        "subprocess.run(cmd, creationflags=_lib.NO_WINDOW)\n"
+        "subprocess.Popen(cmd, creationflags=subprocess.CREATE_NEW_PROCESS_GROUP | _lib.NO_WINDOW)\n"
+        "subprocess.run(cmd)\n"
+    )
+    neg_offenders = _missing_creationflags_in_tree(ast.parse(negative_src), "synthetic")
+    neg_lines = {int(o.rsplit(":", 1)[1]) for o in neg_offenders}
+    check("no_window: creationflags=0 is reported as an offender",
+          3 in neg_lines, f"offending lines seen: {sorted(neg_lines)}")
+    check("no_window: re-inlined win32-ternary creationflags is reported as an offender",
+          4 in neg_lines, f"offending lines seen: {sorted(neg_lines)}")
+    check("no_window: creationflags=_lib.NO_WINDOW is NOT reported as an offender",
+          5 not in neg_lines, f"offending lines seen: {sorted(neg_lines)}")
+    check("no_window: combined CREATE_NEW_PROCESS_GROUP | _lib.NO_WINDOW is NOT reported as an offender",
+          6 not in neg_lines, f"offending lines seen: {sorted(neg_lines)}")
+    check("no_window: a spawn with no creationflags at all is reported as an offender",
+          7 in neg_lines, f"offending lines seen: {sorted(neg_lines)}")
 
     return check.failures, check.total
 
