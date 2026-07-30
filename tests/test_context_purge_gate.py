@@ -23,14 +23,11 @@ _spec.loader.exec_module(gate)
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")
 
-failures = 0
+sys.path.insert(0, str(REPO / "tests" / "_lib"))
+from check_harness import CheckHarness  # noqa: E402
 
-
-def ok(case: str, cond: bool) -> None:
-    global failures
-    print(f"{'OK   ' if cond else 'FAIL '} {case}")
-    if not cond:
-        failures += 1
+_h = CheckHarness()
+check = _h.check
 
 
 HASHES = {
@@ -40,48 +37,47 @@ HASHES = {
 
 # ---- render / parse round-trip ----
 block = gate.render_ledger_block(HASHES, "2026-07-07")
-ok("render: marker first line", block.startswith(gate.BLOCK_MARKER))
-ok("render: carries last-run-at", "last-run-at: 2026-07-07" in block)
+check(block.startswith(gate.BLOCK_MARKER), "render: marker first line")
+check("last-run-at: 2026-07-07" in block, "render: carries last-run-at")
 parsed = gate.parse_ledger_block(f"prose above\n\n{block}")
-ok("parse: round-trips every entry", parsed == HASHES)
-ok("parse: no block -> empty dict", gate.parse_ledger_block("no marker here") == {})
-ok("parse: last-run-at line is not an entry", "last-run-at" not in parsed)
+check(parsed == HASHES, "parse: round-trips every entry")
+check(gate.parse_ledger_block("no marker here") == {}, "parse: no block -> empty dict")
+check("last-run-at" not in parsed, "parse: last-run-at line is not an entry")
 
 # ---- diff ----
 current = dict(HASHES)
 to_purge, unchanged = gate.diff_ledger(current, HASHES)
-ok("diff: identical -> nothing to purge", to_purge == [] and len(unchanged) == 2)
+check(to_purge == [] and len(unchanged) == 2, "diff: identical -> nothing to purge")
 
 current["life-os/CLAUDE.md"] = "ffffffffffff"  # modified
 current["photo-ocr/CLAUDE.md"] = "eeeeeeeeeeee"  # never assessed
 to_purge, unchanged = gate.diff_ledger(current, HASHES)
-ok("diff: modified file re-enters to_purge", "life-os/CLAUDE.md" in to_purge)
-ok("diff: never-assessed file is to_purge", "photo-ocr/CLAUDE.md" in to_purge)
-ok("diff: untouched file stays unchanged", unchanged == ["fleet-config/global-CLAUDE.md"])
+check("life-os/CLAUDE.md" in to_purge, "diff: modified file re-enters to_purge")
+check("photo-ocr/CLAUDE.md" in to_purge, "diff: never-assessed file is to_purge")
+check(unchanged == ["fleet-config/global-CLAUDE.md"], "diff: untouched file stays unchanged")
 
 # ---- select_assessed (advance --only) ----
 # A fleet run is normally partial, so recording the whole surface would mark
 # never-read files as assessed and hide them from every future run.
 SURFACE = {"a/CLAUDE.md": "aaaaaaaaaaaa", "b/CLAUDE.md": "bbbbbbbbbbbb",
            "c/CLAUDE.md": "cccccccccccc"}
-ok("select: no --only -> whole surface", gate.select_assessed(SURFACE, None) == SURFACE)
-ok("select: --only narrows to the assessed files",
-   gate.select_assessed(SURFACE, ["a/CLAUDE.md", "c/CLAUDE.md"])
-   == {"a/CLAUDE.md": "aaaaaaaaaaaa", "c/CLAUDE.md": "cccccccccccc"})
-ok("select: unassessed file is left out (stays in next run's to_purge)",
-   "b/CLAUDE.md" not in gate.select_assessed(SURFACE, ["a/CLAUDE.md"]))
-ok("select: empty --only records nothing", gate.select_assessed(SURFACE, []) == {})
+check(gate.select_assessed(SURFACE, None) == SURFACE, "select: no --only -> whole surface")
+check(gate.select_assessed(SURFACE, ["a/CLAUDE.md", "c/CLAUDE.md"])
+      == {"a/CLAUDE.md": "aaaaaaaaaaaa", "c/CLAUDE.md": "cccccccccccc"},
+      "select: --only narrows to the assessed files")
+check("b/CLAUDE.md" not in gate.select_assessed(SURFACE, ["a/CLAUDE.md"]),
+      "select: unassessed file is left out (stays in next run's to_purge)")
+check(gate.select_assessed(SURFACE, []) == {}, "select: empty --only records nothing")
 try:
     gate.select_assessed(SURFACE, ["a/CLAUDE.md", "typo/CLAUDE.md"])
-    ok("select: unknown key raises", False)
+    check(False, "select: unknown key raises")
 except KeyError as exc:
-    ok("select: unknown key raises, naming it", "typo/CLAUDE.md" in str(exc))
+    check("typo/CLAUDE.md" in str(exc), "select: unknown key raises, naming it")
 
 # ---- hash shape ----
-ok("file_hash: 12 lowercase hex chars", len(gate.file_hash(b"x")) == 12
-   and all(c in "0123456789abcdef" for c in gate.file_hash(b"x")))
-ok("file_hash: content-sensitive", gate.file_hash(b"a") != gate.file_hash(b"b"))
+check(len(gate.file_hash(b"x")) == 12
+      and all(c in "0123456789abcdef" for c in gate.file_hash(b"x")),
+      "file_hash: 12 lowercase hex chars")
+check(gate.file_hash(b"a") != gate.file_hash(b"b"), "file_hash: content-sensitive")
 
-print()
-print(f"test_context_purge_gate: {'ALL PASS' if failures == 0 else f'{failures} FAILURE(S)'}")
-raise SystemExit(0 if failures == 0 else 1)
+_h.report_and_exit("test_context_purge_gate")

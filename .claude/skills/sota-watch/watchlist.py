@@ -21,7 +21,7 @@ unattended weekly run never needs a commit (same pattern as fleet-health's
 ledger). Override the directory with ``SOTA_WATCH_STATE_DIR`` (tests).
 Until an area is first marked, its ``verdict_date`` is the baseline.
 
-stdlib-only. Run with the repo venv:
+stdlib + the shared `skills/_lib/utf8_stdio` helper only. Run with the repo venv:
     E:/automation/fleet-config/.venv/Scripts/python.exe .claude/skills/sota-watch/watchlist.py due
 """
 
@@ -36,9 +36,10 @@ import tomllib
 from pathlib import Path
 from typing import Any, Dict, Optional
 
-if hasattr(sys.stdout, "reconfigure"):
-    sys.stdout.reconfigure(encoding="utf-8")
-    sys.stderr.reconfigure(encoding="utf-8")
+sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "skills" / "_lib"))
+from utf8_stdio import ensure_utf8_stdio  # noqa: E402
+
+ensure_utf8_stdio()
 
 WATCHLIST = Path(__file__).resolve().parent / "watchlist.toml"
 

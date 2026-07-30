@@ -49,12 +49,11 @@ def default_ref(repo_dir: Path) -> Optional[str]:
     Resolves ``origin/HEAD`` (e.g. ``origin/main``); falls back through common
     default-branch names. Uses remote-tracking refs so the result is
     independent of which branch the repo is checked out on, and needs no
-    network.
+    network. Routed through the shared `git_run.resolve_default_branch_ref`
+    resolver (fleet-config#500); `final_fallback=""` reproduces this helper's
+    own pre-existing "give up and return None" contract on top of it.
     """
-    head = git_run.run_git(["-C", str(repo_dir), "rev-parse", "--abbrev-ref", "origin/HEAD"])
-    if head.returncode == 0 and head.stdout.strip():
-        return head.stdout.strip()
-    for cand in ("origin/main", "origin/master", "main", "master"):
-        if git_run.run_git(["-C", str(repo_dir), "rev-parse", "--verify", "--quiet", cand]).returncode == 0:
-            return cand
-    return None
+    ref = git_run.resolve_default_branch_ref(
+        repo_dir, candidates=("origin/main", "origin/master", "main", "master"), final_fallback="",
+    )
+    return ref or None

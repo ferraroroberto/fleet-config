@@ -24,14 +24,11 @@ _spec.loader.exec_module(cp)
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")
 
-failures = 0
+sys.path.insert(0, str(REPO / "tests" / "_lib"))
+from check_harness import CheckHarness  # noqa: E402
 
-
-def ok(case: str, cond: bool) -> None:
-    global failures
-    print(f"{'OK   ' if cond else 'FAIL '} {case}")
-    if not cond:
-        failures += 1
+_h = CheckHarness()
+check = _h.check
 
 
 MERMAID = (
@@ -41,14 +38,14 @@ MERMAID = (
 BEFORE_MD = f"# Global\n\nLots of prose here.\n\n{MERMAID}\n\nMore prose.\n"
 
 # ---- marked blocks ----
-ok("marked block preserved byte-identical -> pass",
-   cp.check(BEFORE_MD, f"# Global\n\n{MERMAID}\n") == [])
-ok("marked block edited -> fail",
-   any("marked block" in f for f in cp.check(BEFORE_MD, BEFORE_MD.replace("flowchart LR", "flowchart TD"))))
-ok("marked block dropped -> fail",
-   any("marked block" in f for f in cp.check(BEFORE_MD, "# Global\n\nshort.\n")))
-ok("no marked blocks in before -> nothing to check",
-   cp.check("# plain\ntext\n", "# plain\n") == [])
+check(cp.check(BEFORE_MD, f"# Global\n\n{MERMAID}\n") == [],
+      "marked block preserved byte-identical -> pass")
+check(any("marked block" in f for f in cp.check(BEFORE_MD, BEFORE_MD.replace("flowchart LR", "flowchart TD"))),
+      "marked block edited -> fail")
+check(any("marked block" in f for f in cp.check(BEFORE_MD, "# Global\n\nshort.\n")),
+      "marked block dropped -> fail")
+check(cp.check("# plain\ntext\n", "# plain\n") == [],
+      "no marked blocks in before -> nothing to check")
 
 # ---- quoted triggers in frontmatter description ----
 SKILL_BEFORE = (
@@ -62,14 +59,14 @@ SKILL_AFTER_LOST = (
 )
 SKILL_AFTER_NO_DESC = "---\nname: foo\n---\n\n# foo\n"
 
-ok("all quoted triggers survive (prose reworded) -> pass",
-   cp.check(SKILL_BEFORE, SKILL_AFTER_OK) == [])
-ok("a quoted trigger lost -> fail",
-   any("trigger phrase" in f for f in cp.check(SKILL_BEFORE, SKILL_AFTER_LOST)))
-ok("description dropped entirely -> fail",
-   any("dropped entirely" in f for f in cp.check(SKILL_BEFORE, SKILL_AFTER_NO_DESC)))
-ok("plain file without frontmatter -> description rule not applied",
-   cp.check("no frontmatter here\n", "still none\n") == [])
+check(cp.check(SKILL_BEFORE, SKILL_AFTER_OK) == [],
+      "all quoted triggers survive (prose reworded) -> pass")
+check(any("trigger phrase" in f for f in cp.check(SKILL_BEFORE, SKILL_AFTER_LOST)),
+      "a quoted trigger lost -> fail")
+check(any("dropped entirely" in f for f in cp.check(SKILL_BEFORE, SKILL_AFTER_NO_DESC)),
+      "description dropped entirely -> fail")
+check(cp.check("no frontmatter here\n", "still none\n") == [],
+      "plain file without frontmatter -> description rule not applied")
 
 # Apostrophes are not quoting. Rewording prose around a possessive must not read
 # as a lost trigger, as long as every double-quoted phrase survives.
@@ -79,16 +76,14 @@ SKILL_APOSTROPHE_BEFORE = (
 SKILL_APOSTROPHE_AFTER = (
     '---\nname: foo\ndescription: Capture the machine\'s envelope, diffed weekly, e.g. "/foo".\n---\n\n# foo\n'
 )
-ok("possessives reworded, double-quoted triggers intact -> pass",
-   cp.check(SKILL_APOSTROPHE_BEFORE, SKILL_APOSTROPHE_AFTER) == [])
-ok("possessives reworded but a real trigger lost -> still fails",
-   any("trigger phrase" in f for f in cp.check(
-       SKILL_APOSTROPHE_BEFORE,
-       '---\nname: foo\ndescription: Capture the machine\'s envelope weekly.\n---\n\n# foo\n')))
+check(cp.check(SKILL_APOSTROPHE_BEFORE, SKILL_APOSTROPHE_AFTER) == [],
+      "possessives reworded, double-quoted triggers intact -> pass")
+check(any("trigger phrase" in f for f in cp.check(
+      SKILL_APOSTROPHE_BEFORE,
+      '---\nname: foo\ndescription: Capture the machine\'s envelope weekly.\n---\n\n# foo\n')),
+      "possessives reworded but a real trigger lost -> still fails")
 
 # ---- token estimate ----
-ok("est_tokens ~ chars/4", cp.est_tokens("x" * 400) == 100)
+check(cp.est_tokens("x" * 400) == 100, "est_tokens ~ chars/4")
 
-print()
-print(f"test_context_purge_check: {'ALL PASS' if failures == 0 else f'{failures} FAILURE(S)'}")
-raise SystemExit(0 if failures == 0 else 1)
+_h.report_and_exit("test_context_purge_check")
