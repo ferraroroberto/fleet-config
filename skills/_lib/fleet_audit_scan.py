@@ -66,7 +66,7 @@ def _default_branch(repo_path: str) -> str | None:
 
 def _current_branch(repo_path: str) -> str | None:
     try:
-        return audit_issue._git(["-C", repo_path, "symbolic-ref", "--short", "HEAD"])
+        return git_run.run_git_checked(["-C", repo_path, "symbolic-ref", "--short", "HEAD"])
     except SystemExit:
         return None
 
@@ -87,7 +87,7 @@ def scan(root: str, only: str | None = None, dry_run: bool = False) -> dict:
             continue
 
         try:
-            remote = audit_issue._git(["-C", str(d), "remote", "get-url", "origin"])
+            remote = git_run.run_git_checked(["-C", str(d), "remote", "get-url", "origin"])
         except SystemExit:
             continue
         if not is_fleet_repo(remote):
@@ -97,7 +97,7 @@ def scan(root: str, only: str | None = None, dry_run: bool = False) -> dict:
         repo_path = str(d)
 
         try:
-            status = audit_issue._git(["-C", repo_path, "status", "--porcelain"])
+            status = git_run.run_git_checked(["-C", repo_path, "status", "--porcelain"])
         except SystemExit as exc:
             results["errors"].append({"repo": name, "reason": str(exc)})
             continue
@@ -112,14 +112,14 @@ def scan(root: str, only: str | None = None, dry_run: bool = False) -> dict:
             continue
 
         try:
-            audit_issue._git(["-C", repo_path, "fetch", "origin"])
+            git_run.run_git_checked(["-C", repo_path, "fetch", "origin"])
         except SystemExit as exc:
             results["errors"].append({"repo": name, "reason": f"fetch failed: {exc}"})
             continue
 
         if not dry_run:
             try:
-                audit_issue._git(["-C", repo_path, "pull", "--ff-only"])
+                git_run.run_git_checked(["-C", repo_path, "pull", "--ff-only"])
             except SystemExit:
                 results["skipped"].append({"repo": name, "reason": "non-ff"})
                 continue

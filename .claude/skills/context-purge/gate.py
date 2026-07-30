@@ -54,7 +54,12 @@ FLEET_ROOT = REPO_ROOT.parent
 sys.path.insert(0, str(REPO_ROOT / "skills" / "_lib"))
 from no_window import NO_WINDOW  # noqa: E402
 
-AUDIT_ISSUE = Path.home() / ".claude" / "skills" / "_lib" / "audit_issue.py"
+# Repo-relative (fleet-config#502), matching every other _lib cross-reference
+# in the tree (e.g. .claude/skills/learning-log/gather.py's HELPER) — the
+# home-junction form would execute whatever's junctioned into ~/.claude
+# rather than the checkout this script itself lives in, so a run from one of
+# this repo's own <repo>-wt-N worktrees would silently use main's helper.
+AUDIT_ISSUE = REPO_ROOT / "skills" / "_lib" / "audit_issue.py"
 LEDGER_REPO = "ferraroroberto/fleet-config"
 KIND = "context-purge"
 TITLE = "context-purge ledger"

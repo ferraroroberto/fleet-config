@@ -45,6 +45,24 @@ def run_git(args: Sequence[str], *, check: bool = False) -> subprocess.Completed
     )
 
 
+def run_git_checked(args: Sequence[str]) -> str:
+    """Run `git <args>`; raise `SystemExit` on a non-zero exit, else return
+    stripped stdout.
+
+    The convenience wrapper every call site actually wants on top of
+    `run_git` — most fleet code doesn't want to inspect `.returncode` itself,
+    it wants "give me the output or blow up with a clear message." Was
+    `audit_issue.py`'s private `_git`, promoted here (fleet-config#502) so
+    `design_sweep_scan.py` / `fleet_audit_scan.py` reach a real public entry
+    point instead of a sibling module's underscore-prefixed name.
+    """
+    r = run_git(args)
+    if r.returncode != 0:
+        sys.stderr.write(r.stderr or "")
+        raise SystemExit(f"git {' '.join(args)} failed (exit {r.returncode})")
+    return (r.stdout or "").strip()
+
+
 def resolve_default_branch_ref(
     repo_path: Path,
     candidates: Sequence[str] = ("origin/main", "main", "master"),

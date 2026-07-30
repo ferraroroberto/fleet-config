@@ -383,28 +383,26 @@ _TRANSIENT_GH_RE = re.compile(
 _GH_RETRY_BACKOFF_SECONDS = 2.0
 
 
-def _gh(args: list[str], *, _retried: bool = False) -> str:
+def gh(args: list[str], *, _retried: bool = False) -> str:
+    """The `gh` shell-out — public (fleet-config#502): sibling helpers
+    (`design_sweep_scan.py`, `fleet_audit_scan.py`) already call across
+    module boundaries for the git half via `git_run.run_git_checked`; this
+    is the `gh` equivalent, promoted out of the module-private `_gh` so a
+    future cross-module call site has a real entry point instead of reaching
+    into a name Python conventions mark internal-only."""
     r = _run(args)
     if r.returncode != 0:
         stderr = r.stderr or ""
         if not _retried and _TRANSIENT_GH_RE.search(stderr):
             time.sleep(_GH_RETRY_BACKOFF_SECONDS)
-            return _gh(args, _retried=True)
+            return gh(args, _retried=True)
         sys.stderr.write(stderr)
         raise SystemExit(f"gh {' '.join(args)} failed (exit {r.returncode})")
     return (r.stdout or "").strip()
 
 
-def _git(args: list[str]) -> str:
-    r = git_run.run_git(args)
-    if r.returncode != 0:
-        sys.stderr.write(r.stderr or "")
-        raise SystemExit(f"git {' '.join(args)} failed (exit {r.returncode})")
-    return (r.stdout or "").strip()
-
-
 def _list_open(repo: str) -> list[dict]:
-    out = _gh([
+    out = gh([
         "issue", "list", "--repo", repo, "--state", "open",
         "--limit", "300", "--json", "number,title,body",
     ])
@@ -429,7 +427,7 @@ def cmd_get(repo: str, kind: str) -> None:
     keep, dupes = plan(_list_open(repo), kind)
     body = ""
     if keep is not None:
-        body = _gh(["issue", "view", str(keep), "--repo", repo, "--json", "body", "-q", ".body"])
+        body = gh(["issue", "view", str(keep), "--repo", repo, "--json", "body", "-q", ".body"])
     print(json.dumps({"number": keep, "body": body, "duplicates": dupes}))
 
 
@@ -445,17 +443,17 @@ def _upsert_issue(repo: str, kind: str, title: str, body: str, label: str | None
                   "--body-file", tmp, "--assignee", "@me"]
         if label:
             create += ["--label", label]
-        url = _gh(create)
+        url = gh(create)
     else:
         edit = ["issue", "edit", str(keep), "--repo", repo, "--title", title, "--body-file", tmp]
         if label:
             edit += ["--add-label", label]
-        _gh(edit)
-        url = _gh(["issue", "view", str(keep), "--repo", repo, "--json", "url", "-q", ".url"])
+        gh(edit)
+        url = gh(["issue", "view", str(keep), "--repo", repo, "--json", "url", "-q", ".url"])
         for n in dupes:
             _ensure_label(repo, "duplicate")
             _run(["issue", "edit", str(n), "--repo", repo, "--add-label", "duplicate"])
-            _gh([
+            gh([
                 "issue", "close", str(n), "--repo", repo,
                 "--comment",
                 f"Collapsed into #{keep} — one audit issue per type per repo "
@@ -470,7 +468,7 @@ def cmd_upsert(repo: str, kind: str, title: str, body: str, label: str | None) -
 
 
 def _fetch_merged_prs(repo: str) -> list[dict]:
-    out = _gh([
+    out = gh([
         "pr", "list", "--repo", repo, "--state", "merged", "--limit", "100",
         "--json", "number,mergeCommit,closingIssuesReferences,headRefName,additions,deletions",
     ])
@@ -491,12 +489,12 @@ def evaluate_repo(repo: str, repo_path: str, dry_run: bool = False) -> dict:
     if keep is None:
         return {"decision": "AUDIT", "reason": "no-ledger"}
 
-    body = _gh(["issue", "view", str(keep), "--repo", repo, "--json", "body", "-q", ".body"])
+    body = gh(["issue", "view", str(keep), "--repo", repo, "--json", "body", "-q", ".body"])
     ledger = parse_ledger(body)
     if ledger["sha"] is None or ledger["rubric"] is None:
         return {"decision": "AUDIT", "reason": "unparseable-ledger", "ledger_issue": keep}
 
-    commit_count = int(_git(["-C", repo_path, "rev-list", f"{ledger['sha']}..HEAD", "--count"]))
+    commit_count = int(git_run.run_git_checked(["-C", repo_path, "rev-list", f"{ledger['sha']}..HEAD", "--count"]))
     closed_issues: list[int] = []
     significance: float | None = None
 
@@ -526,7 +524,7 @@ def evaluate_repo(repo: str, repo_path: str, dry_run: bool = False) -> dict:
         # self-fix PR, which fails audit_only_churn closed for every such
         # repo. This makes the self-fix check work identically for
         # squash-merge and regular-merge repos.
-        commit_shas = _git(
+        commit_shas = git_run.run_git_checked(
             ["-C", repo_path, "rev-list", "--first-parent", f"{ledger['sha']}..HEAD"]
         ).splitlines()
         prs = _fetch_merged_prs(repo)
@@ -537,7 +535,7 @@ def evaluate_repo(repo: str, repo_path: str, dry_run: bool = False) -> dict:
             referenced |= {r["number"] for r in (pr.get("closingIssuesReferences") or [])}
         for n in referenced - managed:
             try:
-                view = json.loads(_gh(["issue", "view", str(n), "--repo", repo, "--json", "title,body"]))
+                view = json.loads(gh(["issue", "view", str(n), "--repo", repo, "--json", "title,body"]))
             except SystemExit:
                 continue
             if any(has_marker(view.get("body", ""), k) or title_matches(view.get("title", ""), k)
@@ -564,7 +562,7 @@ def evaluate_repo(repo: str, repo_path: str, dry_run: bool = False) -> dict:
     }
 
     if decision == "SKIP_SELF_FIX" and not dry_run:
-        head_sha = _git(["-C", repo_path, "rev-parse", "HEAD"])
+        head_sha = git_run.run_git_checked(["-C", repo_path, "rev-parse", "HEAD"])
         today = datetime.date.today().isoformat()
         ledger_body = (
             "Machine-readable ledger for `/codebase-audit`. Do not edit by hand — "
@@ -584,7 +582,7 @@ def evaluate_repo(repo: str, repo_path: str, dry_run: bool = False) -> dict:
             f"({closed_str}) — no organic change, ledger advanced without a "
             f"full re-read."
         )
-        _gh(["issue", "comment", str(keep), "--repo", repo, "--body", comment])
+        gh(["issue", "comment", str(keep), "--repo", repo, "--body", comment])
 
     return result
 

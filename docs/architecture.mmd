@@ -115,9 +115,11 @@ flowchart TB
   CONTEXTPURGE -->|compresses| gskills
   SCHEDULED -->|streams via| LIB
 
-  subgraph tests["tests/run_acceptance.py"]
-    TESTS["hook payload matrix + _lib unit tests +\nsystem-map / config-map drift guards"]
+  subgraph tests["tests/ — run_acceptance.py (thin dispatcher) + acceptance/ package (fleet-config#502)"]
+    TESTS["run_acceptance.py\nsums + prints the summary line"]
+    ACCPKG["acceptance/\nshared · hook_matrix · architecture_guards ·\nspawn_scanner · unit_checks · standalone_dispatch"]
+    TESTS --> ACCPKG
   end
-  TESTS --> HOOKFILES
-  TESTS --> LIB
-  TESTS --> ARCH
+  ACCPKG --> HOOKFILES
+  ACCPKG --> LIB
+  ACCPKG --> ARCH
