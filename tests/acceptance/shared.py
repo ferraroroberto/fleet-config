@@ -110,9 +110,9 @@ class _Checker:
 
 def _subprocess_unit_check(label: str, test_file: str) -> Tuple[int, int]:
     """Run a standalone pure-logic test file as a subprocess and report it as
-    one pass/fail check -- the shared body behind the `_x_unit_check` wrappers
-    that each point it at one focused file under tests/. Returns
-    (failures, total=1)."""
+    one pass/fail check -- the shared body every row of
+    `standalone_dispatch._STANDALONE_UNIT_CHECKS` points at one focused file
+    under tests/. Returns (failures, total=1)."""
     proc = subprocess.run(
         [PYTHON, str(REPO / "tests" / test_file)],
         capture_output=True, text=True, encoding="utf-8", errors="replace",
