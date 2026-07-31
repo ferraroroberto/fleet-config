@@ -43,11 +43,23 @@ the worktree right after the checkout is created.
 
 Subcommands:
 
-  acquire <repo-root> [--issue N] [--branch B] [--ttl-hours H]
+  acquire <repo-root> [--issue N] [--branch B] [--ttl-hours H] [--force-worktree]
       Atomically claim the primary checkout. Prints `MODE=primary` (work in
       place) or `MODE=worktree` (caller then calls setup-worktree). Reclaims a
       claim older than the TTL, or one whose recorded branch no longer exists
       (merged-and-deleted => leaked claim, self-heals on the next acquire).
+
+      `--force-worktree` skips the claim attempt entirely and always prints
+      `MODE=worktree` (fleet-config#515). The claim only protects against a
+      second *claiming session*; a live production process sitting in the same
+      directory — the launcher webapp, home-automation's tray, or fleet-config's
+      own hooks/ + skills/ junctioned into every live `~/.claude` — is not a
+      claim holder, so a first-and-only unattended agent legitimately wins
+      `MODE=primary` and edits files that a running app is serving. Unattended
+      fleet-fanout dispatch (cleanup-fleet, cleanup-fleet-all, codebase-audit's
+      security self-heal) therefore never works a primary checkout, for any
+      repo. Interactive single-session `/issue-start` keeps the default
+      claim-or-worktree behaviour.
 
   setup-worktree <repo-root> <issue-N> <branch>
       `git worktree add <repo>-wt-<N> -b <branch> <origin-main>` + junction the
@@ -405,6 +417,15 @@ def _resolve_repo(arg: str) -> Path:
 
 def cmd_acquire(args: argparse.Namespace) -> int:
     repo = _resolve_repo(args.repo_root)
+    if getattr(args, "force_worktree", False):
+        # No claim attempt at all: unattended fanout must never touch a primary
+        # checkout, even an unclaimed one (fleet-config#515 — a live app or a
+        # live junction is not a claim holder). Deliberately does not publish a
+        # claim either, so the primary stays free for a human session.
+        print("MODE=worktree")
+        print("# --force-worktree: primary checkout not eligible for unattended "
+              "fanout; caller must run setup-worktree", file=sys.stderr)
+        return 0
     lock = lock_dir_for(repo)
     meta = {
         "created": time.time(),
@@ -506,6 +527,9 @@ def main(argv: Optional[list] = None) -> int:
     a.add_argument("--issue", default=None)
     a.add_argument("--branch", default=None)
     a.add_argument("--ttl-hours", type=float, default=DEFAULT_TTL_HOURS)
+    a.add_argument("--force-worktree", action="store_true",
+                   help="never claim the primary; always print MODE=worktree "
+                        "(unattended fleet fanout, fleet-config#515)")
     a.set_defaults(func=cmd_acquire)
 
     s = sub.add_parser("setup-worktree", help="create the sibling worktree + junction .venv")

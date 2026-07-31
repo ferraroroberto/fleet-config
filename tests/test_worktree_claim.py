@@ -222,4 +222,57 @@ check(wc.owner_check({"issue": "473"}, "473", dirty=True)[0] is False,
       "owner_check: dirty tree beats a matching-issue claim -> refuse")
 
 
+
+# ---- acquire --force-worktree: unattended fanout never wins a primary (#515) ----
+#
+# The whole point is that it must NOT consult, publish, or reclaim a claim: a
+# live app or a live junction isn't a claim holder, so "is the claim free?" is
+# the wrong question for unattended dispatch. Assert MODE=worktree *and* that
+# the lock dir is untouched, which also proves the primary stays free for a
+# human session.
+
+force_base = Path(tempfile.mkdtemp(prefix="wc-force-"))
+try:
+    fake_repo = force_base / "repo"
+    fake_repo.mkdir()
+    fake_lock = force_base / "lock"
+
+    real_lock_dir_for = wc.lock_dir_for
+    real_try_acquire = wc.try_acquire
+    try_acquire_calls = []
+
+    wc.lock_dir_for = lambda repo: fake_lock  # noqa: E731
+    wc.try_acquire = lambda *a, **k: (try_acquire_calls.append(a) or ("primary", {}))  # noqa: E731
+
+    import argparse as _argparse
+    import contextlib as _contextlib
+    import io as _io
+
+    def _run_acquire(**kw) -> str:
+        ns = _argparse.Namespace(
+            repo_root=str(fake_repo), issue="515", branch="fix/515-x",
+            ttl_hours=wc.DEFAULT_TTL_HOURS, **kw)
+        buf = _io.StringIO()
+        with _contextlib.redirect_stdout(buf):
+            wc.cmd_acquire(ns)
+        return buf.getvalue()
+
+    out = _run_acquire(force_worktree=True)
+    check("MODE=worktree" in out, "acquire --force-worktree -> MODE=worktree (#515)")
+    check("MODE=primary" not in out,
+          "acquire --force-worktree never prints MODE=primary, even with a free claim (#515)")
+    check(try_acquire_calls == [],
+          "acquire --force-worktree short-circuits before try_acquire (no claim published) (#515)")
+    check(not fake_lock.exists(),
+          "acquire --force-worktree leaves the primary claim free for a human session (#515)")
+
+    out = _run_acquire(force_worktree=False)
+    check("MODE=primary" in out and len(try_acquire_calls) == 1,
+          "acquire without the flag keeps the default claim-or-worktree behaviour")
+finally:
+    wc.lock_dir_for = real_lock_dir_for
+    wc.try_acquire = real_try_acquire
+    shutil.rmtree(force_base, ignore_errors=True)
+
+
 _h.report_and_exit("test_worktree_claim")
