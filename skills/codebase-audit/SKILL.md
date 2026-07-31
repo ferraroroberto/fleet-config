@@ -464,7 +464,7 @@ repo has **no test surface at all** to add a regression test to, or the
 verification gate / added test does **not** pass, or `/issue-yolo`'s validation
 fails for any reason: **do not merge.** Leave the branch in place, leave the
 redacted issue **open**, and fire the same `--kind security` alert with
-`--summary "escalated — needs manual /issue-finish"` (drop `--pr`/`--pr-url` if
+`--summary "escalated - needs manual /issue-finish"` (drop `--pr`/`--pr-url` if
 no PR was opened). Never retry a failed security fix by guessing, and never
 force-merge one. Half-healing a security gap unreviewed is worse than leaving it
 for the human the alert just pinged.

@@ -102,8 +102,10 @@ COMMENT_URL=$(gh issue comment "<LEDGER_URL>" --repo ferraroroberto/fleet-config
 
 ```
 E:/automation/fleet-config/.venv/Scripts/python.exe hooks/notify_complete.py --kind learning --comment-url "<COMMENT_URL>" \
-  --summary "<N> PRs / <M> issues across <K> repos · <one-line horizon grade>"
+  --summary "<N> PRs / <M> issues across <K> repos | <one-line horizon grade>"
 ```
+
+Keep the summary **pure ASCII**, separating its parts with `|` — the hook renders that as `·` from a Python literal. A literal `·` in the command line reached Slack as `??` (fleet-config#507); a Windows command line is not a UTF-8-safe channel.
 
 `📓 Learning log` — opt-in (silent no-op if no `[global] slack_notify_channel`), never blocks. Omit `--comment-url` if the comment was skipped.
 

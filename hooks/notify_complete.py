@@ -25,9 +25,16 @@ not reliably on ``PATH`` on this machine; see ``_lib.find_python_executable``)::
     E:/automation/fleet-config/.venv/Scripts/python.exe ~/.claude/hooks/notify_complete.py --kind cleanup --summary documentation --merged 5 --review 2
     E:/automation/fleet-config/.venv/Scripts/python.exe ~/.claude/hooks/notify_complete.py --kind recap --summary "3 skills swept - alt-text +2, journal-daily +1"   # automatic sweep (no proposals)
     E:/automation/fleet-config/.venv/Scripts/python.exe ~/.claude/hooks/notify_complete.py --kind recap --summary "2 skills consolidated, 4 promoted"               # explicit consolidation
-    E:/automation/fleet-config/.venv/Scripts/python.exe ~/.claude/hooks/notify_complete.py --kind learning --comment-url https://github.com/ferraroroberto/fleet-config/issues/131#issuecomment-456 --summary "12 PRs / 8 issues distilled · 2/3 horizon shipped"
+    E:/automation/fleet-config/.venv/Scripts/python.exe ~/.claude/hooks/notify_complete.py --kind learning --comment-url https://github.com/ferraroroberto/fleet-config/issues/131#issuecomment-456 --summary "12 PRs / 8 issues distilled | 2/3 horizon shipped"
     E:/automation/fleet-config/.venv/Scripts/python.exe ~/.claude/hooks/notify_complete.py --kind security --issue 42 --pr 43 --pr-url https://github.com/owner/repo/pull/43 --summary "auto-merged, review the diff"
-    E:/automation/fleet-config/.venv/Scripts/python.exe ~/.claude/hooks/notify_complete.py --kind design  --summary "8 swept · 3 drifted · 11 findings filed"
+    E:/automation/fleet-config/.venv/Scripts/python.exe ~/.claude/hooks/notify_complete.py --kind design  --summary "8 swept | 3 drifted | 11 findings filed"
+
+Keep every ``--summary`` **pure ASCII**: a Windows command line is not a
+UTF-8-safe channel (fleet-config#507 — a literal ``·`` reached Slack as ``??``),
+so spell a multi-part summary's separator with the ASCII token ``|`` and let
+:func:`normalize_summary` render it as ``·`` from a Python literal. Mojibake that
+is still recoverable is repaired on the way in; a boundary that already replaced
+the character with ``?`` is not recoverable by anything.
 
 For ``--kind cleanup`` (the closing roll-up of a ``/cleanup-fleet`` swarm) pass
 ``--summary`` (the bucket name), ``--merged`` (sonnet issues YOLO'd to a merged
@@ -71,6 +78,7 @@ import argparse
 import json
 import logging
 import os
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -96,6 +104,32 @@ _PR_KINDS = ("finish", "yolo", "security")
 # Everything else (add, finish, yolo, audit, recap, learning, finish-batch,
 # design) is a completed-work record → the "log" channel.
 _ATTENTION_KINDS = ("start", "batch", "security")
+
+# The `·` a multi-part summary reads with is assembled **here, from a Python
+# source literal**, never carried across the shell boundary as a `--summary`
+# character. A skill writes the ASCII token instead — `"8 swept | 2 drifted"` —
+# and gets `8 swept · 2 drifted` in Slack. See `_lib.repair_mojibake` for why the
+# boundary can't be trusted (fleet-config#507): the emoji and em-dash in every
+# message above are Python literals for exactly the same reason, which is why
+# they always rendered while the argv-sourced `·` did not.
+SUMMARY_SEPARATOR = " · "
+_SUMMARY_SEPARATOR_TOKEN = re.compile(r"\s*\|\s*")
+
+
+def normalize_summary(summary: Optional[str]) -> Optional[str]:
+    """Make an argv-sourced ``--summary`` render correctly. Pure / testable.
+
+    Repairs recoverable cp1252 mojibake, then expands the ASCII separator token
+    ``|`` into :data:`SUMMARY_SEPARATOR`. No ``--summary`` in the fleet carries a
+    literal pipe (they are short status lines, not markdown tables), so the
+    expansion is unambiguous — unlike ``slack_notify --text``, which does carry
+    markdown and therefore only gets the repair.
+    """
+    if summary is None:
+        return None
+    return _SUMMARY_SEPARATOR_TOKEN.sub(
+        SUMMARY_SEPARATOR, _lib.repair_mojibake(summary) or ""
+    )
 
 
 def category_for(kind: str, *, review: Optional[str] = None) -> str:
@@ -195,8 +229,11 @@ def build_message(
     """Assemble the canonical ping text (no @mention prefix). Pure / testable.
 
     Leads with a glanceable status mark. A missing ``title`` or ``url`` is
-    dropped cleanly — no dangling " · " or double spaces.
+    dropped cleanly — no dangling " · " or double spaces. ``summary`` is passed
+    through :func:`normalize_summary` first, so an argv-mangled or ASCII-token
+    separator renders as a real ``·`` (fleet-config#507).
     """
+    summary = normalize_summary(summary)
     name = f" {title}" if title else ""
     link = f" · {url}" if url else ""
     if kind == "add":

@@ -206,8 +206,13 @@ Deliver on two channels:
   ```
   E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/hooks/notify_complete.py \
     --kind design \
-    --summary "<N> swept · <D> drifted · <F> findings filed"
+    --summary "<N> swept | <D> drifted | <F> findings filed"
   ```
+
+  Keep the summary **pure ASCII** and separate its parts with `|` — the hook
+  renders that as `·` from a Python literal. A literal `·` typed into the command
+  line reached Slack as `??` (fleet-config#507): a Windows command line is not a
+  UTF-8-safe channel, so the separator must never travel as an argv character.
 
   This is a silent no-op if no `slack_notify_channel` is configured; it always
   exits 0 and can never block or delay the finish.

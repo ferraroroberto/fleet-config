@@ -1815,6 +1815,56 @@ def _notify_complete_unit_checks() -> Tuple[int, int]:
     check("build: security with no summary defaults to review-the-diff",
           bm("security", issue="42", url="http://pr") == "🔒 Security #42 — review the diff · http://pr")
 
+    # --summary crosses the harness -> shell -> CreateProcess boundary, which is
+    # not UTF-8 safe on Windows: a literal `·` reached Slack as `??`
+    # (fleet-config#507). Skills spell the separator with the ASCII token `|`,
+    # and whatever mojibake is still recoverable is repaired on the way in.
+    ns = notify_complete.normalize_summary
+    check("normalize_summary: ASCII token renders as the middle-dot separator",
+          ns("8 swept | 2 drifted | 4 findings filed") == "8 swept · 2 drifted · 4 findings filed")
+    check("normalize_summary: token spacing is normalised either way",
+          ns("8 swept|2 drifted") == "8 swept · 2 drifted")
+    check("normalize_summary: cp1252-mangled middle-dot is repaired",
+          ns("8 swept Â· 2 drifted") == "8 swept · 2 drifted")
+    check("normalize_summary: an intact middle-dot survives untouched",
+          ns("8 swept · 2 drifted") == "8 swept · 2 drifted")
+    check("normalize_summary: plain ASCII prose is untouched",
+          ns("review the diff, then /issue-finish") == "review the diff, then /issue-finish")
+    check("normalize_summary: None stays None", ns(None) is None)
+    check("build: design accepts the ASCII separator token",
+          bm("design", summary="8 swept | 3 drifted | 11 findings filed")
+          == "🎨 Design sweep — 8 swept · 3 drifted · 11 findings filed")
+
+    rm = _lib.repair_mojibake
+    check("repair_mojibake: mangled em-dash restored", rm("a â€” b") == "a — b")
+    check("repair_mojibake: genuine accented prose left alone", rm("não é") == "não é")
+    check("repair_mojibake: pure ASCII short-circuits", rm("plain text") == "plain text")
+    check("repair_mojibake: empty/None pass through", rm("") == "" and rm(None) is None)
+
+    # The separator token only exists because non-ASCII must not be authored into
+    # an argv string — a SKILL.md (or the doc a model copies the command from)
+    # that re-inlines a literal `·` puts the corruption straight back.
+    # Emoji (>= U+2600) are exempt: they are the glanceable status cue, and the
+    # reported corruption was of punctuation. Everything else non-ASCII is an
+    # offender — separators, dashes, quotes.
+    offenders: list[str] = []
+    arg_text = re.compile(r'--(?:summary|text)\s+"([^"]*)"')
+    sources = sorted((REPO / ".claude" / "skills").rglob("SKILL.md"))
+    sources += sorted((REPO / "skills").rglob("SKILL.md"))
+    sources += sorted((REPO / "docs").rglob("*.md"))
+    sources += [REPO / "README.md", REPO / "CLAUDE.md", REPO / "global-CLAUDE.md"]
+    for source in sources:
+        if not source.is_file():
+            continue
+        for lineno, line in enumerate(source.read_text(encoding="utf-8").splitlines(), 1):
+            for value in arg_text.findall(line):
+                bad = sorted({c for c in value if not c.isascii() and ord(c) < 0x2600})
+                if bad:
+                    offenders.append(f"{source.relative_to(REPO).as_posix()}:{lineno} {bad}")
+    check("skills + docs author only ASCII punctuation into --summary/--text argv"
+          + (f" (offenders: {offenders})" if offenders else ""),
+          not offenders)
+
     # The shared resolver: unknown cwd -> [global] channel/user + 'claude' name.
     ch, usr, nm = _lib.resolve_slack_target(Path("E:/does/not/match/anything"))
     check("resolve_slack_target: global fallback + claude name",
