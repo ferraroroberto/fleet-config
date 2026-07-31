@@ -266,14 +266,60 @@ try:
     check(not fake_lock.exists(),
           "acquire --force-worktree leaves the primary claim free for a human session (#515)")
 
-    out = _run_acquire(force_worktree=False)
-    check("MODE=primary" in out and len(try_acquire_calls) == 1,
-          "acquire without the flag keeps the default claim-or-worktree behaviour")
+    # Control the environment explicitly: this suite itself usually runs inside
+    # a launcher-dispatched session, whose APP_LAUNCHER_SESSION_ID would now
+    # force worktree mode (#525 take 2) and mask the interactive default.
+    _saved_env = {k: os.environ.pop(k) for k in
+                  ("APP_LAUNCHER_SESSION_ID", "WORKTREE_CLAIM_ALLOW_PRIMARY")
+                  if k in os.environ}
+    try:
+        out = _run_acquire(force_worktree=False)
+        check("MODE=primary" in out and len(try_acquire_calls) == 1,
+              "acquire without the flag, outside a dispatched session, keeps claim-or-worktree")
+
+        os.environ["APP_LAUNCHER_SESSION_ID"] = "sess-525"
+        out = _run_acquire(force_worktree=False)
+        check("MODE=worktree" in out and "MODE=primary" not in out,
+              "acquire inside a launcher-dispatched session is forced to worktree "
+              "with no flag passed -- enforced in the tool, not in skill prose (#525)")
+        check(len(try_acquire_calls) == 1,
+              "acquire: the forced path still never publishes a claim (#525)")
+    finally:
+        os.environ.pop("APP_LAUNCHER_SESSION_ID", None)
+        os.environ.update(_saved_env)
 finally:
     wc.lock_dir_for = real_lock_dir_for
     wc.try_acquire = real_try_acquire
     shutil.rmtree(force_base, ignore_errors=True)
 
+
+
+# ---- worktree_forced: enforcement, not instruction (#525 take 2) -----------
+#
+# #525 first shipped as a line of /issue-start SKILL.md prose telling the agent
+# to pass --force-worktree. A dispatched worker landed in a primary checkout
+# within the hour with every precondition satisfied. These checks pin the
+# decision in code, where an agent cannot skip it by not reading carefully.
+
+check(wc.worktree_forced(True, {}) == (True, "--force-worktree"),
+      "worktree_forced: the explicit flag forces worktree mode")
+forced, why = wc.worktree_forced(False, {"APP_LAUNCHER_SESSION_ID": "abc123"})
+check(forced is True, "worktree_forced: a launcher-dispatched session is forced even without the flag (#525)")
+check("APP_LAUNCHER_SESSION_ID" in why,
+      "worktree_forced: the reason names the trigger, so the stderr note is diagnosable")
+check(wc.worktree_forced(False, {}) == (False, ""),
+      "worktree_forced: an ordinary interactive session is NOT forced (claim-or-worktree preserved)")
+check(wc.worktree_forced(False, {"APP_LAUNCHER_SESSION_ID": ""})[0] is False,
+      "worktree_forced: an empty session id is not a dispatch signal")
+check(wc.worktree_forced(False, {"APP_LAUNCHER_SESSION_ID": "x",
+                                 "WORKTREE_CLAIM_ALLOW_PRIMARY": "1"})[0] is False,
+      "worktree_forced: WORKTREE_CLAIM_ALLOW_PRIMARY=1 is the deliberate escape hatch")
+check(wc.worktree_forced(True, {"APP_LAUNCHER_SESSION_ID": "x",
+                                "WORKTREE_CLAIM_ALLOW_PRIMARY": "1"})[0] is True,
+      "worktree_forced: an explicit --force-worktree still wins over the escape hatch")
+check(wc.worktree_forced(False, {"APP_LAUNCHER_SESSION_ID": "x",
+                                 "WORKTREE_CLAIM_ALLOW_PRIMARY": "yes"})[0] is True,
+      "worktree_forced: only the literal '1' opens the hatch, not any truthy string")
 
 
 # ---- primary_for_worktree / remove_worktree: the deregistered leftover (#526) ----
