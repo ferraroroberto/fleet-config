@@ -391,13 +391,20 @@ does not get an auto-resume wake-up (global CLAUDE.md, "A sub-agent does not
 self-resume"), so under `/audit-fleet` it would silently stall. Doing the
 `/issue-yolo` steps yourself, in-turn, avoids that entirely.
 
-1. **Claim the repo** (the collision primitive — same one `/issue-start` uses),
-   so a concurrent `/cleanup-fleet` / human session on this repo can't clobber
-   you and vice-versa. `MODE=worktree` isolates you automatically if the primary
-   is busy:
+1. **Claim the repo in forced worktree mode** (the collision primitive — same one
+   `/issue-start` uses), so a concurrent `/cleanup-fleet` / human session on this
+   repo can't clobber you and vice-versa. `--force-worktree` skips the primary
+   claim entirely: this is unattended fleet-wide dispatch, and a *running* app or
+   a live junction is not a claim holder, so an ordinary `acquire` would hand you
+   `MODE=primary` and have you edit files a live process is serving
+   (fleet-config#515). Then `cd` into the printed `WORKTREE=` path — everything
+   after this step happens there, never in the primary checkout:
    ```
-   E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/worktree_claim.py acquire <repo-root> --issue <security-issue-or-0>
+   E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/worktree_claim.py acquire <repo-root> --issue <security-issue-or-0> --force-worktree
+   E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/worktree_claim.py setup-worktree <repo-root> <security-issue-or-0> <branch>
    ```
+   A live-e2e guard refusal is a hard STOP — report it and stop; setting
+   `E2E_LIVE=1` or any equivalent override is forbidden.
 
 2. **File the redacted issue** via the helper — **no vulnerability detail, ever**:
    not the class, not the file, not the line, not a description. Title exactly
@@ -432,8 +439,11 @@ self-resume"), so under `/audit-fleet` it would silently stall. Doing the
 
 4. **Auto-merge on green** (green = gate passes *including* the new test), exactly
    like `/cleanup-fleet`'s easy tier: PR, wait for CI per `/issue-yolo`'s rules,
-   `merge --delete-branch`, land on `main`, **release the claim**
-   (`worktree_claim.py release <repo>` — verify `CLAIM=free`). Tray restart
+   `merge --delete-branch`, land on `main`, **tear the worktree down and release
+   the claim** (`worktree_claim.py remove-worktree <worktree-path>` then
+   `release <repo>` — verify `CLAIM=free` and that `git worktree list` shows the
+   primary only; never `rm -rf` a worktree, its `.venv` junction would take the
+   primary's real venv with it). Tray restart
    follows `/issue-yolo`'s safety rule: a detach-compliant tray restarts; an
    unsafe/silent tray is **not** restarted unattended — note "tray not restarted,
    still on old build" in the alert instead.

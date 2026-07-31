@@ -29,6 +29,11 @@ _STANDALONE_UNIT_CHECKS: Tuple[Tuple[str, str, str], ...] = (
      "the claim FSM -- atomic acquire, the worktree fallback when held, "
      "TTL stale-reclaim, and the sibling-path convention -- is testable "
      "on its own"),
+    ("cleanup_fleet_all_flow", "test_cleanup_fleet_all_flow.py",
+     "the cleanup-fleet-all workflow script's control flow -- strict lane "
+     "seriality, teardown on every terminal path, and halt-on-residue -- is "
+     "exercised against the real .js with stubbed agents, so the 2026-07-30 "
+     "fan-out cannot be reintroduced silently (fleet-config#518)"),
     ("active_issue", "test_active_issue.py",
      "the helper's tolerant/pruned/concurrent JSON lifecycle and every "
      "workflow path that adds or removes a marker stay reachable from "

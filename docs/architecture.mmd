@@ -91,10 +91,12 @@ flowchart TB
   CLEANUPFLEET --> ISSUEEXTRA
 
   subgraph fworkflows[".claude/workflows/ — Workflow-tool scripts, no Bash/filesystem access"]
-    CLEANUPFLEETALLJS["cleanup-fleet-all.js\nbuild -> validate -> execute per issue,\ndeterministic retry/escalate gate (max 2 rounds)"]
+    CLEANUPFLEETALLJS["cleanup-fleet-all.js\nbuild -> validate -> execute -> teardown per issue,\nSERIAL lanes (one bucket, one repo at a time),\ndeterministic retry/escalate gate (max 2 rounds),\nhalts the run on teardown residue (#518)"]
   end
   CLEANUPFLEETALL -->|invokes + polls TaskOutput to completion| CLEANUPFLEETALLJS
   CLEANUPFLEETALLJS -->|build/execute agents reuse| ISSUEEXTRA
+  CLEANUPFLEETALLJS -->|every agent forces --force-worktree| LIB
+  ACCPKG -.->|control-flow suite: seriality, teardown, halt| CLEANUPFLEETALLJS
 
   ARCH["architecture/\nfleet.data.js · system-map.{html,png,mmd} · config.data.js · ARCHITECTURE.md"]
   GCMDFILE["global-CLAUDE.md"]

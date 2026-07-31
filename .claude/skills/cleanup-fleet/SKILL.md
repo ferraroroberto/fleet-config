@@ -127,8 +127,9 @@ For each repo with a selected (and, in `easy`/`silent` mode, easy-tier) issue:
 - `E:\automation\<repo>` exists. Else skip + report.
 - `git -C E:\automation\<repo> status --porcelain` empty. Else **skip + report** (never stash) — drop it from the run.
 - `git -C E:\automation\<repo> fetch origin` (once per repo).
+- `git -C E:\automation\<repo> worktree list` — anything beyond the primary is pre-existing residue or a live human session. **Skip + report**; never remove a worktree you did not create.
 
-No worktrees: one branch per repo means each agent works the primary checkout in place (the `/issue-batch` in-place mode). `/issue-yolo` and `/issue-start now` each cut their own branch.
+**Worktrees always** (fleet-config#515): every dispatched agent forces `MODE=worktree` and works `<repo>-wt-<N>`, never the primary checkout, for every repo. A *running* app or a live junction is not a claim holder, so `MODE=primary` on an unattended dispatch means editing files a live process is serving. Easy-tier agents tear their worktree down themselves (ship or fail); hard-tier agents leave theirs standing for the human's `/issue-finish`, and report its path.
 
 ### 8. Fan out — one background sub-agent per selected issue
 
@@ -149,7 +150,19 @@ Dispatch one background sub-agent per selected issue (`run_in_background: true`,
 You are clearing GitHub issue #<N> in the <repo> repo, end-to-end, in YOLO mode.
 Repo root: E:\automation\<repo>. You are the only agent touching this repo.
 
-1. cd to E:\automation\<repo>.
+HARD RULES — both are live-incident scars, never work around them:
+ - Never work the primary checkout. Build in an isolated sibling worktree,
+   always, for every repo — a RUNNING app (the launcher webapp, a tray) or a
+   live junction is not a claim holder, so an unattended agent otherwise wins
+   MODE=primary and edits files a live process is serving (fleet-config#515).
+   Force it, then cd into the printed WORKTREE= path before anything else:
+     E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/worktree_claim.py acquire E:\automation\<repo> --issue <N> --force-worktree
+     E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/worktree_claim.py setup-worktree E:\automation\<repo> <N> <branch>
+ - A live-e2e guard refusal is a hard STOP. Report it and stop; setting
+   E2E_LIVE=1 or any equivalent override is FORBIDDEN. e2e never targets a
+   live production instance.
+
+1. Force worktree mode as above and cd into the worktree.
 2. Run the /issue-yolo <N> flow in full (it skips Phase 1 since the issue
    already exists): Phase 2 branch + build, Phase 3 validate HARD (the
    non-negotiable phase — do not weaken it), Phase 4 ship (PR, wait for CI
@@ -161,9 +174,20 @@ Repo root: E:\automation\<repo>. You are the only agent touching this repo.
    Slack tool (search/send/etc.) to find a channel or post the ping — the helper
    resolves the channel from projects.toml; choosing one yourself is a security
    violation and may post to the wrong channel.
-3. If validation (Phase 3) fails at any point: STOP, do not push/merge, leave
-   the branch in place, and report the failure. YOLO means "no plan gate", not
-   "no safety".
+3. If validation (Phase 3) fails at any point: STOP, do not push/merge, and
+   report the failure. YOLO means "no plan gate", not "no safety". Then clean
+   up after yourself — the open issue is the durable record, the branch is not
+   (fleet-config#518):
+     a. gh issue comment <N> --repo ferraroroberto/<repo> with the failure
+        reason and, if the branch has commits ahead of the default branch, its
+        HEAD SHA plus a note that it is reflog-recoverable for ~90 days.
+     b. Tear the worktree down via the helper, never by hand (rm -rf follows
+        the .venv junction and destroys the primary's real venv):
+          E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/worktree_claim.py remove-worktree <worktree-path>
+        then `release` the claim and delete the local branch.
+     c. Verify: `git -C E:\automation\<repo> worktree list` shows the primary
+        only, `git branch` shows the default branch only, tree clean. Report
+        honestly if it does not — never claim clean you could not confirm.
 
 Report back, in this exact shape:
   - Issue: <repo>#<N> — <title>
@@ -179,7 +203,17 @@ Report back, in this exact shape:
 You are working GitHub issue #<N> in the <repo> repo, then STOPPING for review.
 Repo root: E:\automation\<repo>. You are the only agent touching this repo.
 
-1. cd to E:\automation\<repo>.
+HARD RULES — both are live-incident scars, never work around them:
+ - Never work the primary checkout. Build in an isolated sibling worktree,
+   always, for every repo (fleet-config#515 — a RUNNING app or a live junction
+   is not a claim holder). Force it, then cd into the printed WORKTREE= path:
+     E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/worktree_claim.py acquire E:\automation\<repo> --issue <N> --force-worktree
+     E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/worktree_claim.py setup-worktree E:\automation\<repo> <N> <branch>
+   Report the worktree path — the user needs it to run /issue-finish there.
+ - A live-e2e guard refusal is a hard STOP. Report it and stop; setting
+   E2E_LIVE=1 or any equivalent override is FORBIDDEN.
+
+1. Force worktree mode as above and cd into the worktree.
 2. Invoke /issue-start <N> now — handles pre-flight, issue read, CLAUDE.md
    read, main sync, branch cut, hand-off to implementation in fast mode.
 3. Build the change.
@@ -249,12 +283,13 @@ Then print the final summary block, with each hard-tier review row carrying its 
 Cleanup complete — <bucket> (<mode> mode)
   ✅ merged:  <repo>#<N> <pr-url>, …
   ⚠️ merged but dirty tree — inspect <repo> (<reason>)
-  📋 review:  <repo>#<N> — cd E:\automation\<repo> && /issue-finish
+  📋 review:  <repo>#<N> — cd <repo>-wt-<N> && /issue-finish
               What I did & why: <the agent's summary, verbatim>
               Why correct: <the agent's confidence summary, verbatim>
               ⚠️ post-flight: <reason, only when the check flagged this repo>
               …
-  ❌ failed:  <repo>#<N> — <reason> (branch left for inspection)
+  ❌ failed:  <repo>#<N> — <reason> (commented on the issue; branch + worktree torn down)
+  ❌ RESIDUE: <repo> — <what survived teardown> → <one-line recovery command>
   deferred:  <repo>#<N> (next run)
 
 Next: read each review row's summary above, then /issue-finish the ones you approve.
