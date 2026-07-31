@@ -54,6 +54,49 @@ PROJECTS_TOML_ENV_VAR = "CLAUDE_HOOKS_PROJECTS_TOML"
 NO_WINDOW = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
 
 
+# ------------------------------------------------------- argv text repair
+
+# Free text that reaches a hook as a **command-line argument** has crossed the
+# harness → shell → CreateProcess boundary, and on Windows that boundary is not
+# UTF-8 safe end to end. Reproduced on this host (fleet-config#507): a BOM-less
+# UTF-8 command handed to Windows PowerShell 5.1 is decoded with the ANSI
+# codepage, so the two UTF-8 bytes of `·` (0xC2 0xB7) arrive as the two
+# characters `Â·`; a further narrowing to an OEM codepage that has neither turns
+# the pair into `??`, which is what landed in Slack.
+#
+# Two prior instances of the same class already carry fixes on adjacent paths —
+# `notify_complete.gh_json` (gh stdout forced to UTF-8) and
+# `slack_notify._read_text` (piped stdin forced to UTF-8). Those cover *byte*
+# streams we own. This covers the argv leg, which we do not own: the only two
+# defences are (a) repair the recoverable half here, and (b) never author
+# non-ASCII punctuation into an argv string in the first place — skills spell the
+# separator with the ASCII token instead (see `notify_complete.normalize_summary`).
+_MOJIBAKE_MARKERS = ("Â", "Ã", "â€", "Å", "Ë", "Ð", "ð\x9f")
+
+
+def repair_mojibake(text: Optional[str]) -> Optional[str]:
+    """Undo a UTF-8-bytes-decoded-as-cp1252 round trip (``"Â·"`` → ``"·"``).
+
+    Only rewrites text that both *looks* mojibake-encoded (carries one of the
+    telltale Latin-1 lead characters) and survives the round trip cleanly, so
+    genuine accented prose — where the cp1252 re-encode produces bytes that are
+    not valid UTF-8 — is returned untouched. ASCII and ``None`` short-circuit.
+
+    Irrecoverable by design: once the boundary has replaced a character with
+    ``?`` the original codepoint is gone, which is why the ASCII separator token
+    exists alongside this repair rather than instead of it.
+    """
+    if not text or text.isascii():
+        return text
+    if not any(marker in text for marker in _MOJIBAKE_MARKERS):
+        return text
+    try:
+        repaired = text.encode("cp1252").decode("utf-8")
+    except (UnicodeEncodeError, UnicodeDecodeError):
+        return text
+    return repaired
+
+
 # ------------------------------------------- foreign-harness payload normalization
 
 # Grok Build (xAI's CLI) scans `~/.claude/settings.json` for hooks by default

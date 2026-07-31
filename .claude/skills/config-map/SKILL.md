@@ -72,7 +72,7 @@ Activity-log traffic, so route with `--category log` (the helper resolves the `#
 E:/automation/fleet-config/.venv/Scripts/python.exe hooks/slack_notify.py --category log \
    --file architecture/config-map.png \
    --title "Fleet config & conventions" \
-   --text "🗺️ Cross-agent config map — refreshed <YYYY-MM-DD>. <change line from step 3>."
+   --text "🗺️ Cross-agent config map - refreshed <YYYY-MM-DD>. <change line from step 3>."
 ```
 
 Always post — on-demand *and* scheduled. The helper never raises; a missing token just logs and exits non-zero.

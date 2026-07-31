@@ -103,7 +103,7 @@ Post the refreshed map, folding in the change line from step 4 so the recurring 
 E:/automation/fleet-config/.venv/Scripts/python.exe hooks/slack_notify.py --category log \
    --file architecture/system-map.png \
    --title "Roberto's System — architecture" \
-   --text "🛠️ Fleet architecture map — refreshed <YYYY-MM-DD>. <change line from step 4>."
+   --text "🛠️ Fleet architecture map - refreshed <YYYY-MM-DD>. <change line from step 4>."
 ```
 
 Always post — on-demand *and* scheduled — so the fresh picture lands on the phone. The helper never raises; a missing token just logs and exits non-zero.

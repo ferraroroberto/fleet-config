@@ -303,17 +303,38 @@ def upload_file(
     return True
 
 
+def _repair(text: str) -> str:
+    """``_lib.repair_mojibake`` applied defensively.
+
+    Imported lazily inside a try/except for the same reason as
+    :func:`_global_mention_toggle`: this transport must stay usable with nothing
+    but its own directory importable, so an absent ``_lib`` degrades to "send the
+    text as received" rather than crashing a ping.
+    """
+    try:
+        import _lib  # local import keeps the transport dependency-free at module load
+        return _lib.repair_mojibake(text) or text
+    except Exception:  # pragma: no cover - defensive: never break a ping on a repair error
+        return text
+
+
 def _read_text(arg_text: Optional[str]) -> str:
     """Message text from ``--text`` or, failing that, piped stdin.
 
     Reads piped stdin as raw bytes and decodes UTF-8 explicitly: on Windows
     ``sys.stdin``'s default cp1252 mis-decodes a UTF-8 pipe (emoji, em-dash,
     bullet), and the misread text then double-encodes on the way to Slack
-    (🧠 -> ``ðŸ§ ``, — -> ``â€"``). ``--text`` comes from argv already decoded,
-    so it is left alone.
+    (🧠 -> ``ðŸ§ ``, — -> ``â€"``).
+
+    ``--text`` is decoded by the time argv reaches Python, but *what* it was
+    decoded from is not ours to trust — the harness → shell → CreateProcess leg
+    can hand us an already-mangled string (fleet-config#507), so it goes through
+    :func:`_lib.repair_mojibake` for the recoverable half of exactly the same
+    corruption. No separator-token expansion here: a ``--text`` body carries
+    markdown, where a literal ``|`` is a table cell, not a separator.
     """
     if arg_text:
-        return arg_text
+        return _repair(arg_text)
     if not sys.stdin.isatty():
         raw = getattr(sys.stdin, "buffer", None)
         if raw is not None:

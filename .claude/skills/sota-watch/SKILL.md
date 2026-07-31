@@ -81,8 +81,10 @@ The last comment on the ledger = the current state of the watch, same contract a
 ### 7. Slack ping
 
 ```
-E:/automation/fleet-config/.venv/Scripts/python.exe hooks/slack_notify.py --category log --text "🔭 sota-watch — <date> · <N> due, <M> no-change, <K> challenger · <ledger comment URL>"
+E:/automation/fleet-config/.venv/Scripts/python.exe hooks/slack_notify.py --category log --text "🔭 sota-watch - <date> - <N> due, <M> no-change, <K> challenger - <ledger comment URL>"
 ```
+
+`slack_notify --text` has no separator token (a `--text` body carries markdown, where `|` is a table cell), so keep the *punctuation* ASCII here: a literal `·` in a Windows command line reached Slack as `??` (fleet-config#507). The leading emoji stays — it is the glanceable cue, and it is the punctuation that was observed to corrupt — but every separator is a hyphen.
 
 Challenger found → one extra line naming the area. The helper never raises; a missing token logs and exits non-zero — report it, don't fail the run.
 
