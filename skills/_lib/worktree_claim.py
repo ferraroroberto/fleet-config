@@ -78,7 +78,13 @@ Subcommands:
 
   remove-worktree <worktree-path>
       Reparse-safe teardown: strip the .venv junction, then
-      `git worktree remove --force` + `git worktree prune`.
+      `git worktree remove --force` + `git worktree prune`. Tolerates a
+      worktree that git already deregistered while its directory survived
+      (fleet-config#526) -- it resolves the primary by inverting the
+      `<repo>-wt-<N>` convention and falls back to a plain delete, always
+      after the junction strip. Exits 1, naming the path, if the tree is
+      still there afterwards (a live process is holding a file inside it);
+      the caller must report that as residue, never as a clean teardown.
 
   status <repo-root>
       Print the current claim holder (if any) and `git worktree list`.
@@ -112,14 +118,18 @@ DEFAULT_TTL_HOURS = 8.0
 
 # ---- pure helpers (unit-tested without git) -------------------------------
 
+WT_SEP = "-wt-"
+
+
 def worktree_path(repo_root: Path, issue: str) -> Path:
     """Sibling worktree path: `<parent>/<repo-name>-wt-<N>`.
 
     Same convention as /issue-batch. The `<repo>-wt-<N>` *prefix-matches* the
     repo's `cwd_prefix` in projects.toml, so notify_on_idle still names the right
-    project (a `.worktrees/` layout would break that match).
+    project (a `.worktrees/` layout would break that match). `primary_for_worktree`
+    inverts this, so `WT_SEP` is the one place the separator is spelled.
     """
-    return repo_root.parent / f"{repo_root.name}-wt-{issue}"
+    return repo_root.parent / f"{repo_root.name}{WT_SEP}{issue}"
 
 
 def is_stale(
@@ -371,15 +381,69 @@ def setup_worktree(repo: Path, issue: str, branch: str) -> Path:
     return wt
 
 
-def remove_worktree(wt: Path) -> None:
+def primary_for_worktree(wt: Path) -> Optional[Path]:
+    """The primary checkout owning `wt`, or None if it can't be determined.
+
+    Normally `git rev-parse --git-common-dir` from inside the worktree. That
+    fails once the worktree has been **deregistered** but its directory still
+    exists (its `.git` file is gone, so git exits 128) -- precisely the leftover
+    a teardown is called to clean, and the state that used to crash
+    `remove_worktree` with an unhandled CalledProcessError (fleet-config#526).
+    So fall back to inverting `worktree_path`'s own `<repo>-wt-<N>` convention;
+    that stays a single source of truth for the naming rather than a second
+    hand-rolled guess. Returns None when neither route resolves, leaving the
+    caller to degrade honestly rather than pretend.
+    """
+    try:
+        return common_dir(wt).parent  # common dir is <primary>/.git
+    except (subprocess.CalledProcessError, OSError):
+        pass
+    stem, sep, _issue = wt.name.rpartition(WT_SEP)
+    if sep and stem:
+        candidate = wt.parent / stem
+        if (candidate / ".git").exists():
+            return candidate
+    return None
+
+
+def remove_worktree(wt: Path) -> int:
+    """Reparse-safe teardown. Returns 0 on success, 1 if the tree survived.
+
+    Never raises on a leftover it was asked to clean: a directory that outlives
+    its registration (a live process holding a file open inside it is the usual
+    cause -- a leaked browser helper or backend server) must produce an honest
+    non-zero exit naming the path, so the caller reports residue instead of a
+    false clean.
+    """
     if not wt.exists():
         print(f"Worktree already gone: {wt}")
-        return
-    primary = common_dir(wt).parent  # common dir is <primary>/.git
-    _strip_junction(wt / ".venv")     # MUST precede the remove (see _strip_junction)
-    _git(primary, "worktree", "remove", "--force", str(wt), check=False)
-    _git(primary, "worktree", "prune", check=False)
+        return 0
+
+    # MUST precede any recursive delete, on EVERY path through this function
+    # (see _strip_junction): git's remove follows a .venv junction into the
+    # primary's real venv and destroys it.
+    _strip_junction(wt / ".venv")
+
+    primary = primary_for_worktree(wt)
+    if primary is not None:
+        _git(primary, "worktree", "remove", "--force", str(wt), check=False)
+        _git(primary, "worktree", "prune", check=False)
+    else:
+        print(f"# could not resolve the primary for {wt}; "
+              f"stripped the junction and falling back to a plain delete",
+              file=sys.stderr)
+
+    if wt.exists():
+        # git declined (or was never reachable) and the tree is still here.
+        # The junction is already gone, so this delete cannot escape the tree.
+        shutil.rmtree(wt, ignore_errors=True)
+
+    if wt.exists():
+        print(f"Worktree NOT removed (a live process is likely holding a file "
+              f"inside it): {wt}", file=sys.stderr)
+        return 1
     print(f"Removed worktree: {wt}")
+    return 0
 
 
 # ---- CLI ------------------------------------------------------------------
@@ -469,8 +533,7 @@ def cmd_remove_worktree(args: argparse.Namespace) -> int:
     # resolves, hand the literal resolved path to remove_worktree so it prints
     # its honest "already gone" message rather than exiting.
     resolved = _resolve_path_arg(args.worktree_path)
-    remove_worktree(resolved or Path(args.worktree_path).resolve())
-    return 0
+    return remove_worktree(resolved or Path(args.worktree_path).resolve())
 
 
 def cmd_assert_owner(args: argparse.Namespace) -> int:

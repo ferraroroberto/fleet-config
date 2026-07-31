@@ -43,6 +43,23 @@ diagnostic metadata, omit it in pick mode:
 E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/worktree_claim.py acquire . --issue <N>
 ```
 
+**Append `--force-worktree` when the `APP_LAUNCHER_SESSION_ID` environment
+variable is set** (fleet-config#525) — check it first, e.g. `echo
+"${APP_LAUNCHER_SESSION_ID:-unset}"`. That variable means App Launcher spawned
+this session: a machine dispatched the work and no human chose the tree. The
+claim only protects against a second *claiming session*, and a **running app is
+not a claim holder** — so an unattended worker otherwise wins `MODE=primary` in
+a repo whose primary checkout is being served live by the launcher webapp,
+home-automation's tray, or (for `fleet-config`) `hooks/` + `skills/` junctioned
+into every live `~/.claude`. That is what broke the running launcher mid-run on
+2026-07-30. With the flag, no claim is attempted or published, `MODE=worktree`
+is always printed, and the primary stays free for a human session.
+
+A human running this skill in their own terminal has no such variable and keeps
+the default claim-or-worktree behaviour, which is correct there — one worktree
+per issue for a single interactive session would be pure overhead (README
+"Concurrent same-repo work").
+
 Read the printed `MODE=`:
 - **`MODE=primary`** — you are the first session here. Work **in place** on the
   primary checkout, exactly as the steps below describe.

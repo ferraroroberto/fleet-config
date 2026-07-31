@@ -275,4 +275,67 @@ finally:
     shutil.rmtree(force_base, ignore_errors=True)
 
 
+
+# ---- primary_for_worktree / remove_worktree: the deregistered leftover (#526) ----
+#
+# The state that used to crash the helper with an unhandled CalledProcessError:
+# git has deregistered the worktree (its .git file is gone, so rev-parse exits
+# 128) but the directory survived because a live process held a file inside it.
+# That is exactly the leftover teardown is called to clean, so it must degrade,
+# not trap -- and the junction strip must still happen FIRST on every path.
+
+deregistered_base = Path(tempfile.mkdtemp(prefix="wc-dereg-"))
+try:
+    primary = deregistered_base / "myrepo"
+    (primary / ".git").mkdir(parents=True)
+    leftover = deregistered_base / ("myrepo" + wc.WT_SEP + "526")
+    leftover.mkdir()
+
+    real_common_dir = wc.common_dir
+    real_git = wc._git
+    real_strip = wc._strip_junction
+
+    import subprocess as _sp
+
+    def _dead_common_dir(_wt):
+        raise _sp.CalledProcessError(128, ["git", "rev-parse"])
+
+    wc.common_dir = _dead_common_dir
+
+    check(wc.primary_for_worktree(leftover) == primary,
+          "primary_for_worktree: falls back to the <repo>-wt-<N> convention when git is dead (#526)")
+    check(wc.primary_for_worktree(deregistered_base / "no-separator-here") is None,
+          "primary_for_worktree: returns None rather than guessing when nothing resolves (#526)")
+
+    # Full teardown over the leftover: must not raise, must strip first, must go.
+    order = []
+    wc._strip_junction = lambda p: order.append(("strip", p))
+    wc._git = lambda repo, *a, **k: order.append(("git", a[0])) or _sp.CompletedProcess([], 0, "", "")
+
+    rc = wc.remove_worktree(leftover)
+    check(rc == 0, "remove_worktree: deregistered-but-present leftover removed, exit 0 (#526)")
+    check(not leftover.exists(), "remove_worktree: the leftover directory is actually gone (#526)")
+    check(order and order[0][0] == "strip",
+          "remove_worktree: junction strip happens FIRST, before any delete (#526)")
+
+    check(wc.remove_worktree(deregistered_base / "never-existed") == 0,
+          "remove_worktree: absent path still exits 0 ('already gone' fast path)")
+
+    # A tree that survives every attempt must fail loudly, never report success.
+    stubborn = deregistered_base / ("myrepo" + wc.WT_SEP + "999")
+    stubborn.mkdir()
+    real_rmtree = shutil.rmtree
+    shutil.rmtree = lambda *a, **k: None  # simulate a held directory
+    try:
+        check(wc.remove_worktree(stubborn) == 1,
+              "remove_worktree: a directory that survives teardown exits 1, never a false clean (#526)")
+    finally:
+        shutil.rmtree = real_rmtree
+finally:
+    wc.common_dir = real_common_dir
+    wc._git = real_git
+    wc._strip_junction = real_strip
+    shutil.rmtree(deregistered_base, ignore_errors=True)
+
+
 _h.report_and_exit("test_worktree_claim")

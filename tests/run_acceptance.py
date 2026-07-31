@@ -35,6 +35,7 @@ from acceptance.architecture_guards import (  # noqa: E402
     _config_map_check,
     _fleet_toml_check,
     _mermaid_check,
+    _unattended_worktree_mandate_check,
     _settings_template_sync_check,
     _system_map_coverage_check,
     _system_map_whatchanged_check,
@@ -173,6 +174,7 @@ def main() -> int:
 
     # ---- system-map: Mermaid companion render (render_mermaid.py) freshness ----
     run_unit(_mermaid_check)
+    run_unit(_unattended_worktree_mandate_check)
 
     # ---- system-map: week-over-week 'what changed' diff (whatchanged.py) ----
     run_unit(_system_map_whatchanged_check)

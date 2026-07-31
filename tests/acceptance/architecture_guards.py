@@ -116,6 +116,44 @@ def _fleet_toml_check() -> Tuple[int, int]:
     return check.failures, check.total
 
 
+def _unattended_worktree_mandate_check() -> Tuple[int, int]:
+    """Every unattended dispatch path must force worktree mode (#515, #525).
+
+    A *running* app is not a claim holder, so an ordinary `acquire` hands
+    machine-dispatched work `MODE=primary` in a repo whose primary checkout is
+    being served live -- that is what broke the running launcher on 2026-07-30.
+    Four skills carry the rule in prose, which a context purge or a well-meaning
+    rewrite can quietly drop; this pins it. Checks the flag is named in each,
+    and that `/issue-start` still keys on the launcher's own session variable
+    rather than some re-derived heuristic. Returns the failure count.
+    """
+    check = _Checker()
+    flag = "--force-worktree"
+
+    for rel in (
+        ".claude/workflows/cleanup-fleet-all.js",
+        ".claude/skills/cleanup-fleet/SKILL.md",
+        "skills/codebase-audit/SKILL.md",
+        "skills/issue-start/SKILL.md",
+    ):
+        body = (REPO / rel).read_text(encoding="utf-8")
+        check(f"worktree mandate: {rel} forces worktree mode", flag in body)
+
+    issue_start = (REPO / "skills" / "issue-start" / "SKILL.md").read_text(encoding="utf-8")
+    check(
+        "worktree mandate: /issue-start keys the force on APP_LAUNCHER_SESSION_ID (#525)",
+        "APP_LAUNCHER_SESSION_ID" in issue_start,
+    )
+
+    wc = (REPO / "skills" / "_lib" / "worktree_claim.py").read_text(encoding="utf-8")
+    check(
+        "worktree mandate: acquire actually implements --force-worktree",
+        'print("MODE=worktree")' in wc and "force_worktree" in wc,
+    )
+
+    return check.failures, check.total
+
+
 def _mermaid_check() -> Tuple[int, int]:
     """The Mermaid companion render (`render_mermaid.py`) can't silently go stale.
 
