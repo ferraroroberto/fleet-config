@@ -49,6 +49,15 @@ Subcommands:
       claim older than the TTL, or one whose recorded branch no longer exists
       (merged-and-deleted => leaked claim, self-heals on the next acquire).
 
+      Worktree mode is **forced**, with no primary attempt, whenever either
+      `--force-worktree` is passed OR `APP_LAUNCHER_SESSION_ID` is set (an
+      App-Launcher-dispatched session: a machine chose the work, not a human).
+      Set `WORKTREE_CLAIM_ALLOW_PRIMARY=1` to defeat the environment trigger
+      for a dispatched flow that genuinely must hold the primary; an explicit
+      `--force-worktree` still wins over it. Enforcing this in the tool rather
+      than in skill prose is deliberate -- fleet-config#525 first shipped as a
+      SKILL.md instruction and a dispatched worker ignored it inside the hour.
+
       `--force-worktree` skips the claim attempt entirely and always prints
       `MODE=worktree` (fleet-config#515). The claim only protects against a
       second *claiming session*; a live production process sitting in the same
@@ -102,7 +111,7 @@ import subprocess
 import sys
 import time
 from pathlib import Path
-from typing import Callable, Optional, Tuple
+from typing import Callable, Mapping, Optional, Tuple
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import git_run  # noqa: E402
@@ -479,8 +488,44 @@ def _resolve_repo(arg: str) -> Path:
     return resolved
 
 
+def worktree_forced(argv_flag: bool, env: "Mapping[str, str]") -> Tuple[bool, str]:
+    """Decide whether this `acquire` may return `MODE=primary` at all.
+
+    Returns `(forced, why)`. Two independent triggers, either sufficient:
+
+      - the caller passed `--force-worktree` (unattended fleet fanout asking
+        for it explicitly), or
+      - `APP_LAUNCHER_SESSION_ID` is set, meaning App Launcher's Board spawned
+        this session: a machine dispatched the work and no human chose the tree.
+
+    The second trigger exists because the first one *did not hold* in practice.
+    fleet-config#525 originally shipped as a line of `/issue-start` SKILL.md
+    prose telling the agent to pass the flag, and within the hour a dispatched
+    worker landed in a primary checkout anyway with everything wired correctly —
+    the variable set, the junctioned skill updated, the flow chained. A rule an
+    agent has to read, recognise and choose to obey is advisory; every other
+    guarantee in this lifecycle (the claim FSM, the junction-strip ordering, the
+    halt gate) is enforced by code that cannot be skipped, and so is this now.
+
+    `WORKTREE_CLAIM_ALLOW_PRIMARY=1` is the deliberate escape hatch, for the
+    rare dispatched flow that genuinely must hold the primary. It only defeats
+    the environment trigger — an explicit `--force-worktree` still wins, since
+    a caller that asked for isolation by name should get it.
+    """
+    if argv_flag:
+        return True, "--force-worktree"
+    if env.get("APP_LAUNCHER_SESSION_ID") and env.get("WORKTREE_CLAIM_ALLOW_PRIMARY") != "1":
+        return True, "APP_LAUNCHER_SESSION_ID (launcher-dispatched; fleet-config#525)"
+    return False, ""
+
+
 def cmd_acquire(args: argparse.Namespace) -> int:
     repo = _resolve_repo(args.repo_root)
+    forced, why = worktree_forced(getattr(args, "force_worktree", False), os.environ)
+    if forced:
+        args.force_worktree = True
+        if why != "--force-worktree":
+            print(f"# forced to worktree mode by {why}", file=sys.stderr)
     if getattr(args, "force_worktree", False):
         # No claim attempt at all: unattended fanout must never touch a primary
         # checkout, even an unclaimed one (fleet-config#515 — a live app or a
