@@ -340,6 +340,136 @@ check(disabled_exit == 0 and "⏱ stalled" not in "\n".join(disabled_lines),
       "stall_timeout=0 disables the watchdog")
 
 
+# ---- the CLI background-wait ceiling is lifted for every child (fleet-config#519) ----
+
+# #506 only made the sub-agent kill *visible*; the work was still lost. These
+# probes exit with a code encoding what the child actually saw, so a missing or
+# wrong value can never pass as a clean run.
+CEILING = cp.BG_WAIT_CEILING_ENV
+ceiling_probe = (
+    "import json,os,sys; "
+    + INIT_LINE
+    + f"sys.exit(0 if os.environ.get({CEILING!r}) == '0' else 3)"
+)
+ceiling_lines: list[str] = []
+ceiling_exit = cp.run_process(
+    [sys.executable, "-c", ceiling_probe],
+    formatter=cp.ProgressFormatter(emit=ceiling_lines.append),
+)
+check(ceiling_exit == 0, f"run_process sets {CEILING}=0 in the spawned child's environment")
+
+# A stale value inherited from the parent must not silently reinstate the kill.
+os.environ[CEILING] = "600000"
+inherited_lines: list[str] = []
+try:
+    inherited_exit = cp.run_process(
+        [sys.executable, "-c", ceiling_probe],
+        formatter=cp.ProgressFormatter(emit=inherited_lines.append),
+    )
+finally:
+    del os.environ[CEILING]
+check(inherited_exit == 0,
+      "an inherited ceiling from the parent environment is overridden, never honoured")
+
+# An explicit caller override is still the escape hatch and still wins.
+override_probe = (
+    "import json,os,sys; "
+    + INIT_LINE
+    + f"sys.exit(0 if os.environ.get({CEILING!r}) == '900' else 3)"
+)
+override_lines: list[str] = []
+override_exit = cp.run_process(
+    [sys.executable, "-c", override_probe],
+    formatter=cp.ProgressFormatter(emit=override_lines.append),
+    env={CEILING: "900"},
+)
+check(override_exit == 0, "an explicit env= override still beats the adapter's default ceiling")
+
+
+# ---- self-reported zero-work run: ends normally, delivers nothing (fleet-config#519) ----
+
+# Kept ASCII on purpose: this string crosses the Windows argv boundary into a
+# `python -c` child, where non-ASCII is not reliably preserved (fleet-config#523).
+ZERO_REPORT = "Fleet audit - 0 repos evaluated.\nSCHEDULED-RUN-FAILED - the fleet sweep returned no repos"
+zero_work_script = (
+    "import json,sys; "
+    + INIT_LINE
+    + f"report = {ZERO_REPORT!r}; "
+    "print(json.dumps({'type':'assistant','message':{'content':"
+    "[{'type':'text','text':report}]}}), flush=True); "
+    "print(json.dumps({'type':'result','subtype':'success','is_error':False,"
+    "'result':report}), flush=True); "
+    "sys.exit(0)"
+)
+zero_lines: list[str] = []
+zero_formatter = cp.ProgressFormatter(emit=zero_lines.append)
+zero_exit = cp.run_process(
+    [sys.executable, "-c", zero_work_script],
+    formatter=zero_formatter,
+)
+zero_output = "\n".join(zero_lines)
+check(zero_exit == cp.SELF_REPORTED_FAILURE_EXIT_CODE,
+      "a self-reported zero-work run exits non-zero even though the child exited 0")
+check(zero_formatter.saw_self_reported_failure,
+      "the formatter records that the run reported its own delivery assertion failed")
+check("❌ failed" in zero_output and "delivered no work" in zero_output,
+      "the terminal milestone names the zero-work cause distinctly")
+check("✅ completed" not in zero_output, "a zero-work run is never reported as completed")
+
+# The final report arrives twice (assistant text, then the result event); the
+# marker must register on the first copy, before dedup drops the second.
+dup_report = "Final report\nSCHEDULED-RUN-FAILED — digest comment never attempted"
+dup_lines: list[str] = []
+dup_formatter = cp.ProgressFormatter(emit=dup_lines.append, clock=lambda: 0.0)
+dup_formatter.handle_event(
+    {"type": "assistant", "message": {"content": [{"type": "text", "text": dup_report}]}}
+)
+dup_formatter.handle_event(
+    {"type": "result", "subtype": "success", "is_error": False, "result": dup_report}
+)
+dup_formatter.finish(0)
+dup_output = "\n".join(dup_lines)
+check(dup_formatter.saw_self_reported_failure,
+      "the marker registers even when the duplicate copy is deduped away")
+check(dup_output.count("digest comment never attempted") == 1,
+      "the deduped second copy of the report is still not re-emitted")
+
+# A run that delivered must stay green — the marker is opt-in, not a default.
+delivered_lines: list[str] = []
+delivered_formatter = cp.ProgressFormatter(emit=delivered_lines.append, clock=lambda: 0.0)
+delivered_formatter.handle_event({
+    "type": "result",
+    "subtype": "success",
+    "is_error": False,
+    "result": "Fleet audit — 0 to audit, 31 unchanged; digest posted, Slack pinged.",
+})
+delivered_formatter.finish(0)
+check(not delivered_formatter.saw_self_reported_failure
+      and "✅ completed" in "\n".join(delivered_lines),
+      "an all-unchanged run that still delivered a digest stays a success")
+
+# The marker is line-anchored: a successful run that quotes its own rulebook
+# ("...prints SCHEDULED-RUN-FAILED when the assertion fails") is not turned red.
+check(not cp._is_self_reported_failure(
+          "Delivered. The rule says to print SCHEDULED-RUN-FAILED when nothing shipped."),
+      "a mid-sentence mention of the marker does not trip the detector")
+for shape in (
+    "SCHEDULED-RUN-FAILED - no repo evaluated",
+    "report\n  SCHEDULED-RUN-FAILED - no digest",
+    "report\n- SCHEDULED-RUN-FAILED - no digest",
+    "report\n> SCHEDULED-RUN-FAILED - no digest",
+):
+    check(cp._is_self_reported_failure(shape),
+          f"the marker is detected at the start of a line: {shape.splitlines()[-1].strip()[:34]!r}")
+
+# The marker is a contract between this adapter and the skills that print it.
+audit_skill = (ROOT / ".claude" / "skills" / "audit-fleet" / "SKILL.md").read_text(encoding="utf-8")
+check(cp.SELF_REPORTED_FAILURE_MARKER in audit_skill,
+      "audit-fleet's SKILL.md prints the exact marker string the adapter detects")
+check("delivery assertion" in audit_skill.lower(),
+      "audit-fleet's SKILL.md carries the zero-work delivery assertion")
+
+
 # ---- all checked-in scheduled wrappers use the one shared adapter ----
 
 wrapper_expectations = {
