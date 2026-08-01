@@ -183,6 +183,24 @@ class ProgressFormatter:
         with self._emit_lock:
             self._emit_raw(f"{self._prefix()} {message}")
 
+    def emit_best_effort(self, message: str) -> None:
+        """Write one diagnostic line that must never block or raise.
+
+        Used only *after* the stall watchdog has killed the child, where the
+        thing most likely to be jammed is this adapter's own stdout — a
+        backpressured downstream consumer is what wedged the 2026-07-30
+        scheduled run (fleet-config#514). Taking ``_emit_lock`` here would park
+        it inside a blocked write, and the main thread's own ``finish()`` emit
+        would then deadlock on it, so this deliberately writes unlocked and
+        swallows whatever the write does. Interleaving with a concurrent
+        ``emit`` is an acceptable price for a single last-gasp line on a run
+        that is already being torn down.
+        """
+        try:
+            self._emit_raw(f"{self._prefix()} {message}")
+        except Exception:  # noqa: BLE001 — best-effort by contract
+            pass
+
     def _mark_unknown(self) -> None:
         self._unknown += 1
         self._unknown_timestamps.append(self._clock())
@@ -427,11 +445,17 @@ def _watch_for_stall(
         if idle < stall_timeout:
             continue
         state["stalled"] = True
-        progress.emit(
+        # Kill first, announce second. Announcing first put this thread inside a
+        # `print()` on a backpressured stdout and the kill below never ran, so
+        # the watchdog meant to un-wedge a jammed run wedged with it and the job
+        # read `running` for five hours (fleet-config#514). Killing the tree also
+        # stops the child writing into the shared pipe chain, which is what lets
+        # the downstream backpressure drain in the first place.
+        _kill_process_tree(process)
+        progress.emit_best_effort(
             f"⏱ no stream activity for {_elapsed(idle)} "
             f"(limit {_elapsed(stall_timeout)}) — killing the stalled run"
         )
-        _kill_process_tree(process)
         return
 
 
