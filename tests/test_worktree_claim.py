@@ -384,4 +384,91 @@ finally:
     shutil.rmtree(deregistered_base, ignore_errors=True)
 
 
+
+# ---- copy_runtime_config: the worktree gets its OWN port, not the primary's (#537) ----
+#
+# Carrying the primary's port across is what made every worktree lane's e2e
+# suite report a collision with the live tray and refuse to run. Secrets and
+# every other field must still copy verbatim -- the worktree is a faithful
+# runtime twin, differing only where sharing is the bug.
+
+import json as _json
+
+port_base = Path(tempfile.mkdtemp(prefix="wc-port-"))
+try:
+    primary = port_base / "myrepo"
+    (primary / "config").mkdir(parents=True)
+    (primary / "config" / "webapp_config.json").write_text(
+        _json.dumps({"host": "0.0.0.0", "port": 8447, "auth_token": "s3cret"}), encoding="utf-8")
+    # A second ported config: app-launcher's webapp + session-host shape.
+    (primary / "config" / "hosts.json").write_text(
+        _json.dumps({"port": 8447, "name": "session-host"}), encoding="utf-8")
+    # No top-level port -- must stay byte-identical.
+    plain = {"names": {"a": "b"}, "nested": {"port": 8447}}
+    (primary / "config" / "display_names.json").write_text(_json.dumps(plain), encoding="utf-8")
+    # Not an object, and not parseable -- neither may break setup.
+    (primary / "config" / "list.json").write_text("[1, 2, 3]", encoding="utf-8")
+    (primary / "config" / "broken.json").write_text("{not json", encoding="utf-8")
+    (primary / "config" / "webapp_config.sample.json").write_text("{}", encoding="utf-8")
+
+    wt = port_base / ("myrepo" + wc.WT_SEP + "579")
+    wt.mkdir()
+    copied = wc.copy_runtime_config(primary, wt)
+
+    names = sorted(q.name for q in copied)
+    check("webapp_config.sample.json" not in names,
+          "copy_runtime_config: *.sample.json still excluded")
+
+    got = _json.loads((wt / "config" / "webapp_config.json").read_text(encoding="utf-8"))
+    check(got["port"] != 8447, "copy_runtime_config: worktree port differs from the primary's (#537)")
+    check(wc.WT_PORT_BASE <= got["port"] < wc.WT_PORT_BASE + wc.WT_PORT_SPAN,
+          "copy_runtime_config: repointed port lands in the 8500-8999 band (#537)")
+    check(got["auth_token"] == "s3cret" and got["host"] == "0.0.0.0",
+          "copy_runtime_config: every other field copies verbatim, secrets included (#537)")
+
+    got2 = _json.loads((wt / "config" / "hosts.json").read_text(encoding="utf-8"))
+    check(got2["port"] != got["port"],
+          "copy_runtime_config: two ported configs get two DISTINCT ports (#537)")
+    check(got2["name"] == "session-host", "copy_runtime_config: sibling config keeps its other fields")
+
+    check(_json.loads((wt / "config" / "display_names.json").read_text(encoding="utf-8")) == plain,
+          "copy_runtime_config: no top-level port -> untouched, nested 'port' not walked (#537)")
+    check((wt / "config" / "list.json").read_text(encoding="utf-8") == "[1, 2, 3]",
+          "copy_runtime_config: a non-object JSON copies verbatim (#537)")
+    check((wt / "config" / "broken.json").read_text(encoding="utf-8") == "{not json",
+          "copy_runtime_config: an unparseable config copies verbatim, never breaks setup (#537)")
+
+    # The primary must come out of this untouched.
+    src_now = _json.loads((primary / "config" / "webapp_config.json").read_text(encoding="utf-8"))
+    check(src_now["port"] == 8447, "copy_runtime_config: the PRIMARY's own port is never rewritten (#537)")
+
+    # Deterministic: same repo + same issue -> same port when it is still free.
+    shutil.rmtree(wt / "config")
+    wc.copy_runtime_config(primary, wt)
+    again = _json.loads((wt / "config" / "webapp_config.json").read_text(encoding="utf-8"))
+    check(again["port"] == got["port"],
+          "copy_runtime_config: same lane re-setup reproduces the same port (#537)")
+
+    # An already-present destination is still left alone.
+    wt2 = port_base / ("myrepo" + wc.WT_SEP + "580")
+    (wt2 / "config").mkdir(parents=True)
+    (wt2 / "config" / "webapp_config.json").write_text('{"port": 1}', encoding="utf-8")
+    wc.copy_runtime_config(primary, wt2)
+    check(_json.loads((wt2 / "config" / "webapp_config.json").read_text(encoding="utf-8"))["port"] == 1,
+          "copy_runtime_config: an existing destination file is not overwritten or repointed")
+finally:
+    shutil.rmtree(port_base, ignore_errors=True)
+
+
+# ---- worktree_port: band, determinism, avoids what is taken ----
+
+check(wc.worktree_port("579") == wc.worktree_port("579"),
+      "worktree_port: deterministic for the same issue (#537)")
+_p = wc.worktree_port("579")
+check(wc.worktree_port("579", {_p}) != _p,
+      "worktree_port: skips a port already handed out in this worktree (#537)")
+check(wc.WT_PORT_BASE <= wc.worktree_port("fix-no-digits") < wc.WT_PORT_BASE + wc.WT_PORT_SPAN,
+      "worktree_port: a non-numeric issue still lands in band (#537)")
+
+
 _h.report_and_exit("test_worktree_claim")

@@ -109,6 +109,7 @@ import argparse
 import json
 import os
 import shutil
+import socket
 import subprocess
 import sys
 import time
@@ -130,6 +131,11 @@ DEFAULT_TTL_HOURS = 8.0
 # ---- pure helpers (unit-tested without git) -------------------------------
 
 WT_SEP = "-wt-"
+
+# Band a worktree's copied runtime-config ports are repointed into (#537).
+# Rationale for these exact bounds is in `worktree_port`'s docstring.
+WT_PORT_BASE = 8500
+WT_PORT_SPAN = 500
 
 
 def worktree_path(repo_root: Path, issue: str) -> Path:
@@ -334,6 +340,64 @@ def _strip_junction(path: Path) -> None:
         )
 
 
+def _port_is_free(port: int) -> bool:
+    """True if nothing is listening on 127.0.0.1:`port` right now."""
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        sock.settimeout(0.2)
+        return sock.connect_ex(("127.0.0.1", port)) != 0
+
+
+def worktree_port(issue: str, taken: "set" = frozenset()) -> int:
+    """A port for a worktree's copied runtime config, in `8500-8999`.
+
+    Deterministic first, honest second: the issue number seeds the offset so
+    re-running setup for the same lane reproduces the same port, then we probe
+    upward (wrapping inside the band) past anything already listening or already
+    handed out to a sibling config file in this same worktree. A repo with two
+    ported configs (app-launcher's webapp + session-host) therefore gets two
+    distinct ports rather than one collided pair.
+
+    The band is chosen to clear three things at once: the fleet's own app ports
+    (`844x`), this machine's known fixed listeners (cloudflared 20241-3,
+    tailscaled 40746, OneDrive 42050, MouseWithoutBorders 15100/1, llama-server
+    18093, StreamDeck 28196/8, MSI 26822/32683/33683, logioptionsplus 19010,
+    hwinfo 10000), and the Windows ephemeral range 49152-65535.
+    """
+    digits = "".join(ch for ch in issue if ch.isdigit())
+    seed = int(digits) if digits else sum(ord(ch) for ch in issue)
+    for step in range(WT_PORT_SPAN):
+        port = WT_PORT_BASE + ((seed + step) % WT_PORT_SPAN)
+        if port not in taken and _port_is_free(port):
+            return port
+    raise RuntimeError(
+        f"no free port in {WT_PORT_BASE}-{WT_PORT_BASE + WT_PORT_SPAN - 1} "
+        f"for worktree issue {issue!r}"
+    )
+
+
+def _repoint_config_port(dst: Path, taken: "set") -> Optional[int]:
+    """Give a copied config its own port instead of the primary's. Returns it.
+
+    Only a top-level integer `port` on a JSON **object** is touched — nested
+    objects are left alone, and a file that is not an object, has no `port`, or
+    does not parse is returned unchanged with `None`. A broken runtime config
+    must not break worktree setup; it is the app's business to complain about
+    its own file, not ours to fail the lane over.
+    """
+    try:
+        raw = json.loads(dst.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    port_value = raw.get("port") if isinstance(raw, dict) else None
+    # `bool` is an `int` subclass — exclude it explicitly, a `true` is not a port.
+    if not isinstance(port_value, int) or isinstance(port_value, bool):
+        return None
+    port = worktree_port(dst.parent.parent.name.rpartition(WT_SEP)[2], taken)
+    raw["port"] = port
+    dst.write_text(json.dumps(raw, indent=2) + "\n", encoding="utf-8")
+    return port
+
+
 def copy_runtime_config(repo: Path, wt: Path) -> list:
     """Copy the primary's gitignored `config/*.json` into a fresh worktree.
 
@@ -346,12 +410,23 @@ def copy_runtime_config(repo: Path, wt: Path) -> list:
     and excluded; a destination file that already exists (e.g. a prior partial
     setup) is left alone rather than overwritten. No-op if the repo has no
     `config/` dir. Returns the list of copied destination paths.
+
+    The copy is byte-verbatim **except for a top-level `port`**, which is
+    repointed into the `8500-8999` band (fleet-config#537). Carrying the
+    primary's port across is what made every worktree lane's e2e suite report a
+    collision with the user's live tray and refuse to run — a false positive,
+    since the suite boots its own disposable instance on a free port and never
+    touches the tray's. It also left a worktree that actually boots the app
+    trying to bind the primary's port. Secrets (`auth_token`, `auth_password`)
+    and every other field still copy across untouched: the worktree must stay a
+    faithful runtime twin, differing only where sharing is the bug.
     """
     copied = []
     src_dir = repo / "config"
     if not src_dir.is_dir():
         return copied
     dst_dir = wt / "config"
+    assigned: set = set()
     for src in sorted(src_dir.glob("*.json")):
         if src.name.endswith(".sample.json"):
             continue
@@ -361,6 +436,10 @@ def copy_runtime_config(repo: Path, wt: Path) -> list:
         dst_dir.mkdir(exist_ok=True)
         shutil.copy2(src, dst)
         copied.append(dst)
+        port = _repoint_config_port(dst, assigned)
+        if port is not None:
+            assigned.add(port)
+            print(f"WORKTREE_PORT={port} ({src.name})", file=sys.stderr)
     return copied
 
 
