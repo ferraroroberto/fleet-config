@@ -33,6 +33,16 @@ export const meta = {
 // HALT ON RESIDUE. If teardown cannot get a repo back to clean, the run stops
 // there rather than starting the next lane. Continuing past an unclean lane is
 // precisely how one forgotten worktree became a cascade.
+//
+// REPORTED BUT NOT HALTING (fleet-config#534). Three conditions found on
+// 2026-08-01 are real, must reach a human, and are *not* residue: a stale
+// `.git/index.lock` left by a crashed git (which silently blocks every pull, so
+// a later verification reads a stale working copy and calls shipped work
+// missing), a primary many commits behind `origin/main` (clean is not current),
+// and an empty `<repo>-wt-<N>` shell pinned by exited-but-still-handled WebKit
+// process objects on a host that has not rebooted (inert, undeletable until
+// reboot, and it halted four runs in one day). Teardown reports all three; only
+// `residue` gates the run.
 
 const MAX_ROUNDS = 2
 
@@ -71,6 +81,14 @@ const EXECUTE_RESULT_SCHEMA = {
   },
 }
 
+// fleet-config#534. The last four properties are *reported*, never gating: a
+// stale index.lock, a primary behind origin, and inert zombie-pinned empty
+// shells are all real conditions a human must see, and none of them is residue
+// in the worktree/branch sense. They deliberately do not feed the halt gate in
+// processIssue -- only `residue` does. Each has an explicit `unknown` member
+// because a probe that could not establish its fact must say so rather than
+// fold into the passing value (global CLAUDE.md, and #526's principle applied
+// to a second check).
 const TEARDOWN_RESULT_SCHEMA = {
   type: 'object',
   required: ['residue', 'detail'],
@@ -79,6 +97,11 @@ const TEARDOWN_RESULT_SCHEMA = {
     detail: { type: 'string' },
     commented: { type: 'boolean' },
     wipSha: { type: 'string' },
+    indexLock: { type: 'string', enum: ['none', 'stale-cleared', 'live-held', 'unknown'] },
+    indexLockDetail: { type: 'string' },
+    behindOrigin: { type: 'string', enum: ['current', 'fast-forwarded', 'unknown'] },
+    behindOriginDetail: { type: 'string' },
+    zombieShells: { type: 'string' },
   },
 }
 
@@ -167,15 +190,49 @@ ${commentStep}
 4. Release the claim (idempotent, harmless if never held):
    \`E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/worktree_claim.py release E:\\automation\\${issue.repo}\`
 5. From the primary checkout, delete the local lane branch if it still exists (\`git branch -D ${lane.branch || '<branch>'}\`) and make sure the primary is on its default branch, clean.
-6. VERIFY — do not assume any of the above worked. In the primary checkout run all four and read the output:
-   - \`git -C E:\\automation\\${issue.repo} worktree list\` → must list the primary only.
-   - \`ls -d /e/automation/${issue.repo}-wt-* 2>/dev/null\` → must find nothing.
-   - \`git -C E:\\automation\\${issue.repo} branch\` → must show the default branch only.
-   - \`git -C E:\\automation\\${issue.repo} status --porcelain\` → must be empty, on the default branch.
+6. VERIFY — do not assume any of the above worked. Run all six checks in the primary checkout and read the output. Checks 1–4 decide \`residue\`; checks 5 and 6 are **reported and never halt the run**.
+
+   **Check 1 — worktree registration.** \`git -C E:\\automation\\${issue.repo} worktree list\` → must list the primary only.
+
+   **Check 2 — leftover sibling directory.** \`ls -d /e/automation/${issue.repo}-wt-* 2>/dev/null\`. Glob **only this lane's own repo name**, exactly as written — never a fleet-wide \`/e/automation/*-wt-*\`. Sweeps run concurrently across repos, so a fleet-wide glob makes this lane report another repo's in-flight worktree as its own residue; that happened on 2026-08-01 (app-launcher#709's lane flagged home-automation's live worktree). Keep it repo-scoped; this is not a thing to "simplify" later.
+
+   A hit is **residue by default**. It is not residue only when all five conditions below hold, each proved by running the command and reading its output — never inferred:
+
+   1. **Empty** — zero children, recursively: \`find '<path>' -mindepth 1 -print -quit\` prints nothing.
+   2. **A real directory, not a reparse point/junction** — read the attribute bit explicitly: \`C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe -NoProfile -Command "(Get-Item -Force '<path>').Attributes"\` must not contain \`ReparsePoint\`. Do not infer this from the listing.
+   3. **Git has already deregistered it** — the path is absent from check 1's \`git worktree list\` output.
+   4. **No live holder** — \`E:\\automation\\${issue.repo}\\.venv\\Scripts\\python.exe tests/e2e/_browser_sweep.py '<path>' --dry-run\` reports \`live=0\`; every holder it prints is classified \`zombie\`.
+   5. **The helper was still run and still refused** — \`worktree_claim.py remove-worktree '<path>'\` (step 3) was actually executed against this path and did not remove it.
+
+   Why the exception exists: on a Windows host that has not rebooted since an e2e run leaked WebKit helpers, those helpers exit and Windows keeps their *process objects* alive while any handle to them remains. The empty directory shell they pin cannot be deleted, renamed, or moved until reboot. It holds nothing, is git-deregistered, is not a junction, and is inert. Treating it as residue halted four separate runs in one day.
+
+   Any one of the five unestablished — a non-empty directory, a junction, a still-registered worktree, one \`live\` holder, or a sweep that could not be run at all (no \`_browser_sweep.py\` in this repo, no venv, a crash) — makes this **RESIDUE**. An unverifiable state is residue, never a convenient pass.
+
+   **Zombies cannot be attributed to a directory, and nothing here asks you to.** An exited process reports \`cwd=<unreadable>\`, so the sweep prints the same repo-wide holder list whatever path you hand it. \`live=0\` across the repo is the entire requirement and it is sufficient, because a live process is the only kind that could still be doing something. Do not try to match a particular zombie to a particular shell, and do not report an inability to do so as a failed condition — that information does not exist.
+
+   Report every leftover that satisfies all five in \`zombieShells\`, by **path and zombie count**, and do not let it make this lane RESIDUE. Judge each directory on its own five conditions. **The number of such shells is irrelevant** — several, left by earlier lanes, are the expected state on a host that has not rebooted; never key on a count, and never on which path you were expecting.
+
+   **Check 3 — branches.** \`git -C E:\\automation\\${issue.repo} branch\` → must show the default branch only.
+
+   **Check 4 — tree.** \`git -C E:\\automation\\${issue.repo} status --porcelain\` → must be empty, on the default branch.
+
+   **Check 5 — stale \`.git/index.lock\` (reported, never halts).** A crashed or killed git leaves \`.git/index.lock\` behind and every later \`git pull\` fails with *"Another git process seems to be running"*. Checks 1–4 pass anyway, so the lane reports "primary on main, clean" — true, and read as current when it is four commits behind. On 2026-08-01 three repos held hours-old locks with no git process alive, and a verification consequently recorded a merged, shipped file as MISSING.
+   - \`ls -l E:\\automation\\${issue.repo}/.git/index.lock\` → absent: \`indexLock: "none"\`, nothing to do.
+   - Present → look for a **live** \`git.exe\` whose command line names this repo: \`C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe -NoProfile -Command "Get-CimInstance Win32_Process -Filter \\"Name='git.exe'\\" | Select-Object ProcessId,CommandLine | Format-List"\`.
+   - A live git naming this repo → \`indexLock: "live-held"\`. Someone is mid-operation: say so in \`indexLockDetail\` (with the pid) and **touch nothing** — no delete, no pull, no retry. \`live-held\` is an *unknown*-class verdict, never a pass: it is a named, more useful spelling of "could not establish that this primary is current", and it must be reported as such.
+   - No live git **and** the lock's mtime is older than 5 minutes → \`indexLock: "stale-cleared"\`. Put its age in \`indexLockDetail\`, delete the lock, and let check 6 do the pull. This is the **only** condition under which the lock may be removed.
+   - Anything you could not establish — the process query failed, the mtime is unreadable, or the lock is younger than 5 minutes with no identifiable owner → \`indexLock: "unknown"\`, and leave it exactly where it is.
+
+   **Check 6 — primary current with origin (reported, never halts).** Clean is not current: a primary sitting eleven commits behind \`origin/main\` passes checks 1–4, and any later verification reading that working copy misreports shipped work as absent.
+   - \`git -C E:\\automation\\${issue.repo} fetch origin\`, then \`git -C E:\\automation\\${issue.repo} rev-list --count HEAD..origin/<default-branch>\`.
+   - \`0\` → \`behindOrigin: "current"\`.
+   - Non-zero, **and checks 3 and 4 both came back clean** → \`git -C E:\\automation\\${issue.repo} pull --ff-only\`. On success \`behindOrigin: "fast-forwarded"\`, with the commit delta and the before/after SHAs in \`behindOriginDetail\`. **Never a merge, never a rebase, never a reset, never \`--force\`.**
+   - Never pull over an unclean primary. If check 3 or 4 failed (wrong branch, dirty tree), do **not** attempt the fast-forward at all → \`behindOrigin: "unknown"\` naming the count and the reason. This lane is already RESIDUE; mutating the tree on top of that would destroy the evidence a human needs.
+   - The fast-forward is refused (diverged history), the fetch failed, or check 5 left the lock in place (\`live-held\`/\`unknown\`) → \`behindOrigin: "unknown"\` with the reason. Do not escalate to any other kind of pull.
 
 If a directory refuses to delete because a process holds it (a leaked Playwright browser helper is the usual culprit — project-scaffolding#203), say exactly that in \`detail\`; do NOT kill processes you cannot identify and do NOT retry destructively.
 
-Report via the required schema. \`residue\` is **CLEAN** only when all four verification commands above came back exactly as described — if any check could not be run, or came back ambiguous, that is RESIDUE, not CLEAN. A run-halting decision is made from this field, so a false CLEAN is far worse than an honest RESIDUE.`
+Report via the required schema. \`residue\` is **CLEAN** only when checks 1–4 came back exactly as described — with a leftover directory that satisfies all five zombie-shell conditions counting as passing check 2 — and if any of those checks could not be run, or came back ambiguous, that is RESIDUE, not CLEAN. A run-halting decision is made from this field, so a false CLEAN is far worse than an honest RESIDUE. Checks 5 and 6 never touch \`residue\` and never halt the run; report them in \`indexLock\`/\`indexLockDetail\` and \`behindOrigin\`/\`behindOriginDetail\` so they reach the human-facing summary.`
 }
 
 async function processIssue(bucket, issue) {
@@ -243,11 +300,19 @@ async function processIssue(bucket, issue) {
     schema: TEARDOWN_RESULT_SCHEMA,
   })
 
+  // fleet-config#534: the two reported-only probes default to 'unknown', never
+  // to their passing value, when the teardown agent died or omitted them — a
+  // check that could not establish its fact must surface as unknown.
   return {
     ...lane,
     residue: teardown ? teardown.residue : 'RESIDUE',
     residueDetail: teardown ? teardown.detail : 'teardown agent returned no result',
     wipSha: teardown ? teardown.wipSha : undefined,
+    indexLock: (teardown && teardown.indexLock) || 'unknown',
+    indexLockDetail: teardown ? teardown.indexLockDetail : 'teardown agent returned no result',
+    behindOrigin: (teardown && teardown.behindOrigin) || 'unknown',
+    behindOriginDetail: teardown ? teardown.behindOriginDetail : 'teardown agent returned no result',
+    zombieShells: teardown ? teardown.zombieShells : undefined,
   }
 }
 
@@ -284,6 +349,12 @@ for (const bucket of bucketNames) {
     const r = await processIssue(bucket, issue)
     results.push(r)
     log(`${bucket} [${i + 1}/${issues.length}]: ${issue.repo}#${issue.number} → ${r.status}, teardown ${r.residue}`)
+
+    // Reported-only probes (#534) — surfaced in the stream so an overnight run
+    // is diagnosable from the log alone, never folded into the halt decision.
+    if (r.indexLock !== 'none') log(`  index.lock: ${r.indexLock} — ${r.indexLockDetail || 'no detail reported'}`)
+    if (r.behindOrigin !== 'current') log(`  behind origin: ${r.behindOrigin} — ${r.behindOriginDetail || 'no detail reported'}`)
+    if (r.zombieShells) log(`  zombie-pinned shells (not residue): ${r.zombieShells}`)
 
     // Anti-cascade gate. A lane that could not be returned to clean stops the
     // whole run — serial lanes mean exactly one repo is affected, and starting
