@@ -12,7 +12,7 @@ description: Unattended, all-bucket sibling of /cleanup-fleet — builds, valida
 1. **Build** — implement the fix in a forced worktree and run the project's verification gate, then **stop** before shipping.
 2. **Validate** — a fresh, independent agent with no memory of the build. Re-runs the verification gate itself and judges, leniently, whether the diff actually addresses the issue.
 3. **Execute** — ships an already-validated branch: push, PR, CI, merge, tray restart.
-4. **Teardown** — the terminal step of **every** lane, whatever the outcome: comments the failure reason + any WIP SHA onto the GitHub issue (non-merged lanes only), removes the worktree via `worktree_claim.py remove-worktree`, releases the claim, deletes the branch, and **verifies** the repo is back on a clean default branch with no worktree and no stray branch.
+4. **Teardown** — the terminal step of **every** lane, whatever the outcome: comments the failure reason + any WIP SHA onto the GitHub issue (non-merged lanes only), removes the worktree via `worktree_claim.py remove-worktree`, releases the claim, deletes the branch, and runs **six verification checks**. Four of them decide residue (worktree list, no leftover sibling directory, default branch only, clean tree); two are **reported and never halt** — a stale `.git/index.lock` and a primary behind `origin/<default>` (fleet-config#534).
 
 A failed validation retries the build **once** (feeding it the validator's feedback verbatim), for a hard cap of **2 rounds**; a second failure escalates the issue. **Escalation is not "leave the branch for a human"** — the open GitHub issue plus the teardown agent's comment on it *is* the durable record; the branch and worktree are torn down like any other lane (fleet-config#518).
 
@@ -109,7 +109,7 @@ Re-issue this call (each blocks up to 10 minutes) until the returned status is `
 
 The workflow's return value is `{ buckets: [{ bucket, results: [...], skipped? }, ...], halted }`:
 
-- each result is `{ issue, status, round, branch, worktree, residue, residueDetail, pr?, mergeSha?, reason?, wipSha? }` — `status` is one of `merged`, `escalated`, `failed`; `residue` is `CLEAN` or `RESIDUE`.
+- each result is `{ issue, status, round, branch, worktree, residue, residueDetail, indexLock, indexLockDetail, behindOrigin, behindOriginDetail, zombieShells?, pr?, mergeSha?, reason?, wipSha? }` — `status` is one of `merged`, `escalated`, `failed`; `residue` is `CLEAN` or `RESIDUE`. `indexLock` (`none`/`stale-cleared`/`live-held`/`unknown`) and `behindOrigin` (`current`/`fast-forwarded`/`unknown`) are **reported only** — they never gate a lane and never halt the run, and they default to `unknown` when the teardown agent died or omitted them. `zombieShells` names any leftover directory that satisfied all five zombie-pinned conditions (step 8b) and was therefore not counted as residue.
 - `halted` is `null` on a full run, or `{ bucket, repo, issue, status, detail, remainingInBucket }` when a lane's teardown left residue and the run stopped there. **A halted run is a loud failure, not a partial success** — report it at the top of the final summary, name the one repo, and say exactly what a human must do.
 
 ### 8. Post-flight verification (never trust the agent's self-report)
@@ -137,13 +137,26 @@ E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skill
 ```
 for r in <every touched repo>; do
   git -C /e/automation/$r worktree list
-  ls -d /e/automation/$r-wt-* 2>/dev/null
+  ls -d /e/automation/$r-wt-* 2>/dev/null   # per-repo glob, never /e/automation/*-wt-*
   git -C /e/automation/$r branch --format='%(refname:short)'
   git -C /e/automation/$r status --porcelain
+  ls -l /e/automation/$r/.git/index.lock 2>/dev/null
+  git -C /e/automation/$r fetch origin && git -C /e/automation/$r rev-list --count HEAD..origin/<default>
 done
 ```
 
-Anything beyond `main` (or the repo's default branch), a clean tree, and a single primary worktree is **residue**. Residue is never folded into a `✅`/`📋` line: it gets its own `❌ RESIDUE` block in the final summary naming the repo, the leftover path/branch, and the one-line recovery command. If a check could not run at all, report it as `❓ unknown`, never as clean.
+The worktree glob is **per repo, inside the loop, and stays that way**. A fleet-wide `/e/automation/*-wt-*` makes one repo's check report another repo's in-flight worktree as residue — that happened on 2026-08-01, when app-launcher#709's lane flagged home-automation's live worktree.
+
+Anything beyond `main` (or the repo's default branch), a clean tree, and a single primary worktree is **residue** — with one by-condition exception, the same one the teardown agent applies. A leftover `<repo>-wt-<N>` directory is **not** residue when all five hold, each proved by running the command: it is recursively empty; it is a real directory, not a reparse point (read the attribute bit via `powershell.exe -NoProfile -Command "(Get-Item -Force '<path>').Attributes"`); it is absent from `git worktree list`; `<repo>/.venv/Scripts/python.exe tests/e2e/_browser_sweep.py '<path>' --dry-run` reports `live=0`; and `worktree_claim.py remove-worktree` was run against it and refused. Windows keeps the *process objects* of exited WebKit e2e helpers alive while any handle remains, and the empty shell they pin cannot be deleted until reboot — inert, but undeletable. Any one condition unestablished is residue. **Never ask which zombie pins which directory** — an exited process reports `cwd=<unreadable>`, so the sweep prints the same repo-wide list for any path; `live=0` repo-wide is the whole requirement and is sufficient. Report qualifying shells as `🧟 zombie-pinned (not residue)` with path and zombie count; several of them are the expected state on a host that has not rebooted, so nothing keys on how many there are.
+
+Residue is never folded into a `✅`/`📋` line: it gets its own `❌ RESIDUE` block in the final summary naming the repo, the leftover path/branch, and the one-line recovery command. If a check could not run at all, report it as `❓ unknown`, never as clean.
+
+**Neither of the last two probes is residue and neither halts anything** (fleet-config#534) — they are reported alongside it:
+
+- **`index.lock`** — present with a **live** `git.exe` naming that repo (`powershell.exe -NoProfile -Command "Get-CimInstance Win32_Process -Filter \"Name='git.exe'\" | Select-Object ProcessId,CommandLine | Format-List"`) → report `❓ index.lock held by live git (pid N) — left alone`, and touch nothing. Present with **no** live git and an mtime older than 5 minutes → report it by name and age as a stale lock, delete it, and retry the `rev-list`/pull below. Anything unestablished → `❓ unknown`, leave it in place. This is the condition that silently blocks every `git pull` and turns a "clean" primary into a stale one.
+- **Behind origin** — a non-zero `rev-list --count HEAD..origin/<default>` is fast-forwarded with `git -C /e/automation/$r pull --ff-only` (never a merge, a rebase, a reset, or `--force`) and reported as `⬆️ <repo> was N behind — fast-forwarded <before>→<after>`. A refused fast-forward, a failed fetch, or a still-locked index → `❓ unknown` with the reason, not a silent pass. **Never pull over a repo this step already found dirty or off its default branch** — report the count as `❓ unknown` instead; that repo is residue and mutating it destroys the evidence.
+
+`live-held` and a refused fast-forward are *unknown*-class verdicts, not passes — named spellings of "could not establish that this primary is current". Render them with `❓` and never fold them into a `✅`.
 
 ### 9. Notify
 
@@ -170,6 +183,13 @@ Cleanup-fleet-all complete           (or: HALTED at <repo>#<N> — see below)
   …
   skipped repos (dirty/off-branch/pre-existing worktree): website
   deferred (extra issue, next run): grocery-shopping#9
+
+  primary hygiene (reported, nothing halted):
+    🔓 home-automation — stale .git/index.lock (4h12m old, no live git) cleared, pull retried
+    ❓ automation      — index.lock held by live git (pid 21884) — left alone
+    ⬆️ automation      — was 11 behind origin/main, fast-forwarded a1b2c3d→e4f5a6b
+    ❓ website         — behind check unknown: fetch failed (no network)
+    🧟 app-launcher    — E:\automation\app-launcher-wt-709 empty + zombie-pinned (6 zombies, live=0), not residue
 
   ❌ RESIDUE (run halted): local-llm-hub — E:\automation\local-llm-hub-wt-451 would not delete
      <detail from the teardown agent>
@@ -200,6 +220,9 @@ No follow-up actions and no auto-launch of anything — including no retry of a 
 - **Post-flight dirty-tree check runs here, in this skill, never inside a spawned agent**, right before a repo's status is trusted.
 - **Max 2 build/validate rounds per issue. A second failure escalates — it never force-merges and never silently drops the issue from the final report.** Escalation means *commented on the issue and torn down*, not *branch parked for later*.
 - **Post-flight residue enumeration (step 8b) covers every touched repo, not just merged ones, and fails loud.** A check that can't establish a fact reports `unknown`, never clean.
+- **The leftover-directory glob is per repo, in both the teardown prompt and step 8b — never fleet-wide.** Concurrent sweeps mean `/e/automation/*-wt-*` reports another repo's live worktree as this lane's residue.
+- **A leftover worktree directory is judged by condition, never by path or count.** All five hold (recursively empty, not a reparse point, git-deregistered, `_browser_sweep.py --dry-run` reports `live=0`, `remove-worktree` was run and refused) → reported as zombie-pinned, not residue, no halt. Any one unestablished → RESIDUE. Multiple qualifying shells are the expected state on a host that has not rebooted. **No rule may require attributing a zombie process to a directory** — an exited process reports `cwd=<unreadable>`, so that attribution does not exist; `live=0` repo-wide is the whole requirement.
+- **A stale `index.lock` and a behind-origin primary are reported, never halting, and never silently repaired.** The lock is deleted only when no live `git.exe` names the repo *and* it is older than 5 minutes; a live holder or an unreadable state is `unknown` and is left alone. Behind-origin is fast-forwarded with `--ff-only` only — never a merge, rebase, reset, or `--force` — and a refused fast-forward is `unknown`, not a pass.
 - **No AI attribution; no hard-wrapped issue/PR-body paragraphs.** (Per global CLAUDE.md.)
 
 ## Notes
@@ -208,4 +231,5 @@ No follow-up actions and no auto-launch of anything — including no retry of a 
 - **Compose, don't reinvent:** the build agent's mechanics reuse `/issue-start <N> now`; the execute agent's mechanics reuse `/issue-finish`'s push/PR/CI/merge/tray-restart sequence — same as `/cleanup-fleet` and `/issue-finish-batch` already do.
 - **Validated attended, once, against the `stale` bucket** (4 repos: whatsapp-radar, photo-ocr, local-llm-hub, app-launcher) — all 4 merged on the first round, no retries needed, post-flight `dirty_tree_check.py` confirmed all four trees clean on `main`. Two environment bugs surfaced and were worked around: `scriptPath` invocation (see step 7) and `args` arriving inside the workflow script as a JSON string rather than a parsed object — `.claude/workflows/cleanup-fleet-all.js` defensively `JSON.parse`s it when it comes through as a string. Neither bug is specific to this skill's content (both reproduced with trivial scripts/payloads); worth re-testing if the harness changes.
 - **Before trusting the full unattended schedule**, run at least one more attended pass covering a bucket with a validator rejection (to prove the retry loop, not just the happy path) before wiring `run-weekly.bat` into a scheduled job.
+- **2026-08-01 teardown-honesty pass (fleet-config#534).** Three conditions found during a multi-repo cleanup day, all the same defect class the halt-on-residue work targets — a check that passes or fails without having established the thing it claims. (1) Three repos held hours-old `.git/index.lock` files with no live git process; every `git pull` failed and nothing looked, so a hash check reported a merged, shipped file as MISSING. (2) Teardown verified "clean" but never "current" — five primaries were 1–11 commits behind `origin/main` and passed all four checks. (3) Empty `<repo>-wt-<N>` shells pinned by exited-but-still-handled WebKit process objects were counted as residue and halted four runs; they are inert and undeletable until reboot. The first two became reported-only checks 5 and 6; the third became a by-condition exception to check 2. An earlier draft of that exception demanded per-directory zombie attribution and was correctly rejected by a teardown agent as unprovable — an exited process reports `cwd=<unreadable>`, so `live=0` repo-wide is the requirement, and no rule may ask for more.
 - **2026-07-31 rewrite (fleet-config#518 + #515), after the 2026-07-30 run reported `35 merged / 12 escalated / 0 failed` and left the fleet unusable:** within-bucket `parallel(...)` became a serial loop; a fourth Teardown agent became the terminal step of every lane; residue halts the run; all agent briefs force worktree mode and ban live-e2e overrides; step 8 gained the fleet-wide residue enumeration. The old run's `0 failed` was the giveaway — every one of the 11 stray worktrees came from a lane the workflow considered a *success path* for reporting purposes.

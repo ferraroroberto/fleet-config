@@ -91,7 +91,7 @@ flowchart TB
   CLEANUPFLEET --> ISSUEEXTRA
 
   subgraph fworkflows[".claude/workflows/ — Workflow-tool scripts, no Bash/filesystem access"]
-    CLEANUPFLEETALLJS["cleanup-fleet-all.js\nbuild -> validate -> execute -> teardown per issue,\nSERIAL lanes (one bucket, one repo at a time),\ndeterministic retry/escalate gate (max 2 rounds),\nhalts the run on teardown residue (#518)"]
+    CLEANUPFLEETALLJS["cleanup-fleet-all.js\nbuild -> validate -> execute -> teardown per issue,\nSERIAL lanes (one bucket, one repo at a time),\ndeterministic retry/escalate gate (max 2 rounds),\nhalts the run on teardown residue (#518),\nreports-without-halting stale index.lock / behind-origin /\nzombie-pinned empty shells (#534)"]
   end
   CLEANUPFLEETALL -->|invokes + polls TaskOutput to completion| CLEANUPFLEETALLJS
   CLEANUPFLEETALLJS -->|build/execute agents reuse| ISSUEEXTRA
