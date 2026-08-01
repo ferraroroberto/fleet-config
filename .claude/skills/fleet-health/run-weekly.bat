@@ -1,6 +1,7 @@
 @echo off
 REM Weekly unattended /fleet-health run — wired as an app-launcher Job
-REM (Windows Task Scheduler \AppLauncher\, overnight). Captures every reachable
+REM (Windows Task Scheduler \AppLauncher\; the schedule is owned by
+REM app-launcher's Jobs registry, config/jobs.json). Captures every reachable
 REM machine through its own hub, analyses each against last week, and appends to
 REM the incremental ledger under %USERPROFILE%\.claude\fleet-health\, then posts
 REM a digest to Slack. Captures block for ~1h — the job must not be killed early.

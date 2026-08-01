@@ -1,6 +1,7 @@
 @echo off
 REM Weekly unattended /context-audit run — wired as an app-launcher Job
-REM (Windows Task Scheduler \AppLauncher\, Fridays 00:30). Audits the fleet's
+REM (Windows Task Scheduler \AppLauncher\; the schedule is owned by
+REM app-launcher's Jobs registry, config/jobs.json). Audits the fleet's
 REM always-on context surface (CLAUDE.md token budgets, skill-description word
 REM counts, single-home-by-altitude violations), upserts the context-audit
 REM ledger issue + weekly comment, and posts a Slack digest. bypassPermissions

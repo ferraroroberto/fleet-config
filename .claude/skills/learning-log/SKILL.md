@@ -125,6 +125,6 @@ A few lines: window, grand totals, buckets analysed (+ any agent that errored), 
 
 An app-launcher Job (`config/jobs.json`, weekly, `visible: true`) calls `.claude/skills/learning-log/run-weekly.bat`, staggered clear of the other Friday claude-runs:
 
-The wrapper preserves `/learning-log`, `claude-sonnet-4-6`, and bypass permissions while streaming filtered milestones through `claude_progress.py`.
+The wrapper preserves `/learning-log`, `claude-sonnet-5`, and bypass permissions while streaming filtered milestones through `claude_progress.py`.
 
 cwd = `E:/automation/fleet-config`. The Sonnet orchestrator gathers, fans out the Sonnet bucket sub-agents, aggregates, and writes the ledger + comment + Slack itself.

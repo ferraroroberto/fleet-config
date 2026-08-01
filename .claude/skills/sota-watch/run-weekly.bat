@@ -1,6 +1,7 @@
 @echo off
 REM Weekly unattended /sota-watch run — wired as an app-launcher Job
-REM (Windows Task Scheduler \AppLauncher\, overnight). Walks the SOTA
+REM (Windows Task Scheduler \AppLauncher\; the schedule is owned by
+REM app-launcher's Jobs registry, config/jobs.json). Walks the SOTA
 REM watchlist, deep-researches due areas, relays the local-llm-hub frontier
 REM ledger, and comments the digest on the sota-watch ledger issue + Slack.
 cd /d E:\automation\fleet-config
