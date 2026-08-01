@@ -23,7 +23,16 @@ Claude Code's own ``--print`` mode kills any sub-agents still in flight when a
 background-task ceiling elapses (currently 600s) and exits ``0`` anyway — a
 false success that looks identical to a clean run unless something reads
 stderr (fleet-config#506). This adapter watches for that stderr signature and
-exits ``125`` instead, even when the child process itself reported ``0``.
+exits ``125`` instead, even when the child process itself reported ``0``. It
+also *prevents* the kill in the first place by handing the child
+``CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS=0`` — the CLI's own documented "wait
+indefinitely" setting (fleet-config#519).
+
+The third false-success shape is a run that ends perfectly normally having done
+no work at all: nothing was killed, nothing stalled, so the child exits ``0``.
+Only the skill itself knows what "no work" means for it, so a scheduled skill
+self-reports by printing ``SCHEDULED-RUN-FAILED`` in its final report and this
+adapter turns that into exit ``123``.
 """
 
 from __future__ import annotations
@@ -76,6 +85,30 @@ STALL_EXIT_CODE = 124
 KILL_SIGNATURE_TERMS = ("background tasks still running", "terminat")
 BACKGROUND_KILL_EXIT_CODE = 125
 
+# Detection is not prevention: #506 made the kill visible, but the sub-agents'
+# work was still lost. The CLI's own stderr names the cure — "Set
+# CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS=0 to wait indefinitely" — so this adapter
+# sets it for every scheduled skill from the one place that owns the spawn
+# (fleet-config#519). Verified against the shipped CLI rather than taken on
+# faith: the binary reads this exact name (`env.CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS
+# ?? <default>`) and gates the sweep on `ceiling > 0 && ...`, so `0` makes
+# "ceiling exceeded" permanently false — it disables the kill, it does not make
+# it immediate. Safe against a genuinely wedged run: background-task events keep
+# the stream alive, so the stall watchdog above remains the real upper bound on
+# an unattended run.
+BG_WAIT_CEILING_ENV = "CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS"
+BG_WAIT_CEILING_UNLIMITED = "0"
+
+# A run that ends normally having done nothing is the false success neither the
+# kill detector nor the stall watchdog can see — on 2026-07-30 the tell was in
+# the content (zero repos audited, no digest, no ping), not in the exit code.
+# The adapter cannot judge "no work" for an arbitrary skill, so the skill
+# asserts its own delivery and prints this marker when the assertion fails;
+# the adapter owns turning that into a non-zero exit (fleet-config#519).
+# Deliberately not 124/125/127 — those already name stall/kill/spawn-failure.
+SELF_REPORTED_FAILURE_MARKER = "SCHEDULED-RUN-FAILED"
+SELF_REPORTED_FAILURE_EXIT_CODE = 123
+
 # A burst of unknown-typed stream records right at shutdown is the secondary
 # symptom of the same kill — informational only, never fails a run by itself.
 UNKNOWN_BURST_WINDOW_SECONDS = 15.0
@@ -91,10 +124,25 @@ _SECRET_RE = re.compile(
 )
 
 
+# Anchored to the start of a line (bullets, blockquote marks and indentation
+# tolerated) because a skill is told to print the marker as its own line. A run
+# that merely *mentions* the marker in prose — quoting its own rulebook in a
+# successful report — must not be turned red by the mention.
+_SELF_REPORTED_FAILURE_RE = re.compile(
+    rf"^[ \t>*•\-]*{re.escape(SELF_REPORTED_FAILURE_MARKER)}\b",
+    re.MULTILINE,
+)
+
+
 def _is_background_kill_signature(text: str) -> bool:
     """True for the stderr line Claude prints when it kills in-flight tasks."""
     lower = text.lower()
     return all(term in lower for term in KILL_SIGNATURE_TERMS)
+
+
+def _is_self_reported_failure(text: str) -> bool:
+    """True when a run declared, on its own line, that it delivered nothing."""
+    return _SELF_REPORTED_FAILURE_RE.search(text) is not None
 
 
 def _configure_output() -> None:
@@ -157,10 +205,15 @@ class ProgressFormatter:
         self._result_error = False
         self._saw_result = False
         self._saw_kill_signature = False
+        self._saw_self_reported_failure = False
 
     @property
     def saw_kill_signature(self) -> bool:
         return self._saw_kill_signature
+
+    @property
+    def saw_self_reported_failure(self) -> bool:
+        return self._saw_self_reported_failure
 
     def _prefix(self) -> str:
         return f"[{_elapsed(self._clock() - self._started_at)}]"
@@ -314,7 +367,14 @@ class ProgressFormatter:
         if not isinstance(value, str):
             return
         text = value.replace("\r\n", "\n").strip()
-        if not text or text in self._assistant_texts:
+        if not text:
+            return
+        # Scanned before the dedup guard: the same final report arrives twice
+        # (assistant text block, then the terminal result event), and the marker
+        # must register whichever copy is seen first.
+        if _is_self_reported_failure(text):
+            self._saw_self_reported_failure = True
+        if text in self._assistant_texts:
             return
         self._assistant_texts.add(text)
         self.emit(f"Claude:\n{text}")
@@ -339,13 +399,25 @@ class ProgressFormatter:
                 f"⚠ burst of {recent_unknown} unknown stream record(s) near shutdown "
                 "— possible truncated/killed stream"
             )
-        failed = stalled or exit_code != 0 or self._result_error or self._saw_kill_signature
+        failed = (
+            stalled
+            or exit_code != 0
+            or self._result_error
+            or self._saw_kill_signature
+            or self._saw_self_reported_failure
+        )
         if stalled:
             status = "⏱ stalled"
         elif self._saw_kill_signature:
             status = (
                 "❌ failed · background tasks killed after timeout — orchestrator "
                 "likely ended its turn with agents in flight"
+            )
+        elif self._saw_self_reported_failure:
+            status = (
+                "❌ failed · the run reported it delivered no work "
+                f"({SELF_REPORTED_FAILURE_MARKER}) — see its final report for which "
+                "delivery assertion failed"
             )
         else:
             status = "❌ failed" if failed else "✅ completed"
@@ -474,6 +546,10 @@ def run_process(
     """
     progress = formatter or ProgressFormatter()
     child_env = os.environ.copy()
+    # Applied after the inherited copy so a stale ambient ceiling can never
+    # silently reinstate the 600s sub-agent kill, and before the caller's own
+    # `env` so an explicit override still wins (fleet-config#519).
+    child_env[BG_WAIT_CEILING_ENV] = BG_WAIT_CEILING_UNLIMITED
     if env:
         child_env.update(env)
     process = subprocess.Popen(
@@ -530,6 +606,8 @@ def run_process(
         exit_code = STALL_EXIT_CODE
     elif progress.saw_kill_signature and exit_code == 0:
         exit_code = BACKGROUND_KILL_EXIT_CODE
+    elif progress.saw_self_reported_failure and exit_code == 0:
+        exit_code = SELF_REPORTED_FAILURE_EXIT_CODE
     progress.finish(exit_code, stalled=stall_state["stalled"])
     return exit_code
 

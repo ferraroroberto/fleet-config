@@ -444,6 +444,20 @@ Two channels. stdout is the reliable one (a scheduled run captures it in app-lau
 
   If `gh` fails or the URL is empty, note `comment: skipped (<reason>)` and carry on. **Never fail the run over the comment.**
 
+- **Delivery assertion — run it here, before the ping.** This is the only place the run may declare itself failed on *content* rather than on a crash, and it is the gap `fleet-config#506` left open: on 2026-07-30 the tell was entirely in the content — zero repos audited, no digest comment, no ping — while the exit code read `0`. Check all three, and treat any one you **cannot establish** as failed rather than as passing (an unresolved check is its own state, never folded into the passing one — global CLAUDE.md, "Verify before declaring done"):
+
+  1. **≥1 repo evaluated.** Step 2's sweep placed at least one repo in some bucket (`to_audit` + `unchanged` + `self_fix` + `below_threshold` + `skipped` + `errors` > 0). An empty sweep means the fleet walk itself failed — it does not mean the fleet is clean.
+  2. **A digest was composed and printed.** Step 5 produced digest markdown and this step wrote it to stdout verbatim.
+  3. **The digest comment resolved either way.** `COMMENT_URL` holds a real URL, *or* the comment was recorded as `comment: skipped (<reason>)` with a stated reason. "Never fail the run over the comment" holds for a *stated* failure; a comment step that silently never ran fails this assertion.
+
+  All three hold → carry on to the Slack ping and report normally in step 7. Any one fails → do **not** report success: print this line verbatim in the step-7 final report,
+
+  ```
+  SCHEDULED-RUN-FAILED — <which assertion failed, one line>
+  ```
+
+  still send the Slack ping (a failed run must be *more* visible, not less), and state the failure plainly. `skills/_lib/claude_progress.py` detects that literal marker in the run's final report and exits `123` instead of `0`, so the weekly job shows red rather than a false green (`fleet-config#519`). Never print the marker on a run that did deliver: a sweep where every repo came back `unchanged` and `to_audit` was empty is a **successful** run — it still produces a full digest (step 2), which is exactly why assertion 1 counts `unchanged` too.
+
 - **Slack ping:** call `notify_complete.py --kind audit` with the captured comment URL and a one-line summary. This is deterministic — the skill hands the hook exact structured args; the hook assembles the message:
 
   ```
@@ -457,7 +471,7 @@ Two channels. stdout is the reliable one (a scheduled run captures it in app-lau
 
 ### 7. Final report
 
-One concise block: the plan line from step 2, per-repo results, where the digest went (stdout always; comment URL or skipped reason; Slack pinged or no-op), and the digest-state issue URL. Stop.
+One concise block: the plan line from step 2, per-repo results, where the digest went (stdout always; comment URL or skipped reason; Slack pinged or no-op), and the digest-state issue URL. If step 6's delivery assertion failed, its `SCHEDULED-RUN-FAILED — <reason>` line goes in this block verbatim and nothing in the block may describe the run as complete. Stop.
 
 ## Hard rules
 
@@ -492,7 +506,18 @@ One concise block: the plan line from step 2, per-repo results, where the digest
   killed at the CLI's background-task ceiling and the run reports a false
   `exit 0` (`fleet-config#506`). Step 3's dispatch loop blocks in-turn on every
   task it launches and never returns control until the to-audit list is fully
-  drained.
+  drained. `claude_progress.py` now also hands the CLI
+  `CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS=0` so an in-flight task is waited on
+  rather than killed (`fleet-config#519`) — that is a safety net against losing
+  the work, **not** a licence to end the turn: results a turn never collected
+  still never reach the digest.
+- **A run that delivered nothing must exit non-zero.** Step 6's delivery
+  assertion (≥1 repo evaluated, a digest composed and printed, the comment
+  posted or skipped with a stated reason) runs before the Slack ping on every
+  run. On failure the run prints the literal `SCHEDULED-RUN-FAILED` marker,
+  which `claude_progress.py` maps to exit `123`. A green weekly job with zero
+  work done is the failure mode this whole skill's incident history is made of
+  — never let one report success.
 - **Degrade, don't block.** Built for unattended `claude -p`. A per-repo failure
   is reported and skipped; only a pre-flight failure stops the whole run. Never
   wait on an interactive prompt.
