@@ -1,6 +1,7 @@
 @echo off
 REM Weekly fleet design-drift sweep, fired by the app-launcher Jobs tab
-REM (job id "design-sweep-fleet", weekly THU 10:00, visible console).
+REM (job id "design-sweep-fleet"). The schedule is owned by app-launcher's
+REM Jobs registry (config/jobs.json) and is deliberately not restated here.
 REM Runs the /design-sweep skill headless on the local Claude subscription.
 REM
 REM Opus + high effort for the ORCHESTRATOR: unlike /audit-fleet (whose top-level

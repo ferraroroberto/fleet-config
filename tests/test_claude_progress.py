@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import sys
 import threading
 import time
@@ -481,10 +482,24 @@ wrapper_expectations = {
     "design-sweep": ('"/design-sweep %~1"', "--model opus", "--effort high"),
     "fleet-health": ('"/fleet-health"',),
     "insights-weekly": ('"/insights-weekly"',),
-    "learning-log": ('"/learning-log"', "--model claude-sonnet-4-6"),
+    "learning-log": ('"/learning-log"', "--model claude-sonnet-5"),
     "sota-watch": ('"/sota-watch"',),
     "system-map": ('"/system-map"',),
 }
+
+# A slot claim — a weekday, a clock time, or "overnight" — restates live
+# app-launcher Jobs config, which moves on every Jobs-UI edit while the comment
+# stays put; three wrappers were outright fiction by the time it was noticed
+# (fleet-config#520). The registry owns the schedule; a wrapper points at it.
+_DAY_NAMES = (
+    "mon|monday|tue|tues|tuesday|wed|weds|wednesday|thu|thur|thurs|thursday"
+    "|fri|friday|sat|saturday|sun|sunday"
+)
+slot_claim = re.compile(
+    rf"\b(?:{_DAY_NAMES})s?\b|\b\d{{1,2}}:\d{{2}}\b|\bovernight\b",
+    re.IGNORECASE,
+)
+
 wrappers = sorted((ROOT / ".claude" / "skills").glob("*/run-weekly.bat"))
 check(len(wrappers) == len(wrapper_expectations) == 11,
       "the wiring test covers all eleven scheduled wrappers")
@@ -497,6 +512,10 @@ for wrapper in wrappers:
           f"{wrapper.parent.name}: preserves unattended permission mode")
     check(all(fragment in text for fragment in expected),
           f"{wrapper.parent.name}: preserves prompt/model/effort arguments")
+    slot = slot_claim.search(text)
+    found = slot.group(0) if slot else ""
+    check(slot is None,
+          f"{wrapper.parent.name}: states no schedule slot (found {found!r})")
 
 
 _h.report_and_exit("test_claude_progress")
