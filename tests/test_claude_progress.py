@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import sys
+import threading
 import time
 from pathlib import Path
 
@@ -278,6 +279,37 @@ check(stall_exit == cp.STALL_EXIT_CODE,
 check(stall_elapsed < 60, f"the watchdog returns promptly (took {stall_elapsed:.1f}s)")
 check("no stream activity" in stall_output, "the stall is reported with its idle time")
 check("⏱ stalled" in stall_output, "the terminal milestone names the stall distinctly")
+
+# A jammed stdout must not cost the kill (fleet-config#514). The diagnostic emit
+# used to run *before* _kill_process_tree, so a blocked write parked the watchdog
+# thread and the child was never killed. This emit blocks forever on the stall
+# line; the run must still tear the tree down and exit STALL_EXIT_CODE — the
+# grandchild in stall_script holds the inherited stdout pipe, so the read loop
+# only reaches EOF if the whole tree really died.
+blocked_lines: list[str] = []
+blocked_release = threading.Event()
+
+
+def blocking_emit(line: str) -> None:
+    blocked_lines.append(line)
+    if "no stream activity" in line:
+        blocked_release.wait()  # never set while the run is in flight
+
+
+blocked_started = time.monotonic()
+blocked_exit = cp.run_process(
+    [sys.executable, "-c", stall_script],
+    formatter=cp.ProgressFormatter(emit=blocking_emit),
+    stall_timeout=2.0,
+)
+blocked_elapsed = time.monotonic() - blocked_started
+blocked_release.set()  # release the parked watchdog thread
+check(blocked_exit == cp.STALL_EXIT_CODE,
+      "a stall kill still exits 124 when the diagnostic emit blocks forever")
+check(blocked_elapsed < 60,
+      f"the blocked-emit stall still returns promptly (took {blocked_elapsed:.1f}s)")
+check(any("⏱ stalled" in line for line in blocked_lines),
+      "finish() still reports the stall after the watchdog's emit blocked")
 
 # A child that keeps talking must never be killed, however long it runs.
 chatty_script = (
