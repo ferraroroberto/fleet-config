@@ -94,6 +94,8 @@ Subcommands:
       after the junction strip. Exits 1, naming the path, if the tree is
       still there afterwards (a live process is holding a file inside it);
       the caller must report that as residue, never as a clean teardown.
+      The usual holder is a leaked e2e browser helper -- `remove_worktree`'s
+      docstring names the sweep to run before retrying.
 
   status <repo-root>
       Print the current claim holder (if any) and `git worktree list`.
@@ -423,6 +425,26 @@ def remove_worktree(wt: Path) -> int:
     cause -- a leaked browser helper or backend server) must produce an honest
     non-zero exit naming the path, so the caller reports residue instead of a
     false clean.
+
+    **When the removal fails as "busy", suspect a leaked browser helper.** The
+    named cause (project-scaffolding#203) is a Playwright/WebKit helper process
+    left behind by an e2e run, holding the worktree as its **current working
+    directory** -- helpers inherit pytest's cwd, so a run inside `<repo>-wt-<N>`
+    leaves helpers rooted there, and Windows will not delete a directory that is
+    some live process's cwd. An *already-exited* helper cannot be the culprit:
+    Windows merely keeps its process object (and its `tasklist`/WMI row) alive
+    while a handle to it remains, so a busy worktree implies a genuinely
+    **running** holder, not one of those zombies.
+
+    Diagnosing and clearing that is the e2e harness's job, not this module's.
+    Run the adopting repo's own standalone sweep through its venv interpreter,
+    then retry the teardown:
+
+        <repo>/.venv/Scripts/python.exe tests/e2e/_browser_sweep.py <worktree-path> [--dry-run]
+
+    Pointer only -- the sweep classifies by cwd read from the PEB (Win32
+    exposes no accessor for another process's working directory) and lives in
+    `project-scaffolding`'s e2e harness. Never reimplement it here.
     """
     if not wt.exists():
         print(f"Worktree already gone: {wt}")
@@ -450,6 +472,11 @@ def remove_worktree(wt: Path) -> int:
     if wt.exists():
         print(f"Worktree NOT removed (a live process is likely holding a file "
               f"inside it): {wt}", file=sys.stderr)
+        print(f"# most likely a leaked Playwright/WebKit helper from an e2e run, "
+              f"holding the worktree as its cwd (project-scaffolding#203). "
+              f"Clear it with that repo's own sweep, then retry:\n"
+              f"#   <repo>/.venv/Scripts/python.exe tests/e2e/_browser_sweep.py "
+              f"{wt} --dry-run", file=sys.stderr)
         return 1
     print(f"Removed worktree: {wt}")
     return 0
