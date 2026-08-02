@@ -294,6 +294,74 @@ def run_eval(args: argparse.Namespace) -> int:
     return 1 if failures else 0
 
 
+def run_compress(args: argparse.Namespace) -> int:
+    """Compress an already-captured tool output (fleet-config#545).
+
+    The Pi port's entry: Pi's ``tool_result`` extension middleware already has
+    the real output, so unlike ``run`` there is nothing to execute — no wrapper
+    timeout, no shell-dialect concerns. Reads one JSON object on stdin
+    (``command``, ``output``, optional ``session_id`` / ``cwd`` / ``exit_code``),
+    resolves the mode itself (env → mode.json → off), and prints one JSON
+    object: ``{"mode", "wrap"}`` plus ``"text"`` when wrap is true. Telemetry
+    rows are appended in both shadow and rewrite, same as ``run``.
+    """
+    try:
+        data = json.load(sys.stdin)
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        print(json.dumps({"mode": "off", "wrap": False}))
+        return 0
+    if not isinstance(data, dict):
+        print(json.dumps({"mode": "off", "wrap": False}))
+        return 0
+
+    command = str(data.get("command") or "")
+    output = str(data.get("output") or "")
+    mode = context_filter.resolve_mode()
+    if mode not in {"shadow", "rewrite"} or not command:
+        print(json.dumps({"mode": mode, "wrap": False}))
+        return 0
+    decision = context_filter.rewrite_decision(command)
+    if not decision.should_wrap:
+        print(json.dumps({"mode": mode, "wrap": False}))
+        return 0
+
+    compressed = context_filter.compress_output(command, output, cache_raw=mode == "rewrite")
+    exit_code = data.get("exit_code")
+    context_filter.append_shadow_log(
+        {
+            "ts": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            "mode": mode,
+            "agent": args.agent or "pi",
+            "session_id": str(data.get("session_id") or "") or None,
+            "cwd": str(data.get("cwd") or "") or None,
+            "command": command,
+            "tool": args.tool,
+            "raw_tokens": compressed.raw_tokens,
+            "compressed_tokens": compressed.compressed_tokens,
+            "reduction_pct": round(compressed.reduction_pct, 2),
+            "duration_ms": round(compressed.duration_ms, 3),
+            "exit_code": exit_code if isinstance(exit_code, int) else None,
+        }
+    )
+
+    if mode == "shadow":
+        print(json.dumps({"mode": mode, "wrap": False}))
+        return 0
+
+    header = (
+        f"[fleet-context-filter: raw_tokens={compressed.raw_tokens} "
+        f"compressed_tokens={compressed.compressed_tokens} "
+        f"reduction={compressed.reduction_pct:.1f}%"
+    )
+    if compressed.raw_key:
+        header += f" raw_key={compressed.raw_key}"
+    if compressed.secret_like:
+        header += " secret_like=true raw_not_cached=true"
+    header += "]"
+    print(json.dumps({"mode": mode, "wrap": True, "text": header + "\n" + compressed.compressed}))
+    return 0
+
+
 def retrieve(args: argparse.Namespace) -> int:
     path = context_filter.data_dir() / "blobs" / f"{args.key}.txt"
     if not path.exists():
@@ -325,6 +393,11 @@ def main() -> int:
     run_p.add_argument("--session-id", dest="session_id", default="")
     run_p.add_argument("--agent", default="")
     run_p.set_defaults(func=run_wrapped)
+
+    compress_p = sub.add_parser("compress", help="compress an already-captured output (stdin JSON)")
+    compress_p.add_argument("--tool", default="Bash")
+    compress_p.add_argument("--agent", default="pi")
+    compress_p.set_defaults(func=run_compress)
 
     eval_p = sub.add_parser("eval", help="run the reproducible fixture benchmark")
     eval_p.add_argument("--fixtures", default="tests/fixtures/context_filter")
