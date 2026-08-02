@@ -360,11 +360,36 @@ _agy_other = _lib.normalize_payload({"toolCall": {"name": "read_file", "args": {
 check(_agy_other.get("tool_name") == "read_file", "agy: unknown tool name passes through")
 check(_lib.shell_is_ambiguous(_agy_other) is False, "agy: non-shell tool is not marked ambiguous")
 
-# Claude identity property must survive the new branch
+# ---- Copilot CLI shape: string toolArgs envelope -> Claude vocabulary ----
+# fleet-config#547. Verified live against Copilot CLI 1.0.77: preToolUse stdin
+# is {"sessionId", "timestamp", "cwd", "toolName", "toolArgs": "<JSON string>"},
+# camelCase, no event name — the string-typed toolArgs is the tell.
+
+COPILOT_PRE_TOOL_USE = {
+    "sessionId": "cop-sess-1",
+    "timestamp": 1785694280490,
+    "cwd": "E:\\automation\\fleet-config",
+    "toolName": "powershell",
+    "toolArgs": "{\"command\":\"git status --short\",\"description\":\"d\",\"mode\":\"sync\"}",
+}
+
+_cop = _lib.normalize_payload(dict(COPILOT_PRE_TOOL_USE))
+check(_cop.get("hook_event_name") == "PreToolUse", "copilot: event maps to PreToolUse")
+check(_cop.get("tool_name") == "PowerShell", "copilot: powershell maps to PowerShell (tool names the real shell)")
+check(_cop.get("tool_input", {}).get("command") == "git status --short", "copilot: toolArgs command lands as tool_input.command")
+check(_cop.get("tool_input", {}).get("mode") == "sync", "copilot: other toolArgs keys are preserved for modifiedArgs echo")
+check(_cop.get("session_id") == "cop-sess-1", "copilot: sessionId lands as session_id")
+check(_lib.payload_agent(_cop) == "copilot", "copilot: agent hint is copilot")
+check(_lib.shell_is_ambiguous(_cop) is False, "copilot: not shell-ambiguous (toolName is the shell)")
+
+_cop_bad = _lib.normalize_payload({"toolName": "powershell", "toolArgs": "{not json"})
+check(_cop_bad.get("tool_input") == {}, "copilot: malformed toolArgs degrades to empty tool_input")
+
+# Claude identity property must survive the new branches
 _claude_again = {"hook_event_name": "PreToolUse", "tool_name": "Bash", "tool_input": {"command": "x"}}
 check(
     _lib.normalize_payload(_claude_again) is _claude_again,
-    "claude payload still returns the identical object after the agy branch",
+    "claude payload still returns the identical object after the agy + copilot branches",
 )
 
 

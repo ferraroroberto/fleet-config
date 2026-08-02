@@ -188,6 +188,17 @@ _GROK_KEYS = {
     "lastAssistantMessage": "last_assistant_message",
 }
 
+# Copilot CLI tool ids → Claude tool names (fleet-config#547). Unlike Codex
+# and agy, Copilot's toolName truthfully names the executing shell (verified
+# live on 1.0.77: toolName "powershell" ran PowerShell), so no shell-ambiguity
+# marker and no platform override are needed downstream.
+_COPILOT_TOOLS = {
+    "powershell": "PowerShell",
+    "bash": "Bash",
+    "shell": "Bash",
+    "sh": "Bash",
+}
+
 # Antigravity's `agy` CLI tool ids → Claude tool names (fleet-config#546).
 # `run_command` is shell-agnostic like Grok's `run_terminal_command`; the live
 # probe proved agy executes CommandLine under PowerShell on Windows, but that
@@ -235,6 +246,32 @@ def normalize_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
     #   "conversationId", "stepIdx", ...}` — the `toolCall` envelope is the
     # reliable tell (Claude and Grok never send it; verified live against
     # agy 1.1.8). Translated here, once, same contract as the Grok branch.
+    # Copilot CLI (fleet-config#547): camelCase envelope with NO event name —
+    # `{"sessionId", "timestamp", "cwd", "toolName", "toolArgs": "<JSON string>"}`
+    # (verified live on 1.0.77). The string-typed `toolArgs` beside `toolName`
+    # is the tell: Claude sends tool_input as an object, Grok sends
+    # hookEventName, agy sends toolCall. The full parsed args dict is kept in
+    # tool_input because Copilot's modifiedArgs response replaces the WHOLE
+    # args object — a hook that rewrites `command` must echo the other keys.
+    if "toolArgs" in payload and isinstance(payload.get("toolArgs"), str) and "hookEventName" not in payload:
+        _ACTIVE_AGENT = "copilot"
+        try:
+            parsed_args = json.loads(payload.get("toolArgs") or "{}")
+        except (json.JSONDecodeError, TypeError):
+            parsed_args = {}
+        if not isinstance(parsed_args, dict):
+            parsed_args = {}
+        raw_tool = str(payload.get("toolName") or "").lower()
+        out = {
+            "hook_event_name": "PreToolUse",
+            "session_id": payload.get("sessionId"),
+            "cwd": payload.get("cwd") or "",
+            "tool_name": _COPILOT_TOOLS.get(raw_tool, payload.get("toolName") or ""),
+            "tool_input": parsed_args,
+            AGENT_HINT_KEY: "copilot",
+        }
+        return out
+
     tool_call = payload.get("toolCall")
     if isinstance(tool_call, dict):
         _ACTIVE_AGENT = "antigravity"

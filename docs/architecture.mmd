@@ -29,6 +29,9 @@ flowchart TB
   AGYSRC["agy/plugins/fleet-context-filter/\nplugin.json + hooks.json — the context-filter\nPreToolUse plugin (#546); drift vs installed copy\nfails the acceptance gate"]
   INSTALL -->|"Install-AgyContextFilterPlugin"| AGYHOME
   AGYSRC --> AGYHOME
+  COPILOTHOOKS["copilot-hooks/fleet-context-filter.json\npreToolUse + modifiedArgs context-filter wiring (#547)\ndrift-guarded copy into ~/.copilot/hooks/"]
+  INSTALL -->|"Install-CopilotContextFilterHook"| COPILOT
+  COPILOTHOOKS --> COPILOT
 
   subgraph hooks["hooks/ — junctioned into Claude + Codex; reached by Grok via compat"]
     LIBPY["_lib.py\nproject detection, stdin-JSON, projects.toml loader, NO_WINDOW spawn flag\nnormalize_payload: Grok camelCase -> Claude shape (#491)"]

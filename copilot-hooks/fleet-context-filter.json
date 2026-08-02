@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "hooks": {
+    "preToolUse": [
+      {
+        "type": "command",
+        "powershell": "[Console]::In.ReadToEnd() | & 'E:/automation/fleet-config/.venv/Scripts/python.exe' 'C:/Users/rober/.claude/hooks/context_filter_hook.py'",
+        "timeoutSec": 15
+      }
+    ]
+  }
+}

@@ -109,6 +109,16 @@ def main() -> None:
         # (verified live: an overwritten CommandLine actually executed,
         # fleet-config#546). Emitting Claude's shape here would be ignored.
         output = {"decision": "allow", "overwrite": {"CommandLine": rewritten}}
+    elif agent == "copilot":
+        # Copilot's dialect: `modifiedArgs` is a JSON *string* replacing the
+        # whole tool-args object (verified live on 1.0.77: a modified command
+        # executed and its output reached the model, fleet-config#547) — so the
+        # original args' other keys (description, mode, initial_wait, ...) are
+        # echoed back with only `command` rewritten.
+        tool_input = payload.get("tool_input")
+        args_out = dict(tool_input) if isinstance(tool_input, dict) else {}
+        args_out["command"] = rewritten
+        output = {"permissionDecision": "allow", "modifiedArgs": json.dumps(args_out)}
     else:
         output = {
             "hookSpecificOutput": {
