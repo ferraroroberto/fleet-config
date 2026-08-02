@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import re
 import time
 from dataclasses import dataclass
@@ -94,8 +95,60 @@ def estimate_tokens(text: str) -> int:
     return max(1, (len(text) + TOKEN_DIVISOR - 1) // TOKEN_DIVISOR)
 
 
+VALID_MODES = {"off", "shadow", "rewrite"}
+BLOB_TTL_SECONDS = 7 * 24 * 3600
+
+
 def data_dir() -> Path:
+    # FLEET_CONTEXT_FILTER_DIR exists so tests (and e2e harnesses) can isolate
+    # the mode file, shadow log, and blob cache away from the machine's live
+    # telemetry; unset means the real per-user directory.
+    override = os.environ.get("FLEET_CONTEXT_FILTER_DIR", "").strip()
+    if override:
+        return Path(override)
     return Path.home() / ".fleet-context-filter"
+
+
+def mode_file_path() -> Path:
+    return data_dir() / "mode.json"
+
+
+def resolve_mode() -> str:
+    """Effective filter mode: env override -> mode.json -> off.
+
+    The env var is the explicit per-process override and kill switch (any
+    non-empty value that isn't a valid mode reads as an "off" attempt, matching
+    the pre-mode-file behavior). The machine-wide switch is mode.json, written
+    by the app-launcher toggle (fleet-config#541); absent or malformed degrades
+    to "off" — the filter must fail dormant, never fail active.
+    """
+    env = os.environ.get("FLEET_CONTEXT_FILTER_MODE", "").strip().lower()
+    if env:
+        return env if env in VALID_MODES else "off"
+    try:
+        # utf-8-sig: tolerate a BOM if an external .NET/PowerShell writer ever
+        # produces the file (same lesson as app-launcher's board_state readers).
+        data = json.loads(mode_file_path().read_text(encoding="utf-8-sig"))
+    except (OSError, ValueError):
+        return "off"
+    mode = str(data.get("mode", "") if isinstance(data, dict) else "").strip().lower()
+    return mode if mode in VALID_MODES else "off"
+
+
+def _prune_old_blobs(target_dir: Path) -> None:
+    """Best-effort GC: rewrite mode caches one raw blob per wrapped call with a
+    unique key, so without a TTL the cache grows forever (fleet-config#541)."""
+    cutoff = time.time() - BLOB_TTL_SECONDS
+    try:
+        entries = list(os.scandir(target_dir))
+    except OSError:
+        return
+    for entry in entries:
+        try:
+            if entry.is_file() and entry.stat().st_mtime < cutoff:
+                os.unlink(entry.path)
+        except OSError:
+            continue
 
 
 def cache_raw_output(command: str, raw: str) -> str:
@@ -105,6 +158,7 @@ def cache_raw_output(command: str, raw: str) -> str:
     key = digest[:16]
     target_dir = data_dir() / "blobs"
     target_dir.mkdir(parents=True, exist_ok=True)
+    _prune_old_blobs(target_dir)
     (target_dir / f"{key}.txt").write_text(raw, encoding="utf-8", errors="replace")
     return key
 
