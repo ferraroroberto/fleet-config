@@ -280,7 +280,9 @@ function Install-AgyContextFilterPlugin {
     foreach ($name in @('plugin.json', 'hooks.json')) {
         $src = Join-Path $source $name
         $dst = Join-Path $installed $name
-        if (-not (Test-Path $dst) -or ((Get-FileHash $src).Hash -ne (Get-FileHash $dst).Hash)) {
+        # Newline-insensitive compare: git renormalizes the repo copy to CRLF
+        # while the installed copy keeps its installed bytes — not drift.
+        if (-not (Test-Path $dst) -or (((Get-Content $src -Raw) -replace "`r`n", "`n") -ne ((Get-Content $dst -Raw) -replace "`r`n", "`n"))) {
             $fresh = $false
         }
     }
@@ -290,6 +292,26 @@ function Install-AgyContextFilterPlugin {
     }
     & $agy.Source plugin install $source | Out-Null
     Write-Host "INSTALL agy plugin fleet-context-filter (agy plugin install: registry + copy)" -ForegroundColor Cyan
+}
+
+# Copilot CLI context-filter hook (fleet-config#547): a per-feature file under
+# ~/.copilot/hooks/ (Copilot's native user-scope hook location, camelCase
+# events). A drift-guarded copy, same pattern as the agy plugin above — the
+# hooks dir holds tool-managed and sister-repo files, so a whole-dir junction
+# is off the table, and a file symlink would drag elevation into a step a
+# byte-compare copy handles fine. tests/run_acceptance.py fails loud on drift.
+function Install-CopilotContextFilterHook {
+    if (-not (Get-Command copilot -ErrorAction SilentlyContinue)) { return }
+    $src = Join-Path $RepoRoot 'copilot-hooks\fleet-context-filter.json'
+    $dstDir = Join-Path $CopilotHome 'hooks'
+    $dst = Join-Path $dstDir 'fleet-context-filter.json'
+    if ((Test-Path $dst) -and (((Get-Content $src -Raw) -replace "`r`n", "`n") -eq ((Get-Content $dst -Raw) -replace "`r`n", "`n"))) {
+        Write-Host "OK      copilot hook fleet-context-filter (installed copy matches repo)" -ForegroundColor Green
+        return
+    }
+    if (-not (Test-Path $dstDir)) { New-Item -ItemType Directory -Path $dstDir | Out-Null }
+    Copy-Item $src $dst -Force
+    Write-Host "INSTALL copilot hook fleet-context-filter (drift-guarded copy)" -ForegroundColor Cyan
 }
 
 # Self-elevation pre-pass: file symlinks require admin (or Developer Mode) on Windows.
@@ -407,6 +429,7 @@ $manifest | ConvertTo-Json -Depth 5 | Set-Content -Path $ManifestPath -Encoding 
 Write-Host ""
 Install-OtelProjectProfileHook
 Install-AgyContextFilterPlugin
+Install-CopilotContextFilterHook
 
 Write-Host ""
 Write-Host "Done. created=$created skipped=$skipped blocked=$blocked" -ForegroundColor Cyan

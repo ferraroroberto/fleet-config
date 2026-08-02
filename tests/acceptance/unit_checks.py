@@ -468,6 +468,72 @@ def _context_filter_unit_checks() -> Tuple[int, int]:
         stdout + stderr,
     )
 
+    # ---- copilot payload -> permissionDecision allow + modifiedArgs (#547) ----
+    # Copilot's dialect: string toolArgs in, string modifiedArgs out replacing
+    # the WHOLE args object — other keys must be echoed, only command rewritten.
+    copilot_payload = {
+        "sessionId": "cop-sess-9",
+        "timestamp": 1785694280490,
+        "cwd": str(REPO),
+        "toolName": "powershell",
+        "toolArgs": json.dumps({"command": "git status --short", "description": "d", "mode": "sync"}),
+    }
+    code, stdout, stderr = run(
+        "context_filter_hook", copilot_payload, {"FLEET_CONTEXT_FILTER_MODE": "rewrite"}
+    )
+    reply = json.loads(stdout) if code == 0 and stdout.strip() else {}
+    try:
+        cop_args = json.loads(reply.get("modifiedArgs") or "{}")
+    except json.JSONDecodeError:
+        cop_args = {}
+    cop_rewritten = str(cop_args.get("command") or "")
+    check(
+        "context_filter_hook: copilot payload -> allow + modifiedArgs, other keys echoed (fleet-config#547)",
+        code == 0
+        and reply.get("permissionDecision") == "allow"
+        and cop_rewritten.startswith("& ")
+        and "--tool PowerShell" in cop_rewritten
+        and "--agent copilot" in cop_rewritten
+        and "--session-id cop-sess-9" in cop_rewritten
+        and cop_args.get("mode") == "sync"
+        and cop_args.get("description") == "d"
+        and "hookSpecificOutput" not in stdout,
+        stdout + stderr,
+    )
+
+    # copilot streaming/skip commands fail open with no JSON emitted
+    copilot_skip = dict(copilot_payload, toolArgs=json.dumps({"command": "npm run dev -- --watch"}))
+    code, stdout, stderr = run(
+        "context_filter_hook", copilot_skip, {"FLEET_CONTEXT_FILTER_MODE": "rewrite"}
+    )
+    check(
+        "context_filter_hook: copilot streaming command passthrough (fleet-config#547)",
+        code == 0 and stdout.strip() == "",
+        stdout + stderr,
+    )
+
+    # ---- copilot hook wiring: installed copy must match the repo source (#547) ----
+    copilot_installed = Path.home() / ".copilot" / "hooks" / "fleet-context-filter.json"
+    copilot_source = REPO / "copilot-hooks" / "fleet-context-filter.json"
+    def _normalized(path: Path) -> bytes:
+        # Newline-insensitive: git renormalizes the repo copy to CRLF while the
+        # installed copy keeps the bytes it was installed with — that is not
+        # drift (fleet-config#547).
+        return path.read_bytes().replace(b"\r\n", b"\n")
+
+    if copilot_installed.exists():
+        check(
+            "copilot hook: installed copy matches repo source (fleet-config#547)",
+            _normalized(copilot_installed) == _normalized(copilot_source),
+            "re-run install.ps1 to refresh the drift-guarded copy",
+        )
+    else:
+        check(
+            "copilot hook: not installed on this machine — drift check skipped (fleet-config#547)",
+            True,
+            "",
+        )
+
     # ---- agy plugin: installed copy must match the repo source (#546) ----
     # agy's wiring is registry + copy (its Go plugin scanner does not descend
     # junctions), so drift between the repo source and the installed copy is
@@ -479,7 +545,8 @@ def _context_filter_unit_checks() -> Tuple[int, int]:
         drifted = [
             name for name in ("plugin.json", "hooks.json")
             if not (agy_installed / name).exists()
-            or (agy_installed / name).read_bytes() != (agy_source / name).read_bytes()
+            or (agy_installed / name).read_bytes().replace(b"\r\n", b"\n")
+            != (agy_source / name).read_bytes().replace(b"\r\n", b"\n")
         ]
         check(
             f"agy plugin: installed copy matches repo source (drift: {drifted or 'none'}) (fleet-config#546)",
