@@ -163,9 +163,29 @@ def cache_raw_output(command: str, raw: str) -> str:
     return key
 
 
+# Telemetry log cap: at ~45 MB/year observed growth this triggers roughly every
+# five months; one prior generation (shadow.jsonl.1) is kept (fleet-config#549).
+SHADOW_LOG_MAX_BYTES = 20 * 1024 * 1024
+
+
+def _rotate_shadow_log(target: Path) -> None:
+    """Best-effort size-based rotation — a telemetry failure must never block
+    the wrapped command, so every OSError is swallowed (fleet-config#549)."""
+    try:
+        if target.stat().st_size < SHADOW_LOG_MAX_BYTES:
+            return
+    except OSError:
+        return
+    try:
+        target.replace(target.with_name(target.name + ".1"))
+    except OSError:
+        pass
+
+
 def append_shadow_log(record: dict[str, Any]) -> None:
     target = data_dir() / "shadow.jsonl"
     target.parent.mkdir(parents=True, exist_ok=True)
+    _rotate_shadow_log(target)
     with target.open("a", encoding="utf-8") as fh:
         fh.write(json.dumps(record, sort_keys=True) + "\n")
 
