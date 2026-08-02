@@ -391,6 +391,42 @@ def _context_filter_unit_checks() -> Tuple[int, int]:
         stdout + stderr,
     )
 
+    # ---- codex wraps for its real shell, not its reported tool name (#541) ----
+    # Codex reports a Bash-flavored tool but executes under PowerShell on
+    # Windows — a Bash-form wrap died with a PowerShell ParserError in a live
+    # codex exec probe. Detection is the ~/.codex/hooks wiring path (the env
+    # stamp APP_LAUNCHER_AGENT inherits across process trees and lied in that
+    # same probe), so drive the hook through the real junction path.
+    codex_hook = Path.home() / ".codex" / "hooks" / "context_filter_hook.py"
+    if codex_hook.exists():
+        res = subprocess.run(
+            [PYTHON, str(codex_hook)],
+            input=json.dumps(
+                {"tool_name": "Bash", "cwd": str(REPO), "tool_input": {"command": "git status --short"}}
+            ),
+            capture_output=True,
+            text=True,
+            timeout=15,
+            env={**os.environ, "FLEET_CONTEXT_FILTER_MODE": "rewrite"},
+        )
+        codex_rewritten = ""
+        if res.returncode == 0 and res.stdout.strip():
+            codex_rewritten = json.loads(res.stdout)["hookSpecificOutput"]["updatedInput"]["command"]
+        check(
+            "context_filter_hook: codex-wired wrap is PowerShell-shaped on win32 (fleet-config#541)",
+            res.returncode == 0
+            and codex_rewritten.startswith("& ")
+            and "--tool PowerShell" in codex_rewritten
+            and "--agent codex" in codex_rewritten,
+            codex_rewritten or (res.stdout + res.stderr),
+        )
+    else:
+        check(
+            "context_filter_hook: codex-wired wrap check skipped — ~/.codex/hooks junction absent",
+            True,
+            "",
+        )
+
     # ---- blob GC: rewrite prunes cache entries older than the TTL (#541) ----
     with tempfile.TemporaryDirectory() as tmp:
         blobs = Path(tmp) / "blobs"

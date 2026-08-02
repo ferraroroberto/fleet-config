@@ -13,7 +13,6 @@ from __future__ import annotations
 
 import base64
 import json
-import os
 import re
 import sys
 from pathlib import Path
@@ -32,17 +31,18 @@ def _quote_path(path: Path) -> str:
 
 
 def _invoking_agent(payload: dict) -> str:
-    """Which harness this hook is serving, for telemetry attribution only.
+    """Which harness this hook is serving — attribution AND shell selection.
 
-    Precedence mirrors session_state's: the launcher's explicit stamp, then the
-    payload hint normalize_payload() set, then the wiring path — Codex invokes
-    this file by its `~/.codex/hooks/` junction path (codex-hooks.json), which
-    is an install-location fact, not payload vocabulary, so it doesn't belong
-    in _lib.normalize_payload().
+    Payload hint first (normalize_payload() identified the harness from the
+    payload itself), then the wiring path: Codex invokes this file by its
+    `~/.codex/hooks/` junction path (codex-hooks.json) — an install-location
+    fact that is correct by construction, not payload vocabulary, so it doesn't
+    belong in _lib.normalize_payload(). Deliberately does NOT read
+    APP_LAUNCHER_AGENT: env stamps inherit across process trees, so a codex
+    session spawned from inside a launcher-spawned Claude session reports
+    "claude" — which mis-shaped the wrap into a PowerShell ParserError in a
+    live probe (fleet-config#541).
     """
-    stamped = os.environ.get("APP_LAUNCHER_AGENT", "").strip().lower()
-    if stamped:
-        return stamped
     hinted = _lib.payload_agent(payload)
     if hinted:
         return hinted
@@ -71,17 +71,27 @@ def main() -> None:
     if not decision.should_wrap:
         _lib.allow()
 
+    agent = re.sub(r"[^a-z0-9_-]", "", _invoking_agent(payload)) or "claude"
+    shell_tool = "PowerShell" if tool.lower() == "powershell" else "Bash"
+    if agent == "codex":
+        # Codex's payload reports a Bash-flavored tool name, but its
+        # shell_command tool executes under the platform shell — PowerShell on
+        # Windows. Proven live: a Bash-form wrap (no call operator) died with a
+        # PowerShell ParserError inside a codex exec session (fleet-config#541).
+        # Wrap for the shell that actually parses and runs the command.
+        shell_tool = "PowerShell" if sys.platform == "win32" else "Bash"
+
     encoded = base64.b64encode(command.encode("utf-8")).decode("ascii")
     cli = Path(__file__).resolve().parent / "context_filter_cli.py"
     py_cmd = _quote_path(Path(_python_command()))
-    if tool.lower() == "powershell":
+    if shell_tool == "PowerShell":
         # A quoted path as a bare statement isn't invocable in PowerShell
         # without the call operator -- unlike Bash, which strips the quotes
         # and executes directly.
         py_cmd = f"& {py_cmd}"
     cwd = str(_lib.cwd(payload))
     rewritten = (
-        f'{py_cmd} {_quote_path(cli)} run --tool {tool} --mode {mode} '
+        f'{py_cmd} {_quote_path(cli)} run --tool {shell_tool} --mode {mode} '
         f'--encoded {encoded} --cwd {_quote_path(Path(cwd))}'
     )
     # Sanitized to a shell-neutral charset rather than quoted: the rewritten
@@ -90,7 +100,6 @@ def main() -> None:
     session_id = re.sub(r"[^A-Za-z0-9_.-]", "", str(payload.get("session_id") or ""))
     if session_id:
         rewritten += f" --session-id {session_id}"
-    agent = re.sub(r"[^a-z0-9_-]", "", _invoking_agent(payload)) or "claude"
     rewritten += f" --agent {agent}"
 
     output = {
