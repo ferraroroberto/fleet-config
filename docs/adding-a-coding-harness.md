@@ -49,6 +49,7 @@ Establish, empirically:
 | What is its **hook vocabulary**? | Which Board states it can prove | Its hooks doc; map onto `UserPromptSubmit` / `Stop` / `SessionEnd` / idle |
 | What is the exact **stdin payload shape**? | Key names *and* value casing both matter | Its hooks doc, then verify against a live event |
 | How does a hook **refuse** a tool call? | Exit code, stdout JSON, or both — and what it does with the codes it does not recognise | Its hooks doc's exit-code table, then verify live |
+| Can a hook **substitute tool input/output**, or only observe/block? | Decides whether the context filter (and any future rewriting hook) can run there at all — Claude/Codex: `updatedInput`; Copilot: `modifiedArgs`; agy: `overwrite`; Pi: mutable `tool_call` input / modifiable `tool_result`; Grok: **neither** — allow/deny only | Its hooks doc's response-field list, then verify a real substitution live (an emitted field the harness ignores fails silently — the Grok lesson) |
 | Does it fire turn-boundary hooks in **headless/print mode**? | Whether you can verify without a human at a TUI | Run it headless with debug logging |
 | Which **models / effort levels** does it accept? | The `docs/model-tiers.md` row | Introspection; then actually pass each level and see which are rejected |
 | Does it **self-name** sessions? Fullscreen/alt-screen? | app-launcher's renderer and title logic | ConPTY probe (see app-launcher's own notes) |
@@ -109,6 +110,15 @@ no new wiring at all. Otherwise give it its own entry file in its own dialect �
 Codex has `codex-hooks.json`, invoking hook modules directly (no PowerShell
 shim); Claude routes through `run-hook.ps1`. Never write backslashes into a
 command string that Claude will route through Git Bash.
+
+**The reported tool name does not tell you the execution shell.** A harness may
+name its shell tool `Bash` and still execute the command under PowerShell —
+Codex does exactly this on Windows, and the context filter's Bash-form wrap died
+there with a PowerShell ParserError until the wrap was keyed to the *invoking
+harness*, not the tool name (fleet-config#541, the codex probe). Any hook that
+emits a command string the harness will re-parse must determine the real shell
+empirically: substitute a probe command whose parse differs by dialect and see
+which shell ran it.
 
 **Translation, not duplication.** When a harness's payload differs in shape,
 normalize it at `hooks/_lib.read_stdin_json()` — the one entry point every hook
