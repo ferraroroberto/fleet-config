@@ -1,0 +1,16 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "run_command",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/hooks/context_filter_hook.py",
+            "timeout": 15
+          }
+        ]
+      }
+    ]
+  }
+}

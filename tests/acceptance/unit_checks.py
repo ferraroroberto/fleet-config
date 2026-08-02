@@ -427,6 +427,72 @@ def _context_filter_unit_checks() -> Tuple[int, int]:
             "",
         )
 
+    # ---- agy (Antigravity CLI) payload -> decision-allow + overwrite (#546) ----
+    # agy's PreToolUse dialect: `toolCall` envelope in, `overwrite` merged into
+    # the tool args out (Claude's updatedInput equivalent, verified live). The
+    # wrap must be PowerShell-shaped on win32 — the live probe expanded
+    # `$env:OS` and left `%OS%` literal.
+    agy_payload = {
+        "toolCall": {"name": "run_command", "args": {"CommandLine": "git status --short", "Cwd": str(REPO)}},
+        "conversationId": "agy-conv-1",
+        "stepIdx": 3,
+    }
+    code, stdout, stderr = run(
+        "context_filter_hook", agy_payload, {"FLEET_CONTEXT_FILTER_MODE": "rewrite"}
+    )
+    reply = json.loads(stdout) if code == 0 and stdout.strip() else {}
+    agy_rewritten = str((reply.get("overwrite") or {}).get("CommandLine") or "")
+    check(
+        "context_filter_hook: agy payload -> allow + overwrite, PowerShell-shaped (fleet-config#546)",
+        code == 0
+        and reply.get("decision") == "allow"
+        and agy_rewritten.startswith("& ")
+        and "--tool PowerShell" in agy_rewritten
+        and "--agent antigravity" in agy_rewritten
+        and "--session-id agy-conv-1" in agy_rewritten
+        and "hookSpecificOutput" not in stdout,
+        stdout + stderr,
+    )
+
+    # agy streaming/skip commands must fail open with NO overwrite emitted
+    agy_skip = {
+        "toolCall": {"name": "run_command", "args": {"CommandLine": "npm run dev -- --watch", "Cwd": str(REPO)}},
+        "conversationId": "agy-conv-2",
+    }
+    code, stdout, stderr = run(
+        "context_filter_hook", agy_skip, {"FLEET_CONTEXT_FILTER_MODE": "rewrite"}
+    )
+    check(
+        "context_filter_hook: agy streaming command passthrough (fleet-config#546)",
+        code == 0 and stdout.strip() == "",
+        stdout + stderr,
+    )
+
+    # ---- agy plugin: installed copy must match the repo source (#546) ----
+    # agy's wiring is registry + copy (its Go plugin scanner does not descend
+    # junctions), so drift between the repo source and the installed copy is
+    # possible between installs — this is the same anti-staleness contract as
+    # .fleet.toml. Skips when agy (or the plugin) is not on this machine.
+    agy_installed = Path.home() / ".gemini" / "config" / "plugins" / "fleet-context-filter"
+    agy_source = REPO / "agy" / "plugins" / "fleet-context-filter"
+    if agy_installed.exists():
+        drifted = [
+            name for name in ("plugin.json", "hooks.json")
+            if not (agy_installed / name).exists()
+            or (agy_installed / name).read_bytes() != (agy_source / name).read_bytes()
+        ]
+        check(
+            f"agy plugin: installed copy matches repo source (drift: {drifted or 'none'}) (fleet-config#546)",
+            not drifted,
+            "re-run install.ps1 (or: agy plugin install " + str(agy_source) + ")",
+        )
+    else:
+        check(
+            "agy plugin: not installed on this machine — drift check skipped (fleet-config#546)",
+            True,
+            "",
+        )
+
     # ---- compress subcommand: the Pi port's entry point (#545) ----
     # Pi's tool_result middleware already holds the output, so compress reads
     # stdin JSON and never executes anything. Mode comes from the same
