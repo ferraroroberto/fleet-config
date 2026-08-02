@@ -1,0 +1,5 @@
+{
+  "name": "fleet-context-filter",
+  "version": "1.0.0",
+  "description": "Fleet context filter (fleet-config#392/#541/#546): wraps run_command through the local token-reduction wrapper, controlled machine-wide by ~/.fleet-context-filter/mode.json."
+}

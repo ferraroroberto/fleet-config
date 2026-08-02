@@ -41,6 +41,15 @@ $CodexHome      = Join-Path $env:USERPROFILE '.codex'
 # Copilot reads ~/.copilot/copilot-instructions.md. Both verified empirically (#189).
 $PiAgentHome    = Join-Path (Join-Path $env:USERPROFILE '.pi') 'agent'
 $CopilotHome    = Join-Path $env:USERPROFILE '.copilot'
+# agy (Antigravity CLI) loads plugins from ~/.gemini/config/plugins/<name>/ --
+# verified live against agy 1.1.8 (fleet-config#546). Unlike every other agent,
+# the wiring is agy's own `plugin install` (registry entry + file copy), not a
+# link: its Go plugin scanner does not descend directory junctions (observed
+# live -- a junctioned plugin dir loads 0 hooks), and file symlinks would drag
+# elevation into a step agy handles fine itself. Install-AgyContextFilterPlugin
+# below re-copies whenever the installed files drift from the repo source, and
+# tests/run_acceptance.py fails loud on that drift between installs.
+$GeminiConfHome = Join-Path (Join-Path $env:USERPROFILE '.gemini') 'config'
 $ManifestPath   = Join-Path $ClaudeHome '.fleet-config-installed.json'
 
 # Link targets live under a base home. 'claude' (default) -> ~/.claude; 'agents' -> ~/.agents
@@ -258,6 +267,31 @@ foreach ($baseDir in @($ClaudeHome, $AgentsHome, $CodexHome, $PiAgentHome, $Copi
     }
 }
 
+# agy (Antigravity CLI) context-filter plugin: registry + copy via agy's own
+# installer, re-run only when the installed files drift from the repo source
+# (see the $GeminiConfHome note above; fleet-config#546). Silent no-op when the
+# agy CLI is not on this machine.
+function Install-AgyContextFilterPlugin {
+    $agy = Get-Command agy -ErrorAction SilentlyContinue
+    if (-not $agy) { return }
+    $source = Join-Path $RepoRoot 'agy\plugins\fleet-context-filter'
+    $installed = Join-Path $GeminiConfHome 'plugins\fleet-context-filter'
+    $fresh = $true
+    foreach ($name in @('plugin.json', 'hooks.json')) {
+        $src = Join-Path $source $name
+        $dst = Join-Path $installed $name
+        if (-not (Test-Path $dst) -or ((Get-FileHash $src).Hash -ne (Get-FileHash $dst).Hash)) {
+            $fresh = $false
+        }
+    }
+    if ($fresh) {
+        Write-Host "OK      agy plugin fleet-context-filter (installed copy matches repo)" -ForegroundColor Green
+        return
+    }
+    & $agy.Source plugin install $source | Out-Null
+    Write-Host "INSTALL agy plugin fleet-context-filter (agy plugin install: registry + copy)" -ForegroundColor Cyan
+}
+
 # Self-elevation pre-pass: file symlinks require admin (or Developer Mode) on Windows.
 # Junctions and hardlinks do not. So we only relaunch under UAC if there is real
 # symlink work pending. Reinstalls that find the symlinks already in place stay UAC-free.
@@ -372,6 +406,7 @@ $manifest | ConvertTo-Json -Depth 5 | Set-Content -Path $ManifestPath -Encoding 
 
 Write-Host ""
 Install-OtelProjectProfileHook
+Install-AgyContextFilterPlugin
 
 Write-Host ""
 Write-Host "Done. created=$created skipped=$skipped blocked=$blocked" -ForegroundColor Cyan

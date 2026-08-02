@@ -331,4 +331,41 @@ for _shape, _allow_payload in (
     )
 
 
+# ---- agy (Antigravity CLI) shape: toolCall envelope -> Claude vocabulary ----
+# fleet-config#546. Verified live against agy 1.1.8: PreToolUse stdin is
+# {"toolCall": {"name", "args": {"CommandLine", "Cwd", ...}}, "conversationId",
+# "stepIdx", ...}; the `toolCall` envelope is the detection tell.
+
+AGY_PRE_TOOL_USE = {
+    "toolCall": {
+        "name": "run_command",
+        "args": {"CommandLine": "git status --short", "Cwd": "E:/automation/fleet-config", "WaitMsBeforeAsync": 5000},
+    },
+    "conversationId": "agy-conv-9",
+    "stepIdx": 3,
+    "modelName": "gemini-3.6-flash-low",
+}
+
+_agy = _lib.normalize_payload(dict(AGY_PRE_TOOL_USE))
+check(_agy.get("hook_event_name") == "PreToolUse", "agy: event maps to PreToolUse")
+check(_agy.get("tool_name") == "Bash", "agy: run_command maps to Bash")
+check(_agy.get("tool_input", {}).get("command") == "git status --short", "agy: CommandLine lands as tool_input.command")
+check(_agy.get("cwd") == "E:/automation/fleet-config", "agy: Cwd lands as cwd")
+check(_agy.get("session_id") == "agy-conv-9", "agy: conversationId lands as session_id")
+check(_lib.payload_agent(_agy) == "antigravity", "agy: agent hint is antigravity")
+check(_lib.shell_is_ambiguous(_agy) is True, "agy: run_command is shell-ambiguous")
+
+# An unknown agy tool passes its name through rather than vanishing
+_agy_other = _lib.normalize_payload({"toolCall": {"name": "read_file", "args": {}}})
+check(_agy_other.get("tool_name") == "read_file", "agy: unknown tool name passes through")
+check(_lib.shell_is_ambiguous(_agy_other) is False, "agy: non-shell tool is not marked ambiguous")
+
+# Claude identity property must survive the new branch
+_claude_again = {"hook_event_name": "PreToolUse", "tool_name": "Bash", "tool_input": {"command": "x"}}
+check(
+    _lib.normalize_payload(_claude_again) is _claude_again,
+    "claude payload still returns the identical object after the agy branch",
+)
+
+
 _h.report_and_exit("test_payload_normalization")

@@ -73,12 +73,13 @@ def main() -> None:
 
     agent = re.sub(r"[^a-z0-9_-]", "", _invoking_agent(payload)) or "claude"
     shell_tool = "PowerShell" if tool.lower() == "powershell" else "Bash"
-    if agent == "codex":
-        # Codex's payload reports a Bash-flavored tool name, but its
-        # shell_command tool executes under the platform shell — PowerShell on
-        # Windows. Proven live: a Bash-form wrap (no call operator) died with a
-        # PowerShell ParserError inside a codex exec session (fleet-config#541).
-        # Wrap for the shell that actually parses and runs the command.
+    if agent in {"codex", "antigravity"}:
+        # These harnesses report a Bash-flavored tool name but execute under
+        # the platform shell — PowerShell on Windows. Both proven live: a
+        # Bash-form wrap died with a PowerShell ParserError in a codex exec
+        # session (fleet-config#541), and an agy overwrite probe expanded
+        # `$env:OS` but left `%OS%` literal (fleet-config#546). Wrap for the
+        # shell that actually parses and runs the command.
         shell_tool = "PowerShell" if sys.platform == "win32" else "Bash"
 
     encoded = base64.b64encode(command.encode("utf-8")).decode("ascii")
@@ -102,14 +103,21 @@ def main() -> None:
         rewritten += f" --session-id {session_id}"
     rewritten += f" --agent {agent}"
 
-    output = {
-        "hookSpecificOutput": {
-            "hookEventName": "PreToolUse",
-            "permissionDecision": "allow",
-            "permissionDecisionReason": f"fleet-context-filter: {mode}",
-            "updatedInput": {"command": rewritten},
+    if agent == "antigravity":
+        # agy's PreToolUse response dialect: `overwrite` merges into the tool
+        # call's args before it runs — its equivalent of Claude's updatedInput
+        # (verified live: an overwritten CommandLine actually executed,
+        # fleet-config#546). Emitting Claude's shape here would be ignored.
+        output = {"decision": "allow", "overwrite": {"CommandLine": rewritten}}
+    else:
+        output = {
+            "hookSpecificOutput": {
+                "hookEventName": "PreToolUse",
+                "permissionDecision": "allow",
+                "permissionDecisionReason": f"fleet-context-filter: {mode}",
+                "updatedInput": {"command": rewritten},
+            }
         }
-    }
     print(json.dumps(output, separators=(",", ":")), flush=True)
     sys.exit(0)
 

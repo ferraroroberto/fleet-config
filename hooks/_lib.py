@@ -188,6 +188,15 @@ _GROK_KEYS = {
     "lastAssistantMessage": "last_assistant_message",
 }
 
+# Antigravity's `agy` CLI tool ids → Claude tool names (fleet-config#546).
+# `run_command` is shell-agnostic like Grok's `run_terminal_command`; the live
+# probe proved agy executes CommandLine under PowerShell on Windows, but that
+# is the *hook body's* platform decision (see context_filter_hook), not a
+# payload fact, so the map stays shell-neutral here.
+_AGY_TOOLS = {
+    "run_command": "Bash",
+}
+
 _CAMEL_BOUNDARY = re.compile(r"(?<!^)(?=[A-Z])")
 
 # The harness whose payload this process is currently handling, set by
@@ -218,7 +227,33 @@ def normalize_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
     """
     global _ACTIVE_AGENT
 
-    if not isinstance(payload, dict) or "hookEventName" not in payload:
+    if not isinstance(payload, dict):
+        return payload
+
+    # Antigravity's `agy` CLI (fleet-config#546): its PreToolUse payload is
+    # `{"toolCall": {"name", "args": {"CommandLine", "Cwd", ...}},
+    #   "conversationId", "stepIdx", ...}` — the `toolCall` envelope is the
+    # reliable tell (Claude and Grok never send it; verified live against
+    # agy 1.1.8). Translated here, once, same contract as the Grok branch.
+    tool_call = payload.get("toolCall")
+    if isinstance(tool_call, dict):
+        _ACTIVE_AGENT = "antigravity"
+        args = tool_call.get("args") if isinstance(tool_call.get("args"), dict) else {}
+        raw_tool = str(tool_call.get("name") or "")
+        out = {
+            "hook_event_name": "PreToolUse",
+            "session_id": payload.get("conversationId"),
+            "transcript_path": payload.get("transcriptPath"),
+            "tool_name": _AGY_TOOLS.get(raw_tool, raw_tool),
+            "tool_input": {"command": args.get("CommandLine") or ""},
+            "cwd": args.get("Cwd") or "",
+            AGENT_HINT_KEY: "antigravity",
+        }
+        if raw_tool in _AGY_TOOLS:
+            out[SHELL_AMBIGUOUS_KEY] = True
+        return out
+
+    if "hookEventName" not in payload:
         return payload
 
     _ACTIVE_AGENT = "grok"
