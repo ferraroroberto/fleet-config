@@ -427,6 +427,37 @@ def _context_filter_unit_checks() -> Tuple[int, int]:
             "",
         )
 
+    # ---- shadow.jsonl rotates at the size cap, keeping one generation (#549) ----
+    with tempfile.TemporaryDirectory() as tmp:
+        sys.path.insert(0, str(HOOKS))
+        import context_filter as _cf  # noqa: E402
+
+        log = Path(tmp) / "shadow.jsonl"
+        log.write_text("x" * (_cf.SHADOW_LOG_MAX_BYTES + 1), encoding="utf-8")
+        prior_gen = Path(tmp) / "shadow.jsonl.1"
+        prior_gen.write_text("older generation\n", encoding="utf-8")
+        res = subprocess.run(
+            [
+                PYTHON,
+                str(HOOKS / "context_filter_cli.py"),
+                "run",
+                "--tool", "PowerShell",
+                "--mode", "shadow",
+                "--encoded", encoded,
+            ],
+            capture_output=True,
+            text=True,
+            env={**os.environ, "FLEET_CONTEXT_FILTER_DIR": tmp},
+            timeout=30,
+        )
+        rotated = prior_gen.exists() and prior_gen.stat().st_size > len("older generation\n")
+        fresh_rows = [l for l in log.read_text(encoding="utf-8").splitlines() if l.strip()] if log.exists() else []
+        check(
+            "context_filter: oversized shadow.jsonl rotates to .1 and the row lands fresh (fleet-config#549)",
+            res.returncode == 0 and rotated and len(fresh_rows) == 1 and fresh_rows[0].startswith("{"),
+            f"rc={res.returncode} rotated={rotated} fresh_rows={len(fresh_rows)} | {res.stderr.strip()}",
+        )
+
     # ---- blob GC: rewrite prunes cache entries older than the TTL (#541) ----
     with tempfile.TemporaryDirectory() as tmp:
         blobs = Path(tmp) / "blobs"
