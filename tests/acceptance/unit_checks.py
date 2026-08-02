@@ -244,28 +244,179 @@ def _context_filter_unit_checks() -> Tuple[int, int]:
     # with UnicodeEncodeError instead of passing the output through.
     emoji_command = "Write-Output ([System.Char]::ConvertFromUtf32(0x1F4CA))"
     encoded = base64.b64encode(emoji_command.encode("utf-8")).decode("ascii")
+    with tempfile.TemporaryDirectory() as tmp:
+        for mode in ("shadow", "rewrite"):
+            res = subprocess.run(
+                [
+                    PYTHON,
+                    str(HOOKS / "context_filter_cli.py"),
+                    "run",
+                    "--tool",
+                    "PowerShell",
+                    "--mode",
+                    mode,
+                    "--encoded",
+                    encoded,
+                ],
+                capture_output=True,
+                text=True,
+                # FLEET_CONTEXT_FILTER_DIR: keep test rows out of the machine's
+                # real telemetry — the launcher stats panel reads it now (#541).
+                env={**os.environ, "PYTHONUTF8": "0", "FLEET_CONTEXT_FILTER_DIR": tmp},
+                timeout=30,
+            )
+            check(
+                f"context_filter_cli: {mode} mode survives non-cp1252 output (fleet-config#426)",
+                res.returncode == 0 and "UnicodeEncodeError" not in res.stderr,
+                res.stdout.strip() + " | " + res.stderr.strip(),
+            )
+
+    # ---- mode file resolution: env override -> mode.json -> off (#541) ----
+    # The machine-wide switch is ~/.fleet-context-filter/mode.json (written by
+    # the app-launcher toggle); the env var stays the per-process override and
+    # kill switch. FLEET_CONTEXT_FILTER_MODE is cleared explicitly because the
+    # acceptance run itself may be inside a session that still carries it.
+    base_payload = {
+        "tool_name": "PowerShell",
+        "cwd": str(REPO),
+        "tool_input": {"command": "git status --short"},
+    }
+    with tempfile.TemporaryDirectory() as tmp:
+        mode_file = Path(tmp) / "mode.json"
+        isolated = {"FLEET_CONTEXT_FILTER_MODE": "", "FLEET_CONTEXT_FILTER_DIR": tmp}
+
+        code, stdout, stderr = run("context_filter_hook", base_payload, isolated)
+        check(
+            "context_filter_hook: no env, no mode.json -> allow (fleet-config#541)",
+            code == 0 and stdout.strip() == "",
+            stdout + stderr,
+        )
+
+        mode_file.write_text(json.dumps({"mode": "rewrite"}), encoding="utf-8")
+        code, stdout, stderr = run("context_filter_hook", base_payload, isolated)
+        check(
+            "context_filter_hook: mode.json rewrite -> wraps (fleet-config#541)",
+            code == 0 and "updatedInput" in stdout and "--mode rewrite" in stdout,
+            stdout + stderr,
+        )
+
+        code, stdout, stderr = run(
+            "context_filter_hook", base_payload, {**isolated, "FLEET_CONTEXT_FILTER_MODE": "off"}
+        )
+        check(
+            "context_filter_hook: env off overrides mode.json rewrite (fleet-config#541)",
+            code == 0 and stdout.strip() == "",
+            stdout + stderr,
+        )
+
+        mode_file.write_text("{not json", encoding="utf-8")
+        code, stdout, stderr = run("context_filter_hook", base_payload, isolated)
+        check(
+            "context_filter_hook: malformed mode.json degrades to off (fleet-config#541)",
+            code == 0 and stdout.strip() == "",
+            stdout + stderr,
+        )
+
+    # ---- grok payloads short-circuit: its PreToolUse ignores updatedInput ----
+    grok_payload = {
+        "hookEventName": "PreToolUse",
+        "cwd": str(REPO),
+        "toolName": "run_terminal_command",
+        "toolInput": {"command": "git status --short"},
+    }
+    code, stdout, stderr = run(
+        "context_filter_hook", grok_payload, {"FLEET_CONTEXT_FILTER_MODE": "rewrite"}
+    )
+    check(
+        "context_filter_hook: grok payload short-circuits to allow (fleet-config#541)",
+        code == 0 and stdout.strip() == "",
+        stdout + stderr,
+    )
+
+    # ---- telemetry row schema is pinned, and rewrite mode logs too (#541) ----
+    # The app-launcher stats panel consumes these rows; a silent schema drift or
+    # a rewrite flip that stops logging would blank the panel with no error.
+    expected_keys = {
+        "ts", "mode", "agent", "session_id", "cwd", "command", "tool",
+        "raw_tokens", "compressed_tokens", "reduction_pct", "duration_ms", "exit_code",
+    }
+    log_command = 'Write-Output "schema probe"'
+    encoded = base64.b64encode(log_command.encode("utf-8")).decode("ascii")
     for mode in ("shadow", "rewrite"):
+        with tempfile.TemporaryDirectory() as tmp:
+            res = subprocess.run(
+                [
+                    PYTHON,
+                    str(HOOKS / "context_filter_cli.py"),
+                    "run",
+                    "--tool", "PowerShell",
+                    "--mode", mode,
+                    "--encoded", encoded,
+                    "--session-id", "test-session-541",
+                    "--agent", "codex",
+                ],
+                capture_output=True,
+                text=True,
+                env={**os.environ, "FLEET_CONTEXT_FILTER_DIR": tmp},
+                timeout=30,
+            )
+            log_path = Path(tmp) / "shadow.jsonl"
+            rows = []
+            if log_path.exists():
+                rows = [json.loads(line) for line in log_path.read_text(encoding="utf-8").splitlines() if line.strip()]
+            row = rows[0] if rows else {}
+            check(
+                f"context_filter_cli: {mode} mode logs a row with the pinned schema (fleet-config#541)",
+                res.returncode == 0
+                and len(rows) == 1
+                and set(row.keys()) == expected_keys
+                and row["mode"] == mode
+                and row["agent"] == "codex"
+                and row["session_id"] == "test-session-541"
+                and row["ts"].endswith("+00:00"),
+                f"rc={res.returncode} rows={len(rows)} keys={sorted(row.keys())} | {res.stderr.strip()}",
+            )
+
+    # ---- rewritten command carries attribution flags (#541) ----
+    code, stdout, stderr = run(
+        "context_filter_hook",
+        {**base_payload, "session_id": "abc-123"},
+        # APP_LAUNCHER_AGENT cleared: the acceptance run itself may be inside a
+        # launcher-spawned session, which would win the attribution precedence.
+        {"FLEET_CONTEXT_FILTER_MODE": "rewrite", "APP_LAUNCHER_AGENT": ""},
+    )
+    check(
+        "context_filter_hook: rewritten command forwards --session-id and --agent (fleet-config#541)",
+        code == 0 and "--session-id abc-123" in stdout and "--agent claude" in stdout,
+        stdout + stderr,
+    )
+
+    # ---- blob GC: rewrite prunes cache entries older than the TTL (#541) ----
+    with tempfile.TemporaryDirectory() as tmp:
+        blobs = Path(tmp) / "blobs"
+        blobs.mkdir(parents=True)
+        stale = blobs / "deadbeefdeadbeef.txt"
+        stale.write_text("old raw output", encoding="utf-8")
+        old = time.time() - (8 * 24 * 3600)
+        os.utime(stale, (old, old))
         res = subprocess.run(
             [
                 PYTHON,
                 str(HOOKS / "context_filter_cli.py"),
                 "run",
-                "--tool",
-                "PowerShell",
-                "--mode",
-                mode,
-                "--encoded",
-                encoded,
+                "--tool", "PowerShell",
+                "--mode", "rewrite",
+                "--encoded", encoded,
             ],
             capture_output=True,
             text=True,
-            env={**os.environ, "PYTHONUTF8": "0"},
+            env={**os.environ, "FLEET_CONTEXT_FILTER_DIR": tmp},
             timeout=30,
         )
         check(
-            f"context_filter_cli: {mode} mode survives non-cp1252 output (fleet-config#426)",
-            res.returncode == 0 and "UnicodeEncodeError" not in res.stderr,
-            res.stdout.strip() + " | " + res.stderr.strip(),
+            "context_filter_cli: blob older than 7 days is pruned on rewrite (fleet-config#541)",
+            res.returncode == 0 and not stale.exists(),
+            f"rc={res.returncode} stale_exists={stale.exists()} | {res.stderr.strip()}",
         )
     return check.failures, check.total
 

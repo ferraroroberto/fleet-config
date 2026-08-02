@@ -16,6 +16,7 @@ import os
 import shutil
 import subprocess
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 from statistics import median
 from typing import Any
@@ -167,18 +168,27 @@ def run_wrapped(args: argparse.Namespace) -> int:
     raw = (result.stdout or "") + (result.stderr or "")
     compressed = context_filter.compress_output(command, raw, cache_raw=args.mode == "rewrite")
 
+    # Logged in BOTH modes (fleet-config#541): rewrite rows are what the
+    # app-launcher stats panel reads after the #392 flip — a shadow-only writer
+    # would go dark the moment the filter starts earning its keep.
+    context_filter.append_shadow_log(
+        {
+            "ts": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            "mode": args.mode,
+            "agent": args.agent or "claude",
+            "session_id": args.session_id or None,
+            "cwd": args.cwd or None,
+            "command": command,
+            "tool": args.tool,
+            "raw_tokens": compressed.raw_tokens,
+            "compressed_tokens": compressed.compressed_tokens,
+            "reduction_pct": round(compressed.reduction_pct, 2),
+            "duration_ms": round(compressed.duration_ms, 3),
+            "exit_code": result.returncode,
+        }
+    )
+
     if args.mode == "shadow":
-        context_filter.append_shadow_log(
-            {
-                "command": command,
-                "tool": args.tool,
-                "raw_tokens": compressed.raw_tokens,
-                "compressed_tokens": compressed.compressed_tokens,
-                "reduction_pct": round(compressed.reduction_pct, 2),
-                "duration_ms": round(compressed.duration_ms, 3),
-                "exit_code": result.returncode,
-            }
-        )
         sys.stdout.write(raw)
         return result.returncode
 
@@ -310,6 +320,10 @@ def main() -> int:
     run_p.add_argument("--mode", default="rewrite", choices=["rewrite", "shadow"])
     run_p.add_argument("--encoded", required=True)
     run_p.add_argument("--cwd")
+    # Telemetry attribution (fleet-config#541); optional so an older hook (or a
+    # hand-run wrapper) stays valid.
+    run_p.add_argument("--session-id", dest="session_id", default="")
+    run_p.add_argument("--agent", default="")
     run_p.set_defaults(func=run_wrapped)
 
     eval_p = sub.add_parser("eval", help="run the reproducible fixture benchmark")

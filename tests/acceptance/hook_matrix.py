@@ -201,8 +201,11 @@ def run_hook_matrix() -> Tuple[int, int]:
          {"tool_name": "Edit", "tool_input": {"file_path": "E:/automation/foo/docs/2026-06-18-retro.md"}},
          0),
 
-        # ---- context_filter_hook (disabled unless env opts in) ----
-        ("context_filter_hook: default off -> allow",
+        # ---- context_filter_hook (env override -> mode.json -> off; #541) ----
+        # Exit is 0 whether the machine's mode.json enables it or not; the
+        # deterministic resolution cases live in unit_checks with an isolated
+        # FLEET_CONTEXT_FILTER_DIR.
+        ("context_filter_hook: default -> allow (exit 0 in every mode)",
          "context_filter_hook",
          {"tool_name": "PowerShell", "cwd": str(REPO), "tool_input": {"command": "git status --short"}},
          0),
