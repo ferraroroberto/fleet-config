@@ -196,7 +196,30 @@ conformance gate runs later in `/issue-finish`. `SPEC_APPLIES=no` (non-web repo
 or a Streamlit spike) → skip. The `ux`/`design` arg forces the load; `no-ux`
 suppresses it.
 
-When the work, validation, and review are done, finish with `/issue-finish`. For fast-mode work that changes code in a repo with a declared long-lived-process restart recipe, do not hand off a stale running app: either complete the repo-declared safe restart + bounded build-identity verification before reporting ready, or make `/issue-finish` the immediate next action that will do it.
+**Ready-to-validate handoff (fast mode).** When the fast-mode build is done
+and the ball goes back to the user for validation, hand the system **ready to
+validate** — never make the user boot it themselves:
+
+- Repo with a web/tray surface and a repo-declared safe restart recipe → run
+  it (e.g. `tray.bat --restart` through a real Windows shell, per that repo's
+  own `CLAUDE.md`), confirm the new build with the bounded build-identity
+  poll, and put the **URL to open** in the same handoff message as the step-7
+  ping. Worktree mode: never restart the shared tray (the primary checkout
+  may be serving it live) — hand the one-line command that launches *this
+  worktree's* app instead.
+- Recipe requires confirmation, or the repo is silent on restart safety → do
+  not restart; hand the exact restart command.
+- No web surface → nothing to hand off; skip silently.
+
+**E2e along the way.** E2e criteria live in the **`/e2e` skill**
+(`skills/e2e/SKILL.md`), not here. During the build — including follow-up
+"change this, change that" rounds in the same session — invoke `/e2e` when a
+change plausibly touches the browser surface and you (or the user) want proof
+now; it routes the accumulated diff and runs only the proportionate slice.
+Otherwise don't run e2e per change: `/issue-finish` always runs the `/e2e`
+evaluation before the PR, so nothing ships unevaluated either way.
+
+When the work, validation, and review are done, finish with `/issue-finish`.
 
 ### 7. Notify when control returns to the user
 
