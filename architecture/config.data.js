@@ -187,6 +187,11 @@ window.CONFIG = {
       "scope": "repo"
     },
     {
+      "nm": "quick",
+      "ds": "Trunk-based lane for changes below the issue threshold — one capped, verified, conventional commit pushed directly to the default…",
+      "scope": "repo"
+    },
+    {
       "nm": "screen",
       "ds": "Attach recent screenshots from E:\\downloads\\snaps without manual copy-paste.",
       "scope": "repo"
