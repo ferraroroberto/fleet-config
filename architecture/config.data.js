@@ -132,6 +132,11 @@ window.CONFIG = {
       "scope": "repo"
     },
     {
+      "nm": "e2e",
+      "ds": "Decide, run, and maintain a repo's end-to-end tests proportionate to the actual diff — deterministic classify_e2e routing where a…",
+      "scope": "repo"
+    },
+    {
       "nm": "e2e-audit",
       "ds": "On-demand audit of a repo's e2e/regression test suite for redundancy, bloat, and coverage gaps against project-scaffolding's \"&lt;15…",
       "scope": "repo"

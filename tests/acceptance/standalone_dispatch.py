@@ -128,5 +128,11 @@ _STANDALONE_UNIT_CHECKS: Tuple[Tuple[str, str, str], ...] = (
     ("watchlist", "test_watchlist.py",
      "the due/fresh/delegated cadence logic and the seed watchlist's "
      "shape are testable on their own (fleet-config#393)"),
+    ("e2e_route", "test_e2e_route.py",
+     "the /e2e skill's deterministic front-end -- classifier/table/"
+     "suite/web-surface probing, the byte-verbatim bootstrap with its "
+     "refuse-on-divergence contract, and the route fail-safe (no "
+     "classifier -> explicit unknown, broken classifier -> full) -- is "
+     "testable on its own against synthetic trees (fleet-config#556)"),
 )
 

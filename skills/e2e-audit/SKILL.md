@@ -259,5 +259,10 @@ survived judgment (don't file an empty one).
 - The suite-size target and the "delete with the feature" discipline are
   owned by `project-scaffolding`'s `docs/playwright-ui-testing.md` — this
   skill measures against that target, it doesn't redefine it.
+- **Split with `/e2e` (fleet-config#556):** `/e2e` is the *execution +
+  inline maintenance* half — it routes and runs the proportionate slice for
+  the current diff and edits tests in-branch (delete-with-the-feature,
+  qualifying additions). This skill stays the *review* half: on-demand,
+  whole-suite, report-only. The report-only hard rule above is unchanged.
 - First validated target: `app-launcher`'s `tests/e2e/` (the fleet's largest
   suite, ~60 files / ~400 collected nodes against the 15-test target).

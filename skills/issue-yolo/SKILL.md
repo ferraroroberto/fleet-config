@@ -101,12 +101,16 @@ exercised before and after. "I think this fixes it" is not enough in YOLO mode
 **Zero allowed failures and zero allowed skips that hide the change.** A
 green-with-skips run is not green if the skip masks the area you touched.
 
-**3d. End-to-end test suite, when one exists.** Per the scaffolding `CLAUDE.md`:
-*"Boot failure is a hard failure — never `pytest.skip`. A regression suite that
-skips when the app isn't up reports green on a build it never tested; that is
-the exact rot this suite exists to prevent."* In YOLO mode this matters
-double — if a project has a `scripts/verify-before-ship.*` gate, run **that**,
-not a bare `pytest`. The gate is one command, exit-0 only.
+**3d. E2e leg — delegated to the `/e2e` skill.** Run `/e2e`
+(`skills/e2e/SKILL.md`): it routes the branch diff through the repo's own
+`classify_e2e.py` (bootstrapping it on first contact — self-healing
+adoption), runs the proportionate slice (`skip` / `static` / `full`), and
+applies its inline suite maintenance on this branch. If the project has a
+`scripts/verify-before-ship.*` gate, run **that** first (one command, exit-0
+only) — `/e2e` carries the gate's e2e result instead of re-running the same
+slice. The scaffold rule stands unweakened: boot failure is a hard failure —
+never `pytest.skip`; a suite that skips when the app isn't up reports green
+on a build it never tested. A FAIL from the routed slice stops the run.
 
 **3e. Behavioural verification — the change actually does what it claims.**
 This is the part most easily skipped and the part that matters most in YOLO
@@ -230,11 +234,12 @@ review's `pass: true`). Run the full `/issue-finish` skill:
 7. **Wait for CI unless local e2e + pytest already proved it, or the diff is
    provably CI-unrelated.**
    - **Local e2e + pytest green this run** → if Phase 3c (unit/integration
-     tests) and Phase 3d/3e (end-to-end suite / behavioural verification)
-     already ran and passed, CI's only signal beyond that — the e2e leg, also
-     the known-flaky one — has already been produced locally. Skip the watch,
-     merge immediately (step 8), and note it: `CI not awaited — local e2e +
-     pytest green this run.`
+     tests) passed and Phase 3d's `/e2e` run was green — a passing `full`
+     slice, or a routed `skip`/green `static` (the classifier positively
+     cleared the diff's browser impact) — CI's only signal beyond that — the
+     e2e leg, also the known-flaky one — has already been produced locally.
+     Skip the watch, merge immediately (step 8), and note it: `CI not
+     awaited — /e2e <tier> green this run.`
    - **Otherwise, CI-unrelated diff** → unrelated only if *every* changed file
      is one CI never executes — `*.md`, `docs/`, `LICENSE`, images/assets, or
      pure code-comment edits — **AND** `.github/workflows/` has no job

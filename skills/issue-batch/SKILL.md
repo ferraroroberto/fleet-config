@@ -148,7 +148,17 @@ Workflow (mirrors /issue-start steps 3 + 6, plus verification):
    parallel runs (shared port, shared file), report that you skipped it
    and why. The app-launcher gate boots its own ephemeral webapp + session
    host on free ports — that one is safe to run in parallel.
-7. STOP. Do not push, do not open a PR, do not run /issue-finish.
+7. Run the /e2e skill (skills/e2e/SKILL.md): it routes this branch's diff
+   through the repo's own classifier and runs the proportionate slice. If
+   the gate in step 6 already executed that slice, /e2e carries the result
+   — no double run. Run it synchronously to completion within your turn.
+8. Ready-to-validate handoff (worktree mode): do NOT restart the shared
+   tray/webapp — the primary checkout may be serving it live, and only one
+   build can be live at a time. Instead, if the repo has a web surface,
+   include in your report the one-line command (from the repo's README /
+   CLAUDE.md) that launches THIS worktree's app for validation. No web
+   surface → report `Validate: n/a`.
+9. STOP. Do not push, do not open a PR, do not run /issue-finish.
 
 Report back, in this exact shape:
   - Issue: <repo>#<N> — <title>
@@ -156,6 +166,8 @@ Report back, in this exact shape:
   - Worktree: <wt-path>
   - Files changed: <list>
   - Verification: PASS / SKIPPED (<reason>) / FAIL (<short reason>)
+  - E2e: <tier> (<reason>) — PASS / FAIL / skip / n/a
+  - Validate: <launch command for this worktree | n/a (no web surface)>
   - Notes: <one or two lines if anything surprising came up>
 
 If verification FAILS, leave the worktree as-is for the user to inspect —
@@ -178,7 +190,17 @@ Workflow:
      branch cut, and the hand-off to implementation in fast mode.
 3. Build the change.
 4. Run the project's verification gate (per its CLAUDE.md).
-5. STOP. Do not push, do not open a PR, do not run /issue-finish.
+5. Run the /e2e skill (skills/e2e/SKILL.md): proportionate e2e for this
+   branch's diff; if the gate already executed the routed slice, /e2e
+   carries the result. Run it synchronously to completion within your turn.
+6. Ready-to-validate handoff (in-place mode): if the repo's CLAUDE.md
+   declares a long-lived app and an unattended-safe restart recipe (e.g.
+   `tray.bat --restart` with detach-compliant children), run it, confirm the
+   new build with the bounded build-identity poll, and report the URL. If
+   the recipe requires confirmation, or the repo is silent on restart
+   safety, do NOT restart — report the exact restart command for the user
+   instead. No web surface → report `Validate: n/a`.
+7. STOP. Do not push, do not open a PR, do not run /issue-finish.
 
 Report back, in this exact shape:
   - Issue: <repo>#<N> — <title>
@@ -186,6 +208,8 @@ Report back, in this exact shape:
   - Worktree: (in-place — primary checkout at E:\automation\<repo>)
   - Files changed: <list>
   - Verification: PASS / SKIPPED (<reason>) / FAIL (<short reason>)
+  - E2e: <tier> (<reason>) — PASS / FAIL / skip / n/a
+  - Validate: <live URL | restart command | n/a (no web surface)>
   - Notes: <one or two lines if anything surprising came up>
 
 If verification FAILS, leave the branch as-is for the user to inspect —

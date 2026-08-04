@@ -129,6 +129,23 @@ even if `TOUCHED=no`; `no-ux` skips it; `ux-full` checks every `KEY_VIEWS`
 entry. Always **state** the gate decision (ran / skipped / `ux-full`, plus any
 drift fixed) in the step-7 summary so the user can veto.
 
+### 3c. E2e leg (delegated to `/e2e`)
+
+Run the **`/e2e` skill** (`skills/e2e/SKILL.md`) — the evaluation is
+mandatory before any PR; the execution is proportionate. It probes the repo,
+routes the branch diff through the repo's own `classify_e2e.py`
+(bootstrapping it on first contact — self-healing adoption), runs the routed
+slice (`skip` / `static` / `full`), and applies its inline suite maintenance
+(delete-with-the-feature, qualifying additions, table upkeep) on this branch.
+Integration rules:
+
+- If step 3's gate already executed the routed e2e slice this session (the
+  scaffold-shaped `verify-before-ship` gates route internally), `/e2e`
+  carries that result — no double run.
+- A **FAIL** from the slice stops the finish exactly like a red gate.
+- Echo `/e2e`'s report block into the step-7 summary — the tier + reason
+  always appear there, even when the outcome is `skip` or `n/a`.
+
 ### 4. Push and open the PR
 
 - `git push -u origin <branch>`.
@@ -155,19 +172,21 @@ by the project's `## CI expectations` block (the convention is
   to the conservative behavior: always `--watch` (skip nothing)**, subject to
   the local-e2e-proof rule below. Do not invent thresholds or surface paths the
   block doesn't state.
-- **Skip-the-wait when local e2e + pytest already proved it this session.** If
-  step 3's gate is green **and** the project's end-to-end suite was actually run
-  and passed in this same session (a local `verify`-style pass, or a gate
-  command that itself boots the app and runs e2e) → skip the watch and merge
-  immediately, **regardless of whether the diff touches declared e2e-surface
-  paths** — CI's only signal beyond the local gate has already been produced
-  locally. **State it** in the summary, e.g. `CI not awaited — local e2e +
-  pytest green this session`.
-- **Otherwise, skip-the-wait keyed on the e2e surface.** If local e2e did *not*
-  run this session, fall back to the narrower rule: if the diff touches **none**
-  of the declared e2e-surface paths and the local gate (step 3) is green → skip
-  the watch and merge immediately. **State it** in the summary, e.g. `CI not
-  awaited — store-only diff, no e2e surface touched`.
+- **Skip-the-wait when step 3c's `/e2e` run already proved it.** If step 3's
+  gate is green **and** step 3c executed (or carried from the gate) a passing
+  `full`-tier e2e run this session → skip the watch and merge immediately,
+  **regardless of whether the diff touches declared e2e-surface paths** —
+  CI's only signal beyond the local gate has already been produced locally.
+  **State it** in the summary, e.g. `CI not awaited — /e2e full slice green
+  this session`.
+- **Otherwise, skip-the-wait keyed on the `/e2e` routing.** If step 3c routed
+  `skip` (the classifier — or the judgment fail-safe — positively cleared
+  every changed path of browser impact) and the local gate is green → skip
+  the watch and merge immediately. Same for a green `static` slice: the
+  repo's own `[e2e]` table declared the smoke target sufficient for those
+  paths. **State it**, e.g. `CI not awaited — /e2e routed skip: docs-only
+  diff`. Never re-derive the surface match by eye — the routing decision is
+  step 3c's.
 - **Otherwise watch — but proactively, not passively.** Run `gh pr checks <PR>
   --watch`. The moment elapsed crosses the block's **investigate threshold**,
   stop waiting passively: inspect the run (`gh run view <run-id> --job <job>`)
@@ -335,7 +354,8 @@ E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skill
 
 Summarize: issue closed, PR merged, branch deleted, docs updated (or why not),
 gate result, the UX-conformance gate decision (ran / skipped / `ux-full`, plus
-any drift fixed — step 3b), the deploy-coverage decision (n/a / not touched /
+any drift fixed — step 3b), the `/e2e` report block (source, tier + reason,
+result, maintenance — step 3c), the deploy-coverage decision (n/a / not touched /
 confirmed live / merged but not yet live / unknown — step 6b), and the live
 build line.
 
