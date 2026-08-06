@@ -10,7 +10,7 @@ The hooks here are project-aware via a single `hooks/projects.toml` registry: ge
 
 ## What's in here today
 
-17 hooks under `hooks/` that enforce the rituals I kept correcting Claude on, across the home-stack fleet:
+18 hooks under `hooks/` that enforce the rituals I kept correcting Claude on, across the home-stack fleet:
 
 | Hook | Event | What it does |
 |---|---|---|
@@ -151,9 +151,12 @@ fleet-config/
 │   ├── chief_handover_sessionstart.py # SessionStart: hand the standing fleet chief its last-written run log back (fleet-config#442)
 │   ├── context_filter.py              # local deterministic output compressor used by the context-filter hook/eval
 │   ├── context_filter_cli.py          # wrapper/eval CLI: shadow, rewrite, retrieve, fixture benchmark
-│   ├── context_filter_hook.py         # PreToolUse rewriter; FLEET_CONTEXT_FILTER_MODE=shadow (current) | rewrite | off
+│   ├── context_filter_hook.py         # PreToolUse rewriter: runs supported commands through the compressor (mode: see Graduation above)
 │   ├── restart_and_verify_webapp.py   # also exposed as /restart-webapp
 │   ├── notify_on_idle.py            # Notification hook (via run-hook.ps1): opt-in Slack ping
+│   ├── session_state.py             # UserPromptSubmit|Stop|SessionEnd: the Fleet-Board session-row engine (hooks/state/sessions-state.json)
+│   ├── session_state_codex.py       # thin Codex adapter → session_state (wired from codex-hooks.json)
+│   ├── session_state_pi.py          # thin Pi adapter → session_state (shelled out to by pi/extensions/session_state.ts)
 │   ├── slack_notify.py              # shared Slack-notify transport (importable + CLI, stdlib-only)
 │   ├── notify_complete.py           # deterministic skill-completion ping (issue-* skills call this); finish/yolo carry a work-summary roll-up
 │   ├── work_summary.py              # deterministic PR work-summary (file/LOC roll-up + per-file table) from `gh`, no LLM; importable + CLI
@@ -168,11 +171,13 @@ fleet-config/
 ├── commands/                       # junction → ~/.claude/commands AND ~/.codex/prompts (Codex prompts)
 ├── pi/extensions/statusline.ts      # junction via pi/extensions/ → ~/.pi/agent/extensions — custom Pi footer/statusline
 ├── pi/extensions/session_state.ts   # same junction — reports Pi lifecycle events into sessions-state.json (#349)
+├── agy/plugins/fleet-context-filter/   # Antigravity `agy` context-filter plugin (plugin.json + hooks.json) — installed by copy, not junction (#546); drift-guarded by tests/run_acceptance.py
+├── copilot-hooks/                   # Copilot CLI hook wiring (fleet-context-filter.json: preToolUse + modifiedArgs, #547) — copied into ~/.copilot/hooks/, drift-guarded
 ├── skills/                         # junction → ~/.claude/skills, ~/.agents/skills (Codex+Pi), ~/.copilot/skills (Copilot) — GLOBAL tier: issue-* workflow, handoff-commit, codebase-audit, design-sync, screen, _lib/, …
 ├── .claude/skills/                 # project-scoped — FLEET-ONLY tier, loads only in fleet-config: audit-fleet, chief, design-sweep, cleanup-fleet, cleanup-fleet-all, context-audit, context-purge, config-map, fleet-health, insights-weekly, learning-log, sota-watch, system-map (fleet-config#161)
 ├── .claude/workflows/              # Workflow-tool scripts (no Bash/filesystem access) — cleanup-fleet-all.js
 ├── architecture/                   # fleet architecture + config maps: fleet.data.js / config.data.js (source of truth), rendered system-map.png / config-map.png / *.mmd, ARCHITECTURE.md
-├── docs/                           # references: slack-workflow, codex-browser, mcp-context-audit, design-system, model-tiers, rate-gate, fleet-inference-capacity, adding-a-coding-harness
+├── docs/                           # durable topic references, one file per topic (+ architecture.mmd, this repo's own internal diagram) — enumerating them here only goes stale; see the directory
 ├── tests/run_acceptance.py         # drives each hook with a sample stdin payload
 ├── settings.template.json          # the `hooks` block to merge into your ~/.claude/settings.json (Claude)
 └── codex-hooks.json                # exposed as ~/.codex/hooks.json (symlink) — Codex hook wiring (direct Python commands)
