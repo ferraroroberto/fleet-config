@@ -290,6 +290,66 @@ def _config_map_check() -> Tuple[int, int]:
     return check.failures, check.total
 
 
+def _readme_layout_check() -> Tuple[int, int]:
+    """README's Layout tree really is the exhaustive inventory it reads as.
+
+    fleet-config#565 (and #504 before it): the README's *prose* keeps up with
+    each feature as it ships, the Layout block does not — so the two halves of
+    one document ended up disagreeing about what exists (`agy/`,
+    `copilot-hooks/`, and all three `session_state*` hooks were absent, and the
+    count above the hook table was one short). A reader trusts that block as the
+    file inventory, so a missing line reads as "this doesn't exist" rather than
+    "this isn't listed" — which is worse than a plain omission. Three mechanical
+    parts, so the next new directory or hook fails here instead of rotting:
+      1. every top-level tracked directory is named in the Layout block;
+      2. every `hooks/*.py` module is named in it;
+      3. the "<N> hooks under `hooks/`" count matches the hook table's rows.
+    Returns (failures, total).
+    """
+    check = _Checker()
+
+    readme = (REPO / "README.md").read_text(encoding="utf-8")
+
+    # The fenced tree under "## Layout", up to the next top-level heading.
+    after = readme.split("\n## Layout\n", 1)[1]
+    layout = after.split("\n## ", 1)[0]
+
+    tracked = subprocess.run(
+        ["git", "-C", str(REPO), "ls-files"],
+        capture_output=True, text=True, encoding="utf-8", errors="replace",
+    )
+    top_dirs = sorted({
+        line.split("/", 1)[0]
+        for line in tracked.stdout.splitlines()
+        if "/" in line
+    })
+    missing_dirs = [d for d in top_dirs if f"{d}/" not in layout]
+    check(
+        f"readme_layout: every top-level tracked directory is in the Layout tree "
+        f"(missing: {missing_dirs or 'none'})",
+        not missing_dirs,
+    )
+
+    hook_modules = sorted(p.name for p in (REPO / "hooks").glob("*.py"))
+    missing_hooks = [h for h in hook_modules if h not in layout]
+    check(
+        f"readme_layout: every hooks/*.py module is in the Layout tree "
+        f"(missing: {missing_hooks or 'none'})",
+        not missing_hooks,
+    )
+
+    # "18 hooks under `hooks/` that ..." must match the table it introduces.
+    m = re.search(r"^(\d+) hooks under `hooks/`", readme, re.M)
+    rows = len(re.findall(r"^\| `[a-z0-9_]+\.py` \|", readme, re.M))
+    claimed = int(m.group(1)) if m else -1
+    check(
+        f"readme_layout: the hook count matches the hook table (claims {claimed}, table has {rows})",
+        claimed == rows,
+    )
+
+    return check.failures, check.total
+
+
 def _settings_template_sync_check() -> Tuple[int, int, int]:
     """Every hook wired in settings.template.json must also be wired in the live
     ~/.claude/settings.json.
