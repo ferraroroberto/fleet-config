@@ -278,6 +278,12 @@ window.CONFIG = {
       ]
     },
     {
+      "repo": "app-launcher-lite",
+      "items": [
+        "verify"
+      ]
+    },
+    {
       "repo": "content-management",
       "items": [
         "schedule-autoheal"
@@ -525,9 +531,9 @@ window.CONFIG = {
     }
   ],
   "coverage": {
-    "total": 30,
-    "claude_md": "30/30",
-    "fleet_toml": "30/30"
+    "total": 36,
+    "claude_md": "35/36",
+    "fleet_toml": "34/36"
   },
   "principles": [
     [

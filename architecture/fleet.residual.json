@@ -1,7 +1,9 @@
 {
   "_adopted": [
     "accounting-quarterly",
+    "algo-trading",
     "app-launcher",
+    "app-launcher-lite",
     "automation",
     "closed-company-accounting",
     "content-management",
@@ -10,6 +12,7 @@
     "facilitation-shuffle",
     "family-accounting",
     "fleet-config",
+    "gitlab-to-github-migrator",
     "grocery-shopping-automation",
     "home-automation",
     "illustration-color-edit",
@@ -29,6 +32,7 @@
     "vibe-coding-workshop",
     "voice-transcriber",
     "website",
+    "website-analytics",
     "whatsapp-radar"
   ],
   "governance": [
@@ -41,6 +45,11 @@
       "ic": "⚙️",
       "nm": "fleet-config",
       "ds": "Fleet-wide Claude Code hooks, skills &amp; the issue workflow."
+    },
+    {
+      "ic": "⚙️",
+      "nm": "fleet-config-lite",
+      "ds": "Copilot-CLI + GitLab lite fork — session-state hook, issue skills &amp; installer."
     }
   ],
   "access": [
@@ -180,6 +189,11 @@
         "→",
         "MELCloud Home"
       ]
+    },
+    {
+      "ic": "📶",
+      "nm": "github-copilot-usage",
+      "ds": "Local dashboard for Copilot premium-request &amp; token usage."
     }
   ],
   "pipe": [
