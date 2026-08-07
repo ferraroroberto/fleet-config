@@ -9,6 +9,8 @@ third `skipped` count (it can find no live settings.json to compare against).
 """
 from __future__ import annotations
 
+import contextlib
+import io
 import json
 import re
 import subprocess
@@ -64,19 +66,41 @@ def _system_map_coverage_check() -> Tuple[int, int]:
     return check.failures, check.total
 
 
-def _fleet_toml_check() -> Tuple[int, int]:
+_REGEN_HINT = (
+    "regenerate + commit with `/system-map`, or directly:\n"
+    "E:/automation/fleet-config/.venv/Scripts/python.exe .claude/skills/system-map/build_data.py"
+)
+
+
+def _fleet_toml_check() -> Tuple[int, int, int]:
     """Per-repo `.fleet.toml` aggregation is fresh and can't silently go stale.
 
     Guards the self-describing map (`build_data.py`: residual + per-repo
-    `.fleet.toml` → `fleet.data.js`):
-      1. `fleet.data.js` is exactly what `build_data.py` regenerates — a forgotten
-         regen, a hand-edit, or an un-committed `.fleet.toml` change fails loud;
-      2. every repo in the residual's `_adopted` registry still carries a
-         `.fleet.toml` on its committed default branch — deleting one (which would
-         silently revert to the central fallback) fails loud;
-      3. every present `.fleet.toml` is a valid declaration (parses, `layer` in
-         the enum, required fields set).
-    Returns the failure count.
+    `.fleet.toml` → `fleet.data.js`). Split by *whose commit can fix a failure*
+    (fleet-config#562):
+
+    **Hard** — inputs this repo owns, so a fresh clone on any machine gets the
+    same answer:
+      1. fleet-config's own card in the committed `fleet.data.js` matches
+         fleet-config's own committed `.fleet.toml` — the anti-staleness
+         contract for the one card this repo can actually keep current.
+
+    **Advisory** (reported, counted as *skipped*, never failed) — inputs that
+    live in sibling checkouts, so no commit here can make them green:
+      2. `fleet.data.js` is exactly what `build_data.py` regenerates;
+      3. every repo in the residual's `_adopted` registry still carries a
+         `.fleet.toml` on its committed default branch;
+      4. every present `.fleet.toml` is a valid declaration.
+
+    2-4 used to be hard, which meant a `.fleet.toml` commit in *any* sister repo
+    turned this repo's gate red — blocking every `/issue-finish`, `/quick`, and
+    `/issue-yolo` here, for a reason the author of the change could not see,
+    until the weekly `/system-map` run regenerated the aggregate (observed on
+    `main` at c70b88f: home-automation added a Modbus chip and this gate went
+    red for two days). `/system-map` owns fleet-wide freshness — it regenerates
+    and commits weekly, and `build_data.py --check` fails loud there.
+
+    Returns (failures, total, skipped).
     """
     import importlib.util
     import tomllib
@@ -88,19 +112,47 @@ def _fleet_toml_check() -> Tuple[int, int]:
     bd = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(bd)
 
-    committed = (REPO / "architecture" / "fleet.data.js").read_text(encoding="utf-8")
+    committed_text = (REPO / "architecture" / "fleet.data.js").read_text(encoding="utf-8")
+
+    # --- hard: fleet-config's own card, both sides committed in this repo ---
+    own_detail = ""
     try:
-        fresh = bd.regenerate() == committed
-        regen_err = ""
+        own_toml = bd.read_fleet_toml(REPO)
+        if own_toml is None:
+            own_ok, own_detail = False, "fleet-config has no committed .fleet.toml"
+        else:
+            section, own_card = bd.card_from_toml("fleet-config", tomllib.loads(own_toml))
+            committed = json.loads(
+                committed_text[committed_text.index("{"): committed_text.rindex("}") + 1]
+            )
+            mapped = [e for e in committed.get(section, []) if e.get("repo", e.get("nm")) == "fleet-config"]
+            own_ok = mapped == [own_card]
+            if not own_ok:
+                own_detail = f"declared: {own_card}\nmapped:   {mapped}\n{_REGEN_HINT}"
+    except Exception as exc:  # noqa: BLE001 - a malformed own declaration is our bug
+        own_ok, own_detail = False, str(exc)
+    check("fleet_toml: fleet-config's own card matches its own .fleet.toml", own_ok, own_detail)
+
+    # --- advisory: everything below reads sibling repos' live checkouts ---
+    try:
+        fresh, regen_err = bd.regenerate() == committed_text, ""
     except Exception as exc:  # noqa: BLE001 - surface a malformed declaration cleanly
         fresh, regen_err = False, f" ({exc})"
-    check(f"fleet_toml: fleet.data.js matches build_data.py output{regen_err}", fresh)
+    check.advisory(
+        f"fleet_toml: fleet.data.js matches build_data.py output{regen_err}",
+        fresh,
+        f"a sibling repo's .fleet.toml moved ahead of the committed aggregate.\n{_REGEN_HINT}",
+    )
 
     residual = bd.load_residual()
     repos = bd.fleet_repos()
     adopted = residual.get("_adopted", [])
     missing = [r for r in adopted if r not in repos or bd.read_fleet_toml(repos[r]) is None]
-    check(f"fleet_toml: every adopted repo still has a .fleet.toml (missing: {sorted(missing) or 'none'})", not missing)
+    check.advisory(
+        f"fleet_toml: every adopted repo still has a .fleet.toml (missing: {sorted(missing) or 'none'})",
+        not missing,
+        "fix in the owning repo (or drop it from architecture/fleet.residual.json `_adopted`).",
+    )
 
     invalid = []
     for name, repo_dir in sorted(repos.items()):
@@ -111,7 +163,47 @@ def _fleet_toml_check() -> Tuple[int, int]:
             bd.card_from_toml(name, tomllib.loads(text))
         except Exception as exc:  # noqa: BLE001
             invalid.append(f"{name}: {exc}")
-    check(f"fleet_toml: every present .fleet.toml is valid (invalid: {invalid or 'none'})", not invalid)
+    check.advisory(
+        f"fleet_toml: every present .fleet.toml is valid (invalid: {invalid or 'none'})",
+        not invalid,
+        "fix the declaration in the owning repo; schema: architecture/README.md.",
+    )
+
+    return check.failures, check.total, check.skipped
+
+
+def _advisory_semantics_check() -> Tuple[int, int]:
+    """`_Checker.advisory` reports, it never gates (fleet-config#562).
+
+    The scoping decision `_fleet_toml_check` rests on: a check whose inputs live
+    in sibling checkouts may turn up drift, but must not make this repo's `main`
+    unshippable. Pinned mechanically, because "advisory" is one careless
+    `check(...)` away from being a hard failure again — and because the opposite
+    mistake (swallowing drift into the passing state) is the false "done" the
+    global CLAUDE.md forbids. Returns the failure count.
+    """
+    check = _Checker()
+
+    def counts(drive) -> Tuple[int, int, int]:
+        """Run one probe against a throwaway _Checker, swallowing its own
+        OK/FAIL/SKIP line so a deliberate failing probe can't be mistaken for a
+        real one in the gate output."""
+        probe = _Checker()
+        with contextlib.redirect_stdout(io.StringIO()):
+            drive(probe)
+        return probe.failures, probe.total, probe.skipped
+
+    check("advisory: a pass counts toward Total like any other check",
+          counts(lambda c: c.advisory("probe", True)) == (0, 1, 0))
+    check("advisory: a failure counts as Skipped, never Failed",
+          counts(lambda c: c.advisory("probe", False, "why it drifted")) == (0, 0, 1))
+    check("advisory: an ordinary check still fails hard (the escape hatch isn't global)",
+          counts(lambda c: c("probe", False)) == (1, 1, 0))
+
+    src = Path(__file__).read_text(encoding="utf-8")
+    body = src.split("def _fleet_toml_check", 1)[1].split("\ndef ", 1)[0]
+    check("advisory: the three fleet-wide fleet_toml checks are still advisory",
+          body.count("check.advisory(") == 3 and body.count("\n    check(") == 1)
 
     return check.failures, check.total
 
@@ -230,18 +322,22 @@ def _system_map_whatchanged_check() -> Tuple[int, int]:
     return check.failures, check.total
 
 
-def _config_map_check() -> Tuple[int, int]:
+def _config_map_check() -> Tuple[int, int, int]:
     """The /config-map data is fresh, and its week-over-week diff behaves.
 
     Guards the introspected config map (`.claude/skills/config-map`):
-      1. `config.data.js` is exactly what `build_data.py` regenerates — a forgotten
-         regen, a hand-edit, a new skill/hook, or a re-wired `install.ps1` link
-         fails loud (same anti-staleness contract as `/system-map`);
+      1. **Advisory** — `config.data.js` is exactly what `build_data.py`
+         regenerates. Same anti-staleness contract as `/system-map`, and the
+         same scoping as `_fleet_toml_check`: `build_data.repo_skills()` /
+         `coverage()` sweep every *sibling* repo's committed default branch, so
+         a sister repo adding one `.claude/skills/` entry would otherwise turn
+         this repo's gate red until the weekly `/config-map` run regenerated it
+         (fleet-config#562). Reported, never failed; `/config-map` owns it.
       2. `whatchanged.py` pure-logic: adds/removes are named across every
          dimension (skills/hooks/matrix/conventions), edits are counted, repo
          keys collapse to a short label, and the no-op / first-run lines read
-         sensibly.
-    Returns the failure count.
+         sensibly. In-repo and deterministic — stays hard.
+    Returns (failures, total, skipped).
     """
     import importlib.util
 
@@ -258,7 +354,13 @@ def _config_map_check() -> Tuple[int, int]:
         regen_err = ""
     except Exception as exc:  # noqa: BLE001
         fresh, regen_err = False, f" ({exc})"
-    check(f"config_map: config.data.js matches build_data.py output{regen_err}", fresh)
+    check.advisory(
+        f"config_map: config.data.js matches build_data.py output{regen_err}",
+        fresh,
+        "a sibling repo's committed skills/hooks moved ahead of the introspected snapshot.\n"
+        "regenerate + commit with `/config-map`, or directly:\n"
+        "E:/automation/fleet-config/.venv/Scripts/python.exe .claude/skills/config-map/build_data.py",
+    )
 
     wc_spec = importlib.util.spec_from_file_location("config_map_whatchanged", cm_dir / "whatchanged.py")
     wc = importlib.util.module_from_spec(wc_spec)
@@ -287,7 +389,7 @@ def _config_map_check() -> Tuple[int, int]:
     check("config_map_whatchanged: no prior snapshot reads 'baseline'",
           wc.summarize(None, cur) == "baseline")
 
-    return check.failures, check.total
+    return check.failures, check.total, check.skipped
 
 
 def _readme_layout_check() -> Tuple[int, int]:

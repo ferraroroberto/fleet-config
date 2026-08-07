@@ -33,6 +33,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from acceptance.hook_matrix import run_hook_matrix  # noqa: E402
 from acceptance.architecture_guards import (  # noqa: E402
+    _advisory_semantics_check,
     _config_map_check,
     _fleet_toml_check,
     _mermaid_check,
@@ -65,6 +66,7 @@ from acceptance.unit_checks import (  # noqa: E402
     _notify_mention_unit_checks,
     _pi_usage_stats_unit_checks,
     _restart_webapp_unit_checks,
+    _safe_kill_force_push_unit_checks,
     _session_state_agent_adapter_unit_checks,
     _session_state_unit_checks,
     _slack_notify_unit_checks,
@@ -88,6 +90,20 @@ def main() -> int:
         f, t = check_fn()
         failures += f
         total_checks += t
+
+    def run_unit3(check_fn: Callable[[], Tuple[int, int, int]]) -> None:
+        """`run_unit` for the checks that also report a third state — `skipped`.
+
+        A check that *couldn't establish* a fact (no live settings.json to
+        compare against) or that *may not gate this repo* (fleet-wide freshness,
+        whose inputs are sibling checkouts) must land in neither Total nor
+        Failed, so a run that verified less never reads identical to one that
+        verified everything (fleet-config#461, #501, #562)."""
+        nonlocal failures, total_checks, skipped_checks
+        f, t, s = check_fn()
+        failures += f
+        total_checks += t
+        skipped_checks += s
 
     # ---- hook-payload acceptance matrix + foreign-harness (Grok) parity ----
     run_unit(run_hook_matrix)
@@ -146,6 +162,9 @@ def main() -> int:
     # ---- restart_and_verify_webapp restart-strategy + recovery hint ----
     run_unit(_restart_webapp_unit_checks)
 
+    # ---- safe_kill_guard: force-push blocks on the pushed ref (#562) ----
+    run_unit(_safe_kill_force_push_unit_checks)
+
     # ---- gh_body_file_guard: warn-only stdout assertions ----
     run_unit(_gh_body_file_guard_unit_checks)
 
@@ -173,7 +192,11 @@ def main() -> int:
     run_unit(_system_map_coverage_check)
 
     # ---- system-map: per-repo .fleet.toml aggregation + anti-staleness ----
-    run_unit(_fleet_toml_check)
+    # run_unit3: only fleet-config's own card is gated here. The fleet-wide
+    # freshness checks read sibling checkouts no commit in this repo controls,
+    # so they report as skipped rather than failing this gate (fleet-config#562).
+    run_unit3(_fleet_toml_check)
+    run_unit(_advisory_semantics_check)
 
     # ---- system-map: Mermaid companion render (render_mermaid.py) freshness ----
     run_unit(_mermaid_check)
@@ -183,7 +206,9 @@ def main() -> int:
     run_unit(_system_map_whatchanged_check)
 
     # ---- config-map: introspected config.data.js freshness + whatchanged ----
-    run_unit(_config_map_check)
+    # run_unit3: the freshness half sweeps sibling repos, so it reports as
+    # skipped rather than failing this gate — same reason as #562's fleet_toml.
+    run_unit3(_config_map_check)
 
     # ---- README Layout tree is an exhaustive inventory (fleet-config#565) ----
     run_unit(_readme_layout_check)
@@ -192,12 +217,9 @@ def main() -> int:
     run_unit(_codex_hooks_config_check)
 
     # ---- settings: live ~/.claude/settings.json ⊇ template hook wiring ----
-    # Not run_unit: this check has a third state (skipped, when the live file
-    # is absent) that must never fold into total_checks/failures (fleet-config#501).
-    _stsc_f, _stsc_t, _stsc_s = _settings_template_sync_check()
-    failures += _stsc_f
-    total_checks += _stsc_t
-    skipped_checks += _stsc_s
+    # run_unit3: this check has a third state (skipped, when the live file is
+    # absent) that must never fold into total_checks/failures (fleet-config#501).
+    run_unit3(_settings_template_sync_check)
 
     # ---- Windows console suppression on every runtime spawn (#399 / #412) ----
     run_unit(_no_window_unit_check)

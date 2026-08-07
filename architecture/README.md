@@ -13,7 +13,7 @@ A **light-theme, horizontal, Janis-style** infographic — grouped zone panels, 
 - each repo's root **`.fleet.toml`** — that repo's self-declared card, authoritative when present;
 - **`fleet.residual.json`** — hand-maintained: the non-repo structure (access/edge/compute/external/principles), a fallback card per repo in curated order, and an `_adopted` registry listing repos that MUST self-describe.
 
-`tests/run_acceptance.py` asserts the fleet, the generated data, the per-repo `.fleet.toml`s, and `ARCHITECTURE.md` never drift apart — including that `fleet.data.js` is exactly what `build_data.py` regenerates and that no `_adopted` repo has lost its `.fleet.toml` (so per-repo metadata can't silently go stale).
+`tests/run_acceptance.py` asserts the fleet, the generated data, and `ARCHITECTURE.md` never drift apart, plus — hard — that fleet-config's own card matches its own `.fleet.toml`. The fleet-wide `.fleet.toml` assertions (`fleet.data.js` is exactly what `build_data.py` regenerates; no `_adopted` repo has lost its declaration; every declaration parses) still run every time and still name the drift, but report as **`SKIP` (advisory), not a failure** — their inputs are *sibling repos'* live checkouts, so a `.fleet.toml` commit in any other repo would otherwise make fleet-config's gate red and unshippable for a reason no commit here can fix (fleet-config#562). `/system-map` owns clearing them, weekly.
 
 ### Per-repo `.fleet.toml` schema
 
@@ -40,7 +40,7 @@ tag          = ["→", "Notion"]  # [relation, target] edge annotation (working 
 | `chips` | | `chips` | enabling cards |
 | `tag` | | `tag` | working cards; `[relation, target]` |
 
-**Keep it current:** update `.fleet.toml` in the same PR as any material change (layer, port, role, one-line description, exposed services). A repo listed in the residual's `_adopted` registry whose `.fleet.toml` goes missing fails the drift test. After editing any `.fleet.toml`, run `E:/automation/fleet-config/.venv/Scripts/python.exe .claude/skills/system-map/build_data.py` to regenerate `fleet.data.js`.
+**Keep it current:** update `.fleet.toml` in the same PR as any material change (layer, port, role, one-line description, exposed services). A repo listed in the residual's `_adopted` registry whose `.fleet.toml` goes missing is reported by the drift test (advisory here, gating in `/system-map`). After editing any `.fleet.toml`, run `E:/automation/fleet-config/.venv/Scripts/python.exe .claude/skills/system-map/build_data.py` to regenerate `fleet.data.js`.
 
 ### Optional per-repo `[vendored]` table (fleet-config#338)
 
@@ -154,7 +154,7 @@ A second weekly map, the **descriptive** companion to `/context-audit` (which is
 - repo-specific skills → a git sweep of each fleet repo's committed `.claude/skills` (same committed-state read the system map uses for `.fleet.toml`);
 - convention coverage → committed `CLAUDE.md` / `.fleet.toml` per repo.
 
-The thin hand-maintained input is [`config.residual.json`](config.residual.json) — only what can't be derived: the agent columns, the matrix row structure (non-derivable cells carry an `annot`), the universal-skill scope set, the project-wired hooks, and the conventions prose. `tests/run_acceptance.py` asserts `config.data.js` is exactly what `build_data.py` regenerates, so it can't go stale. **By construction the dataset holds only wiring/structure — never a secret** (`build_data.py` reads the committed `settings.template.json`, never the live `~/.claude/settings.json`).
+The thin hand-maintained input is [`config.residual.json`](config.residual.json) — only what can't be derived: the agent columns, the matrix row structure (non-derivable cells carry an `annot`), the universal-skill scope set, the project-wired hooks, and the conventions prose. `tests/run_acceptance.py` checks `config.data.js` is exactly what `build_data.py` regenerates — advisory (a `SKIP` line, not a failure), because the sweep reads sibling repos; `/config-map` owns clearing it, weekly. **By construction the dataset holds only wiring/structure — never a secret** (`build_data.py` reads the committed `settings.template.json`, never the live `~/.claude/settings.json`).
 
 Regenerate + render the same way as the system map:
 

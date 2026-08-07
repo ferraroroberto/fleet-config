@@ -12,6 +12,8 @@ cover independently.
 from __future__ import annotations
 
 import base64
+import contextlib
+import io
 import json
 import os
 import re
@@ -2179,6 +2181,120 @@ def _restart_webapp_unit_checks() -> Tuple[int, int]:
         bool(flags & getattr(rw.subprocess, "CREATE_NEW_PROCESS_GROUP", 0))
         and bool(flags & getattr(rw.subprocess, "CREATE_NO_WINDOW", 0)),
     )
+
+    # ---- build identity is confirmed, never assumed (fleet-config#562) ----
+    # `expected.startswith("")` is unconditionally True, so the old predicate
+    # reported a payload carrying no git_sha as `OK git_sha= (matches HEAD)`.
+    head = "a1b2c3d4e5f6a7b8"
+    check("sha_matches: empty got_sha never matches (the #562 false-verify)",
+          not rw.sha_matches(head, ""))
+    check("sha_matches: empty expected_sha never matches",
+          not rw.sha_matches("", "a1b2c3d"))
+    check("sha_matches: a 7-char prefix matches in either direction",
+          rw.sha_matches(head, "a1b2c3d") and rw.sha_matches("a1b2c3d", head))
+    check("sha_matches: a different sha does not match",
+          not rw.sha_matches(head, "9999999abc"))
+
+    def drive(payload: Any, git_head: Any = head) -> int:
+        """Run main() end-to-end with the port/restart/HTTP layer stubbed out —
+        proves the *exit code*, not just the predicate."""
+        saved = (rw._pid_on_port, rw._restart_via_cmd, rw._git_head, rw._fetch_version,
+                 rw.VERIFY_TIMEOUT_S, rw.POLL_INTERVAL_S, sys.argv)
+        rw._pid_on_port = lambda port: None
+        rw._restart_via_cmd = lambda cmd, cwd, port: True
+        rw._git_head = lambda cwd: git_head
+        rw._fetch_version = lambda port, path, timeout=2.0: payload
+        rw.VERIFY_TIMEOUT_S, rw.POLL_INTERVAL_S = 0.15, 0.05
+        sys.argv = ["restart_and_verify_webapp", "--cwd", "E:/automation/app-launcher"]
+        try:
+            with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+                return rw.main()
+        finally:
+            (rw._pid_on_port, rw._restart_via_cmd, rw._git_head, rw._fetch_version,
+             rw.VERIFY_TIMEOUT_S, rw.POLL_INTERVAL_S, sys.argv) = saved
+
+    check("restart verify: git_sha matching HEAD -> exit 0",
+          drive({"git_sha": head, "asset_hash": "deadbeef"}) == 0)
+    check("restart verify: payload with NO git_sha key -> exit 3 (unconfirmed, not success)",
+          drive({"asset_hash": "deadbeef"}) == 3)
+    check("restart verify: payload with an empty git_sha -> exit 3 (unconfirmed)",
+          drive({"git_sha": "", "asset_hash": "deadbeef"}) == 3)
+    check("restart verify: payload with a null git_sha -> exit 3 (unconfirmed)",
+          drive({"git_sha": None}) == 3)
+    check("restart verify: HEAD unreadable -> exit 3 (nothing to compare against)",
+          drive({"git_sha": head}, git_head=None) == 3)
+    check("restart verify: a real sha that never converges -> exit 2 (mismatch, distinct from 3)",
+          drive({"git_sha": "9999999abcdef"}) == 2)
+    check("restart verify: endpoint never answers -> exit 2",
+          drive(None) == 2)
+
+    return check.failures, check.total
+
+
+def _safe_kill_force_push_unit_checks() -> Tuple[int, int]:
+    """The force-push guard decides on the *ref being pushed* (fleet-config#562).
+
+    The predicate used to be a word-boundary search for `main`/`master` across
+    the whole command line, so `git push --force origin
+    chore/rename-main-config-loader` was refused — a legitimate feature-branch
+    force-push the module's own docstring promises to allow. A fleet-wide guard
+    blocking valid work is the expensive kind of wrong (#464/#472 reverted a
+    hook within the hour for it), so the branch-name-contains-main case is
+    pinned here alongside the protections it must not weaken.
+    """
+    sys.path.insert(0, str(HOOKS))
+    import safe_kill_guard as skg  # noqa: E402
+
+    check = _Checker()
+    push = "git " + "push"  # split so this file's own text isn't a force-push line
+    here = REPO
+
+    def blocked(cmd: str) -> bool:
+        return skg.forced_push_hits_protected(cmd, here)
+
+    check("force-push: --force origin main -> blocked", blocked(f"{push} --force origin main"))
+    check("force-push: -f origin master -> blocked", blocked(f"{push} -f origin master"))
+    check("force-push: --force-with-lease origin HEAD:main -> blocked",
+          blocked(f"{push} --force-with-lease origin HEAD:main"))
+    check("force-push: +refs/heads/master refspec -> blocked",
+          blocked(f"{push} --force origin +refs/heads/master"))
+    check("force-push: short-flag cluster -fu origin main -> blocked",
+          blocked(f"{push} -fu origin main"))
+    check("force-push: chained after another command -> blocked",
+          blocked(f"git status && {push} --force origin main"))
+
+    check("force-push: feature branch -> allowed", not blocked(f"{push} --force origin feature/foo"))
+    check("force-push: branch whose NAME contains 'main' -> allowed (the #562 false positive)",
+          not blocked(f"{push} --force origin chore/rename-main-config-loader"))
+    check("force-push: branch whose name contains 'master' -> allowed",
+          not blocked(f"{push} --force origin fix/12-master-list-parser"))
+    check("force-push: a src-side 'main' pushed onto a feature ref -> allowed",
+          not blocked(f"{push} --force origin main:feature/staging-main"))
+    check("force-push: no force flag -> not a forced push at all",
+          skg.forced_push_refspecs(f"{push} origin main") is None)
+    check("force-push: --foo is not the short -f (no false positive)",
+          skg.forced_push_refspecs(f"{push} --foo origin main") is None)
+
+    check("force-push: refspec-less push reports an empty list, not a guess",
+          skg.forced_push_refspecs(f"{push} --force origin") == [])
+    check("destination_branch: strips + and refs/heads/, keeps the dst side",
+          skg.destination_branch("+refs/heads/main") == "main"
+          and skg.destination_branch("HEAD:refs/heads/master") == "master"
+          and skg.destination_branch("feature/x") == "feature/x")
+
+    # Refspec-less force push falls back to the checked-out branch of `cwd`.
+    tmp = Path(tempfile.mkdtemp(prefix="fc-push-"))
+    try:
+        subprocess.run(["git", "-C", str(tmp), "init", "-b", "main"], capture_output=True)
+        check("force-push: refspec-less push on main -> blocked via the checked-out branch",
+              skg.forced_push_hits_protected(f"{push} --force origin", tmp))
+        subprocess.run(["git", "-C", str(tmp), "checkout", "-b", "feat/x"], capture_output=True)
+        check("force-push: refspec-less push on a feature branch -> allowed",
+              not skg.forced_push_hits_protected(f"{push} --force origin", tmp))
+        check("_current_branch: unresolvable cwd reports '' (fails open, never guesses)",
+              skg._current_branch(tmp / "not-a-repo-here") == "")
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
 
     return check.failures, check.total
 

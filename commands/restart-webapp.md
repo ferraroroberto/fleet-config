@@ -17,6 +17,8 @@ This invokes `~/.claude/hooks/restart_and_verify_webapp.py`, which:
 5. Polls `<api_version_path>` (default `/api/version`) until `git_sha` matches `git rev-parse HEAD`.
 6. Reports the new `asset_hash` so I know the build I'm looking at is the one I just shipped. On an unrecoverable failure it prints the manual-recovery commands instead of a bare `nothing listening`.
 
+Exit codes: **0** the live `git_sha` was read and matches HEAD · **1** the project isn't in `projects.toml` · **2** the kill/restart failed, or the live build never converged to HEAD · **3** `UNCONFIRMED` — the webapp is up but its build identity could not be established (HEAD unreadable, or the version payload carries no `git_sha`). **3 is not a success**: report it as "restarted, build identity unverified" and say which build is live is unknown — never as a verified restart (fleet-config#562).
+
 ## How to invoke it
 
 Run this from the project root (so `cwd` resolves to the right project in `projects.toml`):
