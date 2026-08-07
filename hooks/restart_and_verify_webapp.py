@@ -74,10 +74,15 @@ def _run_ps(
     timeout: Optional[int] = 15,
     env: Optional[dict] = None,
 ) -> subprocess.CompletedProcess:
-    """Run a PowerShell one-liner via the absolute Windows PowerShell 5.1 path."""
-    ps = r"C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe"
+    """Run a PowerShell one-liner via the absolute Windows PowerShell 5.1 path.
+
+    Resolution is `_lib.powershell_exe()` (fleet-config#561): this used to
+    hardcode the literal with no existence check, so a machine without Windows
+    PowerShell 5.1 hard-failed `/restart-webapp` where the sibling copy in
+    `context_filter_cli` degraded through `shutil.which`.
+    """
     return subprocess.run(
-        [ps, "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", command],
+        [_lib.powershell_exe(), "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", command],
         capture_output=True,
         text=True,
         timeout=timeout,

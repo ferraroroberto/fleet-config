@@ -10,9 +10,10 @@ token-styled web apps — so it skips non-web repos and Streamlit-only POC spike
 without an LLM loop reading every repo's CSS.
 
 This script does that gate in **one process**: crawl every `ferraroroberto`
-repo under a root (the same filesystem crawl `/audit-fleet`'s
-`fleet_audit_scan.py` uses — skips linked worktrees whose `.git` is a file),
-classify each with the *same* web-app detection `/design-sync`'s step 2
+repo under a root (literally the same crawl `/audit-fleet`'s
+`fleet_audit_scan.py` runs — both call `fleet_repo_scan.iter_fleet_repos`,
+which skips linked worktrees whose `.git` is a file), classify each with the
+*same* web-app detection `/design-sync`'s step 2
 describes (token-bearing CSS in a `:root`, minus Streamlit spikes), and print
 one JSON object bucketing every repo into `web_apps` / `skipped_non_web` /
 `skipped_streamlit` / `errors`. The orchestrator just reads the output — no
@@ -20,7 +21,7 @@ per-repo `git`/`gh` tool calls needed for the gating step.
 
 The correctness-critical piece (`classify_web_app`) is pure over a filesystem
 tree and unit-tested (`tests/run_acceptance.py`) independent of the git/gh I/O
-around it, mirroring `fleet_audit_scan.is_fleet_repo`. Reuses `design_lint`'s
+around it, mirroring `fleet_repo_scan.is_fleet_repo`. Reuses `design_lint`'s
 `repo_files` / `parse_custom_props` so the detection can never drift from the
 per-repo lint. stdlib + the `git` CLI only.
 
@@ -38,8 +39,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import design_lint  # noqa: E402
-import fleet_audit_scan  # noqa: E402
-import git_run  # noqa: E402
+import fleet_repo_scan  # noqa: E402
 
 
 def _token_css_files(root: Path) -> list[Path]:
@@ -102,23 +102,8 @@ def scan(root: str, only: str | None = None) -> dict:
         "web_apps": [], "skipped_non_web": [], "skipped_streamlit": [], "errors": [],
     }
 
-    for d in sorted(Path(root).iterdir()):
-        if not d.is_dir():
-            continue
-        if not (d / ".git").is_dir():
-            # Not a git repo, or a linked worktree (its .git is a file) — skip.
-            continue
+    for d in fleet_repo_scan.iter_fleet_repos(root, only):
         name = d.name
-        if only and name != only:
-            continue
-
-        try:
-            remote = git_run.run_git_checked(["-C", str(d), "remote", "get-url", "origin"])
-        except SystemExit:
-            continue
-        if not fleet_audit_scan.is_fleet_repo(remote):
-            continue
-
         try:
             category, reason = classify_web_app(d)
         except OSError as exc:

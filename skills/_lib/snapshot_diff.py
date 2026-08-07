@@ -28,7 +28,8 @@ from pathlib import Path
 from typing import Callable, Dict, Optional
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from no_window import NO_WINDOW  # noqa: E402
+import git_run  # noqa: E402
+from utf8_stdio import ensure_utf8_stdio  # noqa: E402
 
 # U+2212 MINUS SIGN for removals (reads cleaner than a hyphen, which looks like
 # a CLI flag) — matches both skills' '+added, −removed' examples.
@@ -65,13 +66,14 @@ def summarize(
 
 def read_git_snapshot(file_path: str, ref: str) -> Optional[str]:
     """The previous snapshot's text at ``ref``, or ``None`` if the file didn't
-    exist there yet (first run / baseline)."""
+    exist there yet (first run / baseline).
+
+    Routed through `git_run.run_git` for the same reason as `run_cli`'s stdio
+    guard below (fleet-config#561) — the shared wrapper already owns the UTF-8
+    decode and `NO_WINDOW`, and adds the `errors="replace"` this call site was
+    missing."""
     try:
-        return subprocess.run(
-            ["git", "show", f"{ref}:{file_path}"],
-            capture_output=True, text=True, encoding="utf-8", check=True,
-            creationflags=NO_WINDOW,
-        ).stdout
+        return git_run.run_git(["show", f"{ref}:{file_path}"], check=True).stdout
     except subprocess.CalledProcessError:
         return None
 
@@ -86,10 +88,10 @@ def run_cli(
     """Shared CLI body: UTF-8 stdout, ``--file``/``--ref`` args, git-show read, print."""
     # Captured stdout falls back to cp1252 on Windows, which can't encode the
     # U+2212 minus sign — force UTF-8 so the line survives the skill's capture.
-    try:
-        sys.stdout.reconfigure(encoding="utf-8")  # type: ignore[attr-defined]
-    except Exception:  # noqa: BLE001 - best-effort; real terminals are already utf-8
-        pass
+    # `utf8_stdio` is the shared home for that guard (fleet-config#500); this was
+    # one call site its consolidation missed (fleet-config#561), and routing it
+    # here also covers stderr, which the local copy did not.
+    ensure_utf8_stdio()
 
     ap = argparse.ArgumentParser(description=description)
     ap.add_argument("--file", default=default_file,

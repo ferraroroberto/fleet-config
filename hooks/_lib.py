@@ -15,6 +15,7 @@ Use the helpers below so each hook stays a few dozen lines of pure rule logic.
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
 import shutil
@@ -33,6 +34,54 @@ except ModuleNotFoundError:  # pragma: no cover - fallback for older Pythons
 HOOKS_DIR = Path(__file__).resolve().parent
 PROJECTS_TOML = HOOKS_DIR / "projects.toml"
 PROJECTS_TOML_ENV_VAR = "CLAUDE_HOOKS_PROJECTS_TOML"
+
+logger = logging.getLogger("fleet_hooks")
+
+
+# ------------------------------------------------------- credential patterns
+
+# The one definition of "what a live credential looks like" for this tier
+# (fleet-config#561). Two independent copies used to exist — `context_filter`'s
+# four-family redaction regex and `secret_scan_guard`'s one-family commit
+# blocker — and the *narrower* one was the copy wired into the guard that
+# actually refuses a commit. So the guard blocked a leaked Slack bot token and
+# waved through an OpenAI key, a GitHub PAT, and an AWS access key id. Both now
+# read from here, so extending coverage is a one-line change in one place.
+#
+# `\b` anchors every pattern: without them `sk-` matches inside `risk-…` and
+# `gh?_` inside `highp_…`, which is tolerable for a redactor (a false positive
+# just redacts a word) but not for a guard that refuses `git commit`. Verified
+# against every tracked file in every repo under `E:/automation`: zero matches.
+#
+# Deliberately live-shaped, not prefix-shaped, so this repo's own docs — which
+# legitimately carry the placeholder forms `xoxb-…` and `xoxb-<token>` — never
+# trip the guard. A real token has a long secret body; the placeholders don't.
+#
+# The Slack pattern requires the **three** hyphen-separated groups every real
+# Slack token carries (`xoxb-<team>-<bot>-<secret>`, `xoxp-`/`xoxa-` likewise),
+# rather than a bare "prefix plus 16 characters". Interior groups are `+` — an
+# `xoxa-` app token's second group is a single digit — but the trailing secret
+# must be 8+. Without the three-group requirement a *test fixture* naming a
+# plausible-looking fake token becomes uncommittable, which is how this pattern
+# first blocked its own repo (fleet-config#561).
+SECRET_PATTERNS: tuple[tuple[str, str], ...] = (
+    ("Slack token (xox…-)", r"\bxox[baprs]-[A-Za-z0-9]+-[A-Za-z0-9]+-[A-Za-z0-9]{8,}"),
+    ("API key (sk-)", r"\bsk-[A-Za-z0-9_-]{20,}"),
+    ("GitHub token (gh?_)", r"\bgh[pousr]_[A-Za-z0-9_]{20,}"),
+    ("AWS access key id (AKIA…)", r"\bAKIA[0-9A-Z]{16}"),
+)
+
+# The same tuple as one alternation, for redaction (`SECRET_RE.sub(...)`) and
+# for "does this output look secret-bearing" tests.
+SECRET_RE = re.compile("(" + "|".join(pattern for _, pattern in SECRET_PATTERNS) + ")")
+
+
+def scan_for_secret(text: str) -> Optional["tuple[str, str]"]:
+    """Return ``(label, pattern)`` of the first credential found in ``text``, else ``None``."""
+    for label, pattern in SECRET_PATTERNS:
+        if re.search(pattern, text):
+            return label, pattern
+    return None
 
 
 # ------------------------------------------------------- subprocess spawning
@@ -426,6 +475,69 @@ def find_python_executable() -> Optional[str]:
         if candidate and not _is_windowsapps_alias(candidate) and Path(candidate).exists():
             return candidate
     return None
+
+
+# ----------------------------------------------------- PowerShell resolution
+
+# The absolute Windows PowerShell 5.1 path every hook must spell out, because
+# the `pwsh` on PATH here is a 0-byte WindowsApps reparse stub that fails
+# non-interactively (global CLAUDE.md, "Windows PowerShell in spawned commands").
+WINDOWS_POWERSHELL = "C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe"
+
+
+def powershell_exe() -> str:
+    """Resolve a usable PowerShell executable, preferring Windows PowerShell 5.1.
+
+    Probes for the absolute path first and degrades through ``shutil.which`` so a
+    machine without it (a POSIX box, a trimmed Windows image) gets a best-effort
+    fallback instead of a hard `FileNotFoundError`. Hoisted here from
+    `context_filter_cli` (fleet-config#561): `restart_and_verify_webapp` had
+    hardcoded the literal with no probe, so `/restart-webapp` hard-failed where
+    the wrapper degraded — two resolutions of one fact that had drifted in
+    safety.
+    """
+    if Path(WINDOWS_POWERSHELL).exists():
+        return WINDOWS_POWERSHELL
+    return shutil.which("powershell") or "powershell"
+
+
+# ------------------------------------------------------------------ gh CLI
+
+
+def gh_json(args: Sequence[str], *, timeout: int = 20) -> Dict[str, Any]:
+    """Run ``gh <args>`` and parse its JSON stdout. Returns ``{}`` on any error.
+
+    Never raises: a missing gh, a non-zero exit, or unparseable output all yield
+    an empty dict so the caller degrades to a link-less message instead of
+    crashing a skill mid-run.
+
+    Decodes gh's stdout as UTF-8 explicitly — on Windows ``text=True`` falls back
+    to cp1252, which mis-decodes a UTF-8 title (em-dash — -> â€", emoji -> ðŸ§)
+    before it ever reaches Slack. Mirrors ``slack_notify._read_text``.
+
+    Lives here rather than in `notify_complete` (fleet-config#561) because
+    `work_summary` needed the identical helper and could not import it —
+    `notify_complete` imports `work_summary`, so the obvious direction was an
+    import cycle and the cycle was "resolved" by copying the body. `_lib` is
+    imported by both and imports neither, so the cycle dissolves.
+    """
+    try:
+        proc = subprocess.run(
+            ["gh", *args], capture_output=True, text=True,
+            encoding="utf-8", errors="replace", timeout=timeout,
+            creationflags=NO_WINDOW,
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        logger.error("gh call failed: %s", exc)
+        return {}
+    if proc.returncode != 0:
+        logger.error("gh exited %s: %s", proc.returncode, (proc.stderr or "").strip()[:200])
+        return {}
+    try:
+        data = json.loads(proc.stdout)
+    except ValueError:
+        return {}
+    return data if isinstance(data, dict) else {}
 
 
 # --------------------------------------------------------- Payload extraction

@@ -79,7 +79,6 @@ import json
 import logging
 import os
 import re
-import subprocess
 import sys
 from pathlib import Path
 from typing import List, Optional, Tuple
@@ -88,8 +87,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import _lib  # noqa: E402
 import slack_notify  # noqa: E402
 import work_summary  # noqa: E402
-
-logger = logging.getLogger("notify_complete")
 
 # Kinds that link a pull request (read from gh pr) vs. an issue (gh issue view).
 # `security` links its (auto-merged) fix PR and carries the work-summary block so
@@ -147,33 +144,12 @@ def category_for(kind: str, *, review: Optional[str] = None) -> str:
     return "log"
 
 
-def gh_json(args: List[str]) -> dict:
-    """Run ``gh <args>`` and parse its JSON stdout. Returns ``{}`` on any error.
-
-    Never raises: a missing gh, a non-zero exit, or unparseable output all yield
-    an empty dict so the caller degrades to a link-less message instead of
-    crashing a skill mid-run.
-    """
-    try:
-        # Decode gh's stdout as UTF-8 explicitly: on Windows text=True falls back
-        # to cp1252, which mis-decodes a UTF-8 title (em-dash — -> â€", emoji ->
-        # ðŸ§) before it ever reaches Slack. Mirrors slack_notify._read_text.
-        proc = subprocess.run(
-            ["gh", *args], capture_output=True, text=True,
-            encoding="utf-8", errors="replace", timeout=20,
-            creationflags=_lib.NO_WINDOW,
-        )
-    except (OSError, subprocess.SubprocessError) as exc:
-        logger.error("gh call failed: %s", exc)
-        return {}
-    if proc.returncode != 0:
-        logger.error("gh exited %s: %s", proc.returncode, proc.stderr.strip()[:200])
-        return {}
-    try:
-        data = json.loads(proc.stdout)
-    except ValueError:
-        return {}
-    return data if isinstance(data, dict) else {}
+# The gh shell-out lives in `_lib` (fleet-config#561) so `work_summary` — which
+# this module imports, and which therefore could not import back — reaches the
+# same implementation instead of keeping a copy. Re-exported under the original
+# name because it is this module's public surface (callers and tests both reach
+# `notify_complete.gh_json`).
+gh_json = _lib.gh_json
 
 
 def lookup(

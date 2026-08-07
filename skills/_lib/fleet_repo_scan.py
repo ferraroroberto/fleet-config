@@ -1,5 +1,7 @@
 """Shared "enumerate the fleet + resolve a repo's committed default branch"
-logic behind /config-map's and /system-map's `build_data.py` (fleet-config#318).
+logic behind /config-map's and /system-map's `build_data.py` (fleet-config#318),
+plus the filesystem-crawl half (`is_fleet_repo` / `iter_fleet_repos`) that
+/audit-fleet's and /design-sweep's scanners share (fleet-config#561).
 
 Both skills derive their per-repo data from the same `hooks/projects.toml`
 membership list, and both need each repo's committed default branch (to read
@@ -18,7 +20,7 @@ from __future__ import annotations
 import sys
 import tomllib
 from pathlib import Path
-from typing import Dict, Optional
+from typing import Dict, Iterator, Optional
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import git_run  # noqa: E402
@@ -41,6 +43,45 @@ def fleet_repos(projects_toml: Path = _DEFAULT_PROJECTS_TOML) -> Dict[str, Path]
         if name != "global" and isinstance(tbl, dict) and "cwd_prefix" in tbl
         and name not in ignore
     }
+
+
+def is_fleet_repo(remote_url: str | None) -> bool:
+    """True if the remote URL belongs to the `ferraroroberto` GitHub org.
+
+    Matches both the https (`https://github.com/ferraroroberto/x.git`) and
+    ssh (`git@github.com:ferraroroberto/x.git`) remote URL forms.
+    """
+    return bool(remote_url) and "ferraroroberto/" in remote_url
+
+
+def iter_fleet_repos(root: str | Path, only: str | None = None) -> Iterator[Path]:
+    """Yield every fleet repo directory directly under `root`, in name order.
+
+    A directory qualifies when it is a real repo (`.git` is a **directory** —
+    a linked worktree's `.git` is a *file*, and sweeping a sibling `-wt-<N>`
+    tree would double-count the repo it belongs to) whose `origin` remote is a
+    `ferraroroberto` one. `only` narrows to a single repo by directory name.
+    A directory whose `origin` can't be read is skipped silently — it isn't a
+    fleet repo as far as this crawl can tell.
+
+    `fleet_audit_scan.scan` and `design_sweep_scan.scan` carried this loop
+    copy-pasted verbatim, comment and all (fleet-config#561), which is why the
+    worktree guard had to be got right twice.
+    """
+    for d in sorted(Path(root).iterdir()):
+        if not d.is_dir():
+            continue
+        if not (d / ".git").is_dir():
+            continue
+        if only and d.name != only:
+            continue
+        try:
+            remote = git_run.run_git_checked(["-C", str(d), "remote", "get-url", "origin"])
+        except SystemExit:
+            continue
+        if not is_fleet_repo(remote):
+            continue
+        yield d
 
 
 def default_ref(repo_dir: Path) -> Optional[str]:

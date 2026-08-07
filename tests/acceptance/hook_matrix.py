@@ -18,12 +18,14 @@ from typing import Any, Dict, List, Tuple
 
 from acceptance.shared import REPO, assert_exit, run
 
-# A synthetic Slack-token-shaped string for the secret_scan_guard cases. It is
-# assembled from fragments at runtime so the literal `xoxb-` token body never
-# sits in this source file — a contiguous literal would trip GitHub's push
-# protection (and the very guard under test). The assembled value still matches
-# secret_scan_guard's regex `xoxb-\d{6,}-\d{6,}-[A-Za-z0-9]{8,}`.
+# Synthetic credential-shaped strings for the secret_scan_guard cases, one per
+# family in `_lib.SECRET_PATTERNS`. Each is assembled from fragments at runtime
+# so no contiguous token literal ever sits in this source file — that would trip
+# GitHub's push protection (and the very guard under test).
 FAKE_XOXB = "-".join(("xo" + "xb", "2444556677", "8899001122", "AbCdEfGhIjKlMnOpQrStUvWx"))
+FAKE_GHP = "gh" + "p_" + "AbCdEfGhIjKlMnOpQrStUvWxYz012345"
+FAKE_SK = "sk" + "-" + "AbCdEfGhIjKlMnOpQrStUvWxYz012345"
+FAKE_AKIA = "AK" + "IA" + "IOSFODNN7EXAMPLE"
 
 
 def run_hook_matrix() -> Tuple[int, int]:
@@ -54,6 +56,32 @@ def run_hook_matrix() -> Tuple[int, int]:
          {"tool_name": "Bash", "cwd": tempfile.gettempdir(),
           "tool_input": {"command": f'git add config.toml && git commit -m "wip: SLACK_BOT_TOKEN = {FAKE_XOXB}"'}},
          2),
+        # The three families the guard was blind to until fleet-config#561 —
+        # `context_filter`'s redactor already knew all four, the guard's own
+        # copy knew only Slack, and the narrow copy was the one blocking commits.
+        ("secret_scan: live GitHub token in commit one-liner -> block",
+         "secret_scan_guard",
+         {"tool_name": "Bash", "cwd": tempfile.gettempdir(),
+          "tool_input": {"command": f'git commit -m "wip: GH_TOKEN = {FAKE_GHP}"'}},
+         2),
+        ("secret_scan: live sk- API key in commit one-liner -> block",
+         "secret_scan_guard",
+         {"tool_name": "Bash", "cwd": tempfile.gettempdir(),
+          "tool_input": {"command": f'git commit -m "wip: API_KEY = {FAKE_SK}"'}},
+         2),
+        ("secret_scan: AWS access key id in commit one-liner -> block",
+         "secret_scan_guard",
+         {"tool_name": "Bash", "cwd": tempfile.gettempdir(),
+          "tool_input": {"command": f'git commit -m "wip: AWS_ACCESS_KEY_ID = {FAKE_AKIA}"'}},
+         2),
+        # The `\b` anchors on those patterns: `sk-` inside `risk-…` and `gh?_`
+        # inside `highp_…` are prose, not credentials. A redactor could afford
+        # that false positive; a guard that refuses `git commit` cannot.
+        ("secret_scan: 'risk-'/'highp_' prose lookalikes -> allow",
+         "secret_scan_guard",
+         {"tool_name": "Bash", "cwd": tempfile.gettempdir(),
+          "tool_input": {"command": 'git commit -m "docs: risk-assessment-framework-controls, highp_conversion_estimates"'}},
+         0),
         ("secret_scan: xoxb- placeholder (docs ellipsis) -> allow",
          "secret_scan_guard",
          {"tool_name": "Bash", "cwd": tempfile.gettempdir(),

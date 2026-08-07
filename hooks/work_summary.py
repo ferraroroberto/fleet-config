@@ -32,15 +32,12 @@ from __future__ import annotations
 import argparse
 import json
 import logging
-import subprocess
 import sys
 from pathlib import Path
 from typing import Dict, List, Optional
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import _lib  # noqa: E402
-
-logger = logging.getLogger("work_summary")
 
 MINUS = "−"  # U+2212 MINUS SIGN — matches the roll-up's "−47", not ASCII "-"
 
@@ -143,31 +140,17 @@ def _gh_pr(ref: str) -> Dict:
     """``gh pr view <ref> --json files,additions,deletions,changedFiles`` → dict.
 
     ``ref`` is a PR number or a full URL (URL works from any CWD). Returns ``{}``
-    on a missing gh, a non-zero exit, or unparseable output — never raises. Has
-    its own gh shell-out rather than importing ``notify_complete.gh_json`` to
-    avoid an import cycle (``notify_complete`` imports this module). Decodes
-    stdout as UTF-8 explicitly (Windows ``text=True`` falls back to cp1252 and
-    mangles a UTF-8 path before it reaches Slack/the report).
+    on a missing gh, a non-zero exit, or unparseable output — never raises.
+
+    Used to carry its own ~20-line gh shell-out, copied from
+    ``notify_complete.gh_json`` because importing it would have closed a cycle
+    (``notify_complete`` imports this module). The helper now lives in ``_lib``,
+    which both modules already import and neither imports back, so the cycle
+    that motivated the copy is gone (fleet-config#561).
     """
-    try:
-        proc = subprocess.run(
-            ["gh", "pr", "view", str(ref), "--json",
-             "files,additions,deletions,changedFiles"],
-            capture_output=True, text=True,
-            encoding="utf-8", errors="replace", timeout=20,
-            creationflags=_lib.NO_WINDOW,
-        )
-    except (OSError, subprocess.SubprocessError) as exc:
-        logger.error("gh call failed: %s", exc)
-        return {}
-    if proc.returncode != 0:
-        logger.error("gh exited %s: %s", proc.returncode, proc.stderr.strip()[:200])
-        return {}
-    try:
-        data = json.loads(proc.stdout)
-    except ValueError:
-        return {}
-    return data if isinstance(data, dict) else {}
+    return _lib.gh_json(
+        ["pr", "view", str(ref), "--json", "files,additions,deletions,changedFiles"]
+    )
 
 
 def block_for(ref: str) -> str:

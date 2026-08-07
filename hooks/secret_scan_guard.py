@@ -13,29 +13,24 @@ instead lives in a **file** being committed, so the command string alone is
 blind to it — we have to look at what's actually staged.
 
 Matching is deliberately narrow so it never trips on this repo's own docs, which
-legitimately contain the *placeholder* forms `xoxb-…` and `xoxb-<token>`. A real
-token is `xoxb-` followed by hyphen-separated digit groups and a long alnum
-secret tail; the placeholders have no such body and are ignored.
+legitimately contain the *placeholder* forms `xoxb-…` and `xoxb-<token>`: a real
+token has a long secret body and the placeholders do not.
+
+What counts as a credential is **not** decided here — `_lib.SECRET_PATTERNS` is
+the one definition for this tier, shared with `context_filter`'s redactor
+(fleet-config#561). This module used to carry its own one-family copy, which had
+drifted strictly narrower than the redactor's four, so the guard blocked a Slack
+token and waved through an OpenAI key, a GitHub PAT, and an AWS access key id.
 """
 
 from __future__ import annotations
 
-import re
 import subprocess
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import _lib  # noqa: E402
-
-
-# A live Slack bot token: `xoxb-` then at least two hyphen-joined digit groups
-# and an alphanumeric secret tail of 8+ chars. The placeholder forms this repo's
-# own docs use (`xoxb-…`, `xoxb-<token>`, bare `xoxb-`) lack that body and so do
-# not match.
-SECRET_PATTERNS: tuple[tuple[str, str], ...] = (
-    ("Slack bot token (xoxb-)", r"xoxb-\d{6,}-\d{6,}-[A-Za-z0-9]{8,}"),
-)
 
 
 def _is_git_commit(cmd: str) -> bool:
@@ -64,14 +59,6 @@ def _staged_diff(repo_cwd: Path) -> str:
     return res.stdout or ""
 
 
-def _scan(text: str) -> "tuple[str, str] | None":
-    """Return ``(label, pattern)`` of the first secret found, else ``None``."""
-    for label, pattern in SECRET_PATTERNS:
-        if re.search(pattern, text):
-            return label, pattern
-    return None
-
-
 def main() -> None:
     payload = _lib.read_stdin_json()
     if _lib.tool_name(payload) != "Bash":
@@ -85,7 +72,7 @@ def main() -> None:
     # ride in via an inline `git add` + commit one-liner, or a heredoc).
     haystack = cmd + "\n" + _staged_diff(_lib.cwd(payload))
 
-    hit = _scan(haystack)
+    hit = _lib.scan_for_secret(haystack)
     if hit:
         label, pattern = hit
         _lib.block(
