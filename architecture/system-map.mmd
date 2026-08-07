@@ -5,12 +5,14 @@ flowchart LR
   subgraph governance["Governance"]
     project_scaffolding["📐 project-scaffolding"]
     fleet_config["⚙️ fleet-config"]
+    fleet_config_lite["⚙️ fleet-config-lite"]
   end
   subgraph enabling["Enabling"]
     app_launcher["🚀 app-launcher"]
     local_llm_hub["🧠 local-llm-hub"]
     voice_transcriber["🎙️ voice-transcriber"]
     photo_ocr["📷 photo-ocr"]
+    app_launcher_lite["🚀 App Launcher Lite"]
   end
   subgraph web["Web"]
     grocery_shopping_automation["🛒 grocery"]
@@ -22,6 +24,8 @@ flowchart LR
     vibe_coding_workshop["🎓 vibe-coding-workshop"]
     life_os["🌱 life-os"]
     home_automation["🌡️ home-automation"]
+    github_copilot_usage["📶 github-copilot-usage"]
+    website_analytics["📈 website-analytics"]
   end
   subgraph pipe["Pipelines"]
     accounting_quarterly["💳 accounting-quarterly"]
@@ -38,6 +42,8 @@ flowchart LR
     automation["🤖 automation"]
     mcp_personal_onedrive["📁 mcp-personal-onedrive"]
     minecraft_bedrock_bot["⛏️ minecraft-bedrock-bot"]
+    algo_trading["📈 algo-trading"]
+    gitlab_to_github_migrator["🔀 gitlab-to-github-migrator"]
     oracle_to_gcp["☁️ Oracle to GCP"]
   end
   subgraph targets["Referenced"]
@@ -48,6 +54,8 @@ flowchart LR
     t_notion["Notion"]
     t_onedrive["OneDrive"]
     t_minecraft_realm["Minecraft Realm"]
+    t_ibkr["IBKR"]
+    t_github["GitHub"]
   end
   grocery_shopping_automation -->|uses| t_hub_whisper
   whatsapp_radar -->|uses| t_hub
@@ -58,3 +66,5 @@ flowchart LR
   email_archiver -->|→| t_onedrive
   mcp_personal_onedrive -->|→| t_onedrive
   minecraft_bedrock_bot -->|→| t_minecraft_realm
+  algo_trading -->|→| t_ibkr
+  gitlab_to_github_migrator -->|→| t_github

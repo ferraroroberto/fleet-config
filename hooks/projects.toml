@@ -97,6 +97,12 @@ is_hub              = true
 [accounting-quarterly]
 cwd_prefix = "E:/automation/accounting-quarterly"
 
+[algo-trading]
+cwd_prefix = "E:/automation/algo-trading"
+
+[app-launcher-lite]
+cwd_prefix = "E:/automation/app-launcher-lite"
+
 [arboldelossuenos]
 cwd_prefix = "E:/automation/arboldelossuenos"
 
@@ -105,6 +111,9 @@ cwd_prefix = "E:/automation/automation"
 
 [fleet-config]
 cwd_prefix = "E:/automation/fleet-config"
+
+[fleet-config-lite]
+cwd_prefix = "E:/automation/fleet-config-lite"
 
 [closed-company-accounting]
 cwd_prefix = "E:/automation/closed-company-accounting"
@@ -126,6 +135,12 @@ cwd_prefix = "E:/automation/facilitation-shuffle"
 
 [family-accounting]
 cwd_prefix = "E:/automation/family-accounting"
+
+[github-copilot-usage]
+cwd_prefix = "E:/automation/github-copilot-usage"
+
+[gitlab-to-github-migrator]
+cwd_prefix = "E:/automation/gitlab-to-github-migrator"
 
 [grocery-shopping-automation]
 cwd_prefix = "E:/automation/grocery-shopping-automation"
@@ -187,6 +202,9 @@ cwd_prefix = "E:/automation/vibe-coding-workshop"
 
 [website]
 cwd_prefix = "E:/automation/website"
+
+[website-analytics]
+cwd_prefix = "E:/automation/website-analytics"
 
 [whatsapp-radar]
 cwd_prefix          = "E:/automation/whatsapp-radar"

@@ -13,7 +13,8 @@
 window.FLEET = {
   "governance": [
     {"ic": "📐", "nm": "project-scaffolding", "ds": "Canonical master — the scaffold &amp; CLAUDE.md every project derives from."},
-    {"ic": "⚙️", "nm": "fleet-config", "ds": "Fleet-wide Claude Code hooks, skills &amp; the issue workflow."}
+    {"ic": "⚙️", "nm": "fleet-config", "ds": "Fleet-wide Claude Code hooks, skills &amp; the issue workflow."},
+    {"ic": "⚙️", "nm": "fleet-config-lite", "ds": "Copilot-CLI + GitLab lite fork — session-state hook, issue skills &amp; installer."}
   ],
   "access": [
     {"ic": "📱", "nm": "iPhone", "ds": "Phone-first — one tap launches anything."},
@@ -30,7 +31,8 @@ window.FLEET = {
     {"ic": "🚀", "nm": "app-launcher", "port": ":8445", "ds": "<b>Where I live</b> — the central hub. Coding · Apps · Jobs · Life OS · Board (fleet kanban) · Settings, all from the phone. Born from one goal: do <i>everything</i> on the PC from mobile. The entry point to it all."},
     {"ic": "🧠", "nm": "local-llm-hub", "port": ":8000", "ds": "Shared LLM gateway — routes to local models or claude -p.", "chips": ["claude -p", "agy gemini", "qwen35-4b :8088", "gemma-26b :8087", "voice → gaming+mac", "tts :8092+"]},
     {"ic": "🎙️", "nm": "voice-transcriber", "port": ":8443", "ds": "Always-on voice→text (F8). Owns whisper :8090.", "chips": ["whisper :8090"]},
-    {"ic": "📷", "nm": "photo-ocr", "port": ":8444", "ds": "Mobile OCR — photos → clean text. Reusable capture surface."}
+    {"ic": "📷", "nm": "photo-ocr", "port": ":8444", "ds": "Mobile OCR — photos → clean text. Reusable capture surface."},
+    {"ic": "🚀", "nm": "App Launcher Lite", "repo": "app-launcher-lite", "port": ":8465", "ds": "<b>App Launcher Lite</b> — phone-first launcher hub, Copilot + GitLab lite fork of app-launcher. Coding (Copilot CLI PTY sessions) · Apps · Jobs · Team OS · Board (GitLab kanban) · Settings, all from the phone."}
   ],
   "web": [
     {"ic": "🛒", "nm": "grocery", "repo": "grocery-shopping-automation", "port": 8502, "ds": "Inventory + shopping PWA, voice audit, HA voice commands + product search.", "tag": ["uses", "hub + whisper"]},
@@ -41,7 +43,9 @@ window.FLEET = {
     {"ic": "🌐", "nm": "website", "ds": "Multi-workshop landing site."},
     {"ic": "🎓", "nm": "vibe-coding-workshop", "ds": "Python workshop + exercises."},
     {"ic": "🌱", "nm": "life-os", "ds": "Productivity skills — diary, prep, muse.", "tag": ["via", "launcher"]},
-    {"ic": "🌡️", "nm": "home-automation", "port": 8447, "ds": "Home automation suite: AC, solar, per-circuit energy, alarm, network health, and native Home Assistant entities.", "chips": ["FastAPI", "PWA", "MELCloud", "Modbus", "FusionSolar", "Athom", "Tuya", "HA", "Telegram"]}
+    {"ic": "🌡️", "nm": "home-automation", "port": 8447, "ds": "Home automation suite: AC, solar, per-circuit energy, alarm, network health, and native Home Assistant entities.", "chips": ["FastAPI", "PWA", "MELCloud", "Modbus", "FusionSolar", "Athom", "Tuya", "HA", "Telegram"]},
+    {"ic": "📶", "nm": "github-copilot-usage", "ds": "Local dashboard for Copilot premium-request &amp; token usage."},
+    {"ic": "📈", "nm": "website-analytics", "ds": "Local-first GA4, Search Console, crawl, and weekly website-insight dashboard."}
   ],
   "pipe": [
     {"ic": "💳", "nm": "accounting-quarterly", "ds": "Stripe payments → quarterly reports.", "tag": ["→", "Stripe"]},
@@ -58,6 +62,8 @@ window.FLEET = {
     {"ic": "🤖", "nm": "automation", "ds": "Python automation grab-bag."},
     {"ic": "📁", "nm": "mcp-personal-onedrive", "ds": "Read-only MCP to browse OneDrive.", "tag": ["→", "OneDrive"]},
     {"ic": "⛏️", "nm": "minecraft-bedrock-bot", "ds": "Headless Node bot that joins a Minecraft Bedrock Realm over NetherNet.", "tag": ["→", "Minecraft Realm"]},
+    {"ic": "📈", "nm": "algo-trading", "ds": "Rule-based automated FX trading (major pairs) — backtest → paper → live via Interactive Brokers.", "tag": ["→", "IBKR"]},
+    {"ic": "🔀", "nm": "gitlab-to-github-migrator", "ds": "GitLab → GitHub repo migration (history mirror + MR-to-issue replay).", "tag": ["→", "GitHub"]},
     {"ic": "☁️", "nm": "Oracle to GCP", "repo": "oracle-to-gcp", "ds": "Local Oracle SQL to BigQuery translator prototype with a SQLite-backed mock validation loop."}
   ],
   "external": [
