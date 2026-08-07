@@ -38,6 +38,12 @@ file *can* be committed to the default branch, so it stays blocked.
 
 Escape hatch: set `CLAUDE_HOOKS_ALLOW_MAIN_EDIT=1` for the rare case a
 launcher-dispatched flow needs a deliberate default-branch write.
+
+Git access is `_lib.run_git` / `_lib.resolve_default_branch_ref`, i.e. this
+hook's *own* tree. It used to `sys.path`-insert `../skills/_lib` and import
+`git_run` directly, which broke the convention every other hook here states —
+the two trees install independently, so a hook must stay importable with
+nothing but its own directory on `sys.path` (fleet-config#564).
 """
 
 from __future__ import annotations
@@ -49,9 +55,6 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import _lib  # noqa: E402
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "skills" / "_lib"))
-import git_run  # noqa: E402
-
 
 GUARDED_TOOLS = ("Edit", "Write", "MultiEdit")
 
@@ -62,7 +65,7 @@ def _current_branch(target_dir: Path) -> "str | None":
     open the same way. This single call is also the "is this a repo at all"
     check: `rev-parse` on a non-repo path simply returns non-zero.
     """
-    res = git_run.run_git(["-C", str(target_dir), "rev-parse", "--abbrev-ref", "HEAD"])
+    res = _lib.run_git(["-C", str(target_dir), "rev-parse", "--abbrev-ref", "HEAD"])
     if res.returncode != 0:
         return None
     branch = res.stdout.strip()
@@ -74,14 +77,14 @@ def _current_branch(target_dir: Path) -> "str | None":
 def _default_branch(target_dir: Path) -> str:
     """Bare default-branch name for `target_dir`'s repo.
 
-    Uses `git_run.resolve_default_branch_ref`'s default candidate-probing
+    Uses `_lib.resolve_default_branch_ref`'s default candidate-probing
     (`origin/main`, `main`, `master`) rather than `dirty_tree_check`'s
     `candidates=()` variant — that variant skips probing on `symbolic-ref`
     failure and would default every repo with no `origin` configured to
     `"main"`, silently losing `master` detection for a remote-less repo
     (including this guard's own unit-test fixtures).
     """
-    ref = git_run.resolve_default_branch_ref(target_dir)
+    ref = _lib.resolve_default_branch_ref(target_dir)
     return ref[len("origin/"):] if ref.startswith("origin/") else ref
 
 
@@ -103,7 +106,7 @@ def _is_ignored(target: Path) -> bool:
     "is outside repository at 'E:/automation/fleet-config'" — the fail-closed
     path, which would have left fleet-config#489's second live repro blocked.
     """
-    res = git_run.run_git(["-C", str(target.parent), "check-ignore", "-q", str(target)])
+    res = _lib.run_git(["-C", str(target.parent), "check-ignore", "-q", str(target)])
     return res.returncode == 0
 
 

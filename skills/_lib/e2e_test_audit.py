@@ -9,7 +9,7 @@ inventory, raw test-function counts, an optional true pytest node count
 (handles `@pytest.mark.parametrize` expansion), near-duplicate-name clusters,
 and (when the repo declares a `## UX surface` block, via `ux_surface.py`)
 views with no matching test as a coverage-gap signal. Same
-deterministic-not-LLM principle as `design_lint.py` / `cert_drift.py`: every
+deterministic-not-LLM principle as `design_lint/` / `cert_drift.py`: every
 number here is measured, not guessed. The skill's own LLM-judgment layer
 decides which clusters/gaps are *real* findings — this module only surfaces
 candidates.

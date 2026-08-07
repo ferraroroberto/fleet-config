@@ -1,4 +1,4 @@
-"""Unit tests for the pure logic in skills/_lib/design_lint.py (fleet-config#277).
+"""Unit tests for the pure logic in skills/_lib/design_lint/ (fleet-config#277).
 
 No live repos or gh — synthetic spec/CSS/JS strings and temp trees exercise the
 frontmatter parser (inline maps, nesting, {token} refs), the custom-prop

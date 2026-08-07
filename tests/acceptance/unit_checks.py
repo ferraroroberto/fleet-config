@@ -221,8 +221,17 @@ def _context_filter_unit_checks() -> Tuple[int, int]:
          python_prefix + skill_dir + 'fleet-health/capture.py" --minutes 9', True, 427),
         ("system-map build_data.py",
          python_prefix + skill_dir + 'system-map/build_data.py"', True, 427),
+        # #564: design_lint is an executable package directory now, so the
+        # /design-sync invocation carries no `.py` — it must still pass through.
+        ("design_lint package directory",
+         python_prefix + '"C:/Users/rober/.claude/skills/_lib/design_lint" all E:/automation/home-automation',
+         True, 564),
         ("ordinary python -c", python_prefix + '-c "print(1)"', False, 427),
         ("ordinary git", "git status --short", False, 427),
+        # ...and the extension-less branch must not swallow ordinary work under
+        # a skill directory, which matches the same bare `skills/<x>/<y>` shape.
+        ("ordinary rg under a skill directory",
+         "rg design_lint E:/automation/fleet-config/skills/design-sync/", False, 564),
     ]
     for label, command, expect_passthrough, issue in passthrough_cases:
         payload = {"tool_name": "PowerShell", "cwd": str(REPO), "tool_input": {"command": command}}

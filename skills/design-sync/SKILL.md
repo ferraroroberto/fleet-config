@@ -7,7 +7,7 @@ description: Check a web app against the fleet design system with the determinis
 
 **Goal:** Keep every fleet web app (FastAPI + static PWA) true to the shared
 visual identity in `~/.claude/design.md` (light) + `~/.claude/design.dark.md`
-(dark). Run the **deterministic lint** (`skills/_lib/design_lint.py`) — token
+(dark). Run the **deterministic lint** (`skills/_lib/design_lint/`) — token
 mapping + drift (light **and** dark), per-family adoption ratios, component
 contracts (including the PWA app-icon family), vendored-component
 byte-verification, sibling duplicates — apply
@@ -17,7 +17,7 @@ LLM judgment only where measurement can't reach, and file exactly one deduped
 `apply`, also write the aligned token values into the working tree for review.
 
 **Measure with the helper, never by eye.** Everything mechanically checkable
-comes from `design_lint.py` (pure, unit-tested); never re-derive a ratio,
+comes from `design_lint` (pure, unit-tested); never re-derive a ratio,
 token comparison, or byte-diff by reading CSS. LLM judgment is confined to:
 `unmapped` variable leftovers, the materiality bar, sibling arbitration, and
 writing the issue.
@@ -162,7 +162,7 @@ File nothing.
 One command computes every mechanically checkable dimension (JSON to stdout):
 
 ```
-E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/design_lint.py all <repo-root>
+E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/design_lint all <repo-root>
 ```
 
 (Reads the spec from `~/.claude/design.md` + `design.dark.md` — the junctioned
@@ -291,7 +291,7 @@ its selectors or APIs into checks.
   to a spec role (then compare values yourself and add a finding on mismatch)
   or is a legitimate derived/app-specific token (`--input-bg: var(--card-off)`,
   the nav geometry vars — fine, note nothing). If an alias is genuinely
-  fleet-common, extend `ALIASES` in `design_lint.py` in a proper branch — never
+  fleet-common, extend `ALIASES` in `design_lint/tokens.py` in a proper branch — never
   fudge the mapping ad hoc.
 - **(b) Materiality bar** over everything the lint surfaced: a 1-unit
   radius/spacing nitpick or a shadow's `#000` is not a finding; a wrong canvas
@@ -376,7 +376,7 @@ mechanics to `/codebase-audit`'s bucket issues. Never `gh issue create` by hand.
 CLAUDE.md rendered-markdown rule applies; the helper prepends the marker):
 
 ```markdown
-Surfaced by `/design-sync`, kept up to date across runs. Spec: `~/.claude/design.md` (+ `design.dark.md`). Measured by `skills/_lib/design_lint.py` (deterministic); judgment items marked.
+Surfaced by `/design-sync`, kept up to date across runs. Spec: `~/.claude/design.md` (+ `design.dark.md`). Measured by `skills/_lib/design_lint/` (deterministic); judgment items marked.
 
 ## Findings
 
@@ -468,7 +468,7 @@ even on a clean app).
 
 ## Hard rules
 
-- **Measure with `design_lint.py`, never by eye.** Ratios, token comparisons,
+- **Measure with `design_lint`, never by eye.** Ratios, token comparisons,
   contract greps, vendored byte-diffs, and sibling detection come from the
   helper (step 3) — the LLM never re-derives them. LLM judgment is confined to
   step 4 (alias leftovers, materiality, sibling arbitration, prose-only
@@ -508,7 +508,7 @@ even on a clean app).
   `/issue-triage` treats both like any other issue.
 - The cert convention lives in `project-scaffolding#89`; the heuristic in the
   pure, unit-tested `skills/_lib/cert_drift.py`. The lint lenses live in
-  `skills/_lib/design_lint.py` (unit-tested, wired into `run_acceptance.py`);
+  `skills/_lib/design_lint/` (unit-tested, wired into `run_acceptance.py`);
   icon steps, contract targets, and the switch on-color are spec-driven, so a
   spec change propagates without touching the helper. v2 provenance: #277 +
   #278 + project-scaffolding#120.

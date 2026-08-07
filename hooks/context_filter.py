@@ -56,7 +56,20 @@ SECRET_RE = _lib.SECRET_RE
 # 600s wrapper cap, and `.claude/skills/system-map/build_data.py` crawls every
 # repo in the fleet. The invariant is "a Python helper shipped with a skill",
 # which the `_lib` path segment only partially expressed.
-SWEEP_HELPER_RE = re.compile(r"skills[/\\][^\s'\"/\\]+[/\\][^\s'\"]+\.py", re.IGNORECASE)
+#
+# Second alternative (fleet-config#564): a helper is no longer necessarily a
+# single `.py`. `design_lint` became an executable *package directory*, so
+# /design-sync now runs `<python> .../skills/_lib/design_lint all <root>` with no
+# file extension — the same whole-repo crawl emitting the same single JSON
+# payload, and the busiest of the lot. Dropping the `.py` requirement outright
+# would swallow ordinary work (`cat skills/design-sync/SKILL.md` matches a bare
+# `skills/<x>/<y>` shape), so the extension-less form is recognized only when a
+# python executable is what's running it.
+SWEEP_HELPER_RE = re.compile(
+    r"skills[/\\][^\s'\"/\\]+[/\\][^\s'\"]+\.py"
+    r"|python[^\s'\"]*[\"']?\s+[\"']?[^\s'\"]*skills[/\\][^\s'\"/\\]+[/\\][^\s'\"]+",
+    re.IGNORECASE,
+)
 
 TIMESTAMP_RE = re.compile(
     r"\b(?:\d{4}-\d{2}-\d{2}[T ][0-9:.+-]+|\d{2}:\d{2}:\d{2}(?:\.\d+)?)\b"

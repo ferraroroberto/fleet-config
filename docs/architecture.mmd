@@ -65,7 +65,7 @@ flowchart TB
     ISSUEEXTRA["issue-batch · issue-finish-batch · issue-triage · issue-yolo"]
     OTHERGLOBAL["codebase-audit · design-sync · e2e · e2e-audit · docs-shots · handoff-commit · quick · screen"]
     PROPVENDORED["propagate-vendored\n[vendored] manifest fan-out + dry-run drift report"]
-    LIB["_lib/ — worktree_claim.py · active_issue.py · claude_progress.py · ux_surface.py ·\nbrowser_verify.py · audit_issue.py · cert_drift.py · rate_gate.py · dirty_tree_check.py ·\ndesign_lint.py · design_sweep_scan.py · git_run.py · snapshot_diff.py · fleet_repo_scan.py ·\nvendored_drift.py · no_window.py · e2e_test_audit.py · e2e_route.py · html_shot.py · docs_shots_plan.py ·\nfleet_audit_scan.py · deploy_coverage.py · chief_ops.py · chief_managed.py"]
+    LIB["_lib/ — worktree_claim.py · active_issue.py · claude_progress.py · ux_surface.py ·\nbrowser_verify.py · audit_issue.py · cert_drift.py · rate_gate.py · dirty_tree_check.py ·\ndesign_lint/ · design_sweep_scan.py · git_run.py · snapshot_diff.py · fleet_repo_scan.py ·\nvendored_drift.py · no_window.py · e2e_test_audit.py · e2e_route.py · html_shot.py · docs_shots_plan.py ·\nfleet_audit_scan.py · deploy_coverage.py · chief_ops.py · chief_managed.py"]
   end
   gskills --> CLAUDE
   gskills --> CODEX
