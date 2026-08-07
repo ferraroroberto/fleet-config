@@ -42,7 +42,7 @@ Then add the repo's row to `architecture/ARCHITECTURE.md`. A repo that ships its
 
 ```powershell
 # 1. Byte-compile every hook and shared skill helper
-& E:/automation/fleet-config/.venv/Scripts/python.exe -m py_compile hooks/*.py skills/_lib/*.py
+& E:/automation/fleet-config/.venv/Scripts/python.exe -m py_compile hooks/*.py skills/_lib/*.py skills/_lib/design_lint/*.py skills/_lib/design_lint/contracts/*.py
 
 # 2. Run the acceptance matrix (sample stdin payloads per hook + the helper unit tests)
 & E:/automation/fleet-config/.venv/Scripts/python.exe tests/run_acceptance.py

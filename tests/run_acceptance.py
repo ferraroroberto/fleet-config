@@ -11,7 +11,8 @@ under `tests/acceptance/` and prints one summary line. Each module owns one
 concern the pre-split 3287-line file used to mix together — the hook-payload
 acceptance matrix + foreign-harness parity (`hook_matrix`), architecture/
 fleet-map freshness guards (`architecture_guards`), the static AST spawn-flag
-scanner (`spawn_scanner`), the ~40 substantive per-hook unit-check functions
+scanner (`spawn_scanner`), the hooks/ <-> skills/_lib tree-independence gate
+(`tree_boundary`), the ~40 substantive per-hook unit-check functions
 (`unit_checks`), and the standalone pure-logic test-file dispatch layer
 (`standalone_dispatch`). Shared plumbing (REPO/HOOKS/PYTHON resolution,
 `run()`/`assert_exit()`, `_Checker`, `_subprocess_unit_check`) lives in
@@ -44,6 +45,7 @@ from acceptance.architecture_guards import (  # noqa: E402
 from acceptance.shared import _subprocess_unit_check  # noqa: E402
 from acceptance.spawn_scanner import _no_window_unit_check  # noqa: E402
 from acceptance.standalone_dispatch import _STANDALONE_UNIT_CHECKS  # noqa: E402
+from acceptance.tree_boundary import _hooks_tree_boundary_check  # noqa: E402
 from acceptance.unit_checks import (  # noqa: E402
     _bash_cmdexe_syntax_guard_unit_checks,
     _block_askuserquestion_chief_unit_checks,
@@ -199,6 +201,9 @@ def main() -> int:
 
     # ---- Windows console suppression on every runtime spawn (#399 / #412) ----
     run_unit(_no_window_unit_check)
+
+    # ---- hooks/ never imports across into skills/_lib (fleet-config#564) ----
+    run_unit(_hooks_tree_boundary_check)
 
     print()
     print(f"Total: {total_checks} | Failed: {failures} | Skipped: {skipped_checks}")

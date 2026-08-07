@@ -501,6 +501,65 @@ def powershell_exe() -> str:
     return shutil.which("powershell") or "powershell"
 
 
+# --------------------------------------------------------------------- git
+
+
+def run_git(
+    args: Sequence[str], *, check: bool = False, timeout: Optional[float] = None
+) -> subprocess.CompletedProcess:
+    """Run ``git <args>``, UTF-8 decoded with undecodable bytes replaced.
+
+    Pass ``-C <repo>`` inside ``args`` to target a working tree — the
+    convention every call site in this repo uses. ``check=False`` (the default)
+    leaves the caller to inspect ``.returncode``/``.stdout``/``.stderr``.
+
+    Deliberately a **hooks-tier copy** of ``skills/_lib/git_run.run_git``, the
+    same way :data:`NO_WINDOW` duplicates ``skills/_lib/no_window`` — see that
+    constant's note. ``branch_before_edit_guard`` used to reach the skills-tier
+    module by inserting ``../skills/_lib`` onto ``sys.path`` at import time
+    (fleet-config#564), which breaks the rule the rest of the directory states
+    outright (``notify_on_idle``: the two trees are independent, so a sibling is
+    reached by subprocess, never a Python import). The practical cost of the
+    violation was unbounded: the import sat at module top with no guard, so a
+    renamed or absent skills tree would kill a ``PreToolUse`` hook *at import
+    time* — before any of its fail-open logic could run — on every Edit/Write in
+    every session, fleet-wide. ``tests/acceptance/tree_boundary.py`` now fails
+    on any hook that reaches across, and asserts this copy agrees behaviourally
+    with the skills-tier original.
+    """
+    return subprocess.run(
+        ["git", *args], capture_output=True, text=True,
+        encoding="utf-8", errors="replace", check=check, timeout=timeout,
+        creationflags=NO_WINDOW,
+    )
+
+
+def resolve_default_branch_ref(
+    repo_path: Path,
+    candidates: Sequence[str] = ("origin/main", "main", "master"),
+    final_fallback: str = "main",
+) -> str:
+    """The repo's default branch, preferring the remote's own ``origin/HEAD``.
+
+    On ``symbolic-ref refs/remotes/origin/HEAD`` success, returns the ref with
+    the ``refs/remotes/`` prefix stripped (e.g. ``origin/main``). On failure,
+    probes ``candidates`` in order via ``rev-parse --verify --quiet`` and
+    returns the first that resolves; if none do (or ``candidates`` is empty),
+    returns ``final_fallback``.
+
+    Hooks-tier copy of ``skills/_lib/git_run.resolve_default_branch_ref`` — see
+    :func:`run_git` for why the two trees each carry their own.
+    """
+    res = run_git(["-C", str(repo_path), "symbolic-ref", "refs/remotes/origin/HEAD"])
+    ref = res.stdout.strip()
+    if res.returncode == 0 and ref:
+        return ref.replace("refs/remotes/", "", 1)
+    for cand in candidates:
+        if run_git(["-C", str(repo_path), "rev-parse", "--verify", "--quiet", cand]).returncode == 0:
+            return cand
+    return final_fallback
+
+
 # ------------------------------------------------------------------ gh CLI
 
 
