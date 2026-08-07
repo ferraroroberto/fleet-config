@@ -31,9 +31,13 @@ reliably on ``PATH`` on this machine (see ``_lib.find_python_executable``):
     E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/hooks/restart_and_verify_webapp.py [--cwd <path>]
 
 Exit codes:
-    0 on success (and prints the version line)
+    0 on success — the live build's `git_sha` was read and matches HEAD
     1 if the project isn't in projects.toml or has no webapp_port
-    2 on kill / restart / verify failure
+    2 on kill / restart failure, or the live build never converged to HEAD
+    3 the webapp is up but its build identity is **unconfirmed** — HEAD could
+      not be read, or `<api_version_path>` reported no `git_sha`. Distinct from
+      both 0 and 2 on purpose: a check that could not establish the fact must
+      say so rather than fold into the passing state (fleet-config#562).
 """
 
 from __future__ import annotations
@@ -148,6 +152,21 @@ def _git_head(cwd: Path) -> Optional[str]:
     if res.returncode != 0:
         return None
     return (res.stdout or "").strip() or None
+
+
+def sha_matches(expected: str, got: str) -> bool:
+    """True only when **both** shas are non-empty and one prefixes the other.
+
+    The emptiness guard is the whole point (fleet-config#562): the predicate
+    used to be a bare `got.startswith(expected[:7]) or expected.startswith(
+    got[:7])`, and `"anything".startswith("")` is unconditionally True — so a
+    `/api/version` payload with no `git_sha` (missing key, `null`, `""`) was
+    reported as `OK  git_sha= (matches HEAD)`. A restart that proved nothing
+    about which build is live must never read as a verified match.
+    """
+    if not expected or not got:
+        return False
+    return got.startswith(expected[:7]) or expected.startswith(got[:7])
 
 
 _INSECURE_CTX = ssl._create_unverified_context()  # self-signed certs are normal in our fleet
@@ -294,8 +313,18 @@ def main() -> int:
         print(recovery_hint(project.name, port, project_root, restart_cmd, project.tray_cmd), file=sys.stderr)
         return 2
 
-    # 4) Verify the new build via /api/version
+    # 4) Verify the new build via /api/version. Three outcomes, never two:
+    #    matched (0), answered-but-unidentifiable (3), never converged (2).
     expected_sha = _git_head(project_root)
+    if expected_sha is None:
+        print(
+            "[restart-webapp] UNCONFIRMED: could not read HEAD in " + str(project_root)
+            + " — the webapp is listening on :" + str(port) + ", but there is nothing to "
+            "compare the live build against. Build identity NOT verified.",
+            file=sys.stderr,
+        )
+        return 3
+
     deadline = time.time() + VERIFY_TIMEOUT_S
     last_payload: Optional[dict] = None
     while time.time() < deadline:
@@ -303,14 +332,25 @@ def main() -> int:
         if payload is not None:
             last_payload = payload
             got_sha = str(payload.get("git_sha") or "")
-            if expected_sha is None or got_sha.startswith(expected_sha[:7]) or expected_sha.startswith(got_sha[:7]):
+            if sha_matches(expected_sha, got_sha):
                 print(
-                    "[restart-webapp] OK  git_sha=" + got_sha[:7]
-                    + (" (matches HEAD)" if expected_sha else "")
+                    "[restart-webapp] OK  git_sha=" + got_sha[:7] + " (matches HEAD)"
                     + "  asset_hash=" + str(payload.get("asset_hash") or "?")
                 )
                 return 0
         time.sleep(POLL_INTERVAL_S)
+
+    # The endpoint answered but never named a build: `unknown`, not success and
+    # not a mismatch — the caller must be able to tell those apart (#562).
+    if last_payload is not None and not str(last_payload.get("git_sha") or ""):
+        print(
+            "[restart-webapp] UNCONFIRMED: " + api_path + " reported no git_sha within "
+            + str(VERIFY_TIMEOUT_S) + "s — the webapp is listening on :" + str(port)
+            + ", but which build is live could not be established. Have it expose "
+            "`git_sha` in its version payload. last payload: " + json.dumps(last_payload),
+            file=sys.stderr,
+        )
+        return 3
 
     print(
         "[restart-webapp] ERROR: " + api_path + " did not converge to HEAD within "

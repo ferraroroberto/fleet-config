@@ -97,6 +97,7 @@ class _Checker:
     def __init__(self) -> None:
         self.failures = 0
         self.total = 0
+        self.skipped = 0
 
     def __call__(self, case: str, ok: bool, detail: str = "") -> None:
         self.total += 1
@@ -106,6 +107,27 @@ class _Checker:
             if detail:
                 for line in detail.strip().splitlines():
                     print(f"        | {line}")
+
+    def advisory(self, case: str, ok: bool, detail: str = "") -> None:
+        """Report a check whose inputs live **outside this repo** — it may not
+        gate this repo's own `main`.
+
+        A pass counts normally (it did verify something). A failure is reported
+        loudly with `detail`, but lands in `skipped`, never `failures`: nothing
+        no commit here controls may turn this gate red and block every
+        `/issue-finish`, `/quick`, and `/issue-yolo` until someone else's repo
+        is fixed (fleet-config#562). It is also the honest state — the result
+        depends on untracked sibling checkouts, so a fresh clone or another
+        machine would answer differently. Never fold an unverifiable into a
+        pass either: `Skipped: N` is its own column in the summary line.
+        """
+        if ok:
+            self(case, True)
+            return
+        self.skipped += 1
+        print(f"SKIP  {case}")
+        for line in (detail or "").strip().splitlines():
+            print(f"        | {line}")
 
 
 def _subprocess_unit_check(label: str, test_file: str) -> Tuple[int, int]:
