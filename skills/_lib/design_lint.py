@@ -41,7 +41,7 @@ from pathlib import Path
 from typing import Callable, Dict, List, Optional, Tuple
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from no_window import NO_WINDOW  # noqa: E402
+import git_run  # noqa: E402
 
 # --------------------------------------------------------------------- files
 
@@ -49,13 +49,15 @@ SKIP_DIR_PARTS = {".git", ".venv", "node_modules", "__pycache__", "spike", "spik
 
 
 def repo_files(root: Path, suffixes: Tuple[str, ...]) -> List[Path]:
-    """Tracked files by suffix — `git ls-files` when available, rglob fallback."""
+    """Tracked files by suffix — `git ls-files` when available, rglob fallback.
+
+    The `git` shell-out is `git_run.run_git` (fleet-config#561); only the rglob
+    fallback is local. The wrapper it used to hand-roll had already been
+    factored out into that shared helper, which owns the explicit UTF-8 decode
+    and `NO_WINDOW`.
+    """
     try:
-        out = subprocess.run(
-            ["git", "-C", str(root), "ls-files"],
-            capture_output=True, text=True, encoding="utf-8", errors="replace",
-            timeout=15, creationflags=NO_WINDOW,
-        )
+        out = git_run.run_git(["-C", str(root), "ls-files"], timeout=15)
         if out.returncode == 0:
             names = [ln.strip() for ln in out.stdout.splitlines() if ln.strip()]
             paths = [root / n for n in names]

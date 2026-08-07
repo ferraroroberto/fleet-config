@@ -34,13 +34,6 @@ def _decode_command(encoded: str) -> str:
     return base64.b64decode(encoded.encode("ascii")).decode("utf-8", "replace")
 
 
-def _powershell_exe() -> str:
-    win_ps = "C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe"
-    if Path(win_ps).exists():
-        return win_ps
-    return shutil.which("powershell") or "powershell"
-
-
 class WrapperTimeout(Exception):
     """The wrapped command exceeded the wrapper timeout and was killed.
 
@@ -105,7 +98,7 @@ def _kill_tree(process: subprocess.Popen[str]) -> None:
 
 def _run_command(tool: str, command: str, cwd: str | None) -> subprocess.CompletedProcess[str]:
     if tool.lower() == "powershell":
-        args = [_powershell_exe(), "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", command]
+        args = [_lib.powershell_exe(), "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", command]
     elif tool.lower() == "bash":
         bash = shutil.which("bash")
         args = [bash, "-lc", command] if bash else [command]

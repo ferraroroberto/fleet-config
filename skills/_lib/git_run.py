@@ -18,20 +18,24 @@ from __future__ import annotations
 import subprocess
 import sys
 from pathlib import Path
-from typing import Sequence
+from typing import Optional, Sequence
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from no_window import NO_WINDOW  # noqa: E402
 
 
-def run_git(args: Sequence[str], *, check: bool = False) -> subprocess.CompletedProcess:
+def run_git(
+    args: Sequence[str], *, check: bool = False, timeout: Optional[float] = None
+) -> subprocess.CompletedProcess:
     """Run `git <args>`, UTF-8 decoded with undecodable bytes replaced.
 
     Pass `-C <repo>` as part of `args` to target a specific working tree —
     the convention every call site in this repo uses. `check=True` raises
     `subprocess.CalledProcessError` on a non-zero exit (matching
     `subprocess.run`'s own contract); the default `check=False` leaves the
-    caller to inspect `.returncode`/`.stdout`/`.stderr`.
+    caller to inspect `.returncode`/`.stdout`/`.stderr`. `timeout` is passed
+    straight through (raising `subprocess.TimeoutExpired`) for the call sites
+    that bound a crawl over an unknown tree.
 
     `creationflags=NO_WINDOW` is what makes this the *only* place most helpers
     need to think about console suppression: a scheduled `claude -p` job has no
@@ -40,7 +44,7 @@ def run_git(args: Sequence[str], *, check: bool = False) -> subprocess.Completed
     """
     return subprocess.run(
         ["git", *args], capture_output=True, text=True,
-        encoding="utf-8", errors="replace", check=check,
+        encoding="utf-8", errors="replace", check=check, timeout=timeout,
         creationflags=NO_WINDOW,
     )
 

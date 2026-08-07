@@ -11,10 +11,14 @@ import hashlib
 import json
 import os
 import re
+import sys
 import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterable, Optional
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import _lib  # noqa: E402
 
 
 TOKEN_DIVISOR = 4
@@ -33,14 +37,11 @@ SIGNAL_RE = re.compile(
     re.IGNORECASE,
 )
 
-SECRET_RE = re.compile(
-    r"("
-    r"xox[baprs]-[A-Za-z0-9-]{16,}"
-    r"|sk-[A-Za-z0-9_-]{20,}"
-    r"|gh[pousr]_[A-Za-z0-9_]{20,}"
-    r"|AKIA[0-9A-Z]{16}"
-    r")"
-)
+# One definition of "what a credential looks like" for the hooks tier, shared
+# with `secret_scan_guard`'s commit blocker (fleet-config#561) — extending
+# coverage is a one-line change in `_lib.SECRET_PATTERNS`, not two edits that
+# can drift apart.
+SECRET_RE = _lib.SECRET_RE
 
 # Deterministic fleet sweep helpers (fleet_audit_scan.py, design_sweep_scan.py,
 # fleet_repo_scan.py, cert_drift.py, ...) walk the whole fleet and are read by

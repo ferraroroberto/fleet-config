@@ -20,7 +20,6 @@ import json
 import os
 import re
 import shutil
-import subprocess
 import sys
 import tempfile
 import time
@@ -31,7 +30,7 @@ from pathlib import Path
 from typing import Any, Dict, Iterator, Optional
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from no_window import NO_WINDOW  # noqa: E402
+import git_run  # noqa: E402
 
 STATE_FILENAME = "active-issues.json"
 PRUNE_AFTER = timedelta(hours=24)
@@ -244,15 +243,9 @@ def state_lock(
 
 
 def _remote_repo_name(repo_path: Path) -> Optional[str]:
-    result = subprocess.run(
-        ["git", "-C", str(repo_path), "remote", "get-url", "origin"],
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-        check=False,
-        creationflags=NO_WINDOW,
-    )
+    # `git_run.run_git` owns the explicit UTF-8 decode and `NO_WINDOW` this used
+    # to hand-roll (fleet-config#561).
+    result = git_run.run_git(["-C", str(repo_path), "remote", "get-url", "origin"])
     if result.returncode != 0:
         return None
     remote = result.stdout.strip().rstrip("/\\")

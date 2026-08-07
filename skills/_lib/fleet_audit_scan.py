@@ -41,16 +41,13 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import audit_issue  # noqa: E402
+import fleet_repo_scan  # noqa: E402
 import git_run  # noqa: E402
 
-
-def is_fleet_repo(remote_url: str | None) -> bool:
-    """True if the remote URL belongs to the `ferraroroberto` GitHub org.
-
-    Matches both the https (`https://github.com/ferraroroberto/x.git`) and
-    ssh (`git@github.com:ferraroroberto/x.git`) remote URL forms.
-    """
-    return bool(remote_url) and "ferraroroberto/" in remote_url
+# Re-exported: `is_fleet_repo` now lives beside the crawl that uses it
+# (fleet-config#561), but this module is where the unit tests and
+# `design_sweep_scan` have always reached for it.
+is_fleet_repo = fleet_repo_scan.is_fleet_repo
 
 
 def _default_branch(repo_path: str) -> str | None:
@@ -76,23 +73,8 @@ def scan(root: str, only: str | None = None, dry_run: bool = False) -> dict:
         "to_audit": [], "unchanged": [], "self_fix": [], "below_threshold": [], "skipped": [], "errors": [],
     }
 
-    for d in sorted(Path(root).iterdir()):
-        if not d.is_dir():
-            continue
-        if not (d / ".git").is_dir():
-            # Not a git repo, or a linked worktree (its .git is a file) — skip.
-            continue
+    for d in fleet_repo_scan.iter_fleet_repos(root, only):
         name = d.name
-        if only and name != only:
-            continue
-
-        try:
-            remote = git_run.run_git_checked(["-C", str(d), "remote", "get-url", "origin"])
-        except SystemExit:
-            continue
-        if not is_fleet_repo(remote):
-            continue
-
         repo = f"ferraroroberto/{name}"
         repo_path = str(d)
 
