@@ -94,6 +94,13 @@ BUCKET_KINDS = (
 )
 
 _LEDGER_MARKER = "<!-- audit-ledger -->"
+# The marker an agent hand-authoring a ledger actually tends to write: an OPEN
+# comment with the data inside it, so the block stays hidden in rendered
+# markdown. Both forms hide the data and nothing at authoring time
+# distinguishes them, so the parser accepts either and every write normalizes
+# back to the closed form (fleet-config#566 — three repos drifted, one of them
+# a ledger created fresh by the very run that then failed to parse it).
+_LEDGER_MARKER_OPEN = "<!-- audit-ledger"
 _LEDGER_SHA_RE = re.compile(r"^last-audited-sha:[ \t]*(\S+)[ \t]*$", re.MULTILINE)
 _LEDGER_AT_RE = re.compile(r"^last-audited-at:[ \t]*(\S+)[ \t]*$", re.MULTILINE)
 _LEDGER_RUBRIC_RE = re.compile(r"^rubric-sha:[ \t]*(.*?)[ \t]*$", re.MULTILINE)
@@ -190,15 +197,32 @@ def rubric_sha_of_path(repo_path: str) -> str:
 
 
 def parse_ledger(body: str) -> dict:
-    """Extract {sha, at, rubric} from the <!-- audit-ledger --> block.
+    """Extract {sha, at, rubric} from the `<!-- audit-ledger` block.
 
     Anchored to the marker (same top-anchor philosophy as has_marker) so a
     quoted/example block elsewhere in the body can't be mistaken for the real
     one. Any missing field is None; an empty-string rubric is a legitimate
     value (repo has no CLAUDE.md) and must never be confused with None
     (unparseable/missing).
+
+    Accepts the closed marker (`<!-- audit-ledger -->` + plain `key: value`
+    lines) and the open-comment block an agent naturally writes instead
+    (`<!-- audit-ledger` … `-->`) — matching on the shared prefix reads both,
+    and the `-->` terminator can't match a `key: value` line. Reading only the
+    closed form made a hand-authored ledger indistinguishable from a changed
+    repo, buying a full Opus whole-repo audit every week forever
+    (fleet-config#566). `render_ledger_body` normalizes to the closed form on
+    the next write, so a drifted ledger self-heals.
     """
-    idx = (body or "").find(_LEDGER_MARKER)
+    # GitHub stores issue bodies with CRLF. `gh issue view -q .body` hands them
+    # back LF-normalized (universal newlines on a raw stream) but `gh issue list
+    # --json body` does not (the CRLF is escaped *inside* the JSON), so the same
+    # ledger parsed or didn't depending on which call fed it — `\r` is
+    # whitespace, so `(\S+)[ \t]*$` never matches a CRLF line. Normalize once
+    # here rather than leaving a correct-looking parser that is one call-site
+    # swap away from declaring all 38 ledgers unparseable.
+    body = (body or "").replace("\r\n", "\n").replace("\r", "\n")
+    idx = body.find(_LEDGER_MARKER_OPEN)
     if idx == -1:
         return {"sha": None, "at": None, "rubric": None}
     block = body[idx:]
@@ -212,11 +236,67 @@ def parse_ledger(body: str) -> dict:
     }
 
 
+def render_ledger_body(sha: str, at: str, rubric: str) -> str:
+    """The ONE place a ledger body is composed — no caller writes a delimiter.
+
+    The marker is a machine contract, and a contract spelled out in agent prose
+    is a contract that drifts: three repos hand-authored an unreadable variant,
+    including one whose ledger was created fresh by the run that then couldn't
+    read it (fleet-config#566). Enforce it in the tool, not the prose
+    (project-scaffolding#202). `rubric` may legitimately be the empty string —
+    a repo with no CLAUDE.md — which is why it is written unconditionally
+    rather than omitted when falsy.
+    """
+    return (
+        "Machine-readable ledger for `/codebase-audit`. Do not edit by hand — "
+        "the skill upserts this on each whole-repo run. Labelled `audit-meta` "
+        "so it never surfaces as actionable work.\n\n"
+        f"{_LEDGER_MARKER}\n"
+        f"last-audited-sha: {sha}\n"
+        f"last-audited-at: {at}\n"
+        f"rubric-sha: {rubric}\n"
+    )
+
+
+def normalize_ledger_body(body: str) -> str:
+    """Re-render a ledger body canonically, or raise if it can't be read.
+
+    Every ledger write goes through here, so a body that would not parse back
+    is rejected *at write time* — where it is one clear error — instead of a
+    week later as a silent, permanent full-audit (fleet-config#566). A body in
+    the open-comment form parses fine and comes back out closed, which is how
+    an already-drifted ledger self-heals on its next write.
+    """
+    parsed = parse_ledger(body)
+    if parsed["sha"] is None or parsed["rubric"] is None:
+        raise SystemExit(
+            "refusing to write an unparseable ledger body: no readable "
+            f"`{_LEDGER_MARKER_OPEN}` block with `last-audited-sha` and "
+            "`rubric-sha`. Don't hand-author the block — use "
+            "`audit_issue.py ledger-write`."
+        )
+    return render_ledger_body(
+        parsed["sha"], parsed["at"] or datetime.date.today().isoformat(), parsed["rubric"]
+    )
+
+
+# A ledger the gate cannot read is not "this repo changed" — it is a broken
+# ledger, and an AUDIT bought by one costs a full Opus whole-repo pass every
+# week until someone notices. Both reasons stay distinguishable from organic
+# change all the way out to the sweep JSON and the plan line
+# (fleet-config#566, #567).
+UNPARSEABLE_LEDGER = "unparseable-ledger"
+
 # A baseline SHA that git cannot resolve is NOT "nothing changed" and NOT a
 # transient error to bury — it is a repo whose change-since-last-audit is
 # unknown, and the safe answer to unknown is a full whole-repo audit
 # (fleet-config#567).
 UNRESOLVABLE_BASELINE = "unresolvable-baseline"
+
+# An AUDIT carrying one of these was not earned by change — the gate simply
+# could not read the ledger. `no-ledger` is deliberately absent: a repo with no
+# ledger at all is a first-ever audit, not drift.
+BROKEN_LEDGER_REASONS = (UNPARSEABLE_LEDGER, UNRESOLVABLE_BASELINE)
 
 
 def default_branch_sha(repo_path: str) -> str | None:
@@ -476,7 +556,10 @@ def _list_open(repo: str) -> list[dict]:
 
 
 def _write_tmp(body: str) -> str:
-    f = tempfile.NamedTemporaryFile("w", suffix=".md", delete=False, encoding="utf-8")
+    # newline="" so Windows doesn't translate the body's LFs to CRLF on the way
+    # to `gh` — the ledger block is a parsed machine contract, and it should not
+    # acquire line endings that depend on which OS ran the audit.
+    f = tempfile.NamedTemporaryFile("w", suffix=".md", delete=False, encoding="utf-8", newline="")
     f.write(body)
     f.close()
     return f.name
@@ -530,6 +613,12 @@ def _upsert_issue(repo: str, kind: str, title: str, body: str, label: str | None
 
 
 def cmd_upsert(repo: str, kind: str, title: str, body: str, label: str | None) -> None:
+    # A ledger is a machine contract, so it is validated and normalized here
+    # rather than trusted from the caller's markdown — `--kind ledger` through
+    # this path used to accept anything, which is how an unreadable block
+    # reached three repos (fleet-config#566).
+    if kind == "ledger":
+        body = normalize_ledger_body(body)
     print(_upsert_issue(repo, kind, title, body, label))
 
 
@@ -558,7 +647,7 @@ def evaluate_repo(repo: str, repo_path: str, dry_run: bool = False) -> dict:
     body = gh(["issue", "view", str(keep), "--repo", repo, "--json", "body", "-q", ".body"])
     ledger = parse_ledger(body)
     if ledger["sha"] is None or ledger["rubric"] is None:
-        return {"decision": "AUDIT", "reason": "unparseable-ledger", "ledger_issue": keep}
+        return {"decision": "AUDIT", "reason": UNPARSEABLE_LEDGER, "ledger_issue": keep}
 
     commit_count = commits_since(repo_path, ledger["sha"])
     if commit_count is None:
@@ -646,15 +735,7 @@ def evaluate_repo(repo: str, repo_path: str, dry_run: bool = False) -> dict:
             result["ledger_write"] = "refused-unverifiable-sha"
             return result
         today = datetime.date.today().isoformat()
-        ledger_body = (
-            "Machine-readable ledger for `/codebase-audit`. Do not edit by hand — "
-            "the skill upserts this on each whole-repo run. Labelled `audit-meta` "
-            "so it never surfaces as actionable work.\n\n"
-            f"{_LEDGER_MARKER}\n"
-            f"last-audited-sha: {head_sha}\n"
-            f"last-audited-at: {today}\n"
-            f"rubric-sha: {current_rubric}\n"
-        )
+        ledger_body = render_ledger_body(head_sha, today, current_rubric)
         _upsert_issue(repo, "ledger", "codebase-audit ledger", ledger_body, "audit-meta")
         closed_str = ", ".join(f"#{n}" for n in closed_issues) if closed_issues else "none"
         comment = (
@@ -673,15 +754,23 @@ def cmd_gate(repo: str, repo_path: str) -> None:
     print(json.dumps(evaluate_repo(repo, repo_path)))
 
 
-def cmd_ledger_sha(repo_path: str) -> None:
-    """Print the sha `/codebase-audit` step 9 must record — never `HEAD`."""
+def cmd_ledger_write(repo: str, repo_path: str) -> None:
+    """Compose *and* upsert the ledger — `/codebase-audit` step 9, entire.
+
+    Deliberately the only ledger-writing entry point: the sha comes from
+    `recordable_ledger_sha` (squash-proof, fleet-config#567) and the block from
+    `render_ledger_body` (unhand-authorable, fleet-config#566). A subcommand
+    that merely handed back the sha would have left the agent composing the
+    block itself, which is the bug.
+    """
     sha = recordable_ledger_sha(repo_path)
     if sha is None:
         raise SystemExit(
             f"no verifiable default-branch commit in {repo_path} — "
             "refusing to record an unreachable ledger sha"
         )
-    print(sha)
+    body = render_ledger_body(sha, datetime.date.today().isoformat(), rubric_sha_of_path(repo_path))
+    print(_upsert_issue(repo, "ledger", "codebase-audit ledger", body, "audit-meta"))
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -703,8 +792,9 @@ def main(argv: list[str] | None = None) -> None:
     gt.add_argument("--repo", required=True)
     gt.add_argument("--repo-path", required=True)
 
-    ls = sub.add_parser("ledger-sha")
-    ls.add_argument("--repo-path", required=True)
+    lw = sub.add_parser("ledger-write")
+    lw.add_argument("--repo", required=True)
+    lw.add_argument("--repo-path", required=True)
 
     args = ap.parse_args(argv)
     if args.cmd == "get":
@@ -715,8 +805,8 @@ def main(argv: list[str] | None = None) -> None:
         cmd_upsert(args.repo, args.kind, args.title, body, args.label)
     elif args.cmd == "gate":
         cmd_gate(args.repo, args.repo_path)
-    elif args.cmd == "ledger-sha":
-        cmd_ledger_sha(args.repo_path)
+    elif args.cmd == "ledger-write":
+        cmd_ledger_write(args.repo, args.repo_path)
 
 
 if __name__ == "__main__":

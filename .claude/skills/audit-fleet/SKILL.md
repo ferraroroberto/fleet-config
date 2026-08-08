@@ -96,7 +96,7 @@ implementation) per repo.
 It prints one JSON object:
 
 ```
-{"to_audit": [{"repo": "...", "path": "...", "reason": "unresolvable-baseline"?, "baseline_sha": "..."?}, ...],
+{"to_audit": [{"repo": "...", "path": "...", "reason": "unparseable-ledger"|"unresolvable-baseline"?, "baseline_sha": "..."?, "ledger_issue": N?}, ...],
  "unchanged": ["repo1", "repo2", ...],
  "self_fix": [{"repo": "...", "path": "...", "decision": "SKIP_SELF_FIX", "closed_issues": [...], ...}, ...],
  "below_threshold": [{"repo": "...", "path": "...", "decision": "SKIP_BELOW_THRESHOLD", "significance": N, "threshold": M, ...}, ...],
@@ -113,12 +113,19 @@ shape of the 2026-07/08 failure where an unresolvable ledger baseline threw past
 every branch and two repos vanished from three consecutive runs
 (fleet-config#567). Never report counts that don't add up as a healthy run.
 
-A `to_audit` entry carrying `"reason": "unresolvable-baseline"` is **not**
-organic change: its recorded `last-audited-sha` (`baseline_sha`) resolves to
-nothing in the checkout — almost always a squash-merged, deleted feature-branch
-tip. Auditing whole-repo is the safe answer, so it is correctly in `to_audit`,
-but it also means that repo's ledger is broken and its true audit range is
-unknown. Surface it by name in the plan line and the digest.
+A `to_audit` entry carrying a `reason` is **not** organic change — it is a
+repo the gate was *forced* to audit because it could not read the ledger
+(`fleet_audit_scan.broken_ledgers()` returns exactly these; don't re-derive the
+filter in prose). `unresolvable-baseline` means the recorded `last-audited-sha`
+(`baseline_sha`) resolves to nothing in the checkout, almost always a
+squash-merged, deleted feature-branch tip. `unparseable-ledger` means the
+ledger issue (`ledger_issue`) carries no readable `<!-- audit-ledger` block at
+all. Auditing whole-repo is the safe answer to both, so they are correctly in
+`to_audit` — but each one re-bills a full Opus whole-repo pass *every week*
+until the ledger is repaired, so surface them by name in the plan line and the
+digest rather than letting them read as ordinary churn. Both self-heal once the
+repo's own audit reaches step 9, since every ledger write now normalizes the
+block.
 
 For every `self_fix` entry, the script has **already** advanced that repo's
 ledger (HEAD sha + today's date, same rubric-sha) and posted a
@@ -141,14 +148,14 @@ Print a one-line plan from the JSON, e.g.:
 ```
 Fleet audit plan — 32 repos enumerated, 3 to audit, 24 unchanged, 1 self-fix, 2 below-threshold, 2 skipped (dirty)
   audit:            app-launcher, photo-ocr, local-llm-hub
-  broken-baseline:  grocery-shopping-automation (ledger sha 99100ac unresolvable — auditing whole repo)
+  broken-ledger:    grocery-shopping-automation (baseline 99100ac unresolvable), local-llm-hub (ledger #31 unparseable)
   self-fix:         website (closed #71, #64 — ledger advanced, no organic change)
   below-threshold:  accounting-quarterly (591/1000), pvgis (85/1000)
   skipped:          reporting (dirty), site (off-branch)
 ```
 
-Lead the line with `accounting.enumerated` and print a `broken-baseline:` line
-naming every `to_audit` entry whose `reason` is `unresolvable-baseline`. If
+Lead the line with `accounting.enumerated` and print a `broken-ledger:` line
+naming every entry `broken_ledgers()` returns, with its reason. If
 `accounting.balanced` is `false`, print `WARNING: <N> repos in no bucket` on its
 own line — the sweep lost repos and the run must not read as healthy.
 
@@ -382,7 +389,7 @@ email body. Structure it so the per-repo results form a clean table when
 rendered:
 
 - **Header:** date, counts — `E repos enumerated: N audited, M issues filed, K unchanged, L self-fix, B below-threshold, J skipped, X errors`, plus `S security fixes` when any sub-agent reported a `Security:` result other than `NONE`, and `D design-drift / C cert-drift open` from the step-5 bucket count. The per-bucket counts **must sum to `E`** (`accounting.enumerated` from step 2); when `accounting.balanced` is `false`, append `— ⚠️ <N> repos in no bucket` rather than printing counts that quietly don't add up.
-- **Broken-baseline section** *(only when non-empty)*: repos step 2 routed to `to_audit` with `reason: unresolvable-baseline` — one line each naming the unresolvable `baseline_sha` (`grocery-shopping-automation: ledger sha 99100ac resolves to nothing — audited whole-repo, ledger re-anchored`). These were audited, so they also appear in the per-repo results; this section exists because a broken ledger is a distinct problem from organic change and used to be visible nowhere at all (fleet-config#567).
+- **Broken-ledger section** *(only when non-empty)*: the repos `broken_ledgers()` returns — one line each naming the reason and what could not be read (`grocery-shopping-automation: baseline 99100ac resolves to nothing — audited whole-repo, ledger re-anchored`; `local-llm-hub: ledger #31 had no readable audit-ledger block — audited whole-repo, ledger normalized`). These were audited, so they also appear in the per-repo results; the section exists because a broken ledger is a *recurring weekly cost* misreported as organic change, and used to be visible nowhere at all (fleet-config#566, #567).
 - **Per audited repo:** result line + the issues filed this run (bucket → URL),
   and the **delta vs last week** (`+2 since last week` from the digest-state
   counts). Repos that came back CLEAN or SKIPPED-BY-LEDGER get a one-liner.

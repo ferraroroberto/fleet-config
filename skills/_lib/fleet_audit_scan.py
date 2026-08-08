@@ -96,6 +96,17 @@ def accounting(results: dict) -> dict:
     }
 
 
+def broken_ledgers(results: dict) -> list[dict]:
+    """The `to_audit` entries that are there because the ledger was unreadable.
+
+    The plan line and the digest read this rather than re-deriving the filter
+    in prose — a full whole-repo audit bought by a parse failure has to be
+    visible *as* a parse failure (fleet-config#566). Pure: takes the scan
+    result, touches no git.
+    """
+    return [e for e in results.get("to_audit", []) if e.get("reason") in audit_issue.BROKEN_LEDGER_REASONS]
+
+
 def scan(root: str, only: str | None = None, dry_run: bool = False) -> dict:
     results: dict = {
         "to_audit": [], "unchanged": [], "self_fix": [], "below_threshold": [], "skipped": [], "errors": [],
@@ -151,12 +162,17 @@ def scan(root: str, only: str | None = None, dry_run: bool = False) -> dict:
             results["below_threshold"].append({"repo": name, "path": repo_path, **outcome})
         else:
             entry = {"repo": name, "path": repo_path}
-            # An AUDIT forced by an unreadable baseline must stay
-            # distinguishable from an AUDIT earned by real change — it is a
-            # broken ledger to repair, not organic churn (fleet-config#567).
-            if outcome.get("reason") == audit_issue.UNRESOLVABLE_BASELINE:
-                entry["reason"] = audit_issue.UNRESOLVABLE_BASELINE
-                entry["baseline_sha"] = outcome.get("baseline_sha")
+            # An AUDIT the gate was *forced* into because it couldn't read the
+            # ledger must stay distinguishable from an AUDIT earned by real
+            # change — it is a broken ledger to repair, not organic churn, and
+            # it re-bills a full Opus pass every week until someone sees it
+            # (fleet-config#566, #567).
+            if outcome.get("reason") in audit_issue.BROKEN_LEDGER_REASONS:
+                entry["reason"] = outcome["reason"]
+                if outcome.get("baseline_sha"):
+                    entry["baseline_sha"] = outcome["baseline_sha"]
+                if outcome.get("ledger_issue"):
+                    entry["ledger_issue"] = outcome["ledger_issue"]
             results["to_audit"].append(entry)
 
     results["accounting"] = accounting(results)
