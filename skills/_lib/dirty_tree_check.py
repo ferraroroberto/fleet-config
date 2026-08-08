@@ -26,9 +26,17 @@ Subcommand
   check <repo-path> --mode {merged,built} [--expect-branch BRANCH]
         [--default-branch NAME]
     Prints:
-      STATUS=CLEAN|DIRTY
-      BRANCH=<current-branch>
-      REASON=<text>   (only when STATUS=DIRTY)
+      STATUS=CLEAN|DIRTY|UNKNOWN
+      BRANCH=<current-branch>   (empty when UNKNOWN)
+      REASON=<text>   (only when STATUS=DIRTY or UNKNOWN)
+
+`UNKNOWN` means the facts could not be gathered -- a path that doesn't exist,
+a directory that isn't a repo, a `git` that failed. It is a third state on
+purpose: a failed probe used to yield empty strings that read as facts, so a
+repo that was never inspected got a confident `DIRTY` (fleet-config#570, five
+repos at once, all five actually clean) and, in `built` mode, silently
+satisfied the "is the tree clean" half of the did-the-agent-save-anything
+test. Callers must render `UNKNOWN` as `❓` and never fold it into `✅`/`❌`.
 
 This never blocks or auto-fixes -- it only reports, so the caller can
 downgrade a self-reported status line. Always exits 0. The decision logic
@@ -48,8 +56,20 @@ import git_run  # noqa: E402
 
 
 class Result(NamedTuple):
-    status: str  # "CLEAN" | "DIRTY"
+    status: str  # "CLEAN" | "DIRTY" | "UNKNOWN"
     reason: Optional[str]
+
+
+class Unreadable(Exception):
+    """The repo's facts could not be established — so there is no verdict.
+
+    Raised instead of letting a failed `git` return an empty string that then
+    reads as a fact: an empty branch name is unequal to `main` (→ a confident
+    `DIRTY` about a repo never inspected) and empty porcelain reads as *clean*
+    (fleet-config#570 — five repos reported DIRTY at once, all five clean).
+    This helper exists to be the independent check on a sub-agent's
+    self-report, so a manufactured verdict here is worse than no verdict.
+    """
 
 
 def evaluate(
@@ -58,9 +78,17 @@ def evaluate(
     default_branch: str,
     expected_branch: Optional[str],
     porcelain_empty: bool,
-    commits_ahead: int,
+    commits_ahead: Optional[int],
 ) -> Result:
-    """Pure decision: no git calls, just the facts already gathered."""
+    """Pure decision: no git calls, just the facts already gathered.
+
+    `commits_ahead=None` means the count could not be established (no
+    `origin/<default>` to compare against, say). It only matters to the `built`
+    mode's "did the agent save anything?" test, and only when the tree is
+    clean — with uncommitted changes present the answer is already yes. Where
+    it does matter, the honest answer is `UNKNOWN`, never the `DIRTY` that a
+    silent coercion to `0` used to produce.
+    """
     if mode == "merged":
         if current_branch != default_branch:
             return Result("DIRTY", f"still on {current_branch}, expected to land on {default_branch}")
@@ -73,6 +101,8 @@ def evaluate(
             return Result("DIRTY", f"HEAD unexpectedly back on {default_branch}, expected {expected_branch}")
         if expected_branch is not None and current_branch != expected_branch:
             return Result("DIRTY", f"on {current_branch}, expected {expected_branch}")
+        if porcelain_empty and commits_ahead is None:
+            return Result("UNKNOWN", "tree is clean but the commits-ahead count could not be established")
         if porcelain_empty and commits_ahead == 0:
             return Result("DIRTY", "reported changes but tree is clean and branch has no commits ahead — nothing found")
         return Result("CLEAN", None)
@@ -81,7 +111,17 @@ def evaluate(
 
 
 def _run_git(repo_path: Path, *args: str) -> str:
-    return git_run.run_git(["-C", str(repo_path), *args]).stdout.strip()
+    """Stripped stdout, or `Unreadable` — never an empty string standing in for
+    a fact. `git_run.run_git` defaults to `check=False` and documents that the
+    caller inspects `.returncode`; this caller used not to."""
+    r = git_run.run_git(["-C", str(repo_path), *args])
+    if r.returncode != 0:
+        detail = (r.stderr or "").strip().splitlines()
+        raise Unreadable(
+            f"git {' '.join(args)} failed (exit {r.returncode})"
+            + (f": {detail[0]}" if detail else "")
+        )
+    return r.stdout.strip()
 
 
 def detect_default_branch(repo_path: Path) -> str:
@@ -92,27 +132,52 @@ def detect_default_branch(repo_path: Path) -> str:
     return ref[len("origin/"):] if ref.startswith("origin/") else ref
 
 
-def gather(repo_path: Path, default_branch: str) -> tuple[str, bool, int]:
-    """Collect the live git facts `evaluate` needs."""
+def gather(repo_path: Path, default_branch: str) -> tuple[str, bool, Optional[int]]:
+    """Collect the live git facts `evaluate` needs.
+
+    Raises `Unreadable` when the branch or the working tree can't be read —
+    without those two there is nothing to judge. The commits-ahead count is
+    softer: `origin/<default>` legitimately may not exist (a repo with no
+    remote), so that one comes back as `None` and `evaluate` decides whether
+    it mattered.
+    """
     current_branch = _run_git(repo_path, "branch", "--show-current")
     porcelain = _run_git(repo_path, "status", "--porcelain")
     porcelain_empty = porcelain == ""
-    count_raw = _run_git(repo_path, "rev-list", "--count", f"origin/{default_branch}..HEAD")
     try:
-        commits_ahead = int(count_raw)
-    except ValueError:
-        commits_ahead = 0
+        commits_ahead: Optional[int] = int(
+            _run_git(repo_path, "rev-list", "--count", f"origin/{default_branch}..HEAD")
+        )
+    except (Unreadable, ValueError):
+        commits_ahead = None
     return current_branch, porcelain_empty, commits_ahead
 
 
 def cmd_check(repo_path: Path, mode: str, expect_branch: Optional[str], default_branch: Optional[str]) -> None:
-    resolved_default = default_branch or detect_default_branch(repo_path)
-    current_branch, porcelain_empty, commits_ahead = gather(repo_path, resolved_default)
+    # Cheap, precise pre-check. Deliberately only tests existence and not for a
+    # `.git` entry: `-C` works fine from a subdirectory of a repo, which has
+    # none, so a `.git` test would reject paths that are perfectly readable.
+    # Anything else that isn't a repo, git itself names in the error below.
+    if not repo_path.exists():
+        _report("UNKNOWN", "", f"no such path: {repo_path}")
+        return
+    try:
+        resolved_default = default_branch or detect_default_branch(repo_path)
+        current_branch, porcelain_empty, commits_ahead = gather(repo_path, resolved_default)
+    except Unreadable as exc:
+        # Exit 0 and an empty BRANCH, same as any other reported outcome — this
+        # helper reports, it never blocks, and callers key on STATUS.
+        _report("UNKNOWN", "", str(exc))
+        return
     result = evaluate(mode, current_branch, resolved_default, expect_branch, porcelain_empty, commits_ahead)
-    print(f"STATUS={result.status}")
-    print(f"BRANCH={current_branch}")
-    if result.reason:
-        print(f"REASON={result.reason}")
+    _report(result.status, current_branch, result.reason)
+
+
+def _report(status: str, branch: str, reason: Optional[str]) -> None:
+    print(f"STATUS={status}")
+    print(f"BRANCH={branch}")
+    if reason:
+        print(f"REASON={reason}")
 
 
 def main(argv: list[str] | None = None) -> None:

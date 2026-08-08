@@ -268,6 +268,10 @@ reports completion, before you relay that completion onward to Roberto:
 - `STATUS=DIRTY` (exit 1) means the self-report doesn't match reality —
   don't relay it as done; say what `REASON=` gave you and investigate
   (read the branch/PR yourself) before deciding what to tell Roberto.
+- `STATUS=UNKNOWN` (also exit 1) means the repo could not be read at all,
+  so the check has **no** verdict — relay it as unverified (`❓`), never
+  as done and never as dirty. Check the path you passed first
+  (fleet-config#570).
 
 **Verify from outside; never arbitrate between two agents' conflicting
 accounts.** When a fleet-config worker reported that a fork had overstepped

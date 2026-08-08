@@ -116,7 +116,7 @@ Print a single confirmation block listing every agent dispatched (repo, #N, bran
 E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/dirty_tree_check.py check <path> --mode merged
 ```
 
-`STATUS=DIRTY` → downgrade that branch's status from `✅ merged` to `⚠️ merged but dirty tree — inspect <repo>` (carry the `REASON=` line) instead of the plain `✅ merged` mark. This check only reports; it never blocks the run, never auto-commits, and never auto-fixes.
+`STATUS=DIRTY` → downgrade that branch's status from `✅ merged` to `⚠️ merged but dirty tree — inspect <repo>` (carry the `REASON=` line) instead of the plain `✅ merged` mark. `STATUS=UNKNOWN` → the helper could not read that repo, so it has no verdict: mark it `❓ tree unverified — <REASON>` and never fold it into a pass or a fail (fleet-config#570). This check only reports; it never blocks the run, never auto-commits, and never auto-fixes.
 
 As each agent returns, surface its report with a status mark: `✅ merged` / `⚠️ merged but dirty tree` / `❌ blocked`. The per-issue `✅ Done` pings the finishers already fired are kept — this is *in addition*.
 

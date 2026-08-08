@@ -100,8 +100,10 @@ Subcommands
       right before a worker's self-reported "shipped ✅" is trusted onward.
       `<repo>` is a fleet-registry name (resolved via
       `skills/_lib/fleet_repo_scan.py`) or a literal path. Exits 1 on
-      STATUS=DIRTY so a caller can gate on the exit code, not just parse
-      text.
+      STATUS=DIRTY *and* on STATUS=UNKNOWN (the repo could not be read, so
+      the self-report is unverified — relaying it as verified would be the
+      same false pass) so a caller can gate on the exit code, not just parse
+      text. UNKNOWN is never reported as DIRTY (fleet-config#570).
 
 stdlib only, plus the `gh` CLI for `issues`.
 """
@@ -638,17 +640,29 @@ def cmd_escalate(args: argparse.Namespace) -> int:
 
 
 def cmd_verify(args: argparse.Namespace) -> int:
-    repo_path = resolve_repo_path(args.repo)
-    resolved_default = args.default_branch or dirty_tree_check.detect_default_branch(repo_path)
-    current_branch, porcelain_empty, commits_ahead = dirty_tree_check.gather(repo_path, resolved_default)
+    try:
+        # A repo name/path that resolves to nothing is the same class of
+        # non-fact as a git that failed — report it, don't traceback.
+        repo_path = resolve_repo_path(args.repo)
+        resolved_default = args.default_branch or dirty_tree_check.detect_default_branch(repo_path)
+        current_branch, porcelain_empty, commits_ahead = dirty_tree_check.gather(repo_path, resolved_default)
+    except (dirty_tree_check.Unreadable, ValueError) as exc:
+        # The repo could not be read, so there is no verdict about it. Exit 1
+        # like DIRTY does — an unverifiable self-report must not be relayed as
+        # verified — but say UNKNOWN, never DIRTY (fleet-config#570).
+        return _print_verify("UNKNOWN", "", str(exc))
     result = dirty_tree_check.evaluate(
         args.expect, current_branch, resolved_default, args.branch, porcelain_empty, commits_ahead
     )
-    print(f"STATUS={result.status}")
-    print(f"BRANCH={current_branch}")
-    if result.reason:
-        print(f"REASON={result.reason}")
-    return 0 if result.status == "CLEAN" else 1
+    return _print_verify(result.status, current_branch, result.reason)
+
+
+def _print_verify(status: str, branch: str, reason: Optional[str]) -> int:
+    print(f"STATUS={status}")
+    print(f"BRANCH={branch}")
+    if reason:
+        print(f"REASON={reason}")
+    return 0 if status == "CLEAN" else 1
 
 
 def main(argv: Optional[List[str]] = None) -> int:

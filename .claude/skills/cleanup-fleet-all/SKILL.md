@@ -124,13 +124,15 @@ E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skill
 
 `STATUS=DIRTY` → downgrade from `✅ merged` to `⚠️ merged but dirty tree — inspect <repo>` and carry the `REASON=` line.
 
+`STATUS=UNKNOWN` → the helper could not read that repo at all, so it has **no** verdict about it: render `❓ merged, tree unverified — <REASON>` and never fold it into `✅` or `⚠️`. Check the path you passed first — the 2026-08-06 occurrence was the caller-side Git Bash backslash trap (a double-quoted Windows path loses its backslashes and never expands the loop variable), and the helper answered `DIRTY` for all five touched repos, every one of which was actually clean (fleet-config#570). Pass forward slashes.
+
 For every issue with `status: "escalated"` or `"failed"` — the teardown agent should have put the repo back on a clean default branch, so check it the same way:
 
 ```
 E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/dirty_tree_check.py check E:\automation\<repo> --mode merged
 ```
 
-`STATUS=DIRTY` → append `⚠️ post-flight: <REASON>` next to the escalation line.
+`STATUS=DIRTY` → append `⚠️ post-flight: <REASON>` next to the escalation line. `STATUS=UNKNOWN` → append `❓ post-flight unverified: <REASON>` — an escalation whose tree could not be read is not an escalation whose tree is fine.
 
 **8b. Fleet-wide residue enumeration — fail loud.** Checking only the primaries of touched repos is exactly what let 11 worktrees slip through a run that reported `0 failed`. After all buckets finish, enumerate residue across **every repo the run touched** (Git Bash, read-only):
 

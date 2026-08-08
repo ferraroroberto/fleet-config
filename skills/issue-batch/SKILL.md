@@ -242,7 +242,7 @@ Then stop. Do not poll, do not sleep, do not check on progress — the harness r
 E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/dirty_tree_check.py check <path> --mode built --expect-branch <branch>
 ```
 
-(`<path>` is the worktree path in worktree mode, or `E:\automation\<repo>` in-place.) `STATUS=DIRTY` → keep the agent's verification mark but append an explicit `⚠️ post-flight: <REASON>` note to that repo's line — this catches HEAD unexpectedly back on the default branch, a branch mismatch, or the agent reporting changed files it never actually saved. This check only reports; it never blocks the run, never auto-commits, and never auto-fixes.
+(`<path>` is the worktree path in worktree mode, or `E:\automation\<repo>` in-place.) `STATUS=DIRTY` → keep the agent's verification mark but append an explicit `⚠️ post-flight: <REASON>` note to that repo's line — this catches HEAD unexpectedly back on the default branch, a branch mismatch, or the agent reporting changed files it never actually saved. `STATUS=UNKNOWN` → the helper could not read that repo, so it has no verdict: mark it `❓ tree unverified — <REASON>` and never fold it into a pass or a fail (fleet-config#570). This check only reports; it never blocks the run, never auto-commits, and never auto-fixes.
 
 As each background sub-agent finishes, surface its report verbatim in the chat with a short header (`✅` if verification passed, `⚠️` if skipped or post-flight flagged something, `❌` if failed).
 

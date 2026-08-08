@@ -447,4 +447,30 @@ finally:
     shutil.rmtree(_state_tmp, ignore_errors=True)
 
 
+
+# ---- verify: an unreadable repo is UNKNOWN, never DIRTY (fleet-config#570) ----
+# chief relays this onward to Roberto, so a manufactured verdict here becomes a
+# manufactured status report.
+
+import contextlib  # noqa: E402
+import io  # noqa: E402
+
+_verify_tmp = Path(tempfile.mkdtemp(prefix="chief_ops_verify_"))
+try:
+    for _label, _target in (("nonexistent path", _verify_tmp / "nope"),
+                            ("a directory that is not a repo", _verify_tmp)):
+        _buf = io.StringIO()
+        with contextlib.redirect_stdout(_buf):
+            _rc = co.cmd_verify(argparse.Namespace(
+                repo=str(_target), expect="merged", branch=None, default_branch=None))
+        _out = _buf.getvalue()
+        check("STATUS=UNKNOWN" in _out and "STATUS=DIRTY" not in _out,
+              f"cmd_verify: {_label} -> STATUS=UNKNOWN, never a DIRTY verdict")
+        check(_rc == 1, f"cmd_verify: {_label} still exits 1 — unverified is not trusted onward")
+        check("REASON=" in _out, f"cmd_verify: {_label} explains why in REASON")
+finally:
+    import shutil
+    shutil.rmtree(_verify_tmp, ignore_errors=True)
+
+
 _h.report_and_exit("test_chief_ops")
