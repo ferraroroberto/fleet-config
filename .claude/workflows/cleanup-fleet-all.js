@@ -102,6 +102,7 @@ const TEARDOWN_RESULT_SCHEMA = {
     behindOrigin: { type: 'string', enum: ['current', 'fast-forwarded', 'unknown'] },
     behindOriginDetail: { type: 'string' },
     zombieShells: { type: 'string' },
+    foreignBranches: { type: 'string' },
   },
 }
 
@@ -212,7 +213,9 @@ ${commentStep}
 
    Report every leftover that satisfies all five in \`zombieShells\`, by **path and zombie count**, and do not let it make this lane RESIDUE. Judge each directory on its own five conditions. **The number of such shells is irrelevant** — several, left by earlier lanes, are the expected state on a host that has not rebooted; never key on a count, and never on which path you were expecting.
 
-   **Check 3 — branches.** \`git -C E:\\automation\\${issue.repo} branch\` → must show the default branch only.
+   **Check 3 — this lane's branch is gone.** \`git -C E:\\automation\\${issue.repo} branch\` → \`${lane.branch || '(none — build never cut one)'}\` must not appear. **Judge only your own branch.** Every *other* local branch is reported, never residue, and never halts: your mandate is this lane (step 5 deletes your branch, and another lane's ref is explicitly not yours to remove), so this check may not assert a whole-repo property you are forbidden to bring about. On 2026-08-07 a lane that built, merged, and tore down perfectly reported RESIDUE over a stale branch from an *earlier* lane whose PR was already merged, and halted the run with 41 lanes unstarted (fleet-config#572).
+
+   Report every branch that is neither the default nor yours in \`foreignBranches\`, one entry each, with its name and — cheaply, best-effort — whether its PR already merged (\`gh pr list --repo ferraroroberto/${issue.repo} --head <branch> --state all --json number,state\`) and whether \`git -C E:\\automation\\${issue.repo} diff <default>..<branch>\` is empty. Do **not** delete them. Note for whoever reads it: \`git branch --merged\` is unreliable here — the fleet squash-merges, so the original tip is not an ancestor of the default branch and a fully-absorbed branch still reports as unmerged (the same squash-destroys-the-SHA behaviour as fleet-config#567). An empty \`diff\` or the PR's merge state is the reliable test, and \`git branch -d\` will refuse where \`-D\` is what's actually correct.
 
    **Check 4 — tree.** \`git -C E:\\automation\\${issue.repo} status --porcelain\` → must be empty, on the default branch.
 
@@ -226,13 +229,14 @@ ${commentStep}
    **Check 6 — primary current with origin (reported, never halts).** Clean is not current: a primary sitting eleven commits behind \`origin/main\` passes checks 1–4, and any later verification reading that working copy misreports shipped work as absent.
    - \`git -C E:\\automation\\${issue.repo} fetch origin\`, then \`git -C E:\\automation\\${issue.repo} rev-list --count HEAD..origin/<default-branch>\`.
    - \`0\` → \`behindOrigin: "current"\`.
-   - Non-zero, **and checks 3 and 4 both came back clean** → \`git -C E:\\automation\\${issue.repo} pull --ff-only\`. On success \`behindOrigin: "fast-forwarded"\`, with the commit delta and the before/after SHAs in \`behindOriginDetail\`. **Never a merge, never a rebase, never a reset, never \`--force\`.**
-   - Never pull over an unclean primary. If check 3 or 4 failed (wrong branch, dirty tree), do **not** attempt the fast-forward at all → \`behindOrigin: "unknown"\` naming the count and the reason. This lane is already RESIDUE; mutating the tree on top of that would destroy the evidence a human needs.
+   - Non-zero, **and check 4 came back clean** (empty porcelain, HEAD on the default branch) → \`git -C E:\\automation\\${issue.repo} pull --ff-only\`. On success \`behindOrigin: "fast-forwarded"\`, with the commit delta and the before/after SHAs in \`behindOriginDetail\`. **Never a merge, never a rebase, never a reset, never \`--force\`.**
+   - Gate this on check 4 alone — what makes a pull unsafe is a dirty tree or HEAD off the default branch, not the mere existence of other refs. Gating it on check 3 too meant one foreign branch withheld the fast-forward from a perfectly healthy primary and left it two commits behind, which is precisely the "clean is not current" failure this check exists to prevent (fleet-config#572).
+   - Never pull over an unclean primary. If check 4 failed (wrong branch, dirty tree), do **not** attempt the fast-forward at all → \`behindOrigin: "unknown"\` naming the count and the reason. This lane is already RESIDUE; mutating the tree on top of that would destroy the evidence a human needs.
    - The fast-forward is refused (diverged history), the fetch failed, or check 5 left the lock in place (\`live-held\`/\`unknown\`) → \`behindOrigin: "unknown"\` with the reason. Do not escalate to any other kind of pull.
 
 If a directory refuses to delete because a process holds it (a leaked Playwright browser helper is the usual culprit — project-scaffolding#203), say exactly that in \`detail\`; do NOT kill processes you cannot identify and do NOT retry destructively.
 
-Report via the required schema. \`residue\` is **CLEAN** only when checks 1–4 came back exactly as described — with a leftover directory that satisfies all five zombie-shell conditions counting as passing check 2 — and if any of those checks could not be run, or came back ambiguous, that is RESIDUE, not CLEAN. A run-halting decision is made from this field, so a false CLEAN is far worse than an honest RESIDUE. Checks 5 and 6 never touch \`residue\` and never halt the run; report them in \`indexLock\`/\`indexLockDetail\` and \`behindOrigin\`/\`behindOriginDetail\` so they reach the human-facing summary.`
+Report via the required schema. \`residue\` is **CLEAN** only when checks 1–4 came back exactly as described — with a leftover directory that satisfies all five zombie-shell conditions counting as passing check 2, and another lane's branch counting as passing check 3 — and if any of those checks could not be run, or came back ambiguous, that is RESIDUE, not CLEAN. A run-halting decision is made from this field, so a false CLEAN is far worse than an honest RESIDUE. Checks 5 and 6 never touch \`residue\` and never halt the run; report them in \`indexLock\`/\`indexLockDetail\` and \`behindOrigin\`/\`behindOriginDetail\`, along with \`zombieShells\` and \`foreignBranches\`, so they reach the human-facing summary. Narrowing what counts as *your* mess is not lowering the bar for it — your own leftover branch, worktree, or dirty tree is still RESIDUE and still halts the run.`
 }
 
 async function processIssue(bucket, issue) {
@@ -313,6 +317,7 @@ async function processIssue(bucket, issue) {
     behindOrigin: (teardown && teardown.behindOrigin) || 'unknown',
     behindOriginDetail: teardown ? teardown.behindOriginDetail : 'teardown agent returned no result',
     zombieShells: teardown ? teardown.zombieShells : undefined,
+    foreignBranches: teardown ? teardown.foreignBranches : undefined,
   }
 }
 
@@ -355,6 +360,7 @@ for (const bucket of bucketNames) {
     if (r.indexLock !== 'none') log(`  index.lock: ${r.indexLock} — ${r.indexLockDetail || 'no detail reported'}`)
     if (r.behindOrigin !== 'current') log(`  behind origin: ${r.behindOrigin} — ${r.behindOriginDetail || 'no detail reported'}`)
     if (r.zombieShells) log(`  zombie-pinned shells (not residue): ${r.zombieShells}`)
+    if (r.foreignBranches) log(`  foreign branches (not residue): ${r.foreignBranches}`)
 
     // Anti-cascade gate. A lane that could not be returned to clean stops the
     // whole run — serial lanes mean exactly one repo is affected, and starting
