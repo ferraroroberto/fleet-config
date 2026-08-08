@@ -1,6 +1,6 @@
 # Project Instructions
 
-Versioned home for user-scope coding-agent configuration. After `install.ps1`, `hooks/` is visible at `~/.claude/hooks/` (and vice-versa) via a Windows junction — no copy step, no sync ritual. This repo's own `global-CLAUDE.md` supplies the global instructions (plan-mode default, git discipline, no AI attribution) and applies here in full; below is only what's repo-specific.
+Versioned home for user-scope coding-agent configuration. After `install.ps1`, `hooks/` is visible at `~/.claude/hooks/` (and vice-versa) via a Windows junction — no copy step, no sync ritual. This repo's own `global-CLAUDE.md` supplies the global instructions and applies here in full; below is only what's repo-specific.
 
 ## Repo-specific conventions
 
@@ -10,7 +10,7 @@ Versioned home for user-scope coding-agent configuration. After `install.ps1`, `
 - **Hooks block by exit-code 2** with a single short reason on stderr; non-blocking hooks print a single nudge line on stdout and exit 0.
 - **Hooks read stdin as JSON** via `_lib.read_stdin_json()`; PowerShell shims use `[Console]::In.ReadToEnd()` and pipe straight to the Python module.
 - **Foreign-harness payloads are translated in exactly one place** — `_lib.normalize_payload()`, called from `read_stdin_json()` (fleet-config#491). A hook must never learn a second harness's key names, event vocabulary, or tool ids; if a harness sends something new, extend the maps there. Claude-shaped payloads are returned as the *same object*, and `tests/test_payload_normalization.py` asserts that, because `hooks/` is junctioned live into `~/.claude/hooks` — a merge is fleet-wide against running sessions the moment it lands. Likewise `_lib.block()` owns the per-harness refusal dialect (Claude: exit 2 + stderr; Grok additionally needs a `deny` decision on stdout, because it reports our 2 as 1 and fails **open** on anything else). Adding a guard that only *reports* a block is worse than adding no guard: verify a real refusal live in the target harness. Procedure: `docs/adding-a-coding-harness.md`.
-- **Every `subprocess` spawn passes `creationflags=NO_WINDOW`** — `_lib.NO_WINDOW` in `hooks/`, `from no_window import NO_WINDOW` in `skills/_lib/` and `.claude/skills/*` (fleet-config#412). Never re-inline the `sys.platform == "win32"` ternary. This repo's scheduled skills *are* the console-less parent the global convention names, so an unflagged spawn flashes a console window at whoever is at the machine. `tests/run_acceptance.py` parses `hooks/`, `skills/`, and `.claude/skills/` and fails on any spawn missing the flag, so a new call site can't drift; `tests/` itself is exempt.
+- **Every `subprocess` spawn passes `creationflags=NO_WINDOW`** — `_lib.NO_WINDOW` in `hooks/`, `from no_window import NO_WINDOW` in `skills/_lib/` and `.claude/skills/*` (fleet-config#412). Never re-inline the `sys.platform == "win32"` ternary. This repo's scheduled skills *are* the console-less parent of the global convention, so an unflagged spawn flashes a console window at whoever is at the machine. `tests/run_acceptance.py` parses `hooks/`, `skills/`, and `.claude/skills/` and fails on any spawn missing the flag; `tests/` itself is exempt.
 - **Scheduled-skill launchers live *with* the skill:** `skills/<skill>/run-weekly.bat`, never at the repo root. Body is exactly `cd /d <working-dir>` then this repo's `.venv` Python invoking `skills/_lib/claude_progress.py "/<skill>" [flags] --permission-mode bypassPermissions` — the adapter owns `claude -p --output-format stream-json --verbose`, emits flushed human-readable milestones, and preserves Claude's exit code. The working dir is the skill's repo (`cd /d E:\automation\fleet-config`), or `E:\automation` for genuinely fleet-wide skills (`/audit-fleet`); `bypassPermissions` is required because a scheduled run has no human to answer prompts; add `--model`/`--effort` only when needed. Sister repos follow the same shape in their own tree (e.g. life-os `.claude/skills/_recap/run-weekly.bat`). The app-launcher Job's `script_path` points at this file; live `jobs.json` is machine-local, `jobs.sample.json` carries the committed example.
 
 ## Internal architecture
@@ -41,14 +41,15 @@ Then add the repo's row to `architecture/ARCHITECTURE.md`. A repo that ships its
 ## Verification
 
 ```powershell
-# 1. Byte-compile every hook and shared skill helper
-& E:/automation/fleet-config/.venv/Scripts/python.exe -m py_compile hooks/*.py skills/_lib/*.py skills/_lib/design_lint/*.py skills/_lib/design_lint/contracts/*.py
+# 1. Byte-compile every hook and shared skill helper (recursive — PowerShell does
+#    not glob-expand arguments to a native exe, so `py_compile hooks/*.py` fails)
+& E:/automation/fleet-config/.venv/Scripts/python.exe -m compileall -q hooks skills/_lib
 
 # 2. Run the acceptance matrix (sample stdin payloads per hook + the helper unit tests)
 & E:/automation/fleet-config/.venv/Scripts/python.exe tests/run_acceptance.py
 ```
 
-Invoke this repo's `.venv` interpreter directly by its absolute path (as above) — a bare `py`/`python` is not reliably on `PATH` on this machine, so it silently fails wherever a skill or doc uses it (fleet-config#256). Create the venv once with `py -m venv .venv` (or any Python ≥3.12); it is stdlib-only, so nothing needs installing. Don't claim a hook works without driving it through `tests/run_acceptance.py`.
+Invoke this repo's `.venv` interpreter directly by its absolute path (as above) — a bare `py`/`python` is not reliably on `PATH` here, so it silently fails wherever a skill or doc uses it (fleet-config#256). Create the venv once with `py -m venv .venv` (or any Python ≥3.12); it is stdlib-only, nothing to install. Don't claim a hook works without driving it through `tests/run_acceptance.py`.
 
 ## Git
 
