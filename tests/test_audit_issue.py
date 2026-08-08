@@ -8,6 +8,8 @@ Run: `E:/automation/fleet-config/.venv/Scripts/python.exe tests/test_audit_issue
 
 from __future__ import annotations
 
+import shutil
+import subprocess
 import sys
 import tempfile
 from pathlib import Path
@@ -362,5 +364,109 @@ try:
 finally:
     ai._run = _original_run
     ai.time.sleep = _original_sleep
+
+
+# ---- ledger baseline sha: squash-merge safety (fleet-config#567) ----
+#
+# The ledger used to record the working checkout's HEAD. On a feature branch
+# that tip is destroyed by squash-merge + delete-branch, `rev-list <sha>..HEAD`
+# then fails, and the repo silently drops out of every sweep via errors[].
+
+def _git567(cwd: Path, *args: str) -> str:
+    proc = subprocess.run(["git", "-C", str(cwd), *args], capture_output=True, text=True)
+    check(proc.returncode == 0, f"git {' '.join(args)} in {cwd} failed: {proc.stderr}")
+    return proc.stdout.strip()
+
+
+_gtmp = Path(tempfile.mkdtemp(prefix="test_audit_issue_567_"))
+try:
+    _up = _gtmp / "upstream"
+    _work = _gtmp / "work"
+    _up.mkdir()
+    _git567(_up, "init", "-q")
+    _git567(_up, "checkout", "-q", "-b", "main")
+    _git567(_up, "config", "user.email", "35553560+ferraroroberto@users.noreply.github.com")
+    _git567(_up, "config", "user.name", "Test")
+    (_up / "README.md").write_text("hello\n", encoding="utf-8")
+    _git567(_up, "add", "README.md")
+    _git567(_up, "commit", "-q", "-m", "initial")
+
+    _git567(_gtmp, "clone", "-q", str(_up), str(_work))
+    _git567(_work, "config", "user.email", "35553560+ferraroroberto@users.noreply.github.com")
+    _git567(_work, "config", "user.name", "Test")
+
+    _main_sha = _git567(_work, "rev-parse", "origin/main")
+
+    # Check out a feature branch and commit — exactly the state /codebase-audit
+    # was in when it poisoned two real ledgers.
+    _git567(_work, "checkout", "-q", "-b", "feat/x")
+    (_work / "f.txt").write_text("x\n", encoding="utf-8")
+    _git567(_work, "add", "f.txt")
+    _git567(_work, "commit", "-q", "-m", "feature")
+    _feat_sha = _git567(_work, "rev-parse", "HEAD")
+
+    check(_feat_sha != _main_sha, "fixture: feature tip differs from the default-branch tip")
+
+    # The pre-fix write path recorded HEAD (== _feat_sha). The fix records the
+    # default-branch commit, which a squash cannot destroy.
+    check(ai.default_branch_sha(str(_work)) == _main_sha,
+          "default_branch_sha: records the default-branch tip, not the checked-out HEAD")
+    check(ai.recordable_ledger_sha(str(_work)) == _main_sha,
+          "recordable_ledger_sha: returns the verified default-branch commit")
+
+    check(ai.sha_is_on_default_branch(str(_work), _main_sha) is True,
+          "sha_is_on_default_branch: the default-branch tip is reachable")
+    check(ai.sha_is_on_default_branch(str(_work), _feat_sha) is False,
+          "sha_is_on_default_branch: an off-branch feature tip is refused at write time")
+    check(ai.sha_is_on_default_branch(str(_work), "") is False,
+          "sha_is_on_default_branch: an empty sha is never recordable")
+
+    # An unresolvable baseline is `None` — a real answer — not an exception
+    # that lands the repo in an errors[] bucket nobody reads.
+    check(ai.commits_since(str(_work), _main_sha) == 1,
+          "commits_since: resolvable baseline -> a real count")
+    check(ai.commits_since(str(_work), "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef") is None,
+          "commits_since: a vanished baseline sha -> None, never a raise")
+
+    # A path that is not a repo at all can produce no verifiable sha.
+    check(ai.default_branch_sha(str(_gtmp / "nope")) is None,
+          "default_branch_sha: unreadable repo -> None")
+    check(ai.recordable_ledger_sha(str(_gtmp / "nope")) is None,
+          "recordable_ledger_sha: unreadable repo -> refuses rather than guessing")
+
+    # evaluate_repo routes an unresolvable baseline to a full audit under its
+    # OWN reason, so it is never mistaken for ordinary organic change.
+    _ledger_body = (
+        "<!-- audit-managed: kind=ledger -->\n<!-- audit-ledger -->\n"
+        "last-audited-sha: deadbeefdeadbeefdeadbeefdeadbeefdeadbeef\n"
+        "last-audited-at: 2026-07-16\nrubric-sha: \n"
+    )
+    _orig_list_open, _orig_gh = ai._list_open, ai.gh
+    try:
+        ai._list_open = lambda repo: [{"number": 15, "title": "codebase-audit ledger", "body": _ledger_body}]
+        ai.gh = lambda args, **kw: _ledger_body
+        _out = ai.evaluate_repo("ferraroroberto/x", str(_work), dry_run=True)
+    finally:
+        ai._list_open, ai.gh = _orig_list_open, _orig_gh
+
+    check(_out["decision"] == "AUDIT", "evaluate_repo: unresolvable baseline -> AUDIT, never a silent drop-out")
+    check(_out["reason"] == ai.UNRESOLVABLE_BASELINE,
+          "evaluate_repo: unresolvable baseline carries its own distinct reason")
+    check(_out.get("baseline_sha", "").startswith("deadbeef"),
+          "evaluate_repo: names the baseline sha that could not be resolved")
+finally:
+    shutil.rmtree(_gtmp, ignore_errors=True)
+
+
+# The write path that actually poisoned the two real ledgers was not code — it
+# was /codebase-audit's step 9 *instructing* the agent to record `git rev-parse
+# HEAD`. Guard the prose too, or the helper above is one doc edit from moot.
+
+_step9 = (Path(__file__).resolve().parent.parent / "skills" / "codebase-audit" / "SKILL.md").read_text(
+    encoding="utf-8").split("### 9. Update the ledger", 1)[-1].split("\n### ", 1)[0]
+check("git rev-parse HEAD" not in _step9,
+      "codebase-audit SKILL.md step 9: never instructs recording the checkout HEAD")
+check("audit_issue.py ledger-sha" in _step9,
+      "codebase-audit SKILL.md step 9: records the sha via the verified ledger-sha helper")
 
 _h.report_and_exit("test_audit_issue")

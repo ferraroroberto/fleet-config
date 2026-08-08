@@ -96,13 +96,29 @@ implementation) per repo.
 It prints one JSON object:
 
 ```
-{"to_audit": [{"repo": "...", "path": "..."}, ...],
+{"to_audit": [{"repo": "...", "path": "...", "reason": "unresolvable-baseline"?, "baseline_sha": "..."?}, ...],
  "unchanged": ["repo1", "repo2", ...],
  "self_fix": [{"repo": "...", "path": "...", "decision": "SKIP_SELF_FIX", "closed_issues": [...], ...}, ...],
  "below_threshold": [{"repo": "...", "path": "...", "decision": "SKIP_BELOW_THRESHOLD", "significance": N, "threshold": M, ...}, ...],
  "skipped": [{"repo": "...", "reason": "dirty"|"off-branch"|"non-ff"}, ...],
- "errors": [{"repo": "...", "reason": "..."}, ...]}
+ "errors": [{"repo": "...", "reason": "..."}, ...],
+ "enumerated": N,
+ "accounting": {"enumerated": N, "bucketed": N, "unaccounted": 0, "balanced": true}}
 ```
+
+`enumerated` counts the repos the walk *found*, before any decision; the
+`accounting` block asserts the six buckets sum back to it. A repo that lands in
+no bucket shows up as a non-zero `unaccounted` / `balanced: false` — the exact
+shape of the 2026-07/08 failure where an unresolvable ledger baseline threw past
+every branch and two repos vanished from three consecutive runs
+(fleet-config#567). Never report counts that don't add up as a healthy run.
+
+A `to_audit` entry carrying `"reason": "unresolvable-baseline"` is **not**
+organic change: its recorded `last-audited-sha` (`baseline_sha`) resolves to
+nothing in the checkout — almost always a squash-merged, deleted feature-branch
+tip. Auditing whole-repo is the safe answer, so it is correctly in `to_audit`,
+but it also means that repo's ledger is broken and its true audit range is
+unknown. Surface it by name in the plan line and the digest.
 
 For every `self_fix` entry, the script has **already** advanced that repo's
 ledger (HEAD sha + today's date, same rubric-sha) and posted a
@@ -123,12 +139,18 @@ to it.
 Print a one-line plan from the JSON, e.g.:
 
 ```
-Fleet audit plan — 3 to audit, 24 unchanged, 1 self-fix, 2 below-threshold, 2 skipped (dirty)
+Fleet audit plan — 32 repos enumerated, 3 to audit, 24 unchanged, 1 self-fix, 2 below-threshold, 2 skipped (dirty)
   audit:            app-launcher, photo-ocr, local-llm-hub
+  broken-baseline:  grocery-shopping-automation (ledger sha 99100ac unresolvable — auditing whole repo)
   self-fix:         website (closed #71, #64 — ledger advanced, no organic change)
   below-threshold:  accounting-quarterly (591/1000), pvgis (85/1000)
   skipped:          reporting (dirty), site (off-branch)
 ```
+
+Lead the line with `accounting.enumerated` and print a `broken-baseline:` line
+naming every `to_audit` entry whose `reason` is `unresolvable-baseline`. If
+`accounting.balanced` is `false`, print `WARNING: <N> repos in no bucket` on its
+own line — the sweep lost repos and the run must not read as healthy.
 
 If `to_audit` is empty, jump to step 5 with an empty result set (the digest
 still goes out so the weekly run always produces a record).
@@ -359,7 +381,8 @@ is attached to the email as a `.md` file; step 6 also renders it to HTML for the
 email body. Structure it so the per-repo results form a clean table when
 rendered:
 
-- **Header:** date, counts — `N repos audited, M issues filed, K unchanged, L self-fix, B below-threshold, J skipped`, plus `S security fixes` when any sub-agent reported a `Security:` result other than `NONE`, and `D design-drift / C cert-drift open` from the step-5 bucket count.
+- **Header:** date, counts — `E repos enumerated: N audited, M issues filed, K unchanged, L self-fix, B below-threshold, J skipped, X errors`, plus `S security fixes` when any sub-agent reported a `Security:` result other than `NONE`, and `D design-drift / C cert-drift open` from the step-5 bucket count. The per-bucket counts **must sum to `E`** (`accounting.enumerated` from step 2); when `accounting.balanced` is `false`, append `— ⚠️ <N> repos in no bucket` rather than printing counts that quietly don't add up.
+- **Broken-baseline section** *(only when non-empty)*: repos step 2 routed to `to_audit` with `reason: unresolvable-baseline` — one line each naming the unresolvable `baseline_sha` (`grocery-shopping-automation: ledger sha 99100ac resolves to nothing — audited whole-repo, ledger re-anchored`). These were audited, so they also appear in the per-repo results; this section exists because a broken ledger is a distinct problem from organic change and used to be visible nowhere at all (fleet-config#567).
 - **Per audited repo:** result line + the issues filed this run (bucket → URL),
   and the **delta vs last week** (`+2 since last week` from the digest-state
   counts). Repos that came back CLEAN or SKIPPED-BY-LEDGER get a one-liner.
@@ -447,6 +470,7 @@ Two channels. stdout is the reliable one (a scheduled run captures it in app-lau
 - **Delivery assertion — run it here, before the ping.** This is the only place the run may declare itself failed on *content* rather than on a crash, and it is the gap `fleet-config#506` left open: on 2026-07-30 the tell was entirely in the content — zero repos audited, no digest comment, no ping — while the exit code read `0`. Check all three, and treat any one you **cannot establish** as failed rather than as passing (an unresolved check is its own state, never folded into the passing one — global CLAUDE.md, "Verify before declaring done"):
 
   1. **≥1 repo evaluated.** Step 2's sweep placed at least one repo in some bucket (`to_audit` + `unchanged` + `self_fix` + `below_threshold` + `skipped` + `errors` > 0). An empty sweep means the fleet walk itself failed — it does not mean the fleet is clean.
+  1b. **The buckets account for every repo walked.** Step 2's `accounting.balanced` is `true`. A `false` (or missing) `balanced` means repos the walk *found* landed in no bucket at all and were neither audited nor reported — the fleet-config#567 shape. Treat it exactly like the other assertions: fail the run, name the unaccounted count, never let a sweep that lost repos report success.
   2. **A digest was composed and printed.** Step 5 produced digest markdown and this step wrote it to stdout verbatim.
   3. **The digest comment resolved either way.** `COMMENT_URL` holds a real URL, *or* the comment was recorded as `comment: skipped (<reason>)` with a stated reason. "Never fail the run over the comment" holds for a *stated* failure; a comment step that silently never ran fails this assertion.
 

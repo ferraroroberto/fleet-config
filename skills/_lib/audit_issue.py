@@ -212,6 +212,72 @@ def parse_ledger(body: str) -> dict:
     }
 
 
+# A baseline SHA that git cannot resolve is NOT "nothing changed" and NOT a
+# transient error to bury — it is a repo whose change-since-last-audit is
+# unknown, and the safe answer to unknown is a full whole-repo audit
+# (fleet-config#567).
+UNRESOLVABLE_BASELINE = "unresolvable-baseline"
+
+
+def default_branch_sha(repo_path: str) -> str | None:
+    """Commit sha of the repo's default branch, or None if it can't be read.
+
+    The *only* sha safe to record as `last-audited-sha`. Recording the working
+    checkout's `HEAD` poisons the ledger whenever an audit runs off the default
+    branch: the fleet pipeline squash-merges and deletes the branch, so that tip
+    exists in no checkout and no remote afterwards, `rev-list <sha>..HEAD`
+    fails, and the repo silently drops out of every later sweep
+    (fleet-config#567 — two repos went unaudited for three weeks). A
+    default-branch commit survives a squash by construction.
+    """
+    ref = git_run.resolve_default_branch_ref(Path(repo_path))
+    r = git_run.run_git(["-C", repo_path, "rev-parse", "--verify", "--quiet", f"{ref}^{{commit}}"])
+    sha = (r.stdout or "").strip()
+    return sha if r.returncode == 0 and sha else None
+
+
+def sha_is_on_default_branch(repo_path: str, sha: str) -> bool:
+    """True only when `sha` is an ancestor of (or is) the default-branch tip."""
+    if not sha:
+        return False
+    ref = git_run.resolve_default_branch_ref(Path(repo_path))
+    return git_run.run_git(
+        ["-C", repo_path, "merge-base", "--is-ancestor", sha, ref]
+    ).returncode == 0
+
+
+def recordable_ledger_sha(repo_path: str) -> str | None:
+    """The sha to write into the ledger, or None when none can be verified.
+
+    Belt and braces on top of `default_branch_sha`: re-confirm reachability
+    from the default branch before handing it back, so a stale or rewritten
+    ref can never be recorded. Refusing to write beats poisoning the ledger
+    for weeks — a stale-but-valid baseline just means a slightly wider next
+    audit, an unresolvable one means no audit at all.
+    """
+    sha = default_branch_sha(repo_path)
+    if sha is None or not sha_is_on_default_branch(repo_path, sha):
+        return None
+    return sha
+
+
+def commits_since(repo_path: str, sha: str) -> int | None:
+    """Commits from `sha` to HEAD, or None when the range can't be resolved.
+
+    None is a real answer — "the baseline is unreadable" — and the caller must
+    route it to a full audit under its own reason. Letting the underlying
+    `rev-list` raise instead lands the repo in `fleet_audit_scan`'s `errors[]`
+    bucket, which is reported nowhere (fleet-config#567).
+    """
+    r = git_run.run_git(["-C", repo_path, "rev-list", f"{sha}..HEAD", "--count"])
+    if r.returncode != 0:
+        return None
+    try:
+        return int((r.stdout or "").strip())
+    except ValueError:
+        return None
+
+
 def bucket_issue_numbers(issues: list[dict]) -> dict[str, int]:
     """Given an already-fetched issue list, the managed bucket-issue numbers.
 
@@ -494,7 +560,18 @@ def evaluate_repo(repo: str, repo_path: str, dry_run: bool = False) -> dict:
     if ledger["sha"] is None or ledger["rubric"] is None:
         return {"decision": "AUDIT", "reason": "unparseable-ledger", "ledger_issue": keep}
 
-    commit_count = int(git_run.run_git_checked(["-C", repo_path, "rev-list", f"{ledger['sha']}..HEAD", "--count"]))
+    commit_count = commits_since(repo_path, ledger["sha"])
+    if commit_count is None:
+        # The recorded baseline resolves to nothing in this checkout (the
+        # classic cause: a squash-merged, deleted feature-branch tip). Audit
+        # the whole repo — the safe answer — and say *why*, so this never
+        # again looks like ordinary organic change or vanishes into errors[].
+        return {
+            "decision": "AUDIT",
+            "reason": UNRESOLVABLE_BASELINE,
+            "ledger_issue": keep,
+            "baseline_sha": ledger["sha"],
+        }
     closed_issues: list[int] = []
     significance: float | None = None
 
@@ -562,7 +639,12 @@ def evaluate_repo(repo: str, repo_path: str, dry_run: bool = False) -> dict:
     }
 
     if decision == "SKIP_SELF_FIX" and not dry_run:
-        head_sha = git_run.run_git_checked(["-C", repo_path, "rev-parse", "HEAD"])
+        head_sha = recordable_ledger_sha(repo_path)
+        if head_sha is None:
+            # Never write a sha we could not verify — a poisoned ledger costs
+            # weeks of missed audits, a refused write costs one wider audit.
+            result["ledger_write"] = "refused-unverifiable-sha"
+            return result
         today = datetime.date.today().isoformat()
         ledger_body = (
             "Machine-readable ledger for `/codebase-audit`. Do not edit by hand — "
@@ -591,6 +673,17 @@ def cmd_gate(repo: str, repo_path: str) -> None:
     print(json.dumps(evaluate_repo(repo, repo_path)))
 
 
+def cmd_ledger_sha(repo_path: str) -> None:
+    """Print the sha `/codebase-audit` step 9 must record — never `HEAD`."""
+    sha = recordable_ledger_sha(repo_path)
+    if sha is None:
+        raise SystemExit(
+            f"no verifiable default-branch commit in {repo_path} — "
+            "refusing to record an unreachable ledger sha"
+        )
+    print(sha)
+
+
 def main(argv: list[str] | None = None) -> None:
     ap = argparse.ArgumentParser(description="Deterministic upsert for audit-managed issues.")
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -610,6 +703,9 @@ def main(argv: list[str] | None = None) -> None:
     gt.add_argument("--repo", required=True)
     gt.add_argument("--repo-path", required=True)
 
+    ls = sub.add_parser("ledger-sha")
+    ls.add_argument("--repo-path", required=True)
+
     args = ap.parse_args(argv)
     if args.cmd == "get":
         cmd_get(args.repo, args.kind)
@@ -619,6 +715,8 @@ def main(argv: list[str] | None = None) -> None:
         cmd_upsert(args.repo, args.kind, args.title, body, args.label)
     elif args.cmd == "gate":
         cmd_gate(args.repo, args.repo_path)
+    elif args.cmd == "ledger-sha":
+        cmd_ledger_sha(args.repo_path)
 
 
 if __name__ == "__main__":

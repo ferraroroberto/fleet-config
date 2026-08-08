@@ -475,8 +475,27 @@ for the human the alert just pinged.
 
 Upsert the per-repo ledger issue so the next run can short-circuit at step 2:
 
-- Build the body: the `<!-- audit-ledger -->` block with the current HEAD sha
-  (`git rev-parse HEAD`), today's date, and the `rubric-sha` from step 2 (the
+- Get the sha to record from the helper — **never the working checkout's `HEAD`**:
+
+  ```
+  E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/audit_issue.py ledger-sha \
+    --repo-path <REPO_PATH>
+  ```
+
+  It prints the repo's **default-branch** commit, having re-confirmed the commit
+  is reachable from that branch. The working checkout's `HEAD` is not safe to
+  record: an audit run off a feature branch (or in a worktree) writes a tip the
+  fleet's squash-merge + delete-branch pipeline is *guaranteed* to destroy, and
+  the ledger then points at a commit that exists in no checkout and no remote —
+  `rev-list <sha>..HEAD` fails and the repo drops out of every later sweep
+  (fleet-config#567: two repos went unaudited for three weeks). A default-branch
+  commit survives a squash by construction. If the helper exits non-zero it
+  could not verify any commit — **leave the ledger's `last-audited-sha`
+  unchanged** and say so in the run report; a stale-but-valid baseline costs one
+  wider audit next week, a poisoned one costs every audit.
+
+- Build the body: the `<!-- audit-ledger -->` block with that sha, today's date,
+  and the `rubric-sha` from step 2 (the
   sha256 of the project CLAUDE.md alone). The
   helper prepends the `<!-- audit-managed: kind=ledger -->` marker — don't write
   it yourself. Keep the `<!-- audit-ledger -->` block intact; the step-2 gate
