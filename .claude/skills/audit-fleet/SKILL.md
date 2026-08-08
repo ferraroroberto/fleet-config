@@ -153,11 +153,9 @@ and branch on `DECISION`:
   `run-weekly.bat` with no wake-up mechanism (see "Never background a tool
   call in this skill" above); a background task nobody is polling in-turn just
   gets silently killed at the CLI's 600s background-task ceiling, and the run
-  reports a false `exit 0` success — exactly what happened on the 2026-07-30
-  11:00 scheduled run (0/10 repos actually audited, `fleet-config#506`; the
-  same class of gap `fleet-config#314` closed for this skill's own
-  Bash/Monitor calls, just never stated for this specific `Agent`-dispatch
-  loop). If a `TaskOutput` call times out before a task finishes, re-issue the
+  reports a false `exit 0` success (`fleet-config#506`; the same class of gap
+  `fleet-config#314` closed for this skill's own Bash/Monitor calls, just
+  never stated for this specific `Agent`-dispatch loop). If a `TaskOutput` call times out before a task finishes, re-issue the
   same blocking call — never move on with a task still unresolved. As each
   task returns, record its report and immediately dispatch the next repo from
   the to-audit list to refill the window — never more than **3 in flight**,
@@ -444,7 +442,7 @@ Two channels. stdout is the reliable one (a scheduled run captures it in app-lau
 
   If `gh` fails or the URL is empty, note `comment: skipped (<reason>)` and carry on. **Never fail the run over the comment.**
 
-- **Delivery assertion — run it here, before the ping.** This is the only place the run may declare itself failed on *content* rather than on a crash, and it is the gap `fleet-config#506` left open: on 2026-07-30 the tell was entirely in the content — zero repos audited, no digest comment, no ping — while the exit code read `0`. Check all three, and treat any one you **cannot establish** as failed rather than as passing (an unresolved check is its own state, never folded into the passing one — global CLAUDE.md, "Verify before declaring done"):
+- **Delivery assertion — run it here, before the ping.** This is the only place the run may declare itself failed on *content* rather than on a crash — the gap `fleet-config#506` left open. Check all three, and treat any one you **cannot establish** as failed rather than as passing (an unresolved check is its own state, never folded into the passing one — global CLAUDE.md, "Verify before declaring done"):
 
   1. **≥1 repo evaluated.** Step 2's sweep placed at least one repo in some bucket (`to_audit` + `unchanged` + `self_fix` + `below_threshold` + `skipped` + `errors` > 0). An empty sweep means the fleet walk itself failed — it does not mean the fleet is clean.
   2. **A digest was composed and printed.** Step 5 produced digest markdown and this step wrote it to stdout verbatim.
@@ -559,10 +557,9 @@ One concise block: the plan line from step 2, per-repo results, where the digest
   `DEFAULT_SIGNIFICANCE_THRESHOLD` (1000). Below that, `SKIP_BELOW_THRESHOLD`
   leaves the ledger sha untouched, so small organic changes batch up across
   however many weekly runs it takes rather than forcing a full re-audit over a
-  single low-risk commit — proven necessary when a one-time fleet-wide
-  docs-only rollout (#256) flipped 28 of 31 repos to "needs audit" in one run.
-  A repo that does cross the threshold is still audited whole-repo, covering
-  everything back to the ledger sha — nothing is lost, only batched.
+  single low-risk commit (#256). A repo that does cross the threshold is still
+  audited whole-repo, covering everything back to the ledger sha — nothing is
+  lost, only batched.
 - **Per-category trend data lives in the per-repo ledger** (`<!-- audit-snapshot -->`
   comments, `/codebase-audit` step 9); this fleet digest stays aggregate by design.
 - **The weekly job** lives in app-launcher (`config/jobs.json`) and calls this
