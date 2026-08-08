@@ -17,6 +17,11 @@ the same `significance`/`threshold` numbers `evaluate_repo` returns, so the
 digest can show how close it is. The orchestrator just reads the output —
 no per-repo `git`/`gh` tool calls needed for the gating step at all.
 
+The output also carries `enumerated` (repos walked) and an `accounting` block
+asserting the buckets sum back to it, so a repo can never silently drop out of
+every bucket the way an unresolvable ledger baseline used to
+(fleet-config#567).
+
 CLI
 ---
   fleet_audit_scan.py --root <path> [--only <repo-name>] [--dry-run]
@@ -68,13 +73,38 @@ def _current_branch(repo_path: str) -> str | None:
         return None
 
 
+BUCKETS = ("to_audit", "unchanged", "self_fix", "below_threshold", "skipped", "errors")
+
+
+def accounting(results: dict) -> dict:
+    """Prove every enumerated repo landed in exactly one bucket.
+
+    `enumerated` is counted at the top of the walk, before any decision; the
+    buckets are counted after. A repo that falls through every branch — the
+    2026-07/08 failure where an unresolvable baseline raised past all of them
+    (fleet-config#567) — shows up here as a non-zero `unaccounted`, so the
+    digest header's counts can never quietly fail to add up. Pure: takes the
+    scan result, touches no git.
+    """
+    enumerated = int(results.get("enumerated", 0))
+    bucketed = sum(len(results.get(b, [])) for b in BUCKETS)
+    return {
+        "enumerated": enumerated,
+        "bucketed": bucketed,
+        "unaccounted": enumerated - bucketed,
+        "balanced": enumerated == bucketed,
+    }
+
+
 def scan(root: str, only: str | None = None, dry_run: bool = False) -> dict:
     results: dict = {
         "to_audit": [], "unchanged": [], "self_fix": [], "below_threshold": [], "skipped": [], "errors": [],
+        "enumerated": 0,
     }
 
     for d in fleet_repo_scan.iter_fleet_repos(root, only):
         name = d.name
+        results["enumerated"] += 1
         repo = f"ferraroroberto/{name}"
         repo_path = str(d)
 
@@ -120,8 +150,16 @@ def scan(root: str, only: str | None = None, dry_run: bool = False) -> dict:
         elif decision == "SKIP_BELOW_THRESHOLD":
             results["below_threshold"].append({"repo": name, "path": repo_path, **outcome})
         else:
-            results["to_audit"].append({"repo": name, "path": repo_path})
+            entry = {"repo": name, "path": repo_path}
+            # An AUDIT forced by an unreadable baseline must stay
+            # distinguishable from an AUDIT earned by real change — it is a
+            # broken ledger to repair, not organic churn (fleet-config#567).
+            if outcome.get("reason") == audit_issue.UNRESOLVABLE_BASELINE:
+                entry["reason"] = audit_issue.UNRESOLVABLE_BASELINE
+                entry["baseline_sha"] = outcome.get("baseline_sha")
+            results["to_audit"].append(entry)
 
+    results["accounting"] = accounting(results)
     return results
 
 
