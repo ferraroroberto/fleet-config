@@ -12,7 +12,10 @@
 // found on 2026-08-01 -- a stale `.git/index.lock`, a primary behind origin,
 // and a zombie-pinned empty worktree shell -- are reported and never halt, and
 // the teardown brief that implements them keeps its repo-scoped glob and its
-// "no per-directory zombie attribution" rule.
+// "no per-directory zombie attribution" rule. Cases 5b and 8 add
+// fleet-config#572's: a branch left by another lane is the fourth condition in
+// that family, teardown's checks are scoped to its own lane, and SKILL.md must
+// carry the same rules as the prompt.
 //
 // Driven by tests/test_cleanup_fleet_all_flow.py (which run_acceptance.py owns).
 // Run directly with: node tests/cleanup_fleet_all_flow.mjs
@@ -69,6 +72,7 @@ function reply(label, kind) {
       behindOrigin: kind.behindOrigin || 'current',
       behindOriginDetail: kind.behindOriginDetail || '',
       zombieShells: kind.zombieShells,
+      foreignBranches: kind.foreignBranches,
     }
   }
   throw new Error('unknown label ' + label)
@@ -167,6 +171,29 @@ const check = (cond, msg) => { console.log((cond ? 'OK   ' : 'FAIL ') + msg); if
     && /zombie-pinned shells/.test(logs), 'all three surface in the run log')
 }
 
+// --- Case 5b: a foreign branch is reported, never residue (#572) ----------
+// A lane that built, merged and tore itself down perfectly reported RESIDUE
+// over a stale branch left by an EARLIER lane, halting the run with 41 lanes
+// unstarted. Teardown's mandate is its own lane; it is explicitly forbidden to
+// delete another lane's ref, so no check may demand that it does.
+{
+  const { sink, agentImpl } = tracker(l => reply(l, {
+    foreignBranches: 'fix/68-harden-upload-path-handling (PR #69 merged, diff vs main empty)',
+    behindOrigin: 'fast-forwarded', behindOriginDetail: '2 behind, 4bec16d->c9516a7',
+  }))
+  sink.args = { issuesByBucket: ISSUES }
+  const res = await makeRunner(agentImpl, sink)
+  check(res.halted === null, 'a foreign branch never halts the run')
+  const all = res.buckets.flatMap(b => b.results)
+  check(all.every(r => r.residue === 'CLEAN'), 'a foreign branch leaves residue CLEAN')
+  check((all[0].foreignBranches || '').includes('fix/68'),
+    'foreign branches reach the workflow result by name')
+  check(all[0].behindOrigin === 'fast-forwarded',
+    'the fast-forward is not withheld just because another ref exists')
+  check(/foreign branches \(not residue\)/.test(sink.logs.join('\n')),
+    'foreign branches surface in the run log')
+}
+
 // --- Case 6: a teardown that omits the probes reports unknown, not clean ---
 {
   const { sink, agentImpl } = tracker(l => (l.includes(':teardown:')
@@ -210,6 +237,28 @@ const check = (cond, msg) => { console.log((cond ? 'OK   ' : 'FAIL ') + msg); if
     'nothing keys on how many zombie-pinned shells exist')
   check(/Any one of the five unestablished/.test(p),
     'any unestablished condition is still RESIDUE')
+  // #572: check 3 is scoped to the lane, and check 6 no longer depends on it.
+  check(/Check 3 — this lane's branch is gone/.test(p),
+    'check 3 asserts only this lane\'s branch, not a repo-wide branch list')
+  check(!/must show the default branch only/.test(p),
+    'the old whole-repo branch assertion is gone')
+  check(/Judge only your own branch/.test(p) && /foreignBranches/.test(p),
+    'other lanes\' branches are reported, never residue')
+  check(/git branch --merged/.test(p) && /squash/.test(p),
+    'the brief warns that --merged is unreliable against a squash-merged branch')
+  check(/\*\*and check 4 came back clean\*\*/.test(p) && !/checks 3 and 4 both came back clean/.test(p),
+    'the fast-forward is gated on the tree, not on the presence of unrelated refs')
+}
+
+// --- Case 8: SKILL.md and the teardown prompt must not drift (#572) --------
+// They carry the same rules and are edited by different people at different
+// times; a rule that lives in only one of them is a rule that will be lost.
+{
+  const skill = readFileSync(join(REPO, '.claude', 'skills', 'cleanup-fleet-all', 'SKILL.md'), 'utf8')
+  check(/foreignBranches/.test(skill), 'SKILL.md documents the foreignBranches field')
+  check(/fleet-config#572/.test(skill), 'SKILL.md records why foreign branches stopped halting runs')
+  check(/this lane's own branch|this lane's branch/i.test(skill),
+    'SKILL.md scopes the branch check to the lane')
 }
 
 console.log(failures === 0 ? '\nALL CONTROL-FLOW CHECKS PASS' : `\n${failures} CHECK(S) FAILED`)
