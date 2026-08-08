@@ -109,6 +109,11 @@ _STANDALONE_UNIT_CHECKS: Tuple[Tuple[str, str, str], ...] = (
      "clean default branch, built-mode expects the reported feature "
      "branch with real evidence of work -- is testable on its own, with "
      "a real throwaway git repo (fleet-config#247)"),
+    ("dir_holders", "test_dir_holders.py",
+     "the repo-agnostic live-holder probe -- path matching, ancestor "
+     "exclusion so the probe never reports itself, and a real spawned "
+     "holder going LIVE then CLEAR -- is testable on its own, in a repo "
+     "with no tests/e2e, no Playwright and no venv (fleet-config#571)"),
     ("git_run", "test_git_run.py",
      "the shared `resolve_default_branch_ref` helper -- symbolic-ref "
      "success, candidate probing, terminal fallback, and the "
