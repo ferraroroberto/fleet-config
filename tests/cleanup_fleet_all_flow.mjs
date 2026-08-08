@@ -229,8 +229,12 @@ const check = (cond, msg) => { console.log((cond ? 'OK   ' : 'FAIL ') + msg); if
   check(/rev-list --count HEAD\.\.origin/.test(p) && /--ff-only/.test(p) && !/pull --rebase/.test(p),
     'check 6 fast-forwards with --ff-only only')
   check(/never halt/i.test(p), 'checks 5 and 6 are explicitly non-halting')
-  check(/_browser_sweep\.py/.test(p) && /live=0/.test(p),
-    'the zombie-shell rule names the sweep and its live=0 requirement')
+  check(/dir_holders\.py check/.test(p) && /STATUS=CLEAR/.test(p),
+    'the zombie-shell rule names the repo-agnostic live-holder probe and its CLEAR verdict')
+  check(!/_browser_sweep\.py '<path>' --dry-run/.test(p),
+    'no repo-local Playwright sweeper is required as proof (#571: it ships in 4 of 14 repos)')
+  check(/STATUS=UNKNOWN/.test(p) && /STATUS=LIVE/.test(p),
+    'both a live holder and an unrunnable probe are still RESIDUE')
   check(/cwd=<unreadable>/.test(p) && /Do not try to match a particular zombie/.test(p),
     'per-directory zombie attribution is explicitly not required')
   check(/number of such shells is irrelevant/i.test(p),
