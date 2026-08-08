@@ -8,6 +8,8 @@ Run: `E:/automation/fleet-config/.venv/Scripts/python.exe tests/test_audit_issue
 
 from __future__ import annotations
 
+import contextlib
+import io
 import shutil
 import subprocess
 import sys
@@ -458,15 +460,132 @@ finally:
     shutil.rmtree(_gtmp, ignore_errors=True)
 
 
-# The write path that actually poisoned the two real ledgers was not code — it
-# was /codebase-audit's step 9 *instructing* the agent to record `git rev-parse
-# HEAD`. Guard the prose too, or the helper above is one doc edit from moot.
+# ---- ledger marker: the tool owns the delimiter (fleet-config#566) ----
+#
+# An agent hand-authoring a fresh ledger writes the OPEN comment block — data
+# inside the comment, so it stays hidden in rendered markdown — which looks at
+# least as correct as the closed form and which the gate could not read. Three
+# repos drifted this way, one of them a ledger created fresh by the very run
+# that then failed to parse it, each buying a full Opus audit every week.
+
+_CLOSED = (
+    "<!-- audit-ledger -->\nlast-audited-sha: 7e31411\nlast-audited-at: 2026-08-06\n"
+    "rubric-sha: 6e6ea0b\n"
+)
+# gitlab-to-github-migrator#6's pre-repair body, verbatim in shape.
+_OPEN = (
+    "<!-- audit-ledger\nlast-audited-sha: 7e31411\nlast-audited-at: 2026-08-06\n"
+    "rubric-sha: 6e6ea0b\n-->\n"
+)
+
+for _label, _form in (("closed", _CLOSED), ("open-comment", _OPEN)):
+    _p = ai.parse_ledger("Machine-readable ledger.\n\n" + _form)
+    check(_p == {"sha": "7e31411", "at": "2026-08-06", "rubric": "6e6ea0b"},
+          f"parse_ledger: reads the {_label} marker form")
+
+check(ai.parse_ledger("no marker at all\nlast-audited-sha: 7e31411\n")["sha"] is None,
+      "parse_ledger: key lines with no marker are still unparseable")
+
+# GitHub stores bodies with CRLF; only some `gh` call shapes normalize it back.
+check(ai.parse_ledger(_CLOSED.replace("\n", "\r\n")) ==
+      {"sha": "7e31411", "at": "2026-08-06", "rubric": "6e6ea0b"},
+      "parse_ledger: a CRLF body parses identically to an LF one")
+check(ai.parse_ledger(_OPEN.replace("\n", "\r\n"))["sha"] == "7e31411",
+      "parse_ledger: CRLF and the open marker form together still parse")
+
+# render -> parse round-trips, so a body the tool wrote always reads back.
+_rendered = ai.render_ledger_body("7e31411", "2026-08-06", "6e6ea0b")
+check(ai.parse_ledger(_rendered) == {"sha": "7e31411", "at": "2026-08-06", "rubric": "6e6ea0b"},
+      "render_ledger_body: what the tool writes always parses back")
+check(ai._LEDGER_MARKER in _rendered, "render_ledger_body: emits the closed marker")
+# An empty rubric-sha is a real value (repo has no CLAUDE.md), never None.
+check(ai.parse_ledger(ai.render_ledger_body("7e31411", "2026-08-06", ""))["rubric"] == "",
+      "render_ledger_body: an empty rubric round-trips as '', not None")
+
+# A drifted ledger self-heals: normalizing the open form yields the closed one.
+check(ai.normalize_ledger_body(_OPEN) == _rendered,
+      "normalize_ledger_body: the drifted open form is rewritten closed")
+check(ai.normalize_ledger_body(_rendered) == _rendered,
+      "normalize_ledger_body: already-canonical bodies are unchanged (idempotent)")
+try:
+    ai.normalize_ledger_body("just some prose, no block at all")
+    check(False, "normalize_ledger_body: refuses a body that would not parse back")
+except SystemExit:
+    check(True, "normalize_ledger_body: refuses a body that would not parse back")
+
+# The generic upsert path validates + normalizes, so no caller's markdown can
+# put an unreadable ledger on GitHub.
+_seen: list[str] = []
+_orig_upsert = ai._upsert_issue
+try:
+    ai._upsert_issue = lambda repo, kind, title, body, label: (_seen.append(body), "url")[1]
+    # cmd_* print the issue URL; swallow it so the harness output stays readable.
+    with contextlib.redirect_stdout(io.StringIO()):
+        ai.cmd_upsert("ferraroroberto/x", "ledger", "codebase-audit ledger", _OPEN, "audit-meta")
+        check(_seen == [_rendered], "cmd_upsert: a ledger body is normalized before it is written")
+        _seen.clear()
+        try:
+            ai.cmd_upsert("ferraroroberto/x", "ledger", "codebase-audit ledger", "prose only", "audit-meta")
+            check(False, "cmd_upsert: refuses to write an unparseable ledger")
+        except SystemExit:
+            check(_seen == [], "cmd_upsert: refuses to write an unparseable ledger")
+        # Non-ledger kinds are markdown, not a machine contract — passed through.
+        ai.cmd_upsert("ferraroroberto/x", "bug", "audit: bug findings", "free prose", None)
+    check(_seen == ["free prose"], "cmd_upsert: non-ledger bodies are passed through untouched")
+finally:
+    ai._upsert_issue = _orig_upsert
+
+check(ai.UNPARSEABLE_LEDGER in ai.BROKEN_LEDGER_REASONS and
+      ai.UNRESOLVABLE_BASELINE in ai.BROKEN_LEDGER_REASONS,
+      "BROKEN_LEDGER_REASONS: both unreadable-ledger reasons are flagged as broken")
+check("no-ledger" not in ai.BROKEN_LEDGER_REASONS,
+      "BROKEN_LEDGER_REASONS: a never-audited repo is a first audit, not drift")
+
+# End to end: a repo whose ledger is in the drifted open form and whose baseline
+# is current must now SKIP, where pre-fix it billed a full audit every week.
+_gt2 = Path(tempfile.mkdtemp(prefix="test_audit_issue_566_"))
+try:
+    _r = _gt2 / "repo"
+    _r.mkdir()
+    _git567(_r, "init", "-q")
+    _git567(_r, "checkout", "-q", "-b", "main")
+    _git567(_r, "config", "user.email", "35553560+ferraroroberto@users.noreply.github.com")
+    _git567(_r, "config", "user.name", "Test")
+    (_r / "README.md").write_text("hello\n", encoding="utf-8")
+    _git567(_r, "add", "README.md")
+    _git567(_r, "commit", "-q", "-m", "initial")
+    _head = _git567(_r, "rev-parse", "HEAD")
+
+    _drifted = (
+        "<!-- audit-managed: kind=ledger -->\n"
+        f"<!-- audit-ledger\nlast-audited-sha: {_head}\nlast-audited-at: 2026-08-06\n"
+        "rubric-sha: \n-->\n"
+    )
+    _orig_list_open, _orig_gh = ai._list_open, ai.gh
+    try:
+        ai._list_open = lambda repo: [{"number": 6, "title": "codebase-audit ledger", "body": _drifted}]
+        ai.gh = lambda args, **kw: _drifted
+        _o = ai.evaluate_repo("ferraroroberto/x", str(_r), dry_run=True)
+    finally:
+        ai._list_open, ai.gh = _orig_list_open, _orig_gh
+    check(_o["decision"] == "SKIP",
+          "evaluate_repo: a drifted-but-current ledger SKIPs instead of re-billing a full audit")
+finally:
+    shutil.rmtree(_gt2, ignore_errors=True)
+
+
+# The write path that poisoned the real ledgers was not code — it was
+# /codebase-audit's step 9 prose telling the agent to record `git rev-parse
+# HEAD` and to compose the block by hand. Guard the prose too, or the helpers
+# above are one doc edit from moot.
 
 _step9 = (Path(__file__).resolve().parent.parent / "skills" / "codebase-audit" / "SKILL.md").read_text(
     encoding="utf-8").split("### 9. Update the ledger", 1)[-1].split("\n### ", 1)[0]
 check("git rev-parse HEAD" not in _step9,
       "codebase-audit SKILL.md step 9: never instructs recording the checkout HEAD")
-check("audit_issue.py ledger-sha" in _step9,
-      "codebase-audit SKILL.md step 9: records the sha via the verified ledger-sha helper")
+check("audit_issue.py ledger-write" in _step9,
+      "codebase-audit SKILL.md step 9: writes the ledger through the one helper that owns sha + marker")
+check("--kind ledger" not in _step9,
+      "codebase-audit SKILL.md step 9: never hand-authors a ledger body for a generic upsert")
 
 _h.report_and_exit("test_audit_issue")

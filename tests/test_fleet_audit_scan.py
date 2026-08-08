@@ -56,4 +56,18 @@ check(fas.accounting({"enumerated": 0}) == {
 check(set(fas.BUCKETS) == {"to_audit", "unchanged", "self_fix", "below_threshold", "skipped", "errors"},
       "accounting: BUCKETS covers exactly the six sweep buckets")
 
+
+# ---- broken ledgers stay distinguishable from organic change (#566/#567) ----
+
+_scan = {"to_audit": [
+    {"repo": "plain"},
+    {"repo": "stale-baseline", "reason": "unresolvable-baseline", "baseline_sha": "99100ac"},
+    {"repo": "drifted", "reason": "unparseable-ledger", "ledger_issue": 6},
+]}
+check([e["repo"] for e in fas.broken_ledgers(_scan)] == ["stale-baseline", "drifted"],
+      "broken_ledgers: returns exactly the audits forced by an unreadable ledger")
+check(fas.broken_ledgers({"to_audit": [{"repo": "plain"}]}) == [],
+      "broken_ledgers: organic-change audits are not reported as broken")
+check(fas.broken_ledgers({}) == [], "broken_ledgers: an empty scan is empty, not an error")
+
 _h.report_and_exit("test_fleet_audit_scan")

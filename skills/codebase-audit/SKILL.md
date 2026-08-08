@@ -475,44 +475,41 @@ for the human the alert just pinged.
 
 Upsert the per-repo ledger issue so the next run can short-circuit at step 2:
 
-- Get the sha to record from the helper — **never the working checkout's `HEAD`**:
+- One command does the whole write — **never hand-author the ledger block, and
+  never record the working checkout's `HEAD`**:
 
   ```
-  E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/audit_issue.py ledger-sha \
-    --repo-path <REPO_PATH>
+  E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/audit_issue.py ledger-write \
+    --repo <OWNER/REPO> --repo-path <REPO_PATH>
   ```
 
-  It prints the repo's **default-branch** commit, having re-confirmed the commit
-  is reachable from that branch. The working checkout's `HEAD` is not safe to
-  record: an audit run off a feature branch (or in a worktree) writes a tip the
-  fleet's squash-merge + delete-branch pipeline is *guaranteed* to destroy, and
-  the ledger then points at a commit that exists in no checkout and no remote —
-  `rev-list <sha>..HEAD` fails and the repo drops out of every later sweep
-  (fleet-config#567: two repos went unaudited for three weeks). A default-branch
-  commit survives a squash by construction. If the helper exits non-zero it
-  could not verify any commit — **leave the ledger's `last-audited-sha`
-  unchanged** and say so in the run report; a stale-but-valid baseline costs one
-  wider audit next week, a poisoned one costs every audit.
+  It composes the `<!-- audit-ledger -->` block itself — sha, today's date, and
+  the `rubric-sha` (sha256 of the project CLAUDE.md alone) — then creates, edits,
+  or collapses strays and ensures the `audit-meta` label, printing the ledger
+  issue URL. Capture that URL; the snapshot comment below posts to it.
 
-- Build the body: the `<!-- audit-ledger -->` block with that sha, today's date,
-  and the `rubric-sha` from step 2 (the
-  sha256 of the project CLAUDE.md alone). The
-  helper prepends the `<!-- audit-managed: kind=ledger -->` marker — don't write
-  it yourself. Keep the `<!-- audit-ledger -->` block intact; the step-2 gate
-  parses it.
-- Write the body to a repo-scoped temp file (same convention as step 8, e.g.
-  `E:/tmp/audit-<owner>-<repo>-ledger.md`) — never a fixed shared name.
-- Upsert via the helper (creates, edits, or collapses strays — and ensures the
-  `audit-meta` label):
+  Two things you must not do by hand, both of which have already cost real
+  audits:
 
-  ```
-  E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/audit_issue.py upsert \
-    --repo <OWNER/REPO> --kind ledger --label audit-meta \
-    --title "codebase-audit ledger" --body-file <tmpfile>
-  ```
+  - **Don't write the marker.** Hand-authoring it drifts — an agent naturally
+    writes an *open* comment block (`<!-- audit-ledger` … `-->`) with the data
+    inside, which looks at least as correct and which the step-2 gate could not
+    read, so the repo bought a full Opus whole-repo audit every week while
+    reporting as legitimately changed (fleet-config#566, three repos, one of
+    them a ledger created fresh by that very run). The parser now reads both
+    forms and this helper normalizes back to the closed one, but the fix is that
+    the tool owns the delimiter.
+  - **Don't record `HEAD`.** The helper records the repo's **default-branch**
+    commit, re-confirmed reachable from that branch. An audit run off a feature
+    branch (or in a worktree) that recorded the checkout tip would write a
+    commit the fleet's squash-merge + delete-branch pipeline is *guaranteed* to
+    destroy; `rev-list <sha>..HEAD` then fails and the repo drops out of every
+    later sweep (fleet-config#567: two repos went unaudited for three weeks).
 
-  Capture the ledger issue URL the helper prints — the snapshot comment below
-  posts to it.
+  If the helper exits non-zero it could not verify a commit or could not read
+  what it was asked to write — **leave the ledger unchanged**, and say so in the
+  run report. A stale-but-valid baseline costs one wider audit next week; a
+  poisoned one costs every audit.
 
 - This runs on **every** non-skipped path — including a clean pass that filed
   zero issues — so an unchanged repo is correctly skipped next time.
