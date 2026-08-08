@@ -11,7 +11,14 @@ REM in step 3 are the ones running hard tier (Opus), never the top-level
 REM launcher. claude_progress.py converts Claude's verbose stream-json into
 REM flushed, human-readable milestones for app-launcher's live Jobs pane.
 REM
+REM --delivery-check is an outer post-condition, run after the child exits
+REM whatever its exit code was: it asks whether a digest comment actually
+REM landed on the ledger issue. The 2026-08-06 run recorded success / exit 0
+REM having audited zero repos and posted nothing (fleet-config#560), which no
+REM amount of stream inspection was going to catch — so the job now checks the
+REM delivered artifact, not the symptoms.
+REM
 REM Optional %1 is forwarded as the skill argument: empty for the whole fleet,
 REM or a bare repo name to restrict to a single repo (see SKILL.md's Arguments).
 cd /d E:\automation\fleet-config
-E:\automation\fleet-config\.venv\Scripts\python.exe E:\automation\fleet-config\skills\_lib\claude_progress.py "/audit-fleet %~1" --model claude-sonnet-5 --effort high --permission-mode bypassPermissions
+E:\automation\fleet-config\.venv\Scripts\python.exe E:\automation\fleet-config\skills\_lib\claude_progress.py "/audit-fleet %~1" --model claude-sonnet-5 --effort high --delivery-check E:\automation\fleet-config\.claude\skills\audit-fleet\delivery_check.py --permission-mode bypassPermissions
