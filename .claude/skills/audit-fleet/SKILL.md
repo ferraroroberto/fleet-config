@@ -549,6 +549,19 @@ One concise block: the plan line from step 2, per-repo results, where the digest
   which `claude_progress.py` maps to exit `123`. A green weekly job with zero
   work done is the failure mode this whole skill's incident history is made of
   — never let one report success.
+- **And the assertion can't save a run that never reaches it.** Step 6 runs at
+  the *end* of this flow, so an orchestrator cut off mid-flight — which is what
+  happened on 2026-08-06, ending its turn believing it was still waiting —
+  never prints the marker at all, and the job recorded `success` / exit 0 with
+  zero repos audited. The launcher therefore also passes
+  `--delivery-check .claude/skills/audit-fleet/delivery_check.py`, an outer
+  post-condition `claude_progress.py` runs *after* the child exits whatever its
+  exit code was: it resolves this skill's digest ledger issue the same way step
+  5 does (never a hardcoded id) and fails the job (exit `121`) unless a digest
+  comment landed within the last 12 hours. It checks the delivered artifact, not
+  a symptom (fleet-config#560). Nothing in this skill needs to invoke it — but
+  if step 6's shape ever changes, that check changes with it or it starts
+  lying.
 - **Degrade, don't block.** Built for unattended `claude -p`. A per-repo failure
   is reported and skipped; only a pre-flight failure stops the whole run. Never
   wait on an interactive prompt.

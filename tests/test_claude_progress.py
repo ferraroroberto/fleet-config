@@ -5,7 +5,9 @@ from __future__ import annotations
 import json
 import os
 import re
+import shutil
 import sys
+import tempfile
 import threading
 import time
 from pathlib import Path
@@ -54,12 +56,12 @@ for reserved in cp.RESERVED_FLAGS:
 # ---- adapter-owned --stall-timeout never reaches claude (fleet-config#411) ----
 
 for form in (["--stall-timeout", "900"], ["--stall-timeout=900"]):
-    remaining, stall = cp.parse_adapter_flags(["/audit-fleet", *form, "--model", "opus"])
+    remaining, stall, _delivery = cp.parse_adapter_flags(["/audit-fleet", *form, "--model", "opus"])
     check(remaining == ["/audit-fleet", "--model", "opus"],
           f"parse_adapter_flags strips {form[0]} and keeps caller flags")
     check(stall == 900.0, f"parse_adapter_flags reads the timeout from {form[0]}")
 
-check(cp.parse_adapter_flags(["/x"]) == (["/x"], None),
+check(cp.parse_adapter_flags(["/x"]) == (["/x"], None, None),
       "parse_adapter_flags leaves an unflagged invocation untouched")
 for bad in (["--stall-timeout"], ["--stall-timeout", "soon"]):
     try:
@@ -229,17 +231,46 @@ check("❌ failed" in direct_output and "exit 0" in direct_output,
 check("✅ completed" not in direct_output, "a killed run is never reported as completed")
 
 
-# ---- unknown-record burst near shutdown is a warning, never a failure by itself ----
+# ---- unknown-record burst near shutdown means delivery is UNCONFIRMED ----
+#
+# This used to be informational-only, on the stated assumption that it was the
+# secondary symptom of a kill `KILL_SIGNATURE_TERMS` would catch first. #519
+# disabled that kill, and with it the kill message, leaving this as the only
+# remaining signal while it was still wired never to fail anything — so on
+# 2026-08-06 /audit-fleet printed the burst warning and `✅ completed · exit 0`
+# on the very next line, having audited zero repos (fleet-config#560).
 
 burst_lines: list[str] = []
 burst_formatter = cp.ProgressFormatter(emit=burst_lines.append, clock=lambda: 0.0)
 for _ in range(cp.UNKNOWN_BURST_THRESHOLD):
     burst_formatter.handle_line(json.dumps({"type": "future_event"}))
-burst_formatter.finish(0)
+check(burst_formatter.stream_truncated, "a shutdown burst is visible before finish() is called")
+check(burst_formatter.truncated_stream_burst() == cp.UNKNOWN_BURST_THRESHOLD,
+      "the burst count is the number of unknown records inside the window")
+burst_formatter.finish(cp.TRUNCATED_STREAM_EXIT_CODE)
 burst_output = "\n".join(burst_lines)
 check("burst of" in burst_output and "unknown stream record" in burst_output,
       "a burst of unknown records near shutdown is flagged")
-check("✅ completed" in burst_output, "the burst warning alone does not fail a clean run")
+check("✅ completed" not in burst_output,
+      "a truncated stream never reports as a completed run")
+check("❓ not confirmed" in burst_output and "delivery was never verified" in burst_output,
+      "a truncated stream is reported as unconfirmed — its own state, not a pass and not a failure")
+check("❌ failed" not in burst_output,
+      "a truncated stream is not claimed to be a proven failure either")
+check(cp.TRUNCATED_STREAM_EXIT_CODE not in (
+    0, cp.STALL_EXIT_CODE, cp.BACKGROUND_KILL_EXIT_CODE, cp.SELF_REPORTED_FAILURE_EXIT_CODE,
+    cp.DELIVERY_NOT_CONFIRMED_EXIT_CODE),
+    "a truncated stream has its own exit code, distinct from stall/kill/self-reported/delivery")
+
+# The burst count is fixed by whoever asks first, so run()'s exit-code decision
+# and finish()'s verdict line can never disagree about it.
+_drift_clock = iter([0.0] * 6 + [999.0] * 6)
+drift_formatter = cp.ProgressFormatter(emit=[].append, clock=lambda: next(_drift_clock))
+for _ in range(cp.UNKNOWN_BURST_THRESHOLD):
+    drift_formatter.handle_line(json.dumps({"type": "future_event"}))
+_first = drift_formatter.truncated_stream_burst()
+check(_first == drift_formatter.truncated_stream_burst(),
+      "the burst count is cached, so a later clock cannot change the verdict mid-shutdown")
 
 quiet_lines: list[str] = []
 quiet_formatter = cp.ProgressFormatter(emit=quiet_lines.append, clock=lambda: 0.0)
@@ -516,6 +547,105 @@ for wrapper in wrappers:
     found = slot.group(0) if slot else ""
     check(slot is None,
           f"{wrapper.parent.name}: states no schedule slot (found {found!r})")
+
+
+
+# ---- the captured 2026-08-06 run, end to end (#560) ----
+#
+# tests/fixtures/audit_fleet_20260806_false_success.log is the real adapter
+# output from job codebase-audit-fleet run 20260806T110001, kept verbatim: it
+# diagnosed the truncation in one line and declared success on the next, and
+# the job recorded exit 0 while auditing zero repos. Replaying a child with the
+# same shape must now flip the verdict.
+
+_fixture = (ROOT / "tests" / "fixtures" / "audit_fleet_20260806_false_success.log").read_text(
+    encoding="utf-8")
+check("burst of 5 unknown stream record(s) near shutdown" in _fixture,
+      "fixture: the captured run really did detect a truncated stream")
+check("✅ completed · exit 0" in _fixture,
+      "fixture: and reported it as a completed run on the very next line")
+
+# 19 unknown records then a clean exit 0 — the captured run's shape, with no
+# kill signature anywhere, because #519 disabled the kill that used to print it.
+_replay_script = (
+    "import json,sys; "
+    "print(json.dumps({'type':'system','subtype':'init','claude_code_version':'test',"
+    "'model':'fixture'}), flush=True); "
+    "[print(json.dumps({'type':'future_event','n':i}), flush=True) for i in range(19)]; "
+    "sys.exit(0)"
+)
+_replay_lines: list[str] = []
+_replay_formatter = cp.ProgressFormatter(emit=_replay_lines.append)
+_replay_exit = cp.run_process([sys.executable, "-c", _replay_script], formatter=_replay_formatter)
+_replay_output = "\n".join(_replay_lines)
+check(_replay_exit == cp.TRUNCATED_STREAM_EXIT_CODE,
+      "replaying the captured run's shape exits non-zero with the truncated-stream code")
+check("✅ completed · exit 0" not in _replay_output,
+      "replaying the captured run no longer yields the false success it recorded")
+check("❓ not confirmed" in _replay_output,
+      "replaying the captured run reports delivery as unconfirmed")
+check(not _replay_formatter.saw_kill_signature,
+      "and it gets there with no kill signature at all — the signal #519 disabled")
+
+
+# ---- --delivery-check: an outer post-condition on the fact (#560) ----
+#
+# Every other detector here pattern-matches a *symptom* of a run that delivered
+# nothing, and each has been its own incident. This one asks the question that
+# actually matters, from outside the child, whatever the child's exit code was.
+
+_dc_flag, _dc_value = cp.DELIVERY_CHECK_FLAG, "E:/check.py"
+for form in ([_dc_flag, _dc_value], [f"{_dc_flag}={_dc_value}"]):
+    _rem, _stall, _delivery = cp.parse_adapter_flags(["/audit-fleet", *form, "--model", "opus"])
+    check(_rem == ["/audit-fleet", "--model", "opus"],
+          f"parse_adapter_flags strips {form[0]} — claude would reject it as unknown")
+    check(_delivery == _dc_value, f"parse_adapter_flags reads the script path from {form[0]}")
+
+_rem, _stall, _delivery = cp.parse_adapter_flags(
+    ["/x", "--stall-timeout", "900", _dc_flag, _dc_value])
+check(_rem == ["/x"] and _stall == 900.0 and _delivery == _dc_value,
+      "both adapter flags can be given together")
+try:
+    cp.parse_adapter_flags(["/x", _dc_flag])
+    _rejected = False
+except ValueError:
+    _rejected = True
+check(_rejected, "a --delivery-check with no value is a usage error, not a silent skip")
+
+_dc_tmp = Path(tempfile.mkdtemp(prefix="claude_progress_delivery_"))
+try:
+    _ok = _dc_tmp / "ok.py"
+    _ok.write_text("print('digest comment posted 2026-08-06')\n", encoding="utf-8")
+    _bad = _dc_tmp / "bad.py"
+    _bad.write_text("import sys\nprint('no digest comment for today')\nsys.exit(1)\n", encoding="utf-8")
+
+    _lines: list[str] = []
+    check(cp.run_delivery_check(str(_ok), cp.ProgressFormatter(emit=_lines.append)) is True,
+          "run_delivery_check: an exit-0 post-condition confirms delivery")
+    check(any("delivery confirmed" in line for line in _lines),
+          "run_delivery_check: a confirmed delivery says so in the log")
+
+    _lines = []
+    check(cp.run_delivery_check(str(_bad), cp.ProgressFormatter(emit=_lines.append)) is False,
+          "run_delivery_check: a non-zero post-condition means delivery is NOT confirmed")
+    check(any("NOT confirmed" in line and "no digest comment" in line for line in _lines),
+          "run_delivery_check: the check's own output is quoted so a human knows what failed")
+
+    _lines = []
+    check(cp.run_delivery_check(str(_dc_tmp / "missing.py"),
+                                cp.ProgressFormatter(emit=_lines.append)) is False,
+          "run_delivery_check: a check that cannot run is unconfirmed, never confirmed")
+finally:
+    shutil.rmtree(_dc_tmp, ignore_errors=True)
+
+# The launcher wires it up, or the whole mechanism is theoretical.
+_audit_bat = ROOT / ".claude" / "skills" / "audit-fleet" / "run-weekly.bat"
+_bat_text = _audit_bat.read_text(encoding="utf-8")
+check(cp.DELIVERY_CHECK_FLAG in _bat_text,
+      "audit-fleet's launcher passes a delivery check — the run that reported 0 repos as success")
+_dc_script = ROOT / ".claude" / "skills" / "audit-fleet" / "delivery_check.py"
+check(_dc_script.name in _bat_text and _dc_script.exists(),
+      "audit-fleet's delivery check script exists at the path the launcher names")
 
 
 _h.report_and_exit("test_claude_progress")

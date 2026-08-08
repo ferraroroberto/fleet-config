@@ -47,7 +47,7 @@ import threading
 import time
 from collections.abc import Callable, Iterable, Sequence
 from pathlib import Path
-from typing import Any, Optional, TextIO
+from typing import Any, NamedTuple, Optional, TextIO
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from no_window import NO_WINDOW  # noqa: E402
@@ -67,6 +67,19 @@ SUMMARY_KEYS = (
 )
 RESERVED_FLAGS = ("-p", "--print", "--output-format", "--include-partial-messages")
 STALL_FLAG = "--stall-timeout"
+
+# An outer, adapter-side post-condition, checked after the child exits and
+# whatever its exit code was. Every detector in this file pattern-matches a
+# *symptom* of a run that delivered nothing, and each one has been a separate
+# incident (#314, #506, #519, #560). The fact that actually matters is not
+# "was the stream clean" but "did the run deliver", and for a scheduled skill
+# that is usually verifiable from outside the child — a digest comment dated
+# today, a file written, a row inserted. One check on the fact catches every
+# variant of this class at once, including the ones not seen yet, instead of a
+# fifth pattern-matcher for the fifth variant.
+DELIVERY_CHECK_FLAG = "--delivery-check"
+DELIVERY_CHECK_TIMEOUT_SECONDS = 120.0
+DELIVERY_NOT_CONFIRMED_EXIT_CODE = 121
 
 # A wedged run is worse than a failed one: it holds the job slot, reports
 # nothing, and is only noticed when a human looks (fleet-config#411 sat idle for
@@ -109,10 +122,29 @@ BG_WAIT_CEILING_UNLIMITED = "0"
 SELF_REPORTED_FAILURE_MARKER = "SCHEDULED-RUN-FAILED"
 SELF_REPORTED_FAILURE_EXIT_CODE = 123
 
-# A burst of unknown-typed stream records right at shutdown is the secondary
-# symptom of the same kill — informational only, never fails a run by itself.
+# A burst of unknown-typed stream records right at shutdown means the stream
+# stopped mid-conversation: the child was cut off, and whether it delivered
+# anything is unknown.
+#
+# This was wired informational-only because it was the *secondary* symptom of
+# the kill `KILL_SIGNATURE_TERMS` already caught. #519 then set the wait
+# ceiling to `0` for every scheduled run, which disables the kill — and with it
+# the kill *message*. That promoted this detector from secondary symptom to the
+# only remaining signal while it was still hard-wired never to fail anything,
+# so on 2026-08-06 `/audit-fleet` printed this exact warning and then `✅
+# completed · exit 0` on the very next line, having audited zero repos
+# (fleet-config#560, the fourth variant of the headless background-and-wait
+# class after #314/#506/#519).
+#
+# It is deliberately *not* reported as a failure: a truncated stream does not
+# prove the run failed, it proves delivery was never confirmed — which the
+# global rule says must be its own state rather than folded into the passing
+# one. The exit code is non-zero all the same, because an unattended job whose
+# outcome is unknown must show red, and it is distinct from stall/kill/
+# self-reported so the three stay tellable apart.
 UNKNOWN_BURST_WINDOW_SECONDS = 15.0
 UNKNOWN_BURST_THRESHOLD = 3
+TRUNCATED_STREAM_EXIT_CODE = 122
 
 _ANSI_RE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
 _SECRET_RE = re.compile(
@@ -206,6 +238,7 @@ class ProgressFormatter:
         self._saw_result = False
         self._saw_kill_signature = False
         self._saw_self_reported_failure = False
+        self._burst_count: Optional[int] = None
 
     @property
     def saw_kill_signature(self) -> bool:
@@ -214,6 +247,27 @@ class ProgressFormatter:
     @property
     def saw_self_reported_failure(self) -> bool:
         return self._saw_self_reported_failure
+
+    def truncated_stream_burst(self) -> int:
+        """Unknown records inside the shutdown window — computed once, then cached.
+
+        `run()` needs this *before* it calls `finish()`, to pick the exit code,
+        and `finish()` needs the same number for its verdict line. Recomputing
+        would read a later clock and could disagree with itself across the two
+        call sites, so the first caller fixes the value.
+        """
+        if self._burst_count is None:
+            now = self._clock()
+            self._burst_count = sum(
+                1 for seen_at in self._unknown_timestamps
+                if now - seen_at <= UNKNOWN_BURST_WINDOW_SECONDS
+            )
+        return self._burst_count
+
+    @property
+    def stream_truncated(self) -> bool:
+        """True when the stream stopped mid-conversation — delivery unconfirmed."""
+        return self.truncated_stream_burst() >= UNKNOWN_BURST_THRESHOLD
 
     def _prefix(self) -> str:
         return f"[{_elapsed(self._clock() - self._started_at)}]"
@@ -390,11 +444,8 @@ class ProgressFormatter:
                 "⚠ ignored "
                 f"{self._malformed} malformed and {self._unknown} unknown stream record(s)"
             )
-        now = self._clock()
-        recent_unknown = sum(
-            1 for seen_at in self._unknown_timestamps if now - seen_at <= UNKNOWN_BURST_WINDOW_SECONDS
-        )
-        if recent_unknown >= UNKNOWN_BURST_THRESHOLD:
+        recent_unknown = self.truncated_stream_burst()
+        if self.stream_truncated:
             self.emit(
                 f"⚠ burst of {recent_unknown} unknown stream record(s) near shutdown "
                 "— possible truncated/killed stream"
@@ -419,6 +470,16 @@ class ProgressFormatter:
                 f"({SELF_REPORTED_FAILURE_MARKER}) — see its final report for which "
                 "delivery assertion failed"
             )
+        elif self.stream_truncated:
+            # Not "failed" — unconfirmed. The stream stopped mid-conversation,
+            # so whether the run delivered anything is a fact nobody
+            # established, and folding that into ✅ is what let a zero-repo
+            # audit report success (fleet-config#560).
+            status = (
+                f"❓ not confirmed · stream truncated near shutdown ({recent_unknown} "
+                "unknown record(s)) — the run was cut off mid-flight and delivery "
+                "was never verified"
+            )
         else:
             status = "❌ failed" if failed else "✅ completed"
         result_note = " · no terminal result event" if not self._saw_result else ""
@@ -438,34 +499,77 @@ def build_command(arguments: Sequence[str], executable: Optional[str] = None) ->
     return [claude, "-p", *arguments, "--output-format", "stream-json", "--verbose"]
 
 
-def parse_adapter_flags(arguments: Sequence[str]) -> tuple[list[str], Optional[float]]:
+class AdapterFlags(NamedTuple):
+    arguments: list[str]
+    stall_timeout: Optional[float]
+    delivery_check: Optional[str]
+
+
+def parse_adapter_flags(arguments: Sequence[str]) -> AdapterFlags:
     """Split adapter-owned flags out of the caller's Claude arguments.
 
-    ``--stall-timeout`` configures *this* process's watchdog and must never be
-    forwarded to ``claude``, which would reject it as an unknown flag.
+    ``--stall-timeout`` configures *this* process's watchdog and
+    ``--delivery-check`` its post-condition; neither may be forwarded to
+    ``claude``, which would reject them as unknown flags.
     """
     remaining: list[str] = []
     stall: Optional[float] = None
+    delivery: Optional[str] = None
     index = 0
     while index < len(arguments):
         argument = arguments[index]
-        if argument == STALL_FLAG:
-            if index + 1 >= len(arguments):
-                raise ValueError(f"{STALL_FLAG} requires a value in seconds")
-            value = arguments[index + 1]
-            index += 2
-        elif argument.startswith(STALL_FLAG + "="):
-            value = argument.split("=", 1)[1]
-            index += 1
+        for flag in (STALL_FLAG, DELIVERY_CHECK_FLAG):
+            if argument == flag:
+                if index + 1 >= len(arguments):
+                    raise ValueError(f"{flag} requires a value")
+                matched, value, index = flag, arguments[index + 1], index + 2
+                break
+            if argument.startswith(flag + "="):
+                matched, value, index = flag, argument.split("=", 1)[1], index + 1
+                break
         else:
             remaining.append(argument)
             index += 1
+            continue
+        if matched == DELIVERY_CHECK_FLAG:
+            delivery = value
             continue
         try:
             stall = float(value)
         except (TypeError, ValueError):
             raise ValueError(f"{STALL_FLAG} expects seconds, got {value!r}") from None
-    return remaining, stall
+    return AdapterFlags(remaining, stall, delivery)
+
+
+def run_delivery_check(script: str, formatter: "ProgressFormatter") -> bool:
+    """Run the post-condition script; True only when it proves delivery.
+
+    Invoked with *this* interpreter and no shell, so a Windows path needs no
+    quoting gymnastics through a `.bat`. A script that exits non-zero, cannot
+    be run, or hangs past its timeout all mean the same thing here: delivery
+    was not confirmed. That is the point — this check exists precisely because
+    the child's own exit code cannot be trusted to reflect whether the run did
+    anything (fleet-config#560), so an inconclusive post-condition may not
+    resolve to "delivered" either.
+    """
+    try:
+        proc = subprocess.run(
+            [sys.executable, script],
+            capture_output=True, text=True, encoding="utf-8", errors="replace",
+            creationflags=NO_WINDOW, timeout=DELIVERY_CHECK_TIMEOUT_SECONDS,
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        formatter.emit(f"❓ delivery check could not run: {_one_line(exc)}")
+        return False
+    detail = _one_line((proc.stdout or "").strip() or (proc.stderr or "").strip())
+    if proc.returncode == 0:
+        formatter.emit(f"✓ delivery confirmed{f' · {detail}' if detail else ''}")
+        return True
+    formatter.emit(
+        f"❓ delivery NOT confirmed (check exit {proc.returncode})"
+        + (f" · {detail}" if detail else "")
+    )
+    return False
 
 
 def resolve_stall_timeout(explicit: Optional[float] = None) -> float:
@@ -608,6 +712,10 @@ def run_process(
         exit_code = BACKGROUND_KILL_EXIT_CODE
     elif progress.saw_self_reported_failure and exit_code == 0:
         exit_code = SELF_REPORTED_FAILURE_EXIT_CODE
+    elif progress.stream_truncated and exit_code == 0:
+        # Last, and only over a clean exit: the specific detectors above name
+        # the cause, this one only knows the stream stopped mid-conversation.
+        exit_code = TRUNCATED_STREAM_EXIT_CODE
     progress.finish(exit_code, stalled=stall_state["stalled"])
     return exit_code
 
@@ -617,15 +725,20 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
     arguments = list(sys.argv[1:] if argv is None else argv)
     progress = ProgressFormatter()
     try:
-        arguments, stall_flag = parse_adapter_flags(arguments)
-        command = build_command(arguments)
+        flags = parse_adapter_flags(arguments)
+        command = build_command(flags.arguments)
     except ValueError as exc:
         progress.emit(f"❌ usage error: {_one_line(exc)}")
         return 2
     try:
-        return run_process(
-            command, formatter=progress, stall_timeout=resolve_stall_timeout(stall_flag)
+        exit_code = run_process(
+            command, formatter=progress, stall_timeout=resolve_stall_timeout(flags.stall_timeout)
         )
+        if flags.delivery_check and not run_delivery_check(flags.delivery_check, progress):
+            # Runs whatever the child reported, and outranks a clean exit only:
+            # a child that already failed keeps the code naming *why* it failed.
+            return exit_code if exit_code != 0 else DELIVERY_NOT_CONFIRMED_EXIT_CODE
+        return exit_code
     except OSError as exc:
         progress.emit(f"❌ Claude Code failed to start: {_one_line(exc)}")
         progress.finish(127)
