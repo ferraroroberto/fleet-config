@@ -255,12 +255,12 @@ Print a single confirmation block listing every sub-agent dispatched (repo, #N, 
   ```
   E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/dirty_tree_check.py check E:\automation\<repo> --mode merged
   ```
-  `STATUS=DIRTY` → downgrade the status from `✅ merged` to `⚠️ merged but dirty tree — inspect <repo>` and carry the `REASON=` line, instead of trusting `Result: MERGED`.
+  `STATUS=DIRTY` → downgrade the status from `✅ merged` to `⚠️ merged but dirty tree — inspect <repo>` and carry the `REASON=` line, instead of trusting `Result: MERGED`. `STATUS=UNKNOWN` → the helper could not read that repo, so it has no verdict: mark it `❓ tree unverified — <REASON>` and never fold it into a pass or a fail (fleet-config#570).
 - **Hard-tier (build-and-stop):**
   ```
   E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/dirty_tree_check.py check E:\automation\<repo> --mode built --expect-branch <branch>
   ```
-  `STATUS=DIRTY` → keep the `📋 ready for review` mark but append an explicit `⚠️ post-flight: <REASON>` line right next to it, distinct from the rationale summary — this catches HEAD silently back on `main`, a branch mismatch, or the agent reporting changes it never actually saved.
+  `STATUS=DIRTY` → keep the `📋 ready for review` mark but append an explicit `⚠️ post-flight: <REASON>` line right next to it, distinct from the rationale summary — this catches HEAD silently back on `main`, a branch mismatch, or the agent reporting changes it never actually saved. `STATUS=UNKNOWN` → the helper could not read that repo, so it has no verdict: mark it `❓ tree unverified — <REASON>` and never fold it into a pass or a fail (fleet-config#570).
 
 This check only reports — it never blocks the run, never auto-commits, and never auto-fixes. A per-repo failure never stops the aggregation of the rest.
 

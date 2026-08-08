@@ -69,6 +69,24 @@ try:
 except ValueError:
     check(True, "evaluate: unknown mode raises ValueError")
 
+# ---- evaluate: an unestablished commits-ahead count (fleet-config#570) ----
+# It used to be coerced to 0, which reads as "the agent saved nothing".
+
+r = dtc.evaluate("built", "feat/23-x", "main", "feat/23-x", True, None)
+check(r.status == "UNKNOWN" and "could not be established" in r.reason,
+      "built: clean tree + uncountable commits ahead -> UNKNOWN, not DIRTY")
+
+r = dtc.evaluate("built", "feat/23-x", "main", "feat/23-x", False, None)
+check(r.status == "CLEAN",
+      "built: uncommitted changes present -> the count never mattered, still CLEAN")
+
+r = dtc.evaluate("built", "main", "main", "feat/23-x", True, None)
+check(r.status == "DIRTY" and "unexpectedly back on main" in r.reason,
+      "built: a branch fact that WAS established still decides before the count")
+
+r = dtc.evaluate("merged", "main", "main", None, True, None)
+check(r.status == "CLEAN", "merged: the commits-ahead count is irrelevant to this mode")
+
 
 # ---- check CLI end-to-end against a real throwaway repo ----
 
@@ -95,9 +113,9 @@ try:
     _git(work, "config", "user.email", "35553560+ferraroroberto@users.noreply.github.com")
     _git(work, "config", "user.name", "Test")
 
-    def run_check(mode: str, expect_branch: str | None = None) -> str:
+    def run_check(mode: str, expect_branch: str | None = None, path: Path | None = None) -> str:
         args = [sys.executable, str(REPO / "skills" / "_lib" / "dirty_tree_check.py"),
-                "check", str(work), "--mode", mode]
+                "check", str(path or work), "--mode", mode]
         if expect_branch:
             args += ["--expect-branch", expect_branch]
         proc = subprocess.run(args, capture_output=True, text=True)
@@ -131,6 +149,44 @@ try:
         "STATUS=DIRTY" in out and "unexpectedly back on main" in out,
         "check CLI: built mode, HEAD back on main -> STATUS=DIRTY",
     )
+
+    # ---- a repo it could not read is never a verdict (fleet-config#570) ----
+    # Pre-fix each of these printed a confident STATUS=DIRTY with an empty
+    # BRANCH, about a repo no git command ever succeeded against.
+
+    missing = tmp / "definitely-not-a-repo-xyz"
+    for mode, expect in (("merged", None), ("built", "feat/x")):
+        out = run_check(mode, expect, path=missing)
+        check("STATUS=UNKNOWN" in out and "STATUS=DIRTY" not in out,
+              f"check CLI: {mode} mode, nonexistent path -> STATUS=UNKNOWN, never DIRTY")
+        check("no such path" in out, f"check CLI: {mode} mode, nonexistent path is named in REASON")
+
+    not_a_repo = tmp / "plain-dir"
+    not_a_repo.mkdir()
+    for mode, expect in (("merged", None), ("built", "feat/x")):
+        out = run_check(mode, expect, path=not_a_repo)
+        check("STATUS=UNKNOWN" in out and "STATUS=DIRTY" not in out,
+              f"check CLI: {mode} mode, a directory that is not a repo -> STATUS=UNKNOWN")
+        check("REASON=" in out and "git " in out,
+              f"check CLI: {mode} mode, the underlying git error reaches REASON")
+
+    # A real repo with no remote at all: branch + porcelain read fine, only the
+    # commits-ahead count is unestablishable. `merged` mode never needed it.
+    lone = tmp / "no-remote"
+    lone.mkdir()
+    _git(lone, "init", "-q")
+    _git(lone, "checkout", "-q", "-b", "main")
+    _git(lone, "config", "user.email", "35553560+ferraroroberto@users.noreply.github.com")
+    _git(lone, "config", "user.name", "Test")
+    (lone / "a.txt").write_text("a\n", encoding="utf-8")
+    _git(lone, "add", "a.txt")
+    _git(lone, "commit", "-q", "-m", "initial")
+    out = run_check("merged", path=lone)
+    check("STATUS=CLEAN" in out, "check CLI: a readable repo with no remote still gets a real merged verdict")
+    _git(lone, "checkout", "-q", "-b", "feat/2-thing")
+    out = run_check("built", "feat/2-thing", path=lone)
+    check("STATUS=UNKNOWN" in out and "could not be established" in out,
+          "check CLI: built mode cannot count commits ahead with no remote -> UNKNOWN, not DIRTY")
 finally:
     import shutil
     shutil.rmtree(tmp, ignore_errors=True)
