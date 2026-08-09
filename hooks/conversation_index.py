@@ -31,6 +31,7 @@ Usage (from anywhere — invoke the resolved Python path directly, not a bare
 from __future__ import annotations
 
 import argparse
+import json
 import logging
 import re
 import sys
@@ -45,7 +46,9 @@ import hub_client  # noqa: E402
 from conversation_capture import (  # noqa: E402
     CaptureConfig,
     capture_config_from_project,
+    parse_capture_header,
     scan_known_skills,
+    strip_capture_header,
 )
 
 try:
@@ -57,6 +60,11 @@ except (AttributeError, ValueError):
 logger = logging.getLogger("conversation_index")
 
 INDEX_NAME = "index.md"
+# Machine-readable twin of index.md, written by the same function from the same
+# entries (fleet-config#586) so the two can't drift. index.md stays the
+# skill-facing surface a SKILL.md reads; index.json is the API for the search
+# CLI and for app-launcher's Life OS conversation browser.
+INDEX_JSON_NAME = "index.json"
 # A capture younger than this is still "settling" (its session may not have fully
 # ended). Small on purpose: at SessionStart the previous conversation is over, so
 # this only guards the narrow race of a Stop write landing as a new session begins.
@@ -75,6 +83,13 @@ _ENTRY_RE = re.compile(
 )
 _ATTR_RE = re.compile(r'(\w+)="?([^"\s]+)"?')
 _NAME_RE = re.compile(r"^(\d{4}-\d{2}-\d{2})-(\d{4})-(.+?)\.md$")
+# Pulls a digest field back out of a rendered bullet. Anchored on the bold label
+# rather than stripped punctuation: a plain `lstrip("-*• ")` also eats the `**`
+# that opens the label, so the match silently never fires and every field lands
+# in index.json empty.
+_FIELD_RE = re.compile(
+    r"^[-*•\s]*\*\*(Topic|Decisions|Open loops):\*\*\s*(.*)$", re.IGNORECASE
+)
 _TOKEN_SUFFIX_RE = re.compile(r"(?:-[0-9a-f]{8})+$")
 
 DIGEST_PROMPT = (
@@ -94,6 +109,12 @@ class Entry:
     mtime: float
     turns: int
     body: str
+    # Resume identity, lifted from the capture's own header. Optional by
+    # design: captures written before fleet-config#586 have no header, and the
+    # healer leaves a capture sid-less when its transcript is gone rather than
+    # inventing one. Consumers must treat "" as "searchable, not resumable".
+    sid: str = ""
+    agent: str = ""
 
 
 def _split_name(filename: str) -> "tuple[str, str]":
@@ -130,8 +151,46 @@ def parse_index(path: Path) -> "dict[str, Entry]":
         except ValueError:
             turns = 0
         body = re.sub(r"^### .*\n?", "", m.group("body").strip(), count=1).strip()
-        entries[fn] = Entry(file=fn, mtime=mtime, turns=turns, body=body)
+        entries[fn] = Entry(
+            file=fn, mtime=mtime, turns=turns, body=body,
+            sid=attrs.get("sid", ""), agent=attrs.get("agent", ""),
+        )
     return entries
+
+
+def _digest_fields(body: str) -> "dict[str, str]":
+    """Split a rendered entry body back into its three digest fields.
+
+    ``index.json`` carries them separately so a consumer can show just the topic
+    or search the fields at different weights; ``index.md`` keeps the prose
+    bullets. Parsing the body the writer produced keeps one source of truth for
+    the digest rather than storing it twice.
+    """
+    out = {"topic": "", "decisions": "", "open_loops": ""}
+    for line in body.splitlines():
+        m = _FIELD_RE.match(line)
+        if m:
+            out[m.group(1).lower().replace(" ", "_")] = m.group(2).strip()
+    return out
+
+
+def index_json_payload(label: str, entries: "dict[str, Entry]") -> "list[dict]":
+    """``index.json``'s entry list — newest first, same order as ``index.md``."""
+    rows = []
+    for e in sorted(entries.values(), key=lambda e: e.file, reverse=True):
+        date, slug = _split_name(e.file)
+        rows.append({
+            "skill": label,
+            "file": e.file,
+            "date": date,
+            "slug": slug,
+            "turns": e.turns,
+            "mtime": e.mtime,
+            "sid": e.sid,
+            "agent": e.agent,
+            **_digest_fields(e.body),
+        })
+    return rows
 
 
 def decay_tail(path: Path) -> str:
@@ -158,7 +217,14 @@ def render_index(label: str, entries: "dict[str, Entry]", tail: str = "") -> str
     ]
     for e in sorted(entries.values(), key=lambda e: e.file, reverse=True):
         date, slug = _split_name(e.file)
-        lines.append(f'<!-- idx file="{e.file}" mtime={int(e.mtime)} turns={e.turns} -->')
+        # Attrs are *extended*, never reshaped — `_recap` and life-os's
+        # `_shared/bootstrap.md` both parse this grammar (fleet-config#586).
+        extra = "".join(
+            f' {k}="{v}"' for k, v in (("sid", e.sid), ("agent", e.agent)) if v
+        )
+        lines.append(
+            f'<!-- idx file="{e.file}" mtime={int(e.mtime)} turns={e.turns}{extra} -->'
+        )
         lines.append(f"### {date} · {slug}")
         lines.append(e.body)
         lines.append("")
@@ -216,27 +282,66 @@ def index_dir(conv_dir: Path, label: str, *, force: bool = False) -> int:
             continue  # still settling — next run
         prior = entries.get(fn)
         if prior is not None and abs(prior.mtime - st.st_mtime) < 1 and not force:
-            continue  # already indexed, unchanged
+            # Already digested and unchanged — but its identity may still be
+            # missing (a legacy entry, or one whose capture the healer has since
+            # backfilled with a preserved mtime). Refreshing that is a file read,
+            # not an LLM call, so it happens here instead of forcing a re-digest
+            # of the whole archive (fleet-config#586).
+            head = _read_header(path)
+            if head and (prior.sid, prior.agent) != (head.get("sid", ""), head.get("agent", "")):
+                prior.sid = head.get("sid", "")
+                prior.agent = head.get("agent", "")
+                changed = True
+            continue
         try:
             text = path.read_text(encoding="utf-8", errors="ignore")
         except OSError:
             continue
-        body = digest(text)
+        # The header is identity, not conversation — digesting it would spend
+        # tokens on a uuid and invite the model to describe it.
+        body = digest(strip_capture_header(text))
         if body is None:
             continue  # hub down — fail-open, retry next run
         turns = text.count("**You**:") + text.count("**Claude**:")
-        entries[fn] = Entry(file=fn, mtime=st.st_mtime, turns=turns, body=body)
+        head = parse_capture_header(text)
+        entries[fn] = Entry(
+            file=fn, mtime=st.st_mtime, turns=turns, body=body,
+            sid=head.get("sid", ""), agent=head.get("agent", ""),
+        )
         changed = True
         digested += 1
 
-    if changed:
+    # `changed` alone would never backfill index.json for a dir that was fully
+    # indexed before this file existed, so a missing twin also triggers a write —
+    # but only where there is something to write. Without the `entries` guard an
+    # empty conversations/ (a skill nobody has used yet) gets a header-only
+    # index.md and an empty index.json conjured into it on the next run.
+    json_path = conv_dir / INDEX_JSON_NAME
+    if changed or (entries and not json_path.exists()):
         try:
             index_path.write_text(
                 render_index(label, entries, decay_tail(index_path)), encoding="utf-8"
             )
         except OSError as exc:
             logger.error("Could not write %s: %s", index_path, exc)
+        try:
+            json_path.write_text(
+                json.dumps(index_json_payload(label, entries), indent=2, ensure_ascii=False),
+                encoding="utf-8",
+            )
+        except OSError as exc:
+            logger.error("Could not write %s: %s", json_path, exc)
     return digested
+
+
+def _read_header(path: Path) -> dict:
+    """The capture's identity header, read from its first lines only."""
+    try:
+        with path.open(encoding="utf-8", errors="ignore") as fh:
+            head = "".join(next(fh, "") for _ in range(6))
+    except OSError:
+        return {}
+    return parse_capture_header(head)
 
 
 def conversations_dirs(cfg: CaptureConfig) -> "list[tuple[Path, str]]":
@@ -258,6 +363,15 @@ def index_project(cfg: CaptureConfig, *, force: bool = False) -> int:
     total = 0
     for conv_dir, label in conversations_dirs(cfg):
         total += index_dir(conv_dir, label, force=force)
+    # Keep the search index current off the back of the run that already walked
+    # these dirs (fleet-config#586) — no second schedule, and the db is a pure
+    # derivative, so a failure here is logged and never fails the index run.
+    try:
+        import conversation_search
+
+        conversation_search.sync(cfg)
+    except Exception as exc:  # noqa: BLE001 - fail-open by design
+        logger.error("search sync skipped: %s", exc)
     return total
 
 

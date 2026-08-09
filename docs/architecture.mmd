@@ -39,6 +39,7 @@ flowchart TB
     RUNHOOK["run-hook.ps1 — Claude Code shim (Git Bash routes through it)"]
     HOOKFILES["pre_commit_no_ai_trailer · secret_scan_guard · safe_kill_guard ·\nvenv_discipline · py_syntax_check · notify_on_idle · session_state ·\nblock_askuserquestion_chief · chief_handover_sessionstart · …"]
     SLACKPY["slack_notify.py -> notify_complete.py -> work_summary.py"]
+    CONVPY["conversation memory engine (projects.toml opt-in, #586)\nconversation_capture (Stop) -> capture + full-session-id header\nsession_index (SessionStart) -> conversation_index -> index.md + index.json\nconversation_search — FTS5 over digests + transcripts, returns resume cmd\nheal_capture_sids — run-once sid backfill, delete when history is healed"]
   end
   hooks --> CLAUDE
   hooks --> CODEX

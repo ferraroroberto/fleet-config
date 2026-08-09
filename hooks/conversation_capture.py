@@ -213,6 +213,23 @@ def _is_preamble(text: str) -> bool:
     return bool(_PREAMBLE_PATTERNS.search(text[:300]))
 
 
+def normalize_turn(clean: str) -> Optional[str]:
+    """Apply the substantive-turn rules to already-tag-stripped text.
+
+    Returns the normalized turn, or ``None`` when the text doesn't qualify as
+    substantive. Factored out of :func:`first_real_turn` so the *same* rules can
+    be replayed against a rendered capture's ``**You**:`` blocks — the healer
+    (:mod:`heal_capture_sids`) recovers a conversation's identity from its
+    capture file, and it can only match a transcript if both sides normalize the
+    opening turn identically.
+    """
+    if "***" in clean:
+        clean = clean.split("***", 1)[1].strip()
+    if len(clean) < 10:
+        return None
+    return clean
+
+
 def first_real_turn(messages: list[tuple[str, str]]) -> str:
     """Cleaned full text of the first substantive user turn, or ``""`` if none.
 
@@ -226,12 +243,10 @@ def first_real_turn(messages: list[tuple[str, str]]) -> str:
     for role, text in messages:
         if role != "user":
             continue
-        clean = _strip_command_tags(text)
-        if "***" in clean:
-            clean = clean.split("***", 1)[1].strip()
-        if len(clean) < 10:
-            continue
         if _is_preamble(text):
+            continue
+        clean = normalize_turn(_strip_command_tags(text))
+        if clean is None:
             continue
         return clean
     return ""
@@ -315,6 +330,18 @@ def session_token(session_id: str) -> str:
     return cleaned[-8:]
 
 
+def signature_of(clean: str) -> str:
+    """The short hash used as a conversation's content signature.
+
+    Split from :func:`content_signature` so a caller holding the normalized
+    opening turn from *any* source — a live transcript or a rendered capture —
+    hashes it exactly the same way.
+    """
+    if not clean:
+        return ""
+    return hashlib.sha1(clean.encode("utf-8")).hexdigest()[:8]
+
+
 def content_signature(messages: list[tuple[str, str]]) -> str:
     """Resume-stable dedup token: a short hash of the first real user turn.
 
@@ -324,10 +351,57 @@ def content_signature(messages: list[tuple[str, str]]) -> str:
     turn has appeared yet (a cold-start readiness-ack capture) — dedup then
     relies on the session token alone.
     """
-    clean = first_real_turn(messages)
-    if not clean:
-        return ""
-    return hashlib.sha1(clean.encode("utf-8")).hexdigest()[:8]
+    return signature_of(first_real_turn(messages))
+
+
+# ------------------------------------------------------------ capture header
+
+# The machine-readable identity line every capture carries, written directly
+# under the human description (fleet-config#586). It exists because the filename
+# keeps only the *last 8 chars* of the session id (see `session_token`), which is
+# enough to dedup captures but not to resume one: `claude --resume` needs the
+# full id. Storing it here — rewritten on every supersede, so it always names the
+# session that can actually be resumed — is what makes a specific past
+# conversation reopenable from a search result.
+#
+# Legacy captures predate the header and simply don't have one; every consumer
+# treats `sid`/`agent` as optional and degrades to "searchable but not
+# resumable" rather than inventing an id.
+_CAPTURE_HEADER_RE = re.compile(r"^<!-- capture (?P<attrs>[^>]*?)-->\s*$", re.MULTILINE)
+_HEADER_ATTR_RE = re.compile(r'(\w+)="([^"]*)"')
+
+
+def capture_header(sid: str, agent: str, updated: str) -> str:
+    """Render the identity header. Empty fields are omitted, never written blank."""
+    parts = []
+    if sid:
+        parts.append(f'sid="{sid}"')
+    if agent:
+        parts.append(f'agent="{agent}"')
+    if updated:
+        parts.append(f'updated="{updated}"')
+    return f"<!-- capture {' '.join(parts)} -->" if parts else ""
+
+
+def parse_capture_header(text: str) -> dict:
+    """``{sid, agent, updated}`` from a capture's header, or ``{}`` when absent.
+
+    Only the first header in the file is honoured, and only when it appears in
+    the first few lines — a ``<!-- capture ... -->`` string quoted inside a
+    transcript body is conversation content, not identity.
+    """
+    head = "\n".join(text.splitlines()[:6])
+    m = _CAPTURE_HEADER_RE.search(head)
+    if not m:
+        return {}
+    return dict(_HEADER_ATTR_RE.findall(m.group("attrs")))
+
+
+def strip_capture_header(text: str) -> str:
+    """The capture text without its identity header — what a digest should see."""
+    lines = text.splitlines()
+    kept = [ln for i, ln in enumerate(lines) if not (i < 6 and _CAPTURE_HEADER_RE.match(ln))]
+    return "\n".join(kept)
 
 
 def capture_filename(timestamp: str, slug: str, sid_token: str, sig_token: str) -> str:
@@ -370,8 +444,15 @@ def supersede_prior(out_dir: Path, sid_token: str, sig_token: str) -> None:
                 pass
 
 
-def render_markdown(description: str, messages: list[tuple[str, str]]) -> str:
+def render_markdown(
+    description: str,
+    messages: list[tuple[str, str]],
+    *,
+    header: str = "",
+) -> str:
     lines = [description, ""]
+    if header:
+        lines.extend([header, ""])
     for role, text in messages:
         if role == "user" and _is_preamble(text):
             continue
@@ -432,8 +513,18 @@ def main() -> int:
         return 0  # nothing to capture (pure setup/command sessions)
     description = make_description(messages)
     slug = conversation_slug(messages)
-    timestamp = datetime.now().strftime("%Y-%m-%d-%H%M")
-    content = render_markdown(description, messages)
+    now = datetime.now()
+    timestamp = now.strftime("%Y-%m-%d-%H%M")
+    # The full session id is the resume identity (fleet-config#586) — the
+    # filename only ever carries its last 8 chars. Written fresh on every
+    # capture, so after a resume (which rewrites session_id) the surviving file
+    # names the session that can actually be reopened.
+    header = capture_header(
+        session_id or "",
+        _lib.payload_agent(payload) or "claude",
+        now.isoformat(timespec="seconds"),
+    )
+    content = render_markdown(description, messages, header=header)
 
     # The Stop hook fires at every turn-end, so collapse this conversation's
     # earlier captures into one up-to-date file — keyed on the session token
