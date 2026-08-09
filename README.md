@@ -59,6 +59,8 @@ Alongside the hooks, `hooks/slack_notify.py` is a shared **Slack-notify transpor
 
 Two more **project-wired** hooks (opt-in per project via `projects.toml` `capture = true`; currently just life-os, and wired from that project's own `settings.json` rather than user-scope) form a **conversation-memory engine**. `conversation_capture.py` (Stop) writes each finished session to markdown; `session_index.py` (SessionStart) lazily runs `conversation_index.py` to digest *settled* captures — once per conversation, after it ends — into a per-folder `index.md` (topic / decisions / open loops, pointing back at the raw capture), so a consumer knows what happened recently without bulk-loading transcripts. The digest goes through `hooks/hub_client.py`, the shared stdlib-`urllib` client for the local LLM hub (OpenAI-shape, fail-open — mirrors `slack_notify`). Routing is config-driven: `capture_routing = "flat"` (one `conversations/` + `index.md` per project, the default) or `"skills"` (per-skill dirs, routed by an `active_marker`; life-os's setup). Generic by design — any repo opts in with one `projects.toml` block.
 
+Each capture also carries a machine-readable identity line — `<!-- capture sid="…" agent="…" -->` — holding the **full** session id (the filename keeps only its last 8 chars, enough to dedup a capture but not to reopen one). That id is what makes a specific past conversation resumable: `conversation_index.py` lifts it into the `<!-- idx -->` attrs and into an `index.json` twin written by the same function, and `conversation_search.py` searches every skill at once over two weighted layers — the digests (high) and the full transcript text (low) — returning each hit's ready-to-run resume command (`claude --resume <sid>`, `codex resume <sid>`). The SQLite FTS5 database is a pure derivative of the captures plus the index, kept current at the end of each indexer run: **deleting it is always safe**, `--rebuild` recreates it. A capture with no stored id is reported as searchable-but-not-resumable rather than given a guessed one. `heal_capture_sids.py` backfilled the ids for captures written before this existed, recovering them from Claude Code's own transcript store; it is run-once and should be deleted after the fleet's history is healed.
+
 The original Tier 2 / Tier 3 follow-up plan was triaged once Tier 1 had burned in (fleet-config#158): the three hooks that still earned their slot — `docs_dated_filename_guard`, `hub_bypass_warn`, `browser_stealth_lint` — shipped into the table above; the rest were dropped as low-signal or deferred (session-start fleet status → the Fleet Board work in #91).
 
 ### Skills
@@ -163,7 +165,9 @@ fleet-config/
 │   ├── pi_usage_stats.py            # content-free Pi session usage collector (provider/model/tokens from ~/.pi/agent/sessions)
 │   ├── conversation_capture.py     # Stop hook: captures a session to markdown (projects.toml-driven, opt-in; wired from the project's own settings.json)
 │   ├── session_index.py            # SessionStart hook: lazily digests settled captures into conversations/index.md
-│   ├── conversation_index.py       # the indexer (lib + CLI) session_index runs; digests via the hub
+│   ├── conversation_index.py       # the indexer (lib + CLI) session_index runs; digests via the hub, writes index.md + index.json
+│   ├── conversation_search.py      # CLI: ranked FTS5 search over captures, returns each hit's resume command
+│   ├── heal_capture_sids.py        # one-shot CLI: backfills full session ids into pre-#586 captures (delete once history is healed)
 │   └── hub_client.py               # shared stdlib-urllib client for the local LLM hub (OpenAI-shape, fail-open)
 ├── tray/                           # junction → ~/.claude/tray — the ONE machine-local tray_lifecycle.ps1 (fleet-config#153)
 │   └── tray_lifecycle.ps1          # canonical source: project-scaffolding; every sister tray.bat calls this one file by path
