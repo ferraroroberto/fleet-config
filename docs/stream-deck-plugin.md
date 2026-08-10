@@ -108,3 +108,18 @@ the physical key layout changes, never for target/icon/registry code changes.
   Profiles** (profile-by-foreground-app) feature reacting to the newly
   launched window taking focus. If this behavior is unwanted, it's configured
   in the Stream Deck app's own Profiles settings, not in this plugin.
+- **A freshly-dragged `Call Action` key that flashes a warning on first press
+  is almost always an unset Property Inspector dropdown, not a code bug.**
+  Confirmed live (fleet-config#591/#593): placing the key alone doesn't set
+  `targetId` — its Action dropdown has to be explicitly clicked to a specific
+  option, and that selection has to actually persist. When it hasn't,
+  `com.ferraroroberto.fleetcoding.sdPlugin/logs/com.ferraroroberto.fleetcoding.<N>.log`
+  (the newest-numbered file) shows `ERROR call-action: unknown, unset, or
+  non-http-action targetId ""` for that press — check this log before
+  suspecting `call-action.ts` or the home-automation endpoint. Fix is live,
+  no rebuild/export: reopen that key's Property Inspector and re-pick the
+  target from its dropdown. A `TimeoutError` in the same log instead (the 5s
+  `AbortSignal.timeout` in `src/lib/http-client.ts`) means the dropdown was
+  fine and the real HTTP call to home-automation was just slow that one time
+  — a single occurrence isn't evidence of a systemic problem, but if it
+  recurs the timeout may need raising.

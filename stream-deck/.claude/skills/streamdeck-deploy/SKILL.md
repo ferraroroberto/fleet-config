@@ -67,3 +67,11 @@ One concise summary:
 - The `profile-diff` output verbatim, or "nothing left — every target already has a key" if empty.
 - If step 5 found anything: the exact manual sequence — open the Stream Deck app → Fleet Coding XL profile → drag each listed action type onto a free key → pick the listed target from its Property Inspector dropdown → export over `com.ferraroroberto.fleetcoding.sdPlugin/profiles/fleet-coding-xl.streamDeckProfile` → re-run this skill (or `npm run package`) once to repack with the new export.
 - Never claim the buttons "work" — you cannot press a physical key. The furthest you can verify is that the HTTP call itself succeeds (e.g. a harmless `POST /api/actions/<unknown-id>` returning a clean 404 proves auth + connectivity, not a specific real button).
+
+### 7. If the user reports a placed key failed (warning flash)
+
+Read `com.ferraroroberto.fleetcoding.sdPlugin/logs/com.ferraroroberto.fleetcoding.<N>.log` (the newest-numbered file — check all of them if unsure) before guessing at a code cause:
+
+- `ERROR call-action: unknown, unset, or non-http-action targetId ""` — the key's Property Inspector Action dropdown was never actually set (dragging the key in isn't enough). Confirmed live, fleet-config#591/#593. **Not a code bug** — tell the user to reopen that key's Property Inspector and explicitly re-pick the target from its dropdown; it saves live, no rebuild/export/repackage needed.
+- `TimeoutError: The operation was aborted due to timeout` — the dropdown was fine; the real HTTP call to home-automation was just slow past the 5s cutoff (`src/lib/http-client.ts`) that one time. A single occurrence isn't evidence of a systemic problem; several in a row on the same action might warrant raising the timeout.
+- Anything else — an actual HTTP error status or a thrown exception — read it and diagnose from there; don't default to "check the dropdown" if the log says something more specific.
