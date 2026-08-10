@@ -217,11 +217,11 @@ def normalize_turn(clean: str) -> Optional[str]:
     """Apply the substantive-turn rules to already-tag-stripped text.
 
     Returns the normalized turn, or ``None`` when the text doesn't qualify as
-    substantive. Factored out of :func:`first_real_turn` so the *same* rules can
-    be replayed against a rendered capture's ``**You**:`` blocks — the healer
-    (:mod:`heal_capture_sids`) recovers a conversation's identity from its
-    capture file, and it can only match a transcript if both sides normalize the
-    opening turn identically.
+    substantive. Kept separate from :func:`first_real_turn` so the *same* rules
+    can be replayed against a rendered capture's ``**You**:`` blocks: anything
+    deriving a conversation's identity from a capture file rather than from a
+    live payload has to normalize the opening turn identically, or the two sides
+    compute different signatures for the same conversation.
     """
     if "***" in clean:
         clean = clean.split("***", 1)[1].strip()

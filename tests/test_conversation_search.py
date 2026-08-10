@@ -6,19 +6,16 @@ reopenable, against synthetic captures and transcripts in a temp tree:
   * ``conversation_capture`` — the identity header (write / parse / strip).
   * ``conversation_index`` — digest-field parsing, the ``<!-- idx -->`` attr
     extension, and the ``index.json`` twin.
-  * ``heal_capture_sids`` — the three matching tiers plus the two guards that
-    keep a *wrong* match from ever being written.
   * ``conversation_search`` — db build, ranked query, filters, and the
     resume-command mapping.
 
-Two checks here are regressions for bugs found during the build, both of the
-same family — a match that looked successful but was wrong:
+One check here is a regression for a bug found during the build:
+``_digest_fields`` used ``lstrip("-*• ")``, which also ate the ``**`` that
+opens the label, so every field in ``index.json`` silently came out empty — a
+parse that looked successful and was wrong.
 
-  * ``_digest_fields`` used ``lstrip("-*• ")``, which also ate the ``**`` that
-    opens the label, so every field in ``index.json`` silently came out empty.
-  * the healer matched captures on ``[Request interrupted by user]`` — Claude
-    Code's own system text, shared by dozens of unrelated conversations — and
-    paired a 2026-06-01 capture with a 2026-07-17 transcript.
+The one-shot ``heal_capture_sids`` backfill this suite also covered was
+deleted in #598 once life-os's history was healed; its tests went with it.
 
 Run: `E:/automation/fleet-config/.venv/Scripts/python.exe tests/test_conversation_search.py`
 (also invoked by tests/run_acceptance.py)
@@ -38,7 +35,6 @@ sys.path.insert(0, str(REPO / "hooks"))
 import conversation_capture as cc  # noqa: E402
 import conversation_index as ci  # noqa: E402
 import conversation_search as cs  # noqa: E402
-import heal_capture_sids as heal  # noqa: E402
 
 sys.path.insert(0, str(REPO / "tests" / "_lib"))
 from check_harness import CheckHarness  # noqa: E402
@@ -77,16 +73,19 @@ buried = "desc\n\n**You**: hi\n" + "\n".join(f"line {i}" for i in range(10)) + \
 check(cc.parse_capture_header(buried) == {},
       "parse_capture_header: ignores a header-shaped line in the body")
 
-# The signature must be identical whether it came from a live transcript's
-# messages or from a rendered capture -- the healer's whole premise.
+# The content signature is what makes a *resumed* conversation update its
+# existing capture instead of writing a second one: `claude --resume` mints a
+# new session id, so identity has to come from the opening turn, which doesn't
+# change. These two checks pin exactly that property.
 turns = [("user", "Base directory for this skill: E:/x"),
          ("user", "I want to research bone conduction headphones repair"),
          ("assistant", "sure")]
 sig_live = cc.content_signature(turns)
-sig_capture = cc.signature_of(heal.capture_first_turn(
-    cc.render_markdown("d", turns, header="")))
-check(sig_live and sig_live == sig_capture,
-      "signature: transcript-side and capture-side agree")
+check(bool(sig_live),
+      "content_signature: derives an identity from the first real turn")
+check(cc.content_signature(turns + [("user", "and one more thing entirely")])
+      == sig_live,
+      "content_signature: later turns don't move it (survives a resume)")
 
 
 # ------------------------------------------------------- index digest fields
@@ -149,131 +148,6 @@ try:
           "decay zone: still round-tripped verbatim")
     check("2026-08-09-1826-a-b-c.md" in ci.parse_index(idx),
           "decay zone: entries above the marker still parse")
-finally:
-    shutil.rmtree(tmp, ignore_errors=True)
-
-
-# ------------------------------------------------------------- healer tiers
-
-def _transcript(dirpath: Path, sid: str, first_turn: str, started: str) -> Path:
-    """A minimal Claude-Code-shaped transcript JSONL named by its session id."""
-    path = dirpath / f"{sid}.jsonl"
-    rows = [
-        {"type": "mode", "sessionId": sid},
-        {"type": "user", "timestamp": started,
-         "message": {"role": "user", "content": first_turn}},
-        {"type": "assistant", "timestamp": started,
-         "message": {"role": "assistant", "content": "ok"}},
-    ]
-    path.write_text("\n".join(json.dumps(r) for r in rows), encoding="utf-8")
-    return path
-
-
-REAL_TURN = "I want to research bone conduction headphones repair options"
-
-tmp = Path(tempfile.mkdtemp(prefix="conv_heal_"))
-try:
-    tdir = tmp / "transcripts"
-    tdir.mkdir()
-    _transcript(tdir, SID, REAL_TURN, "2026-06-13T19:00:00.000Z")
-    _transcript(tdir, OTHER_SID, "a completely different opening question here",
-                "2026-06-14T19:00:00.000Z")
-    transcripts = heal.load_transcripts(tdir)
-    check(len(transcripts) == 2, "load_transcripts: reads the store")
-    check(any(t.started == date(2026, 6, 13) for t in transcripts),
-          "load_transcripts: start date parsed from the first timestamp")
-
-    cdir = tmp / "conversations"
-    cdir.mkdir()
-
-    # Tier 1: filename session token (last 8 of the sid).
-    tok = cc.session_token(SID)
-    f1 = cdir / f"2026-06-13-1900-headphones-{tok}.md"
-    f1.write_text(cc.render_markdown("d", [("user", REAL_TURN)]), encoding="utf-8")
-    hit, tier = heal.match_transcript(f1, f1.read_text(encoding="utf-8"), transcripts)
-    check(hit is not None and hit.sid == SID and tier == "session-token",
-          "healer tier 1: filename session token matches")
-
-    # Tier 2: filename content signature.
-    sig = cc.signature_of(REAL_TURN)
-    f2 = cdir / f"2026-06-13-1901-headphones-{sig}.md"
-    f2.write_text(cc.render_markdown("d", [("user", REAL_TURN)]), encoding="utf-8")
-    hit, tier = heal.match_transcript(f2, f2.read_text(encoding="utf-8"), transcripts)
-    check(hit is not None and hit.sid == SID and tier in ("content-signature", "content-match"),
-          "healer tier 2: filename content signature matches")
-
-    # Tier 3: no tokens at all (pre-token era / renamed by app-launcher).
-    f3 = cdir / "2026-06-13-1902-renamed-by-hand.md"
-    f3.write_text(cc.render_markdown("d", [("user", REAL_TURN)]), encoding="utf-8")
-    hit, tier = heal.match_transcript(f3, f3.read_text(encoding="utf-8"), transcripts)
-    check(hit is not None and hit.sid == SID and tier == "content-match",
-          "healer tier 3: tokenless capture matched on its opening turn")
-
-    # Guard A -- a system marker is not identity (regression: this paired a
-    # 2026-06-01 capture with a 2026-07-17 transcript).
-    marker = "[Request interrupted by user]"
-    _transcript(tdir, "99998888-7777-6666-5555-444433332222", marker,
-                "2026-07-17T19:00:00.000Z")
-    transcripts = heal.load_transcripts(tdir)
-    check(heal.identity_signature(marker) == "",
-          "guard: a bracketed system marker carries no identity")
-    f4 = cdir / "2026-06-01-1822-request-interrupted-user.md"
-    f4.write_text(cc.render_markdown("d", [("user", marker)]), encoding="utf-8")
-    hit, _ = heal.match_transcript(f4, f4.read_text(encoding="utf-8"), transcripts)
-    check(hit is None,
-          "guard: boilerplate-only capture stays unmatched, never a wrong sid")
-
-    # Guard B -- a transcript cannot predate-match a capture written before it.
-    late_sid = "aaaabbbb-cccc-dddd-eeee-ffff00001111"
-    _transcript(tdir, late_sid, "a late unique opening turn about ferries",
-                "2026-07-20T19:00:00.000Z")
-    transcripts = heal.load_transcripts(tdir)
-    f5 = cdir / "2026-06-02-1000-ferries.md"
-    f5.write_text(cc.render_markdown(
-        "d", [("user", "a late unique opening turn about ferries")]), encoding="utf-8")
-    hit, _ = heal.match_transcript(f5, f5.read_text(encoding="utf-8"), transcripts)
-    check(hit is None,
-          "guard: transcript starting after the capture date is rejected")
-    check(heal.plausible(heal.Transcript("x", 0.0, "s", date(2026, 6, 13)),
-                         date(2026, 6, 13)) is True,
-          "plausible: same-day transcript accepted")
-    check(heal.plausible(heal.Transcript("x", 0.0, "s", None), date(2026, 6, 13)) is True,
-          "plausible: unknown start -> not rejected (can't establish it)")
-
-    # write_header: inserts identity and preserves mtime.
-    original = f1.read_text(encoding="utf-8")
-    before = f1.stat().st_mtime
-    heal.write_header(f1, original, SID, "claude")
-    after = f1.read_text(encoding="utf-8")
-    check(cc.parse_capture_header(after).get("sid") == SID,
-          "write_header: header lands where parse_capture_header finds it")
-    check(after.splitlines()[0] == original.splitlines()[0],
-          "write_header: description line untouched")
-    check(abs(f1.stat().st_mtime - before) < 2,
-          "write_header: mtime preserved (no mass re-digest)")
-    check("**You**: " + REAL_TURN in after, "write_header: body preserved")
-
-    # First-turn collision between two different days: the transcript that began
-    # on the capture's own date wins over the merely-newer one, so a shared
-    # opening sentence can't pair an older capture with an unrelated later session.
-    shared = "lets go through the weekly numbers together now"
-    early_sid = "11110000-0000-0000-0000-000000000001"
-    later_sid = "22220000-0000-0000-0000-000000000002"
-    _transcript(tdir, early_sid, shared, "2026-06-20T09:00:00.000Z")
-    _transcript(tdir, later_sid, shared, "2026-06-25T09:00:00.000Z")
-    transcripts = heal.load_transcripts(tdir)
-    f6 = cdir / "2026-06-20-0900-weekly-numbers.md"
-    f6.write_text(cc.render_markdown("d", [("user", shared)]), encoding="utf-8")
-    hit, _ = heal.match_transcript(f6, f6.read_text(encoding="utf-8"), transcripts)
-    check(hit is not None and hit.sid == early_sid,
-          "collision: same-day transcript beats the newer one")
-
-    check(heal.filename_tokens(f"2026-06-13-1900-x-{tok}-{sig}.md") == [tok, sig],
-          "filename_tokens: both tokens, in order")
-    check(heal.filename_tokens("2026-06-13-1900-renamed.md") == [],
-          "filename_tokens: renamed capture has none")
-    check(heal.capture_date("2026-06-13-1900-x.md") == date(2026, 6, 13),
-          "capture_date: parsed from the filename prefix")
 finally:
     shutil.rmtree(tmp, ignore_errors=True)
 
