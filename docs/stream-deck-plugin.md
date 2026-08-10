@@ -48,6 +48,12 @@ hand in the app and exported into
 step-by-step. This is a standing constraint, not a TODO: re-do it only when
 the physical key layout changes, never for target/icon/registry code changes.
 
+The exported file itself is **gitignored, not committed** (fleet-config#596)
+— an export embeds the physical device's own `Device.UUID`/`Model`, which has
+no reason to be in this public repo. It only ever needs to exist on the local
+machine that runs `streamdeck link`/`npm run package`; see
+`com.ferraroroberto.fleetcoding.sdPlugin/profiles/README.md`.
+
 ## Gotchas hit during bring-up (all empirically confirmed on this machine, Stream Deck 7.4.2)
 
 - **A custom `Category` without a matching `CategoryIcon` silently kills the

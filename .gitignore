@@ -56,3 +56,8 @@ stream-deck/*.sdPlugin/bin/
 stream-deck/*.sdPlugin/imgs/targets/
 stream-deck/*.sdPlugin/pi/
 stream-deck/*.sdPlugin/registry/
+
+# The exported profile is local-only (fleet-config#596) — the export embeds
+# the physical Stream Deck's own Device.UUID/Model, not something to publish
+# in a public repo. See stream-deck/com.ferraroroberto.fleetcoding.sdPlugin/profiles/README.md.
+stream-deck/*.sdPlugin/profiles/*.streamDeckProfile
