@@ -49,6 +49,30 @@
       "label": "Grocery Automation",
       "projectsTomlKey": "grocery-shopping-automation",
       "iconSource": "E:/automation/grocery-shopping-automation/assets/stream-deck/grocery-shopping-automation-144.png"
+    },
+    {
+      "id": "light-on",
+      "kind": "http-action",
+      "label": "Light On",
+      "actionId": "plug_on"
+    },
+    {
+      "id": "light-off",
+      "kind": "http-action",
+      "label": "Light Off",
+      "actionId": "plug_off"
+    },
+    {
+      "id": "ac-on",
+      "kind": "http-action",
+      "label": "AC On",
+      "actionId": "ac_on"
+    },
+    {
+      "id": "ac-off",
+      "kind": "http-action",
+      "label": "AC Off",
+      "actionId": "ac_off"
     }
   ]
 }

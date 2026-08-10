@@ -80,3 +80,55 @@ test("validateAndResolve fails when iconSource is not a .png", () => {
   assert.equal(resolvedTargets.length, 0);
   assert.match(errors[0], /must be a \.png/);
 });
+
+test("validateAndResolve resolves a valid http-action entry with no icon copy needed", () => {
+  const io = { fileExists: () => true, readFile: () => fakePng(144, 144) };
+  const registry = {
+    targets: [{ id: "light-on", kind: "http-action", label: "Light On", actionId: "plug_on" }],
+  };
+  const { errors, resolvedTargets, piOptions, httpActionPiOptions } = validateAndResolve(registry, PROJECTS, io);
+  assert.deepEqual(errors, []);
+  assert.equal(resolvedTargets.length, 1);
+  assert.deepEqual(resolvedTargets[0], { kind: "http-action", id: "light-on", label: "Light On", actionId: "plug_on" });
+  assert.deepEqual(piOptions, []);
+  assert.match(httpActionPiOptions[0], /value="light-on"/);
+});
+
+test("validateAndResolve fails when an http-action entry has no actionId", () => {
+  const io = { fileExists: () => true, readFile: () => fakePng(144, 144) };
+  const registry = {
+    targets: [{ id: "light-on", kind: "http-action", label: "Light On", actionId: "" }],
+  };
+  const { errors, resolvedTargets } = validateAndResolve(registry, PROJECTS, io);
+  assert.equal(resolvedTargets.length, 0);
+  assert.match(errors[0], /needs a non-empty actionId/);
+});
+
+test("validateAndResolve fails when an http-action entry has no label", () => {
+  const io = { fileExists: () => true, readFile: () => fakePng(144, 144) };
+  const registry = {
+    targets: [{ id: "light-on", kind: "http-action", label: "  ", actionId: "plug_on" }],
+  };
+  const { errors, resolvedTargets } = validateAndResolve(registry, PROJECTS, io);
+  assert.equal(resolvedTargets.length, 0);
+  assert.match(errors[0], /needs a non-empty label/);
+});
+
+test("validateAndResolve fails loudly on an unknown target kind", () => {
+  const io = { fileExists: () => true, readFile: () => fakePng(144, 144) };
+  const registry = { targets: [{ id: "mystery", kind: "url", label: "Mystery" }] };
+  const { errors, resolvedTargets } = validateAndResolve(registry, PROJECTS, io);
+  assert.equal(resolvedTargets.length, 0);
+  assert.match(errors[0], /unknown kind "url"/);
+});
+
+test("validateAndResolve handles a mix of tray and http-action entries independently", () => {
+  const io = { fileExists: () => true, readFile: () => fakePng(144, 144) };
+  const registry = baseRegistry();
+  registry.targets.push({ id: "light-on", kind: "http-action", label: "Light On", actionId: "plug_on" });
+  const { errors, resolvedTargets, piOptions, httpActionPiOptions } = validateAndResolve(registry, PROJECTS, io);
+  assert.deepEqual(errors, []);
+  assert.equal(resolvedTargets.length, 2);
+  assert.equal(piOptions.length, 1);
+  assert.equal(httpActionPiOptions.length, 1);
+});
