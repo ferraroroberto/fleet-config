@@ -141,8 +141,8 @@ _STANDALONE_UNIT_CHECKS: Tuple[Tuple[str, str, str], ...] = (
      "testable on its own against synthetic trees (fleet-config#556)"),
     ("conversation_search", "test_conversation_search.py",
      "the resume-identity + search layer -- capture header round trip, the "
-     "index.json twin, the healer's three matching tiers and its two "
-     "wrong-match guards, and FTS build/query/prune -- runs against "
-     "synthetic captures and transcripts in a temp tree (fleet-config#586)"),
+     "content signature surviving a resume, the index.json twin, and FTS "
+     "build/query/prune -- runs against synthetic captures in a temp tree "
+     "(fleet-config#586)"),
 )
 
