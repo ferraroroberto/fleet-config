@@ -19,6 +19,21 @@
 			]
 		},
 		{
+			"Name": "Call Action",
+			"UUID": "com.ferraroroberto.fleetcoding.call-action",
+			"Icon": "imgs/actions/call-action/icon",
+			"Tooltip": "Calls a home-automation action chosen via its Property Inspector.",
+			"PropertyInspectorPath": "pi/call-action.html",
+			"Controllers": [
+				"Keypad"
+			],
+			"States": [
+				{
+					"Image": "imgs/actions/call-action/key"
+				}
+			]
+		},
+		{
 			"Name": "Open Coding",
 			"UUID": "com.ferraroroberto.fleetcoding.open-coding",
 			"Icon": "imgs/actions/open-coding/icon",
@@ -52,7 +67,7 @@
 	"Category": "Fleet Coding",
 	"CategoryIcon": "imgs/plugin/category-icon",
 	"CodePath": "bin/plugin.js",
-	"Description": "Source-controlled Fleet Coding control surface — fleet tray launchers, Open Coding, and Back (fleet-config#370).",
+	"Description": "Source-controlled Fleet Coding control surface — fleet tray launchers, home-automation actions, Open Coding, and Back (fleet-config#370, #574).",
 	"Icon": "imgs/plugin/icon",
 	"SDKVersion": 2,
 	"Software": {

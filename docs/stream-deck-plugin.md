@@ -15,16 +15,26 @@ touches this next.
 
 ## Architecture in one paragraph
 
-`registry/targets.json` is the only committed source of truth for tray
-targets (`id`/`label`/`projectsTomlKey`/`iconSource`) — it deliberately does
-**not** carry a launch path. `scripts/sync-assets.mjs` (a `prebuild` step)
-cross-checks each entry against `hooks/projects.toml` (must have `tray_cmd` +
-`cwd_prefix`, and the launcher file must exist), copies the matching icon in,
-and writes the build-only `registry/targets.generated.json` that the runtime
-actually reads — so the registry can never drift from the fleet's real launch
-contract, and a missing/renamed launcher or icon fails the build loudly
-instead of silently. Three actions ship: `launch-target` (generic, resolves
-only trusted registry IDs, never key-supplied text), `open-coding`, and
+`registry/targets.json` is the only committed source of truth for every
+target, a discriminated union by `kind`: `tray` (`id`/`label`/
+`projectsTomlKey`/`iconSource`, deliberately carrying **no** launch path) and,
+since fleet-config#574, `http-action` (`id`/`label`/`actionId` — an
+authenticated `POST` against home-automation's `POST
+/api/actions/{action_id}` alias endpoint, carrying no URL/token of its own;
+those live in the gitignored plugin-bundle `.env`, see the README's
+"Configuring the home-automation connection"). `scripts/sync-assets.mjs` (a
+`prebuild` step) validates each kind differently — a `tray` entry is
+cross-checked against `hooks/projects.toml` (must have `tray_cmd` +
+`cwd_prefix`, launcher file must exist) and its icon copied in; an
+`http-action` entry just needs a non-empty `label`/`actionId`, no icon or
+projects.toml lookup — and writes the build-only
+`registry/targets.generated.json` the runtime reads, so the registry can
+never drift from the fleet's real launch/call contract and a missing/renamed
+launcher, icon, or malformed http-action entry fails the build loudly instead
+of silently. Four actions ship: `launch-target` and `call-action` (each
+generic, resolving only trusted registry IDs of their own kind, never
+key-supplied text — `call-action` additionally needs the `.env` connection
+config, absent which every press shows `showAlert()`), `open-coding`, and
 `back`.
 
 ## The one step that can't be automated

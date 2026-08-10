@@ -47,7 +47,7 @@ export class LaunchTarget extends SingletonAction<LaunchTargetSettings> {
     settings: LaunchTargetSettings,
   ): Promise<void> {
     const target = resolveTarget(this.targets, settings.targetId);
-    if (target) {
+    if (target && target.kind === "tray") {
       await action.setImage(join(this.sdPluginDir, target.icon));
     }
   }
@@ -58,9 +58,9 @@ export class LaunchTarget extends SingletonAction<LaunchTargetSettings> {
     // Only ever resolves against the trusted, already-loaded registry — never
     // executes key-supplied text.
     const target = resolveTarget(this.targets, ev.payload.settings.targetId);
-    if (!target) {
+    if (!target || target.kind !== "tray") {
       streamDeck.logger.error(
-        `launch-target: unknown or unset targetId "${ev.payload.settings.targetId ?? ""}"`,
+        `launch-target: unknown, unset, or non-tray targetId "${ev.payload.settings.targetId ?? ""}"`,
       );
       await ev.action.showAlert();
       return;

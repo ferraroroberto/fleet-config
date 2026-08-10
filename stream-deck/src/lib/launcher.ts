@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
 import { join } from "node:path";
-import type { ResolvedTarget } from "../types.js";
+import type { ResolvedTrayTarget } from "../types.js";
 
 const CMD_EXE = "C:\\Windows\\System32\\cmd.exe";
 
@@ -21,7 +21,7 @@ const CMD_EXE = "C:\\Windows\\System32\\cmd.exe";
  * still travels as discrete argv elements, not a concatenated shell string,
  * so this stays free of shell-injection even though cmd.exe is involved.
  */
-export function launch(target: ResolvedTarget): Promise<void> {
+export function launch(target: ResolvedTrayTarget): Promise<void> {
   return new Promise((resolve, reject) => {
     const child = spawn(CMD_EXE, ["/c", join(target.cwd, target.command)], {
       cwd: target.cwd,
