@@ -39,7 +39,7 @@ streamdeck link com.ferraroroberto.fleetcoding.sdPlugin
 
 `npm run verify` chains typecheck → unit tests → asset sync/validation → build — everything that's provable without the physical device or the Stream Deck app's GUI. `streamdeck link` then installs the unpacked plugin directly into the live app for local development (auto-reloads on `npm run dev`), which is how you get the `Launch target`/`Call Action`/`Open Coding`/`Back` actions available to drag in the step below.
 
-`streamdeck validate` and `streamdeck pack` (bundled as `npm run package`) additionally require the bundled profile file to exist — see the manual step immediately below — so they aren't part of `npm run verify` and will fail with a clear "Profiles[0].Name file not found" error until that step is done once. Once it is, `npm run package` produces `dist/*.streamDeckPlugin`, installable the same way an end user would (double-click it) instead of `streamdeck link`.
+`streamdeck validate` and `streamdeck pack` (bundled as `npm run package`) additionally require the bundled profile file to exist **locally** — it's gitignored (see `com.ferraroroberto.fleetcoding.sdPlugin/profiles/README.md`), so a fresh clone starts without one — so they aren't part of `npm run verify` and will fail with a clear "Profiles[0].Name file not found" error until the manual step immediately below is done once. Once it is, `npm run package` produces `dist/*.streamDeckPlugin`, installable the same way an end user would (double-click it) instead of `streamdeck link`.
 
 Either way, installing only adds this plugin and its bundled, read-only **Fleet Coding XL** profile — every other installed plugin and profile is left exactly as it was.
 
@@ -53,7 +53,7 @@ Elgato only supports creating a plugin-bundled profile through the real desktop 
 3b. Drag four **Call Action** actions onto the layout the same way — one each for Light On, Light Off, AC On, AC Off (pick from that action's own Property Inspector dropdown; needs the `.env` from "Configuring the home-automation connection" above to actually fire, but can still be placed/exported without it). **Make sure you actually click an option in that dropdown, not just drag the key in** — a key with no dropdown selection flashes a warning on every press with nothing to fix in code; see `docs/stream-deck-plugin.md`'s gotcha on this (search that file for `targetId ""`) if a freshly-placed key doesn't fire.
 4. Drag one **Back** action onto the remaining key of your choice.
 5. Export the profile (Stream Deck app's profile export/share gesture) and save it as:
-   `com.ferraroroberto.fleetcoding.sdPlugin/profiles/fleet-coding-xl.streamDeckProfile`
+   `com.ferraroroberto.fleetcoding.sdPlugin/profiles/fleet-coding-xl.streamDeckProfile` — **this file is gitignored, not committed** (fleet-config#596: an export embeds the device's own UUID/model, which has no reason to be in a public repo). It only needs to exist locally, on whichever machine runs `npm run package`/`streamdeck link` — see `profiles/README.md`.
 6. Run `npm run package` (`streamdeck validate` + `streamdeck pack`) so the packed `.streamDeckPlugin` includes the exported profile and passes validation end-to-end.
 7. In your existing general-purpose profile, manually drag one **Open Coding** action onto a key (per the issue, this is never auto-inserted). Pressing it switches to Fleet Coding XL; **Back** returns to whatever profile was active before.
 
