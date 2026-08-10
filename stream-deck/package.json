@@ -6,6 +6,7 @@
   "type": "module",
   "scripts": {
     "sync-assets": "node scripts/sync-assets.mjs",
+    "profile-diff": "node scripts/profile-diff.mjs",
     "icon": "node scripts/generate-plugin-icon.mjs",
     "prebuild": "npm run sync-assets",
     "build": "rollup -c",
