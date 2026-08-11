@@ -144,5 +144,10 @@ _STANDALONE_UNIT_CHECKS: Tuple[Tuple[str, str, str], ...] = (
      "content signature surviving a resume, the index.json twin, and FTS "
      "build/query/prune -- runs against synthetic captures in a temp tree "
      "(fleet-config#586)"),
+    ("fleet_private_backup", "test_fleet_private_backup.py",
+     "the daily backup engine -- three-layer selection over a real git repo, "
+     "junction traversal, hardlink dedup proven by st_nlink, retention, the "
+     "sample verification, the zero-file regression guard, and three-state "
+     "freshness -- needs real temp trees rather than mocks (fleet-config#590)"),
 )
 

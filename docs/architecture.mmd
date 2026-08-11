@@ -40,12 +40,17 @@ flowchart TB
     HOOKFILES["pre_commit_no_ai_trailer · secret_scan_guard · safe_kill_guard ·\nvenv_discipline · py_syntax_check · notify_on_idle · session_state ·\nblock_askuserquestion_chief · chief_handover_sessionstart · …"]
     SLACKPY["slack_notify.py -> notify_complete.py -> work_summary.py"]
     CONVPY["conversation memory engine (projects.toml opt-in, #586)\nconversation_capture (Stop) -> capture + full-session-id header\nsession_index (SessionStart) -> conversation_index -> index.md + index.json\nconversation_search — FTS5 over digests + transcripts, returns resume cmd"]
+    BACKUPPY["backup_private.py + run-backup-daily.bat (#590)\nNOT a hook — a daily scheduled program\ngit-ignored set -> deny-list -> bulk-dir guard\nhardlinked dated snapshots + latest/ mirror\nself-verifying: sample re-hash · zero-file regression · 3-state freshness"]
   end
   hooks --> CLAUDE
   hooks --> CODEX
   HOOKFILES --> LIBPY
   HOOKFILES --> PROJECTS
   RUNHOOK --> HOOKFILES
+  BACKUPPY --> LIBPY
+  BACKUPPY --> PROJECTS
+  BACKUPPY -->|success to #log, failure to #attention| SLACKPY
+  BACKUPPY -->|"E: repo residue -> C: ; C: transcripts -> E:"| BACKUPDEST["C:/Users/rober/backups/fleet-private\nE:/backups/claude-transcripts\ndated snapshots + latest/ + manifest.json"]
 
   subgraph tray["tray/ — junctioned into ~/.claude/tray (fleet-config#153)"]
     TRAYPS1["tray_lifecycle.ps1\nONE machine-local copy; every sister tray.bat calls it by path\ncanonical source: project-scaffolding"]

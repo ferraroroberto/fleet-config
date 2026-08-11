@@ -76,6 +76,11 @@ api_version_path    = "/api/version"
 
 [home-automation]
 cwd_prefix          = "E:/automation/home-automation"
+# _local/ mixes hand-written spike notes with a 16.7 GB Hyper-V tree and 828 MB
+# of NUT captures. Dropping the two machine-generated subtrees keeps _local under
+# the bulk-dir guard's threshold, so the notes are backed up instead of the whole
+# directory being excluded for the VM images' sake (fleet-config#590).
+backup_exclude      = ["_local/vm/**", "_local/nut/**"]
 webapp_port         = 8447
 tray_cmd            = "tray.bat"
 restart_cmd         = '& .\.venv\Scripts\python.exe -c "from app.webapp.manager import WebappManager; WebappManager().start(wait=True)"'
@@ -235,3 +240,42 @@ architecture_ignore = [
   "arboldelossuenos",       # out of scope for the personal-fleet map
   "notion-automation-files", # legacy
 ]
+
+# ---------------------------------------------------------------------------
+# Daily fleet-private backup (fleet-config#590, hooks/backup_private.py).
+#
+# LAST TABLE IN THE FILE, DELIBERATELY. A TOML table header claims every bare
+# key that follows it, so putting this anywhere above [global]'s keys silently
+# re-parents them — inserting it before `architecture_ignore` moved that list
+# into [backup] and dropped four repos off the architecture map, which is how
+# this comment came to exist. New [global] keys go above this line.
+#
+# Its own table rather than [global] keys: both `_lib.load_registry` and
+# `skills/_lib/fleet_repo_scan.fleet_repos` enumerate this file by "table
+# carrying a cwd_prefix", so a [backup] table is invisible to them and cannot
+# perturb the fleet-membership list.
+#
+# Per-repo overrides live in that repo's own table above, following the
+# `capture = true` precedent:
+#   backup         = false            # opt this repo out entirely
+#   backup_exclude = ["_local/vm/**"] # drop a path before the bulk-dir guard sees it
+#   backup_include = ["archive/"]     # keep a top-level dir the guard would drop
+# ---------------------------------------------------------------------------
+[backup]
+source_root      = "E:/automation"
+dest             = "C:/Users/rober/backups/fleet-private"
+transcripts_src  = "~/.claude/projects"
+transcripts_dest = "E:/backups/claude-transcripts"
+keep_daily       = 14
+keep_weekly      = 8
+max_file_mb      = 10
+# The bulk-directory guard. Measured on 2026-08-11: the deny-list and size cap
+# alone still select 11.8 GB / 108k files, because gitignore is also where every
+# repo parks its generated output. Any top-level directory whose surviving
+# subtree crosses this is excluded whole and named in the run report. Size only
+# — a file-count threshold was tried and removed, having caught nothing over
+# 1.2 MB that size did not, including whatsapp-radar's 1,353 session-key files.
+bulk_dir_mb      = 25
+# A snapshot older than this reads `stale` from --check-freshness (daily job, so
+# 48h means "a run was missed", not "a run is in flight").
+freshness_max_hours = 48
