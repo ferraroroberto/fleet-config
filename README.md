@@ -69,7 +69,7 @@ The original Tier 2 / Tier 3 follow-up plan was triaged once Tier 1 had burned i
 
 **Selection is git-derived, in three layers.** `git ls-files --others --ignored --exclude-standard` per repo is the exact ignored set — nothing is hand-listed, so a personal file created tomorrow is covered without editing anything. A deny-list plus a per-file size cap (`max_file_mb`) drops the obvious rubbish. Then a **bulk-directory guard** drops what those two cannot: measured on 2026-08-11, the deny-list and cap alone still select **11.8 GB across 108k files**, roughly 200× the genuinely irreplaceable set, because gitignore is also where every repo parks its generated output (content-management `planning/` 2.8 GB, voice-transcriber `archive/` 2.5 GB, app-launcher `webapp/` 2.3 GB). So any **top-level** directory whose surviving subtree exceeds `bulk_dir_mb` is excluded whole, named with its size in the run report and the manifest, and re-admitted permanently with a per-repo `backup_include`. Top-level only and a single size threshold, deliberately: an operator has to be able to predict what this keeps without simulating an algorithm. A file-*count* threshold was tried alongside it and removed — every directory it caught that size did not was ≤1.2 MB, and one of them was `whatsapp-radar/auth/`, 1,353 tiny files holding the WhatsApp session keys. "Small but numerous" is the shape of precious data here, not of bulk. The live selection is 5,689 files / 183 MB across 32 repos.
 
-**Two legs, opposite directions**, so each volume holds the other's crown jewels: repo residue `E:` → `C:/Users/rober/backups/fleet-private`, and Claude Code's session transcripts (`~/.claude/projects/`, the actual recovery goldmine on 2026-08-10, and prunable by Claude Code itself) `C:` → `E:/backups/claude-transcripts`. A destination sharing a volume with its source is refused outright.
+**Two legs, opposite directions**, so each volume holds the other's crown jewels: repo residue `E:` → `C:/Users/rober/backup/fleet-private`, and Claude Code's session transcripts (`~/.claude/projects/`, the actual recovery goldmine on 2026-08-10, and prunable by Claude Code itself) `C:` → `E:/backup/claude-transcripts`. A destination sharing a volume with its source is refused outright. That crossing is what makes either drive failing lose nothing — each volume holds the other's only copy — so the two legs are deliberately *not* consolidated into one location. Both use the singular `backup`, matching the `E:/backup` that already held this machine's disk images: a sibling `E:/backups` one letter away is what gets restored from by mistake under pressure (fleet-config#605).
 
 **Storage is plain files with hardlink dedup.** Dated snapshots `<dest>/<YYYY-MM-DD>/<group>/<relpath>` plus a `latest/` mirror; a file whose sha256 is unchanged since the previous snapshot is hardlinked to it rather than copied (the `rsync --link-dest` shape), so every dated directory reads as a complete tree in Explorer while 14 dailies cost about one copy plus deltas. `latest/` is itself a hardlink mirror rather than a junction, so it stays valid after retention prunes the snapshot it was built from. Retention keeps 14 dailies plus one snapshot per ISO week for 8 weeks. Plain files are the point: **the restore has to need zero tooling**, because the incident restore was done by hand from plain sources.
 
@@ -77,13 +77,13 @@ The original Tier 2 / Tier 3 follow-up plan was triaged once Tier 1 had burned i
 
 ```powershell
 # Most recent copy of one repo's private files
-Copy-Item -Recurse "C:\Users\rober\backups\fleet-private\latest\life-os\*" "E:\automation\life-os\"
+Copy-Item -Recurse "C:\Users\rober\backup\fleet-private\latest\life-os\*" "E:\automation\life-os\"
 
 # A specific day instead
-Copy-Item -Recurse "C:\Users\rober\backups\fleet-private\2026-08-11\life-os\identity" "E:\automation\life-os\"
+Copy-Item -Recurse "C:\Users\rober\backup\fleet-private\2026-08-11\life-os\identity" "E:\automation\life-os\"
 
 # Session transcripts (the other direction)
-Copy-Item -Recurse "E:\backups\claude-transcripts\latest\projects\*" "$env:USERPROFILE\.claude\projects\"
+Copy-Item -Recurse "E:\backup\claude-transcripts\latest\projects\*" "$env:USERPROFILE\.claude\projects\"
 ```
 
 `manifest.json` in each snapshot lists every file with its sha256, size and mtime, plus what was excluded and why — so "was this file backed up, and which day should I restore from?" is answerable without hunting the tree. Each destination root also carries a plain-text `HOW-TO-RESTORE.txt`, rewritten every run: a folder of repo names explains neither what wrote it nor how to use it, and the README that does explain it lives on the volume the backup exists to survive the loss of, so the instructions ship next to the data.

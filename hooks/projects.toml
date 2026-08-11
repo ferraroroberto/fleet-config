@@ -263,9 +263,12 @@ architecture_ignore = [
 # ---------------------------------------------------------------------------
 [backup]
 source_root      = "E:/automation"
-dest             = "C:/Users/rober/backups/fleet-private"
+# Singular `backup` on both drives: E:/backup already existed (Rescuezilla disk
+# images) and a sibling E:/backups one letter away is what gets restored from by
+# mistake under pressure (fleet-config#605).
+dest             = "C:/Users/rober/backup/fleet-private"
 transcripts_src  = "~/.claude/projects"
-transcripts_dest = "E:/backups/claude-transcripts"
+transcripts_dest = "E:/backup/claude-transcripts"
 keep_daily       = 14
 keep_weekly      = 8
 max_file_mb      = 10

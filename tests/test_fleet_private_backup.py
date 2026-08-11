@@ -520,6 +520,23 @@ try:
     check(bp.load_backup_config(real_toml).bulk_dir_bytes > 0,
           "projects.toml: the real config loads")
 
+    # ---- the unattended log reaches stdout, line-buffered ------------------
+    # fleet-config#605: logging.basicConfig defaults to stderr, so the
+    # app-launcher Jobs pane captured 0 bytes for a 35-minute run. Driven as a
+    # real subprocess with the streams split, because that is the only way the
+    # defect shows — in-process logging assertions cannot see it.
+    proc = subprocess.run(
+        [sys.executable, str(ROOT / "hooks" / "backup_private.py"), "--check-freshness"],
+        capture_output=True, text=True, encoding="utf-8", errors="replace",
+        timeout=120, creationflags=bp._lib.NO_WINDOW,
+    )
+    check("BACKUP_FRESHNESS=" in proc.stdout,
+          f"log: the report goes to stdout, got stdout={proc.stdout[:80]!r}")
+    src = (ROOT / "hooks" / "backup_private.py").read_text(encoding="utf-8")
+    check("stream=sys.stdout" in src, "log: logging is pinned to stdout, not the stderr default")
+    check("line_buffering=True" in src,
+          "log: stdout is line-buffered so a piped run shows progress before it exits")
+
     # ---- exit-code severity ordering --------------------------------------
     check(bp._worst([bp.EXIT_REPO_FAILURE, bp.EXIT_VERIFY_FAILED]) == bp.EXIT_VERIFY_FAILED,
           "exit: a verification failure outranks a repo failure")
