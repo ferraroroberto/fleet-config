@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import os
 import shutil
+import subprocess
 import sys
 import tempfile
 import threading
@@ -361,8 +362,16 @@ try:
     rc = wc.remove_worktree(leftover)
     check(rc == 0, "remove_worktree: deregistered-but-present leftover removed, exit 0 (#526)")
     check(not leftover.exists(), "remove_worktree: the leftover directory is actually gone (#526)")
-    check(order and order[0][0] == "strip",
-          "remove_worktree: junction strip happens FIRST, before any delete (#526)")
+    # The #589 primary-checkout guard now runs a read-only `git rev-parse`
+    # before the strip, so "strip" is no longer literally order[0] -- the
+    # invariant that actually matters is that it precedes any `git worktree`
+    # removal call (nothing may recurse into the .venv junction before it's
+    # stripped).
+    strip_idx = next(i for i, entry in enumerate(order) if entry[0] == "strip")
+    worktree_git_idx = next(i for i, entry in enumerate(order)
+                             if entry[0] == "git" and entry[1] == "worktree")
+    check(strip_idx < worktree_git_idx,
+          "remove_worktree: junction strip happens before any git worktree removal (#526)")
 
     check(wc.remove_worktree(deregistered_base / "never-existed") == 0,
           "remove_worktree: absent path still exits 0 ('already gone' fast path)")
@@ -469,6 +478,93 @@ check(wc.worktree_port("579", {_p}) != _p,
       "worktree_port: skips a port already handed out in this worktree (#537)")
 check(wc.WT_PORT_BASE <= wc.worktree_port("fix-no-digits") < wc.WT_PORT_BASE + wc.WT_PORT_SPAN,
       "worktree_port: a non-numeric issue still lands in band (#537)")
+
+
+# ---- _looks_like_worktree_name: the <repo>-wt-<N> naming convention (#589) ----
+
+check(wc._looks_like_worktree_name("fleet-config" + wc.WT_SEP + "143") is True,
+      "_looks_like_worktree_name: a real <repo>-wt-<N> name matches (#589)")
+check(wc._looks_like_worktree_name("fleet-config") is False,
+      "_looks_like_worktree_name: a bare repo name (no separator) does not match (#589)")
+check(wc._looks_like_worktree_name("fleet-config" + wc.WT_SEP) is False,
+      "_looks_like_worktree_name: an empty issue suffix does not match (#589)")
+check(wc._looks_like_worktree_name(wc.WT_SEP + "143") is False,
+      "_looks_like_worktree_name: an empty stem does not match (#589)")
+
+
+# ---- _is_primary_checkout_safe: tolerates a non-git target (#589) ----
+
+def _raise_not_a_repo(_p):
+    raise subprocess.CalledProcessError(128, ["git", "rev-parse"])
+
+_real_is_primary = wc.is_primary_checkout
+try:
+    wc.is_primary_checkout = _raise_not_a_repo
+    check(wc._is_primary_checkout_safe(Path("not-a-git-repo")) is False,
+          "_is_primary_checkout_safe: swallows CalledProcessError -> False, never raises (#589)")
+    wc.is_primary_checkout = lambda p: True
+    check(wc._is_primary_checkout_safe(Path("whatever")) is True,
+          "_is_primary_checkout_safe: passes through a real True (#589)")
+finally:
+    wc.is_primary_checkout = _real_is_primary
+
+
+# ---- remove_worktree: refuses a primary checkout, never deletes it (#589) -----
+#
+# The exact confusion that destroyed life-os's gitignored personal data: an
+# agent passed remove-worktree the PRIMARY repo root (the shape every sibling
+# subcommand accepts as repo_root) instead of a worktree path. This must now
+# refuse loudly and touch nothing, both for a detected primary checkout and
+# for a path whose basename doesn't even look like a worktree.
+
+guard_base = Path(tempfile.mkdtemp(prefix="wc-guard-"))
+try:
+    # Detected as a primary checkout -> hard refusal, exit 2, nothing touched.
+    primary_like = guard_base / "myrepo"
+    primary_like.mkdir()
+    (primary_like / "sentinel.txt").write_text("still here", encoding="utf-8")
+
+    real_is_primary = wc.is_primary_checkout
+    wc.is_primary_checkout = lambda p: True
+    try:
+        rc = wc.remove_worktree(primary_like)
+        check(rc == 2, "remove_worktree: refuses a primary checkout, exit 2 (#589)")
+        check(primary_like.exists() and (primary_like / "sentinel.txt").exists(),
+              "remove_worktree: a primary checkout is left completely untouched (#589)")
+    finally:
+        wc.is_primary_checkout = real_is_primary
+
+    # Not a primary checkout, but the basename doesn't match <repo>-wt-<N> ->
+    # the naming-convention guard refuses too.
+    wc.is_primary_checkout = lambda p: False
+    try:
+        weird_name = guard_base / "not-a-worktree-name"
+        weird_name.mkdir()
+        rc = wc.remove_worktree(weird_name)
+        check(rc == 2, "remove_worktree: refuses a non-<repo>-wt-<N> basename (#589)")
+        check(weird_name.exists(),
+              "remove_worktree: the mismatched-name path is left untouched (#589)")
+
+        # --force-nonstandard-name is the deliberate override.
+        weird_name2 = guard_base / "another-nonstandard-dir"
+        weird_name2.mkdir()
+        rc = wc.remove_worktree(weird_name2, force_nonstandard_name=True)
+        check(rc == 0,
+              "remove_worktree: --force-nonstandard-name overrides the naming guard (#589)")
+        check(not weird_name2.exists(),
+              "remove_worktree: with the override, a nonstandard-named path is removed (#589)")
+
+        # A real <repo>-wt-<N> worktree (correctly not flagged as primary)
+        # still tears down normally -- the guard must not break the happy path.
+        ok_wt = guard_base / ("myrepo" + wc.WT_SEP + "589")
+        ok_wt.mkdir()
+        rc = wc.remove_worktree(ok_wt)
+        check(rc == 0, "remove_worktree: a real <repo>-wt-<N> worktree still tears down (#589)")
+        check(not ok_wt.exists(), "remove_worktree: the real worktree is actually gone (#589)")
+    finally:
+        wc.is_primary_checkout = real_is_primary
+finally:
+    shutil.rmtree(guard_base, ignore_errors=True)
 
 
 _h.report_and_exit("test_worktree_claim")

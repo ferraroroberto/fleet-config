@@ -85,7 +85,7 @@ Subcommands:
       is held by a *different* issue; passes (exit 0) if the tree is clean and
       the claim is free or already owned by <issue-N>. Fleet-config#473.
 
-  remove-worktree <worktree-path>
+  remove-worktree <worktree-path> [--force-nonstandard-name]
       Reparse-safe teardown: strip the .venv junction, then
       `git worktree remove --force` + `git worktree prune`. Tolerates a
       worktree that git already deregistered while its directory survived
@@ -96,6 +96,15 @@ Subcommands:
       the caller must report that as residue, never as a clean teardown.
       The usual holder is a leaked e2e browser helper -- `remove_worktree`'s
       docstring names the sweep to run before retrying.
+
+      Refuses (exit 2, deletes nothing) unless the target actually **is** a
+      linked worktree: a primary checkout (`--git-common-dir` == `--git-dir`)
+      is rejected outright, and a path whose basename doesn't match the
+      `<repo>-wt-<N>` convention is rejected unless `--force-nonstandard-name`
+      is passed. An agent that confuses this subcommand's `worktree_path` arg
+      with every sibling subcommand's `repo_root` arg previously got the
+      primary checkout `rmtree`'d -- fleet-config#589, which destroyed a
+      repo's gitignored personal data that existed nowhere else.
 
   status <repo-root>
       Print the current claim holder (if any) and `git worktree list`.
@@ -325,6 +334,34 @@ def is_primary_checkout(repo: Path) -> bool:
     return Path(git_dir).resolve() == common_dir(repo).resolve()
 
 
+def _is_primary_checkout_safe(path: Path) -> bool:
+    """`is_primary_checkout`, tolerant of `path` not being a git checkout at all.
+
+    `remove_worktree`'s guard (fleet-config#589) must never itself explode on
+    an unexpected target -- a path that isn't a git repo can't be a primary
+    checkout either, so this returns False rather than raising, leaving the
+    naming-convention guard to catch that case instead.
+    """
+    try:
+        return is_primary_checkout(path)
+    except subprocess.CalledProcessError:
+        return False
+
+
+def _looks_like_worktree_name(name: str) -> bool:
+    """True if `name` matches the `<repo>{WT_SEP}<N>` naming convention.
+
+    Belt-and-braces companion to the primary-checkout guard (fleet-config#589):
+    a `remove-worktree` target whose basename doesn't look like a worktree at
+    all is refused too, even if it somehow isn't detected as a primary
+    checkout (e.g. not a git repo). Mirrors `primary_for_worktree`'s own
+    `rpartition(WT_SEP)` inversion -- `WT_SEP` stays the one spelling of the
+    separator.
+    """
+    stem, sep, issue = name.rpartition(WT_SEP)
+    return bool(sep) and bool(stem) and bool(issue)
+
+
 def _strip_junction(path: Path) -> None:
     """Remove a directory junction by its reparse point ONLY, never its target.
 
@@ -496,8 +533,16 @@ def primary_for_worktree(wt: Path) -> Optional[Path]:
     return None
 
 
-def remove_worktree(wt: Path) -> int:
+def remove_worktree(wt: Path, *, force_nonstandard_name: bool = False) -> int:
     """Reparse-safe teardown. Returns 0 on success, 1 if the tree survived.
+
+    Refuses (returns 2, deletes nothing) before touching anything if `wt`
+    isn't actually a linked worktree (fleet-config#589): a primary checkout
+    (`--git-common-dir` == `--git-dir`) is always rejected, and a basename
+    that doesn't match the `<repo>{WT_SEP}<N>` convention is rejected too
+    unless `force_nonstandard_name` is set. This is what stops a caller that
+    confuses this function's `wt` arg with every sibling subcommand's
+    `repo_root` arg from `rmtree`-ing a repo's main working tree.
 
     Never raises on a leftover it was asked to clean: a directory that outlives
     its registration (a live process holding a file open inside it is the usual
@@ -528,6 +573,19 @@ def remove_worktree(wt: Path) -> int:
     if not wt.exists():
         print(f"Worktree already gone: {wt}")
         return 0
+
+    if _is_primary_checkout_safe(wt):
+        print(f"REFUSING: {wt} is a primary checkout, not a linked worktree -- "
+              f"deleting it would destroy the repo's main working tree "
+              f"(fleet-config#589). Nothing was touched.", file=sys.stderr)
+        return 2
+
+    if not force_nonstandard_name and not _looks_like_worktree_name(wt.name):
+        print(f"REFUSING: {wt.name!r} doesn't match the '<repo>{WT_SEP}<N>' worktree "
+              f"naming convention -- refusing to delete a path that doesn't look like "
+              f"a worktree. Pass --force-nonstandard-name to override "
+              f"(fleet-config#589). Nothing was touched.", file=sys.stderr)
+        return 2
 
     # MUST precede any recursive delete, on EVERY path through this function
     # (see _strip_junction): git's remove follows a .venv junction into the
@@ -684,7 +742,10 @@ def cmd_remove_worktree(args: argparse.Namespace) -> int:
     # resolves, hand the literal resolved path to remove_worktree so it prints
     # its honest "already gone" message rather than exiting.
     resolved = _resolve_path_arg(args.worktree_path)
-    return remove_worktree(resolved or Path(args.worktree_path).resolve())
+    return remove_worktree(
+        resolved or Path(args.worktree_path).resolve(),
+        force_nonstandard_name=args.force_nonstandard_name,
+    )
 
 
 def cmd_assert_owner(args: argparse.Namespace) -> int:
@@ -758,6 +819,9 @@ def main(argv: Optional[list] = None) -> int:
 
     rw = sub.add_parser("remove-worktree", help="reparse-safe worktree teardown")
     rw.add_argument("worktree_path")
+    rw.add_argument("--force-nonstandard-name", action="store_true",
+                     help="skip the <repo>-wt-<N> naming-convention guard "
+                          "(fleet-config#589)")
     rw.set_defaults(func=cmd_remove_worktree)
 
     ao = sub.add_parser("assert-owner", help="refuse a main checkout unless it's safe for <issue>")
