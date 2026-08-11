@@ -54,13 +54,13 @@ Don't ask about things determinable from the code, things already specified, or 
 
 ### Verify before declaring done
 
-Verify every unit with the project's actual tooling (byte-compile, lint, tests). If no checker exists, say so explicitly — never claim "tests pass" when there are no tests. Report failures faithfully with the output; never report done on a skipped step.
+Verify every unit with the project's actual tooling (byte-compile, lint, tests). No checker exists → say so explicitly; never claim "tests pass" where there are no tests. Report failures faithfully with the output; never report done on a skipped step.
 
-A passing suite proves the code behaves as written; it doesn't prove the originally reported symptom is gone or that the fix is running in the actual deployed/live process — before declaring done, reproduce the original failing case (the same repro used to satisfy "Reproduce before fixing" above) against that actual process and watch it pass, not just against the suite. Where a regression test is added, first prove it fails against pre-fix code (e.g. `git stash`) so a later pass is trustworthy. This is the read-side counterpart to deploy-coverage enforcement (`project-scaffolding#199`, `fleet-config#459`) — that confirms the fix shipped, this confirms it actually fixed what was reported.
+A passing suite proves the code behaves as written — not that the reported symptom is gone, nor that the fix is live in the deployed process. Before declaring done, re-run the original repro (the one "Reproduce before fixing" required) against that actual process and watch it pass. A regression test must first be proven to fail against pre-fix code (`git stash`), or its later pass means nothing. Deploy-coverage (`project-scaffolding#199`, `fleet-config#459`) confirms the fix shipped; this confirms it fixed what was reported.
 
 If the repo declares a restart/refresh recipe for a long-lived local process, use it after code changes so the verified change is actually live (unless the user opted out). Don't ask a second permission just because the recipe restarts something — the local `CLAUDE.md` owns the command, scope, and build-identity check. No recipe, or the recipe says confirm first → stop and say exactly what's missing; never improvise process kills.
 
-Any check, gate, health probe, or classifier that can fail to establish a fact must report that as its own state — `unknown` / `not confirmed` — never folded into the passing state. A null, a stale cache, or an unresolved probe is not "fine," and a write acknowledged is not an outcome confirmed; both are the same false "done" this section already warns against. Applies to health checks, verification gates, deploy-coverage checks, and delivery/status classifiers alike — when a check can't tell, say so.
+Any check, gate, health probe, or classifier that can fail to establish a fact must report that as its own state — `unknown` / `not confirmed` — never folded into the passing state. A null, a stale cache, an unresolved probe is not "fine"; a write acknowledged is not an outcome confirmed. Applies to health checks, verification gates, deploy-coverage checks, and delivery/status classifiers alike.
 
 ### Senior-dev check
 
@@ -116,10 +116,7 @@ Branch naming: `<type>/<issue-N>-<short-slug>` — e.g. `fix/28-terminal-reconne
 
 **`gh issue create` defaults:** always `--assignee @me` + at least one type label (`bug`, `enhancement`, `refactor`, `docs`, `chore`, `test`, `perf`; `meta` for cumulative/rollback context). Create the label first if missing.
 
-**Issue body format:** owned by the `/issue-add` skill (its step 6 is the one
-canonical template — title style, section list, `file:line` grounding). Filing
-without invoking that skill? Use it anyway — `/issue-add` — rather than
-improvising a section list here.
+**Issue body format:** owned by the `/issue-add` skill (its step 6 is the one canonical template — title style, section list, `file:line` grounding). Filing without invoking that skill? Use it anyway rather than improvising a section list here.
 
 **Decompose:** can't be one PR → "Step N/M" sub-issues, each independently shippable; no "phase 1 of 4" PRs. **Cross-repo:** a shared-pattern bug gets the same issue in each affected repo, cross-linked by URL. **Closing:** `Closes #N` in the PR body; direct-commit closes paste the SHA in a comment; not-planned closes explain the disproof — no zombie issues. **On rollback:** file a `meta` issue capturing what was attempted, what worked/didn't, a checkbox list of items still open, and the rollback + base-of-truth SHAs.
 
@@ -129,7 +126,7 @@ improvising a section list here.
 
 ### Markdown that will be rendered — no hard wraps
 
-Markdown headed for a renderer (GitHub issue/PR bodies, comments, Notion via MCP) must **not** hard-wrap paragraphs at 70/80 cols — paragraphs are single long lines; newlines only between paragraphs, between list items, and inside code fences. (The user reads on a vertical terminal where forced breaks fight the natural wrapping.) Does **not** apply to: source code, plain repo `.md` viewed as source, commit messages (wrap at 72), terminal-only output.
+Markdown headed for a renderer (GitHub issue/PR bodies, comments, Notion via MCP) must **not** hard-wrap paragraphs at 70/80 cols — paragraphs are single long lines; newlines only between paragraphs, between list items, and inside code fences. (The user reads on a vertical terminal where forced breaks fight the natural wrapping.) Does **not** apply to: source code, plain repo `.md` read as source, commit messages (wrap at 72), terminal-only output.
 
 ### Issue workflow skills
 
@@ -143,11 +140,11 @@ All stay generic and read each project's CLAUDE.md for the gate command, ports, 
 
 ### Spawning sub-agents — cap concurrent Opus at 3 *(Claude Code only — skip on other agents)*
 
-Keep at most **3 background Opus sub-agents in flight** (sliding window: dispatch up to 3, refill as each returns). **Sonnet sub-agents are exempt** — they fan out freely and don't count against the window. The cap works around Anthropic's Opus-specific server-side burst limiter: the 4th–5th+ concurrent bootstrap gets rate-limited (anthropics/claude-code#53922, https://code.claude.com/docs/en/errors) — two unattended fleet runs lost most of their work to it. It is **not** `CLAUDE_CODE_MAX_TOOL_USE_CONCURRENCY` (that bounds parallel tool calls in one session, not sub-agents) — the only place to cap sub-agent count is the orchestrating skill's dispatch logic. Tier vocabulary and per-host model mapping live in `fleet-config/docs/model-tiers.md` (single source — don't restate a tier table).
+Keep at most **3 background Opus sub-agents in flight** (sliding window: dispatch up to 3, refill as each returns). **Sonnet sub-agents are exempt** — they fan out freely and don't count against the window. This works around Anthropic's Opus-specific server-side burst limiter, which rate-limits the 4th–5th+ concurrent bootstrap (anthropics/claude-code#53922, https://code.claude.com/docs/en/errors) and cost two unattended fleet runs most of their work. It is **not** `CLAUDE_CODE_MAX_TOOL_USE_CONCURRENCY` (that bounds parallel tool calls in one session, not sub-agents) — the only place to cap sub-agent count is the orchestrating skill's dispatch logic. Tier vocabulary and per-host model mapping live in `fleet-config/docs/model-tiers.md` (single source — don't restate a tier table).
 
 **A sub-agent does not self-resume when its own background task finishes** — only the top-level session gets that wake-up, so a sub-agent that backgrounds a step (e.g. the e2e leg of its verification gate) and ends its turn with "I'll wait for it to finish" just stops (`project-scaffolding#124`). When briefing a sub-agent that must run a long background step, tell it up front: it will not be auto-woken — it must poll (`BashOutput`/`Monitor`) to completion *within its own turn* before ending.
 
-**A headless top-level `claude -p` session has no wake-up mechanism at all** — backgrounding-and-waiting there is fatal, not just stalled: the CLI exits on the clean turn-end and reports `exit_code: 0`, false success over a skill that never ran (`fleet-config#314`, `/audit-fleet` twice — no digest, no audits). Every scheduled fleet skill runs this way, via its own `run-weekly.bat` calling `claude -p "/<skill>" ... --permission-mode bypassPermissions`, with no human attending and no orchestrator to resume it. Any command inside a skill meant for unattended/scheduled execution must run synchronously (foreground) or poll to completion within the same turn; never fire-and-forget a tool call and end the turn expecting to be resumed.
+**A headless top-level `claude -p` session has no wake-up mechanism at all** — backgrounding-and-waiting there is fatal, not just stalled: the CLI exits on the clean turn-end and reports `exit_code: 0`, false success over a skill that never ran (`fleet-config#314`). Every scheduled fleet skill runs this way — its own `run-weekly.bat` calling `claude -p "/<skill>" ... --permission-mode bypassPermissions`, no human attending, no orchestrator to resume it. Any command inside a skill meant for unattended/scheduled execution must run synchronously (foreground) or poll to completion within the same turn; never fire-and-forget a tool call and end the turn expecting to be resumed.
 
 ### Project hygiene
 
@@ -252,15 +249,9 @@ flowchart LR
 
 ## Local infrastructure
 
-### `claude-local-calls` local LLM hub
+### `local-llm-hub` local LLM hub
 
-`E:\automation\claude-local-calls` runs a FastAPI hub on `127.0.0.1:8000` exposing Anthropic-shape `POST /v1/messages` and OpenAI-shape `POST /v1/chat/completions`, routed by `model` name:
-
-- `claude-haiku-4-5`, `claude-sonnet-4-6`, `claude-opus-4-7` → local `claude -p` CLI (the user's subscription)
-- `qwen3.5-9b` → llama-server on `:8081`
-- `glm-4.5-air` → llama-server on `:8082` (MoE, CPU offload)
-- `gemma4-e4b-it` → llama-server on `:8086` (8 B, edge tier)
-- `gemma4-26b-a4b-it` → llama-server on `:8087` (25 B / 3.8 B-active MoE, quality tier)
+`E:\automation\local-llm-hub` runs a FastAPI hub on `127.0.0.1:8000` exposing Anthropic-shape `POST /v1/messages` and OpenAI-shape `POST /v1/chat/completions`, routed by `model` name: Claude/Gemini ids reach the local CLI on the user's subscription, open-weight ids reach llama-server backends on their own ports. **Live model ids and ports: that repo's README + `docs/model-comparison.md`, or `GET /v1/models`** — a latest-only policy replaces entries when newer models ship, so never trust a copied list (this one went stale twice).
 
 Whisper-server at `127.0.0.1:8090` (`ggml-large-v3-turbo.bin`, OpenAI-compatible `/v1/audio/transcriptions`). The hub also proxies audio on `:8000` (`/v1/audio/transcriptions` + `/v1/audio/translations`) so requests land in the observability ring; direct `:8090` POSTs are lower-overhead but invisible to the admin UI. Port 8090 is mutex-shared with `automation/audio/transcribe_voice`.
 
@@ -276,7 +267,7 @@ client.messages.create(model="claude-haiku-4-5", ...)
 curl -F file=@clip.wav http://127.0.0.1:8090/v1/audio/transcriptions
 ```
 
-**Limitations** (as of late June 2026): image/document content blocks work on the `claude-*` / `gemini-*` subscription paths, but only via the Anthropic `/v1/messages` shape (base64-decoded to a per-request temp dir, fed via `--add-dir`); llama-server backends (qwen/gemma) are text-only and 400 on image input. Remaining gaps: OpenAI-shape → claude silently drops `image_url` parts; URL image sources are passed as a text reference, not fetched; extended-thinking blocks are dropped at the shape boundary; no streaming on `/v1/messages`; Anthropic-shape tool-use to qwen/glm unimplemented (OpenAI-shape works via `--jinja`). Re-read the repo's README + `docs/model-comparison.md` before relying on a model id — the latest-only policy replaces entries when newer models ship.
+**Limitations:** image/document content blocks work on the subscription paths, but only via the Anthropic `/v1/messages` shape (base64-decoded to a per-request temp dir, fed via `--add-dir`); llama-server backends are text-only and 400 on image input. Also: OpenAI-shape → claude silently drops `image_url` parts; URL image sources are passed as a text reference, not fetched; extended-thinking blocks are dropped at the shape boundary; no streaming on `/v1/messages`; Anthropic-shape tool-use to the open-weight backends is unimplemented (OpenAI-shape works via `--jinja`).
 
 ### Don't duplicate hub functionality in downstream apps
 
@@ -284,7 +275,7 @@ Route downstream Claude/local-LLM access through the hub via standard SDKs — n
 
 - LLM call → `Anthropic(api_key="local-dummy", base_url="http://127.0.0.1:8000")` or `OpenAI(api_key="local-dummy", base_url="http://127.0.0.1:8000/v1")`.
 - Audio → POST directly to `http://127.0.0.1:8090/v1/audio/transcriptions`.
-- Hub lacks a feature → write a plan for `claude-local-calls` to add it; don't bypass the hub.
+- Hub lacks a feature → write a plan for `local-llm-hub` to add it; don't bypass the hub.
 
 ### Prefer scripts over session-injected MCP connectors for automation
 
@@ -328,7 +319,7 @@ Every Playwright / automated-browser launch must present as a real human Chrome 
 - Real Chrome (`channel="chrome"`), not bundled Chromium.
 - Persistent profile, viewport 1280×900, `--disable-blink-features=AutomationControlled`.
 - Also `--disable-features=Translate`, `--no-default-browser-check`, `--no-first-run`.
-- `chromium_sandbox=True` on `launch` / `launch_persistent_context` — Playwright's default (`False`) injects `--no-sandbox`, which pops Chrome's *"the `--no-sandbox` flag you are using is not supported"* infobar, itself a bot tell of the same class as the automation bar above. Setting it `True` enables the sandbox and drops the flag.
+- `chromium_sandbox=True` on `launch` / `launch_persistent_context` — Playwright's default (`False`) injects `--no-sandbox`, which pops Chrome's *"the `--no-sandbox` flag you are using is not supported"* infobar, itself a bot tell. `True` enables the sandbox and drops the flag.
 
 **Single source per project:** launch kwargs + init-script live in one helper (e.g. `config/chrome_launch.py`, `automation/browser.py`); every module imports it — never re-inline launch args. If the user reports a captcha or "unusual activity", suspect a stealth regression first.
 
@@ -338,11 +329,11 @@ A persistent Chrome profile allows one live instance; a second launch gets Playw
 
 ### GitHub's `Closes #N` keyword matches on substrings, not standalone clauses
 
-GitHub's issue-closing parser (`close(s|d)?` / `fix(es|ed)?` / `resolve(s|d)?` + `#N`) matches anywhere in the text, including mid-sentence — "Closes #355 findings for …" auto-closed a tracking issue mid-migration (`app-launcher#355`, 2026-07-06). When a PR advances one finding of a multi-PR issue without finishing it, avoid the keyword entirely — "Part of #N", "Addresses one of #N's findings", "Progresses #N" — and reserve the literal `Closes #N` / `Fixes #N` for the one PR that actually finishes the issue.
+GitHub's issue-closing parser (`close(s|d)?` / `fix(es|ed)?` / `resolve(s|d)?` + `#N`) matches anywhere in the text, including mid-sentence — "Closes #355 findings for …" auto-closed a tracking issue mid-migration (`app-launcher#355`). When a PR advances one finding of a multi-PR issue without finishing it, avoid the keyword entirely — "Part of #N", "Addresses one of #N's findings", "Progresses #N" — and reserve the literal `Closes #N` / `Fixes #N` for the one PR that actually finishes the issue.
 
 ### Subprocess spawns must suppress the console window (Windows)
 
-Any `subprocess.Popen`/`.run`/`.call`/`.check_output`/`.check_call` that launches an external executable (ffmpeg, ssh, docker, tailscale, nvidia-smi, clip, a helper script, …) must pass `creationflags=subprocess.CREATE_NO_WINDOW` on Windows — parents with no console of their own (pythonw, a tray app, a scheduled task, a daemon) otherwise get a new console window flashed on screen for every spawn. Default to suppressing it; only omit the flag when the window is meant to be visible to the user (rare — e.g. a deliberately-opened interactive terminal). Prior instances: `local-llm-hub`#317, #282, #174, #169 + its own `claude_cli.py` fix, `voice-transcriber`#147; fleet-wide gap audit `fleet-config`#399.
+Any `subprocess.Popen`/`.run`/`.call`/`.check_output`/`.check_call` that launches an external executable (ffmpeg, ssh, docker, tailscale, nvidia-smi, clip, a helper script, …) must pass `creationflags=subprocess.CREATE_NO_WINDOW` on Windows — parents with no console of their own (pythonw, a tray app, a scheduled task, a daemon) otherwise get a new console window flashed on screen for every spawn. Default to suppressing it; only omit the flag when the window is meant to be visible to the user (rare — e.g. a deliberately-opened interactive terminal). Prior instances: `local-llm-hub`#317/#282/#174/#169, `voice-transcriber`#147; fleet-wide gap audit `fleet-config`#399.
 
 Canonical pattern (short-lived, no signaling needed):
 ```python
@@ -365,7 +356,7 @@ Get-WinEvent -FilterHashtable @{LogName='System'; ProviderName='Tcpip'} -MaxEven
 Get-NetTCPConnection | Group-Object State | Sort-Object Count -Descending
 netsh int ipv4 show dynamicport tcp
 ```
-Event IDs 4231 (TCP)/4266 (UDP) = "ephemeral port space ... all such ports being in use"; Windows rate-limits these, so absence doesn't rule it out — corroborate with the `TIME_WAIT` count (observed oscillating 335→434→796→806 minutes apart on a normal afternoon; live-verified on this host at 324, top state in the table).
+Event IDs 4231 (TCP)/4266 (UDP) = "ephemeral port space ... all such ports being in use". Windows rate-limits these, so absence doesn't rule it out — corroborate with the `TIME_WAIT` count (a normal afternoon on this host oscillates ~325–800, routinely the top state in the table).
 
 **Fix hierarchy — cheapest and most targeted first:**
 1. Fix the leak: find and stop whatever opens short-lived outbound connections in a burst/loop (a poller with no backoff, retry-without-backoff, a health check with no session reuse).
