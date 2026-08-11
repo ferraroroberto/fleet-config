@@ -1152,10 +1152,17 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     parser.add_argument("--json", action="store_true", help="Print the run summary as JSON.")
     args = parser.parse_args(argv)
 
+    # stdout, line-buffered, for the app-launcher Jobs pane (fleet-config#605).
+    # Two separate defects, both invisible until a run went through the real
+    # scheduler path: `logging.basicConfig` defaults to **stderr**, and the Jobs
+    # pane captured 0 bytes for a 35-minute run (stdout 0 / stderr 1615, measured);
+    # and stdout is block-buffered when it is a pipe rather than a console, so
+    # even on the right stream the whole log would only surface at exit. An
+    # unattended job whose failure leaves no reason behind cannot be diagnosed.
     if hasattr(sys.stdout, "reconfigure"):
-        sys.stdout.reconfigure(encoding="utf-8")
-        sys.stderr.reconfigure(encoding="utf-8")
-    logging.basicConfig(level=logging.INFO, format="%(message)s")
+        sys.stdout.reconfigure(encoding="utf-8", line_buffering=True)
+        sys.stderr.reconfigure(encoding="utf-8", line_buffering=True)
+    logging.basicConfig(level=logging.INFO, format="%(message)s", stream=sys.stdout)
 
     cfg = load_backup_config(args.config)
 
