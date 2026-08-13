@@ -29,7 +29,7 @@ window.FLEET = {
   "compute": {"gpu": "GPU · &lt;model&gt; · &lt;NN&gt; GB", "cpu": "CPU · &lt;model&gt; · &lt;n&gt;c/&lt;n&gt;t", "ram": "RAM · &lt;NN&gt; GB"},
   "enabling": [
     {"ic": "🚀", "nm": "app-launcher", "port": ":8445", "ds": "<b>Where I live</b> — the central hub. Coding · Apps · Jobs · Life OS · Board (fleet kanban) · Settings, all from the phone. Born from one goal: do <i>everything</i> on the PC from mobile. The entry point to it all."},
-    {"ic": "🧠", "nm": "local-llm-hub", "port": ":8000", "ds": "Shared LLM gateway — routes to local models or claude -p.", "chips": ["claude -p", "agy gemini", "qwen35-4b :8088", "gemma-26b :8087", "voice → gaming+mac", "tts :8092+"]},
+    {"ic": "🧠", "nm": "local-llm-hub", "port": ":8000", "ds": "Shared LLM gateway — routes to local models or claude -p.", "chips": ["claude -p", "agy gemini", "qwen35-4b :8088", "gemma-26b :8087", "voice → gaming+mac", "tts :8092+", "flux1-dev :8188", "flux2-klein :8190"]},
     {"ic": "🎙️", "nm": "voice-transcriber", "port": ":8443", "ds": "Always-on voice→text (F8). Owns whisper :8090.", "chips": ["whisper :8090"]},
     {"ic": "📷", "nm": "photo-ocr", "port": ":8444", "ds": "Mobile OCR — photos → clean text. Reusable capture surface."},
     {"ic": "🚀", "nm": "App Launcher Lite", "repo": "app-launcher-lite", "port": ":8465", "ds": "<b>App Launcher Lite</b> — phone-first launcher hub, Copilot + GitLab lite fork of app-launcher. Coding (Copilot CLI PTY sessions) · Apps · Jobs · Team OS · Board (GitLab kanban) · Settings, all from the phone."}
