@@ -9,8 +9,11 @@ Run: `E:/automation/fleet-config/.venv/Scripts/python.exe tests/test_fleet_audit
 
 from __future__ import annotations
 
+import json
 import sys
+import tempfile
 from pathlib import Path
+from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "skills" / "_lib"))
 import fleet_audit_scan as fas  # noqa: E402
@@ -69,5 +72,60 @@ check([e["repo"] for e in fas.broken_ledgers(_scan)] == ["stale-baseline", "drif
 check(fas.broken_ledgers({"to_audit": [{"repo": "plain"}]}) == [],
       "broken_ledgers: organic-change audits are not reported as broken")
 check(fas.broken_ledgers({}) == [], "broken_ledgers: an empty scan is empty, not an error")
+
+# ---- sentinel publish + detached launch (fleet-config#609) -----------------
+
+with tempfile.TemporaryDirectory() as _td:
+    _tdp = Path(_td)
+
+    # write_result: atomic publish, no leftover temp files.
+    _out = _tdp / "result.json"
+    fas.write_result(_out, {"hello": "world"})
+    check(_out.exists(), "write_result: sentinel file exists after publish")
+    check(json.loads(_out.read_text(encoding="utf-8")) == {"hello": "world"},
+          "write_result: sentinel content round-trips as JSON")
+    check(list(_tdp.glob("*.tmp-*")) == [], "write_result: no temp file left behind")
+
+    # write_result: overwrites a stale sentinel from a prior run at the same path.
+    fas.write_result(_out, {"hello": "again"})
+    check(json.loads(_out.read_text(encoding="utf-8")) == {"hello": "again"},
+          "write_result: atomic overwrite replaces a stale sentinel")
+
+    # write_result: creates missing parent directories.
+    _nested = _tdp / "nested" / "dir" / "result.json"
+    fas.write_result(_nested, {"ok": True})
+    check(_nested.exists(), "write_result: creates missing parent directories")
+
+check(fas.default_out_path() != fas.default_out_path(),
+      "default_out_path: two calls never collide on the same path")
+check(str(fas.default_out_path()).endswith(".json"),
+      "default_out_path: sentinel path is a .json file")
+
+# run_and_publish: success path writes the sentinel and returns the scan result.
+with tempfile.TemporaryDirectory() as _td:
+    _out = Path(_td) / "result.json"
+    _fake_result = {"to_audit": [], "enumerated": 0}
+    with mock.patch.object(fas, "scan", return_value=_fake_result) as _mock_scan:
+        _returned = fas.run_and_publish("E:/nowhere", None, True, _out)
+    check(_mock_scan.called, "run_and_publish: calls scan() with the given args")
+    check(_returned == _fake_result, "run_and_publish: returns scan()'s result")
+    check(json.loads(_out.read_text(encoding="utf-8")) == _fake_result,
+          "run_and_publish: publishes scan()'s result to the sentinel")
+
+# run_and_publish: a scan() crash still publishes a sentinel (an error payload)
+# instead of leaving a poller to wait forever on a file that will never appear.
+with tempfile.TemporaryDirectory() as _td:
+    _out = Path(_td) / "result.json"
+    with mock.patch.object(fas, "scan", side_effect=RuntimeError("boom")):
+        try:
+            fas.run_and_publish("E:/nowhere", None, True, _out)
+            check(False, "run_and_publish: re-raises the original exception")
+        except RuntimeError:
+            pass
+    check(_out.exists(), "run_and_publish: a crash still publishes a sentinel")
+    _payload = json.loads(_out.read_text(encoding="utf-8"))
+    check("error" in _payload and "boom" in _payload["error"],
+          "run_and_publish: the crash sentinel carries the error message")
+
 
 _h.report_and_exit("test_fleet_audit_scan")

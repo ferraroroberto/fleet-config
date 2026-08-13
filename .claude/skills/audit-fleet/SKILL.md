@@ -36,17 +36,28 @@ Anything else → treat as no argument (whole fleet).
   context (and the weekly token spend) bounded.
 - **Never disturb in-progress work.** A repo that is dirty or not on its default
   branch is skipped and reported — never stashed, never force-switched.
-- **Never background a tool call in this skill.** This orchestrator runs
-  headless via `run-weekly.bat`'s one-shot Claude process, with no persistent
-  turn loop and no human attending it. There is
-  no wake-up mechanism to resume the session after a turn ends, so launching
-  any command (the step 2 `fleet_audit_scan.py` sweep, a sub-agent dispatch,
-  the rate-gate wait) with `run_in_background: true` and then ending the turn
-  to "wait for it" silently kills the entire run: the CLI exits immediately on
-  that clean turn-end, reporting `exit_code: 0` (false success) while nothing
-  past that point ever happened (`fleet-config#314`). Every command here —
-  including the step 3 rate-limit pause — must run synchronously (foreground)
-  or poll to completion within the same turn (e.g. the `Monitor` tool's
+- **Never end the turn to "wait for it."** This orchestrator runs headless via
+  `run-weekly.bat`'s one-shot Claude process, with no persistent turn loop and
+  no human attending it. There is no wake-up mechanism to resume the session
+  after a turn ends, so launching any command with `run_in_background: true`
+  and then ending the turn silently kills the entire run: the CLI exits
+  immediately on that clean turn-end, reporting `exit_code: 0` (false success)
+  while nothing past that point ever happened (`fleet-config#314`). This
+  extends to a tool call the *harness itself* auto-backgrounds past its own
+  timeout ceiling (not one this skill chose to background) — the step 2 sweep
+  used to be exactly this shape until `fleet-config#609` restructured it (see
+  step 2): a single synchronous call spanning the whole sweep's runtime (up to
+  1460s+ historically, past the Bash tool's 600s ceiling) got auto-backgrounded
+  mid-run with no externally observable condition for the orchestrator to
+  poll, and the model improvised (`Monitor` against the wrong target,
+  `TaskStop`, then a false "I'll be notified automatically" belief) instead of
+  correctly recognizing it had nothing to wait on. The fix there is
+  structural — never let a single call span the sweep's real runtime at all —
+  not a stronger version of this rule; an instruction cannot prevent an
+  *automatic* timeout-background. Every command here — including the step 3
+  rate-limit pause — must run synchronously (foreground) or poll to completion
+  within the same turn against a concrete, externally observable condition
+  (e.g. the `Monitor` tool's
   until-loop pattern), never fire-and-forget.
 
 ## Self-pacing against the live session budget
@@ -75,14 +86,72 @@ the whole run. Only a pre-flight failure (step 1) stops everything.
   never busts a cache. Sub-agents still read the global rubric when they grade
   (`/codebase-audit` step 3).
 
-### 2. One Python sweep: enumerate, sync, and gate every repo
+### 2. One Python sweep: enumerate, sync, and gate every repo — launched detached, polled to completion
 
-Enumeration + per-repo gating is **one deterministic Python sweep** — a single
-tool call whose JSON the orchestrator reads, never a per-repo LLM loop:
+Enumeration + per-repo gating is **one deterministic Python sweep** — the
+orchestrator reads its JSON, never runs a per-repo LLM loop. But the sweep's
+own runtime (345s–1460s+ historically, and growing with the fleet) regularly
+crosses the Bash tool's 600s ceiling, and pinning a single tool call to that
+full runtime is exactly what stranded a run for 10 hours with zero digest
+delivered (`fleet-config#609` — see the "Never end the turn to 'wait for it'"
+rule above for the full incident). So this step never issues one long
+synchronous call: it launches the sweep **detached** and polls a **sentinel
+file** for completion — a concrete, externally observable condition, instead
+of an opaque harness-tracked background task with nothing for `Monitor` to
+watch.
+
+**Launch** (returns in well under a second — this call is never the one that
+takes 345s–1460s):
 
 ```
-E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/fleet_audit_scan.py --root E:\automation [--only <repo-name>]
+E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/fleet_audit_scan.py --root E:\automation [--only <repo-name>] --detach
 ```
+
+Prints exactly one line:
+
+```
+LAUNCHED pid=<pid> out=<result-path> log=<log-path>
+```
+
+Capture `out=` verbatim as `SWEEP_RESULT` — never construct or guess the path;
+`fleet_audit_scan.py` generates a fresh, unique one per invocation
+(`E:/tmp/fleet-audit-scan-<pid>-<ns>.json` when `E:/tmp` exists, the system
+temp dir otherwise), so two overlapping runs (a manual retry alongside a still
+running scheduled one) can never collide on a fixed name. The detached child
+is the exact same `scan()` this step always ran — spawned
+`CREATE_NEW_PROCESS_GROUP | NO_WINDOW` (the same survive-the-parent pattern
+`hooks/restart_and_verify_webapp.py` already uses to outlive a hook's own
+exit) so it keeps running after this tool call returns, and it publishes its
+JSON result to `SWEEP_RESULT` atomically (temp-file-then-rename, so a poller
+can never observe a partial write) on completion — or an `{"error": "..."}`
+payload if the sweep itself raises, so a crash is distinguishable from "still
+running" rather than leaving a poller to wait out the full ceiling below for a
+file that will never appear.
+
+**Poll** `SWEEP_RESULT` with the `Monitor` tool's until-loop pattern — the
+same mechanism this skill already uses for the rate-gate `PAUSE` wait (step
+3), never a raw backgrounded Bash call and never `TaskStop`/`TaskOutput`
+against whatever task id the harness happens to assign; there is nothing in
+this flow for those to target:
+
+```
+until [ -f "$SWEEP_RESULT" ]; do sleep 30; done; cat "$SWEEP_RESULT"
+```
+
+`Monitor`'s `timeout_ms` maxes out at 3,600,000 (1 hour) per call; if it times
+out before the sentinel appears, call `Monitor` again with the same command —
+the detached sweep process is unaffected by a `Monitor` timeout, since
+`Monitor` only ever watches, it never owns the child. **Cap retries at 4** (a
+4-hour ceiling, comfortably above every observed historic duration including
+the 1460s outlier). If `SWEEP_RESULT` still hasn't appeared after 4 timeouts,
+or if it appears carrying an `{"error": ...}` payload, treat this as a
+pre-flight-class failure: print `Fleet audit plan — sweep did not complete:
+<reason>` and skip straight to step 6's delivery assertion, which correctly
+finds nothing to report and prints `SCHEDULED-RUN-FAILED` — never fabricate a
+plan line from a scan that never finished.
+
+Once read, `SWEEP_RESULT`'s content is this step's JSON output, exactly as
+before:
 
 The script (`skills/_lib/fleet_audit_scan.py`, built on `audit_issue.py`'s
 `evaluate_repo`) walks `E:\automation\*\`, skips linked worktrees
@@ -93,7 +162,7 @@ surfaces as a spurious off-branch repo), filters to repos with a
 `/codebase-audit` step 2 uses** (`evaluate_repo` — exactly one
 implementation) per repo.
 
-It prints one JSON object:
+Its JSON shape:
 
 ```
 {"to_audit": [{"repo": "...", "path": "...", "reason": "unparseable-ledger"|"unresolvable-baseline"?, "baseline_sha": "..."?, "ledger_issue": N?}, ...],
@@ -179,8 +248,8 @@ and branch on `DECISION`:
   `model: "opus"`) to fill the window, then **stay in this same turn and block
   on `TaskOutput` (`block: true`) for every task now in flight** — do not end
   the turn to "wait for it". This orchestrator runs headless via
-  `run-weekly.bat` with no wake-up mechanism (see "Never background a tool
-  call in this skill" above); a background task nobody is polling in-turn just
+  `run-weekly.bat` with no wake-up mechanism (see "Never end the turn to
+  'wait for it'" above); a background task nobody is polling in-turn just
   gets silently killed at the CLI's 600s background-task ceiling, and the run
   reports a false `exit 0` success (`fleet-config#506`; the same class of gap
   `fleet-config#314` closed for this skill's own Bash/Monitor calls, just
