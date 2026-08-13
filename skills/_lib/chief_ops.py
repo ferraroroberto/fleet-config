@@ -54,7 +54,13 @@ Subcommands
 
   exchange <sid> [--tail N] [--base-url URL]
       Last assistant text for a live session, tailed to N chars (default
-      2000).
+      2000). `<sid>` accepts either a full session id or the 8-char prefix
+      `board`/`sessions` actually print -- resolved against the board's live
+      session ids before the lookup (fleet-config#613). A prefix matching
+      >=2 live sessions fails as `UNRESOLVABLE reason=...`, never a silent
+      pick and never `session_not_found`; a prefix/id matching no live
+      session passes through unchanged and still gets the real
+      `UNAVAILABLE reason=session_not_found`.
 
   issues <repo#n> [<repo#n> ...] [--owner OWNER]
       One state-table row per ref via `gh issue view`; a per-ref `gh`
@@ -236,6 +242,38 @@ def classify_exchange_marker(available: bool, timestamp: Any, send_time: datetim
     if parsed is None:
         return "pending"
     return "delivered" if parsed > send_time else "pending"
+
+
+def resolve_session_id(sid: str, columns: Dict[str, Any]) -> Tuple[Optional[str], Optional[str]]:
+    """Resolve `sid` against the full ids of every live session card the
+    board currently reports, so `exchange` accepts the 8-char prefix
+    `board`/`sessions` actually print instead of requiring the full
+    32-character id neither of those commands ever emits (fleet-config#613).
+
+    Returns `(resolved_id, reason)`:
+      - an exact match, or an unambiguous prefix match -> `(full_id, None)`.
+      - two or more live ids share `sid` as a prefix -> `(None, reason)`, a
+        state distinct from a genuine 404 -- callers must never silently
+        pick one.
+      - no live id matches (a dead session's full id, or a prefix whose
+        session has since ended) -> `(sid, None)` unchanged, so the caller
+        still queries the real endpoint and gets the real
+        `session_not_found` -- this path must not regress.
+    """
+    live_ids = sorted({
+        str(card["session_id"])
+        for bucket in (columns.get("claude_turn"), columns.get("your_turn"), columns.get("other"))
+        for card in (bucket or [])
+        if card.get("alive") and card.get("session_id")
+    })
+    if sid in live_ids:
+        return sid, None
+    matches = [full for full in live_ids if full.startswith(sid)]
+    if len(matches) >= 2:
+        return None, f"prefix {sid!r} matches {len(matches)} live sessions: {', '.join(matches)}"
+    if len(matches) == 1:
+        return matches[0], None
+    return sid, None
 
 
 def find_session_status(columns: Dict[str, Any], sid: str) -> Optional[str]:
@@ -486,7 +524,12 @@ def cmd_sessions(args: argparse.Namespace) -> int:
 
 
 def cmd_exchange(args: argparse.Namespace) -> int:
-    result = _request(args.base_url, f"/api/board/sessions/{args.sid}/exchange")
+    board = _request(args.base_url, "/api/board")
+    resolved_sid, reason = resolve_session_id(args.sid, board.get("columns") or {})
+    if reason is not None:
+        print(f"UNRESOLVABLE reason={reason}")
+        return 1
+    result = _request(args.base_url, f"/api/board/sessions/{resolved_sid}/exchange")
     if not result.get("available"):
         print(f"UNAVAILABLE reason={result.get('reason')}")
         return 1

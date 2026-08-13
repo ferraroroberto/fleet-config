@@ -170,6 +170,89 @@ check(
 )
 
 
+# ---- resolve_session_id / cmd_exchange (fleet-config#613) --------------------
+
+import contextlib  # noqa: E402
+import io  # noqa: E402
+
+_exchange_columns = {
+    "claude_turn": [
+        _session_card(project="life-os", session_id="d235f290aaaaaaaaaaaaaaaaaaaaaaaa"),
+        _session_card(project="minecraft-bedrock-bot", session_id="d235f299bbbbbbbbbbbbbbbbbbbbbbbb"),
+    ],
+    "your_turn": [_session_card(project="local-llm-hub", session_id="ad3e8bbbcccccccccccccccccccccccc")],
+    "other": [],
+}
+
+check(
+    co.resolve_session_id("ad3e8bbbcccccccccccccccccccccccc", _exchange_columns)
+    == ("ad3e8bbbcccccccccccccccccccccccc", None),
+    "resolve_session_id: exact full-id match passes through unchanged",
+)
+check(
+    co.resolve_session_id("ad3e8bbb", _exchange_columns) == ("ad3e8bbbcccccccccccccccccccccccc", None),
+    "resolve_session_id: unambiguous 8-char prefix (the form board/sessions print) resolves to the full live id",
+)
+_amb_resolved, _amb_reason = co.resolve_session_id("d235f29", _exchange_columns)
+check(
+    _amb_resolved is None and _amb_reason is not None,
+    "resolve_session_id: a prefix matching 2 live sessions refuses to pick either",
+)
+check(
+    co.resolve_session_id("deadbeefdeadbeefdeadbeefdeadbeef", _exchange_columns)
+    == ("deadbeefdeadbeefdeadbeefdeadbeef", None),
+    "resolve_session_id: no live match passes the id through unchanged (real endpoint decides)",
+)
+
+
+def _run_exchange(sid, board_columns, exchange_result=None):
+    """Drive `cmd_exchange` against a stubbed transport, capturing stdout."""
+    calls = {"board": 0, "exchange": 0}
+
+    def _fake_request(base_url, path, method="GET", body=None, timeout=10.0):
+        if path == "/api/board":
+            calls["board"] += 1
+            return {"columns": board_columns}
+        if path.endswith("/exchange"):
+            calls["exchange"] += 1
+            return exchange_result
+        raise AssertionError(f"unexpected path: {path}")
+
+    prior = co._request
+    co._request = _fake_request
+    try:
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            rc = co.cmd_exchange(argparse.Namespace(sid=sid, tail=2000, base_url=co.DEFAULT_BASE_URL))
+    finally:
+        co._request = prior
+    return rc, buf.getvalue(), calls
+
+
+_rc, _out, _calls = _run_exchange(
+    "ad3e8bbb", _exchange_columns,
+    exchange_result={"available": True, "source": "pty", "assistant": {"timestamp": "t", "text": "hi"}},
+)
+check(_rc == 0, "cmd_exchange: unambiguous 8-char prefix succeeds against the live session")
+check(_calls["exchange"] == 1, "cmd_exchange resolved before calling the exchange endpoint")
+
+_rc, _out, _calls = _run_exchange("d235f29", _exchange_columns)
+check(_rc == 1, "cmd_exchange: ambiguous prefix fails")
+check(_out.startswith("UNRESOLVABLE reason="), "cmd_exchange: ambiguous prefix reports UNRESOLVABLE, not UNAVAILABLE")
+check(_calls["exchange"] == 0, "cmd_exchange never calls the exchange endpoint on an ambiguous prefix (no silent pick)")
+
+_rc, _out, _calls = _run_exchange(
+    "deadbeefdeadbeefdeadbeefdeadbeef", _exchange_columns,
+    exchange_result={"available": False, "reason": "session_not_found"},
+)
+check(_rc == 1, "cmd_exchange: an id matching no live session still fails")
+check(
+    "UNAVAILABLE reason=session_not_found" in _out,
+    "cmd_exchange: no-match path is unchanged -- still the real UNAVAILABLE reason=session_not_found",
+)
+check(_calls["exchange"] == 1, "cmd_exchange: no-match path still queries the real endpoint")
+
+
 def _run_say_verify(exchange_responses, board_status="needs-you", timeout=0.15, poll_interval=0.05):
     """Drive `cmd_say --verify` against a stubbed transport. `exchange_responses`
     is consumed in order (one per poll iteration); the last value repeats once
