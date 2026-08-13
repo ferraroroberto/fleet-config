@@ -281,6 +281,47 @@ check("burst of" not in "\n".join(quiet_lines),
       "fewer than the threshold of unknown records stays silent")
 
 
+# ---- a shutdown burst is not truncation when the result event arrived (#608) ----
+#
+# design-sweep-fleet run 20260813T100001 completed in full — 10 apps swept, 4
+# design-drift issues filed, Slack digest posted, final report printed — and
+# still exited 122, because `stream_truncated` only counted the unknown-record
+# burst and never checked whether the terminal `result` event had actually
+# arrived. The burst was the normal end-of-run sub-agent task-completion
+# flush, not a cut-off stream.
+
+delivered_lines: list[str] = []
+delivered_formatter = cp.ProgressFormatter(emit=delivered_lines.append, clock=lambda: 0.0)
+delivered_formatter.handle_line(json.dumps({"type": "result", "result": "done"}))
+for _ in range(cp.UNKNOWN_BURST_THRESHOLD):
+    delivered_formatter.handle_line(json.dumps({"type": "future_event"}))
+check(not delivered_formatter.stream_truncated,
+      "a shutdown burst after a terminal result event is not truncation")
+delivered_formatter.finish(0)
+delivered_output = "\n".join(delivered_lines)
+check("no terminal result event" not in delivered_output,
+      "the result event was received, so finish() must not claim otherwise")
+check("✅ completed · exit 0" in delivered_output,
+      "a run that delivered its result event reports as completed, not unconfirmed")
+check("❓ not confirmed" not in delivered_output,
+      "a delivered run is never reported as unconfirmed")
+
+# The #560 case this must not weaken: no result event ever arrives, so the
+# same burst still means the stream was genuinely cut off mid-flight.
+undelivered_lines: list[str] = []
+undelivered_formatter = cp.ProgressFormatter(emit=undelivered_lines.append, clock=lambda: 0.0)
+for _ in range(cp.UNKNOWN_BURST_THRESHOLD):
+    undelivered_formatter.handle_line(json.dumps({"type": "future_event"}))
+check(undelivered_formatter.stream_truncated,
+      "a shutdown burst with no result event is still reported as truncated (#560)")
+undelivered_formatter.finish(cp.TRUNCATED_STREAM_EXIT_CODE)
+undelivered_output = "\n".join(undelivered_lines)
+check("❓ not confirmed" in undelivered_output,
+      "the no-result-event case still reports delivery as unconfirmed")
+check("no terminal result event" in undelivered_output,
+      "and still names the missing result event")
+
+
 # ---- stall watchdog: a silent run is killed, not left wedged (fleet-config#411) ----
 
 # The child leaves a grandchild holding the inherited stdout pipe and then goes

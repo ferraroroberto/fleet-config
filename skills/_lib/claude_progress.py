@@ -266,7 +266,16 @@ class ProgressFormatter:
 
     @property
     def stream_truncated(self) -> bool:
-        """True when the stream stopped mid-conversation — delivery unconfirmed."""
+        """True when the stream stopped mid-conversation — delivery unconfirmed.
+
+        A burst of unknown-typed records near shutdown is only evidence of a
+        cut-off stream when the terminal `result` event never arrived. A run
+        that delivered its result event proved the opposite — the burst is
+        just the normal end-of-run sub-agent flush — so `_saw_result` overrides
+        the burst count rather than being folded into it (fleet-config#608).
+        """
+        if self._saw_result:
+            return False
         return self.truncated_stream_burst() >= UNKNOWN_BURST_THRESHOLD
 
     def _prefix(self) -> str:
