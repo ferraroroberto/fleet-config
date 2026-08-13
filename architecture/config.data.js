@@ -304,6 +304,7 @@ window.CONFIG = {
         "journal-weekly",
         "meeting-prep",
         "roast-posts",
+        "slides",
         "sparring-private",
         "sparring-work",
         "visual-muse"
@@ -464,6 +465,10 @@ window.CONFIG = {
       "ds": "Shared helpers for the fleet-config hooks."
     },
     {
+      "nm": "backup_private",
+      "ds": "Daily snapshot of every fleet repo's gitignored-but-precious residue."
+    },
+    {
       "nm": "context_filter",
       "ds": "Local command-output compression for the fleet hook layer."
     },
@@ -474,6 +479,10 @@ window.CONFIG = {
     {
       "nm": "conversation_index",
       "ds": "Tier-1 conversation index — a cheap, searchable layer over raw captures."
+    },
+    {
+      "nm": "conversation_search",
+      "ds": "Ranked full-text search over captured conversations (fleet-config#586)."
     },
     {
       "nm": "hub_client",
