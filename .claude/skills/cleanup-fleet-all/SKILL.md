@@ -45,8 +45,8 @@ All of the actual retry/ship decision-making lives in **`.claude/workflows/clean
 
 ### 1. Pre-flight
 
-- `gh auth status` — must be authenticated as `ferraroroberto`. Else stop: "Not authenticated — run `gh auth login`."
-- Confirm `E:\automation\` exists (the fleet root). Else stop.
+- `gh auth status` — must be authenticated as `ferraroroberto`. Else stop, and the final report must print the literal line `SCHEDULED-RUN-FAILED — not authenticated, run gh auth login` (no lane is ever attempted, so this is a delivery failure, not a clean no-op — fleet-config#612).
+- Confirm `E:\automation\` exists (the fleet root). Else stop, and the final report must print `SCHEDULED-RUN-FAILED — fleet root E:\automation not found`.
 
 ### 2. Resolve buckets
 
@@ -61,7 +61,7 @@ gh search issues --owner ferraroroberto --state open --include-prs=false --limit
 
 Read the JSON directly (no jq/python/awk — group and select model-side, same convention as `/cleanup-fleet`). For each issue, collect every label that matches one of this run's resolved bucket names — **drop any row carrying `audit-meta`** (the ledger issues, never actionable), and drop any row matching none of the resolved buckets. An issue carrying more than one bucket label legitimately appears in more than one bucket's list; that's fine, buckets run serially so it's never worked on twice at once.
 
-If nothing survives for any resolved bucket: print `No open cleanup issues across the fleet 🎉` and stop.
+If nothing survives for any resolved bucket: print `No open cleanup issues across the fleet 🎉` and stop. This is a legitimate empty-queue success, not a self-reported failure — the queue was checked and found empty, so do **not** print the `SCHEDULED-RUN-FAILED` marker here.
 
 ### 4. Group by (bucket, repo) + enforce one issue per repo per bucket
 
@@ -204,10 +204,14 @@ Cleanup-fleet-all complete           (or: HALTED at <repo>#<N> — see below)
      Recover: E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/worktree_claim.py remove-worktree E:\automation\local-llm-hub-wt-451
      Not started because of the halt: 4 issue(s) in maintainability, all of slop/bug/design-drift
 
+SCHEDULED-RUN-FAILED — halted at local-llm-hub#N: E:\automation\local-llm-hub-wt-451 would not delete, 4 issue(s) never started
+
 Next: escalated issues need a human — read the teardown comment on the issue and either re-run it, or close it if it doesn't warrant the work.
 ```
 
 A run that halted says so on the **first** line. Never present a halted run as `complete`.
+
+**If (and only if) step 7's workflow result carries a non-null `halted`** (`{ bucket, repo, issue, status, detail, remainingInBucket }`), the final report must also print the literal line `SCHEDULED-RUN-FAILED — halted at <repo>#<issue>: <detail>, <remainingInBucket + issues in later buckets> issue(s) never started`, exactly as shown above, so `claude_progress.py` maps this run to exit 123 instead of falling through to the harness's default exit 0 (fleet-config#612 — a run that halted 1 of 9 lanes in previously reported exit 0 and showed green on the Jobs card). A fully successful run — `halted` is `null` — must **not** print this line; the marker is opt-in, not a default.
 
 ### 11. Stop
 
@@ -232,6 +236,7 @@ No follow-up actions and no auto-launch of anything — including no retry of a 
 - **A leftover worktree directory is judged by condition, never by path or count.** All five hold (recursively empty, not a reparse point, git-deregistered, `dir_holders.py check` reports `STATUS=CLEAR`, `remove-worktree` was run and refused) → reported as zombie-pinned, not residue, no halt. Any one unestablished → RESIDUE. Multiple qualifying shells are the expected state on a host that has not rebooted. **No rule may require attributing a zombie process to a directory** — an exited process is absent from the process table, so that attribution does not exist; a `CLEAR` verdict is the whole requirement. **And no condition may depend on a tool the repo might not ship** — the live-holder proof is repo-agnostic (`skills/_lib/dir_holders.py`, run from fleet-config's venv) precisely because requiring each repo's own `tests/e2e/_browser_sweep.py` made the condition unprovable in ten of fourteen repos, turning an exception into a guaranteed halt (fleet-config#571).
 - **Teardown judges its own lane's mess, never the repo's.** Check 3 asserts that *this lane's* branch is gone, not that the repo has no other branches — because step 5 only deletes this lane's branch and the brief explicitly forbids removing another lane's ref, so the old whole-repo form asserted a property teardown was not allowed to bring about. Any pre-existing local branch therefore failed every subsequent lane in that repo. Foreign branches join `indexLock`/`behindOrigin`/`zombieShells` in the reported-only tier. This narrows *what counts as this lane's mess*; it does not lower the bar for it — the lane's own branch, worktree, or dirty tree still halts the run (fleet-config#572).
 - **A stale `index.lock` and a behind-origin primary are reported, never halting, and never silently repaired.** The lock is deleted only when no live `git.exe` names the repo *and* it is older than 5 minutes; a live holder or an unreadable state is `unknown` and is left alone. Behind-origin is fast-forwarded with `--ff-only` only — never a merge, rebase, reset, or `--force` — and a refused fast-forward is `unknown`, not a pass.
+- **A run that stops with lanes unprocessed must print the literal `SCHEDULED-RUN-FAILED` marker in its final report** — a pre-flight failure (step 1) or a residue halt (step 10, non-null `halted`) — so `claude_progress.py` maps the run to exit 123 instead of a false-success exit 0 (fleet-config#612). The step 3 empty-queue stop (`No open cleanup issues across the fleet`) is exempt: it's a legitimate success, not a failure, and must never print the marker.
 - **No AI attribution; no hard-wrapped issue/PR-body paragraphs.** (Per global CLAUDE.md.)
 
 ## Notes
@@ -242,3 +247,4 @@ No follow-up actions and no auto-launch of anything — including no retry of a 
 - **Before trusting the full unattended schedule**, run at least one more attended pass covering a bucket with a validator rejection (to prove the retry loop, not just the happy path) before wiring `run-weekly.bat` into a scheduled job.
 - **Teardown-honesty pass (fleet-config#534).** A prior run found the same defect class the halt-on-residue work targets — a check that passes or fails without having established the thing it claims: (1) a stale `.git/index.lock` with no live git process silently broke `git pull` and made a hash check report a merged, shipped file as MISSING; (2) teardown verified "clean" but never "current" — a primary can be commits behind `origin/main` and still pass all four checks; (3) empty `<repo>-wt-<N>` shells pinned by exited-but-still-handled WebKit process objects were being counted as residue, halting runs, though they are inert and undeletable until reboot. The first two became the reported-only checks 5 and 6 above; the third became the by-condition zombie-pinned exception to check 2 — deliberately repo-wide (`live=0`) rather than per-directory, because an exited process reports `cwd=<unreadable>` and no rule may ask for more.
 - **2026-07-31 rewrite (fleet-config#518 + #515)**, after a prior run's within-bucket parallel fan-out left 11 stray worktrees and two primaries off `main` while still reporting `0 failed` — the giveaway that every stray worktree came from a lane the workflow considered a *success path*. Response: within-bucket `parallel(...)` became a serial loop; a fourth Teardown agent became the terminal step of every lane; residue halts the run; all agent briefs force worktree mode and ban live-e2e overrides; step 8 gained the fleet-wide residue enumeration.
+- **False-success exit code (fleet-config#612).** A run's own halt behaviour (step 10's "loud failure, not a partial success") was already correct, but the halt never reached the process exit code: `2026-08-13T140001`'s run halted after 1 of 9 lanes (residue in `local-llm-hub-wt-503`, correctly refused) yet the harness reported `exit 0` and the Jobs card showed green, because the halt path never printed the `SCHEDULED-RUN-FAILED` marker `skills/_lib/claude_progress.py` watches for (the same marker `/audit-fleet` already used for its own zero-work case). Step 1 and step 10 now print it on any stop that leaves lanes unprocessed; the step 3 empty-queue stop is exempt since it's a legitimate success.

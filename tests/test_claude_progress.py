@@ -542,6 +542,70 @@ check(cp.SELF_REPORTED_FAILURE_MARKER in audit_skill,
 check("delivery assertion" in audit_skill.lower(),
       "audit-fleet's SKILL.md carries the zero-work delivery assertion")
 
+# fleet-config#612: a halted cleanup-fleet-all run (residue, lanes unprocessed)
+# previously exited 0 and showed green on the Jobs card because the halt path
+# never printed the marker. SKILL.md now documents the contract on both the
+# pre-flight stops and the halted final-summary template.
+cleanup_all_skill = (
+    ROOT / ".claude" / "skills" / "cleanup-fleet-all" / "SKILL.md"
+).read_text(encoding="utf-8")
+check(cp.SELF_REPORTED_FAILURE_MARKER in cleanup_all_skill,
+      "cleanup-fleet-all's SKILL.md prints the exact marker string the adapter detects")
+check("halted" in cleanup_all_skill.lower() and "612" in cleanup_all_skill,
+      "cleanup-fleet-all's SKILL.md ties the marker to the halted-run case (#612)")
+
+# Repro (not just code inspection): a final report shaped exactly like step 10's
+# halted-run template -- the "HALTED at <repo>#<N>" line plus the marker line --
+# must map to the same non-zero exit as any other self-reported failure. Kept
+# ASCII on purpose, same reason as ZERO_REPORT above (fleet-config#523).
+HALTED_REPORT = (
+    "Cleanup-fleet-all HALTED at local-llm-hub#451 - see below\n"
+    "  ...\n"
+    "  RESIDUE (run halted): local-llm-hub - "
+    "E:\\automation\\local-llm-hub-wt-451 would not delete\n"
+    "     Not started because of the halt: 4 issue(s) in maintainability\n\n"
+    "SCHEDULED-RUN-FAILED - halted at local-llm-hub#451: "
+    "would not delete, 4 issue(s) never started"
+)
+halted_script = (
+    "import json,sys; "
+    + INIT_LINE
+    + f"report = {HALTED_REPORT!r}; "
+    "print(json.dumps({'type':'assistant','message':{'content':"
+    "[{'type':'text','text':report}]}}), flush=True); "
+    "print(json.dumps({'type':'result','subtype':'success','is_error':False,"
+    "'result':report}), flush=True); "
+    "sys.exit(0)"
+)
+halted_lines: list[str] = []
+halted_formatter = cp.ProgressFormatter(emit=halted_lines.append)
+halted_exit = cp.run_process(
+    [sys.executable, "-c", halted_script],
+    formatter=halted_formatter,
+)
+check(halted_exit == cp.SELF_REPORTED_FAILURE_EXIT_CODE,
+      "a cleanup-fleet-all halted-run report exits non-zero even though the child exited 0")
+check(halted_formatter.saw_self_reported_failure,
+      "the formatter records the halted run's self-reported delivery failure")
+
+# The happy-path template (no halt) must stay green — same "opt-in, not default"
+# guarantee as the audit-fleet case above, checked against this skill's own words.
+COMPLETE_REPORT = (
+    "Cleanup-fleet-all complete\n"
+    "  documentation: 3 merged, 1 escalated\n"
+    "  skipped repos (dirty/off-branch/pre-existing worktree): website\n"
+)
+complete_formatter = cp.ProgressFormatter(emit=lambda *_: None, clock=lambda: 0.0)
+complete_formatter.handle_event({
+    "type": "result",
+    "subtype": "success",
+    "is_error": False,
+    "result": COMPLETE_REPORT,
+})
+complete_formatter.finish(0)
+check(not complete_formatter.saw_self_reported_failure,
+      "a cleanup-fleet-all run that completed all lanes stays a success")
+
 
 # ---- all checked-in scheduled wrappers use the one shared adapter ----
 
