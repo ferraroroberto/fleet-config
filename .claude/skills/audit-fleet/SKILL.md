@@ -57,8 +57,14 @@ Anything else → treat as no argument (whole fleet).
   *automatic* timeout-background. Every command here — including the step 3
   rate-limit pause — must run synchronously (foreground) or poll to completion
   within the same turn against a concrete, externally observable condition
-  (e.g. the `Monitor` tool's
-  until-loop pattern), never fire-and-forget.
+  (e.g. the `Monitor` tool's until-loop pattern for step 3's rate-gate pause),
+  never fire-and-forget. **A second incident on the same issue showed prose
+  alone isn't enough even for the poll itself:** the model composed a
+  `Monitor` call for step 2's sentinel wait that returned without actually
+  blocking, then ended the turn believing it would be notified later
+  (`fleet-config#609`, reopened). Step 2 now uses a foreground blocking helper
+  script instead of a model-composed wait, precisely to take that composition
+  step out of the model's hands — see step 2.
 
 ## Self-pacing against the live session budget
 
@@ -128,27 +134,42 @@ payload if the sweep itself raises, so a crash is distinguishable from "still
 running" rather than leaving a poller to wait out the full ceiling below for a
 file that will never appear.
 
-**Poll** `SWEEP_RESULT` with the `Monitor` tool's until-loop pattern — the
-same mechanism this skill already uses for the rate-gate `PAUSE` wait (step
-3), never a raw backgrounded Bash call and never `TaskStop`/`TaskOutput`
-against whatever task id the harness happens to assign; there is nothing in
-this flow for those to target:
+**Wait** for `SWEEP_RESULT` with a foreground blocking helper script, never
+`Monitor` and never a raw backgrounded Bash call. A `Monitor`-composed
+until-loop is exactly what failed here the second time this issue was worked
+(`fleet-config#609`, reopened): the run invoked `Monitor`, it returned in
+about a second instead of actually blocking on the sentinel, and the model
+then narrated "I'll wait for the sentinel file notification before proceeding
+to step 3" and ended its turn — under `claude -p` nothing ever delivers that
+notification, so the CLI exited 0 at 39 seconds having audited nothing. Prose
+already forbade this and the model quoted the rule before failing anyway, so
+the fix removes the model's role in composing the wait rather than asking it
+to compose the wait more carefully. `skills/_lib/wait_for_sentinel.py` blocks
+in a real synchronous sleep loop inside a single Bash call and returns only
+with an unambiguous, machine-checkable answer:
 
 ```
-until [ -f "$SWEEP_RESULT" ]; do sleep 30; done; cat "$SWEEP_RESULT"
+E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/wait_for_sentinel.py --path "$SWEEP_RESULT" --timeout-seconds 560
 ```
 
-`Monitor`'s `timeout_ms` maxes out at 3,600,000 (1 hour) per call; if it times
-out before the sentinel appears, call `Monitor` again with the same command —
-the detached sweep process is unaffected by a `Monitor` timeout, since
-`Monitor` only ever watches, it never owns the child. **Cap retries at 4** (a
-4-hour ceiling, comfortably above every observed historic duration including
-the 1460s outlier). If `SWEEP_RESULT` still hasn't appeared after 4 timeouts,
-or if it appears carrying an `{"error": ...}` payload, treat this as a
-pre-flight-class failure: print `Fleet audit plan — sweep did not complete:
-<reason>` and skip straight to step 6's delivery assertion, which correctly
-finds nothing to report and prints `SCHEDULED-RUN-FAILED` — never fabricate a
-plan line from a scan that never finished.
+**Exit 0** (`SENTINEL-READY <path>`) — the sweep is done: `cat "$SWEEP_RESULT"`
+and continue below with its JSON. **Exit 2** (`SENTINEL-NOT-READY <path>`) —
+the sentinel is not there yet. This is not a "wait for a notification" signal;
+it is a "call this exact command again right now, in this same turn" signal —
+immediately re-invoke it. `--timeout-seconds 560` keeps a single call
+comfortably under the Bash tool's 600s ceiling, so the retry is a normal part
+of the design, not a failure. **Cap retries at 26** (≈4 hours, the same
+ceiling the earlier Monitor-based design targeted, comfortably above every
+observed historic duration including the 1460s outlier). If `SWEEP_RESULT`
+still hasn't appeared after 26 exit-2 results, or it appears carrying an
+`{"error": ...}` payload, treat this as a pre-flight-class failure: print
+`Fleet audit plan — sweep did not complete: <reason>` and skip straight to
+step 6's delivery assertion, which correctly finds nothing to report and
+prints `SCHEDULED-RUN-FAILED` — never fabricate a plan line from a scan that
+never finished. **Never end this turn on an exit-2 result** — the only two
+places this step may stop polling are a resolved exit 0 or an exhausted retry
+cap; "the sweep is probably still running, I'll check back" is not a valid
+reason to end the turn.
 
 Once read, `SWEEP_RESULT`'s content is this step's JSON output, exactly as
 before:
