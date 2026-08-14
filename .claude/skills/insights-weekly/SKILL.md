@@ -50,7 +50,7 @@ cat <<'EOF' | E:/automation/fleet-config/.venv/Scripts/python.exe hooks/slack_no
 EOF
 ```
 
-Keep the caption tight — the digest is the phone-readable summary; the attached `.md` is the full read. The helper never raises; a missing token just logs and exits non-zero.
+Keep the caption tight. The helper never raises; a missing token just logs and exits non-zero.
 
 ### 4. Report
 
@@ -58,8 +58,6 @@ Print: which two reports were compared (or "baseline"), the dated file path, the
 
 ## Wiring the weekly schedule
 
-Add an **app-launcher Jobs** entry (Windows Task Scheduler under `\AppLauncher\`) that runs weekly — **target the first run for a Friday**:
-
-Target `.claude/skills/insights-weekly/run-weekly.bat`; it preserves `/insights-weekly` plus bypass permissions and streams filtered milestones through `claude_progress.py`.
+Add an **app-launcher Jobs** entry (Windows Task Scheduler under `\AppLauncher\`) that runs weekly — **target the first run for a Friday** — pointing at `.claude/skills/insights-weekly/run-weekly.bat`; it preserves `/insights-weekly` plus bypass permissions and streams filtered milestones through `claude_progress.py`.
 
 cwd = `E:/automation/fleet-config`. Same executor as every other scheduled job (`/system-map`, `/audit-fleet`); the skill handles refresh + hub diff + Slack itself. (Alternatively a scheduled cloud agent invoking the same skill.)

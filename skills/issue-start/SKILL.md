@@ -33,11 +33,11 @@ stopping so the repo isn't blocked for the 8h TTL:
 
 ### 0. Claim the repo (concurrency-safe start)
 
-**The very first action, before reading the issue or studying any code.** Two
+**The very first action, before reading the issue or studying any code** — two
 sessions on the same repo collide during the minutes-long *study* phase, long
-before either cuts a branch — so the claim has to be dropped up front. Run from
-the repo root. Pass `.` as `<repo>` (current working directory); `--issue` is optional
-diagnostic metadata, omit it in pick mode:
+before either cuts a branch. Run from the repo root. Pass `.` as `<repo>`
+(current working directory); `--issue` is optional diagnostic metadata, omit it
+in pick mode:
 
 ```
 E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/worktree_claim.py acquire . --issue <N>
@@ -51,14 +51,13 @@ claim only protects against a second *claiming session*, and a **running app is
 not a claim holder** — so an unattended worker otherwise wins `MODE=primary` in
 a repo whose primary checkout is being served live by the launcher webapp,
 home-automation's tray, or (for `fleet-config`) `hooks/` + `skills/` junctioned
-into every live `~/.claude`. That is what broke the running launcher mid-run on
-2026-07-30. With the flag, no claim is attempted or published, `MODE=worktree`
-is always printed, and the primary stays free for a human session.
+into every live `~/.claude`, and breaks it mid-run. With the flag, no claim is
+attempted or published, `MODE=worktree` is always printed, and the primary stays
+free for a human session.
 
 A human running this skill in their own terminal has no such variable and keeps
-the default claim-or-worktree behaviour, which is correct there — one worktree
-per issue for a single interactive session would be pure overhead (README
-"Concurrent same-repo work").
+the default claim-or-worktree behaviour — one worktree per issue for a single
+interactive session would be pure overhead (README "Concurrent same-repo work").
 
 Read the printed `MODE=`:
 - **`MODE=primary`** — you are the first session here. Work **in place** on the
@@ -235,6 +234,5 @@ The `--summary` is the only free-form part — keep it to one short imperative
 line (e.g. `review the diff, then /issue-finish` or `approve the plan to
 proceed`). The helper resolves the channel/user, pulls the issue title + link
 from `gh`, and emits the canonical format. Silent no-op if no channel is
-configured; always exits 0. Skip it only if the
-work ran straight through to `/issue-finish` without ever pausing for the user
-(that flow fires its own ping).
+configured; always exits 0. Skip it only if the work ran straight through to
+`/issue-finish` without ever pausing for the user (that flow fires its own ping).

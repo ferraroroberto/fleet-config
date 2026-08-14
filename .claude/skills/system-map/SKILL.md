@@ -7,9 +7,7 @@ description: Regenerate the fleet architecture map (crawl every repo under E:\au
 
 **Goal:** Keep one always-current, shareable picture of the whole personal fleet. Crawl the fleet, reconcile it against the written architecture, render the visual, commit when it changed, and drop the fresh image in Slack — every run, on-demand or scheduled.
 
-**The map is self-describing: each repo declares its own card in a root `.fleet.toml`, and `.claude/skills/system-map/build_data.py` aggregates those into `architecture/fleet.data.js`** (`window.FLEET = { …strict JSON… };`, the *generated* file the renderer reads). The hand-maintained input is `architecture/fleet.residual.json` — the non-repo structure (access/edge/compute/external/principles), every repo's fallback card in curated order, and an `_adopted` registry of repos that MUST carry a `.fleet.toml`. The visual (`architecture/system-map.html`) is a pure renderer that reads the generated `fleet.data.js`; `architecture/ARCHITECTURE.md` is the human-readable narrative that must agree with it. `.claude/skills/system-map/render_mermaid.py` is a second, text-native renderer of the same `fleet.data.js` — a Mermaid flowchart committed to `architecture/system-map.mmd` and also embedded in `global-CLAUDE.md` (the every-session context file), so an agent gets a compact fleet-relationship picture for free, no browser required. The acceptance matrix (`tests/run_acceptance.py`) fails loud if the fleet, the data file, and the doc ever drift apart — so keeping them in sync is enforced, not hoped for. Per-repo `.fleet.toml` aggregation is the one exception: its inputs live in sibling checkouts, so there it reports drift as `SKIP` rather than failing fleet-config's gate, and **this skill owns fixing it** (step 2).
-
-**Designed for unattended runs.** A weekly job invokes the co-located `run-weekly.bat` from the `fleet-config` repo; that wrapper routes `/system-map` through the shared `claude_progress.py` adapter with bypass permissions. Every step must degrade gracefully, never block on a prompt.
+**The map is self-describing:** each repo declares its own card in a root `.fleet.toml`, and `.claude/skills/system-map/build_data.py` aggregates those (plus the hand-maintained `architecture/fleet.residual.json`) into the *generated* `architecture/fleet.data.js` that both renderers read — `architecture/system-map.html` (the PNG) and `.claude/skills/system-map/render_mermaid.py` (the text-native `.mmd` + `global-CLAUDE.md` block). `architecture/ARCHITECTURE.md` is the human-readable narrative that must agree with it, and `tests/run_acceptance.py` fails loud if the fleet, the data file, and the doc ever drift apart — enforced, not hoped for. Per-repo `.fleet.toml` aggregation is the one exception: its inputs live in sibling checkouts, so there it reports drift as `SKIP` rather than failing fleet-config's gate, and **this skill owns fixing it** (step 2).
 
 ## Execution rules (read first)
 
@@ -17,6 +15,7 @@ description: Regenerate the fleet architecture map (crawl every repo under E:\au
 - **Never leak hardware specs.** The render always forces `?placeholders=1`, so the committed PNG shows `<model> · <NN> GB` placeholders even though a local `system-map.local.js` exists. Do not put real specs into `ARCHITECTURE.md`, the `DATA` object, or the commit. (See `architecture/README.md`.)
 - **Keep the residual and `ARCHITECTURE.md` in lockstep.** Any project add/remove/edit happens in `architecture/fleet.residual.json` (or the repo's `.fleet.toml`) *and* `ARCHITECTURE.md` in the same run, then regenerate `fleet.data.js` with `build_data.py`. Never hand-edit `fleet.data.js`.
 - **Don't disturb in-progress work.** Only touch `architecture/` and the marked fleet-map block in `global-CLAUDE.md`, and only commit those paths.
+- **Degrade gracefully, never block on a prompt** — this runs unattended.
 
 ## Steps
 
@@ -26,8 +25,8 @@ Run in order. A failure on one step prints a short error and stops.
 
 - `hooks/projects.toml` → the fleet: every `[<name>]` table's bare name is a repo; the `[global] architecture_ignore` array lists repos to exclude (vendored/legacy/out-of-scope). The fleet set = all repo names − `architecture_ignore`.
 - each repo's `<cwd_prefix>/.fleet.toml` → that repo's self-declared card (authoritative when present). Schema in `architecture/README.md`.
-- `architecture/fleet.residual.json` → the hand-maintained input: non-repo structure (access/edge/compute/external/principles) + fallback cards (curated order) + the `_adopted` registry.
-- `architecture/fleet.data.js` → the **generated** map data (`window.FLEET`); never hand-edit it.
+- `architecture/fleet.residual.json` → the hand-maintained input: non-repo structure (access/edge/compute/external/principles) + fallback cards (curated order) + the `_adopted` registry of repos that MUST carry a `.fleet.toml`.
+- `architecture/fleet.data.js` → the **generated** map data (`window.FLEET = { …strict JSON… };`); never hand-edit it.
 - `architecture/ARCHITECTURE.md` → the current layer assignment + prose descriptions.
 
 ### 2. Reconcile the fleet, then regenerate
@@ -116,8 +115,6 @@ Print: the change line from step 4, projects added/removed (if any), whether a c
 
 ## Wiring the weekly schedule
 
-Add an **app-launcher Jobs** entry (Windows Task Scheduler under `\AppLauncher\`) that runs weekly:
-
-Target `.claude/skills/system-map/run-weekly.bat`; it preserves `/system-map` plus bypass permissions and streams filtered milestones through `claude_progress.py`.
+Add an **app-launcher Jobs** entry (Windows Task Scheduler under `\AppLauncher\`) that runs weekly, targeting the co-located `.claude/skills/system-map/run-weekly.bat`; it preserves `/system-map` plus bypass permissions and streams filtered milestones through the shared `claude_progress.py` adapter.
 
 cwd = `E:/automation/fleet-config`. Same executor as every other scheduled job; the skill handles render + commit-if-changed + Slack itself. (Alternatively a scheduled cloud agent invoking the same skill.)

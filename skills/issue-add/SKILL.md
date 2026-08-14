@@ -37,10 +37,9 @@ In parallel:
 - `gh label list` — compare against the canonical type set in step 7; any
   missing label gets created there.
 
-Do **not** scan past issues to "learn the house style" — the canonical style is
-defined in this skill (step 6) and that's the only source of truth. Reading
-prior issues adds context noise and drifts toward whatever was filed last
-instead of the intended format.
+Do **not** scan past issues to "learn the house style" — step 6 is the only
+source of truth; reading prior issues adds noise and drifts toward whatever was
+filed last.
 
 ### 2. Extract the real intent
 
@@ -50,7 +49,7 @@ Don't ask a question yet; research usually resolves apparent ambiguity.
 
 ### 3. Research the codebase
 
-This is the core of the skill. Find and read the code the idea touches:
+The core of the skill. Find and read the code the idea touches:
 - Which files / modules / functions are involved, and how they behave now.
 - Constraints, conventions, and patterns the change must respect.
 - Anything that makes the idea harder or different than it first sounds.
@@ -149,11 +148,10 @@ the label applied.
   E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/hooks/notify_complete.py --kind add --issue <N> --repo <owner/name>
   ```
 
-  `<owner/name>` is the value captured in step 8, not re-derived from CWD —
-  this is what keeps the ping pinned to the repo the issue was actually filed
-  into even if the session's CWD is elsewhere by the time this fires
-  (fleet-config#497). The helper pulls the title + URL from `gh -R <owner/name>`.
-  Silent no-op if no channel is configured; always exits 0.
+  `<owner/name>` is the value captured in step 8, never re-derived from CWD
+  (which may be elsewhere by the time this fires). The helper pulls the title
+  + URL from `gh -R <owner/name>`. Silent no-op if no channel is configured;
+  always exits 0.
 - **One-shot mode (`now`):** do **not** stop and do **not** fire the add ping —
   immediately proceed to the `/issue-start <N> now` flow on the same turn
   (pre-flight, sync main, cut branch, build straight away, per that skill's

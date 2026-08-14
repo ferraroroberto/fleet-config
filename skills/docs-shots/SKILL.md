@@ -1,6 +1,6 @@
 ---
 name: docs-shots
-description: Judgment + orchestration for a repo's visual-docs screenshots — decides which features a diff actually touched (or takes named/all features standalone), proposes the stale set, and on your OK drives the repo's own doc-capture engine + README regen. Never runs the capture engine without asking first. Silent no-op unless the repo has docs/screenshots/manifest.json. E.g. "/docs-shots", "/docs-shots reporting newsletter", "refresh the visual docs for what changed".
+description: Judgment + orchestration for a repo's visual-docs screenshots — decides which features a diff touched (or takes named/all features standalone), proposes the stale set, and on your OK drives the repo's own capture engine + README regen. Never captures without asking. No-op unless docs/screenshots/manifest.json exists. E.g. "/docs-shots", "/docs-shots reporting newsletter", "refresh the visual docs for what changed".
 ---
 
 # docs-shots
@@ -18,10 +18,8 @@ what to ask the engine to do, asks the human first, then calls it.
 
 **Generic, no project hardcoded.** Any repo can adopt this by shipping an
 engine matching the contract below at `docs/screenshots/manifest.json` +
-`config/doc_capture` — today `content-management` is the only adopter.
-Wiring it into any other project is explicitly out of scope for this skill
-(fleet-config#93) — extend the discovery below when a second adopter exists
-with a differently-pathed engine, don't generalize for one.
+`config/doc_capture` — today `content-management` is the only adopter. Wiring
+it into any other project is explicitly out of scope (fleet-config#93).
 
 ## The engine contract (pinned to content-management#110's shipped shape)
 
@@ -47,8 +45,8 @@ with a differently-pathed engine, don't generalize for one.
 - **PNG naming**: `docs/screenshots/<feature>-desktop.png` (stable — no
   timestamp in the filename, so git diffs stay clean).
 - **Fail-safe masking is entirely engine-owned.** `plan_features` inside the
-  engine refuses (logs a loud warning, `ACTION_SKIP_UNMASKED`) any feature
-  with no `mask` selectors — this skill's job is to **surface** that warning
+  engine refuses (loud warning, `ACTION_SKIP_UNMASKED`) any feature with no
+  `mask` selectors — this skill's job is to **surface** that warning
   distinctly in its own report, not to re-implement the guard.
 
 ## Discovery — activate only if the repo has opted in
@@ -65,10 +63,9 @@ pilot's own setup work.
 ## Two entry points
 
 - **Standalone `/docs-shots [feature ...]`** — a deliberate refresh. No
-  argument → propose **every** manifest feature (the engine's own
-  idempotency will no-op anything genuinely unchanged, but the human still
-  approves the run). Named arguments (`/docs-shots reporting newsletter`) →
-  propose just those.
+  argument → propose **every** manifest feature (engine idempotency no-ops
+  anything genuinely unchanged, but the human still approves the run). Named
+  arguments (`/docs-shots reporting newsletter`) → propose just those.
 - **Inside `/issue-finish` Step 2** (wired below) — after the README/docs
   update, run the **diff-intersection judgment routine**: which manifest
   features does *this PR's diff* touch, keyed off `source_globs`. No-op when
@@ -184,11 +181,10 @@ README/docs update and before the verification gate:
 - `skills/_lib/docs_shots_plan.py` owns the pure discovery + diff-
   intersection logic (unit-tested, `tests/test_docs_shots_plan.py`), reusing
   `ux_surface.py`'s glob-matching (`matches_any`) rather than reimplementing
-  it — same brace-expand + glob-to-regex machinery the design-conformance
-  gate already uses.
-- Today's engine invocation (`python -m config.doc_capture`) is documented
-  as the current fleet convention because there is exactly one adopter. If a
-  second app adopts a differently-pathed engine, extend the discovery to read
-  an explicit declaration (e.g. a manifest `engine` field) rather than
-  assuming every future adopter's module lives at the same path — don't
-  build that generalization before a second real caller exists.
+  it.
+- Today's engine invocation (`python -m config.doc_capture`) is the fleet
+  convention because there is exactly one adopter. If a second app adopts a
+  differently-pathed engine, extend the discovery to read an explicit
+  declaration (e.g. a manifest `engine` field) rather than assuming every
+  future adopter's module lives at the same path — don't build that
+  generalization before a second real caller exists.

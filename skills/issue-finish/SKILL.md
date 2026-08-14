@@ -40,11 +40,10 @@ Run in parallel; stop on any failure:
 ### 2. Documentation
 
 - Update `README.md` if usage, config, or output changed.
-- Do **not** create a dated `docs/YYYY-MM-DD-*.md` changelog. The PR body, the
-  closed issue, and `git log` already capture "what was done, files modified,
-  validation run" — a third copy in `docs/` is busywork that ages badly. `docs/`
-  is reserved for durable *design records* a future reader will actually
-  re-open (architecture, testing strategy, etc.), not per-PR changelogs.
+- Do **not** create a dated `docs/YYYY-MM-DD-*.md` changelog — the PR body, the
+  closed issue, and `git log` already capture what was done. `docs/` is reserved
+  for durable *design records* a future reader will re-open (architecture,
+  testing strategy), not per-PR changelogs.
 - Commit any documentation changes.
 
 ### 2b. Visual docs (`/docs-shots` sub-step — repos with a screenshot manifest only)
@@ -71,9 +70,8 @@ never block the finish over it.
 
 Run the gate the project's `CLAUDE.md` specifies (e.g.
 `C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe -File scripts/verify-before-ship.ps1`).
-It must exit 0. Do not proceed on
-a red gate. If the project has no checker, say so explicitly — never claim tests
-passed when there are none.
+It must exit 0. Do not proceed on a red gate. If the project has no checker, say
+so explicitly — never claim tests passed when there are none.
 
 ### 3b. UX-conformance gate (web-app UX diffs only)
 
@@ -157,13 +155,12 @@ Integration rules:
 ### 5. Merge (CI is advisory — skip the wait when it adds no signal)
 
 **CI is advisory, not a required gate.** The local verification gate (step 3) is
-the contract; CI is supplementary. Its **only** signal beyond the local gate is
-the **e2e suite** (when the local gate itself doesn't run it — it needs browsers
-+ a live webapp), which is also the known-flaky leg. So a diff that touches none
-of the e2e surface gains nothing from waiting, and neither does a diff whose
-e2e coverage was already proven **locally, in this session** — a wedged remote
-browser can block the merge for nothing either way. The decision below is driven
-by the project's `## CI expectations` block (the convention is
+the contract. CI's **only** signal beyond it is the **e2e suite** (when the local
+gate doesn't run it — that needs browsers + a live webapp), which is also the
+known-flaky leg. So waiting adds nothing for a diff touching no e2e surface, nor
+for one whose e2e coverage was already proven **locally, in this session** — a
+wedged remote browser blocks the merge for nothing either way. The decision below
+is driven by the project's `## CI expectations` block (convention:
 `ferraroroberto/project-scaffolding#52`).
 
 - **Read the project's `## CI expectations` block in `CLAUDE.md`.** It declares
@@ -273,7 +270,7 @@ follow that procedure **exactly**. The non-negotiables:
   (forward-slash exe path, per the Git-Bash-strips-backslashes rule). Launched
   through the Bash tool as `cmd /c "tray.bat --restart"`, Git Bash/MSYS rewrites
   `/c` to `C:/`; `cmd.exe` opens an interactive prompt and the batch/helper never
-  runs. The call emits only the `cmd` banner, none of the batch's own `Stopping
+  runs — it emits only the `cmd` banner, none of the batch's own `Stopping
   previous…` echoes, and leaves the old build untouched. Fire the PowerShell
   invocation non-blocking (the tray holds its console — a foreground launch
   never returns), then move to the bounded poll below.
@@ -302,11 +299,10 @@ follow that procedure **exactly**. The non-negotiables:
 - **On a `git_sha` ≠ `HEAD` mismatch (a silent adopt-stale), stop and surface it
   to the user — do not improvise process kills.** A by-hand `taskkill`/
   `Get-NetTCPConnection` kill during recovery is exactly what the safe-restart
-  rules warn against: it catches the one listener it finds, misses the orphan,
-  and a mistimed single-PID kill can take the server fully down. The robust
-  reclaim is the tray's job (`project-scaffolding#54` hardens `--restart` to
-  reclaim and self-verify); the finisher's contract is to invoke it correctly
-  and **report** a mismatch, not to hand-fix it.
+  rules above warn against, and a mistimed single-PID kill can take the server
+  fully down. The robust reclaim is the tray's job (`project-scaffolding#54`
+  hardens `--restart` to reclaim and self-verify); the finisher's contract is to
+  invoke it correctly and **report** a mismatch, not to hand-fix it.
 
 If the project has no tray, skip this step.
 
@@ -385,15 +381,14 @@ E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/hooks
 
 `<PR_URL>` is the full PR URL (e.g. `https://github.com/owner/repo/pull/31`) —
 pass the URL you already have from `gh pr create` or `gh pr view`. This makes
-the title/URL lookup CWD-independent so it works correctly from subagent
-contexts where the shell's working directory may differ from the project root.
-If no channel is configured it's a silent no-op, and it always exits 0, so a
-notification failure can never block or delay anything.
+the title/URL lookup CWD-independent so it works from subagent contexts where
+the shell's working directory may differ from the project root. If no channel is
+configured it's a silent no-op, and it always exits 0, so a notification failure
+can never block or delay anything.
 
 **`notify_complete.py` is the ONLY sanctioned way to send this ping — do NOT use
-any MCP Slack tool (search/send/etc.) to find a channel or post the ping.** The
-helper resolves the destination channel deterministically from `projects.toml`;
-picking a channel yourself is both a security violation (an agent-inferred
-external write destination) and wrong (it may post to the wrong channel). If the
-helper is a silent no-op because no channel is configured, that is the correct
-outcome — do not "fix" it by reaching for Slack tools.
+any MCP Slack tool (search/send/etc.) to find a channel or post the ping.**
+Picking a channel yourself is both a security violation (an agent-inferred
+external write destination) and wrong (it may post to the wrong channel). A
+silent no-op because no channel is configured is the correct outcome — do not
+"fix" it by reaching for Slack tools.

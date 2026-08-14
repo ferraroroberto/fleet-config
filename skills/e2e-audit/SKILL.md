@@ -1,14 +1,17 @@
 ---
 name: e2e-audit
-description: On-demand audit of a repo's e2e/regression test suite for redundancy, bloat, and coverage gaps against project-scaffolding's "<15 tests total" target — deterministic inventory + near-duplicate clustering via e2e_test_audit.py, then a deduped e2e-redundancy issue for /cleanup-fleet. Never rewrites/deletes tests. Not scheduled weekly — run it after a burst of feature work when redundancy is suspected. E.g. "/e2e-audit", "/e2e-audit app-launcher", "audit the e2e suite for bloat".
+description: On-demand audit of a repo's e2e/regression suite for redundancy, bloat, and coverage gaps against project-scaffolding's "<15 tests total" target — deterministic inventory + near-duplicate clustering via e2e_test_audit.py, then a deduped e2e-redundancy issue for /cleanup-fleet. Never rewrites/deletes tests. Never scheduled — run it after a burst of feature work. E.g. "/e2e-audit", "/e2e-audit app-launcher", "audit the e2e suite for bloat".
 ---
 
 # e2e-audit
 
 **Goal:** Answer "is this e2e suite exhaustive without being infinite?" for one
-repo, on demand — never as a weekly scheduled job (fleet-config#406). Run the
-**deterministic scan** (`skills/_lib/e2e_test_audit.py`) — test-file inventory,
-raw + true (parametrize-expanded) node counts against project-scaffolding's
+repo, on demand — never as a weekly scheduled job (fleet-config#406; suite
+bloat is feature-driven, not time-driven, and the fleet already runs
+`audit-fleet` / `context-audit` / `config-map` / `system-map` /
+`insights-weekly` / `learning-log` weekly). Run the **deterministic scan**
+(`skills/_lib/e2e_test_audit.py`) — test-file inventory, raw + true
+(parametrize-expanded) node counts against project-scaffolding's
 `docs/playwright-ui-testing.md` target ("Keep it small. Target < 15 tests
 total. If tempted to add #20, delete two first."), near-duplicate test-name
 clusters, file-size outliers, and (when the repo declares a `## UX surface`
@@ -16,25 +19,6 @@ block) coverage gaps — apply LLM judgment only where measurement can't reach,
 and file exactly one deduped `e2e-redundancy` issue per repo (the same
 audit→bucket→cleanup machinery as `/codebase-audit` and `/design-sync`,
 cleared later by `/cleanup-fleet e2e-redundancy`).
-
-**Report, never rewrite.** This skill proposes merge/removal/gap candidates
-with rationale and file/test citations. It never edits, merges, or deletes a
-test itself — a test suite is safety equipment; the skill proposes, a human
-disposes (and actually merging tests is its own scoped follow-up work, out of
-scope here).
-
-**Measure with the helper, never by eye.** Every mechanically-checkable number
-— file/test counts, the true pytest node count, name-collision clusters, size
-outliers — comes from `e2e_test_audit.py` (pure, unit-tested); never re-derive
-a count or cluster by reading test files. LLM judgment is confined to:
-confirming a clustered/gap candidate is a *real* finding, materiality, and
-writing the issue.
-
-**On-demand only — deliberately not a weekly job.** Suite bloat is feature-
-driven, not time-driven; a weekly cron would fire ~52×/year to find nothing
-~51 times, adding to a fleet already running `audit-fleet` / `context-audit` /
-`config-map` / `system-map` / `insights-weekly` / `learning-log` weekly. Run
-this after a burst of feature work, not on a clock.
 
 ## Arguments
 
@@ -80,8 +64,7 @@ block for an "e2e surface" line and uses its backtick-quoted, test-like paths
 (e.g. app-launcher's `tests/e2e/`); falls back to `tests/e2e/` — the shared
 convention `project-scaffolding`'s `docs/playwright-ui-testing.md` already
 establishes fleet-wide — when no block or no test-like path is declared. This
-is "generic + project-driven", not a hardcoded per-repo path: the fallback is
-a fleet convention, not this skill's own invention.
+is "generic + project-driven", not a hardcoded per-repo path.
 
 The fields it returns, and what each means:
 
@@ -227,9 +210,10 @@ survived judgment (don't file an empty one).
 
 - **Measure with `e2e_test_audit.py`, never by eye.** File/test counts, node
   counts, clusters, and outliers come from the helper (step 3) — the LLM never
-  re-derives them. LLM judgment is confined to step 4 (confirming clusters,
-  confirming gaps, materiality, writing the issue).
-- **Never edits, merges, or deletes a test.** Report-only; always. Actually
+  re-derives them by reading test files. LLM judgment is confined to step 4
+  (confirming clusters, confirming gaps, materiality, writing the issue).
+- **Never edits, merges, or deletes a test.** Report-only; always — a test
+  suite is safety equipment: this skill proposes, a human disposes. Actually
   consolidating tests is separate, explicitly-scoped follow-up work.
 - **One managed issue per repo per kind — the helper owns identity.** Always
   go through `skills/_lib/audit_issue.py` (`get` then `upsert`) — `--kind
@@ -244,7 +228,8 @@ survived judgment (don't file an empty one).
 - **No AI attribution; no hard-wrapped issue-body paragraphs** (per global
   CLAUDE.md).
 - **Never scheduled weekly.** On-demand only, per fleet-config#406's explicit
-  design point — do not wire this into `run-weekly.bat` or any cron.
+  design point — do not wire this into `run-weekly.bat` or any cron. Run it
+  after a burst of feature work, not on a clock.
 
 ## Notes
 

@@ -5,7 +5,7 @@ description: Audit the fleet's always-on context surface — CLAUDE.md token bud
 
 # context-audit
 
-**Goal:** Keep the **always-on context surface** lean and well-layered over time. Every `CLAUDE.md` and every skill *description* loads on every session of every project, so bloat and duplication there is a fleet-wide, every-session tax. Once a week (or on demand) measure that surface, flag where it violates the standard below, and record the trend — so drift is caught and corrected, not discovered years later.
+**Goal:** Keep the **always-on context surface** lean and well-layered. Every `CLAUDE.md` and every skill *description* loads on every session of every project, so bloat and duplication there is a fleet-wide, every-session tax. Weekly (or on demand): measure that surface, flag where it violates the standard below, and record the trend.
 
 **This is the home of the context-efficiency standard** (ferraroroberto/project-scaffolding#68). The standard lives *here*, in a skill body loaded only on invocation — deliberately **not** as prose in any `CLAUDE.md`, because a standard governing the always-on surface must not itself bloat it.
 
@@ -18,14 +18,14 @@ Every directive lives in **exactly one place**, chosen by two axes:
 
 The layering that falls out:
 
-- **Universal directives → `global-CLAUDE.md`** (one home). Inherited by every session, including shapeless one-offs, with zero shape noise.
+- **Universal directives → `global-CLAUDE.md`** (one home), inherited by every session including shapeless one-offs, with zero shape noise.
 - **Shape-specific directives → the `project-scaffolding` master `CLAUDE.md`**, each gated `*apply only if this project…*`, inherited only by projects of that shape.
 - **A project's own `CLAUDE.md`** carries *only* its project-specific instances (real ports, script names, the restart recipe) — it must **never restate a universal directive** (that's a single-home violation).
 - **Skill `description:`** states only *what it does* + *when to trigger* (keyword/phrase cues), target **≤ ~50 words of prose** (quoted trigger examples are exempt — they must stay verbatim so routing never regresses). The *how it works* lives in the `SKILL.md` body.
 
 ## Lens separation
 
-Three fleet audit lenses, kept distinct so each stays sharp:
+Three fleet audit lenses, kept distinct:
 
 - `/audit-fleet` + `/codebase-audit` → **project source code** quality.
 - `/learning-log` → the **GitHub work stream** (PRs / issues), no source.
@@ -53,14 +53,14 @@ Prints a `MANIFEST:` line (skills / over-cap / claude_mds / leaks / total_est_to
 
 Read the manifest and classify, concisely:
 
-- **Over-cap descriptions** — which are genuinely too verbose vs. merely example-heavy (prose already lean, only the exempt quoted triggers push the total up — those are fine).
-- **Single-home leaks** — which duplicated lines are real universal-directive restatements (→ should be deleted from the project `CLAUDE.md`, inherited from global instead) vs. coincidental short matches. The big clusters are the fleet dedupe backlog.
+- **Over-cap descriptions** — genuinely too verbose vs. merely example-heavy (prose already lean, only the exempt quoted triggers push the total up — those are fine).
+- **Single-home leaks** — real universal-directive restatements (→ delete from the project `CLAUDE.md`, inherit from global instead) vs. coincidental short matches. The big clusters are the fleet dedupe backlog.
 - **Header drift** — projects whose shape-sections diverge from the scaffold master (excluding the ignored one-offs).
 - **Budget trend** — compare the total + per-file tokens against the previous run recorded in the ledger; call out the largest files and any growth.
 
 ### 3. Upsert the ledger + record the week
 
-Build a short markdown digest (single long lines): the manifest totals, the top offenders per category, and the week-over-week budget delta. Keep the durable archive (per-run totals) in the body; put the weekly narrative in a comment — same shape as `/audit-fleet` and `/learning-log`.
+Build a short markdown digest (single long lines): the manifest totals, the top offenders per category, the week-over-week budget delta. Durable archive (per-run totals) in the body; weekly narrative in a comment — same shape as `/audit-fleet` and `/learning-log`.
 
 ```
 E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/audit_issue.py upsert --repo ferraroroberto/fleet-config \
@@ -88,8 +88,6 @@ Print: the manifest totals, the biggest offender per category, the budget delta 
 
 ## Wiring the weekly schedule
 
-Add an **app-launcher Jobs** entry (Windows Task Scheduler under `\AppLauncher\`) running weekly — same executor as `/insights-weekly` and `/audit-fleet`:
-
-Target `.claude/skills/context-audit/run-weekly.bat`; it preserves `/context-audit` plus bypass permissions and streams filtered milestones through `claude_progress.py`.
+Add an **app-launcher Jobs** entry (Windows Task Scheduler under `\AppLauncher\`) running weekly — same executor as `/insights-weekly` and `/audit-fleet` — targeting `.claude/skills/context-audit/run-weekly.bat`; it preserves `/context-audit` plus bypass permissions and streams filtered milestones through `claude_progress.py`.
 
 cwd = `E:/automation/fleet-config`. The skill handles measure + judge + ledger + Slack itself.
