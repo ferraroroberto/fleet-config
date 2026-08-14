@@ -18,11 +18,10 @@ Anything else → treat as no args.
 
 ## Execution rules (read before running any command)
 
-- **Do not spawn Python, jq, awk, sed, or any other tool to process the `gh` JSON.** The JSON output of `gh search issues` is read **directly by Claude** — group, score, and render in-conversation. Counting rows, bucketing by repo, picking suggestions are all model-side operations, not shell-side.
+- **Do not hand-process the fetched JSON yourself with jq/awk/sed/a second script.** Step 2's one helper invocation is the only shell-side processing this skill does — its output is read **directly by Claude**, then grouped, scored, and rendered in-conversation. Counting rows, bucketing by repo, picking suggestions are all model-side operations from there.
 - **Shell:** the Bash tool on this machine is **Git Bash**, which does **not** accept PowerShell syntax. The `&` call operator, `$env:VAR`, backtick line continuations, here-strings (`@'…'@`) — all of these are PowerShell-only and will error in Bash with `syntax error near unexpected token '&'` or similar.
-  - If you genuinely need PowerShell (e.g. to invoke `.\.venv\Scripts\python.exe`), use the **PowerShell tool**, not Bash.
-  - For this skill there is **no reason** to invoke PowerShell — the only shell command needed is `gh`, which works identically in either shell. Stick with Bash + a plain `gh` invocation.
-- **One `gh` call total.** Do not re-query per-repo. Do not pipe `gh` into another tool.
+  - For this skill there is **no reason** to invoke PowerShell — step 2's helper is a forward-slash absolute path invoked directly, which Git Bash handles fine. Stick with Bash.
+- **One fetch call total.** Step 2's helper call is the one and only fetch — do not re-query per-repo yourself, and do not pipe its output into another tool.
 
 ## Steps
 
@@ -32,22 +31,19 @@ Run in order. If a step fails, print a short error and stop.
 
 - `gh auth status` — must be authenticated as `ferraroroberto`. If not, stop and tell the user to run `gh auth login`.
 
-### 2. Fetch all open issues in one shot
-
-Single GitHub search query — much faster than iterating repos:
+### 2. Fetch all open issues — direct Issues API, one repo-scoped call per repo
 
 ```
-gh search issues --owner ferraroroberto --state open --include-prs=false --limit 300 \
-  --json repository,number,title,body,labels,url,createdAt,updatedAt,assignees
+E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/gh_issue_fetch.py fetch
 ```
 
-Run this **once**, via Bash, as plain `gh …` — no `&`, no pipes, no Python wrapper. Claude reads the JSON output directly from the tool result.
+This replaces `gh search issues --owner ferraroroberto`: that call is backed by GitHub's Search API, which is documented as eventually consistent and was observed reporting 23 issues as open for five-plus weeks after they had actually been closed (fleet-config#623). `gh_issue_fetch.py` reads the same information through the direct Issues API instead — one `gh issue list --repo <owner>/<name> --state open` per repo, aggregated inside the helper into the same shape the old search call returned. Run this **once**, via Bash. Claude reads the JSON output directly from the tool result — the helper is the one shell-side processing step, nothing downstream of it re-touches the raw `gh` output.
 
 Notes:
-- `--include-prs=false` keeps PRs out of the result set.
-- `--limit 300` is well above the realistic backlog; if the result is exactly 300, mention that the cap may have been hit.
+- `--limit 300` no longer applies — a repo-scoped `gh issue list` has no comparable cap, so there's nothing to warn about hitting.
 - If a single-repo filter was passed, **mentally** filter the JSON by `repository.name == <arg>` when grouping in step 3 — don't shell out a second tool to filter it.
 - **Drop ledger / metadata issues.** Ignore any issue carrying the `audit-meta` label (the `/codebase-audit` per-repo ledger). It is never actionable work — filter it out model-side when grouping, exactly like the single-repo filter above. Don't add a `gh` query qualifier for it (a leading `-label:` dash trips arg parsing); just skip those rows.
+- If the helper's stderr summary reports any `ERROR <repo>: <reason>` lines, mention those repos were skipped (not silently absent) rather than folding them into "no open issues."
 
 If the result is empty, print "No open issues across the fleet 🎉" and stop.
 

@@ -455,20 +455,25 @@ design snapshot rather than a delta.
 **Count the design-drift bucket (read-only).** `design-drift` and `cert-drift`
 issues are filed by `/design-sweep` / `/design-sync`, never by an audit
 sub-agent, so no sub-agent report carries them — count the open issues directly
-with two fleet-wide searches (read-only, no repo reading):
+with two fleet-wide fetches (read-only, no repo reading), via the direct
+Issues API rather than `gh search issues --owner`, which is backed by
+GitHub's Search API and was observed reporting issues as open for five-plus
+weeks after they had actually closed (fleet-config#623):
 
 ```bash
-gh search issues --owner ferraroroberto --label design-drift --state open --json repository --limit 200
-gh search issues --owner ferraroroberto --label cert-drift  --state open --json repository --limit 200
+E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/gh_issue_fetch.py fetch --label design-drift
+E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/gh_issue_fetch.py fetch --label cert-drift
 ```
 
 Group each result by `repository.name` into per-repo open counts. This is the
 one place the fleet's design-drift accounting is tallied week-over-week — one
 ledger, alongside the six code buckets, never conflated with them. `/audit-fleet`
 is the unified reporter; `/design-sweep` is the doer that keeps those issues
-current. If either `gh search` fails, note `design-drift: count skipped
+current. If either fetch fails outright, note `design-drift: count skipped
 (<reason>)`, carry the last ledger snapshot forward unchanged, and never fail
-the run over it.
+the run over it. If a fetch's stderr summary reports per-repo `ERROR` lines but
+still returns a partial result, use the partial count and note which repos were
+skipped rather than discarding the whole tally.
 
 Compose the digest as markdown (single long lines per paragraph, no hard
 wraps). This markdown is the canonical artifact: it goes to stdout verbatim and
