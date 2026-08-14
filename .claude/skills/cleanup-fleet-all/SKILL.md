@@ -52,14 +52,19 @@ All of the actual retry/ship decision-making lives in **`.claude/workflows/clean
 
 Parse args through the synonym table (see "Arguments"). No args → all eight queued canonical labels (`documentation`, `claude-md-drift`, `duplication`, `stale`, `maintainability`, `slop`, `bug`, `design-drift`). `security` and `cert-drift` are never in this set — `security` is self-healed inline by `/codebase-audit`, and `cert-drift` is `/design-sync`'s review-only kind (a tailnet-cert migration is never auto-applied unattended). Unrecognized tokens are ignored with a one-line note, not a hard stop.
 
-### 3. Fetch every bucket — one `gh` call
+### 3. Fetch every bucket — direct Issues API, one repo-scoped call per repo
 
 ```
-gh search issues --owner ferraroroberto --state open --include-prs=false --limit 300 \
-  --json repository,number,title,body,labels,url
+E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/gh_issue_fetch.py fetch
 ```
 
-Read the JSON directly (no jq/python/awk — group and select model-side, same convention as `/cleanup-fleet`). For each issue, collect every label that matches one of this run's resolved bucket names — **drop any row carrying `audit-meta`** (the ledger issues, never actionable), and drop any row matching none of the resolved buckets. An issue carrying more than one bucket label legitimately appears in more than one bucket's list; that's fine, buckets run serially so it's never worked on twice at once.
+This is the **preferred primary fetch**, not `gh search issues --owner ferraroroberto`: that call is backed by GitHub's Search API, which is documented as eventually consistent and was observed reporting 23 issues as open for five-plus weeks after they had actually been closed — 46 wasted agent invocations, ~2.9M tokens, confirming already-shipped work before any code was touched (fleet-config#623). `gh_issue_fetch.py` reads the same information through the direct Issues API instead, one `gh issue list --repo <owner>/<name> --state open` per repo, aggregated into the same shape `gh search issues` returns.
+
+**Read that as "avoids a known-bad source", not "proven immune."** The repo-scoped smoke test that motivated this was a single same-day observation, not a guarantee about every cache layer between `gh` and GitHub's backend — which is exactly why step 5 still re-checks each selected issue's state immediately before dispatch rather than treating this fetch as sufficient on its own. The two cover different failure modes and neither subsumes the other.
+
+Read the JSON directly (no jq/python/awk — group and select model-side, same convention as `/cleanup-fleet`; the aggregation itself happens inside the purpose-built helper, not by hand-processing raw `gh` output). For each issue, collect every label that matches one of this run's resolved bucket names — **drop any row carrying `audit-meta`** (the ledger issues, never actionable), and drop any row matching none of the resolved buckets. An issue carrying more than one bucket label legitimately appears in more than one bucket's list; that's fine, buckets run serially so it's never worked on twice at once.
+
+If the helper's stderr summary reports `ERRORS=` greater than zero, note which repos it could not read (printed as `ERROR <repo>: <reason>` lines) in the final report — those repos are simply absent from this run's candidates, not a run-wide failure.
 
 If nothing survives for any resolved bucket: print `No open cleanup issues across the fleet 🎉` and stop. This is a legitimate empty-queue success, not a self-reported failure — the queue was checked and found empty, so do **not** print the `SCHEDULED-RUN-FAILED` marker here.
 
@@ -72,16 +77,16 @@ Within each bucket, group surviving issues by `repository.name`:
 
 ### 5. Pre-flight per selected repo
 
-For every repo with a selected issue in any bucket:
+**Re-verify every selected issue's live state first, in one batch, before any per-repo check below.** Even the direct-Issues-API fetch (step 3) is not proven immune to every staleness source (see step 3's caveat), and this run can sit for hours — an issue selected at step 4 can close for real while an earlier bucket is still running. Build one JSON array of every selected issue across every bucket (`[{"repo": ..., "number": ..., "bucket": ..., ...other fields...}, ...]`) and pipe it through:
 
-- **Re-verify the issue's live state.** Step 3's fetch is backed by the Search
-  API, which is documented as eventually consistent and can report an issue as
-  open for weeks after it actually closed (fleet-config#623). Run one direct
-  check per selected issue — `gh issue view <N> --repo ferraroroberto/<repo>
-  --json state` — and read the `state` field directly (no jq/python). `CLOSED`
-  → drop that issue from every bucket's list and record it in the final report
-  as `already closed — dropped, no agent dispatched`, before any of the checks
-  below run for its repo.
+```
+E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/issue_state_gate.py partition
+```
+
+Read the stdout JSON directly — `{"dispatch": [...], "skipped_closed": [...], "unresolved": [...]}`. **Only `dispatch` items proceed past this step.** For every item in `skipped_closed`, drop it from its bucket's list and record it in the final report as `already closed — dropped, no agent dispatched`. For every item in `unresolved`, **also drop it from this run** — the check could not establish the issue's state, so it is dropped rather than guessed as open, and recorded in the final report as `state unresolved — dropped, not dispatched (<detail>)`, distinct from both the closed and the dispatched sets. This must never collapse into "no issues found" — the final report's headline must show all three counts (`dispatched`, `already-closed`, `unresolved`) so an unresolved batch is visible, not read as a quiet empty run.
+
+For every repo with a selected (`dispatch`-bucket) issue in any bucket:
+
 - `E:\automation\<repo>` exists. Else skip + report.
 - `git -C E:\automation\<repo> status --porcelain` empty. Else **skip + report** (never stash) — drop every one of this repo's selected issues (across all buckets) from the run.
 - `git -C E:\automation\<repo> fetch origin` (once per repo, even if it has issues in multiple buckets).
@@ -117,7 +122,7 @@ Re-issue this call (each blocks up to 10 minutes) until the returned status is `
 
 The workflow's return value is `{ buckets: [{ bucket, results: [...], skipped? }, ...], halted }`:
 
-- each result is `{ issue, status, round, branch, worktree, residue, residueDetail, indexLock, indexLockDetail, behindOrigin, behindOriginDetail, zombieShells?, pr?, mergeSha?, reason?, wipSha? }` — `status` is one of `merged`, `escalated`, `failed`; `residue` is `CLEAN` or `RESIDUE`. `indexLock` (`none`/`stale-cleared`/`live-held`/`unknown`) and `behindOrigin` (`current`/`fast-forwarded`/`unknown`) are **reported only** — they never gate a lane and never halt the run, and they default to `unknown` when the teardown agent died or omitted them. `zombieShells` names any leftover directory that satisfied all five zombie-pinned conditions (step 8b) and was therefore not counted as residue; `foreignBranches` names local branches belonging to no lane of this run — also reported, also never residue.
+- each result is `{ issue, status, round, branch, worktree, residue, residueDetail, indexLock, indexLockDetail, behindOrigin, behindOriginDetail, zombieShells?, pr?, mergeSha?, reason?, wipSha?, alreadyClosed? }` — `status` is one of `merged`, `escalated`, `failed`; `residue` is `CLEAN` or `RESIDUE`. `indexLock` (`none`/`stale-cleared`/`live-held`/`unknown`) and `behindOrigin` (`current`/`fast-forwarded`/`unknown`) are **reported only** — they never gate a lane and never halt the run, and they default to `unknown` when the teardown agent died or omitted them. `zombieShells` names any leftover directory that satisfied all five zombie-pinned conditions (step 8b) and was therefore not counted as residue; `foreignBranches` names local branches belonging to no lane of this run — also reported, also never residue. `alreadyClosed: true` means an issue that step 5's batch check let through nonetheless turned out closed by the time /issue-start reached it, hours into the run (fleet-config#623) — the lane still escalates and still tears down, but its teardown skips the usual "unattended lane escalated" comment, since posting one on an already-resolved thread is noise, not a record. Note this is a *different* population from step 5's `skipped_closed`/`unresolved`, which never reach `results` at all — they never entered `issuesByBucket`, so no build agent, let alone a full lane, ran for them.
 - `halted` is `null` on a full run, or `{ bucket, repo, issue, status, detail, remainingInBucket }` when a lane's teardown left residue and the run stopped there. **A halted run is a loud failure, not a partial success** — report it at the top of the final summary, name the one repo, and say exactly what a human must do.
 
 ### 8. Post-flight verification (never trust the agent's self-report)
@@ -189,6 +194,7 @@ E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/hooks
 
 ```
 Cleanup-fleet-all complete           (or: HALTED at <repo>#<N> — see below)
+  candidates: 9 dispatched, 2 already-closed (skipped, no agent dispatched), 1 unresolved (skipped, state unknown)
   documentation:      3 merged, 1 escalated
     ✅ merged:   photo-ocr#44 <pr-url>, reporting#12 <pr-url>, …
     📋 escalate: app-launcher#71 — reason: <validator's last feedback>
@@ -218,6 +224,8 @@ Next: escalated issues need a human — read the teardown comment on the issue a
 ```
 
 A run that halted says so on the **first** line. Never present a halted run as `complete`.
+
+The `candidates:` line is **mandatory on every run, even when both extra counts are zero** — step 5's state re-check can drop issues before any bucket runs, and a run that silently shrank its own working set reads as "nothing to do" when it actually skipped real candidates (fleet-config#623, echoing the same false-confidence shape as fleet-config#560 and #612). `already-closed` and `unresolved` are two distinct counts, never combined into one "skipped" number — an unresolved state check is not the same fact as a confirmed closure, and collapsing them back into one number is exactly the failure this line exists to prevent.
 
 **If (and only if) step 7's workflow result carries a non-null `halted`** (`{ bucket, repo, issue, status, detail, remainingInBucket }`), the final report must also print the literal line `SCHEDULED-RUN-FAILED — halted at <repo>#<issue>: <detail>, <remainingInBucket + issues in later buckets> issue(s) never started`, exactly as shown above, so `claude_progress.py` maps this run to exit 123 instead of falling through to the harness's default exit 0 (fleet-config#612 — a run that halted 1 of 9 lanes in previously reported exit 0 and showed green on the Jobs card). A fully successful run — `halted` is `null` — must **not** print this line; the marker is opt-in, not a default.
 

@@ -155,5 +155,15 @@ _STANDALONE_UNIT_CHECKS: Tuple[Tuple[str, str, str], ...] = (
      "and the SKILL.md wiring that routes the orchestrator through it instead "
      "of a model-composed Monitor loop -- is testable on its own "
      "(fleet-config#609, reopened)"),
+    ("issue_state_gate", "test_issue_state_gate.py",
+     "/cleanup-fleet's and /cleanup-fleet-all's pre-dispatch state re-check "
+     "-- gh-outcome classification into open/closed/unknown, and the "
+     "partition proving a closed issue never reaches the dispatch bucket -- "
+     "is testable on its own, with gh monkeypatched out (fleet-config#623)"),
+    ("gh_issue_fetch", "test_gh_issue_fetch.py",
+     "the direct-Issues-API fetch that replaces `gh search issues --owner` "
+     "as the primary working-set source -- per-repo aggregation and the "
+     "degrade-don't-block path when one repo's fetch fails -- is testable "
+     "on its own, with gh monkeypatched out (fleet-config#623)"),
 )
 

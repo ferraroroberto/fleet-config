@@ -57,6 +57,13 @@ const BUILD_RESULT_SCHEMA = {
     retryable: { type: 'boolean' },
     reason: { type: 'string' },
     summary: { type: 'string' },
+    // The orchestrator's own step-5 pre-dispatch check (fleet-config#623) can
+    // still miss a closure that happens mid-run, hours into a serial sweep.
+    // /issue-start's own "closed → stop" check is the last line of defense,
+    // and this flag is how that specific reason reaches teardown -- so it can
+    // skip the "unattended lane escalated" comment, which reads as confusing
+    // noise on a thread that is already resolved.
+    alreadyClosed: { type: 'boolean' },
   },
 }
 
@@ -125,6 +132,7 @@ ${ISOLATION_RULES}
 
 1. Force worktree mode and create the worktree per the isolation rules above, then \`cd\` into it.
 2. Invoke /issue-start ${issue.number} now — handles pre-flight, issue read, CLAUDE.md read, main sync, branch cut, hand-off to fast-mode implementation. It will see it is already in a worktree; do not let it move you back to the primary.
+   If /issue-start's own pre-flight reports the issue is already closed, STOP immediately — do not force scope onto a closed issue. Report status: "failed", verification: "SKIPPED", retryable: false, reason: "issue already closed", and alreadyClosed: true, then skip straight to the report at the end (do not attempt steps 3-4).
 3. Build the change.
 4. Run the project's verification gate per its CLAUDE.md (e.g. \`pwsh -File scripts/verify-before-ship.ps1\`). It must exit 0. If the project has no checker, say so explicitly in your report and treat verification as SKIPPED, not PASS.
 5. STOP. Do NOT push, open a PR, merge, or run /issue-finish — a separate agent validates this before anything ships.${retryNote}
@@ -175,6 +183,8 @@ function teardownPrompt(issue, lane) {
   const shipped = lane.status === 'merged'
   const commentStep = shipped
     ? `1. No issue comment needed — this one merged (${lane.pr || 'PR recorded'}).`
+    : lane.alreadyClosed
+    ? `1. No issue comment needed — the issue was already closed by the time /issue-start reached it (fleet-config#623). Posting an "unattended lane escalated" comment on an already-resolved thread is confusing noise, not a useful record; just tear the workspace down below.`
     : `1. Post a \`gh issue comment ${issue.number} --repo ferraroroberto/${issue.repo}\` recording, in plain prose (no hard-wrapped paragraphs, no AI attribution): that an unattended /cleanup-fleet-all lane ended as **${lane.status}** after round ${lane.round}; the verbatim reason below; and — only if branch \`${lane.branch}\` has commits ahead of the default branch — that WIP SHA plus a note that the branch and worktree were torn down and the commit is recoverable from the reflog for ~90 days. This comment is the durable record; the branch is not.
 
    Reason to quote verbatim: "${(lane.reason || 'no reason reported').replace(/"/g, "'")}"`
@@ -245,7 +255,7 @@ async function processIssue(bucket, issue) {
   let feedback = null
   let lane = {
     bucket, issue, status: 'escalated', round: MAX_ROUNDS,
-    branch: null, worktree: null, reason: 'exhausted retries',
+    branch: null, worktree: null, reason: 'exhausted retries', alreadyClosed: false,
   }
 
   for (let round = 1; round <= MAX_ROUNDS; round++) {
@@ -266,7 +276,7 @@ async function processIssue(bucket, issue) {
         feedback = reason
         continue
       }
-      lane = { ...lane, status: 'escalated', round, reason }
+      lane = { ...lane, status: 'escalated', round, reason, alreadyClosed: !!(build && build.alreadyClosed) }
       break
     }
 
@@ -363,6 +373,7 @@ for (const bucket of bucketNames) {
     if (r.behindOrigin !== 'current') log(`  behind origin: ${r.behindOrigin} — ${r.behindOriginDetail || 'no detail reported'}`)
     if (r.zombieShells) log(`  zombie-pinned shells (not residue): ${r.zombieShells}`)
     if (r.foreignBranches) log(`  foreign branches (not residue): ${r.foreignBranches}`)
+    if (r.alreadyClosed) log(`  already closed mid-run (fleet-config#623) — no teardown comment posted`)
 
     // Anti-cascade gate. A lane that could not be returned to clean stops the
     // whole run — serial lanes mean exactly one repo is affected, and starting

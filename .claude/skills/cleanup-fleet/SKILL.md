@@ -64,21 +64,20 @@ If **no bucket** is given → run step 2's count query, then `AskUserQuestion` l
 Parse the args (order-independent): the mode token is `hard`/`easy`/`silent`; anything else is the bucket. Map the bucket through the synonym table to its canonical label. Default mode `hard`. If no bucket token was given, fetch the per-bucket counts and ask:
 
 ```
-gh search issues --owner ferraroroberto --state open --include-prs=false --limit 300 \
-  --json repository,number,labels
+E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/gh_issue_fetch.py fetch
 ```
 
 Tally open issues per bucket label (drop `audit-meta` rows; a `security` or `cert-drift` row should never appear — neither is queued here — but drop them too if one somehow exists), then `AskUserQuestion` listing the eight queued buckets with counts.
 
-### 3. Fetch candidates — one `gh` call
+### 3. Fetch candidates — direct Issues API, one repo-scoped call per repo
 
 ```
-gh search issues --owner ferraroroberto --state open --include-prs=false \
-  --label <bucket-label> --limit 300 \
-  --json repository,number,title,body,labels,url
+E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/gh_issue_fetch.py fetch --label <bucket-label>
 ```
 
-Read the JSON directly. **Drop any row carrying the `audit-meta` label** — those are the per-repo `codebase-audit ledger` and the `audit-fleet digest state` issues, never actionable work. If the result is empty, print `No open <bucket> issues across the fleet 🎉` and stop.
+This is the **preferred primary fetch**, not `gh search issues --owner ferraroroberto`: that call is backed by GitHub's Search API, which is documented as eventually consistent and was observed reporting 23 issues as open for five-plus weeks after they had actually been closed — 46 wasted agent invocations, ~2.9M tokens, confirming already-shipped work before any code was touched (fleet-config#623). `gh_issue_fetch.py` reads the same information through the direct Issues API instead, one `gh issue list --repo <owner>/<name> --state open` per repo. **Read that as "avoids a known-bad source," not "proven immune"** — the repo-scoped smoke test that motivated this was a single same-day observation, not a guarantee about every cache layer between `gh` and GitHub's backend. That's why step 8 still re-checks each selected issue's state immediately before dispatch rather than treating this fetch as sufficient on its own; the two cover different failure modes and neither subsumes the other.
+
+Read the JSON directly. **Drop any row carrying the `audit-meta` label** — those are the per-repo `codebase-audit ledger` and the `audit-fleet digest state` issues, never actionable work. If the result is empty, print `No open <bucket> issues across the fleet 🎉` and stop. If the helper's stderr summary reports any `ERROR <repo>: <reason>` lines, note them in the eventual plan — those repos are simply absent from this run's candidates, not a run-wide failure.
 
 ### 4. Group by repo + enforce one-agent-per-repo
 
@@ -133,16 +132,28 @@ For each repo with a selected (and, in `easy`/`silent` mode, easy-tier) issue:
 
 ### 8. Fan out — one background sub-agent per selected issue
 
-**Re-verify state first.** `gh search issues --owner` (step 3's fetch) is backed
-by the Search API, which is documented as eventually consistent and can return
-an issue as open for weeks after it was actually closed (fleet-config#623). For
-every issue still selected at this point, run one direct check —
-`gh issue view <N> --repo ferraroroberto/<repo> --json state` — and read the
-`state` field directly (no jq/python, same convention as elsewhere). Drop any
-that come back `CLOSED`: report it in the run's summary as `already closed —
-dropped, no agent dispatched` rather than spawning an agent to rediscover that.
-Do this right before dispatch, not right after step 3 — `hard` mode's approval
-wait can itself take long enough for an issue to close in the meantime.
+**Re-verify state first, in one batch.** Even step 3's direct-Issues-API fetch is
+not proven immune to every staleness source (see step 3's caveat), and `hard`
+mode's approval wait can itself take long enough for an issue to close in the
+meantime. Build one JSON array of every still-selected issue (`[{"repo": ...,
+"number": ..., ...other fields...}, ...]`) and pipe it through:
+
+```
+E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/issue_state_gate.py partition
+```
+
+Read the stdout JSON directly — `{"dispatch": [...], "skipped_closed": [...],
+"unresolved": [...]}`. **Only `dispatch` items get a sub-agent below.** For
+every `skipped_closed` item, drop it and report `already closed — dropped, no
+agent dispatched` in the run's summary. For every `unresolved` item — the check
+could not establish open vs. closed (network error, rate limit) — **also drop
+it from this run**, never guessed as open, and report `state unresolved —
+dropped, not dispatched (<detail>)`, kept as its own category, never merged
+into either the closed count or the dispatched count. The run's final summary
+must show all three counts (`dispatched` / `already-closed` / `unresolved`)
+even when the latter two are zero — a run that silently shrank its own working
+set reads as "nothing to do," which is the same false-confidence shape this
+issue exists to fix (fleet-config#623, #560, #612).
 
 Before the mass easy-tier dispatch below, call
 `E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/rate_gate.py check --threshold 70`
@@ -292,6 +303,7 @@ Then print the final summary block, with each hard-tier review row carrying its 
 
 ```
 Cleanup complete — <bucket> (<mode> mode)
+  candidates: 6 dispatched, 1 already-closed (skipped, no agent dispatched), 0 unresolved
   ✅ merged:  <repo>#<N> <pr-url>, …
   ⚠️ merged but dirty tree — inspect <repo> (<reason>)
   📋 review:  <repo>#<N> — cd <repo>-wt-<N> && /issue-finish
@@ -305,6 +317,8 @@ Cleanup complete — <bucket> (<mode> mode)
 
 Next: read each review row's summary above, then /issue-finish the ones you approve.
 ```
+
+The `candidates:` line is mandatory even when the extra two counts are zero — step 8's state re-check can drop candidates before any agent is dispatched, and a summary that silently shrinks its own working set reads as "nothing to do" (fleet-config#623). `already-closed` and `unresolved` are always two separate counts, never combined into one "skipped" number.
 
 ### 11. Stop
 
