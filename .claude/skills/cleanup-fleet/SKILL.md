@@ -133,6 +133,17 @@ For each repo with a selected (and, in `easy`/`silent` mode, easy-tier) issue:
 
 ### 8. Fan out — one background sub-agent per selected issue
 
+**Re-verify state first.** `gh search issues --owner` (step 3's fetch) is backed
+by the Search API, which is documented as eventually consistent and can return
+an issue as open for weeks after it was actually closed (fleet-config#623). For
+every issue still selected at this point, run one direct check —
+`gh issue view <N> --repo ferraroroberto/<repo> --json state` — and read the
+`state` field directly (no jq/python, same convention as elsewhere). Drop any
+that come back `CLOSED`: report it in the run's summary as `already closed —
+dropped, no agent dispatched` rather than spawning an agent to rediscover that.
+Do this right before dispatch, not right after step 3 — `hard` mode's approval
+wait can itself take long enough for an issue to close in the meantime.
+
 Before the mass easy-tier dispatch below, call
 `E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/rate_gate.py check --threshold 70`
 once. `DECISION=PAUSE` → wait via the `Monitor` tool's until-loop pattern against

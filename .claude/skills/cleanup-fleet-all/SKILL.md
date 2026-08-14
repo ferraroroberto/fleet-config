@@ -74,6 +74,14 @@ Within each bucket, group surviving issues by `repository.name`:
 
 For every repo with a selected issue in any bucket:
 
+- **Re-verify the issue's live state.** Step 3's fetch is backed by the Search
+  API, which is documented as eventually consistent and can report an issue as
+  open for weeks after it actually closed (fleet-config#623). Run one direct
+  check per selected issue — `gh issue view <N> --repo ferraroroberto/<repo>
+  --json state` — and read the `state` field directly (no jq/python). `CLOSED`
+  → drop that issue from every bucket's list and record it in the final report
+  as `already closed — dropped, no agent dispatched`, before any of the checks
+  below run for its repo.
 - `E:\automation\<repo>` exists. Else skip + report.
 - `git -C E:\automation\<repo> status --porcelain` empty. Else **skip + report** (never stash) — drop every one of this repo's selected issues (across all buckets) from the run.
 - `git -C E:\automation\<repo> fetch origin` (once per repo, even if it has issues in multiple buckets).
