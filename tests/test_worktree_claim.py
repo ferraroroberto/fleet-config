@@ -567,4 +567,127 @@ finally:
     shutil.rmtree(guard_base, ignore_errors=True)
 
 
+# ---- worktree_junction_targets: declarative extra paths from .fleet.toml (#620) ----
+
+wjt_base = Path(tempfile.mkdtemp(prefix="wc-wjt-"))
+try:
+    bare = wjt_base / "no-toml"
+    bare.mkdir()
+    check(wc.worktree_junction_targets(bare) == [".venv"],
+          "worktree_junction_targets: no .fleet.toml -> .venv-only default (#620)")
+
+    no_table = wjt_base / "no-table"
+    no_table.mkdir()
+    (no_table / ".fleet.toml").write_text(
+        'layer = "enabling"\nicon = "x"\ndescription = "d"\n', encoding="utf-8")
+    check(wc.worktree_junction_targets(no_table) == [".venv"],
+          "worktree_junction_targets: .fleet.toml without [worktree] -> .venv-only default (#620)")
+
+    invalid = wjt_base / "invalid-toml"
+    invalid.mkdir()
+    (invalid / ".fleet.toml").write_text("not [ valid toml", encoding="utf-8")
+    check(wc.worktree_junction_targets(invalid) == [".venv"],
+          "worktree_junction_targets: unparseable .fleet.toml -> .venv-only default, no crash (#620)")
+
+    wrong_type = wjt_base / "wrong-type"
+    wrong_type.mkdir()
+    (wrong_type / ".fleet.toml").write_text(
+        '[worktree]\nextra_junctions = "vendor/comfyui"\n', encoding="utf-8")
+    check(wc.worktree_junction_targets(wrong_type) == [".venv"],
+          "worktree_junction_targets: extra_junctions not a list -> .venv-only default (#620)")
+
+    declared = wjt_base / "declared"
+    declared.mkdir()
+    (declared / ".fleet.toml").write_text(
+        '[worktree]\nextra_junctions = ["vendor/comfyui", "  /models/cache/  ", 42, "", "../escape"]\n',
+        encoding="utf-8")
+    check(wc.worktree_junction_targets(declared) == [".venv", "vendor/comfyui", "models/cache"],
+          "worktree_junction_targets: declared extras appended after .venv; "
+          "non-strings, blanks, and '..'-escaping entries dropped, slashes trimmed (#620)")
+
+    # An unreadable-but-present .fleet.toml (permission error, vanished mid-read,
+    # a leftover worktree with a half-deleted checkout) must degrade the same
+    # way a MISSING file does -- never raise. If this raised, remove_worktree's
+    # `for rel in worktree_junction_targets(wt): _strip_junction(...)` loop would
+    # never even start, and the exception would propagate uncaught out of
+    # remove_worktree, skipping the .venv strip entirely (fleet-config#620).
+    unreadable = wjt_base / "unreadable"
+    unreadable.mkdir()
+    (unreadable / ".fleet.toml").write_text('[worktree]\nextra_junctions = ["x"]\n', encoding="utf-8")
+    real_read_text = Path.read_text
+
+    def _boom(self, *a, **k):
+        if self.name == ".fleet.toml":
+            raise OSError("simulated: permission denied / vanished mid-read")
+        return real_read_text(self, *a, **k)
+
+    Path.read_text = _boom
+    try:
+        check(wc.worktree_junction_targets(unreadable) == [".venv"],
+              "worktree_junction_targets: OSError reading .fleet.toml -> .venv-only "
+              "default, never raises (#620)")
+    finally:
+        Path.read_text = real_read_text
+finally:
+    shutil.rmtree(wjt_base, ignore_errors=True)
+
+
+# ---- real junction + reparse-safe teardown: the target survives (#620) ------
+#
+# Proof this branch exists for: create a REAL junction to a directory holding a
+# sentinel file, tear it down the exact way setup_worktree / remove_worktree do
+# (strip via _strip_junction BEFORE any recursive delete of the worktree dir),
+# and assert the sentinel still exists afterwards. Proven for BOTH junction
+# shapes this branch handles: the existing top-level '.venv' junction and the
+# NEW declarative nested extra junction ('vendor/comfyui', whose parent dir
+# does not pre-exist in a fresh worktree). No git, no real worktree -- a
+# throwaway temp-dir fixture only, per the branch's own safety rule.
+
+jt_base = Path(tempfile.mkdtemp(prefix="wc-junction-proof-"))
+try:
+    primary = jt_base / "primary"
+    (primary / ".venv").mkdir(parents=True)
+    (primary / ".venv" / "sentinel.txt").write_text("venv-survives", encoding="utf-8")
+    (primary / "vendor" / "comfyui").mkdir(parents=True)
+    (primary / "vendor" / "comfyui" / "sentinel.txt").write_text("vendor-survives", encoding="utf-8")
+    (primary / ".fleet.toml").write_text(
+        '[worktree]\nextra_junctions = ["vendor/comfyui"]\n', encoding="utf-8")
+
+    wt = jt_base / "primary-wt-620"
+    wt.mkdir()
+    # A real `git worktree add` checks out tracked files, and .fleet.toml is
+    # tracked -- mirror that so the teardown side reads targets from the
+    # worktree's OWN .fleet.toml, exactly as remove_worktree does.
+    shutil.copy2(primary / ".fleet.toml", wt / ".fleet.toml")
+
+    targets = wc.worktree_junction_targets(primary)
+    check(targets == [".venv", "vendor/comfyui"],
+          "junction proof: fixture declares both junction shapes (#620)")
+
+    for rel in targets:
+        link = wt / rel
+        ok, err = wc._junction(link, primary / rel)
+        check(ok, f"junction proof: real mklink /J succeeded for {rel!r} ({err})")
+
+    # Prove the junctions actually work before tearing anything down.
+    check((wt / ".venv" / "sentinel.txt").read_text(encoding="utf-8") == "venv-survives",
+          "junction proof: .venv junction reads through to the primary's real file")
+    check((wt / "vendor" / "comfyui" / "sentinel.txt").read_text(encoding="utf-8") == "vendor-survives",
+          "junction proof: nested extra-junction reads through to the primary's real file")
+
+    # Tear down exactly as remove_worktree does: strip every declared target
+    # BEFORE any recursive delete of the worktree directory.
+    for rel in wc.worktree_junction_targets(wt):
+        wc._strip_junction(wt / rel)
+    shutil.rmtree(wt, ignore_errors=True)
+
+    check(not wt.exists(), "junction proof: the worktree directory itself is gone")
+    check((primary / ".venv" / "sentinel.txt").read_text(encoding="utf-8") == "venv-survives",
+          "junction proof: .venv junction TARGET survives teardown intact (#620)")
+    check((primary / "vendor" / "comfyui" / "sentinel.txt").read_text(encoding="utf-8") == "vendor-survives",
+          "junction proof: nested extra-junction TARGET survives teardown intact (#620)")
+finally:
+    shutil.rmtree(jt_base, ignore_errors=True)
+
+
 _h.report_and_exit("test_worktree_claim")

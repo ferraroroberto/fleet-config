@@ -109,6 +109,32 @@ is the only guard against `audit_issue.py` refiling a closed-as-not-planned
 is otherwise invisible to the next sweep. Same silent-if-unrecognized parsing
 as `[vendored]` above — adding `[cert]` costs nothing on the map-build path.
 
+### Optional per-repo `[worktree]` table (fleet-config#620)
+
+`skills/_lib/worktree_claim.py` junctions a repo's `.venv` into every fresh
+`/issue-start` worktree so a 24-repo fleet never recreates heavy venvs per
+worktree. A repo whose own gate also needs a *different* gitignored,
+untracked path — a vendored install, a model cache — declares it here so
+that path gets junctioned too, instead of the worktree silently lacking it
+and failing its own gate for a reason that looks like the issue being built,
+not the isolation primitive:
+
+```toml
+[worktree]
+extra_junctions = ["vendor/comfyui"]
+```
+
+| Field | Meaning |
+|---|---|
+| `extra_junctions` | list of paths, relative to the repo root, to junction into a worktree alongside `.venv` |
+
+`.venv` is always junctioned first and remains the *only* target when this
+table (or `.fleet.toml` itself) is absent — an undeclared repo behaves
+exactly as before. A declared path that doesn't exist in the primary is
+skipped, never a setup failure. Same silent-if-unrecognized parsing as
+`[vendored]`/`[cert]` above — adding `[worktree]` costs nothing on the
+map-build path.
+
 ### Local specs — kept out of git 🔒
 
 The committed `DATA.compute` (and the committed `system-map.png`) show **placeholder** hardware specs. Real GPU/CPU/RAM are personal detail, so they live in **`system-map.local.js`** (gitignored via `*.local.*`). `system-map.html` loads it with a plain `<script>` tag — works under `file://`, no CORS — and merges `window.LOCAL` over the placeholders. Missing on a fresh checkout → harmless 404, placeholders stay.
