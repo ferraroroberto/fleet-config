@@ -265,5 +265,30 @@ const check = (cond, msg) => { console.log((cond ? 'OK   ' : 'FAIL ') + msg); if
     'SKILL.md scopes the branch check to the lane')
 }
 
+// --- Case 9: build reports the issue already closed -> no teardown comment (#623) ---
+// The orchestrator's own step-5 pre-dispatch check can still miss a closure
+// that happens mid-run, hours into a serial sweep. /issue-start's own
+// "closed -> stop" check is the last line of defense; the build agent
+// surfaces that via alreadyClosed, and teardown must not post the normal
+// "unattended lane escalated" comment over an already-resolved thread.
+{
+  const { sink, agentImpl } = promptSpy(l => {
+    if (l.includes(':build:')) {
+      return { status: 'failed', verification: 'SKIPPED', retryable: false, reason: 'issue already closed', alreadyClosed: true }
+    }
+    return reply(l, {})
+  })
+  sink.args = { issuesByBucket: { bug: ISSUES.bug } }
+  const res = await makeRunner(agentImpl, sink)
+  const r = res.buckets[0].results[0]
+  check(r.status === 'escalated' && r.round === 1, 'alreadyClosed build failure escalates immediately, no retry')
+  check(!sink.order.includes('bug:validate:charlie#3'), 'no validate after an alreadyClosed build failure')
+  const p = sink.prompts['bug:teardown:charlie#3']
+  check(!!p, 'teardown still runs for an alreadyClosed lane (worktree cleanup is still owed)')
+  check(!/Post a `gh issue comment/.test(p), 'no escalation-comment instruction for an alreadyClosed lane')
+  check(/already closed/i.test(p) && /confusing noise/i.test(p),
+    'the teardown brief explains why no comment is posted')
+}
+
 console.log(failures === 0 ? '\nALL CONTROL-FLOW CHECKS PASS' : `\n${failures} CHECK(S) FAILED`)
 process.exit(failures === 0 ? 0 : 1)

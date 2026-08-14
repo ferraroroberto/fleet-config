@@ -79,8 +79,15 @@ poll:
 - `chief_ops.py issues <repo>#<n> [<repo>#<n> ...]` — one state-table row
   per ref via `gh issue view`; use this instead of hand-rolling a
   multi-repo loop. For an open-ended search across all repos (not a known
-  list of refs), still use **one** `gh search issues --owner ferraroroberto
-  --state open ...` call, the `/issue-triage` discipline.
+  list of refs), use
+  `E:/automation/fleet-config/.venv/Scripts/python.exe skills/_lib/gh_issue_fetch.py fetch [--label <label>]`
+  — **not** `gh search issues --owner ferraroroberto --state open ...`.
+  That call is backed by GitHub's Search API, which is documented as
+  eventually consistent and was observed reporting issues as open for
+  five-plus weeks after they had actually closed; a chief run using it
+  reported inflated backlog numbers to Roberto (fleet-config#623).
+  `gh_issue_fetch.py` reads the same information through the direct
+  Issues API instead, one call per repo, aggregated into the same shape.
 - Stale GitHub cache (old `github.fetched_at`)? Refresh once:
   `curl -sk -X POST https://127.0.0.1:8445/api/board/github/refresh`
   (not covered by the helper — it's a one-off action, not a recurring read).
