@@ -32,6 +32,23 @@ The teardown order is load-bearing: a junction MUST be stripped with
 delete follows the junction and wipes the *real* venv (proven the hard way; same
 junction footgun as uninstall.ps1, fleet-config#136).
 
+`.venv` isn't always the only gitignored path a repo's own gate needs — a
+vendored install (`local-llm-hub`'s `vendor/comfyui/`), a model cache, and
+similar never make it into a fresh worktree either, so that repo's own test
+suite can never pass there even though the build itself succeeds
+(fleet-config#620). A repo declares extra ones in its own `.fleet.toml`:
+
+    [worktree]
+    extra_junctions = ["vendor/comfyui"]
+
+`worktree_junction_targets` reads this declaratively; `.venv` is always
+junctioned first and remains the *only* target when no `.fleet.toml` /
+`[worktree]` table is present, so an undeclared repo behaves exactly as
+before. Every target — `.venv` and each declared extra — goes through the
+same junction-then-reparse-safe-teardown path in `setup_worktree` /
+`remove_worktree`; a declared path that doesn't exist in the primary is
+simply skipped, never a setup failure.
+
 `git worktree add` populates tracked files only, so a repo's own gitignored
 runtime config (`config/webapp_config.json`, `config/apps.json`, ... whatever
 each repo's own `config.json`-pattern requires) never makes it into the new
@@ -71,10 +88,11 @@ Subcommands:
       claim-or-worktree behaviour.
 
   setup-worktree <repo-root> <issue-N> <branch>
-      `git worktree add <repo>-wt-<N> -b <branch> <origin-main>` + junction the
-      primary's .venv into it, then copy the primary's gitignored
-      `config/*.json` runtime config (excluding `*.sample.json` templates,
-      which are already tracked) into the worktree. Prints `WORKTREE=<path>`.
+      `git worktree add <repo>-wt-<N> -b <branch> <origin-main>` + junction
+      `.venv` and any repo-declared `[worktree] extra_junctions` (fleet-config#620)
+      into it, then copy the primary's gitignored `config/*.json` runtime
+      config (excluding `*.sample.json` templates, which are already tracked)
+      into the worktree. Prints `WORKTREE=<path>`.
 
   release <repo-root>
       Remove the primary claim. Idempotent. (Worktree sessions never hold it.)
@@ -362,6 +380,70 @@ def _looks_like_worktree_name(name: str) -> bool:
     return bool(sep) and bool(stem) and bool(issue)
 
 
+def worktree_junction_targets(repo: Path) -> list:
+    """Relative paths to junction from the primary checkout into a fresh worktree.
+
+    Always starts with `.venv`. A repo can declare extra gitignored paths its
+    own gate needs (a vendored install, a model cache, ...) via `.fleet.toml`'s
+    optional `[worktree]` table:
+
+        [worktree]
+        extra_junctions = ["vendor/comfyui"]
+
+    No `.fleet.toml`, no `[worktree]` table, or a malformed value all degrade
+    to the `.venv`-only default -- an undeclared repo behaves exactly as
+    before (fleet-config#620). Entries that aren't non-empty strings, or that
+    contain a `..` component, are silently dropped rather than junctioning
+    outside the repo. Pure path/text logic -- no filesystem checks here;
+    `setup_worktree` skips a declared target that doesn't actually exist in
+    the primary.
+    """
+    targets = [".venv"]
+    fleet_toml = repo / ".fleet.toml"
+    if not fleet_toml.is_file():
+        return targets
+    import tomllib
+    try:
+        data = tomllib.loads(fleet_toml.read_text(encoding="utf-8", errors="replace"))
+    except (OSError, tomllib.TOMLDecodeError):
+        # OSError covers a partially-deleted/leftover worktree whose .fleet.toml
+        # exists but is unreadable (permission error, vanished mid-read, ...) --
+        # remove_worktree must still strip .venv rather than crash before it
+        # gets the chance to (fleet-config#620 teardown-safety follow-up).
+        return targets
+    table = data.get("worktree")
+    if not isinstance(table, dict):
+        return targets
+    extra = table.get("extra_junctions")
+    if not isinstance(extra, list):
+        return targets
+    for item in extra:
+        if not isinstance(item, str) or not item.strip():
+            continue
+        rel = item.strip().strip("/\\")
+        if rel and ".." not in Path(rel).parts:
+            targets.append(rel)
+    return targets
+
+
+def _junction(link: Path, target: Path) -> Tuple[bool, str]:
+    """Create a directory junction `link` -> `target` (`mklink /J`).
+
+    Creates `link`'s parent first -- `git worktree add` only populates tracked
+    files, so a declared extra target's parent dir (e.g. `vendor/` for
+    `vendor/comfyui`) may not exist yet. Returns `(ok, message)`; message is
+    the combined stderr/stdout on failure, empty on success. Pure OS wrapper --
+    the caller decides whether a failure is fatal.
+    """
+    link.parent.mkdir(parents=True, exist_ok=True)
+    res = subprocess.run(
+        ["cmd", "/c", "mklink", "/J", str(link), str(target)],
+        capture_output=True, text=True, creationflags=NO_WINDOW,
+    )
+    ok = res.returncode == 0 and link.exists()
+    return ok, "" if ok else (res.stderr.strip() or res.stdout.strip())
+
+
 def _strip_junction(path: Path) -> None:
     """Remove a directory junction by its reparse point ONLY, never its target.
 
@@ -491,20 +573,26 @@ def setup_worktree(repo: Path, issue: str, branch: str) -> Path:
         print(f"CONFIG_COPIED={len(copied)}: "
               f"{', '.join(p.name for p in copied)}", file=sys.stderr)
 
-    venv = repo / ".venv"
-    if venv.is_dir():
-        link = wt / ".venv"
-        res = subprocess.run(
-            ["cmd", "/c", "mklink", "/J", str(link), str(venv)],
-            capture_output=True, text=True, creationflags=NO_WINDOW,
-        )
-        if res.returncode != 0 or not link.exists():
+    linked: list = []
+    for rel in worktree_junction_targets(repo):
+        src = repo / rel
+        if not src.is_dir():
+            # Declared-but-absent must not break setup (fleet-config#620
+            # acceptance) -- .venv itself is optional the same way today.
+            continue
+        link = wt / rel
+        ok, err = _junction(link, src)
+        if not ok:
             # Roll back the half-made worktree so we never leave a broken one
-            # behind. Strip any partial junction FIRST (reparse-safe) so the
-            # rollback remove can't follow it into the primary's real venv.
+            # behind. Strip every junction made so far FIRST (reparse-safe,
+            # including this failed/partial one) so the rollback remove can't
+            # follow any of them into the primary's real target.
+            for done in linked:
+                _strip_junction(done)
             _strip_junction(link)
             _git(repo, "worktree", "remove", "--force", str(wt), check=False)
-            sys.exit(f"Failed to junction .venv into the worktree: {res.stderr.strip() or res.stdout.strip()}")
+            sys.exit(f"Failed to junction {rel} into the worktree: {err}")
+        linked.append(link)
     return wt
 
 
@@ -588,9 +676,13 @@ def remove_worktree(wt: Path, *, force_nonstandard_name: bool = False) -> int:
         return 2
 
     # MUST precede any recursive delete, on EVERY path through this function
-    # (see _strip_junction): git's remove follows a .venv junction into the
-    # primary's real venv and destroys it.
-    _strip_junction(wt / ".venv")
+    # (see _strip_junction): git's remove follows a junction into its real
+    # target and destroys it. `.fleet.toml` is a tracked file, so it was
+    # already checked out into `wt` by `git worktree add` -- reading targets
+    # from `wt` itself (not the primary) needs no git and degrades safely if
+    # the worktree is already deregistered (fleet-config#526/#620).
+    for rel in worktree_junction_targets(wt):
+        _strip_junction(wt / rel)
 
     primary = primary_for_worktree(wt)
     if primary is not None:
