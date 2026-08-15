@@ -50,7 +50,7 @@ flowchart TB
   BACKUPPY --> LIBPY
   BACKUPPY --> PROJECTS
   BACKUPPY -->|success to #log, failure to #attention| SLACKPY
-  BACKUPPY -->|"E: repo residue -> C: ; C: transcripts -> E:"| BACKUPDEST["C:/Users/rober/backups/fleet-private\nE:/backups/claude-transcripts\ndated snapshots + latest/ + manifest.json"]
+  BACKUPPY -->|"E: repo residue -> C: ; C: transcripts -> E:"| BACKUPDEST["C:/Users/rober/backup/fleet-private\nE:/backup/claude-transcripts\ndated snapshots + latest/ + manifest.json"]
 
   subgraph tray["tray/ — junctioned into ~/.claude/tray (fleet-config#153)"]
     TRAYPS1["tray_lifecycle.ps1\nONE machine-local copy; every sister tray.bat calls it by path\ncanonical source: project-scaffolding"]
