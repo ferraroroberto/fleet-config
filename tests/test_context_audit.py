@@ -34,6 +34,7 @@ REPO = Path(__file__).resolve().parent.parent
 
 sys.path.insert(0, str(REPO / "skills" / "_lib"))
 import skill_description as sd  # noqa: E402
+from fleet_repo_scan import is_linked_worktree as sd_is_wt  # noqa: E402
 
 
 def _load(name: str, rel: str):
@@ -195,5 +196,63 @@ with tempfile.TemporaryDirectory() as td:
     total_files = len(rows) + len(unmeasured)
     check(total_files == 6,
           f"measured (3) + unmeasured (2 files + 1 missing repo) accounts for everything probed (got {total_files})")
+
+
+# ------------------------------------------- budget scan: worktree siblings ----
+# fleet-config#629. The *budget* half of this file had no worktree guard, so a
+# transient `<repo>-wt-<N>` sibling was measured as a fleet project: phantom
+# rows in the budget and header-drift blocks, and — because worktrees appear
+# and vanish with whatever sessions are running — a `total_est_tokens` that
+# moved between runs with no file changed, corrupting the week-over-week trend
+# recorded in the #218 ledger.
+#
+# A linked worktree's `.git` is a FILE containing a `gitdir:` pointer; a real
+# checkout's is a DIRECTORY. That byte-level difference is the whole
+# discriminator, so the fixture reproduces that shape directly rather than
+# shelling out to `git worktree add`.
+with tempfile.TemporaryDirectory() as td:
+    fleet = Path(td)
+
+    def _repo(name: str, *, worktree: bool, claude_md: bool = True) -> Path:
+        d = fleet / name
+        d.mkdir()
+        if worktree:
+            (d / ".git").write_text("gitdir: E:/automation/real/.git/worktrees/x\n", encoding="utf-8")
+        else:
+            (d / ".git").mkdir()
+        if claude_md:
+            (d / "CLAUDE.md").write_text("# " + name + "\n\nproject instructions.\n", encoding="utf-8")
+        return d
+
+    real_a = _repo("alpha", worktree=False)
+    real_b = _repo("beta", worktree=False)
+    wt = _repo("alpha-wt-42", worktree=True)
+    plain = fleet / "not-a-repo"          # no .git at all — not a worktree
+    plain.mkdir()
+    (plain / "CLAUDE.md").write_text("# loose\n\nstill costs context.\n", encoding="utf-8")
+
+    check(sd_is_wt(wt) is True, "a .git FILE identifies a linked worktree")
+    check(sd_is_wt(real_a) is False, "a .git DIRECTORY is a real checkout, not a worktree")
+    check(sd_is_wt(plain) is False, "a directory with no .git at all is not a worktree either")
+
+    found = {n for n, _ in audit.find_project_claude_mds(fleet)}
+    check("alpha-wt-42" not in found,
+          "a worktree sibling contributes no budget row — the #629 defect")
+    check({"alpha", "beta"} <= found,
+          "real repo checkouts are still measured")
+    check("not-a-repo" in found,
+          "a non-repo directory carrying a CLAUDE.md is still measured — the guard "
+          "excludes worktrees only, it does not silently shrink the budget")
+    check(len(found) == 3, f"exactly the three non-worktree dirs are measured (got {sorted(found)})")
+
+    # The load-bearing property: the answer must not depend on which worktrees
+    # happen to exist when the weekly job fires.
+    before = audit.find_project_claude_mds(fleet)
+    _repo("beta-wt-7", worktree=True)
+    _repo("alpha-wt-99", worktree=True)
+    after = audit.find_project_claude_mds(fleet)
+    check(before == after,
+          "adding two more worktrees changes nothing — the budget total is now "
+          "stable across runs, which is what the #218 trend depends on")
 
 _h.report_and_exit("test_context_audit")
