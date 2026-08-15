@@ -1,26 +1,24 @@
 ---
 name: e2e
-description: Decide, run, and maintain a repo's end-to-end tests proportionate to the actual diff — deterministic classify_e2e routing where adopted, self-healing bootstrap where not, LLM judgment only as fail-safe (always escalating to full, never narrowing). Removes tests with removed features, adds qualifying regressions, keeps the routing table honest. Delegated to by /issue-finish, /issue-yolo, /issue-batch before shipping; also standalone — e.g. "/e2e", "/e2e plan", "/e2e full", "run the e2e", "do we need an e2e run for this?".
+description: Decide, run, and maintain a repo's end-to-end tests proportionate to the diff — deterministic classify_e2e routing where adopted, self-healing bootstrap where not, LLM judgment only as fail-safe (always escalating to full, never narrowing). Delegated to by /issue-finish, /issue-yolo, /issue-batch; also standalone — e.g. "/e2e", "/e2e plan", "/e2e full", "run the e2e", "do we need an e2e run for this?".
 ---
 
 # e2e
 
 **Goal:** One place that answers — and acts on — "what end-to-end testing does
-this diff actually need?" The point is to stop burning CPU, wall-clock, and
-tokens on full browser suites for diffs that don't touch the browser surface,
-**without ever under-testing**: uncertainty always escalates to the full
-suite, never narrows it. The issue-* skills delegate here instead of each
-embedding its own e2e criteria; the user can also invoke it standalone at any
-time ("I changed a few things — e2e").
+this diff actually need?" Stop burning CPU, wall-clock, and tokens on full
+browser suites for diffs that don't touch the browser surface, **without ever
+under-testing**: uncertainty always escalates to the full suite, never narrows
+it. The issue-* skills delegate here instead of each embedding its own e2e
+criteria; the user can also invoke it standalone.
 
 The routing *mechanism* is project-scaffolding's diff-proportionate e2e
 routing (`docs/e2e-routing.md`): each repo's own `scripts/classify_e2e.py`
 reads that repo's `.fleet.toml` `[e2e]` table and maps the changed-file set to
 a tier — `skip` (no browser suite), `static` (narrow smoke slice), `full` —
-fail-safe to `full`. This skill fronts that mechanism fleet-wide: runs it
-where adopted, **bootstraps it where missing** (self-healing adoption), and
-falls back to same-vocabulary LLM judgment only where the classifier can't
-exist yet.
+fail-safe to `full`. This skill fronts it fleet-wide: runs it where adopted,
+**bootstraps it where missing** (self-healing adoption), and falls back to
+same-vocabulary LLM judgment only where the classifier can't exist yet.
 
 ## Arguments
 
@@ -37,8 +35,8 @@ Run in order. Stop on any hard failure with a one-line error.
 
 ### 1. Probe the repo — deterministic facts first
 
-From the repo root, read the project's `CLAUDE.md` (verification gate,
-`## CI expectations` block) and run:
+From the repo root, read the project's `CLAUDE.md` (verification gate, `## CI
+expectations` block) and run:
 
 ```
 E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/e2e_route.py probe .
@@ -58,12 +56,11 @@ Nothing to route. Two cases, keyed on the probe's `WEB_SURFACE`:
 - **`WEB_SURFACE=yes`** (webapp or Streamlit) → evaluate whether a suite is
   worth *starting*, against project-scaffolding's Loop-2 promotion bar
   (`docs/playwright-ui-testing.md`): silent breakage would hurt, no unit test
-  can catch it, and the behavior has stabilized. If the bar is met, propose a
-  minimal starter suite (boot-or-adopt fail-loud conftest, a handful of tests,
-  well under the 15-test target) — **propose in the report; build it only on
-  the user's OK or as its own issue**, never as a silent side effect of a
-  finish flow. If the bar isn't met (early spike, still churning), say so and
-  stop.
+  can catch it, and the behavior has stabilized. Bar met → propose a minimal
+  starter suite (boot-or-adopt fail-loud conftest, a handful of tests, well
+  under the 15-test target) — **propose in the report; build it only on the
+  user's OK or as its own issue**, never as a silent side effect of a finish
+  flow. Bar not met (early spike, still churning) → say so and stop.
 
 ### 3. Suite present, classifier missing — self-heal
 
@@ -138,8 +135,7 @@ E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skill
 
 ### 6. Inline suite maintenance (same run, same branch)
 
-The suite stays right-sized as a side effect of using this skill — cleanup is
-part of the flow, not a periodic chore:
+Cleanup is part of the flow, not a periodic chore:
 
 - **Feature removed by this diff** → find the e2e tests that covered it
   (selectors, routes, widget keys, view names the diff deleted) and **remove
@@ -202,10 +198,9 @@ One block, echoed verbatim by delegating skills into their finish summary:
 
 - **Split with `/e2e-audit`:** this skill is the *execution + inline
   maintenance* half (acts on the current diff, edits tests in-branch);
-  `/e2e-audit` is the *review* half — on-demand, whole-suite,
-  **report-only** (redundancy/bloat/gap findings into a managed issue). They
-  never overlap: this skill doesn't audit the resting suite; the audit never
-  runs or edits tests.
+  `/e2e-audit` is the *review* half — on-demand, whole-suite, **report-only**.
+  They never overlap: this skill doesn't audit the resting suite; the audit
+  never runs or edits tests.
 - Decision record: fleet-config#556 (delegation contract, self-healing
   adoption, direct test additions, web-only suite evaluation).
 - Mechanism + schema ownership stays with project-scaffolding

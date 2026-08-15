@@ -6,26 +6,21 @@ description: Fan out a byte-for-byte re-vendor of one project-scaffolding compon
 # propagate-vendored
 
 **Goal:** Turn a `project-scaffolding` component fix into a one-command,
-Dependabot-style distribution wave instead of N hand-filed issues + N
-hand-built PRs (the 2026-07-09/10 cascade: ~40 mechanical byte-copy PRs across
-6–7 repos for two components — `project-scaffolding#144–#150`). The scaffold
-change already carries the decision; a byte-for-byte re-vendor carries none —
-so this skill never files a per-repo issue, only opens auto-merging PRs that
-link back to the scaffold record.
+Dependabot-style distribution wave instead of N hand-filed issues + N hand-built
+PRs (`project-scaffolding#144–#150`). The scaffold change already carries the
+decision; a byte-for-byte re-vendor carries none — so this skill never files a
+per-repo issue, only opens auto-merging PRs linking back to the scaffold record.
 
-Companion doc: `skills/propagate-vendored/README.md` (the manifest-schema
-decision writeup — `.fleet.toml [vendored]` vs a separate `VENDORED.lock`, and
-the concrete `build_data.py` conflict check that was run and came back clean).
-Schema reference: `architecture/README.md`'s "Optional per-repo `[vendored]`
-table" section.
+Companion doc: `skills/propagate-vendored/README.md` (manifest-schema decision
+writeup). Schema reference: `architecture/README.md`'s "Optional per-repo
+`[vendored]` table" section.
 
 ## Cadence — explicit or batched, never reflex-fired
 
-Invoke this skill **by hand**, or as a periodic batch (e.g. weekly), never
-automatically per scaffold commit. Four propagation waves in one day (the
-cascade this skill exists to fix) is the anti-pattern regardless of how cheap
-each wave is — collect scaffold changes, propagate once. Nothing in this
-skill schedules itself; there is no `run-weekly.bat` here by design.
+Invoke **by hand**, or as a periodic batch (e.g. weekly), never automatically
+per scaffold commit. Four propagation waves in one day is the anti-pattern
+regardless of how cheap each wave is — collect scaffold changes, propagate once.
+Nothing here schedules itself; there is no `run-weekly.bat` by design.
 
 ## Arguments
 
@@ -43,7 +38,7 @@ skill schedules itself; there is no `run-weekly.bat` here by design.
 No component argument → stop: "Pass a component name, e.g.
 `/propagate-vendored nav` or `/propagate-vendored nav --dry-run`."
 
-## Execution rules (read before running anything)
+## Rules (read before running anything)
 
 - **Model tier: `easy`** (per `docs/model-tiers.md`) — narrow, mechanical,
   zero design decisions; full-autonomy execution shape. On Claude Code today
@@ -61,14 +56,30 @@ No component argument → stop: "Pass a component name, e.g.
   on the very first adopter merge (the substring-match gotcha in
   `~/.claude/CLAUDE.md`).
 - **Adopt before re-vendor.** A repo with no `[vendored].<component>` entry
-  yet is not skipped — see step 3's "adopt" sub-step. This is how the manifest
-  goes from zero adopters (today) to covering the real nav + tray consumers,
-  without this PR touching a single sister repo.
+  yet is not skipped — see step 4a's "adopt" sub-step. This is how the manifest
+  goes from zero adopters (today) to covering the real nav + tray consumers.
+- **Vendor verbatim.** Never hand-edit a copied file — a re-vendor that needs
+  a local tweak means the tweak belongs upstream in `project-scaffolding`
+  first, not in the adopter's copy (`_vendored/README.md`'s rule).
+- **Vendoring standardizes whatever you vendor, including mistakes — review
+  the component's user-facing wording as carefully as its mechanism before
+  propagating it fleet-wide.** Byte-identical + hash-verified means a
+  locally-softened copy registers as *drift*, so a bad default reads as the
+  safe choice everywhere it lands. This bit the fleet once: a vendored
+  component's docstring and exit message prescribed "kill + fresh restart" on
+  repos whose ports host a daily-driver tray and the Board itself. Before a
+  real (non-`--dry-run`) wave, confirm the scaffold source's wording actually
+  matches its own cited reference implementation, not just that the bytes
+  hash-match.
+- **Hash-verify before bumping the manifest sha.** A copy that doesn't
+  byte-match the scaffold source is a bug in this skill, not something to
+  paper over by writing the sha anyway.
 - **Degrade, don't block.** A per-adopter failure (gate red, merge conflict,
   CI red) is reported and left for a human; it never stops the rest of the
   wave.
 - **`--dry-run` never writes anything** — no clone, no branch, no file, no PR,
   no manifest bump. It only runs `vendored_drift.py` and reports.
+- **No AI attribution; no hard-wrapped PR-body paragraphs** (global CLAUDE.md).
 - **Shell:** Bash tool here is Git Bash — plain `git`/`gh`/the resolved Python
   path only, no PowerShell syntax.
 
@@ -98,12 +109,12 @@ booleans + diff file lists), `no_manifest` (every other fleet repo — the
 "hasn't adopted yet" bucket), and `errors`. This is the **only** source of
 truth for who's behind; never eyeball repos by hand.
 
-For the **adopt** discovery — finding a repo that already carries the
-component's files but has no manifest entry recording it — `no_manifest`
-alone doesn't distinguish "never touched this component" from "has it,
-unlabeled." Resolve that with one targeted sweep, scoped to the component's
-conventional path (UI components: `app/webapp/static/_vendored/<component>/`;
-tray primitives: the specific file, e.g. `app/tray/tray_lifecycle.ps1`):
+For the **adopt** discovery — a repo that already carries the component's files
+but has no manifest entry — `no_manifest` alone doesn't distinguish "never
+touched this component" from "has it, unlabeled." Resolve that with one
+targeted sweep, scoped to the component's conventional path (UI components:
+`app/webapp/static/_vendored/<component>/`; tray primitives: the specific file,
+e.g. `app/tray/tray_lifecycle.ps1`):
 
 ```
 git -C E:\automation\<repo> ls-files -- "<component-path>"
@@ -137,10 +148,9 @@ Run `/propagate-vendored <component>` (no --dry-run) to fan out the real wave.
 
 Target repos = every `behind_head`/`local_drift` adopter from step 2, plus
 every adopt-candidate from step 2's sweep. For each, dispatch a background
-sub-agent (`run_in_background: true`, easy tier per the execution rules
-above). Worktree setup mirrors `/issue-batch` step 6 — pre-create the branch
-in the orchestrator via `worktree_claim.py`, sequentially, before any agent
-launches:
+sub-agent (`run_in_background: true`, easy tier per the rules above). Worktree
+setup mirrors `/issue-batch` step 6 — pre-create the branch in the orchestrator
+via `worktree_claim.py`, sequentially, before any agent launches:
 
 ```
 git -C E:\automation\<repo> fetch origin
@@ -234,45 +244,16 @@ As each agent returns, surface its report with a status mark (`✅ merged` /
   no per-repo issues filed (by design — see the scaffold record).
 ```
 
-## Hard rules
-
-- **No per-repo issues, ever.** The scaffold issue/PR is the sole record.
-- **`Part of …`, never `Closes …`** in a generated PR body.
-- **Vendor verbatim.** Never hand-edit a copied file — a re-vendor that needs
-  a local tweak means the tweak belongs upstream in `project-scaffolding`
-  first, not in the adopter's copy (`_vendored/README.md`'s rule).
-- **Vendoring standardizes whatever you vendor, including mistakes — review
-  the component's user-facing wording as carefully as its mechanism before
-  propagating it fleet-wide.** Byte-identical + hash-verified means a
-  locally-softened copy registers as *drift*, so a bad default reads as the
-  safe choice everywhere it lands. This bit the fleet once: a vendored
-  component's docstring and user-facing exit message prescribed "kill +
-  fresh restart" on repos whose ports host a daily-driver tray and the Board
-  itself — caught only because one adopter stopped to ask instead of
-  applying it. Before a real (non-`--dry-run`) propagation wave, confirm the
-  scaffold source's wording actually matches its own cited reference
-  implementation, not just that the bytes hash-match.
-- **Hash-verify before bumping the manifest sha.** A copy that doesn't
-  byte-match the scaffold source is a bug in this skill, not something to
-  paper over by writing the sha anyway.
-- **`--dry-run` writes nothing.** Not a manifest bump, not a branch, nothing.
-- **One agent per repo/checkout**, worktree-claimed exactly like `/issue-batch`.
-- **Degrade, don't block.** A blocked adopter is reported and left for a
-  human; the rest of the wave proceeds.
-- **No AI attribution; no hard-wrapped PR-body paragraphs** (global CLAUDE.md).
-
 ## Notes
 
-- **This PR (fleet-config#338) ships the skill + manifest schema + drift
-  helper only — it never edits a sister repo.** The nav + tray adopters
-  (app-launcher, home-automation, local-llm-hub, photo-ocr, voice-transcriber,
-  whatsapp-radar, grocery-shopping-automation) get their `[vendored]` entries
-  written by step 4a ("ADOPT") the first time this skill actually runs against
-  them — not hand-added here. That first run is this skill's own acceptance
-  test.
+- **fleet-config#338 ships the skill + manifest schema + drift helper only —
+  it never edits a sister repo.** The nav + tray adopters (app-launcher,
+  home-automation, local-llm-hub, photo-ocr, voice-transcriber, whatsapp-radar,
+  grocery-shopping-automation) get their `[vendored]` entries written by step 4a
+  ("ADOPT") the first time this skill actually runs against them.
 - **Quality gate is upstream, not here.** `project-scaffolding#152` (source
   behavioral tests + a same-day-second-bug freeze rule) is what keeps a
-  defective component from ever reaching this skill's fan-out — propagation
+  defective component from reaching this skill's fan-out — propagation
   distributes whatever quality ships, including defects, so it deliberately
   does not re-review the component's correctness.
 - **If `project-scaffolding#153` (de-vendor the tray) lands,** tray components

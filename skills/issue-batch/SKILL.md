@@ -1,6 +1,6 @@
 ---
 name: issue-batch
-description: Fan out a batch of GitHub issues to parallel background sub-agents — one agent per issue, with git worktrees when multiple issues hit the same repo so the agents don't collide. Each sub-agent cuts the branch, builds the change, runs the verification gate, then STOPS for review. You run `/issue-finish` yourself per branch, sequentially. Use after `/issue-triage` when you want to pick a handful of issues and work on them in parallel — e.g. "/issue-batch app-launcher#23 app-launcher#45 photo-ocr#12" or bare "/issue-batch 23 45 12".
+description: Fan out GitHub issues to parallel background sub-agents — one per issue, in git worktrees when several hit the same repo. Each cuts a branch, builds, runs the verification gate, then STOPS for review; you run `/issue-finish` per branch, sequentially. Use after `/issue-triage` — e.g. "/issue-batch app-launcher#23 app-launcher#45 photo-ocr#12" or bare "/issue-batch 23 45 12".
 ---
 
 # issue-batch
@@ -246,16 +246,13 @@ E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skill
 
 As each background sub-agent finishes, surface its report verbatim in the chat with a short header (`✅` if verification passed, `⚠️` if skipped or post-flight flagged something, `❌` if failed).
 
-After **all** agents have returned, fire the batch-complete ping with the
-deterministic helper (canonical format, resolves channel/user from
-`projects.toml`). Run:
+After **all** agents have returned, fire the batch-complete ping with the deterministic helper (canonical format, resolves channel/user from `projects.toml`):
 
 ```
 E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/hooks/notify_complete.py --kind batch --passed <pass> --total <total>
 ```
 
-If no channel is configured it's a silent no-op; it always exits 0, so a
-notification failure can't block or delay anything.
+If no channel is configured it's a silent no-op; it always exits 0, so a notification failure can't block or delay anything.
 
 Then finish with one summary block:
 

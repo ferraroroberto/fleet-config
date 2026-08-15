@@ -5,37 +5,7 @@ description: Run /design-sync across every FastAPI + static-PWA web app in the E
 
 # design-sweep
 
-**Goal:** A fleet-wide, idempotent, scatter-gather wrapper around `/design-sync`
-— the unattended half split out of `fleet-config#178`. Deterministically gate
-the fleet down to its **token-styled web apps** (skipping non-web repos and
-Streamlit POC spikes), run the per-repo `/design-sync` logic against each
-through a bounded window of **Sonnet** sub-agents, then collect the results into
-**one combined digest**: stdout (so a scheduled run captures it) + a Slack ping
-via `notify_complete.py --kind design`. Each drifted app already has its own
-durable `design-drift` (and `cert-drift`) issue — this digest is a transient
-this-run roll-up, not a competing count store.
-
-**Opus orchestrator, Sonnet workers.** The top-level orchestrator runs on
-**Opus** (`hard` tier — the enumeration/gating/digest reasoning is where a
-mistake is most expensive), while the per-repo `/design-sync` sub-agents run on
-**Sonnet** (`docs/model-tiers.md`). `/design-sync` is deterministic-lint-heavy
-with only light judgment, so Sonnet is the right worker tier — and because
-Sonnet sub-agents are **exempt** from the ≤3-concurrent-Opus burst-limiter cap
-(global CLAUDE.md), the window below is a token-pacing default, not the limiter.
-There is only ever the **one** Opus session (this orchestrator) in flight.
-
-**Where the persistent counts live.** This skill does **not** own a
-week-over-week ledger. The fleet's design-drift accounting lives in the single
-`audit-fleet digest state` ledger issue, where `/audit-fleet` tallies open
-`design-drift` + `cert-drift` issues per repo on its own weekly run — one place,
-alongside the six code buckets, never conflated with them
-(`fleet-config#180`). This sweep is the *doer* (files/refreshes the per-repo
-issues); `/audit-fleet` is the unified *reporter*.
-
-**This skill writes no source and runs no `apply`.** Its only writes are the
-per-repo `design-drift` / `cert-drift` issues each `/design-sync` sub-agent
-files/updates (report-only mode). Never commit, push, restart, or run
-`/design-sync apply`.
+**Goal:** A fleet-wide, idempotent, scatter-gather wrapper around `/design-sync` (`fleet-config#178`). Deterministically gate the fleet down to its **token-styled web apps** (skipping non-web repos and Streamlit POC spikes), run the per-repo `/design-sync` logic against each through a bounded window of **Sonnet** sub-agents, then collect the results into **one combined digest**: stdout (so a scheduled run captures it) + a Slack ping via `notify_complete.py --kind design`.
 
 ## Arguments
 
@@ -49,22 +19,21 @@ Anything else → treat as no argument (whole fleet).
 
 - **The orchestrator only does cheap, safe work:** the deterministic web-app
   gate (one Python sweep), windowed dispatch, collection, the digest. **All CSS
-  reading and lint happens inside sub-agents** — this is what keeps the
-  orchestrator's context (and the weekly token spend) bounded.
+  reading and lint happens inside sub-agents** — that bounded orchestrator
+  context is what keeps the weekly token spend low enough for an all-app sweep.
 - **Never disturb in-progress work.** `/design-sync` is read-only on source (it
   files issues, never switches branches or edits code), so it is safe on a repo
   in any state — but never pass `apply`, and never touch a repo's tree.
 - **Never background a tool call in this skill.** This orchestrator runs
-  headless via `run-weekly.bat`'s one-shot Claude process, with no persistent
-  turn loop and no human attending it. There is no wake-up mechanism to resume
-  the session after a turn ends, so launching any command (the step-2 gate
-  sweep, a sub-agent dispatch) with `run_in_background: true` and then ending
-  the turn to "wait for it" silently kills the entire run: the CLI exits
-  immediately on that clean turn-end, reporting `exit_code: 0` (false success)
-  while nothing past that point ever happened (`fleet-config#314`). Every
-  command here — including waiting on in-flight sub-agents — must run
-  synchronously (foreground) or poll to completion within the same turn (e.g.
-  the `Monitor` tool's until-loop), never fire-and-forget.
+  headless via `run-weekly.bat`'s one-shot Claude process — no persistent turn
+  loop, no human, **no wake-up mechanism**. Launching any command (the step-2
+  gate sweep, a sub-agent dispatch) with `run_in_background: true` and then
+  ending the turn to "wait for it" silently kills the run: the CLI exits on that
+  clean turn-end reporting `exit_code: 0` (false success) while nothing past
+  that point happened (`fleet-config#314`). Every command — including waiting on
+  in-flight sub-agents — must run synchronously (foreground) or poll to
+  completion within the same turn (e.g. the `Monitor` tool's until-loop) —
+  never fire-and-forget.
 
 ## Steps
 
@@ -121,17 +90,15 @@ rate limiter — Sonnet is exempt from the ≤3-Opus cap. Dispatch up to 4
 background `Agent` calls (`run_in_background: true`,
 `subagent_type: "general-purpose"`, **`model: "sonnet"`**) to fill the window,
 then **stay in this same turn and block on `TaskOutput` (`block: true`) for
-every task now in flight** — do not end the turn to "wait for it". This
-orchestrator runs headless via `run-weekly.bat` with no wake-up mechanism (see
-"Never background a tool call in this skill" above); an unpolled background
-task is silently killed at the CLI's background-task ceiling and the run
-reports a false `exit 0` (`fleet-config#506`, the same gap `fleet-config#314`
-closed for this skill's own Python-sweep/digest calls, just never stated for
-this specific `Agent`-dispatch loop). If a `TaskOutput` call times out before a
-task finishes, re-issue the same blocking call. As each task returns, record
-its report and immediately dispatch the next repo — never more than 4 in
-flight, and the turn must never end while any task is still dispatched. No
-git worktrees: `/design-sync` (report-only) never edits a tree, so agents in
+every task now in flight** — do not end the turn to "wait for it". An unpolled
+background task is silently killed at the CLI's background-task ceiling and the
+run reports a false `exit 0` (`fleet-config#506`, the same gap
+`fleet-config#314` closed for this skill's own Python-sweep/digest calls, just
+never stated for this `Agent`-dispatch loop). If a `TaskOutput` call times out
+before a task finishes, re-issue the same blocking call. As each task returns,
+record its report and immediately dispatch the next repo — never more than 4 in
+flight, and the turn must never end while any task is still dispatched. No git
+worktrees: `/design-sync` (report-only) never edits a tree, so agents in
 different repo directories cannot collide.
 
 Prompt template (substitute `<name>` / `<path>`):
@@ -162,11 +129,9 @@ Report back in this exact shape so the orchestrator can build the digest:
   - Note: <one line if anything surprising came up>
 ```
 
-Keep the window full: each time a sub-agent returns and its report is recorded,
-immediately dispatch the next pending repo (up to the 4-in-flight cap). Print a
-one-line progress marker per repo as it completes (e.g.
+Print a one-line progress marker per repo as it completes (e.g.
 `[3/8] home-automation — DRIFT (4)`) so a scheduled run's console shows forward
-motion. This entire loop runs inside one turn: block on `TaskOutput` for the
+motion. The whole loop runs inside one turn: block on `TaskOutput` for the
 in-flight window, refill on each return, repeat until `web_apps` is drained —
 the turn never ends with a sub-agent still dispatched (`fleet-config#506`).
 
@@ -232,12 +197,19 @@ digest went (stdout always; Slack pinged or no-op). Stop.
 - **Report-only on source.** This orchestrator and its sub-agents never edit
   code, commit, push, restart, or run `/design-sync apply`. Every write is a
   `design-drift` or `cert-drift` issue.
-- **Opus orchestrator, Sonnet sub-agents.** The one Opus session drives;
-  per-repo `/design-sync` runs on Sonnet through a ≤4 pacing window (Sonnet is
-  exempt from the ≤3-Opus burst cap — `docs/model-tiers.md`).
-- **No separate design ledger.** Week-over-week design-drift counts live only in
-  the `audit-fleet digest state` ledger (`/audit-fleet` owns that accounting);
-  this sweep's digest is a transient this-run roll-up.
+- **Opus orchestrator, Sonnet sub-agents.** The top-level orchestrator runs on
+  **Opus** (`hard` tier — the enumeration/gating/digest reasoning is where a
+  mistake is most expensive) and is the **only** Opus session in flight;
+  per-repo `/design-sync` is deterministic-lint-heavy with only light judgment,
+  so it runs on **Sonnet** through a ≤4 pacing window (Sonnet is exempt from the
+  ≤3-concurrent-Opus burst cap — `docs/model-tiers.md`, global CLAUDE.md).
+- **No separate design ledger.** This skill owns no week-over-week counts: the
+  fleet's design-drift accounting lives in the single `audit-fleet digest state`
+  ledger issue, where `/audit-fleet` tallies open `design-drift` + `cert-drift`
+  issues per repo on its own weekly run — one place, alongside the six code
+  buckets, never conflated with them (`fleet-config#180`). This sweep is the
+  *doer* (files/refreshes the per-repo issues); `/audit-fleet` is the unified
+  *reporter*, and this digest is a transient this-run roll-up.
 - **Degrade, don't block.** Built for unattended `claude -p`. A per-repo failure
   is reported and skipped; only a pre-flight failure stops the whole run. Never
   wait on an interactive prompt, and never background a tool call and end the
@@ -247,10 +219,6 @@ digest went (stdout always; Slack pinged or no-op). Stop.
 
 ## Notes
 
-- **Why scatter-gather:** each app's CSS reading and lint is isolated in its own
-  sub-agent context, so the orchestrator never holds the whole fleet's
-  stylesheets at once — that bounded context is what makes a weekly all-app
-  sweep cheap.
 - **`design-drift` and `cert-drift` are first-class audit buckets**
   (`audit_issue.py` `KINDS`) — `/cleanup-fleet design-drift` clears the design
   bucket fleet-wide and `/cleanup-fleet cert-drift` the cert bucket, both
