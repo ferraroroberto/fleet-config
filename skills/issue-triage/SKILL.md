@@ -18,10 +18,8 @@ Anything else → treat as no args.
 
 ## Execution rules (read before running any command)
 
-- **Do not hand-process the fetched JSON yourself with jq/awk/sed/a second script.** Step 2's one helper invocation is the only shell-side processing this skill does — its output is read **directly by Claude**, then grouped, scored, and rendered in-conversation. Counting rows, bucketing by repo, picking suggestions are all model-side operations from there.
-- **Shell:** the Bash tool on this machine is **Git Bash**, which does **not** accept PowerShell syntax. The `&` call operator, `$env:VAR`, backtick line continuations, here-strings (`@'…'@`) — all of these are PowerShell-only and will error in Bash with `syntax error near unexpected token '&'` or similar.
-  - For this skill there is **no reason** to invoke PowerShell — step 2's helper is a forward-slash absolute path invoked directly, which Git Bash handles fine. Stick with Bash.
-- **One fetch call total.** Step 2's helper call is the one and only fetch — do not re-query per-repo yourself, and do not pipe its output into another tool.
+- **One fetch call total, and no shell-side post-processing.** Step 2's single helper invocation is the only shell work this skill does — no jq/awk/sed, no second script, no per-repo re-query, no piping its output into another tool. Claude reads that output **directly**; grouping, scoring and picking suggestions are all model-side from there.
+- **Shell:** use Bash, not PowerShell. The Bash tool here is **Git Bash**, which rejects PowerShell syntax — the `&` call operator, `$env:VAR`, backtick continuations, here-strings (`@'…'@`) all error with `syntax error near unexpected token '&'` or similar. Step 2's helper is a forward-slash absolute path Git Bash handles directly, so PowerShell is never needed.
 
 ## Steps
 
@@ -37,7 +35,7 @@ Run in order. If a step fails, print a short error and stop.
 E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/gh_issue_fetch.py fetch
 ```
 
-This replaces `gh search issues --owner ferraroroberto`: that call is backed by GitHub's Search API, which is documented as eventually consistent and was observed reporting 23 issues as open for five-plus weeks after they had actually been closed (fleet-config#623). `gh_issue_fetch.py` reads the same information through the direct Issues API instead — one `gh issue list --repo <owner>/<name> --state open` per repo, aggregated inside the helper into the same shape the old search call returned. Run this **once**, via Bash. Claude reads the JSON output directly from the tool result — the helper is the one shell-side processing step, nothing downstream of it re-touches the raw `gh` output.
+This replaces `gh search issues --owner ferraroroberto`, which is backed by GitHub's eventually-consistent Search API and was observed reporting 23 issues as open for five-plus weeks after they were closed (fleet-config#623). The helper reads the direct Issues API instead — one `gh issue list --repo <owner>/<name> --state open` per repo, aggregated into the same shape the old search call returned. Run it **once**, via Bash; Claude reads the JSON straight from the tool result.
 
 Notes:
 - `--limit 300` no longer applies — a repo-scoped `gh issue list` has no comparable cap, so there's nothing to warn about hitting.
