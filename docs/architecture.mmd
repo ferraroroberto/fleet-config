@@ -71,7 +71,7 @@ flowchart TB
     ISSUEEXTRA["issue-batch · issue-finish-batch · issue-triage · issue-yolo"]
     OTHERGLOBAL["codebase-audit · design-sync · e2e · e2e-audit · docs-shots · handoff-commit · quick · screen"]
     PROPVENDORED["propagate-vendored\n[vendored] manifest fan-out + dry-run drift report"]
-    LIB["_lib/ — worktree_claim.py · active_issue.py · claude_progress.py · ux_surface.py ·\nbrowser_verify.py · audit_issue.py · cert_drift.py · rate_gate.py · dirty_tree_check.py · dir_holders.py ·\ndesign_lint/ · design_sweep_scan.py · git_run.py · snapshot_diff.py · fleet_repo_scan.py ·\nvendored_drift.py · no_window.py · e2e_test_audit.py · e2e_route.py · html_shot.py · docs_shots_plan.py ·\nfleet_audit_scan.py · deploy_coverage.py · chief_ops.py · chief_managed.py"]
+    LIB["_lib/ — worktree_claim.py · active_issue.py · claude_progress.py · ux_surface.py ·\nbrowser_verify.py · audit_issue.py · cert_drift.py · rate_gate.py · dirty_tree_check.py · dir_holders.py ·\ndesign_lint/ · design_sweep_scan.py · git_run.py · snapshot_diff.py · fleet_repo_scan.py ·\nvendored_drift.py · no_window.py · e2e_test_audit.py · e2e_route.py · html_shot.py · docs_shots_plan.py ·\nfleet_audit_scan.py · deploy_coverage.py · chief_ops.py · chief_managed.py · skill_description.py"]
   end
   gskills --> CLAUDE
   gskills --> CODEX
@@ -88,7 +88,7 @@ flowchart TB
     AUDITFLEET["audit-fleet"] --> CLEANUPFLEET["cleanup-fleet\n(attended, single-bucket, human-gated)"]
     CLEANUPFLEET --> CLEANUPFLEETALL["cleanup-fleet-all\n(unattended, all-bucket, agent-validated)"]
     DESIGNSWEEP["design-sweep\nOpus orchestrator · Sonnet workers\ndesign_sweep_scan.py web-app gate"]
-    CONTEXTAUDIT["context-audit"] --> CONTEXTPURGE["context-purge\ncheck.py · gate.py"]
+    CONTEXTAUDIT["context-audit\naudit.py — fleet-wide description cap gate"] --> CONTEXTPURGE["context-purge\ncheck.py · gate.py"]
     CONFIGMAP["config-map"]
     FLEETHEALTH["fleet-health\ncapture.py · ledger.py"]
     SOTAWATCH["sota-watch\nwatchlist.toml · watchlist.py"]
@@ -126,6 +126,10 @@ flowchart TB
   CONTEXTAUDIT -->|measures| GCMDFILE
   CONTEXTAUDIT -->|measures| gskills
   CONTEXTAUDIT -->|measures| fskills
+  CONTEXTAUDIT -->|fleet membership + shared description measurement| LIB
+  CONTEXTPURGE -->|shared description measurement| LIB
+  SISTERSKILLS["every fleet repo's .claude/skills/*/SKILL.md\n(membership: hooks/projects.toml)"]
+  CONTEXTAUDIT -->|cap-gates, per repo| SISTERSKILLS
   CONTEXTPURGE -->|compresses| GCMDFILE
   CONTEXTPURGE -->|compresses| gskills
   SCHEDULED -->|streams via| LIB
