@@ -43,6 +43,7 @@ SCAFFOLD_FILE = FLEET_ROOT / "project-scaffolding" / "CLAUDE.md"
 sys.path.insert(0, str(REPO_ROOT / "skills" / "_lib"))
 from fleet_repo_scan import fleet_repos, is_linked_worktree  # noqa: E402
 from skill_description import frontmatter_description, prose_words, word_count  # noqa: E402
+from utf8_stdio import ensure_utf8_stdio  # noqa: E402
 
 # The repo whose `skills/` tier is junctioned into every agent home — its
 # descriptions are always-on in *every* repo's sessions, not just its own.
@@ -285,7 +286,7 @@ def scan_budget_and_drift(ignore: set[str]) -> dict:
 
 
 def main() -> int:
-    sys.stdout.reconfigure(encoding="utf-8")  # UTF-8 under capture (fleet gotcha)
+    ensure_utf8_stdio()  # UTF-8 under capture (fleet gotcha) — stdout + stderr
     ap = argparse.ArgumentParser(description="Measure the fleet's always-on context surface.")
     ap.add_argument("--cap", type=int, default=DEFAULT_CAP, help="skill-description prose word cap")
     ap.add_argument("--json", action="store_true", help="emit the full report as JSON")

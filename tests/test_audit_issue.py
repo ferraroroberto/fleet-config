@@ -11,7 +11,6 @@ from __future__ import annotations
 import contextlib
 import io
 import shutil
-import subprocess
 import sys
 import tempfile
 from pathlib import Path
@@ -21,6 +20,7 @@ import audit_issue as ai  # noqa: E402
 
 sys.path.insert(0, str(Path(__file__).resolve().parent / "_lib"))
 from check_harness import CheckHarness  # noqa: E402
+from git_fixtures import make_upstream_and_clone, run_git  # noqa: E402
 
 _h = CheckHarness()
 check = _h.check
@@ -375,27 +375,12 @@ finally:
 # then fails, and the repo silently drops out of every sweep via errors[].
 
 def _git567(cwd: Path, *args: str) -> str:
-    proc = subprocess.run(["git", "-C", str(cwd), *args], capture_output=True, text=True)
-    check(proc.returncode == 0, f"git {' '.join(args)} in {cwd} failed: {proc.stderr}")
-    return proc.stdout.strip()
+    return run_git(cwd, *args, check=check)
 
 
 _gtmp = Path(tempfile.mkdtemp(prefix="test_audit_issue_567_"))
 try:
-    _up = _gtmp / "upstream"
-    _work = _gtmp / "work"
-    _up.mkdir()
-    _git567(_up, "init", "-q")
-    _git567(_up, "checkout", "-q", "-b", "main")
-    _git567(_up, "config", "user.email", "35553560+ferraroroberto@users.noreply.github.com")
-    _git567(_up, "config", "user.name", "Test")
-    (_up / "README.md").write_text("hello\n", encoding="utf-8")
-    _git567(_up, "add", "README.md")
-    _git567(_up, "commit", "-q", "-m", "initial")
-
-    _git567(_gtmp, "clone", "-q", str(_up), str(_work))
-    _git567(_work, "config", "user.email", "35553560+ferraroroberto@users.noreply.github.com")
-    _git567(_work, "config", "user.name", "Test")
+    _up, _work = make_upstream_and_clone(_gtmp, check)
 
     _main_sha = _git567(_work, "rev-parse", "origin/main")
 

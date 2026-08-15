@@ -37,11 +37,10 @@ from pathlib import Path
 # Reuse the extractor (same dir; Python puts the script's dir on sys.path[0]).
 from extract import ReportExtractor
 
-try:
-    sys.stdout.reconfigure(encoding="utf-8")
-    sys.stderr.reconfigure(encoding="utf-8")
-except (AttributeError, ValueError):  # pragma: no cover
-    pass
+sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "skills" / "_lib"))
+from utf8_stdio import ensure_utf8_stdio  # noqa: E402
+
+ensure_utf8_stdio()
 
 USAGE_DIR = Path(os.environ.get("INSIGHTS_USAGE_DIR", Path.home() / ".claude" / "usage-data"))
 MODEL = os.environ.get("INSIGHTS_DIFF_MODEL", "claude_sonnet")

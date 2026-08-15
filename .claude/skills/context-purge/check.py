@@ -36,6 +36,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "skills" / "_lib"))
 from skill_description import frontmatter_description, quoted_phrases  # noqa: E402,F401
+from utf8_stdio import ensure_utf8_stdio  # noqa: E402
 
 _MARKED_BLOCK = re.compile(
     r"<!--\s*([\w-]+:[\w-]+):start\s*-->.*?<!--\s*\1:end\s*-->", re.S
@@ -76,7 +77,7 @@ def check(before: str, after: str) -> list[str]:
 
 
 def main() -> int:
-    sys.stdout.reconfigure(encoding="utf-8")  # UTF-8 under capture (fleet gotcha)
+    ensure_utf8_stdio()  # UTF-8 under capture (fleet gotcha) — stdout + stderr
     ap = argparse.ArgumentParser(description="Post-purge preservation checks + token delta.")
     ap.add_argument("before", type=Path)
     ap.add_argument("after", type=Path)
