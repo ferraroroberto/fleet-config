@@ -13,6 +13,11 @@ checkable, so they live here rather than in LLM judgment (same discipline as
      survive verbatim — they are the routing surface and are exempt from the
      prose cap precisely because they must never be reworded.
 
+The `description:` parser and the double-quoted-trigger regex now live in
+`skills/_lib/skill_description.py`, shared with `context-audit/audit.py` — the
+two carried private copies and the audit's `["']` character class silently
+under-counted every description containing an apostrophe (fleet-config#626).
+
 It also prints the before/after token delta (~4 chars/token, the same estimate
 audit.py trends on) so the purge report quotes exact numbers.
 
@@ -29,14 +34,12 @@ import re
 import sys
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "skills" / "_lib"))
+from skill_description import frontmatter_description, quoted_phrases  # noqa: E402,F401
+
 _MARKED_BLOCK = re.compile(
     r"<!--\s*([\w-]+:[\w-]+):start\s*-->.*?<!--\s*\1:end\s*-->", re.S
 )
-# Trigger phrases are double-quoted by fleet convention (verified across all 25
-# skill descriptions). Matching `'...'` too only ever spanned apostrophes — a
-# possessive pair like "box's … week's" read as one lost "trigger" and failed
-# any rewrite that touched it.
-_QUOTED = re.compile(r"\"[^\"]+\"")
 
 
 def est_tokens(text: str) -> int:
@@ -47,18 +50,6 @@ def est_tokens(text: str) -> int:
 def marked_blocks(text: str) -> list[str]:
     """Every `<!-- x:y:start -->…<!-- x:y:end -->` block, whole and in order."""
     return [m.group(0) for m in _MARKED_BLOCK.finditer(text)]
-
-
-def frontmatter_description(text: str) -> str:
-    """The YAML `description:` line value from a SKILL.md frontmatter, or ''."""
-    if not text.startswith("---"):
-        return ""
-    end = text.find("\n---", 3)
-    front = text[3 : end if end != -1 else len(text)]
-    for line in front.splitlines():
-        if line.startswith("description:"):
-            return line[len("description:") :].strip()
-    return ""
 
 
 def check(before: str, after: str) -> list[str]:
@@ -76,7 +67,7 @@ def check(before: str, after: str) -> list[str]:
         if not desc_after:
             failures.append("frontmatter description: dropped entirely")
         else:
-            for phrase in _QUOTED.findall(desc_before):
+            for phrase in quoted_phrases(desc_before):
                 if phrase not in desc_after:
                     failures.append(
                         f"quoted trigger phrase lost from description: {phrase}"

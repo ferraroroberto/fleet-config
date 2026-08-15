@@ -28,7 +28,7 @@ cwd_prefix = "E:/automation/my-new-project"
 
 Required for `notify_on_idle` to name the right project in Slack pings (else it falls back to `[claude]`). Add port/gate/tray fields only if the project has a tray app or verification gate.
 
-**That block is also the fleet-membership list** — `fleet_repos()` reads it (minus `[global] architecture_ignore`), so a new entry expands `/system-map` and `/config-map` too. Same PR, or `tests/run_acceptance.py` fails:
+**That block is also the fleet-membership list** — `fleet_repos()` reads it (minus `[global] architecture_ignore`), so a new entry expands `/system-map`, `/config-map`, and `/context-audit`'s skill-description cap gate too. Same PR, or `tests/run_acceptance.py` fails:
 
 ```powershell
 & E:/automation/fleet-config/.venv/Scripts/python.exe .claude/skills/system-map/build_data.py     # fleet.data.js

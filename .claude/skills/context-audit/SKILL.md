@@ -47,13 +47,18 @@ Three fleet audit lenses, kept distinct:
 E:/automation/fleet-config/.venv/Scripts/python.exe .claude/skills/context-audit/audit.py
 ```
 
-Prints a `MANIFEST:` line (skills / over-cap / claude_mds / leaks / total_est_tokens) then four blocks — skill-description word counts vs the cap, the always-on token budget per `CLAUDE.md` (+ fleet total), single-home leaks (project lines duplicated verbatim from `global-CLAUDE.md`), and header overlap with the scaffold master. Capture it. `--json` emits the full structured report; `--cap N` overrides the word cap.
+Prints a `MANIFEST:` line (skills / compliant / over-cap / unmeasured / repos / claude_mds / leaks / total_est_tokens) then six blocks — skill-description prose counts vs the cap (labelled `<repo>/<skill>`), the unmeasured list, the per-repo roll-up, the always-on token budget per `CLAUDE.md` (+ fleet total), single-home leaks (project lines duplicated verbatim from `global-CLAUDE.md`), and header overlap with the scaffold master. Capture it. `--json` emits the full structured report; `--cap N` overrides the word cap.
+
+**Scope of the cap gate (fleet-config#626).** It measures **every fleet repo's** `.claude/skills/*/SKILL.md` — membership from `fleet_repos()` (`hooks/projects.toml`), the same list `/system-map` and `/config-map` read, so a new repo is covered the day it is added — plus fleet-config's junctioned `skills/` tier, which is always-on in every repo's sessions. It previously looked only at this repo's two tiers, and its quoted-phrase regex matched apostrophes (`Board's … launcher's` swallowed the prose between them), so it reported `over_cap=0` across a fleet where 21 of 49 descriptions were over. Measurement now lives in `skills/_lib/skill_description.py`, shared with `/context-purge`'s `check.py`.
+
+**`unmeasured` is not `compliant`.** A `SKILL.md` that cannot be read, carries no `description:`, or belongs to a repo checkout that is missing reports as `unmeasured` and is excluded from both the compliant and over-cap counts. Treat a non-zero `unmeasured` as a finding in its own right — a gate that silently shrinks its own working set is exactly what made `over_cap=0` technically true and completely false.
 
 ### 2. Judge + narrate
 
 Read the manifest and classify, concisely:
 
-- **Over-cap descriptions** — genuinely too verbose vs. merely example-heavy (prose already lean, only the exempt quoted triggers push the total up — those are fine).
+- **Over-cap descriptions** — genuinely too verbose vs. merely example-heavy (prose already lean, only the exempt quoted triggers push the total up — those are fine). Name the repo, not just the skill.
+- **Unmeasured descriptions** — report each one and why. Never round `unmeasured` into the compliant count or the narrative; a run that measured less must never read like one that measured everything.
 - **Single-home leaks** — real universal-directive restatements (→ delete from the project `CLAUDE.md`, inherit from global instead) vs. coincidental short matches. The big clusters are the fleet dedupe backlog.
 - **Header drift** — projects whose shape-sections diverge from the scaffold master (excluding the ignored one-offs).
 - **Budget trend** — compare the total + per-file tokens against the previous run recorded in the ledger; call out the largest files and any growth.
@@ -77,7 +82,7 @@ Activity-log traffic → `--category log` (the resolver picks the channel from `
 ```
 cat <<'EOF' | E:/automation/fleet-config/.venv/Scripts/python.exe hooks/slack_notify.py --category log \
    --title "context-audit — always-on surface <YYYY-MM-DD>"
-🧮 Weekly context-audit — <total>k always-on tokens, <N> over-cap descriptions, <M> single-home leaks
+🧮 Weekly context-audit — <total>k always-on tokens, <N> over-cap descriptions (<U> unmeasured), <M> single-home leaks
 <the TL;DR>
 EOF
 ```
