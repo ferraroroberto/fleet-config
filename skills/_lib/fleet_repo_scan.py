@@ -45,6 +45,30 @@ def fleet_repos(projects_toml: Path = _DEFAULT_PROJECTS_TOML) -> Dict[str, Path]
     }
 
 
+def is_linked_worktree(path: str | Path) -> bool:
+    """True if `path` is a linked git worktree rather than a real checkout.
+
+    `git worktree add` writes a `.git` **file** containing a `gitdir:` pointer,
+    where a real checkout has a `.git` **directory**. That one byte-level fact
+    is the only reliable discriminator, and every fleet sweep over
+    `E:/automation` needs it: a sibling `<repo>-wt-<N>` tree is a full checkout
+    holding a byte-identical copy of its primary's `CLAUDE.md`, `.fleet.toml`
+    and skills, so counting it double-counts the repo it belongs to.
+
+    Worktrees are created and torn down constantly by `/issue-start`,
+    `/cleanup-fleet` and `/cleanup-fleet-all`, so a scan without this guard
+    produces different numbers on every run with no file having changed
+    (fleet-config#629 — `/context-audit`'s budget block reported 6.5% phantom
+    tokens from two unrelated sessions' worktrees).
+
+    Named and shared rather than re-inlined: `iter_fleet_repos` below asks the
+    stricter question ("is this a real repo *of ours*") via `.git.is_dir()`,
+    which excludes worktrees as a side effect; callers that only need to
+    exclude worktrees — without also imposing repo-ownership — call this.
+    """
+    return (Path(path) / ".git").is_file()
+
+
 def is_fleet_repo(remote_url: str | None) -> bool:
     """True if the remote URL belongs to the `ferraroroberto` GitHub org.
 
@@ -59,8 +83,9 @@ def iter_fleet_repos(root: str | Path, only: str | None = None) -> Iterator[Path
 
     A directory qualifies when it is a real repo (`.git` is a **directory** —
     a linked worktree's `.git` is a *file*, and sweeping a sibling `-wt-<N>`
-    tree would double-count the repo it belongs to) whose `origin` remote is a
-    `ferraroroberto` one. `only` narrows to a single repo by directory name.
+    tree would double-count the repo it belongs to; see `is_linked_worktree`)
+    whose `origin` remote is a `ferraroroberto` one. `only` narrows to a
+    single repo by directory name.
     A directory whose `origin` can't be read is skipped silently — it isn't a
     fleet repo as far as this crawl can tell.
 

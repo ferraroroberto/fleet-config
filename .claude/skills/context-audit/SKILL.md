@@ -61,7 +61,7 @@ Read the manifest and classify, concisely:
 - **Unmeasured descriptions** — report each one and why. Never round `unmeasured` into the compliant count or the narrative; a run that measured less must never read like one that measured everything.
 - **Single-home leaks** — real universal-directive restatements (→ delete from the project `CLAUDE.md`, inherit from global instead) vs. coincidental short matches. The big clusters are the fleet dedupe backlog.
 - **Header drift** — projects whose shape-sections diverge from the scaffold master (excluding the ignored one-offs).
-- **Budget trend** — compare the total + per-file tokens against the previous run recorded in the ledger; call out the largest files and any growth.
+- **Budget trend** — compare the total + per-file tokens against the previous run recorded in the ledger; call out the largest files and any growth. **Ledger rows dated before 2026-08-15 are contaminated**: until fleet-config#629 the budget scan counted transient `<repo>-wt-<N>` worktree siblings as fleet projects, so their `Total tok` and `CLAUDE.mds` are inflated by whatever worktrees happened to exist at run time (6.5% when measured). Don't rewrite them, and don't read a drop across that boundary as a real saving.
 
 ### 3. Upsert the ledger + record the week
 

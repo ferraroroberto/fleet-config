@@ -41,7 +41,7 @@ GLOBAL_FILE = REPO_ROOT / "global-CLAUDE.md"
 SCAFFOLD_FILE = FLEET_ROOT / "project-scaffolding" / "CLAUDE.md"
 
 sys.path.insert(0, str(REPO_ROOT / "skills" / "_lib"))
-from fleet_repo_scan import fleet_repos  # noqa: E402
+from fleet_repo_scan import fleet_repos, is_linked_worktree  # noqa: E402
 from skill_description import frontmatter_description, prose_words, word_count  # noqa: E402
 
 # The repo whose `skills/` tier is junctioned into every agent home — its
@@ -192,9 +192,30 @@ def per_repo_summary(rows: List[dict], unmeasured: List[dict]) -> List[dict]:
     ]
 
 
-def find_project_claude_mds() -> list[tuple[str, Path]]:
-    out: list[tuple[str, Path]] = []
-    for d in sorted(p for p in FLEET_ROOT.iterdir() if p.is_dir()):
+def find_project_claude_mds(fleet_root: Optional[Path] = None) -> List[Tuple[str, Path]]:
+    """Every fleet project's `CLAUDE.md`, excluding linked worktrees.
+
+    A `<repo>-wt-<N>` sibling is a full checkout holding a byte-identical copy
+    of its primary's `CLAUDE.md`, so counting it inflated the always-on budget,
+    `claude_mds`, and the header-drift block with phantom rows — and because
+    worktrees appear and vanish with whatever sessions are running, the totals
+    moved between runs with no file changed, corrupting the week-over-week
+    trend this block exists to produce (fleet-config#629).
+
+    Deliberately *only* the worktree guard, via `fleet_repo_scan`'s shared
+    `is_linked_worktree` rather than a fourth copy of the rule. Gating on
+    `fleet_repos()` instead — the `projects.toml` membership list the skill
+    scan uses — was measured and rejected: it would have silently dropped
+    three real repos carrying a `CLAUDE.md` that costs context every session
+    (`arboldelossuenos`, `externalrisk`, `local-llm-hub-lite`). A budget scan
+    that quietly stops measuring part of the budget is the same failure class
+    as #626's `over_cap=0`.
+    """
+    root = FLEET_ROOT if fleet_root is None else fleet_root
+    out: List[Tuple[str, Path]] = []
+    for d in sorted(p for p in root.iterdir() if p.is_dir()):
+        if is_linked_worktree(d):
+            continue
         cm = d / "CLAUDE.md"
         if cm.is_file():
             out.append((d.name, cm))
