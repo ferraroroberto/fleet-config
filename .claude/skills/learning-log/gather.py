@@ -38,16 +38,13 @@ import subprocess
 import sys
 from pathlib import Path
 
-try:
-    sys.stdout.reconfigure(encoding="utf-8")
-    sys.stderr.reconfigure(encoding="utf-8")
-except (AttributeError, ValueError):  # pragma: no cover
-    pass
-
 HELPER = Path(__file__).resolve().parents[3] / "skills" / "_lib" / "audit_issue.py"
 
 sys.path.insert(0, str(HELPER.parent))
 from no_window import NO_WINDOW  # noqa: E402
+from utf8_stdio import ensure_utf8_stdio  # noqa: E402
+
+ensure_utf8_stdio()
 
 ARCHIVE_HEADER = "## Decision / discovery archive"
 HORIZON_HEADER = "## Horizon → next week"

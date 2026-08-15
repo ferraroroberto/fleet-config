@@ -52,6 +52,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "skills" / "_lib"))
 import fleet_repo_scan  # noqa: E402
+from frontmatter import frontmatter_field  # noqa: E402
 from no_window import NO_WINDOW  # noqa: E402
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -117,12 +118,7 @@ def _frontmatter_field(skill_md: Path, field: str) -> str | None:
         text = skill_md.read_text(encoding="utf-8")
     except OSError:
         return None
-    if not text.startswith("---"):
-        return None
-    end = text.find("\n---", 3)
-    block = text[3:end] if end != -1 else text
-    m = re.search(rf"^{re.escape(field)}:\s*(.+)$", block, re.MULTILINE)
-    return m.group(1).strip() if m else None
+    return frontmatter_field(text, field)
 
 
 def _docstring_first_line(py: Path, cap: int = 120) -> str:

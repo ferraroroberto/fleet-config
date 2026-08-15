@@ -21,6 +21,7 @@ import dirty_tree_check as dtc  # noqa: E402
 
 sys.path.insert(0, str(REPO / "tests" / "_lib"))
 from check_harness import CheckHarness  # noqa: E402
+from git_fixtures import make_upstream_and_clone, run_git  # noqa: E402
 
 _h = CheckHarness()
 check = _h.check
@@ -91,27 +92,12 @@ check(r.status == "CLEAN", "merged: the commits-ahead count is irrelevant to thi
 # ---- check CLI end-to-end against a real throwaway repo ----
 
 def _git(cwd: Path, *args: str) -> str:
-    proc = subprocess.run(["git", "-C", str(cwd), *args], capture_output=True, text=True)
-    check(proc.returncode == 0, f"git {' '.join(args)} in {cwd} failed: {proc.stderr}")
-    return proc.stdout.strip()
+    return run_git(cwd, *args, check=check)
 
 
 tmp = Path(tempfile.mkdtemp(prefix="dirty_tree_check_"))
 try:
-    upstream = tmp / "upstream"
-    work = tmp / "work"
-    upstream.mkdir()
-    _git(upstream, "init", "-q")
-    _git(upstream, "checkout", "-q", "-b", "main")
-    _git(upstream, "config", "user.email", "35553560+ferraroroberto@users.noreply.github.com")
-    _git(upstream, "config", "user.name", "Test")
-    (upstream / "README.md").write_text("hello\n", encoding="utf-8")
-    _git(upstream, "add", "README.md")
-    _git(upstream, "commit", "-q", "-m", "initial")
-
-    _git(tmp, "clone", "-q", str(upstream), str(work))
-    _git(work, "config", "user.email", "35553560+ferraroroberto@users.noreply.github.com")
-    _git(work, "config", "user.name", "Test")
+    upstream, work = make_upstream_and_clone(tmp, check)
 
     def run_check(mode: str, expect_branch: str | None = None, path: Path | None = None) -> str:
         args = [sys.executable, str(REPO / "skills" / "_lib" / "dirty_tree_check.py"),

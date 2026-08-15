@@ -13,7 +13,6 @@ Run: `E:/automation/fleet-config/.venv/Scripts/python.exe tests/test_vendored_dr
 from __future__ import annotations
 
 import shutil
-import subprocess
 import sys
 import tempfile
 from pathlib import Path
@@ -24,6 +23,7 @@ import vendored_drift as vd  # noqa: E402
 
 sys.path.insert(0, str(REPO / "tests" / "_lib"))
 from check_harness import CheckHarness  # noqa: E402
+from git_fixtures import run_git  # noqa: E402
 
 _h = CheckHarness()
 check = _h.check
@@ -110,9 +110,7 @@ finally:
 # ---- scan_fleet: end-to-end against a real throwaway scaffold + adopter repos ----
 
 def _git(cwd: Path, *args: str) -> str:
-    proc = subprocess.run(["git", "-C", str(cwd), *args], capture_output=True, text=True)
-    check(proc.returncode == 0, f"git {' '.join(args)} in {cwd} failed: {proc.stderr}")
-    return proc.stdout.strip()
+    return run_git(cwd, *args, check=check)
 
 
 root = Path(tempfile.mkdtemp(prefix="vendored_drift_fleet_"))

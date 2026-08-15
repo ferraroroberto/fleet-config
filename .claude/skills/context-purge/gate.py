@@ -53,6 +53,7 @@ FLEET_ROOT = REPO_ROOT.parent
 
 sys.path.insert(0, str(REPO_ROOT / "skills" / "_lib"))
 from no_window import NO_WINDOW  # noqa: E402
+from utf8_stdio import ensure_utf8_stdio  # noqa: E402
 
 # Repo-relative (fleet-config#502), matching every other _lib cross-reference
 # in the tree (e.g. .claude/skills/learning-log/gather.py's HELPER) — the
@@ -189,7 +190,7 @@ def write_ledger(hashes: dict[str, str], run_at: str) -> str:
 # ---- CLI --------------------------------------------------------------------
 
 def main() -> int:
-    sys.stdout.reconfigure(encoding="utf-8")  # UTF-8 under capture (fleet gotcha)
+    ensure_utf8_stdio()  # UTF-8 under capture (fleet gotcha) — stdout + stderr
     ap = argparse.ArgumentParser(description="context-purge skip-unchanged ledger gate")
     sub = ap.add_subparsers(dest="cmd", required=True)
     g = sub.add_parser("gate", help="list files needing assessment vs unchanged")

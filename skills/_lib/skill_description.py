@@ -30,6 +30,8 @@ from __future__ import annotations
 import re
 from typing import List
 
+from frontmatter import frontmatter_field
+
 QUOTED = re.compile(r"\"[^\"]+\"")
 _WORD = re.compile(r"\S+")
 
@@ -61,11 +63,4 @@ def frontmatter_description(text: str) -> str:
     no `description:` key. Callers that must not treat "no description" as
     "compliant" check the empty return and report it as unmeasured.
     """
-    if not text.startswith("---"):
-        return ""
-    end = text.find("\n---", 3)
-    front = text[3 : end if end != -1 else len(text)]
-    for line in front.splitlines():
-        if line.startswith("description:"):
-            return line[len("description:") :].strip()
-    return ""
+    return frontmatter_field(text, "description") or ""
