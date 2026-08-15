@@ -233,9 +233,9 @@ def load_backup_config(path: Optional[Path] = None) -> BackupConfig:
 
     return BackupConfig(
         source_root=_path("source_root", "E:/automation"),
-        dest=_path("dest", "C:/Users/rober/backups/fleet-private"),
+        dest=_path("dest", "C:/Users/rober/backup/fleet-private"),
         transcripts_src=_path("transcripts_src", "~/.claude/projects"),
-        transcripts_dest=_path("transcripts_dest", "E:/backups/claude-transcripts"),
+        transcripts_dest=_path("transcripts_dest", "E:/backup/claude-transcripts"),
         keep_daily=int(table.get("keep_daily", 14)),
         keep_weekly=int(table.get("keep_weekly", 8)),
         max_file_bytes=_mb("max_file_mb", 10 * 1024 * 1024),
