@@ -61,6 +61,23 @@ _STANDALONE_UNIT_CHECKS: Tuple[Tuple[str, str, str], ...] = (
     ("context_purge_gate", "test_context_purge_gate.py",
      "the skip-unchanged ledger's parse/render/diff core, testable "
      "without gh (fleet-config#287)"),
+    ("context_purge_digest", "test_context_purge_digest.py",
+     "the per-run digest's rendering layer -- the three-way "
+     "probed/not-probed/not-recorded split that keeps an unknown from "
+     "rendering as a zero, per-file (not per-repo) probe coverage, the "
+     "cost-of-a-lost-directive ranking, partial-run banners that name the "
+     "unreached repos, and validate() rejecting run data that would make the "
+     "digest lie -- is testable on its own without gh or Slack "
+     "(fleet-config#627)"),
+    ("delivery_check_contract", "test_delivery_check_contract.py",
+     "the shared digest-delivery post-condition -- /audit-fleet's "
+     "pre-refactor exit codes pinned verbatim as a characterization "
+     "baseline, /context-purge's strict-when-invoked-bare mode, and the "
+     "rule both callers exist to hold: a delivery that cannot be "
+     "ESTABLISHED exits non-zero rather than folding into success. Also "
+     "exercises claude_progress's DELIVERY_NOT_CONFIRMED sentinel end to "
+     "end, since a sentinel that silently stops matching turns a loud "
+     "failure into a green run (fleet-config#627, #560)"),
     ("ux_surface", "test_ux_surface.py",
      "the UX-gate trigger -- `## UX surface` block parsing, brace "
      "expansion, glob->regex, and the diff intersection -- is testable "

@@ -74,6 +74,7 @@ KINDS = (
     "cert-drift",
     "context-audit",
     "context-purge",
+    "context-purge-digest",
     "sota-watch",
     "e2e-redundancy",
     "cleanup-deferred",
