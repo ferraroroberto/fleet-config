@@ -282,6 +282,41 @@ check(all(wc.format_primary_state(o, r, b).startswith("PRIMARY=")
       "format_primary_state: every outcome emits a PRIMARY= line (never absent, never implied)")
 
 
+# ---- worktree_add_args: branch reuse, no `-b` on an existing branch (#602) ----
+#
+# `-b` means *create*. Applied unconditionally it crashed with a raw
+# CalledProcessError on a local branch, and -- silently, the worse half --
+# started the lane at `main` when the branch existed only on origin, dropping
+# the commits already pushed to it.
+
+WT = Path("C:/tmp/repo-wt-602")
+
+check(wc.worktree_add_args(WT, "fix/602-x", local_exists=False, remote_exists=False,
+                           main_ref_value="origin/main")
+      == ["worktree", "add", str(WT), "-b", "fix/602-x", "origin/main"],
+      "worktree_add_args: brand-new branch still created off the default branch")
+check(wc.worktree_add_args(WT, "fix/602-x", local_exists=False, remote_exists=False,
+                           main_ref_value="origin/master")
+      == ["worktree", "add", str(WT), "-b", "fix/602-x", "origin/master"],
+      "worktree_add_args: non-'main' default branch passes through untouched")
+
+check(wc.worktree_add_args(WT, "fix/602-x", local_exists=True, remote_exists=False,
+                           main_ref_value="origin/main")
+      == ["worktree", "add", str(WT), "fix/602-x"],
+      "worktree_add_args: existing local branch is checked out, never re-created")
+check("-b" not in wc.worktree_add_args(WT, "fix/602-x", local_exists=True, remote_exists=True,
+                                       main_ref_value="origin/main"),
+      "worktree_add_args: local branch wins over remote -- still no `-b`")
+
+check(wc.worktree_add_args(WT, "fix/602-x", local_exists=False, remote_exists=True,
+                           main_ref_value="origin/main")
+      == ["worktree", "add", str(WT), "-b", "fix/602-x", "origin/fix/602-x"],
+      "worktree_add_args: pushed-but-not-local branch resumes from origin/<branch>, not main")
+check("origin/main" not in wc.worktree_add_args(WT, "fix/602-x", local_exists=False,
+                                                remote_exists=True, main_ref_value="origin/main"),
+      "worktree_add_args: remote-only branch never silently starts at main")
+
+
 # ---- acquire --force-worktree: unattended fanout never wins a primary (#515) ----
 #
 # The whole point is that it must NOT consult, publish, or reclaim a claim: a
