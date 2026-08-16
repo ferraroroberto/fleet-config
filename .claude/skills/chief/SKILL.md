@@ -42,6 +42,54 @@ could hit by hand.
 - Stay in role for the whole session. Between messages you simply wait;
   never start speculative work nobody asked for.
 
+## Polling on a cadence — one-shot tasks, never a loop (fleet-config#637)
+
+A background task re-invokes you **when it exits** — not on each line it
+prints. So a periodic poll is a **one-shot** task: sleep the interval, emit
+one digest, exit. You report on the wake-up, then relaunch the same script for
+the next tick. Nothing re-arms it for you.
+
+- **Never a loop with an internal `sleep`.** It collects data faithfully and
+  reports it to nobody until it terminates — which is exactly when the
+  reporting has stopped being useful. A 30-iteration 30-minute loop watching a
+  16-hour unattended run produced one wake-up, at the end: three ticks sat in
+  the output file while Roberto heard nothing for 90 minutes and had to ask.
+- A long-lived loop is still fine for pure **data collection** into a file
+  something else reads. The defect is using one as the *reporting* mechanism.
+- Foreground `sleep` is blocked by the harness, so the interval has to live
+  inside the background task. Don't assume the schedule held either — stamp
+  each tick with its own wall-clock (`date +%H:%M:%S`) rather than reporting
+  the time you expected it to fire.
+
+**This is the inverse of the worker rule you hand out at dispatch time** —
+"poll background work to completion inside your own turn; never end a turn
+waiting to be resumed" (the standard dispatch brief's point 1 below). The two
+are not in conflict; they follow from the same mechanic. Only a task's *exit*
+wakes a session: a top-level worker gets no wake-up at all, so it must never
+end a turn waiting for one, while you **do** get woken, so you build your
+cadence out of short tasks that end. The rule you give workers is not the rule
+you follow.
+
+Reference implementation — copy it rather than redesigning it, and launch it
+with the Bash tool's `run_in_background`, one tick per launch:
+
+```bash
+#!/bin/bash
+# One-shot 10-minute poll: sleeps, prints one digest, then EXITS.
+# Only a background task's EXIT re-invokes the chief session.
+PY=/e/automation/fleet-config/.venv/Scripts/python.exe
+OPS=/e/automation/fleet-config/skills/_lib/chief_ops.py
+sleep 600
+echo "=== poll $(date +%H:%M:%S) ==="
+"$PY" "$OPS" board 2>&1
+echo "--- worktrees ---"
+ls -d /e/automation/*-wt-* 2>/dev/null || echo "none"
+```
+
+Widen the digest to whatever the situation needs — a job's run status, `wc -c`
+of its log, lanes started, `tail -3` of the log — the shape stays the same:
+sleep, one digest, exit.
+
 ## Reaching the launcher (auth story)
 
 The webapp is `https://127.0.0.1:8445` — self-signed cert, so **always
@@ -173,7 +221,9 @@ dropped:
 1. **Poll background work to completion inside your own turn; never end a
    turn waiting to be resumed.** Nothing wakes a top-level worker session.
    This is already in the global `CLAUDE.md` for sub-agents, but a
-   chief-dispatched top-level worker needs it stated explicitly too.
+   chief-dispatched top-level worker needs it stated explicitly too. It is a
+   worker rule, not yours — your own periodic polling follows the inverse
+   ("Polling on a cadence" above), for the same underlying reason.
 2. **Suspect buffering before a hang.** "Zero output for 20 minutes" is
    usually stdout block-buffered under capture, not a stuck process — re-run
    in the foreground with `PYTHONUTF8=1`/`PYTHONUNBUFFERED=1` before
