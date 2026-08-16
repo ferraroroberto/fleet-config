@@ -201,15 +201,22 @@ just the launcher call):
   `DELIVERED` exits 0; the other three each exit 1 and each mean something
   different:
   - `PENDING` — delivery is *likely* and unconfirmed only because the worker
-    is still talking: either the board shows it mid-turn, or the submit is
-    with the deferred watcher (`deferred`, app-launcher#763 — accepted and in
-    flight, not stranded). Benign. Read the exchange again in a minute;
-    do not resend.
+    is still talking: the board shows it mid-turn, **or it emitted output in
+    the last few seconds even though the board says otherwise**
+    (fleet-config#662 — the `status` field reads `awaiting-input` for sessions
+    that are demonstrably mid-turn, so recent output overrides the label), or
+    the submit is with the deferred watcher (`deferred`, app-launcher#763 —
+    accepted and in flight, not stranded), or its output age could not be read
+    at all. Benign. Read the exchange again in a minute; do not resend.
   - `STRANDED` — positively not delivered. Either the exchange never advanced
-    on a target that was not busy, or the endpoint said so outright
+    on a target that is **demonstrably quiet** (measured silence, not merely a
+    non-`working` label), or the endpoint said so outright
     (`not_ingested`/`dropped`, or the watcher's `defer_timeout` /
-    `defer_vanished` / `defer_unclear` landing on `last_input`). This is the
-    one that needs you.
+    `defer_vanished` / `defer_unclear` landing on `last_input`). It is never
+    reached by fallthrough — it always rests on positive evidence, because a
+    false `STRANDED` is the verdict most likely to make you resend, and a
+    resent steer can double-execute a shipping command. This is the one that
+    needs you.
   - `UNKNOWN` — the exchange could not be *read*. Genuinely unresolvable, and
     now narrow: a readable-but-un-advanced exchange is `STRANDED`, never this.
   Every non-`DELIVERED` line carries the target's `status=` and

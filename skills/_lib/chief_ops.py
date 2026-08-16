@@ -91,14 +91,18 @@ Subcommands
       (fleet-config#643); only DELIVERED exits 0:
 
         DELIVERED  the exchange advanced past the send. Confirmed.
-        PENDING    delivery likely, unconfirmed: the target is mid-turn, or
-                   the submit is with the deferred watcher (`deferred`,
-                   app-launcher#763). In flight, not stranded. Exits 1.
+        PENDING    delivery likely, unconfirmed: the target is mid-turn
+                   (board says `working`, *or* it emitted output in the last
+                   few seconds — fleet-config#662), the submit is with the
+                   deferred watcher (`deferred`, app-launcher#763), or its
+                   output age could not be read at all. In flight, not
+                   stranded. Exits 1.
         STRANDED   positively not delivered — either the exchange never
-                   advanced on a target that was not busy, or the endpoint
-                   said so outright (`not_ingested`/`dropped`, or the
-                   watcher's `defer_timeout`/`defer_vanished`/
-                   `defer_unclear` on `last_input`).
+                   advanced on a target that is demonstrably quiet, or the
+                   endpoint said so outright (`not_ingested`/`dropped`, or
+                   the watcher's `defer_timeout`/`defer_vanished`/
+                   `defer_unclear` on `last_input`). Never reached by
+                   fallthrough: it always rests on positive evidence.
         UNKNOWN    the exchange could not be *read*. Genuinely unresolvable
                    — never merely "un-advanced", which is STRANDED.
 
@@ -160,6 +164,7 @@ DEFAULT_OWNER = "ferraroroberto"
 DEFAULT_TAIL = 2000
 DEFAULT_VERIFY_TIMEOUT = 20.0
 DEFAULT_VERIFY_POLL_INTERVAL = 2.0
+DEFAULT_RECENT_OUTPUT_WINDOW = 2 * DEFAULT_VERIFY_POLL_INTERVAL
 
 LOOPBACK_HOSTS = {"127.0.0.1", "::1", "localhost"}
 
@@ -330,6 +335,8 @@ def finalize_delivery(
     marker_available: bool = True,
     post_reason: Optional[str] = None,
     last_input: Optional[Dict[str, Any]] = None,
+    last_output_age: Optional[float] = None,
+    output_window: float = DEFAULT_RECENT_OUTPUT_WINDOW,
 ) -> str:
     """The caller-facing verdict once the poll budget is exhausted: one of
     "delivered", "pending", "stranded", "unknown" (fleet-config#643).
@@ -350,19 +357,37 @@ def finalize_delivery(
     3. `deferred` (app-launcher#763): the payload is in the composer and its
        submitting CR is with a background watcher that has not reported yet.
        Genuinely in flight — neither delivered nor stranded → "pending".
-    4. A `working` target: mid-turn, so non-movement is not proof of loss →
-       "pending". The benign case the issue was filed over.
+    4. A busy target: mid-turn, so non-movement is not proof of loss →
+       "pending". Busy is read from **two** independent signals, either one
+       sufficient — the board's `status == "working"`, *or* output emitted
+       within `output_window` seconds. The second was added by
+       fleet-config#662: the board's status field is demonstrably unreliable,
+       reading `awaiting-input` for sessions the exchange showed mid-turn, and
+       trusting it alone produced a confident `STRANDED` for a steer that had
+       been delivered and acted upon. A target that emitted output a second
+       ago is not idle, whatever the label says — and #643 was already
+       collecting that figure, printing it on the same line as the verdict it
+       refuted, purely for display.
     5. An exchange that could not be **read** (transport error, or the
        launcher reporting it unavailable) → "unknown". This is the narrow,
        genuinely-unresolvable case, per the fleet rule that a check which
        cannot establish a fact reports that as its own state.
-    6. Otherwise — a readable exchange that never advanced, on an idle or
-       `needs-you` target, or one this board snapshot cannot find at all →
-       "stranded". Non-movement is a real signal here.
+    6. A readable exchange that never advanced on a target whose output age
+       could **not** be established → "pending". No positive grounds:
+       un-advanced plus an unreliable status label is not evidence of loss.
+    7. Otherwise — a readable exchange that never advanced on a target that is
+       demonstrably quiet (output older than `output_window`) → "stranded".
+       Non-movement is a real signal here.
 
-    Note 5 vs 6: "un-advanced" and "unreadable" are different facts, and only
+    Note 5 vs 7: "un-advanced" and "unreadable" are different facts, and only
     the second is `unknown`. A readable-but-un-advanced exchange must never
     land in `unknown`, or the narrowing exists only in this docstring.
+
+    `stranded` is now reached only on **positive** grounds — an authoritative
+    negative, or measured silence — never by fallthrough (fleet-config#662).
+    The asymmetry justifies it: a false `pending` costs a second look, while a
+    false `stranded` invites a resend, and a resent steer can double-execute a
+    shipping command.
 
     Every non-delivered verdict is non-zero at the call site and none of them
     ever triggers a resend — a resent steer can double-execute a shipping
@@ -379,6 +404,8 @@ def finalize_delivery(
         return "pending"
     if not marker_available:
         return "unknown"
+    if last_output_age is None or last_output_age <= output_window:
+        return "pending"
     return "stranded"
 
 
@@ -638,17 +665,47 @@ def fetch_session_card(base_url: str, sid: str) -> Dict[str, Any]:
     return {}
 
 
-def format_last_output_age(last_output_at: Any, now: Optional[float] = None) -> str:
-    """`last_output_at` (an epoch float) rendered as `"4s ago"`, or the
-    literal `"unknown"` when it is missing or unparseable — never a
-    fabricated number, and never silently omitted."""
+def last_output_age_seconds(last_output_at: Any, now: Optional[float] = None) -> Optional[float]:
+    """Seconds since the target last emitted output, or None when
+    `last_output_at` is missing/unparseable — an age that cannot be read is
+    its own state, never a large number standing in for "long ago"
+    (fleet-config#662). This is a classifier input, not just a display value:
+    `finalize_delivery` uses it as evidence the target is mid-turn."""
     try:
         stamp = float(last_output_at)
     except (TypeError, ValueError):
-        return "unknown"
+        return None
     if stamp <= 0:
+        return None
+    return max(0.0, (time.time() if now is None else now) - stamp)
+
+
+def recent_output_window(poll_interval: float) -> float:
+    """How fresh output has to be to count as "the target is still talking",
+    derived from the poll budget rather than picked by feel (fleet-config#662).
+
+    Two poll intervals: the classifier runs after the poll loop ends, and the
+    age is read from a session card fetched *after* that — one more board call
+    and one more sessions call later. One interval covers the last poll cycle,
+    the second covers those two round trips, so latency alone can never make a
+    still-talking target look quiet. Floored at one default interval so an
+    operator passing `--poll-interval 0.1` doesn't shrink the window below the
+    time those calls take. Still far short of the 20s verify budget, so a
+    target that fell silent early in the wait is correctly stranded.
+    """
+    return max(2 * poll_interval, DEFAULT_VERIFY_POLL_INTERVAL)
+
+
+def format_output_age(age: Optional[float]) -> str:
+    """An age from `last_output_age_seconds` rendered as `"4s ago"`, or the
+    literal `"unknown"` when it could not be read — never a fabricated number,
+    and never silently omitted.
+
+    Takes the already-measured age rather than the raw stamp so the verdict
+    line and the classifier read the same single measurement (fleet-config#662)
+    instead of each taking its own `time.time()`."""
+    if age is None:
         return "unknown"
-    age = max(0.0, (time.time() if now is None else now) - stamp)
     if age < 90:
         return f"{int(age)}s ago"
     if age < 5400:
@@ -688,6 +745,14 @@ VERDICT_REASONS = {
         "target still mid-turn, exchange not advanced yet; "
         "delivery likely, unconfirmed — not resent"
     ),
+    "pending_talking": (
+        "target emitting output despite a non-working board status, so it is "
+        "mid-turn; exchange not advanced yet, delivery likely — not resent"
+    ),
+    "pending_unmeasured": (
+        "exchange not advanced, but the target's output age could not be read "
+        "— no positive grounds to call it stranded; not resent"
+    ),
     "unknown": (
         "exchange could not be read, delivery neither confirmed nor "
         "disproved; not resent, operator decides"
@@ -697,9 +762,33 @@ VERDICT_REASONS = {
         "not resent, operator decides"
     ),
     "stranded": (
-        "exchange never advanced past send; not resent, operator decides"
+        "exchange never advanced past send and the target has emitted nothing "
+        "since; not resent, operator decides"
     ),
 }
+
+
+def pending_reason_key(
+    post_reason: Optional[str],
+    target_status: Optional[str],
+    last_output_age: Optional[float],
+) -> str:
+    """Which `VERDICT_REASONS` entry explains *this* PENDING. The four
+    situations are operationally different — in flight with the watcher, board
+    says working, board says otherwise but the target is still talking, or the
+    output age could not be read at all — and the verdict line exists so the
+    operator can judge without a second round of calls.
+
+    No window needed: `finalize_delivery` only returns "pending" on a measured
+    age when that age is already inside the window, so a non-None age reaching
+    here *is* recent output."""
+    if post_reason == INPUT_DEFERRED:
+        return "pending_deferred"
+    if target_status == "working":
+        return "pending_busy"
+    if last_output_age is None:
+        return "pending_unmeasured"
+    return "pending_talking"
 
 
 def read_brief(file_arg: Optional[str]) -> str:
@@ -858,18 +947,25 @@ def cmd_say(args: argparse.Namespace) -> int:
     target_status = find_session_status(board.get("columns") or {}, args.sid)
     card = fetch_session_card(args.base_url, args.sid)
     last_input = card.get("last_input") if isinstance(card.get("last_input"), dict) else None
+    # Measured once: the classifier and the printed line must agree about how
+    # long the target has been quiet, or the verdict can contradict the
+    # evidence beside it — which is exactly how #662 happened.
+    output_age = last_output_age_seconds(card.get("last_output_at"))
+    output_window = recent_output_window(args.poll_interval)
 
     state = finalize_delivery(
         state, target_status,
         marker_available=bool(marker.get("available")),
         post_reason=post_reason,
         last_input=last_input,
+        last_output_age=output_age,
+        output_window=output_window,
     )
 
     last_input_reason = (last_input or {}).get("reason")
     if state == "pending":
         reason = VERDICT_REASONS[
-            "pending_deferred" if post_reason == INPUT_DEFERRED else "pending_busy"
+            pending_reason_key(post_reason, target_status, output_age)
         ]
     elif state == "unknown":
         reason = VERDICT_REASONS["unknown"]
@@ -882,7 +978,7 @@ def cmd_say(args: argparse.Namespace) -> int:
 
     print(format_verdict_line(
         state, args.sid, len(text), target_status,
-        format_last_output_age(card.get("last_output_at")),
+        format_output_age(output_age),
         reason, last_input_reason,
     ))
     # Every non-delivered verdict is non-zero — including the friendly-sounding
