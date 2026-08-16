@@ -65,6 +65,15 @@ and never folds "couldn't tell" into "fine". Failures are aggregated, not fatal
 on first error — every remaining repo is still attempted — and the process exits
 non-zero, which is what the app-launcher Job's `alert_on_failure` keys off.
 
+A run interrupted mid-write (killed, machine shut down) leaves the dated
+snapshot torn — half-rewritten but sitting next to a manifest that still
+describes the *previous* run. `run_leg` writes `<snapshot>/.run-in-progress`
+before the first file and clears it only after `manifest.json` lands, so
+`freshness` can tell a torn newest snapshot apart from a genuinely fresh one
+(`unknown`, never `ok`) and `_previous_snapshot` never hardlinks against one
+(fleet-config#607). A stale marker is self-healing: the next run for that same
+date overwrites the directory and clears it.
+
 stdlib only. Never follows a junction or symlink (see `is_reparse_point` — on
 Windows `Path.is_symlink()` returns **False** for a junction, so a symlink-based
 guard walks straight into every worktree's `.venv`).
@@ -128,6 +137,7 @@ FRESHNESS_UNKNOWN = "unknown"
 _FRESHNESS_EXIT = {FRESHNESS_OK: 0, FRESHNESS_STALE: 1, FRESHNESS_UNKNOWN: 2}
 
 MANIFEST_NAME = "manifest.json"
+RUN_MARKER_NAME = ".run-in-progress"
 LATEST_DIR = "latest"
 DATE_FMT = "%Y-%m-%d"
 
@@ -577,15 +587,27 @@ def iter_repos(source_root: Path) -> Iterator[Path]:
 # ---------------------------------------------------------------------------
 # Snapshot writing
 # ---------------------------------------------------------------------------
-def _previous_snapshot(dest_root: Path, today: str) -> Tuple[Optional[Path], Dict[str, Any]]:
-    """The newest dated snapshot before `today` that has a readable manifest."""
+def _previous_snapshot(
+    dest_root: Path, today: str,
+) -> Tuple[Optional[Path], Dict[str, Any], List[str]]:
+    """The newest dated snapshot before `today` that has a readable manifest.
+
+    A snapshot still carrying `.run-in-progress` was left mid-write by a run that
+    never reached `manifest.json` — its tree is torn, so it is skipped rather than
+    hardlinked against or trusted for content. Skipped names are returned so the
+    caller can report the interrupted predecessor (fleet-config#607).
+    """
+    skipped: List[str] = []
     for snapshot in sorted(dated_snapshots(dest_root), key=lambda p: p.name, reverse=True):
         if snapshot.name >= today:
             continue
+        if has_run_marker(snapshot):
+            skipped.append(snapshot.name)
+            continue
         manifest = read_manifest(snapshot)
         if manifest:
-            return snapshot, manifest
-    return None, {}
+            return snapshot, manifest, skipped
+    return None, {}, skipped
 
 
 def _index_manifest(manifest: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
@@ -735,6 +757,44 @@ def read_manifest(snapshot_dir: Path) -> Dict[str, Any]:
         return {}
 
 
+def has_run_marker(snapshot_dir: Path) -> bool:
+    """True if `snapshot_dir` carries `.run-in-progress` — a torn, mid-write tree."""
+    return (snapshot_dir / RUN_MARKER_NAME).is_file()
+
+
+def read_run_marker(snapshot_dir: Path) -> Dict[str, Any]:
+    path = snapshot_dir / RUN_MARKER_NAME
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+
+
+def write_run_marker(snapshot_dir: Path, leg: str) -> None:
+    """Write `.run-in-progress` before the first file, so a death mid-write leaves
+    a torn tree unambiguously marked (fleet-config#607). Failure to write it must
+    never fail the backup itself — it degrades to the pre-#607 behaviour.
+    """
+    marker = {
+        "leg": leg,
+        "pid": os.getpid(),
+        "started_at": datetime.now(timezone.utc).isoformat(),
+    }
+    try:
+        (snapshot_dir / RUN_MARKER_NAME).write_text(
+            json.dumps(marker, ensure_ascii=False), encoding="utf-8",
+        )
+    except OSError as exc:
+        logger.warning("⚠️ could not write %s to %s: %s", RUN_MARKER_NAME, snapshot_dir, exc)
+
+
+def clear_run_marker(snapshot_dir: Path) -> None:
+    try:
+        (snapshot_dir / RUN_MARKER_NAME).unlink()
+    except OSError:
+        pass
+
+
 RESTORE_NOTE_NAME = "HOW-TO-RESTORE.txt"
 
 _RESTORE_NOTE = """\
@@ -876,6 +936,18 @@ def freshness(dest_root: Path, cfg: BackupConfig,
     if not snapshots:
         return FRESHNESS_UNKNOWN, {"reason": f"no snapshots under {dest_root}"}
 
+    newest = snapshots[-1]
+    if has_run_marker(newest):
+        # The newest snapshot is mid-write (or died mid-write): whatever the
+        # previous snapshot's manifest says, it does NOT describe this directory.
+        # Reporting "unknown" here — rather than silently falling through to an
+        # older manifest — is the whole point of #607: a check that cannot
+        # establish the fact must say so, never fold it into "ok".
+        return FRESHNESS_UNKNOWN, {
+            "snapshot": newest.name,
+            "reason": "last run did not finish",
+        }
+
     for snapshot in reversed(snapshots):
         manifest = read_manifest(snapshot)
         if not manifest:
@@ -936,11 +1008,26 @@ def run_leg(leg: str, groups: Dict[str, Selection], source: Path, dest_root: Pat
         "totals": {},
         "verification": {},
         "status": "unknown",
+        "recovered_marker": None,
+        "skipped_interrupted": [],
     }
 
     snapshot_dir = dest_root / today
-    prev_dir, prev_manifest = (None, {}) if dry_run else _previous_snapshot(dest_root, today)
+    if dry_run:
+        prev_dir, prev_manifest, skipped_interrupted = None, {}, []
+    else:
+        # The marker goes down before the first file write, so a death anywhere
+        # between here and the manifest write below leaves `.run-in-progress`
+        # behind as unambiguous proof the tree is torn (fleet-config#607). A
+        # marker already sitting here belongs to an earlier run for this same
+        # date that never finished — self-healing: this run overwrites the
+        # directory and clears it on success, but the report names it first.
+        snapshot_dir.mkdir(parents=True, exist_ok=True)
+        manifest["recovered_marker"] = read_run_marker(snapshot_dir) or None
+        write_run_marker(snapshot_dir, leg)
+        prev_dir, prev_manifest, skipped_interrupted = _previous_snapshot(dest_root, today)
     prev_index = _index_manifest(prev_manifest)
+    manifest["skipped_interrupted"] = skipped_interrupted
 
     linked = copied = 0
     for name, selection in sorted(groups.items()):
@@ -997,10 +1084,12 @@ def run_leg(leg: str, groups: Dict[str, Selection], source: Path, dest_root: Pat
     ) else "failed"
     manifest["finished_at"] = datetime.now(timezone.utc).isoformat()
 
-    snapshot_dir.mkdir(parents=True, exist_ok=True)
     (snapshot_dir / MANIFEST_NAME).write_text(
         json.dumps(manifest, indent=2, ensure_ascii=False), encoding="utf-8",
     )
+    # The manifest now describes this directory (even a "failed" one) — the
+    # marker's job, proving the tree is torn, is done (fleet-config#607).
+    clear_run_marker(snapshot_dir)
     manifest["latest_files"] = rebuild_latest(dest_root, snapshot_dir)
     manifest["pruned"] = prune(dest_root, cfg)
     write_restore_note(dest_root, leg, source)
@@ -1038,6 +1127,18 @@ def report(manifest: Dict[str, Any]) -> None:
         manifest["leg"], totals["files"], _mb(totals["bytes"]),
         totals["linked"], totals["copied"], totals["groups"],
     )
+    recovered = manifest.get("recovered_marker")
+    if recovered:
+        logger.info(
+            "   ⚠️ %s: recovered an unfinished run's marker for %s (pid %s, started %s) "
+            "— that run never reached manifest.json; today's run overwrote it",
+            manifest["leg"], manifest["date"], recovered.get("pid"), recovered.get("started_at"),
+        )
+    for name in manifest.get("skipped_interrupted") or []:
+        logger.info(
+            "   ⚠️ %s: %s never finished (marker present) — skipped as a hardlink source",
+            manifest["leg"], name,
+        )
     for name, payload in sorted(manifest["groups"].items()):
         for excluded in payload["bulk_excluded"]:
             logger.info(
