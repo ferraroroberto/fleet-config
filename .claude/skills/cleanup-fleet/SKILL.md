@@ -244,10 +244,18 @@ HARD RULES — both are live-incident scars, never work around them:
 3. Build the change.
 4. Run the project's verification gate (per its CLAUDE.md — e.g.
    `C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe -File scripts/verify-before-ship.ps1`).
-5. STOP. Do NOT push, open a PR, merge, or run /issue-finish. This issue is
-   hard-tier enough that the user validates the approach before it ships. The
-   user will NOT read the diff — they review your summary below, so make it
-   count.
+5. Commit your work on the branch — git add the files you changed and git
+   commit them (conventional `type: subject` message, no AI-attribution
+   trailer). Your handoff artefact is a committed branch, not a dirty working
+   tree: uncommitted work has no SHA, so a crash or an escalation before the
+   user ships it loses it outright instead of parking it recoverably in the
+   reflog (fleet-config#641). Changed nothing? Commit nothing and say so — a
+   clean tree with no new commits is a valid report, a dirty tree never is.
+6. STOP. Do NOT push, open a PR, merge, or run /issue-finish. "Do not ship"
+   does not mean "do not commit": step 5 is required, and only the four
+   actions named here are forbidden. This issue is hard-tier enough that the
+   user validates the approach before it ships. The user will NOT read the
+   diff — they review your summary below, so make it count.
 
 Report back, in this exact shape:
   - Issue: <repo>#<N> — <title>

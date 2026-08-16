@@ -158,7 +158,16 @@ Workflow (mirrors /issue-start steps 3 + 6, plus verification):
    include in your report the one-line command (from the repo's README /
    CLAUDE.md) that launches THIS worktree's app for validation. No web
    surface → report `Validate: n/a`.
-9. STOP. Do not push, do not open a PR, do not run /issue-finish.
+9. Commit your work on the branch — git add the files you changed and git
+   commit them (conventional `type: subject` message, no AI-attribution
+   trailer). Your handoff artefact is a committed branch, not a dirty working
+   tree: uncommitted work has no SHA, so anything that goes wrong before the
+   user runs /issue-finish loses it outright (fleet-config#641). Changed
+   nothing? Commit nothing and say so — a clean tree with no new commits is a
+   valid report, a dirty tree never is.
+10. STOP. Do not push, do not open a PR, do not run /issue-finish. "Do not
+    ship" does not mean "do not commit": step 9 is required, and only the
+    three actions named here are forbidden.
 
 Report back, in this exact shape:
   - Issue: <repo>#<N> — <title>
@@ -200,7 +209,16 @@ Workflow:
    the recipe requires confirmation, or the repo is silent on restart
    safety, do NOT restart — report the exact restart command for the user
    instead. No web surface → report `Validate: n/a`.
-7. STOP. Do not push, do not open a PR, do not run /issue-finish.
+7. Commit your work on the branch — git add the files you changed and git
+   commit them (conventional `type: subject` message, no AI-attribution
+   trailer). Your handoff artefact is a committed branch, not a dirty working
+   tree: uncommitted work has no SHA, so anything that goes wrong before the
+   user runs /issue-finish loses it outright (fleet-config#641). Changed
+   nothing? Commit nothing and say so — a clean tree with no new commits is a
+   valid report, a dirty tree never is.
+8. STOP. Do not push, do not open a PR, do not run /issue-finish. "Do not
+   ship" does not mean "do not commit": step 7 is required, and only the
+   three actions named here are forbidden.
 
 Report back, in this exact shape:
   - Issue: <repo>#<N> — <title>

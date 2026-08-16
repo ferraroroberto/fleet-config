@@ -135,7 +135,8 @@ ${ISOLATION_RULES}
    If /issue-start's own pre-flight reports the issue is already closed, STOP immediately — do not force scope onto a closed issue. Report status: "failed", verification: "SKIPPED", retryable: false, reason: "issue already closed", and alreadyClosed: true, then skip straight to the report at the end (do not attempt steps 3-4).
 3. Build the change.
 4. Run the project's verification gate per its CLAUDE.md (e.g. \`pwsh -File scripts/verify-before-ship.ps1\`). It must exit 0. If the project has no checker, say so explicitly in your report and treat verification as SKIPPED, not PASS.
-5. STOP. Do NOT push, open a PR, merge, or run /issue-finish — a separate agent validates this before anything ships.${retryNote}
+5. Commit your work on the branch — \`git add\` the files you changed and \`git commit\` them (conventional \`type: subject\` message, no AI-attribution trailer). Your handoff artefact is a **committed branch**, not a dirty working tree: uncommitted work has no SHA, so an escalation or a crash between here and the next agent loses it outright instead of parking it recoverably in the reflog (fleet-config#641). If you genuinely changed nothing, commit nothing and say so — a clean tree with no new commits is a valid report, a dirty tree never is.
+6. STOP. Do NOT push, open a PR, merge, or run /issue-finish — a separate agent validates this before anything ships. "Do not ship" does not mean "do not commit": step 5 is required, and only the four actions named here are forbidden.${retryNote}
 
 Issue #${issue.number}: ${issue.title}
 The full issue text is already read by /issue-start. If needed, fetch the current text with \`gh issue view ${issue.number} --repo ferraroroberto/${issue.repo}\`.
@@ -149,10 +150,11 @@ function validatePrompt(issue, build) {
 ${ISOLATION_RULES}
 
 1. \`cd\` into that worktree (never the primary checkout at E:\\automation\\${issue.repo}) and confirm you're on branch ${build.branch}.
-2. Fetch the current issue text with \`gh issue view ${issue.number} --repo ferraroroberto/${issue.repo}\` and use it as the acceptance-criteria source.
-3. Read the diff against the repo's default branch (e.g. \`git diff origin/main...${build.branch}\`).
-4. Independently re-run the project's verification gate yourself per its CLAUDE.md — do not just trust the builder's report of PASS.
-5. Judge whether this diff plausibly and reasonably addresses the fetched acceptance criteria.
+2. Check the handoff is committed: \`git status --porcelain\` must be empty. If it is not, the build agent left its work in a dirty tree — stop reviewing and report \`pass: false\` with feedback "uncommitted changes at handoff — commit your work on the branch before stopping". This is the one lane-boundary assertion the leniency rule below does not soften; absorbing it silently is what let it recur (fleet-config#641). Judge the **tree**, not the commit count: a build that legitimately changed nothing leaves a clean tree with no commits ahead, and that is not a failure.
+3. Fetch the current issue text with \`gh issue view ${issue.number} --repo ferraroroberto/${issue.repo}\` and use it as the acceptance-criteria source.
+4. Read the diff against the repo's default branch (e.g. \`git diff origin/main...${build.branch}\`).
+5. Independently re-run the project's verification gate yourself per its CLAUDE.md — do not just trust the builder's report of PASS.
+6. Judge whether this diff plausibly and reasonably addresses the fetched acceptance criteria.
 
 Issue #${issue.number}: ${issue.title}
 
