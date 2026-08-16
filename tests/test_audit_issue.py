@@ -69,6 +69,10 @@ check(ai.title_matches("audit: claude-md-drift findings (2 items)", "claude-md-d
 check(not ai.title_matches("audit: bug findings", "stale"), "title wrong kind")
 check(not ai.title_matches("fix a nasty bug in parser", "bug"), "title not a managed issue")
 check(not ai.title_matches("codebase-audit ledger v2", "ledger"), "title ledger strict")
+check(ai.title_matches("cleanup-fleet-all deferred repos", "cleanup-deferred"),
+      "title cleanup-deferred")
+check(not ai.title_matches("cleanup-fleet-all deferred repos", "ledger"),
+      "title cleanup-deferred not ledger")
 
 # ---- plan: keep lowest, close the rest ----
 
@@ -112,6 +116,16 @@ check("design-drift" in ai.KINDS, "KINDS has design-drift")
 check("slop" in ai.KINDS and "security" in ai.KINDS, "KINDS has slop + security")
 check("slop" in ai.BUCKET_KINDS and "security" in ai.BUCKET_KINDS,
       "BUCKET_KINDS has slop + security")
+# cleanup-deferred (fleet-config#642) is a registered kind but deliberately NOT
+# a finding bucket: it tracks repos /cleanup-fleet-all could not enter, which is
+# maintenance, not one of a repo's own audit findings — so it must never count
+# as self-fix churn in evaluate_repo.
+check("cleanup-deferred" in ai.KINDS, "KINDS has cleanup-deferred")
+check("cleanup-deferred" not in ai.BUCKET_KINDS,
+      "BUCKET_KINDS excludes cleanup-deferred — it is not an audit finding bucket")
+check(ai.has_marker(ai.ensure_marker("## Deferred\n- website", "cleanup-deferred"),
+                    "cleanup-deferred"),
+      "cleanup-deferred marker round-trip")
 check(ai.has_marker(ai.ensure_marker("## Findings\n- x", "slop"), "slop"),
       "slop marker round-trip")
 check(ai.title_matches("audit: slop findings", "slop"), "title slop bucket")
@@ -503,7 +517,9 @@ except SystemExit:
 _seen: list[str] = []
 _orig_upsert = ai._upsert_issue
 try:
-    ai._upsert_issue = lambda repo, kind, title, body, label: (_seen.append(body), "url")[1]
+    ai._upsert_issue = lambda repo, kind, title, body, label, reopen=False: (
+        _seen.append(body), "url"
+    )[1]
     # cmd_* print the issue URL; swallow it so the harness output stays readable.
     with contextlib.redirect_stdout(io.StringIO()):
         ai.cmd_upsert("ferraroroberto/x", "ledger", "codebase-audit ledger", _OPEN, "audit-meta")
@@ -519,6 +535,69 @@ try:
     check(_seen == ["free prose"], "cmd_upsert: non-ledger bodies are passed through untouched")
 finally:
     ai._upsert_issue = _orig_upsert
+
+# ---- cleanup-deferred: open/closed state carries the signal (fleet-config#642) ----
+# A tracking issue left open saying "nothing deferred" is a zombie, so an empty
+# deferred set CLOSES it and the next non-empty run must REOPEN that same issue
+# rather than filing a second one. Both halves are gh plumbing, so the gh layer
+# is stubbed and the recorded command sequence is what's asserted.
+_gh_calls: list[list[str]] = []
+_orig_gh, _orig_open, _orig_closed = ai.gh, ai._list_open, ai._list_closed
+_orig_label = ai._ensure_label
+try:
+    ai.gh = lambda args, _retried=False: (_gh_calls.append(list(args)), "https://x/issues/7")[1]
+    ai._ensure_label = lambda repo, label: None
+
+    # No open managed issue, but a closed one exists -> reopen it, never create.
+    ai._list_open = lambda repo: []
+    ai._list_closed = lambda repo: [
+        {"number": 7, "title": "cleanup-fleet-all deferred repos", "body": ""}
+    ]
+    with contextlib.redirect_stdout(io.StringIO()):
+        ai.cmd_upsert("ferraroroberto/fleet-config", "cleanup-deferred",
+                      "cleanup-fleet-all deferred repos", "## Deferred\n- website",
+                      "chore", True)
+    check(["issue", "reopen", "7", "--repo", "ferraroroberto/fleet-config"] in _gh_calls,
+          "upsert --reopen: a closed cleanup-deferred issue is reopened")
+    check(not any(c[:2] == ["issue", "create"] for c in _gh_calls),
+          "upsert --reopen: no duplicate issue is filed when a closed one exists")
+    check(any(c[:3] == ["issue", "edit", "7"] for c in _gh_calls),
+          "upsert --reopen: the reopened issue is the one edited")
+
+    # Without --reopen the closed issue is invisible -- `security` is closed on
+    # fix-merge by design and must never be resurrected by an unrelated upsert.
+    _gh_calls.clear()
+    with contextlib.redirect_stdout(io.StringIO()):
+        ai.cmd_upsert("ferraroroberto/fleet-config", "cleanup-deferred",
+                      "cleanup-fleet-all deferred repos", "body", "chore")
+    check(not any(c[:2] == ["issue", "reopen"] for c in _gh_calls),
+          "upsert without --reopen never reopens a closed issue (security stays closed)")
+    check(any(c[:2] == ["issue", "create"] for c in _gh_calls),
+          "upsert without --reopen files a new issue when none is open")
+
+    # Empty deferred set -> close the open issue with the comment.
+    _gh_calls.clear()
+    ai._list_open = lambda repo: [
+        {"number": 7, "title": "cleanup-fleet-all deferred repos", "body": ""}
+    ]
+    with contextlib.redirect_stdout(io.StringIO()) as _out:
+        ai.cmd_close("ferraroroberto/fleet-config", "cleanup-deferred", "cleared on 2026-08-16")
+    check(any(c[:3] == ["issue", "close", "7"] and "cleared on 2026-08-16" in c
+              for c in _gh_calls),
+          "close: the open cleanup-deferred issue is closed with the run's comment")
+    check("CLOSED=" in _out.getvalue(),
+          "close: prints which issue it closed rather than leaving the caller to assume")
+
+    # Idempotent: nothing open is already the requested state, not an error.
+    _gh_calls.clear()
+    ai._list_open = lambda repo: []
+    with contextlib.redirect_stdout(io.StringIO()) as _out:
+        ai.cmd_close("ferraroroberto/fleet-config", "cleanup-deferred", "nothing to do")
+    check(_gh_calls == [] and _out.getvalue().strip() == "CLOSED=none",
+          "close: no open issue is a no-op reported as CLOSED=none, never an error")
+finally:
+    ai.gh, ai._list_open, ai._list_closed = _orig_gh, _orig_open, _orig_closed
+    ai._ensure_label = _orig_label
 
 check(ai.UNPARSEABLE_LEDGER in ai.BROKEN_LEDGER_REASONS and
       ai.UNRESOLVABLE_BASELINE in ai.BROKEN_LEDGER_REASONS,

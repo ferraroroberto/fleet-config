@@ -593,7 +593,7 @@ check(halted_formatter.saw_self_reported_failure,
 COMPLETE_REPORT = (
     "Cleanup-fleet-all complete\n"
     "  documentation: 3 merged, 1 escalated\n"
-    "  skipped repos (dirty/off-branch/pre-existing worktree): website\n"
+    "  skipped: 0 repos, 0 issues unprocessed (0 repo state unknown)\n"
 )
 complete_formatter = cp.ProgressFormatter(emit=lambda *_: None, clock=lambda: 0.0)
 complete_formatter.handle_event({
@@ -605,6 +605,66 @@ complete_formatter.handle_event({
 complete_formatter.finish(0)
 check(not complete_formatter.saw_self_reported_failure,
       "a cleanup-fleet-all run that completed all lanes stays a success")
+
+# fleet-config#642: a run that found real candidates and skipped every one of
+# their repos processed nothing, so it must not read as a clean sweep. Same
+# repro shape as the halted case above -- driven end-to-end through
+# `run_process` against a child that exits 0, because a red exit code that
+# silently stops matching the marker is worse than no marker at all.
+ALL_SKIPPED_REPORT = (
+    "Cleanup-fleet-all complete\n"
+    "  candidates: 11 dispatched, 0 already-closed, 0 unresolved\n"
+    "  skipped: 4 repos, 11 issues unprocessed (1 repo state unknown) - 0 recovered on retry\n"
+    "  deferred repos (skipped at pre-flight, re-checked after the last bucket):\n"
+    "    website - dirty (working tree not clean) - 7 issue(s) unprocessed\n\n"
+    "SCHEDULED-RUN-FAILED - every candidate repo was skipped "
+    "(4 repos, 11 issues unprocessed), no lane ran"
+)
+all_skipped_script = (
+    "import json,sys; "
+    + INIT_LINE
+    + f"report = {ALL_SKIPPED_REPORT!r}; "
+    "print(json.dumps({'type':'assistant','message':{'content':"
+    "[{'type':'text','text':report}]}}), flush=True); "
+    "print(json.dumps({'type':'result','subtype':'success','is_error':False,"
+    "'result':report}), flush=True); "
+    "sys.exit(0)"
+)
+all_skipped_formatter = cp.ProgressFormatter(emit=lambda *_: None)
+all_skipped_exit = cp.run_process(
+    [sys.executable, "-c", all_skipped_script],
+    formatter=all_skipped_formatter,
+)
+check(all_skipped_exit == cp.SELF_REPORTED_FAILURE_EXIT_CODE,
+      "an all-candidate-repos-skipped report exits non-zero even though the child exited 0")
+check(all_skipped_formatter.saw_self_reported_failure,
+      "the formatter records the all-skipped run's self-reported delivery failure")
+
+# The other side of the same rule: skipping *some* repos is normal operation,
+# not a delivery failure -- the marker must stay opt-in even with a non-zero
+# skipped count on the mandatory report line.
+some_skipped_formatter = cp.ProgressFormatter(emit=lambda *_: None, clock=lambda: 0.0)
+some_skipped_formatter.handle_event({
+    "type": "result",
+    "subtype": "success",
+    "is_error": False,
+    "result": (
+        "Cleanup-fleet-all complete\n"
+        "  skipped: 1 repos, 2 issues unprocessed (0 repo state unknown) - 1 recovered on retry\n"
+        "  documentation: 3 merged, 0 escalated\n"
+    ),
+})
+some_skipped_formatter.finish(0)
+check(not some_skipped_formatter.saw_self_reported_failure,
+      "a run that skipped some repos but shipped lanes stays a success")
+
+# The marker text is a contract between this adapter and the skill that prints
+# it -- assert the skill really carries the all-skipped wording, so the two
+# cannot drift apart silently.
+check("every candidate repo was skipped" in cleanup_all_skill,
+      "cleanup-fleet-all's SKILL.md documents the all-skipped delivery-failure line (#642)")
+check("642" in cleanup_all_skill and "repo_preflight.py" in cleanup_all_skill,
+      "cleanup-fleet-all's SKILL.md ties the deferred-repo retry to its helper and issue")
 
 
 # ---- all checked-in scheduled wrappers use the one shared adapter ----
