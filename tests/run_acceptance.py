@@ -53,6 +53,7 @@ from acceptance.unit_checks import (  # noqa: E402
     _block_askuserquestion_chief_unit_checks,
     _branch_before_edit_guard_unit_checks,
     _chief_handover_sessionstart_unit_checks,
+    _chief_steer_convention_unit_checks,
     _codex_hooks_config_check,
     _context_filter_unit_checks,
     _conversation_capture_unit_checks,
@@ -135,6 +136,9 @@ def main() -> int:
 
     # ---- chief_handover_sessionstart pure logic + end-to-end (fleet-config#442) ----
     run_unit(_chief_handover_sessionstart_unit_checks)
+
+    # ---- chief steer convention: retired `CHIEF - ` marker + what replaced it (fleet-config#622) ----
+    run_unit(_chief_steer_convention_unit_checks)
 
     # ---- session_state board-row persistence (fleet-config#91) ----
     run_unit(_session_state_unit_checks)

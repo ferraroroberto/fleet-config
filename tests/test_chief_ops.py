@@ -713,7 +713,9 @@ import time  # noqa: E402
 _say_tmp = Path(tempfile.mkdtemp(prefix="chief_ops_say_"))
 try:
     _brief = _say_tmp / "brief.md"
-    _brief.write_text("CHIEF - steer", encoding="utf-8")
+    # Plain, unsigned steer text: the `CHIEF - ` marker was retired in
+    # fleet-config#622, and an acceptance check now asserts it appears nowhere.
+    _brief.write_text("gate failure on line 12 is pre-existing, see #622", encoding="utf-8")
 
     def _run_say(post_result, *, verify=True, marker=None, status="working",
                  card=None):
