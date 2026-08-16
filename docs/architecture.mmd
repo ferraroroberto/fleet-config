@@ -113,6 +113,12 @@ flowchart TB
 
   ARCH["architecture/\nfleet.data.js · system-map.{html,png,mmd} · config.data.js · ARCHITECTURE.md"]
   GCMDFILE["global-CLAUDE.md"]
+  READMEFILE["README.md\norients, installs, points onward — reference catalogues live in docs/ (#648)"]
+  DOCSDIR["docs/ — durable topic reference, one file per topic\nhooks.md (Tier 1 hook catalogue) · skills.md (both tiers + _lib/ primitives) ·\ncross-agent-parity.md (per-agent matrix) · install.md · fleet-private-backup.md ·\narchitecture.mmd (this diagram)"]
+  READMEFILE --> DOCSDIR
+  HOOKFILES -.->|catalogued in| DOCSDIR
+  gskills -.->|catalogued in| DOCSDIR
+  ACCPKG -->|README layout tree + docs/hooks.md count gate| DOCSDIR
   SYSTEMMAP --> ARCH
   SYSTEMMAP -->|marked block| GCMDFILE
   CONFIGMAP --> ARCH

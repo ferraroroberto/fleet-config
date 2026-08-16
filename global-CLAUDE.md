@@ -1,6 +1,6 @@
 # Global instructions
 
-One file, symlinked by `fleet-config/install.ps1` into every agent's user-scope context path — Claude Code (`~/.claude/CLAUDE.md`), Codex (`~/.codex/AGENTS.md`), Pi (`~/.pi/agent/AGENTS.md`), Copilot CLI (`~/.copilot/copilot-instructions.md`). Hooks, statusline, and tool settings are Claude-Code + Codex-only (matrix: `fleet-config` README). Agent-specific sections are marked *(… only — skip on other agents)*.
+One file, symlinked by `fleet-config/install.ps1` into every agent's user-scope context path — Claude Code (`~/.claude/CLAUDE.md`), Codex (`~/.codex/AGENTS.md`), Pi (`~/.pi/agent/AGENTS.md`), Copilot CLI (`~/.copilot/copilot-instructions.md`). Hooks, statusline, and tool settings are Claude-Code + Codex-only (matrix: `fleet-config`'s `docs/cross-agent-parity.md`). Agent-specific sections are marked *(… only — skip on other agents)*.
 
 > **Here vs project.** This file owns the **universal** — true for every repo, including a one-off with no UI/tray/launcher. Shape-specific guidance (Streamlit, tray/daemon, e2e UI testing, GitHub-Actions CI, restart recipes) lives in `project-scaffolding`'s `CLAUDE.md`. Test: *"would this still apply to a bare repo with no app?"* Yes → here, no → the scaffold, never both. (`ferraroroberto/project-scaffolding#68`; `/context-audit` enforces weekly.)
 
@@ -104,7 +104,7 @@ Branch naming: `<type>/<issue-N>-<short-slug>` — e.g. `fix/28-terminal-reconne
 
 **PR body:** single-commit PR → `Summary` + `Test plan` checklist + `Closes #N`. Multi-commit → per-commit table (`SHA | What | Why`) + `Closed in this PR` + `Still open`. A **cumulative branch** is the exception, allowed only for rapid verified-per-commit rounds — document the policy in the PR body and default back to one-issue-one-branch when the round closes.
 
-**Concurrent same-repo work:** first come, first owns `main` — later sessions build in an isolated `git worktree` (`<repo>-wt-<N>`, venv junctioned) on their own branch. The `issue-*` skills automate this via `fleet-config`'s `skills/_lib/worktree_claim.py`; mechanics + the junction-teardown footgun are in that repo's README ("Concurrent same-repo work").
+**Concurrent same-repo work:** first come, first owns `main` — later sessions build in an isolated `git worktree` (`<repo>-wt-<N>`, venv junctioned) on their own branch. The `issue-*` skills automate this via `fleet-config`'s `skills/_lib/worktree_claim.py`; mechanics + the junction-teardown footgun are in that repo's `docs/skills.md` ("Concurrent same-repo work").
 
 ### Planning & documentation
 

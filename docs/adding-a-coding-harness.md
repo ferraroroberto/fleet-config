@@ -222,9 +222,9 @@ Per leg, in the real harness, not in a test harness:
 - [ ] Pre-existing failures are distinguished from new ones by running the gate
       on a clean tree
 
-Then update `README.md`, this document, the capability matrix, `model-tiers.md`,
-and `docs/architecture.mmd` in the **same PR** — the anti-staleness contract this
-repo applies to `.fleet.toml` applies here too.
+Then update this document, the capability matrix (`cross-agent-parity.md`),
+`hooks.md`, `model-tiers.md`, and `architecture.mmd` in the **same PR** — the
+anti-staleness contract this repo applies to `.fleet.toml` applies here too.
 
 ## Cost note
 
