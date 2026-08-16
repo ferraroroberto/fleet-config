@@ -168,18 +168,34 @@ Its JSON shape:
  "unchanged": ["repo1", "repo2", ...],
  "self_fix": [{"repo": "...", "path": "...", "decision": "SKIP_SELF_FIX", "closed_issues": [...], ...}, ...],
  "below_threshold": [{"repo": "...", "path": "...", "decision": "SKIP_BELOW_THRESHOLD", "significance": N, "threshold": M, ...}, ...],
- "skipped": [{"repo": "...", "reason": "dirty"|"off-branch"|"non-ff"}, ...],
+ "skipped": [{"repo": "...", "reason": "dirty"|"off-branch"|"non-ff"|"index-lock in flight"}, ...],
+ "stale_lock": [{"repo": "...", "path": "...", "verdict": "stale"|"stale_unconfirmed", "age_seconds": N, "size": N, "reason": "..."}, ...],
  "errors": [{"repo": "...", "reason": "..."}, ...],
  "enumerated": N,
  "accounting": {"enumerated": N, "bucketed": N, "unaccounted": 0, "balanced": true}}
 ```
 
 `enumerated` counts the repos the walk *found*, before any decision; the
-`accounting` block asserts the six buckets sum back to it. A repo that lands in
+`accounting` block asserts the seven buckets sum back to it. A repo that lands in
 no bucket shows up as a non-zero `unaccounted` / `balanced: false` — the shape
 of the failure where an unresolvable ledger baseline threw past every branch and
 two repos vanished from three consecutive runs (fleet-config#567). Never report
 counts that don't add up as a healthy run.
+
+A `stale_lock` entry is a repo carrying a stranded `.git/index.lock`, and it is
+**the one bucket that never self-heals** — surface every entry by name, every
+week, until a human clears it. It exists because a stale lock is invisible to
+every read: `status`, `fetch`, `rev-list` and an up-to-date `pull --ff-only`
+all exit 0 with the right answer while the repo is frozen against every write,
+so the sweep of 2026-08-13 filed nine locked repos as healthy
+`below_threshold` and nobody noticed for fifteen days (fleet-config#667).
+`verdict: stale` means no git process is running on the machine at all;
+`stale_unconfirmed` means the lock is past the threshold but that could not be
+established — both need a look, neither is auto-repaired. **Never delete a
+lock from this skill**, and never instruct a sub-agent to: it is another
+process's file, and refusing to remove one on chief authority was the correct
+call that surfaced the whole class in the first place. The fix is a human
+confirming the holder is dead, then removing it.
 
 A `to_audit` entry carrying a `reason` is **not** organic change — it is a
 repo the gate was *forced* to audit because it could not read the ledger
@@ -219,13 +235,26 @@ Fleet audit plan — 32 repos enumerated, 3 to audit, 24 unchanged, 1 self-fix, 
   broken-ledger:    grocery-shopping-automation (baseline 99100ac unresolvable), local-llm-hub (ledger #31 unparseable)
   self-fix:         website (closed #71, #64 — ledger advanced, no organic change)
   below-threshold:  accounting-quarterly (591/1000), pvgis (85/1000)
-  skipped:          reporting (dirty), site (off-branch)
+  skipped:          reporting (dirty), site (off-branch), pvgis (index-lock in flight)
+  stale-lock:       email-archiver (stale, 15.2d), algo-trading (stale, 15.2d)
 ```
 
 Lead the line with `accounting.enumerated` and print a `broken-ledger:` line
 naming every entry `broken_ledgers()` returns, with its reason. If
 `accounting.balanced` is `false`, print `WARNING: <N> repos in no bucket` on its
-own line — the sweep lost repos and the run must not read as healthy.
+own line — the sweep lost repos and the run must not read as healthy. Print a
+`stale-lock:` line whenever that bucket is non-empty, naming every repo with its
+verdict and age — a frozen repo that goes unnamed is the exact fifteen-day
+failure this bucket exists to end.
+
+**Name every skipped repo with its own `reason` string, verbatim from the JSON
+— never a bare count, and never a hardcoded list of the reasons you expect.**
+`fleet-config#642` was precisely this: skipped repos dropped from the report, so
+work went missing while the run read clean. A new reason (`index-lock in
+flight`, added in #667) must therefore reach the operator by name the day it
+first fires, without this file being edited again — which is why the line is
+rendered from the reason the sweep actually returned rather than from a
+vocabulary written down here.
 
 If `to_audit` is empty, jump to step 5 with an empty result set (the digest
 still goes out so the weekly run always produces a record).
@@ -332,9 +361,9 @@ sub-agent still dispatched (`fleet-config#506`).
 Hold each sub-agent's structured report as it returns. When the to-audit list is
 drained with no agent still in flight (whether or not one or more pause cycles
 happened along the way), proceed to the practices ledger (4b) then the digest.
-Track two terminal buckets, plus the `self_fix`, `below_threshold`, and
-`skipped` buckets already decided by step 2's Python sweep (carried through
-unchanged — no sub-agent touches those repos):
+Track two terminal buckets, plus the `self_fix`, `below_threshold`, `skipped`,
+and `stale_lock` buckets already decided by step 2's Python sweep (carried
+through unchanged — no sub-agent touches those repos):
 
 - A sub-agent that errors out **without** a rate-limit signature is recorded as
   `ERROR` for its repo (a genuine single-repo failure); it does not block the
@@ -456,7 +485,7 @@ is attached to the email as a `.md` file; step 6 also renders it to HTML for the
 email body. Structure it so the per-repo results form a clean table when
 rendered:
 
-- **Header:** date, counts — `E repos enumerated: N audited, M issues filed, K unchanged, L self-fix, B below-threshold, J skipped, X errors`, plus `S security fixes` when any sub-agent reported a `Security:` result other than `NONE`, and `D design-drift / C cert-drift open` from the step-5 bucket count. The per-bucket counts **must sum to `E`** (`accounting.enumerated` from step 2); when `accounting.balanced` is `false`, append `— ⚠️ <N> repos in no bucket` rather than printing counts that quietly don't add up.
+- **Header:** date, counts — `E repos enumerated: N audited, M issues filed, K unchanged, L self-fix, B below-threshold, J skipped, W stale-lock, X errors`, plus `S security fixes` when any sub-agent reported a `Security:` result other than `NONE`, and `D design-drift / C cert-drift open` from the step-5 bucket count. The per-bucket counts **must sum to `E`** (`accounting.enumerated` from step 2); when `accounting.balanced` is `false`, append `— ⚠️ <N> repos in no bucket` rather than printing counts that quietly don't add up.
 - **Broken-ledger section** *(only when non-empty)*: the repos `broken_ledgers()` returns — one line each naming the reason and what could not be read (`grocery-shopping-automation: baseline 99100ac resolves to nothing — audited whole-repo, ledger re-anchored`; `local-llm-hub: ledger #31 had no readable audit-ledger block — audited whole-repo, ledger normalized`). These were audited, so they also appear in the per-repo results; the section exists because a broken ledger is a *recurring weekly cost* misreported as organic change (fleet-config#566, #567).
 - **Per audited repo:** result line + the issues filed this run (bucket → URL),
   and the **delta vs last week** (`+2 since last week` from the digest-state
@@ -477,8 +506,17 @@ rendered:
   threshold weighted-LOC (`accounting-quarterly: 591/1000 weighted lines
   since 2026-07-04 — accumulating, not yet audited`), so quiet accumulation
   stays visible. These repos are NOT counted toward "standing backlog" below.
-- **Skipped section:** repos skipped for dirty / off-branch / non-ff, so the
-  user knows they were intentionally left out (not silently missed).
+- **Skipped section:** repos skipped for dirty / off-branch / non-ff /
+  index-lock-in-flight, so the user knows they were intentionally left out (not
+  silently missed).
+- **Stale-lock section** *(only when non-empty)*: repos carrying a stranded
+  `.git/index.lock` — one line each with verdict and age (`email-archiver:
+  0-byte lock 15.2d old, no git process running — repo frozen against every
+  write; needs a human to confirm the holder is dead and remove it`). This
+  section is **never** resolved by the run itself: the skill reports, a human
+  clears. Unlike every other bucket it does not self-heal next week, so it
+  repeats verbatim until acted on — that repetition is the point
+  (fleet-config#667).
 - **Session-limit section** *(only when non-empty)*: repos left unaudited
   because the step-3 3-pause safety net was hit, so they are visibly
   outstanding rather than silently dropped — next week's ledger gate picks
@@ -538,7 +576,7 @@ Two channels. stdout is the reliable one (a scheduled run captures it in app-lau
 
 - **Delivery assertion — run it here, before the ping.** This is the only place the run may declare itself failed on *content* rather than on a crash — the gap `fleet-config#506` left open. Check all three, and treat any one you **cannot establish** as failed rather than as passing (an unresolved check is its own state, never folded into the passing one — global CLAUDE.md, "Verify before declaring done"):
 
-  1. **≥1 repo evaluated.** Step 2's sweep placed at least one repo in some bucket (`to_audit` + `unchanged` + `self_fix` + `below_threshold` + `skipped` + `errors` > 0). An empty sweep means the fleet walk itself failed — it does not mean the fleet is clean.
+  1. **≥1 repo evaluated.** Step 2's sweep placed at least one repo in some bucket (`to_audit` + `unchanged` + `self_fix` + `below_threshold` + `skipped` + `stale_lock` + `errors` > 0). An empty sweep means the fleet walk itself failed — it does not mean the fleet is clean.
   1b. **The buckets account for every repo walked.** Step 2's `accounting.balanced` is `true`. A `false` (or missing) `balanced` means repos the walk *found* landed in no bucket at all and were neither audited nor reported — the fleet-config#567 shape. Fail the run, name the unaccounted count, never let a sweep that lost repos report success.
   2. **A digest was composed and printed.** Step 5 produced digest markdown and this step wrote it to stdout verbatim.
   3. **The digest comment resolved either way.** `COMMENT_URL` holds a real URL, *or* the comment was recorded as `comment: skipped (<reason>)` with a stated reason. "Never fail the run over the comment" holds for a *stated* failure; a comment step that silently never ran fails this assertion.

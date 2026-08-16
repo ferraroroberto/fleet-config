@@ -22,7 +22,7 @@ work in this repo doesn't cost the whole catalogue:
   `skills/` vs fleet-only `.claude/skills/`), the full per-skill inventory, the
   scheduled-run adapter, and the cross-skill `_lib/` primitives:
   claim-or-worktree concurrency, the issue lifecycle marker, the
-  UX-conformance gate, and the deploy-coverage gate.
+  UX-conformance gate, the deploy-coverage gate, and stranded index locks.
 - **[`docs/cross-agent-parity.md`](docs/cross-agent-parity.md)** — the
   per-agent capability matrix (Claude Code · Codex · Pi · Copilot · Grok ·
   Antigravity), what is wired and what is a documented non-goal, the

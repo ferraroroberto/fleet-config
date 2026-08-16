@@ -10,8 +10,12 @@ the LLM no reason to be more careful than prose. This script does the whole
 fleet in **one process**: enumerate every `ferraroroberto` repo under a root,
 skip dirty/off-branch ones, sync the rest, run `evaluate_repo` per repo, and
 print one JSON object bucketing every repo into `to_audit` / `unchanged` /
-`self_fix` / `below_threshold` / `skipped` / `errors`. `below_threshold` is a
-repo whose organic (non-self-fix) change since its last audit hasn't yet
+`self_fix` / `below_threshold` / `skipped` / `stale_lock` / `errors`.
+`stale_lock` is a repo carrying a stranded `.git/index.lock` (`index_lock.py`)
+— frozen against every write while every read still exits 0, so it has to be
+checked for rather than inferred from the reads that keep passing
+(fleet-config#667). `below_threshold` is a repo whose organic (non-self-fix)
+change since its last audit hasn't yet
 crossed `audit_issue.py`'s weighted-LOC significance threshold — it carries
 the same `significance`/`threshold` numbers `evaluate_repo` returns, so the
 digest can show how close it is. The orchestrator just reads the output —
@@ -70,6 +74,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import audit_issue  # noqa: E402
 import fleet_repo_scan  # noqa: E402
 import git_run  # noqa: E402
+import index_lock  # noqa: E402
 from no_window import NO_WINDOW  # noqa: E402
 
 # Re-exported: `is_fleet_repo` now lives beside the crawl that uses it
@@ -96,7 +101,7 @@ def _current_branch(repo_path: str) -> str | None:
         return None
 
 
-BUCKETS = ("to_audit", "unchanged", "self_fix", "below_threshold", "skipped", "errors")
+BUCKETS = ("to_audit", "unchanged", "self_fix", "below_threshold", "skipped", "stale_lock", "errors")
 
 
 def accounting(results: dict) -> dict:
@@ -132,8 +137,8 @@ def broken_ledgers(results: dict) -> list[dict]:
 
 def scan(root: str, only: str | None = None, dry_run: bool = False) -> dict:
     results: dict = {
-        "to_audit": [], "unchanged": [], "self_fix": [], "below_threshold": [], "skipped": [], "errors": [],
-        "enumerated": 0,
+        "to_audit": [], "unchanged": [], "self_fix": [], "below_threshold": [], "skipped": [],
+        "stale_lock": [], "errors": [], "enumerated": 0,
     }
 
     for d in fleet_repo_scan.iter_fleet_repos(root, only):
@@ -141,6 +146,25 @@ def scan(root: str, only: str | None = None, dry_run: bool = False) -> dict:
         results["enumerated"] += 1
         repo = f"ferraroroberto/{name}"
         repo_path = str(d)
+
+        # Before anything reads the repo: a stranded `.git/index.lock` blocks
+        # every write while leaving every read exiting 0, so `status`/`fetch`/
+        # `pull` below would all pass and file this repo as healthy while it is
+        # in fact frozen — nine repos spent fifteen days in exactly that state
+        # (fleet-config#667). Its own bucket, never auto-deleted.
+        lock = index_lock.inspect(d)
+        if lock["verdict"] in index_lock.REPORTABLE_VERDICTS:
+            results["stale_lock"].append({
+                "repo": name, "path": repo_path, "verdict": lock["verdict"],
+                "age_seconds": lock["age_seconds"], "size": lock["size"], "reason": lock["detail"],
+            })
+            continue
+        if lock["verdict"] == "fresh":
+            results["skipped"].append({"repo": name, "reason": "index-lock in flight"})
+            continue
+        if lock["verdict"] == "unreadable":
+            results["errors"].append({"repo": name, "reason": lock["detail"]})
+            continue
 
         try:
             status = git_run.run_git_checked(["-C", repo_path, "status", "--porcelain"])
