@@ -202,8 +202,27 @@ is driven by the project's `## CI expectations` block (convention:
   protection, the skip-rule must **fall back to watching** (a required check
   can't be skipped without `--admin`, which is out of scope here). This skips
   only the *remote CI wait*; it never skips the verification gate in step 3.
-- `gh pr merge <PR> --merge --delete-branch` — merge commit; branch deleted on
-  both remote and local.
+- **Merge — the flag depends on the checkout mode** (from pre-flight):
+  - **Primary checkout:** `gh pr merge <PR> --merge --delete-branch` — merge
+    commit; branch deleted on both remote and local.
+  - **Linked worktree:** `gh pr merge <PR> --merge` — **no `--delete-branch`**.
+    From inside a worktree that flag fails its *local* half every time
+    (`'main' is already used by worktree at <primary>`, 6 for 6 on 2026-08-16):
+    `gh` tries to check out the default branch to delete the ref, and the
+    primary holds it. The remote merge still succeeds, so the failure is
+    cosmetic — but each lane then improvised its own recovery. Delete the refs
+    explicitly instead, after the landing step below:
+    ```
+    git push origin --delete <branch>
+    git -C <repo> branch -D <branch>
+    ```
+    **Gate the local delete on an ancestry check** — confirm the tip is already
+    in the default branch before deleting anything: `git -C <repo> branch
+    --merged origin/<default>` lists it, or `git -C <repo> diff --quiet
+    origin/<default> <branch>` is clean. Use `-D`, not `-d`: a **squash** merge
+    rewrites the SHA, so `-d`'s own merged-check fails on a branch that is
+    genuinely merged. The ancestry check is what makes `-D` safe — never skip it
+    and never `-D` a branch whose tip you haven't confirmed landed.
 - **Land + clean up, by checkout mode** (from pre-flight):
   - **Primary checkout:** before switching, guard against landing this merge on
     top of a tree that isn't this session's to touch (fleet-config#473 — the
@@ -234,13 +253,43 @@ is driven by the project's `## CI expectations` block (convention:
     release did not take — re-run `release <repo>` and re-check before reporting
     the finish done.
   - **Linked worktree:** do **not** `git checkout <main>` — the primary checkout
-    may belong to another live session; the merge is already authoritative on the
-    remote. Instead `cd` out to the primary repo path (`<repo>`) and remove this
-    worktree (the helper strips the `.venv` junction *before* `git worktree
-    remove`, so the primary's real venv is never touched):
-    ```
-    E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/worktree_claim.py remove-worktree <repo>-wt-<N>
-    ```
+    may belong to another live session. That caution stays, but it does **not**
+    mean leaving the primary behind: `cd` out to the primary repo path
+    (`<repo>`), remove this worktree, then **land the primary** (fleet-config#647).
+    1. Remove the worktree (the helper strips the `.venv` junction *before*
+       `git worktree remove`, so the primary's real venv is never touched):
+       ```
+       E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/worktree_claim.py remove-worktree <repo>-wt-<N>
+       ```
+    2. **Land the primary, or say plainly that you didn't.** A merged PR is not
+       a deployed fix: until the primary tree fast-forwards, the merged change
+       is not live for anyone working there — and in `fleet-config`
+       specifically, `hooks/` and `skills/` reach `~/.claude` through junctions
+       rooted at the primary, so the change does nothing *fleet-wide*:
+       ```
+       E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/worktree_claim.py land-primary <repo> <N>
+       ```
+       It applies the same guard as `assert-owner` (clean tree, claim free or
+       owned by `<N>`) plus "already on the default branch", then `pull
+       --ff-only` and a `rev-list --count HEAD..origin/<default>` check. It
+       prints exactly one line either way:
+       - `PRIMARY=live behind=0` — the merge is live locally.
+       - `PRIMARY=stale reason=<why>` — it could not establish that. **Do not
+         improvise, do not stash, do not force, do not `git checkout`.**
+         Reporting stale *is* the correct outcome; recovering a dirty or
+         claimed primary is never this lane's job.
+       **Put that line in the finish summary, verbatim, next to the merge
+       result** — never absent, never implied by silence. "Merged" and "live"
+       are two facts and the summary carries both (the fleet rule that a check
+       which cannot establish a fact reports its own state rather than passing).
+    3. **`fleet-config` only — prove the junction is serving the merge.** When
+       the diff touched `hooks/` or `skills/`, landing the primary is what
+       *deploys*. Read a changed file back through its `~/.claude/...` path
+       (e.g. `C:/Users/rober/.claude/skills/issue-finish/SKILL.md`) and confirm
+       it carries the edit. An artefact check — never infer it from the
+       junction's existence. Same class of check as the `#199`/`#459`
+       deploy-coverage gate.
+
     A worktree session holds no primary claim, so there is nothing to release.
 - Confirm the issue closed (`gh issue view <N>` → `CLOSED`). If it didn't
   auto-close, close it manually with a comment referencing the merge commit.
@@ -353,7 +402,10 @@ gate result, the UX-conformance gate decision (ran / skipped / `ux-full`, plus
 any drift fixed — step 3b), the `/e2e` report block (source, tier + reason,
 result, maintenance — step 3c), the deploy-coverage decision (n/a / not touched /
 confirmed live / merged but not yet live / unknown — step 6b), and the live
-build line.
+build line. **Worktree mode also carries step 5's `PRIMARY=` line verbatim** —
+`PRIMARY=live behind=0` or `PRIMARY=stale reason=<why>` — right next to the
+merge result. Merged and live are two facts; a summary that reports only the
+first is reporting a deploy it never established.
 
 Then append the **work-summary** — the file/LOC shape of what shipped — by
 running the deterministic helper and echoing its output verbatim into the

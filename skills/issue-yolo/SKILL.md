@@ -252,8 +252,24 @@ review's `pass: true`). Run the full `/issue-finish` skill:
      → **stop**, do not merge.
    This skips only the *remote CI wait* — never the Phase 3 local gate, which is
    non-negotiable and always runs.
-8. `gh pr merge <PR> --merge --delete-branch`. Land on main locally
-   (`git checkout main && git pull --ff-only`). Confirm the issue auto-closed.
+8. Merge, then land — **both depend on the checkout mode** Phase 2 ended up in.
+   Phase 2 runs the `/issue-start now` flow, which forces **worktree** mode
+   whenever `APP_LAUNCHER_SESSION_ID` is set, so for any launcher- or
+   chief-dispatched YOLO run this is the *only* path, not the rare one. Check
+   it rather than assuming: `worktree_claim.py mode <repo>`.
+   - **Primary checkout:** `gh pr merge <PR> --merge --delete-branch`, then
+     `git checkout main && git pull --ff-only`.
+   - **Linked worktree:** `gh pr merge <PR> --merge` — **no `--delete-branch`**
+     (it fails its local half from a worktree: `'main' is already used by
+     worktree`). Never `git checkout main` here. Instead follow `/issue-finish`
+     step 5's worktree branch verbatim (fleet-config#647): `remove-worktree`,
+     then `worktree_claim.py land-primary <repo> <N>`, then delete the refs
+     explicitly (`git push origin --delete <branch>`; local `-D` only after
+     confirming the tip is an ancestor of `origin/<default>`). Carry the
+     resulting `PRIMARY=live behind=0` / `PRIMARY=stale reason=<why>` line into
+     the final report — a stale primary means the merge is **not live**, and
+     YOLO has no human checkpoint left to catch that.
+   Confirm the issue auto-closed.
    Clear the issue's Fleet Board marker only after that successful merge (a
    validation/CI stop leaves it active):
    ```

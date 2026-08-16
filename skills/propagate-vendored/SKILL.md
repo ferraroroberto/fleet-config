@@ -208,6 +208,16 @@ You are the only agent touching this checkout.
 7. Auto-merge on green: `gh pr merge --auto --squash --delete-branch` (or the
    repo's own merge convention if its CLAUDE.md states one). Do not force-merge
    past a red gate/CI.
+   **In `MODE=worktree`, drop `--delete-branch`** — from a worktree its local
+   half fails (`'main' is already used by worktree at <primary>`). Once merged:
+   `remove-worktree <worktree-path>`, then land the primary so the re-vendor is
+   actually live there —
+   `worktree_claim.py land-primary E:\automation\<repo> <component>-<shortsha>`
+   — and report its `PRIMARY=live behind=0` / `PRIMARY=stale reason=<why>` line.
+   Then delete the refs explicitly: `git push origin --delete <branch>`, and the
+   local ref with `-D` **only after** confirming the tip landed in
+   `origin/<default>` (`git diff --quiet origin/<default> <branch>`). `-d` fails
+   here by design — a squash merge rewrites the SHA (fleet-config#647).
 
 8. If this repo has a tray (hooks/projects.toml tray_cmd/restart_cmd), restart
    it per that repo's CLAUDE.md recipe — only if the merge landed.
@@ -215,6 +225,7 @@ You are the only agent touching this checkout.
 Report back, in this exact shape:
   - Repo: <repo>
   - Action: ADOPTED | RE-VENDORED | BOTH
+  - Primary: PRIMARY=live behind=0 | PRIMARY=stale reason=<why> | n/a (primary mode)
   - Branch: chore/revendor-<component>-<shortsha>
   - Gate: PASS | FAIL (<reason>)
   - Result: MERGED (<merge-sha>) | PR-OPEN (<url>, gate/CI pending) | BLOCKED (<reason>)
