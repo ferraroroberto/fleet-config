@@ -85,11 +85,28 @@ Subcommands
       Sends `--file`'s content (or stdin) as session input. Never accepts
       prose as a bare CLI arg — `say` is a pure pipe, it never composes
       the brief. `--verify` (fleet-config#453) polls the session's exchange
-      after posting and reports one of DELIVERED / UNKNOWN / STRANDED
-      instead of trusting the endpoint's `{"ok": true}` — the endpoint
-      reported success on 2026-07-27 for messages that were never
-      submitted, twice, in two different ways. Never auto-retries on a
-      non-delivered result; that is the caller's call.
+      after posting instead of trusting the endpoint's `{"ok": true}` — the
+      endpoint reported success on 2026-07-27 for messages that were never
+      submitted, twice, in two different ways. Four verdicts
+      (fleet-config#643); only DELIVERED exits 0:
+
+        DELIVERED  the exchange advanced past the send. Confirmed.
+        PENDING    delivery likely, unconfirmed: the target is mid-turn, or
+                   the submit is with the deferred watcher (`deferred`,
+                   app-launcher#763). In flight, not stranded. Exits 1.
+        STRANDED   positively not delivered — either the exchange never
+                   advanced on a target that was not busy, or the endpoint
+                   said so outright (`not_ingested`/`dropped`, or the
+                   watcher's `defer_timeout`/`defer_vanished`/
+                   `defer_unclear` on `last_input`).
+        UNKNOWN    the exchange could not be *read*. Genuinely unresolvable
+                   — never merely "un-advanced", which is STRANDED.
+
+      Every non-DELIVERED verdict carries the target's status and
+      last-output age, and exits non-zero. Never auto-retries, on any
+      verdict; a resent steer can double-execute a shipping command, so
+      that is the caller's call. Plain `say` (no `--verify`) reports
+      `FAILED` on a rejected POST rather than raising.
 
   stop <sid> [--kill] [--base-url URL]
       `quit` by default; `--kill` must be explicit.
@@ -145,6 +162,25 @@ DEFAULT_VERIFY_TIMEOUT = 20.0
 DEFAULT_VERIFY_POLL_INTERVAL = 2.0
 
 LOOPBACK_HOSTS = {"127.0.0.1", "::1", "localhost"}
+
+# Input-outcome reasons the session-host reports (app-launcher#760/#763,
+# `src/session_host.py:194-207`). Mirrored here as literals rather than
+# imported — this file is stdlib-only and must never depend on app-launcher's
+# tree. The `reason` field, not the HTTP status, is the documented contract
+# (`src/session_client.py:159-163`), so a 202 is recognised by `deferred`
+# alone and `_request` never has to surface status codes.
+INPUT_DEFERRED = "deferred"
+# The deferred watcher's terminal *failure* verdicts, landed on the session's
+# `last_input` after the fact, plus the two immediate negatives. Every one of
+# them is the API stating outright that nothing was submitted — authoritative
+# negatives, which outrank anything inferred from board status.
+INPUT_NEGATIVE_REASONS = frozenset({
+    "not_ingested",     # written, never echoed back → not delivered
+    "dropped",          # the write never reached the PTY at all
+    "defer_timeout",    # never went quiet within the watcher's cap
+    "defer_vanished",   # went quiet, but the payload had gone
+    "defer_unclear",    # quiet with the payload present — and a dialog too
+})
 
 
 # ---- loopback guard (pure) -------------------------------------------------
@@ -287,19 +323,61 @@ def find_session_status(columns: Dict[str, Any], sid: str) -> Optional[str]:
     return None
 
 
-def finalize_delivery(last_marker_state: str, target_status: Optional[str]) -> str:
+def finalize_delivery(
+    last_marker_state: str,
+    target_status: Optional[str],
+    *,
+    marker_available: bool = True,
+    post_reason: Optional[str] = None,
+    last_input: Optional[Dict[str, Any]] = None,
+) -> str:
     """The caller-facing verdict once the poll budget is exhausted: one of
-    "delivered", "unknown", "stranded".
+    "delivered", "pending", "stranded", "unknown" (fleet-config#643).
 
-    A `working` target may simply not have finished its current turn yet —
-    "no timestamp movement" is not proof of loss there, so it reads as
-    "unknown", not "stranded" (a busy session isn't the case that needs
-    unsticking anyway). Any other status — idle, needs-you, or a target this
-    board snapshot can't find at all — makes non-movement a real signal.
+    `UNKNOWN` used to carry two unrelated meanings at once — "the worker is
+    mid-turn so the exchange hasn't moved yet" and "the exchange could not be
+    read at all". A verifier that cries wolf gets ignored, and this is the
+    only mechanism that has ever caught a genuinely stranded steer, so the
+    two are split here. Precedence, strongest evidence first:
+
+    1. The exchange advanced past the send — "delivered". Positive proof.
+    2. An **authoritative negative**: the API itself said nothing was
+       submitted, either immediately (`not_ingested`/`dropped`) or via the
+       deferred watcher's terminal verdict on `last_input`
+       (`defer_timeout`/`defer_vanished`/`defer_unclear`). This outranks a
+       busy board status: a `working` session whose watcher reported
+       `defer_timeout` is *not* pending, it is stranded.
+    3. `deferred` (app-launcher#763): the payload is in the composer and its
+       submitting CR is with a background watcher that has not reported yet.
+       Genuinely in flight — neither delivered nor stranded → "pending".
+    4. A `working` target: mid-turn, so non-movement is not proof of loss →
+       "pending". The benign case the issue was filed over.
+    5. An exchange that could not be **read** (transport error, or the
+       launcher reporting it unavailable) → "unknown". This is the narrow,
+       genuinely-unresolvable case, per the fleet rule that a check which
+       cannot establish a fact reports that as its own state.
+    6. Otherwise — a readable exchange that never advanced, on an idle or
+       `needs-you` target, or one this board snapshot cannot find at all →
+       "stranded". Non-movement is a real signal here.
+
+    Note 5 vs 6: "un-advanced" and "unreadable" are different facts, and only
+    the second is `unknown`. A readable-but-un-advanced exchange must never
+    land in `unknown`, or the narrowing exists only in this docstring.
+
+    Every non-delivered verdict is non-zero at the call site and none of them
+    ever triggers a resend — a resent steer can double-execute a shipping
+    command, so the decision stays with the operator.
     """
     if last_marker_state == "delivered":
         return "delivered"
+    watcher_reason = (last_input or {}).get("reason")
+    if post_reason in INPUT_NEGATIVE_REASONS or watcher_reason in INPUT_NEGATIVE_REASONS:
+        return "stranded"
+    if post_reason == INPUT_DEFERRED:
+        return "pending"
     if target_status == "working":
+        return "pending"
+    if not marker_available:
         return "unknown"
     return "stranded"
 
@@ -493,6 +571,137 @@ def fetch_exchange_marker(base_url: str, sid: str) -> Dict[str, Any]:
     return {"available": True, "timestamp": assistant.get("timestamp")}
 
 
+def post_session_input(base_url: str, sid: str, text: str) -> Dict[str, Any]:
+    """POST one steer into `sid`'s terminal. **Exactly one POST, always** —
+    this helper never retries, and no caller may call it twice for the same
+    steer (a resent `/issue-finish` can double-execute a merge).
+
+    Returns `{"ok": bool, "reason": str|None, "http_status": int|None,
+    "error": str|None}`.
+
+    The session-host answers a *written but never echoed* payload with HTTP
+    502, and an already-exited session with 409 (app-launcher#607/#760).
+    Both used to escape `urllib` as an unhandled `HTTPError` and crash the
+    tool with a traceback — so the one case where the API states outright
+    "this was NOT delivered" was the single input the verifier could not
+    process, while every verdict it *did* report rested on inference. Caught
+    here, those become a `reason` the classifier can act on.
+
+    Success bodies are returned as-is; `reason` (not the HTTP status) is the
+    documented contract for `deferred`/202, per app-launcher's
+    `src/session_client.py:159-163`.
+    """
+    try:
+        result = _request(
+            base_url, f"/api/claude-code/sessions/{sid}/input",
+            method="POST", body={"data": text, "submit": True},
+        )
+    except urllib.error.HTTPError as exc:
+        detail = ""
+        try:
+            detail = exc.read().decode("utf-8", "replace")
+        except Exception:  # noqa: BLE001 — a body we cannot read must not mask the status
+            detail = ""
+        # 502 is the host's "written, never echoed, no CR sent" — map it onto
+        # the same reason vocabulary the body would have carried, so the
+        # classifier has one language for authoritative negatives.
+        reason = "not_ingested" if exc.code == 502 else "dropped" if exc.code == 409 else None
+        return {
+            "ok": False, "reason": reason, "http_status": exc.code,
+            "error": f"HTTP {exc.code}: {detail.strip()[:300] or exc.reason}",
+        }
+    except (urllib.error.URLError, ValueError) as exc:
+        # Could not reach the endpoint at all — not evidence either way.
+        return {"ok": False, "reason": None, "http_status": None, "error": str(exc)[:300]}
+    if not isinstance(result, dict):
+        return {"ok": True, "reason": None, "http_status": None, "error": None}
+    return {"ok": True, "reason": result.get("reason"), "http_status": None, "error": None}
+
+
+def fetch_session_card(base_url: str, sid: str) -> Dict[str, Any]:
+    """The session-host's own record for `sid` from the sessions list, or
+    `{}` when it cannot be read. Source of `last_output_at` and — on hosts
+    new enough to have app-launcher#760 — `last_input`.
+
+    An older host simply omits `last_input`; that is reported as unknown
+    rather than guessed at, which is why the callers below print `unknown`
+    instead of inventing a verdict.
+    """
+    try:
+        payload = _request(base_url, "/api/claude-code/sessions")
+    except (urllib.error.URLError, ValueError):
+        return {}
+    sessions = payload.get("sessions") if isinstance(payload, dict) else payload
+    for card in sessions or []:
+        if isinstance(card, dict) and str(card.get("session_id") or "") == sid:
+            return card
+    return {}
+
+
+def format_last_output_age(last_output_at: Any, now: Optional[float] = None) -> str:
+    """`last_output_at` (an epoch float) rendered as `"4s ago"`, or the
+    literal `"unknown"` when it is missing or unparseable — never a
+    fabricated number, and never silently omitted."""
+    try:
+        stamp = float(last_output_at)
+    except (TypeError, ValueError):
+        return "unknown"
+    if stamp <= 0:
+        return "unknown"
+    age = max(0.0, (time.time() if now is None else now) - stamp)
+    if age < 90:
+        return f"{int(age)}s ago"
+    if age < 5400:
+        return f"{int(age // 60)}m ago"
+    return f"{int(age // 3600)}h ago"
+
+
+def format_verdict_line(
+    verdict: str,
+    sid: str,
+    chars: int,
+    target_status: Optional[str],
+    last_output_age: str,
+    reason: str,
+    last_input_reason: Optional[str] = None,
+) -> str:
+    """One self-contained line per verdict. Every non-`DELIVERED` result
+    carries the target's status and last-output age so the operator can judge
+    without a second round of calls (fleet-config#643)."""
+    parts = [
+        verdict.upper(), f"sid={sid}", f"chars={chars}",
+        f"status={target_status or 'unknown'}",
+        f"last_output={last_output_age}",
+    ]
+    if last_input_reason:
+        parts.append(f"last_input={last_input_reason}")
+    parts.append(f"reason={reason}")
+    return " ".join(parts)
+
+
+VERDICT_REASONS = {
+    "pending_deferred": (
+        "submit accepted and handed to the watcher (deferred); "
+        "exchange not advanced yet, delivery likely — not resent"
+    ),
+    "pending_busy": (
+        "target still mid-turn, exchange not advanced yet; "
+        "delivery likely, unconfirmed — not resent"
+    ),
+    "unknown": (
+        "exchange could not be read, delivery neither confirmed nor "
+        "disproved; not resent, operator decides"
+    ),
+    "stranded_negative": (
+        "the endpoint reported the input was never submitted; "
+        "not resent, operator decides"
+    ),
+    "stranded": (
+        "exchange never advanced past send; not resent, operator decides"
+    ),
+}
+
+
 def read_brief(file_arg: Optional[str]) -> str:
     """`--file`'s content, or stdin when omitted. `say` never accepts prose
     as a bare CLI arg — it carries the brief the model already composed,
@@ -598,47 +807,87 @@ def cmd_chief_sid(args: argparse.Namespace) -> int:
 def cmd_say(args: argparse.Namespace) -> int:
     text = read_brief(args.file)
 
+    send_time = datetime.now(timezone.utc)
+    # The one and only POST, on both the plain and the --verify path. Nothing
+    # below this line ever sends again.
+    posted = post_session_input(args.base_url, args.sid, text)
+
     if not args.verify:
-        _request(
-            args.base_url, f"/api/claude-code/sessions/{args.sid}/input",
-            method="POST", body={"data": text, "submit": True},
-        )
+        # Plain `say` is the most-used call, and a traceback here turns a
+        # steer the operator could deliberately retry into a crash they have
+        # to diagnose. Report the failure instead (fleet-config#643).
+        if not posted["ok"]:
+            print(f"FAILED sid={args.sid} chars={len(text)} reason={posted['error']}")
+            return 1
         print(f"SENT sid={args.sid} chars={len(text)}")
         return 0
 
-    send_time = datetime.now(timezone.utc)
-    _request(
-        args.base_url, f"/api/claude-code/sessions/{args.sid}/input",
-        method="POST", body={"data": text, "submit": True},
-    )
+    post_reason = posted.get("reason")
+    # An authoritative negative needs no poll — the endpoint already said the
+    # input was never submitted. Polling an exchange for movement that cannot
+    # come would only spend the timeout budget before reporting the same thing.
+    if not posted["ok"] and post_reason not in INPUT_NEGATIVE_REASONS:
+        # The endpoint could not be reached at all — that is not evidence
+        # either way, so it is `unknown`, never `stranded`.
+        print(format_verdict_line(
+            "unknown", args.sid, len(text), None, "unknown",
+            f"send failed: {posted['error']}",
+        ))
+        return 1
 
     state = "pending"
-    deadline = time.monotonic() + args.timeout
-    while True:
-        marker = fetch_exchange_marker(args.base_url, args.sid)
-        state = classify_exchange_marker(marker["available"], marker["timestamp"], send_time)
-        if state == "delivered" or time.monotonic() >= deadline:
-            break
-        time.sleep(args.poll_interval)
-
-    if state != "delivered":
-        board = _request(args.base_url, "/api/board")
-        target_status = find_session_status(board.get("columns") or {}, args.sid)
-        state = finalize_delivery(state, target_status)
+    marker = {"available": False, "timestamp": None}
+    if posted["ok"]:
+        deadline = time.monotonic() + args.timeout
+        while True:
+            marker = fetch_exchange_marker(args.base_url, args.sid)
+            state = classify_exchange_marker(marker["available"], marker["timestamp"], send_time)
+            if state == "delivered" or time.monotonic() >= deadline:
+                break
+            time.sleep(args.poll_interval)
 
     if state == "delivered":
         print(f"DELIVERED sid={args.sid} chars={len(text)}")
         return 0
-    if state == "unknown":
-        print(
-            f"UNKNOWN sid={args.sid} chars={len(text)} "
-            "reason=target busy or exchange unreadable, delivery unconfirmed"
-        )
-        return 1
-    print(
-        f"STRANDED sid={args.sid} chars={len(text)} "
-        "reason=exchange never advanced past send; not resent, operator decides"
+
+    board: Dict[str, Any] = {}
+    try:
+        board = _request(args.base_url, "/api/board")
+    except (urllib.error.URLError, ValueError):
+        board = {}
+    target_status = find_session_status(board.get("columns") or {}, args.sid)
+    card = fetch_session_card(args.base_url, args.sid)
+    last_input = card.get("last_input") if isinstance(card.get("last_input"), dict) else None
+
+    state = finalize_delivery(
+        state, target_status,
+        marker_available=bool(marker.get("available")),
+        post_reason=post_reason,
+        last_input=last_input,
     )
+
+    last_input_reason = (last_input or {}).get("reason")
+    if state == "pending":
+        reason = VERDICT_REASONS[
+            "pending_deferred" if post_reason == INPUT_DEFERRED else "pending_busy"
+        ]
+    elif state == "unknown":
+        reason = VERDICT_REASONS["unknown"]
+    elif post_reason in INPUT_NEGATIVE_REASONS or last_input_reason in INPUT_NEGATIVE_REASONS:
+        reason = VERDICT_REASONS["stranded_negative"]
+        if posted.get("error"):
+            reason = f"{reason} ({posted['error']})"
+    else:
+        reason = VERDICT_REASONS["stranded"]
+
+    print(format_verdict_line(
+        state, args.sid, len(text), target_status,
+        format_last_output_age(card.get("last_output_at")),
+        reason, last_input_reason,
+    ))
+    # Every non-delivered verdict is non-zero — including the friendly-sounding
+    # PENDING. "Likely delivered" is not "delivered", and the moment it exits 0
+    # a caller starts treating it as success.
     return 1
 
 
@@ -751,7 +1000,11 @@ def main(argv: Optional[List[str]] = None) -> int:
     say_p.add_argument("--file", default=None)
     say_p.add_argument(
         "--verify", action="store_true",
-        help="poll the exchange after posting and report DELIVERED/UNKNOWN/STRANDED (fleet-config#453)",
+        help=(
+            "poll the exchange after posting and report "
+            "DELIVERED/PENDING/STRANDED/UNKNOWN (fleet-config#453, #643); "
+            "never auto-retries"
+        ),
     )
     say_p.add_argument("--timeout", type=float, default=DEFAULT_VERIFY_TIMEOUT)
     say_p.add_argument("--poll-interval", type=float, default=DEFAULT_VERIFY_POLL_INTERVAL)

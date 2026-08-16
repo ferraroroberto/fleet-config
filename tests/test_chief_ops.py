@@ -158,8 +158,8 @@ check(
 
 check(co.finalize_delivery("delivered", "working") == "delivered", "finalize_delivery: delivered stays delivered")
 check(
-    co.finalize_delivery("pending", "working") == "unknown",
-    "finalize_delivery: non-movement on a busy target -> unknown, not stranded",
+    co.finalize_delivery("pending", "working") == "pending",
+    "finalize_delivery: non-movement on a busy target -> pending, not unknown (#643)",
 )
 check(
     co.finalize_delivery("pending", "needs-you") == "stranded",
@@ -273,6 +273,15 @@ def _run_say_verify(exchange_responses, board_status="needs-you", timeout=0.15, 
                 "claude_turn": [_session_card(session_id="target-1", status=board_status)],
                 "your_turn": [],
             }}
+        if path == "/api/claude-code/sessions":
+            # Read on every non-delivered verdict for `last_output_at` /
+            # `last_input` (fleet-config#643). Shaped like the *live*
+            # pre-app-launcher#760 host: `last_output_at` present, no
+            # `last_input` key at all.
+            return {"sessions": [{
+                "session_id": "target-1",
+                "last_output_at": __import__("time").time() - 3,
+            }]}
         raise AssertionError(f"unexpected path: {path}")
 
     prior = co._request
@@ -306,10 +315,10 @@ check(rc == 0, "cmd_say --verify exits 0 when the exchange advances past send ti
 check(calls["input"] == 1, "cmd_say --verify posts the input exactly once (no auto-retry)")
 
 rc, _ = _run_say_verify([{"available": False}], board_status="needs-you")
-check(rc == 1, "cmd_say --verify: unreadable exchange on an idle target -> failure (stranded)")
+check(rc == 1, "cmd_say --verify: unreadable exchange on an idle target -> failure (unknown since #643 — cannot read is not proof of loss)")
 
 rc, _ = _run_say_verify([{"available": False}], board_status="working")
-check(rc == 1, "cmd_say --verify: unreadable exchange on a working target -> failure (unknown, not stranded)")
+check(rc == 1, "cmd_say --verify: unreadable exchange on a working target -> failure (pending since #643, still non-zero)")
 
 rc, calls = _run_say_verify(
     [{"available": True, "assistant": {"timestamp": _real_before}}], board_status="needs-you",
@@ -540,6 +549,189 @@ try:
 finally:
     import shutil
     shutil.rmtree(_verify_tmp, ignore_errors=True)
+
+
+# ---- say --verify: four distinct verdicts (fleet-config#643) ----------------
+# UNKNOWN used to mean "busy target" and "unreadable exchange" at once. These
+# pin the split, and — because `say` is how chief steers every worker — that
+# the send happens exactly once on every path, whatever the verdict.
+
+# 1. The pure classifier, over the conditions the live host can produce.
+check(
+    co.finalize_delivery("pending", "working", post_reason="deferred") == "pending",
+    "finalize_delivery: deferred submit in flight -> pending (app-launcher#763)",
+)
+check(
+    co.finalize_delivery("pending", "idle", post_reason="deferred") == "pending",
+    "finalize_delivery: deferred outranks an idle status -> pending, not stranded",
+)
+for _neg in sorted(co.INPUT_NEGATIVE_REASONS):
+    check(
+        co.finalize_delivery("pending", "working", post_reason=_neg) == "stranded",
+        f"finalize_delivery: authoritative negative {_neg!r} -> stranded even on a busy target",
+    )
+    check(
+        co.finalize_delivery("pending", "working", last_input={"reason": _neg}) == "stranded",
+        f"finalize_delivery: watcher verdict {_neg!r} on last_input -> stranded",
+    )
+check(
+    co.finalize_delivery(
+        "pending", "working", post_reason="deferred",
+        last_input={"reason": "defer_timeout"},
+    ) == "stranded",
+    "finalize_delivery: watcher's terminal failure outranks the deferred acceptance",
+)
+check(
+    co.finalize_delivery("pending", "needs-you", marker_available=False) == "unknown",
+    "finalize_delivery: unreadable exchange -> unknown, not stranded",
+)
+# The narrowing has to be real, not just documented: readable-but-un-advanced
+# is STRANDED, and must never land in UNKNOWN.
+for _status in ("idle", "needs-you", None):
+    check(
+        co.finalize_delivery("pending", _status, marker_available=True) != "unknown",
+        f"finalize_delivery: readable-but-un-advanced exchange (status={_status!r}) is never unknown",
+    )
+check(
+    co.finalize_delivery("delivered", None, marker_available=False,
+                         post_reason="not_ingested") == "delivered",
+    "finalize_delivery: a genuinely advanced exchange still wins over everything",
+)
+
+# 2. format_last_output_age — an unreadable stamp says so, never a number.
+check(co.format_last_output_age(None) == "unknown",
+      "format_last_output_age: missing stamp -> unknown, never fabricated")
+check(co.format_last_output_age("nonsense") == "unknown",
+      "format_last_output_age: unparseable stamp -> unknown")
+check(co.format_last_output_age(0) == "unknown",
+      "format_last_output_age: zero stamp -> unknown")
+check(co.format_last_output_age(1000.0, now=1004.0) == "4s ago",
+      "format_last_output_age: seconds")
+check(co.format_last_output_age(1000.0, now=1000.0 + 300) == "5m ago",
+      "format_last_output_age: minutes")
+check(co.format_last_output_age(1000.0, now=1000.0 + 7200) == "2h ago",
+      "format_last_output_age: hours")
+
+# 3. cmd_say end-to-end against a stubbed transport. The live session-host is
+# still the pre-#760 build (verified 2026-08-16: its /api/claude-code/sessions
+# cards carry `last_output_at` but no `last_input`), so it cannot emit a 202
+# `deferred` yet — that path is proven here against a synthetic 202 and is
+# recorded as unproven end-to-end until the parked session-host restart.
+import time  # noqa: E402
+
+_say_tmp = Path(tempfile.mkdtemp(prefix="chief_ops_say_"))
+try:
+    _brief = _say_tmp / "brief.md"
+    _brief.write_text("CHIEF - steer", encoding="utf-8")
+
+    def _run_say(post_result, *, verify=True, marker=None, status="working",
+                 card=None):
+        """Drive cmd_say with every network edge stubbed. Returns
+        (exit_code, stdout, post_call_count)."""
+        calls = {"n": 0}
+
+        def _fake_post(base_url, sid, text):
+            calls["n"] += 1
+            if isinstance(post_result, Exception):
+                raise post_result
+            return post_result
+
+        _orig = (co.post_session_input, co.fetch_exchange_marker,
+                 co._request, co.fetch_session_card)
+        co.post_session_input = _fake_post
+        co.fetch_exchange_marker = lambda *a, **k: (
+            marker or {"available": False, "timestamp": None})
+        co._request = lambda base, path, **k: (
+            {"columns": {"claude_turn": [{"session_id": "sid123", "status": status}]}}
+            if path == "/api/board" else {})
+        co.fetch_session_card = lambda *a, **k: (
+            card if card is not None else {"last_output_at": time.time() - 4})
+        try:
+            buf = io.StringIO()
+            with contextlib.redirect_stdout(buf):
+                rc = co.cmd_say(argparse.Namespace(
+                    sid="sid123", file=str(_brief), verify=verify,
+                    timeout=0.0, poll_interval=0.0, base_url=co.DEFAULT_BASE_URL))
+            return rc, buf.getvalue(), calls["n"]
+        finally:
+            (co.post_session_input, co.fetch_exchange_marker,
+             co._request, co.fetch_session_card) = _orig
+
+    # 202 deferred -> PENDING, exit 1, exactly one POST.
+    _rc, _out, _n = _run_say({"ok": True, "reason": "deferred", "error": None})
+    check("PENDING sid=sid123" in _out, "cmd_say: a deferred (202) submit reports PENDING")
+    check(_rc == 1, "cmd_say: PENDING still exits non-zero — likely-delivered is not delivered")
+    check(_n == 1, "cmd_say: PENDING path sent exactly once — never auto-retries")
+    check("status=working" in _out and "last_output=" in _out,
+          "cmd_say: PENDING line carries target status and last-output age")
+
+    # HTTP 502 not_ingested -> STRANDED, not a traceback.
+    _rc, _out, _n = _run_say({
+        "ok": False, "reason": "not_ingested", "http_status": 502,
+        "error": "HTTP 502: never echoed the input",
+    })
+    check("STRANDED sid=sid123" in _out,
+          "cmd_say: the endpoint's authoritative 'not delivered' reports STRANDED")
+    check(_rc == 1, "cmd_say: STRANDED exits non-zero")
+    check(_n == 1, "cmd_say: STRANDED path sent exactly once — never auto-retries")
+
+    # Watcher's terminal failure on last_input -> STRANDED.
+    _rc, _out, _n = _run_say(
+        {"ok": True, "reason": "deferred", "error": None},
+        card={"last_output_at": time.time() - 10,
+              "last_input": {"reason": "defer_timeout"}},
+    )
+    check("STRANDED sid=sid123" in _out and "last_input=defer_timeout" in _out,
+          "cmd_say: the watcher's defer_timeout verdict reports STRANDED and names itself")
+    check(_n == 1, "cmd_say: watcher-negative path sent exactly once")
+
+    # Busy target, readable-but-un-advanced exchange -> PENDING.
+    _rc, _out, _n = _run_say(
+        {"ok": True, "reason": "ok", "error": None},
+        marker={"available": True, "timestamp": None}, status="working")
+    check("PENDING sid=sid123" in _out,
+          "cmd_say: busy target with an un-advanced exchange reports PENDING")
+    check("UNKNOWN" not in _out,
+          "cmd_say: a readable exchange never reports UNKNOWN")
+
+    # Unreadable exchange on an idle target -> UNKNOWN.
+    _rc, _out, _n = _run_say(
+        {"ok": True, "reason": "ok", "error": None},
+        marker={"available": False, "timestamp": None}, status="needs-you")
+    check("UNKNOWN sid=sid123" in _out,
+          "cmd_say: an unreadable exchange reports UNKNOWN")
+    check(_rc == 1 and _n == 1, "cmd_say: UNKNOWN exits 1 and sent exactly once")
+
+    # Readable, un-advanced, idle target -> STRANDED (the signal worth keeping).
+    _rc, _out, _n = _run_say(
+        {"ok": True, "reason": "ok", "error": None},
+        marker={"available": True, "timestamp": None}, status="needs-you")
+    check("STRANDED sid=sid123" in _out,
+          "cmd_say: un-advanced exchange on an idle target stays STRANDED")
+
+    # Delivered -> exit 0, one POST.
+    _future = (datetime.now(timezone.utc) + timedelta(minutes=5)).isoformat()
+    _rc, _out, _n = _run_say(
+        {"ok": True, "reason": "ok", "error": None},
+        marker={"available": True, "timestamp": _future})
+    check("DELIVERED sid=sid123" in _out and _rc == 0,
+          "cmd_say: an advanced exchange reports DELIVERED and exits 0")
+    check(_n == 1, "cmd_say: DELIVERED path sent exactly once")
+
+    # Plain `say` (no --verify): happy path unchanged, failure reported not raised.
+    _rc, _out, _n = _run_say({"ok": True, "reason": "ok", "error": None}, verify=False)
+    check("SENT sid=sid123" in _out and _rc == 0,
+          "cmd_say: plain say still prints SENT and exits 0 — happy path unchanged")
+    check(_n == 1, "cmd_say: plain say sent exactly once")
+    _rc, _out, _n = _run_say(
+        {"ok": False, "reason": "not_ingested", "http_status": 502,
+         "error": "HTTP 502: never echoed the input"}, verify=False)
+    check("FAILED sid=sid123" in _out and _rc == 1,
+          "cmd_say: plain say reports a rejected POST instead of raising")
+    check(_n == 1, "cmd_say: plain say failure path sent exactly once — never auto-retries")
+finally:
+    import shutil
+    shutil.rmtree(_say_tmp, ignore_errors=True)
 
 
 _h.report_and_exit("test_chief_ops")
