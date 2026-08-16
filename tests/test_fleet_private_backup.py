@@ -8,7 +8,9 @@ if it only ever meets mocks are exactly junction traversal, `st_nlink`, and what
 
 from __future__ import annotations
 
+import io
 import json
+import logging
 import os
 import shutil
 import subprocess
@@ -365,6 +367,44 @@ try:
     check(state == bp.FRESHNESS_STALE,
           "freshness: a recent but failed run is not ok")
 
+    # ---- torn-snapshot marker (fleet-config#607) ---------------------------
+    marker_root = tmp / "markertest"
+    day_a = marker_root / "2026-08-10"
+    day_b = marker_root / "2026-08-11"
+    _write(day_a / "g" / "a.md", "content")
+    (day_a / bp.MANIFEST_NAME).write_text(json.dumps({
+        "status": "ok", "finished_at": NOW.isoformat(),
+        "groups": {"g": {"files": [{"path": "a.md", "sha256": "x", "size": 1}]}},
+    }), encoding="utf-8")
+
+    check(not bp.has_run_marker(day_a), "marker: a finished snapshot carries no marker")
+    day_b.mkdir(parents=True)
+    bp.write_run_marker(day_b, "repos")
+    check(bp.has_run_marker(day_b), "marker: write_run_marker leaves the file behind")
+    read_back = bp.read_run_marker(day_b)
+    check(read_back.get("leg") == "repos" and "pid" in read_back and "started_at" in read_back,
+          f"marker: it carries leg, pid and start time, got {read_back}")
+    bp.clear_run_marker(day_b)
+    check(not bp.has_run_marker(day_b), "marker: clear_run_marker removes it")
+    bp.clear_run_marker(day_b)  # clearing an absent marker is not an error
+
+    # freshness: the newest snapshot carrying a marker reports unknown, never ok,
+    # even though an older manifest right beside it looks perfectly fine.
+    bp.write_run_marker(day_b, "repos")
+    state, detail = bp.freshness(marker_root, cfg, now=NOW)
+    check(state == bp.FRESHNESS_UNKNOWN and detail.get("reason") == "last run did not finish",
+          f"freshness: a torn newest snapshot reports unknown, got {state} {detail}")
+    check(detail.get("snapshot") == "2026-08-11", "freshness: it names the torn snapshot")
+
+    # _previous_snapshot: a marked snapshot is skipped, falling back to the older
+    # clean one, and the skip is reported for the caller to name in its own report.
+    prev_dir, prev_manifest, skipped = bp._previous_snapshot(marker_root, "2026-08-12")
+    check(prev_dir == day_a and skipped == ["2026-08-11"],
+          f"_previous_snapshot: skips the torn snapshot and falls back, got "
+          f"prev_dir={prev_dir} skipped={skipped}")
+    check(prev_manifest.get("status") == "ok",
+          "_previous_snapshot: the fallback manifest is the older clean one")
+
     # ---- cross-volume preflight -------------------------------------------
     check(bp._same_volume(tmp, tmp / "child"), "volume: two temp paths share a volume")
     problem = bp._preflight(tmp / "fleet", tmp / "dest-same-volume")
@@ -498,6 +538,108 @@ try:
               "e2e: --dry-run created no snapshot directory")
     finally:
         bp._preflight = original_preflight
+
+    # ---- an interrupted run: marker left behind, recovered, and reported ---
+    # A real death mid-write, simulated by making write_group raise after the
+    # marker is already down — the same failure shape as a killed process or a
+    # power loss between the first write and manifest.json (fleet-config#607).
+    torn_cfg = _cfg(tmp, dest=tmp / "torn-dest", transcripts_src=tmp / "torn-transcripts",
+                    transcripts_dest=tmp / "torn-tdest")
+    original_preflight2 = bp._preflight
+    original_write_group = bp.write_group
+    bp._preflight = lambda source, dest: None  # temp dirs share a volume by construction
+
+    class _SimulatedCrash(Exception):
+        pass
+
+    def _crashing_write_group(*args, **kwargs):
+        raise _SimulatedCrash("process died mid-write")
+
+    try:
+        code1, _ = bp.run(torn_cfg, only="demo-repo", toml_path=toml_path,
+                          notify=False, today="2026-08-10")
+        check(code1 == bp.EXIT_OK, "torn: the baseline run is clean")
+        check(not bp.has_run_marker(torn_cfg.dest / "2026-08-10"),
+              "torn: an ordinary successful run removes its own marker")
+
+        bp.write_group = _crashing_write_group
+        crashed = False
+        try:
+            bp.run(torn_cfg, only="demo-repo", toml_path=toml_path,
+                  notify=False, today="2026-08-11")
+        except _SimulatedCrash:
+            crashed = True
+        finally:
+            bp.write_group = original_write_group
+        check(crashed, "torn: the simulated mid-write crash propagates (nothing swallows it)")
+
+        torn_snapshot = torn_cfg.dest / "2026-08-11"
+        check(bp.has_run_marker(torn_snapshot),
+              "torn: a run interrupted between the first write and the manifest "
+              "leaves .run-in-progress behind")
+        check(not (torn_snapshot / bp.MANIFEST_NAME).exists(),
+              "torn: an interrupted run never reaches manifest.json")
+
+        state, detail = bp.freshness(torn_cfg.dest, torn_cfg, now=NOW)
+        check(state == bp.FRESHNESS_UNKNOWN and detail.get("reason") == "last run did not finish",
+              f"torn: --check-freshness reports unknown over the torn snapshot, got {state}")
+
+        # The next day's run skips the torn snapshot as a hardlink source and
+        # names it as the interrupted predecessor in its own manifest/report.
+        code3, manifests3 = bp.run(torn_cfg, only="demo-repo", toml_path=toml_path,
+                                   notify=False, today="2026-08-12")
+        check(code3 == bp.EXIT_OK, "torn: the following day's run is clean")
+        repos3 = next(m for m in manifests3 if m["leg"] == "repos")
+        check(repos3["skipped_interrupted"] == ["2026-08-11"],
+              f"torn: the next run's report names the interrupted predecessor, "
+              f"got {repos3['skipped_interrupted']}")
+        check(bp.has_run_marker(torn_snapshot),
+              "torn: a stuck marker from a different date is left untouched, not silently cleared")
+
+        report_buf = io.StringIO()
+        report_handler = logging.StreamHandler(report_buf)
+        prior_level = bp.logger.level
+        bp.logger.addHandler(report_handler)
+        bp.logger.setLevel(logging.INFO)
+        try:
+            bp.report(repos3)
+        finally:
+            bp.logger.removeHandler(report_handler)
+            bp.logger.setLevel(prior_level)
+        check("2026-08-11" in report_buf.getvalue() and "never finished" in report_buf.getvalue(),
+              f"torn: report() prints the interrupted predecessor's name, got "
+              f"{report_buf.getvalue()!r}")
+
+        # Re-running the SAME date the torn run died on is self-healing: it
+        # overwrites the directory, recovers (and reports) the stale marker, and
+        # clears it on success.
+        code4, manifests4 = bp.run(torn_cfg, only="demo-repo", toml_path=toml_path,
+                                   notify=False, today="2026-08-11")
+        check(code4 == bp.EXIT_OK, "torn: a clean re-run over the same date succeeds")
+        repos4 = next(m for m in manifests4 if m["leg"] == "repos")
+        check(repos4["recovered_marker"] is not None
+              and repos4["recovered_marker"]["leg"] == "repos",
+              f"torn: the re-run's manifest names the marker it recovered, "
+              f"got {repos4['recovered_marker']}")
+        check(not bp.has_run_marker(torn_snapshot),
+              "torn: a successful re-run over a marked directory clears the marker")
+
+        recovered_buf = io.StringIO()
+        recovered_handler = logging.StreamHandler(recovered_buf)
+        prior_level2 = bp.logger.level
+        bp.logger.addHandler(recovered_handler)
+        bp.logger.setLevel(logging.INFO)
+        try:
+            bp.report(repos4)
+        finally:
+            bp.logger.removeHandler(recovered_handler)
+            bp.logger.setLevel(prior_level2)
+        check("recovered" in recovered_buf.getvalue(),
+              f"torn: report() names the marker it recovered on this run, got "
+              f"{recovered_buf.getvalue()!r}")
+    finally:
+        bp._preflight = original_preflight2
+        bp.write_group = original_write_group
 
     # ---- the real projects.toml: [backup] must not steal [global]'s keys ---
     # A TOML table header claims every bare key that follows it. Adding [backup]
