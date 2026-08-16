@@ -164,6 +164,96 @@ check(m.cluster_candidates([{"file": "a.py", "name": "test_only_one"}]) == [],
       "a single test never forms a cluster")
 
 
+# ---- parametrize-matrix redundancy, the name-clustering blind spot (#602) ---
+#
+# Modelled on project-scaffolding's pre-6717f6b test_geometry_helper.py: four
+# differently-named tests sweeping one shared 8-leg MATRIX, 32 collected nodes,
+# which cluster_candidates reported as zero clusters. PR #219 later collapsed
+# them to 8 nodes with no coverage loss.
+
+MATRIX_SRC = '''
+import pytest
+
+MATRIX = [(360, "light"), (768, "dark")]
+OTHER = [(1, 2)]
+
+
+@pytest.mark.parametrize(("width", "theme"), MATRIX, ids=map(matrix_id, MATRIX))
+def test_violating_min_target_fails(width, theme):
+    pass
+
+
+@pytest.mark.parametrize(("width", "theme"), MATRIX)
+def test_violating_overlap_fails(width, theme):
+    pass
+
+
+@pytest.mark.parametrize(("width", "theme"), MATRIX)
+def test_violating_chart_ticks_fail(width, theme):
+    pass
+
+
+@pytest.mark.parametrize(("width", "theme"), MATRIX)
+def test_violating_overflow_fails(width, theme):
+    pass
+
+
+@pytest.mark.parametrize("n", OTHER)
+def test_unrelated_sweep(n):
+    pass
+
+
+def test_plain_no_parametrize():
+    pass
+'''
+
+sigs = m.parametrize_signatures(MATRIX_SRC)
+check(sigs.get("test_violating_min_target_fails") == "width,theme@name:MATRIX",
+      "parametrize_signatures: argnames tuple + named collection form the signature")
+check(len({sigs[n] for n in sigs if n.startswith("test_violating_")}) == 1,
+      "parametrize_signatures: all four violating twins share one signature")
+check(sigs.get("test_unrelated_sweep") == "n@name:OTHER",
+      "parametrize_signatures: a different matrix gets a different signature")
+check("test_plain_no_parametrize" not in sigs,
+      "parametrize_signatures: an unparametrized test is absent, not empty-signatured")
+check(m.parametrize_signatures("def test_x(:\n  syntax error") == {},
+      "parametrize_signatures: an unparseable file yields nothing, never raises")
+
+matrix_file = {"file": "tests/e2e/test_geometry_helper.py", "lines": 200,
+               "tests": list(sigs), "parametrized": sigs}
+mc = m.matrix_candidates([matrix_file])
+check(len(mc) == 1, "matrix_candidates: only the >=2-member matrix is a candidate")
+check(set(mc[0]["members"]) == {"test_violating_min_target_fails", "test_violating_overlap_fails",
+                                "test_violating_chart_ticks_fail", "test_violating_overflow_fails"},
+      "matrix_candidates: flags exactly the four same-matrix twins")
+check(mc[0]["source"] == "name:MATRIX" and mc[0]["argnames"] == "width,theme",
+      "matrix_candidates: the entry names the shared collection and argnames")
+check(m.cluster_candidates([{"file": matrix_file["file"], "name": n} for n in sigs]) == [],
+      "the name-based detector still sees nothing here -- that is the blind spot being covered")
+
+check(m.matrix_candidates([{"file": "a.py", "parametrized": {"test_a": "n@name:M"}}]) == [],
+      "matrix_candidates: a lone parametrized test is not a candidate")
+check(m.matrix_candidates([{"file": "a.py", "lines": 1, "tests": []}]) == [],
+      "matrix_candidates: a file with no parametrize data is skipped, never raises")
+
+INLINE_TWINS = '''
+import pytest
+
+@pytest.mark.parametrize("w", [1, 2, 3])
+def test_alpha(w):
+    pass
+
+@pytest.mark.parametrize("w", [1, 2, 3])
+def test_beta(w):
+    pass
+'''
+inline = m.parametrize_signatures(INLINE_TWINS)
+check(len(set(inline.values())) == 1,
+      "parametrize_signatures: identical inline matrices collide via their literal hash")
+check(len(m.matrix_candidates([{"file": "a.py", "parametrized": inline}])) == 1,
+      "matrix_candidates: duplicated inline matrices are a candidate too")
+
+
 # ---- size_outliers ----------------------------------------------------------
 
 FILES = [
