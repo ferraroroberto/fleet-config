@@ -24,7 +24,10 @@ Run in parallel; stop on any failure:
   ```
   prints `primary` (work in the shared checkout) or `worktree` (a linked
   `<repo>-wt-<N>` created by `/issue-start`'s concurrency path). Remember which;
-  the two modes finish differently.
+  the two modes finish differently. **Run it from the checkout you are
+  finishing** — it answers about the cwd, and `<repo>` only says which repo that
+  cwd must belong to (fleet-config#652). A `UNKNOWN reason=<why>` line (exit 2)
+  means it could not tell: stop and fix the cwd/argument, never guess a mode.
 
 ## Steps
 

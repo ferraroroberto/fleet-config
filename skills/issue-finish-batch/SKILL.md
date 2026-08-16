@@ -83,7 +83,9 @@ You are the only agent touching this checkout.
    is provably CI-unrelated; rerun a single documented flake once), merge, land
    the primary, and restart the project's tray per its CLAUDE.md if it has one.
    Merge + land BOTH depend on the checkout mode -- run
-   `worktree_claim.py mode <path>` and follow /issue-finish step 5 for that mode.
+   `worktree_claim.py mode <path>` FROM <path> (step 1's cd; it answers about
+   the cwd, fleet-config#652) and follow /issue-finish step 5 for that mode.
+   `UNKNOWN reason=<why>` means it could not tell -- stop, never guess a mode.
    In a linked worktree do NOT pass --delete-branch (it fails its local half:
    "'main' is already used by worktree") and do NOT `git checkout main`; instead
    `remove-worktree`, then `worktree_claim.py land-primary <repo> #<N>`, then
