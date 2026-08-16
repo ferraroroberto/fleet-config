@@ -101,7 +101,7 @@ is a Claude-specific server-side limiter and does **not** apply to Grok.
 
 ### Antigravity
 
-No skills surface at all today (see `README.md`'s cross-agent capability matrix
+No skills surface at all today (see `cross-agent-parity.md`'s capability matrix
 and `/config-map`). Not applicable until that changes.
 
 ## Concurrency cap, restated in tier terms

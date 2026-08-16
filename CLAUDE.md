@@ -57,4 +57,4 @@ Global git discipline applies (never auto-commit/push/stage unasked; prepare a r
 
 ---
 
-See `README.md` for install, layout, and the Tier 1 hook list.
+See `README.md` for install and layout; the reference catalogues live in `docs/` — `docs/hooks.md` (Tier 1 hooks), `docs/skills.md` (both skill tiers + the `_lib/` primitives), `docs/cross-agent-parity.md` (the per-agent matrix).

@@ -470,11 +470,17 @@ def _readme_layout_check() -> Tuple[int, int]:
       1. every top-level tracked directory is named in the Layout block;
       2. every `hooks/*.py` module is named in it;
       3. the "<N> hooks under `hooks/`" count matches the hook table's rows.
+
+    Part 3 reads `docs/hooks.md`, not the README: fleet-config#648 relocated the
+    hook reference catalogue there, leaving the README the layout tree and the
+    install path. The invariant is unchanged — the count sentence and the table
+    it introduces still have to agree — only the file that carries both moved.
     Returns (failures, total).
     """
     check = _Checker()
 
     readme = (REPO / "README.md").read_text(encoding="utf-8")
+    hooks_doc = (REPO / "docs" / "hooks.md").read_text(encoding="utf-8")
 
     # The fenced tree under "## Layout", up to the next top-level heading.
     after = readme.split("\n## Layout\n", 1)[1]
@@ -505,13 +511,22 @@ def _readme_layout_check() -> Tuple[int, int]:
     )
 
     # "18 hooks under `hooks/` that ..." must match the table it introduces.
-    m = re.search(r"^(\d+) hooks under `hooks/`", readme, re.M)
-    rows = len(re.findall(r"^\| `[a-z0-9_]+\.py` \|", readme, re.M))
+    m = re.search(r"^(\d+) hooks under `hooks/`", hooks_doc, re.M)
+    rows = len(re.findall(r"^\| `[a-z0-9_]+\.py` \|", hooks_doc, re.M))
     claimed = int(m.group(1)) if m else -1
     check(
-        f"readme_layout: the hook count matches the hook table (claims {claimed}, table has {rows})",
+        f"readme_layout: docs/hooks.md's count matches its hook table "
+        f"(claims {claimed}, table has {rows})",
         claimed == rows,
     )
+
+    # The README must still route a reader to the relocated reference, or the
+    # trimmed README becomes small at the cost of no longer orienting anyone.
+    for target in ("docs/hooks.md", "docs/skills.md"):
+        check(
+            f"readme_layout: README points onward to {target}",
+            f"]({target})" in readme,
+        )
 
     return check.failures, check.total
 
