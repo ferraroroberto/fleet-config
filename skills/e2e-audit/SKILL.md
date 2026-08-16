@@ -14,7 +14,7 @@ bloat is feature-driven, not time-driven, and the fleet already runs
 (parametrize-expanded) node counts against project-scaffolding's
 `docs/playwright-ui-testing.md` target ("Keep it small. Target < 15 tests
 total. If tempted to add #20, delete two first."), near-duplicate test-name
-clusters, file-size outliers, and (when the repo declares a `## UX surface`
+clusters, shared-parametrize-matrix clusters, file-size outliers, and (when the repo declares a `## UX surface`
 block) coverage gaps — apply LLM judgment only where measurement can't reach,
 and file exactly one deduped `e2e-redundancy` issue per repo (the same
 audit→bucket→cleanup machinery as `/codebase-audit` and `/design-sync`,
@@ -47,9 +47,15 @@ In parallel, from the target repo root:
 
 ### 2. Detect a test suite — else skip
 
-Run the scan (step 3) regardless — its `totals.files` answers this. If it
-comes back `0`, stop with: `<repo> has no test files under its resolved test
-dir(s) (<dirs>) — nothing to audit.` File nothing.
+Run the scan (step 3) regardless — its `totals.files` answers this, but read
+`test_dirs_resolved` **first**. `false` means none of the resolved dirs exist
+on disk: the scan had nowhere to look, so its `0` is *unknown*, not empty.
+Stop with `<repo>: could not resolve a test dir (tried <test_dirs_missing>) —
+coverage unknown, not audited.` and file nothing.
+
+Only when `test_dirs_resolved` is `true` does `totals.files == 0` mean what it
+says: stop with `<repo> has no test files under its resolved test dir(s)
+(<dirs>) — nothing to audit.` File nothing.
 
 ### 3. Run the deterministic scan
 
@@ -64,10 +70,14 @@ block for an "e2e surface" line and uses its backtick-quoted, test-like paths
 (e.g. app-launcher's `tests/e2e/`); falls back to `tests/e2e/` — the shared
 convention `project-scaffolding`'s `docs/playwright-ui-testing.md` already
 establishes fleet-wide — when no block or no test-like path is declared. This
-is "generic + project-driven", not a hardcoded per-repo path.
+is "generic + project-driven", not a hardcoded per-repo path. A heading inside
+a fenced code block is ignored, so a repo that only *documents* the block
+template (project-scaffolding) reads as undeclared and takes the fallback.
 
 The fields it returns, and what each means:
 
+- **`test_dirs_resolved` / `test_dirs_missing`** — whether any resolved dir
+  exists on disk. `false` is an *unknown*, never a clean result — see step 2.
 - **`totals`** — `files`, `raw_tests` (a plain `def test_` count), `node_count`
   (the true pytest-collected count, parametrize expansion included — `null`
   when the repo has no `.venv` or pytest isn't collectible; report that
@@ -78,6 +88,14 @@ The fields it returns, and what each means:
 - **`clusters`** — groups of tests whose normalized name collided across
   ≥2 files — a redundancy *candidate*, not a verdict (a short generic name
   like `test_smoke` can collide without being a real duplicate).
+- **`matrix_clusters`** — tests in the *same file* sweeping the same
+  `@pytest.mark.parametrize` matrix (`argnames@source`), which name clustering
+  cannot see: differently-named twins over one shared `MATRIX` collide on
+  nothing. Each entry carries `file`, `argnames`, `source`, `members`. High
+  leverage — this is where node counts multiply (project-scaffolding's four
+  geometry twins were 32 collected nodes, later 8 with no coverage loss). Also
+  a candidate, not a verdict: a shared matrix over genuinely distinct
+  assertions is legitimate breakpoint coverage.
 - **`size_outliers`** — files far above the suite's median line count —
   context, not automatically a finding (a large file may be one legitimately
   cohesive view's full coverage).
@@ -93,6 +111,12 @@ The fields it returns, and what each means:
   collision (two different views that both happen to use a generic name) is
   **not** a finding — say so and drop it, don't force every cluster into the
   issue.
+- **(a2) Confirm each matrix cluster.** Read the members' bodies. Twins that
+  differ only in which violation they assert, all swept over the same matrix,
+  collapse into one parametrized test with no coverage loss — that is the
+  finding, and it is usually the largest node-count win available. Tests that
+  genuinely assert different behaviour across the matrix are legitimate
+  coverage: drop them, don't pad the issue.
 - **(b) Confirm each coverage gap.** The helper's check is a crude substring
   match on test names/paths — read the actual suite before filing a gap; a
   view covered under a very differently-worded test name is a false positive,
@@ -195,6 +219,7 @@ Print one summary and stop:
   files: <n>   raw tests: <n>   collected nodes: <n | not measured>
   target: 15   ratio: <x.xx>x
   clusters: <n> candidate(s) -> <n> confirmed, <n> dismissed as coincidental
+  matrix clusters: <n> candidate(s) -> <n> confirmed, <n> legitimate coverage
   size outliers: <n> (<top files>)
   coverage gaps: <n confirmed | none declared | none found>
   filed: https://github.com/<owner>/<repo>/issues/<N>   (e2e-redundancy)
@@ -209,9 +234,13 @@ survived judgment (don't file an empty one).
 ## Hard rules
 
 - **Measure with `e2e_test_audit.py`, never by eye.** File/test counts, node
-  counts, clusters, and outliers come from the helper (step 3) — the LLM never
-  re-derives them by reading test files. LLM judgment is confined to step 4
-  (confirming clusters, confirming gaps, materiality, writing the issue).
+  counts, clusters (name *and* matrix), and outliers come from the helper
+  (step 3) — the LLM never re-derives them by reading test files. LLM judgment
+  is confined to step 4 (confirming clusters, confirming gaps, materiality,
+  writing the issue).
+- **A scan that could not resolve a test dir reports `unknown`, never clean.**
+  `test_dirs_resolved: false` is its own outcome (step 2) — never summarized
+  as "no tests", which is what let a bogus resolution read as a clean suite.
 - **Never edits, merges, or deletes a test.** Report-only; always — a test
   suite is safety equipment: this skill proposes, a human disposes. Actually
   consolidating tests is separate, explicitly-scoped follow-up work.

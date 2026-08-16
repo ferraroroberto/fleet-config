@@ -88,8 +88,10 @@ Subcommands:
       claim-or-worktree behaviour.
 
   setup-worktree <repo-root> <issue-N> <branch>
-      `git worktree add <repo>-wt-<N> -b <branch> <origin-main>` + junction
-      `.venv` and any repo-declared `[worktree] extra_junctions` (fleet-config#620)
+      `git worktree add <repo>-wt-<N> <branch>` — created off the default
+      branch, or off `origin/<branch>` when the branch is already pushed, or
+      checked out in place when it already exists locally (fleet-config#602) —
+      + junction `.venv` and any repo-declared `[worktree] extra_junctions` (fleet-config#620)
       into it, then copy the primary's gitignored `config/*.json` runtime
       config (excluding `*.sample.json` templates, which are already tracked)
       into the worktree. Prints `WORKTREE=<path>`.
@@ -151,7 +153,7 @@ import subprocess
 import sys
 import time
 from pathlib import Path
-from typing import Callable, Mapping, Optional, Tuple
+from typing import Callable, List, Mapping, Optional, Tuple
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import git_run  # noqa: E402
@@ -404,6 +406,74 @@ def branch_exists_on_remote(repo: Path, branch: str) -> bool:
     # Not on the remote — it may be a local-only branch not yet pushed.
     local = _git(repo, "rev-parse", "--verify", "--quiet", f"refs/heads/{branch}", check=False)
     return local.returncode == 0
+
+
+def local_branch_exists(repo: Path, branch: str) -> bool:
+    """True if `branch` exists as a local ref in this repo."""
+    if not branch:
+        return False
+    res = _git(repo, "rev-parse", "--verify", "--quiet", f"refs/heads/{branch}", check=False)
+    return res.returncode == 0
+
+
+def remote_branch_exists(repo: Path, branch: str) -> bool:
+    """True if `origin/<branch>` exists as a remote-tracking ref.
+
+    Deliberately the *local* remote-tracking ref, not `ls-remote`: the ref is
+    what `git worktree add -b <branch> origin/<branch>` will actually resolve,
+    so probing anything else could promise a start point git then rejects.
+    Unlike `branch_exists_on_remote` (which fails safe toward "present" to
+    protect a peer's claim), an unprovable ref here must read False — the
+    caller's fallback is to branch off main, which is always valid.
+    """
+    if not branch:
+        return False
+    res = _git(repo, "rev-parse", "--verify", "--quiet",
+               f"refs/remotes/origin/{branch}", check=False)
+    return res.returncode == 0
+
+
+def branch_checked_out_at(repo: Path, branch: str) -> Optional[str]:
+    """Path of the worktree that already has `branch` checked out, else None.
+
+    Git allows one checkout per branch across a repo's worktrees, so this is
+    the one `setup-worktree` failure that no start-point choice can fix — it
+    earns a message naming the holding tree rather than a generic git dump.
+    """
+    res = _git(repo, "worktree", "list", "--porcelain", check=False)
+    if res.returncode != 0:
+        return None
+    current: Optional[str] = None
+    for line in (res.stdout or "").splitlines():
+        if line.startswith("worktree "):
+            current = line[len("worktree "):].strip()
+        elif line.startswith("branch ") and current:
+            if line[len("branch "):].strip() == f"refs/heads/{branch}":
+                return current
+    return None
+
+
+def worktree_add_args(
+    wt: Path, branch: str, local_exists: bool, remote_exists: bool, main_ref_value: str,
+) -> List[str]:
+    """The `git worktree add` argv tail for `branch`, by what already exists.
+
+    Pure decision half of `setup_worktree` (fleet-config#602). `-b` means
+    *create*, so the original unconditional `-b <branch> <main>` had two
+    failure modes on a branch that already existed: a raw
+    `CalledProcessError` traceback when the branch was local, and — worse,
+    silently — a lane started at `main` when the branch existed only on
+    `origin`, discarding the work already pushed to it. Three cases:
+
+    - already local -> check it out, no start point (git rejects `-b` here)
+    - on origin only -> create it from `origin/<branch>`, resuming that work
+    - neither -> create it off the default branch, exactly as before
+    """
+    if local_exists:
+        return ["worktree", "add", str(wt), branch]
+    if remote_exists:
+        return ["worktree", "add", str(wt), "-b", branch, f"origin/{branch}"]
+    return ["worktree", "add", str(wt), "-b", branch, main_ref_value]
 
 
 def is_primary_checkout(repo: Path) -> bool:
@@ -660,7 +730,21 @@ def setup_worktree(repo: Path, issue: str, branch: str) -> Path:
     if wt.exists():
         sys.exit(f"Worktree path already exists: {wt}\n"
                  f"Probably stale — clean with: git -C {repo} worktree remove --force {wt}")
-    _git(repo, "worktree", "add", str(wt), "-b", branch, main_ref(repo))
+    add_args = worktree_add_args(
+        wt, branch,
+        local_exists=local_branch_exists(repo, branch),
+        remote_exists=remote_branch_exists(repo, branch),
+        main_ref_value=main_ref(repo),
+    )
+    res = _git(repo, *add_args, check=False)
+    if res.returncode != 0:
+        holder = branch_checked_out_at(repo, branch)
+        if holder:
+            sys.exit(f"Branch '{branch}' is already checked out at: {holder}\n"
+                     f"One checkout per branch — finish or remove that worktree first.")
+        sys.exit(f"Could not create the worktree for '{branch}' at {wt}\n"
+                 f"git worktree add exited {res.returncode}: "
+                 f"{(res.stderr or res.stdout or '').strip()}")
     copied = copy_runtime_config(repo, wt)
     if copied:
         print(f"CONFIG_COPIED={len(copied)}: "

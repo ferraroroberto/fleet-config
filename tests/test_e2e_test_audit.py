@@ -69,6 +69,76 @@ check(m.resolve_test_dirs(SOURCE_ONLY_LINE) == list(m.DEFAULT_TEST_DIRS),
       "e2e-surface line with no test-like path -> default test dir")
 
 
+# ---- fenced code blocks are not declarations (#602) -------------------------
+#
+# project-scaffolding documents the `## CI expectations` template verbatim
+# inside a fence. Matching it made the audit resolve test_dirs to the
+# template's bracketed placeholder and report a confident 0 files for a repo
+# with five -- a wrong answer indistinguishable from "no tests".
+
+check(m.fenced_mask(["a", "```", "b", "```", "c"]) == [False, True, True, True, False],
+      "fenced_mask: delimiters and body masked, surrounding prose is not")
+check(m.fenced_mask(["````md", "```", "x", "```", "````", "after"])
+      == [True, True, True, True, True, False],
+      "fenced_mask: a longer opening fence is not closed by a shorter inner one")
+check(m.fenced_mask(["~~~", "x", "~~~", "y"]) == [True, True, True, False],
+      "fenced_mask: tilde fences tracked too")
+check(m.fenced_mask(["```py", "x"]) == [True, True],
+      "fenced_mask: an unclosed fence masks to end of file, never re-opens prose")
+
+DOCUMENTED_TEMPLATE = """\
+# Project Instructions
+
+## CI is advisory
+Block template (fill the bracketed values):
+
+```markdown
+## CI expectations
+- CI's only signal is the **e2e suite**. Its e2e surface = `[app/webapp/, tests/e2e/, static assets]`.
+```
+
+Prose after the fence.
+"""
+check(m.find_ci_expectations_block(DOCUMENTED_TEMPLATE) is None,
+      "a fenced template example is not a declared CI-expectations block")
+check(m.resolve_test_dirs(DOCUMENTED_TEMPLATE) == list(m.DEFAULT_TEST_DIRS),
+      "documented-only template falls back to tests/e2e, never the placeholder text")
+check(not any("[" in d for d in m.resolve_test_dirs(DOCUMENTED_TEMPLATE)),
+      "bracketed placeholder text never escapes as a resolved test dir")
+
+REAL_BLOCK_WITH_EXAMPLE = """\
+## CI expectations
+- Its e2e surface = `app/webapp/`, `tests/e2e/`.
+- Example of a different heading, quoted:
+
+```markdown
+## Some other heading
+```
+
+- Still part of the CI expectations block.
+
+## Next section
+- unrelated
+"""
+blk = m.find_ci_expectations_block(REAL_BLOCK_WITH_EXAMPLE)
+assert blk is not None
+check("Still part of the CI expectations block." in blk,
+      "a real block is not truncated at a `## ` line quoted inside a fence")
+check("unrelated" not in blk, "a real block still stops at the next genuine heading")
+check(m.resolve_test_dirs(REAL_BLOCK_WITH_EXAMPLE) == ["tests/e2e"],
+      "a genuinely declared block is still honoured")
+
+
+# ---- split_resolved_dirs: "nowhere to look" is not "no tests" (#602) --------
+
+_here = Path(__file__).resolve().parent
+existing, missing = m.split_resolved_dirs(_here.parent, ["tests", "does/not/exist"])
+check(existing == ["tests"] and missing == ["does/not/exist"],
+      "split_resolved_dirs: separates real dirs from ones absent on disk")
+check(m.split_resolved_dirs(_here.parent, ["nope/at/all"]) == ([], ["nope/at/all"]),
+      "split_resolved_dirs: nothing resolves -> empty existing, so test_dirs_resolved is False")
+
+
 # ---- normalize_test_name + clustering --------------------------------------
 
 check(m.normalize_test_name("test_board_tab_renders_correctly")
@@ -92,6 +162,96 @@ check("test_unique_thing" not in clustered_names, "the unique test is not in the
 
 check(m.cluster_candidates([{"file": "a.py", "name": "test_only_one"}]) == [],
       "a single test never forms a cluster")
+
+
+# ---- parametrize-matrix redundancy, the name-clustering blind spot (#602) ---
+#
+# Modelled on project-scaffolding's pre-6717f6b test_geometry_helper.py: four
+# differently-named tests sweeping one shared 8-leg MATRIX, 32 collected nodes,
+# which cluster_candidates reported as zero clusters. PR #219 later collapsed
+# them to 8 nodes with no coverage loss.
+
+MATRIX_SRC = '''
+import pytest
+
+MATRIX = [(360, "light"), (768, "dark")]
+OTHER = [(1, 2)]
+
+
+@pytest.mark.parametrize(("width", "theme"), MATRIX, ids=map(matrix_id, MATRIX))
+def test_violating_min_target_fails(width, theme):
+    pass
+
+
+@pytest.mark.parametrize(("width", "theme"), MATRIX)
+def test_violating_overlap_fails(width, theme):
+    pass
+
+
+@pytest.mark.parametrize(("width", "theme"), MATRIX)
+def test_violating_chart_ticks_fail(width, theme):
+    pass
+
+
+@pytest.mark.parametrize(("width", "theme"), MATRIX)
+def test_violating_overflow_fails(width, theme):
+    pass
+
+
+@pytest.mark.parametrize("n", OTHER)
+def test_unrelated_sweep(n):
+    pass
+
+
+def test_plain_no_parametrize():
+    pass
+'''
+
+sigs = m.parametrize_signatures(MATRIX_SRC)
+check(sigs.get("test_violating_min_target_fails") == "width,theme@name:MATRIX",
+      "parametrize_signatures: argnames tuple + named collection form the signature")
+check(len({sigs[n] for n in sigs if n.startswith("test_violating_")}) == 1,
+      "parametrize_signatures: all four violating twins share one signature")
+check(sigs.get("test_unrelated_sweep") == "n@name:OTHER",
+      "parametrize_signatures: a different matrix gets a different signature")
+check("test_plain_no_parametrize" not in sigs,
+      "parametrize_signatures: an unparametrized test is absent, not empty-signatured")
+check(m.parametrize_signatures("def test_x(:\n  syntax error") == {},
+      "parametrize_signatures: an unparseable file yields nothing, never raises")
+
+matrix_file = {"file": "tests/e2e/test_geometry_helper.py", "lines": 200,
+               "tests": list(sigs), "parametrized": sigs}
+mc = m.matrix_candidates([matrix_file])
+check(len(mc) == 1, "matrix_candidates: only the >=2-member matrix is a candidate")
+check(set(mc[0]["members"]) == {"test_violating_min_target_fails", "test_violating_overlap_fails",
+                                "test_violating_chart_ticks_fail", "test_violating_overflow_fails"},
+      "matrix_candidates: flags exactly the four same-matrix twins")
+check(mc[0]["source"] == "name:MATRIX" and mc[0]["argnames"] == "width,theme",
+      "matrix_candidates: the entry names the shared collection and argnames")
+check(m.cluster_candidates([{"file": matrix_file["file"], "name": n} for n in sigs]) == [],
+      "the name-based detector still sees nothing here -- that is the blind spot being covered")
+
+check(m.matrix_candidates([{"file": "a.py", "parametrized": {"test_a": "n@name:M"}}]) == [],
+      "matrix_candidates: a lone parametrized test is not a candidate")
+check(m.matrix_candidates([{"file": "a.py", "lines": 1, "tests": []}]) == [],
+      "matrix_candidates: a file with no parametrize data is skipped, never raises")
+
+INLINE_TWINS = '''
+import pytest
+
+@pytest.mark.parametrize("w", [1, 2, 3])
+def test_alpha(w):
+    pass
+
+@pytest.mark.parametrize("w", [1, 2, 3])
+def test_beta(w):
+    pass
+'''
+inline = m.parametrize_signatures(INLINE_TWINS)
+check(len(set(inline.values())) == 1,
+      "parametrize_signatures: identical inline matrices collide via their literal hash")
+check(len(m.matrix_candidates([{"file": "a.py", "parametrized": inline}])) == 1,
+      "matrix_candidates: duplicated inline matrices are a candidate too")
 
 
 # ---- size_outliers ----------------------------------------------------------

@@ -6,8 +6,12 @@ testing.md` states the target explicitly: "Keep it small. Target < 15 tests
 total. If tempted to add #20, delete two first." This module measures what a
 real suite actually looks like against that target, mechanically — file
 inventory, raw test-function counts, an optional true pytest node count
-(handles `@pytest.mark.parametrize` expansion), near-duplicate-name clusters,
-and (when the repo declares a `## UX surface` block, via `ux_surface.py`)
+(handles `@pytest.mark.parametrize` expansion), and two independent redundancy
+detectors — near-duplicate *name* clusters, and same-file tests sweeping the
+same parametrize *matrix* (differently-named tests over one shared `MATRIX`
+collide on neither name nor assertion text, so name clustering alone reported
+a confident zero over 32 collected nodes; fleet-config#602) — plus, when the
+repo declares a `## UX surface` block (via `ux_surface.py`),
 views with no matching test as a coverage-gap signal. Same
 deterministic-not-LLM principle as `design_lint/` / `cert_drift.py`: every
 number here is measured, not guessed. The skill's own LLM-judgment layer
@@ -20,18 +24,23 @@ surface = `app/webapp/`, ... `tests/e2e/`, and static assets."). When present,
 the backtick-quoted, test-like paths on that line are used; otherwise this
 falls back to `tests/e2e/` — the shared convention project-scaffolding's
 playwright-ui-testing.md already establishes fleet-wide, not a path this
-module invents per repo.
+module invents per repo. Headings inside a fenced code block are ignored, so a
+repo that *documents* the block template verbatim is not mistaken for one that
+declares it (fleet-config#602).
 
 Subcommand:
 
   scan <repo-root> [--target N]
-      Prints one JSON blob to stdout: test_dirs, per-file inventory (path,
-      lines, test names), totals (files, raw_tests, node_count|null), the
-      target ratio, near-duplicate-name clusters, and (if the repo has a
-      `## UX surface` block) coverage-gap candidates. Always exits 0 — a
-      missing test dir, unmeasurable node count, or absent UX-surface block
-      are legitimate results (empty inventory / node_count=null / no gaps
-      checked), never a crash.
+      Prints one JSON blob to stdout: test_dirs, `test_dirs_resolved` +
+      `test_dirs_missing`, per-file inventory (path, lines, test names,
+      parametrize signatures), totals (files, raw_tests, node_count|null), the
+      target ratio, near-duplicate-name `clusters`, shared-matrix
+      `matrix_clusters`, and (if the repo has a `## UX surface` block)
+      coverage-gap candidates. Always exits 0 — a missing test dir,
+      unmeasurable node count, or absent UX-surface block are legitimate
+      results (empty inventory / node_count=null / no gaps checked), never a
+      crash. `test_dirs_resolved: false` is the one result a caller must not
+      read as "no tests": it means the scan had nowhere to look.
 
 stdlib + the `git`/`gh`-free `git_run` helper + (best-effort) the target
 repo's own `.venv` pytest for the true node count.
@@ -40,6 +49,8 @@ repo's own `.venv` pytest for the true node count.
 from __future__ import annotations
 
 import argparse
+import ast
+import hashlib
 import json
 import os
 import re
@@ -61,6 +72,7 @@ DEFAULT_TEST_DIRS = ["tests/e2e"]
 DEFAULT_TARGET = 15
 
 _CI_HEADING = re.compile(r"^##\s+CI expectations\b")
+_FENCE_RE = re.compile(r"^\s{0,3}(`{3,}|~{3,})")
 _E2E_SURFACE_LINE_RE = re.compile(r"e2e surface", re.IGNORECASE)
 _BACKTICK_RE = re.compile(r"`([^`]+)`")
 _TEST_DEF_RE = re.compile(r"^\s*def (test_\w+)")
@@ -68,25 +80,62 @@ _TEST_DEF_RE = re.compile(r"^\s*def (test_\w+)")
 
 # ---- pure helpers (unit-tested without git/pytest) ------------------------
 
+def fenced_mask(lines: List[str]) -> List[bool]:
+    """Per-line "is this inside a fenced code block?" mask.
+
+    Tracks paired ``` / ~~~ fences (CommonMark: a closing fence uses the same
+    character and is at least as long as the opener, so a ```` ```markdown ````
+    block containing a shorter fence is not closed early). Both the delimiter
+    lines and everything between them are masked True.
+    """
+    mask: List[bool] = []
+    fence_char = ""
+    fence_len = 0
+    for line in lines:
+        m = _FENCE_RE.match(line)
+        if not fence_char:
+            if m:
+                fence_char, fence_len = m.group(1)[0], len(m.group(1))
+                mask.append(True)
+                continue
+            mask.append(False)
+        else:
+            mask.append(True)
+            if m and m.group(1)[0] == fence_char and len(m.group(1)) >= fence_len:
+                # A closing fence carries no info text after the delimiter.
+                if not line.strip()[fence_len:].strip():
+                    fence_char, fence_len = "", 0
+    return mask
+
+
 def find_ci_expectations_block(claude_md: str) -> Optional[str]:
     """Extract the `## CI expectations` section text, or None if absent.
 
     Stops at the next `## ` heading, same top-anchored-section convention as
     `ux_surface.py`'s block parser.
+
+    Headings inside a fenced code block are ignored (fleet-config#602).
+    project-scaffolding documents the `## CI expectations` template *verbatim
+    inside a fence*, and matching that example made the audit resolve
+    `test_dirs` to the template's bracketed placeholder text and report a
+    confident 0 files for a repo that has five. The same mask guards the
+    section-end scan, so a real block quoting a `## ` line in an example is no
+    longer truncated at it.
     """
     lines = claude_md.splitlines()
+    fenced = fenced_mask(lines)
     start = None
     for i, line in enumerate(lines):
-        if _CI_HEADING.match(line.strip()):
+        if not fenced[i] and _CI_HEADING.match(line.strip()):
             start = i + 1
             break
     if start is None:
         return None
     out: List[str] = []
-    for line in lines[start:]:
-        if line.startswith("## "):
+    for i in range(start, len(lines)):
+        if not fenced[i] and lines[i].startswith("## "):
             break
-        out.append(line)
+        out.append(lines[i])
     return "\n".join(out)
 
 
@@ -171,6 +220,119 @@ def cluster_candidates(tests: List[Dict[str, str]]) -> List[Dict[str, object]]:
     ]
 
 
+def _dotted_name(node: ast.AST) -> str:
+    """`pytest.mark.parametrize` from the attribute chain, or "" if not a name."""
+    parts: List[str] = []
+    while isinstance(node, ast.Attribute):
+        parts.append(node.attr)
+        node = node.value
+    if isinstance(node, ast.Name):
+        parts.append(node.id)
+        return ".".join(reversed(parts))
+    return ""
+
+
+def _argnames_text(node: ast.AST) -> str:
+    """`("width", "theme")` / `"width,theme"` -> a single canonical string."""
+    if isinstance(node, ast.Constant) and isinstance(node.value, str):
+        return ",".join(p.strip() for p in node.value.split(","))
+    if isinstance(node, (ast.Tuple, ast.List)):
+        names = [e.value for e in node.elts
+                 if isinstance(e, ast.Constant) and isinstance(e.value, str)]
+        if names:
+            return ",".join(names)
+    return "?"
+
+
+def _argvalues_source(node: ast.AST) -> str:
+    """A stable identity for the parametrize *value source*.
+
+    A shared module-level `MATRIX` is the shape this detector is named for, but
+    two tests pasting the identical inline list are the same redundancy — so a
+    literal collection collapses to a hash of its AST and collides just the
+    same. Anything unrecognized returns "" and is skipped rather than guessed.
+    """
+    dotted = _dotted_name(node)
+    if dotted:
+        return f"name:{dotted}"
+    if isinstance(node, ast.Call):
+        fn = _dotted_name(node.func)
+        return f"call:{fn}" if fn else ""
+    if isinstance(node, (ast.List, ast.Tuple, ast.Set)):
+        digest = hashlib.sha1(ast.dump(node).encode("utf-8")).hexdigest()[:8]
+        return f"literal:{digest}"
+    return ""
+
+
+def parametrize_signatures(source: str) -> Dict[str, str]:
+    """`{test_name: "<argnames>@<value-source>"}` for parametrized tests.
+
+    Only tests whose `@pytest.mark.parametrize` value source is identifiable
+    (a named collection, a call, or a literal) appear; an unparseable file or
+    an unrecognized decorator shape yields nothing rather than a guess.
+    """
+    try:
+        tree = ast.parse(source)
+    except (SyntaxError, ValueError):
+        return {}
+    out: Dict[str, str] = {}
+    for node in ast.walk(tree):
+        if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            continue
+        if not node.name.startswith("test_"):
+            continue
+        for dec in node.decorator_list:
+            if not isinstance(dec, ast.Call):
+                continue
+            name = _dotted_name(dec.func)
+            if not (name.endswith("mark.parametrize") or name == "parametrize"):
+                continue
+            if len(dec.args) < 2:
+                continue
+            src = _argvalues_source(dec.args[1])
+            if src:
+                out[node.name] = f"{_argnames_text(dec.args[0])}@{src}"
+            break
+    return out
+
+
+def matrix_candidates(files: List[Dict[str, object]]) -> List[Dict[str, object]]:
+    """Tests in one file sweeping the same parametrize matrix, >=2 members.
+
+    The blind spot `cluster_candidates` cannot see (fleet-config#602): it
+    groups on *normalized names*, so four differently-named tests each
+    decorated with the same 8-leg `MATRIX` never collide, and the audit
+    reported a confident "0 clusters" over 32 collected nodes. That verdict
+    was acted on — project-scaffolding#209 closed calling the sweep deliberate
+    breakpoint coverage, and was reopened after PR #219 collapsed those same
+    tests 32 nodes -> 8 with no coverage loss.
+
+    Like every other signal here this is a *candidate*, not a verdict — a
+    shared matrix across genuinely distinct assertions is legitimate. The
+    point is that the LLM layer gets to see it at all.
+    """
+    out: List[Dict[str, object]] = []
+    for f in files:
+        sigs = f.get("parametrized") or {}
+        if not isinstance(sigs, dict):
+            continue
+        by_sig: Dict[str, List[str]] = {}
+        for name, sig in sigs.items():
+            by_sig.setdefault(sig, []).append(name)
+        for sig, members in sorted(by_sig.items()):
+            if len(members) < 2:
+                continue
+            argnames, _, source = sig.partition("@")
+            out.append({
+                "file": f.get("file"),
+                "signature": sig,
+                "argnames": argnames,
+                "source": source,
+                "members": sorted(members),
+            })
+    return out
+
+
 def size_outliers(files: List[Dict[str, object]], factor: float = 3.0) -> List[Dict[str, object]]:
     """Files whose line count exceeds `factor` times the suite's median.
 
@@ -204,6 +366,20 @@ def coverage_gaps(key_views: List[str], all_test_text: str) -> List[str]:
         if token.lower() not in low_text:
             gaps.append(view)
     return gaps
+
+
+def split_resolved_dirs(repo_root: Path, test_dirs: List[str]) -> tuple:
+    """`(existing, missing)` split of `test_dirs` against what's on disk.
+
+    The measurement behind `test_dirs_resolved` (fleet-config#602). A scan
+    whose resolved dirs match nothing real found 0 files because it had
+    nowhere to look — a different fact from "this repo has no e2e tests", and
+    the fleet's rule is that an unestablished fact reports as its own state
+    rather than folding into the passing one.
+    """
+    existing = [d for d in test_dirs if (repo_root / d).is_dir()]
+    missing = [d for d in test_dirs if d not in existing]
+    return existing, missing
 
 
 def target_ratio(total_tests: int, target: int) -> float:
@@ -240,7 +416,12 @@ def parse_test_file(repo_root: Path, rel_path: str) -> Dict[str, object]:
     text = (repo_root / rel_path).read_text(encoding="utf-8", errors="replace")
     lines = text.splitlines()
     names = [m.group(1) for line in lines if (m := _TEST_DEF_RE.match(line))]
-    return {"file": rel_path, "lines": len(lines), "tests": names}
+    return {
+        "file": rel_path,
+        "lines": len(lines),
+        "tests": names,
+        "parametrized": parametrize_signatures(text),
+    }
 
 
 def collect_pytest_node_count(repo_root: Path, test_dirs: List[str]) -> Optional[int]:
@@ -292,6 +473,7 @@ def scan(repo_root: Path, target: int = DEFAULT_TARGET) -> Dict[str, object]:
         if claude_md_path.is_file() else None
     )
     test_dirs = resolve_test_dirs(claude_md_text)
+    existing_dirs, missing_dirs = split_resolved_dirs(repo_root, test_dirs)
 
     files: List[Dict[str, object]] = []
     all_tests: List[Dict[str, str]] = []
@@ -308,6 +490,8 @@ def scan(repo_root: Path, target: int = DEFAULT_TARGET) -> Dict[str, object]:
 
     return {
         "test_dirs": test_dirs,
+        "test_dirs_resolved": bool(existing_dirs),
+        "test_dirs_missing": missing_dirs,
         "files": files,
         "totals": {
             "files": len(files),
@@ -317,6 +501,7 @@ def scan(repo_root: Path, target: int = DEFAULT_TARGET) -> Dict[str, object]:
         "target": target,
         "ratio": target_ratio(node_count if node_count is not None else len(all_tests), target),
         "clusters": cluster_candidates(all_tests),
+        "matrix_clusters": matrix_candidates(files),
         "size_outliers": size_outliers(files),
         "key_views_declared": key_views,
         "coverage_gaps": coverage_gaps(key_views, all_test_text) if key_views else [],
