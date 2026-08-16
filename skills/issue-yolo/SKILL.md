@@ -256,7 +256,10 @@ review's `pass: true`). Run the full `/issue-finish` skill:
    Phase 2 runs the `/issue-start now` flow, which forces **worktree** mode
    whenever `APP_LAUNCHER_SESSION_ID` is set, so for any launcher- or
    chief-dispatched YOLO run this is the *only* path, not the rare one. Check
-   it rather than assuming: `worktree_claim.py mode <repo>`.
+   it rather than assuming: `worktree_claim.py mode <repo>`, run **from the
+   checkout you built in** — it answers about the cwd, and `<repo>` only says
+   which repo that cwd must belong to (fleet-config#652). `UNKNOWN reason=<why>`
+   (exit 2) means it could not tell: stop, never guess a mode.
    - **Primary checkout:** `gh pr merge <PR> --merge --delete-branch`, then
      `git checkout main && git pull --ff-only`.
    - **Linked worktree:** `gh pr merge <PR> --merge` — **no `--delete-branch`**

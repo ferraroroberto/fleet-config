@@ -851,4 +851,103 @@ finally:
     shutil.rmtree(land_base, ignore_errors=True)
 
 
+# ---- mode CLI, git-backed: answers about the cwd, not the argument (#652) ----
+#
+# Over a REAL linked worktree, deliberately: the whole defect lives in path
+# resolution, so a mocked filesystem would reproduce nothing. From inside
+# `<repo>-wt-<N>`, `_resolve_path_arg`'s sibling fallback (#165) turns the bare
+# repo name every skill documents into the *primary*, and the pre-fix
+# implementation answered `primary` to a worktree lane -- silently, and always
+# toward the teardown path that fails with "'main' is already used by worktree".
+
+# Pure half first: reconciliation is at repo granularity, never tree granularity.
+_g = Path("E:/automation/fleet-config/.git")
+check(wc.mode_check(_g, _g) == (True, "repo argument and cwd agree on the repo"),
+      "mode_check: same shared git dir -> answerable (a worktree naming its primary)")
+check(wc.mode_check(None, _g)[0] is False and "cwd is not inside" in wc.mode_check(None, _g)[1],
+      "mode_check: cwd outside git -> not answerable, with a reason")
+check(wc.mode_check(_g, None)[0] is False,
+      "mode_check: argument not a checkout -> not answerable")
+check(wc.mode_check(_g, Path("E:/automation/app-launcher/.git"))[0] is False,
+      "mode_check: a genuinely different repo -> not answerable")
+
+
+def _mode(cwd: Path, arg: str) -> subprocess.CompletedProcess:
+    return subprocess.run([sys.executable, CLI, "mode", arg],
+                          cwd=str(cwd), capture_output=True, text=True)
+
+
+mode_base = Path(tempfile.mkdtemp(prefix="wc-mode-"))
+_no_hooks = mode_base / "nohooks"
+_no_hooks.mkdir()
+try:
+    # Cloned, not `init`ed: `setup_worktree` branches off `main_ref`, which
+    # resolves to `origin/main` -- a bare init has no such ref.
+    upstream = mode_base / "upstream"
+    upstream.mkdir()
+    _git_t(upstream, "init", "-b", "main")
+    (upstream / "a.txt").write_text("one", encoding="utf-8")
+    _git_t(upstream, "add", "-A")
+    _git_t(upstream, "commit", "-m", "one")
+
+    primary = mode_base / "myrepo"
+    _git_t(mode_base, "clone", str(upstream), str(primary))
+    other = mode_base / "otherrepo"
+    _git_t(mode_base, "clone", str(upstream), str(other))
+
+    wt = wc.setup_worktree(primary, "652", "fix/652-x")
+    check(wt.exists() and wt.name == "myrepo-wt-652",
+          "mode fixture: a real linked worktree exists (not a mock)")
+    # The disagreement that *is* the bug, asserted directly.
+    check(_git_t(wt, "rev-parse", "--path-format=absolute", "--git-dir").stdout.strip()
+          != _git_t(wt, "rev-parse", "--path-format=absolute", "--git-common-dir").stdout.strip(),
+          "mode fixture: inside the worktree --git-dir and --git-common-dir differ")
+
+    # THE regression: the bare-name form every SKILL.md documents, from the worktree.
+    res = _mode(wt, "myrepo")
+    check(res.returncode == 0 and res.stdout.strip() == "worktree",
+          f"mode: bare repo name from inside <repo>-wt-<N> -> 'worktree' (got {res.stdout.strip()!r}) (#652)")
+
+    res = _mode(primary, "myrepo")
+    check(res.returncode == 0 and res.stdout.strip() == "primary",
+          f"mode: bare repo name from the primary still -> 'primary' (got {res.stdout.strip()!r})")
+
+    check(_mode(wt, ".").stdout.strip() == "worktree" and
+          _mode(primary, ".").stdout.strip() == "primary",
+          "mode: the explicit '.' form agrees with the bare-name form in both trees")
+
+    # Naming the *other* tree of the same repo is not a mismatch -- the argument
+    # identifies the repo, the cwd selects the tree.
+    check(_mode(primary, str(wt)).stdout.strip() == "primary" and
+          _mode(wt, str(primary)).stdout.strip() == "worktree",
+          "mode: naming the sibling tree still answers about the cwd, not the argument")
+
+    # Non-answers: distinct, reasoned, never a confident wrong answer.
+    unknowns = [
+        (_mode(wt, str(other)), "a genuinely different repo"),
+        (_mode(wt, "no-such-repo-anywhere"), "a name that resolves to nothing"),
+        (_mode(mode_base, str(primary)), "a cwd outside any git checkout"),
+    ]
+    for res, what in unknowns:
+        out = res.stdout.strip()
+        check(res.returncode == 2 and out.startswith("UNKNOWN reason=") and len(out) > len("UNKNOWN reason="),
+              f"mode: {what} -> 'UNKNOWN reason=<why>', exit 2 (got {out!r}, rc={res.returncode})")
+    check(all(r.stdout.strip() not in ("primary", "worktree") for r, _ in unknowns),
+          "mode: an unreconcilable argument NEVER produces a confident primary/worktree answer (#652)")
+
+    # Audit of the sibling subcommands (#652 criterion): `status` is repo-scoped
+    # -- its lock lives in the shared git dir and `worktree list` is identical
+    # from every tree -- so argument-vs-cwd resolution cannot change its answer.
+    st_from_wt = _git_t(wt, "worktree", "list").stdout.strip()
+    st_from_primary = _git_t(primary, "worktree", "list").stdout.strip()
+    check(st_from_wt == st_from_primary,
+          "status audit: `git worktree list` is identical from the primary and the worktree")
+    check(wc.lock_dir_for(wt) == wc.lock_dir_for(primary),
+          "status audit: the claim lock resolves to one shared path from either tree (repo-scoped)")
+
+    wc.remove_worktree(wt)
+finally:
+    shutil.rmtree(mode_base, ignore_errors=True)
+
+
 _h.report_and_exit("test_worktree_claim")

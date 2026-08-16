@@ -412,6 +412,39 @@ def is_primary_checkout(repo: Path) -> bool:
     return Path(git_dir).resolve() == common_dir(repo).resolve()
 
 
+def _common_dir_or_none(path: Path) -> Optional[Path]:
+    """`common_dir(path)`, or None when `path` isn't inside a git checkout.
+
+    The shared git dir is the repo's identity: it is the *same* absolute path
+    seen from the primary and from every linked worktree, which is what lets
+    `mode_check` decide "same repo?" without deciding "same tree?".
+    """
+    try:
+        return common_dir(path).resolve()
+    except (subprocess.CalledProcessError, OSError):
+        return None
+
+
+def mode_check(cwd_common: Optional[Path], arg_common: Optional[Path]) -> Tuple[bool, str]:
+    """Can `mode` answer about the cwd checkout? Returns `(ok, reason)`.
+
+    Pure reconciliation half of `cmd_mode` (fleet-config#652). Both arguments
+    are shared-git-dir paths, so the comparison is at **repo** granularity, not
+    tree granularity: a bare repo name resolved to the primary while the caller
+    stands in `<repo>-wt-<N>` is a *match*, because the argument only says which
+    repo the cwd is expected to belong to. Naming a genuinely different repo —
+    or standing outside git entirely — is the caller error worth surfacing.
+    """
+    if cwd_common is None:
+        return False, "cwd is not inside a git checkout"
+    if arg_common is None:
+        return False, "repo argument is not inside a git checkout"
+    if cwd_common.resolve() != arg_common.resolve():
+        return False, (f"repo argument names a different repo than the cwd "
+                       f"({arg_common} vs {cwd_common})")
+    return True, "repo argument and cwd agree on the repo"
+
+
 def _is_primary_checkout_safe(path: Path) -> bool:
     """`is_primary_checkout`, tolerant of `path` not being a git checkout at all.
 
@@ -962,10 +995,34 @@ def cmd_land_primary(args: argparse.Namespace) -> int:
 
 
 def cmd_mode(args: argparse.Namespace) -> int:
-    """Print `primary` or `worktree` for the current checkout — the deterministic
-    primary-vs-linked-worktree decision /issue-finish keys its teardown on."""
-    repo = _resolve_repo(args.repo_root)
-    print("primary" if is_primary_checkout(repo) else "worktree")
+    """Print `primary` or `worktree` for the checkout the caller is *standing in*
+    — the deterministic decision /issue-finish keys its teardown on.
+
+    The answer is about the **cwd**, never about `repo_root` (fleet-config#652).
+    `repo_root` only *identifies* which repo the cwd is expected to belong to;
+    it does not select a tree. That distinction is the entire bug: every skill
+    documents the call as `mode <repo>` with a bare name, and from inside
+    `<repo>-wt-<N>` the sibling fallback in `_resolve_path_arg` (fleet-config#165,
+    right for `remove-worktree`) resolves that name to the *primary*. The old
+    implementation then asked `is_primary_checkout` about the primary and
+    truthfully answered `primary` — to a worktree lane. Silent, and always wrong
+    in the dangerous direction: the primary teardown path runs `gh pr merge
+    --delete-branch` and hits `'main' is already used by worktree`.
+
+    An argument that cannot be reconciled with the cwd prints `UNKNOWN
+    reason=<why>` and exits 2 — a helper that cannot establish which checkout it
+    was asked about says so rather than guessing.
+    """
+    resolved = _resolve_path_arg(args.repo_root)
+    if resolved is None:
+        print(f"UNKNOWN reason=no such repo path: {Path(args.repo_root).resolve()}")
+        return 2
+    cwd = Path.cwd()
+    ok, reason = mode_check(_common_dir_or_none(cwd), _common_dir_or_none(resolved))
+    if not ok:
+        print(f"UNKNOWN reason={reason}")
+        return 2
+    print("primary" if is_primary_checkout(cwd) else "worktree")
     return 0
 
 
@@ -1024,8 +1081,13 @@ def main(argv: Optional[list] = None) -> int:
     lp.add_argument("issue")
     lp.set_defaults(func=cmd_land_primary)
 
-    md = sub.add_parser("mode", help="print 'primary' or 'worktree' for the cwd checkout")
-    md.add_argument("repo_root")
+    md = sub.add_parser("mode",
+                        help="print 'primary' or 'worktree' for the cwd checkout "
+                             "(run it from the checkout you are asking about)")
+    md.add_argument("repo_root",
+                    help="the repo the cwd must belong to — it identifies the repo, "
+                         "it does NOT select a tree; a mismatch prints "
+                         "'UNKNOWN reason=...' and exits 2 (fleet-config#652)")
     md.set_defaults(func=cmd_mode)
 
     st = sub.add_parser("status", help="show claim holder + worktree list")
