@@ -47,9 +47,15 @@ In parallel, from the target repo root:
 
 ### 2. Detect a test suite — else skip
 
-Run the scan (step 3) regardless — its `totals.files` answers this. If it
-comes back `0`, stop with: `<repo> has no test files under its resolved test
-dir(s) (<dirs>) — nothing to audit.` File nothing.
+Run the scan (step 3) regardless — its `totals.files` answers this, but read
+`test_dirs_resolved` **first**. `false` means none of the resolved dirs exist
+on disk: the scan had nowhere to look, so its `0` is *unknown*, not empty.
+Stop with `<repo>: could not resolve a test dir (tried <test_dirs_missing>) —
+coverage unknown, not audited.` and file nothing.
+
+Only when `test_dirs_resolved` is `true` does `totals.files == 0` mean what it
+says: stop with `<repo> has no test files under its resolved test dir(s)
+(<dirs>) — nothing to audit.` File nothing.
 
 ### 3. Run the deterministic scan
 
@@ -64,10 +70,14 @@ block for an "e2e surface" line and uses its backtick-quoted, test-like paths
 (e.g. app-launcher's `tests/e2e/`); falls back to `tests/e2e/` — the shared
 convention `project-scaffolding`'s `docs/playwright-ui-testing.md` already
 establishes fleet-wide — when no block or no test-like path is declared. This
-is "generic + project-driven", not a hardcoded per-repo path.
+is "generic + project-driven", not a hardcoded per-repo path. A heading inside
+a fenced code block is ignored, so a repo that only *documents* the block
+template (project-scaffolding) reads as undeclared and takes the fallback.
 
 The fields it returns, and what each means:
 
+- **`test_dirs_resolved` / `test_dirs_missing`** — whether any resolved dir
+  exists on disk. `false` is an *unknown*, never a clean result — see step 2.
 - **`totals`** — `files`, `raw_tests` (a plain `def test_` count), `node_count`
   (the true pytest-collected count, parametrize expansion included — `null`
   when the repo has no `.venv` or pytest isn't collectible; report that
@@ -212,6 +222,9 @@ survived judgment (don't file an empty one).
   counts, clusters, and outliers come from the helper (step 3) — the LLM never
   re-derives them by reading test files. LLM judgment is confined to step 4
   (confirming clusters, confirming gaps, materiality, writing the issue).
+- **A scan that could not resolve a test dir reports `unknown`, never clean.**
+  `test_dirs_resolved: false` is its own outcome (step 2) — never summarized
+  as "no tests", which is what let a bogus resolution read as a clean suite.
 - **Never edits, merges, or deletes a test.** Report-only; always — a test
   suite is safety equipment: this skill proposes, a human disposes. Actually
   consolidating tests is separate, explicitly-scoped follow-up work.

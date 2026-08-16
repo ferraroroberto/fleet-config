@@ -69,6 +69,76 @@ check(m.resolve_test_dirs(SOURCE_ONLY_LINE) == list(m.DEFAULT_TEST_DIRS),
       "e2e-surface line with no test-like path -> default test dir")
 
 
+# ---- fenced code blocks are not declarations (#602) -------------------------
+#
+# project-scaffolding documents the `## CI expectations` template verbatim
+# inside a fence. Matching it made the audit resolve test_dirs to the
+# template's bracketed placeholder and report a confident 0 files for a repo
+# with five -- a wrong answer indistinguishable from "no tests".
+
+check(m.fenced_mask(["a", "```", "b", "```", "c"]) == [False, True, True, True, False],
+      "fenced_mask: delimiters and body masked, surrounding prose is not")
+check(m.fenced_mask(["````md", "```", "x", "```", "````", "after"])
+      == [True, True, True, True, True, False],
+      "fenced_mask: a longer opening fence is not closed by a shorter inner one")
+check(m.fenced_mask(["~~~", "x", "~~~", "y"]) == [True, True, True, False],
+      "fenced_mask: tilde fences tracked too")
+check(m.fenced_mask(["```py", "x"]) == [True, True],
+      "fenced_mask: an unclosed fence masks to end of file, never re-opens prose")
+
+DOCUMENTED_TEMPLATE = """\
+# Project Instructions
+
+## CI is advisory
+Block template (fill the bracketed values):
+
+```markdown
+## CI expectations
+- CI's only signal is the **e2e suite**. Its e2e surface = `[app/webapp/, tests/e2e/, static assets]`.
+```
+
+Prose after the fence.
+"""
+check(m.find_ci_expectations_block(DOCUMENTED_TEMPLATE) is None,
+      "a fenced template example is not a declared CI-expectations block")
+check(m.resolve_test_dirs(DOCUMENTED_TEMPLATE) == list(m.DEFAULT_TEST_DIRS),
+      "documented-only template falls back to tests/e2e, never the placeholder text")
+check(not any("[" in d for d in m.resolve_test_dirs(DOCUMENTED_TEMPLATE)),
+      "bracketed placeholder text never escapes as a resolved test dir")
+
+REAL_BLOCK_WITH_EXAMPLE = """\
+## CI expectations
+- Its e2e surface = `app/webapp/`, `tests/e2e/`.
+- Example of a different heading, quoted:
+
+```markdown
+## Some other heading
+```
+
+- Still part of the CI expectations block.
+
+## Next section
+- unrelated
+"""
+blk = m.find_ci_expectations_block(REAL_BLOCK_WITH_EXAMPLE)
+assert blk is not None
+check("Still part of the CI expectations block." in blk,
+      "a real block is not truncated at a `## ` line quoted inside a fence")
+check("unrelated" not in blk, "a real block still stops at the next genuine heading")
+check(m.resolve_test_dirs(REAL_BLOCK_WITH_EXAMPLE) == ["tests/e2e"],
+      "a genuinely declared block is still honoured")
+
+
+# ---- split_resolved_dirs: "nowhere to look" is not "no tests" (#602) --------
+
+_here = Path(__file__).resolve().parent
+existing, missing = m.split_resolved_dirs(_here.parent, ["tests", "does/not/exist"])
+check(existing == ["tests"] and missing == ["does/not/exist"],
+      "split_resolved_dirs: separates real dirs from ones absent on disk")
+check(m.split_resolved_dirs(_here.parent, ["nope/at/all"]) == ([], ["nope/at/all"]),
+      "split_resolved_dirs: nothing resolves -> empty existing, so test_dirs_resolved is False")
+
+
 # ---- normalize_test_name + clustering --------------------------------------
 
 check(m.normalize_test_name("test_board_tab_renders_correctly")

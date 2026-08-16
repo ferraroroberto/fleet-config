@@ -20,18 +20,22 @@ surface = `app/webapp/`, ... `tests/e2e/`, and static assets."). When present,
 the backtick-quoted, test-like paths on that line are used; otherwise this
 falls back to `tests/e2e/` — the shared convention project-scaffolding's
 playwright-ui-testing.md already establishes fleet-wide, not a path this
-module invents per repo.
+module invents per repo. Headings inside a fenced code block are ignored, so a
+repo that *documents* the block template verbatim is not mistaken for one that
+declares it (fleet-config#602).
 
 Subcommand:
 
   scan <repo-root> [--target N]
-      Prints one JSON blob to stdout: test_dirs, per-file inventory (path,
-      lines, test names), totals (files, raw_tests, node_count|null), the
-      target ratio, near-duplicate-name clusters, and (if the repo has a
+      Prints one JSON blob to stdout: test_dirs, `test_dirs_resolved` +
+      `test_dirs_missing`, per-file inventory (path, lines, test names),
+      totals (files, raw_tests, node_count|null), the target ratio,
+      near-duplicate-name clusters, and (if the repo has a
       `## UX surface` block) coverage-gap candidates. Always exits 0 — a
       missing test dir, unmeasurable node count, or absent UX-surface block
       are legitimate results (empty inventory / node_count=null / no gaps
-      checked), never a crash.
+      checked), never a crash. `test_dirs_resolved: false` is the one result a
+      caller must not read as "no tests": it means the scan had nowhere to look.
 
 stdlib + the `git`/`gh`-free `git_run` helper + (best-effort) the target
 repo's own `.venv` pytest for the true node count.
@@ -61,6 +65,7 @@ DEFAULT_TEST_DIRS = ["tests/e2e"]
 DEFAULT_TARGET = 15
 
 _CI_HEADING = re.compile(r"^##\s+CI expectations\b")
+_FENCE_RE = re.compile(r"^\s{0,3}(`{3,}|~{3,})")
 _E2E_SURFACE_LINE_RE = re.compile(r"e2e surface", re.IGNORECASE)
 _BACKTICK_RE = re.compile(r"`([^`]+)`")
 _TEST_DEF_RE = re.compile(r"^\s*def (test_\w+)")
@@ -68,25 +73,62 @@ _TEST_DEF_RE = re.compile(r"^\s*def (test_\w+)")
 
 # ---- pure helpers (unit-tested without git/pytest) ------------------------
 
+def fenced_mask(lines: List[str]) -> List[bool]:
+    """Per-line "is this inside a fenced code block?" mask.
+
+    Tracks paired ``` / ~~~ fences (CommonMark: a closing fence uses the same
+    character and is at least as long as the opener, so a ```` ```markdown ````
+    block containing a shorter fence is not closed early). Both the delimiter
+    lines and everything between them are masked True.
+    """
+    mask: List[bool] = []
+    fence_char = ""
+    fence_len = 0
+    for line in lines:
+        m = _FENCE_RE.match(line)
+        if not fence_char:
+            if m:
+                fence_char, fence_len = m.group(1)[0], len(m.group(1))
+                mask.append(True)
+                continue
+            mask.append(False)
+        else:
+            mask.append(True)
+            if m and m.group(1)[0] == fence_char and len(m.group(1)) >= fence_len:
+                # A closing fence carries no info text after the delimiter.
+                if not line.strip()[fence_len:].strip():
+                    fence_char, fence_len = "", 0
+    return mask
+
+
 def find_ci_expectations_block(claude_md: str) -> Optional[str]:
     """Extract the `## CI expectations` section text, or None if absent.
 
     Stops at the next `## ` heading, same top-anchored-section convention as
     `ux_surface.py`'s block parser.
+
+    Headings inside a fenced code block are ignored (fleet-config#602).
+    project-scaffolding documents the `## CI expectations` template *verbatim
+    inside a fence*, and matching that example made the audit resolve
+    `test_dirs` to the template's bracketed placeholder text and report a
+    confident 0 files for a repo that has five. The same mask guards the
+    section-end scan, so a real block quoting a `## ` line in an example is no
+    longer truncated at it.
     """
     lines = claude_md.splitlines()
+    fenced = fenced_mask(lines)
     start = None
     for i, line in enumerate(lines):
-        if _CI_HEADING.match(line.strip()):
+        if not fenced[i] and _CI_HEADING.match(line.strip()):
             start = i + 1
             break
     if start is None:
         return None
     out: List[str] = []
-    for line in lines[start:]:
-        if line.startswith("## "):
+    for i in range(start, len(lines)):
+        if not fenced[i] and lines[i].startswith("## "):
             break
-        out.append(line)
+        out.append(lines[i])
     return "\n".join(out)
 
 
@@ -206,6 +248,20 @@ def coverage_gaps(key_views: List[str], all_test_text: str) -> List[str]:
     return gaps
 
 
+def split_resolved_dirs(repo_root: Path, test_dirs: List[str]) -> tuple:
+    """`(existing, missing)` split of `test_dirs` against what's on disk.
+
+    The measurement behind `test_dirs_resolved` (fleet-config#602). A scan
+    whose resolved dirs match nothing real found 0 files because it had
+    nowhere to look — a different fact from "this repo has no e2e tests", and
+    the fleet's rule is that an unestablished fact reports as its own state
+    rather than folding into the passing one.
+    """
+    existing = [d for d in test_dirs if (repo_root / d).is_dir()]
+    missing = [d for d in test_dirs if d not in existing]
+    return existing, missing
+
+
 def target_ratio(total_tests: int, target: int) -> float:
     if target <= 0:
         return 0.0
@@ -292,6 +348,7 @@ def scan(repo_root: Path, target: int = DEFAULT_TARGET) -> Dict[str, object]:
         if claude_md_path.is_file() else None
     )
     test_dirs = resolve_test_dirs(claude_md_text)
+    existing_dirs, missing_dirs = split_resolved_dirs(repo_root, test_dirs)
 
     files: List[Dict[str, object]] = []
     all_tests: List[Dict[str, str]] = []
@@ -308,6 +365,8 @@ def scan(repo_root: Path, target: int = DEFAULT_TARGET) -> Dict[str, object]:
 
     return {
         "test_dirs": test_dirs,
+        "test_dirs_resolved": bool(existing_dirs),
+        "test_dirs_missing": missing_dirs,
         "files": files,
         "totals": {
             "files": len(files),
