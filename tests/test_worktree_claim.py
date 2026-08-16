@@ -223,6 +223,64 @@ check(wc.owner_check({"issue": "473"}, "473", dirty=True)[0] is False,
       "owner_check: dirty tree beats a matching-issue claim -> refuse")
 
 
+# ---- land_primary_check / format_primary_state: worktree lane lands the primary (#647) ----
+#
+# A worktree lane's merge is authoritative on the remote but not *live* until
+# the primary is fast-forwarded -- in this repo `hooks/` and `skills/` reach
+# ~/.claude through junctions rooted there. The guard inherits owner_check and
+# adds "already on the default branch", because the fix is `pull --ff-only` on
+# a tree already sitting on main -- never a `git checkout` from a worktree.
+
+ok, reason = wc.land_primary_check(None, "647", dirty=False,
+                                   current_branch="main", main_branch="main")
+check(ok is True, "land_primary_check: clean primary on main, free claim -> pass")
+check("main" in reason, "land_primary_check: pass reason names the branch")
+check(wc.land_primary_check({"issue": "647"}, "647", dirty=False,
+                            current_branch="main", main_branch="main")[0] is True,
+      "land_primary_check: claim owned by this issue -> pass")
+
+ok, reason = wc.land_primary_check(None, "647", dirty=True,
+                                   current_branch="main", main_branch="main")
+check(ok is False and reason == "working tree has uncommitted changes",
+      "land_primary_check: dirty primary -> refuse (never stash, never force)")
+
+ok, reason = wc.land_primary_check(
+    {"issue": "640", "branch": "fix/640-x", "created_iso": "2026-08-16T09:00:00"},
+    "647", dirty=False, current_branch="main", main_branch="main")
+check(ok is False and "640" in reason,
+      "land_primary_check: another issue's live claim -> refuse, naming it")
+
+ok, reason = wc.land_primary_check(None, "647", dirty=False,
+                                   current_branch="fix/599-y", main_branch="main")
+check(ok is False and "fix/599-y" in reason and "main" in reason,
+      "land_primary_check: primary parked off its default branch -> refuse, no checkout")
+check(wc.land_primary_check(None, "647", dirty=False,
+                            current_branch="master", main_branch="master")[0] is True,
+      "land_primary_check: non-'main' default branch (life-os) is detected, not assumed")
+
+ok, reason = wc.land_primary_check(None, "647", dirty=False,
+                                   current_branch="", main_branch="main")
+check(ok is False and "detached HEAD" in reason,
+      "land_primary_check: detached-HEAD primary refuses by name, not as an empty branch")
+
+# The one line the finish summary quotes -- 'merged' and 'live' are two facts.
+check(wc.format_primary_state(True, "clean, on main, claim free", behind=0)
+      == "PRIMARY=live behind=0",
+      "format_primary_state: landed -> PRIMARY=live behind=0")
+check(wc.format_primary_state(False, "working tree has uncommitted changes")
+      == "PRIMARY=stale reason=working tree has uncommitted changes",
+      "format_primary_state: refusal carries the reason verbatim")
+check(wc.format_primary_state(True, "ok", behind=2)
+      == "PRIMARY=stale reason=still 2 behind after pull --ff-only",
+      "format_primary_state: pull ran but tree still behind -> stale, not live")
+for unknown in (None, -1):
+    check(wc.format_primary_state(True, "ok", behind=unknown)
+          == "PRIMARY=stale reason=could not count commits behind origin",
+          f"format_primary_state: uncountable behind ({unknown!r}) -> stale, never folded into live")
+check(all(wc.format_primary_state(o, r, b).startswith("PRIMARY=")
+          for o, r, b in ((True, "x", 0), (True, "x", 3), (False, "y", None), (True, "x", None))),
+      "format_primary_state: every outcome emits a PRIMARY= line (never absent, never implied)")
+
 
 # ---- acquire --force-worktree: unattended fanout never wins a primary (#515) ----
 #
@@ -688,6 +746,109 @@ try:
           "junction proof: nested extra-junction TARGET survives teardown intact (#620)")
 finally:
     shutil.rmtree(jt_base, ignore_errors=True)
+
+
+# ---- land-primary CLI, git-backed: the worktree lane's landing step (#647) ----
+#
+# End-to-end over real repos, because the CLI *is* what a lane invokes and the
+# whole defect was a missing step rather than a wrong computation. Asserts the
+# three outcomes a finish summary can carry, and -- the safety property that
+# must not regress -- that a refusal leaves the tree exactly as it found it:
+# nothing stashed, nothing checked out, nothing forced.
+
+CLI = str(Path(__file__).resolve().parent.parent / "skills" / "_lib" / "worktree_claim.py")
+
+
+def _land(repo: Path, issue: str = "647") -> subprocess.CompletedProcess:
+    return subprocess.run([sys.executable, CLI, "land-primary", str(repo), issue],
+                          capture_output=True, text=True)
+
+
+def _git_t(cwd: Path, *args: str) -> subprocess.CompletedProcess:
+    # `core.hooksPath` -> an empty dir: this machine carries a global commit
+    # hook that rejects non-allowlisted author emails, which would otherwise
+    # silently leave the fixture repos commit-less.
+    res = subprocess.run(["git", "-c", "user.email=t@t", "-c", "user.name=t",
+                          "-c", f"core.hooksPath={_no_hooks}", *args],
+                         cwd=str(cwd), capture_output=True, text=True)
+    if res.returncode != 0 and args[0] in ("init", "clone", "commit", "add", "checkout"):
+        raise AssertionError(f"fixture git {args[0]} failed: {res.stderr.strip()}")
+    return res
+
+
+land_base = Path(tempfile.mkdtemp(prefix="wc-land-"))
+_no_hooks = land_base / "nohooks"
+_no_hooks.mkdir()
+try:
+    upstream = land_base / "upstream"
+    upstream.mkdir()
+    _git_t(upstream, "init", "-b", "main")
+    (upstream / "a.txt").write_text("one", encoding="utf-8")
+    _git_t(upstream, "add", "-A")
+    _git_t(upstream, "commit", "-m", "one")
+    primary = land_base / "myrepo"
+    _git_t(land_base, "clone", str(upstream), str(primary))
+
+    # Upstream moves ahead -- exactly the post-merge state a worktree lane is in.
+    (upstream / "b.txt").write_text("two", encoding="utf-8")
+    _git_t(upstream, "add", "-A")
+    _git_t(upstream, "commit", "-m", "two")
+
+    res = _land(primary)
+    check(res.returncode == 0 and res.stdout.strip() == "PRIMARY=live behind=0",
+          f"land-primary: clean primary behind origin -> fast-forwards, PRIMARY=live (got {res.stdout.strip()!r})")
+    check((primary / "b.txt").exists(),
+          "land-primary: the merged file is actually present in the primary afterwards")
+
+    res = _land(primary)
+    check(res.returncode == 0 and "PRIMARY=live" in res.stdout,
+          "land-primary: idempotent -- an already-current primary is live, not an error")
+
+    # Refusal 1: dirty tree. The reason a lane must report stale, never recover.
+    (primary / "untracked.txt").write_text("a human's work in progress", encoding="utf-8")
+    res = _land(primary)
+    check(res.returncode == 1 and
+          res.stdout.strip() == "PRIMARY=stale reason=working tree has uncommitted changes",
+          f"land-primary: dirty primary -> PRIMARY=stale, exit 1 (got {res.stdout.strip()!r})")
+    check((primary / "untracked.txt").read_text(encoding="utf-8") == "a human's work in progress",
+          "land-primary: a refused tree is untouched -- never stashed, never forced (#647)")
+    (primary / "untracked.txt").unlink()
+
+    # Refusal 2: primary parked off its default branch. The fix is `pull
+    # --ff-only` on a tree already on main -- never a checkout from a worktree.
+    _git_t(primary, "checkout", "-q", "-b", "fix/599-someone-elses-work")
+    res = _land(primary)
+    check(res.returncode == 1 and "not 'main'" in res.stdout and "fix/599" in res.stdout,
+          f"land-primary: primary off its default branch -> stale, no checkout (got {res.stdout.strip()!r})")
+    check(_git_t(primary, "branch", "--show-current").stdout.strip() == "fix/599-someone-elses-work",
+          "land-primary: refusing did not switch the primary's branch (#647)")
+    _git_t(primary, "checkout", "-q", "main")
+
+    # Refusal 3: a live claim held by a *different* issue.
+    lock = wc.lock_dir_for(primary)
+    lock.mkdir(parents=True, exist_ok=True)
+    wc.write_meta(lock, {"issue": "640", "branch": "fix/640-x", "created_iso": "2026-08-16T09:00:00"})
+    res = _land(primary, issue="647")
+    check(res.returncode == 1 and "640" in res.stdout,
+          f"land-primary: another issue's live claim -> stale, naming the holder (got {res.stdout.strip()!r})")
+    check(_land(primary, issue="640").returncode == 0,
+          "land-primary: the claim's own issue is still allowed to land")
+    shutil.rmtree(lock, ignore_errors=True)
+
+    # Wrong target: a linked worktree, not the primary. Refuses, changes nothing.
+    wt = wc.setup_worktree(primary, "647", "fix/647-x")
+    res = _land(wt)
+    check(res.returncode == 2 and "not a primary checkout" in res.stdout,
+          f"land-primary: pointed at a worktree -> exit 2, no landing attempted (got {res.stdout.strip()!r})")
+    check(wt.exists(), "land-primary: the mistargeted worktree is left intact (never a teardown)")
+    wc.remove_worktree(wt)
+
+    # Every outcome emitted exactly one PRIMARY= line -- the summary is never silent.
+    check(all(len([l for l in _land(p, i).stdout.strip().splitlines() if l.startswith("PRIMARY=")]) == 1
+              for p, i in ((primary, "647"), (primary, "999"))),
+          "land-primary: exactly one PRIMARY= line on stdout in every outcome (#647)")
+finally:
+    shutil.rmtree(land_base, ignore_errors=True)
 
 
 _h.report_and_exit("test_worktree_claim")

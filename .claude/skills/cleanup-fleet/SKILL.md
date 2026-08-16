@@ -189,8 +189,11 @@ HARD RULES — both are live-incident scars, never work around them:
    already exists): Phase 2 branch + build, Phase 3 validate HARD (the
    non-negotiable phase — do not weaken it), Phase 4 ship (PR, wait for CI
    green unless the diff is provably CI-unrelated per /issue-yolo step 7,
-   merge --delete-branch, land on main, tray restart per the repo's
-   CLAUDE.md), Phase 5 fire the /issue-yolo completion ping.
+   merge and land per /issue-yolo step 8's WORKTREE branch — you forced
+   worktree mode in step 1, so: no --delete-branch, no `git checkout main`,
+   `remove-worktree` then `worktree_claim.py land-primary <repo> <N>`, then
+   delete the refs explicitly; report its PRIMARY= line, tray restart per the
+   repo's CLAUDE.md), Phase 5 fire the /issue-yolo completion ping.
    KEEP Phase 5's ping — it carries this issue's PR link and must go out.
    notify_complete.py is the ONLY sanctioned way to send it: do NOT use any MCP
    Slack tool (search/send/etc.) to find a channel or post the ping — the helper

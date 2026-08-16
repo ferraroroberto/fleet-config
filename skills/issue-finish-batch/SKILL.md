@@ -80,9 +80,15 @@ You are the only agent touching this checkout.
    e2e + pytest are green — either from this run's own gate, or from the prior
    build/review's report *if and only if* it recorded a genuine PASS on the
    e2e/behavioural leg, never a SKIPPED one; otherwise skip only when the diff
-   is provably CI-unrelated; rerun a single documented flake once), merge with
-   --merge --delete-branch, land on main, and restart the project's tray per
-   its CLAUDE.md if it has one.
+   is provably CI-unrelated; rerun a single documented flake once), merge, land
+   the primary, and restart the project's tray per its CLAUDE.md if it has one.
+   Merge + land BOTH depend on the checkout mode -- run
+   `worktree_claim.py mode <path>` and follow /issue-finish step 5 for that mode.
+   In a linked worktree do NOT pass --delete-branch (it fails its local half:
+   "'main' is already used by worktree") and do NOT `git checkout main`; instead
+   `remove-worktree`, then `worktree_claim.py land-primary <repo> #<N>`, then
+   delete the refs explicitly. Report its `PRIMARY=live behind=0` /
+   `PRIMARY=stale reason=<why>` line -- a merged PR is not a live one.
 3. Fire /issue-finish's own completion ping (✅ Done #<N> … — PR merged) — KEEP
    it, it carries this branch's PR link. notify_complete.py is the ONLY
    sanctioned way to send it: do NOT use any MCP Slack tool (search/send/etc.)
@@ -99,6 +105,7 @@ Report back, in this exact shape:
   - Branch: <branch>
   - Result: MERGED (<merge-sha>) | BLOCKED (<one-line reason — needs human>)
   - PR: <url or n/a>
+  - Primary: PRIMARY=live behind=0 | PRIMARY=stale reason=<why> | n/a (primary mode)
 ```
 
 Substitute every `<…>` with the concrete value from steps 2–3.

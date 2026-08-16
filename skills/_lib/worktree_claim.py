@@ -103,6 +103,16 @@ Subcommands:
       is held by a *different* issue; passes (exit 0) if the tree is clean and
       the claim is free or already owned by <issue-N>. Fleet-config#473.
 
+  land-primary <repo-root> <issue-N>
+      Make a worktree lane's merge *live*: fast-forward the primary checkout,
+      or report why it couldn't. Same guard as assert-owner (clean tree, claim
+      free or owned by <issue-N>) plus "already on the default branch", then
+      `pull --ff-only` and a `rev-list --count HEAD..origin/<default>` check.
+      Prints one `PRIMARY=live behind=0` / `PRIMARY=stale reason=<why>` line in
+      every outcome -- the line the finish summary quotes. Exit 0 only when
+      live. Never checks out, stashes or forces the primary: a refusal is
+      reported, not recovered. Fleet-config#647.
+
   remove-worktree <worktree-path> [--force-nonstandard-name]
       Reparse-safe teardown: strip the .venv junction, then
       `git worktree remove --force` + `git worktree prune`. Tolerates a
@@ -270,6 +280,56 @@ def owner_check(holder: Optional[dict], issue: str, dirty: bool) -> Tuple[bool, 
         return False, (f"primary held since {holder.get('created_iso', '?')} "
                         f"by issue {holder.get('issue', '?')} on {holder.get('branch', '?')}")
     return True, ("free" if not holder else "owned")
+
+
+def land_primary_check(
+    holder: Optional[dict],
+    issue: str,
+    dirty: bool,
+    current_branch: str,
+    main_branch: str,
+) -> Tuple[bool, str]:
+    """Decide whether it is safe to fast-forward the primary checkout.
+
+    Pure decision for the `land-primary` guard (fleet-config#647). A worktree
+    lane's merge is authoritative on the remote but *not live* until the
+    primary tree is fast-forwarded -- acutely so in this repo, where `hooks/`
+    and `skills/` reach `~/.claude` through junctions rooted at the primary, so
+    a merged hook or skill change does nothing fleet-wide until that tree moves.
+
+    The landing is a `pull --ff-only` and nothing else. `owner_check` supplies
+    the "is this tree anyone else's to touch?" half; the branch check enforces
+    the other half -- only ever pull a tree *already sitting on* its default
+    branch, because a worktree lane must never `git checkout` the primary.
+    Returns `(ok, reason)`; on refusal `reason` is the text that reaches the
+    finish summary as `PRIMARY=stale reason=<reason>`.
+    """
+    ok, reason = owner_check(holder, issue, dirty)
+    if not ok:
+        return False, reason
+    if not current_branch:
+        return False, f"primary is on a detached HEAD, not '{main_branch}'"
+    if current_branch != main_branch:
+        return False, f"primary is on '{current_branch}', not '{main_branch}'"
+    return True, f"clean, on {main_branch}, claim {reason}"
+
+
+def format_primary_state(ok: bool, reason: str, behind: Optional[int] = None) -> str:
+    """The one machine-readable line a worktree lane's finish summary carries.
+
+    `PRIMARY=live behind=0`, or `PRIMARY=stale reason=<why>`. "Merged" and
+    "live" are two separate facts: a lane that could not establish the second
+    reports it as its own named state rather than letting silence imply
+    success. An uncountable `behind` is likewise stale, never passing -- the
+    fleet's unknown-is-not-pass rule.
+    """
+    if not ok:
+        return f"PRIMARY=stale reason={reason}"
+    if behind == 0:
+        return "PRIMARY=live behind=0"
+    if behind is None or behind < 0:
+        return "PRIMARY=stale reason=could not count commits behind origin"
+    return f"PRIMARY=stale reason=still {behind} behind after pull --ff-only"
 
 
 def try_acquire(
@@ -864,6 +924,43 @@ def cmd_assert_owner(args: argparse.Namespace) -> int:
     return 1
 
 
+def cmd_land_primary(args: argparse.Namespace) -> int:
+    """Fast-forward the primary checkout after a worktree lane's merge, or say
+    plainly that it didn't (fleet-config#647).
+
+    Prints exactly one `PRIMARY=` line on stdout in every outcome -- that line
+    is what the finish summary quotes. Exit 0 only for `PRIMARY=live behind=0`;
+    1 for any stale state; 2 when the target isn't a primary checkout at all.
+    Never checks out, stashes, forces, or otherwise "recovers" a tree it was
+    refused: reporting stale *is* the correct outcome, and `--ff-only` fails
+    safely rather than merging, so nothing here can lose work.
+    """
+    repo = _resolve_repo(args.repo_root)
+    if not _is_primary_checkout_safe(repo):
+        print(f"PRIMARY=stale reason=not a primary checkout: {repo}")
+        return 2
+    lock = lock_dir_for(repo)
+    holder = read_meta(lock) if lock.exists() else None
+    dirty = bool(_git(repo, "status", "--porcelain").stdout.strip())
+    current = _git(repo, "branch", "--show-current").stdout.strip()
+    ref = main_ref(repo)                                   # e.g. 'origin/main'
+    main_branch = ref.split("/", 1)[1] if "/" in ref else ref
+    ok, reason = land_primary_check(holder, args.issue, dirty, current, main_branch)
+    if not ok:
+        print(format_primary_state(False, reason))
+        return 1
+    pull = _git(repo, "pull", "--ff-only", check=False)
+    if pull.returncode != 0:
+        detail = ((pull.stderr or "") + (pull.stdout or "")).strip().splitlines()
+        print(format_primary_state(False, f"pull --ff-only failed: {detail[0] if detail else '?'}"))
+        return 1
+    counted = _git(repo, "rev-list", "--count", f"HEAD..{ref}", check=False).stdout.strip()
+    behind = int(counted) if counted.isdigit() else -1
+    line = format_primary_state(True, reason, behind)
+    print(line)
+    return 0 if behind == 0 else 1
+
+
 def cmd_mode(args: argparse.Namespace) -> int:
     """Print `primary` or `worktree` for the current checkout — the deterministic
     primary-vs-linked-worktree decision /issue-finish keys its teardown on."""
@@ -920,6 +1017,12 @@ def main(argv: Optional[list] = None) -> int:
     ao.add_argument("repo_root")
     ao.add_argument("issue")
     ao.set_defaults(func=cmd_assert_owner)
+
+    lp = sub.add_parser("land-primary",
+                        help="fast-forward the primary after a worktree merge, or report stale")
+    lp.add_argument("repo_root")
+    lp.add_argument("issue")
+    lp.set_defaults(func=cmd_land_primary)
 
     md = sub.add_parser("mode", help="print 'primary' or 'worktree' for the cwd checkout")
     md.add_argument("repo_root")

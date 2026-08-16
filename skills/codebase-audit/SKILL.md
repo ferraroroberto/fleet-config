@@ -432,11 +432,17 @@ self-resume"), so under `/audit-fleet` it would silently stall.
 
 4. **Auto-merge on green** (green = gate passes *including* the new test), exactly
    like `/cleanup-fleet`'s easy tier: PR, wait for CI per `/issue-yolo`'s rules,
-   `merge --delete-branch`, land on `main`, **tear the worktree down and release
-   the claim** (`worktree_claim.py remove-worktree <worktree-path>` then
-   `release <repo>` — verify `CLAIM=free` and that `git worktree list` shows the
-   primary only; never `rm -rf` a worktree, its `.venv` junction would take the
-   primary's real venv with it). Tray restart
+   then merge + land per `/issue-yolo` step 8's **worktree** branch — `gh pr
+   merge <PR> --merge` with **no `--delete-branch`** and no `git checkout main`
+   — **tear the worktree down, land the primary, and release the claim**
+   (`worktree_claim.py remove-worktree <worktree-path>`, then `land-primary
+   <repo> <N>` — report its `PRIMARY=live behind=0` / `PRIMARY=stale
+   reason=<why>` line, since a merged fix that never reached the primary is not
+   live — then `release <repo>`; verify `CLAIM=free` and that `git worktree
+   list` shows the primary only; never `rm -rf` a worktree, its `.venv`
+   junction would take the primary's real venv with it). Delete the branch refs
+   explicitly (`git push origin --delete <branch>`; local `-D` only after
+   confirming the tip landed in `origin/<default>`). Tray restart
    follows `/issue-yolo`'s safety rule: a detach-compliant tray restarts; an
    unsafe/silent tray is **not** restarted unattended — note "tray not restarted,
    still on old build" in the alert instead.
