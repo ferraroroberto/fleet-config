@@ -118,7 +118,7 @@ window.CONFIG = {
   "skills_universal": [
     {
       "nm": "codebase-audit",
-      "ds": "Audit a codebase's resting state against its CLAUDE.md and senior-dev maintainability standards — duplication, stale/dead code, c…",
+      "ds": "Audit a codebase's resting state against its CLAUDE.md and senior-dev standards — duplication, stale/dead code, convention drift,…",
       "scope": "repo"
     },
     {
@@ -128,17 +128,17 @@ window.CONFIG = {
     },
     {
       "nm": "docs-shots",
-      "ds": "Judgment + orchestration for a repo's visual-docs screenshots — decides which features a diff actually touched (or takes named/al…",
+      "ds": "Judgment + orchestration for a repo's visual-docs screenshots — decides which features a diff touched (or takes named/all feature…",
       "scope": "repo"
     },
     {
       "nm": "e2e",
-      "ds": "Decide, run, and maintain a repo's end-to-end tests proportionate to the actual diff — deterministic classify_e2e routing where a…",
+      "ds": "Decide, run, and maintain a repo's end-to-end tests proportionate to the diff — deterministic classify_e2e routing where adopted,…",
       "scope": "repo"
     },
     {
       "nm": "e2e-audit",
-      "ds": "On-demand audit of a repo's e2e/regression test suite for redundancy, bloat, and coverage gaps against project-scaffolding's \"&lt;15…",
+      "ds": "On-demand audit of a repo's e2e/regression suite for redundancy, bloat, and coverage gaps against project-scaffolding's \"&lt;15 test…",
       "scope": "repo"
     },
     {
@@ -153,7 +153,7 @@ window.CONFIG = {
     },
     {
       "nm": "issue-batch",
-      "ds": "Fan out a batch of GitHub issues to parallel background sub-agents — one agent per issue, with git worktrees when multiple issues…",
+      "ds": "Fan out GitHub issues to parallel background sub-agents — one per issue, in git worktrees when several hit the same repo.",
       "scope": "fleet"
     },
     {
@@ -193,7 +193,7 @@ window.CONFIG = {
     },
     {
       "nm": "screen",
-      "ds": "Attach recent screenshots from E:\\downloads\\snaps without manual copy-paste.",
+      "ds": "Attach screenshots from E:\\downloads\\snaps without manual copy-paste.",
       "scope": "repo"
     }
   ],
@@ -205,7 +205,7 @@ window.CONFIG = {
     },
     {
       "nm": "chief",
-      "ds": "Standing conversational fleet chief — the brain of the app-launcher Board's chat mode (app-launcher#245).",
+      "ds": "Standing conversational fleet chief — brain of the app-launcher Board chat mode (app-launcher#245).",
       "sched": false
     },
     {
@@ -540,9 +540,9 @@ window.CONFIG = {
     }
   ],
   "coverage": {
-    "total": 36,
-    "claude_md": "35/36",
-    "fleet_toml": "34/36"
+    "total": 37,
+    "claude_md": "36/37",
+    "fleet_toml": "35/37"
   },
   "principles": [
     [

@@ -168,6 +168,9 @@ capture_routing = "skills"
 skills_dir      = ".claude/skills"
 active_marker   = ".active-skill"
 
+[local-llm-hub-lite]
+cwd_prefix = "E:/automation/local-llm-hub-lite"
+
 [mass-html-to-markdown]
 cwd_prefix = "E:/automation/mass-html-to-markdown"
 
