@@ -70,13 +70,67 @@ E:/automation/fleet-config/.venv/Scripts/python.exe .claude/skills/context-purge
 5. Run the validation harness; restore-and-re-probe on any regression.
 6. **Advance the ledger** (`gate.py advance`) for every assessed file.
 7. Open the PR (draft) with the validation report. Stop — the user merges.
+8. **Publish the run digest** (below). Not optional, and not only on the happy path.
 
 Fleet mode is the same loop with `--fleet` on both gate and advance, grouping the to-purge files by repo (one branch + PR per repo). Designed to degrade, not block — a per-repo failure is reported and skipped so the scheduled run always finishes.
+
+## Run data — what every worker reports back
+
+**The digest renders the run's own data, never the PR bodies.** Parsing prose the run just wrote would be a second place for the numbers to disagree, so the PR body and the digest are two renderings of one structure. Each per-repo worker writes `<scratch>/run/<repo>.json`; the orchestrator concatenates them into one `run.json`:
+
+```json
+{ "run_id": "<YYYYMMDDThhmmss>", "mode": "fleet", "status": "complete|partial",
+  "gate": {"to_purge": 41, "unchanged": 12, "surface": 53},
+  "unreached": [{"repo": "life-os", "reason": "gh auth failed"}],
+  "repos": [{
+    "repo": "project-scaffolding", "status": "shipped|skipped|failed", "pr": "<url>|null",
+    "risk": {"always_on": true, "shape_change": "large|medium|small", "checked": true},
+    "files": [{"path": "CLAUDE.md", "action": "rewritten|assessed-lean|untouched",
+               "tokens_before": 4210, "tokens_after": 3120,
+               "inventory_items": 57, "inventory_discharged": 57,
+               "probe": {"ran": true, "questions": 14, "compressed": 13, "control": 13}}],
+    "descriptions": [{"path": "…/SKILL.md", "words_before": 62, "words_after": 44,
+                      "before": "…", "after": "…"}],
+    "decisions": [{"summary": "…", "detail": "…", "where": "PR #123"}],
+    "not_fixed": [{"summary": "…", "reason": "…"}]
+  }] }
+```
+
+Token counts come straight from `check.py`'s `TOKENS:` line; `gate` from `gate.py gate`'s `SUMMARY:`.
+
+**A figure the run could not establish is reported as unknown, never as zero.** `"probe": null` means *not recorded*; `"probe": {"ran": false}` means *deliberately not probed*; these are different facts and the digest renders them differently. Omit a token or inventory field you did not measure rather than writing `0`. Every **rewritten** file must carry a `probe` key — `null` is a valid answer, silence is not, because silence about probing is the exact gap this reporting was built for.
+
+**`action` is three-valued on purpose.** `assessed-lean` and `untouched` files are listed in the digest so "not in the diff" cannot read as "not looked at".
+
+## Step 8 — publish the digest
+
+Run from the fleet-config repo root. Validate first: run data that would make the digest lie is a hard stop, not something to render around.
+
+```
+E:/automation/fleet-config/.venv/Scripts/python.exe .claude/skills/context-purge/digest.py validate <scratch>/run.json
+E:/automation/fleet-config/.venv/Scripts/python.exe .claude/skills/context-purge/digest.py render <scratch>/run.json \
+    --md <scratch>/digest.md --html <scratch>/digest.html --slack <scratch>/digest.txt
+```
+
+Then publish the **durable** copy — a comment on the managed `[ledger] context-purge run digests` issue — and ping Slack. Order matters: publish first so the Slack message has a link, then record whether the ping landed.
+
+```
+E:/automation/fleet-config/.venv/Scripts/python.exe .claude/skills/context-purge/digest.py publish <scratch>/run.json --md <scratch>/digest.md --slack-state unknown
+cat <scratch>/digest.txt | E:/automation/fleet-config/.venv/Scripts/python.exe hooks/slack_notify.py --category log
+```
+
+`slack_notify.py` is the fleet's one Slack transport — never add a second notifier. It **never raises** and reports failure through its exit code, so check it: re-run `publish` with `--slack-state posted` or `--slack-state failed` to stamp the outcome. `unknown` is treated as not-confirmed downstream, which is the correct default if you cannot tell.
+
+Optionally publish `digest.html` as a **private** Artifact and re-render with `--url <artifact-url>` so the durable copy references it. This is **best effort** — an Artifact publish is unproven from a headless run (see `/fleet-health`'s SKILL.md), so it may never be the only link. A failure here is a line in the digest, not a failed run.
+
+**A run that fails partway still publishes a digest.** Set `"status": "partial"` and name every repo in `unreached` with a reason; the digest renders a banner and the Slack message leads with it. A missing Slack message is indistinguishable from a run that never started.
+
+**Delivery is asserted, not assumed.** Every published comment carries `<!-- context-purge-digest run=… status=… unreached=N slack=… -->`. `delivery_check.py` — wired into `run-weekly.bat` via `claude_progress.py --delivery-check` — exits non-zero unless a fresh digest comment exists **and** reports `status=complete` **and** `slack=posted`, so a partial run and a silently failed ping both turn the scheduled job red. It is strict when invoked with no arguments because that is exactly how the adapter invokes it.
 
 ## Wiring the weekly schedule
 
 An app-launcher Job (Windows Task Scheduler `\AppLauncher\`) runs the fleet sweep weekly — Saturdays 01:00, on Opus — via the co-located launcher `.claude/skills/context-purge/run-weekly.bat` (per this repo's scheduled-skill convention):
 
-The wrapper preserves `/context-purge fleet`, Opus, and bypass permissions while streaming filtered milestones through `claude_progress.py`.
+The wrapper preserves `/context-purge fleet`, Opus, and bypass permissions while streaming filtered milestones through `claude_progress.py`, and passes `--delivery-check` so the job cannot exit 0 having published nothing (fleet-config#627).
 
-The ledger gate makes the scheduled run cheap: an unchanged week costs one `gh` read and stops.
+The ledger gate makes the scheduled run cheap: an unchanged week costs one `gh` read and stops. A `to_purge=0` run still publishes a digest — "surface unchanged since last run" is a result, and a silent week is indistinguishable from a job that never fired.
