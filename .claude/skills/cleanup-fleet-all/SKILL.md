@@ -92,6 +92,8 @@ For every repo with a selected (`dispatch`-bucket) issue in any bucket:
 
 **Worktrees always** — every build agent forces `MODE=worktree` and works `<repo>-wt-<N>`, never the primary checkout, for every repo (fleet-config#515). The primary is only ever read (pre-flight above) and, at teardown, checked back to clean. Lanes are serial, so a repo touched by two buckets is never touched by two agents at once, and at most one worktree exists fleet-wide at any moment.
 
+**A build agent's handoff is a committed branch, never a dirty tree** (fleet-config#641). The build brief's STOP step forbids exactly four actions — push, PR, merge, `/issue-finish` — and committing is not one of them; the validate agent's first act is `git status --porcelain` on the worktree, and a dirty tree is an immediate `pass: false` regardless of the otherwise-lenient default. This is the one rejection reason that is not a judgement call. It is asserted at the boundary because the failure is otherwise invisible: the execute agent's `/issue-finish` commits pending work as a safety net, so an uncommitted handoff ships fine and recurs silently. It is not harmless — uncommitted work has no SHA, so the escalation comment's WIP SHA (step 8's durable record) has nothing to point at, and an escalation or crash between build and execute loses the work instead of parking it reflog-recoverable for ~90 days. A build that legitimately changed nothing still leaves a clean tree, so the assertion is on the tree, never on the commit count.
+
 ### 6. Rate-gate check
 
 ```

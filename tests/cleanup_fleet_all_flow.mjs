@@ -290,5 +290,65 @@ const check = (cond, msg) => { console.log((cond ? 'OK   ' : 'FAIL ') + msg); if
     'the teardown brief explains why no comment is posted')
 }
 
+// --- Case 10: the handoff artefact is a committed branch (#641) -----------
+// In the 2026-08-15 run several build agents read "STOP. Do NOT push, open a
+// PR, merge, or run /issue-finish" as also meaning "do not commit", and handed
+// off dirty worktrees. Nothing broke only because the execute agent's
+// /issue-finish committed for them — the defect was absorbed downstream rather
+// than surfaced, so it would have recurred silently until a lane composition
+// changed. The fix is wording in the briefs plus one assertion at the lane
+// boundary; both are prompt text, so both are asserted here.
+{
+  const { sink, agentImpl } = promptSpy(l => reply(l, {}))
+  sink.args = { issuesByBucket: { bug: ISSUES.bug } }
+  await makeRunner(agentImpl, sink)
+
+  const b = sink.prompts['bug:build:charlie#3']
+  check(!!b, 'build prompt captured')
+  check(b.includes('Commit your work on the branch'),
+    'the build brief tells the agent to commit before stopping')
+  check(b.includes('**committed branch**, not a dirty working tree'),
+    'the committed branch is named as the handoff artefact')
+  check(b.includes('Do NOT push, open a PR, merge, or run /issue-finish'),
+    'push / PR / merge / issue-finish stay unambiguously forbidden')
+  check(b.includes('"Do not ship" does not mean "do not commit"'),
+    'the brief closes the exact misreading that caused #641')
+  check(/no AI-attribution trailer/i.test(b),
+    'the commit instruction carries the no-AI-attribution rule')
+  check(b.includes('clean tree with no new commits is a valid report'),
+    'a legitimately empty build is still allowed to commit nothing')
+
+  const v = sink.prompts['bug:validate:charlie#3']
+  check(!!v, 'validate prompt captured')
+  check(v.includes('git status --porcelain` must be empty'),
+    'validate asserts a committed handoff at the lane boundary')
+  check(v.includes('the leniency rule below does not soften'),
+    'the dirty-tree assertion is exempted from the lenient default')
+  check(v.includes('Judge the **tree**, not the commit count'),
+    'a build that legitimately changed nothing is not failed for having no commits')
+}
+
+// --- Case 10b: the same rule in every build-and-stop brief (#641) ----------
+// /cleanup-fleet's hard tier is documented as the /issue-batch contract, so a
+// rule that lands in one of these files and not the others is drift by
+// construction.
+{
+  for (const [rel, label] of [
+    [['.claude', 'skills', 'cleanup-fleet', 'SKILL.md'], '/cleanup-fleet hard-tier prompt'],
+    [['skills', 'issue-batch', 'SKILL.md'], '/issue-batch build prompts'],
+  ]) {
+    // These two files hard-wrap their prompt blocks, so a phrase legitimately
+    // spans a line break — match on whitespace-collapsed text, not raw bytes.
+    const txt = readFileSync(join(REPO, ...rel), 'utf8').replace(/\s+/g, ' ')
+    check(txt.includes('Commit your work on the branch'),
+      `${label} tells the agent to commit before stopping`)
+    check(txt.includes('committed branch, not a dirty working tree'),
+      `${label} names the committed branch as the handoff artefact`)
+    check(txt.includes('"Do not ship" does not mean "do not commit"'),
+      `${label} closes the #641 misreading`)
+    check(/fleet-config#641/.test(txt), `${label} records why the wording changed`)
+  }
+}
+
 console.log(failures === 0 ? '\nALL CONTROL-FLOW CHECKS PASS' : `\n${failures} CHECK(S) FAILED`)
 process.exit(failures === 0 ? 0 : 1)
