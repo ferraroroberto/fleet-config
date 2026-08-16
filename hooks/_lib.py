@@ -504,6 +504,23 @@ def powershell_exe() -> str:
 # --------------------------------------------------------------------- git
 
 
+def git_env(base: Optional[dict] = None) -> dict:
+    """``base`` (default ``os.environ``) plus ``GIT_OPTIONAL_LOCKS=0``.
+
+    Hooks-tier copy of ``skills/_lib/git_run.git_env`` — see that function for
+    the full reasoning (fleet-config#667). Short version: ``git status`` takes
+    ``.git/index.lock`` only to persist a refreshed stat cache, so killing one
+    mid-refresh strands a 0-byte lock that then blocks every write in that repo
+    while every *read* keeps exiting 0. This tier matters most, not least:
+    ``branch_before_edit_guard`` shells out to ``git`` on every Edit/Write in
+    every live session fleet-wide, which is by far the highest-frequency git
+    spawn this repo owns.
+    """
+    env = dict(os.environ if base is None else base)
+    env["GIT_OPTIONAL_LOCKS"] = "0"
+    return env
+
+
 def run_git(
     args: Sequence[str], *, check: bool = False, timeout: Optional[float] = None
 ) -> subprocess.CompletedProcess:
@@ -525,12 +542,12 @@ def run_git(
     time* — before any of its fail-open logic could run — on every Edit/Write in
     every session, fleet-wide. ``tests/acceptance/tree_boundary.py`` now fails
     on any hook that reaches across, and asserts this copy agrees behaviourally
-    with the skills-tier original.
+    with the skills-tier original — including ``env=git_env()``.
     """
     return subprocess.run(
         ["git", *args], capture_output=True, text=True,
         encoding="utf-8", errors="replace", check=check, timeout=timeout,
-        creationflags=NO_WINDOW,
+        creationflags=NO_WINDOW, env=git_env(),
     )
 
 

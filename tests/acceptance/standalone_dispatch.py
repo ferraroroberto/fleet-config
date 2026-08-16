@@ -147,7 +147,17 @@ _STANDALONE_UNIT_CHECKS: Tuple[Tuple[str, str, str], ...] = (
      "the shared `resolve_default_branch_ref` helper -- symbolic-ref "
      "success, candidate probing, terminal fallback, and the "
      "`candidates=()` shape `dirty_tree_check.py` depends on -- is "
-     "testable on its own, with a real throwaway git repo (fleet-config#485)"),
+     "testable on its own, with a real throwaway git repo (fleet-config#485); "
+     "so is `GIT_OPTIONAL_LOCKS=0`, which must be proven against real git "
+     "rather than a mock because the change rests entirely on git's own "
+     "semantics -- reads take no optional lock, output is unchanged, writes "
+     "still take the real one (fleet-config#667)"),
+    ("index_lock", "test_index_lock.py",
+     "the stranded-`.git/index.lock` detector -- a pure verdict lattice "
+     "whose two could-not-establish paths must not collapse into a settled "
+     "answer, plus a real reproduction of the 2026-08-01 condition proving "
+     "`git status` still exits 0 and reads clean while every write is "
+     "frozen -- is testable on its own (fleet-config#667)"),
     ("payload_normalization", "test_payload_normalization.py",
      "the Grok camelCase -> Claude snake_case translation every hook "
      "now routes through, and -- the load-bearing half -- that a "

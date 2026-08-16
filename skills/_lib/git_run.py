@@ -15,6 +15,7 @@ stdlib only (plus the sibling `no_window` constant).
 
 from __future__ import annotations
 
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -22,6 +23,35 @@ from typing import Optional, Sequence
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from no_window import NO_WINDOW  # noqa: E402
+
+
+def git_env(base: Optional[dict] = None) -> dict:
+    """`base` (default `os.environ`) plus `GIT_OPTIONAL_LOCKS=0`.
+
+    **Do not "clean up" this variable.** `git status` (and `git diff`, and
+    friends) take `.git/index.lock` purely to write back a refreshed stat
+    cache — an optimisation, not part of producing the output. Kill such a
+    process mid-refresh and it leaves exactly a 0-byte `index.lock` and
+    nothing else touched. That is what happened fleet-wide on 2026-08-01:
+    nine repos, nine 0-byte locks, all stamped the same second, and every one
+    of those repos was silently unable to `git add`/`commit`/`pull`/`stash`
+    for **fifteen days** (fleet-config#667).
+
+    Fifteen days, because a stale lock is invisible to a read: `git status
+    --porcelain`, `git fetch`, `git rev-list`, and an up-to-date `git pull
+    --ff-only` **all exit 0 and print the right answer** with the lock
+    sitting there — so `#570`'s raise-on-non-zero never fires and no sweep
+    ever reports `UNKNOWN`. Detection is `index_lock.py`'s job; this is the
+    half that stops them being created at all.
+
+    `GIT_OPTIONAL_LOCKS=0` suppresses only *optional* locks — a requested
+    write still takes the real index lock, and still refuses when one is
+    already held. Verified, not assumed: `tests/test_git_run.py` drives both
+    halves against a real repo.
+    """
+    env = dict(os.environ if base is None else base)
+    env["GIT_OPTIONAL_LOCKS"] = "0"
+    return env
 
 
 def run_git(
@@ -40,12 +70,14 @@ def run_git(
     `creationflags=NO_WINDOW` is what makes this the *only* place most helpers
     need to think about console suppression: a scheduled `claude -p` job has no
     console of its own, so every unsuppressed `git` spawn beneath it flashes a
-    window on screen (fleet-config#412).
+    window on screen (fleet-config#412). `env=git_env()` is the same
+    one-place-fix argument for optional index locks — see that function
+    (fleet-config#667).
     """
     return subprocess.run(
         ["git", *args], capture_output=True, text=True,
         encoding="utf-8", errors="replace", check=check, timeout=timeout,
-        creationflags=NO_WINDOW,
+        creationflags=NO_WINDOW, env=git_env(),
     )
 
 
