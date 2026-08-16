@@ -29,6 +29,29 @@ import git_run  # noqa: E402
 _DEFAULT_PROJECTS_TOML = Path(__file__).resolve().parent.parent.parent / "hooks" / "projects.toml"
 
 
+def fleet_repo_tables(projects_toml: Optional[Path] = None) -> Dict[str, dict]:
+    """Return ``{repo_name: <its whole projects.toml table>}``.
+
+    The membership half of `fleet_repos` without the projection down to a
+    path: callers that need a *declaration* rather than a location — is there
+    a `tray_cmd`, which `webapp_port`, which `api_version_path`
+    (`worktree_claim.declared_service`, fleet-config#665) — read it here
+    instead of re-parsing the file. Deliberately **not** filtered by
+    ``[global] architecture_ignore``: that list says a repo is out of scope
+    for the architecture map, never that it has no long-running process.
+    """
+    path = Path(projects_toml) if projects_toml else _DEFAULT_PROJECTS_TOML
+    return _tables(tomllib.loads(path.read_text(encoding="utf-8")))
+
+
+def _tables(toml: dict) -> Dict[str, dict]:
+    return {
+        name: tbl
+        for name, tbl in toml.items()
+        if name != "global" and isinstance(tbl, dict) and "cwd_prefix" in tbl
+    }
+
+
 def fleet_repos(projects_toml: Path = _DEFAULT_PROJECTS_TOML) -> Dict[str, Path]:
     """Return ``{repo_name: repo_dir}`` for the architecture fleet.
 
@@ -39,9 +62,8 @@ def fleet_repos(projects_toml: Path = _DEFAULT_PROJECTS_TOML) -> Dict[str, Path]
     ignore = set(toml.get("global", {}).get("architecture_ignore", []))
     return {
         name: Path(tbl["cwd_prefix"])
-        for name, tbl in toml.items()
-        if name != "global" and isinstance(tbl, dict) and "cwd_prefix" in tbl
-        and name not in ignore
+        for name, tbl in _tables(toml).items()
+        if name not in ignore
     }
 
 

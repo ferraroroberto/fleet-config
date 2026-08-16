@@ -11,8 +11,11 @@ Run: `E:/automation/fleet-config/.venv/Scripts/python.exe tests/test_worktree_cl
 
 from __future__ import annotations
 
+import http.server
+import json
 import os
 import shutil
+import socket
 import subprocess
 import sys
 import tempfile
@@ -231,37 +234,133 @@ check(wc.owner_check({"issue": "473"}, "473", dirty=True)[0] is False,
 # adds "already on the default branch", because the fix is `pull --ff-only` on
 # a tree already sitting on main -- never a `git checkout` from a worktree.
 
+# `service` is the fourth guard's verdict (#665), passed in like every other
+# fact so the decision stays pure; NO_SERVICE is "nothing runs out of this
+# tree", the fleet-config case these three guards were written for.
+NO_SERVICE = (True, "no long-running service declared")
+
 ok, reason = wc.land_primary_check(None, "647", dirty=False,
-                                   current_branch="main", main_branch="main")
+                                   current_branch="main", main_branch="main",
+                                   service=NO_SERVICE)
 check(ok is True, "land_primary_check: clean primary on main, free claim -> pass")
 check("main" in reason, "land_primary_check: pass reason names the branch")
 check(wc.land_primary_check({"issue": "647"}, "647", dirty=False,
-                            current_branch="main", main_branch="main")[0] is True,
+                            current_branch="main", main_branch="main",
+                            service=NO_SERVICE)[0] is True,
       "land_primary_check: claim owned by this issue -> pass")
 
 ok, reason = wc.land_primary_check(None, "647", dirty=True,
-                                   current_branch="main", main_branch="main")
+                                   current_branch="main", main_branch="main",
+                                   service=NO_SERVICE)
 check(ok is False and reason == "working tree has uncommitted changes",
       "land_primary_check: dirty primary -> refuse (never stash, never force)")
 
 ok, reason = wc.land_primary_check(
     {"issue": "640", "branch": "fix/640-x", "created_iso": "2026-08-16T09:00:00"},
-    "647", dirty=False, current_branch="main", main_branch="main")
+    "647", dirty=False, current_branch="main", main_branch="main", service=NO_SERVICE)
 check(ok is False and "640" in reason,
       "land_primary_check: another issue's live claim -> refuse, naming it")
 
 ok, reason = wc.land_primary_check(None, "647", dirty=False,
-                                   current_branch="fix/599-y", main_branch="main")
+                                   current_branch="fix/599-y", main_branch="main",
+                                   service=NO_SERVICE)
 check(ok is False and "fix/599-y" in reason and "main" in reason,
       "land_primary_check: primary parked off its default branch -> refuse, no checkout")
 check(wc.land_primary_check(None, "647", dirty=False,
-                            current_branch="master", main_branch="master")[0] is True,
+                            current_branch="master", main_branch="master",
+                            service=NO_SERVICE)[0] is True,
       "land_primary_check: non-'main' default branch (life-os) is detected, not assumed")
 
 ok, reason = wc.land_primary_check(None, "647", dirty=False,
-                                   current_branch="", main_branch="main")
+                                   current_branch="", main_branch="main",
+                                   service=NO_SERVICE)
 check(ok is False and "detached HEAD" in reason,
       "land_primary_check: detached-HEAD primary refuses by name, not as an empty branch")
+
+
+# ---- live_service_check: the fourth guard -- don't land a tree in use (#665) ----
+#
+# `#647`'s three questions were all satisfied when the app-launcher#773 lane
+# fast-forwarded a primary whose tray was serving it: disk moved to 1705558
+# while the running Python stayed at 9af573f, so jobs-row.js gained a control
+# the live API did not understand. The asymmetry is the whole design -- not
+# landing is behind-but-coherent, landing is behind-AND-skewed -- so the
+# declared-and-running case refuses, and there is no "landed anyway" variant.
+
+ok, reason = wc.live_service_check(True, wc.SERVICE_LIVE, port=8445, running_sha="9af573f")
+check(ok is False, "live_service_check: declared tray + live webapp -> refuse (the #665 case)")
+check("8445" in reason and "9af573f" in reason,
+      "live_service_check: refusal names the port and the commit actually running")
+check("restart" in reason,
+      "live_service_check: refusal names the restart as the remedy, not a repair")
+
+check(wc.live_service_check(False, wc.SERVICE_UNKNOWN,
+                            detail="fleet-config declares no tray_cmd")[0] is True,
+      "live_service_check: no tray_cmd -> lands unconditionally (the #647 junction case)")
+check(wc.live_service_check(True, wc.SERVICE_ABSENT,
+                            port=8445, detail="nothing listening on 127.0.0.1:8445")[0] is True,
+      "live_service_check: declared but not running -> nothing is served, landing is safe")
+
+for probe in (wc.SERVICE_UNKNOWN, "", "garbled"):
+    ok, reason = wc.live_service_check(True, probe, port=8445, detail="probe timed out")
+    check(ok is False and "cannot confirm" in reason,
+          f"live_service_check: unestablished probe ({probe!r}) refuses -- never folded into a pass")
+
+ok, reason = wc.live_service_check(True, wc.SERVICE_UNKNOWN,
+                                   detail="no webapp_port declared to probe")
+check(ok is False and "no webapp_port" in reason,
+      "live_service_check: tray declared with nothing to probe -> refuse, saying why")
+
+# Composition: the new guard is fourth, so the older refusals still speak first.
+ok, reason = wc.land_primary_check(None, "665", dirty=False,
+                                   current_branch="main", main_branch="main",
+                                   service=wc.live_service_check(True, wc.SERVICE_LIVE, port=8445))
+check(ok is False and "live process serving this tree" in reason,
+      "land_primary_check: clean, on main, claim free -- and still refused for the live service")
+check(wc.format_primary_state(*wc.land_primary_check(
+          None, "665", dirty=False, current_branch="main", main_branch="main",
+          service=wc.live_service_check(True, wc.SERVICE_LIVE, port=8445, running_sha="9af573f")))
+      == ("PRIMARY=stale reason=live process serving this tree (webapp :8445 at 9af573f); "
+          "restart required, not a fast-forward"),
+      "land_primary_check: the live-service refusal reaches the summary as one PRIMARY=stale line")
+check(wc.land_primary_check(None, "665", dirty=True,
+                            current_branch="main", main_branch="main",
+                            service=wc.live_service_check(True, wc.SERVICE_LIVE, port=8445)
+                            )[1] == "working tree has uncommitted changes",
+      "land_primary_check: a dirty tree still reports its own reason, not the service one")
+
+# declared_service reads the fleet's existing membership table -- and an
+# unreadable one is nothing established, so it refuses rather than reading a
+# failed parse as "this repo declares no tray".
+_toml_base = Path(tempfile.mkdtemp(prefix="wc-toml-"))
+try:
+    missing = _toml_base / "nope.toml"
+    check(wc.declared_service(Path("E:/automation/app-launcher"), missing)[0] is True,
+          "declared_service: unreadable projects.toml -> declared, i.e. refuse (never a silent pass)")
+    ok, reason = wc.service_state(Path("E:/automation/app-launcher"), missing)
+    check(ok is False and "could not read hooks/projects.toml" in reason,
+          f"service_state: a table it cannot read names that as the reason (got {reason!r})")
+
+    broken = _toml_base / "broken.toml"
+    broken.write_text("[unclosed\n", encoding="utf-8")
+    ok, reason = wc.service_state(Path("E:/automation/app-launcher"), broken)
+    check(ok is False and "could not read hooks/projects.toml" in reason,
+          "service_state: a malformed table refuses too -- a failed parse is not a declaration")
+
+    declaring = _toml_base / "ok.toml"
+    declaring.write_text(
+        '[app-launcher]\ncwd_prefix = "E:/automation/app-launcher"\n'
+        'webapp_port = 8445\ntray_cmd = "tray.bat"\napi_version_path = "/api/version"\n'
+        '[fleet-config]\ncwd_prefix = "E:/automation/fleet-config"\n', encoding="utf-8")
+    check(wc.declared_service(Path("E:/automation/app-launcher"), declaring)
+          == (True, 8445, "/api/version", ""),
+          "declared_service: tray_cmd + port + api path are read straight off the table")
+    check(wc.declared_service(Path("E:\\automation\\app-launcher"), declaring)[0] is True,
+          "declared_service: a backslash path matches a forward-slash cwd_prefix (same tree)")
+    check(wc.declared_service(Path("E:/automation/fleet-config"), declaring)[0] is False,
+          "declared_service: no tray_cmd -> no service, whatever else the table says (#647 intact)")
+finally:
+    shutil.rmtree(_toml_base, ignore_errors=True)
 
 # The one line the finish summary quotes -- 'merged' and 'live' are two facts.
 check(wc.format_primary_state(True, "clean, on main, claim free", behind=0)
@@ -884,6 +983,151 @@ try:
           "land-primary: exactly one PRIMARY= line on stdout in every outcome (#647)")
 finally:
     shutil.rmtree(land_base, ignore_errors=True)
+
+
+# ---- land-primary CLI: refuse a tree a live process is serving (#665) ------
+#
+# Reproduces the observed case from fixtures, never by mutating the live
+# app-launcher checkout: a repo declaring `tray_cmd` + `webapp_port`, an
+# `/api/version` answering with the *running* commit, and a primary sitting
+# behind its origin. Pre-fix, `land-primary` fast-forwarded it -- that is
+# exactly how the app-launcher primary ended up at 1705558 while its webapp
+# kept serving 9af573f.
+#
+# The declaration is injected by *relocating the library*, not by adding a CLI
+# flag: `_lib` is copied to a temp tree with its own `hooks/projects.toml`
+# beside it, so the production tool grows no way to be told "ignore the tray
+# and land anyway".
+
+svc_base = Path(tempfile.mkdtemp(prefix="wc-svc-"))
+_running = None
+try:
+    _no_hooks = svc_base / "nohooks"          # _git_t reads this global at call time
+    _no_hooks.mkdir()
+
+    lib_src = Path(__file__).resolve().parent.parent / "skills" / "_lib"
+    lib_dst = svc_base / "skills" / "_lib"
+    lib_dst.mkdir(parents=True)
+    for mod in lib_src.glob("*.py"):
+        shutil.copy2(mod, lib_dst / mod.name)
+    SVC_CLI = str(lib_dst / "worktree_claim.py")
+
+    def _make_repo(name: str) -> Path:
+        """An `upstream` one commit ahead of its clone -- the post-merge state."""
+        up = svc_base / f"{name}-upstream"
+        up.mkdir()
+        _git_t(up, "init", "-b", "main")
+        (up / "a.txt").write_text("one", encoding="utf-8")
+        _git_t(up, "add", "-A")
+        _git_t(up, "commit", "-m", "one")
+        clone = svc_base / name
+        _git_t(svc_base, "clone", str(up), str(clone))
+        (up / "static.js").write_text("the asset the running process has never read", encoding="utf-8")
+        _git_t(up, "add", "-A")
+        _git_t(up, "commit", "-m", "two")
+        return clone
+
+    served = _make_repo("trayrepo")           # declares tray_cmd, service up
+    idle = _make_repo("idlerepo")             # declares tray_cmd, service down
+    junction = _make_repo("junctionrepo")     # declares no tray_cmd (the fleet-config case)
+    portless = _make_repo("portlessrepo")     # declares tray_cmd, nothing to probe
+
+    # A real listener answering /api/version with the commit it is "running" --
+    # the same shape app-launcher's webapp reports its own skew with.
+    class _Version(http.server.BaseHTTPRequestHandler):
+        def do_GET(self):                                        # noqa: N802
+            body = json.dumps({"git_sha": "9af573f", "head_sha": "1705558"}).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def log_message(self, *a):                               # keep the run quiet
+            pass
+
+    _running = http.server.ThreadingHTTPServer(("127.0.0.1", 0), _Version)
+    live_port = _running.server_address[1]
+    threading.Thread(target=_running.serve_forever, daemon=True).start()
+
+    # A port nothing is listening on: bound, read back, released.
+    _probe = socket.socket()
+    _probe.bind(("127.0.0.1", 0))
+    dead_port = _probe.getsockname()[1]
+    _probe.close()
+
+    (svc_base / "hooks").mkdir()
+    (svc_base / "hooks" / "projects.toml").write_text(f"""
+[trayrepo]
+cwd_prefix       = "{served.as_posix()}"
+webapp_port      = {live_port}
+tray_cmd         = "tray.bat"
+api_version_path = "/api/version"
+
+[idlerepo]
+cwd_prefix       = "{idle.as_posix()}"
+webapp_port      = {dead_port}
+tray_cmd         = "tray.bat"
+api_version_path = "/api/version"
+
+[junctionrepo]
+cwd_prefix       = "{junction.as_posix()}"
+
+[portlessrepo]
+cwd_prefix       = "{portless.as_posix()}"
+tray_cmd         = "tray.bat"
+
+[global]
+architecture_ignore = []
+""", encoding="utf-8")
+
+    def _land_svc(repo: Path) -> subprocess.CompletedProcess:
+        return subprocess.run([sys.executable, SVC_CLI, "land-primary", str(repo), "665"],
+                              capture_output=True, text=True)
+
+    res = _land_svc(served)
+    out = res.stdout.strip()
+    check(res.returncode == 1 and out.startswith("PRIMARY=stale"),
+          f"land-primary: live service on the declared port -> stale, exit 1 (got {out!r})")
+    check(f":{live_port}" in out and "9af573f" in out,
+          "land-primary: the refusal names the port and the commit the live process is actually on")
+    check("restart" in out,
+          "land-primary: the refusal names the restart as the remedy (#665)")
+    check(not (served / "static.js").exists(),
+          "land-primary: refusing left the tree behind-but-coherent -- no mixed-commit assets")
+    check(len([l for l in out.splitlines() if l.startswith("PRIMARY=")]) == 1,
+          "land-primary: the live-service refusal is exactly one PRIMARY= line, like every other")
+
+    res = _land_svc(idle)
+    check(res.returncode == 0 and res.stdout.strip() == "PRIMARY=live behind=0",
+          f"land-primary: declared tray, nothing listening -> lands normally (got {res.stdout.strip()!r})")
+    check((idle / "static.js").exists(),
+          "land-primary: the idle repo really did fast-forward, not just report it")
+
+    res = _land_svc(junction)
+    check(res.returncode == 0 and res.stdout.strip() == "PRIMARY=live behind=0",
+          f"land-primary: no tray_cmd -> lands unconditionally, #647's junction case intact "
+          f"(got {res.stdout.strip()!r})")
+
+    res = _land_svc(portless)
+    check(res.returncode == 1 and "cannot confirm" in res.stdout,
+          f"land-primary: tray declared but unprobeable -> refuse, never assume idle "
+          f"(got {res.stdout.strip()!r})")
+    check(not (portless / "static.js").exists(),
+          "land-primary: the unprobeable repo was left untouched too")
+
+    # A repo the table has never heard of is a *known* absence of a declaration,
+    # not an unknown -- every fixture repo in the block above this one is one.
+    stranger = _make_repo("undeclaredrepo")
+    res = _land_svc(stranger)
+    check(res.returncode == 0 and "PRIMARY=live" in res.stdout,
+          f"land-primary: repo absent from projects.toml declares no service -> lands "
+          f"(got {res.stdout.strip()!r})")
+finally:
+    if _running is not None:
+        _running.shutdown()
+        _running.server_close()
+    shutil.rmtree(svc_base, ignore_errors=True)
 
 
 # ---- mode CLI, git-backed: answers about the cwd, not the argument (#652) ----
