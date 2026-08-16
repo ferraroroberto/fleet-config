@@ -196,10 +196,26 @@ just the launcher call):
   the text; session ids come from `chief_ops.py board`/`sessions`). Add
   `--verify` when unsticking an idle/`needs-you` session — the endpoint has
   reported `{"ok": true}` for a message that never actually submitted
-  (fleet-config#453); `--verify` polls the exchange and reports
-  DELIVERED/UNKNOWN/STRANDED instead of trusting the response. It never
-  auto-retries on a non-delivered result — a STRANDED or UNKNOWN send is
-  your call, not a resend. **Always open the text with the literal marker
+  (fleet-config#453); `--verify` polls the exchange and reports one of four
+  verdicts instead of trusting the response (fleet-config#643). Only
+  `DELIVERED` exits 0; the other three each exit 1 and each mean something
+  different:
+  - `PENDING` — delivery is *likely* and unconfirmed only because the worker
+    is still talking: either the board shows it mid-turn, or the submit is
+    with the deferred watcher (`deferred`, app-launcher#763 — accepted and in
+    flight, not stranded). Benign. Read the exchange again in a minute;
+    do not resend.
+  - `STRANDED` — positively not delivered. Either the exchange never advanced
+    on a target that was not busy, or the endpoint said so outright
+    (`not_ingested`/`dropped`, or the watcher's `defer_timeout` /
+    `defer_vanished` / `defer_unclear` landing on `last_input`). This is the
+    one that needs you.
+  - `UNKNOWN` — the exchange could not be *read*. Genuinely unresolvable, and
+    now narrow: a readable-but-un-advanced exchange is `STRANDED`, never this.
+  Every non-`DELIVERED` line carries the target's `status=` and
+  `last_output=` age, so you can judge without a second round of calls. It
+  never auto-retries on any verdict — a resend can double-execute a shipping
+  command, so it is your call, never the tool's. **Always open the text with the literal marker
   `CHIEF - `** (fleet-config#509): that prefix is the only thing separating
   your steer from a human typing into the same endpoint, and the
   pre-authorization paragraph you gave the worker at dispatch time is what
