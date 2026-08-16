@@ -21,6 +21,12 @@ _STANDALONE_UNIT_CHECKS: Tuple[Tuple[str, str, str], ...] = (
      "on its own"),
     ("fleet_audit_scan", "test_fleet_audit_scan.py",
      "`is_fleet_repo` is testable on its own"),
+    ("repo_preflight", "test_repo_preflight.py",
+     "the per-repo availability gate -- classify_repo's ordering, the "
+     "repos-vs-issues count split, `unknown` as its own state, and the "
+     "statelessness that makes the end-of-run retry re-establish facts "
+     "rather than replay a cached verdict -- is testable on its own "
+     "against synthetic facts (fleet-config#642)"),
     ("design_sweep_scan", "test_design_sweep_scan.py",
      "the fleet-wide web-app gate -- `classify_web_app` over synthetic "
      "trees, the FastAPI-vs-Streamlit disambiguation, and the reuse of "

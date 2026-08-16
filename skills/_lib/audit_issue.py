@@ -21,8 +21,17 @@ Two subcommands:
          The skill reads the existing body, merges its findings, then calls upsert.
 
   upsert --repo OWNER/NAME --kind KIND --title T --body-file F [--label L]
+         [--reopen]
          0 matches -> create · 1 -> edit · >1 -> edit lowest, close the rest as
          duplicates. Stamps the marker. Prints the canonical issue URL.
+         `--reopen` extends the 0-match case to the CLOSED issues before
+         filing a new one — opt-in, for the one kind whose closed state is a
+         meaningful "nothing outstanding" rather than "done forever".
+
+  close  --repo OWNER/NAME --kind KIND --comment TEXT
+         Closes the open managed issue for that kind with the comment, so an
+         open issue can carry "there is live work here" as its own signal.
+         Idempotent: prints `CLOSED=none` when there was nothing open.
 
 Identity is the marker `<!-- audit-managed: kind=<kind> -->`. Pre-existing issues
 that predate the marker are adopted by their stable title (see ``title_matches``),
@@ -67,6 +76,7 @@ KINDS = (
     "context-purge",
     "sota-watch",
     "e2e-redundancy",
+    "cleanup-deferred",
 )
 
 _MARKER_RE = re.compile(
@@ -152,6 +162,8 @@ def title_matches(title: str, kind: str) -> bool:
         return t == "context-purge ledger"
     if kind == "sota-watch":
         return t == "sota-watch ledger"
+    if kind == "cleanup-deferred":
+        return t == "cleanup-fleet-all deferred repos"
     # bucket kinds: "audit: <kind> findings ..." (trailing count suffix tolerated)
     return re.match(r"^audit:\s*" + re.escape(kind) + r"\s+findings\b", t) is not None
 
@@ -555,6 +567,21 @@ def _list_open(repo: str) -> list[dict]:
     return json.loads(out) if out else []
 
 
+def _list_closed(repo: str) -> list[dict]:
+    """Closed issues, for the one kind whose open/closed state carries meaning.
+
+    `cleanup-deferred` is closed when a run ends with nothing deferred, so the
+    *next* run that does have something to defer must find and reopen that same
+    issue rather than filing a second one. Every other kind lives its whole life
+    open and never consults this (fleet-config#642).
+    """
+    out = gh([
+        "issue", "list", "--repo", repo, "--state", "closed",
+        "--limit", "100", "--json", "number,title,body",
+    ])
+    return json.loads(out) if out else []
+
+
 def _write_tmp(body: str) -> str:
     # newline="" so Windows doesn't translate the body's LFs to CRLF on the way
     # to `gh` — the ledger block is a parsed machine contract, and it should not
@@ -580,8 +607,16 @@ def cmd_get(repo: str, kind: str) -> None:
     print(json.dumps({"number": keep, "body": body, "duplicates": dupes}))
 
 
-def _upsert_issue(repo: str, kind: str, title: str, body: str, label: str | None) -> str:
+def _upsert_issue(
+    repo: str, kind: str, title: str, body: str, label: str | None, reopen: bool = False
+) -> str:
     keep, dupes = plan(_list_open(repo), kind)
+    if keep is None and reopen:
+        # Opt-in, never the default: `security`'s managed issue is *closed* on
+        # fix-merge by design, so a blanket reopen would resurrect it.
+        keep, _closed_dupes = plan(_list_closed(repo), kind)
+        if keep is not None:
+            gh(["issue", "reopen", str(keep), "--repo", repo])
     tmp = _write_tmp(ensure_marker(body, kind))
 
     if label:
@@ -612,14 +647,38 @@ def _upsert_issue(repo: str, kind: str, title: str, body: str, label: str | None
     return url
 
 
-def cmd_upsert(repo: str, kind: str, title: str, body: str, label: str | None) -> None:
+def cmd_upsert(
+    repo: str, kind: str, title: str, body: str, label: str | None, reopen: bool = False
+) -> None:
     # A ledger is a machine contract, so it is validated and normalized here
     # rather than trusted from the caller's markdown — `--kind ledger` through
     # this path used to accept anything, which is how an unreadable block
     # reached three repos (fleet-config#566).
     if kind == "ledger":
         body = normalize_ledger_body(body)
-    print(_upsert_issue(repo, kind, title, body, label))
+    print(_upsert_issue(repo, kind, title, body, label, reopen))
+
+
+def cmd_close(repo: str, kind: str, comment: str) -> None:
+    """Close the managed issue for `kind`, letting open/closed carry the signal.
+
+    Written for `cleanup-deferred` (fleet-config#642): a tracking issue that
+    stays open saying "nothing to do" is a zombie, and it trains a reader to
+    skim past exactly the issue that is supposed to catch their eye when it
+    does have content. So an *open* `cleanup-deferred` issue always means
+    "there is unprocessed work" -- never "the last run had nothing to say".
+
+    Idempotent and never an error: no open managed issue for this kind means
+    the state is already what the caller asked for. Prints `CLOSED=<url>` or
+    `CLOSED=none`, so a caller can report which of the two actually happened
+    rather than assuming.
+    """
+    keep, _dupes = plan(_list_open(repo), kind)
+    if keep is None:
+        print("CLOSED=none")
+        return
+    gh(["issue", "close", str(keep), "--repo", repo, "--comment", comment])
+    print("CLOSED=" + gh(["issue", "view", str(keep), "--repo", repo, "--json", "url", "-q", ".url"]))
 
 
 def _fetch_merged_prs(repo: str) -> list[dict]:
@@ -787,6 +846,16 @@ def main(argv: list[str] | None = None) -> None:
     u.add_argument("--title", required=True)
     u.add_argument("--body-file", required=True)
     u.add_argument("--label", default=None)
+    u.add_argument(
+        "--reopen", action="store_true",
+        help="when no OPEN managed issue exists, reopen the closed one instead "
+             "of filing a new one (cleanup-deferred; never for `security`)",
+    )
+
+    cl = sub.add_parser("close")
+    cl.add_argument("--repo", required=True)
+    cl.add_argument("--kind", required=True, choices=KINDS)
+    cl.add_argument("--comment", required=True)
 
     gt = sub.add_parser("gate")
     gt.add_argument("--repo", required=True)
@@ -802,7 +871,9 @@ def main(argv: list[str] | None = None) -> None:
     elif args.cmd == "upsert":
         with open(args.body_file, encoding="utf-8") as fh:
             body = fh.read()
-        cmd_upsert(args.repo, args.kind, args.title, body, args.label)
+        cmd_upsert(args.repo, args.kind, args.title, body, args.label, args.reopen)
+    elif args.cmd == "close":
+        cmd_close(args.repo, args.kind, args.comment)
     elif args.cmd == "gate":
         cmd_gate(args.repo, args.repo_path)
     elif args.cmd == "ledger-write":
