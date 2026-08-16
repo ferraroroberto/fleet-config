@@ -310,6 +310,10 @@ Invoking `& .\.venv\Scripts\python.exe <script-outside-project>` that imports pr
 
 Piped/redirected stdout makes Python fall back to cp1252, so emoji/box-drawing `print()` throws `UnicodeEncodeError` and exits 1 — even though it works in a real terminal. Set `$env:PYTHONUTF8 = "1"` under capture; durable code fix: `sys.stdout.reconfigure(encoding="utf-8")` (and stderr) at entry points.
 
+**The inverse, in any process that sets `PYTHONUTF8`:** `subprocess.run(..., text=True)` decodes the *child's* output as UTF-8, but native Windows console tools (`schtasks`, `netsh`, `sc`, `tasklist`, `wmic`, `reg`, `ipconfig`, …) emit the OEM code page (cp850 here), which is not valid UTF-8. It doesn't raise — `proc.stdout` comes back empty/`None`, so any `if not proc.stdout: return None`-shaped guard reads it as "the query failed" and the feature degrades silently. Every such call site must pin its own decoding — `encoding="oem", errors="replace"` — never inherit `text=True`'s ambient locale (`replace` so one odd byte costs a character, not the whole feature). It reproduces only *inside* the app: from any terminal there is no `PYTHONUTF8`, so identical code returns the full output and looks healthy. (`app-launcher#743` — blank `next_run` on all 20 jobs and `unknown` structural missed-fire coverage, fleet-wide, for weeks.)
+
+**Corollary:** a helper that returns `None` on failure must **log** the failure. Silent `None` is why this hid so long — a dead query was indistinguishable from a quiet system. Same "an unestablished fact needs its own visible state" rule the health checks already follow.
+
 ### Browser automation must not look like a bot
 
 Every Playwright / automated-browser launch must present as a real human Chrome session (past captchas on detection; social platforms risk account lockouts):
