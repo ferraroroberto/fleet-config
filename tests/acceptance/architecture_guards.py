@@ -172,6 +172,70 @@ def _fleet_toml_check() -> Tuple[int, int, int]:
     return check.failures, check.total, check.skipped
 
 
+def _fleet_membership_drift_check() -> Tuple[int, int, int]:
+    """The fleet on disk and the fleet in `projects.toml` are the same set (#640).
+
+    `CLAUDE.md` makes that block the fleet-membership list — `fleet_repos()`
+    reads it, so an omission silently narrows `/system-map`, `/config-map`,
+    `/context-audit`'s cap gate and `chief_ops.py verify`, and leaves
+    `notify_on_idle` pinging `[claude]` instead of naming the project. Nothing
+    caught that: `local-llm-hub-lite` was worked by six `/cleanup-fleet-all`
+    lanes while being invisible to every fleet report, because the list is
+    maintained by hand and drift is silent by construction.
+
+    So: every real fleet repo sitting next to this one must be declared, or
+    named in `[global] architecture_ignore` — the documented "deliberately off
+    the map" escape hatch. Hard, not `advisory`: unlike `_fleet_toml_check`'s
+    fleet-wide half, the fix is a one-line commit *in this repo*, which is
+    exactly the kind of failure a gate is for.
+
+    Membership comes from the shared `fleet_repo_scan.iter_fleet_repos` rather
+    than a fresh crawl, so the linked-worktree guard is inherited instead of
+    re-derived — a sibling `<repo>-wt-<N>` is a full checkout and counting one
+    as a repo is the same mistake #629 already fixed once.
+
+    Finding no repos at all is its own state, not a pass: on a fresh clone or
+    another machine there is no fleet next door to compare against, and a run
+    that verified nothing must never read like one that verified everything
+    (fleet-config#461, #501). Returns (failures, total, skipped).
+    """
+    import importlib.util
+    import tomllib
+
+    spec = importlib.util.spec_from_file_location(
+        "fleet_repo_scan", REPO / "skills" / "_lib" / "fleet_repo_scan.py"
+    )
+    scan = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(scan)  # type: ignore[union-attr]
+
+    root = REPO.parent  # E:/automation — the fleet lives beside this checkout
+    on_disk = {d.name for d in scan.iter_fleet_repos(root)}
+    if not on_disk:
+        print(f"SKIP  fleet_membership: no fleet repos found beside this checkout in {root} (skipped)")
+        return 0, 0, 1
+
+    toml = tomllib.loads((REPO / "hooks" / "projects.toml").read_text(encoding="utf-8"))
+    declared = {
+        name for name, tbl in toml.items()
+        if name != "global" and isinstance(tbl, dict) and "cwd_prefix" in tbl
+    }
+    ignored = set(toml.get("global", {}).get("architecture_ignore", []))
+
+    check = _Checker()
+    undeclared = sorted(on_disk - declared - ignored)
+    check(
+        f"fleet_membership: every repo in {root} is declared in projects.toml "
+        f"(undeclared: {undeclared or 'none'})",
+        not undeclared,
+        "add each to hooks/projects.toml before the [global] block:\n"
+        + "\n".join(f'[{r}]\ncwd_prefix = "{root.as_posix()}/{r}"' for r in undeclared)
+        + "\n(then regenerate the maps per CLAUDE.md 'Adding a new fleet project'), "
+        "or list it in [global] architecture_ignore to keep it off the map on purpose.",
+    )
+
+    return check.failures, check.total, check.skipped
+
+
 def _advisory_semantics_check() -> Tuple[int, int]:
     """`_Checker.advisory` reports, it never gates (fleet-config#562).
 

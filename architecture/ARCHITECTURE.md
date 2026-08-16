@@ -86,6 +86,7 @@ These are the **pieces that let me do everything else** — each is *used by mor
 | 🎙️ **voice-transcriber** | The **shared speech layer**: always-on local voice-to-text (whisper.cpp), global `F8` hotkey → auto-paste at the caret. Owns the `whisper-server` on `:8090`, which other apps reuse. | `:8443` (whisper `:8090`) | L0 GPU/RAM | grocery voice-audit (whisper, mutex-shared) |
 | 📷 **photo-ocr** | Mobile-first **OCR service**: snap N photos of a document/screen/email → clean text. A reusable capture-to-text surface (tray + PWA + Cloudflare tunnel), sibling to the launcher and voice apps. | `:8444` | L1 access, L2 hub | (capture surface for downstream use) |
 | 🚀 **app-launcher-lite** | The **public lite fork of `app-launcher`**: same phone-first hub, but driving GitHub Copilot CLI sessions and a GitLab-backed Board instead of Claude Code + GitHub. Runs alongside the full launcher on its own port, not in place of it. | `:8465` | L1 access | **GitHub Copilot CLI**, **GitLab** |
+| 🧠 **local-llm-hub-lite** | The **public lite fork of `local-llm-hub`**: single-machine, local-models-only edition — the same Anthropic-shape and OpenAI-shape surfaces on `:8000`, routed to one `llama-server` and `whisper-server` rather than to the multi-machine fleet or the `claude -p` CLI. Admin SPA: Hub · Models · Playground. | `:8000` | L0 GPU/RAM | (standalone — no fleet dependants) |
 
 **Local models behind the hub** (run on the L0 GPU):
 
