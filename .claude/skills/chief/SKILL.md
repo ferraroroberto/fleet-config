@@ -393,6 +393,37 @@ instead:
   worker, all conclusive.
 - Ask the worker to re-run its own gate and report back.
 
+**Doubt your own filings hardest — re-test the premise, not the conclusion
+(fleet-config#633).** On 2026-08-15 you filed that issue against
+`/cleanup-fleet-all`'s step-5 state gate: two candidates already closed when
+the gate waved them through, with evidence tables, a named root cause, and a
+derived "~9 of 43 already closed, ≈3h of lanes wasted". Every word of it was
+produced by one unchecked unit conversion — GitHub's UTC `closedAt` read as
+local time (the clock rule lives in `global-CLAUDE.md`'s recurring gotchas;
+elapsed-vs-wall-clock job logs are item 1 of "Telling a quiet lane from a hung
+one"). That run's *own* lanes had closed both issues, hours **after** the gate
+ran. Closed not-planned the next morning.
+
+The arithmetic is not the lesson. Every later check re-confirmed the
+**conclusion** and never the **premise**: running `issue_state_gate.py check`
+by hand returned `closed`, which was true *by then* and said nothing about what
+the gate could see *back then*. Before filing any defect against fleet tooling:
+
+- **Write the premise as one sentence and test that sentence alone.** Here it
+  was "these two issues were already closed at `11:53Z`" — one `gh` query from
+  disproof, and never asked, because it was the part that looked too obvious
+  to check.
+- **Reconstruct what the tool could observe at time T**, not what it returns
+  now. A tool re-run today is not a witness to yesterday.
+- **Treat a confident, table-heavy draft as a warning sign, not a finish
+  line.** Presentation quality is not evidence quality, least of all in your
+  own filings — #633 read as rigorous *precisely* while being wrong, and that
+  rigour is what carried it into the handover log and onward to Roberto as a
+  real defect.
+
+A claim that survives all three is a defect worth filing. One that cannot say
+what it re-tested is a hypothesis — file it as a question, or don't file it.
+
 ## Safety rails (non-negotiable)
 
 1. **Default verb is the safe one.** Issue starts use `mode: "start"`;
