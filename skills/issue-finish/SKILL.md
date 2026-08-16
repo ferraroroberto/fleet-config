@@ -280,7 +280,11 @@ is driven by the project's `## CI expectations` block (convention:
        - `PRIMARY=stale reason=<why>` — it could not establish that. **Do not
          improvise, do not stash, do not force, do not `git checkout`.**
          Reporting stale *is* the correct outcome; recovering a dirty or
-         claimed primary is never this lane's job.
+         claimed primary is never this lane's job. `reason=live process
+         serving this tree (…)` is that same correct outcome by design
+         (fleet-config#665): a repo declaring `tray_cmd` runs a server out of
+         its checkout, so fast-forwarding it would serve one UI out of two
+         commits. The named restart is the remedy — nothing here is broken.
        **Put that line in the finish summary, verbatim, next to the merge
        result** — never absent, never implied by silence. "Merged" and "live"
        are two facts and the summary carries both (the fleet rule that a check
