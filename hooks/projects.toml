@@ -148,8 +148,13 @@ cwd_prefix = "E:/automation/github-copilot-usage"
 cwd_prefix = "E:/automation/gitlab-to-github-migrator"
 
 [grocery-shopping-automation]
-cwd_prefix = "E:/automation/grocery-shopping-automation"
-tray_cmd   = "tray.bat"
+cwd_prefix       = "E:/automation/grocery-shopping-automation"
+webapp_port      = 8502
+tray_cmd         = "tray.bat"
+api_version_path = "/api/version"
+# No `restart_cmd`: the sibling incantation imports app.webapp.manager, which
+# grocery does not have — its tray manager is app/tray/manager.py and its
+# declared recipe is `tray.bat --restart` (that repo's CLAUDE.md).
 
 [illustration-color-edit]
 cwd_prefix = "E:/automation/illustration-color-edit"
