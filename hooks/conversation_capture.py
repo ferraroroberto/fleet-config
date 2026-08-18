@@ -40,6 +40,12 @@ fullest transcript — collapsing the conversation to a single file:
 Without a session id *and* without a real turn we can't identify siblings, so we
 fall back to a plain timestamped name (no dedup).
 
+A successful capture also spawns a **delayed, detached** ``conversation_index``
+run (fleet-config#673) — see :func:`_trigger_delayed_index` — so a closed
+conversation is digested and searchable near close, not only the next time a
+new session starts (the ``session_index`` ``SessionStart`` hook, kept as a
+fallback for the case the delayed run's process never gets to fire).
+
 Invoked by the ``Stop`` hook in ``life-os/.claude/settings.json``.
 """
 
@@ -49,6 +55,7 @@ import hashlib
 import json
 import logging
 import re
+import subprocess
 import sys
 from dataclasses import dataclass
 from datetime import datetime
@@ -465,6 +472,45 @@ def render_markdown(
     return "\n".join(lines)
 
 
+# Buffer above conversation_index's own SETTLE_SECONDS (45s, conversation_index.py)
+# so the delayed run lands after a capture that's genuinely done changing, not
+# mid-window — a run that fires too early would just skip it and wait for the
+# *next* trigger, which is exactly the lazy-SessionStart gap this exists to close.
+_INDEX_DELAY_SECONDS = 60.0
+
+INDEXER = Path(__file__).resolve().parent / "conversation_index.py"
+
+
+def _trigger_delayed_index(project_name: str) -> None:
+    """Spawn a detached, delayed ``conversation_index`` run for ``project_name``.
+
+    ``Stop`` fires at every turn-end, so this fires once per turn during an
+    active conversation — cheap, because ``conversation_index.py`` is already
+    idempotent per capture (its settle window + unchanged-mtime check make a
+    run against a capture that hasn't settled, or hasn't changed, a near-instant
+    no-op). The one delayed run that lands after the conversation has genuinely
+    stopped producing new turns is the one that actually digests it — near the
+    close, instead of waiting for the next ``SessionStart`` (fleet-config#673).
+
+    Detached and fail-open, same shape as ``session_index.py``'s own trigger:
+    never blocks or delays the ``Stop`` hook, never raises.
+    """
+    if not INDEXER.exists():
+        return
+    try:
+        py = sys.executable or "py"
+        subprocess.Popen(
+            [py, str(INDEXER), "--project", project_name,
+             "--delay-seconds", str(_INDEX_DELAY_SECONDS)],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            cwd=str(INDEXER.parent),
+            creationflags=_lib.NO_WINDOW,
+        )
+    except OSError:
+        pass  # fail-open — a failed trigger must never break the Stop hook
+
+
 def main() -> int:
     logging.basicConfig(level=logging.INFO, format="%(message)s", stream=sys.stderr)
     payload = _lib.read_stdin_json()
@@ -476,8 +522,9 @@ def main() -> int:
     if not transcript_path.exists():
         return 0
 
-    cfg = resolve_capture_config(payload)
-    if cfg is None:
+    project = _lib.detect_project(_lib.cwd(payload))
+    cfg = capture_config_from_project(project)
+    if cfg is None or project is None:
         return 0  # project not opted into capture — silent no-op
 
     session_id = payload.get("session_id", "")
@@ -539,6 +586,7 @@ def main() -> int:
     try:
         out_path.write_text(content, encoding="utf-8")
         logger.info("Captured → %s", out_path)
+        _trigger_delayed_index(project.name)
     except OSError as exc:
         logger.error("Could not write %s: %s", out_path, exc)
 

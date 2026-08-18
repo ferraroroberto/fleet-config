@@ -18,6 +18,16 @@ with ``capture = true`` and a ``capture_routing`` of ``"flat"`` (one
 conversations dir) or ``"skills"`` (per-skill dirs). Fail-open: if the hub is
 unreachable an entry is skipped and retried next run (see :mod:`hub_client`).
 
+Two triggers invoke this module (fleet-config#673): ``session_index.py``, on
+``SessionStart`` (the original, still the fallback/catch-up path), and
+``conversation_capture.py``, detached, ~60s after a ``Stop`` write — so a
+closed conversation is digested near close rather than only the next time a
+session starts. The latter passes ``--delay-seconds`` (see :func:`apply_delay`)
+so the run lands after this module's own ``SETTLE_SECONDS`` window, and fires
+once per turn during an active conversation harmlessly — the settle window and
+the unchanged-mtime check below make a run against a capture that hasn't
+settled, or hasn't changed, a near-instant no-op.
+
 Usage (from anywhere — invoke the resolved Python path directly, not a bare
 ``py``/``python``, which is not reliably on ``PATH`` on this machine; see
 ``_lib.find_python_executable``)::
@@ -26,6 +36,7 @@ Usage (from anywhere — invoke the resolved Python path directly, not a bare
     E:/automation/fleet-config/.venv/Scripts/python.exe hooks/conversation_index.py --cwd E:/automation/life-os
     E:/automation/fleet-config/.venv/Scripts/python.exe hooks/conversation_index.py --all                  # every opted-in project
     E:/automation/fleet-config/.venv/Scripts/python.exe hooks/conversation_index.py --all --force          # ignore settle, re-digest
+    E:/automation/fleet-config/.venv/Scripts/python.exe hooks/conversation_index.py --project life-os --delay-seconds 60  # sleep, then index
 """
 
 from __future__ import annotations
@@ -380,6 +391,18 @@ def opted_in_projects() -> "list":
     return [p for p in _lib.load_registry().projects if p.extra.get("capture")]
 
 
+def apply_delay(seconds: float) -> None:
+    """Sleep before indexing, when a Stop-triggered near-close run asks for it.
+
+    Split out from :func:`main` so the acceptance suite can assert the delay is
+    requested correctly (by stubbing :func:`time.sleep`) without an actual
+    multi-second sleep in the test run (fleet-config#673). A no-op for the
+    ``SessionStart`` trigger, which never passes ``--delay-seconds``.
+    """
+    if seconds > 0:
+        time.sleep(seconds)
+
+
 def main() -> int:
     logging.basicConfig(level=logging.INFO, format="%(message)s", stream=sys.stderr)
     ap = argparse.ArgumentParser(description="Build/refresh conversation indexes.")
@@ -389,7 +412,11 @@ def main() -> int:
     g.add_argument("--cwd", help="resolve the project by a cwd path")
     ap.add_argument("--force", action="store_true",
                     help="ignore the settle window and re-digest existing entries")
+    ap.add_argument("--delay-seconds", type=float, default=0.0,
+                    help="sleep this long before indexing — used by the "
+                         "Stop-triggered near-close trigger (fleet-config#673)")
     args = ap.parse_args()
+    apply_delay(args.delay_seconds)
 
     reg = _lib.load_registry()
     if args.all:

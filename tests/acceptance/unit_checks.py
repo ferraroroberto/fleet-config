@@ -1991,6 +1991,7 @@ def _conversation_capture_unit_checks() -> Tuple[int, int]:
     supersede-prior sweep that collapses a session's many Stop captures to one."""
     sys.path.insert(0, str(HOOKS))
     import conversation_capture as cc  # noqa: E402
+    import _lib  # noqa: E402
 
     check = _Checker()
 
@@ -2074,6 +2075,38 @@ def _conversation_capture_unit_checks() -> Tuple[int, int]:
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 
+    # _trigger_delayed_index: the near-close trigger (fleet-config#673) — spawns
+    # conversation_index.py detached, with the project name and a delay, and
+    # never lets a spawn failure raise out of the Stop hook.
+    captured: dict = {}
+    saved_popen = cc.subprocess.Popen
+    cc.subprocess.Popen = lambda argv, **kw: captured.update(argv=argv, kw=kw)
+    try:
+        cc._trigger_delayed_index("life-os")
+    finally:
+        cc.subprocess.Popen = saved_popen
+    argv = captured.get("argv", [])
+    check("_trigger_delayed_index: spawns conversation_index.py for the project",
+          str(cc.INDEXER) in argv and "--project" in argv and "life-os" in argv)
+    check("_trigger_delayed_index: passes --delay-seconds",
+          "--delay-seconds" in argv
+          and float(argv[argv.index("--delay-seconds") + 1]) == cc._INDEX_DELAY_SECONDS)
+    check("_trigger_delayed_index: detached, creationflags carries NO_WINDOW",
+          captured.get("kw", {}).get("stdout") is cc.subprocess.DEVNULL
+          and captured.get("kw", {}).get("creationflags") == _lib.NO_WINDOW)
+
+    saved_popen = cc.subprocess.Popen
+    def _raise(*_a, **_kw):
+        raise OSError("spawn refused")
+    cc.subprocess.Popen = _raise
+    try:
+        cc._trigger_delayed_index("life-os")  # must not raise (fail-open)
+        check("_trigger_delayed_index: a spawn failure is swallowed, not raised", True)
+    except OSError:
+        check("_trigger_delayed_index: a spawn failure is swallowed, not raised", False)
+    finally:
+        cc.subprocess.Popen = saved_popen
+
     return check.failures, check.total
 
 
@@ -2129,6 +2162,19 @@ def _conversation_index_unit_checks() -> Tuple[int, int]:
     finally:
         ci.hub_client.complete = saved
         shutil.rmtree(tmp, ignore_errors=True)
+
+    # apply_delay: the Stop-triggered near-close run's sleep, stubbed so the
+    # acceptance suite never actually waits (fleet-config#673).
+    sleeps: list = []
+    saved_sleep = ci.time.sleep
+    ci.time.sleep = lambda s: sleeps.append(s)
+    try:
+        ci.apply_delay(60.0)
+        check("apply_delay: seconds > 0 -> sleeps that long", sleeps == [60.0])
+        ci.apply_delay(0.0)
+        check("apply_delay: 0 -> no sleep (SessionStart trigger never delays)", sleeps == [60.0])
+    finally:
+        ci.time.sleep = saved_sleep
 
     return check.failures, check.total
 
