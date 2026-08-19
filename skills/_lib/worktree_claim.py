@@ -128,6 +128,15 @@ Subcommands:
       unconditionally -- landing it is exactly what makes a merge live through
       the `~/.claude` junctions.
 
+      That guard asks its question *after* "is there anything to pull?"
+      (fleet-config#671): a tree already level with its remote is landed by
+      definition, so a service serving it is irrelevant and the answer is
+      `PRIMARY=live behind=0`, exit 0 -- reporting `stale` for a demonstrably
+      live deploy inverts the unknown-is-not-pass rule by downgrading an
+      *established* fact. The count is taken against a freshly fetched remote
+      ref; a fetch or count that fails leaves it unknown, which takes the
+      ordinary path through the service guard rather than a shortcut.
+
   remove-worktree <worktree-path> [--force-nonstandard-name]
       Reparse-safe teardown: strip the .venv junction, then
       `git worktree remove --force` + `git worktree prune`. Tolerates a
@@ -364,6 +373,7 @@ def land_primary_check(
     dirty: bool,
     current_branch: str,
     main_branch: str,
+    behind: Optional[int],
     service: Tuple[bool, str],
 ) -> Tuple[bool, str]:
     """Decide whether it is safe to fast-forward the primary checkout.
@@ -378,10 +388,23 @@ def land_primary_check(
     the "is this tree anyone else's to touch?" half; the branch check enforces
     the other half -- only ever pull a tree *already sitting on* its default
     branch, because a worktree lane must never `git checkout` the primary.
-    `service` is `live_service_check`'s verdict, passed in exactly as `holder`
-    / `dirty` / `current_branch` are, so the whole decision stays pure and
-    unit-testable with no git and no network inside it -- and so omitting it is
-    a `TypeError` at the call site rather than a silently skipped guard.
+    `behind` and `service` are passed in exactly as `holder` / `dirty` /
+    `current_branch` are, so the whole decision stays pure and unit-testable
+    with no git and no network inside it -- and so omitting either is a
+    `TypeError` at the call site rather than a silently skipped guard.
+
+    `behind` is how many commits the tree is behind its remote default branch,
+    or `None` when that could not be counted. **Zero short-circuits the service
+    guard** (fleet-config#671): there is nothing to fast-forward, so no live
+    process can be skewed by a landing that isn't going to happen, and the tree
+    is already exactly what the merge produced. Refusing there reported `stale`
+    for a demonstrably live deploy -- downgrading an established fact, the
+    mirror image of the unknown-is-not-pass rule the rest of this guard exists
+    to uphold, and the one outcome that trains a reader to ignore the line. An
+    *unknown* count is not zero: it falls through to the service guard, which
+    refuses on its own terms. The earlier guards still speak first -- a dirty
+    or off-branch primary reports its own reason however far behind it is.
+
     Returns `(ok, reason)`; on refusal `reason` is the text that reaches the
     finish summary as `PRIMARY=stale reason=<reason>`.
     """
@@ -392,6 +415,9 @@ def land_primary_check(
         return False, f"primary is on a detached HEAD, not '{main_branch}'"
     if current_branch != main_branch:
         return False, f"primary is on '{current_branch}', not '{main_branch}'"
+    if behind == 0:
+        return True, (f"clean, on {main_branch}, claim {reason}, "
+                      "already level with origin -- nothing to fast-forward")
     service_ok, service_reason = service
     if not service_ok:
         return False, service_reason
@@ -467,6 +493,30 @@ def main_ref(repo: Path) -> str:
     reproduce this helper's own pre-existing symbolic-ref-only contract.
     """
     return git_run.resolve_default_branch_ref(repo, candidates=(), final_fallback="origin/main")
+
+
+def count_behind(repo: Path, ref: str, *, fetch: bool = True) -> Optional[int]:
+    """How many commits `repo`'s HEAD is behind `ref`, or None if uncountable.
+
+    `fetch=True` refreshes the remote ref first, because the pre-landing count
+    (fleet-config#671) decides whether the service guard is skipped: a stale
+    `origin/<default>` would read a tree that is genuinely behind as level, and
+    a false `PRIMARY=live behind=0` is the one error direction this guard
+    cannot afford. `land-primary` runs right after a `gh pr merge` that never
+    touched local refs, so the stale case is the *normal* one, not the corner.
+    Pass `fetch=False` after a `pull --ff-only` has already fetched.
+
+    A failed fetch, a failed `rev-list`, or output that isn't a number returns
+    `None` -- not 0. An uncountable distance is unknown, and unknown is never
+    folded into the passing state.
+    """
+    if fetch:
+        remote = ref.split("/", 1)[0] if "/" in ref else "origin"
+        if _git(repo, "fetch", "--quiet", remote, check=False).returncode != 0:
+            return None
+    counted = _git(repo, "rev-list", "--count", f"HEAD..{ref}", check=False)
+    out = counted.stdout.strip()
+    return int(out) if counted.returncode == 0 and out.isdigit() else None
 
 
 def branch_exists_on_remote(repo: Path, branch: str) -> bool:
@@ -1280,6 +1330,11 @@ def cmd_land_primary(args: argparse.Namespace) -> int:
     Prints exactly one `PRIMARY=` line on stdout in every outcome -- that line
     is what the finish summary quotes. Exit 0 only for `PRIMARY=live behind=0`;
     1 for any stale state; 2 when the target isn't a primary checkout at all.
+    The distance from the remote is counted (against a fresh fetch) *before*
+    the guards, because "there is nothing to pull" answers the whole question:
+    a level tree lands as a no-op, service or no service, and the pull is
+    skipped entirely (fleet-config#671).
+
     Never checks out, stashes, forces, or otherwise "recovers" a tree it was
     refused: reporting stale *is* the correct outcome, and `--ff-only` fails
     safely rather than merging, so nothing here can lose work. Nor does it
@@ -1297,18 +1352,23 @@ def cmd_land_primary(args: argparse.Namespace) -> int:
     current = _git(repo, "branch", "--show-current").stdout.strip()
     ref = main_ref(repo)                                   # e.g. 'origin/main'
     main_branch = ref.split("/", 1)[1] if "/" in ref else ref
+    behind = count_behind(repo, ref)
     ok, reason = land_primary_check(holder, args.issue, dirty, current, main_branch,
-                                    service_state(repo))
+                                    behind, service_state(repo))
     if not ok:
         print(format_primary_state(False, reason))
         return 1
+    if behind == 0:
+        # Nothing to fast-forward -- the tree is already what the merge
+        # produced, so there is no pull to run and no service to skew (#671).
+        print(format_primary_state(True, reason, 0))
+        return 0
     pull = _git(repo, "pull", "--ff-only", check=False)
     if pull.returncode != 0:
         detail = ((pull.stderr or "") + (pull.stdout or "")).strip().splitlines()
         print(format_primary_state(False, f"pull --ff-only failed: {detail[0] if detail else '?'}"))
         return 1
-    counted = _git(repo, "rev-list", "--count", f"HEAD..{ref}", check=False).stdout.strip()
-    behind = int(counted) if counted.isdigit() else -1
+    behind = count_behind(repo, ref, fetch=False)           # the pull just fetched
     line = format_primary_state(True, reason, behind)
     print(line)
     return 0 if behind == 0 else 1

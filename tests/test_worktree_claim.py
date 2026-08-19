@@ -240,39 +240,40 @@ check(wc.owner_check({"issue": "473"}, "473", dirty=True)[0] is False,
 NO_SERVICE = (True, "no long-running service declared")
 
 ok, reason = wc.land_primary_check(None, "647", dirty=False,
-                                   current_branch="main", main_branch="main",
+                                   current_branch="main", main_branch="main", behind=1,
                                    service=NO_SERVICE)
 check(ok is True, "land_primary_check: clean primary on main, free claim -> pass")
 check("main" in reason, "land_primary_check: pass reason names the branch")
 check(wc.land_primary_check({"issue": "647"}, "647", dirty=False,
-                            current_branch="main", main_branch="main",
+                            current_branch="main", main_branch="main", behind=1,
                             service=NO_SERVICE)[0] is True,
       "land_primary_check: claim owned by this issue -> pass")
 
 ok, reason = wc.land_primary_check(None, "647", dirty=True,
-                                   current_branch="main", main_branch="main",
+                                   current_branch="main", main_branch="main", behind=1,
                                    service=NO_SERVICE)
 check(ok is False and reason == "working tree has uncommitted changes",
       "land_primary_check: dirty primary -> refuse (never stash, never force)")
 
 ok, reason = wc.land_primary_check(
     {"issue": "640", "branch": "fix/640-x", "created_iso": "2026-08-16T09:00:00"},
-    "647", dirty=False, current_branch="main", main_branch="main", service=NO_SERVICE)
+    "647", dirty=False, current_branch="main", main_branch="main", behind=1,
+    service=NO_SERVICE)
 check(ok is False and "640" in reason,
       "land_primary_check: another issue's live claim -> refuse, naming it")
 
 ok, reason = wc.land_primary_check(None, "647", dirty=False,
-                                   current_branch="fix/599-y", main_branch="main",
+                                   current_branch="fix/599-y", main_branch="main", behind=1,
                                    service=NO_SERVICE)
 check(ok is False and "fix/599-y" in reason and "main" in reason,
       "land_primary_check: primary parked off its default branch -> refuse, no checkout")
 check(wc.land_primary_check(None, "647", dirty=False,
-                            current_branch="master", main_branch="master",
+                            current_branch="master", main_branch="master", behind=1,
                             service=NO_SERVICE)[0] is True,
       "land_primary_check: non-'main' default branch (life-os) is detected, not assumed")
 
 ok, reason = wc.land_primary_check(None, "647", dirty=False,
-                                   current_branch="", main_branch="main",
+                                   current_branch="", main_branch="main", behind=1,
                                    service=NO_SERVICE)
 check(ok is False and "detached HEAD" in reason,
       "land_primary_check: detached-HEAD primary refuses by name, not as an empty branch")
@@ -313,21 +314,107 @@ check(ok is False and "no webapp_port" in reason,
 
 # Composition: the new guard is fourth, so the older refusals still speak first.
 ok, reason = wc.land_primary_check(None, "665", dirty=False,
-                                   current_branch="main", main_branch="main",
+                                   current_branch="main", main_branch="main", behind=1,
                                    service=wc.live_service_check(True, wc.SERVICE_LIVE, port=8445))
 check(ok is False and "live process serving this tree" in reason,
       "land_primary_check: clean, on main, claim free -- and still refused for the live service")
 check(wc.format_primary_state(*wc.land_primary_check(
-          None, "665", dirty=False, current_branch="main", main_branch="main",
+          None, "665", dirty=False, current_branch="main", main_branch="main", behind=1,
           service=wc.live_service_check(True, wc.SERVICE_LIVE, port=8445, running_sha="9af573f")))
       == ("PRIMARY=stale reason=live process serving this tree (webapp :8445 at 9af573f); "
           "restart required, not a fast-forward"),
       "land_primary_check: the live-service refusal reaches the summary as one PRIMARY=stale line")
 check(wc.land_primary_check(None, "665", dirty=True,
-                            current_branch="main", main_branch="main",
+                            current_branch="main", main_branch="main", behind=1,
                             service=wc.live_service_check(True, wc.SERVICE_LIVE, port=8445)
                             )[1] == "working tree has uncommitted changes",
       "land_primary_check: a dirty tree still reports its own reason, not the service one")
+
+
+# ---- "is there anything to pull?" comes before the service guard (#671) ----
+#
+# grocery's tree sat at 6f8f641, its webapp reported 6f8f641, zero commits
+# behind -- and land-primary still said `PRIMARY=stale ... restart required`,
+# exit 1. Nothing was stale and no restart would change anything: the #665
+# guard is right about fast-forwarding a tree out from under a running server,
+# but a landing that is a no-op cannot skew one. Reporting stale there
+# downgrades an *established* fact, the mirror of the unknown-is-not-pass rule,
+# and teaches the reader to ignore the one line #647 exists to produce.
+
+LIVE_SERVICE = wc.live_service_check(True, wc.SERVICE_LIVE, port=8502, running_sha="6f8f641")
+
+ok, reason = wc.land_primary_check(None, "671", dirty=False,
+                                   current_branch="main", main_branch="main", behind=0,
+                                   service=LIVE_SERVICE)
+check(ok is True,
+      "land_primary_check: level tree + live service -> pass (nothing to fast-forward, #671)")
+check(wc.format_primary_state(ok, reason, 0) == "PRIMARY=live behind=0",
+      "land_primary_check: the in-sync pass reaches the summary as PRIMARY=live behind=0")
+check(wc.land_primary_check(None, "671", dirty=False,
+                            current_branch="main", main_branch="main", behind=0,
+                            service=NO_SERVICE)[0] is True,
+      "land_primary_check: level tree with no service declared still passes")
+for probe in (wc.SERVICE_UNKNOWN, "garbled"):
+    check(wc.land_primary_check(None, "671", dirty=False,
+                                current_branch="main", main_branch="main", behind=0,
+                                service=wc.live_service_check(True, probe, port=8502))[0] is True,
+          f"land_primary_check: level tree passes even on an unestablished probe ({probe!r})")
+
+# The #665 guard itself is untouched: genuinely behind + live service refuses.
+ok, reason = wc.land_primary_check(None, "671", dirty=False,
+                                   current_branch="main", main_branch="main", behind=2,
+                                   service=LIVE_SERVICE)
+check(ok is False and "live process serving this tree" in reason,
+      "land_primary_check: genuinely behind + live service -> still refuses (#665 unchanged)")
+
+# ...and an *unknown* distance is not zero -- it takes the ordinary path.
+ok, reason = wc.land_primary_check(None, "671", dirty=False,
+                                   current_branch="main", main_branch="main", behind=None,
+                                   service=LIVE_SERVICE)
+check(ok is False and "live process serving this tree" in reason,
+      "land_primary_check: uncountable behind is not a level tree -- no shortcut past the guard")
+check(wc.land_primary_check(None, "671", dirty=False,
+                            current_branch="main", main_branch="main", behind=None,
+                            service=NO_SERVICE)[0] is True,
+      "land_primary_check: uncountable behind with no service still lands (pull decides)")
+
+# Behind-with-no-service is the plain fast-forward case, untouched by all this.
+check(wc.land_primary_check(None, "671", dirty=False,
+                            current_branch="main", main_branch="main", behind=3,
+                            service=NO_SERVICE)[0] is True,
+      "land_primary_check: genuinely behind, nothing serving -> fast-forwards as before")
+
+# The earlier guards still speak first: level does not excuse a dirty or
+# off-branch primary, because those refusals are about the tree, not the pull.
+check(wc.land_primary_check(None, "671", dirty=True,
+                            current_branch="main", main_branch="main", behind=0,
+                            service=LIVE_SERVICE)[1] == "working tree has uncommitted changes",
+      "land_primary_check: behind=0 does not short-circuit the dirty-tree refusal")
+check(wc.land_primary_check(None, "671", dirty=False,
+                            current_branch="fix/671-x", main_branch="main", behind=0,
+                            service=NO_SERVICE)[0] is False,
+      "land_primary_check: behind=0 does not short-circuit the off-branch refusal")
+
+# The new input is a required argument, exactly like `service`: a call site
+# that forgets it must be a TypeError, never a silently skipped guard.
+try:
+    wc.land_primary_check(None, "671", dirty=False, current_branch="main",
+                          main_branch="main", service=NO_SERVICE)  # type: ignore[call-arg]
+    check(False, "land_primary_check: omitting `behind` must raise TypeError")
+except TypeError:
+    check(True, "land_primary_check: omitting `behind` raises TypeError, never skips the check")
+
+# count_behind supplies that input, and its failure value is the whole safety
+# margin: a git that cannot answer must read as unknown, never as level.
+_nogit = Path(tempfile.mkdtemp(prefix="wc-nogit-"))
+try:
+    check(wc.count_behind(_nogit, "origin/main") is None,
+          "count_behind: a path git cannot answer for -> None, never 0")
+    check(wc.count_behind(_nogit, "origin/main", fetch=False) is None,
+          "count_behind: fetch=False on an unanswerable path is still None")
+finally:
+    shutil.rmtree(_nogit, ignore_errors=True)
+
 
 # declared_service reads the fleet's existing membership table -- and an
 # unreadable one is nothing established, so it refuses rather than reading a
