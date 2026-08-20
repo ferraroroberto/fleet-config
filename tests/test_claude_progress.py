@@ -35,9 +35,30 @@ arguments = [
     "bypassPermissions",
 ]
 command = cp.build_command(arguments, executable="claude-test")
-check(command[:3] == ["claude-test", "-p", "/audit-fleet repo-one"],
+check(command[:2] == ["claude-test", "-p"],
       "build_command adds print mode before the caller prompt")
 check(command[3:-3] == arguments[1:], "build_command preserves caller flags and values")
+
+# fleet-config#689: the prompt reaching `claude` is an instruction, not a bare
+# slash command -- 2.1.237 delivers a `/<skill>` body as passive context, and the
+# model answers "Ready -- what would you like to do?" instead of running it.
+check("/audit-fleet" not in command[2],
+      "build_command does not hand `claude` a bare slash command")
+check(command[2].startswith("Run the audit-fleet skill now"),
+      "build_command asks for the skill by name")
+check("Skill arguments: repo-one" in command[2],
+      "build_command forwards the slash command's trailing text as skill arguments")
+
+check("Skill arguments: none" in cp.normalize_skill_prompt("/cleanup-fleet-all "),
+      "normalize_skill_prompt: an argument-less command says so rather than trailing off")
+_plain = "Run the cleanup-fleet-all skill and report."
+check(cp.normalize_skill_prompt(_plain) == _plain,
+      "normalize_skill_prompt: a caller's own instruction is passed through untouched")
+check(cp.normalize_skill_prompt("not/a/command") == "not/a/command",
+      "normalize_skill_prompt: only a leading slash counts as a command")
+for _phrase in ("never ask a question", "never end your turn waiting to be resumed"):
+    check(_phrase in cp.normalize_skill_prompt("/fleet-health"),
+          "normalize_skill_prompt states the unattended contract: " + _phrase)
 check(command[-3:] == ["--output-format", "stream-json", "--verbose"],
       "build_command owns verbose stream-json output")
 check("--include-partial-messages" not in command,
@@ -332,6 +353,12 @@ INIT_LINE = (
     "print(json.dumps({'type':'system','subtype':'init',"
     "'claude_code_version':'stall-fixture','model':'fixture'}), flush=True); "
 )
+# fleet-config#689 made a clean exit with zero tool invocations red, so every
+# fixture that asserts `exit 0` has to invoke something, as any real run does.
+TOOL_LINE = (
+    "print(json.dumps({'type':'assistant','message':{'content':"
+    "[{'type':'tool_use','id':'t1','name':'Bash','input':{}}]}}), flush=True); "
+)
 stall_script = (
     "import json,subprocess,sys,time; "
     + INIT_LINE
@@ -388,6 +415,7 @@ check(any("⏱ stalled" in line for line in blocked_lines),
 chatty_script = (
     "import json,sys,time; "
     + INIT_LINE
+    + TOOL_LINE
     + "[ (print(json.dumps({'type':'system','subtype':'thinking_tokens',"
     "'estimated_tokens':1}), flush=True), time.sleep(0.2)) for _ in range(15) ]"
 )
@@ -405,7 +433,7 @@ check("no stream activity" not in chatty_output and "⏱ stalled" not in chatty_
 # Explicitly disabled: the watchdog must not fire at all.
 disabled_lines: list[str] = []
 disabled_exit = cp.run_process(
-    [sys.executable, "-c", "import json; " + INIT_LINE],
+    [sys.executable, "-c", "import json; " + INIT_LINE + TOOL_LINE],
     formatter=cp.ProgressFormatter(emit=disabled_lines.append),
     stall_timeout=0,
 )
@@ -422,6 +450,7 @@ CEILING = cp.BG_WAIT_CEILING_ENV
 ceiling_probe = (
     "import json,os,sys; "
     + INIT_LINE
+    + TOOL_LINE
     + f"sys.exit(0 if os.environ.get({CEILING!r}) == '0' else 3)"
 )
 ceiling_lines: list[str] = []
@@ -448,6 +477,7 @@ check(inherited_exit == 0,
 override_probe = (
     "import json,os,sys; "
     + INIT_LINE
+    + TOOL_LINE
     + f"sys.exit(0 if os.environ.get({CEILING!r}) == '900' else 3)"
 )
 override_lines: list[str] = []
@@ -802,6 +832,70 @@ try:
           "run_delivery_check: a check that cannot run is unconfirmed, never confirmed")
 finally:
     shutil.rmtree(_dc_tmp, ignore_errors=True)
+
+# ---- a run that invoked nothing is not a success (fleet-config#689) ----
+
+# The exact 2026-08-20 shape: session starts, model answers in prose, stream
+# completes, child exits 0 -- and not one tool was ever invoked. None of the
+# four detectors above can see it: nothing was killed, nothing stalled, the
+# stream was whole, and a skill that never started printed no failure marker.
+IDLE_REPLY = "Ready — what would you like to do?"
+idle_script = (
+    "import json,sys; "
+    + INIT_LINE
+    + f"reply = {IDLE_REPLY!r}; "
+    "print(json.dumps({'type':'assistant','message':{'content':"
+    "[{'type':'text','text':reply}]}}), flush=True); "
+    "print(json.dumps({'type':'result','subtype':'success','is_error':False,"
+    "'result':reply}), flush=True); "
+    "sys.exit(0)"
+)
+idle_lines: list[str] = []
+idle_formatter = cp.ProgressFormatter(emit=idle_lines.append)
+idle_exit = cp.run_process([sys.executable, "-c", idle_script], formatter=idle_formatter)
+idle_output = "\n".join(idle_lines)
+check(idle_exit == cp.NO_TOOL_USE_EXIT_CODE,
+      "a run that invoked no tools exits non-zero even though the child exited 0")
+check(not idle_formatter.saw_tool_use,
+      "the formatter records that nothing was ever invoked")
+check("invoked no tools" in idle_output,
+      "the terminal milestone names the no-tool cause distinctly")
+check("✅ completed" not in idle_output,
+      "a run that invoked nothing is never reported as completed")
+check(idle_exit not in {
+          cp.STALL_EXIT_CODE,
+          cp.BACKGROUND_KILL_EXIT_CODE,
+          cp.SELF_REPORTED_FAILURE_EXIT_CODE,
+          cp.TRUNCATED_STREAM_EXIT_CODE,
+          cp.DELIVERY_NOT_CONFIRMED_EXIT_CODE,
+      },
+      "the no-tool exit code stays distinct from all five codes already in use")
+
+# A sub-agent or workflow is a tool invocation too, and arrives on the system
+# channel rather than as an assistant `tool_use` block. An orchestrator that
+# only dispatches agents must not read as having done nothing.
+task_script = (
+    "import json,sys; "
+    + INIT_LINE
+    + "print(json.dumps({'type':'system','subtype':'task_started',"
+    "'description':'fan out'}), flush=True); "
+    "sys.exit(0)"
+)
+task_formatter = cp.ProgressFormatter(emit=lambda *_: None)
+task_exit = cp.run_process([sys.executable, "-c", task_script], formatter=task_formatter)
+check(task_exit == 0 and task_formatter.saw_tool_use,
+      "a dispatched task counts as work: task_started alone keeps the run green")
+
+# A child that failed on its own keeps its own verdict -- the no-tool wording
+# must not overwrite a cause the child already named.
+own_failure_lines: list[str] = []
+own_failure_exit = cp.run_process(
+    [sys.executable, "-c", "import json,sys; " + INIT_LINE + "sys.exit(7)"],
+    formatter=cp.ProgressFormatter(emit=own_failure_lines.append),
+)
+check(own_failure_exit == 7 and "invoked no tools" not in "\n".join(own_failure_lines),
+      "a child that exited non-zero keeps its own exit code and wording")
+
 
 # The launcher wires it up, or the whole mechanism is theoretical.
 _audit_bat = ROOT / ".claude" / "skills" / "audit-fleet" / "run-weekly.bat"
