@@ -60,16 +60,12 @@ class Result(NamedTuple):
     reason: Optional[str]
 
 
-class Unreadable(Exception):
-    """The repo's facts could not be established — so there is no verdict.
-
-    Raised instead of letting a failed `git` return an empty string that then
-    reads as a fact: an empty branch name is unequal to `main` (→ a confident
-    `DIRTY` about a repo never inspected) and empty porcelain reads as *clean*
-    (fleet-config#570 — five repos reported DIRTY at once, all five clean).
-    This helper exists to be the independent check on a sub-agent's
-    self-report, so a manufactured verdict here is worse than no verdict.
-    """
+# Re-exported, not redefined (fleet-config#677): this module exists to be the
+# independent check on a sub-agent's self-report, so a manufactured verdict here
+# is worse than no verdict — but that argument is `git_run.Unreadable`'s, and one
+# class means `repo_preflight` and this module can never drift apart on it.
+# `except dirty_tree_check.Unreadable` at every existing call site still works.
+Unreadable = git_run.Unreadable
 
 
 def evaluate(
@@ -110,18 +106,10 @@ def evaluate(
     raise ValueError(f"unknown mode: {mode}")
 
 
-def _run_git(repo_path: Path, *args: str) -> str:
-    """Stripped stdout, or `Unreadable` — never an empty string standing in for
-    a fact. `git_run.run_git` defaults to `check=False` and documents that the
-    caller inspects `.returncode`; this caller used not to."""
-    r = git_run.run_git(["-C", str(repo_path), *args])
-    if r.returncode != 0:
-        detail = (r.stderr or "").strip().splitlines()
-        raise Unreadable(
-            f"git {' '.join(args)} failed (exit {r.returncode})"
-            + (f": {detail[0]}" if detail else "")
-        )
-    return r.stdout.strip()
+# Stripped stdout, or `Unreadable` — never an empty string standing in for a
+# fact. Shared with `repo_preflight` (fleet-config#677); the local name is kept
+# so the call sites below read unchanged.
+_run_git = git_run.run_git_or_raise
 
 
 def detect_default_branch(repo_path: Path) -> str:

@@ -52,6 +52,7 @@ import sys
 import tempfile
 import time
 from pathlib import Path
+from typing import Iterator, Optional
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import git_run  # noqa: E402
@@ -386,17 +387,19 @@ def bucket_issue_numbers(issues: list[dict]) -> dict[str, int]:
     return result
 
 
-def audit_only_churn(commit_shas: list[str], prs: list[dict], managed_numbers: set[int]) -> bool:
-    """True only if every commit in range is explained by a self-fix PR.
+def _unexplained_commits(
+    commit_shas: list[str], prs: list[dict], managed_numbers: set[int]
+) -> Iterator[Optional[dict]]:
+    """Yield one entry per commit that is NOT explained as this repo's own
+    self-fix churn: the commit's PR, or `None` when no PR merged it at all.
 
     A commit is "explained" when it is the merge-commit of some PR in `prs`
     whose closingIssuesReferences are non-empty and entirely contained in
-    `managed_numbers`. Any unexplained commit (direct push, non-squash merge,
-    a PR outside the fetch window) or any PR closing something outside the
-    managed set fails closed to False — this must never produce a false skip.
+    `managed_numbers`. Both callers need exactly this walk and differ only in
+    what they do with the result — `audit_only_churn` asks whether the sequence
+    is empty, `unexplained_weighted_loc` sums a score over it — so the self-fix
+    rule is defined once and can only change in one place (fleet-config#677).
     """
-    if not commit_shas:
-        return True
     by_sha = {}
     for pr in prs:
         merge_commit = pr.get("mergeCommit") or {}
@@ -406,11 +409,25 @@ def audit_only_churn(commit_shas: list[str], prs: list[dict], managed_numbers: s
     for sha in commit_shas:
         pr = by_sha.get(sha)
         if pr is None:
-            return False
+            yield None
+            continue
         refs = {r["number"] for r in (pr.get("closingIssuesReferences") or [])}
         if not refs or not refs.issubset(managed_numbers):
-            return False
-    return True
+            yield pr
+
+
+def audit_only_churn(commit_shas: list[str], prs: list[dict], managed_numbers: set[int]) -> bool:
+    """True only if every commit in range is explained by a self-fix PR.
+
+    Any unexplained commit (direct push, non-squash merge, a PR outside the
+    fetch window) or any PR closing something outside the managed set fails
+    closed to False — this must never produce a false skip. An empty range is
+    vacuously True.
+    """
+    # `any(True for _ in ...)`, not `any(...)`: the generator yields `None` for
+    # a commit with no PR at all, which is falsy — a bare `any` would read that
+    # unexplained commit as explained, the exact false skip this guards against.
+    return not any(True for _ in _unexplained_commits(commit_shas, prs, managed_numbers))
 
 
 PR_TYPE_WEIGHTS = {
@@ -441,14 +458,13 @@ def pr_weight(branch: str) -> float:
 def unexplained_weighted_loc(commit_shas: list[str], prs: list[dict], managed_numbers: set[int]) -> float:
     """Weighted LOC of the commits NOT explained as this repo's own self-fix churn.
 
-    Mirrors `audit_only_churn`'s per-commit self-fix check, but instead of
-    failing closed to a bool, sums a significance score for every commit
-    that ISN'T explained — weighted by its PR's conventional branch-type
-    (`PR_TYPE_WEIGHTS`), so a docs-only or bug-fix-only commit contributes
-    little or nothing while a feature or refactor contributes fully.
-    Self-fix-explained commits (merge-commit of a PR whose
-    closingIssuesReferences are entirely within `managed_numbers`)
-    contribute nothing, regardless of type.
+    Walks the same `_unexplained_commits` sequence `audit_only_churn` does —
+    one definition of the self-fix rule — but instead of failing closed to a
+    bool, sums a significance score over it, weighted by each PR's conventional
+    branch-type (`PR_TYPE_WEIGHTS`), so a docs-only or bug-fix-only commit
+    contributes little or nothing while a feature or refactor contributes
+    fully. Self-fix-explained commits never reach this loop at all, so they
+    contribute nothing regardless of type.
 
     A commit with no matching PR at all (a direct push — never expected in
     this fleet's PR-only workflow) has no reliable LOC data, so it fails
@@ -456,21 +472,10 @@ def unexplained_weighted_loc(commit_shas: list[str], prs: list[dict], managed_nu
     than silently under-counting, exactly like `audit_only_churn`'s own
     fail-closed behavior for the same case.
     """
-    by_sha = {}
-    for pr in prs:
-        merge_commit = pr.get("mergeCommit") or {}
-        oid = merge_commit.get("oid")
-        if oid:
-            by_sha[oid] = pr
-
     total = 0.0
-    for sha in commit_shas:
-        pr = by_sha.get(sha)
+    for pr in _unexplained_commits(commit_shas, prs, managed_numbers):
         if pr is None:
             return float("inf")
-        refs = {r["number"] for r in (pr.get("closingIssuesReferences") or [])}
-        if refs and refs.issubset(managed_numbers):
-            continue
         loc = pr.get("additions", 0) + pr.get("deletions", 0)
         total += loc * pr_weight(pr.get("headRefName", ""))
     return total

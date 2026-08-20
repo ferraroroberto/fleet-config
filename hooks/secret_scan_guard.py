@@ -42,18 +42,17 @@ def _staged_diff(repo_cwd: Path) -> str:
 
     Any failure (not a repo, git missing, timeout) yields ``""`` — the guard then
     falls back to scanning just the command string and never blocks spuriously.
+
+    Routed through :func:`_lib.run_git` rather than a hand-rolled
+    ``subprocess.run(["git", …])`` (fleet-config#677): this fires on **every
+    commit in every repo in the fleet**, and a raw spawn silently opts out of
+    ``GIT_OPTIONAL_LOCKS=0`` — the one-line fix that exists precisely because
+    ``git diff`` takes ``.git/index.lock`` to write back a refreshed stat cache,
+    and a hook killed mid-refresh strands a 0-byte lock that blocks every write
+    in that repo while every read keeps exiting 0 (fleet-config#667).
     """
     try:
-        res = subprocess.run(
-            ["git", "diff", "--cached"],
-            cwd=str(repo_cwd),
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            timeout=10,
-            creationflags=_lib.NO_WINDOW,
-        )
+        res = _lib.run_git(["-C", str(repo_cwd), "diff", "--cached"], timeout=10)
     except (OSError, subprocess.SubprocessError):
         return ""
     return res.stdout or ""

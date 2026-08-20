@@ -52,6 +52,7 @@ REPO_ROOT = SKILL_DIR.parents[2]
 FLEET_ROOT = REPO_ROOT.parent
 
 sys.path.insert(0, str(REPO_ROOT / "skills" / "_lib"))
+from fleet_repo_scan import is_linked_worktree  # noqa: E402
 from no_window import NO_WINDOW  # noqa: E402
 from utf8_stdio import ensure_utf8_stdio  # noqa: E402
 
@@ -117,11 +118,6 @@ def select_assessed(current: dict[str, str], only: list[str] | None) -> dict[str
 
 # ---- surface enumeration ---------------------------------------------------
 
-def _is_linked_worktree(repo_dir: Path) -> bool:
-    git = repo_dir / ".git"
-    return git.exists() and git.is_file()
-
-
 def surface_files(fleet: bool) -> dict[str, Path]:
     """{ledger key: absolute path} for the requested surface."""
     out: dict[str, Path] = {}
@@ -140,7 +136,7 @@ def surface_files(fleet: bool) -> dict[str, Path]:
         for repo_dir in sorted(p for p in FLEET_ROOT.iterdir() if p.is_dir()):
             if repo_dir == REPO_ROOT or not (repo_dir / ".git").exists():
                 continue
-            if _is_linked_worktree(repo_dir):
+            if is_linked_worktree(repo_dir):
                 continue
             add(repo_dir / "CLAUDE.md")
             for skill_md in sorted(repo_dir.glob(".claude/skills/*/SKILL.md")):

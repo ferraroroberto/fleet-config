@@ -22,8 +22,8 @@ a fix for months):
 Both `/propagate-vendored --dry-run` and any future audit call `scan_fleet`
 directly rather than re-deriving either check by hand.
 
-Hashing is byte-exact (raw `subprocess` around `git show`, not the text-mode
-`git_run` wrapper used for path listings) — `hash-verify` in the propagation
+Hashing is byte-exact (`git_run.run_git_bytes` around `git show`, not the
+text-mode `git_run.run_git` used for path listings) — `hash-verify` in the propagation
 flow means "these are the identical bytes", not "these decode to the same
 text", so a text round-trip through UTF-8 would be the wrong contract here.
 
@@ -50,7 +50,6 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
-import subprocess
 import sys
 import tomllib
 from pathlib import Path
@@ -59,7 +58,6 @@ from typing import Dict, List, Optional
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import fleet_repo_scan  # noqa: E402
 import git_run  # noqa: E402
-from no_window import NO_WINDOW  # noqa: E402
 from utf8_stdio import ensure_utf8_stdio  # noqa: E402
 
 ensure_utf8_stdio()
@@ -136,13 +134,11 @@ def hash_dir_local(path: Path) -> Dict[str, str]:
 
 
 def _git_show_bytes(repo: Path, ref: str, relpath: str) -> Optional[bytes]:
-    """Raw bytes of `relpath` as committed at `ref` — deliberately bypasses
-    `git_run` (text-mode, UTF-8-decoded) so a hash comparison is byte-exact.
+    """Raw bytes of `relpath` as committed at `ref` — via `git_run.run_git_bytes`,
+    the bytes-mode wrapper, so a hash comparison stays byte-exact *without*
+    hand-rolling a spawn that opts out of `git_env()` (fleet-config#677).
     `None` on any git failure (bad ref, path absent at that commit, ...)."""
-    proc = subprocess.run(
-        ["git", "-C", str(repo), "show", f"{ref}:{relpath}"],
-        capture_output=True, check=False, creationflags=NO_WINDOW,
-    )
+    proc = git_run.run_git_bytes(["-C", str(repo), "show", f"{ref}:{relpath}"])
     return proc.stdout if proc.returncode == 0 else None
 
 
