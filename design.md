@@ -405,15 +405,15 @@ hand-picked per app.
 
 ## Base UI — model components on shadcn
 
-shadcn/ui (<https://ui.shadcn.com/docs/components>) is the reference for component
-**structure, markup, accessibility, and interaction** — its primitives encode the
-WAI-ARIA patterns correctly (on whichever backend you pick: [Radix UI](https://www.radix-ui.com/primitives) or [Base UI](https://base-ui.com/)). But
-**these apps are vanilla HTML/CSS/JS, not React**, so you do not install shadcn —
-you copy its *markup shape and interaction semantics* (the element structure, ARIA
-roles/states, keyboard behavior) by hand, then skin them with the fleet tokens
-above (colors, radii, spacing, and the `control` / `switch` dimensions). Before
-hand-rolling any control, read its shadcn component page and mirror that structure;
-don't reinvent interaction semantics shadcn already gets right.
+Model every interactive component on its **shadcn/ui** counterpart
+(<https://ui.shadcn.com/docs/components>). **These apps are vanilla HTML/CSS/JS,
+not React**, so you do not install shadcn — you copy its *markup shape and
+interaction semantics* (the element structure, ARIA roles/states, keyboard
+behavior) by hand, then skin them with the fleet tokens above (colors, radii,
+spacing, and the `control` / `switch` dimensions). Before hand-rolling any
+control, read its shadcn component page and mirror that structure; don't
+reinvent interaction semantics shadcn already gets right.
+*Why shadcn, and its Radix / Base UI backends: `fleet-config/docs/design-system.md`.*
 
 Mapping for the controls this fleet uses:
 
@@ -430,18 +430,10 @@ the tokens — that is how every app stays visually *and* behaviorally identical
 
 ## Icons
 
-One icon set, fleet-wide: **Lucide** (<https://lucide.dev>). This is the
-consistent choice rather than a new dependency — Lucide is shadcn/ui's default
-icon set, and the spec already endorses shadcn as the structural reference for
-every interactive component, so the glyphs and the component shapes come from the
-same vocabulary. Lucide ships ~1,600 icons under the permissive **ISC** license
-on a **24×24** grid with a **2px** outline stroke — the calm, GitHub-mobile
-line-icon style this identity is modelled on — and it ships as plain **SVG**, so
-it drops into these vanilla HTML/CSS/JS PWAs with **no React and no build step**.
-Unlike an icon font it carries no web-font payload, consistent with the
-system-font, instant-first-paint typography choice above. Radix Icons (the set
-behind the Radix UI reference above) was considered and rejected: ~300 glyphs at
-15×15 is too small a library to dress a multi-app fleet.
+One icon set, fleet-wide: **Lucide** (<https://lucide.dev>) — plain **SVG** on a
+**24×24** grid with a **2px** outline stroke, no React and no build step, no
+web-font payload.
+*Why Lucide, and the rejected alternative: `fleet-config/docs/design-system.md`.*
 
 Use Lucide everywhere the fleet shows an icon: the bottom-nav **tabs** (icon +
 label, per the Navigation contract), the **disclosure** header glyph (with the
@@ -479,7 +471,7 @@ byte-for-byte components.
 - **Do** reserve bottom padding for the fixed nav so content is never occluded.
 - **Do** give every interactive element the one tokenized `:focus-visible` ring — never leave focus to the browser default.
 - **Do** color a switch's on-track green (`success`) — the universal on-state.
-- **Do** size every glyph from the canonical `icons.size` steps (16 / 18 / 24) — don't hand-pick a one-off size.
+- **Do** size every glyph from the canonical `icons.size` steps (16 / 18 / 20 / 24 — `inline` / `title` / `nav-tab` / `feature`) — don't hand-pick a one-off size.
 - **Do** honor `prefers-reduced-motion` — collapse authored animation to near-instant.
 - **Do** ship the user-selectable theme: pre-paint `data-theme` boot script + persisted sun/moon toggle on the main view — never dark-only or OS-only.
 - **Do** render a repeating list of entries (history, activity log) as flat full-bleed rows on a hairline divider — never nested cards per entry.

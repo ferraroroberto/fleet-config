@@ -1,6 +1,6 @@
 # Roberto's System — Architecture
 
-> The system explained layer by layer: how I reach it, what runs it, the shared tools that enable everything, the apps I actually use, and the governance on top. This document is the **source of truth** — the visual map (horizontal, Janis-style) is generated *from* the structure below, so the knowledge lives here in words first.
+> The system explained layer by layer: how I reach it, what runs it, the shared tools that enable everything, the apps I actually use, and the governance on top. This document is the **narrative companion** to the map, not its source: the visual map (horizontal, Janis-style) is generated from each repo's `.fleet.toml` plus `fleet.residual.json` by `.claude/skills/system-map/build_data.py`, which never reads this file. Edit a row here in the **same PR** as the `.fleet.toml` change it describes — `tests/run_acceptance.py` asserts the two never drift apart.
 
 ## How to read this doc (fixed structure)
 
@@ -190,8 +190,6 @@ External connections come from **two sources**: the **orchestration layer** (app
 ## Maintaining this doc
 
 - **Structure is fixed** (the layers and the per-project schema above). When the fleet changes, only the **rows** change — add/edit a project line in the right layer with the same fields.
-- The **visual map is generated from this file**: it reads the layers + per-project rows and lays them out as horizontal blocks (light theme, Janis-style). Keeping descriptions here means the picture never goes stale.
-- Source of fleet membership: `hooks/projects.toml`. Source of per-project descriptions: each repo's `README.md` / `CLAUDE.md`.
+- The **visual map is not generated from this file**: `.claude/skills/system-map/build_data.py` assembles `fleet.data.js` from each repo's root `.fleet.toml` (authoritative when present) plus the hand-maintained `fleet.residual.json` fallback. This doc is the human-readable companion that data must agree with — edit a row here in the **same PR** as the `.fleet.toml` change, and `tests/run_acceptance.py` will fail the gate if the two drift apart.
+- Source of fleet membership: `hooks/projects.toml`. Source of per-project descriptions: each repo's `.fleet.toml` (fallback `fleet.residual.json`), distilled from its `README.md` / `CLAUDE.md`.
 - **Excluded repos** (vendored, legacy, or out-of-scope) are listed once in `hooks/projects.toml` under `[global] architecture_ignore` — the doc and the generated visual both skip them, so the exclusion stays maintainable in one place. Currently: `suna`, `externalrisk`, `arboldelossuenos`, `notion-automation-files`.
-
-> Status: **draft for review.** Verify the L2/L3 split matches how you think about "enabling vs. working."
