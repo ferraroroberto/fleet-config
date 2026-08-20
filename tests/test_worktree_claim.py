@@ -1,8 +1,11 @@
-"""Unit tests for the pure logic in skills/_lib/worktree_claim.py.
+"""Unit tests for the pure logic in skills/_lib/worktree_claim.py and
+skills/_lib/service_probe.py, the live-service capability it calls.
 
 No git, no real worktrees — exercises the claim FSM (atomic acquire, the
-worktree fallback when held, TTL-based stale reclaim) and the sibling-path
-convention. The git/junction ops are Windows-side and proven by the live
+worktree fallback when held, TTL-based stale reclaim), the sibling-path
+convention, and the declaration/probe/verdict half `land-primary` asks before
+fast-forwarding a tree something might be serving (fleet-config#680: the probe
+moved to its own module; its evidence stays here, beside its caller). The git/junction ops are Windows-side and proven by the live
 two-terminal check; this guards the decision logic that decides primary vs
 worktree.
 
@@ -24,6 +27,7 @@ import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "skills" / "_lib"))
+import service_probe as sp  # noqa: E402
 import worktree_claim as wc  # noqa: E402
 
 sys.path.insert(0, str(Path(__file__).resolve().parent / "_lib"))
@@ -279,6 +283,26 @@ check(ok is False and "detached HEAD" in reason,
       "land_primary_check: detached-HEAD primary refuses by name, not as an empty branch")
 
 
+# ---- the live-service capability is reachable without the claim FSM (#680) ----
+#
+# It moved to `service_probe.py` precisely so `/issue-finish`, the webapp
+# restart helper, and any future health sweep can ask "is this repo's declared
+# service up?" without importing the 1400-line worktree module -- so the checks
+# below drive it as `sp.`, and the new module importing standalone is itself
+# asserted (a broken import is an ImportError before any check runs). Two more
+# structural facts, both of which would otherwise fail silently: `land-primary`
+# reaches the *same object* rather than a second copy, and the probe never
+# imports the claim module back -- the dependency runs one way.
+check(wc.service_state is sp.service_state,
+      "service_probe: worktree_claim calls service_probe's own service_state, not a copy")
+for _name in ("SERVICE_LIVE", "live_service_check", "declared_service",
+              "listening_ports", "probe_service"):
+    check(not hasattr(wc, _name),
+          f"service_probe: {_name} has exactly one home -- worktree_claim no longer carries it")
+check("worktree_claim" not in sys.modules["service_probe"].__dict__,
+      "service_probe: does not import worktree_claim back -- the dependency runs one way")
+
+
 # ---- live_service_check: the fourth guard -- don't land a tree in use (#665) ----
 #
 # `#647`'s three questions were all satisfied when the app-launcher#773 lane
@@ -288,26 +312,26 @@ check(ok is False and "detached HEAD" in reason,
 # landing is behind-but-coherent, landing is behind-AND-skewed -- so the
 # declared-and-running case refuses, and there is no "landed anyway" variant.
 
-ok, reason = wc.live_service_check(True, wc.SERVICE_LIVE, port=8445, running_sha="9af573f")
+ok, reason = sp.live_service_check(True, sp.SERVICE_LIVE, port=8445, running_sha="9af573f")
 check(ok is False, "live_service_check: declared tray + live webapp -> refuse (the #665 case)")
 check("8445" in reason and "9af573f" in reason,
       "live_service_check: refusal names the port and the commit actually running")
 check("restart" in reason,
       "live_service_check: refusal names the restart as the remedy, not a repair")
 
-check(wc.live_service_check(False, wc.SERVICE_UNKNOWN,
+check(sp.live_service_check(False, sp.SERVICE_UNKNOWN,
                             detail="fleet-config declares no tray_cmd")[0] is True,
       "live_service_check: no tray_cmd -> lands unconditionally (the #647 junction case)")
-check(wc.live_service_check(True, wc.SERVICE_ABSENT,
+check(sp.live_service_check(True, sp.SERVICE_ABSENT,
                             port=8445, detail="nothing listening on 127.0.0.1:8445")[0] is True,
       "live_service_check: declared but not running -> nothing is served, landing is safe")
 
-for probe in (wc.SERVICE_UNKNOWN, "", "garbled"):
-    ok, reason = wc.live_service_check(True, probe, port=8445, detail="probe timed out")
+for probe in (sp.SERVICE_UNKNOWN, "", "garbled"):
+    ok, reason = sp.live_service_check(True, probe, port=8445, detail="probe timed out")
     check(ok is False and "cannot confirm" in reason,
           f"live_service_check: unestablished probe ({probe!r}) refuses -- never folded into a pass")
 
-ok, reason = wc.live_service_check(True, wc.SERVICE_UNKNOWN,
+ok, reason = sp.live_service_check(True, sp.SERVICE_UNKNOWN,
                                    detail="no webapp_port declared to probe")
 check(ok is False and "no webapp_port" in reason,
       "live_service_check: tray declared with nothing to probe -> refuse, saying why")
@@ -315,18 +339,18 @@ check(ok is False and "no webapp_port" in reason,
 # Composition: the new guard is fourth, so the older refusals still speak first.
 ok, reason = wc.land_primary_check(None, "665", dirty=False,
                                    current_branch="main", main_branch="main", behind=1,
-                                   service=wc.live_service_check(True, wc.SERVICE_LIVE, port=8445))
+                                   service=sp.live_service_check(True, sp.SERVICE_LIVE, port=8445))
 check(ok is False and "live process serving this tree" in reason,
       "land_primary_check: clean, on main, claim free -- and still refused for the live service")
 check(wc.format_primary_state(*wc.land_primary_check(
           None, "665", dirty=False, current_branch="main", main_branch="main", behind=1,
-          service=wc.live_service_check(True, wc.SERVICE_LIVE, port=8445, running_sha="9af573f")))
+          service=sp.live_service_check(True, sp.SERVICE_LIVE, port=8445, running_sha="9af573f")))
       == ("PRIMARY=stale reason=live process serving this tree (webapp :8445 at 9af573f); "
           "restart required, not a fast-forward"),
       "land_primary_check: the live-service refusal reaches the summary as one PRIMARY=stale line")
 check(wc.land_primary_check(None, "665", dirty=True,
                             current_branch="main", main_branch="main", behind=1,
-                            service=wc.live_service_check(True, wc.SERVICE_LIVE, port=8445)
+                            service=sp.live_service_check(True, sp.SERVICE_LIVE, port=8445)
                             )[1] == "working tree has uncommitted changes",
       "land_primary_check: a dirty tree still reports its own reason, not the service one")
 
@@ -341,7 +365,7 @@ check(wc.land_primary_check(None, "665", dirty=True,
 # downgrades an *established* fact, the mirror of the unknown-is-not-pass rule,
 # and teaches the reader to ignore the one line #647 exists to produce.
 
-LIVE_SERVICE = wc.live_service_check(True, wc.SERVICE_LIVE, port=8502, running_sha="6f8f641")
+LIVE_SERVICE = sp.live_service_check(True, sp.SERVICE_LIVE, port=8502, running_sha="6f8f641")
 
 ok, reason = wc.land_primary_check(None, "671", dirty=False,
                                    current_branch="main", main_branch="main", behind=0,
@@ -354,10 +378,10 @@ check(wc.land_primary_check(None, "671", dirty=False,
                             current_branch="main", main_branch="main", behind=0,
                             service=NO_SERVICE)[0] is True,
       "land_primary_check: level tree with no service declared still passes")
-for probe in (wc.SERVICE_UNKNOWN, "garbled"):
+for probe in (sp.SERVICE_UNKNOWN, "garbled"):
     check(wc.land_primary_check(None, "671", dirty=False,
                                 current_branch="main", main_branch="main", behind=0,
-                                service=wc.live_service_check(True, probe, port=8502))[0] is True,
+                                service=sp.live_service_check(True, probe, port=8502))[0] is True,
           f"land_primary_check: level tree passes even on an unestablished probe ({probe!r})")
 
 # The #665 guard itself is untouched: genuinely behind + live service refuses.
@@ -422,15 +446,15 @@ finally:
 _toml_base = Path(tempfile.mkdtemp(prefix="wc-toml-"))
 try:
     missing = _toml_base / "nope.toml"
-    check(wc.declared_service(Path("E:/automation/app-launcher"), missing)[0] is True,
+    check(sp.declared_service(Path("E:/automation/app-launcher"), missing)[0] is True,
           "declared_service: unreadable projects.toml -> declared, i.e. refuse (never a silent pass)")
-    ok, reason = wc.service_state(Path("E:/automation/app-launcher"), missing)
+    ok, reason = sp.service_state(Path("E:/automation/app-launcher"), missing)
     check(ok is False and "could not read hooks/projects.toml" in reason,
           f"service_state: a table it cannot read names that as the reason (got {reason!r})")
 
     broken = _toml_base / "broken.toml"
     broken.write_text("[unclosed\n", encoding="utf-8")
-    ok, reason = wc.service_state(Path("E:/automation/app-launcher"), broken)
+    ok, reason = sp.service_state(Path("E:/automation/app-launcher"), broken)
     check(ok is False and "could not read hooks/projects.toml" in reason,
           "service_state: a malformed table refuses too -- a failed parse is not a declaration")
 
@@ -439,12 +463,12 @@ try:
         '[app-launcher]\ncwd_prefix = "E:/automation/app-launcher"\n'
         'webapp_port = 8445\ntray_cmd = "tray.bat"\napi_version_path = "/api/version"\n'
         '[fleet-config]\ncwd_prefix = "E:/automation/fleet-config"\n', encoding="utf-8")
-    check(wc.declared_service(Path("E:/automation/app-launcher"), declaring)
+    check(sp.declared_service(Path("E:/automation/app-launcher"), declaring)
           == (True, 8445, "/api/version", ""),
           "declared_service: tray_cmd + port + api path are read straight off the table")
-    check(wc.declared_service(Path("E:\\automation\\app-launcher"), declaring)[0] is True,
+    check(sp.declared_service(Path("E:\\automation\\app-launcher"), declaring)[0] is True,
           "declared_service: a backslash path matches a forward-slash cwd_prefix (same tree)")
-    check(wc.declared_service(Path("E:/automation/fleet-config"), declaring)[0] is False,
+    check(sp.declared_service(Path("E:/automation/fleet-config"), declaring)[0] is False,
           "declared_service: no tray_cmd -> no service, whatever else the table says (#647 intact)")
 finally:
     shutil.rmtree(_toml_base, ignore_errors=True)

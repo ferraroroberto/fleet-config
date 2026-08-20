@@ -34,7 +34,8 @@ _STANDALONE_UNIT_CHECKS: Tuple[Tuple[str, str, str], ...] = (
     ("worktree_claim", "test_worktree_claim.py",
      "the claim FSM -- atomic acquire, the worktree fallback when held, "
      "TTL stale-reclaim, and the sibling-path convention -- is testable "
-     "on its own"),
+     "on its own; the same file covers `service_probe.py`, the live-service "
+     "capability land-primary's fourth guard calls (fleet-config#680)"),
     ("cleanup_fleet_all_flow", "test_cleanup_fleet_all_flow.py",
      "the cleanup-fleet-all workflow script's control flow -- strict lane "
      "seriality, teardown on every terminal path, and halt-on-residue -- is "
@@ -128,7 +129,9 @@ _STANDALONE_UNIT_CHECKS: Tuple[Tuple[str, str, str], ...] = (
      "alive-worker count, the three dispatch refusals (occupied repo, "
      "at/over worker cap, unconfirmed yolo), the non-loopback-host "
      "guard, and the board-digest formatting -- is testable on its own, "
-     "with no live launcher or `gh` call required (fleet-config#445)"),
+     "with no live launcher or `gh` call required (fleet-config#445); the "
+     "same file covers `steer_delivery.py`, the say --verify classifier "
+     "(fleet-config#680)"),
     ("chief_managed", "test_chief_managed.py",
      "the chief-managed session marker -- mark/is_managed, cross-sid "
      "isolation, and the 24h TTL prune -- is testable on its own, with "

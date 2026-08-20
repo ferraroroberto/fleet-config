@@ -115,6 +115,17 @@ def main() -> None:
     if _lib.tool_name(payload) not in GUARDED_TOOLS:
         _lib.allow()
 
+    # Cheapest *and* most selective gate first (fleet-config#680). Only a
+    # launcher-dispatched session can ever be blocked here, and the vast
+    # majority of live sessions are interactive ones that carry no such
+    # variable — so asking this before `_current_branch`/`_default_branch`
+    # keeps two `git` spawns off every Edit/Write in every ordinary session
+    # fleet-wide. `run_git`'s own docstring calls this "by far the
+    # highest-frequency git spawn this repo owns"; the whole decision below is
+    # pure, so ordering these guards changes cost, never verdict.
+    if not os.environ.get("APP_LAUNCHER_SESSION_ID", "").strip():
+        _lib.allow()
+
     if os.environ.get("CLAUDE_HOOKS_ALLOW_MAIN_EDIT") == "1":
         _lib.allow()
 
@@ -141,9 +152,6 @@ def main() -> None:
 
     default_branch = _default_branch(target_dir)
     if branch != default_branch:
-        _lib.allow()
-
-    if not os.environ.get("APP_LAUNCHER_SESSION_ID", "").strip():
         _lib.allow()
 
     if _is_ignored(target):

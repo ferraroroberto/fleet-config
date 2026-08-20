@@ -35,7 +35,7 @@ def fleet_repo_tables(projects_toml: Optional[Path] = None) -> Dict[str, dict]:
     The membership half of `fleet_repos` without the projection down to a
     path: callers that need a *declaration* rather than a location — is there
     a `tray_cmd`, which `webapp_port`, which `api_version_path`
-    (`worktree_claim.declared_service`, fleet-config#665) — read it here
+    (`service_probe.declared_service`, fleet-config#665) — read it here
     instead of re-parsing the file. Deliberately **not** filtered by
     ``[global] architecture_ignore``: that list says a repo is out of scope
     for the architecture map, never that it has no long-running process.
