@@ -751,9 +751,15 @@ def _junction(link: Path, target: Path) -> Tuple[bool, str]:
     the caller decides whether a failure is fatal.
     """
     link.parent.mkdir(parents=True, exist_ok=True)
+    # encoding pinned to the OEM code page: `mklink` is a native console tool
+    # and emits cp850 here, which is not valid UTF-8. Under bare text=True the
+    # decode yields empty output, so setup_worktree aborted with
+    # "Failed to junction <rel> into the worktree:" and an *empty* reason
+    # (fleet-config#679). Same rule listening_ports() below already documents.
     res = subprocess.run(
         ["cmd", "/c", "mklink", "/J", str(link), str(target)],
-        capture_output=True, text=True, creationflags=NO_WINDOW,
+        capture_output=True, encoding="oem", errors="replace",
+        creationflags=NO_WINDOW,
     )
     ok = res.returncode == 0 and link.exists()
     return ok, "" if ok else (res.stderr.strip() or res.stdout.strip())
@@ -768,9 +774,12 @@ def _strip_junction(path: Path) -> None:
     keeps the primary's real .venv intact (fleet-config#136 / #143).
     """
     if path.exists() or path.is_symlink():
+        # encoding="oem" for the same reason as _junction: cmd's own error text
+        # is OEM-encoded and bare text=True silently blanks it (fleet-config#679).
         subprocess.run(
             ["cmd", "/c", "rmdir", str(path)],
-            capture_output=True, text=True, creationflags=NO_WINDOW,
+            capture_output=True, encoding="oem", errors="replace",
+            creationflags=NO_WINDOW,
         )
 
 

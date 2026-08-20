@@ -432,12 +432,26 @@ def collect_pytest_node_count(repo_root: Path, test_dirs: List[str]) -> Optional
     reports None rather than crashing; the caller treats that as "not
     measured", matching the fleet's fail-open convention for optional
     measurements.
+
+    Every `None` exit writes a one-line reason to stderr first. A silent
+    `None` is indistinguishable from a genuinely tiny suite once `scan`
+    substitutes the raw function count into `ratio`, so a repo whose pytest
+    collection is *broken* produced the same headline number as a healthy one
+    (fleet-config#679). `index_lock.git_processes_running` is the in-repo
+    model for this shape.
     """
     python_exe = repo_root / ".venv" / "Scripts" / "python.exe"
     if not python_exe.is_file():
+        sys.stderr.write(
+            f"e2e_test_audit: node count not measured — no venv interpreter at {python_exe}\n"
+        )
         return None
     existing_dirs = [d for d in test_dirs if (repo_root / d).is_dir()]
     if not existing_dirs:
+        sys.stderr.write(
+            f"e2e_test_audit: node count not measured — none of the declared test dirs "
+            f"{test_dirs or '[]'} exist under {repo_root}\n"
+        )
         return None
     try:
         res = subprocess.run(
@@ -450,10 +464,19 @@ def collect_pytest_node_count(repo_root: Path, test_dirs: List[str]) -> Optional
             timeout=120,
             creationflags=NO_WINDOW,
         )
-    except (OSError, subprocess.SubprocessError):
+    except (OSError, subprocess.SubprocessError) as exc:
+        sys.stderr.write(
+            f"e2e_test_audit: node count not measured — pytest --collect-only failed in "
+            f"{repo_root} ({type(exc).__name__}: {exc})\n"
+        )
         return None
     m = re.search(r"^(\d+) tests? collected", res.stdout, re.MULTILINE)
     if not m:
+        tail = (res.stdout or res.stderr or "").strip().replace("\n", " ")[-200:]
+        sys.stderr.write(
+            f"e2e_test_audit: node count not measured — no 'N tests collected' line in "
+            f"pytest output for {repo_root} (exit {res.returncode}): {tail!r}\n"
+        )
         return None
     return int(m.group(1))
 

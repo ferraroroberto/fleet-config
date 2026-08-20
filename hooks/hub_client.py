@@ -11,9 +11,12 @@ digest, retry next run) instead of failing. Nothing here ever raises.
 
 Config via env so a backend swap needs no code change:
   * ``HUB_URL``        — default ``http://127.0.0.1:8000/v1``
-  * ``HUB_CHAT_MODEL`` — default ``claude-haiku-4-5`` (cheap digest tier;
-                         point at ``claude-sonnet-4-6`` / a local model id when
-                         that backend is loaded)
+  * ``HUB_CHAT_MODEL`` — default ``claude_haiku`` (cheap digest tier; point at
+                         ``claude_sonnet`` / a local model id when that backend
+                         is loaded). Deliberately the hub's stable *alias*, not
+                         a versioned id: the hub runs a latest-only policy, so a
+                         copied ``claude-haiku-4-5`` stops resolving the day the
+                         row flips to haiku-5 (fleet-config#679)
 """
 
 from __future__ import annotations
@@ -27,7 +30,13 @@ import urllib.request
 logger = logging.getLogger("hub_client")
 
 HUB_URL = os.environ.get("HUB_URL", "http://127.0.0.1:8000/v1").rstrip("/")
-DEFAULT_MODEL = os.environ.get("HUB_CHAT_MODEL", "claude-haiku-4-5")
+# The hub's stable alias, never a versioned id. local-llm-hub replaces a row
+# outright when a newer model ships ("latest-only"), so a pinned
+# `claude-haiku-4-5` starts 404ing on the next bump and `complete()` returns
+# None forever after. The failure is invisible: the indexer is spawned
+# detached with stdout/stderr DEVNULL, so the warning reaches nobody
+# (fleet-config#679).
+DEFAULT_MODEL = os.environ.get("HUB_CHAT_MODEL", "claude_haiku")
 
 
 def complete(

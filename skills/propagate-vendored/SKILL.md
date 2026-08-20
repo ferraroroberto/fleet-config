@@ -191,7 +191,10 @@ You are the only agent touching this checkout.
    FULL sha, not the short form).
 
 5. Run this repo's verification gate (its own CLAUDE.md / hooks/projects.toml
-   gate_cmd — e.g. `pwsh -File scripts/verify-before-ship.ps1`). A gate
+   gate_cmd — e.g.
+   `C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe -File scripts/verify-before-ship.ps1`,
+   never bare `pwsh`: on this machine that is a 0-byte WindowsApps stub which
+   fails non-interactively). A gate
    FAILURE is a genuine blocker: STOP, do not weaken or skip it, report FAILED.
 
 6. Commit (conventional, no AI-attribution trailer):

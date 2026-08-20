@@ -54,9 +54,13 @@ ISSUE_FIELDS = "number,title,body,labels,url,createdAt,updatedAt,assignees"
 
 
 def list_owner_repos() -> List[str]:
+    # encoding pinned to UTF-8: `gh` emits UTF-8, and bare text=True decodes with
+    # the ambient Windows locale (cp1252), which raises UnicodeDecodeError on the
+    # first non-ASCII byte. errors="replace" never throws (fleet-config#679).
     proc = subprocess.run(
         ["gh", "repo", "list", OWNER, "--json", "name", "--limit", "300", "--no-archived"],
-        capture_output=True, text=True, timeout=GH_TIMEOUT_SECONDS, creationflags=NO_WINDOW,
+        capture_output=True, text=True, encoding="utf-8", errors="replace",
+        timeout=GH_TIMEOUT_SECONDS, creationflags=NO_WINDOW,
     )
     if proc.returncode != 0:
         raise RuntimeError((proc.stderr or proc.stdout or "gh repo list failed").strip())
@@ -69,8 +73,13 @@ def fetch_repo_issues(repo: str, label: str | None) -> List[Dict[str, Any]]:
     cmd = ["gh", "issue", "list", "--repo", f"{OWNER}/{repo}", "--state", "open", "--json", ISSUE_FIELDS]
     if label:
         cmd += ["--label", label]
+    # encoding pinned to UTF-8 (see list_owner_repos): this call requests `body`,
+    # and issue bodies routinely carry em dashes and emoji. Under the cp1252
+    # default one such repo raised UnicodeDecodeError and dropped out of the
+    # working set as an ERROR row (fleet-config#679).
     proc = subprocess.run(
-        cmd, capture_output=True, text=True, timeout=GH_TIMEOUT_SECONDS, creationflags=NO_WINDOW,
+        cmd, capture_output=True, text=True, encoding="utf-8", errors="replace",
+        timeout=GH_TIMEOUT_SECONDS, creationflags=NO_WINDOW,
     )
     if proc.returncode != 0:
         raise RuntimeError((proc.stderr or proc.stdout or "gh issue list failed").strip())

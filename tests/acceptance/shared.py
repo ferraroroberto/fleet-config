@@ -22,6 +22,14 @@ from typing import Any, Dict, Tuple
 REPO = Path(__file__).resolve().parent.parent.parent
 HOOKS = REPO / "hooks"
 
+# The exit code a standalone `tests/test_*.py` suite uses to say "I could not
+# establish my facts" -- distinct from 0 (ran, all passed) and from any other
+# non-zero (ran, failed). `_subprocess_unit_check` renders it as SKIP and it
+# lands in neither Total nor Failed (fleet-config#679). Deliberately not 2:
+# 2 is what an unhandled `SystemExit`/argparse error uses, and a crash must
+# never be mistaken for an honest skip.
+SKIP_EXIT = 3
+
 
 def _is_windowsapps_alias(path: str) -> bool:
     return "\\windowsapps\\" in path.replace("/", "\\").lower()
@@ -130,18 +138,33 @@ class _Checker:
             print(f"        | {line}")
 
 
-def _subprocess_unit_check(label: str, test_file: str) -> Tuple[int, int]:
+def _subprocess_unit_check(label: str, test_file: str) -> Tuple[int, int, int]:
     """Run a standalone pure-logic test file as a subprocess and report it as
-    one pass/fail check -- the shared body every row of
+    one pass/fail/skip check -- the shared body every row of
     `standalone_dispatch._STANDALONE_UNIT_CHECKS` points at one focused file
-    under tests/. Returns (failures, total=1)."""
+    under tests/. Returns (failures, total, skipped).
+
+    Exit codes: 0 = the suite ran and every check passed; `SKIP_EXIT` = the
+    suite could not establish its facts (a missing interpreter or toolchain,
+    never a real failure); anything else = failed. The third state exists
+    because exit 0 was previously the only way for a suite to say "I did not
+    run", which printed a bare `OK` in the gate output while verifying nothing
+    (fleet-config#679). A skipped suite counts toward neither Total nor
+    Failed, exactly like `_Checker.advisory`, and its stdout is echoed so the
+    reason is visible.
+    """
     proc = subprocess.run(
         [PYTHON, str(REPO / "tests" / test_file)],
         capture_output=True, text=True, encoding="utf-8", errors="replace",
     )
+    if proc.returncode == SKIP_EXIT:
+        print(f"SKIP  {label}: pure-logic unit tests NOT verified")
+        for line in (proc.stdout or "").strip().splitlines():
+            print(f"        | {line}")
+        return 0, 0, 1
     ok = proc.returncode == 0
     print(f"{'OK   ' if ok else 'FAIL '} {label}: pure-logic unit tests")
     if not ok:
         for line in (proc.stdout or "").strip().splitlines():
             print(f"        | {line}")
-    return (0 if ok else 1), 1
+    return (0 if ok else 1), 1, 0

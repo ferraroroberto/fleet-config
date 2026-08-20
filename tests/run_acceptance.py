@@ -111,7 +111,11 @@ def main() -> int:
     run_unit(run_hook_matrix)
 
     # ---- context filter hook JSON + fixture eval ----
-    run_unit(_context_filter_unit_checks)
+    # run_unit3: three of its cases probe integrations installed *outside* this
+    # repo (~/.codex hooks junction, the copilot hook, the agy plugin). A
+    # machine without one of them cannot establish the fact, so it reports as
+    # skipped instead of folding into the pass count (fleet-config#679).
+    run_unit3(_context_filter_unit_checks)
 
     # ---- slack_notify unit checks (pure / no network) ----
     run_unit(_slack_notify_unit_checks)
@@ -186,9 +190,13 @@ def main() -> int:
     # acceptance/standalone_dispatch.py's table -- new suite = one row added
     # there, no new wrapper/import/registration here (fleet-config#505) ----
     for _label, _test_file, _why in _STANDALONE_UNIT_CHECKS:
-        f, t = _subprocess_unit_check(_label, _test_file)
+        # Three-state like run_unit3: a suite that exits shared.SKIP_EXIT could
+        # not establish its facts (missing toolchain) and lands in Skipped, not
+        # in a bare `OK` that verified nothing (fleet-config#679).
+        f, t, s = _subprocess_unit_check(_label, _test_file)
         failures += f
         total_checks += t
+        skipped_checks += s
 
     # ---- learning-log report.py pure helpers (.claude/skills/learning-log) ----
     run_unit(_learning_log_unit_checks)
