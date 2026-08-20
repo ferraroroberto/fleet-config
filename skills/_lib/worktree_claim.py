@@ -169,6 +169,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import shutil
 import socket
 import ssl
@@ -675,6 +676,23 @@ def _looks_like_worktree_name(name: str) -> bool:
     return bool(sep) and bool(stem) and bool(issue)
 
 
+# `.fleet.toml` is repo-authored data that travels between repos, and a declared
+# target is used to build an OS-level command. Validate it here, at the one
+# place it enters, rather than trusting it at each use site. An allowlist rather
+# than a denylist: every real target is an ordinary directory name (`.venv`,
+# `vendor/comfyui`, `models/cache`), so nothing legitimate is turned away.
+_SAFE_COMPONENT = re.compile(r"^[A-Za-z0-9 ._-]+$")
+
+
+def _safe_relpath(rel: str) -> bool:
+    """True if every component of `rel` is an ordinary directory name.
+
+    Also rejects a drive-qualified entry (`C:/x` -> first part `C:\\`), which
+    the `..` check alone would let through.
+    """
+    return all(_SAFE_COMPONENT.match(part) for part in Path(rel).parts)
+
+
 def worktree_junction_targets(repo: Path) -> list:
     """Relative paths to junction from the primary checkout into a fresh worktree.
 
@@ -687,9 +705,11 @@ def worktree_junction_targets(repo: Path) -> list:
 
     No `.fleet.toml`, no `[worktree]` table, or a malformed value all degrade
     to the `.venv`-only default -- an undeclared repo behaves exactly as
-    before (fleet-config#620). Entries that aren't non-empty strings, or that
-    contain a `..` component, are silently dropped rather than junctioning
-    outside the repo. Pure path/text logic -- no filesystem checks here;
+    before (fleet-config#620). Entries that aren't non-empty strings, that
+    contain a `..` component, or whose components are not ordinary directory
+    names (`_safe_relpath`) are silently dropped rather than junctioning
+    outside the repo or being used unvalidated. Pure path/text logic --
+    no filesystem checks here;
     `setup_worktree` skips a declared target that doesn't actually exist in
     the primary.
     """
@@ -716,7 +736,7 @@ def worktree_junction_targets(repo: Path) -> list:
         if not isinstance(item, str) or not item.strip():
             continue
         rel = item.strip().strip("/\\")
-        if rel and ".." not in Path(rel).parts:
+        if rel and ".." not in Path(rel).parts and _safe_relpath(rel):
             targets.append(rel)
     return targets
 
