@@ -146,6 +146,25 @@ UNKNOWN_BURST_WINDOW_SECONDS = 15.0
 UNKNOWN_BURST_THRESHOLD = 3
 TRUNCATED_STREAM_EXIT_CODE = 122
 
+# The fifth shape, and the one none of the four above can see: a run that
+# starts, answers in prose, and ends its turn normally -- never having invoked a
+# single tool. On 2026-08-20 `/cleanup-fleet-all` did exactly that in 5.3s and
+# reported `exit 0` (fleet-config#689); the stream was complete, nothing was
+# killed, no watchdog fired, and the skill printed no failure marker, because
+# from the CLI's point of view nothing went wrong. The job card was green.
+#
+# `SELF_REPORTED_FAILURE_MARKER` cannot cover this: it needs the skill to reach
+# its own final report and assert something, and a skill that never started has
+# no report to print. This detector deliberately judges nothing about *what* a
+# run did -- only that a scheduled skill which invoked zero tools cannot have
+# done its job, whatever prose it emitted. That is the one claim the adapter can
+# make about an arbitrary skill without knowing anything about it.
+#
+# 121-125 is a crowded namespace by now; this one takes the last free rung
+# below the four symptom detectors and the delivery post-condition, so all
+# six stay tellable apart from each other and from a child's own code.
+NO_TOOL_USE_EXIT_CODE = 120
+
 _ANSI_RE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
 _SECRET_RE = re.compile(
     r"(?i)("
@@ -238,11 +257,22 @@ class ProgressFormatter:
         self._saw_result = False
         self._saw_kill_signature = False
         self._saw_self_reported_failure = False
+        self._saw_tool_use = False
         self._burst_count: Optional[int] = None
 
     @property
     def saw_kill_signature(self) -> bool:
         return self._saw_kill_signature
+
+    @property
+    def saw_tool_use(self) -> bool:
+        """True once the child invoked anything at all.
+
+        Counts both shapes the stream reports: an assistant ``tool_use`` block,
+        and a ``task_started`` system event for a sub-agent or workflow the
+        parent dispatched. A run showing neither did nothing.
+        """
+        return self._saw_tool_use
 
     @property
     def saw_self_reported_failure(self) -> bool:
@@ -370,6 +400,7 @@ class ProgressFormatter:
         if subtype == "thinking_tokens":
             return
         if subtype in {"task_started", "task_progress", "task_notification"}:
+            self._saw_tool_use = True
             label = {
                 "task_started": "▶ task",
                 "task_progress": "… task",
@@ -402,6 +433,7 @@ class ProgressFormatter:
             self._mark_unknown()
 
     def _start_tool(self, block: dict[str, Any]) -> None:
+        self._saw_tool_use = True
         tool_id = block.get("id")
         name = _one_line(block.get("name") or "tool")
         summary = _tool_summary(block.get("input"))
@@ -489,10 +521,59 @@ class ProgressFormatter:
                 "unknown record(s)) — the run was cut off mid-flight and delivery "
                 "was never verified"
             )
+        elif exit_code == NO_TOOL_USE_EXIT_CODE:
+            # Its own state rather than folded into the passing one: a scheduled
+            # skill that invoked no tool did not run, and saying so beats green.
+            status = (
+                "❌ failed · the run invoked no tools at all — the skill never "
+                "started (check that the prompt asks for it, not just names it)"
+            )
         else:
             status = "❌ failed" if failed else "✅ completed"
         result_note = " · no terminal result event" if not self._saw_result else ""
         self.emit(f"{status} · exit {exit_code}{result_note}")
+
+
+# Claude Code 2.1.237 changed how a bare `/<skill>` prompt is framed in headless
+# `-p` mode. The skill body now arrives as its own message flagged
+# `"isMeta": true, "turnCompanion": true` -- passive context -- while the user
+# turn carries only `<command-name>/<skill></command-name>`; the run that
+# exposed this recorded `input_tokens: 2` against 52,603 cached ones. A skill
+# whose text opens with an imperative still gets executed. One that opens with
+# descriptive prose reads as reference material, and the model answers "Ready --
+# what would you like to do?" and stops (fleet-config#689).
+#
+# So the adapter stops depending on slash expansion and asks for the skill by
+# name. Appending the instruction *after* the slash command is not an option:
+# trailing text lands in `<command-args>`, where the skill parses it as its own
+# arguments.
+_SLASH_COMMAND_RE = re.compile(r"^/(?P<name>[A-Za-z0-9][A-Za-z0-9._-]*)(?P<rest>\s[\s\S]*)?$")
+
+SKILL_PROMPT_TEMPLATE = (
+    "Run the {name} skill now via the Skill tool, end to end and fully unattended, "
+    "following its SKILL.md steps exactly. Skill arguments: {arguments}. "
+    "Nobody is attending this run: never ask a question, never end your turn "
+    "waiting to be resumed, and poll every background call to completion inside "
+    "your own turn."
+)
+
+
+def normalize_skill_prompt(prompt: str) -> str:
+    """Rewrite a bare ``/<skill>`` prompt into an explicit instruction.
+
+    Anything that is not a slash command comes back untouched -- a caller that
+    already phrases its own instruction keeps it verbatim. Trailing text after
+    the command name is forwarded as the skill's arguments, which is what slash
+    expansion would have done with it anyway.
+    """
+    match = _SLASH_COMMAND_RE.match(prompt.strip())
+    if match is None:
+        return prompt
+    arguments = (match.group("rest") or "").strip()
+    return SKILL_PROMPT_TEMPLATE.format(
+        name=match.group("name"),
+        arguments=arguments or "none",
+    )
 
 
 def build_command(arguments: Sequence[str], executable: Optional[str] = None) -> list[str]:
@@ -505,7 +586,13 @@ def build_command(arguments: Sequence[str], executable: Optional[str] = None) ->
         ):
             raise ValueError(f"{argument} is owned by claude_progress.py")
     claude = executable or shutil.which("claude") or "claude"
-    return [claude, "-p", *arguments, "--output-format", "stream-json", "--verbose"]
+    # Prompt-first is this adapter's contract (the empty check above rests on the
+    # same assumption), so only the first argument is a candidate for rewriting;
+    # the Claude flags that follow are passed through untouched.
+    prompt = normalize_skill_prompt(arguments[0])
+    return [
+        claude, "-p", prompt, *arguments[1:], "--output-format", "stream-json", "--verbose",
+    ]
 
 
 class AdapterFlags(NamedTuple):
@@ -725,6 +812,10 @@ def run_process(
         # Last, and only over a clean exit: the specific detectors above name
         # the cause, this one only knows the stream stopped mid-conversation.
         exit_code = TRUNCATED_STREAM_EXIT_CODE
+    elif not progress.saw_tool_use and exit_code == 0:
+        # Last of all, and only over a clean exit. Every detector above names a
+        # cause; this one only knows the run touched nothing.
+        exit_code = NO_TOOL_USE_EXIT_CODE
     progress.finish(exit_code, stalled=stall_state["stalled"])
     return exit_code
 
