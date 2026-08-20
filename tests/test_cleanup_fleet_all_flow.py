@@ -21,6 +21,9 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "skills" / "_lib"))
 from no_window import NO_WINDOW  # noqa: E402
 
+sys.path.insert(0, str(Path(__file__).resolve().parent / "acceptance"))
+from shared import SKIP_EXIT  # noqa: E402
+
 HARNESS = Path(__file__).resolve().parent / "cleanup_fleet_all_flow.mjs"
 
 
@@ -28,9 +31,14 @@ def main() -> int:
     node = shutil.which("node")
     if not node:
         # Honest skip, not a silent pass: the fact could not be established.
+        # SKIP_EXIT (not 0) so the acceptance gate's `_subprocess_unit_check`
+        # reports SKIP rather than printing a bare `OK` over a suite that ran
+        # nothing -- returning 0 here made the whole fleet-config#518
+        # regression coverage (lane seriality, teardown-on-every-path,
+        # halt-on-residue) silently unverified (fleet-config#679).
         print("test_cleanup_fleet_all_flow: SKIPPED (node not on PATH) -- "
               "the cleanup-fleet-all control-flow properties were NOT verified")
-        return 0
+        return SKIP_EXIT
 
     res = subprocess.run(
         [node, str(HARNESS)],

@@ -40,7 +40,17 @@ from acceptance.shared import (
 # style, so each check's dependency is visible at its own call site.
 
 
-def _context_filter_unit_checks() -> Tuple[int, int]:
+def _context_filter_unit_checks() -> Tuple[int, int, int]:
+    """Returns `(failures, total, skipped)` -- run via `run_unit3`.
+
+    Three of these cases probe integrations that live *outside* this repo
+    (the ~/.codex hooks junction, the installed copilot hook, the installed
+    agy plugin). On a machine without one of them the fact cannot be
+    established, so it reports as `skipped` via `check.advisory(..., False)`
+    -- never folded into the pass count, which is what made a machine that
+    verified nothing read identical to one that verified all three
+    (fleet-config#679).
+    """
     check = _Checker()
 
     payload = {
@@ -432,10 +442,10 @@ def _context_filter_unit_checks() -> Tuple[int, int]:
             codex_rewritten or (res.stdout + res.stderr),
         )
     else:
-        check(
-            "context_filter_hook: codex-wired wrap check skipped — ~/.codex/hooks junction absent",
-            True,
-            "",
+        check.advisory(
+            "context_filter_hook: codex-wired wrap NOT verified — ~/.codex/hooks junction absent",
+            False,
+            f"no such path: {codex_hook} — run install.ps1 to wire the codex hooks junction",
         )
 
     # ---- agy (Antigravity CLI) payload -> decision-allow + overwrite (#546) ----
@@ -539,10 +549,10 @@ def _context_filter_unit_checks() -> Tuple[int, int]:
             "re-run install.ps1 to refresh the drift-guarded copy",
         )
     else:
-        check(
-            "copilot hook: not installed on this machine — drift check skipped (fleet-config#547)",
-            True,
-            "",
+        check.advisory(
+            "copilot hook: NOT verified — no installed copy on this machine (fleet-config#547)",
+            False,
+            f"no such path: {copilot_installed} — run install.ps1 to install the copilot hook",
         )
 
     # ---- agy plugin: installed copy must match the repo source (#546) ----
@@ -565,10 +575,10 @@ def _context_filter_unit_checks() -> Tuple[int, int]:
             "re-run install.ps1 (or: agy plugin install " + str(agy_source) + ")",
         )
     else:
-        check(
-            "agy plugin: not installed on this machine — drift check skipped (fleet-config#546)",
-            True,
-            "",
+        check.advisory(
+            "agy plugin: NOT verified — no installed copy on this machine (fleet-config#546)",
+            False,
+            f"no such path: {agy_installed} — run install.ps1 (or: agy plugin install {agy_source})",
         )
 
     # ---- compress subcommand: the Pi port's entry point (#545) ----
@@ -697,7 +707,7 @@ def _context_filter_unit_checks() -> Tuple[int, int]:
             res.returncode == 0 and not stale.exists(),
             f"rc={res.returncode} stale_exists={stale.exists()} | {res.stderr.strip()}",
         )
-    return check.failures, check.total
+    return check.failures, check.total, check.skipped
 
 
 

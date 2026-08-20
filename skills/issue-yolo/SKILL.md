@@ -297,7 +297,9 @@ review's `pass: true`). Run the full `/issue-finish` skill:
    shell**, exactly as `/issue-finish` step 6 requires — never Git Bash's nested
    `cmd /c`. Git Bash/MSYS rewrites `/c` to `C:/`, opens an interactive cmd
    prompt, and never runs the batch/helper. Use the PowerShell tool or the
-   absolute `powershell.exe -Command "& '<repo>/tray.bat' --restart"` form.
+   absolute
+   `C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe -Command "& '<repo>/tray.bat' --restart"`
+   form (forward-slash exe path, per the Git-Bash-strips-backslashes rule).
    **Safety caveat:** `--restart`'s
    `/T` subtree kill is safe only for a tray whose linked-but-independent
    children (a session-host + its PTY shells) are spawned detached + re-adopted

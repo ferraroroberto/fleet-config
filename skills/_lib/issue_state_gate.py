@@ -87,9 +87,15 @@ def check(repo: str, number: str) -> Tuple[str, str]:
     """Real `gh` call + classification. Never raises -- a failed invocation
     itself becomes an "unknown" verdict with the reason attached."""
     try:
+        # encoding pinned to UTF-8: `gh` emits UTF-8 and bare text=True would
+        # decode with the ambient Windows locale (cp1252), raising
+        # UnicodeDecodeError on a non-ASCII byte in gh's own stderr and turning a
+        # readable verdict into a crash. errors="replace" never throws
+        # (fleet-config#679).
         proc = subprocess.run(
             ["gh", "issue", "view", str(number), "--repo", f"ferraroroberto/{repo}", "--json", "state"],
-            capture_output=True, text=True, timeout=GH_TIMEOUT_SECONDS, creationflags=NO_WINDOW,
+            capture_output=True, text=True, encoding="utf-8", errors="replace",
+            timeout=GH_TIMEOUT_SECONDS, creationflags=NO_WINDOW,
         )
     except (subprocess.TimeoutExpired, OSError) as exc:
         return "unknown", f"gh invocation failed: {exc}"
