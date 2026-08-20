@@ -46,6 +46,7 @@ window.FLEET = {
     {"ic": "🌱", "nm": "life-os", "ds": "Productivity skills — diary, prep, muse.", "tag": ["via", "launcher"]},
     {"ic": "🌡️", "nm": "home-automation", "port": 8447, "ds": "Home automation suite: AC, solar, per-circuit energy, alarm, network health, and native Home Assistant entities.", "chips": ["FastAPI", "PWA", "MELCloud", "Modbus", "FusionSolar", "Athom", "Tuya", "HA", "Telegram"]},
     {"ic": "📶", "nm": "github-copilot-usage", "ds": "Local dashboard for Copilot premium-request &amp; token usage."},
+    {"ic": "✅", "nm": "task-os", "port": ":8448", "ds": "<b>task-os</b> — one master task list: nested tasks that become projects, comments + activity log, folder links that open on any PC (taskos:// opener), GitHub/GitLab issues as tasks, folder-index + federated search, a markdown mirror (edit tasks as .md files) + nightly backup. PC-first PWA, phone via Tailscale.", "tag": ["→", "GitHub"]},
     {"ic": "📈", "nm": "website-analytics", "ds": "Local-first GA4, Search Console, crawl, and weekly website-insight dashboard."}
   ],
   "pipe": [
