@@ -47,11 +47,8 @@ from __future__ import annotations
 import argparse
 import datetime as dt
 import json
-import os  # noqa: F401 - re-exported for test fixtures
 import re
-import shutil  # noqa: F401 - re-exported for test fixtures
 import sys
-import tempfile  # noqa: F401 - re-exported for test fixtures
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional, Sequence
@@ -71,30 +68,15 @@ def _stamp_re(prefix: str) -> re.Pattern[str]:
 
 # ---- pure helpers (unit-tested without gh) ---------------------------------
 
-def newest_comment_age_hours(comments: Sequence[dict], now: dt.datetime) -> Optional[float]:
-    """Hours since the newest comment, or None if none has a readable date.
-
-    None is a real answer -- "there is nothing here to date" -- and every
-    caller reports it as unconfirmed rather than guessing in either direction.
-    It must never be allowed to compare as a small number.
-    """
-    ages = []
-    for comment in comments or []:
-        raw = (comment or {}).get("createdAt")
-        if not raw:
-            continue
-        try:
-            created = dt.datetime.fromisoformat(str(raw).replace("Z", "+00:00"))
-        except ValueError:
-            continue
-        ages.append((now - created).total_seconds() / 3600.0)
-    return min(ages) if ages else None
-
-
 def newest_dated_comment(
     comments: Sequence[dict], now: dt.datetime
 ) -> tuple[Optional[float], Optional[dict]]:
-    """(age_hours, comment) for the newest dated comment; (None, None) if none."""
+    """(age_hours, comment) for the newest dated comment; (None, None) if none.
+
+    (None, None) is a real answer -- "there is nothing here to date" -- and
+    every caller reports it as unconfirmed rather than guessing in either
+    direction. It must never be allowed to compare as a small age.
+    """
     best: tuple[Optional[float], Optional[dict]] = (None, None)
     for comment in comments or []:
         raw = (comment or {}).get("createdAt")

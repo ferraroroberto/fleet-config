@@ -75,17 +75,14 @@ def _c(hours: float, body: str = "digest") -> dict:
     return comment(hours, body, now=NOW)
 
 
-check(dd.newest_comment_age_hours([], NOW) is None,
+check(dd.newest_dated_comment([], NOW)[0] is None,
       "age: no comments at all is None -- 'nothing here to date', not age 0")
-check(dd.newest_comment_age_hours([{"body": "x"}], NOW) is None,
+check(dd.newest_dated_comment([{"body": "x"}], NOW)[0] is None,
       "age: a comment with no createdAt is undateable, not fresh")
-check(dd.newest_comment_age_hours([{"createdAt": "not-a-date"}], NOW) is None,
+check(dd.newest_dated_comment([{"createdAt": "not-a-date"}], NOW)[0] is None,
       "age: an unparseable date is undateable, not fresh")
-check(abs(dd.newest_comment_age_hours([_c(3), _c(50)], NOW) - 3.0) < 0.01,
+check(abs(dd.newest_dated_comment([_c(3), _c(50)], NOW)[0] - 3.0) < 0.01,
       "age: the newest comment wins when several are dated")
-
-check(dd.newest_comment_age_hours([], NOW) is None,
-      "age: an unmeasured age stays None so it can never compare as fresh")
 
 _age, _cm = dd.newest_dated_comment([_c(3, "newer"), _c(50, "older")], NOW)
 check(_cm is not None and _cm["body"] == "newer",

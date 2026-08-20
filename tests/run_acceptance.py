@@ -69,7 +69,6 @@ from acceptance.unit_checks import (  # noqa: E402
     _notify_classify_unit_checks,
     _notify_complete_unit_checks,
     _notify_mention_unit_checks,
-    _pi_usage_stats_unit_checks,
     _restart_webapp_unit_checks,
     _safe_kill_force_push_unit_checks,
     _session_state_agent_adapter_unit_checks,
@@ -158,9 +157,6 @@ def main() -> int:
 
     # ---- work_summary roll-up block + per-file table (pure, no gh) ----
     run_unit(_work_summary_unit_checks)
-
-    # ---- Pi usage collector parses model/provider/token telemetry (pure) ----
-    run_unit(_pi_usage_stats_unit_checks)
 
     # ---- slack category -> channel routing (issue #139) ----
     run_unit(_slack_routing_unit_checks)

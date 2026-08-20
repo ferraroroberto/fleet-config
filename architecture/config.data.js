@@ -493,10 +493,6 @@ window.CONFIG = {
       "ds": "Deterministic skill-completion Slack ping — one canonical format per skill."
     },
     {
-      "nm": "pi_usage_stats",
-      "ds": "Pi coding-agent usage collector."
-    },
-    {
       "nm": "session_state_codex",
       "ds": "Codex adapter for the Fleet Board session-state writer (fleet-config#349)."
     },
