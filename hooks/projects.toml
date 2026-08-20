@@ -210,6 +210,14 @@ cwd_prefix = "E:/automation/social-media-analytics"
 [suna]
 cwd_prefix = "E:/automation/suna"
 
+[task-os]
+cwd_prefix          = "E:/automation/task-os"
+webapp_port         = 8448
+gate_cmd            = "pwsh -File scripts/verify-before-ship.ps1"
+tray_cmd            = "tray.bat"
+restart_cmd         = '& .\.venv\Scripts\python.exe -c "from app.webapp.manager import WebappManager; WebappManager().start(wait=True)"'
+api_version_path    = "/api/version"
+
 [vibe-coding-workshop]
 cwd_prefix = "E:/automation/vibe-coding-workshop"
 

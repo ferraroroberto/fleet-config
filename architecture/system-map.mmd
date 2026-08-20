@@ -26,6 +26,7 @@ flowchart LR
     life_os["🌱 life-os"]
     home_automation["🌡️ home-automation"]
     github_copilot_usage["📶 github-copilot-usage"]
+    task_os["✅ task-os"]
     website_analytics["📈 website-analytics"]
   end
   subgraph pipe["Pipelines"]
@@ -51,16 +52,17 @@ flowchart LR
     t_hub_whisper["hub + whisper"]
     t_hub["hub"]
     t_launcher["launcher"]
+    t_github["GitHub"]
     t_stripe["Stripe"]
     t_notion["Notion"]
     t_onedrive["OneDrive"]
     t_minecraft_realm["Minecraft Realm"]
     t_ibkr["IBKR"]
-    t_github["GitHub"]
   end
   grocery_shopping_automation -->|uses| t_hub_whisper
   whatsapp_radar -->|uses| t_hub
   life_os -->|via| t_launcher
+  task_os -->|→| t_github
   accounting_quarterly -->|→| t_stripe
   inspiration_system -->|→| t_notion
   content_management -->|→| t_notion

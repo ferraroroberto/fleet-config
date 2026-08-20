@@ -118,6 +118,7 @@ The **work layer**, enabled by L2. Most mature ones are **web apps exposing an A
 | 🌐 **website** | Multi-workshop landing site (one template, per-workshop config). | static | — |
 | 🎓 **vibe-coding-workshop** | Hands-on Python workshop — slideshow + structured exercises. | static/notebooks | — |
 | 📶 **github-copilot-usage** | Local read-only dashboard over the usage data Copilot writes to this machine — premium requests, tokens, and prompt composition per session/model/project. | `:8377` FastAPI | — (local Copilot logs) |
+| ✅ **task-os** | One master task list: nested tasks that become projects, comments + activity log, folder links that open on any PC (`taskos://` opener), GitHub/GitLab issues as tasks, folder-index + federated search, and a markdown mirror (edit tasks as `.md`) + nightly backup. | `:8448` FastAPI+PWA | **GitHub** |
 | 📈 **website-analytics** | Local-first website-insight dashboard: GA4 + Search Console + site crawl → weekly report. | Streamlit | **GA4**, **Search Console** |
 
 ### Pipelines & batch (non-interactive)
