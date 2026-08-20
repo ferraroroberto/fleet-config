@@ -127,10 +127,12 @@ mode. Pick the smallest mode that genuinely covers the change:
   `[]`, fall back to installed Playwright with real Chrome — `iab` absence does
   **not** skip the visual leg (fleet-config#351). The deterministic plan
   (backend, venv, `channel="chrome"` launch kwargs honoring the browser-safety
-  contract, the `KEY_VIEWS` × {light, dark} capture list, and the distinct
-  Playwright-missing / Chrome-missing / app-unreachable / profile-lock failure
-  messages) comes from `browser_verify.py plan . --base-url <app-root>
-  --iab-available <yes|no>`; background + recovery in `docs/codex-browser.md`.
+  contract, the `KEY_VIEWS` × {light, dark} capture list) comes from
+  `browser_verify.py plan . --base-url <app-root> --iab-available <yes|no>`.
+  Report the one capability failure you observed — Playwright-missing /
+  Chrome-missing / app-unreachable / profile-lock each read distinctly, never
+  one generic error; those codes, background and recovery in
+  `docs/codex-browser.md`.
   Then, when this is a **web-app UX diff**, run the **design-conformance gate**
   (`project-scaffolding#83`):
 

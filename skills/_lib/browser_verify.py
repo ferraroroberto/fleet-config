@@ -22,8 +22,10 @@ What this module owns (the reusable, deterministic parts):
   * the capture plan — every `KEY_VIEWS` entry x {light, dark};
   * distinct, actionable messages for the four capability failures the issue
     calls out (Playwright missing, Chrome missing, live app unreachable, profile
-    lock exhausted) plus the informational `iab`-unavailable and a render failure;
-  * a `plan` CLI the skills invoke to print all of the above.
+    lock exhausted) plus the informational `iab`-unavailable and a render failure
+    — looked up per code via `failure_message()`, never dumped as a legend;
+  * a `plan` CLI the skills invoke to print the backend, capture plan and launch
+    contract, plus the message for any failure the plan itself determined.
 
 What it does NOT own: launching the browser itself (the agent drives it via its
 Browser plugin, or via Playwright with these kwargs) and the proprietary `iab`
@@ -155,7 +157,11 @@ def capture_plan(
 #
 # The issue's contract: `iab` unavailable, Playwright/Chrome unavailable, live
 # app unreachable, and a rendered-assertion/screenshot failure must NOT collapse
-# into one generic message. Each code carries its own remediation.
+# into one generic message. Each code carries its own remediation, looked up one
+# at a time by whoever determined the code. The plan CLI emits the message for
+# the failure it determined itself and nothing else — never the whole legend for
+# the caller to classify by hand; docs/codex-browser.md carries the codes only
+# the driving agent can observe.
 
 FAILURES: Dict[str, str] = {
     "IAB_UNAVAILABLE": (
@@ -194,9 +200,6 @@ FAILURES: Dict[str, str] = {
         "specific view; the render did not complete."
     ),
 }
-
-# The busy-persistent-profile backoff the shared-profile rule mandates (seconds).
-PROFILE_LOCK_BACKOFF = (60, 120, 240, 480)
 
 
 def failure_message(code: str, base_url: Optional[str] = None) -> str:
@@ -283,7 +286,8 @@ def cmd_plan(repo: Path, base_url: str, iab_available: bool, check_app: bool) ->
     KEY=VALUE lines (structured values as JSON), matching the ux_surface CLI
     style. When `iab` is available the in-app path is used and no fallback plan
     is emitted; otherwise the Playwright fallback plan (venv, probe, launch
-    kwargs, captures, scratch dir) plus the failure legend is printed.
+    kwargs, captures, scratch dir) is printed, plus the remediation message for
+    any failure this command determined itself (`--check-app` finding it down).
     """
     block = _key_views(repo)
     applies = bool(block and block["spec_applies"])
@@ -316,7 +320,6 @@ def cmd_plan(repo: Path, base_url: str, iab_available: bool, check_app: bool) ->
     print(f"LAUNCH_KWARGS={json.dumps(playwright_launch_kwargs(str(Path(scratch) / 'profile')))}")
     print(f"INIT_SCRIPT={WEBDRIVER_INIT_SCRIPT}")
     print(f"CAPTURES={json.dumps(capture_plan(key_views, base_url, scratch))}")
-    print("FAILURES=" + json.dumps({c: failure_message(c, base_url) for c in FAILURES}))
     return 0
 
 
