@@ -114,14 +114,14 @@ E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skill
       installed Playwright with real Chrome — `iab` absence is **not** a reason
       to skip the visual leg (fleet-config#351). Get the plan (backend, venv,
       `channel="chrome"` launch kwargs honoring the browser-safety contract,
-      the `KEY_VIEWS` × {light, dark} capture list, and the distinct
-      capability-failure messages) from:
+      and the `KEY_VIEWS` × {light, dark} capture list) from:
       ```
       E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/browser_verify.py plan . --base-url <app-root> --iab-available <yes|no>
       ```
       A missing Playwright, missing Chrome, unreachable app, or exhausted
-      profile-lock each report distinctly (never one generic error). Background
-      + recovery: `docs/codex-browser.md`. On Claude Code the `verify` skill's
+      profile-lock each report distinctly (never one generic error) — report
+      the one you observed, never the whole legend. Those codes, background
+      and recovery: `docs/codex-browser.md`. On Claude Code the `verify` skill's
       MCP browser is the `iab`-equivalent path — the fallback is for hosts with
       no live in-app backend.
 

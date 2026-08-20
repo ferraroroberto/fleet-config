@@ -2,13 +2,16 @@
 
 No live browser / app — these exercise backend selection, the browser-safety
 launch kwargs, the KEY_VIEWS x light/dark capture plan, the distinct capability
-failures, and the venv/probe command construction.
+failures, the venv/probe command construction, and the `plan` CLI's emission
+contract (it classifies rather than dumping the whole failure legend).
 
 Run: `E:/automation/fleet-config/.venv/Scripts/python.exe tests/test_browser_verify.py`  (also invoked by tests/run_acceptance.py)
 """
 
 from __future__ import annotations
 
+import contextlib
+import io
 import sys
 import tempfile
 from pathlib import Path
@@ -88,7 +91,8 @@ check("Chrome" in bv.FAILURES["CHROME_MISSING"] and "Chromium" in bv.FAILURES["C
       "CHROME_MISSING distinguishes real Chrome from Chromium")
 check("kill" in bv.FAILURES["PROFILE_LOCK_EXHAUSTED"].lower() and "backoff" in bv.FAILURES["PROFILE_LOCK_EXHAUSTED"].lower(),
       "PROFILE_LOCK_EXHAUSTED warns against killing the holder + names backoff")
-check(bv.PROFILE_LOCK_BACKOFF == (60, 120, 240, 480), "backoff schedule matches the shared-profile rule")
+check("60/120/240/480" in bv.FAILURES["PROFILE_LOCK_EXHAUSTED"],
+      "PROFILE_LOCK_EXHAUSTED states the backoff schedule the shared-profile rule mandates")
 # an unknown code is a hard error, not a silent pass
 try:
     bv.failure_message("NOPE")
@@ -125,6 +129,37 @@ try:
 finally:
     import shutil
     shutil.rmtree(_tmp2, ignore_errors=True)
+
+
+# ---- `plan` CLI emits classified failures, never the whole legend ----
+#
+# fleet-config#683: cmd_plan used to print `FAILURES=<every message>`, which left
+# the classification surface permanently unselected — the caller received the
+# legend and picked by hand. The CLI must emit only what it determined itself.
+
+_repo = Path(tempfile.mkdtemp(prefix="bv-repo-"))
+try:
+    _claude_md = [
+        "## UX surface",
+        "- design spec applies: yes",
+        "- paths:",
+        "  - app/**/*.css",
+        "- key views:",
+        "  - /",
+    ]
+    (_repo / "CLAUDE.md").write_text("\n".join(_claude_md), encoding="utf-8")
+    _buf = io.StringIO()
+    with contextlib.redirect_stdout(_buf):
+        _rc = bv.cmd_plan(_repo, "http://127.0.0.1:8501", iab_available=False, check_app=False)
+    _out = _buf.getvalue()
+    check(_rc == 0, "plan exits 0 on a UX-surface repo")
+    check("BACKEND=playwright" in _out and "CAPTURES=" in _out, "plan still emits the fallback contract")
+    check("FAILURES=" not in _out, "plan does not dump the failure legend")
+    check(not any(bv.FAILURES[c] in _out for c in bv.FAILURES),
+          "no undetermined failure message leaks into the plan output")
+finally:
+    import shutil
+    shutil.rmtree(_repo, ignore_errors=True)
 
 
 # ---- scratch dir is outside any repo (never committable) ----
