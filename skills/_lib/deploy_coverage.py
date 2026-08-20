@@ -18,10 +18,12 @@ surface` convention `ux_surface.py` reads) — "touched by this diff" has to be
 inferred from backtick-quoted path-looking tokens in the `what/why` and
 `NOT restarted/deployed by` prose. That is a real limitation, not an
 oversight: a future reword of either bullet can silently change what this
-detects. When a declared component yields zero parseable path tokens, this
-module reports `TOUCHED=unknown` rather than `no` — a flow that cannot tell
-whether it was touched must not silently assume it wasn't (the exact failure
-shape `project-scaffolding#199` exists to close).
+detects. When a declared component yields zero parseable path tokens — **or
+when the diff itself could not be taken at all** (`git_run.changed_files()`
+returning `None`; fleet-config#681) — this module reports `TOUCHED=unknown`
+rather than `no`: a flow that cannot tell whether it was touched must not
+silently assume it wasn't (the exact failure shape `project-scaffolding#199`
+exists to close).
 
 Subcommand:
 
@@ -184,19 +186,8 @@ def touched_by(changed_files: List[str], path_tokens: List[str]) -> List[str]:
 
 # ---- git-backed CLI -------------------------------------------------------
 
-def _git(repo: Path, *args: str):
-    return git_run.run_git(["-C", str(repo), *args])
-
-
 def _default_base(repo: Path) -> str:
     return git_run.resolve_default_branch_ref(repo)
-
-
-def _changed_files(repo: Path, base: str) -> List[str]:
-    res = _git(repo, "diff", "--name-only", f"{base}...HEAD")
-    if res.returncode != 0:
-        return []
-    return [ln.strip() for ln in res.stdout.splitlines() if ln.strip()]
 
 
 def cmd_check(repo: Path, base: Optional[str]) -> int:
@@ -208,9 +199,11 @@ def cmd_check(repo: Path, base: Optional[str]) -> int:
         return 0
 
     print("DECLARED=yes")
-    changed = _changed_files(repo, base or _default_base(repo))
+    changed = git_run.changed_files(repo, base or _default_base(repo))
     for comp in components:
-        touched = component_touch_status(comp, changed)
+        # A diff that could not be taken is `unknown`, exactly as a component
+        # with no parseable path token is — never `no` (fleet-config#681).
+        touched = "unknown" if changed is None else component_touch_status(comp, changed)
         print(f"COMPONENT={comp['name']}")
         print(f"TOUCHED={touched}")
         print(f"LIVENESS={comp['liveness_signal']}")

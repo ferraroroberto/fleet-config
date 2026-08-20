@@ -197,6 +197,18 @@ def _rotate_shadow_log(target: Path) -> None:
 
 
 def append_shadow_log(record: dict[str, Any]) -> None:
+    """Append one telemetry row, with the `command` field redacted.
+
+    The row's *output*-derived fields already pass through `SECRET_RE` on the
+    compression path, but `command` was written verbatim — so a
+    `gh auth login --with-token ghp_…` row landed half-filtered, the secret
+    stripped from one field of the record and preserved in the other
+    (fleet-config#681). Redacting here rather than at the call site keeps the
+    two fields symmetric for every future writer too. The caller's dict is
+    copied, never mutated — it is the same object the caller may still read.
+    """
+    if isinstance(record.get("command"), str):
+        record = {**record, "command": redact_secret_markers(record["command"])}
     target = data_dir() / "shadow.jsonl"
     target.parent.mkdir(parents=True, exist_ok=True)
     _rotate_shadow_log(target)

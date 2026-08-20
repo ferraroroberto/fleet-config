@@ -652,4 +652,62 @@ check("audit_issue.py ledger-write" in _step9,
 check("--kind ledger" not in _step9,
       "codebase-audit SKILL.md step 9: never hand-authors a ledger body for a generic upsert")
 
+# Same class of doc bug in /audit-fleet's step 4b (fleet-config#681): it told
+# the agent "never a fixed shared name" and then gave a fixed shared name as
+# the example, one clause later. Its parallel sub-agents share E:/tmp, so a
+# fixed name is a race between two repos' practices-ledger writes.
+_af = (Path(__file__).resolve().parent.parent / ".claude" / "skills" / "audit-fleet" / "SKILL.md").read_text(
+    encoding="utf-8")
+check("E:/tmp/audit-practices-ledger.md" not in _af,
+      "audit-fleet SKILL.md: the practices-ledger temp-file example is not a fixed shared name")
+check("audit-practices-ledger-<short-sha>.md" in _af,
+      "audit-fleet SKILL.md: the example carries a per-run suffix, matching codebase-audit's convention")
+
+# ---- _upsert_issue reclaims its NamedTemporaryFile (fleet-config#681) --------
+# `_write_tmp` uses delete=False, so nothing but this function ever reclaims
+# the file. One weekly /audit-fleet pass upserts a ledger plus up to eight
+# bucket issues across ~39 repos, so an un-unlinked temp file is hundreds of
+# orphaned .md files in %TEMP% every week, forever.
+
+import os  # noqa: E402
+
+_tmp_dir = Path(tempfile.gettempdir())
+
+
+def _upsert_leaks(gh_stub) -> tuple[int, list[Path]]:
+    before = set(_tmp_dir.glob("*.md"))
+    _orig = (ai.gh, ai._run, ai._list_open)
+    ai.gh = gh_stub
+    ai._run = lambda *a, **k: ""
+    ai._list_open = lambda *a, **k: []
+    try:
+        raised = 0
+        try:
+            ai._upsert_issue("o/r", "bug", "audit: bug findings", "body", None)
+        except RuntimeError:
+            raised = 1
+        return raised, sorted(set(_tmp_dir.glob("*.md")) - before)
+    finally:
+        ai.gh, ai._run, ai._list_open = _orig
+
+
+_raised, _leaked = _upsert_leaks(lambda argv: "https://example/1")
+check(_raised == 0 and _leaked == [],
+      f"_upsert_issue: the body temp file is unlinked on the success path (leaked: {_leaked!r})")
+
+
+def _boom(argv):
+    raise RuntimeError("gh exploded")
+
+
+_raised, _leaked = _upsert_leaks(_boom)
+check(_raised == 1 and _leaked == [],
+      f"_upsert_issue: the temp file is unlinked even when `gh` raises (leaked: {_leaked!r})")
+
+_probe = ai._write_tmp("x")
+check(os.path.exists(_probe),
+      "_write_tmp still produces a real file — the cleanup is the caller's job, not a no-op writer")
+os.unlink(_probe)
+
+
 _h.report_and_exit("test_audit_issue")

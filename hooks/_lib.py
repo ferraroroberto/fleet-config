@@ -266,6 +266,13 @@ _CAMEL_BOUNDARY = re.compile(r"(?<!^)(?=[A-Z])")
 # `_lib.block(...)` call sites across the hooks directory.
 _ACTIVE_AGENT: Optional[str] = None
 
+# The event this process is handling, set by `read_stdin_json()` once the
+# payload is in Claude's shape. Same one-payload-one-process lifetime argument
+# as `_ACTIVE_AGENT` above — it exists so `warn()` can pick the stdout dialect
+# the event actually delivers to the model, without threading the payload
+# through every `_lib.warn(...)` call site (fleet-config#681).
+_ACTIVE_EVENT: Optional[str] = None
+
 
 def _camel_to_snake(key: str) -> str:
     return _CAMEL_BOUNDARY.sub("_", key).lower()
@@ -394,6 +401,7 @@ def read_stdin_json() -> Dict[str, Any]:
     A non-Claude harness's payload is translated into Claude's shape first (see
     :func:`normalize_payload`), so every hook downstream reads one vocabulary.
     """
+    global _ACTIVE_EVENT
     raw = sys.stdin.read()
     if not raw or not raw.strip():
         return {}
@@ -403,7 +411,13 @@ def read_stdin_json() -> Dict[str, Any]:
         return {}
     if not isinstance(data, dict):
         return {}
-    return normalize_payload(data)
+    normalized = normalize_payload(data)
+    # Read *after* normalization so a foreign harness's event name is already
+    # Claude's. Never mutates the payload — Claude-shaped payloads must come
+    # back as the same object (tests/test_payload_normalization.py asserts it).
+    event = normalized.get("hook_event_name")
+    _ACTIVE_EVENT = event if isinstance(event, str) and event else None
+    return normalized
 
 
 def block(reason: str) -> "NoReturn":
@@ -429,8 +443,56 @@ def block(reason: str) -> "NoReturn":
     sys.exit(2)
 
 
+# Events whose exit-0 **plain-text** stdout Claude Code adds to the model's
+# context. Every other event writes it to the debug log only — which is what
+# made all seven `warn()` call sites invisible to the model they were written
+# to advise (fleet-config#681). Per code.claude.com/docs/en/hooks: "For most
+# events, stdout is written to the debug log but not shown in the transcript.
+# The exceptions are UserPromptSubmit, UserPromptExpansion, and SessionStart."
+_STDOUT_IS_CONTEXT_EVENTS = frozenset({"UserPromptExpansion", "SessionStart"})
+
+# Events carrying a `hookSpecificOutput.additionalContext` field — "text added
+# to the conversation as context Claude sees" (same reference).
+_ADDITIONAL_CONTEXT_EVENTS = frozenset({
+    "PostToolUse", "PostToolUseFailure", "UserPromptSubmit", "Stop",
+})
+
+
 def warn(message: str) -> "NoReturn":
-    """Exit 0 with a single-line nudge on stdout → Claude sees the message but the action still runs."""
+    """Exit 0 with a nudge the model actually sees; the action still runs.
+
+    A guard that only *reports* is worse than no guard, and that is exactly
+    what this was: bare stdout on exit 0 reaches the model on `SessionStart` /
+    `UserPromptSubmit` / `UserPromptExpansion` and **nowhere else**, so the
+    `PreToolUse` and `PostToolUse` nudges (`bash_cmdexe_syntax_guard`,
+    `gh_body_file_guard`, `hub_bypass_warn`, `browser_stealth_lint`) went to
+    the debug log and no further (fleet-config#681). The channel is per-event,
+    so the dialect is too — same shape as :func:`block`:
+
+      - ``PostToolUse`` / ``PostToolUseFailure`` / ``UserPromptSubmit`` /
+        ``Stop`` → ``hookSpecificOutput.additionalContext``.
+      - ``PreToolUse`` (and any event without an ``additionalContext`` field)
+        → the common ``systemMessage`` field, which Claude Code's `PreToolUse`
+        section documents as "added to the conversation as context Claude can
+        see". It is *not* a `permissionDecision`: a nudge must stay advisory,
+        and both ``allow`` and ``ask`` would change whether the tool call runs.
+      - ``SessionStart`` / ``UserPromptExpansion`` → plain text, already the
+        model-visible channel there.
+
+    A foreign harness keeps the bare-stdout form: Claude's JSON protocol is
+    Claude's, and none of the shapes above are part of the Grok/Copilot/agy
+    contract.
+    """
+    if _ACTIVE_AGENT is None and _ACTIVE_EVENT not in _STDOUT_IS_CONTEXT_EVENTS:
+        if _ACTIVE_EVENT in _ADDITIONAL_CONTEXT_EVENTS:
+            payload: Dict[str, Any] = {"hookSpecificOutput": {
+                "hookEventName": _ACTIVE_EVENT,
+                "additionalContext": message,
+            }}
+        else:
+            payload = {"systemMessage": message}
+        print(json.dumps(payload), flush=True)
+        sys.exit(0)
     print(message, flush=True)
     sys.exit(0)
 

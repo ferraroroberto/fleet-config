@@ -8,10 +8,17 @@
     in the manifest -- real files and unrelated directories under ~/.claude/
     are left untouched.
 
-    Also removes the OTel project-attribution $PROFILE block (fleet-config#310)
-    from both the pwsh and Windows PowerShell 5.1 profile files, if present --
-    this isn't a junction/symlink so it isn't in the manifest, but it's the
-    other piece of state install.ps1 writes outside ~/.claude.
+    Also removes the three pieces of state install.ps1 writes OUTSIDE the
+    junction/symlink manifest, none of which a manifest-only uninstall would
+    ever reach (fleet-config#681):
+      - the OTel project-attribution $PROFILE block (fleet-config#310), from
+        both the pwsh and Windows PowerShell 5.1 profile files;
+      - the agy context-filter plugin under
+        ~/.gemini/config/plugins/fleet-context-filter (fleet-config#546);
+      - the Copilot CLI context-filter hook at
+        ~/.copilot/hooks/fleet-context-filter.json (fleet-config#547).
+    Each mirrors its Install-* counterpart and removes only what that function
+    writes -- a hook file this repo did not author is left alone.
 
     Does NOT modify ~/.claude/settings.json -- remove the hooks block yourself
     if you want it gone.
@@ -22,8 +29,11 @@ param()
 
 $ErrorActionPreference = 'Stop'
 
-$ClaudeHome   = Join-Path $env:USERPROFILE '.claude'
-$ManifestPath = Join-Path $ClaudeHome '.fleet-config-installed.json'
+$ClaudeHome     = Join-Path $env:USERPROFILE '.claude'
+$ManifestPath   = Join-Path $ClaudeHome '.fleet-config-installed.json'
+# Mirrors install.ps1's own $GeminiConfHome / $CopilotHome.
+$GeminiConfHome = Join-Path (Join-Path $env:USERPROFILE '.gemini') 'config'
+$CopilotHome    = Join-Path $env:USERPROFILE '.copilot'
 
 function Remove-OtelProjectProfileHook {
     # Mirrors Install-OtelProjectProfileHook's marker in install.ps1 --
@@ -65,7 +75,51 @@ function Remove-OtelProjectProfileHook {
     }
 }
 
+function Remove-AgyContextFilterPlugin {
+    # Counterpart to install.ps1's Install-AgyContextFilterPlugin. agy owns the
+    # plugin registry as well as the copied files, so the removal goes through
+    # agy's own `plugin uninstall <name>` (verified against the live CLI's
+    # `agy plugin` help) rather than deleting the directory behind its back and
+    # leaving a dangling registry entry. Directory left over anyway (a failed
+    # or partial uninstall) -> say so; never delete a tree agy still lists.
+    $installed = Join-Path $GeminiConfHome 'plugins\fleet-context-filter'
+    $agy = Get-Command agy -ErrorAction SilentlyContinue
+    if (-not $agy) {
+        if (Test-Path $installed) {
+            Write-Host "SKIP    $installed (agy CLI not on this machine -- remove by hand)" -ForegroundColor Yellow
+        } else {
+            Write-Host "MISSING agy plugin fleet-context-filter (nothing to remove)" -ForegroundColor DarkGray
+        }
+        return
+    }
+    if (-not (Test-Path $installed)) {
+        Write-Host "MISSING agy plugin fleet-context-filter (nothing to remove)" -ForegroundColor DarkGray
+        return
+    }
+    & $agy.Source plugin uninstall 'fleet-context-filter' | Out-Null
+    if (Test-Path $installed) {
+        Write-Host "SKIP    $installed (agy plugin uninstall left the files -- remove by hand)" -ForegroundColor Yellow
+    } else {
+        Write-Host "REMOVED agy plugin fleet-context-filter" -ForegroundColor Cyan
+    }
+}
+
+function Remove-CopilotContextFilterHook {
+    # Counterpart to install.ps1's Install-CopilotContextFilterHook. ~/.copilot/hooks
+    # is a shared dir holding tool-managed and sister-repo files, so this removes
+    # exactly the one file that installer writes and nothing else.
+    $dst = Join-Path (Join-Path $CopilotHome 'hooks') 'fleet-context-filter.json'
+    if (-not (Test-Path $dst)) {
+        Write-Host "MISSING $dst (nothing to remove)" -ForegroundColor DarkGray
+        return
+    }
+    Remove-Item -LiteralPath $dst -Force
+    Write-Host "REMOVED $dst (copilot context-filter hook)" -ForegroundColor Cyan
+}
+
 Remove-OtelProjectProfileHook
+Remove-AgyContextFilterPlugin
+Remove-CopilotContextFilterHook
 Write-Host ""
 
 if (-not (Test-Path $ManifestPath)) {

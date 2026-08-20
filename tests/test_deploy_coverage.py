@@ -154,4 +154,43 @@ check(dc.component_touch_status(no_paths_comp, ["README.md"]) == "unknown",
       "no parseable paths -> unknown, never silently 'no' (the exact #199 failure shape)")
 
 
+# ---- cmd_check: a diff that FAILED is `unknown` too (fleet-config#681) ----
+# The three-state decision above only ever saw "no parseable path token". The
+# other way this flow cannot tell whether it was touched is the diff itself
+# failing — which the old private `_changed_files` turned into `[]`, and `[]`
+# against a component WITH paths prints `TOUCHED=no`: the deploy-coverage gate
+# declaring a component untouched on the strength of a probe that never ran.
+import contextlib  # noqa: E402
+import io  # noqa: E402
+import tempfile  # noqa: E402
+
+
+def _run_dc_check(changed_stub):
+    repo = Path(tempfile.mkdtemp(prefix="test_deploy_coverage_"))
+    (repo / "CLAUDE.md").write_text(TEMPLATE_SHAPED, encoding="utf-8")
+    orig_changed, orig_base = dc.git_run.changed_files, dc._default_base
+    dc.git_run.changed_files = lambda *a, **k: changed_stub
+    dc._default_base = lambda *_a, **_k: "origin/main"
+    try:
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            dc.cmd_check(repo, None)
+        return buf.getvalue()
+    finally:
+        dc.git_run.changed_files, dc._default_base = orig_changed, orig_base
+        import shutil
+        shutil.rmtree(repo, ignore_errors=True)
+
+
+_dc_out = _run_dc_check(None)
+check("TOUCHED=unknown" in _dc_out,
+      f"cmd_check: a failed diff reports TOUCHED=unknown for a declared component — got {_dc_out.splitlines()!r}")
+check("LIVENESS=" in _dc_out and "UPDATE_CMD=" in _dc_out,
+      "cmd_check: the unknown stanza still carries LIVENESS/UPDATE_CMD so /issue-finish can act on it")
+check("TOUCHED=no" in _run_dc_check(["README.md"]),
+      "cmd_check: an untouched component on a real diff still reports TOUCHED=no")
+check("TOUCHED=yes" in _run_dc_check(["src/session_host.py"]),
+      "cmd_check: a touched component still reports TOUCHED=yes")
+
+
 _h.report_and_exit("deploy_coverage")

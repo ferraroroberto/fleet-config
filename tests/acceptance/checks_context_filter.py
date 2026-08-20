@@ -680,6 +680,43 @@ def _context_filter_unit_checks() -> Tuple[int, int, int]:
             f"rc={res.returncode} rotated={rotated} fresh_rows={len(fresh_rows)} | {res.stderr.strip()}",
         )
 
+    # ---- the `command` field is redacted like the output is (#681) ----
+    # The row's output-derived fields already passed through SECRET_RE; the
+    # command did not, so a secret-bearing command landed half-filtered in the
+    # log — the redaction the writer applies asymmetric between two fields of
+    # the same record.
+    with tempfile.TemporaryDirectory() as tmp:
+        sys.path.insert(0, str(HOOKS))
+        import context_filter as _cf2  # noqa: E402
+
+        secret_cmd = "gh auth login --with-token ghp_0123456789abcdefghijklmnopqrstuvwxyzA"
+        record = {"ts": "now", "mode": "shadow", "command": secret_cmd, "tool": "Bash"}
+        prior_dir = os.environ.get("FLEET_CONTEXT_FILTER_DIR")
+        os.environ["FLEET_CONTEXT_FILTER_DIR"] = tmp
+        try:
+            _cf2.append_shadow_log(record)
+            written = (Path(tmp) / "shadow.jsonl").read_text(encoding="utf-8")
+        finally:
+            if prior_dir is None:
+                os.environ.pop("FLEET_CONTEXT_FILTER_DIR", None)
+            else:
+                os.environ["FLEET_CONTEXT_FILTER_DIR"] = prior_dir
+        check(
+            "context_filter: append_shadow_log redacts the `command` field (fleet-config#681)",
+            "ghp_0123456789abcdefghijklmnopqrstuvwxyzA" not in written
+            and "[REDACTED_SECRET]" in written,
+            f"written={written.strip()[:200]}",
+        )
+        check(
+            "context_filter: append_shadow_log does not mutate the caller's record",
+            record["command"] == secret_cmd,
+        )
+        check(
+            "context_filter: a secret-free command is written through unchanged",
+            "git status --porcelain" in json.dumps({"command": "git status --porcelain"})
+            and _cf2.redact_secret_markers("git status --porcelain") == "git status --porcelain",
+        )
+
     # ---- blob GC: rewrite prunes cache entries older than the TTL (#541) ----
     with tempfile.TemporaryDirectory() as tmp:
         blobs = Path(tmp) / "blobs"

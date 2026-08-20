@@ -46,6 +46,7 @@ from acceptance.architecture_guards import (  # noqa: E402
     _fleet_membership_drift_check,
     _fleet_toml_check,
     _mermaid_check,
+    _installer_symmetry_check,
     _readme_layout_check,
     _unattended_worktree_mandate_check,
     _settings_template_sync_check,
@@ -69,6 +70,7 @@ from acceptance.checks_guards import (  # noqa: E402
     _gh_body_file_guard_unit_checks,
     _safe_kill_force_push_unit_checks,
     _tier23_hooks_unit_checks,
+    _warn_channel_unit_checks,
 )
 from acceptance.checks_notify import (  # noqa: E402
     _notify_board_link_unit_checks,
@@ -191,6 +193,9 @@ def main() -> int:
     # ---- safe_kill_guard: force-push blocks on the pushed ref (#562) ----
     run_unit(_safe_kill_force_push_unit_checks)
 
+    # ---- _lib.warn: the nudge lands on a channel the model reads (#681) ----
+    run_unit(_warn_channel_unit_checks)
+
     # ---- gh_body_file_guard: warn-only stdout assertions ----
     run_unit(_gh_body_file_guard_unit_checks)
 
@@ -244,6 +249,9 @@ def main() -> int:
     # run_unit3: the freshness half sweeps sibling repos, so it reports as
     # skipped rather than failing this gate — same reason as #562's fleet_toml.
     run_unit3(_config_map_check)
+
+    # ---- install.ps1 / uninstall.ps1 mirror each other (fleet-config#681) ----
+    run_unit(_installer_symmetry_check)
 
     # ---- README Layout tree is an exhaustive inventory (fleet-config#565) ----
     run_unit(_readme_layout_check)

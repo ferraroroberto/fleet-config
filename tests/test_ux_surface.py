@@ -166,4 +166,42 @@ check(ux.touched_paths(["app/server.py", "README.md"], PATHS) == [],
       "code/docs-only diff touches no UX surface")
 
 
+# ---- cmd_check: a diff that FAILED is `unknown`, never `no` (fleet-config#681) ----
+# ux_surface used to carry a private `_changed_files` that swallowed git's
+# non-zero exit and returned `[]`, printing the same `TOUCHED=no` a genuinely
+# clean diff prints — so /issue-finish skipped the design gate on the strength
+# of a probe that never ran.
+import contextlib  # noqa: E402
+import io  # noqa: E402
+import tempfile  # noqa: E402
+
+
+def _run_check(changed_stub):
+    repo = Path(tempfile.mkdtemp(prefix="test_ux_surface_"))
+    (repo / "CLAUDE.md").write_text(BLOCK, encoding="utf-8")
+    orig_changed, orig_base = ux.git_run.changed_files, ux._default_base
+    ux.git_run.changed_files = lambda *a, **k: changed_stub
+    ux._default_base = lambda *_a, **_k: "origin/main"
+    try:
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            ux.cmd_check(repo, None)
+        return buf.getvalue()
+    finally:
+        ux.git_run.changed_files, ux._default_base = orig_changed, orig_base
+        import shutil
+        shutil.rmtree(repo, ignore_errors=True)
+
+
+_out = _run_check(None)
+check("TOUCHED=unknown" in _out,
+      f"cmd_check: a failed diff reports TOUCHED=unknown, not `no` — got {_out.splitlines()!r}")
+check(any(ln.startswith("KEY_VIEWS=") and len(ln) > len("KEY_VIEWS=") for ln in _out.splitlines()),
+      "cmd_check: the unknown path still emits the KEY_VIEWS the gate needs to check every view")
+check("TOUCHED=no" in _run_check([]),
+      "cmd_check: a genuinely clean diff still reports TOUCHED=no — `unknown` did not swallow it")
+check("TOUCHED=yes" in _run_check(["app/webapp/templates/home.html"]),
+      "cmd_check: a real UX hit still reports TOUCHED=yes")
+
+
 _h.report_and_exit("ux_surface")

@@ -290,6 +290,29 @@ def resolve_session_id(sid: str, columns: Dict[str, Any]) -> Tuple[Optional[str]
     return sid, None
 
 
+def resolve_sid_via_board(base_url: str, sid: str) -> Tuple[Optional[str], Optional[str]]:
+    """`resolve_session_id` against a freshly-fetched board.
+
+    Every operator-facing command that takes a `sid` has to do this, because
+    the only place an operator *gets* a sid is `board`/`sessions`, and both
+    print the 8-char prefix (`:498`, `:523`) — never the full 32-char id.
+    `exchange` resolved it; `say` and `stop` did not, so `say <prefix>` POSTed
+    to a session id that does not exist and `say --verify` then read the
+    resulting empty card as **pending** — "delivery likely, unconfirmed" for a
+    steer that was never accepted at all (fleet-config#681).
+
+    A board that cannot be read is not evidence that the prefix is wrong, so
+    the id passes through unchanged and the real endpoint gets to answer —
+    the same never-invent-a-verdict rule `resolve_session_id`'s no-match branch
+    already follows.
+    """
+    try:
+        board = _request(base_url, "/api/board")
+    except (urllib.error.URLError, ValueError):
+        return sid, None
+    return resolve_session_id(sid, board.get("columns") or {})
+
+
 def find_session_status(columns: Dict[str, Any], sid: str) -> Optional[str]:
     """Status of the live session card matching `sid` (any column), or None
     if no card matches. Used to tell a busy target from a stuck one before
@@ -588,8 +611,7 @@ def cmd_sessions(args: argparse.Namespace) -> int:
 
 
 def cmd_exchange(args: argparse.Namespace) -> int:
-    board = _request(args.base_url, "/api/board")
-    resolved_sid, reason = resolve_session_id(args.sid, board.get("columns") or {})
+    resolved_sid, reason = resolve_sid_via_board(args.base_url, args.sid)
     if reason is not None:
         print(f"UNRESOLVABLE reason={reason}")
         return 1
@@ -660,6 +682,15 @@ def cmd_chief_sid(args: argparse.Namespace) -> int:
 
 
 def cmd_say(args: argparse.Namespace) -> int:
+    resolved_sid, reason = resolve_sid_via_board(args.base_url, args.sid)
+    if reason is not None:
+        print(f"UNRESOLVABLE reason={reason}")
+        return 1
+    # Resolved once, before the one POST: everything below (the POST, the
+    # exchange poll, the board/card reads, and every printed line) must speak
+    # about the same session, or the verdict describes a different one.
+    args.sid = resolved_sid
+
     text = read_brief(args.file)
 
     send_time = datetime.now(timezone.utc)
@@ -754,12 +785,16 @@ def cmd_say(args: argparse.Namespace) -> int:
 
 
 def cmd_stop(args: argparse.Namespace) -> int:
+    resolved_sid, reason = resolve_sid_via_board(args.base_url, args.sid)
+    if reason is not None:
+        print(f"UNRESOLVABLE reason={reason}")
+        return 1
     mode = "kill" if args.kill else "quit"
     _request(
-        args.base_url, f"/api/claude-code/sessions/{args.sid}/stop",
+        args.base_url, f"/api/claude-code/sessions/{resolved_sid}/stop",
         method="POST", body={"mode": mode},
     )
-    print(f"STOPPED sid={args.sid} mode={mode}")
+    print(f"STOPPED sid={resolved_sid} mode={mode}")
     return 0
 
 

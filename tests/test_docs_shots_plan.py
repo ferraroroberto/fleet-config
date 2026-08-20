@@ -109,4 +109,41 @@ check(
 )
 
 
+# ---- cmd_check: a diff that FAILED is `unknown`, not the empty set (#681) ----
+# `STALE=` is the value /issue-finish reads as "no visual-docs feature touched
+# by this diff" and skips the whole sub-step on. The old private
+# `_changed_files` printed exactly that when the diff itself failed.
+import contextlib  # noqa: E402
+import io  # noqa: E402
+
+
+def _run_dsp_check(changed_stub):
+    import shutil
+    repo = Path(tempfile.mkdtemp(prefix="test_docs_shots_plan_"))
+    (repo / "docs" / "screenshots").mkdir(parents=True)
+    (repo / "docs" / "screenshots" / "manifest.json").write_text(
+        json.dumps(MANIFEST), encoding="utf-8")
+    orig_changed, orig_base = p.git_run.changed_files, p._default_base
+    p.git_run.changed_files = lambda *a, **k: changed_stub
+    p._default_base = lambda *_a, **_k: "origin/main"
+    try:
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            p.cmd_check(repo, None)
+        return buf.getvalue()
+    finally:
+        p.git_run.changed_files, p._default_base = orig_changed, orig_base
+        shutil.rmtree(repo, ignore_errors=True)
+
+
+_dsp_out = _run_dsp_check(None)
+check("STALE=unknown" in _dsp_out and "UNMAPPED=unknown" in _dsp_out,
+      f"cmd_check: a failed diff reports STALE=unknown / UNMAPPED=unknown — got {_dsp_out.splitlines()!r}")
+_dsp_clean = _run_dsp_check([])
+check("STALE=" in _dsp_clean.splitlines() and "UNMAPPED=" in _dsp_clean.splitlines(),
+      f"cmd_check: a genuinely clean diff still reports the EMPTY stale set, distinct from unknown — got {_dsp_clean.splitlines()!r}")
+check("STALE=reporting:app/tab_reporting.py" in _run_dsp_check(["app/tab_reporting.py"]),
+      "cmd_check: a real hit still reports the stale feature")
+
+
 _h.report_and_exit("docs_shots_plan")

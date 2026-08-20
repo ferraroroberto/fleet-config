@@ -133,8 +133,8 @@ README/docs update and before the verification gate:
    E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/docs_shots_plan.py check <repo-root> [--base <ref>]
    ```
 
-   Prints `MANIFEST=<path>|absent`, `STALE=<feature:file|file,...;...>`,
-   `UNMAPPED=<csv>`, `README_MARKERS=yes|no`. `--base` defaults to the repo's
+   Prints `MANIFEST=<path>|absent`, `STALE=<feature:file|file,...;...>|unknown`,
+   `UNMAPPED=<csv>|unknown`, `README_MARKERS=yes|no`. `--base` defaults to the repo's
    main branch — omit it unless `/issue-finish` is diffing against something
    else.
 2. `MANIFEST=absent` → no-op, nothing to report.
@@ -147,6 +147,10 @@ README/docs update and before the verification gate:
    report-only flag, not a blocker for the rest of `/issue-finish`.
 5. Empty stale set → no-op, say so in the finish summary
    (`docs-shots: no visual-docs feature touched by this diff`).
+   `STALE=unknown` / `UNMAPPED=unknown` is **not** the empty set — the diff
+   itself failed (bad base ref, unreadable repo), so nothing is known either
+   way (fleet-config#681). Report it as unknown, name the base ref, and ask
+   the user rather than proceeding as if nothing were stale.
 6. Non-empty stale set → **propose-then-capture, same gate as standalone**:
    show the stale set + reasons, wait for the user's OK, **inside the same
    `/issue-finish` run** (this is exactly the kind of decision the global

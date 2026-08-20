@@ -140,7 +140,9 @@ mode. Pick the smallest mode that genuinely covers the change:
   E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/ux_surface.py check .
   ```
 
-  If `SPEC_APPLIES=yes` and `TOUCHED=yes`, also (a) **token check, fix-now** —
+  If `SPEC_APPLIES=yes` and `TOUCHED=yes` (or `TOUCHED=unknown` — the diff
+  failed, which is not evidence the surface was untouched, fleet-config#681),
+  also (a) **token check, fix-now** —
   compare the touched CSS custom properties (light **and** dark) and the nav
   contract to `~/.claude/design.md` + `design.dark.md` and fix material drift
   in-branch now (don't file-and-defer; that's `/design-sync`'s periodic job);

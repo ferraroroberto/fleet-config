@@ -138,6 +138,7 @@ The **work layer**, enabled by L2. Most mature ones are **web apps exposing an A
 | 🗂️ **copilot-studio-transcripts** | Streamlit workbench for Copilot Studio transcripts. | Streamlit | — |
 | 📚 **closed-company-accounting** | Accounting tooling for a closed company. | pipeline | — |
 | 🤖 **automation** | Grab-bag of Python automation tools (audio, image, video, email, Notion, system). | scripts | Notion, etc. |
+| 📁 **mcp-personal-onedrive** | Read-only MCP server for browsing personal OneDrive from a coding agent. | MCP server | **OneDrive** |
 | 🌱 **life-os** | Personal productivity suite as Claude Code skills (diary, meeting prep, sparring, visual muse, …). Launched from the app-launcher's Life OS tab. | skills | app-launcher (L2) |
 | ⛏️ **minecraft-bedrock-bot** | Headless Node.js bot that joins a Minecraft Bedrock Realm over NetherNet (BedrockX), with reconnect/supervision. | scripts (Node) | Minecraft Realm |
 | 📈 **algo-trading** | Rule-based automated FX trading on major pairs — backtest → paper → live. | pipeline | **Interactive Brokers** |

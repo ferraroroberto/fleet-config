@@ -156,6 +156,27 @@ try:
               f"run_git_checked: SystemExit message names the failed git command, got {exc!r}")
     check(raised, "run_git_checked: a non-zero exit raises SystemExit instead of returning")
 
+    # ---- changed_files: a failed diff is None, never an empty list (#681) ----
+    # The whole point of the shared helper: `[]` means "diffed cleanly, nothing
+    # changed" and `None` means "could not diff", and the three gates that read
+    # it (ux_surface / deploy_coverage / docs_shots_plan) render those as `no`
+    # vs `unknown`. Their old private copies collapsed both into `[]`.
+    check(git_run.changed_files(work, "no-such-base-ref-xyz") is None,
+          "changed_files: an unresolvable base ref returns None, not []")
+    check(git_run.changed_files(tmp / "not-a-repo-at-all", "main") is None,
+          "changed_files: a path that is not a repo returns None, not []")
+
+    (work / "touched-by-681.txt").write_text("hi\n", encoding="utf-8")
+    _git(work, "add", "touched-by-681.txt")
+    _git(work, "commit", "-q", "-m", "a change to diff")
+    listed = git_run.changed_files(work, "origin/main")
+    check(listed is not None and "touched-by-681.txt" in listed,
+          f"changed_files: a real three-dot diff lists the changed path, got {listed!r}")
+    _git(work, "checkout", "-q", "-B", "empty-diff", "origin/main")
+    check(git_run.changed_files(work, "origin/main") == [],
+          "changed_files: a genuinely clean diff is [] — the state None must stay distinct from")
+    _git(work, "checkout", "-q", "main")
+
     # ---- git_env: the variable is set, on top of the ambient environment ----
     env = git_run.git_env()
     check(env.get("GIT_OPTIONAL_LOCKS") == "0", "git_env: sets GIT_OPTIONAL_LOCKS=0")

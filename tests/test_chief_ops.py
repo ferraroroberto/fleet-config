@@ -879,4 +879,73 @@ finally:
     shutil.rmtree(_say_tmp, ignore_errors=True)
 
 
+# ---- say/stop resolve the prefix too (fleet-config#681) ----------------------
+# `board`/`sessions` only ever print the 8-char prefix, so that is the only
+# form an operator (or chief, per SKILL.md) has. `exchange` resolved it and
+# `say`/`stop` did not: `say <prefix>` POSTed to a session id that does not
+# exist, and `--verify` then read the resulting empty card as PENDING —
+# "delivery likely, unconfirmed" for a steer that was never accepted at all.
+
+def _run_sid_cmd(fn, sid, *, kill=False):
+    """Drive cmd_say (plain) or cmd_stop against a stubbed transport, returning
+    (exit_code, stdout, the sid the endpoint was actually called with)."""
+    seen = {"path": None}
+
+    def _fake_request(base_url, path, method="GET", body=None, timeout=10.0):
+        if path == "/api/board":
+            return {"columns": _exchange_columns}
+        seen["path"] = path
+        return {}
+
+    _orig = (co._request, co.post_session_input)
+    co._request = _fake_request
+
+    def _fake_post(base_url, s, text):
+        seen["path"] = f"/api/claude-code/sessions/{s}/input"
+        return {"ok": True, "reason": "ok", "error": None}
+
+    co.post_session_input = _fake_post
+    try:
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            args = argparse.Namespace(sid=sid, file=str(_prefix_brief), verify=False,
+                                      timeout=0.0, poll_interval=0.0, kill=kill,
+                                      base_url=co.DEFAULT_BASE_URL)
+            rc = fn(args)
+        return rc, buf.getvalue(), seen["path"]
+    finally:
+        co._request, co.post_session_input = _orig
+
+
+_prefix_tmp = Path(tempfile.mkdtemp(prefix="chief_ops_prefix_"))
+try:
+    _prefix_brief = _prefix_tmp / "brief.md"
+    _prefix_brief.write_text("steer text", encoding="utf-8")
+
+    _rc, _out, _path = _run_sid_cmd(co.cmd_say, "ad3e8bbb")
+    check(_path == "/api/claude-code/sessions/ad3e8bbbcccccccccccccccccccccccc/input",
+          f"cmd_say: an 8-char board prefix is resolved before the POST — called {_path!r}")
+    check("SENT sid=ad3e8bbbcccccccccccccccccccccccc" in _out and _rc == 0,
+          "cmd_say: the reported sid is the resolved one, so the operator can correlate it")
+
+    _rc, _out, _path = _run_sid_cmd(co.cmd_stop, "ad3e8bbb")
+    check(_path == "/api/claude-code/sessions/ad3e8bbbcccccccccccccccccccccccc/stop",
+          f"cmd_stop: an 8-char board prefix is resolved before the stop — called {_path!r}")
+    check("STOPPED sid=ad3e8bbbcccccccccccccccccccccccc" in _out and _rc == 0,
+          "cmd_stop: reports the resolved sid")
+
+    _rc, _out, _path = _run_sid_cmd(co.cmd_say, "d235f29")
+    check(_rc == 1 and "UNRESOLVABLE" in _out and _path is None,
+          "cmd_say: an ambiguous prefix refuses and never sends — same rule as cmd_exchange")
+    _rc, _out, _path = _run_sid_cmd(co.cmd_stop, "d235f29")
+    check(_rc == 1 and "UNRESOLVABLE" in _out and _path is None,
+          "cmd_stop: an ambiguous prefix refuses and never stops the wrong session")
+
+    _rc, _out, _path = _run_sid_cmd(co.cmd_say, "deadbeefdeadbeefdeadbeefdeadbeef")
+    check(_path == "/api/claude-code/sessions/deadbeefdeadbeefdeadbeefdeadbeef/input",
+          "cmd_say: an id matching no live session is passed through unchanged (real endpoint decides)")
+finally:
+    shutil.rmtree(_prefix_tmp, ignore_errors=True)
+
+
 _h.report_and_exit("test_chief_ops")

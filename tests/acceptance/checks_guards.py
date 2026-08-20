@@ -100,6 +100,77 @@ def _block_askuserquestion_chief_unit_checks() -> Tuple[int, int]:
     return check.failures, check.total
 
 
+def _warn_channel_unit_checks() -> Tuple[int, int]:
+    """`_lib.warn()` speaks a channel the model actually reads (fleet-config#681).
+
+    Claude Code adds a hook's exit-0 **plain-text** stdout to the model's
+    context only on `UserPromptSubmit`/`UserPromptExpansion`/`SessionStart`;
+    everywhere else it goes to the debug log. Every one of this repo's seven
+    nudge sites is `PreToolUse` or `PostToolUse`, so all seven were advising
+    nobody — a guard that only reports. These drive real hooks with a real
+    `hook_event_name` and assert the per-event JSON dialect, because "the
+    nudge printed something" is exactly the assertion that stayed green
+    throughout the bug.
+    """
+    check = _Checker()
+
+    # PreToolUse: `systemMessage` — the one PreToolUse field documented as
+    # "added to the conversation as context Claude can see" that does NOT also
+    # decide whether the tool call runs (a nudge must stay advisory, so never
+    # permissionDecision allow/ask).
+    _code, out, _err = run("bash_cmdexe_syntax_guard", {
+        "hook_event_name": "PreToolUse", "tool_name": "Bash",
+        "tool_input": {"command": "echo %PATH%"},
+    })
+    try:
+        pre = json.loads(out)
+    except json.JSONDecodeError:
+        pre = None
+    check("warn: PreToolUse nudge is JSON, not plain stdout Claude never reads",
+          isinstance(pre, dict))
+    check("warn: PreToolUse nudge rides `systemMessage` (model-visible on that event)",
+          isinstance(pre, dict) and "Nudge:" in str(pre.get("systemMessage", "")))
+    check("warn: PreToolUse nudge is NOT a permissionDecision — it must not change whether the tool runs",
+          isinstance(pre, dict) and "hookSpecificOutput" not in pre)
+
+    # PostToolUse: `hookSpecificOutput.additionalContext`.
+    tmp = Path(tempfile.mkdtemp(prefix="warn_channel_"))
+    try:
+        target = tmp / "wrapper.py"
+        target.write_text(
+            "import subprocess\nsubprocess.run(['claude', '-p', 'hi'])\n",
+            encoding="utf-8")
+        _code, out, _err = run("hub_bypass_warn", {
+            "hook_event_name": "PostToolUse", "tool_name": "Write",
+            "tool_input": {"file_path": str(target)},
+        })
+        try:
+            post = json.loads(out)
+        except json.JSONDecodeError:
+            post = None
+        hso = post.get("hookSpecificOutput", {}) if isinstance(post, dict) else {}
+        check("warn: PostToolUse nudge rides hookSpecificOutput.additionalContext",
+              "Nudge:" in str(hso.get("additionalContext", "")))
+        check("warn: PostToolUse nudge stamps the matching hookEventName",
+              hso.get("hookEventName") == "PostToolUse")
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+    # Both remain non-blocking: a warn is advice, never a refusal.
+    check("warn: the PreToolUse nudge still exits 0 (advisory, not a block)", _code == 0)
+
+    # A foreign harness keeps the bare-stdout form — Claude's JSON protocol is
+    # Claude's. Grok's tell is `hookEventName` + camelCase tool ids.
+    _code, out, _err = run("bash_cmdexe_syntax_guard", {
+        "hookEventName": "pre_tool_use", "toolName": "run_terminal_command",
+        "toolInput": {"command": "echo %PATH%"},
+    })
+    check("warn: a Grok-shaped payload still gets the bare-stdout nudge, not Claude JSON",
+          _code == 0 and out.strip().startswith("Nudge:"))
+
+    return check.failures, check.total
+
+
 def _gh_body_file_guard_unit_checks() -> Tuple[int, int]:
     """The warn-only nudge fires on the two payload traps and stays silent
     otherwise. Exit is always 0, so these assert on STDOUT, not the exit code:
