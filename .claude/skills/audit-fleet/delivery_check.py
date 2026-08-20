@@ -46,9 +46,6 @@ KIND = "digest"
 LEDGER_TITLE = "audit-fleet digest state"
 DEFAULT_MAX_AGE_HOURS = digest_delivery.DEFAULT_MAX_AGE_HOURS
 
-# Re-exported so the contract test can drive this module's real entry point.
-newest_comment_age_hours = digest_delivery.newest_comment_age_hours
-
 
 def main(argv: list[str] | None = None) -> int:
     return digest_delivery.main_for(

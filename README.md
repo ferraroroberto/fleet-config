@@ -82,7 +82,6 @@ fleet-config/
 │   ├── slack_notify.py              # shared Slack-notify transport (importable + CLI, stdlib-only)
 │   ├── notify_complete.py           # deterministic skill-completion ping (issue-* skills call this); finish/yolo carry a work-summary roll-up
 │   ├── work_summary.py              # deterministic PR work-summary (file/LOC roll-up + per-file table) from `gh`, no LLM; importable + CLI
-│   ├── pi_usage_stats.py            # content-free Pi session usage collector (provider/model/tokens from ~/.pi/agent/sessions)
 │   ├── conversation_capture.py     # Stop hook: captures a session to markdown (projects.toml-driven, opt-in; wired from the project's own settings.json)
 │   ├── session_index.py            # SessionStart hook: lazily digests settled captures into conversations/index.md
 │   ├── conversation_index.py       # the indexer (lib + CLI) session_index runs; digests via the hub, writes index.md + index.json

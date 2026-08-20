@@ -2559,39 +2559,6 @@ def _work_summary_unit_checks() -> Tuple[int, int]:
     return check.failures, check.total
 
 
-def _pi_usage_stats_unit_checks() -> Tuple[int, int]:
-    """Pi JSONL usage collector: model/provider + tokens, no prompt text."""
-    sys.path.insert(0, str(HOOKS))
-    import pi_usage_stats as pi_stats  # noqa: E402
-
-    check = _Checker()
-
-    with tempfile.TemporaryDirectory() as tmp:
-        root = Path(tmp) / "sessions"
-        sess_dir = root / "--E--automation-fleet-config--"
-        sess_dir.mkdir(parents=True)
-        path = sess_dir / "2026-06-24T09-09-16-155Z_abc.jsonl"
-        path.write_text("\n".join([
-            json.dumps({"type": "session", "id": "abc", "timestamp": "2026-06-24T09:09:16.155Z", "cwd": "E:\\automation\\fleet-config"}),
-            json.dumps({"type": "model_change", "timestamp": "2026-06-24T09:09:17.000Z", "provider": "openai-codex", "modelId": "gpt-5.5"}),
-            json.dumps({"type": "message", "timestamp": "2026-06-24T09:10:00.000Z", "message": {"role": "assistant", "provider": "openai-codex", "model": "gpt-5.5", "content": [{"type": "toolCall"}], "usage": {"input": 10, "output": 2, "cacheRead": 3, "cacheWrite": 4, "totalTokens": 19, "cost": {"total": 0.12}}}}),
-        ]), encoding="utf-8")
-
-        sessions = pi_stats.collect(root)
-        summary = pi_stats.aggregate(sessions)
-        row = sessions[0]
-        check("pi_usage_stats: parses cwd/project/provider/model",
-              len(sessions) == 1 and row.project == "fleet-config"
-              and row.provider == "openai-codex" and row.model == "gpt-5.5")
-        check("pi_usage_stats: aggregates token totals and tool calls",
-              summary["usage"]["total"] == 19 and summary["usage"]["input"] == 10
-              and row.tool_calls == 1 and summary["by_model"]["openai-codex/gpt-5.5"]["total"] == 19)
-        check("pi_usage_stats: JSON rows omit prompt text",
-              "content" not in row.as_dict() and "message" not in row.as_dict())
-
-    return check.failures, check.total
-
-
 def _slack_routing_unit_checks() -> Tuple[int, int]:
     """Category → channel routing (issue #139): the resolver picks the dedicated
     channel per category, falls back to the single channel when a category is
