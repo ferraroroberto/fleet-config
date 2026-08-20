@@ -19,7 +19,7 @@ import os
 import subprocess
 import sys
 from pathlib import Path
-from typing import Optional, Sequence
+from typing import List, Optional, Sequence
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from no_window import NO_WINDOW  # noqa: E402
@@ -155,6 +155,28 @@ def run_git_checked(args: Sequence[str]) -> str:
         sys.stderr.write(r.stderr or "")
         raise SystemExit(f"git {' '.join(args)} failed (exit {r.returncode})")
     return (r.stdout or "").strip()
+
+
+def changed_files(repo_path: Path, base: str) -> Optional[List[str]]:
+    """Files changed on HEAD since its merge-base with `base` (three-dot), or
+    `None` when the diff could not be taken at all.
+
+    **`None`, never `[]`.** An unresolvable base ref, a detached/unborn HEAD,
+    an unreadable repo — none of those mean "nothing was touched", but each of
+    `deploy_coverage`, `ux_surface` and `docs_shots_plan` used to carry its own
+    verbatim copy of this helper that swallowed the non-zero exit and returned
+    an empty list, rendering as `TOUCHED=no` / `STALE=` / `UNMAPPED=`: a failed
+    probe indistinguishable from a clean diff, in the very machinery those
+    gates exist to make honest (fleet-config#681). `deploy_coverage`'s own
+    module docstring already spelled out the rule its `_changed_files` broke —
+    "a flow that cannot tell whether it was touched must not silently assume it
+    wasn't" (`project-scaffolding#199`). Callers turn `None` into their own
+    `unknown` state; none of them may turn it back into `no`.
+    """
+    res = run_git(["-C", str(repo_path), "diff", "--name-only", f"{base}...HEAD"])
+    if res.returncode != 0:
+        return None
+    return [ln.strip() for ln in res.stdout.splitlines() if ln.strip()]
 
 
 def resolve_default_branch_ref(

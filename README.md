@@ -50,7 +50,7 @@ fleet-config/
 ├── statusline-command.ps1          # exposed as ~/.claude/statusline-command.ps1 (symlink) — custom statusline (Claude only)
 ├── .gitignore
 ├── install.ps1                     # creates junctions/symlinks into the agent homes: ~/.claude, ~/.agents, ~/.codex, ~/.pi/agent, ~/.copilot; also wires shell/claude-otel-project.ps1 into $PROFILE
-├── uninstall.ps1                   # removes only the links install.ps1 created (+ the $PROFILE OTel hook block), leaves the homes otherwise untouched
+├── uninstall.ps1                   # mirror of install.ps1: the manifest links + the $PROFILE OTel block, agy plugin, and copilot hook it writes outside it
 ├── shell/
 │   └── claude-otel-project.ps1     # dot-sourced from $PROFILE — wraps `claude` to auto-tag OTEL_RESOURCE_ATTRIBUTES with the repo name (docs/otel-project-attribution.md)
 ├── hooks/                          # junction → ~/.claude/hooks AND ~/.codex/hooks (Codex)
@@ -148,7 +148,7 @@ The live agent wiring picks the venv up automatically, no manual path edit requi
 .\uninstall.ps1
 ```
 
-Removes only the junctions/symlinks the installer created (recorded in `~/.claude/.fleet-config-installed.json`). Never touches real data.
+Removes the junctions/symlinks the installer created (recorded in `~/.claude/.fleet-config-installed.json`) **plus the three pieces of state `install.ps1` writes outside that manifest**: the OTel `$PROFILE` block, the agy context-filter plugin (`agy plugin uninstall fleet-context-filter`), and `~/.copilot/hooks/fleet-context-filter.json`. Never touches real data, and never removes a file in those shared directories that this repo did not write.
 
 ## Inspiration
 

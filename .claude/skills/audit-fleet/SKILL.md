@@ -408,8 +408,11 @@ the `kind=practices` marker — keep the `<!-- fleet-practices -->` block intact
 - <YYYY-MM-DD>: +N capabilities, +M candidates from <repos>.
 ```
 
-Write to a repo-scoped temp file (never a fixed shared name — see the global
-tmp-file gotcha; e.g. `E:/tmp/audit-practices-ledger.md`) and upsert:
+Write to a **unique** temp file — never a fixed shared name, because this
+skill's own parallel sub-agents share `E:/tmp` and a fixed name is a race
+(same rule as `skills/codebase-audit/SKILL.md` step 8). Use
+`E:/tmp/audit-practices-ledger-<short-sha>.md`, where `<short-sha>` is
+`git rev-parse --short HEAD` in this repo. Then upsert:
 
 ```
 E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/audit_issue.py upsert \

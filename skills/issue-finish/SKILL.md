@@ -90,6 +90,10 @@ E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skill
 - `SPEC_APPLIES=no` (non-web repo / Streamlit spike) **or** `TOUCHED=no` → the
   gate is a no-op. **State it** in the step-7 summary (`no UX surface touched`)
   and go to step 4. This is the common case and costs nothing.
+- `TOUCHED=unknown` → the diff itself could not be taken, which is **not**
+  evidence the surface was untouched (fleet-config#681). Treat it as `yes`,
+  run both legs against every `KEY_VIEWS` entry, and say `UX surface: unknown
+  (diff failed) — gate run in full` in the step-7 summary.
 - `TOUCHED=yes` → run both legs against the files in `MATCHED`:
   - **Token check (fix-now).** Compare the touched CSS custom properties (light
     **and** dark) and the nav contract to `~/.claude/design.md` +

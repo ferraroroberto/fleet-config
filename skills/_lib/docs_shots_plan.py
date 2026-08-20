@@ -34,7 +34,10 @@ Subcommands:
       Also diffs `<base>...HEAD` (default: the repo's main branch) and
       intersects it against the manifest. Prints `MANIFEST`, `STALE=
       <feature:file|file,...;...>`, `UNMAPPED=<csv>`, `README_MARKERS=yes|no`.
-      Used by the `/issue-finish` Step 2 sub-step.
+      Used by the `/issue-finish` Step 2 sub-step. When the diff itself fails
+      (bad base ref, unreadable repo) both `STALE` and `UNMAPPED` are the
+      literal `unknown`, never the empty value an actually-clean diff
+      produces (fleet-config#681).
 
 stdlib + the `git` CLI only (matches the `_lib` module contract); imports
 `ux_surface` for glob matching and `git_run` for the diff, no `gh` dependency.
@@ -142,13 +145,6 @@ def _default_base(repo: Path) -> str:
     return git_run.resolve_default_branch_ref(repo)
 
 
-def _changed_files(repo: Path, base: str) -> List[str]:
-    res = git_run.run_git(["-C", str(repo), "diff", "--name-only", f"{base}...HEAD"])
-    if res.returncode != 0:
-        return []
-    return [ln.strip() for ln in res.stdout.splitlines() if ln.strip()]
-
-
 def cmd_discover(repo: Path) -> int:
     manifest_path = find_manifest_path(repo)
     if manifest_path is None:
@@ -176,9 +172,15 @@ def cmd_check(repo: Path, base: Optional[str]) -> int:
     manifest = load_manifest(manifest_path)
     print(f"MANIFEST={manifest_path}")
     base = base or _default_base(repo)
-    changed = _changed_files(repo, base)
-    print(f"STALE={_format_stale(stale_features(changed, manifest))}")
-    print(f"UNMAPPED={','.join(unmapped_changed_files(changed, manifest))}")
+    changed = git_run.changed_files(repo, base)
+    if changed is None:
+        # An empty stale set is a claim ("no visual-docs feature was touched")
+        # that a failed diff has no basis for making (fleet-config#681).
+        print("STALE=unknown")
+        print("UNMAPPED=unknown")
+    else:
+        print(f"STALE={_format_stale(stale_features(changed, manifest))}")
+        print(f"UNMAPPED={','.join(unmapped_changed_files(changed, manifest))}")
     readme_path = repo / "README.md"
     has_markers = readme_path.is_file() and readme_has_markers(
         readme_path.read_text(encoding="utf-8", errors="replace")

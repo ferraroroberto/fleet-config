@@ -29,9 +29,12 @@ Subcommands:
 
   check <repo-root> [--base <ref>]
       Also diff `<base>...HEAD` and glob-match the changed files against the
-      block's `paths`. Prints `SPEC_APPLIES`, `TOUCHED=yes|no`, `MATCHED=<csv>`,
-      `KEY_VIEWS`. Used at `/issue-finish` and `/issue-yolo` to gate the design
-      check on the actual diff. `--base` defaults to the repo's main branch.
+      block's `paths`. Prints `SPEC_APPLIES`, `TOUCHED=yes|no|unknown`,
+      `MATCHED=<csv>`, `KEY_VIEWS`. Used at `/issue-finish` and `/issue-yolo`
+      to gate the design check on the actual diff. `--base` defaults to the
+      repo's main branch. `TOUCHED=unknown` means the diff itself could not be
+      taken (bad base ref, unreadable repo) — the gate treats it as touched,
+      never as a silent `no` (fleet-config#681).
 
 A repo with no `## UX surface` block (or `design spec applies: no`) yields
 `SPEC_APPLIES=no` / `TOUCHED=no`, so the gate is a permanent no-op there.
@@ -43,7 +46,6 @@ from __future__ import annotations
 
 import argparse
 import re
-import subprocess
 import sys
 from pathlib import Path
 from typing import Dict, List, Optional
@@ -201,21 +203,9 @@ def touched_paths(changed_files: List[str], patterns: List[str]) -> List[str]:
 
 # ---- git-backed CLI -------------------------------------------------------
 
-def _git(repo: Path, *args: str) -> subprocess.CompletedProcess:
-    return git_run.run_git(["-C", str(repo), *args])
-
-
 def _default_base(repo: Path) -> str:
     """The repo's main branch to diff against (prefer the remote's default)."""
     return git_run.resolve_default_branch_ref(repo)
-
-
-def _changed_files(repo: Path, base: str) -> List[str]:
-    """Files changed on HEAD since its merge-base with `base` (three-dot)."""
-    res = _git(repo, "diff", "--name-only", f"{base}...HEAD")
-    if res.returncode != 0:
-        return []
-    return [ln.strip() for ln in res.stdout.splitlines() if ln.strip()]
 
 
 def _load_block(repo: Path) -> Optional[Dict[str, object]]:
@@ -244,7 +234,16 @@ def cmd_check(repo: Path, base: Optional[str]) -> int:
         print("KEY_VIEWS=")
         return 0
     base = base or _default_base(repo)
-    matched = touched_paths(_changed_files(repo, base), block["paths"])  # type: ignore[index]
+    changed = git_run.changed_files(repo, base)
+    if changed is None:
+        # The diff itself failed. "The UX surface was not touched" is a claim
+        # this run has no evidence for, so it does not make it — the gate reads
+        # `unknown` as touched (fleet-config#681).
+        print("TOUCHED=unknown")
+        print("MATCHED=")
+        print(f"KEY_VIEWS={','.join(block['key_views'])}")  # type: ignore[index]
+        return 0
+    matched = touched_paths(changed, block["paths"])  # type: ignore[index]
     print(f"TOUCHED={'yes' if matched else 'no'}")
     print(f"MATCHED={','.join(matched)}")
     print(f"KEY_VIEWS={','.join(block['key_views'])}")  # type: ignore[index]

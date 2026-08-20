@@ -343,6 +343,13 @@ if ($needsElevation -and -not (Test-IsElevated)) {
     Write-Host "Symlink creation requires admin (cross-volume file linking). Requesting UAC..." -ForegroundColor Yellow
     $psExe   = 'C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe'
     $psArgs  = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $PSCommandPath)
+    # The parent exits on the child's exit code below, so it never reaches its
+    # own Invoke-*Verification calls at the end of the script. Any switch not
+    # forwarded here silently no-ops on exactly the machines that need the UAC
+    # prompt -- a fresh install -- reporting a successful install for a
+    # verification that never ran (fleet-config#681).
+    if ($VerifyCodexSandbox) { $psArgs += '-VerifyCodexSandbox' }
+    if ($VerifyGrokCompat)   { $psArgs += '-VerifyGrokCompat' }
     $proc    = Start-Process -FilePath $psExe -ArgumentList $psArgs -Verb RunAs -Wait -PassThru
     exit $proc.ExitCode
 }

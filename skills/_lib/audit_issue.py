@@ -46,6 +46,7 @@ import argparse
 import datetime
 import hashlib
 import json
+import os
 import re
 import subprocess
 import sys
@@ -625,30 +626,41 @@ def _upsert_issue(
             gh(["issue", "reopen", str(keep), "--repo", repo])
     tmp = _write_tmp(ensure_marker(body, kind))
 
-    if label:
-        _ensure_label(repo, label)
+    # `delete=False` means nothing reclaims this but us. One weekly /audit-fleet
+    # pass upserts a ledger plus up to eight bucket issues across ~39 repos, so
+    # an un-unlinked temp file here is hundreds of orphaned `.md` files in
+    # %TEMP% every week, forever (fleet-config#681). `finally`, not a trailing
+    # unlink: `gh` raising must not be what decides whether we clean up.
+    try:
+        if label:
+            _ensure_label(repo, label)
 
-    if keep is None:
-        create = ["issue", "create", "--repo", repo, "--title", title,
-                  "--body-file", tmp, "--assignee", "@me"]
-        if label:
-            create += ["--label", label]
-        url = gh(create)
-    else:
-        edit = ["issue", "edit", str(keep), "--repo", repo, "--title", title, "--body-file", tmp]
-        if label:
-            edit += ["--add-label", label]
-        gh(edit)
-        url = gh(["issue", "view", str(keep), "--repo", repo, "--json", "url", "-q", ".url"])
-        for n in dupes:
-            _ensure_label(repo, "duplicate")
-            _run(["issue", "edit", str(n), "--repo", repo, "--add-label", "duplicate"])
-            gh([
-                "issue", "close", str(n), "--repo", repo,
-                "--comment",
-                f"Collapsed into #{keep} — one audit issue per type per repo "
-                f"(see skills/_lib/audit_issue.py).",
-            ])
+        if keep is None:
+            create = ["issue", "create", "--repo", repo, "--title", title,
+                      "--body-file", tmp, "--assignee", "@me"]
+            if label:
+                create += ["--label", label]
+            url = gh(create)
+        else:
+            edit = ["issue", "edit", str(keep), "--repo", repo, "--title", title, "--body-file", tmp]
+            if label:
+                edit += ["--add-label", label]
+            gh(edit)
+            url = gh(["issue", "view", str(keep), "--repo", repo, "--json", "url", "-q", ".url"])
+            for n in dupes:
+                _ensure_label(repo, "duplicate")
+                _run(["issue", "edit", str(n), "--repo", repo, "--add-label", "duplicate"])
+                gh([
+                    "issue", "close", str(n), "--repo", repo,
+                    "--comment",
+                    f"Collapsed into #{keep} — one audit issue per type per repo "
+                    f"(see skills/_lib/audit_issue.py).",
+                ])
+    finally:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
 
     return url
 

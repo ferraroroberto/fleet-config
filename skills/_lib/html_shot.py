@@ -128,12 +128,21 @@ def shoot(
     chrome_exe = find_chrome()
     tmp = Path(tempfile.gettempdir())
 
-    # 1. probe for the page's measured dimensions
-    probe = _run_chrome(chrome_exe, [
-        "--enable-logging=stderr", "--v=0", f"--virtual-time-budget={virtual_time_budget}",
-        "--window-size=400,300", f"--screenshot={tmp / ('html_shot_probe_' + uuid.uuid4().hex + '.png')}",
-        url,
-    ], timeout)
+    # 1. probe for the page's measured dimensions. The probe PNG is a throwaway
+    # — only Chrome's stderr is read — but it is still a real file, and every
+    # /system-map, /config-map and design render dropped one in %TEMP% that
+    # nothing reclaimed. Unlinked in `finally`, like the staged shot below, so
+    # a probe that fails to yield DIMS doesn't leak on its way out
+    # (fleet-config#681).
+    probe_png = tmp / ("html_shot_probe_" + uuid.uuid4().hex + ".png")
+    try:
+        probe = _run_chrome(chrome_exe, [
+            "--enable-logging=stderr", "--v=0", f"--virtual-time-budget={virtual_time_budget}",
+            "--window-size=400,300", f"--screenshot={probe_png}",
+            url,
+        ], timeout)
+    finally:
+        probe_png.unlink(missing_ok=True)
     dims = parse_dims(probe.stderr)
     if dims is None:
         raise RuntimeError(
@@ -144,17 +153,19 @@ def shoot(
 
     # 2. screenshot at the measured size; render to tmp then copy.
     staged = tmp / f"html_shot_{uuid.uuid4().hex}.png"
-    shot = _run_chrome(chrome_exe, [
-        f"--force-device-scale-factor={scale}", f"--window-size={w},{h}",
-        f"--virtual-time-budget={virtual_time_budget}", f"--screenshot={staged}", url,
-    ], timeout)
-    if not staged.is_file():
-        raise RuntimeError(
-            "screenshot was not written.\n" + shot.stderr.decode("utf-8", "replace")[-800:]
-        )
-    out.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copyfile(staged, out)
-    staged.unlink(missing_ok=True)
+    try:
+        shot = _run_chrome(chrome_exe, [
+            f"--force-device-scale-factor={scale}", f"--window-size={w},{h}",
+            f"--virtual-time-budget={virtual_time_budget}", f"--screenshot={staged}", url,
+        ], timeout)
+        if not staged.is_file():
+            raise RuntimeError(
+                "screenshot was not written.\n" + shot.stderr.decode("utf-8", "replace")[-800:]
+            )
+        out.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(staged, out)
+    finally:
+        staged.unlink(missing_ok=True)
     return w, h
 
 

@@ -21,6 +21,22 @@ from typing import Tuple
 from acceptance.shared import HOOKS, PYTHON, REPO, _Checker
 
 
+# A card row is a markdown table row whose FIRST cell names the project, in
+# bold, optionally after an icon: `| 🚀 **app-launcher** | ... |`. Anchoring to
+# the first cell is the whole point — a bare `r in doc` substring test passed
+# for `mcp-personal-onedrive` purely because the External-integrations table
+# mentions it in prose in a *second* cell, so the guard could not detect the
+# one thing it exists to detect: a mapped repo with no card of its own
+# (fleet-config#681). Non-repo rows (`**Slack**`, `**GPU**`) also match and are
+# harmless: the set is only ever tested for membership of known repo names.
+_CARD_ROW_RE = re.compile(r"^\|[^|]*?\*\*([A-Za-z0-9][A-Za-z0-9._-]*)\*\*[^|]*\|", re.MULTILINE)
+
+
+def _architecture_card_repos(doc: str) -> set:
+    """Project names carrying their own card row in ARCHITECTURE.md."""
+    return set(_CARD_ROW_RE.findall(doc))
+
+
 def _system_map_coverage_check() -> Tuple[int, int]:
     """The system map must cover exactly the fleet, and the doc must agree.
 
@@ -60,8 +76,24 @@ def _system_map_coverage_check() -> Tuple[int, int]:
     check(f"system_map: no stale map entries (stale: {sorted(stale) or 'none'})", not stale)
 
     doc = (arch / "ARCHITECTURE.md").read_text(encoding="utf-8")
-    doc_missing = sorted(r for r in mapped if r not in doc)
-    check(f"system_map: every mapped repo is in ARCHITECTURE.md (missing: {doc_missing or 'none'})", not doc_missing)
+    carded = _architecture_card_repos(doc)
+    doc_missing = sorted(r for r in mapped if r not in carded)
+    check(f"system_map: every mapped repo has a card row in ARCHITECTURE.md (missing: {doc_missing or 'none'})", not doc_missing)
+
+    # The matcher itself, against the shape that defeated the old substring
+    # test: `mcp-personal-onedrive` named in prose in a *second* cell of the
+    # External-integrations table, with no card row of its own anywhere.
+    _prose_only = (
+        "| Service | Reached from | For |\n"
+        "|---|---|---|\n"
+        "| 📁 **OneDrive** | apps: email-archiver, ghost-repo | file browsing |\n"
+    )
+    check("system_map: the card matcher ignores a repo named only in another cell's prose",
+          "ghost-repo" not in _architecture_card_repos(_prose_only))
+    check("system_map: the card matcher accepts a real icon+bold first-cell card row",
+          "ghost-repo" in _architecture_card_repos("| 📁 **ghost-repo** | what it is | pipeline | — |\n"))
+    check("system_map: the card matcher accepts a bold first cell with no icon",
+          "ghost-repo" in _architecture_card_repos("| **ghost-repo** | what it is |\n"))
 
     return check.failures, check.total
 
@@ -454,6 +486,60 @@ def _config_map_check() -> Tuple[int, int, int]:
           wc.summarize(None, cur) == "baseline")
 
     return check.failures, check.total, check.skipped
+
+
+def _installer_symmetry_check() -> Tuple[int, int]:
+    """install.ps1 and uninstall.ps1 stay each other's mirror (fleet-config#681).
+
+    Two failures, one shape — the installer reporting success for work it did
+    not do:
+
+      1. **Self-elevation drops switches.** The UAC relaunch builds `$psArgs`
+         by hand and the parent then `exit`s on the child's exit code, before
+         ever reaching its own `Invoke-*Verification` calls. Any `[switch]`
+         parameter not appended to `$psArgs` silently no-ops on exactly the
+         machines that need the prompt — a fresh install.
+      2. **Uninstall misses out-of-manifest state.** The manifest only records
+         junctions/symlinks, so every `Install-*` that writes elsewhere (the
+         OTel `$PROFILE` block, the agy plugin, the Copilot hook) needs its own
+         `Remove-*`, or a "clean" uninstall leaves fleet-config's hooks live in
+         another agent forever.
+
+    Both are text-level, because there is no way to run either script in a test
+    without touching this machine's real `~/.claude`.
+    Returns (failures, total).
+    """
+    check = _Checker()
+
+    install = (REPO / "install.ps1").read_text(encoding="utf-8")
+    uninstall = (REPO / "uninstall.ps1").read_text(encoding="utf-8")
+
+    # 1. every declared [switch] reaches the elevated child.
+    param_block = install.split("param(", 1)[1].split(")", 1)[0]
+    switches = re.findall(r"\[switch\]\$(\w+)", param_block)
+    check("installer: install.ps1 declares at least one [switch] to forward",
+          bool(switches))
+    relaunch = install.split("$psArgs", 1)[1].split("Start-Process", 1)[0]
+    unforwarded = [s for s in switches if f"-{s}" not in relaunch]
+    check(f"installer: every [switch] is forwarded across the UAC relaunch (dropped: {unforwarded or 'none'})",
+          not unforwarded)
+
+    # 2. every out-of-manifest installer has an uninstall counterpart, and both
+    #    are actually *called*, not merely defined.
+    installers = re.findall(r"function\s+(Install-\w+)", install)
+    check("installer: install.ps1 defines the out-of-manifest Install-* functions",
+          len(installers) >= 3)
+    for fn in installers:
+        counterpart = fn.replace("Install-", "Remove-", 1)
+        check(f"installer: {fn} has a {counterpart} counterpart in uninstall.ps1",
+              f"function {counterpart}" in uninstall)
+        # A defined-but-never-called Remove-* is the same silent no-op the
+        # forwarding bug was: require an invocation line too.
+        called = re.search(rf"^{counterpart}\s*$", uninstall, re.MULTILINE)
+        check(f"installer: {counterpart} is actually invoked, not just defined",
+              bool(called))
+
+    return check.failures, check.total
 
 
 def _readme_layout_check() -> Tuple[int, int]:
