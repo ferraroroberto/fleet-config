@@ -884,6 +884,34 @@ try:
           "worktree_junction_targets: declared extras appended after .venv; "
           "non-strings, blanks, and '..'-escaping entries dropped, slashes trimmed (#620)")
 
+    # A declared target is used to build an OS-level command, so an entry whose
+    # components are not ordinary directory names is dropped here, at the one
+    # place `.fleet.toml` data enters -- and ordinary names must still pass.
+    unsafe = wjt_base / "unsafe"
+    unsafe.mkdir()
+    (unsafe / ".fleet.toml").write_text(
+        '[worktree]\nextra_junctions = ['
+        '"vendor/ok", "a&whoami", "a|whoami", "a>out", "a<in", "a^b", '
+        r'"x\" & whoami & \"y", "C:/windows/temp", "pct%VAR%"'
+        ']\n',
+        encoding="utf-8")
+    check(wc.worktree_junction_targets(unsafe) == [".venv", "vendor/ok"],
+          "worktree_junction_targets: entries whose components are not ordinary "
+          "directory names are dropped before use; ordinary names still pass")
+
+    ordinary = wjt_base / "ordinary"
+    ordinary.mkdir()
+    (ordinary / ".fleet.toml").write_text(
+        '[worktree]\nextra_junctions = ['
+        '"vendor/comfyui", "models/cache", "my models", "node_modules", "a.b-c"'
+        ']\n',
+        encoding="utf-8")
+    check(wc.worktree_junction_targets(ordinary) == [
+              ".venv", "vendor/comfyui", "models/cache", "my models",
+              "node_modules", "a.b-c"],
+          "worktree_junction_targets: ordinary directory names (dots, dashes, "
+          "underscores, spaces, nesting) are not turned away by the guard")
+
     # An unreadable-but-present .fleet.toml (permission error, vanished mid-read,
     # a leftover worktree with a half-deleted checkout) must degrade the same
     # way a MISSING file does -- never raise. If this raised, remove_worktree's
