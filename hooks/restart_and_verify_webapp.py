@@ -138,15 +138,15 @@ def _wait_port_listening(port: int, deadline: float) -> bool:
 
 
 def _git_head(cwd: Path) -> Optional[str]:
+    """HEAD sha for the checkout at ``cwd``, or None when it can't be read.
+
+    Via :func:`_lib.run_git` (fleet-config#677) so this inherits
+    ``GIT_OPTIONAL_LOCKS=0`` like every other git read in the tree — a raw
+    ``subprocess.run(["git", …])`` here would quietly opt back out of the
+    stranded-``index.lock`` fix (fleet-config#667).
+    """
     try:
-        res = subprocess.run(
-            ["git", "rev-parse", "HEAD"],
-            cwd=str(cwd),
-            capture_output=True,
-            text=True,
-            timeout=5,
-            creationflags=_lib.NO_WINDOW,
-        )
+        res = _lib.run_git(["-C", str(cwd), "rev-parse", "HEAD"], timeout=5)
     except (subprocess.TimeoutExpired, OSError):
         return None
     if res.returncode != 0:

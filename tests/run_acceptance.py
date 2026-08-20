@@ -45,7 +45,10 @@ from acceptance.architecture_guards import (  # noqa: E402
     _system_map_whatchanged_check,
 )
 from acceptance.shared import _subprocess_unit_check  # noqa: E402
-from acceptance.spawn_scanner import _no_window_unit_check  # noqa: E402
+from acceptance.spawn_scanner import (  # noqa: E402
+    _git_wrapper_unit_check,
+    _no_window_unit_check,
+)
 from acceptance.standalone_dispatch import _STANDALONE_UNIT_CHECKS  # noqa: E402
 from acceptance.tree_boundary import _hooks_tree_boundary_check  # noqa: E402
 from acceptance.unit_checks import (  # noqa: E402
@@ -241,6 +244,9 @@ def main() -> int:
 
     # ---- Windows console suppression on every runtime spawn (#399 / #412) ----
     run_unit(_no_window_unit_check)
+
+    # ---- every runtime `git` spawn routes through run_git (#667 / #677) ----
+    run_unit(_git_wrapper_unit_check)
 
     # ---- hooks/ never imports across into skills/_lib (fleet-config#564) ----
     run_unit(_hooks_tree_boundary_check)

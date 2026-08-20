@@ -67,6 +67,50 @@ try:
     ref = git_run.resolve_default_branch_ref(work, candidates=(), final_fallback="main")
     check(ref == "origin/main", f"symbolic-ref success ignores candidates=(): got {ref!r}")
 
+    # ---- run_git_bytes / run_git_or_raise / Unreadable (fleet-config#677) ----
+    # The three primitives extracted so no caller has to hand-roll a `git` spawn
+    # to get raw bytes, nor hand-roll a raiser to stop an empty string standing
+    # in for a fact. Both were being re-implemented; both are gated statically
+    # now (`git_wrapper` in run_acceptance.py), so they have to actually work.
+    (work / "bytes.bin").write_bytes(b"\xff\xfe not utf-8 \x00\r\n")
+    _git(work, "add", "bytes.bin")
+    _git(work, "commit", "-q", "-m", "undecodable blob")
+
+    shown = git_run.run_git_bytes(["-C", str(work), "show", "HEAD:bytes.bin"])
+    check(shown.returncode == 0 and shown.stdout == b"\xff\xfe not utf-8 \x00\r\n",
+          f"run_git_bytes: returns the committed bytes verbatim -- no decode, no "
+          f"newline translation (got {shown.stdout!r})")
+    decoded = git_run.run_git(["-C", str(work), "show", "HEAD:bytes.bin"])
+    check("\ufffd" in decoded.stdout,
+          "run_git_bytes: the text-mode wrapper replaces those same bytes -- which "
+          "is exactly why a byte-exact reader needs its own entry point rather than "
+          "a hand-rolled spawn")
+    check(git_run.run_git_bytes(["-C", str(work), "show", "HEAD:nope.bin"]).returncode != 0,
+          "run_git_bytes: a missing path is a non-zero exit, not a raise")
+
+    check(git_run.run_git_or_raise(work, "rev-parse", "--abbrev-ref", "HEAD") != "",
+          "run_git_or_raise: returns stripped stdout on success")
+    try:
+        git_run.run_git_or_raise(work, "rev-parse", "--verify", "refs/heads/no-such-branch")
+        raised = None
+    except git_run.Unreadable as exc:
+        raised = str(exc)
+    check(raised is not None and "failed (exit" in raised,
+          f"run_git_or_raise: a failed git raises Unreadable carrying the exit code, "
+          f"never an empty string that reads as a fact (got {raised!r})")
+
+    import dirty_tree_check  # noqa: E402
+    import repo_preflight  # noqa: E402
+
+    check(dirty_tree_check.Unreadable is git_run.Unreadable
+          and repo_preflight.Unreadable is git_run.Unreadable,
+          "Unreadable: both consumers re-export the one class, so `except "
+          "dirty_tree_check.Unreadable` catches what repo_preflight raises and the "
+          "two can never drift apart again")
+    check(dirty_tree_check._run_git is git_run.run_git_or_raise
+          and repo_preflight._run_git is git_run.run_git_or_raise,
+          "run_git_or_raise: both former private copies now resolve to the shared one")
+
     # ---- symbolic-ref fails (no remote at all): probe candidates in order ----
     bare = tmp / "bare_no_remote"
     bare.mkdir()

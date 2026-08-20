@@ -111,16 +111,10 @@ class RepoFacts(NamedTuple):
     extra_worktrees: Tuple[str, ...]
 
 
-class Unreadable(Exception):
-    """The repo's facts could not be established -- so there is no verdict.
-
-    Raised rather than letting a failed `git` return an empty string that
-    then reads as a fact: empty porcelain reads as *clean* and an empty
-    branch name is unequal to `main`, so a repo that was never inspected
-    would otherwise be dispatched as available or deferred as off-branch,
-    both of them inventions (the shape `dirty_tree_check.py` documents at
-    fleet-config#570).
-    """
+# Re-exported, not redefined (fleet-config#677) -- see `git_run.Unreadable` for
+# why an unreadable repo gets no verdict at all rather than a manufactured one.
+# `except repo_preflight.Unreadable` at any call site still resolves here.
+Unreadable = git_run.Unreadable
 
 
 def classify_repo(facts: RepoFacts) -> Tuple[str, str]:
@@ -165,19 +159,12 @@ def parse_worktree_list(porcelain: str) -> Tuple[str, ...]:
     return tuple(paths[1:])
 
 
-def _run_git(repo_path: Path, *args: str) -> str:
-    """Stripped stdout, or `Unreadable` -- never an empty string standing in
-    for a fact. Mirrors `dirty_tree_check._run_git`; kept local rather than
-    shared because the two helpers report through different vocabularies and
-    a shared raiser would have to satisfy both."""
-    r = git_run.run_git(["-C", str(repo_path), *args])
-    if r.returncode != 0:
-        detail = (r.stderr or "").strip().splitlines()
-        raise Unreadable(
-            f"git {' '.join(args)} failed (exit {r.returncode})"
-            + (f": {detail[0]}" if detail else "")
-        )
-    return r.stdout.strip()
+# Stripped stdout, or `Unreadable` -- never an empty string standing in for a
+# fact. Shared with `dirty_tree_check` (fleet-config#677): the two copies were
+# byte-identical, and the comment that used to justify keeping them apart ("the
+# two helpers report through different vocabularies") described the *callers*,
+# which each still render the caught exception their own way.
+_run_git = git_run.run_git_or_raise
 
 
 def detect_default_branch(repo_path: Path) -> str:

@@ -138,6 +138,63 @@ def _run_command(tool: str, command: str, cwd: str | None) -> subprocess.Complet
     return subprocess.CompletedProcess(args, process.returncode, stdout, stderr)
 
 
+def _log_row(
+    *,
+    mode: str,
+    agent: str,
+    session_id: str | None,
+    cwd: str | None,
+    command: str,
+    tool: str,
+    compressed: Any,
+    exit_code: int | None,
+) -> None:
+    """Append one telemetry row for a compressed command, in either agent path.
+
+    Written in BOTH shadow and rewrite (fleet-config#541): rewrite rows are what
+    the app-launcher stats panel reads after the #392 flip, so a shadow-only
+    writer would go dark the moment the filter starts earning its keep.
+
+    One writer for `run_wrapped` (Claude/Codex) and `run_compress` (Pi), because
+    the panel reads both agents' rows out of the same log and therefore needs
+    one payload shape — two hand-kept copies could only ever drift into a
+    half-readable log (fleet-config#677).
+    """
+    context_filter.append_shadow_log(
+        {
+            "ts": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            "mode": mode,
+            "agent": agent,
+            "session_id": session_id or None,
+            "cwd": cwd or None,
+            "command": command,
+            "tool": tool,
+            "raw_tokens": compressed.raw_tokens,
+            "compressed_tokens": compressed.compressed_tokens,
+            "reduction_pct": round(compressed.reduction_pct, 2),
+            "duration_ms": round(compressed.duration_ms, 3),
+            "exit_code": exit_code,
+        }
+    )
+
+
+def _header(compressed: Any) -> str:
+    """The one-line `[fleet-context-filter: ...]` banner prefixed to rewritten
+    output. Shared by both agent paths for the same reason as `_log_row`: the
+    banner is a parsed contract (the app-launcher stats panel and the fixture
+    eval both read it), not decoration."""
+    header = (
+        f"[fleet-context-filter: raw_tokens={compressed.raw_tokens} "
+        f"compressed_tokens={compressed.compressed_tokens} "
+        f"reduction={compressed.reduction_pct:.1f}%"
+    )
+    if compressed.raw_key:
+        header += f" raw_key={compressed.raw_key}"
+    if compressed.secret_like:
+        header += " secret_like=true raw_not_cached=true"
+    return header + "]"
+
+
 def run_wrapped(args: argparse.Namespace) -> int:
     command = _decode_command(args.encoded)
     try:
@@ -161,41 +218,22 @@ def run_wrapped(args: argparse.Namespace) -> int:
     raw = (result.stdout or "") + (result.stderr or "")
     compressed = context_filter.compress_output(command, raw, cache_raw=args.mode == "rewrite")
 
-    # Logged in BOTH modes (fleet-config#541): rewrite rows are what the
-    # app-launcher stats panel reads after the #392 flip — a shadow-only writer
-    # would go dark the moment the filter starts earning its keep.
-    context_filter.append_shadow_log(
-        {
-            "ts": datetime.now(timezone.utc).isoformat(timespec="seconds"),
-            "mode": args.mode,
-            "agent": args.agent or "claude",
-            "session_id": args.session_id or None,
-            "cwd": args.cwd or None,
-            "command": command,
-            "tool": args.tool,
-            "raw_tokens": compressed.raw_tokens,
-            "compressed_tokens": compressed.compressed_tokens,
-            "reduction_pct": round(compressed.reduction_pct, 2),
-            "duration_ms": round(compressed.duration_ms, 3),
-            "exit_code": result.returncode,
-        }
+    _log_row(
+        mode=args.mode,
+        agent=args.agent or "claude",
+        session_id=args.session_id,
+        cwd=args.cwd,
+        command=command,
+        tool=args.tool,
+        compressed=compressed,
+        exit_code=result.returncode,
     )
 
     if args.mode == "shadow":
         sys.stdout.write(raw)
         return result.returncode
 
-    header = (
-        f"[fleet-context-filter: raw_tokens={compressed.raw_tokens} "
-        f"compressed_tokens={compressed.compressed_tokens} "
-        f"reduction={compressed.reduction_pct:.1f}%"
-    )
-    if compressed.raw_key:
-        header += f" raw_key={compressed.raw_key}"
-    if compressed.secret_like:
-        header += " secret_like=true raw_not_cached=true"
-    header += "]"
-    sys.stdout.write(header + "\n" + compressed.compressed + "\n")
+    sys.stdout.write(_header(compressed) + "\n" + compressed.compressed + "\n")
     return result.returncode
 
 
@@ -320,38 +358,23 @@ def run_compress(args: argparse.Namespace) -> int:
 
     compressed = context_filter.compress_output(command, output, cache_raw=mode == "rewrite")
     exit_code = data.get("exit_code")
-    context_filter.append_shadow_log(
-        {
-            "ts": datetime.now(timezone.utc).isoformat(timespec="seconds"),
-            "mode": mode,
-            "agent": args.agent or "pi",
-            "session_id": str(data.get("session_id") or "") or None,
-            "cwd": str(data.get("cwd") or "") or None,
-            "command": command,
-            "tool": args.tool,
-            "raw_tokens": compressed.raw_tokens,
-            "compressed_tokens": compressed.compressed_tokens,
-            "reduction_pct": round(compressed.reduction_pct, 2),
-            "duration_ms": round(compressed.duration_ms, 3),
-            "exit_code": exit_code if isinstance(exit_code, int) else None,
-        }
+    _log_row(
+        mode=mode,
+        agent=args.agent or "pi",
+        session_id=str(data.get("session_id") or ""),
+        cwd=str(data.get("cwd") or ""),
+        command=command,
+        tool=args.tool,
+        compressed=compressed,
+        exit_code=exit_code if isinstance(exit_code, int) else None,
     )
 
     if mode == "shadow":
         print(json.dumps({"mode": mode, "wrap": False}))
         return 0
 
-    header = (
-        f"[fleet-context-filter: raw_tokens={compressed.raw_tokens} "
-        f"compressed_tokens={compressed.compressed_tokens} "
-        f"reduction={compressed.reduction_pct:.1f}%"
-    )
-    if compressed.raw_key:
-        header += f" raw_key={compressed.raw_key}"
-    if compressed.secret_like:
-        header += " secret_like=true raw_not_cached=true"
-    header += "]"
-    print(json.dumps({"mode": mode, "wrap": True, "text": header + "\n" + compressed.compressed}))
+    text = _header(compressed) + "\n" + compressed.compressed
+    print(json.dumps({"mode": mode, "wrap": True, "text": text}))
     return 0
 
 

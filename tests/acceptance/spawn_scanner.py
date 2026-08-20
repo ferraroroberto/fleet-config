@@ -7,6 +7,12 @@ Split out of the former tests/run_acceptance.py god-module: concern (c) --
 console-flash on a headless spawn, fleet-config#412), plus
 `_no_window_unit_check`, the `_x_unit_check`-shaped wrapper the acceptance
 matrix actually calls.
+
+Also home to the sibling call-site gate `_git_wrapper_unit_check`
+(fleet-config#677): the same trees, scanned for a hand-rolled
+`subprocess.<spawn>(["git", ...])` that bypasses the tier's `run_git` wrapper
+and so silently opts out of `GIT_OPTIONAL_LOCKS=0` (fleet-config#667). Same
+shape of defect, same static-AST answer, hence the same module.
 """
 from __future__ import annotations
 
@@ -115,6 +121,119 @@ def _spawn_import_style_offenders() -> "list[str]":
                         and any(a.name in _SPAWN_ATTRS for a in node.names)):
                     offenders.append(f"{py.relative_to(REPO).as_posix()}:{node.lineno}")
     return offenders
+
+
+# The two files allowed to spawn `git` directly: they *are* the wrappers. Every
+# other runtime file must route through `_lib.run_git` (hooks tier) or
+# `git_run.run_git` (skills tier) so `GIT_OPTIONAL_LOCKS=0` and `NO_WINDOW`
+# apply everywhere, not just wherever someone remembered (fleet-config#677).
+_GIT_WRAPPER_FILES = {"hooks/_lib.py", "skills/_lib/git_run.py"}
+
+
+def _is_git_argv(node) -> bool:
+    """True if a spawn call's first positional argument is a list literal whose
+    first element is the string `git` (optionally a path ending in it).
+
+    Deliberately literal-only: a spawn built from a variable can't be judged
+    statically, and guessing would make the gate noisy rather than sound. The
+    hand-rolled sites this exists to catch are all written out inline."""
+    import ast
+
+    if not node.args:
+        return False
+    argv = node.args[0]
+    if not (isinstance(argv, ast.List) and argv.elts):
+        return False
+    head = argv.elts[0]
+    if not (isinstance(head, ast.Constant) and isinstance(head.value, str)):
+        return False
+    exe = head.value.replace("\\", "/").rsplit("/", 1)[-1]
+    return exe in {"git", "git.exe"}
+
+
+def _raw_git_spawns_in_tree(tree, label: str) -> "list[str]":
+    """Every `subprocess.<spawn>(["git", ...], ...)` in a parsed `tree`, as
+    `label:line` strings. Shared by the file scan and the synthetic unit cases
+    so both exercise the identical matcher."""
+    import ast
+
+    offenders: list[str] = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        fn = node.func
+        if not (isinstance(fn, ast.Attribute) and fn.attr in _SPAWN_ATTRS
+                and isinstance(fn.value, ast.Name) and fn.value.id == "subprocess"):
+            continue
+        if _is_git_argv(node):
+            offenders.append(f"{label}:{node.lineno}")
+    return offenders
+
+
+def _raw_git_spawn_sites() -> "list[str]":
+    """Every hand-rolled `git` spawn under `_SPAWN_SCAN_DIRS`, excluding the two
+    wrapper files that are supposed to contain one."""
+    import ast
+
+    offenders: list[str] = []
+    for rel in _SPAWN_SCAN_DIRS:
+        for py in sorted((REPO / rel).rglob("*.py")):
+            if "__pycache__" in py.parts:
+                continue
+            label = py.relative_to(REPO).as_posix()
+            if label in _GIT_WRAPPER_FILES:
+                continue
+            try:
+                tree = ast.parse(py.read_text(encoding="utf-8"), filename=str(py))
+            except (OSError, SyntaxError) as exc:  # pragma: no cover - byte-compile catches these first
+                offenders.append(f"{label}: unparseable ({exc})")
+                continue
+            offenders.extend(_raw_git_spawns_in_tree(tree, label))
+    return offenders
+
+
+def _git_wrapper_unit_check() -> Tuple[int, int]:
+    """No runtime file hand-rolls a `git` spawn around its tier's `run_git` (#677).
+
+    `run_git` is not a style preference: it is where `GIT_OPTIONAL_LOCKS=0`
+    lives, the fix for the stranded 0-byte `index.lock` that left nine repos
+    unable to commit for fifteen days (fleet-config#667). A raw
+    `subprocess.run(["git", ...])` silently opts back out of it, and — exactly
+    like an unsuppressed spawn — nothing at runtime says so: every affected
+    command keeps exiting 0 and printing the right answer. So the gate is
+    static, and it sits beside the NO_WINDOW scanner it mirrors.
+    """
+    check = _Checker()
+
+    offenders = _raw_git_spawn_sites()
+    check(f"git_wrapper: no hand-rolled `git` spawn in {', '.join(_SPAWN_SCAN_DIRS)} "
+          f"(route through run_git; wrappers exempt: {', '.join(sorted(_GIT_WRAPPER_FILES))})",
+          not offenders,
+          "hand-rolled git spawns at:\n" + "\n".join(offenders))
+
+    import ast
+
+    synthetic = (
+        "import subprocess\n"
+        "subprocess.run(['git', 'diff', '--cached'], creationflags=_lib.NO_WINDOW)\n"
+        "subprocess.run([GIT_EXE, 'status'], creationflags=_lib.NO_WINDOW)\n"
+        "subprocess.run(['gh', 'issue', 'view'], creationflags=_lib.NO_WINDOW)\n"
+        "_lib.run_git(['-C', repo, 'diff', '--cached'])\n"
+        "subprocess.Popen(['git', 'fetch'], creationflags=_lib.NO_WINDOW)\n"
+    )
+    lines = {int(o.rsplit(":", 1)[1]) for o in _raw_git_spawns_in_tree(ast.parse(synthetic), "synthetic")}
+    check("git_wrapper: a literal `subprocess.run(['git', ...])` is reported",
+          2 in lines, f"offending lines seen: {sorted(lines)}")
+    check("git_wrapper: a non-literal argv head is NOT reported (unjudgeable statically)",
+          3 not in lines, f"offending lines seen: {sorted(lines)}")
+    check("git_wrapper: a non-git spawn (`gh`) is NOT reported",
+          4 not in lines, f"offending lines seen: {sorted(lines)}")
+    check("git_wrapper: a `run_git` call is NOT reported",
+          5 not in lines, f"offending lines seen: {sorted(lines)}")
+    check("git_wrapper: `subprocess.Popen(['git', ...])` is reported too",
+          6 in lines, f"offending lines seen: {sorted(lines)}")
+
+    return check.failures, check.total
 
 
 def _no_window_unit_check() -> Tuple[int, int]:

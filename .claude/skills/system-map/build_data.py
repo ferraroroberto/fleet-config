@@ -42,14 +42,13 @@ from __future__ import annotations
 import argparse
 import copy
 import json
-import subprocess
 import sys
 import tomllib
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "skills" / "_lib"))
 import fleet_repo_scan  # noqa: E402
-from no_window import NO_WINDOW  # noqa: E402
+import git_run  # noqa: E402
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 DATA_JS = REPO_ROOT / "architecture" / "fleet.data.js"
@@ -117,10 +116,7 @@ def read_fleet_toml(repo_dir: Path) -> str | None:
     ref = _default_ref(repo_dir)
     if ref is None:
         return None
-    shown = subprocess.run(
-        ["git", "-C", str(repo_dir), "show", f"{ref}:.fleet.toml"],
-        capture_output=True, creationflags=NO_WINDOW,
-    )
+    shown = git_run.run_git_bytes(["-C", str(repo_dir), "show", f"{ref}:.fleet.toml"])
     return shown.stdout.decode("utf-8") if shown.returncode == 0 else None
 
 

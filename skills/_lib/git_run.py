@@ -81,6 +81,64 @@ def run_git(
     )
 
 
+def run_git_bytes(
+    args: Sequence[str], *, check: bool = False, timeout: Optional[float] = None
+) -> subprocess.CompletedProcess:
+    """`run_git` for the callers that need **raw bytes**, not decoded text.
+
+    Same spawn, same `creationflags=NO_WINDOW` and `env=git_env()` — only the
+    decoding differs. Exists because `git show <ref>:<path>` and
+    `git ls-tree` are read for byte-exact hashing (`vendored_drift`) or for
+    content that must round-trip untouched (`system-map`/`config-map`
+    `build_data`), and `run_git`'s `errors="replace"` would silently rewrite a
+    byte before it was hashed. Those call sites used to hand-roll their own
+    `subprocess.run(["git", …])` to get bytes, which also opted them out of
+    `git_env()` — the wrapper is the *only* thing that had to be given up, so
+    now it isn't (fleet-config#677).
+    """
+    return subprocess.run(
+        ["git", *args], capture_output=True, check=check, timeout=timeout,
+        creationflags=NO_WINDOW, env=git_env(),
+    )
+
+
+class Unreadable(Exception):
+    """A repo's facts could not be established — so there is no verdict.
+
+    Raised by `run_git_or_raise` instead of letting a failed `git` return an
+    empty string that then reads as a fact: empty porcelain reads as *clean*
+    and an empty branch name is unequal to `main`, so a repo that was never
+    inspected would otherwise be reported as available, or dispatched, or
+    called DIRTY — all of them inventions (fleet-config#570: five repos
+    reported DIRTY at once, all five clean).
+
+    One class for both `dirty_tree_check` and `repo_preflight`
+    (fleet-config#677). They used to carry byte-identical private copies under
+    a comment claiming a shared raiser could not satisfy both "different
+    vocabularies" — untrue: the vocabularies differ in how each *caller*
+    renders the caught exception, not in the raising, and both re-exported
+    names still resolve here so `except dirty_tree_check.Unreadable` keeps
+    working.
+    """
+
+
+def run_git_or_raise(repo_path: Path, *args: str) -> str:
+    """Stripped stdout for `git -C <repo_path> <args>`, or `Unreadable`.
+
+    Never an empty string standing in for a fact — see `Unreadable`. The
+    message carries the exit code plus git's first stderr line, which is what
+    makes an unreadable repo diagnosable from a sweep's output alone.
+    """
+    r = run_git(["-C", str(repo_path), *args])
+    if r.returncode != 0:
+        detail = (r.stderr or "").strip().splitlines()
+        raise Unreadable(
+            f"git {' '.join(args)} failed (exit {r.returncode})"
+            + (f": {detail[0]}" if detail else "")
+        )
+    return r.stdout.strip()
+
+
 def run_git_checked(args: Sequence[str]) -> str:
     """Run `git <args>`; raise `SystemExit` on a non-zero exit, else return
     stripped stdout.

@@ -18,41 +18,24 @@ Chrome and a working tmp dir are the only requirements (no extra Python deps).
 
 from __future__ import annotations
 
-import argparse
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "skills" / "_lib"))
-from html_shot import shoot  # noqa: E402
+from html_shot import render_cli  # noqa: E402
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 DEFAULT_HTML = REPO_ROOT / "architecture" / "config-map.html"
 DEFAULT_OUT = REPO_ROOT / "architecture" / "config-map.png"
 
 
-def render(html: Path, out: Path, scale: float = 2.0) -> tuple[int, int]:
-    """Render ``html`` to ``out`` at ``scale`` DPR. Return the (w, h) used.
-
-    Forces ``?placeholders=1`` for parity with ``/system-map`` — the config
-    dataset carries only wiring/structure (never a secret), so this is a
-    reserved no-op safety net here rather than a spec-hider.
-    """
-    return shoot(html, out, scale=scale, query="placeholders=1")
-
-
 def main(argv: list[str] | None = None) -> int:
-    ap = argparse.ArgumentParser(description="Render config-map.html → PNG.")
-    ap.add_argument("--html", type=Path, default=DEFAULT_HTML)
-    ap.add_argument("--out", type=Path, default=DEFAULT_OUT)
-    ap.add_argument("--scale", type=float, default=2.0)
-    args = ap.parse_args(argv)
-    try:
-        w, h = render(args.html, args.out, args.scale)
-    except Exception as exc:  # noqa: BLE001 - surface a clean one-line error
-        print(f"render failed: {exc}", file=sys.stderr)
-        return 1
-    print(f"rendered {args.out} at {w}x{h} (scale {args.scale})")
-    return 0
+    return render_cli(
+        argv,
+        default_html=DEFAULT_HTML,
+        default_out=DEFAULT_OUT,
+        description="Render config-map.html → PNG.",
+    )
 
 
 if __name__ == "__main__":

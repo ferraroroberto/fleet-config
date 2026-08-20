@@ -16,8 +16,10 @@ e.g. a running webapp's page for `/docs-shots`) — used as-is, since a running
 server is the only way to screenshot a page whose assets aren't same-origin-
 fetchable from `file://`. An optional `query` string is appended either way
 (`?query=` or `&query=` depending on whether the target already has one) —
-`render.py` uses this to force `?placeholders=1` so the committed PNG never
-bakes in real hardware specs from a local `system-map.local.js`.
+`render_cli()` (below) uses this to force `?placeholders=1` so the committed
+PNG never bakes in real hardware specs from a local `system-map.local.js`; it
+is also the shared `--html/--out/--scale` entry point both map renderers call,
+so neither has to re-implement the wrapper (fleet-config#677).
 
 stdlib + Chrome only (matches the `_lib` module contract) — no extra Python
 deps, per the repo's "system Python, no venv" hook convention.
@@ -25,6 +27,7 @@ deps, per the repo's "system Python, no venv" hook convention.
 
 from __future__ import annotations
 
+import argparse
 import re
 import shutil
 import subprocess
@@ -153,3 +156,40 @@ def shoot(
     shutil.copyfile(staged, out)
     staged.unlink(missing_ok=True)
     return w, h
+
+
+def render_cli(
+    argv: Optional[List[str]],
+    *,
+    default_html: Path,
+    default_out: Path,
+    description: str,
+    query: Optional[str] = "placeholders=1",
+    success_note: str = "",
+) -> int:
+    """The `--html/--out/--scale` CLI wrapper both map renderers need.
+
+    `.claude/skills/system-map/render.py` and `.claude/skills/config-map/render.py`
+    were near-byte-for-byte copies of the same argparse + try/except + one-line
+    report (fleet-config#677) — differing only in their two default paths, the
+    argparse description, and whether the success line mentions placeholders.
+    Those four differences are now the parameters; each script keeps its
+    docstring and nothing else. Returns the process exit code (0 / 1) so the
+    caller's `main` is a one-liner.
+
+    `query` defaults to `placeholders=1`, which is what forces the committed
+    PNGs never to bake in real hardware specs from a local
+    `system-map.local.js`; pass `None` for a renderer that must not set it.
+    """
+    ap = argparse.ArgumentParser(description=description)
+    ap.add_argument("--html", type=Path, default=default_html)
+    ap.add_argument("--out", type=Path, default=default_out)
+    ap.add_argument("--scale", type=float, default=2.0)
+    args = ap.parse_args(argv)
+    try:
+        w, h = shoot(args.html, args.out, scale=args.scale, query=query)
+    except Exception as exc:  # noqa: BLE001 - surface a clean one-line error
+        print(f"render failed: {exc}", file=sys.stderr)
+        return 1
+    print(f"rendered {args.out} at {w}x{h} (scale {args.scale}{success_note})")
+    return 0

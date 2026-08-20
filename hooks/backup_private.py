@@ -90,7 +90,6 @@ import os
 import random
 import shutil
 import stat
-import subprocess
 import sys
 import time
 from dataclasses import dataclass, field
@@ -484,12 +483,15 @@ def git_ignored_entries(repo_dir: Path) -> List[str]:
     that does not exist. `--directory` collapses a wholly-ignored directory into a
     single `dir/` entry, which is what keeps this fast on a repo with a 40k-file
     `node_modules`.
+
+    Via `_lib.run_git` (fleet-config#677): this walks *every repo in the fleet*
+    on the nightly backup, so a hand-rolled spawn would strand a 0-byte
+    `index.lock` in any of them if the run were killed mid-refresh — the exact
+    failure `GIT_OPTIONAL_LOCKS=0` exists to prevent (fleet-config#667).
     """
-    result = subprocess.run(
-        ["git", "-c", "core.quotePath=false", "-C", str(repo_dir), "ls-files",
+    result = _lib.run_git(
+        ["-c", "core.quotePath=false", "-C", str(repo_dir), "ls-files",
          "--others", "--ignored", "--exclude-standard", "--directory", "-z"],
-        capture_output=True, encoding="utf-8", errors="replace",
-        creationflags=_lib.NO_WINDOW,
     )
     if result.returncode != 0:
         raise OSError(f"git ls-files failed in {repo_dir}: {result.stderr.strip()}")
