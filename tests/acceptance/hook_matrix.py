@@ -241,7 +241,7 @@ def run_hook_matrix() -> Tuple[int, int]:
 
         # ---- context_filter_hook (env override -> mode.json -> off; #541) ----
         # Exit is 0 whether the machine's mode.json enables it or not; the
-        # deterministic resolution cases live in unit_checks with an isolated
+        # deterministic resolution cases live in checks_context_filter with an isolated
         # FLEET_CONTEXT_FILTER_DIR.
         ("context_filter_hook: default -> allow (exit 0 in every mode)",
          "context_filter_hook",

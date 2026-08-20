@@ -102,7 +102,7 @@ def _git_helper_parity(check: _Checker) -> None:
         repo = tmp / "repo"
         repo.mkdir()
         # The author email matches this machine's commit-email allowlist hook —
-        # same value `unit_checks.git_repo` uses, for the same reason.
+        # same value `checks_guards`'s own `git_repo` uses, for the same reason.
         for args in (
             ["init", "-q", "-b", "master"],
             ["config", "user.email", "35553560+ferraroroberto@users.noreply.github.com"],

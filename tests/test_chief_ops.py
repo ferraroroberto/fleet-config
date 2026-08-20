@@ -1,9 +1,12 @@
-"""Unit tests for the pure logic in skills/_lib/chief_ops.py (fleet-config#445).
+"""Unit tests for the pure logic in skills/_lib/chief_ops.py (fleet-config#445)
+and skills/_lib/steer_delivery.py, the `say --verify` classifier it calls.
 
 Exercises `repo_occupancy`, `alive_worker_count`, `refuse_dispatch`,
 `assert_loopback`, `format_board_digest`, and `parse_issue_ref`/`_fmt_age`
 directly against synthetic board payloads — no network, no `gh`, no live
-launcher required.
+launcher required. The delivery lattice (`sd.` below) is covered here rather
+than in a file of its own: it is the same subsystem from the caller's side, and
+splitting the module was never meant to split its evidence (fleet-config#680).
 
 Run: `E:/automation/fleet-config/.venv/Scripts/python.exe tests/test_chief_ops.py`  (also invoked by tests/run_acceptance.py)
 """
@@ -22,6 +25,7 @@ REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO / "skills" / "_lib"))
 import chief_managed  # noqa: E402
 import chief_ops as co  # noqa: E402
+import steer_delivery as sd  # noqa: E402
 
 sys.path.insert(0, str(REPO / "tests" / "_lib"))
 from check_harness import CheckHarness  # noqa: E402
@@ -114,6 +118,24 @@ check(
 )
 
 
+# ---- the delivery classifier is its own module now (fleet-config#680) --------
+#
+# `say --verify`'s four-verdict subsystem moved to `steer_delivery.py`, so the
+# checks below drive it as `sd.` -- `chief_ops` is the CLI, this is the
+# classifier. Two structural facts worth asserting, because both would fail
+# silently: the names `chief_ops` still calls are the *same objects* (an import,
+# never a second copy), and the classifier stays pure -- importing it must not
+# drag `chief_ops`'s network/`gh` half back the other way.
+for _name in ("finalize_delivery", "classify_exchange_marker", "pending_reason_key",
+              "last_output_age_seconds", "recent_output_window", "format_output_age",
+              "format_verdict_line", "VERDICT_REASONS", "INPUT_NEGATIVE_REASONS",
+              "DEFAULT_VERIFY_POLL_INTERVAL"):
+    check(getattr(co, _name) is getattr(sd, _name),
+          f"steer_delivery: chief_ops.{_name} is steer_delivery's own object, not a copy")
+check("chief_ops" not in sd.__dict__,
+      "steer_delivery: does not import chief_ops back -- the dependency runs one way")
+
+
 # ---- say --verify delivery detection (fleet-config#453) ----------------------
 
 _send_time = datetime(2026, 7, 27, 12, 0, 0, tzinfo=timezone.utc)
@@ -121,26 +143,26 @@ _before = (_send_time - timedelta(minutes=1)).isoformat().replace("+00:00", "Z")
 _after = (_send_time + timedelta(seconds=5)).isoformat().replace("+00:00", "Z")
 
 check(
-    co.parse_exchange_timestamp(_after) == _send_time + timedelta(seconds=5),
+    sd.parse_exchange_timestamp(_after) == _send_time + timedelta(seconds=5),
     "parse_exchange_timestamp parses a Z-suffixed ISO8601 timestamp",
 )
-check(co.parse_exchange_timestamp(None) is None, "parse_exchange_timestamp tolerates None")
-check(co.parse_exchange_timestamp("not-a-timestamp") is None, "parse_exchange_timestamp tolerates garbage")
+check(sd.parse_exchange_timestamp(None) is None, "parse_exchange_timestamp tolerates None")
+check(sd.parse_exchange_timestamp("not-a-timestamp") is None, "parse_exchange_timestamp tolerates garbage")
 
 check(
-    co.classify_exchange_marker(True, _after, _send_time) == "delivered",
+    sd.classify_exchange_marker(True, _after, _send_time) == "delivered",
     "classify_exchange_marker: available + timestamp after send_time -> delivered",
 )
 check(
-    co.classify_exchange_marker(True, _before, _send_time) == "pending",
+    sd.classify_exchange_marker(True, _before, _send_time) == "pending",
     "classify_exchange_marker: available + timestamp before send_time -> pending",
 )
 check(
-    co.classify_exchange_marker(False, None, _send_time) == "pending",
+    sd.classify_exchange_marker(False, None, _send_time) == "pending",
     "classify_exchange_marker: unavailable -> pending, never delivered",
 )
 check(
-    co.classify_exchange_marker(True, None, _send_time) == "pending",
+    sd.classify_exchange_marker(True, None, _send_time) == "pending",
     "classify_exchange_marker: available with no timestamp (launcher fallback) -> pending",
 )
 
@@ -156,17 +178,17 @@ check(
     "find_session_status returns None when no card matches",
 )
 
-check(co.finalize_delivery("delivered", "working") == "delivered", "finalize_delivery: delivered stays delivered")
+check(sd.finalize_delivery("delivered", "working") == "delivered", "finalize_delivery: delivered stays delivered")
 check(
-    co.finalize_delivery("pending", "working") == "pending",
+    sd.finalize_delivery("pending", "working") == "pending",
     "finalize_delivery: non-movement on a busy target -> pending, not unknown (#643)",
 )
 check(
-    co.finalize_delivery("pending", "needs-you", last_output_age=600.0) == "stranded",
+    sd.finalize_delivery("pending", "needs-you", last_output_age=600.0) == "stranded",
     "finalize_delivery: non-movement on an idle/needs-you target -> stranded",
 )
 check(
-    co.finalize_delivery("pending", None, last_output_age=600.0) == "stranded",
+    sd.finalize_delivery("pending", None, last_output_age=600.0) == "stranded",
     "finalize_delivery: non-movement with no matching card -> stranded",
 )
 
@@ -560,42 +582,42 @@ finally:
 
 # 1. The pure classifier, over the conditions the live host can produce.
 check(
-    co.finalize_delivery("pending", "working", post_reason="deferred") == "pending",
+    sd.finalize_delivery("pending", "working", post_reason="deferred") == "pending",
     "finalize_delivery: deferred submit in flight -> pending (app-launcher#763)",
 )
 check(
-    co.finalize_delivery("pending", "idle", post_reason="deferred") == "pending",
+    sd.finalize_delivery("pending", "idle", post_reason="deferred") == "pending",
     "finalize_delivery: deferred outranks an idle status -> pending, not stranded",
 )
-for _neg in sorted(co.INPUT_NEGATIVE_REASONS):
+for _neg in sorted(sd.INPUT_NEGATIVE_REASONS):
     check(
-        co.finalize_delivery("pending", "working", post_reason=_neg) == "stranded",
+        sd.finalize_delivery("pending", "working", post_reason=_neg) == "stranded",
         f"finalize_delivery: authoritative negative {_neg!r} -> stranded even on a busy target",
     )
     check(
-        co.finalize_delivery("pending", "working", last_input={"reason": _neg}) == "stranded",
+        sd.finalize_delivery("pending", "working", last_input={"reason": _neg}) == "stranded",
         f"finalize_delivery: watcher verdict {_neg!r} on last_input -> stranded",
     )
 check(
-    co.finalize_delivery(
+    sd.finalize_delivery(
         "pending", "working", post_reason="deferred",
         last_input={"reason": "defer_timeout"},
     ) == "stranded",
     "finalize_delivery: watcher's terminal failure outranks the deferred acceptance",
 )
 check(
-    co.finalize_delivery("pending", "needs-you", marker_available=False) == "unknown",
+    sd.finalize_delivery("pending", "needs-you", marker_available=False) == "unknown",
     "finalize_delivery: unreadable exchange -> unknown, not stranded",
 )
 # The narrowing has to be real, not just documented: readable-but-un-advanced
 # is STRANDED, and must never land in UNKNOWN.
 for _status in ("idle", "needs-you", None):
     check(
-        co.finalize_delivery("pending", _status, marker_available=True) != "unknown",
+        sd.finalize_delivery("pending", _status, marker_available=True) != "unknown",
         f"finalize_delivery: readable-but-un-advanced exchange (status={_status!r}) is never unknown",
     )
 check(
-    co.finalize_delivery("delivered", None, marker_available=False,
+    sd.finalize_delivery("delivered", None, marker_available=False,
                          post_reason="not_ingested") == "delivered",
     "finalize_delivery: a genuinely advanced exchange still wins over everything",
 )
@@ -605,23 +627,23 @@ check(
 # `awaiting-input` for sessions the exchange shows mid-turn — so a steer that
 # was delivered and acted upon came back STRANDED, printing `last_output=0s
 # ago` on the same line as the verdict that figure refutes.
-_WINDOW = co.DEFAULT_RECENT_OUTPUT_WINDOW
+_WINDOW = sd.DEFAULT_RECENT_OUTPUT_WINDOW
 # The exact observed case: readable un-advanced exchange, status=awaiting-input,
 # last output ~0s ago. Pre-fix this returns "stranded".
 check(
-    co.finalize_delivery("pending", "awaiting-input", marker_available=True,
+    sd.finalize_delivery("pending", "awaiting-input", marker_available=True,
                          last_output_age=0.0) == "pending",
     "finalize_delivery: the 2026-08-16 16:04 case — un-advanced exchange, "
     "status=awaiting-input, output 0s ago -> pending, not stranded (#662)",
 )
 for _status in ("awaiting-input", "needs-you", "idle", None):
     check(
-        co.finalize_delivery("pending", _status, marker_available=True,
+        sd.finalize_delivery("pending", _status, marker_available=True,
                              last_output_age=_WINDOW) == "pending",
         f"finalize_delivery: output inside the window on status={_status!r} -> pending",
     )
     check(
-        co.finalize_delivery("pending", _status, marker_available=True,
+        sd.finalize_delivery("pending", _status, marker_available=True,
                              last_output_age=_WINDOW + 0.1) == "stranded",
         f"finalize_delivery: output older than the window on status={_status!r} -> "
         "stranded; the verdict is narrowed, not removed",
@@ -629,78 +651,78 @@ for _status in ("awaiting-input", "needs-you", "idle", None):
 # An unreadable output age is not evidence of silence — `stranded` needs
 # positive grounds, so the residual case is `pending`, not a confident negative.
 check(
-    co.finalize_delivery("pending", "needs-you", marker_available=True,
+    sd.finalize_delivery("pending", "needs-you", marker_available=True,
                          last_output_age=None) == "pending",
     "finalize_delivery: un-measurable output age -> pending, never a fallthrough stranded",
 )
 # Precedence is unchanged: an authoritative negative outranks recent output.
-for _neg in sorted(co.INPUT_NEGATIVE_REASONS):
+for _neg in sorted(sd.INPUT_NEGATIVE_REASONS):
     check(
-        co.finalize_delivery("pending", "awaiting-input", marker_available=True,
+        sd.finalize_delivery("pending", "awaiting-input", marker_available=True,
                              post_reason=_neg, last_output_age=0.0) == "stranded",
         f"finalize_delivery: authoritative negative {_neg!r} -> stranded even on a "
         "target that is actively emitting output",
     )
     check(
-        co.finalize_delivery("pending", "awaiting-input", marker_available=True,
+        sd.finalize_delivery("pending", "awaiting-input", marker_available=True,
                              last_input={"reason": _neg}, last_output_age=0.0) == "stranded",
         f"finalize_delivery: watcher verdict {_neg!r} -> stranded even with output 0s ago",
     )
 # An unreadable exchange stays UNKNOWN whatever the output age says: recent
 # output means "busy", never "delivered".
 check(
-    co.finalize_delivery("pending", "needs-you", marker_available=False,
+    sd.finalize_delivery("pending", "needs-you", marker_available=False,
                          last_output_age=0.0) == "unknown",
     "finalize_delivery: recent output does not turn an unreadable exchange into a verdict",
 )
 
 # The window is derived from the poll budget, not picked by feel.
-check(co.recent_output_window(2.0) == 4.0,
+check(sd.recent_output_window(2.0) == 4.0,
       "recent_output_window: two poll intervals at the default")
-check(co.recent_output_window(0.1) == co.DEFAULT_VERIFY_POLL_INTERVAL,
+check(sd.recent_output_window(0.1) == sd.DEFAULT_VERIFY_POLL_INTERVAL,
       "recent_output_window: floored at one default interval, so a fast poll "
       "cannot shrink it below the two round trips it has to cover")
-check(co.recent_output_window(10.0) == 20.0,
+check(sd.recent_output_window(10.0) == 20.0,
       "recent_output_window: scales with a slower poll")
 
 # The PENDING reasons name which of the four situations the operator is in.
-check(co.pending_reason_key("deferred", "idle", 0.0) == "pending_deferred",
+check(sd.pending_reason_key("deferred", "idle", 0.0) == "pending_deferred",
       "pending_reason_key: the deferred watcher outranks the rest")
-check(co.pending_reason_key(None, "working", 0.0) == "pending_busy",
+check(sd.pending_reason_key(None, "working", 0.0) == "pending_busy",
       "pending_reason_key: board says working")
-check(co.pending_reason_key(None, "awaiting-input", 0.0) == "pending_talking",
+check(sd.pending_reason_key(None, "awaiting-input", 0.0) == "pending_talking",
       "pending_reason_key: still emitting output despite the status label")
-check(co.pending_reason_key(None, "awaiting-input", None) == "pending_unmeasured",
+check(sd.pending_reason_key(None, "awaiting-input", None) == "pending_unmeasured",
       "pending_reason_key: output age unreadable")
 for _key in ("pending_deferred", "pending_busy", "pending_talking",
              "pending_unmeasured", "unknown", "stranded", "stranded_negative"):
-    check(_key in co.VERDICT_REASONS, f"VERDICT_REASONS carries {_key!r}")
+    check(_key in sd.VERDICT_REASONS, f"VERDICT_REASONS carries {_key!r}")
 
 # 1c. last_output_age_seconds — the classifier input behind all of the above.
-check(co.last_output_age_seconds(None) is None,
+check(sd.last_output_age_seconds(None) is None,
       "last_output_age_seconds: missing stamp -> None, never a large number")
-check(co.last_output_age_seconds("nonsense") is None,
+check(sd.last_output_age_seconds("nonsense") is None,
       "last_output_age_seconds: unparseable stamp -> None")
-check(co.last_output_age_seconds(0) is None,
+check(sd.last_output_age_seconds(0) is None,
       "last_output_age_seconds: zero stamp -> None")
-check(co.last_output_age_seconds(1000.0, now=1004.0) == 4.0,
+check(sd.last_output_age_seconds(1000.0, now=1004.0) == 4.0,
       "last_output_age_seconds: seconds since the stamp")
-check(co.last_output_age_seconds(1000.0, now=990.0) == 0.0,
+check(sd.last_output_age_seconds(1000.0, now=990.0) == 0.0,
       "last_output_age_seconds: a clock-skewed future stamp clamps to 0, never negative")
 
 # 2. format_output_age — an unreadable stamp says so, never a number.
-_age = co.last_output_age_seconds
-check(co.format_output_age(_age(None)) == "unknown",
+_age = sd.last_output_age_seconds
+check(sd.format_output_age(_age(None)) == "unknown",
       "format_output_age: missing stamp -> unknown, never fabricated")
-check(co.format_output_age(_age("nonsense")) == "unknown",
+check(sd.format_output_age(_age("nonsense")) == "unknown",
       "format_output_age: unparseable stamp -> unknown")
-check(co.format_output_age(_age(0)) == "unknown",
+check(sd.format_output_age(_age(0)) == "unknown",
       "format_output_age: zero stamp -> unknown")
-check(co.format_output_age(_age(1000.0, now=1004.0)) == "4s ago",
+check(sd.format_output_age(_age(1000.0, now=1004.0)) == "4s ago",
       "format_output_age: seconds")
-check(co.format_output_age(_age(1000.0, now=1000.0 + 300)) == "5m ago",
+check(sd.format_output_age(_age(1000.0, now=1000.0 + 300)) == "5m ago",
       "format_output_age: minutes")
-check(co.format_output_age(_age(1000.0, now=1000.0 + 7200)) == "2h ago",
+check(sd.format_output_age(_age(1000.0, now=1000.0 + 7200)) == "2h ago",
       "format_output_age: hours")
 
 # 3. cmd_say end-to-end against a stubbed transport. The live session-host is

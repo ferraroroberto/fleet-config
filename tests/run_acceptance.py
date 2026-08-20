@@ -12,11 +12,19 @@ concern the pre-split 3287-line file used to mix together — the hook-payload
 acceptance matrix + foreign-harness parity (`hook_matrix`), architecture/
 fleet-map freshness guards (`architecture_guards`), the static AST spawn-flag
 scanner (`spawn_scanner`), the hooks/ <-> skills/_lib tree-independence gate
-(`tree_boundary`), the ~40 substantive per-hook unit-check functions
-(`unit_checks`), and the standalone pure-logic test-file dispatch layer
-(`standalone_dispatch`). Shared plumbing (REPO/HOOKS/PYTHON resolution,
-`run()`/`assert_exit()`, `_Checker`, `_subprocess_unit_check`) lives in
-`tests/acceptance/shared.py`, imported by every module above.
+(`tree_boundary`), and the standalone pure-logic test-file dispatch layer
+(`standalone_dispatch`).
+
+The substantive per-hook unit-check functions are the `checks_*` modules, one
+per domain (fleet-config#680, finishing the #502 split that left them piled in
+a single 2681-line `unit_checks.py`): `checks_context_filter`, `checks_notify`,
+`checks_guards`, `checks_session_state`, `checks_cross_agent`,
+`checks_capture`, `checks_skill_helpers`. Adding a check means one new function
+in the module that owns its domain, plus one `run_unit()` line below.
+
+Shared plumbing (REPO/HOOKS/PYTHON resolution, `run()`/`assert_exit()`,
+`_Checker`, `_subprocess_unit_check`) lives in `tests/acceptance/shared.py`,
+imported by every module above.
 """
 
 from __future__ import annotations
@@ -44,6 +52,43 @@ from acceptance.architecture_guards import (  # noqa: E402
     _system_map_coverage_check,
     _system_map_whatchanged_check,
 )
+from acceptance.checks_capture import (  # noqa: E402
+    _conversation_capture_unit_checks,
+    _conversation_index_unit_checks,
+    _work_summary_unit_checks,
+)
+from acceptance.checks_context_filter import _context_filter_unit_checks  # noqa: E402
+from acceptance.checks_cross_agent import (  # noqa: E402
+    _codex_hooks_config_check,
+    _session_state_agent_adapter_unit_checks,
+)
+from acceptance.checks_guards import (  # noqa: E402
+    _bash_cmdexe_syntax_guard_unit_checks,
+    _block_askuserquestion_chief_unit_checks,
+    _branch_before_edit_guard_unit_checks,
+    _gh_body_file_guard_unit_checks,
+    _safe_kill_force_push_unit_checks,
+    _tier23_hooks_unit_checks,
+)
+from acceptance.checks_notify import (  # noqa: E402
+    _notify_board_link_unit_checks,
+    _notify_chief_routing_unit_checks,
+    _notify_classify_unit_checks,
+    _notify_complete_unit_checks,
+    _notify_mention_unit_checks,
+    _slack_notify_unit_checks,
+    _slack_routing_unit_checks,
+)
+from acceptance.checks_session_state import (  # noqa: E402
+    _chief_handover_sessionstart_unit_checks,
+    _chief_steer_convention_unit_checks,
+    _lib_detect_project_unit_checks,
+    _session_state_unit_checks,
+)
+from acceptance.checks_skill_helpers import (  # noqa: E402
+    _learning_log_unit_checks,
+    _restart_webapp_unit_checks,
+)
 from acceptance.shared import _subprocess_unit_check  # noqa: E402
 from acceptance.spawn_scanner import (  # noqa: E402
     _git_wrapper_unit_check,
@@ -51,33 +96,6 @@ from acceptance.spawn_scanner import (  # noqa: E402
 )
 from acceptance.standalone_dispatch import _STANDALONE_UNIT_CHECKS  # noqa: E402
 from acceptance.tree_boundary import _hooks_tree_boundary_check  # noqa: E402
-from acceptance.unit_checks import (  # noqa: E402
-    _bash_cmdexe_syntax_guard_unit_checks,
-    _block_askuserquestion_chief_unit_checks,
-    _branch_before_edit_guard_unit_checks,
-    _chief_handover_sessionstart_unit_checks,
-    _chief_steer_convention_unit_checks,
-    _codex_hooks_config_check,
-    _context_filter_unit_checks,
-    _conversation_capture_unit_checks,
-    _conversation_index_unit_checks,
-    _gh_body_file_guard_unit_checks,
-    _learning_log_unit_checks,
-    _lib_detect_project_unit_checks,
-    _notify_board_link_unit_checks,
-    _notify_chief_routing_unit_checks,
-    _notify_classify_unit_checks,
-    _notify_complete_unit_checks,
-    _notify_mention_unit_checks,
-    _restart_webapp_unit_checks,
-    _safe_kill_force_push_unit_checks,
-    _session_state_agent_adapter_unit_checks,
-    _session_state_unit_checks,
-    _slack_notify_unit_checks,
-    _slack_routing_unit_checks,
-    _tier23_hooks_unit_checks,
-    _work_summary_unit_checks,
-)
 
 
 def main() -> int:
