@@ -19,8 +19,20 @@ a fix for months):
      scaffold's current default-branch tip for that component's path? (the
      "who needs a re-vendor wave" question)
 
+Both questions are about repos that *declared* the component. A third one is
+about the repos that didn't (project-scaffolding#230):
+
+  3. **undeclared carriers** — which repos hold a known component's files at
+     the scaffold's own path while declaring nothing? They are invisible to
+     `/propagate-vendored`, whose adopter list comes from `[vendored]` entries,
+     so a wave re-vendors the declarers, reports success, and leaves the rest
+     stale with nobody told. `#228` reached one repo out of seven that way.
+     Answering it needs the other half of the manifest picture: the scaffold's
+     own `[components]` catalog, the canonical `key -> src` map of what it
+     publishes (`parse_scaffold_catalog`).
+
 Both `/propagate-vendored --dry-run` and any future audit call `scan_fleet`
-directly rather than re-deriving either check by hand.
+directly rather than re-deriving any of these checks by hand.
 
 Hashing is byte-exact (`git_run.run_git_bytes` around `git show`, not the
 text-mode `git_run.run_git` used for path listings) — `hash-verify` in the propagation
@@ -34,9 +46,12 @@ CLI:
       `fleet_repo_scan.fleet_repos()` list — same membership `/system-map` and
       `/config-map` use, so this never needs its own repo inventory), report
       one JSON object: which repos declare a `[vendored]` entry (with the two
-      drift signals per entry), and which don't (informational — "no manifest
+      drift signals per entry), which don't (informational — "no manifest
       yet", the expected answer for every current fleet repo before this
-      skill's first real run). `--component` filters to one component name.
+      skill's first real run), which carry a catalogued component without
+      declaring it (`undeclared_carriers`), and a `coverage` block a caller
+      must state out loud so a partial wave can never read as a complete one.
+      `--component` filters to one component name.
 
 This CLI always exits 0 — the caller reads `errors`/`no_manifest` in the JSON
 rather than relying on a process exit code, matching `fleet_audit_scan.py`'s
@@ -81,6 +96,58 @@ def parse_vendored_manifest(toml_text: str) -> Dict[str, Dict[str, str]]:
     if not isinstance(vendored, dict):
         return {}
     return {name: dict(entry) for name, entry in vendored.items() if isinstance(entry, dict)}
+
+
+def parse_scaffold_catalog(toml_text: str) -> Dict[str, str]:
+    """Parse `project-scaffolding`'s `[components]` catalog -> ``{key: src}``.
+
+    The mirror image of `parse_vendored_manifest`: an adopter's `[vendored]`
+    table declares what it *copied*, the scaffold's `[components]` table
+    declares what it *publishes* (project-scaffolding#230). Only the scaffold
+    carries this table, and it is the sole machine-readable answer to "which
+    paths are known components" — without it, a repo carrying an undeclared
+    component is indistinguishable from one that never adopted it.
+
+    `{}` when the table is absent or empty (an older scaffold checkout). The
+    caller must surface that as *unknown* rather than "no carriers found";
+    a malformed entry is dropped for the same read-only-detector reason
+    `parse_vendored_manifest` drops one.
+    """
+    data = tomllib.loads(toml_text)
+    table = data.get("components")
+    if not isinstance(table, dict):
+        return {}
+    out: Dict[str, str] = {}
+    for name, entry in table.items():
+        if isinstance(entry, dict) and isinstance(entry.get("src"), str) and entry["src"]:
+            out[name] = entry["src"]
+    return out
+
+
+def scaffold_catalog(scaffold_root: Path) -> tuple[Dict[str, str], Optional[str]]:
+    """`parse_scaffold_catalog` over the scaffold's working-tree `.fleet.toml`.
+
+    Returns `(catalog, error)`. `error` is a human-readable reason the catalog
+    could not be established — a missing file, invalid TOML, or no `[components]`
+    table — and is `None` only on a real, non-empty catalog. Two return values
+    rather than one, because an empty dict has to mean *unknown* here, never
+    *nothing to find*.
+    """
+    path = scaffold_root / ".fleet.toml"
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError as exc:
+        return {}, f"cannot read the scaffold catalog at {path}: {exc}"
+    try:
+        catalog = parse_scaffold_catalog(text)
+    except tomllib.TOMLDecodeError as exc:
+        return {}, f"invalid TOML in {path}: {exc}"
+    if not catalog:
+        return {}, (
+            f"no [components] table in {path} — undeclared-carrier detection cannot run "
+            "(update the project-scaffolding checkout; project-scaffolding#230)"
+        )
+    return catalog, None
 
 
 def diff_hashes(a: Dict[str, str], b: Dict[str, str]) -> List[str]:
@@ -131,6 +198,34 @@ def hash_dir_local(path: Path) -> Dict[str, str]:
         if p.is_file():
             out[p.relative_to(path).as_posix()] = sha256_bytes(p.read_bytes())
     return out
+
+
+def hash_component_local(repo_dir: Path, relpath: str) -> Dict[str, str]:
+    """A repo's own copy of a component, hashed from its **committed** blobs.
+
+    Both sides of every comparison here must read the same population of bytes.
+    The scaffold side reads committed blobs (`git show`); reading the adopter
+    side off the filesystem does not match that on this fleet, for two reasons
+    that both produce false drift:
+
+      * **Line endings.** These checkouts store LF and check out CRLF, so a
+        working-tree read of any text file differs from its own blob in every
+        line. Byte-exactness is the right contract for a hash-verify, which is
+        precisely why the two sides cannot be read through different filters:
+        every text component compared as drifted no matter how byte-perfect
+        the vendored copy was, and the one signal that matters — "identical,
+        therefore safe to adopt" — could never fire.
+      * **Untracked artefacts.** `__pycache__/`, `.pyc` and friends sit inside
+        a vendored package directory and exist on no git side at all.
+
+    Falls back to the plain filesystem walk when git cannot answer — a non-git
+    directory (the hermetic fixtures), or a path present in the tree but not
+    committed. Falling back can only *over*-report drift or a carrier, never
+    hide one, which is the right direction for a detector built on the premise
+    that silence must not be mistaken for coverage.
+    """
+    committed = hash_dir_at_ref(repo_dir, "HEAD", relpath)
+    return committed or hash_dir_local(repo_dir / relpath)
 
 
 def _git_show_bytes(repo: Path, ref: str, relpath: str) -> Optional[bytes]:
@@ -191,6 +286,13 @@ def scan_fleet(
     committed-snapshot read (`system-map/build_data.py` reads `git show
     <ref>:.fleet.toml` because it renders what's *shipped*, not what's
     mid-edit).
+
+    Alongside the two per-adopter drift signals it answers a third question the
+    manifest alone cannot (project-scaffolding#230): **who carries a component
+    without declaring it?** `/propagate-vendored` derives its adopter list from
+    `[vendored]` entries, so a repo holding the files but no entry is invisible
+    — the wave re-vendors whoever declared the component, reports success, and
+    silently leaves the rest on stale bytes. See `scan_undeclared_carriers`.
     """
     if repos is None:
         repos = fleet_repo_scan.fleet_repos()
@@ -202,6 +304,8 @@ def scan_fleet(
     adopters: List[Dict[str, object]] = []
     no_manifest: List[str] = []
     errors: List[Dict[str, str]] = []
+    manifests: Dict[str, Dict[str, Dict[str, str]]] = {}
+    unreadable: List[str] = []
 
     for repo_name, repo_dir in sorted(repos.items()):
         if repo_dir.resolve() == scaffold_resolved:
@@ -209,12 +313,15 @@ def scan_fleet(
         toml_path = repo_dir / ".fleet.toml"
         if not toml_path.is_file():
             no_manifest.append(repo_name)
+            manifests[repo_name] = {}
             continue
         try:
             manifest = parse_vendored_manifest(toml_path.read_text(encoding="utf-8"))
         except (OSError, tomllib.TOMLDecodeError) as exc:
             errors.append({"repo": repo_name, "error": f"unreadable/invalid .fleet.toml: {exc}"})
+            unreadable.append(repo_name)
             continue
+        manifests[repo_name] = manifest
         if not manifest:
             no_manifest.append(repo_name)
             continue
@@ -233,7 +340,7 @@ def scan_fleet(
             pinned = hash_dir_at_ref(scaffold_root, sha, src)
             if src not in head_cache:
                 head_cache[src] = hash_dir_at_ref(scaffold_root, head_ref, src)
-            local = hash_dir_local(repo_dir / dest)
+            local = hash_component_local(repo_dir, dest)
             result = classify_adopter(local, pinned, head_cache[src])
             adopters.append({
                 "repo": repo_name, "component": component,
@@ -241,6 +348,14 @@ def scan_fleet(
                 "pinned_sha": sha, "head_sha": head_sha,
                 **result,
             })
+
+    catalog, catalog_error = scaffold_catalog(scaffold_root)
+    if catalog_error:
+        errors.append({"repo": "project-scaffolding", "error": catalog_error})
+    carriers = scan_undeclared_carriers(
+        scaffold_root, repos, manifests, catalog, head_ref, head_cache,
+        component_filter=component_filter, scaffold_resolved=scaffold_resolved,
+    )
 
     return {
         "scaffold": str(scaffold_root),
@@ -250,7 +365,92 @@ def scan_fleet(
         "adopters": adopters,
         "no_manifest": sorted(no_manifest),
         "errors": errors,
+        "catalog": {
+            "components": sorted(catalog),
+            "count": len(catalog),
+            "known": catalog_error is None,
+            "error": catalog_error,
+        },
+        "undeclared_carriers": carriers,
+        # The coverage line every caller must state out loud. `carriers_unknown`
+        # is deliberately its own number rather than folded into either bucket:
+        # a repo whose `.fleet.toml` could not be parsed is not "declared" and
+        # not "a carrier" — it is unestablished, and reporting it as clean is
+        # the exact failure this whole feature exists to stop.
+        "coverage": {
+            "declared_adopters": len({str(a["repo"]) for a in adopters}),
+            "undeclared_carriers": len({str(c["repo"]) for c in carriers}),
+            "carriers_unknown": sorted(unreadable),
+            "catalog_known": catalog_error is None,
+        },
     }
+
+
+def scan_undeclared_carriers(
+    scaffold_root: Path,
+    repos: Dict[str, Path],
+    manifests: Dict[str, Dict[str, Dict[str, str]]],
+    catalog: Dict[str, str],
+    head_ref: str,
+    head_cache: Dict[str, Dict[str, str]],
+    component_filter: Optional[str] = None,
+    scaffold_resolved: Optional[Path] = None,
+) -> List[Dict[str, object]]:
+    """Repos holding a catalogued component's files without declaring it.
+
+    For every component in the scaffold's `[components]` catalog, look at the
+    conventional destination — the same relative path the scaffold keeps it at,
+    which is what `/propagate-vendored` defaults `dest` to — in every fleet repo
+    that has no `[vendored]` entry for it. A path that exists there is a
+    **carrier**: the repo has the component, the manifest doesn't say so, and
+    every propagation wave has been skipping it silently.
+
+    Each finding carries `matches_head`, and that distinction is the point:
+
+    * `True`  — byte-identical to the scaffold's current tip. Nothing to decide;
+                this is a repo that simply never recorded what it copied, and
+                `/propagate-vendored`'s ADOPT step can add the entry.
+    * `False` — present but different. "Never declared it" and "deliberately
+                forked it" are indistinguishable from the bytes alone, and only
+                a human knows which, so this reports and never rewrites
+                (project-scaffolding#230's explicit constraint).
+
+    An adopter that legitimately keeps the component somewhere other than the
+    scaffold's path is found by its own `dest` instead, and is already covered
+    by the `adopters` list — so a miss here is a false *negative*, never a false
+    positive that would push a re-vendor at a repo that never adopted anything.
+
+    Returns `[]` when the catalog is empty (an older scaffold checkout with no
+    `[components]` table). The caller reports that as `catalog_known: false` —
+    "we could not look", not "there is nothing to find".
+    """
+    scaffold_at = scaffold_resolved or scaffold_root.resolve()
+    carriers: List[Dict[str, object]] = []
+    for repo_name, repo_dir in sorted(repos.items()):
+        if repo_dir.resolve() == scaffold_at:
+            continue
+        declared = manifests.get(repo_name)
+        if declared is None:  # unreadable .fleet.toml — reported as unknown, not clean
+            continue
+        for component, src in sorted(catalog.items()):
+            if component_filter and component != component_filter:
+                continue
+            if component in declared:
+                continue
+            local = hash_component_local(repo_dir, src)
+            if not local:
+                continue
+            if src not in head_cache:
+                head_cache[src] = hash_dir_at_ref(scaffold_root, head_ref, src)
+            diff = diff_hashes(local, head_cache[src])
+            carriers.append({
+                "repo": repo_name,
+                "component": component,
+                "path": src,
+                "matches_head": not diff,
+                "diff_files": diff,
+            })
+    return carriers
 
 
 # ---- CLI ---------------------------------------------------------------
