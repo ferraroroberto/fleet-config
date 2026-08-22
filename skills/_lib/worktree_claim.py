@@ -56,7 +56,11 @@ worktree. Left unfixed, an e2e suite that boots a disposable webapp+session-host
 hits its own missing-config guard for nearly every test and mass-skips silently
 -- the pre-ship gate still reports green (fleet-config#470). `setup_worktree`
 copies the primary's `config/*.json` (excluding `*.sample.json` templates) into
-the worktree right after the checkout is created.
+the worktree right after the checkout is created. The primary's gitignored
+`.env` is mirrored the same way, right after `config/*.json`: a repo whose
+startup path reads a secret or setting from `.env` (e.g. `local-llm-hub`'s
+`LOCAL_LLM_HUB_SSH_KEY`) otherwise stalls on the missing value until an
+unrelated timeout trips the e2e stage red (fleet-config#698).
 
 Subcommands:
 
@@ -833,6 +837,31 @@ def copy_runtime_config(repo: Path, wt: Path) -> list:
     return copied
 
 
+def copy_env_file(repo: Path, wt: Path) -> Optional[Path]:
+    """Copy the primary's gitignored `.env` into a fresh worktree.
+
+    `git worktree add` populates tracked files only, so a repo's own
+    `.env` never lands in the new worktree, exactly like `config/*.json`
+    (see `copy_runtime_config`). A hub or webapp that reads secrets/config
+    from `.env` at startup (e.g. `local-llm-hub`'s `LOCAL_LLM_HUB_SSH_KEY`)
+    then stalls on its own missing-value path until an unrelated timeout
+    fires, and the e2e stage of a pre-ship gate goes red for a reason that
+    has nothing to do with the diff (fleet-config#698). No-op, never a setup
+    failure, if the primary has no `.env`. A destination file that already
+    exists (e.g. a prior partial setup) is left alone rather than
+    overwritten, same as `copy_runtime_config`. Returns the copied
+    destination path, or None if there was nothing to copy.
+    """
+    src = repo / ".env"
+    if not src.is_file():
+        return None
+    dst = wt / ".env"
+    if dst.exists():
+        return None
+    shutil.copy2(src, dst)
+    return dst
+
+
 def setup_worktree(repo: Path, issue: str, branch: str) -> Path:
     wt = worktree_path(repo, issue)
     if wt.exists():
@@ -857,6 +886,10 @@ def setup_worktree(repo: Path, issue: str, branch: str) -> Path:
     if copied:
         print(f"CONFIG_COPIED={len(copied)}: "
               f"{', '.join(p.name for p in copied)}", file=sys.stderr)
+
+    env_copied = copy_env_file(repo, wt)
+    if env_copied:
+        print("ENV_COPIED=1: .env", file=sys.stderr)
 
     linked: list = []
     for rel in worktree_junction_targets(repo):

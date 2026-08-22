@@ -772,6 +772,48 @@ finally:
     shutil.rmtree(port_base, ignore_errors=True)
 
 
+# ---- copy_env_file: the primary's .env mirrors into a fresh worktree (#698) ----
+#
+# A repo whose startup path reads a secret/setting from .env (e.g.
+# local-llm-hub's LOCAL_LLM_HUB_SSH_KEY) never gets it in a worktree, since
+# `git worktree add` populates tracked files only and .env is gitignored --
+# the same shape as copy_runtime_config, one level up from config/.
+
+env_base = Path(tempfile.mkdtemp(prefix="wc-env-"))
+try:
+    primary = env_base / "myrepo"
+    primary.mkdir(parents=True)
+    (primary / ".env").write_text("LOCAL_LLM_HUB_SSH_KEY=s3cret\n", encoding="utf-8")
+
+    wt = env_base / ("myrepo" + wc.WT_SEP + "698")
+    wt.mkdir()
+    dst = wc.copy_env_file(primary, wt)
+
+    check(dst == wt / ".env", "copy_env_file: returns the copied destination path")
+    check((wt / ".env").read_text(encoding="utf-8") == "LOCAL_LLM_HUB_SSH_KEY=s3cret\n",
+          "copy_env_file: .env content copies verbatim (#698)")
+
+    # A primary with no .env must not fail setup.
+    no_env_primary = env_base / "noenvrepo"
+    no_env_primary.mkdir()
+    wt_noenv = env_base / ("noenvrepo" + wc.WT_SEP + "1")
+    wt_noenv.mkdir()
+    check(wc.copy_env_file(no_env_primary, wt_noenv) is None,
+          "copy_env_file: no primary .env -> no-op, never a setup failure (#698)")
+    check(not (wt_noenv / ".env").exists(), "copy_env_file: no .env created when primary has none")
+
+    # An already-present destination is left alone, same as copy_runtime_config.
+    wt2 = env_base / ("myrepo" + wc.WT_SEP + "699")
+    wt2.mkdir()
+    (wt2 / ".env").write_text("PRESERVE_ME=1\n", encoding="utf-8")
+    check(wc.copy_env_file(primary, wt2) is None,
+          "copy_env_file: existing destination -> no-op")
+    check((wt2 / ".env").read_text(encoding="utf-8") == "PRESERVE_ME=1\n",
+          "copy_env_file: an existing destination file is not overwritten")
+finally:
+    shutil.rmtree(env_base, ignore_errors=True)
+
+
 # ---- worktree_port: band, determinism, avoids what is taken ----
 
 check(wc.worktree_port("579") == wc.worktree_port("579"),
