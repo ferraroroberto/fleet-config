@@ -7,14 +7,14 @@ description: Take one bucket of audit findings (a label like documentation, drif
 
 **Goal:** `/audit-fleet` *finds* and files codebase findings, bucketed into seven labels, and `/design-sweep` files an eighth (`design-drift`); this skill *fixes* one bucket fleet-wide in a single pass. Pick a bucket → gather every open issue carrying that label → score each for complexity → deploy **one background sub-agent per repo**, sized via the easy/hard tier policy (`docs/model-tiers.md`) → aggregate.
 
-**`security` is not a cleanup bucket.** `/codebase-audit`'s seven finding buckets (incl. `slop`) are all queued here for fixing; its `security` kind is the exception — self-healed inline by `/codebase-audit` itself (step 8b: redacted issue + auto-fix + auto-merge, or escalate on failure), never queued here. `/design-sync` contributes the eighth queued bucket, `design-drift` (web-app CSS/token/nav drift); its sibling `cert-drift` kind is likewise **review-only** — never queued here, since a tailnet-cert migration must never be auto-applied. This skill operates on the eight *queued* buckets below; a `security` or `cert-drift` label never appears here.
+**`security` is not a cleanup bucket.** `/codebase-audit`'s seven finding buckets (incl. `slop`) all queue here; its `security` kind is the exception — self-healed inline by `/codebase-audit` step 8b (redacted issue + auto-fix + auto-merge, or escalate on failure), never queued here. `/design-sync` contributes the eighth queued bucket, `design-drift` (web-app CSS/token/nav drift); its sibling `cert-drift` kind is likewise **review-only** — a tailnet-cert migration must never be auto-applied. This skill operates on the eight *queued* buckets below; a `security` or `cert-drift` label never appears here.
 
-**One agent per repo, never two:** the audit files exactly one managed issue per (repo, bucket), so one issue → one repo → one agent → one branch → one PR. Two agents on one checkout collide, so the skill hard-caps at one agent per repo per run and defers extras.
+**One agent per repo, never two:** the audit files exactly one managed issue per (repo, bucket), so one issue → one repo → one agent → one branch → one PR. Two agents on one checkout collide, so the skill hard-caps at one per repo per run and defers extras.
 
 **Two execution paths, both delegating to existing skills — don't reinvent them:**
 
 - **Easy tier → full YOLO.** The agent runs the **`/issue-yolo <N>`** flow end-to-end: branch, build, validate hard, PR, wait for CI, merge, delete branch, tray restart. No human gate. Each agent fires its own `🚀 Shipped #N — PR · <url>` ping (the per-PR link is valuable — **not** suppressed).
-- **Hard tier → build-and-stop.** The agent runs **`/issue-start <N> now`** → build → run the verification gate → **STOP before push/PR** (the `/issue-batch` in-place contract). Instead of a diff to review, the agent hands back a plain-English rationale summary — what it did, why, and why it believes the change is correct (see prompt 8b) — so you approve or push back on the logic, not by reading code. You then ship each with `/issue-finish`.
+- **Hard tier → build-and-stop.** The agent runs **`/issue-start <N> now`** → build → run the verification gate → **STOP before push/PR** (the `/issue-batch` in-place contract). It hands back a plain-English rationale summary instead of a diff — what it did, why, and why it believes the change is correct (prompt 8b) — so you approve or push back on the logic, not by reading code. You then ship each with `/issue-finish`.
 
 ## Arguments
 
@@ -37,10 +37,10 @@ description: Take one bucket of audit findings (a label like documentation, drif
 
 If **no bucket** is given → run step 2's count query, then `AskUserQuestion` listing the eight queued buckets each with its **live open-issue count**, and let the user pick.
 
-**Mode** — `hard` (default) or `easy` / `silent`. (This is the CLI argument, distinct from the per-issue complexity *tier* below — always read as "`hard` mode" vs. "hard-tier issue" to keep the two straight.)
+**Mode** — `hard` (default) or `easy` / `silent`. (The CLI argument, distinct from the per-issue complexity *tier* below — always read as "`hard` mode" vs. "hard-tier issue".)
 
 - **`hard` mode** (default) — full sweep: easy-tier issues take the YOLO path, hard-tier issues build-and-stop for review. The plan is **presented for approval first**.
-- **`easy` / `silent` mode** — only the easy-tier issues, fully unattended (no approval gate). Hard-tier issues are **listed but never run** ("left for a hard run"). This is the mode to run alongside `/audit-fleet` on a schedule. Safety property: easy mode can *only ever* auto-merge work that scored genuinely simple — any hard-tier finding is never executed in this mode.
+- **`easy` / `silent` mode** — only the easy-tier issues, fully unattended (no approval gate). Hard-tier issues are **listed but never run** ("left for a hard run"). This is the mode to run alongside `/audit-fleet` on a schedule. Safety property: easy mode can *only ever* auto-merge work that scored genuinely simple.
 
 ## Execution rules (read before running any command)
 
@@ -50,7 +50,7 @@ If **no bucket** is given → run step 2's count query, then `AskUserQuestion` l
 - **One agent per repo, period.** Never spawn two agents against the same checkout.
 - **Never disturb in-progress work.** A repo that is dirty or off its default branch is skipped and reported — never stashed, never force-switched.
 - **Degrade, don't block** (so `easy`/`silent` can run unattended via `claude -p`): a per-repo failure is reported and skipped; only a pre-flight failure stops the whole run.
-- **In `easy`/`silent` mode, never background-and-wait.** An attended `hard`-mode run is a normal top-level Claude Code session, and the harness *does* re-invoke it as each background sub-agent completes (step 9's "stop and stand by" is correct there). But `easy`/`silent` mode is designed to run headless via `claude -p` (see the Notes' scheduling example) — a headless run has **no** wake-up mechanism at all, so stopping to "wait for the harness" in that mode silently kills the run: the CLI exits `0` immediately and every dispatched agent gets killed at the background-task ceiling with nothing collected (`fleet-config#506`, `fleet-config#314`). In `easy`/`silent` mode, step 9 must instead block on `TaskOutput` (`block: true`) for every in-flight agent within the same turn, re-issuing on timeout, and never end the turn until the selected-issue list is fully drained.
+- **In `easy`/`silent` mode, never background-and-wait.** An attended `hard`-mode run is a normal top-level Claude Code session, and the harness *does* re-invoke it as each background sub-agent completes (step 9's "stop and stand by" is correct there). But `easy`/`silent` runs headless via `claude -p`, which has **no** wake-up mechanism at all: waiting for the harness there silently kills the run — the CLI exits `0` immediately and every dispatched agent is killed at the background-task ceiling with nothing collected (`fleet-config#506`, `fleet-config#314`). In `easy`/`silent` mode, step 9 must instead block on `TaskOutput` (`block: true`) for every in-flight agent within the same turn, re-issuing on timeout, and never end the turn until the selected-issue list is fully drained.
 
 ## Steps
 
@@ -75,9 +75,9 @@ Tally open issues per bucket label (drop `audit-meta` rows; a `security` or `cer
 E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/gh_issue_fetch.py fetch --label <bucket-label>
 ```
 
-This is the **preferred primary fetch**, not `gh search issues --owner ferraroroberto`: that call is backed by GitHub's Search API, which is documented as eventually consistent and was observed reporting 23 issues as open for five-plus weeks after they had actually been closed — 46 wasted agent invocations, ~2.9M tokens confirming already-shipped work (fleet-config#623). `gh_issue_fetch.py` reads the same information through the direct Issues API instead, one `gh issue list --repo <owner>/<name> --state open` per repo. **Read that as "avoids a known-bad source," not "proven immune"** — the repo-scoped smoke test that motivated this was a single same-day observation, not a guarantee about every cache layer between `gh` and GitHub's backend. That's why step 8 still re-checks each selected issue's state immediately before dispatch rather than treating this fetch as sufficient on its own; the two cover different failure modes and neither subsumes the other.
+This is the **preferred primary fetch**, not `gh search issues --owner ferraroroberto`: the Search API is documented as eventually consistent and was observed reporting 23 issues as open for five-plus weeks after they had closed — 46 wasted agent invocations, ~2.9M tokens confirming already-shipped work (fleet-config#623). `gh_issue_fetch.py` reads the same information through the direct Issues API instead, one `gh issue list --repo <owner>/<name> --state open` per repo. **Read that as "avoids a known-bad source," not "proven immune"** — the smoke test behind it was a single same-day observation, not a guarantee about every cache layer between `gh` and GitHub's backend. That's why step 8 still re-checks each selected issue's state immediately before dispatch; the two cover different failure modes and neither subsumes the other.
 
-Read the JSON directly. **Drop any row carrying the `audit-meta` label** — those are the per-repo `codebase-audit ledger` and the `audit-fleet digest state` issues, never actionable work. If the result is empty, print `No open <bucket> issues across the fleet 🎉` and stop. If the helper's stderr summary reports any `ERROR <repo>: <reason>` lines, note them in the eventual plan — those repos are simply absent from this run's candidates, not a run-wide failure.
+Read the JSON directly. **Drop any row carrying the `audit-meta` label** — those are the per-repo `codebase-audit ledger` and the `audit-fleet digest state` issues, never actionable work. If the result is empty, print `No open <bucket> issues across the fleet 🎉` and stop. If the helper's stderr summary reports any `ERROR <repo>: <reason>` lines, note them in the plan — those repos are simply absent from this run's candidates, not a run-wide failure.
 
 ### 4. Group by repo + enforce one-agent-per-repo
 
@@ -92,7 +92,7 @@ Read each selected issue's title + body (for an audit bucket issue, also weigh t
 
 - **easy tier:** narrow surface, mechanical, clear acceptance, no design decision. Doc fixes, a handful of stale-code deletions, a missing README flag, a rename, a few tightly-scoped checklist items.
 - **hard tier:** multi-module, real design choices, a refactor, an unbounded body, or a **mixed** checklist (trivial *and* hard items together → treat the whole issue as hard-tier; it absorbs the easy parts too).
-- **`design-drift` specifically:** pure token/palette/spacing drift is easy-tier; any **structural** finding — a hand-rolled nav, a forked or re-authored vendored component, a layout rewrite — is hard-tier. `/design-sync`'s rule is *never re-author nav/components* (reuse the vendored snippet, don't rewrite), so a `design-drift` issue carrying one is worked build-and-stop for review, never auto-merged.
+- **`design-drift` specifically:** pure token/palette/spacing drift is easy-tier; any **structural** finding — a hand-rolled nav, a forked or re-authored vendored component, a layout rewrite — is hard-tier. `/design-sync`'s rule is *never re-author nav/components* (reuse the vendored snippet), so a `design-drift` issue carrying one is worked build-and-stop for review, never auto-merged.
 
 When genuinely on the fence, round **up** to hard-tier in `hard` mode (a human will still review it) and **down**-or-defer in `easy`/`silent` mode (never auto-merge something you weren't sure about).
 
@@ -132,11 +132,11 @@ For each repo with a selected (and, in `easy`/`silent` mode, easy-tier) issue:
 
 ### 8. Fan out — one background sub-agent per selected issue
 
-**Re-verify state first, in one batch.** Even step 3's direct-Issues-API fetch is
-not proven immune to every staleness source (see step 3's caveat), and `hard`
-mode's approval wait can itself take long enough for an issue to close in the
-meantime. Build one JSON array of every still-selected issue (`[{"repo": ...,
-"number": ..., ...other fields...}, ...]`) and pipe it through:
+**Re-verify state first, in one batch.** Step 3's fetch is not proven immune to
+every staleness source, and `hard` mode's approval wait can itself take long
+enough for an issue to close meanwhile. Build one JSON array of every
+still-selected issue (`[{"repo": ..., "number": ..., ...other fields...}, ...]`)
+and pipe it through:
 
 ```
 E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/issue_state_gate.py partition
@@ -152,8 +152,7 @@ dropped, not dispatched (<detail>)`, kept as its own category, never merged
 into either the closed count or the dispatched count. The run's final summary
 must show all three counts (`dispatched` / `already-closed` / `unresolved`)
 even when the latter two are zero — a run that silently shrank its own working
-set reads as "nothing to do," which is the same false-confidence shape this
-issue exists to fix (fleet-config#623, #560, #612).
+set reads as "nothing to do" (fleet-config#623, #560, #612).
 
 Before the mass easy-tier dispatch below, call
 `E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/rate_gate.py check --threshold 70`
@@ -282,7 +281,7 @@ Print a single confirmation block listing every sub-agent dispatched (repo, #N, 
 
 ### 10. Aggregate as agents return, then the closing ping
 
-**Before marking any repo complete, run the post-flight dirty-tree check yourself — never trust the agent's self-report.** The agent that reports the result is the same actor that might have forgotten a commit or left something dirty, so this runs in the orchestrator:
+**Before marking any repo complete, run the post-flight dirty-tree check yourself — never trust the agent's self-report.** The reporting agent is the same actor that might have forgotten a commit or left something dirty, so this runs in the orchestrator:
 
 - **Easy-tier (reported `MERGED`):**
   ```
@@ -293,7 +292,7 @@ Print a single confirmation block listing every sub-agent dispatched (repo, #N, 
   ```
   E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/dirty_tree_check.py check E:\automation\<repo> --mode built --expect-branch <branch>
   ```
-  `STATUS=DIRTY` → keep the `📋 ready for review` mark but append an explicit `⚠️ post-flight: <REASON>` line right next to it, distinct from the rationale summary — this catches HEAD silently back on `main`, a branch mismatch, or the agent reporting changes it never actually saved. `STATUS=UNKNOWN` → the helper could not read that repo, so it has no verdict: mark it `❓ tree unverified — <REASON>` and never fold it into a pass or a fail (fleet-config#570).
+  `STATUS=DIRTY` → keep the `📋 ready for review` mark but append an explicit `⚠️ post-flight: <REASON>` line right next to it, distinct from the rationale summary — this catches HEAD silently back on `main`, a branch mismatch, or the agent reporting changes it never actually saved. `STATUS=UNKNOWN` → as above: `❓ tree unverified — <REASON>`, never folded into a pass or a fail.
 
 This check only reports — it never blocks the run, never auto-commits, and never auto-fixes. A per-repo failure never stops the aggregation of the rest.
 
@@ -308,7 +307,7 @@ E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/hooks
 
 (In easy mode `--review 0` — the helper drops the review clause.) Silent no-op if no Slack channel is configured; always exits 0.
 
-**`notify_complete.py` is the ONLY sanctioned way to send this roll-up ping — do NOT use any MCP Slack tool (search/send/etc.) to find a channel or post the ping.** The helper resolves the destination channel deterministically from `projects.toml`; picking one yourself is both a security violation (an agent-inferred external write destination) and wrong (it may post to the wrong channel). A silent no-op when no channel is configured is correct — do not "fix" it by reaching for Slack tools.
+**`notify_complete.py` is the ONLY sanctioned way to send this roll-up ping — do NOT use any MCP Slack tool (search/send/etc.) to find a channel or post the ping.** The helper resolves the destination channel deterministically from `projects.toml`; picking one yourself is a security violation (an agent-inferred external write destination) and may post to the wrong channel. A silent no-op when no channel is configured is correct — do not "fix" it by reaching for Slack tools.
 
 Then print the final summary block, with each hard-tier review row carrying its rationale summary inline, and any post-flight dirty-tree finding called out as its own line rather than folded silently into a clean-looking status:
 
@@ -329,7 +328,7 @@ Cleanup complete — <bucket> (<mode> mode)
 Next: read each review row's summary above, then /issue-finish the ones you approve.
 ```
 
-The `candidates:` line is mandatory even when the extra two counts are zero — step 8's state re-check can drop candidates before any agent is dispatched, and a summary that silently shrinks its own working set reads as "nothing to do" (fleet-config#623). `already-closed` and `unresolved` are always two separate counts, never combined into one "skipped" number.
+The `candidates:` line is mandatory even when the extra two counts are zero — step 8's state re-check can drop candidates before any agent is dispatched (fleet-config#623). `already-closed` and `unresolved` are always two separate counts, never combined into one "skipped" number.
 
 ### 11. Stop
 
@@ -338,15 +337,13 @@ No follow-up actions. The user reads each hard-tier row's rationale summary (not
 - **`/issue-finish-batch <branches>`** — once happy with several branches, fan out one background finisher per branch (all at once — this is easy-tier work itself, exempt from the Opus cap), each running `/issue-finish` one-shot and reporting back only on a genuine blocker. The parallel path.
 - **`/issue-finish`** per branch, one at a time — the always-available manual fallback.
 
-Do **not** auto-launch either: the batch finish is user-triggered, exactly like the manual one.
-
 ## Hard rules
 
 - **One agent per repo, period.** A bucket is at most one issue per repo by construction; if a repo has extras, defer them — never two agents on one checkout.
-- **Easy-tier path is full-YOLO-to-merged; hard-tier path always stops before push/PR.** Never let a hard-tier agent merge; never make an easy-tier agent stop early in `hard`/`easy` mode (that's what the hard tier is for).
-- **Whichever tier resolves to Opus on the current host dispatches through the global Opus concurrency window (≤3 in flight); every other tier is exempt.** On Claude Code today hard-tier resolves to Opus. Refill the window as each capped agent returns; never a single-message fan-out of many Opus agents at once — it trips Anthropic's server-side burst rate limit (see `~/.claude/CLAUDE.md`, "Spawning sub-agents — cap concurrent Opus at 3").
+- **Easy-tier path is full-YOLO-to-merged; hard-tier path always stops before push/PR.** Never let a hard-tier agent merge; never make an easy-tier agent stop early in `hard`/`easy` mode.
+- **Whichever tier resolves to Opus on the current host dispatches through the global Opus concurrency window (≤3 in flight); every other tier is exempt.** On Claude Code today hard-tier resolves to Opus. Refill the window as each capped agent returns; never a single-message fan-out of many Opus agents at once — it trips Anthropic's server-side burst rate limit (step 8).
 - **`easy`/`silent` mode never spawns hard-tier work and never merges hard-scored work.** Hard-tier rows are listed only. This is the unattended-safety guarantee.
-- **Hard-tier review is by rationale summary, not diff.** Prompt 8b's agent must return "What I did & why" / "Why I believe this is correct"; the orchestrator surfaces both verbatim next to every `📋 ready for review` row (steps 9-10) — that's what the user reviews, not the code.
+- **Hard-tier review is by rationale summary, not diff.** Prompt 8b's agent must return "What I did & why" / "Why I believe this is correct"; the orchestrator surfaces both verbatim next to every `📋 ready for review` row (steps 9-10).
 - **The orchestrator never edits source, commits, pushes, or merges.** Every write happens inside a spawned agent.
 - **Never disturb in-progress work.** Dirty / off-default-branch repos are skipped and reported, never stashed or force-switched.
 - **Post-flight dirty-tree check runs in the orchestrator, never the sub-agent, right before a repo is marked complete (step 10).** It only corrects the reported status (downgrades `✅`/`📋` on a mismatch) — it never blocks, auto-commits, or auto-fixes.

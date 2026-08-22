@@ -77,18 +77,17 @@ Run the `/issue-start <N> now` flow:
 
 ### Phase 3 — Validate hard *(the non-negotiable phase)*
 
-The whole reason YOLO is safe enough to ship is that this phase is *not*
-weakened relative to the normal flow — it is **stronger**. There is no human
+This phase is stronger than the normal flow, not weaker — there is no human
 checkpoint after this. Everything below must hold before Phase 4 starts.
 
 Run **all** that apply to this project. Each is a hard gate.
 
-**3a. Reproduction proof (for bugs).** Per the scaffolding `CLAUDE.md`'s
-"While fixing" section: a bug fix needs an artefact that *demonstrates* the
-fix. A failing test that now passes, a recorded console transcript showing the
-old error then the new clean run, or a documented reproduction sequence
-exercised before and after. "I think this fixes it" is not enough in YOLO mode
-— there is no review to catch a non-fix.
+**3a. Reproduction proof (for bugs).** A bug fix needs an artefact that
+*demonstrates* the fix (scaffolding `CLAUDE.md`'s "While fixing" section): a
+failing test that now passes, a recorded console transcript showing the old
+error then the new clean run, or a documented reproduction sequence exercised
+before and after. "I think this fixes it" is not enough in YOLO mode — there
+is no review to catch a non-fix.
 
 **3b. Syntax / type / lint gate.** Whatever the project specifies in its
 `CLAUDE.md` Verification section. Typically:
@@ -174,8 +173,7 @@ check. Fix anything obvious *now*. The reviewer in this run is you.
 
 **If anything in 3a–3g fails — stop.** Report the failure, leave the branch
 in place, let the user inspect. Do **not** continue to 3h or Phase 4. Do
-**not** soft-pass with caveats. A YOLO run that ships a half-broken change
-defeats the whole structure.
+**not** soft-pass with caveats.
 
 **3h. Independent review — a fresh agent with no memory of the build.** Only
 reached once 3a–3g are all green. Self-review (3a–3g) is still done by the
@@ -372,12 +370,11 @@ outcome — do not "fix" it by reaching for Slack tools.
 ## Notes on safety
 
 - The "approval gate" you're skipping is the plan-mode pause where the user
-  would normally vet the *approach* before code is written. The validation
-  gate you're not skipping is what proves the code *works*. These are
-  different gates; do not conflate them.
+  vets the *approach* before code is written; the validation gate you're not
+  skipping is what proves the code *works*. Different gates — do not conflate
+  them.
 - If you find yourself wanting to weaken Phase 3 to keep the run moving,
   you are not doing YOLO any more — you are doing something else. Stop and
   ask the user.
-- If a project has a tray running an older version while you ship, the tray
-  restart at the end is what makes "merged" mean "live". A YOLO run that
+- The tray restart at the end is what makes "merged" mean "live" — a run that
   merges but leaves the tray on the previous build is not finished.

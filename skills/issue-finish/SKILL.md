@@ -81,7 +81,7 @@ so explicitly — never claim tests passed when there are none.
 When the diff touches the web app's UX, confirm it still conforms to the fleet
 design system **and** isn't visually broken — *before* the PR, so a drift-fix
 commit lands in it. Convention + contract: `project-scaffolding#83`. The trigger
-is deterministic, not a judgment call:
+is deterministic:
 
 ```
 E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/ux_surface.py check .
@@ -165,9 +165,8 @@ Integration rules:
 the contract. CI's **only** signal beyond it is the **e2e suite** (when the local
 gate doesn't run it — that needs browsers + a live webapp), which is also the
 known-flaky leg. So waiting adds nothing for a diff touching no e2e surface, nor
-for one whose e2e coverage was already proven **locally, in this session** — a
-wedged remote browser blocks the merge for nothing either way. The decision below
-is driven by the project's `## CI expectations` block (convention:
+for one whose e2e coverage was already proven **locally, in this session**. The
+decision below is driven by the project's `## CI expectations` block (convention:
 `ferraroroberto/project-scaffolding#52`).
 
 - **Read the project's `## CI expectations` block in `CLAUDE.md`.** It declares
@@ -207,17 +206,16 @@ is driven by the project's `## CI expectations` block (convention:
   force-merges: CI is advisory (no branch protection), so no `--admin` is ever
   needed — but **if a repo later marks the `e2e` check *required*** in branch
   protection, the skip-rule must **fall back to watching** (a required check
-  can't be skipped without `--admin`, which is out of scope here). This skips
+  can't be skipped without `--admin`). This skips
   only the *remote CI wait*; it never skips the verification gate in step 3.
 - **Merge — the flag depends on the checkout mode** (from pre-flight):
   - **Primary checkout:** `gh pr merge <PR> --merge --delete-branch` — merge
     commit; branch deleted on both remote and local.
   - **Linked worktree:** `gh pr merge <PR> --merge` — **no `--delete-branch`**.
-    From inside a worktree that flag fails its *local* half every time
-    (`'main' is already used by worktree at <primary>`, 6 for 6 on 2026-08-16):
-    `gh` tries to check out the default branch to delete the ref, and the
-    primary holds it. The remote merge still succeeds, so the failure is
-    cosmetic — but each lane then improvised its own recovery. Delete the refs
+    From inside a worktree that flag always fails its *local* half
+    (`'main' is already used by worktree at <primary>`): `gh` tries to check
+    out the default branch to delete the ref, but the primary holds it. The
+    remote merge still succeeds — the failure is cosmetic. Delete the refs
     explicitly instead, after the landing step below:
     ```
     git push origin --delete <branch>
@@ -288,11 +286,10 @@ is driven by the project's `## CI expectations` block (convention:
          serving this tree (…)` is that same correct outcome by design
          (fleet-config#665): a repo declaring `tray_cmd` runs a server out of
          its checkout, so fast-forwarding it would serve one UI out of two
-         commits. The named restart is the remedy — nothing here is broken.
+         commits.
        **Put that line in the finish summary, verbatim, next to the merge
        result** — never absent, never implied by silence. "Merged" and "live"
-       are two facts and the summary carries both (the fleet rule that a check
-       which cannot establish a fact reports its own state rather than passing).
+       are two facts and the summary carries both.
     3. **`fleet-config` only — prove the junction is serving the merge.** When
        the diff touched `hooks/` or `skills/`, landing the primary is what
        *deploys*. Read a changed file back through its `~/.claude/...` path
@@ -324,16 +321,14 @@ follow that procedure **exactly**. The non-negotiables:
   atomically. **Do not** hand-roll a `Get-NetTCPConnection`/`taskkill` kill:
   a by-hand kill only catches the one listener it finds and misses the orphan
   the reclaim sweep exists to kill, then re-runs a start-only script.
-- **Invoke it through a real Windows shell — never Git Bash's nested `cmd /c`.**
-  Run the restart via the harness PowerShell tool, or
+- **Invoke it through a real Windows shell — never Git Bash's nested `cmd /c`**
+  (MSYS rewrites `/c` to `C:/`, so `cmd.exe` opens interactively instead of
+  running the batch — only the `cmd` banner prints, the old build stays
+  untouched). Run the restart via the harness PowerShell tool, or
   `C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe -Command "& '<repo>/tray.bat' --restart"`
-  (forward-slash exe path, per the Git-Bash-strips-backslashes rule). Launched
-  through the Bash tool as `cmd /c "tray.bat --restart"`, Git Bash/MSYS rewrites
-  `/c` to `C:/`; `cmd.exe` opens an interactive prompt and the batch/helper never
-  runs — it emits only the `cmd` banner, none of the batch's own `Stopping
-  previous…` echoes, and leaves the old build untouched. Fire the PowerShell
-  invocation non-blocking (the tray holds its console — a foreground launch
-  never returns), then move to the bounded poll below.
+  (forward-slash exe path, per the Git-Bash-strips-backslashes rule). Fire the
+  PowerShell invocation non-blocking (the tray holds its console — a foreground
+  launch never returns), then move to the bounded poll below.
 - **Safety caveat — linked children.** `tray.bat --restart` does a `/T` subtree
   kill, so it is safe only for a tray whose linked-but-independent children
   (a session-host + its PTY-backed shells) are spawned **detached** and

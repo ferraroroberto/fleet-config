@@ -49,11 +49,11 @@ prints. So a periodic poll is a **one-shot** task: sleep the interval, emit
 one digest, exit. You report on the wake-up, then relaunch the same script for
 the next tick. Nothing re-arms it for you.
 
-- **Never a loop with an internal `sleep`.** It collects data faithfully and
-  reports it to nobody until it terminates — which is exactly when the
-  reporting has stopped being useful. A 30-iteration 30-minute loop watching a
-  16-hour unattended run produced one wake-up, at the end: three ticks sat in
-  the output file while Roberto heard nothing for 90 minutes and had to ask.
+- **Never a loop with an internal `sleep`.** It collects data faithfully but
+  reports to nobody until it terminates — exactly when reporting stops being
+  useful: a 30-iteration 30-minute loop over a 16-hour run produced one
+  wake-up at the end, after Roberto went unanswered for 90 minutes and had to
+  ask.
 - A long-lived loop is still fine for pure **data collection** into a file
   something else reads. The defect is using one as the *reporting* mechanism.
 - Foreground `sleep` is blocked by the harness, so the interval has to live
@@ -63,12 +63,10 @@ the next tick. Nothing re-arms it for you.
 
 **This is the inverse of the worker rule you hand out at dispatch time** —
 "poll background work to completion inside your own turn; never end a turn
-waiting to be resumed" (the standard dispatch brief's point 1 below). The two
-are not in conflict; they follow from the same mechanic. Only a task's *exit*
-wakes a session: a top-level worker gets no wake-up at all, so it must never
-end a turn waiting for one, while you **do** get woken, so you build your
-cadence out of short tasks that end. The rule you give workers is not the rule
-you follow.
+waiting to be resumed" (the standard dispatch brief's point 1 below). Only a
+task's *exit* wakes a session: a top-level worker gets no wake-up at all, so
+it must never end a turn waiting for one, while you **do** get woken, so you
+build your cadence out of short tasks that end.
 
 Reference implementation — copy it rather than redesigning it, and launch it
 with the Bash tool's `run_in_background`, one tick per launch:
@@ -261,14 +259,14 @@ returned session so the user can find the card.
 ## Standard dispatch brief (fold into every worker brief, fleet-config#444)
 
 **Open every brief by naming the instruction channel (fleet-config#622).**
-Not to authenticate yourself — there is no marker and no authority claim any
-more — but because a worker that meets an unexplained mid-run instruction with
-no idea one was coming stalls just as hard as one that meets an unverifiable
+Not to authenticate yourself — there is no marker or authority claim any
+more — but because a worker meeting an unexplained mid-run instruction with no
+idea one was coming stalls just as hard as one meeting an unverifiable
 authority marker. What the brief declares is a **channel, not a password**:
 which input path carries further instructions, and what does not. That
-distinction is the security property that actually matters, and it survives
-dropping the prefix precisely because a channel is not a string an attacker
-can type. Adapt the wording, never the substance:
+distinction is the security property that matters, and it survives dropping
+the prefix because a channel isn't a string an attacker can type. Adapt the
+wording, never the substance:
 
 > **Where further instructions come from.** This work was dispatched by the
 > fleet chief — a standing orchestrator session (cwd
@@ -396,11 +394,10 @@ completion onward to Roberto:
   (fleet-config#570).
 
 **Verify from outside; never arbitrate between two agents' conflicting
-accounts.** When one worker reports that another overstepped its brief, the
-right move is checking independently — the PR contents, `git log`, the working
-tree, and the repo's own gate — rather than refereeing which narrative is
-right. You are the one party in a position to check; use that instead of
-picking a side.
+accounts.** When one worker reports that another overstepped its brief, check
+independently — the PR contents, `git log`, the working tree, and the repo's
+own gate — rather than refereeing which narrative is right. You're the one
+party positioned to check; use that instead of picking a side.
 
 **Correct a wrong hedge fast, once you have better information.** A soft
 guess ("likely a narration artifact") that a worker later contradicts with
@@ -413,17 +410,16 @@ worker.** Running `tests/run_acceptance.py` against fleet-config's tree while
 a worker was editing it gave two different failure counts on consecutive runs
 — not flake, a race with the worker's writes: noise presented as a signal.
 This doesn't narrow what you can inspect — `git
-status`, `git log`, reading files, reading committed state, querying `gh` all
-stay fine and encouraged, including in a repo with a live worker. The line is
-running the repo's own tooling: a gate, a test suite, a byte-compile, anything
+status`, `git log`, reading files/committed state, querying `gh` all stay fine
+and encouraged, including in a repo with a live worker. The line is running
+the repo's own tooling: a gate, a test suite, a byte-compile, anything
 that writes `__pycache__` or otherwise mutates a tree someone else is actively
 changing — that can neither be trusted (it's reading a moving target) nor
 safely repeated (a second run against different mid-edit state is a different
 question, not confirmation).
 
-When you genuinely doubt a worker's report — and you should keep doubting;
-the failure here was the method, not the impulse — verify one of these ways
-instead:
+When you genuinely doubt a worker's report (keep doubting — the failure here
+was the method, not the impulse), verify one of these ways instead:
 
 - Against `origin/main` or a specific commit, never the live working tree.
 - Against an artefact the change produced, rather than by re-running the
@@ -435,32 +431,30 @@ instead:
 - Ask the worker to re-run its own gate and report back.
 
 **Doubt your own filings hardest — re-test the premise, not the conclusion
-(fleet-config#633).** On 2026-08-15 you filed that issue against
-`/cleanup-fleet-all`'s step-5 state gate: two candidates already closed when
-the gate waved them through, with evidence tables, a named root cause, and a
-derived "~9 of 43 already closed, ≈3h of lanes wasted". Every word of it was
-produced by one unchecked unit conversion — GitHub's UTC `closedAt` read as
-local time (the clock rule lives in `global-CLAUDE.md`'s recurring gotchas;
-elapsed-vs-wall-clock job logs are item 1 of "Telling a quiet lane from a hung
-one"). That run's *own* lanes had closed both issues, hours **after** the gate
-ran. Closed not-planned the next morning.
+(fleet-config#633).** On 2026-08-15 you filed against `/cleanup-fleet-all`'s
+step-5 state gate — two candidates already closed when the gate waved them
+through, with evidence tables, a named root cause, and a derived "~9 of 43
+already closed, ≈3h of lanes wasted." The cause: one unchecked unit
+conversion — GitHub's UTC `closedAt` read as local time (clock rule in
+`global-CLAUDE.md`'s recurring gotchas; elapsed-vs-wall-clock job logs are
+item 1 of "Telling a quiet lane from a hung one" above). That run's *own*
+lanes had closed both issues, hours **after** the gate ran — closed
+not-planned the next morning.
 
-The arithmetic is not the lesson. Every later check re-confirmed the
-**conclusion** and never the **premise**: running `issue_state_gate.py check`
-by hand returned `closed`, which was true *by then* and said nothing about what
-the gate could see *back then*. Before filing any defect against fleet tooling:
+The arithmetic isn't the lesson: every later check re-confirmed the
+**conclusion**, never the **premise** — `issue_state_gate.py check` run by
+hand returned `closed`, true *by then*, saying nothing about what the gate
+could see *back then*. Before filing any defect against fleet tooling:
 
-- **Write the premise as one sentence and test that sentence alone.** Here it
-  was "these two issues were already closed at `11:53Z`" — one `gh` query from
-  disproof, and never asked, because it was the part that looked too obvious
-  to check.
+- **Write the premise as one sentence and test that sentence alone.** Here:
+  "these two issues were already closed at `11:53Z`" — one `gh` query from
+  disproof, never asked because it looked too obvious to check.
 - **Reconstruct what the tool could observe at time T**, not what it returns
-  now. A tool re-run today is not a witness to yesterday.
-- **Treat a confident, table-heavy draft as a warning sign, not a finish
-  line.** Presentation quality is not evidence quality, least of all in your
-  own filings — #633 read as rigorous *precisely* while being wrong, and that
-  rigour is what carried it into the handover log and onward to Roberto as a
-  real defect.
+  now — a tool re-run today is not a witness to yesterday.
+- **A confident, table-heavy draft is a warning sign, not a finish line.**
+  Presentation quality isn't evidence quality, least of all in your own
+  filings — #633 read as rigorous *precisely* while being wrong, and that
+  rigour is what carried it to Roberto as a real defect.
 
 A claim that survives all three is a defect worth filing. One that cannot say
 what it re-tested is a hypothesis — file it as a question, or don't file it.

@@ -5,8 +5,8 @@ description: On-demand audit of a repo's e2e/regression suite for redundancy, bl
 
 # e2e-audit
 
-**Goal:** Answer "is this e2e suite exhaustive without being infinite?" for one
-repo, on demand — never as a weekly scheduled job (fleet-config#406; suite
+**Goal:** Audit one repo's e2e suite for redundancy and coverage gaps, on
+demand — never as a weekly scheduled job (fleet-config#406; suite
 bloat is feature-driven, not time-driven, and the fleet already runs
 `audit-fleet` / `context-audit` / `config-map` / `system-map` /
 `insights-weekly` / `learning-log` weekly). Run the **deterministic scan**
@@ -69,10 +69,10 @@ Test-dir resolution: reads the repo's own `## CI expectations` CLAUDE.md
 block for an "e2e surface" line and uses its backtick-quoted, test-like paths
 (e.g. app-launcher's `tests/e2e/`); falls back to `tests/e2e/` — the shared
 convention `project-scaffolding`'s `docs/playwright-ui-testing.md` already
-establishes fleet-wide — when no block or no test-like path is declared. This
-is "generic + project-driven", not a hardcoded per-repo path. A heading inside
-a fenced code block is ignored, so a repo that only *documents* the block
-template (project-scaffolding) reads as undeclared and takes the fallback.
+establishes fleet-wide — when no block or no test-like path is declared. A
+heading inside a fenced code block is ignored, so a repo that only
+*documents* the block template (project-scaffolding) reads as undeclared and
+takes the fallback.
 
 The fields it returns, and what each means:
 
@@ -83,8 +83,7 @@ The fields it returns, and what each means:
   when the repo has no `.venv` or pytest isn't collectible; report that
   explicitly as "not measured", never as zero).
 - **`ratio`** — `(node_count or raw_tests) / target` against the 15-test
-  target. This is the headline bloat signal (e.g. app-launcher: ~400 collected
-  nodes / 15 ≈ 26×).
+  target. This is the headline bloat signal (see Notes for a real reading).
 - **`clusters`** — groups of tests whose normalized name collided across
   ≥2 files — a redundancy *candidate*, not a verdict (a short generic name
   like `test_smoke` can collide without being a real duplicate).
@@ -262,11 +261,9 @@ survived judgment (don't file an empty one).
 
 ## Notes
 
-- Decision record + the reusable audit/dedupe pattern this skill follows:
-  fleet-config#406. The A-vs-B design question (standalone skill vs. a
-  `/codebase-audit` lens) was decided **standalone** — folding into
-  `/codebase-audit` would put this on that skill's weekly cadence, which
-  fleet-config#406 explicitly rejects.
+- Decision record + reusable audit/dedupe pattern: fleet-config#406, which
+  decided **standalone** over folding into `/codebase-audit` (that would
+  inherit its weekly cadence, explicitly rejected).
 - `e2e-redundancy` is a first-class audit bucket (`audit_issue.py` `KINDS`) —
   `/cleanup-fleet e2e-redundancy` fans out fixers, and `/issue-triage` treats
   it like any other issue.
@@ -277,6 +274,6 @@ survived judgment (don't file an empty one).
   inline maintenance* half — it routes and runs the proportionate slice for
   the current diff and edits tests in-branch (delete-with-the-feature,
   qualifying additions). This skill stays the *review* half: on-demand,
-  whole-suite, report-only. The report-only hard rule above is unchanged.
+  whole-suite, report-only.
 - First validated target: `app-launcher`'s `tests/e2e/` (the fleet's largest
   suite, ~60 files / ~400 collected nodes against the 15-test target).
