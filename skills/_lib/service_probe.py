@@ -120,11 +120,21 @@ def declared_service(
     process serves that tree, so no new configuration file is introduced --
     adding one would be the wrong move.
 
-    A repo absent from the table declares no tray, and lands: that is a known
-    absence, and it is reported in `detail` rather than passing silently. An
-    *unreadable* table is a different thing entirely -- nothing was
-    established, so it declares the tray true with no port, which routes to
-    `SERVICE_UNKNOWN` and refuses.
+    Three states, not two (fleet-config#686 -- the first cut conflated the
+    last two under one `False`, so a repo that was simply never entered in
+    the table landed exactly like one that declares no tray on purpose):
+
+    - **registered, with a `tray_cmd`**: `True`, with the port/api path to
+      probe.
+    - **registered, no `tray_cmd`**: a *known* absence -- `fleet-config`
+      itself is this case, and it must keep landing or every merge here
+      stops deploying through the `~/.claude` junctions. Returns `False`;
+      `detail` names the repo.
+    - **absent from the table entirely, same as an unreadable table**:
+      nothing was established -- unlike the case above, this is not evidence
+      the repo runs no service, only that nothing says so. Returns `True`
+      with no port, which routes `service_state` to `SERVICE_UNKNOWN` and
+      refuses; `detail` names the missing declaration as the remedy.
     """
     try:
         tables = fleet_repo_scan.fleet_repo_tables(projects_toml)
@@ -139,7 +149,9 @@ def declared_service(
             return False, None, None, f"{name} declares no tray_cmd"
         port = tbl.get("webapp_port")
         return True, int(port) if isinstance(port, int) else None, tbl.get("api_version_path"), ""
-    return False, None, None, f"{repo.name} is not declared in hooks/projects.toml"
+    return (True, None, None,
+            f"{repo.name} is not declared in hooks/projects.toml -- "
+            "declare it there to land")
 
 
 def listening_ports() -> Optional[set]:
