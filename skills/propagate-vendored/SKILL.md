@@ -58,6 +58,13 @@ No component argument → stop: "Pass a component name, e.g.
 - **Adopt before re-vendor.** A repo with no `[vendored].<component>` entry
   yet is not skipped — see step 4a's "adopt" sub-step. This is how the manifest
   goes from zero adopters (today) to covering the real nav + tray consumers.
+- **State coverage; a partial wave must never read as a complete one.** The
+  adopter list comes from the adopters' own `[vendored]` entries, so a repo
+  carrying the component without declaring it is invisible to it. Always report
+  both numbers — declared adopters propagated *and* undeclared carriers found —
+  and report a repo whose manifest could not be read, or a scaffold with no
+  `[components]` catalog, as its own **unknown** rather than folding either into
+  the clean count (project-scaffolding#230).
 - **Vendor verbatim.** Never hand-edit a copied file — a re-vendor that needs
   a local tweak means the tweak belongs upstream in `project-scaffolding`
   first, not in the adopter's copy (`_vendored/README.md`'s rule).
@@ -112,19 +119,29 @@ truth for who's behind; never eyeball repos by hand.
 For the **adopt** discovery — a repo that already carries the component's files
 but has no manifest entry — `no_manifest` alone doesn't distinguish "never
 touched this component" from "has it, unlabeled." Resolve that with one
-targeted sweep, scoped to the component's conventional path (UI components:
-`app/webapp/static/_vendored/<component>/`; tray primitives: the specific file,
-e.g. `app/tray/tray_lifecycle.ps1`):
+targeted sweep. **That sweep is no longer yours to run by hand** — the scan
+answers it (project-scaffolding#230). `undeclared_carriers` names every repo
+holding a catalogued component's files at the scaffold's own path with no
+manifest entry, each carrying:
 
-```
-git -C E:\automation\<repo> ls-files -- "<component-path>"
-```
+- `matches_head: true` — byte-identical to the scaffold tip. Nothing to decide:
+  the repo simply never recorded what it copied. An **adopt** candidate (step 4a).
+- `matches_head: false` — present but different, with `diff_files`. "Never
+  declared it" and "deliberately forked it" are indistinguishable from the
+  bytes, so **this reports; it does not overwrite.** Never fold one of these
+  into the wave silently: name it, say what differs, and let the human decide
+  whether it is a stale copy to re-vendor or a deliberate divergence to leave
+  alone.
 
-run once per `no_manifest` repo (or, cheaper, one `Glob`/`git grep`-style
-sweep across `E:/automation/*/<component-path>` first, then confirm per hit).
-A repo with files at that path and no manifest entry is an **adopt**
-candidate (step 4a); a repo with nothing there is genuinely not an adopter —
-skip it, it is out of scope for this component.
+`coverage` carries the two numbers this skill must always state, plus
+`carriers_unknown` (repos whose `.fleet.toml` could not be parsed — their carrier
+status is *unestablished*, never "clean") and `catalog_known`. **If
+`catalog_known` is `false` the scaffold checkout has no `[components]` table and
+carrier detection did not run at all** — say so; do not report "no undeclared
+carriers", which is a different and unearned claim.
+
+A repo appearing in neither list carries nothing catalogued and is genuinely
+not an adopter — skip it, it is out of scope for this component.
 
 ### 3. `--dry-run` / `check` stops here
 
@@ -136,10 +153,14 @@ Print the report and stop — no clone, no branch, no PR, nothing written:
   adopters (declared in [vendored]):
     <repo>   pinned <short-sha>   local: OK|DRIFT (<n> files)   vs HEAD: current|BEHIND (<n> files)
     …
-  adopt candidates (component present, no manifest entry yet):
-    <repo>   <component-path> found, undeclared
+  undeclared carriers (component present, no manifest entry):
+    <repo>   <component-path>   identical to HEAD — adopt
+    <repo>   <component-path>   DIFFERS (<n> files) — stale or deliberately forked, human call
     …
   no signal (<n> repos): <comma-separated, or "none">
+
+  coverage: <n> declared adopters, <m> undeclared carriers, <k> unknown (<repos, or "none">)
+            catalog: <c> components known | NOT KNOWN (<reason>)
 
 Run `/propagate-vendored <component>` (no --dry-run) to fan out the real wave.
 ```
@@ -147,7 +168,9 @@ Run `/propagate-vendored <component>` (no --dry-run) to fan out the real wave.
 ### 4. Real run: fan out one sub-agent per target repo
 
 Target repos = every `behind_head`/`local_drift` adopter from step 2, plus
-every adopt-candidate from step 2's sweep. For each, dispatch a background
+every `matches_head: true` carrier (adopt-only — its bytes are already current).
+A `matches_head: false` carrier is **not** a target by default: surface it and
+ask, then include it only on an explicit yes. For each target, dispatch a background
 sub-agent (`run_in_background: true`, easy tier per the rules above). Worktree
 setup mirrors `/issue-batch` step 6 — pre-create the branch in the orchestrator
 via `worktree_claim.py`, sequentially, before any agent launches:
@@ -255,8 +278,23 @@ As each agent returns, surface its report with a status mark (`✅ merged` /
   ⚠️ open:    <repo> <pr-url> (<reason>), …
   ❌ blocked: <repo> — <reason>, …
 
+  coverage: propagated to <n>/<N> declared adopters
+            <m> undeclared carrier(s) found: <repos, or "none">
+              - adopted (identical to HEAD): <repos, or "none">
+              - reported only (differ from HEAD, human call): <repos, or "none">
+            <k> repo(s) unknown (manifest unreadable): <repos, or "none">
+            catalog: <c> components known | NOT KNOWN — carrier detection did not run (<reason>)
+
   no per-repo issues filed (by design — see the scaffold record).
 ```
+
+**The coverage block is not decoration — it is the finding.** A wave that
+re-vendors every declared adopter and prints nothing else reads as complete
+whether it covered seven repos or one, which is exactly how `#228`'s fix reached
+`task-os` and left six repos on the leaked-hostname copy with nobody told
+(project-scaffolding#230). Print it even when every number is zero, and never
+compress "found no carriers" and "could not look for carriers" into the same
+line.
 
 ## Notes
 

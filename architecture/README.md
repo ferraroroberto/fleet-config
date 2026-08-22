@@ -82,6 +82,33 @@ one more thing to keep in sync with reality. Full decision writeup, including
 what would have flipped the answer to `VENDORED.lock`, is in
 `skills/propagate-vendored/README.md`.
 
+**Its mirror image lives in the scaffold: the `[components]` catalog
+(project-scaffolding#230).** `[vendored]` says what an adopter *copied*;
+`project-scaffolding`'s own `.fleet.toml` carries a `[components]` table saying
+what the scaffold *publishes* — `<manifest key> = { src = "<path in the scaffold>" }`,
+one entry per vendor-verbatim component, and **only** that repo carries it.
+
+```toml
+[components]
+nav       = { src = "app/webapp/static/_vendored/nav" }
+no_window = { src = "src/no_window.py" }
+```
+
+Without it, `/propagate-vendored`'s adopter list — built from `[vendored]`
+entries — cannot see a repo that carries a component and declared nothing, so a
+wave re-vendors the declarers, reports success, and leaves the rest stale with
+nobody told (`#228` reached one repo out of seven that way). With it,
+`skills/_lib/vendored_drift.py` hashes every fleet repo's copy of a *known*
+component path and reports `undeclared_carriers` by name, plus a `coverage`
+block the skill must state out loud. A scaffold checkout with no `[components]`
+table makes carrier detection report `catalog_known: false` — *could not look*,
+never *nothing to find*.
+
+Both sides of every hash comparison read **committed blobs**, not the working
+tree: these checkouts store LF and check out CRLF, so a filesystem-side read
+would differ from its own blob in every line of every text file and report
+universal false drift.
+
 ### Optional per-repo `[cert]` table (fleet-config#418)
 
 A repo that has triaged and disproved a `cert-drift` finding — `skills/_lib/cert_drift.py`

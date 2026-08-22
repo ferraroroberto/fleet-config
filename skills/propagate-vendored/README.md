@@ -86,3 +86,35 @@ generated PR body itself carries the link back to the scaffold change (with
 "Part of …" phrasing, never `Closes` — GitHub's closing-keyword parser
 matches substrings, so a literal `Closes`/`Fixes` in a distribution PR could
 accidentally close the scaffold issue on the first adopter to merge).
+
+## Why the manifest alone cannot report coverage (project-scaffolding#230)
+
+The adopter list is built from adopters' own `[vendored]` entries. That is
+self-referential: it can only find the repos that already told us. A repo
+carrying the component with no entry is not "skipped" in any visible sense — it
+is *absent from the question*, so the wave re-vendors whoever declared the
+component, prints a green digest, and leaves the rest on stale bytes with
+nobody told. `#228` prescribed `/propagate-vendored tailscale_cert` for seven
+adopters; only `task-os` had declared it, so the wave would have covered one
+repo and reported success. The stale copies were the ones holding a real tailnet
+hostname in public repos, and the gap was caught only because someone grepped
+the adopters directly instead of trusting the manifest.
+
+The missing half is a catalog of what the scaffold *publishes*:
+`project-scaffolding`'s own `.fleet.toml` `[components]` table (schema:
+`architecture/README.md`). With it, `vendored_drift.py scan` can hash every
+fleet repo's copy of a known component path and report `undeclared_carriers`
+alongside `adopters`, and this skill states both counts in every report.
+
+Two rules follow, and both are about not overclaiming:
+
+- **Detection reports; it never overwrites.** A carrier byte-identical to the
+  scaffold tip (`matches_head: true`) simply never recorded what it copied, and
+  adopting it is safe. One that differs is either stale or a deliberate fork,
+  and those are indistinguishable from the bytes — so it is named, with its
+  differing files, and left for a human.
+- **Unknown is its own state.** A repo whose `.fleet.toml` will not parse lands
+  in `carriers_unknown`, and a scaffold checkout with no `[components]` table
+  sets `catalog_known: false`. Neither may be folded into the clean count:
+  "found nothing" and "could not look" are different claims, and the second one
+  wearing the first one's clothes is the whole defect.
