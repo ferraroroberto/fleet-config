@@ -21,7 +21,7 @@ description: Ship reviewed branches in parallel — fan out one Sonnet agent per
 - **One agent per branch/checkout, period.** Each agent operates a working tree (the primary checkout, or a worktree path for `/issue-batch` worktree-mode branches); two agents on the same checkout collide. One issue → one branch → one agent → one merge.
 - **Agents finish only — never re-build.** The branch is already built and reviewed: agents run `/issue-finish`, they do **not** re-build, re-design, or "improve" the change.
 - **Sonnet by default, fanned out all at once; Opus only on explicit override (then the ≤3 window applies).** Finishing a reviewed branch is mechanical, so Sonnet is the right tier — and Sonnet sub-agents are exempt from the global Opus concurrency cap of 3 (`~/.claude/CLAUDE.md`, "Spawning sub-agents — cap concurrent Opus at 3"), so the whole batch fans out in a single message, no window.
-- **Post-flight dirty-tree check (step 6) runs in the orchestrator, never the agent, before a branch is marked merged.** It only corrects the reported status — never blocks, auto-commits, or auto-fixes.
+- **Post-flight dirty-tree check (step 6) runs in the orchestrator, never the agent, before a branch is marked merged** (never-blocks/auto-commits/auto-fixes detail in step 6).
 - **Blocker-only escalation.** An agent reports `BLOCKED` and stops on a genuine blocker (merge conflict, CI red on a diff that *does* touch e2e surface, verification-gate failure). It must **not** guess-fix, weaken the gate, or force anything. Everything else just ships and reports `MERGED`.
 - **Keep per-issue pings.** Each `/issue-finish` fires its own `✅ Done` ping (PR link); the `--kind finish-batch` roll-up is an *additional* closing aggregate, not a replacement. (Per `~/.claude/CLAUDE.md`, "keep per-item pings with aggregate".)
 - **The orchestrator only does cheap, safe work:** resolve each token to its repo + branch, per-branch pre-flight, fan-out, aggregate. **It never edits source, commits, pushes, or merges** — every write happens inside a spawned agent's `/issue-finish` run.
@@ -135,9 +135,9 @@ E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/hooks
   --kind finish-batch --merged <merged-count> --blocked <blocked-count>
 ```
 
-(A `0`/empty `--blocked` drops the clause.) Silent no-op if no Slack channel is configured; always exits 0.
+(A `0`/empty `--blocked` drops the clause.) Always exits 0; silent no-op if no Slack channel is configured — that is the correct outcome, do not "fix" it by reaching for a Slack tool.
 
-**`notify_complete.py` is the ONLY sanctioned way to send this roll-up ping — do NOT use any MCP Slack tool (search/send/etc.) to find a channel or post the ping.** The helper resolves the destination channel deterministically from `projects.toml`; picking a channel yourself is both a security violation (an agent-inferred external write destination) and wrong (it may post to the wrong channel). A silent no-op when no channel is configured is the correct outcome — do not "fix" it by reaching for Slack tools.
+**`notify_complete.py` is the ONLY sanctioned way to send this roll-up ping — never an MCP Slack tool (search/send/etc.) to find a channel or post it.** It resolves the destination channel deterministically from `projects.toml`; picking one yourself is a security violation (agent-inferred external write destination) and may hit the wrong channel.
 
 Then print the final summary block:
 
@@ -156,5 +156,5 @@ No follow-up actions. Blocked branches are left in place for you to inspect and 
 
 ## Notes
 
-- **Where this sits:** `/cleanup-fleet` and `/issue-batch` *build and stop* (one reviewed branch per issue); `/issue-finish-batch` *ships* a set of those reviewed branches in parallel. It composes `/issue-finish` rather than re-implementing it — that skill already owns the acceptance/gate/CI-advisory/merge/tray choreography per project, so this one owns only branch resolution, fan-out, and aggregate.
+- **Where this sits:** ships build-and-stop branches from `/cleanup-fleet`/`/issue-batch` in parallel by composing `/issue-finish` rather than re-implementing it — that skill already owns the acceptance/gate/CI-advisory/merge/tray choreography per project.
 - **Worktree branches:** `/issue-batch` uses worktrees when several issues hit one repo. Step 2 detects the worktree path and points the agent at it; the agent's `/issue-finish` run handles the merge, and worktree cleanup (`git worktree remove`) is done from the primary checkout afterwards per `/issue-batch`'s closing note.

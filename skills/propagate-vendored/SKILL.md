@@ -8,8 +8,8 @@ description: Fan out a byte-for-byte re-vendor of one project-scaffolding compon
 **Goal:** Turn a `project-scaffolding` component fix into a one-command,
 Dependabot-style distribution wave instead of N hand-filed issues + N hand-built
 PRs (`project-scaffolding#144–#150`). The scaffold change already carries the
-decision; a byte-for-byte re-vendor carries none — so this skill never files a
-per-repo issue, only opens auto-merging PRs linking back to the scaffold record.
+decision; a byte-for-byte re-vendor carries none (see "No per-repo issues,
+ever" below).
 
 Companion doc: `skills/propagate-vendored/README.md` (manifest-schema decision
 writeup). Schema reference: `architecture/README.md`'s "Optional per-repo
@@ -72,12 +72,11 @@ No component argument → stop: "Pass a component name, e.g.
   the component's user-facing wording as carefully as its mechanism before
   propagating it fleet-wide.** Byte-identical + hash-verified means a
   locally-softened copy registers as *drift*, so a bad default reads as the
-  safe choice everywhere it lands. This bit the fleet once: a vendored
-  component's docstring and exit message prescribed "kill + fresh restart" on
-  repos whose ports host a daily-driver tray and the Board itself. Before a
-  real (non-`--dry-run`) wave, confirm the scaffold source's wording actually
-  matches its own cited reference implementation, not just that the bytes
-  hash-match.
+  safe choice everywhere it lands (once: a vendored docstring/exit message
+  prescribed "kill + fresh restart" on repos hosting a daily-driver tray and
+  the Board itself). Before a real (non-`--dry-run`) wave, confirm the
+  scaffold source's wording actually matches its own cited reference
+  implementation, not just that the bytes hash-match.
 - **Hash-verify before bumping the manifest sha.** A copy that doesn't
   byte-match the scaffold source is a bug in this skill, not something to
   paper over by writing the sha anyway.
@@ -118,9 +117,9 @@ truth for who's behind; never eyeball repos by hand.
 
 For the **adopt** discovery — a repo that already carries the component's files
 but has no manifest entry — `no_manifest` alone doesn't distinguish "never
-touched this component" from "has it, unlabeled." Resolve that with one
-targeted sweep. **That sweep is no longer yours to run by hand** — the scan
-answers it (project-scaffolding#230). `undeclared_carriers` names every repo
+touched this component" from "has it, unlabeled." The scan itself resolves
+that via a targeted sweep — **not yours to run by hand** (project-scaffolding#230).
+`undeclared_carriers` names every repo
 holding a catalogued component's files at the scaffold's own path with no
 manifest entry, each carrying:
 
@@ -140,8 +139,8 @@ status is *unestablished*, never "clean") and `catalog_known`. **If
 carrier detection did not run at all** — say so; do not report "no undeclared
 carriers", which is a different and unearned claim.
 
-A repo appearing in neither list carries nothing catalogued and is genuinely
-not an adopter — skip it, it is out of scope for this component.
+A repo appearing in neither list carries nothing catalogued — skip it, out of
+scope for this component.
 
 ### 3. `--dry-run` / `check` stops here
 
@@ -302,7 +301,7 @@ line.
   it never edits a sister repo.** The nav + tray adopters (app-launcher,
   home-automation, local-llm-hub, photo-ocr, voice-transcriber, whatsapp-radar,
   grocery-shopping-automation) get their `[vendored]` entries written by step 4a
-  ("ADOPT") the first time this skill actually runs against them.
+  ("ADOPT") the first time this skill runs against them.
 - **Quality gate is upstream, not here.** `project-scaffolding#152` (source
   behavioral tests + a same-day-second-bug freeze rule) is what keeps a
   defective component from reaching this skill's fan-out — propagation

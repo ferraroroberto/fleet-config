@@ -12,8 +12,8 @@ capture engine — never silently, always **propose-then-capture** (fleet-config
 **This skill is judgment + orchestration only.** The deterministic mechanism —
 Playwright capture, fail-safe masking, the manifest, the README generator —
 lives per-app, pinned to the shipped reference implementation:
-`content-management`'s `config/doc_capture/` (`content-management#110`,
-shipped in PR #162). This skill never screenshots anything itself; it decides
+`content-management`'s `config/doc_capture/` (`content-management#110`).
+This skill never screenshots anything itself; it decides
 what to ask the engine to do, asks the human first, then calls it.
 
 **Generic, no project hardcoded.** Any repo can adopt this by shipping an
