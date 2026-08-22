@@ -470,6 +470,29 @@ try:
           "declared_service: a backslash path matches a forward-slash cwd_prefix (same tree)")
     check(sp.declared_service(Path("E:/automation/fleet-config"), declaring)[0] is False,
           "declared_service: no tray_cmd -> no service, whatever else the table says (#647 intact)")
+
+    # fleet-config#686: a repo *absent from the table entirely* is not the
+    # same fact as one that is registered and declares no tray_cmd -- the
+    # first cut conflated both under `declared=False`, so an undeclared repo
+    # (task-os, live on :8448 while unregistered for days) landed exactly
+    # like a genuine known absence instead of refusing as unknown.
+    check(sp.declared_service(Path("E:/automation/task-os"), declaring)[0] is True,
+          "declared_service: absent from the table -> unknown (routes to refuse), not a known absence")
+    ok, reason = sp.service_state(Path("E:/automation/task-os"), declaring)
+    check(ok is False and "not declared in hooks/projects.toml" in reason,
+          f"service_state: an undeclared repo refuses, naming the missing declaration (got {reason!r})")
+    ok, reason = wc.land_primary_check(None, "686", dirty=False,
+                                       current_branch="main", main_branch="main", behind=1,
+                                       service=sp.service_state(Path("E:/automation/task-os"), declaring))
+    check(ok is False and "not declared in hooks/projects.toml" in reason,
+          "land_primary_check: an undeclared repo never reaches PRIMARY=live")
+
+    # The genuine known-absence case (fleet-config: registered, no tray_cmd)
+    # must keep landing unconditionally through the same service_state path,
+    # or every merge to this repo stops deploying through the ~/.claude
+    # junctions (#647).
+    check(sp.service_state(Path("E:/automation/fleet-config"), declaring)[0] is True,
+          "service_state: registered with no tray_cmd still lands (#647 regression guard)")
 finally:
     shutil.rmtree(_toml_base, ignore_errors=True)
 
@@ -1072,6 +1095,7 @@ finally:
 # nothing stashed, nothing checked out, nothing forced.
 
 CLI = str(Path(__file__).resolve().parent.parent / "skills" / "_lib" / "worktree_claim.py")
+_PRODUCTION_CLI = CLI
 
 
 def _land(repo: Path, issue: str = "647") -> subprocess.CompletedProcess:
@@ -1103,6 +1127,21 @@ try:
     _git_t(upstream, "commit", "-m", "one")
     primary = land_base / "myrepo"
     _git_t(land_base, "clone", str(upstream), str(primary))
+
+    # Relocate the library so `myrepo` can be declared a known absence (no
+    # tray_cmd) independent of whatever the real fleet's own
+    # hooks/projects.toml says. These tests exercise the plain fast-forward /
+    # dirty / branch guards, not the #665/#686 service guard, and must not
+    # depend on `myrepo` happening to be undeclared for real -- an undeclared
+    # repo is now unknown, therefore refuse (fleet-config#686).
+    lib_dst = land_base / "skills" / "_lib"
+    lib_dst.mkdir(parents=True)
+    for mod in (Path(__file__).resolve().parent.parent / "skills" / "_lib").glob("*.py"):
+        shutil.copy2(mod, lib_dst / mod.name)
+    CLI = str(lib_dst / "worktree_claim.py")
+    (land_base / "hooks").mkdir()
+    (land_base / "hooks" / "projects.toml").write_text(
+        f'[myrepo]\ncwd_prefix = "{primary.as_posix()}"\n', encoding="utf-8")
 
     # Upstream moves ahead -- exactly the post-merge state a worktree lane is in.
     (upstream / "b.txt").write_text("two", encoding="utf-8")
@@ -1163,6 +1202,7 @@ try:
               for p, i in ((primary, "647"), (primary, "999"))),
           "land-primary: exactly one PRIMARY= line on stdout in every outcome (#647)")
 finally:
+    CLI = _PRODUCTION_CLI
     shutil.rmtree(land_base, ignore_errors=True)
 
 
@@ -1297,13 +1337,18 @@ architecture_ignore = []
     check(not (portless / "static.js").exists(),
           "land-primary: the unprobeable repo was left untouched too")
 
-    # A repo the table has never heard of is a *known* absence of a declaration,
-    # not an unknown -- every fixture repo in the block above this one is one.
+    # A repo the table has never heard of is *unknown*, not a known absence of
+    # a declaration -- every fixture repo in the block above this one is
+    # registered (fleet-config#686: task-os's tray was live on :8448 for days
+    # while undeclared, and the pre-fix code landed it anyway on that basis).
     stranger = _make_repo("undeclaredrepo")
     res = _land_svc(stranger)
-    check(res.returncode == 0 and "PRIMARY=live" in res.stdout,
-          f"land-primary: repo absent from projects.toml declares no service -> lands "
+    check(res.returncode == 1 and res.stdout.strip().startswith("PRIMARY=stale")
+          and "not declared in hooks/projects.toml" in res.stdout,
+          f"land-primary: repo absent from projects.toml -> unknown, refuses "
           f"(got {res.stdout.strip()!r})")
+    check(not (stranger / "static.js").exists(),
+          "land-primary: the undeclared repo was left untouched too")
 finally:
     if _running is not None:
         _running.shutdown()
