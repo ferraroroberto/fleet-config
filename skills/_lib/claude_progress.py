@@ -33,6 +33,14 @@ no work at all: nothing was killed, nothing stalled, so the child exits ``0``.
 Only the skill itself knows what "no work" means for it, so a scheduled skill
 self-reports by printing ``SCHEDULED-RUN-FAILED`` in its final report and this
 adapter turns that into exit ``123``.
+
+Every detector above turns a lying success into an honest failure. The one
+exception runs the other way: an upstream ``API Error: 5xx`` is a genuine
+failure that is nobody's fault and usually gone a minute later, so the adapter
+*retries* it rather than only reporting it — twice, backing off, and only for a
+run that had invoked no tool yet and therefore has nothing to duplicate. A
+transient error that survives the retries exits ``119``, which names the API
+rather than the skill (fleet-config#700).
 """
 
 from __future__ import annotations
@@ -165,6 +173,42 @@ TRUNCATED_STREAM_EXIT_CODE = 122
 # six stay tellable apart from each other and from a child's own code.
 NO_TOOL_USE_EXIT_CODE = 120
 
+# The sixth shape, and the only one so far that is nobody's fault: the upstream
+# API answered `529 Overloaded` three minutes into a run, the CLI printed its own
+# "usually temporary -- try again in a moment" and exited 1, and the weekly
+# `/context-purge` job lost the entire week because 01:03 is not a time anyone is
+# awake to try again (fleet-config#700). Re-running it by hand the same morning
+# worked with nothing changed.
+#
+# Every detector above answers "did this run deliver?" and each is terminal by
+# design. This one answers a different question -- "is this failure the run's
+# fault at all?" -- and is the only one that can be *acted on* rather than merely
+# reported, because the API itself named the remedy.
+#
+# Two deliberately separate decisions, kept apart because conflating them is how
+# a retry turns into a duplicated digest:
+#
+#   * Classification (this exit code) applies whenever a transient upstream error
+#     accompanied a failing run. It names the cause instead of a bare `1`, so the
+#     Telegram ping and the job card say "upstream, not us" even for a run that
+#     was never eligible to be retried.
+#   * Retryability (`retryable_transient_failure`) additionally requires that the
+#     run invoked *no tool at all*. A session that already edited files, pushed a
+#     branch or posted a digest must never be replayed from the top; only a run
+#     that died before touching anything is safe to start over.
+#
+# Restricted to 5xx on purpose: a 4xx (bad request, expired auth, exhausted
+# quota) is a real failure that retrying only makes slower and noisier.
+#
+# 120-125 is full and 126/127 carry their own shell meanings (`cannot execute` /
+# `not found`, and 127 is already this adapter's spawn failure), so this takes
+# the next rung *below* the block rather than crowding into either.
+TRANSIENT_API_EXIT_CODE = 119
+TRANSIENT_API_MAX_ATTEMPTS = 3
+# 60s then 180s. The failing run had burned 3m23s of a weekly window, so there is
+# room to spare; the point is to outlast a blip, not to hammer a struggling API.
+TRANSIENT_API_BACKOFF_SECONDS = (60.0, 180.0)
+
 _ANSI_RE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
 _SECRET_RE = re.compile(
     r"(?i)("
@@ -183,6 +227,24 @@ _SELF_REPORTED_FAILURE_RE = re.compile(
     rf"^[ \t>*•\-]*{re.escape(SELF_REPORTED_FAILURE_MARKER)}\b",
     re.MULTILINE,
 )
+
+
+# Anchored to the start of a line, like the marker above and for the same reason:
+# a run that mentions an API error mid-sentence -- a skill narrating yesterday's
+# job log, or this very issue -- is not a run that *hit* one. The leading class
+# tolerates bullets and blockquote marks exactly as the sibling regex does, so a
+# quoted `- API Error: 503` at the head of a line does still match; what filters
+# those out is not this pattern but the two guards downstream, which need the
+# child to have actually failed and to have invoked nothing.
+_TRANSIENT_API_ERROR_RE = re.compile(
+    r"^[ \t>*•\-]*API Error:\s*5\d{2}\b",
+    re.MULTILINE,
+)
+
+
+def _is_transient_api_error(text: str) -> bool:
+    """True for the CLI's own ``API Error: 5xx`` line — upstream, not this run."""
+    return _TRANSIENT_API_ERROR_RE.search(text) is not None
 
 
 def _is_background_kill_signature(text: str) -> bool:
@@ -258,6 +320,7 @@ class ProgressFormatter:
         self._saw_kill_signature = False
         self._saw_self_reported_failure = False
         self._saw_tool_use = False
+        self._saw_transient_api_error = False
         self._burst_count: Optional[int] = None
 
     @property
@@ -277,6 +340,49 @@ class ProgressFormatter:
     @property
     def saw_self_reported_failure(self) -> bool:
         return self._saw_self_reported_failure
+
+    @property
+    def saw_transient_api_error(self) -> bool:
+        """True once the CLI reported an upstream 5xx — the run's own fault, no."""
+        return self._saw_transient_api_error
+
+    @property
+    def retryable_transient_failure(self) -> bool:
+        """True only for a transient failure that is *safe* to start over.
+
+        The tool-use guard is the whole safety argument for retrying at all: a
+        session that already ran a tool may have edited files, pushed a branch
+        or posted a digest, and replaying it from the top would do that twice.
+        A run that died before touching anything has, by definition, nothing to
+        duplicate. `saw_tool_use` already tracks both shapes the stream reports
+        (an assistant `tool_use` block and a `task_started` sub-agent event), so
+        it is exactly the right question to ask here.
+        """
+        return self._saw_transient_api_error and not self._saw_tool_use
+
+    def reset_for_retry(self) -> None:
+        """Clear per-attempt state, keeping the run-level clock.
+
+        Only the *attempt* starts over; the elapsed-time prefix keeps counting
+        from the original start so the log reads as one continuous run rather
+        than three that each begin at `[00:00]`. Every verdict-bearing field is
+        cleared, because a fresh attempt must be judged on its own evidence —
+        leaving `_result_error` or the unknown-record timestamps behind would
+        let attempt 1's failure decide attempt 2's exit code.
+        """
+        self._tools.clear()
+        self._assistant_texts.clear()
+        self._unknown_timestamps.clear()
+        self._malformed = 0
+        self._unknown = 0
+        self._result_error = False
+        self._saw_result = False
+        self._saw_kill_signature = False
+        self._saw_self_reported_failure = False
+        self._saw_tool_use = False
+        self._saw_transient_api_error = False
+        self._burst_count = None
+        self._touch()
 
     def truncated_stream_burst(self) -> int:
         """Unknown records inside the shutdown window — computed once, then cached.
@@ -469,6 +575,11 @@ class ProgressFormatter:
         # must register whichever copy is seen first.
         if _is_self_reported_failure(text):
             self._saw_self_reported_failure = True
+        # Same reason as the marker above: the CLI's error text arrives as an
+        # assistant block and again as the terminal result, and the dedup guard
+        # below drops whichever copy lands second.
+        if _is_transient_api_error(text):
+            self._saw_transient_api_error = True
         if text in self._assistant_texts:
             return
         self._assistant_texts.add(text)
@@ -500,6 +611,17 @@ class ProgressFormatter:
         )
         if stalled:
             status = "⏱ stalled"
+        elif exit_code == TRANSIENT_API_EXIT_CODE:
+            # Placed here so this chain mirrors `run_process`'s precedence
+            # exactly. Those branches test formatter flags while the code was
+            # already decided, so any disagreement in ordering prints a verdict
+            # that contradicts the exit code beside it — a run that both
+            # self-reported and hit a 5xx would exit 119 under a line reading
+            # "delivered no work". Reading the code first keeps the two honest.
+            status = (
+                "❌ failed · transient upstream API error (5xx) — the run never got "
+                "going; this is an API-side fault, not a fault in the skill"
+            )
         elif self._saw_kill_signature:
             status = (
                 "❌ failed · background tasks killed after timeout — orchestrator "
@@ -804,6 +926,11 @@ def run_process(
         watchdog.join(timeout=5)
     if stall_state["stalled"]:
         exit_code = STALL_EXIT_CODE
+    elif exit_code != 0 and progress.saw_transient_api_error:
+        # Only ever over a child that already failed — this renames a failure,
+        # it never creates one. A run that hit a 5xx, recovered on its own and
+        # exited 0 succeeded, and saying otherwise would invent a red job.
+        exit_code = TRANSIENT_API_EXIT_CODE
     elif progress.saw_kill_signature and exit_code == 0:
         exit_code = BACKGROUND_KILL_EXIT_CODE
     elif progress.saw_self_reported_failure and exit_code == 0:
@@ -820,6 +947,63 @@ def run_process(
     return exit_code
 
 
+def run_with_transient_retry(
+    command: Sequence[str],
+    *,
+    formatter: ProgressFormatter,
+    stall_timeout: float = DEFAULT_STALL_TIMEOUT_SECONDS,
+    sleep: Callable[[float], None] = time.sleep,
+) -> int:
+    """Run the child, restarting it while a *safe* transient upstream error is the cause.
+
+    The retry is bounded by `TRANSIENT_API_BACKOFF_SECONDS` and gated on
+    `retryable_transient_failure`, so it fires only for a run that hit a 5xx
+    having invoked nothing — never for a stall, a self-reported failure, a
+    truncated stream, a non-transient error, or a run that already did work.
+
+    Synchronous by construction. Every caller of this module is an unattended
+    scheduled `.bat`; a headless run has no wake-up mechanism, so waiting out
+    the backoff has to happen inside this process or not at all.
+
+    `sleep` is injected so the tests can prove the retry policy without
+    actually parking for four minutes.
+    """
+    # One source of truth for "how many retries": the attempt cap trims the
+    # backoff schedule, and everything else — the loop, the `n/N` in the log,
+    # the give-up tally — is derived from the trimmed list. Reading the cap in
+    # one place and the raw tuple's length in another is how a log line starts
+    # promising a third attempt that the loop never makes.
+    schedule = TRANSIENT_API_BACKOFF_SECONDS[: max(0, TRANSIENT_API_MAX_ATTEMPTS - 1)]
+    attempts = 1
+    exit_code = run_process(command, formatter=formatter, stall_timeout=stall_timeout)
+    for retry_number, delay in enumerate(schedule, start=1):
+        # Gated on the *classification landing*, not merely on a 5xx having been
+        # seen. A run can emit a 5xx and then stall, or emit one and still exit
+        # 0 having touched nothing: both are safe to retry, and both are
+        # pointless to retry — the stall would cost another 45-minute watchdog
+        # window per attempt, and the exit-0 run is already destined for 120
+        # whatever a retry does. Requiring the code to actually be
+        # TRANSIENT_API_EXIT_CODE means the retry fires only where run_process
+        # concluded the upstream error is what failed the run.
+        if exit_code != TRANSIENT_API_EXIT_CODE or not formatter.retryable_transient_failure:
+            return exit_code
+        formatter.emit(
+            f"↻ transient API error — retry {retry_number}/{len(schedule)} "
+            f"in {_elapsed(delay)}"
+        )
+        sleep(delay)
+        # Judge the new attempt on its own evidence, not the failed one's.
+        formatter.reset_for_retry()
+        attempts += 1
+        exit_code = run_process(command, formatter=formatter, stall_timeout=stall_timeout)
+    if exit_code == TRANSIENT_API_EXIT_CODE and formatter.retryable_transient_failure:
+        formatter.emit(
+            f"↻ transient API error persisted across {attempts} attempt(s) — giving up; "
+            "check https://status.claude.com"
+        )
+    return exit_code
+
+
 def main(argv: Optional[Iterable[str]] = None) -> int:
     _configure_output()
     arguments = list(sys.argv[1:] if argv is None else argv)
@@ -831,7 +1015,10 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
         progress.emit(f"❌ usage error: {_one_line(exc)}")
         return 2
     try:
-        exit_code = run_process(
+        # The delivery check below stays outside the retry loop deliberately: it
+        # is a post-condition on the run as a whole, so it runs once, against
+        # whatever the final attempt left behind.
+        exit_code = run_with_transient_retry(
             command, formatter=progress, stall_timeout=resolve_stall_timeout(flags.stall_timeout)
         )
         if flags.delivery_check and not run_delivery_check(flags.delivery_check, progress):
