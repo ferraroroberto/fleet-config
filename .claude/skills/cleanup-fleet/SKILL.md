@@ -136,7 +136,10 @@ For each repo with a selected (and, in `easy`/`silent` mode, easy-tier) issue:
 not proven immune to every staleness source (see step 3's caveat), and `hard`
 mode's approval wait can itself take long enough for an issue to close in the
 meantime. Build one JSON array of every still-selected issue (`[{"repo": ...,
-"number": ..., ...other fields...}, ...]`) and pipe it through:
+"number": ..., ...other fields...}, ...]` — `repo` a bare name like `"task-os"`,
+never `"owner/name"`: the helper prepends the owner itself, and a prefixed repo
+produces a doubled-owner `gh` argv that fails with a network-sounding error
+unrelated to the network, fleet-config#706) and pipe it through:
 
 ```
 E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/issue_state_gate.py partition

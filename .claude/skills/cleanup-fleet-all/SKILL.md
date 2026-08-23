@@ -75,7 +75,7 @@ Within each bucket, group surviving issues by `repository.name`:
 
 ### 5. Pre-flight per selected repo
 
-**Re-verify every selected issue's live state first, in one batch, before any per-repo check below.** Even the direct-Issues-API fetch (step 3) is not proven immune to every staleness source (see step 3's caveat), and this run can sit for hours — an issue selected at step 4 can close for real while an earlier bucket is still running. Build one JSON array of every selected issue across every bucket (`[{"repo": ..., "number": ..., "bucket": ..., ...other fields...}, ...]`) and pipe it through:
+**Re-verify every selected issue's live state first, in one batch, before any per-repo check below.** Even the direct-Issues-API fetch (step 3) is not proven immune to every staleness source (see step 3's caveat), and this run can sit for hours — an issue selected at step 4 can close for real while an earlier bucket is still running. Build one JSON array of every selected issue across every bucket (`[{"repo": ..., "number": ..., "bucket": ..., ...other fields...}, ...]` — `repo` a bare name like `"task-os"`, never `"owner/name"`: the helper prepends the owner itself, and a prefixed repo produces a doubled-owner `gh` argv that fails with a network-sounding error unrelated to the network, fleet-config#706) and pipe it through:
 
 ```
 E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/issue_state_gate.py partition
