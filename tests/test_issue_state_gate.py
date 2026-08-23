@@ -59,6 +59,36 @@ check(state == "unknown" and "unrecognized state" in detail,
       "classify_state: an unrecognized state value -> unknown, never silently open/closed")
 
 
+# ---- validate_bare_repo / check(): the fleet-config#706 acceptance test ----
+# "an owner-prefixed repo produces a precise diagnostic, never a network-
+# sounding error" -- proven both at the pure-guard level and end-to-end
+# through check() with the real gh call monkeypatched out.
+
+detail = isg.validate_bare_repo("task-os")
+check(detail == "", "validate_bare_repo: a bare name is valid -> empty detail")
+
+detail = isg.validate_bare_repo("ferraroroberto/task-os")
+check("bare name" in detail and "owner/name" in detail and "ferraroroberto/task-os" in detail,
+      "validate_bare_repo: an owner-prefixed repo names the actual problem")
+check("error connecting" not in detail and "internet connection" not in detail,
+      "validate_bare_repo: the diagnostic is never mistakable for a network failure")
+
+with patch.object(isg.subprocess, "run") as mock_run:
+    state, detail = isg.check("ferraroroberto/task-os", "1")
+    check(state == "unknown" and "bare name" in detail and "ferraroroberto/task-os" in detail,
+          "check: owner-prefixed repo -> unknown with a precise repo-shape detail")
+    check(not mock_run.called,
+          "check: a malformed repo never spends a doomed gh subprocess call")
+
+with patch.object(isg.subprocess, "run") as mock_run:
+    mock_run.return_value = type("Proc", (), {"returncode": 0, "stdout": '{"state": "OPEN"}', "stderr": ""})()
+    state, detail = isg.check("task-os", "1")
+    check(state == "open" and detail == "", "check: a bare repo name still reaches gh and classifies normally")
+    called_argv = mock_run.call_args.args[0]
+    check("--repo" in called_argv and called_argv[called_argv.index("--repo") + 1] == "ferraroroberto/task-os",
+          "check: the owner is still prepended exactly once for a valid bare repo")
+
+
 # ---- partition_working_set: the fleet-config#623 acceptance test ----
 # "given a working set containing a closed issue, no agent is dispatched
 # for it" -- proven structurally: the closed issue must be absent from

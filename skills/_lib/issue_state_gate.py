@@ -28,14 +28,19 @@ zero results -- never silently dropped, never silently treated as open.
 Subcommands
 -----------
   check <repo> <number>
-        Prints `STATE=open|closed|unknown` and, when not `open`,
-        `DETAIL=<reason>`. Always exits 0 -- this helper reports, it never
-        blocks.
+        `repo` must be a bare name (e.g. "task-os"), never "owner/name" --
+        see the `partition` entry below for why. Prints
+        `STATE=open|closed|unknown` and, when not `open`, `DETAIL=<reason>`.
+        Always exits 0 -- this helper reports, it never blocks.
 
   partition
         Reads a JSON array from stdin, each element at minimum
         `{"repo": ..., "number": ...}` (any other keys pass through
-        unchanged). Runs one `check` per element and prints a JSON object
+        unchanged). `repo` must be a bare name (e.g. "task-os"), never
+        "owner/name" -- `check()` prepends the owner itself, so a prefixed
+        repo produces a doubled-owner `gh` argv that fails with a
+        network-sounding error unrelated to the network (fleet-config#706).
+        Runs one `check` per element and prints a JSON object
         to stdout:
           {"dispatch": [...], "skipped_closed": [...], "unresolved": [...]}
         Each element in the output carries its original keys plus `state`
@@ -83,9 +88,30 @@ def classify_state(returncode: int, stdout: str, stderr: str) -> Tuple[str, str]
     return "unknown", f"unrecognized state {state!r}"
 
 
+def validate_bare_repo(repo: str) -> str:
+    """Pure guard: `repo` must be a bare name (e.g. "task-os"), never an
+    `owner/name` pair -- every real caller in this codebase (`gh_issue_fetch.py`,
+    both cleanup-fleet SKILL.md briefs) already passes a bare name, and `check()`
+    prepends the owner itself. A caller that passes `owner/name` -- the natural
+    reading, and the shape `gh` itself takes everywhere else -- would otherwise
+    produce `--repo ferraroroberto/owner/name`, which `gh` misparses (the leading
+    segment reads as a hostname) and fails with a network-sounding error that has
+    nothing to do with the network (fleet-config#706). Returns a non-empty detail
+    string naming the actual problem when `repo` is malformed, empty string when
+    it's fine -- checked before any `gh` subprocess is spawned, so a bad `repo`
+    never spends a doomed call.
+    """
+    if "/" in repo:
+        return f"repo must be a bare name, not owner/name: got {repo!r}"
+    return ""
+
+
 def check(repo: str, number: str) -> Tuple[str, str]:
     """Real `gh` call + classification. Never raises -- a failed invocation
     itself becomes an "unknown" verdict with the reason attached."""
+    repo_error = validate_bare_repo(repo)
+    if repo_error:
+        return "unknown", repo_error
     try:
         # encoding pinned to UTF-8: `gh` emits UTF-8 and bare text=True would
         # decode with the ambient Windows locale (cp1252), raising
