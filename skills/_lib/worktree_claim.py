@@ -961,10 +961,15 @@ def remove_worktree(wt: Path, *, force_nonstandard_name: bool = False) -> int:
     left behind by an e2e run, holding the worktree as its **current working
     directory** -- helpers inherit pytest's cwd, so a run inside `<repo>-wt-<N>`
     leaves helpers rooted there, and Windows will not delete a directory that is
-    some live process's cwd. An *already-exited* helper cannot be the culprit:
-    Windows merely keeps its process object (and its `tasklist`/WMI row) alive
-    while a handle to it remains, so a busy worktree implies a genuinely
-    **running** holder, not one of those zombies.
+    some live process's cwd. A busy worktree implies a holder that still owns
+    the directory -- which may be genuinely **running**, or wedged mid-exit
+    (fleet-config#705): `ExitStatus` set so `GetExitCodeProcess`/`taskkill`
+    report it gone, but `GetProcessTimes` shows no exit time, Toolhelp32 shows
+    a live thread, and its cwd handle is still held. Windows keeps an
+    already-exited process's object (and its `tasklist`/WMI row) alive only
+    while *some* handle to it remains -- that alone does not rule out this
+    wedged state, so "the sweep calls it exited" is not proof the worktree is
+    safe to retry.
 
     Diagnosing and clearing that is the e2e harness's job, not this module's.
     Run the adopting repo's own standalone sweep through its venv interpreter,
@@ -974,7 +979,18 @@ def remove_worktree(wt: Path, *, force_nonstandard_name: bool = False) -> int:
 
     Pointer only -- the sweep classifies by cwd read from the PEB (Win32
     exposes no accessor for another process's working directory) and lives in
-    `project-scaffolding`'s e2e harness. Never reimplement it here.
+    `project-scaffolding`'s e2e harness (as of project-scaffolding#236 it
+    reports a wedged holder as `wedged:pins-scope` and exits non-zero when the
+    path is pinned). Never reimplement it here.
+
+    **A `wedged:pins-scope` verdict means retrying the teardown will not
+    help** -- nothing can reap a wedged process. The directory is freed by
+    closing the holder's cwd handle remotely (`RTL_USER_PROCESS_PARAMETERS
+    .CurrentDirectory.Handle` from its PEB, then `NtDuplicateObject(...,
+    DUPLICATE_CLOSE_SOURCE)`), not by killing or rebooting -- rebooting the
+    host was tried (home-automation#581) and the directories came straight
+    back. Working implementation: `home-automation`'s
+    `scripts/unpin_directory.py`.
     """
     if not wt.exists():
         print(f"Worktree already gone: {wt}")
