@@ -60,7 +60,7 @@ flowchart TB
   subgraph streamdeck["stream-deck/ — self-contained Node/TS Stream Deck plugin (fleet-config#370)"]
     SDREGISTRY["registry/targets.json\ncommitted tray-target registry"]
     SDSYNC["scripts/sync-assets.mjs\nvalidates + copies sister-repo icons,\ncross-checks hooks/projects.toml at build time"]
-    SDACTIONS["src/actions/\nlaunch-target · open-coding · back"]
+    SDACTIONS["src/actions/\nlaunch-target · open-coding · back · call-action"]
     SDMANIFEST["manifest.json + bundled\nread-only Fleet Coding XL profile"]
     SDREGISTRY --> SDSYNC --> SDACTIONS --> SDMANIFEST
   end
@@ -93,6 +93,7 @@ flowchart TB
     FLEETHEALTH["fleet-health\ncapture.py · ledger.py"]
     SOTAWATCH["sota-watch\nwatchlist.toml · watchlist.py"]
     OTHERFLEET["insights-weekly · learning-log"]
+    CHIEF["chief\nstanding Board-chat brain — app-launcher-spawned session,\nnot for ad-hoc invocation"]
     SCHEDULED["run-weekly.bat ×11\nscheduled Claude launchers"]
   end
   fskills -.->|cwd-scoped, Claude Code only| CLAUDE
@@ -102,6 +103,7 @@ flowchart TB
   AUDITFLEET -.->|reports design-drift bucket count| DESIGNSWEEP
   CLEANUPFLEET -->|fans out fixes for| OTHERGLOBAL
   CLEANUPFLEET --> ISSUEEXTRA
+  CHIEF -->|chief_ops.py · chief_managed.py| LIB
 
   subgraph fworkflows[".claude/workflows/ — Workflow-tool scripts, no Bash/filesystem access"]
     CLEANUPFLEETALLJS["cleanup-fleet-all.js\nbuild -> validate -> execute -> teardown per issue,\nSERIAL lanes (one bucket, one repo at a time),\ndeterministic retry/escalate gate (max 2 rounds),\nhalts the run on teardown residue (#518),\nreports-without-halting stale index.lock / behind-origin /\nzombie-pinned empty shells (#534)"]
