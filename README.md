@@ -91,7 +91,7 @@ fleet-config/
 │   └── hub_client.py               # shared stdlib-urllib client for the local LLM hub (OpenAI-shape, fail-open)
 ├── tray/                           # junction → ~/.claude/tray — the ONE machine-local tray_lifecycle.ps1 (fleet-config#153)
 │   └── tray_lifecycle.ps1          # canonical source: project-scaffolding; every sister tray.bat calls this one file by path
-├── stream-deck/                    # source-controlled Elgato Stream Deck plugin (Node/TS, own build+tests) — fleet tray launchers, Open Coding / Back actions (fleet-config#370, docs/stream-deck-plugin.md)
+├── stream-deck/                    # source-controlled Elgato Stream Deck plugin (Node/TS, own build+tests) — fleet tray launchers, launch-target / open-coding / back / call-action actions (fleet-config#370, docs/stream-deck-plugin.md)
 ├── commands/                       # junction → ~/.claude/commands AND ~/.codex/prompts (Codex prompts)
 ├── pi/extensions/statusline.ts      # junction via pi/extensions/ → ~/.pi/agent/extensions — custom Pi footer/statusline
 ├── pi/extensions/session_state.ts   # same junction — reports Pi lifecycle events into sessions-state.json (#349)
