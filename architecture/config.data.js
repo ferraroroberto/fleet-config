@@ -286,6 +286,7 @@ window.CONFIG = {
     {
       "repo": "content-management",
       "items": [
+        "newsletter-triage",
         "schedule-autoheal"
       ]
     },
@@ -298,6 +299,7 @@ window.CONFIG = {
         "alt-text",
         "geek-out",
         "general",
+        "health",
         "ip-check",
         "is-this-ai",
         "journal-daily",
