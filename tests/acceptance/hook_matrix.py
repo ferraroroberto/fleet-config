@@ -157,6 +157,22 @@ def run_hook_matrix() -> Tuple[int, int]:
          "safe_kill_guard",
          {"tool_name": "Bash", "tool_input": {"command": "killall python3"}},
          2),
+        # heuristic 2 used to collect any `:PORT` token anywhere in the whole
+        # command once `Stop-Process` appeared anywhere in it, so a PID-scoped
+        # kill that merely *mentions* a protected port in a later, unrelated
+        # clause was refused. Fixed to scope the `:PORT` match to the same
+        # statement as the kill (fleet-config#709).
+        ("safe_kill: PID-scoped kill that merely mentions a protected port later -> allow (fleet-config#709)",
+         "safe_kill_guard",
+         {"tool_name": "PowerShell",
+          "tool_input": {"command": "Stop-Process -Id 1234 -Force; Invoke-WebRequest http://127.0.0.1:8446/api/version"}},
+         0),
+        # Same port mentioned in the SAME statement as the kill still blocks.
+        ("safe_kill: kill and protected-port reference in the same statement -> block (fleet-config#709)",
+         "safe_kill_guard",
+         {"tool_name": "PowerShell",
+          "tool_input": {"command": "Stop-Process -Id 1234 -Force # targeting 127.0.0.1:8446"}},
+         2),
 
         # ---- venv_discipline ----
         ("venv: python -m venv venv -> block",
@@ -189,6 +205,23 @@ def run_hook_matrix() -> Tuple[int, int]:
         ("venv: bare python with NO .venv -> allow",
          "venv_discipline",
          {"tool_name": "Bash", "cwd": tempfile.gettempdir(), "tool_input": {"command": "python --version"}},
+         0),
+        # `_is_path_scoped` used to search the whole command string, so a
+        # compound command pairing a correctly venv-scoped first clause with a
+        # bare `python` in a later clause passed whole -- exactly the shape
+        # the guard exists to catch, and the repo's own documented default
+        # ("chain them in a single PowerShell call"). Fixed to evaluate
+        # path-scoping per clause (fleet-config#709).
+        ("venv: compound command, scoped first clause + bare python later -> block (fleet-config#709)",
+         "venv_discipline",
+         {"tool_name": "PowerShell", "cwd": "E:/automation/app-launcher",
+          "tool_input": {"command": '& .\\.venv\\Scripts\\python.exe -c "1"; python foo.py'}},
+         2),
+        # The mirror case still allows: both clauses path-scoped.
+        ("venv: compound command, both clauses path-scoped -> allow (fleet-config#709)",
+         "venv_discipline",
+         {"tool_name": "PowerShell", "cwd": "E:/automation/app-launcher",
+          "tool_input": {"command": '& .\\.venv\\Scripts\\python.exe -c "1"; & .\\.venv\\Scripts\\python.exe foo.py'}},
          0),
 
         # ---- bash_windows_path_guard (issue #246) ----

@@ -549,6 +549,28 @@ finally:
     shutil.rmtree(_state_tmp, ignore_errors=True)
 
 
+# ---- cmd_dispatch: an explicit worker_cap of 0 must fail closed (fleet-config#709) ----
+# `int(x or 3)` treats `0` as falsy and silently substitutes the default, so an
+# operator who set worker_cap: 0 to pause dispatch got fleet dispatch anyway.
+_prior_request = co._request
+try:
+    def _zero_cap_request(base_url, path, method="GET", body=None, timeout=10.0):
+        if path == "/api/board":
+            return {"columns": {"claude_turn": [], "your_turn": []}}
+        if path == "/api/board/chief/settings":
+            return {"settings": {"worker_cap": 0}}
+        raise AssertionError(f"unexpected path: {path}")
+
+    co._request = _zero_cap_request
+    args = argparse.Namespace(
+        repo="app-launcher", number=528, mode="start", model=None,
+        yolo_confirmed=False, base_url=co.DEFAULT_BASE_URL,
+    )
+    rc = co.cmd_dispatch(args)
+    check(rc == 1, "cmd_dispatch: worker_cap=0 -> refused, not silently defaulted to 3")
+finally:
+    co._request = _prior_request
+
 
 # ---- verify: an unreadable repo is UNKNOWN, never DIRTY (fleet-config#570) ----
 # chief relays this onward to Roberto, so a manufactured verdict here becomes a

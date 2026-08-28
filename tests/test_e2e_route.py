@@ -105,6 +105,27 @@ with tempfile.TemporaryDirectory() as td:
     check(rc == 0 and "SOURCE=classifier" in out and "E2E_TIER=full" in out,
           "route runs the repo classifier and passes E2E_* through")
 
+    # ---- route: subprocess decoding is pinned, never the ambient locale ----
+    # `subprocess.run(..., text=True)` with no `encoding=`/`errors=` decodes
+    # using the ambient codec; a byte that codec rejects raises
+    # UnicodeDecodeError *inside* subprocess.run itself -- a ValueError the
+    # `except (OSError, subprocess.TimeoutExpired)` guard does not catch, so
+    # the deliberate E2E_TIER=full fail-safe never ran (fleet-config#709).
+    _captured_kwargs: dict = {}
+    _real_run = er.subprocess.run
+
+    def _spy_run(*args, **kwargs):
+        _captured_kwargs.update(kwargs)
+        return _real_run(*args, **kwargs)
+
+    er.subprocess.run = _spy_run
+    try:
+        _capture(er.cmd_route, api, [])
+    finally:
+        er.subprocess.run = _real_run
+    check(_captured_kwargs.get("encoding") == "utf-8" and _captured_kwargs.get("errors") == "replace",
+          "cmd_route pins encoding=utf-8, errors=replace on the classifier subprocess")
+
     # ---- bootstrap: refuses to clobber a diverged (custom) classifier ----
     custom = root / "custom"
     (custom / "scripts").mkdir(parents=True)

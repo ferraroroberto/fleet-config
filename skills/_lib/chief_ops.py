@@ -646,7 +646,8 @@ def cmd_dispatch(args: argparse.Namespace) -> int:
     board = _request(args.base_url, "/api/board")
     columns = board.get("columns") or {}
     settings = _request(args.base_url, "/api/board/chief/settings")
-    worker_cap = int((settings.get("settings") or {}).get("worker_cap") or 3)
+    _worker_cap_raw = (settings.get("settings") or {}).get("worker_cap")
+    worker_cap = int(_worker_cap_raw) if _worker_cap_raw is not None else 3
 
     reason = refuse_dispatch(
         args.repo,
