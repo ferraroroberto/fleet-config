@@ -141,18 +141,29 @@ def forced_push_hits_protected(cmd: str, cwd_path: Path) -> bool:
 LOCALPORT_RE = re.compile(r"-LocalPort\s+(\d+)", re.IGNORECASE)
 NETSTAT_PORT_RE = re.compile(r":(\d{2,5})\b")
 
+# Statement separators only — never `|`, which chains a single logical
+# PowerShell pipeline (`Get-NetTCPConnection -LocalPort N | ... | Stop-Process`
+# is one command whose `-LocalPort` clause and `Stop-Process` clause
+# legitimately live in different pipe segments; heuristic 1 relies on that).
+STATEMENT_SPLIT_RE = re.compile(r"[\n;]+|&&|\|\|")
+
 
 def _scan_port_kills(cmd: str) -> list[int]:
     """Return the list of ports a port-scoped kill is targeting (heuristic)."""
     ports: list[int] = []
 
-    # Heuristic 1: PowerShell `-LocalPort N` clauses
+    # Heuristic 1: PowerShell `-LocalPort N` clauses anywhere a kill is present.
     if re.search(r"\bStop-Process\b", cmd, re.IGNORECASE) or re.search(r"\bkill\b", cmd, re.IGNORECASE):
         ports.extend(int(p) for p in LOCALPORT_RE.findall(cmd))
 
-    # Heuristic 2: cmd contains `Stop-Process` AND a netstat-y `:PORT` reference
-    if re.search(r"\bStop-Process\b", cmd, re.IGNORECASE):
-        ports.extend(int(p) for p in NETSTAT_PORT_RE.findall(cmd))
+    # Heuristic 2: a netstat-y `:PORT` reference in the SAME statement as the
+    # kill — not just anywhere on the line. Whole-command matching let a
+    # PID-scoped kill that merely *mentions* a protected port in a later
+    # clause ("Stop-Process -Id 1234 -Force; curl http://127.0.0.1:8446/")
+    # get refused as though it targeted that port (fleet-config#709).
+    for segment in STATEMENT_SPLIT_RE.split(cmd):
+        if re.search(r"\bStop-Process\b", segment, re.IGNORECASE):
+            ports.extend(int(p) for p in NETSTAT_PORT_RE.findall(segment))
 
     return ports
 

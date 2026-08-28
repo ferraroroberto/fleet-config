@@ -72,6 +72,15 @@ def _is_path_scoped(cmd: str) -> bool:
     return any(re.search(p, cmd, re.IGNORECASE) for p in PATH_SCOPED_HINTS)
 
 
+# Same clause separators safe_kill_guard.py's forced_push_refspecs already
+# splits on. Path-scoping must be judged per clause, not over the whole
+# command string — otherwise a compound command that pairs a correctly
+# venv-scoped invocation with a later bare `python`/`pip` clause passes
+# whole, because `_is_path_scoped` is satisfied by the first clause
+# (fleet-config#709).
+_SEGMENT_SPLIT_RE = re.compile(r"[\n;|&]+")
+
+
 def main() -> None:
     payload = _lib.read_stdin_json()
     if _lib.tool_name(payload) not in {"Bash", "PowerShell"}:
@@ -100,16 +109,22 @@ def main() -> None:
                 "`./.venv/bin/python ...` on POSIX."
             )
 
-    # 3) Bare python/pip when a project .venv is present
-    has_bare_python = bool(BARE_PYTHON_RE.search(cmd))
-    has_bare_pip    = bool(BARE_PIP_RE.search(cmd))
+    # 3) Bare python/pip when a project .venv is present. Evaluated per
+    # clause (see _SEGMENT_SPLIT_RE) so a compound command can't launder a
+    # bare invocation behind an earlier, correctly-scoped one.
+    hit_verb = None
+    for segment in _SEGMENT_SPLIT_RE.split(cmd):
+        has_bare_python = bool(BARE_PYTHON_RE.search(segment))
+        has_bare_pip    = bool(BARE_PIP_RE.search(segment))
+        if (has_bare_python or has_bare_pip) and not _is_path_scoped(segment):
+            hit_verb = "python" if has_bare_python else "pip"
+            break
 
-    if (has_bare_python or has_bare_pip) and not _is_path_scoped(cmd):
+    if hit_verb is not None:
         venv_python = _lib.find_venv_python(_lib.cwd(payload))
         if venv_python is not None:
-            verb = "python" if has_bare_python else "pip"
             _lib.block(
-                "Blocked: bare `" + verb + "` invocation with a project .venv present at "
+                "Blocked: bare `" + hit_verb + "` invocation with a project .venv present at "
                 + str(venv_python.parent.parent) + ". "
                 "Use `& .\\.venv\\Scripts\\python.exe ...` (or `& .\\.venv\\Scripts\\pip.exe ...`) "
                 "so you hit the venv, not the system Python."

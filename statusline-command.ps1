@@ -135,6 +135,19 @@ try {
     $stateDir = $env:CLAUDE_HOOKS_STATE_DIR
     if (-not $stateDir) { $stateDir = Join-Path $HOME '.claude\hooks\state' }
     if (-not (Test-Path $stateDir)) { New-Item -ItemType Directory -Force -Path $stateDir | Out-Null }
+
+    # Sweep orphaned tmp files left by prior runs that never reached the
+    # Move-Item below or the catch's own Remove-Item (the statusline is
+    # re-rendered constantly and can be killed mid-write on the harness
+    # timeout) — nothing else ever cleans these up, so they accumulate
+    # unbounded (fleet-config#709: 1081 orphaned files, ~30/day, dated
+    # 2026-07-19 through 2026-08-25). Age-gated so a tmp file another
+    # concurrent session is actively writing right now is never touched.
+    $tmpCutoffUtc = (Get-Date).ToUniversalTime().AddMinutes(-5)
+    Get-ChildItem -LiteralPath $stateDir -Filter 'rate-limits.json.tmp.*' -ErrorAction SilentlyContinue |
+        Where-Object { $_.LastWriteTimeUtc -lt $tmpCutoffUtc } |
+        Remove-Item -Force -ErrorAction SilentlyContinue
+
     $target = Join-Path $stateDir 'rate-limits.json'
     $json = $cache | ConvertTo-Json -Depth 4
 

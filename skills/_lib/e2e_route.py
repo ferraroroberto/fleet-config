@@ -193,6 +193,7 @@ def cmd_route(repo: Path, files: List[str]) -> int:
         res = subprocess.run(
             [sys.executable, str(classifier), *files],
             cwd=str(repo), capture_output=True, text=True,
+            encoding="utf-8", errors="replace",
             timeout=120, creationflags=NO_WINDOW,
         )
     except (OSError, subprocess.TimeoutExpired) as exc:
