@@ -62,6 +62,29 @@ startup path reads a secret or setting from `.env` (e.g. `local-llm-hub`'s
 `LOCAL_LLM_HUB_SSH_KEY`) otherwise stalls on the missing value until an
 unrelated timeout trips the e2e stage red (fleet-config#698).
 
+A byte-verbatim copy is not safe by itself: a repo's config can point at a
+real, machine-bound sink outside the worktree -- a synced mirror/backup
+folder, an index path, another repo's database -- and a worktree instance
+booted for a "ready to validate" handoff then reads and writes the owner's
+**real** data (`task-os#80`, fleet-config#713). `copy_runtime_config` blanks
+those values right after the port rewrite, the same way and in the same
+per-file loop. A repo declares exactly which dotted keys are machine-bound in
+its own `.fleet.toml`:
+
+    [worktree]
+    blank_config_keys = ["mirror.dir", "mirror.backup_dir", "search.folder_roots"]
+
+`worktree_blank_config_keys` reads this the same way `worktree_junction_targets`
+reads `extra_junctions`. A repo that declares nothing (no `.fleet.toml`, no
+`[worktree]` table, or the table without a `blank_config_keys` key) falls back
+to a conservative built-in default: any string value, anywhere in the config,
+that looks machine-bound -- an `{onedrive}`-style placeholder, or an absolute
+Windows path -- is blanked, list entries filtered the same way. An empty
+string is what the app already treats as "feature off" (task-os's mirror does
+today); a repo whose own gate needs to keep a value opts out per key by
+declaring `blank_config_keys` explicitly (an empty list disables the default
+heuristic entirely).
+
 Subcommands:
 
   acquire <repo-root> [--issue N] [--branch B] [--ttl-hours H] [--force-worktree]
@@ -98,7 +121,9 @@ Subcommands:
       + junction `.venv` and any repo-declared `[worktree] extra_junctions` (fleet-config#620)
       into it, then copy the primary's gitignored `config/*.json` runtime
       config (excluding `*.sample.json` templates, which are already tracked)
-      into the worktree. Prints `WORKTREE=<path>`.
+      into the worktree, blanking machine-bound path values along the way
+      (repo-declared `[worktree] blank_config_keys`, or a conservative
+      default heuristic -- fleet-config#713). Prints `WORKTREE=<path>`.
 
   release <repo-root>
       Remove the primary claim. Idempotent. (Worktree sessions never hold it.)
@@ -792,6 +817,146 @@ def _repoint_config_port(dst: Path, taken: "set") -> Optional[int]:
     return port
 
 
+_MACHINE_BOUND_TOKEN = "{onedrive}"
+_WIN_ABS_PATH_RE = re.compile(r"^[A-Za-z]:[\\/]")
+
+
+def _looks_machine_bound(value: str) -> bool:
+    """True if a string value plausibly points at a real, non-worktree path.
+
+    Two shapes cover every case seen so far (fleet-config#713): a template
+    placeholder a repo's own config layer resolves against a real synced
+    folder (`{onedrive}/...`), and a plain Windows absolute path (a drive
+    letter into the primary checkout, another repo's data dir, or a synced
+    folder written out in full). Deliberately narrow -- e.g. it does not
+    flag URLs or POSIX-shaped strings that are actually route paths -- since
+    a false positive here blanks a value a repo's own gate may need; a repo
+    that needs finer control declares `blank_config_keys` explicitly instead
+    of relying on this default.
+    """
+    if not value:
+        return False
+    if _MACHINE_BOUND_TOKEN in value.lower():
+        return True
+    return bool(_WIN_ABS_PATH_RE.match(value))
+
+
+def _blank_declared_keys(raw: dict, keys: list) -> list:
+    """Blank exactly the dotted keys a repo declared, skipping any that are
+    absent -- a declared-but-absent key must not break setup, same contract
+    as `worktree_junction_targets`'s declared-but-absent path."""
+    blanked = []
+    for dotted in keys:
+        parts = [p for p in dotted.split(".") if p]
+        if not parts:
+            continue
+        node = raw
+        for part in parts[:-1]:
+            if not (isinstance(node, dict) and part in node):
+                node = None
+                break
+            node = node[part]
+        if not isinstance(node, dict) or parts[-1] not in node:
+            continue
+        last = parts[-1]
+        value = node[last]
+        if isinstance(value, str) and value:
+            node[last] = ""
+            blanked.append(dotted)
+        elif isinstance(value, list) and value:
+            node[last] = []
+            blanked.append(dotted)
+    return blanked
+
+
+def _blank_default_heuristic(node, prefix: str = "") -> list:
+    """Blank every machine-bound-looking string leaf, recursively.
+
+    The conservative fallback for a repo that declares no
+    `blank_config_keys` -- see `_looks_machine_bound`. List entries are
+    filtered rather than blanked in place (a `folder_roots`-shaped list of
+    paths just loses the dangerous entries); nested dicts/lists are walked.
+    """
+    blanked = []
+    if isinstance(node, dict):
+        for key, value in node.items():
+            path = f"{prefix}.{key}" if prefix else key
+            if isinstance(value, str):
+                if _looks_machine_bound(value):
+                    node[key] = ""
+                    blanked.append(path)
+            elif isinstance(value, list):
+                filtered = [v for v in value if not (isinstance(v, str) and _looks_machine_bound(v))]
+                if len(filtered) != len(value):
+                    node[key] = filtered
+                    blanked.append(path)
+                for item in value:
+                    if isinstance(item, (dict, list)):
+                        blanked.extend(_blank_default_heuristic(item, path))
+            elif isinstance(value, dict):
+                blanked.extend(_blank_default_heuristic(value, path))
+    elif isinstance(node, list):
+        for item in node:
+            if isinstance(item, (dict, list)):
+                blanked.extend(_blank_default_heuristic(item, prefix))
+    return blanked
+
+
+def worktree_blank_config_keys(repo: Path) -> Optional[list]:
+    """Dotted config keys a repo declares as machine-bound, from `.fleet.toml`:
+
+        [worktree]
+        blank_config_keys = ["mirror.dir", "mirror.backup_dir"]
+
+    Returns `None` when nothing is declared (no `.fleet.toml`, no
+    `[worktree]` table, no `blank_config_keys` key, or a malformed value) --
+    the caller's signal to fall back to the conservative default heuristic.
+    Returns a (possibly empty) list when the repo explicitly declares one; an
+    empty list is a deliberate opt-out of the default heuristic entirely.
+    Same silent-degrade-on-any-error contract as `worktree_junction_targets`.
+    """
+    fleet_toml = repo / ".fleet.toml"
+    if not fleet_toml.is_file():
+        return None
+    import tomllib
+    try:
+        data = tomllib.loads(fleet_toml.read_text(encoding="utf-8", errors="replace"))
+    except (OSError, tomllib.TOMLDecodeError):
+        return None
+    table = data.get("worktree")
+    if not isinstance(table, dict) or "blank_config_keys" not in table:
+        return None
+    keys = table.get("blank_config_keys")
+    if not isinstance(keys, list):
+        return None
+    return [k.strip() for k in keys if isinstance(k, str) and k.strip()]
+
+
+def blank_machine_bound_config(dst: Path, declared_keys: Optional[list]) -> list:
+    """Blank machine-bound path values in a just-copied worktree config.
+
+    `declared_keys` is `worktree_blank_config_keys(repo)`'s result -- `None`
+    routes through the default heuristic, a list (including empty) blanks
+    exactly those dotted keys. Same fail-open contract as
+    `_repoint_config_port`: a file that isn't a JSON object, or doesn't
+    parse, is left untouched rather than breaking setup. Returns the dotted
+    keys actually blanked, for the caller to report.
+    """
+    try:
+        raw = json.loads(dst.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return []
+    if not isinstance(raw, dict):
+        return []
+    if declared_keys is not None:
+        blanked = _blank_declared_keys(raw, declared_keys)
+    else:
+        blanked = _blank_default_heuristic(raw)
+    if blanked:
+        dst.write_text(json.dumps(raw, indent=2) + "\n", encoding="utf-8")
+    return blanked
+
+
 def copy_runtime_config(repo: Path, wt: Path) -> list:
     """Copy the primary's gitignored `config/*.json` into a fresh worktree.
 
@@ -806,14 +971,17 @@ def copy_runtime_config(repo: Path, wt: Path) -> list:
     `config/` dir. Returns the list of copied destination paths.
 
     The copy is byte-verbatim **except for a top-level `port`**, which is
-    repointed into the `8500-8999` band (fleet-config#537). Carrying the
-    primary's port across is what made every worktree lane's e2e suite report a
-    collision with the user's live tray and refuse to run — a false positive,
-    since the suite boots its own disposable instance on a free port and never
-    touches the tray's. It also left a worktree that actually boots the app
-    trying to bind the primary's port. Secrets (`auth_token`, `auth_password`)
-    and every other field still copy across untouched: the worktree must stay a
-    faithful runtime twin, differing only where sharing is the bug.
+    repointed into the `8500-8999` band (fleet-config#537), and any
+    machine-bound path values, which are blanked (fleet-config#713, see
+    `blank_machine_bound_config`). Carrying the primary's port across is what
+    made every worktree lane's e2e suite report a collision with the user's
+    live tray and refuse to run — a false positive, since the suite boots its
+    own disposable instance on a free port and never touches the tray's. It
+    also left a worktree that actually boots the app trying to bind the
+    primary's port. Secrets (`auth_token`, `auth_password`) and every other
+    field still copy across untouched: the worktree must stay a faithful
+    runtime twin, differing only where sharing (a live port, a real synced
+    folder) is itself the bug.
     """
     copied = []
     src_dir = repo / "config"
@@ -821,6 +989,7 @@ def copy_runtime_config(repo: Path, wt: Path) -> list:
         return copied
     dst_dir = wt / "config"
     assigned: set = set()
+    declared_keys = worktree_blank_config_keys(repo)
     for src in sorted(src_dir.glob("*.json")):
         if src.name.endswith(".sample.json"):
             continue
@@ -834,6 +1003,10 @@ def copy_runtime_config(repo: Path, wt: Path) -> list:
         if port is not None:
             assigned.add(port)
             print(f"WORKTREE_PORT={port} ({src.name})", file=sys.stderr)
+        blanked = blank_machine_bound_config(dst, declared_keys)
+        if blanked:
+            print(f"WORKTREE_CONFIG_BLANKED={len(blanked)}: "
+                  f"{', '.join(blanked)} ({src.name})", file=sys.stderr)
     return copied
 
 
