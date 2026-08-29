@@ -7,9 +7,9 @@ description: Fan out a byte-for-byte re-vendor of one project-scaffolding compon
 
 **Goal:** Turn a `project-scaffolding` component fix into a one-command,
 Dependabot-style distribution wave instead of N hand-filed issues + N hand-built
-PRs (`project-scaffolding#144–#150`). The scaffold change already carries the
-decision; a byte-for-byte re-vendor carries none — so this skill never files a
-per-repo issue, only opens auto-merging PRs linking back to the scaffold record.
+PRs (`project-scaffolding#144–#150`). The scaffold change carries the decision;
+a byte-for-byte re-vendor carries none — so this skill never files a per-repo
+issue, only opens auto-merging PRs linking back to the scaffold record.
 
 Companion doc: `skills/propagate-vendored/README.md` (manifest-schema decision
 writeup). Schema reference: `architecture/README.md`'s "Optional per-repo
@@ -19,8 +19,8 @@ writeup). Schema reference: `architecture/README.md`'s "Optional per-repo
 
 Invoke **by hand**, or as a periodic batch (e.g. weekly), never automatically
 per scaffold commit. Four propagation waves in one day is the anti-pattern
-regardless of how cheap each wave is — collect scaffold changes, propagate once.
-Nothing here schedules itself; there is no `run-weekly.bat` by design.
+however cheap each wave is — collect scaffold changes, propagate once. Nothing
+here schedules itself; there is no `run-weekly.bat` by design.
 
 ## Arguments
 
@@ -57,7 +57,7 @@ No component argument → stop: "Pass a component name, e.g.
   `~/.claude/CLAUDE.md`).
 - **Adopt before re-vendor.** A repo with no `[vendored].<component>` entry
   yet is not skipped — see step 4a's "adopt" sub-step. This is how the manifest
-  goes from zero adopters (today) to covering the real nav + tray consumers.
+  grows to cover the real nav + tray consumers.
 - **State coverage; a partial wave must never read as a complete one.** The
   adopter list comes from the adopters' own `[vendored]` entries, so a repo
   carrying the component without declaring it is invisible to it. Always report
@@ -72,12 +72,9 @@ No component argument → stop: "Pass a component name, e.g.
   the component's user-facing wording as carefully as its mechanism before
   propagating it fleet-wide.** Byte-identical + hash-verified means a
   locally-softened copy registers as *drift*, so a bad default reads as the
-  safe choice everywhere it lands. This bit the fleet once: a vendored
-  component's docstring and exit message prescribed "kill + fresh restart" on
-  repos whose ports host a daily-driver tray and the Board itself. Before a
-  real (non-`--dry-run`) wave, confirm the scaffold source's wording actually
-  matches its own cited reference implementation, not just that the bytes
-  hash-match.
+  safe choice everywhere it lands. Before a real (non-`--dry-run`) wave,
+  confirm the scaffold source's wording actually matches its own cited
+  reference implementation, not just that the bytes hash-match.
 - **Hash-verify before bumping the manifest sha.** A copy that doesn't
   byte-match the scaffold source is a bug in this skill, not something to
   paper over by writing the sha anyway.
@@ -118,11 +115,10 @@ truth for who's behind; never eyeball repos by hand.
 
 For the **adopt** discovery — a repo that already carries the component's files
 but has no manifest entry — `no_manifest` alone doesn't distinguish "never
-touched this component" from "has it, unlabeled." Resolve that with one
-targeted sweep. **That sweep is no longer yours to run by hand** — the scan
-answers it (project-scaffolding#230). `undeclared_carriers` names every repo
-holding a catalogued component's files at the scaffold's own path with no
-manifest entry, each carrying:
+touched this component" from "has it, unlabeled." **The scan answers that; never
+sweep for it by hand** (project-scaffolding#230). `undeclared_carriers` names
+every repo holding a catalogued component's files at the scaffold's own path
+with no manifest entry, each carrying:
 
 - `matches_head: true` — byte-identical to the scaffold tip. Nothing to decide:
   the repo simply never recorded what it copied. An **adopt** candidate (step 4a).
@@ -290,11 +286,10 @@ As each agent returns, surface its report with a status mark (`✅ merged` /
 
 **The coverage block is not decoration — it is the finding.** A wave that
 re-vendors every declared adopter and prints nothing else reads as complete
-whether it covered seven repos or one, which is exactly how `#228`'s fix reached
-`task-os` and left six repos on the leaked-hostname copy with nobody told
-(project-scaffolding#230). Print it even when every number is zero, and never
-compress "found no carriers" and "could not look for carriers" into the same
-line.
+whether it covered seven repos or one — how `#228`'s fix reached `task-os` and
+left six repos on the leaked-hostname copy (project-scaffolding#230). Print it
+even when every number is zero, and never compress "found no carriers" and
+"could not look for carriers" into the same line.
 
 ## Notes
 
@@ -304,15 +299,15 @@ line.
   grocery-shopping-automation) get their `[vendored]` entries written by step 4a
   ("ADOPT") the first time this skill actually runs against them.
 - **Quality gate is upstream, not here.** `project-scaffolding#152` (source
-  behavioral tests + a same-day-second-bug freeze rule) is what keeps a
-  defective component from reaching this skill's fan-out — propagation
-  distributes whatever quality ships, including defects, so it deliberately
-  does not re-review the component's correctness.
+  behavioral tests + a same-day-second-bug freeze rule) keeps a defective
+  component from reaching this skill's fan-out — propagation distributes
+  whatever quality ships, including defects, so it deliberately does not
+  re-review the component's correctness.
 - **If `project-scaffolding#153` (de-vendor the tray) lands,** tray components
   drop out of this skill's scope — a shared junctioned call replaces
   per-repo vendoring for machine-local infrastructure. The UI components
   (`_vendored/`) remain vendored + propagated exactly as here.
-- **Drift-history lens is a natural follow-up, not built here:** a future
-  `/audit-fleet`-style weekly sweep could call `vendored_drift.py scan` with
-  no `--component` filter and report the whole fleet's drift in one digest —
-  today it's invoked per component, on demand.
+- **Drift-history lens is not built here:** `vendored_drift.py scan` is invoked
+  per component, on demand; a future `/audit-fleet`-style weekly sweep with no
+  `--component` filter (whole-fleet drift in one digest) is a possible
+  follow-up.

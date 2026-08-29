@@ -50,7 +50,7 @@ of (security is not a checklist bucket — see step 8b):
    / config knob with no documentation a new reader could find. Cite the rule
    (sub-check a) or the feature + where it should be documented (sub-check c).
 
-   **Boundary against buckets 1–3 (read this — it's the part that goes wrong):**
+   **Boundary against buckets 1–3 (this is the part that goes wrong):**
    anything whose *subject* is `README.md` / `docs/` prose goes here, in bucket
    6 — including a doc that violates a CLAUDE.md doc rule, a duplicated doc
    section, or a stale doc section. `duplication`, `stale`, and
@@ -61,7 +61,7 @@ of (security is not a checklist bucket — see step 8b):
    unused generality (a config knob / parameter / abstraction layer nothing
    exercises), belt-and-suspenders defensive handling for inputs that can't
    occur, verbose boilerplate a stdlib one-liner replaces. **The bucket-4
-   boundary (read this — the two blur):** bucket 4 asks *"is this code well
+   boundary (the two blur):** bucket 4 asks *"is this code well
    *structured*?"* (naming, modularity, a god-module); bucket 7 asks *"did this
    much code need to exist at all?"* A finding that would shrink the line count
    with no loss of behavior is slop (7); a finding that would reorganize the
@@ -372,8 +372,8 @@ hyphen; `<short-sha>` = `git rev-parse --short HEAD`). **Never** a fixed
 ### 8b. Security findings — redacted issue + immediate self-heal
 
 **Only runs when step 5 held aside one or more security findings.** No security
-findings → skip this entire step. This is the one place the skill writes code;
-everything about it is scoped to security and gated on the safety rules below.
+findings → skip this entire step. This is the one place the skill writes code,
+scoped to security and gated on the rules below.
 
 **One repo → one branch → one PR → one redacted issue, no matter how many gaps** —
 tracked by the single `audit: security findings` issue, never N public security
@@ -424,9 +424,8 @@ self-resume"), so under `/audit-fleet` it would silently stall.
      test name and any comment — none may name the vulnerability class (no "SQL
      injection", "XSS", "hardcoded credential", "path traversal", …). Use
      `fix: harden input handling in <module>` shapes. The public diff already
-     reveals the fix to anyone who reads it — unavoidable on a public repo — so
-     the mitigation is a *short exposure window + a private review*, not secret
-     text; don't add a neon label on top.
+     reveals the fix on a public repo, so the mitigation is a *short exposure
+     window + a private review*, not secret text — don't add a neon label on top.
    - Run the repo's **own verification gate** (per its CLAUDE.md) — the new
      regression test included — as the hard pass/fail.
 
@@ -465,8 +464,8 @@ fails for any reason: **do not merge.** Leave the branch in place, leave the
 redacted issue **open**, and fire the same `--kind security` alert with
 `--summary "escalated - needs manual /issue-finish"` (drop `--pr`/`--pr-url` if
 no PR was opened). Never retry a failed security fix by guessing, and never
-force-merge one. Half-healing a security gap unreviewed is worse than leaving it
-for the human the alert just pinged.
+force-merge one — half-healing a gap unreviewed is worse than leaving it for
+the human the alert just pinged.
 
 ### 9. Update the ledger
 
@@ -490,12 +489,11 @@ Upsert the per-repo ledger issue so the next run can short-circuit at step 2:
   Two things you must not do by hand, both of which have already cost real
   audits:
 
-  - **Don't write the marker.** Hand-authoring it drifts — an agent naturally
-    writes an *open* comment block (`<!-- audit-ledger` … `-->`) the step-2 gate
-    cannot read, so the repo bought a full Opus whole-repo audit every week
-    while reporting as legitimately changed (fleet-config#566). The parser now
-    reads both forms and the helper normalizes back to the closed one, but the
-    tool owns the delimiter.
+  - **Don't write the marker.** Hand-authoring drifts to an *open* comment block
+    (`<!-- audit-ledger` … `-->`) the step-2 gate cannot read, buying a full Opus
+    whole-repo audit every week (fleet-config#566). The parser reads both forms
+    and the helper normalizes back to the closed one, but the tool owns the
+    delimiter.
   - **Don't record `HEAD`.** The helper records the repo's **default-branch**
     commit, re-confirmed reachable from that branch. An audit off a feature
     branch (or in a worktree) recording the checkout tip writes a commit the
@@ -609,12 +607,10 @@ findings. Codebase passes the audit.` — and stop.
   abstraction, not "this could be two lines shorter." Bugs and documentation
   historically re-surface low-value findings, so hold both to a stricter bar
   than the others.
-- **Never edit files — except the security self-heal (step 8b).** For the seven
-  finding buckets this skill files issues and does not patch code. The **sole**
-  code-editing path is step 8b, gated on its own rules (claim the repo, mandatory
-  regression test, generic artifacts, auto-merge only on a green gate, escalate
-  rather than merge blind). Never a reason to patch a duplication, slop, bug, or
-  any other bucket's finding.
+- **Never edit files — except the security self-heal (step 8b)**, gated on its
+  own rules (claim the repo, mandatory regression test, generic artifacts,
+  auto-merge only on a green gate, escalate rather than merge blind). Never a
+  reason to patch a duplication, slop, bug, or any other bucket's finding.
 - **Promotion candidates never become issues or foreign-repo writes.** They are
   the inverse of a finding (an asset to preserve, not rot to fix), surfaced in
   the final report only. Filing or cataloguing them is `/audit-fleet`'s job.
@@ -624,13 +620,11 @@ findings. Codebase passes the audit.` — and stop.
   `security` issue is separate from this cap (it carries no findings and closes
   as soon as its fix merges) and is rare.
 - **Security is self-healed, never publicly detailed (step 8b).** A security
-  finding never goes on a public checklist. It gets a redacted issue (no class,
-  file, line, or description), one branch fixing every gap in the repo with a
-  mandatory regression test, generic commit/PR/test text, auto-merge only on a
-  green gate (the regression test included), a private `--kind security` review
-  alert, and escalation-not-blind-merge on any failure. The public fix commit is
-  an unavoidable disclosure on a public repo — the mitigations are a short window
-  and the private review, not secret text.
+  finding never goes on a public checklist. Invariants: a redacted issue (no
+  class, file, line, or description); one branch fixing every gap in the repo;
+  a mandatory regression test; generic commit/PR/test text; auto-merge only on
+  a green gate including that test; a private `--kind security` review alert;
+  escalation-not-blind-merge on any failure.
 - **One managed issue per (repo, bucket) — the helper owns identity.**
   Never `gh issue create` / `gh issue edit` a managed issue by hand; always go
   through `skills/_lib/audit_issue.py` (`get` then `upsert`). It reuses the one
@@ -731,11 +725,8 @@ failure modes are.
   secret, a missing authz check); anything found is self-healed via step 8b, not
   filed as a public finding. `/security-review` remains the diff-scoped
   reviewer; this is the whole-repo resting-state lens.
-- Layered idempotency (step 2): unchanged → `SKIP` at one `gh` + one `git`
-  call; self-fix-only churn → `SKIP_SELF_FIX`, ledger auto-advanced;
-  below-threshold organic churn → `SKIP_BELOW_THRESHOLD`, ledger not advanced so
-  it accumulates; even on `AUDIT`, dedupe prevents re-filing. All one Python
-  function (`evaluate_repo`; unit-tested in `tests/test_audit_issue.py`), not
-  LLM judgment.
+- Step 2's four decisions plus step 6's dedupe are layered idempotency, all
+  decided by one Python function (`evaluate_repo`; unit-tested in
+  `tests/test_audit_issue.py`), never LLM judgment.
 - The ledger is labelled `audit-meta` so it never shows up as actionable —
   `/issue-triage` and `/issue-start` filter it out.

@@ -13,7 +13,7 @@ capture engine — never silently, always **propose-then-capture** (fleet-config
 Playwright capture, fail-safe masking, the manifest, the README generator —
 lives per-app, pinned to the shipped reference implementation:
 `content-management`'s `config/doc_capture/` (`content-management#110`,
-shipped in PR #162). This skill never screenshots anything itself; it decides
+PR #162). This skill never screenshots anything itself; it decides
 what to ask the engine to do, asks the human first, then calls it.
 
 **Generic, no project hardcoded.** Any repo can adopt this by shipping an
@@ -75,12 +75,9 @@ pilot's own setup work.
 
 ### 1. Pre-flight + discovery
 
-```
-E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/docs_shots_plan.py discover <repo-root>
-```
-
-`MANIFEST=absent` → stop: `<repo> has no docs/screenshots/manifest.json —
-nothing to refresh.` File nothing, run nothing.
+Run the `discover` command above. `MANIFEST=absent` → stop: `<repo> has no
+docs/screenshots/manifest.json — nothing to refresh.` File nothing, run
+nothing.
 
 ### 2. Build the proposal
 

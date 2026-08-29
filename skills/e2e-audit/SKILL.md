@@ -5,31 +5,27 @@ description: On-demand audit of a repo's e2e/regression suite for redundancy, bl
 
 # e2e-audit
 
-**Goal:** Answer "is this e2e suite exhaustive without being infinite?" for one
-repo, on demand — never as a weekly scheduled job (fleet-config#406; suite
-bloat is feature-driven, not time-driven, and the fleet already runs
-`audit-fleet` / `context-audit` / `config-map` / `system-map` /
-`insights-weekly` / `learning-log` weekly). Run the **deterministic scan**
-(`skills/_lib/e2e_test_audit.py`) — test-file inventory, raw + true
-(parametrize-expanded) node counts against project-scaffolding's
-`docs/playwright-ui-testing.md` target ("Keep it small. Target < 15 tests
-total. If tempted to add #20, delete two first."), near-duplicate test-name
-clusters, shared-parametrize-matrix clusters, file-size outliers, and (when the repo declares a `## UX surface`
-block) coverage gaps — apply LLM judgment only where measurement can't reach,
-and file exactly one deduped `e2e-redundancy` issue per repo (the same
-audit→bucket→cleanup machinery as `/codebase-audit` and `/design-sync`,
-cleared later by `/cleanup-fleet e2e-redundancy`).
+**Goal:** answer "is this e2e suite exhaustive without being infinite?" for one repo, **on demand — never as a weekly scheduled job** (fleet-config#406: bloat is feature-driven, not time-driven, and `audit-fleet` / `context-audit` / `config-map` / `system-map` / `insights-weekly` / `learning-log` already run weekly).
+
+Run the deterministic scan (`skills/_lib/e2e_test_audit.py`) — file
+inventory, raw + true (parametrize-expanded) node counts against
+project-scaffolding's `docs/playwright-ui-testing.md` target ("Keep it small.
+Target < 15 tests total. If tempted to add #20, delete two first."),
+near-duplicate name clusters, shared-parametrize-matrix clusters, size
+outliers, and (when the repo declares a `## UX surface` block) coverage gaps.
+Apply LLM judgment only where measurement can't reach, then file exactly one
+deduped `e2e-redundancy` issue per repo — the same audit→bucket→cleanup
+machinery as `/codebase-audit` and `/design-sync`, cleared later by
+`/cleanup-fleet e2e-redundancy`.
 
 ## Arguments
 
 - No argument → the **current repo** (cwd).
-- One argument that is a path or repo name → that **target repo** (resolve
-  relative to `E:/automation/<name>` or as a path; must be a git repo).
-- An optional `--target N` is **not** a slash-command argument here — the
-  target is fixed at project-scaffolding's stated 15; don't let a run
-  override it ad hoc.
-
-More than one path argument → say only one target is accepted and stop.
+- One path or repo name → that **target repo** (resolve as
+  `E:/automation/<name>` or as a path; must be a git repo).
+- `--target N` is **not** an argument here — the target is fixed at
+  project-scaffolding's 15; don't let a run override it ad hoc.
+- More than one path argument → say only one target is accepted and stop.
 
 ## Steps
 
@@ -41,17 +37,17 @@ In parallel, from the target repo root:
 - `git rev-parse --is-inside-work-tree` — must print `true`, else stop:
   "Not inside a git repository."
 - `git rev-parse --show-toplevel` — capture the repo root.
-- `gh repo view --json nameWithOwner -q .nameWithOwner` — capture `OWNER/REPO`.
-  If it fails, stop: "No GitHub remote — this skill files issues, can't run
-  without one."
+- `gh repo view --json nameWithOwner -q .nameWithOwner` — capture
+  `OWNER/REPO`. On failure stop: "No GitHub remote — this skill files issues,
+  can't run without one."
 
 ### 2. Detect a test suite — else skip
 
-Run the scan (step 3) regardless — its `totals.files` answers this, but read
-`test_dirs_resolved` **first**. `false` means none of the resolved dirs exist
-on disk: the scan had nowhere to look, so its `0` is *unknown*, not empty.
-Stop with `<repo>: could not resolve a test dir (tried <test_dirs_missing>) —
-coverage unknown, not audited.` and file nothing.
+Run the scan (step 3) regardless, but read `test_dirs_resolved` **first**.
+`false` means none of the resolved dirs exist on disk: the scan had nowhere
+to look, so its `0` is *unknown*, not empty. Stop with `<repo>: could not
+resolve a test dir (tried <test_dirs_missing>) — coverage unknown, not
+audited.` and file nothing.
 
 Only when `test_dirs_resolved` is `true` does `totals.files == 0` mean what it
 says: stop with `<repo> has no test files under its resolved test dir(s)
@@ -67,64 +63,59 @@ E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skill
 
 Test-dir resolution: reads the repo's own `## CI expectations` CLAUDE.md
 block for an "e2e surface" line and uses its backtick-quoted, test-like paths
-(e.g. app-launcher's `tests/e2e/`); falls back to `tests/e2e/` — the shared
-convention `project-scaffolding`'s `docs/playwright-ui-testing.md` already
-establishes fleet-wide — when no block or no test-like path is declared. This
-is "generic + project-driven", not a hardcoded per-repo path. A heading inside
-a fenced code block is ignored, so a repo that only *documents* the block
-template (project-scaffolding) reads as undeclared and takes the fallback.
+(e.g. app-launcher's `tests/e2e/`); falls back to `tests/e2e/` when no block
+or no test-like path is declared. Generic + project-driven, not a hardcoded
+per-repo path. A heading inside a fenced code block is ignored, so a repo
+that only *documents* the block template (project-scaffolding) reads as
+undeclared and takes the fallback.
 
-The fields it returns, and what each means:
+Fields returned:
 
 - **`test_dirs_resolved` / `test_dirs_missing`** — whether any resolved dir
-  exists on disk. `false` is an *unknown*, never a clean result — see step 2.
-- **`totals`** — `files`, `raw_tests` (a plain `def test_` count), `node_count`
-  (the true pytest-collected count, parametrize expansion included — `null`
-  when the repo has no `.venv` or pytest isn't collectible; report that
-  explicitly as "not measured", never as zero).
+  exists on disk. `false` is an *unknown*, never a clean result (step 2).
+- **`totals`** — `files`, `raw_tests` (plain `def test_` count), `node_count`
+  (true pytest-collected count, parametrize expansion included — `null` when
+  the repo has no `.venv` or pytest isn't collectible; report that as "not
+  measured", never as zero).
 - **`ratio`** — `(node_count or raw_tests) / target` against the 15-test
-  target. This is the headline bloat signal (e.g. app-launcher: ~400 collected
-  nodes / 15 ≈ 26×).
-- **`clusters`** — groups of tests whose normalized name collided across
-  ≥2 files — a redundancy *candidate*, not a verdict (a short generic name
-  like `test_smoke` can collide without being a real duplicate).
+  target. The headline bloat signal (e.g. app-launcher: ~400 nodes / 15 ≈
+  26×).
+- **`clusters`** — tests whose normalized name collided across ≥2 files. A
+  redundancy *candidate*, not a verdict — a generic name like `test_smoke`
+  can collide innocently.
 - **`matrix_clusters`** — tests in the *same file* sweeping the same
-  `@pytest.mark.parametrize` matrix (`argnames@source`), which name clustering
-  cannot see: differently-named twins over one shared `MATRIX` collide on
-  nothing. Each entry carries `file`, `argnames`, `source`, `members`. High
-  leverage — this is where node counts multiply (project-scaffolding's four
-  geometry twins were 32 collected nodes, later 8 with no coverage loss). Also
-  a candidate, not a verdict: a shared matrix over genuinely distinct
-  assertions is legitimate breakpoint coverage.
-- **`size_outliers`** — files far above the suite's median line count —
-  context, not automatically a finding (a large file may be one legitimately
-  cohesive view's full coverage).
+  `@pytest.mark.parametrize` matrix (`argnames@source`), which name
+  clustering cannot see. Each entry carries `file`, `argnames`, `source`,
+  `members`. High leverage — this is where node counts multiply
+  (project-scaffolding's four geometry twins: 32 nodes → 8, no coverage
+  loss). Also a candidate, not a verdict: a shared matrix over genuinely
+  distinct assertions is legitimate breakpoint coverage.
+- **`size_outliers`** — files far above the suite's median line count.
+  Context, not automatically a finding.
 - **`key_views_declared` / `coverage_gaps`** — only populated when the repo
   has a `## UX surface` block (`ux_surface.py`); a gap is a crude substring
   check the LLM layer must sanity-check before filing (step 4).
 
 ### 4. LLM judgment layer (only where measurement can't reach)
 
-- **(a) Confirm each cluster.** Read the two-plus colliding tests' actual
+- **(a) Confirm each cluster.** Read the colliding tests' actual
   bodies/selectors. A genuine near-duplicate (same view, same assertion, same
   setup) is a merge candidate — say which to keep. A coincidental name
-  collision (two different views that both happen to use a generic name) is
-  **not** a finding — say so and drop it, don't force every cluster into the
-  issue.
+  collision is **not** a finding — say so and drop it; don't force every
+  cluster into the issue.
 - **(a2) Confirm each matrix cluster.** Read the members' bodies. Twins that
   differ only in which violation they assert, all swept over the same matrix,
-  collapse into one parametrized test with no coverage loss — that is the
-  finding, and it is usually the largest node-count win available. Tests that
-  genuinely assert different behaviour across the matrix are legitimate
-  coverage: drop them, don't pad the issue.
+  collapse into one parametrized test with no coverage loss — usually the
+  largest node-count win available. Tests that genuinely assert different
+  behaviour across the matrix are legitimate coverage: drop them, don't pad
+  the issue.
 - **(b) Confirm each coverage gap.** The helper's check is a crude substring
-  match on test names/paths — read the actual suite before filing a gap; a
-  view covered under a very differently-worded test name is a false positive,
-  not a real gap.
-- **(c) Materiality bar.** A single coincidental name collision or a two-line
-  ratio drift is not worth a finding; a real cluster of ≥3 tests re-asserting
-  the same thing, a suite multiple times over the stated target with no
-  organizational structure, or a genuinely uncovered key view is.
+  match on test names/paths — read the actual suite before filing; a view
+  covered under a very differently-worded test name is a false positive.
+- **(c) Materiality bar.** A single coincidental collision or a two-line
+  ratio drift is not a finding; a real cluster of ≥3 tests re-asserting the
+  same thing, a suite multiple times over target with no organizational
+  structure, or a genuinely uncovered key view is.
 - **(d) Positive-shape reference.** `docs/playwright-ui-testing.md` documents
   what a *well-organized* suite looks like (the vendored `_geometry.py`
   helper, a `KEY_VIEWS`-driven matrix pattern) — when proposing a merge/split,
@@ -148,9 +139,9 @@ create` by hand.
    E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/audit_issue.py get --repo <OWNER/REPO> --kind e2e-redundancy
    ```
 
-3. **Build the merged body.** Fresh → use the template below. Existing →
-   merge this run's findings: preserve every ticked `- [x]` verbatim, update
-   the inventory table and ratio, keep items not re-surfaced (flag them in the
+3. **Build the merged body.** Fresh → the template below. Existing → merge
+   this run's findings: preserve every ticked `- [x]` verbatim, update the
+   inventory table and ratio, keep items not re-surfaced (flag them in the
    run log), never tick/close anything yourself, never add `Closes #`. Append
    a dated bullet to `## Run log`.
 
@@ -225,27 +216,27 @@ Print one summary and stop:
   filed: https://github.com/<owner>/<repo>/issues/<N>   (e2e-redundancy)
 ```
 
-If the scan finds zero test files, report that and stop (step 2) — file
-nothing. If it finds tests but zero confirmed clusters/outliers/gaps after
-step 4, say `Suite is <ratio>x the target with no redundancy/gap candidates
-confirmed this run.` and still no-op the issue if none of this run's findings
-survived judgment (don't file an empty one).
+Zero test files → report and stop (step 2), file nothing. Tests but zero
+confirmed clusters/outliers/gaps after step 4 → say `Suite is <ratio>x the
+target with no redundancy/gap candidates confirmed this run.` and still no-op
+the issue if none of this run's findings survived judgment (don't file an
+empty one).
 
 ## Hard rules
 
 - **Measure with `e2e_test_audit.py`, never by eye.** File/test counts, node
   counts, clusters (name *and* matrix), and outliers come from the helper
-  (step 3) — the LLM never re-derives them by reading test files. LLM judgment
-  is confined to step 4 (confirming clusters, confirming gaps, materiality,
+  (step 3) — the LLM never re-derives them by reading test files. Judgment is
+  confined to step 4 (confirming clusters, confirming gaps, materiality,
   writing the issue).
 - **A scan that could not resolve a test dir reports `unknown`, never clean.**
   `test_dirs_resolved: false` is its own outcome (step 2) — never summarized
   as "no tests", which is what let a bogus resolution read as a clean suite.
-- **Never edits, merges, or deletes a test.** Report-only; always — a test
+- **Never edits, merges, or deletes a test.** Report-only, always — a test
   suite is safety equipment: this skill proposes, a human disposes. Actually
   consolidating tests is separate, explicitly-scoped follow-up work.
 - **One managed issue per repo per kind — the helper owns identity.** Always
-  go through `skills/_lib/audit_issue.py` (`get` then `upsert`) — `--kind
+  go through `skills/_lib/audit_issue.py` (`get` then `upsert`) with `--kind
   e2e-redundancy`. Never hand-roll a `gh issue create`.
 - **Not a coincidence detector without confirmation.** A helper-reported
   cluster or gap is a candidate, not a finding, until step 4 confirms it by
@@ -256,17 +247,16 @@ survived judgment (don't file an empty one).
   closing is the user's call via `/issue-finish`.
 - **No AI attribution; no hard-wrapped issue-body paragraphs** (per global
   CLAUDE.md).
-- **Never scheduled weekly.** On-demand only, per fleet-config#406's explicit
-  design point — do not wire this into `run-weekly.bat` or any cron. Run it
-  after a burst of feature work, not on a clock.
+- **Never scheduled weekly.** On-demand only, per fleet-config#406 — do not
+  wire this into `run-weekly.bat` or any cron. Run it after a burst of
+  feature work, not on a clock.
 
 ## Notes
 
-- Decision record + the reusable audit/dedupe pattern this skill follows:
-  fleet-config#406. The A-vs-B design question (standalone skill vs. a
-  `/codebase-audit` lens) was decided **standalone** — folding into
-  `/codebase-audit` would put this on that skill's weekly cadence, which
-  fleet-config#406 explicitly rejects.
+- Decision record + the reusable audit/dedupe pattern: fleet-config#406.
+  Standalone skill vs. a `/codebase-audit` lens was decided **standalone** —
+  folding in would put this on that skill's weekly cadence, which #406
+  rejects.
 - `e2e-redundancy` is a first-class audit bucket (`audit_issue.py` `KINDS`) —
   `/cleanup-fleet e2e-redundancy` fans out fixers, and `/issue-triage` treats
   it like any other issue.
@@ -278,5 +268,5 @@ survived judgment (don't file an empty one).
   the current diff and edits tests in-branch (delete-with-the-feature,
   qualifying additions). This skill stays the *review* half: on-demand,
   whole-suite, report-only. The report-only hard rule above is unchanged.
-- First validated target: `app-launcher`'s `tests/e2e/` (the fleet's largest
-  suite, ~60 files / ~400 collected nodes against the 15-test target).
+- First validated target: `app-launcher`'s `tests/e2e/` (~60 files / ~400
+  collected nodes against the 15-test target).

@@ -5,7 +5,7 @@ description: Ship reviewed branches in parallel — fan out one Sonnet agent per
 
 # issue-finish-batch
 
-**Goal:** `/cleanup-fleet` and `/issue-batch` *build and stop* — one reviewed branch per issue, each needing a manual, sequential `/issue-finish`. Once you're happy with those branches, finishing each is purely mechanical (push, PR, CI-as-advisory, merge, delete branch, land on main, tray restart) and needs neither Opus nor the main session's serial attention. This skill fans out **one background Sonnet agent per branch**, each running the existing `/issue-finish` flow end-to-end one-shot, and reports back **only** when an agent hits a genuine blocker it cannot resolve on its own.
+**Goal:** `/cleanup-fleet` and `/issue-batch` *build and stop* — one reviewed branch per issue, each needing a manual, sequential `/issue-finish`. Finishing a reviewed branch is purely mechanical (push, PR, CI-as-advisory, merge, delete branch, land on main, tray restart) and needs neither Opus nor the main session's serial attention. This skill fans out **one background Sonnet agent per branch**, each running the existing `/issue-finish` flow end-to-end one-shot, and reports back **only** when an agent hits a genuine blocker it cannot resolve on its own. It composes `/issue-finish` rather than re-implementing it — that skill already owns the acceptance/gate/CI-advisory/merge/tray choreography per project, so this one owns only branch resolution, fan-out, and aggregate.
 
 ## Arguments
 
@@ -20,7 +20,7 @@ description: Ship reviewed branches in parallel — fan out one Sonnet agent per
 - **User-triggered, never automatic.** You invoke this explicitly once you've decided the reviewed branches are ready to ship; `/cleanup-fleet`'s rule that the orchestrator never *auto*-launches `/issue-finish` is unchanged.
 - **One agent per branch/checkout, period.** Each agent operates a working tree (the primary checkout, or a worktree path for `/issue-batch` worktree-mode branches); two agents on the same checkout collide. One issue → one branch → one agent → one merge.
 - **Agents finish only — never re-build.** The branch is already built and reviewed: agents run `/issue-finish`, they do **not** re-build, re-design, or "improve" the change.
-- **Sonnet by default, fanned out all at once; Opus only on explicit override (then the ≤3 window applies).** Finishing a reviewed branch is mechanical, so Sonnet is the right tier — and Sonnet sub-agents are exempt from the global Opus concurrency cap of 3 (`~/.claude/CLAUDE.md`, "Spawning sub-agents — cap concurrent Opus at 3"), so the whole batch fans out in a single message, no window.
+- **Sonnet by default, fanned out all at once; Opus only on explicit override (then the ≤3 window applies).** Sonnet sub-agents are exempt from the global Opus concurrency cap of 3 (`~/.claude/CLAUDE.md`, "Spawning sub-agents — cap concurrent Opus at 3"), so the whole batch fans out in a single message, no window.
 - **Post-flight dirty-tree check (step 6) runs in the orchestrator, never the agent, before a branch is marked merged.** It only corrects the reported status — never blocks, auto-commits, or auto-fixes.
 - **Blocker-only escalation.** An agent reports `BLOCKED` and stops on a genuine blocker (merge conflict, CI red on a diff that *does* touch e2e surface, verification-gate failure). It must **not** guess-fix, weaken the gate, or force anything. Everything else just ships and reports `MERGED`.
 - **Keep per-issue pings.** Each `/issue-finish` fires its own `✅ Done` ping (PR link); the `--kind finish-batch` roll-up is an *additional* closing aggregate, not a replacement. (Per `~/.claude/CLAUDE.md`, "keep per-item pings with aggregate".)
@@ -124,7 +124,7 @@ Print a single confirmation block listing every agent dispatched (repo, #N, bran
 E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/dirty_tree_check.py check <path> --mode merged
 ```
 
-`STATUS=DIRTY` → downgrade that branch's status from `✅ merged` to `⚠️ merged but dirty tree — inspect <repo>` (carry the `REASON=` line) instead of the plain `✅ merged` mark. `STATUS=UNKNOWN` → the helper could not read that repo, so it has no verdict: mark it `❓ tree unverified — <REASON>` and never fold it into a pass or a fail (fleet-config#570). This check only reports; it never blocks the run, never auto-commits, and never auto-fixes.
+`STATUS=DIRTY` → downgrade that branch's status from `✅ merged` to `⚠️ merged but dirty tree — inspect <repo>` (carry the `REASON=` line). `STATUS=UNKNOWN` → the helper could not read that repo, so it has no verdict: mark it `❓ tree unverified — <REASON>` and never fold it into a pass or a fail (fleet-config#570). This check only reports; it never blocks the run, never auto-commits, and never auto-fixes.
 
 As each agent returns, surface its report with a status mark: `✅ merged` / `⚠️ merged but dirty tree` / `❌ blocked`. The per-issue `✅ Done` pings the finishers already fired are kept — this is *in addition*.
 
@@ -156,5 +156,4 @@ No follow-up actions. Blocked branches are left in place for you to inspect and 
 
 ## Notes
 
-- **Where this sits:** `/cleanup-fleet` and `/issue-batch` *build and stop* (one reviewed branch per issue); `/issue-finish-batch` *ships* a set of those reviewed branches in parallel. It composes `/issue-finish` rather than re-implementing it — that skill already owns the acceptance/gate/CI-advisory/merge/tray choreography per project, so this one owns only branch resolution, fan-out, and aggregate.
 - **Worktree branches:** `/issue-batch` uses worktrees when several issues hit one repo. Step 2 detects the worktree path and points the agent at it; the agent's `/issue-finish` run handles the merge, and worktree cleanup (`git worktree remove`) is done from the primary checkout afterwards per `/issue-batch`'s closing note.

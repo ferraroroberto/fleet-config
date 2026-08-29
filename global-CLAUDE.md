@@ -19,7 +19,7 @@ Recommended project setting: `{ "permissions": { "defaultMode": "plan" } }`. Exi
 
 ### Ask before assuming
 
-Ask whenever a decision is expensive to undo or genuinely ambiguous. One sharp question beats three filler ones; use multi-choice (2–4 options) when the choice space is bounded. If multiple reasonable approaches exist, present them as options with tradeoffs — don't pick silently.
+Ask whenever a decision is expensive to undo or genuinely ambiguous. One sharp question beats three filler ones; multi-choice (2–4 options) when the choice space is bounded. Multiple reasonable approaches → present them as options with tradeoffs, don't pick silently.
 
 Always ask before assuming: file/module location for new code; data shape or schema; data source; error and empty-state handling; whether to add tests, and at what level.
 
@@ -46,29 +46,22 @@ Don't ask about things determinable from the code, things already specified, or 
 - Front-load the questions — settle scope, ambiguity, and hard-to-undo decisions before starting.
 - Once scope is agreed, execute end-to-end to a verified, shippable state. No per-phase approval; "large" is not "stop".
 - Checkpoint on risk, not size: pause mid-task only for a real ambiguity, an unforeseen decision, or a finding that contradicts the plan.
-
-### Chaining connected work
-
-- After finishing and verifying a unit, check the related open issues; if the next step is a natural continuation, state it and proceed — new branch off freshly-merged `main`. Pause for approval only when it's risky, ambiguous, or materially bigger than discussed.
+- After finishing and verifying a unit, check the related open issues; a natural continuation → state it and proceed, new branch off freshly-merged `main`. Pause for approval only when it's risky, ambiguous, or materially bigger than discussed.
 - One branch per coherent unit; keep commits and branches separable so any piece reviews and reverts on its own.
 
 ### Verify before declaring done
 
-Verify every unit with the project's actual tooling (byte-compile, lint, tests). No checker exists → say so explicitly; never claim "tests pass" where there are no tests. Report failures faithfully with the output; never report done on a skipped step.
-
-A passing suite proves the code behaves as written — not that the reported symptom is gone, nor that the fix is live in the deployed process. Before declaring done, re-run the original repro (the one "Reproduce before fixing" required) against that actual process and watch it pass. A regression test must first be proven to fail against pre-fix code (`git stash`), or its later pass means nothing. Deploy-coverage (`project-scaffolding#199`, `fleet-config#459`) confirms the fix shipped; this confirms it fixed what was reported.
-
-If the repo declares a restart/refresh recipe for a long-lived local process, use it after code changes so the verified change is actually live (unless the user opted out). Don't ask a second permission just because the recipe restarts something — the local `CLAUDE.md` owns the command, scope, and build-identity check. No recipe, or the recipe says confirm first → stop and say exactly what's missing; never improvise process kills.
-
-Any check, gate, health probe, or classifier that can fail to establish a fact must report that as its own state — `unknown` / `not confirmed` — never folded into the passing state. A null, a stale cache, an unresolved probe is not "fine"; a write acknowledged is not an outcome confirmed. Applies to health checks, verification gates, deploy-coverage checks, and delivery/status classifiers alike.
+- Verify every unit with the project's actual tooling (byte-compile, lint, tests). No checker exists → say so explicitly; never claim "tests pass" where there are no tests. Report failures faithfully with the output; never report done on a skipped step.
+- A passing suite proves the code behaves as written — not that the symptom is gone, nor that the fix is live in the deployed process. Re-run the original repro against that actual process and watch it pass before declaring done. (Deploy-coverage — `project-scaffolding#199`, `fleet-config#459` — confirms the fix shipped; this confirms it fixed what was reported.)
+- A regression test must first be proven to fail against pre-fix code (`git stash`), or its later pass means nothing.
+- If the repo declares a restart/refresh recipe for a long-lived local process, use it after code changes so the verified change is actually live (unless the user opted out). Don't ask a second permission just because the recipe restarts something — the local `CLAUDE.md` owns the command, scope, and build-identity check. No recipe, or the recipe says confirm first → stop and say exactly what's missing; never improvise process kills.
+- Any check, gate, health probe, or classifier that can fail to establish a fact must report that as its own state — `unknown` / `not confirmed` — never folded into the passing state. A null, a stale cache, an unresolved probe is not "fine"; a write acknowledged is not an outcome confirmed. Applies to health checks, verification gates, deploy-coverage checks, and delivery/status classifiers alike.
 
 ### Senior-dev check
 
 Before finishing, ask: "What would a senior, perfectionist dev reject in review?" Fix duplicated state, inconsistent patterns, or broken architecture *within the file you're already editing* — don't expand scope to unrelated files.
 
 ## Conventions
-
-Universal code & config conventions (project-specific layout and stack live in the project's own README/CLAUDE.md).
 
 - **Read the README first.** Don't assume `/app/`, `/src/`, `launch_app.bat`, or any path exists — layout is documented per project.
 - **Web-app UI work consults the fleet design system:** `~/.claude/design.md` (light) + `~/.claude/design.dark.md` (dark) — colors, typography, spacing, and the navigation contract (floating bottom-tab pill). `/design-sync` reports drift. Streamlit POC spikes exempt.
@@ -94,13 +87,11 @@ Never auto-commit or push, and never stage files, without being asked — prepar
 
 ### Branch & PR pipeline
 
-`main` is always shippable. One issue → one branch → one PR → merge → branch deleted, issue closed.
-
-Branch naming: `<type>/<issue-N>-<short-slug>` — e.g. `fix/28-terminal-reconnect`, `feat/30-osc-title`. Type matches the commit prefix.
+`main` is always shippable. One issue → one branch → one PR → merge → branch deleted, issue closed. Branch naming: `<type>/<issue-N>-<short-slug>` — e.g. `fix/28-terminal-reconnect`, `feat/30-osc-title`; type matches the commit prefix.
 
 **Lifecycle:** branch off latest `main` → first push opens the PR as **draft** with the issue's acceptance checklist → promote to ready when checks pass → squash-merge + auto-delete branch → `git checkout main && git pull && git branch -d <branch>`, `git fetch --prune`, confirm the issue auto-closed. (Some sister projects use a local-merge flow — follow the project's own pipeline where it differs.)
 
-**Hard rules:** never commit to `main` directly — the one sanctioned exception is the **`/quick` skill** (a below-issue-threshold trunk commit: explicit invocation is the authorization, and its SKILL.md owns the size caps, mandatory verification, and escalate-to-issue rule); never force-push a branch someone else or CI might have pulled; never stack a second feature branch on an unmerged first; one feature/fix per branch — an unrelated mid-branch bug gets its own issue and branch. **Never stack hotfixes on hotfixes** — if a fix exposes a new bug, revert before adding a third change; if three same-day PRs interact badly, roll back to last known-good and re-introduce one at a time.
+**Hard rules:** never commit to `main` directly — the one sanctioned exception is the **`/quick` skill** (explicit invocation is the authorization; its SKILL.md owns the size caps, mandatory verification, and escalate-to-issue rule); never force-push a branch someone else or CI might have pulled; never stack a second feature branch on an unmerged first; one feature/fix per branch — an unrelated mid-branch bug gets its own issue and branch. **Never stack hotfixes on hotfixes** — if a fix exposes a new bug, revert before adding a third change; if three same-day PRs interact badly, roll back to last known-good and re-introduce one at a time.
 
 **PR body:** single-commit PR → `Summary` + `Test plan` checklist + `Closes #N`. Multi-commit → per-commit table (`SHA | What | Why`) + `Closed in this PR` + `Still open`. A **cumulative branch** is the exception, allowed only for rapid verified-per-commit rounds — document the policy in the PR body and default back to one-issue-one-branch when the round closes.
 
@@ -113,12 +104,12 @@ Branch naming: `<type>/<issue-N>-<short-slug>` — e.g. `fix/28-terminal-reconne
 - **One canonical issue per decision-bearing topic** — reproduce durable content, don't depend on links; other repos get one-line pointer issues.
 - **Decision log:** dated distilled bullets inside long-lived issues recording why the plan turned.
 - **Supersede explicitly:** comment on the old issue linking the new, then close it — never silently diverge.
-
-**`gh issue create` defaults:** always `--assignee @me` + at least one type label (`bug`, `enhancement`, `refactor`, `docs`, `chore`, `test`, `perf`; `meta` for cumulative/rollback context). Create the label first if missing.
-
-**Issue body format:** owned by the `/issue-add` skill (its step 6 is the one canonical template — title style, section list, `file:line` grounding). Filing without invoking that skill? Use it anyway rather than improvising a section list here.
-
-**Decompose:** can't be one PR → "Step N/M" sub-issues, each independently shippable; no "phase 1 of 4" PRs. **Cross-repo:** a shared-pattern bug gets the same issue in each affected repo, cross-linked by URL. **Closing:** `Closes #N` in the PR body; direct-commit closes paste the SHA in a comment; not-planned closes explain the disproof — no zombie issues. **On rollback:** file a `meta` issue capturing what was attempted, what worked/didn't, a checkbox list of items still open, and the rollback + base-of-truth SHAs.
+- **`gh issue create` defaults:** always `--assignee @me` + at least one type label (`bug`, `enhancement`, `refactor`, `docs`, `chore`, `test`, `perf`; `meta` for cumulative/rollback context). Create the label first if missing.
+- **Issue body format** is owned by the `/issue-add` skill (its step 6 is the one canonical template — title style, section list, `file:line` grounding). Filing without invoking that skill? Use it anyway rather than improvising a section list here.
+- **Decompose:** can't be one PR → "Step N/M" sub-issues, each independently shippable; no "phase 1 of 4" PRs.
+- **Cross-repo:** a shared-pattern bug gets the same issue in each affected repo, cross-linked by URL.
+- **Closing:** direct-commit closes paste the SHA in a comment; not-planned closes explain the disproof — no zombie issues.
+- **On rollback:** file a `meta` issue capturing what was attempted, what worked/didn't, a checkbox list of items still open, and the rollback + base-of-truth SHAs.
 
 **`docs/` is for durable reference** a future reader will re-open (design records, architecture overviews, integration guides, shared playbooks). Topic filenames, never dates. Never plans/TODOs (→ issues) or dated changelogs.
 
@@ -126,7 +117,7 @@ Branch naming: `<type>/<issue-N>-<short-slug>` — e.g. `fix/28-terminal-reconne
 
 ### Markdown that will be rendered — no hard wraps
 
-Markdown headed for a renderer (GitHub issue/PR bodies, comments, Notion via MCP) must **not** hard-wrap paragraphs at 70/80 cols — paragraphs are single long lines; newlines only between paragraphs, between list items, and inside code fences. (The user reads on a vertical terminal where forced breaks fight the natural wrapping.) Does **not** apply to: source code, plain repo `.md` read as source, commit messages (wrap at 72), terminal-only output.
+Markdown headed for a renderer (GitHub issue/PR bodies, comments, Notion via MCP) must **not** hard-wrap paragraphs at 70/80 cols — paragraphs are single long lines; newlines only between paragraphs, between list items, and inside code fences. Does **not** apply to: source code, plain repo `.md` read as source, commit messages (wrap at 72), terminal-only output.
 
 ### Issue workflow skills
 
@@ -140,11 +131,11 @@ All stay generic and read each project's CLAUDE.md for the gate command, ports, 
 
 ### Spawning sub-agents — cap concurrent Opus at 3 *(Claude Code only — skip on other agents)*
 
-Keep at most **3 background Opus sub-agents in flight** (sliding window: dispatch up to 3, refill as each returns). **Sonnet sub-agents are exempt** — they fan out freely and don't count against the window. This works around Anthropic's Opus-specific server-side burst limiter, which rate-limits the 4th–5th+ concurrent bootstrap (anthropics/claude-code#53922, https://code.claude.com/docs/en/errors) and cost two unattended fleet runs most of their work. It is **not** `CLAUDE_CODE_MAX_TOOL_USE_CONCURRENCY` (that bounds parallel tool calls in one session, not sub-agents) — the only place to cap sub-agent count is the orchestrating skill's dispatch logic. Tier vocabulary and per-host model mapping live in `fleet-config/docs/model-tiers.md` (single source — don't restate a tier table).
+Keep at most **3 background Opus sub-agents in flight** (sliding window: dispatch up to 3, refill as each returns). **Sonnet sub-agents are exempt** — they fan out freely and don't count against the window. This works around Anthropic's Opus-specific server-side burst limiter, which rate-limits the 4th–5th+ concurrent bootstrap (anthropics/claude-code#53922, https://code.claude.com/docs/en/errors). It is **not** `CLAUDE_CODE_MAX_TOOL_USE_CONCURRENCY` (that bounds parallel tool calls in one session, not sub-agents) — the only place to cap sub-agent count is the orchestrating skill's dispatch logic. Tier vocabulary and per-host model mapping live in `fleet-config/docs/model-tiers.md` (single source — don't restate a tier table).
 
-**A sub-agent does not self-resume when its own background task finishes** — only the top-level session gets that wake-up, so a sub-agent that backgrounds a step (e.g. the e2e leg of its verification gate) and ends its turn with "I'll wait for it to finish" just stops (`project-scaffolding#124`). When briefing a sub-agent that must run a long background step, tell it up front: it will not be auto-woken — it must poll (`BashOutput`/`Monitor`) to completion *within its own turn* before ending.
+**A sub-agent does not self-resume when its own background task finishes** — only the top-level session gets that wake-up, so a sub-agent that backgrounds a step and ends its turn waiting just stops (`project-scaffolding#124`). When briefing a sub-agent that must run a long background step, tell it up front: it will not be auto-woken — it must poll (`BashOutput`/`Monitor`) to completion *within its own turn* before ending.
 
-**A headless top-level `claude -p` session has no wake-up mechanism at all** — backgrounding-and-waiting there is fatal, not just stalled: the CLI exits on the clean turn-end and reports `exit_code: 0`, false success over a skill that never ran (`fleet-config#314`). Every scheduled fleet skill runs this way — its own `run-weekly.bat` calling `claude -p "/<skill>" ... --permission-mode bypassPermissions`, no human attending, no orchestrator to resume it. Any command inside a skill meant for unattended/scheduled execution must run synchronously (foreground) or poll to completion within the same turn; never fire-and-forget a tool call and end the turn expecting to be resumed.
+**A headless top-level `claude -p` session has no wake-up mechanism at all** — the CLI exits on the clean turn-end and reports `exit_code: 0`, false success over a skill that never ran (`fleet-config#314`). Every scheduled fleet skill runs this way — its own `run-weekly.bat` calling `claude -p "/<skill>" ... --permission-mode bypassPermissions`, no human attending. Any command inside a skill meant for unattended/scheduled execution must run synchronously (foreground) or poll to completion within the same turn; never fire-and-forget a tool call and end the turn expecting to be resumed.
 
 ### Project hygiene
 
@@ -155,11 +146,11 @@ Keep at most **3 background Opus sub-agents in flight** (sliding window: dispatc
 
 ### `project-scaffolding` is the canonical master
 
-`E:\automation\project-scaffolding` (`ferraroroberto/project-scaffolding`) is the scaffold repo whose `CLAUDE.md` sister projects derive theirs from; its `docs/playwright-ui-testing.md` is the shared e2e-testing reference. Its pipeline: branch off `main` → push → **draft PR** → promote → **squash-merge + delete branch**; branch `<type>/<issue-N>-<slug>`; issues need `--assignee @me` + a type label.
+`E:\automation\project-scaffolding` (`ferraroroberto/project-scaffolding`) is the scaffold repo whose `CLAUDE.md` sister projects derive theirs from; its `docs/playwright-ui-testing.md` is the shared e2e-testing reference. It follows the branch/PR pipeline and issue defaults above exactly.
 
 ### Propagate generalizable conventions up to scaffolding
 
-Sister-project work producing a *generalizable convention* (testing pattern, CLAUDE.md rule, workflow) routes up to `project-scaffolding` so every project inherits it — "very important"; ad-hoc per-project divergence was explicitly rejected.
+Sister-project work producing a *generalizable convention* (testing pattern, CLAUDE.md rule, workflow) routes up to `project-scaffolding` so every project inherits it — ad-hoc per-project divergence was explicitly rejected.
 
 - Per-project *instances* (real script names, paths) stay in the project's own CLAUDE.md; the reusable *concept* goes to scaffolding.
 - Check for an existing `project-scaffolding` issue first; otherwise file one (master's template + label + `--assignee @me`).
@@ -254,11 +245,9 @@ flowchart LR
 
 ### `local-llm-hub` local LLM hub
 
-`E:\automation\local-llm-hub` runs a FastAPI hub on `127.0.0.1:8000` exposing Anthropic-shape `POST /v1/messages` and OpenAI-shape `POST /v1/chat/completions`, routed by `model` name: Claude/Gemini ids reach the local CLI on the user's subscription, open-weight ids reach llama-server backends on their own ports. **Live model ids and ports: that repo's README + `docs/model-comparison.md`, or `GET /v1/models`** — a latest-only policy replaces entries when newer models ship, so never trust a copied list (this one went stale twice).
+`E:\automation\local-llm-hub` runs a FastAPI hub on `127.0.0.1:8000` exposing Anthropic-shape `POST /v1/messages` and OpenAI-shape `POST /v1/chat/completions`, routed by `model` name: Claude/Gemini ids reach the local CLI on the user's subscription, open-weight ids reach llama-server backends on their own ports. **Live model ids and ports: that repo's README + `docs/model-comparison.md`, or `GET /v1/models`** — a latest-only policy replaces entries when newer models ship, so never trust a copied list.
 
 Whisper-server at `127.0.0.1:8090` (`ggml-large-v3-turbo.bin`, OpenAI-compatible `/v1/audio/transcriptions`). The hub also proxies audio on `:8000` (`/v1/audio/transcriptions` + `/v1/audio/translations`) so requests land in the observability ring; direct `:8090` POSTs are lower-overhead but invisible to the admin UI. Port 8090 is mutex-shared with `automation/audio/transcribe_voice`.
-
-**Calling it:**
 
 ```python
 from anthropic import Anthropic
@@ -274,7 +263,7 @@ curl -F file=@clip.wav http://127.0.0.1:8090/v1/audio/transcriptions
 
 ### Don't duplicate hub functionality in downstream apps
 
-Route downstream Claude/local-LLM access through the hub via standard SDKs — never re-implement inline `claude -p` subprocess wrappers (rejected as duplicated engineering; the hub owns subprocess management, prompt assembly, multi-turn flattening, host-routing, and observability).
+Route downstream Claude/local-LLM access through the hub via standard SDKs — never re-implement inline `claude -p` subprocess wrappers (the hub owns subprocess management, prompt assembly, multi-turn flattening, host-routing, and observability).
 
 - LLM call → `Anthropic(api_key="local-dummy", base_url="http://127.0.0.1:8000")` or `OpenAI(api_key="local-dummy", base_url="http://127.0.0.1:8000/v1")`.
 - Audio → POST directly to `http://127.0.0.1:8090/v1/audio/transcriptions`.
@@ -282,7 +271,7 @@ Route downstream Claude/local-LLM access through the hub via standard SDKs — n
 
 ### Prefer scripts over session-injected MCP connectors for automation
 
-For unattended/automation workflows, prefer a thin Python script (standard SDK or REST) over a session-injected MCP connector — a fleet audit (`ferraroroberto/fleet-config#128`, 945 transcripts) found 97% of injected tool surface unused. Every enabled connector is a fleet-wide, every-session context cost.
+For unattended/automation workflows, prefer a thin Python script (standard SDK or REST) over a session-injected MCP connector — a fleet audit (`ferraroroberto/fleet-config#128`, 945 transcripts) found 97% of injected tool surface unused, and every enabled connector is a fleet-wide, every-session context cost.
 
 - New automation → script via SDK/REST first; connectors only for genuinely interactive, exploratory, one-off use.
 - Keep the default connector set minimal; toggle one on per session that needs it.
@@ -292,7 +281,7 @@ For unattended/automation workflows, prefer a thin Python script (standard SDK o
 
 ### Git Bash strips backslashes in `settings.json` commands *(Claude Code only — skip on other agents)*
 
-Claude Code on this machine executes `settings.json` commands (statusLine, hooks) through **Git Bash**, which treats `\` as an escape — Windows paths in command strings must use **forward slashes** (`C:/Windows/...`) or they silently mangle (`C:\Windows` → `C:Windows`). Codex invokes the Python hook modules directly (no Git Bash, no `run-hook.ps1` shim). Working command form:
+Claude Code executes `settings.json` commands (statusLine, hooks) through **Git Bash**, which treats `\` as an escape — Windows paths in command strings must use **forward slashes** (`C:/Windows/...`) or they silently mangle (`C:\Windows` → `C:Windows`). Codex invokes the Python hook modules directly (no Git Bash, no `run-hook.ps1` shim). Working command form:
 
 ```
 C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File C:/Users/rober/.claude/<script>.ps1
@@ -300,22 +289,22 @@ C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe -NoProfile -NonInterac
 
 ### Windows PowerShell in spawned commands (any agent)
 
-- **Avoid `pwsh`** in spawned commands — the PATH `pwsh` is a 0-byte WindowsApps reparse stub that fails non-interactively. Use the absolute path `C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe`.
-- **Never call native `cmd.exe /c` from Git Bash.** MSYS rewrites the single-slash switch to `C:/`, so cmd opens interactively and never runs the requested command (fleet-config#385). Use the PowerShell tool/absolute `powershell.exe` path; if Bash must call cmd, the MSYS-safe spelling is `cmd.exe //c`.
+- **Avoid `pwsh`** — the PATH `pwsh` is a 0-byte WindowsApps reparse stub that fails non-interactively. Use the absolute path `C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe`.
+- **Never call native `cmd.exe /c` from Git Bash.** MSYS rewrites the single-slash switch to `C:/`, so cmd opens interactively and never runs the command (fleet-config#385). Use the PowerShell tool/absolute `powershell.exe` path; if Bash must call cmd, the MSYS-safe spelling is `cmd.exe //c`.
 - **PowerShell scripts reading the agent's stdin JSON** use `[Console]::In.ReadToEnd()` — `$input` is unreliable across the shell → powershell.exe pipe.
 - `[math]::Round(x) + '%'` parses as arithmetic and throws — cast first: `[string][math]::Round(x) + '%'`.
 
 ### PYTHONPATH for out-of-tree Python scripts
 
-Invoking `& .\.venv\Scripts\python.exe <script-outside-project>` that imports project packages fails with `ModuleNotFoundError` — Python sets `sys.path[0]` to the *script's* dir, not CWD, so `cd`-ing in doesn't help. Prepend `$env:PYTHONPATH = (Get-Location).Path;` (Windows) / `PYTHONPATH=$(pwd)` (POSIX). Better when the script can live in-tree (gitignored scratch is fine): `& .\.venv\Scripts\python.exe -m <module.path>` from the repo root — `-m` adds CWD to `sys.path`, no env var.
+`& .\.venv\Scripts\python.exe <script-outside-project>` importing project packages fails with `ModuleNotFoundError` — Python sets `sys.path[0]` to the *script's* dir, not CWD, so `cd`-ing in doesn't help. Prepend `$env:PYTHONPATH = (Get-Location).Path;` (Windows) / `PYTHONPATH=$(pwd)` (POSIX). Better when the script can live in-tree (gitignored scratch is fine): `& .\.venv\Scripts\python.exe -m <module.path>` from the repo root — `-m` adds CWD to `sys.path`, no env var.
 
 ### Windows Python: UTF-8 stdout under capture
 
 Piped/redirected stdout makes Python fall back to cp1252, so emoji/box-drawing `print()` throws `UnicodeEncodeError` and exits 1 — even though it works in a real terminal. Set `$env:PYTHONUTF8 = "1"` under capture; durable code fix: `sys.stdout.reconfigure(encoding="utf-8")` (and stderr) at entry points.
 
-**The inverse, in any process that sets `PYTHONUTF8`:** `subprocess.run(..., text=True)` decodes the *child's* output as UTF-8, but native Windows console tools (`schtasks`, `netsh`, `sc`, `tasklist`, `wmic`, `reg`, `ipconfig`, …) emit the OEM code page (cp850 here), which is not valid UTF-8. It doesn't raise — `proc.stdout` comes back empty/`None`, so any `if not proc.stdout: return None`-shaped guard reads it as "the query failed" and the feature degrades silently. Every such call site must pin its own decoding — `encoding="oem", errors="replace"` — never inherit `text=True`'s ambient locale (`replace` so one odd byte costs a character, not the whole feature). It reproduces only *inside* the app: from any terminal there is no `PYTHONUTF8`, so identical code returns the full output and looks healthy. (`app-launcher#743` — blank `next_run` on all 20 jobs and `unknown` structural missed-fire coverage, fleet-wide, for weeks.)
+**The inverse, in any process that sets `PYTHONUTF8`:** `subprocess.run(..., text=True)` decodes the *child's* output as UTF-8, but native Windows console tools (`schtasks`, `netsh`, `sc`, `tasklist`, `wmic`, `reg`, `ipconfig`, …) emit the OEM code page (cp850 here), which is not valid UTF-8. It doesn't raise — `proc.stdout` comes back empty/`None`, so any `if not proc.stdout: return None`-shaped guard reads it as "the query failed" and the feature degrades silently. Every such call site must pin its own decoding — `encoding="oem", errors="replace"` — never inherit `text=True`'s ambient locale (`replace` so one odd byte costs a character, not the whole feature). It reproduces only *inside* the app: from any terminal there is no `PYTHONUTF8`, so identical code looks healthy (`app-launcher#743`).
 
-**Corollary:** a helper that returns `None` on failure must **log** the failure. Silent `None` is why this hid so long — a dead query was indistinguishable from a quiet system. Same "an unestablished fact needs its own visible state" rule the health checks already follow.
+**Corollary:** a helper that returns `None` on failure must **log** the failure — a dead query must never be indistinguishable from a quiet system.
 
 ### Browser automation must not look like a bot
 
@@ -326,7 +315,7 @@ Every Playwright / automated-browser launch must present as a real human Chrome 
 - Real Chrome (`channel="chrome"`), not bundled Chromium.
 - Persistent profile, viewport 1280×900, `--disable-blink-features=AutomationControlled`.
 - Also `--disable-features=Translate`, `--no-default-browser-check`, `--no-first-run`.
-- `chromium_sandbox=True` on `launch` / `launch_persistent_context` — Playwright's default (`False`) injects `--no-sandbox`, which pops Chrome's *"the `--no-sandbox` flag you are using is not supported"* infobar, itself a bot tell. `True` enables the sandbox and drops the flag.
+- `chromium_sandbox=True` on `launch` / `launch_persistent_context` — Playwright's default (`False`) injects `--no-sandbox`, which pops Chrome's *"the `--no-sandbox` flag you are using is not supported"* infobar, itself a bot tell.
 
 **Single source per project:** launch kwargs + init-script live in one helper (e.g. `config/chrome_launch.py`, `automation/browser.py`); every module imports it — never re-inline launch args. If the user reports a captcha or "unusual activity", suspect a stealth regression first.
 
@@ -340,15 +329,14 @@ GitHub's issue-closing parser (`close(s|d)?` / `fix(es|ed)?` / `resolve(s|d)?` +
 
 ### Three clocks — normalise to UTC before correlating GitHub state with local logs
 
-`gh` JSON timestamps (`closedAt`, `createdAt`, `mergedAt`) are **UTC**, suffixed `Z`. This host is **`+0200` in summer, `+0100` in winter** (Europe/Brussels — read the offset, never hardcode it). An app-launcher job log's `[h:mm:ss]` prefix is **elapsed since run start**, not a wall clock at all (`fleet-config`'s `skills/_lib/claude_progress.py:282`, off `time.monotonic`); only the `<run_id>` directory name is a local wall-clock stamp, so a line's real time is `run_id + elapsed`. Normalise everything to UTC *before* comparing, and state the conversion in the working notes — any conclusion resting on event ordering ("the gate saw it already closed", "the fix landed before the failure") is worth exactly as much as that arithmetic, and getting it wrong fails **silently**: it yields a plausible, confidently-wrong story rather than an error. `fleet-config#633` was an entire defect issue — evidence tables, named root cause, a fabricated "≈3h of lanes wasted" — built on reading `12:12Z` as local `12:12`.
+`gh` JSON timestamps (`closedAt`, `createdAt`, `mergedAt`) are **UTC**, suffixed `Z`. This host is **`+0200` in summer, `+0100` in winter** (Europe/Brussels — read the offset, never hardcode it). An app-launcher job log's `[h:mm:ss]` prefix is **elapsed since run start**, not a wall clock at all (`fleet-config`'s `skills/_lib/claude_progress.py:282`, off `time.monotonic`); only the `<run_id>` directory name is a local wall-clock stamp, so a line's real time is `run_id + elapsed`. Normalise everything to UTC *before* comparing, and state the conversion in the working notes — getting it wrong fails **silently**, yielding a plausible, confidently-wrong story rather than an error (`fleet-config#633`).
 
 **The same shape without clocks:** when a claim is "tool X reported the wrong thing at time T", reconstruct what X could *observe* at T. Re-running X now answers a different question and will cheerfully agree with you.
 
 ### Subprocess spawns must suppress the console window (Windows)
 
-Any `subprocess.Popen`/`.run`/`.call`/`.check_output`/`.check_call` that launches an external executable (ffmpeg, ssh, docker, tailscale, nvidia-smi, clip, a helper script, …) must pass `creationflags=subprocess.CREATE_NO_WINDOW` on Windows — parents with no console of their own (pythonw, a tray app, a scheduled task, a daemon) otherwise get a new console window flashed on screen for every spawn. Default to suppressing it; only omit the flag when the window is meant to be visible to the user (rare — e.g. a deliberately-opened interactive terminal). Prior instances: `local-llm-hub`#317/#282/#174/#169, `voice-transcriber`#147; fleet-wide gap audit `fleet-config`#399.
+Any `subprocess.Popen`/`.run`/`.call`/`.check_output`/`.check_call` launching an external executable (ffmpeg, ssh, docker, tailscale, nvidia-smi, clip, a helper script, …) must pass `creationflags=subprocess.CREATE_NO_WINDOW` on Windows — parents with no console of their own (pythonw, a tray app, a scheduled task, a daemon) otherwise flash a new console window for every spawn. Default to suppressing; only omit the flag when the window is meant to be visible to the user (rare — e.g. a deliberately-opened interactive terminal). Prior instances: `local-llm-hub`#317/#282/#174/#169, `voice-transcriber`#147; fleet-wide gap audit `fleet-config`#399.
 
-Canonical pattern (short-lived, no signaling needed):
 ```python
 creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
 ```
@@ -357,7 +345,7 @@ For a long-lived child that later needs `CTRL_BREAK_EVENT` or graceful terminati
 if sys.platform == "win32":
     kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_NO_WINDOW
 ```
-`DETACHED_PROCESS` and `CREATE_NO_WINDOW` are mutually exclusive — never combine them (see `local-llm-hub`#282). Repos with 3+ call sites should factor this into one `_no_window_flags()` / `NO_WINDOW` helper (see `local-llm-hub/scripts/_lib.py`, `whatsapp-radar/src/subprocess_flags.py`) rather than repeating the ternary at every call site.
+`DETACHED_PROCESS` and `CREATE_NO_WINDOW` are mutually exclusive — never combine them (`local-llm-hub`#282). Repos with 3+ call sites factor this into one `_no_window_flags()` / `NO_WINDOW` helper (see `local-llm-hub/scripts/_lib.py`, `whatsapp-radar/src/subprocess_flags.py`) rather than repeating the ternary at every call site.
 
 ### Windows ephemeral port exhaustion takes down the whole fleet at once
 
@@ -369,11 +357,11 @@ Get-WinEvent -FilterHashtable @{LogName='System'; ProviderName='Tcpip'} -MaxEven
 Get-NetTCPConnection | Group-Object State | Sort-Object Count -Descending
 netsh int ipv4 show dynamicport tcp
 ```
-Event IDs 4231 (TCP)/4266 (UDP) = "ephemeral port space ... all such ports being in use". Windows rate-limits these, so absence doesn't rule it out — corroborate with the `TIME_WAIT` count (a normal afternoon on this host oscillates ~325–800, routinely the top state in the table).
+Event IDs 4231 (TCP)/4266 (UDP) = "ephemeral port space ... all such ports being in use". Windows rate-limits these, so absence doesn't rule it out — corroborate with the `TIME_WAIT` count (a normal afternoon on this host oscillates ~325–800, routinely the top state).
 
 **Fix hierarchy — cheapest and most targeted first:**
 1. Fix the leak: find and stop whatever opens short-lived outbound connections in a burst/loop (a poller with no backoff, retry-without-backoff, a health check with no session reuse).
 2. Pool connections: module-level `requests.Session` (or equivalent), never a bare `requests.get`/`urlopen` per call inside a loop; back off a failing endpoint instead of retrying at full rate; never point an e2e suite at a live production app.
-3. Last resort, machine-level, needs elevation + a reboot — **Roberto's call, never applied unattended by an agent:** `TcpTimedWaitDelay = 30` at `HKLM\SYSTEM\CurrentControlSet\Services\Tcpip\Parameters` (valid 30–300), ~4x effective capacity without touching the range. Microsoft-documented; re-measure its effect on the Windows 11 stack after applying, don't assume it.
+3. Last resort, machine-level, needs elevation + a reboot — **Roberto's call, never applied unattended by an agent:** `TcpTimedWaitDelay = 30` at `HKLM\SYSTEM\CurrentControlSet\Services\Tcpip\Parameters` (valid 30–300), ~4x effective capacity without touching the range. Re-measure its effect on the Windows 11 stack after applying, don't assume it.
 
 **Never narrow the range downward** — `netsh int ipv4 set dynamicport tcp start=10000` (seen circulated, wrong) hands out this machine's 16 fixed listeners as ephemeral ports: cloudflared `20241-3`, tailscaled `40746`, OneDrive `42050`, MouseWithoutBorders `15100/1`, llama-server `18093`, StreamDeck `28196/8`, MSI services `26822/32683/33683`, logioptionsplus `19010`, hwinfo `10000` — turning a visible, self-healing outage into intermittent bind failures that are far harder to diagnose. Safe floor on this host if the range must widen: `netsh int ipv4 set dynamicport tcp start=44000 num=21535` (clears every observed fixed listener) — still machine-level tuning, still Roberto's call.

@@ -10,9 +10,9 @@ unbroken run — `/issue-add` → `/issue-start now` → build → **validate ha
 `/issue-finish`. No approval pauses in between.
 
 **YOLO means "skip the plan-approval gate", not "skip safety".** The validation
-phase is what stops a broken build from reaching `main`. It is the only thing
-between a fresh idea and a merge commit on a protected branch. Do not weaken
-it. If validation fails at any point, **stop and report**; do not push.
+phase is the only thing between a fresh idea and a merge commit on a protected
+branch. Do not weaken it. If validation fails at any point, **stop and report**;
+do not push.
 
 Use this when:
 - You've thought through the change well enough that a plan-approval gate would
@@ -77,15 +77,15 @@ Run the `/issue-start <N> now` flow:
 
 ### Phase 3 — Validate hard *(the non-negotiable phase)*
 
-The whole reason YOLO is safe enough to ship is that this phase is *not*
-weakened relative to the normal flow — it is **stronger**. There is no human
-checkpoint after this. Everything below must hold before Phase 4 starts.
+This phase is *not* weakened relative to the normal flow — it is **stronger**.
+There is no human checkpoint after this. Everything below must hold before
+Phase 4 starts.
 
 Run **all** that apply to this project. Each is a hard gate.
 
 **3a. Reproduction proof (for bugs).** Per the scaffolding `CLAUDE.md`'s
 "While fixing" section: a bug fix needs an artefact that *demonstrates* the
-fix. A failing test that now passes, a recorded console transcript showing the
+fix — a failing test that now passes, a recorded console transcript showing the
 old error then the new clean run, or a documented reproduction sequence
 exercised before and after. "I think this fixes it" is not enough in YOLO mode
 — there is no review to catch a non-fix.
@@ -113,8 +113,7 @@ never `pytest.skip`; a suite that skips when the app isn't up reports green
 on a build it never tested. A FAIL from the routed slice stops the run.
 
 **3e. Behavioural verification — the change actually does what it claims.**
-This is the part most easily skipped and the part that matters most in YOLO
-mode. Pick the smallest mode that genuinely covers the change:
+Pick the smallest mode that genuinely covers the change:
 - **UI change** (Streamlit, FastAPI/Flask + browser, Electron, phone webapp):
   use the **`verify` skill** to launch the app and drive the feature in a real
   browser. Headed Playwright (or Playwright MCP) so the actual feature is
@@ -182,19 +181,17 @@ reached once 3a–3g are all green. Self-review (3a–3g) is still done by the
 same context that wrote the code — it cannot be the last checkpoint before a
 merge with no human in the loop. Per the fleet's
 [independent-review-gate convention](../../docs/independent-review-gate.md)
-(fleet-config#408), `/issue-yolo` is that convention's first adopter, with
-**stop-and-report** failure handling (not `cleanup-fleet-all.js`'s
-retry-then-escalate) — this run is interactive, so a human is already present
-to decide on a retry, unlike that unattended context.
+(fleet-config#408), with **stop-and-report** failure handling (not
+`cleanup-fleet-all.js`'s retry-then-escalate) — this run is interactive, so a
+human is already present to decide on a retry.
 
 Spawn the review as a genuinely separate agent invocation — **not** a forked
-continuation of this conversation (a fork inherits this session's own
-context, which defeats the point: the reviewer must not be able to
-rationalize its own prior reasoning). On Claude Code, use the `Agent` tool
-with a fresh subagent (e.g. `general-purpose`) rather than `subagent_type:
-"fork"`. Brief it with only what it needs to do the review cold — the issue
-number, the branch name, and the repo path — not a summary of what you built
-or why; let it discover that itself:
+continuation of this conversation (a fork inherits this session's own context,
+so the reviewer could rationalize its own prior reasoning). On Claude Code, use
+the `Agent` tool with a fresh subagent (e.g. `general-purpose`) rather than
+`subagent_type: "fork"`. Brief it with only what it needs to do the review
+cold — the issue number, the branch name, and the repo path — not a summary of
+what you built or why; let it discover that itself:
 
 1. **Fetch the issue's acceptance criteria itself** — `gh issue view <N>` —
    never trust this run's own restatement of them.
@@ -224,8 +221,8 @@ Only reachable on a fully-green Phase 3 (3a–3h, including the independent
 review's `pass: true`). Run the full `/issue-finish` skill:
 1. Re-confirm every acceptance point on the issue is actually met.
 2. Update `README.md` if usage / config / output changed. Do not write a
-   dated `docs/YYYY-MM-DD-*.md` file — per the project doc-discipline
-   sections, the PR + issue + `git log` are the changelog.
+   dated `docs/YYYY-MM-DD-*.md` file — the PR + issue + `git log` are the
+   changelog.
 3. Run the project's verification gate (e.g. `scripts/verify-before-ship.ps1`)
    as a final atomic pass/fail. Already-run sub-pieces in Phase 3 don't
    substitute for the consolidated gate.
@@ -257,13 +254,13 @@ review's `pass: true`). Run the full `/issue-finish` skill:
    This skips only the *remote CI wait* — never the Phase 3 local gate, which is
    non-negotiable and always runs.
 8. Merge, then land — **both depend on the checkout mode** Phase 2 ended up in.
-   Phase 2 runs the `/issue-start now` flow, which forces **worktree** mode
-   whenever `APP_LAUNCHER_SESSION_ID` is set, so for any launcher- or
-   chief-dispatched YOLO run this is the *only* path, not the rare one. Check
-   it rather than assuming: `worktree_claim.py mode <repo>`, run **from the
-   checkout you built in** — it answers about the cwd, and `<repo>` only says
-   which repo that cwd must belong to (fleet-config#652). `UNKNOWN reason=<why>`
-   (exit 2) means it could not tell: stop, never guess a mode.
+   Phase 2's `/issue-start now` flow forces **worktree** mode whenever
+   `APP_LAUNCHER_SESSION_ID` is set, so for any launcher- or chief-dispatched
+   YOLO run this is the *only* path. Check rather than assume:
+   `worktree_claim.py mode <repo>`, run **from the checkout you built in** — it
+   answers about the cwd, and `<repo>` only says which repo that cwd must belong
+   to (fleet-config#652). `UNKNOWN reason=<why>` (exit 2) means it could not
+   tell: stop, never guess a mode.
    - **Primary checkout:** `gh pr merge <PR> --merge --delete-branch`, then
      `git checkout main && git pull --ff-only`.
    - **Linked worktree:** `gh pr merge <PR> --merge` — **no `--delete-branch`**
@@ -299,23 +296,21 @@ review's `pass: true`). Run the full `/issue-finish` skill:
    orphan the reclaim sweep exists to kill. Manual port-PID kill is a fallback
    only for the rare app with no `--restart`. Invoke it through a **real Windows
    shell**, exactly as `/issue-finish` step 6 requires — never Git Bash's nested
-   `cmd /c`. Git Bash/MSYS rewrites `/c` to `C:/`, opens an interactive cmd
-   prompt, and never runs the batch/helper. Use the PowerShell tool or the
-   absolute
+   `cmd /c` (MSYS rewrites `/c` to `C:/`, opens an interactive cmd prompt, and
+   never runs the batch). Use the PowerShell tool or the absolute
    `C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe -Command "& '<repo>/tray.bat' --restart"`
    form (forward-slash exe path, per the Git-Bash-strips-backslashes rule).
-   **Safety caveat:** `--restart`'s
-   `/T` subtree kill is safe only for a tray whose linked-but-independent
-   children (a session-host + its PTY shells) are spawned detached + re-adopted
-   on start (scaffold `docs/windows-tray.md`). Read the target repo's `CLAUDE.md`
-   to know which case applies — don't assume by app name. A tray that declares
-   its linked children detach-compliant (e.g. `app-launcher`, per
-   `project-scaffolding#35`: its `:8446` session-host is re-parented via `cmd /c
-   start` and re-adopted, so `--restart` preserves open Coding sessions) is fine
-   to restart unattended. A tray that still hosts them in-subtree, or is silent
-   on the point, must be treated as unsafe: `--restart` kills the user's open
-   Coding sessions, so an unattended YOLO run **must not** restart it without
-   confirmation. Then confirm the new build
+   **Safety caveat** (same test as `/issue-finish` step 6): `--restart`'s `/T`
+   subtree kill is safe only for a tray whose linked-but-independent children
+   (a session-host + its PTY shells) are spawned detached + re-adopted on start
+   (scaffold `docs/windows-tray.md`). Read the target repo's `CLAUDE.md` to know
+   which case applies — don't assume by app name. Detach-compliant (e.g.
+   `app-launcher`, per `project-scaffolding#35`: its `:8446` session-host is
+   re-parented via `cmd /c start` and re-adopted, so `--restart` preserves open
+   Coding sessions) is fine to restart unattended. Still hosting them
+   in-subtree, or silent on the point, is unsafe: `--restart` kills the user's
+   open Coding sessions, so an unattended YOLO run **must not** restart it
+   without confirmation. Then confirm the new build
    with a **bounded** poll of the version endpoint (hard timeout + attempt cap,
    fail loud): `git_sha` must match `HEAD` (a `/healthz` 200 is not enough — a
    stale process passes it).
@@ -365,9 +360,8 @@ or delay the finish.
 any MCP Slack tool (search/send/etc.) to find a channel or post the ping.** The
 helper resolves the destination channel deterministically from `projects.toml`;
 picking a channel yourself is both a security violation (an agent-inferred
-external write destination) and wrong (it may post to the wrong channel). If the
-helper is a silent no-op because no channel is configured, that is the correct
-outcome — do not "fix" it by reaching for Slack tools.
+external write destination) and wrong (it may post to the wrong channel). A
+silent no-op is the correct outcome — do not "fix" it with Slack tools.
 
 ## Notes on safety
 
