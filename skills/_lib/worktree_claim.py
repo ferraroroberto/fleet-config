@@ -62,6 +62,20 @@ startup path reads a secret or setting from `.env` (e.g. `local-llm-hub`'s
 `LOCAL_LLM_HUB_SSH_KEY`) otherwise stalls on the missing value until an
 unrelated timeout trips the e2e stage red (fleet-config#698).
 
+Some repos keep their runtime config at the repo **root** instead of under
+`config/` (`accounting-quarterly`'s `config.json` and
+`classification_rules.json`, `home-automation`'s `devices.json`). Neither
+`copy_runtime_config` nor `copy_env_file` covers that shape, so a worktree for
+one of these repos crashed on startup with no config at all, discovered the
+hard way mid-audit-rework on `accounting-quarterly#78` (fleet-config#714).
+`copy_root_config` closes it right after `.env`: rather than hardcode which
+root filenames matter, it asks `git check-ignore` which of the repo's own
+root-level `*.json` files are gitignored, so a repo that adds a new one is
+covered with no code change here. Same rules as `copy_runtime_config` --
+`*.sample.json` excluded, an existing destination left alone, a top-level
+`port` repointed via `_repoint_config_port`, machine-bound values blanked via
+`blank_machine_bound_config` -- reused rather than reinvented.
+
 A byte-verbatim copy is not safe by itself: a repo's config can point at a
 real, machine-bound sink outside the worktree -- a synced mirror/backup
 folder, an index path, another repo's database -- and a worktree instance
@@ -794,7 +808,7 @@ def worktree_port(issue: str, taken: "set" = frozenset()) -> int:
     )
 
 
-def _repoint_config_port(dst: Path, taken: "set") -> Optional[int]:
+def _repoint_config_port(dst: Path, wt: Path, taken: "set") -> Optional[int]:
     """Give a copied config its own port instead of the primary's. Returns it.
 
     Only a top-level integer `port` on a JSON **object** is touched — nested
@@ -802,6 +816,10 @@ def _repoint_config_port(dst: Path, taken: "set") -> Optional[int]:
     does not parse is returned unchanged with `None`. A broken runtime config
     must not break worktree setup; it is the app's business to complain about
     its own file, not ours to fail the lane over.
+
+    `wt` is the worktree root itself (not `dst`'s parent) so the issue number
+    seeding `worktree_port` is read from `wt.name` directly — correct whether
+    `dst` sits under `config/` or right at the worktree root (fleet-config#714).
     """
     try:
         raw = json.loads(dst.read_text(encoding="utf-8"))
@@ -811,7 +829,7 @@ def _repoint_config_port(dst: Path, taken: "set") -> Optional[int]:
     # `bool` is an `int` subclass — exclude it explicitly, a `true` is not a port.
     if not isinstance(port_value, int) or isinstance(port_value, bool):
         return None
-    port = worktree_port(dst.parent.parent.name.rpartition(WT_SEP)[2], taken)
+    port = worktree_port(wt.name.rpartition(WT_SEP)[2], taken)
     raw["port"] = port
     dst.write_text(json.dumps(raw, indent=2) + "\n", encoding="utf-8")
     return port
@@ -957,7 +975,7 @@ def blank_machine_bound_config(dst: Path, declared_keys: Optional[list]) -> list
     return blanked
 
 
-def copy_runtime_config(repo: Path, wt: Path) -> list:
+def copy_runtime_config(repo: Path, wt: Path, assigned: Optional["set"] = None) -> list:
     """Copy the primary's gitignored `config/*.json` into a fresh worktree.
 
     `git worktree add` populates tracked files only, so a repo's own
@@ -982,13 +1000,18 @@ def copy_runtime_config(repo: Path, wt: Path) -> list:
     field still copy across untouched: the worktree must stay a faithful
     runtime twin, differing only where sharing (a live port, a real synced
     folder) is itself the bug.
+
+    `assigned` collects ports handed out in this call; pass in a set shared
+    with a sibling call (e.g. `copy_root_config` on the same worktree) so two
+    ported configs in different locations can't compute the same port
+    (fleet-config#714 review).
     """
     copied = []
     src_dir = repo / "config"
     if not src_dir.is_dir():
         return copied
     dst_dir = wt / "config"
-    assigned: set = set()
+    assigned = set() if assigned is None else assigned
     declared_keys = worktree_blank_config_keys(repo)
     for src in sorted(src_dir.glob("*.json")):
         if src.name.endswith(".sample.json"):
@@ -999,7 +1022,7 @@ def copy_runtime_config(repo: Path, wt: Path) -> list:
         dst_dir.mkdir(exist_ok=True)
         shutil.copy2(src, dst)
         copied.append(dst)
-        port = _repoint_config_port(dst, assigned)
+        port = _repoint_config_port(dst, wt, assigned)
         if port is not None:
             assigned.add(port)
             print(f"WORKTREE_PORT={port} ({src.name})", file=sys.stderr)
@@ -1035,6 +1058,64 @@ def copy_env_file(repo: Path, wt: Path) -> Optional[Path]:
     return dst
 
 
+def _git_check_ignore(repo: Path, names: list) -> "set":
+    """Names among `names` (repo-root-relative) that git considers ignored.
+
+    `git check-ignore` exits 1 when nothing matches -- not an error, so this
+    runs with `check=False` and trusts only stdout, one matched name per line.
+    """
+    if not names:
+        return set()
+    res = _git(repo, "check-ignore", "--", *names, check=False)
+    return {line.strip() for line in res.stdout.splitlines() if line.strip()}
+
+
+def copy_root_config(repo: Path, wt: Path, assigned: Optional["set"] = None) -> list:
+    """Copy the primary's gitignored root-level `*.json` into a fresh worktree.
+
+    Some repos keep their runtime config at the repo root instead of under
+    `config/` (`accounting-quarterly`'s `config.json`, `home-automation`'s
+    `devices.json`) -- `copy_runtime_config` doesn't reach those, so a
+    worktree for one of these repos was missing its config entirely
+    (fleet-config#714). Which root-level `*.json` files matter is asked of
+    git itself (`git check-ignore`) rather than hardcoded, so a repo that
+    adds a new one is covered with no code change here; a tracked
+    `*.sample.json` template is excluded up front as belt-and-braces, though
+    a tracked file is never gitignored in the first place. Same rules as
+    `copy_runtime_config`: an existing destination is left alone, a
+    top-level `port` is repointed via `_repoint_config_port`, and
+    machine-bound values are blanked via `blank_machine_bound_config`.
+    Returns the list of copied destination paths.
+
+    `assigned` collects ports handed out in this call; `setup_worktree`
+    passes the same set it gave `copy_runtime_config` so a `config/*.json`
+    file and a root-level file can't be repointed to the same port.
+    """
+    copied = []
+    candidates = sorted(p.name for p in repo.glob("*.json") if not p.name.endswith(".sample.json"))
+    ignored = _git_check_ignore(repo, candidates)
+    if not ignored:
+        return copied
+    assigned = set() if assigned is None else assigned
+    declared_keys = worktree_blank_config_keys(repo)
+    for name in sorted(ignored):
+        src = repo / name
+        dst = wt / name
+        if dst.exists():
+            continue
+        shutil.copy2(src, dst)
+        copied.append(dst)
+        port = _repoint_config_port(dst, wt, assigned)
+        if port is not None:
+            assigned.add(port)
+            print(f"WORKTREE_PORT={port} ({name})", file=sys.stderr)
+        blanked = blank_machine_bound_config(dst, declared_keys)
+        if blanked:
+            print(f"WORKTREE_CONFIG_BLANKED={len(blanked)}: "
+                  f"{', '.join(blanked)} ({name})", file=sys.stderr)
+    return copied
+
+
 def setup_worktree(repo: Path, issue: str, branch: str) -> Path:
     wt = worktree_path(repo, issue)
     if wt.exists():
@@ -1055,7 +1136,8 @@ def setup_worktree(repo: Path, issue: str, branch: str) -> Path:
         sys.exit(f"Could not create the worktree for '{branch}' at {wt}\n"
                  f"git worktree add exited {res.returncode}: "
                  f"{(res.stderr or res.stdout or '').strip()}")
-    copied = copy_runtime_config(repo, wt)
+    assigned_ports: set = set()
+    copied = copy_runtime_config(repo, wt, assigned_ports)
     if copied:
         print(f"CONFIG_COPIED={len(copied)}: "
               f"{', '.join(p.name for p in copied)}", file=sys.stderr)
@@ -1063,6 +1145,11 @@ def setup_worktree(repo: Path, issue: str, branch: str) -> Path:
     env_copied = copy_env_file(repo, wt)
     if env_copied:
         print("ENV_COPIED=1: .env", file=sys.stderr)
+
+    root_copied = copy_root_config(repo, wt, assigned_ports)
+    if root_copied:
+        print(f"ROOT_CONFIG_COPIED={len(root_copied)}: "
+              f"{', '.join(p.name for p in root_copied)}", file=sys.stderr)
 
     linked: list = []
     for rel in worktree_junction_targets(repo):
