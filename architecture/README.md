@@ -148,12 +148,14 @@ not the isolation primitive:
 
 ```toml
 [worktree]
-extra_junctions = ["vendor/comfyui"]
+extra_junctions   = ["vendor/comfyui"]
+blank_config_keys = ["mirror.dir", "mirror.backup_dir"]
 ```
 
 | Field | Meaning |
 |---|---|
 | `extra_junctions` | list of paths, relative to the repo root, to junction into a worktree alongside `.venv` |
+| `blank_config_keys` | dotted keys in a copied `config/*.json` that point at real, machine-bound state (a synced mirror/backup folder, another repo's database) — blanked to `""`/`[]` in the worktree's copy instead of carrying the primary's real path across (fleet-config#713) |
 
 `.venv` is always junctioned first and remains the *only* target when this
 table (or `.fleet.toml` itself) is absent — an undeclared repo behaves
@@ -161,6 +163,14 @@ exactly as before. A declared path that doesn't exist in the primary is
 skipped, never a setup failure. Same silent-if-unrecognized parsing as
 `[vendored]`/`[cert]` above — adding `[worktree]` costs nothing on the
 map-build path.
+
+A repo that declares no `blank_config_keys` (no `[worktree]` table, or the
+table without that key) gets a conservative built-in default instead of no
+protection at all: any string value in the copied config that looks
+machine-bound — an `{onedrive}`-style template placeholder, or an absolute
+Windows path — is blanked, list entries filtered the same way. An explicit
+empty list (`blank_config_keys = []`) opts a repo out of that default
+heuristic entirely.
 
 ### Local specs — kept out of git 🔒
 

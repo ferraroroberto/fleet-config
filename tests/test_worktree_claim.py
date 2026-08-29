@@ -795,6 +795,138 @@ finally:
     shutil.rmtree(port_base, ignore_errors=True)
 
 
+# ---- copy_runtime_config blanks machine-bound paths (#713) --------------------
+#
+# A copied config can point at a real, machine-bound sink outside the
+# worktree -- a synced mirror/backup folder, another repo's database -- and a
+# worktree instance that boots to hand the owner a "ready to validate" app
+# then reads and writes the owner's REAL data (task-os#80). The default
+# heuristic (no .fleet.toml declaration) must catch the exact task-os shape;
+# an explicit `blank_config_keys` declaration must be used verbatim instead,
+# including an empty list as an opt-out.
+
+blank_base = Path(tempfile.mkdtemp(prefix="wc-blank-"))
+try:
+    task_os_shape = {
+        "port": 8448,
+        "placeholders": {"onedrive": "E:/onedrive", "user": "rober"},
+        "mirror": {"dir": "{onedrive}/task-os/mirror", "backup_dir": "{onedrive}/task-os/backup"},
+        "search": {"folder_roots": ["{onedrive}/Documentos"],
+                   "email_db": "E:/automation/email-archiver/data/emails.db"},
+        "team": {"enabled": False, "people": ["Roberto Ferraro"]},
+        "auth": {"token": "s3cret"},
+    }
+
+    # -- default heuristic: no .fleet.toml at all --
+    no_toml = blank_base / "no-toml"
+    (no_toml / "config").mkdir(parents=True)
+    (no_toml / "config" / "config.json").write_text(_json.dumps(task_os_shape), encoding="utf-8")
+    wt = blank_base / ("no-toml" + wc.WT_SEP + "713")
+    wt.mkdir()
+    wc.copy_runtime_config(no_toml, wt)
+    got = _json.loads((wt / "config" / "config.json").read_text(encoding="utf-8"))
+    check(got["mirror"] == {"dir": "", "backup_dir": ""},
+          "copy_runtime_config: default heuristic blanks {onedrive}-templated mirror paths (#713)")
+    check(got["search"] == {"folder_roots": [], "email_db": ""},
+          "copy_runtime_config: default heuristic blanks a templated list AND a plain absolute path (#713)")
+    check(got["placeholders"]["onedrive"] == "",
+          "copy_runtime_config: default heuristic also blanks the raw absolute-path root it templates from (#713)")
+    check(got["team"] == {"enabled": False, "people": ["Roberto Ferraro"]} and got["auth"] == {"token": "s3cret"},
+          "copy_runtime_config: default heuristic leaves non-path fields (incl. secrets) untouched (#713)")
+
+    # -- declared blank_config_keys: exactly those dotted keys, nothing else --
+    declared = blank_base / "declared"
+    (declared / "config").mkdir(parents=True)
+    (declared / "config" / "config.json").write_text(_json.dumps(task_os_shape), encoding="utf-8")
+    (declared / ".fleet.toml").write_text(
+        '[worktree]\nblank_config_keys = ["mirror.dir", "mirror.backup_dir"]\n', encoding="utf-8")
+    wt_d = blank_base / ("declared" + wc.WT_SEP + "713")
+    wt_d.mkdir()
+    wc.copy_runtime_config(declared, wt_d)
+    got_d = _json.loads((wt_d / "config" / "config.json").read_text(encoding="utf-8"))
+    check(got_d["mirror"] == {"dir": "", "backup_dir": ""},
+          "copy_runtime_config: declared blank_config_keys blanks exactly what's declared (#713)")
+    check(got_d["search"]["email_db"] == "E:/automation/email-archiver/data/emails.db",
+          "copy_runtime_config: declared blank_config_keys leaves UNDECLARED machine-bound keys "
+          "untouched -- declaration takes over from the default heuristic entirely (#713)")
+
+    # -- empty list is a deliberate opt-out of the default heuristic --
+    opt_out = blank_base / "opt-out"
+    (opt_out / "config").mkdir(parents=True)
+    (opt_out / "config" / "config.json").write_text(_json.dumps(task_os_shape), encoding="utf-8")
+    (opt_out / ".fleet.toml").write_text('[worktree]\nblank_config_keys = []\n', encoding="utf-8")
+    wt_o = blank_base / ("opt-out" + wc.WT_SEP + "713")
+    wt_o.mkdir()
+    wc.copy_runtime_config(opt_out, wt_o)
+    got_o = _json.loads((wt_o / "config" / "config.json").read_text(encoding="utf-8"))
+    check(got_o["mirror"]["dir"] == "{onedrive}/task-os/mirror",
+          "copy_runtime_config: an explicit empty blank_config_keys opts out of the default heuristic (#713)")
+
+    # -- a declared-but-absent key must not break setup --
+    absent = blank_base / "absent-key"
+    (absent / "config").mkdir(parents=True)
+    (absent / "config" / "config.json").write_text('{"port": 1, "name": "x"}', encoding="utf-8")
+    (absent / ".fleet.toml").write_text(
+        '[worktree]\nblank_config_keys = ["mirror.dir", "no.such.path"]\n', encoding="utf-8")
+    wt_a = blank_base / ("absent-key" + wc.WT_SEP + "713")
+    wt_a.mkdir()
+    wc.copy_runtime_config(absent, wt_a)
+    got_a = _json.loads((wt_a / "config" / "config.json").read_text(encoding="utf-8"))
+    check(got_a["name"] == "x" and set(got_a.keys()) == {"port", "name"},
+          "copy_runtime_config: declared-but-absent blank_config_keys is a no-op, never a setup failure (#713)")
+
+    # -- worktree_blank_config_keys: same degrade-on-any-error contract as
+    #    worktree_junction_targets (no .fleet.toml / no [worktree] table / a
+    #    non-list value all fall back to None -> the default heuristic).
+    check(wc.worktree_blank_config_keys(no_toml) is None,
+          "worktree_blank_config_keys: no .fleet.toml -> None (#713)")
+
+    no_table = blank_base / "no-table"
+    no_table.mkdir()
+    (no_table / ".fleet.toml").write_text('layer = "enabling"\n', encoding="utf-8")
+    check(wc.worktree_blank_config_keys(no_table) is None,
+          "worktree_blank_config_keys: .fleet.toml without [worktree] -> None (#713)")
+
+    no_key = blank_base / "no-key"
+    no_key.mkdir()
+    (no_key / ".fleet.toml").write_text('[worktree]\nextra_junctions = ["vendor/x"]\n', encoding="utf-8")
+    check(wc.worktree_blank_config_keys(no_key) is None,
+          "worktree_blank_config_keys: [worktree] present without blank_config_keys -> None (#713)")
+
+    wrong_type = blank_base / "wrong-type"
+    wrong_type.mkdir()
+    (wrong_type / ".fleet.toml").write_text(
+        '[worktree]\nblank_config_keys = "mirror.dir"\n', encoding="utf-8")
+    check(wc.worktree_blank_config_keys(wrong_type) is None,
+          "worktree_blank_config_keys: blank_config_keys not a list -> None (#713)")
+
+    invalid_toml = blank_base / "invalid-toml"
+    invalid_toml.mkdir()
+    (invalid_toml / ".fleet.toml").write_text("not [ valid toml", encoding="utf-8")
+    check(wc.worktree_blank_config_keys(invalid_toml) is None,
+          "worktree_blank_config_keys: unparseable .fleet.toml -> None, no crash (#713)")
+
+    check(wc.worktree_blank_config_keys(declared) == ["mirror.dir", "mirror.backup_dir"],
+          "worktree_blank_config_keys: declared list is returned verbatim (#713)")
+    check(wc.worktree_blank_config_keys(opt_out) == [],
+          "worktree_blank_config_keys: an explicit empty list is returned as [], not None (#713)")
+
+    # -- a file that isn't a JSON object, or doesn't parse, must not break setup --
+    non_object = blank_base / "non-object"
+    (non_object / "config").mkdir(parents=True)
+    (non_object / "config" / "list.json").write_text("[1, 2, 3]", encoding="utf-8")
+    (non_object / "config" / "broken.json").write_text("{not json", encoding="utf-8")
+    wt_no = blank_base / ("non-object" + wc.WT_SEP + "713")
+    wt_no.mkdir()
+    wc.copy_runtime_config(non_object, wt_no)
+    check((wt_no / "config" / "list.json").read_text(encoding="utf-8") == "[1, 2, 3]",
+          "copy_runtime_config: a non-object JSON is never touched by the blanking pass (#713)")
+    check((wt_no / "config" / "broken.json").read_text(encoding="utf-8") == "{not json",
+          "copy_runtime_config: an unparseable config is never touched by the blanking pass (#713)")
+finally:
+    shutil.rmtree(blank_base, ignore_errors=True)
+
+
 # ---- copy_env_file: the primary's .env mirrors into a fresh worktree (#698) ----
 #
 # A repo whose startup path reads a secret/setting from .env (e.g.
