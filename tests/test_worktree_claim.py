@@ -1247,6 +1247,121 @@ def _git_t(cwd: Path, *args: str) -> subprocess.CompletedProcess:
     return res
 
 
+# ---- copy_root_config: gitignored root-level *.json mirrors into worktrees (#714) ----
+#
+# Some repos keep runtime config at the repo root instead of under config/
+# (accounting-quarterly's config.json, home-automation's devices.json) --
+# git worktree add populates tracked files only, so a fresh worktree crashed
+# on startup with no config at all until this closed the gap. A REAL git repo
+# is required here (unlike copy_runtime_config's plain-directory fixtures)
+# because "gitignored" is exactly what `git check-ignore` answers.
+
+root_base = Path(tempfile.mkdtemp(prefix="wc-root-"))
+_no_hooks = root_base / "nohooks"
+_no_hooks.mkdir()
+try:
+    primary = root_base / "myrepo"
+    primary.mkdir()
+    _git_t(primary, "init", "-b", "main")
+    (primary / ".gitignore").write_text(
+        "/config.json\n/classification_rules.json\n/broken.json\n/list.json\n", encoding="utf-8")
+    (primary / "package.json").write_text('{"name": "tracked-not-ignored"}', encoding="utf-8")
+    (primary / "config.sample.json").write_text("{}", encoding="utf-8")
+    _git_t(primary, "add", "-A")
+    _git_t(primary, "commit", "-m", "init")
+
+    (primary / "config.json").write_text(
+        _json.dumps({"port": 8447, "auth_token": "s3cret"}), encoding="utf-8")
+    (primary / "classification_rules.json").write_text(
+        _json.dumps({"rules": ["a", "b"]}), encoding="utf-8")
+    (primary / "list.json").write_text("[1, 2, 3]", encoding="utf-8")
+    (primary / "broken.json").write_text("{not json", encoding="utf-8")
+
+    wt = root_base / ("myrepo" + wc.WT_SEP + "714")
+    wt.mkdir()
+    copied = wc.copy_root_config(primary, wt)
+    names = sorted(p.name for p in copied)
+
+    check(names == ["broken.json", "classification_rules.json", "config.json", "list.json"],
+          f"copy_root_config: copies exactly the gitignored root JSONs, nothing tracked (got {names!r}) (#714)")
+    check("package.json" not in names,
+          "copy_root_config: a tracked, non-gitignored root *.json is never copied (#714)")
+    check("config.sample.json" not in names,
+          "copy_root_config: *.sample.json excluded even though it's on disk at the root (#714)")
+
+    got = _json.loads((wt / "config.json").read_text(encoding="utf-8"))
+    check(got["port"] != 8447 and wc.WT_PORT_BASE <= got["port"] < wc.WT_PORT_BASE + wc.WT_PORT_SPAN,
+          "copy_root_config: a top-level port is repointed into the 8500-8999 band, same as config/*.json (#714)")
+    check(got["auth_token"] == "s3cret",
+          "copy_root_config: every other field, secrets included, copies verbatim (#714)")
+
+    got_rules = _json.loads((wt / "classification_rules.json").read_text(encoding="utf-8"))
+    check(got_rules == {"rules": ["a", "b"]},
+          "copy_root_config: a file with no top-level port copies untouched (#714)")
+
+    check((wt / "list.json").read_text(encoding="utf-8") == "[1, 2, 3]",
+          "copy_root_config: a non-object JSON copies verbatim, never breaks setup (#714)")
+    check((wt / "broken.json").read_text(encoding="utf-8") == "{not json",
+          "copy_root_config: an unparseable file copies verbatim, never breaks setup (#714)")
+
+    src_now = _json.loads((primary / "config.json").read_text(encoding="utf-8"))
+    check(src_now["port"] == 8447, "copy_root_config: the PRIMARY's own port is never rewritten (#714)")
+
+    # Deterministic: same repo + same issue -> same port when it is still free.
+    (wt / "config.json").unlink()
+    wc.copy_root_config(primary, wt)
+    again = _json.loads((wt / "config.json").read_text(encoding="utf-8"))
+    check(again["port"] == got["port"],
+          "copy_root_config: same lane re-setup reproduces the same port (#714)")
+
+    # An already-present destination is left alone, same as copy_runtime_config.
+    wt2 = root_base / ("myrepo" + wc.WT_SEP + "715")
+    wt2.mkdir()
+    (wt2 / "config.json").write_text('{"port": 1}', encoding="utf-8")
+    wc.copy_root_config(primary, wt2)
+    check(_json.loads((wt2 / "config.json").read_text(encoding="utf-8"))["port"] == 1,
+          "copy_root_config: an existing destination file is not overwritten or repointed (#714)")
+
+    # A shared `assigned` set (what setup_worktree passes both calls) keeps a
+    # config/*.json port and a root-level port DISTINCT even with the same
+    # issue seed -- each call computing its own independent set could collide.
+    portrepo = root_base / "portrepo"
+    (portrepo / "config").mkdir(parents=True)
+    _git_t(portrepo, "init", "-b", "main")
+    (portrepo / "config" / "app.json").write_text(
+        _json.dumps({"port": 8447}), encoding="utf-8")
+    (portrepo / ".gitignore").write_text("/config.json\n", encoding="utf-8")
+    (portrepo / "README.md").write_text("hi", encoding="utf-8")
+    _git_t(portrepo, "add", "-A")
+    _git_t(portrepo, "commit", "-m", "init")
+    (portrepo / "config.json").write_text(_json.dumps({"port": 8447}), encoding="utf-8")
+
+    wt_shared = root_base / ("portrepo" + wc.WT_SEP + "900")
+    wt_shared.mkdir()
+    shared_assigned: set = set()
+    wc.copy_runtime_config(portrepo, wt_shared, shared_assigned)
+    wc.copy_root_config(portrepo, wt_shared, shared_assigned)
+    port_a = _json.loads((wt_shared / "config" / "app.json").read_text(encoding="utf-8"))["port"]
+    port_b = _json.loads((wt_shared / "config.json").read_text(encoding="utf-8"))["port"]
+    check(port_a != port_b,
+          "copy_root_config + copy_runtime_config: a shared assigned-ports set keeps a "
+          "config/*.json port and a root-level port distinct, even with the same issue seed (#714)")
+
+    # A repo with no gitignored root-level JSON at all: no-op, never a setup failure.
+    plain = root_base / "plainrepo"
+    plain.mkdir()
+    _git_t(plain, "init", "-b", "main")
+    (plain / "README.md").write_text("hi", encoding="utf-8")
+    _git_t(plain, "add", "-A")
+    _git_t(plain, "commit", "-m", "init")
+    wt3 = root_base / ("plainrepo" + wc.WT_SEP + "1")
+    wt3.mkdir()
+    check(wc.copy_root_config(plain, wt3) == [],
+          "copy_root_config: a repo with no gitignored root JSON -> no-op (#714)")
+finally:
+    shutil.rmtree(root_base, ignore_errors=True)
+
+
 land_base = Path(tempfile.mkdtemp(prefix="wc-land-"))
 _no_hooks = land_base / "nohooks"
 _no_hooks.mkdir()
