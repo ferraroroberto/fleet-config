@@ -357,6 +357,28 @@ def _session_state_unit_checks() -> Tuple[int, int]:
         check("notify_on_idle: idle_prompt with no prior row -> exit 0, no row created",
               code == 0 and "sid-5" not in rows())
 
+        # fleet-config#718: agent_needs_input/agent_completed fire per Task/Agent
+        # sub-agent spawn, not for the parent session -- they must not overwrite
+        # a live "working" row with "needs-you" mid-turn, same as idle_prompt above.
+        session_state.upsert("sid-6", status="working", project="p6",
+                             transcript_path=None, cwd_path=str(tmp))
+        sub_agent_payload = {"session_id": "sid-6", "transcript_path": str(tmp / "t6.jsonl"),
+                             "cwd": str(tmp), "notification_type": "agent_needs_input",
+                             "message": "sub-agent needs input"}
+        code, _out, _err = run("notify_on_idle", sub_agent_payload, extra_env=env)
+        check("notify_on_idle: agent_needs_input -> exit 0, 'working' row NOT overwritten to 'needs-you'",
+              code == 0 and (rows().get("sid-6") or {}).get("status") == "working")
+
+        session_state.upsert("sid-7", status="working", project="p7",
+                             transcript_path=None, cwd_path=str(tmp))
+        code, _out, _err = run(
+            "notify_on_idle",
+            {**sub_agent_payload, "session_id": "sid-7", "notification_type": "agent_completed"},
+            extra_env=env,
+        )
+        check("notify_on_idle: agent_completed -> exit 0, 'working' row NOT overwritten to 'needs-you'",
+              code == 0 and (rows().get("sid-7") or {}).get("status") == "working")
+
         # ---- SessionEnd (#241): deletes the row instead of leaving it to the 24h prune ----
         code, _out, _err = run(
             "session_state",
