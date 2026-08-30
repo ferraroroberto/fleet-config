@@ -282,9 +282,14 @@ def main() -> None:
     # idle_prompt fires ~60s later while nothing has changed. Writing "idle"
     # here silently downgraded that needs-you row until the user replied or a
     # fresh permission_prompt fired, dropping a genuinely-waiting session off
-    # the Board's "Your turn" column (fleet-config#354). So it's a no-op here,
-    # same as the Slack-ping side already treats it (_NOOP_TYPES below).
-    if payload.get("notification_type") != "idle_prompt":
+    # the Board's "Your turn" column (fleet-config#354). agent_needs_input and
+    # agent_completed are the same shape of non-event, but for the *parent*
+    # row: they fire per Task/Agent sub-agent spawn, not for the parent
+    # session's own state, so persisting "needs-you" here stamped a mid-turn
+    # parent row as blocked on evidence that says nothing about the parent
+    # (fleet-config#718). All three are no-ops here, same as the Slack-ping
+    # side already treats them (_NOOP_TYPES below).
+    if payload.get("notification_type") not in _NOOP_TYPES:
         try:
             import session_state
             session_state.upsert_from_payload(payload, "needs-you")
