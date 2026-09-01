@@ -51,10 +51,30 @@ complete plain-file tree in Explorer while 14 dailies cost about one copy plus
 deltas. Plain files are deliberate: the #590 restore has to need zero tooling,
 because the incident restore was done by hand from plain sources.
 
-Two legs run each night, in opposite directions, so each volume holds the other's
-crown jewels: repo residue E: -> C:, and Claude Code's session transcripts
-(`~/.claude/projects/`, the actual recovery goldmine, and prunable by Claude Code
-itself) C: -> E:.
+Three legs run each night, and every one of them crosses volumes, so each drive
+holds the other's crown jewels: repo residue E: -> C:; Claude Code's session
+transcripts (`~/.claude/projects/`, the actual recovery goldmine, and prunable by
+Claude Code itself) C: -> E:; and the relocated runtime-data root C: -> E:.
+
+The third leg exists because `project-scaffolding#243` moved every always-on
+service's SQLite database *out* of its repo's working tree, to `C:/sqlite/<app>/`
+(the SSD, so seven services fsync-ing at a poll interval stop hammering the
+spinning E: drive). Selection here is git-derived, and that root is outside every
+git working tree — so the relocation makes those databases invisible to layer 1
+entirely: not dropped-and-reported, just absent (fleet-config#724). Two things
+about this leg are deliberate and must not be "tidied":
+
+- **No `max_file_mb` cap.** The transcripts leg drops oversize files; here that
+  would silently drop exactly the databases the leg exists for
+  (home-automation's `telemetry.sqlite3` is already 18 MB against a 10 MB cap).
+  That silent drop is the defect fleet-config#722 just fixed on the repos leg.
+- **Databases are snapshotted, not copied.** These are live WAL-mode files under
+  continuous write. Copying the `.sqlite3` alone yields a stale-to-last-checkpoint
+  image at best; copying it together with `-wal`/`-shm` non-atomically can yield a
+  corrupt one. `snapshot_sqlite` uses SQLite's online backup API into a temp
+  staging tree, which the generic engine below then treats as ordinary files, and
+  the `-wal`/`-shm` sidecars are skipped because that snapshot already contains
+  their committed contents.
 
 Honesty rules
 -------------
@@ -82,6 +102,7 @@ guard walks straight into every worktree's `.venv`).
 from __future__ import annotations
 
 import argparse
+import contextlib
 import fnmatch
 import hashlib
 import json
@@ -89,8 +110,10 @@ import logging
 import os
 import random
 import shutil
+import sqlite3
 import stat
 import sys
+import tempfile
 import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -140,6 +163,25 @@ RUN_MARKER_NAME = ".run-in-progress"
 LATEST_DIR = "latest"
 DATE_FMT = "%Y-%m-%d"
 
+# The relocated-runtime-data leg (fleet-config#724). Its name is load-bearing in
+# three places — the manifest's `leg`, `policy_summary`'s cap exemption, and the
+# restore note's per-leg blurb — so it is a constant, not a repeated literal.
+RUNTIME_DATA_LEG = "runtime-data"
+RUNTIME_DATA_GROUP = "sqlite"
+
+#: Extensions treated as a SQLite database: snapshotted through the online
+#: backup API rather than copied byte-for-byte.
+DB_SUFFIXES: Tuple[str, ...] = (".sqlite3", ".sqlite", ".db")
+#: A database's companion files. Excluded from selection because the online
+#: backup already folds their committed contents into the snapshot — and
+#: because copying them out of step with the main file is what *creates* a
+#: corrupt restore.
+DB_SIDECAR_MARKERS: Tuple[str, ...] = ("-wal", "-shm", "-journal")
+#: How long a snapshot waits on a writer's lock before giving up and reporting
+#: the database as a failure. Long enough for an ordinary transaction, short
+#: enough that one wedged service cannot stall the nightly run.
+DB_LOCK_TIMEOUT_SECONDS = 30.0
+
 # Defaults for every `[backup]` key. projects.toml overrides any of them; these
 # exist so a fresh clone (or a test's throwaway TOML) is runnable with no config.
 DEFAULT_DENY_DIRS: Tuple[str, ...] = (
@@ -175,6 +217,11 @@ class BackupConfig:
     dest: Path
     transcripts_src: Path
     transcripts_dest: Path
+    # The relocated runtime-data root (project-scaffolding#243) and its
+    # destination. `runtime_data_dest` has to live on E: — the legs cross
+    # volumes on purpose, and `_preflight` refuses a same-volume snapshot.
+    runtime_data_src: Path
+    runtime_data_dest: Path
     keep_daily: int = 14
     keep_weekly: int = 8
     max_file_bytes: int = 10 * 1024 * 1024
@@ -187,14 +234,17 @@ class BackupConfig:
     def _deny_dirs_lower(self) -> frozenset:
         return frozenset(name.lower() for name in self.deny_dirs)
 
-    def policy_summary(self) -> Dict[str, Any]:
+    def policy_summary(self, leg: str = "repos") -> Dict[str, Any]:
         """The selection policy, recorded in every manifest.
 
         A snapshot that is smaller than yesterday's should be explainable by
         looking at the two manifests, without a git archaeology session over
-        this file.
+        this file. Which is why the runtime-data leg reports its size cap as
+        `null` plus a reason rather than echoing a number it does not apply:
+        a manifest that claims a 10 MB cap over an 18 MB database it did in
+        fact keep is a manifest nobody can reason from.
         """
-        return {
+        summary: Dict[str, Any] = {
             "max_file_mb": round(self.max_file_bytes / 1024 / 1024, 3),
             "bulk_dir_mb": round(self.bulk_dir_bytes / 1024 / 1024, 3),
             "keep_daily": self.keep_daily,
@@ -202,6 +252,13 @@ class BackupConfig:
             "deny_dirs": list(self.deny_dirs),
             "deny_globs": list(self.deny_globs),
         }
+        if leg == RUNTIME_DATA_LEG:
+            summary["max_file_mb"] = None
+            summary["size_cap_exempt"] = (
+                "runtime-data: the databases ARE the payload, so the global "
+                "max_file_mb cap is deliberately not applied (fleet-config#724)"
+            )
+        return summary
 
 
 @dataclass(frozen=True)
@@ -252,6 +309,8 @@ def load_backup_config(path: Optional[Path] = None) -> BackupConfig:
         dest=_path("dest", "C:/Users/rober/backup/fleet-private"),
         transcripts_src=_path("transcripts_src", "~/.claude/projects"),
         transcripts_dest=_path("transcripts_dest", "E:/backup/claude-transcripts"),
+        runtime_data_src=_path("runtime_data_src", "C:/sqlite"),
+        runtime_data_dest=_path("runtime_data_dest", "E:/backup/fleet-runtime-data"),
         keep_daily=int(table.get("keep_daily", 14)),
         keep_weekly=int(table.get("keep_weekly", 8)),
         max_file_bytes=_mb("max_file_mb", 10 * 1024 * 1024),
@@ -613,6 +672,144 @@ def select_transcripts(cfg: BackupConfig) -> Selection:
     return sel
 
 
+# ---------------------------------------------------------------------------
+# The runtime-data leg (fleet-config#724)
+# ---------------------------------------------------------------------------
+def is_sqlite_sidecar(rel: str) -> bool:
+    """True for the `-wal` / `-shm` / `-journal` companion of a database file.
+
+    Matched against a *database* stem only — `notes-wal` is a file called
+    `notes-wal`, while `tasks.sqlite3-wal` is SQLite's write-ahead log. A blanket
+    `*-wal` rule would quietly drop the former, and this leg's whole premise is
+    that nothing under the root goes missing without saying so.
+    """
+    name = rel.rstrip("/").rsplit("/", 1)[-1].lower()
+    for marker in DB_SIDECAR_MARKERS:
+        if not name.endswith(marker):
+            continue
+        if any(name[: -len(marker)].endswith(suffix) for suffix in DB_SUFFIXES):
+            return True
+    return False
+
+
+def snapshot_sqlite(src: Path, dst: Path,
+                    timeout: float = DB_LOCK_TIMEOUT_SECONDS) -> str:
+    """Write a *consistent* copy of the live database `src` to `dst`.
+
+    SQLite's online backup API, never a byte copy. These databases are written
+    continuously by running services in WAL mode: copying the `.sqlite3` alone
+    yields at best an image stale to the last checkpoint, and copying it
+    alongside its `-wal`/`-shm` non-atomically can yield one that will not open
+    at all. `Connection.backup` reads through the same locking layer the writers
+    use, so what lands is a complete, openable database with no sidecar needed.
+
+    Two connect attempts, deliberately. `mode=ro` is correct and is tried first,
+    but SQLite needs to *write* the `-shm` to read a WAL database whose shared
+    memory is not already mapped by a live process — so a service that is merely
+    stopped, with a `-wal` left on disk, refuses a read-only open. Falling back
+    to a normal read-write open lets SQLite recover that `-shm`; the backup
+    itself still only reads the source. Returns which mode succeeded, so the
+    fallback is reported rather than silent.
+
+    Raises `OSError` when neither attempt works — locked, corrupt, or not a
+    database — leaving no half-written file at `dst`. The caller records that as
+    its own failure state; a database that could not be snapshotted must never
+    look like one that simply was not there.
+    """
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    base = src.resolve().as_uri()
+    last: Optional[BaseException] = None
+    for uri, mode in ((f"{base}?mode=ro", "read-only"), (base, "read-write")):
+        with contextlib.suppress(OSError):
+            dst.unlink()
+        try:
+            source = sqlite3.connect(uri, uri=True, timeout=timeout)
+        except sqlite3.Error as exc:
+            last = exc
+            continue
+        try:
+            target = sqlite3.connect(str(dst), timeout=timeout)
+            try:
+                source.backup(target)
+            finally:
+                target.close()
+            return mode
+        except sqlite3.Error as exc:
+            last = exc
+        finally:
+            source.close()
+    with contextlib.suppress(OSError):
+        dst.unlink()
+    raise OSError(f"sqlite backup failed: {last}")
+
+
+@contextlib.contextmanager
+def runtime_data_staging() -> Iterator[Path]:
+    """A temp tree holding this run's database snapshots, removed on every path.
+
+    The snapshots have to exist as ordinary files before the generic engine can
+    hash, hardlink and verify them, so they are staged rather than streamed —
+    but they are a working artifact, not output, and a failed run must not leave
+    a second copy of every fleet database on the SSD.
+    """
+    staging = Path(tempfile.mkdtemp(prefix="fleet-backup-sqlite-"))
+    try:
+        yield staging
+    finally:
+        shutil.rmtree(staging, ignore_errors=True)
+
+
+def select_runtime_data(cfg: BackupConfig, staging: Path) -> Selection:
+    """The runtime-data leg: `C:/sqlite`, with every database snapshotted.
+
+    Modelled on `select_transcripts` — no bulk-directory guard, because this
+    tree *is* the payload — with one deliberate divergence:
+
+    **The `max_file_mb` cap is NOT applied here. Do not add it.** The transcripts
+    leg drops an oversize file and reports it; on this leg that would silently
+    drop exactly what the leg exists for — home-automation's `telemetry.sqlite3`
+    is already 18 MB against a 10 MB cap, and a service database only ever grows.
+    Losing it to a size threshold is the same defect fleet-config#722 fixed on
+    the repos leg, and re-introducing it here would just move that bug.
+
+    A database that cannot be snapshotted lands in `errors`, which makes its
+    group `failed`, prints in the run report, and exits the process non-zero —
+    never a quiet omission folded into a passing run.
+    """
+    sel = Selection()
+    root = cfg.runtime_data_src
+    if not root.is_dir():
+        # Not an error: the fleet migration to <root>/<app>/<file> is in flight,
+        # so the root may legitimately not exist yet. `run()` skips the leg
+        # rather than writing an empty snapshot over a good one.
+        return sel
+
+    for abs_path, rel, size in walk_files(root, "", cfg, sel.errors, sel.vanished):
+        if is_sqlite_sidecar(rel):
+            continue
+        if abs_path.suffix.lower() not in DB_SUFFIXES:
+            # An ordinary file beside the databases (a config, a key, a README):
+            # copied straight from source by the generic engine, uncapped.
+            sel.files.append((abs_path, rel, size))
+            continue
+        staged = staging / rel
+        try:
+            mode = snapshot_sqlite(abs_path, staged)
+            staged_size = staged.stat().st_size
+        except (OSError, sqlite3.Error) as exc:
+            sel.errors.append(f"sqlite-snapshot {rel}: {exc}")
+            continue
+        if mode != "read-only":
+            logger.info(
+                "   ℹ️ %s: read-only snapshot refused (a WAL database with no live "
+                "reader); reopened read-write to recover its -shm", rel,
+            )
+        sel.files.append((staged, rel, staged_size))
+
+    sel.files = _dedupe_by_rel(sel.files)
+    return sel
+
+
 def iter_repos(source_root: Path) -> Iterator[Path]:
     """Every real git repo directly under `source_root`, in name order.
 
@@ -848,10 +1045,7 @@ Written by hooks/backup_private.py in E:/automation/fleet-config
 (fleet-config#590), daily at 03:00 via an app-launcher Job.
 
 WHAT THIS IS
-  A copy of the files git deliberately ignores in {source} — the ones
-  that exist on this machine and nowhere else. Anything git tracks is
-  already safe on GitHub and is NOT here.
-
+{what}
 HOW TO RESTORE
   Copy the files back. There is nothing to install, unpack or decrypt —
   every folder below is an ordinary tree you can browse in Explorer.
@@ -876,6 +1070,26 @@ WHAT WAS LEFT OUT, AND WHY
 """
 
 
+_WHAT_IGNORED = """\
+  A copy of the files git deliberately ignores in {source} — the ones
+  that exist on this machine and nowhere else. Anything git tracks is
+  already safe on GitHub and is NOT here.
+"""
+
+_WHAT_RUNTIME_DATA = """\
+  The live SQLite databases of the always-on fleet services, which sit
+  in {source} rather than inside their repos (project-scaffolding#243)
+  and are therefore invisible to the git-derived backup of everything
+  else.
+
+  Each .sqlite3 here was taken with SQLite's online backup API while the
+  service was still writing to it, so every file below is a COMPLETE,
+  OPENABLE database — not a torn byte copy. There are deliberately no
+  -wal / -shm files: the snapshot already contains their contents, and
+  you do not need them to open one of these.
+"""
+
+
 def write_restore_note(dest_root: Path, leg: str, source: Path) -> None:
     """Drop a plain-text restore note at the destination root.
 
@@ -884,9 +1098,14 @@ def write_restore_note(dest_root: Path, leg: str, source: Path) -> None:
     README that does explain it lives on the volume this exists to survive the
     loss of. So the instructions ship next to the data.
     """
+    what = _WHAT_IGNORED
     if leg == "transcripts":
         example_src = str(dest_root / LATEST_DIR / "projects" / "*")
         example_dst = str(source)
+    elif leg == RUNTIME_DATA_LEG:
+        what = _WHAT_RUNTIME_DATA
+        example_src = str(dest_root / LATEST_DIR / RUNTIME_DATA_GROUP / "home-automation" / "*")
+        example_dst = str(source / "home-automation")
     else:
         example_src = str(dest_root / LATEST_DIR / "life-os" / "*")
         example_dst = str(source / "life-os")
@@ -894,6 +1113,7 @@ def write_restore_note(dest_root: Path, leg: str, source: Path) -> None:
         (dest_root / RESTORE_NOTE_NAME).write_text(
             _RESTORE_NOTE.format(
                 leg=leg, source=source, example_src=example_src, example_dst=example_dst,
+                what=what.format(source=source),
                 stamp=datetime.now().strftime("%Y-%m-%d %H:%M"),
             ),
             encoding="utf-8",
@@ -1047,7 +1267,7 @@ def run_leg(leg: str, groups: Dict[str, Selection], source: Path, dest_root: Pat
         "finished_at": None,
         "source": str(source),
         "dest": str(dest_root),
-        "policy": cfg.policy_summary(),
+        "policy": cfg.policy_summary(leg),
         "groups": {},
         "totals": {},
         "verification": {},
@@ -1255,29 +1475,55 @@ def run(cfg: BackupConfig, *, dry_run: bool = False, only: Optional[str] = None,
     if skipped:
         logger.info("ℹ️ opted out via projects.toml: %s", ", ".join(skipped))
 
-    legs = [("repos", repo_groups, cfg.source_root, cfg.dest)]
-    if not only:
-        legs.append(("transcripts", {"projects": select_transcripts(cfg)},
-                     cfg.transcripts_src, cfg.transcripts_dest))
+    # The runtime-data leg's database snapshots live in a temp tree that has to
+    # outlive selection and survive until `run_leg` has copied out of it — hence
+    # an ExitStack around the whole loop rather than a `with` per leg. It is
+    # removed on every path out of here, including an exception.
+    with contextlib.ExitStack() as stack:
+        legs = [("repos", repo_groups, cfg.source_root, cfg.dest)]
+        if not only:
+            legs.append(("transcripts", {"projects": select_transcripts(cfg)},
+                         cfg.transcripts_src, cfg.transcripts_dest))
+            if cfg.runtime_data_src.is_dir():
+                # `--dry-run` still takes the snapshots (into the temp staging
+                # tree it then throws away): "which databases can actually be
+                # snapshotted right now" is the one question a dry run of this
+                # leg exists to answer, and a report that assumed the answer
+                # would be worth nothing.
+                staging = stack.enter_context(runtime_data_staging())
+                legs.append((RUNTIME_DATA_LEG,
+                             {RUNTIME_DATA_GROUP: select_runtime_data(cfg, staging)},
+                             cfg.runtime_data_src, cfg.runtime_data_dest))
+            else:
+                # A skip, not a failure: the fleet's move to this root
+                # (project-scaffolding#243) is still in flight, so an absent
+                # directory means "nothing has migrated yet", not "the backup
+                # broke". Said out loud, because a leg that quietly does nothing
+                # is indistinguishable from one that quietly stopped working.
+                logger.info(
+                    "ℹ️ %s leg skipped: %s does not exist yet — no runtime data "
+                    "has been relocated here (project-scaffolding#243)",
+                    RUNTIME_DATA_LEG, cfg.runtime_data_src,
+                )
 
-    for leg, groups, source, dest_root in legs:
-        if not dry_run:
-            problem = _preflight(source, dest_root)
-            if problem:
-                logger.error("❌ %s leg: %s", leg, problem)
-                codes.append(EXIT_DEST_UNUSABLE)
+        for leg, groups, source, dest_root in legs:
+            if not dry_run:
+                problem = _preflight(source, dest_root)
+                if problem:
+                    logger.error("❌ %s leg: %s", leg, problem)
+                    codes.append(EXIT_DEST_UNUSABLE)
+                    continue
+            manifest = run_leg(leg, groups, source, dest_root, cfg, today, dry_run)
+            manifests.append(manifest)
+            report(manifest)
+            if dry_run:
                 continue
-        manifest = run_leg(leg, groups, source, dest_root, cfg, today, dry_run)
-        manifests.append(manifest)
-        report(manifest)
-        if dry_run:
-            continue
-        if manifest["verification"]["status"] == "fail":
-            codes.append(EXIT_VERIFY_FAILED)
-        if manifest.get("regressions"):
-            codes.append(EXIT_ZERO_FILES_REGRESSION)
-        if any(payload["status"] == "failed" for payload in manifest["groups"].values()):
-            codes.append(EXIT_REPO_FAILURE)
+            if manifest["verification"]["status"] == "fail":
+                codes.append(EXIT_VERIFY_FAILED)
+            if manifest.get("regressions"):
+                codes.append(EXIT_ZERO_FILES_REGRESSION)
+            if any(payload["status"] == "failed" for payload in manifest["groups"].values()):
+                codes.append(EXIT_REPO_FAILURE)
 
     exit_code = _worst(codes)
     if notify and not dry_run:
@@ -1314,7 +1560,19 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     if args.check_freshness:
         worst = FRESHNESS_OK
         details = {}
-        for leg, dest_root in (("repos", cfg.dest), ("transcripts", cfg.transcripts_dest)):
+        legs = [("repos", cfg.dest), ("transcripts", cfg.transcripts_dest)]
+        if cfg.runtime_data_src.is_dir():
+            legs.append((RUNTIME_DATA_LEG, cfg.runtime_data_dest))
+        else:
+            # The leg does not run while its source root is absent, so it has no
+            # snapshot to be fresh or stale about. Reported as its own state
+            # rather than as `unknown` — "this leg is not active yet" is a fact
+            # we established, not one we failed to.
+            details[RUNTIME_DATA_LEG] = {
+                "state": "not-yet-active",
+                "reason": f"{cfg.runtime_data_src} does not exist",
+            }
+        for leg, dest_root in legs:
             state, detail = freshness(dest_root, cfg)
             details[leg] = {"state": state, **detail}
             if _FRESHNESS_EXIT[state] > _FRESHNESS_EXIT[worst]:

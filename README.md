@@ -31,7 +31,9 @@ work in this repo doesn't cost the whole catalogue:
   creates, the other surfaces this repo ships (`tray/`, `stream-deck/`), and
   the migration recipes for an agent home that already holds real files.
 - **[`docs/fleet-private-backup.md`](docs/fleet-private-backup.md)** — the
-  daily backup of everything git ignores, including the restore procedure.
+  daily backup of everything git ignores, plus the relocated runtime-data
+  root (`C:/sqlite`) that git-derived selection cannot see, including the
+  restore procedure.
 - **[`docs/architecture.mmd`](docs/architecture.mmd)** — this repo's own
   internal structure diagram, hand-authored and under a same-PR anti-staleness
   contract.
