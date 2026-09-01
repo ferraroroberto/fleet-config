@@ -81,6 +81,13 @@ cwd_prefix          = "E:/automation/home-automation"
 # the bulk-dir guard's threshold, so the notes are backed up instead of the whole
 # directory being excluded for the VM images' sake (fleet-config#590).
 backup_exclude      = ["_local/vm/**", "_local/nut/**"]
+# telemetry.sqlite3 (18 MB) is alarm_scene_automation.py's/security_override_
+# automation.py's event history — security-relevant, not disposable, so it's
+# worth exempting from the global max_file_mb cap. webapp.log/watchdog.log
+# carry the same automation activity, so they're exempted from the global
+# *.log deny-glob too (fleet-config#722).
+backup_always_include = ["webapp/telemetry.sqlite3"]
+backup_include_globs  = ["webapp.log", "watchdog.log"]
 webapp_port         = 8447
 tray_cmd            = "tray.bat"
 restart_cmd         = '& .\.venv\Scripts\python.exe -c "from app.webapp.manager import WebappManager; WebappManager().start(wait=True)"'

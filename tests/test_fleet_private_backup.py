@@ -91,6 +91,17 @@ try:
     check(not bp._denied("venv-notes.md", cfg),
           "deny: a name merely containing a denied word is not denied")
 
+    # ---- per-repo include_globs exempts an otherwise-denied basename -------
+    exempt = bp.RepoOverrides(include_globs=("webapp.log", "watchdog.log"))
+    check(not bp._denied("webapp/webapp.log", cfg, exempt),
+          "deny: include_globs exempts a *.log basename anywhere in the tree")
+    check(not bp._denied("logs/watchdog.log", cfg, exempt),
+          "deny: include_globs also bypasses a denied *directory* (logs/)")
+    check(bp._denied("webapp/other.log", cfg, exempt),
+          "deny: include_globs is a specific-basename allowlist, not a blanket *.log pass")
+    check(bp._denied("webapp/webapp.log", cfg),
+          "deny: with no overrides passed, the glob still denies as before")
+
     # ---- Slack summary stays ASCII and never trails off --------------------
     summary = bp._slack_summary([{"leg": "repos", "totals": {
         "files": 6047, "bytes": 192 * 1024 * 1024, "bulk_excluded_dirs": 13}}], bp.EXIT_OK)
@@ -160,6 +171,26 @@ try:
     check(len(kept3) == 1 and not excluded3,
           "bulk: files at the repo root are never subject to the guard")
 
+    # fleet-config#722: a forced-include file must not (a) get dropped along with
+    # its bulk-excluded sibling directory, nor (b) count toward pushing that
+    # directory's total over the threshold in the first place.
+    forced_items = [
+        (tmp / "d", "webapp/small.txt", 100),               # 100 B, well under 2 KB cap
+        (tmp / "e", "webapp/telemetry.sqlite3", 4096),        # forced; over the 2 KB bulk cap alone
+    ]
+    kept4, excluded4 = bp._apply_bulk_guard(
+        forced_items, cfg, bp.RepoOverrides(always_include=("webapp/telemetry.sqlite3",)))
+    kept4_rels = {rel for _, rel, _ in kept4}
+    check(kept4_rels == {"webapp/small.txt", "webapp/telemetry.sqlite3"},
+          f"bulk: always_include survives even though its dir would otherwise be dropped, got {sorted(kept4_rels)}")
+    check(not excluded4,
+          "bulk: the forced file's bytes don't count toward its sibling dir's bulk total")
+
+    kept4_plain, excluded4_plain = bp._apply_bulk_guard(forced_items, cfg, bp.RepoOverrides())
+    check(not kept4_plain and excluded4_plain,
+          "bulk: without the override, the same two files together do trip the guard "
+          "(proves the exemption above is doing real work, not a no-op)")
+
     # ---- selection over a real git repo -----------------------------------
     fleet = tmp / "fleet"
     repo = fleet / "demo-repo"
@@ -210,6 +241,19 @@ try:
 
     opted_out = bp.select_repo(repo, cfg, bp.RepoOverrides(exclude=("**",)))
     check(not opted_out.files, "select: a catch-all exclude selects nothing")
+
+    # ---- fleet-config#722: per-repo glob/size exemptions --------------------
+    log_exempt = bp.select_repo(repo, cfg, bp.RepoOverrides(include_globs=("app.log",)))
+    log_exempt_rels = {rel for _, rel, _ in log_exempt.files}
+    check("app.log" in log_exempt_rels,
+          "select: backup_include_globs rescues a specific *.log basename")
+
+    size_exempt = bp.select_repo(repo, cfg, bp.RepoOverrides(always_include=("big.dat",)))
+    size_exempt_rels = {rel for _, rel, _ in size_exempt.files}
+    check("big.dat" in size_exempt_rels,
+          "select: backup_always_include rescues a specific over-cap file")
+    check(not any(o["path"] == "big.dat" for o in size_exempt.oversize),
+          "select: an always_include file is not double-reported as oversize")
 
     # ---- overlapping git entries are deduped ------------------------------
     # `git ls-files --directory` emits a partially-ignored directory's files AND a
@@ -462,6 +506,8 @@ try:
         "[demo-repo]\n"
         f'cwd_prefix = "{repo.as_posix()}"\n'
         'backup_exclude = ["_local/vm/**"]\n'
+        'backup_include_globs = ["webapp.log", "watchdog.log"]\n'
+        'backup_always_include = ["webapp/telemetry.sqlite3"]\n'
         "\n"
         "[skipme]\n"
         f'cwd_prefix = "{(fleet / "skipme").as_posix()}"\n'
@@ -481,6 +527,10 @@ try:
     overrides = bp.load_repo_overrides(repo, toml_path)
     check(overrides.enabled and overrides.exclude == ("_local/vm/**",),
           "overrides: a repo's own table supplies backup_exclude")
+    check(overrides.include_globs == ("webapp.log", "watchdog.log"),
+          "overrides: a repo's own table supplies backup_include_globs")
+    check(overrides.always_include == ("webapp/telemetry.sqlite3",),
+          "overrides: a repo's own table supplies backup_always_include")
     (fleet / "skipme").mkdir(exist_ok=True)
     check(not bp.load_repo_overrides(fleet / "skipme", toml_path).enabled,
           "overrides: backup = false opts a repo out")
