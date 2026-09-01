@@ -13,6 +13,7 @@ import json
 import logging
 import os
 import shutil
+import sqlite3
 import subprocess
 import sys
 import tempfile
@@ -66,6 +67,10 @@ def _cfg(tmp: Path, **overrides) -> bp.BackupConfig:
         dest=tmp / "dest",
         transcripts_src=tmp / "transcripts",
         transcripts_dest=tmp / "tdest",
+        # Absent by default, so every pre-existing case here keeps its two-leg
+        # shape and the runtime-data cases opt in explicitly.
+        runtime_data_src=tmp / "runtime-data-src",
+        runtime_data_dest=tmp / "runtime-data-dest",
         keep_daily=14,
         keep_weekly=8,
         max_file_bytes=1024,
@@ -537,6 +542,230 @@ try:
     check(bp.load_repo_overrides(fleet / "unknown-repo", toml_path).enabled,
           "overrides: a repo with no table defaults to being backed up")
 
+    # =======================================================================
+    # The runtime-data leg (fleet-config#724)
+    # =======================================================================
+    # project-scaffolding#243 moved every always-on service's SQLite database to
+    # C:/sqlite/<app>/, outside every git working tree — invisible to the
+    # git-derived selection above. Everything here runs against REAL sqlite
+    # files with a REAL writer connection held open, because the two things this
+    # leg must get right (a live WAL database is not safely byte-copyable, and
+    # the global size cap must not apply) are both invisible to a mock.
+
+    # ---- sidecar classification -------------------------------------------
+    check(bp.is_sqlite_sidecar("app/tasks.sqlite3-wal"), "sidecar: -wal is a sidecar")
+    check(bp.is_sqlite_sidecar("app/tasks.sqlite3-shm"), "sidecar: -shm is a sidecar")
+    check(bp.is_sqlite_sidecar("app/store.db-journal"), "sidecar: -journal is a sidecar")
+    check(bp.is_sqlite_sidecar("APP/Tasks.SQLITE-WAL"), "sidecar: matching is case-insensitive")
+    check(not bp.is_sqlite_sidecar("app/tasks.sqlite3"), "sidecar: the database itself is not one")
+    check(not bp.is_sqlite_sidecar("notes-wal"),
+          "sidecar: a plain file merely ending in -wal is NOT a sidecar (it has no db stem)")
+    check(not bp.is_sqlite_sidecar("app/readme.md"), "sidecar: an ordinary file is not one")
+
+    # ---- a live WAL database round-trips through the online backup API -----
+    rd_src = tmp / "runtime-live"
+    live_db = rd_src / "home-automation" / "telemetry.sqlite3"
+    live_db.parent.mkdir(parents=True, exist_ok=True)
+    writer = sqlite3.connect(str(live_db))
+    writer.execute("PRAGMA journal_mode=WAL")
+    writer.execute("CREATE TABLE events (id INTEGER PRIMARY KEY, note TEXT)")
+    writer.executemany("INSERT INTO events (note) VALUES (?)",
+                       [(f"event-{n}",) for n in range(50)])
+    writer.commit()
+    # Deliberately NOT closed: a running service holding the database open is the
+    # only state this leg ever meets in production, and it is the state in which
+    # a plain file copy is unsafe.
+    check((live_db.parent / "telemetry.sqlite3-wal").exists(),
+          "runtime: the live database really is in WAL mode (-wal on disk)")
+
+    snap_target = tmp / "snap-out" / "telemetry.sqlite3"
+    mode = bp.snapshot_sqlite(live_db, snap_target)
+    check(mode in {"read-only", "read-write"}, f"runtime: snapshot reports its mode, got {mode}")
+    restored = sqlite3.connect(str(snap_target))
+    try:
+        rows = restored.execute("SELECT COUNT(*) FROM events").fetchone()[0]
+        integrity = restored.execute("PRAGMA integrity_check").fetchone()[0]
+        first = restored.execute("SELECT note FROM events ORDER BY id LIMIT 1").fetchone()[0]
+    finally:
+        restored.close()
+    check(rows == 50, f"runtime: the snapshot is queryable with the same rows, got {rows}")
+    # The point of the online backup API, made concrete: with the writer still
+    # holding the database, the committed rows live in the -wal, and the main
+    # file on disk is a near-empty shell. A byte copy of it would restore an
+    # EMPTY table while looking like a successful backup.
+    check(snap_target.stat().st_size > live_db.stat().st_size,
+          f"runtime: the snapshot folded in the -wal contents — it is larger than the "
+          f"live main file it came from ({snap_target.stat().st_size} vs "
+          f"{live_db.stat().st_size} bytes)")
+    byte_copy = tmp / "snap-out" / "byte-copy.sqlite3"
+    shutil.copy2(live_db, byte_copy)
+    naive = sqlite3.connect(str(byte_copy))
+    try:
+        naive_rows = naive.execute("SELECT COUNT(*) FROM events").fetchone()[0]
+    except sqlite3.Error as exc:
+        naive_rows = f"unreadable: {exc}"
+    finally:
+        naive.close()
+    check(naive_rows != 50,
+          f"runtime: and a plain file copy of the same live database really does LOSE "
+          f"data ({naive_rows} rows) — which is why this leg does not copy bytes")
+    check(integrity == "ok", f"runtime: the snapshot passes integrity_check, got {integrity}")
+    check(first == "event-0", "runtime: the snapshot carries the real row contents")
+    check(not (snap_target.parent / "telemetry.sqlite3-wal").exists(),
+          "runtime: a snapshot needs no -wal beside it — it is already complete")
+
+    # ---- a file that is not a database is a reported failure, not a silence --
+    corrupt_dir = tmp / "runtime-corrupt"
+    corrupt_db = corrupt_dir / "task-os" / "tasks.sqlite3"
+    _write(corrupt_db, "this is definitely not a sqlite database")
+    raised = False
+    try:
+        bp.snapshot_sqlite(corrupt_db, tmp / "snap-out" / "corrupt.sqlite3")
+    except OSError:
+        raised = True
+    check(raised, "runtime: an unopenable database raises rather than producing a fake snapshot")
+    check(not (tmp / "snap-out" / "corrupt.sqlite3").exists(),
+          "runtime: a failed snapshot leaves no half-written file behind")
+
+    # ---- selection: no size cap, no sidecars, plain files pass through ------
+    _write(rd_src / "home-automation" / "notes.txt", "small")
+    _write(rd_src / "home-automation" / "big.blob", "b" * 5000)   # ~5x the 1 KB cap
+    _write(rd_src / "home-automation" / "notes-wal", "not a sidecar")
+    rd_cfg = _cfg(tmp, runtime_data_src=rd_src, runtime_data_dest=tmp / "rd-dest")
+    check(rd_cfg.max_file_bytes == 1024,
+          "runtime: the cap under test is genuinely smaller than the database")
+    check(live_db.stat().st_size > rd_cfg.max_file_bytes,
+          "runtime: the live database really is over the cap (the check below means something)")
+
+    with bp.runtime_data_staging() as staging:
+        rd_sel = bp.select_runtime_data(rd_cfg, staging)
+        rd_rels = {rel for _, rel, _ in rd_sel.files}
+        # Looked up defensively rather than with `next(...)`: if the size cap
+        # ever comes back to this leg the database disappears from the
+        # selection, and that must surface as the named check below, not as a
+        # StopIteration traceback three lines earlier.
+        staged_db = next((p for p, rel, _ in rd_sel.files
+                          if rel == "home-automation/telemetry.sqlite3"), None)
+        check(staged_db is not None and staging in staged_db.parents,
+              "runtime: the database is selected from the staging tree, not copied live")
+        staged_count = None
+        if staged_db is not None:
+            staged_rows = sqlite3.connect(str(staged_db))
+            try:
+                staged_count = staged_rows.execute("SELECT COUNT(*) FROM events").fetchone()[0]
+            finally:
+                staged_rows.close()
+        check(staged_count == 50, f"runtime: the staged database is queryable, got {staged_count}")
+        staging_seen = staging
+    check(not staging_seen.exists(), "runtime: the staging tree is removed on the success path")
+
+    check("home-automation/telemetry.sqlite3" in rd_rels,
+          f"runtime: the over-cap database is SELECTED — no max_file_mb on this leg, got {sorted(rd_rels)}")
+    check("home-automation/big.blob" in rd_rels,
+          "runtime: an over-cap plain file under the root is selected too")
+    check(not rd_sel.oversize,
+          f"runtime: nothing is reported as oversize, because nothing was dropped for size, got {rd_sel.oversize}")
+    check("home-automation/notes.txt" in rd_rels, "runtime: an ordinary file is copied normally")
+    check("home-automation/notes-wal" in rd_rels,
+          "runtime: a plain file merely ending in -wal survives")
+    check(not any(r.endswith(("-wal", "-shm")) and ".sqlite" in r for r in rd_rels),
+          f"runtime: the real -wal/-shm sidecars are excluded, got {sorted(rd_rels)}")
+    check(not rd_sel.errors, f"runtime: a healthy root produces no errors, got {rd_sel.errors}")
+
+    # The transcripts leg still caps — this exemption is scoped to one leg, and
+    # "unify the two selectors" must stay a change someone has to make on purpose.
+    _write(rd_cfg.transcripts_src / "proj" / "huge.jsonl", "j" * 5000)
+    _write(rd_cfg.transcripts_src / "proj" / "small.jsonl", "{}")
+    t_sel = bp.select_transcripts(rd_cfg)
+    t_rels = {rel for _, rel, _ in t_sel.files}
+    check("proj/small.jsonl" in t_rels and "proj/huge.jsonl" not in t_rels,
+          f"runtime: the transcripts leg still applies max_file_mb, got {sorted(t_rels)}")
+    check(any(o["path"] == "proj/huge.jsonl" for o in t_sel.oversize),
+          "runtime: and still reports what it dropped for size")
+
+    # ---- a corrupt database is its own failure state, never a silent omission
+    _write(corrupt_dir / "task-os" / "notes.md", "still fine")
+    corrupt_cfg = _cfg(tmp, runtime_data_src=corrupt_dir, runtime_data_dest=tmp / "corrupt-dest")
+    with bp.runtime_data_staging() as staging:
+        bad_sel = bp.select_runtime_data(corrupt_cfg, staging)
+    bad_rels = {rel for _, rel, _ in bad_sel.files}
+    check("task-os/tasks.sqlite3" not in bad_rels,
+          "runtime: an unsnapshottable database is not passed off as backed up")
+    check(any("task-os/tasks.sqlite3" in e for e in bad_sel.errors),
+          f"runtime: it is REPORTED as a failure instead, got {bad_sel.errors}")
+    check("task-os/notes.md" in bad_rels,
+          "runtime: one bad database does not abort the rest of the root")
+
+    # ---- a missing root selects nothing, without erroring ------------------
+    absent_cfg = _cfg(tmp, runtime_data_src=tmp / "never-created")
+    with bp.runtime_data_staging() as staging:
+        absent_sel = bp.select_runtime_data(absent_cfg, staging)
+    check(not absent_sel.files and not absent_sel.errors,
+          f"runtime: an absent root is empty and quiet, got files={absent_sel.files} "
+          f"errors={absent_sel.errors}")
+
+    # ---- the staging tree is removed on the failure path too ---------------
+    class _StagingCrash(Exception):
+        pass
+
+    crash_staging = None
+    try:
+        with bp.runtime_data_staging() as staging:
+            crash_staging = staging
+            raise _StagingCrash("died mid-leg")
+    except _StagingCrash:
+        pass
+    check(crash_staging is not None and not crash_staging.exists(),
+          "runtime: the staging tree is removed when the leg raises, not just when it succeeds")
+
+    # ---- the manifest does not claim a cap it did not apply ----------------
+    rd_policy = rd_cfg.policy_summary(bp.RUNTIME_DATA_LEG)
+    check(rd_policy["max_file_mb"] is None and "size_cap_exempt" in rd_policy,
+          f"runtime: the leg's policy records the exemption rather than a cap it ignored, "
+          f"got {rd_policy}")
+    check(rd_cfg.policy_summary("repos")["max_file_mb"] > 0,
+          "runtime: the repos leg's policy still reports its real cap")
+
+    # ---- the destination explains this leg in its own terms ----------------
+    rd_note_root = tmp / "rd-notetest"
+    rd_note_root.mkdir()
+    bp.write_restore_note(rd_note_root, bp.RUNTIME_DATA_LEG, Path("C:/sqlite"))
+    rd_note = (rd_note_root / bp.RESTORE_NOTE_NAME).read_text(encoding="utf-8")
+    check("online backup API" in rd_note and "-wal" in rd_note,
+          "runtime: the restore note explains that these are complete databases, not byte copies")
+    check("files git deliberately ignores" not in rd_note,
+          "runtime: it does not repeat the other legs' 'files git ignores' framing")
+    check("files git deliberately ignores" in
+          (tmp / "notetest" / bp.RESTORE_NOTE_NAME).read_text(encoding="utf-8"),
+          "runtime: while the git-derived legs keep theirs unchanged")
+
+    # ---- config ------------------------------------------------------------
+    rd_toml = tmp / "rd-projects.toml"
+    rd_toml.write_text(
+        "[backup]\n"
+        'runtime_data_src  = "D:/elsewhere/sqlite"\n'
+        'runtime_data_dest = "D:/elsewhere/backup"\n',
+        encoding="utf-8",
+    )
+    rd_loaded = bp.load_backup_config(rd_toml)
+    check(rd_loaded.runtime_data_src == Path("D:/elsewhere/sqlite"),
+          "config: runtime_data_src is read from the [backup] table")
+    check(rd_loaded.runtime_data_dest == Path("D:/elsewhere/backup"),
+          "config: runtime_data_dest is read from the [backup] table")
+    defaults = bp.load_backup_config(tmp / "absent.toml")
+    check(defaults.runtime_data_src == Path("C:/sqlite"),
+          f"config: the default root is C:/sqlite, got {defaults.runtime_data_src}")
+    check(str(defaults.runtime_data_dest).upper().startswith("E:"),
+          f"config: the default destination is on E:, so the leg crosses volumes, "
+          f"got {defaults.runtime_data_dest}")
+    real_backup_table = bp._read_toml(ROOT / "hooks" / "projects.toml").get("backup", {})
+    check(real_backup_table.get("runtime_data_src") and real_backup_table.get("runtime_data_dest"),
+          "projects.toml: the real [backup] table declares both runtime-data keys")
+    real_cfg = bp.load_backup_config(ROOT / "hooks" / "projects.toml")
+    check(not bp._same_volume(real_cfg.runtime_data_src.parent, real_cfg.runtime_data_dest.parent)
+          or sys.platform != "win32",
+          "projects.toml: the real runtime-data leg crosses volumes (preflight would refuse it)")
+
     # ---- end-to-end run ----------------------------------------------------
     e2e_cfg = _cfg(tmp, dest=tmp / "e2e-dest", transcripts_src=tmp / "e2e-transcripts",
                    transcripts_dest=tmp / "e2e-tdest")
@@ -549,7 +778,8 @@ try:
                                  today="2026-08-11")
         check(code == bp.EXIT_OK, f"e2e: a clean run exits 0, got {code}")
         check({m["leg"] for m in manifests} == {"repos", "transcripts"},
-              "e2e: both legs ran")
+              "e2e: the two git-derived legs ran, and the runtime-data leg is "
+              "cleanly absent because its root does not exist (fleet-config#724)")
         repos_manifest = next(m for m in manifests if m["leg"] == "repos")
         check(repos_manifest["status"] == "ok", "e2e: the repos leg reports ok")
         check("demo-repo" in repos_manifest["groups"], "e2e: the demo repo was snapshotted")
@@ -586,8 +816,73 @@ try:
               "e2e: --dry-run reports without writing")
         check(not (e2e_cfg.dest / "2026-08-13").exists(),
               "e2e: --dry-run created no snapshot directory")
+        check(not (tmp / "runtime-data-dest").exists(),
+              "e2e: a skipped runtime-data leg writes nothing at all, not an empty snapshot")
+
+        # ---- end-to-end, runtime-data leg ---------------------------------
+        rd_e2e = _cfg(tmp, dest=tmp / "rd-e2e-dest",
+                      transcripts_src=tmp / "rd-e2e-transcripts",
+                      transcripts_dest=tmp / "rd-e2e-tdest",
+                      runtime_data_src=rd_src, runtime_data_dest=tmp / "rd-e2e-rdest")
+        _write(rd_e2e.transcripts_src / "proj" / "session.jsonl", '{"a":1}')
+        rd_code, rd_manifests = bp.run(rd_e2e, toml_path=toml_path, notify=False,
+                                       today="2026-08-20")
+        check(rd_code == bp.EXIT_OK, f"rd-e2e: a clean three-leg run exits 0, got {rd_code}")
+        check({m["leg"] for m in rd_manifests} ==
+              {"repos", "transcripts", bp.RUNTIME_DATA_LEG},
+              f"rd-e2e: all three legs ran, got {[m['leg'] for m in rd_manifests]}")
+        rd_manifest = next(m for m in rd_manifests if m["leg"] == bp.RUNTIME_DATA_LEG)
+        check(rd_manifest["status"] == "ok", f"rd-e2e: the leg reports ok, got {rd_manifest}")
+        check(rd_manifest["policy"]["max_file_mb"] is None,
+              "rd-e2e: the written manifest records that no size cap was applied")
+        rd_snapshot = (rd_e2e.runtime_data_dest / "2026-08-20" /
+                       bp.RUNTIME_DATA_GROUP / "home-automation")
+        check((rd_snapshot / "telemetry.sqlite3").is_file(),
+              "rd-e2e: the database landed in the dated snapshot")
+        check(not (rd_snapshot / "telemetry.sqlite3-wal").exists()
+              and not (rd_snapshot / "telemetry.sqlite3-shm").exists(),
+              "rd-e2e: no -wal/-shm sidecar was written beside it")
+        snap_rows = None
+        if (rd_snapshot / "telemetry.sqlite3").is_file():
+            snap_conn = sqlite3.connect(str(rd_snapshot / "telemetry.sqlite3"))
+            try:
+                snap_rows = snap_conn.execute("SELECT COUNT(*) FROM events").fetchone()[0]
+            except sqlite3.Error as exc:
+                snap_rows = f"unreadable: {exc}"
+            finally:
+                snap_conn.close()
+        check(snap_rows == 50,
+              f"rd-e2e: the SNAPSHOTTED file on the backup volume opens and holds the "
+              f"live rows, got {snap_rows}")
+        check(rd_manifest["verification"]["status"] == "pass",
+              "rd-e2e: the leg verified its own output like any other")
+        check((rd_e2e.runtime_data_dest / bp.RESTORE_NOTE_NAME).is_file(),
+              "rd-e2e: the destination carries its own restore note")
+
+        # A database that goes bad is a failure AND, once it is the only one,
+        # a zero-file regression — the protection that catches a leg quietly
+        # backing up nothing where it used to back something up.
+        writer.close()  # release the live handle before overwriting the file
+        live_db.write_text("no longer a database at all", encoding="utf-8")
+        for sidecar in ("telemetry.sqlite3-wal", "telemetry.sqlite3-shm"):
+            (live_db.parent / sidecar).unlink(missing_ok=True)
+        for stray in ("notes.txt", "big.blob", "notes-wal"):
+            (live_db.parent / stray).unlink(missing_ok=True)
+        bad_code, bad_manifests = bp.run(rd_e2e, toml_path=toml_path, notify=False,
+                                         today="2026-08-21")
+        bad_manifest = next(m for m in bad_manifests if m["leg"] == bp.RUNTIME_DATA_LEG)
+        check(bad_manifest["groups"][bp.RUNTIME_DATA_GROUP]["status"] == "failed",
+              "rd-e2e: an unsnapshottable database fails its group, never a quiet pass")
+        check(any("telemetry.sqlite3" in e
+                  for e in bad_manifest["groups"][bp.RUNTIME_DATA_GROUP]["errors"]),
+              "rd-e2e: the manifest names the database it could not snapshot")
+        check(bad_manifest["regressions"] == [bp.RUNTIME_DATA_GROUP],
+              f"rd-e2e: backing up 0 files where there were files still trips the "
+              f"zero-file regression check, got {bad_manifest['regressions']}")
+        check(bad_code != bp.EXIT_OK, f"rd-e2e: the run exits non-zero, got {bad_code}")
     finally:
         bp._preflight = original_preflight
+        writer.close()
 
     # ---- an interrupted run: marker left behind, recovered, and reported ---
     # A real death mid-write, simulated by making write_group raise after the

@@ -292,6 +292,16 @@ source_root      = "E:/automation"
 dest             = "C:/Users/rober/backup/fleet-private"
 transcripts_src  = "~/.claude/projects"
 transcripts_dest = "E:/backup/claude-transcripts"
+# Third leg (fleet-config#724): the always-on services' SQLite databases, which
+# project-scaffolding#243 moved OUT of their repo working trees to C:/sqlite/<app>/
+# so seven services fsync-ing at a poll interval stop hammering the spinning E:
+# drive. That root is outside every git working tree, so the git-derived selection
+# above cannot see it at all — hence its own leg. Databases are snapshotted with
+# SQLite's online backup API (never a byte copy of a live WAL file), and the
+# max_file_mb cap below is deliberately NOT applied to this leg. Dest on E: because
+# the legs cross volumes on purpose; a same-volume snapshot is refused outright.
+runtime_data_src  = "C:/sqlite"
+runtime_data_dest = "E:/backup/fleet-runtime-data"
 keep_daily       = 14
 keep_weekly      = 8
 max_file_mb      = 10
