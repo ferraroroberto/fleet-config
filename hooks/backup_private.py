@@ -211,6 +211,13 @@ class RepoOverrides:
     enabled: bool = True
     exclude: Tuple[str, ...] = ()
     include: Tuple[str, ...] = ()
+    # Basename globs exempted from the global deny_dirs/deny_globs check, for
+    # this repo only (fleet-config#722) — e.g. a *.log file that is actually
+    # security-relevant automation state, not routine debug noise.
+    include_globs: Tuple[str, ...] = ()
+    # Relative paths (matched like `include`/`exclude`) exempted from the
+    # global max_file_mb cap, for this repo only (fleet-config#722).
+    always_include: Tuple[str, ...] = ()
 
 
 def _projects_toml_path(explicit: Optional[Path] = None) -> Path:
@@ -256,7 +263,8 @@ def load_backup_config(path: Optional[Path] = None) -> BackupConfig:
 
 
 def load_repo_overrides(repo_dir: Path, path: Optional[Path] = None) -> RepoOverrides:
-    """Read `backup` / `backup_exclude` / `backup_include` for one repo.
+    """Read `backup` / `backup_exclude` / `backup_include` / `backup_include_globs` /
+    `backup_always_include` for one repo.
 
     Follows the `capture = true` precedent: per-project nuance lives in that
     project's own projects.toml table, never in this module. Matching is by
@@ -277,6 +285,8 @@ def load_repo_overrides(repo_dir: Path, path: Optional[Path] = None) -> RepoOver
             enabled=bool(table.get("backup", True)),
             exclude=tuple(table.get("backup_exclude", []) or []),
             include=tuple(table.get("backup_include", []) or []),
+            include_globs=tuple(table.get("backup_include_globs", []) or []),
+            always_include=tuple(table.get("backup_always_include", []) or []),
         )
     return RepoOverrides()
 
@@ -352,14 +362,24 @@ class Selection:
         return sum(size for _, _, size in self.files)
 
 
-def _denied(rel: str, cfg: BackupConfig) -> bool:
-    """True if any path segment is a denied directory or the name matches a deny glob."""
+def _denied(rel: str, cfg: BackupConfig, overrides: Optional["RepoOverrides"] = None) -> bool:
+    """True if any path segment is a denied directory or the name matches a deny glob.
+
+    `overrides.include_globs`, when given, exempts a basename match from both
+    checks — the repo-scoped opt-back-in for an otherwise-denied name, e.g. a
+    `*.log` file that is actually security-relevant automation state
+    (fleet-config#722).
+    """
     parts = rel.rstrip("/").split("/")
+    name = parts[-1].lower()
+    if overrides is not None and overrides.include_globs and \
+            any(fnmatch.fnmatch(name, glob.lower()) for glob in overrides.include_globs):
+        return False
     # Case-insensitively, because NTFS is: a `.VENV` created by some other tool
     # is the same directory the deny-list means to exclude.
     if any(part.lower() in cfg._deny_dirs_lower for part in parts):
         return True
-    return any(fnmatch.fnmatch(parts[-1].lower(), glob) for glob in cfg.deny_globs)
+    return any(fnmatch.fnmatch(name, glob) for glob in cfg.deny_globs)
 
 
 def _matches_any(rel: str, globs: Sequence[str]) -> bool:
@@ -378,7 +398,8 @@ def _matches_any(rel: str, globs: Sequence[str]) -> bool:
 
 
 def walk_files(base: Path, rel_prefix: str, cfg: BackupConfig, errors: List[str],
-               vanished: Optional[List[str]] = None) -> Iterator[Tuple[Path, str, int]]:
+               vanished: Optional[List[str]] = None,
+               overrides: Optional["RepoOverrides"] = None) -> Iterator[Tuple[Path, str, int]]:
     """Yield `(abs_path, rel_path, size)` under `base`, never crossing a reparse point.
 
     A path that disappears mid-walk lands in `vanished` rather than `errors`, for
@@ -401,7 +422,7 @@ def walk_files(base: Path, rel_prefix: str, cfg: BackupConfig, errors: List[str]
             rel = f"{prefix}{entry.name}"
             if is_reparse_point(entry_path):
                 continue
-            if _denied(rel, cfg):
+            if _denied(rel, cfg, overrides):
                 continue
             try:
                 if entry.is_dir(follow_symlinks=False):
@@ -412,6 +433,22 @@ def walk_files(base: Path, rel_prefix: str, cfg: BackupConfig, errors: List[str]
                 vanished.append(rel)
             except OSError as exc:
                 errors.append(f"stat {entry_path}: {exc}")
+
+
+def _forced_include(rel: str, overrides: RepoOverrides) -> bool:
+    """True if `rel` is exempted from the size cap or the deny-list by name.
+
+    Such a file is also exempt from the bulk-directory guard (fleet-config#722):
+    the whole point of `backup_always_include`/`backup_include_globs` is "back
+    this up no matter what", so a sibling's bulk crossing must not undo it, and
+    its own bytes must not count toward pushing that sibling over the threshold.
+    """
+    if _matches_any(rel, overrides.always_include):
+        return True
+    if not overrides.include_globs:
+        return False
+    name = rel.rstrip("/").split("/")[-1].lower()
+    return any(fnmatch.fnmatch(name, glob.lower()) for glob in overrides.include_globs)
 
 
 def _apply_bulk_guard(candidates: List[Tuple[Path, str, int]], cfg: BackupConfig,
@@ -426,17 +463,22 @@ def _apply_bulk_guard(candidates: List[Tuple[Path, str, int]], cfg: BackupConfig
     which is exactly what this exists to save.
 
     `backup_include` re-admits a directory permanently regardless of size.
+    `_forced_include` (backup_always_include / backup_include_globs) re-admits a
+    single file, and is excluded from its siblings' bulk-size total.
     """
     by_top: Dict[str, List[Tuple[Path, str, int]]] = {}
     root_files: List[Tuple[Path, str, int]] = []
+    forced: List[Tuple[Path, str, int]] = []
     for item in candidates:
         rel = item[1]
-        if "/" in rel:
+        if _forced_include(rel, overrides):
+            forced.append(item)
+        elif "/" in rel:
             by_top.setdefault(rel.split("/", 1)[0], []).append(item)
         else:
             root_files.append(item)
 
-    kept = list(root_files)
+    kept = list(root_files) + forced
     excluded: List[Dict[str, Any]] = []
     for top, items in sorted(by_top.items()):
         total_bytes = sum(size for _, _, size in items)
@@ -510,7 +552,7 @@ def select_repo(repo_dir: Path, cfg: BackupConfig, overrides: RepoOverrides) -> 
     candidates: List[Tuple[Path, str, int]] = []
     for entry in entries:
         rel = entry.replace("\\", "/")
-        if _denied(rel, cfg) or _matches_any(rel, overrides.exclude):
+        if _denied(rel, cfg, overrides) or _matches_any(rel, overrides.exclude):
             continue
         target = repo_dir / rel
         if is_reparse_point(target):
@@ -518,7 +560,7 @@ def select_repo(repo_dir: Path, cfg: BackupConfig, overrides: RepoOverrides) -> 
         if rel.endswith("/"):
             if not target.is_dir():
                 continue
-            found = walk_files(target, rel, cfg, sel.errors, sel.vanished)
+            found = walk_files(target, rel, cfg, sel.errors, sel.vanished, overrides)
         else:
             if not target.is_file():
                 continue
@@ -533,7 +575,7 @@ def select_repo(repo_dir: Path, cfg: BackupConfig, overrides: RepoOverrides) -> 
         for abs_path, rel_path, size in found:
             if _matches_any(rel_path, overrides.exclude):
                 continue
-            if size > cfg.max_file_bytes:
+            if size > cfg.max_file_bytes and not _matches_any(rel_path, overrides.always_include):
                 sel.oversize.append({
                     "path": rel_path,
                     "bytes": size,
