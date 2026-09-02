@@ -480,6 +480,48 @@ try:
     check(not (mirror_root / (bp.LATEST_DIR + ".new")).exists(),
           "latest: the staging directory is swapped in, not left behind")
 
+    # ---- latest/ survives an interrupt during teardown ---------------------
+    # fleet-config#720: rebuild_latest() used to shutil.rmtree() the live
+    # `latest/` *before* renaming the new one in — a kill mid-delete left
+    # `latest/` half-deleted for as long as the delete took (minutes, on a
+    # large tree). The swap is now two instant renames with the slow delete
+    # moved after, so a raise during that final cleanup must land on an
+    # already-fully-swapped `latest/`, never a partial one.
+    retiring_dir = mirror_root / (bp.LATEST_DIR + ".old")
+    _write(mirror_snap / "g" / "c.md", "gamma")
+    real_rmtree = shutil.rmtree
+
+    def _rmtree_raise_on_retiring(path, *args, **kwargs):
+        if Path(path) == retiring_dir:
+            raise OSError("simulated kill during teardown")
+        return real_rmtree(path, *args, **kwargs)
+
+    bp.shutil.rmtree = _rmtree_raise_on_retiring
+    try:
+        raised = False
+        try:
+            bp.rebuild_latest(mirror_root, mirror_snap)
+        except OSError:
+            raised = True
+    finally:
+        bp.shutil.rmtree = real_rmtree
+    check(raised, "latest: the simulated teardown kill actually raised")
+    check((mirror_root / bp.LATEST_DIR / "g" / "c.md").is_file(),
+          "latest: an interrupt during teardown still leaves latest/ fully rebuilt")
+    check(retiring_dir.is_dir(),
+          "latest: the retired tree is left behind as garbage, not corrupting latest/")
+
+    # a following run sweeps the stale latest.old and does not fail on it
+    _write(mirror_snap / "g" / "d.md", "delta")
+    count2 = bp.rebuild_latest(mirror_root, mirror_snap)
+    expected_count = sum(1 for p in mirror_snap.rglob("*") if not p.is_dir())
+    check((mirror_root / bp.LATEST_DIR / "g" / "d.md").is_file(),
+          "latest: the next run recovers cleanly after a torn teardown")
+    check(not retiring_dir.exists(),
+          "latest: the stale latest.old is swept, not left behind forever")
+    check(count2 == expected_count,
+          f"latest: the recovered mirror covers every file, got count={count2} vs {expected_count}")
+
     # ---- the destination explains itself ----------------------------------
     note_root = tmp / "notetest"
     note_root.mkdir()

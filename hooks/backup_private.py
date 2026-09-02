@@ -1127,13 +1127,20 @@ def rebuild_latest(dest_root: Path, snapshot_dir: Path) -> int:
 
     A mirror rather than a junction to the newest dated directory: hardlinks keep
     `latest/` valid after retention prunes the snapshot it was built from, and cost
-    no bytes. Built beside the live one and swapped in, so an interrupted run
-    cannot leave a half-built `latest/`.
+    no bytes. Built beside the live one, then swapped in with two instant renames
+    — `latest` -> `latest.old`, `latest.new` -> `latest` — with the slow delete of
+    the retired tree moved *after* the swap. An interrupt can only ever land
+    before the swap (untouched `latest`) or after it (fully-rebuilt `latest`,
+    `latest.old` just garbage the next run sweeps) — never mid-delete, so
+    `latest/` is never left half-deleted (fleet-config#720).
     """
     latest = dest_root / LATEST_DIR
     staging = dest_root / (LATEST_DIR + ".new")
+    retiring = dest_root / (LATEST_DIR + ".old")
     if staging.exists():
         shutil.rmtree(staging, ignore_errors=True)
+    if retiring.exists():
+        shutil.rmtree(retiring, ignore_errors=True)
 
     count = 0
     for source in snapshot_dir.rglob("*"):
@@ -1148,8 +1155,10 @@ def rebuild_latest(dest_root: Path, snapshot_dir: Path) -> int:
         count += 1
 
     if latest.exists():
-        shutil.rmtree(latest, ignore_errors=True)
+        latest.rename(retiring)
     staging.rename(latest)
+    if retiring.exists():
+        shutil.rmtree(retiring, ignore_errors=True)
     return count
 
 
