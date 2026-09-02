@@ -1123,7 +1123,12 @@ def write_restore_note(dest_root: Path, leg: str, source: Path) -> None:
 
 
 def rebuild_latest(dest_root: Path, snapshot_dir: Path) -> int:
-    """Rebuild `latest/` as a hardlink mirror of `snapshot_dir`.
+    """Rebuild `latest/` as a hardlink mirror of `snapshot_dir`, from scratch.
+
+    The repair path, kept reachable for the cases `reconcile_latest` below
+    cannot handle safely (no `latest/` yet, or no readable previous manifest to
+    diff against) and for `--rebuild-latest-full` — never the nightly default
+    once a previous manifest exists (fleet-config#721).
 
     A mirror rather than a junction to the newest dated directory: hardlinks keep
     `latest/` valid after retention prunes the snapshot it was built from, and cost
@@ -1160,6 +1165,109 @@ def rebuild_latest(dest_root: Path, snapshot_dir: Path) -> int:
     if retiring.exists():
         shutil.rmtree(retiring, ignore_errors=True)
     return count
+
+
+def _prune_empty_dirs(root: Path) -> None:
+    """Remove directories left empty by `reconcile_latest`'s removals.
+
+    Bottom-up so a directory that only becomes empty once its last child is
+    pruned is still caught in the same pass. Re-checks each directory's actual
+    contents rather than `os.walk`'s cached listing, since siblings deeper in
+    the same walk may have just emptied it.
+    """
+    if not root.is_dir():
+        return
+    for dirpath, _dirnames, _filenames in os.walk(root, topdown=False):
+        path = Path(dirpath)
+        if path == root:
+            continue
+        try:
+            next(path.iterdir())
+        except StopIteration:
+            try:
+                path.rmdir()
+            except OSError:
+                pass
+        except OSError:
+            pass
+
+
+def reconcile_latest(dest_root: Path, snapshot_dir: Path, manifest: Dict[str, Any],
+                     prev_manifest: Dict[str, Any]) -> Tuple[int, int, int]:
+    """Update `latest/` to match `snapshot_dir`'s manifest, touching only the
+    files that changed since `prev_manifest` (fleet-config#721).
+
+    `rebuild_latest` re-links every file in the tree every night regardless of
+    how much actually changed — ~14.7k `os.link()` calls for a delta of a few
+    hundred files on the transcripts leg. This instead diffs the two manifests
+    by sha256 and applies just the delta: relink what changed or was added,
+    unlink what dropped out of the new manifest, leave everything else exactly
+    as it already sits in `latest/`.
+
+    An entry unchanged since `prev_manifest` is skipped only after confirming it
+    is still actually there — a cheap `is_file()` stat, not a full re-link — so
+    `latest/` self-heals from any prior drift (a killed reconcile, manual
+    meddling) instead of silently trusting a manifest that no longer matches
+    disk. The dated snapshot such a file was originally hardlinked from may
+    since have been pruned by retention; that's fine, the hardlink already
+    sitting in `latest/` keeps its data alive by inode refcount, independent of
+    the path it was created from.
+
+    The `"{group}/{path}"` keys `_index_manifest` produces are themselves valid
+    relative paths under both `snapshot_dir` and `latest/` — `write_group`
+    targets `snapshot_dir / group / rel`, so no group/rel split is needed here.
+
+    Returns `(added, updated, removed)`, so the caller can report the delta —
+    not the tree size — as the leg's ongoing cost.
+    """
+    latest = dest_root / LATEST_DIR
+    new_index = _index_manifest(manifest)
+    prev_index = _index_manifest(prev_manifest)
+
+    added = updated = removed = 0
+    for key, entry in new_index.items():
+        prev_entry = prev_index.get(key)
+        target = latest / key
+        if (prev_entry is not None and prev_entry.get("sha256") == entry.get("sha256")
+                and target.is_file()):
+            continue
+        source = snapshot_dir / key
+        target.parent.mkdir(parents=True, exist_ok=True)
+        if target.exists():
+            target.unlink()
+        try:
+            os.link(source, target)
+        except OSError:
+            shutil.copy2(source, target)
+        if prev_entry is None:
+            added += 1
+        else:
+            updated += 1
+
+    for key in prev_index.keys() - new_index.keys():
+        try:
+            (latest / key).unlink()
+        except OSError:
+            continue
+        removed += 1
+
+    # `manifest.json` sits at `snapshot_dir`'s top level, outside every group, so
+    # the per-group diff above never touches it — but it changes every run
+    # regardless of group content, and a full rebuild always re-links it (its
+    # `rglob` walks the whole tree). Refreshed unconditionally so `latest/`
+    # never carries a stale manifest describing an earlier day.
+    source_manifest = snapshot_dir / MANIFEST_NAME
+    if source_manifest.is_file():
+        latest_manifest = latest / MANIFEST_NAME
+        if latest_manifest.exists():
+            latest_manifest.unlink()
+        try:
+            os.link(source_manifest, latest_manifest)
+        except OSError:
+            shutil.copy2(source_manifest, latest_manifest)
+
+    _prune_empty_dirs(latest)
+    return added, updated, removed
 
 
 def plan_retention(snapshot_names: Sequence[str], keep_daily: int,
@@ -1266,7 +1374,8 @@ def _preflight(source: Path, dest: Path) -> Optional[str]:
 
 
 def run_leg(leg: str, groups: Dict[str, Selection], source: Path, dest_root: Path,
-            cfg: BackupConfig, today: str, dry_run: bool) -> Dict[str, Any]:
+            cfg: BackupConfig, today: str, dry_run: bool,
+            force_rebuild_latest: bool = False) -> Dict[str, Any]:
     """Snapshot one leg's already-selected groups and return its manifest."""
     started = datetime.now(timezone.utc)
     manifest: Dict[str, Any] = {
@@ -1363,7 +1472,17 @@ def run_leg(leg: str, groups: Dict[str, Selection], source: Path, dest_root: Pat
     # The manifest now describes this directory (even a "failed" one) — the
     # marker's job, proving the tree is torn, is done (fleet-config#607).
     clear_run_marker(snapshot_dir)
-    manifest["latest_files"] = rebuild_latest(dest_root, snapshot_dir)
+    # A full rebuild is the only correct move with nothing to diff against — no
+    # `latest/` yet, or no readable previous manifest — and is always available
+    # as an explicit repair path via `force_rebuild_latest` (fleet-config#721).
+    if force_rebuild_latest or not (dest_root / LATEST_DIR).is_dir() or not prev_manifest.get("groups"):
+        manifest["latest_files"] = rebuild_latest(dest_root, snapshot_dir)
+        manifest["latest_mode"] = "full"
+    else:
+        added, updated, removed = reconcile_latest(dest_root, snapshot_dir, manifest, prev_manifest)
+        manifest["latest_files"] = total_files
+        manifest["latest_mode"] = "incremental"
+        manifest["latest_delta"] = {"added": added, "updated": updated, "removed": removed}
     manifest["pruned"] = prune(dest_root, cfg)
     write_restore_note(dest_root, leg, source)
     return manifest
@@ -1393,13 +1512,46 @@ def _mb(value: int) -> str:
     return f"{value / 1024 / 1024:.1f} MB"
 
 
+def _leg_duration_seconds(manifest: Dict[str, Any]) -> Optional[float]:
+    """Wall time from `started_at` to `finished_at`, or `None` if either is absent.
+
+    Logged per leg (rather than only the overall run total `main()` already
+    prints) so the transcripts leg's contribution to total runtime stays
+    visible night over night — the trend that walked fleet-config#720 into a
+    watchdog kill in the first place (fleet-config#721).
+    """
+    started, finished = manifest.get("started_at"), manifest.get("finished_at")
+    if not started or not finished:
+        return None
+    try:
+        return (datetime.fromisoformat(finished) - datetime.fromisoformat(started)).total_seconds()
+    except ValueError:
+        return None
+
+
 def report(manifest: Dict[str, Any]) -> None:
     totals = manifest["totals"]
+    duration = _leg_duration_seconds(manifest)
     logger.info(
-        "ℹ️ %s: %d files, %s (%d linked, %d copied) across %d groups",
+        "ℹ️ %s: %d files, %s (%d linked, %d copied) across %d groups%s",
         manifest["leg"], totals["files"], _mb(totals["bytes"]),
         totals["linked"], totals["copied"], totals["groups"],
+        f" in {duration:.1f}s" if duration is not None else "",
     )
+    latest_mode = manifest.get("latest_mode")
+    if latest_mode == "incremental":
+        delta = manifest.get("latest_delta") or {}
+        logger.info(
+            "   🔗 %s: latest/ reconciled incrementally (+%d ~%d -%d) instead of a "
+            "full %d-file rebuild",
+            manifest["leg"], delta.get("added", 0), delta.get("updated", 0),
+            delta.get("removed", 0), manifest.get("latest_files", 0),
+        )
+    elif latest_mode == "full":
+        logger.info(
+            "   🔗 %s: latest/ fully rebuilt (%d files)",
+            manifest["leg"], manifest.get("latest_files", 0),
+        )
     recovered = manifest.get("recovered_marker")
     if recovered:
         logger.info(
@@ -1474,7 +1626,8 @@ def _worst(codes: Sequence[int]) -> int:
 
 def run(cfg: BackupConfig, *, dry_run: bool = False, only: Optional[str] = None,
         toml_path: Optional[Path] = None, notify: bool = True,
-        today: Optional[str] = None) -> Tuple[int, List[Dict[str, Any]]]:
+        today: Optional[str] = None,
+        rebuild_latest_full: bool = False) -> Tuple[int, List[Dict[str, Any]]]:
     """Run both legs. Returns `(exit_code, manifests)`."""
     today = today or datetime.now().strftime(DATE_FMT)
     codes: List[int] = []
@@ -1522,7 +1675,8 @@ def run(cfg: BackupConfig, *, dry_run: bool = False, only: Optional[str] = None,
                     logger.error("❌ %s leg: %s", leg, problem)
                     codes.append(EXIT_DEST_UNUSABLE)
                     continue
-            manifest = run_leg(leg, groups, source, dest_root, cfg, today, dry_run)
+            manifest = run_leg(leg, groups, source, dest_root, cfg, today, dry_run,
+                               force_rebuild_latest=rebuild_latest_full)
             manifests.append(manifest)
             report(manifest)
             if dry_run:
@@ -1550,6 +1704,9 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     parser.add_argument("--config", type=Path, help="Path to projects.toml.")
     parser.add_argument("--no-slack", action="store_true", help="Suppress the Slack ping.")
     parser.add_argument("--json", action="store_true", help="Print the run summary as JSON.")
+    parser.add_argument("--rebuild-latest-full", action="store_true",
+                        help="Force a full rebuild of latest/ instead of the incremental "
+                             "reconcile — the repair path if latest/ is ever suspect.")
     args = parser.parse_args(argv)
 
     # stdout, line-buffered, for the app-launcher Jobs pane (fleet-config#605).
@@ -1594,7 +1751,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     started = time.monotonic()
     exit_code, manifests = run(
         cfg, dry_run=args.dry_run, only=args.only, toml_path=args.config,
-        notify=not args.no_slack,
+        notify=not args.no_slack, rebuild_latest_full=args.rebuild_latest_full,
     )
     if args.json:
         print(json.dumps(

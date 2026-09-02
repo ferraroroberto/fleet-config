@@ -926,6 +926,106 @@ try:
         bp._preflight = original_preflight
         writer.close()
 
+    # ---- latest/ incremental reconcile (fleet-config#721) ------------------
+    # A full rebuild used to re-hardlink every file in the tree on every run,
+    # regardless of how much actually changed. This proves a run over a small
+    # delta touches only the delta: one file changed, one removed, one added.
+    incr_fleet = tmp / "incr-fleet"
+    incr_repo = incr_fleet / "incr-repo"
+    incr_repo.mkdir(parents=True)
+    _git(incr_repo, "init", "-q")
+    _write(incr_repo / ".gitignore", "priv/\n")
+    _write(incr_repo / "priv" / "keep.md", "unchanged")
+    _write(incr_repo / "priv" / "change.md", "v1")
+    _write(incr_repo / "priv" / "remove.md", "gone soon")
+
+    incr_cfg = _cfg(tmp, source_root=incr_fleet, dest=tmp / "incr-dest",
+                    transcripts_src=tmp / "incr-transcripts", transcripts_dest=tmp / "incr-tdest")
+    original_preflight3 = bp._preflight
+    bp._preflight = lambda source, dest: None  # temp dirs share a volume by construction
+    try:
+        code1, manifests1 = bp.run(incr_cfg, only="incr-repo", toml_path=toml_path,
+                                   notify=False, today="2026-08-11")
+        check(code1 == bp.EXIT_OK, f"incr: the baseline run is clean, got {code1}")
+        repos1 = next(m for m in manifests1 if m["leg"] == "repos")
+        check(repos1.get("latest_mode") == "full",
+              f"incr: the first run has no previous manifest to diff against, so it "
+              f"fully rebuilds latest/, got {repos1.get('latest_mode')}")
+        latest_root = incr_cfg.dest / bp.LATEST_DIR / "incr-repo" / "priv"
+        keep_ino_before = (latest_root / "keep.md").stat().st_ino
+
+        # A small delta: one file changes content, one is removed, one is added.
+        _write(incr_repo / "priv" / "change.md", "v2")
+        (incr_repo / "priv" / "remove.md").unlink()
+        _write(incr_repo / "priv" / "new.md", "brand new")
+
+        code2, manifests2 = bp.run(incr_cfg, only="incr-repo", toml_path=toml_path,
+                                   notify=False, today="2026-08-12")
+        check(code2 == bp.EXIT_OK, f"incr: the delta run is clean, got {code2}")
+        repos2 = next(m for m in manifests2 if m["leg"] == "repos")
+        check(repos2.get("latest_mode") == "incremental",
+              f"incr: a run with a valid previous manifest reconciles instead of "
+              f"rebuilding, got {repos2.get('latest_mode')}")
+        delta = repos2.get("latest_delta") or {}
+        check(delta == {"added": 1, "updated": 1, "removed": 1},
+              f"incr: the work done is proportional to the change (1 add, 1 update, "
+              f"1 remove out of 4 files), not to the tree size, got {delta}")
+
+        check((latest_root / "new.md").is_file()
+              and (latest_root / "new.md").read_text(encoding="utf-8") == "brand new",
+              "incr: latest/ picks up the added file")
+        check((latest_root / "change.md").read_text(encoding="utf-8") == "v2",
+              "incr: latest/ reflects the changed file's new content")
+        check(not (latest_root / "remove.md").exists(),
+              "incr: a file deleted from source is gone from latest/ too")
+        keep_ino_after = (latest_root / "keep.md").stat().st_ino
+        check(keep_ino_before == keep_ino_after,
+              "incr: an unchanged file is never touched — same inode before and after")
+        latest_manifest_written = json.loads(
+            (incr_cfg.dest / bp.LATEST_DIR / bp.MANIFEST_NAME).read_text(encoding="utf-8"))
+        check(latest_manifest_written.get("date") == "2026-08-12",
+              "incr: latest/manifest.json — outside every group, so untouched by the "
+              "per-group diff — is still refreshed to today's, not left stale")
+
+        # Full rebuild remains reachable as a repair path, and lands on the same
+        # membership the incremental reconcile just produced (fleet-config#721 AC).
+        bp.rebuild_latest(incr_cfg.dest, incr_cfg.dest / "2026-08-12")
+        latest_rels = {
+            str(p.relative_to(incr_cfg.dest / bp.LATEST_DIR)).replace("\\", "/")
+            for p in (incr_cfg.dest / bp.LATEST_DIR).rglob("*") if p.is_file()
+        }
+        snapshot_rels = {
+            str(p.relative_to(incr_cfg.dest / "2026-08-12")).replace("\\", "/")
+            for p in (incr_cfg.dest / "2026-08-12").rglob("*") if p.is_file()
+        }
+        check(latest_rels == snapshot_rels,
+              "incr: a full rebuild is byte-identical in membership to what the "
+              "incremental reconcile had already produced")
+
+        # Self-heal: a file the manifest says is unchanged, but that has gone
+        # missing from latest/ (a killed reconcile, manual meddling), must not
+        # be silently trusted — the next reconcile notices and relinks it.
+        (latest_root / "keep.md").unlink()
+        code3, manifests3 = bp.run(incr_cfg, only="incr-repo", toml_path=toml_path,
+                                   notify=False, today="2026-08-13")
+        repos3 = next(m for m in manifests3 if m["leg"] == "repos")
+        check(repos3.get("latest_mode") == "incremental",
+              f"incr: an untouched-content day still reconciles incrementally, "
+              f"got {repos3.get('latest_mode')}")
+        check((latest_root / "keep.md").is_file()
+              and (latest_root / "keep.md").read_text(encoding="utf-8") == "unchanged",
+              "incr: a file missing from latest/ despite an unchanged manifest entry "
+              "is relinked, not left absent")
+
+        code4, manifests4 = bp.run(incr_cfg, only="incr-repo", toml_path=toml_path,
+                                   notify=False, today="2026-08-14", rebuild_latest_full=True)
+        repos4 = next(m for m in manifests4 if m["leg"] == "repos")
+        check(repos4.get("latest_mode") == "full",
+              f"incr: --rebuild-latest-full forces the repair path even with a valid "
+              f"previous manifest, got {repos4.get('latest_mode')}")
+    finally:
+        bp._preflight = original_preflight3
+
     # ---- an interrupted run: marker left behind, recovered, and reported ---
     # A real death mid-write, simulated by making write_group raise after the
     # marker is already down — the same failure shape as a killed process or a
