@@ -262,10 +262,16 @@ def _bash_cmdexe_syntax_guard_unit_checks() -> Tuple[int, int]:
     check("cmdexe_guard: plain git log -> silent",
           stdout_for("git log --oneline") == "")
 
+    # issue-yolo's own Phase 4 delegates tray-restart mechanics to
+    # `/issue-finish` verbatim rather than restating them (fleet-config#728),
+    # so the rule now lives in issue-finish's text; check the combined text
+    # an agent following a YOLO run actually reads across both files.
     yolo_skill = (REPO / "skills" / "issue-yolo" / "SKILL.md").read_text(encoding="utf-8")
-    yolo_skill_flat = re.sub(r"\s+", " ", yolo_skill.replace("**", ""))
-    check("cmdexe_guard: issue-yolo mandates a real Windows shell for tray restart",
-          "real Windows shell" in yolo_skill_flat and "cmd /c" in yolo_skill_flat)
+    finish_skill = (REPO / "skills" / "issue-finish" / "SKILL.md").read_text(encoding="utf-8")
+    combined_flat = re.sub(r"\s+", " ", (yolo_skill + finish_skill).replace("**", ""))
+    check("cmdexe_guard: issue-yolo (via its delegation to issue-finish) mandates "
+          "a real Windows shell for tray restart",
+          "real Windows shell" in combined_flat and "cmd /c" in combined_flat)
 
     return check.failures, check.total
 

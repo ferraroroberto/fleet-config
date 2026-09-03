@@ -121,17 +121,10 @@ Pick the smallest mode that genuinely covers the change:
   a local scratch path; **never attach it to the PR body, an issue, or a
   comment** (assume every repo is public — an uploaded UI screenshot is an
   information breach). Put a text-only result line in the PR instead.
-  **Browser-backend preflight (Codex — no live `iab`):** prefer the in-app
-  Browser (`iab`) when `agent.browsers.list()` includes it; when it returns
-  `[]`, fall back to installed Playwright with real Chrome — `iab` absence does
-  **not** skip the visual leg (fleet-config#351). The deterministic plan
-  (backend, venv, `channel="chrome"` launch kwargs honoring the browser-safety
-  contract, the `KEY_VIEWS` × {light, dark} capture list) comes from
-  `browser_verify.py plan . --base-url <app-root> --iab-available <yes|no>`.
-  Report the one capability failure you observed — Playwright-missing /
-  Chrome-missing / app-unreachable / profile-lock each read distinctly, never
-  one generic error; those codes, background and recovery in
-  `docs/codex-browser.md`.
+  **Browser-backend preflight (Codex — no live `iab`):** same preflight as
+  `/issue-finish` step 3b (backend selection between `iab` and installed
+  Playwright, the `browser_verify.py plan` invocation, and its four distinct
+  failure codes) — see that step rather than restating it here.
   Then, when this is a **web-app UX diff**, run the **design-conformance gate**
   (`project-scaffolding#83`):
 
@@ -215,114 +208,36 @@ adjust scope, or abandon. **Do not** auto-retry the build and do **not**
 continue to Phase 4 on a rejected verdict — that silent-second-round shape is
 `cleanup-fleet-all.js`'s job, not this one.
 
-### Phase 4 — Ship (`/issue-finish` flow)
+### Phase 4 — Ship (delegates to `/issue-finish`)
 
 Only reachable on a fully-green Phase 3 (3a–3h, including the independent
-review's `pass: true`). Run the full `/issue-finish` skill:
-1. Re-confirm every acceptance point on the issue is actually met.
-2. Update `README.md` if usage / config / output changed. Do not write a
-   dated `docs/YYYY-MM-DD-*.md` file — the PR + issue + `git log` are the
-   changelog.
-3. Run the project's verification gate (e.g. `scripts/verify-before-ship.ps1`)
-   as a final atomic pass/fail. Already-run sub-pieces in Phase 3 don't
-   substitute for the consolidated gate.
-4. Commit any remaining work with a conventional `type:` message (no
-   `Co-Authored-By: Claude` trailer).
-5. `git push -u origin <branch>`.
-6. `gh pr create` — body with **Summary**, **Validation** (concretely what
-   you ran in Phase 3 and what its outputs were), and `Closes #<N>`.
-   Do **not** include the `🤖 Generated with [Claude Code]` line at the bottom of the PR body.
-7. **Wait for CI unless local e2e + pytest already proved it, or the diff is
-   provably CI-unrelated.**
-   - **Local e2e + pytest green this run** → if Phase 3c (unit/integration
-     tests) passed and Phase 3d's `/e2e` run was green — a passing `full`
-     slice, or a routed `skip`/green `static` (the classifier positively
-     cleared the diff's browser impact) — CI's only signal beyond that — the
-     e2e leg, also the known-flaky one — has already been produced locally.
-     Skip the watch, merge immediately (step 8), and note it: `CI not
-     awaited — /e2e <tier> green this run.`
-   - **Otherwise, CI-unrelated diff** → unrelated only if *every* changed file
-     is one CI never executes — `*.md`, `docs/`, `LICENSE`, images/assets, or
-     pure code-comment edits — **AND** `.github/workflows/` has no job
-     targeting them (no markdownlint, link-check, docs build). Read the
-     workflow files to confirm; never assume. → skip the watch, merge
-     immediately (step 8), and note it: `CI not awaited — docs-only change, no
-     docs CI job.` If the merge is rejected for a pending/failing *required*
-     check, fall back to `--watch`.
-   - **Neither applies** → `gh pr checks <PR> --watch`, green only. CI red
-     → **stop**, do not merge.
-   This skips only the *remote CI wait* — never the Phase 3 local gate, which is
-   non-negotiable and always runs.
-8. Merge, then land — **both depend on the checkout mode** Phase 2 ended up in.
-   Phase 2's `/issue-start now` flow forces **worktree** mode whenever
-   `APP_LAUNCHER_SESSION_ID` is set, so for any launcher- or chief-dispatched
-   YOLO run this is the *only* path. Check rather than assume:
-   `worktree_claim.py mode <repo>`, run **from the checkout you built in** — it
-   answers about the cwd, and `<repo>` only says which repo that cwd must belong
-   to (fleet-config#652). `UNKNOWN reason=<why>` (exit 2) means it could not
-   tell: stop, never guess a mode.
-   - **Primary checkout:** `gh pr merge <PR> --merge --delete-branch`, then
-     `git checkout main && git pull --ff-only`.
-   - **Linked worktree:** `gh pr merge <PR> --merge` — **no `--delete-branch`**
-     (it fails its local half from a worktree: `'main' is already used by
-     worktree`). Never `git checkout main` here. Instead follow `/issue-finish`
-     step 5's worktree branch verbatim (fleet-config#647): `remove-worktree`,
-     then `worktree_claim.py land-primary <repo> <N>`, then delete the refs
-     explicitly (`git push origin --delete <branch>`; local `-D` only after
-     confirming the tip is an ancestor of `origin/<default>`). Carry the
-     resulting `PRIMARY=live behind=0` / `PRIMARY=stale reason=<why>` line into
-     the final report — a stale primary means the merge is **not live**, and
-     YOLO has no human checkpoint left to catch that.
-   Confirm the issue auto-closed.
-   Clear the issue's Fleet Board marker only after that successful merge (a
-   validation/CI stop leaves it active):
-   ```
-   E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/active_issue.py remove <repo> <N>
-   ```
-   `ACTIVE_ISSUE=absent` is an idempotent success; retry a helper error once
-   and stop if the shared state still cannot be updated.
-   Then **release the concurrency claim** — Phase 2 acquired a primary claim via
-   the `/issue-start now` flow, and an inline-merge YOLO run has no separate
-   `/issue-finish` to free it, so it must be released here or it leaks until the
-   8h TTL (fleet-config#174). Idempotent, so it's safe even if no claim was held:
-   ```
-   E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/worktree_claim.py release <repo>
-   ```
-   Confirm it freed with `worktree_claim.py status <repo>` → `CLAIM=free`.
-9. Tray restart per project `CLAUDE.md` if a tray exists. Run the deterministic
-   **`tray.bat --restart`** (the canonical orphan-proof reclaim-then-start — it
-   does the subtree kill + per-`.venv` port reclaim + start atomically). Do
-   **not** hand-roll a `Get-NetTCPConnection`/`taskkill` kill: it misses the
-   orphan the reclaim sweep exists to kill. Manual port-PID kill is a fallback
-   only for the rare app with no `--restart`. Invoke it through a **real Windows
-   shell**, exactly as `/issue-finish` step 6 requires — never Git Bash's nested
-   `cmd /c` (MSYS rewrites `/c` to `C:/`, opens an interactive cmd prompt, and
-   never runs the batch). Use the PowerShell tool or the absolute
-   `C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe -Command "& '<repo>/tray.bat' --restart"`
-   form (forward-slash exe path, per the Git-Bash-strips-backslashes rule).
-   **Safety caveat** (same test as `/issue-finish` step 6): `--restart`'s `/T`
-   subtree kill is safe only for a tray whose linked-but-independent children
-   (a session-host + its PTY shells) are spawned detached + re-adopted on start
-   (scaffold `docs/windows-tray.md`). Read the target repo's `CLAUDE.md` to know
-   which case applies — don't assume by app name. Detach-compliant (e.g.
-   `app-launcher`, per `project-scaffolding#35`: its `:8446` session-host is
-   re-parented via `cmd /c start` and re-adopted, so `--restart` preserves open
-   Coding sessions) is fine to restart unattended. Still hosting them
-   in-subtree, or silent on the point, is unsafe: `--restart` kills the user's
-   open Coding sessions, so an unattended YOLO run **must not** restart it
-   without confirmation. Then confirm the new build
-   with a **bounded** poll of the version endpoint (hard timeout + attempt cap,
-   fail loud): `git_sha` must match `HEAD` (a `/healthz` 200 is not enough — a
-   stale process passes it).
+review's `pass: true`). Once there, run the full **`/issue-finish` skill**
+(`skills/issue-finish/SKILL.md`, steps 1 through 8) verbatim — acceptance
+re-confirmation, README + `/docs-shots` visual-docs (step 2b), the
+consolidated verification gate, `/e2e` (step 3c), push + PR, the
+CI-advisory/checkout-mode-aware merge and land, the tray restart, and the
+deploy-coverage liveness check (step 6b) are exactly the same mechanics
+whether this run arrived via a plan-approval gate or via YOLO's own Phase 3,
+so this file used to restate them as its own nine steps instead of delegating
+— and the restatement had already drifted into a stale subset, silently
+skipping `/issue-finish`'s step 2b and step 6b on every YOLO run that touched
+either surface (fleet-config#728). Delegating means every future
+`/issue-finish` step reaches this flow for free, with no second copy to fall
+out of sync.
 
-**The `/issue-finish` UX-conformance gate (its step 3b) is already satisfied by
-Phase 3e above** — do not re-run `ux_surface.py check` or re-screenshot in this
-phase; any drift was fixed and the text-only conformance line already belongs in
-the PR body from step 6.
+Three YOLO-specific deltas on top of the delegated steps:
 
-**Do not fire `/issue-finish`'s own Slack ping (its step 8) during this phase** —
-Phase 5 sends a single `--kind yolo` ping instead, so the run produces exactly
-one completion notification, not two.
+- **`/issue-finish` step 4's PR body carries Phase 3's validation, not just
+  the gate result** — the **Validation** section names what Phase 3 ran
+  (including the reproduction proof for a bug fix and the 3h independent
+  review's verdict), not only the consolidated verification gate.
+- **Step 3b (UX-conformance) is already satisfied by Phase 3e above** — do not
+  re-run `ux_surface.py check` or re-screenshot in this phase; any drift was
+  already fixed and the text-only conformance line already belongs in the PR
+  body from step 4.
+- **Skip `/issue-finish`'s own step 8 Slack ping** — Phase 5 below sends a
+  single `--kind yolo` ping instead, so the run produces exactly one
+  completion notification, not two.
 
 ### Phase 5 — Final report
 

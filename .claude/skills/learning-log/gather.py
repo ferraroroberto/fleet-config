@@ -41,6 +41,7 @@ from pathlib import Path
 HELPER = Path(__file__).resolve().parents[3] / "skills" / "_lib" / "audit_issue.py"
 
 sys.path.insert(0, str(HELPER.parent))
+import git_run  # noqa: E402
 from no_window import NO_WINDOW  # noqa: E402
 from utf8_stdio import ensure_utf8_stdio  # noqa: E402
 
@@ -257,9 +258,7 @@ def render_stats(stats: dict, since: str, today: str) -> str:
 
 def _gh_json(args: list[str]) -> list | dict:
     try:
-        proc = subprocess.run(["gh", *args], capture_output=True, text=True,
-                              encoding="utf-8", errors="replace", timeout=120,
-                              creationflags=NO_WINDOW)
+        proc = git_run.run_gh(args, timeout=120)
     except (OSError, subprocess.SubprocessError) as exc:
         print(f"gh {' '.join(args[:3])}… failed: {exc}", file=sys.stderr)
         return []
