@@ -9,10 +9,11 @@ console-flash on a headless spawn, fleet-config#412), plus
 matrix actually calls.
 
 Also home to the sibling call-site gate `_git_wrapper_unit_check`
-(fleet-config#677): the same trees, scanned for a hand-rolled
-`subprocess.<spawn>(["git", ...])` that bypasses the tier's `run_git` wrapper
-and so silently opts out of `GIT_OPTIONAL_LOCKS=0` (fleet-config#667). Same
-shape of defect, same static-AST answer, hence the same module.
+(fleet-config#677, fleet-config#728): the same trees, scanned for a
+hand-rolled `subprocess.<spawn>(["git"/"gh", ...])` that bypasses the tier's
+`run_git`/`run_gh` wrapper and so silently opts out of `GIT_OPTIONAL_LOCKS=0`
+(fleet-config#667) or the `gh` UTF-8-decoding/NO_WINDOW combo (fleet-config#679).
+Same shape of defect, same static-AST answer, hence the same module.
 """
 from __future__ import annotations
 
@@ -123,16 +124,19 @@ def _spawn_import_style_offenders() -> "list[str]":
     return offenders
 
 
-# The two files allowed to spawn `git` directly: they *are* the wrappers. Every
-# other runtime file must route through `_lib.run_git` (hooks tier) or
-# `git_run.run_git` (skills tier) so `GIT_OPTIONAL_LOCKS=0` and `NO_WINDOW`
-# apply everywhere, not just wherever someone remembered (fleet-config#677).
+# The two files allowed to spawn `git`/`gh` directly: they *are* the wrappers.
+# Every other runtime file must route through `_lib.run_git`/`_lib.run_gh`
+# (hooks tier) or `git_run.run_git`/`git_run.run_gh` (skills tier) so
+# `GIT_OPTIONAL_LOCKS=0`/UTF-8 decoding and `NO_WINDOW` apply everywhere, not
+# just wherever someone remembered (fleet-config#677, fleet-config#728).
 _GIT_WRAPPER_FILES = {"hooks/_lib.py", "skills/_lib/git_run.py"}
+_GH_WRAPPER_FILES = _GIT_WRAPPER_FILES
 
 
-def _is_git_argv(node) -> bool:
-    """True if a spawn call's first positional argument is a list literal whose
-    first element is the string `git` (optionally a path ending in it).
+def _argv_head_exe(node) -> "str | None":
+    """The bare executable name of a spawn call's first positional argument,
+    if it's a list literal whose first element is a string constant — else
+    `None`.
 
     Deliberately literal-only: a spawn built from a variable can't be judged
     statically, and guessing would make the gate noisy rather than sound. The
@@ -140,21 +144,21 @@ def _is_git_argv(node) -> bool:
     import ast
 
     if not node.args:
-        return False
+        return None
     argv = node.args[0]
     if not (isinstance(argv, ast.List) and argv.elts):
-        return False
+        return None
     head = argv.elts[0]
     if not (isinstance(head, ast.Constant) and isinstance(head.value, str)):
-        return False
-    exe = head.value.replace("\\", "/").rsplit("/", 1)[-1]
-    return exe in {"git", "git.exe"}
+        return None
+    return head.value.replace("\\", "/").rsplit("/", 1)[-1]
 
 
-def _raw_git_spawns_in_tree(tree, label: str) -> "list[str]":
-    """Every `subprocess.<spawn>(["git", ...], ...)` in a parsed `tree`, as
-    `label:line` strings. Shared by the file scan and the synthetic unit cases
-    so both exercise the identical matcher."""
+def _raw_exe_spawns_in_tree(tree, label: str, exe_names: "set[str]") -> "list[str]":
+    """Every `subprocess.<spawn>([<exe>, ...], ...)` in a parsed `tree` whose
+    argv head resolves to one of `exe_names`, as `label:line` strings. Shared
+    by the `git` and `gh` file scans and their synthetic unit cases so all of
+    them exercise the identical matcher."""
     import ast
 
     offenders: list[str] = []
@@ -165,14 +169,14 @@ def _raw_git_spawns_in_tree(tree, label: str) -> "list[str]":
         if not (isinstance(fn, ast.Attribute) and fn.attr in _SPAWN_ATTRS
                 and isinstance(fn.value, ast.Name) and fn.value.id == "subprocess"):
             continue
-        if _is_git_argv(node):
+        if _argv_head_exe(node) in exe_names:
             offenders.append(f"{label}:{node.lineno}")
     return offenders
 
 
-def _raw_git_spawn_sites() -> "list[str]":
-    """Every hand-rolled `git` spawn under `_SPAWN_SCAN_DIRS`, excluding the two
-    wrapper files that are supposed to contain one."""
+def _raw_exe_spawn_sites(exe_names: "set[str]", wrapper_files: "set[str]") -> "list[str]":
+    """Every hand-rolled spawn of `exe_names` under `_SPAWN_SCAN_DIRS`,
+    excluding `wrapper_files` (the files that are supposed to contain one)."""
     import ast
 
     offenders: list[str] = []
@@ -181,27 +185,42 @@ def _raw_git_spawn_sites() -> "list[str]":
             if "__pycache__" in py.parts:
                 continue
             label = py.relative_to(REPO).as_posix()
-            if label in _GIT_WRAPPER_FILES:
+            if label in wrapper_files:
                 continue
             try:
                 tree = ast.parse(py.read_text(encoding="utf-8"), filename=str(py))
             except (OSError, SyntaxError) as exc:  # pragma: no cover - byte-compile catches these first
                 offenders.append(f"{label}: unparseable ({exc})")
                 continue
-            offenders.extend(_raw_git_spawns_in_tree(tree, label))
+            offenders.extend(_raw_exe_spawns_in_tree(tree, label, exe_names))
     return offenders
 
 
+def _raw_git_spawn_sites() -> "list[str]":
+    """Every hand-rolled `git` spawn under `_SPAWN_SCAN_DIRS`, excluding the two
+    wrapper files that are supposed to contain one."""
+    return _raw_exe_spawn_sites({"git", "git.exe"}, _GIT_WRAPPER_FILES)
+
+
+def _raw_gh_spawn_sites() -> "list[str]":
+    """Every hand-rolled `gh` spawn under `_SPAWN_SCAN_DIRS`, excluding the two
+    wrapper files that are supposed to contain one (fleet-config#728)."""
+    return _raw_exe_spawn_sites({"gh", "gh.exe"}, _GH_WRAPPER_FILES)
+
+
 def _git_wrapper_unit_check() -> Tuple[int, int]:
-    """No runtime file hand-rolls a `git` spawn around its tier's `run_git` (#677).
+    """No runtime file hand-rolls a `git`/`gh` spawn around its tier's
+    `run_git`/`run_gh` (#677, #728).
 
     `run_git` is not a style preference: it is where `GIT_OPTIONAL_LOCKS=0`
     lives, the fix for the stranded 0-byte `index.lock` that left nine repos
-    unable to commit for fifteen days (fleet-config#667). A raw
-    `subprocess.run(["git", ...])` silently opts back out of it, and — exactly
-    like an unsuppressed spawn — nothing at runtime says so: every affected
-    command keeps exiting 0 and printing the right answer. So the gate is
-    static, and it sits beside the NO_WINDOW scanner it mirrors.
+    unable to commit for fifteen days (fleet-config#667). `run_gh` is the same
+    fix for the `gh` CLI's own drifted UTF-8-decoding/timeout/NO_WINDOW combo
+    (fleet-config#728, fleet-config#679). A raw `subprocess.run(["git"/"gh",
+    ...])` silently opts back out of either, and — exactly like an
+    unsuppressed spawn — nothing at runtime says so: every affected command
+    keeps exiting 0 and printing the right answer. So the gate is static, and
+    it sits beside the NO_WINDOW scanner it mirrors.
     """
     check = _Checker()
 
@@ -210,6 +229,12 @@ def _git_wrapper_unit_check() -> Tuple[int, int]:
           f"(route through run_git; wrappers exempt: {', '.join(sorted(_GIT_WRAPPER_FILES))})",
           not offenders,
           "hand-rolled git spawns at:\n" + "\n".join(offenders))
+
+    gh_offenders = _raw_gh_spawn_sites()
+    check(f"gh_wrapper: no hand-rolled `gh` spawn in {', '.join(_SPAWN_SCAN_DIRS)} "
+          f"(route through run_gh; wrappers exempt: {', '.join(sorted(_GH_WRAPPER_FILES))})",
+          not gh_offenders,
+          "hand-rolled gh spawns at:\n" + "\n".join(gh_offenders))
 
     import ast
 
@@ -220,18 +245,32 @@ def _git_wrapper_unit_check() -> Tuple[int, int]:
         "subprocess.run(['gh', 'issue', 'view'], creationflags=_lib.NO_WINDOW)\n"
         "_lib.run_git(['-C', repo, 'diff', '--cached'])\n"
         "subprocess.Popen(['git', 'fetch'], creationflags=_lib.NO_WINDOW)\n"
+        "_lib.run_gh(['issue', 'view'])\n"
+        "subprocess.Popen(['gh', 'issue', 'comment'], creationflags=_lib.NO_WINDOW)\n"
     )
-    lines = {int(o.rsplit(":", 1)[1]) for o in _raw_git_spawns_in_tree(ast.parse(synthetic), "synthetic")}
+    git_lines = {int(o.rsplit(":", 1)[1])
+                 for o in _raw_exe_spawns_in_tree(ast.parse(synthetic), "synthetic", {"git", "git.exe"})}
     check("git_wrapper: a literal `subprocess.run(['git', ...])` is reported",
-          2 in lines, f"offending lines seen: {sorted(lines)}")
+          2 in git_lines, f"offending lines seen: {sorted(git_lines)}")
     check("git_wrapper: a non-literal argv head is NOT reported (unjudgeable statically)",
-          3 not in lines, f"offending lines seen: {sorted(lines)}")
+          3 not in git_lines, f"offending lines seen: {sorted(git_lines)}")
     check("git_wrapper: a non-git spawn (`gh`) is NOT reported",
-          4 not in lines, f"offending lines seen: {sorted(lines)}")
+          4 not in git_lines, f"offending lines seen: {sorted(git_lines)}")
     check("git_wrapper: a `run_git` call is NOT reported",
-          5 not in lines, f"offending lines seen: {sorted(lines)}")
+          5 not in git_lines, f"offending lines seen: {sorted(git_lines)}")
     check("git_wrapper: `subprocess.Popen(['git', ...])` is reported too",
-          6 in lines, f"offending lines seen: {sorted(lines)}")
+          6 in git_lines, f"offending lines seen: {sorted(git_lines)}")
+
+    gh_lines = {int(o.rsplit(":", 1)[1])
+                for o in _raw_exe_spawns_in_tree(ast.parse(synthetic), "synthetic", {"gh", "gh.exe"})}
+    check("gh_wrapper: a literal `subprocess.run(['gh', ...])` is reported",
+          4 in gh_lines, f"offending lines seen: {sorted(gh_lines)}")
+    check("gh_wrapper: a non-gh spawn (`git`) is NOT reported",
+          2 not in gh_lines, f"offending lines seen: {sorted(gh_lines)}")
+    check("gh_wrapper: a `run_gh` call is NOT reported",
+          7 not in gh_lines, f"offending lines seen: {sorted(gh_lines)}")
+    check("gh_wrapper: `subprocess.Popen(['gh', ...])` is reported too",
+          8 in gh_lines, f"offending lines seen: {sorted(gh_lines)}")
 
     return check.failures, check.total
 

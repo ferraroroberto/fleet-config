@@ -57,7 +57,6 @@ from typing import Iterator, Optional
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import git_run  # noqa: E402
-from no_window import NO_WINDOW  # noqa: E402
 
 KINDS = (
     "ledger",
@@ -524,16 +523,9 @@ def ledger_decision(
 # ---- gh plumbing ----------------------------------------------------------
 
 def _run(args: list[str]) -> subprocess.CompletedProcess:
-    # Force UTF-8: issue bodies routinely contain non-ASCII (em dashes, emoji),
-    # and the Windows default (cp1252) raises UnicodeDecodeError mid-read, which
-    # would crash the unattended weekly run. errors="replace" never throws.
-    # NO_WINDOW for the same unattended run: /audit-fleet upserts dozens of
-    # issues from a console-less scheduled job (fleet-config#412).
-    return subprocess.run(
-        ["gh", *args], capture_output=True, text=True,
-        encoding="utf-8", errors="replace",
-        creationflags=NO_WINDOW,
-    )
+    # Shared plumbing (fleet-config#728): UTF-8 decoding, NO_WINDOW, and the
+    # encoding/console-flash gotchas are all owned by git_run.run_gh now.
+    return git_run.run_gh(args)
 
 
 # A 5xx / timeout-shaped gh failure is the server or the network, not our

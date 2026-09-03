@@ -160,7 +160,12 @@ try:
     batch_skill = (ROOT / "skills" / "issue-batch" / "SKILL.md").read_text(encoding="utf-8")
     check("active_issue.py add" in start_skill, "issue-start writes the marker")
     check("active_issue.py remove" in finish_skill, "issue-finish clears the marker")
-    check("active_issue.py remove" in yolo_skill, "issue-yolo inline merge clears the marker")
+    # issue-yolo's Phase 4 delegates its ship steps to `/issue-finish` verbatim
+    # (fleet-config#728) rather than restating them, so the marker-clear command
+    # now lives only in finish_skill's text -- confirm yolo actually delegates
+    # there rather than checking for a since-removed literal restatement.
+    check("run the full **`/issue-finish` skill**" in yolo_skill,
+          "issue-yolo Phase 4 delegates to issue-finish (which clears the marker)")
     check("active_issue.py add" in batch_skill, "issue-batch worktree setup writes the marker")
 finally:
     shutil.rmtree(tmp, ignore_errors=True)

@@ -60,6 +60,7 @@ SKILL_DIR = Path(__file__).resolve().parent
 REPO_ROOT = SKILL_DIR.parents[2]
 
 sys.path.insert(0, str(REPO_ROOT / "skills" / "_lib"))
+import git_run  # noqa: E402
 from no_window import NO_WINDOW  # noqa: E402
 from utf8_stdio import ensure_utf8_stdio  # noqa: E402
 
@@ -582,10 +583,7 @@ def _audit_issue(*args: str) -> str:
 
 
 def _gh(args: list[str]) -> str:
-    res = subprocess.run(
-        ["gh", *args], capture_output=True, text=True,
-        encoding="utf-8", errors="replace", timeout=120, creationflags=NO_WINDOW,
-    )
+    res = git_run.run_gh(args, timeout=120)
     if res.returncode != 0:
         raise RuntimeError(f"gh {' '.join(args)} failed: {(res.stderr or res.stdout).strip()}")
     return (res.stdout or "").strip()

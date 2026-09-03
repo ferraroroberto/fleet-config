@@ -613,6 +613,37 @@ def run_git(
     )
 
 
+def run_gh(
+    args: Sequence[str], *, check: bool = False, timeout: Optional[float] = None,
+    stdin: Optional[int] = None,
+) -> subprocess.CompletedProcess:
+    """Run ``gh <args>``, UTF-8 decoded with undecodable bytes replaced.
+
+    The ``gh``-CLI sibling of :func:`run_git` (fleet-config#728): before this
+    existed, every ``gh`` call site hand-rolled the identical
+    ``capture_output=True, text=True, encoding="utf-8", errors="replace",
+    creationflags=NO_WINDOW`` combination — ``text=True`` alone falls back to
+    cp1252 on Windows, which raises ``UnicodeDecodeError`` on a non-ASCII issue
+    title or body (fleet-config#679) — each restating the same two gotchas in
+    its own comment. They had already drifted on ``timeout`` (some passed none,
+    some 30s/60s/120s) before this wrapper existed to catch it; that spread is
+    real call-site policy, so ``timeout`` stays a parameter here rather than a
+    forced constant — only the plumbing is shared. ``stdin`` likewise stays
+    optional (``None`` inherits, matching every site except
+    ``chief_ops.fetch_issue_state``, which passes ``subprocess.DEVNULL``).
+
+    Deliberately a **hooks-tier copy** of ``skills/_lib/git_run.run_gh`` — the
+    same duplication `run_git` already carries between the two trees (see that
+    function's docstring for why: `hooks/` must stay importable with nothing
+    but its own directory on ``sys.path``).
+    """
+    return subprocess.run(
+        ["gh", *args], capture_output=True, text=True,
+        encoding="utf-8", errors="replace", check=check, timeout=timeout,
+        creationflags=NO_WINDOW, stdin=stdin,
+    )
+
+
 def resolve_default_branch_ref(
     repo_path: Path,
     candidates: Sequence[str] = ("origin/main", "main", "master"),
@@ -660,11 +691,7 @@ def gh_json(args: Sequence[str], *, timeout: int = 20) -> Dict[str, Any]:
     imported by both and imports neither, so the cycle dissolves.
     """
     try:
-        proc = subprocess.run(
-            ["gh", *args], capture_output=True, text=True,
-            encoding="utf-8", errors="replace", timeout=timeout,
-            creationflags=NO_WINDOW,
-        )
+        proc = run_gh(args, timeout=timeout)
     except (OSError, subprocess.SubprocessError) as exc:
         logger.error("gh call failed: %s", exc)
         return {}

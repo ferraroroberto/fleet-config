@@ -1,4 +1,4 @@
-"""Shared `git` subprocess wrapper for skills/_lib helpers.
+"""Shared `git`/`gh` subprocess wrappers for skills/_lib helpers.
 
 Every helper here needs the same three lines — shell out to `git`, capture
 stdout/stderr as UTF-8, never crash on an undecodable byte — but before this
@@ -9,6 +9,13 @@ copy the one that had drifted (missing `errors="replace"`, so a non-ASCII
 commit message could raise `UnicodeDecodeError` mid-run). One place now owns
 the subprocess plumbing; each call site keeps whatever return shape (`str` vs
 `CompletedProcess`) and failure behavior (raise vs swallow) it needs on top.
+
+`run_gh` (fleet-config#728) is the same fix for the `gh` CLI: `audit_issue.py`,
+`chief_ops.py`, `issue_state_gate.py`, and `gh_issue_fetch.py` each hand-rolled
+an identical `capture_output=True, text=True, encoding="utf-8",
+errors="replace", creationflags=NO_WINDOW` `gh` spawn before this existed, and
+had already drifted on `timeout` (some passed none, some 30s/60s/120s) — see
+that function's docstring.
 
 stdlib only (plus the sibling `no_window` constant).
 """
@@ -78,6 +85,35 @@ def run_git(
         ["git", *args], capture_output=True, text=True,
         encoding="utf-8", errors="replace", check=check, timeout=timeout,
         creationflags=NO_WINDOW, env=git_env(),
+    )
+
+
+def run_gh(
+    args: Sequence[str], *, check: bool = False, timeout: Optional[float] = None,
+    stdin: Optional[int] = None,
+) -> subprocess.CompletedProcess:
+    """Run `gh <args>`, UTF-8 decoded with undecodable bytes replaced.
+
+    The `gh`-CLI sibling of `run_git` (fleet-config#728). `text=True` alone
+    falls back to cp1252 on Windows, which raises `UnicodeDecodeError` on a
+    non-ASCII issue title or body (fleet-config#679) — every prior call site
+    repeated that comment along with the identical spawn. `timeout` stays a
+    parameter rather than a forced constant: call sites had already drifted
+    (`issue_state_gate` 30s, `gh_issue_fetch` 60s, `audit_issue`/`chief_ops`
+    none) before this wrapper existed to catch the drift, and that spread is
+    real per-call-site policy (a short interactive-shaped lookup vs. a bulk
+    `--limit 400` list), not an oversight to erase. `stdin` likewise stays
+    optional — `None` inherits, matching every site except
+    `chief_ops.fetch_issue_state`, which passes `subprocess.DEVNULL` to keep a
+    scheduled run from ever blocking on stdin.
+
+    `creationflags=NO_WINDOW` is the same one-place fix as `run_git` —
+    (fleet-config#412).
+    """
+    return subprocess.run(
+        ["gh", *args], capture_output=True, text=True,
+        encoding="utf-8", errors="replace", check=check, timeout=timeout,
+        creationflags=NO_WINDOW, stdin=stdin,
     )
 
 

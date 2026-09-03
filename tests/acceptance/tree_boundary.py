@@ -18,9 +18,10 @@ session. So the rule gets a gate instead of a paragraph.
 Two mechanical parts:
   1. no module under `hooks/` reaches into `skills/` at all (no `sys.path`
      entry naming it, no import of a name that only exists there);
-  2. the deliberate hooks-tier copies of the two `git_run` helpers agree
-     behaviourally with the skills-tier originals, so the duplication cannot
-     drift — the same contract `spawn_scanner` holds `NO_WINDOW` to.
+  2. the deliberate hooks-tier copies of the `git_run` helpers — including
+     `run_gh` (fleet-config#728) — agree behaviourally with the skills-tier
+     originals, so the duplication cannot drift — the same contract
+     `spawn_scanner` holds `NO_WINDOW` to.
 """
 from __future__ import annotations
 
@@ -90,8 +91,9 @@ def _cross_tree_offenders() -> List[str]:
 
 
 def _git_helper_parity(check: _Checker) -> None:
-    """The hooks-tier `run_git` / `resolve_default_branch_ref` copies behave
-    exactly like the skills-tier originals, on real temp repos."""
+    """The hooks-tier `run_git` / `resolve_default_branch_ref` / `run_gh`
+    copies behave exactly like the skills-tier originals, on real temp repos
+    (and, for `run_gh`, the real `gh` binary)."""
     sys.path.insert(0, str(HOOKS))
     sys.path.insert(0, str(SKILLS_LIB))
     import _lib  # noqa: E402  (hooks/_lib.py)
@@ -136,6 +138,17 @@ def _git_helper_parity(check: _Checker) -> None:
               == git_run.resolve_default_branch_ref(outside) == "main",
               f"hooks={_lib.resolve_default_branch_ref(outside)!r} "
               f"skills={git_run.resolve_default_branch_ref(outside)!r}")
+
+        # run_gh (fleet-config#728): same parity contract as run_git, above.
+        # `gh --version` needs neither network nor auth, so this drives the
+        # real binary rather than a mock.
+        mine_gh = _lib.run_gh(["--version"])
+        theirs_gh = git_run.run_gh(["--version"])
+        check("tree_boundary: hooks/_lib.run_gh matches git_run.run_gh "
+              "(returncode + stdout)",
+              (mine_gh.returncode, mine_gh.stdout) == (theirs_gh.returncode, theirs_gh.stdout),
+              f"hooks={(mine_gh.returncode, mine_gh.stdout)!r} "
+              f"skills={(theirs_gh.returncode, theirs_gh.stdout)!r}")
     finally:
         # git's object store is read-only on Windows, so a plain rmtree can
         # raise on a perfectly successful run — never let cleanup fail the gate.

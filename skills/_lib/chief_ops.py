@@ -161,6 +161,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import chief_managed  # noqa: E402
 import dirty_tree_check  # noqa: E402
 import fleet_repo_scan  # noqa: E402
+import git_run  # noqa: E402
 from no_window import NO_WINDOW  # noqa: E402
 # `say --verify`'s delivery classifier is its own subsystem, in its own module
 # (fleet-config#680) -- this file keeps the CLI and the I/O that feeds it.
@@ -474,14 +475,13 @@ def fetch_issue_state(repo: str, number: int, owner: str = DEFAULT_OWNER) -> Dic
     """One `gh issue view` per ref (no batched API exists). A `gh` failure
     becomes an `error` field rather than raising, so one bad ref never
     aborts the rest of a multi-repo table."""
-    res = subprocess.run(
+    res = git_run.run_gh(
         [
-            "gh", "issue", "view", str(number),
+            "issue", "view", str(number),
             "--repo", f"{owner}/{repo}",
             "--json", "number,title,state,labels,updatedAt",
         ],
-        capture_output=True, text=True, encoding="utf-8", errors="replace",
-        stdin=subprocess.DEVNULL, creationflags=NO_WINDOW, check=False,
+        stdin=subprocess.DEVNULL,
     )
     if res.returncode != 0:
         return {"repo": repo, "number": number, "error": res.stderr.strip() or "gh error"}

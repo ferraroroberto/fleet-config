@@ -61,7 +61,7 @@ from pathlib import Path
 from typing import Any, Callable, Dict, List, Tuple
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from no_window import NO_WINDOW  # noqa: E402
+import git_run  # noqa: E402
 
 GH_TIMEOUT_SECONDS = 30
 
@@ -113,15 +113,9 @@ def check(repo: str, number: str) -> Tuple[str, str]:
     if repo_error:
         return "unknown", repo_error
     try:
-        # encoding pinned to UTF-8: `gh` emits UTF-8 and bare text=True would
-        # decode with the ambient Windows locale (cp1252), raising
-        # UnicodeDecodeError on a non-ASCII byte in gh's own stderr and turning a
-        # readable verdict into a crash. errors="replace" never throws
-        # (fleet-config#679).
-        proc = subprocess.run(
-            ["gh", "issue", "view", str(number), "--repo", f"ferraroroberto/{repo}", "--json", "state"],
-            capture_output=True, text=True, encoding="utf-8", errors="replace",
-            timeout=GH_TIMEOUT_SECONDS, creationflags=NO_WINDOW,
+        proc = git_run.run_gh(
+            ["issue", "view", str(number), "--repo", f"ferraroroberto/{repo}", "--json", "state"],
+            timeout=GH_TIMEOUT_SECONDS,
         )
     except (subprocess.TimeoutExpired, OSError) as exc:
         return "unknown", f"gh invocation failed: {exc}"

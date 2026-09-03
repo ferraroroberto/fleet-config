@@ -1,4 +1,4 @@
-"""Unit tests for skills/_lib/git_run.py (fleet-config#485, #667).
+"""Unit tests for skills/_lib/git_run.py (fleet-config#485, #667, #728).
 
 Exercises the shared default-branch resolver against a real throwaway git
 repo (upstream + clone, so `origin/HEAD` resolves like it would in a real
@@ -176,6 +176,24 @@ try:
     check(git_run.changed_files(work, "origin/main") == [],
           "changed_files: a genuinely clean diff is [] — the state None must stay distinct from")
     _git(work, "checkout", "-q", "main")
+
+    # ---- run_gh: the gh-CLI sibling wrapper (fleet-config#728) ----
+    # `gh --version` needs neither network nor auth, so this exercises the
+    # actual plumbing (UTF-8 decode, NO_WINDOW, stdin) against the real
+    # binary rather than a mock, without depending on GitHub being reachable.
+    ver = git_run.run_gh(["--version"])
+    check(ver.returncode == 0 and ver.stdout.lower().startswith("gh version"),
+          f"run_gh: 'gh --version' succeeds and decodes as text (got {ver.stdout!r})")
+    check(isinstance(ver.stdout, str) and isinstance(ver.stderr, str),
+          "run_gh: stdout/stderr are decoded text, not bytes")
+
+    silenced = git_run.run_gh(["--version"], stdin=subprocess.DEVNULL)
+    check(silenced.returncode == 0,
+          "run_gh: an explicit stdin= (e.g. DEVNULL) is passed through and does not hang")
+
+    bad = git_run.run_gh(["no-such-subcommand-xyz"])
+    check(bad.returncode != 0,
+          f"run_gh: an unknown subcommand is a non-zero exit, not a raise (got {bad.returncode})")
 
     # ---- git_env: the variable is set, on top of the ambient environment ----
     env = git_run.git_env()
