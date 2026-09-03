@@ -22,7 +22,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "hooks"))
-import backup_private as bp  # noqa: E402
+import backup as bp  # noqa: E402
 
 sys.path.insert(0, str(Path(__file__).resolve().parent / "_lib"))
 from check_harness import CheckHarness  # noqa: E402
@@ -265,13 +265,13 @@ try:
     # collapsed entry for a wholly-ignored subdirectory under it, so the same file
     # is reached twice. Day one hid it (copy2 overwrites); day two failed 516 files
     # across 11 repos on os.link (fleet-config#590).
-    original_entries = bp.git_ignored_entries
-    bp.git_ignored_entries = lambda repo_dir: [".env", "identity/", "identity/me.md",
+    original_entries = bp.select.git_ignored_entries
+    bp.select.git_ignored_entries = lambda repo_dir: [".env", "identity/", "identity/me.md",
                                                "identity/", ".env"]
     try:
         overlapped = bp.select_repo(repo, cfg, bp.RepoOverrides())
     finally:
-        bp.git_ignored_entries = original_entries
+        bp.select.git_ignored_entries = original_entries
     overlapped_rels = [rel for _, rel, _ in overlapped.files]
     check(len(overlapped_rels) == len(set(overlapped_rels)),
           f"dedupe: overlapping git entries yield no duplicate paths, got {overlapped_rels}")
@@ -813,8 +813,8 @@ try:
                    transcripts_dest=tmp / "e2e-tdest")
     _write(e2e_cfg.transcripts_src / "proj" / "session.jsonl", '{"a":1}')
 
-    original_preflight = bp._preflight
-    bp._preflight = lambda source, dest: None  # temp dirs share a volume by construction
+    original_preflight = bp.cli._preflight
+    bp.cli._preflight = lambda source, dest: None  # temp dirs share a volume by construction
     try:
         code, manifests = bp.run(e2e_cfg, only=None, toml_path=toml_path, notify=False,
                                  today="2026-08-11")
@@ -923,7 +923,7 @@ try:
               f"zero-file regression check, got {bad_manifest['regressions']}")
         check(bad_code != bp.EXIT_OK, f"rd-e2e: the run exits non-zero, got {bad_code}")
     finally:
-        bp._preflight = original_preflight
+        bp.cli._preflight = original_preflight
         writer.close()
 
     # ---- latest/ incremental reconcile (fleet-config#721) ------------------
@@ -941,8 +941,8 @@ try:
 
     incr_cfg = _cfg(tmp, source_root=incr_fleet, dest=tmp / "incr-dest",
                     transcripts_src=tmp / "incr-transcripts", transcripts_dest=tmp / "incr-tdest")
-    original_preflight3 = bp._preflight
-    bp._preflight = lambda source, dest: None  # temp dirs share a volume by construction
+    original_preflight3 = bp.cli._preflight
+    bp.cli._preflight = lambda source, dest: None  # temp dirs share a volume by construction
     try:
         code1, manifests1 = bp.run(incr_cfg, only="incr-repo", toml_path=toml_path,
                                    notify=False, today="2026-08-11")
@@ -1024,7 +1024,7 @@ try:
               f"incr: --rebuild-latest-full forces the repair path even with a valid "
               f"previous manifest, got {repos4.get('latest_mode')}")
     finally:
-        bp._preflight = original_preflight3
+        bp.cli._preflight = original_preflight3
 
     # ---- an interrupted run: marker left behind, recovered, and reported ---
     # A real death mid-write, simulated by making write_group raise after the
@@ -1032,9 +1032,9 @@ try:
     # power loss between the first write and manifest.json (fleet-config#607).
     torn_cfg = _cfg(tmp, dest=tmp / "torn-dest", transcripts_src=tmp / "torn-transcripts",
                     transcripts_dest=tmp / "torn-tdest")
-    original_preflight2 = bp._preflight
-    original_write_group = bp.write_group
-    bp._preflight = lambda source, dest: None  # temp dirs share a volume by construction
+    original_preflight2 = bp.cli._preflight
+    original_write_group = bp.cli.write_group
+    bp.cli._preflight = lambda source, dest: None  # temp dirs share a volume by construction
 
     class _SimulatedCrash(Exception):
         pass
@@ -1049,7 +1049,7 @@ try:
         check(not bp.has_run_marker(torn_cfg.dest / "2026-08-10"),
               "torn: an ordinary successful run removes its own marker")
 
-        bp.write_group = _crashing_write_group
+        bp.cli.write_group = _crashing_write_group
         crashed = False
         try:
             bp.run(torn_cfg, only="demo-repo", toml_path=toml_path,
@@ -1057,7 +1057,7 @@ try:
         except _SimulatedCrash:
             crashed = True
         finally:
-            bp.write_group = original_write_group
+            bp.cli.write_group = original_write_group
         check(crashed, "torn: the simulated mid-write crash propagates (nothing swallows it)")
 
         torn_snapshot = torn_cfg.dest / "2026-08-11"
@@ -1125,8 +1125,8 @@ try:
               f"torn: report() names the marker it recovered on this run, got "
               f"{recovered_buf.getvalue()!r}")
     finally:
-        bp._preflight = original_preflight2
-        bp.write_group = original_write_group
+        bp.cli._preflight = original_preflight2
+        bp.cli.write_group = original_write_group
 
     # ---- the real projects.toml: [backup] must not steal [global]'s keys ---
     # A TOML table header claims every bare key that follows it. Adding [backup]
@@ -1161,7 +1161,7 @@ try:
     )
     check("BACKUP_FRESHNESS=" in proc.stdout,
           f"log: the report goes to stdout, got stdout={proc.stdout[:80]!r}")
-    src = (ROOT / "hooks" / "backup_private.py").read_text(encoding="utf-8")
+    src = (ROOT / "hooks" / "backup" / "cli.py").read_text(encoding="utf-8")
     check("stream=sys.stdout" in src, "log: logging is pinned to stdout, not the stderr default")
     check("line_buffering=True" in src,
           "log: stdout is line-buffered so a piped run shows progress before it exits")

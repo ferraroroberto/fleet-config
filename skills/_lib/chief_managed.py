@@ -27,7 +27,7 @@ from pathlib import Path
 from typing import Any, Dict, Optional
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from active_issue import _write_rows, read_rows, state_lock  # noqa: E402
+from active_issue import read_rows, state_lock, write_rows  # noqa: E402
 
 STATE_FILENAME = "chief-managed.json"
 PRUNE_AFTER = timedelta(hours=24)
@@ -96,7 +96,7 @@ def mark(
     with state_lock(target):
         rows = prune_rows(read_rows(target), now=moment)
         rows[sid] = row
-        _write_rows(target, rows)
+        write_rows(target, rows)
     return row
 
 

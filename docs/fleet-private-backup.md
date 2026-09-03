@@ -2,8 +2,11 @@
 
 `hooks/backup_private.py` backs up everything git ignores — the files that
 exist on this machine and nowhere else. Design record plus the restore
-procedure; the engine itself is `hooks/backup_private.py` and its scheduled
-launcher `hooks/run-backup-daily.bat`.
+procedure; the engine itself lives in the `hooks/backup/` package
+(fleet-config#731 — `config.py`/`select.py`/`snapshot.py`/`retention.py`/
+`report.py`, wired together by `cli.py`), `hooks/backup_private.py` is the
+thin CLI shim invoked below, and `hooks/run-backup-daily.bat` is its
+scheduled launcher.
 
 `hooks/backup_private.py` is **not a hook** — it is a plain scheduled program (`hooks/run-backup-daily.bat` → an app-launcher Job → Task Scheduler, daily at 03:00) that lives here because `hooks/` is this repo's junctioned Python-tool tier: `projects.toml`, `_lib.NO_WINDOW`, and the Slack transport are all already in it. It exists because `ferraroroberto/life-os#72` permanently deleted life-os's gitignored personal content — `identity/`, per-skill `context/`/`memory/`/`conversations/`, `.env` — which by design exists in exactly one place. **Anything git tracks is already safe on GitHub; anything git ignores lives on this machine and nowhere else**, and that ignored set is what this backs up (fleet-config#590).
 
