@@ -48,6 +48,13 @@ ensure_utf8_stdio()
 
 ARCHIVE_HEADER = "## Decision / discovery archive"
 HORIZON_HEADER = "## Horizon → next week"
+# Bounds the archive so the ledger body never approaches GitHub's 65,536-char
+# issue-body ceiling (fleet-config#732): at ~12 new bullets/week the archive
+# would otherwise grow unbounded (94 bullets / 32.7k chars and counting on the
+# live ledger). 150 bullets is comfortably wide (~2.5 years at the 12/week
+# cap) while keeping the body well under the limit even before dedup trims it
+# further.
+ARCHIVE_CAP = 150
 # The fleet architecture map regenerated weekly by /system-map (cross-linked, not owned here).
 FLEET_MAP_URL = "https://github.com/ferraroroberto/fleet-config/blob/main/architecture/system-map.png"
 
@@ -123,9 +130,35 @@ def extract_archive_bullets(prior_body: str) -> list[str]:
     return _bullet_lines(slice_section(prior_body, ARCHIVE_HEADER))
 
 
+def _dedupe_bullets(bullets: list[str]) -> list[str]:
+    """Drop repeat content, keeping the first (most recent) occurrence.
+
+    Bullets are compared on their text after any leading `- YYYY-MM-DD: `
+    date stamp, so the same discovery re-surfacing in a later run collapses
+    onto its newest dated entry instead of accumulating duplicates forever.
+    """
+    seen: set[str] = set()
+    out: list[str] = []
+    for b in bullets:
+        content = re.sub(r"^-\s*\d{4}-\d{2}-\d{2}:\s*", "", b).strip().lower()
+        if content in seen:
+            continue
+        seen.add(content)
+        out.append(b)
+    return out
+
+
+def window_archive(discoveries_bullets: list[str], prior_archive_bullets: list[str],
+                    cap: int = ARCHIVE_CAP) -> list[str]:
+    """This run's dated discoveries + the prior archive, deduped and capped
+    to the newest `cap` bullets so the ledger body stops growing unbounded."""
+    return _dedupe_bullets(discoveries_bullets + prior_archive_bullets)[:cap]
+
+
 def build_ledger_body(prior_body: str, today: str, horizon: str, discoveries: str) -> str:
     horizon_md = "\n".join(_bullet_lines(horizon)) or "- [ ] (none captured this run)"
-    archive = dated_discovery_bullets(discoveries, today) + extract_archive_bullets(prior_body)
+    archive = window_archive(dated_discovery_bullets(discoveries, today),
+                             extract_archive_bullets(prior_body))
     archive_md = "\n".join(archive) if archive else "- (nothing archived yet)"
     return (
         "<!-- learning-log-state -->\n"

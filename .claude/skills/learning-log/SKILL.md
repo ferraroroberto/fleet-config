@@ -74,7 +74,7 @@ Compose the weekly digest as markdown (single long lines, no hard wraps). Order:
 
 ### 4. Assemble the ledger body + upsert
 
-Write the new horizon bullets to `horizon.md` and the discovery bullets to `discoveries.md` (in `OUT_DIR`), then let Python preserve the durable archive + stamp `last-run-at`. `build_ledger_body` also renders a fixed **Fleet map** link near the top of the body — the `architecture/system-map.png` produced by `/system-map` (cross-linked, never regenerated here):
+Write the new horizon bullets to `horizon.md` and the discovery bullets to `discoveries.md` (in `OUT_DIR`), then let Python preserve the durable archive + stamp `last-run-at`. The archive is deduped on content and windowed to the newest `ARCHIVE_CAP` bullets (fleet-config#732) — it keeps growing week over week but no longer without bound, so the body stays under GitHub's issue-body ceiling. `build_ledger_body` also renders a fixed **Fleet map** link near the top of the body — the `architecture/system-map.png` produced by `/system-map` (cross-linked, never regenerated here):
 
 ```
 E:/automation/fleet-config/.venv/Scripts/python.exe .claude/skills/learning-log/gather.py assemble-ledger \
