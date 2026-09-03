@@ -723,8 +723,6 @@ class ProjectConfig:
     name: str
     cwd_prefix: Path
     webapp_port: Optional[int]
-    gate_trigger_globs: Sequence[str]
-    gate_cmd: Optional[str]
     tray_cmd: Optional[str]
     restart_cmd: Optional[str]
     api_version_path: Optional[str]
@@ -799,14 +797,12 @@ def load_registry(path: Optional[Path] = None) -> Registry:
                 name=name,
                 cwd_prefix=Path(prefix_raw),
                 webapp_port=int(webapp_port) if webapp_port is not None else None,
-                gate_trigger_globs=tuple(table.get("gate_trigger_globs", []) or []),
-                gate_cmd=table.get("gate_cmd"),
                 tray_cmd=table.get("tray_cmd"),
                 restart_cmd=table.get("restart_cmd"),
                 api_version_path=table.get("api_version_path"),
                 extra={k: v for k, v in table.items() if k not in {
-                    "cwd_prefix", "webapp_port", "gate_trigger_globs",
-                    "gate_cmd", "tray_cmd", "restart_cmd", "api_version_path",
+                    "cwd_prefix", "webapp_port",
+                    "tray_cmd", "restart_cmd", "api_version_path",
                 }},
             )
         )
