@@ -468,7 +468,7 @@ window.CONFIG = {
     },
     {
       "nm": "backup_private",
-      "ds": "Daily snapshot of every fleet repo's gitignored-but-precious residue."
+      "ds": "Thin CLI entry point for the daily fleet-private backup engine."
     },
     {
       "nm": "context_filter",

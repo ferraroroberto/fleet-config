@@ -158,7 +158,7 @@ def prune_rows(
     return kept
 
 
-def _write_rows(path: Path, rows: Dict[str, Any]) -> None:
+def write_rows(path: Path, rows: Dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     payload = json.dumps(rows, indent=2, sort_keys=True) + "\n"
     last_error: Optional[OSError] = None
@@ -291,7 +291,7 @@ def add_marker(
     with state_lock(target):
         rows = prune_rows(read_rows(target), now=moment)
         rows[marker_key(repo_name, issue)] = row
-        _write_rows(target, rows)
+        write_rows(target, rows)
     return row
 
 
@@ -312,7 +312,7 @@ def remove_marker(
     with state_lock(target):
         rows = prune_rows(read_rows(target), now=moment)
         removed = rows.pop(key, None) is not None
-        _write_rows(target, rows)
+        write_rows(target, rows)
     return removed
 
 

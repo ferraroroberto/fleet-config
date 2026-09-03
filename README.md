@@ -89,7 +89,8 @@ fleet-config/
 │   ├── session_index.py            # SessionStart hook: lazily digests settled captures into conversations/index.md
 │   ├── conversation_index.py       # the indexer (lib + CLI) session_index runs; digests via the hub, writes index.md + index.json
 │   ├── conversation_search.py      # CLI: ranked FTS5 search over captures, returns each hit's resume command
-│   ├── backup_private.py           # daily fleet-private backup engine (not a hook — a scheduled program, fleet-config#590)
+│   ├── backup_private.py           # thin CLI shim (not a hook — a scheduled program, fleet-config#590) → hooks/backup/'s `main`
+│   ├── backup/                     # the daily fleet-private backup engine: config/select/snapshot/retention/report + a thin cli.py (fleet-config#731)
 │   ├── run-backup-daily.bat        # its scheduled launcher (app-launcher Job → Task Scheduler)
 │   └── hub_client.py               # shared stdlib-urllib client for the local LLM hub (OpenAI-shape, fail-open)
 ├── tray/                           # junction → ~/.claude/tray — the ONE machine-local tray_lifecycle.ps1 (fleet-config#153)
