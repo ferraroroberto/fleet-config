@@ -52,7 +52,7 @@ cwd_prefix          = "E:/automation/app-launcher"
 webapp_port         = 8445
 session_host_port   = 8446
 gate_trigger_globs  = ["app/webapp/**", "src/launcher.py", "src/session_host*.py"]
-gate_cmd            = "pwsh -File scripts/verify-before-ship.ps1"
+gate_cmd            = "C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe -File scripts/verify-before-ship.ps1"
 tray_cmd            = "tray.bat"
 restart_cmd         = '& .\.venv\Scripts\python.exe -c "from app.webapp.manager import WebappManager; WebappManager().start(wait=True)"'
 api_version_path    = "/api/version"
@@ -61,7 +61,7 @@ api_version_path    = "/api/version"
 cwd_prefix          = "E:/automation/photo-ocr"
 webapp_port         = 8444
 gate_trigger_globs  = ["app/webapp/**"]
-gate_cmd            = "pwsh -File scripts/verify-before-ship.ps1"
+gate_cmd            = "C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe -File scripts/verify-before-ship.ps1"
 tray_cmd            = "tray.bat"
 restart_cmd         = '& .\.venv\Scripts\python.exe -c "from app.webapp.manager import WebappManager; WebappManager().start(wait=True)"'
 api_version_path    = "/api/version"
@@ -69,7 +69,7 @@ api_version_path    = "/api/version"
 [voice-transcriber]
 cwd_prefix          = "E:/automation/voice-transcriber"
 webapp_port         = 8443
-gate_cmd            = "pwsh -File scripts/verify-before-ship.ps1"
+gate_cmd            = "C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe -File scripts/verify-before-ship.ps1"
 tray_cmd            = "tray.bat"
 restart_cmd         = '& .\.venv\Scripts\python.exe -c "from app.webapp.manager import WebappManager; WebappManager().start(wait=True)"'
 api_version_path    = "/api/version"
@@ -97,7 +97,7 @@ api_version_path    = "/api/version"
 cwd_prefix          = "E:/automation/local-llm-hub"
 webapp_port         = 8000
 whisper_port        = 8090
-gate_cmd            = "pwsh -File scripts/verify-before-ship.ps1"
+gate_cmd            = "C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe -File scripts/verify-before-ship.ps1"
 tray_cmd            = "tray.bat"
 # Legitimately owns a `claude -p` subprocess wrapper — exempts it from
 # hub_bypass_warn.py's "don't re-implement the hub inline" nudge. A second
@@ -220,7 +220,7 @@ cwd_prefix = "E:/automation/suna"
 [task-os]
 cwd_prefix          = "E:/automation/task-os"
 webapp_port         = 8448
-gate_cmd            = "pwsh -File scripts/verify-before-ship.ps1"
+gate_cmd            = "C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe -File scripts/verify-before-ship.ps1"
 tray_cmd            = "tray.bat"
 restart_cmd         = '& .\.venv\Scripts\python.exe -c "from app.webapp.manager import WebappManager; WebappManager().start(wait=True)"'
 api_version_path    = "/api/version"
@@ -237,7 +237,7 @@ cwd_prefix = "E:/automation/website-analytics"
 [whatsapp-radar]
 cwd_prefix          = "E:/automation/whatsapp-radar"
 webapp_port         = 8455
-gate_cmd            = "pwsh -File scripts/verify-before-ship.ps1"
+gate_cmd            = "C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe -File scripts/verify-before-ship.ps1"
 tray_cmd            = "tray.bat"
 restart_cmd         = '& .\.venv\Scripts\python.exe -c "from app.webapp.manager import WebappManager; WebappManager().start(wait=True)"'
 api_version_path    = "/api/version"

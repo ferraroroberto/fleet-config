@@ -89,6 +89,8 @@ def _run_ps(
         [_lib.powershell_exe(), "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", command],
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         timeout=timeout,
         cwd=str(cwd) if cwd else None,
         env=env,

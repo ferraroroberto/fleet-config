@@ -29,6 +29,7 @@ from check_harness import CheckHarness  # noqa: E402
 
 _h = CheckHarness()
 check = _h.check
+skip = _h.skip
 
 NOW = datetime(2026, 8, 11, 3, 0, 0, tzinfo=timezone.utc)
 
@@ -133,7 +134,7 @@ try:
         check(not junction.is_symlink() or sys.platform != "win32",
               "reparse: is_symlink() is False for a junction (the reason this helper exists)")
     else:
-        check(True, "reparse: junction creation unavailable — skipped")
+        skip("reparse: junction creation unavailable, so junction-detection was not verified")
     check(not bp.is_reparse_point(real_dir), "reparse: an ordinary directory is not one")
     check(bp.is_reparse_point(tmp / "does-not-exist"),
           "reparse: an unstattable path fails closed")
@@ -144,13 +145,17 @@ try:
     _write(walk_root / "nested" / "deep.md")
     _write(walk_root / "trash.log")
     _write(walk_root / ".venv" / "lib.py")
-    if _make_junction(walk_root / "linked", real_dir):
-        pass
+    junction_created = _make_junction(walk_root / "linked", real_dir)
     errors: list = []
     walked = {rel for _, rel, _ in bp.walk_files(walk_root, "", cfg, errors)}
     check(walked == {"keep.md", "nested/deep.md"},
-          f"walk: deny-list + junction skipped, got {sorted(walked)}")
+          f"walk: deny-list excludes .venv/** and *.log, got {sorted(walked)}")
     check(not errors, "walk: a clean tree produces no errors")
+    if junction_created:
+        check(not any(rel == "linked" or rel.startswith("linked/") for rel in walked),
+              f"walk: a real junction is never crossed, got {sorted(walked)}")
+    else:
+        skip("walk: junction creation unavailable, so junction-skipping was not verified")
 
     # ---- bulk-directory guard ---------------------------------------------
     items = [

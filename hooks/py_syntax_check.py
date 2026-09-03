@@ -67,6 +67,8 @@ def main() -> None:
             [interpreter, "-m", "py_compile", str(target)],
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             timeout=10,
             creationflags=_lib.NO_WINDOW,
         )
