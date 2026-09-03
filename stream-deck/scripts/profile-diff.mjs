@@ -86,7 +86,7 @@ function extractProfileZip(profilePath) {
     "-NonInteractive",
     "-Command",
     `Expand-Archive -LiteralPath '${zipCopyPath}' -DestinationPath '${dir}' -Force`,
-  ]);
+  ], { windowsHide: true });
   return dir;
 }
 
