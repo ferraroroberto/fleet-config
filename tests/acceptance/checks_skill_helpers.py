@@ -113,6 +113,26 @@ def _learning_log_unit_checks() -> Tuple[int, int]:
           and "- 2026-06-08: prior learning (repo#9)" in body
           and body.index("2026-06-15: fresh") < body.index("2026-06-08: prior learning"))
 
+    # ---- archive windowing: dedupe on content, cap total (fleet-config#732) ----
+    check("learning_log: window_archive dedupes same content across dates, keeps newest",
+          ll.window_archive(["- 2026-06-15: same thing (repo#1)"],
+                            ["- 2026-06-08: same thing (repo#1)", "- 2026-06-01: other (repo#2)"])
+          == ["- 2026-06-15: same thing (repo#1)", "- 2026-06-01: other (repo#2)"])
+    big_prior = [f"- 2026-01-{d:02d}: item {d} (repo#{d})" for d in range(1, 30)]
+    windowed = ll.window_archive([], big_prior, cap=10)
+    check("learning_log: window_archive caps to the newest N bullets",
+          len(windowed) == 10 and windowed == big_prior[:10])
+    check("learning_log: build_ledger_body archive never exceeds ARCHIVE_CAP bullets",
+          len(ll.dated_discovery_bullets("- x\n", "2026-06-15") + [f"- 2026-01-{d:02d}: item {d}" for d in range(1, 200)])
+          > ll.ARCHIVE_CAP
+          and ll.build_ledger_body(
+              "<!-- learning-log-state -->\nlast-run-at: 2026-06-08\n\n"
+              "## Horizon → next week (set 2026-06-08)\n- [ ] old item\n\n"
+              "## Decision / discovery archive\n"
+              + "\n".join(f"- 2026-01-{d:02d}: item {d} (repo#{d})" for d in range(1, 200)) + "\n",
+              "2026-06-15", "- [ ] h", "- fresh (repo#9)"
+          ).count("\n- 2026-") <= ll.ARCHIVE_CAP)
+
     return check.failures, check.total
 
 
