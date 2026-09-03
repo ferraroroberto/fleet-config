@@ -18,8 +18,9 @@ work in this repo doesn't cost the whole catalogue:
   exists. Also the tooling that ships in that tier: the context filter, the
   Slack-notify transport and the deterministic completion ping, the
   conversation-memory engine, and the Pi usage bridge.
-- **[`docs/skills.md`](docs/skills.md)** — the two skill tiers (global
-  `skills/` vs fleet-only `.claude/skills/`), the full per-skill inventory, the
+- **[`docs/skills.md`](docs/skills.md)** — the three skill tiers (global
+  `skills/`, fleet-only `.claude/skills/`, and a subsystem's own
+  directory-scoped `.claude/skills/`), the full per-skill inventory, the
   scheduled-run adapter, and the cross-skill `_lib/` primitives:
   claim-or-worktree concurrency, the issue lifecycle marker, the
   UX-conformance gate, the deploy-coverage gate, and stranded index locks.
@@ -94,6 +95,7 @@ fleet-config/
 ├── tray/                           # junction → ~/.claude/tray — the ONE machine-local tray_lifecycle.ps1 (fleet-config#153)
 │   └── tray_lifecycle.ps1          # canonical source: project-scaffolding; every sister tray.bat calls this one file by path
 ├── stream-deck/                    # source-controlled Elgato Stream Deck plugin (Node/TS, own build+tests) — fleet tray launchers, launch-target / open-coding / back / call-action actions (fleet-config#370, docs/stream-deck-plugin.md)
+│   └── .claude/skills/streamdeck-deploy/  # directory-scoped skill tier (docs/skills.md) — build/link/package/profile-diff, loads only under stream-deck/
 ├── commands/                       # junction → ~/.claude/commands AND ~/.codex/prompts (Codex prompts)
 ├── pi/extensions/statusline.ts      # junction via pi/extensions/ → ~/.pi/agent/extensions — custom Pi footer/statusline
 ├── pi/extensions/session_state.ts   # same junction — reports Pi lifecycle events into sessions-state.json (#349)
