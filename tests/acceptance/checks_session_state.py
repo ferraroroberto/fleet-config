@@ -48,12 +48,12 @@ def _lib_detect_project_unit_checks() -> Tuple[int, int]:
         projects=[
             _lib.ProjectConfig(
                 name="fleet-config", cwd_prefix=Path("E:/automation/fleet-config"),
-                webapp_port=None, gate_trigger_globs=(), gate_cmd=None,
+                webapp_port=None,
                 tray_cmd=None, restart_cmd=None, api_version_path=None, extra={},
             ),
             _lib.ProjectConfig(
                 name="app-launcher", cwd_prefix=Path("E:/automation/app-launcher"),
-                webapp_port=None, gate_trigger_globs=(), gate_cmd=None,
+                webapp_port=None,
                 tray_cmd=None, restart_cmd=None, api_version_path=None, extra={},
             ),
         ],

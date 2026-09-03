@@ -193,7 +193,7 @@ def _notify_board_link_unit_checks() -> Tuple[int, int]:
         # ---- resolve_board_url: per-project override wins ----
         proj = _lib.ProjectConfig(
             name="x", cwd_prefix=Path("E:/automation/x"), webapp_port=None,
-            gate_trigger_globs=(), gate_cmd=None, tray_cmd=None, restart_cmd=None,
+            tray_cmd=None, restart_cmd=None,
             api_version_path=None, extra={"board_url": "https://proj.example:8445"},
         )
         reg = _lib.Registry(
@@ -483,7 +483,7 @@ def _slack_routing_unit_checks() -> Tuple[int, int]:
     # ---- per-project override of a category channel wins over [global] ----
     proj = _lib.ProjectConfig(
         name="x", cwd_prefix=Path("E:/automation/x"), webapp_port=None,
-        gate_trigger_globs=(), gate_cmd=None, tray_cmd=None, restart_cmd=None,
+        tray_cmd=None, restart_cmd=None,
         api_version_path=None, extra={"slack_channel_log": "C_PROJ_LOG"},
     )
     reg = _lib.Registry(
