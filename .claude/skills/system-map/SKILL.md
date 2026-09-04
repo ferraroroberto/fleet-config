@@ -1,11 +1,11 @@
 ---
 name: system-map
-description: Regenerate the fleet architecture map (crawl every repo under E:\automation, render to architecture/system-map.png) and post the refreshed image to Slack. Use when the user wants to refresh or see the system architecture diagram — e.g. "/system-map", "update the architecture map", "regenerate the system diagram". Also runs unattended on a weekly schedule.
+description: Regenerate the fleet architecture map (crawl every repo under E:\automation, render to architecture/system-map.png) and post the refreshed image to Telegram. Use when the user wants to refresh or see the system architecture diagram — e.g. "/system-map", "update the architecture map", "regenerate the system diagram". Also runs unattended on a weekly schedule.
 ---
 
 # system-map
 
-**Goal:** Keep one always-current, shareable picture of the whole personal fleet. Crawl the fleet, reconcile it against the written architecture, render the visual, commit when it changed, and drop the fresh image in Slack — every run, on-demand or scheduled.
+**Goal:** Keep one always-current, shareable picture of the whole personal fleet. Crawl the fleet, reconcile it against the written architecture, render the visual, commit when it changed, and drop the fresh image in Telegram — every run, on-demand or scheduled.
 
 **The map is self-describing:** each repo declares its own card in a root `.fleet.toml`, and `.claude/skills/system-map/build_data.py` aggregates those (plus the hand-maintained `architecture/fleet.residual.json`) into the *generated* `architecture/fleet.data.js` that both renderers read — `architecture/system-map.html` (the PNG) and `.claude/skills/system-map/render_mermaid.py` (the text-native `.mmd` + `global-CLAUDE.md` block). `architecture/ARCHITECTURE.md` is the human-readable narrative that must agree with it, and `tests/run_acceptance.py` fails loud if the fleet, the data file, and the doc ever drift apart — enforced, not hoped for. Per-repo `.fleet.toml` aggregation is the one exception: its inputs live in sibling checkouts, so there it reports drift as `SKIP` rather than failing fleet-config's gate, and **this skill owns fixing it** (step 2).
 
@@ -69,7 +69,7 @@ This regenerates `architecture/system-map.mmd` (a Mermaid flowchart — icons + 
 ### 4. Compute the week-over-week change line
 
 Before committing (so `HEAD` still points at the previous run), capture the
-one-line "what changed" summary for the Slack post:
+one-line "what changed" summary for the Telegram post:
 
 ```
 E:/automation/fleet-config/.venv/Scripts/python.exe .claude/skills/system-map/whatchanged.py
@@ -96,12 +96,12 @@ git commit -m "docs: refresh system map (<YYYY-MM-DD>)"
 
 If the current branch is `main` (the scheduled unattended case), also `git push`. On a feature branch, leave pushing to the normal PR/`issue-finish` flow.
 
-### 6. Post the image to Slack (every run)
+### 6. Post the image to Telegram (every run)
 
-Post the refreshed map, folding in the change line from step 4 so the recurring run reads as alive. This is **activity-log** traffic, so route it with `--category log` (the helper resolves the `#log` channel from `hooks/projects.toml` — never hardcode a channel id):
+Post the refreshed map, folding in the change line from step 4 so the recurring run reads as alive. This is **activity-log** traffic, so route it with `--category log` (the helper resolves the `coding log` chat from `hooks/projects.toml` — never hardcode a channel id):
 
 ```
-E:/automation/fleet-config/.venv/Scripts/python.exe hooks/slack_notify.py --category log \
+E:/automation/fleet-config/.venv/Scripts/python.exe hooks/notify_send.py --category log \
    --file architecture/system-map.png \
    --title "Roberto's System — architecture" \
    --text "🛠️ Fleet architecture map - refreshed <YYYY-MM-DD>. <change line from step 4>."
@@ -111,10 +111,10 @@ Always post — on-demand *and* scheduled — so the fresh picture lands on the 
 
 ### 7. Report
 
-Print: the change line from step 4, projects added/removed (if any), whether a commit was made (and pushed), and the Slack post result. Keep it to a few lines.
+Print: the change line from step 4, projects added/removed (if any), whether a commit was made (and pushed), and the Telegram post result. Keep it to a few lines.
 
 ## Wiring the weekly schedule
 
 Add an **app-launcher Jobs** entry (Windows Task Scheduler under `\AppLauncher\`) that runs weekly, targeting the co-located `.claude/skills/system-map/run-weekly.bat`; it preserves `/system-map` plus bypass permissions and streams filtered milestones through the shared `claude_progress.py` adapter.
 
-cwd = `E:/automation/fleet-config`. Same executor as every other scheduled job; the skill handles render + commit-if-changed + Slack itself. (Alternatively a scheduled cloud agent invoking the same skill.)
+cwd = `E:/automation/fleet-config`. Same executor as every other scheduled job; the skill handles render + commit-if-changed + Telegram itself. (Alternatively a scheduled cloud agent invoking the same skill.)

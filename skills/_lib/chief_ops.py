@@ -37,8 +37,8 @@ many issues" API exists), one process per ref, `stdin=DEVNULL` +
 `creationflags=NO_WINDOW`. The win there is "chief runs one command", not
 "one HTTP request" — the multi-repo loop is finally something the tool
 owns instead of the model re-typing it. `escalate` is the other: it shells
-to `hooks/slack_notify.py` (its own docstring documents exactly this
-standalone-CLI usage) rather than re-implementing Slack posting here —
+to `hooks/notify_send.py` (its own docstring documents exactly this
+standalone-CLI usage) rather than re-implementing the transport here —
 hooks/ and skills/_lib/ are two independent trees by convention, so this
 crosses that boundary via subprocess, never an import.
 
@@ -73,7 +73,7 @@ Subcommands
       `/api/board/issues/start` and marks the new session chief-managed
       (`skills/_lib/chief_managed.py`, fleet-config#443) so
       `hooks/notify_on_idle.py` can route its blocked-on-input
-      notifications to chief instead of Slack.
+      notifications to chief instead of the human ping.
 
   chief-sid [--base-url URL]
       Prints `CHIEF_SID=<sid>` (or `none`) for the live standing chief —
@@ -116,9 +116,9 @@ Subcommands
       `quit` by default; `--kill` must be explicit.
 
   escalate [--file PATH]
-      A visibly distinct, higher-priority Slack ping ("chief needs
+      A visibly distinct, higher-priority Telegram ping ("chief needs
       Roberto specifically") — forces `--mention` and the `attention`
-      category via `hooks/slack_notify.py`, never a routine worker status.
+      category via `hooks/notify_send.py`, never a routine worker status.
 
   verify <repo> --expect merged|built [--branch NAME]
          [--default-branch NAME]
@@ -249,7 +249,7 @@ def find_chief_session(columns: Dict[str, Any]) -> Optional[str]:
     report `project == "fleet-config"`), so only the `label == "chief"`
     card is actually chief. Used by `chief-sid` so `hooks/notify_on_idle.py`
     can push a chief-managed worker's blocked-on-input notification into
-    chief's own session instead of Slack (fleet-config#443).
+    chief's own session instead of the human ping (fleet-config#443).
     """
     cards = list(columns.get("claude_turn") or []) + list(columns.get("your_turn") or [])
     for card in cards:
@@ -800,24 +800,27 @@ def cmd_stop(args: argparse.Namespace) -> int:
 
 
 def cmd_escalate(args: argparse.Namespace) -> int:
-    """Post a visibly distinct, higher-priority Slack ping — "chief needs
+    """Post a visibly distinct, higher-priority Telegram ping — "chief needs
     Roberto specifically", never a routine worker status (fleet-config#443).
 
-    Shells to the existing `hooks/slack_notify.py` transport (its own
+    Shells to the existing `hooks/notify_send.py` transport (its own
     module docstring documents exactly this standalone-CLI usage) rather
-    than re-implementing Slack posting here — same cross-tier-via-subprocess
+    than re-implementing the transport here — same cross-tier-via-subprocess
     pattern `hooks/notify_on_idle.py` uses to reach `chief_ops.py`. Routes to
-    the `attention` category channel and forces `--mention` regardless of
-    the `[global] slack_notify_mention` default, so it reads and *sounds*
-    different from a routine ping.
+    the `attention` category chat.
+
+    It used to force `--mention` so the ping would *sound* different from a
+    routine one. Telegram has no mention machinery to force — every message to
+    a chat you are in pushes — so the distinction is carried entirely by the
+    🚨 banner in the message text (fleet-config#540).
     """
     text = read_brief(args.file)
     message = f"🚨 CHIEF ESCALATION 🚨\n{text}"
     repo_root = Path(__file__).resolve().parent.parent.parent
-    slack_notify_path = repo_root / "hooks" / "slack_notify.py"
+    notify_send_path = repo_root / "hooks" / "notify_send.py"
     proc = subprocess.run(
-        [sys.executable, str(slack_notify_path), "--category", "attention",
-         "--mention", "--text", message],
+        [sys.executable, str(notify_send_path), "--category", "attention",
+         "--text", message],
         capture_output=True, text=True, encoding="utf-8", errors="replace",
         stdin=subprocess.DEVNULL, creationflags=NO_WINDOW,
         cwd=str(repo_root), check=False,
@@ -915,7 +918,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     st.add_argument("--base-url", default=DEFAULT_BASE_URL)
     st.set_defaults(func=cmd_stop)
 
-    esc = sub.add_parser("escalate", help="high-priority Slack ping (fleet-config#443)")
+    esc = sub.add_parser("escalate", help="high-priority Telegram ping (fleet-config#443)")
     esc.add_argument("--file", default=None)
     esc.set_defaults(func=cmd_escalate)
 

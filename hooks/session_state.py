@@ -35,7 +35,7 @@ mid-turn. It deliberately does **not** write anything for the periodic
 ``idle_prompt`` re-announcement (fleet-config#354) — that sub-type fires
 ~60s after ``Stop`` already recorded ``needs-you`` with nothing having
 changed, so writing ``idle`` there silently downgraded an already-correct
-row until the user replied or a fresh ``permission_prompt`` fired. Slack
+row until the user replied or a fresh ``permission_prompt`` fired. Telegram
 pings are unchanged either way.
 
 Status meanings the board relies on: ``working`` | ``needs-you`` | ``idle``

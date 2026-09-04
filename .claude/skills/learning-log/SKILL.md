@@ -20,7 +20,7 @@ description: Weekly learning log + forward horizon + productivity stats distille
 
 - **Run from the `fleet-config` repo root** (`E:/automation/fleet-config`) so helper paths resolve.
 - **Public repos only.** The digest and its stats are published in a public ledger issue, so `gather.py` lists with `--visibility public` — private-repo activity (and even repo names) is never gathered, counted, or narrated. A sub-agent must never cite a `repo#N` outside the public set it was handed.
-- **Read-only on GitHub except three writes:** the `kind=learning` ledger issue (upsert), the weekly comment on it, and the Slack ping. Never edits source, commits, pushes, or restarts.
+- **Read-only on GitHub except three writes:** the `kind=learning` ledger issue (upsert), the weekly comment on it, and the Telegram ping. Never edits source, commits, pushes, or restarts.
 - **Stats are deterministic — never let the model invent numbers.** Every count and LOC figure comes from `gather.py` (Python over `gh` JSON), pasted verbatim. The sub-agents narrate *insight*, not statistics.
 - **Sub-agents are Sonnet, fan out freely** (exempt from the 3-Opus cap). One per non-empty bucket. They are READ-ONLY analysts — they file nothing and change no state.
 - **Degrade gracefully, never block** (unattended). A bucket sub-agent that errors is recorded as such and skipped; the run still produces a log. A quiet week (no PRs/issues) still records the run so the ledger keeps cadence.
@@ -96,20 +96,20 @@ Capture `LEDGER_URL`. Post the digest as a comment (the running week-by-week log
 COMMENT_URL=$(gh issue comment "<LEDGER_URL>" --repo ferraroroberto/fleet-config --body-file <digest file>)
 ```
 
-### 5. Slack completion ping
+### 5. Telegram completion ping
 
 ```
 E:/automation/fleet-config/.venv/Scripts/python.exe hooks/notify_complete.py --kind learning --comment-url "<COMMENT_URL>" \
   --summary "<N> PRs / <M> issues across <K> repos | <one-line horizon grade>"
 ```
 
-Keep the summary **pure ASCII**, separating its parts with `|` — the hook renders that as `·` from a Python literal. A literal `·` in the command line reached Slack as `??` (fleet-config#507); a Windows command line is not a UTF-8-safe channel.
+Keep the summary **pure ASCII**, separating its parts with `|` — the hook renders that as `·` from a Python literal. A literal `·` in the command line reached the chat as `??` (fleet-config#507); a Windows command line is not a UTF-8-safe channel.
 
-`📓 Learning log` — opt-in (silent no-op if no `[global] slack_notify_channel`), never blocks. Omit `--comment-url` if the comment was skipped.
+`📓 Learning log` — opt-in (silent no-op if no `[global] telegram_chat`), never blocks. Omit `--comment-url` if the comment was skipped.
 
 ### 6. Report
 
-A few lines: window, grand totals, buckets analysed (+ any agent that errored), ledger + comment URLs, Slack result.
+A few lines: window, grand totals, buckets analysed (+ any agent that errored), ledger + comment URLs, Telegram result.
 
 ## Notes
 
@@ -123,4 +123,4 @@ A few lines: window, grand totals, buckets analysed (+ any agent that errored), 
 
 An app-launcher Job (`config/jobs.json`, weekly, `visible: true`) calls the co-located `.claude/skills/learning-log/run-weekly.bat`, staggered clear of the other Friday claude-runs. The wrapper preserves `/learning-log`, `claude-sonnet-5`, and bypass permissions while streaming filtered milestones through the shared `claude_progress.py` adapter. Every step must degrade gracefully rather than block on a prompt.
 
-cwd = `E:/automation/fleet-config`. The Sonnet orchestrator gathers, fans out the Sonnet bucket sub-agents, aggregates, and writes the ledger + comment + Slack itself.
+cwd = `E:/automation/fleet-config`. The Sonnet orchestrator gathers, fans out the Sonnet bucket sub-agents, aggregates, and writes the ledger + comment + Telegram itself.

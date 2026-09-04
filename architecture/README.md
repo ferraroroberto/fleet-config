@@ -180,7 +180,7 @@ The committed `DATA.compute` (and the committed `system-map.png`) show **placeho
 cp system-map.local.example.js system-map.local.js   # then edit in your specs
 ```
 
-So a local render shows your real specs; anything pushed (PNG, HTML, the issue, Slack) shows placeholders.
+So a local render shows your real specs; anything pushed (PNG, HTML, the issue, Telegram) shows placeholders.
 
 ### Render
 

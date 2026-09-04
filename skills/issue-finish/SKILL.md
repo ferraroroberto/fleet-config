@@ -412,12 +412,12 @@ E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/hooks
 It prints the roll-up (`📊 +N −M · K files` + new/changed/deleted buckets) and a
 churn-sorted per-file table (status · file · + · −). No LLM, all from `gh`; it
 prints nothing on any `gh` error, so skip the block if it comes back empty. The
-same roll-up rides the Slack ping in step 8 — don't re-assemble it by hand.
+same roll-up rides the Telegram ping in step 8 — don't re-assemble it by hand.
 
-### 8. Slack notification
+### 8. Telegram notification
 
 After the summary, fire the completion ping with the deterministic helper. It
-resolves the channel/user from `projects.toml` and emits the one canonical
+resolves the chat from `projects.toml` and emits the one canonical
 format. Run:
 
 ```
@@ -427,12 +427,12 @@ E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/hooks
 `<PR_URL>` is the full PR URL (e.g. `https://github.com/owner/repo/pull/31`) —
 pass the URL you already have from `gh pr create` or `gh pr view`. This makes
 the title/URL lookup CWD-independent so it works from subagent contexts where
-the shell's working directory may differ from the project root. If no channel is
+the shell's working directory may differ from the project root. If no chat is
 configured it's a silent no-op, and it always exits 0, so a notification failure
 can never block or delay anything.
 
 **`notify_complete.py` is the ONLY sanctioned way to send this ping — do NOT use
-any MCP Slack tool (search/send/etc.) to find a channel or post the ping.**
-Picking a channel yourself is both a security violation (an agent-inferred
-external write destination) and wrong (it may post to the wrong channel). A
-silent no-op is the correct outcome — do not "fix" it with Slack tools.
+any MCP chat tool (search/send/etc.) to find a chat or post the ping.**
+Picking a chat yourself is both a security violation (an agent-inferred
+external write destination) and wrong (it may post to the wrong chat). A
+silent no-op is the correct outcome — do not "fix" it with MCP chat tools.

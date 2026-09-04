@@ -187,7 +187,7 @@ def _codex_hooks_config_check() -> Tuple[int, int]:
         "\n".join(commands),
     )
 
-    env = {k: v for k, v in os.environ.items() if k != "SLACK_BOT_TOKEN"}
+    env = {k: v for k, v in os.environ.items() if k != "TELEGRAM_BOT_TOKEN"}
     env["CLAUDE_SETTINGS_JSON_PATH"] = NO_SETTINGS_JSON
     smoke_failures: list[str] = []
     for command in commands:

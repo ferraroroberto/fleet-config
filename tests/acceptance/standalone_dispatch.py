@@ -68,7 +68,7 @@ _STANDALONE_UNIT_CHECKS: Tuple[Tuple[str, str, str], ...] = (
      "rendering as a zero, per-file (not per-repo) probe coverage, the "
      "cost-of-a-lost-directive ranking, partial-run banners that name the "
      "unreached repos, and validate() rejecting run data that would make the "
-     "digest lie -- is testable on its own without gh or Slack "
+     "digest lie -- is testable on its own without gh or Telegram "
      "(fleet-config#627)"),
     ("delivery_check_contract", "test_delivery_check_contract.py",
      "the shared digest-delivery post-condition -- /audit-fleet's "

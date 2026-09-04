@@ -170,7 +170,7 @@ ${ISOLATION_RULES}
 
 1. \`cd\` into that worktree, confirm you're on branch ${build.branch}.
 2. Run the /issue-finish flow for this branch: push, gh pr create, CI-advisory wait (unless the diff is provably CI-unrelated per /issue-yolo's rule), then merge + land per /issue-finish step 5's WORKTREE branch — you are in a worktree, so \`gh pr merge <PR> --merge\` with NO --delete-branch (it fails its local half) and NO \`git checkout main\`; then remove-worktree, then \`worktree_claim.py land-primary <repo> ${issue.number}\`, then delete the branch refs explicitly. Report its PRIMARY=live/PRIMARY=stale line — a merged PR that never reached the primary is not live. Tray restart per the repo's CLAUDE.md. /issue-finish owns the worktree teardown for a successful ship — let it run its own teardown rather than hand-rolling one.
-3. Fire the /issue-finish completion ping via notify_complete.py --kind finish — do NOT use any MCP Slack tool to pick a channel yourself, the helper resolves it from projects.toml.
+3. Fire the /issue-finish completion ping via notify_complete.py --kind finish — do NOT use any MCP chat tool to pick a channel yourself, the helper resolves it from projects.toml.
 
 If anything fails, do not force it through — leave the branch and PR (if any) as-is and report FAILED with the reason. Never guess-fix a shipping failure. A dedicated teardown agent runs after you either way.
 

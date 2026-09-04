@@ -243,7 +243,7 @@ E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/hooks
 
 (`--review` here means "escalated after 2 failed validation rounds," reusing the existing `--kind cleanup` semantics exactly — no code changes needed.) After every bucket has reported: fire one final roll-up call summing merged/escalated across all eight buckets, same `--kind cleanup` shape with `--summary "all buckets"`.
 
-**`notify_complete.py` is the only sanctioned way to send these pings** — never use an MCP Slack tool to pick a channel; the helper resolves it from `projects.toml`. A silent no-op with no channel configured is correct, not a bug to route around.
+**`notify_complete.py` is the only sanctioned way to send these pings** — never use an MCP chat tool to pick a chat; the helper resolves it from `projects.toml`. A silent no-op with no channel configured is correct, not a bug to route around.
 
 ### 10. Final summary
 

@@ -81,7 +81,7 @@ These are the **pieces that let me do everything else** — each is *used by mor
 
 | Project | What it is | Port | Builds on | Consumed by / External |
 |---|---|---|---|---|
-| 🚀 **app-launcher** | The **orchestration layer — where I live.** Phone-first hub with four tabs: Coding (launch Claude Code / Codex / Antigravity / Copilot in any repo), Apps (launch any tray webapp), Jobs (one-shot + scheduled scripts + automation, same executor as Stream Deck & Task Scheduler), Life OS (run a `life-os` skill). The single front door to the whole fleet — and the project that started it all: born from one goal, *do everything on the PC from the phone.* | `:8445` (+ session-host `:8446`) | L1 access, Task Scheduler | **Slack** (job-failure / status pings), **Pushover** |
+| 🚀 **app-launcher** | The **orchestration layer — where I live.** Phone-first hub with four tabs: Coding (launch Claude Code / Codex / Antigravity / Copilot in any repo), Apps (launch any tray webapp), Jobs (one-shot + scheduled scripts + automation, same executor as Stream Deck & Task Scheduler), Life OS (run a `life-os` skill). The single front door to the whole fleet — and the project that started it all: born from one goal, *do everything on the PC from the phone.* | `:8445` (+ session-host `:8446`) | L1 access, Task Scheduler | **Telegram** (job-failure / status pings), **Pushover** |
 | 🧠 **local-llm-hub** | The **shared LLM gateway**: one HTTP hub exposing Anthropic-shape and OpenAI-shape APIs, routed by model name to the local models or to the `claude -p` CLI (subscription). Every app that needs an LLM call routes through here — apps never re-implement their own `claude -p` wrapper. | `:8000` | L0 GPU/RAM | downstream apps (e.g. grocery audit), coding agents |
 | 🎙️ **voice-transcriber** | The **shared speech layer**: always-on local voice-to-text (whisper.cpp), global `F8` hotkey → auto-paste at the caret. Owns the `whisper-server` on `:8090`, which other apps reuse. | `:8443` (whisper `:8090`) | L0 GPU/RAM | grocery voice-audit (whisper, mutex-shared) |
 | 📷 **photo-ocr** | Mobile-first **OCR service**: snap N photos of a document/screen/email → clean text. A reusable capture-to-text surface (tray + PWA + Cloudflare tunnel), sibling to the launcher and voice apps. | `:8444` | L1 access, L2 hub | (capture surface for downstream use) |
@@ -155,7 +155,7 @@ The meta-layer that keeps the whole fleet consistent — it sits *above* the app
 | Project | Scope | What it is |
 |---|---|---|
 | 📐 **project-scaffolding** | what ships **inside** each project | The **canonical master**: the scaffold + `CLAUDE.md` every sister project derives from. Conventions flow *down* from here; divergence is the thing it prevents. |
-| ⚙️ **fleet-config** | what governs the **machine**, above all projects | **Fleet-wide Claude Code config**: user-scope hooks, skills, and the issue workflow, installed once via junctions into `~/.claude`. The Slack idle-pings and commit guards live here. |
+| ⚙️ **fleet-config** | what governs the **machine**, above all projects | **Fleet-wide Claude Code config**: user-scope hooks, skills, and the issue workflow, installed once via junctions into `~/.claude`. The Telegram idle-pings and commit guards live here. |
 | ⚙️ **fleet-config-lite** | the same, for the **Copilot + GitLab** stack | Public downscaled companion to `fleet-config`, installed into `~/.copilot`: the session-state hook that feeds `app-launcher-lite`'s Board, plus `glab`-flavoured issue-workflow skills. No LLM calls, no schedulers, no chief. |
 
 Plus cross-cutting shared helpers (single source of truth per concern, reused by every app that needs them): the **Chrome stealth + persistent-profile-lock** launch helpers (anti-bot browser automation), and the **tray + PWA + Cloudflare-tunnel** app pattern shared by the launcher / voice / photo / grocery webapps.
@@ -168,7 +168,7 @@ External connections come from **two sources**: the **orchestration layer** (app
 
 | Service | Reached from | For |
 |---|---|---|
-| 💬 **Slack** | **orchestration** (app-launcher + fleet-config hooks) | idle/needs-you pings, job status |
+| 💬 **Telegram** | **orchestration** (app-launcher + fleet-config hooks) | idle/needs-you pings, job status |
 | 🔔 **Pushover** | orchestration (app-launcher jobs) | job-failure push notifications |
 | 📔 **Notion** | apps: inspiration-system, content-management, automation | content archive, automation |
 | 💳 **Stripe** | app: accounting-quarterly | payment classification |

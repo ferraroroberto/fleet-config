@@ -200,7 +200,7 @@ window.CONFIG = {
   "skills_fleet": [
     {
       "nm": "audit-fleet",
-      "ds": "Run /codebase-audit across every repo in the E:\\automation fleet in one pass and emit one weekly digest (GitHub comment + Slack p…",
+      "ds": "Run /codebase-audit across every repo in the E:\\automation fleet in one pass and emit one weekly digest (GitHub comment + Telegra…",
       "sched": true
     },
     {
@@ -430,7 +430,7 @@ window.CONFIG = {
       "ev": "Notification",
       "block": false,
       "reach": "Claude only",
-      "ds": "Ping Slack when a live session needs attention — so you can stop babysitting."
+      "ds": "Ping Telegram when a live session needs attention — so you can stop babysitting."
     },
     {
       "nm": "session_state",
@@ -492,7 +492,11 @@ window.CONFIG = {
     },
     {
       "nm": "notify_complete",
-      "ds": "Deterministic skill-completion Slack ping — one canonical format per skill."
+      "ds": "Deterministic skill-completion Telegram ping — one canonical format per skill."
+    },
+    {
+      "nm": "notify_send",
+      "ds": "Fleet-wide Telegram notifier - fire a real, bot-identity notification."
     },
     {
       "nm": "session_state_codex",
@@ -504,7 +508,7 @@ window.CONFIG = {
     },
     {
       "nm": "slack_notify",
-      "ds": "Fleet-wide Slack notifier — fire a real, bot-identity Slack notification."
+      "ds": "DEPRECATED compatibility shim — forwards to :mod:`notify_send` (Telegram)."
     },
     {
       "nm": "work_summary",

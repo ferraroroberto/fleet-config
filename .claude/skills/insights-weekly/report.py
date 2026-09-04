@@ -10,10 +10,10 @@ The analysis is delegated to the hub — the orchestrating skill does not read t
 
 Output: a dated markdown report under ``~/.claude/usage-data/weekly/`` (durable,
 user-local, never committed) and a short ``TL;DR`` digest printed to stdout for
-the skill to post to Slack.
+the skill to post to Telegram.
 
 Stdlib only — POSTs to the hub with ``urllib`` so there's nothing to install in
-the system Python (mirrors ``hooks/slack_notify.py``). The model is the hub's
+the system Python (mirrors ``hooks/notify_send.py``). The model is the hub's
 job, not a re-implemented ``claude -p`` wrapper.
 
 Config (env): ``INSIGHTS_DIFF_MODEL`` (default ``claude_sonnet`` — reliably up
@@ -115,7 +115,7 @@ def baseline_prompt(cur_text: str) -> list[dict]:
 
 
 def extract_digest(report: str) -> str:
-    """Pull the TL;DR block (to the next H2) for the Slack post; fall back to head."""
+    """Pull the TL;DR block (to the next H2) for the Telegram post; fall back to head."""
     start = report.find(DIGEST_MARKER)
     if start == -1:
         return report[:600].strip()
@@ -158,7 +158,7 @@ def main() -> int:
     )
     out_file.write_text(front + body + "\n", encoding="utf-8")
 
-    # stdout: machine-friendly first line (path) + the Slack digest after a blank line.
+    # stdout: machine-friendly first line (path) + the Telegram digest after a blank line.
     print(out_file)
     print()
     print(extract_digest(body))

@@ -4,7 +4,7 @@ Renders a glanceable "shape of the work" from a PR's file list using only
 ``gh`` (no LLM; stdlib only — hooks run on system Python with no venv). Two
 renderings, both built **here in Python** so they're byte-stable:
 
-* :func:`format_block` — the compact roll-up, for the Slack completion ping and
+* :func:`format_block` — the compact roll-up, for the completion ping and
   as the chat report's header::
 
       📊 +312 −47 · 8 files
@@ -12,7 +12,7 @@ renderings, both built **here in Python** so they're byte-stable:
 
 * :func:`format_table` — a per-file markdown table (status · file · + · −,
   churn-sorted), for the in-chat finish/yolo report where a renderer shows it as
-  a real table. Left out of Slack on purpose: Slack mrkdwn has no table support
+  a real table. Left out of the ping on purpose: a plain-text ping has no table support
   and a long file list bloats the mobile push.
 
 Data source: ``gh pr view <ref> --json files,additions,deletions,changedFiles``,
@@ -154,7 +154,7 @@ def _gh_pr(ref: str) -> Dict:
 
 
 def block_for(ref: str) -> str:
-    """The Slack roll-up block for a PR ``ref`` (number or URL). ``""`` on error."""
+    """The roll-up block for a PR ``ref`` (number or URL). ``""`` on error."""
     return format_block(_gh_pr(ref))
 
 
@@ -175,7 +175,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     args = parser.parse_args(argv)
 
     # The block is emoji-laden and this CLI exists to be captured (piped into a
-    # Slack ping / echoed into the chat report), where Windows stdout falls back
+    # Telegram ping / echoed into the chat report), where Windows stdout falls back
     # to cp1252 and a UTF-8 emoji throws UnicodeEncodeError. Force UTF-8 at the
     # entry point (the documented durable fix).
     for stream in (sys.stdout, sys.stderr):

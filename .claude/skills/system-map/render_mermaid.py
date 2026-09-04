@@ -1,6 +1,6 @@
 """Render ``architecture/fleet.data.js`` as a Mermaid flowchart — text-native.
 
-The PNG (`render.py`) is the human/Slack artifact; this is the **agent** artifact —
+The PNG (`render.py`) is the human/chat artifact; this is the **agent** artifact —
 a compact, always-current picture of the fleet an LLM can read as text without a
 browser or an image decoder. Same single source of truth (`fleet.data.js`), a
 second consumer, no new crawl logic.

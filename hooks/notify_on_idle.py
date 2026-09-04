@@ -1,4 +1,4 @@
-"""Ping Slack when a live session needs attention — so you can stop babysitting.
+"""Ping Telegram when a live session needs attention — so you can stop babysitting.
 
 **Claude Code only.** This hook is wired *solely* into Claude Code's
 ``Notification`` event (``settings.template.json``) — no other agent has an
@@ -15,18 +15,18 @@ sub-agent types** ``agent_needs_input`` / ``agent_completed`` (fleet-config#274
 — fired per Task/Agent-tool spawn since a Claude Code update added them; a
 fan-out skill like ``/issue-batch`` or ``/cleanup-fleet`` spawns many of these,
 and only the parent session's own prompt is worth a phone push). It rides the
-`slack_notify` transport, so an AFK human gets a real phone notification
+`notify_send` transport, so an AFK human gets a real phone notification
 instead of a desktop toast nobody sees.
 
 **Opt-in, default off.** It does nothing unless the current project declares a
-``slack_notify_channel`` in ``hooks/projects.toml`` (or a ``[global]
-slack_notify_channel`` fallback is set). That keeps notification noise off by
-default and lets you flip it on per project. See `docs/slack-workflow.md`.
+``telegram_chat`` in ``hooks/projects.toml`` (or a ``[global]
+telegram_chat`` fallback is set). That keeps notification noise off by
+default and lets you flip it on per project. See `docs/telegram-workflow.md`.
 
 **Board deep link (fleet-config#242).** When ``board_url`` is also configured,
 the ping appends a second line linking straight to the session's Fleet-Board
 card (`?board=<transcript_uuid>`) — see `board_link()` and
-`docs/slack-workflow.md`. Unset by default, so this is a no-op until you
+`docs/telegram-workflow.md`. Unset by default, so this is a no-op until you
 configure it.
 
 A Notification hook only advises — it never blocks, and always exits 0.
@@ -46,7 +46,7 @@ from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import _lib  # noqa: E402
-import slack_notify  # noqa: E402
+import notify_send  # noqa: E402
 
 logger = logging.getLogger("notify_on_idle")
 
@@ -54,7 +54,7 @@ logger = logging.getLogger("notify_on_idle")
 # convention (a hook must stay importable with nothing but its own directory
 # on sys.path), so chief_ops.py is reached via subprocess here, never a
 # Python import -- same cross-tier pattern chief_ops.py's own `escalate`
-# subcommand uses in reverse to reach hooks/slack_notify.py. `hooks/` is
+# subcommand uses in reverse to reach hooks/notify_send.py. `hooks/` is
 # physically inside the fleet-config repo (junctioned elsewhere too), so
 # this resolves the fleet-config root without hardcoding a machine path.
 FLEET_CONFIG_ROOT = Path(__file__).resolve().parent.parent
@@ -78,7 +78,7 @@ _TRANSCRIPT_HEAD_BYTES = 65536
 
 
 def classify(payload: dict) -> tuple[str, str]:
-    """Map a Notification payload to an (icon, text) pair for the Slack ping.
+    """Map a Notification payload to an (icon, text) pair for the ping.
 
     The payload only reliably carries ``notification_type`` and a generic
     ``message`` — in a remote/bridge session the tool being gated lives in the
@@ -127,7 +127,7 @@ def session_link(transcript_path: object) -> str | None:
 
 
 def board_link(payload: dict, registry: object | None = None) -> str | None:
-    """Slack mrkdwn line deep-linking to the session's Fleet-Board card, or None.
+    """Plain-text line deep-linking to the session's Fleet-Board card, or None.
 
     Needs both the payload's ``session_id`` (Claude's transcript UUID —
     ``session_state.py`` persists the same id as the board row's key) and a
@@ -154,7 +154,7 @@ def board_link(payload: dict, registry: object | None = None) -> str | None:
     query = parse_qsl(parts.query, keep_blank_values=True)
     query.append(("board", session_id))
     url = urlunsplit((parts.scheme, parts.netloc, parts.path or "/", urlencode(query), ""))
-    return f"📋 <{url}|Open on the Board>"
+    return f"📋 Open on the Board: {url}"
 
 
 def is_chief_managed(sid: str, path: Optional[Path] = None) -> bool:
@@ -214,7 +214,7 @@ def notify_chief(text: str) -> bool:
     except (OSError, subprocess.TimeoutExpired) as exc:
         # Couldn't even invoke chief_ops.py -- distinct from "no chief found"
         # below, since the board was never reached to check (fleet-config#456).
-        logger.warning("notify_chief: chief-sid lookup failed to run (%s) -- falling back to Slack ping", exc)
+        logger.warning("notify_chief: chief-sid lookup failed to run (%s) -- falling back to the human ping", exc)
         return False
     if sid_proc.returncode == 1:
         # cmd_chief_sid's own "board reachable, no live chief-labeled session"
@@ -224,7 +224,7 @@ def notify_chief(text: str) -> bool:
         # the rc==2 branch below (couldn't even query the board) and from
         # ordinary silence (this line only appears when the fallback fires,
         # not on every ping).
-        logger.info("notify_chief: chief-sid found no live chief session -- falling back to Slack ping")
+        logger.info("notify_chief: chief-sid found no live chief session -- falling back to the human ping")
         return False
     if sid_proc.returncode != 0:
         # rc==2 is chief_ops.py's own ValueError/URLError catch (app-launcher
@@ -232,7 +232,7 @@ def notify_chief(text: str) -> bool:
         # chief running", so it gets its own message.
         stderr_tail = (sid_proc.stderr or "").strip()
         logger.warning(
-            "notify_chief: chief-sid query errored (rc=%d): %s -- falling back to Slack ping",
+            "notify_chief: chief-sid query errored (rc=%d): %s -- falling back to the human ping",
             sid_proc.returncode, stderr_tail,
         )
         return False
@@ -241,7 +241,7 @@ def notify_chief(text: str) -> bool:
         # Defense in depth: cmd_chief_sid's contract is exit 0 only when sid
         # is truthy, so this would be a parse/contract mismatch, not the
         # routing-miss above.
-        logger.warning("notify_chief: chief-sid exited 0 but printed no sid -- falling back to Slack ping")
+        logger.warning("notify_chief: chief-sid exited 0 but printed no sid -- falling back to the human ping")
         return False
 
     fd, tmp_name = tempfile.mkstemp(prefix="chief-ping-", suffix=".txt")
@@ -275,7 +275,7 @@ def main() -> None:
 
     # Persist the board state row (fleet-config#91) before any opt-in gating —
     # a blocked session must surface on the Fleet Board even for projects with
-    # Slack pings off, and a persistence failure must never touch the ping.
+    # pings off, and a persistence failure must never touch the ping.
     #
     # idle_prompt is a periodic "still waiting on you" re-announcement, not a
     # new state — Stop already wrote needs-you when the turn ended, and
@@ -287,7 +287,7 @@ def main() -> None:
     # row: they fire per Task/Agent sub-agent spawn, not for the parent
     # session's own state, so persisting "needs-you" here stamped a mid-turn
     # parent row as blocked on evidence that says nothing about the parent
-    # (fleet-config#718). All three are no-ops here, same as the Slack-ping
+    # (fleet-config#718). All three are no-ops here, same as the ping
     # side already treats them (_NOOP_TYPES below).
     if payload.get("notification_type") not in _NOOP_TYPES:
         try:
@@ -299,7 +299,7 @@ def main() -> None:
     # A chief-dispatched worker's "come look, I'm blocked" is chief's problem
     # first, not the human's (fleet-config#443) — chief wrote the brief and
     # can usually unblock it without paging Roberto. Tried *before* the
-    # channel-configured check below, since this path doesn't need Slack at
+    # chat-configured check below, since this path doesn't need Telegram at
     # all. Falls through to the normal human ping on any failure (session not
     # found, delivery failed) — never silently drops a real blocked-worker
     # notification, and never retries (a retry here would mask a real #607
@@ -317,9 +317,9 @@ def main() -> None:
         if notify_chief(chief_message):
             _lib.allow()  # delivered to chief -- no human ping for this one
 
-    # A "come look, I'm blocked" prompt is action-needed → the attention channel.
-    channel, user, name = _lib.resolve_slack_target(_lib.cwd(payload), category="attention")
-    if not channel:
+    # A "come look, I'm blocked" prompt is action-needed → the attention chat.
+    chat, name = _lib.resolve_notify_target(_lib.cwd(payload), category="attention")
+    if not chat:
         _lib.allow()  # opt-in: not configured for this project → silent no-op
 
     # Only the "come look, I'm blocked" prompt is worth a phone push. The 💤
@@ -337,9 +337,7 @@ def main() -> None:
     board = board_link(payload)
     if board:
         message += f"\n{board}"
-    # The @mention decision is single-sourced in slack_notify.notify() (off by
-    # default); pass the resolved user id and let it decide.
-    slack_notify.notify(message, channel=str(channel), user=user)
+    notify_send.notify(message, chat=str(chat))
     _lib.allow()
 
 

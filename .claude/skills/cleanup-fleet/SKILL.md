@@ -181,9 +181,9 @@ HARD RULES — both are live-incident scars, never work around them:
    repo's CLAUDE.md), Phase 5 fire the /issue-yolo completion ping.
    KEEP Phase 5's ping — it carries this issue's PR link and must go out.
    notify_complete.py is the ONLY sanctioned way to send it: do NOT use any MCP
-   Slack tool (search/send/etc.) to find a channel or post the ping — the helper
-   resolves the channel from projects.toml; choosing one yourself is a security
-   violation and may post to the wrong channel.
+   chat tool (search/send/etc.) to find a chat or post the ping — the helper
+   resolves the chat from projects.toml; choosing one yourself is a security
+   violation and may post to the wrong chat.
 3. If validation (Phase 3) fails at any point: STOP, do not push/merge, and
    report the failure. YOLO means "no plan gate", not "no safety". Then clean
    up after yourself — the open issue is the durable record, the branch is not
@@ -291,9 +291,9 @@ E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/hooks
   --kind cleanup --summary "<bucket>" --merged <easy-tier-merged-count> --review <hard-tier-review-count>
 ```
 
-(In easy mode `--review 0` — the helper drops the review clause.) Silent no-op if no Slack channel is configured; always exits 0.
+(In easy mode `--review 0` — the helper drops the review clause.) Silent no-op if no Telegram chat is configured; always exits 0.
 
-**`notify_complete.py` is the ONLY sanctioned way to send this roll-up ping — do NOT use any MCP Slack tool (search/send/etc.) to find a channel or post the ping.** The helper resolves the channel deterministically from `projects.toml`; picking one yourself is both a security violation (an agent-inferred external write destination) and wrong (it may post to the wrong channel). A silent no-op when no channel is configured is correct — do not "fix" it by reaching for Slack tools.
+**`notify_complete.py` is the ONLY sanctioned way to send this roll-up ping — do NOT use any MCP chat tool (search/send/etc.) to find a chat or post the ping.** The helper resolves the channel deterministically from `projects.toml`; picking one yourself is both a security violation (an agent-inferred external write destination) and wrong (it may post to the wrong chat). A silent no-op when no channel is configured is correct — do not "fix" it by reaching for Slack tools.
 
 Then print the final summary block, with each hard-tier review row carrying its rationale summary inline, and any post-flight dirty-tree finding called out as its own line rather than folded silently into a clean-looking status:
 

@@ -21,7 +21,7 @@ publishing a digest that names the unreached repos -- the issue's fourth
 acceptance criterion, discharged by this one post-condition rather than a
 second mechanism.
 
-(3) exists because `hooks/slack_notify.py` never raises and reports failure as
+(3) exists because `hooks/notify_send.py` never raises and reports failure as
 a return value. Without consulting the stamp, a landed digest comment plus a
 silently failed Slack post would read as complete success. `slack=unknown` is
 treated as not confirmed, never as a pass.

@@ -77,9 +77,9 @@ from acceptance.checks_notify import (  # noqa: E402
     _notify_chief_routing_unit_checks,
     _notify_classify_unit_checks,
     _notify_complete_unit_checks,
-    _notify_mention_unit_checks,
-    _slack_notify_unit_checks,
-    _slack_routing_unit_checks,
+    _notify_chunking_unit_checks,
+    _notify_send_unit_checks,
+    _notify_routing_unit_checks,
 )
 from acceptance.checks_session_state import (  # noqa: E402
     _chief_handover_sessionstart_unit_checks,
@@ -139,11 +139,11 @@ def main() -> int:
     # skipped instead of folding into the pass count (fleet-config#679).
     run_unit3(_context_filter_unit_checks)
 
-    # ---- slack_notify unit checks (pure / no network) ----
-    run_unit(_slack_notify_unit_checks)
+    # ---- notify_send unit checks (pure / no network) ----
+    run_unit(_notify_send_unit_checks)
 
     # ---- notify_on_idle mention-construction unit checks ----
-    run_unit(_notify_mention_unit_checks)
+    run_unit(_notify_chunking_unit_checks)
 
     # ---- notify_on_idle classify / session-link / idle-suppression ----
     run_unit(_notify_classify_unit_checks)
@@ -178,8 +178,8 @@ def main() -> int:
     # ---- work_summary roll-up block + per-file table (pure, no gh) ----
     run_unit(_work_summary_unit_checks)
 
-    # ---- slack category -> channel routing (issue #139) ----
-    run_unit(_slack_routing_unit_checks)
+    # ---- notify category -> chat routing (issue #139) ----
+    run_unit(_notify_routing_unit_checks)
 
     # ---- conversation_capture session-dedup logic ----
     run_unit(_conversation_capture_unit_checks)

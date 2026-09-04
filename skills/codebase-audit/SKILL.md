@@ -451,7 +451,7 @@ self-resume"), so under `/audit-fleet` it would silently stall.
 
 6. **Fire the private security alert** — the review channel the public issue
    deliberately lacks, so you can inspect the actual fix and revert if it's
-   wrong. Routes to the attention channel, not the log:
+   wrong. Routes to the attention chat, not the log:
    ```
    E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/hooks/notify_complete.py \
      --kind security --issue <N> --pr <PR> --pr-url <PR_URL> --summary "auto-merged, review the diff"

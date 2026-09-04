@@ -108,14 +108,14 @@ try:
     check(bp._denied("webapp/webapp.log", cfg),
           "deny: with no overrides passed, the glob still denies as before")
 
-    # ---- Slack summary stays ASCII and never trails off --------------------
-    summary = bp._slack_summary([{"leg": "repos", "totals": {
+    # ---- the summary stays ASCII and never trails off ----------------------
+    summary = bp._notify_summary([{"leg": "repos", "totals": {
         "files": 6047, "bytes": 192 * 1024 * 1024, "bulk_excluded_dirs": 13}}], bp.EXIT_OK)
-    check(summary.isascii(), f"slack: the summary is pure ASCII (fleet-config#507): {summary}")
+    check(summary.isascii(), f"notify: the summary is pure ASCII (fleet-config#507): {summary}")
     check("6047 files" in summary and "13 bulk dirs" in summary,
-          "slack: the summary carries the counts")
-    check("no leg completed" in bp._slack_summary([], bp.EXIT_DEST_UNUSABLE),
-          "slack: a run with no manifest says so instead of trailing off")
+          "notify: the summary carries the counts")
+    check("no leg completed" in bp._notify_summary([], bp.EXIT_DEST_UNUSABLE),
+          "notify: a run with no manifest says so instead of trailing off")
 
     # ---- exclude/include glob matching ------------------------------------
     check(bp._matches_any("_local/vm/disk.vhdx", ["_local/vm/**"]), "match: ** glob form")

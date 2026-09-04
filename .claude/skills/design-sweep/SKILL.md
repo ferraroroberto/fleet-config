@@ -1,11 +1,11 @@
 ---
 name: design-sweep
-description: Run /design-sync across every FastAPI + static-PWA web app in the E:\automation fleet in one pass, emitting one combined digest (stdout + Slack ping). The fleet-wide, unattended half of /design-sync — e.g. "/design-sweep", "sweep the fleet for design drift", "weekly design sync across all apps". Also runs weekly unattended.
+description: Run /design-sync across every FastAPI + static-PWA web app in the E:\automation fleet in one pass, emitting one combined digest (stdout + Telegram ping). The fleet-wide, unattended half of /design-sync — e.g. "/design-sweep", "sweep the fleet for design drift", "weekly design sync across all apps". Also runs weekly unattended.
 ---
 
 # design-sweep
 
-**Goal:** A fleet-wide, idempotent, scatter-gather wrapper around `/design-sync` (`fleet-config#178`). Deterministically gate the fleet down to its **token-styled web apps** (skipping non-web repos and Streamlit POC spikes), run the per-repo `/design-sync` logic against each through a bounded window of **Sonnet** sub-agents, then collect the results into **one combined digest**: stdout (so a scheduled run captures it) + a Slack ping via `notify_complete.py --kind design`.
+**Goal:** A fleet-wide, idempotent, scatter-gather wrapper around `/design-sync` (`fleet-config#178`). Deterministically gate the fleet down to its **token-styled web apps** (skipping non-web repos and Streamlit POC spikes), run the per-repo `/design-sync` logic against each through a bounded window of **Sonnet** sub-agents, then collect the results into **one combined digest**: stdout (so a scheduled run captures it) + a Telegram ping via `notify_complete.py --kind design`.
 
 ## Arguments
 
@@ -165,7 +165,7 @@ artifact and goes to stdout verbatim. Structure the per-repo results as a table:
 Deliver on two channels:
 
 - **stdout:** print the full markdown digest. Always.
-- **Slack ping:** call `notify_complete.py --kind design` with a one-line
+- **Telegram ping:** call `notify_complete.py --kind design` with a one-line
   summary. Deterministic — the skill hands the hook exact structured args:
 
   ```
@@ -176,16 +176,16 @@ Deliver on two channels:
 
   Keep the summary **pure ASCII** and separate its parts with `|` — the hook
   renders that as `·` from a Python literal. A literal `·` typed into the command
-  line reached Slack as `??` (fleet-config#507): a Windows command line is not a
+  line reached the chat as `??` (fleet-config#507): a Windows command line is not a
   UTF-8-safe channel, so the separator must never travel as an argv character.
 
-  This is a silent no-op if no `slack_notify_channel` is configured; it always
+  This is a silent no-op if no `telegram_chat` is configured; it always
   exits 0 and can never block or delay the finish.
 
 ### 6. Final report
 
 One concise block: the plan line from step 2, per-repo results, and where the
-digest went (stdout always; Slack pinged or no-op). Stop.
+digest went (stdout always; Telegram pinged or no-op). Stop.
 
 ## Hard rules
 

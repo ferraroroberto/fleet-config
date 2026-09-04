@@ -305,7 +305,7 @@ check("burst of" not in "\n".join(quiet_lines),
 # ---- a shutdown burst is not truncation when the result event arrived (#608) ----
 #
 # design-sweep-fleet run 20260813T100001 completed in full — 10 apps swept, 4
-# design-drift issues filed, Slack digest posted, final report printed — and
+# design-drift issues filed, Telegram digest posted, final report printed — and
 # still exited 122, because `stream_truncated` only counted the unknown-record
 # burst and never checked whether the terminal `result` event had actually
 # arrived. The burst was the normal end-of-run sub-agent task-completion
@@ -544,7 +544,7 @@ delivered_formatter.handle_event({
     "type": "result",
     "subtype": "success",
     "is_error": False,
-    "result": "Fleet audit — 0 to audit, 31 unchanged; digest posted, Slack pinged.",
+    "result": "Fleet audit — 0 to audit, 31 unchanged; digest posted, Telegram pinged.",
 })
 delivered_formatter.finish(0)
 check(not delivered_formatter.saw_self_reported_failure

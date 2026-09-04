@@ -19,7 +19,7 @@ description: Weekly hardware health checkup of every fleet machine — capture e
 - **Poll synchronously; never background-and-wait.** Per fleet-config#314, a scheduled headless `claude -p` that ends its turn expecting to be resumed exits `0` having done nothing, and the job reports false success. `capture.py` blocks in bounded chunks and returns only when the captures are done — let it.
 - **Partial failure degrades one entry, never the run.** One unreachable machine is a "not covered" line; it does not abort the other captures.
 - **A `409` is "busy", not "broken".** The hub refuses a second concurrent capture with `{"detail": "a capture is already running"}`; `capture.py` adopts the in-flight run instead of failing.
-- **Degrade gracefully, never block on a prompt** (this runs unattended): hub down → report it and skip Slack rather than hang; first run → write a baseline entry and say so.
+- **Degrade gracefully, never block on a prompt** (this runs unattended): hub down → report it and skip the ping rather than hang; first run → write a baseline entry and say so.
 
 ## Steps
 
@@ -101,10 +101,10 @@ Keep entries diffable: same headings, same order, no prose drift between runs.
 
 ### 5. Report out
 
-Post the digest to Slack as the caption of the ledger file — **activity-log** traffic, so `--category log` (the helper resolves `#log` from `hooks/projects.toml`; never hardcode a channel id):
+Post the digest to Telegram as the caption of the ledger file — **activity-log** traffic, so `--category log` (the helper resolves `coding log` from `hooks/projects.toml`; never hardcode a chat id):
 
 ```
-cat <<'EOF' | E:/automation/fleet-config/.venv/Scripts/python.exe hooks/slack_notify.py --category log \
+cat <<'EOF' | E:/automation/fleet-config/.venv/Scripts/python.exe hooks/notify_send.py --category log \
    --file <absolute LEDGER path from step 2> \
    --title "Fleet health — <YYYY-MM-DD>"
 🩺 Fleet health checkup — <YYYY-MM-DD> · <N> captured, <M> not covered
@@ -119,7 +119,7 @@ Then publish the run as a **private Artifact** so it reads well on a phone. This
 
 ### 6. Report
 
-Print: how many machines were captured, how many not covered and why, each machine's verdict, the headline change vs last run, and the Slack result. A few lines.
+Print: how many machines were captured, how many not covered and why, each machine's verdict, the headline change vs last run, and the Telegram result. A few lines.
 
 ## Notes
 

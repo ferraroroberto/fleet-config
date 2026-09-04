@@ -1,4 +1,4 @@
-"""Human-readable run report (logged per leg) and the Slack summary ping.
+"""Human-readable run report (logged per leg) and the summary ping.
 
 Split out of `hooks/backup_private.py` (fleet-config#731). Works purely off
 already-built manifest dicts, so its only sibling dependency is `config.py`
@@ -15,7 +15,7 @@ from typing import Any, Dict, Optional, Sequence
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import _lib  # noqa: E402
-import slack_notify  # noqa: E402
+import notify_send  # noqa: E402
 
 from .config import EXIT_OK
 
@@ -104,9 +104,9 @@ def report(manifest: Dict[str, Any]) -> None:
                     len(manifest["pruned"]), ", ".join(manifest["pruned"]))
 
 
-def _slack_summary(manifests: Sequence[Dict[str, Any]], exit_code: int) -> str:
+def _notify_summary(manifests: Sequence[Dict[str, Any]], exit_code: int) -> str:
     """One ASCII-only line per leg (fleet-config#507: a Windows command line is
-    not a UTF-8-safe channel, and this text also reaches Slack via argv)."""
+    not a UTF-8-safe channel, and this text also reaches the chat via argv)."""
     icon = "OK" if exit_code == EXIT_OK else "FAILED"
     parts = []
     for manifest in manifests:
@@ -124,9 +124,9 @@ def _slack_summary(manifests: Sequence[Dict[str, Any]], exit_code: int) -> str:
 
 def _notify(manifests: Sequence[Dict[str, Any]], exit_code: int) -> None:
     category = "log" if exit_code == EXIT_OK else "attention"
-    channel, user, _ = _lib.resolve_slack_target(Path.cwd(), category=category)
-    if not channel:
+    chat, _ = _lib.resolve_notify_target(Path.cwd(), category=category)
+    if not chat:
         return
     prefix = "✅" if exit_code == EXIT_OK else "❌"
-    slack_notify.notify(f"{prefix} {_slack_summary(manifests, exit_code)}", channel, user=user)
+    notify_send.notify(f"{prefix} {_notify_summary(manifests, exit_code)}", chat)
 

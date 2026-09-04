@@ -150,7 +150,7 @@ the label applied.
 
   `<owner/name>` is the value captured in step 8, never re-derived from CWD
   (which may be elsewhere by the time this fires). The helper pulls the title
-  + URL from `gh -R <owner/name>`. Silent no-op if no channel is configured;
+  + URL from `gh -R <owner/name>`. Silent no-op if no chat is configured;
   always exits 0.
 - **One-shot mode (`now`):** do **not** stop and do **not** fire the add ping —
   immediately proceed to the `/issue-start <N> now` flow on the same turn

@@ -35,7 +35,7 @@ Three fleet audit lenses, kept distinct:
 
 - **Run from the `fleet-config` repo root** (`E:/automation/fleet-config`) so helper paths resolve.
 - **The helper measures; the orchestrator judges.** `audit.py` produces exact counts — never invent or round them. The *judgment* (is a flagged duplication a real universal-directive leak or a legitimate project instance? is a header divergence true drift or expected shape?) is the orchestrator's job.
-- **Read-only except three writes:** the `kind=context-audit` ledger issue (upsert), its weekly comment, and the Slack ping. Never edits a `CLAUDE.md`, commits, pushes, or restarts. Fixes are *separate* issues/PRs (route them through `/cleanup-fleet` or file them).
+- **Read-only except three writes:** the `kind=context-audit` ledger issue (upsert), its weekly comment, and the Telegram ping. Never edits a `CLAUDE.md`, commits, pushes, or restarts. Fixes are *separate* issues/PRs (route them through `/cleanup-fleet` or file them).
 - **Degrade gracefully, never block on a prompt** (this runs unattended): a missing file is reported and skipped; a quiet week still records the run so the ledger keeps cadence.
 - **No AI attribution; no hard-wrapped paragraphs** (global `CLAUDE.md`).
 
@@ -75,12 +75,12 @@ E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skill
 
 Then add the weekly narrative as a comment on the returned issue.
 
-### 4. Ping Slack
+### 4. Ping Telegram
 
 Activity-log traffic → `--category log` (the resolver picks the channel from `hooks/projects.toml`; never hardcode an id). Caption = the TL;DR (top numbers + biggest offender), with the digest attached:
 
 ```
-cat <<'EOF' | E:/automation/fleet-config/.venv/Scripts/python.exe hooks/slack_notify.py --category log \
+cat <<'EOF' | E:/automation/fleet-config/.venv/Scripts/python.exe hooks/notify_send.py --category log \
    --title "context-audit — always-on surface <YYYY-MM-DD>"
 🧮 Weekly context-audit — <total>k always-on tokens, <N> over-cap descriptions (<U> unmeasured), <M> single-home leaks
 <the TL;DR>
@@ -89,10 +89,10 @@ EOF
 
 ### 5. Report
 
-Print: the manifest totals, the biggest offender per category, the budget delta vs last run, the ledger issue URL, and the Slack result. A few lines.
+Print: the manifest totals, the biggest offender per category, the budget delta vs last run, the ledger issue URL, and the Telegram result. A few lines.
 
 ## Wiring the weekly schedule
 
 Add an **app-launcher Jobs** entry (Windows Task Scheduler under `\AppLauncher\`) running weekly — same executor as `/insights-weekly` and `/audit-fleet` — targeting `.claude/skills/context-audit/run-weekly.bat`; it preserves `/context-audit` plus bypass permissions and streams filtered milestones through `claude_progress.py`.
 
-cwd = `E:/automation/fleet-config`. The skill handles measure + judge + ledger + Slack itself.
+cwd = `E:/automation/fleet-config`. The skill handles measure + judge + ledger + ping itself.

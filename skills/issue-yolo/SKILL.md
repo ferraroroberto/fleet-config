@@ -235,7 +235,7 @@ Three YOLO-specific deltas on top of the delegated steps:
   re-run `ux_surface.py check` or re-screenshot in this phase; any drift was
   already fixed and the text-only conformance line already belongs in the PR
   body from step 4.
-- **Skip `/issue-finish`'s own step 8 Slack ping** — Phase 5 below sends a
+- **Skip `/issue-finish`'s own step 8 Telegram ping** — Phase 5 below sends a
   single `--kind yolo` ping instead, so the run produces exactly one
   completion notification, not two.
 
@@ -268,15 +268,15 @@ pass the URL you already have from `gh pr create` or `gh pr view`. This makes
 the title/URL lookup CWD-independent so it works correctly from subagent
 contexts where the shell's working directory may differ from the project root.
 
-Silent no-op if no channel is configured; always exits 0, so it can never block
+Silent no-op if no chat is configured; always exits 0, so it can never block
 or delay the finish.
 
 **`notify_complete.py` is the ONLY sanctioned way to send this ping — do NOT use
-any MCP Slack tool (search/send/etc.) to find a channel or post the ping.** The
-helper resolves the destination channel deterministically from `projects.toml`;
-picking a channel yourself is both a security violation (an agent-inferred
-external write destination) and wrong (it may post to the wrong channel). A
-silent no-op is the correct outcome — do not "fix" it with Slack tools.
+any MCP chat tool (search/send/etc.) to find a chat or post the ping.** The
+helper resolves the destination chat deterministically from `projects.toml`;
+picking a chat yourself is both a security violation (an agent-inferred
+external write destination) and wrong (it may post to the wrong chat). A
+silent no-op is the correct outcome — do not "fix" it with MCP chat tools.
 
 ## Notes on safety
 

@@ -1,6 +1,6 @@
 ---
 name: config-map
-description: Regenerate the fleet config & convention map (introspect install.ps1, the skill/hook dirs, a per-repo git sweep; render to architecture/config-map.png) and post it to Slack. Use to see or refresh the cross-agent configuration picture — e.g. "/config-map", "update the config map", "what skills/hooks does each agent get". Companion to /context-audit (which enforces drift). Runs weekly unattended.
+description: Regenerate the fleet config & convention map (introspect install.ps1, the skill/hook dirs, a per-repo git sweep; render to architecture/config-map.png) and post it to Telegram. Use to see or refresh the cross-agent configuration picture — e.g. "/config-map", "update the config map", "what skills/hooks does each agent get". Companion to /context-audit (which enforces drift). Runs weekly unattended.
 ---
 
 # config-map
@@ -64,12 +64,12 @@ git commit -m "docs: refresh config map (<YYYY-MM-DD>)"
 
 If the current branch is `main` (the scheduled unattended case), also `git push`. On a feature branch, leave pushing to the normal PR/`issue-finish` flow.
 
-### 5. Post the image to Slack (every run)
+### 5. Post the image to Telegram (every run)
 
-Activity-log traffic, so route with `--category log` (the helper resolves the `#log` channel from `hooks/projects.toml` — never hardcode a channel id):
+Activity-log traffic, so route with `--category log` (the helper resolves the `coding log` chat from `hooks/projects.toml` — never hardcode a channel id):
 
 ```
-E:/automation/fleet-config/.venv/Scripts/python.exe hooks/slack_notify.py --category log \
+E:/automation/fleet-config/.venv/Scripts/python.exe hooks/notify_send.py --category log \
    --file architecture/config-map.png \
    --title "Fleet config & conventions" \
    --text "🗺️ Cross-agent config map - refreshed <YYYY-MM-DD>. <change line from step 3>."
@@ -79,7 +79,7 @@ Always post — on-demand *and* scheduled. The helper never raises; a missing to
 
 ### 6. Report
 
-Print: the change line from step 3, whether a commit was made (and pushed), and the Slack post result. A few lines.
+Print: the change line from step 3, whether a commit was made (and pushed), and the Telegram post result. A few lines.
 
 ## Wiring the weekly schedule
 

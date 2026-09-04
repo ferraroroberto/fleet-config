@@ -27,7 +27,7 @@ New repo under `E:/automation/` → **always** add a minimal entry to `hooks/pro
 cwd_prefix = "E:/automation/my-new-project"
 ```
 
-Required for `notify_on_idle` to name the right project in Slack pings (else it falls back to `[claude]`). `tests/run_acceptance.py`'s `fleet_membership` check enforces this: any repo on disk under `E:/automation/` that is neither declared here nor listed in `[global] architecture_ignore` fails the gate by name (fleet-config#640). Add port/gate/tray fields only if the project has a tray app or verification gate.
+Required for `notify_on_idle` to name the right project in Telegram pings (else it falls back to `[claude]`). `tests/run_acceptance.py`'s `fleet_membership` check enforces this: any repo on disk under `E:/automation/` that is neither declared here nor listed in `[global] architecture_ignore` fails the gate by name (fleet-config#640). Add port/gate/tray fields only if the project has a tray app or verification gate.
 
 **That block is also the fleet-membership list** — `fleet_repos()` reads it (minus `[global] architecture_ignore`), so a new entry expands `/system-map`, `/config-map`, and `/context-audit`'s skill-description cap gate too. Same PR, or `tests/run_acceptance.py` fails:
 

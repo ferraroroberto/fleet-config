@@ -16,7 +16,7 @@ work in this repo doesn't cost the whole catalogue:
 - **[`docs/hooks.md`](docs/hooks.md)** — the Tier 1 hook reference: every hook
   in `hooks/`, what it blocks or nudges, its `projects.toml` keys, and why it
   exists. Also the tooling that ships in that tier: the context filter, the
-  Slack-notify transport and the deterministic completion ping, the
+  Telegram notify transport and the deterministic completion ping, the
   conversation-memory engine, and the Pi usage bridge.
 - **[`docs/skills.md`](docs/skills.md)** — the three skill tiers (global
   `skills/`, fleet-only `.claude/skills/`, and a subsystem's own
@@ -78,11 +78,12 @@ fleet-config/
 │   ├── context_filter_cli.py          # wrapper/eval CLI: shadow, rewrite, retrieve, fixture benchmark
 │   ├── context_filter_hook.py         # PreToolUse rewriter: runs supported commands through the compressor (mode: see Graduation above)
 │   ├── restart_and_verify_webapp.py   # also exposed as /restart-webapp
-│   ├── notify_on_idle.py            # Notification hook (via run-hook.ps1): opt-in Slack ping
+│   ├── notify_on_idle.py            # Notification hook (via run-hook.ps1): opt-in Telegram ping
 │   ├── session_state.py             # UserPromptSubmit|Stop|SessionEnd: the Fleet-Board session-row engine (hooks/state/sessions-state.json)
 │   ├── session_state_codex.py       # thin Codex adapter → session_state (wired from codex-hooks.json)
 │   ├── session_state_pi.py          # thin Pi adapter → session_state (shelled out to by pi/extensions/session_state.ts)
-│   ├── slack_notify.py              # shared Slack-notify transport (importable + CLI, stdlib-only)
+│   ├── notify_send.py               # shared Telegram transport (importable + CLI, stdlib-only)
+│   ├── slack_notify.py              # DEPRECATED shim -> notify_send.py, for sister repos that load it by path (fleet-config#540)
 │   ├── notify_complete.py           # deterministic skill-completion ping (issue-* skills call this); finish/yolo carry a work-summary roll-up
 │   ├── work_summary.py              # deterministic PR work-summary (file/LOC roll-up + per-file table) from `gh`, no LLM; importable + CLI
 │   ├── conversation_capture.py     # Stop hook: captures a session to markdown (projects.toml-driven, opt-in; wired from the project's own settings.json)

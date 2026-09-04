@@ -1,6 +1,6 @@
 """Pure-logic tests for .claude/skills/context-purge/digest.py (fleet-config#627).
 
-Covers the rendering layer without touching `gh`, Slack, or the filesystem
+Covers the rendering layer without touching `gh`, Telegram, or the filesystem
 beyond a temp dir. The properties worth pinning are the ones a reviewer would
 otherwise have to take on trust, and the ones the issue was filed about:
 

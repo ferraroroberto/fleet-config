@@ -3,7 +3,7 @@
 `chief_ops.py dispatch` writes a marker here immediately after spawning a
 worker session, so `hooks/notify_on_idle.py` can tell a chief-dispatched
 worker apart from a human-started one and route its "blocked on input"
-notification to chief instead of Slack. A different concern from
+notification to chief instead of the human ping. A different concern from
 `active_issue.py`'s issue-branch lifecycle (this is session identity for
 notification routing, keyed by session id, not by repo#issue), so a
 separate state file rather than overloading that schema — but the same
