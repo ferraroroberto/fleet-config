@@ -14,7 +14,7 @@ Bare invocation therefore requires all three facts:
 
   1. a digest comment inside the window          -> the run delivered at all
   2. `status=complete`                            -> it reached every repo
-  3. `slack=posted`                               -> the ping actually landed
+  3. `delivery=posted`                            -> the ping actually landed
 
 (2) is what makes a deliberately-failed partial run exit non-zero while still
 publishing a digest that names the unreached repos -- the issue's fourth
@@ -23,8 +23,8 @@ second mechanism.
 
 (3) exists because `hooks/notify_send.py` never raises and reports failure as
 a return value. Without consulting the stamp, a landed digest comment plus a
-silently failed Slack post would read as complete success. `slack=unknown` is
-treated as not confirmed, never as a pass.
+silently failed chat post would read as complete success. `delivery=unknown`
+is treated as not confirmed, never as a pass.
 
 Exit 0 = a complete run delivered a digest and pinged it. Non-zero = it did
 not, or the question could not be answered; both are "not confirmed", which is

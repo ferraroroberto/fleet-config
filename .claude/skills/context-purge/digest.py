@@ -28,21 +28,28 @@ Three outputs from one structure:
               (see `/fleet-health`'s SKILL.md), so it may never be the only one.
   html     -- a self-contained page, published best-effort as a private
               Artifact because it reads better on a phone.
-  slack    -- a short text digest: the three headline figures, any hard flag,
+  chat     -- a short text digest: the three headline figures, any hard flag,
               and the link.
 
 Every published comment carries a machine-readable stamp:
 
-    <!-- context-purge-digest run=<id> status=complete|partial unreached=N slack=posted|failed|unknown -->
+    <!-- context-purge-digest run=<id> status=complete|partial unreached=N delivery=posted|failed|unknown -->
 
-`delivery_check.py` reads it, so a partial run and a silently failed Slack post
+`delivery_check.py` reads it, so a partial run and a silently failed chat post
 are both caught by the same post-condition rather than exiting 0 having half
 delivered.
 
+**Naming note (fleet-config#740):** this field and the CLI flags below used to
+be named after Slack, the transport #540 replaced with Telegram. The rename is
+not backward-compatible on purpose -- an older comment's `slack=` field simply
+reads as `delivery=unknown` (unestablished, never a false pass), and every
+such comment ages out of `delivery_check.py`'s freshness window within one
+weekly cycle, so no transition-window shim was worth carrying.
+
 stdlib only. CLI:
     digest.py validate <run.json>
-    digest.py render   <run.json> --html P --md P --slack P [--url U]
-    digest.py publish  <run.json> --md P [--slack-state posted|failed|unknown]
+    digest.py render   <run.json> --html P --md P --chat-text P [--url U]
+    digest.py publish  <run.json> --md P [--delivery-state posted|failed|unknown]
 """
 
 from __future__ import annotations
@@ -254,11 +261,11 @@ def validate(run: Any) -> list[str]:
 
 # ---- stamp ------------------------------------------------------------------
 
-def render_stamp(run: dict, slack_state: str) -> str:
+def render_stamp(run: dict, delivery_state: str) -> str:
     return (f"<!-- {STAMP_PREFIX} run={run.get('run_id', 'unknown')} "
             f"status={run.get('status', 'unknown')} "
             f"unreached={len(run.get('unreached', []))} "
-            f"slack={slack_state} -->")
+            f"delivery={delivery_state} -->")
 
 
 # ---- markdown ---------------------------------------------------------------
@@ -409,9 +416,9 @@ def render_markdown(run: dict, artifact_url: Optional[str] = None) -> str:
     return "\n".join(lines) + "\n"
 
 
-# ---- slack ------------------------------------------------------------------
+# ---- chat --------------------------------------------------------------------
 
-def render_slack(run: dict, link: Optional[str] = None) -> str:
+def render_chat(run: dict, link: Optional[str] = None) -> str:
     h = headline(run)
     partial = run.get("status") == "partial"
     head = "⚠️ PARTIAL" if partial else "🧹"
@@ -620,10 +627,10 @@ def ensure_ledger() -> int:
     return int(number)
 
 
-def publish(run: dict, markdown: str, slack_state: str) -> str:
+def publish(run: dict, markdown: str, delivery_state: str) -> str:
     """Post the digest as a comment on the ledger; return the comment URL."""
     number = ensure_ledger()
-    body = markdown.rstrip() + "\n\n" + render_stamp(run, slack_state) + "\n"
+    body = markdown.rstrip() + "\n\n" + render_stamp(run, delivery_state) + "\n"
     with tempfile.NamedTemporaryFile("w", suffix=".md", delete=False, encoding="utf-8") as fh:
         fh.write(body)
         tmp = fh.name
@@ -647,17 +654,17 @@ def main(argv: Optional[list[str]] = None) -> int:
     v = sub.add_parser("validate", help="check run data before anything renders it")
     v.add_argument("run", type=Path)
 
-    r = sub.add_parser("render", help="render markdown / html / slack from run data")
+    r = sub.add_parser("render", help="render markdown / html / chat text from run data")
     r.add_argument("run", type=Path)
     r.add_argument("--md", type=Path)
     r.add_argument("--html", type=Path)
-    r.add_argument("--slack", type=Path)
+    r.add_argument("--chat-text", type=Path)
     r.add_argument("--url", help="artifact URL to reference, when one published")
 
     p = sub.add_parser("publish", help="post the digest to the managed ledger issue")
     p.add_argument("run", type=Path)
     p.add_argument("--md", type=Path, required=True)
-    p.add_argument("--slack-state", choices=["posted", "failed", "unknown"], default="unknown")
+    p.add_argument("--delivery-state", choices=["posted", "failed", "unknown"], default="unknown")
 
     args = ap.parse_args(argv)
 
@@ -685,10 +692,10 @@ def main(argv: Optional[list[str]] = None) -> int:
             args.md.write_text(render_markdown(run, args.url), encoding="utf-8")
         if args.html:
             args.html.write_text(render_html(run), encoding="utf-8")
-        if args.slack:
-            args.slack.write_text(render_slack(run, args.url), encoding="utf-8")
+        if args.chat_text:
+            args.chat_text.write_text(render_chat(run, args.url), encoding="utf-8")
         print(f"RENDERED run={run.get('run_id')} "
-              f"md={bool(args.md)} html={bool(args.html)} slack={bool(args.slack)}")
+              f"md={bool(args.md)} html={bool(args.html)} chat={bool(args.chat_text)}")
         return 0
 
     # publish
@@ -698,7 +705,7 @@ def main(argv: Optional[list[str]] = None) -> int:
         print(f"FAIL could not read rendered markdown: {exc}", file=sys.stderr)
         return 2
     try:
-        url = publish(run, markdown, args.slack_state)
+        url = publish(run, markdown, args.delivery_state)
     except RuntimeError as exc:
         print(f"FAIL publish did not land: {exc}", file=sys.stderr)
         return 1
