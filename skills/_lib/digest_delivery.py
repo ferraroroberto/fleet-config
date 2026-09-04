@@ -58,7 +58,7 @@ import audit_issue  # noqa: E402
 
 DEFAULT_MAX_AGE_HOURS = 12.0
 
-# `<!-- <prefix> run=... status=... unreached=N slack=... -->`
+# `<!-- <prefix> run=... status=... unreached=N delivery=... -->`
 _STAMP_FIELD_RE = re.compile(r"([a-z_]+)=([^\s>]+)")
 
 
@@ -131,7 +131,7 @@ def classify(
 
     States: ``confirmed`` | ``not-delivered`` (a digest, but too old) |
     ``unestablished`` (the question could not be answered) | ``partial`` |
-    ``slack-unconfirmed``. Only ``confirmed`` is truthy.
+    ``delivery-unconfirmed``. Only ``confirmed`` is truthy.
     """
     where = f"{repo}#{number}" if repo else "the ledger"
     age, comment = newest_dated_comment(comments, now)
@@ -163,15 +163,15 @@ def classify(
             f"digest on {where} is marked status={status or 'unknown'} "
             f"({unreached} repo(s) unreached) -- the run did not complete")
 
-    slack = stamp.get("slack")
-    if slack != "posted":
+    delivery = stamp.get("delivery")
+    if delivery != "posted":
         return Verdict(
-            False, "slack-unconfirmed",
-            f"digest on {where} reports slack={slack or 'unknown'} -- the Slack "
-            f"post was not confirmed, so this run did not fully deliver")
+            False, "delivery-unconfirmed",
+            f"digest on {where} reports delivery={delivery or 'unknown'} -- the "
+            f"chat post was not confirmed, so this run did not fully deliver")
 
     return Verdict(True, "confirmed",
-                   f"digest comment on {where} is {age:.1f}h old (status=complete, slack=posted)")
+                   f"digest comment on {where} is {age:.1f}h old (status=complete, delivery=posted)")
 
 
 # ---- gh-backed check --------------------------------------------------------

@@ -235,31 +235,31 @@ check("a \\| b" in digest.render_markdown(_pipe_run),
       "markdown: a literal pipe in a description does not break the table")
 
 
-# ---- slack -----------------------------------------------------------------
+# ---- chat -------------------------------------------------------------------
 
-slack = digest.render_slack(RUN, link="https://example/comment")
-check("1,500" in slack, "slack: the headline token figure is present")
-check("https://example/comment" in slack, "slack: the link is carried")
-check(len(slack.splitlines()) <= 8, "slack: the message stays phone-readable, not a wall")
-check("🖐️" in slack, "slack: a waiting reviewer decision is flagged")
+chat = digest.render_chat(RUN, link="https://example/comment")
+check("1,500" in chat, "chat: the headline token figure is present")
+check("https://example/comment" in chat, "chat: the link is carried")
+check(len(chat.splitlines()) <= 8, "chat: the message stays phone-readable, not a wall")
+check("🖐️" in chat, "chat: a waiting reviewer decision is flagged")
 
-slack_p = digest.render_slack(partial)
-check("PARTIAL" in slack_p and "grocery" in slack_p,
-      "slack: a partial run is flagged and names who was missed")
+chat_p = digest.render_chat(partial)
+check("PARTIAL" in chat_p and "grocery" in chat_p,
+      "chat: a partial run is flagged and names who was missed")
 
 _regressed = _clone()
 _regressed["repos"][0]["files"][0]["probe"] = {"ran": True, "questions": 14,
                                                "compressed": 9, "control": 13}
-check("REGRESSION" in digest.render_slack(_regressed),
-      "slack: a probe regression is a hard flag, not buried in the page")
+check("REGRESSION" in digest.render_chat(_regressed),
+      "chat: a probe regression is a hard flag, not buried in the page")
 check(digest.probe_verdict(_regressed["repos"][0]["files"][0]) is False,
       "probe_verdict: compressed scoring below control is a failure")
 check(digest.probe_verdict({"probe": {"ran": True}}) is None,
       "probe_verdict: a probe with no scores is unmeasured, not a pass")
 
-slack_u = digest.render_slack(unknown_run)
-check("no probe record" in slack_u,
-      "slack: unrecorded probe coverage is surfaced as a warning, not hidden")
+chat_u = digest.render_chat(unknown_run)
+check("no probe record" in chat_u,
+      "chat: unrecorded probe coverage is surfaced as a warning, not hidden")
 
 
 # ---- html ------------------------------------------------------------------
@@ -287,11 +287,11 @@ check("PARTIAL RUN" in html_p and "grocery" in html_p,
 # ---- stamp -----------------------------------------------------------------
 
 stamp = digest.render_stamp(RUN, "posted")
-check("status=complete" in stamp and "unreached=0" in stamp and "slack=posted" in stamp,
-      "stamp: carries status, unreached count and slack state")
+check("status=complete" in stamp and "unreached=0" in stamp and "delivery=posted" in stamp,
+      "stamp: carries status, unreached count and delivery state")
 check("run=20260815T010000" in stamp, "stamp: carries the run id")
 stamp_p = digest.render_stamp(partial, "failed")
-check("status=partial" in stamp_p and "unreached=1" in stamp_p and "slack=failed" in stamp_p,
+check("status=partial" in stamp_p and "unreached=1" in stamp_p and "delivery=failed" in stamp_p,
       "stamp: a partial run with a failed ping stamps both facts")
 
 # The stamp the digest writes must be the stamp the post-condition reads.
@@ -321,11 +321,11 @@ try:
     check(digest.main(["validate", str(missing)]) == 2,
           "cli: unreadable run data is an error, never an empty success")
 
-    md_out, html_out, slack_out = _tmp / "d.md", _tmp / "d.html", _tmp / "d.txt"
+    md_out, html_out, chat_out = _tmp / "d.md", _tmp / "d.html", _tmp / "d.txt"
     check(digest.main(["render", str(run_path), "--md", str(md_out),
-                       "--html", str(html_out), "--slack", str(slack_out)]) == 0,
+                       "--html", str(html_out), "--chat-text", str(chat_out)]) == 0,
           "cli: render writes all three renderings")
-    check(md_out.exists() and html_out.exists() and slack_out.exists(),
+    check(md_out.exists() and html_out.exists() and chat_out.exists(),
           "cli: every requested rendering actually lands on disk")
     check("20260815T010000" in md_out.read_text(encoding="utf-8"),
           "cli: the rendered markdown carries the run")

@@ -109,23 +109,23 @@ Run from the fleet-config repo root. Validate first: run data that would make th
 ```
 E:/automation/fleet-config/.venv/Scripts/python.exe .claude/skills/context-purge/digest.py validate <scratch>/run.json
 E:/automation/fleet-config/.venv/Scripts/python.exe .claude/skills/context-purge/digest.py render <scratch>/run.json \
-    --md <scratch>/digest.md --html <scratch>/digest.html --slack <scratch>/digest.txt
+    --md <scratch>/digest.md --html <scratch>/digest.html --chat-text <scratch>/digest.txt
 ```
 
 Then publish the **durable** copy — a comment on the managed `[ledger] context-purge run digests` issue — and ping Telegram. Order matters: publish first so the Telegram message has a link, then record whether the ping landed.
 
 ```
-E:/automation/fleet-config/.venv/Scripts/python.exe .claude/skills/context-purge/digest.py publish <scratch>/run.json --md <scratch>/digest.md --slack-state unknown
+E:/automation/fleet-config/.venv/Scripts/python.exe .claude/skills/context-purge/digest.py publish <scratch>/run.json --md <scratch>/digest.md --delivery-state unknown
 cat <scratch>/digest.txt | E:/automation/fleet-config/.venv/Scripts/python.exe hooks/notify_send.py --category log
 ```
 
-`notify_send.py` is the fleet's one Telegram transport — never add a second notifier. It **never raises** and reports failure through its exit code, so check it: re-run `publish` with `--slack-state posted` or `--slack-state failed` to stamp the outcome. `unknown` is treated as not-confirmed downstream, which is the correct default if you cannot tell.
+`notify_send.py` is the fleet's one Telegram transport — never add a second notifier. It **never raises** and reports failure through its exit code, so check it: re-run `publish` with `--delivery-state posted` or `--delivery-state failed` to stamp the outcome. `unknown` is treated as not-confirmed downstream, which is the correct default if you cannot tell.
 
 Optionally publish `digest.html` as a **private** Artifact and re-render with `--url <artifact-url>` so the durable copy references it. This is **best effort** — an Artifact publish is unproven from a headless run (see `/fleet-health`'s SKILL.md), so it may never be the only link. A failure here is a line in the digest, not a failed run.
 
 **A run that fails partway still publishes a digest.** Set `"status": "partial"` and name every repo in `unreached` with a reason; the digest renders a banner and the Telegram message leads with it. A missing Telegram message is indistinguishable from a run that never started.
 
-**Delivery is asserted, not assumed.** Every published comment carries `<!-- context-purge-digest run=… status=… unreached=N slack=… -->`. `delivery_check.py` — wired into `run-weekly.bat` via `claude_progress.py --delivery-check` — exits non-zero unless a fresh digest comment exists **and** reports `status=complete` **and** `slack=posted`, so a partial run and a silently failed ping both turn the scheduled job red. It is strict when invoked with no arguments because that is exactly how the adapter invokes it.
+**Delivery is asserted, not assumed.** Every published comment carries `<!-- context-purge-digest run=… status=… unreached=N delivery=… -->`. `delivery_check.py` — wired into `run-weekly.bat` via `claude_progress.py --delivery-check` — exits non-zero unless a fresh digest comment exists **and** reports `status=complete` **and** `delivery=posted`, so a partial run and a silently failed ping both turn the scheduled job red. It is strict when invoked with no arguments because that is exactly how the adapter invokes it.
 
 ## Wiring the weekly schedule
 

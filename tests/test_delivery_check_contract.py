@@ -61,10 +61,14 @@ check = _h.check
 
 NOW = dt.datetime(2026, 8, 16, 12, 0, tzinfo=dt.timezone.utc)
 
-COMPLETE = "<!-- context-purge-digest run=20260815T010000 status=complete unreached=0 slack=posted -->"
-PARTIAL = "<!-- context-purge-digest run=20260815T010000 status=partial unreached=3 slack=posted -->"
-SLACK_FAILED = "<!-- context-purge-digest run=20260815T010000 status=complete unreached=0 slack=failed -->"
-NO_SLACK_FIELD = "<!-- context-purge-digest run=r status=complete unreached=0 -->"
+COMPLETE = "<!-- context-purge-digest run=20260815T010000 status=complete unreached=0 delivery=posted -->"
+PARTIAL = "<!-- context-purge-digest run=20260815T010000 status=partial unreached=3 delivery=posted -->"
+DELIVERY_FAILED = "<!-- context-purge-digest run=20260815T010000 status=complete unreached=0 delivery=failed -->"
+NO_DELIVERY_FIELD = "<!-- context-purge-digest run=r status=complete unreached=0 -->"
+# An old-format stamp (pre-#740) still carrying the retired `slack=` key --
+# proves the rename's deliberately non-backward-compatible read side: this
+# reads as unestablished, never as a false pass.
+OLD_FORMAT_STAMP = "<!-- context-purge-digest run=r status=complete unreached=0 slack=posted -->"
 
 
 # ---------------------------------------------------------------------------
@@ -120,7 +124,7 @@ check({fresh.confirmed, stale.confirmed, none.confirmed} == {True, False},
 # ---------------------------------------------------------------------------
 
 check(dd.parse_stamp(COMPLETE) == {"run": "20260815T010000", "status": "complete",
-                                   "unreached": "0", "slack": "posted"},
+                                   "unreached": "0", "delivery": "posted"},
       "stamp: a well-formed stamp parses into its fields")
 check(dd.parse_stamp("no stamp here") == {},
       "stamp: an absent stamp is {} -- the caller decides what that means")
@@ -128,7 +132,7 @@ check(dd.parse_stamp(COMPLETE, prefix="other-prefix") == {},
       "stamp: a different prefix does not match -- callers cannot read each other's stamps")
 
 ok = dd.classify([_c(2, COMPLETE)], NOW, 12.0, require_complete=True)
-check(ok.confirmed is True, "strict: complete + slack=posted inside the window confirms")
+check(ok.confirmed is True, "strict: complete + delivery=posted inside the window confirms")
 
 part = dd.classify([_c(2, PARTIAL)], NOW, 12.0, require_complete=True)
 check(part.confirmed is False and part.state == "partial",
@@ -136,20 +140,25 @@ check(part.confirmed is False and part.state == "partial",
 check("3 repo(s) unreached" in part.detail,
       "strict: the partial reason names how many repos went unreached")
 
-sf = dd.classify([_c(2, SLACK_FAILED)], NOW, 12.0, require_complete=True)
-check(sf.confirmed is False and sf.state == "slack-unconfirmed",
-      "strict: slack=failed is its own failure -- notify_send never raises, so a "
+df = dd.classify([_c(2, DELIVERY_FAILED)], NOW, 12.0, require_complete=True)
+check(df.confirmed is False and df.state == "delivery-unconfirmed",
+      "strict: delivery=failed is its own failure -- notify_send never raises, so a "
       "half-failure must not read as success")
 
 missing = dd.classify([_c(2, "digest with no stamp")], NOW, 12.0, require_complete=True)
 check(missing.confirmed is False and missing.state == "unestablished",
       "strict: a comment with no stamp leaves status unknown -- unknown is not success")
 
-unknown_slack = dd.classify([_c(2, NO_SLACK_FIELD)], NOW, 12.0, require_complete=True)
-check(unknown_slack.confirmed is False and unknown_slack.state == "slack-unconfirmed",
-      "strict: a missing slack= field is 'unknown' and is not confirmed (non-negotiable)")
-check("slack=unknown" in unknown_slack.detail,
+unknown_delivery = dd.classify([_c(2, NO_DELIVERY_FIELD)], NOW, 12.0, require_complete=True)
+check(unknown_delivery.confirmed is False and unknown_delivery.state == "delivery-unconfirmed",
+      "strict: a missing delivery= field is 'unknown' and is not confirmed (non-negotiable)")
+check("delivery=unknown" in unknown_delivery.detail,
       "strict: the reason says the delivery state was unknown, not that it failed")
+
+old_format = dd.classify([_c(2, OLD_FORMAT_STAMP)], NOW, 12.0, require_complete=True)
+check(old_format.confirmed is False and old_format.state == "delivery-unconfirmed",
+      "strict: a pre-#740 stamp carrying the retired slack= key reads as unconfirmed, "
+      "never as a false pass -- the rename's deliberate non-backward-compat decision")
 
 lenient = dd.classify([_c(2, PARTIAL)], NOW, 12.0, require_complete=False)
 check(lenient.confirmed is True,
@@ -197,7 +206,7 @@ def _scenarios(stamp_complete: str) -> dict:
         "gh-error": lambda f: setattr(f, "raise_on_view", SystemExit("gh issue view failed (exit 1)")),
         "no-ledger": lambda f: (setattr(f, "issues", []), setattr(f, "comments", [])),
         "partial-stamp": lambda f: setattr(f, "comments", [_live(2, PARTIAL)]),
-        "slack-failed": lambda f: setattr(f, "comments", [_live(2, SLACK_FAILED)]),
+        "delivery-failed": lambda f: setattr(f, "comments", [_live(2, DELIVERY_FAILED)]),
         "no-stamp": lambda f: setattr(f, "comments", [_live(2, "plain digest")]),
     }
 
@@ -237,9 +246,9 @@ check(purge_codes["unestablished"] != 0 and purge_codes["gh-error"] != 0,
 check(purge_codes["partial-stamp"] != 0,
       f"context-purge: a partial run exits non-zero when invoked BARE, with no flag "
       f"to forget (saw {purge_codes['partial-stamp']})")
-check(purge_codes["slack-failed"] != 0,
-      f"context-purge: slack=failed exits non-zero when invoked bare "
-      f"(saw {purge_codes['slack-failed']})")
+check(purge_codes["delivery-failed"] != 0,
+      f"context-purge: delivery=failed exits non-zero when invoked bare "
+      f"(saw {purge_codes['delivery-failed']})")
 check(purge_codes["no-stamp"] != 0,
       f"context-purge: a digest with no stamp is unestablished, not a pass "
       f"(saw {purge_codes['no-stamp']})")
