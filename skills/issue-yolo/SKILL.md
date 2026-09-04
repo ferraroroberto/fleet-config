@@ -5,28 +5,24 @@ description: One-shot the GitHub-issue workflow end-to-end — file the issue, c
 
 # issue-yolo
 
-**Goal:** Take a rough idea and carry it all the way to merged-and-closed in one
-unbroken run — `/issue-add` → `/issue-start now` → build → **validate hard** →
-`/issue-finish`. No approval pauses in between.
+**Goal:** idea → merged-and-closed in one unbroken run — `/issue-add` →
+`/issue-start now` → build → **validate hard** → `/issue-finish`. No approval
+pauses in between.
 
 **YOLO means "skip the plan-approval gate", not "skip safety".** The validation
-phase is the only thing between a fresh idea and a merge commit on a protected
-branch. Do not weaken it. If validation fails at any point, **stop and report**;
-do not push.
+phase (Phase 3) is the only thing between a fresh idea and a merge commit on a
+protected branch — do not weaken it. Validation fails at any point → **stop and
+report**; do not push.
 
-Use this when:
-- You've thought through the change well enough that a plan-approval gate would
-  be ceremony.
-- The change is bounded enough that a single validation pass can credibly cover
-  it.
-- You're willing to accept that the next eyeball on the work will be `main`'s.
+Use when: the approach is already thought through (a plan gate would be
+ceremony); the change is bounded enough for one validation pass to credibly
+cover it; you accept the next eyeball on the work is `main`'s.
 
-Do **not** use this for:
-- Architectural changes, cross-cutting refactors, or anything where the design
-  is the hard part. Those need `/issue-start … plan`.
-- Work with hard-to-reverse blast radius beyond the local app (production data,
-  external API state, shared infrastructure). YOLO covers the local repo + its
-  CI + the local tray, nothing more.
+**Do not** use for: architectural changes / cross-cutting refactors / anything
+where design is the hard part — use `/issue-start … plan` instead; work with
+hard-to-reverse blast radius beyond the local app (production data, external
+API state, shared infrastructure) — YOLO covers the local repo + its CI + the
+local tray, nothing more.
 
 ## Argument
 
@@ -43,18 +39,18 @@ Run in order. Any failure stops the whole run — no partial finish.
 
 ### Phase 1 — File the issue (`/issue-add` flow)
 
-**Skip this phase if an existing issue number was passed as the argument.**
-Jump directly to Phase 2 using that number.
+**Skip this phase if an existing issue number was passed as the argument** —
+jump directly to Phase 2 using that number.
 
 Otherwise run the full `/issue-add` skill steps 1–8 verbatim:
 1. Repo + convention context.
 2. Extract the real intent.
 3. Research the codebase.
-4. Check for duplicates — if a clear duplicate exists, **stop**, tell the user,
-   do not start work on it.
+4. Check for duplicates — clear duplicate exists → **stop**, tell the user, do
+   not start work on it.
 5. Decide if a question is needed — only for substantive, decision-bearing
-   ambiguity that would change what gets built. The bar is higher in YOLO mode:
-   if you have to ask, that's a signal the work probably shouldn't be YOLO'd.
+   ambiguity that would change what gets built. Bar is higher in YOLO mode:
+   having to ask is a signal the work probably shouldn't be YOLO'd.
 6. Draft the issue (canonical title style, body proportionate to the work).
 7. Apply one canonical type label.
 8. Create the issue via `gh issue create … --assignee @me`.
@@ -77,18 +73,15 @@ Run the `/issue-start <N> now` flow:
 
 ### Phase 3 — Validate hard *(the non-negotiable phase)*
 
-This phase is *not* weakened relative to the normal flow — it is **stronger**.
-There is no human checkpoint after this. Everything below must hold before
-Phase 4 starts.
-
-Run **all** that apply to this project. Each is a hard gate.
+**Stronger** than the normal flow, not weaker — no human checkpoint after this.
+Everything below must hold before Phase 4 starts. Run **all** that apply to
+this project; each is a hard gate.
 
 **3a. Reproduction proof (for bugs).** Per the scaffolding `CLAUDE.md`'s
 "While fixing" section: a bug fix needs an artefact that *demonstrates* the
-fix — a failing test that now passes, a recorded console transcript showing the
-old error then the new clean run, or a documented reproduction sequence
-exercised before and after. "I think this fixes it" is not enough in YOLO mode
-— there is no review to catch a non-fix.
+fix — a failing test that now passes, a recorded console transcript (old error
+→ new clean run), or a documented repro sequence exercised before and after.
+"I think this fixes it" is not enough — there is no review to catch a non-fix.
 
 **3b. Syntax / type / lint gate.** Whatever the project specifies in its
 `CLAUDE.md` Verification section. Typically:
@@ -98,34 +91,33 @@ exercised before and after. "I think this fixes it" is not enough in YOLO mode
 - TS / JS projects: their type-check and lint commands.
 
 **3c. Unit + integration tests.** Project's `pytest` / `jest` / `go test` etc.
-**Zero allowed failures and zero allowed skips that hide the change.** A
+**Zero allowed failures and zero allowed skips that hide the change** — a
 green-with-skips run is not green if the skip masks the area you touched.
 
 **3d. E2e leg — delegated to the `/e2e` skill.** Run `/e2e`
-(`skills/e2e/SKILL.md`): it routes the branch diff through the repo's own
-`classify_e2e.py` (bootstrapping it on first contact — self-healing
-adoption), runs the proportionate slice (`skip` / `static` / `full`), and
-applies its inline suite maintenance on this branch. If the project has a
-`scripts/verify-before-ship.*` gate, run **that** first (one command, exit-0
-only) — `/e2e` carries the gate's e2e result instead of re-running the same
-slice. The scaffold rule stands unweakened: boot failure is a hard failure —
-never `pytest.skip`; a suite that skips when the app isn't up reports green
-on a build it never tested. A FAIL from the routed slice stops the run.
+(`skills/e2e/SKILL.md`): routes the branch diff through the repo's own
+`classify_e2e.py` (bootstrapping it on first contact), runs the proportionate
+slice (`skip` / `static` / `full`), applies its inline suite maintenance on
+this branch. If the project has a `scripts/verify-before-ship.*` gate, run
+**that** first (one command, exit-0 only) — `/e2e` carries the gate's e2e
+result instead of re-running the same slice. Boot failure is a hard failure —
+never `pytest.skip` (a suite that skips when the app isn't up reports green on
+a build it never tested). A FAIL from the routed slice stops the run.
 
 **3e. Behavioural verification — the change actually does what it claims.**
 Pick the smallest mode that genuinely covers the change:
 - **UI change** (Streamlit, FastAPI/Flask + browser, Electron, phone webapp):
   use the **`verify` skill** to launch the app and drive the feature in a real
   browser. Headed Playwright (or Playwright MCP) so the actual feature is
-  exercised, not a mock. **Inspect the screenshot in-session only** — save it to
-  a local scratch path; **never attach it to the PR body, an issue, or a
-  comment** (assume every repo is public — an uploaded UI screenshot is an
-  information breach). Put a text-only result line in the PR instead.
+  exercised, not a mock. **Inspect the screenshot in-session only** — save to a
+  local scratch path; **never attach it to the PR body, an issue, or a
+  comment** (assume every repo is public — a screenshot is an information
+  breach). Text-only result line in the PR instead.
   **Browser-backend preflight (Codex — no live `iab`):** same preflight as
   `/issue-finish` step 3b (backend selection between `iab` and installed
-  Playwright, the `browser_verify.py plan` invocation, and its four distinct
-  failure codes) — see that step rather than restating it here.
-  Then, when this is a **web-app UX diff**, run the **design-conformance gate**
+  Playwright, the `browser_verify.py plan` invocation, its four distinct
+  failure codes) — see that step, don't restate here.
+  When this is a **web-app UX diff**, also run the **design-conformance gate**
   (`project-scaffolding#83`):
 
   ```
@@ -133,15 +125,14 @@ Pick the smallest mode that genuinely covers the change:
   ```
 
   If `SPEC_APPLIES=yes` and `TOUCHED=yes` (or `TOUCHED=unknown` — the diff
-  failed, which is not evidence the surface was untouched, fleet-config#681),
-  also (a) **token check, fix-now** —
-  compare the touched CSS custom properties (light **and** dark) and the nav
-  contract to `~/.claude/design.md` + `design.dark.md` and fix material drift
-  in-branch now (don't file-and-defer; that's `/design-sync`'s periodic job);
-  and (b) apply the **design-conformance lens** to the screenshot you just took
-  (nav pill, layout, palette per spec). Overrides: `ux`/`design` force it,
-  `no-ux` skips it, `ux-full` checks every `KEY_VIEWS`. `SPEC_APPLIES=no` /
-  `TOUCHED=no` → nothing to do here.
+  failed, not evidence the surface was untouched, fleet-config#681): (a)
+  **token check, fix-now** — compare the touched CSS custom properties (light
+  **and** dark) and the nav contract to `~/.claude/design.md` +
+  `design.dark.md`, fix material drift in-branch now (don't file-and-defer;
+  that's `/design-sync`'s periodic job); (b) apply the **design-conformance
+  lens** to the screenshot just taken (nav pill, layout, palette per spec).
+  Overrides: `ux`/`design` force it, `no-ux` skips it, `ux-full` checks every
+  `KEY_VIEWS`. `SPEC_APPLIES=no` / `TOUCHED=no` → nothing to do here.
 - **CLI change:** invoke the CLI with realistic arguments against realistic
   input. Show the actual output. Don't trust that "the function returns X" —
   show the binary printing X.
@@ -154,15 +145,15 @@ Pick the smallest mode that genuinely covers the change:
 If the project has its own `run`-style skill, prefer that — it knows how to
 launch the app. Fall back to the global `verify` skill otherwise.
 
-**3f. Sanity sweep for unintended damage.** `git diff main...HEAD` and
-read it. Anything outside the change's stated scope is a red flag — either
-revert that hunk or stop and ask. Look especially for: dependency bumps you
-didn't intend, removed tests, weakened assertions, suppressed warnings,
-silently-broadened exception handlers, `.gitignore` edits.
+**3f. Sanity sweep for unintended damage.** `git diff main...HEAD`, read it.
+Anything outside the change's stated scope is a red flag — revert that hunk or
+stop and ask. Watch for: unintended dependency bumps, removed tests, weakened
+assertions, suppressed warnings, silently-broadened exception handlers,
+`.gitignore` edits.
 
-**3g. Self-critique pass.** Take 30 seconds to ask "what would a senior,
-perfectionist reviewer reject?" — per scaffolding `CLAUDE.md`'s Senior-dev
-check. Fix anything obvious *now*. The reviewer in this run is you.
+**3g. Self-critique pass.** 30 seconds: "what would a senior, perfectionist
+reviewer reject?" (scaffolding `CLAUDE.md` Senior-dev check). Fix anything
+obvious *now* — the reviewer in this run is you.
 
 **If anything in 3a–3g fails — stop.** Report the failure, leave the branch
 in place, let the user inspect. Do **not** continue to 3h or Phase 4. Do
@@ -170,21 +161,20 @@ in place, let the user inspect. Do **not** continue to 3h or Phase 4. Do
 defeats the whole structure.
 
 **3h. Independent review — a fresh agent with no memory of the build.** Only
-reached once 3a–3g are all green. Self-review (3a–3g) is still done by the
-same context that wrote the code — it cannot be the last checkpoint before a
-merge with no human in the loop. Per the fleet's
+reached once 3a–3g are all green. Self-review (3a–3g) is done by the same
+context that wrote the code — it cannot be the last checkpoint before a merge
+with no human in the loop. Per the fleet's
 [independent-review-gate convention](../../docs/independent-review-gate.md)
 (fleet-config#408), with **stop-and-report** failure handling (not
-`cleanup-fleet-all.js`'s retry-then-escalate) — this run is interactive, so a
-human is already present to decide on a retry.
+`cleanup-fleet-all.js`'s retry-then-escalate — this run is interactive, a human
+is already present to decide on a retry).
 
-Spawn the review as a genuinely separate agent invocation — **not** a forked
-continuation of this conversation (a fork inherits this session's own context,
-so the reviewer could rationalize its own prior reasoning). On Claude Code, use
-the `Agent` tool with a fresh subagent (e.g. `general-purpose`) rather than
-`subagent_type: "fork"`. Brief it with only what it needs to do the review
-cold — the issue number, the branch name, and the repo path — not a summary of
-what you built or why; let it discover that itself:
+Spawn as a genuinely separate agent invocation — **not** a forked continuation
+of this conversation (a fork inherits this session's context; the reviewer
+could rationalize its own prior reasoning). Claude Code: use the `Agent` tool
+with a fresh subagent (e.g. `general-purpose`), not `subagent_type: "fork"`.
+Brief it with only the issue number, branch name, and repo path — not a
+summary of what you built or why; let it discover that itself:
 
 1. **Fetch the issue's acceptance criteria itself** — `gh issue view <N>` —
    never trust this run's own restatement of them.
@@ -195,18 +185,17 @@ what you built or why; let it discover that itself:
 4. **Judge** whether the diff plausibly and reasonably satisfies the fetched
    acceptance criteria **and** conforms to the repo's own `CLAUDE.md`
    conventions — not just "did the gate pass". Lenient by default (per
-   `docs/independent-review-gate.md`): fail only on something a human
-   reviewer would actually reject (the gate genuinely fails, the diff doesn't
-   touch what the issue asked for, an obvious bug) — never on style
-   preference.
-5. Have it report a schema-validated verdict: `pass: boolean`, `feedback:
-   string` (always filled in, briefly even on a pass).
+   `docs/independent-review-gate.md`): fail only on something a human reviewer
+   would actually reject (gate genuinely fails, diff doesn't touch what the
+   issue asked for, obvious bug) — never style preference.
+5. Report a schema-validated verdict: `pass: boolean`, `feedback: string`
+   (always filled in, briefly even on a pass).
 
 **On `pass: false` — stop and report.** Surface the reviewer's `feedback`
-verbatim, leave the branch as-is, and let the user decide whether to retry,
-adjust scope, or abandon. **Do not** auto-retry the build and do **not**
-continue to Phase 4 on a rejected verdict — that silent-second-round shape is
-`cleanup-fleet-all.js`'s job, not this one.
+verbatim, leave the branch as-is, let the user decide retry / adjust scope /
+abandon. **Do not** auto-retry the build and do **not** continue to Phase 4 on
+a rejected verdict — that silent-second-round shape is `cleanup-fleet-all.js`'s
+job, not this one.
 
 ### Phase 4 — Ship (delegates to `/issue-finish`)
 
@@ -216,14 +205,11 @@ review's `pass: true`). Once there, run the full **`/issue-finish` skill**
 re-confirmation, README + `/docs-shots` visual-docs (step 2b), the
 consolidated verification gate, `/e2e` (step 3c), push + PR, the
 CI-advisory/checkout-mode-aware merge and land, the tray restart, and the
-deploy-coverage liveness check (step 6b) are exactly the same mechanics
-whether this run arrived via a plan-approval gate or via YOLO's own Phase 3,
-so this file used to restate them as its own nine steps instead of delegating
-— and the restatement had already drifted into a stale subset, silently
-skipping `/issue-finish`'s step 2b and step 6b on every YOLO run that touched
-either surface (fleet-config#728). Delegating means every future
-`/issue-finish` step reaches this flow for free, with no second copy to fall
-out of sync.
+deploy-coverage liveness check (step 6b). Delegate rather than restate: a prior
+version duplicated these as its own nine steps and the copy drifted stale,
+silently skipping step 2b and 6b on every YOLO run touching either surface
+(fleet-config#728). Delegating means every future `/issue-finish` step reaches
+this flow for free, no second copy to fall out of sync.
 
 Three YOLO-specific deltas on top of the delegated steps:
 
@@ -264,29 +250,26 @@ E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/hooks
 ```
 
 `<PR_URL>` is the full PR URL (e.g. `https://github.com/owner/repo/pull/31`) —
-pass the URL you already have from `gh pr create` or `gh pr view`. This makes
-the title/URL lookup CWD-independent so it works correctly from subagent
-contexts where the shell's working directory may differ from the project root.
+pass the URL already on hand from `gh pr create`/`gh pr view`; keeps the
+title/URL lookup CWD-independent for subagent contexts.
 
-Silent no-op if no chat is configured; always exits 0, so it can never block
-or delay the finish.
+Silent no-op if no chat is configured; always exits 0 — never blocks or delays
+the finish.
 
 **`notify_complete.py` is the ONLY sanctioned way to send this ping — do NOT use
 any MCP chat tool (search/send/etc.) to find a chat or post the ping.** The
 helper resolves the destination chat deterministically from `projects.toml`;
 picking a chat yourself is both a security violation (an agent-inferred
-external write destination) and wrong (it may post to the wrong chat). A
-silent no-op is the correct outcome — do not "fix" it with MCP chat tools.
+external write destination) and wrong (may post to the wrong chat). A silent
+no-op is the correct outcome — don't "fix" it with MCP chat tools.
 
 ## Notes on safety
 
-- The "approval gate" you're skipping is the plan-mode pause where the user
-  would normally vet the *approach* before code is written. The validation
-  gate you're not skipping is what proves the code *works*. These are
-  different gates; do not conflate them.
-- If you find yourself wanting to weaken Phase 3 to keep the run moving,
-  you are not doing YOLO any more — you are doing something else. Stop and
-  ask the user.
-- If a project has a tray running an older version while you ship, the tray
-  restart at the end is what makes "merged" mean "live". A YOLO run that
-  merges but leaves the tray on the previous build is not finished.
+- The "approval gate" skipped is the plan-mode pause vetting *approach* before
+  code is written. The validation gate NOT skipped is what proves the code
+  *works*. Different gates — don't conflate them.
+- Tempted to weaken Phase 3 to keep the run moving? That's not YOLO any more.
+  Stop and ask the user.
+- The tray restart at the end is what makes "merged" mean "live" for a project
+  running an older build while you ship. A YOLO run that merges but leaves the
+  tray on the previous build is not finished.

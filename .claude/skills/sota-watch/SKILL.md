@@ -5,7 +5,7 @@ description: Recurring state-of-the-art watch over the fleet's adopted tooling, 
 
 # sota-watch
 
-**Goal:** Notice when the *next* #219 is due — prior evaluation spikes (token reduction, model tiers, MCP surface) reached a verdict and went silent; the market did not. Walk `watchlist.toml` — each area's adopted choice, recorded verdict, and the disqualifiers that would have to change — re-research only the areas whose per-area cadence has elapsed, and report **only changes**: one line for "no change", a short evidenced block when a challenger appears to clear the recorded disqualifiers.
+**Goal:** notice when the *next* #219 is due — prior evaluation spikes (token reduction, model tiers, MCP surface) reached a verdict and went silent; the market did not. Walk `watchlist.toml` — each area's adopted choice, recorded verdict, and the disqualifiers that would have to change — re-research only the areas whose per-area cadence has elapsed, report **only changes**: one line for "no change", a short evidenced block when a challenger appears to clear the recorded disqualifiers.
 
 **Advisory, never auto-adopting.** The digest may *draft* a spike-issue outline for a challenger, but this skill never creates the spike, never edits the watchlist verdicts, and never adopts anything — the user files the evaluation spike from the digest (the #219 pattern: measure, trust-gate, verdict).
 
@@ -14,8 +14,8 @@ description: Recurring state-of-the-art watch over the fleet's adopted tooling, 
 - **Run from the `fleet-config` repo root** (`E:/automation/fleet-config`).
 - **Never commit anything.** Run state lives in `~/.claude/sota-watch/state.json` (outside the repo); the ledger lives in a GitHub issue. Watchlist *verdicts* change only via a human-reviewed PR after a spike concludes — never during a run.
 - **Poll synchronously; never background-and-wait** (fleet-config#314): a scheduled headless `claude -p` that ends its turn expecting a resume exits `0` having done nothing. Any background work the research step spawns must be polled to completion inside the same turn.
-- **Partial failure degrades one area, never the run.** A failed research pass or unreachable delegate becomes a "not checked — <reason>" line in the digest; the other areas still complete and the run still reports.
-- **Degrade gracefully, never block on a prompt** (this runs unattended).
+- **Partial failure degrades one area, never the run.** A failed research pass or unreachable delegate becomes a "not checked — <reason>" line in the digest; other areas still complete and the run still reports.
+- **Degrade gracefully, never block on a prompt** (unattended).
 
 ## Steps
 
@@ -35,7 +35,7 @@ For each `status=delegated` area (currently `local-model-frontier` → [local-ll
 gh issue view 272 --repo ferraroroberto/local-llm-hub --comments
 ```
 
-Read the **latest** comment — by that ledger's own contract it is the current state of the local-model frontier. Extract the run date and the per-role verdict table. Report it in one compact block, plus a **staleness flag** if the latest run is older than the area's `stale_after` days (the delegate's own cadence has slipped — a finding about the *process*, not the models). Never re-research a delegated area here; local-llm-hub's `/frontier-refresh` owns it.
+Read the **latest** comment — by that ledger's own contract it is the current state of the local-model frontier. Extract the run date and the per-role verdict table. Report it in one compact block, plus a **staleness flag** if the latest run is older than the area's `stale_after` days (delegate's own cadence slipped — a finding about the *process*, not the models). Never re-research a delegated area here; local-llm-hub's `/frontier-refresh` owns it.
 
 ### 3. Research each due area
 
@@ -84,7 +84,7 @@ The last comment on the ledger = the current state of the watch, same contract a
 E:/automation/fleet-config/.venv/Scripts/python.exe hooks/notify_send.py --category log --text "🔭 sota-watch - <date> - <N> due, <M> no-change, <K> challenger - <ledger comment URL>"
 ```
 
-`notify_send --text` has no separator token (a `--text` body carries markdown, where `|` is a table cell), so keep the *punctuation* ASCII here: a literal `·` in a Windows command line reached the chat as `??` (fleet-config#507). Every separator is a hyphen; the leading emoji stays — it is the glanceable cue, and punctuation was what corrupted.
+`notify_send --text` has no separator token (a `--text` body carries markdown, where `|` is a table cell), so keep the *punctuation* ASCII here: a literal `·` in a Windows command line reached the chat as `??` (fleet-config#507). Every separator is a hyphen; the leading emoji stays as the glanceable cue.
 
 Challenger found → one extra line naming the area. The helper never raises; a missing token logs and exits non-zero — report it, don't fail the run.
 

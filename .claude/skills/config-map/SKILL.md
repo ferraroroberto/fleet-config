@@ -1,15 +1,15 @@
 ---
 name: config-map
-description: Regenerate the fleet config & convention map (introspect install.ps1, the skill/hook dirs, a per-repo git sweep; render to architecture/config-map.png) and post it to Telegram. Use to see or refresh the cross-agent configuration picture — e.g. "/config-map", "update the config map", "what skills/hooks does each agent get". Companion to /context-audit (which enforces drift). Runs weekly unattended.
+description: Regenerate the fleet config & convention map (introspect install.ps1, the skill/hook dirs, a per-repo git sweep; render to architecture/config-map.png) and post it to Telegram — the cross-agent configuration picture. E.g. "/config-map", "update the config map", "what skills/hooks does each agent get". Companion to /context-audit. Runs weekly unattended.
 ---
 
 # config-map
 
-**Goal:** Keep one always-current, shareable picture of the whole cross-agent *configuration* surface — what skills, hooks, context file, design system, statusline and settings each agent (Claude Code · Codex · Pi · Copilot · Antigravity) gets, which are universal vs repo-specific, and which conventions are in force. The descriptive counterpart to `/context-audit`: this skill is the weekly **photo**; `/context-audit` flags the **drift**.
+**Goal:** one always-current picture of the cross-agent *configuration* surface — skills, hooks, context file, design system, statusline, settings per agent (Claude Code · Codex · Pi · Copilot · Antigravity); universal vs repo-specific; conventions in force. Descriptive counterpart to `/context-audit`: this skill is the weekly **photo**; `/context-audit` flags the **drift**.
 
-**The map is derived, not declared.** Unlike `/system-map` (which aggregates self-describing per-repo `.fleet.toml` cards), almost all config is centralized in `fleet-config`, so `.claude/skills/config-map/build_data.py` *introspects* it: the per-agent matrix from `install.ps1`'s link table + `codex-hooks.json`; the skills from `skills/` and `.claude/skills/`; the hooks from `hooks/*.py` + `settings.template.json`; the repo-specific skills from a git sweep of each fleet repo's committed `.claude/skills`. The thin hand-maintained input is `architecture/config.residual.json` — the agent columns, the matrix row structure (non-derivable cells only), the universal-skill scope set, the project-wired hooks, and the conventions prose. The visual (`architecture/config-map.html`) is a pure renderer over the generated `architecture/config.data.js` (`window.CONFIG = { …strict JSON… }`). The acceptance matrix (`tests/run_acceptance.py`) reports `config.data.js` drifting from what `build_data.py` regenerates — as a `SKIP` line, not a failure, because the git sweep reads *sibling* repos and no fleet-config commit can turn a sister repo's new skill green (fleet-config#562). **This skill owns that freshness** (see step 1).
+**Derived, not declared.** Unlike `/system-map` (aggregates self-describing per-repo `.fleet.toml` cards), config is centralized in `fleet-config`, so `.claude/skills/config-map/build_data.py` *introspects* it: per-agent matrix from `install.ps1`'s link table + `codex-hooks.json`; skills from `skills/` and `.claude/skills/`; hooks from `hooks/*.py` + `settings.template.json`; repo-specific skills from a git sweep of each fleet repo's committed `.claude/skills`. Hand-maintained input: `architecture/config.residual.json` — agent columns, matrix row structure (non-derivable cells only), universal-skill scope set, project-wired hooks, conventions prose. Visual (`architecture/config-map.html`) is a pure renderer over generated `architecture/config.data.js` (`window.CONFIG = { …strict JSON… }`). `tests/run_acceptance.py` reports `config.data.js` drifting from `build_data.py`'s output as a `SKIP`, not a failure — the git sweep reads *sibling* repos and no fleet-config commit can turn a sister repo's new skill green (fleet-config#562). **This skill owns that freshness** (step 1).
 
-**Designed for unattended runs.** Every step degrades gracefully, never blocks on a prompt.
+**Unattended-safe:** every step degrades gracefully, never blocks on a prompt.
 
 ## Execution rules (read first)
 
@@ -29,7 +29,7 @@ E:/automation/fleet-config/.venv/Scripts/python.exe .claude/skills/config-map/bu
 E:/automation/fleet-config/.venv/Scripts/python.exe tests/run_acceptance.py
 ```
 
-The `config_map:` checks fail loud if a `whatchanged` invariant breaks, and print `SKIP  config_map: config.data.js matches build_data.py output` when the committed snapshot is stale. **Treat that SKIP as a failure of this run** — it is advisory only for fleet-config's own gate (its inputs are sibling repos), and this skill is what clears it: the regeneration above should have, so investigate rather than proceeding. Fix any failure or SKIP before rendering. If a new agent, config class, statusline kind or project-wired hook appeared that the introspection can't derive, add it to `architecture/config.residual.json` first, then regenerate.
+`config_map:` checks fail loud if a `whatchanged` invariant breaks, and print `SKIP  config_map: config.data.js matches build_data.py output` when the committed snapshot is stale. **Treat that SKIP as a failure of this run** — advisory only for fleet-config's own gate; this skill is what clears it, so investigate rather than proceeding. Fix any failure or SKIP before rendering. If a new agent, config class, statusline kind, or project-wired hook appeared that introspection can't derive, add it to `architecture/config.residual.json` first, then regenerate.
 
 ### 2. Render the visual
 

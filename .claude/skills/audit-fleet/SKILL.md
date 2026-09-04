@@ -1,157 +1,75 @@
 ---
 name: audit-fleet
-description: Run /codebase-audit across every repo in the E:\automation fleet in one pass and emit one weekly digest (GitHub comment + Telegram ping). Use when the user wants a whole-fleet quality sweep — e.g. "/audit-fleet", "audit the whole fleet", "weekly codebase audit across all repos". Also runs unattended on a weekly schedule.
+description: Run /codebase-audit across every repo in the E:\automation fleet in one pass, emitting one weekly digest (GitHub comment + Telegram ping). Whole-fleet quality sweep — e.g. "/audit-fleet", "audit the whole fleet", "weekly codebase audit across all repos". Also runs unattended weekly.
 ---
 
 # audit-fleet
 
-**Goal:** A fleet-wide, idempotent, scatter-gather wrapper around `/codebase-audit`. Walk every repo under `E:\automation\`, cheaply skip the unchanged ones, audit the changed ones through a **bounded window of up to 3 concurrent sub-agents** (one per repo), then collect the results into **one diff-based digest**: a GitHub comment on the `audit-fleet digest state` ledger issue in `fleet-config` + stdout (so a scheduled run captures it), with a Telegram ping via `notify_complete.py --kind audit`.
+**Goal:** fleet-wide, idempotent, scatter-gather wrapper around `/codebase-audit`. Walk every repo under `E:\automation\`, cheaply skip unchanged ones, audit changed ones through a **bounded window of up to 3 concurrent sub-agents** (one per repo), collect results into **one diff-based digest**: GitHub comment on the `audit-fleet digest state` ledger issue in `fleet-config` + stdout, with a Telegram ping via `notify_complete.py --kind audit`.
 
-**Scope boundary — source code, not context.** This audits *project source code* quality. The fleet's *always-on context surface* is `/context-audit`'s lens; web-app *visual conformance* is `/design-sweep`'s (it files the `design-drift`/`cert-drift` issues). This digest only *reports* that bucket's open counts week-over-week (step 5); it never runs the design lint itself.
+**Scope boundary — source code, not context.** Audits *project source code* quality only. Fleet *context surface* is `/context-audit`'s lens; web-app *visual conformance* is `/design-sweep`'s (files `design-drift`/`cert-drift` issues). This digest only *reports* that bucket's open counts week-over-week (step 5); never runs the design lint itself.
 
-**This skill files no issues itself.** The only writes are (a) the audit issues each sub-agent's `/codebase-audit` files, (b) the per-repo `audit-meta` ledger those audits update, (c) one `audit-fleet digest state` ledger issue in `fleet-config`, (d) the digest comment on that issue, and (e) one cross-fleet `fleet practices ledger` issue in `project-scaffolding`. The orchestrator never edits source, commits, pushes, or restarts anything. **One narrow exception lives inside the sub-agents:** `/codebase-audit`'s step 8b self-heals a **security** finding in place (redacted issue + auto-fix + auto-merge), the only code-writing path in the whole flow — scoped to security, gated on its own safety rules (claim, mandatory regression test, generic artifacts, green-gate-only merge). This orchestrator just carries the counts-only result into the digest.
+**Files no issues itself.** Only writes: (a) audit issues each sub-agent's `/codebase-audit` files, (b) per-repo `audit-meta` ledger, (c) one `audit-fleet digest state` ledger issue in `fleet-config`, (d) the digest comment on it, (e) one `fleet practices ledger` issue in `project-scaffolding`. Orchestrator never edits source, commits, pushes, or restarts anything. **One exception inside sub-agents:** `/codebase-audit` step 8b self-heals a **security** finding in place (redacted issue + auto-fix + auto-merge) — scoped to security, gated on its own rules (claim, mandatory regression test, generic artifacts, green-gate-only merge).
 
-**Designed for unattended runs.** A weekly app-launcher job invokes the co-located `run-weekly.bat`, which routes `/audit-fleet` plus its Sonnet/high-effort/bypass-permissions flags through the shared `claude_progress.py` stream adapter. Every step must therefore degrade gracefully rather than block on a prompt. The orchestrator only does cheap enumeration/gating/dispatch, so it runs at `easy` tier; the per-repo sweep sub-agents dispatched in step 3 run at `hard` tier (`docs/model-tiers.md`).
+**Unattended.** Weekly app-launcher job invokes co-located `run-weekly.bat`, routing `/audit-fleet` + Sonnet/high-effort/bypass-permissions flags through `claude_progress.py`. Every step must degrade gracefully, never block on a prompt. Orchestrator runs `easy` tier; step-3 sweep sub-agents run `hard` tier (`docs/model-tiers.md`).
 
 ## Arguments
 
-- No argument → the whole fleet.
-- One argument that looks like a repo name (e.g. `/audit-fleet app-launcher`) →
-  restrict to that single repo. Match the bare repo name.
-- Anything else → treat as no argument (whole fleet).
+- No argument → whole fleet.
+- One argument matching a repo name (e.g. `/audit-fleet app-launcher`) → restrict to that repo (bare name match).
+- Anything else → treat as no argument.
 
 ## Execution rules (read before running any command)
 
-- **Shell:** the Bash tool here is **Git Bash**. `gh` and `git` work
-  identically in it. Do not use PowerShell syntax (`&`, `$env:`, here-strings)
-  in Bash. Windows paths map as `/e/automation/...`.
-- **The orchestrator only does cheap, safe work:** enumeration, the per-repo
-  ledger gate, fast-forward syncs, windowed dispatch, collection, the digest. **All file
-  reading happens inside sub-agents** — this is what keeps the orchestrator's
-  context (and the weekly token spend) bounded.
-- **Never disturb in-progress work.** A repo that is dirty or not on its default
-  branch is skipped and reported — never stashed, never force-switched.
-- **Never end the turn to "wait for it."** This orchestrator runs headless via
-  `run-weekly.bat`'s one-shot Claude process — no turn loop, no human, no
-  wake-up mechanism after a turn ends. `run_in_background: true` followed by
-  ending the turn silently kills the entire run: the CLI exits on that clean
-  turn-end reporting `exit_code: 0` (false success) while nothing past that
-  point ever happened (`fleet-config#314`).
-  - This extends to a call the *harness itself* auto-backgrounds past its
-    timeout ceiling. An instruction can't prevent an *automatic*
-    timeout-background, so the fix is structural: **never let a single call span
-    the sweep's real runtime at all** (`fleet-config#609` — the step 2 sweep ran
-    345s–1460s+, past the Bash tool's 600s ceiling; see step 2).
-  - Every command here — including the step 3 rate-limit pause — must run
-    synchronously (foreground) or poll to completion within the same turn
-    against a concrete, externally observable condition (e.g. the `Monitor`
-    tool's until-loop pattern for step 3's rate-gate pause), never
-    fire-and-forget.
-  - **Prose isn't enough even for the poll:** a model-composed `Monitor` wait
-    returned without blocking and the turn ended awaiting a notification that
-    never came (`fleet-config#609`, reopened). Step 2 therefore uses a
-    foreground blocking helper script, not a model-composed wait.
+- **Shell:** Bash tool here is **Git Bash**. `gh`/`git` work identically. No PowerShell syntax (`&`, `$env:`, here-strings). Windows paths map as `/e/automation/...`.
+- **Orchestrator only does cheap, safe work:** enumeration, per-repo ledger gate, fast-forward syncs, windowed dispatch, collection, digest. **All file reading happens inside sub-agents** — keeps orchestrator context/token spend bounded.
+- **Never disturb in-progress work.** Dirty or off-default-branch repo → skip and report, never stash or force-switch.
+- **Never end the turn to "wait for it."** Headless one-shot process via `run-weekly.bat` — no turn loop, no human, no wake-up after a turn ends. `run_in_background: true` + ending the turn = false success (`exit_code: 0`) while nothing past that point happens (`fleet-config#314`).
+  - Extends to the harness auto-backgrounding a call past its own timeout ceiling: never let a single call span the sweep's real runtime (`fleet-config#609` — step 2 sweep ran 345s–1460s+, past the Bash tool's 600s ceiling; see step 2).
+  - Every command — including step 3's rate-limit pause — runs synchronously (foreground) or polls to completion within the same turn against a concrete, externally observable condition (e.g. `Monitor`'s until-loop for step 3's rate-gate pause). Never fire-and-forget.
+  - A model-composed `Monitor` wait once returned without blocking and the turn ended awaiting a notification that never came (`fleet-config#609`, reopened) — step 2 therefore uses a foreground blocking helper script, not a model-composed wait.
 
 ## Self-pacing against the live session budget
 
-A full fleet sweep can exhaust the rolling **5-hour session rate limit**
-mid-run. `statusline-command.ps1` caches the live `rate_limits.five_hour` usage
-% (+ `resets_at`) to `~/.claude/hooks/state/rate-limits.json` on every render
-(fleet-config#259), so this skill pauses dispatch proactively, waits in place,
-and resumes within the same run — no relaunch, no OS-level scheduling, no
-`resume` argument; a run always ends by delivering one full digest. The
-gate/pause/fallback mechanics are wired into step 3. Full design:
-`docs/rate-gate.md`.
+A full sweep can exhaust the rolling **5-hour session rate limit** mid-run. `statusline-command.ps1` caches live `rate_limits.five_hour` usage % + `resets_at` to `~/.claude/hooks/state/rate-limits.json` on every render (`fleet-config#259`), so this skill pauses dispatch proactively, waits in place, and resumes within the same run — no relaunch, no OS-level scheduling, no `resume` argument; a run always ends by delivering one full digest. Gate/pause/fallback mechanics wired into step 3. Full design: `docs/rate-gate.md`.
 
 ## Steps
 
-Run in order. A failure on one repo is reported and skipped; it does not abort
-the whole run. Only a pre-flight failure (step 1) stops everything.
+Run in order. A failure on one repo is reported and skipped, doesn't abort the run. Only a pre-flight failure (step 1) stops everything.
 
 ### 1. Pre-flight
 
-- `gh auth status` — must be authenticated as `ferraroroberto`. If not, stop:
-  "Not authenticated — run `gh auth login`."
-- Confirm `E:\automation\` exists (the fleet root). Else stop.
-- No need to read the global `~/.claude/CLAUDE.md` here: the step-2 gate hashes
-  each repo's **own** project CLAUDE.md, not the global file, so a global edit
-  never busts a cache. Sub-agents still read the global rubric when they grade
-  (`/codebase-audit` step 3).
+- `gh auth status` must be authenticated as `ferraroroberto`. If not, stop: "Not authenticated — run `gh auth login`."
+- Confirm `E:\automation\` exists (fleet root). Else stop.
+- No need to read global `~/.claude/CLAUDE.md`: step-2 gate hashes each repo's **own** project CLAUDE.md, not the global file, so a global edit never busts the cache. Sub-agents read the global rubric when grading (`/codebase-audit` step 3).
 
-### 2. One Python sweep: enumerate, sync, and gate every repo — launched detached, polled to completion
+### 2. One Python sweep: enumerate, sync, gate — launched detached, polled to completion
 
-Enumeration + per-repo gating is **one deterministic Python sweep** — the
-orchestrator reads its JSON, never runs a per-repo LLM loop. The sweep's runtime
-(345s–1460s+, growing with the fleet) regularly crosses the Bash tool's 600s
-ceiling, so this step never issues one long synchronous call: it launches the
-sweep **detached** and polls a **sentinel file** — a concrete, externally
-observable condition, instead of an opaque harness-tracked background task with
-nothing for `Monitor` to watch.
+Enumeration + per-repo gating is **one deterministic Python sweep**; orchestrator reads its JSON, never runs a per-repo LLM loop. Runtime (345s–1460s+, growing with the fleet) regularly crosses the Bash tool's 600s ceiling, so this step launches the sweep **detached** and polls a **sentinel file** — concrete, externally observable — instead of an opaque harness-tracked background task.
 
-**Launch** (returns in well under a second — this call is never the one that
-takes 345s–1460s):
+**Launch** (returns in well under a second):
 
 ```
 E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/fleet_audit_scan.py --root E:\automation [--only <repo-name>] --detach
 ```
 
-Prints exactly one line:
+Prints exactly one line: `LAUNCHED pid=<pid> out=<result-path> log=<log-path>`
 
-```
-LAUNCHED pid=<pid> out=<result-path> log=<log-path>
-```
+Capture `out=` verbatim as `SWEEP_RESULT` — never construct/guess the path; `fleet_audit_scan.py` generates a fresh unique one per invocation (`E:/tmp/fleet-audit-scan-<pid>-<ns>.json` when `E:/tmp` exists, system temp dir otherwise), so overlapping runs never collide. The detached child is the same `scan()`, spawned `CREATE_NEW_PROCESS_GROUP | NO_WINDOW` (same pattern as `hooks/restart_and_verify_webapp.py`) so it outlives this tool call. It publishes JSON to `SWEEP_RESULT` atomically (temp-file-then-rename) or an `{"error": "..."}` payload if it raises, so a crash is distinguishable from "still running".
 
-Capture `out=` verbatim as `SWEEP_RESULT` — never construct or guess the path;
-`fleet_audit_scan.py` generates a fresh, unique one per invocation
-(`E:/tmp/fleet-audit-scan-<pid>-<ns>.json` when `E:/tmp` exists, the system temp
-dir otherwise), so two overlapping runs (a manual retry alongside a
-still-running scheduled one) can never collide on a fixed name. The detached
-child is the same `scan()` — spawned `CREATE_NEW_PROCESS_GROUP | NO_WINDOW` (the
-survive-the-parent pattern `hooks/restart_and_verify_webapp.py` uses) so it
-outlives this tool call. It publishes its JSON to `SWEEP_RESULT` atomically
-(temp-file-then-rename, so a poller can never observe a partial write), or an
-`{"error": "..."}` payload if the sweep raises, so a crash is distinguishable
-from "still running".
-
-**Wait** for `SWEEP_RESULT` with a foreground blocking helper script, never
-`Monitor` and never a raw backgrounded Bash call (`fleet-config#609`, reopened).
-`skills/_lib/wait_for_sentinel.py` blocks in a real synchronous sleep loop
-inside a single Bash call:
+**Wait** with a foreground blocking helper script — never `Monitor`, never a raw backgrounded Bash call (`fleet-config#609`, reopened):
 
 ```
 E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/wait_for_sentinel.py --path "$SWEEP_RESULT" --timeout-seconds 560
 ```
 
-**Exit 0** (`SENTINEL-READY <path>`) — the sweep is done: `cat "$SWEEP_RESULT"`
-and continue below with its JSON. **Exit 2** (`SENTINEL-NOT-READY <path>`) —
-the sentinel is not there yet. This is not a "wait for a notification" signal;
-it is a "call this exact command again right now, in this same turn" signal —
-immediately re-invoke it. `--timeout-seconds 560` keeps a single call
-comfortably under the Bash tool's 600s ceiling, so the retry is a normal part
-of the design, not a failure. **Cap retries at 26** (≈4 hours, comfortably
-above every observed historic duration including the 1460s outlier). If
-`SWEEP_RESULT` still hasn't appeared after 26 exit-2 results, or it appears
-carrying an `{"error": ...}` payload, treat this as a pre-flight-class failure:
-print `Fleet audit plan — sweep did not complete: <reason>` and skip straight to
-step 6's delivery assertion, which correctly finds nothing to report and
-prints `SCHEDULED-RUN-FAILED` — never fabricate a plan line from a scan that
-never finished. **Never end this turn on an exit-2 result** — the only two
-places this step may stop polling are a resolved exit 0 or an exhausted retry
-cap; "the sweep is probably still running, I'll check back" is not a valid
-reason to end the turn.
+**Exit 0** (`SENTINEL-READY <path>`) — sweep done: `cat "$SWEEP_RESULT"` and continue with its JSON. **Exit 2** (`SENTINEL-NOT-READY <path>`) — not a wait-for-notification signal; re-invoke the exact same command again immediately, same turn. `--timeout-seconds 560` keeps a call under the Bash tool's 600s ceiling — the retry is normal, not a failure. **Cap retries at 26** (~4 hours, above the observed 1460s outlier). If `SWEEP_RESULT` still absent after 26 exit-2 results, or carries `{"error": ...}`: treat as pre-flight-class failure — print `Fleet audit plan — sweep did not complete: <reason>` and skip to step 6's delivery assertion (prints `SCHEDULED-RUN-FAILED`); never fabricate a plan line from an unfinished scan. **Never end this turn on an exit-2 result** — only two valid stops: resolved exit 0, or exhausted retry cap.
 
 Once read, `SWEEP_RESULT`'s content is this step's JSON output.
 
-The script (`skills/_lib/fleet_audit_scan.py`, built on `audit_issue.py`'s
-`evaluate_repo`) walks `E:\automation\*\`, skips linked worktrees
-(`<repo>-wt-<N>`: `.git` is a file, not a dir — without this guard a worktree
-surfaces as a spurious off-branch repo), filters to repos with a
-`ferraroroberto` remote, skips dirty/off-branch repos, syncs the rest (`fetch` +
-`pull --ff-only`), and runs the **same ledger-gate + self-fix-churn decision
-`/codebase-audit` step 2 uses** (`evaluate_repo` — exactly one implementation)
-per repo.
+The script (`skills/_lib/fleet_audit_scan.py`, built on `audit_issue.py`'s `evaluate_repo`) walks `E:\automation\*\`, skips linked worktrees (`<repo>-wt-<N>`: `.git` is a file, not a dir), filters to repos with a `ferraroroberto` remote, skips dirty/off-branch repos, syncs the rest (`fetch` + `pull --ff-only`), and runs the **same ledger-gate + self-fix-churn decision `/codebase-audit` step 2 uses** (`evaluate_repo` — one implementation) per repo.
 
-Its JSON shape:
+JSON shape:
 
 ```
 {"to_audit": [{"repo": "...", "path": "...", "reason": "unparseable-ledger"|"unresolvable-baseline"?, "baseline_sha": "..."?, "ledger_issue": N?}, ...],
@@ -165,52 +83,13 @@ Its JSON shape:
  "accounting": {"enumerated": N, "bucketed": N, "unaccounted": 0, "balanced": true}}
 ```
 
-`enumerated` counts the repos the walk *found*, before any decision; the
-`accounting` block asserts the seven buckets sum back to it. A repo that lands in
-no bucket shows up as a non-zero `unaccounted` / `balanced: false` — the shape
-of the failure where an unresolvable ledger baseline threw past every branch and
-two repos vanished from three consecutive runs (fleet-config#567). Never report
-counts that don't add up as a healthy run.
+`enumerated` counts repos the walk *found*, before any decision; `accounting` asserts the seven buckets sum back to it. A repo in no bucket shows nonzero `unaccounted` / `balanced: false` (fleet-config#567 — two repos vanished from three consecutive runs). Never report counts that don't add up as healthy.
 
-A `stale_lock` entry is a repo carrying a stranded `.git/index.lock`, and it is
-**the one bucket that never self-heals** — surface every entry by name, every
-week, until a human clears it. A stale lock is invisible to every read
-(`status`, `fetch`, `rev-list`, an up-to-date `pull --ff-only` all exit 0 with
-the right answer) while the repo is frozen against every write: nine locked
-repos filed as healthy `below_threshold` went unnoticed for fifteen days
-(fleet-config#667). `verdict: stale` means no git process is running on the
-machine at all; `stale_unconfirmed` means the lock is past the threshold but
-that could not be established — both need a look, neither is auto-repaired.
-**Never delete a lock from this skill**, and never instruct a sub-agent to: it
-is another process's file. The fix is a human confirming the holder is dead,
-then removing it.
+A `stale_lock` entry is a repo carrying a stranded `.git/index.lock` — **the one bucket that never self-heals**: surface every entry by name, every week, until a human clears it. Invisible to every read (`status`, `fetch`, `rev-list`, an up-to-date `pull --ff-only` all exit 0) while the repo is frozen against every write (fleet-config#667 — nine locked repos filed as healthy `below_threshold` went unnoticed 15 days). `verdict: stale` = no git process running at all; `stale_unconfirmed` = past threshold but couldn't be established — both need a look, neither auto-repaired. **Never delete a lock from this skill**, and never instruct a sub-agent to — it's another process's file; fix is a human confirming the holder is dead, then removing it.
 
-A `to_audit` entry carrying a `reason` is **not** organic change — the gate was
-*forced* to audit because it could not read the ledger
-(`fleet_audit_scan.broken_ledgers()` returns exactly these; don't re-derive the
-filter in prose). `unresolvable-baseline` = the recorded `last-audited-sha`
-(`baseline_sha`) resolves to nothing in the checkout, almost always a
-squash-merged, deleted feature-branch tip. `unparseable-ledger` = the ledger
-issue (`ledger_issue`) carries no readable `<!-- audit-ledger` block at all.
-Auditing whole-repo is the safe answer to both, so they belong in `to_audit` —
-but each re-bills a full Opus whole-repo pass *every week* until the ledger is
-repaired, so surface them by name in the plan line and the digest rather than
-letting them read as ordinary churn. Both self-heal once the repo's own audit
-reaches step 9, since every ledger write now normalizes the block.
+A `to_audit` entry carrying a `reason` is **not** organic change — the gate was *forced* to audit because it couldn't read the ledger (`fleet_audit_scan.broken_ledgers()` returns these; don't re-derive the filter in prose). `unresolvable-baseline` = recorded `last-audited-sha` (`baseline_sha`) resolves to nothing in the checkout (almost always a squash-merged, deleted feature-branch tip). `unparseable-ledger` = the ledger issue (`ledger_issue`) carries no readable `<!-- audit-ledger` block. Both belong in `to_audit` (safe answer), but each re-bills a full Opus whole-repo pass *every week* until the ledger is repaired — surface by name in the plan line and digest. Both self-heal once the repo's own audit reaches step 9 (every ledger write normalizes the block).
 
-For every `self_fix` entry, the script has **already** advanced that repo's
-ledger (HEAD sha + today's date, same rubric-sha) and posted a `<!--
-audit-self-fix -->` comment on its ledger issue — no further write needed here.
-A `below_threshold` entry is the opposite of a silent skip: the repo has real
-organic (non-self-fix) commits since its last audit, but their weighted-LOC
-significance (`skills/_lib/audit_issue.py`'s `unexplained_weighted_loc` —
-feature/refactor count fully, docs/test nothing, fix/chore partially) hasn't
-crossed the threshold. Its ledger sha is **not** advanced, so next week covers
-the same growing range plus whatever lands meanwhile; changes accumulate until
-the total justifies a whole-repo audit, at which point it moves to `to_audit`
-and that audit covers everything back to the ledger sha — nothing is ever lost.
-If the single-repo argument was passed, `--only <name>` restricts the whole
-sweep to it.
+For every `self_fix` entry, the script has **already** advanced that repo's ledger (HEAD sha + today's date, same rubric-sha) and posted a `<!-- audit-self-fix -->` comment on its ledger issue — no further write needed. A `below_threshold` entry: the repo has real organic commits since last audit, but weighted-LOC significance (`skills/_lib/audit_issue.py`'s `unexplained_weighted_loc` — feature/refactor full weight, docs/test none, fix/chore partial) hasn't crossed the threshold. Its ledger sha is **not** advanced — next week covers the same growing range plus new changes, accumulating until it crosses into `to_audit` (which then covers everything back to the ledger sha). If the single-repo argument was passed, `--only <name>` restricts the whole sweep to it.
 
 Print a one-line plan from the JSON, e.g.:
 
@@ -224,66 +103,22 @@ Fleet audit plan — 32 repos enumerated, 3 to audit, 24 unchanged, 1 self-fix, 
   stale-lock:       email-archiver (stale, 15.2d), algo-trading (stale, 15.2d)
 ```
 
-Lead the line with `accounting.enumerated` and print a `broken-ledger:` line
-naming every entry `broken_ledgers()` returns, with its reason. If
-`accounting.balanced` is `false`, print `WARNING: <N> repos in no bucket` on its
-own line — the sweep lost repos and the run must not read as healthy. Print a
-`stale-lock:` line whenever that bucket is non-empty, naming every repo with its
-verdict and age — a frozen repo that goes unnamed is the exact fifteen-day
-failure this bucket exists to end.
+Lead with `accounting.enumerated`; print `broken-ledger:` naming every `broken_ledgers()` entry with reason. If `accounting.balanced` is `false`, print `WARNING: <N> repos in no bucket` on its own line. Print `stale-lock:` whenever non-empty, naming every repo with verdict and age.
 
-**Name every skipped repo with its own `reason` string, verbatim from the JSON —
-never a bare count, and never a hardcoded list of the reasons you expect.**
-`fleet-config#642` was precisely this: skipped repos dropped from the report, so
-work went missing while the run read clean. A new reason (`index-lock in
-flight`, added in #667) must reach the operator by name the day it first fires,
-without this file being edited again — which is why the line is rendered from
-the reason the sweep actually returned rather than from a vocabulary written
-down here.
+**Name every skipped repo with its own `reason` string, verbatim from the JSON — never a bare count, never a hardcoded list of expected reasons.** `fleet-config#642`: skipped repos dropped from the report; `#667` added `index-lock in flight` — a new reason must reach the operator by name without this file being edited again, hence rendering from the reason returned rather than a vocabulary written here.
 
-If `to_audit` is empty, jump to step 5 with an empty result set (the digest
-still goes out so the weekly run always produces a record).
+If `to_audit` is empty, jump to step 5 with an empty result set (digest still goes out).
 
 ### 3. Audit each repo — a bounded window, self-paced against the live session budget
 
-Process the to-audit list through a **bounded concurrency window of up to 3
-sub-agents** — a session-token-budget pacing default and a natural rate-limit
-re-check cadence, which also doubles as the live Opus burst-limiter cap: audit
-sub-agents run at **`hard` tier** (see `docs/model-tiers.md`), which resolves to
-`model: "opus"` on Claude Code today.
+Process the to-audit list through a **bounded concurrency window of up to 3 sub-agents** — session-token-budget pacing default and the live Opus burst-limiter cap: audit sub-agents run at **`hard` tier** (`docs/model-tiers.md`), which resolves to `model: "opus"` on Claude Code today.
 
-Before each dispatch/refill, call
-`E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/rate_gate.py check --threshold 70`
-and branch on `DECISION`:
+Before each dispatch/refill, call `E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/rate_gate.py check --threshold 70` and branch on `DECISION`:
 
-- **`OK` / `UNKNOWN`** → dispatch the next repo. Dispatch up to 3 background
-  `Agent` calls (`run_in_background: true`, `subagent_type: "general-purpose"`,
-  `model: "opus"`) to fill the window, then **stay in this same turn and block
-  on `TaskOutput` (`block: true`) for every task now in flight** — do not end
-  the turn to "wait for it" (see the execution rule above; an unpolled
-  background task is silently killed at the CLI's 600s ceiling and the run
-  reports a false `exit 0` — `fleet-config#506`). If a `TaskOutput` call times
-  out before a task finishes, re-issue the same blocking call — never move on
-  with a task still unresolved. As each task returns, record its report and
-  immediately dispatch the next repo to refill the window — never more than **3
-  in flight**, and the turn must never end while any task is still dispatched.
-  Fewer than 3 repos left → dispatch just that many. No git worktrees:
-  `/codebase-audit` is read-only and only files issues, so agents in different
-  repo directories cannot collide.
-- **`PAUSE`** → stop dispatching new sub-agents (let in-flight ones finish),
-  wait via the `Monitor` tool's until-loop pattern against the printed
-  `WAIT_SECONDS`/`RESETS_AT`, then re-check and resume. **Cap: 3 pause cycles
-  per run** — a 4th would-be pause instead marks every remaining repo
-  `SKIPPED (session limit — exceeded pause retries)` and moves on to the
-  digest; the per-repo ledger makes next week's run pick these up for free.
+- **`OK` / `UNKNOWN`** → dispatch the next repo. Dispatch up to 3 background `Agent` calls (`run_in_background: true`, `subagent_type: "general-purpose"`, `model: "opus"`) to fill the window, then **stay in this same turn and block on `TaskOutput` (`block: true`) for every task in flight** — do not end the turn to wait (an unpolled background task is silently killed at the CLI's 600s ceiling, run reports false `exit 0` — `fleet-config#506`). If a `TaskOutput` call times out before a task finishes, re-issue the same blocking call — never move on with a task unresolved. As each task returns, record its report and immediately dispatch the next repo — never more than **3 in flight**, turn must never end while any task is still dispatched. Fewer than 3 repos left → dispatch just that many. No git worktrees needed: `/codebase-audit` is read-only and only files issues, agents in different repo directories cannot collide.
+- **`PAUSE`** → stop dispatching new sub-agents (let in-flight ones finish), wait via `Monitor`'s until-loop pattern against the printed `WAIT_SECONDS`/`RESETS_AT`, re-check and resume. **Cap: 3 pause cycles per run** — a 4th would-be pause instead marks every remaining repo `SKIPPED (session limit — exceeded pause retries)` and moves to the digest; next week's ledger gate picks these up for free.
 
-**Reactive fallback.** A sub-agent failure carrying a rate-limit signature
-("Server is temporarily limiting requests", "usage limit", "rate limit",
-"429", "Overloaded") despite the proactive gate — e.g. a stale cache — is
-treated as a `PAUSE`: stop dispatching, wait (re-run `rate_gate.py check` for
-a fresh `WAIT_SECONDS`, conservative fallback wait if still `UNKNOWN`), then
-resume. A failure *without* a rate-limit signature stays an ordinary per-repo
-`ERROR` and the window keeps refilling.
+**Reactive fallback.** A sub-agent failure carrying a rate-limit signature ("Server is temporarily limiting requests", "usage limit", "rate limit", "429", "Overloaded") despite the proactive gate is treated as `PAUSE`: stop dispatching, wait (re-run `rate_gate.py check` for a fresh `WAIT_SECONDS`, conservative fallback wait if still `UNKNOWN`), resume. A failure *without* a rate-limit signature stays an ordinary per-repo `ERROR` and the window keeps refilling.
 
 Prompt template (substitute `<name>` / `<path>`):
 
@@ -321,63 +156,29 @@ Report back in this exact shape so the orchestrator can build the digest:
   - Note: <one line if anything surprising came up>
 ```
 
-The `new`/`carried`/`stale` counts per bucket come straight from
-`/codebase-audit` step 10's final report table (itself sourced from step 8's
-run-log counts, never recomputed) — this is what lets the digest (step 5)
-separate genuinely new findings from standing backlog instead of treating
-"an issue got upserted this run" as the unit of "new."
+The `new`/`carried`/`stale` counts per bucket come straight from `/codebase-audit` step 10's final report table (from step 8's run-log counts, never recomputed) — lets the digest (step 5) separate genuinely new findings from standing backlog.
 
-Keep the window full: each time a sub-agent returns and its report is recorded,
-immediately dispatch the next pending repo (up to the 3-in-flight cap, subject
-to the `rate_gate.py check` above). Print a one-line progress marker per repo as
-it completes (e.g. `[3/12] photo-ocr — AUDITED`) so a scheduled run's console
-shows forward motion. Do **not** sleep between dispatches when the gate reads
-`OK` — refill the window the moment a slot frees. This entire loop runs inside
-one turn: block on `TaskOutput` for the in-flight window, refill on each
-return, repeat until the to-audit list is drained — the turn never ends with a
-sub-agent still dispatched (`fleet-config#506`).
+Keep the window full: each time a sub-agent returns and its report is recorded, immediately dispatch the next pending repo (up to the 3-in-flight cap, subject to `rate_gate.py check`). Print a one-line progress marker per repo as it completes (e.g. `[3/12] photo-ocr — AUDITED`). Do **not** sleep between dispatches when the gate reads `OK` — refill the moment a slot frees. Entire loop runs in one turn: block on `TaskOutput` for the in-flight window, refill on each return, repeat until the to-audit list is drained — turn never ends with a sub-agent still dispatched (`fleet-config#506`).
 
 ### 4. Collect results
 
-Hold each sub-agent's structured report as it returns. When the to-audit list is
-drained with no agent still in flight (whether or not one or more pause cycles
-happened along the way), proceed to the practices ledger (4b) then the digest.
-Track two terminal buckets, plus the `self_fix`, `below_threshold`, `skipped`,
-and `stale_lock` buckets already decided by step 2's Python sweep (carried
-through unchanged — no sub-agent touches those repos):
+Hold each sub-agent's structured report as it returns. When the to-audit list is drained with no agent in flight, proceed to the practices ledger (4b) then the digest. Track terminal buckets `AUDITED`/`CLEAN`/`SKIPPED-BY-LEDGER`/`ERROR` plus the `self_fix`, `below_threshold`, `skipped`, `stale_lock` buckets already decided by step 2's sweep (carried unchanged — no sub-agent touches those repos):
 
-- A sub-agent that errors out **without** a rate-limit signature is recorded as
-  `ERROR` for its repo (a genuine single-repo failure); it does not block the
-  others and the window refills as normal.
-- Everything else is its normal `AUDITED` / `CLEAN` / `SKIPPED-BY-LEDGER` result
-  — or, only if the 3-pause safety net (step 3) was hit, `SKIPPED (session
-  limit — exceeded pause retries)` for whatever repos were left.
+- A sub-agent that errors **without** a rate-limit signature is recorded `ERROR` for its repo — doesn't block others, window refills normally.
+- Everything else is its normal result — or, only if the 3-pause safety net (step 3) was hit, `SKIPPED (session limit — exceeded pause retries)`.
 
 ### 4b. Upsert the fleet practices ledger
 
-Collect the `Promotion candidates` lines from every sub-agent report. If **all**
-were empty, skip this step (the digest still notes "no new assets"). Otherwise
-maintain one living catalog issue in **`ferraroroberto/project-scaffolding`** —
-the cross-fleet "things that work" ledger (assets to remember, not rot to fix),
-labelled `audit-meta` so `/issue-triage` filters it out.
+Collect `Promotion candidates` lines from every sub-agent report. If **all** were empty, skip this step (digest notes "no new assets"). Otherwise maintain one living catalog issue in **`ferraroroberto/project-scaffolding`** — the cross-fleet "things that work" ledger — labelled `audit-meta` so `/issue-triage` filters it out.
 
-Read the existing ledger, then merge — same discipline as `/codebase-audit`
-step 8:
+Read the existing ledger:
 
 ```
 E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/audit_issue.py get \
   --repo ferraroroberto/project-scaffolding --kind practices
 ```
 
-Merge this run's candidates into the returned body: **preserve every existing
-entry verbatim** (the catalog is durable memory), **dedupe by repo + capability**
-(don't re-add an asset already listed; refresh its `Where:` path if it moved),
-and append a dated `## Ledger run log` bullet. Sort candidates into the two
-sections — **Capabilities** (fleet-worthy assets) and **Convention candidates**
-(nominations for `project-scaffolding`). The ledger only *nominates* conventions;
-actually filing one is a manual `/issue-add` call, so the weekly run never
-auto-spams `project-scaffolding`. Body shape (no hard wraps; the helper prepends
-the `kind=practices` marker — keep the `<!-- fleet-practices -->` block intact):
+Merge this run's candidates into the returned body: **preserve every existing entry verbatim**, **dedupe by repo + capability** (refresh `Where:` path if it moved), append a dated `## Ledger run log` bullet. Sort into two sections — **Capabilities** (fleet-worthy assets) and **Convention candidates** (nominations for `project-scaffolding`). The ledger only *nominates* conventions — filing one is a manual `/issue-add` call, so the weekly run never auto-spams `project-scaffolding`. Body shape (no hard wraps; helper prepends the `kind=practices` marker — keep `<!-- fleet-practices -->` intact):
 
 ```
 <!-- fleet-practices -->
@@ -389,11 +190,7 @@ the `kind=practices` marker — keep the `<!-- fleet-practices -->` block intact
 - <YYYY-MM-DD>: +N capabilities, +M candidates from <repos>.
 ```
 
-Write to a **unique** temp file — never a fixed shared name, because this
-skill's own parallel sub-agents share `E:/tmp` and a fixed name is a race
-(same rule as `skills/codebase-audit/SKILL.md` step 8). Use
-`E:/tmp/audit-practices-ledger-<short-sha>.md`, where `<short-sha>` is
-`git rev-parse --short HEAD` in this repo. Then upsert:
+Write to a **unique** temp file — never a fixed shared name (parallel sub-agents share `E:/tmp`, same rule as `skills/codebase-audit/SKILL.md` step 8): `E:/tmp/audit-practices-ledger-<short-sha>.md`, `<short-sha>` = `git rev-parse --short HEAD` in this repo. Then upsert:
 
 ```
 E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/audit_issue.py upsert \
@@ -401,25 +198,13 @@ E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skill
   --title "fleet practices ledger" --body-file <tmpfile>
 ```
 
-Capture the printed URL as `PRACTICES_LEDGER_URL` for the digest. If the upsert
-fails (e.g. no access to `project-scaffolding`), note `practices: skipped
-(<reason>)` and carry on — **never fail the run over the ledger.**
+Capture the printed URL as `PRACTICES_LEDGER_URL` for the digest. If the upsert fails (e.g. no access to `project-scaffolding`), note `practices: skipped (<reason>)` and carry on — **never fail the run over the ledger.**
 
 ### 5. Build the digest
 
-A run always reaches this step with a complete result set — every repo is
-`AUDITED` / `CLEAN` / `SKIPPED-BY-LEDGER` / `SELF-FIX` / `BELOW-THRESHOLD` /
-`ERROR`, or (only if the 3-pause safety net was hit) `SKIPPED (session limit —
-exceeded pause retries)`. `SELF-FIX` and `BELOW-THRESHOLD` repos were both
-decided entirely by step 2's sweep — no sub-agent ran, and for
-`BELOW-THRESHOLD` the ledger is deliberately **not** advanced (see step 2).
-Build and deliver the full digest in every case; session-limit skips are
-flagged in the digest, not silently dropped.
+A run always reaches this step with a complete result set — every repo `AUDITED`/`CLEAN`/`SKIPPED-BY-LEDGER`/`SELF-FIX`/`BELOW-THRESHOLD`/`ERROR`, or (only if the 3-pause safety net was hit) `SKIPPED (session limit — exceeded pause retries)`. `SELF-FIX` and `BELOW-THRESHOLD` were decided entirely by step 2's sweep — no sub-agent ran; for `BELOW-THRESHOLD` the ledger is deliberately **not** advanced. Build and deliver the full digest in every case; session-limit skips are flagged, not silently dropped.
 
-Read the digest-state ledger first so the recap is week-over-week, not a
-re-list:
-`E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/audit_issue.py get --repo ferraroroberto/fleet-config --kind digest`.
-Parse the `<!-- audit-fleet-digest -->` block from the returned `body`:
+Read the digest-state ledger first (week-over-week, not a re-list): `E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/audit_issue.py get --repo ferraroroberto/fleet-config --kind digest`. Parse the `<!-- audit-fleet-digest -->` block:
 
 ```
 <!-- audit-fleet-digest -->
@@ -432,106 +217,34 @@ cert-drift:<name>: <open-cert-drift-count>
 ...
 ```
 
-The code-bucket per-repo lines are the bare `<name>: <count>` ones; the
-`design-drift:` / `cert-drift:`-prefixed keys below the
-`design-drift-last-run-at:` marker are the **design bucket's own accounting**,
-kept separate so a design-drift issue never inflates a repo's code-finding
-count or its `+N since last week` code delta (`fleet-config#180`). Treat a
-ledger with no `design-drift-last-run-at:` line (a pre-#180 state) as an empty
-design baseline — note it as the initial design snapshot rather than a delta.
+Code-bucket per-repo lines are bare `<name>: <count>`; `design-drift:`/`cert-drift:`-prefixed keys below `design-drift-last-run-at:` are the **design bucket's own accounting**, kept separate so a design-drift issue never inflates a repo's code-finding count or `+N since last week` delta (fleet-config#180). Treat a ledger with no `design-drift-last-run-at:` line (pre-#180) as an empty design baseline — note as initial snapshot, not a delta.
 
-**Count the design-drift bucket (read-only).** `design-drift` and `cert-drift`
-issues are filed by `/design-sweep` / `/design-sync`, never by an audit
-sub-agent, so no sub-agent report carries them — count the open issues directly
-with two fleet-wide fetches, via the direct Issues API rather than `gh search
-issues --owner` (Search-API-backed, observed reporting issues as open for
-five-plus weeks after they closed — fleet-config#623):
+**Count the design-drift bucket (read-only).** `design-drift`/`cert-drift` issues are filed by `/design-sweep`/`/design-sync`, never by an audit sub-agent — count open issues directly via the Issues API rather than `gh search issues --owner` (Search-API-backed, observed reporting issues open for 5+ weeks after they closed — fleet-config#623):
 
 ```bash
 E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/gh_issue_fetch.py fetch --label design-drift
 E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/gh_issue_fetch.py fetch --label cert-drift
 ```
 
-Group each result by `repository.name` into per-repo open counts. This is the
-one place the fleet's design-drift accounting is tallied week-over-week — one
-ledger, alongside the six code buckets, never conflated with them. `/audit-fleet`
-is the unified reporter; `/design-sweep` is the doer that keeps those issues
-current. If either fetch fails outright, note `design-drift: count skipped
-(<reason>)`, carry the last ledger snapshot forward unchanged, and never fail
-the run over it. If a fetch's stderr summary reports per-repo `ERROR` lines but
-still returns a partial result, use the partial count and note which repos were
-skipped rather than discarding the whole tally.
+Group each result by `repository.name` into per-repo open counts — the one place this accounting is tallied, never conflated with code buckets. `/audit-fleet` is the unified reporter; `/design-sweep` is the doer. If either fetch fails outright, note `design-drift: count skipped (<reason>)`, carry the last snapshot forward unchanged, never fail the run over it. If stderr reports per-repo `ERROR` lines but still returns a partial result, use the partial count and note which repos were skipped.
 
-Compose the digest as markdown (single long lines per paragraph, no hard wraps)
-— the canonical artifact: stdout verbatim, attached to the email as a `.md`
-file, and rendered to HTML for the email body in step 6. Structure it so the
-per-repo results form a clean table when rendered:
+Compose the digest as markdown (single long lines per paragraph, no hard wraps) — stdout verbatim, attached to email as `.md`, rendered to HTML for the email body in step 6:
 
-- **Header:** date, counts — `E repos enumerated: N audited, M issues filed, K unchanged, L self-fix, B below-threshold, J skipped, W stale-lock, X errors`, plus `S security fixes` when any sub-agent reported a `Security:` result other than `NONE`, and `D design-drift / C cert-drift open` from the step-5 bucket count. The per-bucket counts **must sum to `E`** (`accounting.enumerated` from step 2); when `accounting.balanced` is `false`, append `— ⚠️ <N> repos in no bucket` rather than printing counts that quietly don't add up.
-- **Broken-ledger section** *(only when non-empty)*: the repos `broken_ledgers()` returns — one line each naming the reason and what could not be read (`grocery-shopping-automation: baseline 99100ac resolves to nothing — audited whole-repo, ledger re-anchored`; `local-llm-hub: ledger #31 had no readable audit-ledger block — audited whole-repo, ledger normalized`). These were audited, so they also appear in the per-repo results; the section exists because a broken ledger is a *recurring weekly cost* misreported as organic change (fleet-config#566, #567).
-- **Per audited repo:** result line + the issues filed this run (bucket → URL),
-  and the **delta vs last week** (`+2 since last week` from the digest-state
-  counts). Repos that came back CLEAN or SKIPPED-BY-LEDGER get a one-liner.
-- **Security section** *(only when any sub-agent reported a non-`NONE`
-  `Security:` line)*: one line per repo, **counts + disposition only, never any
-  detail** — `<repo>: 1 gap self-healed, PR merged (private alert sent)` or
-  `<repo>: 1 gap ESCALATED — branch left for manual /issue-finish`. The
-  vulnerability, file, and class live nowhere in the digest, the ledger, or any
-  commit. An `ESCALATED` line is the digest's durable flag that a security gap
-  needs a human.
-- **Self-fix section** *(only when non-empty)*: repos step 2's sweep classified
-  `SELF-FIX` — one line each naming the closed issue numbers (`website:
-  closed #71, #64 — ledger advanced, no organic change`), so it's visible that
-  these repos were deliberately *not* re-audited rather than silently skipped.
-- **Below-threshold section** *(only when non-empty)*: repos step 2's sweep
-  classified `SKIP_BELOW_THRESHOLD` — one line each with the accumulated vs.
-  threshold weighted-LOC (`accounting-quarterly: 591/1000 weighted lines
-  since 2026-07-04 — accumulating, not yet audited`), so quiet accumulation
-  stays visible. These repos are NOT counted toward "standing backlog" below.
-- **Skipped section:** repos skipped for dirty / off-branch / non-ff /
-  index-lock-in-flight, so the user knows they were intentionally left out (not
-  silently missed).
-- **Stale-lock section** *(only when non-empty)*: repos carrying a stranded
-  `.git/index.lock` — one line each with verdict and age (`email-archiver:
-  0-byte lock 15.2d old, no git process running — repo frozen against every
-  write; needs a human to confirm the holder is dead and remove it`). This
-  section is **never** resolved by the run itself: the skill reports, a human
-  clears. Unlike every other bucket it does not self-heal next week, so it
-  repeats verbatim until acted on — that repetition is the point
-  (fleet-config#667).
-- **Session-limit section** *(only when non-empty)*: repos left unaudited
-  because the step-3 3-pause safety net was hit, so they are visibly
-  outstanding rather than silently dropped — next week's ledger gate picks
-  them up for free.
-- **New findings this week:** built strictly from the `new` counts each
-  sub-agent reported (step 3's `Filed:` breakdown) — only bucket/URL pairs
-  where `new > 0`. This is the actual delta, not "an issue got upserted" — list
-  these at the top so the email leads with what genuinely changed.
-- **Standing backlog:** a single fleet-wide count — the sum of every
-  `carried` + `stale` count across every audited repo this run, never an item
-  list. One line, e.g. `14 standing findings across 5 repos, unchanged or not
-  re-verified this run — see each repo's audit issue for detail.`
-- **New fleet assets this week:** the promotion candidates added to the practices
-  ledger this run (asset/convention one-liners), with the `PRACTICES_LEDGER_URL`.
-  If none were added, one line: `No new fleet assets catalogued this week.`
-- **Design & cert drift:** the `design-drift` bucket, reported *alongside* the
-  six code buckets but never mixed into their counts. One line with the
-  fleet-wide open total and its week-over-week delta from the
-  `design-drift-last-run-at:` baseline (`6 open design-drift across 3 apps
-  (+2 since last week); 1 cert-drift`), then — only for repos whose count
-  **changed** since the baseline — a per-repo delta line (`home-automation: 4
-  (+2)`). Steady repos are folded into the total, not enumerated (same
-  anti-noise discipline as standing backlog). `/design-sweep` is what files and
-  refreshes these issues; this line is the durable week-over-week record.
+- **Header:** date, counts — `E repos enumerated: N audited, M issues filed, K unchanged, L self-fix, B below-threshold, J skipped, W stale-lock, X errors`, plus `S security fixes` when any sub-agent reported non-`NONE` `Security:`, and `D design-drift / C cert-drift open`. Per-bucket counts **must sum to `E`** (`accounting.enumerated`); if `accounting.balanced` is `false`, append `— ⚠️ <N> repos in no bucket`.
+- **Broken-ledger section** *(only when non-empty)*: repos `broken_ledgers()` returns — one line each naming reason and what couldn't be read (`grocery-shopping-automation: baseline 99100ac resolves to nothing — audited whole-repo, ledger re-anchored`; `local-llm-hub: ledger #31 had no readable audit-ledger block — audited whole-repo, ledger normalized`) — a recurring weekly cost misreported as organic change if omitted (fleet-config#566, #567).
+- **Per audited repo:** result line + issues filed this run (bucket → URL) + delta vs last week (`+2 since last week`). CLEAN/SKIPPED-BY-LEDGER get a one-liner.
+- **Security section** *(only when any sub-agent reported non-`NONE` `Security:`)*: one line per repo, counts + disposition only, NEVER detail — `<repo>: 1 gap self-healed, PR merged (private alert sent)` or `<repo>: 1 gap ESCALATED — branch left for manual /issue-finish`.
+- **Self-fix section** *(only when non-empty)*: repos classified `SELF-FIX` — one line each naming closed issue numbers (`website: closed #71, #64 — ledger advanced, no organic change`).
+- **Below-threshold section** *(only when non-empty)*: repos classified `SKIP_BELOW_THRESHOLD` — one line each with accumulated vs threshold weighted-LOC (`accounting-quarterly: 591/1000 weighted lines since 2026-07-04 — accumulating, not yet audited`). NOT counted toward standing backlog.
+- **Skipped section:** repos skipped for dirty/off-branch/non-ff/index-lock-in-flight.
+- **Stale-lock section** *(only when non-empty)*: repos with a stranded `.git/index.lock`, one line each with verdict and age (`email-archiver: 0-byte lock 15.2d old, no git process running — repo frozen against every write; needs a human to confirm the holder is dead and remove it`). **Never** resolved by the run itself — repeats verbatim until acted on (fleet-config#667).
+- **Session-limit section** *(only when non-empty)*: repos left unaudited because the step-3 3-pause safety net was hit.
+- **New findings this week:** built strictly from the `new` counts each sub-agent reported (step 3's `Filed:` breakdown) — only bucket/URL pairs where `new > 0`. List at the top.
+- **Standing backlog:** single fleet-wide count — sum of every `carried` + `stale` count across every audited repo, never an item list, e.g. `14 standing findings across 5 repos, unchanged or not re-verified this run — see each repo's audit issue for detail.`
+- **New fleet assets this week:** promotion candidates added to the practices ledger this run, with `PRACTICES_LEDGER_URL`. If none: `No new fleet assets catalogued this week.`
+- **Design & cert drift:** design-drift bucket reported alongside the six code buckets but never mixed into their counts. One line with fleet-wide open total and week-over-week delta from the `design-drift-last-run-at:` baseline (`6 open design-drift across 3 apps (+2 since last week); 1 cert-drift`), then — only for repos whose count **changed** since baseline — a per-repo delta line (`home-automation: 4 (+2)`). Steady repos fold into the total, not enumerated.
 
-Then upsert the digest-state ledger issue with today's date and the current
-per-repo open-audit-issue counts **plus** the design/cert bucket counts under
-their `design-drift-last-run-at:` marker (stamp today's date on that marker
-too), so next week can diff both. Keep the two account groups distinct in the
-body — the bare `<name>: <count>` code lines and the `design-drift:` /
-`cert-drift:`-prefixed lines — never fold a design count into a code line. The
-helper handles create-vs-edit, collapses strays, and stamps the marker (keep the
-`<!-- audit-fleet-digest -->` block intact):
+Then upsert the digest-state ledger issue with today's date, current per-repo open-audit-issue counts, **plus** the design/cert bucket counts under `design-drift-last-run-at:` (stamp today's date there too). Keep the two account groups distinct — bare `<name>: <count>` code lines vs `design-drift:`/`cert-drift:`-prefixed lines — never fold one into the other. Helper handles create-vs-edit, collapses strays, stamps the marker (keep `<!-- audit-fleet-digest -->` intact):
 
 ```
 E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/audit_issue.py upsert \
@@ -539,39 +252,37 @@ E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skill
   --title "audit-fleet digest state" --body-file <tmpfile>
 ```
 
-Capture its printed URL as `DIGEST_ISSUE_URL` and use that for the comment in
-step 6 — never a hardcoded issue number.
+Capture the printed URL as `DIGEST_ISSUE_URL`, used for the comment in step 6 — never a hardcoded issue number.
 
 ### 6. Deliver the digest
 
-Two channels. stdout is the reliable one (a scheduled run captures it in app-launcher's job history); the GitHub comment is the durable record that the Telegram ping links to.
+Two channels: stdout (reliable, captured in app-launcher's job history) and the GitHub comment (durable record the Telegram ping links to).
 
-- **stdout:** print the full markdown digest. Always.
-- **GitHub comment:** post the digest as a comment on the `audit-fleet digest state` issue in `ferraroroberto/fleet-config` — the one step 5 upserted (`DIGEST_ISSUE_URL`), never a hardcoded id — turning that issue into a running log of every weekly run. Use the `gh issue comment` output URL:
+- **stdout:** print the full markdown digest, always.
+- **GitHub comment:** post the digest on `audit-fleet digest state` in `ferraroroberto/fleet-config` (`DIGEST_ISSUE_URL` from step 5, never a hardcoded id):
 
   ```bash
   COMMENT_URL=$(gh issue comment "$DIGEST_ISSUE_URL" --repo ferraroroberto/fleet-config --body "$DIGEST_MARKDOWN")
-  # gh issue comment prints the URL of the created comment on stdout
   ```
 
-  If `gh` fails or the URL is empty, note `comment: skipped (<reason>)` and carry on. **Never fail the run over the comment.**
+  If `gh` fails or the URL is empty, note `comment: skipped (<reason>)` and carry on — **never fail the run over the comment.**
 
-- **Delivery assertion — run it here, before the ping.** This is the only place the run may declare itself failed on *content* rather than on a crash — the gap `fleet-config#506` left open. Check all three, and treat any one you **cannot establish** as failed rather than as passing (an unresolved check is its own state, never folded into the passing one — global CLAUDE.md, "Verify before declaring done"):
+- **Delivery assertion — run here, before the ping.** The only place the run may declare itself failed on *content* rather than a crash (fleet-config#506). Check all three; treat any one you **cannot establish** as failed, never as passing:
 
-  1. **≥1 repo evaluated.** Step 2's sweep placed at least one repo in some bucket (`to_audit` + `unchanged` + `self_fix` + `below_threshold` + `skipped` + `stale_lock` + `errors` > 0). An empty sweep means the fleet walk itself failed — it does not mean the fleet is clean.
-  1b. **The buckets account for every repo walked.** Step 2's `accounting.balanced` is `true`. A `false` (or missing) `balanced` means repos the walk *found* landed in no bucket at all and were neither audited nor reported — the fleet-config#567 shape. Fail the run, name the unaccounted count, never let a sweep that lost repos report success.
-  2. **A digest was composed and printed.** Step 5 produced digest markdown and this step wrote it to stdout verbatim.
-  3. **The digest comment resolved either way.** `COMMENT_URL` holds a real URL, *or* the comment was recorded as `comment: skipped (<reason>)` with a stated reason. "Never fail the run over the comment" holds for a *stated* failure; a comment step that silently never ran fails this assertion.
+  1. **≥1 repo evaluated.** Step 2's sweep placed ≥1 repo in some bucket (`to_audit`+`unchanged`+`self_fix`+`below_threshold`+`skipped`+`stale_lock`+`errors` > 0). Empty sweep = the fleet walk itself failed.
+  1b. **Buckets account for every repo walked.** `accounting.balanced` is `true`. `false`/missing = repos the walk found landed in no bucket at all (fleet-config#567 shape) — fail the run, name the unaccounted count.
+  2. **A digest was composed and printed.** Step 5 produced markdown and this step wrote it to stdout verbatim.
+  3. **The digest comment resolved either way.** `COMMENT_URL` holds a real URL, or the comment was recorded as `comment: skipped (<reason>)` with a stated reason — a comment step that silently never ran fails this assertion.
 
-  All three hold → carry on to the Telegram ping and report normally in step 7. Any one fails → do **not** report success: print this line verbatim in the step-7 final report,
+  All three hold → carry on to the Telegram ping, report normally in step 7. Any one fails → do **not** report success: print verbatim in the step-7 final report,
 
   ```
   SCHEDULED-RUN-FAILED — <which assertion failed, one line>
   ```
 
-  still send the Telegram ping (a failed run must be *more* visible, not less), and state the failure plainly. `skills/_lib/claude_progress.py` detects that literal marker in the run's final report and exits `123` instead of `0`, so the weekly job shows red rather than a false green (`fleet-config#519`). Never print the marker on a run that did deliver: a sweep where every repo came back `unchanged` and `to_audit` was empty is a **successful** run — it still produces a full digest (step 2), which is exactly why assertion 1 counts `unchanged` too.
+  still send the Telegram ping (a failed run must be *more* visible), state the failure plainly. `skills/_lib/claude_progress.py` detects that literal marker and exits `123` instead of `0` (fleet-config#519). Never print the marker on a run that did deliver — a sweep where every repo came back `unchanged` and `to_audit` was empty is a **successful** run (it still produces a full digest per step 2, which is why assertion 1 counts `unchanged` too).
 
-- **Telegram ping:** call `notify_complete.py --kind audit` with the captured comment URL and a one-line summary. This is deterministic — the skill hands the hook exact structured args; the hook assembles the message:
+- **Telegram ping:** call `notify_complete.py --kind audit` with the captured comment URL and a one-line summary (deterministic — skill hands the hook exact structured args):
 
   ```
   E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/hooks/notify_complete.py \
@@ -580,100 +291,32 @@ Two channels. stdout is the reliable one (a scheduled run captures it in app-lau
     --summary "<N> audited, <M> issues filed, <K> unchanged"
   ```
 
-  If `COMMENT_URL` is empty (comment was skipped), omit `--comment-url` so the ping still goes out link-less. This call is a silent no-op if no `telegram_chat` is configured; it always exits 0 and can never block or delay the finish.
+  If `COMMENT_URL` is empty, omit `--comment-url` so the ping still goes out link-less. Silent no-op if no `telegram_chat` configured; always exits 0, never blocks/delays the finish.
 
 ### 7. Final report
 
-One concise block: the plan line from step 2, per-repo results, where the digest went (stdout always; comment URL or skipped reason; Telegram pinged or no-op), and the digest-state issue URL. If step 6's delivery assertion failed, its `SCHEDULED-RUN-FAILED — <reason>` line goes in this block verbatim and nothing in the block may describe the run as complete. Stop.
+One concise block: the plan line from step 2, per-repo results, where the digest went (stdout always; comment URL or skipped reason; Telegram pinged or no-op), the digest-state issue URL. If step 6's delivery assertion failed, its `SCHEDULED-RUN-FAILED — <reason>` line goes in this block verbatim and nothing may describe the run as complete. Stop.
 
 ## Hard rules
 
-- **The ledger gate is one shared Python implementation, not prose.** Step 2's
-  `fleet_audit_scan.py` and `/codebase-audit`'s own step 2 both call
-  `audit_issue.py`'s `evaluate_repo` — exactly one implementation of the
-  skip/audit/self-fix decision. Unit-tested independent of `gh`/`git` in
-  `tests/test_audit_issue.py`.
-- **Read-only on source — except a sub-agent's step-8b security self-heal**
-  (redacted issue + auto-fix + auto-merge, gated on that skill's rules: claim,
-  mandatory regression test, generic artifacts, green-gate-only merge, escalate
-  on failure). Every other write is an audit issue, the per-repo ledger, the
-  digest-state issue, the digest comment, or the cross-fleet practices ledger in
-  `project-scaffolding` (the one issue-write target outside `fleet-config` —
-  still an issue, never source).
-- **Never disturb in-progress work.** Dirty or off-default-branch repos are
-  skipped and reported, never stashed or force-switched.
-- **One sub-agent per repo, `hard` tier (Opus on Claude Code today), through a
-  ≤3 sliding window.** Refill as each returns — a session-token-budget pacing
-  default that also doubles as the live Opus burst-limiter cap; widening beyond
-  3 would need to respect that cap (`docs/model-tiers.md`). No worktrees (audits
-  don't collide). Don't read repo source in the orchestrator.
-- **Block on `TaskOutput` for every in-flight sub-agent, same turn, always.**
-  `run_in_background: true` followed by ending the turn is not a valid pattern
-  anywhere in this skill (`fleet-config#506`); step 3's loop never returns
-  control until the to-audit list is fully drained. `claude_progress.py` also
-  hands the CLI `CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS=0` so an in-flight task is
-  waited on rather than killed (`fleet-config#519`) — a safety net against
-  losing the work, **not** a licence to end the turn: results a turn never
-  collected still never reach the digest.
-- **A run that delivered nothing must exit non-zero.** Step 6's delivery
-  assertion runs before the Telegram ping on every run; on failure it prints the
-  literal `SCHEDULED-RUN-FAILED` marker, which `claude_progress.py` maps to exit
-  `123`. Never let a green weekly job with zero work done report success.
-- **And the assertion can't save a run that never reaches it.** An orchestrator
-  cut off mid-flight never prints the marker and the job records `success` /
-  exit 0 with zero repos audited. The launcher therefore also passes
-  `--delivery-check .claude/skills/audit-fleet/delivery_check.py`, an outer
-  post-condition `claude_progress.py` runs *after* the child exits whatever its
-  exit code was: it resolves this skill's digest ledger issue the same way step
-  5 does (never a hardcoded id) and fails the job (exit `121`) unless a digest
-  comment landed within the last 12 hours — the delivered artifact, not a
-  symptom (fleet-config#560). Nothing here invokes it, but if step 6's shape
-  changes, that check changes with it or it starts lying.
-- **Degrade, don't block.** Built for unattended `claude -p`. A per-repo failure
-  is reported and skipped; only a pre-flight failure stops the whole run. Never
-  wait on an interactive prompt.
-- **Self-pace against the live session %, don't die-and-hope.** Check
-  `rate_gate.py` before each dispatch/refill (step 3); on `PAUSE`, wait in place
-  via the `Monitor` tool's until-loop pattern and resume — capped at 3 pause
-  cycles per run. No OS-level scheduling, no `resume` argument — see
-  `docs/rate-gate.md`.
-- **No AI attribution; no hard-wrapped digest paragraphs.** (Per global
-  CLAUDE.md.)
+- **The ledger gate is one shared Python implementation, not prose.** Step 2's `fleet_audit_scan.py` and `/codebase-audit`'s own step 2 both call `audit_issue.py`'s `evaluate_repo` — exactly one implementation of the skip/audit/self-fix decision. Unit-tested independent of `gh`/`git` in `tests/test_audit_issue.py`.
+- **Read-only on source — except a sub-agent's step-8b security self-heal** (redacted issue + auto-fix + auto-merge, gated: claim, mandatory regression test, generic artifacts, green-gate-only merge, escalate on failure). Every other write is an audit issue, the per-repo ledger, the digest-state issue, the digest comment, or the cross-fleet practices ledger in `project-scaffolding` (the one issue-write target outside `fleet-config` — still an issue, never source).
+- **Never disturb in-progress work.** Dirty or off-default-branch repos are skipped and reported, never stashed or force-switched.
+- **One sub-agent per repo, `hard` tier (Opus on Claude Code today), through a ≤3 sliding window.** Refill as each returns. No worktrees (audits don't collide). Don't read repo source in the orchestrator.
+- **Block on `TaskOutput` for every in-flight sub-agent, same turn, always.** `run_in_background: true` + ending the turn is never valid here (`fleet-config#506`); step 3's loop never returns control until the to-audit list is fully drained. `claude_progress.py` hands the CLI `CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS=0` so an in-flight task is waited on rather than killed (`fleet-config#519`) — not a licence to end the turn.
+- **A run that delivered nothing must exit non-zero.** Step 6's delivery assertion runs before the Telegram ping on every run; on failure it prints the literal `SCHEDULED-RUN-FAILED` marker, mapped by `claude_progress.py` to exit `123`.
+- **And the assertion can't save a run that never reaches it.** An orchestrator cut off mid-flight never prints the marker and the job records `success`/exit 0 with zero repos audited. The launcher therefore also passes `--delivery-check .claude/skills/audit-fleet/delivery_check.py`, an outer post-condition `claude_progress.py` runs *after* the child exits: resolves this skill's digest ledger issue the same way step 5 does (never a hardcoded id), fails the job (exit `121`) unless a digest comment landed within the last 12 hours (fleet-config#560). If step 6's shape changes, that check changes with it.
+- **Degrade, don't block.** Built for unattended `claude -p`. A per-repo failure is reported and skipped; only a pre-flight failure stops the whole run. Never wait on an interactive prompt.
+- **Self-pace against the live session %, don't die-and-hope.** Check `rate_gate.py` before each dispatch/refill (step 3); on `PAUSE`, wait via `Monitor`'s until-loop pattern and resume — capped at 3 pause cycles per run. No OS-level scheduling, no `resume` argument. `docs/rate-gate.md`.
+- **No AI attribution; no hard-wrapped digest paragraphs.** (Per global CLAUDE.md.)
 
 ## Notes
 
-- **Why scatter-gather:** each repo's file reading is isolated in its own
-  sub-agent context, so the orchestrator never holds the whole fleet's source
-  at once — that is what makes a weekly all-repo sweep cheap.
-- **Why a ledger gate:** most weeks most repos are unchanged; the gate turns an
-  unchanged repo into one `gh` + one `git` call. The commit SHA is the cache
-  key; the rubric hash (sha256 of the repo's **own** project CLAUDE.md) busts
-  one repo's cache when its criteria change. The global `~/.claude/CLAUDE.md` is
-  deliberately excluded — a fleet-wide re-grade is an explicit act (clear the
-  ledgers' `last-audited-sha`), never a side effect of one edit.
-- **Self-fix-only churn is treated as unchanged:** `evaluate_repo` detects it
-  via merged-PR `closingIssuesReferences` against the managed bucket issues and
-  advances the ledger itself — otherwise a repo fixed only via `/cleanup-fleet`
-  would be re-flagged weekly (fleet-config#251).
-- **A mixed PR fails closed to AUDIT, on purpose** (fleet-config#251 decision
-  log): a PR closing a hand-filed issue alongside an audit-managed one is not
-  recognized as self-fix, so the repo re-audits. Telling those apart would need
-  provenance tagging at issue-filing time across multiple skills; an occasional
-  unnecessary re-audit is the safer failure mode. Known limitation, not a bug.
-- **Not every non-self-fix commit re-audits immediately** (fleet-config#315):
-  `evaluate_repo` weighs the unexplained commits' `additions + deletions` by
-  conventional branch-type (`feat`/`refactor` full weight, `fix`/`chore`
-  partial, `docs`/`test` none — `audit_issue.py`'s `PR_TYPE_WEIGHTS`) and only
-  audits once the total crosses `DEFAULT_SIGNIFICANCE_THRESHOLD` (1000). Below
-  that, `SKIP_BELOW_THRESHOLD` leaves the ledger sha untouched so small organic
-  changes batch up rather than forcing a re-audit over one low-risk commit
-  (#256) — see step 2.
-- **Per-category trend data lives in the per-repo ledger** (`<!-- audit-snapshot -->`
-  comments, `/codebase-audit` step 9); this fleet digest stays aggregate by design.
-- **The weekly job** lives in app-launcher (`config/jobs.json`) and calls this
-  repo's `.claude/skills/audit-fleet/run-weekly.bat`.
-- **Why a proactive gate, not a dead-man's switch** (#222 → redesigned #261):
-  the session % used to exist only at TUI render time; `statusline-command.ps1`
-  now caches it to `~/.claude/hooks/state/rate-limits.json` on every render
-  (#259), so the skill reads it directly and pause-waits in place instead of
-  dying and hoping a relaunch resumes. Contract: `docs/rate-gate.md`.
+- **Why scatter-gather:** each repo's file reading is isolated in its own sub-agent context, so the orchestrator never holds the whole fleet's source at once.
+- **Why a ledger gate:** most weeks most repos are unchanged; the gate turns an unchanged repo into one `gh` + one `git` call. Commit SHA is the cache key; rubric hash (sha256 of the repo's **own** project CLAUDE.md) busts one repo's cache when its criteria change. Global `~/.claude/CLAUDE.md` is deliberately excluded — a fleet-wide re-grade is an explicit act (clear the ledgers' `last-audited-sha`), never a side effect.
+- **Self-fix-only churn is treated as unchanged:** `evaluate_repo` detects it via merged-PR `closingIssuesReferences` against managed bucket issues and advances the ledger itself — otherwise a repo fixed only via `/cleanup-fleet` would be re-flagged weekly (fleet-config#251).
+- **A mixed PR fails closed to AUDIT, on purpose** (fleet-config#251): a PR closing a hand-filed issue alongside an audit-managed one is not recognized as self-fix, so the repo re-audits. Known limitation, not a bug.
+- **Not every non-self-fix commit re-audits immediately** (fleet-config#315): `evaluate_repo` weighs unexplained commits' `additions + deletions` by conventional branch-type (`feat`/`refactor` full weight, `fix`/`chore` partial, `docs`/`test` none — `audit_issue.py`'s `PR_TYPE_WEIGHTS`), audits once the total crosses `DEFAULT_SIGNIFICANCE_THRESHOLD` (1000). Below that, `SKIP_BELOW_THRESHOLD` leaves the ledger sha untouched (#256).
+- **Per-category trend data lives in the per-repo ledger** (`<!-- audit-snapshot -->` comments, `/codebase-audit` step 9); this fleet digest stays aggregate by design.
+- **The weekly job** lives in app-launcher (`config/jobs.json`), calls this repo's `.claude/skills/audit-fleet/run-weekly.bat`.
+- **Why a proactive gate, not a dead-man's switch** (#222 → redesigned #261): session % used to exist only at TUI render time; `statusline-command.ps1` now caches it to `~/.claude/hooks/state/rate-limits.json` on every render (#259), so the skill reads it directly and pause-waits in place instead of dying and hoping a relaunch resumes. Contract: `docs/rate-gate.md`.

@@ -11,9 +11,9 @@ Pairs with `/issue-triage` (pick what to work on) and `/issue-finish` (ship each
 
 ## Execution rules
 
-- **Read-only on GitHub.** This skill never creates issues, pushes, opens PRs, or merges. All shipping is deferred to manual `/issue-finish` per branch.
-- **Shell:** Bash tool is **Git Bash** on this machine. Do not use PowerShell syntax (`&`, `$env:`, here-strings) in Bash. The only shell commands this skill needs are `gh` and `git`, both of which work identically in Bash.
-- **All git plumbing runs in the orchestrator (main conversation), not the sub-agents.** Worktree creation, main-branch sync, and branch cutting happen here — sequentially and safely — *before* sub-agents launch. Sub-agents inherit a ready-to-edit workspace.
+- **Read-only on GitHub** — never creates issues, pushes, opens PRs, or merges. All shipping is deferred to manual `/issue-finish` per branch.
+- **Shell:** Bash tool is **Git Bash** here. No PowerShell syntax (`&`, `$env:`, here-strings) in Bash. Only `gh` and `git` are needed, both identical in Bash.
+- **All git plumbing runs in the orchestrator (main conversation), not the sub-agents** — worktree creation, main-branch sync, branch cutting happen here, sequentially, *before* sub-agents launch. Sub-agents inherit a ready-to-edit workspace.
 - **The post-flight dirty-tree check (step 9) also runs in the orchestrator, never the sub-agent** — it only corrects the reported status, never blocks, auto-commits, or auto-fixes.
 
 ## Arguments
@@ -21,26 +21,26 @@ Pairs with `/issue-triage` (pick what to work on) and `/issue-finish` (ship each
 A space-separated list of issue tokens. Each token is one of:
 
 - **Explicit:** `<repo-name>#<N>` — e.g. `app-launcher#23`. Unambiguous; preferred.
-- **Bare number:** `<N>` — resolved via a single `gh search issues` call. If the same number exists in multiple repos, ask the user (AskUserQuestion) which one they meant.
+- **Bare number:** `<N>` — resolved via a single `gh search issues` call. Same number in multiple repos → ask the user (AskUserQuestion) which one.
 
 Mixed forms are fine: `/issue-batch app-launcher#23 45 photo-ocr#12`.
 
-If no tokens are passed, stop and say "Pass at least one issue, e.g. `/issue-batch app-launcher#23 photo-ocr#12`."
+No tokens passed → stop: "Pass at least one issue, e.g. `/issue-batch app-launcher#23 photo-ocr#12`."
 
 ## Steps
 
-Run in order. If a step fails, print a short error and stop. **Never leave half-made worktrees or branches behind** — on failure mid-setup, undo what was done so far (`git worktree remove --force <path>`, `git branch -D <branch>`).
+Run in order. Step fails → print a short error and stop. **Never leave half-made worktrees or branches behind** — on failure mid-setup, undo what was done (`git worktree remove --force <path>`, `git branch -D <branch>`).
 
 ### 1. Pre-flight
 
 - `gh auth status` — must be authenticated as `ferraroroberto`. Else stop.
-- Confirm `E:\automation\` exists (it's the fleet root on this machine).
+- Confirm `E:\automation\` exists (fleet root on this machine).
 
 ### 2. Parse tokens and resolve bare numbers
 
 Split args on whitespace. Classify each:
-- Contains `#` → split into `repo` + `N`. Validate `N` is a positive integer.
-- Else → treat as bare `N`; collect for batch resolution.
+- Contains `#` → split into `repo` + `N`; validate `N` is a positive integer.
+- Else → bare `N`; collect for batch resolution.
 
 If any bare numbers exist, run **once**:
 
@@ -61,8 +61,8 @@ Output of this step: a list of `(repo, N, title, labels)` tuples.
 
 Group tuples by repo. For each repo, count the selected issues.
 
-- **count == 1** → **in-place mode**: sub-agent works in the primary checkout at `E:\automation\<repo>`. The sub-agent will invoke `/issue-start <N> now` directly, which handles its own branch cut.
-- **count >= 2** → **worktree mode**: each issue gets its own sibling worktree. The orchestrator pre-creates the worktree and branch; the sub-agent skips the worktree-incompatible parts of `/issue-start` and starts directly at the implementation step.
+- **count == 1** → **in-place mode**: sub-agent works in the primary checkout at `E:\automation\<repo>`, invoking `/issue-start <N> now` directly (handles its own branch cut).
+- **count >= 2** → **worktree mode**: each issue gets its own sibling worktree. Orchestrator pre-creates the worktree and branch; sub-agent skips the worktree-incompatible parts of `/issue-start` and starts directly at the implementation step.
 
 Print a one-line plan before any setup, e.g.:
 ```
@@ -74,8 +74,8 @@ Plan: 3 sub-agents across 2 repos
 ### 4. Pre-flight per repo
 
 For each repo in the plan:
-- `E:\automation\<repo>` must exist. Else stop.
-- `git -C E:\automation\<repo> status --porcelain` must be empty. Else stop with the dirty repo name — the user must commit/stash before proceeding.
+- `E:\automation\<repo>` must exist, else stop.
+- `git -C E:\automation\<repo> status --porcelain` must be empty, else stop with the dirty repo name — user must commit/stash before proceeding.
 - `git -C E:\automation\<repo> fetch origin` (once per repo, sequentially).
 
 ### 5. Compute branch names
@@ -94,7 +94,7 @@ Example: bug #23 titled "WS handshake retry fails on reconnect" → `fix/23-ws-h
 
 ### 6. Create worktrees (worktree mode only)
 
-For each worktree-mode issue, use the shared concurrency helper (the same one `/issue-start` uses) so the worktree gets its `.venv` junctioned from the primary and the reparse-safe teardown is owned in one place:
+For each worktree-mode issue, use the shared concurrency helper (same one `/issue-start` uses) so the worktree gets its `.venv` junctioned from the primary and the reparse-safe teardown is owned in one place:
 
 ```
 git -C E:\automation\<repo> fetch origin
@@ -104,21 +104,21 @@ E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skill
 
 Notes:
 - The helper creates the **sibling** worktree `E:\automation\<repo>-wt-<N>` off latest `origin/main` on `<branch>`, then junctions the primary's `.venv` into it — so a Python repo's verification gate (`& .\.venv\Scripts\python.exe …`) resolves inside the worktree without a per-worktree reinstall.
-- Do **not** hand-roll `git worktree add` + a `.venv` junction here; the helper owns both creation and the junction-strip-before-`git worktree remove` teardown (the junction footgun that wiped a real venv in fleet-config#143).
-- If a worktree path already exists the helper stops with a clear message (probably stale from a prior run; clean with the `remove-worktree <path>` command in step 9).
+- Do **not** hand-roll `git worktree add` + a `.venv` junction here — the helper owns both creation and the junction-strip-before-`git worktree remove` teardown (the junction footgun that wiped a real venv in fleet-config#143).
+- Worktree path already exists → helper stops with a clear message (probably stale from a prior run; clean with `remove-worktree <path>` in step 9).
 - The active-issue write is the worktree-mode equivalent of `/issue-start`
-  step 5. In-place agents inherit it by invoking `/issue-start`. If the write
-  fails, immediately remove that newly-created worktree with
+  step 5; in-place agents inherit it by invoking `/issue-start`. Write fails →
+  immediately remove that newly-created worktree with
   `worktree_claim.py remove-worktree <path>` and stop the batch rather than
-  dispatching unmarked work.
+  dispatch unmarked work.
 
-Run these sequentially per repo (worktree creation modifies repo metadata; safer not to parallelize).
+Run sequentially per repo (worktree creation modifies repo metadata; safer not to parallelize).
 
 In-place mode: skip — `/issue-start` inside the sub-agent will cut the branch.
 
 ### 7. Fan out: spawn one background sub-agent per issue
 
-Spawn one background sub-agent per issue (`run_in_background: true`, `subagent_type: "general-purpose"` or `"claude"`), but **bound the Opus concurrency**: these agents inherit the parent session's model, so when the parent is on **Opus**, dispatch them through the global Opus concurrency window (≤3 in flight — see `~/.claude/CLAUDE.md`, "Spawning sub-agents — cap concurrent Opus at 3"): launch up to 3, and each time one returns dispatch the next pending issue until the batch drains. Fewer than 3 issues → just spawn that many. When the parent is on **Sonnet** the cap does not apply — spawn them all in a single message. Worktree pre-creation (step 6) already ran sequentially before any agent launches, so a windowed launch never races it.
+Spawn one background sub-agent per issue (`run_in_background: true`, `subagent_type: "general-purpose"` or `"claude"`), but **bound the Opus concurrency**: these agents inherit the parent session's model, so when the parent is on **Opus**, dispatch through the global Opus concurrency window (≤3 in flight — `~/.claude/CLAUDE.md`, "Spawning sub-agents — cap concurrent Opus at 3"): launch up to 3, and each time one returns dispatch the next pending issue until the batch drains. Fewer than 3 issues → spawn that many. Parent on **Sonnet** → cap doesn't apply, spawn all in one message. Worktree pre-creation (step 6) already ran sequentially before any agent launches, so a windowed launch never races it.
 
 Two prompt templates — pick by isolation mode:
 
@@ -144,30 +144,30 @@ Workflow (mirrors /issue-start steps 3 + 6, plus verification):
 6. Run the project's verification gate (per its CLAUDE.md — for
    app-launcher it's
    `C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe -File scripts/verify-before-ship.ps1`).
-   IMPORTANT: the gate must run isolated. If the gate would conflict with
-   parallel runs (shared port, shared file), report that you skipped it
-   and why. The app-launcher gate boots its own ephemeral webapp + session
-   host on free ports — that one is safe to run in parallel.
+   IMPORTANT: the gate must run isolated. If it would conflict with parallel
+   runs (shared port, shared file), report that you skipped it and why. The
+   app-launcher gate boots its own ephemeral webapp + session host on free
+   ports — safe to run in parallel.
 7. Run the /e2e skill (skills/e2e/SKILL.md): it routes this branch's diff
    through the repo's own classifier and runs the proportionate slice. If
    the gate in step 6 already executed that slice, /e2e carries the result
    — no double run. Run it synchronously to completion within your turn.
 8. Ready-to-validate handoff (worktree mode): do NOT restart the shared
-   tray/webapp — the primary checkout may be serving it live, and only one
-   build can be live at a time. Instead, if the repo has a web surface,
-   include in your report the one-line command (from the repo's README /
-   CLAUDE.md) that launches THIS worktree's app for validation. No web
-   surface → report `Validate: n/a`.
-9. Commit your work on the branch — git add the files you changed and git
-   commit them (conventional `type: subject` message, no AI-attribution
-   trailer). Your handoff artefact is a committed branch, not a dirty working
-   tree: uncommitted work has no SHA, so anything that goes wrong before the
-   user runs /issue-finish loses it outright (fleet-config#641). Changed
-   nothing? Commit nothing and say so — a clean tree with no new commits is a
-   valid report, a dirty tree never is.
+   tray/webapp — the primary checkout may be serving it live, only one build
+   can be live at a time. If the repo has a web surface, include in your
+   report the one-line command (from the repo's README/CLAUDE.md) that
+   launches THIS worktree's app for validation. No web surface → report
+   `Validate: n/a`.
+9. Commit your work on the branch — git add the files you changed and commit
+   (conventional `type: subject` message, no AI-attribution trailer). Your
+   handoff artefact is a committed branch, not a dirty working tree:
+   uncommitted work has no SHA, so anything that goes wrong before the user
+   runs /issue-finish loses it outright (fleet-config#641). Changed nothing?
+   Commit nothing and say so — a clean tree with no new commits is a valid
+   report, a dirty tree never is.
 10. STOP. Do not push, do not open a PR, do not run /issue-finish. "Do not
-    ship" does not mean "do not commit": step 9 is required, and only the
-    three actions named here are forbidden.
+    ship" does not mean "do not commit": step 9 is required, only the three
+    actions named here are forbidden.
 
 Report back, in this exact shape:
   - Issue: <repo>#<N> — <title>
@@ -254,13 +254,13 @@ Then stop. Do not poll, do not sleep, do not check on progress — the harness r
 
 ### 9. Report each completion (as agents return)
 
-**Before surfacing a completion as verified, run the post-flight dirty-tree check yourself — never trust the agent's self-reported `Files changed:`/`Verification:` lines alone.** Every issue-batch sub-agent is build-and-stop (it never merges), so this is always `--mode built`:
+**Before surfacing a completion as verified, run the post-flight dirty-tree check yourself — never trust the agent's self-reported `Files changed:`/`Verification:` lines alone.** Every issue-batch sub-agent is build-and-stop (never merges), so this is always `--mode built`:
 
 ```
 E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/dirty_tree_check.py check <path> --mode built --expect-branch <branch>
 ```
 
-(`<path>` is the worktree path in worktree mode, or `E:\automation\<repo>` in-place.) `STATUS=DIRTY` → keep the agent's verification mark but append an explicit `⚠️ post-flight: <REASON>` note to that repo's line — this catches HEAD unexpectedly back on the default branch, a branch mismatch, or the agent reporting changed files it never actually saved. `STATUS=UNKNOWN` → the helper could not read that repo, so it has no verdict: mark it `❓ tree unverified — <REASON>` and never fold it into a pass or a fail (fleet-config#570). This check only reports; it never blocks the run, never auto-commits, and never auto-fixes.
+(`<path>` is the worktree path in worktree mode, or `E:\automation\<repo>` in-place.) `STATUS=DIRTY` → keep the agent's verification mark but append an explicit `⚠️ post-flight: <REASON>` note (catches HEAD unexpectedly back on the default branch, a branch mismatch, or the agent reporting changed files it never actually saved). `STATUS=UNKNOWN` → the helper could not read that repo, no verdict: mark it `❓ tree unverified — <REASON>`, never fold into a pass or a fail (fleet-config#570). This check only reports; never blocks the run, never auto-commits, never auto-fixes.
 
 As each background sub-agent finishes, surface its report verbatim in the chat with a short header (`✅` if verification passed, `⚠️` if skipped or post-flight flagged something, `❌` if failed).
 

@@ -1,20 +1,20 @@
 ---
 name: context-audit
-description: Audit the fleet's always-on context surface — CLAUDE.md token budgets, skill-description word counts, and single-home-by-altitude violations (universal directives leaking into project files) — flagging drift, weekly. Use when the user wants to check the always-on context budget — e.g. "/context-audit", "audit my always-on context", "context budget audit". Also runs unattended on a weekly schedule.
+description: Audit the fleet's always-on context surface — CLAUDE.md token budgets, skill-description word counts, and single-home-by-altitude violations (universal directives leaking into project files) — flagging drift. E.g. "/context-audit", "audit my always-on context", "context budget audit". Also runs unattended weekly.
 ---
 
 # context-audit
 
-**Goal:** Keep the **always-on context surface** lean and well-layered. Every `CLAUDE.md` and every skill *description* loads on every session of every project, so bloat there is a fleet-wide, every-session tax. Weekly (or on demand): measure that surface, flag where it violates the standard below, and record the trend.
+**Goal:** keep the **always-on context surface** lean and well-layered. Every `CLAUDE.md` and every skill *description* loads on every session of every project, so bloat there is a fleet-wide, every-session tax. Weekly (or on demand): measure that surface, flag violations of the standard below, record the trend.
 
-**This is the home of the context-efficiency standard** (ferraroroberto/project-scaffolding#68). The standard lives *here*, in a skill body loaded only on invocation — deliberately **not** as prose in any `CLAUDE.md`, because a standard governing the always-on surface must not itself bloat it.
+**Home of the context-efficiency standard** (ferraroroberto/project-scaffolding#68) — lives *here*, in a skill body loaded only on invocation, deliberately **not** as prose in any `CLAUDE.md` (a standard governing the always-on surface must not itself bloat it).
 
 ## The standard — single-home by altitude
 
 Every directive lives in **exactly one place**, chosen by two axes:
 
-1. **Universal vs shape-specific.** *Universal* = true for **every** repo on the machine, including a one-off with no UI, no tray, no launcher. *Shape-specific* = only meaningful for a project of a given shape (Streamlit, tray/daemon, e2e UI, GitHub-Actions CI). The test: *"would this still apply to a bare repo with no app?"* Yes → universal. No → shape-specific.
-2. **Directive vs reference.** *Directive* = needed in (nearly) every session → stays always-on. *Reference* = only when doing X → belongs in an on-demand doc (`docs/<topic>.md`) or a skill body. **Exception:** trap-prevention *gotchas* earn their always-on slot even though they're "only when doing X", because the agent can't know to load them *before* hitting the bug.
+1. **Universal vs shape-specific.** *Universal* = true for **every** repo, including a one-off with no UI/tray/launcher. *Shape-specific* = only meaningful for a given shape (Streamlit, tray/daemon, e2e UI, GitHub-Actions CI). Test: *"would this still apply to a bare repo with no app?"* Yes → universal. No → shape-specific.
+2. **Directive vs reference.** *Directive* = needed in (nearly) every session → always-on. *Reference* = only when doing X → an on-demand doc (`docs/<topic>.md`) or a skill body. **Exception:** trap-prevention *gotchas* earn their always-on slot anyway — the agent can't know to load them *before* hitting the bug.
 
 The layering that falls out:
 
@@ -34,9 +34,9 @@ Three fleet audit lenses, kept distinct:
 ## Execution rules (read first)
 
 - **Run from the `fleet-config` repo root** (`E:/automation/fleet-config`) so helper paths resolve.
-- **The helper measures; the orchestrator judges.** `audit.py` produces exact counts — never invent or round them. The *judgment* (is a flagged duplication a real universal-directive leak or a legitimate project instance? is a header divergence true drift or expected shape?) is the orchestrator's job.
-- **Read-only except three writes:** the `kind=context-audit` ledger issue (upsert), its weekly comment, and the Telegram ping. Never edits a `CLAUDE.md`, commits, pushes, or restarts. Fixes are *separate* issues/PRs (route them through `/cleanup-fleet` or file them).
-- **Degrade gracefully, never block on a prompt** (this runs unattended): a missing file is reported and skipped; a quiet week still records the run so the ledger keeps cadence.
+- **The helper measures; the orchestrator judges.** `audit.py` produces exact counts — never invent or round them. Judgment (real universal-directive leak vs. legitimate project instance; true drift vs. expected shape) is the orchestrator's job.
+- **Read-only except three writes:** the `kind=context-audit` ledger issue (upsert), its weekly comment, and the Telegram ping. Never edits a `CLAUDE.md`, commits, pushes, or restarts. Fixes are *separate* issues/PRs (route through `/cleanup-fleet` or file them).
+- **Degrade gracefully, never block on a prompt** (runs unattended): a missing file is reported and skipped; a quiet week still records the run so the ledger keeps cadence.
 - **No AI attribution; no hard-wrapped paragraphs** (global `CLAUDE.md`).
 
 ## Steps
@@ -49,19 +49,19 @@ E:/automation/fleet-config/.venv/Scripts/python.exe .claude/skills/context-audit
 
 Prints a `MANIFEST:` line (skills / compliant / over-cap / unmeasured / repos / claude_mds / leaks / total_est_tokens) then six blocks — skill-description prose counts vs the cap (labelled `<repo>/<skill>`), the unmeasured list, the per-repo roll-up, the always-on token budget per `CLAUDE.md` (+ fleet total), single-home leaks (project lines duplicated verbatim from `global-CLAUDE.md`), and header overlap with the scaffold master. Capture it. `--json` emits the full structured report; `--cap N` overrides the word cap.
 
-**Scope of the cap gate (fleet-config#626).** It measures **every fleet repo's** `.claude/skills/*/SKILL.md` — membership from `fleet_repos()` (`hooks/projects.toml`), the same list `/system-map` and `/config-map` read, so a new repo is covered the day it is added — plus fleet-config's junctioned `skills/` tier, which is always-on in every repo's sessions. Measurement lives in `skills/_lib/skill_description.py`, shared with `/context-purge`'s `check.py`.
+**Scope of the cap gate (fleet-config#626).** Measures **every fleet repo's** `.claude/skills/*/SKILL.md` — membership from `fleet_repos()` (`hooks/projects.toml`), same list `/system-map` and `/config-map` read, so a new repo is covered the day it's added — plus fleet-config's junctioned `skills/` tier (always-on in every repo's sessions). Measurement lives in `skills/_lib/skill_description.py`, shared with `/context-purge`'s `check.py`.
 
-**`unmeasured` is not `compliant`.** A `SKILL.md` that cannot be read, carries no `description:`, or belongs to a repo checkout that is missing reports as `unmeasured` and is excluded from both the compliant and over-cap counts. Treat a non-zero `unmeasured` as a finding in its own right — a gate that silently shrinks its own working set is exactly what made `over_cap=0` technically true and completely false.
+**`unmeasured` is not `compliant`.** A `SKILL.md` that cannot be read, carries no `description:`, or belongs to a missing repo checkout reports as `unmeasured`, excluded from both compliant and over-cap counts. Treat non-zero `unmeasured` as a finding in its own right — a gate that silently shrinks its own working set is what made `over_cap=0` technically true and completely false.
 
 ### 2. Judge + narrate
 
 Read the manifest and classify, concisely:
 
-- **Over-cap descriptions** — genuinely too verbose vs. merely example-heavy (prose already lean, only the exempt quoted triggers push the total up — those are fine). Name the repo, not just the skill.
-- **Unmeasured descriptions** — report each one and why. Never round `unmeasured` into the compliant count or the narrative; a run that measured less must never read like one that measured everything.
-- **Single-home leaks** — real universal-directive restatements (→ delete from the project `CLAUDE.md`, inherit from global instead) vs. coincidental short matches. The big clusters are the fleet dedupe backlog.
-- **Header drift** — projects whose shape-sections diverge from the scaffold master (excluding the ignored one-offs).
-- **Budget trend** — compare the total + per-file tokens against the previous run recorded in the ledger; call out the largest files and any growth. **Ledger rows dated before 2026-08-15 are contaminated**: until fleet-config#629 the budget scan counted transient `<repo>-wt-<N>` worktree siblings as fleet projects, so their `Total tok` and `CLAUDE.mds` are inflated (6.5% when measured). Don't rewrite them, and don't read a drop across that boundary as a real saving.
+- **Over-cap descriptions** — genuinely too verbose vs. merely example-heavy (prose already lean, only the exempt quoted triggers push the total up — fine). Name the repo, not just the skill.
+- **Unmeasured descriptions** — report each one and why. Never round `unmeasured` into the compliant count or the narrative.
+- **Single-home leaks** — real universal-directive restatements (→ delete from the project `CLAUDE.md`, inherit from global) vs. coincidental short matches. Big clusters = the fleet dedupe backlog.
+- **Header drift** — projects whose shape-sections diverge from the scaffold master (excluding ignored one-offs).
+- **Budget trend** — compare total + per-file tokens against the previous run recorded in the ledger; call out the largest files and any growth. **Ledger rows dated before 2026-08-15 are contaminated**: until fleet-config#629 the budget scan counted transient `<repo>-wt-<N>` worktree siblings as fleet projects, inflating `Total tok`/`CLAUDE.mds` (6.5% when measured). Don't rewrite them; don't read a drop across that boundary as a real saving.
 
 ### 3. Upsert the ledger + record the week
 

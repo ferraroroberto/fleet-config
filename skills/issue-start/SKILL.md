@@ -46,10 +46,10 @@ E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skill
 **Append `--force-worktree` when the `APP_LAUNCHER_SESSION_ID` environment
 variable is set** (fleet-config#525) — check it first, e.g. `echo
 "${APP_LAUNCHER_SESSION_ID:-unset}"`. That variable means App Launcher spawned
-this session: a machine dispatched the work and no human chose the tree. The
-claim only protects against a second *claiming session*, and a **running app is
-not a claim holder** — so an unattended worker otherwise wins `MODE=primary` in
-a repo whose primary checkout is being served live by the launcher webapp,
+this session: a machine dispatched the work, no human chose the tree. The claim
+only protects against a second *claiming session*, and a **running app is not a
+claim holder** — so an unattended worker otherwise wins `MODE=primary` in a repo
+whose primary checkout is being served live by the launcher webapp,
 home-automation's tray, or (for `fleet-config`) `hooks/` + `skills/` junctioned
 into every live `~/.claude`, and breaks it mid-run. With the flag, no claim is
 attempted or published, `MODE=worktree` is always printed, and the primary stays
@@ -68,8 +68,8 @@ Read the printed `MODE=`:
   touches the other session's tree.
 
 This is the single concurrency primitive — `/issue-yolo`, `/issue-batch`
-in-place, and `/cleanup-fleet` all inherit it because they route through this
-skill. The claim is released by `/issue-finish` (or auto-expires after 8h if a
+in-place, and `/cleanup-fleet` all inherit it by routing through this skill.
+The claim is released by `/issue-finish` (or auto-expires after 8h if a
 session crashes). See `skills/_lib/worktree_claim.py` and README "Concurrent
 same-repo work".
 
@@ -189,11 +189,10 @@ E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skill
 
 If it prints `SPEC_APPLIES=yes` **and** the issue plausibly touches the web UI
 (CSS, templates, view JS, the nav), read `~/.claude/design.md` +
-`design.dark.md` into context **now** — two file reads, no browser. Building
-design-aware from the start is what stops end-of-flow rework; the actual
-conformance gate runs later in `/issue-finish`. `SPEC_APPLIES=no` (non-web repo
-or a Streamlit spike) → skip. The `ux`/`design` arg forces the load; `no-ux`
-suppresses it.
+`design.dark.md` into context **now** — two file reads, no browser. This is
+what stops end-of-flow rework; the actual conformance gate runs later in
+`/issue-finish`. `SPEC_APPLIES=no` (non-web repo or a Streamlit spike) → skip.
+The `ux`/`design` arg forces the load; `no-ux` suppresses it.
 
 **Ready-to-validate handoff (fast mode).** When the fast-mode build is done
 and the ball goes back to the user for validation, hand the system **ready to
@@ -213,10 +212,10 @@ validate** — never make the user boot it themselves:
 **E2e along the way.** E2e criteria live in the **`/e2e` skill**
 (`skills/e2e/SKILL.md`), not here. During the build — including follow-up
 "change this, change that" rounds in the same session — invoke `/e2e` when a
-change plausibly touches the browser surface and you (or the user) want proof
-now; it routes the accumulated diff and runs only the proportionate slice.
-Otherwise don't run e2e per change: `/issue-finish` always runs the `/e2e`
-evaluation before the PR, so nothing ships unevaluated either way.
+change plausibly touches the browser surface and proof is wanted now; it
+routes the accumulated diff, running only the proportionate slice. Otherwise
+don't run e2e per change: `/issue-finish` always runs the `/e2e` evaluation
+before the PR, so nothing ships unevaluated either way.
 
 When the work, validation, and review are done, finish with `/issue-finish`.
 
@@ -230,9 +229,9 @@ ready to validate** — fire the completion ping so they can act from their phon
 E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/hooks/notify_complete.py --kind start --issue <N> --summary "<one concise line: the single next action>"
 ```
 
-The `--summary` is the only free-form part — keep it to one short imperative
-line (e.g. `review the diff, then /issue-finish` or `approve the plan to
-proceed`). The helper resolves the chat, pulls the issue title + link
-from `gh`, and emits the canonical format. Silent no-op if no channel is
-configured; always exits 0. Skip it only if the work ran straight through to
-`/issue-finish` without ever pausing for the user (that flow fires its own ping).
+The `--summary` is the only free-form part — one short imperative line (e.g.
+`review the diff, then /issue-finish` or `approve the plan to proceed`). The
+helper resolves the chat, pulls the issue title + link from `gh`, and emits
+the canonical format. Silent no-op if no channel is configured; always exits
+0. Skip it only if the work ran straight through to `/issue-finish` without
+ever pausing for the user (that flow fires its own ping).

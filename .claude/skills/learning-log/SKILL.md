@@ -1,15 +1,15 @@
 ---
 name: learning-log
-description: Weekly learning log + forward horizon + productivity stats distilled from the fleet's GitHub work stream (merged PRs and closed issues, no source code). Use when the user wants the week's learning journey and productivity distilled — e.g. "/learning-log", "weekly learning log", "what did we ship and learn this week". Also runs unattended on a weekly schedule.
+description: Weekly learning log + forward horizon + productivity stats distilled from the fleet's GitHub work stream (merged PRs and closed issues, no source code). E.g. "/learning-log", "weekly learning log", "what did we ship and learn this week". Also runs unattended weekly.
 ---
 
 # learning-log
 
-**Goal:** Surface the *learning journey* and *productivity shape* otherwise buried inside individual PRs and issues. Once a week, read the **work stream itself** — every merged PR and closed issue across the `ferraroroberto` fleet since the last run — then (a) compute **exact productivity tables** (PRs / issues / LOC, by project and by work-type) and (b) fan out **one Sonnet sub-agent per work-type bucket** to *extract insights* (patterns, recurring root-causes, decisions, durable lessons). Aggregate into a themed log, **grade last week's horizon**, and set the next one.
+**Goal:** surface the *learning journey* and *productivity shape* otherwise buried inside individual PRs and issues. Once a week, read the **work stream itself** — every merged PR and closed issue across the `ferraroroberto` fleet since the last run — then (a) compute **exact productivity tables** (PRs / issues / LOC, by project and by work-type) and (b) fan out **one Sonnet sub-agent per work-type bucket** to *extract insights* (patterns, recurring root-causes, decisions, durable lessons). Aggregate into a themed log, **grade last week's horizon**, and set the next one.
 
-**The journey + productivity lens, not the others.** Reads **no source code** (that's `/audit-fleet`); does not regenerate the architecture PNG (that's `/system-map` — only cross-links it); is not Claude Code usage metrics (that's `/insights-weekly`). Its only input is GitHub: merged PRs + closed issues.
+**The journey + productivity lens, not the others.** Reads **no source code** (that's `/audit-fleet`); does not regenerate the architecture PNG (that's `/system-map` — only cross-links it); is not Claude Code usage metrics (that's `/insights-weekly`). Only input is GitHub: merged PRs + closed issues.
 
-**Scatter-gather, like `/audit-fleet`.** A deterministic Python helper (`gather.py`) does the GitHub gather + the exact stats + the per-bucket partition; the orchestrator fans out **Sonnet** sub-agents (one per bucket), each returning a **fixed format** so the aggregate is uniform. The orchestrator never reads source; it weaves the bucket insights, grades the horizon, and assembles the digest.
+**Scatter-gather, like `/audit-fleet`.** A deterministic Python helper (`gather.py`) does the GitHub gather + exact stats + per-bucket partition; the orchestrator fans out **Sonnet** sub-agents (one per bucket), each returning a **fixed format** so the aggregate is uniform. The orchestrator never reads source; it weaves the bucket insights, grades the horizon, assembles the digest.
 
 ## Arguments
 
@@ -21,8 +21,8 @@ description: Weekly learning log + forward horizon + productivity stats distille
 - **Run from the `fleet-config` repo root** (`E:/automation/fleet-config`) so helper paths resolve.
 - **Public repos only.** The digest and its stats are published in a public ledger issue, so `gather.py` lists with `--visibility public` — private-repo activity (and even repo names) is never gathered, counted, or narrated. A sub-agent must never cite a `repo#N` outside the public set it was handed.
 - **Read-only on GitHub except three writes:** the `kind=learning` ledger issue (upsert), the weekly comment on it, and the Telegram ping. Never edits source, commits, pushes, or restarts.
-- **Stats are deterministic — never let the model invent numbers.** Every count and LOC figure comes from `gather.py` (Python over `gh` JSON), pasted verbatim. The sub-agents narrate *insight*, not statistics.
-- **Sub-agents are Sonnet, fan out freely** (exempt from the 3-Opus cap). One per non-empty bucket. They are READ-ONLY analysts — they file nothing and change no state.
+- **Stats are deterministic — never let the model invent numbers.** Every count and LOC figure comes from `gather.py` (Python over `gh` JSON), pasted verbatim. Sub-agents narrate *insight*, not statistics.
+- **Sub-agents are Sonnet, fan out freely** (exempt from the 3-Opus cap). One per non-empty bucket. READ-ONLY analysts — file nothing, change no state.
 - **Degrade gracefully, never block** (unattended). A bucket sub-agent that errors is recorded as such and skipped; the run still produces a log. A quiet week (no PRs/issues) still records the run so the ledger keeps cadence.
 - **No AI attribution; no hard-wrapped paragraphs** (global `CLAUDE.md`).
 
@@ -35,7 +35,7 @@ E:/automation/fleet-config/.venv/Scripts/python.exe .claude/skills/learning-log/
 E:/automation/fleet-config/.venv/Scripts/python.exe .claude/skills/learning-log/gather.py gather --since 2026-05-01   # override (backfill/validation)
 ```
 
-It lists every fleet repo (`gh repo list`), reads each repo's merged PRs + closed issues **per repo** (`gh pr list` / `gh issue list` — REST, so the full window is covered with no cap and no search rate-limit), buckets each item by work type, computes exact stats, and writes into `<OUT_DIR>`: `stats.md` (the productivity tables), `prior-horizon.md`, and one `bucket-<slug>.md` per non-empty bucket. It prints a **manifest** — capture every line:
+Lists every fleet repo (`gh repo list`), reads each repo's merged PRs + closed issues **per repo** (`gh pr list` / `gh issue list` — REST, so the full window is covered with no cap and no search rate-limit), buckets each item by work type, computes exact stats, writes into `<OUT_DIR>`: `stats.md` (the productivity tables), `prior-horizon.md`, and one `bucket-<slug>.md` per non-empty bucket. Prints a **manifest** — capture every line:
 
 - `SINCE=` / `TOTALS=` — window start and grand totals.
 - `STATS_FILE=` — the productivity tables (paste verbatim into the digest).
@@ -44,7 +44,7 @@ It lists every fleet repo (`gh repo list`), reads each repo's merged PRs + close
 
 ### 2. Scatter — one Sonnet sub-agent per bucket
 
-For each `BUCKET=` line, dispatch a **background `Agent`** (`run_in_background: true`, `subagent_type: general-purpose`, `model: sonnet`) — all in parallel (Sonnet is exempt from the Opus cap). Then, in this same turn, block on `TaskOutput` (`block: true`) for every dispatched task — do not end the turn to "wait for it". This orchestrator runs headless via `run-weekly.bat` with no wake-up mechanism: an unpolled background task is silently killed at the CLI's background-task ceiling and the run reports a false `exit 0` (`fleet-config#506`, the same gap `fleet-config#314` already closed for this skill's own gather/upsert calls, just never stated for this bucket fan-out). If a `TaskOutput` call times out before a task finishes, re-issue the same blocking call — the turn must never end while any bucket agent is still dispatched. Each reads only its `bucket-<slug>.md` and EXTRACTS INSIGHTS in this exact format (so the aggregate is uniform):
+For each `BUCKET=` line, dispatch a **background `Agent`** (`run_in_background: true`, `subagent_type: general-purpose`, `model: sonnet`) — all in parallel (Sonnet is exempt from the Opus cap). Then, in this same turn, block on `TaskOutput` (`block: true`) for every dispatched task — do not end the turn to "wait for it". This orchestrator runs headless via `run-weekly.bat` with no wake-up mechanism: an unpolled background task is silently killed at the CLI's background-task ceiling and the run reports a false `exit 0` (`fleet-config#506`, same gap `fleet-config#314` already closed for this skill's own gather/upsert calls, just never stated for this bucket fan-out). If a `TaskOutput` call times out before a task finishes, re-issue the same blocking call — the turn must never end while any bucket agent is still dispatched. Each reads only its `bucket-<slug>.md` and EXTRACTS INSIGHTS in this exact format (so the aggregate is uniform):
 
 ```
 ### <Bucket name>
@@ -74,7 +74,7 @@ Compose the weekly digest as markdown (single long lines, no hard wraps). Order:
 
 ### 4. Assemble the ledger body + upsert
 
-Write the new horizon bullets to `horizon.md` and the discovery bullets to `discoveries.md` (in `OUT_DIR`), then let Python preserve the durable archive + stamp `last-run-at`. The archive is deduped on content and windowed to the newest `ARCHIVE_CAP` bullets (fleet-config#732) — it keeps growing week over week but no longer without bound, so the body stays under GitHub's issue-body ceiling. `build_ledger_body` also renders a fixed **Fleet map** link near the top of the body — the `architecture/system-map.png` produced by `/system-map` (cross-linked, never regenerated here):
+Write the new horizon bullets to `horizon.md` and the discovery bullets to `discoveries.md` (in `OUT_DIR`), then let Python preserve the durable archive + stamp `last-run-at`. The archive is deduped on content and windowed to the newest `ARCHIVE_CAP` bullets (fleet-config#732) — keeps growing week over week but no longer without bound, so the body stays under GitHub's issue-body ceiling. `build_ledger_body` also renders a fixed **Fleet map** link near the top of the body — the `architecture/system-map.png` produced by `/system-map` (cross-linked, never regenerated here):
 
 ```
 E:/automation/fleet-config/.venv/Scripts/python.exe .claude/skills/learning-log/gather.py assemble-ledger \
@@ -113,10 +113,10 @@ A few lines: window, grand totals, buckets analysed (+ any agent that errored), 
 
 ## Notes
 
-- **Why deterministic stats + LLM insight (not LLM stats):** counts and LOC must be exact and reproducible, so Python computes them from `gh` JSON; the Sonnet agents do the *judgement* (patterns, lessons) that a table can't capture. GitHub gives per-repo Pulse/contributor stats but nothing **cross-fleet** or **per-work-type**, so these tables are additive, not a duplicate.
-- **Why a ledger issue, not `docs/`:** the global `CLAUDE.md` rule — durable knowledge lives in *one canonical issue with a dated decision log*. The issue body is the deduped durable archive + live horizon; its comments are the week-by-week record (narrative + tables).
-- **Why anchor the window to `last-run-at`:** a missed/late run never drops a week — the next run widens. First run with no ledger falls back to trailing 7 days.
-- **Buckets** are by work type — PRs by conventional-commit prefix (`feat`/`fix`/`chore`/`docs`/`refactor`/…), issues by type label. Items with neither land in **Other** (a known limitation; tighten with keyword heuristics in `gather.py` if it grows).
+- **Why deterministic stats + LLM insight (not LLM stats):** counts and LOC must be exact and reproducible, so Python computes them from `gh` JSON; Sonnet agents do the *judgement* (patterns, lessons) a table can't capture. GitHub gives per-repo Pulse/contributor stats but nothing **cross-fleet** or **per-work-type**, so these tables are additive, not a duplicate.
+- **Why a ledger issue, not `docs/`:** the global `CLAUDE.md` rule — durable knowledge lives in *one canonical issue with a dated decision log*. Issue body is the deduped durable archive + live horizon; comments are the week-by-week record (narrative + tables).
+- **Why anchor the window to `last-run-at`:** a missed/late run never drops a week — next run widens. First run with no ledger falls back to trailing 7 days.
+- **Buckets** are by work type — PRs by conventional-commit prefix (`feat`/`fix`/`chore`/`docs`/`refactor`/…), issues by type label. Items with neither land in **Other** (known limitation; tighten with keyword heuristics in `gather.py` if it grows).
 - **Separate from `/system-map`** (cross-linked, not modified) and from fleet-config#95.
 
 ## Wiring the weekly schedule
