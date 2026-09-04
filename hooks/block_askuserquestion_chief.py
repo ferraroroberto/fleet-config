@@ -8,7 +8,7 @@ message), which never surfaces a `tool_use` block, so the question is
 invisible and any answer that reaches the prompt is unattributable -- nobody
 in the chain chose it. `notify_on_idle.py` already tried to route around this
 after the fact (fleet-config#443: reword the notification and ping chief
-instead of Slack), but that's advisory, not enforcement -- a worker can still
+instead of the human ping), but that's advisory, not enforcement -- a worker can still
 open the prompt and something can still answer it blind.
 
 This is the enforcement: refuse the tool outright for a chief-managed

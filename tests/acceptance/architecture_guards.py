@@ -27,7 +27,7 @@ from acceptance.shared import HOOKS, PYTHON, REPO, _Checker
 # for `mcp-personal-onedrive` purely because the External-integrations table
 # mentions it in prose in a *second* cell, so the guard could not detect the
 # one thing it exists to detect: a mapped repo with no card of its own
-# (fleet-config#681). Non-repo rows (`**Slack**`, `**GPU**`) also match and are
+# (fleet-config#681). Non-repo rows (`**Telegram**`, `**GPU**`) also match and are
 # harmless: the set is only ever tested for membership of known repo names.
 _CARD_ROW_RE = re.compile(r"^\|[^|]*?\*\*([A-Za-z0-9][A-Za-z0-9._-]*)\*\*[^|]*\|", re.MULTILINE)
 
@@ -381,7 +381,7 @@ def _mermaid_check() -> Tuple[int, int]:
 def _system_map_whatchanged_check() -> Tuple[int, int]:
     """The /system-map week-over-week diff (.claude/skills/system-map/whatchanged.py).
 
-    Pure-logic guard on the diff that feeds the one-line Slack summary: added /
+    Pure-logic guard on the diff that feeds the one-line notify summary: added /
     removed repos are named, in-place edits are counted, a no-op week and a
     first run read sensibly. Returns the failure count.
     """

@@ -234,7 +234,7 @@ just the launcher call):
   "...", "mode": "add"|"build"|"yolo", "model": "sonnet"}` — `add` files
   the issue only, `build` files and builds, `yolo` ships.
 - Escalate to Roberto specifically: `chief_ops.py escalate --file <path>`
-  (fleet-config#443) — a visibly distinct, higher-priority Slack ping
+  (fleet-config#443) — a visibly distinct, higher-priority Telegram ping
   (forced `@mention`), for a genuine blocker only: a plan gate holding a
   whole repo chain, a decision about a destructive action, anything where
   routine drawer traffic would bury it. Not for routine status.
@@ -242,7 +242,7 @@ just the launcher call):
 Every `dispatch` also marks the spawned session **chief-managed**
 (`skills/_lib/chief_managed.py`) — no action needed from you, but it's why a
 chief-dispatched worker's "blocked on input" reaches you directly instead of
-Slack (see below).
+Telegram (see below).
 
 After a dispatch, confirm back with the repo, issue number/goal, and the
 returned session so the user can find the card.
@@ -354,7 +354,7 @@ On one of these:
   upward, and don't let a genuine "I need Roberto" blend in with routine
   status (that's exactly the distinct-priority ping `escalate` exists for).
 - If delivery to you ever fails silently (you never received a ping you'd
-  expect), the notification falls back to the human Slack channel rather
+  expect), the notification falls back to the human Telegram chat rather
   than being dropped — that fallback is not a bug to route around.
 
 The periodic Board poll is unaffected and still catches what this event

@@ -9,7 +9,7 @@ ignored set is what this backs up.
 
 Not a hook — a plain scheduled program (`run-backup-daily.bat` → an app-launcher
 Job → Task Scheduler). It lives in `hooks/` because that is this repo's junctioned
-Python-tool tier: `projects.toml`, `_lib.NO_WINDOW`, and the Slack transport it
+Python-tool tier: `projects.toml`, `_lib.NO_WINDOW`, and the Telegram transport it
 needs are all already here, and the acceptance matrix's spawn-flag scanner and the
 README-Layout gate already cover this directory.
 
@@ -122,7 +122,7 @@ independently, so it only went one way):
   retention.py  The previous-snapshot lookup, run markers, the `latest/`
                 mirror (full rebuild + incremental reconcile), the restore
                 note, and the retention/freshness state machine.
-  report.py     The per-leg human-readable report and the Slack summary ping.
+  report.py     The per-leg human-readable report and the summary ping.
   cli.py        The thin orchestrator: preflight, `run_leg`, `collect_repos`,
                 exit-code aggregation, `run`, and `main`'s argument parsing.
                 Everything above is wired together here; none of the actual
@@ -217,7 +217,7 @@ from .retention import (  # noqa: E402
     write_restore_note,
     write_run_marker,
 )
-from .report import _leg_duration_seconds, _mb, _notify, _slack_summary, report  # noqa: E402
+from .report import _leg_duration_seconds, _mb, _notify, _notify_summary, report  # noqa: E402
 from .cli import (  # noqa: E402
     _preflight,
     _same_volume,

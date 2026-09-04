@@ -15,7 +15,7 @@ Captures are strictly local to each hub (``local-llm-hub`` ``docs/diagnostics.md
 addresses are resolved from the hub's ``config/models.yaml`` ``hosts:`` block,
 keyed by the ids the inventory already returned.
 
-Stdlib only (urllib) — same reason as ``hooks/slack_notify.py``: this must run
+Stdlib only (urllib) — same reason as ``hooks/notify_send.py``: this must run
 without a venv on any host.
 
 Three verbs, because a tool call is capped well under a capture's length and the

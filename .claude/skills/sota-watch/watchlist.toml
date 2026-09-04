@@ -76,7 +76,7 @@ disqualifiers = [
 check_every_days = 45
 
 [areas.agent-messaging]
-adopted = "launcher Board chat + /chief (app-launcher#245) + Slack hooks + vendored Telegram notifier (project-scaffolding#100); fleet-config#177 open as the inbound-bridge candidate"
+adopted = "launcher Board chat + /chief (app-launcher#245) + fleet-config notify hooks + vendored Telegram notifier (project-scaffolding#100); fleet-config#177 open as the inbound-bridge candidate"
 verdict = "watch, don't adopt — Buzz (github.com/block/buzz) evaluated at launch: mobile/push unfinished for a phone-first user, 4-service Docker stack vs native-process posture, duplicates three working surfaces, Nostr Git collides with GitHub-as-OS"
 verdict_date = 2026-07-25
 links = ["fleet-config#422", "fleet-config#177", "app-launcher#245", "project-scaffolding#100"]

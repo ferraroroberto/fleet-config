@@ -138,7 +138,7 @@ check("3 repo(s) unreached" in part.detail,
 
 sf = dd.classify([_c(2, SLACK_FAILED)], NOW, 12.0, require_complete=True)
 check(sf.confirmed is False and sf.state == "slack-unconfirmed",
-      "strict: slack=failed is its own failure -- slack_notify never raises, so a "
+      "strict: slack=failed is its own failure -- notify_send never raises, so a "
       "half-failure must not read as success")
 
 missing = dd.classify([_c(2, "digest with no stamp")], NOW, 12.0, require_complete=True)
@@ -149,7 +149,7 @@ unknown_slack = dd.classify([_c(2, NO_SLACK_FIELD)], NOW, 12.0, require_complete
 check(unknown_slack.confirmed is False and unknown_slack.state == "slack-unconfirmed",
       "strict: a missing slack= field is 'unknown' and is not confirmed (non-negotiable)")
 check("slack=unknown" in unknown_slack.detail,
-      "strict: the reason says the Slack state was unknown, not that it failed")
+      "strict: the reason says the delivery state was unknown, not that it failed")
 
 lenient = dd.classify([_c(2, PARTIAL)], NOW, 12.0, require_complete=False)
 check(lenient.confirmed is True,

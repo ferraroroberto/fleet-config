@@ -1,4 +1,4 @@
-"""Week-over-week 'what changed' line for the /system-map Slack post.
+"""Week-over-week 'what changed' line for the /system-map Telegram post.
 
 Produces a one-liner like ``+whatsapp-radar, −suna, 3 repos updated`` by diffing
 two ``fleet.data.js`` snapshots — the way ``/audit-fleet`` reports week-over-week.
@@ -77,7 +77,7 @@ def format_line(diff: dict) -> str:
 
 
 def summarize(prev_js: Optional[str], cur_js: str) -> str:
-    """The Slack-post line; ``baseline`` when there is no prior snapshot.
+    """The post line; ``baseline`` when there is no prior snapshot.
 
     The first run (no committed ``fleet.data.js`` at the ref) has nothing to
     diff against, so it reports ``baseline`` rather than a misleading all-added.

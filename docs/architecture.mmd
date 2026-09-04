@@ -38,7 +38,7 @@ flowchart TB
     PROJECTS["projects.toml\nper-project ports/gates/never-kill ports"]
     RUNHOOK["run-hook.ps1 — Claude Code shim (Git Bash routes through it)"]
     HOOKFILES["pre_commit_no_ai_trailer · secret_scan_guard · safe_kill_guard ·\nvenv_discipline · py_syntax_check · notify_on_idle · session_state ·\nblock_askuserquestion_chief · chief_handover_sessionstart · …"]
-    SLACKPY["slack_notify.py -> notify_complete.py -> work_summary.py"]
+    NOTIFYPY["notify_send.py -> notify_complete.py -> work_summary.py"]
     CONVPY["conversation memory engine (projects.toml opt-in, #586)\nconversation_capture (Stop) -> capture + full-session-id header\nsession_index (SessionStart) -> conversation_index -> index.md + index.json\nconversation_search — FTS5 over digests + transcripts, returns resume cmd"]
     BACKUPPY["backup_private.py + run-backup-daily.bat (#590)\nNOT a hook — a daily scheduled program\ngit-ignored set -> deny-list -> bulk-dir guard\nhardlinked dated snapshots + latest/ mirror\nself-verifying: sample re-hash · zero-file regression · 3-state freshness"]
   end
@@ -49,7 +49,7 @@ flowchart TB
   RUNHOOK --> HOOKFILES
   BACKUPPY --> LIBPY
   BACKUPPY --> PROJECTS
-  BACKUPPY -->|success to #log, failure to #attention| SLACKPY
+  BACKUPPY -->|"success to coding log, failure to coding alerts"| NOTIFYPY
   BACKUPPY -->|"E: repo residue -> C: ; C: transcripts -> E:"| BACKUPDEST["C:/Users/rober/backup/fleet-private\nE:/backup/claude-transcripts\ndated snapshots + latest/ + manifest.json"]
 
   subgraph tray["tray/ — junctioned into ~/.claude/tray (fleet-config#153)"]

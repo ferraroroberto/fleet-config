@@ -55,20 +55,20 @@ def _python_for_hooks() -> str:
 # non-interactive WindowsApps aliases.
 PYTHON = _python_for_hooks()
 
-# A path that never exists on disk. slack_notify._token_from_settings() reads
-# ~/.claude/settings.json as a fallback when SLACK_BOT_TOKEN isn't in the env --
+# A path that never exists on disk. notify_send._token_from_settings() reads
+# ~/.claude/settings.json as a fallback when TELEGRAM_BOT_TOKEN isn't in the env --
 # straight off disk via Path.home(), which on Windows resolves through the OS
 # profile API and finds the real file even when a test subprocess's env dict
-# omits SLACK_BOT_TOKEN (and even USERPROFILE). Without this override, every
-# acceptance run posted real Slack pings to the real attention channel
+# omits TELEGRAM_BOT_TOKEN (and even USERPROFILE). Without this override, every
+# acceptance run posted real Telegram pings to the real attention chat
 # (fleet-config#<pending>).
 NO_SETTINGS_JSON = str(Path(tempfile.gettempdir()) / "fleet-config-test-no-settings.json")
 
 
 def run(hook: str, payload: Dict[str, Any], extra_env: Dict[str, str] | None = None) -> Tuple[int, str, str]:
-    # Strip SLACK_BOT_TOKEN so a hook that posts to Slack (notify_on_idle) takes
+    # Strip TELEGRAM_BOT_TOKEN so a hook that posts to Telegram (notify_on_idle) takes
     # the graceful-fail path instead of firing a real ping on every test run.
-    env = {k: v for k, v in os.environ.items() if k != "SLACK_BOT_TOKEN"}
+    env = {k: v for k, v in os.environ.items() if k != "TELEGRAM_BOT_TOKEN"}
     env["CLAUDE_SETTINGS_JSON_PATH"] = NO_SETTINGS_JSON
     if extra_env:
         env.update(extra_env)

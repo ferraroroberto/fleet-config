@@ -23,7 +23,7 @@ gap visible.
 Three outputs from one structure:
 
   markdown -- the canonical, durable copy, posted as a comment on the managed
-              ledger issue. This is the link the Slack message can always
+              ledger issue. This is the link the Telegram message can always
               carry: an Artifact publish is unproven from a headless run
               (see `/fleet-health`'s SKILL.md), so it may never be the only one.
   html     -- a self-contained page, published best-effort as a private

@@ -270,7 +270,7 @@ After **all** agents have returned, fire the batch-complete ping with the determ
 E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/hooks/notify_complete.py --kind batch --passed <pass> --total <total>
 ```
 
-If no channel is configured it's a silent no-op; it always exits 0, so a notification failure can't block or delay anything.
+If no chat is configured it's a silent no-op; it always exits 0, so a notification failure can't block or delay anything.
 
 Then finish with one summary block:
 

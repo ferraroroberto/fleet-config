@@ -1,6 +1,6 @@
 ---
 name: sota-watch
-description: Recurring state-of-the-art watch over the fleet's adopted tooling, model, and practice choices — walk the watchlist, deep-research due areas, relay the local-llm-hub frontier ledger, and report only changes (challenger vs no-change) to the sota-watch ledger issue + Slack. E.g. "/sota-watch", "is our tooling still state of the art", "check if something better shipped". Also runs unattended weekly.
+description: Recurring state-of-the-art watch over the fleet's adopted tooling, model, and practice choices — walk the watchlist, deep-research due areas, relay the local-llm-hub frontier ledger, and report only changes (challenger vs no-change) to the sota-watch ledger issue + Telegram. E.g. "/sota-watch", "is our tooling still state of the art", "check if something better shipped". Also runs unattended weekly.
 ---
 
 # sota-watch
@@ -74,23 +74,23 @@ If `number` is null, `upsert` it once with a short standing body (what the ledge
 - run date + `DUE=` summary line
 - per-area lines/blocks from step 4 (delegated relay included)
 - one-line diff vs the previous run comment ("no change anywhere" is valid and expected)
-- unwrapped markdown (rendered by GitHub/Slack — no hard wraps)
+- unwrapped markdown (rendered by GitHub/Telegram — no hard wraps)
 
 The last comment on the ledger = the current state of the watch, same contract as local-llm-hub#272.
 
-### 7. Slack ping
+### 7. Telegram ping
 
 ```
-E:/automation/fleet-config/.venv/Scripts/python.exe hooks/slack_notify.py --category log --text "🔭 sota-watch - <date> - <N> due, <M> no-change, <K> challenger - <ledger comment URL>"
+E:/automation/fleet-config/.venv/Scripts/python.exe hooks/notify_send.py --category log --text "🔭 sota-watch - <date> - <N> due, <M> no-change, <K> challenger - <ledger comment URL>"
 ```
 
-`slack_notify --text` has no separator token (a `--text` body carries markdown, where `|` is a table cell), so keep the *punctuation* ASCII here: a literal `·` in a Windows command line reached Slack as `??` (fleet-config#507). Every separator is a hyphen; the leading emoji stays — it is the glanceable cue, and punctuation was what corrupted.
+`notify_send --text` has no separator token (a `--text` body carries markdown, where `|` is a table cell), so keep the *punctuation* ASCII here: a literal `·` in a Windows command line reached the chat as `??` (fleet-config#507). Every separator is a hyphen; the leading emoji stays — it is the glanceable cue, and punctuation was what corrupted.
 
 Challenger found → one extra line naming the area. The helper never raises; a missing token logs and exits non-zero — report it, don't fail the run.
 
 ### 8. Report
 
-Print: areas checked / fresh / not-checked, each verdict in one line, the ledger comment URL, the Slack result. A few lines.
+Print: areas checked / fresh / not-checked, each verdict in one line, the ledger comment URL, the Telegram result. A few lines.
 
 ## Wiring the weekly schedule
 

@@ -1,4 +1,4 @@
-"""Week-over-week 'what changed' line for the /config-map Slack post.
+"""Week-over-week 'what changed' line for the /config-map Telegram post.
 
 Produces a one-liner like ``+config-map, −old-hook, 3 updated`` by diffing two
 ``config.data.js`` snapshots — the same shape ``/system-map`` uses. The skill
@@ -92,7 +92,7 @@ def format_line(diff: dict) -> str:
 
 
 def summarize(prev_js: Optional[str], cur_js: str) -> str:
-    """The Slack-post line; ``baseline`` when there is no prior snapshot."""
+    """The post line; ``baseline`` when there is no prior snapshot."""
     return snapshot_diff.summarize(prev_js, cur_js, parse_config, format_line)
 
 

@@ -54,7 +54,7 @@ def run_hook_matrix() -> Tuple[int, int]:
         ("secret_scan: live xoxb- token in commit one-liner -> block",
          "secret_scan_guard",
          {"tool_name": "Bash", "cwd": tempfile.gettempdir(),
-          "tool_input": {"command": f'git add config.toml && git commit -m "wip: SLACK_BOT_TOKEN = {FAKE_XOXB}"'}},
+          "tool_input": {"command": f'git add config.toml && git commit -m "wip: TELEGRAM_BOT_TOKEN = {FAKE_XOXB}"'}},
          2),
         # The three families the guard was blind to until fleet-config#561 —
         # `context_filter`'s redactor already knew all four, the guard's own
@@ -85,7 +85,7 @@ def run_hook_matrix() -> Tuple[int, int]:
         ("secret_scan: xoxb- placeholder (docs ellipsis) -> allow",
          "secret_scan_guard",
          {"tool_name": "Bash", "cwd": tempfile.gettempdir(),
-          "tool_input": {"command": 'git commit -m "docs: show xoxb-… placeholder in slack-workflow.md"'}},
+          "tool_input": {"command": 'git commit -m "docs: show xoxb-… placeholder in telegram-workflow.md"'}},
          0),
         ("secret_scan: clean commit message -> allow",
          "secret_scan_guard",
@@ -309,13 +309,13 @@ def run_hook_matrix() -> Tuple[int, int]:
     ))
 
     # ---- notify_on_idle ----
-    # fleet-config itself has no per-project slack_notify_channel in projects.toml,
+    # fleet-config itself has no per-project telegram_chat in projects.toml,
     # but the [global] fallback IS now set. The hook will try to post but neither
-    # SLACK_BOT_TOKEN nor a readable settings.json is in reach (both routed to
-    # NO_SETTINGS_JSON above), so slack_notify returns False gracefully and the
+    # TELEGRAM_BOT_TOKEN nor a readable settings.json is in reach (both routed to
+    # NO_SETTINGS_JSON above), so notify_send returns False gracefully and the
     # hook still exits 0 without ever reaching the network.
     cases.append((
-        "notify_on_idle: global channel set, missing token -> allow (graceful fail)",
+        "notify_on_idle: global chat set, missing token -> allow (graceful fail)",
         "notify_on_idle",
         {"hook_event_name": "Notification", "cwd": str(REPO), "message": "needs input"},
         0,

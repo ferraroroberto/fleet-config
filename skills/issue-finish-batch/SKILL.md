@@ -93,10 +93,10 @@ You are the only agent touching this checkout.
    `PRIMARY=stale reason=<why>` line -- a merged PR is not a live one.
 3. Fire /issue-finish's own completion ping (✅ Done #<N> … — PR merged) — KEEP
    it, it carries this branch's PR link. notify_complete.py is the ONLY
-   sanctioned way to send it: do NOT use any MCP Slack tool (search/send/etc.)
-   to find a channel or post the ping — the helper resolves the channel from
+   sanctioned way to send it: do NOT use any MCP chat tool (search/send/etc.)
+   to find a chat or post the ping — the helper resolves the chat from
    projects.toml; choosing one yourself is a security violation and may post to
-   the wrong channel.
+   the wrong chat.
 4. If you hit a genuine blocker — merge conflict, CI red on a diff that DOES
    touch e2e surface, or the verification gate fails — STOP. Do NOT guess-fix,
    weaken the gate, or force the merge. Leave the branch in place and report
@@ -135,9 +135,9 @@ E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/hooks
   --kind finish-batch --merged <merged-count> --blocked <blocked-count>
 ```
 
-(A `0`/empty `--blocked` drops the clause.) Silent no-op if no Slack channel is configured; always exits 0.
+(A `0`/empty `--blocked` drops the clause.) Silent no-op if no Telegram chat is configured; always exits 0.
 
-**`notify_complete.py` is the ONLY sanctioned way to send this roll-up ping — do NOT use any MCP Slack tool (search/send/etc.) to find a channel or post the ping.** The helper resolves the destination channel deterministically from `projects.toml`; picking a channel yourself is both a security violation (an agent-inferred external write destination) and wrong (it may post to the wrong channel). A silent no-op when no channel is configured is the correct outcome — do not "fix" it by reaching for Slack tools.
+**`notify_complete.py` is the ONLY sanctioned way to send this roll-up ping — do NOT use any MCP chat tool (search/send/etc.) to find a chat or post the ping.** The helper resolves the destination chat deterministically from `projects.toml`; picking a chat yourself is both a security violation (an agent-inferred external write destination) and wrong (it may post to the wrong chat). A silent no-op when no channel is configured is the correct outcome — do not "fix" it by reaching for Slack tools.
 
 Then print the final summary block:
 

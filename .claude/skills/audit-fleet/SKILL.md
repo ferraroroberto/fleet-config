@@ -1,11 +1,11 @@
 ---
 name: audit-fleet
-description: Run /codebase-audit across every repo in the E:\automation fleet in one pass and emit one weekly digest (GitHub comment + Slack ping). Use when the user wants a whole-fleet quality sweep — e.g. "/audit-fleet", "audit the whole fleet", "weekly codebase audit across all repos". Also runs unattended on a weekly schedule.
+description: Run /codebase-audit across every repo in the E:\automation fleet in one pass and emit one weekly digest (GitHub comment + Telegram ping). Use when the user wants a whole-fleet quality sweep — e.g. "/audit-fleet", "audit the whole fleet", "weekly codebase audit across all repos". Also runs unattended on a weekly schedule.
 ---
 
 # audit-fleet
 
-**Goal:** A fleet-wide, idempotent, scatter-gather wrapper around `/codebase-audit`. Walk every repo under `E:\automation\`, cheaply skip the unchanged ones, audit the changed ones through a **bounded window of up to 3 concurrent sub-agents** (one per repo), then collect the results into **one diff-based digest**: a GitHub comment on the `audit-fleet digest state` ledger issue in `fleet-config` + stdout (so a scheduled run captures it), with a Slack ping via `notify_complete.py --kind audit`.
+**Goal:** A fleet-wide, idempotent, scatter-gather wrapper around `/codebase-audit`. Walk every repo under `E:\automation\`, cheaply skip the unchanged ones, audit the changed ones through a **bounded window of up to 3 concurrent sub-agents** (one per repo), then collect the results into **one diff-based digest**: a GitHub comment on the `audit-fleet digest state` ledger issue in `fleet-config` + stdout (so a scheduled run captures it), with a Telegram ping via `notify_complete.py --kind audit`.
 
 **Scope boundary — source code, not context.** This audits *project source code* quality. The fleet's *always-on context surface* is `/context-audit`'s lens; web-app *visual conformance* is `/design-sweep`'s (it files the `design-drift`/`cert-drift` issues). This digest only *reports* that bucket's open counts week-over-week (step 5); it never runs the design lint itself.
 
@@ -544,7 +544,7 @@ step 6 — never a hardcoded issue number.
 
 ### 6. Deliver the digest
 
-Two channels. stdout is the reliable one (a scheduled run captures it in app-launcher's job history); the GitHub comment is the durable record that the Slack ping links to.
+Two channels. stdout is the reliable one (a scheduled run captures it in app-launcher's job history); the GitHub comment is the durable record that the Telegram ping links to.
 
 - **stdout:** print the full markdown digest. Always.
 - **GitHub comment:** post the digest as a comment on the `audit-fleet digest state` issue in `ferraroroberto/fleet-config` — the one step 5 upserted (`DIGEST_ISSUE_URL`), never a hardcoded id — turning that issue into a running log of every weekly run. Use the `gh issue comment` output URL:
@@ -563,15 +563,15 @@ Two channels. stdout is the reliable one (a scheduled run captures it in app-lau
   2. **A digest was composed and printed.** Step 5 produced digest markdown and this step wrote it to stdout verbatim.
   3. **The digest comment resolved either way.** `COMMENT_URL` holds a real URL, *or* the comment was recorded as `comment: skipped (<reason>)` with a stated reason. "Never fail the run over the comment" holds for a *stated* failure; a comment step that silently never ran fails this assertion.
 
-  All three hold → carry on to the Slack ping and report normally in step 7. Any one fails → do **not** report success: print this line verbatim in the step-7 final report,
+  All three hold → carry on to the Telegram ping and report normally in step 7. Any one fails → do **not** report success: print this line verbatim in the step-7 final report,
 
   ```
   SCHEDULED-RUN-FAILED — <which assertion failed, one line>
   ```
 
-  still send the Slack ping (a failed run must be *more* visible, not less), and state the failure plainly. `skills/_lib/claude_progress.py` detects that literal marker in the run's final report and exits `123` instead of `0`, so the weekly job shows red rather than a false green (`fleet-config#519`). Never print the marker on a run that did deliver: a sweep where every repo came back `unchanged` and `to_audit` was empty is a **successful** run — it still produces a full digest (step 2), which is exactly why assertion 1 counts `unchanged` too.
+  still send the Telegram ping (a failed run must be *more* visible, not less), and state the failure plainly. `skills/_lib/claude_progress.py` detects that literal marker in the run's final report and exits `123` instead of `0`, so the weekly job shows red rather than a false green (`fleet-config#519`). Never print the marker on a run that did deliver: a sweep where every repo came back `unchanged` and `to_audit` was empty is a **successful** run — it still produces a full digest (step 2), which is exactly why assertion 1 counts `unchanged` too.
 
-- **Slack ping:** call `notify_complete.py --kind audit` with the captured comment URL and a one-line summary. This is deterministic — the skill hands the hook exact structured args; the hook assembles the message:
+- **Telegram ping:** call `notify_complete.py --kind audit` with the captured comment URL and a one-line summary. This is deterministic — the skill hands the hook exact structured args; the hook assembles the message:
 
   ```
   E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/hooks/notify_complete.py \
@@ -580,11 +580,11 @@ Two channels. stdout is the reliable one (a scheduled run captures it in app-lau
     --summary "<N> audited, <M> issues filed, <K> unchanged"
   ```
 
-  If `COMMENT_URL` is empty (comment was skipped), omit `--comment-url` so the ping still goes out link-less. This call is a silent no-op if no `slack_notify_channel` is configured; it always exits 0 and can never block or delay the finish.
+  If `COMMENT_URL` is empty (comment was skipped), omit `--comment-url` so the ping still goes out link-less. This call is a silent no-op if no `telegram_chat` is configured; it always exits 0 and can never block or delay the finish.
 
 ### 7. Final report
 
-One concise block: the plan line from step 2, per-repo results, where the digest went (stdout always; comment URL or skipped reason; Slack pinged or no-op), and the digest-state issue URL. If step 6's delivery assertion failed, its `SCHEDULED-RUN-FAILED — <reason>` line goes in this block verbatim and nothing in the block may describe the run as complete. Stop.
+One concise block: the plan line from step 2, per-repo results, where the digest went (stdout always; comment URL or skipped reason; Telegram pinged or no-op), and the digest-state issue URL. If step 6's delivery assertion failed, its `SCHEDULED-RUN-FAILED — <reason>` line goes in this block verbatim and nothing in the block may describe the run as complete. Stop.
 
 ## Hard rules
 
@@ -616,7 +616,7 @@ One concise block: the plan line from step 2, per-repo results, where the digest
   losing the work, **not** a licence to end the turn: results a turn never
   collected still never reach the digest.
 - **A run that delivered nothing must exit non-zero.** Step 6's delivery
-  assertion runs before the Slack ping on every run; on failure it prints the
+  assertion runs before the Telegram ping on every run; on failure it prints the
   literal `SCHEDULED-RUN-FAILED` marker, which `claude_progress.py` maps to exit
   `123`. Never let a green weekly job with zero work done report success.
 - **And the assertion can't save a run that never reaches it.** An orchestrator

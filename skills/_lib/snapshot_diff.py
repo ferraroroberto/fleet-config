@@ -1,5 +1,5 @@
 """Shared "diff two JSON snapshots into a one-line summary" logic behind the
-/config-map and /system-map week-over-week Slack posts (fleet-config#318).
+/config-map and /system-map week-over-week Telegram posts (fleet-config#318).
 
 Both skills follow the same shape: slice the strict-JSON object out of a
 ``window.X = {...};`` snapshot file, flatten it to ``{key: entry}``, diff two
@@ -57,7 +57,7 @@ def summarize(
     parse_fn: Callable[[str], Dict[str, dict]],
     format_fn: Callable[[dict], str],
 ) -> str:
-    """The Slack-post line; ``baseline`` when there is no prior snapshot (a
+    """The post line; ``baseline`` when there is no prior snapshot (a
     first-run repo has no prior commit to diff against)."""
     if not prev_js:
         return "baseline"

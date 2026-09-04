@@ -1,10 +1,10 @@
 """Acceptance checks for the notification surface (fleet-config#680).
 
 Everything that decides *whether, where and how* something reaches Roberto:
-`slack_notify`'s transport (no network touched), `notify_on_idle`'s mention
+`notify_send`'s transport (no network touched), `notify_on_idle`'s message
 construction / prompt classification / idle suppression, its Fleet-Board deep
 link and chief-managed routing, `notify_complete`'s deterministic message
-assembly, and the category -> channel routing table.
+assembly, and the category -> chat routing table.
 
 Split out of the former 2681-line `unit_checks.py` (see `checks_context_filter`
 for why). Each function is self-contained and returns its own
@@ -33,84 +33,108 @@ from acceptance.shared import (
 # style, so each check's dependency is visible at its own call site.
 
 
-def _slack_notify_unit_checks() -> Tuple[int, int]:
-    """Exercise slack_notify without touching the network. Returns failure count."""
+def _notify_send_unit_checks() -> Tuple[int, int]:
+    """Exercise notify_send without touching the network. Returns failure count."""
     sys.path.insert(0, str(HOOKS))
-    import slack_notify  # noqa: E402
+    import notify_send  # noqa: E402
 
     check = _Checker()
 
     check(
-        "slack_notify: archive URL -> bare id",
-        slack_notify.parse_channel("https://x.slack.com/archives/C0B76GBA0LS") == "C0B76GBA0LS",
+        "notify_send: t.me link -> @publicname",
+        notify_send.parse_chat("https://t.me/somechannel") == "@somechannel",
     )
     check(
-        "slack_notify: bare id passes through",
-        slack_notify.parse_channel("  C0B76GBA0LS  ") == "C0B76GBA0LS",
+        "notify_send: bare chat id passes through",
+        notify_send.parse_chat("  -1004408175579  ") == "-1004408175579",
     )
 
     # Missing token must return False (never raise, never post). Force-unset the
     # env var AND neutralize the settings.json fallback around the call, so
     # neither a real token in the dev box's env nor one in ~/.claude/settings.json
     # can trigger a post — this exercises the genuine "no token anywhere" path.
-    saved = os.environ.pop(slack_notify.TOKEN_ENV_VAR, None)
-    saved_from_settings = slack_notify._token_from_settings
-    slack_notify._token_from_settings = lambda: None
+    saved = os.environ.pop(notify_send.TOKEN_ENV_VAR, None)
+    saved_from_settings = notify_send._token_from_settings
+    notify_send._token_from_settings = lambda: None
     try:
-        result = slack_notify.notify("test", channel="C0B76GBA0LS", token=None)
+        result = notify_send.notify("test", chat="-1004408175579", token=None)
     finally:
-        slack_notify._token_from_settings = saved_from_settings
+        notify_send._token_from_settings = saved_from_settings
         if saved is not None:
-            os.environ[slack_notify.TOKEN_ENV_VAR] = saved
-    check("slack_notify: missing token -> False (graceful)", result is False)
+            os.environ[notify_send.TOKEN_ENV_VAR] = saved
+    check("notify_send: missing token -> False (graceful)", result is False)
 
     # The settings.json fallback resolves a token when the env var is unset —
     # this is the launcher-agnostic behaviour (#192). Stub the file reader so the
     # check is hermetic (independent of whether the dev box's settings.json has a
     # token) and confirm the resolution order: env var wins, else settings.json.
-    saved_env = os.environ.pop(slack_notify.TOKEN_ENV_VAR, None)
-    saved_reader = slack_notify._token_from_settings
-    slack_notify._token_from_settings = lambda: "xoxb-from-settings"
+    saved_env = os.environ.pop(notify_send.TOKEN_ENV_VAR, None)
+    saved_reader = notify_send._token_from_settings
+    notify_send._token_from_settings = lambda: "tg-from-settings"
     try:
-        from_settings = slack_notify._resolve_token(None)
-        os.environ[slack_notify.TOKEN_ENV_VAR] = "xoxb-from-env"
-        env_wins = slack_notify._resolve_token(None)
+        from_settings = notify_send._resolve_token(None)
+        os.environ[notify_send.TOKEN_ENV_VAR] = "tg-from-env"
+        env_wins = notify_send._resolve_token(None)
     finally:
-        slack_notify._token_from_settings = saved_reader
-        os.environ.pop(slack_notify.TOKEN_ENV_VAR, None)
+        notify_send._token_from_settings = saved_reader
+        os.environ.pop(notify_send.TOKEN_ENV_VAR, None)
         if saved_env is not None:
-            os.environ[slack_notify.TOKEN_ENV_VAR] = saved_env
-    check("slack_notify: settings.json fallback resolves token when env unset",
-          from_settings == "xoxb-from-settings")
-    check("slack_notify: env var wins over settings.json fallback",
-          env_wins == "xoxb-from-env")
+            os.environ[notify_send.TOKEN_ENV_VAR] = saved_env
+    check("notify_send: settings.json fallback resolves token when env unset",
+          from_settings == "tg-from-settings")
+    check("notify_send: env var wins over settings.json fallback",
+          env_wins == "tg-from-env")
 
     return check.failures, check.total
 
 
-def _notify_mention_unit_checks() -> Tuple[int, int]:
-    """The single-sourced @mention decision in slack_notify (off by default).
+def _notify_chunking_unit_checks() -> Tuple[int, int]:
+    """Telegram's two hard size limits, enforced in the transport (fleet-config#540).
 
-    Mentioning now lives in exactly one place — ``slack_notify.notify()`` — via
-    two pure helpers. No caller hand-assembles ``<@U…>`` anymore.
+    Replaces the former @mention checks. Slack needed an ``<@user>`` tag to
+    guarantee a mobile push; Telegram pushes to any chat you are in, so that
+    machinery was deleted rather than ported. What genuinely replaced it is size
+    handling: ``sendMessage`` rejects — not truncates — a body over 4096, and a
+    ``sendDocument`` caption over 1024, and both limits are already exceeded by
+    the weekly digests. A regression here loses a whole digest silently, which is
+    exactly the failure mode this suite exists to catch.
     """
     sys.path.insert(0, str(HOOKS))
-    import slack_notify  # noqa: E402
+    import notify_send  # noqa: E402
 
     check = _Checker()
 
-    check("mention_prefix: enabled + user -> tag",
-          slack_notify._mention_prefix("U0B71PQEL6S", True) == "<@U0B71PQEL6S> ")
-    check("mention_prefix: disabled -> no tag",
-          slack_notify._mention_prefix("U0B71PQEL6S", False) == "")
-    check("mention_prefix: enabled but no user -> no tag",
-          slack_notify._mention_prefix(None, True) == "")
-    check("resolve_mention: explicit override wins",
-          slack_notify._resolve_mention(True) is True
-          and slack_notify._resolve_mention(False) is False)
-    # None -> read the [global] slack_notify_mention toggle, which ships off.
-    check("resolve_mention: None -> global toggle (off by default)",
-          slack_notify._resolve_mention(None) is False)
+    check("chunks: a short body stays one unmarked message",
+          notify_send._chunks("hello") == ["hello"])
+
+    long_body = "line of text\n" * 600
+    parts = notify_send._chunks(long_body)
+    check("chunks: an over-long body splits", len(parts) > 1)
+    check("chunks: every part fits the Bot API limit",
+          all(len(p) <= notify_send.MESSAGE_LIMIT for p in parts))
+    check("chunks: each part is marked [i/n]",
+          all(p.endswith("[%d/%d]" % (i, len(parts))) for i, p in enumerate(parts, 1)))
+
+    # A single line longer than the limit has no newline to split on, so it is
+    # hard-split. Byte-for-byte recoverable: dropping the markers must rebuild
+    # the original exactly, or a digest is being silently truncated.
+    one_line = "x" * 9000
+    hard = notify_send._chunks(one_line)
+    check("chunks: a single over-long line is hard-split",
+          len(hard) > 1 and all(len(p) <= notify_send.MESSAGE_LIMIT for p in hard))
+    check("chunks: a hard split loses no content",
+          "".join(p.rsplit("\n\n[", 1)[0] for p in hard) == one_line)
+
+    check("limits: message and caption limits match the Bot API",
+          notify_send.MESSAGE_LIMIT == 4096 and notify_send.CAPTION_LIMIT == 1024)
+
+    # Slack link markup must not reach the chat as literal noise — notify_on_idle
+    # still emits a board line, and any straggler caller may too.
+    check("flatten: labelled link -> 'label: url'",
+          notify_send._flatten_markup("<https://x.dev/a|Open on the Board>")
+          == "Open on the Board: https://x.dev/a")
+    check("flatten: bare autolink -> bare url",
+          notify_send._flatten_markup("<https://y.dev>") == "https://y.dev")
 
     return check.failures, check.total
 
@@ -215,11 +239,11 @@ def _notify_board_link_unit_checks() -> Tuple[int, int]:
               _lib.resolve_board_url(Path("E:/automation/x"), registry=reg) == "https://proj.example:8445")
         os.environ.pop(env_key, None)
 
-        # ---- board_link: configured + session_id -> mrkdwn deep link ----
+        # ---- board_link: configured + session_id -> plain-text deep link ----
         payload = {"session_id": "abc-123", "cwd": "E:/automation/x"}
-        check("board_link: configured -> Slack mrkdwn deep link",
+        check("board_link: configured -> plain-text deep link",
               notify_on_idle.board_link(payload, registry=reg)
-              == "📋 <https://proj.example:8445/?board=abc-123|Open on the Board>")
+              == "📋 Open on the Board: https://proj.example:8445/?board=abc-123")
 
         # ---- board_link: trailing slash on board_url is stripped ----
         trailing = _lib.Registry(
@@ -227,7 +251,7 @@ def _notify_board_link_unit_checks() -> Tuple[int, int]:
         )
         check("board_link: trailing slash on board_url stripped",
               notify_on_idle.board_link(payload, registry=trailing)
-              == "📋 <https://global.example:8445/?board=abc-123|Open on the Board>")
+              == "📋 Open on the Board: https://global.example:8445/?board=abc-123")
 
         # ---- board_link: board_url with an existing query string merges, not concatenates (fleet-config#273) ----
         tokened = _lib.Registry(
@@ -235,7 +259,7 @@ def _notify_board_link_unit_checks() -> Tuple[int, int]:
         )
         check("board_link: existing ?token= on board_url survives alongside ?board=",
               notify_on_idle.board_link(payload, registry=tokened)
-              == "📋 <https://global.example:8445/?token=secret&board=abc-123|Open on the Board>")
+              == "📋 Open on the Board: https://global.example:8445/?token=secret&board=abc-123")
 
         # ---- board_link: unconfigured -> None (default, current behavior unchanged) ----
         check("board_link: board_url unset -> None",
@@ -256,7 +280,7 @@ def _notify_board_link_unit_checks() -> Tuple[int, int]:
 def _notify_chief_routing_unit_checks() -> Tuple[int, int]:
     """`is_chief_managed`/`parse_chief_sid` — the pure decision logic behind
     routing a chief-dispatched worker's blocked-on-input notification to
-    chief instead of Slack (fleet-config#443).
+    chief instead of the human ping (fleet-config#443).
 
     Deliberately does NOT exercise `notify_chief`'s live subprocess/network
     call here (or via a `run()` end-to-end hook invocation with a genuinely
@@ -309,7 +333,7 @@ def _notify_chief_routing_unit_checks() -> Tuple[int, int]:
 
 
 def _notify_complete_unit_checks() -> Tuple[int, int]:
-    """Canonical per-kind message assembly + the shared slack-target resolver."""
+    """Canonical per-kind message assembly + the shared notify-target resolver."""
     sys.path.insert(0, str(HOOKS))
     import notify_complete  # noqa: E402
     import _lib  # noqa: E402
@@ -369,7 +393,7 @@ def _notify_complete_unit_checks() -> Tuple[int, int]:
           bm("security", issue="42", url="http://pr") == "🔒 Security #42 — review the diff · http://pr")
 
     # --summary crosses the harness -> shell -> CreateProcess boundary, which is
-    # not UTF-8 safe on Windows: a literal `·` reached Slack as `??`
+    # not UTF-8 safe on Windows: a literal `·` reached the chat as `??`
     # (fleet-config#507). Skills spell the separator with the ASCII token `|`,
     # and whatever mojibake is still recoverable is repaired on the way in.
     ns = notify_complete.normalize_summary
@@ -418,10 +442,10 @@ def _notify_complete_unit_checks() -> Tuple[int, int]:
           + (f" (offenders: {offenders})" if offenders else ""),
           not offenders)
 
-    # The shared resolver: unknown cwd -> [global] channel/user + 'claude' name.
-    ch, usr, nm = _lib.resolve_slack_target(Path("E:/does/not/match/anything"))
-    check("resolve_slack_target: global fallback + claude name",
-          ch == "C0B76GBA0LS" and usr == "U0B71PQEL6S" and nm == "claude")
+    # The shared resolver: unknown cwd -> [global] chat + 'claude' name.
+    ch, nm = _lib.resolve_notify_target(Path("E:/does/not/match/anything"))
+    check("resolve_notify_target: global fallback + claude name",
+          ch == "-1004408175579" and nm == "claude")
 
     # lookup(): --repo threads onto the gh invocation as `-R repo`, for both the
     # issue path and the pr-by-number path, so a cross-repo ping can't silently
@@ -451,9 +475,9 @@ def _notify_complete_unit_checks() -> Tuple[int, int]:
     return check.failures, check.total
 
 
-def _slack_routing_unit_checks() -> Tuple[int, int]:
-    """Category → channel routing (issue #139): the resolver picks the dedicated
-    channel per category, falls back to the single channel when a category is
+def _notify_routing_unit_checks() -> Tuple[int, int]:
+    """Category → chat routing (issue #139): the resolver picks the dedicated
+    chat per category, falls back to the single chat when a category is
     unset, and the kind → category map sends action-needed pings to attention."""
     sys.path.insert(0, str(HOOKS))
     import _lib  # noqa: E402
@@ -463,36 +487,36 @@ def _slack_routing_unit_checks() -> Tuple[int, int]:
 
     cwd = Path("E:/does/not/match/anything")  # global-only resolution
 
-    # ---- category routes to its dedicated [global] channel ----
-    ch, _u, _n = _lib.resolve_slack_target(cwd, category="attention")
-    check("route: attention -> #attention channel", ch == "C0BAGNEQ163")
-    ch, _u, _n = _lib.resolve_slack_target(cwd, category="log")
-    check("route: log -> #log channel", ch == "C0BARRUBG03")
-    # No category -> the plain channel (back-compat: existing callers unchanged).
-    ch, _u, _n = _lib.resolve_slack_target(cwd)
-    check("route: no category -> slack_notify_channel", ch == "C0B76GBA0LS")
+    # ---- category routes to its dedicated [global] chat ----
+    ch, _n = _lib.resolve_notify_target(cwd, category="attention")
+    check("route: attention -> the attention chat", ch == "-1004408175579")
+    ch, _n = _lib.resolve_notify_target(cwd, category="log")
+    check("route: log -> the log chat", ch == "-1004387099086")
+    # No category -> the plain chat (back-compat: existing callers unchanged).
+    ch, _n = _lib.resolve_notify_target(cwd)
+    check("route: no category -> telegram_chat", ch == "-1004408175579")
 
-    # ---- graceful degradation: category channels unset -> single-channel fallback ----
+    # ---- graceful degradation: category chats unset -> single-chat fallback ----
     single = _lib.Registry(
         projects=[],
-        globals=_lib.GlobalConfig(never_kill_ports=(), slack_notify_channel="C_ONLY"),
+        globals=_lib.GlobalConfig(never_kill_ports=(), telegram_chat="C_ONLY"),
     )
-    ch, _u, _n = _lib.resolve_slack_target(cwd, registry=single, category="attention")
-    check("route: unset category channel -> falls back to single channel", ch == "C_ONLY")
+    ch, _n = _lib.resolve_notify_target(cwd, registry=single, category="attention")
+    check("route: unset category chat -> falls back to single chat", ch == "C_ONLY")
 
-    # ---- per-project override of a category channel wins over [global] ----
+    # ---- per-project override of a category chat wins over [global] ----
     proj = _lib.ProjectConfig(
         name="x", cwd_prefix=Path("E:/automation/x"), webapp_port=None,
         tray_cmd=None, restart_cmd=None,
-        api_version_path=None, extra={"slack_channel_log": "C_PROJ_LOG"},
+        api_version_path=None, extra={"telegram_chat_log": "C_PROJ_LOG"},
     )
     reg = _lib.Registry(
         projects=[proj],
-        globals=_lib.GlobalConfig(never_kill_ports=(), slack_notify_channel="C_G",
-                                  slack_channel_log="C_GLOBAL_LOG"),
+        globals=_lib.GlobalConfig(never_kill_ports=(), telegram_chat="C_G",
+                                  telegram_chat_log="C_GLOBAL_LOG"),
     )
-    ch, _u, _n = _lib.resolve_slack_target(Path("E:/automation/x"), registry=reg, category="log")
-    check("route: per-project category channel overrides [global]", ch == "C_PROJ_LOG")
+    ch, _n = _lib.resolve_notify_target(Path("E:/automation/x"), registry=reg, category="log")
+    check("route: per-project category chat overrides [global]", ch == "C_PROJ_LOG")
 
     # ---- kind -> category map ----
     cat = notify_complete.category_for

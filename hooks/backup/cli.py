@@ -303,7 +303,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                         help="Report BACKUP_FRESHNESS=ok|stale|unknown and exit.")
     parser.add_argument("--only", help="Limit the repo leg to one repo (debugging).")
     parser.add_argument("--config", type=Path, help="Path to projects.toml.")
-    parser.add_argument("--no-slack", action="store_true", help="Suppress the Slack ping.")
+    parser.add_argument("--no-notify", action="store_true", help="Suppress the Telegram ping.")
     parser.add_argument("--json", action="store_true", help="Print the run summary as JSON.")
     parser.add_argument("--rebuild-latest-full", action="store_true",
                         help="Force a full rebuild of latest/ instead of the incremental "
@@ -352,7 +352,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     started = time.monotonic()
     exit_code, manifests = run(
         cfg, dry_run=args.dry_run, only=args.only, toml_path=args.config,
-        notify=not args.no_slack, rebuild_latest_full=args.rebuild_latest_full,
+        notify=not args.no_notify, rebuild_latest_full=args.rebuild_latest_full,
     )
     if args.json:
         print(json.dumps(

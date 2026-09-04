@@ -4,7 +4,7 @@
 !*.local.example.*
 settings.local.json
 
-# Secrets — never track. The Slack bot token lives in ~/.codex/config.toml and
+# Secrets — never track. The Telegram bot token lives in ~/.codex/config.toml and
 # ~/.claude/settings.json (secret-managed, env-var injected), never in this repo.
 # Belt-and-braces against an accidental copy landing here (fleet-config#74);
 # the real wire is the secret_scan_guard hook, which blocks the commit itself.

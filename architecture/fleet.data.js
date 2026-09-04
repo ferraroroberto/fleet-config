@@ -69,7 +69,7 @@ window.FLEET = {
     {"ic": "☁️", "nm": "Oracle to GCP", "repo": "oracle-to-gcp", "ds": "Local Oracle SQL to BigQuery translator prototype with a SQLite-backed mock validation loop."}
   ],
   "external": [
-    {"ic": "💬", "nm": "Slack", "fr": "from app-launcher (orchestration)"},
+    {"ic": "💬", "nm": "Telegram", "fr": "from app-launcher (orchestration)"},
     {"ic": "🔔", "nm": "Pushover", "fr": "from launcher jobs"},
     {"ic": "📔", "nm": "Notion", "fr": "inspiration · content · automation"},
     {"ic": "💳", "nm": "Stripe", "fr": "accounting-quarterly"},

@@ -44,7 +44,7 @@ logger = logging.getLogger("fleet_hooks")
 # (fleet-config#561). Two independent copies used to exist — `context_filter`'s
 # four-family redaction regex and `secret_scan_guard`'s one-family commit
 # blocker — and the *narrower* one was the copy wired into the guard that
-# actually refuses a commit. So the guard blocked a leaked Slack bot token and
+# actually refuses a commit. So the guard blocked a leaked Telegram bot token and
 # waved through an OpenAI key, a GitHub PAT, and an AWS access key id. Both now
 # read from here, so extending coverage is a one-line change in one place.
 #
@@ -66,6 +66,13 @@ logger = logging.getLogger("fleet_hooks")
 # first blocked its own repo (fleet-config#561).
 SECRET_PATTERNS: tuple[tuple[str, str], ...] = (
     ("Slack token (xox…-)", r"\bxox[baprs]-[A-Za-z0-9]+-[A-Za-z0-9]+-[A-Za-z0-9]{8,}"),
+    # Telegram bot token: `<bot_id>:<35-char secret>` (fleet-config#540). Added
+    # rather than swapping out the Slack entry — this tuple is the tier's general
+    # credential list, not a Slack list, and the `xoxb-` token stays live until
+    # the workspace is actually decommissioned. The secret half is exactly 35
+    # characters, so the length is pinned rather than `{20,}`: a looser rule
+    # matches ordinary `HH:MM`-adjacent digit-colon-text runs in a log tail.
+    ("Telegram bot token", r"\b\d{8,10}:[A-Za-z0-9_-]{35}\b"),
     ("API key (sk-)", r"\bsk-[A-Za-z0-9_-]{20,}"),
     ("GitHub token (gh?_)", r"\bgh[pousr]_[A-Za-z0-9_]{20,}"),
     ("AWS access key id (AKIA…)", r"\bAKIA[0-9A-Z]{16}"),
@@ -111,11 +118,11 @@ NO_WINDOW = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
 # UTF-8 command handed to Windows PowerShell 5.1 is decoded with the ANSI
 # codepage, so the two UTF-8 bytes of `·` (0xC2 0xB7) arrive as the two
 # characters `Â·`; a further narrowing to an OEM codepage that has neither turns
-# the pair into `??`, which is what landed in Slack.
+# the pair into `??`, which is what landed in the chat.
 #
 # Two prior instances of the same class already carry fixes on adjacent paths —
 # `notify_complete.gh_json` (gh stdout forced to UTF-8) and
-# `slack_notify._read_text` (piped stdin forced to UTF-8). Those cover *byte*
+# `notify_send._read_text` (piped stdin forced to UTF-8). Those cover *byte*
 # streams we own. This covers the argv leg, which we do not own: the only two
 # defences are (a) repair the recoverable half here, and (b) never author
 # non-ASCII punctuation into an argv string in the first place — skills spell the
@@ -682,7 +689,7 @@ def gh_json(args: Sequence[str], *, timeout: int = 20) -> Dict[str, Any]:
 
     Decodes gh's stdout as UTF-8 explicitly — on Windows ``text=True`` falls back
     to cp1252, which mis-decodes a UTF-8 title (em-dash — -> â€", emoji -> ðŸ§)
-    before it ever reaches Slack. Mirrors ``slack_notify._read_text``.
+    before it ever reaches the chat. Mirrors ``notify_send._read_text``.
 
     Lives here rather than in `notify_complete` (fleet-config#561) because
     `work_summary` needed the identical helper and could not import it —
@@ -759,16 +766,14 @@ class ProjectConfig:
 @dataclass(frozen=True)
 class GlobalConfig:
     never_kill_ports: Sequence[int]
-    slack_notify_channel: Optional[str] = None
-    slack_notify_user: Optional[str] = None
-    slack_notify_mention: bool = False
-    # Per-category channels (issue #139). A ping carries a category — "attention"
+    telegram_chat: Optional[str] = None
+    # Per-category chats (issue #139). A ping carries a category — "attention"
     # ("come look": blocked / awaiting input / ready-to-validate) vs "log"
     # (activity record: filed / shipped / merged / digests). When the category's
-    # channel is unset, routing falls back to `slack_notify_channel`, so a single
-    # channel keeps working and the split can roll out one channel at a time.
-    slack_channel_attention: Optional[str] = None
-    slack_channel_log: Optional[str] = None
+    # chat is unset, routing falls back to `telegram_chat`, so a single chat
+    # keeps working and the split can roll out one chat at a time.
+    telegram_chat_attention: Optional[str] = None
+    telegram_chat_log: Optional[str] = None
     # Base URL for the app-launcher Fleet Board (fleet-config#242), e.g. a
     # Tailscale address so a phone tap resolves outside the LAN. Unset by
     # default — notify_on_idle omits the board deep-link line entirely until
@@ -790,7 +795,7 @@ def load_registry(path: Optional[Path] = None) -> Registry:
     """Load the project registry from ``projects.toml``.
 
     ``CLAUDE_HOOKS_PROJECTS_TOML`` overrides the path (same pattern as
-    ``slack_notify``'s ``CLAUDE_SETTINGS_JSON_PATH``) so acceptance tests can
+    ``notify_send``'s ``CLAUDE_SETTINGS_JSON_PATH``) so acceptance tests can
     point this at a throwaway file with a ``cwd_prefix`` under a temp dir,
     instead of writing test fixtures into the real fleet paths.
     """
@@ -804,11 +809,9 @@ def load_registry(path: Optional[Path] = None) -> Registry:
 
     globals_table = data.pop("global", {}) if isinstance(data.get("global"), dict) else {}
     never_kill = tuple(int(p) for p in globals_table.get("never_kill_ports", []))
-    slack_channel = globals_table.get("slack_notify_channel") or None
-    slack_user = globals_table.get("slack_notify_user") or None
-    slack_mention = bool(globals_table.get("slack_notify_mention", False))
-    slack_attention = globals_table.get("slack_channel_attention") or None
-    slack_log = globals_table.get("slack_channel_log") or None
+    telegram_chat = globals_table.get("telegram_chat") or None
+    telegram_attention = globals_table.get("telegram_chat_attention") or None
+    telegram_log = globals_table.get("telegram_chat_log") or None
     board_url = globals_table.get("board_url") or None
 
     projects: List[ProjectConfig] = []
@@ -838,11 +841,9 @@ def load_registry(path: Optional[Path] = None) -> Registry:
         projects=projects,
         globals=GlobalConfig(
             never_kill_ports=never_kill,
-            slack_notify_channel=slack_channel,
-            slack_notify_user=slack_user,
-            slack_notify_mention=slack_mention,
-            slack_channel_attention=slack_attention,
-            slack_channel_log=slack_log,
+            telegram_chat=telegram_chat,
+            telegram_chat_attention=telegram_attention,
+            telegram_chat_log=telegram_log,
             board_url=board_url,
         ),
     )
@@ -890,34 +891,39 @@ def detect_project(cwd_path: Path, registry: Optional[Registry] = None) -> Optio
     return _match_project(_strip_worktree_suffix(cwd_norm), reg.projects)
 
 
-# A ping's intent category → the projects.toml channel key that routes it
+# A ping's intent category → the projects.toml chat key that routes it
 # (issue #139). Both keys are valid as a [global] entry and as a per-project
-# override. An unset category channel falls back to `slack_notify_channel`.
-SLACK_CATEGORY_KEYS = {
-    "attention": "slack_channel_attention",
-    "log": "slack_channel_log",
+# override. An unset category chat falls back to `telegram_chat`.
+NOTIFY_CATEGORY_KEYS = {
+    "attention": "telegram_chat_attention",
+    "log": "telegram_chat_log",
 }
 
 
-def resolve_slack_target(
+def resolve_notify_target(
     cwd_path: Path,
     registry: Optional[Registry] = None,
     *,
     category: Optional[str] = None,
-) -> "tuple[Optional[str], Optional[str], str]":
-    """Resolve ``(channel, user, project_name)`` for a Slack ping from ``cwd_path``.
+) -> "tuple[Optional[str], str]":
+    """Resolve ``(chat, project_name)`` for a Telegram ping from ``cwd_path``.
 
     A project's own override wins over the ``[global]`` fallback at every level;
     ``name`` is the project key, or ``"claude"`` when ``cwd_path`` matches no
     registered project. Shared by ``notify_on_idle`` (the hook) and
-    ``notify_complete`` (the skill-completion helper) so both resolve the
-    channel, mention, and project name identically.
+    ``notify_complete`` (the skill-completion helper) so both resolve the chat
+    and project name identically.
 
     ``category`` ("attention" / "log", issue #139) routes the ping to a
-    dedicated channel: the per-category key is tried first (project override,
-    then ``[global]``); when it is unset the channel **falls back to
-    ``slack_notify_channel``**. That fallback is what keeps a single-channel
-    setup working unchanged and lets the split roll out one channel at a time.
+    dedicated chat: the per-category key is tried first (project override, then
+    ``[global]``); when it is unset the chat **falls back to ``telegram_chat``**.
+    That fallback is what keeps a single-chat setup working unchanged and lets
+    the split roll out one chat at a time.
+
+    No mention/user leg: Slack needed an ``<@user>`` tag to guarantee a mobile
+    push, so this returned a user id too. Telegram pushes every message to a
+    chat you are a member of, which made the whole mention path dead weight —
+    dropped in fleet-config#540 rather than ported.
     """
     reg = registry or load_registry()
     project = detect_project(cwd_path, reg)
@@ -925,16 +931,15 @@ def resolve_slack_target(
     def pick(key: str, global_value: Optional[str]) -> Optional[str]:
         return (project.extra.get(key) if project else None) or global_value
 
-    channel: Optional[str] = None
-    cat_key = SLACK_CATEGORY_KEYS.get(category) if category else None
+    chat: Optional[str] = None
+    cat_key = NOTIFY_CATEGORY_KEYS.get(category) if category else None
     if cat_key:
-        channel = pick(cat_key, getattr(reg.globals, cat_key, None))
-    if not channel:
-        channel = pick("slack_notify_channel", reg.globals.slack_notify_channel)
+        chat = pick(cat_key, getattr(reg.globals, cat_key, None))
+    if not chat:
+        chat = pick("telegram_chat", reg.globals.telegram_chat)
 
-    user = pick("slack_notify_user", reg.globals.slack_notify_user)
     name = project.name if project else "claude"
-    return channel, user, name
+    return chat, name
 
 
 BOARD_URL_ENV_VAR = "FLEET_BOARD_URL"
@@ -949,10 +954,10 @@ def resolve_board_url(cwd_path: Path, registry: Optional[Registry] = None) -> Op
 
     The real value (a Tailscale hostname) is set via ``FLEET_BOARD_URL``, not
     ``[global] board_url``, because fleet-config is a **public** repo
-    (fleet-config#271) — same reasoning as ``SLACK_BOT_TOKEN`` staying out of
+    (fleet-config#271) — same reasoning as ``TELEGRAM_BOT_TOKEN`` staying out of
     ``projects.toml``. Claude Code always injects its ``env`` block into hook
     subprocesses, so a bare env-var read is enough here (unlike
-    ``slack_notify``'s extra settings.json-file fallback, needed only because
+    ``notify_send``'s extra settings.json-file fallback, needed only because
     that transport must also work from non-Claude launchers).
     """
     reg = registry or load_registry()

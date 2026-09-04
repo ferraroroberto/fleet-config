@@ -4,7 +4,7 @@ REM (Windows Task Scheduler \AppLauncher\; the schedule is owned by
 REM app-launcher's Jobs registry, config/jobs.json). Audits the fleet's
 REM always-on context surface (CLAUDE.md token budgets, skill-description word
 REM counts, single-home-by-altitude violations), upserts the context-audit
-REM ledger issue + weekly comment, and posts a Slack digest. bypassPermissions
+REM ledger issue + weekly comment, and posts a Telegram digest. bypassPermissions
 REM because a scheduled run has no human to answer permission prompts.
 cd /d E:\automation\fleet-config
 E:\automation\fleet-config\.venv\Scripts\python.exe E:\automation\fleet-config\skills\_lib\claude_progress.py "/context-audit" --permission-mode bypassPermissions

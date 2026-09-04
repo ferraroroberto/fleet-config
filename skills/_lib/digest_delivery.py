@@ -24,9 +24,9 @@ Two strictness levels, because the callers genuinely differ:
 * **lenient** (`/audit-fleet`) -- a dated comment inside the window is enough.
 * **strict** (`/context-purge`, `require_complete=True`) -- the comment must
   also carry a machine-readable stamp saying the run completed and that the
-  Slack post landed. `slack_notify.py` never raises and returns exit 1 on
+  ping landed. `notify_send.py` never raises and returns exit 1 on
   failure, so without consulting the stamp a successful digest comment plus a
-  silently failed Slack post would read as full success.
+  silently failed ping would read as full success.
 
 Strictness is a **constructor argument, not a CLI flag**, on purpose:
 `claude_progress.run_delivery_check` invokes the script as

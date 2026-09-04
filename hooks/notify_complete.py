@@ -1,12 +1,12 @@
-"""Deterministic skill-completion Slack ping — one canonical format per skill.
+"""Deterministic skill-completion Telegram ping — one canonical format per skill.
 
 Each ``issue-*`` skill ends by calling this with structured args instead of
 hand-assembling a message. The format and the real GitHub URL are built **here,
 in Python** — not by the model — so every completion ping is byte-identical and
 carries a correct, live link. The leading mark (✅ 🆕 🚦 🏁 🚀 📊 🔄) is a
-glanceable status cue. See `docs/slack-workflow.md`.
+glanceable status cue. See `docs/telegram-workflow.md`.
 
-Opt-in: a silent no-op unless a ``slack_notify_channel`` is configured (project
+Opt-in: a silent no-op unless a ``telegram_chat`` is configured (project
 table or ``[global]``) in ``hooks/projects.toml``. Never blocks — any gh,
 network, or config error is logged and the process still exits 0, so a
 notification failure can't break or delay a skill.
@@ -30,7 +30,7 @@ not reliably on ``PATH`` on this machine; see ``_lib.find_python_executable``)::
     E:/automation/fleet-config/.venv/Scripts/python.exe ~/.claude/hooks/notify_complete.py --kind design  --summary "8 swept | 3 drifted | 11 findings filed"
 
 Keep every ``--summary`` **pure ASCII**: a Windows command line is not a
-UTF-8-safe channel (fleet-config#507 — a literal ``·`` reached Slack as ``??``),
+UTF-8-safe channel (fleet-config#507 — a literal ``·`` reached the chat as ``??``),
 so spell a multi-part summary's separator with the ASCII token ``|`` and let
 :func:`normalize_summary` render it as ``·`` from a Python literal. Mojibake that
 is still recoverable is repaired on the way in; a boundary that already replaced
@@ -63,7 +63,7 @@ CWD-relative inference exactly.
 
 For ``--kind audit`` pass ``--comment-url`` (the GitHub comment permalink posted
 by ``/audit-fleet``) and ``--summary`` (e.g. "3 audited, 2 issues filed"). The
-Slack ping links directly to the comment so the user reaches the full digest in
+ping links directly to the comment so the user reaches the full digest in
 one click.
 
 ``--kind learning`` is the same contract as ``audit`` — the weekly ``/learning-log``
@@ -85,27 +85,27 @@ from typing import List, Optional, Tuple
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import _lib  # noqa: E402
-import slack_notify  # noqa: E402
+import notify_send  # noqa: E402
 import work_summary  # noqa: E402
 
 # Kinds that link a pull request (read from gh pr) vs. an issue (gh issue view).
 # `security` links its (auto-merged) fix PR and carries the work-summary block so
-# the private review channel shows the file/LOC shape of the change to inspect.
+# the private review chat shows the file/LOC shape of the change to inspect.
 _PR_KINDS = ("finish", "yolo", "security")
 
 # Action-needed kinds — the ping is a call to action the user must respond to,
-# so it routes to the "attention" channel, not the activity log (issue #139).
+# so it routes to the "attention" chat, not the activity log (issue #139).
 # `cleanup` is conditional: it's action-needed only when issues await review.
 # `security` is always action-needed — an audit auto-fix shipped to a public repo
 # and the private after-the-fact diff review is the whole point (fleet-config#361).
 # Everything else (add, finish, yolo, audit, recap, learning, finish-batch,
-# design) is a completed-work record → the "log" channel.
+# design) is a completed-work record → the "log" chat.
 _ATTENTION_KINDS = ("start", "batch", "security")
 
 # The `·` a multi-part summary reads with is assembled **here, from a Python
 # source literal**, never carried across the shell boundary as a `--summary`
 # character. A skill writes the ASCII token instead — `"8 swept | 2 drifted"` —
-# and gets `8 swept · 2 drifted` in Slack. See `_lib.repair_mojibake` for why the
+# and gets `8 swept · 2 drifted` in the chat. See `_lib.repair_mojibake` for why the
 # boundary can't be trusted (fleet-config#507): the emoji and em-dash in every
 # message above are Python literals for exactly the same reason, which is why
 # they always rendered while the argv-sourced `·` did not.
@@ -119,7 +119,7 @@ def normalize_summary(summary: Optional[str]) -> Optional[str]:
     Repairs recoverable cp1252 mojibake, then expands the ASCII separator token
     ``|`` into :data:`SUMMARY_SEPARATOR`. No ``--summary`` in the fleet carries a
     literal pipe (they are short status lines, not markdown tables), so the
-    expansion is unambiguous — unlike ``slack_notify --text``, which does carry
+    expansion is unambiguous — unlike ``notify_send --text``, which does carry
     markdown and therefore only gets the repair.
     """
     if summary is None:
@@ -202,7 +202,7 @@ def build_message(
     review: Optional[str] = None,
     blocked: Optional[str] = None,
 ) -> str:
-    """Assemble the canonical ping text (no @mention prefix). Pure / testable.
+    """Assemble the canonical ping text. Pure / testable.
 
     Leads with a glanceable status mark. A missing ``title`` or ``url`` is
     dropped cleanly — no dangling " · " or double spaces. ``summary`` is passed
@@ -266,7 +266,7 @@ def build_message(
 
 def main(argv: Optional[List[str]] = None) -> int:
     parser = argparse.ArgumentParser(
-        description="Send a deterministic skill-completion Slack ping."
+        description="Send a deterministic skill-completion Telegram ping."
     )
     parser.add_argument(
         "--kind", required=True,
@@ -303,8 +303,8 @@ def main(argv: Optional[List[str]] = None) -> int:
     logging.basicConfig(level=logging.INFO, format="%(message)s", stream=sys.stderr)
 
     category = category_for(args.kind, review=args.review)
-    channel, user, _name = _lib.resolve_slack_target(Path(os.getcwd()), category=category)
-    if not channel:
+    chat, _name = _lib.resolve_notify_target(Path(os.getcwd()), category=category)
+    if not chat:
         return 0  # opt-in: not configured → silent no-op
 
     title, url = (None, None)
@@ -330,16 +330,14 @@ def main(argv: Optional[List[str]] = None) -> int:
     # A merged PR (finish / yolo) carries a compact work-summary roll-up under the
     # canonical line — the file/LOC shape of the change. Built in work_summary
     # (never raises → "" on any gh error), so a stats hiccup degrades to the plain
-    # ping. The per-file table is chat-only (Slack mrkdwn has no tables); only the
+    # ping. The per-file table is chat-only (a plain-text ping has no tables); only the
     # roll-up rides the ping. build_message stays untouched (its exact output is
     # asserted in tests) — the block is appended here.
     if args.kind in _PR_KINDS:
         block = work_summary.block_for(args.pr_url or args.pr or "")
         if block:
             text = f"{text}\n{block}"
-    # The @mention decision is single-sourced in slack_notify.notify() (off by
-    # default); pass the resolved user id and let it decide.
-    slack_notify.notify(text, channel=str(channel), user=user)
+    notify_send.notify(text, chat=str(chat))
     return 0
 
 

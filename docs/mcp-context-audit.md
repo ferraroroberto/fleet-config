@@ -34,7 +34,7 @@ Per-tool breakdown of the live ones: `notion-fetch` 45, `notion-search` 33, `not
 
 - **One workflow dominates.** Notion is 115 of 167 invocations (69%), and every Notion call comes from the `life-os` daily journal. The entire "real automation" value of the connector set is one skill.
 - **Five connectors are pure context tax.** Google Drive, Spotify, Supabase, Uber Eats, Zoom have **never once** been invoked across 945 transcripts. They contribute **53 tool schemas** (Supabase alone is 29) and provide zero value.
-- **Slack is already off MCP for automation.** Completion pings and file posts go through `hooks/slack_notify.py` / `hooks/notify_complete.py` (stdlib Python, bot identity). The 33 Slack MCP calls are ad-hoc/interactive; nothing unattended depends on the connector.
+- **Slack is already off MCP for automation.** Completion pings and file posts go through `hooks/notify_send.py` / `hooks/notify_complete.py` (stdlib Python, bot identity). The 33 Slack MCP calls are ad-hoc/interactive; nothing unattended depends on the connector.
 - **Gmail/Calendar are low, interactive, and undepended-on.**
 
 ## Context cost
