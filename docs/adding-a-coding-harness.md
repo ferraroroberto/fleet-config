@@ -159,6 +159,22 @@ detected agent so Claude's stdout stays empty.
 > is the fleet's recurring bug class — the confident wrong answer — in its most
 > dangerous form. Verify a real refusal, live, in the real harness.
 
+### Codex refusal conformance
+
+The shared `block()` helper emits `hookSpecificOutput` with `hookEventName: "PreToolUse"`, `permissionDecision: "deny"` and `permissionDecisionReason`, then exits 0. This matches the [official hook response schema](https://learn.chatgpt.com/docs/hooks#pretooluse). Codex provenance comes from the invoked `.codex/hooks/<script>` path before junction resolution, not an inherited launcher or thread environment variable. Other events do not receive this PreToolUse-specific denial. An unrecognized caller, event or malformed payload has no confirmed Codex enforcement contract; a hook exit alone is not evidence of nonexecution.
+
+The Windows Codex CLI 0.153.3 `exec --ephemeral --approve-for-me` probe established: the previous stderr/exit-2 helper was called after a matching policy, yet the sentinel was created; structured deny/exit-0 allowed the control and prevented the sentinel, with the refusal reason visible to the model. This is installed-version evidence, not a promise about untested modes or future versions. The documentation also describes exit 2 as supported; the observed failure is why the probe checks actual file effects.
+
+Run the opt-in, bounded probe from the checkout being tested with its existing venv:
+
+```powershell
+& ./.venv/Scripts/python.exe tests/probe_codex_refusal.py --workspace ./tmp/codex-refusal-check --model gpt-6-astra
+```
+
+The directory must not already exist. The probe creates a disposable nested git repo and reviewed project hook, invokes the real shared `block()`, and allows at most 150 seconds for two harmless file-creation attempts. It leaves sanitized hook observations and the local CLI transcript for inspection. `conformance: pass` requires the control contents, absent sentinel, two observed hook calls, a matching actual block call, the exact deny wire format and model-visible reason. A missing hook invocation or failed/timed-out CLI is `unknown`; it never counts as refusal.
+
+Keep the normal account/config discovery: `--ignore-user-config` prevented project hook loading in the tested client. The probe uses invocation-scoped project trust and `--dangerously-bypass-hook-trust` for these reviewed test hooks, isolates the fleet session-state output, and disables context rewriting for the invocation. It does not copy credentials, change live hook wiring, or persist trust. Review enabled user hooks before running it, since normal discovery also loads those hooks. Never substitute a destructive command for the sentinel.
+
 ## Step 4 — Board state and the capability matrix
 
 `hooks/session_state.py` is the sole writer of `sessions-state.json`. Map the

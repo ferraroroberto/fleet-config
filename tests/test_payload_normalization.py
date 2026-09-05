@@ -24,6 +24,9 @@ Run: `E:/automation/fleet-config/.venv/Scripts/python.exe tests/test_payload_nor
 from __future__ import annotations
 
 import json
+import io
+from contextlib import redirect_stdout, redirect_stderr
+from unittest.mock import patch
 import subprocess
 import sys
 from pathlib import Path
@@ -392,5 +395,49 @@ check(
     "claude payload still returns the identical object after the agy + copilot branches",
 )
 
+
+# ---- Codex transport: invoked entry point, never inherited launcher identity ----
+def _refusal(raw: str, entry: str) -> tuple:
+    out, err = io.StringIO(), io.StringIO()
+    with patch.object(sys, "argv", [entry]), patch.object(sys, "stdin", io.StringIO(raw)):
+        with redirect_stdout(out), redirect_stderr(err):
+            _lib.read_stdin_json()
+            try:
+                _lib.block("Fleet sentinel refused")
+            except SystemExit as exc:
+                return exc.code, out.getvalue(), err.getvalue()
+
+
+_codex_entry = str(Path.cwd() / ".codex" / "hooks" / "guard.py")
+for _event in ("PreToolUse", "PostToolUse", "FutureEvent", None):
+    _payload = {"hook_event_name": _event, "tool_name": "Bash", "tool_input": {"command": "sentinel"}}
+    _code, _stdout, _stderr = _refusal(json.dumps(_payload), _codex_entry)
+    if _event == "PreToolUse":
+        try:
+            _wire = json.loads(_stdout)
+        except ValueError:
+            _wire = {}
+        check(_code == 0 and _wire == {"hookSpecificOutput": {
+            "hookEventName": "PreToolUse", "permissionDecision": "deny",
+            "permissionDecisionReason": "Fleet sentinel refused"}}, "Codex: structured PreToolUse deny exits 0")
+    else:
+        check(_code == 2 and not _stdout, f"Codex: {_event} never claims a PreToolUse denial")
+
+for _raw in ("", "not json", "[]", "null"):
+    _code, _stdout, _stderr = _refusal(_raw, _codex_entry)
+    check(_code == 2 and not _stdout, "malformed input cannot reuse confirmed Codex/event state")
+
+for _entry in (str(Path.cwd() / ".claude" / "hooks" / "guard.py"),
+               str(Path.cwd() / ".codex" / "elsewhere" / "guard.py")):
+    with patch.dict("os.environ", {"APP_LAUNCHER_AGENT": "codex", "CODEX_THREAD_ID": "inherited"}):
+        _code, _stdout, _stderr = _refusal(json.dumps(CLAUDE_PRE_TOOL_USE), _entry)
+    check(_code == 2 and not _stdout and _stderr == "Fleet sentinel refused\n",
+          "unknown/Claude entry: inherited Codex environment does not change stderr/exit contract")
+
+with patch.object(sys, "argv", [_codex_entry]):
+    _normalized = _lib.normalize_payload(CLAUDE_PRE_TOOL_USE)
+check(_lib.payload_agent(_normalized) == "codex", "Codex invoked hook carries harness provenance")
+check(_normalized.get("tool_input") is CLAUDE_PRE_TOOL_USE["tool_input"], "Codex preserves tool input identity")
+check(_lib.AGENT_HINT_KEY not in CLAUDE_PRE_TOOL_USE, "Codex normalization never mutates caller input")
 
 _h.report_and_exit("test_payload_normalization")

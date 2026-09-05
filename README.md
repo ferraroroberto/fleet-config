@@ -4,6 +4,8 @@ Versioned home for my user-scope [Claude Code](https://docs.claude.com/en/docs/c
 
 The hooks here are project-aware via a single `hooks/projects.toml` registry: generic at code level, per-project nuance (ports, pre-ship gate triggers, "never kill these ports") in one TOML file.
 
+Shared guards emit the calling harness's refusal format. Codex `PreToolUse` uses a structured denial; its installed-runtime control/refusal probe is documented in [Adding a coding harness](docs/adding-a-coding-harness.md#codex-refusal-conformance).
+
 ## Why this repo exists
 
 `~/.claude/` is a kitchen sink — cache, transcripts, plans — so it can't all be a git repo. But the *config* inside it (hooks, skills, the global `CLAUDE.md`) is real source code: it shapes every Claude session, breaks silently when typoed, and needs to be reviewed, diffed, and reverted like any other code. Before this repo, edits to `~/.claude/hooks/*` and friends were unversioned. Now they aren't.
