@@ -14,6 +14,8 @@ Codex also carries the applicable command and edit policies from Claude Code: Gi
 
 Shared issue/audit workflows bind delegation, result collection and questions to the current session through the [interactive capability contract](docs/workflow-capabilities.md). Claude and Codex native multi-worker proofs are recorded per surface; independent-review and human-review gates remain mandatory when tools are absent.
 
+Native Claude and Codex quota measurements now share a [versioned snapshot contract](docs/quota-snapshots.md). Claude publishes from its existing statusline; Codex refreshes on demand through its native account method. Sources retain their own windows, provenance and freshness, with unknown account scopes explicit and the legacy Claude cache preserved.
+
 ## Why this repo exists
 
 `~/.claude/` is a kitchen sink — cache, transcripts, plans — so it can't all be a git repo. But the *config* inside it (hooks, skills, the global `CLAUDE.md`) is real source code: it shapes every Claude session, breaks silently when typoed, and needs to be reviewed, diffed, and reverted like any other code. Before this repo, edits to `~/.claude/hooks/*` and friends were unversioned. Now they aren't.
