@@ -16,9 +16,17 @@ Fleet-only tier by design: a global skill's description would load into every se
 
 Both modes ship to **review, not merge**: the PR carries the validation report; the user merges.
 
-## Skip-unchanged ledger (run the gate first, always)
+## Skip-unchanged ledger (reconcile, then gate — always, in that order)
 
-A file is re-assessed **only when its bytes changed** since it was last assessed — never rewrite the same unchanged file week after week. `gate.py` keys on content hashes (sha256/12) recorded in one `kind=context-purge` ledger issue in `fleet-config` (title `context-purge ledger`, label `audit-meta`, managed via `audit_issue.py`):
+A file is re-assessed **only when its bytes changed** since it was last assessed — never rewrite the same unchanged file week after week. `gate.py` keys on content hashes (sha256/12) recorded in one `kind=context-purge` ledger issue in `fleet-config` (title `context-purge ledger`, label `audit-meta`, managed via `audit_issue.py`).
+
+**Reconcile first** (fleet-config#757): a purge PR that was never merged must not go on suppressing its files forever. `reconcile` syncs the ledger against what actually happened to every `chore/context-purge-*` PR — a merged PR's files get their ledger hash refreshed to their content *at that PR's own merge commit* (never `main`'s ever-moving tip — an unrelated later commit touching the same file must re-surface it, not hide behind a stale credit); a closed-unmerged PR's files have their (never-landed) ledger entry dropped so they re-enter `to_purge`; a still-open PR is left untouched and reported in the backlog instead (the "safe default is to re-offer, never silently suppress" middle state):
+
+```
+E:/automation/fleet-config/.venv/Scripts/python.exe .claude/skills/context-purge/gate.py reconcile [--fleet] --json > <scratch>/reconcile.json
+```
+
+Then gate:
 
 ```
 E:/automation/fleet-config/.venv/Scripts/python.exe .claude/skills/context-purge/gate.py gate [--fleet]
@@ -31,6 +39,8 @@ E:/automation/fleet-config/.venv/Scripts/python.exe .claude/skills/context-purge
 ```
 
 `advance` merges over the existing ledger (entries outside the scanned surface are preserved) and upserts the issue. **Pass `--only` with the files you actually assessed.** A fleet run is normally partial (large surface, lean files skipped by design, per-repo failures reported and skipped), so a bare `advance` would record files nobody read and silently suppress them from every future run until edited. Bare `advance` (whole surface) is correct only when the run genuinely assessed every gated file. Unknown paths are a hard error, not a silent no-op.
+
+`advance`'s own honesty still depends on the *next* run's `reconcile` catching an abandoned PR — `advance` itself still records a rewritten file's hash immediately (there is no way to know at that point whether the PR it belongs to will ever merge). That is fine: `reconcile` is what corrects it later, and the backlog section in every digest (below) is what makes "there's a PR still waiting" visible before it goes stale.
 
 ## Priorities (highest value first)
 
@@ -63,7 +73,7 @@ E:/automation/fleet-config/.venv/Scripts/python.exe .claude/skills/context-purge
 
 ## Steps (default mode)
 
-1. **Gate:** `gate.py gate` — `to_purge=0` → report "surface unchanged" and stop. Otherwise only the listed files proceed.
+1. **Reconcile, then gate:** `gate.py reconcile --json > <scratch>/reconcile.json`, then `gate.py gate` — `to_purge=0` → report "surface unchanged" and stop. Otherwise only the listed files proceed. Keep `<scratch>/reconcile.json` — step 8 reuses it for the digest's backlog section.
 2. Branch off fresh `main` (normal issue workflow; never purge on `main`).
 3. Snapshot originals + `audit.py --json` baseline to the scratchpad.
 4. Purge the gated files in priority order per the compression contract.
@@ -72,7 +82,7 @@ E:/automation/fleet-config/.venv/Scripts/python.exe .claude/skills/context-purge
 7. Open the PR (draft) with the validation report. Stop — the user merges.
 8. **Publish the run digest** (below). Not optional, and not only on the happy path.
 
-Fleet mode is the same loop with `--fleet` on both gate and advance, grouping the to-purge files by repo (one branch + PR per repo). Designed to degrade, not block — a per-repo failure is reported and skipped so the scheduled run always finishes.
+Fleet mode is the same loop with `--fleet` on both `reconcile`/gate/advance, grouping the to-purge files by repo (one branch + PR per repo). Designed to degrade, not block — a per-repo failure is reported and skipped so the scheduled run always finishes.
 
 ## Run data — what every worker reports back
 
@@ -109,8 +119,11 @@ Run from the fleet-config repo root. Validate first: run data that would make th
 ```
 E:/automation/fleet-config/.venv/Scripts/python.exe .claude/skills/context-purge/digest.py validate <scratch>/run.json
 E:/automation/fleet-config/.venv/Scripts/python.exe .claude/skills/context-purge/digest.py render <scratch>/run.json \
-    --md <scratch>/digest.md --html <scratch>/digest.html --chat-text <scratch>/digest.txt
+    --md <scratch>/digest.md --html <scratch>/digest.html --chat-text <scratch>/digest.txt \
+    --reconcile-json <scratch>/reconcile.json
 ```
+
+`--reconcile-json` points at step 1's `reconcile --json` output (fleet-config#757) — it carries the live open-purge-PR backlog into the digest's "Open purge PR backlog" section. Omit it (or lose the file) and the section renders "not recorded", never a silently-clean backlog.
 
 Then publish the **durable** copy — a comment on the managed `[ledger] context-purge run digests` issue — and ping Telegram. Order matters: publish first so the Telegram message has a link, then record whether the ping landed.
 

@@ -284,6 +284,37 @@ check("PARTIAL RUN" in html_p and "grocery" in html_p,
       "html: the partial banner names the unreached repos too")
 
 
+# ---- open purge PR backlog (fleet-config#757) ------------------------------
+
+md_no_backlog = digest.render_markdown(RUN)
+check("not recorded" in md_no_backlog.lower() and "Open purge PR backlog" in md_no_backlog,
+      "markdown: an omitted backlog renders as unknown, never as an empty/clean one")
+
+BACKLOG = [
+    {"repo": "automation", "number": 110, "title": "chore: compress",
+     "url": "https://github.com/ferraroroberto/automation/pull/110",
+     "created_at": "2026-08-22T06:10:51Z", "age_days": 14},
+]
+md_backlog = digest.render_markdown(RUN, backlog=BACKLOG)
+check("automation" in md_backlog and "#110" in md_backlog and "14d" in md_backlog,
+      "markdown: an open purge PR is listed with repo, number and age")
+
+md_empty_backlog = digest.render_markdown(RUN, backlog=[])
+check("No open" in md_empty_backlog,
+      "markdown: a genuinely empty backlog (fetched, and empty) reads as clean, "
+      "distinct from 'not recorded'")
+
+chat_backlog = digest.render_chat(RUN, backlog=BACKLOG)
+check("1 open purge PR" in chat_backlog, "chat: the open-PR count is surfaced")
+chat_no_backlog = digest.render_chat(RUN, backlog=None)
+check("backlog check failed" in chat_no_backlog,
+      "chat: an unrecorded backlog is flagged, not silently omitted")
+
+html_backlog = digest.render_html(RUN, backlog=BACKLOG)
+check("automation" in html_backlog and "#110" in html_backlog,
+      "html: the backlog table renders the open PR")
+
+
 # ---- stamp -----------------------------------------------------------------
 
 stamp = digest.render_stamp(RUN, "posted")
@@ -335,6 +366,14 @@ try:
           "cli: an artifact URL is accepted")
     check("https://artifact/x" in md_out.read_text(encoding="utf-8"),
           "cli: the artifact URL is referenced from the durable copy")
+
+    reconcile_out = _tmp / "reconcile.json"
+    reconcile_out.write_text(json.dumps({"updates": {}, "backlog": BACKLOG}), encoding="utf-8")
+    check(digest.main(["render", str(run_path), "--md", str(md_out),
+                       "--reconcile-json", str(reconcile_out)]) == 0,
+          "cli: --reconcile-json is accepted")
+    check("automation" in md_out.read_text(encoding="utf-8"),
+          "cli: the reconcile file's backlog reaches the rendered markdown")
 finally:
     shutil.rmtree(_tmp, ignore_errors=True)
 
