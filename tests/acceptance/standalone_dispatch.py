@@ -161,6 +161,10 @@ _STANDALONE_UNIT_CHECKS: Tuple[Tuple[str, str, str], ...] = (
      "answer, plus a real reproduction of the 2026-08-01 condition proving "
      "`git status` still exits 0 and reads clean while every write is "
      "frozen -- is testable on its own (fleet-config#667)"),
+    ("scoped_discovery", "test_scoped_discovery.py",
+     "real scoped links, collisions, worktree sources, and uninstall ownership (fleet-config#748)"),
+    ("discovery_probe", "test_discovery_probe.py",
+     "native source identity, unstable scope, and failed/unknown instruction evidence stay nonpassing (fleet-config#748)"),
     ("edit_targets", "test_edit_targets.py",
      "shared native/patch edit targets and multi-file Python syntax feedback (fleet-config#744)"),
     ("codex_policy_coverage", "test_codex_policy_coverage.py",

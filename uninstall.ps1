@@ -25,9 +25,17 @@
 #>
 
 [CmdletBinding()]
-param()
+param([string]$ProjectRoot)
 
 $ErrorActionPreference = 'Stop'
+$RepoRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
+if ($ProjectRoot -or (Test-Path -LiteralPath (Join-Path $RepoRoot '.git') -PathType Leaf)) {
+    if (-not $ProjectRoot) { $ProjectRoot = $RepoRoot }
+    & (Join-Path $RepoRoot '.venv/Scripts/python.exe') (Join-Path $RepoRoot 'skills/_lib/scoped_discovery.py') uninstall --repo $ProjectRoot
+    exit $LASTEXITCODE
+}
+& (Join-Path $RepoRoot '.venv/Scripts/python.exe') (Join-Path $RepoRoot 'skills/_lib/scoped_discovery.py') uninstall --registered
+$discoveryExit = $LASTEXITCODE
 
 $ClaudeHome     = Join-Path $env:USERPROFILE '.claude'
 $ManifestPath   = Join-Path $ClaudeHome '.fleet-config-installed.json'
@@ -124,6 +132,7 @@ Write-Host ""
 
 if (-not (Test-Path $ManifestPath)) {
     Write-Host "No manifest at $ManifestPath -- nothing else to uninstall." -ForegroundColor Yellow
+    if ($discoveryExit -ne 0) { exit $discoveryExit }
     return
 }
 
@@ -132,6 +141,7 @@ $manifest = Get-Content $ManifestPath -Raw | ConvertFrom-Json
 $removed = 0
 $missing = 0
 $skipped = 0
+$retained = @{}
 
 foreach ($prop in $manifest.PSObject.Properties) {
     # Prefer the absolute target recorded by install.ps1 (handles non-~/.claude bases like
@@ -139,15 +149,28 @@ foreach ($prop in $manifest.PSObject.Properties) {
     $target    = if ($prop.Value.target) { $prop.Value.target } else { Join-Path $ClaudeHome $prop.Name }
     $entryKind = $prop.Value.kind
 
-    if (-not (Test-Path $target)) {
+    $info = Get-Item -LiteralPath $target -Force -ErrorAction SilentlyContinue
+    if (-not $info) {
         Write-Host "MISSING $target (already gone)" -ForegroundColor DarkGray
         $missing++
         continue
     }
 
-    $info = Get-Item $target -Force
     if ($info.LinkType -notin @('Junction', 'SymbolicLink', 'HardLink')) {
         Write-Host "SKIP    $target (not a link any more -- leaving alone)" -ForegroundColor Yellow
+        $skipped++
+        $retained[$prop.Name] = $prop.Value
+        continue
+    }
+
+    $linkSource = @($info.Target)[0]
+    if ($linkSource -and -not [System.IO.Path]::IsPathRooted($linkSource)) {
+        $linkSource = Join-Path (Split-Path -Parent $target) $linkSource
+    }
+    if (-not $prop.Value.source -or -not $linkSource -or
+        [System.IO.Path]::GetFullPath($linkSource) -ne [System.IO.Path]::GetFullPath($prop.Value.source)) {
+        Write-Host "SKIP    $target (link target changed -- leaving alone)" -ForegroundColor Yellow
+        $retained[$prop.Name] = $prop.Value
         $skipped++
         continue
     }
@@ -162,8 +185,13 @@ foreach ($prop in $manifest.PSObject.Properties) {
     $removed++
 }
 
-Remove-Item -LiteralPath $ManifestPath -Force
+if ($retained.Count -gt 0) {
+    $retained | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $ManifestPath -Encoding UTF8
+} else {
+    Remove-Item -LiteralPath $ManifestPath -Force
+}
 
 Write-Host ""
 Write-Host "Done. removed=$removed missing=$missing skipped=$skipped" -ForegroundColor Cyan
 Write-Host "Reminder: edit ~/.claude/settings.json by hand if you want the 'hooks' block gone too."
+if ($discoveryExit -ne 0 -or $skipped -gt 0) { exit 1 }

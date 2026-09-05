@@ -22,6 +22,9 @@ flowchart TB
   end
 
   INSTALL --> CLAUDE
+  SCOPED["scoped_discovery.py\nregistered checkout/package skill links\nper-checkout Git metadata ownership; read-only diagnostics"]
+  INSTALL --> SCOPED
+  SCOPED --> PROJECTSKILLS["maintained .claude/.agents skills\nindividual same-scope discovery routes"]
   INSTALL --> CODEX
   INSTALL --> PIHOME
   INSTALL --> COPILOT
