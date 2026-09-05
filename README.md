@@ -6,6 +6,8 @@ The hooks here are project-aware via a single `hooks/projects.toml` registry: ge
 
 Shared guards emit the calling harness's refusal format. Codex `PreToolUse` uses a structured denial; its installed-runtime control/refusal probe is documented in [Adding a coding harness](docs/adding-a-coding-harness.md#codex-refusal-conformance).
 
+Project and package skills now receive individual discovery links for Claude and Codex/Pi at their existing scope. `install.ps1` reconciles registered checkouts; `install.ps1 -ProjectRoot <checkout>` handles one checkout or worktree without changing user homes. Existing real sources and conflicting names are preserved and reported. See [scoped discovery and instruction verification](docs/install.md#scoped-project-discovery).
+
 Python syntax feedback covers every surviving Python target in a successful Codex patch, including renames. Unknown targets or outcomes are explicitly unverified; the [shared edit contract and disposable runtime probe](docs/adding-a-coding-harness.md#shared-edit-events-and-codex-syntax-feedback) document the supported payload.
 
 Codex also carries the applicable command and edit policies from Claude Code: GitHub body quoting, dated-doc blocking, branch-before-edit enforcement, local-hub routing, and browser-launch safety. Their observed block/advice semantics and explicit unsupported surfaces are recorded in the [cross-agent policy coverage table](docs/cross-agent-parity.md#command-and-edit-policy-coverage).
@@ -162,7 +164,7 @@ The live agent wiring picks the venv up automatically, no manual path edit requi
 .\uninstall.ps1
 ```
 
-Removes the junctions/symlinks the installer created (recorded in `~/.claude/.fleet-config-installed.json`) **plus the three pieces of state `install.ps1` writes outside that manifest**: the OTel `$PROFILE` block, the agy context-filter plugin (`agy plugin uninstall fleet-context-filter`), and `~/.copilot/hooks/fleet-context-filter.json`. Never touches real data, and never removes a file in those shared directories that this repo did not write.
+Removes the junctions/symlinks the installer created (recorded in `~/.claude/.fleet-config-installed.json`) and its registered project discovery links, plus the OTel `$PROFILE` block, the agy context-filter plugin (`agy plugin uninstall fleet-context-filter`), and `~/.copilot/hooks/fleet-context-filter.json`. Changed link targets and real directories are retained with a collision report. `uninstall.ps1 -ProjectRoot <checkout>` removes only that checkout's owned discovery links; use it before worktree teardown.
 
 ## Inspiration
 

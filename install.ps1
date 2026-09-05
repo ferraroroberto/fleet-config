@@ -28,12 +28,24 @@
 [CmdletBinding()]
 param(
     [switch]$VerifyCodexSandbox,
-    [switch]$VerifyGrokCompat
+    [switch]$VerifyGrokCompat,
+    [string]$ProjectRoot
 )
 
 $ErrorActionPreference = 'Stop'
 
 $RepoRoot       = Split-Path -Parent $MyInvocation.MyCommand.Path
+
+# A named checkout (including a linked worktree) installs only its local links.
+# Never redirect machine-wide homes to a transient worktree.
+if ($ProjectRoot -or (Test-Path -LiteralPath (Join-Path $RepoRoot '.git') -PathType Leaf)) {
+    if ($VerifyCodexSandbox -or $VerifyGrokCompat) {
+        throw 'Scoped installation cannot run user-home verification switches; run skills/_lib/discovery_probe.py --run separately.'
+    }
+    if (-not $ProjectRoot) { $ProjectRoot = $RepoRoot }
+    & (Join-Path $RepoRoot '.venv/Scripts/python.exe') (Join-Path $RepoRoot 'skills/_lib/scoped_discovery.py') install --repo $ProjectRoot
+    exit $LASTEXITCODE
+}
 $ClaudeHome     = Join-Path $env:USERPROFILE '.claude'
 $AgentsHome     = Join-Path $env:USERPROFILE '.agents'
 $CodexHome      = Join-Path $env:USERPROFILE '.codex'
@@ -350,7 +362,7 @@ if ($needsElevation -and -not (Test-IsElevated)) {
     # verification that never ran (fleet-config#681).
     if ($VerifyCodexSandbox) { $psArgs += '-VerifyCodexSandbox' }
     if ($VerifyGrokCompat)   { $psArgs += '-VerifyGrokCompat' }
-    $proc    = Start-Process -FilePath $psExe -ArgumentList $psArgs -Verb RunAs -Wait -PassThru
+    $proc    = Start-Process -FilePath $psExe -ArgumentList $psArgs -Verb RunAs -WindowStyle Hidden -Wait -PassThru
     exit $proc.ExitCode
 }
 
@@ -364,8 +376,7 @@ if (Test-Path $ManifestPath) {
             $loaded.PSObject.Properties | ForEach-Object { $manifest[$_.Name] = $_.Value }
         }
     } catch {
-        Write-Warning "Existing manifest at $ManifestPath is unreadable; starting fresh."
-        $manifest = @{}
+        throw "Existing manifest at $ManifestPath is unreadable; preserve it and repair ownership before installing."
     }
 }
 
@@ -396,7 +407,7 @@ foreach ($item in $Items) {
 
             if ($linkTargetStr -and ((Resolve-Path $linkTargetStr -ErrorAction SilentlyContinue).Path -eq $sourceFull)) {
                 Write-Host "OK      $targetAbs (already linked to repo)" -ForegroundColor Green
-                $manifest[$manifestKey] = @{ kind = $item.kind; source = $sourceAbs; target = $targetAbs; installed_at = (Get-Date -Format 'o') }
+                # A matching user-created link is usable, but is not ours to uninstall.
                 $skipped++
                 continue
             } else {
@@ -438,6 +449,10 @@ Install-OtelProjectProfileHook
 Install-AgyContextFilterPlugin
 Install-CopilotContextFilterHook
 
+# The same scoped manifest/reconcile engine backs install, diagnosis and teardown.
+& (Join-Path $RepoRoot '.venv/Scripts/python.exe') (Join-Path $RepoRoot 'skills/_lib/scoped_discovery.py') install --registered
+$discoveryExit = $LASTEXITCODE
+
 Write-Host ""
 Write-Host "Done. created=$created skipped=$skipped blocked=$blocked" -ForegroundColor Cyan
 Write-Host "Manifest: $ManifestPath"
@@ -450,3 +465,4 @@ if ($VerifyGrokCompat) {
 Write-Host ""
 Write-Host "Next step: merge the 'hooks' block from settings.template.json into ~/.claude/settings.json,"
 Write-Host "then restart Claude Code so the new hooks load."
+if ($discoveryExit -ne 0 -or $blocked -gt 0) { exit 1 }
