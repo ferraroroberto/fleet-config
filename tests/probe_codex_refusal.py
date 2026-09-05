@@ -19,6 +19,8 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--workspace", type=Path, required=True, help="New disposable directory (must not exist)")
     parser.add_argument("--model", required=True, help="Installed Codex model to run the two harmless tool calls")
+    parser.add_argument("--policy", choices=("refusal", "shell-safety"), default="refusal",
+                        help="Check refusal transport alone or the real unknown-shell safety dispatch")
     args = parser.parse_args()
     root = args.workspace.absolute()
     if os.name != "nt" or root.exists():
@@ -43,21 +45,38 @@ command = _lib.command_string(payload)
 matched = bool(re.search(r"\\bfleet_conformance_sentinel\\b", command))
 out, err = io.StringIO(), io.StringIO()
 code = 0
-if matched:
-    with redirect_stdout(out), redirect_stderr(err):
-        try:
+block_called = False
+original_block = _lib.block
+def observe_block(reason):
+    global block_called
+    block_called = True
+    original_block(reason)
+_lib.block = observe_block
+with redirect_stdout(out), redirect_stderr(err):
+    try:
+        if POLICY == "shell-safety":
+            import safe_kill_guard
+            # The harmless marker exists ONLY in the PowerShell rule set.
+            # main() must choose that set from real normalized shell metadata.
+            safe_kill_guard.POWERSHELL_BLANKET_KILL = (r"\\bfleet_conformance_sentinel\\b",)
+            safe_kill_guard.BASH_BLANKET_KILL = ()
+            safe_kill_guard.COMMON_BLANKET_KILL = ()
+            _lib.read_stdin_json = lambda: payload
+            safe_kill_guard.main()
+        elif matched:
             _lib.block(REASON)
-        except SystemExit as exc:
-            code = exc.code
+    except SystemExit as exc:
+        code = exc.code
 with (Path(__file__).parents[2] / "observations.jsonl").open("a", encoding="utf-8") as log:
     log.write(json.dumps({"event": payload.get("hook_event_name"),
         "agent": _lib.payload_agent(payload), "command_type": type(command).__name__,
-        "command_length": len(command), "matches_policy": matched, "block_called": matched,
+        "command_length": len(command), "matches_policy": matched, "block_called": block_called,
+        "tool": _lib.tool_name(payload), "shell_unknown": _lib.shell_is_ambiguous(payload),
         "exit_code": code, "stdout": out.getvalue(), "stderr": err.getvalue()}) + "\\n")
 sys.stdout.write(out.getvalue())
 sys.stderr.write(err.getvalue())
 sys.exit(code)
-'''.replace("SOURCE", repr(str(source))).replace("REASON", repr(REASON)), encoding="utf-8")
+'''.replace("SOURCE", repr(str(source))).replace("REASON", repr(REASON)).replace("POLICY", repr(args.policy)), encoding="utf-8")
     command = subprocess.list2cmdline([sys.executable, str(hook)])
     (root / ".codex" / "hooks.json").write_text(json.dumps({"hooks": {"PreToolUse": [
         {"matcher": "Bash", "hooks": [{"type": "command", "command": command, "timeout": 15}]}]}}), encoding="utf-8")
@@ -88,13 +107,21 @@ Stop after these attempts. Do not read files, inspect policies, retry, combine c
     control = root / "control.txt"
     control_ok = control.exists() and control.read_text(encoding="utf-8-sig").strip() == "control"
     blocked = [row for row in rows if row["block_called"]]
+    reason = REASON
+    shell_ok = True
+    if args.policy == "shell-safety":
+        response = json.loads(blocked[0]["stdout"] or "{}") if len(blocked) == 1 else {}
+        reason = response.get("hookSpecificOutput", {}).get("permissionDecisionReason", "")
+        shell_ok = (bool(reason) and "Shell unknown" in reason
+                    and all(row["shell_unknown"] and row["tool"] == "Bash" for row in rows))
     wire = {"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "deny",
-                                  "permissionDecisionReason": REASON}}
-    passed = (control_ok and not (root / "sentinel.txt").exists() and len(rows) == 2
+                                  "permissionDecisionReason": reason}}
+    visible_reason = "Shell unknown" if args.policy == "shell-safety" else REASON
+    passed = (shell_ok and control_ok and not (root / "sentinel.txt").exists() and len(rows) == 2
               and len(blocked) == 1 and all(row["agent"] == "codex" and row["event"] == "PreToolUse" for row in rows)
               and blocked[0]["exit_code"] == 0 and json.loads(blocked[0]["stdout"] or "{}") == wire
-              and REASON in (root / "run.jsonl").read_text(encoding="utf-8"))
-    print(json.dumps({"version": version, "conformance": "pass" if passed else "fail",
+              and visible_reason in (root / "run.jsonl").read_text(encoding="utf-8"))
+    print(json.dumps({"version": version, "policy": args.policy, "conformance": "pass" if passed else "fail",
                       "control": control_ok, "sentinel": (root / "sentinel.txt").exists(),
                       "hook_calls": len(rows), "block_calls": len(blocked), "evidence": str(root)}))
     return 0 if passed else 1

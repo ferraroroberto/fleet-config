@@ -363,7 +363,12 @@ def normalize_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
                 and isinstance(payload.get("hook_event_name"), str)
                 and payload["hook_event_name"]):
             _ACTIVE_AGENT = "codex"
-            return {**payload, AGENT_HINT_KEY: "codex"}
+            out = {**payload, AGENT_HINT_KEY: "codex"}
+            # Bash is Codex's exec alias, not evidence of the executing shell.
+            # Reuse the conservative contract of other shell-agnostic tools.
+            if out.get("tool_name") in {"Bash", "PowerShell"}:
+                out[SHELL_AMBIGUOUS_KEY] = True
+            return out
         return payload
 
     _ACTIVE_AGENT = "grok"

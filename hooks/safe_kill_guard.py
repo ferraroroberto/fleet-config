@@ -179,11 +179,14 @@ def main() -> None:
 
     # 1) Blanket python kills - dispatch by shell so an `echo` of a kill string
     #    in the other shell doesn't false-positive. A harness with a single,
-    #    shell-agnostic terminal tool (Grok) gets *both* sets: we cannot observe
+    #    shell-agnostic terminal tool (e.g. Grok or Codex) gets *both* sets: we cannot observe
     #    which shell it will use, and a missed blanket kill costs far more than
     #    an over-eager block on an echoed kill string (fleet-config#491).
     tn = _lib.tool_name(payload)
     ambiguous = _lib.shell_is_ambiguous(payload)
+    shell_note = " Shell unknown; checked PowerShell and Bash safety rules." if ambiguous else ""
+    if ambiguous:
+        _lib.logger.info("safe_kill_guard: shell unknown; applying both shell rule sets")
     patterns: list[str] = list(COMMON_BLANKET_KILL)
     if tn == "PowerShell" or ambiguous:
         patterns.extend(POWERSHELL_BLANKET_KILL)
@@ -197,7 +200,7 @@ def main() -> None:
                 "This would also kill sister hubs (local-llm-hub :8000, whisper :8090, "
                 "session-host :8446). Use port-scoped kill instead: "
                 "`Get-NetTCPConnection -LocalPort <PORT> | Select -ExpandProperty OwningProcess | "
-                "ForEach-Object { Stop-Process -Id $_ -Force }`."
+                "ForEach-Object { Stop-Process -Id $_ -Force }`." + shell_note
             )
 
     # 2) Git bypass flags
@@ -228,7 +231,7 @@ def main() -> None:
                 "Blocked: kill targets a protected port "
                 + ", ".join(str(p) for p in hits)
                 + " (sister hub — listed in projects.toml [global].never_kill_ports). "
-                "Killing it would break unrelated apps."
+                "Killing it would break unrelated apps." + shell_note
             )
 
     _lib.allow()

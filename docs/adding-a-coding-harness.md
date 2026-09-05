@@ -120,6 +120,12 @@ emits a command string the harness will re-parse must determine the real shell
 empirically: substitute a probe command whose parse differs by dialect and see
 which shell ran it.
 
+**Shell safety invariant (#743).** `normalize_payload()` reuses the invoked `.codex/hooks/<module>.py` provenance established for Codex refusal transport (#759), before junction resolution. Codex's snake_case envelope alone cannot distinguish it from Claude, and `APP_LAUNCHER_AGENT` can name a parent process, so neither is used to guess a shell. A direct invocation outside the configured entry cannot establish Codex provenance. Claude payloads still return the identical object.
+
+Codex shell tools stay marked unknown: no observed shell metadata establishes Bash versus PowerShell. The shared ambiguity marker is the same contract used by Grok and agy; future adapters, including Pi safety adapters, must carry that marker whenever their terminal tool cannot establish a shell. `safe_kill_guard` checks both blanket-kill sets and PowerShell protected-port patterns, logs an info-level breadcrumb without command text, and includes `Shell unknown` in relevant refusals. Unknown-shell quoted kill literals are conservatively refused; genuine Claude Bash/PowerShell tools retain their existing cross-shell literal behavior. This policy is heuristic, not a shell parser.
+
+Verify dangerous-looking commands only as stdin JSON. Run `tests/probe_codex_refusal.py --workspace ./tmp/codex-shell-check --model gpt-6-astra --policy shell-safety` for the live shell-policy check. It imports the real `safe_kill_guard.main()` and replaces only its PowerShell match with a harmless marker in the disposable hook. Success requires the allowed control file, absent sentinel, an actual structured refusal with `Shell unknown`, and observed `Bash` tool labels with unknown-shell metadata. This extends the transport probe below; no test policy reaches installed hooks and no process-kill command is executed.
+
 **Translation, not duplication.** When a harness's payload differs in shape,
 normalize it at `hooks/_lib.read_stdin_json()` — the one entry point every hook
 already shares — rather than teaching each hook a second dialect or shipping a

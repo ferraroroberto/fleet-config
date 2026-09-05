@@ -148,6 +148,8 @@ Every hook, skill helper, test, and doc example in this repo invokes Python by t
 py -m venv .venv     # any Python >=3.12; run once from the repo root
 ```
 
+Codex safety hooks treat the `Bash` tool label as an unknown execution shell and apply both PowerShell and Bash safety checks. Refusals state that uncertainty; the trusted `~/.codex/hooks/` invocation path identifies the harness without consulting inherited launcher variables. See [the shell contract](docs/adding-a-coding-harness.md#step-3--hooks-and-the-payload-contract).
+
 The live agent wiring picks the venv up automatically, no manual path edit required: Claude Code's hooks route through the junctioned `hooks/run-hook.ps1`, which prefers the venv (falling back to a system Python only if it is absent), and Codex's `~/.codex/hooks.json` is a symlink to this repo's `codex-hooks.json`. Verify anytime with `& .\.venv\Scripts\python.exe tests/run_acceptance.py`.
 
 ## Uninstall
