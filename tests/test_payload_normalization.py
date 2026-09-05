@@ -422,6 +422,10 @@ for _event in ("PreToolUse", "PostToolUse", "FutureEvent", None):
         check(_code == 0 and _wire == {"hookSpecificOutput": {
             "hookEventName": "PreToolUse", "permissionDecision": "deny",
             "permissionDecisionReason": "Fleet sentinel refused"}}, "Codex: structured PreToolUse deny exits 0")
+    elif _event == "PostToolUse":
+        check(_code == 0 and not _stderr and json.loads(_stdout) == {"hookSpecificOutput": {
+            "hookEventName": "PostToolUse", "additionalContext": "Fleet sentinel refused"}},
+              "Codex: post-edit feedback uses existing structured context channel")
     else:
         check(_code == 2 and not _stdout, f"Codex: {_event} never claims a PreToolUse denial")
 

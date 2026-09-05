@@ -1,86 +1,95 @@
-"""Surface Python syntax errors immediately after an Edit/Write.
+"""Check every surviving Python target after a successful shared edit event.
 
-Triggers on `PostToolUse` for `Edit` and `Write` when the target file is a
-`*.py`. Runs `python -m py_compile <file>` against the project's `.venv`
-(falls back to the `py` launcher / system Python). On failure, exits with
-the compiler error on stderr so Claude sees it inline and can fix the typo
-in the next turn.
-
-Why: silently broken Python sits there until the next manual run. ~50 ms
-per edit is a small price for surfacing the problem at the moment of edit.
+Uses each target's project .venv (then system Python). Syntax failures retain
+block() feedback; unavailable targets, unknown outcomes and checker failures
+produce explicit unverified feedback instead of silently implying a pass.
 """
-
 from __future__ import annotations
 
+import logging
+from pathlib import Path
 import subprocess
 import sys
-from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import _lib  # noqa: E402
 
+logger = logging.getLogger(__name__)
+
 
 def main() -> None:
     payload = _lib.read_stdin_json()
-    if _lib.tool_name(payload) not in {"Edit", "Write", "MultiEdit"}:
+    edit = _lib.edit_event(payload)
+    if edit.status == "not_edit" or edit.outcome == "pending":
         _lib.allow()
+    if edit.status == "unverified":
+        _lib.warn("py_compile: unverified - " + edit.reason)
+    if edit.outcome != "success":
+        _lib.warn("py_compile: unverified - edit " + edit.outcome + "; final targets not checked")
 
-    target = _lib.file_path(payload)
-    if target is None or target.suffix.lower() != ".py":
-        _lib.allow()
+    # Keep the final state of each path: renames remove their source; deletes
+    # remove even an earlier update of the same file. Path equality deduplicates.
+    targets: dict[Path, None] = {}
+    for change in edit.targets:
+        if change.source_path is not None:
+            targets.pop(change.source_path, None)
+        if change.operation == "delete":
+            targets.pop(change.path, None)
+        else:
+            targets[change.path] = None
 
-    if not target.exists():
-        # File may have been written then moved; nothing to compile.
-        _lib.allow()
+    errors: list[str] = []
+    unknown: list[str] = []
+    usable: dict[str, bool] = {}
 
-    # Find the right Python interpreter. Prefer the project's .venv, then `py`,
-    # then `python` on PATH. Validate each candidate before committing (a broken
-    # venv has a python.exe stub that exists on disk but fails to launch when the
-    # base installation has been removed).
-    interpreter: str | None = None
+    def interpreter_works(path: str) -> bool:
+        if path not in usable:
+            try:
+                result = subprocess.run([path, "--version"], capture_output=True, timeout=5,
+                                        creationflags=_lib.NO_WINDOW)
+                usable[path] = result.returncode == 0
+            except (OSError, subprocess.TimeoutExpired):
+                usable[path] = False
+        return usable[path]
 
-    def _interpreter_works(path: str) -> bool:
+    for target in targets:
+        if target.suffix.lower() != ".py":
+            continue
+        if not target.is_file():
+            unknown.append(f"{target}: target missing or not a file")
+            continue
+        venv = _lib.find_venv_python(target.parent)
+        interpreter = str(venv) if venv and interpreter_works(str(venv)) else None
+        if interpreter is None:
+            fallback = _lib.find_python_executable()
+            if fallback and interpreter_works(fallback):
+                interpreter = fallback
+        if interpreter is None:
+            unknown.append(f"{target}: no working Python interpreter")
+            continue
         try:
-            r = subprocess.run(
-                [path, "--version"], capture_output=True, timeout=5,
-                creationflags=_lib.NO_WINDOW,
-            )
-            return r.returncode == 0
-        except (OSError, subprocess.TimeoutExpired):
-            return False
-
-    venv_py = _lib.find_venv_python(target.parent)
-    if venv_py is not None and _interpreter_works(str(venv_py)):
-        interpreter = str(venv_py)
-
-    if interpreter is None:
-        resolved = _lib.find_python_executable()
-        if resolved and _interpreter_works(resolved):
-            interpreter = resolved
-
-    if interpreter is None:
-        # Can't check; don't block.
-        _lib.allow()
-
-    try:
-        result = subprocess.run(
-            [interpreter, "-m", "py_compile", str(target)],
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            timeout=10,
-            creationflags=_lib.NO_WINDOW,
-        )
-    except (subprocess.TimeoutExpired, OSError):
-        _lib.allow()
-
-    if result.returncode == 0:
-        _lib.allow()
-
-    # py_compile writes its error to stderr (and sometimes stdout)
-    err = (result.stderr or "").strip() or (result.stdout or "").strip() or "py_compile failed"
-    _lib.block("py_compile: " + err)
+            result = subprocess.run([interpreter, "-m", "py_compile", str(target)],
+                                    capture_output=True, text=True, encoding="utf-8", errors="replace",
+                                    timeout=10, creationflags=_lib.NO_WINDOW)
+        except subprocess.TimeoutExpired:
+            unknown.append(f"{target}: compiler timed out")
+            continue
+        except OSError as exc:
+            unknown.append(f"{target}: compiler could not start ({exc})")
+            continue
+        logger.info("Python syntax check target=%s exit_code=%s", target, result.returncode)
+        if result.returncode:
+            errors.append((result.stderr or "").strip() or (result.stdout or "").strip()
+                          or f"{target}: py_compile failed")
+    syntax_failed = bool(errors)
+    if unknown:
+        errors.append("unverified - " + "; ".join(unknown))
+    if errors:
+        feedback = "py_compile: " + "\n".join(errors)
+        if syntax_failed:
+            _lib.block(feedback)
+        _lib.warn(feedback)
+    _lib.allow()
 
 
 if __name__ == "__main__":
