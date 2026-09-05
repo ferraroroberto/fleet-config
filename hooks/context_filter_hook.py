@@ -6,7 +6,9 @@ the `FLEET_CONTEXT_FILTER_MODE` env var overrides it per process and doubles
 as the kill switch (fleet-config#541). `shadow` collects real command metrics
 without changing returned output; `rewrite` returns the compressed output to
 the agent. In both modes the original command is executed by
-`context_filter_cli.py run`, so unsafe/streaming commands are skipped.
+`context_filter_cli.py run`, so unsafe/streaming commands are skipped. Codex
+is deliberately fail-open because it misattributes a replacement command's
+ordinary failure to the hook (fleet-config#755).
 """
 
 from __future__ import annotations
@@ -57,7 +59,15 @@ def main() -> None:
         _lib.allow()
 
     payload = _lib.read_stdin_json()
-    if _lib.payload_agent(payload) == "grok":
+    agent = re.sub(r"[^a-z0-9_-]", "", _invoking_agent(payload)) or "claude"
+    if agent == "codex":
+        # Codex renders an updatedInput command's ordinary nonzero exit as
+        # "Hook failed". Preserving the wrapped command's status therefore
+        # falsely blames this hook, while forcing zero would hide a real user
+        # command failure. Until Codex separates those statuses, fail open and
+        # let its shell execute the original command exactly once (#755).
+        _lib.allow()
+    if agent == "grok":
         # Grok's PreToolUse honors only allow/deny — `updatedInput` is ignored,
         # so the wrap would never substitute and the emitted JSON would be dead
         # weight on its runner. Explicitly inert there (fleet-config#541).
@@ -71,15 +81,12 @@ def main() -> None:
     if not decision.should_wrap:
         _lib.allow()
 
-    agent = re.sub(r"[^a-z0-9_-]", "", _invoking_agent(payload)) or "claude"
     shell_tool = "PowerShell" if tool.lower() == "powershell" else "Bash"
-    if agent in {"codex", "antigravity"}:
-        # These harnesses report a Bash-flavored tool name but execute under
-        # the platform shell — PowerShell on Windows. Both proven live: a
-        # Bash-form wrap died with a PowerShell ParserError in a codex exec
-        # session (fleet-config#541), and an agy overwrite probe expanded
-        # `$env:OS` but left `%OS%` literal (fleet-config#546). Wrap for the
-        # shell that actually parses and runs the command.
+    if agent == "antigravity":
+        # agy reports a Bash-flavored tool name but executes under the platform
+        # shell — its live overwrite probe expanded `$env:OS` but left `%OS%`
+        # literal (fleet-config#546). Wrap for the shell that actually parses
+        # and runs the command.
         shell_tool = "PowerShell" if sys.platform == "win32" else "Bash"
 
     encoded = base64.b64encode(command.encode("utf-8")).decode("ascii")

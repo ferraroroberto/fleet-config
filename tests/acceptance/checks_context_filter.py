@@ -412,12 +412,11 @@ def _context_filter_unit_checks() -> Tuple[int, int, int]:
         stdout + stderr,
     )
 
-    # ---- codex wraps for its real shell, not its reported tool name (#541) ----
-    # Codex reports a Bash-flavored tool but executes under PowerShell on
-    # Windows — a Bash-form wrap died with a PowerShell ParserError in a live
-    # codex exec probe. Detection is the ~/.codex/hooks wiring path (the env
-    # stamp APP_LAUNCHER_AGENT inherits across process trees and lied in that
-    # same probe), so drive the hook through the real junction path.
+    # ---- codex must not rewrite commands (#755) ----
+    # Codex attributes a rewritten command's ordinary nonzero exit to the hook
+    # that supplied updatedInput. That makes a healthy hook look broken and
+    # cannot be repaired without erasing the user's real command status, so
+    # drive the hook through its real junction path and pin fail-open behavior.
     codex_hook = Path.home() / ".codex" / "hooks" / "context_filter_hook.py"
     if codex_hook.exists():
         res = subprocess.run(
@@ -430,16 +429,10 @@ def _context_filter_unit_checks() -> Tuple[int, int, int]:
             timeout=15,
             env={**os.environ, "FLEET_CONTEXT_FILTER_MODE": "rewrite"},
         )
-        codex_rewritten = ""
-        if res.returncode == 0 and res.stdout.strip():
-            codex_rewritten = json.loads(res.stdout)["hookSpecificOutput"]["updatedInput"]["command"]
         check(
-            "context_filter_hook: codex-wired wrap is PowerShell-shaped on win32 (fleet-config#541)",
-            res.returncode == 0
-            and codex_rewritten.startswith("& ")
-            and "--tool PowerShell" in codex_rewritten
-            and "--agent codex" in codex_rewritten,
-            codex_rewritten or (res.stdout + res.stderr),
+            "context_filter_hook: codex-wired commands fail open without rewrite (fleet-config#755)",
+            res.returncode == 0 and res.stdout.strip() == "",
+            res.stdout + res.stderr,
         )
     else:
         check.advisory(
