@@ -1,69 +1,30 @@
-"""Stop hook — capture a finished Claude Code session as a markdown file.
+"""Opt-in Stop capture for native Claude/Codex stored transcripts.
 
-Generic + ``projects.toml``-driven (CLAUDE.md: hooks stay generic, project
-quirks live in the registry). Fires on every ``Stop`` event; detects the
-session's project by ``cwd`` and captures only if that project opted in with
-``capture = true``. Otherwise it's a silent no-op. Reads the JSONL transcript
-and writes a ``YYYY-MM-DD-HHMM-<slug>.md`` file into the project's conversations
-area. life-os is the first opted-in project.
-
-Routing (per the project's ``capture_routing``):
-  * ``"flat"`` (default) — one ``<conversations_dir>/`` for the whole project.
-  * ``"skills"`` (life-os) — per-skill ``conversations/`` dirs under
-    ``<skills_dir>/<skill>/``, with the skill resolved by:
-      1. the ``active_marker`` file (e.g. ``.active-skill``, written by the
-         skill's Step 0), then
-      2. inference from ``<command-name>`` tags / Read paths in the transcript,
-      3. else ``<conversations_dir>/_archive/`` so nothing is ever dropped.
-
-Output file format:
-  - First line: one-line human description extracted from the first
-    substantive user turn.
-  - Blank line, then a fenced markdown block of all user/assistant turns
-    in order (verbatim — no summarising).
-
-One file per conversation: the ``Stop`` hook fires at every turn-end (not once
-per session), so a single session triggers several captures — e.g. a cold-start
-readiness-ack turn, then the real work. Each run supersedes earlier captures of
-the same conversation on either of two stable identifiers and writes the latest,
-fullest transcript — collapsing the conversation to a single file:
-
-  * the **session token** (last 8 of ``session_id``) collapses turn-end captures
-    *within one session*, including the empty cold-start readiness-ack capture
-    whose first real turn hasn't appeared yet;
-  * the **content signature** (hash of the first real user turn) collapses a
-    *resumed* conversation onto its predecessor. ``claude --resume`` copies the
-    transcript forward but rewrites every entry's ``session_id`` (and message
-    ``uuid``), so the session token alone leaves a duplicate — the first real
-    user turn is the only identity that survives a resume.
-
-Without a session id *and* without a real turn we can't identify siblings, so we
-fall back to a plain timestamped name (no dedup).
-
-A successful capture also spawns a **delayed, detached** ``conversation_index``
-run (fleet-config#673) — see :func:`_trigger_delayed_index` — so a closed
-conversation is digested and searchable near close, not only the next time a
-new session starts (the ``session_index`` ``SessionStart`` hook, kept as a
-fallback for the case the delayed run's process never gets to fire).
-
-Invoked by the ``Stop`` hook in ``life-os/.claude/settings.json``.
+Transcript readers normalize identity and chronological conversational turns
+before rendering. One harness-qualified native session updates one capture;
+forks remain distinct. Legacy captures remain readable. Digest generation stays
+separate and uses the existing hub. See docs/conversation-capture.md.
 """
 
 from __future__ import annotations
 
 import hashlib
+import html
 import json
 import logging
+import os
 import re
 import subprocess
 import sys
+import tempfile
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import _lib  # noqa: E402
+from transcript_readers import Transcript, read_transcript  # noqa: E402
 
 logger = logging.getLogger("conversation_capture")
 
@@ -129,23 +90,6 @@ def _skill_path_re(skills_dir: str) -> "re.Pattern":
     return re.compile(escaped + r"[/\\]([^/\\]+)[/\\]")
 
 
-def load_transcript(path: Path) -> list[dict]:
-    entries = []
-    try:
-        with path.open(encoding="utf-8") as fh:
-            for line in fh:
-                line = line.strip()
-                if not line:
-                    continue
-                try:
-                    entries.append(json.loads(line))
-                except json.JSONDecodeError:
-                    continue
-    except OSError as exc:
-        logger.error("Could not read transcript %s: %s", path, exc)
-    return entries
-
-
 def _text_from_content(content) -> str:
     if isinstance(content, str):
         return content
@@ -156,21 +100,6 @@ def _text_from_content(content) -> str:
                 parts.append(block.get("text", ""))
         return " ".join(p for p in parts if p)
     return ""
-
-
-def extract_messages(entries: list[dict]) -> list[tuple[str, str]]:
-    """Return [(role, text), ...] for user/assistant turns."""
-    messages = []
-    for entry in entries:
-        role = entry.get("type")
-        if role not in ("user", "assistant"):
-            continue
-        msg = entry.get("message", {})
-        content = msg.get("content", "") if isinstance(msg, dict) else entry.get("content", "")
-        text = _text_from_content(content).strip()
-        if text:
-            messages.append((role, text))
-    return messages
 
 
 def infer_skill_from_transcript(
@@ -241,9 +170,8 @@ def first_real_turn(messages: list[tuple[str, str]]) -> str:
     """Cleaned full text of the first substantive user turn, or ``""`` if none.
 
     Skips skill-loading preamble and command-tag injections. The one-line
-    description and the dedup content signature both key off this single turn, so
-    they always move together — and because ``claude --resume`` copies this turn
-    forward verbatim, it is the conversation's only resume-stable identity. (The
+    description and the legacy content fingerprint key off this turn. Its text
+    is descriptive, never native session identity. (The
     filename *slug* is derived separately from the whole conversation — see
     :func:`conversation_slug`.)
     """
@@ -326,13 +254,7 @@ def conversation_slug(messages: list[tuple[str, str]]) -> str:
 
 
 def session_token(session_id: str) -> str:
-    """Short, filename-safe, stable token identifying this session.
-
-    The ``Stop`` hook fires at every turn-end, so one session produces several
-    captures. A token derived from the (stable) session id lets each capture
-    recognise and supersede its predecessors. Empty when no session id is
-    available — the caller then skips dedup.
-    """
+    """Legacy last-eight filename token; never evidence to replace a capture."""
     cleaned = re.sub(r"[^a-z0-9]", "", (session_id or "").lower())
     return cleaned[-8:]
 
@@ -350,43 +272,21 @@ def signature_of(clean: str) -> str:
 
 
 def content_signature(messages: list[tuple[str, str]]) -> str:
-    """Resume-stable dedup token: a short hash of the first real user turn.
-
-    ``claude --resume`` copies that turn forward verbatim while rewriting the
-    ``session_id``, so this signature (unlike :func:`session_token`) lets a
-    resumed capture recognise and supersede its predecessor. Empty when no real
-    turn has appeared yet (a cold-start readiness-ack capture) — dedup then
-    relies on the session token alone.
-    """
+    """Legacy descriptive fingerprint, retained for consumers; never dedup identity."""
     return signature_of(first_real_turn(messages))
 
 
 # ------------------------------------------------------------ capture header
 
-# The machine-readable identity line every capture carries, written directly
-# under the human description (fleet-config#586). It exists because the filename
-# keeps only the *last 8 chars* of the session id (see `session_token`), which is
-# enough to dedup captures but not to resume one: `claude --resume` needs the
-# full id. Storing it here — rewritten on every supersede, so it always names the
-# session that can actually be resumed — is what makes a specific past
-# conversation reopenable from a search result.
-#
-# Legacy captures predate the header and simply don't have one; every consumer
-# treats `sid`/`agent` as optional and degrades to "searchable but not
-# resumable" rather than inventing an id.
+# Legacy sid/agent/updated headers remain readable; new attrs are additive.
 _CAPTURE_HEADER_RE = re.compile(r"^<!-- capture (?P<attrs>[^>]*?)-->\s*$", re.MULTILINE)
 _HEADER_ATTR_RE = re.compile(r'(\w+)="([^"]*)"')
 
 
-def capture_header(sid: str, agent: str, updated: str) -> str:
-    """Render the identity header. Empty fields are omitted, never written blank."""
-    parts = []
-    if sid:
-        parts.append(f'sid="{sid}"')
-    if agent:
-        parts.append(f'agent="{agent}"')
-    if updated:
-        parts.append(f'updated="{updated}"')
+def capture_header(sid: str, agent: str, updated: str, **metadata: str) -> str:
+    """Render escaped optional identity/provenance attrs; preserve legacy grammar."""
+    attrs = dict(sid=sid, agent=agent, updated=updated, **metadata)
+    parts = [f'{key}="{html.escape(value, quote=True)}"' for key, value in attrs.items() if value]
     return f"<!-- capture {' '.join(parts)} -->" if parts else ""
 
 
@@ -401,7 +301,7 @@ def parse_capture_header(text: str) -> dict:
     m = _CAPTURE_HEADER_RE.search(head)
     if not m:
         return {}
-    return dict(_HEADER_ATTR_RE.findall(m.group("attrs")))
+    return {k: html.unescape(v) for k, v in _HEADER_ATTR_RE.findall(m.group("attrs"))}
 
 
 def strip_capture_header(text: str) -> str:
@@ -412,43 +312,9 @@ def strip_capture_header(text: str) -> str:
 
 
 def capture_filename(timestamp: str, slug: str, sid_token: str, sig_token: str) -> str:
-    """Build the capture filename, embedding both dedup identifiers.
-
-    The session token then the content signature are appended when present (in
-    that fixed order), so a later capture can find and supersede this file by
-    *either* identifier. With neither we fall back to a plain timestamped name.
-    """
+    """Legacy filename constructor retained for consumers; new writes use full keys."""
     suffix = "".join(f"-{t}" for t in (sid_token, sig_token) if t)
     return f"{timestamp}-{slug}{suffix}.md"
-
-
-def supersede_prior(out_dir: Path, sid_token: str, sig_token: str) -> None:
-    """Delete earlier captures of this conversation before writing the new one.
-
-    Matches on *either* identifier so both the intra-session readiness-ack
-    capture and a prior *resumed* capture are collapsed rather than left behind:
-
-      * ``*-<sig>.md`` — the content signature is always the final segment, so
-        this catches any earlier capture of the same conversation regardless of
-        its (rewritten) session token.
-      * ``*-<sid>.md`` / ``*-<sid>-*.md`` — the session token, whether it is the
-        final segment (legacy single-token or degenerate captures) or the middle
-        one (the new two-token shape).
-
-    No-op when both tokens are empty.
-    """
-    patterns: list[str] = []
-    if sig_token:
-        patterns.append(f"*-{sig_token}.md")
-    if sid_token:
-        patterns.append(f"*-{sid_token}.md")
-        patterns.append(f"*-{sid_token}-*.md")
-    for pattern in patterns:
-        for prior in out_dir.glob(pattern):
-            try:
-                prior.unlink()
-            except OSError:
-                pass
 
 
 def render_markdown(
@@ -456,15 +322,18 @@ def render_markdown(
     messages: list[tuple[str, str]],
     *,
     header: str = "",
+    agent: str = "",
 ) -> str:
+    agent = agent or parse_capture_header(header).get("agent", "")
     lines = [description, ""]
     if header:
         lines.extend([header, ""])
     for role, text in messages:
-        if role == "user" and _is_preamble(text):
+        if agent == "claude" and role == "user" and _is_preamble(text):
             continue
-        label = "**You**" if role == "user" else "**Claude**"
-        clean = _strip_command_tags(text) if role == "user" else text
+        assistant = {"claude": "Claude", "codex": "Codex"}.get(agent, "Assistant")
+        label = "**You**" if role == "user" else f"**{assistant}**"
+        clean = _strip_command_tags(text) if agent == "claude" and role == "user" else text
         if not clean.strip():
             continue
         lines.append(f"{label}: {clean}")
@@ -511,85 +380,117 @@ def _trigger_delayed_index(project_name: str) -> None:
         pass  # fail-open — a failed trigger must never break the Stop hook
 
 
+def write_capture(cfg: CaptureConfig, out_dir: Path, source: Path, transcript: Transcript) -> bool:
+    """Atomically update an exact native session; no prompt hashes or short-ID matches.
+
+    Search all configured routing folders so later turns cannot strand duplicates
+    when the one-shot skill marker has already been consumed. A missing native ID
+    uses the source path only for idempotence, never for a resume command.
+    """
+    from conversation_index import conversations_dirs
+
+    identity = transcript.session_id or str(source.resolve())
+    key = hashlib.sha256(f"{transcript.harness}\0{identity}".encode()).hexdigest()
+    digest = hashlib.sha256(json.dumps(transcript.messages, ensure_ascii=False).encode()).hexdigest()
+    out_path = None
+    for directory, _label in conversations_dirs(cfg):
+        if not directory.is_dir():
+            continue
+        for path in sorted(directory.glob("*.md")):
+            if path.name == "index.md":
+                continue
+            prior = parse_capture_header(path.read_text(encoding="utf-8"))
+            same = (prior.get("agent") == transcript.harness and
+                    ((transcript.session_id and prior.get("sid") == transcript.session_id)
+                     or (not transcript.session_id and prior.get("key") == key)))
+            if same:
+                out_path = path
+                try:
+                    prior_turns = int(prior.get("turns", "0"))
+                except ValueError:
+                    prior_turns = 0
+                if prior_turns > len(transcript.messages):
+                    logger.warning("Capture parse_failure: source shrank; retained prior capture")
+                    return False
+                if (prior.get("digest") == digest and prior.get("parent_sid", "") == transcript.parent_session_id
+                        and prior.get("format") == transcript.source_format):
+                    return False
+                break
+        if out_path:
+            break
+    now = datetime.now(timezone.utc)
+    if out_path is None:
+        filename = f"{now:%Y-%m-%d-%H%M}-{conversation_slug(transcript.messages)}-{key}.md"
+        out_path = out_dir / filename
+    header = capture_header(transcript.session_id, transcript.harness, now.isoformat(timespec="seconds"),
+                            schema="2", key=key, digest=digest, turns=str(len(transcript.messages)),
+                            parent_sid=transcript.parent_session_id,
+                            format=transcript.source_format, version=transcript.source_version)
+    content = render_markdown(make_description(transcript.messages), transcript.messages,
+                              header=header, agent=transcript.harness)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = None
+    try:
+        with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=out_path.parent,
+                                         prefix=".capture-", suffix=".tmp", delete=False) as handle:
+            temporary = Path(handle.name)
+            handle.write(content)
+        os.replace(temporary, out_path)
+    finally:
+        if temporary and temporary.exists():
+            temporary.unlink()
+    logger.info("Captured %s session %s -> %s", transcript.harness, transcript.session_id or "unknown", out_path)
+    return True
+
+
 def main() -> int:
     logging.basicConfig(level=logging.INFO, format="%(message)s", stream=sys.stderr)
     payload = _lib.read_stdin_json()
-
-    transcript_path_raw = payload.get("transcript_path")
-    if not transcript_path_raw:
-        return 0
-    transcript_path = Path(transcript_path_raw)
-    if not transcript_path.exists():
-        return 0
-
     project = _lib.detect_project(_lib.cwd(payload))
     cfg = capture_config_from_project(project)
     if cfg is None or project is None:
-        return 0  # project not opted into capture — silent no-op
+        return 0
+    allowed = project.extra.get("capture_harnesses", ["claude"])
+    if not isinstance(allowed, list):
+        logger.error("Capture unsupported: capture_harnesses must be a list")
+        return 0
+    hint = _lib.payload_agent(payload)
+    if hint and hint not in allowed:
+        return 0
+    raw_path = payload.get("transcript_path")
+    if not isinstance(raw_path, str) or not raw_path:
+        logger.warning("Capture unavailable: no transcript path")
+        return 0
+    source = Path(raw_path)
+    transcript = read_transcript(source, harness=hint, session_id=payload.get("session_id") or "")
+    if transcript.status != "ok":
+        logger.warning("Capture %s: %s", transcript.status, transcript.detail)
+        return 0
+    if transcript.harness not in allowed or not transcript.messages:
+        return 0
 
-    session_id = payload.get("session_id", "")
-    entries = load_transcript(transcript_path)
-
-    # 1. Build the output dir from the project's routing.
+    out_dir = cfg.root / cfg.conversations_dir
     if cfg.routing == "skills":
         skills_root = cfg.root / cfg.skills_dir
         known = scan_known_skills(skills_root)
         marker = cfg.root / cfg.active_marker
-        skill: Optional[str] = None
+        skill = None
         if marker.exists():
             try:
                 skill = marker.read_text(encoding="utf-8").strip()
                 marker.unlink()
             except OSError:
                 skill = None
-        if skill and skill not in known:
+        if skill not in known:
             skill = None
-        if not skill:
-            skill = infer_skill_from_transcript(entries, known, cfg.skills_dir)
-        if skill:
-            out_dir = skills_root / skill / "conversations"
-        else:
-            out_dir = cfg.root / cfg.conversations_dir / "_archive"
-    else:  # "flat" — one conversations dir for the whole project
-        out_dir = cfg.root / cfg.conversations_dir
-    out_dir.mkdir(parents=True, exist_ok=True)
-
-    # 2. Render.
-    messages = extract_messages(entries)
-    if not messages:
-        return 0  # nothing to capture (pure setup/command sessions)
-    description = make_description(messages)
-    slug = conversation_slug(messages)
-    now = datetime.now()
-    timestamp = now.strftime("%Y-%m-%d-%H%M")
-    # The full session id is the resume identity (fleet-config#586) — the
-    # filename only ever carries its last 8 chars. Written fresh on every
-    # capture, so after a resume (which rewrites session_id) the surviving file
-    # names the session that can actually be reopened.
-    header = capture_header(
-        session_id or "",
-        _lib.payload_agent(payload) or "claude",
-        now.isoformat(timespec="seconds"),
-    )
-    content = render_markdown(description, messages, header=header)
-
-    # The Stop hook fires at every turn-end, so collapse this conversation's
-    # earlier captures into one up-to-date file — keyed on the session token
-    # (intra-session, incl. the cold-start readiness-ack turn) and the content
-    # signature (a resumed conversation, whose session_id has been rewritten).
-    sid_token = session_token(session_id)
-    sig_token = content_signature(messages)
-    supersede_prior(out_dir, sid_token, sig_token)
-    filename = capture_filename(timestamp, slug, sid_token, sig_token)
-
-    out_path = out_dir / filename
+        if not skill and transcript.harness == "claude":
+            skill = infer_skill_from_transcript(transcript.entries, known, cfg.skills_dir)
+        out_dir = skills_root / skill / "conversations" if skill else out_dir / "_archive"
     try:
-        out_path.write_text(content, encoding="utf-8")
-        logger.info("Captured → %s", out_path)
-        _trigger_delayed_index(project.name)
-    except OSError as exc:
-        logger.error("Could not write %s: %s", out_path, exc)
-
+        if write_capture(cfg, out_dir, source, transcript):
+            _trigger_delayed_index(project.name)
+    except (OSError, UnicodeError) as exc:
+        logger.error("Capture write failed: %s", exc)
     return 0
 
 

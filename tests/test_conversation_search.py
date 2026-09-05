@@ -73,16 +73,14 @@ buried = "desc\n\n**You**: hi\n" + "\n".join(f"line {i}" for i in range(10)) + \
 check(cc.parse_capture_header(buried) == {},
       "parse_capture_header: ignores a header-shaped line in the body")
 
-# The content signature is what makes a *resumed* conversation update its
-# existing capture instead of writing a second one: `claude --resume` mints a
-# new session id, so identity has to come from the opening turn, which doesn't
-# change. These two checks pin exactly that property.
+# Legacy descriptive fingerprints stay stable for existing consumers. They are
+# deliberately not used as native identity or as permission to overwrite files.
 turns = [("user", "Base directory for this skill: E:/x"),
          ("user", "I want to research bone conduction headphones repair"),
          ("assistant", "sure")]
 sig_live = cc.content_signature(turns)
 check(bool(sig_live),
-      "content_signature: derives an identity from the first real turn")
+      "content_signature: describes the first real turn")
 check(cc.content_signature(turns + [("user", "and one more thing entirely")])
       == sig_live,
       "content_signature: later turns don't move it (survives a resume)")

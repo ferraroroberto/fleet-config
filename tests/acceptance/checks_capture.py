@@ -51,7 +51,7 @@ def _conversation_capture_unit_checks() -> Tuple[int, int]:
           cc.capture_filename("2026-06-02-2020", "day-today", "", "")
           == "2026-06-02-2020-day-today.md")
 
-    # content_signature is the resume-stable identity: it keys off the first real
+    # content_signature is a legacy descriptive fingerprint, not dedup identity: it keys off the first real
     # user turn (copied forward verbatim on --resume), not the session id. So two
     # transcripts sharing that opening turn — but with different later turns and a
     # different session_id — hash identically; a preamble-only turn yields "".
@@ -89,33 +89,8 @@ def _conversation_capture_unit_checks() -> Tuple[int, int]:
               ("user", "<command-name>/journal-daily</command-name> logbook logbook entries"),
           ]) == "logbook-entries")
 
-    # supersede_prior removes this session's earlier captures, leaves others.
-    tmp = Path(tempfile.mkdtemp(prefix="cc_dedup_"))
-    try:
-        (tmp / "2026-06-02-2016-session-abcd1234.md").write_text("early", encoding="utf-8")
-        (tmp / "2026-06-02-2018-other-abcd1234.md").write_text("mid", encoding="utf-8")
-        (tmp / "2026-06-02-2020-real-deadbeef.md").write_text("other session", encoding="utf-8")
-        cc.supersede_prior(tmp, "abcd1234", "")
-        remaining = sorted(p.name for p in tmp.iterdir())
-        check("supersede_prior: drops same-session files, keeps other sessions",
-              remaining == ["2026-06-02-2020-real-deadbeef.md"])
-    finally:
-        shutil.rmtree(tmp, ignore_errors=True)
-
-    # supersede_prior on resume: the predecessor carries the SAME content
-    # signature but a DIFFERENT (now-rewritten) session token, so only the
-    # signature match collapses it. An unrelated conversation is left untouched.
-    tmp = Path(tempfile.mkdtemp(prefix="cc_resume_"))
-    try:
-        (tmp / "2026-06-05-1606-licenses-and-gps-aaaa1111-cafe9999.md").write_text("v1", encoding="utf-8")
-        (tmp / "2026-06-08-2105-other-topic-bbbb2222-dead8888.md").write_text("unrelated", encoding="utf-8")
-        # resumed capture: new session token, same content signature.
-        cc.supersede_prior(tmp, "eeee5555", "cafe9999")
-        remaining = sorted(p.name for p in tmp.iterdir())
-        check("supersede_prior: resume (new session id, same signature) drops predecessor",
-              remaining == ["2026-06-08-2105-other-topic-bbbb2222-dead8888.md"])
-    finally:
-        shutil.rmtree(tmp, ignore_errors=True)
+    # Native-session update/isolation replaces the unsafe prompt-hash deletion
+    # checks; exercised end-to-end in test_transcript_capture.py (#753).
 
     # _trigger_delayed_index: the near-close trigger (fleet-config#673) — spawns
     # conversation_index.py detached, with the project name and a delay, and
