@@ -14,7 +14,6 @@ from __future__ import annotations
 import json
 import os
 import re
-import signal
 import subprocess
 import sys
 import threading
@@ -25,6 +24,7 @@ from typing import Any, NamedTuple, Optional, TextIO
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from no_window import NO_WINDOW  # noqa: E402
+from process_scope import ProcessScope, PipeReader, DRAIN_TIMEOUT_SECONDS, TERMINATE_TIMEOUT_SECONDS  # noqa: E402
 from runner_adapters import ClaudeAdapter, CodexAdapter, ProgressEvent  # noqa: E402
 
 MAX_SUMMARY_CHARS = 180
@@ -757,36 +757,10 @@ def resolve_stall_timeout(explicit: Optional[float] = None) -> float:
         return DEFAULT_STALL_TIMEOUT_SECONDS
 
 
-def _kill_process_tree(process: "subprocess.Popen[str]") -> bool:
-    """Kill the Claude child *and every descendant*.
-
-    ``Popen.kill()`` alone leaves the sub-processes Claude spawned running, and
-    they hold the stdout pipe open — so the read loop here would never see EOF
-    and this adapter would wedge alongside the run it just tried to end.
-    """
-    if process.poll() is not None:
-        return False  # an exited root does not establish descendant termination
-    if sys.platform == "win32":
-        try:
-            killed = subprocess.run(
-                ["taskkill", "/T", "/F", "/PID", str(process.pid)],
-                capture_output=True,
-                timeout=30,
-                creationflags=NO_WINDOW,
-            )
-            if killed.returncode == 0:
-                return True
-        except (OSError, subprocess.SubprocessError):
-            pass  # fall through to the direct-child kill below
-    try:
-        if sys.platform != "win32":
-            os.killpg(process.pid, signal.SIGKILL)
-            return True
-        else:
-            process.kill()
-    except OSError:
-        pass
-    return False  # direct-child fallback cannot confirm its descendants
+def _kill_process_tree(process: subprocess.Popen) -> bool:
+    """Terminate the retained scope; a dead root PID is not a tree identity."""
+    scope = getattr(process, "_scheduled_scope", None)
+    return scope.terminate() if scope is not None else False
 
 
 def _watch_for_stall(
@@ -803,6 +777,7 @@ def _watch_for_stall(
         if cancel_event is not None and cancel_event.is_set():
             state["cancelled"] = True
             state["cancel_confirmed"] = _kill_process_tree(process)
+            state["stop_complete"] = True
             return
         if stall_timeout <= 0:
             continue
@@ -816,10 +791,12 @@ def _watch_for_stall(
         # read `running` for five hours (fleet-config#514). Killing the tree also
         # stops the child writing into the shared pipe chain, which is what lets
         # the downstream backpressure drain in the first place.
-        _kill_process_tree(process)
+        confirmed = _kill_process_tree(process)
+        state["stop_complete"] = True
         progress.emit_best_effort(
             f"⏱ no stream activity for {_elapsed(idle)} "
-            f"(limit {_elapsed(stall_timeout)}) — killing the stalled run"
+            f"(limit {_elapsed(stall_timeout)}) — killing the stalled run · "
+            f"owned termination {'confirmed' if confirmed else 'unconfirmed'}"
         )
         return
 
@@ -848,77 +825,122 @@ def run_process(
         child_env.update(env)
     for key in progress.adapter.excluded_environment:
         child_env.pop(key, None)
-    process = subprocess.Popen(
-        list(command),
-        stdin=subprocess.DEVNULL,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-        bufsize=1,
-        env=child_env,
-        # This adapter *is* the scheduled-job parent the convention names: every
-        # `run-weekly.bat` calls it from an app-launcher job with no console, so
-        # an unsuppressed `claude -p` here flashes a window (fleet-config#412).
-        # Plain NO_WINDOW, not a new process group — the stall watchdog kills the
-        # tree with `taskkill /T`, so no CTRL_BREAK_EVENT signalling is needed.
-        creationflags=NO_WINDOW,
-        start_new_session=sys.platform != "win32",
-    )
+    scope = ProcessScope()
+    process = None
+    try:
+        process = subprocess.Popen(
+            scope.command(list(command)),
+            stdin=subprocess.PIPE if sys.platform == "win32" else subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            bufsize=0,
+            env=child_env,
+            creationflags=NO_WINDOW,
+            start_new_session=sys.platform != "win32",
+        )
+        process._scheduled_scope = scope
+        scope.start(process)
+    except BaseException:
+        scope.close()
+        if process is not None:
+            for stream in (process.stdin, process.stdout, process.stderr):
+                if stream is not None:
+                    stream.close()
+        raise
     assert process.stdout is not None
     assert process.stderr is not None
+    readers = (PipeReader(process.stdout), PipeReader(process.stderr))
 
-    def drain_stderr(stream: TextIO) -> None:
-        for stderr_line in stream:
-            progress.emit_stderr(stderr_line)
-
-    stderr_thread = threading.Thread(
-        target=drain_stderr,
-        args=(process.stderr,),
-        name="claude-progress-stderr",
-        daemon=True,
-    )
-    stderr_thread.start()
-
-    stall_state = {"stalled": False, "cancelled": False, "cancel_confirmed": False}
+    stall_state = {"stalled": False, "cancelled": False, "cancel_confirmed": False,
+                   "stop_complete": False}
     watchdog_stop = threading.Event()
     watchdog: Optional[threading.Thread] = None
     if stall_timeout > 0 or cancel_event is not None:
         watchdog = threading.Thread(
             target=_watch_for_stall,
             args=(process, progress, stall_timeout, watchdog_stop, stall_state, cancel_event),
-            name="claude-progress-watchdog",
+            name="scheduled-progress-watchdog",
             daemon=True,
         )
         watchdog.start()
 
+    exit_code = None
+    orphaned = False
+    drain_deadline = None
+    drain_message = None
     try:
-        for stdout_line in process.stdout:
-            progress.handle_line(stdout_line)
-        exit_code = process.wait()
+        while True:
+            for line in readers[0].poll():
+                progress.handle_line(line)
+            for line in readers[1].poll():
+                progress.emit_stderr(line)
+            exit_code = process.poll()
+            stopping = stall_state["cancelled"] or stall_state["stalled"]
+            if exit_code is not None or stopping:
+                if drain_deadline is None:
+                    drain_deadline = time.monotonic() + DRAIN_TIMEOUT_SECONDS
+                    if stopping and not stall_state["stop_complete"]:
+                        drain_deadline += TERMINATE_TIMEOUT_SECONDS
+                active = scope.active()
+                if (all(reader.eof for reader in readers) and active == 0
+                        and (not stopping or stall_state["stop_complete"])
+                        and not (cancel_event is not None and cancel_event.is_set()
+                                 and not stall_state["cancelled"])):
+                    break
+                if time.monotonic() >= drain_deadline:
+                    orphaned = active is not None and active > 0 and not stopping
+                    # Unobserved descendant work closes the pre-effect replay
+                    # gate even when it closed both pipes and the parent failed.
+                    if active != 0 or not all(reader.eof for reader in readers):
+                        progress._mark_unknown()
+                    drain_message = (
+                        f"owned scope drain deadline reached · active processes "
+                        f"{active if active is not None else 'unknown'} · "
+                        f"stdout EOF={readers[0].eof} · stderr EOF={readers[1].eof}"
+                    )
+                    break
+            time.sleep(0.01)
     except KeyboardInterrupt:
         stall_state["cancelled"] = True
         stall_state["cancel_confirmed"] = _kill_process_tree(process)
-        exit_code = process.wait(timeout=30)
+        stall_state["stop_complete"] = True
+        deadline = time.monotonic() + DRAIN_TIMEOUT_SECONDS
+        while not all(reader.eof for reader in readers) and time.monotonic() < deadline:
+            for reader in readers:
+                reader.poll()
+            time.sleep(0.01)
     finally:
         watchdog_stop.set()
-        if process.poll() is None:
-            _kill_process_tree(process)
-            process.wait(timeout=30)
-        stderr_thread.join(timeout=5)
         if watchdog is not None:
-            watchdog.join(timeout=5)
+            watchdog.join(timeout=TERMINATE_TIMEOUT_SECONDS + 1)
+        # Closing the Windows job is a final ownership-scoped safety net. It
+        # cannot upgrade an unconfirmed cancellation into confirmed success.
+        if scope.active() != 0:
+            scope.terminate()
+        scope.close()
+        if process.poll() is None:
+            try:
+                process.wait(timeout=TERMINATE_TIMEOUT_SECONDS)
+            except subprocess.TimeoutExpired:
+                progress._mark_unknown()
+        if exit_code is None:
+            exit_code = process.poll()
         process.stdout.close()
         process.stderr.close()
-        if stderr_thread.is_alive():
-            progress._mark_unknown()
+    if drain_message:
+        progress.emit_best_effort(drain_message)
+    if exit_code is None:
+        exit_code = CANCELLATION_UNCONFIRMED_EXIT_CODE
     if stall_state["cancelled"]:
-        cancelled_code = CANCELLED_EXIT_CODE if stall_state["cancel_confirmed"] else CANCELLATION_UNCONFIRMED_EXIT_CODE
+        confirmed = stall_state["cancel_confirmed"] and all(reader.eof for reader in readers)
+        cancelled_code = CANCELLED_EXIT_CODE if confirmed else CANCELLATION_UNCONFIRMED_EXIT_CODE
         progress.finish(cancelled_code)
         return cancelled_code
     if stall_state["stalled"]:
         exit_code = STALL_EXIT_CODE
+    elif orphaned and exit_code == 0:
+        progress.emit_best_effort("unfinished owned descendants after provider exit")
+        exit_code = INCOMPLETE_WORK_EXIT_CODE
     elif exit_code != 0 and progress.saw_transient_api_error:
         # Only ever over a child that already failed — this renames a failure,
         # it never creates one. A run that hit a 5xx, recovered on its own and

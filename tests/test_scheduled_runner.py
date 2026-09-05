@@ -1,6 +1,9 @@
 """Scheduled adapter conformance against sanitized events and owned fake children."""
 from __future__ import annotations
 
+import ctypes
+from ctypes import wintypes
+from contextlib import nullcontext
 import json
 import os
 from pathlib import Path
@@ -116,6 +119,38 @@ class ScheduledRunnerTests(unittest.TestCase):
         self.assertEqual(code, runner.TRANSIENT_API_EXIT_CODE)
         self.assertFalse(formatter.retryable_transient_failure)
 
+    def test_unfinished_owned_descendants_close_pre_effect_retry_gate(self):
+        flags = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
+        failure = json.dumps({"type": "result", "subtype": "error", "is_error": True,
+                              "result": "API Error: 503 synthetic"})
+        script = (f"import subprocess,sys;"
+                  f"subprocess.Popen([sys.executable,'-c','import time;time.sleep(4)'],"
+                  f"stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,creationflags={flags});"
+                  f"print({failure!r},flush=True);sys.exit(1)")
+        sleeps = []
+        code = runner.run_with_transient_retry(
+            [sys.executable, "-c", script],
+            formatter=runner.ProgressFormatter(emit=lambda _: None),
+            stall_timeout=0, sleep=sleeps.append)
+        print(f"orphan pre-effect retry: exit={code}, retries={len(sleeps)}", flush=True)
+        self.assertEqual(code, runner.TRANSIENT_API_EXIT_CODE)
+        self.assertEqual(sleeps, [], "unobserved child work must forbid provider replay")
+
+    def test_clean_parent_with_owned_orphan_is_not_reclassified_as_api_failure(self):
+        flags = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
+        recovered = {"type": "assistant", "message": {"content": [
+            {"type": "text", "text": "API Error: 503 recovered"}]}}
+        good = "\n".join(json.dumps(e) for e in [recovered, *self.fixtures["Claude Code"]])
+        script = (f"import subprocess,sys;"
+                  f"subprocess.Popen([sys.executable,'-c','import time;time.sleep(4)'],"
+                  f"stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,creationflags={flags});"
+                  f"print({good!r},flush=True)")
+        formatter = runner.ProgressFormatter(emit=lambda _: None)
+        code = runner.run_process([sys.executable, "-c", script], formatter=formatter, stall_timeout=0)
+        print(f"clean parent with orphan: exit={code}", flush=True)
+        self.assertTrue(formatter.saw_transient_api_error)
+        self.assertEqual(code, runner.INCOMPLETE_WORK_EXIT_CODE)
+
     def test_explicit_selection_no_guessed_flags_or_fallback(self):
         command = CodexAdapter().build_command(["/smoke arg", "--model", "synthetic", "--sandbox", "read-only"], "codex-test")
         self.assertEqual(command[:2], ["codex-test", "exec"])
@@ -151,6 +186,166 @@ class ScheduledRunnerTests(unittest.TestCase):
         self.assertIn("cancellation not confirmed", "\n".join(lines))
         self.assertNotIn("owned process tree stopped", "\n".join(lines))
 
+
+    def test_cancellation_after_parent_exit_does_not_wait_for_descendant_eof(self):
+        flags = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
+        real_popen = subprocess.Popen
+        captured = []
+        launched = threading.Event()
+        cancel = threading.Event()
+        requested = []
+        errors = []
+        with tempfile.TemporaryDirectory(prefix="runner_orphan_") as folder:
+            marker = Path(folder) / "descendant_completed"
+            ready = Path(folder) / "descendant_started"
+            descendant = f"import time; from pathlib import Path; Path({str(ready)!r}).touch(); time.sleep(4); Path({str(marker)!r}).touch()"
+            child = f"import subprocess,sys; subprocess.Popen([sys.executable,'-c',{descendant!r}],stdout=sys.stdout,stderr=sys.stderr,creationflags={flags})"
+            def capture(*args, **kwargs):
+                process = real_popen(*args, **kwargs)
+                captured.append(process)
+                launched.set()
+                return process
+            def cancel_after_exit():
+                try:
+                    assert launched.wait(3), "child never launched"
+                    captured[0].wait(timeout=3)
+                    deadline = time.monotonic() + 2
+                    while not ready.exists() and time.monotonic() < deadline:
+                        time.sleep(0.01)
+                    assert ready.exists(), "descendant did not start"
+                    requested.append(time.monotonic())
+                    cancel.set()
+                except Exception as exc:
+                    errors.append(str(exc))
+                    cancel.set()
+            observer = threading.Thread(target=cancel_after_exit)
+            observer.start()
+            try:
+                with patch.object(runner.subprocess, "Popen", side_effect=capture):
+                    code = runner.run_process([sys.executable, "-c", child],
+                                              formatter=runner.ProgressFormatter(emit=lambda _: None),
+                                              stall_timeout=5, cancel_event=cancel)
+                returned = time.monotonic()
+            finally:
+                observer.join(timeout=6)
+            self.assertFalse(observer.is_alive())
+            self.assertEqual(errors, [])
+            self.assertTrue(requested)
+            delay = returned - requested[0]
+            print(f"orphan cancellation: exit={code}, delay={delay:.3f}s, descendant_marker={marker.exists()}", flush=True)
+            self.assertLess(delay, 2.0, "cancellation waited for an orphan's pipe EOF")
+            self.assertEqual(code, runner.CANCELLED_EXIT_CODE)
+            self.assertFalse(marker.exists(), "owned descendant survived cancellation")
+
+    @unittest.skipUnless(sys.platform == "win32", "Windows job ownership")
+    def test_ownership_rejection_never_launches_provider(self):
+        from process_scope import _WindowsJob
+        with tempfile.TemporaryDirectory(prefix="runner_ownership_") as folder:
+            marker = Path(folder) / "provider_started"
+            script = f"from pathlib import Path; Path({str(marker)!r}).touch()"
+            with patch.object(_WindowsJob, "assign", side_effect=OSError("ownership rejected")):
+                with self.assertRaisesRegex(OSError, "ownership rejected"):
+                    runner.run_process([sys.executable, "-c", script], stall_timeout=0)
+            self.assertFalse(marker.exists())
+
+    @unittest.skipUnless(sys.platform == "win32", "Windows job ownership")
+    def test_orphan_pipe_matrix_and_unconfirmed_cleanup_are_bounded(self):
+        from process_scope import _WindowsJob
+        flags = subprocess.CREATE_NO_WINDOW
+        good = "\n".join(json.dumps(e) for e in self.fixtures["Codex"])
+        for pipe in ("stdout", "stderr", "both", "neither"):
+            for failure in ("none", "terminate", "query"):
+                with self.subTest(pipe=pipe, failure=failure), tempfile.TemporaryDirectory(prefix="runner_drain_") as folder:
+                    marker = Path(folder) / "descendant_completed"
+                    ready = Path(folder) / "descendant_started"
+                    descendant = f"import os,time;from pathlib import Path;Path({str(ready)!r}).write_text(str(os.getpid()));time.sleep(4);Path({str(marker)!r}).touch()"
+                    out = "sys.stdout" if pipe in ("stdout", "both") else "subprocess.DEVNULL"
+                    err = "sys.stderr" if pipe in ("stderr", "both") else "subprocess.DEVNULL"
+                    script = (f"import subprocess,sys,time;from pathlib import Path;"
+                              f"subprocess.Popen([sys.executable,'-c',{descendant!r}],stdout={out},stderr={err},creationflags={flags});"
+                              f"print({good!r},flush=True)")
+                    lines = []
+                    cancel = threading.Event()
+                    handles = []
+                    api = ctypes.WinDLL("kernel32", use_last_error=True)
+                    api.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+                    api.OpenProcess.restype = wintypes.HANDLE
+                    api.WaitForSingleObject.argtypes = [wintypes.HANDLE, wintypes.DWORD]
+                    api.WaitForSingleObject.restype = wintypes.DWORD
+                    api.CloseHandle.argtypes = [wintypes.HANDLE]
+                    api.CloseHandle.restype = wintypes.BOOL
+                    def request():
+                        deadline = time.monotonic()+3
+                        while time.monotonic() < deadline:
+                            try:
+                                pid = int(ready.read_text())
+                            except (OSError, ValueError):
+                                time.sleep(.01)
+                                continue
+                            handle = api.OpenProcess(0x100000, False, pid)
+                            if handle:
+                                handles.append(handle)
+                            break
+                        if failure != "none":
+                            cancel.set()
+                    thread = threading.Thread(target=request)
+                    thread.start()
+                    attribute = "terminate" if failure == "terminate" else "active"
+                    value = False if failure == "terminate" else None
+                    context = patch.object(_WindowsJob, attribute, return_value=value)
+                    if failure == "none":
+                        context = nullcontext()
+                    started = time.monotonic()
+                    formatter = runner.ProgressFormatter(adapter=CodexAdapter(), emit=lines.append)
+                    with context:
+                        code = runner.run_process(
+                            [sys.executable, "-c", script],
+                            formatter=formatter,
+                            stall_timeout=0, cancel_event=cancel if failure != "none" else None)
+                    thread.join(timeout=4)
+                    self.assertFalse(thread.is_alive())
+                    self.assertEqual(len(handles), 1, "must retain the live descendant handle")
+                    try:
+                        self.assertEqual(api.WaitForSingleObject(handles[0], 2000), 0,
+                                         "the owned descendant has not exited")
+                    finally:
+                        for handle in handles:
+                            api.CloseHandle(handle)
+                    self.assertLess(time.monotonic()-started, 3.5, "\n".join(lines))
+                    self.assertEqual(code, runner.INCOMPLETE_WORK_EXIT_CODE if failure == "none" else runner.CANCELLATION_UNCONFIRMED_EXIT_CODE, "\n".join(lines))
+                    self.assertFalse(marker.exists())
+                    if failure == "none":
+                        self.assertTrue(formatter.saw_tool_use)
+                        self.assertTrue(formatter._saw_result)
+                        self.assertFalse(formatter._malformed)
+                    self.assertNotIn("owned process tree stopped", "\n".join(lines))
+                    # The final close safety net must terminate owned processes,
+                    # even when the explicit termination/query result is unknown.
+
+    def test_unclosed_pipes_cannot_confirm_cancellation(self):
+        event = threading.Event()
+        event.set()
+        lines = []
+        started = time.monotonic()
+        with patch.object(runner, "_kill_process_tree", return_value=True):
+            code = runner.run_process(
+                [sys.executable, "-c", "import time; time.sleep(5)"],
+                formatter=runner.ProgressFormatter(emit=lines.append),
+                stall_timeout=0, cancel_event=event)
+        self.assertLess(time.monotonic()-started, 4)
+        self.assertEqual(code, runner.CANCELLATION_UNCONFIRMED_EXIT_CODE)
+        self.assertNotIn("owned process tree stopped", "\n".join(lines))
+
+    def test_stall_keeps_its_code_but_names_unconfirmed_termination(self):
+        lines = []
+        with patch.object(runner, "_kill_process_tree", return_value=False):
+            code = runner.run_process(
+                [sys.executable, "-c", "import time; time.sleep(5)"],
+                formatter=runner.ProgressFormatter(emit=lines.append),
+                stall_timeout=.1)
+        self.assertEqual(code, runner.STALL_EXIT_CODE)
+        self.assertIn("owned termination unconfirmed", "\n".join(lines))
+
     def test_cwd_and_utf8_are_preserved(self):
         with tempfile.TemporaryDirectory(prefix="runner_cwd_") as folder:
             previous = Path.cwd()
@@ -173,13 +368,26 @@ class ScheduledRunnerTests(unittest.TestCase):
                     grandchild = f"import time; from pathlib import Path; Path({str(started)!r}).touch(); time.sleep(3); Path({str(sentinel)!r}).touch()"
                     script = f"import subprocess,sys,time; subprocess.Popen([sys.executable,'-c',{grandchild!r}],creationflags={flags}); time.sleep(30)"
                     event = threading.Event()
-                    timer = threading.Timer(1.0, event.set)
-                    timer.start()
+                    stop_observer = threading.Event()
+                    formatter = runner.ProgressFormatter(emit=lambda _: None)
+                    def observe_readiness():
+                        deadline = time.monotonic() + 5
+                        while not started.exists() and time.monotonic() < deadline and not stop_observer.is_set():
+                            # Fixture setup is not the idle period under test.
+                            # Arm the real watchdog only after its target exists.
+                            formatter._touch()
+                            time.sleep(.01)
+                        if started.exists():
+                            formatter._touch()
+                            event.set()
+                    observer = threading.Thread(target=observe_readiness)
+                    observer.start()
                     try:
-                        code = runner.run_process([sys.executable, "-c", script], formatter=runner.ProgressFormatter(emit=lambda _: None), stall_timeout=0 if cancel else 1, cancel_event=event if cancel else None)
+                        code = runner.run_process([sys.executable, "-c", script], formatter=formatter, stall_timeout=0 if cancel else 1, cancel_event=event if cancel else None)
                     finally:
-                        timer.cancel()
-                        timer.join()
+                        stop_observer.set()
+                        observer.join(timeout=6)
+                    self.assertFalse(observer.is_alive())
                     self.assertEqual(code, runner.CANCELLED_EXIT_CODE if cancel else runner.STALL_EXIT_CODE)
                     self.assertTrue(started.exists(), "the owned grandchild must start before cancellation")
                     time.sleep(3)

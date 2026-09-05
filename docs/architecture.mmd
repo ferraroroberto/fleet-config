@@ -157,6 +157,7 @@ flowchart TB
   SCHEDULED -->|compatible facade| CLAUDEPROGRESS["claude_progress.py"]
   CLAUDEPROGRESS --> RUNNER["scheduled_runner.py\nshared progress, terminal evidence, delivery, retry, owned cancellation"]
   CODEXENTRY["explicit --harness codex callers"] --> RUNNER
+  RUNNER --> SCOPE["process_scope.py\nowned Windows job / POSIX group + nonblocking pipe drain"]
   RUNNER --> ADAPTERS["runner_adapters.py\nClaudeAdapter + CodexAdapter -> ProgressEvent\nPi/Grok and Codex child delegation unverified"]
   RUNNER --> LIB
   ACCPKG -->|native fixtures + fake owned children| RUNNER
