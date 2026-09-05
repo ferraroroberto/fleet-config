@@ -49,7 +49,14 @@ weekly cycle, so no transition-window shim was worth carrying.
 stdlib only. CLI:
     digest.py validate <run.json>
     digest.py render   <run.json> --html P --md P --chat-text P [--url U]
+                       [--reconcile-json P]
     digest.py publish  <run.json> --md P [--delivery-state posted|failed|unknown]
+
+`--reconcile-json` (fleet-config#757) points at `gate.py reconcile --json`'s
+output -- a standing fact about open `chore/context-purge-*` PRs, not run
+data, so it is supplied at render time rather than carried in `run.json`.
+Omitted (or unreadable), the "Open purge PR backlog" section renders `None`
+as *not recorded*, never as an empty/clean backlog.
 """
 
 from __future__ import annotations
@@ -298,7 +305,36 @@ def _probe_cell(f: dict) -> str:
     return f"{compressed}/{control} vs control, {questions or '?'} q -- {verdict}"
 
 
-def render_markdown(run: dict, artifact_url: Optional[str] = None) -> str:
+def _backlog_lines(backlog: "list[dict] | None") -> list[str]:
+    """Markdown lines for the standing open-purge-PR backlog (fleet-config#757).
+
+    A draft PR nobody promotes silently suppresses its files from every
+    future gate forever — this section is what makes that backlog visible
+    somewhere a human reads weekly, whether or not this run rewrote anything.
+    `backlog` is `None` when the render wasn't given a live PR check to draw
+    on (no `--reconcile-json`, or that check itself failed) — treated as
+    unknown, never as an empty/clean backlog.
+    """
+    lines = ["### Open purge PR backlog", ""]
+    if backlog is None:
+        lines.append("Not recorded this run — treat as unknown, not clean.")
+    elif not backlog:
+        lines.append("No open `chore/context-purge-*` PRs.")
+    else:
+        lines.append("A draft PR nobody promotes hides its files from every future gate — merge or close it.")
+        lines.append("")
+        lines.append("| Repo | PR | Age | Title |")
+        lines.append("|---|---|---|---|")
+        for b in sorted(backlog, key=lambda b: -(b.get("age_days") or 0)):
+            age = "unknown" if b.get("age_days") is None else f"{b['age_days']}d"
+            lines.append(f"| `{b.get('repo','?')}` | [#{b.get('number','?')}]({b.get('url','')}) | "
+                         f"{age} | {b.get('title','?')} |")
+    lines.append("")
+    return lines
+
+
+def render_markdown(run: dict, artifact_url: Optional[str] = None,
+                     backlog: "list[dict] | None" = None) -> str:
     h = headline(run)
     partial = run.get("status") == "partial"
     lines: list[str] = []
@@ -329,6 +365,8 @@ def render_markdown(run: dict, artifact_url: Optional[str] = None) -> str:
     if artifact_url:
         lines.append(f"- **Full page:** {artifact_url}")
     lines.append("")
+
+    lines.extend(_backlog_lines(backlog))
 
     lines.append("### Probe coverage, per file")
     lines.append("")
@@ -418,7 +456,8 @@ def render_markdown(run: dict, artifact_url: Optional[str] = None) -> str:
 
 # ---- chat --------------------------------------------------------------------
 
-def render_chat(run: dict, link: Optional[str] = None) -> str:
+def render_chat(run: dict, link: Optional[str] = None,
+                 backlog: "list[dict] | None" = None) -> str:
     h = headline(run)
     partial = run.get("status") == "partial"
     head = "⚠️ PARTIAL" if partial else "🧹"
@@ -439,6 +478,12 @@ def render_chat(run: dict, link: Optional[str] = None) -> str:
     decisions = collect(run, "decisions")
     if decisions:
         lines.append(f"🖐️ {len(decisions)} reviewer decision(s) waiting")
+    if backlog is None:
+        lines.append("⚠️ open-purge-PR backlog check failed — could not confirm none are stuck")
+    elif backlog:
+        stale = [b for b in backlog if (b.get("age_days") or 0) >= 7]
+        lines.append(f"🗄️ {len(backlog)} open purge PR(s)"
+                     + (f", {len(stale)} older than a week" if stale else ""))
     if link:
         lines.append(link)
     return "\n".join(lines)
@@ -446,7 +491,7 @@ def render_chat(run: dict, link: Optional[str] = None) -> str:
 
 # ---- html -------------------------------------------------------------------
 
-def render_html(run: dict) -> str:
+def render_html(run: dict, backlog: "list[dict] | None" = None) -> str:
     h = headline(run)
     md_rows = render_markdown(run)
     esc = _html.escape
@@ -454,6 +499,24 @@ def render_html(run: dict) -> str:
 
     def cells(row: list[str], tag: str = "td") -> str:
         return "".join(f"<{tag}>{c}</{tag}>" for c in row)
+
+    if backlog is None:
+        backlog_html = "<p>Not recorded this run — treat as unknown, not clean.</p>"
+    elif not backlog:
+        backlog_html = "<p>No open <code>chore/context-purge-*</code> PRs.</p>"
+    else:
+        backlog_rows = "".join(
+            "<tr>" + cells([
+                f"<code>{esc(b.get('repo','?'))}</code>",
+                f"<a href='{esc(b.get('url',''))}'>#{esc(str(b.get('number','?')))}</a>",
+                "unknown" if b.get("age_days") is None else f"{b['age_days']}d",
+                esc(b.get("title", "?")),
+            ]) + "</tr>"
+            for b in sorted(backlog, key=lambda b: -(b.get("age_days") or 0))
+        )
+        backlog_html = (f"<div class='scroll'><table>"
+                        f"<tr><th>Repo</th><th>PR</th><th>Age</th><th>Title</th></tr>"
+                        f"{backlog_rows}</table></div>")
 
     file_rows = "".join(
         "<tr>" + cells([
@@ -540,6 +603,9 @@ ul {{ padding-left:1.1rem; }}
   <div class="stat"><div class="n">{h['inventory_walked']:,}</div><div class="l">inventory items walked</div></div>
   <div class="stat"><div class="n">{h['probed']}/{h['files_rewritten']}</div><div class="l">probed{f" · {h['probe_unknown']} not recorded" if h['probe_unknown'] else ""}</div></div>
 </div>
+
+<h2>Open purge PR backlog</h2>
+{backlog_html}
 
 <h2>Probe coverage, per file</h2>
 <div class="scroll"><table>
@@ -660,6 +726,10 @@ def main(argv: Optional[list[str]] = None) -> int:
     r.add_argument("--html", type=Path)
     r.add_argument("--chat-text", type=Path)
     r.add_argument("--url", help="artifact URL to reference, when one published")
+    r.add_argument("--reconcile-json", type=Path,
+                   help="gate.py reconcile --json output; carries the live "
+                        "open-purge-PR backlog (fleet-config#757). Omit to "
+                        "render the backlog section as 'not recorded'.")
 
     p = sub.add_parser("publish", help="post the digest to the managed ledger issue")
     p.add_argument("run", type=Path)
@@ -688,12 +758,18 @@ def main(argv: Optional[list[str]] = None) -> int:
         return 0
 
     if args.cmd == "render":
+        backlog = None
+        if args.reconcile_json:
+            try:
+                backlog = json.loads(args.reconcile_json.read_text(encoding="utf-8")).get("backlog")
+            except (OSError, ValueError) as exc:
+                print(f"WARN could not read --reconcile-json: {exc}", file=sys.stderr)
         if args.md:
-            args.md.write_text(render_markdown(run, args.url), encoding="utf-8")
+            args.md.write_text(render_markdown(run, args.url, backlog), encoding="utf-8")
         if args.html:
-            args.html.write_text(render_html(run), encoding="utf-8")
+            args.html.write_text(render_html(run, backlog), encoding="utf-8")
         if args.chat_text:
-            args.chat_text.write_text(render_chat(run, args.url), encoding="utf-8")
+            args.chat_text.write_text(render_chat(run, args.url, backlog), encoding="utf-8")
         print(f"RENDERED run={run.get('run_id')} "
               f"md={bool(args.md)} html={bool(args.html)} chat={bool(args.chat_text)}")
         return 0
