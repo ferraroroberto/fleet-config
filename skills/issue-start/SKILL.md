@@ -5,6 +5,8 @@ description: Start work on a GitHub issue — pick it, sync main, cut a feature 
 
 # issue-start
 
+**Capability preflight:** read [workflow-capabilities](../../docs/workflow-capabilities.md) and bind dispatch, results, waits, cancellation, model tiers and questions to this session’s actual tools before proceeding. Tool names below are conditional Claude examples; the contract governs adaptation. Keep this skill’s worktree, independent-review, human-review and shipping gates.
+
 **Goal:** Get cleanly onto a fresh feature branch for one GitHub issue, then hand
 off to the implementation. This skill sets up — it does **not** implement.
 
@@ -92,7 +94,7 @@ Run in parallel:
 - **Number given:** `gh issue view <N>`. If it fails or the issue is closed,
   stop and say so.
 - **Pick mode:** `gh issue list --state open --json number,title,labels` and
-  present the open issues with the AskUserQuestion tool (number + title). Never
+  present the open issues with the available user-input channel (number + title). Never
   auto-pick. **Exclude any issue labelled `audit-meta`** (the `/codebase-audit`
   ledger — not actionable work); filter it out model-side rather than adding a
   `gh` query qualifier.

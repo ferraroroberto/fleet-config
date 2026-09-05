@@ -5,6 +5,8 @@ description: Fan out GitHub issues to parallel background sub-agents — one per
 
 # issue-batch
 
+**Capability preflight:** read [workflow-capabilities](../../docs/workflow-capabilities.md) and bind dispatch, results, waits, cancellation, model tiers and questions to this session’s actual tools before proceeding. Tool names below are conditional Claude examples; the contract governs adaptation. Keep this skill’s worktree, independent-review, human-review and shipping gates.
+
 **Goal:** Take a list of selected GitHub issues, set up isolated workspaces (worktrees when needed), and spawn a parallel **background** sub-agent per issue to build + verify the change. Each sub-agent stops before pushing — you review and `/issue-finish` each branch yourself, one at a time.
 
 Pairs with `/issue-triage` (pick what to work on) and `/issue-finish` (ship each result, sequentially).
@@ -12,7 +14,7 @@ Pairs with `/issue-triage` (pick what to work on) and `/issue-finish` (ship each
 ## Execution rules
 
 - **Read-only on GitHub** — never creates issues, pushes, opens PRs, or merges. All shipping is deferred to manual `/issue-finish` per branch.
-- **Shell:** Bash tool is **Git Bash** here. No PowerShell syntax (`&`, `$env:`, here-strings) in Bash. Only `gh` and `git` are needed, both identical in Bash.
+- **Shell:** use the actual execution tool’s declared shell. Keep PowerShell syntax out of Git Bash and translate examples for the active shell.
 - **All git plumbing runs in the orchestrator (main conversation), not the sub-agents** — worktree creation, main-branch sync, branch cutting happen here, sequentially, *before* sub-agents launch. Sub-agents inherit a ready-to-edit workspace.
 - **The post-flight dirty-tree check (step 9) also runs in the orchestrator, never the sub-agent** — it only corrects the reported status, never blocks, auto-commits, or auto-fixes.
 
@@ -21,7 +23,7 @@ Pairs with `/issue-triage` (pick what to work on) and `/issue-finish` (ship each
 A space-separated list of issue tokens. Each token is one of:
 
 - **Explicit:** `<repo-name>#<N>` — e.g. `app-launcher#23`. Unambiguous; preferred.
-- **Bare number:** `<N>` — resolved via a single `gh search issues` call. Same number in multiple repos → ask the user (AskUserQuestion) which one.
+- **Bare number:** `<N>` — resolved via a single `gh search issues` call. Same number in multiple repos → ask the user (the contract’s available user-input channel) which one.
 
 Mixed forms are fine: `/issue-batch app-launcher#23 45 photo-ocr#12`.
 
@@ -53,7 +55,7 @@ For each bare `N`:
 - Match against the result on `number == N`.
 - 0 matches → stop: "No open issue #N in any ferraroroberto repo."
 - 1 match → resolved.
-- 2+ matches → AskUserQuestion listing each `repo#N — <title>` and let the user pick.
+- 2+ matches → ask through the available user-input channel, listing each `repo#N — <title>` and let the user pick.
 
 Output of this step: a list of `(repo, N, title, labels)` tuples.
 
@@ -118,7 +120,7 @@ In-place mode: skip — `/issue-start` inside the sub-agent will cut the branch.
 
 ### 7. Fan out: spawn one background sub-agent per issue
 
-Spawn one background sub-agent per issue (`run_in_background: true`, `subagent_type: "general-purpose"` or `"claude"`), but **bound the Opus concurrency**: these agents inherit the parent session's model, so when the parent is on **Opus**, dispatch through the global Opus concurrency window (≤3 in flight — `~/.claude/CLAUDE.md`, "Spawning sub-agents — cap concurrent Opus at 3"): launch up to 3, and each time one returns dispatch the next pending issue until the batch drains. Fewer than 3 issues → spawn that many. Parent on **Sonnet** → cap doesn't apply, spawn all in one message. Worktree pre-creation (step 6) already ran sequentially before any agent launches, so a windowed launch never races it.
+Dispatch one worker per issue through the capability contract. Use the parent model unless a task calls for a resolved tier; respect available host slots, and the ≤3-in-flight Opus cap only if the resolved model is Opus. Refill after collecting a terminal result. Worktree setup (step 6) remains sequential before launch. With no spawn, eligible builds run serially with the same isolation and build-and-stop human-review handoff; do not describe that as parallel execution.
 
 Two prompt templates — pick by isolation mode:
 
@@ -250,7 +252,7 @@ I'll report each result here as the agents complete. You don't need to wait —
 ask me anything else in the meantime.
 ```
 
-Then stop. Do not poll, do not sleep, do not check on progress — the harness re-invokes you automatically when each background agent completes. On Opus, when a completion frees a window slot, dispatch the next pending issue (step 7) until the batch drains.
+Collect every launched worker’s terminal result using the contract’s dispatch/collect loop within this turn. A wait timeout or notification without a result is still pending. Refill available slots until the queue drains; never assume automatic reinvocation. Preserve step 9’s human-review handoff.
 
 ### 9. Report each completion (as agents return)
 
@@ -282,7 +284,7 @@ All <N> sub-agents complete.
   ❌ <repo>#<N> verification failed — inspect <path>
 
 Next: review each branch, then ship — either `/issue-finish-batch <branches>`
-to fan out parallel Sonnet finishers once you're happy with several, or
+to fan out parallel easy-tier finishers once you're happy with several, or
 `/issue-finish` one at a time (sequential merges avoid CI pile-up and
 tray-restart races). `/issue-finish` removes a worktree-mode branch's worktree
 for you (it detects the linked worktree and runs the reparse-safe teardown). To
@@ -293,4 +295,4 @@ remove-worktree <wt-path>`.
 
 ### 10. Stop
 
-No follow-up actions. The user reviews each branch, then ships — via `/issue-finish-batch <branches>` (parallel Sonnet finishers, blocker-only escalation) or `/issue-finish` per branch (manual fallback). Do **not** auto-launch either.
+No follow-up actions. The user reviews each branch, then ships — via `/issue-finish-batch <branches>` (parallel easy-tier finishers, blocker-only escalation) or `/issue-finish` per branch (manual fallback). Do **not** auto-launch either.

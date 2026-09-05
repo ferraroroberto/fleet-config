@@ -5,7 +5,9 @@ description: Run /design-sync across every FastAPI + static-PWA web app in the E
 
 # design-sweep
 
-**Goal:** a fleet-wide, idempotent, scatter-gather wrapper around `/design-sync` (`fleet-config#178`). Deterministically gate the fleet down to its **token-styled web apps** (skip non-web repos and Streamlit POC spikes), run the per-repo `/design-sync` logic against each through a bounded window of **Sonnet** sub-agents, then collect the results into **one combined digest**: stdout (so a scheduled run captures it) + a Telegram ping via `notify_complete.py --kind design`.
+**Capability preflight:** read [workflow-capabilities](../../../docs/workflow-capabilities.md) and bind dispatch, results, waits, cancellation, model tiers and questions to this session’s actual tools before proceeding. Tool names below are conditional Claude examples; the contract governs adaptation. Keep this skill’s worktree, independent-review, human-review and shipping gates.
+
+**Goal:** a fleet-wide, idempotent, scatter-gather wrapper around `/design-sync` (`fleet-config#178`). Deterministically gate the fleet down to its **token-styled web apps** (skip non-web repos and Streamlit POC spikes), run the per-repo `/design-sync` logic against each through a bounded window of **easy-tier** sub-agents, then collect the results into **one combined digest**: stdout (so a scheduled run captures it) + a Telegram ping via `notify_complete.py --kind design`.
 
 ## Arguments
 
@@ -59,9 +61,9 @@ Design sweep plan — 8 web apps, 26 non-web skipped, 1 Streamlit skipped
 
 If `web_apps` is empty, jump to step 5 with an empty result set (the digest still goes out so the weekly run always produces a record).
 
-### 3. Sweep each web app — a bounded window of Sonnet sub-agents
+### 3. Sweep each web app — a bounded window of easy-tier sub-agents
 
-Process the `web_apps` list through a **bounded concurrency window of up to 4 Sonnet sub-agents** (one per repo). This window is a token-pacing default, not a rate limiter — Sonnet is exempt from the ≤3-Opus cap. Dispatch up to 4 background `Agent` calls (`run_in_background: true`, `subagent_type: "general-purpose"`, **`model: "sonnet"`**) to fill the window, then **stay in this same turn and block on `TaskOutput` (`block: true`) for every task now in flight** — do not end the turn to "wait for it". An unpolled background task is silently killed at the CLI's background-task ceiling and the run reports a false `exit 0` (`fleet-config#506`, same gap `fleet-config#314` closed for this skill's own Python-sweep/digest calls, just never stated for this `Agent`-dispatch loop). If a `TaskOutput` call times out before a task finishes, re-issue the same blocking call. As each task returns, record its report and immediately dispatch the next repo — never more than 4 in flight, and the turn must never end while any task is still dispatched. No git worktrees needed: `/design-sync` (report-only) never edits a tree, so agents in different repo directories cannot collide.
+Process `web_apps` through the capability contract, easy tier, up to the smaller of four workers and available host slots. Collect every terminal result within this turn, refill on completion, and keep timeouts pending. No-spawn fallback runs the same report-only `/design-sync` work serially. No worktrees are needed for these read-only checks.
 
 Prompt template (substitute `<name>` / `<path>`):
 

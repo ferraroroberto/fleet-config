@@ -5,11 +5,13 @@ description: Weekly learning log + forward horizon + productivity stats distille
 
 # learning-log
 
-**Goal:** surface the *learning journey* and *productivity shape* otherwise buried inside individual PRs and issues. Once a week, read the **work stream itself** — every merged PR and closed issue across the `ferraroroberto` fleet since the last run — then (a) compute **exact productivity tables** (PRs / issues / LOC, by project and by work-type) and (b) fan out **one Sonnet sub-agent per work-type bucket** to *extract insights* (patterns, recurring root-causes, decisions, durable lessons). Aggregate into a themed log, **grade last week's horizon**, and set the next one.
+**Capability preflight:** read [workflow-capabilities](../../../docs/workflow-capabilities.md) and bind dispatch, results, waits, cancellation, model tiers and questions to this session’s actual tools before proceeding. Tool names below are conditional Claude examples; the contract governs adaptation. Keep this skill’s worktree, independent-review, human-review and shipping gates.
+
+**Goal:** surface the *learning journey* and *productivity shape* otherwise buried inside individual PRs and issues. Once a week, read the **work stream itself** — every merged PR and closed issue across the `ferraroroberto` fleet since the last run — then (a) compute **exact productivity tables** (PRs / issues / LOC, by project and by work-type) and (b) fan out **one easy-tier sub-agent per work-type bucket** to *extract insights* (patterns, recurring root-causes, decisions, durable lessons). Aggregate into a themed log, **grade last week's horizon**, and set the next one.
 
 **The journey + productivity lens, not the others.** Reads **no source code** (that's `/audit-fleet`); does not regenerate the architecture PNG (that's `/system-map` — only cross-links it); is not Claude Code usage metrics (that's `/insights-weekly`). Only input is GitHub: merged PRs + closed issues.
 
-**Scatter-gather, like `/audit-fleet`.** A deterministic Python helper (`gather.py`) does the GitHub gather + exact stats + per-bucket partition; the orchestrator fans out **Sonnet** sub-agents (one per bucket), each returning a **fixed format** so the aggregate is uniform. The orchestrator never reads source; it weaves the bucket insights, grades the horizon, assembles the digest.
+**Scatter-gather, like `/audit-fleet`.** A deterministic Python helper (`gather.py`) does the GitHub gather + exact stats + per-bucket partition; the orchestrator fans out **easy-tier** sub-agents (one per bucket), each returning a **fixed format** so the aggregate is uniform. The orchestrator never reads source; it weaves the bucket insights, grades the horizon, assembles the digest.
 
 ## Arguments
 
@@ -42,9 +44,9 @@ Lists every fleet repo (`gh repo list`), reads each repo's merged PRs + closed i
 - `PRIOR_HORIZON_FILE=` — last week's horizon (grade against it).
 - `OUT_DIR=` and one `BUCKET=<slug>|<name>|prs=N|issues=M|file=<path>` per non-empty bucket — dispatch one sub-agent per line.
 
-### 2. Scatter — one Sonnet sub-agent per bucket
+### 2. Scatter — one easy-tier sub-agent per bucket
 
-For each `BUCKET=` line, dispatch a **background `Agent`** (`run_in_background: true`, `subagent_type: general-purpose`, `model: sonnet`) — all in parallel (Sonnet is exempt from the Opus cap). Then, in this same turn, block on `TaskOutput` (`block: true`) for every dispatched task — do not end the turn to "wait for it". This orchestrator runs headless via `run-weekly.bat` with no wake-up mechanism: an unpolled background task is silently killed at the CLI's background-task ceiling and the run reports a false `exit 0` (`fleet-config#506`, same gap `fleet-config#314` already closed for this skill's own gather/upsert calls, just never stated for this bucket fan-out). If a `TaskOutput` call times out before a task finishes, re-issue the same blocking call — the turn must never end while any bucket agent is still dispatched. Each reads only its `bucket-<slug>.md` and EXTRACTS INSIGHTS in this exact format (so the aggregate is uniform):
+For each `BUCKET=` line, dispatch an easy-tier worker through the capability contract, bounded by available slots. Collect every terminal result within this turn; timeouts remain pending. With no spawn, extract buckets serially using the same inputs and output format. Each reads only its `bucket-<slug>.md` and EXTRACTS INSIGHTS in this exact format (so the aggregate is uniform):
 
 ```
 ### <Bucket name>

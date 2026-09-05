@@ -5,6 +5,8 @@ description: Take one bucket of audit findings (a label like documentation, drif
 
 # cleanup-fleet
 
+**Capability preflight:** read [workflow-capabilities](../../../docs/workflow-capabilities.md) and bind dispatch, results, waits, cancellation, model tiers and questions to this session’s actual tools before proceeding. Tool names below are conditional Claude examples; the contract governs adaptation. Keep this skill’s worktree, independent-review, human-review and shipping gates.
+
 **Goal:** `/audit-fleet` *finds* and files codebase findings, bucketed into seven labels, and `/design-sweep` files an eighth (`design-drift`); this skill *fixes* one bucket fleet-wide in a single pass. Pick a bucket → gather every open issue carrying that label → score each for complexity → deploy **one background sub-agent per repo**, sized via the easy/hard tier policy (`docs/model-tiers.md`) → aggregate.
 
 **`security` is not a cleanup bucket.** `/codebase-audit`'s seven finding buckets (incl. `slop`) are all queued here; `security` is the exception — self-healed inline by `/codebase-audit` itself (step 8b: redacted issue + auto-fix + auto-merge, or escalate on failure). `/design-sync`'s eighth queued bucket is `design-drift`; its sibling `cert-drift` is likewise **review-only** (a tailnet-cert migration must never be auto-applied). A `security` or `cert-drift` label never appears in this skill.
@@ -35,7 +37,7 @@ description: Take one bucket of audit findings (a label like documentation, drif
 
 (`security` is intentionally absent — self-healed inline by `/codebase-audit`; `cert-drift` is likewise absent — it's `/design-sync`'s review-only kind, never auto-fixed here.)
 
-If **no bucket** is given → run step 2's count query, then `AskUserQuestion` listing the eight queued buckets each with its **live open-issue count**, and let the user pick.
+If **no bucket** is given → run step 2's count query, then ask through the available user-input channel, listing the eight queued buckets each with its **live open-issue count**, and let the user pick.
 
 **Mode** — `hard` (default) or `easy` / `silent`. (This is the CLI argument, distinct from the per-issue complexity *tier* below — always read as "`hard` mode" vs. "hard-tier issue" to keep the two straight.)
 
@@ -44,13 +46,13 @@ If **no bucket** is given → run step 2's count query, then `AskUserQuestion` l
 
 ## Execution rules (read before running any command)
 
-- **Shell:** the Bash tool here is **Git Bash**. Use plain `gh` / `git` only — no PowerShell syntax (`&`, `$env:`, here-strings). Windows paths map as `/e/automation/...`.
+- **Shell:** use the actual execution tool’s declared shell; translate examples without mixing Bash and PowerShell syntax.
 - **The orchestrator only does cheap, safe work:** resolve the bucket, **one** issue-fetch call, score, plan, per-repo pre-flight, fan-out, aggregate. **It never edits source, commits, pushes, or merges** — every write happens inside a spawned agent.
 - **Read the issue JSON directly.** Do not spawn jq / python / awk to process the output — group, score, and select model-side, exactly like `/issue-triage`.
 - **One agent per repo, period.** Never spawn two agents against the same checkout.
 - **Never disturb in-progress work.** A repo that is dirty or off its default branch is skipped and reported — never stashed, never force-switched.
 - **Degrade, don't block** (so `easy`/`silent` can run unattended via `claude -p`): a per-repo failure is reported and skipped; only a pre-flight failure stops the whole run.
-- **In `easy`/`silent` mode, never background-and-wait.** An attended `hard`-mode run is a normal top-level session and the harness *does* re-invoke it as each background sub-agent completes (step 9's "stop and stand by" is correct there). `easy`/`silent` runs headless via `claude -p` with **no** wake-up mechanism, so stopping to "wait for the harness" there silently kills the run: the CLI exits `0` immediately and every dispatched agent is killed at the background-task ceiling with nothing collected (`fleet-config#506`, `fleet-config#314`). In `easy`/`silent`, step 9 must instead block on `TaskOutput` (`block: true`) for every in-flight agent within the same turn, re-issuing on timeout, never ending the turn until the selected-issue list is fully drained.
+- **Drain every worker in the current turn in all modes.** Use the capability contract’s dispatch/collect loop. Neither attended mode nor background launch proves automatic reinvocation; scheduled process launching remains owned by the existing runner.
 
 ## Steps
 
@@ -67,7 +69,7 @@ Parse the args (order-independent): the mode token is `hard`/`easy`/`silent`; an
 E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/gh_issue_fetch.py fetch
 ```
 
-Tally open issues per bucket label (drop `audit-meta` rows; a `security` or `cert-drift` row should never appear — neither is queued here — but drop them too if one somehow exists), then `AskUserQuestion` listing the eight queued buckets with counts.
+Tally open issues per bucket label (drop `audit-meta` rows; a `security` or `cert-drift` row should never appear — neither is queued here — but drop them too if one somehow exists), then ask through the available user-input channel, listing the eight queued buckets with counts.
 
 ### 3. Fetch candidates — direct Issues API, one repo-scoped call per repo
 
@@ -146,10 +148,7 @@ once. `DECISION=PAUSE` → wait via the `Monitor` tool's until-loop pattern agai
 the printed `WAIT_SECONDS`/`RESETS_AT` before firing the batch (see
 `docs/rate-gate.md`); `OK`/`UNKNOWN` → proceed immediately.
 
-Dispatch one background sub-agent per selected issue (`run_in_background: true`, `subagent_type: "general-purpose"`, **`model` resolved from the tier** — `model: "sonnet"` for easy tier, `model: "opus"` for hard tier on Claude Code today, see `docs/model-tiers.md`), but **bound whichever tier resolves to Opus on the current host**:
-
-- **Easy-tier agents are exempt** — spawn them all at once in a single message (after the rate-gate check above).
-- **Any tier that resolves to Opus on the current host goes through the global Opus concurrency window** (≤3 in flight — `~/.claude/CLAUDE.md`, "Spawning sub-agents — cap concurrent Opus at 3"): dispatch up to 3, refill as each returns until the queue drains. On Claude Code today **hard-tier resolves to Opus, so this window is live** for every hard-tier dispatch, not just a future `extreme`-tier escalation (`docs/model-tiers.md`). A single-message fan-out of many Opus agents trips Anthropic's burst limiter (ceiling 3–4, anthropics/claude-code#53922).
+Dispatch one fresh worker per selected issue through the capability contract, with model/effort resolved from the tier. Respect available host slots and the ≤3 Opus window where that model is selected; refill after collecting terminal results. Easy tier does not bypass host slot limits. Without fresh spawn and collection, stop with a concrete standalone-worker handoff; this orchestrator never becomes its own builder or independent reviewer.
 
 #### 8a. Easy-tier prompt
 
@@ -262,8 +261,7 @@ Substitute every `<…>` placeholder with the concrete value from steps 2–7.
 
 Print a single confirmation block listing every sub-agent dispatched (repo, #N, model, path) — and, if any hard-tier issues are still queued behind the Opus window (see step 8), note how many are pending.
 
-- **`hard` mode (attended, a normal top-level session):** then **stop** — do not poll, sleep, or check progress. The harness re-invokes you automatically as each background agent completes; on each Opus-tier completion, refill that window with the next pending issue (step 8) until the queue drains.
-- **`easy`/`silent` mode (designed to also run headless via `claude -p`):** a headless run has no re-invocation to rely on, so instead **block on `TaskOutput` (`block: true`) for every in-flight agent within this same turn**, re-issuing on timeout; refill the window as each returns (step 8); never end the turn until every selected issue has a final status (`fleet-config#506`).
+- **All modes:** collect every terminal result within this turn, refill the available window and keep timed-out workers pending. Hard-tier branches still stop for human review; easy-tier shipping still requires the independent review in `/issue-yolo`.
 
 ### 10. Aggregate as agents return, then the closing ping
 
