@@ -4,8 +4,8 @@ Every hook in this directory:
 
 * Reads a single JSON payload from stdin (Claude Code's hook contract).
 * Returns exit code 0 to allow the action.
-* Returns exit code 2 with a one-line reason on **stderr** to block the action
-  (Claude sees the stderr and adjusts).
+* Refuses through block(): Claude uses exit 2 + stderr; Codex PreToolUse
+  uses a structured deny + exit 0; Grok adds its own structured deny.
 * Or returns exit code 0 with a single-line nudge on **stdout** to advise
   without blocking.
 
@@ -289,10 +289,9 @@ def normalize_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
     """Translate a foreign-harness hook payload into Claude Code's shape.
 
     Claude Code payloads (and the Pi adapter's ``{"event": ...}`` envelope) are
-    returned **unchanged** — same object, no copy — so this is a no-op for every
-    caller that existed before fleet-config#491. Only a payload carrying Grok's
-    ``hookEventName`` key is rewritten; that key is the reliable tell, since
-    Grok sends it on every event and Claude Code never does.
+    returned **unchanged** — same object, no copy. Foreign envelopes are
+    translated below. Codex shares Claude's shape, so only an invoked
+    ``.codex/hooks`` entry point establishes Codex provenance.
 
     The rewritten payload also carries an :data:`AGENT_HINT_KEY` entry naming
     the originating harness, so :mod:`session_state` can attribute the row to
@@ -300,6 +299,7 @@ def normalize_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
     mis-attribution the compat shim would otherwise cause).
     """
     global _ACTIVE_AGENT
+    _ACTIVE_AGENT = None
 
     if not isinstance(payload, dict):
         return payload
@@ -354,6 +354,16 @@ def normalize_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
         return out
 
     if "hookEventName" not in payload:
+        # Codex uses Claude-shaped input. The invoked entry point is provenance;
+        # resolving junctions would erase .codex, and inherited launcher/env
+        # hints can describe an ancestor rather than this hook's caller (#759).
+        entry = Path(sys.argv[0]).absolute() if sys.argv else None
+        if (entry is not None and entry.parent.name.lower() == "hooks"
+                and entry.parent.parent.name.lower() == ".codex"
+                and isinstance(payload.get("hook_event_name"), str)
+                and payload["hook_event_name"]):
+            _ACTIVE_AGENT = "codex"
+            return {**payload, AGENT_HINT_KEY: "codex"}
         return payload
 
     _ACTIVE_AGENT = "grok"
@@ -408,7 +418,9 @@ def read_stdin_json() -> Dict[str, Any]:
     A non-Claude harness's payload is translated into Claude's shape first (see
     :func:`normalize_payload`), so every hook downstream reads one vocabulary.
     """
-    global _ACTIVE_EVENT
+    global _ACTIVE_EVENT, _ACTIVE_AGENT
+    _ACTIVE_EVENT = None
+    _ACTIVE_AGENT = None
     raw = sys.stdin.read()
     if not raw or not raw.strip():
         return {}
@@ -442,8 +454,19 @@ def block(reason: str) -> "NoReturn":
     decision on **stdout is honored regardless of exit code**, so a Grok-sourced
     payload also gets the JSON decision. Claude Code never reaches that branch —
     it is gated on the agent :func:`normalize_payload` identified — so Claude's
-    stdout stays clean and its behaviour is byte-for-byte unchanged.
+    stdout stays clean and its behaviour is byte-for-byte unchanged. Codex
+    PreToolUse uses its verified structured deny with exit 0 (fleet-config#759).
     """
+    # Codex 0.153.3 exec: stderr + exit 2 reported a block but executed the
+    # sentinel. Structured PreToolUse deny + exit 0 refused it and delivered the
+    # reason. Other events have different contracts; never label those a deny.
+    if _ACTIVE_AGENT == "codex" and _ACTIVE_EVENT == "PreToolUse":
+        print(json.dumps({"hookSpecificOutput": {
+            "hookEventName": "PreToolUse",
+            "permissionDecision": "deny",
+            "permissionDecisionReason": reason,
+        }}), flush=True)
+        sys.exit(0)
     if _ACTIVE_AGENT == "grok":
         print(json.dumps({"decision": "deny", "reason": reason}), flush=True)
     print(reason, file=sys.stderr, flush=True)
@@ -490,7 +513,7 @@ def warn(message: str) -> "NoReturn":
     Claude's, and none of the shapes above are part of the Grok/Copilot/agy
     contract.
     """
-    if _ACTIVE_AGENT is None and _ACTIVE_EVENT not in _STDOUT_IS_CONTEXT_EVENTS:
+    if _ACTIVE_AGENT in (None, "codex") and _ACTIVE_EVENT not in _STDOUT_IS_CONTEXT_EVENTS:
         if _ACTIVE_EVENT in _ADDITIONAL_CONTEXT_EVENTS:
             payload: Dict[str, Any] = {"hookSpecificOutput": {
                 "hookEventName": _ACTIVE_EVENT,
