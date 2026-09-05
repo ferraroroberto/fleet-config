@@ -1,7 +1,7 @@
 """Block dated retrospective filenames under a `docs/` directory.
 
-Triggers on `PreToolUse` for `Write`. **Blocks** (exit 2) when the target file
-sits under a `docs/` directory and its basename starts with a `YYYY-MM-DD-`
+Triggers on `PreToolUse` for `Write` or Codex `apply_patch`. **Blocks** when a
+new target file sits under a `docs/` directory and its basename starts with a `YYYY-MM-DD-`
 date prefix — e.g. `docs/2026-06-18-retro.md`.
 
 Why: the global "Documentation discipline" rule — `docs/` is for durable
@@ -30,30 +30,36 @@ DATED_PREFIX_RE = re.compile(r"^\d{4}-\d{2}-\d{2}-")
 
 def main() -> None:
     payload = _lib.read_stdin_json()
-    if _lib.tool_name(payload) != "Write":
+    tool = _lib.tool_name(payload)
+    if tool not in {"Write", "apply_patch"}:
         _lib.allow()
 
     if os.environ.get("CLAUDE_HOOKS_ALLOW_DATED_DOCS") == "1":
         _lib.allow()
 
-    target = _lib.file_path(payload)
-    if target is None:
+    edit = _lib.edit_event(payload)
+    if edit.status != "known":
         _lib.allow()
 
-    parts = [p.lower() for p in target.parts]
-    if "docs" not in parts:
-        _lib.allow()
+    for change in edit.targets:
+        # Native Write retains its historical create/overwrite coverage. For a
+        # patch, only Add File creates the dated-document shape this policy
+        # forbids; updates, deletes and renames of an existing artifact remain
+        # possible.
+        if tool == "apply_patch" and change.operation != "add":
+            continue
+        target = change.path
+        parts = [p.lower() for p in target.parts]
+        if "docs" in parts and DATED_PREFIX_RE.match(target.name):
+            _lib.block(
+                f"Blocked: '{target.name}' is a dated file under docs/. The 'Documentation "
+                "discipline' rule keeps docs/ for durable, topic-named reference — not dated "
+                "retrospectives (the issue + PR + git log are the changelog). Name it for the "
+                "topic, or record the work in the GitHub issue/PR. Set "
+                "CLAUDE_HOOKS_ALLOW_DATED_DOCS=1 to override for a genuine dated artifact."
+            )
 
-    if not DATED_PREFIX_RE.match(target.name):
-        _lib.allow()
-
-    _lib.block(
-        f"Blocked: '{target.name}' is a dated file under docs/. The 'Documentation "
-        "discipline' rule keeps docs/ for durable, topic-named reference — not dated "
-        "retrospectives (the issue + PR + git log are the changelog). Name it for the "
-        "topic, or record the work in the GitHub issue/PR. Set "
-        "CLAUDE_HOOKS_ALLOW_DATED_DOCS=1 to override for a genuine dated artifact."
-    )
+    _lib.allow()
 
 
 if __name__ == "__main__":

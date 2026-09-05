@@ -163,6 +163,9 @@ _STANDALONE_UNIT_CHECKS: Tuple[Tuple[str, str, str], ...] = (
      "frozen -- is testable on its own (fleet-config#667)"),
     ("edit_targets", "test_edit_targets.py",
      "shared native/patch edit targets and multi-file Python syntax feedback (fleet-config#744)"),
+    ("codex_policy_coverage", "test_codex_policy_coverage.py",
+     "Codex command/edit policy delivery, multi-target patch behavior, and Claude/Grok compatibility "
+     "are exercised through real hook subprocesses (fleet-config#745)"),
     ("payload_normalization", "test_payload_normalization.py",
      "the Grok camelCase -> Claude snake_case translation every hook "
      "now routes through, and -- the load-bearing half -- that a "

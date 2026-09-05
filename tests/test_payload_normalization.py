@@ -446,6 +446,20 @@ check(_lib.payload_agent(_normalized) == "codex", "Codex invoked hook carries ha
 check(_normalized.get("tool_input") is CLAUDE_PRE_TOOL_USE["tool_input"], "Codex preserves tool input identity")
 check(_lib.AGENT_HINT_KEY not in CLAUDE_PRE_TOOL_USE, "Codex normalization never mutates caller input")
 
+_codex_warn_out = io.StringIO()
+with patch.object(sys, "argv", [_codex_entry]), patch.object(
+    sys, "stdin", io.StringIO(json.dumps(CLAUDE_PRE_TOOL_USE))
+), redirect_stdout(_codex_warn_out):
+    _lib.read_stdin_json()
+    try:
+        _lib.warn("Fleet advisory")
+    except SystemExit as exc:
+        _codex_warn_code = exc.code
+_codex_warn_wire = json.loads(_codex_warn_out.getvalue() or "{}")
+check(_codex_warn_code == 0 and _codex_warn_wire == {"hookSpecificOutput": {
+    "hookEventName": "PreToolUse", "additionalContext": "Fleet advisory"}},
+      "Codex: PreToolUse advisory uses model-visible additionalContext")
+
 
 # ---- Codex's Bash label does not establish the shell (#743) ----
 # Only JSON is passed to the guard; these commands are NEVER executed.

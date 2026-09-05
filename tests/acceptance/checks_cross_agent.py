@@ -28,6 +28,22 @@ from acceptance.shared import (
     run,
 )
 
+
+_CODEX_POLICY_COVERAGE = (
+    # policy, module, event, matcher, observed Codex status
+    ("GitHub body quoting", "gh_body_file_guard", "PreToolUse", "Bash", "advises"),
+    ("Dated docs filenames", "docs_dated_filename_guard", "PreToolUse",
+     "Edit|Write|MultiEdit", "blocks"),
+    ("Branch before edit", "branch_before_edit_guard", "PreToolUse",
+     "Edit|Write|MultiEdit", "blocks"),
+    ("Local hub routing", "hub_bypass_warn", "PostToolUse",
+     "Edit|Write|MultiEdit", "advises"),
+    ("Browser launch safety", "browser_stealth_lint", "PostToolUse",
+     "Edit|Write|MultiEdit", "advises"),
+    ("Chief question suppression", "block_askuserquestion_chief", None, None,
+     "not applicable"),
+)
+
 # Every function below inserts its own sys.path entry (HOOKS or skills/_lib)
 # right before its dynamic import -- matches the pre-split file's per-function
 # style, so each check's dependency is visible at its own call site.
@@ -185,6 +201,35 @@ def _codex_hooks_config_check() -> Tuple[int, int]:
         "codex_hooks: commands invoke hook modules directly",
         all(re.search(r"^E:/automation/fleet-config/\.venv/Scripts/python\.exe\s+C:/Users/rober/\.codex/hooks/\w+\.py$", c) for c in commands),
         "\n".join(commands),
+    )
+
+    registrations = {
+        (event, str(block.get("matcher", "")), match.group(1))
+        for event, blocks in data.get("hooks", {}).items()
+        for block in blocks
+        for hook in block.get("hooks", [])
+        if (match := re.search(r"/([A-Za-z0-9_]+)\.py$", str(hook.get("command", ""))))
+    }
+    expected = {
+        (event, matcher, module)
+        for _policy, module, event, matcher, status in _CODEX_POLICY_COVERAGE
+        if status in {"blocks", "advises"}
+    }
+    missing = sorted(expected - registrations)
+    check(
+        "codex_hooks: explicit policy table has every applicable registration",
+        not missing,
+        "missing: " + repr(missing),
+    )
+    unsupported_wired = sorted(
+        module for _policy, module, _event, _matcher, status in _CODEX_POLICY_COVERAGE
+        if status in {"not applicable", "unsupported", "not verified"}
+        and any(registration[2] == module for registration in registrations)
+    )
+    check(
+        "codex_hooks: unsupported/not-applicable policy surfaces stay explicit and unwired",
+        not unsupported_wired,
+        "unexpected registrations: " + repr(unsupported_wired),
     )
 
     env = {k: v for k, v in os.environ.items() if k != "TELEGRAM_BOT_TOKEN"}
