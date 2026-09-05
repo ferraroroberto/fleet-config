@@ -67,7 +67,7 @@ E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skill
 
 Once read, `SWEEP_RESULT`'s content is this step's JSON output.
 
-The script (`skills/_lib/fleet_audit_scan.py`, built on `audit_issue.py`'s `evaluate_repo`) walks `E:\automation\*\`, skips linked worktrees (`<repo>-wt-<N>`: `.git` is a file, not a dir), filters to repos with a `ferraroroberto` remote, skips dirty/off-branch repos, syncs the rest (`fetch` + `pull --ff-only`), and runs the **same ledger-gate + self-fix-churn decision `/codebase-audit` step 2 uses** (`evaluate_repo` — one implementation) per repo.
+The script (`skills/_lib/fleet_audit_scan.py`, built on `audit_issue.py`'s `evaluate_repo`) walks `E:\automation\*\`, skips linked worktrees (`<repo>-wt-<N>`: `.git` is a file, not a dir — without this guard a worktree surfaces as a spurious off-branch repo), filters to repos with a `ferraroroberto` remote, skips dirty/off-branch repos, syncs the rest (`fetch` + `pull --ff-only`), and runs the **same ledger-gate + self-fix-churn decision `/codebase-audit` step 2 uses** (`evaluate_repo` — one implementation) per repo.
 
 JSON shape:
 
