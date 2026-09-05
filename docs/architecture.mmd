@@ -154,7 +154,13 @@ flowchart TB
   CONTEXTAUDIT -->|cap-gates, per repo| SISTERSKILLS
   CONTEXTPURGE -->|compresses| GCMDFILE
   CONTEXTPURGE -->|compresses| gskills
-  SCHEDULED -->|streams via| LIB
+  SCHEDULED -->|compatible facade| CLAUDEPROGRESS["claude_progress.py"]
+  CLAUDEPROGRESS --> RUNNER["scheduled_runner.py\nshared progress, terminal evidence, delivery, retry, owned cancellation"]
+  CODEXENTRY["explicit --harness codex callers"] --> RUNNER
+  RUNNER --> SCOPE["process_scope.py\nowned Windows job / POSIX group + nonblocking pipe drain"]
+  RUNNER --> ADAPTERS["runner_adapters.py\nClaudeAdapter + CodexAdapter -> ProgressEvent\nPi/Grok and Codex child delegation unverified"]
+  RUNNER --> LIB
+  ACCPKG -->|native fixtures + fake owned children| RUNNER
 
   subgraph tests["tests/ — run_acceptance.py (thin dispatcher) + acceptance/ package (fleet-config#502)"]
     TESTS["run_acceptance.py\nsums + prints the summary line"]

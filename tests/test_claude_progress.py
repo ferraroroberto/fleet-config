@@ -190,7 +190,7 @@ check(all(secret not in rendered for secret in (
 )), "thinking, signatures, and raw malformed/unknown records are absent")
 check("1 malformed and 1 unknown" in rendered,
       "malformed and future events are summarized without crashing")
-check("✅ completed · exit 0" in rendered, "successful terminal status is explicit")
+check("❓ not confirmed" in rendered, "malformed or unknown records remain unverified even after a result")
 
 
 # ---- stderr redaction and exact child exit-code propagation ----
@@ -313,7 +313,7 @@ check("burst of" not in "\n".join(quiet_lines),
 
 delivered_lines: list[str] = []
 delivered_formatter = cp.ProgressFormatter(emit=delivered_lines.append, clock=lambda: 0.0)
-delivered_formatter.handle_line(json.dumps({"type": "result", "result": "done"}))
+delivered_formatter.handle_line(json.dumps({"type": "result", "subtype": "success", "is_error": False, "result": "done"}))
 for _ in range(cp.UNKNOWN_BURST_THRESHOLD):
     delivered_formatter.handle_line(json.dumps({"type": "future_event"}))
 check(not delivered_formatter.stream_truncated,
@@ -322,10 +322,10 @@ delivered_formatter.finish(0)
 delivered_output = "\n".join(delivered_lines)
 check("no terminal result event" not in delivered_output,
       "the result event was received, so finish() must not claim otherwise")
-check("✅ completed · exit 0" in delivered_output,
-      "a run that delivered its result event reports as completed, not unconfirmed")
-check("❓ not confirmed" not in delivered_output,
-      "a delivered run is never reported as unconfirmed")
+check("✅ completed" not in delivered_output,
+      "a result does not bless unknown event semantics (#750)")
+check("❓ not confirmed" in delivered_output,
+      "unknown records remain unconfirmed even with a terminal result (#750)")
 
 # The #560 case this must not weaken: no result event ever arrives, so the
 # same burst still means the stream was genuinely cut off mid-flight.
@@ -358,7 +358,10 @@ INIT_LINE = (
 TOOL_LINE = (
     "print(json.dumps({'type':'assistant','message':{'content':"
     "[{'type':'tool_use','id':'t1','name':'Bash','input':{}}]}}), flush=True); "
+    "print(json.dumps({'type':'user','message':{'content':"
+    "[{'type':'tool_result','tool_use_id':'t1'}]}}), flush=True); "
 )
+RESULT_LINE = "print(json.dumps({'type':'result','subtype':'success','is_error':False,'result':'done'}), flush=True); "
 stall_script = (
     "import json,subprocess,sys,time; "
     + INIT_LINE
@@ -416,6 +419,7 @@ chatty_script = (
     "import json,sys,time; "
     + INIT_LINE
     + TOOL_LINE
+    + RESULT_LINE
     + "[ (print(json.dumps({'type':'system','subtype':'thinking_tokens',"
     "'estimated_tokens':1}), flush=True), time.sleep(0.2)) for _ in range(15) ]"
 )
@@ -433,7 +437,7 @@ check("no stream activity" not in chatty_output and "⏱ stalled" not in chatty_
 # Explicitly disabled: the watchdog must not fire at all.
 disabled_lines: list[str] = []
 disabled_exit = cp.run_process(
-    [sys.executable, "-c", "import json; " + INIT_LINE + TOOL_LINE],
+    [sys.executable, "-c", "import json; " + INIT_LINE + TOOL_LINE + RESULT_LINE],
     formatter=cp.ProgressFormatter(emit=disabled_lines.append),
     stall_timeout=0,
 )
@@ -451,6 +455,7 @@ ceiling_probe = (
     "import json,os,sys; "
     + INIT_LINE
     + TOOL_LINE
+    + RESULT_LINE
     + f"sys.exit(0 if os.environ.get({CEILING!r}) == '0' else 3)"
 )
 ceiling_lines: list[str] = []
@@ -478,6 +483,7 @@ override_probe = (
     "import json,os,sys; "
     + INIT_LINE
     + TOOL_LINE
+    + RESULT_LINE
     + f"sys.exit(0 if os.environ.get({CEILING!r}) == '900' else 3)"
 )
 override_lines: list[str] = []
@@ -878,13 +884,13 @@ task_script = (
     "import json,sys; "
     + INIT_LINE
     + "print(json.dumps({'type':'system','subtype':'task_started',"
-    "'description':'fan out'}), flush=True); "
+    "'task_id':'child-1','description':'fan out'}), flush=True); "
     "sys.exit(0)"
 )
 task_formatter = cp.ProgressFormatter(emit=lambda *_: None)
 task_exit = cp.run_process([sys.executable, "-c", task_script], formatter=task_formatter)
-check(task_exit == 0 and task_formatter.saw_tool_use,
-      "a dispatched task counts as work: task_started alone keeps the run green")
+check(task_exit == cp.INCOMPLETE_WORK_EXIT_CODE and task_formatter.saw_tool_use,
+      "a dispatched task counts as work but must finish before success (#750)")
 
 # A child that failed on its own keeps its own verdict -- the no-tool wording
 # must not overwrite a cause the child already named.
@@ -1039,7 +1045,7 @@ check(zero_retry_slept == [] and zero_retry_exit == cp.SELF_REPORTED_FAILURE_EXI
       "a self-reported zero-work failure is not retried -- retrying cannot fix it")
 
 clean_exit, clean_slept = _retry_run(
-    "import json,sys; " + INIT_LINE + TOOL_LINE + "sys.exit(0)",
+    "import json,sys; " + INIT_LINE + TOOL_LINE + RESULT_LINE + "sys.exit(0)",
     cp.ProgressFormatter(emit=lambda *_: None))
 check(clean_slept == [] and clean_exit == 0,
       "a clean run is run exactly once")
@@ -1118,8 +1124,8 @@ _5xx_then_clean_exit = (
 )
 notool_exit, notool_slept = _retry_run(
     _5xx_then_clean_exit, cp.ProgressFormatter(emit=lambda *_: None))
-check(notool_exit == cp.NO_TOOL_USE_EXIT_CODE and notool_slept == [],
-      "a no-tool run that saw a 5xx but exited 0 lands on the no-tool code without "
+check(notool_exit == cp.TRUNCATED_STREAM_EXIT_CODE and notool_slept == [],
+      "a run without a terminal result remains unconfirmed despite exit 0, without "
       "burning backoff -- a retry cannot change that verdict")
 
 # finish()'s branch order mirrors run_process's, so the status line can never

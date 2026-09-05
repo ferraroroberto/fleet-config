@@ -1,0 +1,1067 @@
+"""Shared scheduled lifecycle for explicit Claude/Codex process adapters.
+
+The compatible claude_progress.py facade retains existing Claude callers.
+New callers use scheduled_runner.py --harness codex PROMPT --model MODEL
+with an explicit supported permission choice. Provider argv/JSONL live in
+runner_adapters.py; this module owns progress, watchdog/cancellation, terminal
+evidence, delivery checks and the existing pre-tool-only Claude retry policy.
+Unknown events, malformed records, missing results and unfinished work never
+become success merely because the child exited zero. No schedule is migrated.
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import re
+import subprocess
+import sys
+import threading
+import time
+from collections.abc import Callable, Iterable, Sequence
+from pathlib import Path
+from typing import Any, NamedTuple, Optional, TextIO
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from no_window import NO_WINDOW  # noqa: E402
+from process_scope import ProcessScope, PipeReader, DRAIN_TIMEOUT_SECONDS, TERMINATE_TIMEOUT_SECONDS  # noqa: E402
+from runner_adapters import ClaudeAdapter, CodexAdapter, ProgressEvent  # noqa: E402
+
+MAX_SUMMARY_CHARS = 180
+SUMMARY_KEYS = (
+    "description",
+    "name",
+    "repo",
+    "repository",
+    "path",
+    "file_path",
+    "subject",
+    "task_id",
+    "skill",
+    "bucket",
+)
+RESERVED_FLAGS = ("-p", "--print", "--output-format", "--include-partial-messages")
+STALL_FLAG = "--stall-timeout"
+
+# An outer, adapter-side post-condition, checked after the child exits and
+# whatever its exit code was. Every detector in this file pattern-matches a
+# *symptom* of a run that delivered nothing, and each one has been a separate
+# incident (#314, #506, #519, #560). The fact that actually matters is not
+# "was the stream clean" but "did the run deliver", and for a scheduled skill
+# that is usually verifiable from outside the child — a digest comment dated
+# today, a file written, a row inserted. One check on the fact catches every
+# variant of this class at once, including the ones not seen yet, instead of a
+# fifth pattern-matcher for the fifth variant.
+DELIVERY_CHECK_FLAG = "--delivery-check"
+DELIVERY_CHECK_TIMEOUT_SECONDS = 120.0
+DELIVERY_NOT_CONFIRMED_EXIT_CODE = 121
+
+# A wedged run is worse than a failed one: it holds the job slot, reports
+# nothing, and is only noticed when a human looks (fleet-config#411 sat idle for
+# eight hours). 45 minutes is far above any legitimate quiet stretch — every
+# Bash/PowerShell call is itself bounded by the context-filter wrapper's own
+# timeout, and observed gaps between stream events run to a few minutes at most.
+DEFAULT_STALL_TIMEOUT_SECONDS = 2700.0
+STALL_EXIT_CODE = 124
+
+# Claude Code's own background-task ceiling (currently 600s) kills any sub-agent
+# still in flight and exits 0 regardless — the exact false-success shape #314
+# already fixed for this adapter's own Bash/Monitor calls, just one layer up in
+# the child process itself (fleet-config#506). Detected by substring rather
+# than an exact-wording regex so a ceiling/wording tweak upstream doesn't
+# silently stop tripping this.
+KILL_SIGNATURE_TERMS = ("background tasks still running", "terminat")
+BACKGROUND_KILL_EXIT_CODE = 125
+
+# Detection is not prevention: #506 made the kill visible, but the sub-agents'
+# work was still lost. The CLI's own stderr names the cure — "Set
+# CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS=0 to wait indefinitely" — so this adapter
+# sets it for every scheduled skill from the one place that owns the spawn
+# (fleet-config#519). Verified against the shipped CLI rather than taken on
+# faith: the binary reads this exact name (`env.CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS
+# ?? <default>`) and gates the sweep on `ceiling > 0 && ...`, so `0` makes
+# "ceiling exceeded" permanently false — it disables the kill, it does not make
+# it immediate. Safe against a genuinely wedged run: background-task events keep
+# the stream alive, so the stall watchdog above remains the real upper bound on
+# an unattended run.
+BG_WAIT_CEILING_ENV = "CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS"
+BG_WAIT_CEILING_UNLIMITED = "0"
+
+# A run that ends normally having done nothing is the false success neither the
+# kill detector nor the stall watchdog can see — on 2026-07-30 the tell was in
+# the content (zero repos audited, no digest, no ping), not in the exit code.
+# The adapter cannot judge "no work" for an arbitrary skill, so the skill
+# asserts its own delivery and prints this marker when the assertion fails;
+# the adapter owns turning that into a non-zero exit (fleet-config#519).
+# Deliberately not 124/125/127 — those already name stall/kill/spawn-failure.
+SELF_REPORTED_FAILURE_MARKER = "SCHEDULED-RUN-FAILED"
+SELF_REPORTED_FAILURE_EXIT_CODE = 123
+
+# A burst of unknown-typed stream records right at shutdown means the stream
+# stopped mid-conversation: the child was cut off, and whether it delivered
+# anything is unknown.
+#
+# This was wired informational-only because it was the *secondary* symptom of
+# the kill `KILL_SIGNATURE_TERMS` already caught. #519 then set the wait
+# ceiling to `0` for every scheduled run, which disables the kill — and with it
+# the kill *message*. That promoted this detector from secondary symptom to the
+# only remaining signal while it was still hard-wired never to fail anything,
+# so on 2026-08-06 `/audit-fleet` printed this exact warning and then `✅
+# completed · exit 0` on the very next line, having audited zero repos
+# (fleet-config#560, the fourth variant of the headless background-and-wait
+# class after #314/#506/#519).
+#
+# It is deliberately *not* reported as a failure: a truncated stream does not
+# prove the run failed, it proves delivery was never confirmed — which the
+# global rule says must be its own state rather than folded into the passing
+# one. The exit code is non-zero all the same, because an unattended job whose
+# outcome is unknown must show red, and it is distinct from stall/kill/
+# self-reported so the three stay tellable apart.
+UNKNOWN_BURST_WINDOW_SECONDS = 15.0
+UNKNOWN_BURST_THRESHOLD = 3
+TRUNCATED_STREAM_EXIT_CODE = 122
+
+# The fifth shape, and the one none of the four above can see: a run that
+# starts, answers in prose, and ends its turn normally -- never having invoked a
+# single tool. On 2026-08-20 `/cleanup-fleet-all` did exactly that in 5.3s and
+# reported `exit 0` (fleet-config#689); the stream was complete, nothing was
+# killed, no watchdog fired, and the skill printed no failure marker, because
+# from the CLI's point of view nothing went wrong. The job card was green.
+#
+# `SELF_REPORTED_FAILURE_MARKER` cannot cover this: it needs the skill to reach
+# its own final report and assert something, and a skill that never started has
+# no report to print. This detector deliberately judges nothing about *what* a
+# run did -- only that a scheduled skill which invoked zero tools cannot have
+# done its job, whatever prose it emitted. That is the one claim the adapter can
+# make about an arbitrary skill without knowing anything about it.
+#
+# 121-125 is a crowded namespace by now; this one takes the last free rung
+# below the four symptom detectors and the delivery post-condition, so all
+# six stay tellable apart from each other and from a child's own code.
+NO_TOOL_USE_EXIT_CODE = 120
+
+# The sixth shape, and the only one so far that is nobody's fault: the upstream
+# API answered `529 Overloaded` three minutes into a run, the CLI printed its own
+# "usually temporary -- try again in a moment" and exited 1, and the weekly
+# `/context-purge` job lost the entire week because 01:03 is not a time anyone is
+# awake to try again (fleet-config#700). Re-running it by hand the same morning
+# worked with nothing changed.
+#
+# Every detector above answers "did this run deliver?" and each is terminal by
+# design. This one answers a different question -- "is this failure the run's
+# fault at all?" -- and is the only one that can be *acted on* rather than merely
+# reported, because the API itself named the remedy.
+#
+# Two deliberately separate decisions, kept apart because conflating them is how
+# a retry turns into a duplicated digest:
+#
+#   * Classification (this exit code) applies whenever a transient upstream error
+#     accompanied a failing run. It names the cause instead of a bare `1`, so the
+#     Telegram ping and the job card say "upstream, not us" even for a run that
+#     was never eligible to be retried.
+#   * Retryability (`retryable_transient_failure`) additionally requires that the
+#     run invoked *no tool at all*. A session that already edited files, pushed a
+#     branch or posted a digest must never be replayed from the top; only a run
+#     that died before touching anything is safe to start over.
+#
+# Restricted to 5xx on purpose: a 4xx (bad request, expired auth, exhausted
+# quota) is a real failure that retrying only makes slower and noisier.
+#
+# 120-125 is full and 126/127 carry their own shell meanings (`cannot execute` /
+# `not found`, and 127 is already this adapter's spawn failure), so this takes
+# the next rung *below* the block rather than crowding into either.
+TRANSIENT_API_EXIT_CODE = 119
+TRANSIENT_API_MAX_ATTEMPTS = 3
+# 60s then 180s. The failing run had burned 3m23s of a weekly window, so there is
+# room to spare; the point is to outlast a blip, not to hammer a struggling API.
+TRANSIENT_API_BACKOFF_SECONDS = (60.0, 180.0)
+
+_ANSI_RE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
+_SECRET_RE = re.compile(
+    r"(?i)("
+    r"(?:sk-(?:ant-)?|xox[baprs]-|gh[pousr]_)[A-Za-z0-9_-]{8,}"
+    r"|Bearer\s+[A-Za-z0-9._~+/=-]{8,}"
+    r"|(?:api[_-]?key|token|password|secret)\s*[:=]\s*[^\s,;]+"
+    r")"
+)
+
+
+# Anchored to the start of a line (bullets, blockquote marks and indentation
+# tolerated) because a skill is told to print the marker as its own line. A run
+# that merely *mentions* the marker in prose — quoting its own rulebook in a
+# successful report — must not be turned red by the mention.
+_SELF_REPORTED_FAILURE_RE = re.compile(
+    rf"^[ \t>*•\-]*{re.escape(SELF_REPORTED_FAILURE_MARKER)}\b",
+    re.MULTILINE,
+)
+
+
+# Anchored to the start of a line, like the marker above and for the same reason:
+# a run that mentions an API error mid-sentence -- a skill narrating yesterday's
+# job log, or this very issue -- is not a run that *hit* one. The leading class
+# tolerates bullets and blockquote marks exactly as the sibling regex does, so a
+# quoted `- API Error: 503` at the head of a line does still match; what filters
+# those out is not this pattern but the two guards downstream, which need the
+# child to have actually failed and to have invoked nothing.
+_TRANSIENT_API_ERROR_RE = re.compile(
+    r"^[ \t>*•\-]*API Error:\s*5\d{2}\b",
+    re.MULTILINE,
+)
+
+
+def _is_transient_api_error(text: str) -> bool:
+    """True for the CLI's own ``API Error: 5xx`` line — upstream, not this run."""
+    return _TRANSIENT_API_ERROR_RE.search(text) is not None
+
+
+def _is_background_kill_signature(text: str) -> bool:
+    """True for the stderr line Claude prints when it kills in-flight tasks."""
+    lower = text.lower()
+    return all(term in lower for term in KILL_SIGNATURE_TERMS)
+
+
+def _is_self_reported_failure(text: str) -> bool:
+    """True when a run declared, on its own line, that it delivered nothing."""
+    return _SELF_REPORTED_FAILURE_RE.search(text) is not None
+
+
+def _configure_output() -> None:
+    """Keep captured Windows output UTF-8-safe and immediately visible."""
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(encoding="utf-8", errors="replace", line_buffering=True)
+
+
+def _redact(value: str) -> str:
+    return _SECRET_RE.sub("[redacted]", value)
+
+
+def _one_line(value: object, limit: int = MAX_SUMMARY_CHARS) -> str:
+    text = _ANSI_RE.sub("", str(value)).replace("\r", " ").replace("\n", " ")
+    text = _redact(" ".join(text.split()))
+    if len(text) > limit:
+        return text[: limit - 1].rstrip() + "…"
+    return text
+
+
+def _elapsed(seconds: float) -> str:
+    total = max(0, int(seconds))
+    hours, remainder = divmod(total, 3600)
+    minutes, secs = divmod(remainder, 60)
+    if hours:
+        return f"{hours}:{minutes:02d}:{secs:02d}"
+    return f"{minutes:02d}:{secs:02d}"
+
+
+def _tool_summary(tool_input: object) -> str:
+    """Return only allowlisted metadata; never echo commands or prompts."""
+    if not isinstance(tool_input, dict):
+        return ""
+    for key in SUMMARY_KEYS:
+        value = tool_input.get(key)
+        if isinstance(value, (str, int, float)) and str(value).strip():
+            return _one_line(value)
+    return ""
+
+
+INCOMPLETE_WORK_EXIT_CODE = 118
+AUTH_UNAVAILABLE_EXIT_CODE = 117
+MODEL_UNAVAILABLE_EXIT_CODE = 116
+MISSING_TOOLS_EXIT_CODE = 115
+CANCELLATION_UNCONFIRMED_EXIT_CODE = 114
+CANCELLED_EXIT_CODE = 130
+
+
+class ProgressFormatter:
+    """Shared evidence state and readable milestones from normalized events."""
+
+    def __init__(
+        self,
+        emit: Optional[Callable[[str], None]] = None,
+        clock: Callable[[], float] = time.monotonic,
+        adapter: Optional[ClaudeAdapter | CodexAdapter] = None,
+    ) -> None:
+        self.adapter = adapter or ClaudeAdapter()
+        self._children: set[str] = set()
+        self._provider_error = ""
+        self._clock = clock
+        self._started_at = clock()
+        self._last_activity = self._started_at
+        self._emit_raw = emit or (lambda line: print(line, flush=True))
+        self._emit_lock = threading.Lock()
+        self._tools: dict[str, str] = {}
+        self._assistant_texts: set[str] = set()
+        self._malformed = 0
+        self._unknown = 0
+        self._unknown_timestamps: list[float] = []
+        self._result_error = False
+        self._saw_result = False
+        self._saw_kill_signature = False
+        self._saw_child_failure = False
+        self._saw_self_reported_failure = False
+        self._saw_tool_use = False
+        self._saw_transient_api_error = False
+        self._burst_count: Optional[int] = None
+
+    @property
+    def saw_kill_signature(self) -> bool:
+        return self._saw_kill_signature or self._saw_child_failure
+
+    @property
+    def saw_tool_use(self) -> bool:
+        """True once the child invoked anything at all.
+
+        Counts both shapes the stream reports: an assistant ``tool_use`` block,
+        and a ``task_started`` system event for a sub-agent or workflow the
+        parent dispatched. A run showing neither did nothing.
+        """
+        return self._saw_tool_use
+
+    @property
+    def saw_self_reported_failure(self) -> bool:
+        return self._saw_self_reported_failure
+
+    @property
+    def saw_transient_api_error(self) -> bool:
+        """True once the CLI reported an upstream 5xx — the run's own fault, no."""
+        return self._saw_transient_api_error
+
+    @property
+    def retryable_transient_failure(self) -> bool:
+        """True only for a transient failure that is *safe* to start over.
+
+        The tool-use guard is the whole safety argument for retrying at all: a
+        session that already ran a tool may have edited files, pushed a branch
+        or posted a digest, and replaying it from the top would do that twice.
+        A run that died before touching anything has, by definition, nothing to
+        duplicate. `saw_tool_use` already tracks both shapes the stream reports
+        (an assistant `tool_use` block and a `task_started` sub-agent event), so
+        it is exactly the right question to ask here.
+        """
+        return (self.adapter.retry_before_tools and self._saw_transient_api_error
+                and not self._saw_tool_use and not self._unknown and not self._malformed
+                and not self._children and not self._saw_kill_signature)
+
+    def reset_for_retry(self) -> None:
+        """Clear per-attempt state, keeping the run-level clock.
+
+        Only the *attempt* starts over; the elapsed-time prefix keeps counting
+        from the original start so the log reads as one continuous run rather
+        than three that each begin at `[00:00]`. Every verdict-bearing field is
+        cleared, because a fresh attempt must be judged on its own evidence —
+        leaving `_result_error` or the unknown-record timestamps behind would
+        let attempt 1's failure decide attempt 2's exit code.
+        """
+        self._tools.clear()
+        self._children.clear()
+        self._provider_error = ""
+        self._assistant_texts.clear()
+        self._unknown_timestamps.clear()
+        self._malformed = 0
+        self._unknown = 0
+        self._result_error = False
+        self._saw_result = False
+        self._saw_kill_signature = False
+        self._saw_child_failure = False
+        self._saw_self_reported_failure = False
+        self._saw_tool_use = False
+        self._saw_transient_api_error = False
+        self._burst_count = None
+        self._touch()
+
+    def truncated_stream_burst(self) -> int:
+        """Unknown records inside the shutdown window — computed once, then cached.
+
+        `run()` needs this *before* it calls `finish()`, to pick the exit code,
+        and `finish()` needs the same number for its verdict line. Recomputing
+        would read a later clock and could disagree with itself across the two
+        call sites, so the first caller fixes the value.
+        """
+        if self._burst_count is None:
+            now = self._clock()
+            self._burst_count = sum(
+                1 for seen_at in self._unknown_timestamps
+                if now - seen_at <= UNKNOWN_BURST_WINDOW_SECONDS
+            )
+        return self._burst_count
+
+    @property
+    def stream_truncated(self) -> bool:
+        """True when the stream stopped mid-conversation — delivery unconfirmed.
+
+        A burst of unknown-typed records near shutdown is only evidence of a
+        cut-off stream when the terminal `result` event never arrived. A run
+        that delivered its result event proved the opposite — the burst is
+        just the normal end-of-run sub-agent flush — so `_saw_result` overrides
+        the burst count rather than being folded into it (fleet-config#608).
+        """
+        if self._saw_result:
+            return False
+        return self.truncated_stream_burst() >= UNKNOWN_BURST_THRESHOLD
+
+    def _prefix(self) -> str:
+        return f"[{_elapsed(self._clock() - self._started_at)}]"
+
+    def _touch(self) -> None:
+        """Record that the child produced output just now.
+
+        Deliberately driven by *received* child output rather than by ``emit``,
+        so the watchdog's own stall message can never reset its own deadline.
+        """
+        with self._emit_lock:
+            self._last_activity = self._clock()
+
+    def seconds_since_activity(self) -> float:
+        """Seconds since the child last produced any output."""
+        with self._emit_lock:
+            return max(0.0, self._clock() - self._last_activity)
+
+    def emit(self, message: str) -> None:
+        with self._emit_lock:
+            self._emit_raw(f"{self._prefix()} {message}")
+
+    def emit_best_effort(self, message: str) -> None:
+        """Write one diagnostic line that must never block or raise.
+
+        Used only *after* the stall watchdog has killed the child, where the
+        thing most likely to be jammed is this adapter's own stdout — a
+        backpressured downstream consumer is what wedged the 2026-07-30
+        scheduled run (fleet-config#514). Taking ``_emit_lock`` here would park
+        it inside a blocked write, and the main thread's own ``finish()`` emit
+        would then deadlock on it, so this deliberately writes unlocked and
+        swallows whatever the write does. Interleaving with a concurrent
+        ``emit`` is an acceptable price for a single last-gasp line on a run
+        that is already being torn down.
+        """
+        try:
+            self._emit_raw(f"{self._prefix()} {message}")
+        except Exception:  # noqa: BLE001 — best-effort by contract
+            pass
+
+    def _mark_unknown(self) -> None:
+        self._unknown += 1
+        self._unknown_timestamps.append(self._clock())
+
+    def emit_stderr(self, line: str) -> None:
+        self._touch()
+        clean = _one_line(line)
+        if not clean:
+            return
+        if _is_background_kill_signature(clean):
+            self._saw_kill_signature = True
+        self._classify_error(clean)
+        self.emit(f"⚠ {self.adapter.label} stderr: {clean}")
+
+    def handle_line(self, line: str) -> None:
+        stripped = line.strip()
+        if not stripped:
+            return
+        self._touch()
+        try:
+            event = json.loads(stripped)
+        except (json.JSONDecodeError, TypeError):
+            self._malformed += 1
+            return
+        if not isinstance(event, dict):
+            self._malformed += 1
+            return
+        self.handle_event(event)
+
+    def handle_event(self, event: dict[str, Any]) -> None:
+        try:
+            normalized_events = self.adapter.events(event)
+        except (TypeError, ValueError, AttributeError, KeyError):
+            self._malformed += 1
+            return
+        for normalized in normalized_events:
+            self.handle_progress(normalized)
+
+    def _classify_error(self, text: str) -> None:
+        category = self.adapter.error_category(text)
+        if category:
+            self._provider_error = category
+
+    def handle_progress(self, event: ProgressEvent) -> None:
+        """Consume only the shared contract; provider fields stay at the edge."""
+        if event.kind == "unknown":
+            self._mark_unknown()
+        elif event.kind == "malformed":
+            self._malformed += 1
+        elif event.kind == "start":
+            self.emit(f"▶ {self.adapter.label} {_one_line(event.text)} · session started")
+        elif event.kind == "text":
+            self._emit_assistant_text(event.text)
+        elif event.kind == "error":
+            self._classify_error(event.text)
+            self.emit(f"⚠ {_one_line(event.text)}")
+        elif event.kind in {"tool_start", "child_start", "child_progress"}:
+            self._saw_tool_use = True
+            name = _one_line(event.name or "tool")
+            if event.kind == "tool_start":
+                self._tools[event.id] = name
+            else:
+                self._children.add(event.id)
+            self.emit(f"▶ {name}" + (f" · {_tool_summary(event.metadata)}" if event.metadata else ""))
+        elif event.kind in {"tool_end", "child_end"}:
+            self._saw_tool_use = True
+            if event.kind == "child_end":
+                self._children.discard(event.id)
+                name = "task"
+                if event.failed:
+                    self._saw_child_failure = True
+            else:
+                name = self._tools.pop(event.id, event.name or "tool")
+            self.emit(f"{'✗' if event.failed else '✓'} {_one_line(name)} {'failed' if event.failed else 'completed'}")
+        elif event.kind == "result":
+            self._saw_result = True
+            self._result_error = event.failed
+            self._classify_error(event.text)
+            self._emit_assistant_text(event.text)
+
+    @property
+    def unverified_stream(self) -> bool:
+        return bool(not self._saw_result or self._unknown or self._malformed)
+
+    @property
+    def unfinished_work(self) -> bool:
+        return bool(self._tools or self._children)
+
+    def _emit_assistant_text(self, value: object) -> None:
+        if not isinstance(value, str):
+            return
+        text = value.replace("\r\n", "\n").strip()
+        if not text:
+            return
+        # Scanned before the dedup guard: the same final report arrives twice
+        # (assistant text block, then the terminal result event), and the marker
+        # must register whichever copy is seen first.
+        if _is_self_reported_failure(text):
+            self._saw_self_reported_failure = True
+        # Same reason as the marker above: the CLI's error text arrives as an
+        # assistant block and again as the terminal result, and the dedup guard
+        # below drops whichever copy lands second.
+        if self.adapter.retry_before_tools and _is_transient_api_error(text):
+            self._saw_transient_api_error = True
+        if text in self._assistant_texts:
+            return
+        self._assistant_texts.add(text)
+        self.emit(f"{self.adapter.label}:\n{_redact(text)}")
+
+    def finish(self, exit_code: int, stalled: bool = False) -> None:
+        if self._malformed or self._unknown:
+            self.emit(
+                "⚠ ignored "
+                f"{self._malformed} malformed and {self._unknown} unknown stream record(s)"
+            )
+        recent_unknown = self.truncated_stream_burst()
+        if self.stream_truncated:
+            self.emit(
+                f"⚠ burst of {recent_unknown} unknown stream record(s) near shutdown "
+                "— possible truncated/killed stream"
+            )
+        failed = (
+            stalled
+            or exit_code != 0
+            or self._result_error
+            or self._saw_kill_signature
+            or self._saw_self_reported_failure
+        )
+        if stalled:
+            status = "⏱ stalled"
+        elif exit_code == TRANSIENT_API_EXIT_CODE:
+            # Placed here so this chain mirrors `run_process`'s precedence
+            # exactly. Those branches test formatter flags while the code was
+            # already decided, so any disagreement in ordering prints a verdict
+            # that contradicts the exit code beside it — a run that both
+            # self-reported and hit a 5xx would exit 119 under a line reading
+            # "delivered no work". Reading the code first keeps the two honest.
+            status = (
+                "❌ failed · transient upstream API error (5xx) — the run never got "
+                "going; this is an API-side fault, not a fault in the skill"
+            )
+        elif exit_code == CANCELLATION_UNCONFIRMED_EXIT_CODE:
+            status = "❓ cancellation not confirmed · owned descendants could not be verified"
+        elif exit_code == CANCELLED_EXIT_CODE:
+            status = "❌ cancelled · owned process tree stopped"
+        elif self.unfinished_work and exit_code in {0, INCOMPLETE_WORK_EXIT_CODE}:
+            status = "❓ not confirmed · unfinished tools or children"
+        elif exit_code in {AUTH_UNAVAILABLE_EXIT_CODE, MODEL_UNAVAILABLE_EXIT_CODE, MISSING_TOOLS_EXIT_CODE}:
+            status = f"❌ failed · {self._provider_error} unavailable"
+        elif self._saw_child_failure:
+            status = "❌ failed · child failed or was interrupted"
+        elif self._saw_kill_signature:
+            status = (
+                "❌ failed · background tasks killed after timeout — orchestrator "
+                "likely ended its turn with agents in flight"
+            )
+        elif self._saw_self_reported_failure:
+            status = (
+                "❌ failed · the run reported it delivered no work "
+                f"({SELF_REPORTED_FAILURE_MARKER}) — see its final report for which "
+                "delivery assertion failed"
+            )
+        elif self.stream_truncated:
+            # Not "failed" — unconfirmed. The stream stopped mid-conversation,
+            # so whether the run delivered anything is a fact nobody
+            # established, and folding that into ✅ is what let a zero-repo
+            # audit report success (fleet-config#560).
+            status = (
+                f"❓ not confirmed · stream truncated near shutdown ({recent_unknown} "
+                "unknown record(s)) — the run was cut off mid-flight and delivery "
+                "was never verified"
+            )
+        elif exit_code == NO_TOOL_USE_EXIT_CODE:
+            # Its own state rather than folded into the passing one: a scheduled
+            # skill that invoked no tool did not run, and saying so beats green.
+            status = (
+                "❌ failed · the run invoked no tools at all — the skill never "
+                "started (check that the prompt asks for it, not just names it)"
+            )
+        elif self.unverified_stream and exit_code in {0, TRUNCATED_STREAM_EXIT_CODE}:
+            status = "❓ not confirmed · missing, malformed or unknown completion stream"
+        else:
+            status = "❌ failed" if failed else "✅ completed"
+        result_note = " · no terminal result event" if not self._saw_result else ""
+        self.emit(f"{status} · exit {exit_code}{result_note}")
+
+
+# Claude Code 2.1.237 changed how a bare `/<skill>` prompt is framed in headless
+# `-p` mode. The skill body now arrives as its own message flagged
+# `"isMeta": true, "turnCompanion": true` -- passive context -- while the user
+# turn carries only `<command-name>/<skill></command-name>`; the run that
+# exposed this recorded `input_tokens: 2` against 52,603 cached ones. A skill
+# whose text opens with an imperative still gets executed. One that opens with
+# descriptive prose reads as reference material, and the model answers "Ready --
+# what would you like to do?" and stops (fleet-config#689).
+#
+# So the adapter stops depending on slash expansion and asks for the skill by
+# name. Appending the instruction *after* the slash command is not an option:
+# trailing text lands in `<command-args>`, where the skill parses it as its own
+# arguments.
+_SLASH_COMMAND_RE = re.compile(r"^/(?P<name>[A-Za-z0-9][A-Za-z0-9._-]*)(?P<rest>\s[\s\S]*)?$")
+
+SKILL_PROMPT_TEMPLATE = (
+    "Run the {name} skill now via the Skill tool, end to end and fully unattended, "
+    "following its SKILL.md steps exactly. Skill arguments: {arguments}. "
+    "Nobody is attending this run: never ask a question, never end your turn "
+    "waiting to be resumed, and poll every background call to completion inside "
+    "your own turn."
+)
+
+
+def normalize_skill_prompt(prompt: str) -> str:
+    """Rewrite a bare ``/<skill>`` prompt into an explicit instruction.
+
+    Anything that is not a slash command comes back untouched -- a caller that
+    already phrases its own instruction keeps it verbatim. Trailing text after
+    the command name is forwarded as the skill's arguments, which is what slash
+    expansion would have done with it anyway.
+    """
+    match = _SLASH_COMMAND_RE.match(prompt.strip())
+    if match is None:
+        return prompt
+    arguments = (match.group("rest") or "").strip()
+    return SKILL_PROMPT_TEMPLATE.format(
+        name=match.group("name"),
+        arguments=arguments or "none",
+    )
+
+
+def build_command(arguments: Sequence[str], executable: Optional[str] = None) -> list[str]:
+    """Build the child command while keeping stream-owned flags canonical."""
+    return ClaudeAdapter().build_command(arguments, executable)
+
+
+
+class AdapterFlags(NamedTuple):
+    arguments: list[str]
+    stall_timeout: Optional[float]
+    delivery_check: Optional[str]
+
+
+def parse_adapter_flags(arguments: Sequence[str]) -> AdapterFlags:
+    """Split adapter-owned flags out of the caller's Claude arguments.
+
+    ``--stall-timeout`` configures *this* process's watchdog and
+    ``--delivery-check`` its post-condition; neither may be forwarded to
+    ``claude``, which would reject them as unknown flags.
+    """
+    remaining: list[str] = []
+    stall: Optional[float] = None
+    delivery: Optional[str] = None
+    index = 0
+    while index < len(arguments):
+        argument = arguments[index]
+        for flag in (STALL_FLAG, DELIVERY_CHECK_FLAG):
+            if argument == flag:
+                if index + 1 >= len(arguments):
+                    raise ValueError(f"{flag} requires a value")
+                matched, value, index = flag, arguments[index + 1], index + 2
+                break
+            if argument.startswith(flag + "="):
+                matched, value, index = flag, argument.split("=", 1)[1], index + 1
+                break
+        else:
+            remaining.append(argument)
+            index += 1
+            continue
+        if matched == DELIVERY_CHECK_FLAG:
+            delivery = value
+            continue
+        try:
+            stall = float(value)
+        except (TypeError, ValueError):
+            raise ValueError(f"{STALL_FLAG} expects seconds, got {value!r}") from None
+    return AdapterFlags(remaining, stall, delivery)
+
+
+def run_delivery_check(script: str, formatter: "ProgressFormatter") -> bool:
+    """Run the post-condition script; True only when it proves delivery.
+
+    Invoked with *this* interpreter and no shell, so a Windows path needs no
+    quoting gymnastics through a `.bat`. A script that exits non-zero, cannot
+    be run, or hangs past its timeout all mean the same thing here: delivery
+    was not confirmed. That is the point — this check exists precisely because
+    the child's own exit code cannot be trusted to reflect whether the run did
+    anything (fleet-config#560), so an inconclusive post-condition may not
+    resolve to "delivered" either.
+    """
+    try:
+        proc = subprocess.run(
+            [sys.executable, script],
+            capture_output=True, text=True, encoding="utf-8", errors="replace",
+            creationflags=NO_WINDOW, timeout=DELIVERY_CHECK_TIMEOUT_SECONDS,
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        formatter.emit(f"❓ delivery check could not run: {_one_line(exc)}")
+        return False
+    detail = _one_line((proc.stdout or "").strip() or (proc.stderr or "").strip())
+    if proc.returncode == 0:
+        formatter.emit(f"✓ delivery confirmed{f' · {detail}' if detail else ''}")
+        return True
+    formatter.emit(
+        f"❓ delivery NOT confirmed (check exit {proc.returncode})"
+        + (f" · {detail}" if detail else "")
+    )
+    return False
+
+
+def resolve_stall_timeout(explicit: Optional[float] = None) -> float:
+    """Flag beats env beats built-in default; ``<= 0`` disables the watchdog."""
+    if explicit is not None:
+        return max(0.0, explicit)
+    raw = os.environ.get("CLAUDE_PROGRESS_STALL_TIMEOUT", "")
+    try:
+        return max(0.0, float(raw))
+    except (TypeError, ValueError):
+        return DEFAULT_STALL_TIMEOUT_SECONDS
+
+
+def _kill_process_tree(process: subprocess.Popen) -> bool:
+    """Terminate the retained scope; a dead root PID is not a tree identity."""
+    scope = getattr(process, "_scheduled_scope", None)
+    return scope.terminate() if scope is not None else False
+
+
+def _watch_for_stall(
+    process: "subprocess.Popen[str]",
+    progress: ProgressFormatter,
+    stall_timeout: float,
+    stop_event: threading.Event,
+    state: dict[str, bool],
+    cancel_event: Optional[threading.Event] = None,
+) -> None:
+    """Kill the run once its stream has been silent longer than ``stall_timeout``."""
+    poll_seconds = 0.1 if cancel_event is not None else max(1.0, min(30.0, stall_timeout / 10))
+    while not stop_event.wait(poll_seconds):
+        if cancel_event is not None and cancel_event.is_set():
+            state["cancelled"] = True
+            state["cancel_confirmed"] = _kill_process_tree(process)
+            state["stop_complete"] = True
+            return
+        if stall_timeout <= 0:
+            continue
+        idle = progress.seconds_since_activity()
+        if idle < stall_timeout:
+            continue
+        state["stalled"] = True
+        # Kill first, announce second. Announcing first put this thread inside a
+        # `print()` on a backpressured stdout and the kill below never ran, so
+        # the watchdog meant to un-wedge a jammed run wedged with it and the job
+        # read `running` for five hours (fleet-config#514). Killing the tree also
+        # stops the child writing into the shared pipe chain, which is what lets
+        # the downstream backpressure drain in the first place.
+        confirmed = _kill_process_tree(process)
+        state["stop_complete"] = True
+        progress.emit_best_effort(
+            f"⏱ no stream activity for {_elapsed(idle)} "
+            f"(limit {_elapsed(stall_timeout)}) — killing the stalled run · "
+            f"owned termination {'confirmed' if confirmed else 'unconfirmed'}"
+        )
+        return
+
+
+def run_process(
+    command: Sequence[str],
+    *,
+    formatter: Optional[ProgressFormatter] = None,
+    env: Optional[dict[str, str]] = None,
+    stall_timeout: float = DEFAULT_STALL_TIMEOUT_SECONDS,
+    cancel_event: Optional[threading.Event] = None,
+) -> int:
+    """Run one JSONL-producing child and return its exit code unchanged.
+
+    Returns ``STALL_EXIT_CODE`` instead if the watchdog had to kill the child for
+    going silent — a wedged unattended run must surface as a failed job rather
+    than hold its slot indefinitely (fleet-config#411).
+    """
+    progress = formatter or ProgressFormatter()
+    child_env = os.environ.copy()
+    # Applied after the inherited copy so a stale ambient ceiling can never
+    # silently reinstate the 600s sub-agent kill, and before the caller's own
+    # `env` so an explicit override still wins (fleet-config#519).
+    child_env.update(progress.adapter.environment())
+    if env:
+        child_env.update(env)
+    for key in progress.adapter.excluded_environment:
+        child_env.pop(key, None)
+    scope = ProcessScope()
+    process = None
+    try:
+        process = subprocess.Popen(
+            scope.command(list(command)),
+            stdin=subprocess.PIPE if sys.platform == "win32" else subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            bufsize=0,
+            env=child_env,
+            creationflags=NO_WINDOW,
+            start_new_session=sys.platform != "win32",
+        )
+        process._scheduled_scope = scope
+        scope.start(process)
+    except BaseException:
+        scope.close()
+        if process is not None:
+            for stream in (process.stdin, process.stdout, process.stderr):
+                if stream is not None:
+                    stream.close()
+        raise
+    assert process.stdout is not None
+    assert process.stderr is not None
+    readers = (PipeReader(process.stdout), PipeReader(process.stderr))
+
+    stall_state = {"stalled": False, "cancelled": False, "cancel_confirmed": False,
+                   "stop_complete": False}
+    watchdog_stop = threading.Event()
+    watchdog: Optional[threading.Thread] = None
+    if stall_timeout > 0 or cancel_event is not None:
+        watchdog = threading.Thread(
+            target=_watch_for_stall,
+            args=(process, progress, stall_timeout, watchdog_stop, stall_state, cancel_event),
+            name="scheduled-progress-watchdog",
+            daemon=True,
+        )
+        watchdog.start()
+
+    exit_code = None
+    orphaned = False
+    drain_deadline = None
+    drain_message = None
+    try:
+        while True:
+            for line in readers[0].poll():
+                progress.handle_line(line)
+            for line in readers[1].poll():
+                progress.emit_stderr(line)
+            exit_code = process.poll()
+            stopping = stall_state["cancelled"] or stall_state["stalled"]
+            if exit_code is not None or stopping:
+                if drain_deadline is None:
+                    drain_deadline = time.monotonic() + DRAIN_TIMEOUT_SECONDS
+                    if stopping and not stall_state["stop_complete"]:
+                        drain_deadline += TERMINATE_TIMEOUT_SECONDS
+                active = scope.active()
+                if (all(reader.eof for reader in readers) and active == 0
+                        and (not stopping or stall_state["stop_complete"])
+                        and not (cancel_event is not None and cancel_event.is_set()
+                                 and not stall_state["cancelled"])):
+                    break
+                if time.monotonic() >= drain_deadline:
+                    orphaned = active is not None and active > 0 and not stopping
+                    # Unobserved descendant work closes the pre-effect replay
+                    # gate even when it closed both pipes and the parent failed.
+                    if active != 0 or not all(reader.eof for reader in readers):
+                        progress._mark_unknown()
+                    drain_message = (
+                        f"owned scope drain deadline reached · active processes "
+                        f"{active if active is not None else 'unknown'} · "
+                        f"stdout EOF={readers[0].eof} · stderr EOF={readers[1].eof}"
+                    )
+                    break
+            time.sleep(0.01)
+    except KeyboardInterrupt:
+        stall_state["cancelled"] = True
+        stall_state["cancel_confirmed"] = _kill_process_tree(process)
+        stall_state["stop_complete"] = True
+        deadline = time.monotonic() + DRAIN_TIMEOUT_SECONDS
+        while not all(reader.eof for reader in readers) and time.monotonic() < deadline:
+            for reader in readers:
+                reader.poll()
+            time.sleep(0.01)
+    finally:
+        watchdog_stop.set()
+        if watchdog is not None:
+            watchdog.join(timeout=TERMINATE_TIMEOUT_SECONDS + 1)
+        # Closing the Windows job is a final ownership-scoped safety net. It
+        # cannot upgrade an unconfirmed cancellation into confirmed success.
+        if scope.active() != 0:
+            scope.terminate()
+        scope.close()
+        if process.poll() is None:
+            try:
+                process.wait(timeout=TERMINATE_TIMEOUT_SECONDS)
+            except subprocess.TimeoutExpired:
+                progress._mark_unknown()
+        if exit_code is None:
+            exit_code = process.poll()
+        process.stdout.close()
+        process.stderr.close()
+    if drain_message:
+        progress.emit_best_effort(drain_message)
+    if exit_code is None:
+        exit_code = CANCELLATION_UNCONFIRMED_EXIT_CODE
+    if stall_state["cancelled"]:
+        confirmed = stall_state["cancel_confirmed"] and all(reader.eof for reader in readers)
+        cancelled_code = CANCELLED_EXIT_CODE if confirmed else CANCELLATION_UNCONFIRMED_EXIT_CODE
+        progress.finish(cancelled_code)
+        return cancelled_code
+    if stall_state["stalled"]:
+        exit_code = STALL_EXIT_CODE
+    elif orphaned and exit_code == 0:
+        progress.emit_best_effort("unfinished owned descendants after provider exit")
+        exit_code = INCOMPLETE_WORK_EXIT_CODE
+    elif exit_code != 0 and progress.saw_transient_api_error:
+        # Only ever over a child that already failed — this renames a failure,
+        # it never creates one. A run that hit a 5xx, recovered on its own and
+        # exited 0 succeeded, and saying otherwise would invent a red job.
+        exit_code = TRANSIENT_API_EXIT_CODE
+    elif progress._provider_error and (exit_code != 0 or progress._result_error):
+        exit_code = {"auth": AUTH_UNAVAILABLE_EXIT_CODE, "model": MODEL_UNAVAILABLE_EXIT_CODE, "tools": MISSING_TOOLS_EXIT_CODE}[progress._provider_error]
+    elif progress.saw_kill_signature and exit_code == 0:
+        exit_code = BACKGROUND_KILL_EXIT_CODE
+    elif progress.saw_self_reported_failure and exit_code == 0:
+        exit_code = SELF_REPORTED_FAILURE_EXIT_CODE
+    elif progress._result_error and exit_code == 0:
+        exit_code = 1
+    elif progress.unfinished_work and exit_code == 0:
+        exit_code = INCOMPLETE_WORK_EXIT_CODE
+    elif progress.unverified_stream and exit_code == 0:
+        # Last, and only over a clean exit: the specific detectors above name
+        # the cause, this one only knows the stream stopped mid-conversation.
+        exit_code = TRUNCATED_STREAM_EXIT_CODE
+    elif not progress.saw_tool_use and exit_code == 0:
+        # Last of all, and only over a clean exit. Every detector above names a
+        # cause; this one only knows the run touched nothing.
+        exit_code = NO_TOOL_USE_EXIT_CODE
+    progress.finish(exit_code, stalled=stall_state["stalled"])
+    return exit_code
+
+
+def run_with_transient_retry(
+    command: Sequence[str],
+    *,
+    formatter: ProgressFormatter,
+    stall_timeout: float = DEFAULT_STALL_TIMEOUT_SECONDS,
+    sleep: Callable[[float], None] = time.sleep,
+) -> int:
+    """Run the child, restarting it while a *safe* transient upstream error is the cause.
+
+    The retry is bounded by `TRANSIENT_API_BACKOFF_SECONDS` and gated on
+    `retryable_transient_failure`, so it fires only for a run that hit a 5xx
+    having invoked nothing — never for a stall, a self-reported failure, a
+    truncated stream, a non-transient error, or a run that already did work.
+
+    Synchronous by construction. Every caller of this module is an unattended
+    scheduled `.bat`; a headless run has no wake-up mechanism, so waiting out
+    the backoff has to happen inside this process or not at all.
+
+    `sleep` is injected so the tests can prove the retry policy without
+    actually parking for four minutes.
+    """
+    # One source of truth for "how many retries": the attempt cap trims the
+    # backoff schedule, and everything else — the loop, the `n/N` in the log,
+    # the give-up tally — is derived from the trimmed list. Reading the cap in
+    # one place and the raw tuple's length in another is how a log line starts
+    # promising a third attempt that the loop never makes.
+    schedule = TRANSIENT_API_BACKOFF_SECONDS[: max(0, TRANSIENT_API_MAX_ATTEMPTS - 1)]
+    attempts = 1
+    exit_code = run_process(command, formatter=formatter, stall_timeout=stall_timeout)
+    for retry_number, delay in enumerate(schedule, start=1):
+        # Gated on the *classification landing*, not merely on a 5xx having been
+        # seen. A run can emit a 5xx and then stall, or emit one and still exit
+        # 0 having touched nothing: both are safe to retry, and both are
+        # pointless to retry — the stall would cost another 45-minute watchdog
+        # window per attempt, and the exit-0 run is already destined for 120
+        # whatever a retry does. Requiring the code to actually be
+        # TRANSIENT_API_EXIT_CODE means the retry fires only where run_process
+        # concluded the upstream error is what failed the run.
+        if exit_code != TRANSIENT_API_EXIT_CODE or not formatter.retryable_transient_failure:
+            return exit_code
+        formatter.emit(
+            f"↻ transient API error — retry {retry_number}/{len(schedule)} "
+            f"in {_elapsed(delay)}"
+        )
+        sleep(delay)
+        # Judge the new attempt on its own evidence, not the failed one's.
+        formatter.reset_for_retry()
+        attempts += 1
+        exit_code = run_process(command, formatter=formatter, stall_timeout=stall_timeout)
+    if exit_code == TRANSIENT_API_EXIT_CODE and formatter.retryable_transient_failure:
+        formatter.emit(
+            f"↻ transient API error persisted across {attempts} attempt(s) — giving up; "
+            "check https://status.claude.com"
+        )
+    return exit_code
+
+
+def main(argv: Optional[Iterable[str]] = None) -> int:
+    _configure_output()
+    arguments = list(sys.argv[1:] if argv is None else argv)
+    progress = ProgressFormatter()
+    try:
+        harness = "claude"
+        if arguments[:1] == ["--harness"]:
+            if len(arguments) < 3:
+                raise ValueError("--harness requires claude or codex and a prompt")
+            harness, arguments = arguments[1], arguments[2:]
+        if harness not in {"claude", "codex"}:
+            raise ValueError(f"unsupported scheduled harness: {harness}")
+        progress = ProgressFormatter(adapter=ClaudeAdapter() if harness == "claude" else CodexAdapter())
+        flags = parse_adapter_flags(arguments)
+        command = progress.adapter.build_command(flags.arguments)
+    except ValueError as exc:
+        progress.emit(f"❌ usage error: {_one_line(exc)}")
+        return 2
+    try:
+        # The delivery check below stays outside the retry loop deliberately: it
+        # is a post-condition on the run as a whole, so it runs once, against
+        # whatever the final attempt left behind.
+        exit_code = run_with_transient_retry(
+            command, formatter=progress, stall_timeout=resolve_stall_timeout(flags.stall_timeout)
+        )
+        if flags.delivery_check and not run_delivery_check(flags.delivery_check, progress):
+            # Runs whatever the child reported, and outranks a clean exit only:
+            # a child that already failed keeps the code naming *why* it failed.
+            final_code = exit_code if exit_code != 0 else DELIVERY_NOT_CONFIRMED_EXIT_CODE
+            progress.emit(f"❓ final outcome · delivery not confirmed · exit {final_code}")
+            return final_code
+        return exit_code
+    except OSError as exc:
+        progress.emit(f"❌ {progress.adapter.label} failed to start: {_one_line(exc)}")
+        progress.finish(127)
+        return 127
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
