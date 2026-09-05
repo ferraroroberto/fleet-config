@@ -5,6 +5,8 @@ description: One-shot the GitHub-issue workflow end-to-end — file the issue, c
 
 # issue-yolo
 
+**Capability preflight:** read [workflow-capabilities](../../docs/workflow-capabilities.md) and bind dispatch, results, waits, cancellation, model tiers and questions to this session’s actual tools before proceeding. Tool names below are conditional Claude examples; the contract governs adaptation. Keep this skill’s worktree, independent-review, human-review and shipping gates.
+
 **Goal:** idea → merged-and-closed in one unbroken run — `/issue-add` →
 `/issue-start now` → build → **validate hard** → `/issue-finish`. No approval
 pauses in between.
@@ -169,12 +171,7 @@ with no human in the loop. Per the fleet's
 `cleanup-fleet-all.js`'s retry-then-escalate — this run is interactive, a human
 is already present to decide on a retry).
 
-Spawn as a genuinely separate agent invocation — **not** a forked continuation
-of this conversation (a fork inherits this session's context; the reviewer
-could rationalize its own prior reasoning). Claude Code: use the `Agent` tool
-with a fresh subagent (e.g. `general-purpose`), not `subagent_type: "fork"`.
-Brief it with only the issue number, branch name, and repo path — not a
-summary of what you built or why; let it discover that itself:
+Spawn a genuinely fresh independent context through the capability contract. Claude: fresh `Agent`/`Task` type, never fork; Codex native collaboration: `fork_turns: "none"`. If no fresh spawn exists, stop at review-ready and request an independent human or separately launched reviewer; serial self-review does not satisfy this gate. Brief it with only the issue number, branch name and repo path, plus these review duties; collect and validate its terminal verdict before shipping:
 
 1. **Fetch the issue's acceptance criteria itself** — `gh issue view <N>` —
    never trust this run's own restatement of them.

@@ -11,6 +11,9 @@ export const meta = {
 
 // See fleet-config/.claude/skills/cleanup-fleet-all/SKILL.md for the invoking
 // skill and the "decision gate" rationale (fleet-config plan tingly-kindling-crayon).
+// Optional native Workflow specialization; without that tool, the interactive
+// skills/_lib/cleanup_workflow.cjs bridge evaluates these same decisions and
+// emits requests for fresh workers via docs/workflow-capabilities.md.
 // This script owns zero Bash/filesystem access by design — every repo-mutating
 // action happens inside a spawned agent, never here. The gate below is a fixed
 // lookup on each agent's own schema-validated verdict, not a re-interpretation

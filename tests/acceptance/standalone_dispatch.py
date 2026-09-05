@@ -216,5 +216,7 @@ _STANDALONE_UNIT_CHECKS: Tuple[Tuple[str, str, str], ...] = (
      "as the primary working-set source -- per-repo aggregation and the "
      "degrade-don't-block path when one repo's fetch fails -- is testable "
      "on its own, with gh monkeypatched out (fleet-config#623)"),
+    ("workflow_capabilities", "test_workflow_capabilities.py",
+     "interactive cleanup request/result gates and portable skill contracts (#749)"),
 )
 

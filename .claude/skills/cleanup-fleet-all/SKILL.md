@@ -5,6 +5,8 @@ description: Unattended, all-bucket sibling of /cleanup-fleet — builds, valida
 
 # cleanup-fleet-all
 
+**Capability preflight:** read [workflow-capabilities](../../../docs/workflow-capabilities.md) and bind dispatch, results, waits, cancellation, model tiers and questions to this session’s actual tools before proceeding. Tool names below are conditional Claude examples; the contract governs adaptation. Keep this skill’s worktree, independent-review, human-review and shipping gates.
+
 **Goal:** the genuinely unattended sibling of `/cleanup-fleet` (one bucket, stops for human approval in its default `hard` mode). This walks **all eight queued** audit buckets, serially, and ships every issue with **no human review gate** — replaced by an independent validator agent, so no single agent both builds and ships its own work unchecked. (`security` is never queued — `/codebase-audit` self-heals it inline — and `cert-drift`, `/design-sync`'s other kind, is review-only, never auto-migrated; nothing here touches either.)
 
 **Four agents per issue, never fewer:**
@@ -22,7 +24,7 @@ A failed validation retries the build **once** (feeding it the validator's feedb
 
 **Never a primary checkout.** Every build/validate/execute agent forces worktree mode (`worktree_claim.py acquire … --force-worktree`) for every repo, no exceptions, no special-cased list — a running app or a live junction (e.g. `fleet-config`'s own `hooks/`+`skills/` into every `~/.claude`) is not a claim holder, so an unattended agent otherwise wins `MODE=primary` and edits files a live process is serving (fleet-config#515). Same briefs: a live-e2e guard refusal is a hard STOP — `E2E_LIVE=1` or any equivalent override is forbidden.
 
-All retry/ship decision-making lives in **`.claude/workflows/cleanup-fleet-all.js`**, a Workflow script — not this SKILL.md, not a fourth "orchestrator" agent. Retry vs. ship vs. escalate is a fixed lookup on each agent's own schema-validated verdict (`verification`, `retryable`, `pass`, retry-round count); judgment calls happen once, inside Build/Validate, never re-litigated by whatever reads the result. See the script's header comment and `docs/model-tiers.md`.
+All retry/ship decision-making lives in **`.claude/workflows/cleanup-fleet-all.js`**, the fixed decision script — not this SKILL.md, not a fourth "orchestrator" agent. Retry vs. ship vs. escalate is a fixed lookup on each agent's own schema-validated verdict (`verification`, `retryable`, `pass`, retry-round count); judgment calls happen once, inside Build/Validate, never re-litigated by whatever reads the result. See the script's header comment and `docs/model-tiers.md`.
 
 ## Arguments
 
@@ -33,8 +35,8 @@ All retry/ship decision-making lives in **`.claude/workflows/cleanup-fleet-all.j
 
 ## Execution rules (read before running any command)
 
-- **Shell:** the Bash tool here is **Git Bash**. Use plain `gh`/`git` only — no PowerShell syntax. Windows paths map as `/e/automation/...`.
-- **The orchestrator (this skill) only does cheap, safe work:** auth check, the issue fetch, grouping/dedupe (model-side, no jq/python), the rate-gate check, invoking the Workflow, and post-flight reporting. **It never edits source, commits, pushes, or merges** — every write happens inside an agent spawned by the workflow script.
+- **Shell:** use the actual execution tool’s declared shell; translate examples without mixing Bash and PowerShell syntax.
+- **The orchestrator (this skill) only does cheap, safe work:** auth check, the issue fetch, grouping/dedupe (model-side, no jq/python), the rate-gate check, invoking the decision script through an available adapter, and post-flight reporting. **It never edits source, commits, pushes, or merges** — every write happens inside an agent spawned by the workflow script.
 - **Never disturb in-progress work.** A repo that is dirty or off its default branch is skipped and reported — never stashed, never force-switched. Skipped is not dropped: it is deferred, retried once after the last bucket, and recorded durably (steps 5, 7b, 8c).
 - **Never background a tool call in this skill — the rule that matters most here.** Runs headless via `run-weekly.bat`'s one-shot Claude process (streamed through `claude_progress.py`), no persistent turn loop, no human, **no wake-up mechanism**: launching a command and ending the turn to "wait for it" silently kills the run — CLI exits `exit_code: 0` (false success) while nothing past that point happens (fleet-config#314, the exact failure `/audit-fleet` hit twice). Applies to the `Workflow` call in step 7 exactly as much as a backgrounded `Agent` dispatch — `Workflow` also returns immediately and notifies later. Every long-running call, **including the rate-gate wait**, must run synchronously (foreground) or poll to completion **within the same turn** (`TaskOutput` with `block: true`, re-issued in a loop; or `Monitor`'s until-loop for the rate-gate wait) — never fire-and-forget.
 - **Degrade, don't block.** A per-repo failure is reported and skipped; only a pre-flight failure stops the whole run. Nothing here waits on an interactive prompt — there's nobody to answer one.
@@ -109,9 +111,13 @@ E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skill
 
 `DECISION=PAUSE` → wait via the `Monitor` tool's until-loop pattern against the printed `WAIT_SECONDS`/`RESETS_AT` before proceeding (per the Execution rules above — this must resolve within the same turn). `OK`/`UNKNOWN` → proceed immediately.
 
-### 7. Invoke the workflow and poll it to completion
+### 7. Invoke the workflow and collect it to completion
 
 Build `issuesByBucket` — `{ "<bucket>": [{ repo, number, title, body }, ...], ... }` — from the surviving, pre-flighted issues (step 5's skips already removed).
+
+**Choose the available adapter first.** If native `Workflow` plus terminal-result collection are callable, use the Claude specialization below. Otherwise follow the capability contract’s **Cleanup without Workflow** path: `node <fleet-config>/skills/_lib/cleanup_workflow.cjs <state.json>` emits the next exact prompt/schema, dispatch it to a fresh native worker, collect its terminal result, append the matching request ID/result, and repeat until `complete`. The helper evaluates this same decision script; do not reimplement retry/ship decisions model-side. Native spawn unavailable → stop before starting a lane; this skill forbids orchestrator writes and cannot replace independent validation with self-review. Scheduled process launching is unchanged.
+
+**Claude Workflow specialization only:**
 
 **Invoke with the inline `script` parameter (paste the full contents of `.claude/workflows/cleanup-fleet-all.js`), not `scriptPath`.** `scriptPath` has been observed to fail in this environment — the permission-approval layer rejects it with a false-positive "script contains control characters" error even against a byte-clean file. Read the script file fresh each invocation so edits are picked up.
 
@@ -146,7 +152,7 @@ E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skill
 
 The helper holds no state between calls, so this necessarily re-establishes every fact from the live tree rather than trusting step 5's verdict — a repo that has since *become* dirty must not be dispatched on an hours-old "available".
 
-Anything now in `dispatch` gets one retry pass: rebuild `issuesByBucket` from those issues only, and invoke the workflow a second time exactly as step 7 describes — same inline `script` parameter, same blocking `TaskOutput` poll to completion within this turn. The serial-lane invariant holds by construction: this invocation starts only after the first has fully completed, so there is still at most one worktree fleet-wide at any instant.
+Anything now in `dispatch` gets one retry pass: rebuild `issuesByBucket` from those issues only, and invoke the workflow a second time exactly as step 7 describes — same selected adapter and terminal-result collection within this turn. The serial-lane invariant holds by construction: this invocation starts only after the first has fully completed, so there is still at most one worktree fleet-wide at any instant.
 
 Merge its `buckets` results into the report under the same bucket names, marked `(retry)`. Its `halted` is handled exactly like step 7's. **One pass, never a loop** — whatever is still unavailable stays deferred and goes to step 8c.
 

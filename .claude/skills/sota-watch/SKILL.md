@@ -5,6 +5,8 @@ description: Recurring state-of-the-art watch over the fleet's adopted tooling, 
 
 # sota-watch
 
+**Capability preflight:** read [workflow-capabilities](../../../docs/workflow-capabilities.md) and bind dispatch, results, waits, cancellation, model tiers and questions to this session’s actual tools before proceeding. Tool names below are conditional Claude examples; the contract governs adaptation. Keep this skill’s worktree, independent-review, human-review and shipping gates.
+
 **Goal:** notice when the *next* #219 is due — prior evaluation spikes (token reduction, model tiers, MCP surface) reached a verdict and went silent; the market did not. Walk `watchlist.toml` — each area's adopted choice, recorded verdict, and the disqualifiers that would have to change — re-research only the areas whose per-area cadence has elapsed, report **only changes**: one line for "no change", a short evidenced block when a challenger appears to clear the recorded disqualifiers.
 
 **Advisory, never auto-adopting.** The digest may *draft* a spike-issue outline for a challenger, but this skill never creates the spike, never edits the watchlist verdicts, and never adopts anything — the user files the evaluation spike from the digest (the #219 pattern: measure, trust-gate, verdict).

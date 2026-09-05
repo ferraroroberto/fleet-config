@@ -5,6 +5,8 @@ description: Fan out a byte-for-byte re-vendor of one project-scaffolding compon
 
 # propagate-vendored
 
+**Capability preflight:** read [workflow-capabilities](../../docs/workflow-capabilities.md) and bind dispatch, results, waits, cancellation, model tiers and questions to this session’s actual tools before proceeding. Tool names below are conditional Claude examples; the contract governs adaptation. Keep this skill’s worktree, independent-review, human-review and shipping gates.
+
 **Goal:** Turn a `project-scaffolding` component fix into a one-command,
 Dependabot-style distribution wave instead of N hand-filed issues + N hand-built
 PRs (`project-scaffolding#144–#150`). The scaffold change carries the decision;
@@ -167,7 +169,7 @@ Target repos = every `behind_head`/`local_drift` adopter from step 2, plus
 every `matches_head: true` carrier (adopt-only — its bytes are already current).
 A `matches_head: false` carrier is **not** a target by default: surface it and
 ask, then include it only on an explicit yes. For each target, dispatch a background
-sub-agent (`run_in_background: true`, easy tier per the rules above). Worktree
+worker through the capability contract (easy tier, bounded by available slots). Worktree
 setup mirrors `/issue-batch` step 6 — pre-create the branch in the orchestrator
 via `worktree_claim.py`, sequentially, before any agent launches:
 
@@ -260,7 +262,7 @@ guess-fix, weaken the gate, or force anything.
 ### 5. Confirm fan-out and stand by
 
 Print a confirmation block listing every dispatched agent (repo, action,
-branch). Then stop — do not poll. The harness re-invokes as each returns.
+branch). Drain the contract’s dispatch/collect loop within this turn; never assume automatic reinvocation. Only terminal results proceed to aggregation.
 
 ### 6. Aggregate, then final report
 

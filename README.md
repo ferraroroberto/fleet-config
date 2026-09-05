@@ -12,6 +12,8 @@ Python syntax feedback covers every surviving Python target in a successful Code
 
 Codex also carries the applicable command and edit policies from Claude Code: GitHub body quoting, dated-doc blocking, branch-before-edit enforcement, local-hub routing, and browser-launch safety. Their observed block/advice semantics and explicit unsupported surfaces are recorded in the [cross-agent policy coverage table](docs/cross-agent-parity.md#command-and-edit-policy-coverage).
 
+Shared issue/audit workflows bind delegation, result collection and questions to the current session through the [interactive capability contract](docs/workflow-capabilities.md). Claude and Codex native multi-worker proofs are recorded per surface; independent-review and human-review gates remain mandatory when tools are absent.
+
 ## Why this repo exists
 
 `~/.claude/` is a kitchen sink — cache, transcripts, plans — so it can't all be a git repo. But the *config* inside it (hooks, skills, the global `CLAUDE.md`) is real source code: it shapes every Claude session, breaks silently when typoed, and needs to be reviewed, diffed, and reverted like any other code. Before this repo, edits to `~/.claude/hooks/*` and friends were unversioned. Now they aren't.

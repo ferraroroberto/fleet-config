@@ -83,6 +83,10 @@ flowchart TB
   ISSUESTART --> LIB
   ISSUEFINISH --> LIB
   ISSUEEXTRA --> LIB
+  CAPABILITIES["workflow-capabilities.md — interactive dispatch/collect contract"]
+  ISSUEEXTRA --> CAPABILITIES
+  CLEANUPBRIDGE["cleanup_workflow.cjs — interactive request/result bridge\nexisting cleanup-fleet-all.js decision script; no process spawning"]
+  CAPABILITIES --> CLEANUPBRIDGE
   OTHERGLOBAL --> LIB
   PROPVENDORED --> LIB
 

@@ -41,6 +41,10 @@ The gate is a **fixed lookup on each agent's own schema-validated verdict**
 result — that keeps a long or unattended run from drifting or forgetting state
 between rounds.
 
+## Portable invocation
+
+Use [workflow-capabilities.md](workflow-capabilities.md) to bind fresh spawn and terminal result collection to the actual session. Codex app/API collaboration reviewers use `fork_turns: "none"`; full-history forks fail independence. Missing fresh spawn requires an independent human or separately launched reviewer and blocks autonomous shipping. Timeout, cancellation, malformed verdict or unknown result never passes the gate. Record the reviewed branch SHA and re-confirm it before execution; a changed branch needs fresh review.
+
 ## Failure handling is not one-size-fits-all
 
 `cleanup-fleet-all.js` runs **retry-then-escalate**: a validation rejection

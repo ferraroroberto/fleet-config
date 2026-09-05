@@ -26,6 +26,8 @@ doc rather than restating a table.
 
 ## Concrete mapping per host
 
+Before using a row, inspect the current session’s accepted model/effort metadata per [workflow-capabilities.md](workflow-capabilities.md). Historical CLI probes establish only that release and surface; never send an old ID or effort blindly to a native worker tool.
+
 ### Claude Code (current, primary)
 
 | Tier | Model | Effort | Execution shape |
@@ -52,20 +54,15 @@ drives execution shape (full autonomy vs. review-gated) regardless of model.
 
 ### Codex / GPT
 
-No confirmed background/scheduled skill-fan-out surface comparable to Claude
-Code's `Agent` spawn is documented for Codex in this repo as of this writing.
-**Fallback: serial, manual.** A Codex session running `/audit-fleet` or
-`/cleanup-fleet` should work the per-repo list sequentially in the same session
-rather than attempting to spawn background workers. When a model id must be
-named for `hard`/`extreme`-tier reasoning on Codex, use `gpt-5.6` — **unverified
-by this session, confirm the exact id before relying on it.** This section gets
-a real background-fan-out row the day that surface is verified — not a
-parallel doc.
+Native Codex app/API collaboration was verified with two fresh workers on 2026-09-05; both terminal results were collected. The exact tools, model requests, slot limit and evidence are in [workflow-capabilities.md](workflow-capabilities.md#observed-bindings). This is not a blanket claim for Codex CLI or scheduled execution.
+
+Resolve each tier from **this session's** exposed model/effort metadata, considering task complexity: easy selects an available model suitable for bounded mechanical work, hard selects available strong judgment, extreme selects the strongest suitable supported reasoning setting. Retain the tier's human-review requirement regardless of model. Do not persist a guessed permanent Astra/Luna mapping. The observed smoke requested `gpt-5.6-luna` / `low`; acceptance by the native tool is verified, provider execution is not independently attested. Inherit the parent only when appropriate and disclose controls that cannot be set. An explicit unavailable model/effort request needs clarification.
+
+If spawn or reliable result collection is absent, use the contract's workflow-specific serial/handoff behavior. Missing fresh-review capability blocks autonomous shipping; it never permits serial self-review.
 
 ### Pi / Copilot
 
-Same as Codex: no verified model/effort convention, no known background
-fan-out surface in this repo today. Serial/manual fallback, same as above.
+Interactive delegation, fresh review and model/effort controls are unknown pending the [same conformance scenarios](workflow-capabilities.md#conformance-and-evidence). Use the workflow-specific serial/handoff behavior until proven; discovery alone is not execution evidence.
 
 ### Grok (Grok Build)
 
@@ -80,8 +77,7 @@ Verified against grok 0.2.114 by probing the CLI itself, not from docs alone.
 One model, tiered by **reasoning effort** rather than by model id — the local
 install advertises a single `grok-4.5` whose menu exposes `low`/`medium`/`high`,
 defaulting to `high`. Effort is settable both in the TUI and headless
-(`grok -p --effort <level>`), which makes Grok the only non-Claude host where
-the tier ladder is actually *enforceable* today rather than aspirational.
+(`grok -p --effort <level>`), which established the CLI's accepted effort controls for that measured release. It does not establish native worker controls on another surface.
 
 **`hard` and `extreme` deliberately resolve to the same effort.** Grok's docs list
 a canonical ladder up to `xhigh`/`max`, but this model does not advertise those
@@ -93,10 +89,9 @@ always the point (see "The three tiers" above — the review gate exists because
 work is consequential, not because the model is expensive). Revisit if a future
 model id advertises more.
 
-**Background fan-out is available but unverified.** Grok exposes `spawn_subagent`
+**Spawn is advertised; completed delegation remains unknown.** Grok exposes `spawn_subagent`
 plus `SubagentStart`/`SubagentStop` hooks, so a scatter-gather skill is plausible
-here — but no fleet skill has been driven through it, so the Codex/Pi
-serial-fallback rule stands until someone verifies it. The ≤3-concurrent-Opus cap
+here — but no fleet skill has been driven through it, so the workflow-specific serial/handoff fallback applies until someone verifies collection and fresh context. The ≤3-concurrent-Opus cap
 is a Claude-specific server-side limiter and does **not** apply to Grok.
 
 ### Antigravity
@@ -111,8 +106,7 @@ See `global-CLAUDE.md`, "Spawning sub-agents — cap concurrent Opus at 3": the
 (anthropics/claude-code#53922), not of any tier name. On Claude Code today,
 `easy` resolves to Sonnet — exempt from that cap and free to fan out — while
 `hard` and `extreme` both resolve to Opus and bind the cap. Restated generally:
-**whichever tier resolves to Opus on the current host is capped at 3 concurrent;
-every other tier fans out freely.**
+**whichever tier resolves to Opus is capped at 3 concurrent; every tier also respects the active host’s free slots and the skill’s own window.**
 
 `/audit-fleet` additionally keeps its own ≤3-wide dispatch window as a
 **session-token-budget pacing default** (a reasonable checkpoint cadence for

@@ -247,9 +247,7 @@ Add a host section to [`model-tiers.md`](model-tiers.md) mapping
   still separates them — the tiers encode *execution shape* (review-gated or
   not), not just model spend.
 
-Also state whether the harness has a verified background fan-out surface. If it
-does not, the serial/manual fallback applies. The ≤3-concurrent cap is a
-Claude-specific server-side limiter and does not transfer.
+For interactive workflows, follow [workflow-capabilities.md](workflow-capabilities.md), including its native two-worker launch/collect proof and capability fixtures for failure, cancellation, absent spawn and mode-dependent input. Record the exact surface: a Codex app/API collaboration result does not certify Codex CLI. Pi/Grok stay unknown per capability until those scenarios pass. Fresh independent review and human approval survive missing tools. Scheduled process/stream adapters are a separate domain (fleet-config#750). The ≤3 Opus cap does not replace host slot limits.
 
 ## Step 6 — app-launcher
 
