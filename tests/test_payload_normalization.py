@@ -27,6 +27,8 @@ import json
 import io
 from contextlib import redirect_stdout, redirect_stderr
 from unittest.mock import patch
+
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -439,5 +441,58 @@ with patch.object(sys, "argv", [_codex_entry]):
 check(_lib.payload_agent(_normalized) == "codex", "Codex invoked hook carries harness provenance")
 check(_normalized.get("tool_input") is CLAUDE_PRE_TOOL_USE["tool_input"], "Codex preserves tool input identity")
 check(_lib.AGENT_HINT_KEY not in CLAUDE_PRE_TOOL_USE, "Codex normalization never mutates caller input")
+
+
+# ---- Codex's Bash label does not establish the shell (#743) ----
+# Only JSON is passed to the guard; these commands are NEVER executed.
+_HOOKS = Path(__file__).resolve().parent.parent / "hooks"
+
+def _drive_safety(command: str, entry: str, tool: str = "Bash") -> subprocess.CompletedProcess:
+    driver = (
+        "import sys; sys.path.insert(0, sys.argv[1]); "
+        "sys.argv[0] = sys.argv[2]; import safe_kill_guard; safe_kill_guard.main()"
+    )
+    return subprocess.run(
+        [sys.executable, "-c", driver, str(_HOOKS), entry],
+        input=json.dumps({"hook_event_name": "PreToolUse", "tool_name": tool,
+                          "tool_input": {"command": command}, "cwd": str(_HOOKS.parent)}),
+        capture_output=True, text=True, timeout=15, creationflags=_lib.NO_WINDOW,
+        env={**os.environ, "APP_LAUNCHER_AGENT": "claude"},
+    )
+
+with patch.object(sys, "argv", [_codex_entry]):
+    _codex = _lib.normalize_payload(CLAUDE_PRE_TOOL_USE)
+check(_codex is not CLAUDE_PRE_TOOL_USE, "Codex provenance creates its own envelope")
+check(_codex["tool_name"] == "Bash", "Codex tool label is preserved, not relabelled PowerShell")
+check(_lib.shell_is_ambiguous(_codex), "Codex shell is explicitly unknown")
+check(_lib.payload_agent(_codex) == "codex", "Codex provenance is observable")
+check(_lib.normalize_payload(CLAUDE_PRE_TOOL_USE) is CLAUDE_PRE_TOOL_USE,
+      "Claude identity still holds after Codex normalization")
+check(not _lib.shell_is_ambiguous(CLAUDE_PRE_TOOL_USE), "Codex normalization never mutates Claude input")
+with patch.object(sys, "argv", [_codex_entry]):
+    _read = _lib.normalize_payload({**CLAUDE_PRE_TOOL_USE, "tool_name": "Read"})
+check(not _lib.shell_is_ambiguous(_read), "Codex non-shell tools do not acquire shell ambiguity")
+
+_CODEX_ENTRY = "C:/Users/test/.codex/hooks/safe_kill_guard.py"
+for _label, _command, _entry, _tool, _expected in (
+    ("Codex recorded repro", "Stop-Process -Name python -Force", _CODEX_ENTRY, "Bash", 2),
+    ("Codex protected port", "Get-NetTCPConnection -LocalPort 8446 | Stop-Process", _CODEX_ENTRY, "Bash", 2),
+    ("Codex Bash kill", "pkill -f python", _CODEX_ENTRY, "Bash", 2),
+    ("Codex safe command", "git status", _CODEX_ENTRY, "Bash", 0),
+    ("Claude genuine Bash quoted PowerShell", "echo 'Stop-Process -Name python -Force'", str(_HOOKS / "safe_kill_guard.py"), "Bash", 0),
+    ("Claude PowerShell quoted Bash", "Write-Output 'pkill -f python'", str(_HOOKS / "safe_kill_guard.py"), "PowerShell", 0),
+    ("Codex unknown quoted literal is conservative", "echo 'Stop-Process -Name python -Force'", _CODEX_ENTRY, "Bash", 2),
+):
+    _result = _drive_safety(_command, _entry, _tool)
+    if _entry == _CODEX_ENTRY and _expected == 2:
+        _wire = json.loads(_result.stdout or "{}").get("hookSpecificOutput", {})
+        check(_result.returncode == 0 and _wire.get("permissionDecision") == "deny",
+              f"{_label}: structured denial (exit {_result.returncode})")
+        check("shell unknown" in _wire.get("permissionDecisionReason", "").lower(),
+              f"{_label}: uncertainty is visible")
+    else:
+        check(_result.returncode == _expected, f"{_label}: exit {_result.returncode}, expected {_expected}")
+        check(not _result.stdout.strip(), f"{_label}: allowed or Claude call keeps stdout empty")
+
 
 _h.report_and_exit("test_payload_normalization")
