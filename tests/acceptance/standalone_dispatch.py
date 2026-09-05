@@ -218,6 +218,8 @@ _STANDALONE_UNIT_CHECKS: Tuple[Tuple[str, str, str], ...] = (
      "on its own, with gh monkeypatched out (fleet-config#623)"),
     ("workflow_capabilities", "test_workflow_capabilities.py",
      "interactive cleanup request/result gates and portable skill contracts (#749)"),
+    ("quota_snapshots", "test_quota_snapshots.py",
+     "native source validation, account scope, freshness and atomic concurrent producer writes (#751)"),
     ("codex_statusline", "test_codex_statusline.py",
      "the opt-in Codex footer merger preserves custom settings/comments, appends native quota items, "
      "and stays idempotent against synthetic config files (#752)"),

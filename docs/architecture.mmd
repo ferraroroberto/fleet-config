@@ -13,6 +13,11 @@ flowchart TB
     CODEXSTATUS["codex_statusline.py\nopt-in atomic merge into ~/.codex/config.toml\npreserves custom footer order, comments, and unrelated settings"]
   end
 
+  QUOTAS["quota_sources.py + quota_snapshot.py\nClaude statusline subset + one-shot native Codex account read\natomic producer shards, UTC freshness, identified account pools"]
+  QUOTASTATE["hooks/state/quota-v1/*.json\nlegacy rate-limits.json preserved"]
+  QUOTAS --> QUOTASTATE
+  INSTALL -.->|existing statusline/skills links| QUOTAS
+
   subgraph homes["Agent homes"]
     CLAUDE["~/.claude (Claude Code)"]
     CODEX["~/.codex (Codex)"]

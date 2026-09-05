@@ -180,3 +180,35 @@ try {
 } catch {
     # Advisory-only — never let a cache-write failure surface to the user.
 }
+
+# Publish the same native render to the provider-aware contract. Keep the
+# legacy cache above byte/shape-compatible for consumers during migration.
+# Pass only quota fields, never the full statusline payload or a transcript.
+try {
+    $quotaScript = Join-Path $PSScriptRoot 'skills/_lib/quota_sources.py'
+    $quotaPython = 'E:/automation/fleet-config/.venv/Scripts/python.exe'
+    if ($cache -and (Test-Path $quotaScript) -and (Test-Path $quotaPython)) {
+        $start = New-Object System.Diagnostics.ProcessStartInfo
+        $start.FileName = $quotaPython
+        $start.Arguments = '"' + $quotaScript + '" claude --state-dir "' + $stateDir + '"'
+        $start.UseShellExecute = $false
+        $start.CreateNoWindow = $true
+        $start.RedirectStandardInput = $true
+        $start.RedirectStandardOutput = $true
+        $start.RedirectStandardError = $true
+        $quotaProcess = New-Object System.Diagnostics.Process
+        $quotaProcess.StartInfo = $start
+        [void]$quotaProcess.Start()
+        $quotaProcess.StandardInput.WriteLine(($cache | ConvertTo-Json -Depth 4))
+        $quotaProcess.StandardInput.Close()
+        if (-not $quotaProcess.WaitForExit(3000)) {
+            # Only the disposable child created above belongs to this render.
+            $quotaProcess.Kill()
+            [void]$quotaProcess.WaitForExit(1000)
+        }
+        $quotaProcess.Dispose()
+    }
+} catch {
+    # A missing/failed shared producer remains unknown or ages to stale.
+    # Its failure must never damage the already-rendered native footer.
+}
