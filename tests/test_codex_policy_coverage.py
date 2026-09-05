@@ -13,6 +13,12 @@ REPO = Path(__file__).resolve().parent.parent
 HOOKS = REPO / "hooks"
 sys.path.insert(0, str(HOOKS))
 import _lib  # noqa: E402
+from probe_codex_policies import (  # noqa: E402
+    PROJECT_CONTROL_MARKER,
+    PROJECT_CONTROL_OBSERVATIONS,
+    project_control_observed,
+    successful_file_change_observed,
+)
 
 
 failures = 0
@@ -77,6 +83,48 @@ def post_patch_payload(command: str, cwd: Path) -> dict:
 
 root = Path(tempfile.mkdtemp(prefix="codex_policy_"))
 try:
+    # Project-only control classification must require both invocation and
+    # effect evidence; absence or malformed observation is never suppression.
+    project_control = root / "project-control"
+    project_control.mkdir()
+    (project_control / PROJECT_CONTROL_MARKER).write_text(
+        "project_only_deny\n", encoding="utf-8")
+    observation = {
+        "module": "project_only_deny",
+        "hook_event_name": "PreToolUse",
+        "tool_name": "apply_patch",
+    }
+    (project_control / PROJECT_CONTROL_OBSERVATIONS).write_text(
+        json.dumps(observation) + "\n", encoding="utf-8")
+    check(project_control_observed(project_control),
+          "Project-only control: valid invocation/effect evidence is accepted")
+    (project_control / PROJECT_CONTROL_OBSERVATIONS).unlink()
+    check(not project_control_observed(project_control),
+          "Project-only control: missing invocation evidence stays unverified")
+    (project_control / PROJECT_CONTROL_OBSERVATIONS).write_text(
+        "not-json\n", encoding="utf-8")
+    check(not project_control_observed(project_control),
+          "Project-only control: malformed invocation evidence stays unverified")
+    target = project_control / "project-only-control.txt"
+    completed_change = json.dumps({
+        "type": "item.completed",
+        "item": {"type": "file_change", "status": "completed",
+                  "changes": [{"path": str(target), "kind": "add"}]},
+    })
+    started_change = json.dumps({
+        "type": "item.started",
+        "item": {"type": "file_change", "status": "in_progress",
+                  "changes": [{"path": str(target), "kind": "add"}]},
+    })
+    check(successful_file_change_observed(started_change + "\n" + completed_change, target),
+          "Project-only control: started then completed file effect is accepted")
+    check(not successful_file_change_observed(started_change, target),
+          "Project-only control: started-only file effect stays unverified")
+    check(not successful_file_change_observed("", target),
+          "Project-only control: missing tool result stays unverified")
+    check(not successful_file_change_observed("not-json\n" + completed_change, target),
+          "Project-only control: malformed tool result stays unverified")
+
     # Command policy: use Codex's observed tool_input.command envelope.
     risky_gh = drive("gh_body_file_guard", pre_payload(
         "Bash", {"command": 'gh pr create --body "see `uname -a`"'}, root))
@@ -194,5 +242,5 @@ try:
 finally:
     shutil.rmtree(root, ignore_errors=True)
 
-print(f"Total: 12 | Failed: {failures}")
+print(f"Total: 19 | Failed: {failures}")
 sys.exit(1 if failures else 0)
