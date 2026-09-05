@@ -86,7 +86,7 @@ fleet-config/
 │   ├── restart_and_verify_webapp.py   # also exposed as /restart-webapp
 │   ├── notify_on_idle.py            # Notification hook (via run-hook.ps1): opt-in Telegram ping
 │   ├── session_state.py             # UserPromptSubmit|Stop|SessionEnd: the Fleet-Board session-row engine (hooks/state/sessions-state.json)
-│   ├── session_state_codex.py       # thin Codex adapter → session_state (wired from codex-hooks.json)
+│   ├── session_state_codex.py       # Codex working/needs-you/SessionEnd adapter → shared state
 │   ├── session_state_pi.py          # thin Pi adapter → session_state (shelled out to by pi/extensions/session_state.ts)
 │   ├── notify_send.py               # shared Telegram transport (importable + CLI, stdlib-only)
 │   ├── slack_notify.py              # DEPRECATED shim -> notify_send.py, for sister repos that load it by path (fleet-config#540)

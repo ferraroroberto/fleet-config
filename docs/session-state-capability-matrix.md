@@ -12,7 +12,7 @@ without inferring from process age, transcript text, or directory alone
 | `working` | `UserPromptSubmit` hook | `UserPromptSubmit` hook | `input` extension event | `UserPromptSubmit` hook, reached through Grok's own Claude-settings compat scan (see below) — **verified live** |
 | `needs-you` | `Stop` hook, or the `Notification` hook's permission-prompt piggyback (`notify_on_idle.py`) | `Stop` hook, or `PermissionRequest` hook (the Codex analog of Claude's permission-prompt piggyback) | `agent_settled` extension event ("fires when Pi will not continue running automatically" — the closest available analog to Claude's `Stop`) | `Stop` hook — **verified live** |
 | `idle` | `Notification` hook's idle-nag piggyback (`notify_on_idle.py`) | not available — Codex exposes no idle-nag-shaped event today | not available — Pi's docs state no event distinguishes idle from active work | **not proven.** Grok *does* expose `Notification` and `PermissionDenied`, so the signal exists in principle — but `notify_on_idle.py`'s classifier is written against Claude's notification sub-type vocabulary and has not been verified against Grok's payload, so nothing is written. Degrades to the Board's `unknown` rather than being guessed. |
-| row removal on session end | `SessionEnd` hook | not available — Codex's hook vocabulary (`SessionStart, SubagentStart, PreToolUse, PermissionRequest, PostToolUse, PreCompact, PostCompact, UserPromptSubmit, SubagentStop, Stop`) has no session-end-shaped event; a Codex row ages out via the writer's existing 24h prune, same as any hard-killed session | `session_shutdown` extension event | `SessionEnd` hook — **verified live** |
+| row removal on session end | `SessionEnd` hook | `SessionEnd` hook — **verified live** in `codex exec --ephemeral` on normal process exit | `session_shutdown` extension event | `SessionEnd` hook — **verified live** |
 
 "Verified live" above means exactly that: a real `grok -p` session against
 grok 0.2.114, polled at 60 ms, produced the transition
@@ -25,17 +25,21 @@ unavailable, never inferred.
 Any state a writer can't prove is never fabricated. `app-launcher/src/board_sessions.py`
 already renders anything outside `{working, needs-you, idle}` as `unknown`
 (and a session with no state row at all also renders `unknown`) — so a
-missing `idle` signal for Codex/Pi, or a missing shutdown-cleanup hook for
-Codex, degrades to the Board's existing fallback rather than requiring new
-code on either side of the join.
+missing `idle` signal for Codex/Pi, or a hard-killed session whose end hook
+cannot fire, degrades to the Board's existing fallback rather than requiring
+new code on either side of the join. Terminal ids are tombstoned for the same
+24-hour window so a late observational event cannot recreate a removed row;
+an explicit new prompt clears that marker because it proves a real resume.
 
 ## Adapters
 
 - **Codex** — `hooks/session_state_codex.py`, wired into `codex-hooks.json`'s
-  `UserPromptSubmit` / `Stop` / `PermissionRequest` entries. Codex's hook
+  `UserPromptSubmit` / `Stop` / `PermissionRequest` / `SessionEnd` entries.
+  `SessionEnd` uses the shared removal operation and matches Codex's current
+  `reason: "other"`. Codex's hook
   payload shares the same field names as Claude Code's (`session_id`, `cwd`,
   `hook_event_name`, `transcript_path` — confirmed against
-  developers.openai.com/codex/hooks), so this is a thin event-map wrapper
+  [Codex hooks documentation](https://learn.chatgpt.com/docs/hooks)), so this is a thin event-map wrapper
   around `session_state.upsert_from_payload()`, not a separate parser.
 - **Pi** — `pi/extensions/session_state.ts` (sibling to the existing
   `statusline.ts`), subscribing to `input` / `agent_settled` /
@@ -76,16 +80,22 @@ separate subsystem, so nothing about the existing notifier changes.
 
 ## Verification caveat
 
-Both CLIs skip turn-boundary hooks in their non-interactive/print modes
-(`codex exec`, `pi -p --no-session`) — confirmed live during development:
-`codex exec` fires `PreToolUse`/`PostToolUse` but never `UserPromptSubmit`/
-`Stop`; `pi -p` fires `input` and `session_shutdown` but never
+Pi's print mode skips its settle boundary: `pi -p` fires `input` and
+`session_shutdown` but never
 `agent_settled` (there's no "settle" point in a one-shot run). The
-`input`/`session_shutdown` path was verified end-to-end live; the
-`UserPromptSubmit`/`Stop`/`PermissionRequest` (Codex) and `agent_settled`
-(Pi) paths are verified by unit tests plus the officially documented payload
-schema, not by a live one-shot trigger — a real interactive session is the
-next spot-check if this ever needs re-confirming.
+`input`/`session_shutdown` path was verified end-to-end live; Pi's
+`agent_settled` and Codex's `PermissionRequest` paths are verified by unit
+tests plus the officially documented payload schema.
+
+Codex was re-probed against `codex-cli 0.153.3` using `codex exec --ephemeral`,
+normal config discovery, invocation-scoped project trust, and isolated
+project hooks/state. Normal process exit produced the exact sequence
+`UserPromptSubmit` → `Stop` → `SessionEnd` with `reason: "other"`, and the row
+transitioned `working` → `needs-you` → removed. Switching away from a thread or
+calling `thread/unsubscribe` is explicitly non-terminal in the current Codex
+contract and does not fire `SessionEnd`; archive, delete, normal exit, or 30
+minutes inactive with no connected client does. The bounded live check is
+`tests/probe_codex_session_end.py`.
 
 **Grok is the exception**: unlike Codex and Pi, it fires the full turn-boundary
 set in headless `grok -p` mode, so every claimed cell above was confirmed

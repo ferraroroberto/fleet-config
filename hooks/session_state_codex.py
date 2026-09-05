@@ -1,21 +1,24 @@
 """Codex adapter for the Fleet Board session-state writer (fleet-config#349).
 
-Wires Codex CLI's ``UserPromptSubmit`` / ``Stop`` / ``PermissionRequest`` hooks
+Wires Codex CLI's ``UserPromptSubmit`` / ``Stop`` / ``PermissionRequest`` /
+``SessionEnd`` hooks
 (``codex-hooks.json``) into the same ``sessions-state.json`` row
 :mod:`session_state` already maintains for Claude Code, so a Codex terminal
 shows ``working``/``needs-you`` on the Fleet Board instead of ``unknown``.
 
 Codex's hook payload shares the same field names as Claude Code's
 (``session_id``, ``cwd``, ``hook_event_name``, ``transcript_path`` —
-confirmed against the current Codex hooks doc, developers.openai.com/codex/hooks)
+confirmed against the current Codex hooks doc, learn.chatgpt.com/docs/hooks)
 so this module is a thin event-map wrapper around
 :func:`session_state.upsert_from_payload`, not a separate parser.
 
 ``PermissionRequest`` maps to ``needs-you`` — the Codex analog of how
 Claude's ``Notification`` hook piggybacks ``needs-you`` on a permission gate
-(:mod:`notify_on_idle`). Codex has no session-end-shaped hook, so a Codex row
-has no explicit removal path; it ages out via :mod:`session_state`'s existing
-24h prune, same as a hard-killed Claude session.
+(:mod:`notify_on_idle`). ``SessionEnd`` calls the shared row-removal path. The
+shared writer retains a bounded tombstone so a late ``Stop`` or
+``PermissionRequest`` cannot recreate a closed row; a later
+``UserPromptSubmit`` proves a resumed session is active and may reopen that
+same id.
 
 Composes with, rather than replaces, Codex's separate ``notify`` mechanism
 (the CUA ``codex-computer-use.exe`` "turn-ended" notifier in
@@ -46,9 +49,17 @@ def main() -> None:
     try:
         payload = _lib.read_stdin_json()
         event = str(payload.get("hook_event_name") or "")
-        status = _EVENT_STATUS.get(event)
-        if status:
-            session_state.upsert_from_payload(payload, status, default_agent="codex")
+        if event == "SessionEnd":
+            session_state.remove_from_payload(payload)
+        else:
+            status = _EVENT_STATUS.get(event)
+            if status:
+                session_state.upsert_from_payload(
+                    payload,
+                    status,
+                    default_agent="codex",
+                    allow_reopen=event == "UserPromptSubmit",
+                )
     except Exception:  # noqa: BLE001 — state is advisory; never disturb the session
         pass
     _lib.allow()
