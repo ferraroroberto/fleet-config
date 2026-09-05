@@ -27,6 +27,7 @@
 
 [CmdletBinding()]
 param(
+    [switch]$ConfigureCodexStatusline,
     [switch]$VerifyCodexSandbox,
     [switch]$VerifyGrokCompat,
     [string]$ProjectRoot
@@ -39,8 +40,8 @@ $RepoRoot       = Split-Path -Parent $MyInvocation.MyCommand.Path
 # A named checkout (including a linked worktree) installs only its local links.
 # Never redirect machine-wide homes to a transient worktree.
 if ($ProjectRoot -or (Test-Path -LiteralPath (Join-Path $RepoRoot '.git') -PathType Leaf)) {
-    if ($VerifyCodexSandbox -or $VerifyGrokCompat) {
-        throw 'Scoped installation cannot run user-home verification switches; run skills/_lib/discovery_probe.py --run separately.'
+    if ($ConfigureCodexStatusline -or $VerifyCodexSandbox -or $VerifyGrokCompat) {
+        throw 'Scoped installation cannot change or verify user-home configuration; run the requested switch from the primary checkout.'
     }
     if (-not $ProjectRoot) { $ProjectRoot = $RepoRoot }
     & (Join-Path $RepoRoot '.venv/Scripts/python.exe') (Join-Path $RepoRoot 'skills/_lib/scoped_discovery.py') install --repo $ProjectRoot
@@ -360,6 +361,7 @@ if ($needsElevation -and -not (Test-IsElevated)) {
     # forwarded here silently no-ops on exactly the machines that need the UAC
     # prompt -- a fresh install -- reporting a successful install for a
     # verification that never ran (fleet-config#681).
+    if ($ConfigureCodexStatusline) { $psArgs += '-ConfigureCodexStatusline' }
     if ($VerifyCodexSandbox) { $psArgs += '-VerifyCodexSandbox' }
     if ($VerifyGrokCompat)   { $psArgs += '-VerifyGrokCompat' }
     $proc    = Start-Process -FilePath $psExe -ArgumentList $psArgs -Verb RunAs -WindowStyle Hidden -Wait -PassThru
@@ -453,6 +455,11 @@ Install-CopilotContextFilterHook
 & (Join-Path $RepoRoot '.venv/Scripts/python.exe') (Join-Path $RepoRoot 'skills/_lib/scoped_discovery.py') install --registered
 $discoveryExit = $LASTEXITCODE
 
+if ($ConfigureCodexStatusline) {
+    & (Join-Path $RepoRoot '.venv/Scripts/python.exe') (Join-Path $RepoRoot 'codex_statusline.py') --apply --config (Join-Path $CodexHome 'config.toml')
+    if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+}
+
 Write-Host ""
 Write-Host "Done. created=$created skipped=$skipped blocked=$blocked" -ForegroundColor Cyan
 Write-Host "Manifest: $ManifestPath"
@@ -465,4 +472,7 @@ if ($VerifyGrokCompat) {
 Write-Host ""
 Write-Host "Next step: merge the 'hooks' block from settings.template.json into ~/.claude/settings.json,"
 Write-Host "then restart Claude Code so the new hooks load."
+if ($ConfigureCodexStatusline) {
+    Write-Host "Open a fresh Codex terminal to load the updated native footer."
+}
 if ($discoveryExit -ne 0 -or $blocked -gt 0) { exit 1 }

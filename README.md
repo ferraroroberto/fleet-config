@@ -61,6 +61,7 @@ fleet-config/
 ├── design.md                       # exposed as ~/.claude/design.md (symlink) — fleet web-app design system (light); navigation + interaction contract (rationale + references: docs/design-system.md)
 ├── design.dark.md                  # exposed as ~/.claude/design.dark.md (symlink) — same token names, dark values (Vercel light/dark convention)
 ├── statusline-command.ps1          # exposed as ~/.claude/statusline-command.ps1 (symlink) — custom statusline (Claude only)
+├── codex_statusline.py             # opt-in, comment-preserving merge of native Codex footer fields into ~/.codex/config.toml
 ├── .gitignore
 ├── install.ps1                     # creates junctions/symlinks into the agent homes: ~/.claude, ~/.agents, ~/.codex, ~/.pi/agent, ~/.copilot; also wires shell/claude-otel-project.ps1 into $PROFILE
 ├── uninstall.ps1                   # mirror of install.ps1: the manifest links + the $PROFILE OTel block, agy plugin, and copilot hook it writes outside it
@@ -141,6 +142,8 @@ recipes for migrating an agent home that already holds real files are in
 [`docs/install.md`](docs/install.md). The per-agent capability matrix — what
 each agent supports, what is wired, and where a class is a deliberate non-goal
 — is in [`docs/cross-agent-parity.md`](docs/cross-agent-parity.md).
+
+To add the supported context, model, location, branch, five-hour-limit, and weekly-limit items to the native Codex terminal footer, run `.\install.ps1 -ConfigureCodexStatusline` from the primary checkout. This opt-in merge preserves existing footer items, their order, comments, `terminal_title`, and unrelated settings; see [`docs/install.md`](docs/install.md#codex-terminal-footer-opt-in).
 
 Edits on either side are visible on the other instantly — no copy step, no sync ritual. The installer is idempotent:
 - existing link pointing at the repo → no-op
