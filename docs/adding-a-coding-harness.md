@@ -207,6 +207,14 @@ Run the broader command/edit policy probe when changing Codex wiring or any shar
 
 It uses normal config discovery, invocation-scoped trust, `--approve-for-me`, and reviewed wrappers under disposable `.codex/hooks/`; it neither copies credentials nor changes live hooks. The feature-branch leg proves a safe multi-file patch runs, the PreToolUse GitHub-body advisory and both PostToolUse advisories reach the model, and an installed dated-doc policy refuses the dated target. The default-branch leg proves a gitignored control edit runs while a committable target is refused. Two project-only controls establish the tested runtime and mode: normal discovery must invoke the disposable hook and record its refusal/effect, while `--ignore-user-config` must run the same harmless tool successfully with no project-hook marker or observation. The latter does not assume global hooks are absent; installed user-scope policies may still act, so their behavior is reported separately. Missing or malformed observations, an unattempted control action, or a failed CLI never counts as suppression. Pass depends on actual file effects and transcript evidence, not registration alone.
 
+When changing Codex session lifecycle wiring, run the dedicated end-to-end probe:
+
+```powershell
+& ./.venv/Scripts/python.exe tests/probe_codex_session_end.py --workspace ./tmp/codex-session-end-check --model gpt-6-astra
+```
+
+It uses normal config discovery, invocation-scoped project trust, reviewed disposable project hooks, isolated state, and `codex exec --ephemeral` so neither the workspace nor the thread enters normal session history. Normal process exit must emit `UserPromptSubmit` → `Stop` → `SessionEnd`, and the matching row must transition `working` → `needs-you` → removed. The probe records the installed CLI version and `SessionEnd.reason`; a missing event, unexpected order, surviving row, timeout, or CLI failure is unknown/fail rather than a pass. Do not add `--ignore-user-config`: that suppresses project hooks while global hooks remain active, so it tests a different configuration surface.
+
 ## Step 4 — Board state and the capability matrix
 
 `hooks/session_state.py` is the sole writer of `sessions-state.json`. Map the

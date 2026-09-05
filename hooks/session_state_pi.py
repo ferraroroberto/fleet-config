@@ -57,7 +57,12 @@ def main() -> None:
         else:
             status = _EVENT_STATUS.get(name)
             if status:
-                session_state.upsert_from_payload(payload, status, default_agent="pi")
+                session_state.upsert_from_payload(
+                    payload,
+                    status,
+                    default_agent="pi",
+                    allow_reopen=name == "input",
+                )
     except Exception:  # noqa: BLE001 — state is advisory; never disturb the session
         pass
     _lib.allow()

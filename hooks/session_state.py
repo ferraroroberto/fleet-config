@@ -27,7 +27,9 @@ Wired into three Claude Code events (``settings.template.json``):
 * ``SessionEnd`` → **deletes** the row (the session is gone, not waiting on
   anyone). Fires on clean exit (``/exit``, ``clear``, ``logout``, prompt-input
   exit); a hard kill (taskkill, crash) never fires it, so those rows still age
-  out via the 24h prune below (#241).
+  out via the 24h prune below (#241). A 24-hour tombstone in
+  ``sessions-ended.json`` keeps a late observational event from recreating the
+  removed row; a new prompt clears it because that proves a genuine resume.
 
 ``notify_on_idle`` (the ``Notification`` hook) additionally upserts
 ``needs-you`` on a permission prompt, so a blocked session surfaces even
@@ -72,6 +74,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import _lib  # noqa: E402
 
 STATE_FILENAME = "sessions-state.json"
+ENDED_FILENAME = "sessions-ended.json"
 
 _PRUNE_AFTER = timedelta(hours=24)
 _REPLACE_ATTEMPTS = 3  # os.replace can hit a transient PermissionError under a concurrent Windows reader
@@ -88,6 +91,11 @@ def state_file() -> Path:
     root = os.environ.get("CLAUDE_HOOKS_STATE_DIR")
     base = Path(root) if root else Path.home() / ".claude" / "hooks" / "state"
     return base / STATE_FILENAME
+
+
+def ended_file() -> Path:
+    """Resolve the terminal-session tombstone path beside the live rows."""
+    return state_file().with_name(ENDED_FILENAME)
 
 
 def sessions_registry_dir() -> Path:
@@ -160,6 +168,17 @@ def _read_rows(path: Path) -> Dict[str, Any]:
     return data if isinstance(data, dict) else {}
 
 
+def _live_tombstones(path: Path) -> Dict[str, Any]:
+    """Return terminal session ids still inside the late-event guard window."""
+    cutoff = _now() - _PRUNE_AFTER
+    live: Dict[str, Any] = {}
+    for session_id, stamp in _read_rows(path).items():
+        moment = _parse_updated_at({"updated_at": stamp})
+        if moment is not None and moment >= cutoff:
+            live[session_id] = stamp
+    return live
+
+
 def _write_rows(path: Path, rows: Dict[str, Any]) -> None:
     """Atomic tmp+replace write, retried because a concurrent reader on Windows
     can hold the target and fail ``os.replace`` with a transient PermissionError."""
@@ -192,6 +211,7 @@ def upsert(
     name_source: Optional[str] = None,
     agent: str = "claude",
     launcher_session_id: Optional[str] = None,
+    allow_reopen: bool = False,
 ) -> None:
     """Write/refresh one session row and prune rows stale past 24h.
 
@@ -201,6 +221,14 @@ def upsert(
     """
     path = state_file()
     path.parent.mkdir(parents=True, exist_ok=True)
+
+    tombstone_path = ended_file()
+    tombstones = _live_tombstones(tombstone_path)
+    if str(session_id) in tombstones:
+        if not allow_reopen:
+            return
+        del tombstones[str(session_id)]
+        _write_rows(tombstone_path, tombstones)
 
     rows = _read_rows(path)
     rows[str(session_id)] = {
@@ -226,7 +254,8 @@ def upsert(
 
 
 def upsert_from_payload(
-    payload: Dict[str, Any], status: str, *, default_agent: str = "claude"
+    payload: Dict[str, Any], status: str, *, default_agent: str = "claude",
+    allow_reopen: bool = False,
 ) -> None:
     """Upsert straight from a hook payload; silent no-op without a session_id.
 
@@ -268,12 +297,18 @@ def upsert_from_payload(
         name_source=name_source,
         agent=agent,
         launcher_session_id=launcher_session_id,
+        allow_reopen=allow_reopen,
     )
 
 
 def remove(session_id: str) -> None:
-    """Delete one session's row (SessionEnd); silent no-op if the row is absent."""
+    """Delete one row and suppress late observational events for 24 hours."""
     path = state_file()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tombstone_path = ended_file()
+    tombstones = _live_tombstones(tombstone_path)
+    tombstones[str(session_id)] = _isoformat(_now())
+    _write_rows(tombstone_path, tombstones)
     if not path.exists():
         return
     rows = _read_rows(path)
@@ -299,7 +334,9 @@ def main() -> None:
         else:
             status = _EVENT_STATUS.get(event)
             if status:
-                upsert_from_payload(payload, status)
+                upsert_from_payload(
+                    payload, status, allow_reopen=event == "UserPromptSubmit"
+                )
     except Exception:  # noqa: BLE001 — state is advisory; never disturb the session
         pass
     _lib.allow()

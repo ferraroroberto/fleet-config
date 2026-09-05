@@ -140,6 +140,19 @@
           }
         ]
       }
+    ],
+    "SessionEnd": [
+      {
+        "matcher": "other",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.codex/hooks/session_state_codex.py",
+            "timeout": 15,
+            "statusMessage": "Removing Fleet Board session"
+          }
+        ]
+      }
     ]
   }
 }
