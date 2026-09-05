@@ -12,6 +12,20 @@ migrating an agent home that already holds real files.
 - **Junctions** for the directory entries. Cross-volume OK, no admin. `hooks/` and `commands/` are each junctioned into **both** `~/.claude` and `~/.codex`, `skills/` into `~/.claude/skills` + `~/.agents/skills` (Codex+Pi) + `~/.copilot/skills` (Copilot), `pi/extensions/` into `~/.pi/agent/extensions` for Pi's footer extension, and `tray/` into `~/.claude/tray` — the one machine-local `tray_lifecycle.ps1` every fleet `tray.bat` calls by path (fleet-config#153) — so every agent (and every tray) loads the *same live files* and nothing can drift between them.
 - **Symlinks** for the single-file entries (`global-CLAUDE.md` → `~/.claude/CLAUDE.md`, `~/.codex/AGENTS.md`, `~/.pi/agent/AGENTS.md`, and `~/.copilot/copilot-instructions.md`; `codex-hooks.json` → `~/.codex/hooks.json`; `statusline-command.ps1`). Cross-volume file linking on Windows requires admin or Developer Mode, so the installer self-elevates with **one UAC prompt** the first time it needs to create them. Reinstalls that find the symlinks already in place stay UAC-free.
 
+## Codex terminal footer opt-in
+
+Codex owns its terminal footer through `[tui].status_line` in `~/.codex/config.toml`. The ordinary install leaves that user customization alone. To add the fleet's supported native fields, run this from the primary checkout:
+
+```powershell
+.\install.ps1 -ConfigureCodexStatusline
+```
+
+The switch runs `codex_statusline.py`, which appends only missing items in this order: `context-used`, `model`, `current-dir`, `git-branch`, `five-hour-limit`, `weekly-limit`. Existing items keep their order, and comments, `tui.terminal_title`, and unrelated settings retain their bytes. Re-running the command is an idempotent no-op. A malformed config fails without replacing the file. The switch is refused in scoped/worktree install mode so a transient checkout cannot change user-home configuration.
+
+The two limit items use Codex's own account data and rendering. An unavailable window is omitted instead of displayed as zero, and the TUI elides lower-priority trailing items when the terminal is too narrow. Use `/statusline` in a fresh terminal to inspect or reorder the active items and `/status` to compare the available windows. The [official OpenAI developer-command reference](https://learn.chatgpt.com/docs/developer-commands#configure-footer-items-with-statusline) confirms that `/statusline` updates the footer immediately and persists it to `tui.status_line`.
+
+This config affects the Codex terminal TUI only. It does not customize the Codex desktop conversation UI, and it does not add custom colors, thresholds, or a replacement renderer; theme colors and layout remain native Codex behavior.
+
 ## Scoped project discovery
 
 `install.ps1` also inventories the registered checkouts in `hooks/projects.toml` and reconciles individual skill-directory links. The layout follows [project-scaffolding's portable project skills contract](https://github.com/ferraroroberto/project-scaffolding/blob/main/docs/agents/project-skills.md): keep the maintained source, link the complete directory into the missing native root at the same scope, and preserve existing real parents. `.claude/skills/<name>` gets a `.agents/skills/<name>` link for Codex/Pi; a real `.agents` source gets an inverse `.claude` link. Grok's native compatibility needs no `.grok` mirror. Existing user-home junctions remain compatible, including the `_lib` helper path used by global workflows; new project discovery never mirrors their parent containers.

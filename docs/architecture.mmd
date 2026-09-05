@@ -10,6 +10,7 @@
 flowchart TB
   subgraph install["install.ps1 / uninstall.ps1"]
     INSTALL["junctions: hooks/, skills/, commands/, pi/extensions/, tray/\nsymlinks: global-CLAUDE.md, design.md, design.dark.md,\nstatusline-command.ps1, codex-hooks.json"]
+    CODEXSTATUS["codex_statusline.py\nopt-in atomic merge into ~/.codex/config.toml\npreserves custom footer order, comments, and unrelated settings"]
   end
 
   subgraph homes["Agent homes"]
@@ -26,6 +27,7 @@ flowchart TB
   INSTALL --> SCOPED
   SCOPED --> PROJECTSKILLS["maintained .claude/.agents skills\nindividual same-scope discovery routes"]
   INSTALL --> CODEX
+  INSTALL -->|"-ConfigureCodexStatusline"| CODEXSTATUS --> CODEX
   INSTALL --> PIHOME
   INSTALL --> COPILOT
   CLAUDE -.->|"compat scan: rules, skills, hooks"| GROK
