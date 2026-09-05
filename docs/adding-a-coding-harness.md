@@ -181,6 +181,24 @@ The directory must not already exist. The probe creates a disposable nested git 
 
 Keep the normal account/config discovery: `--ignore-user-config` prevented project hook loading in the tested client. The probe uses invocation-scoped project trust and `--dangerously-bypass-hook-trust` for these reviewed test hooks, isolates the fleet session-state output, and disables context rewriting for the invocation. It does not copy credentials, change live hook wiring, or persist trust. Review enabled user hooks before running it, since normal discovery also loads those hooks. Never substitute a destructive command for the sentinel.
 
+### Shared edit events and Codex syntax feedback
+
+`_lib.edit_event(payload)` is the lazy edit view after `normalize_payload()`; keeping it separate preserves Claude's identical payload object. Its `EditEvent` has `status` (`known`, `unverified`, `not_edit`), `outcome` (`pending`, `success`, `failed`, `unknown`), `reason`, and ordered `EditTarget` entries (`path`, `operation`, optional `source_path`). Native Edit/MultiEdit produce `update`, native Write (including translated Grok) produces `write`; patch operations are `add`, `update`, `delete`, `rename`. Paths are absolute, resolving relative names against the payload's absolute `cwd`. Missing cwd for a relative target, unsupported patch grammar or malformed input makes the entire target set unverified. No patch text is executed and no representative file is invented. Existing single-path `file_path()` consumers are unchanged; #745 owns their migration/wiring.
+
+The [official PostToolUse contract](https://learn.chatgpt.com/docs/hooks#posttooluse) says `apply_patch` stays the tool name even when Edit/Write matcher aliases fire, with patch text in `tool_input.command`. CLI 0.153.3 sends the model-facing string response, including `Exit code: 0`, timing, and `Success. Updated the following files:`. The parser recognizes that successful response or its unwrapped success form; unrecognized output remains unknown. Pre-event targets describe intent. Failed outcomes do not prove atomicity and never count as checked final files.
+
+The syntax consumer checks each surviving `.py` path once (rename destination, no deleted source), using that target's project interpreter and continuing past the first error. It reports missing files, no working interpreter, compiler start failure and timeout as unverified. Codex 0.153.3 dropped PostToolUse stderr/exit-2 syntax feedback in a real A/B test; `_lib.block()` delegates that event to the existing `_lib.warn()` additional-context channel, exit 0. This reports errors after the edit, without claiming to undo it. Claude and Grok retain their existing output/exit behavior.
+
+Run the bounded opt-in runtime check from the checkout being tested:
+
+```powershell
+& ./.venv/Scripts/python.exe tests/probe_codex_patch.py --workspace ./tmp/codex-patch-check --model gpt-6-astra
+```
+
+This reuses the refusal probe's normal account discovery, invocation-only project trust, reviewed disposable hooks and isolated session state; no credential copies or live wiring changes. It creates a new disposable git repository, submits a six-target patch (two invalid Python files, valid Python, text, rename, deletion), then a patch that fails verification on a missing file. Pass requires the exact attempts, four actual compiler targets once each, both SyntaxErrors in structured hook context and the model transcript, expected file effects, and observed patch failure. The sanitized successful hook payload is `tests/fixtures/codex_patch_post.json`. `--expect-bug` reproduces the original zero-compiler-call failure against old code.
+
+In the tested client the failed verification attempt fires PreToolUse but neither PostToolUse nor PostToolUseFailure; the probe records that limitation, and the normal syntax hook cannot report an event it never receives. Synthetic failure-event/unknown-response tests ensure these states remain unverified if delivered by another supported mode. Runtime artifacts stay local under the chosen workspace. Missing hook execution, CLI failure or timeout is unknown, never a pass.
+
 ## Step 4 — Board state and the capability matrix
 
 `hooks/session_state.py` is the sole writer of `sessions-state.json`. Map the

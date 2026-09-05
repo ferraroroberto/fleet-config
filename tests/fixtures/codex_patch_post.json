@@ -1,0 +1,9 @@
+{
+  "hook_event_name": "PostToolUse",
+  "tool_name": "apply_patch",
+  "tool_input": {
+    "command": "*** Begin Patch\n*** Add File: broken_a.py\n+def broken_a(:\n*** Add File: broken_b.py\n+def broken_b(:\n*** Add File: good.py\n+VALUE = 1\n*** Add File: notes.txt\n+harmless\n*** Update File: old.py\n*** Move to: renamed.py\n@@\n-VALUE = 0\n+VALUE = 2\n*** Delete File: deleted.py\n*** End Patch"
+  },
+  "tool_response": "Exit code: 0\nWall time: 12.6 seconds\nOutput:\nSuccess. Updated the following files:\nA broken_a.py\nA broken_b.py\nA good.py\nA notes.txt\nM renamed.py\nD deleted.py\n",
+  "cwd": "<disposable repository>"
+}

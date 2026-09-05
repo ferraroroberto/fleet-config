@@ -161,6 +161,8 @@ _STANDALONE_UNIT_CHECKS: Tuple[Tuple[str, str, str], ...] = (
      "answer, plus a real reproduction of the 2026-08-01 condition proving "
      "`git status` still exits 0 and reads clean while every write is "
      "frozen -- is testable on its own (fleet-config#667)"),
+    ("edit_targets", "test_edit_targets.py",
+     "shared native/patch edit targets and multi-file Python syntax feedback (fleet-config#744)"),
     ("payload_normalization", "test_payload_normalization.py",
      "the Grok camelCase -> Claude snake_case translation every hook "
      "now routes through, and -- the load-bearing half -- that a "
