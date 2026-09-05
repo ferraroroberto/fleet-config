@@ -1,0 +1,18 @@
+{"type": "thread.started", "thread_id": "synthetic-thread"}
+{"type": "turn.started"}
+{"type": "item.completed", "item": {"id": "item_0", "type": "agent_message", "text": "SCHEDULED_SMOKE_COMPLETE"}}
+{"type": "item.started", "item": {"id": "item_1", "type": "command_execution", "exit_code": null, "status": "in_progress"}}
+{"type": "item.completed", "item": {"id": "item_1", "type": "command_execution", "exit_code": 0, "status": "completed"}}
+{"type": "item.started", "item": {"id": "item_2", "type": "command_execution", "exit_code": null, "status": "in_progress"}}
+{"type": "item.completed", "item": {"id": "item_2", "type": "command_execution", "exit_code": 0, "status": "completed"}}
+{"type": "item.started", "item": {"id": "item_3", "type": "file_change", "status": "in_progress"}}
+{"type": "item.completed", "item": {"id": "item_3", "type": "file_change", "status": "completed"}}
+{"type": "item.started", "item": {"id": "item_4", "type": "command_execution", "exit_code": null, "status": "in_progress"}}
+{"type": "item.completed", "item": {"id": "item_4", "type": "command_execution", "exit_code": 1, "status": "failed"}}
+{"type": "item.started", "item": {"id": "item_5", "type": "command_execution", "exit_code": null, "status": "in_progress"}}
+{"type": "item.completed", "item": {"id": "item_5", "type": "command_execution", "exit_code": 0, "status": "completed"}}
+{"type": "item.completed", "item": {"id": "item_6", "type": "agent_message", "text": "SCHEDULED_SMOKE_COMPLETE"}}
+{"type": "item.started", "item": {"id": "item_7", "type": "command_execution", "exit_code": null, "status": "in_progress"}}
+{"type": "item.completed", "item": {"id": "item_7", "type": "command_execution", "exit_code": 0, "status": "completed"}}
+{"type": "item.completed", "item": {"id": "item_8", "type": "agent_message", "text": "SCHEDULED_SMOKE_COMPLETE"}}
+{"type": "turn.completed", "usage": {"input_tokens": 176625, "cached_input_tokens": 155904, "cache_write_input_tokens": 0, "output_tokens": 1148, "reasoning_output_tokens": 316}}

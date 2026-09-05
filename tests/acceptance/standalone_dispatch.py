@@ -45,6 +45,8 @@ _STANDALONE_UNIT_CHECKS: Tuple[Tuple[str, str, str], ...] = (
      "the helper's tolerant/pruned/concurrent JSON lifecycle and every "
      "workflow path that adds or removes a marker stay reachable from "
      "the one gate"),
+    ("scheduled_runner", "test_scheduled_runner.py",
+     "provider adapters share completion, delivery, retry and owned-cancellation conformance"),
     ("claude_progress", "test_claude_progress.py",
      "parser filtering/deduplication, child exit-code propagation, and "
      "the checked-in contract that every run-weekly.bat uses the shared "
