@@ -37,6 +37,15 @@ DATED_PATCH = """*** Begin Patch
 +blocked sentinel
 *** End Patch"""
 
+PROJECT_CONTROL_PATCH = """*** Begin Patch
+*** Add File: project-only-control.txt
++project hook control
+*** End Patch"""
+
+PROJECT_CONTROL_FILE = "project-only-control.txt"
+PROJECT_CONTROL_MARKER = "project-hook-ran.txt"
+PROJECT_CONTROL_OBSERVATIONS = "project-hook-observations.jsonl"
+
 IGNORED_PATCH = """*** Begin Patch
 *** Add File: ignored.txt
 +allowed sentinel
@@ -65,7 +74,7 @@ def init_repo(root: Path, branch: str) -> None:
         raise RuntimeError(f"git checkout failed: {branch}")
 
 
-def wire_hooks(root: Path) -> None:
+def wire_hooks(root: Path, *, project_control: bool = False) -> None:
     hook_dir = root / ".codex" / "hooks"
     hook_dir.mkdir(parents=True)
     source = Path(__file__).resolve().parents[1] / "hooks"
@@ -93,7 +102,80 @@ def wire_hooks(root: Path) -> None:
                        "command": subprocess.list2cmdline([sys.executable, str(wrapper)]),
                        "timeout": 15}],
         })
+    if project_control:
+        wrapper = hook_dir / "project_only_deny.py"
+        marker = root / PROJECT_CONTROL_MARKER
+        observations = root / PROJECT_CONTROL_OBSERVATIONS
+        source = Path(__file__).resolve().parents[1] / "hooks"
+        wrapper.write_text(
+            "import json, sys\n"
+            "from pathlib import Path\n"
+            f"sys.path.insert(0, {str(source)!r})\n"
+            "import _lib\n"
+            "raw = json.load(sys.stdin)\n"
+            "payload = _lib.normalize_payload(raw)\n"
+            "_lib._ACTIVE_EVENT = payload.get('hook_event_name')\n"
+            "cwd = payload.get('cwd')\n"
+            "if not isinstance(cwd, str) or not cwd:\n"
+            "    raise SystemExit('project-only control missing cwd')\n"
+            f"Path({str(observations)!r}).open('a', encoding='utf-8').write(\n"
+            "    json.dumps({'module': 'project_only_deny',\n"
+            "                'hook_event_name': payload.get('hook_event_name'),\n"
+            "                'tool_name': payload.get('tool_name')}) + '\\n')\n"
+            f"Path({str(marker)!r}).write_text('project_only_deny\\n', encoding='utf-8')\n"
+            "_lib.read_stdin_json = lambda: payload\n"
+            "_lib.block('project-only control refusal')\n",
+            encoding="utf-8",
+        )
+        by_event.setdefault("PreToolUse", []).append({
+            "matcher": "Edit|Write|MultiEdit",
+            "hooks": [{"type": "command",
+                       "command": subprocess.list2cmdline([sys.executable, str(wrapper)]),
+                       "timeout": 15}],
+        })
     (root / ".codex" / "hooks.json").write_text(json.dumps({"hooks": by_event}), encoding="utf-8")
+
+
+def project_control_observed(root: Path) -> bool:
+    """Require the project-only hook's invocation and effect evidence."""
+    try:
+        marker = (root / PROJECT_CONTROL_MARKER).read_text(encoding="utf-8")
+        lines = (root / PROJECT_CONTROL_OBSERVATIONS).read_text(encoding="utf-8").splitlines()
+        observations = [json.loads(line) for line in lines]
+    except (OSError, json.JSONDecodeError, UnicodeDecodeError):
+        return False
+    return (marker == "project_only_deny\n" and len(observations) == 1
+            and observations[0] == {
+                "module": "project_only_deny",
+                "hook_event_name": "PreToolUse",
+                "tool_name": "apply_patch",
+            })
+
+
+def successful_file_change_observed(log: str, target: Path) -> bool:
+    """Require one parsed Codex completion record for the expected file."""
+    try:
+        records = [json.loads(line) for line in log.splitlines()]
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        return False
+    matches = []
+    for record in records:
+        if not isinstance(record, dict):
+            return False
+        item = record.get("item")
+        if not isinstance(item, dict) or item.get("type") != "file_change":
+            continue
+        if record.get("type") == "item.started" and item.get("status") == "in_progress":
+            continue
+        if (record.get("type") != "item.completed" or item.get("status") != "completed"
+                or not isinstance(item.get("changes"), list)):
+            return False
+        for change in item["changes"]:
+            if (isinstance(change, dict) and change.get("kind") == "add"
+                    and isinstance(change.get("path"), str)
+                    and Path(change["path"]).resolve() == target.resolve()):
+                matches.append(change)
+    return len(matches) == 1
 
 
 def run_codex(codex: str, root: Path, model: str, prompt: str, name: str,
@@ -132,12 +214,16 @@ def main() -> int:
 
     feature = root / "feature"
     main_repo = root / "main"
+    discovery_control = root / "project-hook-discovery-control"
     control = root / "ignore-user-config-control"
     init_repo(feature, "feat/policy-probe")
     init_repo(main_repo, "main")
+    init_repo(discovery_control, "feat/control")
     init_repo(control, "feat/control")
-    for repo in (feature, main_repo, control):
+    for repo in (feature, main_repo):
         wire_hooks(repo)
+    wire_hooks(discovery_control, project_control=True)
+    wire_hooks(control, project_control=True)
 
     feature_prompt = f"""Authorized disposable policy conformance test. Make exactly three tool calls in order, then stop and report every hook message verbatim. Do not inspect files, retry, fix warnings, delegate, or use other tools.
 1. One exec_command call with shell=C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe and login=false. Its exact command must be: gh pr create --help --body 'see `fleet_conformance_sentinel`'
@@ -159,10 +245,17 @@ Second patch:
         {"APP_LAUNCHER_SESSION_ID": "codex-policy-probe"},
     )
 
-    control_prompt = f"""Authorized disposable negative control. Make exactly one apply_patch call with this exact patch, then stop. Do not use another tool.
-{DATED_PATCH}
+    discovery_prompt = f"""Authorized disposable project-hook discovery control. Make exactly one apply_patch call with this exact patch, then stop. Do not use another tool. Report the tool result and any refusal verbatim.
+{PROJECT_CONTROL_PATCH}
 """
-    control_code, _control_log = run_codex(
+    discovery_code, discovery_log = run_codex(
+        codex, discovery_control, args.model, discovery_prompt, "project-hook-discovery",
+    )
+
+    control_prompt = f"""Authorized disposable project-hook suppression control. Make exactly one apply_patch call with this exact patch, then stop. Do not use another tool. Report the tool result verbatim.
+{PROJECT_CONTROL_PATCH}
+"""
+    control_code, control_log = run_codex(
         codex, control, args.model, control_prompt, "control", ignore_user_config=True,
     )
 
@@ -176,9 +269,17 @@ Second patch:
     ))
     main_effects = (main_repo / "ignored.txt").exists() and not (main_repo / "tracked.py").exists()
     main_message = "editing on 'main'" in main_log
-    control_effect = (control / "docs/2026-09-05-hook-retro.md").exists()
-    passed = (feature_code == 0 and main_code == 0 and control_code == 0 and feature_effects
-              and feature_messages and main_effects and main_message and control_effect)
+    discovery_effect = (not (discovery_control / PROJECT_CONTROL_FILE).exists()
+                        and project_control_observed(discovery_control))
+    discovery_message = "project-only control refusal" in discovery_log
+    control_effect = ((control / PROJECT_CONTROL_FILE).exists()
+                      and not (control / PROJECT_CONTROL_MARKER).exists()
+                      and not (control / PROJECT_CONTROL_OBSERVATIONS).exists())
+    control_message = successful_file_change_observed(
+        control_log, control / PROJECT_CONTROL_FILE)
+    passed = (feature_code == 0 and main_code == 0 and discovery_code == 0 and control_code == 0
+              and feature_effects and feature_messages and main_effects and main_message
+              and discovery_effect and discovery_message and control_effect and control_message)
     version = subprocess.run([codex, "--version"], capture_output=True, text=True, timeout=15,
                              creationflags=NO_WINDOW).stdout.strip()
     print(json.dumps({
@@ -189,7 +290,9 @@ Second patch:
         "dated_docs_blocked": not (feature / "docs/2026-09-05-hook-retro.md").exists(),
         "main_ignored_allowed": (main_repo / "ignored.txt").exists(),
         "main_tracked_blocked": not (main_repo / "tracked.py").exists() and main_message,
-        "ignore_user_config_suppresses_hooks": control_effect,
+        "project_hook_discovery_observed": discovery_effect and discovery_message,
+        "ignore_user_config_suppresses_project_hook": control_effect and control_message,
+        "installed_dated_docs_guard_still_active": not (feature / "docs/2026-09-05-hook-retro.md").exists(),
         "evidence": str(root),
     }))
     return 0 if passed else 1
