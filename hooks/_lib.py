@@ -511,10 +511,11 @@ def warn(message: str) -> "NoReturn":
 
       - ``PostToolUse`` / ``PostToolUseFailure`` / ``UserPromptSubmit`` /
         ``Stop`` → ``hookSpecificOutput.additionalContext``.
-      - ``PreToolUse`` (and any event without an ``additionalContext`` field)
-        → the common ``systemMessage`` field, which Claude Code's `PreToolUse`
-        section documents as "added to the conversation as context Claude can
-        see". It is *not* a `permissionDecision`: a nudge must stay advisory,
+      - Claude ``PreToolUse`` (and any event without an
+        ``additionalContext`` field) → the common ``systemMessage`` field.
+      - Codex ``PreToolUse`` → ``hookSpecificOutput.additionalContext``; its
+        0.153.3 client ignores the Claude ``systemMessage`` envelope.
+        Neither form is a `permissionDecision`: a nudge must stay advisory,
         and both ``allow`` and ``ask`` would change whether the tool call runs.
       - ``SessionStart`` / ``UserPromptExpansion`` → plain text, already the
         model-visible channel there.
@@ -523,6 +524,18 @@ def warn(message: str) -> "NoReturn":
     Claude's, and none of the shapes above are part of the Grok/Copilot/agy
     contract.
     """
+    # Codex 0.153.3 ignores Claude's top-level `systemMessage` on PreToolUse:
+    # the hook runs and the command proceeds, but a live one-call probe reports
+    # "No hook messages were emitted". The same additionalContext envelope
+    # already proven on Codex PostToolUse is model-visible on PreToolUse too.
+    # Keep Claude on its documented systemMessage route below.
+    if _ACTIVE_AGENT == "codex" and _ACTIVE_EVENT == "PreToolUse":
+        logger.info("Codex PreToolUse advisory emitted through additionalContext")
+        print(json.dumps({"hookSpecificOutput": {
+            "hookEventName": "PreToolUse",
+            "additionalContext": message,
+        }}), flush=True)
+        sys.exit(0)
     if _ACTIVE_AGENT in (None, "codex") and _ACTIVE_EVENT not in _STDOUT_IS_CONTEXT_EVENTS:
         if _ACTIVE_EVENT in _ADDITIONAL_CONTEXT_EVENTS:
             payload: Dict[str, Any] = {"hookSpecificOutput": {

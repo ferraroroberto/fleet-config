@@ -18,6 +18,12 @@
           },
           {
             "type": "command",
+            "command": "E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.codex/hooks/gh_body_file_guard.py",
+            "timeout": 15,
+            "statusMessage": "Checking GitHub body quoting"
+          },
+          {
+            "type": "command",
             "command": "E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.codex/hooks/bash_cmdexe_syntax_guard.py",
             "timeout": 15,
             "statusMessage": "Checking cmd.exe syntax"
@@ -52,6 +58,23 @@
             "statusMessage": "Checking context filter"
           }
         ]
+      },
+      {
+        "matcher": "Edit|Write|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.codex/hooks/docs_dated_filename_guard.py",
+            "timeout": 15,
+            "statusMessage": "Checking documentation filename"
+          },
+          {
+            "type": "command",
+            "command": "E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.codex/hooks/branch_before_edit_guard.py",
+            "timeout": 15,
+            "statusMessage": "Checking edit branch"
+          }
+        ]
       }
     ],
     "PostToolUse": [
@@ -63,6 +86,18 @@
             "command": "E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.codex/hooks/py_syntax_check.py",
             "timeout": 15,
             "statusMessage": "Checking Python syntax"
+          },
+          {
+            "type": "command",
+            "command": "E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.codex/hooks/hub_bypass_warn.py",
+            "timeout": 15,
+            "statusMessage": "Checking local hub routing"
+          },
+          {
+            "type": "command",
+            "command": "E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.codex/hooks/browser_stealth_lint.py",
+            "timeout": 15,
+            "statusMessage": "Checking browser launch safety"
           }
         ]
       }

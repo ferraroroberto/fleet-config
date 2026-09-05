@@ -1,8 +1,8 @@
-"""Block an `Edit`/`Write`/`MultiEdit` on the default branch from a launcher-
+"""Block an edit on the default branch from a launcher-
 dispatched worker.
 
-Triggers on `PreToolUse` for `Edit`/`Write`/`MultiEdit`. **Blocks** (exit 2)
-when the *target file's own directory* resolves to the repo's default branch
+Triggers on `PreToolUse` for native `Edit`/`Write`/`MultiEdit` and Codex
+`apply_patch`. **Blocks** when any target file's own directory resolves to the repo's default branch
 (`main`/`master`, or whatever `origin/HEAD` says) **and** the process is a
 launcher-dispatched session (the `APP_LAUNCHER_SESSION_ID` env var App
 Launcher injects into Board/Job children — same idiom `session_state.py`
@@ -56,7 +56,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import _lib  # noqa: E402
 
 
-GUARDED_TOOLS = ("Edit", "Write", "MultiEdit")
+GUARDED_TOOLS = ("Edit", "Write", "MultiEdit", "apply_patch")
 
 
 def _current_branch(target_dir: Path) -> "str | None":
@@ -129,40 +129,39 @@ def main() -> None:
     if os.environ.get("CLAUDE_HOOKS_ALLOW_MAIN_EDIT") == "1":
         _lib.allow()
 
-    target = _lib.file_path(payload)
-    if target is None:
+    edit = _lib.edit_event(payload)
+    if edit.status != "known":
         _lib.allow()
 
-    # Resolve junctions/symlinks up front. `~/.claude/hooks/` is a junction
-    # into this repo, so the chief's own writes arrive spelled under
-    # `C:\\Users\\rober\\...` while living in `E:\\automation\\fleet-config` —
-    # non-strict, so a path that doesn't exist yet (every creating `Write`)
-    # still resolves. This sits ahead of every other check, so a pathological
-    # path that made `resolve()` raise would crash the hook for *all*
-    # launcher-dispatched edits; fall back to the raw path instead, which is
-    # exactly the pre-#489 behavior.
-    try:
-        target = target.resolve()
-    except OSError:
-        pass
-    target_dir = target.parent
-    branch = _current_branch(target_dir)
-    if branch is None:
-        _lib.allow()
+    for change in edit.targets:
+        # Deletes and rename sources still mutate the source path. Check both
+        # endpoints so one multi-file patch cannot hide a main-tree edit behind
+        # a safe worktree target.
+        paths = (change.path,) if change.source_path is None else (change.source_path, change.path)
+        for raw_target in paths:
+            # Resolve junctions/symlinks up front. `~/.claude/hooks/` is a
+            # junction into this repo; non-strict resolution also handles new
+            # files. Fall back to the raw path on a pathological resolution
+            # failure, preserving the previous fail-closed behavior.
+            try:
+                target = raw_target.resolve()
+            except OSError:
+                target = raw_target
+            target_dir = target.parent
+            branch = _current_branch(target_dir)
+            if branch is None:
+                continue
+            default_branch = _default_branch(target_dir)
+            if branch != default_branch or _is_ignored(target):
+                continue
+            _lib.block(
+                f"Blocked: editing on '{branch}' from a launcher-dispatched session. "
+                "Cut a branch first — git checkout -b <type>/<issue-N>-<slug> — before "
+                "editing (global-CLAUDE.md: never commit to main directly). Set "
+                "CLAUDE_HOOKS_ALLOW_MAIN_EDIT=1 to override for a deliberate default-branch write."
+            )
 
-    default_branch = _default_branch(target_dir)
-    if branch != default_branch:
-        _lib.allow()
-
-    if _is_ignored(target):
-        _lib.allow()
-
-    _lib.block(
-        f"Blocked: editing on '{branch}' from a launcher-dispatched session. "
-        "Cut a branch first — git checkout -b <type>/<issue-N>-<slug> — before "
-        "editing (global-CLAUDE.md: never commit to main directly). Set "
-        "CLAUDE_HOOKS_ALLOW_MAIN_EDIT=1 to override for a deliberate default-branch write."
-    )
+    _lib.allow()
 
 
 if __name__ == "__main__":

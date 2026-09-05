@@ -1,7 +1,7 @@
 """Nudge when a browser-launch file is missing the anti-bot stealth kwargs.
 
-Triggers on `PostToolUse` for `Edit`/`Write`/`MultiEdit`. **Non-blocking** —
-emits a single one-line nudge on stdout (exit 0). The user decides whether the
+Triggers on `PostToolUse` for native edits and Codex `apply_patch`.
+**Non-blocking** — emits one nudge through the shared event channel. The user decides whether the
 detection risk is real.
 
 Fires only for the files where the fleet launches Playwright — basename
@@ -16,8 +16,8 @@ automation must not look like a bot" rule:
   * `--disable-blink-features=AutomationControlled`
 
 Catches a launch re-inlined into a new module instead of importing the
-project's single-source-of-truth launch helper. Reads the file from disk
-(the PostToolUse target already exists), matching `py_syntax_check.py`.
+project's single-source-of-truth launch helper. Reads every surviving target
+from disk after a confirmed successful edit, matching `py_syntax_check.py`.
 """
 
 from __future__ import annotations
@@ -51,30 +51,32 @@ STEALTH_MARKERS = (
 
 def main() -> None:
     payload = _lib.read_stdin_json()
-    if _lib.tool_name(payload) not in {"Edit", "Write", "MultiEdit"}:
+    edit = _lib.edit_event(payload)
+    if edit.status == "not_edit" or edit.outcome != "success":
         _lib.allow()
 
-    target = _lib.file_path(payload)
-    if target is None or not target.exists():
-        _lib.allow()
+    offenders: list[str] = []
+    for change in edit.targets:
+        target = change.path
+        if change.operation == "delete" or not target.exists():
+            continue
+        name = target.name
+        if name not in WATCHED_NAMES and not fnmatch.fnmatch(name, WATCHED_GLOB):
+            continue
+        try:
+            content = target.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        if not LAUNCH_RE.search(content):
+            continue
+        missing = [label for label, rx in STEALTH_MARKERS if not rx.search(content)]
+        if missing:
+            offenders.append(f"{target}: {'; '.join(missing)}")
 
-    name = target.name
-    if name not in WATCHED_NAMES and not fnmatch.fnmatch(name, WATCHED_GLOB):
-        _lib.allow()
-
-    try:
-        content = target.read_text(encoding="utf-8", errors="replace")
-    except OSError:
-        _lib.allow()
-
-    if not LAUNCH_RE.search(content):
-        _lib.allow()
-
-    missing = [label for label, rx in STEALTH_MARKERS if not rx.search(content)]
-    if missing:
+    if offenders:
         _lib.warn(
-            f"Nudge: {name} launches a browser but is missing stealth marker(s): "
-            f"{'; '.join(missing)}. The 'Browser automation must not look like a bot' "
+            "Nudge: browser launch target(s) are missing stealth markers: "
+            f"{' | '.join(offenders)}. The 'Browser automation must not look like a bot' "
             "rule needs all of them (past Mercadona/Casa Melier runs hit captchas the "
             "moment automation was detected). Import the project's single-source launch "
             "helper rather than re-inlining launch args."

@@ -1,7 +1,7 @@
 """Nudge away from re-implementing the local LLM hub with an inline `claude -p`.
 
-Triggers on `PostToolUse` for `Edit`/`Write`/`MultiEdit`. **Non-blocking** —
-emits a single one-line nudge on stdout (exit 0) and lets the edit stand. The
+Triggers on `PostToolUse` for native edits and Codex `apply_patch`.
+**Non-blocking** — emits one nudge through the shared event channel and lets the edit stand. The
 user decides whether the call is a legitimate one-off.
 
 Fires when the edited file is a `*.py` anywhere EXCEPT inside a repo flagged
@@ -11,7 +11,7 @@ global "Don't duplicate hub functionality" rule — downstream apps should route
 through the hub at `http://127.0.0.1:8000` via the standard Anthropic/OpenAI
 SDKs, not re-roll a `claude -p` subprocess wrapper.
 
-Reads the file from disk (the PostToolUse target already exists), matching
+Reads every surviving target from disk after a confirmed successful edit, matching
 `py_syntax_check.py`.
 """
 
@@ -35,25 +35,29 @@ CLAUDE_P_RE = re.compile(r"claude\s+-p\b|['\"]claude['\"]\s*,\s*['\"]-p['\"]")
 
 def main() -> None:
     payload = _lib.read_stdin_json()
-    if _lib.tool_name(payload) not in {"Edit", "Write", "MultiEdit"}:
+    edit = _lib.edit_event(payload)
+    if edit.status == "not_edit" or edit.outcome != "success":
         _lib.allow()
 
-    target = _lib.file_path(payload)
-    if target is None or target.suffix.lower() != ".py" or not target.exists():
-        _lib.allow()
+    offenders: list[Path] = []
+    for change in edit.targets:
+        target = change.path
+        if change.operation == "delete" or target.suffix.lower() != ".py" or not target.exists():
+            continue
+        project = _lib.detect_project(target)
+        if project is not None and project.extra.get("is_hub"):
+            continue
+        try:
+            content = target.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        if SUBPROCESS_RE.search(content) and CLAUDE_P_RE.search(content):
+            offenders.append(target)
 
-    project = _lib.detect_project(target)
-    if project is not None and project.extra.get("is_hub"):
-        _lib.allow()
-
-    try:
-        content = target.read_text(encoding="utf-8", errors="replace")
-    except OSError:
-        _lib.allow()
-
-    if SUBPROCESS_RE.search(content) and CLAUDE_P_RE.search(content):
+    if offenders:
+        names = ", ".join(str(path) for path in offenders)
         _lib.warn(
-            "Nudge: this file spawns an inline `claude -p` subprocess. The 'Don't "
+            f"Nudge: {names} spawns an inline `claude -p` subprocess. The 'Don't "
             "duplicate hub functionality' rule routes LLM calls through the local hub "
             "at http://127.0.0.1:8000 via the Anthropic/OpenAI SDKs "
             "(Anthropic(api_key='local-dummy', base_url='http://127.0.0.1:8000')) "
