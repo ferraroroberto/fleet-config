@@ -155,7 +155,7 @@ def _log_row(
     the app-launcher stats panel reads after the #392 flip, so a shadow-only
     writer would go dark the moment the filter starts earning its keep.
 
-    One writer for `run_wrapped` (Claude/Codex) and `run_compress` (Pi), because
+    One writer for `run_wrapped` (Claude/agy/Copilot) and `run_compress` (Pi), because
     the panel reads both agents' rows out of the same log and therefore needs
     one payload shape — two hand-kept copies could only ever drift into a
     half-readable log (fleet-config#677).
