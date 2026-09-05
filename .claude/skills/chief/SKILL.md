@@ -1,6 +1,6 @@
 ---
 name: chief
-description: Standing conversational fleet chief — brain of the app-launcher Board chat mode (app-launcher#245). Injected as the launcher-spawned chief session's first prompt; answers fleet questions from live Board/gh data and dispatches issue work via the launcher HTTP API under strict safety rails. Not for ad-hoc invocation in a coding session.
+description: Brain of the app-launcher Board chat mode (app-launcher#245), injected as the launcher-spawned chief session's first prompt. Answers fleet questions from live Board/gh data and dispatches issue work via the launcher HTTP API under strict safety rails. Not for ad-hoc invocation in a coding session.
 ---
 
 # chief

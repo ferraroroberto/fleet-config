@@ -5,21 +5,21 @@ description: Judgment + orchestration for a repo's visual-docs screenshots — d
 
 # docs-shots
 
-**Goal:** Decide *whether* and *which* features of a repo's visual
-documentation need fresh screenshots, then drive the repo's own deterministic
-capture engine — never silently, always **propose-then-capture** (fleet-config#93).
+**Goal:** Decide *whether* and *which* features of a repo's visual docs need
+fresh screenshots, then drive the repo's own deterministic capture engine —
+never silently, always **propose-then-capture** (fleet-config#93).
 
-**This skill is judgment + orchestration only.** The deterministic mechanism —
-Playwright capture, fail-safe masking, the manifest, the README generator —
-lives per-app, pinned to the shipped reference implementation:
-`content-management`'s `config/doc_capture/` (`content-management#110`,
-PR #162). This skill never screenshots anything itself; it decides
-what to ask the engine to do, asks the human first, then calls it.
+**Judgment + orchestration only.** The deterministic mechanism — Playwright
+capture, fail-safe masking, the manifest, the README generator — lives
+per-app, pinned to the shipped reference implementation: `content-management`'s
+`config/doc_capture/` (`content-management#110`, PR #162). This skill never
+screenshots anything itself; it decides what to ask the engine to do, asks
+the human first, then calls it.
 
-**Generic, no project hardcoded.** Any repo can adopt this by shipping an
-engine matching the contract below at `docs/screenshots/manifest.json` +
+**Generic, no project hardcoded.** Any repo can adopt by shipping an engine
+matching the contract below at `docs/screenshots/manifest.json` +
 `config/doc_capture` — today `content-management` is the only adopter. Wiring
-it into any other project is explicitly out of scope (fleet-config#93).
+into any other project is out of scope (fleet-config#93).
 
 ## The engine contract (pinned to content-management#110's shipped shape)
 
@@ -31,23 +31,21 @@ it into any other project is explicitly out of scope (fleet-config#93).
 - **CLI**: `& <repo>/.venv/Scripts/python.exe -m config.doc_capture <cmd> [flags]`
   from the repo root:
   - `capture [--only NAME]... [--force] [--headed] [--base-url URL]` —
-    capture stale/named features (idempotent on an input-hash of the matched
-    `source_globs` files + capture config; `--force` overrides).
+    idempotent on an input-hash of the matched `source_globs` files + capture
+    config; `--force` overrides.
   - `readme` — regenerate the README block between
     `<!-- docs-shots:start -->` / `<!-- docs-shots:end -->` (hard-fails if
-    those markers are missing — check for them **before** calling this).
-  - `all [same capture flags]` — capture then regenerate the README in one
-    call. **Prefer this** over calling `capture` + `readme` separately.
-  - Exit 0 on a normal run (including one where every requested feature was
-    skipped-unmasked or skipped-unchanged — those are warnings, not
-    failures). Non-zero only for a genuine setup failure: the app unreachable
-    at `--base-url`, or missing README markers.
-- **PNG naming**: `docs/screenshots/<feature>-desktop.png` (stable — no
-  timestamp in the filename, so git diffs stay clean).
-- **Fail-safe masking is entirely engine-owned.** `plan_features` inside the
-  engine refuses (loud warning, `ACTION_SKIP_UNMASKED`) any feature with no
-  `mask` selectors — this skill's job is to **surface** that warning
-  distinctly in its own report, not to re-implement the guard.
+    markers are missing — check for them **before** calling this).
+  - `all [same capture flags]` — capture then regenerate README in one call.
+    **Prefer this** over calling `capture` + `readme` separately.
+  - Exit 0 on a normal run, including skipped-unmasked/skipped-unchanged
+    (warnings, not failures). Non-zero only for a genuine setup failure: app
+    unreachable at `--base-url`, or missing README markers.
+- **PNG naming**: `docs/screenshots/<feature>-desktop.png` — stable, no
+  timestamp, so git diffs stay clean.
+- **Fail-safe masking is entirely engine-owned.** `plan_features` refuses
+  (`ACTION_SKIP_UNMASKED`) any feature with no `mask` selectors — this
+  skill's job is to **surface** that warning, never to re-implement the guard.
 
 ## Discovery — activate only if the repo has opted in
 
@@ -57,8 +55,8 @@ E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skill
 
 Prints `MANIFEST=<path>|absent` and, when present, `FEATURES=<csv>`.
 `MANIFEST=absent` → this skill (and the `/issue-finish` sub-step, below) is a
-**silent no-op**. Never create a manifest yourself — that's the per-project
-pilot's own setup work.
+**silent no-op**. Never create a manifest yourself — per-project pilot's own
+setup work.
 
 ## Two entry points
 
@@ -150,12 +148,11 @@ README/docs update and before the verification gate:
    the user rather than proceeding as if nothing were stale.
 6. Non-empty stale set → **propose-then-capture, same gate as standalone**:
    show the stale set + reasons, wait for the user's OK, **inside the same
-   `/issue-finish` run** (this is exactly the kind of decision the global
-   `CLAUDE.md` "ask before assuming" rule calls for — screenshot capture
-   touches a running app and produces a diff of its own). On approval, run
-   step 4 above (`all --only <stale features>`) and fold its report into the
-   finish summary. On decline, note it was skipped and move on — never block
-   the rest of `/issue-finish` over a declined docs-shots refresh.
+   `/issue-finish` run** (screenshot capture touches a running app and
+   produces its own diff — global `CLAUDE.md` "ask before assuming" applies).
+   On approval, run step 4 above (`all --only <stale features>`) and fold its
+   report into the finish summary. On decline, note it was skipped and move
+   on — never block the rest of `/issue-finish` over a declined refresh.
 
 ## Hard rules
 

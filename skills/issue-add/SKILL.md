@@ -1,14 +1,14 @@
 ---
 name: issue-add
-description: Turn a rough idea, brain-dump, or transcript into a well-formed GitHub issue — researches the codebase, drafts it the way a senior developer would, labels it, self-assigns, and creates it. Use when capturing new work, e.g. "/issue-add <paste your idea or transcript>" or "/issue-add now <idea>" to file and start building in one shot. Pairs with /issue-start and /issue-finish.
+description: Turn a rough idea, brain-dump, or transcript into a well-formed GitHub issue — researches the codebase, drafts it as a senior developer would, labels it, self-assigns, creates it. E.g. "/issue-add <paste your idea or transcript>" or "/issue-add now <idea>" to file and start building in one shot. Pairs with /issue-start and /issue-finish.
 ---
 
 # issue-add
 
-**Goal:** Take whatever the user pastes — a clean idea, a rambling brain-dump, a
-raw voice transcript — and file one well-formed GitHub issue that a senior
-developer would be happy to have written: self-contained, researched, correctly
-scoped, and ready to hand off cold to an LLM or a human.
+**Goal:** Take whatever the user pastes — clean idea, rambling brain-dump, raw
+voice transcript — and file one well-formed GitHub issue a senior developer
+would be happy to have written: self-contained, researched, correctly scoped,
+ready to hand off cold to an LLM or a human.
 
 The issue is **created directly** once drafted — no approval checkpoint.
 
@@ -32,8 +32,8 @@ Run in order. If a step fails, print a short error and stop.
 In parallel:
 - `git rev-parse --is-inside-work-tree` — must be `true`, else stop:
   "Not inside a git repository."
-- Read the project's `CLAUDE.md` and `README.md` — layout, conventions, what the
-  project is and how the change being filed actually interacts with the code.
+- Read the project's `CLAUDE.md` and `README.md` — layout, conventions, how the
+  change being filed interacts with the code.
 - `gh label list` — compare against the canonical type set in step 7; any
   missing label gets created there.
 
@@ -44,8 +44,8 @@ filed last.
 ### 2. Extract the real intent
 
 The pasted text may be messy or a garbled dictation. Work out what the user
-actually wants — the underlying feature, bug, or change — not the literal words.
-Don't ask a question yet; research usually resolves apparent ambiguity.
+actually wants — not the literal words. Don't ask a question yet; research
+usually resolves apparent ambiguity.
 
 ### 3. Research the codebase
 
@@ -65,13 +65,13 @@ existing issue number and stop.
 ### 5. Decide if a question is needed
 
 Only if a **substantive** ambiguity remains after research — one that would
-change what gets built — ask one sharp question (AskUserQuestion). Otherwise
-proceed. Never ask about anything research already answered.
+change what gets built — ask one sharp question (AskUserQuestion). Never ask
+about anything research already answered.
 
 ### 6. Draft the issue
 
-Write it the way a senior developer would — proportionate to the work, no
-over-engineering, no padding.
+Write it the way a senior developer would — proportionate, no over-engineering,
+no padding.
 
 - **Title:** `<Area>: <concise description>` — e.g.
   `Coding tab: rename a running session from the app`,
@@ -102,9 +102,8 @@ over-engineering, no padding.
 ### 7. Label
 
 Every issue gets **exactly one type label** from this canonical set — the
-industry-standard minimal taxonomy. First ensure each label exists in the repo;
-create any that's missing with `gh label create` (idempotent — skip the ones
-already present):
+industry-standard minimal taxonomy. First ensure each exists in the repo;
+create any missing ones with `gh label create` (idempotent — skip existing):
 
 | Label           | Color    | For                                            |
 |-----------------|----------|------------------------------------------------|
@@ -129,10 +128,10 @@ Create the issue directly, self-assigned to the user:
 gh issue create --title "<title>" --body-file <tmpfile> --label <label> --assignee @me
 ```
 
-Write the body to a temp file (or use a here-string) so multi-line markdown
-isn't mangled by shell escaping. Capture the repo the issue actually landed in
-right here — `gh repo view --json nameWithOwner -q .nameWithOwner` — rather
-than assuming it later; that value feeds the `--repo` flag in step 9 so the
+Write the body to a temp file (or a here-string) so multi-line markdown isn't
+mangled by shell escaping. Capture the repo the issue actually landed in right
+here — `gh repo view --json nameWithOwner -q .nameWithOwner` — rather than
+assuming it later; that value feeds the `--repo` flag in step 9 so the
 completion ping can't drift to a different repo than the one just filed into
 (fleet-config#497).
 

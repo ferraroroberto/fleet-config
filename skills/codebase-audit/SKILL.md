@@ -13,9 +13,9 @@ see — bundled into **at most 7 GitHub issues per run** for `/issue-start`.
 **Issues, not code edits — with exactly one exception.** For the seven finding
 buckets below, never edit files, commit, push, or restart anything — filing
 issues is the only side effect. The **sole** exception is a **security** finding:
-self-healed in place (redacted issue + auto-fix), because a security gap sitting
-in a public issue body until someone gets to it is itself a disclosure. That path
-is step 8b and its Hard Rule; it is scoped to security only and is never license
+self-healed in place (redacted issue + auto-fix) — a security gap sitting in a
+public issue body until someone gets to it is itself a disclosure. That path is
+step 8b and its Hard Rule; it is scoped to security only and is never license
 to edit code for any other bucket.
 
 **The seven finding buckets.** Every non-security finding belongs to exactly one
@@ -61,13 +61,13 @@ of (security is not a checklist bucket — see step 8b):
    unused generality (a config knob / parameter / abstraction layer nothing
    exercises), belt-and-suspenders defensive handling for inputs that can't
    occur, verbose boilerplate a stdlib one-liner replaces. **The bucket-4
-   boundary (the two blur):** bucket 4 asks *"is this code well
-   *structured*?"* (naming, modularity, a god-module); bucket 7 asks *"did this
-   much code need to exist at all?"* A finding that would shrink the line count
-   with no loss of behavior is slop (7); a finding that would reorganize the
-   same lines is maintainability (4). When both apply, file it once, in
-   whichever is the dominant fix. AI-assisted work on this fleet steadily
-   accretes lines — be actively critical of volume, not just structure.
+   boundary (the two blur):** bucket 4 asks *"is this code well structured?"*
+   (naming, modularity, a god-module); bucket 7 asks *"did this much code need
+   to exist at all?"* A finding that would shrink the line count with no loss
+   of behavior is slop (7); one that would reorganize the same lines is
+   maintainability (4). Both apply → file once, in whichever is the dominant
+   fix. AI-assisted work on this fleet steadily accretes lines — be actively
+   critical of volume, not just structure.
 
 One issue per non-empty bucket. **Hard cap: 7 issues per run** (one per finding
 bucket). Empty buckets are simply skipped. Findings inside an issue go on a
@@ -120,10 +120,10 @@ It prints `{"decision": "SKIP"|"AUDIT"|"SKIP_SELF_FIX"|"SKIP_BELOW_THRESHOLD", "
 The ledger lives in **one issue per repo** — title `codebase-audit ledger`,
 label `audit-meta`, `--assignee @me`, never closed, with a hidden identity
 marker and a machine-readable `<!-- audit-ledger -->` block (`last-audited-sha`,
-`last-audited-at`, `rubric-sha` — sha256 of the project CLAUDE.md **alone**; the
-global `~/.claude/CLAUDE.md` is deliberately excluded so an edit to that shared
-file never busts every repo's cache at once). `evaluate_repo` computes and
-compares all of this internally.
+`last-audited-at`, `rubric-sha` — sha256 of the project CLAUDE.md **alone**;
+the global `~/.claude/CLAUDE.md` is deliberately excluded so an edit to that
+shared file never busts every repo's cache at once). `evaluate_repo` computes
+and compares all of this internally.
 
 Branch on the decision:
 
@@ -197,13 +197,13 @@ When you see the same pattern twice in two files, that's bucket 1
 (duplication), not two separate bucket-4 findings.
 
 **Security findings are captured on a *separate* private list — never in the
-per-bucket notes and never in a public checklist.** A security gap (an injection
-sink, a hardcoded secret, a path-traversal, a missing-authz check, an unsafe
-deserialization, credentials in a committed file, etc.) is held aside for the
-self-heal path (step 8b). Record only what the fix agent needs — file:line and
-the concrete gap; it never leaves this run as public text. Hold a security
-finding to the bug bar (would you bet money it's exploitable) — a false one
-wastes an auto-fix cycle and, worse, an unnecessary public fix commit.
+per-bucket notes and never in a public checklist.** A security gap (an
+injection sink, a hardcoded secret, a path-traversal, a missing-authz check, an
+unsafe deserialization, credentials in a committed file, etc.) is held aside
+for the self-heal path (step 8b). Record only what the fix agent needs —
+file:line and the concrete gap; it never leaves this run as public text. Hold
+it to the bug bar (would you bet money it's exploitable) — a false one wastes
+an auto-fix cycle and, worse, an unnecessary public fix commit.
 
 **Read `README.md` and `docs/` twice — once for context, once for bucket 6.**
 Pass one mines them for code-side staleness leads (bucket 2). Pass two judges
@@ -328,8 +328,8 @@ E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skill
 ```
 
 The helper stamps the `<!-- audit-managed: kind=<bucket> -->` marker, applies
-the label, and prints the canonical issue URL. **Titles are stable** — no
-`(N items)` count (it lives in the body), so the title never changes run to run.
+the label, prints the canonical issue URL. **Titles are stable** — no `(N
+items)` count (lives in the body), so the title never changes run to run.
 
 **Body shape** for a fresh issue (no hard wraps in paragraphs — the global
 CLAUDE.md "Markdown that will be rendered" rule applies; the helper prepends the
@@ -384,11 +384,11 @@ NOT spawn a nested background sub-agent for the fix.** A nested background agent
 does not get an auto-resume wake-up (global CLAUDE.md, "A sub-agent does not
 self-resume"), so under `/audit-fleet` it would silently stall.
 
-1. **Claim the repo in forced worktree mode** (the collision primitive — same one
-   `/issue-start` uses), so a concurrent `/cleanup-fleet` / human session on this
+1. **Claim the repo in forced worktree mode** (same collision primitive
+   `/issue-start` uses) so a concurrent `/cleanup-fleet` / human session on this
    repo can't clobber you and vice-versa. `--force-worktree` skips the primary
-   claim entirely: this is unattended fleet-wide dispatch, and a *running* app or
-   a live junction is not a claim holder, so an ordinary `acquire` would hand you
+   claim entirely: unattended fleet-wide dispatch, and a *running* app or a live
+   junction is not a claim holder, so an ordinary `acquire` would hand you
    `MODE=primary` and have you edit files a live process is serving
    (fleet-config#515). Then `cd` into the printed `WORKTREE=` path — everything
    after this step happens there, never in the primary checkout:
@@ -482,12 +482,11 @@ Upsert the per-repo ledger issue so the next run can short-circuit at step 2:
   ```
 
   It composes the `<!-- audit-ledger -->` block itself — sha, today's date, and
-  the `rubric-sha` (sha256 of the project CLAUDE.md alone) — then creates, edits,
-  or collapses strays and ensures the `audit-meta` label, printing the ledger
-  issue URL. Capture that URL; the snapshot comment below posts to it.
+  the `rubric-sha` (sha256 of the project CLAUDE.md alone) — then creates,
+  edits, or collapses strays and ensures the `audit-meta` label, printing the
+  ledger issue URL. Capture that URL; the snapshot comment below posts to it.
 
-  Two things you must not do by hand, both of which have already cost real
-  audits:
+  Two things not to do by hand, both of which have already cost real audits:
 
   - **Don't write the marker.** Hand-authoring drifts to an *open* comment block
     (`<!-- audit-ledger` … `-->`) the step-2 gate cannot read, buying a full Opus

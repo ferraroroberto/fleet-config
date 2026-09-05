@@ -5,14 +5,14 @@ description: Compress the fleet's markdown context files — CLAUDE.md files and
 
 # context-purge
 
-**Goal:** Cut the always-on context tax by rewriting the fleet's markdown context files with a critical senior-editor eye — the *compression* counterpart to `/context-audit` (which only measures and flags). The contract is **lossless in directives**: nothing the LLM is told to do (or forbidden from doing) may disappear; only the prose around it does. Every purge run must pass the validation harness before it ships.
+**Goal:** cut the always-on context tax by rewriting the fleet's markdown context files with a critical senior-editor eye — the *compression* counterpart to `/context-audit` (which only measures and flags). Contract is **lossless in directives**: nothing the LLM is told to do (or forbidden from doing) may disappear; only the prose around it does. Every purge run must pass the validation harness before it ships.
 
-Fleet-only tier by design: a global skill's description would load into every session of every repo — self-defeating for a skill whose purpose is shrinking that surface. One home, executed from fleet-config.
+Fleet-only tier by design: a global skill's description would load into every session of every repo — self-defeating for a skill shrinking that surface. One home, executed from fleet-config.
 
 ## Modes
 
-- **`/context-purge`** (default) — the fleet-config-owned surface: `global-CLAUDE.md`, `fleet-config/CLAUDE.md`, and `SKILL.md` files in both tiers (`skills/`, `.claude/skills/`). One branch/PR in this repo.
-- **`/context-purge fleet`** — the fleet-wide sweep: the default surface **plus** every sister git repo under `E:\automation\` (skip linked worktrees — `.git` must be a directory): each repo's `CLAUDE.md` + any `.claude/skills/*/SKILL.md`. Compress only where there are real savings; skip clean/lean files. **One branch + PR per repo**, each with its own validation report. Respect the model-tier policy (`docs/model-tiers.md`) if fanning out sub-agents.
+- **`/context-purge`** (default) — fleet-config-owned surface: `global-CLAUDE.md`, `fleet-config/CLAUDE.md`, and `SKILL.md` files in both tiers (`skills/`, `.claude/skills/`). One branch/PR in this repo.
+- **`/context-purge fleet`** — fleet-wide sweep: default surface **plus** every sister git repo under `E:\automation\` (skip linked worktrees — `.git` must be a directory): each repo's `CLAUDE.md` + any `.claude/skills/*/SKILL.md`. Compress only where real savings; skip clean/lean files. **One branch + PR per repo**, each with its own validation report. Respect the model-tier policy (`docs/model-tiers.md`) if fanning out sub-agents.
 
 Both modes ship to **review, not merge**: the PR carries the validation report; the user merges.
 
@@ -30,7 +30,7 @@ Prints `TO_PURGE` lines + a `SUMMARY:` — only those files are read at all. `to
 E:/automation/fleet-config/.venv/Scripts/python.exe .claude/skills/context-purge/gate.py advance [--fleet] --only <path> [<path> ...]
 ```
 
-`advance` merges over the existing ledger (entries outside the scanned surface are preserved) and upserts the issue. **Pass `--only` with the files you actually assessed.** A fleet run is normally partial — the surface is large, lean files are skipped by design, and a per-repo failure is reported and skipped — so a bare `advance` would record files nobody read and silently suppress them from every future run until someone edits them. Bare `advance` (whole surface) is correct only when the run genuinely assessed every gated file. Unknown paths are a hard error, not a silent no-op.
+`advance` merges over the existing ledger (entries outside the scanned surface are preserved) and upserts the issue. **Pass `--only` with the files you actually assessed.** A fleet run is normally partial (large surface, lean files skipped by design, per-repo failures reported and skipped), so a bare `advance` would record files nobody read and silently suppress them from every future run until edited. Bare `advance` (whole surface) is correct only when the run genuinely assessed every gated file. Unknown paths are a hard error, not a silent no-op.
 
 ## Priorities (highest value first)
 
@@ -58,7 +58,7 @@ E:/automation/fleet-config/.venv/Scripts/python.exe .claude/skills/context-purge
    ```
    must exit 0 (marked blocks byte-identical, quoted triggers preserved) and prints the token delta. Then re-run `audit.py`: totals down, no new over-cap descriptions, no new single-home leaks. Then the repo gate (`py_compile` + `tests/run_acceptance.py`).
 2. **Directive inventory** — walk each file's saved inventory item by item against the rewrite; every item must still be discharged (verbatim or semantically intact).
-3. **Agent-based before/after probe** — for each substantially rewritten file: derive ~10–20 behavioral questions from the *original* ("what must never appear in a commit message?", "which Python do you invoke?"). Spawn fresh **Haiku** sub-agents (a weaker model is a stricter clarity test, and cheap; Sonnet acceptable) whose only context is the **compressed** file; same questions to a **control** agent reading the original. Grade both against original-derived expected answers. **Pass = compressed score ≥ control score.** Any question the compressed file fails but the control passes → restore that content and re-probe.
+3. **Agent-based before/after probe** — for each substantially rewritten file: derive ~10–20 behavioral questions from the *original* ("what must never appear in a commit message?", "which Python do you invoke?"). Spawn fresh **Haiku** sub-agents (weaker model = stricter clarity test, cheap; Sonnet acceptable) whose only context is the **compressed** file; same questions to a **control** agent reading the original. Grade both against original-derived expected answers. **Pass = compressed score ≥ control score.** Any question the compressed file fails but the control passes → restore that content and re-probe.
 4. **Report** — the PR body carries the per-file before/after token table, probe scores (compressed vs control), and the inventory result. No screenshots, no merge.
 
 ## Steps (default mode)
@@ -98,7 +98,7 @@ Fleet mode is the same loop with `--fleet` on both gate and advance, grouping th
 
 Token counts come straight from `check.py`'s `TOKENS:` line; `gate` from `gate.py gate`'s `SUMMARY:`.
 
-**A figure the run could not establish is reported as unknown, never as zero.** `"probe": null` means *not recorded*; `"probe": {"ran": false}` means *deliberately not probed*; these are different facts and the digest renders them differently. Omit a token or inventory field you did not measure rather than writing `0`. Every **rewritten** file must carry a `probe` key — `null` is a valid answer, silence is not, because silence about probing is the exact gap this reporting was built for.
+**A figure the run could not establish is reported as unknown, never as zero.** `"probe": null` means *not recorded*; `"probe": {"ran": false}` means *deliberately not probed*; these are different facts and the digest renders them differently. Omit a token or inventory field you did not measure rather than writing `0`. Every **rewritten** file must carry a `probe` key — `null` is a valid answer, silence is not.
 
 **`action` is three-valued on purpose.** `assessed-lean` and `untouched` files are listed in the digest so "not in the diff" cannot read as "not looked at".
 

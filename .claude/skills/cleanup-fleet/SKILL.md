@@ -1,13 +1,13 @@
 ---
 name: cleanup-fleet
-description: Take one bucket of audit findings (a label like documentation, drift, or bug) and fan out one background agent per repo to fix every open issue carrying it fleet-wide. The fix-half of /audit-fleet. Use to clear a category of audit work in one pass — e.g. "/cleanup-fleet documentation", "/cleanup-fleet drift", "clean up all the bugs", "/cleanup-fleet docs easy".
+description: Take one bucket of audit findings (a label like documentation, drift, or bug) and fan out one background agent per repo to fix every open issue carrying it fleet-wide. The fix-half of /audit-fleet — e.g. "/cleanup-fleet documentation", "/cleanup-fleet drift", "clean up all the bugs", "/cleanup-fleet docs easy".
 ---
 
 # cleanup-fleet
 
 **Goal:** `/audit-fleet` *finds* and files codebase findings, bucketed into seven labels, and `/design-sweep` files an eighth (`design-drift`); this skill *fixes* one bucket fleet-wide in a single pass. Pick a bucket → gather every open issue carrying that label → score each for complexity → deploy **one background sub-agent per repo**, sized via the easy/hard tier policy (`docs/model-tiers.md`) → aggregate.
 
-**`security` is not a cleanup bucket.** `/codebase-audit`'s seven finding buckets (incl. `slop`) are all queued here; its `security` kind is the exception — self-healed inline by `/codebase-audit` itself (step 8b: redacted issue + auto-fix + auto-merge, or escalate on failure), never queued here. `/design-sync` contributes the eighth queued bucket, `design-drift` (web-app CSS/token/nav drift); its sibling `cert-drift` kind is likewise **review-only** — never queued here, since a tailnet-cert migration must never be auto-applied. This skill operates on the eight *queued* buckets below; a `security` or `cert-drift` label never appears here.
+**`security` is not a cleanup bucket.** `/codebase-audit`'s seven finding buckets (incl. `slop`) are all queued here; `security` is the exception — self-healed inline by `/codebase-audit` itself (step 8b: redacted issue + auto-fix + auto-merge, or escalate on failure). `/design-sync`'s eighth queued bucket is `design-drift`; its sibling `cert-drift` is likewise **review-only** (a tailnet-cert migration must never be auto-applied). A `security` or `cert-drift` label never appears in this skill.
 
 **One agent per repo, never two:** the audit files exactly one managed issue per (repo, bucket), so one issue → one repo → one agent → one branch → one PR. Two agents on one checkout collide, so the skill hard-caps at one agent per repo per run and defers extras.
 
@@ -50,7 +50,7 @@ If **no bucket** is given → run step 2's count query, then `AskUserQuestion` l
 - **One agent per repo, period.** Never spawn two agents against the same checkout.
 - **Never disturb in-progress work.** A repo that is dirty or off its default branch is skipped and reported — never stashed, never force-switched.
 - **Degrade, don't block** (so `easy`/`silent` can run unattended via `claude -p`): a per-repo failure is reported and skipped; only a pre-flight failure stops the whole run.
-- **In `easy`/`silent` mode, never background-and-wait.** An attended `hard`-mode run is a normal top-level Claude Code session and the harness *does* re-invoke it as each background sub-agent completes (step 9's "stop and stand by" is correct there). `easy`/`silent` runs headless via `claude -p` with **no** wake-up mechanism, so stopping to "wait for the harness" there silently kills the run: the CLI exits `0` immediately and every dispatched agent is killed at the background-task ceiling with nothing collected (`fleet-config#506`, `fleet-config#314`). In `easy`/`silent`, step 9 must instead block on `TaskOutput` (`block: true`) for every in-flight agent within the same turn, re-issuing on timeout, and never end the turn until the selected-issue list is fully drained.
+- **In `easy`/`silent` mode, never background-and-wait.** An attended `hard`-mode run is a normal top-level session and the harness *does* re-invoke it as each background sub-agent completes (step 9's "stop and stand by" is correct there). `easy`/`silent` runs headless via `claude -p` with **no** wake-up mechanism, so stopping to "wait for the harness" there silently kills the run: the CLI exits `0` immediately and every dispatched agent is killed at the background-task ceiling with nothing collected (`fleet-config#506`, `fleet-config#314`). In `easy`/`silent`, step 9 must instead block on `TaskOutput` (`block: true`) for every in-flight agent within the same turn, re-issuing on timeout, never ending the turn until the selected-issue list is fully drained.
 
 ## Steps
 
@@ -75,9 +75,9 @@ Tally open issues per bucket label (drop `audit-meta` rows; a `security` or `cer
 E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/gh_issue_fetch.py fetch --label <bucket-label>
 ```
 
-This is the **preferred primary fetch**, not `gh search issues --owner ferraroroberto`: that call is backed by GitHub's Search API, documented as eventually consistent and observed reporting 23 issues as open for five-plus weeks after they had closed — 46 wasted agent invocations, ~2.9M tokens confirming already-shipped work (fleet-config#623). `gh_issue_fetch.py` reads the same information through the direct Issues API, one `gh issue list --repo <owner>/<name> --state open` per repo. **Read that as "avoids a known-bad source," not "proven immune"** — the motivating smoke test was a single same-day observation, not a guarantee about every cache layer. That's why step 8 still re-checks each selected issue's state immediately before dispatch; the two cover different failure modes and neither subsumes the other.
+**Preferred primary fetch**, not `gh search issues --owner ferraroroberto` (Search-API-backed, eventually consistent — observed reporting 23 issues open for 5+ weeks after they closed, 46 wasted agent invocations, ~2.9M tokens confirming already-shipped work — fleet-config#623). `gh_issue_fetch.py` uses the direct Issues API, one `gh issue list --repo <owner>/<name> --state open` per repo. **Avoids a known-bad source, not "proven immune"** — step 8 still re-checks each selected issue's state immediately before dispatch; the two checks cover different failure modes.
 
-Read the JSON directly. **Drop any row carrying the `audit-meta` label** — those are the per-repo `codebase-audit ledger` and the `audit-fleet digest state` issues, never actionable work. If the result is empty, print `No open <bucket> issues across the fleet 🎉` and stop. If the helper's stderr summary reports any `ERROR <repo>: <reason>` lines, note them in the eventual plan — those repos are simply absent from this run's candidates, not a run-wide failure.
+Read the JSON directly. **Drop any row carrying the `audit-meta` label** — those are the per-repo `codebase-audit ledger` and the `audit-fleet digest state` issues, never actionable. If the result is empty, print `No open <bucket> issues across the fleet 🎉` and stop. If the helper's stderr summary reports any `ERROR <repo>: <reason>` lines, note them in the plan — those repos are simply absent from this run's candidates, not a run-wide failure.
 
 ### 4. Group by repo + enforce one-agent-per-repo
 
@@ -327,17 +327,19 @@ Do **not** auto-launch either: the batch finish is user-triggered, exactly like 
 
 ## Hard rules
 
-- **One agent per repo, period.** A bucket is at most one issue per repo by construction; if a repo has extras, defer them — never two agents on one checkout.
-- **Easy-tier path is full-YOLO-to-merged; hard-tier path always stops before push/PR.** Never let a hard-tier agent merge; never make an easy-tier agent stop early in `hard`/`easy` mode (that's what the hard tier is for).
-- **Whichever tier resolves to Opus on the current host dispatches through the global Opus concurrency window (≤3 in flight); every other tier is exempt.** On Claude Code today hard-tier resolves to Opus. Refill as each capped agent returns; never a single-message fan-out of many Opus agents at once — it trips Anthropic's server-side burst rate limit (`~/.claude/CLAUDE.md`, "Spawning sub-agents — cap concurrent Opus at 3").
-- **`easy`/`silent` mode never spawns hard-tier work and never merges hard-scored work.** Hard-tier rows are listed only. This is the unattended-safety guarantee.
-- **Hard-tier review is by rationale summary, not diff.** Prompt 8b's agent must return "What I did & why" / "Why I believe this is correct"; the orchestrator surfaces both verbatim next to every `📋 ready for review` row (steps 9-10) — that's what the user reviews, not the code.
-- **The orchestrator never edits source, commits, pushes, or merges.** Every write happens inside a spawned agent.
-- **Never disturb in-progress work.** Dirty / off-default-branch repos are skipped and reported, never stashed or force-switched.
-- **Post-flight dirty-tree check runs in the orchestrator, never the sub-agent, right before a repo is marked complete (step 10).** It only corrects the reported status (downgrades `✅`/`📋` on a mismatch) — never blocks, auto-commits, or auto-fixes.
-- **Keep per-issue pings.** Easy-tier agents fire their own `/issue-yolo` ping (PR link); the orchestrator's `--kind cleanup` ping is an *additional* closing roll-up, not a replacement.
-- **Degrade, don't block.** A per-repo failure is reported and skipped; only a pre-flight failure stops the whole run. `easy`/`silent` must never wait on an interactive prompt.
-- **No AI attribution; no hard-wrapped issue/PR-body paragraphs.** (Per global CLAUDE.md.)
+Recap of the binding constraints above — see the referenced step for full detail:
+
+- One agent per repo, period. A bucket is at most one issue per repo by construction; a repo with extras defers them — never two agents on one checkout.
+- Easy-tier path is full-YOLO-to-merged; hard-tier path always stops before push/PR. Never let a hard-tier agent merge; never make an easy-tier agent stop early in `hard`/`easy` mode.
+- Whichever tier resolves to Opus on the current host dispatches through the global Opus concurrency window (≤3 in flight); every other tier is exempt. On Claude Code today hard-tier resolves to Opus. Refill as each capped agent returns; never a single-message fan-out of many Opus agents at once (`~/.claude/CLAUDE.md`, "Spawning sub-agents — cap concurrent Opus at 3").
+- `easy`/`silent` mode never spawns hard-tier work and never merges hard-scored work. Hard-tier rows are listed only — the unattended-safety guarantee.
+- Hard-tier review is by rationale summary, not diff. Prompt 8b's agent must return "What I did & why" / "Why I believe this is correct"; the orchestrator surfaces both verbatim next to every `📋 ready for review` row (steps 9-10).
+- The orchestrator never edits source, commits, pushes, or merges. Every write happens inside a spawned agent.
+- Never disturb in-progress work. Dirty/off-default-branch repos are skipped and reported, never stashed or force-switched.
+- Post-flight dirty-tree check runs in the orchestrator, never the sub-agent, right before a repo is marked complete (step 10) — only corrects the reported status, never blocks/auto-commits/auto-fixes.
+- Keep per-issue pings. Easy-tier agents fire their own `/issue-yolo` ping (PR link); the orchestrator's `--kind cleanup` ping is an *additional* closing roll-up, not a replacement.
+- Degrade, don't block. A per-repo failure is reported and skipped; only a pre-flight failure stops the whole run. `easy`/`silent` must never wait on an interactive prompt.
+- No AI attribution; no hard-wrapped issue/PR-body paragraphs (per global CLAUDE.md).
 
 ## Notes
 

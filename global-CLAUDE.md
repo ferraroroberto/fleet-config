@@ -11,8 +11,8 @@ One file, symlinked by `fleet-config/install.ps1` into every agent's user-scope 
 Every non-trivial request starts in plan mode — non-trivial = anything beyond a one-line fix, a typo, or a question answerable without touching code. In plan mode:
 
 - Do NOT edit files, run destructive commands, or commit anything.
-- Investigate as needed (read files, search, run read-only commands).
-- Resolve ambiguity through questions *before* proposing a plan; present it only when confident it reflects what the user wants.
+- Investigate freely: read files, search, run read-only commands.
+- Resolve ambiguity through questions *before* proposing a plan; present it only when confident it matches what the user wants.
 - Stay in plan mode across rejections — revise and re-present; don't bail out to execution.
 
 Recommended project setting: `{ "permissions": { "defaultMode": "plan" } }`. Exit plan mode only after explicit approval; approval transitions straight to execution in the same turn.
@@ -21,15 +21,13 @@ Recommended project setting: `{ "permissions": { "defaultMode": "plan" } }`. Exi
 
 Ask whenever a decision is expensive to undo or genuinely ambiguous. One sharp question beats three filler ones; multi-choice (2–4 options) when the choice space is bounded. Multiple reasonable approaches → present them as options with tradeoffs, don't pick silently.
 
-Always ask before assuming: file/module location for new code; data shape or schema; data source; error and empty-state handling; whether to add tests, and at what level.
-
-Don't ask about things determinable from the code, things already specified, or meta-questions like "is the plan ready?" — that's what plan approval is for.
+Always ask before assuming: file/module location for new code; data shape or schema; data source; error and empty-state handling; whether to add tests, and at what level. Don't ask about things determinable from the code, things already specified, or meta-questions like "is the plan ready?" — that's what plan approval is for.
 
 ### Before editing
 
 - Re-read any file before modifying it; for files >500 LOC, read in chunks.
 - When renaming a symbol, search separately for: direct calls, type references, string literals, dynamic imports, re-exports, and tests.
-- Reproduce before fixing: for any non-trivial bug, write a repro (script, failing test, or documented sequence) before the fix.
+- Reproduce before fixing: any non-trivial bug gets a repro (script, failing test, or documented sequence) first.
 - Re-verify the issue's premise: confirm the symptom still reproduces and the code matches the issue before starting.
 - `git log -- <file>` the area first — prior attempts at the same fix are the cheapest source of truth.
 
@@ -37,8 +35,8 @@ Don't ask about things determinable from the code, things already specified, or 
 
 - Empirical proof for retry/timeout/backoff logic — verify the API-semantics assumption with a 10-line probe before shipping.
 - Distinct error messages for distinct conditions ("down" vs "in flight past timeout").
-- Don't bundle independently-revertable bugs in one PR — if bug-A's commit can revert without breaking bug-B's fix, ship two PRs.
-- Leave info-level log breadcrumbs after a hard bug, in the same commit as the fix — the next occurrence should be diagnosable from logs.
+- Don't bundle independently-revertable bugs in one PR — if bug-A reverts without breaking bug-B's fix, ship two PRs.
+- Leave info-level log breadcrumbs after a hard bug, in the same commit as the fix — the next occurrence must be diagnosable from logs.
 - Test-plan checkboxes are observed, not aspirational: `[x]` means "I ran this and saw it pass."
 
 ### Execution: scope up front, then carry it through
@@ -47,7 +45,7 @@ Don't ask about things determinable from the code, things already specified, or 
 - Once scope is agreed, execute end-to-end to a verified, shippable state. No per-phase approval; "large" is not "stop".
 - Checkpoint on risk, not size: pause mid-task only for a real ambiguity, an unforeseen decision, or a finding that contradicts the plan.
 - After finishing and verifying a unit, check the related open issues; a natural continuation → state it and proceed, new branch off freshly-merged `main`. Pause for approval only when it's risky, ambiguous, or materially bigger than discussed.
-- One branch per coherent unit; keep commits and branches separable so any piece reviews and reverts on its own.
+- Keep commits and branches separable so any piece reviews and reverts on its own.
 
 ### Verify before declaring done
 
@@ -63,7 +61,7 @@ Before finishing, ask: "What would a senior, perfectionist dev reject in review?
 
 ## Conventions
 
-- **Read the README first.** Don't assume `/app/`, `/src/`, `launch_app.bat`, or any path exists — layout is documented per project.
+- **Read the README first.** Don't assume `/app/`, `/src/`, `launch_app.bat`, or any path exists.
 - **Web-app UI work consults the fleet design system:** `~/.claude/design.md` (light) + `~/.claude/design.dark.md` (dark) — colors, typography, spacing, and the navigation contract (floating bottom-tab pill). `/design-sync` reports drift. Streamlit POC spikes exempt.
 - **Config & secrets:** project config in `config.json` or similar; secrets always in `.env`, never committed (`.env` is the env file; `.venv` is the venv directory).
 - **Virtual environment:** use the existing `.venv`. Never create `venv`. Never activate — invoke via `& .\.venv\Scripts\python.exe ...` on Windows, `./.venv/bin/python ...` on POSIX.
@@ -79,7 +77,7 @@ Before finishing, ask: "What would a senior, perfectionist dev reject in review?
 
 ### Commit messages — no AI attribution
 
-Never add `Co-Authored-By: Claude …`, `Co-Authored-By: Codex …`, or any AI/Anthropic/OpenAI attribution trailer (the user explicitly rejected this). Conventional `type: subject` line + bullet body only.
+Never add an AI/Anthropic/OpenAI attribution trailer of any kind — a `Co-Authored-By` line naming Claude or Codex included (the user explicitly rejected this). Conventional `type: subject` line + bullet body only.
 
 ### Git discipline
 
@@ -105,7 +103,7 @@ Never auto-commit or push, and never stage files, without being asked — prepar
 - **Decision log:** dated distilled bullets inside long-lived issues recording why the plan turned.
 - **Supersede explicitly:** comment on the old issue linking the new, then close it — never silently diverge.
 - **`gh issue create` defaults:** always `--assignee @me` + at least one type label (`bug`, `enhancement`, `refactor`, `docs`, `chore`, `test`, `perf`; `meta` for cumulative/rollback context). Create the label first if missing.
-- **Issue body format** is owned by the `/issue-add` skill (its step 6 is the one canonical template — title style, section list, `file:line` grounding). Filing without invoking that skill? Use it anyway rather than improvising a section list here.
+- **Issue body format** is owned by the `/issue-add` skill (its step 6 is the one canonical template — title style, section list, `file:line` grounding). Invoke it rather than improvising a section list.
 - **Decompose:** can't be one PR → "Step N/M" sub-issues, each independently shippable; no "phase 1 of 4" PRs.
 - **Cross-repo:** a shared-pattern bug gets the same issue in each affected repo, cross-linked by URL.
 - **Closing:** direct-commit closes paste the SHA in a comment; not-planned closes explain the disproof — no zombie issues.
@@ -121,21 +119,17 @@ Markdown headed for a renderer (GitHub issue/PR bodies, comments, Notion via MCP
 
 ### Issue workflow skills
 
-Three global skills automate the GitHub-issue workflow in every sister project, from one `fleet-config/skills` source junctioned into each agent's auto-scanned skills dir (`~/.claude/skills` Claude; `~/.agents/skills` Codex + Pi; `~/.copilot/skills` Copilot) — same `SKILL.md` format everywhere, no translation. Antigravity has no user-skills dir (plugin-only): documented non-goal (#160).
+`/issue-add`, `/issue-start`, `/issue-finish` automate the GitHub-issue workflow in every sister project — each skill's own always-on `description:` is its spec, not repeated here. They ship from one `fleet-config/skills` source junctioned into each agent's auto-scanned skills dir (`~/.claude/skills` Claude; `~/.agents/skills` Codex + Pi; `~/.copilot/skills` Copilot) — same `SKILL.md` format everywhere, no translation. Antigravity has no user-skills dir (plugin-only): documented non-goal (#160).
 
-- **`/issue-add`** — rough idea/transcript → one researched, well-formed, labelled, self-assigned issue. Creates directly, no checkpoint.
-- **`/issue-start`** — pick issue, sync `main`, cut branch, load context. Mode from the type label: `bug`/`chore`/`documentation` → fast (build straight away); `enhancement` → plan gate. Override: `now` / `plan`.
-- **`/issue-finish`** — confirm acceptance, update README, verification gate, push, PR with `Closes #N`, CI, auto-merge + delete branch, land on main, safe tray restart. No dated changelog files.
-
-All stay generic and read each project's CLAUDE.md for the gate command, ports, and tray procedure.
+Two rules that live only here: `/issue-start` takes its mode from the type label — `bug`/`chore`/`documentation` → build straight away, `enhancement` → plan gate, override `now` / `plan`; `/issue-finish` writes no dated changelog files. All three stay generic and read each project's CLAUDE.md for the gate command, ports, and tray procedure.
 
 ### Spawning sub-agents — cap concurrent Opus at 3 *(Claude Code only — skip on other agents)*
 
-Keep at most **3 background Opus sub-agents in flight** (sliding window: dispatch up to 3, refill as each returns). **Sonnet sub-agents are exempt** — they fan out freely and don't count against the window. This works around Anthropic's Opus-specific server-side burst limiter, which rate-limits the 4th–5th+ concurrent bootstrap (anthropics/claude-code#53922, https://code.claude.com/docs/en/errors). It is **not** `CLAUDE_CODE_MAX_TOOL_USE_CONCURRENCY` (that bounds parallel tool calls in one session, not sub-agents) — the only place to cap sub-agent count is the orchestrating skill's dispatch logic. Tier vocabulary and per-host model mapping live in `fleet-config/docs/model-tiers.md` (single source — don't restate a tier table).
+Keep at most **3 background Opus sub-agents in flight** (sliding window: dispatch up to 3, refill as each returns). **Sonnet sub-agents are exempt** — they fan out freely and don't count against the window. Works around Anthropic's Opus-specific server-side burst limiter on the 4th–5th+ concurrent bootstrap (anthropics/claude-code#53922, https://code.claude.com/docs/en/errors). It is **not** `CLAUDE_CODE_MAX_TOOL_USE_CONCURRENCY` (that bounds parallel tool calls in one session, not sub-agents) — the only place to cap sub-agent count is the orchestrating skill's dispatch logic. Tier vocabulary and per-host model mapping: `fleet-config/docs/model-tiers.md` (single source — don't restate a tier table).
 
-**A sub-agent does not self-resume when its own background task finishes** — only the top-level session gets that wake-up, so a sub-agent that backgrounds a step and ends its turn waiting just stops (`project-scaffolding#124`). When briefing a sub-agent that must run a long background step, tell it up front: it will not be auto-woken — it must poll (`BashOutput`/`Monitor`) to completion *within its own turn* before ending.
+**A sub-agent does not self-resume when its own background task finishes** — only the top-level session gets that wake-up, so one that backgrounds a step and ends its turn just stops (`project-scaffolding#124`). Brief any sub-agent running a long background step up front: it will not be auto-woken; it must poll (`BashOutput`/`Monitor`) to completion *within its own turn* before ending.
 
-**A headless top-level `claude -p` session has no wake-up mechanism at all** — the CLI exits on the clean turn-end and reports `exit_code: 0`, false success over a skill that never ran (`fleet-config#314`). Every scheduled fleet skill runs this way — its own `run-weekly.bat` calling `claude -p "/<skill>" ... --permission-mode bypassPermissions`, no human attending. Any command inside a skill meant for unattended/scheduled execution must run synchronously (foreground) or poll to completion within the same turn; never fire-and-forget a tool call and end the turn expecting to be resumed.
+**A headless top-level `claude -p` session has no wake-up mechanism at all** — the CLI exits on the clean turn-end reporting `exit_code: 0`, false success over a skill that never ran (`fleet-config#314`). Every scheduled fleet skill runs this way: its own `run-weekly.bat` calling `claude -p "/<skill>" ... --permission-mode bypassPermissions`, no human attending. Any command in a skill meant for unattended/scheduled execution must run synchronously (foreground) or poll to completion in the same turn; never fire-and-forget and end the turn expecting to be resumed.
 
 ### Project hygiene
 
@@ -150,7 +144,7 @@ Keep at most **3 background Opus sub-agents in flight** (sliding window: dispatc
 
 ### Propagate generalizable conventions up to scaffolding
 
-Sister-project work producing a *generalizable convention* (testing pattern, CLAUDE.md rule, workflow) routes up to `project-scaffolding` so every project inherits it — ad-hoc per-project divergence was explicitly rejected.
+Sister-project work producing a *generalizable convention* (testing pattern, CLAUDE.md rule, workflow) routes up to `project-scaffolding` — ad-hoc per-project divergence was explicitly rejected.
 
 - Per-project *instances* (real script names, paths) stay in the project's own CLAUDE.md; the reusable *concept* goes to scaffolding.
 - Check for an existing `project-scaffolding` issue first; otherwise file one (master's template + label + `--assignee @me`).
@@ -302,7 +296,7 @@ C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe -NoProfile -NonInterac
 
 Piped/redirected stdout makes Python fall back to cp1252, so emoji/box-drawing `print()` throws `UnicodeEncodeError` and exits 1 — even though it works in a real terminal. Set `$env:PYTHONUTF8 = "1"` under capture; durable code fix: `sys.stdout.reconfigure(encoding="utf-8")` (and stderr) at entry points.
 
-**The inverse, in any process that sets `PYTHONUTF8`:** `subprocess.run(..., text=True)` decodes the *child's* output as UTF-8, but native Windows console tools (`schtasks`, `netsh`, `sc`, `tasklist`, `wmic`, `reg`, `ipconfig`, …) emit the OEM code page (cp850 here), which is not valid UTF-8. It doesn't raise — `proc.stdout` comes back empty/`None`, so any `if not proc.stdout: return None`-shaped guard reads it as "the query failed" and the feature degrades silently. Every such call site must pin its own decoding — `encoding="oem", errors="replace"` — never inherit `text=True`'s ambient locale (`replace` so one odd byte costs a character, not the whole feature). It reproduces only *inside* the app: from any terminal there is no `PYTHONUTF8`, so identical code looks healthy (`app-launcher#743`).
+**The inverse, in any process that sets `PYTHONUTF8`:** `subprocess.run(..., text=True)` decodes the *child's* output as UTF-8, but native Windows console tools (`schtasks`, `netsh`, `sc`, `tasklist`, `wmic`, `reg`, `ipconfig`, …) emit the OEM code page (cp850 here), which is not valid UTF-8. It doesn't raise — `proc.stdout` comes back empty/`None`, so any `if not proc.stdout: return None`-shaped guard reads it as "the query failed" and the feature degrades silently. Pin decoding at every such call site — `encoding="oem", errors="replace"` (`replace` so one odd byte costs a character, not the whole feature) — never inherit `text=True`'s ambient locale. Reproduces only *inside* the app: from any terminal there is no `PYTHONUTF8`, so identical code looks healthy (`app-launcher#743`).
 
 **Corollary:** a helper that returns `None` on failure must **log** the failure — a dead query must never be indistinguishable from a quiet system.
 
@@ -335,7 +329,7 @@ GitHub's issue-closing parser (`close(s|d)?` / `fix(es|ed)?` / `resolve(s|d)?` +
 
 ### Subprocess spawns must suppress the console window (Windows)
 
-Any `subprocess.Popen`/`.run`/`.call`/`.check_output`/`.check_call` launching an external executable (ffmpeg, ssh, docker, tailscale, nvidia-smi, clip, a helper script, …) must pass `creationflags=subprocess.CREATE_NO_WINDOW` on Windows — parents with no console of their own (pythonw, a tray app, a scheduled task, a daemon) otherwise flash a new console window for every spawn. Default to suppressing; only omit the flag when the window is meant to be visible to the user (rare — e.g. a deliberately-opened interactive terminal). Prior instances: `local-llm-hub`#317/#282/#174/#169, `voice-transcriber`#147; fleet-wide gap audit `fleet-config`#399.
+Any `subprocess.Popen`/`.run`/`.call`/`.check_output`/`.check_call` launching an external executable (ffmpeg, ssh, docker, tailscale, nvidia-smi, clip, a helper script, …) must pass `creationflags=subprocess.CREATE_NO_WINDOW` on Windows — parents with no console of their own (pythonw, a tray app, a scheduled task, a daemon) otherwise flash a new console window per spawn. Default to suppressing; only omit the flag when the window is meant to be visible (rare — a deliberately-opened interactive terminal). Prior instances: `local-llm-hub`#317/#282/#174/#169, `voice-transcriber`#147; fleet-wide gap audit `fleet-config`#399.
 
 ```python
 creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
@@ -360,8 +354,8 @@ netsh int ipv4 show dynamicport tcp
 Event IDs 4231 (TCP)/4266 (UDP) = "ephemeral port space ... all such ports being in use". Windows rate-limits these, so absence doesn't rule it out — corroborate with the `TIME_WAIT` count (a normal afternoon on this host oscillates ~325–800, routinely the top state).
 
 **Fix hierarchy — cheapest and most targeted first:**
-1. Fix the leak: find and stop whatever opens short-lived outbound connections in a burst/loop (a poller with no backoff, retry-without-backoff, a health check with no session reuse).
+1. Fix the leak: stop whatever opens short-lived outbound connections in a burst/loop (a poller with no backoff, retry-without-backoff, a health check with no session reuse).
 2. Pool connections: module-level `requests.Session` (or equivalent), never a bare `requests.get`/`urlopen` per call inside a loop; back off a failing endpoint instead of retrying at full rate; never point an e2e suite at a live production app.
 3. Last resort, machine-level, needs elevation + a reboot — **Roberto's call, never applied unattended by an agent:** `TcpTimedWaitDelay = 30` at `HKLM\SYSTEM\CurrentControlSet\Services\Tcpip\Parameters` (valid 30–300), ~4x effective capacity without touching the range. Re-measure its effect on the Windows 11 stack after applying, don't assume it.
 
-**Never narrow the range downward** — `netsh int ipv4 set dynamicport tcp start=10000` (seen circulated, wrong) hands out this machine's 16 fixed listeners as ephemeral ports: cloudflared `20241-3`, tailscaled `40746`, OneDrive `42050`, MouseWithoutBorders `15100/1`, llama-server `18093`, StreamDeck `28196/8`, MSI services `26822/32683/33683`, logioptionsplus `19010`, hwinfo `10000` — turning a visible, self-healing outage into intermittent bind failures that are far harder to diagnose. Safe floor on this host if the range must widen: `netsh int ipv4 set dynamicport tcp start=44000 num=21535` (clears every observed fixed listener) — still machine-level tuning, still Roberto's call.
+**Never narrow the range downward** — `netsh int ipv4 set dynamicport tcp start=10000` (seen circulated, wrong) hands out this machine's 16 fixed listeners as ephemeral ports: cloudflared `20241-3`, tailscaled `40746`, OneDrive `42050`, MouseWithoutBorders `15100/1`, llama-server `18093`, StreamDeck `28196/8`, MSI services `26822/32683/33683`, logioptionsplus `19010`, hwinfo `10000` — turning a visible, self-healing outage into intermittent bind failures far harder to diagnose. Safe floor on this host if the range must widen: `netsh int ipv4 set dynamicport tcp start=44000 num=21535` (clears every observed fixed listener) — still machine-level tuning, still Roberto's call.

@@ -1,11 +1,11 @@
 ---
 name: issue-finish-batch
-description: Ship reviewed branches in parallel — fan out one Sonnet agent per branch running /issue-finish (push, PR, merge, delete, tray restart), reporting on a blocker. Parallel-finish step after /cleanup-fleet or /issue-batch. Use to ship branches without the serial slog — e.g. "/issue-finish-batch app-launcher#71 reporting#12", bare "/issue-finish-batch 71 12", or just "finish them all" after a fan-out run.
+description: Ship reviewed branches in parallel — fan out one Sonnet agent per branch running /issue-finish (push, PR, merge, delete, tray restart), reporting on a blocker. The parallel-finish step after /cleanup-fleet or /issue-batch — e.g. "/issue-finish-batch app-launcher#71 reporting#12", bare "/issue-finish-batch 71 12", or just "finish them all" after a fan-out run.
 ---
 
 # issue-finish-batch
 
-**Goal:** `/cleanup-fleet` and `/issue-batch` *build and stop* — one reviewed branch per issue, each needing a manual, sequential `/issue-finish`. Finishing a reviewed branch is purely mechanical (push, PR, CI-as-advisory, merge, delete branch, land on main, tray restart) and needs neither Opus nor the main session's serial attention. This skill fans out **one background Sonnet agent per branch**, each running the existing `/issue-finish` flow end-to-end one-shot, and reports back **only** when an agent hits a genuine blocker it cannot resolve on its own. It composes `/issue-finish` rather than re-implementing it — that skill already owns the acceptance/gate/CI-advisory/merge/tray choreography per project, so this one owns only branch resolution, fan-out, and aggregate.
+**Goal:** `/cleanup-fleet` and `/issue-batch` *build and stop* — one reviewed branch per issue, each needing a manual, sequential `/issue-finish`. Finishing is purely mechanical (push, PR, CI-as-advisory, merge, delete branch, land on main, tray restart) and needs neither Opus nor serial attention. This skill fans out **one background Sonnet agent per branch**, each running the existing `/issue-finish` flow end-to-end one-shot, and reports back **only** on a genuine blocker it cannot resolve. It composes `/issue-finish` rather than re-implementing it — that skill owns the acceptance/gate/CI-advisory/merge/tray choreography per project; this one owns only branch resolution, fan-out, and aggregate.
 
 ## Arguments
 
@@ -17,17 +17,17 @@ description: Ship reviewed branches in parallel — fan out one Sonnet agent per
 
 ## Hard rules (read before running any command)
 
-- **User-triggered, never automatic.** You invoke this explicitly once you've decided the reviewed branches are ready to ship; `/cleanup-fleet`'s rule that the orchestrator never *auto*-launches `/issue-finish` is unchanged.
-- **One agent per branch/checkout, period.** Each agent operates a working tree (the primary checkout, or a worktree path for `/issue-batch` worktree-mode branches); two agents on the same checkout collide. One issue → one branch → one agent → one merge.
-- **Agents finish only — never re-build.** The branch is already built and reviewed: agents run `/issue-finish`, they do **not** re-build, re-design, or "improve" the change.
+- **User-triggered, never automatic.** Invoke explicitly once the reviewed branches are ready to ship; `/cleanup-fleet`'s rule that the orchestrator never *auto*-launches `/issue-finish` is unchanged.
+- **One agent per branch/checkout, period.** Two agents on the same checkout collide. One issue → one branch → one agent → one merge.
+- **Agents finish only — never re-build.** Branch already built and reviewed: agents run `/issue-finish`, they do **not** re-build, re-design, or "improve" the change.
 - **Sonnet by default, fanned out all at once; Opus only on explicit override (then the ≤3 window applies).** Sonnet sub-agents are exempt from the global Opus concurrency cap of 3 (`~/.claude/CLAUDE.md`, "Spawning sub-agents — cap concurrent Opus at 3"), so the whole batch fans out in a single message, no window.
-- **Post-flight dirty-tree check (step 6) runs in the orchestrator, never the agent, before a branch is marked merged.** It only corrects the reported status — never blocks, auto-commits, or auto-fixes.
-- **Blocker-only escalation.** An agent reports `BLOCKED` and stops on a genuine blocker (merge conflict, CI red on a diff that *does* touch e2e surface, verification-gate failure). It must **not** guess-fix, weaken the gate, or force anything. Everything else just ships and reports `MERGED`.
-- **Keep per-issue pings.** Each `/issue-finish` fires its own `✅ Done` ping (PR link); the `--kind finish-batch` roll-up is an *additional* closing aggregate, not a replacement. (Per `~/.claude/CLAUDE.md`, "keep per-item pings with aggregate".)
-- **The orchestrator only does cheap, safe work:** resolve each token to its repo + branch, per-branch pre-flight, fan-out, aggregate. **It never edits source, commits, pushes, or merges** — every write happens inside a spawned agent's `/issue-finish` run.
+- **Post-flight dirty-tree check (step 6) runs in the orchestrator, never the agent, before a branch is marked merged.** Only corrects the reported status — never blocks, auto-commits, or auto-fixes.
+- **Blocker-only escalation.** An agent reports `BLOCKED` and stops on a genuine blocker (merge conflict, CI red on a diff that *does* touch e2e surface, verification-gate failure). Must **not** guess-fix, weaken the gate, or force anything. Everything else ships and reports `MERGED`.
+- **Keep per-issue pings.** Each `/issue-finish` fires its own `✅ Done` ping (PR link); the `--kind finish-batch` roll-up is an *additional* closing aggregate, not a replacement (`~/.claude/CLAUDE.md`, "keep per-item pings with aggregate").
+- **The orchestrator only does cheap, safe work:** resolve each token to its repo + branch, per-branch pre-flight, fan-out, aggregate. **Never edits source, commits, pushes, or merges** — every write happens inside a spawned agent's `/issue-finish` run.
 - **Degrade, don't block.** A per-branch failure is reported and skipped; only a pre-flight failure stops the whole run.
 - **No AI attribution; no hard-wrapped issue/PR-body paragraphs.** (Per global CLAUDE.md.)
-- **Shell:** the Bash tool here is **Git Bash**. Use plain `gh` / `git` only — no PowerShell syntax. Windows paths map as `/e/automation/...`.
+- **Shell:** the Bash tool here is **Git Bash**. Plain `gh` / `git` only — no PowerShell syntax. Windows paths map as `/e/automation/...`.
 
 ## Steps
 
@@ -57,7 +57,7 @@ Do **not** check out branches or touch working trees here — each agent does th
 
 ### 4. Confirm the set + fan out
 
-Print the resolved set (repo, #N, branch, path, model) and — unless invoked from a just-confirmed fan-out — get a one-line go-ahead. Then dispatch **one background sub-agent per branch** (`run_in_background: true`, `subagent_type: "general-purpose"`, `model: "sonnet"` by default):
+Print the resolved set (repo, #N, branch, path, model) and — unless invoked from a just-confirmed fan-out — get a one-line go-ahead. Dispatch **one background sub-agent per branch** (`run_in_background: true`, `subagent_type: "general-purpose"`, `model: "sonnet"` by default):
 
 - **Sonnet (default):** spawn them **all at once** in a single message — Sonnet is exempt from the Opus cap.
 - **Opus override:** dispatch through the global ≤3-in-flight Opus window — launch up to 3, refill as each returns, until the queue drains.
@@ -137,7 +137,7 @@ E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/hooks
 
 (A `0`/empty `--blocked` drops the clause.) Silent no-op if no Telegram chat is configured; always exits 0.
 
-**`notify_complete.py` is the ONLY sanctioned way to send this roll-up ping — do NOT use any MCP chat tool (search/send/etc.) to find a chat or post the ping.** The helper resolves the destination chat deterministically from `projects.toml`; picking a chat yourself is both a security violation (an agent-inferred external write destination) and wrong (it may post to the wrong chat). A silent no-op when no channel is configured is the correct outcome — do not "fix" it by reaching for Slack tools.
+**`notify_complete.py` is the ONLY sanctioned way to send this roll-up ping — do NOT use any MCP chat tool (search/send/etc.) to find a chat or post the ping.** The helper resolves the destination chat deterministically from `projects.toml`; picking a chat yourself is a security violation (agent-inferred external write destination) and may post to the wrong chat. A silent no-op when no channel is configured is correct — do not "fix" it by reaching for Slack tools.
 
 Then print the final summary block:
 
