@@ -192,6 +192,8 @@ _STANDALONE_UNIT_CHECKS: Tuple[Tuple[str, str, str], ...] = (
      "refuse-on-divergence contract, and the route fail-safe (no "
      "classifier -> explicit unknown, broken classifier -> full) -- is "
      "testable on its own against synthetic trees (fleet-config#556)"),
+    ("transcript_capture", "test_transcript_capture.py",
+     "native readers, opt-in routing, session/fork identity and non-destructive rebuilds (#753)"),
     ("conversation_search", "test_conversation_search.py",
      "the resume-identity + search layer -- capture header round trip, the "
      "content signature surviving a resume, the index.json twin, and FTS "

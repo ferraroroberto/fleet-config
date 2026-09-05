@@ -45,6 +45,7 @@ from typing import Optional
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import _lib  # noqa: E402
+from transcript_readers import native_id  # noqa: E402
 from conversation_capture import (  # noqa: E402
     CaptureConfig,
     capture_config_from_project,
@@ -81,9 +82,9 @@ RESUME_COMMANDS = {
 
 def resume_command(agent: str, sid: str) -> str:
     """The command that reopens this conversation, or ``""`` when unknown."""
-    if not sid:
+    if not native_id(sid):
         return ""
-    template = RESUME_COMMANDS.get((agent or "claude").lower())
+    template = RESUME_COMMANDS.get((agent or "").lower())
     return template.format(sid=sid) if template else ""
 
 
@@ -187,8 +188,8 @@ def sync(cfg: CaptureConfig, *, rebuild: bool = False) -> int:
                     "path": key,
                     "date": date,
                     "slug": slug,
-                    "sid": (entry.sid if entry and entry.sid else header.get("sid", "")),
-                    "agent": (entry.agent if entry and entry.agent else header.get("agent", "")),
+                    "sid": (header.get("sid", "") if header else entry.sid if entry else ""),
+                    "agent": (header.get("agent", "") if header else entry.agent if entry else ""),
                     "topic": fields.get("topic", ""),
                     "decisions": fields.get("decisions", ""),
                     "open_loops": fields.get("open_loops", ""),
@@ -336,7 +337,7 @@ def _render(results: "list[dict]") -> str:
         # agent has no resume command. Never printed as a silent omission.
         lines.append(
             f"     resume: {r['resume']}" if r["resumable"]
-            else "     resume: unavailable (no stored session id)"
+            else "     resume: unavailable (unknown harness or session identity)"
         )
         lines.append("")
     return "\n".join(lines).rstrip()

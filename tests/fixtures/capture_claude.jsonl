@@ -1,0 +1,4 @@
+{"type": "user", "sessionId": "33333333-3333-4333-8333-333333333333", "timestamp": "2026-09-05T12:00:00Z", "uuid": "message-0", "message": {"role": "user", "content": [{"type": "text", "text": "Harmless fixture about lunar gardens"}]}}
+{"type": "assistant", "sessionId": "33333333-3333-4333-8333-333333333333", "timestamp": "2026-09-05T12:00:01Z", "uuid": "message-1", "message": {"role": "assistant", "content": [{"type": "text", "text": "Lunar gardens answer"}]}}
+{"type": "user", "sessionId": "33333333-3333-4333-8333-333333333333", "timestamp": "2026-09-05T12:00:02Z", "uuid": "message-2", "message": {"role": "user", "content": [{"type": "text", "text": "Second harmless turn"}]}}
+{"type": "assistant", "sessionId": "33333333-3333-4333-8333-333333333333", "timestamp": "2026-09-05T12:00:03Z", "uuid": "message-3", "message": {"role": "assistant", "content": [{"type": "text", "text": "Second answer"}]}}

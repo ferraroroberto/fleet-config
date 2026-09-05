@@ -10,8 +10,8 @@ full transcript when a specific past conversation is referenced.
 Digesting is **decoupled from capture** — running it on the Stop hook would fire
 an LLM call every turn-end. Instead the indexer runs lazily (the ``session_index``
 SessionStart hook invokes it), so a conversation is digested **once, after it has
-settled**. Each entry is keyed on the capture *filename*; ``supersede_prior`` in
-the capture hook already collapses a conversation to one file before it settles.
+settled**. Each entry is keyed on the capture *filename*; the capture hook
+updates the file belonging to that exact harness/native session before it settles.
 
 Generic + ``projects.toml``-driven, mirroring the capture hook: a project opts in
 with ``capture = true`` and a ``capture_routing`` of ``"flat"`` (one
@@ -101,7 +101,7 @@ _NAME_RE = re.compile(r"^(\d{4}-\d{2}-\d{2})-(\d{4})-(.+?)\.md$")
 _FIELD_RE = re.compile(
     r"^[-*•\s]*\*\*(Topic|Decisions|Open loops):\*\*\s*(.*)$", re.IGNORECASE
 )
-_TOKEN_SUFFIX_RE = re.compile(r"(?:-[0-9a-f]{8})+$")
+_TOKEN_SUFFIX_RE = re.compile(r"(?:-(?:[0-9a-f]{64}|[0-9a-f]{8}))+$")
 
 DIGEST_PROMPT = (
     "You are writing a compact index entry for a past assistant/user "
@@ -313,7 +313,7 @@ def index_dir(conv_dir: Path, label: str, *, force: bool = False) -> int:
         body = digest(strip_capture_header(text))
         if body is None:
             continue  # hub down — fail-open, retry next run
-        turns = text.count("**You**:") + text.count("**Claude**:")
+        turns = len(re.findall(r"^\*\*(?:You|Claude|Codex|Assistant)\*\*:", text, re.MULTILINE))
         head = parse_capture_header(text)
         entries[fn] = Entry(
             file=fn, mtime=st.st_mtime, turns=turns, body=body,

@@ -18,6 +18,8 @@ Native Claude and Codex quota measurements now share a [versioned snapshot contr
 
 Scheduled skills can now explicitly select Claude or Codex through one [shared runner](docs/scheduled-runners.md), with terminal evidence, delivery checks and owned-process cancellation. Existing Claude launchers remain unchanged; Pi/Grok and Codex delegated-child execution remain unverified.
 
+Opted-in conversations now normalize native Claude/Codex stored transcripts before shared capture and search. Exact harness/session identity keeps unrelated equal prompts separate and preserves Codex fork lineage; [capture setup, reader contract and native evidence](docs/conversation-capture.md) document the explicit Codex opt-in and current limits.
+
 ## Why this repo exists
 
 `~/.claude/` is a kitchen sink — cache, transcripts, plans — so it can't all be a git repo. But the *config* inside it (hooks, skills, the global `CLAUDE.md`) is real source code: it shapes every Claude session, breaks silently when typoed, and needs to be reviewed, diffed, and reverted like any other code. Before this repo, edits to `~/.claude/hooks/*` and friends were unversioned. Now they aren't.
@@ -101,6 +103,7 @@ fleet-config/
 │   ├── slack_notify.py              # DEPRECATED shim -> notify_send.py, for sister repos that load it by path (fleet-config#540)
 │   ├── notify_complete.py           # deterministic skill-completion ping (issue-* skills call this); finish/yolo carry a work-summary roll-up
 │   ├── work_summary.py              # deterministic PR work-summary (file/LOC roll-up + per-file table) from `gh`, no LLM; importable + CLI
+│   ├── transcript_readers.py       # native Claude/Codex stored transcript normalization
 │   ├── conversation_capture.py     # Stop hook: captures a session to markdown (projects.toml-driven, opt-in; wired from the project's own settings.json)
 │   ├── session_index.py            # SessionStart hook: lazily digests settled captures into conversations/index.md
 │   ├── conversation_index.py       # the indexer (lib + CLI) session_index runs; digests via the hub, writes index.md + index.json
