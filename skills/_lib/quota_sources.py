@@ -19,8 +19,8 @@ from quota_snapshot import (account_key, empty_source, identifier, iso_utc, obse
                             parse_time, publish, read_snapshot, refresh_states, utc_now, window)
 
 LOGGER = logging.getLogger(__name__)
-# App-server is experimental. A new version requires the documented native probe.
-CODEX_VERSIONS = {"0.153.3"}
+# App-server is experimental. Each admitted version passed the documented native probe.
+CODEX_VERSIONS = {"0.153.3", "0.153.4"}
 RPC_TIMEOUT_SECONDS = 20
 
 
