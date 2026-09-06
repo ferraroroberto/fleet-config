@@ -284,6 +284,27 @@ class CaptureTests(unittest.TestCase):
             self.assertEqual(len(result.messages), turns)
             self.assertEqual([role for role, _ in result.messages], ['user', 'assistant'] * (turns // 2))
 
+    def test_codex_routes_by_transcript_inference_without_marker(self):
+        """#785 acceptance #1: no marker at all -- Codex must still route by
+        transcript inference, not fall straight to _archive."""
+        self.project.extra.update(capture_harnesses=['codex'], capture_routing='skills')
+        skill = self.root / '.claude' / 'skills' / 'journal-daily'
+        skill.mkdir(parents=True)
+        records = codex()
+        records[2]['payload']['item']['content'][0]['text'] = (
+            'Use the journal-daily skill from .claude/skills/journal-daily/SKILL.md.')
+        self.capture(records, 'codex')
+        routed = list((skill / 'conversations').glob('*.md'))
+        self.assertEqual(len(routed), 1)
+        self.assertFalse((self.root / 'conversations' / '_archive').exists())
+
+    def test_claude_and_codex_render_identically_modulo_agent(self):
+        """#785 acceptance #2: same conversation, differs only in agent/label."""
+        messages = [('user', 'Please help me plan the trip'), ('assistant', 'Sure, where to?')]
+        claude_doc = cc.render_markdown('d', messages, agent='claude')
+        codex_doc = cc.render_markdown('d', messages, agent='codex')
+        self.assertEqual(claude_doc.replace('Claude', 'X'), codex_doc.replace('Codex', 'X'))
+
 
 if __name__ == '__main__':
     unittest.main()
