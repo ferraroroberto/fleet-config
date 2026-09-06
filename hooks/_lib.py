@@ -288,7 +288,7 @@ def _camel_to_snake(key: str) -> str:
 def normalize_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
     """Translate a foreign-harness hook payload into Claude Code's shape.
 
-    Claude Code payloads (and the Pi adapter's ``{"event": ...}`` envelope) are
+    Claude Code payloads (and Pi lifecycle ``{"event": ...}`` envelopes) are
     returned **unchanged** — same object, no copy. Foreign envelopes are
     translated below. Codex shares Claude's shape, so only an invoked
     ``.codex/hooks`` entry point establishes Codex provenance.
@@ -303,6 +303,46 @@ def normalize_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
 
     if not isinstance(payload, dict):
         return payload
+
+    # Only the explicit extension envelope establishes Pi provenance. Lifecycle
+    # adapters retain their existing pass-through contract.
+    if payload.get("fleet_harness") == "pi":
+        _ACTIVE_AGENT = "pi"
+        event = payload.get("type")
+        raw_tool = payload.get("toolName")
+        names = {"bash": "Bash", "powershell": "PowerShell", "edit": "Edit", "write": "Write"}
+        if event not in {"tool_call", "tool_result"} or raw_tool not in names:
+            raise ValueError("unsupported Pi policy event/tool")
+        args = payload.get("input")
+        if not isinstance(args, dict):
+            raise ValueError("missing Pi tool input")
+        field = "command" if raw_tool in {"bash", "powershell"} else "path"
+        if not isinstance(args.get(field), str) or not args[field].strip():
+            raise ValueError("missing Pi " + field)
+        if "\0" in args[field]:
+            raise ValueError("invalid Pi " + field)
+        base = payload.get("cwd")
+        if not isinstance(base, str) or not Path(base).is_absolute():
+            raise ValueError("missing or relative Pi cwd")
+        out = {
+            "hook_event_name": "PreToolUse" if event == "tool_call" else "PostToolUse",
+            "tool_name": names[raw_tool], "tool_input": dict(args),
+            "cwd": payload.get("cwd"), "session_id": payload.get("session_id"),
+            "tool_use_id": payload.get("toolCallId"), AGENT_HINT_KEY: "pi",
+        }
+        if field == "path":
+            # Pi's own write/edit resolver supplies the target. Raw aliases are
+            # not filesystem paths (e.g. @docs/... writes docs/..., #746).
+            resolved = payload.get("fleet_resolved_path")
+            if (not isinstance(resolved, str) or "\0" in resolved
+                    or not Path(resolved).is_absolute()):
+                raise ValueError("Pi resolved edit target unavailable")
+            out["tool_input"]["file_path"] = resolved
+        if event == "tool_result":
+            # A missing flag is unknown, never a successful post-edit event.
+            flag = payload.get("isError")
+            out["_fleet_edit_outcome"] = "failed" if flag is True else "success" if flag is False else "unknown"
+        return out
 
     # Antigravity's `agy` CLI (fleet-config#546): its PreToolUse payload is
     # `{"toolCall": {"name", "args": {"CommandLine", "Cwd", ...}},
@@ -462,6 +502,11 @@ def block(reason: str) -> "NoReturn":
     stdout stays clean and its behaviour is byte-for-byte unchanged. Codex
     PreToolUse uses its verified structured deny with exit 0 (fleet-config#759).
     """
+    if _ACTIVE_AGENT == "pi":
+        if _ACTIVE_EVENT == "PreToolUse":
+            print(json.dumps({"fleet_policy": 1, "decision": "block", "message": reason}), flush=True)
+            sys.exit(0)
+        warn(reason)
     # Codex 0.153.3 exec: stderr + exit 2 reported a block but executed the
     # sentinel. Structured PreToolUse deny + exit 0 refused it and delivered the
     # reason. Other events have different contracts; never label those a deny.
@@ -524,6 +569,9 @@ def warn(message: str) -> "NoReturn":
     Claude's, and none of the shapes above are part of the Grok/Copilot/agy
     contract.
     """
+    if _ACTIVE_AGENT == "pi":
+        print(json.dumps({"fleet_policy": 1, "decision": "warn", "message": message}), flush=True)
+        sys.exit(0)
     # Codex 0.153.3 ignores Claude's top-level `systemMessage` on PreToolUse:
     # the hook runs and the command proceeds, but a live one-call probe reports
     # "No hook messages were emitted". The same additionalContext envelope
@@ -552,6 +600,8 @@ def warn(message: str) -> "NoReturn":
 
 def allow() -> "NoReturn":
     """Exit 0 silently → action proceeds, Claude sees nothing."""
+    if _ACTIVE_AGENT == "pi":
+        print(json.dumps({"fleet_policy": 1, "decision": "allow", "message": ""}), flush=True)
     sys.exit(0)
 
 
@@ -921,6 +971,8 @@ def edit_event(payload: Dict[str, Any]) -> EditEvent:
                     outcome = "failed"
         else:
             outcome = "success"  # Native PostToolUse is the successful edit event.
+    if payload_agent(payload) == "pi" and event == "PostToolUse":
+        outcome = payload.get("_fleet_edit_outcome", "unknown")
     try:
         if name == "apply_patch":
             targets = _patch_targets(tool_input(payload).get("command"), payload)

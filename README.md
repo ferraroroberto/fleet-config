@@ -12,6 +12,8 @@ Python syntax feedback covers every surviving Python target in a successful Code
 
 Codex also carries the applicable command and edit policies from Claude Code: GitHub body quoting, dated-doc blocking, branch-before-edit enforcement, local-hub routing, and browser-launch safety. Their observed block/advice semantics and explicit unsupported surfaces are recorded in the [cross-agent policy coverage table](docs/cross-agent-parity.md#command-and-edit-policy-coverage).
 
+Pi now invokes the shared command/edit guards through `pi/extensions/policy_hooks.ts`, preserving compression and lifecycle reporting. [Pi policy conformance](docs/adding-a-coding-harness.md#pi-policy-conformance) distinguishes installed-runtime evidence with deterministic model responses from subscription authentication.
+
 Shared issue/audit workflows bind delegation, result collection and questions to the current session through the [interactive capability contract](docs/workflow-capabilities.md). Claude and Codex native multi-worker proofs are recorded per surface; independent-review and human-review gates remain mandatory when tools are absent.
 
 Native Claude and Codex quota measurements now share a [versioned snapshot contract](docs/quota-snapshots.md). Claude publishes from its existing statusline; Codex refreshes on demand through its native account method. Sources retain their own windows, provenance and freshness, with unknown account scopes explicit and the legacy Claude cache preserved.
@@ -118,6 +120,7 @@ fleet-config/
 │   └── .claude/skills/streamdeck-deploy/  # directory-scoped skill tier (docs/skills.md) — build/link/package/profile-diff, loads only under stream-deck/
 ├── commands/                       # junction → ~/.claude/commands AND ~/.codex/prompts (Codex prompts)
 ├── pi/extensions/statusline.ts      # junction via pi/extensions/ → ~/.pi/agent/extensions — custom Pi footer/statusline
+├── pi/extensions/policy_hooks.ts    # same junction — bounded shared Python policies; native block/advisory adapter (#746)
 ├── pi/extensions/session_state.ts   # same junction — reports Pi lifecycle events into sessions-state.json (#349)
 ├── agy/plugins/fleet-context-filter/   # Antigravity `agy` context-filter plugin (plugin.json + hooks.json) — installed by copy, not junction (#546); drift-guarded by tests/run_acceptance.py
 ├── copilot-hooks/                   # Copilot CLI hook wiring (fleet-context-filter.json: preToolUse + modifiedArgs, #547) — copied into ~/.copilot/hooks/, drift-guarded

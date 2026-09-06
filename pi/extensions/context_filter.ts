@@ -3,6 +3,7 @@ import { spawn } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { WARNING_PREFIX } from "./policy_hooks.ts";
 
 // fleet-config#545 — the Pi port of the fleet context filter (#392/#541).
 // Pi's tool_result middleware can modify a tool's result in place, which is
@@ -65,7 +66,8 @@ export default function (pi: ExtensionAPI) {
 		if (!modeLooksActive()) return;
 
 		const parts = Array.isArray(event.content) ? event.content : [];
-		const text = parts
+		const preserved = parts.filter((p: any) => p.type !== "text" || p.text?.startsWith(WARNING_PREFIX));
+		const text = parts.filter((p: any) => !preserved.includes(p))
 			.map((p: any) => (p && p.type === "text" ? String(p.text ?? "") : ""))
 			.join("");
 		if (!text) return;
@@ -82,7 +84,7 @@ export default function (pi: ExtensionAPI) {
 
 		const result = await compress(payload);
 		if (result && result.wrap && typeof result.text === "string" && result.text) {
-			return { content: [{ type: "text", text: result.text }] };
+			return { content: [{ type: "text", text: result.text }, ...preserved] };
 		}
 		// shadow / off / skip / failure: leave the original result untouched
 	});

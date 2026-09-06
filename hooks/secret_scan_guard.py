@@ -60,7 +60,7 @@ def _staged_diff(repo_cwd: Path) -> str:
 
 def main() -> None:
     payload = _lib.read_stdin_json()
-    if _lib.tool_name(payload) != "Bash":
+    if _lib.tool_name(payload) not in {"Bash", "PowerShell"}:
         _lib.allow()
 
     cmd = _lib.command_string(payload)
