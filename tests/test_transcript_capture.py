@@ -79,6 +79,18 @@ class CaptureTests(unittest.TestCase):
         self.assertNotIn('Injected context', text)
         self.assertLess(text.index('**You**:'), text.index('**Codex**:'))
 
+    def test_filename_key_token_is_truncated(self):
+        """fleet-config#791: the filename's key token must stay short and readable;
+        the full identity hash belongs only in the header's `key` attribute."""
+        files = self.capture(claude(), 'claude')
+        self.assertEqual(len(files), 1)
+        stem = files[0].stem
+        token = stem.rsplit('-', 1)[-1]
+        self.assertEqual(len(token), 8)
+        header_key = cc.parse_capture_header(files[0].read_text(encoding='utf-8'))['key']
+        self.assertEqual(len(header_key), 64)
+        self.assertTrue(header_key.startswith(token))
+
     def test_same_prompt_unrelated_sessions_and_providers(self):
         self.capture(claude(), 'claude')
         self.capture(claude(OTHER), 'claude', OTHER)

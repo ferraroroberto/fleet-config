@@ -388,7 +388,7 @@ def strip_capture_header(text: str) -> str:
 
 
 def capture_filename(timestamp: str, slug: str, sid_token: str, sig_token: str) -> str:
-    """Legacy filename constructor retained for consumers; new writes use full keys."""
+    """Legacy filename constructor retained for consumers; new writes use a truncated key."""
     suffix = "".join(f"-{t}" for t in (sid_token, sig_token) if t)
     return f"{timestamp}-{slug}{suffix}.md"
 
@@ -520,7 +520,10 @@ def write_capture(
     now = datetime.now(timezone.utc)
     if out_path is None:
         stamp = filename_time or now
-        filename = f"{stamp:%Y-%m-%d-%H%M}-{conversation_slug(transcript.messages)}-{key}.md"
+        # Filename token is a truncated *cosmetic* uniquifier only — dedup/resume
+        # identity always reads the full `key` from the header (see the header-parsing
+        # loop above), never the filename, so truncating here is safe (fleet-config#791).
+        filename = f"{stamp:%Y-%m-%d-%H%M}-{conversation_slug(transcript.messages)}-{key[:8]}.md"
         out_path = out_dir / filename
     header = capture_header(transcript.session_id, transcript.harness, now.isoformat(timespec="seconds"),
                             schema="2", key=key, digest=digest, turns=str(len(transcript.messages)),
