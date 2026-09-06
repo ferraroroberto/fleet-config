@@ -16,6 +16,8 @@ from typing import Tuple
 # docstrings, several of which cite the issue that motivated splitting the
 # suite out).
 _STANDALONE_UNIT_CHECKS: Tuple[Tuple[str, str, str], ...] = (
+    ("pi_policy_coverage", "test_pi_policy_coverage.py",
+     "Pi shared decisions and real extension middleware failure/composition boundaries"),
     ("audit_issue", "test_audit_issue.py",
      "the helper's marker / title-adoption / keep-close logic is testable "
      "on its own"),

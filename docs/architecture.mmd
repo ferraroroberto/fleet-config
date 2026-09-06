@@ -34,6 +34,9 @@ flowchart TB
   INSTALL --> CODEX
   INSTALL -->|"-ConfigureCodexStatusline"| CODEXSTATUS --> CODEX
   INSTALL --> PIHOME
+  PIPOLICY["pi/extensions/policy_hooks.ts\nPi tool_call/tool_result -> bounded hidden Python guards\nversioned allow/block/warn; compression preserves advice"]
+  PIHOME --> PIPOLICY --> HOOKFILES
+  PIPOLICY --> LIBPY
   INSTALL --> COPILOT
   CLAUDE -.->|"compat scan: rules, skills, hooks"| GROK
   AGYSRC["agy/plugins/fleet-context-filter/\nplugin.json + hooks.json — the context-filter\nPreToolUse plugin (#546); drift vs installed copy\nfails the acceptance gate"]
@@ -44,7 +47,7 @@ flowchart TB
   COPILOTHOOKS --> COPILOT
 
   subgraph hooks["hooks/ — junctioned into Claude + Codex; reached by Grok via compat"]
-    LIBPY["_lib.py\nproject detection, stdin-JSON, projects.toml loader, NO_WINDOW spawn flag\nnormalize_payload: Grok camelCase -> Claude shape (#491)\nedit_event: native + Codex patch targets/outcomes (#744)\nSECRET_PATTERNS · gh_json · powershell_exe — one copy per fact (#561)"]
+    LIBPY["_lib.py\nproject detection, stdin-JSON, projects.toml loader, NO_WINDOW spawn flag\nnormalize_payload: Grok camelCase -> Claude shape (#491)\nedit_event: native + Codex patch + Pi targets/outcomes (#744/#746)\nSECRET_PATTERNS · gh_json · powershell_exe — one copy per fact (#561)"]
     PROJECTS["projects.toml\nper-project ports/gates/never-kill ports"]
     RUNHOOK["run-hook.ps1 — Claude Code shim (Git Bash routes through it)"]
     HOOKFILES["pre_commit_no_ai_trailer · secret_scan_guard · safe_kill_guard ·\nvenv_discipline · py_syntax_check · notify_on_idle · session_state ·\nblock_askuserquestion_chief · chief_handover_sessionstart · …"]

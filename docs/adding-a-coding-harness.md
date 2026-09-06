@@ -288,3 +288,41 @@ A measured Grok tool call ran eight `PreToolUse` hooks at roughly 650–1400 ms
 each. That is the same cost Claude pays and is not a regression — but before the
 payload fix it bought nothing at all. Worth knowing before adding the seventh
 harness; reducing it is its own piece of work, not part of onboarding.
+
+## Pi policy conformance
+
+`pi/extensions/policy_hooks.ts` invokes existing Python guards; it contains wiring and transport, not policy regexes. It locates this checkout's `.venv` and `hooks` relative to its resolved extension file, so explicit worktree extensions test the worktree implementation. Existing directory discovery through the Pi extensions junction needs no settings migration; reload/restart an already running Pi session to load the new extension.
+
+Pi 0.84.4's installed `docs/extensions.md`, `docs/custom-provider.md`, and tool declarations establish separate `bash` and `powershell` tools, `write.path/content`, and `edit.path/edits[]`. The extension sends the native event plus `fleet_harness: "pi"`; `_lib.normalize_payload()` is the only translation point. The shared edit view resolves paths against absolute cwd and reads the native `isError` boolean: false is success, true failed, absent/unknown unverified. Claude payload identity and the existing Pi lifecycle envelope stay unchanged.
+
+| Pi tool/event | Shared policies | Outcome |
+| --- | --- | --- |
+| `bash`, `powershell` / `tool_call` | Commit attribution, staged secrets, command/kill safety, venv discipline | Block on policy refusal |
+| `bash` / `tool_call` | Windows backslash paths; cmd syntax and GitHub body quoting | Existing block/advice semantics; never mislabel PowerShell as Bash |
+| `edit`, `write` / `tool_call` | Branch-before-edit; dated docs for writes | Existing launcher/override conditions retained |
+| `edit`, `write` / `tool_result` | Python syntax, hub bypass, browser launch lint | Append visible advisories; never undo an edit or change its error flag |
+| `read`, `grep`, `find`, `ls` | No applicable mutation policy | Pass through |
+| Other/custom tool names | No verified policy mapping | Block explicitly as unsupported |
+
+Each hidden Python child has a 15-second deadline and bounded output. `_lib.allow/block/warn` emit `{fleet_policy: 1, decision: "allow"|"block"|"warn", message}` for Pi only. Unknown event/input/cwd, process failure, spawn failure, timeout, empty/malformed response or oversized response never count as passed enforcement: pre-call failures return Pi's native `{block: true, reason}`, while post-edit failures append an explicit unverified warning. Python syntax errors use the warning channel because the edit already happened. Pre-call advisories are retained by `toolCallId`, attached to that result, and cleared on settlement/shutdown. Compression preserves advisory and non-text blocks in either extension order, and partial result patches preserve `details`, `isError`, and `usage`.
+
+This is heuristic shared-policy coverage, not a shell sandbox. Writes made inside shell commands have no native edit event; user `!`/`!!` commands, questions, delegation, quotas, model routing, capture and scheduling are not certified by this adapter. Grok's existing deny response remains unchanged; this work does not grant Grok input/output rewriting.
+
+Run focused fixtures through the existing interpreter:
+
+```powershell
+& ./.venv/Scripts/python.exe tests/test_pi_policy_coverage.py
+```
+
+Run the installed Pi loop with the committed deterministic test provider (replace `<pi-cli>` with the installed `dist/bundle/cli.js` path):
+
+```powershell
+& ./.venv/Scripts/python.exe tests/probe_pi_policies.py --cli <pi-cli> --synthetic
+& ./.venv/Scripts/python.exe tests/probe_pi_policies.py --cli <pi-cli> --synthetic --policy-first
+```
+
+Observed on 2026-09-06 with Pi 0.84.4 and Node 24.15.0: all six cases passed in both extension orders. Real PowerShell wrote the allowed control; shell and dated-document sentinels were absent after actual refused calls. Native `write` and `edit` produced syntax feedback while retaining successful tool outcomes. A native Bash result was compressed and retained its pre-call advisory. The deterministic provider recorded the exact result content Pi delivered back into model context. The real lifecycle writer reported working, needs-you, then removed the row after the test requested Pi's documented `ctx.shutdown()`. This proves native Pi tool/middleware execution with simulated model responses; it does not prove authenticated model behavior or automatic shutdown in every CLI mode.
+
+The synthetic probe uses an empty temporary Pi home, repo and state, no network, no saved credentials, no replacement tools or hook mocks. Its temporary provider exists only for that invocation. JSONL tool events, received model context, lifecycle observations, and `summary.json` remain in the printed evidence directory; exit zero alone is not a pass. Node loads the actual TypeScript extensions in fixtures and Pi loads them natively; no standalone TypeScript compiler was available on this host.
+
+Authenticated verification remains **not confirmed**: the saved `openai-codex` provider advertised `gpt-5.6-luna`, and `pi auth check --provider openai-codex --model gpt-5.6-luna --json` returned `ready`, but actual requests failed with `Provided authentication token is expired` and zero tool calls. No credential output/copy or billed-provider fallback was used. The supported recovery is interactive `pi`, then `/login` and select OpenAI Codex, per installed `docs/providers.md`. After login, repeat the probe with `--provider openai-codex --model <currently-supported-model>` instead of `--synthetic`; check actual tool evidence, not auth readiness alone.
