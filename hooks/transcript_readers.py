@@ -31,17 +31,28 @@ def native_id(value: object) -> str:
     return value if isinstance(value, str) and re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]{0,199}", value) else ""
 
 
+def _normalize_newlines(text: str) -> str:
+    """CRLF/CR -> LF, so a Windows-stored rollout renders identically to a LF one.
+
+    Applied at the reader boundary so every consumer (capture, index, search)
+    sees the same line endings regardless of which harness or OS wrote the
+    stored transcript (fleet-config#785).
+    """
+    return text.replace("\r\n", "\n").replace("\r", "\n")
+
+
 def text_content(content: object) -> str:
     """Text blocks only; tool, image and reasoning blocks are not conversation."""
     if isinstance(content, str):
-        return content
+        return _normalize_newlines(content)
     if not isinstance(content, list):
         return ""
-    return "\n".join(
+    joined = "\n".join(
         block["text"] for block in content
         if isinstance(block, dict) and block.get("type") in {"text", "Text", "input_text", "output_text"}
         and isinstance(block.get("text"), str)
     )
+    return _normalize_newlines(joined)
 
 
 def read_transcript(path: Path, *, harness: Optional[str] = None, session_id: str = "") -> Transcript:

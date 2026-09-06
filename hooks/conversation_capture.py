@@ -91,8 +91,18 @@ def scan_known_skills(skills_root: Path) -> set:
 
 
 def _skill_path_re(skills_dir: str) -> "re.Pattern":
-    """Regex matching ``<skills_dir>/<skill>/`` in a Read tool path (either slash)."""
-    escaped = re.escape(skills_dir).replace("/", r"[/\\]").replace("\\\\", r"[/\\]")
+    """Regex matching ``<skills_dir>/<skill>/`` in a path (either slash).
+
+    ``skills_dir`` segments are escaped individually and rejoined on a
+    slash-or-backslash class; substituting into the *whole* escaped string in
+    one pass (the previous approach) leaves a literal ``[/\\]`` in the escaped
+    text, and a second blanket substitution over that same string then matches
+    its own inserted backslashes and nests the class again — a real bug that
+    left this regex, and everything reading its match, permanently dead
+    (fleet-config#785).
+    """
+    parts = [p for p in re.split(r"[/\\]+", skills_dir.strip("/\\")) if p]
+    escaped = r"[/\\]".join(re.escape(p) for p in parts)
     return re.compile(escaped + r"[/\\]([^/\\]+)[/\\]")
 
 
@@ -109,11 +119,22 @@ def _text_from_content(content) -> str:
 
 
 def infer_skill_from_transcript(
-    entries: list[dict], known_skills: set, skills_dir: str = ".claude/skills"
+    transcript: "Transcript", known_skills: set, skills_dir: str = ".claude/skills"
 ) -> Optional[str]:
-    """Best-effort skill name from command-name tags or Read tool paths."""
+    """Best-effort skill name from command-name tags, tool paths, or a plain
+    skill-path mention in conversation text.
+
+    The first two passes read Claude-shaped raw ``entries`` (``<command-name>``
+    tags; Read-tool ``file_path``/``path`` values) and are a no-op for a harness
+    whose entries don't carry that shape. The third pass is harness-agnostic: it
+    scans the reader-normalized ``messages`` for a skill-path mention in a user
+    turn's plain text — the shape Codex naturally produces when a skill names
+    itself by path ("Use the journal-daily skill from
+    .claude/skills/journal-daily/SKILL.md."), with no command tags or
+    ``tool_input`` to inspect (fleet-config#785).
+    """
     skill_path_re = _skill_path_re(skills_dir)
-    for entry in entries:
+    for entry in transcript.entries:
         if entry.get("type") != "user":
             continue
         msg = entry.get("message", {})
@@ -125,7 +146,7 @@ def infer_skill_from_transcript(
             if candidate in known_skills:
                 return candidate
     # Second pass: look for Read calls that touched a skill's private dir.
-    for entry in entries:
+    for entry in transcript.entries:
         for field in (entry.get("tool_input", {}), entry.get("message", {})):
             if not isinstance(field, dict):
                 continue
@@ -135,6 +156,15 @@ def infer_skill_from_transcript(
                 candidate = m.group(1)
                 if candidate in known_skills:
                     return candidate
+    # Third pass: a skill-path mention anywhere in plain user-turn text.
+    for role, text in transcript.messages:
+        if role != "user":
+            continue
+        m = skill_path_re.search(text)
+        if m:
+            candidate = m.group(1)
+            if candidate in known_skills:
+                return candidate
     return None
 
 
@@ -370,16 +400,21 @@ def render_markdown(
     header: str = "",
     agent: str = "",
 ) -> str:
+    """Render one capture body. Preamble/command-tag handling is harness-agnostic
+    (fleet-config#785): the same rules strip a Claude skill-loading injection and
+    a Codex "Use the X skill from .../SKILL.md" opener alike, so two captures of
+    the same conversation differ only in the ``agent`` attribute and speaker label.
+    """
     agent = agent or parse_capture_header(header).get("agent", "")
     lines = [description, ""]
     if header:
         lines.extend([header, ""])
     for role, text in messages:
-        if agent == "claude" and role == "user" and _is_preamble(text):
+        if role == "user" and _is_preamble(text):
             continue
         assistant = {"claude": "Claude", "codex": "Codex"}.get(agent, "Assistant")
         label = "**You**" if role == "user" else f"**{assistant}**"
-        clean = _strip_command_tags(text) if agent == "claude" and role == "user" else text
+        clean = _strip_command_tags(text) if role == "user" else text
         if not clean.strip():
             continue
         lines.append(f"{label}: {clean}")
@@ -426,12 +461,28 @@ def _trigger_delayed_index(project_name: str) -> None:
         pass  # fail-open — a failed trigger must never break the Stop hook
 
 
-def write_capture(cfg: CaptureConfig, out_dir: Path, source: Path, transcript: Transcript) -> bool:
+def write_capture(
+    cfg: CaptureConfig, out_dir: Path, source: Path, transcript: Transcript,
+    *, filename_time: Optional[datetime] = None, dry_run: bool = False,
+) -> bool:
     """Atomically update an exact native session; no prompt hashes or short-ID matches.
 
     Search all configured routing folders so later turns cannot strand duplicates
     when the one-shot skill marker has already been consumed. A missing native ID
     uses the source path only for idempotence, never for a resume command.
+
+    ``filename_time`` stamps a *new* capture's filename; it defaults to "now",
+    which is correct for a live Stop-hook write. A backfill of a session that
+    ended in the past passes the transcript's own recorded start instead, so a
+    recovered conversation sorts and files under its real date rather than the
+    recovery run's (fleet-config#785). The header's own ``updated`` attribute is
+    unaffected — it always records when this capture was actually written.
+
+    ``dry_run`` runs the exact same identity/digest lookup and returns whether a
+    write *would* happen, touching no disk — so a caller reporting "would
+    capture" can never disagree with what a real run actually does (a naive
+    dry-run that skips the dedup lookup entirely would report every already-
+    captured session as new, fleet-config#785).
     """
     from conversation_index import conversations_dirs
 
@@ -464,9 +515,12 @@ def write_capture(cfg: CaptureConfig, out_dir: Path, source: Path, transcript: T
                 break
         if out_path:
             break
+    if dry_run:
+        return True
     now = datetime.now(timezone.utc)
     if out_path is None:
-        filename = f"{now:%Y-%m-%d-%H%M}-{conversation_slug(transcript.messages)}-{key}.md"
+        stamp = filename_time or now
+        filename = f"{stamp:%Y-%m-%d-%H%M}-{conversation_slug(transcript.messages)}-{key}.md"
         out_path = out_dir / filename
     header = capture_header(transcript.session_id, transcript.harness, now.isoformat(timespec="seconds"),
                             schema="2", key=key, digest=digest, turns=str(len(transcript.messages)),
@@ -532,8 +586,8 @@ def main() -> int:
         elif not marker_is_current(written_at, transcript):
             logger.warning("Capture routing: ignored %r marker predating this session", skill)
             skill = None
-        if not skill and transcript.harness == "claude":
-            skill = infer_skill_from_transcript(transcript.entries, known, cfg.skills_dir)
+        if not skill:
+            skill = infer_skill_from_transcript(transcript, known, cfg.skills_dir)
         out_dir = skills_root / skill / "conversations" if skill else out_dir / "_archive"
     try:
         if write_capture(cfg, out_dir, source, transcript):

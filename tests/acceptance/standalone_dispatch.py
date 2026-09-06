@@ -201,6 +201,12 @@ _STANDALONE_UNIT_CHECKS: Tuple[Tuple[str, str, str], ...] = (
      "content signature surviving a resume, the index.json twin, and FTS "
      "build/query/prune -- runs against synthetic captures in a temp tree "
      "(fleet-config#586)"),
+    ("conversation_backfill", "test_conversation_backfill.py",
+     "recovering a stored transcript no live Stop ever captured -- Codex "
+     "transcript-inference routing with no marker, session-start filename "
+     "stamping instead of datetime.now(), idempotent re-runs, and scoped "
+     "discovery across the Claude/Codex transcript stores -- runs against "
+     "synthetic transcripts in a temp tree (fleet-config#785)"),
     ("fleet_private_backup", "test_fleet_private_backup.py",
      "the daily backup engine -- three-layer selection over a real git repo, "
      "junction traversal, hardlink dedup proven by st_nlink, retention, the "
