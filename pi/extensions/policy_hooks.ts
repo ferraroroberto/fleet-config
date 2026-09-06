@@ -1,8 +1,8 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { spawn } from "node:child_process";
 import { realpathSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { dirname, isAbsolute, join } from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 // Transport and wiring only. Policy and native payload translation live in Python.
 const ROOT = join(dirname(realpathSync(fileURLToPath(import.meta.url))), "../..");
@@ -15,6 +15,20 @@ const EDIT = ["docs_dated_filename_guard", "branch_before_edit_guard"];
 const POST_EDIT = ["py_syntax_check", "hub_bypass_warn", "browser_stealth_lint"];
 const READ_ONLY = new Set(["read", "grep", "find", "ls"]);
 type Decision = { fleet_policy: 1; decision: "allow" | "block" | "warn"; message: string };
+
+async function policyPayload(event: any, cwd: string, sessionId: string): Promise<string> {
+	let resolvedPath: string | undefined;
+	if (["edit", "write"].includes(event.toolName)) {
+		// Pi write/edit call this exact packaged resolver. Its aliases (@, ~,
+		// file URLs, Unicode spaces, Windows shell paths) must not be reimplemented.
+		// Missing package/API support is unavailable enforcement, never a guessed path.
+		const { getPackageDir } = await import("@earendil-works/pi-coding-agent");
+		const resolver = await import(pathToFileURL(join(getPackageDir(), "dist/core/tools/path-utils.js")).href);
+		resolvedPath = resolver.resolveToCwd(event.input.path, cwd);
+		if (typeof resolvedPath !== "string" || !isAbsolute(resolvedPath)) throw new Error("unknown target");
+	}
+	return JSON.stringify({ ...event, fleet_harness: "pi", fleet_resolved_path: resolvedPath, cwd, session_id: sessionId });
+}
 
 export function runGuard(name: string, payload: string): Promise<Decision> {
 	return new Promise((resolve) => {
@@ -71,7 +85,9 @@ export default function (pi: ExtensionAPI) {
 			: event.toolName === "powershell" ? SHELL
 			: ["edit", "write"].includes(event.toolName) ? EDIT : null;
 		if (!guards) return { block: true, reason: "Fleet policy: unsupported tool; enforcement unavailable" };
-		const payload = JSON.stringify({ ...event, fleet_harness: "pi", cwd: ctx.cwd, session_id: ctx.sessionManager.getSessionId() });
+		let payload: string;
+		try { payload = await policyPayload(event, ctx.cwd, ctx.sessionManager.getSessionId()); }
+		catch { return { block: true, reason: "Fleet policy: target resolution unavailable; not verified" }; }
 		const warnings: string[] = [];
 		for (const guard of guards) {
 			const result = await runGuard(guard, payload);
@@ -84,11 +100,13 @@ export default function (pi: ExtensionAPI) {
 		const warnings = pending.get(event.toolCallId) ?? [];
 		pending.delete(event.toolCallId);
 		if (["edit", "write"].includes(event.toolName)) {
-			const payload = JSON.stringify({ ...event, fleet_harness: "pi", cwd: ctx.cwd, session_id: ctx.sessionManager.getSessionId() });
-			for (const guard of POST_EDIT) {
-				const result = await runGuard(guard, payload);
-				if (result.decision !== "allow") warnings.push(result.message);
-			}
+			try {
+				const payload = await policyPayload(event, ctx.cwd, ctx.sessionManager.getSessionId());
+				for (const guard of POST_EDIT) {
+					const result = await runGuard(guard, payload);
+					if (result.decision !== "allow") warnings.push(result.message);
+				}
+			} catch { warnings.push("target resolution unavailable; not verified"); }
 		}
 		if (warnings.length) {
 			// A partial patch preserves details/isError/usage and every original block.

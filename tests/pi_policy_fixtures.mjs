@@ -72,6 +72,9 @@ for (const extensions of [[policy,compression,lifecycle],[compression,lifecycle,
  const next=await emit('tool_result',{...event,toolCallId:'b',content:[],isError:false});
  assert.equal(next.content.length,0,'warning leaked across call ids');
  response='exit';
+ const unresolved=await emit('tool_call',{...event,toolName:'edit',input:{path:null}});
+ assert.equal(unresolved.block,true);
+ assert.match(unresolved.reason,/target resolution unavailable/);
  const failed=await emit('tool_result',{...event,toolName:'edit',content:[{type:'text',text:'original'}],isError:true});
  assert.equal(failed.content[0].text,'original');
  assert.equal(failed.isError,true);

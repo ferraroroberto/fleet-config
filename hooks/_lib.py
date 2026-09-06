@@ -331,7 +331,13 @@ def normalize_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
             "tool_use_id": payload.get("toolCallId"), AGENT_HINT_KEY: "pi",
         }
         if field == "path":
-            out["tool_input"]["file_path"] = args["path"]
+            # Pi's own write/edit resolver supplies the target. Raw aliases are
+            # not filesystem paths (e.g. @docs/... writes docs/..., #746).
+            resolved = payload.get("fleet_resolved_path")
+            if (not isinstance(resolved, str) or "\0" in resolved
+                    or not Path(resolved).is_absolute()):
+                raise ValueError("Pi resolved edit target unavailable")
+            out["tool_input"]["file_path"] = resolved
         if event == "tool_result":
             # A missing flag is unknown, never a successful post-edit event.
             flag = payload.get("isError")

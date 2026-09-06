@@ -15,8 +15,13 @@ import _lib
 
 
 def payload(tool='powershell', event='tool_call', **args):
-    return {'fleet_harness': 'pi', 'type': event, 'toolName': tool,
+    data = {'fleet_harness': 'pi', 'type': event, 'toolName': tool,
             'toolCallId': 'test', 'input': args, 'cwd': str(ROOT), 'session_id': 'synthetic'}
+    if tool in {'edit', 'write'}:
+        # Fixture paths are ordinary relative/absolute forms. Native alias
+        # resolution itself is exercised by probe_pi_policies in installed Pi.
+        data['fleet_resolved_path'] = str(ROOT / args.get('path', ''))
+    return data
 
 
 class PiPolicies(unittest.TestCase):
@@ -44,6 +49,16 @@ class PiPolicies(unittest.TestCase):
         malformed = payload('write', path='bad\0path')
         with self.assertRaises(ValueError):
             _lib.normalize_payload(malformed)
+
+    def test_native_target_evidence_is_required(self):
+        raw = payload('write', path='@docs/2026-09-06-sentinel.md')
+        raw['fleet_resolved_path'] = str(ROOT / 'docs/2026-09-06-sentinel.md')
+        normalized = _lib.normalize_payload(raw)
+        self.assertEqual(_lib.edit_event(normalized).targets[0].path, Path(raw['fleet_resolved_path']))
+        for unknown in [None, '', 'relative.py']:
+            raw['fleet_resolved_path'] = unknown
+            with self.assertRaises(ValueError):
+                _lib.normalize_payload(raw)
         malformed = payload(command='echo harmless'); malformed['cwd'] = 'relative'
         with self.assertRaises(ValueError):
             _lib.normalize_payload(malformed)
@@ -82,6 +97,7 @@ class PiPolicies(unittest.TestCase):
             self.assertNotIn('SyntaxError', result['message'])
             bad = directory / 'browser.py'
             raw['input']['path'] = str(bad)
+            raw['fleet_resolved_path'] = str(bad)
             for name, content in [
                 ('hub_bypass_warn', 'import subprocess\nsubprocess.run(["claude", "-p", "x"])\n'),
                 ('browser_stealth_lint', 'ctx = p.chromium.launch_persistent_context(user_data_dir="x")\n'),
