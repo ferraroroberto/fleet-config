@@ -7,18 +7,20 @@ from contextlib import nullcontext
 import json
 import os
 from pathlib import Path
+import signal
 import subprocess
 import sys
 import tempfile
 import threading
 import time
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "skills" / "_lib"))
 import scheduled_runner as runner
 from runner_adapters import ClaudeAdapter, CodexAdapter
+import process_scope
 
 
 def fake_run(events, adapter, child_exit=0, suffix=""):
@@ -396,6 +398,210 @@ class ScheduledRunnerTests(unittest.TestCase):
         finally:
             unrelated.kill()
             unrelated.wait(timeout=10)
+
+
+class PosixScopeTests(unittest.TestCase):
+    @patch.object(process_scope.signal, "SIGKILL", 9, create=True)
+    def test_launch_and_group_termination_contract(self):
+        child = Mock(pid=12345)
+        with patch.object(process_scope.sys, "platform", "linux"), patch.object(process_scope.subprocess, "Popen", return_value=child) as popen:
+            scope = process_scope.ProcessScope()
+            self.assertIs(scope.launch(["synthetic-child"], env={"KEY": "value"}), child)
+        self.assertIsNone(scope.job)
+        self.assertEqual(popen.call_args.args, (["synthetic-child"],))
+        self.assertTrue(popen.call_args.kwargs["start_new_session"])
+        self.assertEqual(popen.call_args.kwargs["stdin"], subprocess.DEVNULL)
+        self.assertEqual(popen.call_args.kwargs["env"], {"KEY": "value"})
+        with patch.object(process_scope.os, "killpg", create=True, side_effect=[None, ProcessLookupError]) as killpg:
+            self.assertTrue(scope.terminate())
+        self.assertEqual(killpg.call_args_list[0].args, (child.pid, process_scope.signal.SIGKILL))
+        self.assertEqual(killpg.call_args_list[1].args, (child.pid, 0))
+        with patch.object(process_scope.os, "killpg", create=True, side_effect=PermissionError):
+            self.assertIsNone(scope.active())
+            self.assertFalse(scope.terminate())
+        scope.close()
+
+
+@unittest.skipUnless(sys.platform == "win32", "Windows job ownership")
+class WindowsScopeTests(unittest.TestCase):
+    def setUp(self):
+        # The acceptance dispatcher may itself use a base interpreter. Always
+        # exercise this checkout's existing venv redirector, including the
+        # scope's bootstrap; a base-only run cannot prove this regression.
+        venv = ROOT / ".venv"
+        self.assertTrue((venv / "pyvenv.cfg").is_file(), "ownership proof requires the existing project venv")
+        executable = venv / "Scripts" / "python.exe"
+        self.assertTrue(executable.is_file())
+        executable_patch = patch.object(process_scope.sys, "executable", str(executable))
+        executable_patch.start()
+        self.addCleanup(executable_patch.stop)
+        self.api = ctypes.WinDLL("kernel32", use_last_error=True)
+        for name, arguments, result in (
+            ("OpenProcess", [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD], wintypes.HANDLE),
+            ("IsProcessInJob", [wintypes.HANDLE, wintypes.HANDLE, ctypes.POINTER(wintypes.BOOL)], wintypes.BOOL),
+            ("WaitForSingleObject", [wintypes.HANDLE, wintypes.DWORD], wintypes.DWORD),
+            ("CloseHandle", [wintypes.HANDLE], wintypes.BOOL),
+        ):
+            function = getattr(self.api, name)
+            function.argtypes, function.restype = arguments, result
+        self.handles = []
+
+    def tearDown(self):
+        for handle in self.handles:
+            self.api.CloseHandle(handle)
+
+    def retain(self, pid):
+        handle = self.api.OpenProcess(0x100000 | 0x1000, False, pid)
+        self.assertTrue(handle, f"cannot retain owned process {pid}")
+        self.handles.append(handle)
+        return handle
+
+    def assert_member(self, handle, scope):
+        member = wintypes.BOOL()
+        self.assertTrue(self.api.IsProcessInJob(handle, scope.job.handle, ctypes.byref(member)))
+        self.assertTrue(member.value, "venv base interpreter escaped the exact private job")
+
+    def launch_compatible(self, scope, command):
+        # Keep the repro executable against the pre-fix API as well.
+        if hasattr(scope, "launch"):
+            return scope.launch(command)
+        child = subprocess.Popen(scope.command(command), stdin=subprocess.PIPE,
+                                 stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                 creationflags=subprocess.CREATE_NO_WINDOW)
+        scope.start(child)
+        return child
+
+    def test_delayed_venv_assignment_contains_launcher_bootstrap_and_provider(self):
+        self.assertNotEqual(Path(sys.executable), Path(sys._base_executable),
+                            "run the ownership regression with the real venv redirector")
+        original = process_scope._WindowsJob.assign
+        with tempfile.TemporaryDirectory(prefix="scope_delay_") as folder:
+            ready = Path(folder) / "pids"
+            command = [sys.executable, "-I", "-c",
+                       f"import os,time;from pathlib import Path;Path({str(ready)!r}).write_text(f'{{os.getpid()}} {{os.getppid()}}');time.sleep(2)"]
+            scope = process_scope.ProcessScope()
+            child = None
+            def delayed(job, process):
+                self.retain(process.pid)
+                time.sleep(.5)
+                original(job, process)
+            try:
+                with patch.object(process_scope._WindowsJob, "assign", delayed):
+                    child = self.launch_compatible(scope, command)
+                deadline = time.monotonic() + 3
+                while not ready.exists() and time.monotonic() < deadline:
+                    time.sleep(.01)
+                self.assertTrue(ready.exists())
+                provider, bootstrap = map(int, ready.read_text().split())
+                self.retain(provider)
+                self.retain(bootstrap)
+                for handle in self.handles:
+                    self.assert_member(handle, scope)
+                self.assertEqual(child.wait(timeout=5), 0)
+                for handle in self.handles:
+                    self.assertEqual(self.api.WaitForSingleObject(handle, 2000), 0)
+                deadline = time.monotonic() + 2
+                while scope.active() != 0 and time.monotonic() < deadline:
+                    time.sleep(.01)
+                self.assertEqual(scope.active(), 0)
+                print("500ms venv assignment: launcher/bootstrap/provider exact-job membership=True; normal exit confirmed", flush=True)
+            finally:
+                # Pre-fix children naturally finish; do not mistake empty job
+                # accounting for proof that the escaped process has stopped.
+                if child is not None:
+                    child.wait(timeout=6)
+                    for stream in (child.stdin, child.stdout, child.stderr):
+                        if stream is not None:
+                            stream.close()
+                scope.close()
+
+    def test_launch_failure_and_interrupt_collect_every_created_process(self):
+        for stage in ("assign", "release", "release_written", "resume", "interrupt_assign", "interrupt_release"):
+            with self.subTest(stage=stage), tempfile.TemporaryDirectory(prefix="scope_abort_") as folder:
+                marker = Path(folder) / "provider_started"
+                command = [sys.executable, "-I", "-c", f"from pathlib import Path;Path({str(marker)!r}).touch()"]
+                scope = process_scope.ProcessScope()
+                original_assign = process_scope._WindowsJob.assign
+                original_release = scope._release
+                captured = []
+                error = KeyboardInterrupt if stage.startswith("interrupt") else OSError
+                def assign(job, process):
+                    captured.append(process)
+                    self.retain(process.pid)
+                    time.sleep(.5)
+                    if stage in ("assign", "interrupt_assign"):
+                        raise error("injected assignment failure")
+                    original_assign(job, process)
+                    self.assert_member(self.handles[-1], scope)
+                def release():
+                    if stage == "release_written":
+                        original_release()
+                    if stage in ("release", "release_written", "interrupt_release"):
+                        raise error("injected release failure")
+                    original_release()
+                context = (patch.object(scope.job, "resume", side_effect=OSError("injected resume failure"))
+                           if stage == "resume" else nullcontext())
+                with patch.object(process_scope._WindowsJob, "assign", assign), patch.object(scope, "_release", release), context:
+                    with self.assertRaises(error):
+                        scope.launch(command)
+                self.assertEqual(len(captured), 1)
+                self.assertIsNotNone(captured[0].poll())
+                self.assertEqual(self.api.WaitForSingleObject(self.handles[-1], 0), 0)
+                self.assertFalse(marker.exists(), "provider ran before a successful release")
+                self.assertTrue(all(stream.closed for stream in (captured[0].stdin, captured[0].stdout, captured[0].stderr)))
+        print("assign/release/resume failure and launch interrupts: provider absent; retained launch handles terminal", flush=True)
+
+    def test_interrupt_after_resume_retains_and_stops_descendants(self):
+        with tempfile.TemporaryDirectory(prefix="scope_resumed_") as folder:
+            ready = Path(folder) / "pids"
+            command = [sys.executable, "-I", "-c",
+                       f"import os,time;from pathlib import Path;Path({str(ready)!r}).write_text(f'{{os.getpid()}} {{os.getppid()}}');time.sleep(5)"]
+            scope = process_scope.ProcessScope()
+            original_resume = scope.job.resume
+            def resume(process):
+                self.retain(process.pid)
+                original_resume(process)
+                deadline = time.monotonic() + 3
+                while not ready.exists() and time.monotonic() < deadline:
+                    time.sleep(.01)
+                self.assertTrue(ready.exists())
+                for pid in map(int, ready.read_text().split()):
+                    self.assert_member(self.retain(pid), scope)
+                raise KeyboardInterrupt("after native resume")
+            with patch.object(scope.job, "resume", resume):
+                with self.assertRaises(KeyboardInterrupt):
+                    scope.launch(command)
+            for handle in self.handles:
+                self.assertEqual(self.api.WaitForSingleObject(handle, 2000), 0)
+
+    def test_unqueryable_launch_cleanup_is_unknown_even_when_close_kills(self):
+        scope = process_scope.ProcessScope()
+        def release():
+            self.retain(scope.process.pid)
+            raise KeyboardInterrupt("before release")
+        with patch.object(scope, "_release", release), patch.object(scope.job, "active", return_value=None):
+            with self.assertRaisesRegex(RuntimeError, "cleanup unknown"):
+                scope.launch([sys.executable, "-I", "-c", "raise SystemExit(0)"])
+        self.assertEqual(self.api.WaitForSingleObject(self.handles[-1], 2000), 0)
+
+    def test_sigint_between_native_creation_and_popen_return_is_collected(self):
+        scope = process_scope.ProcessScope()
+        original_popen = subprocess.Popen
+        original_handler = signal.getsignal(signal.SIGINT)
+        with tempfile.TemporaryDirectory(prefix="scope_create_interrupt_") as folder:
+            marker = Path(folder) / "provider_started"
+            command = [sys.executable, "-I", "-c", f"from pathlib import Path;Path({str(marker)!r}).touch()"]
+            def create_then_interrupt(*args, **kwargs):
+                child = original_popen(*args, **kwargs)
+                self.retain(child.pid)
+                signal.raise_signal(signal.SIGINT)
+                return child
+            with patch.object(process_scope.subprocess, "Popen", side_effect=create_then_interrupt):
+                with self.assertRaises(KeyboardInterrupt):
+                    scope.launch(command)
+            self.assertIs(signal.getsignal(signal.SIGINT), original_handler)
+            self.assertEqual(self.api.WaitForSingleObject(self.handles[-1], 0), 0)
+            self.assertFalse(marker.exists())
 
 
 if __name__ == "__main__":

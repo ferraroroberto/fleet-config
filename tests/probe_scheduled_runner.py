@@ -1,4 +1,4 @@
-"""Opt-in native smoke; never run by the offline acceptance gate."""
+"""Opt-in provider smoke or model-free native ownership conformance."""
 from __future__ import annotations
 
 import argparse
@@ -16,10 +16,29 @@ from scheduled_runner import main as run_scheduled
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--harness", required=True, choices=("claude", "codex"))
-    parser.add_argument("--model", required=True)
+    parser.add_argument("--ownership-only", action="store_true", help="run harmless native process controls without a provider")
+    parser.add_argument("--harness", choices=("claude", "codex"))
+    parser.add_argument("--model")
     parser.add_argument("--effort", default="low")
     args = parser.parse_args()
+    if args.ownership_only:
+        if args.harness or args.model:
+            parser.error("--ownership-only cannot select a provider/model")
+        import unittest
+        from test_scheduled_runner import PosixScopeTests, ScheduledRunnerTests, WindowsScopeTests
+        if sys.platform != "win32":
+            parser.error("the native ownership probe requires Windows and its real venv")
+        loader = unittest.TestLoader()
+        suite = unittest.TestSuite([
+            loader.loadTestsFromTestCase(WindowsScopeTests),
+            loader.loadTestsFromTestCase(PosixScopeTests),
+            ScheduledRunnerTests("test_cancellation_after_parent_exit_does_not_wait_for_descendant_eof"),
+            ScheduledRunnerTests("test_orphan_pipe_matrix_and_unconfirmed_cleanup_are_bounded"),
+        ])
+        print("Native ownership conformance: real venv; no provider/model calls", flush=True)
+        return 0 if unittest.TextTestRunner(verbosity=2).run(suite).wasSuccessful() else 1
+    if not args.harness or not args.model:
+        parser.error("provider smoke requires --harness and --model")
     root = Path(tempfile.mkdtemp(prefix=f"scheduled_smoke_{args.harness}_"))
     run_git(["init", "-q", str(root)], check=True)
     skill = root / ".agents" / "skills" / "scheduled-smoke" / "SKILL.md"

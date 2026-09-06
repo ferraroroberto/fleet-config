@@ -828,18 +828,7 @@ def run_process(
     scope = ProcessScope()
     process = None
     try:
-        process = subprocess.Popen(
-            scope.command(list(command)),
-            stdin=subprocess.PIPE if sys.platform == "win32" else subprocess.DEVNULL,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            bufsize=0,
-            env=child_env,
-            creationflags=NO_WINDOW,
-            start_new_session=sys.platform != "win32",
-        )
-        process._scheduled_scope = scope
-        scope.start(process)
+        process = scope.launch(list(command), env=child_env)
     except BaseException:
         scope.close()
         if process is not None:
