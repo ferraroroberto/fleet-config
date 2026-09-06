@@ -18,7 +18,7 @@ Shared issue/audit workflows bind delegation, result collection and questions to
 
 Native Claude and Codex quota measurements now share a [versioned snapshot contract](docs/quota-snapshots.md). Claude publishes from its existing statusline; Codex refreshes on demand through its native account method. Sources retain their own windows, provenance and freshness, with unknown account scopes explicit and the legacy Claude cache preserved.
 
-Scheduled skills can now explicitly select Claude or Codex through one [shared runner](docs/scheduled-runners.md), with terminal evidence, delivery checks and owned-process cancellation. Existing Claude launchers remain unchanged; Pi/Grok and Codex delegated-child execution remain unverified.
+Scheduled skills can now explicitly select Claude or Codex through one [shared runner](docs/scheduled-runners.md), with terminal evidence, delivery checks and owned-process cancellation. Windows launchers are created suspended so the venv's base interpreter inherits ownership before it can run; `tests/probe_scheduled_runner.py --ownership-only` checks the boundary without model calls. Existing Claude launchers remain unchanged; Pi/Grok and Codex delegated-child execution remain unverified.
 
 Opted-in conversations now normalize native Claude/Codex stored transcripts before shared capture and search. Exact harness/session identity keeps unrelated equal prompts separate and preserves Codex fork lineage; [capture setup, reader contract and native evidence](docs/conversation-capture.md) document the explicit Codex opt-in and current limits.
 

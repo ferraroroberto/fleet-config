@@ -1,14 +1,16 @@
 """Owned scheduled process scope and nonblocking pipe reads (stdlib only).
 
-Windows starts a waiting Python bootstrap, assigns it to a private kill-on-close
-job, then releases the native command. Descendants remain in that job after the
-bootstrap/native parent exits. Assignment failure never releases the command.
+Windows creates a suspended launcher, assigns it to a private kill-on-close job,
+then resumes it. Even a venv redirector cannot create children before ownership.
+The stdin release is prepared while suspended; a failed release cannot run code.
 """
 from __future__ import annotations
 
 import codecs
+from contextlib import contextmanager
 import ctypes
 from ctypes import wintypes
+import logging
 import os
 from pathlib import Path
 import signal
@@ -23,6 +25,38 @@ from no_window import NO_WINDOW
 
 TERMINATE_TIMEOUT_SECONDS = 2.0
 DRAIN_TIMEOUT_SECONDS = 1.0
+logger = logging.getLogger(__name__)
+
+
+@contextmanager
+def _defer_launch_interrupt():
+    # A Ctrl+C inside Popen can otherwise raise after CreateProcess succeeds
+    # but before its object reaches the owner. Delay only this short Windows
+    # creation window, then deliver the original handler inside launch's try.
+    if sys.platform != "win32" or threading.current_thread() is not threading.main_thread():
+        yield
+        return
+    handler = signal.getsignal(signal.SIGINT)
+    if not callable(handler):
+        yield
+        return
+    pending = []
+    def remember(signum, frame):
+        pending[:] = [(signum, frame)]
+    signal.signal(signal.SIGINT, remember)
+    try:
+        yield
+    finally:
+        signal.signal(signal.SIGINT, handler)
+        if pending:
+            handler(*pending[0])
+
+
+class _ThreadEntry(ctypes.Structure):
+    _fields_ = [("size", wintypes.DWORD), ("usage", wintypes.DWORD),
+                ("tid", wintypes.DWORD), ("pid", wintypes.DWORD),
+                ("base_priority", wintypes.LONG), ("delta_priority", wintypes.LONG),
+                ("flags", wintypes.DWORD)]
 
 
 class _BasicLimits(ctypes.Structure):
@@ -67,6 +101,13 @@ class _WindowsJob:
             "QueryInformationJobObject": ([wintypes.HANDLE, ctypes.c_int, ctypes.c_void_p, wintypes.DWORD, ctypes.c_void_p], wintypes.BOOL),
             "TerminateJobObject": ([wintypes.HANDLE, wintypes.UINT], wintypes.BOOL),
             "CloseHandle": ([wintypes.HANDLE], wintypes.BOOL),
+            "CreateToolhelp32Snapshot": ([wintypes.DWORD, wintypes.DWORD], wintypes.HANDLE),
+            "Thread32First": ([wintypes.HANDLE, ctypes.POINTER(_ThreadEntry)], wintypes.BOOL),
+            "Thread32Next": ([wintypes.HANDLE, ctypes.POINTER(_ThreadEntry)], wintypes.BOOL),
+            "OpenThread": ([wintypes.DWORD, wintypes.BOOL, wintypes.DWORD], wintypes.HANDLE),
+            "GetProcessIdOfThread": ([wintypes.HANDLE], wintypes.DWORD),
+            "ResumeThread": ([wintypes.HANDLE], wintypes.DWORD),
+            "WaitForSingleObject": ([wintypes.HANDLE, wintypes.DWORD], wintypes.DWORD),
         }
         for name, (args, result) in signatures.items():
             function = getattr(self.api, name)
@@ -91,8 +132,49 @@ class _WindowsJob:
             return None
         return int(info.active)
 
+    def resume(self, process: subprocess.Popen) -> None:
+        # Popen closes CreateProcess's initial thread handle. Its suspended
+        # process is retained and has exactly one thread; never resume a thread
+        # selected by name or by the PID of an exited process.
+        snapshot = self.api.CreateToolhelp32Snapshot(4, 0)  # TH32CS_SNAPTHREAD
+        if snapshot == ctypes.c_void_p(-1).value:
+            raise ctypes.WinError(ctypes.get_last_error())
+        thread_ids = []
+        try:
+            entry = _ThreadEntry()
+            entry.size = ctypes.sizeof(entry)
+            found = self.api.Thread32First(snapshot, ctypes.byref(entry))
+            while found:
+                if entry.pid == process.pid:
+                    thread_ids.append(entry.tid)
+                found = self.api.Thread32Next(snapshot, ctypes.byref(entry))
+            if ctypes.get_last_error() != 18:  # ERROR_NO_MORE_FILES
+                raise ctypes.WinError(ctypes.get_last_error())
+        finally:
+            self.api.CloseHandle(snapshot)
+        if process.poll() is not None or len(thread_ids) != 1:
+            raise OSError("suspended launcher does not have one live primary thread")
+        thread = self.api.OpenThread(0x0002 | 0x0040, False, thread_ids[0])
+        if not thread:
+            raise ctypes.WinError(ctypes.get_last_error())
+        try:
+            if self.api.GetProcessIdOfThread(thread) != process.pid:
+                raise OSError("suspended thread ownership could not be confirmed")
+            previous = self.api.ResumeThread(thread)
+            if previous == 0xFFFFFFFF:
+                raise ctypes.WinError(ctypes.get_last_error())
+            if previous != 1:
+                raise OSError(f"unexpected launcher suspend count: {previous}")
+        finally:
+            self.api.CloseHandle(thread)
+
     def terminate(self) -> bool:
         return bool(self.api.TerminateJobObject(self.handle, 1))
+
+    def wait_process(self, process: subprocess.Popen) -> bool:
+        # GetExitCodeProcess/Popen.poll can expose an exit code before the
+        # process handle is signaled. Observe the actual terminal handle too.
+        return self.api.WaitForSingleObject(int(process._handle), int(TERMINATE_TIMEOUT_SECONDS * 1000)) == 0
 
     def close(self) -> None:
         if self.handle is not None:
@@ -108,28 +190,60 @@ class ProcessScope:
         self.process: Optional[subprocess.Popen] = None
         self._lock = threading.Lock()
 
-    def command(self, command: list[str]) -> list[str]:
-        if self.job is None:
-            return command
-        return [sys.executable, "-I", str(Path(__file__).resolve()), "--bootstrap", *command]
+    def launch(self, command: list[str], *, env: Optional[dict[str, str]] = None) -> subprocess.Popen:
+        """Create and release one owned process; callers cannot launch it early."""
+        if self.process is not None:
+            raise RuntimeError("process scope already used")
+        argv = command if self.job is None else [
+            sys.executable, "-I", str(Path(__file__).resolve()), "--bootstrap", *command]
+        try:
+            with _defer_launch_interrupt():
+                self.process = subprocess.Popen(
+                    argv, stdin=subprocess.PIPE if self.job is not None else subprocess.DEVNULL,
+                    stdout=subprocess.PIPE, stderr=subprocess.PIPE, bufsize=0, env=env,
+                    creationflags=NO_WINDOW | (0x00000004 if self.job is not None else 0),
+                    start_new_session=self.job is None,
+                )
+            self.process._scheduled_scope = self
+            if self.job is not None:
+                self.job.assign(self.process)
+                self._release()
+                self.job.resume(self.process)
+            return self.process
+        except BaseException as error:
+            confirmed = self._abort_launch()
+            logger.info("scoped launch aborted: cleanup=%s", "confirmed" if confirmed else "unknown")
+            if not confirmed:
+                raise RuntimeError("scoped launch failed; owned cleanup unknown") from error
+            raise
 
-    def start(self, process: subprocess.Popen) -> None:
-        self.process = process
-        if self.job is not None:
-            try:
-                self.job.assign(process)
-                assert process.stdin is not None
-                process.stdin.write(b"1")
-                process.stdin.close()
-            except BaseException:
-                # Assignment failure leaves the bootstrap waiting. If release
-                # itself failed, the job still owns any command already started.
-                try:
-                    process.kill()
-                    process.wait(timeout=TERMINATE_TIMEOUT_SECONDS)
-                finally:
-                    self.close()
-                raise
+    def _release(self) -> None:
+        assert self.process is not None and self.process.stdin is not None
+        if self.process.stdin.write(b"1") != 1:
+            raise OSError("bootstrap release was not written")
+        self.process.stdin.close()
+
+    def _abort_launch(self) -> bool:
+        # An unassigned launcher is still suspended and has no descendants.
+        # A resumed launcher and all its ordinary children are owned by the job.
+        confirmed = True
+        try:
+            if self.process is not None:
+                confirmed = self.terminate()
+                if self.process.poll() is None:
+                    self.process.kill()
+                self.process.wait(timeout=TERMINATE_TIMEOUT_SECONDS)
+                if self.job is not None:
+                    confirmed = self.job.wait_process(self.process) and confirmed
+        except (OSError, subprocess.TimeoutExpired, KeyboardInterrupt):
+            confirmed = False
+        finally:
+            self.close()
+            if self.process is not None:
+                for stream in (self.process.stdin, self.process.stdout, self.process.stderr):
+                    if stream is not None:
+                        stream.close()
+        return confirmed
 
     def active(self) -> Optional[int]:
         if self.job is not None:
