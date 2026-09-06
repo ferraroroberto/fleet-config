@@ -19,6 +19,10 @@ The shipped Codex `Stop` hook invokes the shared capture entry point. It is iner
 
 Before opting in, keep the selected capture directories, generated `index.md`/`index.json` and `.search.db` in the adopting project's ignored private storage. For flat routing, ignore `conversations/`; for skill routing, ignore each skill's `conversations/` and the archive. This engine never stages, publishes, approves curated memory, installs hooks or alters another project's capture preference. A disposable proof can override only its process's `CLAUDE_HOOKS_PROJECTS_TOML` and `CLAUDE_HOOKS_STATE_DIR` to temporary locations.
 
+## Skill routing and marker provenance
+
+Under `capture_routing = "skills"` a skill's Step 0 writes its own name to the project's `active_marker`, and that same session's `Stop` hook reads, deletes and routes on it one turn later. The marker carries no identity, so a session that is interrupted or killed before its `Stop` fires leaves one on disk: whatever session stops next would otherwise adopt it and file an unrelated transcript under that skill (#784). The marker is therefore trusted only when its mtime is at or after this transcript's earliest recorded timestamp — a marker predating the session cannot have been written by it. A source stamping nothing at all falls back to a 12-hour age bound. A rejected marker is still deleted, never left to mislead a third session, and routing continues exactly as if it had been absent: Claude's transcript inference, then the shared `_archive`.
+
 ## Readers and identity
 
 | Source | Supported interpretation | Identity and lineage |

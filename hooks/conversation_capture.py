@@ -18,7 +18,7 @@ import subprocess
 import sys
 import tempfile
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Optional
 
@@ -30,6 +30,12 @@ logger = logging.getLogger("conversation_capture")
 
 # Tags Claude Code embeds in user messages when a skill is invoked.
 _CMD_NAME_RE = re.compile(r"<command-name>/([^<]+)</command-name>")
+
+# Marker provenance (fleet-config#784). The marker and the transcript are stamped
+# by the same host clock, so only a token skew allowance is needed; the max age is
+# the weaker fallback used when a source records no timestamp at all.
+_MARKER_SKEW_SECONDS = 5
+_MARKER_MAX_AGE_SECONDS = 12 * 3600
 
 
 # --------------------------------------------------------------- capture config
@@ -130,6 +136,46 @@ def infer_skill_from_transcript(
                 if candidate in known_skills:
                     return candidate
     return None
+
+
+def transcript_start_time(entries: list[dict]) -> Optional[datetime]:
+    """Earliest wall-clock timestamp a native source recorded, or ``None``.
+
+    Both readers' sources stamp entries ISO-8601 UTC, but not every entry: Claude
+    interleaves bookkeeping records that carry none, so take the minimum rather
+    than trusting the first entry to be stamped.
+    """
+    earliest = None
+    for entry in entries:
+        raw = entry.get("timestamp")
+        if not isinstance(raw, str) or not raw:
+            continue
+        try:
+            stamped = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+        except ValueError:
+            continue
+        if stamped.tzinfo is None:
+            stamped = stamped.replace(tzinfo=timezone.utc)
+        if earliest is None or stamped < earliest:
+            earliest = stamped
+    return earliest
+
+
+def marker_is_current(written_at: float, transcript: Transcript) -> bool:
+    """Whether the marker could have been written by the session ending now.
+
+    A skill's Step 0 writes the marker from inside its own session, and that
+    session's own Stop hook consumes it a turn later. So a marker predating this
+    session's first recorded turn belongs to an *earlier* session whose Stop hook
+    never fired, and describes a skill this session never ran (fleet-config#784).
+    A source with no timestamps at all cannot prove provenance either way; bound
+    it by age instead, which still catches the interrupted-session leftover.
+    """
+    written = datetime.fromtimestamp(written_at, timezone.utc)
+    started = transcript_start_time(transcript.entries)
+    if started is not None:
+        return written >= started - timedelta(seconds=_MARKER_SKEW_SECONDS)
+    return datetime.now(timezone.utc) - written <= timedelta(seconds=_MARKER_MAX_AGE_SECONDS)
 
 
 def _strip_command_tags(text: str) -> str:
@@ -474,14 +520,17 @@ def main() -> int:
         skills_root = cfg.root / cfg.skills_dir
         known = scan_known_skills(skills_root)
         marker = cfg.root / cfg.active_marker
-        skill = None
-        if marker.exists():
-            try:
-                skill = marker.read_text(encoding="utf-8").strip()
-                marker.unlink()
-            except OSError:
-                skill = None
+        skill, written_at = None, None
+        try:
+            written_at = marker.stat().st_mtime
+            skill = marker.read_text(encoding="utf-8", errors="replace").strip()
+            marker.unlink()  # one-shot, even when rejected below — never let it linger
+        except OSError:
+            skill, written_at = None, None
         if skill not in known:
+            skill = None
+        elif not marker_is_current(written_at, transcript):
+            logger.warning("Capture routing: ignored %r marker predating this session", skill)
             skill = None
         if not skill and transcript.harness == "claude":
             skill = infer_skill_from_transcript(transcript.entries, known, cfg.skills_dir)
