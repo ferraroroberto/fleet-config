@@ -1,8 +1,11 @@
 """Regression boundary for shared native transcript capture (#753)."""
+from datetime import datetime, timezone
 import json
+import os
 from pathlib import Path
 import sys
 import tempfile
+import time
 import unittest
 from unittest.mock import patch
 
@@ -15,6 +18,7 @@ import transcript_readers as tr
 
 SID = '11111111-1111-4111-8111-111111111111'
 OTHER = '22222222-2222-4222-8222-222222222222'
+THIRD = '33333333-3333-4333-8333-333333333333'
 PROMPT = 'Harmless capture marker about lunar gardens'
 
 
@@ -36,6 +40,12 @@ def codex(sid=SID, parent=None):
                            'item': {'type': role, 'id': f'item-{i}',
                                     'content': [{'type': 'text', 'text': text}]}}}
               for i, (role, text) in enumerate([('UserMessage', PROMPT), ('AgentMessage', 'Lunar gardens answer')])]]
+
+
+def stamped(records, when):
+    """Re-stamp a fixture onto a real wall clock; marker provenance compares the two."""
+    iso = datetime.fromtimestamp(when, timezone.utc).isoformat(timespec='seconds').replace('+00:00', 'Z')
+    return [{**record, 'timestamp': iso} if 'timestamp' in record else record for record in records]
 
 
 class CaptureTests(unittest.TestCase):
@@ -148,6 +158,51 @@ class CaptureTests(unittest.TestCase):
         self.assertEqual(list(self.root.rglob('*.md')), routed)
         self.project.extra['capture'] = False
         self.assertIsNone(cc.capture_config_from_project(self.project))
+
+    def test_stale_marker_cannot_misfile_the_next_session(self):
+        """#784: a marker no Stop hook consumed must not route a later session."""
+        self.project.extra.update(capture_harnesses=['claude', 'codex'], capture_routing='skills')
+        skills = self.root / '.claude' / 'skills'
+        (skills / 'journal-daily').mkdir(parents=True)
+        (skills / 'probe').mkdir(parents=True)
+        marker = self.root / '.active-skill'
+        journal = skills / 'journal-daily' / 'conversations'
+        archive = self.root / 'conversations' / '_archive'
+
+        # Written and consumed inside one session: the common case still routes.
+        marker.write_text('journal-daily', encoding='utf-8')
+        self.capture(stamped(codex(), time.time()), 'codex')
+        self.assertEqual(len(list(journal.glob('*.md'))), 1)
+        self.assertFalse(marker.exists())
+
+        # Left behind by an interrupted session, so it predates the next one.
+        stale = time.time() - 3600
+        marker.write_text('journal-daily', encoding='utf-8')
+        os.utime(marker, (stale, stale))
+        self.capture(stamped(codex(OTHER), time.time()), 'codex', OTHER)
+        self.assertFalse(marker.exists())
+        self.assertEqual(len(list(journal.glob('*.md'))), 1)
+        self.assertEqual(len(list(archive.glob('*.md'))), 1)
+
+        # Rejecting the marker still leaves this session's own evidence a turn.
+        invoked = claude(THIRD)
+        invoked[0]['message']['content'] = '<command-name>/probe</command-name> run it'
+        marker.write_text('journal-daily', encoding='utf-8')
+        os.utime(marker, (stale, stale))
+        self.capture(stamped(invoked, time.time()), 'claude', THIRD)
+        self.assertEqual(len(list(journal.glob('*.md'))), 1)
+        self.assertEqual(len(list((skills / 'probe' / 'conversations').glob('*.md'))), 1)
+
+    def test_marker_provenance_falls_back_to_age_without_timestamps(self):
+        """An unstamped source cannot prove provenance, so bound the marker by age."""
+        undated = tr.Transcript('ok', 'codex', SID, entries=[{'type': 'session_meta'}])
+        self.assertTrue(cc.marker_is_current(time.time(), undated))
+        self.assertFalse(cc.marker_is_current(time.time() - cc._MARKER_MAX_AGE_SECONDS - 60, undated))
+        dated = tr.Transcript('ok', 'claude', SID, entries=[{'timestamp': '2026-09-05T12:00:00Z'}])
+        started = datetime(2026, 9, 5, 12, 0, tzinfo=timezone.utc)
+        self.assertEqual(cc.transcript_start_time(dated.entries), started)
+        self.assertTrue(cc.marker_is_current(started.timestamp() + 1, dated))
+        self.assertFalse(cc.marker_is_current(started.timestamp() - 60, dated))
 
     def test_legacy_and_native_search_rebuild_preserves_originals(self):
         files = self.capture(codex(), 'codex')
