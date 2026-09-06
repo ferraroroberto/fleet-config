@@ -38,7 +38,7 @@ import logging
 import os
 import sys
 from pathlib import Path
-from typing import Iterator, Optional
+from typing import Optional
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import _lib  # noqa: E402
