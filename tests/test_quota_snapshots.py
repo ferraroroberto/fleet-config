@@ -83,6 +83,7 @@ class ContractTests(unittest.TestCase):
                 result = sources.codex_source(raw, "0.153.3", now=NOW)
                 self.assertNotEqual(result["state"], "available")
                 contract.validate_source(result)
+        self.assertEqual(sources.codex_source(codex_fixture(), "0.153.4", now=NOW)["state"], "available")
         self.assertEqual(sources.codex_source(codex_fixture(), "0.154.0", now=NOW)["state"], "unsupported")
         raw = codex_fixture()
         raw["rateLimits"]["primary"]["usedPercent"] = None
