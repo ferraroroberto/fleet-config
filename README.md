@@ -157,6 +157,8 @@ each agent supports, what is wired, and where a class is a deliberate non-goal
 
 To add the supported context, model, location, branch, five-hour-limit, and weekly-limit items to the native Codex terminal footer, run `.\install.ps1 -ConfigureCodexStatusline` from the primary checkout. This opt-in merge preserves existing footer items, their order, comments, `terminal_title`, and unrelated settings; see [`docs/install.md`](docs/install.md#codex-terminal-footer-opt-in).
 
+To apply the versioned Codex model policy, run `.\install.ps1 -ConfigureCodexModelPolicy` from the primary checkout. It defaults new threads to Sol, filters the native picker to Luna, Terra, Sol, and Astra, and installs the unbudgeted `easy` (Luna/xhigh), `normal` (Terra/high), and `hard` (Sol/high) native roles; see [`docs/install.md`](docs/install.md#codex-model-policy-opt-in). Context capacity is controlled by the native model, not this policy.
+
 To pin local native conversation persistence for both agents, run `.\install.ps1 -ConfigureSessionRetention`. It sets Claude Code's `cleanupPeriodDays` to 730, removes the prompt-history opt-out if present, sets Codex `history.persistence = "save-all"`, and removes `history.max_bytes`; unrelated settings and machine-local secrets are retained. See [`docs/install.md`](docs/install.md#session-retention-opt-in).
 
 Edits on either side are visible on the other instantly — no copy step, no sync ritual. The installer is idempotent:
