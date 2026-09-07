@@ -27,6 +27,9 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from .config import (
     BackupConfig,
+    CLAUDE_SESSIONS_LEG,
+    CODEX_SESSIONS_GROUP,
+    CODEX_SESSIONS_LEG,
     DATE_FMT,
     EXIT_DEST_UNUSABLE,
     EXIT_OK,
@@ -43,15 +46,24 @@ from .config import (
     load_backup_config,
     load_repo_overrides,
 )
-from .select import Selection, iter_repos, select_repo, select_runtime_data, select_transcripts
+from .select import (
+    Selection,
+    iter_repos,
+    select_codex_sessions,
+    select_repo,
+    select_runtime_data,
+    select_transcripts,
+)
 from .snapshot import check_zero_file_regressions, runtime_data_staging, verify_sample, write_group
 from .retention import (
     _index_manifest,
     _previous_snapshot,
+    audit_session_archive,
     clear_run_marker,
     freshness,
     prune,
     read_run_marker,
+    reconcile_session_archive,
     reconcile_latest,
     rebuild_latest,
     write_restore_note,
@@ -150,11 +162,15 @@ def run_leg(leg: str, groups: Dict[str, Selection], source: Path, dest_root: Pat
             "oversize": selection.oversize,
             "errors": errors,
             "vanished": vanished,
+            "sessions": selection.sessions,
         }
 
     total_files = sum(len(payload["files"]) for payload in manifest["groups"].values())
     manifest["totals"] = {
         "files": total_files,
+        "sessions": sum(
+            len(payload["sessions"]) for payload in manifest["groups"].values()
+        ),
         "bytes": sum(payload["bytes"] for payload in manifest["groups"].values()),
         "linked": linked,
         "copied": copied,
@@ -180,6 +196,9 @@ def run_leg(leg: str, groups: Dict[str, Selection], source: Path, dest_root: Pat
         and not manifest["regressions"]
         and not failed_groups
     ) else "failed"
+    manifest["archive"] = reconcile_session_archive(dest_root, snapshot_dir, manifest)
+    if manifest["archive"] and manifest["archive"].get("status") != "pass":
+        manifest["status"] = "failed"
     manifest["finished_at"] = datetime.now(timezone.utc).isoformat()
 
     (snapshot_dir / MANIFEST_NAME).write_text(
@@ -245,8 +264,16 @@ def run(cfg: BackupConfig, *, dry_run: bool = False, only: Optional[str] = None,
     with contextlib.ExitStack() as stack:
         legs = [("repos", repo_groups, cfg.source_root, cfg.dest)]
         if not only:
-            legs.append(("transcripts", {"projects": select_transcripts(cfg)},
+            legs.append((CLAUDE_SESSIONS_LEG, {"projects": select_transcripts(cfg)},
                          cfg.transcripts_src, cfg.transcripts_dest))
+            if cfg.codex_sessions_src.is_dir():
+                codex_staging = stack.enter_context(runtime_data_staging())
+                legs.append((CODEX_SESSIONS_LEG,
+                             {CODEX_SESSIONS_GROUP: select_codex_sessions(cfg, codex_staging)},
+                             cfg.codex_sessions_src, cfg.codex_sessions_dest))
+            else:
+                logger.info("ℹ️ %s leg skipped: %s does not exist", CODEX_SESSIONS_LEG,
+                            cfg.codex_sessions_src)
             if cfg.runtime_data_src.is_dir():
                 # `--dry-run` still takes the snapshots (into the temp staging
                 # tree it then throws away): "which databases can actually be
@@ -284,6 +311,8 @@ def run(cfg: BackupConfig, *, dry_run: bool = False, only: Optional[str] = None,
                 continue
             if manifest["verification"]["status"] == "fail":
                 codes.append(EXIT_VERIFY_FAILED)
+            if manifest.get("archive") and manifest["archive"].get("status") != "pass":
+                codes.append(EXIT_VERIFY_FAILED)
             if manifest.get("regressions"):
                 codes.append(EXIT_ZERO_FILES_REGRESSION)
             if any(payload["status"] == "failed" for payload in manifest["groups"].values()):
@@ -301,6 +330,9 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                         help="Report what would be snapshotted; write nothing.")
     parser.add_argument("--check-freshness", action="store_true",
                         help="Report BACKUP_FRESHNESS=ok|stale|unknown and exit.")
+    parser.add_argument("--audit-sessions", action="store_true",
+                        help="Read-only audit that every current native Claude/Codex "
+                             "session is present in its durable archive.")
     parser.add_argument("--only", help="Limit the repo leg to one repo (debugging).")
     parser.add_argument("--config", type=Path, help="Path to projects.toml.")
     parser.add_argument("--no-notify", action="store_true", help="Suppress the Telegram ping.")
@@ -324,10 +356,48 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
 
     cfg = load_backup_config(args.config)
 
+    if args.audit_sessions:
+        audits: Dict[str, Dict[str, Any]] = {}
+        with contextlib.ExitStack() as stack:
+            if cfg.transcripts_src.is_dir():
+                audits[CLAUDE_SESSIONS_LEG] = audit_session_archive(
+                    cfg.transcripts_dest, {"projects": select_transcripts(cfg)},
+                )
+            else:
+                audits[CLAUDE_SESSIONS_LEG] = {
+                    "status": "unknown", "reason": f"{cfg.transcripts_src} does not exist",
+                }
+            if cfg.codex_sessions_src.is_dir():
+                staging = stack.enter_context(runtime_data_staging())
+                audits[CODEX_SESSIONS_LEG] = audit_session_archive(
+                    cfg.codex_sessions_dest,
+                    {CODEX_SESSIONS_GROUP: select_codex_sessions(cfg, staging)},
+                )
+            else:
+                audits[CODEX_SESSIONS_LEG] = {
+                    "status": "unknown", "reason": f"{cfg.codex_sessions_src} does not exist",
+                }
+        statuses = {detail["status"] for detail in audits.values()}
+        overall = "unknown" if "unknown" in statuses else (
+            "incomplete" if "incomplete" in statuses else "ok"
+        )
+        print(f"SESSION_ARCHIVE_AUDIT={overall}")
+        for leg, detail in audits.items():
+            print(f"  {leg}: {json.dumps(detail, ensure_ascii=False)}")
+        return EXIT_OK if overall == "ok" else (
+            EXIT_REPO_FAILURE if overall == "incomplete" else EXIT_VERIFY_FAILED
+        )
+
     if args.check_freshness:
         worst = FRESHNESS_OK
         details = {}
-        legs = [("repos", cfg.dest), ("transcripts", cfg.transcripts_dest)]
+        legs = [("repos", cfg.dest), (CLAUDE_SESSIONS_LEG, cfg.transcripts_dest)]
+        if cfg.codex_sessions_src.is_dir():
+            legs.append((CODEX_SESSIONS_LEG, cfg.codex_sessions_dest))
+        else:
+            details[CODEX_SESSIONS_LEG] = {
+                "state": "not-yet-active", "reason": f"{cfg.codex_sessions_src} does not exist",
+            }
         if cfg.runtime_data_src.is_dir():
             legs.append((RUNTIME_DATA_LEG, cfg.runtime_data_dest))
         else:

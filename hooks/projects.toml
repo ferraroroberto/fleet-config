@@ -314,6 +314,8 @@ source_root      = "E:/automation"
 dest             = "C:/Users/rober/backup/fleet-private"
 transcripts_src  = "~/.claude/projects"
 transcripts_dest = "E:/backup/claude-transcripts"
+codex_sessions_src  = "~/.codex"
+codex_sessions_dest = "E:/backup/codex-sessions"
 # Third leg (fleet-config#724): the always-on services' SQLite databases, which
 # project-scaffolding#243 moved OUT of their repo working trees to C:/sqlite/<app>/
 # so seven services fsync-ing at a poll interval stop hammering the spinning E:

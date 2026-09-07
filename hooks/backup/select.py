@@ -13,6 +13,7 @@ from __future__ import annotations
 import fnmatch
 import logging
 import os
+import re
 import sqlite3
 import stat
 import sys
@@ -62,6 +63,9 @@ class Selection:
     # Source files that existed at enumeration and were gone by the time we read
     # them. Its own state, deliberately — see `write_group`.
     vanished: List[str] = field(default_factory=list)
+    # Native session identities represented by this selection. Content is never
+    # copied into the manifest; only identity, storage path, and archive state.
+    sessions: List[Dict[str, Any]] = field(default_factory=list)
 
     @property
     def total_bytes(self) -> int:
@@ -308,14 +312,105 @@ def select_transcripts(cfg: BackupConfig) -> Selection:
         return sel
     for abs_path, rel, size in walk_files(cfg.transcripts_src, "", cfg, sel.errors,
                                           sel.vanished):
-        if size > cfg.max_file_bytes:
-            sel.oversize.append({
-                "path": rel, "bytes": size, "mb": round(size / 1024 / 1024, 2),
-                "reason": "size-cap",
-            })
-            continue
         sel.files.append((abs_path, rel, size))
+        session_id = _session_id_from_path(rel)
+        if session_id and "/subagents/" not in f"/{rel.lower()}/":
+            sel.sessions.append({"id": session_id, "path": rel, "archived": False})
     sel.files = _dedupe_by_rel(sel.files)
+    sel.sessions = _dedupe_sessions(sel.sessions)
+    return sel
+
+
+_SESSION_ID_RE = re.compile(
+    r"(?<![0-9a-f])([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})(?![0-9a-f])",
+    re.IGNORECASE,
+)
+
+
+def _session_id_from_path(rel: str) -> Optional[str]:
+    match = _SESSION_ID_RE.search(rel.replace("\\", "/"))
+    return match.group(1).lower() if match else None
+
+
+def _dedupe_sessions(items: Sequence[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    by_id: Dict[str, Dict[str, Any]] = {}
+    for item in items:
+        session_id = str(item.get("id") or "").lower()
+        if session_id:
+            by_id[session_id] = {**item, "id": session_id}
+    return [by_id[key] for key in sorted(by_id)]
+
+
+def select_codex_sessions(cfg: BackupConfig, staging: Path) -> Selection:
+    """Select only Codex's resume-critical local state, snapshotting live DBs.
+
+    Credentials, caches, logs, model metadata, and unrelated application state
+    under ``~/.codex`` are deliberately outside this allowlist.
+    """
+
+    sel = Selection()
+    root = cfg.codex_sessions_src
+    if not root.is_dir():
+        sel.errors.append(f"Codex session source missing: {root}")
+        return sel
+
+    for dirname in ("sessions", "archived_sessions"):
+        source_dir = root / dirname
+        if not source_dir.is_dir():
+            continue
+        for abs_path, rel, size in walk_files(
+            source_dir, dirname + "/", cfg, sel.errors, sel.vanished,
+        ):
+            sel.files.append((abs_path, rel, size))
+            session_id = _session_id_from_path(rel)
+            if session_id:
+                sel.sessions.append({
+                    "id": session_id,
+                    "path": rel,
+                    "archived": dirname == "archived_sessions",
+                })
+
+    for filename in ("history.jsonl", "session_index.jsonl"):
+        source_file = root / filename
+        try:
+            if source_file.is_file():
+                sel.files.append((source_file, filename, source_file.stat().st_size))
+        except OSError as exc:
+            sel.errors.append(f"stat {source_file}: {exc}")
+
+    for source_db in sorted((*root.glob("state_*.sqlite"), *root.glob("thread_history_*.sqlite"))):
+        target = staging / source_db.name
+        try:
+            snapshot_sqlite(source_db, target)
+            sel.files.append((target, source_db.name, target.stat().st_size))
+            if source_db.name.startswith("state_"):
+                connection = sqlite3.connect(f"file:{target.as_posix()}?mode=ro", uri=True)
+                try:
+                    rows = connection.execute(
+                        "SELECT id, rollout_path, archived FROM threads"
+                    ).fetchall()
+                finally:
+                    connection.close()
+                for session_id, rollout_path, archived in rows:
+                    if not isinstance(session_id, str) or not _SESSION_ID_RE.fullmatch(session_id):
+                        continue
+                    rel_path = None
+                    if isinstance(rollout_path, str):
+                        try:
+                            rel_path = str(Path(rollout_path).resolve().relative_to(root.resolve())).replace("\\", "/")
+                        except (OSError, ValueError):
+                            rel_path = None
+                    sel.sessions.append({
+                        "id": session_id.lower(),
+                        "path": rel_path,
+                        "archived": bool(archived),
+                        "index": source_db.name,
+                    })
+        except (OSError, sqlite3.Error) as exc:
+            sel.errors.append(f"snapshot {source_db}: {exc}")
+
+    sel.files = _dedupe_by_rel(sel.files)
+    sel.sessions = _dedupe_sessions(sel.sessions)
     return sel
 
 

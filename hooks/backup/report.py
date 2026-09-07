@@ -47,9 +47,9 @@ def report(manifest: Dict[str, Any]) -> None:
     totals = manifest["totals"]
     duration = _leg_duration_seconds(manifest)
     logger.info(
-        "ℹ️ %s: %d files, %s (%d linked, %d copied) across %d groups%s",
+        "ℹ️ %s: %d files, %s, %d sessions (%d linked, %d copied) across %d groups%s",
         manifest["leg"], totals["files"], _mb(totals["bytes"]),
-        totals["linked"], totals["copied"], totals["groups"],
+        totals.get("sessions", 0), totals["linked"], totals["copied"], totals["groups"],
         f" in {duration:.1f}s" if duration is not None else "",
     )
     latest_mode = manifest.get("latest_mode")
@@ -97,6 +97,16 @@ def report(manifest: Dict[str, Any]) -> None:
     if verification:
         logger.info("   🔎 verification: %s (%d sampled)",
                     verification.get("status"), verification.get("sampled", 0))
+    archive = manifest.get("archive") or {}
+    if archive:
+        logger.info(
+            "   🗄️ archive: %s (%d files, %d sessions; +%d ~%d, %d retained after source removal)",
+            archive.get("status"), archive.get("files", 0), archive.get("sessions", 0),
+            archive.get("added", 0), archive.get("updated", 0),
+            archive.get("retained_missing", 0),
+        )
+        for error in archive.get("errors") or []:
+            logger.error("   ❌ archive: %s", error)
     for group in manifest.get("regressions") or []:
         logger.error("   ❌ %s backed up 0 files but had files last run", group)
     if manifest.get("pruned"):

@@ -50,9 +50,9 @@ work in this repo doesn't cost the whole catalogue:
   creates, the other surfaces this repo ships (`tray/`, `stream-deck/`), and
   the migration recipes for an agent home that already holds real files.
 - **[`docs/fleet-private-backup.md`](docs/fleet-private-backup.md)** — the
-  daily backup of everything git ignores, plus the relocated runtime-data
-  root (`C:/sqlite`) that git-derived selection cannot see, including the
-  restore procedure.
+  daily backup of everything git ignores, native Claude/Codex sessions, and
+  the relocated runtime-data root (`C:/sqlite`), including explicit-deletion-
+  only session archives and restore procedures.
 - **[`docs/architecture.mmd`](docs/architecture.mmd)** — this repo's own
   internal structure diagram, hand-authored and under a same-PR anti-staleness
   contract.
@@ -70,6 +70,7 @@ fleet-config/
 ├── design.dark.md                  # exposed as ~/.claude/design.dark.md (symlink) — same token names, dark values (Vercel light/dark convention)
 ├── statusline-command.ps1          # exposed as ~/.claude/statusline-command.ps1 (symlink) — custom statusline (Claude only)
 ├── codex_statusline.py             # opt-in, comment-preserving merge of native Codex footer fields into ~/.codex/config.toml
+├── session_retention.py            # opt-in, atomic two-year Claude/Codex native-session retention config
 ├── .gitignore
 ├── install.ps1                     # creates junctions/symlinks into the agent homes: ~/.claude, ~/.agents, ~/.codex, ~/.pi/agent, ~/.copilot; also wires shell/claude-otel-project.ps1 into $PROFILE
 ├── uninstall.ps1                   # mirror of install.ps1: the manifest links + the $PROFILE OTel block, agy plugin, and copilot hook it writes outside it
@@ -156,11 +157,13 @@ each agent supports, what is wired, and where a class is a deliberate non-goal
 
 To add the supported context, model, location, branch, five-hour-limit, and weekly-limit items to the native Codex terminal footer, run `.\install.ps1 -ConfigureCodexStatusline` from the primary checkout. This opt-in merge preserves existing footer items, their order, comments, `terminal_title`, and unrelated settings; see [`docs/install.md`](docs/install.md#codex-terminal-footer-opt-in).
 
+To pin local native conversation persistence for both agents, run `.\install.ps1 -ConfigureSessionRetention`. It sets Claude Code's `cleanupPeriodDays` to 730, removes the prompt-history opt-out if present, sets Codex `history.persistence = "save-all"`, and removes `history.max_bytes`; unrelated settings and machine-local secrets are retained. See [`docs/install.md`](docs/install.md#session-retention-opt-in).
+
 Edits on either side are visible on the other instantly — no copy step, no sync ritual. The installer is idempotent:
 - existing link pointing at the repo → no-op
 - existing real file/directory → refuses and prints a one-line "rename it, then re-run"
 
-After `install.ps1`, merge the `hooks`, `env`, and root-level `cleanupPeriodDays`/`feedbackSurveyRate`/`attribution` blocks from `settings.template.json` into your `~/.claude/settings.json` and ensure `statusLine.command` runs `~/.claude/statusline-command.ps1`. Restart Claude Code to pick up the new hooks. The `env` block sets `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE=70`, which fires auto-compaction at 70% of the active context window (700k on the 1M Opus window); the statusline shows the **used** context % color-coded green/yellow/red as you approach that line. `DISABLE_ERROR_REPORTING` opts out of Anthropic-side error reporting (unrelated to the separate `CLAUDE_CODE_ENABLE_TELEMETRY`/OTel-export env vars, which stay on to feed `local-llm-hub`); `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC` is **deliberately not set** — despite the name it also disables the feature-flag check Remote Control depends on, silently breaking mobile/web session pairing with no error anywhere (fleet-config#363). `cleanupPeriodDays: 365` keeps local session data a full year instead of the 30-day default; `feedbackSurveyRate: 0` suppresses the session-quality survey; `attribution: {commit: "", pr: ""}` stops Claude Code auto-appending its own commit/PR trailer (`hooks/pre_commit_no_ai_trailer.py` remains the hard backstop against a trailer showing up any other way — see fleet-config#353).
+After `install.ps1`, merge the `hooks`, `env`, and root-level `cleanupPeriodDays`/`feedbackSurveyRate`/`attribution` blocks from `settings.template.json` into your `~/.claude/settings.json` and ensure `statusLine.command` runs `~/.claude/statusline-command.ps1`. Restart Claude Code to pick up the new hooks. The `env` block sets `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE=70`, which fires auto-compaction at 70% of the active context window (700k on the 1M Opus window); the statusline shows the **used** context % color-coded green/yellow/red as you approach that line. `DISABLE_ERROR_REPORTING` opts out of Anthropic-side error reporting (unrelated to the separate `CLAUDE_CODE_ENABLE_TELEMETRY`/OTel-export env vars, which stay on to feed `local-llm-hub`); `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC` is **deliberately not set** — despite the name it also disables the feature-flag check Remote Control depends on, silently breaking mobile/web session pairing with no error anywhere (fleet-config#363). `cleanupPeriodDays: 730` keeps local session data for two years instead of the 30-day default; `feedbackSurveyRate: 0` suppresses the session-quality survey; `attribution: {commit: "", pr: ""}` stops Claude Code auto-appending its own commit/PR trailer (`hooks/pre_commit_no_ai_trailer.py` remains the hard backstop against a trailer showing up any other way — see fleet-config#353).
 
 For interstitial-free browser inspection, add `FLEET_BROWSER_HOST` to the live `env` block with this machine's Tailscale hostname only (for example `<pc>.<tailnet>.ts.net`, with no scheme or port). Normal Chrome combines it with each app's `webapp_port`; agent-owned screenshot tools use the loopback target and their narrowly-scoped certificate bypass instead. The real hostname stays out of this public repository.
 

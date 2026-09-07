@@ -53,7 +53,7 @@ flowchart TB
     HOOKFILES["pre_commit_no_ai_trailer · secret_scan_guard · safe_kill_guard ·\nvenv_discipline · py_syntax_check · notify_on_idle · session_state ·\nblock_askuserquestion_chief · chief_handover_sessionstart · …"]
     NOTIFYPY["notify_send.py -> notify_complete.py -> work_summary.py"]
     CONVPY["conversation memory engine (projects.toml opt-in, #586)\ntranscript_readers (native Claude/Codex) -> conversation_capture (Stop)\nharness-qualified capture + native-session/fork header\nsession_index (SessionStart) -> conversation_index -> index.md + index.json\nconversation_search — FTS5 over digests + transcripts, returns resume cmd"]
-    BACKUPPY["backup_private.py + run-backup-daily.bat (#590)\nNOT a hook — a daily scheduled program\ngit-ignored set -> deny-list -> bulk-dir guard\nhardlinked dated snapshots + latest/ mirror\nself-verifying: sample re-hash · zero-file regression · 3-state freshness"]
+    BACKUPPY["backup_private.py + run-backup-daily.bat (#590/#797)\nNOT a hook — a daily scheduled program\ngit-ignored residue + Claude/Codex native sessions + live SQLite\nhardlinked dated snapshots + latest/ + explicit-deletion-only session archives\nself-verifying: sample re-hash · native-ID inventory · zero-file regression · 3-state freshness"]
   end
   hooks --> CLAUDE
   hooks --> CODEX
@@ -63,7 +63,7 @@ flowchart TB
   BACKUPPY --> LIBPY
   BACKUPPY --> PROJECTS
   BACKUPPY -->|"success to coding log, failure to coding alerts"| NOTIFYPY
-  BACKUPPY -->|"E: repo residue -> C: ; C: transcripts -> E:"| BACKUPDEST["C:/Users/rober/backup/fleet-private\nE:/backup/claude-transcripts\ndated snapshots + latest/ + manifest.json"]
+  BACKUPPY -->|"E: repo residue -> C: ; C: sessions/runtime data -> E:"| BACKUPDEST["C:/Users/rober/backup/fleet-private\nE:/backup/{claude-transcripts,codex-sessions,fleet-runtime-data}\ndated snapshots + latest/ + session archive + manifests"]
 
   subgraph tray["tray/ — junctioned into ~/.claude/tray (fleet-config#153)"]
     TRAYPS1["tray_lifecycle.ps1\nONE machine-local copy; every sister tray.bat calls it by path\ncanonical source: project-scaffolding"]

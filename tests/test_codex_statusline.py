@@ -150,7 +150,7 @@ class MergeStatusLineTests(unittest.TestCase):
         installer = (REPO / "install.ps1").read_text(encoding="utf-8")
 
         self.assertIn("[switch]$ConfigureCodexStatusline", installer)
-        self.assertIn("$ConfigureCodexStatusline -or $VerifyCodexSandbox", installer)
+        self.assertIn("$ConfigureCodexStatusline -or $ConfigureSessionRetention -or $VerifyCodexSandbox", installer)
         self.assertIn("$psArgs += '-ConfigureCodexStatusline'", installer)
         self.assertIn("(Join-Path $RepoRoot 'codex_statusline.py') --apply", installer)
 
