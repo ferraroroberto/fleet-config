@@ -302,7 +302,7 @@ Piped/redirected stdout makes Python fall back to cp1252, so emoji/box-drawing `
 
 ### Browser automation must not look like a bot
 
-Every Playwright / automated-browser launch must present as a real human Chrome session (past captchas on detection; social platforms risk account lockouts):
+Automation against a third-party site must present as a real human Chrome session (past captchas on detection; social platforms risk account lockouts):
 
 - Strip the automation infobar: `ignore_default_args=["--enable-automation", "--enable-blink-features=IdleDetection"]`.
 - `navigator.webdriver` must read `undefined` — `add_init_script` with `Object.defineProperty(navigator, 'webdriver', {get: () => undefined});` (not just a CLI flag).
@@ -312,6 +312,10 @@ Every Playwright / automated-browser launch must present as a real human Chrome 
 - `chromium_sandbox=True` on `launch` / `launch_persistent_context` — Playwright's default (`False`) injects `--no-sandbox`, which pops Chrome's *"the `--no-sandbox` flag you are using is not supported"* infobar, itself a bot tell.
 
 **Single source per project:** launch kwargs + init-script live in one helper (e.g. `config/chrome_launch.py`, `automation/browser.py`); every module imports it — never re-inline launch args. If the user reports a captcha or "unusual activity", suspect a stealth regression first.
+
+**Narrow first-party screenshot exception:** when the target is one of our own local apps and the only output is a screenshot, the launch is exempt from the stealth profile and may use Chrome Headless Shell. The shared map renderer prefers it and falls back to full Chrome; a headed visual gate or capture engine that promises user-Chrome pixel fidelity may deliberately retain full Chrome. This does not apply to third-party sites or logged-in browser automation. For an agent-controlled loopback HTTPS context, use `ignore_https_errors=True` (Playwright) or `--ignore-certificate-errors --test-type` (Chrome CLI), scoped only to `localhost` / `127.0.0.1` / `::1`. Read `browser_scheme` + `webapp_port` from `hooks/projects.toml`; do not guess the protocol.
+
+**Browser URL:** tooling that cannot set a per-context certificate bypass — including the user's normal Chrome — opens `https://$FLEET_BROWSER_HOST:<webapp_port>` so the Tailscale certificate hostname matches. `FLEET_BROWSER_HOST` is the hostname only and stays in the agent's environment, never committed; plain-HTTP apps use loopback. Do not install a Tailscale leaf in the Windows trust store: trust does not repair its intentional loopback hostname mismatch.
 
 ### Shared Chrome profiles: serialize access, never kill a live holder
 

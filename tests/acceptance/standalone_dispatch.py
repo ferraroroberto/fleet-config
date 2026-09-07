@@ -99,9 +99,9 @@ _STANDALONE_UNIT_CHECKS: Tuple[Tuple[str, str, str], ...] = (
      "clustering, size-outlier and coverage-gap detection -- is testable "
      "on its own (fleet-config#406)"),
     ("html_shot", "test_html_shot.py",
-     "the shared headless-Chrome measure-then-shoot helper -- "
-     "URL-scheme detection, file:// URL building, query appending, and "
-     "the DIMS-log parser -- is testable on its own (fleet-config#96)"),
+     "the shared headless-browser measure-then-shoot helper -- shell discovery, "
+     "full-Chrome fallback, loopback TLS scoping, URL construction, and the "
+     "DIMS-log parser -- is testable on its own (fleet-config#96/#536)"),
     ("docs_shots_plan", "test_docs_shots_plan.py",
      "the `/docs-shots` discovery + diff-intersection layer -- manifest "
      "discovery, source_globs matching, the unmapped-surface heuristic, "

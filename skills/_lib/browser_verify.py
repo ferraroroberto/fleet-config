@@ -101,7 +101,8 @@ def playwright_launch_kwargs(profile_dir: str) -> Dict[str, object]:
     """`launch_persistent_context` kwargs implementing the browser-safety rule.
 
     Real Chrome (`channel="chrome"`, not bundled Chromium), automation markers
-    stripped, a persistent profile at `profile_dir`, 1280x900. The caller must
+    stripped, a persistent profile at `profile_dir`, 1280x900, and certificate
+    errors ignored for the fleet's loopback-only visual target. The caller must
     also `add_init_script(WEBDRIVER_INIT_SCRIPT)` and serialize access to the
     profile (never kill a live holder — see the shared-profile rule).
     """
@@ -110,6 +111,7 @@ def playwright_launch_kwargs(profile_dir: str) -> Dict[str, object]:
         "channel": "chrome",
         "headless": False,
         "viewport": dict(VIEWPORT),
+        "ignore_https_errors": True,
         "ignore_default_args": list(IGNORE_DEFAULT_ARGS),
         "args": list(CHROME_ARGS),
     }
