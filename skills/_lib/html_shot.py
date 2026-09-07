@@ -1,4 +1,4 @@
-"""Shared headless-Chrome HTML -> PNG screenshot helper (fleet-config#96).
+"""Shared headless-browser HTML -> PNG screenshot helper (fleet-config#96).
 
 `.claude/skills/system-map/render.py` (fleet-config#94) and `/docs-shots`
 (fleet-config#93) both need to turn an HTML page into a deterministic PNG.
@@ -21,13 +21,14 @@ PNG never bakes in real hardware specs from a local `system-map.local.js`; it
 is also the shared `--html/--out/--scale` entry point both map renderers call,
 so neither has to re-implement the wrapper (fleet-config#677).
 
-stdlib + Chrome only (matches the `_lib` module contract) — no extra Python
-deps, per the repo's "system Python, no venv" hook convention.
+stdlib + Chrome Headless Shell or Chrome (matches the `_lib` module contract) —
+no extra Python deps, per the repo's "system Python, no venv" hook convention.
 """
 
 from __future__ import annotations
 
 import argparse
+import os
 import re
 import shutil
 import subprocess
@@ -36,13 +37,16 @@ import tempfile
 import uuid
 from pathlib import Path
 from typing import List, Optional, Tuple, Union
+from urllib.parse import urlsplit
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from no_window import NO_WINDOW  # noqa: E402
 
 _DEFAULT_CHROME = r"C:/Program Files/Google/Chrome/Application/chrome.exe"
+_HEADLESS_SHELL_NAMES = {"chrome-headless-shell", "chrome-headless-shell.exe"}
 DIMS_RE = re.compile(rb"DIMS (\d+) (\d+)")
 _URL_SCHEME_RE = re.compile(r"^[a-zA-Z][a-zA-Z0-9+.-]*://")
+_PLAYWRIGHT_REVISION_RE = re.compile(r"^chromium_headless_shell-(\d+)$")
 
 
 # ---- pure helpers (unit-tested without Chrome) ----------------------------
@@ -50,6 +54,16 @@ _URL_SCHEME_RE = re.compile(r"^[a-zA-Z][a-zA-Z0-9+.-]*://")
 def is_url(target: str) -> bool:
     """True if `target` already carries a URL scheme (`http://`, `file://`, ...)."""
     return bool(_URL_SCHEME_RE.match(target))
+
+
+def is_loopback_https_url(url: str) -> bool:
+    """True only for HTTPS on localhost or an IP loopback address."""
+    try:
+        parsed = urlsplit(url)
+        host = parsed.hostname
+    except ValueError:
+        return False
+    return parsed.scheme.lower() == "https" and host in {"127.0.0.1", "localhost", "::1"}
 
 
 def to_file_url(path: Path) -> str:
@@ -90,7 +104,44 @@ def parse_dims(stderr: bytes) -> Optional[Tuple[int, int]]:
     return int(m.group(1)), int(m.group(2))
 
 
-# ---- IO layer: Chrome discovery + the two-pass render ---------------------
+# ---- IO layer: browser discovery + the two-pass render --------------------
+
+def find_cached_headless_shell(cache_root: Path) -> Optional[Path]:
+    """Newest Playwright-managed Chrome Headless Shell under ``cache_root``."""
+    candidates = []
+    if cache_root.is_dir():
+        for candidate in cache_root.glob("chromium_headless_shell-*/*/*"):
+            if not candidate.is_file() or candidate.name not in _HEADLESS_SHELL_NAMES:
+                continue
+            match = _PLAYWRIGHT_REVISION_RE.match(candidate.relative_to(cache_root).parts[0])
+            if match:
+                candidates.append((int(match.group(1)), str(candidate), candidate))
+    return max(candidates, default=(0, "", None))[2]
+
+
+def find_headless_shell() -> Optional[str]:
+    """Find a standalone Chrome Headless Shell without requiring Playwright."""
+    on_path = shutil.which("chrome-headless-shell")
+    if on_path:
+        return on_path
+
+    beside_chrome = Path(_DEFAULT_CHROME).with_name("chrome-headless-shell.exe")
+    if beside_chrome.is_file():
+        return str(beside_chrome)
+
+    cache_roots = []
+    configured_root = os.environ.get("PLAYWRIGHT_BROWSERS_PATH")
+    if configured_root and configured_root != "0":
+        cache_roots.append(Path(configured_root))
+    local_app_data = os.environ.get("LOCALAPPDATA")
+    if local_app_data:
+        cache_roots.append(Path(local_app_data) / "ms-playwright")
+
+    for cache_root in cache_roots:
+        cached = find_cached_headless_shell(cache_root)
+        if cached:
+            return str(cached)
+    return None
 
 def find_chrome() -> str:
     """The known Windows install path, or a `PATH` lookup as fallback."""
@@ -99,9 +150,38 @@ def find_chrome() -> str:
     return shutil.which("chrome") or _DEFAULT_CHROME
 
 
-def _run_chrome(chrome_exe: str, args: List[str], timeout: int) -> subprocess.CompletedProcess:
+def find_browser() -> Tuple[str, bool]:
+    """Return ``(executable, is_headless_shell)`` with full Chrome as fallback."""
+    headless_shell = find_headless_shell()
+    return (headless_shell, True) if headless_shell else (find_chrome(), False)
+
+
+def build_browser_command(
+    browser_exe: str,
+    is_headless_shell: bool,
+    target_url: str,
+    args: List[str],
+) -> List[str]:
+    """Build the browser argv, scoping TLS bypass to loopback HTTPS only."""
+    command = [browser_exe]
+    if not is_headless_shell:
+        command.append("--headless=new")
+    command.extend(["--disable-gpu", "--hide-scrollbars"])
+    if is_loopback_https_url(target_url):
+        command.extend(["--ignore-certificate-errors", "--test-type"])
+    command.extend(args)
+    return command
+
+
+def _run_browser(
+    browser_exe: str,
+    is_headless_shell: bool,
+    target_url: str,
+    args: List[str],
+    timeout: int,
+) -> subprocess.CompletedProcess:
     return subprocess.run(
-        [chrome_exe, "--headless=new", "--disable-gpu", "--hide-scrollbars", *args],
+        build_browser_command(browser_exe, is_headless_shell, target_url, args),
         capture_output=True, timeout=timeout, creationflags=NO_WINDOW,
     )
 
@@ -125,7 +205,7 @@ def shoot(
     if isinstance(html_or_url, Path) and not html_or_url.is_file():
         raise FileNotFoundError(html_or_url)
     url = build_target_url(html_or_url, query)
-    chrome_exe = find_chrome()
+    browser_exe, is_headless_shell = find_browser()
     tmp = Path(tempfile.gettempdir())
 
     # 1. probe for the page's measured dimensions. The probe PNG is a throwaway
@@ -136,7 +216,7 @@ def shoot(
     # (fleet-config#681).
     probe_png = tmp / ("html_shot_probe_" + uuid.uuid4().hex + ".png")
     try:
-        probe = _run_chrome(chrome_exe, [
+        probe = _run_browser(browser_exe, is_headless_shell, url, [
             "--enable-logging=stderr", "--v=0", f"--virtual-time-budget={virtual_time_budget}",
             "--window-size=400,300", f"--screenshot={probe_png}",
             url,
@@ -154,7 +234,7 @@ def shoot(
     # 2. screenshot at the measured size; render to tmp then copy.
     staged = tmp / f"html_shot_{uuid.uuid4().hex}.png"
     try:
-        shot = _run_chrome(chrome_exe, [
+        shot = _run_browser(browser_exe, is_headless_shell, url, [
             f"--force-device-scale-factor={scale}", f"--window-size={w},{h}",
             f"--virtual-time-budget={virtual_time_budget}", f"--screenshot={staged}", url,
         ], timeout)

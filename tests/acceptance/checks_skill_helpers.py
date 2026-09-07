@@ -157,6 +157,17 @@ def _restart_webapp_unit_checks() -> Tuple[int, int]:
     check("restart_cmd: local-llm-hub keeps the tray_cmd path (no restart_cmd)",
           by_name["local-llm-hub"].restart_cmd is None)
 
+    webapps = [project for project in reg.projects if project.webapp_port is not None]
+    check("browser target: every webapp declares an HTTP/HTTPS scheme",
+          all(project.extra.get("browser_scheme") in {"http", "https"} for project in webapps))
+    check("browser target: local hub stays plain HTTP",
+          by_name["local-llm-hub"].extra.get("browser_scheme") == "http")
+    check("browser target: TLS fleet apps declare HTTPS",
+          all(by_name[name].extra.get("browser_scheme") == "https" for name in (
+              "app-launcher", "photo-ocr", "voice-transcriber", "home-automation",
+              "grocery-shopping-automation", "task-os", "whatsapp-radar",
+          )))
+
     hint = rw.recovery_hint(
         "app-launcher", 8445, Path("E:/automation/app-launcher"),
         by_name["app-launcher"].restart_cmd, "tray.bat",
