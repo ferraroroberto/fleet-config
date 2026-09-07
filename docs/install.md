@@ -26,6 +26,18 @@ The two limit items use Codex's own account data and rendering. An unavailable w
 
 This config affects the Codex terminal TUI only. It does not customize the Codex desktop conversation UI, and it does not add custom colors, thresholds, or a replacement renderer; theme colors and layout remain native Codex behavior.
 
+## Codex model policy opt-in
+
+Run this from the primary checkout to apply the fleet's managed Codex defaults:
+
+```powershell
+.\install.ps1 -ConfigureCodexModelPolicy
+```
+
+The command validates the checked-in role layers and asks the installed Codex CLI to load a disposable generated catalog before it changes `~/.codex/config.toml`. It atomically reconciles only the owned main-thread and `[agents]` keys, preserving unrelated settings and comments. The generated catalog preserves the installed CLI's required model metadata while filtering the picker to Luna, Terra, Sol, and Astra. Sol is the new-thread default; Astra remains an explicit human choice.
+
+The named roles are `easy` (Luna/xhigh), `normal` (Terra/high), and `hard` (Sol/high). They deliberately set no rollout/thinking budget; a model turn may use its native limits. Context capacity is model-controlled, not a role setting: the installed Codex catalog reports 272k default / 872k maximum for Luna, rather than 1M. Explicit per-spawn model or effort overrides retain Codex precedence. Invalid TOML, an unavailable model, or an unsupported catalog fails before the real config is written. Re-running is idempotent; open a fresh Codex terminal after applying it.
+
 ## Session retention opt-in
 
 [Anthropic's session documentation](https://code.claude.com/docs/en/sessions) says Claude Code deletes local session files after 30 days by default and that `cleanupPeriodDays` controls that window. The [official OpenAI configuration reference](https://learn.chatgpt.com/docs/config-file/config-reference) exposes Codex `history.persistence = "save-all" | "none"` and says `history.max_bytes` drops oldest entries when set; the [developer-command reference](https://learn.chatgpt.com/docs/developer-commands?surface=cli) documents the native resume paths. The fleet pins a two-year native-resume floor and removes Codex's byte cap with one idempotent command from the primary checkout:

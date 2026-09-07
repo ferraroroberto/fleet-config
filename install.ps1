@@ -28,6 +28,7 @@
 [CmdletBinding()]
 param(
     [switch]$ConfigureCodexStatusline,
+    [switch]$ConfigureCodexModelPolicy,
     [switch]$ConfigureSessionRetention,
     [switch]$VerifyCodexSandbox,
     [switch]$VerifyGrokCompat,
@@ -41,7 +42,7 @@ $RepoRoot       = Split-Path -Parent $MyInvocation.MyCommand.Path
 # A named checkout (including a linked worktree) installs only its local links.
 # Never redirect machine-wide homes to a transient worktree.
 if ($ProjectRoot -or (Test-Path -LiteralPath (Join-Path $RepoRoot '.git') -PathType Leaf)) {
-    if ($ConfigureCodexStatusline -or $ConfigureSessionRetention -or $VerifyCodexSandbox -or $VerifyGrokCompat) {
+    if ($ConfigureCodexStatusline -or $ConfigureCodexModelPolicy -or $ConfigureSessionRetention -or $VerifyCodexSandbox -or $VerifyGrokCompat) {
         throw 'Scoped installation cannot change or verify user-home configuration; run the requested switch from the primary checkout.'
     }
     if (-not $ProjectRoot) { $ProjectRoot = $RepoRoot }
@@ -363,6 +364,7 @@ if ($needsElevation -and -not (Test-IsElevated)) {
     # prompt -- a fresh install -- reporting a successful install for a
     # verification that never ran (fleet-config#681).
     if ($ConfigureCodexStatusline) { $psArgs += '-ConfigureCodexStatusline' }
+    if ($ConfigureCodexModelPolicy) { $psArgs += '-ConfigureCodexModelPolicy' }
     if ($ConfigureSessionRetention) { $psArgs += '-ConfigureSessionRetention' }
     if ($VerifyCodexSandbox) { $psArgs += '-VerifyCodexSandbox' }
     if ($VerifyGrokCompat)   { $psArgs += '-VerifyGrokCompat' }
@@ -461,6 +463,12 @@ if ($ConfigureCodexStatusline) {
     & (Join-Path $RepoRoot '.venv/Scripts/python.exe') (Join-Path $RepoRoot 'codex_statusline.py') --apply --config (Join-Path $CodexHome 'config.toml')
     if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 }
+if ($ConfigureCodexModelPolicy) {
+    & (Join-Path $RepoRoot '.venv/Scripts/python.exe') (Join-Path $RepoRoot 'codex_model_policy.py') --apply `
+        --config (Join-Path $CodexHome 'config.toml') `
+        --policy-root (Join-Path $RepoRoot 'codex')
+    if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+}
 if ($ConfigureSessionRetention) {
     & (Join-Path $RepoRoot '.venv/Scripts/python.exe') (Join-Path $RepoRoot 'session_retention.py') --apply `
         --claude-settings (Join-Path $ClaudeHome 'settings.json') `
@@ -482,6 +490,9 @@ Write-Host "Next step: merge the 'hooks' block from settings.template.json into 
 Write-Host "then restart Claude Code so the new hooks load."
 if ($ConfigureCodexStatusline) {
     Write-Host "Open a fresh Codex terminal to load the updated native footer."
+}
+if ($ConfigureCodexModelPolicy) {
+    Write-Host "Open a fresh Codex terminal to load the managed model policy."
 }
 if ($ConfigureSessionRetention) {
     Write-Host "Open fresh Claude Code and Codex sessions to load the retention settings."

@@ -235,6 +235,9 @@ _STANDALONE_UNIT_CHECKS: Tuple[Tuple[str, str, str], ...] = (
     ("codex_statusline", "test_codex_statusline.py",
      "the opt-in Codex footer merger preserves custom settings/comments, appends native quota items, "
      "and stays idempotent against synthetic config files (#752)"),
+    ("codex_model_policy", "test_codex_model_policy.py",
+     "the opt-in Codex model-policy merger preserves unrelated settings, validates the generated four-model catalog, "
+     "and leaves config untouched on a failed native preflight (#793)"),
     ("session_retention", "test_session_retention.py",
      "the opt-in Claude/Codex retention merger preserves unrelated settings, pins a two-year floor, "
      "removes truncation controls, and remains idempotent (#797)"),
