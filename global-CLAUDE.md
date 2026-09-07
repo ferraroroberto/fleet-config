@@ -281,6 +281,10 @@ Claude Code executes `settings.json` commands (statusLine, hooks) through **Git 
 C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File C:/Users/rober/.claude/<script>.ps1
 ```
 
+### A trailing backslash before a closing double-quote escapes it, not closes it
+
+In Git Bash, `\"` inside a double-quoted string is an escaped literal `"`, not a quote-closer — a Windows path argument that ends in a bare backslash right before its closing `"` (e.g. `"E:\automation\foo\"`) never actually closes that string. Quote parity then shifts for the rest of the command, and a later, genuinely-quoted argument can land unquoted and get its own backslashes silently stripped instead (`fleet-config#800`) — the reported symptom is on the *second* path, but the real defect is the trailing backslash on the *first*. Never end a double-quoted Windows path argument with a bare trailing backslash — drop it or use a forward slash instead.
+
 ### Windows PowerShell in spawned commands (any agent)
 
 - **Avoid `pwsh`** — the PATH `pwsh` is a 0-byte WindowsApps reparse stub that fails non-interactively. Use the absolute path `C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe`.

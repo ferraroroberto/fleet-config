@@ -138,6 +138,36 @@ def find_unsafe_drive_paths(cmd: str) -> "list[re.Match[str]]":
     return hits
 
 
+def _trailing_backslash_count(s: str) -> int:
+    n = 0
+    for ch in reversed(s):
+        if ch != "\\":
+            break
+        n += 1
+    return n
+
+
+def find_broken_quote_path(cmd: str) -> "re.Match[str] | None":
+    """Find a drive-letter path immediately followed by a literal `"`, where
+    the path itself ends in an ODD number of backslashes (fleet-config#800).
+
+    Inside a double-quoted string, backslashes are consumed in escaping pairs
+    (`_safe_mask()` above does the same) -- `\\\\"` (an even count) is a
+    literal backslash followed by a real closing quote, but `\\"` (an odd
+    count) leaves one backslash to escape the quote itself (`\\"` -> literal
+    `"`) instead of closing the string. An odd-count match never actually
+    closes: quote parity shifts for the rest of the command, and a later,
+    genuinely-quoted path can land unquoted and get flagged instead. Returns
+    the first such path, which is the actual defect to fix -- not necessarily
+    the one `find_unsafe_drive_paths()` flags.
+    """
+    for m in DRIVE_PATH_RE.finditer(cmd):
+        end = m.end()
+        if end < len(cmd) and cmd[end] == '"' and _trailing_backslash_count(m.group(0)) % 2 == 1:
+            return m
+    return None
+
+
 def main() -> None:
     payload = _lib.read_stdin_json()
     if _lib.tool_name(payload) != "Bash":
@@ -154,12 +184,27 @@ def main() -> None:
     match = hits[0].group(0)
     mangled = match.replace("\\", "")
     forward = match.replace("\\", "/")
-    _lib.block(
+    message = (
         f"Blocked: unquoted Windows path `{match}` in a Bash command — Git Bash "
         f"strips backslashes in unquoted word-splitting context, so this would "
         f"actually run as `{mangled}`. Use forward slashes (`{forward}`) or quote "
         f"the path (single or double quotes)."
     )
+
+    broken = find_broken_quote_path(cmd)
+    if broken is not None and broken.start() < hits[0].start():
+        broken_path = broken.group(0)
+        message += (
+            f" Root cause: `{broken_path}` ends in a backslash immediately "
+            f"before a closing `\"` — inside double quotes, a trailing `\\` "
+            f"escapes that quote instead of closing it, so the string never "
+            f"actually closes and quote parity shifts for the rest of the "
+            f"command, which is why `{match}` above landed unquoted. Drop the "
+            f"trailing backslash (or use a forward slash) at the end of "
+            f"`{broken_path}`."
+        )
+
+    _lib.block(message)
 
 
 if __name__ == "__main__":

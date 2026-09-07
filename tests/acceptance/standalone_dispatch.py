@@ -241,5 +241,10 @@ _STANDALONE_UNIT_CHECKS: Tuple[Tuple[str, str, str], ...] = (
     ("session_retention", "test_session_retention.py",
      "the opt-in Claude/Codex retention merger preserves unrelated settings, pins a two-year floor, "
      "removes truncation controls, and remains idempotent (#797)"),
+    ("bash_windows_path_guard", "test_bash_windows_path_guard.py",
+     "the guard's root-cause attribution -- a trailing backslash immediately "
+     "before a closing double-quote escapes it instead of closing the "
+     "string -- is pinned against the exact command that misattributed the "
+     "break to the wrong path (#800)"),
 )
 
