@@ -148,7 +148,6 @@ def write_group(items: Sequence[Tuple[Path, str, int]], group: str, snapshot_dir
         target = snapshot_dir / group / rel
         try:
             digest = sha256_file(abs_path)
-            mtime = abs_path.stat().st_mtime
             target.parent.mkdir(parents=True, exist_ok=True)
             # Idempotent per target: a re-run on the same date, or a retry after a
             # partial run, must overwrite rather than fail. `os.link` refuses an
@@ -163,6 +162,11 @@ def write_group(items: Sequence[Tuple[Path, str, int]], group: str, snapshot_dir
                 linked += 1
             else:
                 shutil.copy2(abs_path, target)
+                # Native JSONL histories are append-only but live. They can
+                # change after the source hash and before/during copy, so the
+                # manifest's authority is the stable snapshot that landed,
+                # never an earlier view of the source (fleet-config#797).
+                digest = sha256_file(target)
                 copied += 1
         except FileNotFoundError:
             vanished.append(rel)
@@ -170,7 +174,13 @@ def write_group(items: Sequence[Tuple[Path, str, int]], group: str, snapshot_dir
         except OSError as exc:
             errors.append(f"copy {abs_path}: {exc}")
             continue
-        entries.append({"path": rel, "sha256": digest, "size": size, "mtime": mtime})
+        snapshot_stat = target.stat()
+        entries.append({
+            "path": rel,
+            "sha256": digest,
+            "size": snapshot_stat.st_size,
+            "mtime": snapshot_stat.st_mtime,
+        })
     return entries, linked, copied
 
 

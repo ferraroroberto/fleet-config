@@ -68,6 +68,8 @@ def _cfg(tmp: Path, **overrides) -> bp.BackupConfig:
         dest=tmp / "dest",
         transcripts_src=tmp / "transcripts",
         transcripts_dest=tmp / "tdest",
+        codex_sessions_src=tmp / "codex-sessions",
+        codex_sessions_dest=tmp / "codex-dest",
         # Absent by default, so every pre-existing case here keeps its two-leg
         # shape and the runtime-data cases opt in explicitly.
         runtime_data_src=tmp / "runtime-data-src",
@@ -296,6 +298,36 @@ try:
     check(not rerun_errs, f"rerun: writing over an existing target succeeds, got {rerun_errs}")
     check(len(entries_again) == 1 and (rerun_day / "g" / "f.md").is_file(),
           "rerun: the file is still there afterwards")
+
+    # A native JSONL rollout can be appended between the source hash and its
+    # copy. The manifest must describe the bytes that actually landed, or the
+    # archive correctly rejects an otherwise usable snapshot.
+    live_src = _write(tmp / "live-copy" / "session.jsonl", "first\n")
+    live_day = tmp / "live-copy-dest"
+    original_sha256_file = bp.snapshot.sha256_file
+    mutated = [False]
+
+    def _mutating_hash(path: Path, chunk: int = 1024 * 1024) -> str:
+        digest = original_sha256_file(path, chunk)
+        if path == live_src and not mutated[0]:
+            with live_src.open("a", encoding="utf-8") as handle:
+                handle.write("second\n")
+            mutated[0] = True
+        return digest
+
+    bp.snapshot.sha256_file = _mutating_hash
+    try:
+        live_entries, _, _ = bp.write_group(
+            [(live_src, "session.jsonl", live_src.stat().st_size)],
+            "g", live_day, None, {}, [],
+        )
+    finally:
+        bp.snapshot.sha256_file = original_sha256_file
+    check(live_entries[0]["sha256"] == original_sha256_file(
+        live_day / "g" / "session.jsonl"
+    ), "live copy: the manifest hashes the stable snapshot bytes, not an earlier source state")
+    check(live_entries[0]["size"] == (live_day / "g" / "session.jsonl").stat().st_size,
+          "live copy: the manifest size describes the stable snapshot bytes")
 
     # ---- iter_repos skips linked worktrees --------------------------------
     _write(fleet / "not-a-repo" / "file.txt")
@@ -719,16 +751,121 @@ try:
           f"runtime: the real -wal/-shm sidecars are excluded, got {sorted(rd_rels)}")
     check(not rd_sel.errors, f"runtime: a healthy root produces no errors, got {rd_sel.errors}")
 
-    # The transcripts leg still caps — this exemption is scoped to one leg, and
-    # "unify the two selectors" must stay a change someone has to make on purpose.
+    # Session transcripts are the payload; a size cap would silently drop the
+    # longest and most valuable conversations.
     _write(rd_cfg.transcripts_src / "proj" / "huge.jsonl", "j" * 5000)
     _write(rd_cfg.transcripts_src / "proj" / "small.jsonl", "{}")
     t_sel = bp.select_transcripts(rd_cfg)
     t_rels = {rel for _, rel, _ in t_sel.files}
-    check("proj/small.jsonl" in t_rels and "proj/huge.jsonl" not in t_rels,
-          f"runtime: the transcripts leg still applies max_file_mb, got {sorted(t_rels)}")
-    check(any(o["path"] == "proj/huge.jsonl" for o in t_sel.oversize),
-          "runtime: and still reports what it dropped for size")
+    check({"proj/small.jsonl", "proj/huge.jsonl"} <= t_rels,
+          f"sessions: transcript files bypass max_file_mb, got {sorted(t_rels)}")
+    check(not t_sel.oversize, "sessions: transcript selection drops nothing for size")
+
+    # ---- Codex resume-critical allowlist + live SQLite snapshot -----------
+    codex_root = tmp / "codex-fixture"
+    codex_cfg = _cfg(tmp, codex_sessions_src=codex_root,
+                     codex_sessions_dest=tmp / "codex-fixture-dest")
+    active_id = "11111111-1111-4111-8111-111111111111"
+    archived_id = "22222222-2222-4222-8222-222222222222"
+    active_rollout = _write(
+        codex_root / "sessions" / f"rollout-2026-08-11-{active_id}.jsonl", "{}",
+    )
+    archived_rollout = _write(
+        codex_root / "archived_sessions" / f"rollout-2026-08-10-{archived_id}.jsonl", "{}",
+    )
+    _write(codex_root / "history.jsonl", "{}")
+    _write(codex_root / "session_index.jsonl", "{}")
+    _write(codex_root / "auth.json", '{"secret":"must-not-leave-source"}')
+    state_db = codex_root / "state_5.sqlite"
+    state_conn = sqlite3.connect(state_db)
+    state_conn.execute("CREATE TABLE threads (id TEXT, rollout_path TEXT, archived INTEGER)")
+    state_conn.executemany(
+        "INSERT INTO threads VALUES (?, ?, ?)",
+        [(active_id, str(active_rollout), 0), (archived_id, str(archived_rollout), 1)],
+    )
+    state_conn.commit()
+    state_conn.close()
+    history_db = codex_root / "thread_history_1.sqlite"
+    history_conn = sqlite3.connect(history_db)
+    history_conn.execute("CREATE TABLE thread_items (thread_id TEXT, item_json TEXT)")
+    history_conn.commit()
+    history_conn.close()
+    with bp.runtime_data_staging() as staging:
+        codex_sel = bp.select_codex_sessions(codex_cfg, staging)
+        codex_rels = {rel for _, rel, _ in codex_sel.files}
+        check({"history.jsonl", "session_index.jsonl", "state_5.sqlite",
+               "thread_history_1.sqlite"} <= codex_rels,
+              f"codex: indexes and safely-snapshotted DBs are selected, got {sorted(codex_rels)}")
+        check(any(rel.startswith("sessions/") for rel in codex_rels)
+              and any(rel.startswith("archived_sessions/") for rel in codex_rels),
+              "codex: active and archived rollouts are both selected")
+        check("auth.json" not in codex_rels, "codex: credentials are outside the allowlist")
+        check({s["id"] for s in codex_sel.sessions} == {active_id, archived_id},
+              f"codex: native inventory covers both session ids, got {codex_sel.sessions}")
+        check(not codex_sel.errors, f"codex: healthy native state has no errors: {codex_sel.errors}")
+
+    # ---- explicit-deletion-only session archive --------------------------
+    archive_src = tmp / "archive-source"
+    archive_id = "33333333-3333-4333-8333-333333333333"
+    archive_file = _write(archive_src / f"{archive_id}.jsonl", "first")
+    archive_sel = bp.Selection(
+        files=[(archive_file, archive_file.name, archive_file.stat().st_size)],
+        sessions=[{"id": archive_id, "path": archive_file.name, "archived": False}],
+    )
+    archive_dest = tmp / "archive-dest"
+    first_archive = bp.run_leg(
+        bp.CLAUDE_SESSIONS_LEG, {"projects": archive_sel}, archive_src,
+        archive_dest, rd_cfg, "2026-08-11", False,
+    )
+    durable_file = archive_dest / bp.SESSION_ARCHIVE_DIR / "projects" / archive_file.name
+    check(first_archive["archive"]["status"] == "pass" and durable_file.is_file(),
+          "archive: the first session copy is complete and verified")
+    archive_file.unlink()
+    second_archive = bp.run_leg(
+        bp.CLAUDE_SESSIONS_LEG, {"projects": bp.Selection()}, archive_src,
+        archive_dest, rd_cfg, "2026-08-12", False,
+    )
+    archive_index = json.loads(
+        (archive_dest / bp.ARCHIVE_MANIFEST_NAME).read_text(encoding="utf-8")
+    )
+    check(durable_file.is_file() and durable_file.read_text(encoding="utf-8") == "first",
+          "archive: source deletion never removes the last durable copy")
+    check(archive_id in archive_index["sessions"],
+          "archive: a disappeared session remains indexed by native id")
+    check(second_archive["archive"]["retained_missing"] == 1,
+          "archive: the manifest reports retention after source removal")
+    audit_after_removal = bp.audit_session_archive(
+        archive_dest, {"projects": bp.Selection()},
+    )
+    check(audit_after_removal["status"] == "ok",
+          "archive audit: source removal is safe when the durable archive still has the session")
+    lagging_file = _write(archive_src / archive_file.name, "newer live content")
+    lagging_audit = bp.audit_session_archive(
+        archive_dest,
+        {"projects": bp.Selection(files=[(
+            lagging_file, lagging_file.name, lagging_file.stat().st_size,
+        )], sessions=[{"id": archive_id, "path": lagging_file.name}])},
+    )
+    check(lagging_audit["status"] == "ok"
+          and lagging_audit["lagging_files"] == [f"projects/{archive_file.name}"],
+          f"archive audit: a newer live append is reported as lagging but remains restorable, "
+          f"got {lagging_audit}")
+    new_archive_file = _write(archive_src / "new-session.jsonl", "not archived yet")
+    incomplete_audit = bp.audit_session_archive(
+        archive_dest,
+        {"projects": bp.Selection(files=[(
+            new_archive_file, new_archive_file.name, new_archive_file.stat().st_size,
+        )])},
+    )
+    check(incomplete_audit["status"] == "incomplete"
+          and incomplete_audit["missing_files"] == ["projects/new-session.jsonl"],
+          f"archive audit: a current unarchived file is incomplete, got {incomplete_audit}")
+    corrupt_archive_dest = tmp / "corrupt-archive"
+    corrupt_archive_dest.mkdir()
+    _write(corrupt_archive_dest / bp.ARCHIVE_MANIFEST_NAME, "not json")
+    unknown_audit = bp.audit_session_archive(corrupt_archive_dest, {"projects": bp.Selection()})
+    check(unknown_audit["status"] == "unknown",
+          f"archive audit: an unreadable index is unknown, never ok, got {unknown_audit}")
 
     # ---- a corrupt database is its own failure state, never a silent omission
     _write(corrupt_dir / "task-os" / "notes.md", "still fine")
@@ -782,9 +919,9 @@ try:
           "runtime: the restore note explains that these are complete databases, not byte copies")
     check("files git deliberately ignores" not in rd_note,
           "runtime: it does not repeat the other legs' 'files git ignores' framing")
-    check("files git deliberately ignores" in
-          (tmp / "notetest" / bp.RESTORE_NOTE_NAME).read_text(encoding="utf-8"),
-          "runtime: while the git-derived legs keep theirs unchanged")
+    session_note = (tmp / "notetest" / bp.RESTORE_NOTE_NAME).read_text(encoding="utf-8")
+    check("explicit-deletion-only" in session_note and "plaintext" in session_note,
+          "runtime: while the session leg explains its durable private archive")
 
     # ---- config ------------------------------------------------------------
     rd_toml = tmp / "rd-projects.toml"
@@ -808,6 +945,9 @@ try:
     real_backup_table = bp._read_toml(ROOT / "hooks" / "projects.toml").get("backup", {})
     check(real_backup_table.get("runtime_data_src") and real_backup_table.get("runtime_data_dest"),
           "projects.toml: the real [backup] table declares both runtime-data keys")
+    check(real_backup_table.get("codex_sessions_src")
+          and real_backup_table.get("codex_sessions_dest"),
+          "projects.toml: the real [backup] table declares both Codex-session keys")
     real_cfg = bp.load_backup_config(ROOT / "hooks" / "projects.toml")
     check(not bp._same_volume(real_cfg.runtime_data_src.parent, real_cfg.runtime_data_dest.parent)
           or sys.platform != "win32",

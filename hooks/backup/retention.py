@@ -11,6 +11,7 @@ module's bookkeeping and `snapshot.py`'s file-writing exist.
 from __future__ import annotations
 
 import json
+import hashlib
 import logging
 import os
 import shutil
@@ -20,6 +21,9 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from .config import (
     BackupConfig,
+    ARCHIVE_MANIFEST_NAME,
+    CLAUDE_SESSIONS_LEG,
+    CODEX_SESSIONS_LEG,
     DATE_FMT,
     FRESHNESS_OK,
     FRESHNESS_STALE,
@@ -29,9 +33,12 @@ from .config import (
     RUNTIME_DATA_LEG,
     RUNTIME_DATA_GROUP,
     RUN_MARKER_NAME,
+    SESSION_ARCHIVE_DIR,
 )
 
 logger = logging.getLogger("backup_private")
+
+SESSION_LEGS = frozenset({CLAUDE_SESSIONS_LEG, CODEX_SESSIONS_LEG})
 
 
 def dated_snapshots(dest_root: Path) -> List[Path]:
@@ -112,6 +119,8 @@ HOW TO RESTORE
 
     latest\\        the newest copy (start here)
     YYYY-MM-DD\\    that day's copy, kept 14 days + one per week for 8 weeks
+    archive\\       session legs only: every native session ever observed;
+                   source cleanup never removes files from this tree
 
   Example, restoring one project's private files:
     Copy-Item -Recurse "{example_src}" "{example_dst}"
@@ -149,6 +158,17 @@ _WHAT_RUNTIME_DATA = """\
   you do not need them to open one of these.
 """
 
+_WHAT_SESSIONS = """\
+  A private, local copy of the native {leg} session data under {source}.
+  These files are plaintext and can contain prompts, tool results, source
+  code, and secrets that appeared in tool output. Keep OS access restricted.
+
+  Rotating dated snapshots and latest/ show current state. archive/ is the
+  explicit-deletion-only recovery set: normal source cleanup never removes
+  its last copy of a session. archive-manifest.json indexes native session
+  IDs without copying transcript content into logs.
+"""
+
 
 def write_restore_note(dest_root: Path, leg: str, source: Path) -> None:
     """Drop a plain-text restore note at the destination root.
@@ -159,8 +179,11 @@ def write_restore_note(dest_root: Path, leg: str, source: Path) -> None:
     loss of. So the instructions ship next to the data.
     """
     what = _WHAT_IGNORED
-    if leg == "transcripts":
-        example_src = str(dest_root / LATEST_DIR / "projects" / "*")
+    if leg in SESSION_LEGS:
+        what = _WHAT_SESSIONS
+        example_src = str(dest_root / SESSION_ARCHIVE_DIR / "projects" / "*")
+        if leg == CODEX_SESSIONS_LEG:
+            example_src = str(dest_root / SESSION_ARCHIVE_DIR / "codex" / "*")
         example_dst = str(source)
     elif leg == RUNTIME_DATA_LEG:
         what = _WHAT_RUNTIME_DATA
@@ -173,13 +196,231 @@ def write_restore_note(dest_root: Path, leg: str, source: Path) -> None:
         (dest_root / RESTORE_NOTE_NAME).write_text(
             _RESTORE_NOTE.format(
                 leg=leg, source=source, example_src=example_src, example_dst=example_dst,
-                what=what.format(source=source),
+                what=what.format(source=source, leg=leg),
                 stamp=datetime.now().strftime("%Y-%m-%d %H:%M"),
             ),
             encoding="utf-8",
         )
     except OSError:  # a note we cannot write must never fail the backup itself
         logger.warning("⚠️ could not write %s to %s", RESTORE_NOTE_NAME, dest_root)
+
+
+def _read_archive_manifest(dest_root: Path) -> Dict[str, Any]:
+    path = dest_root / ARCHIVE_MANIFEST_NAME
+    if not path.exists():
+        return {}
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        raise ValueError(f"existing archive manifest is unreadable: {exc}") from exc
+    if not isinstance(data, dict) or not isinstance(data.get("files", {}), dict) \
+            or not isinstance(data.get("sessions", {}), dict):
+        raise ValueError("existing archive manifest has an unsupported shape")
+    return data
+
+
+def _replace_hardlink(source: Path, target: Path) -> None:
+    """Atomically point an archive path at a completed snapshot file."""
+
+    target.parent.mkdir(parents=True, exist_ok=True)
+    temporary = target.with_name(f".{target.name}.{os.getpid()}.tmp")
+    try:
+        temporary.unlink(missing_ok=True)
+        os.link(source, temporary)
+        os.replace(temporary, target)
+    finally:
+        temporary.unlink(missing_ok=True)
+
+
+def _sha256(path: Path, chunk_size: int = 1024 * 1024) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(chunk_size), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def reconcile_session_archive(dest_root: Path, snapshot_dir: Path,
+                              manifest: Dict[str, Any]) -> Dict[str, Any]:
+    """Merge a session snapshot into an explicit-deletion-only archive.
+
+    Missing source paths are intentionally retained. A normal client cleanup or
+    migration therefore cannot cascade through rotating snapshots and erase the
+    last recoverable copy.
+    """
+
+    leg = str(manifest.get("leg") or "")
+    if leg not in SESSION_LEGS:
+        return {}
+    try:
+        prior = _read_archive_manifest(dest_root)
+    except ValueError as exc:
+        return {
+            "status": "fail", "files": 0, "sessions": 0, "added": 0,
+            "updated": 0, "unchanged": 0, "retained_missing": 0,
+            "unresolved_sessions": [], "errors": [str(exc)],
+        }
+    files = prior.get("files") if isinstance(prior.get("files"), dict) else {}
+    sessions = prior.get("sessions") if isinstance(prior.get("sessions"), dict) else {}
+    files = dict(files)
+    sessions = dict(sessions)
+    archive_root = dest_root / SESSION_ARCHIVE_DIR
+    current_keys: set[str] = set()
+    added = updated = unchanged = 0
+    errors: List[str] = []
+
+    for group, payload in sorted((manifest.get("groups") or {}).items()):
+        for entry in payload.get("files") or []:
+            rel = str(entry.get("path") or "").replace("\\", "/")
+            if not rel or rel.startswith("/") or ".." in Path(rel).parts:
+                errors.append(f"unsafe archive path: {group}/{rel}")
+                continue
+            key = f"{group}/{rel}"
+            current_keys.add(key)
+            source = snapshot_dir / group / Path(rel)
+            target = archive_root / group / Path(rel)
+            previous = files.get(key) if isinstance(files.get(key), dict) else {}
+            expected_hash = entry.get("sha256")
+            expected_size = entry.get("size")
+            same = (
+                previous.get("sha256") == expected_hash
+                and previous.get("size") == expected_size
+                and target.is_file()
+                and target.stat().st_size == expected_size
+            )
+            if same:
+                unchanged += 1
+            else:
+                try:
+                    _replace_hardlink(source, target)
+                    if target.stat().st_size != expected_size or _sha256(target) != expected_hash:
+                        raise OSError("archive copy did not match snapshot manifest")
+                    if key in files:
+                        updated += 1
+                    else:
+                        added += 1
+                except OSError as exc:
+                    errors.append(f"archive {key}: {exc}")
+                    continue
+            files[key] = {
+                "group": group,
+                "path": rel,
+                "sha256": expected_hash,
+                "size": expected_size,
+                "last_seen": manifest.get("date"),
+            }
+
+        for session in payload.get("sessions") or []:
+            session_id = str(session.get("id") or "").lower()
+            if not session_id:
+                continue
+            stored = dict(session)
+            stored["group"] = group
+            stored["last_seen"] = manifest.get("date")
+            sessions[session_id] = stored
+
+    unresolved = []
+    for session_id, session in sessions.items():
+        if session.get("last_seen") != manifest.get("date"):
+            continue
+        path = session.get("path")
+        if path and f"{session.get('group')}/{str(path).replace('\\', '/')}" not in files:
+            unresolved.append(session_id)
+    if unresolved:
+        errors.append(f"{len(unresolved)} current session(s) reference an unarchived native path")
+
+    archive_manifest = {
+        "schema": 1,
+        "leg": leg,
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+        "policy": "explicit-deletion-only",
+        "files": files,
+        "sessions": sessions,
+    }
+    try:
+        dest_root.mkdir(parents=True, exist_ok=True)
+        temporary = dest_root / f".{ARCHIVE_MANIFEST_NAME}.{os.getpid()}.tmp"
+        temporary.write_text(
+            json.dumps(archive_manifest, indent=2, ensure_ascii=False), encoding="utf-8",
+        )
+        os.replace(temporary, dest_root / ARCHIVE_MANIFEST_NAME)
+    except OSError as exc:
+        errors.append(f"archive manifest: {exc}")
+
+    return {
+        "status": "fail" if errors else "pass",
+        "files": len(files),
+        "sessions": len(sessions),
+        "added": added,
+        "updated": updated,
+        "unchanged": unchanged,
+        "retained_missing": len(set(files) - current_keys),
+        "unresolved_sessions": unresolved,
+        "errors": errors,
+    }
+
+
+def audit_session_archive(dest_root: Path, groups: Dict[str, Any]) -> Dict[str, Any]:
+    """Read-only completeness audit of current native state against its archive."""
+
+    source_errors = [error for selection in groups.values() for error in selection.errors]
+    try:
+        archive = _read_archive_manifest(dest_root)
+    except ValueError as exc:
+        return {"status": "unknown", "reason": str(exc), "source_errors": source_errors}
+    if not archive:
+        return {
+            "status": "incomplete", "reason": "archive manifest missing",
+            "source_errors": source_errors,
+        }
+    archive_files = archive.get("files", {})
+    archive_sessions = archive.get("sessions", {})
+    current_files: Dict[str, int] = {}
+    current_sessions: set[str] = set()
+    for group, selection in groups.items():
+        for _, rel, size in selection.files:
+            current_files[f"{group}/{rel.replace('\\', '/')}"] = size
+        current_sessions.update(str(item.get("id") or "").lower() for item in selection.sessions)
+    missing_files = []
+    lagging_files = []
+    corrupt_files = []
+    for key, size in current_files.items():
+        entry = archive_files.get(key) if isinstance(archive_files.get(key), dict) else {}
+        target = dest_root / SESSION_ARCHIVE_DIR / Path(key)
+        try:
+            archived_size = entry.get("size")
+            present = bool(entry) and target.is_file()
+            archive_matches_index = present and target.stat().st_size == archived_size
+        except OSError:
+            archive_matches_index = present = False
+        if not present:
+            missing_files.append(key)
+        elif not archive_matches_index:
+            corrupt_files.append(key)
+        elif archived_size != size:
+            # A live client may append immediately after a successful backup.
+            # The session is still archived/restorable; freshness reports how
+            # old that verified copy is, while this audit records the byte lag.
+            lagging_files.append(key)
+    missing_sessions = sorted(current_sessions - set(archive_sessions))
+    if source_errors or corrupt_files:
+        status = "unknown"
+    elif missing_files or missing_sessions:
+        status = "incomplete"
+    else:
+        status = "ok"
+    return {
+        "status": status,
+        "current_files": len(current_files),
+        "current_sessions": len(current_sessions),
+        "archived_files": len(archive_files),
+        "archived_sessions": len(archive_sessions),
+        "missing_files": missing_files,
+        "missing_sessions": missing_sessions,
+        "lagging_files": lagging_files,
+        "corrupt_files": corrupt_files,
+        "source_errors": source_errors,
+    }
 
 
 def rebuild_latest(dest_root: Path, snapshot_dir: Path) -> int:

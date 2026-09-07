@@ -51,10 +51,11 @@ complete plain-file tree in Explorer while 14 dailies cost about one copy plus
 deltas. Plain files are deliberate: the #590 restore has to need zero tooling,
 because the incident restore was done by hand from plain sources.
 
-Three legs run each night, and every one of them crosses volumes, so each drive
+Four legs run each night, and every one of them crosses volumes, so each drive
 holds the other's crown jewels: repo residue E: -> C:; Claude Code's session
-transcripts (`~/.claude/projects/`, the actual recovery goldmine, and prunable by
-Claude Code itself) C: -> E:; and the relocated runtime-data root C: -> E:.
+transcripts (`~/.claude/projects/`, prunable by Claude Code itself) C: -> E:;
+Codex's allowlisted active/archived rollouts and safely-snapshotted thread
+databases C: -> E:; and the relocated runtime-data root C: -> E:.
 
 The third leg exists because `project-scaffolding#243` moved every always-on
 service's SQLite database *out* of its repo's working tree, to `C:/sqlite/<app>/`
@@ -64,10 +65,8 @@ git working tree — so the relocation makes those databases invisible to layer 
 entirely: not dropped-and-reported, just absent (fleet-config#724). Two things
 about this leg are deliberate and must not be "tidied":
 
-- **No `max_file_mb` cap.** The transcripts leg drops oversize files; here that
-  would silently drop exactly the databases the leg exists for
-  (home-automation's `telemetry.sqlite3` is already 18 MB against a 10 MB cap).
-  That silent drop is the defect fleet-config#722 just fixed on the repos leg.
+- **No `max_file_mb` cap on session or runtime-data legs.** Those files are the
+  payload; dropping the longest transcript or a growing database is data loss.
 - **Databases are snapshotted, not copied.** These are live WAL-mode files under
   continuous write. Copying the `.sqlite3` alone yields a stale-to-last-checkpoint
   image at best; copying it together with `-wal`/`-shm` non-atomically can yield a
@@ -120,8 +119,8 @@ independently, so it only went one way):
                 legs, plus the runtime-data leg's selection (which calls into
                 `snapshot.py` for the SQLite side).
   retention.py  The previous-snapshot lookup, run markers, the `latest/`
-                mirror (full rebuild + incremental reconcile), the restore
-                note, and the retention/freshness state machine.
+                mirror (full rebuild + incremental reconcile), explicit-
+                deletion-only session archives, restore notes, and freshness.
   report.py     The per-leg human-readable report and the summary ping.
   cli.py        The thin orchestrator: preflight, `run_leg`, `collect_repos`,
                 exit-code aggregation, `run`, and `main`'s argument parsing.
@@ -144,6 +143,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import _lib  # noqa: E402
 
 from .config import (  # noqa: E402
+    ARCHIVE_MANIFEST_NAME,
+    CLAUDE_SESSIONS_LEG,
+    CODEX_SESSIONS_GROUP,
+    CODEX_SESSIONS_LEG,
     DATE_FMT,
     DB_LOCK_TIMEOUT_SECONDS,
     DB_SIDECAR_MARKERS,
@@ -163,6 +166,7 @@ from .config import (  # noqa: E402
     RUNTIME_DATA_GROUP,
     RUNTIME_DATA_LEG,
     RUN_MARKER_NAME,
+    SESSION_ARCHIVE_DIR,
     BackupConfig,
     RepoOverrides,
     _FRESHNESS_EXIT,
@@ -182,6 +186,7 @@ from .select import (  # noqa: E402
     git_ignored_entries,
     is_reparse_point,
     iter_repos,
+    select_codex_sessions,
     select_repo,
     select_runtime_data,
     select_transcripts,
@@ -204,6 +209,7 @@ from .retention import (  # noqa: E402
     _index_manifest,
     _previous_snapshot,
     _prune_empty_dirs,
+    audit_session_archive,
     clear_run_marker,
     dated_snapshots,
     freshness,
@@ -214,6 +220,7 @@ from .retention import (  # noqa: E402
     read_run_marker,
     rebuild_latest,
     reconcile_latest,
+    reconcile_session_archive,
     write_restore_note,
     write_run_marker,
 )
@@ -236,15 +243,19 @@ __all__ = [
     "EXIT_ZERO_FILES_REGRESSION", "FRESHNESS_OK", "FRESHNESS_STALE", "FRESHNESS_UNKNOWN",
     "MANIFEST_NAME", "RUN_MARKER_NAME", "LATEST_DIR", "DATE_FMT", "RUNTIME_DATA_LEG",
     "RUNTIME_DATA_GROUP", "DB_SUFFIXES", "DB_SIDECAR_MARKERS", "DB_LOCK_TIMEOUT_SECONDS",
+    "CLAUDE_SESSIONS_LEG", "CODEX_SESSIONS_LEG", "CODEX_SESSIONS_GROUP",
+    "SESSION_ARCHIVE_DIR", "ARCHIVE_MANIFEST_NAME",
     "DEFAULT_DENY_DIRS", "DEFAULT_DENY_GLOBS", "RESTORE_NOTE_NAME",
     "load_backup_config", "load_repo_overrides",
     "is_reparse_point", "sha256_file", "git_ignored_entries",
-    "walk_files", "select_repo", "select_transcripts", "select_runtime_data", "iter_repos",
+    "walk_files", "select_repo", "select_transcripts", "select_codex_sessions",
+    "select_runtime_data", "iter_repos",
     "is_sqlite_sidecar", "snapshot_sqlite", "runtime_data_staging",
     "write_group", "verify_sample", "check_zero_file_regressions",
     "dated_snapshots", "read_manifest", "has_run_marker", "read_run_marker",
     "write_run_marker", "clear_run_marker", "write_restore_note", "rebuild_latest",
-    "reconcile_latest", "plan_retention", "prune", "freshness",
+    "reconcile_latest", "reconcile_session_archive", "audit_session_archive",
+    "plan_retention", "prune", "freshness",
     "collect_repos", "run_leg", "run", "main",
     "report", "logger",
 ]

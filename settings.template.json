@@ -7,7 +7,7 @@
     "CLAUDE_AUTOCOMPACT_PCT_OVERRIDE": "70",
     "DISABLE_ERROR_REPORTING": "1"
   },
-  "cleanupPeriodDays": 365,
+  "cleanupPeriodDays": 730,
   "feedbackSurveyRate": 0,
   "attribution": {
     "commit": "",

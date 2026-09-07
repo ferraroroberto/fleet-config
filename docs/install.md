@@ -26,6 +26,18 @@ The two limit items use Codex's own account data and rendering. An unavailable w
 
 This config affects the Codex terminal TUI only. It does not customize the Codex desktop conversation UI, and it does not add custom colors, thresholds, or a replacement renderer; theme colors and layout remain native Codex behavior.
 
+## Session retention opt-in
+
+[Anthropic's session documentation](https://code.claude.com/docs/en/sessions) says Claude Code deletes local session files after 30 days by default and that `cleanupPeriodDays` controls that window. The [official OpenAI configuration reference](https://learn.chatgpt.com/docs/config-file/config-reference) exposes Codex `history.persistence = "save-all" | "none"` and says `history.max_bytes` drops oldest entries when set; the [developer-command reference](https://learn.chatgpt.com/docs/developer-commands?surface=cli) documents the native resume paths. The fleet pins a two-year native-resume floor and removes Codex's byte cap with one idempotent command from the primary checkout:
+
+```powershell
+.\install.ps1 -ConfigureSessionRetention
+```
+
+The switch runs `session_retention.py` atomically. It changes only Claude's `cleanupPeriodDays` and `env.CLAUDE_CODE_SKIP_PROMPT_HISTORY` plus Codex's two history keys; other JSON values, TOML comments/order, permissions, and secrets survive. `--check` provides a read-only drift check. Scoped/worktree installation refuses this user-home mutation. Open fresh sessions after applying it. OpenAI's current configuration reference documents no separate day-based local pruning control for Codex, so that control is unavailable rather than silently assumed to match Claude's 730-day setting; `save-all` with no byte cap is the documented native guarantee, and the independent archive below supplies indefinite recovery.
+
+These settings keep native sessions directly resumable for at least 730 days. The explicit-deletion-only archives described in [the private-backup guide](fleet-private-backup.md) provide the separate data-loss guarantee after native cleanup; provider-side retention is unrelated and unchanged.
+
 ## Scoped project discovery
 
 `install.ps1` also inventories the registered checkouts in `hooks/projects.toml` and reconciles individual skill-directory links. The layout follows [project-scaffolding's portable project skills contract](https://github.com/ferraroroberto/project-scaffolding/blob/main/docs/agents/project-skills.md): keep the maintained source, link the complete directory into the missing native root at the same scope, and preserve existing real parents. `.claude/skills/<name>` gets a `.agents/skills/<name>` link for Codex/Pi; a real `.agents` source gets an inverse `.claude` link. Grok's native compatibility needs no `.grok` mirror. Existing user-home junctions remain compatible, including the `_lib` helper path used by global workflows; new project discovery never mirrors their parent containers.

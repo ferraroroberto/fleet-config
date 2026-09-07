@@ -62,6 +62,11 @@ DATE_FMT = "%Y-%m-%d"
 # restore note's per-leg blurb — so it is a constant, not a repeated literal.
 RUNTIME_DATA_LEG = "runtime-data"
 RUNTIME_DATA_GROUP = "sqlite"
+CLAUDE_SESSIONS_LEG = "transcripts"
+CODEX_SESSIONS_LEG = "codex-sessions"
+CODEX_SESSIONS_GROUP = "codex"
+SESSION_ARCHIVE_DIR = "archive"
+ARCHIVE_MANIFEST_NAME = "archive-manifest.json"
 
 #: Extensions treated as a SQLite database: snapshotted through the online
 #: backup API rather than copied byte-for-byte.
@@ -111,6 +116,8 @@ class BackupConfig:
     dest: Path
     transcripts_src: Path
     transcripts_dest: Path
+    codex_sessions_src: Path
+    codex_sessions_dest: Path
     # The relocated runtime-data root (project-scaffolding#243) and its
     # destination. `runtime_data_dest` has to live on E: — the legs cross
     # volumes on purpose, and `_preflight` refuses a same-volume snapshot.
@@ -146,12 +153,14 @@ class BackupConfig:
             "deny_dirs": list(self.deny_dirs),
             "deny_globs": list(self.deny_globs),
         }
-        if leg == RUNTIME_DATA_LEG:
+        if leg in {CLAUDE_SESSIONS_LEG, CODEX_SESSIONS_LEG, RUNTIME_DATA_LEG}:
             summary["max_file_mb"] = None
             summary["size_cap_exempt"] = (
-                "runtime-data: the databases ARE the payload, so the global "
-                "max_file_mb cap is deliberately not applied (fleet-config#724)"
+                f"{leg}: the session/database files ARE the payload, so the global "
+                "max_file_mb cap is deliberately not applied"
             )
+        if leg in {CLAUDE_SESSIONS_LEG, CODEX_SESSIONS_LEG}:
+            summary["archive"] = "explicit-deletion-only"
         return summary
 
 
@@ -203,6 +212,8 @@ def load_backup_config(path: Optional[Path] = None) -> BackupConfig:
         dest=_path("dest", "C:/Users/rober/backup/fleet-private"),
         transcripts_src=_path("transcripts_src", "~/.claude/projects"),
         transcripts_dest=_path("transcripts_dest", "E:/backup/claude-transcripts"),
+        codex_sessions_src=_path("codex_sessions_src", "~/.codex"),
+        codex_sessions_dest=_path("codex_sessions_dest", "E:/backup/codex-sessions"),
         runtime_data_src=_path("runtime_data_src", "C:/sqlite"),
         runtime_data_dest=_path("runtime_data_dest", "E:/backup/fleet-runtime-data"),
         keep_daily=int(table.get("keep_daily", 14)),
