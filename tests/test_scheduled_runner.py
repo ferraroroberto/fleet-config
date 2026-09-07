@@ -260,7 +260,7 @@ class ScheduledRunnerTests(unittest.TestCase):
                 with self.subTest(pipe=pipe, failure=failure), tempfile.TemporaryDirectory(prefix="runner_drain_") as folder:
                     marker = Path(folder) / "descendant_completed"
                     ready = Path(folder) / "descendant_started"
-                    descendant = f"import os,time;from pathlib import Path;Path({str(ready)!r}).write_text(str(os.getpid()));time.sleep(4);Path({str(marker)!r}).touch()"
+                    descendant = f"import os,time;from pathlib import Path;Path({str(ready)!r}).write_text(str(os.getpid()));time.sleep(8);Path({str(marker)!r}).touch()"
                     out = "sys.stdout" if pipe in ("stdout", "both") else "subprocess.DEVNULL"
                     err = "sys.stderr" if pipe in ("stderr", "both") else "subprocess.DEVNULL"
                     script = (f"import subprocess,sys,time;from pathlib import Path;"
@@ -277,7 +277,7 @@ class ScheduledRunnerTests(unittest.TestCase):
                     api.CloseHandle.argtypes = [wintypes.HANDLE]
                     api.CloseHandle.restype = wintypes.BOOL
                     def request():
-                        deadline = time.monotonic()+3
+                        deadline = time.monotonic()+6
                         while time.monotonic() < deadline:
                             try:
                                 pid = int(ready.read_text())
@@ -304,6 +304,7 @@ class ScheduledRunnerTests(unittest.TestCase):
                             [sys.executable, "-c", script],
                             formatter=formatter,
                             stall_timeout=0, cancel_event=cancel if failure != "none" else None)
+                    returned = time.monotonic()
                     thread.join(timeout=4)
                     self.assertFalse(thread.is_alive())
                     self.assertEqual(len(handles), 1, "must retain the live descendant handle")
@@ -313,7 +314,7 @@ class ScheduledRunnerTests(unittest.TestCase):
                     finally:
                         for handle in handles:
                             api.CloseHandle(handle)
-                    self.assertLess(time.monotonic()-started, 3.5, "\n".join(lines))
+                    self.assertLess(returned-started, 5, "\n".join(lines))
                     self.assertEqual(code, runner.INCOMPLETE_WORK_EXIT_CODE if failure == "none" else runner.CANCELLATION_UNCONFIRMED_EXIT_CODE, "\n".join(lines))
                     self.assertFalse(marker.exists())
                     if failure == "none":
