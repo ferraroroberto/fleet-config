@@ -4,12 +4,13 @@
 !*.local.example.*
 settings.local.json
 
-# Secrets — never track. The Telegram bot token lives in ~/.codex/config.toml and
-# ~/.claude/settings.json (secret-managed, env-var injected), never in this repo.
+# Secrets — never track. The Telegram bot token may live in the ignored root
+# .env or ~/.claude/settings.json; .env.example documents only the key shape.
 # Belt-and-braces against an accidental copy landing here (fleet-config#74);
 # the real wire is the secret_scan_guard hook, which blocks the commit itself.
 .env
 *.env
+!.env.example
 config.toml
 .codex/
 

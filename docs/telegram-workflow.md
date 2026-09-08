@@ -124,7 +124,7 @@ E:/automation/fleet-config/.venv/Scripts/python.exe ~/.claude/hooks/notify_compl
 
 Every kind **leads with a status mark** (`✅ 🆕 🚦 🏁 🚀 📊 🔄`) as a glanceable cue. It maps each `--kind` to an intent category (`category_for()` — `start`/`batch`/`cleanup`-with-review → `attention`, the rest → `log`) and resolves the chat via the shared `_lib.resolve_notify_target(cwd, category=…)` (project override → `[global]` category chat → `telegram_chat` fallback), is a silent no-op when no chat is configured, and always exits 0 — a notification failure can never block a skill. The one thing it can't force is the model remembering to *call* it; making the firing itself deterministic would need a merge-detecting hook, which is more brittle than it's worth.
 
-## 2. Session hook — `notify_on_idle.py`
+## 2. Session hooks — `notify_on_idle.py` and `codex_attention.py`
 
 Wired to Claude Code's `Notification` event (Claude needs input / a permission / has gone idle). It rides `notify_send`, so an AFK human gets a phone notification instead of a toast.
 
@@ -139,7 +139,7 @@ telegram_chat = "-1004408175579"   # numeric chat id
 telegram_chat = "-1004408175579"   # fleet-wide fallback
 ```
 
-The hook posts with `category="attention"`, so when `telegram_chat_attention` is set (see *Chat routing by intent* above) its pings land in `coding alerts`; otherwise they fall back to `telegram_chat`. With no chat set at all, the hook is a silent no-op — that keeps notification noise off by default. It hooks `Notification` (not `Stop`) deliberately, so it doesn't ping on every turn-end.
+The hooks post with `category="attention"`, so when `telegram_chat_attention` is set (see *Chat routing by intent* above) their pings land in `coding alerts`; otherwise they fall back to `telegram_chat`. With no chat set at all, they are silent no-ops — that keeps notification noise off by default. Claude Code uses its native `Notification` event and never calls the local classifier. Codex uses authoritative `PermissionRequest` events plus a bounded 70-word `Stop` excerpt classified through the local hub's `agentic_light` role; only strict `awaiting_input` JSON at confidence 0.90 or above alerts. Uncertain, malformed, timed-out, or unavailable-hub results stay Board-only and are logged as not confirmed. Alerts are deduplicated by native session and turn id. Codex's separate CUA `turn-ended` notifier remains unchanged.
 
 **No `@mention` machinery.** Slack needed an `<@U…>` tag to guarantee a mobile push, so the transport carried a single-sourced mention decision plus a `slack_notify_user` id and a `slack_notify_mention` toggle. Telegram pushes every message to a chat you are a member of, which made all three dead weight — they were deleted in #540, not ported. Per-chat mute is the control now, and it lives in the Telegram client, not in config.
 
@@ -151,7 +151,7 @@ The hook posts with `category="attention"`, so when `telegram_chat_attention` is
 
 **Board deep link (fleet-config#242) — this is the remote control.** When `board_url` is also configured, the ping appends a second line: `📋 Open on the Board: https://<host>:8445/?board=<session_id>`. `<session_id>` is Claude's transcript UUID — the same id `session_state.py` already persists as the board row's key, and the same id app-launcher#307 (shipped) resolves to a card's claimed `state_sid`. `board_url` must be a Tailscale-reachable address (e.g. `https://<pc>.<tailnet>.ts.net:8445`), not loopback, since the ping is tapped on the phone. With Slack's native integration retired, **this link is how work is driven from the phone.**
 
-**Set it via `FLEET_BOARD_URL`, not `[global] board_url` (fleet-config#271).** `_lib.resolve_board_url` checks, in order: a project's own `board_url` override in `projects.toml`, then the `FLEET_BOARD_URL` environment variable, then the committed `[global] board_url` fallback. The real hostname belongs in `FLEET_BOARD_URL` — set it in `~/.claude/settings.json`'s `env` block, same placement as `TELEGRAM_BOT_TOKEN` — because fleet-config is a **public** repo and committing a real Tailscale hostname into `projects.toml` would permanently expose a device name + tailnet id in public git history. `[global] board_url` stays empty here; it exists only as a documented extension point (e.g. for a private fork). With nothing configured, the ping stays link-free.
+**Set it via `FLEET_BOARD_URL`, not `[global] board_url` (fleet-config#271).** `_lib.resolve_board_url` checks, in order: a project's own `board_url` override in `projects.toml`, the `FLEET_BOARD_URL` environment variable, fleet-config's ignored root `.env`, then the committed `[global] board_url` fallback. Keep the real hostname in the ignored `.env` (shape in `.env.example`); Claude settings may also inject the same environment key. This keeps the private device/tailnet identity out of the public repo while making the link available to Codex and other launchers. `[global] board_url` stays empty here; it exists only as a documented extension point. With nothing configured, the ping stays link-free.
 
 **Bake a bearer token in for a frictionless tap (fleet-config#273).** If app-launcher's `auth_token`/`auth_password` are configured, a device that hasn't already stashed the token gets a login overlay instead of landing straight on the card. `FLEET_BOARD_URL` can carry its own query string — e.g. `https://<host>:8445?token=<token>`, the exact value the tray's own **Copy Tailscale URL** menu item already produces — and `board_link()` merges `board=<session_id>` into it via `urllib.parse` rather than concatenating, so the existing `?token=` survives alongside `?board=`. Paste the tray's Copy-URL value straight into `FLEET_BOARD_URL` for a link that authenticates on tap, same trust model as that existing feature.
 
@@ -175,7 +175,7 @@ The fleet reuses the bot `whatsapp-radar` already had (`@whatsappRadarBot`), so 
    { "env": { "TELEGRAM_BOT_TOKEN": "<bot_id>:<secret>" } }
    ```
 
-   That one place reaches every hook, skill, and venv subprocess (they inherit Claude Code's environment). `notify_send.py` also reads this file directly as a fallback when `TELEGRAM_BOT_TOKEN` is absent from the environment — so it works the same under launchers that don't inject the `env` block (Pi, Codex, GitHub Copilot, a bare terminal, a scheduled `.bat`), not just Claude Code.
+   Fleet Config may instead keep the same key in its gitignored root `.env` (copy `.env.example`); `notify_send.py` resolves explicit argument → process environment → root `.env` → Claude settings. This makes hooks work under launchers that inject neither settings nor environment values while keeping the token out of git.
 
    `hooks/secret_scan_guard.py` blocks a commit containing a live-shaped bot token (`_lib.SECRET_PATTERNS`), while leaving placeholder forms like the one above committable.
 6. **Verify with a live ping** — a green test suite proves the code runs, not that the message landed:

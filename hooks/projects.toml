@@ -30,10 +30,10 @@
 # When set, the notify_on_idle hook pings this chat when a live session in
 # that project needs attention. Omit it (the default) to keep that project quiet.
 # A [global] telegram_chat below acts as a fleet-wide fallback. Both are
-# opt-in: with neither set, notify_on_idle is a silent no-op. The bot token lives
-# in ~/.claude/settings.json env (TELEGRAM_BOT_TOKEN), never here — this repo is
-# public. A chat id alone is inert without the token, same trust model as the
-# Telegram chat ids it replaces. See docs/telegram-workflow.md.
+# opt-in: with neither set, attention hooks are silent no-ops. The bot token
+# lives in the ignored fleet-config root .env or ~/.claude/settings.json env as
+# TELEGRAM_BOT_TOKEN, never in this public TOML. A chat id alone is inert without
+# the token. See .env.example and docs/telegram-workflow.md.
 #
 # Notification chat routing by intent (issue #139):
 #   telegram_chat_attention = "-1001234567890"   # "come look": blocked / awaiting input / ready-to-validate / batch-ready

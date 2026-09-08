@@ -1,12 +1,10 @@
 """Ping Telegram when a live session needs attention — so you can stop babysitting.
 
 **Claude Code only.** This hook is wired *solely* into Claude Code's
-``Notification`` event (``settings.template.json``) — no other agent has an
-equivalent event surface (Codex's ``hooks.json`` is PreToolUse/PostToolUse only;
-Pi exposes no hook surface), so the agent label below is the deterministic
-constant ``"Claude Code"`` rather than something inferred. Extending the
-"awaits your input" ping to Codex and Pi (and parametrizing the label once a
-second caller exists) is tracked separately in fleet-config#213.
+``Notification`` event (``settings.template.json``), so its agent label is the
+deterministic constant ``"Claude Code"`` rather than something inferred. Codex
+uses its native ``PermissionRequest`` and ``Stop`` events through the separate
+``codex_attention.py`` hook; Pi still has no equivalent attention event.
 
 It pings only on the ``permission_prompt`` sub-type (a permission gate or an
 ``AskUserQuestion`` — the "come look, I'm blocked" push) and **no-ops on**
@@ -87,7 +85,7 @@ def classify(payload: dict) -> tuple[str, str]:
     through, but a permission prompt is reworded to "awaits your input" because
     it's just as often a question (AskUserQuestion) as a real permission gate.
     The agent name is hardcoded "Claude Code" because this hook only ever fires
-    from Claude Code (see module docstring; Codex/Pi are fleet-config#213).
+    from Claude Code (see module docstring; Codex has its own attention hook).
     """
     if payload.get("notification_type") == "permission_prompt":
         return "🔔", "Claude Code awaits your input"
