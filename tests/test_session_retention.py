@@ -84,10 +84,14 @@ class SessionRetentionTests(unittest.TestCase):
 
     def test_installer_switch_is_scoped_forwarded_and_invokes_helper(self) -> None:
         installer = (ROOT / "install.ps1").read_text(encoding="utf-8")
+        scoped_guard = next(
+            line for line in installer.splitlines()
+            if line.strip().startswith("if ($ConfigureCodexStatusline")
+        )
         self.assertIn("[switch]$ConfigureSessionRetention", installer)
         self.assertIn("$psArgs += '-ConfigureSessionRetention'", installer)
         self.assertIn("(Join-Path $RepoRoot 'session_retention.py') --apply", installer)
-        self.assertIn("$ConfigureCodexStatusline -or $ConfigureSessionRetention", installer)
+        self.assertIn("$ConfigureSessionRetention", scoped_guard)
 
 
 if __name__ == "__main__":

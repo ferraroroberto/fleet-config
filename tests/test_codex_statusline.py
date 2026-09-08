@@ -148,9 +148,13 @@ class MergeStatusLineTests(unittest.TestCase):
 
     def test_installer_switch_is_scoped_and_forwarded(self) -> None:
         installer = (REPO / "install.ps1").read_text(encoding="utf-8")
+        scoped_guard = next(
+            line for line in installer.splitlines()
+            if line.strip().startswith("if ($ConfigureCodexStatusline")
+        )
 
         self.assertIn("[switch]$ConfigureCodexStatusline", installer)
-        self.assertIn("$ConfigureCodexStatusline -or $ConfigureSessionRetention -or $VerifyCodexSandbox", installer)
+        self.assertIn("$ConfigureCodexStatusline", scoped_guard)
         self.assertIn("$psArgs += '-ConfigureCodexStatusline'", installer)
         self.assertIn("(Join-Path $RepoRoot 'codex_statusline.py') --apply", installer)
 
