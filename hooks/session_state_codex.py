@@ -20,6 +20,9 @@ shared writer retains a bounded tombstone so a late ``Stop`` or
 ``UserPromptSubmit`` proves a resumed session is active and may reopen that
 same id.
 
+The separate :mod:`codex_attention` hook handles the native approval event and
+the bounded, advisory Stop classifier.  This adapter remains Board-only.
+
 Composes with, rather than replaces, Codex's separate ``notify`` mechanism
 (the CUA ``codex-computer-use.exe`` "turn-ended" notifier in
 ``~/.codex/config.toml``) by never touching it — this hook fires through the

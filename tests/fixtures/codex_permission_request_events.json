@@ -1,0 +1,22 @@
+{
+  "codex_version": "0.153.4",
+  "approval_request": [
+    "UserPromptSubmit",
+    "PermissionRequest",
+    "Stop"
+  ],
+  "prose_question": [
+    "UserPromptSubmit",
+    "Stop"
+  ],
+  "clean_completion": [
+    "UserPromptSubmit",
+    "Stop"
+  ],
+  "captured_fields": [
+    "hook_event_name",
+    "session_id",
+    "turn_id",
+    "last_assistant_message"
+  ]
+}

@@ -21,12 +21,10 @@ contract is deliberately unchanged - never raises, reports failure as ``False``
 / a non-zero exit, stdlib ``urllib`` only (hooks run on system Python with no
 venv, so there is no ``requests`` to rely on).
 
-The bot token is resolved in three steps: an explicit ``token=`` argument, then
-the ``TELEGRAM_BOT_TOKEN`` environment variable, then - as a fallback - a direct
-read of ``~/.claude/settings.json``'s ``env`` block (never committed). Claude
-Code injects that ``env`` block into everything it spawns, but other launchers
-(Pi, Codex, GitHub Copilot, a bare terminal, a scheduled ``.bat``) don't, so the
-file fallback is what makes this transport truly launcher-agnostic.
+The bot token is resolved in four steps: an explicit ``token=`` argument, the
+``TELEGRAM_BOT_TOKEN`` environment variable, fleet-config's ignored root
+``.env``, then ``~/.claude/settings.json``'s ``env`` block. The two file
+fallbacks keep the transport launcher-agnostic without putting a secret in git.
 
 **No ``parse_mode``.** Every message goes as plain text on purpose. Telegram
 rejects a whole message whose HTML/Markdown does not parse, and the bodies this
@@ -58,6 +56,8 @@ TELEGRAM_API = "https://api.telegram.org/bot{token}/{method}"
 TOKEN_ENV_VAR = "TELEGRAM_BOT_TOKEN"
 SETTINGS_JSON_PATH = Path.home() / ".claude" / "settings.json"
 SETTINGS_JSON_PATH_ENV_VAR = "CLAUDE_SETTINGS_JSON_PATH"
+DOTENV_PATH = Path(__file__).resolve().parent.parent / ".env"
+DOTENV_PATH_ENV_VAR = "FLEET_CONFIG_ENV_PATH"
 
 # Bot API hard limits. Exceeding either is a rejected send, not a truncated one,
 # so both are enforced here in the transport rather than at 18 call sites.
@@ -97,14 +97,30 @@ def _token_from_settings() -> Optional[str]:
         return None
 
 
+def _token_from_dotenv() -> Optional[str]:
+    """Read ``TELEGRAM_BOT_TOKEN`` from fleet-config's ignored root ``.env``."""
+    path = Path(os.environ.get(DOTENV_PATH_ENV_VAR) or DOTENV_PATH)
+    try:
+        for raw_line in path.read_text(encoding="utf-8-sig").splitlines():
+            line = raw_line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            key, value = line.split("=", 1)
+            if key.strip() == TOKEN_ENV_VAR:
+                return value.strip().strip("\"'") or None
+    except OSError:
+        return None
+    return None
+
+
 def _resolve_token(token: Optional[str]) -> Optional[str]:
-    """Resolve the bot token: explicit arg -> env var -> settings.json fallback.
+    """Resolve token: explicit arg -> env var -> root .env -> settings.json.
 
     Single source of token resolution for both :func:`notify` and
     :func:`upload_file` so every launcher (Claude Code, Pi, Codex, Copilot, a
     bare terminal, a scheduled ``.bat``) finds the token identically.
     """
-    return token or os.getenv(TOKEN_ENV_VAR) or _token_from_settings()
+    return token or os.getenv(TOKEN_ENV_VAR) or _token_from_dotenv() or _token_from_settings()
 
 
 def parse_chat(raw: str) -> str:

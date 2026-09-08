@@ -1178,27 +1178,45 @@ def resolve_notify_target(
 
 
 BOARD_URL_ENV_VAR = "FLEET_BOARD_URL"
+DOTENV_PATH_ENV_VAR = "FLEET_CONFIG_ENV_PATH"
+
+
+def _dotenv_value(key: str) -> Optional[str]:
+    """Read one value from fleet-config's ignored root ``.env``; never raise."""
+    default_path = Path(__file__).resolve().parent.parent / ".env"
+    path = Path(os.environ.get(DOTENV_PATH_ENV_VAR) or default_path)
+    try:
+        for raw_line in path.read_text(encoding="utf-8-sig").splitlines():
+            line = raw_line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            candidate, value = line.split("=", 1)
+            if candidate.strip() == key:
+                return value.strip().strip("\"'") or None
+    except OSError:
+        return None
+    return None
 
 
 def resolve_board_url(cwd_path: Path, registry: Optional[Registry] = None) -> Optional[str]:
     """Resolve the app-launcher Fleet Board base URL for a ``?board=<sid>`` deep
     link (fleet-config#242). Precedence: a project's own ``board_url`` override,
-    then the ``FLEET_BOARD_URL`` environment variable, then the committed
-    ``[global] board_url`` — ``None`` when nothing resolves, which the caller
-    must treat as "omit the link line", never a guessed URL.
+    then the ``FLEET_BOARD_URL`` environment variable, fleet-config's ignored
+    root ``.env``, then committed ``[global] board_url``. ``None`` means the
+    caller must omit the link line, never guess a URL.
 
     The real value (a Tailscale hostname) is set via ``FLEET_BOARD_URL``, not
     ``[global] board_url``, because fleet-config is a **public** repo
     (fleet-config#271) — same reasoning as ``TELEGRAM_BOT_TOKEN`` staying out of
     ``projects.toml``. Claude Code always injects its ``env`` block into hook
-    subprocesses, so a bare env-var read is enough here (unlike
-    ``notify_send``'s extra settings.json-file fallback, needed only because
-    that transport must also work from non-Claude launchers).
+    subprocesses. The ignored ``.env`` fallback makes the same private value
+    available to Codex and other launchers that do not inject Claude settings.
     """
     reg = registry or load_registry()
     project = detect_project(cwd_path, reg)
     project_value = project.extra.get("board_url") if project else None
-    return project_value or os.environ.get(BOARD_URL_ENV_VAR) or reg.globals.board_url
+    return (project_value or os.environ.get(BOARD_URL_ENV_VAR)
+            or _dotenv_value(BOARD_URL_ENV_VAR) or reg.globals.board_url)
 
 
 # ------------------------------------------------------------------- .venv

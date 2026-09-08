@@ -50,15 +50,17 @@ def _notify_send_unit_checks() -> Tuple[int, int]:
     )
 
     # Missing token must return False (never raise, never post). Force-unset the
-    # env var AND neutralize the settings.json fallback around the call, so
-    # neither a real token in the dev box's env nor one in ~/.claude/settings.json
-    # can trigger a post — this exercises the genuine "no token anywhere" path.
+    # env var AND neutralize both file fallbacks around the call, so no real
+    # developer-machine secret can trigger a post.
     saved = os.environ.pop(notify_send.TOKEN_ENV_VAR, None)
+    saved_from_dotenv = notify_send._token_from_dotenv
     saved_from_settings = notify_send._token_from_settings
+    notify_send._token_from_dotenv = lambda: None
     notify_send._token_from_settings = lambda: None
     try:
         result = notify_send.notify("test", chat="-1004408175579", token=None)
     finally:
+        notify_send._token_from_dotenv = saved_from_dotenv
         notify_send._token_from_settings = saved_from_settings
         if saved is not None:
             os.environ[notify_send.TOKEN_ENV_VAR] = saved
@@ -69,13 +71,16 @@ def _notify_send_unit_checks() -> Tuple[int, int]:
     # check is hermetic (independent of whether the dev box's settings.json has a
     # token) and confirm the resolution order: env var wins, else settings.json.
     saved_env = os.environ.pop(notify_send.TOKEN_ENV_VAR, None)
+    saved_dotenv_reader = notify_send._token_from_dotenv
     saved_reader = notify_send._token_from_settings
+    notify_send._token_from_dotenv = lambda: None
     notify_send._token_from_settings = lambda: "tg-from-settings"
     try:
         from_settings = notify_send._resolve_token(None)
         os.environ[notify_send.TOKEN_ENV_VAR] = "tg-from-env"
         env_wins = notify_send._resolve_token(None)
     finally:
+        notify_send._token_from_dotenv = saved_dotenv_reader
         notify_send._token_from_settings = saved_reader
         os.environ.pop(notify_send.TOKEN_ENV_VAR, None)
         if saved_env is not None:
@@ -85,6 +90,189 @@ def _notify_send_unit_checks() -> Tuple[int, int]:
     check("notify_send: env var wins over settings.json fallback",
           env_wins == "tg-from-env")
 
+    # The ignored fleet-config .env is the launcher-neutral local source. It
+    # wins over settings.json but never over an explicit process environment.
+    dotenv_dir = Path(tempfile.mkdtemp(prefix="notify_dotenv_"))
+    dotenv = dotenv_dir / ".env"
+    dotenv.write_text('TELEGRAM_BOT_TOKEN="tg-from-dotenv"\n', encoding="utf-8")
+    saved_dotenv_path = os.environ.get(notify_send.DOTENV_PATH_ENV_VAR)
+    saved_env = os.environ.pop(notify_send.TOKEN_ENV_VAR, None)
+    saved_reader = notify_send._token_from_settings
+    notify_send._token_from_settings = lambda: "tg-from-settings"
+    os.environ[notify_send.DOTENV_PATH_ENV_VAR] = str(dotenv)
+    try:
+        check("notify_send: ignored .env resolves the token",
+              notify_send._resolve_token(None) == "tg-from-dotenv")
+        os.environ[notify_send.TOKEN_ENV_VAR] = "tg-from-env"
+        check("notify_send: process env wins over ignored .env",
+              notify_send._resolve_token(None) == "tg-from-env")
+    finally:
+        notify_send._token_from_settings = saved_reader
+        os.environ.pop(notify_send.TOKEN_ENV_VAR, None)
+        if saved_env is not None:
+            os.environ[notify_send.TOKEN_ENV_VAR] = saved_env
+        if saved_dotenv_path is None:
+            os.environ.pop(notify_send.DOTENV_PATH_ENV_VAR, None)
+        else:
+            os.environ[notify_send.DOTENV_PATH_ENV_VAR] = saved_dotenv_path
+        shutil.rmtree(dotenv_dir, ignore_errors=True)
+
+    return check.failures, check.total
+
+
+def _codex_attention_unit_checks() -> Tuple[int, int]:
+    """Codex native approval routing and conservative Stop classification."""
+    sys.path.insert(0, str(HOOKS))
+    import codex_attention  # noqa: E402
+
+    check = _Checker()
+    tmp = Path(tempfile.mkdtemp(prefix="codex_attention_"))
+    registry = tmp / "projects.toml"
+    registry.write_text(
+        f'[probe]\ncwd_prefix = "{tmp.as_posix()}"\n'
+        'telegram_chat_attention = "CHAT"\nboard_url = "https://board.example/?token=x"\n',
+        encoding="utf-8",
+    )
+    saved_registry = os.environ.get("CLAUDE_HOOKS_PROJECTS_TOML")
+    saved_state = os.environ.get("CLAUDE_HOOKS_STATE_DIR")
+    saved_complete = codex_attention.hub_client.complete
+    saved_notify = codex_attention.notify_send.notify
+    calls: list[tuple[str, str]] = []
+    hub_kwargs: list[dict] = []
+
+    def fake_notify(message: str, chat: str, token: str | None = None) -> bool:
+        calls.append((message, chat))
+        return True
+
+    try:
+        os.environ["CLAUDE_HOOKS_PROJECTS_TOML"] = str(registry)
+        os.environ["CLAUDE_HOOKS_STATE_DIR"] = str(tmp / "state")
+        codex_attention.notify_send.notify = fake_notify
+
+        excerpt = codex_attention.bounded_excerpt(" ".join(f"w{i}" for i in range(75)))
+        check("codex_attention: final excerpt is bounded to 70 words", len(excerpt.split()) == 70)
+
+        def question_reply(*args, **kwargs):
+            hub_kwargs.append(kwargs)
+            return '{"verdict":"awaiting_input","confidence":0.96}'
+
+        codex_attention.hub_client.complete = question_reply
+        check("codex_attention: strict question classification passes",
+              codex_attention.classify_stop("Which option should I use?") == ("awaiting_input", 0.96))
+        check("codex_attention: classifier uses agentic_light with a bounded timeout",
+              hub_kwargs[-1]["model"] == "agentic_light" and hub_kwargs[-1]["timeout"] == 3.0)
+
+        codex_attention.hub_client.complete = lambda *a, **k: '{"verdict":"finished","confidence":0.99}'
+        check("codex_attention: clean completion classifies finished",
+              codex_attention.classify_stop("Completed the requested task.") == ("finished", 0.99))
+        for raw in (None, "not json", '{"verdict":"awaiting_input","confidence":true}',
+                    '{"verdict":"awaiting_input","confidence":0.99,"extra":1}'):
+            codex_attention.hub_client.complete = lambda *a, _raw=raw, **k: _raw
+            check(f"codex_attention: degraded classifier {raw!r} -> uncertain",
+                  codex_attention.classify_stop("A final response") == ("uncertain", 0.0))
+
+        permission = {"hook_event_name": "PermissionRequest", "session_id": "s1", "turn_id": "t1",
+                      "cwd": str(tmp)}
+        check("codex_attention: PermissionRequest sends an alert", codex_attention.handle(permission))
+        check("codex_attention: label, project routing, and exact Board URL",
+              calls[-1] == ("🔔 probe Codex awaits your input\n"
+                            "📋 Open on the Board: https://board.example/?token=x&board=s1", "CHAT"))
+        check("codex_attention: duplicate session/turn sends no second alert",
+              not codex_attention.handle(permission) and len(calls) == 1)
+
+        classifier_calls = 0
+
+        def counted_question_reply(*args, **kwargs):
+            nonlocal classifier_calls
+            classifier_calls += 1
+            return '{"verdict":"awaiting_input","confidence":0.96}'
+
+        codex_attention.hub_client.complete = counted_question_reply
+        duplicate_stop = {**permission, "hook_event_name": "Stop",
+                          "last_assistant_message": "What should I do next?"}
+        check("codex_attention: duplicate Stop skips the classifier itself",
+              not codex_attention.handle(duplicate_stop) and classifier_calls == 0 and len(calls) == 1)
+
+        codex_attention.hub_client.complete = question_reply
+        question = {"hook_event_name": "Stop", "session_id": "s1", "turn_id": "t2",
+                    "cwd": str(tmp), "last_assistant_message": "What should I do next?"}
+        check("codex_attention: high-confidence question-shaped Stop sends once",
+              codex_attention.handle(question) and len(calls) == 2)
+
+        codex_attention.hub_client.complete = lambda *a, **k: '{"verdict":"finished","confidence":0.99}'
+        finished = {**question, "turn_id": "t3", "last_assistant_message": "clean completion."}
+        check("codex_attention: clean Stop remains Board-only",
+              not codex_attention.handle(finished) and len(calls) == 2)
+        check("codex_attention: non-Codex lifecycle event never classifies or alerts",
+              not codex_attention.handle({**question, "hook_event_name": "Notification"}) and len(calls) == 2)
+    finally:
+        codex_attention.hub_client.complete = saved_complete
+        codex_attention.notify_send.notify = saved_notify
+        if saved_registry is None:
+            os.environ.pop("CLAUDE_HOOKS_PROJECTS_TOML", None)
+        else:
+            os.environ["CLAUDE_HOOKS_PROJECTS_TOML"] = saved_registry
+        if saved_state is None:
+            os.environ.pop("CLAUDE_HOOKS_STATE_DIR", None)
+        else:
+            os.environ["CLAUDE_HOOKS_STATE_DIR"] = saved_state
+        shutil.rmtree(tmp, ignore_errors=True)
+    return check.failures, check.total
+
+
+def _codex_native_probe_unit_checks() -> Tuple[int, int]:
+    """The native lifecycle evidence verifier rejects false-positive sequences."""
+    from probe_codex_permission_request import evaluate
+
+    check = _Checker()
+    fixture = json.loads((REPO / "tests" / "fixtures" /
+                          "codex_permission_request_events.json").read_text(encoding="utf-8"))
+    check("codex probe: committed fixture preserves the native approval sequence",
+          fixture["approval_request"] == ["UserPromptSubmit", "PermissionRequest", "Stop"])
+    check("codex probe: committed fixture preserves question/completion separation",
+          fixture["prose_question"] == ["UserPromptSubmit", "Stop"]
+          and fixture["clean_completion"] == ["UserPromptSubmit", "Stop"])
+
+    def turn(case: str, names: list[str], message: str = "") -> list[dict[str, str]]:
+        return [{"hook_event_name": name, "session_id": "session-1", "turn_id": case,
+                 "last_assistant_message": message if name == "Stop" else ""}
+                for name in names]
+
+    valid = [
+        *turn("approval", fixture["approval_request"]),
+        *turn("question", fixture["prose_question"], "What would you like me to do next?"),
+        *turn("completion", fixture["clean_completion"], "clean completion."),
+    ]
+    check("codex probe: exact native sequences pass", evaluate(valid)["probe"] == "pass")
+    missing_submit = [event for event in valid
+                      if not (event["turn_id"] == "approval"
+                              and event["hook_event_name"] == "UserPromptSubmit")]
+    check("codex probe: approval missing UserPromptSubmit is not confirmed",
+          evaluate(missing_submit)["probe"] == "not_confirmed")
+    forbidden_permission = [*valid]
+    forbidden_permission.insert(
+        next(index for index, event in enumerate(forbidden_permission)
+             if event["turn_id"] == "question" and event["hook_event_name"] == "Stop"),
+        {"hook_event_name": "PermissionRequest", "session_id": "session-1",
+         "turn_id": "question", "last_assistant_message": ""},
+    )
+    check("codex probe: question carrying PermissionRequest is not confirmed",
+          evaluate(forbidden_permission)["probe"] == "not_confirmed")
+    mixed_identity = [dict(event) for event in valid]
+    mixed_identity[1]["session_id"] = "session-2"
+    check("codex probe: mixed native identity is not confirmed",
+          evaluate(mixed_identity)["probe"] == "not_confirmed")
+    stitched_sessions = [dict(event) for event in valid]
+    for event in stitched_sessions:
+        event["session_id"] = f'session-{event["turn_id"]}'
+    check("codex probe: turns stitched across sessions are not confirmed",
+          evaluate(stitched_sessions)["probe"] == "not_confirmed")
+    repeated_turn = [dict(event) for event in valid]
+    for event in repeated_turn:
+        if event["turn_id"] == "completion":
+            event["turn_id"] = "question"
+    check("codex probe: three cases require distinct native turn ids",
+          evaluate(repeated_turn)["probe"] == "not_confirmed")
     return check.failures, check.total
 
 
@@ -201,6 +389,11 @@ def _notify_board_link_unit_checks() -> Tuple[int, int]:
     # the ambient environment, then restore whatever was there.
     env_key = _lib.BOARD_URL_ENV_VAR
     old_env = os.environ.pop(env_key, None)
+    old_dotenv_path = os.environ.get(_lib.DOTENV_PATH_ENV_VAR)
+    dotenv_dir = Path(tempfile.mkdtemp(prefix="board_dotenv_"))
+    dotenv_path = dotenv_dir / ".env"
+    dotenv_path.write_text("", encoding="utf-8")
+    os.environ[_lib.DOTENV_PATH_ENV_VAR] = str(dotenv_path)
     try:
         # ---- resolve_board_url: unset -> None (byte-identical default behavior) ----
         unset = _lib.Registry(projects=[], globals=_lib.GlobalConfig(never_kill_ports=()))
@@ -239,6 +432,21 @@ def _notify_board_link_unit_checks() -> Tuple[int, int]:
               _lib.resolve_board_url(Path("E:/automation/x"), registry=reg) == "https://proj.example:8445")
         os.environ.pop(env_key, None)
 
+        dotenv_path.write_text("FLEET_BOARD_URL=https://dotenv.example:8445?token=x\n",
+                               encoding="utf-8")
+        check("resolve_board_url: ignored .env resolves for Codex",
+              _lib.resolve_board_url(Path("E:/does/not/match"), registry=unset)
+              == "https://dotenv.example:8445?token=x")
+        check("resolve_board_url: ignored .env wins over committed global fallback",
+              _lib.resolve_board_url(Path("E:/does/not/match"), registry=glob_only)
+              == "https://dotenv.example:8445?token=x")
+        os.environ[env_key] = "https://env.example:8445"
+        check("resolve_board_url: process env wins over ignored .env",
+              _lib.resolve_board_url(Path("E:/does/not/match"), registry=unset)
+              == "https://env.example:8445")
+        os.environ.pop(env_key, None)
+        dotenv_path.write_text("", encoding="utf-8")
+
         # ---- board_link: configured + session_id -> plain-text deep link ----
         payload = {"session_id": "abc-123", "cwd": "E:/automation/x"}
         check("board_link: configured -> plain-text deep link",
@@ -273,6 +481,11 @@ def _notify_board_link_unit_checks() -> Tuple[int, int]:
             os.environ.pop(env_key, None)
         else:
             os.environ[env_key] = old_env
+        if old_dotenv_path is None:
+            os.environ.pop(_lib.DOTENV_PATH_ENV_VAR, None)
+        else:
+            os.environ[_lib.DOTENV_PATH_ENV_VAR] = old_dotenv_path
+        shutil.rmtree(dotenv_dir, ignore_errors=True)
 
     return check.failures, check.total
 

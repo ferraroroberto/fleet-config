@@ -73,6 +73,8 @@ from acceptance.checks_guards import (  # noqa: E402
     _warn_channel_unit_checks,
 )
 from acceptance.checks_notify import (  # noqa: E402
+    _codex_attention_unit_checks,
+    _codex_native_probe_unit_checks,
     _notify_board_link_unit_checks,
     _notify_chief_routing_unit_checks,
     _notify_classify_unit_checks,
@@ -141,6 +143,10 @@ def main() -> int:
 
     # ---- notify_send unit checks (pure / no network) ----
     run_unit(_notify_send_unit_checks)
+
+    # ---- Codex PermissionRequest + conservative Stop attention routing ----
+    run_unit(_codex_attention_unit_checks)
+    run_unit(_codex_native_probe_unit_checks)
 
     # ---- notify_on_idle mention-construction unit checks ----
     run_unit(_notify_chunking_unit_checks)
