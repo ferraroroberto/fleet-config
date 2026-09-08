@@ -1,4 +1,4 @@
-"""Prepare or verify the interactive Codex lifecycle probe for issue #799.
+"""Prepare or verify the interactive Codex lifecycle probe for issues #799/#806.
 
 The tool deliberately does not launch Codex: ``PermissionRequest`` requires a
 real interactive TTY. ``prepare`` prints the command and prompts for a human
@@ -17,6 +17,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "hooks"))
 from _lib import run_git  # noqa: E402
 
 EVENTS = ("UserPromptSubmit", "PermissionRequest", "Stop", "SessionEnd")
+SAFE_PERMISSION_VALUE_KEYS = ("tool_name",)
 
 
 def prepare(root: Path) -> int:
@@ -39,6 +40,11 @@ def prepare(root: Path) -> int:
         f"out = Path({str(evidence)!r})\n"
         "record = {key: raw.get(key) for key in "
         "('hook_event_name', 'session_id', 'turn_id', 'last_assistant_message')}\n"
+        "if raw.get('hook_event_name') == 'PermissionRequest':\n"
+        "    record['permission_field_types'] = {key: type(value).__name__ "
+        "for key, value in raw.items()}\n"
+        f"    record['permission_safe_values'] = {{key: raw.get(key) for key in "
+        f"{SAFE_PERMISSION_VALUE_KEYS!r} if isinstance(raw.get(key), str)}}\n"
         "with out.open('a', encoding='utf-8') as handle:\n"
         "    handle.write(json.dumps(record) + '\\n')\n",
         encoding="utf-8",
@@ -109,6 +115,16 @@ def evaluate(events: list[dict[str, Any]]) -> dict[str, object]:
         "approval_request": _names(approval),
         "prose_question": _names(question),
         "clean_completion": _names(completion),
+        "permission_field_types": next(
+            (event.get("permission_field_types", {}) for event in approval
+             if event.get("hook_event_name") == "PermissionRequest"),
+            {},
+        ),
+        "permission_safe_values": next(
+            (event.get("permission_safe_values", {}) for event in approval
+             if event.get("hook_event_name") == "PermissionRequest"),
+            {},
+        ),
     }
 
 

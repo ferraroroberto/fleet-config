@@ -99,7 +99,7 @@ fleet-config/
 │   ├── context_filter_hook.py         # PreToolUse rewriter: runs supported commands through the compressor (mode: see Graduation above)
 │   ├── restart_and_verify_webapp.py   # also exposed as /restart-webapp
 │   ├── notify_on_idle.py            # Notification hook (via run-hook.ps1): opt-in Telegram ping
-│   ├── codex_attention.py           # PermissionRequest + high-confidence Stop question Telegram ping
+│   ├── codex_attention.py           # safe, redacted PermissionRequest + Stop question Telegram ping
 │   ├── session_state.py             # UserPromptSubmit|Stop|SessionEnd: the Fleet-Board session-row engine (hooks/state/sessions-state.json)
 │   ├── session_state_codex.py       # Codex working/needs-you/SessionEnd adapter → shared state
 │   ├── session_state_pi.py          # thin Pi adapter → session_state (shelled out to by pi/extensions/session_state.ts)

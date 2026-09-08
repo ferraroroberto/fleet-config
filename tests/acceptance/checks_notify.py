@@ -154,29 +154,47 @@ def _codex_attention_unit_checks() -> Tuple[int, int]:
 
         def question_reply(*args, **kwargs):
             hub_kwargs.append(kwargs)
-            return '{"verdict":"awaiting_input","confidence":0.96}'
+            return ('{"verdict":"awaiting_input","confidence":0.96,'
+                    '"request":"choose the deployment target"}')
 
         codex_attention.hub_client.complete = question_reply
         check("codex_attention: strict question classification passes",
-              codex_attention.classify_stop("Which option should I use?") == ("awaiting_input", 0.96))
+              codex_attention.classify_stop("Which option should I use?") ==
+              ("awaiting_input", 0.96, "choose the deployment target"))
         check("codex_attention: classifier uses agentic_light with a bounded timeout",
               hub_kwargs[-1]["model"] == "agentic_light" and hub_kwargs[-1]["timeout"] == 3.0)
 
         codex_attention.hub_client.complete = lambda *a, **k: '{"verdict":"finished","confidence":0.99}'
         check("codex_attention: clean completion classifies finished",
-              codex_attention.classify_stop("Completed the requested task.") == ("finished", 0.99))
+              codex_attention.classify_stop("Completed the requested task.") ==
+              ("finished", 0.99, None))
         for raw in (None, "not json", '{"verdict":"awaiting_input","confidence":true}',
                     '{"verdict":"awaiting_input","confidence":0.99,"extra":1}'):
             codex_attention.hub_client.complete = lambda *a, _raw=raw, **k: _raw
             check(f"codex_attention: degraded classifier {raw!r} -> uncertain",
-                  codex_attention.classify_stop("A final response") == ("uncertain", 0.0))
+                  codex_attention.classify_stop("A final response") == ("uncertain", 0.0, None))
+
+        codex_attention.hub_client.complete = lambda *a, **k: (
+            '{"verdict":"awaiting_input","confidence":0.97,"request":false}')
+        check("codex_attention: malformed request preserves a valid verdict",
+              codex_attention.classify_stop("Which option?") == ("awaiting_input", 0.97, None))
+        live_secret = "sk-" + "A" * 24
+        normalized = codex_attention.normalize_context(
+            f"  approve\n  this {live_secret}  " + "x" * 200)
+        check("codex_attention: context is one line, bounded, and credential-redacted",
+              "\n" not in normalized and len(normalized) <= codex_attention.MAX_CONTEXT_CHARS
+              and live_secret not in normalized and "[REDACTED_SECRET]" in normalized)
 
         permission = {"hook_event_name": "PermissionRequest", "session_id": "s1", "turn_id": "t1",
-                      "cwd": str(tmp)}
+                      "cwd": str(tmp), "tool_name": "apply_patch",
+                      "tool_input": {"patch": f"untrusted {live_secret}"}}
         check("codex_attention: PermissionRequest sends an alert", codex_attention.handle(permission))
-        check("codex_attention: label, project routing, and exact Board URL",
+        check("codex_attention: permission context, routing, and exact message order",
               calls[-1] == ("🔔 probe Codex awaits your input\n"
+                            "Waiting for: approval to edit files\n"
                             "📋 Open on the Board: https://board.example/?token=x&board=s1", "CHAT"))
+        check("codex_attention: raw permission input never reaches the notification",
+              live_secret not in calls[-1][0] and "untrusted" not in calls[-1][0])
         check("codex_attention: duplicate session/turn sends no second alert",
               not codex_attention.handle(permission) and len(calls) == 1)
 
@@ -198,13 +216,40 @@ def _codex_attention_unit_checks() -> Tuple[int, int]:
                     "cwd": str(tmp), "last_assistant_message": "What should I do next?"}
         check("codex_attention: high-confidence question-shaped Stop sends once",
               codex_attention.handle(question) and len(calls) == 2)
+        check("codex_attention: question context precedes the Board link",
+              calls[-1][0] == "🔔 probe Codex awaits your input\n"
+              "Waiting for: choose the deployment target\n"
+              "📋 Open on the Board: https://board.example/?token=x&board=s1")
+
+        codex_attention.hub_client.complete = lambda *a, **k: (
+            '{"verdict":"awaiting_input","confidence":0.98,'
+            f'"request":"choose {live_secret} now"}}')
+        secret_question = {**question, "turn_id": "t-secret"}
+        check("codex_attention: delivered question context redacts credentials",
+              codex_attention.handle(secret_question)
+              and "Waiting for: choose [REDACTED_SECRET] now" in calls[-1][0]
+              and live_secret not in calls[-1][0])
+
+        codex_attention.hub_client.complete = lambda *a, **k: (
+            '{"verdict":"awaiting_input","confidence":0.97,"request":false}')
+        malformed_question = {**question, "turn_id": "t-malformed"}
+        check("codex_attention: malformed question context keeps the generic alert",
+              codex_attention.handle(malformed_question) and calls[-1][0] ==
+              "🔔 probe Codex awaits your input\n"
+              "📋 Open on the Board: https://board.example/?token=x&board=s1")
+
+        fallback = {**permission, "turn_id": "t-fallback", "tool_name": "unknown_tool"}
+        check("codex_attention: unknown permission context keeps the generic alert",
+              codex_attention.handle(fallback) and calls[-1][0] ==
+              "🔔 probe Codex awaits your input\n"
+              "📋 Open on the Board: https://board.example/?token=x&board=s1")
 
         codex_attention.hub_client.complete = lambda *a, **k: '{"verdict":"finished","confidence":0.99}'
         finished = {**question, "turn_id": "t3", "last_assistant_message": "clean completion."}
         check("codex_attention: clean Stop remains Board-only",
-              not codex_attention.handle(finished) and len(calls) == 2)
+              not codex_attention.handle(finished) and len(calls) == 5)
         check("codex_attention: non-Codex lifecycle event never classifies or alerts",
-              not codex_attention.handle({**question, "hook_event_name": "Notification"}) and len(calls) == 2)
+              not codex_attention.handle({**question, "hook_event_name": "Notification"}) and len(calls) == 5)
     finally:
         codex_attention.hub_client.complete = saved_complete
         codex_attention.notify_send.notify = saved_notify
@@ -232,6 +277,10 @@ def _codex_native_probe_unit_checks() -> Tuple[int, int]:
     check("codex probe: committed fixture preserves question/completion separation",
           fixture["prose_question"] == ["UserPromptSubmit", "Stop"]
           and fixture["clean_completion"] == ["UserPromptSubmit", "Stop"])
+    check("codex probe: sanitized fixture proves tool_name without tool_input values",
+          fixture["permission_field_types"].get("tool_name") == "str"
+          and fixture["permission_field_types"].get("tool_input") == "dict"
+          and fixture["permission_safe_values"] == {"tool_name": "apply_patch"})
 
     def turn(case: str, names: list[str], message: str = "") -> list[dict[str, str]]:
         return [{"hook_event_name": name, "session_id": "session-1", "turn_id": case,

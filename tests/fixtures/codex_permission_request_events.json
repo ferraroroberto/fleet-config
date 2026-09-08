@@ -17,6 +17,22 @@
     "hook_event_name",
     "session_id",
     "turn_id",
-    "last_assistant_message"
-  ]
+    "last_assistant_message",
+    "permission_field_types",
+    "permission_safe_values"
+  ],
+  "permission_field_types": {
+    "session_id": "str",
+    "turn_id": "str",
+    "transcript_path": "str",
+    "cwd": "str",
+    "hook_event_name": "str",
+    "model": "str",
+    "permission_mode": "str",
+    "tool_name": "str",
+    "tool_input": "dict"
+  },
+  "permission_safe_values": {
+    "tool_name": "apply_patch"
+  }
 }

@@ -25,12 +25,17 @@ CLASSIFIER_MODEL = "agentic_light"
 CLASSIFIER_TIMEOUT_S = 3.0
 CONFIDENCE_THRESHOLD = 0.90
 MAX_EXCERPT_WORDS = 70
+MAX_CONTEXT_CHARS = 120
 DEDUP_FILENAME = "codex-attention-dedup.json"
 _MAX_DEDUP_KEYS = 500
 _VERDICTS = {"awaiting_input", "finished", "uncertain"}
 BELL = "\U0001f514"
 
-_CLASSIFIER_PROMPT = """Classify whether this Codex final response explicitly leaves a user-facing question or decision unanswered. Return only strict JSON with exactly this schema: {\"verdict\":\"awaiting_input|finished|uncertain\",\"confidence\":0.0}. Use awaiting_input only when the response is genuinely asking the user to answer or choose; commands, reports, acknowledgements, and completed work are finished. If ambiguous, use uncertain.\n\nFinal response:\n"""
+_CLASSIFIER_PROMPT = """Classify whether this Codex final response explicitly leaves a user-facing question or decision unanswered. Return only strict JSON with exactly this schema: {\"verdict\":\"awaiting_input|finished|uncertain\",\"confidence\":0.0,\"request\":\"short description or empty string\"}. Use awaiting_input only when the response is genuinely asking the user to answer or choose; commands, reports, acknowledgements, and completed work are finished. For awaiting_input, describe the unanswered request in a short phrase grounded only in the supplied final response. Otherwise use an empty request. If ambiguous, use uncertain.\n\nFinal response:\n"""
+
+_PERMISSION_CONTEXT = {
+    "apply_patch": "approval to edit files",
+}
 
 
 def bounded_excerpt(message: object) -> str:
@@ -40,25 +45,40 @@ def bounded_excerpt(message: object) -> str:
     return " ".join(message.split()[:MAX_EXCERPT_WORDS])
 
 
-def classify_stop(message: object) -> tuple[str, float]:
-    """Return a strict three-way classifier result, degrading to uncertain."""
+def normalize_context(value: object) -> Optional[str]:
+    """Return safe single-line notification context, or None when unusable."""
+    if not isinstance(value, str):
+        return None
+    normalized = " ".join(value.split())
+    if not normalized:
+        return None
+    redacted = _lib.SECRET_RE.sub("[REDACTED_SECRET]", normalized)
+    if len(redacted) <= MAX_CONTEXT_CHARS:
+        return redacted
+    return redacted[:MAX_CONTEXT_CHARS - 3].rstrip() + "..."
+
+
+def classify_stop(message: object) -> tuple[str, float, Optional[str]]:
+    """Return a strict verdict plus independently validated request context."""
     excerpt = bounded_excerpt(message)
     if not excerpt:
         logger.info("Codex Stop classification not confirmed: final message missing")
-        return "uncertain", 0.0
+        return "uncertain", 0.0, None
     raw = hub_client.complete(
         _CLASSIFIER_PROMPT + excerpt,
         model=CLASSIFIER_MODEL,
-        max_tokens=60,
+        max_tokens=100,
         timeout=CLASSIFIER_TIMEOUT_S,
         temperature=0.0,
     )
     if raw is None:
         logger.info("Codex Stop classification not confirmed: local hub unavailable or timed out")
-        return "uncertain", 0.0
+        return "uncertain", 0.0, None
     try:
         parsed = json.loads(raw)
-        if not isinstance(parsed, dict) or set(parsed) != {"verdict", "confidence"}:
+        if (not isinstance(parsed, dict)
+                or not {"verdict", "confidence"}.issubset(parsed)
+                or not set(parsed).issubset({"verdict", "confidence", "request"})):
             raise ValueError("unexpected schema")
         verdict = parsed["verdict"]
         confidence = parsed["confidence"]
@@ -69,9 +89,19 @@ def classify_stop(message: object) -> tuple[str, float]:
             raise ValueError("confidence out of range")
     except (TypeError, ValueError, json.JSONDecodeError) as exc:
         logger.info("Codex Stop classification not confirmed: malformed classifier result (%s)", exc)
-        return "uncertain", 0.0
+        return "uncertain", 0.0, None
+    raw_request = parsed.get("request")
+    request = normalize_context(raw_request)
+    if "request" in parsed and request is None and raw_request is not None and raw_request != "":
+        logger.info("Codex Stop request context not confirmed: malformed request field")
     logger.info("Codex Stop classification: %s confidence=%.2f", verdict, confidence)
-    return verdict, confidence
+    return verdict, confidence, request
+
+
+def permission_context(payload: dict[str, Any]) -> Optional[str]:
+    """Describe a native request only from probe-verified structured fields."""
+    tool_name = payload.get("tool_name")
+    return _PERMISSION_CONTEXT.get(tool_name) if isinstance(tool_name, str) else None
 
 
 def _dedup_file() -> Path:
@@ -139,11 +169,14 @@ def handle(payload: dict[str, Any]) -> bool:
         return False
     if key in _read_dedup(_dedup_file()):
         return False
+    context = permission_context(payload) if event == "PermissionRequest" else None
     if event == "Stop":
-        verdict, confidence = classify_stop(payload.get("last_assistant_message"))
+        verdict, confidence, context = classify_stop(payload.get("last_assistant_message"))
         if verdict != "awaiting_input" or confidence < CONFIDENCE_THRESHOLD:
             return False
     message = f"{BELL} {project} Codex awaits your input"
+    if context:
+        message += f"\nWaiting for: {context}"
     board = notify_on_idle.board_link(payload)
     if board:
         message += f"\n{board}"
