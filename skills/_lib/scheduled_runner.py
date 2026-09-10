@@ -297,7 +297,8 @@ class ProgressFormatter:
         self._result_error = False
         self._saw_result = False
         self._saw_kill_signature = False
-        self._saw_child_failure = False
+        self._child_failures = 0
+        self._child_cancellations = 0
         self._saw_self_reported_failure = False
         self._saw_tool_use = False
         self._saw_transient_api_error = False
@@ -305,7 +306,36 @@ class ProgressFormatter:
 
     @property
     def saw_kill_signature(self) -> bool:
-        return self._saw_kill_signature or self._saw_child_failure
+        """True only for the stderr line Claude prints when it kills tasks.
+
+        This used to also return `self._saw_child_failure`, which made **any**
+        background task that ended `failed` exit an otherwise-successful run as
+        `BACKGROUND_KILL_EXIT_CODE`. On 2026-09-09 `fleet-health` delivered its
+        full digest, ledger and Telegram ping and was reported `❌ failed ·
+        exit 125` because it had cancelled one mis-targeted disk scan and had
+        one backgrounded PowerShell exit non-zero after a 90s `docker system
+        df` timeout — both recovered from, neither a fault (fleet-config#808).
+
+        Two things were wrong and both are fixed here. A failed child *created*
+        a failure, which is precisely what the sibling comment on
+        `TRANSIENT_API_EXIT_CODE` forbids ("this renames a failure, it never
+        creates one"); and it borrowed 125's name, which means one specific
+        thing — the CLI's own background-task ceiling killed sub-agents that
+        were still in flight (#506) — destroying the tellability the rest of
+        the constant block exists to preserve.
+
+        No new rung was minted for a failed child, and that is a decision
+        rather than an omission. Every question a failed child could raise is
+        "did this run deliver?", and each detector in this file already answers
+        that from the run's *own* outcome: a failed `result` (1), the delivery
+        post-condition (121), the self-reported marker (123), children still
+        unfinished at exit (118), stream integrity (122), zero tool use (120),
+        and the genuine kill above (125). A child that failed and was recovered
+        from adds no independent evidence about delivery — recovering from one
+        is the orchestrator's whole job — so it is surfaced in the log by
+        `finish()` and left out of the verdict.
+        """
+        return self._saw_kill_signature
 
     @property
     def saw_tool_use(self) -> bool:
@@ -362,7 +392,8 @@ class ProgressFormatter:
         self._result_error = False
         self._saw_result = False
         self._saw_kill_signature = False
-        self._saw_child_failure = False
+        self._child_failures = 0
+        self._child_cancellations = 0
         self._saw_self_reported_failure = False
         self._saw_tool_use = False
         self._saw_transient_api_error = False
@@ -507,11 +538,19 @@ class ProgressFormatter:
             if event.kind == "child_end":
                 self._children.discard(event.id)
                 name = "task"
-                if event.failed:
-                    self._saw_child_failure = True
+                # Counted, never a verdict — see `saw_kill_signature` for why a
+                # failed or cancelled child does not decide the exit code, and
+                # `finish()` for where the counts do become visible.
+                if event.cancelled:
+                    self._child_cancellations += 1
+                elif event.failed:
+                    self._child_failures += 1
             else:
                 name = self._tools.pop(event.id, event.name or "tool")
-            self.emit(f"{'✗' if event.failed else '✓'} {_one_line(name)} {'failed' if event.failed else 'completed'}")
+            mark, verb = (("⊘", "stopped") if event.cancelled
+                          else ("✗", "failed") if event.failed
+                          else ("✓", "completed"))
+            self.emit(f"{mark} {_one_line(name)} {verb}")
         elif event.kind == "result":
             self._saw_result = True
             self._result_error = event.failed
@@ -553,6 +592,23 @@ class ProgressFormatter:
                 "⚠ ignored "
                 f"{self._malformed} malformed and {self._unknown} unknown stream record(s)"
             )
+        if self._child_failures or self._child_cancellations:
+            # Not a verdict (see `saw_kill_signature`) but never silent either:
+            # a run that lost a background task should say so on its own line,
+            # so the next reader of the log can tell "happened and was worked
+            # around" from "never happened" without re-reading 300 lines of
+            # stream. Worded as a record rather than a judgement — the adapter
+            # knows the child ended badly, not whether the run coped.
+            counts = ", ".join(
+                part for part in (
+                    f"{self._child_failures} failed" if self._child_failures else "",
+                    f"{self._child_cancellations} stopped" if self._child_cancellations else "",
+                ) if part
+            )
+            self.emit(
+                f"⚠ background task(s): {counts} — recorded, not counted toward "
+                "this run's outcome"
+            )
         recent_unknown = self.truncated_stream_burst()
         if self.stream_truncated:
             self.emit(
@@ -587,8 +643,6 @@ class ProgressFormatter:
             status = "❓ not confirmed · unfinished tools or children"
         elif exit_code in {AUTH_UNAVAILABLE_EXIT_CODE, MODEL_UNAVAILABLE_EXIT_CODE, MISSING_TOOLS_EXIT_CODE}:
             status = f"❌ failed · {self._provider_error} unavailable"
-        elif self._saw_child_failure:
-            status = "❌ failed · child failed or was interrupted"
         elif self._saw_kill_signature:
             status = (
                 "❌ failed · background tasks killed after timeout — orchestrator "

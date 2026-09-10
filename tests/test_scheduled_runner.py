@@ -76,13 +76,90 @@ class ScheduledRunnerTests(unittest.TestCase):
                 pending = {"type": "item.started", "item": {"id": "unfinished", "type": "command_execution", "status": "in_progress"}}
             code, _, text = fake_run([*good[:-1], pending, good[-1]], adapter)
             self.assertEqual(code, runner.INCOMPLETE_WORK_EXIT_CODE, text)
+        # A *finished* child closes its own slot, whatever it finished as, so a
+        # stopped or failed one leaves no unfinished work behind. What it must
+        # not do is decide the run's outcome — that is #808, covered below.
         start = {"type": "system", "subtype": "task_started", "task_id": "child-1"}
         stopped = {"type": "system", "subtype": "task_notification", "task_id": "child-1", "status": "stopped"}
         good = self.fixtures["Claude Code"]
-        code, _, text = fake_run([good[0], start, stopped, good[-1]], ClaudeAdapter())
-        self.assertEqual(code, runner.BACKGROUND_KILL_EXIT_CODE)
-        self.assertIn("child failed or was interrupted", text)
-        self.assertNotIn("killed after timeout", text)
+        code, formatter, text = fake_run([good[0], start, stopped, good[-1]], ClaudeAdapter())
+        self.assertFalse(formatter.unfinished_work, text)
+        self.assertNotEqual(code, runner.INCOMPLETE_WORK_EXIT_CODE, text)
+
+    # ---- a failed or cancelled background child is not this run's verdict ----
+    #
+    # fleet-config#808. `fleet-health` run 20260909T233001 delivered its full
+    # three-machine digest, appended its ledger and sent its Telegram digest,
+    # and was reported `❌ failed · child failed or was interrupted · exit 125`
+    # with an alert_on_failure ping at 00:55. Two children had ended `failed`:
+    # a disk scan the agent deliberately `TaskStop`ped on noticing it was
+    # pointed at E: instead of the monitored C:, and a backgrounded PowerShell
+    # that exited non-zero after `docker system df` timed out at 90s — the very
+    # next line of that log is "Found the disk growth."
+    #
+    # Neither string in KILL_SIGNATURE_TERMS appeared anywhere in the 337-line
+    # log, so the trip came through the child-failure flag `saw_kill_signature`
+    # used to fold in. These replay that stream shape.
+
+    def test_failed_background_child_does_not_red_a_delivered_run(self):
+        good = self.fixtures["Claude Code"]
+        start = {"type": "system", "subtype": "task_started", "task_id": "child-1"}
+        failed = {"type": "system", "subtype": "task_notification", "task_id": "child-1", "status": "failed"}
+        code, formatter, text = fake_run([*good[:-1], start, failed, good[-1]], ClaudeAdapter())
+        self.assertEqual(code, 0, text)
+        self.assertIn("✅ completed · exit 0", text)
+        self.assertFalse(formatter.saw_kill_signature, text)
+        # Not a verdict, but not silent either.
+        self.assertIn("background task(s): 1 failed", text)
+
+    def test_cancelled_background_child_is_a_stop_not_a_failure(self):
+        good = self.fixtures["Claude Code"]
+        start = {"type": "system", "subtype": "task_started", "task_id": "child-1"}
+        stopped = {"type": "system", "subtype": "task_notification", "task_id": "child-1", "status": "stopped"}
+        code, formatter, text = fake_run([*good[:-1], start, stopped, good[-1]], ClaudeAdapter())
+        self.assertEqual(code, 0, text)
+        self.assertIn("⊘ task stopped", text)
+        self.assertNotIn("task failed", text)
+        self.assertFalse(formatter.saw_kill_signature, text)
+        self.assertIn("background task(s): 1 stopped", text)
+
+    def test_replayed_fleet_health_run_no_longer_reports_false_failure(self):
+        """The real 20260909T233001 shape: one stopped child, one failed one."""
+        good = self.fixtures["Claude Code"]
+        events = [
+            *good[:-1],
+            {"type": "system", "subtype": "task_started", "task_id": "bciid0lgb"},
+            {"type": "system", "subtype": "task_notification", "task_id": "bciid0lgb", "status": "stopped"},
+            {"type": "system", "subtype": "task_started", "task_id": "disk-growth"},
+            {"type": "system", "subtype": "task_notification", "task_id": "disk-growth", "status": "failed"},
+            # The recovered tool call that produced the answer anyway.
+            {"type": "assistant", "message": {"content": [
+                {"type": "tool_use", "id": "toolu_replay", "name": "PowerShell", "input": {}}]}},
+            {"type": "user", "message": {"content": [
+                {"tool_use_id": "toolu_replay", "type": "tool_result"}]}},
+            good[-1],
+        ]
+        code, _, text = fake_run(events, ClaudeAdapter(), child_exit=0)
+        self.assertEqual(code, 0, text)
+        self.assertNotIn("❌ failed", text)
+        self.assertNotIn("child failed or was interrupted", text)
+        self.assertIn("background task(s): 1 failed, 1 stopped", text)
+
+    def test_background_kill_exit_code_needs_the_real_stderr_signature(self):
+        """125 stays reachable only from KILL_SIGNATURE_TERMS on stderr."""
+        good = self.fixtures["Claude Code"]
+        start = {"type": "system", "subtype": "task_started", "task_id": "child-1"}
+        failed = {"type": "system", "subtype": "task_notification", "task_id": "child-1", "status": "failed"}
+        events = [*good[:-1], start, failed, good[-1]]
+        self.assertNotEqual(fake_run(events, ClaudeAdapter())[0], runner.BACKGROUND_KILL_EXIT_CODE)
+        # Same stream, plus the line the CLI actually prints when it kills
+        # in-flight sub-agents: still 125, undiminished.
+        kill = ("print('Background tasks still running after 600s; terminating', "
+                "file=sys.stderr, flush=True)")
+        code, formatter, text = fake_run(events, ClaudeAdapter(), suffix=kill)
+        self.assertEqual(code, runner.BACKGROUND_KILL_EXIT_CODE, text)
+        self.assertTrue(formatter.saw_kill_signature, text)
+        self.assertIn("background tasks killed after timeout", text)
 
     def test_codex_delegation_is_unverified_until_native_conformance(self):
         good = self.fixtures["Codex"]
