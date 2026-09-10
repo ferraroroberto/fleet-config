@@ -70,6 +70,7 @@ fleet-config/
 ├── design.dark.md                  # exposed as ~/.claude/design.dark.md (symlink) — same token names, dark values (Vercel light/dark convention)
 ├── statusline-command.ps1          # exposed as ~/.claude/statusline-command.ps1 (symlink) — custom statusline (Claude only)
 ├── codex_statusline.py             # opt-in, comment-preserving merge of native Codex footer fields into ~/.codex/config.toml
+├── codex_model_policy.py           # opt-in, atomic merge of the versioned Codex model policy (codex/) into ~/.codex/config.toml
 ├── session_retention.py            # opt-in, atomic two-year Claude/Codex native-session retention config
 ├── .gitignore
 ├── install.ps1                     # creates junctions/symlinks into the agent homes: ~/.claude, ~/.agents, ~/.codex, ~/.pi/agent, ~/.copilot; also wires shell/claude-otel-project.ps1 into $PROFILE
@@ -134,6 +135,7 @@ fleet-config/
 ├── docs/                           # durable topic references, one file per topic (+ architecture.mmd, this repo's own internal diagram) — enumerating them here only goes stale; see the directory
 ├── tests/run_acceptance.py         # drives each hook with a sample stdin payload
 ├── settings.template.json          # the `hooks` block to merge into your ~/.claude/settings.json (Claude)
+├── codex/                          # versioned Codex model policy data — agents/{easy,normal,hard}.toml role bindings + model_catalog.json, read by codex_model_policy.py
 └── codex-hooks.json                # exposed as ~/.codex/hooks.json (symlink) — Codex hook wiring (direct Python commands)
 ```
 
