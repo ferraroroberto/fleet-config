@@ -37,6 +37,36 @@ def _architecture_card_repos(doc: str) -> set:
     return set(_CARD_ROW_RE.findall(doc))
 
 
+# A tree-entry line names exactly one path token right after its box-drawing
+# prefix (`├── `, `└── `, or a `│   ` continuation for a nested entry) --
+# everything past the run of whitespace that follows is a trailing comment,
+# not the entry itself. A whole-block `"codex/" in layout` substring test also
+# matches `~/.codex/hooks` and `~/.codex/prompts` named in *other* entries'
+# comment prose, so a directory with no tree entry of its own anywhere in the
+# block can still read as present (fleet-config#820, same shape as
+# `_CARD_ROW_RE` above).
+_TREE_ENTRY_RE = re.compile(r"^[\s│├└─]*(\S+)", re.MULTILINE)
+
+
+def _layout_tree_entries(layout: str) -> set:
+    """Every literal entry token a Markdown tree block's lines introduce."""
+    return set(_TREE_ENTRY_RE.findall(layout))
+
+
+def _layout_top_dirs(layout: str) -> set:
+    """Top-level directory names an entry token actually introduces.
+
+    This README's tree sometimes spells a top-level directory alone
+    (`hooks/`) and sometimes fuses it with a deeper path in one line
+    (`agy/plugins/fleet-context-filter/`, `pi/extensions/statusline.ts`,
+    `tests/run_acceptance.py`) rather than giving it its own nested lines --
+    so "the entry token equals `<dir>/`" is too strict and would misreport
+    those as missing. Taking each token's first path segment covers both
+    spellings while still requiring a real tree entry, not a comment mention.
+    """
+    return {token.split("/", 1)[0] for token in _layout_tree_entries(layout) if "/" in token}
+
+
 def _system_map_coverage_check() -> Tuple[int, int]:
     """The system map must cover exactly the fleet, and the doc must agree.
 
@@ -581,12 +611,31 @@ def _readme_layout_check() -> Tuple[int, int]:
         for line in tracked.stdout.splitlines()
         if "/" in line
     })
-    missing_dirs = [d for d in top_dirs if f"{d}/" not in layout]
+    layout_top_dirs = _layout_top_dirs(layout)
+    missing_dirs = [d for d in top_dirs if d not in layout_top_dirs]
     check(
         f"readme_layout: every top-level tracked directory is in the Layout tree "
         f"(missing: {missing_dirs or 'none'})",
         not missing_dirs,
     )
+
+    # The matcher itself, against the shape that defeated the old substring
+    # test (fleet-config#820): `codex/` named only in comment prose on other
+    # entries' lines (`~/.codex/hooks`, `~/.codex/prompts`), with no tree
+    # entry of its own anywhere in the block.
+    _prose_only_layout = (
+        "├── hooks/                          # junction → ~/.claude/hooks AND ~/.codex/hooks (Codex)\n"
+        "├── commands/                       # junction → ~/.claude/commands AND ~/.codex/prompts (Codex prompts)\n"
+    )
+    check("readme_layout: the tree matcher ignores a directory named only in another entry's comment",
+          "codex" not in _layout_top_dirs(_prose_only_layout))
+    check("readme_layout: the tree matcher accepts a real top-level tree entry",
+          "codex" in _layout_top_dirs(
+              _prose_only_layout + "├── codex/                          # versioned Codex model policy data\n"))
+    check("readme_layout: the tree matcher accepts a directory fused with a deeper path in one line",
+          "agy" in _layout_top_dirs("├── agy/plugins/fleet-context-filter/   # installed by copy, not junction\n"))
+    check("readme_layout: the tree matcher accepts a nested continuation entry too",
+          "_lib.py" in _layout_tree_entries("├── hooks/\n│   ├── _lib.py                     # shared wire protocol\n"))
 
     hook_modules = sorted(p.name for p in (REPO / "hooks").glob("*.py"))
     missing_hooks = [h for h in hook_modules if h not in layout]
