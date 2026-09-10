@@ -184,83 +184,99 @@ The five sections it returns, and what each means:
   literal-value histogram. This is the "how much, where" lens (#234): a
   correct-*valued* token used nowhere still scores low here. Ratios trend
   across weekly sweeps (#180).
-- **`contracts`** — PASS/WARN/FAIL/NA per design.md-v2 component contract:
-  tokenized `:focus-visible` ring, `prefers-reduced-motion`, the centered
-  772px desktop measure, **switch on-track = success (green — FAIL if it is
-  the accent)**, no native checkboxes, the disclosure closed-box trio
-  (52px / `0 14px` / open divider), native `<dialog>` vs hand-rolled overlay,
-  the nav-contract signals (`body:has(dialog[open])` hide, `100dvh`,
-  safe-area, **and the standalone fixed-inset `.app` scroller** — the
-  home-automation#303 architecture that removes the iOS pill-drift cause;
-  a nav missing it caps at WARN even when every grep signal passes and even
-  when `_vendored/nav/` is present, because the shell lives app-side; folded
-  into the same check is **nav-nesting** — `<nav class="tabs">` found as a
-  DOM descendant of `<main class="app">` instead of a `<body>` sibling always
-  FAILs on its own, home-automation#232/app-launcher#369), icon px sizes vs
-  the spec's `icons.size` steps
-  (spec-driven — the allowed set is parsed from the spec, not hardcoded),
-  the **viewport zoom lock** (`user-scalable=no` + `maximum-scale=1` — plus
-  `viewport-fit=cover` — on every `index.html`; PWAs are never pinch-zoomable,
-  fleet-config#296), the **button-tier vocabulary** (hardcoded button
-  fills and a filled "ghost" FAIL; a solid accent outside the primary class
-  and a tint without accent text WARN — the tiers live in design.md
-  `components`, #296), the **user-selectable theme** (pre-paint
-  `data-theme` boot script in `<head>` + a persisted `.theme` localStorage
-  toggle — either missing FAILs; a missing or spec-drifted scheme-gated
-  `theme-color` meta pair WARNs, compared against the two specs' `canvas` —
-  spec-driven, #290), the **icon-set** (emoji glyphs in rendered markup text
-  or JS UI-copy strings — FAIL when no vendored Lucide sprite is adopted,
-  WARN when emoji sit alongside an adopted sprite — one icon set, never
-  hand-drawn/mixed, #284; comments (#394), JS **regex literals**, and
-  third-party `vendor/` bundles are not rendered text and are excluded —
-  a char class matching glyphs coming *in* off a terminal draws none, and a
-  vendored bundle's glyph table isn't the adopting app's icon choice, #416),
-  the **app-icon-family** (an installable PWA must
-  adopt `project-scaffolding`'s `brand_gen.render_set`, commit the spec-named
-  Apple 180 / regular 192+512 / separate maskable 512 / favicon assets, link
-  Apple touch + favicon from `index.html`, and keep `any` and `maskable` as
-  distinct manifest purposes — #369), **chevron-placement** (a disclosure `<summary>`
-  whose chevron glyph/icon sits before its title text — the fleet contract
-  pins it right, #284/app-launcher#362), **row-height-scale** (fixed
-  `height`/`min-height` literals on row/action-rail selectors outside the
-  spec's `rows` 3-step scale — 44px/52px/60px by default, spec-driven —
-  WARN, #284/app-launcher#365), the **editor-modal contract** (design.md
-  `modal` component, #307) applied to every `<dialog>` that contains a real
-  editable field (`input`/`select`/`textarea`) — a `<form>` wrapper is
-  **not** required (#342: home-automation#409's JS-managed editors carry
-  bare fields and a plain `type="button"` Save; a field-less alert/results
-  dialog stays NA):
-  `modal-unstyled-rows` (a row class, e.g. `label.stacked`, used inside a
-  dialog but only ever styled under some other, unrelated ancestor scope —
-  the app-launcher#70 root cause, where `.stacked` was styled only under
-  `.settings-card`), `modal-raw-fieldset` (a `<fieldset>`/`<legend>` with
-  zero authored CSS — a raw browser legend box instead of a titled plain
-  section), `modal-header` (a titled dialog with no square × close button,
-  or a footer "Cancel" button standing in its place), `modal-footer` (more
-  than one always-visible footer action, or a sole primary that isn't the
-  full-width solid-accent recipe), and `modal-top-anchor` (no `max-height` +
-  internal scroll, so a tall form jumps vertically as conditional rows
-  toggle), plus the four **mobile interaction contracts** promoted from
-  home-automation#409 (#342 — all conservative static views of design.md's
-  Async data & feedback / Touch targets / Charts sections):
-  **hit-target** (spec-driven from `components.hit-target.min`, 44px — a
-  fixed-size compact interactive rule below the floor with no `::before`
-  hit-area expansion on its own class and no co-applied expansion utility
-  in the markup WARNs; NA when the spec lacks the token or the app authors
-  no compact fixed-size controls), **chart-tick-budget** (Chart.js present
-  with no authored `maxTicksLimit`/`autoSkip` WARNs — phone x-axes collide;
-  NA with no Chart.js), **chart-noncolor-cue** (≥2 colour-assigned datasets
-  with no `borderDash`/`pointStyle`/`fill` second channel WARN — colour
-  must never be the only series cue; NA for single-series apps), and
-  **async-lifecycle** (literal `data-state` values checked against the
-  canonical `loading/ready/empty/stale/error` vocabulary — shadcn-style
-  interaction states like `open`/`closed` are a different channel and
-  exempt; non-canonical lifecycle synonyms WARN, and lifecycle states with
-  no `role="status"` live region WARN — the region counts whether it is
-  declared in markup or set from JS (`setAttribute('role', 'status')`,
-  `el.role = 'status'`), since a JS-rendered drawer is exactly the surface
-  this contract is for and the check already reads `dataset.state` the same
-  way, #416; NA when the app never uses `data-state`).
+- **`contracts`** — PASS/WARN/FAIL/NA per design.md-v2 component contract,
+  one per line below:
+  - **focus ring** — tokenized `:focus-visible` ring.
+  - **reduced motion** — `prefers-reduced-motion` respected.
+  - **desktop measure** — the centered 772px desktop measure.
+  - **switch on-track** — on-track color = success (green); FAIL if it is
+    the accent.
+  - **checkboxes** — no native checkboxes.
+  - **disclosure closed-box** — the closed-box trio (52px / `0 14px` /
+    open divider).
+  - **dialog** — native `<dialog>` vs hand-rolled overlay.
+  - **nav contract** — the nav-contract signals (`body:has(dialog[open])`
+    hide, `100dvh`, safe-area, and the standalone fixed-inset `.app`
+    scroller — the home-automation#303 architecture that removes the iOS
+    pill-drift cause; a nav missing it caps at WARN even when every grep
+    signal passes and even when `_vendored/nav/` is present, because the
+    shell lives app-side). Folds in **nav-nesting**: `<nav class="tabs">`
+    found as a DOM descendant of `<main class="app">` instead of a `<body>`
+    sibling always FAILs on its own (home-automation#232/app-launcher#369).
+  - **icon sizes** — icon px sizes vs the spec's `icons.size` steps
+    (spec-driven — the allowed set is parsed from the spec, not hardcoded).
+  - **viewport zoom lock** — `user-scalable=no` + `maximum-scale=1` +
+    `viewport-fit=cover` on every `index.html`; PWAs are never
+    pinch-zoomable (fleet-config#296).
+  - **button-tier vocabulary** — hardcoded button fills and a filled
+    "ghost" FAIL; a solid accent outside the primary class and a tint
+    without accent text WARN — the tiers live in design.md `components`
+    (#296).
+  - **user-selectable theme** — pre-paint `data-theme` boot script in
+    `<head>` + a persisted `.theme` localStorage toggle; either missing
+    FAILs. A missing or spec-drifted scheme-gated `theme-color` meta pair
+    WARNs, compared against the two specs' `canvas` (spec-driven, #290).
+  - **icon-set** — emoji glyphs in rendered markup text or JS UI-copy
+    strings: FAIL when no vendored Lucide sprite is adopted, WARN when
+    emoji sit alongside an adopted sprite — one icon set, never
+    hand-drawn/mixed (#284). Comments (#394), JS regex literals, and
+    third-party `vendor/` bundles are not rendered text and are excluded —
+    a char class matching glyphs coming *in* off a terminal draws none, and
+    a vendored bundle's glyph table isn't the adopting app's icon choice
+    (#416).
+  - **app-icon-family** — an installable PWA must adopt
+    `project-scaffolding`'s `brand_gen.render_set`, commit the spec-named
+    Apple 180 / regular 192+512 / separate maskable 512 / favicon assets,
+    link Apple touch + favicon from `index.html`, and keep `any` and
+    `maskable` as distinct manifest purposes (#369).
+  - **chevron-placement** — a disclosure `<summary>` whose chevron
+    glyph/icon sits before its title text; the fleet contract pins it
+    right (#284/app-launcher#362).
+  - **row-height-scale** — fixed `height`/`min-height` literals on
+    row/action-rail selectors outside the spec's `rows` 3-step scale
+    (44px/52px/60px by default, spec-driven) WARN (#284/app-launcher#365).
+  - **editor-modal contract** — design.md `modal` component (#307),
+    applied to every `<dialog>` that contains a real editable field
+    (`input`/`select`/`textarea`); a `<form>` wrapper is **not** required
+    (#342: home-automation#409's JS-managed editors carry bare fields and
+    a plain `type="button"` Save; a field-less alert/results dialog stays
+    NA). Sub-checks:
+    - `modal-unstyled-rows` — a row class, e.g. `label.stacked`, used
+      inside a dialog but only ever styled under some other, unrelated
+      ancestor scope (the app-launcher#70 root cause, where `.stacked`
+      was styled only under `.settings-card`).
+    - `modal-raw-fieldset` — a `<fieldset>`/`<legend>` with zero authored
+      CSS (a raw browser legend box instead of a titled plain section).
+    - `modal-header` — a titled dialog with no square × close button, or
+      a footer "Cancel" button standing in its place.
+    - `modal-footer` — more than one always-visible footer action, or a
+      sole primary that isn't the full-width solid-accent recipe.
+    - `modal-top-anchor` — no `max-height` + internal scroll, so a tall
+      form jumps vertically as conditional rows toggle.
+  - **mobile interaction contracts** — four checks promoted from
+    home-automation#409 (#342 — all conservative static views of
+    design.md's Async data & feedback / Touch targets / Charts sections):
+    - **hit-target** — spec-driven from `components.hit-target.min`
+      (44px): a fixed-size compact interactive rule below the floor with
+      no `::before` hit-area expansion on its own class and no
+      co-applied expansion utility in the markup WARNs; NA when the spec
+      lacks the token or the app authors no compact fixed-size controls.
+    - **chart-tick-budget** — Chart.js present with no authored
+      `maxTicksLimit`/`autoSkip` WARNs (phone x-axes collide); NA with no
+      Chart.js.
+    - **chart-noncolor-cue** — ≥2 colour-assigned datasets with no
+      `borderDash`/`pointStyle`/`fill` second channel WARN (colour must
+      never be the only series cue); NA for single-series apps.
+    - **async-lifecycle** — literal `data-state` values checked against
+      the canonical `loading/ready/empty/stale/error` vocabulary;
+      shadcn-style interaction states like `open`/`closed` are a
+      different channel and exempt; non-canonical lifecycle synonyms
+      WARN, and lifecycle states with no `role="status"` live region WARN
+      (the region counts whether it is declared in markup or set from JS
+      — `setAttribute('role', 'status')`, `el.role = 'status'` — since a
+      JS-rendered drawer is exactly the surface this contract is for and
+      the check already reads `dataset.state` the same way, #416); NA
+      when the app never uses `data-state`.
 - **`vendored`** — byte-hash comparison of the app's
   `_vendored/<component>/` copies against project-scaffolding's canonical
   files: `IDENTICAL` / `FORKED` (the vendor-verbatim rule broken — always a

@@ -49,7 +49,9 @@ flowchart TB
   COPILOTHOOKS --> COPILOT
 
   subgraph hooks["hooks/ — junctioned into Claude + Codex; reached by Grok via compat"]
-    LIBPY["_lib.py\nproject detection, stdin-JSON, projects.toml loader, NO_WINDOW spawn flag\nnormalize_payload: Grok camelCase -> Claude shape (#491)\nedit_event: native + Codex patch + Pi targets/outcomes (#744/#746)\nSECRET_PATTERNS · gh_json · powershell_exe — one copy per fact (#561)"]
+    LIBPY["_lib.py — wire protocol + payload extraction, NO_WINDOW spawn flag\nstdin-JSON, normalize_payload: Grok camelCase -> Claude shape (#491)\nSECRET_PATTERNS · gh_json · powershell_exe — one copy per fact (#561)\nre-exports registry.py + edit_events.py so no hook's import changes (#819)"]
+    REGISTRYPY["registry.py\nprojects.toml loader, cwd->project matching, Telegram/board-URL notify routing (#819)"]
+    EDITEVENTSPY["edit_events.py\nEditEvent: native + Codex patch + Pi targets/outcomes (#744/#746/#819)"]
     PROJECTS["projects.toml\nper-project ports/gates/never-kill ports"]
     RUNHOOK["run-hook.ps1 — Claude Code shim (Git Bash routes through it)"]
     HOOKFILES["pre_commit_no_ai_trailer · secret_scan_guard · safe_kill_guard ·\nvenv_discipline · py_syntax_check · notify_on_idle · session_state ·\nblock_askuserquestion_chief · chief_handover_sessionstart · …"]
@@ -61,6 +63,9 @@ flowchart TB
   hooks --> CODEX
   HOOKFILES --> LIBPY
   HOOKFILES --> PROJECTS
+  LIBPY --> REGISTRYPY
+  LIBPY --> EDITEVENTSPY
+  REGISTRYPY --> PROJECTS
   RUNHOOK --> HOOKFILES
   BACKUPPY --> LIBPY
   BACKUPPY --> PROJECTS

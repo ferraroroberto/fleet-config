@@ -484,7 +484,7 @@ def write_capture(
     dry-run that skips the dedup lookup entirely would report every already-
     captured session as new, fleet-config#785).
     """
-    from conversation_index import conversations_dirs
+    from conversation_index import _read_header, conversations_dirs
 
     identity = transcript.session_id or str(source.resolve())
     key = hashlib.sha256(f"{transcript.harness}\0{identity}".encode()).hexdigest()
@@ -496,7 +496,15 @@ def write_capture(
         for path in sorted(directory.glob("*.md")):
             if path.name == "index.md":
                 continue
-            prior = parse_capture_header(path.read_text(encoding="utf-8"))
+            # Bounded 6-line header read, not a full-file slurp: the dedup check
+            # below only ever inspects the header fields `parse_capture_header`
+            # extracts from the first lines. This scan runs once per Stop hook
+            # per capture in every routed directory, so re-reading whole
+            # transcripts here re-slurps the entire capture corpus on every
+            # turn-end for a project routing to many skill directories
+            # (fleet-config#819); `conversation_index._read_header` already
+            # does the bounded read.
+            prior = _read_header(path)
             same = (prior.get("agent") == transcript.harness and
                     ((transcript.session_id and prior.get("sid") == transcript.session_id)
                      or (not transcript.session_id and prior.get("key") == key)))
