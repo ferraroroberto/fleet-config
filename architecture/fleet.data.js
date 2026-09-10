@@ -43,10 +43,10 @@ window.FLEET = {
     {"ic": "🧮", "nm": "mathgamesforkids", "ds": "Educational games & HTML experiments."},
     {"ic": "🌐", "nm": "website", "ds": "Multi-workshop landing site."},
     {"ic": "🎓", "nm": "vibe-coding-workshop", "ds": "Python workshop + exercises."},
-    {"ic": "🌱", "nm": "life-os", "ds": "Productivity skills — diary, prep, muse.", "tag": ["via", "launcher"]},
+    {"ic": "🌱", "nm": "life-os", "ds": "Productivity skills — diary, prep, muse — plus a document-archive engine (health, school).", "tag": ["via", "launcher"]},
     {"ic": "🌡️", "nm": "home-automation", "port": 8447, "ds": "Home automation suite: AC, solar, per-circuit energy, alarm, network health, and native Home Assistant entities.", "chips": ["FastAPI", "PWA", "MELCloud", "Modbus", "FusionSolar", "Athom", "Tuya", "HA", "Telegram"]},
     {"ic": "📶", "nm": "github-copilot-usage", "ds": "Local dashboard for Copilot premium-request &amp; token usage."},
-    {"ic": "✅", "nm": "task-os", "port": ":8448", "ds": "<b>task-os</b> — one master task list: nested tasks that become projects, comments + activity log, folder links that open on any PC (taskos:// opener), GitHub/GitLab issues as tasks, folder-index + federated search, a markdown mirror (edit tasks as .md files) + nightly backup. PC-first PWA, phone via Tailscale.", "tag": ["→", "GitHub"]},
+    {"ic": "✅", "nm": "task-os", "port": ":8448", "ds": "<b>task-os</b> — one master task list: nested tasks that become projects, comments + activity log, folder links that open on any PC (taskos:// opener), GitHub/GitLab issues as tasks, folder-index + federated search, capture into Inbox (flagged emails from email-archiver's index, read-only; WhatsApp messages pushed by whatsapp-radar), batch-archiving the whole Outlook Inbox from an Archive tab that drives email-archiver's headless batch CLI as a subprocess (one run recorded per mail; the report offers accept / move to a ranked candidate / move to any folder / revert per mail, and a correction teaches the next run), voice quick-add (click the mic and the words appear as you speak; the app forwards the clip to the fleet's local-llm-hub, parakeet first, then a light model splits the sentence into a title and a description), a markdown mirror (edit tasks as .md files) + nightly backup. PC-first PWA, phone via Tailscale.", "tag": ["→", "GitHub"]},
     {"ic": "📈", "nm": "website-analytics", "ds": "Local-first GA4, Search Console, crawl, and weekly website-insight dashboard."}
   ],
   "pipe": [
@@ -54,7 +54,7 @@ window.FLEET = {
     {"ic": "📊", "nm": "social-media-analytics", "ds": "Predict content performance."},
     {"ic": "💡", "nm": "inspiration-system", "ds": "Idea → 10 illustration ideas.", "tag": ["→", "Notion"]},
     {"ic": "📝", "nm": "content-management", "ds": "Four content pipelines.", "tag": ["→", "Notion"]},
-    {"ic": "📧", "nm": "email-archiver", "ds": "Outlook → OneDrive archive.", "tag": ["→", "OneDrive"]},
+    {"ic": "📧", "nm": "email-archiver", "ds": "Outlook → OneDrive archive. Its SQLite index records the follow-up flag, which task-os polls read-only to raise a task per flagged mail; main_batch.py exposes headless plan/apply/revert over the whole Inbox plus a renumber verb that re-sequences a folder into sent-date order, all with JSON I/O for the same consumer.", "tag": ["→", "OneDrive"]},
     {"ic": "📄", "nm": "pdf-to-markdown", "ds": "PDF → clean Markdown for LLMs."},
     {"ic": "🧾", "nm": "mass-html-to-markdown", "ds": "HTML → SQLite → Markdown (+ LLM-shortened variant)."},
     {"ic": "🎨", "nm": "illustration-color-edit", "port": 8503, "ds": "SVG pipelines for book art."},
