@@ -50,6 +50,7 @@ from typing import Dict, List, Optional
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import git_run  # noqa: E402
+from ux_surface import fenced_mask  # noqa: E402
 from utf8_stdio import ensure_utf8_stdio  # noqa: E402
 
 ensure_utf8_stdio()
@@ -98,15 +99,7 @@ def parse_components(text: str) -> List[Dict[str, object]]:
     `{"name", "liveness_signal", "update_command", "not_restarted_by", "paths"}`.
     """
     lines = text.splitlines()
-    fenced = [False] * len(lines)  # True for any line inside (or delimiting) a fenced block
-    in_fence = False
-    for i, line in enumerate(lines):
-        stripped = line.lstrip()
-        if stripped.startswith("```") or stripped.startswith("~~~"):
-            fenced[i] = True
-            in_fence = not in_fence
-            continue
-        fenced[i] = in_fence
+    fenced = fenced_mask(lines)  # True for any line inside (or delimiting) a fenced block
 
     sections: List[tuple] = []  # (heading, start_line, end_line)
     heading: Optional[str] = None

@@ -34,8 +34,21 @@ except ModuleNotFoundError:  # pragma: no cover - fallback for older Pythons
 HOOKS_DIR = Path(__file__).resolve().parent
 PROJECTS_TOML = HOOKS_DIR / "projects.toml"
 PROJECTS_TOML_ENV_VAR = "CLAUDE_HOOKS_PROJECTS_TOML"
+STATE_DIR_ENV_VAR = "CLAUDE_HOOKS_STATE_DIR"
 
 logger = logging.getLogger("fleet_hooks")
+
+
+def state_dir() -> Path:
+    """The shared hooks-state base directory, resolved at call time so the
+    ``CLAUDE_HOOKS_STATE_DIR`` override always wins (hermetic acceptance runs
+    depend on it). Every hook that persists advisory state under
+    ``~/.claude/hooks/state/`` derives its own filename from this rather than
+    re-deriving the lookup itself -- eight independent copies of exactly this
+    (fleet-config#817) is the failure mode a ninth caller getting it wrong
+    guards against."""
+    root = os.environ.get(STATE_DIR_ENV_VAR)
+    return Path(root) if root else Path.home() / ".claude" / "hooks" / "state"
 
 
 # ------------------------------------------------------- credential patterns

@@ -31,6 +31,7 @@ from typing import Any, Dict, Iterator, Optional
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import git_run  # noqa: E402
+from hooks_state import state_dir  # noqa: E402
 
 STATE_FILENAME = "active-issues.json"
 PRUNE_AFTER = timedelta(hours=24)
@@ -103,11 +104,14 @@ def _write_lock_owner(lock_dir: Path, token: str) -> None:
     marker.touch(exist_ok=False)
 
 
-def state_file() -> Path:
-    """Resolve the state path at call time so tests can override its root."""
-    root = os.environ.get("CLAUDE_HOOKS_STATE_DIR")
-    base = Path(root) if root else Path.home() / ".claude" / "hooks" / "state"
-    return base / STATE_FILENAME
+def state_file(filename: str = STATE_FILENAME) -> Path:
+    """Resolve a state path under the shared hooks-state root at call time so
+    tests can override it (`CLAUDE_HOOKS_STATE_DIR`, via `hooks_state.state_dir()`).
+    `filename` defaults to this module's own `active-issues.json`; a sibling
+    marker file with the same read-modify-write shape (e.g. `chief_managed.py`'s
+    `chief-managed.json`) passes its own name rather than re-deriving this
+    resolution."""
+    return state_dir() / filename
 
 
 def _now() -> datetime:
@@ -120,10 +124,10 @@ def _iso_z(moment: datetime) -> str:
     )
 
 
-def _parse_started_at(row: Any) -> Optional[datetime]:
+def _parse_timestamp(row: Any, field: str) -> Optional[datetime]:
     if not isinstance(row, dict):
         return None
-    raw = row.get("started_at")
+    raw = row.get(field)
     if not isinstance(raw, str) or not raw:
         return None
     try:
@@ -146,13 +150,19 @@ def read_rows(path: Optional[Path] = None) -> Dict[str, Any]:
 
 
 def prune_rows(
-    rows: Dict[str, Any], *, now: Optional[datetime] = None
+    rows: Dict[str, Any],
+    *,
+    now: Optional[datetime] = None,
+    stamp_field: str = "started_at",
 ) -> Dict[str, Any]:
-    """Keep only well-formed records no older than :data:`PRUNE_AFTER`."""
+    """Keep only well-formed records whose `stamp_field` timestamp is no
+    older than :data:`PRUNE_AFTER`. `stamp_field` defaults to this module's
+    own `started_at`; `chief_managed.py` reuses this directly with
+    `stamp_field="dispatched_at"` rather than re-deriving its own copy."""
     cutoff = (now or _now()) - PRUNE_AFTER
     kept: Dict[str, Any] = {}
     for key, row in rows.items():
-        stamp = _parse_started_at(row)
+        stamp = _parse_timestamp(row, stamp_field)
         if stamp is not None and stamp >= cutoff:
             kept[str(key)] = row
     return kept

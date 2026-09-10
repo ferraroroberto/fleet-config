@@ -12,10 +12,14 @@ import json
 import math
 import os
 import re
+import sys
 import tempfile
 import time
 from pathlib import Path
 from typing import Any, Optional
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from hooks_state import state_dir  # noqa: E402
 
 SCHEMA_VERSION = 1
 MAX_AGE_SECONDS = 600
@@ -183,12 +187,6 @@ def validate_source(raw: Any) -> dict[str, Any]:
     if state in {"error", "unsupported"} and observations:
         raise ValueError("error_with_measurements")
     return result
-
-
-def state_dir() -> Path:
-    """Use the same state override as the legacy Claude cache."""
-    override = os.environ.get("CLAUDE_HOOKS_STATE_DIR")
-    return Path(override) if override else Path.home() / ".claude" / "hooks" / "state"
 
 
 def publish(raw: dict[str, Any], directory: Optional[Path] = None) -> Path:

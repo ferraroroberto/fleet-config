@@ -8,9 +8,9 @@ notification to chief instead of the human ping. A different concern from
 notification routing, keyed by session id, not by repo#issue), so a
 separate state file rather than overloading that schema — but the same
 I/O idiom (24h TTL prune, atomic temp-file replace, a lock dir serializing
-the read-modify-write), reused directly from `active_issue` rather than
-re-derived, since concurrent dispatches are exactly the race that module's
-locking already solves.
+the read-modify-write) is reused directly from `active_issue` (`state_file`,
+`_now`, `_iso_z`, `prune_rows`), not re-derived, since concurrent dispatches
+are exactly the race that module's locking already solves.
 
 The file is advisory and self-healing, same as `active-issues.json`: a
 missing/corrupt read is empty, not fatal, and a marker that outlives its
@@ -20,59 +20,21 @@ routing, it never trusts it as proof a session is alive.
 
 from __future__ import annotations
 
-import os
 import sys
-from datetime import datetime, timedelta, timezone
+from datetime import datetime
+from functools import partial
 from pathlib import Path
 from typing import Any, Dict, Optional
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from active_issue import read_rows, state_lock, write_rows  # noqa: E402
+from active_issue import _iso_z, _now, read_rows, state_lock, write_rows  # noqa: E402
+from active_issue import prune_rows as _base_prune_rows  # noqa: E402
+from active_issue import state_file as _base_state_file  # noqa: E402
 
 STATE_FILENAME = "chief-managed.json"
-PRUNE_AFTER = timedelta(hours=24)
 
-
-def state_file() -> Path:
-    """Resolve the state path at call time so tests can override its root
-    (mirrors `active_issue.py`'s own `state_file()`)."""
-    root = os.environ.get("CLAUDE_HOOKS_STATE_DIR")
-    base = Path(root) if root else Path.home() / ".claude" / "hooks" / "state"
-    return base / STATE_FILENAME
-
-
-def _now() -> datetime:
-    return datetime.now(timezone.utc)
-
-
-def _iso_z(moment: datetime) -> str:
-    return moment.astimezone(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
-
-
-def _parse_dispatched_at(row: Any) -> Optional[datetime]:
-    if not isinstance(row, dict):
-        return None
-    raw = row.get("dispatched_at")
-    if not isinstance(raw, str) or not raw:
-        return None
-    try:
-        parsed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
-    except ValueError:
-        return None
-    if parsed.tzinfo is None:
-        parsed = parsed.astimezone()
-    return parsed
-
-
-def prune_rows(rows: Dict[str, Any], *, now: Optional[datetime] = None) -> Dict[str, Any]:
-    """Keep only well-formed markers no older than :data:`PRUNE_AFTER`."""
-    cutoff = (now or _now()) - PRUNE_AFTER
-    kept: Dict[str, Any] = {}
-    for sid, row in rows.items():
-        stamp = _parse_dispatched_at(row)
-        if stamp is not None and stamp >= cutoff:
-            kept[str(sid)] = row
-    return kept
+state_file = partial(_base_state_file, STATE_FILENAME)
+prune_rows = partial(_base_prune_rows, stamp_field="dispatched_at")
 
 
 def mark(

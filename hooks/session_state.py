@@ -88,9 +88,7 @@ _EVENT_STATUS = {
 
 def state_file() -> Path:
     """Resolve the state-file path at call time so the env override always wins."""
-    root = os.environ.get("CLAUDE_HOOKS_STATE_DIR")
-    base = Path(root) if root else Path.home() / ".claude" / "hooks" / "state"
-    return base / STATE_FILENAME
+    return _lib.state_dir() / STATE_FILENAME
 
 
 def ended_file() -> Path:

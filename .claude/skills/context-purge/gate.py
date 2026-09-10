@@ -52,7 +52,6 @@ import datetime as _dt
 import hashlib
 import json
 import re
-import subprocess
 import sys
 import tempfile
 from pathlib import Path
@@ -63,8 +62,8 @@ FLEET_ROOT = REPO_ROOT.parent
 
 sys.path.insert(0, str(REPO_ROOT / "skills" / "_lib"))
 import git_run  # noqa: E402
+from audit_issue_client import run_audit_issue  # noqa: E402
 from fleet_repo_scan import is_linked_worktree  # noqa: E402
-from no_window import NO_WINDOW  # noqa: E402
 from utf8_stdio import ensure_utf8_stdio  # noqa: E402
 
 # Repo-relative (fleet-config#502), matching every other _lib cross-reference
@@ -416,14 +415,7 @@ def reconcile(fleet: bool, dry_run: bool = False) -> dict:
 # ---- ledger issue I/O (via audit_issue.py) ---------------------------------
 
 def _audit_issue(*args: str) -> str:
-    res = subprocess.run(
-        [sys.executable, str(AUDIT_ISSUE), *args],
-        capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=120,
-        creationflags=NO_WINDOW,
-    )
-    if res.returncode != 0:
-        raise RuntimeError(f"audit_issue.py {args[0]} failed: {(res.stderr or res.stdout).strip()}")
-    return res.stdout
+    return run_audit_issue(AUDIT_ISSUE, *args)
 
 
 def read_ledger() -> dict[str, str]:

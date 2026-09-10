@@ -63,7 +63,7 @@ from typing import Dict, List, Optional
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import git_run  # noqa: E402
 from no_window import NO_WINDOW  # noqa: E402
-from ux_surface import parse_ux_surface_block  # noqa: E402
+from ux_surface import fenced_mask, parse_ux_surface_block  # noqa: E402
 from utf8_stdio import ensure_utf8_stdio  # noqa: E402
 
 ensure_utf8_stdio()
@@ -72,7 +72,6 @@ DEFAULT_TEST_DIRS = ["tests/e2e"]
 DEFAULT_TARGET = 15
 
 _CI_HEADING = re.compile(r"^##\s+CI expectations\b")
-_FENCE_RE = re.compile(r"^\s{0,3}(`{3,}|~{3,})")
 _E2E_SURFACE_LINE_RE = re.compile(r"e2e surface", re.IGNORECASE)
 _BACKTICK_RE = re.compile(r"`([^`]+)`")
 _TEST_DEF_RE = re.compile(r"^\s*def (test_\w+)")
@@ -80,32 +79,9 @@ _TEST_DEF_RE = re.compile(r"^\s*def (test_\w+)")
 
 # ---- pure helpers (unit-tested without git/pytest) ------------------------
 
-def fenced_mask(lines: List[str]) -> List[bool]:
-    """Per-line "is this inside a fenced code block?" mask.
-
-    Tracks paired ``` / ~~~ fences (CommonMark: a closing fence uses the same
-    character and is at least as long as the opener, so a ```` ```markdown ````
-    block containing a shorter fence is not closed early). Both the delimiter
-    lines and everything between them are masked True.
-    """
-    mask: List[bool] = []
-    fence_char = ""
-    fence_len = 0
-    for line in lines:
-        m = _FENCE_RE.match(line)
-        if not fence_char:
-            if m:
-                fence_char, fence_len = m.group(1)[0], len(m.group(1))
-                mask.append(True)
-                continue
-            mask.append(False)
-        else:
-            mask.append(True)
-            if m and m.group(1)[0] == fence_char and len(m.group(1)) >= fence_len:
-                # A closing fence carries no info text after the delimiter.
-                if not line.strip()[fence_len:].strip():
-                    fence_char, fence_len = "", 0
-    return mask
+# `fenced_mask` itself now lives in `ux_surface` (this module already imports
+# from it) so `deploy_coverage` and this module share one fence-tracking
+# implementation instead of re-deriving the CommonMark rule (fleet-config#817).
 
 
 def find_ci_expectations_block(claude_md: str) -> Optional[str]:

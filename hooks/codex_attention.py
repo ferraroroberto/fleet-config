@@ -105,9 +105,7 @@ def permission_context(payload: dict[str, Any]) -> Optional[str]:
 
 
 def _dedup_file() -> Path:
-    root = os.environ.get("CLAUDE_HOOKS_STATE_DIR")
-    base = Path(root) if root else Path.home() / ".claude" / "hooks" / "state"
-    return base / DEDUP_FILENAME
+    return _lib.state_dir() / DEDUP_FILENAME
 
 
 def _event_key(payload: dict[str, Any]) -> Optional[str]:

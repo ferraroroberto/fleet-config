@@ -83,7 +83,10 @@ closed-as-not-planned issue doesn't get refiled next sweep. `CERT_DRIFT=no` →
 note "cert: ok" for the final report and move on.
 
 On `CERT_DRIFT=yes`, file a **separate** deduped `cert-drift` issue (never folded
-into `design-drift`):
+into `design-drift`). This is the **canonical `audit_issue.py` upsert procedure**
+for this skill — step 5's `design-drift` issue reuses the same four-step shape
+below with only its own kind/label/title/temp-file-prefix and (richer) body-merge
+rule swapped in; don't restate the mechanics there if you're changing them here.
 
 1. **Ensure the label** (idempotent):
 
@@ -338,39 +341,25 @@ its selectors or APIs into checks.
 Exactly one managed `design-drift` issue per repo, reused across runs — identical
 mechanics to `/codebase-audit`'s bucket issues. Never `gh issue create` by hand.
 
-1. **Ensure the label** (idempotent):
+Same four-step upsert procedure as step 1b's `cert-drift` issue (ensure label /
+fetch existing / build the body / upsert with a repo-scoped temp file) — only
+these parameters differ:
 
-   ```
-   gh label create design-drift --color '006b75' --description 'Web-app CSS tokens drift from the fleet design.md spec' || true
-   ```
-
-2. **Fetch the existing issue:**
-
-   ```
-   E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/audit_issue.py get --repo <OWNER/REPO> --kind design-drift
-   ```
-
-   It prints `{"number": N|null, "body": "...", "duplicates": [...]}`.
-
-3. **Build the merged body.** Fresh → use the template below. Existing → merge
-   this run's findings into the returned body: preserve every ticked `- [x]`
-   verbatim, match findings by `file` + token role (update the moved line, keep
-   the checkbox), keep items not re-surfaced (flag them in the run log), never
-   tick or close anything yourself, never add `Closes #`. Append a dated bullet to
-   `## Drift run log`.
-
-4. **Upsert** (creates / edits / collapses strays, stamps the marker):
-
-   ```
-   E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/audit_issue.py upsert \
-     --repo <OWNER/REPO> --kind design-drift --label design-drift \
-     --title "audit: design-drift findings" --body-file <tmpfile>
-   ```
-
-   Use a repo-scoped, unique temp file so concurrent runs never clobber each
-   other: `E:/tmp/design-sync-<owner>-<repo>-<short-sha>.md`
-   (`<owner>-<repo>` = `OWNER/REPO` with the slash → hyphen,
-   `<short-sha>` = `git rev-parse --short HEAD`). Never a fixed shared name.
+- **kind / label:** `design-drift` — ensure the label (idempotent) with
+  `gh label create design-drift --color '006b75' --description 'Web-app CSS tokens drift from the fleet design.md spec' || true`;
+  fetch with `audit_issue.py get --repo <OWNER/REPO> --kind design-drift`
+  (prints `{"number": N|null, "body": "...", "duplicates": [...]}`); upsert
+  with `audit_issue.py upsert --repo <OWNER/REPO> --kind design-drift --label design-drift --title "audit: design-drift findings" --body-file <tmpfile>`.
+- **title:** `audit: design-drift findings` (stable, no count suffix).
+- **temp file:** `E:/tmp/design-sync-<owner>-<repo>-<short-sha>.md` — same
+  repo-scoped, unique-per-run convention as `cert-drift`'s, never a fixed
+  shared name.
+- **body merge — richer than `cert-drift`'s plain preserve-and-append:** fresh
+  → the template below; existing → preserve every ticked `- [x]` verbatim,
+  match findings by `file` + token role (update the moved line, keep the
+  checkbox), keep items not re-surfaced (flag them in the run log), never tick
+  or close anything yourself, never add `Closes #`. Append a dated bullet to
+  `## Drift run log`.
 
 **Body shape** for a fresh issue (no hard-wrapped paragraphs — the global
 CLAUDE.md rendered-markdown rule applies; the helper prepends the marker):
