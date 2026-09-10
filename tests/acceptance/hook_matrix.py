@@ -309,11 +309,21 @@ def run_hook_matrix() -> Tuple[int, int]:
     ))
 
     # ---- notify_on_idle ----
-    # fleet-config itself has no per-project telegram_chat in projects.toml,
-    # but the [global] fallback IS now set. The hook will try to post but neither
-    # TELEGRAM_BOT_TOKEN nor a readable settings.json is in reach (both routed to
-    # NO_SETTINGS_JSON above), so notify_send returns False gracefully and the
-    # hook still exits 0 without ever reaching the network.
+    # fleet-config itself has no per-project telegram_chat in projects.toml, but
+    # the [global] fallback IS set, so these cases really do drive the hook down
+    # its posting path. What keeps them off the wire is `shared.hook_env()`: it
+    # closes every token source `_resolve_token` consults *and* sets
+    # FLEET_NOTIFY_BLOCK_NETWORK, so the transport refuses before opening a
+    # socket. The hook still exits 0, because a blocked send raises the same
+    # URLError the callers already convert to a logged False.
+    #
+    # This comment used to claim the network was out of reach because the env
+    # var and settings.json were closed. That was false from the day
+    # `_token_from_dotenv` was added — the token resolved off disk and every
+    # gate run posted four real pings to Roberto's phone (fleet-config#813).
+    # The claim is now enforced rather than asserted: `checks_notify` fails the
+    # suite if either half stops holding, so this comment cannot drift back
+    # into being a comfortable lie.
     cases.append((
         "notify_on_idle: global chat set, missing token -> allow (graceful fail)",
         "notify_on_idle",

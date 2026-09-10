@@ -25,6 +25,7 @@ from acceptance.shared import (
     NO_SETTINGS_JSON,
     REPO,
     _Checker,
+    hook_env,
     run,
 )
 
@@ -312,8 +313,11 @@ def _codex_hooks_config_check() -> Tuple[int, int]:
         "unexpected registrations: " + repr(unsupported_wired),
     )
 
-    env = {k: v for k, v in os.environ.items() if k != "TELEGRAM_BOT_TOKEN"}
-    env["CLAUDE_SETTINGS_JSON_PATH"] = NO_SETTINGS_JSON
+    # These smoke runs shell out directly rather than through shared.run(), so
+    # they take the same isolated environment from its one builder — a second
+    # hand-rolled copy of the env is how #813's hole outlived the fix to its
+    # sibling.
+    env = hook_env()
     smoke_failures: list[str] = []
     for command in commands:
         try:
