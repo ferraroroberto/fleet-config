@@ -148,7 +148,7 @@ window.CONFIG = {
     },
     {
       "nm": "issue-add",
-      "ds": "Turn a rough idea, brain-dump, or transcript into a well-formed GitHub issue — researches the codebase, drafts it the way a senio…",
+      "ds": "Turn a rough idea, brain-dump, or transcript into a well-formed GitHub issue — researches the codebase, drafts it as a senior dev…",
       "scope": "repo"
     },
     {
@@ -163,7 +163,7 @@ window.CONFIG = {
     },
     {
       "nm": "issue-finish-batch",
-      "ds": "Ship reviewed branches in parallel — fan out one Sonnet agent per branch running /issue-finish (push, PR, merge, delete, tray res…",
+      "ds": "Ship reviewed branches in parallel — fan out one easy-tier agent per branch running /issue-finish (push, PR, merge, delete, tray…",
       "scope": "fleet"
     },
     {
@@ -200,12 +200,12 @@ window.CONFIG = {
   "skills_fleet": [
     {
       "nm": "audit-fleet",
-      "ds": "Run /codebase-audit across every repo in the E:\\automation fleet in one pass and emit one weekly digest (GitHub comment + Telegra…",
+      "ds": "Run /codebase-audit across every repo in the E:\\automation fleet in one pass, emitting one weekly digest (GitHub comment + Telegr…",
       "sched": true
     },
     {
       "nm": "chief",
-      "ds": "Standing conversational fleet chief — brain of the app-launcher Board chat mode (app-launcher#245).",
+      "ds": "Brain of the app-launcher Board chat mode (app-launcher#245), injected as the launcher-spawned chief session's first prompt.",
       "sched": false
     },
     {
@@ -306,6 +306,7 @@ window.CONFIG = {
         "journal-weekly",
         "meeting-prep",
         "roast-posts",
+        "school",
         "slides",
         "sparring-private",
         "sparring-work",
@@ -345,7 +346,7 @@ window.CONFIG = {
       "nm": "gh_body_file_guard",
       "ev": "PreToolUse · Bash",
       "block": false,
-      "reach": "Claude only",
+      "reach": "Claude + Codex",
       "ds": "Nudge away from the two cross-shell payload traps that mangle GitHub bodies."
     },
     {
@@ -379,7 +380,7 @@ window.CONFIG = {
     {
       "nm": "context_filter_hook",
       "ev": "PreToolUse · Bash·PowerShell",
-      "block": false,
+      "block": true,
       "reach": "Claude + Codex",
       "ds": "PreToolUse adapter for the local fleet context filter."
     },
@@ -387,7 +388,7 @@ window.CONFIG = {
       "nm": "docs_dated_filename_guard",
       "ev": "PreToolUse · Write",
       "block": true,
-      "reach": "Claude only",
+      "reach": "Claude + Codex",
       "ds": "Block dated retrospective filenames under a `docs/` directory."
     },
     {
@@ -401,28 +402,28 @@ window.CONFIG = {
       "nm": "branch_before_edit_guard",
       "ev": "PreToolUse · Edit·Write·MultiEdit",
       "block": true,
-      "reach": "Claude only",
-      "ds": "Block an `Edit`/`Write`/`MultiEdit` on the default branch from a launcher-"
+      "reach": "Claude + Codex",
+      "ds": "Block an edit on the default branch from a launcher-"
     },
     {
       "nm": "py_syntax_check",
       "ev": "PostToolUse · Edit·Write·MultiEdit",
       "block": true,
       "reach": "Claude + Codex",
-      "ds": "Surface Python syntax errors immediately after an Edit/Write."
+      "ds": "Check every surviving Python target after a successful shared edit event."
     },
     {
       "nm": "hub_bypass_warn",
       "ev": "PostToolUse · Edit·Write·MultiEdit",
       "block": false,
-      "reach": "Claude only",
+      "reach": "Claude + Codex",
       "ds": "Nudge away from re-implementing the local LLM hub with an inline `claude -p`."
     },
     {
       "nm": "browser_stealth_lint",
       "ev": "PostToolUse · Edit·Write·MultiEdit",
       "block": false,
-      "reach": "Claude only",
+      "reach": "Claude + Codex",
       "ds": "Nudge when a browser-launch file is missing the anti-bot stealth kwargs."
     },
     {
@@ -450,8 +451,8 @@ window.CONFIG = {
       "nm": "conversation_capture",
       "ev": "Stop (opt-in per project)",
       "block": false,
-      "reach": "Claude only",
-      "ds": "Stop hook — capture a finished Claude Code session as a markdown file."
+      "reach": "Claude + Codex",
+      "ds": "Opt-in Stop capture for native Claude/Codex stored transcripts."
     },
     {
       "nm": "session_index",
@@ -471,6 +472,10 @@ window.CONFIG = {
       "ds": "Thin CLI entry point for the daily fleet-private backup engine."
     },
     {
+      "nm": "codex_attention",
+      "ds": "Notify Telegram when Codex is genuinely waiting for user input."
+    },
+    {
       "nm": "context_filter",
       "ds": "Local command-output compression for the fleet hook layer."
     },
@@ -479,12 +484,20 @@ window.CONFIG = {
       "ds": "CLI entrypoint for the fleet context filter."
     },
     {
+      "nm": "conversation_backfill",
+      "ds": "Recover a stored transcript no live Stop hook ever captured (fleet-config#785)."
+    },
+    {
       "nm": "conversation_index",
       "ds": "Tier-1 conversation index — a cheap, searchable layer over raw captures."
     },
     {
       "nm": "conversation_search",
       "ds": "Ranked full-text search over captured conversations (fleet-config#586)."
+    },
+    {
+      "nm": "edit_events",
+      "ds": "Shared normalized edit view + ``apply_patch`` envelope parsing (fleet-config#819)."
     },
     {
       "nm": "hub_client",
@@ -499,6 +512,10 @@ window.CONFIG = {
       "ds": "Fleet-wide Telegram notifier - fire a real, bot-identity notification."
     },
     {
+      "nm": "registry",
+      "ds": "``projects.toml`` registry + notify-target routing (fleet-config#819)."
+    },
+    {
       "nm": "session_state_codex",
       "ds": "Codex adapter for the Fleet Board session-state writer (fleet-config#349)."
     },
@@ -509,6 +526,10 @@ window.CONFIG = {
     {
       "nm": "slack_notify",
       "ds": "DEPRECATED compatibility shim — forwards to :mod:`notify_send` (Telegram)."
+    },
+    {
+      "nm": "transcript_readers",
+      "ds": "Native transcript readers; hook-envelope normalization remains in _lib."
     },
     {
       "nm": "work_summary",
