@@ -534,12 +534,26 @@ def block(reason: str) -> "NoReturn":
 # to advise (fleet-config#681). Per code.claude.com/docs/en/hooks: "For most
 # events, stdout is written to the debug log but not shown in the transcript.
 # The exceptions are UserPromptSubmit, UserPromptExpansion, and SessionStart."
-_STDOUT_IS_CONTEXT_EVENTS = frozenset({"UserPromptExpansion", "SessionStart"})
+# `SessionStart` is carved out below into `_ADDITIONAL_CONTEXT_EVENTS` instead
+# (fleet-config#818) — Claude honors both channels for that event, and the
+# wrapped form is the one `chief_handover_sessionstart` already ships in
+# production, so routing through it here preserves that hook's verified
+# behaviour instead of silently switching it to the other equally-documented
+# channel.
+_STDOUT_IS_CONTEXT_EVENTS = frozenset({"UserPromptExpansion"})
 
 # Events carrying a `hookSpecificOutput.additionalContext` field — "text added
-# to the conversation as context Claude sees" (same reference).
+# to the conversation as context Claude sees" (same reference). `SessionStart`
+# joined this set in fleet-config#818 so `chief_handover_sessionstart` could
+# stop hand-rolling the identical envelope: without it, a non-Claude harness
+# — e.g. Grok, which loads this repo's hooks by default — received a Claude
+# JSON envelope it never parses, and the handover log silently never reached
+# the model (the exact failure class fleet-config#491 centralised this dialect
+# table to prevent). Routing through `warn()` gives every SessionStart nudge
+# the same per-harness fallback every other event already gets: foreign
+# harnesses fall through to the plain-stdout branch below instead.
 _ADDITIONAL_CONTEXT_EVENTS = frozenset({
-    "PostToolUse", "PostToolUseFailure", "UserPromptSubmit", "Stop",
+    "PostToolUse", "PostToolUseFailure", "UserPromptSubmit", "Stop", "SessionStart",
 })
 
 
@@ -555,15 +569,17 @@ def warn(message: str) -> "NoReturn":
     so the dialect is too — same shape as :func:`block`:
 
       - ``PostToolUse`` / ``PostToolUseFailure`` / ``UserPromptSubmit`` /
-        ``Stop`` → ``hookSpecificOutput.additionalContext``.
+        ``Stop`` / ``SessionStart`` → ``hookSpecificOutput.additionalContext``
+        (``chief_handover_sessionstart`` is the ``SessionStart`` caller,
+        fleet-config#818).
       - Claude ``PreToolUse`` (and any event without an
         ``additionalContext`` field) → the common ``systemMessage`` field.
       - Codex ``PreToolUse`` → ``hookSpecificOutput.additionalContext``; its
         0.153.3 client ignores the Claude ``systemMessage`` envelope.
         Neither form is a `permissionDecision`: a nudge must stay advisory,
         and both ``allow`` and ``ask`` would change whether the tool call runs.
-      - ``SessionStart`` / ``UserPromptExpansion`` → plain text, already the
-        model-visible channel there.
+      - ``UserPromptExpansion`` → plain text, already the model-visible
+        channel there.
 
     A foreign harness keeps the bare-stdout form: Claude's JSON protocol is
     Claude's, and none of the shapes above are part of the Grok/Copilot/agy
@@ -595,6 +611,57 @@ def warn(message: str) -> "NoReturn":
         print(json.dumps(payload), flush=True)
         sys.exit(0)
     print(message, flush=True)
+    sys.exit(0)
+
+
+def rewrite_command(payload: Dict[str, Any], new_command: str, *, reason: str = "") -> "NoReturn":
+    """Allow the call with its command replaced, in the calling harness's
+    ``PreToolUse`` rewrite dialect. Exit 0; the tool runs with ``new_command``.
+
+    ``context_filter_hook`` is the one caller (fleet-config#818, extracted
+    from it): before this existed, the hook carried three harnesses' outbound
+    key names inline (``overwrite``/``CommandLine`` for Antigravity,
+    ``modifiedArgs`` for Copilot, ``hookSpecificOutput.updatedInput`` for
+    Claude) plus its own provenance sniff, so a fifth harness meant editing a
+    hook body instead of extending the one translation point ``block()`` and
+    ``warn()`` already own for the *refuse* and *nudge* outbound categories.
+    This is that same table for the third category — *rewrite the command*:
+
+      - Antigravity (``agy``): ``overwrite.CommandLine`` merges into the tool
+        call's args before it runs — verified live, an overwritten
+        ``CommandLine`` actually executed (fleet-config#546).
+      - Copilot CLI: ``modifiedArgs`` is a JSON **string** replacing the whole
+        tool-args object — verified live on 1.0.77 (fleet-config#547) — so
+        ``payload``'s other ``tool_input`` keys (description, mode,
+        initial_wait, ...) are echoed back with only ``command`` rewritten.
+      - Claude Code (and any harness :func:`normalize_payload` doesn't name
+        above — Codex and Grok are both fail-open before reaching a rewrite
+        call site, per ``context_filter_hook``'s own early ``allow()``s) —
+        ``hookSpecificOutput.updatedInput.command``, Claude's documented
+        ``PreToolUse`` rewrite field.
+
+    Keyed off the module-global :data:`_ACTIVE_AGENT` `normalize_payload()`
+    set, same as `block()`/`warn()` — no payload/agent threading through call
+    sites. ``reason`` rides Claude's ``permissionDecisionReason`` only; the
+    other two dialects have no equivalent field.
+    """
+    if _ACTIVE_AGENT == "antigravity":
+        output: Dict[str, Any] = {"decision": "allow", "overwrite": {"CommandLine": new_command}}
+    elif _ACTIVE_AGENT == "copilot":
+        raw_tool_input = payload.get("tool_input")
+        args_out = dict(raw_tool_input) if isinstance(raw_tool_input, dict) else {}
+        args_out["command"] = new_command
+        output = {"permissionDecision": "allow", "modifiedArgs": json.dumps(args_out)}
+    else:
+        output = {
+            "hookSpecificOutput": {
+                "hookEventName": "PreToolUse",
+                "permissionDecision": "allow",
+                "permissionDecisionReason": reason,
+                "updatedInput": {"command": new_command},
+            }
+        }
+    print(json.dumps(output, separators=(",", ":")), flush=True)
     sys.exit(0)
 
 

@@ -34,7 +34,6 @@ Wired by the ``SessionStart`` hook in ``settings.template.json``.
 
 from __future__ import annotations
 
-import json
 import os
 import sys
 from pathlib import Path
@@ -89,13 +88,13 @@ def main() -> int:
         return 0  # no log yet (first-ever run, or nothing written) -- silent no-op
     if not content:
         return 0
-    print(json.dumps({
-        "hookSpecificOutput": {
-            "hookEventName": "SessionStart",
-            "additionalContext": build_context(content, path),
-        }
-    }))
-    return 0
+    # `_lib.warn()` owns the per-harness SessionStart dialect (fleet-config#818):
+    # Claude gets the hookSpecificOutput.additionalContext envelope this hook
+    # used to hand-roll unconditionally; a non-Claude harness -- e.g. Grok,
+    # which loads this repo's hooks by default -- gets the plain-stdout
+    # fallback it actually reads, instead of a Claude-shaped envelope it
+    # silently drops.
+    _lib.warn(build_context(content, path))
 
 
 if __name__ == "__main__":

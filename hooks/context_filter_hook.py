@@ -14,7 +14,6 @@ ordinary failure to the hook (fleet-config#755).
 from __future__ import annotations
 
 import base64
-import json
 import re
 import sys
 from pathlib import Path
@@ -110,33 +109,13 @@ def main() -> None:
         rewritten += f" --session-id {session_id}"
     rewritten += f" --agent {agent}"
 
-    if agent == "antigravity":
-        # agy's PreToolUse response dialect: `overwrite` merges into the tool
-        # call's args before it runs — its equivalent of Claude's updatedInput
-        # (verified live: an overwritten CommandLine actually executed,
-        # fleet-config#546). Emitting Claude's shape here would be ignored.
-        output = {"decision": "allow", "overwrite": {"CommandLine": rewritten}}
-    elif agent == "copilot":
-        # Copilot's dialect: `modifiedArgs` is a JSON *string* replacing the
-        # whole tool-args object (verified live on 1.0.77: a modified command
-        # executed and its output reached the model, fleet-config#547) — so the
-        # original args' other keys (description, mode, initial_wait, ...) are
-        # echoed back with only `command` rewritten.
-        tool_input = payload.get("tool_input")
-        args_out = dict(tool_input) if isinstance(tool_input, dict) else {}
-        args_out["command"] = rewritten
-        output = {"permissionDecision": "allow", "modifiedArgs": json.dumps(args_out)}
-    else:
-        output = {
-            "hookSpecificOutput": {
-                "hookEventName": "PreToolUse",
-                "permissionDecision": "allow",
-                "permissionDecisionReason": f"fleet-context-filter: {mode}",
-                "updatedInput": {"command": rewritten},
-            }
-        }
-    print(json.dumps(output, separators=(",", ":")), flush=True)
-    sys.exit(0)
+    # Per-harness outbound rewrite dialect (Antigravity's `overwrite`,
+    # Copilot's `modifiedArgs`, Claude's `hookSpecificOutput.updatedInput`)
+    # lives in `_lib.rewrite_command()`, not here (fleet-config#818) — the
+    # third outbound category alongside `block()`/`warn()`'s refuse/nudge
+    # dialects, so a fifth harness is one branch there instead of an edit to
+    # this hook.
+    _lib.rewrite_command(payload, rewritten, reason=f"fleet-context-filter: {mode}")
 
 
 if __name__ == "__main__":
