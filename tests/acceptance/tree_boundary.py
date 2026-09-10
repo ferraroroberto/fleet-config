@@ -27,7 +27,6 @@ from __future__ import annotations
 
 import ast
 import shutil
-import subprocess
 import sys
 import tempfile
 from pathlib import Path
@@ -36,6 +35,7 @@ from typing import List, Tuple
 from acceptance.shared import HOOKS, REPO, _Checker
 
 SKILLS_LIB = REPO / "skills" / "_lib"
+TESTS_LIB = REPO / "tests" / "_lib"
 
 
 def _skills_only_module_names() -> set:
@@ -96,24 +96,17 @@ def _git_helper_parity(check: _Checker) -> None:
     (and, for `run_gh`, the real `gh` binary)."""
     sys.path.insert(0, str(HOOKS))
     sys.path.insert(0, str(SKILLS_LIB))
+    sys.path.insert(0, str(TESTS_LIB))
     import _lib  # noqa: E402  (hooks/_lib.py)
     import git_run  # noqa: E402  (skills/_lib/git_run.py)
+    from git_fixtures import init_repo  # noqa: E402
 
-    tmp = Path(tempfile.mkdtemp(prefix="test_tree_boundary_"))
+    # `init_repo`'s author identity matches this machine's commit-email
+    # allowlist hook — same value `checks_guards`'s own `git_repo` uses, for
+    # the same reason.
+    repo = init_repo("master")
+    outside = Path(tempfile.mkdtemp(prefix="test_tree_boundary_not_a_repo_"))
     try:
-        repo = tmp / "repo"
-        repo.mkdir()
-        # The author email matches this machine's commit-email allowlist hook —
-        # same value `checks_guards`'s own `git_repo` uses, for the same reason.
-        for args in (
-            ["init", "-q", "-b", "master"],
-            ["config", "user.email", "35553560+ferraroroberto@users.noreply.github.com"],
-            ["config", "user.name", "test"],
-            ["commit", "-q", "--allow-empty", "-m", "init"],
-        ):
-            subprocess.run(["git", "-C", str(repo), *args], check=True,
-                           capture_output=True, creationflags=_lib.NO_WINDOW)
-
         mine = _lib.run_git(["-C", str(repo), "rev-parse", "--abbrev-ref", "HEAD"])
         theirs = git_run.run_git(["-C", str(repo), "rev-parse", "--abbrev-ref", "HEAD"])
         check("tree_boundary: hooks/_lib.run_git matches git_run.run_git "
@@ -131,8 +124,6 @@ def _git_helper_parity(check: _Checker) -> None:
               f"hooks={mine_ref!r} skills={theirs_ref!r}")
 
         # a non-repo path: both must fall through to the final fallback.
-        outside = tmp / "not-a-repo"
-        outside.mkdir()
         check("tree_boundary: hooks/_lib.resolve_default_branch_ref agrees off-repo",
               _lib.resolve_default_branch_ref(outside)
               == git_run.resolve_default_branch_ref(outside) == "main",
@@ -152,7 +143,8 @@ def _git_helper_parity(check: _Checker) -> None:
     finally:
         # git's object store is read-only on Windows, so a plain rmtree can
         # raise on a perfectly successful run — never let cleanup fail the gate.
-        shutil.rmtree(tmp, ignore_errors=True)
+        shutil.rmtree(repo, ignore_errors=True)
+        shutil.rmtree(outside, ignore_errors=True)
 
 
 def _hooks_tree_boundary_check() -> Tuple[int, int]:

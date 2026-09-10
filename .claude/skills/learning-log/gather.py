@@ -42,7 +42,7 @@ HELPER = Path(__file__).resolve().parents[3] / "skills" / "_lib" / "audit_issue.
 
 sys.path.insert(0, str(HELPER.parent))
 import git_run  # noqa: E402
-from no_window import NO_WINDOW  # noqa: E402
+from audit_issue_client import run_audit_issue  # noqa: E402
 from utf8_stdio import ensure_utf8_stdio  # noqa: E402
 
 ensure_utf8_stdio()
@@ -326,12 +326,9 @@ def write_bucket_files(out_dir: Path, prs: list[dict], issues: list[dict]) -> li
 
 def read_ledger_body(repo: str) -> str:
     try:
-        proc = subprocess.run([sys.executable, str(HELPER), "get", "--repo", repo, "--kind", "learning"],
-                              capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=60,
-                              creationflags=NO_WINDOW)
-        if proc.returncode == 0:
-            return json.loads(proc.stdout or "{}").get("body") or ""
-    except (OSError, subprocess.SubprocessError, ValueError) as exc:
+        raw = run_audit_issue(HELPER, "get", "--repo", repo, "--kind", "learning", timeout=60)
+        return json.loads(raw or "{}").get("body") or ""
+    except (OSError, subprocess.SubprocessError, RuntimeError, ValueError) as exc:
         print(f"ledger get failed: {exc}", file=sys.stderr)
     return ""
 

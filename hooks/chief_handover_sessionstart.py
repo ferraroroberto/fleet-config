@@ -34,7 +34,6 @@ Wired by the ``SessionStart`` hook in ``settings.template.json``.
 
 from __future__ import annotations
 
-import os
 import sys
 from pathlib import Path
 
@@ -51,9 +50,7 @@ def handover_path() -> Path:
     root (mirrors ``session_state.py``'s ``state_file()`` pattern). Lands
     under ``hooks/state/`` (gitignored, machine-local — fleet-config#442's
     "the log is gitignored and machine-local" criterion, for free)."""
-    root = os.environ.get("CLAUDE_HOOKS_STATE_DIR")
-    base = Path(root) if root else Path.home() / ".claude" / "hooks" / "state"
-    return base / "chief-handover.md"
+    return _lib.state_dir() / "chief-handover.md"
 
 
 def build_context(content: str, path: Path) -> str:

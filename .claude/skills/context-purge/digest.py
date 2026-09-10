@@ -64,7 +64,6 @@ from __future__ import annotations
 import argparse
 import html as _html
 import json
-import subprocess
 import sys
 import tempfile
 from pathlib import Path
@@ -75,7 +74,7 @@ REPO_ROOT = SKILL_DIR.parents[2]
 
 sys.path.insert(0, str(REPO_ROOT / "skills" / "_lib"))
 import git_run  # noqa: E402
-from no_window import NO_WINDOW  # noqa: E402
+from audit_issue_client import run_audit_issue  # noqa: E402
 from utf8_stdio import ensure_utf8_stdio  # noqa: E402
 
 AUDIT_ISSUE = REPO_ROOT / "skills" / "_lib" / "audit_issue.py"
@@ -645,14 +644,7 @@ ul {{ padding-left:1.1rem; }}
 # ---- publish ----------------------------------------------------------------
 
 def _audit_issue(*args: str) -> str:
-    res = subprocess.run(
-        [sys.executable, str(AUDIT_ISSUE), *args],
-        capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=120,
-        creationflags=NO_WINDOW,
-    )
-    if res.returncode != 0:
-        raise RuntimeError(f"audit_issue.py {args[0]} failed: {(res.stderr or res.stdout).strip()}")
-    return res.stdout
+    return run_audit_issue(AUDIT_ISSUE, *args)
 
 
 def _gh(args: list[str]) -> str:

@@ -1,5 +1,5 @@
 """Shared throwaway-git-repo fixtures for the standalone `tests/test_*.py` files
-(fleet-config#615).
+(fleet-config#615) and the `tests/acceptance/` matrix (fleet-config#817).
 
 `check_harness.py` retired the identical pass/fail-loop trio hand-rolled across
 eight files; this retires the next hand-roll one level up — the ~15-20 line
@@ -21,11 +21,20 @@ Every failure is reported through the caller's own `check(cond, msg)` (from
 `CheckHarness`) rather than raised — the git commands in the fixture are
 expected to succeed, and a failure here should surface as a failed check in
 the caller's own report, not a crash that hides the rest of the suite.
+
+`init_repo()` is the odd one out: it targets `tests/acceptance/tree_boundary.py`
+and `checks_guards.py`, which hand-rolled the same "single throwaway repo
+directly on a given branch, one `--allow-empty` commit" fixture independently
+and (matching the acceptance tier's own style) let a git failure raise rather
+than routing it through a `check()` callback.
+
+stdlib only.
 """
 
 from __future__ import annotations
 
 import subprocess
+import tempfile
 from pathlib import Path
 from typing import Callable, Tuple
 
@@ -65,3 +74,29 @@ def make_upstream_and_clone(
     run_git(work, "config", "user.email", _TEST_IDENTITY_EMAIL, check=check)
     run_git(work, "config", "user.name", _TEST_IDENTITY_NAME, check=check)
     return upstream, work
+
+
+def init_repo(branch: str = "main", *, empty_commit: bool = True) -> Path:
+    """Init a single throwaway repo in a fresh temp dir directly on `branch`,
+    with fleet-config's test identity configured. Unless `empty_commit=False`,
+    also makes one `--allow-empty` commit so the repo has a HEAD to diff or
+    check out against. Raises `subprocess.CalledProcessError` on any git
+    failure -- the acceptance-tier shape callers here expect, not the
+    `check()`-callback reporting `run_git`/`make_upstream_and_clone` use.
+    Returns the repo path; the caller owns cleanup (`shutil.rmtree(...,
+    ignore_errors=True)` -- git's object store is read-only on Windows, so a
+    plain `rmtree` can raise even on a perfectly successful run).
+    """
+    repo = Path(tempfile.mkdtemp(prefix="git_fixture_"))
+    for args in (
+        ["init", "-q", "-b", branch],
+        ["config", "user.email", _TEST_IDENTITY_EMAIL],
+        ["config", "user.name", _TEST_IDENTITY_NAME],
+    ):
+        subprocess.run(["git", "-C", str(repo), *args], check=True, capture_output=True)
+    if empty_commit:
+        subprocess.run(
+            ["git", "-C", str(repo), "commit", "-q", "--allow-empty", "-m", "init"],
+            check=True, capture_output=True,
+        )
+    return repo

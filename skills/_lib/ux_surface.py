@@ -65,6 +65,40 @@ ensure_utf8_stdio()
 # boundary after `surface` keeps `## UX surfaces` (and other words) from matching.
 _UX_HEADING = re.compile(r"^##\s+UX surface(?:\b.*)?$")
 
+_FENCE_RE = re.compile(r"^\s{0,3}(`{3,}|~{3,})")
+
+
+def fenced_mask(lines: List[str]) -> List[bool]:
+    """Per-line "is this inside a fenced code block?" mask.
+
+    Shared by every CLAUDE.md-body parser in this repo that must skip headings
+    or bullets that live inside a documented (fenced) example rather than a
+    live declaration (`ux_surface`, `deploy_coverage`, `e2e_test_audit`).
+
+    Tracks paired ``` / ~~~ fences (CommonMark: a closing fence uses the same
+    character and is at least as long as the opener, so a ```` ```markdown ````
+    block containing a shorter fence is not closed early). Both the delimiter
+    lines and everything between them are masked True.
+    """
+    mask: List[bool] = []
+    fence_char = ""
+    fence_len = 0
+    for line in lines:
+        m = _FENCE_RE.match(line)
+        if not fence_char:
+            if m:
+                fence_char, fence_len = m.group(1)[0], len(m.group(1))
+                mask.append(True)
+                continue
+            mask.append(False)
+        else:
+            mask.append(True)
+            if m and m.group(1)[0] == fence_char and len(m.group(1)) >= fence_len:
+                # A closing fence carries no info text after the delimiter.
+                if not line.strip()[fence_len:].strip():
+                    fence_char, fence_len = "", 0
+    return mask
+
 
 def parse_ux_surface_block(text: str) -> Optional[Dict[str, object]]:
     """Parse the `## UX surface` block out of a CLAUDE.md body.
@@ -84,14 +118,10 @@ def parse_ux_surface_block(text: str) -> Optional[Dict[str, object]]:
     repo that merely documents it must not read as if it declared a live block.
     """
     lines = text.splitlines()
+    mask = fenced_mask(lines)
     start = None
-    in_fence = False
     for i, line in enumerate(lines):
-        stripped = line.lstrip()
-        if stripped.startswith("```") or stripped.startswith("~~~"):
-            in_fence = not in_fence
-            continue
-        if not in_fence and _UX_HEADING.match(line.strip()):
+        if not mask[i] and _UX_HEADING.match(line.strip()):
             start = i + 1
             break
     if start is None:

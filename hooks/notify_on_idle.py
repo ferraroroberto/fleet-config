@@ -167,9 +167,7 @@ def is_chief_managed(sid: str, path: Optional[Path] = None) -> bool:
     finds nothing.
     """
     if path is None:
-        root = os.environ.get("CLAUDE_HOOKS_STATE_DIR")
-        base = Path(root) if root else Path.home() / ".claude" / "hooks" / "state"
-        path = base / "chief-managed.json"
+        path = _lib.state_dir() / "chief-managed.json"
     try:
         data = json.loads(path.read_text(encoding="utf-8-sig"))
     except (OSError, ValueError):

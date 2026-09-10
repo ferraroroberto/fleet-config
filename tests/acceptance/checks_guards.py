@@ -292,24 +292,18 @@ def _branch_before_edit_guard_unit_checks() -> Tuple[int, int]:
     fixtures cover take 2's own false positive (fleet-config#489) and pin the
     exemption to ignored paths only."""
     sys.path.insert(0, str(HOOKS))
+    sys.path.insert(0, str(REPO / "tests" / "_lib"))
     import _lib  # noqa: E402
+    from git_fixtures import init_repo  # noqa: E402
 
     check = _Checker()
     launcher_env = {"APP_LAUNCHER_SESSION_ID": "launcher-test"}
 
     def git_repo(branch: str) -> Path:
-        repo = Path(tempfile.mkdtemp(prefix="branch_guard_"))
-        subprocess.run(["git", "init", "-q"], cwd=repo, check=True, creationflags=_lib.NO_WINDOW)
-        subprocess.run(
-            ["git", "config", "user.email", "35553560+ferraroroberto@users.noreply.github.com"],
-            cwd=repo, check=True, creationflags=_lib.NO_WINDOW,
-        )
-        subprocess.run(["git", "config", "user.name", "test"], cwd=repo, check=True, creationflags=_lib.NO_WINDOW)
-        subprocess.run(["git", "checkout", "-q", "-b", branch], cwd=repo, check=True, creationflags=_lib.NO_WINDOW)
-        subprocess.run(
-            ["git", "commit", "-q", "--allow-empty", "-m", "init"],
-            cwd=repo, check=True, creationflags=_lib.NO_WINDOW,
-        )
+        # Author identity matches this machine's commit-email allowlist hook —
+        # same value `tree_boundary`'s own `_git_helper_parity` uses, for the
+        # same reason.
+        repo = init_repo(branch)
         (repo / "sub").mkdir(exist_ok=True)
         return repo
 

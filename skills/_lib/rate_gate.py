@@ -24,7 +24,7 @@ Subcommand
 
 Like `audit_retry.py`, the correctness-critical decision (`decide`) is pure and
 unit-tested (`tests/test_rate_gate.py`) independent of the file I/O around it.
-stdlib only.
+stdlib + `hooks_state.state_dir()` only.
 """
 
 from __future__ import annotations
@@ -32,10 +32,12 @@ from __future__ import annotations
 import argparse
 import datetime as _dt
 import json
-import os
 import sys
 from pathlib import Path
 from typing import NamedTuple, Optional
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from hooks_state import state_dir  # noqa: E402
 
 DEFAULT_THRESHOLD_PCT = 70.0
 DEFAULT_MAX_AGE_SECONDS = 1800  # 30 min — a statusline render is "recent" within this
@@ -88,13 +90,6 @@ def decide(
     else:
         wait_seconds = float(DEFAULT_WAIT_SECONDS)
     return Decision("PAUSE", used_pct, resets_at_raw, wait_seconds)
-
-
-def state_dir() -> Path:
-    """Resolve the cache directory at call time, mirroring
-    `hooks/session_state.py`'s `state_file()` override pattern."""
-    root = os.environ.get("CLAUDE_HOOKS_STATE_DIR")
-    return Path(root) if root else Path.home() / ".claude" / "hooks" / "state"
 
 
 def load_cache(path: Path) -> dict:
