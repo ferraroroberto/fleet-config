@@ -21,6 +21,11 @@ class ProgressEvent:
     name: str = ""
     text: str = ""
     failed: bool = False
+    # Deliberately stopped, which is not a failure and must never be reported as
+    # one: an orchestrator that cancels its own background task has made a
+    # decision, not hit a fault (fleet-config#808). Kept separate from `failed`
+    # rather than folded into it so the two stay tellable apart downstream.
+    cancelled: bool = False
     metadata: dict[str, Any] = field(default_factory=dict)
 
 
@@ -73,8 +78,15 @@ class ClaudeAdapter:
                 status = event.get("status")
                 if subtype == "task_notification" and status not in {"completed", "failed", "stopped"}:
                     return [ProgressEvent("unknown")]
+                # `stopped` is what `TaskStop` reports, and the run that exposed
+                # this used it exactly as intended: a background disk scan
+                # pointed at the wrong volume, cancelled the moment the agent
+                # noticed (fleet-config#808). Reporting that as `failed` was
+                # both a wrong render (`✗ task failed`) and, downstream, a
+                # wrong verdict. Only `failed` is a failure here.
                 return [ProgressEvent(mapped, id=task_id, name="task", metadata=event,
-                                      failed=status in {"failed", "stopped"})]
+                                      failed=status == "failed",
+                                      cancelled=status == "stopped")]
         elif kind in {"rate_limit_event", "prompt_suggestion"}:
             return []
         elif kind == "result":

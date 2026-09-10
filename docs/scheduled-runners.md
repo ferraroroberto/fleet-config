@@ -42,9 +42,11 @@ The shared runner requires a valid terminal event and observed tool work, with n
 | `122` | Missing terminal event, malformed or unknown stream |
 | `123` | Skill asserted `SCHEDULED-RUN-FAILED` |
 | `124` | Stalled stream |
-| `125` | Interrupted/failed Claude child or native background-kill signature |
+| `125` | Native background-kill signature on stderr |
 | `127` | Native executable could not start |
 | `130` | Requested cancellation of the owned process tree confirmed |
+
+A background task that ends `failed`, or one the run deliberately cancels (`TaskStop`, reported as `stopped`), is **not** a verdict on the run: it is counted, named on its own `⚠ background task(s): …` line, and left out of the exit code (fleet-config#808). Recovering from a failed child is the orchestrator's job, and every question such a child could raise about delivery is already answered by a detector that reads the run's own outcome (`1`, `118`, `120`–`123`). `125` therefore means only what its name says — the CLI's own background-task ceiling killed sub-agents still in flight — and is reachable only from `KILL_SIGNATURE_TERMS` on stderr.
 
 Existing nonzero child exits remain nonzero and normally retain their value. Explicit provider failure classifications and the existing Claude upstream/stall rules name established causes. Stream/no-work/incomplete detectors override clean process exits; they do not hide an existing child failure. A delivery check runs once after the final attempt, regardless of the native exit, and only replaces a clean exit with `121`. Missing, failed or timed-out checks are unconfirmed. The final log reports failed delivery separately from successful process completion.
 
