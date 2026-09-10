@@ -59,6 +59,26 @@ SETTINGS_JSON_PATH_ENV_VAR = "CLAUDE_SETTINGS_JSON_PATH"
 DOTENV_PATH = Path(__file__).resolve().parent.parent / ".env"
 DOTENV_PATH_ENV_VAR = "FLEET_CONFIG_ENV_PATH"
 
+# A test-only hard stop at the transport, not at the token. Closing token
+# sources one by one is how the acceptance suite spent weeks posting four real
+# pings to Roberto's phone on every gate run (fleet-config#813): it stripped
+# TOKEN_ENV_VAR and closed settings.json, then `_token_from_dotenv` was added
+# and read the token straight off disk, and a comment in the harness went on
+# asserting the network was out of reach.
+#
+# Deliberately checked *here* rather than in `_resolve_token`, because this is
+# the only property that survives someone adding a fifth token source: no
+# packet leaves this process while it is set, whatever the token chain does.
+# `tests/acceptance` closes every token source as well — belt and braces — but
+# this is the guarantee, and `checks_notify` fails the suite if either half
+# stops holding.
+#
+# It is genuinely dangerous in production (a fleet with alerts silently off is
+# worse than a noisy one), so: it is never read from a file or settings, only
+# the environment; every block writes a breadcrumb to the log; and the
+# acceptance suite asserts it is NOT set in this machine's ambient environment.
+NETWORK_BLOCK_ENV_VAR = "FLEET_NOTIFY_BLOCK_NETWORK"
+
 # Bot API hard limits. Exceeding either is a rejected send, not a truncated one,
 # so both are enforced here in the transport rather than at 18 call sites.
 MESSAGE_LIMIT = 4096
@@ -98,7 +118,14 @@ def _token_from_settings() -> Optional[str]:
 
 
 def _token_from_dotenv() -> Optional[str]:
-    """Read ``TELEGRAM_BOT_TOKEN`` from fleet-config's ignored root ``.env``."""
+    """Read ``TELEGRAM_BOT_TOKEN`` from fleet-config's ignored root ``.env``.
+
+    ``FLEET_CONFIG_ENV_PATH`` overrides the path, for the same reason its
+    ``settings.json`` sibling above has an override: this reads the file
+    **straight off disk**, so stripping ``TELEGRAM_BOT_TOKEN`` from a
+    subprocess's env dict does not close this source. Missing that is exactly
+    how the acceptance suite kept posting real pings (fleet-config#813).
+    """
     path = Path(os.environ.get(DOTENV_PATH_ENV_VAR) or DOTENV_PATH)
     try:
         for raw_line in path.read_text(encoding="utf-8-sig").splitlines():
@@ -184,6 +211,38 @@ def _chunks(text: str, limit: int = MESSAGE_LIMIT) -> List[str]:
     return ["{0}\n\n[{1}/{2}]".format(p.rstrip(), i, total) for i, p in enumerate(pieces, 1)]
 
 
+class NetworkBlocked(urllib.error.URLError):
+    """Raised instead of opening a socket while :data:`NETWORK_BLOCK_ENV_VAR` is set.
+
+    A ``URLError`` subclass on purpose: :func:`notify` and :func:`upload_file`
+    already catch that and turn it into a logged ``False``, so blocking needs no
+    new control flow in either — a blocked send behaves exactly like an
+    unreachable network, which is the contract every caller is already written
+    against.
+    """
+
+    def __init__(self) -> None:
+        super().__init__(f"{NETWORK_BLOCK_ENV_VAR} is set - refusing to reach the network")
+
+
+def network_blocked() -> bool:
+    """True while the test-only transport block is set to a truthy value."""
+    return (os.environ.get(NETWORK_BLOCK_ENV_VAR) or "").strip().lower() not in {"", "0", "false", "no"}
+
+
+def _urlopen(request: "urllib.request.Request", timeout: int):
+    """The single place this module opens a connection.
+
+    Both send paths route through here so the block is one check rather than one
+    per call site — the shape that let #813 happen was a guarantee that had to
+    be re-established at every new place it mattered.
+    """
+    if network_blocked():
+        logger.warning("[!] %s is set - Telegram send blocked, nothing sent.", NETWORK_BLOCK_ENV_VAR)
+        raise NetworkBlocked()
+    return urllib.request.urlopen(request, timeout=timeout)
+
+
 def _api(method: str, token: str, payload: dict, timeout: int = 15) -> dict:
     """POST a JSON body to a Bot API method; return the parsed response.
 
@@ -199,7 +258,7 @@ def _api(method: str, token: str, payload: dict, timeout: int = 15) -> dict:
         headers={"Content-Type": "application/json; charset=utf-8"},
     )
     try:
-        with urllib.request.urlopen(request, timeout=timeout) as response:
+        with _urlopen(request, timeout) as response:
             return json.loads(response.read().decode("utf-8"))
     except urllib.error.HTTPError as exc:
         return json.loads(exc.read().decode("utf-8", errors="replace"))
@@ -338,7 +397,7 @@ def upload_file(
             headers={"Content-Type": content_type},
         )
         try:
-            with urllib.request.urlopen(request, timeout=120) as response:
+            with _urlopen(request, 120) as response:
                 done = json.loads(response.read().decode("utf-8"))
         except urllib.error.HTTPError as exc:
             done = json.loads(exc.read().decode("utf-8", errors="replace"))

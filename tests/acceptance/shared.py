@@ -64,14 +64,45 @@ PYTHON = _python_for_hooks()
 # (fleet-config#<pending>).
 NO_SETTINGS_JSON = str(Path(tempfile.gettempdir()) / "fleet-config-test-no-settings.json")
 
+# The same trick for notify_send._token_from_dotenv(), which reads
+# fleet-config's root .env straight off disk via DOTENV_PATH. That source was
+# added after the settings.json override above and nothing here closed it, so
+# the token kept resolving and every gate run posted four real pings to the
+# live attention chat (fleet-config#813).
+NO_DOTENV = str(Path(tempfile.gettempdir()) / "fleet-config-test-no-dotenv.env")
 
-def run(hook: str, payload: Dict[str, Any], extra_env: Dict[str, str] | None = None) -> Tuple[int, str, str]:
-    # Strip TELEGRAM_BOT_TOKEN so a hook that posts to Telegram (notify_on_idle) takes
-    # the graceful-fail path instead of firing a real ping on every test run.
+# Hook state (sessions-state.json and friends) must never land in the repo's
+# real hooks/state/ — that directory is junctioned into ~/.claude/hooks/, so a
+# fixture row written there is *live* fleet state, and #813 left a phantom
+# "needs-you" row for a session id that only exists in a test payload.
+# One temp dir per suite run: individual checks still override it with their
+# own via extra_env, this is only the default that was missing.
+TEMP_STATE_DIR = str(Path(tempfile.mkdtemp(prefix="fleet-config-acceptance-state-")))
+
+
+def hook_env(extra_env: Dict[str, str] | None = None) -> Dict[str, str]:
+    """The isolated environment every hook subprocess in the suite runs under.
+
+    Closes **every** token source `notify_send._resolve_token` consults, and
+    blocks the transport outright so a source added later cannot quietly
+    reopen the hole. `checks_notify` asserts both halves still hold and fails
+    the suite if either stops — the property this replaced was a comment.
+    """
     env = {k: v for k, v in os.environ.items() if k != "TELEGRAM_BOT_TOKEN"}
     env["CLAUDE_SETTINGS_JSON_PATH"] = NO_SETTINGS_JSON
+    env["FLEET_CONFIG_ENV_PATH"] = NO_DOTENV
+    env["FLEET_NOTIFY_BLOCK_NETWORK"] = "1"
+    # Unconditional, not setdefault: an ambient CLAUDE_HOOKS_STATE_DIR must not
+    # be able to point the suite back at live state. Checks that want their own
+    # dir pass it through `extra_env`, which still wins below.
+    env["CLAUDE_HOOKS_STATE_DIR"] = TEMP_STATE_DIR
     if extra_env:
         env.update(extra_env)
+    return env
+
+
+def run(hook: str, payload: Dict[str, Any], extra_env: Dict[str, str] | None = None) -> Tuple[int, str, str]:
+    env = hook_env(extra_env)
     res = subprocess.run(
         [PYTHON, str(HOOKS / f"{hook}.py")],
         input=json.dumps(payload),

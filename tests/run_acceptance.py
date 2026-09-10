@@ -78,6 +78,7 @@ from acceptance.checks_notify import (  # noqa: E402
     _notify_board_link_unit_checks,
     _notify_chief_routing_unit_checks,
     _notify_classify_unit_checks,
+    _notify_network_isolation_unit_checks,
     _notify_complete_unit_checks,
     _notify_chunking_unit_checks,
     _notify_send_unit_checks,
@@ -186,6 +187,7 @@ def main() -> int:
 
     # ---- notify category -> chat routing (issue #139) ----
     run_unit(_notify_routing_unit_checks)
+    run_unit(_notify_network_isolation_unit_checks)
 
     # ---- conversation_capture session-dedup logic ----
     run_unit(_conversation_capture_unit_checks)
