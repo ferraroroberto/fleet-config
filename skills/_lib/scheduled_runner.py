@@ -521,7 +521,7 @@ class ProgressFormatter:
         elif event.kind == "start":
             self.emit(f"▶ {self.adapter.label} {_one_line(event.text)} · session started")
         elif event.kind == "text":
-            self._emit_assistant_text(event.text)
+            self._emit_assistant_text(event.text, from_model=event.role == "assistant")
         elif event.kind == "error":
             self._classify_error(event.text)
             self.emit(f"⚠ {_one_line(event.text)}")
@@ -565,22 +565,30 @@ class ProgressFormatter:
     def unfinished_work(self) -> bool:
         return bool(self._tools or self._children)
 
-    def _emit_assistant_text(self, value: object) -> None:
+    def _emit_assistant_text(self, value: object, from_model: bool = True) -> None:
         if not isinstance(value, str):
             return
         text = value.replace("\r\n", "\n").strip()
         if not text:
             return
-        # Scanned before the dedup guard: the same final report arrives twice
-        # (assistant text block, then the terminal result event), and the marker
-        # must register whichever copy is seen first.
-        if _is_self_reported_failure(text):
-            self._saw_self_reported_failure = True
-        # Same reason as the marker above: the CLI's error text arrives as an
-        # assistant block and again as the terminal result, and the dedup guard
-        # below drops whichever copy lands second.
-        if self.adapter.retry_before_tools and _is_transient_api_error(text):
-            self._saw_transient_api_error = True
+        # `from_model` is False only for Claude's "user"-kind text blocks — a
+        # skill invocation's own SKILL.md body, injected back into the
+        # conversation verbatim rather than as a tool_result. That body is
+        # allowed (expected, even) to carry a worked example of the marker at
+        # column 0 to teach the model the contract; it is never something the
+        # run itself asserted, so it must never be scored (fleet-config#829).
+        # Still emitted below for log visibility, same as any other text.
+        if from_model:
+            # Scanned before the dedup guard: the same final report arrives twice
+            # (assistant text block, then the terminal result event), and the marker
+            # must register whichever copy is seen first.
+            if _is_self_reported_failure(text):
+                self._saw_self_reported_failure = True
+            # Same reason as the marker above: the CLI's error text arrives as an
+            # assistant block and again as the terminal result, and the dedup guard
+            # below drops whichever copy lands second.
+            if self.adapter.retry_before_tools and _is_transient_api_error(text):
+                self._saw_transient_api_error = True
         if text in self._assistant_texts:
             return
         self._assistant_texts.add(text)

@@ -702,6 +702,82 @@ check("every candidate repo was skipped" in cleanup_all_skill,
 check("642" in cleanup_all_skill and "repo_preflight.py" in cleanup_all_skill,
       "cleanup-fleet-all's SKILL.md ties the deferred-repo retry to its helper and issue")
 
+# fleet-config#829: a scheduled run's stream includes the body of the invoked
+# SKILL.md itself, injected as a "user"-kind text block when the Skill tool
+# fires (not a tool_result tied to that call). cleanup-fleet-all's own SKILL.md
+# carries a worked example of the marker at column 0 to teach the model the
+# contract -- that example must never be scored, even though it is
+# byte-identical to a genuine assertion at the block level. Proven to fail
+# against pre-fix code: before the `role` field, both fixtures below reported
+# SELF_REPORTED_FAILURE_EXIT_CODE.
+SKILL_PREAMBLE = (
+    "**If (and only if) step 7's workflow result carries a non-null "
+    "`halted`**, also print the literal line, exactly as shown above:\n\n"
+    "SCHEDULED-RUN-FAILED — halted at local-llm-hub#N: "
+    "E:\\automation\\local-llm-hub-wt-451 would not delete, "
+    "4 issue(s) never started\n\n"
+    "Next: escalated issues need a human."
+)
+preamble_event_line = (
+    "print(json.dumps({'type':'user','message':{'content':"
+    f"[{{'type':'text','text':{SKILL_PREAMBLE!r}}}]}}}}), flush=True); "
+)
+
+# 1. Preamble present, run genuinely delivered: must stay green.
+clean_report = "Cleanup-fleet-all complete\n  documentation: 3 merged, 1 escalated"
+clean_preamble_script = (
+    "import json,sys; "
+    + INIT_LINE
+    + preamble_event_line
+    + TOOL_LINE
+    + f"report = {clean_report!r}; "
+    "print(json.dumps({'type':'assistant','message':{'content':"
+    "[{'type':'text','text':report}]}}), flush=True); "
+    "print(json.dumps({'type':'result','subtype':'success','is_error':False,"
+    "'result':report}), flush=True); "
+    "sys.exit(0)"
+)
+clean_preamble_formatter = cp.ProgressFormatter(emit=lambda *_: None)
+clean_preamble_exit = cp.run_process(
+    [sys.executable, "-c", clean_preamble_script],
+    formatter=clean_preamble_formatter,
+)
+check(clean_preamble_exit == 0,
+      "the SKILL.md preamble's column-0 marker example does not fail a delivered run (#829)")
+check(not clean_preamble_formatter.saw_self_reported_failure,
+      "a skill-body preamble quoting the marker is never scored as a self-reported failure")
+
+# 2. Same preamble, but this run's own final report genuinely asserts the
+# marker: must still fail. Proves the fix narrowed *where* the adapter looks
+# (skip "user"-role text), not *what* it looks for -- a real assertion right
+# after the same ignored preamble still trips it.
+failed_report = (
+    "Cleanup-fleet-all HALTED at local-llm-hub#451\n"
+    "SCHEDULED-RUN-FAILED — halted at local-llm-hub#451: would not delete, "
+    "4 issue(s) never started"
+)
+failed_preamble_script = (
+    "import json,sys; "
+    + INIT_LINE
+    + preamble_event_line
+    + TOOL_LINE
+    + f"report = {failed_report!r}; "
+    "print(json.dumps({'type':'assistant','message':{'content':"
+    "[{'type':'text','text':report}]}}), flush=True); "
+    "print(json.dumps({'type':'result','subtype':'success','is_error':False,"
+    "'result':report}), flush=True); "
+    "sys.exit(0)"
+)
+failed_preamble_formatter = cp.ProgressFormatter(emit=lambda *_: None)
+failed_preamble_exit = cp.run_process(
+    [sys.executable, "-c", failed_preamble_script],
+    formatter=failed_preamble_formatter,
+)
+check(failed_preamble_exit == cp.SELF_REPORTED_FAILURE_EXIT_CODE,
+      "a genuine marker in the run's own final report still fails, right after the same ignored preamble (#829)")
+check(failed_preamble_formatter.saw_self_reported_failure,
+      "the formatter still records a real self-reported delivery failure alongside a suppressed preamble")
+
 
 # ---- all checked-in scheduled wrappers use the one shared adapter ----
 
