@@ -27,6 +27,16 @@ class ProgressEvent:
     # rather than folded into it so the two stay tellable apart downstream.
     cancelled: bool = False
     metadata: dict[str, Any] = field(default_factory=dict)
+    # Who authored a "text" event's content. Defaults to the model itself
+    # ("assistant") because every adapter's own generated-message events are
+    # genuinely model output. The one deliberate override is Claude's "user"
+    # stream-kind: a skill invocation is delivered back into the conversation
+    # as a fresh user-role text block (the SKILL.md body), not a tool_result
+    # tied to the Skill call — indistinguishable from real assistant text at
+    # the block level, but never something the run itself asserted
+    # (fleet-config#829). Only a genuinely model-authored block may ever set
+    # a delivery-failure verdict.
+    role: str = "assistant"
 
 
 def error_category(text: str) -> str:
@@ -111,7 +121,11 @@ class ClaudeAdapter:
                 if block_type in {"thinking", "redacted_thinking"}:
                     continue
                 if block_type == "text":
-                    result.append(ProgressEvent("text", text=block.get("text", "")))
+                    # `kind` here is the outer stream-event type ("assistant" or
+                    # "user"), not this block's own type — see the `role` field
+                    # docstring for why the "user" case must never be scored.
+                    result.append(ProgressEvent("text", text=block.get("text", ""),
+                                                 role="assistant" if kind == "assistant" else "user"))
                 elif block_type == "tool_use":
                     tool_id = block.get("id")
                     if not isinstance(tool_id, str) or not tool_id:
