@@ -48,14 +48,13 @@ E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skill
 **Append `--force-worktree` when the `APP_LAUNCHER_SESSION_ID` environment
 variable is set** (fleet-config#525) — check it first, e.g. `echo
 "${APP_LAUNCHER_SESSION_ID:-unset}"`. That variable means App Launcher spawned
-this session: a machine dispatched the work, no human chose the tree. The claim
-only protects against a second *claiming session*, and a **running app is not a
-claim holder** — so an unattended worker otherwise wins `MODE=primary` in a repo
-whose primary checkout is being served live by the launcher webapp,
-home-automation's tray, or (for `fleet-config`) `hooks/` + `skills/` junctioned
-into every live `~/.claude`, and breaks it mid-run. With the flag, no claim is
-attempted or published, `MODE=worktree` is always printed, and the primary stays
-free for a human session.
+this session with no human choosing the tree. The claim only protects against a
+second *claiming session*, and a **running app is not a claim holder** — so an
+unattended worker could otherwise win `MODE=primary` in a repo whose primary
+checkout is being served live (launcher webapp, home-automation's tray, or for
+`fleet-config` the `hooks/`+`skills/` junction into every live `~/.claude`) and
+break it mid-run. With the flag, no claim is attempted/published, `MODE=worktree`
+is always printed, and the primary stays free for a human session.
 
 A human running this skill in their own terminal has no such variable and keeps
 the default claim-or-worktree behaviour — one worktree per issue for a single
@@ -116,7 +115,7 @@ In parallel:
   - Detect the main branch: `git symbolic-ref refs/remotes/origin/HEAD` → strip
     `origin/`; fall back to `main`.
   - Belt-and-suspenders guard before switching (fleet-config#473) — the
-    acquire→sync window is normally seconds, but confirm it stayed that way:
+    acquire→sync window is normally seconds; confirm it stayed that way:
     ```
     E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/worktree_claim.py assert-owner . <N>
     ```
@@ -213,11 +212,11 @@ validate** — never make the user boot it themselves:
 
 **E2e along the way.** E2e criteria live in the **`/e2e` skill**
 (`skills/e2e/SKILL.md`), not here. During the build — including follow-up
-"change this, change that" rounds in the same session — invoke `/e2e` when a
-change plausibly touches the browser surface and proof is wanted now; it
-routes the accumulated diff, running only the proportionate slice. Otherwise
-don't run e2e per change: `/issue-finish` always runs the `/e2e` evaluation
-before the PR, so nothing ships unevaluated either way.
+rounds in the same session — invoke `/e2e` when a change plausibly touches the
+browser surface and proof is wanted now; it routes the accumulated diff,
+running only the proportionate slice. Otherwise don't run e2e per change:
+`/issue-finish` always runs the `/e2e` evaluation before the PR, so nothing
+ships unevaluated either way.
 
 When the work, validation, and review are done, finish with `/issue-finish`.
 

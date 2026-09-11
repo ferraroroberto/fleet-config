@@ -5,7 +5,7 @@ description: Compress the fleet's markdown context files — CLAUDE.md files and
 
 # context-purge
 
-**Goal:** cut the always-on context tax by rewriting the fleet's markdown context files with a critical senior-editor eye — the *compression* counterpart to `/context-audit` (which only measures and flags). Contract is **lossless in directives**: nothing the LLM is told to do (or forbidden from doing) may disappear; only the prose around it does. Every purge run must pass the validation harness before it ships.
+**Goal:** cut the always-on context tax by rewriting the fleet's markdown context files — the *compression* counterpart to `/context-audit` (which only measures and flags). Contract is **lossless in directives**: nothing the LLM is told to do (or forbidden from doing) may disappear; only the prose around it does. Every purge run must pass the validation harness before it ships.
 
 Fleet-only tier by design: a global skill's description would load into every session of every repo — self-defeating for a skill shrinking that surface. One home, executed from fleet-config.
 
@@ -20,7 +20,7 @@ Both modes ship to **review, not merge**: the PR carries the validation report; 
 
 A file is re-assessed **only when its bytes changed** since it was last assessed — never rewrite the same unchanged file week after week. `gate.py` keys on content hashes (sha256/12) recorded in one `kind=context-purge` ledger issue in `fleet-config` (title `context-purge ledger`, label `audit-meta`, managed via `audit_issue.py`).
 
-**Reconcile first** (fleet-config#757): a purge PR that was never merged must not go on suppressing its files forever. `reconcile` syncs the ledger against what actually happened to every `chore/context-purge-*` PR — a merged PR's files get their ledger hash refreshed to their content *at that PR's own merge commit* (never `main`'s ever-moving tip — an unrelated later commit touching the same file must re-surface it, not hide behind a stale credit); a closed-unmerged PR's files have their (never-landed) ledger entry dropped so they re-enter `to_purge`; a still-open PR is left untouched and reported in the backlog instead (the "safe default is to re-offer, never silently suppress" middle state):
+**Reconcile first** (fleet-config#757): a purge PR that was never merged must not go on suppressing its files forever. `reconcile` syncs the ledger against what actually happened to every `chore/context-purge-*` PR — a merged PR's files get their ledger hash refreshed to their content *at that PR's own merge commit* (never `main`'s ever-moving tip — an unrelated later commit touching the same file must re-surface it, not hide behind a stale credit); a closed-unmerged PR's files have their (never-landed) ledger entry dropped so they re-enter `to_purge`; a still-open PR is left untouched and reported in the backlog instead — the safe default is to re-offer, never silently suppress:
 
 ```
 E:/automation/fleet-config/.venv/Scripts/python.exe .claude/skills/context-purge/gate.py reconcile [--fleet] --json > <scratch>/reconcile.json
@@ -40,7 +40,7 @@ E:/automation/fleet-config/.venv/Scripts/python.exe .claude/skills/context-purge
 
 `advance` merges over the existing ledger (entries outside the scanned surface are preserved) and upserts the issue. **Pass `--only` with the files you actually assessed.** A fleet run is normally partial (large surface, lean files skipped by design, per-repo failures reported and skipped), so a bare `advance` would record files nobody read and silently suppress them from every future run until edited. Bare `advance` (whole surface) is correct only when the run genuinely assessed every gated file. Unknown paths are a hard error, not a silent no-op.
 
-`advance`'s own honesty still depends on the *next* run's `reconcile` catching an abandoned PR — `advance` itself still records a rewritten file's hash immediately (there is no way to know at that point whether the PR it belongs to will ever merge). That is fine: `reconcile` is what corrects it later, and the backlog section in every digest (below) is what makes "there's a PR still waiting" visible before it goes stale.
+`advance` records a rewritten file's hash immediately — whether that PR will ever merge is unknowable then. The *next* run's `reconcile` corrects it, and the backlog section in every digest (below) makes a still-waiting PR visible before it goes stale.
 
 ## Priorities (highest value first)
 
@@ -86,7 +86,7 @@ Fleet mode is the same loop with `--fleet` on both `reconcile`/gate/advance, gro
 
 ## Run data — what every worker reports back
 
-**The digest renders the run's own data, never the PR bodies.** Parsing prose the run just wrote would be a second place for the numbers to disagree, so the PR body and the digest are two renderings of one structure. Each per-repo worker writes `<scratch>/run/<repo>.json`; the orchestrator concatenates them into one `run.json`:
+**The digest renders the run's own data, never the PR bodies** — the PR body and the digest are two renderings of one structure, so the numbers cannot disagree. Each per-repo worker writes `<scratch>/run/<repo>.json`; the orchestrator concatenates them into one `run.json`:
 
 ```json
 { "run_id": "<YYYYMMDDThhmmss>", "mode": "fleet", "status": "complete|partial",
@@ -142,7 +142,7 @@ Optionally publish `digest.html` as a **private** Artifact and re-render with `-
 
 ## Wiring the weekly schedule
 
-An app-launcher Job (Windows Task Scheduler `\AppLauncher\`) runs the fleet sweep weekly — Saturdays 01:00, on Opus — via the co-located launcher `.claude/skills/context-purge/run-weekly.bat` (per this repo's scheduled-skill convention):
+An app-launcher Job (Windows Task Scheduler `\AppLauncher\`) runs the fleet sweep weekly — Saturdays 01:00, on Opus — via the co-located launcher `.claude/skills/context-purge/run-weekly.bat` (per this repo's scheduled-skill convention).
 
 The wrapper preserves `/context-purge fleet`, Opus, and bypass permissions while streaming filtered milestones through `claude_progress.py`, and passes `--delivery-check` so the job cannot exit 0 having published nothing (fleet-config#627).
 

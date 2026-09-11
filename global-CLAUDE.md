@@ -2,7 +2,7 @@
 
 One file, symlinked by `fleet-config/install.ps1` into every agent's user-scope context path — Claude Code (`~/.claude/CLAUDE.md`), Codex (`~/.codex/AGENTS.md`), Pi (`~/.pi/agent/AGENTS.md`), Copilot CLI (`~/.copilot/copilot-instructions.md`). Hooks, statusline, and tool settings are Claude-Code + Codex-only (matrix: `fleet-config`'s `docs/cross-agent-parity.md`). Agent-specific sections are marked *(… only — skip on other agents)*.
 
-> **Here vs project.** This file owns the **universal** — true for every repo, including a one-off with no UI/tray/launcher. Shape-specific guidance (Streamlit, tray/daemon, e2e UI testing, GitHub-Actions CI, restart recipes) lives in `project-scaffolding`'s `CLAUDE.md`. Test: *"would this still apply to a bare repo with no app?"* Yes → here, no → the scaffold, never both. (`ferraroroberto/project-scaffolding#68`; `/context-audit` enforces weekly.)
+> **Here vs project.** This file owns the **universal**. Shape-specific guidance (Streamlit, tray/daemon, e2e UI testing, GitHub-Actions CI, restart recipes) lives in `project-scaffolding`'s `CLAUDE.md`. Test: *"would this still apply to a bare repo with no app?"* Yes → here, no → the scaffold, never both. (`ferraroroberto/project-scaffolding#68`; `/context-audit` enforces weekly.)
 
 ## Working method
 
@@ -50,10 +50,10 @@ Always ask before assuming: file/module location for new code; data shape or sch
 ### Verify before declaring done
 
 - Verify every unit with the project's actual tooling (byte-compile, lint, tests). No checker exists → say so explicitly; never claim "tests pass" where there are no tests. Report failures faithfully with the output; never report done on a skipped step.
-- A passing suite proves the code behaves as written — not that the symptom is gone, nor that the fix is live in the deployed process. Re-run the original repro against that actual process and watch it pass before declaring done. (Deploy-coverage — `project-scaffolding#199`, `fleet-config#459` — confirms the fix shipped; this confirms it fixed what was reported.)
+- A passing suite proves the code behaves as written — not that the symptom is gone or the fix is live in the deployed process. Re-run the original repro against that process and watch it pass before declaring done. (Deploy-coverage — `project-scaffolding#199`, `fleet-config#459` — confirms the fix shipped; this confirms it fixed what was reported.)
 - A regression test must first be proven to fail against pre-fix code (`git stash`), or its later pass means nothing.
 - If the repo declares a restart/refresh recipe for a long-lived local process, use it after code changes so the verified change is actually live (unless the user opted out). Don't ask a second permission just because the recipe restarts something — the local `CLAUDE.md` owns the command, scope, and build-identity check. No recipe, or the recipe says confirm first → stop and say exactly what's missing; never improvise process kills.
-- Any check, gate, health probe, or classifier that can fail to establish a fact must report that as its own state — `unknown` / `not confirmed` — never folded into the passing state. A null, a stale cache, an unresolved probe is not "fine"; a write acknowledged is not an outcome confirmed. Applies to health checks, verification gates, deploy-coverage checks, and delivery/status classifiers alike.
+- Any check, gate, health probe, or classifier that can fail to establish a fact must report that as its own state — `unknown` / `not confirmed` — never folded into the passing state. A null, a stale cache, an unresolved probe is not "fine"; a write acknowledged is not an outcome confirmed.
 
 ### Senior-dev check
 
@@ -97,7 +97,7 @@ Never auto-commit or push, and never stage files, without being asked — prepar
 
 ### Planning & documentation
 
-**Plans, roadmaps, proposed features live as GitHub issues**, never as files in the tree. One issue per topic, self-contained enough to hand off cold (executable by a fresh LLM/human with zero session context). The issue + closing PR + `git log` *are* the changelog — no dated `docs/YYYY-MM-DD-*.md` retrospectives.
+**Plans, roadmaps, proposed features live as GitHub issues**, never as files in the tree. One issue per topic, self-contained enough to hand off cold to a fresh LLM/human with zero session context. The issue + closing PR + `git log` *are* the changelog — no dated `docs/YYYY-MM-DD-*.md` retrospectives.
 
 - **One canonical issue per decision-bearing topic** — reproduce durable content, don't depend on links; other repos get one-line pointer issues.
 - **Decision log:** dated distilled bullets inside long-lived issues recording why the plan turned.
@@ -125,9 +125,9 @@ Two rules that live only here: `/issue-start` takes its mode from the type label
 
 ### Spawning sub-agents — cap concurrent Opus at 3 *(Claude Code only — skip on other agents)*
 
-Keep at most **3 background Opus sub-agents in flight** (sliding window: dispatch up to 3, refill as each returns). **Sonnet sub-agents are exempt** — they fan out freely and don't count against the window. Works around Anthropic's Opus-specific server-side burst limiter on the 4th–5th+ concurrent bootstrap (anthropics/claude-code#53922, https://code.claude.com/docs/en/errors). It is **not** `CLAUDE_CODE_MAX_TOOL_USE_CONCURRENCY` (that bounds parallel tool calls in one session, not sub-agents) — the only place to cap sub-agent count is the orchestrating skill's dispatch logic. Tier vocabulary and per-host model mapping: `fleet-config/docs/model-tiers.md` (single source — don't restate a tier table).
+Keep at most **3 background Opus sub-agents in flight** (sliding window: dispatch up to 3, refill as each returns). **Sonnet sub-agents are exempt** — fan out freely. Works around Anthropic's Opus-specific server-side burst limiter on the 4th–5th+ concurrent bootstrap (anthropics/claude-code#53922, https://code.claude.com/docs/en/errors). It is **not** `CLAUDE_CODE_MAX_TOOL_USE_CONCURRENCY` (that bounds parallel tool calls in one session, not sub-agents) — the only place to cap sub-agent count is the orchestrating skill's dispatch logic. Tier vocabulary and per-host model mapping: `fleet-config/docs/model-tiers.md` (single source — don't restate a tier table).
 
-**A sub-agent does not self-resume when its own background task finishes** — only the top-level session gets that wake-up, so one that backgrounds a step and ends its turn just stops (`project-scaffolding#124`). Brief any sub-agent running a long background step up front: it will not be auto-woken; it must poll (`BashOutput`/`Monitor`) to completion *within its own turn* before ending.
+**A sub-agent does not self-resume when its own background task finishes** — only the top-level session gets that wake-up, so one that backgrounds a step and ends its turn just stops (`project-scaffolding#124`). Brief any sub-agent running a long background step up front: it must poll (`BashOutput`/`Monitor`) to completion *within its own turn* before ending.
 
 **A headless top-level `claude -p` session has no wake-up mechanism at all** — the CLI exits on the clean turn-end reporting `exit_code: 0`, false success over a skill that never ran (`fleet-config#314`). Every scheduled fleet skill runs this way: its own `run-weekly.bat` calling `claude -p "/<skill>" ... --permission-mode bypassPermissions`, no human attending. Any command in a skill meant for unattended/scheduled execution must run synchronously (foreground) or poll to completion in the same turn; never fire-and-forget and end the turn expecting to be resumed.
 
@@ -283,7 +283,7 @@ C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe -NoProfile -NonInterac
 
 ### A trailing backslash before a closing double-quote escapes it, not closes it
 
-In Git Bash, `\"` inside a double-quoted string is an escaped literal `"`, not a quote-closer — a Windows path argument that ends in a bare backslash right before its closing `"` (e.g. `"E:\automation\foo\"`) never actually closes that string. Quote parity then shifts for the rest of the command, and a later, genuinely-quoted argument can land unquoted and get its own backslashes silently stripped instead (`fleet-config#800`) — the reported symptom is on the *second* path, but the real defect is the trailing backslash on the *first*. Never end a double-quoted Windows path argument with a bare trailing backslash — drop it or use a forward slash instead.
+In Git Bash, `\"` inside a double-quoted string is an escaped literal `"`, not a quote-closer — a Windows path argument that ends in a bare backslash right before its closing `"` (e.g. `"E:\automation\foo\"`) never actually closes that string. Quote parity then shifts for the rest of the command, and a later quoted argument lands unquoted with its own backslashes silently stripped (`fleet-config#800`) — the symptom shows on the *second* path, the defect is the trailing backslash on the *first*. Never end a double-quoted Windows path argument with a bare trailing backslash — drop it or use a forward slash.
 
 ### Windows PowerShell in spawned commands (any agent)
 
@@ -300,7 +300,7 @@ In Git Bash, `\"` inside a double-quoted string is an escaped literal `"`, not a
 
 Piped/redirected stdout makes Python fall back to cp1252, so emoji/box-drawing `print()` throws `UnicodeEncodeError` and exits 1 — even though it works in a real terminal. Set `$env:PYTHONUTF8 = "1"` under capture; durable code fix: `sys.stdout.reconfigure(encoding="utf-8")` (and stderr) at entry points.
 
-**The inverse, in any process that sets `PYTHONUTF8`:** `subprocess.run(..., text=True)` decodes the *child's* output as UTF-8, but native Windows console tools (`schtasks`, `netsh`, `sc`, `tasklist`, `wmic`, `reg`, `ipconfig`, …) emit the OEM code page (cp850 here), which is not valid UTF-8. It doesn't raise — `proc.stdout` comes back empty/`None`, so any `if not proc.stdout: return None`-shaped guard reads it as "the query failed" and the feature degrades silently. Pin decoding at every such call site — `encoding="oem", errors="replace"` (`replace` so one odd byte costs a character, not the whole feature) — never inherit `text=True`'s ambient locale. Reproduces only *inside* the app: from any terminal there is no `PYTHONUTF8`, so identical code looks healthy (`app-launcher#743`).
+**The inverse, in any process that sets `PYTHONUTF8`:** `subprocess.run(..., text=True)` decodes the *child's* output as UTF-8, but native Windows console tools (`schtasks`, `netsh`, `sc`, `tasklist`, `wmic`, `reg`, `ipconfig`, …) emit the OEM code page (cp850 here), which is not valid UTF-8. It doesn't raise — `proc.stdout` comes back empty/`None`, so an `if not proc.stdout: return None` guard reads it as "the query failed" and the feature degrades silently. Pin decoding at every such call site — `encoding="oem", errors="replace"` (`replace` so one odd byte costs a character, not the whole feature) — never inherit `text=True`'s ambient locale. Reproduces only *inside* the app: from any terminal there is no `PYTHONUTF8`, so identical code looks healthy (`app-launcher#743`).
 
 **Corollary:** a helper that returns `None` on failure must **log** the failure — a dead query must never be indistinguishable from a quiet system.
 
@@ -317,13 +317,13 @@ Automation against a third-party site must present as a real human Chrome sessio
 
 **Single source per project:** launch kwargs + init-script live in one helper (e.g. `config/chrome_launch.py`, `automation/browser.py`); every module imports it — never re-inline launch args. If the user reports a captcha or "unusual activity", suspect a stealth regression first.
 
-**Narrow first-party screenshot exception:** when the target is one of our own local apps and the only output is a screenshot, the launch is exempt from the stealth profile and may use Chrome Headless Shell. The shared map renderer prefers it and falls back to full Chrome; a headed visual gate or capture engine that promises user-Chrome pixel fidelity may deliberately retain full Chrome. This does not apply to third-party sites or logged-in browser automation. For an agent-controlled loopback HTTPS context, use `ignore_https_errors=True` (Playwright) or `--ignore-certificate-errors --test-type` (Chrome CLI), scoped only to `localhost` / `127.0.0.1` / `::1`. Read `browser_scheme` + `webapp_port` from `hooks/projects.toml`; do not guess the protocol.
+**Narrow first-party screenshot exception:** when the target is one of our own local apps and the only output is a screenshot, the launch is exempt from the stealth profile and may use Chrome Headless Shell. The shared map renderer prefers it and falls back to full Chrome; a headed visual gate or capture engine promising user-Chrome pixel fidelity may deliberately retain full Chrome. Does not apply to third-party sites or logged-in browser automation. For an agent-controlled loopback HTTPS context, use `ignore_https_errors=True` (Playwright) or `--ignore-certificate-errors --test-type` (Chrome CLI), scoped only to `localhost` / `127.0.0.1` / `::1`. Read `browser_scheme` + `webapp_port` from `hooks/projects.toml`; do not guess the protocol.
 
 **Browser URL:** tooling that cannot set a per-context certificate bypass — including the user's normal Chrome — opens `https://$FLEET_BROWSER_HOST:<webapp_port>` so the Tailscale certificate hostname matches. `FLEET_BROWSER_HOST` is the hostname only and stays in the agent's environment, never committed; plain-HTTP apps use loopback. Do not install a Tailscale leaf in the Windows trust store: trust does not repair its intentional loopback hostname mismatch.
 
 ### Shared Chrome profiles: serialize access, never kill a live holder
 
-A persistent Chrome profile allows one live instance; a second launch gets Playwright's *"Opening in existing browser session"* and dies. Never "self-heal" by killing the holder — it's usually a legitimately-running sibling job. **Wait** with exponential backoff (60→120→240→480 s), re-attempting each cycle; raise a precise error only after the schedule (a >15-min holder is genuinely hung). On Windows the lock is a live-process kernel object, **not** the POSIX `SingletonLock`/`Cookie`/`Socket` files — deleting those does nothing. Put detect-holder + wait-with-backoff in one helper every session imports; never re-inline a launch-with-retry.
+A persistent Chrome profile allows one live instance; a second launch gets Playwright's *"Opening in existing browser session"* and dies. Never "self-heal" by killing the holder — it's usually a legitimately-running sibling job. **Wait** with exponential backoff (60→120→240→480 s), re-attempting each cycle; raise a precise error only after the schedule (a >15-min holder is hung). On Windows the lock is a live-process kernel object, **not** the POSIX `SingletonLock`/`Cookie`/`Socket` files — deleting those does nothing. Put detect-holder + wait-with-backoff in one helper every session imports; never re-inline a launch-with-retry.
 
 ### GitHub's `Closes #N` keyword matches on substrings, not standalone clauses
 
@@ -331,13 +331,13 @@ GitHub's issue-closing parser (`close(s|d)?` / `fix(es|ed)?` / `resolve(s|d)?` +
 
 ### Three clocks — normalise to UTC before correlating GitHub state with local logs
 
-`gh` JSON timestamps (`closedAt`, `createdAt`, `mergedAt`) are **UTC**, suffixed `Z`. This host is **`+0200` in summer, `+0100` in winter** (Europe/Brussels — read the offset, never hardcode it). An app-launcher job log's `[h:mm:ss]` prefix is **elapsed since run start**, not a wall clock at all (`fleet-config`'s `skills/_lib/claude_progress.py:282`, off `time.monotonic`); only the `<run_id>` directory name is a local wall-clock stamp, so a line's real time is `run_id + elapsed`. Normalise everything to UTC *before* comparing, and state the conversion in the working notes — getting it wrong fails **silently**, yielding a plausible, confidently-wrong story rather than an error (`fleet-config#633`).
+`gh` JSON timestamps (`closedAt`, `createdAt`, `mergedAt`) are **UTC**, suffixed `Z`. This host is **`+0200` in summer, `+0100` in winter** (Europe/Brussels — read the offset, never hardcode it). An app-launcher job log's `[h:mm:ss]` prefix is **elapsed since run start**, not a wall clock at all (`fleet-config`'s `skills/_lib/claude_progress.py:282`, off `time.monotonic`); only the `<run_id>` directory name is a local wall-clock stamp, so a line's real time is `run_id + elapsed`. Normalise everything to UTC *before* comparing, and state the conversion in the working notes — getting it wrong fails **silently**, yielding a confidently-wrong story rather than an error (`fleet-config#633`).
 
 **The same shape without clocks:** when a claim is "tool X reported the wrong thing at time T", reconstruct what X could *observe* at T. Re-running X now answers a different question and will cheerfully agree with you.
 
 ### Subprocess spawns must suppress the console window (Windows)
 
-Any `subprocess.Popen`/`.run`/`.call`/`.check_output`/`.check_call` launching an external executable (ffmpeg, ssh, docker, tailscale, nvidia-smi, clip, a helper script, …) must pass `creationflags=subprocess.CREATE_NO_WINDOW` on Windows — parents with no console of their own (pythonw, a tray app, a scheduled task, a daemon) otherwise flash a new console window per spawn. Default to suppressing; only omit the flag when the window is meant to be visible (rare — a deliberately-opened interactive terminal). Prior instances: `local-llm-hub`#317/#282/#174/#169, `voice-transcriber`#147; fleet-wide gap audit `fleet-config`#399.
+Any `subprocess.Popen`/`.run`/`.call`/`.check_output`/`.check_call` launching an external executable (ffmpeg, ssh, docker, tailscale, nvidia-smi, clip, a helper script, …) must pass `creationflags=subprocess.CREATE_NO_WINDOW` on Windows — parents with no console of their own (pythonw, a tray app, a scheduled task, a daemon) otherwise flash a new console window per spawn. Default to suppressing; only omit it when the window is meant to be visible (rare — a deliberately-opened interactive terminal). Prior instances: `local-llm-hub`#317/#282/#174/#169, `voice-transcriber`#147; fleet-wide gap audit `fleet-config`#399.
 
 ```python
 creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
@@ -351,7 +351,7 @@ if sys.platform == "win32":
 
 ### Windows ephemeral port exhaustion takes down the whole fleet at once
 
-Symptom: **all** local web apps unresponsive at once (any subset of app-launcher/home-automation/whatsapp-radar/voice-transcriber/local-llm-hub), dead 1–4 min, self-heals with no restart, no code change. Simultaneity across independent processes is the tell — a shared kernel resource, not one app's diff. Cause: dynamic port range `49152–65535` (16,384 ports), `TcpTimedWaitDelay` unset → every closed outbound connection parks in `TIME_WAIT` ~120 s; a burst drains the range and **no process on the box can open an outbound socket** until it drains. (`fleet-config`#440, observed 2026-07-25/26.)
+Symptom: **all** local web apps unresponsive at once (any subset of app-launcher/home-automation/whatsapp-radar/voice-transcriber/local-llm-hub), dead 1–4 min, self-heals with no restart, no code change. Simultaneity across independent processes is the tell — a shared kernel resource, not one app's diff. Cause: dynamic port range `49152–65535` (16,384 ports), `TcpTimedWaitDelay` unset → every closed outbound connection parks in `TIME_WAIT` ~120 s; a burst drains the range and **no process on the box can open an outbound socket** until it drains. (`fleet-config`#440.)
 
 **Diagnose in one minute:**
 ```powershell

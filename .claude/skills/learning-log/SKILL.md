@@ -7,11 +7,11 @@ description: Weekly learning log + forward horizon + productivity stats distille
 
 **Capability preflight:** read [workflow-capabilities](../../../docs/workflow-capabilities.md) and bind dispatch, results, waits, cancellation, model tiers and questions to this session’s actual tools before proceeding. Tool names below are conditional Claude examples; the contract governs adaptation. Keep this skill’s worktree, independent-review, human-review and shipping gates.
 
-**Goal:** surface the *learning journey* and *productivity shape* otherwise buried inside individual PRs and issues. Once a week, read the **work stream itself** — every merged PR and closed issue across the `ferraroroberto` fleet since the last run — then (a) compute **exact productivity tables** (PRs / issues / LOC, by project and by work-type) and (b) fan out **one easy-tier sub-agent per work-type bucket** to *extract insights* (patterns, recurring root-causes, decisions, durable lessons). Aggregate into a themed log, **grade last week's horizon**, and set the next one.
+**Goal:** surface the learning journey and productivity shape hidden inside individual PRs/issues. Weekly: read every merged PR and closed issue across the `ferraroroberto` fleet since the last run, then (a) compute **exact productivity tables** (PRs / issues / LOC, by project and by work-type) and (b) fan out **one easy-tier sub-agent per work-type bucket** to *extract insights* (patterns, recurring root-causes, decisions, durable lessons). Aggregate into a themed log, **grade last week's horizon**, and set the next one.
 
-**The journey + productivity lens, not the others.** Reads **no source code** (that's `/audit-fleet`); does not regenerate the architecture PNG (that's `/system-map` — only cross-links it); is not Claude Code usage metrics (that's `/insights-weekly`). Only input is GitHub: merged PRs + closed issues.
+**Journey + productivity lens only.** Reads **no source code** (that's `/audit-fleet`); does not regenerate the architecture PNG (that's `/system-map` — only cross-links it); is not Claude Code usage metrics (that's `/insights-weekly`). Only input is GitHub: merged PRs + closed issues.
 
-**Scatter-gather, like `/audit-fleet`.** A deterministic Python helper (`gather.py`) does the GitHub gather + exact stats + per-bucket partition; the orchestrator fans out **easy-tier** sub-agents (one per bucket), each returning a **fixed format** so the aggregate is uniform. The orchestrator never reads source; it weaves the bucket insights, grades the horizon, assembles the digest.
+**Scatter-gather, like `/audit-fleet`.** Deterministic Python (`gather.py`) does the GitHub gather + exact stats + per-bucket partition; the orchestrator fans out **easy-tier** sub-agents (one per bucket), each returning a **fixed format**. The orchestrator never reads source; it weaves the bucket insights, grades the horizon, assembles the digest.
 
 ## Arguments
 
@@ -115,9 +115,9 @@ A few lines: window, grand totals, buckets analysed (+ any agent that errored), 
 
 ## Notes
 
-- **Why deterministic stats + LLM insight (not LLM stats):** counts and LOC must be exact and reproducible, so Python computes them from `gh` JSON; Sonnet agents do the *judgement* (patterns, lessons) a table can't capture. GitHub gives per-repo Pulse/contributor stats but nothing **cross-fleet** or **per-work-type**, so these tables are additive, not a duplicate.
-- **Why a ledger issue, not `docs/`:** the global `CLAUDE.md` rule — durable knowledge lives in *one canonical issue with a dated decision log*. Issue body is the deduped durable archive + live horizon; comments are the week-by-week record (narrative + tables).
-- **Why anchor the window to `last-run-at`:** a missed/late run never drops a week — next run widens. First run with no ledger falls back to trailing 7 days.
+- **Deterministic stats + LLM insight, not LLM stats:** counts/LOC must be exact and reproducible, so Python computes them from `gh` JSON; Sonnet agents do the judgement (patterns, lessons) a table can't. GitHub's per-repo Pulse/contributor stats aren't cross-fleet or per-work-type, so these tables are additive, not a duplicate.
+- **Ledger issue, not `docs/`:** global `CLAUDE.md` rule — durable knowledge lives in one canonical issue with a dated decision log. Issue body is the deduped durable archive + live horizon; comments are the week-by-week record (narrative + tables).
+- **Window anchored to `last-run-at`:** a missed/late run never drops a week — next run widens. First run with no ledger falls back to trailing 7 days.
 - **Buckets** are by work type — PRs by conventional-commit prefix (`feat`/`fix`/`chore`/`docs`/`refactor`/…), issues by type label. Items with neither land in **Other** (known limitation; tighten with keyword heuristics in `gather.py` if it grows).
 - **Separate from `/system-map`** (cross-linked, not modified) and from fleet-config#95.
 

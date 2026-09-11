@@ -11,14 +11,14 @@ description: One-shot the GitHub-issue workflow end-to-end — file the issue, c
 `/issue-start now` → build → **validate hard** → `/issue-finish`. No approval
 pauses in between.
 
-**YOLO means "skip the plan-approval gate", not "skip safety".** The validation
-phase (Phase 3) is the only thing between a fresh idea and a merge commit on a
-protected branch — do not weaken it. Validation fails at any point → **stop and
-report**; do not push.
+**YOLO means "skip the plan-approval gate", not "skip safety".** Phase 3 is
+the only thing between a fresh idea and a merge commit on a protected branch —
+do not weaken it. Validation fails at any point → **stop and report**; do not
+push.
 
-Use when: the approach is already thought through (a plan gate would be
-ceremony); the change is bounded enough for one validation pass to credibly
-cover it; you accept the next eyeball on the work is `main`'s.
+Use when: the approach is already thought through; the change is bounded
+enough for one validation pass to credibly cover it; you accept the next
+eyeball on the work is `main`'s.
 
 **Do not** use for: architectural changes / cross-cutting refactors / anything
 where design is the hard part — use `/issue-start … plan` instead; work with
@@ -202,11 +202,10 @@ review's `pass: true`). Once there, run the full **`/issue-finish` skill**
 re-confirmation, README + `/docs-shots` visual-docs (step 2b), the
 consolidated verification gate, `/e2e` (step 3c), push + PR, the
 CI-advisory/checkout-mode-aware merge and land, the tray restart, and the
-deploy-coverage liveness check (step 6b). Delegate rather than restate: a prior
-version duplicated these as its own nine steps and the copy drifted stale,
-silently skipping step 2b and 6b on every YOLO run touching either surface
-(fleet-config#728). Delegating means every future `/issue-finish` step reaches
-this flow for free, no second copy to fall out of sync.
+deploy-coverage liveness check (step 6b). Delegate rather than restate: a
+prior duplicated copy drifted stale, silently skipping steps 2b and 6b on
+every YOLO run touching either surface (fleet-config#728) — delegating means
+every future `/issue-finish` step reaches this flow for free.
 
 Three YOLO-specific deltas on top of the delegated steps:
 
