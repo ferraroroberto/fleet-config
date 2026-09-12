@@ -186,16 +186,21 @@ just the launcher call):
   reported `{"ok": true}` for a message that never actually submitted
   (fleet-config#453); `--verify` polls the exchange and reports one of four
   verdicts instead of trusting the response (fleet-config#643). Only
-  `DELIVERED` exits 0; the other three each exit 1 and each mean something
-  different:
+  `DELIVERED` exits 0, and only on positive evidence — an advanced exchange
+  after an immediate submit, or, for a `deferred` send, the watcher's
+  `last_input` confirming the submit (a deferred target is mid-turn, so its
+  exchange moves regardless — fleet-config#856). The other three each exit 1
+  and each mean something different:
   - `PENDING` — delivery is *likely*, unconfirmed only because the worker is
     still talking: the board shows it mid-turn, **or it emitted output in the
     last few seconds even though the board says otherwise** (fleet-config#662
     — `status` reads `awaiting-input` for sessions that are demonstrably
-    mid-turn, so recent output overrides the label), or the submit is with
-    the deferred watcher (`deferred`, app-launcher#763 — accepted and in
-    flight, not stranded), or its output age could not be read at all.
-    Benign. Read the exchange again in a minute; do not resend.
+    mid-turn, so recent output overrides the label), or its output age could
+    not be read at all. Benign. Read the exchange again in a minute; do not
+    resend. A `deferred` PENDING is different: the watcher (up to ~120s,
+    app-launcher#763) had not reported when `--verify` gave up, so **no
+    verdict was reached** — re-read the session's `last_input` before relying
+    on the steer; `defer_timeout` there means it is sitting unsent.
   - `STRANDED` — positively not delivered. Either the exchange never advanced
     on a target that is **demonstrably quiet** (measured silence, not merely a
     non-`working` label), or the endpoint said so outright

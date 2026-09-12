@@ -58,6 +58,37 @@ INPUT_NEGATIVE_REASONS = frozenset({
     "defer_vanished",   # went quiet, but the payload had gone
     "defer_unclear",    # quiet with the payload present — and a dialog too
 })
+# The watcher's one terminal *success*: it pressed Enter and saw the submit
+# land, recorded as `reason: ok` with `submit_confirmed: true, deferred: true`.
+INPUT_OK = "ok"
+
+
+def deferred_submit_outcome(
+    post_reason: Optional[str], last_input: Optional[Dict[str, Any]]
+) -> Optional[str]:
+    """Where a deferred submit stands, read from the watcher's own report on
+    `last_input` (fleet-config#856): "confirmed", "failed", "in_flight", or
+    None when the send was not deferred at all.
+
+    A send is deferred *because* the target is mid-turn, so its exchange keeps
+    advancing on its own — movement there says the target is talking, not
+    that this paste was submitted. Only the watcher knows, so only its record
+    resolves it. Anything short of a terminal record — still `deferred`, a
+    missing or unreadable `last_input`, an unrecognised reason — is
+    "in_flight": the outcome is not established, which is never a success.
+    """
+    if post_reason != INPUT_DEFERRED:
+        return None
+    record = last_input or {}
+    reason = record.get("reason")
+    if reason in INPUT_NEGATIVE_REASONS:
+        return "failed"
+    # `deferred: true` marks the record as the watcher's own; an immediate
+    # `ok` from some other writer to the same session is not this submit.
+    if (reason == INPUT_OK and record.get("submit_confirmed") is True
+            and record.get("deferred") is True):
+        return "confirmed"
+    return "in_flight"
 
 
 
@@ -165,17 +196,24 @@ def finalize_delivery(
     only mechanism that has ever caught a genuinely stranded steer, so the
     two are split here. Precedence, strongest evidence first:
 
-    1. The exchange advanced past the send — "delivered". Positive proof.
-    2. An **authoritative negative**: the API itself said nothing was
-       submitted, either immediately (`not_ingested`/`dropped`) or via the
-       deferred watcher's terminal verdict on `last_input`
-       (`defer_timeout`/`defer_vanished`/`defer_unclear`). This outranks a
-       busy board status: a `working` session whose watcher reported
-       `defer_timeout` is *not* pending, it is stranded.
-    3. `deferred` (app-launcher#763): the payload is in the composer and its
-       submitting CR is with a background watcher that has not reported yet.
-       Genuinely in flight — neither delivered nor stranded → "pending".
-    4. A busy target: mid-turn, so non-movement is not proof of loss →
+    1. The endpoint's immediate negative (`not_ingested`/`dropped`) —
+       "stranded". It said outright the input never landed; an exchange that
+       moved anyway only shows the target talking.
+    2. `deferred` (app-launcher#763): the payload is in the composer and its
+       submitting CR is with a background watcher. Decided **only** by the
+       watcher's record on `last_input` (`deferred_submit_outcome`,
+       fleet-config#856): a confirmed submit → "delivered"; a terminal
+       failure (`defer_timeout`/`defer_vanished`/`defer_unclear`) →
+       "stranded"; anything else, unreadable included → "pending", with no
+       verdict reached. Exchange movement is not consulted — a send is
+       deferred because the target is mid-turn, so its exchange advances
+       regardless, and reading that as proof reported three stranded briefs
+       `DELIVERED` on 2026-09-12.
+    3. The exchange advanced past a send that was not deferred —
+       "delivered". Positive proof.
+    4. A watcher failure on `last_input` without a deferred send (the POST's
+       own reason was unreadable) — "stranded", outranking a busy status.
+    5. A busy target: mid-turn, so non-movement is not proof of loss →
        "pending". Busy is read from **two** independent signals, either one
        sufficient — the board's `status == "working"`, *or* output emitted
        within `output_window` seconds. The second was added by
@@ -186,18 +224,18 @@ def finalize_delivery(
        ago is not idle, whatever the label says — and #643 was already
        collecting that figure, printing it on the same line as the verdict it
        refuted, purely for display.
-    5. An exchange that could not be **read** (transport error, or the
+    6. An exchange that could not be **read** (transport error, or the
        launcher reporting it unavailable) → "unknown". This is the narrow,
        genuinely-unresolvable case, per the fleet rule that a check which
        cannot establish a fact reports that as its own state.
-    6. A readable exchange that never advanced on a target whose output age
+    7. A readable exchange that never advanced on a target whose output age
        could **not** be established → "pending". No positive grounds:
        un-advanced plus an unreliable status label is not evidence of loss.
-    7. Otherwise — a readable exchange that never advanced on a target that is
+    8. Otherwise — a readable exchange that never advanced on a target that is
        demonstrably quiet (output older than `output_window`) → "stranded".
        Non-movement is a real signal here.
 
-    Note 5 vs 7: "un-advanced" and "unreadable" are different facts, and only
+    Note 6 vs 8: "un-advanced" and "unreadable" are different facts, and only
     the second is `unknown`. A readable-but-un-advanced exchange must never
     land in `unknown`, or the narrowing exists only in this docstring.
 
@@ -205,19 +243,28 @@ def finalize_delivery(
     negative, or measured silence — never by fallthrough (fleet-config#662).
     The asymmetry justifies it: a false `pending` costs a second look, while a
     false `stranded` invites a resend, and a resent steer can double-execute a
-    shipping command.
+    shipping command. `delivered` is held to the same bar from the other side
+    (fleet-config#856): only a confirmed submit, or an exchange that advanced
+    past a send that was not deferred — a false `delivered` leaves a worker
+    running without the brief it was sent.
 
     Every non-delivered verdict is non-zero at the call site and none of them
     ever triggers a resend — a resent steer can double-execute a shipping
     command, so the decision stays with the operator.
     """
+    if post_reason in INPUT_NEGATIVE_REASONS:
+        return "stranded"
+    deferred = deferred_submit_outcome(post_reason, last_input)
+    if deferred == "confirmed":
+        return "delivered"
+    if deferred == "failed":
+        return "stranded"
+    if deferred == "in_flight":
+        return "pending"
     if last_marker_state == "delivered":
         return "delivered"
-    watcher_reason = (last_input or {}).get("reason")
-    if post_reason in INPUT_NEGATIVE_REASONS or watcher_reason in INPUT_NEGATIVE_REASONS:
+    if (last_input or {}).get("reason") in INPUT_NEGATIVE_REASONS:
         return "stranded"
-    if post_reason == INPUT_DEFERRED:
-        return "pending"
     if target_status == "working":
         return "pending"
     if not marker_available:
@@ -254,8 +301,9 @@ def format_verdict_line(
 
 VERDICT_REASONS = {
     "pending_deferred": (
-        "submit accepted and handed to the watcher (deferred); "
-        "exchange not advanced yet, delivery likely — not resent"
+        "submit handed to the deferred watcher, which has not reported a "
+        "result — no verdict reached; exchange movement is not evidence while "
+        "deferred; re-read last_input later — not resent"
     ),
     "pending_busy": (
         "target still mid-turn, exchange not advanced yet; "

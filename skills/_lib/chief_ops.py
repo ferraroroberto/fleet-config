@@ -101,13 +101,18 @@ Subcommands
       submitted, twice, in two different ways. Four verdicts
       (fleet-config#643); only DELIVERED exits 0:
 
-        DELIVERED  the exchange advanced past the send. Confirmed.
+        DELIVERED  positive evidence only: the exchange advanced past a send
+                   that was submitted immediately, or — for a `deferred` send
+                   — the watcher's `last_input` confirms the submit. A
+                   deferred send's exchange movement is never proof: the
+                   target is mid-turn by definition (fleet-config#856).
         PENDING    delivery likely, unconfirmed: the target is mid-turn
                    (board says `working`, *or* it emitted output in the last
-                   few seconds — fleet-config#662), the submit is with the
-                   deferred watcher (`deferred`, app-launcher#763), or its
-                   output age could not be read at all. In flight, not
-                   stranded. Exits 1.
+                   few seconds — fleet-config#662), its output age could not
+                   be read at all, or the submit is with the deferred watcher
+                   (`deferred`, app-launcher#763) which has not reported
+                   within `--timeout` — no verdict reached; re-read the
+                   session's `last_input` later. Exits 1.
         STRANDED   positively not delivered — either the exchange never
                    advanced on a target that is demonstrably quiet, or the
                    endpoint said so outright (`not_ingested`/`dropped`, or
@@ -182,9 +187,11 @@ from no_window import NO_WINDOW  # noqa: E402
 # its owner from the outside, which is the thing the split undoes.
 from steer_delivery import (  # noqa: E402
     DEFAULT_VERIFY_POLL_INTERVAL,
+    INPUT_DEFERRED,
     INPUT_NEGATIVE_REASONS,
     VERDICT_REASONS,
     classify_exchange_marker,
+    deferred_submit_outcome,
     finalize_delivery,
     format_output_age,
     format_verdict_line,
@@ -659,6 +666,12 @@ def fetch_session_card(base_url: str, sid: str) -> Dict[str, Any]:
     return {}
 
 
+def _last_input(card: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """`card`'s `last_input` record, or None when absent or malformed."""
+    record = card.get("last_input")
+    return record if isinstance(record, dict) else None
+
+
 def read_brief(file_arg: Optional[str]) -> str:
     """`--file`'s content, or stdin when omitted. `say` never accepts prose
     as a bare CLI arg — it carries the brief the model already composed,
@@ -815,13 +828,18 @@ def cmd_say(args: argparse.Namespace) -> int:
         while True:
             marker = fetch_exchange_marker(args.base_url, args.sid)
             state = classify_exchange_marker(marker["available"], marker["timestamp"], send_time)
-            if state == "delivered" or time.monotonic() >= deadline:
+            if post_reason == INPUT_DEFERRED:
+                # The target is mid-turn, so its exchange advances whether or
+                # not this paste was submitted — wait on the watcher's own
+                # record instead (fleet-config#856).
+                card = fetch_session_card(args.base_url, args.sid)
+                if deferred_submit_outcome(post_reason, _last_input(card)) != "in_flight":
+                    break
+            elif state == "delivered":
+                break
+            if time.monotonic() >= deadline:
                 break
             time.sleep(args.poll_interval)
-
-    if state == "delivered":
-        print(f"DELIVERED sid={args.sid} chars={len(text)}")
-        return 0
 
     board: Dict[str, Any] = {}
     try:
@@ -830,7 +848,7 @@ def cmd_say(args: argparse.Namespace) -> int:
         board = {}
     target_status = find_session_status(board.get("columns") or {}, args.sid)
     card = fetch_session_card(args.base_url, args.sid)
-    last_input = card.get("last_input") if isinstance(card.get("last_input"), dict) else None
+    last_input = _last_input(card)
     # Measured once: the classifier and the printed line must agree about how
     # long the target has been quiet, or the verdict can contradict the
     # evidence beside it — which is exactly how #662 happened.
@@ -845,6 +863,11 @@ def cmd_say(args: argparse.Namespace) -> int:
         last_output_age=output_age,
         output_window=output_window,
     )
+    # DELIVERED is printed only after the full classification, never straight
+    # out of the poll loop: exchange movement alone is not proof (#856).
+    if state == "delivered":
+        print(f"DELIVERED sid={args.sid} chars={len(text)}")
+        return 0
 
     last_input_reason = (last_input or {}).get("reason")
     if state == "pending":

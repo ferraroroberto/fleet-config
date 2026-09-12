@@ -796,10 +796,75 @@ for _status in ("idle", "needs-you", None):
         f"finalize_delivery: readable-but-un-advanced exchange (status={_status!r}) is never unknown",
     )
 check(
-    sd.finalize_delivery("delivered", None, marker_available=False,
-                         post_reason="not_ingested") == "delivered",
-    "finalize_delivery: a genuinely advanced exchange still wins over everything",
+    sd.finalize_delivery("delivered", "working", post_reason="ok") == "delivered",
+    "finalize_delivery: an advanced exchange after an immediately-submitted send is delivered",
 )
+# An advancing exchange only proves the *target* talked, never that this
+# steer submitted — so it cannot outrank the endpoint saying it did not
+# (fleet-config#856; this assertion used to pin the opposite).
+check(
+    sd.finalize_delivery("delivered", None, marker_available=False,
+                         post_reason="not_ingested") == "stranded",
+    "finalize_delivery: an authoritative not_ingested outranks an advanced exchange",
+)
+
+# 1a. A deferred submit is decided by the watcher's own report on
+# `last_input`, never by exchange movement (fleet-config#856). A send is
+# deferred *because* the target is mid-turn, so its exchange advances on its
+# own — three lanes on 2026-09-12 verified DELIVERED that way while each paste
+# sat unsubmitted in the composer. The four `last_input` shapes the
+# session-host produces (app-launcher `src/session_host_input.py:180-189`):
+_LI_CONFIRMED = {"delivered": True, "reason": "ok", "ingested": True,
+                 "submitted": True, "submit_confirmed": True,
+                 "waited_ms": 41000, "deferred": True}
+_LI_IN_FLIGHT = {"delivered": True, "reason": "deferred", "ingested": True,
+                 "submitted": False, "submit_confirmed": None,
+                 "waited_ms": 3000, "deferred": True}
+_LI_TIMEOUT = {"delivered": True, "reason": "defer_timeout", "ingested": True,
+               "submitted": False, "submit_confirmed": False,
+               "waited_ms": 120213, "deferred": True}
+for _marker in ("delivered", "pending"):
+    check(
+        sd.finalize_delivery(_marker, "working", post_reason="deferred",
+                             last_input=_LI_TIMEOUT) == "stranded",
+        f"finalize_delivery: deferred + defer_timeout on last_input -> stranded "
+        f"(exchange {_marker}) — the 2026-09-12 shape",
+    )
+    check(
+        sd.finalize_delivery(_marker, "working", post_reason="deferred",
+                             last_input=_LI_IN_FLIGHT) == "pending",
+        f"finalize_delivery: deferred + watcher still in flight -> pending (exchange {_marker})",
+    )
+    for _unreadable in (None, {}, {"reason": None}):
+        check(
+            sd.finalize_delivery(_marker, "working", post_reason="deferred",
+                                 last_input=_unreadable) == "pending",
+            f"finalize_delivery: deferred + unreadable last_input {_unreadable!r} -> pending, "
+            f"never delivered (exchange {_marker})",
+        )
+    check(
+        sd.finalize_delivery(_marker, "idle", post_reason="deferred",
+                             last_input=_LI_CONFIRMED) == "delivered",
+        f"finalize_delivery: deferred + watcher-confirmed submit -> delivered (exchange {_marker})",
+    )
+# DELIVERED rests on the confirmation itself: take it away and the verdict moves.
+for _field, _value in (("submit_confirmed", None), ("submit_confirmed", False),
+                       ("reason", "deferred"), ("deferred", False)):
+    check(
+        sd.finalize_delivery("delivered", "working", post_reason="deferred",
+                             last_input={**_LI_CONFIRMED, _field: _value}) != "delivered",
+        f"finalize_delivery: confirmed submit with {_field}={_value!r} is no longer delivered",
+    )
+check(sd.deferred_submit_outcome("ok", _LI_TIMEOUT) is None,
+      "deferred_submit_outcome: not a deferred send -> None, last_input not consulted")
+check(sd.deferred_submit_outcome("deferred", _LI_CONFIRMED) == "confirmed",
+      "deferred_submit_outcome: watcher ok + submit_confirmed -> confirmed")
+check(sd.deferred_submit_outcome("deferred", _LI_TIMEOUT) == "failed",
+      "deferred_submit_outcome: watcher terminal failure -> failed")
+check(sd.deferred_submit_outcome("deferred", _LI_IN_FLIGHT) == "in_flight",
+      "deferred_submit_outcome: watcher not reported -> in_flight")
+check(sd.deferred_submit_outcome("deferred", None) == "in_flight",
+      "deferred_submit_outcome: unreadable last_input -> in_flight, never resolved")
 
 # 1b. Recent output as a busy-signal (fleet-config#662). #643's rule 4 read
 # "busy" off the board's `status` alone, and that field demonstrably reports
@@ -919,10 +984,20 @@ try:
     _brief.write_text("gate failure on line 12 is pre-existing, see #622", encoding="utf-8")
 
     def _run_say(post_result, *, verify=True, marker=None, status="working",
-                 card=None):
+                 card=None, timeout=0.0):
         """Drive cmd_say with every network edge stubbed. Returns
-        (exit_code, stdout, post_call_count)."""
-        calls = {"n": 0}
+        (exit_code, stdout, post_call_count). `card` may be a list, consumed
+        one per read with the last repeating — a watcher resolving mid-poll."""
+        calls = {"n": 0, "card": 0}
+
+        def _fake_card(*a, **k):
+            if card is None:
+                return {"last_output_at": time.time() - 4}
+            if isinstance(card, list):
+                idx = min(calls["card"], len(card) - 1)
+                calls["card"] += 1
+                return card[idx]
+            return card
 
         def _fake_post(base_url, sid, text):
             calls["n"] += 1
@@ -938,14 +1013,13 @@ try:
         co._request = lambda base, path, **k: (
             {"columns": {"claude_turn": [{"session_id": "sid123", "status": status}]}}
             if path == "/api/board" else {})
-        co.fetch_session_card = lambda *a, **k: (
-            card if card is not None else {"last_output_at": time.time() - 4})
+        co.fetch_session_card = _fake_card
         try:
             buf = io.StringIO()
             with contextlib.redirect_stdout(buf):
                 rc = co.cmd_say(argparse.Namespace(
                     sid="sid123", file=str(_brief), verify=verify,
-                    timeout=0.0, poll_interval=0.0, base_url=co.DEFAULT_BASE_URL))
+                    timeout=timeout, poll_interval=0.0, base_url=co.DEFAULT_BASE_URL))
             return rc, buf.getvalue(), calls["n"]
         finally:
             (co.post_session_input, co.fetch_exchange_marker,
@@ -1041,6 +1115,50 @@ try:
     check("DELIVERED sid=sid123" in _out and _rc == 0,
           "cmd_say: an advanced exchange reports DELIVERED and exits 0")
     check(_n == 1, "cmd_say: DELIVERED path sent exactly once")
+    # ...and that DELIVERED rests on the advance: remove it and the verdict moves.
+    _rc, _out, _n = _run_say(
+        {"ok": True, "reason": "ok", "error": None},
+        marker={"available": True, "timestamp": None})
+    check("DELIVERED" not in _out and _rc == 1,
+          "cmd_say: the same send with the exchange advance removed is not DELIVERED")
+
+    # fleet-config#856, end to end: a deferred send on a busy target whose
+    # exchange keeps advancing. Pre-fix every one of these printed DELIVERED
+    # straight out of the poll loop, before `last_input` was ever read.
+    _deferred = {"ok": True, "reason": "deferred", "error": None}
+    _rc, _out, _n = _run_say(
+        _deferred, marker={"available": True, "timestamp": _future},
+        card={"last_output_at": time.time(), "last_input": _LI_TIMEOUT})
+    check("STRANDED sid=sid123" in _out and "DELIVERED" not in _out
+          and "last_input=defer_timeout" in _out,
+          "cmd_say: deferred + advancing exchange + defer_timeout -> STRANDED, "
+          "the exact 2026-09-12 stranded-brief shape (#856)")
+    check(_rc == 1 and _n == 1, "cmd_say: that STRANDED exits 1 and sent exactly once")
+
+    _rc, _out, _n = _run_say(
+        _deferred, marker={"available": True, "timestamp": _future},
+        card={"last_output_at": time.time(), "last_input": _LI_IN_FLIGHT})
+    check("PENDING sid=sid123" in _out and "DELIVERED" not in _out,
+          "cmd_say: deferred + advancing exchange + watcher still in flight -> PENDING (#856)")
+    check("no verdict" in _out,
+          "cmd_say: the in-flight PENDING says outright that no verdict was reached")
+    check(_rc == 1 and _n == 1, "cmd_say: that PENDING exits 1 and sent exactly once")
+
+    _rc, _out, _n = _run_say(
+        _deferred, marker={"available": True, "timestamp": _future}, card={})
+    check("PENDING sid=sid123" in _out and "DELIVERED" not in _out,
+          "cmd_say: deferred + advancing exchange + unreadable card -> PENDING, never DELIVERED")
+
+    # A watcher that confirms the submit mid-poll ends the wait with DELIVERED,
+    # exchange movement or not.
+    _rc, _out, _n = _run_say(
+        _deferred, marker={"available": True, "timestamp": None},
+        card=[{"last_output_at": time.time(), "last_input": _LI_IN_FLIGHT},
+              {"last_output_at": time.time(), "last_input": _LI_CONFIRMED}],
+        timeout=5.0)
+    check("DELIVERED sid=sid123" in _out and _rc == 0,
+          "cmd_say: deferred + watcher confirms the submit during the poll -> DELIVERED")
+    check(_n == 1, "cmd_say: watcher-confirmed DELIVERED sent exactly once")
 
     # Plain `say` (no --verify): happy path unchanged, failure reported not raised.
     _rc, _out, _n = _run_say({"ok": True, "reason": "ok", "error": None}, verify=False)
