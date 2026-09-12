@@ -11,9 +11,12 @@ below matches on a machine id — routing is decided by what a machine *answers*
 
 Captures are strictly local to each hub (``local-llm-hub`` ``docs/diagnostics.md``:
 "each host's hub owns its own sampler"), so a peer is driven through its own
-``/admin`` endpoint. The inventory payload carries no LAN address, so peer
-addresses are resolved from the hub's ``config/models.yaml`` ``hosts:`` block,
-keyed by the ids the inventory already returned.
+``/admin`` endpoint at the ``ip`` the inventory returns for it. The inventory is
+the only source for that: addresses used to be parsed out of the hub's
+``config/models.yaml``, which stopped carrying them when they moved to a
+gitignored ``machines.local.yaml`` (``local-llm-hub`` #525) -- the block simply
+went empty, every peer classified ``no-address``, and three consecutive weekly
+runs reached only the host until an overlay was hand-applied (fleet-config#812).
 
 Stdlib only (urllib) — same reason as ``hooks/notify_send.py``: this must run
 without a venv on any host.
@@ -37,7 +40,6 @@ import argparse
 import datetime as _dt
 import json
 import os
-import re
 import socket
 import sys
 import time
@@ -60,8 +62,6 @@ if hasattr(sys.stderr, "reconfigure"):
 
 HUB = os.environ.get("FLEET_HEALTH_HUB", "http://127.0.0.1:8000")
 HUB_PORT = int(os.environ.get("FLEET_HEALTH_HUB_PORT", "8000"))
-MODELS_YAML = Path(os.environ.get(
-    "FLEET_HEALTH_MODELS_YAML", r"E:/automation/local-llm-hub/config/models.yaml"))
 
 # A weekly unattended run: one hour at 30 s ticks = 120 samples. Long enough to
 # catch the idle-resident picture that matters (what is *always* loaded), short
@@ -121,41 +121,6 @@ def _json(body: bytes) -> dict:
 # ---------------------------------------------------------------- discovery
 
 
-def load_addresses() -> dict[str, str]:
-    """Map machine id -> LAN address from the hub's ``hosts:`` block.
-
-    Deliberately a tiny hand-rolled scan rather than a yaml dependency: this is
-    stdlib-only, and the two fields needed (a host id key, its ``address``) sit
-    at fixed indents. Unknown ids simply resolve to no address, which the caller
-    reports as "not covered" rather than guessing a hostname.
-    """
-    if not MODELS_YAML.is_file():
-        return {}
-    addresses: dict[str, str] = {}
-    current: Optional[str] = None
-    in_hosts = False
-    try:
-        lines = MODELS_YAML.read_text(encoding="utf-8", errors="replace").splitlines()
-    except OSError:
-        return {}
-    for line in lines:
-        if re.match(r"^hosts:\s*$", line):
-            in_hosts = True
-            continue
-        if in_hosts and re.match(r"^\S", line):
-            break  # dedented out of the hosts block
-        if not in_hosts:
-            continue
-        host = re.match(r"^  ([A-Za-z0-9._-]+):\s*$", line)
-        if host:
-            current = host.group(1)
-            continue
-        addr = re.match(r"^\s+address:\s*([^\s#]+)", line)
-        if addr and current:
-            addresses[current] = addr.group(1).strip().strip('"\'')
-    return addresses
-
-
 def discover() -> list[dict]:
     """Every enrolled machine, straight from the hub inventory."""
     status, body = _get(f"{HUB}/admin/api/machines/status")
@@ -165,20 +130,22 @@ def discover() -> list[dict]:
     return machines if isinstance(machines, list) else []
 
 
-def diagnostics_base(machine: dict, addresses: dict[str, str]) -> Optional[str]:
+def diagnostics_base(machine: dict) -> Optional[str]:
     """The ``/admin`` base to drive this machine's own hub, or None.
 
     Routing is by capability only: the host we run on is reachable on loopback;
-    any peer is reachable at its declared LAN address. Whether that hub actually
-    *serves* diagnostics is decided by probing, not assumed here.
+    any peer is reachable at the ``ip`` its own inventory row carries. Whether
+    that hub actually *serves* diagnostics is decided by probing, not assumed
+    here, and a peer the inventory gives no address for resolves to no base
+    rather than a guessed hostname.
     """
     if machine.get("is_host"):
         return HUB
-    address = addresses.get(str(machine.get("id") or ""))
+    address = str(machine.get("ip") or "").strip()
     return f"http://{address}:{HUB_PORT}" if address else None
 
 
-def classify(machine: dict, addresses: dict[str, str]) -> tuple[str, str, Optional[str]]:
+def classify(machine: dict) -> tuple[str, str, Optional[str]]:
     """Return (status, reason, diagnostics_base).
 
     status is ``ready`` when a capture can be started, otherwise a
@@ -193,10 +160,11 @@ def classify(machine: dict, addresses: dict[str, str]) -> tuple[str, str, Option
     if state not in ("self", "up") or machine.get("reachable") is False:
         return "unreachable", f"machine did not answer the hub probe (state={state or 'unknown'})", None
 
-    base = diagnostics_base(machine, addresses)
+    base = diagnostics_base(machine)
     if base is None:
         return ("no-address",
-                "no LAN address declared for this machine, so its own hub cannot be dialled", None)
+                "the hub inventory returned no LAN address for this machine, "
+                "so its own hub cannot be dialled", None)
 
     status, _ = _get(f"{base}/admin/api/diagnostics/status", timeout=TIMEOUT_S)
     if status == 200:
@@ -424,8 +392,6 @@ def cmd_start(args) -> int:
     if not machines:
         print(f"inventory unreachable at {HUB}/admin/api/machines/status", file=sys.stderr)
         return 3
-    addresses = load_addresses()
-
     print_header(root, out_dir, today)
     print(f"MACHINE_COUNT={len(machines)}")
 
@@ -433,7 +399,7 @@ def cmd_start(args) -> int:
     skipped: list[dict] = []
     for machine in machines:
         mid = str(machine.get("id") or "?")
-        status, reason, base = classify(machine, addresses)
+        status, reason, base = classify(machine)
         if status == "ready" and base:
             targets[mid] = base
         else:

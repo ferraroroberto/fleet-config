@@ -16,6 +16,11 @@ below is pinned here so the scheduled run stops depending on rediscovery:
    date used to be recomputed from `date.today()` at every invocation, so a
    poll that crossed midnight resolved a different directory than `start`
    wrote. The date is a property of the run, resolved once and persisted.
+3. **Peer addresses** (3rd occurrence). Addresses were parsed out of the hub's
+   public `config/models.yaml`; they moved to a gitignored
+   `machines.local.yaml` (local-llm-hub#525) and the block went empty, so
+   every peer classified `no-address` until an overlay was hand-applied. The
+   inventory now carries `ip` per machine, so it is the single source.
 
 Run: `E:/automation/fleet-config/.venv/Scripts/python.exe tests/test_fleet_health.py`
 (also invoked by tests/run_acceptance.py)
@@ -185,6 +190,55 @@ try:
           "capture.py collect: writes into the run directory `start` created")
     check("no run state" not in out,
           "capture.py collect: finds the run state instead of looking under today's date")
+
+    # ------------------------------------------------- 3. peer addresses
+
+    # The host is always loopback; a peer is dialled at the `ip` the inventory
+    # returns. No config file is read, so an address moving between hub config
+    # files cannot silently empty the target list again.
+    check(capture.diagnostics_base({"id": "tower", "is_host": True, "ip": "10.0.0.1"})
+          == capture.HUB,
+          "diagnostics_base: the host runs on loopback regardless of its ip")
+    check(capture.diagnostics_base({"id": "peer", "ip": "10.0.0.2"})
+          == "http://10.0.0.2:%d" % capture.HUB_PORT,
+          "diagnostics_base: a peer is dialled at the ip the inventory returned")
+    check(capture.diagnostics_base({"id": "peer"}) is None,
+          "diagnostics_base: a peer with no ip resolves to no base, never a guessed hostname")
+    check(capture.diagnostics_base({"id": "peer", "ip": ""}) is None,
+          "diagnostics_base: an empty ip is treated as absent, not as a valid host")
+
+    status, reason, base = capture.classify(
+        {"id": "peer", "state": "up", "reachable": True})
+    check(status == "no-address" and base is None,
+          "classify: a reachable peer with no ip reports no-address (got %s)" % status)
+    check("no LAN address" in reason,
+          "classify: the no-address reason still says why the peer could not be dialled")
+
+    # Ordering is load-bearing: dormant and unreachable are decided before the
+    # address, so a powered-off box never reports as an addressing problem.
+    status, _reason, _base = capture.classify(
+        {"id": "peer", "dormant": True, "ip": "10.0.0.2"})
+    check(status == "dormant", "classify: dormant still wins over addressing (got %s)" % status)
+    status, _reason, _base = capture.classify(
+        {"id": "peer", "state": "down", "reachable": False, "ip": "10.0.0.2"})
+    check(status == "unreachable",
+          "classify: unreachable still wins over addressing (got %s)" % status)
+
+    # The models.yaml reader is gone, not merely unused: a leftover parser is a
+    # second source of truth waiting to be re-wired (global CLAUDE.md).
+    check(not hasattr(capture, "load_addresses"),
+          "capture.py: the models.yaml address parser is removed, not left dead")
+    src = (SKILL / "capture.py").read_text(encoding="utf-8")
+    check("MODELS_YAML" not in src and "FLEET_HEALTH_MODELS_YAML" not in src,
+          "capture.py: the models.yaml constant and its env override are gone")
+    # The module docstring still records *why* it stopped reading that file --
+    # that history is the point. What must not survive is code that reads it.
+    _body = src.split('"""', 2)[2]
+    check("models.yaml" not in _body,
+          "capture.py: models.yaml survives only as docstring history, never in code")
+    skill_md = (SKILL / "SKILL.md").read_text(encoding="utf-8")
+    check("FLEET_HEALTH_MODELS_YAML" not in skill_md,
+          "SKILL.md: stops telling the reader to point a removed env var at models.yaml")
 
 finally:
     shutil.rmtree(tmp, ignore_errors=True)
