@@ -50,7 +50,9 @@ Subcommands
 
   sessions [--base-url URL] [--json]
       Repo occupancy — the "is this repo already busy" question asked
-      before every dispatch.
+      before every dispatch. The caller's own session card is excluded (and
+      named, on the human-readable path) so this answers the same question
+      `dispatch` asks — see `dispatch` below.
 
   exchange <sid> [--tail N] [--base-url URL]
       Last assistant text for a live session, tailed to N chars (default
@@ -74,6 +76,15 @@ Subcommands
       (`skills/_lib/chief_managed.py`, fleet-config#443) so
       `hooks/notify_on_idle.py` can route its blocked-on-input
       notifications to chief instead of the human ping.
+
+      Neither refusal counts the *calling* session, identified by the
+      launcher's own `APP_LAUNCHER_SESSION_ID` stamp (fleet-config#838).
+      The standing chief runs as an ordinary PTY in `fleet-config`, so
+      counting its card made that one repo — the repo the fleet's hooks,
+      skills and runners live in — permanently undispatchable, and the only
+      way through was to route around the guard entirely. Every *other* live
+      session still occupies its repo: a second worker is refused exactly as
+      before.
 
   chief-sid [--base-url URL]
       Prints `CHIEF_SID=<sid>` (or `none`) for the live standing chief —
@@ -146,6 +157,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import ssl
 import subprocess
 import sys
@@ -155,7 +167,7 @@ import urllib.parse
 import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Mapping, Optional, Tuple
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import chief_managed  # noqa: E402
@@ -191,6 +203,13 @@ DEFAULT_VERIFY_TIMEOUT = 20.0
 
 LOOPBACK_HOSTS = {"127.0.0.1", "::1", "localhost"}
 
+# App Launcher stamps its own session id into every session it spawns
+# (`session_host.py`'s `agent_child_env`, the same `uuid4().hex` the board
+# card reports as `session_id`). Named here rather than imported: `hooks/` and
+# `skills/_lib/` are independent trees by convention, and `worktree_claim.py`
+# already reads the same variable the same way.
+LAUNCHER_SESSION_ID_ENV_VAR = "APP_LAUNCHER_SESSION_ID"
+
 
 # ---- loopback guard (pure) -------------------------------------------------
 
@@ -209,17 +228,58 @@ def assert_loopback(url: str) -> None:
 
 # ---- pure decision logic (unit-tested without network/gh) ------------------
 
-def repo_occupancy(columns: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
+def caller_session_id(env: Optional[Mapping[str, str]] = None) -> Optional[str]:
+    """This process's own App Launcher session id, or None outside one.
+
+    The launcher generates a session's id as `uuid4().hex` and stamps that
+    exact value into the spawned process's environment, so a tool running
+    *inside* a launcher session can name its own board card without being
+    told which one it is — the same id space the card's `session_id` field
+    reports, and the same one `hooks/_lib.launcher_session_id()` resolves
+    identity from since fleet-config#848.
+
+    Deliberately not the card's `label`: `label == "chief"` is assigned by
+    the launcher's chief-spawn path, but `/api/board` also re-derives it on
+    every poll (`app/webapp/routers/board_chief.py`'s `_reconcile_chief_label`,
+    called from `board.py`) for any live PTY cwd'd in the fleet-config
+    checkout whose OSC title's last token, hook-state shared name, or first
+    submitted prompt reads "chief" — a deliberate self-heal for a chief
+    re-attached by Resume, and three signals an ordinary worker in this repo
+    can trip. A worker mislabelled that way would be excluded from occupancy,
+    the exact collision the guard exists to prevent, so the exclusion below
+    rests on the primary key instead.
+    """
+    source = os.environ if env is None else env
+    value = str(source.get(LAUNCHER_SESSION_ID_ENV_VAR) or "").strip()
+    return value or None
+
+
+def repo_occupancy(
+    columns: Dict[str, Any],
+    exclude_sid: Optional[str] = None,
+) -> Dict[str, Dict[str, Any]]:
     """Lowercased repo -> occupancy info, for every alive, non-external
     session card in `claude_turn` + `your_turn`.
 
     A dead (`alive: False`) or `external` (state-file-only, unverifiable)
     card never blocks a dispatch — only a live PTY actually holds the repo.
+
+    `exclude_sid` drops one card by session id: the caller's own. The standing
+    chief runs as an ordinary launcher PTY with cwd `E:/automation/fleet-config`,
+    so counting its card made this repo permanently occupied and chief could
+    never dispatch its own queue (fleet-config#838). Chief is not a worker — it
+    never runs `git`, never edits files, never claims a checkout — so its cwd
+    is where it happens to run, not a claim on the tree. Excluding *the caller*
+    rather than "the chief" keeps the rule one a card cannot lie its way out
+    of: a session does not occupy a repo against itself, and every other live
+    session still does.
     """
     occ: Dict[str, Dict[str, Any]] = {}
     cards = list(columns.get("claude_turn") or []) + list(columns.get("your_turn") or [])
     for card in cards:
         if not card.get("alive") or card.get("kind") == "external":
+            continue
+        if exclude_sid and str(card.get("session_id") or "") == exclude_sid:
             continue
         repo = str(card.get("project") or "").strip().lower()
         if not repo:
@@ -234,10 +294,29 @@ def repo_occupancy(columns: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
     return occ
 
 
-def alive_worker_count(columns: Dict[str, Any]) -> int:
-    """Alive session cards, excluding the standing chief's own card."""
+def alive_worker_count(columns: Dict[str, Any], exclude_sid: Optional[str] = None) -> int:
+    """Alive session cards, excluding the caller's own and the standing chief's.
+
+    `exclude_sid` drops the caller's own card here too (fleet-config#838):
+    the count and the occupancy map are read from the same card list in the
+    same dispatch, and a caller that excused itself from one but not the other
+    would still be capped out by its own presence. The `label` test stays as
+    the fallback for a chief that is not itself the caller.
+
+    It excuses *any* caller, not only chief, which is the honest reading of
+    "a session is not one of the workers it is counting" — and safe past
+    chief because a launcher-dispatched session is forced onto a worktree
+    regardless (`worktree_claim.py`, fleet-config#525), so the checkout
+    collision the cap is a proxy for is prevented downstream either way.
+    """
     cards = list(columns.get("claude_turn") or []) + list(columns.get("your_turn") or [])
-    return sum(1 for c in cards if c.get("alive") and c.get("label") != "chief")
+    return sum(
+        1
+        for c in cards
+        if c.get("alive")
+        and c.get("label") != "chief"
+        and not (exclude_sid and str(c.get("session_id") or "") == exclude_sid)
+    )
 
 
 def find_chief_session(columns: Dict[str, Any]) -> Optional[str]:
@@ -602,11 +681,17 @@ def cmd_board(args: argparse.Namespace) -> int:
 
 def cmd_sessions(args: argparse.Namespace) -> int:
     board = _request(args.base_url, "/api/board")
-    occupancy = repo_occupancy(board.get("columns") or {})
+    self_sid = caller_session_id()
+    occupancy = repo_occupancy(board.get("columns") or {}, exclude_sid=self_sid)
     if args.json:
         print(json.dumps(occupancy, indent=2))
     else:
         print(format_occupancy(occupancy))
+        # Never silently: this is the pre-dispatch "is the repo busy" read, so
+        # it has to answer the same question `dispatch` will, and say which
+        # card it left out of the answer.
+        if self_sid:
+            print(f"(excluding this session: {self_sid})")
     return 0
 
 
@@ -649,11 +734,12 @@ def cmd_dispatch(args: argparse.Namespace) -> int:
     _worker_cap_raw = (settings.get("settings") or {}).get("worker_cap")
     worker_cap = int(_worker_cap_raw) if _worker_cap_raw is not None else 3
 
+    self_sid = caller_session_id()
     reason = refuse_dispatch(
         args.repo,
         args.mode,
-        repo_occupancy(columns),
-        alive_worker_count(columns),
+        repo_occupancy(columns, exclude_sid=self_sid),
+        alive_worker_count(columns, exclude_sid=self_sid),
         worker_cap,
         args.yolo_confirmed,
     )
