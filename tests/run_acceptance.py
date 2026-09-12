@@ -71,6 +71,7 @@ from acceptance.checks_guards import (  # noqa: E402
     _safe_kill_force_push_unit_checks,
     _tier23_hooks_unit_checks,
     _venv_junction_guard_unit_checks,
+    _venv_primary_guard_unit_checks,
     _warn_channel_unit_checks,
 )
 from acceptance.checks_notify import (  # noqa: E402
@@ -202,6 +203,9 @@ def main() -> int:
     # ---- safe_kill_guard: force-push blocks on the pushed ref (#562) ----
     run_unit(_safe_kill_force_push_unit_checks)
     run_unit(_venv_junction_guard_unit_checks)
+
+    # ---- venv_discipline rule 5 + destructive-action audit trail ----
+    run_unit(_venv_primary_guard_unit_checks)
 
     # ---- _lib.warn: the nudge lands on a channel the model reads (#681) ----
     run_unit(_warn_channel_unit_checks)
