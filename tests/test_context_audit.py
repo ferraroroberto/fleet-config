@@ -135,6 +135,10 @@ with tempfile.TemporaryDirectory() as td:
     p = root / "broken" / ".claude" / "skills" / "unreadable" / "SKILL.md"
     p.parent.mkdir(parents=True, exist_ok=True)
     p.write_bytes(b"---\nname: u\ndescription: \xff\xfe not utf-8\n---\n")
+    # Unparseable (fleet-config#845): a short, lean description the regex reads
+    # fine — it would have counted compliant — but a YAML loader rejects.
+    _write(root / "sister" / ".claude" / "skills" / "delta" / "SKILL.md",
+           _skill("Two modes: concise is default."))
 
     repos = {
         "self": root / "self",
@@ -157,7 +161,7 @@ with tempfile.TemporaryDirectory() as td:
     check(all(r.repo_dir == root / "elsewhere" for r in over if r.repo == "self"),
           "self_root replaces the user-tier repo's directory for both its tiers")
 
-    rows, unmeasured = audit.scan_skills(50, roots)
+    rows, unmeasured, unparseable = audit.scan_skills(50, roots)
 
     measured = {(r["repo"], r["skill"]): r for r in rows}
     check(set(measured) == {("self", "alpha"), ("self", "beta"), ("sister", "gamma")},
@@ -181,21 +185,31 @@ with tempfile.TemporaryDirectory() as td:
     check(not any((u["repo"], u["skill"]) in measured for u in unmeasured),
           "nothing unmeasured leaks into the measured rows")
 
-    by_repo = audit.per_repo_summary(rows, unmeasured)
+    check([(u["repo"], u["skill"]) for u in unparseable] == [("sister", "delta")],
+          f"a frontmatter YAML rejects is unparseable, not compliant (got {unparseable})")
+    check(bool(unparseable) and "': '" in unparseable[0]["reason"],
+          "the unparseable entry carries the loader-shaped reason")
+    check(("sister", "delta") not in measured and ("sister", "delta") not in reasons,
+          "unparseable is its own state — in neither the measured rows nor unmeasured")
+
+    by_repo = audit.per_repo_summary(rows, unmeasured, unparseable)
     summary = {r["repo"]: r for r in by_repo}
     check(summary["self"]["skills"] == 2 and summary["self"]["over_cap"] == 1,
           "per-repo summary counts skills and over-cap per repo")
     check(summary["sister"]["over_cap"] == 1,
           "an over-cap description names the repo it lives in")
+    check(summary["sister"]["unparseable"] == 1 and summary["sister"]["skills"] == 1,
+          "per-repo summary counts unparseable separately from measured skills")
     check(summary["broken"]["skills"] == 0 and summary["broken"]["unmeasured"] == 2,
           "a repo whose skills could not be read reports 0 measured / 2 unmeasured")
     check("bare" not in summary, "a repo with no surface at all adds no row")
 
     # The load-bearing invariant: the three states partition the working set, so
     # a gate that shrinks its own scope can never read the same as a clean run.
-    total_files = len(rows) + len(unmeasured)
-    check(total_files == 6,
-          f"measured (3) + unmeasured (2 files + 1 missing repo) accounts for everything probed (got {total_files})")
+    total_files = len(rows) + len(unmeasured) + len(unparseable)
+    check(total_files == 7,
+          f"measured (3) + unmeasured (2 files + 1 missing repo) + unparseable (1) "
+          f"accounts for everything probed (got {total_files})")
 
 
 # ------------------------------------------- budget scan: worktree siblings ----

@@ -66,7 +66,7 @@ E:/automation/fleet-config/.venv/Scripts/python.exe .claude/skills/context-purge
    ```
    git show HEAD:<file> > <scratch>/before && E:/automation/fleet-config/.venv/Scripts/python.exe .claude/skills/context-purge/check.py <scratch>/before <file>
    ```
-   must exit 0 (marked blocks byte-identical, quoted triggers preserved) and prints the token delta. Then re-run `audit.py`: totals down, no new over-cap descriptions, no new single-home leaks. Then the repo gate (`py_compile` + `tests/run_acceptance.py`).
+   must exit 0 (marked blocks byte-identical, quoted triggers preserved, frontmatter still parses as YAML) and prints the token delta. Then re-run `audit.py`: totals down, no new over-cap descriptions, no new single-home leaks. Then the repo gate (`py_compile` + `tests/run_acceptance.py`).
 2. **Directive inventory** — walk each file's saved inventory item by item against the rewrite; every item must still be discharged (verbatim or semantically intact).
 3. **Agent-based before/after probe** — for each substantially rewritten file: derive ~10–20 behavioral questions from the *original* ("what must never appear in a commit message?", "which Python do you invoke?"). Spawn fresh **Haiku** sub-agents (weaker model = stricter clarity test, cheap; Sonnet acceptable) whose only context is the **compressed** file; same questions to a **control** agent reading the original. Grade both against original-derived expected answers. **Pass = compressed score ≥ control score.** Any question the compressed file fails but the control passes → restore that content and re-probe.
 4. **Report** — the PR body carries the per-file before/after token table, probe scores (compressed vs control), and the inventory result. No screenshots, no merge.

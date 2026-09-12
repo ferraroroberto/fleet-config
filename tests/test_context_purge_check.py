@@ -83,6 +83,30 @@ check(any("trigger phrase" in f for f in cp.check(
       '---\nname: foo\ndescription: Capture the machine\'s envelope weekly.\n---\n\n# foo\n')),
       "possessives reworded but a real trigger lost -> still fails")
 
+# A rewrite that keeps every trigger but breaks the YAML (fleet-config#845).
+# The real `/context-purge fleet` output for issue-yolo: an unquoted plain
+# scalar holding a colon-space no longer parses, so the live skill listing lost
+# the description entirely while this check printed PASS.
+SKILL_YOLO_BEFORE = (
+    '---\nname: issue-yolo\ndescription: One-shot the GitHub-issue workflow end-to-end — file the issue, '
+    'build, ship. E.g. "/issue-yolo 34".\n---\n\n# issue-yolo\n'
+)
+SKILL_YOLO_AFTER_BROKEN = (
+    '---\nname: issue-yolo\ndescription: One-shot the GitHub-issue workflow: file the issue, '
+    'build, ship. E.g. "/issue-yolo 34".\n---\n\n# issue-yolo\n'
+)
+_yolo = cp.check(SKILL_YOLO_BEFORE, SKILL_YOLO_AFTER_BROKEN)
+check(any("does not parse" in f for f in _yolo),
+      "triggers intact but frontmatter no longer parses -> fail, not PASS")
+check(any("': '" in f for f in _yolo),
+      "the parse failure names its reason (the colon-space), not just 'broken'")
+check(any("does not parse" in f for f in cp.check(
+      "# a CLAUDE.md, no frontmatter\n",
+      '---\nname: foo\ndescription: Two modes: concise is default\n---\n')),
+      "an after-file frontmatter is validated even when before had none")
+check(cp.check("# plain\n", "# plain, shorter\n") == [],
+      "no frontmatter on either side -> parse rule not applied")
+
 # ---- token estimate ----
 check(cp.est_tokens("x" * 400) == 100, "est_tokens ~ chars/4")
 

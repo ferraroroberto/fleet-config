@@ -12,6 +12,9 @@ checkable, so they live here rather than in LLM judgment (same discipline as
   2. Quoted trigger phrases in a SKILL.md frontmatter `description:` must
      survive verbatim — they are the routing surface and are exempt from the
      prose cap precisely because they must never be reworded.
+  3. The after-file's frontmatter must still parse as YAML — a rewrite that
+     breaks it keeps every phrase on disk while the harness drops the whole
+     description (fleet-config#845).
 
 The `description:` parser and the double-quoted-trigger regex now live in
 `skills/_lib/skill_description.py`, shared with `context-audit/audit.py` — the
@@ -35,6 +38,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "skills" / "_lib"))
+from frontmatter import frontmatter_error  # noqa: E402
 from skill_description import frontmatter_description, quoted_phrases  # noqa: E402,F401
 from utf8_stdio import ensure_utf8_stdio  # noqa: E402
 
@@ -61,6 +65,13 @@ def check(before: str, after: str) -> list[str]:
         if block not in after:
             label = block.splitlines()[0].strip()
             failures.append(f"marked block not byte-identical in after: {label}")
+
+    # A trigger found by a line regex is not a description the harness can read:
+    # a rewrite that breaks the YAML keeps every phrase and loses them all
+    # (fleet-config#845), so the after-file's frontmatter must actually parse.
+    parse_error = frontmatter_error(after)
+    if parse_error:
+        failures.append(f"frontmatter does not parse: {parse_error}")
 
     desc_before = frontmatter_description(before)
     desc_after = frontmatter_description(after)
@@ -94,7 +105,7 @@ def main() -> int:
     for f in failures:
         print(f"FAIL  {f}")
     if not failures:
-        print("PASS  marked blocks + quoted triggers preserved")
+        print("PASS  marked blocks + quoted triggers preserved, frontmatter parses")
     return 0 if not failures else 2
 
 
