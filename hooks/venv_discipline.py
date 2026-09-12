@@ -220,15 +220,28 @@ _CMD_SWITCH_RE = re.compile(r"^/[A-Za-z]{1,3}$")
 _MSYS_DRIVE_RE = re.compile(r"^/([A-Za-z])/(.*)$")
 
 
+# PowerShell resolves any unambiguous prefix of a parameter name, so `-r`,
+# `-rec` and `-Recurse` are all the same switch.
+_PS_RECURSE_RE = re.compile(r"^-r(?:e(?:c(?:u(?:r(?:s(?:e)?)?)?)?)?)?$", re.IGNORECASE)
+
+
 def _is_flag(token: str) -> bool:
     return token.startswith("-") or bool(_CMD_SWITCH_RE.match(token))
 
 
 def _operand_path(raw: str, base: Path) -> Path:
+    """`raw` as a filesystem path to test, resolved against the payload cwd.
+
+    A glob is reduced to the directory it expands *within*: the shell expands
+    `rm -rf *` long after the hook has seen the command string, so the only
+    honest question left is whether that directory holds the junction.
+    """
     text = raw.strip().strip("'\"")
     msys = _MSYS_DRIVE_RE.match(text)
     if msys:
         text = f"{msys.group(1).upper()}:/{msys.group(2)}"
+    if any(ch in text for ch in "*?["):
+        text = text.replace("\\", "/").rsplit("/", 1)[0] if "/" in text.replace("\\", "/") else "."
     path = Path(text)
     if not path.is_absolute():
         path = base / path
@@ -297,15 +310,19 @@ def destructive_operands(segment: str) -> Tuple[Optional[str], List[str]]:
         if recursive:
             return "rm -r", [t for t in tokens[1:] if not _is_flag(t)]
 
-    # `Remove-Item -Recurse <path>` (PowerShell)
+    # `Remove-Item -Recurse <path>` (PowerShell). PowerShell accepts any
+    # unambiguous prefix of a parameter name, so `-r` and `-rec` are as legal
+    # as `-Recurse` and must match too.
     if lowered[0] in {"remove-item", "ri", "rm", "del", "erase"}:
-        if any(t.lower().startswith("-recurse") for t in tokens[1:]):
+        if any(_PS_RECURSE_RE.match(t) for t in tokens[1:]):
             return "Remove-Item -Recurse", [t for t in tokens[1:] if not _is_flag(t)]
 
-    # `rmdir /s <path>` / `rd /s <path>` (cmd). Without `/s` it is safe.
-    if lowered[0] in {"rmdir", "rd"}:
-        if any(t.lower() in {"/s", "/s/q", "/q/s"} for t in tokens[1:]):
-            return "rmdir /s", [t for t in tokens[1:] if not _is_flag(t)]
+    # `rmdir /s <path>` / `del /s <path>` (cmd). Without `/s` both are safe:
+    # `rmdir` removes a reparse point without following it, and `del` needs
+    # `/s` before it will descend at all.
+    if lowered[0] in {"rmdir", "rd", "del", "erase"}:
+        if any(t.lower().lstrip("/").find("s") >= 0 and t.startswith("/") for t in tokens[1:]):
+            return lowered[0] + " /s", [t for t in tokens[1:] if not _is_flag(t)]
 
     # `python -m venv [flags] <dir>` — creating or `--clear`-ing over a junction
     # writes through it just as surely as a delete does.

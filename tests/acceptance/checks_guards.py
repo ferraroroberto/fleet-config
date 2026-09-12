@@ -721,6 +721,23 @@ def _venv_junction_guard_unit_checks() -> Tuple[int, int]:
                       tool="PowerShell") == 2)
         check("venv_junction: `rmdir /s <wt>` -> block",
               verdict(f"rmdir /s /q {worktree}", cwd=primary) == 2)
+        # PowerShell resolves any unambiguous parameter prefix, so the guard
+        # must match the abbreviations too, not just the spelled-out switch.
+        check("venv_junction: `Remove-Item -r` (PowerShell abbreviation) -> block",
+              verdict(f"Remove-Item -r -Force {worktree}", cwd=primary,
+                      tool="PowerShell") == 2)
+        check("venv_junction: `Remove-Item -Rec` -> block",
+              verdict(f"Remove-Item -Rec {worktree}", cwd=primary, tool="PowerShell") == 2)
+        check("venv_junction: `del /s` through the junction -> block",
+              verdict(f"del /s /q {worktree}", cwd=primary) == 2)
+        # The shell expands a glob long after the hook sees the command, so an
+        # operand carrying one is reduced to the directory it expands within.
+        check("venv_junction: `rm -rf *` from the worktree root -> block",
+              verdict("rm -rf *", cwd=worktree) == 2)
+        check("venv_junction: `rm -rf <wt>/*` -> block",
+              verdict(f"rm -rf {worktree}/*", cwd=primary) == 2)
+        check("venv_junction: `rm -rf build/*` (no junction there) -> allow",
+              verdict("rm -rf build/*", cwd=worktree) == 0)
         check("venv_junction: relative operand resolved against payload cwd -> block",
               verdict("rm -rf repo-wt-847", cwd=tmp) == 2)
         # The incident command was typed in Git Bash, so its operand was an
