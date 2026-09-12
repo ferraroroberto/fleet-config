@@ -186,13 +186,37 @@ def _header(compressed: Any) -> str:
     header = (
         f"[fleet-context-filter: raw_tokens={compressed.raw_tokens} "
         f"compressed_tokens={compressed.compressed_tokens} "
-        f"reduction={compressed.reduction_pct:.1f}%"
+        f"reduction={compressed.reduction_pct:.1f}% "
+        # lines=N->M is what lets a reader tell heavy filtering from an empty
+        # result without re-reading the source: `lines=0->1` is a command that
+        # printed nothing, `lines=412->9` is one whose output was mostly
+        # withheld (fleet-config#837). Appended, never reordered — the banner is
+        # a parsed contract for the fixture eval.
+        f"lines={compressed.line_count}->{compressed.compressed_line_count}"
     )
     if compressed.raw_key:
         header += f" raw_key={compressed.raw_key}"
     if compressed.secret_like:
         header += " secret_like=true raw_not_cached=true"
     return header + "]"
+
+
+def _retrieve_footer(compressed: Any) -> str:
+    """A one-line escape hatch when lines were withheld, or "" when none were.
+
+    The header already carried `raw_key=`, but nothing said what to do with it,
+    so the full output was cached and unreachable in practice (fleet-config#837).
+    """
+    if not compressed.raw_key or compressed.compressed_line_count >= compressed.line_count:
+        return ""
+    cli = Path(__file__).resolve()
+    python = _lib.find_python_executable() or sys.executable
+    return (
+        f"\n[fleet-context-filter: {compressed.line_count} output lines rendered as "
+        f"{compressed.compressed_line_count} — full output: "
+        f'"{str(python).replace(chr(92), "/")}" '
+        f'"{str(cli).replace(chr(92), "/")}" retrieve {compressed.raw_key}]'
+    )
 
 
 def run_wrapped(args: argparse.Namespace) -> int:
@@ -216,24 +240,39 @@ def run_wrapped(args: argparse.Namespace) -> int:
         return 124
 
     raw = (result.stdout or "") + (result.stderr or "")
-    compressed = context_filter.compress_output(command, raw, cache_raw=args.mode == "rewrite")
 
-    _log_row(
-        mode=args.mode,
-        agent=args.agent or "claude",
-        session_id=args.session_id,
-        cwd=args.cwd,
-        command=command,
-        tool=args.tool,
-        compressed=compressed,
-        exit_code=result.returncode,
-    )
+    # Fail open, loudly (fleet-config#837). The command has already run and its
+    # output is in hand; anything that goes wrong from here on is the filter's
+    # problem, not the command's, and must never cost the agent the output or
+    # turn a successful command into a failure. The command's own exit code is
+    # what propagates either way — which is also why shadow mode runs through
+    # the same guard: it returns raw output regardless, so a telemetry fault
+    # must not be able to change what the agent sees.
+    try:
+        compressed = context_filter.compress_output(command, raw, cache_raw=args.mode == "rewrite")
+        _log_row(
+            mode=args.mode,
+            agent=args.agent or "claude",
+            session_id=args.session_id,
+            cwd=args.cwd,
+            command=command,
+            tool=args.tool,
+            compressed=compressed,
+            exit_code=result.returncode,
+        )
+        filtered = _header(compressed) + "\n" + compressed.compressed + _retrieve_footer(compressed)
+    except Exception as exc:  # noqa: BLE001 - any filter fault degrades to raw
+        print(f"fleet-context-filter: filter failed, passing raw output through: {exc!r}", file=sys.stderr)
+        filtered = (
+            f"[fleet-context-filter: FILTER FAILED ({type(exc).__name__}) — "
+            "output below is unfiltered]\n" + raw.rstrip("\n")
+        )
 
     if args.mode == "shadow":
         sys.stdout.write(raw)
         return result.returncode
 
-    sys.stdout.write(_header(compressed) + "\n" + compressed.compressed + "\n")
+    sys.stdout.write(filtered + "\n")
     return result.returncode
 
 
@@ -356,24 +395,32 @@ def run_compress(args: argparse.Namespace) -> int:
         print(json.dumps({"mode": mode, "wrap": False}))
         return 0
 
-    compressed = context_filter.compress_output(command, output, cache_raw=mode == "rewrite")
-    exit_code = data.get("exit_code")
-    _log_row(
-        mode=mode,
-        agent=args.agent or "pi",
-        session_id=str(data.get("session_id") or ""),
-        cwd=str(data.get("cwd") or ""),
-        command=command,
-        tool=args.tool,
-        compressed=compressed,
-        exit_code=exit_code if isinstance(exit_code, int) else None,
-    )
+    # Fail open, same contract as `run_wrapped` (fleet-config#837): wrap=False
+    # leaves Pi's own tool result untouched, so a filter fault costs telemetry
+    # rather than the agent's view of its output.
+    try:
+        compressed = context_filter.compress_output(command, output, cache_raw=mode == "rewrite")
+        exit_code = data.get("exit_code")
+        _log_row(
+            mode=mode,
+            agent=args.agent or "pi",
+            session_id=str(data.get("session_id") or ""),
+            cwd=str(data.get("cwd") or ""),
+            command=command,
+            tool=args.tool,
+            compressed=compressed,
+            exit_code=exit_code if isinstance(exit_code, int) else None,
+        )
+    except Exception as exc:  # noqa: BLE001 - any filter fault degrades to raw
+        print(f"fleet-context-filter: filter failed, leaving output unwrapped: {exc!r}", file=sys.stderr)
+        print(json.dumps({"mode": mode, "wrap": False}))
+        return 0
 
     if mode == "shadow":
         print(json.dumps({"mode": mode, "wrap": False}))
         return 0
 
-    text = _header(compressed) + "\n" + compressed.compressed
+    text = _header(compressed) + "\n" + compressed.compressed + _retrieve_footer(compressed)
     print(json.dumps({"mode": mode, "wrap": True, "text": text}))
     return 0
 

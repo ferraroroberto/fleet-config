@@ -29,18 +29,38 @@
       "must_contain": ["all visible test suites passed", "72 PASS lines"]
     },
     {
-      "name": "git status",
+      "name": "git status (every distinct path survives)",
       "command": "git status --short",
       "fixture": "git_status.txt",
-      "min_reduction_pct": 20,
-      "must_contain": ["modified: hooks/context_filter.py", "new file: tests/fixtures/context_filter/manifest.json"]
+      "min_reduction_pct": 0,
+      "must_contain": [
+        "modified: hooks/context_filter.py",
+        "new file: tests/fixtures/context_filter/manifest.json",
+        "modified: README.md",
+        "modified: tests/run_acceptance.py",
+        "modified: hooks/context_filter_hook.py",
+        "tests/fixtures/context_filter/git_status.txt",
+        "tests/fixtures/context_filter/npm_success.txt",
+        "tests/fixtures/context_filter/pytest_failure.txt",
+        "tests/fixtures/context_filter/repetitive_log.txt",
+        "tests/fixtures/context_filter/large_json.txt"
+      ]
     },
     {
-      "name": "repetitive log",
+      "name": "repetitive log (cat is verbatim, never an extract)",
       "command": "cat app.log",
       "fixture": "repetitive_log.txt",
-      "min_reduction_pct": 45,
-      "must_contain": ["database retry exhausted", "Traceback (most recent call last)"]
+      "min_reduction_pct": 0,
+      "must_contain": [
+        "database retry exhausted",
+        "Traceback (most recent call last)",
+        "database retry attempt=1",
+        "database retry attempt=2",
+        "2f79f7cf-1111-4111-8111-8e5200000001",
+        "2f79f7cf-1111-4111-8111-8e5200000012",
+        "File \"app/db.py\", line 88, in connect",
+        "TimeoutError: database connection timed out"
+      ]
     },
     {
       "name": "large json",
