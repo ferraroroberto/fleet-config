@@ -191,7 +191,14 @@ The five sections it returns, and what each means:
   - **desktop measure** — the centered 772px desktop measure.
   - **switch on-track** — on-track color = success (green); FAIL if it is
     the accent.
-  - **checkboxes** — no native checkboxes.
+  - **checkboxes** — a checkbox control must be skinned off the browser's
+    own tick (`appearance: none`), per design.md's Checkbox -> shadcn
+    `checkbox` mapping. A real `<input type=checkbox>` is the shadcn
+    substrate, not the violation; a selector *string* in JS
+    (`input:not([type="checkbox"])`) is not a control at all (#843). WARN
+    when a skin exists but cannot be attributed to the checkbox. Whether a
+    given boolean should have been the switch instead is judgment — step 4,
+    not the grep.
   - **disclosure closed-box** — the closed-box trio (52px / `0 14px` /
     open divider).
   - **dialog** — native `<dialog>` vs hand-rolled overlay.
@@ -235,6 +242,11 @@ The five sections it returns, and what each means:
   - **row-height-scale** — fixed `height`/`min-height` literals on
     row/action-rail selectors outside the spec's `rows` 3-step scale
     (44px/52px/60px by default, spec-driven) WARN (#284/app-launcher#365).
+    Row **containers** only — the rule is about the repeating box, so the
+    rightmost compound has to be the row itself (`.trow`, `.link-row`,
+    `.rows`, `.action-rail`). A part *inside* a row (`.trow-status`,
+    `.trow-check`) carries its own size and is not a finding (#843). A
+    truncated stray list says how many values it left out.
   - **editor-modal contract** — design.md `modal` component (#307),
     applied to every `<dialog>` that contains a real editable field
     (`input`/`select`/`textarea`); a `<form>` wrapper is **not** required

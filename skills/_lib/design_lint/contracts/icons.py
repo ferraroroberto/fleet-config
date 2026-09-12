@@ -14,6 +14,7 @@ from typing import Dict, List
 from ..css import _BLOCK_RE, strip_comments
 from ..files import read_text, rel, repo_files
 from ..markup import find_emoji_sites
+from ..selectors import selector_group
 from ._ctx import _ContractsCtx, _result
 
 
@@ -28,7 +29,10 @@ def _check_icon_sizes(ctx: _ContractsCtx) -> List[dict]:
         return [_result("icon-sizes", "NA", "spec defines no icons.size steps")]
     strays: Dict[str, int] = {}
     for bm in _BLOCK_RE.finditer(css_all):
-        selector = bm.group(1)
+        # `selector_group`, never raw group(1): that string also carries the
+        # `/*FILE ...*/` delimiter, so a stylesheet under `_vendored/icons/`
+        # would make its first rule an "icon" rule (fleet-config#843).
+        selector = selector_group(bm.group(1))
         if "icon" not in selector:
             continue
         # `.header-icon-btn { width: 40px }` is a BUTTON box, not a glyph —
@@ -39,9 +43,13 @@ def _check_icon_sizes(ctx: _ContractsCtx) -> List[dict]:
             if dm.group(1) not in allowed:
                 strays[dm.group(1)] = strays.get(dm.group(1), 0) + 1
     if strays:
-        top = ", ".join(f"{k}x{v}" for k, v in sorted(strays.items(), key=lambda kv: -kv[1])[:8])
+        ranked = sorted(strays.items(), key=lambda kv: -kv[1])
+        top = ", ".join(f"{k}x{v}" for k, v in ranked[:8])
+        more = (f" (showing 8 of {len(ranked)} distinct values)"
+                if len(ranked) > 8 else "")
         return [_result("icon-sizes", "WARN",
-                         f"icon px sizes outside the icons.size steps ({', '.join(sorted(allowed))}): {top}")]
+                         f"icon px sizes outside the icons.size steps "
+                         f"({', '.join(sorted(allowed))}): {top}{more}")]
     return [_result("icon-sizes", "PASS", "all fixed icon sizes on the icons.size steps")]
 
 

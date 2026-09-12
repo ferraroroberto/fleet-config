@@ -714,6 +714,168 @@ check(rh_spec["row-height-scale"]["status"] == "PASS",
       "spec-driven rows.* override the hardcoded default scale")
 
 
+# ---- row-height-scale false positives (fleet-config#843) ----
+# Verbatim from task-os `1e5723d`, the CSS that produced 9 hits of which 2
+# were real: `.trow` is the row, `.trow-*` are the parts inside it.
+TROW_CSS = """
+.trow-status { height: 30px; }
+.trow-prio::before { height: 6px; }
+.trow-meta { min-height: 24px; }
+.trow-check { height: 20px; }
+.trow-meta .trow-folder,
+.trow-meta .trow-ai { height: 18px; }
+.c-status .trow-status { height: 30px; }
+.link-row { min-height: 34px; }
+.blocker-row { min-height: 34px; }
+"""
+rh_parts = run_contracts(TROW_CSS)
+check(rh_parts["row-height-scale"]["status"] == "WARN",
+      "task-os fixture still WARNs on the two genuine row strays")
+check(rh_parts["row-height-scale"]["detail"].endswith("scale: 34pxx2"),
+      "only the 2 real hits survive — .link-row + .blocker-row at 34px (#843)")
+for part in ("30px", "6px", "24px", "20px", "18px"):
+    check(part not in rh_parts["row-height-scale"]["detail"],
+          f"a part inside a row ({part}) is not a row-height finding (#843)")
+
+check(run_contracts(".trow-status { height: 30px; }")["row-height-scale"]["status"] == "NA",
+      "`.trow-status` alone is no row rule at all, not a PASS-by-luck")
+check(run_contracts(".trow { height: 30px; }")["row-height-scale"]["status"] == "WARN",
+      "`.trow` IS the row container — a prefixed block name still counts")
+check(run_contracts(".trows > .trow:first-child { height: 30px; }"
+                    )["row-height-scale"]["status"] == "WARN",
+      "pseudo-classes and a descendant scope don't hide the row target")
+check(run_contracts(".row--stack { height: 30px; }")["row-height-scale"]["status"] == "WARN",
+      "a BEM modifier of a row is still a row")
+check(run_contracts(".dropdown-arrow { height: 30px; }")["row-height-scale"]["status"] == "NA",
+      "`.arrow` merely ends in those three letters")
+check(run_contracts(".task-row .check { height: 30px; }")["row-height-scale"]["status"] == "NA",
+      "a row-scoped part is the part's size, not the row's")
+
+# the WARN says so when it truncates (#843)
+rh_many = run_contracts("".join(f".r{i}-row {{ height: {30 + i}px; }}" for i in range(9)))
+check("showing 8 of 9 distinct values" in rh_many["row-height-scale"]["detail"],
+      "a truncated stray list says how many it left out (#843)")
+rh_few = run_contracts(".list-row { height: 47px; }")
+check("showing" not in rh_few["row-height-scale"]["detail"],
+      "an untruncated list says nothing about truncation")
+
+
+# ---- the /*FILE ...*/ delimiter is not part of the selector (#843) ----
+# `_BLOCK_RE` group 1 runs from the previous `}`, so it also carries the
+# marker `contracts()` injects — a *path* with "row" or "icon" in it must not
+# make that file's first rule a row or an icon rule.
+_fm = Path(tempfile.mkdtemp(prefix="dl-marker-"))
+try:
+    for name in ("_vendored/row/row.css", "_vendored/icons/icons.css"):
+        path = _fm / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(".panel { height: 30px; width: 30px; }", encoding="utf-8")
+    marker = {c["id"]: c for c in dl.contracts(
+        _fm, sorted(_fm.rglob("*.css")), [], [],
+        {"icons.size.inline": "16px"})}
+    check(marker["row-height-scale"]["status"] == "NA",
+          "a stylesheet under _vendored/row/ is no row rule (#843)")
+    check(marker["icon-sizes"]["status"] == "PASS",
+          "a stylesheet under _vendored/icons/ is no icon rule (#843)")
+finally:
+    shutil.rmtree(_fm, ignore_errors=True)
+
+
+# ---- no-native-checkbox (design.md Base UI mapping, fleet-config#843) ----
+# design.md maps Checkbox -> shadcn `checkbox`, which IS a real
+# <input type=checkbox> skinned with `appearance: none`. Fixtures verbatim
+# from task-os `1e5723d`: app.js:1267 is a selector *string* (the old false
+# positive), and the three real controls are built in JS (the old misses).
+CB_SELECTOR_STRING_JS = """
+document.addEventListener('keydown', (ev) => {
+  if (ev.target.closest('textarea, select, input:not([type="checkbox"])')) return;
+});
+"""
+CB_BUILT_JS = """
+const cb = document.createElement('input');
+cb.type = 'checkbox';
+cb.className = 'check';
+const box = document.createElement('input');
+box.type = 'checkbox';
+const third = { type: 'checkbox' };
+"""
+CB_SKIN_CSS = ".check { appearance: none; -webkit-appearance: none; width: 16px; }"
+
+cb_str = run_contracts(GOOD_CSS, js=CB_SELECTOR_STRING_JS)
+check(cb_str["no-native-checkbox"]["status"] == "PASS"
+      and cb_str["no-native-checkbox"]["detail"] == "no checkbox controls",
+      "an attribute selector inside a JS string is not a control (#843)")
+
+cb_ok = run_contracts(GOOD_CSS + CB_SKIN_CSS, js=CB_BUILT_JS)
+check(cb_ok["no-native-checkbox"]["status"] == "PASS", "a skinned checkbox PASSes (#843)")
+check("3 checkbox control(s)" in cb_ok["no-native-checkbox"]["detail"],
+      "JS-built controls are counted — the three the old rule never saw (#843)")
+check("`.check`" in cb_ok["no-native-checkbox"]["detail"],
+      "the PASS names the skin rule it found")
+
+cb_raw = run_contracts(GOOD_CSS, js=CB_BUILT_JS)
+check(cb_raw["no-native-checkbox"]["status"] == "FAIL",
+      "no `appearance: none` anywhere -> the browser tick ships -> FAIL")
+
+# voice-transcriber's real shape: the control's class is resolvable and
+# nothing targeting it is skinned, so the FAIL is provable and names it.
+CB_UNSKINNED_JS = """
+const checkbox = document.createElement('input');
+checkbox.type = 'checkbox';
+checkbox.className = 'select-checkbox';
+"""
+cb_named = run_contracts(GOOD_CSS + ".select-native { appearance: none; }",
+                         js=CB_UNSKINNED_JS)
+check(cb_named["no-native-checkbox"]["status"] == "FAIL",
+      "an `appearance: none` on some *other* control is not the checkbox's skin")
+check(".select-checkbox" in cb_named["no-native-checkbox"]["detail"],
+      "the FAIL names the class that should have carried the skin")
+
+# only the control's own receiver counts — a sibling's class must not make a
+# stray `appearance: none` look like the checkbox's skin
+CB_SIBLING_JS = """
+const label = document.createElement('label');
+label.className = 'filter-select';
+const cb = document.createElement('input');
+cb.type = 'checkbox';
+cb.className = 'select-checkbox';
+"""
+cb_sibling = run_contracts(GOOD_CSS + ".filter-select { appearance: none; }",
+                           js=CB_SIBLING_JS)
+check(cb_sibling["no-native-checkbox"]["status"] == "FAIL",
+      "a neighbouring element's skin is not the checkbox's skin")
+
+# class unresolvable + a skin somewhere -> the honest "couldn't establish"
+cb_opaque = run_contracts(GOOD_CSS + ".filter-select { appearance: none; }",
+                          js="const o = { type: 'checkbox' };")
+check(cb_opaque["no-native-checkbox"]["status"] == "WARN",
+      "an unattributable skin is WARN, never a silent PASS")
+check("cannot establish" in cb_opaque["no-native-checkbox"]["detail"],
+      "the WARN says what it failed to establish")
+
+# an HTML control reads its class off its own tag
+cb_html = run_contracts(GOOD_CSS + ".tick { appearance: none; }",
+                        '<input class="tick" type="checkbox"><dialog></dialog>')
+check(cb_html["no-native-checkbox"]["status"] == "PASS",
+      "an HTML checkbox skinned under its own class PASSes")
+
+# a bundled third-party library's own control is not the app's design choice
+# (the same `vendor/` exclusion find_emoji_sites applies, #416/#843)
+_cbv = Path(tempfile.mkdtemp(prefix="dl-cbv-"))
+try:
+    (_cbv / "s.css").write_text(GOOD_CSS, encoding="utf-8")
+    lib = _cbv / "static/vendor/leaflet"
+    lib.mkdir(parents=True)
+    (lib / "leaflet.js").write_text(CB_BUILT_JS, encoding="utf-8")
+    out = {c["id"]: c for c in dl.contracts(
+        _cbv, [_cbv / "s.css"], [], [lib / "leaflet.js"], {"icons.size.inline": "16px"})}
+    check(out["no-native-checkbox"]["status"] == "PASS"
+          and out["no-native-checkbox"]["detail"] == "no checkbox controls",
+          "a checkbox inside a vendor/ bundle is not the app's checkbox (#843)")
+finally:
+    shutil.rmtree(_cbv, ignore_errors=True)
+
+
 # ---- editor-modal contract (design.md `modal` component, fleet-config#307) ----
 # Fixtures mirror the real app-launcher#70 before/after (job-editor dialog):
 # pre-fix `.stacked` styled only under `.settings-card`, a raw unstyled
