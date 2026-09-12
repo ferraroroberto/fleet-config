@@ -19,7 +19,7 @@ from unittest.mock import Mock, patch
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "skills" / "_lib"))
 import scheduled_runner as runner
-from runner_adapters import ClaudeAdapter, CodexAdapter
+from runner_adapters import ClaudeAdapter, CodexAdapter, describe_record
 import process_scope
 
 
@@ -40,6 +40,11 @@ class ScheduledRunnerTests(unittest.TestCase):
                             (ROOT / "tests" / "fixtures" / f"scheduled_{name}.jsonl").read_text(encoding="utf-8").splitlines()]
             for name, adapter in zip(("claude", "codex"), self.adapters)
         }
+        self.background_tasks = [
+            json.loads(line) for line in
+            (ROOT / "tests" / "fixtures" / "scheduled_claude_background_tasks.jsonl")
+            .read_text(encoding="utf-8").splitlines() if line.strip()
+        ]
 
     def test_native_fixture_progress_completion_and_redaction(self):
         for adapter in self.adapters:
@@ -59,6 +64,77 @@ class ScheduledRunnerTests(unittest.TestCase):
                     self.assertEqual(code, runner.TRUNCATED_STREAM_EXIT_CODE, text)
                     self.assertFalse(formatter.retryable_transient_failure)
                     self.assertNotIn("✅ completed", text)
+
+    # ---- the parser's knowledge, not the verdict policy (fleet-config#841) ----
+    #
+    # On 2026-09-11 every Claude-driven scheduled job on this host ended
+    # `❓ not confirmed · exit 122` while demonstrably doing its work —
+    # config-map committed a4758b7 and posted to Telegram, learning-log posted
+    # its digest. Each ended `0 malformed and N unknown`: the stream was
+    # intact, the parser had simply fallen behind it. `--output-format
+    # stream-json` had begun emitting the background-task store
+    # (`background_tasks_changed`) and a task status patch (`task_updated`)
+    # alongside the lifecycle records, and because this runner sets
+    # `CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS=0`, every slow shell command becomes
+    # a background task — three unknown records apiece. "Not confirmed" fired on
+    # every run and so stopped distinguishing a truncated run from a healthy
+    # one, which is the exact failure the state exists to prevent.
+    #
+    # The fixture is sanitized from a real 2.1.269 capture and covers both task
+    # types observed (`local_bash`, `local_agent`).
+
+    def test_backgrounded_task_stream_is_recognised_end_to_end(self):
+        code, formatter, text = fake_run(self.background_tasks, ClaudeAdapter())
+        self.assertEqual(code, 0, text)
+        self.assertIn("✅ completed · exit 0", text)
+        self.assertEqual(formatter._unknown, 0, text)
+        self.assertEqual(formatter._malformed, 0, text)
+        self.assertNotIn("unknown stream record", text)
+        # The lifecycle is still read from `task_notification` alone: two
+        # children started, two ended, neither counted twice by the patch.
+        self.assertFalse(formatter.unfinished_work, text)
+        self.assertEqual(formatter._child_failures, 0, text)
+        self.assertEqual(text.count("✓ task completed"), 2, text)
+
+    def test_truncated_background_task_stream_is_still_unconfirmed(self):
+        """Teaching the parser must not teach it to forgive a cut-off stream."""
+        code, _, text = fake_run(self.background_tasks[:-1], ClaudeAdapter())
+        self.assertEqual(code, runner.TRUNCATED_STREAM_EXIT_CODE, text)
+        self.assertIn("not confirmed", text)
+        self.assertNotIn("✅ completed", text)
+
+    def test_unknown_records_name_the_shape_they_were(self):
+        """A bare count is what made #841 invisible; the log must say what drifted."""
+        good = self.fixtures["Claude Code"]
+        drifted = [
+            {"type": "system", "subtype": "some_future_subtype"},
+            {"type": "system", "subtype": "some_future_subtype"},
+            {"type": "future_top_level"},
+            {"type": "assistant", "message": {"content": [{"type": "future_block"}]}},
+        ]
+        code, formatter, text = fake_run([*good[:-1], *drifted, good[-1]], ClaudeAdapter())
+        self.assertEqual(code, runner.TRUNCATED_STREAM_EXIT_CODE, text)
+        self.assertIn("4 unknown stream record(s)", text)
+        self.assertIn("system/some_future_subtype ×2", text)
+        self.assertIn("future_top_level ×1", text)
+        self.assertIn("assistant/block=future_block ×1", text)
+        # Shape only, and nothing else off the record: a descriptor that ever
+        # carried a payload would paste prompts or paths into the job log.
+        self.assertEqual(
+            set(formatter.unknown_summary().split(", ")),
+            {"system/some_future_subtype ×2", "future_top_level ×1",
+             "assistant/block=future_block ×1"},
+        )
+        formatter.reset_for_retry()
+        self.assertEqual(formatter.unknown_summary(), "")
+
+    def test_unknown_descriptors_are_sanitized_and_capped(self):
+        self.assertEqual(describe_record("system", "a b\nc"), "system/a?b?c")
+        self.assertEqual(describe_record("system", None, ""), "system")
+        self.assertEqual(describe_record(None), "unlabelled")
+        self.assertEqual(len(describe_record("x" * 200)), 40)
+        # Capped as a whole too, so no number of parts widens one log line.
+        self.assertEqual(len(describe_record(*["x" * 50] * 5)), 80)
 
     def test_completed_prose_without_tools_is_no_work(self):
         for adapter in self.adapters:

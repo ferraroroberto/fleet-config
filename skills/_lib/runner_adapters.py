@@ -2,6 +2,9 @@
 
 Adapters emit evidence, never schedule, retry, run checks, or decide success.
 Unknown records deliberately remain unknown even after a terminal event.
+
+An unknown record names what it was, so the next schema drift is diagnosable
+from the run log instead of being a bare count (fleet-config#841).
 """
 from __future__ import annotations
 
@@ -18,6 +21,8 @@ class ProgressEvent:
 
     kind: str
     id: str = ""
+    # Tool/child name on a lifecycle event; on an "unknown" event, the
+    # `describe_record` shape descriptor of the record that was not recognised.
     name: str = ""
     text: str = ""
     failed: bool = False
@@ -39,6 +44,26 @@ class ProgressEvent:
     role: str = "assistant"
 
 
+_DESCRIPTOR_UNSAFE = re.compile(r"[^A-Za-z0-9_.:=-]")
+DESCRIPTOR_PART_LIMIT = 40
+DESCRIPTOR_LIMIT = 80
+
+
+def describe_record(*parts: object) -> str:
+    """Name an unrecognised record by shape alone -- never by its payload.
+
+    Only the discriminator fields a schema owns (`type`, `subtype`, a content
+    block's own `type`) are ever passed in; anything else on the record can
+    carry a prompt, a path or a secret. Sanitized and length-capped on top of
+    that, because this string reaches the run log, which is read by people and
+    scraped by the Board. The cap is applied to each part *and* to the joined
+    result, so no number of parts can widen one log line without bound.
+    """
+    cleaned = [_DESCRIPTOR_UNSAFE.sub("?", str(part))[:DESCRIPTOR_PART_LIMIT]
+               for part in parts if part not in (None, "")]
+    return ("/".join(cleaned) or "unlabelled")[:DESCRIPTOR_LIMIT]
+
+
 def error_category(text: str) -> str:
     """Classify concrete provider failures without treating prose as success."""
     if re.search(r"(?i)(?:\b401\b|authentication failed|invalid.{0,10}(?:api key|token)|not logged in|login required|please (?:log|sign) in|requires.{0,20}authentication)", text):
@@ -48,6 +73,40 @@ def error_category(text: str) -> str:
     if re.search(r"(?i)(?:required.{0,30}(?:tool|mcp).{0,80}(?:missing|unavailable|failed)|(?:tool|mcp server).{0,50}(?:not found|not available|unavailable))", text):
         return "tools"
     return ""
+
+
+# `system` records Claude Code emits as ambient state rather than as a progress
+# boundary. Kept as an explicit allowlist -- anything absent from it stays
+# unknown, which is the whole point: the parser must go red on a schema it has
+# not been taught, not quietly wave it through.
+#
+# Pinned against Claude Code **2.1.269** (captured 2026-09-12). The last two
+# entries are the fleet-config#841 fix: `--output-format stream-json` began
+# emitting the background-task *store* alongside the task lifecycle, so every
+# backgrounded tool call produced three records the parser had never seen. With
+# `CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS=0` -- which this runner sets, so every
+# slow shell command becomes a background task -- that made `unverified_stream`
+# true on literally every scheduled run, and exit 122 stopped carrying
+# information. Neither record is evidence of anything:
+#   * `background_tasks_changed` is a full snapshot of the in-flight set
+#     (`{"tasks": [...]}`), re-sent on every change and empty once drained.
+#   * `task_updated` is a UI patch (`{"patch": {"status": ..., "end_time": ...}}`)
+#     that arrives immediately *before* the `task_notification` for the same
+#     `task_id`. `task_notification` stays the one authoritative terminal
+#     boundary -- observed for both `local_bash` and `local_agent` tasks -- so
+#     consuming the patch too would double-count every child. A task that ever
+#     did end on the patch alone would leave its child open, which `finish()`
+#     already reports as unfinished work (118) rather than as success.
+KNOWN_IGNORED_SYSTEM_SUBTYPES = frozenset({
+    "thinking_tokens",
+    "status",
+    "compact_boundary",
+    "hook_started",
+    "hook_response",
+    "hook_progress",
+    "background_tasks_changed",
+    "task_updated",
+})
 
 
 class ClaudeAdapter:
@@ -78,7 +137,7 @@ class ClaudeAdapter:
             subtype = event.get("subtype")
             if subtype == "init":
                 return [ProgressEvent("start", text=f"{event.get('claude_code_version', 'unknown version')} · {event.get('model', 'unknown model')}")]
-            if subtype in {"thinking_tokens", "status", "compact_boundary", "hook_started", "hook_response", "hook_progress"}:
+            if subtype in KNOWN_IGNORED_SYSTEM_SUBTYPES:
                 return []
             if subtype in {"task_started", "task_progress", "task_notification"}:
                 task_id = event.get("task_id")
@@ -87,7 +146,7 @@ class ClaudeAdapter:
                 mapped = {"task_started": "child_start", "task_progress": "child_progress", "task_notification": "child_end"}[subtype]
                 status = event.get("status")
                 if subtype == "task_notification" and status not in {"completed", "failed", "stopped"}:
-                    return [ProgressEvent("unknown")]
+                    return [ProgressEvent("unknown", name=describe_record(kind, subtype, status))]
                 # `stopped` is what `TaskStop` reports, and the run that exposed
                 # this used it exactly as intended: a background disk scan
                 # pointed at the wrong volume, cancelled the moment the agent
@@ -105,7 +164,7 @@ class ClaudeAdapter:
                 return [ProgressEvent("malformed")]
             success = subtype == "success" and is_error is False
             if not success and not (is_error or subtype.startswith("error")):
-                return [ProgressEvent("unknown")]
+                return [ProgressEvent("unknown", name=describe_record(kind, subtype))]
             return [ProgressEvent("result", failed=not success, text=str(event.get("result") or "\n".join(event.get("errors") or [])))]
         elif kind in {"assistant", "user"}:
             message = event.get("message")
@@ -139,9 +198,9 @@ class ClaudeAdapter:
                     else:
                         result.append(ProgressEvent("tool_end", id=tool_id, failed=block.get("is_error") is True))
                 else:
-                    result.append(ProgressEvent("unknown"))
+                    result.append(ProgressEvent("unknown", name=describe_record(kind, f"block={block_type}")))
             return result
-        return [ProgressEvent("unknown")]
+        return [ProgressEvent("unknown", name=describe_record(kind, event.get("subtype")))]
 
 
 class CodexAdapter:
@@ -223,7 +282,7 @@ class CodexAdapter:
                 return [ProgressEvent("malformed")]
             return [ProgressEvent("result" if kind == "turn.failed" else "error", text=text, failed=True)]
         if kind not in {"item.started", "item.updated", "item.completed"}:
-            return [ProgressEvent("unknown")]
+            return [ProgressEvent("unknown", name=describe_record(kind))]
         item = event.get("item")
         if not isinstance(item, dict) or not isinstance(item.get("id"), str):
             return [ProgressEvent("malformed")]
@@ -240,9 +299,9 @@ class CodexAdapter:
             if kind == "item.started":
                 return [ProgressEvent("tool_start", id=item["id"], name=item_type)]
             if item.get("status") not in {"completed", "failed"}:
-                return [ProgressEvent("unknown")]
+                return [ProgressEvent("unknown", name=describe_record(kind, item_type, item.get("status")))]
             return [ProgressEvent("tool_end", id=item["id"], name=item_type,
                                   failed=item.get("status") == "failed" or item.get("exit_code", 0) not in {0, None})]
         # Native delegated-child completion is a separate unproven surface.
         # A new collaboration item must never disappear into a green turn.
-        return [ProgressEvent("unknown")]
+        return [ProgressEvent("unknown", name=describe_record(kind, item_type))]
