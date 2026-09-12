@@ -1,4 +1,5 @@
-"""Worktree runtime-config provisioning: ports + machine-bound value blanking.
+"""Worktree runtime-config provisioning: ports, machine-bound value blanking,
+and removal of repo-declared secret keys.
 
 Split out of `worktree_claim.py` (fleet-config#731) -- port allocation and
 config blanking share no state with the claim FSM, junction teardown, or the
@@ -34,6 +35,22 @@ nothing falls back to a conservative built-in default (`_blank_default_heuristic
 any string value, anywhere in the config, that looks machine-bound -- an
 `{onedrive}`-style placeholder, or an absolute Windows path -- is blanked,
 list entries filtered the same way.
+
+"Byte-verbatim apart from the rewrites" is therefore no longer the whole
+contract (fleet-config#839): a repo can also declare keys whose values must
+never be reproduced in a worktree copy at all -- a live credential, a secrets
+sub-table:
+
+    [worktree]
+    secret_config_keys = ["auth.token", "credentials"]
+
+`worktree_secret_config_keys` reads it; `remove_secret_config` deletes each
+declared dotted key outright (any value type) ahead of the blanking pass. It is
+additive, not a mode: it never switches off the default heuristic the way
+declaring `blank_config_keys` does, and composes with an explicit
+`blank_config_keys` just the same. Undeclared, it removes nothing, so every
+other repo's copy is unchanged. Scope is the JSON configs these copy
+functions rewrite; `.env` is still copied verbatim.
 
 Carrying the primary's port across into a copied config is what made every
 worktree lane's e2e suite report a collision with the user's live tray and
@@ -114,6 +131,16 @@ def worktree_port(issue: str, taken: "set" = frozenset()) -> int:
     )
 
 
+def _load_json_object(dst: Path) -> Optional[dict]:
+    """`dst` parsed as a JSON object, or `None` if it isn't one or doesn't
+    parse -- the fail-open read every post-copy rewrite shares."""
+    try:
+        raw = json.loads(dst.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    return raw if isinstance(raw, dict) else None
+
+
 def _repoint_config_port(dst: Path, wt: Path, taken: "set") -> Optional[int]:
     """Give a copied config its own port instead of the primary's. Returns it.
 
@@ -127,11 +154,8 @@ def _repoint_config_port(dst: Path, wt: Path, taken: "set") -> Optional[int]:
     seeding `worktree_port` is read from `wt.name` directly — correct whether
     `dst` sits under `config/` or right at the worktree root (fleet-config#714).
     """
-    try:
-        raw = json.loads(dst.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return None
-    port_value = raw.get("port") if isinstance(raw, dict) else None
+    raw = _load_json_object(dst)
+    port_value = raw.get("port") if raw is not None else None
     # `bool` is an `int` subclass — exclude it explicitly, a `true` is not a port.
     if not isinstance(port_value, int) or isinstance(port_value, bool):
         return None
@@ -165,24 +189,35 @@ def _looks_machine_bound(value: str) -> bool:
     return bool(_WIN_ABS_PATH_RE.match(value))
 
 
+def _resolve_dotted_key(raw: dict, dotted: str) -> Optional[tuple]:
+    """`(parent_dict, last_key)` for a dotted key present in `raw`, else `None`.
+
+    A declared-but-absent key (or an intermediate that isn't an object) must
+    not break setup -- same contract as `worktree_junction_targets`'s
+    declared-but-absent path.
+    """
+    parts = [p for p in dotted.split(".") if p]
+    if not parts:
+        return None
+    node = raw
+    for part in parts[:-1]:
+        if not (isinstance(node, dict) and part in node):
+            return None
+        node = node[part]
+    if not isinstance(node, dict) or parts[-1] not in node:
+        return None
+    return node, parts[-1]
+
+
 def _blank_declared_keys(raw: dict, keys: list) -> list:
     """Blank exactly the dotted keys a repo declared, skipping any that are
-    absent -- a declared-but-absent key must not break setup, same contract
-    as `worktree_junction_targets`'s declared-but-absent path."""
+    absent (see `_resolve_dotted_key`)."""
     blanked = []
     for dotted in keys:
-        parts = [p for p in dotted.split(".") if p]
-        if not parts:
+        found = _resolve_dotted_key(raw, dotted)
+        if found is None:
             continue
-        node = raw
-        for part in parts[:-1]:
-            if not (isinstance(node, dict) and part in node):
-                node = None
-                break
-            node = node[part]
-        if not isinstance(node, dict) or parts[-1] not in node:
-            continue
-        last = parts[-1]
+        node, last = found
         value = node[last]
         if isinstance(value, str) and value:
             node[last] = ""
@@ -226,6 +261,31 @@ def _blank_default_heuristic(node, prefix: str = "") -> list:
     return blanked
 
 
+def _worktree_key_list(repo: Path, key: str) -> Optional[list]:
+    """A `[worktree] <key>` string list from a repo's `.fleet.toml`.
+
+    `None` when nothing usable is declared (no `.fleet.toml`, no `[worktree]`
+    table, no such key, a non-list value, or an unparseable file); otherwise
+    the stripped non-empty strings, possibly `[]`. Same
+    silent-degrade-on-any-error contract as `worktree_junction_targets`.
+    """
+    fleet_toml = repo / ".fleet.toml"
+    if not fleet_toml.is_file():
+        return None
+    import tomllib
+    try:
+        data = tomllib.loads(fleet_toml.read_text(encoding="utf-8", errors="replace"))
+    except (OSError, tomllib.TOMLDecodeError):
+        return None
+    table = data.get("worktree")
+    if not isinstance(table, dict) or key not in table:
+        return None
+    keys = table.get(key)
+    if not isinstance(keys, list):
+        return None
+    return [k.strip() for k in keys if isinstance(k, str) and k.strip()]
+
+
 def worktree_blank_config_keys(repo: Path) -> Optional[list]:
     """Dotted config keys a repo declares as machine-bound, from `.fleet.toml`:
 
@@ -237,23 +297,21 @@ def worktree_blank_config_keys(repo: Path) -> Optional[list]:
     the caller's signal to fall back to the conservative default heuristic.
     Returns a (possibly empty) list when the repo explicitly declares one; an
     empty list is a deliberate opt-out of the default heuristic entirely.
-    Same silent-degrade-on-any-error contract as `worktree_junction_targets`.
     """
-    fleet_toml = repo / ".fleet.toml"
-    if not fleet_toml.is_file():
-        return None
-    import tomllib
-    try:
-        data = tomllib.loads(fleet_toml.read_text(encoding="utf-8", errors="replace"))
-    except (OSError, tomllib.TOMLDecodeError):
-        return None
-    table = data.get("worktree")
-    if not isinstance(table, dict) or "blank_config_keys" not in table:
-        return None
-    keys = table.get("blank_config_keys")
-    if not isinstance(keys, list):
-        return None
-    return [k.strip() for k in keys if isinstance(k, str) and k.strip()]
+    return _worktree_key_list(repo, "blank_config_keys")
+
+
+def worktree_secret_config_keys(repo: Path) -> list:
+    """Dotted config keys a repo declares must never reach a worktree copy:
+
+        [worktree]
+        secret_config_keys = ["auth.token", "credentials"]
+
+    Additive and opt-in (fleet-config#839): unlike `blank_config_keys` this
+    never selects a blanking mode, so undeclared, malformed and empty all mean
+    the same thing -- remove nothing -- and the result is always a list.
+    """
+    return _worktree_key_list(repo, "secret_config_keys") or []
 
 
 def blank_machine_bound_config(dst: Path, declared_keys: Optional[list]) -> list:
@@ -266,11 +324,8 @@ def blank_machine_bound_config(dst: Path, declared_keys: Optional[list]) -> list
     parse, is left untouched rather than breaking setup. Returns the dotted
     keys actually blanked, for the caller to report.
     """
-    try:
-        raw = json.loads(dst.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return []
-    if not isinstance(raw, dict):
+    raw = _load_json_object(dst)
+    if raw is None:
         return []
     if declared_keys is not None:
         blanked = _blank_declared_keys(raw, declared_keys)
@@ -279,6 +334,57 @@ def blank_machine_bound_config(dst: Path, declared_keys: Optional[list]) -> list
     if blanked:
         dst.write_text(json.dumps(raw, indent=2) + "\n", encoding="utf-8")
     return blanked
+
+
+def remove_secret_config(dst: Path, secret_keys: list) -> list:
+    """Delete repo-declared secret keys from a just-copied worktree config.
+
+    `secret_keys` is `worktree_secret_config_keys(repo)`'s result. Each dotted
+    key present is removed outright, whatever its value -- a scalar, a list,
+    or a whole sub-table (`"credentials"` drops the object, `"auth.token"`
+    one leaf). Removed rather than blanked, so no value of the declared key --
+    not even an empty placeholder of its type -- is reproduced in the copy,
+    and one rule covers every value shape. Runs independently of
+    `blank_machine_bound_config`, so it composes with either blanking mode.
+    Same fail-open contract; absent keys are skipped. Returns the dotted keys
+    actually removed.
+    """
+    if not secret_keys:
+        return []
+    raw = _load_json_object(dst)
+    if raw is None:
+        return []
+    removed = []
+    for dotted in secret_keys:
+        found = _resolve_dotted_key(raw, dotted)
+        if found is None:
+            continue
+        node, last = found
+        del node[last]
+        removed.append(dotted)
+    if removed:
+        dst.write_text(json.dumps(raw, indent=2) + "\n", encoding="utf-8")
+    return removed
+
+
+def _provision_copied_config(dst: Path, wt: Path, assigned: "set",
+                             declared_keys: Optional[list], secret_keys: list) -> None:
+    """The post-copy rewrites every copied config gets, in order: port
+    repoint, secret-key removal, machine-bound blanking (removal first, so a
+    declared secret is never also reported as blanked) -- each reported on
+    stderr by count and dotted key name, never by value."""
+    port = _repoint_config_port(dst, wt, assigned)
+    if port is not None:
+        assigned.add(port)
+        print(f"WORKTREE_PORT={port} ({dst.name})", file=sys.stderr)
+    removed = remove_secret_config(dst, secret_keys)
+    if removed:
+        print(f"WORKTREE_CONFIG_SECRETS_REMOVED={len(removed)}: "
+              f"{', '.join(removed)} ({dst.name})", file=sys.stderr)
+    blanked = blank_machine_bound_config(dst, declared_keys)
+    if blanked:
+        print(f"WORKTREE_CONFIG_BLANKED={len(blanked)}: "
+              f"{', '.join(blanked)} ({dst.name})", file=sys.stderr)
 
 
 def copy_runtime_config(repo: Path, wt: Path, assigned: Optional["set"] = None) -> list:
@@ -302,10 +408,12 @@ def copy_runtime_config(repo: Path, wt: Path, assigned: Optional["set"] = None) 
     live tray and refuse to run — a false positive, since the suite boots its
     own disposable instance on a free port and never touches the tray's. It
     also left a worktree that actually boots the app trying to bind the
-    primary's port. Secrets (`auth_token`, `auth_password`) and every other
-    field still copy across untouched: the worktree must stay a faithful
-    runtime twin, differing only where sharing (a live port, a real synced
-    folder) is itself the bug.
+    primary's port. Every other field -- secrets included, unless the repo
+    declares them in `[worktree] secret_config_keys`, which are removed
+    (fleet-config#839, see `remove_secret_config`) -- copies across untouched:
+    the worktree must stay a faithful runtime twin, differing only where
+    sharing (a live port, a real synced folder, a declared secret) is itself
+    the bug.
 
     `assigned` collects ports handed out in this call; pass in a set shared
     with a sibling call (e.g. `copy_root_config` on the same worktree) so two
@@ -319,6 +427,7 @@ def copy_runtime_config(repo: Path, wt: Path, assigned: Optional["set"] = None) 
     dst_dir = wt / "config"
     assigned = set() if assigned is None else assigned
     declared_keys = worktree_blank_config_keys(repo)
+    secret_keys = worktree_secret_config_keys(repo)
     for src in sorted(src_dir.glob("*.json")):
         if src.name.endswith(".sample.json"):
             continue
@@ -328,14 +437,7 @@ def copy_runtime_config(repo: Path, wt: Path, assigned: Optional["set"] = None) 
         dst_dir.mkdir(exist_ok=True)
         shutil.copy2(src, dst)
         copied.append(dst)
-        port = _repoint_config_port(dst, wt, assigned)
-        if port is not None:
-            assigned.add(port)
-            print(f"WORKTREE_PORT={port} ({src.name})", file=sys.stderr)
-        blanked = blank_machine_bound_config(dst, declared_keys)
-        if blanked:
-            print(f"WORKTREE_CONFIG_BLANKED={len(blanked)}: "
-                  f"{', '.join(blanked)} ({src.name})", file=sys.stderr)
+        _provision_copied_config(dst, wt, assigned, declared_keys, secret_keys)
     return copied
 
 
@@ -389,8 +491,9 @@ def copy_root_config(repo: Path, wt: Path, assigned: Optional["set"] = None) -> 
     `*.sample.json` template is excluded up front as belt-and-braces, though
     a tracked file is never gitignored in the first place. Same rules as
     `copy_runtime_config`: an existing destination is left alone, a
-    top-level `port` is repointed via `_repoint_config_port`, and
-    machine-bound values are blanked via `blank_machine_bound_config`.
+    top-level `port` is repointed via `_repoint_config_port`,
+    machine-bound values are blanked via `blank_machine_bound_config`, and
+    declared secret keys are removed via `remove_secret_config`.
     Returns the list of copied destination paths.
 
     `assigned` collects ports handed out in this call; `setup_worktree`
@@ -404,6 +507,7 @@ def copy_root_config(repo: Path, wt: Path, assigned: Optional["set"] = None) -> 
         return copied
     assigned = set() if assigned is None else assigned
     declared_keys = worktree_blank_config_keys(repo)
+    secret_keys = worktree_secret_config_keys(repo)
     for name in sorted(ignored):
         src = repo / name
         dst = wt / name
@@ -411,12 +515,5 @@ def copy_root_config(repo: Path, wt: Path, assigned: Optional["set"] = None) -> 
             continue
         shutil.copy2(src, dst)
         copied.append(dst)
-        port = _repoint_config_port(dst, wt, assigned)
-        if port is not None:
-            assigned.add(port)
-            print(f"WORKTREE_PORT={port} ({name})", file=sys.stderr)
-        blanked = blank_machine_bound_config(dst, declared_keys)
-        if blanked:
-            print(f"WORKTREE_CONFIG_BLANKED={len(blanked)}: "
-                  f"{', '.join(blanked)} ({name})", file=sys.stderr)
+        _provision_copied_config(dst, wt, assigned, declared_keys, secret_keys)
     return copied

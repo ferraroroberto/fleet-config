@@ -927,6 +927,125 @@ finally:
     shutil.rmtree(blank_base, ignore_errors=True)
 
 
+# ---- copy_*_config removes repo-declared secret keys (#839) ------------------
+#
+# `[worktree] secret_config_keys` is additive and opt-in: declared keys are
+# removed outright (any value type) on top of whichever blanking mode is in
+# force -- it must never switch off the default heuristic the way declaring
+# `blank_config_keys` does -- and a repo declaring neither copies exactly as
+# before. Synthetic, obviously-fake values only.
+
+secret_base = Path(tempfile.mkdtemp(prefix="wc-secret-"))
+try:
+    fake_shape = {
+        "port": 8448,
+        "mirror": {"dir": "{onedrive}/fake/mirror"},
+        "search": {"email_db": "E:/fake/emails.db"},
+        "auth": {"token": "FAKE-TOKEN-0000", "user": "fake-user"},
+        "credentials": {"api_key": "FAKE-KEY-0000", "scopes": ["read"]},
+        "name": "fake",
+    }
+
+    def _secret_lane(name: str, toml: "str | None", root: bool = False) -> dict:
+        """Copy `fake_shape` from a fresh temp primary into its worktree and
+        return the worktree's parsed copy (config/ by default, or a
+        gitignored root-level config.json when `root`)."""
+        primary = secret_base / name
+        primary.mkdir()
+        if toml is not None:
+            (primary / ".fleet.toml").write_text(toml, encoding="utf-8")
+        wt = secret_base / (name + wc.WT_SEP + "839")
+        wt.mkdir()
+        if root:
+            # `check-ignore` needs a real repo but no commit, so no hook-bypass
+            # fixture (`_git_t`, further down) is required.
+            subprocess.run(["git", "init", "-q", str(primary)], check=True, capture_output=True)
+            (primary / ".gitignore").write_text("config.json\n", encoding="utf-8")
+            (primary / "config.json").write_text(_json.dumps(fake_shape), encoding="utf-8")
+            wc.copy_root_config(primary, wt)
+            return _json.loads((wt / "config.json").read_text(encoding="utf-8"))
+        (primary / "config").mkdir()
+        (primary / "config" / "config.json").write_text(_json.dumps(fake_shape), encoding="utf-8")
+        wc.copy_runtime_config(primary, wt)
+        return _json.loads((wt / "config" / "config.json").read_text(encoding="utf-8"))
+
+    def _without_port(d: dict) -> dict:
+        return {k: v for k, v in d.items() if k != "port"}
+
+    # -- neither key declared: byte-for-byte today's behaviour (heuristic only) --
+    today = {
+        "mirror": {"dir": ""},
+        "search": {"email_db": ""},
+        "auth": {"token": "FAKE-TOKEN-0000", "user": "fake-user"},
+        "credentials": {"api_key": "FAKE-KEY-0000", "scopes": ["read"]},
+        "name": "fake",
+    }
+    check(_without_port(_secret_lane("neither-no-toml", None)) == today,
+          "secret_config_keys: no .fleet.toml -> exactly today's copy, nothing removed (#839)")
+    check(_without_port(_secret_lane("neither-other-keys", '[worktree]\nextra_junctions = ["x"]\n')) == today,
+          "secret_config_keys: [worktree] without either key -> exactly today's copy (#839)")
+
+    # -- secret keys alone: removed, AND the default heuristic still runs --
+    got = _secret_lane("secret-only", '[worktree]\nsecret_config_keys = ["auth.token", "credentials"]\n')
+    check("token" not in got["auth"] and got["auth"] == {"user": "fake-user"},
+          "secret_config_keys: a declared scalar leaf is removed, its siblings kept (#839)")
+    check("credentials" not in got,
+          "secret_config_keys: a declared whole sub-table is removed outright (#839)")
+    check(got["mirror"] == {"dir": ""} and got["search"] == {"email_db": ""},
+          "secret_config_keys: declaring it does NOT switch off the default machine-bound heuristic (#839)")
+    check(isinstance(got["port"], int) and wc.WT_PORT_BASE <= got["port"] < wc.WT_PORT_BASE + wc.WT_PORT_SPAN,
+          "secret_config_keys: the port rewrite still applies alongside removal (#839)")
+
+    # -- composes with an explicit blank_config_keys --
+    got = _secret_lane("secret-and-blank",
+                       '[worktree]\nblank_config_keys = ["mirror.dir"]\nsecret_config_keys = ["auth"]\n')
+    check("auth" not in got and got["mirror"] == {"dir": ""},
+          "secret_config_keys: composes with blank_config_keys -- both applied (#839)")
+    check(got["search"] == {"email_db": "E:/fake/emails.db"},
+          "secret_config_keys: with blank_config_keys declared, blanking stays declared-only (#839)")
+
+    # -- root-level configs get the same removal --
+    got = _secret_lane("secret-root", '[worktree]\nsecret_config_keys = ["auth.token"]\n', root=True)
+    check("token" not in got["auth"] and got["mirror"] == {"dir": ""},
+          "copy_root_config: declared secret keys are removed from a root-level config too (#839)")
+
+    # -- declared-but-absent / non-object / unparseable never break setup --
+    absent = secret_base / "absent.json"
+    absent.write_text('{"name": "x"}', encoding="utf-8")
+    check(wc.remove_secret_config(absent, ["auth.token", "no.such"]) == []
+          and absent.read_text(encoding="utf-8") == '{"name": "x"}',
+          "remove_secret_config: declared-but-absent keys are a no-op, file untouched (#839)")
+    not_obj = secret_base / "list.json"
+    not_obj.write_text("[1, 2]", encoding="utf-8")
+    broken = secret_base / "broken.json"
+    broken.write_text("{not json", encoding="utf-8")
+    check(wc.remove_secret_config(not_obj, ["auth"]) == [] and wc.remove_secret_config(broken, ["auth"]) == []
+          and not_obj.read_text(encoding="utf-8") == "[1, 2]"
+          and broken.read_text(encoding="utf-8") == "{not json",
+          "remove_secret_config: a non-object or unparseable config is left untouched (#839)")
+
+    # -- worktree_secret_config_keys: always a list, degrade-to-[] on anything odd --
+    def _keys_for(name: str, toml: "str | None") -> list:
+        d = secret_base / ("keys-" + name)
+        d.mkdir()
+        if toml is not None:
+            (d / ".fleet.toml").write_text(toml, encoding="utf-8")
+        return wc.worktree_secret_config_keys(d)
+
+    check(_keys_for("none", None) == [], "worktree_secret_config_keys: no .fleet.toml -> [] (#839)")
+    check(_keys_for("no-key", '[worktree]\nblank_config_keys = ["a"]\n') == [],
+          "worktree_secret_config_keys: [worktree] without the key -> [] (#839)")
+    check(_keys_for("wrong-type", '[worktree]\nsecret_config_keys = "auth"\n') == [],
+          "worktree_secret_config_keys: non-list value -> [] (#839)")
+    check(_keys_for("invalid", "not [ valid toml") == [],
+          "worktree_secret_config_keys: unparseable .fleet.toml -> [], no crash (#839)")
+    check(_keys_for("declared", '[worktree]\nsecret_config_keys = [" auth.token ", "", 3, "credentials"]\n')
+          == ["auth.token", "credentials"],
+          "worktree_secret_config_keys: declared list returned stripped, non-strings and blanks dropped (#839)")
+finally:
+    shutil.rmtree(secret_base, ignore_errors=True)
+
+
 # ---- copy_env_file: the primary's .env mirrors into a fresh worktree (#698) ----
 #
 # A repo whose startup path reads a secret/setting from .env (e.g.

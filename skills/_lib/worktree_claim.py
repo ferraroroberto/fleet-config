@@ -97,7 +97,9 @@ Windows path -- is blanked, list entries filtered the same way. An empty
 string is what the app already treats as "feature off" (task-os's mirror does
 today); a repo whose own gate needs to keep a value opts out per key by
 declaring `blank_config_keys` explicitly (an empty list disables the default
-heuristic entirely).
+heuristic entirely). Independently of either mode, keys declared in
+`[worktree] secret_config_keys` are removed from the copy outright
+(fleet-config#839) -- see `worktree_config.py`'s docstring.
 
 The port-allocation and config-blanking machinery behind the three `copy_*`
 functions above lives in `worktree_config.py` (fleet-config#731), imported
@@ -142,7 +144,9 @@ Subcommands:
       config (excluding `*.sample.json` templates, which are already tracked)
       into the worktree, blanking machine-bound path values along the way
       (repo-declared `[worktree] blank_config_keys`, or a conservative
-      default heuristic -- fleet-config#713). Prints `WORKTREE=<path>`.
+      default heuristic -- fleet-config#713) and removing any repo-declared
+      `[worktree] secret_config_keys` on top (fleet-config#839). Prints
+      `WORKTREE=<path>`.
 
   release <repo-root>
       Remove the primary claim. Idempotent. (Worktree sessions never hold it.)
@@ -253,8 +257,10 @@ from worktree_config import (  # noqa: E402
     copy_env_file,
     copy_root_config,
     copy_runtime_config,
+    remove_secret_config,
     worktree_blank_config_keys,
     worktree_port,
+    worktree_secret_config_keys,
 )
 
 ensure_utf8_stdio()
