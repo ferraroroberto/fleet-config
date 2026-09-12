@@ -246,5 +246,10 @@ _STANDALONE_UNIT_CHECKS: Tuple[Tuple[str, str, str], ...] = (
      "before a closing double-quote escapes it instead of closing the "
      "string -- is pinned against the exact command that misattributed the "
      "break to the wrong path (#800)"),
+    ("skip_delta", "test_skip_delta.py",
+     "the merge-verification skip-delta report -- pytest summary/`-rs`/`-v` "
+     "parsing, the count fact and the set fact carrying separate unknowns, "
+     "and the 17->19 app-launcher fresh-checkout round pinned as the anchor "
+     "case -- is testable on its own against recorded output (#846)"),
 )
 

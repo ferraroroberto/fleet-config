@@ -384,6 +384,45 @@ completion onward to Roberto:
   as done and never as dirty. Check the path you passed first
   (fleet-config#570).
 
+### Merge verification runs from a fresh checkout — and must state what it cost
+
+When you re-run a repo's gate against a merge, run it from a **fresh detached
+checkout of the merged default branch** — never a feature branch, never one of
+the worktrees (whose `.venv` is a junction into the primary's real venv). That
+buys the guarantee that the merged tree is what ran.
+
+**It also costs coverage, and the cost is invisible unless you report it.** A
+fresh checkout has none of the repo's gitignored runtime files, so the tests
+that need one **skip** rather than fail, and pytest prints the same green as a
+run that covered more. On the 2026-09-12 app-launcher round the skips went
+**17 → 19**, the whole delta being the `#444` real-agent pin — a fresh clone
+has no app registered under that id, because the registry lives in the
+gitignored `config/webapp_config.json`. A skip is not a pass.
+
+So a merge-verification report is only complete when it names that delta.
+Capture the baseline from the checkout that *has* the runtime files, then
+compare the fresh-checkout run against it — always with `-rs`, or the skips
+come back unnamed:
+
+```
+E:/automation/fleet-config/.venv/Scripts/python.exe skills/_lib/skip_delta.py capture <primary-run.txt> --label "primary checkout" --out <baseline.json>
+E:/automation/fleet-config/.venv/Scripts/python.exe skills/_lib/skip_delta.py compare <fresh-run.txt> --baseline <baseline.json>
+```
+
+Report-only, always exits 0. Relay `STATUS` (the count fact) **and** `SET` (the
+set fact) — they fail independently, and each has its own unknown: `UNKNOWN`
+means no count was established, `UNCONFIRMED` means the skips were never named
+so a same-count-different-set loss can't be ruled out. Neither may be folded
+into a green. `STATUS=INCREASED` or `SET=CHANGED` means the gate covered less
+than the baseline; every `NEW=` line names a test that stopped running, and
+those belong in what you relay to Roberto verbatim.
+
+**Never close the gap by copying a live config into a scratch checkout.** That
+puts real credentials in a throwaway tree, which is exactly what
+`app-launcher#907`/PR #911 exist to prevent. Accepting reduced coverage and
+saying so is the correct behaviour; a credential-free runtime registry, if one
+is ever provisioned, is the owning repo's work and does not change this rule.
+
 **Verify from outside; never arbitrate between two agents' conflicting
 accounts.** When one worker reports that another overstepped its brief, check
 independently — the PR contents, `git log`, the working tree, and the repo's
