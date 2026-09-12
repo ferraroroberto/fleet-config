@@ -154,9 +154,9 @@ every poll:
   with status/age/agent, PR/job cards, the 5h rate-limit line) in one call.
   Add `--json` for the raw `/api/board` payload.
 - `chief_ops.py sessions` — repo occupancy: which repos already have a live
-  session, and its status/age. This is the question to ask before any
-  dispatch — `dispatch` below also checks it, but read it yourself when
-  deciding what to say to the user.
+  session, and its status/age, excluding your own card (named on the last
+  line). This is the question to ask before any dispatch — `dispatch` below
+  also checks it, but read it yourself when deciding what to say to the user.
 - `chief_ops.py exchange <sid> [--tail N]` — last assistant text for a live
   session (default tail 2000 chars).
 - `chief_ops.py issues <repo>#<n> [<repo>#<n> ...]` — one state-table row per ref via `gh issue view`; use this instead of hand-rolling a multi-repo loop. For an open-ended search across all repos (not a known list of refs), use `E:/automation/fleet-config/.venv/Scripts/python.exe skills/_lib/gh_issue_fetch.py fetch [--label <label>]` — **not** `gh search issues --owner ferraroroberto --state open ...`. That call is backed by GitHub's Search API, documented as eventually consistent and observed reporting issues as open for five-plus weeks after they had closed; a chief run using it reported inflated backlog numbers to Roberto (fleet-config#623). `gh_issue_fetch.py` reads the same information through the direct Issues API, one call per repo, aggregated into the same shape.
@@ -466,8 +466,11 @@ what it re-tested is a hypothesis — file it as a question, or don't file it.
 3. **Worker cap and repo occupancy.** `chief_ops.py dispatch` reads
    `/api/board/chief/settings` (default cap 3) and the live board itself
    before every dispatch and **refuses** — no session spawned — if the
-   target repo already has a live session or the cap is at/over. This is a
-   hard refusal, not a rule to remember; on `REFUSED=...`, tell the
+   target repo already has a live session or the cap is at/over. Neither
+   count includes *your own* card, matched on the launcher session id, so
+   your standing presence in `fleet-config` does not make that repo
+   undispatchable (fleet-config#838); every other live session still does.
+   This is a hard refusal, not a rule to remember; on `REFUSED=...`, tell the
    user what's running and queue the request in-conversation, revisiting
    when they confirm or a worker finishes.
 4. **Same-repo work stays isolated for free**: dispatches route through the

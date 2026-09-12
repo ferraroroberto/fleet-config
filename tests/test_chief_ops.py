@@ -1,9 +1,9 @@
 """Unit tests for the pure logic in skills/_lib/chief_ops.py (fleet-config#445)
 and skills/_lib/steer_delivery.py, the `say --verify` classifier it calls.
 
-Exercises `repo_occupancy`, `alive_worker_count`, `refuse_dispatch`,
-`assert_loopback`, `format_board_digest`, and `parse_issue_ref`/`_fmt_age`
-directly against synthetic board payloads — no network, no `gh`, no live
+Exercises `repo_occupancy`, `alive_worker_count`, `caller_session_id`,
+`refuse_dispatch`, `cmd_dispatch`, `assert_loopback`, `format_board_digest`,
+and `parse_issue_ref`/`_fmt_age` directly against synthetic board payloads — no network, no `gh`, no live
 launcher required. The delivery lattice (`sd.` below) is covered here rather
 than in a file of its own: it is the same subsystem from the caller's side, and
 splitting the module was never meant to split its evidence (fleet-config#680).
@@ -78,6 +78,82 @@ occ_case = co.repo_occupancy({
 check("app-launcher" in occ_case, "repo_occupancy lowercases the repo key")
 
 
+# ---- the caller's own card never occupies a repo (fleet-config#838) ---------
+#
+# The standing chief is an ordinary launcher PTY sitting in `fleet-config`, so
+# before the fix its own card made that repo permanently occupied and chief
+# could never dispatch its own queue. The board fields below are the real ones:
+# `session_id` is the launcher's `uuid4().hex`, byte-identical to the value it
+# stamps as `APP_LAUNCHER_SESSION_ID` in the session it spawns.
+
+_CHIEF_SID = "7abf17b1b8134042b628557617a5414e"
+_WORKER_SID = "27c7aace60ce4d2ba40e2e0f19dd8ca5"
+
+chief_only = {
+    "claude_turn": [_session_card(project="fleet-config", label="chief", session_id=_CHIEF_SID)],
+    "your_turn": [],
+}
+check(
+    co.repo_occupancy(chief_only, exclude_sid=_CHIEF_SID) == {},
+    "repo_occupancy: the caller's own card does not occupy its repo (#838)",
+)
+check(
+    "fleet-config" in co.repo_occupancy(chief_only),
+    "repo_occupancy: with no exclude_sid the caller's card still occupies -- "
+    "the exclusion is opt-in, so every non-dispatch reader is unchanged",
+)
+
+chief_plus_worker = {
+    "claude_turn": [
+        _session_card(project="fleet-config", label="chief", session_id=_CHIEF_SID),
+        _session_card(project="fleet-config", label="", session_id=_WORKER_SID),
+    ],
+    "your_turn": [],
+}
+occ_cw = co.repo_occupancy(chief_plus_worker, exclude_sid=_CHIEF_SID)
+check(
+    occ_cw.get("fleet-config", {}).get("session_id") == _WORKER_SID,
+    "repo_occupancy: excluding the caller still surfaces a genuine second "
+    "worker in the same repo -- the collision guard is intact (#838)",
+)
+check(
+    co.repo_occupancy(chief_plus_worker, exclude_sid=_WORKER_SID)
+      .get("fleet-config", {}).get("session_id") == _CHIEF_SID,
+    "repo_occupancy: the exclusion is by session id, not by label -- a "
+    "non-chief caller excludes only itself",
+)
+
+check(
+    co.repo_occupancy(chief_only, exclude_sid="").get("fleet-config") is not None,
+    "repo_occupancy: an empty exclude_sid excludes nothing (a card with no "
+    "session_id must never match)",
+)
+check(
+    co.repo_occupancy(
+        {"claude_turn": [_session_card(project="fleet-config", session_id=None)], "your_turn": []},
+        exclude_sid="",
+    ) != {},
+    "repo_occupancy: a card with session_id None is not excluded by a blank id",
+)
+
+
+# ---- caller_session_id: the launcher's own id space (fleet-config#838/#848) --
+
+check(
+    co.caller_session_id({"APP_LAUNCHER_SESSION_ID": _CHIEF_SID}) == _CHIEF_SID,
+    "caller_session_id reads APP_LAUNCHER_SESSION_ID",
+)
+check(
+    co.caller_session_id({}) is None,
+    "caller_session_id is None outside a launcher session -- no exclusion, "
+    "so a hand-run chief_ops keeps the pre-#838 behaviour",
+)
+check(
+    co.caller_session_id({"APP_LAUNCHER_SESSION_ID": "   "}) is None,
+    "caller_session_id treats a blank stamp as absent, never as a sid",
+)
+
+
 # ---- alive_worker_count ------------------------------------------------------
 
 count = co.alive_worker_count({
@@ -91,6 +167,22 @@ count_dead = co.alive_worker_count({
     "your_turn": [],
 })
 check(count_dead == 0, "alive_worker_count excludes dead cards")
+
+count_self = co.alive_worker_count(
+    {
+        "claude_turn": [
+            _session_card(project="fleet-config", label="", session_id=_CHIEF_SID),
+            _session_card(project="photo-ocr", session_id="other-1"),
+        ],
+        "your_turn": [],
+    },
+    exclude_sid=_CHIEF_SID,
+)
+check(
+    count_self == 1,
+    "alive_worker_count: the caller's own card is not a worker against the "
+    "cap, even when its label is not 'chief' (#838)",
+)
 
 
 # ---- find_chief_session (fleet-config#443) -----------------------------------
@@ -383,6 +475,71 @@ check(
     co.refuse_dispatch("whatsapp-radar", "start", occupied, 1, 3, False) is None,
     "refuse_dispatch allows a clear dispatch",
 )
+
+
+# ---- cmd_dispatch end to end: chief can dispatch its own repo (#838) --------
+#
+# The unit checks above prove the predicate; these prove the wiring, which is
+# where #838 actually lived -- `refuse_dispatch` was always correct, it was
+# handed an occupancy map that counted the caller. Driven through the real
+# `cmd_dispatch` against a stubbed transport, with the launcher's env stamp
+# set exactly as a live session carries it.
+
+def _run_dispatch(cards, env_sid, repo="fleet-config", number=838):
+    posted = []
+
+    def _fake_request(base_url, path, method="GET", body=None, timeout=10.0):
+        if path == "/api/board":
+            return {"columns": {"claude_turn": cards, "your_turn": []}}
+        if path == "/api/board/chief/settings":
+            return {"settings": {"worker_cap": 3}}
+        if path == "/api/board/issues/start":
+            posted.append(body)
+            return {"session": {"session_id": "spawned-1"}}
+        raise AssertionError(f"unexpected path: {path}")
+
+    prior_request, prior_mark = co._request, co.chief_managed.mark
+    prior_env = os.environ.get(co.LAUNCHER_SESSION_ID_ENV_VAR)
+    co._request = _fake_request
+    co.chief_managed.mark = lambda *a, **k: {}
+    if env_sid is None:
+        os.environ.pop(co.LAUNCHER_SESSION_ID_ENV_VAR, None)
+    else:
+        os.environ[co.LAUNCHER_SESSION_ID_ENV_VAR] = env_sid
+    try:
+        args = argparse.Namespace(
+            repo=repo, number=number, mode="start", model=None,
+            yolo_confirmed=False, base_url=co.DEFAULT_BASE_URL,
+        )
+        rc = co.cmd_dispatch(args)
+    finally:
+        co._request, co.chief_managed.mark = prior_request, prior_mark
+        if prior_env is None:
+            os.environ.pop(co.LAUNCHER_SESSION_ID_ENV_VAR, None)
+        else:
+            os.environ[co.LAUNCHER_SESSION_ID_ENV_VAR] = prior_env
+    return rc, posted
+
+
+_chief_card = _session_card(project="fleet-config", label="chief", session_id=_CHIEF_SID)
+_worker_card = _session_card(project="fleet-config", label="", session_id=_WORKER_SID)
+
+rc, posted = _run_dispatch([_chief_card], _CHIEF_SID)
+check(rc == 0 and len(posted) == 1,
+      "cmd_dispatch: chief dispatches fleet-config while its own session is live (#838)")
+
+rc, posted = _run_dispatch([_chief_card, _worker_card], _CHIEF_SID)
+check(rc == 1 and posted == [],
+      "cmd_dispatch: a genuine second worker in the repo is still refused, no POST (#838)")
+
+rc, posted = _run_dispatch([_chief_card], None)
+check(rc == 1 and posted == [],
+      "cmd_dispatch: outside a launcher session nothing is excluded -- the "
+      "guard does not weaken for a hand-run chief_ops")
+
+rc, posted = _run_dispatch([_chief_card], _CHIEF_SID, repo="photo-ocr")
+check(rc == 0 and len(posted) == 1,
+      "cmd_dispatch: an unoccupied repo is unaffected by the exclusion")
 
 
 # ---- assert_loopback ---------------------------------------------------------
