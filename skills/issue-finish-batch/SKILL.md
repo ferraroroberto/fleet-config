@@ -155,4 +155,4 @@ No follow-up actions. Blocked branches are left in place for you to inspect and 
 
 ## Notes
 
-- **Worktree branches:** `/issue-batch` uses worktrees when several issues hit one repo. Step 2 detects the worktree path and points the agent at it; the agent's `/issue-finish` run handles the merge, and worktree cleanup (`git worktree remove`) is done from the primary checkout afterwards per `/issue-batch`'s closing note.
+- **Worktree branches:** `/issue-batch` uses worktrees when several issues hit one repo. Step 2 detects the worktree path and points the agent at it; the agent's `/issue-finish` run handles the merge, and worktree cleanup (`worktree_claim.py remove-worktree <path>` — never raw `git worktree remove`, which follows the `.venv` junction into the primary's real venv, fleet-config#847) is done from the primary checkout afterwards per `/issue-batch`'s closing note.

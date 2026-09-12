@@ -794,8 +794,24 @@ def _strip_junction(path: Path) -> None:
 def setup_worktree(repo: Path, issue: str, branch: str) -> Path:
     wt = worktree_path(repo, issue)
     if wt.exists():
+        # NEVER recommend `git worktree remove` here. A stale worktree still
+        # holds its `.venv` junction, and git's recursive delete follows it
+        # into the primary's real venv -- which is exactly how this message
+        # destroyed task-os's venv under a live app (fleet-config#847): the
+        # lane did what the helper told it to. `remove-worktree` strips the
+        # junction with a reparse-safe `rmdir` first.
+        # Forward slashes throughout: this line exists to be pasted, and Git
+        # Bash strips backslashes out of an unquoted Windows path (it is also
+        # what `bash_windows_path_guard` refuses). A hint that trips another
+        # guard is a hint nobody follows.
+        _fwd = lambda p: str(p).replace("\\", "/")  # noqa: E731
         sys.exit(f"Worktree path already exists: {wt}\n"
-                 f"Probably stale — clean with: git -C {repo} worktree remove --force {wt}")
+                 f"Probably stale — clean with the reparse-safe teardown:\n"
+                 f"  {_fwd(sys.executable)} {_fwd(Path(__file__).resolve())} "
+                 f"remove-worktree {_fwd(wt)}\n"
+                 f"Do NOT `git worktree remove` it: {_fwd(wt / '.venv')} is a junction "
+                 f"to {_fwd(repo / '.venv')}, and git's recursive delete follows it and "
+                 f"guts the primary's real venv (fleet-config#847).")
     add_args = worktree_add_args(
         wt, branch,
         local_exists=local_branch_exists(repo, branch),

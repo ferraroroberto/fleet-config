@@ -31,7 +31,7 @@ No tokens passed → stop: "Pass at least one issue, e.g. `/issue-batch app-laun
 
 ## Steps
 
-Run in order. Step fails → print a short error and stop. **Never leave half-made worktrees or branches behind** — on failure mid-setup, undo what was done (`git worktree remove --force <path>`, `git branch -D <branch>`).
+Run in order. Step fails → print a short error and stop. **Never leave half-made worktrees or branches behind** — on failure mid-setup, undo what was done (`worktree_claim.py remove-worktree <path>`, `git branch -D <branch>`). Undo the worktree **only** through `remove-worktree`, never `git worktree remove`: a half-made worktree still holds its `.venv` junction, and git's recursive delete follows it into the primary's real venv (fleet-config#847 — `venv_discipline`'s rule 4 now refuses the raw form outright).
 
 ### 1. Pre-flight
 
