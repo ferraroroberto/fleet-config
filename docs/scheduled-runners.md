@@ -57,7 +57,7 @@ Descriptors carry discriminator fields only, never payload, and are sanitized an
 | `115` | Required tools/MCP unavailable |
 | `116` | Model unavailable or unsupported |
 | `117` | Authentication unavailable |
-| `118` | Unfinished tools or children |
+| `118` | Unfinished tools or children, **or** owned descendants still running after the provider exited |
 | `119` | Claude upstream 5xx failure; eligible pre-tool attempts may be retried |
 | `120` | Complete turn invoked no tools |
 | `121` | Delivery postcondition not confirmed |
@@ -69,6 +69,8 @@ Descriptors carry discriminator fields only, never payload, and are sanitized an
 | `130` | Requested cancellation of the owned process tree confirmed |
 
 A background task that ends `failed`, or one the run deliberately cancels (`TaskStop`, reported as `stopped`), is **not** a verdict on the run: it is counted, named on its own `⚠ background task(s): …` line, and left out of the exit code (fleet-config#808). Recovering from a failed child is the orchestrator's job, and every question such a child could raise about delivery is already answered by a detector that reads the run's own outcome (`1`, `118`, `120`–`123`). `125` therefore means only what its name says — the CLI's own background-task ceiling killed sub-agents still in flight — and is reachable only from `KILL_SIGNATURE_TERMS` on stderr.
+
+`118` is the one code two independent detectors reach, and they deliberately share it: the stream-level half fires when the parser still holds an open tool or child at exit, the OS-level half when the owned job still has live descendants after the provider returned, and both answer the same question — was this run's work finished when it exited? No rung is minted for the second; what stays tellable apart is the verdict line, which always names which half fired (`❓ not confirmed · unfinished tools or children`, `❓ not confirmed · N owned descendant(s) still running after the provider exited`, or both joined). Its shape is `❓ not confirmed` rather than `❌ failed` because a delivered run that leaked descendants has established two separate facts, and folding the second into a failure asserts the first did not happen — while the descendants, possibly mid-effect, are equally no evidence of success (fleet-config#811). The code stays non-zero so an unattended job still shows something, and detection is unchanged: the drain deadline, the orphan count and the pre-effect retry gate this same evidence closes all behave exactly as before. A child that exits `118` natively — produced by neither detector — keeps the bare `❌ failed` fallback rather than being handed a cause the adapter never established.
 
 Existing nonzero child exits remain nonzero and normally retain their value. Explicit provider failure classifications and the existing Claude upstream/stall rules name established causes. Stream/no-work/incomplete detectors override clean process exits; they do not hide an existing child failure. A delivery check runs once after the final attempt, regardless of the native exit, and only replaces a clean exit with `121`. Missing, failed or timed-out checks are unconfirmed. The final log reports failed delivery separately from successful process completion.
 

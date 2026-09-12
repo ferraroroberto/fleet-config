@@ -288,6 +288,31 @@ def _tool_summary(tool_input: object) -> str:
     return ""
 
 
+# Two independent detectors reach this code, and the decision to let them share
+# it is deliberate rather than inherited. The stream-level half fires when the
+# parser still holds an open tool or child at exit; the OS-level half fires when
+# the owned Windows job still has live descendants after the provider process
+# returned. Both answer the same question — *was this run's work finished when
+# it exited?* — and neither answers a question the other cannot, which is the
+# only bar this file mints a new rung for (see `saw_kill_signature`, where a
+# failed child was denied one for exactly that reason). So no rung is minted;
+# what has to be tellable apart is carried by the verdict line, which names
+# which half fired (fleet-config#811).
+#
+# The shape is `❓ not confirmed`, not `❌ failed`, and that is the second half
+# of the decision. On 2026-09-06 `weekly-recap-draft` swept, rewrote and
+# validated its ledger, posted to Telegram and left a clean tree — and reported
+# `❌ failed · exit 118` because three owned descendants outlived the provider.
+# "Delivered its work" and "left three processes behind" are two different
+# facts; folding the second into `❌ failed` asserts the first did not happen,
+# which the adapter has no evidence for. It has no evidence of success either —
+# a descendant still running may have been mid-effect — so the honest state is
+# the one this file already uses everywhere a fact was never established, per
+# the global rule that such a state is its own and never folded into a
+# neighbouring one. The exit code stays non-zero so an unattended job still
+# shows something, and nothing about the detection changes: the drain deadline,
+# the orphan count and the pre-effect retry gate this same evidence closes are
+# all exactly as they were.
 INCOMPLETE_WORK_EXIT_CODE = 118
 AUTH_UNAVAILABLE_EXIT_CODE = 117
 MODEL_UNAVAILABLE_EXIT_CODE = 116
@@ -330,6 +355,7 @@ class ProgressFormatter:
         self._saw_tool_use = False
         self._saw_transient_api_error = False
         self._burst_count: Optional[int] = None
+        self._owned_orphans = 0
 
     @property
     def saw_kill_signature(self) -> bool:
@@ -661,6 +687,33 @@ class ProgressFormatter:
     def unfinished_work(self) -> bool:
         return bool(self._tools or self._children)
 
+    @property
+    def owned_orphans(self) -> int:
+        """Owned descendants still running when the drain deadline was reached.
+
+        The OS-level half of `INCOMPLETE_WORK_EXIT_CODE`. `run_process` knows
+        this and `finish()` did not, which is the whole reason an orphaned run
+        used to fall through the status chain to a bare `❌ failed · exit 118`
+        with no cause named at all (fleet-config#811).
+        """
+        return self._owned_orphans
+
+    def _mark_owned_orphans(self, count: int) -> None:
+        """Record that the owned job outlived the provider, and by how many."""
+        self._owned_orphans = max(0, int(count))
+
+    def incomplete_work_cause(self) -> str:
+        """Which half (or both) of the 118 evidence this run actually carries."""
+        parts = []
+        if self.unfinished_work:
+            parts.append("unfinished tools or children")
+        if self.owned_orphans:
+            parts.append(
+                f"{self.owned_orphans} owned descendant(s) still running after "
+                "the provider exited"
+            )
+        return " and ".join(parts)
+
     def _emit_assistant_text(self, value: object, from_model: bool = True) -> None:
         if not isinstance(value, str):
             return
@@ -753,8 +806,15 @@ class ProgressFormatter:
             status = "❓ cancellation not confirmed · owned descendants could not be verified"
         elif exit_code == CANCELLED_EXIT_CODE:
             status = "❌ cancelled · owned process tree stopped"
-        elif self.unfinished_work and exit_code in {0, INCOMPLETE_WORK_EXIT_CODE}:
-            status = "❓ not confirmed · unfinished tools or children"
+        elif ((self.unfinished_work or self.owned_orphans)
+              and exit_code in {0, INCOMPLETE_WORK_EXIT_CODE}):
+            # Both halves of 118 land here and the cause names which fired; see
+            # the constant's own comment for why they share a rung and why the
+            # shape is `❓` rather than `❌`. Guarded on the evidence rather
+            # than on the code alone so a child that exits 118 natively — which
+            # neither detector produced — is never handed a cause this adapter
+            # did not establish.
+            status = f"❓ not confirmed · {self.incomplete_work_cause()}"
         elif exit_code in {AUTH_UNAVAILABLE_EXIT_CODE, MODEL_UNAVAILABLE_EXIT_CODE, MISSING_TOOLS_EXIT_CODE}:
             status = f"❌ failed · {self._provider_error} unavailable"
         elif self._saw_kill_signature:
@@ -1023,6 +1083,7 @@ def run_process(
 
     exit_code = None
     orphaned = False
+    orphan_count = 0
     drain_deadline = None
     drain_message = None
     try:
@@ -1046,6 +1107,7 @@ def run_process(
                     break
                 if time.monotonic() >= drain_deadline:
                     orphaned = active is not None and active > 0 and not stopping
+                    orphan_count = active if orphaned else 0
                     # This runner stopped watching before the run was over, so
                     # its outcome is a fact nobody established: verdict-bearing,
                     # and it closes the pre-effect replay gate even when both
@@ -1099,6 +1161,10 @@ def run_process(
         exit_code = STALL_EXIT_CODE
     elif orphaned and exit_code == 0:
         progress.emit_best_effort("unfinished owned descendants after provider exit")
+        # Handed to the formatter as well as the log: the verdict line is what
+        # the job card and the Telegram alert carry, and a breadcrumb printed
+        # three lines above it is not in either (fleet-config#811).
+        progress._mark_owned_orphans(orphan_count)
         exit_code = INCOMPLETE_WORK_EXIT_CODE
     elif exit_code != 0 and progress.saw_transient_api_error:
         # Only ever over a child that already failed — this renames a failure,
