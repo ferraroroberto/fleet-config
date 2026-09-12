@@ -36,16 +36,20 @@ def _evidence(blob: str, pattern: str, flags: int = 0) -> Optional[str]:
     m = re.search(pattern, blob, flags)
     if not m:
         return None
-    fh = blob.rfind("/*FILE ", 0, m.start())
-    fname = blob[fh + 7: blob.find("*/", fh)] if fh >= 0 else "?"
-    line = blob.count("\n", blob.find("*/", fh) + 2 if fh >= 0 else 0, m.start()) + 1
-    return f"{fname}:{line}"
+    return _loc_at(blob, m.start())
 
 
 def _loc_at(blob: str, pos: int) -> str:
     fh = blob.rfind("/*FILE ", 0, pos)
-    fname = blob[fh + 7: blob.find("*/", fh)] if fh >= 0 else "?"
-    line = blob.count("\n", blob.find("*/", fh) + 2 if fh >= 0 else 0, pos) + 1
+    if fh < 0:
+        fname, start = "?", 0
+    else:
+        end = blob.find("*/", fh)
+        fname = blob[fh + 7:end]
+        # Content starts after the newline that ends the marker line — that
+        # newline belongs to the marker, not the file (fleet-config#858).
+        start = blob.find("\n", end) + 1
+    line = blob.count("\n", start, pos) + 1
     return f"{fname}:{line}"
 
 
