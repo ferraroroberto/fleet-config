@@ -20,6 +20,9 @@ class _ContractsCtx:
     root: Path
     css_all: str
     markup_all: str
+    # markup_all minus third-party `vendor/` bundles — what the *app*
+    # authored, for checks that judge the app's own design choices.
+    markup_own: str
     spec_light: Dict[str, str]
     spec_dark: Optional[Dict[str, str]]
     html_files: List[Path]

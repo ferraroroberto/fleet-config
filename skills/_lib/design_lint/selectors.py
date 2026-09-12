@@ -11,9 +11,28 @@ from typing import List, Tuple
 
 from .css import _BLOCK_RE
 
+_COMMENT_RE = re.compile(r"/\*.*?\*/", re.S)
+
+
+def selector_group(sel_group: str) -> str:
+    """Group 1 of a `_BLOCK_RE` match as a *selector list*, comment-free.
+
+    `_BLOCK_RE`'s group 1 is everything between the previous `}` and this
+    `{`, so it also carries the `/*FILE <path>*/` delimiter `contracts()`
+    injects ahead of each file's chunk. Any check that substring-tests that
+    string is really testing the file *path* too — a stylesheet under
+    `_vendored/icons/` or `_vendored/row/` would make the first rule of that
+    file count as an icon or a row rule (fleet-config#843). Source comments
+    are already blanked by `strip_comments`; this removes the one we add.
+
+    Every check that reads a selector out of `_BLOCK_RE` goes through here —
+    one definition, so the next check cannot re-introduce the leak.
+    """
+    return _COMMENT_RE.sub(" ", sel_group).strip()
+
 
 def _last_selector_line(sel_group: str) -> str:
-    lines = sel_group.strip().splitlines()
+    lines = selector_group(sel_group).splitlines()
     return lines[-1].strip() if lines else ""
 
 
@@ -45,11 +64,13 @@ def _selector_hits(css_all: str, rightmost_pattern: "re.Pattern[str]"
     """`(selector, ancestor_compounds, declaration_body)` for every selector
     whose rightmost (target) compound matches `rightmost_pattern`.
     `::backdrop` pseudo-elements are excluded — they never carry the layout
-    declarations these checks look for."""
+    declarations these checks look for. A block whose group 1 is only the
+    `/*FILE ...*/` delimiter reduces to "" in `selector_group` and is skipped
+    by the emptiness test — no `*/` remnant can reach the selector split."""
     hits: List[Tuple[str, List[str], str]] = []
     for bm in _BLOCK_RE.finditer(css_all):
         sel_line = _last_selector_line(bm.group(1))
-        if not sel_line or sel_line.startswith("@") or sel_line.startswith("*/"):
+        if not sel_line or sel_line.startswith("@"):
             continue
         for sel in _split_top_level_commas(sel_line):
             if "::backdrop" in sel:

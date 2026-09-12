@@ -13,7 +13,7 @@ from typing import Callable, Dict, List, Optional, Tuple
 
 from ..css import strip_comments
 from ..files import find_vendored_root, read_text, rel
-from ..markup import _editor_modals
+from ..markup import _editor_modals, _is_third_party
 from ._ctx import _ContractsCtx
 from .a11y import (
     _check_desktop_measure,
@@ -77,15 +77,27 @@ def contracts(
     each check in numbered order and concatenates its `checks` entries."""
     css_all = "\n".join(f"/*FILE {rel(root, p)}*/\n" + strip_comments(read_text(p), "css")
                         for p in css_files)
-    markup_all = "\n".join(
-        f"/*FILE {rel(root, p)}*/\n"
-        + strip_comments(read_text(p), "html" if p.suffix == ".html" else "js")
-        for p in html_files + js_files)
+
+    def _markup_blob(paths: List[Path]) -> str:
+        return "\n".join(
+            f"/*FILE {rel(root, p)}*/\n"
+            + strip_comments(read_text(p), "html" if p.suffix == ".html" else "js")
+            for p in paths)
+
+    markup_files = html_files + js_files
+    markup_all = _markup_blob(markup_files)
+    # app-authored markup only. A bundled third-party library's internals are
+    # not the adopting app's design choice and can't be fixed there anyway —
+    # the reason `find_emoji_sites` already skips them (#416). Leaflet's own
+    # layers-control checkbox is not home-automation's checkbox
+    # (fleet-config#843).
+    markup_own = _markup_blob([p for p in markup_files if not _is_third_party(p)])
     index_files = [p for p in html_files if p.name == "index.html"]
     ctx = _ContractsCtx(
         root=root,
         css_all=css_all,
         markup_all=markup_all,
+        markup_own=markup_own,
         spec_light=spec_light,
         spec_dark=spec_dark,
         html_files=html_files,
