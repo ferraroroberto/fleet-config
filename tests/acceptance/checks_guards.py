@@ -963,3 +963,170 @@ def _venv_primary_guard_unit_checks() -> Tuple[int, int]:
         shutil.rmtree(tmp, ignore_errors=True)
 
     return check.failures, check.total
+
+
+def _venv_git_clean_guard_unit_checks() -> Tuple[int, int]:
+    """`venv_discipline.py` rules 5 + the audit trail over `git clean`
+    (fleet-config#867).
+
+    `-x` drops the ignore rules, and every fleet repo ignores `.venv`, so
+    `git clean -xfd` in a primary checkout deletes its real venv outright --
+    the route #866's reviewer found neither refused nor recorded. The first
+    block is the **reproduction** with real git: it establishes the hazard,
+    the `-e .venv` escape hatch the refusal points at, and that a worktree's
+    junctioned `.venv` is only unlinked (which is why rule 4 must not fire on
+    `git clean`). Every block case below exits 0 against pre-fix code, where
+    `destructive_operands` had no `git clean` branch at all.
+    """
+    check = _Checker()
+
+    tmp = Path(tempfile.mkdtemp(prefix="venv_git_clean_"))
+    junctions = []
+    try:
+        # ---- reproduction: what real `git clean` does to a real `.venv`
+        if shutil.which("git"):
+            def real_repo(name: str) -> Path:
+                root = tmp / "repro" / name
+                (root / "src").mkdir(parents=True)
+                (root / ".gitignore").write_text(".venv/\n", encoding="utf-8")
+                (root / "src" / "a.py").write_text("x = 1\n", encoding="utf-8")
+                for args in (("init", "-q", "-b", "main"), ("config", "user.email", "t@t"),
+                             ("config", "user.name", "t"), ("add", "-A"),
+                             ("commit", "-qm", "init")):
+                    subprocess.run(["git", *args], cwd=str(root), capture_output=True)
+                (root / ".venv").mkdir()
+                (root / ".venv" / "pyvenv.cfg").write_text("home = x\n", encoding="utf-8")
+                return root
+
+            gone = real_repo("gone")
+            subprocess.run(["git", "clean", "-xfd"], cwd=str(gone), capture_output=True)
+            check("venv_git_clean: repro -- `git clean -xfd` deletes a primary's "
+                  "gitignored .venv outright", not (gone / ".venv").exists())
+            kept = real_repo("kept")
+            subprocess.run(["git", "clean", "-xfd", "-e", ".venv"], cwd=str(kept),
+                           capture_output=True)
+            check("venv_git_clean: repro -- `-e .venv` keeps it (the escape hatch is real)",
+                  (kept / ".venv" / "pyvenv.cfg").is_file())
+
+            if sys.platform == "win32":
+                prim = real_repo("prim")
+                wt = tmp / "repro" / "prim-wt-1"
+                subprocess.run(["git", "worktree", "add", "-q", "-b", "fix/1-x", str(wt)],
+                               cwd=str(prim), capture_output=True)
+                subprocess.run(["cmd", "/c", "mklink", "/J", str(wt / ".venv"),
+                                str(prim / ".venv")],
+                               capture_output=True, encoding="oem", errors="replace")
+                junctions.append(wt / ".venv")
+                if (wt / ".venv").exists():
+                    subprocess.run(["git", "clean", "-xfd"], cwd=str(wt), capture_output=True)
+                    check("venv_git_clean: repro -- in a worktree, `git clean -xfd` unlinks "
+                          "the .venv junction without following it",
+                          not (wt / ".venv").exists()
+                          and (prim / ".venv" / "pyvenv.cfg").is_file())
+                else:
+                    check.advisory("venv_git_clean: repro -- junction could not be created, "
+                                   "skipped", False, str(wt / ".venv"))
+        else:
+            check.advisory("venv_git_clean: repro needs git -- skipped", False, "no git")
+
+        # ---- verdicts, against a synthetic primary checkout
+        state = tmp / "state"
+        repo = tmp / "repo"
+        (repo / ".git").mkdir(parents=True)      # primary checkout: `.git` is a DIR
+        (repo / ".venv" / "Scripts").mkdir(parents=True)
+        (repo / "src").mkdir()
+        bare = tmp / "novenv"                    # a primary with nothing to lose
+        (bare / ".git").mkdir(parents=True)
+
+        def verdict(command: str, cwd: Path, tool: str = "Bash") -> Tuple[int, str]:
+            code, _out, err = run("venv_discipline",
+                                  {"tool_name": tool, "cwd": str(cwd),
+                                   "session_id": "sess-867",
+                                   "tool_input": {"command": command}},
+                                  {"CLAUDE_HOOKS_STATE_DIR": str(state)})
+            return code, err
+
+        msys_repo = "/" + str(repo)[0].lower() + str(repo)[2:].replace("\\", "/")
+        blocks = [
+            ("`git clean -xfd` in the primary", "git clean -xfd", repo, "Bash"),
+            ("`git -C <repo> clean -xdf`", f"git -C {repo} clean -xdf", tmp, "Bash"),
+            ("`git -C <msys path> clean -xdf`", f"git -C {msys_repo} clean -xdf", tmp, "Bash"),
+            ("PowerShell `git -C <repo> clean -dfx`", f"git -C '{repo}' clean -dfx", tmp,
+             "PowerShell"),
+            ("`git clean -Xfd` (ignored-only still takes .venv)", "git clean -Xfd", repo, "Bash"),
+            ("`git clean -x -f -d` (split flags)", "git clean -x -f -d", repo, "Bash"),
+            ("`git clean -xf .` (a pathspec makes -d irrelevant)", "git clean -xf .", repo,
+             "Bash"),
+            ("`git clean -xf -- .venv`", "git clean -xf -- .venv", repo, "Bash"),
+            ("global options before the verb", "git --no-pager -c core.quotepath=off clean -dxf",
+             repo, "Bash"),
+            ("an unrelated `-e` does not protect .venv", "git clean -xfd -e build", repo, "Bash"),
+            ("`-X -e .venv` still deletes it", "git clean -Xfd -e .venv", repo, "Bash"),
+            ("a trailing redirect is not a pathspec", "git clean -xfd 2>&1", repo, "Bash"),
+            ("a compound command's later clause", "git status && git clean -xfd", repo, "Bash"),
+        ]
+        stderr_seen = ""
+        for label, command, cwd, tool in blocks:
+            code, err = verdict(command, cwd, tool)
+            stderr_seen = stderr_seen or err
+            check(f"venv_git_clean: {label} -> block", code == 2, f"exit={code} cmd={command}")
+        check("venv_git_clean: the refusal names the `-e .venv` escape hatch",
+              "-e .venv" in stderr_seen, stderr_seen[:300])
+
+        # Allowed and NOT recorded: these delete nothing a venv could lose.
+        unrecorded = [
+            ("`git clean -nxd` (dry run)", "git clean -nxd", repo),
+            ("`git clean -xfd --dry-run`", "git clean -xfd --dry-run", repo),
+            ("`git clean -xfd --dry` (git's long-option prefix)", "git clean -xfd --dry", repo),
+            ("`git clean -fd` (no -x: ignore rules keep .venv)", "git clean -fd", repo),
+            ("`git clean -xf` (no -d, no pathspec: never recurses)", "git clean -xf", repo),
+            ("`git commit -m \"git clean -xfd\"` (a message, not a verb)",
+             'git commit -m "git clean -xfd"', repo),
+            ("`echo git clean -xfd`", "echo git clean -xfd", repo),
+        ]
+        # Allowed but recorded: they do delete ignored files, just not a venv.
+        recorded = [
+            ("`git clean -xfd -e .venv`", "git clean -xfd -e .venv", repo),
+            ("`git clean -xfd --exclude=.venv/`", "git clean -xfd --exclude=.venv/", repo),
+            ("`git clean -xfd` from a subdirectory", "git clean -xfd", repo / "src"),
+            ("`git clean -xfd` where no .venv exists", "git clean -xfd", bare),
+        ]
+        if sys.platform == "win32":
+            linked = tmp / "repo-wt-3"
+            linked.mkdir()
+            (linked / ".git").write_text("gitdir: ../repo/.git/worktrees/repo-wt-3",
+                                         encoding="utf-8")
+            subprocess.run(["cmd", "/c", "mklink", "/J", str(linked / ".venv"),
+                            str(repo / ".venv")],
+                           capture_output=True, encoding="oem", errors="replace")
+            junctions.append(linked / ".venv")
+            if (linked / ".venv").exists():
+                recorded.append(("`git clean -xfd` in a worktree over a junction (git "
+                                 "unlinks it, never follows it)", "git clean -xfd", linked))
+        for label, command, cwd in unrecorded + recorded:
+            code, _err = verdict(command, cwd)
+            check(f"venv_git_clean: {label} -> allow", code == 0, f"exit={code}")
+
+        trail = state / "destructive-actions.jsonl"
+        rows = [json.loads(line) for line in
+                trail.read_text(encoding="utf-8").splitlines()] if trail.is_file() else []
+        blocked = [r for r in rows if r["verdict"] == "BLOCK"]
+        allowed = [r for r in rows if r["verdict"] == "ALLOW"]
+        check("venv_git_clean: every refused `git clean` is recorded as rule 5",
+              len(blocked) == len(blocks)
+              and all(r["rule"] == "primary" and r["venv"] for r in blocked),
+              f"got {[(r['verb'], r['rule']) for r in blocked]}")
+        check("venv_git_clean: allowed destructive `git clean`s are recorded, dry runs "
+              "and -x-less cleans are not",
+              len(allowed) == len(recorded)
+              and all(r["verb"].startswith("git clean") for r in allowed),
+              f"got {[(r['verb'], r['command']) for r in allowed]}")
+    finally:
+        for link in junctions:
+            try:
+                os.rmdir(link)                   # reparse-safe: never follows it
+            except OSError:
+                pass
+        shutil.rmtree(tmp, ignore_errors=True)
+
+    return check.failures, check.total

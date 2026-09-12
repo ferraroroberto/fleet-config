@@ -12,7 +12,7 @@ the five common drifts:
   4. A recursive delete, or a venv (re)creation, whose target resolves through
      a **`.venv` junction** — fleet-config#847
   5. A recursive delete aimed straight at a **primary checkout's real `.venv`**
-     — fleet-config#828
+     — fleet-config#828; `git clean -x|-X` counts as one (fleet-config#867)
 
 Rules 4 and 5 are the destructive ones, and they are the same loss by two
 routes. A worktree's `.venv` is a *junction* to the primary checkout's real
@@ -38,6 +38,16 @@ Every clause either rule classifies as destructive is appended to the
 That file is the answer to #828's third acceptance criterion: the run that
 emptied the venv retained only per-sub-agent progress markers, so the command
 was never identifiable at all. A refusal only the agent sees is not a record.
+
+What the trail deliberately does *not* cover (fleet-config#867, decided): a
+delete inside a script — `python tidy.py` calling `shutil.rmtree` — shows the
+hook no verb and no target. Recording every out-of-repo `python <script>` was
+the cheap partial step on offer, and was rejected: it would flood the trail
+with the scratch probes agents run all day, still miss `python -c`, executed
+heredocs, in-repo scripts and anything the script spawns, and each record
+would name a script, never the path it deleted — so it answers neither "was
+it stopped" nor "what went". Closing that gap needs process-level evidence
+(filesystem auditing on `.venv`), not a command-string matcher.
 
 Allow-listed:
   * `python -m venv .venv`                 — correct directory name
@@ -351,6 +361,122 @@ def primary_venv_under(target: Path) -> Optional[Path]:
 # at. A guard that refuses its own remedy is the expensive kind of wrong.
 VENV_BUILD_VERB = "python -m venv"
 
+# `git clean` with the ignore rules off (fleet-config#867). `-x` drops them and
+# `-X` deletes *only* ignored paths, and every fleet repo ignores `.venv`, so in
+# a primary checkout either one deletes the real venv outright. Rule 4 must not
+# answer it: inside a worktree git unlinks the `.venv` junction without
+# following it (reproduced in the acceptance check), so a "guts the primary"
+# refusal there would be false.
+GIT_CLEAN_VERB = "git clean -x"
+# The same clean told to keep `.venv` (`-x -e .venv`) — still a delete worth a
+# record, never a venv at risk. `-e` protects only under `-x`: with `-X` it
+# *adds* an ignore rule, and ignored paths are exactly what `-X` removes.
+GIT_CLEAN_SPARING_VERB = "git clean -x -e .venv"
+
+# `git` global options that consume the next token (`-C <path>`, `-c <k=v>`).
+_GIT_GLOBAL_WITH_ARG = {"-c", "--git-dir", "--work-tree", "--namespace",
+                        "--config-env", "--super-prefix"}
+# `2>&1`, `>out.txt`, `2>` + a following file: redirections, never pathspecs.
+# A missed one would be read as a pathspec and silently narrow the operand away
+# from the checkout root — an allow on the exact command this rule exists for.
+_REDIRECT_RE = re.compile(r"^\d*(?:>>?|<)(&\d*)?")
+_ENV_ASSIGN_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
+
+
+def _join_operand(base: str, raw: str) -> str:
+    """`raw` against a `git -C` directory, kept as a string.
+
+    Joined with `/` rather than `Path`: an MSYS `-C /e/automation/x` must reach
+    `_operand_path` still MSYS-shaped, or its drive translation never fires.
+    """
+    if not base or re.match(r"^(?:[A-Za-z]:)?[\\/]", raw):
+        return raw
+    return base.rstrip("\\/") + "/" + raw
+
+
+def git_clean_operands(tokens: List[str]) -> Tuple[Optional[str], List[str]]:
+    """`(verb, paths)` for a `git [globals] clean` that can reach a `.venv`.
+
+    `(None, [])` for anything else — including a dry run (`-n`), a clean that
+    keeps the ignore rules (no `-x`/`-X`), and `-x` with neither `-d` nor a
+    pathspec, which never descends into an untracked directory. With a
+    pathspec, `-d` is irrelevant: `git clean -xf .` deletes `.venv` too. With
+    none, the operand is the directory git runs in (cwd, or `-C`), since git
+    cleans only below it.
+    """
+    i = 0
+    while i < len(tokens) and _ENV_ASSIGN_RE.match(tokens[i]):
+        i += 1
+    if i >= len(tokens) or tokens[i].lower().replace("\\", "/").rsplit("/", 1)[-1] \
+            not in {"git", "git.exe"}:
+        return None, []
+    i += 1
+    workdir = ""
+    while i < len(tokens) and tokens[i].startswith("-"):
+        option = tokens[i]
+        if option == "-C" and i + 1 < len(tokens):
+            workdir = _join_operand(workdir, tokens[i + 1])
+            i += 2
+        elif option.startswith("--work-tree="):
+            workdir = _join_operand(workdir, option.split("=", 1)[1])
+            i += 1
+        elif option in _GIT_GLOBAL_WITH_ARG:
+            if option == "--work-tree" and i + 1 < len(tokens):
+                workdir = _join_operand(workdir, tokens[i + 1])
+            i += 2
+        else:
+            i += 1
+    if i >= len(tokens) or tokens[i] != "clean":
+        return None, []
+
+    flags = set()
+    excludes: List[str] = []
+    pathspecs: List[str] = []
+    rest = tokens[i + 1:]
+    j = 0
+    options_done = False
+    while j < len(rest):
+        token = rest[j]
+        j += 1
+        redirect = _REDIRECT_RE.match(token)
+        if redirect:
+            # A bare operator (`>`, `2>`) takes the next token as its file.
+            if redirect.end() == len(token) and not redirect.group(1):
+                j += 1
+            continue
+        if options_done or not token.startswith("-") or token == "-":
+            pathspecs.append(token)
+        elif token == "--":
+            options_done = True
+        elif token.startswith("--"):
+            # git accepts any unambiguous prefix of a long option (`--dry`).
+            name, _, value = token.partition("=")
+            if "--exclude".startswith(name):
+                if not value and j < len(rest):
+                    value, j = rest[j], j + 1
+                excludes.append(value)
+            elif "--dry-run".startswith(name):
+                flags.add("n")
+        else:
+            cluster = token[1:]
+            for k, ch in enumerate(cluster):
+                if ch == "e":
+                    value = cluster[k + 1:]
+                    if not value and j < len(rest):
+                        value, j = rest[j], j + 1
+                    excludes.append(value)
+                    break
+                flags.add(ch)
+
+    if "n" in flags or not flags & {"x", "X"}:
+        return None, []
+    if "d" not in flags and not pathspecs:
+        return None, []
+    spares_venv = "X" not in flags and any(
+        e.strip("\\/") == ".venv" for e in excludes)
+    verb = GIT_CLEAN_SPARING_VERB if spares_venv else GIT_CLEAN_VERB
+    return verb, [_join_operand(workdir, p) for p in pathspecs] or [workdir or "."]
+
 
 def destructive_operands(segment: str) -> Tuple[Optional[str], List[str]]:
     """`(verb, paths)` for a segment that deletes recursively or builds a venv.
@@ -363,6 +489,12 @@ def destructive_operands(segment: str) -> Tuple[Optional[str], List[str]]:
     if not tokens:
         return None, []
     lowered = [t.lower() for t in tokens]
+
+    # `git [-C <repo>] clean -x|-X …` — its own parser: cluster flags, `-e`
+    # arguments, pathspecs and redirections all change the answer.
+    verb, operands = git_clean_operands(tokens)
+    if verb:
+        return verb, operands
 
     # `git [-C <repo>] worktree remove [--force] <path>`
     if "git" in lowered and "worktree" in lowered:
@@ -437,8 +569,12 @@ def destructive_clauses(cmd: str, base: Path) -> List[Clause]:
             out.append(Clause(None, verb, "", None))
             continue
         for operand in operands:
+            if verb == GIT_CLEAN_SPARING_VERB:
+                out.append(Clause(None, verb, operand, None))
+                continue
             path = _operand_path(operand, base)
-            junction = junctioned_venv_under(path)
+            junction = (None if verb == GIT_CLEAN_VERB
+                        else junctioned_venv_under(path))
             if junction is not None:
                 out.append(Clause("junction", verb, operand, junction))
                 continue
@@ -603,6 +739,9 @@ def main() -> None:
     # Rule 5. Only reachable with `hazard.rule == "primary"`: `_lib.block` is
     # NoReturn, so the junction branch above never falls through to here.
     if hazard is not None:
+        remedy = ("To clean ignored files and keep the venv, add `-e .venv` "
+                  "(with `-x`; under `-X` it does not protect it). "
+                  if hazard.verb == GIT_CLEAN_VERB else "")
         _lib.block(
             "Blocked: `" + hazard.verb + " " + hazard.operand + "` would delete the "
             "primary checkout's real venv at " + str(hazard.venv) + ". "
@@ -612,6 +751,7 @@ def main() -> None:
             "one, and it cost a manual rebuild of 33 packages). Every other "
             "session in this repo, and any app running out of this checkout, is "
             "importing from it right now. "
+            + remedy +
             "To rebuild a corrupt venv in place, use `python -m venv --clear "
             "<path>` — it replaces the contents without removing the directory "
             "other processes hold open. To tear down a worktree, use "
