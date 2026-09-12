@@ -28,6 +28,20 @@ For disposable conformance only, Codex also accepts explicit `--disable hooks`, 
 
 The shared runner requires a valid terminal event and observed tool work, with no malformed/unknown records or pending tools/children. Claude's `result` must establish success; Codex's `turn.completed` must have its native usage object. A prose promise, tool start, failed terminal result with process exit zero, or unknown future event never establishes completion. Known reasoning, usage/status and hook metadata is ignored without exposing raw payloads; tool summaries are allowlisted and secret-redacted. Individual failed tools may recover within the same native run, as the Codex smoke demonstrates. A real artifact still requires the caller's delivery check.
 
+### Known record types, and what an unknown one means
+
+Unknown stays unknown: the verdict policy is not the thing that drifts, the parser's knowledge is. `KNOWN_IGNORED_SYSTEM_SUBTYPES` in `skills/_lib/runner_adapters.py` is the explicit allowlist of Claude `system` subtypes that are ambient state rather than a progress boundary (`thinking_tokens`, `status`, `compact_boundary`, `hook_started`, `hook_response`, `hook_progress`, `background_tasks_changed`, `task_updated`). Anything absent from it is counted as unknown, which makes `122` fire — that is the intended fail-safe, not a bug to be relaxed.
+
+Pinned against Claude Code **2.1.269**, captured 2026-09-12. The last two entries are fleet-config#841: the CLI began emitting the background-task store (`background_tasks_changed`, a full snapshot of the in-flight set) and a task status patch (`task_updated`, arriving immediately before the `task_notification` for the same `task_id`) alongside the lifecycle records. Because the runner sets `CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS=0`, every slow shell command becomes a background task, so a healthy run produced three unrecognised records per task and *every* scheduled job on the host ended `122`. `task_notification` remains the one authoritative terminal boundary for both `local_bash` and `local_agent` tasks; the patch is deliberately not consumed, because doing so would count every child twice.
+
+Each unknown record is counted **and named** by its shape — `type/subtype`, or `type/block=<block type>` for an unrecognised content block — and the run's own log line reports the breakdown:
+
+```
+⚠ ignored 0 malformed and 13 unknown stream record(s) · unknown: system/background_tasks_changed ×8, system/task_updated ×5
+```
+
+Descriptors carry discriminator fields only, never payload, and are sanitized and length-capped before they reach the log. A bare count is what let this drift sit unread for weeks: a healthy run and a truncated one printed the same sentence.
+
 | Exit | Meaning |
 | --- | --- |
 | `0` | Complete stream and tool work; delivery confirmed if a check was supplied |
@@ -70,6 +84,8 @@ Observed 2026-09-05 on Windows, using synthetic temp git repositories containing
 Claude safe mode disables custom skill discovery as well as private context; its prompt explicitly asked it to read the disposable SKILL.md and execute the steps with built-in tools. This proves the bounded scheduled execution path, not Claude safe-mode discovery. Codex used the normal `/scheduled-smoke` prompt normalization and `.agents/skills/scheduled-smoke/SKILL.md` discovery. Requested effort was accepted by each CLI; independent provider-side effort attestation was not performed.
 
 An earlier Claude probe with a CRLF input produced LF output and claimed success. The unchanged byte-level delivery checker returned `1`, correctly making delivery unconfirmed. The passing repeat used an explicitly LF input; its checker still required exact bytes. This is evidence for the distinction between native completion and delivered postcondition, not a claim that Claude reliably preserves CRLF.
+
+A second Claude capture on 2026-09-12 (CLI `2.1.269`, `claude-opus-5`, `CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS=0`) recorded the background-task lifecycle for both a backgrounded `Bash` call and an `Agent` sub-agent. Sanitized to discriminator fields only, it is committed as `tests/fixtures/scheduled_claude_background_tasks.jsonl`; replayed through the pre-fix parser it reproduces the reported symptom exactly (`0 malformed and 4 unknown` → exit `122`), and through the current one it reaches `✅ completed · exit 0`.
 
 Run `tests/probe_scheduled_runner.py --harness <claude|codex> --model <supported-id> --effort low` with this repo's existing venv to repeat a bounded native smoke. It uses supported saved authentication, creates no production job, and prints the temp root, native milestones and the postcondition verdict. This opt-in probe is never part of the offline acceptance gate.
 

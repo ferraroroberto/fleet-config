@@ -11,6 +11,7 @@ become success merely because the child exited zero. No schedule is migrated.
 
 from __future__ import annotations
 
+import collections
 import json
 import os
 import re
@@ -119,6 +120,11 @@ SELF_REPORTED_FAILURE_EXIT_CODE = 123
 # self-reported so the three stay tellable apart.
 UNKNOWN_BURST_WINDOW_SECONDS = 15.0
 UNKNOWN_BURST_THRESHOLD = 3
+# How many *distinct* unknown-record shapes the summary line names before it
+# elides the rest. A drifted schema produces a handful of repeated shapes, not a
+# long tail, so a short list is the whole diagnosis; the cap only stops a
+# genuinely corrupt stream from pasting itself into the log.
+UNKNOWN_LABEL_SUMMARY_LIMIT = 6
 TRUNCATED_STREAM_EXIT_CODE = 122
 
 # The fifth shape, and the one none of the four above can see: a run that
@@ -293,6 +299,7 @@ class ProgressFormatter:
         self._assistant_texts: set[str] = set()
         self._malformed = 0
         self._unknown = 0
+        self._unknown_labels: collections.Counter[str] = collections.Counter()
         self._unknown_timestamps: list[float] = []
         self._result_error = False
         self._saw_result = False
@@ -387,6 +394,7 @@ class ProgressFormatter:
         self._provider_error = ""
         self._assistant_texts.clear()
         self._unknown_timestamps.clear()
+        self._unknown_labels.clear()
         self._malformed = 0
         self._unknown = 0
         self._result_error = False
@@ -469,9 +477,29 @@ class ProgressFormatter:
         except Exception:  # noqa: BLE001 — best-effort by contract
             pass
 
-    def _mark_unknown(self) -> None:
+    def _mark_unknown(self, label: str = "") -> None:
+        """Count one unrecognised record, and remember what shape it was.
+
+        The count alone is what made fleet-config#841 invisible for weeks: a
+        healthy run and a truncated one both read "N unknown stream record(s)",
+        so the number stopped being actionable and started being wallpaper. The
+        label is a shape descriptor only (see `runner_adapters.describe_record`)
+        -- never payload -- and it changes nothing about the verdict: unknown
+        still means unknown.
+        """
         self._unknown += 1
+        self._unknown_labels[label or "unlabelled"] += 1
         self._unknown_timestamps.append(self._clock())
+
+    def unknown_summary(self) -> str:
+        """`type/subtype ×N` breakdown of the unknown records, most-seen first."""
+        if not self._unknown_labels:
+            return ""
+        ranked = self._unknown_labels.most_common()
+        named = ", ".join(f"{label} ×{count}"
+                          for label, count in ranked[:UNKNOWN_LABEL_SUMMARY_LIMIT])
+        hidden = len(ranked) - UNKNOWN_LABEL_SUMMARY_LIMIT
+        return named + (f", +{hidden} more shape(s)" if hidden > 0 else "")
 
     def emit_stderr(self, line: str) -> None:
         self._touch()
@@ -515,7 +543,7 @@ class ProgressFormatter:
     def handle_progress(self, event: ProgressEvent) -> None:
         """Consume only the shared contract; provider fields stay at the edge."""
         if event.kind == "unknown":
-            self._mark_unknown()
+            self._mark_unknown(event.name)
         elif event.kind == "malformed":
             self._malformed += 1
         elif event.kind == "start":
@@ -596,9 +624,11 @@ class ProgressFormatter:
 
     def finish(self, exit_code: int, stalled: bool = False) -> None:
         if self._malformed or self._unknown:
+            breakdown = self.unknown_summary()
             self.emit(
                 "⚠ ignored "
                 f"{self._malformed} malformed and {self._unknown} unknown stream record(s)"
+                + (f" · unknown: {breakdown}" if breakdown else "")
             )
         if self._child_failures or self._child_cancellations:
             # Not a verdict (see `saw_kill_signature`) but never silent either:
@@ -943,7 +973,7 @@ def run_process(
                     # Unobserved descendant work closes the pre-effect replay
                     # gate even when it closed both pipes and the parent failed.
                     if active != 0 or not all(reader.eof for reader in readers):
-                        progress._mark_unknown()
+                        progress._mark_unknown("drain/deadline-reached")
                     drain_message = (
                         f"owned scope drain deadline reached · active processes "
                         f"{active if active is not None else 'unknown'} · "
@@ -973,7 +1003,7 @@ def run_process(
             try:
                 process.wait(timeout=TERMINATE_TIMEOUT_SECONDS)
             except subprocess.TimeoutExpired:
-                progress._mark_unknown()
+                progress._mark_unknown("process/exit-wait-timeout")
         if exit_code is None:
             exit_code = process.poll()
         process.stdout.close()
