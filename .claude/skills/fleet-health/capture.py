@@ -46,6 +46,18 @@ import urllib.request
 from pathlib import Path
 from typing import Any, Optional
 
+# Pin stdout/stderr to UTF-8 at the entry point. Windows falls back to cp1252
+# when stdout is piped or redirected, so a single non-latin-1 character in a
+# hub-supplied reason (an arrow, an emoji) raises UnicodeEncodeError and exits
+# 1 -- under capture only, never in a terminal, which is to say only in the
+# scheduled run. The durable fix belongs here rather than in a PYTHONUTF8
+# wrapper at the call site (global-CLAUDE.md, "Windows Python: UTF-8 stdout
+# under capture"; fleet-config#812, the fifth occurrence).
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+if hasattr(sys.stderr, "reconfigure"):
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+
 HUB = os.environ.get("FLEET_HEALTH_HUB", "http://127.0.0.1:8000")
 HUB_PORT = int(os.environ.get("FLEET_HEALTH_HUB_PORT", "8000"))
 MODELS_YAML = Path(os.environ.get(
