@@ -574,15 +574,103 @@ board = {
         ],
         "done": [{"number": 3}],
     },
-    "rate_limits": {"five_hour": {"used_percentage": 42.0, "resets_at": "2026-07-27T18:00:00Z"}},
+    "github": {"available": True, "fetched_at": "2026-07-27T17:00:00Z", "error": None},
+    "live_sessions": {"available": True, "error": None},
+    "quota_lines": [
+        {"harness": "claude", "state": "available", "stale": False,
+         "five_hour": {"used_percentage": 42.0, "resets_at": "2026-07-27T18:00:00Z"}},
+        {"harness": "codex", "state": "available", "stale": False,
+         "five_hour": {"used_percentage": 7.0, "resets_at": "2026-07-27T19:00:00Z"}},
+    ],
 }
 digest = co.format_board_digest(board)
 lines = digest.splitlines()
 check(len(lines) <= 12, f"format_board_digest stays within ~12 lines (got {len(lines)})")
-check(lines[0].startswith("backlog=2 "), "format_board_digest leads with the counts line")
+check(lines[0] == "backlog=2 claude_turn=1 your_turn=1 other=2 done=1",
+      f"format_board_digest leads with the counts line (got {lines[0]!r})")
 check(any("app-launcher" in l for l in lines), "format_board_digest lists the live session")
 check(any("audit-fleet" in l for l in lines), "format_board_digest lists the job card")
-check(any("rate_limit_5h=42.0%" in l for l in lines), "format_board_digest carries the rate-limit line")
+check(any(l == "rate_limit_5h=42.0% resets=2026-07-27T18:00:00Z" for l in lines),
+      "format_board_digest carries the claude 5h rate-limit line from quota_lines")
+check("None" not in digest, "a fully-readable board prints no `None` anywhere")
+check(not any(l.startswith("unknown:") for l in lines), "a fully-readable board carries no unknown line")
+
+# fleet-config#840: an unfetched GitHub cache reads as empty lists — the digest
+# must say unknown, never a plausible `backlog=0`.
+unfetched = {
+    "columns": {"backlog": [], "claude_turn": [_session_card()], "your_turn": [],
+                "other": [{"kind": "job", "job_name": "audit-fleet", "state": "failed"}], "done": []},
+    "github": {"available": False, "fetched_at": None, "error": None},
+    "live_sessions": {"available": True, "error": None},
+    "quota_lines": board["quota_lines"],
+}
+digest = co.format_board_digest(unfetched)
+lines = digest.splitlines()
+check("backlog=0" not in digest, "an unfetched github cache never renders as backlog=0")
+check(lines[0] == "backlog=? claude_turn=1 your_turn=0 other=? done=?",
+      f"github-sourced counts render `?`, session counts stay real (got {lines[0]!r})")
+check(any(l.startswith("unknown:") and "github" in l and "never fetched" in l for l in lines),
+      "the digest says why the github counts are unknown (never fetched)")
+first_fetch_failed = dict(unfetched, github={"available": False, "fetched_at": None, "error": "gh: auth"})
+lines = co.format_board_digest(first_fetch_failed).splitlines()
+check(lines[0].startswith("backlog=? "), "a first fetch that failed still renders the github counts `?`")
+check(any("last attempt failed: gh: auth" in l for l in lines),
+      "a failed first fetch is distinguished from never fetched")
+
+# A refresh that failed after an earlier good fetch: the lists are real (older)
+# data, so the counts stand, but the failure is named.
+failed_refresh = dict(board, github={"available": True, "fetched_at": "2026-07-27T17:00:00Z",
+                                     "error": "gh: HTTP 502"})
+digest = co.format_board_digest(failed_refresh)
+lines = digest.splitlines()
+check(lines[0].startswith("backlog=2 "), "a failed refresh over good cached data keeps the real counts")
+check(any("last fetch failed" in l and "HTTP 502" in l and "2026-07-27T17:00:00Z" in l for l in lines),
+      "a failed refresh is named, with the error and the age of the data shown")
+
+# A genuine zero is still a zero.
+empty_but_fetched = dict(board, columns={"backlog": [], "claude_turn": [], "your_turn": [],
+                                         "other": [], "done": []})
+lines = co.format_board_digest(empty_but_fetched).splitlines()
+check(lines[0] == "backlog=0 claude_turn=0 your_turn=0 other=0 done=0",
+      f"a fetched, genuinely empty board renders real zeros (got {lines[0]!r})")
+
+# #840 comment: an unreadable session-host must not read as `claude_turn=0 your_turn=0`.
+no_host = dict(board, columns=dict(board["columns"], claude_turn=[], your_turn=[]),
+               live_sessions={"available": False, "error": "session-host unreachable"})
+digest = co.format_board_digest(no_host)
+lines = digest.splitlines()
+check(lines[0] == "backlog=2 claude_turn=? your_turn=? other=2 done=1",
+      f"an unreadable session-host renders the turn counts `?` (got {lines[0]!r})")
+check(any("live_sessions" in l and "session-host unreachable" in l for l in lines),
+      "the digest names the session-host error")
+
+# An older launcher build that doesn't send a source section at all: absent is
+# unknown, never "fetched". Every count token must be gated on some source, so
+# a bare `{}` payload can't produce a single plausible number — the property
+# that stops a future count from being added without an availability check.
+digest = co.format_board_digest({})
+lines = digest.splitlines()
+check(lines[0] == "backlog=? claude_turn=? your_turn=? other=? done=?",
+      f"a payload with no source sections renders every count `?` (got {lines[0]!r})")
+check(any("not reported" in l for l in lines), "an absent source section is reported as not reported")
+check("None" not in digest, "an empty payload prints no `None` anywhere")
+check(any(l.startswith("rate_limit_5h=? ") for l in lines), "no quota_lines renders the rate limit `?`")
+
+# The quota row exists but carries no reading.
+unread_quota = dict(board, quota_lines=[{"harness": "claude", "state": "error",
+                                         "reason": "consumer_contract_unavailable",
+                                         "five_hour": {"used_percentage": None, "resets_at": None}}])
+digest = co.format_board_digest(unread_quota)
+check("None" not in digest, "an unreadable quota row prints no `None%`")
+no_reason = dict(board, quota_lines=[{"harness": "claude", "five_hour": {}}])
+check("None" not in co.format_board_digest(no_reason), "a quota row with no state/reason prints no `None`")
+check(any(l.startswith("rate_limit_5h=? resets=?") and "consumer_contract_unavailable" in l
+          for l in digest.splitlines()),
+      "an unreadable quota row renders `?` and names its reason")
+stale_quota = dict(board, quota_lines=[dict(board["quota_lines"][0], stale=True)])
+check(any(l.startswith("rate_limit_5h=42.0% ") and "stale" in l
+          for l in co.format_board_digest(stale_quota).splitlines()),
+      "a stale quota reading keeps its value but is marked stale")
 
 
 # ---- parse_issue_ref / _fmt_age -----------------------------------------------
