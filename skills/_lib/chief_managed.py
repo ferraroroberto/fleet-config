@@ -16,6 +16,14 @@ The file is advisory and self-healing, same as `active-issues.json`: a
 missing/corrupt read is empty, not fatal, and a marker that outlives its
 session is harmless — `notify_on_idle` only ever *reads* it to decide
 routing, it never trusts it as proof a session is alive.
+
+This module is the **writer only**. The one reader is
+`hooks/notify_on_idle.chief_managed_state()` (used by it and by
+`block_askuserquestion_chief`), which keeps its own read logic per the
+hooks/skills_lib tree-independence convention and returns a reason alongside
+the verdict so "not managed" and "could not tell" stay distinct. A second
+reader here was removed as dead (fleet-config#850) — query the marker through
+that function, not by adding one back.
 """
 
 from __future__ import annotations
@@ -62,18 +70,11 @@ def mark(
     return row
 
 
-def is_managed(sid: str, *, path: Optional[Path] = None) -> bool:
-    """True if `sid` has a live (unpruned) chief-managed marker."""
-    target = path or state_file()
-    rows = prune_rows(read_rows(target))
-    return sid in rows
-
-
 def _main(argv: Optional[list[str]] = None) -> int:
     """Minimal CLI so a caller outside this tree (app-launcher, a different
     repo) can write a marker via subprocess instead of importing across the
-    repo boundary -- the same hooks/skills_lib subprocess convention this
-    module's docstring already follows for the read side (fleet-config#474).
+    repo boundary -- the same hooks/skills_lib tree-independence convention
+    the module docstring describes for the read side (fleet-config#474).
 
     ``mark <sid> <repo> <number>`` is the only subcommand; it mirrors
     `chief_ops.py cmd_dispatch`'s existing best-effort call so both the CLI

@@ -159,7 +159,8 @@ _STANDALONE_UNIT_CHECKS: Tuple[Tuple[str, str, str], ...] = (
      "same file covers `steer_delivery.py`, the say --verify classifier "
      "(fleet-config#680)"),
     ("chief_managed", "test_chief_managed.py",
-     "the chief-managed session marker -- mark/is_managed, cross-sid "
+     "the chief-managed session marker -- mark read back through "
+     "notify_on_idle.chief_managed_state (the one reader), cross-sid "
      "isolation, and the 24h TTL prune -- is testable on its own, with "
      "no real chief-managed.json touched (fleet-config#443)"),
     ("dirty_tree_check", "test_dirty_tree_check.py",
