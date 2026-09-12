@@ -36,12 +36,23 @@ from acceptance.shared import (
 
 
 def _block_askuserquestion_chief_unit_checks() -> Tuple[int, int]:
-    """`block_askuserquestion_chief.py` (fleet-config#463): drives the real
-    hook subprocess against a temp `CLAUDE_HOOKS_STATE_DIR` carrying a
-    `chief-managed.json` marker, so a managed sid's `AskUserQuestion` blocks
-    (exit 2) while everything else -- an unmanaged sid, a non-`AskUserQuestion`
-    tool, a missing `session_id`, and a corrupt state file -- fails open
-    (exit 0), never stranding an ordinary session over a bad read.
+    """`block_askuserquestion_chief.py` (fleet-config#463, fleet-config#835):
+    drives the real hook subprocess against a temp `CLAUDE_HOOKS_STATE_DIR`
+    carrying a `chief-managed.json` marker.
+
+    The identity under test is the **launcher** session id in
+    `APP_LAUNCHER_SESSION_ID`, never the payload's `session_id`. Every case
+    below pins that distinction: the pre-#835 hook read the payload, and since
+    the registry is keyed the launcher way the two never matched, so the guard
+    allowed every call it was written to refuse. A payload `session_id` that
+    *is* a marker key must therefore still be allowed -- that case is the
+    regression, and it exits 2 against pre-fix code.
+
+    Everything that is not a confirmed chief-managed session fails open
+    (exit 0), never stranding an ordinary session; the one case where the
+    answer is genuinely unknown -- launcher-spawned with an unreadable registry
+    -- still allows, but must *say so* on the model-visible channel rather than
+    look identical to a clean "not managed".
     """
     check = _Checker()
 
@@ -49,51 +60,84 @@ def _block_askuserquestion_chief_unit_checks() -> Tuple[int, int]:
     try:
         marker = tmp / "chief-managed.json"
         marker.write_text(json.dumps({
-            "sid-managed": {"repo": "fleet-config", "number": 463,
-                             "dispatched_at": "2026-07-27T12:00:00Z"},
+            "launcher-sid-managed": {"repo": "fleet-config", "number": 463,
+                                      "dispatched_at": "2026-07-27T12:00:00Z"},
         }), encoding="utf-8")
-        env = {"CLAUDE_HOOKS_STATE_DIR": str(tmp)}
+        state_env = {"CLAUDE_HOOKS_STATE_DIR": str(tmp)}
+        managed_env = {**state_env, "APP_LAUNCHER_SESSION_ID": "launcher-sid-managed"}
 
         code, _out, stderr = run(
             "block_askuserquestion_chief",
-            {"tool_name": "AskUserQuestion", "session_id": "sid-managed"},
-            extra_env=env,
+            {"tool_name": "AskUserQuestion", "session_id": "claude-transcript-uuid"},
+            extra_env=managed_env,
         )
-        check("block_askuserquestion: managed sid + AskUserQuestion -> block (exit 2)", code == 2)
+        check("block_askuserquestion: chief-managed launcher sid + AskUserQuestion -> block (exit 2)",
+              code == 2)
         check("block_askuserquestion: block reason mentions the say/exchange fallback",
               "chief_ops.py say" in stderr or "say" in stderr.lower())
 
         code, _out, _err = run(
             "block_askuserquestion_chief",
-            {"tool_name": "AskUserQuestion", "session_id": "sid-unmanaged"},
-            extra_env=env,
+            {"tool_name": "AskUserQuestion", "session_id": "claude-transcript-uuid"},
+            extra_env={**state_env, "APP_LAUNCHER_SESSION_ID": "launcher-sid-unmanaged"},
         )
-        check("block_askuserquestion: unmanaged sid -> allow (exit 0)", code == 0)
+        check("block_askuserquestion: launcher-spawned but undispatched -> allow (exit 0)", code == 0)
 
+        # The regression itself: a payload `session_id` that happens to be a
+        # marker key is *not* this session's identity. Pre-#835 this blocked.
         code, _out, _err = run(
             "block_askuserquestion_chief",
-            {"tool_name": "Bash", "session_id": "sid-managed"},
-            extra_env=env,
+            {"tool_name": "AskUserQuestion", "session_id": "launcher-sid-managed"},
+            extra_env=state_env,
         )
-        check("block_askuserquestion: managed sid but non-AskUserQuestion tool -> allow (exit 0)", code == 0)
+        check("block_askuserquestion: payload session_id is never the identity -> allow (exit 0)",
+              code == 0)
 
         code, _out, _err = run(
             "block_askuserquestion_chief",
             {"tool_name": "AskUserQuestion"},
-            extra_env=env,
+            extra_env=state_env,
         )
-        check("block_askuserquestion: missing session_id -> allow (exit 0)", code == 0)
+        check("block_askuserquestion: ordinary (non-launcher) session -> allow (exit 0)", code == 0)
+
+        code, _out, _err = run(
+            "block_askuserquestion_chief",
+            {"tool_name": "Bash", "session_id": "claude-transcript-uuid"},
+            extra_env=managed_env,
+        )
+        check("block_askuserquestion: chief-managed but non-AskUserQuestion tool -> allow (exit 0)",
+              code == 0)
 
         corrupt = tmp / "corrupt"
         corrupt.mkdir()
         corrupt_marker = corrupt / "chief-managed.json"
         corrupt_marker.write_text("{not json", encoding="utf-8")
-        code, _out, _err = run(
+        code, out, _err = run(
             "block_askuserquestion_chief",
-            {"tool_name": "AskUserQuestion", "session_id": "sid-managed"},
-            extra_env={"CLAUDE_HOOKS_STATE_DIR": str(corrupt)},
+            {"tool_name": "AskUserQuestion", "session_id": "claude-transcript-uuid"},
+            extra_env={"CLAUDE_HOOKS_STATE_DIR": str(corrupt),
+                       "APP_LAUNCHER_SESSION_ID": "launcher-sid-managed"},
         )
-        check("block_askuserquestion: corrupt state file -> fail open, allow (exit 0)", code == 0)
+        check("block_askuserquestion: unreadable registry -> fail open, allow (exit 0)", code == 0)
+        try:
+            warned = json.loads(out or "{}").get("systemMessage", "")
+        except ValueError:
+            warned = ""
+        check("block_askuserquestion: unreadable registry reports 'unknown', not silence",
+              "UNVERIFIED" in warned and "unknown" in warned)
+
+        # A registry that was never created is a determination ("nothing has
+        # been dispatched"), not an unknown -- no nudge, just a quiet allow.
+        empty = tmp / "empty"
+        empty.mkdir()
+        code, out, _err = run(
+            "block_askuserquestion_chief",
+            {"tool_name": "AskUserQuestion", "session_id": "claude-transcript-uuid"},
+            extra_env={"CLAUDE_HOOKS_STATE_DIR": str(empty),
+                       "APP_LAUNCHER_SESSION_ID": "launcher-sid-managed"},
+        )
+        check("block_askuserquestion: no registry yet -> quiet allow (exit 0, no nudge)",
+              code == 0 and out.strip() == "")
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 

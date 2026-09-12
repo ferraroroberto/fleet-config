@@ -26,6 +26,15 @@ from typing import Any, Dict, Optional, Sequence
 
 STATE_DIR_ENV_VAR = "CLAUDE_HOOKS_STATE_DIR"
 
+# app-launcher stamps this into every PTY/remote session it spawns
+# (`src/session_host.agent_child_env`), assigning it unconditionally rather
+# than inheriting, so the agent process — and every hook subprocess below it —
+# carries the id of *its own* launcher session even when a launcher session
+# spawns another. It is the only identifier a hook shares with the launcher:
+# the harness's own `payload["session_id"]` lives in a different namespace
+# entirely (fleet-config#835).
+LAUNCHER_SESSION_ID_ENV_VAR = "APP_LAUNCHER_SESSION_ID"
+
 logger = logging.getLogger("fleet_hooks")
 
 
@@ -39,6 +48,20 @@ def state_dir() -> Path:
     guards against."""
     root = os.environ.get(STATE_DIR_ENV_VAR)
     return Path(root) if root else Path.home() / ".claude" / "hooks" / "state"
+
+
+def launcher_session_id() -> str:
+    """This session's **app-launcher** session id, or ``""`` when not launcher-spawned.
+
+    The third reader of :data:`LAUNCHER_SESSION_ID_ENV_VAR`
+    (``branch_before_edit_guard``, ``session_state``, and now the chief-managed
+    lookup in ``notify_on_idle``) is where the inlined
+    ``os.environ.get(..., "").strip()`` becomes a helper, so a fourth reader
+    cannot quietly spell the variable — or the empty-string contract — its own
+    way. Resolved at call time, like :func:`state_dir`, so an acceptance
+    subprocess's env override always wins.
+    """
+    return os.environ.get(LAUNCHER_SESSION_ID_ENV_VAR, "").strip()
 
 
 # ------------------------------------------------------- credential patterns

@@ -123,7 +123,7 @@ def main() -> None:
     # fleet-wide. `run_git`'s own docstring calls this "by far the
     # highest-frequency git spawn this repo owns"; the whole decision below is
     # pure, so ordering these guards changes cost, never verdict.
-    if not os.environ.get("APP_LAUNCHER_SESSION_ID", "").strip():
+    if not _lib.launcher_session_id():
         _lib.allow()
 
     if os.environ.get("CLAUDE_HOOKS_ALLOW_MAIN_EDIT") == "1":

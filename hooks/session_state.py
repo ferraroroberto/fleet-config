@@ -277,9 +277,7 @@ def upsert_from_payload(
     project = _lib.detect_project(cwd_path)
     transcript = payload.get("transcript_path")
     name, name_source = _lookup_session_name(session_id)
-    launcher_session_id = (
-        os.environ.get("APP_LAUNCHER_SESSION_ID", "").strip() or None
-    )
+    launcher_session_id = _lib.launcher_session_id() or None
     agent = (
         os.environ.get("APP_LAUNCHER_AGENT", "").strip().lower()
         or _lib.payload_agent(payload)

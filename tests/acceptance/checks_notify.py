@@ -12,6 +12,7 @@ for why). Each function is self-contained and returns its own
 """
 from __future__ import annotations
 
+import inspect
 import json
 import os
 import re
@@ -543,9 +544,9 @@ def _notify_board_link_unit_checks() -> Tuple[int, int]:
 
 
 def _notify_chief_routing_unit_checks() -> Tuple[int, int]:
-    """`is_chief_managed`/`parse_chief_sid` — the pure decision logic behind
+    """`chief_managed_state`/`parse_chief_sid` — the pure decision logic behind
     routing a chief-dispatched worker's blocked-on-input notification to
-    chief instead of the human ping (fleet-config#443).
+    chief instead of the human ping (fleet-config#443, fleet-config#835).
 
     Deliberately does NOT exercise `notify_chief`'s live subprocess/network
     call here (or via a `run()` end-to-end hook invocation with a genuinely
@@ -563,25 +564,69 @@ def _notify_chief_routing_unit_checks() -> Tuple[int, int]:
 
     check = _Checker()
 
-    # ---- is_chief_managed: file-based, fully isolated from the real state dir ----
+    # ---- chief_managed_state: env identity + file read, fully isolated ----
+    # The sid comes from the *environment*, not an argument: keying this on the
+    # hook payload's `session_id` is what left both callers inert
+    # (fleet-config#835), so the env var is what these checks drive.
     tmp = Path(tempfile.mkdtemp(prefix="chief_managed_route_"))
+    old_launcher_sid = os.environ.get("APP_LAUNCHER_SESSION_ID")
+
+    def _as_launcher(sid: str) -> None:
+        if sid:
+            os.environ["APP_LAUNCHER_SESSION_ID"] = sid
+        else:
+            os.environ.pop("APP_LAUNCHER_SESSION_ID", None)
+
     try:
         target = tmp / "chief-managed.json"
-        check("is_chief_managed: missing state file -> False",
-              notify_on_idle.is_chief_managed("sid-1", path=target) is False)
+
+        _as_launcher("")
+        check("chief_managed_state: no launcher env -> (False, not-launcher-spawned)",
+              notify_on_idle.chief_managed_state(path=target)
+              == (False, notify_on_idle.CHIEF_NOT_LAUNCHER))
+
+        _as_launcher("sid-1")
+        check("chief_managed_state: missing state file -> (False, not-dispatched)",
+              notify_on_idle.chief_managed_state(path=target)
+              == (False, notify_on_idle.CHIEF_NOT_DISPATCHED))
 
         target.write_text(json.dumps({"sid-1": {"repo": "app-launcher", "number": 528,
                                                   "dispatched_at": "2026-07-27T12:00:00Z"}}),
                            encoding="utf-8")
-        check("is_chief_managed: marked sid -> True",
-              notify_on_idle.is_chief_managed("sid-1", path=target) is True)
-        check("is_chief_managed: unrelated sid -> False",
-              notify_on_idle.is_chief_managed("sid-2", path=target) is False)
+        check("chief_managed_state: marked launcher sid -> (True, managed)",
+              notify_on_idle.chief_managed_state(path=target)
+              == (True, notify_on_idle.CHIEF_MANAGED))
+
+        _as_launcher("sid-2")
+        check("chief_managed_state: unmarked launcher sid -> (False, not-dispatched)",
+              notify_on_idle.chief_managed_state(path=target)
+              == (False, notify_on_idle.CHIEF_NOT_DISPATCHED))
 
         target.write_text("{not json", encoding="utf-8")
-        check("is_chief_managed: corrupt state file -> False (no crash)",
-              notify_on_idle.is_chief_managed("sid-1", path=target) is False)
+        _as_launcher("sid-1")
+        check("chief_managed_state: corrupt state file -> (False, undetermined), no crash",
+              notify_on_idle.chief_managed_state(path=target)
+              == (False, notify_on_idle.CHIEF_UNDETERMINED))
+
+        target.write_text(json.dumps(["not", "a", "dict"]), encoding="utf-8")
+        check("chief_managed_state: non-dict state file -> (False, undetermined)",
+              notify_on_idle.chief_managed_state(path=target)
+              == (False, notify_on_idle.CHIEF_UNDETERMINED))
+
+        # "could not tell" must never be spelled the same as any determination.
+        check("chief_managed_state: undetermined is distinct from every determination",
+              len({notify_on_idle.CHIEF_MANAGED, notify_on_idle.CHIEF_NOT_LAUNCHER,
+                   notify_on_idle.CHIEF_NOT_DISPATCHED, notify_on_idle.CHIEF_UNDETERMINED}) == 4)
+
+        # The #835 regression, stated as a property: the payload's session_id is
+        # not an input to this decision at all.
+        check("chief_managed_state: takes no payload sid (env is the only identity)",
+              "sid" not in inspect.signature(notify_on_idle.chief_managed_state).parameters)
     finally:
+        if old_launcher_sid is None:
+            os.environ.pop("APP_LAUNCHER_SESSION_ID", None)
+        else:
+            os.environ["APP_LAUNCHER_SESSION_ID"] = old_launcher_sid
         shutil.rmtree(tmp, ignore_errors=True)
 
     # ---- parse_chief_sid: pure stdout-line parsing ----

@@ -39,7 +39,7 @@ import subprocess
 import sys
 import tempfile
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Tuple
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -155,24 +155,59 @@ def board_link(payload: dict, registry: object | None = None) -> str | None:
     return f"📋 Open on the Board: {url}"
 
 
-def is_chief_managed(sid: str, path: Optional[Path] = None) -> bool:
-    """True if `sid` has a live chief-managed marker (fleet-config#443).
+# The four outcomes of `chief_managed_state()`. Three are *determinations*; the
+# fourth says the question could not be answered, and is deliberately not
+# spelled the same as any of them (fleet-config#835).
+CHIEF_MANAGED = "managed"                     # launcher-spawned AND dispatched by chief
+CHIEF_NOT_LAUNCHER = "not-launcher-spawned"   # no APP_LAUNCHER_SESSION_ID -> an ordinary session
+CHIEF_NOT_DISPATCHED = "not-dispatched"       # launcher-spawned, but chief did not dispatch it
+CHIEF_UNDETERMINED = "undetermined"           # launcher-spawned, registry unreadable -> unknown
 
-    A tiny independent reader of the same `hooks/state/chief-managed.json`
-    `skills/_lib/chief_managed.py` writes -- deliberately its own read
-    logic, not an import, per the hooks/skills_lib tree-independence
-    convention. Tolerant of a missing/corrupt file (not managed, never a
-    hook-breaking error); no TTL re-check here since a marker outliving its
-    session is harmless -- worst case is one extra `chief-sid` lookup that
-    finds nothing.
+
+def chief_managed_state(path: Optional[Path] = None) -> Tuple[bool, str]:
+    """Is *this* session a chief-dispatched worker? -> `(managed, reason)`.
+
+    Reads the same `hooks/state/chief-managed.json` `skills/_lib/chief_managed.py`
+    writes -- deliberately its own read logic, not an import, per the
+    hooks/skills_lib tree-independence convention. No TTL re-check here since a
+    marker outliving its session is harmless -- worst case is one extra
+    `chief-sid` lookup that finds nothing.
+
+    **The key is the launcher session id, never the harness's own
+    `payload["session_id"]`** (fleet-config#835). `chief_ops.py dispatch` marks
+    the sid the app-launcher API hands back; the hook payload carries Claude
+    Code's transcript uuid. They are different id spaces and never equal, so
+    keying this on the payload made every lookup return False -- a guard that
+    had been inert since the day it shipped, without ever saying so. The
+    launcher stamps its own id into the spawned agent's environment
+    (`APP_LAUNCHER_SESSION_ID`), which every hook subprocess inherits, so there
+    is no id translation to keep in sync at all.
+
+    The `reason` exists because "not managed" and "could not tell" must not be
+    the same answer. A missing *file* is a determination (nothing has ever been
+    dispatched on this box); an unreadable or malformed one is not, and callers
+    are expected to report `CHIEF_UNDETERMINED` rather than fold it into the
+    quiet path.
     """
+    sid = _lib.launcher_session_id()
+    if not sid:
+        return False, CHIEF_NOT_LAUNCHER
     if path is None:
         path = _lib.state_dir() / "chief-managed.json"
     try:
-        data = json.loads(path.read_text(encoding="utf-8-sig"))
-    except (OSError, ValueError):
-        return False
-    return isinstance(data, dict) and sid in data
+        raw = path.read_text(encoding="utf-8-sig")
+    except FileNotFoundError:
+        # The registry is created by the first dispatch; absent means none.
+        return False, CHIEF_NOT_DISPATCHED
+    except OSError:
+        return False, CHIEF_UNDETERMINED
+    try:
+        data = json.loads(raw)
+    except ValueError:
+        return False, CHIEF_UNDETERMINED
+    if not isinstance(data, dict):
+        return False, CHIEF_UNDETERMINED
+    return (sid in data), (CHIEF_MANAGED if sid in data else CHIEF_NOT_DISPATCHED)
 
 
 def parse_chief_sid(stdout: str) -> str:
@@ -300,18 +335,30 @@ def main() -> None:
     # found, delivery failed) — never silently drops a real blocked-worker
     # notification, and never retries (a retry here would mask a real #607
     # delivery defect rather than surface it).
-    sid = payload.get("session_id")
-    if (
-        payload.get("notification_type") == "permission_prompt"
-        and isinstance(sid, str)
-        and sid
-        and is_chief_managed(sid)
-    ):
-        icon, text = classify(payload)
-        chief_message = f"{icon} chief-managed worker needs input: {text}"
-        chief_message = chief_message.replace("\n", " ")[:300]
-        if notify_chief(chief_message):
-            _lib.allow()  # delivered to chief -- no human ping for this one
+    #
+    # Keyed on the launcher session id from the environment, not the payload's
+    # `session_id` — those are different id spaces, and the payload spelling
+    # meant this branch had never once been taken (fleet-config#835).
+    if payload.get("notification_type") == "permission_prompt":
+        # The cheap sub-type test stays first so the state read costs nothing on
+        # the no-op notification types.
+        managed, chief_reason = chief_managed_state()
+        if chief_reason == CHIEF_UNDETERMINED:
+            # Launcher-spawned, but the registry could not be read: say so
+            # rather than let "couldn't tell" look identical to "checked, not
+            # managed". The human ping below is the safe fallback, not the
+            # silent one.
+            logger.warning(
+                "notify_on_idle: chief-managed lookup undetermined for launcher session %s "
+                "-- falling back to the human ping",
+                _lib.launcher_session_id(),
+            )
+        if managed:
+            icon, text = classify(payload)
+            chief_message = f"{icon} chief-managed worker needs input: {text}"
+            chief_message = chief_message.replace("\n", " ")[:300]
+            if notify_chief(chief_message):
+                _lib.allow()  # delivered to chief -- no human ping for this one
 
     # A "come look, I'm blocked" prompt is action-needed → the attention chat.
     chat, name = _lib.resolve_notify_target(_lib.cwd(payload), category="attention")

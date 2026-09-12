@@ -347,17 +347,19 @@ def run_hook_matrix() -> Tuple[int, int]:
          "cwd": str(REPO), "message": "needs permission"},
         0,
     ))
-    # fleet-config#443: a session_id present but NOT chief-managed (this fake id
-    # can never appear in the real chief-managed.json) must fall straight through
-    # to the existing human-ping path without ever invoking notify_chief's
-    # subprocess/network call — exercises the new gate at exactly the boundary
-    # that matters (present-but-unmanaged) with zero risk of reaching a real
-    # live chief session. The genuinely chief-managed branch is covered by
-    # direct unit tests on is_chief_managed/parse_chief_sid below instead —
-    # deliberately never end-to-end here, since that would require a real
-    # chief-managed.json entry and would let notify_chief actually shell out.
+    # fleet-config#443: a permission_prompt that is NOT chief-managed must fall
+    # straight through to the existing human-ping path without ever invoking
+    # notify_chief's subprocess/network call. `shared.hook_env` drops
+    # APP_LAUNCHER_SESSION_ID from every hook subprocess, so this runs as an
+    # ordinary non-launcher session no matter how the suite itself was started
+    # (fleet-config#835) — zero risk of reaching a real live chief session. The
+    # payload session_id below is deliberately kept and deliberately ignored:
+    # it is the id space that used to key this decision. The genuinely
+    # chief-managed branch is covered by direct unit tests on
+    # chief_managed_state/parse_chief_sid below instead — never end-to-end
+    # here, since that would let notify_chief actually shell out.
     cases.append((
-        "notify_on_idle: permission_prompt with an unmanaged session_id -> allow (falls through to human ping)",
+        "notify_on_idle: permission_prompt in a non-launcher session -> allow (falls through to human ping)",
         "notify_on_idle",
         {"hook_event_name": "Notification", "notification_type": "permission_prompt",
          "cwd": str(REPO), "message": "needs permission",

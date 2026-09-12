@@ -22,6 +22,12 @@ from typing import Any, Dict, Tuple
 REPO = Path(__file__).resolve().parent.parent.parent
 HOOKS = REPO / "hooks"
 
+sys.path.insert(0, str(HOOKS))
+# Imported for the constant rather than re-spelled as a literal here: the env
+# var name is the hooks' own contract (fleet-config#835), and a rename must
+# break this import instead of silently un-scrubbing the suite's environment.
+from _lib import LAUNCHER_SESSION_ID_ENV_VAR  # noqa: E402
+
 # The exit code a standalone `tests/test_*.py` suite uses to say "I could not
 # establish my facts" -- distinct from 0 (ran, all passed) and from any other
 # non-zero (ran, failed). `_subprocess_unit_check` renders it as SKIP and it
@@ -89,6 +95,15 @@ def hook_env(extra_env: Dict[str, str] | None = None) -> Dict[str, str]:
     the suite if either stops — the property this replaced was a comment.
     """
     env = {k: v for k, v in os.environ.items() if k != "TELEGRAM_BOT_TOKEN"}
+    # `APP_LAUNCHER_SESSION_ID` decides whether a hook thinks it is running
+    # inside a launcher-spawned (and possibly chief-dispatched) session
+    # (fleet-config#835). Inheriting it would make the suite's verdicts depend
+    # on *how the suite was launched* — green from a plain terminal, and from a
+    # chief-dispatched worker a `block_askuserquestion_chief` that blocks and a
+    # `notify_on_idle` that tries to reach the live chief. Dropped
+    # unconditionally, exactly like the Telegram token; the checks that need it
+    # set their own value through `extra_env`.
+    env.pop(LAUNCHER_SESSION_ID_ENV_VAR, None)
     env["CLAUDE_SETTINGS_JSON_PATH"] = NO_SETTINGS_JSON
     env["FLEET_CONFIG_ENV_PATH"] = NO_DOTENV
     env["FLEET_NOTIFY_BLOCK_NETWORK"] = "1"
