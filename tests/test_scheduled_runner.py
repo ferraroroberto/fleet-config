@@ -55,10 +55,18 @@ class ScheduledRunnerTests(unittest.TestCase):
                 self.assertIn("completed · exit 0", text)
                 self.assertNotIn("raw-command", text)
 
-    def test_missing_malformed_and_unknown_completion_are_unverified(self):
+    def test_missing_and_malformed_completion_are_unverified(self):
+        """Still 122 -- these are the halves fleet-config#810 left verdict-bearing.
+
+        A stream that never reached its terminal event, or carried a record the
+        adapter could not parse at all, leaves delivery unestablished. Merely
+        *unrecognised* records used to be in this list and deliberately are not
+        any more; `test_unknown_records_are_named_but_never_the_verdict` owns
+        that case now.
+        """
         for adapter in self.adapters:
             good = self.fixtures[adapter.label]
-            for events in (good[:-1], [*good, "{truncated"], [*good, {"type": "future_side_effect"}], [{}], []):
+            for events in (good[:-1], [*good, "{truncated"], [{}], []):
                 with self.subTest(adapter=adapter.label, events=events[-1:]):
                     code, formatter, text = fake_run(events, adapter)
                     self.assertEqual(code, runner.TRUNCATED_STREAM_EXIT_CODE, text)
@@ -103,8 +111,17 @@ class ScheduledRunnerTests(unittest.TestCase):
         self.assertIn("not confirmed", text)
         self.assertNotIn("✅ completed", text)
 
-    def test_unknown_records_name_the_shape_they_were(self):
-        """A bare count is what made #841 invisible; the log must say what drifted."""
+    def test_unknown_records_are_named_but_never_the_verdict(self):
+        """#841 made them diagnosable; #810 stopped them deciding the run.
+
+        `fleet-health-weekly` run 20260909T233001 delivered its digest, its
+        ledger entry and its Telegram ping under `150 unknown stream record(s)`
+        and would still have gone red, because one unrecognised record anywhere
+        in the stream was enough. Claude Code adds record types routinely, so
+        that shape reds the whole fleet the week upstream ships a new `system`
+        subtype -- manufacturing a failure rather than hiding one. The records
+        stay counted, named and logged; they just stop being evidence.
+        """
         good = self.fixtures["Claude Code"]
         drifted = [
             {"type": "system", "subtype": "some_future_subtype"},
@@ -113,7 +130,8 @@ class ScheduledRunnerTests(unittest.TestCase):
             {"type": "assistant", "message": {"content": [{"type": "future_block"}]}},
         ]
         code, formatter, text = fake_run([*good[:-1], *drifted, good[-1]], ClaudeAdapter())
-        self.assertEqual(code, runner.TRUNCATED_STREAM_EXIT_CODE, text)
+        self.assertEqual(code, 0, text)
+        self.assertIn("✅ completed · exit 0", text)
         self.assertIn("4 unknown stream record(s)", text)
         self.assertIn("system/some_future_subtype ×2", text)
         self.assertIn("future_top_level ×1", text)
@@ -127,6 +145,35 @@ class ScheduledRunnerTests(unittest.TestCase):
         )
         formatter.reset_for_retry()
         self.assertEqual(formatter.unknown_summary(), "")
+
+    def test_unverifiable_surfaces_still_red_a_delivered_run(self):
+        """The half of #810 that must not weaken: unproven is not unrecognised.
+
+        A drain deadline reached with a pipe still open, a child that never
+        exited, a native delegated item whose completion this parser cannot
+        read -- each means the outcome is a fact nobody established, which the
+        global rule says is its own state rather than a pass. A terminal result
+        event does not answer any of them.
+        """
+        lines: list[str] = []
+        formatter = runner.ProgressFormatter(emit=lines.append)
+        formatter.handle_line(json.dumps({"type": "result", "subtype": "success",
+                                          "is_error": False, "result": "done"}))
+        formatter.handle_line(json.dumps({"type": "future_event"}))
+        self.assertFalse(formatter.unverified_stream, "drift alone is not evidence")
+        formatter._mark_unverified("drain/deadline-reached")
+        self.assertTrue(formatter.unverified_stream)
+        formatter.finish(runner.TRUNCATED_STREAM_EXIT_CODE)
+        text = "\n".join(lines)
+        self.assertIn("1 record(s) left this run unverified", text)
+        self.assertIn("drain/deadline-reached \u00d71", text)
+        self.assertIn("\u2753 not confirmed", text)
+        self.assertNotIn("\u2705 completed", text)
+        # Counted separately from the unknown breakdown, so the two never blur.
+        self.assertNotIn("drain/deadline-reached", formatter.unknown_summary())
+        formatter.reset_for_retry()
+        self.assertEqual(formatter.unverified_summary(), "")
+        self.assertEqual(formatter._unverified, 0)
 
     def test_unknown_descriptors_are_sanitized_and_capped(self):
         self.assertEqual(describe_record("system", "a b\nc"), "system/a?b?c")
@@ -238,9 +285,18 @@ class ScheduledRunnerTests(unittest.TestCase):
         self.assertIn("background tasks killed after timeout", text)
 
     def test_codex_delegation_is_unverified_until_native_conformance(self):
+        """A delegated child registers no tool and no child -- nothing else sees it.
+
+        The one adapter site #810 kept verdict-bearing: an unrecognised record
+        is now forgiven, but a collaboration item this parser cannot read would
+        otherwise vanish into a green turn with no other detector watching it.
+        """
         good = self.fixtures["Codex"]
-        code, _, _ = fake_run([*good, {"type": "item.completed", "item": {"id": "child", "type": "collab_tool_call", "status": "completed"}}], CodexAdapter())
-        self.assertEqual(code, runner.TRUNCATED_STREAM_EXIT_CODE)
+        code, formatter, text = fake_run([*good, {"type": "item.completed", "item": {"id": "child", "type": "collab_tool_call", "status": "completed"}}], CodexAdapter())
+        self.assertEqual(code, runner.TRUNCATED_STREAM_EXIT_CODE, text)
+        self.assertEqual(formatter._unknown, 0, text)
+        self.assertIn("item.completed/collab_tool_call \u00d71", text)
+        self.assertNotIn("\u2705 completed", text)
 
     def test_auth_model_tools_and_generic_errors_are_distinct(self):
         cases = [("Authentication failed: 401", runner.AUTH_UNAVAILABLE_EXIT_CODE),
