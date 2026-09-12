@@ -34,6 +34,7 @@ SPEC = importlib.util.spec_from_file_location(
 assert SPEC and SPEC.loader
 session_state = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(session_state)
+_SWEEP_AFTER = timedelta(seconds=session_state._lib.ATOMIC_TMP_SWEEP_AFTER_SECONDS)
 
 
 def _age(path: Path, delta: timedelta) -> None:
@@ -75,7 +76,7 @@ class TempFileHygieneTests(unittest.TestCase):
         prefix = f".{session_state.STATE_FILENAME}."
         stale = self.dir / f"{prefix}deadbeef.tmp"
         stale.write_text("{}", encoding="utf-8")
-        _age(stale, session_state._TMP_SWEEP_AFTER + timedelta(minutes=5))
+        _age(stale, _SWEEP_AFTER + timedelta(minutes=5))
 
         live = self.dir / f"{prefix}livewrit.tmp"
         live.write_text("{}", encoding="utf-8")
@@ -92,7 +93,7 @@ class TempFileHygieneTests(unittest.TestCase):
         unrelated = self.dir / "chief-managed.json"
         for victim in (sibling, legacy, unrelated):
             victim.write_text("{}", encoding="utf-8")
-            _age(victim, session_state._TMP_SWEEP_AFTER + timedelta(hours=2))
+            _age(victim, _SWEEP_AFTER + timedelta(hours=2))
 
         session_state._write_rows(self.target, {"sid-1": {"status": "working"}})
 

@@ -31,7 +31,7 @@ from typing import Any, Dict, Iterator, Optional
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import git_run  # noqa: E402
-from hooks_state import state_dir  # noqa: E402
+from hooks_state import atomic_tmp_prefix, state_dir, sweep_stale_atomic_temps  # noqa: E402
 
 STATE_FILENAME = "active-issues.json"
 PRUNE_AFTER = timedelta(hours=24)
@@ -170,12 +170,14 @@ def prune_rows(
 
 def write_rows(path: Path, rows: Dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
+    sweep_stale_atomic_temps(path)
     payload = json.dumps(rows, indent=2, sort_keys=True) + "\n"
     last_error: Optional[OSError] = None
     for attempt in range(_REPLACE_ATTEMPTS):
         tmp_name: Optional[str] = None
         try:
-            fd, tmp_name = tempfile.mkstemp(dir=str(path.parent), suffix=".tmp")
+            fd, tmp_name = tempfile.mkstemp(
+                dir=str(path.parent), prefix=atomic_tmp_prefix(path), suffix=".tmp")
             with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as handle:
                 handle.write(payload)
             os.replace(tmp_name, path)
