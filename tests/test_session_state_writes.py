@@ -111,5 +111,77 @@ class TempFileHygieneTests(unittest.TestCase):
         self.assertEqual(leftovers, [], f"clean write left temporaries: {leftovers}")
 
 
+class WriteOutcomeTests(unittest.TestCase):
+    """An exhausted retry loop must report the write it threw away."""
+
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        self.dir = Path(self._tmp.name)
+        self.target = self.dir / session_state.STATE_FILENAME
+
+    @staticmethod
+    def _always_busy(*_args, **_kwargs):  # type: ignore[no-untyped-def]
+        """Stand in for the concurrent Windows reader holding the target open."""
+        raise PermissionError(32, "The process cannot access the file")
+
+    def test_committed_write_reports_true(self) -> None:
+        self.assertIs(session_state._write_rows(self.target, {"sid": {}}), True)
+
+    def test_exhausted_retries_report_false_not_none(self) -> None:
+        """`None` read exactly like a success to every caller — that was the defect."""
+        with unittest.mock.patch.object(session_state.os, "replace", self._always_busy):
+            outcome = session_state._write_rows(self.target, {"sid": {}})
+        self.assertIs(outcome, False)
+        self.assertFalse(self.target.exists(), "nothing should have been committed")
+
+    def test_exhausted_retries_leave_a_log_breadcrumb(self) -> None:
+        """A discarded write must be diagnosable from logs, not just from a return."""
+        with unittest.mock.patch.object(session_state.os, "replace", self._always_busy):
+            with self.assertLogs("fleet_hooks", level="WARNING") as captured:
+                session_state._write_rows(self.target, {"sid": {}})
+        self.assertTrue(
+            any("not confirmed" in line and session_state.STATE_FILENAME in line
+                for line in captured.output),
+            f"no attributable warning logged: {captured.output}",
+        )
+
+    def test_a_failed_retry_loop_strands_no_temp(self) -> None:
+        """The except-branch unlink still runs when a Python handler is alive."""
+        with unittest.mock.patch.object(session_state.os, "replace", self._always_busy):
+            session_state._write_rows(self.target, {"sid": {}})
+        leftovers = [p.name for p in self.dir.iterdir() if p.name.endswith(".tmp")]
+        self.assertEqual(leftovers, [], f"failed write stranded temporaries: {leftovers}")
+
+    def test_upsert_propagates_a_discarded_write(self) -> None:
+        """The public writers carry the signal, or the caller still cannot tell."""
+        env = {session_state._lib.STATE_DIR_ENV_VAR: str(self.dir)}
+        with unittest.mock.patch.dict(os.environ, env):
+            healthy = session_state.upsert(
+                "sid-1", status="working", project="p",
+                transcript_path=None, cwd_path=str(self.dir))
+            self.assertIs(healthy, True)
+
+            with unittest.mock.patch.object(session_state.os, "replace", self._always_busy):
+                degraded = session_state.upsert(
+                    "sid-2", status="working", project="p",
+                    transcript_path=None, cwd_path=str(self.dir))
+        self.assertIs(degraded, False)
+
+    def test_remove_propagates_a_discarded_write(self) -> None:
+        env = {session_state._lib.STATE_DIR_ENV_VAR: str(self.dir)}
+        with unittest.mock.patch.dict(os.environ, env):
+            session_state.upsert("sid-1", status="working", project="p",
+                                 transcript_path=None, cwd_path=str(self.dir))
+            with unittest.mock.patch.object(session_state.os, "replace", self._always_busy):
+                degraded = session_state.remove("sid-1")
+        self.assertIs(degraded, False)
+
+    def test_a_deliberate_no_op_is_not_reported_as_a_failure(self) -> None:
+        """Nothing needed writing is a committed state, not a lost write."""
+        self.assertIs(session_state.upsert_from_payload({}, "working"), True)
+        self.assertIs(session_state.remove_from_payload({}), True)
+
+
 if __name__ == "__main__":
     unittest.main()

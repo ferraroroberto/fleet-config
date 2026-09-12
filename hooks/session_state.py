@@ -51,8 +51,12 @@ writer persists them for an exact agent-aware consumer join. External sessions
 have no launcher id and retain the normalized-cwd fallback.
 
 Like every hook here this is advisory-only: any failure is swallowed and the
-hook exits 0. The state file lives under ``~/.claude/hooks/state/`` (a junction
-into this repo's working tree — the directory is gitignored);
+hook exits 0. Advisory is not silent, though — a state write that never
+committed is logged and returned as ``False`` by every writer below
+(fleet-config#816), so a caller that cares can tell stale Board state from
+fresh instead of having no way to ask. The state file lives under
+``~/.claude/hooks/state/`` (a junction into this repo's working tree — the
+directory is gitignored);
 ``CLAUDE_HOOKS_STATE_DIR`` overrides the directory so acceptance tests stay
 hermetic, and ``CLAUDE_SESSIONS_DIR`` likewise overrides the
 ``~/.claude/sessions/`` registry directory the name lookup reads. Rows
@@ -62,6 +66,7 @@ untouched for 24h are pruned on each write.
 from __future__ import annotations
 
 import json
+import logging
 import os
 import sys
 import tempfile
@@ -216,9 +221,18 @@ def _sweep_stale_temps(path: Path) -> None:
             continue
 
 
-def _write_rows(path: Path, rows: Dict[str, Any]) -> None:
+def _write_rows(path: Path, rows: Dict[str, Any]) -> bool:
     """Atomic tmp+replace write, retried because a concurrent reader on Windows
-    can hold the target and fail ``os.replace`` with a transient PermissionError."""
+    can hold the target and fail ``os.replace`` with a transient PermissionError.
+
+    Returns ``True`` only once the payload has actually reached ``path``. An
+    exhausted retry loop used to fall out of the ``for`` and return ``None``,
+    indistinguishable from a committed write: no exception, no log line, no
+    return value, so a caller could not tell fresh Board state from state that
+    was silently discarded (fleet-config#816). That is the shape
+    ``global-CLAUDE.md`` forbids — a write acknowledged is not an outcome
+    confirmed — so the failure is now both logged and returned.
+    """
     _sweep_stale_temps(path)
     payload = json.dumps(rows, indent=2, sort_keys=True)
     for attempt in range(_REPLACE_ATTEMPTS):
@@ -229,7 +243,7 @@ def _write_rows(path: Path, rows: Dict[str, Any]) -> None:
             with os.fdopen(fd, "w", encoding="utf-8") as handle:
                 handle.write(payload)
             os.replace(tmp_name, path)
-            return
+            return True
         except OSError:
             if tmp_name:
                 try:
@@ -237,6 +251,10 @@ def _write_rows(path: Path, rows: Dict[str, Any]) -> None:
                 except OSError:
                     pass
             time.sleep(0.05 * (attempt + 1))
+    _lib.logger.warning(
+        "session-state write not confirmed: %s unchanged after %d attempts",
+        path, _REPLACE_ATTEMPTS)
+    return False
 
 
 def upsert(
@@ -251,23 +269,31 @@ def upsert(
     agent: str = "claude",
     launcher_session_id: Optional[str] = None,
     allow_reopen: bool = False,
-) -> None:
+) -> bool:
     """Write/refresh one session row and prune rows stale past 24h.
 
     ``name``/``name_source`` (fleet-config#302) are the live Claude Code
     session title looked up from ``~/.claude/sessions/<pid>.json``, when a
     caller has one; both default to ``None`` so existing callers are unaffected.
+
+    Returns ``True`` when every state write this call needed actually
+    committed (fleet-config#816). A deliberate no-op — a tombstoned session
+    with ``allow_reopen`` unset — needed no write and is ``True``; only a
+    discarded write is ``False``. Advisory as ever: existing callers ignore
+    the return and the hook still exits 0, but the fact is now available
+    rather than unknowable.
     """
     path = state_file()
     path.parent.mkdir(parents=True, exist_ok=True)
 
     tombstone_path = ended_file()
     tombstones = _live_tombstones(tombstone_path)
+    committed = True
     if str(session_id) in tombstones:
         if not allow_reopen:
-            return
+            return True
         del tombstones[str(session_id)]
-        _write_rows(tombstone_path, tombstones)
+        committed = _write_rows(tombstone_path, tombstones)
 
     rows = _read_rows(path)
     rows[str(session_id)] = {
@@ -289,13 +315,13 @@ def upsert(
         if stamp is not None and stamp >= cutoff:
             kept[sid] = row
 
-    _write_rows(path, kept)
+    return _write_rows(path, kept) and committed
 
 
 def upsert_from_payload(
     payload: Dict[str, Any], status: str, *, default_agent: str = "claude",
     allow_reopen: bool = False,
-) -> None:
+) -> bool:
     """Upsert straight from a hook payload; silent no-op without a session_id.
 
     ``default_agent`` (fleet-config#349) is the agent to record when the
@@ -310,10 +336,13 @@ def upsert_from_payload(
     scans ``~/.claude/settings.json`` by default), so without it every Grok row
     would be stamped ``claude`` — fabricating an agent identity, exactly the
     class of confident-wrong answer the capability matrix exists to prevent.
+
+    Returns :func:`upsert`'s commit signal; a payload with no session_id is a
+    deliberate no-op and therefore ``True``.
     """
     session_id = payload.get("session_id")
     if not isinstance(session_id, str) or not session_id:
-        return
+        return True
     cwd_path = _lib.cwd(payload)
     project = _lib.detect_project(cwd_path)
     transcript = payload.get("transcript_path")
@@ -324,7 +353,7 @@ def upsert_from_payload(
         or _lib.payload_agent(payload)
         or default_agent
     )
-    upsert(
+    return upsert(
         session_id,
         status=status,
         project=project.name if project else cwd_path.name,
@@ -338,31 +367,40 @@ def upsert_from_payload(
     )
 
 
-def remove(session_id: str) -> None:
-    """Delete one row and suppress late observational events for 24 hours."""
+def remove(session_id: str) -> bool:
+    """Delete one row and suppress late observational events for 24 hours.
+
+    Returns ``True`` when every write this call needed committed, on the same
+    contract as :func:`upsert` (fleet-config#816).
+    """
     path = state_file()
     path.parent.mkdir(parents=True, exist_ok=True)
     tombstone_path = ended_file()
     tombstones = _live_tombstones(tombstone_path)
     tombstones[str(session_id)] = _isoformat(_now())
-    _write_rows(tombstone_path, tombstones)
+    committed = _write_rows(tombstone_path, tombstones)
     if not path.exists():
-        return
+        return committed
     rows = _read_rows(path)
     if str(session_id) not in rows:
-        return
+        return committed
     del rows[str(session_id)]
-    _write_rows(path, rows)
+    return _write_rows(path, rows) and committed
 
 
-def remove_from_payload(payload: Dict[str, Any]) -> None:
+def remove_from_payload(payload: Dict[str, Any]) -> bool:
     """Delete the payload's session row; silent no-op without a session_id."""
     session_id = payload.get("session_id")
     if isinstance(session_id, str) and session_id:
-        remove(session_id)
+        return remove(session_id)
+    return True
 
 
 def main() -> None:
+    # Same stderr wiring every sibling hook installs, so a "write not confirmed"
+    # warning lands in the fleet's format instead of logging's lastResort
+    # fallback — this module logs now (fleet-config#816), so it needs it too.
+    logging.basicConfig(level=logging.INFO, format="%(message)s", stream=sys.stderr)
     try:
         payload = _lib.read_stdin_json()
         event = str(payload.get("hook_event_name") or "")
