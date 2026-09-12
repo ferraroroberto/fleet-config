@@ -23,9 +23,11 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO / "skills" / "_lib"))
-import chief_managed  # noqa: E402
 import chief_ops as co  # noqa: E402
 import steer_delivery as sd  # noqa: E402
+
+sys.path.insert(0, str(REPO / "hooks"))
+import notify_on_idle  # noqa: E402
 
 sys.path.insert(0, str(REPO / "tests" / "_lib"))
 from check_harness import CheckHarness  # noqa: E402
@@ -754,6 +756,7 @@ finally:
 
 _state_tmp = Path(tempfile.mkdtemp(prefix="chief_ops_dispatch_"))
 _prior_state_dir = os.environ.get("CLAUDE_HOOKS_STATE_DIR")
+_prior_launcher_sid = os.environ.get("APP_LAUNCHER_SESSION_ID")
 os.environ["CLAUDE_HOOKS_STATE_DIR"] = str(_state_tmp)
 _prior_request = co._request
 try:
@@ -776,8 +779,12 @@ try:
     )
     rc = co.cmd_dispatch(args)
     check(rc == 0, "cmd_dispatch (fake transport) exits 0 on a clear dispatch")
+    # Read back through the hooks' production reader, as the spawned worker
+    # would see itself (its launcher sid arrives via the environment) -- proves
+    # dispatch's write and the guard's read agree on file and key (#835, #850).
+    os.environ["APP_LAUNCHER_SESSION_ID"] = "new-sid-99"
     check(
-        chief_managed.is_managed("new-sid-99"),
+        notify_on_idle.chief_managed_state() == (True, notify_on_idle.CHIEF_MANAGED),
         "cmd_dispatch marks the newly-spawned session chief-managed",
     )
     check(
@@ -790,6 +797,10 @@ finally:
         os.environ.pop("CLAUDE_HOOKS_STATE_DIR", None)
     else:
         os.environ["CLAUDE_HOOKS_STATE_DIR"] = _prior_state_dir
+    if _prior_launcher_sid is None:
+        os.environ.pop("APP_LAUNCHER_SESSION_ID", None)
+    else:
+        os.environ["APP_LAUNCHER_SESSION_ID"] = _prior_launcher_sid
     import shutil
     shutil.rmtree(_state_tmp, ignore_errors=True)
 
