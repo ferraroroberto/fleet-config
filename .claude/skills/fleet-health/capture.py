@@ -358,11 +358,11 @@ def save_state(out_dir: Path, state: dict) -> None:
     state_path(out_dir).write_text(json.dumps(state, indent=2), encoding="utf-8")
 
 
-def print_header(root: Path, out_dir: Path, today: str) -> None:
+def print_header(root: Path, out_dir: Path, run_date: str) -> None:
     print(f"LEDGER_ROOT={root}")
     print(f"LEDGER={root / 'fleet-health.md'}")
     print(f"OUT_DIR={out_dir}")
-    print(f"RUN_DATE={today}")
+    print(f"RUN_DATE={run_date}")
 
 
 def resolve_dirs(args, follow_active: bool = False) -> tuple[Path, Path, str]:
@@ -379,20 +379,22 @@ def resolve_dirs(args, follow_active: bool = False) -> tuple[Path, Path, str]:
     """
     root = Path(args.ledger_root or (Path.home() / ".claude" / "fleet-health"))
     active = load_active_run(root) if follow_active and not args.date else {}
-    today = args.date or str(active.get("run_date") or "") or _dt.date.today().isoformat()
-    out_dir = Path(args.out_dir or (root / "runs" / today))
-    return root, out_dir, today
+    run_date = (args.date or str(active.get("run_date") or "")
+                or _dt.date.today().isoformat())
+    out_dir = Path(args.out_dir or (root / "runs" / run_date))
+    return root, out_dir, run_date
 
 
 def cmd_start(args) -> int:
     """Classify every machine, start every capture, persist the run state."""
-    root, out_dir, today = resolve_dirs(args)
+    root, out_dir, run_date = resolve_dirs(args)
 
     machines = discover()
     if not machines:
         print(f"inventory unreachable at {HUB}/admin/api/machines/status", file=sys.stderr)
         return 3
-    print_header(root, out_dir, today)
+
+    print_header(root, out_dir, run_date)
     print(f"MACHINE_COUNT={len(machines)}")
 
     targets: dict[str, str] = {}
@@ -423,7 +425,7 @@ def cmd_start(args) -> int:
             emit(mid, "not-covered", result, detail="start-failed")
 
     save_state(out_dir, {
-        "run_date": today,
+        "run_date": run_date,
         "ledger_root": str(root),
         "out_dir": str(out_dir),
         "duration_s": args.duration_s,
@@ -432,7 +434,7 @@ def cmd_start(args) -> int:
         "runs": runs,
         "skipped": skipped,
     })
-    mark_active_run(root, today, out_dir)
+    mark_active_run(root, run_date, out_dir)
 
     print(f"STARTED={len(runs)}")
     print(f"NOT_COVERED={len(skipped)}")
@@ -453,7 +455,7 @@ def cmd_poll(args) -> int:
     hour, so the skill polls by calling this repeatedly. Each call is fully
     synchronous — nothing is ever left running in the background.
     """
-    _root, out_dir, _today = resolve_dirs(args, follow_active=True)
+    _root, out_dir, _run_date = resolve_dirs(args, follow_active=True)
     state = load_state(out_dir)
     if not state:
         print(f"no run state at {state_path(out_dir)} — run `start` first", file=sys.stderr)
@@ -488,7 +490,7 @@ def cmd_poll(args) -> int:
 
 def cmd_collect(args) -> int:
     """Stop anything still running, fetch every artefact, emit the manifest."""
-    root, out_dir, today = resolve_dirs(args, follow_active=True)
+    root, out_dir, run_date = resolve_dirs(args, follow_active=True)
     state = load_state(out_dir)
     if not state:
         print(f"no run state at {state_path(out_dir)} — run `start` first", file=sys.stderr)
@@ -498,7 +500,7 @@ def cmd_collect(args) -> int:
     runs: dict[str, str] = state.get("runs") or {}
     skipped: list[dict] = state.get("skipped") or []
 
-    print_header(root, out_dir, today)
+    print_header(root, out_dir, run_date)
     for entry in skipped:
         emit(str(entry.get("id") or "?"), "not-covered",
              str(entry.get("reason") or ""), detail=str(entry.get("detail") or ""))
