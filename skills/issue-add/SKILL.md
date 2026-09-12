@@ -39,9 +39,9 @@ In parallel:
 - `gh label list` — compare against the canonical type set in step 7; any
   missing label gets created there.
 
-Do **not** scan past issues to "learn the house style" — step 6 is the only
-source of truth; reading prior issues adds noise and drifts toward whatever was
-filed last.
+Do **not** scan past issues for "house style" — step 6 is the only source of
+truth; reading prior issues adds noise and drifts toward whatever was filed
+last.
 
 ### 2. Extract the real intent
 
@@ -51,7 +51,7 @@ usually resolves apparent ambiguity.
 
 ### 3. Research the codebase
 
-The core of the skill. Find and read the code the idea touches:
+Find and read the code the idea touches:
 - Which files / modules / functions are involved, and how they behave now.
 - Constraints, conventions, and patterns the change must respect.
 - Anything that makes the idea harder or different than it first sounds.
@@ -81,10 +81,9 @@ no padding.
   colon, no trailing period, ≤72 chars. This is the canonical style — don't
   imitate older issues if they diverge.
 - **Body:** self-contained and LLM-handoff-ready. This is the **one canonical
-  section list** for an issue body fleet-wide (fleet-config#446 reconciled a
-  second, conflicting list that used to live in `global-CLAUDE.md` — that file
-  now only points here). Use as many of these as the issue genuinely needs — a
-  tiny issue needs only the first two:
+  section list** for an issue body fleet-wide (fleet-config#446). Use as many
+  of these as the issue genuinely needs — a tiny issue needs only the first
+  two:
   - **What & why** (or **Symptom** + **Root cause** for a bug) — the goal in
     clean prose, and the motivation.
   - **Current state** — how it works today, with concrete `file:line`
@@ -131,11 +130,10 @@ gh issue create --title "<title>" --body-file <tmpfile> --label <label> --assign
 ```
 
 Write the body to a temp file (or a here-string) so multi-line markdown isn't
-mangled by shell escaping. Capture the repo the issue actually landed in right
-here — `gh repo view --json nameWithOwner -q .nameWithOwner` — rather than
-assuming it later; that value feeds the `--repo` flag in step 9 so the
-completion ping can't drift to a different repo than the one just filed into
-(fleet-config#497).
+mangled by shell escaping. Capture the repo the issue landed in right here —
+`gh repo view --json nameWithOwner -q .nameWithOwner` — rather than assuming
+it later; feeds the `--repo` flag in step 9 so the completion ping can't drift
+to a different repo (fleet-config#497).
 
 ### 9. Report
 
