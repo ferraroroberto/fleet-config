@@ -6,15 +6,18 @@ The chief's merge-verification instruction -- verify from a **fresh detached
 checkout of the merged default branch**, never a feature branch and never one
 of the worktrees -- buys a real guarantee (the merged tree is what ran) at a
 cost nothing in the output ever stated: a fresh checkout has none of the repo's
-gitignored runtime files, and the tests that need one **skip** instead of
-failing. The gate then prints the same green as a run that covered more.
+gitignored runtime files and none of the host state keyed to a known path, and
+the tests that need either **skip** instead of failing. The gate then prints
+the same green as a run that covered more.
 
 Measured on the 2026-09-12 app-launcher merge round: skips went 17 -> 19
 between the primary checkout and the scratch one, and the whole delta was the
-`#444` real-agent pin, skipped because a fresh clone has no app registered
-under that id (the registry lives in the gitignored
-`config/webapp_config.json`). The lane's own words: *"a skip is not a pass."*
-Nothing in the gate output named the two tests that stopped running.
+`#444` real-agent pin. Its residual cause is **agent folder trust**: a
+never-opened directory paints Claude Code's trust prompt instead of the
+composer, and `--dangerously-skip-permissions` does not clear it
+(app-launcher#932, PR #937). It is not the gitignored
+`config/webapp_config.json` registry. The lane's own words: *"a skip is not a
+pass."* Nothing in the gate output named the two tests that stopped running.
 
 This is the fleet's recurring shape one level up -- **a check that could not
 establish a fact reporting the same green as one that did**
