@@ -3,14 +3,19 @@ hand-applied workarounds (fleet-config#812).
 
 Three consecutive weekly runs delivered a digest only because the attending
 agent re-derived three fixes from the previous run's ledger entry. Each one
-below is pinned here so the scheduled run stops depending on rediscovery.
+below is pinned here so the scheduled run stops depending on rediscovery:
 
-**UTF-8 stdout under capture** (5th occurrence). Both entry points print
-report text; Windows falls back to cp1252 when stdout is a pipe, so a single
-arrow raises UnicodeEncodeError and exits 1 -- in the scheduled run only,
-never in a terminal, which is why it shipped five times. Driven as a real
-subprocess with a pipe for stdout and `PYTHONUTF8`/`PYTHONIOENCODING` scrubbed
-from the child env: a test that inherits a UTF-8 environment proves nothing.
+1. **UTF-8 stdout under capture** (5th occurrence). Both entry points print
+   report text; Windows falls back to cp1252 when stdout is a pipe, so a
+   single arrow raises UnicodeEncodeError and exits 1 -- in the scheduled run
+   only, never in a terminal, which is why it shipped five times. Driven as a
+   real subprocess with a pipe for stdout and `PYTHONUTF8`/`PYTHONIOENCODING`
+   scrubbed
+   from the child env: a test that inherits a UTF-8 environment proves nothing.
+2. **Midnight crossing** (3rd occurrence, reproduced live at 00:07). The run
+   date used to be recomputed from `date.today()` at every invocation, so a
+   poll that crossed midnight resolved a different directory than `start`
+   wrote. The date is a property of the run, resolved once and persisted.
 
 Run: `E:/automation/fleet-config/.venv/Scripts/python.exe tests/test_fleet_health.py`
 (also invoked by tests/run_acceptance.py)
@@ -18,6 +23,7 @@ Run: `E:/automation/fleet-config/.venv/Scripts/python.exe tests/test_fleet_healt
 
 from __future__ import annotations
 
+import datetime as _dt
 import json
 import os
 import shutil
@@ -34,6 +40,9 @@ from no_window import NO_WINDOW  # noqa: E402
 
 sys.path.insert(0, str(REPO / "tests" / "_lib"))
 from check_harness import CheckHarness  # noqa: E402
+
+sys.path.insert(0, str(SKILL))
+import capture  # noqa: E402
 
 _h = CheckHarness()
 check = _h.check
@@ -120,6 +129,62 @@ try:
           "capture.py collect: a non-cp1252 reason reaches stdout intact")
     check(code == 4,
           "capture.py collect: still exits 4 when nothing was captured (got %s)" % code)
+
+    # ------------------------------------------------- 2. midnight crossing
+
+    today = _dt.date.today().isoformat()
+    yesterday = (_dt.date.today() - _dt.timedelta(days=1)).isoformat()
+    check(yesterday != today, "fixture sanity: yesterday differs from today")
+
+    mid_root = tmp / "midnight-root"
+    mid_dir = mid_root / "runs" / yesterday
+    mid_dir.mkdir(parents=True)
+    (mid_dir / ".run-state.json").write_text(json.dumps({
+        "run_date": yesterday,
+        "ledger_root": str(mid_root),
+        "out_dir": str(mid_dir),
+        "targets": {}, "runs": {},
+        "skipped": [{"id": "peer", "detail": "dormant",
+                     "reason": "machine is dormant"}],
+    }), encoding="utf-8")
+    capture.mark_active_run(mid_root, yesterday, mid_dir)
+
+    class _Args:
+        out_dir = None
+        ledger_root = str(mid_root)
+        date = None
+
+    _root_r, out_r, date_r = capture.resolve_dirs(_Args(), follow_active=True)
+    check(date_r == yesterday,
+          "resolve_dirs: a poll after midnight reads the persisted run date "
+          "(got %s, today is %s)" % (date_r, today))
+    check(out_r == mid_dir,
+          "resolve_dirs: the run directory follows the persisted date, not today's")
+
+    # `start` must never follow a previous run's marker -- a new run gets a new date.
+    _root_s, _out_s, date_s = capture.resolve_dirs(_Args(), follow_active=False)
+    check(date_s == today,
+          "resolve_dirs: `start` resolves today, ignoring a stale marker (got %s)" % date_s)
+
+    # An explicit --date still wins over the marker, so a rerun stays targetable.
+    class _Pinned(_Args):
+        date = "2026-01-01"
+
+    _root_p, out_p, date_p = capture.resolve_dirs(_Pinned(), follow_active=True)
+    check(date_p == "2026-01-01" and out_p.name == "2026-01-01",
+          "resolve_dirs: an explicit --date overrides the active-run marker")
+
+    # End-to-end: `collect` with no --date finds yesterday's run and reports
+    # yesterday's RUN_DATE, which is the date the ledger append then uses.
+    code, out = _captured(
+        [str(SKILL / "capture.py"), "--ledger-root", str(mid_root), "collect"], REPO)
+    check("RUN_DATE=" + yesterday in out,
+          "capture.py collect: reports the run's own date after midnight (expected %s), got %s"
+          % (yesterday, [ln for ln in out.splitlines() if "RUN_DATE" in ln]))
+    check("OUT_DIR=" + str(mid_dir) in out,
+          "capture.py collect: writes into the run directory `start` created")
+    check("no run state" not in out,
+          "capture.py collect: finds the run state instead of looking under today's date")
 
 finally:
     shutil.rmtree(tmp, ignore_errors=True)

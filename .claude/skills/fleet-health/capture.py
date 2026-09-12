@@ -339,10 +339,40 @@ def emit(mid: str, status: str, reason: str = "", **extra: Any) -> None:
 
 
 STATE_NAME = ".run-state.json"
+ACTIVE_NAME = ".active-run.json"
 
 
 def state_path(out_dir: Path) -> Path:
     return out_dir / STATE_NAME
+
+
+def active_path(root: Path) -> Path:
+    """Where `start` records which run the later verbs belong to.
+
+    It has to live at the ledger root rather than in the run directory: a
+    later verb cannot open the run's own state file without first knowing the
+    run date, which is the very thing that must not be re-derived.
+    """
+    return root / ACTIVE_NAME
+
+
+def mark_active_run(root: Path, run_date: str, out_dir: Path) -> None:
+    """Persist the run date `start` resolved, so nothing recomputes it."""
+    root.mkdir(parents=True, exist_ok=True)
+    active_path(root).write_text(
+        json.dumps({"run_date": run_date, "out_dir": str(out_dir)}, indent=2),
+        encoding="utf-8")
+
+
+def load_active_run(root: Path) -> dict:
+    path = active_path(root)
+    if not path.is_file():
+        return {}
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8")) or {}
+    except (OSError, ValueError):
+        return {}
+    return payload if isinstance(payload, dict) else {}
 
 
 def load_state(out_dir: Path) -> dict:
@@ -367,9 +397,21 @@ def print_header(root: Path, out_dir: Path, today: str) -> None:
     print(f"RUN_DATE={today}")
 
 
-def resolve_dirs(args) -> tuple[Path, Path, str]:
-    today = args.date or _dt.date.today().isoformat()
+def resolve_dirs(args, follow_active: bool = False) -> tuple[Path, Path, str]:
+    """Return (ledger root, run directory, run date) for this invocation.
+
+    The run date is a property of the *run*, not of the moment a verb happens
+    to be called. `start` resolves it once from the clock and records it;
+    `poll` and `collect` pass ``follow_active=True`` and read it back. The job
+    is scheduled at 23:30 and polls for well over an hour, so a date
+    re-derived per invocation splits one run across two directories and hands
+    the ledger append a third answer -- which it did on three consecutive
+    runs, reproducing live at 00:07 (fleet-config#812). An explicit
+    ``--date``/``--out-dir`` still wins, so a rerun stays targetable by hand.
+    """
     root = Path(args.ledger_root or (Path.home() / ".claude" / "fleet-health"))
+    active = load_active_run(root) if follow_active and not args.date else {}
+    today = args.date or str(active.get("run_date") or "") or _dt.date.today().isoformat()
     out_dir = Path(args.out_dir or (root / "runs" / today))
     return root, out_dir, today
 
@@ -424,6 +466,7 @@ def cmd_start(args) -> int:
         "runs": runs,
         "skipped": skipped,
     })
+    mark_active_run(root, today, out_dir)
 
     print(f"STARTED={len(runs)}")
     print(f"NOT_COVERED={len(skipped)}")
@@ -444,7 +487,7 @@ def cmd_poll(args) -> int:
     hour, so the skill polls by calling this repeatedly. Each call is fully
     synchronous — nothing is ever left running in the background.
     """
-    _root, out_dir, _today = resolve_dirs(args)
+    _root, out_dir, _today = resolve_dirs(args, follow_active=True)
     state = load_state(out_dir)
     if not state:
         print(f"no run state at {state_path(out_dir)} — run `start` first", file=sys.stderr)
@@ -479,7 +522,7 @@ def cmd_poll(args) -> int:
 
 def cmd_collect(args) -> int:
     """Stop anything still running, fetch every artefact, emit the manifest."""
-    root, out_dir, today = resolve_dirs(args)
+    root, out_dir, today = resolve_dirs(args, follow_active=True)
     state = load_state(out_dir)
     if not state:
         print(f"no run state at {state_path(out_dir)} — run `start` first", file=sys.stderr)
@@ -526,7 +569,9 @@ def main(argv: Optional[list[str]] = None) -> int:
     parser.add_argument("--ledger-root", default=None,
                         help="ledger root (default ~/.claude/fleet-health)")
     parser.add_argument("--date", default=None,
-                        help="run date YYYY-MM-DD (default today) — must match across calls")
+                        help="run date YYYY-MM-DD (default: the clock on `start`, "
+                             "then the date `start` recorded) — only needed to "
+                             "re-target an old run")
     sub = parser.add_subparsers(dest="cmd", required=True)
 
     start_cmd = sub.add_parser("start", help="classify machines and start every capture")
