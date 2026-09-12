@@ -148,14 +148,16 @@ not the isolation primitive:
 
 ```toml
 [worktree]
-extra_junctions   = ["vendor/comfyui"]
-blank_config_keys = ["mirror.dir", "mirror.backup_dir"]
+extra_junctions    = ["vendor/comfyui"]
+blank_config_keys  = ["mirror.dir", "mirror.backup_dir"]
+secret_config_keys = ["auth.token"]
 ```
 
 | Field | Meaning |
 |---|---|
 | `extra_junctions` | list of paths, relative to the repo root, to junction into a worktree alongside `.venv` |
 | `blank_config_keys` | dotted keys in a copied `config/*.json` that point at real, machine-bound state (a synced mirror/backup folder, another repo's database) — blanked to `""`/`[]` in the worktree's copy instead of carrying the primary's real path across (fleet-config#713) |
+| `secret_config_keys` | dotted keys in a copied config whose values must never be reproduced in a worktree (a live credential, a secrets sub-table) — removed outright from the worktree's copy, whatever the value's type. Additive: applied on top of whichever blanking mode is in force, never disabling the default heuristic (fleet-config#839) |
 
 `.venv` is always junctioned first and remains the *only* target when this
 table (or `.fleet.toml` itself) is absent — an undeclared repo behaves
@@ -171,6 +173,11 @@ machine-bound — an `{onedrive}`-style template placeholder, or an absolute
 Windows path — is blanked, list entries filtered the same way. An explicit
 empty list (`blank_config_keys = []`) opts a repo out of that default
 heuristic entirely.
+
+`secret_config_keys` is independent of that choice: declaring it switches
+nothing off, and a repo that declares it alongside `blank_config_keys` gets
+both. A repo that declares neither copies exactly as before. It applies to the
+copied `config/*.json` and gitignored root `*.json` files, not to `.env`.
 
 ### Local specs — kept out of git 🔒
 
