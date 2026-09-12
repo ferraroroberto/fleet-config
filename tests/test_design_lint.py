@@ -781,6 +781,36 @@ finally:
     shutil.rmtree(_fm, ignore_errors=True)
 
 
+# ---- evidence file:line is the true line within the marked file (#858) ----
+# `contracts()` prefixes each file with `/*FILE <rel>*/\n`; the newline ending
+# that marker line is not part of the file, so it must not shift the count.
+from design_lint.contracts._ctx import _evidence, _loc_at  # noqa: E402
+
+_ev_blob = "/*FILE a.css*/\nFIRST needle\n/*FILE b.css*/\nL1\nL2\nL3 needle"
+check(_evidence(_ev_blob, r"FIRST needle") == "a.css:1",
+      "_evidence: a match on a file's first content line reports line 1 (#858)")
+check(_evidence(_ev_blob, r"L3 needle") == "b.css:3",
+      "_evidence: a match on a later line reports that line (#858)")
+check(_loc_at(_ev_blob, _ev_blob.index("FIRST")) == "a.css:1",
+      "_loc_at: a first-content-line position reports line 1 (#858)")
+check(_loc_at(_ev_blob, _ev_blob.index("L3")) == "b.css:3",
+      "_loc_at: a later-line position reports that line (#858)")
+check(_evidence("x\ny needle", r"needle") == "?:2"
+      and _loc_at("needle", 0) == "?:1",
+      "bare blob with no marker keeps counting from line 1 (#858)")
+
+_fl = Path(tempfile.mkdtemp(prefix="dl-evline-"))
+try:
+    (_fl / "a.css").write_text(".x { color: red; }\n.y { margin: 0; }\n"
+                               "*:focus-visible { outline: 2px solid; }\n",
+                               encoding="utf-8")
+    evline = {c["id"]: c for c in dl.contracts(_fl, [_fl / "a.css"], [], [], {})}
+    check(evline["focus-visible-ring"]["evidence"] == "a.css:3",
+          "end to end: contracts() evidence names the real line (#858)")
+finally:
+    shutil.rmtree(_fl, ignore_errors=True)
+
+
 # ---- no-native-checkbox (design.md Base UI mapping, fleet-config#843) ----
 # design.md maps Checkbox -> shadcn `checkbox`, which IS a real
 # <input type=checkbox> skinned with `appearance: none`. Fixtures verbatim
