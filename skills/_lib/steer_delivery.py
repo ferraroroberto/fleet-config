@@ -59,7 +59,7 @@ INPUT_NEGATIVE_REASONS = frozenset({
     "defer_unclear",    # quiet with the payload present — and a dialog too
 })
 # The watcher's one terminal *success*: it pressed Enter and saw the submit
-# land, recorded as `reason: ok` with `submit_confirmed: true`.
+# land, recorded as `reason: ok` with `submit_confirmed: true, deferred: true`.
 INPUT_OK = "ok"
 
 
@@ -83,7 +83,10 @@ def deferred_submit_outcome(
     reason = record.get("reason")
     if reason in INPUT_NEGATIVE_REASONS:
         return "failed"
-    if reason == INPUT_OK and record.get("submit_confirmed") is True:
+    # `deferred: true` marks the record as the watcher's own; an immediate
+    # `ok` from some other writer to the same session is not this submit.
+    if (reason == INPUT_OK and record.get("submit_confirmed") is True
+            and record.get("deferred") is True):
         return "confirmed"
     return "in_flight"
 

@@ -849,7 +849,7 @@ for _marker in ("delivered", "pending"):
     )
 # DELIVERED rests on the confirmation itself: take it away and the verdict moves.
 for _field, _value in (("submit_confirmed", None), ("submit_confirmed", False),
-                       ("reason", "deferred")):
+                       ("reason", "deferred"), ("deferred", False)):
     check(
         sd.finalize_delivery("delivered", "working", post_reason="deferred",
                              last_input={**_LI_CONFIRMED, _field: _value}) != "delivered",
