@@ -60,6 +60,11 @@ _STANDALONE_UNIT_CHECKS: Tuple[Tuple[str, str, str], ...] = (
      "and an exhausted retry loop that reports the write it discarded -- sits "
      "below the row-level behaviour checks_session_state.py drives through "
      "hook payloads, and is testable on its own (fleet-config#816)"),
+    ("atomic_state_temps", "test_atomic_state_temps.py",
+     "the same target-named, age-swept temp contract for every other writer "
+     "into the shared hooks/state/ dir -- codex_attention and active_issue -- "
+     "plus prefix scoping that spares a sibling writer's live temp and the "
+     "hooks/ vs skills/_lib helper mirror staying in lockstep (fleet-config#864)"),
     ("scheduled_runner", "test_scheduled_runner.py",
      "provider adapters share completion, delivery, retry and owned-cancellation conformance"),
     ("claude_progress", "test_claude_progress.py",

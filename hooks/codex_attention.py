@@ -136,9 +136,11 @@ def _record_once(payload: dict[str, Any]) -> bool:
     if key in keys:
         return False
     keys = [*keys[-(_MAX_DEDUP_KEYS - 1):], key]
+    _lib.sweep_stale_atomic_temps(path)
     temporary: Optional[str] = None
     try:
-        fd, temporary = tempfile.mkstemp(dir=str(path.parent), suffix=".tmp")
+        fd, temporary = tempfile.mkstemp(
+            dir=str(path.parent), prefix=_lib.atomic_tmp_prefix(path), suffix=".tmp")
         with os.fdopen(fd, "w", encoding="utf-8") as handle:
             json.dump(keys, handle)
         os.replace(temporary, path)
