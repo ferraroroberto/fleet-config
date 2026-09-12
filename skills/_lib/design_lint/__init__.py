@@ -16,6 +16,8 @@ Subcommands (all print JSON):
                      (focus ring, reduced motion, desktop measure, switch
                      on-color, native checkboxes, disclosure box, native
                       <dialog>, nav rules, icon-size strays, PWA icon family).
+                     A repo's `[[design.accepted]]` exceptions mark matching
+                     findings ACCEPTED (fleet-config#836).
   vendored  <root>   byte-compare the app's _vendored/ copies against
                      project-scaffolding's canonical files.
   siblings  <root>   same-name top-level JS definitions across >=2 files
@@ -45,6 +47,7 @@ every time design.md gains a rule, so the file only went one way):
   tokens.py      the `tokens` lens — spec role ↔ app custom property
   adoption.py    the `adoption` lens — per-family tokenized ratios
   contracts/     the `contracts` lens — `_CONTRACT_CHECKS` grouped by concern
+  accepted.py    a repo's declared, re-verified exceptions over `contracts` output
   vendored.py    the `vendored` lens — byte-compare against the scaffold
   siblings.py    the `siblings` lens — duplicated top-level JS definitions
   cli.py         argparse + the JSON document assembly

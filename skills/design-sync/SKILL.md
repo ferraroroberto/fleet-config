@@ -184,7 +184,7 @@ The five sections it returns, and what each means:
   literal-value histogram. This is the "how much, where" lens (#234): a
   correct-*valued* token used nowhere still scores low here. Ratios trend
   across weekly sweeps (#180).
-- **`contracts`** — PASS/WARN/FAIL/NA per design.md-v2 component contract,
+- **`contracts`** — PASS/WARN/FAIL/NA (or ACCEPTED, below) per design.md-v2 component contract,
   one per line below:
   - **focus ring** — tokenized `:focus-visible` ring.
   - **reduced motion** — `prefers-reduced-motion` respected.
@@ -289,6 +289,16 @@ The five sections it returns, and what each means:
       JS-rendered drawer is exactly the surface this contract is for and
       the check already reads `dataset.state` the same way, #416); NA
       when the app never uses `data-state`.
+  - **`ACCEPTED`** — a WARN/FAIL a repo already examined and accepted, via a
+    `[[design.accepted]]` entry in its own `.fleet.toml` (schema:
+    `architecture/README.md`, fleet-config#836). The row keeps the original
+    detail plus `accepted.raised_status`, `reason`, `record`, and `verified`
+    (what the declared assertion proved this run). It matches only the exact
+    check + target + detail it accepted, and its assertion is re-run each
+    time: if that fails or can't be established, the row comes back as
+    WARN/FAIL with the reason appended. **`accepted-exception` WARN** rows
+    report a declaration that is malformed or matched nothing. That is a real
+    finding: the repo must fix or remove the declaration.
 - **`vendored`** — byte-hash comparison of the app's
   `_vendored/<component>/` copies against project-scaffolding's canonical
   files: `IDENTICAL` / `FORKED` (the vendor-verbatim rule broken — always a
@@ -327,7 +337,10 @@ its selectors or APIs into checks.
 - **(b) Materiality bar** over everything the lint surfaced: a 1-unit
   radius/spacing nitpick or a shadow's `#000` is not a finding; a wrong canvas
   color, a missing dark theme, a `FORKED` vendored file, an accent-colored
-  switch, or a FAILed contract is. Spacing adoption is expected to score low
+  switch, or a FAILed contract is. An `ACCEPTED` contract is **never** a
+  finding and is never re-judged back into one. Its reasoning was recorded
+  where the lint re-checks it. The reverse holds too: judgment never marks a
+  finding accepted, because only the repo's own declaration can. Spacing adoption is expected to score low
   fleet-wide (never unified — report the ratio, don't inflate findings from
   it); font-size/radius should be near 1.0 on a canon app.
 - **(c) Sibling arbitration.** For each `siblings` duplicate (and any repeated
@@ -385,7 +398,9 @@ these parameters differ:
 - **body merge — richer than `cert-drift`'s plain preserve-and-append:** fresh
   → the template below; existing → preserve every ticked `- [x]` verbatim,
   match findings by `file` + token role (update the moved line, keep the
-  checkbox), keep items not re-surfaced (flag them in the run log), never tick
+  checkbox), keep items not re-surfaced (flag them in the run log). An
+  unticked item the lint now reports `ACCEPTED` moves to the Contracts section
+  and the run log says so. It is not a finding to keep. Never tick
   or close anything yourself, never add `Closes #`. Append a dated bullet to
   `## Drift run log`.
 
@@ -414,7 +429,7 @@ Surfaced by `/design-sync`, kept up to date across runs. Spec: `~/.claude/design
 
 ## Contracts
 
-<one line per lint contract check: `PASS|WARN|FAIL id — detail @ evidence`>
+<one line per lint contract check: `PASS|WARN|FAIL id — detail @ evidence`; an ACCEPTED row prints as `ACCEPTED id — accepted, not re-raised: <reason> (<record>; <verified>)`, listed here and never under Findings>
 
 ## Vendored components
 
@@ -465,7 +480,7 @@ Print one summary and stop:
   dark         <n>         <n>      <n>
 
   adoption: color <0.xx> · font-size <0.xx> · radius <0.xx> · spacing <0.xx>
-  contracts: <n> PASS · <n> WARN · <n> FAIL   (<failing ids>)
+  contracts: <n> PASS · <n> WARN · <n> FAIL · <n> ACCEPTED   (<failing ids>; accepted: <ids>)
   rendered leg: <ran (harness results) | unmeasured — no rendered-geometry harness (project-scaffolding#157)>
   vendored: <n> identical · <n> forked · <n> not adopted
   siblings: <n> duplicate names (<top names>)
@@ -476,7 +491,8 @@ Print one summary and stop:
 ```
 
 The `cert:` line always appears (the step-1b check runs on every target). If the
-lint reports zero drift, zero contract FAILs, and no forked vendored files, say
+lint reports zero drift, zero contract FAILs (`ACCEPTED` rows don't count; they
+still print on the `contracts:` line), and no forked vendored files, say
 `In sync with design.md — no drift.` and still no-op the design-drift issue
 (don't file an empty one; if a prior issue exists with all boxes now
 satisfiable, leave it for the user to close) — the cert verdict and the

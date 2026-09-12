@@ -85,7 +85,7 @@ Run the per-repo design-drift check on the <name> repo.
 Report back in this exact shape so the orchestrator can build the digest:
   - Repo: <name>
   - Result: DRIFT (<n> findings) | IN-SYNC (no drift) | SKIPPED (<reason>)
-  - Contracts: <p> PASS · <w> WARN · <f> FAIL (<failing ids, or "-">)
+  - Contracts: <p> PASS · <w> WARN · <f> FAIL · <a> ACCEPTED (<failing ids, or "-">; accepted: <ids, or "-">)
   - Adoption: color <0.xx> · font-size <0.xx> · radius <0.xx> · spacing <0.xx>
   - Rendered leg: <ran (results) | unmeasured — no rendered-geometry harness>
   - Cert: <ok | drift, filed #N>
@@ -104,7 +104,7 @@ Hold each sub-agent's structured report as it returns. When the `web_apps` list 
 Compose the digest as markdown (single long lines per paragraph, no hard wraps — the global CLAUDE.md rendered-markdown rule). This markdown is the canonical artifact and goes to stdout verbatim. Structure the per-repo results as a table:
 
 - **Header:** date, counts — `N web apps swept, D drifted, C in sync, F findings filed`, plus `X cert-drift` when any sub-agent reported a non-`ok` `Cert:` line.
-- **Per-app row:** result + findings count + contract PASS/WARN/FAIL + the filed `design-drift` URL (or "in sync"). In-sync apps get a one-liner. Note the adoption ratios (trend signal) and any `unmeasured` rendered leg.
+- **Per-app row:** result + findings count + contract PASS/WARN/FAIL/ACCEPTED + the filed `design-drift` URL (or "in sync"). In-sync apps get a one-liner. Note the adoption ratios (trend signal) and any `unmeasured` rendered leg.
 - **Cert-drift section** *(only when non-empty)*: one line per repo whose step-1b check tripped, with the filed `cert-drift` issue — points at `project-scaffolding#89`.
 - **Skipped section:** the `skipped_non_web` + `skipped_streamlit` counts from step 2 (one aggregate line each) — visible which repos were intentionally left out.
 - **Where the counts persist:** one line noting the fleet-wide week-over-week design-drift accounting lives in the `audit-fleet digest state` ledger (via `/audit-fleet`), not here.

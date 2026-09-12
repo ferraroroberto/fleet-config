@@ -13,7 +13,11 @@ Run: `E:/automation/fleet-config/.venv/Scripts/python.exe tests/test_design_lint
 
 from __future__ import annotations
 
+import contextlib
+import io
+import json
 import shutil
+import subprocess
 import sys
 import tempfile
 from pathlib import Path
@@ -1410,6 +1414,138 @@ parsed_source = dl.parse_spec(source_spec.read_text(encoding="utf-8", errors="re
 check(parsed_source.get("app-icon.generator") == "brand_gen"
       and parsed_source.get("app-icon.maskable") == "icon-512-maskable.png",
       "source design.md: app-icon family contract parses")
+
+
+# ---- accepted exceptions: [[design.accepted]] in .fleet.toml (fleet-config#836) ----
+
+ACCEPT_SPEC = """---
+icons:
+  size:
+    inline: 16px
+app-icon:
+  generator: brand_gen
+  apple: icon-180.png
+  regular-small: icon-192.png
+  regular-large: icon-512.png
+  maskable: icon-512-maskable.png
+  favicon: favicon.ico
+---
+"""
+ICON_PATHS = ["static/icon-180.png", "static/icon-192.png", "static/icon-512.png",
+              "static/icon-512-maskable.png", "static/favicon.ico"]
+GENERATOR_DETAIL = "shared brand_gen.render_set generator not adopted"
+
+
+def _git_repo(path: Path, files: dict[str, str]) -> None:
+    for name, body in files.items():
+        (path / name).parent.mkdir(parents=True, exist_ok=True)
+        (path / name).write_text(body, encoding="utf-8")
+    # An empty hooksPath keeps the user's global commit hooks off a synthetic repo.
+    for args in (["init", "-q"], ["add", "-A"],
+                 ["-c", f"core.hooksPath={path / 'no-hooks'}", "-c", "user.name=t",
+                  "-c", "user.email=t@t", "commit", "-qm", "init"]):
+        subprocess.run(["git", "-C", str(path), *args], check=True, capture_output=True)
+
+
+def lint_accepted(fleet_toml: str | None, index: str = APP_ICON_INDEX,
+                  upstream: dict[str, str] | None = None) -> dict:
+    """Run the real `contracts` CLI on a legacy-generator app repo; return
+    `{"rows": {id: row}, "warns": [accepted-exception details]}`."""
+    base = Path(tempfile.mkdtemp(prefix="dl-acc-"))
+    try:
+        app_files = {"index.html": index, **legacy_files}
+        if fleet_toml is not None:
+            app_files[".fleet.toml"] = fleet_toml
+        (base / "app").mkdir()
+        _git_repo(base / "app", app_files)
+        if upstream is not None:
+            (base / "upstream").mkdir()
+            _git_repo(base / "upstream", upstream)
+        (base / "spec.md").write_text(ACCEPT_SPEC, encoding="utf-8")
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            dl.main(["contracts", str(base / "app"), "--spec", str(base / "spec.md"),
+                     "--spec-dark", str(base / "spec.md")])
+        out = json.loads(buf.getvalue())
+        return {"rows": {c["id"]: c for c in out if c["id"] != "accepted-exception"},
+                "warns": [c["detail"] for c in out if c["id"] == "accepted-exception"]}
+    finally:
+        shutil.rmtree(base, ignore_errors=True)
+
+
+def accepted_toml(**overrides: object) -> str:
+    fields = {"check": "app-icon-family", "target": "index.html",
+              "detail": GENERATOR_DETAIL, "reason": "copies of upstream's generated set",
+              "record": "https://example.invalid/issues/23",
+              "identical_to": "../upstream", "paths": ICON_PATHS}
+    fields.update(overrides)
+    lines = ["[[design.accepted]]"]
+    lines += [f"{k} = {json.dumps(v)}" for k, v in fields.items() if v is not None]
+    return "\n".join(lines) + "\n"
+
+
+UPSTREAM_SAME = {p: legacy_files[p] for p in ICON_PATHS}
+
+baseline = lint_accepted(None)
+check(baseline["rows"]["app-icon-family"]["status"] == "FAIL"
+      and baseline["rows"]["app-icon-family"]["detail"] == GENERATOR_DETAIL
+      and not baseline["warns"],
+      "no declaration -> the generator FAIL is raised exactly as before")
+
+live = lint_accepted(accepted_toml(), upstream=UPSTREAM_SAME)
+icon = live["rows"]["app-icon-family"]
+check(icon["status"] == "ACCEPTED" and icon["detail"] == GENERATOR_DETAIL
+      and icon.get("accepted", {}).get("raised_status") == "FAIL"
+      and icon["accepted"]["reason"] == "copies of upstream's generated set"
+      and "sha256 identical" in icon["accepted"]["verified"]
+      and not live["warns"],
+      "live exception with a passing sha256 assertion -> ACCEPTED, still listed, "
+      "never dropped (#836)")
+
+drifted = lint_accepted(accepted_toml(),
+                        upstream={**UPSTREAM_SAME, "static/icon-512.png": "regenerated"})
+icon = drifted["rows"]["app-icon-family"]
+check(icon["status"] == "FAIL"
+      and icon.get("exception", {}).get("state") == "verify-fail"
+      and "static/icon-512.png" in icon["detail"],
+      "upstream blob no longer identical -> the finding is re-raised with why")
+
+gone = lint_accepted(accepted_toml())
+icon = gone["rows"]["app-icon-family"]
+check(icon["status"] == "FAIL"
+      and icon.get("exception", {}).get("state") == "verify-unknown",
+      "assertion that cannot be established (no upstream repo) -> re-raised, "
+      "unknown is never accepted")
+
+unasserted = lint_accepted(accepted_toml(identical_to=None, paths=None))
+icon = unasserted["rows"]["app-icon-family"]
+check(icon["status"] == "ACCEPTED"
+      and icon["accepted"]["verified"] == "no verifiable assertion declared",
+      "exception without an assertion -> ACCEPTED, and says nothing was verified")
+
+new_problem = lint_accepted(
+    accepted_toml(), upstream=UPSTREAM_SAME,
+    index='<head><link rel="manifest" href="/static/manifest.webmanifest">'
+          '<link rel="icon" href="/static/favicon.ico"></head>')
+check(new_problem["rows"]["app-icon-family"]["status"] == "FAIL"
+      and any("matched no current" in w for w in new_problem["warns"]),
+      "a new problem in the same check changes the detail -> FAIL re-raised and "
+      "the stale declaration reported")
+
+malformed = lint_accepted(accepted_toml(reason=None), upstream=UPSTREAM_SAME)
+check(malformed["rows"]["app-icon-family"]["status"] == "FAIL"
+      and any("missing reason" in w for w in malformed["warns"]),
+      "declaration without a reason is ignored and reported, never applied")
+
+half_assert = lint_accepted(accepted_toml(paths=None), upstream=UPSTREAM_SAME)
+check(half_assert["rows"]["app-icon-family"]["status"] == "FAIL"
+      and any("identical_to and paths go together" in w for w in half_assert["warns"]),
+      "identical_to without paths is ignored and reported")
+
+broken = lint_accepted("[[design.accepted]\n")
+check(broken["rows"]["app-icon-family"]["status"] == "FAIL"
+      and any("could not read .fleet.toml" in w for w in broken["warns"]),
+      "unparseable .fleet.toml -> findings raised, the read failure reported")
 
 
 _h.report_and_exit("design_lint")
