@@ -151,8 +151,11 @@ Use it instead of hand-assembling `curl`/JSON for the operations that recur
 every poll:
 
 - `chief_ops.py board` — the ~12-line digest (column counts, live sessions
-  with status/age/agent, PR/job cards, the 5h rate-limit line) in one call.
-  Add `--json` for the raw `/api/board` payload.
+  with status/age/agent, PR/job cards, Claude's 5h rate-limit line) in one call.
+  Add `--json` for the raw `/api/board` payload. A count shown as `?` (e.g.
+  `backlog=?`) is **unknown**, not zero — its source (GitHub cache or
+  session-host) couldn't be read, and the `unknown:` line below says why.
+  Never report a `?` to Roberto as a number (fleet-config#840).
 - `chief_ops.py sessions` — repo occupancy: which repos already have a live
   session, and its status/age, excluding your own card (named on the last
   line). This is the question to ask before any dispatch — `dispatch` below
