@@ -311,11 +311,12 @@ body — the issue is a *living backlog*, so:
     already missed last run too — escalate to
     `_(carried — not re-verified since <date>; flag for pruning)_<!-- last-seen: <date> -->`.
     Two audits on the same calendar day degrade to "no escalation" — a safe
-    default, not a bug. Pruning stays a human decision (never auto-close/tick);
+    default, not a bug. Pruning stays a human decision (never auto-tick);
     this only makes staleness visible on the item itself.
-- **Never tick or close anything yourself**, and never add `Closes #` — multiple
-  PRs may chip at one audit issue without closing it; closing is the user's call
-  via `/issue-finish` once all boxes are checked.
+- **Never tick anything yourself**, and never add `Closes #` — multiple PRs may
+  chip at one audit issue without closing it. Closing is the user's call via
+  `/issue-finish` once all boxes are checked; a lane may close it only under
+  the proven-landed bar in **Hard rules** below.
 - Append a dated bullet to the `## Audit run log` section:
   `<YYYY-MM-DD> @ <short-sha>: +A new, B carried, C not re-surfaced`.
 
@@ -629,8 +630,16 @@ findings. Codebase passes the audit.` — and stop.
   through `skills/_lib/audit_issue.py` (`get` then `upsert`). It reuses the one
   issue, merges into it, and collapses strays. Hand-rolling a create is what
   spawned duplicates.
-- **Never auto-close or auto-tick an audit issue.** It's a living backlog;
-  multiple PRs may chip at it. Closing and checking boxes are the user's call.
+- **Never auto-tick an audit issue; close one only on proof.** It's a living
+  backlog; multiple PRs may chip at it. Checking boxes stays the user's call.
+  A lane **may** close an audit issue (Roberto's standing authorization,
+  2026-09-12) only when **every** finding is proven already landed on `main`
+  by directly reading the code at a named SHA — never from a PR description, a
+  changelog, or an earlier session's log — with that proof recorded per finding
+  in the close comment. One unproven or still-open finding means do not close:
+  fix it, or report it and leave the issue open. Never manufacture a change to
+  justify a close, and never hand-edit the managed body's checkboxes (the body
+  belongs to `audit_issue.py`; hand edits spawn duplicates).
 - **The ledger snapshot comment is counts-only telemetry.** Step 9's
   per-category *count* row (`<!-- audit-snapshot -->`) must **never** carry
   finding text, file paths, or fix shapes — those live in the bucket issues, the
