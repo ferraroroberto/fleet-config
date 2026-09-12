@@ -78,6 +78,13 @@ ENDED_FILENAME = "sessions-ended.json"
 
 _PRUNE_AFTER = timedelta(hours=24)
 _REPLACE_ATTEMPTS = 3  # os.replace can hit a transient PermissionError under a concurrent Windows reader
+# An abrupt death between mkstemp and os.replace runs no Python handler, so
+# _write_rows' own except branch never fires and the temp is stranded
+# (fleet-config#816). Nothing inside the dead process can clean up, so temps
+# are named after their target and expired by age here instead. An hour is
+# orders of magnitude beyond a real write's duration, so the sweep cannot race
+# a live writer's temp.
+_TMP_SWEEP_AFTER = timedelta(hours=1)
 
 # Claude Code event → the board status it evidences. Anything else is ignored.
 _EVENT_STATUS = {
@@ -177,14 +184,48 @@ def _live_tombstones(path: Path) -> Dict[str, Any]:
     return live
 
 
+def _tmp_prefix(path: Path) -> str:
+    """Writer-identifying filename prefix for this target's write temporaries.
+
+    An orphan is then ``.sessions-state.json.<random>.tmp`` — it names the file
+    whose writer stranded it, instead of the anonymous ``tmp<8>.tmp`` that left
+    six accumulated temps unattributable to any writer (fleet-config#816).
+    """
+    return f".{path.name}."
+
+
+def _sweep_stale_temps(path: Path) -> None:
+    """Unlink this target's abandoned write temporaries, by age.
+
+    The cleanup a hard-killed writer could never do itself: see
+    ``_TMP_SWEEP_AFTER``. Scoped to this target's own prefix, so a sweep can
+    only ever remove temps this module created for this file. Advisory — any
+    failure leaves the orphan for the next writer rather than disturbing the
+    state write this sweep precedes.
+    """
+    cutoff = (_now() - _TMP_SWEEP_AFTER).timestamp()
+    try:
+        candidates = list(path.parent.glob(f"{_tmp_prefix(path)}*.tmp"))
+    except OSError:
+        return
+    for stale in candidates:
+        try:
+            if stale.stat().st_mtime < cutoff:
+                stale.unlink()
+        except OSError:
+            continue
+
+
 def _write_rows(path: Path, rows: Dict[str, Any]) -> None:
     """Atomic tmp+replace write, retried because a concurrent reader on Windows
     can hold the target and fail ``os.replace`` with a transient PermissionError."""
+    _sweep_stale_temps(path)
     payload = json.dumps(rows, indent=2, sort_keys=True)
     for attempt in range(_REPLACE_ATTEMPTS):
         tmp_name: Optional[str] = None
         try:
-            fd, tmp_name = tempfile.mkstemp(dir=str(path.parent), suffix=".tmp")
+            fd, tmp_name = tempfile.mkstemp(
+                dir=str(path.parent), prefix=_tmp_prefix(path), suffix=".tmp")
             with os.fdopen(fd, "w", encoding="utf-8") as handle:
                 handle.write(payload)
             os.replace(tmp_name, path)

@@ -54,6 +54,12 @@ _STANDALONE_UNIT_CHECKS: Tuple[Tuple[str, str, str], ...] = (
      "the helper's tolerant/pruned/concurrent JSON lifecycle and every "
      "workflow path that adds or removes a marker stay reachable from "
      "the one gate"),
+    ("session_state_writes", "test_session_state_writes.py",
+     "session_state's atomic-write floor -- temps that name their target and "
+     "expire by age (the cleanup a hard-killed writer can never do itself), "
+     "and an exhausted retry loop that reports the write it discarded -- sits "
+     "below the row-level behaviour checks_session_state.py drives through "
+     "hook payloads, and is testable on its own (fleet-config#816)"),
     ("scheduled_runner", "test_scheduled_runner.py",
      "provider adapters share completion, delivery, retry and owned-cancellation conformance"),
     ("claude_progress", "test_claude_progress.py",
