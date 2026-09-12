@@ -49,6 +49,9 @@ for body in (
     "name: s\n# a comment line\ndescription: ok",
     "name: s\nmetadata:\n  type: user\ndescription: ok",
     'name: s\ndescription: Does a thing. E.g. "/foo", "run foo now".',
+    # Claude Code's own frontmatter shapes — a gate that flags these is wrong.
+    "name: s\ndescription: ok\nallowed-tools: [Read, Grep]\nargument-hint: [issue-number]",
+    'name: s\ndescription: ok\nmeta: {a: "x, ]", b: 2}',
 ):
     check(frontmatter_error(fm(body)) is None, f"valid frontmatter accepted: {body!r}")
 
@@ -74,6 +77,9 @@ for body, reason in (
     ("name: s\ndescription: plain\n  continued", "continues onto"),
     ("name: s\nname: t\ndescription: ok", "duplicate key"),
     ("name: s\njust text\ndescription: ok", "not a `key: value`"),
+    ("name: s\ndescription: ok\nallowed-tools: [Read, Grep", "not closed"),
+    ("name: s\ndescription: ok\nallowed-tools: [Read] Grep", "after the flow collection"),
+    ("name: s\ndescription: [a, b]", "flow collection, not text"),
 ):
     err = frontmatter_error(fm(body))
     check(err is not None and reason in err,

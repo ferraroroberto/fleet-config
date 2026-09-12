@@ -19,13 +19,13 @@ stdlib only, no I/O — callers own reading the file.
 from __future__ import annotations
 
 import re
-from typing import Optional, Set
+from typing import List, Optional, Set
 
 _KEY_LINE = re.compile(r"^([A-Za-z0-9_][A-Za-z0-9_.-]*):(?: +(.*))?$")
 _BLOCK_SCALAR_HEADER = re.compile(r"^[|>][1-9+-]{0,2}\s*(?:#.*)?$")
 # A plain scalar cannot open with one of these (YAML 1.2 §7.3.3 c-indicator).
 # `-`, `?` and `:` are indicators only when followed by whitespace.
-_FORBIDDEN_FIRST = set(",[]{}#&*!|>'\"%@`")
+_FORBIDDEN_FIRST = set(",]}#&*!|>'\"%@`")
 _BARE_INDICATOR = re.compile(r"^[-?:](?:\s|$)")
 
 
@@ -50,6 +50,35 @@ def _quoted_error(value: str) -> Optional[str]:
     return f"{quote}-quoted value is not closed on its own line"
 
 
+def _flow_error(value: str) -> Optional[str]:
+    """Error for a single-line flow collection (`[Read, Grep]`, `{a: b}`), or None.
+
+    Claude Code frontmatter uses these for `allowed-tools` / `argument-hint`, so
+    they must pass; only bracket balance outside quotes is checked.
+    """
+    closers = {"[": "]", "{": "}"}
+    stack: List[str] = []
+    quote: Optional[str] = None
+    for i, ch in enumerate(value):
+        if quote:
+            if ch == quote:
+                quote = None
+            continue
+        if ch in "'\"":
+            quote = ch
+        elif ch in closers:
+            stack.append(closers[ch])
+        elif ch in "]}":
+            if not stack or stack.pop() != ch:
+                return f"unbalanced {ch!r} in flow collection"
+            if not stack:
+                rest = value[i + 1:]
+                if rest.strip() and not re.match(r"^\s+#", rest):
+                    return f"text after the flow collection: {rest.strip()[:40]!r}"
+                return None
+    return "flow collection is not closed on its own line"
+
+
 def _plain_error(value: str) -> Optional[str]:
     """Error for a single-line plain (unquoted) scalar, or None."""
     if value[0] in _FORBIDDEN_FIRST or _BARE_INDICATOR.match(value):
@@ -69,7 +98,9 @@ def frontmatter_error(text: str) -> Optional[str]:
     None also for a file with no frontmatter at all — that is the caller's
     "no description" case, not a parse failure. Otherwise checks the narrow
     subset of YAML a SKILL.md frontmatter uses: top-level `key: value` lines
-    whose values are single-line plain or quoted scalars. A value a real YAML
+    whose values are single-line plain or quoted scalars, or single-line flow
+    collections (`allowed-tools: [Read, Grep]`) on keys other than
+    `description`. A value a real YAML
     loader would reject — or would silently truncate, which loses the same
     routing text without an error (a ` #` comment, a plain scalar continued on
     the next line) — is reported, so no check can read "a line that looks like
@@ -120,10 +151,17 @@ def frontmatter_error(text: str) -> Optional[str]:
                 return f"line {n}: malformed block scalar header {value!r}"
             nested_ok = True
             continue
-        error = _quoted_error(value) if value[0] in "'\"" else _plain_error(value)
+        if value[0] in "[{":
+            if key == "description":
+                return f"line {n}: `description` is a YAML flow collection, not text"
+            error = _flow_error(value)
+        elif value[0] in "'\"":
+            error = _quoted_error(value)
+        else:
+            error = _plain_error(value)
         if error:
             return f"line {n}: `{key}`: {error}"
-        if value[0] not in "'\"":
+        if value[0] not in "'\"[{":
             plain_key = key
     return None
 
