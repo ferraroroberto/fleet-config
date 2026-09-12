@@ -658,3 +658,141 @@ def _tier23_hooks_unit_checks() -> Tuple[int, int]:
         shutil.rmtree(tmp, ignore_errors=True)
 
     return check.failures, check.total
+
+
+def _venv_junction_guard_unit_checks() -> Tuple[int, int]:
+    """`venv_discipline.py` rule 4 and its two false-positive fixes
+    (fleet-config#847).
+
+    Drives the real hook subprocess against a real primary `.venv` and a real
+    worktree whose `.venv` is a real junction to it -- the hazard is a
+    filesystem fact, so a mocked reparse point would prove nothing.
+
+    The incident these cover: a lane ran `git worktree remove --force
+    <worktree>` on a worktree whose `.venv` junction was still in place, and
+    git's recursive delete walked it into `task-os`'s primary venv while a live
+    app was importing from it. The allow-cases at the bottom are the guard's
+    own false positives -- it refused the issue that asked for this rule,
+    because the body quoted the hazard it describes.
+    """
+    check = _Checker()
+
+    tmp = Path(tempfile.mkdtemp(prefix="venv_junction_"))
+    try:
+        primary = tmp / "repo"
+        real_venv = primary / ".venv"
+        real_venv.mkdir(parents=True)
+        (real_venv / "pyvenv.cfg").write_text("home = x\n", encoding="utf-8")
+
+        worktree = tmp / "repo-wt-847"
+        worktree.mkdir()
+        link = worktree / ".venv"
+        if sys.platform == "win32":
+            subprocess.run(["cmd", "/c", "mklink", "/J", str(link), str(real_venv)],
+                           capture_output=True, encoding="oem", errors="replace")
+        else:
+            os.symlink(real_venv, link, target_is_directory=True)
+
+        sys.path.insert(0, str(HOOKS))
+        import venv_discipline  # noqa: E402
+
+        if not venv_discipline.is_reparse_point(link):
+            check.advisory("venv_junction: could not create a real junction -- cases skipped",
+                           False, f"mklink/symlink produced no reparse point at {link}")
+            return check.failures, check.total
+
+        def verdict(command: str, cwd: Path = worktree, tool: str = "Bash") -> int:
+            code, _out, _err = run("venv_discipline",
+                                   {"tool_name": tool, "cwd": str(cwd),
+                                    "tool_input": {"command": command}})
+            return code
+
+        # ---- rule 4: deletes that would follow the junction -> block ----
+        check("venv_junction: `git worktree remove --force <wt>` -> block",
+              verdict(f"git worktree remove --force {worktree}", cwd=primary) == 2)
+        check("venv_junction: `git -C <repo> worktree remove <wt>` -> block",
+              verdict(f"git -C {primary} worktree remove {worktree}", cwd=primary) == 2)
+        check("venv_junction: `rm -rf <wt>` -> block",
+              verdict(f"rm -rf {worktree}", cwd=primary) == 2)
+        check("venv_junction: `rm -rf <wt>/.venv` (the junction itself) -> block",
+              verdict(f"rm -rf {link}", cwd=primary) == 2)
+        check("venv_junction: `Remove-Item -Recurse <wt>` -> block",
+              verdict(f"Remove-Item -Recurse -Force {worktree}", cwd=primary,
+                      tool="PowerShell") == 2)
+        check("venv_junction: `rmdir /s <wt>` -> block",
+              verdict(f"rmdir /s /q {worktree}", cwd=primary) == 2)
+        check("venv_junction: relative operand resolved against payload cwd -> block",
+              verdict("rm -rf repo-wt-847", cwd=tmp) == 2)
+        # The incident command was typed in Git Bash, so its operand was an
+        # MSYS path: `/e/automation/task-os-wt-225`. That has a root but no
+        # drive, so it is not `is_absolute()` on Windows -- and its leading `/`
+        # looks exactly like a cmd switch. Both traps are on the one path shape
+        # that actually caused fleet-config#847, so it gets its own case.
+        if sys.platform == "win32" and str(tmp)[1:3] == ":\\":
+            msys = "/" + str(worktree)[0].lower() + str(worktree)[2:].replace("\\", "/")
+            check("venv_junction: MSYS operand (`/e/automation/...`) -> block (#847)",
+                  verdict(f"git worktree remove --force {msys}", cwd=primary) == 2)
+            check("venv_junction: MSYS operand under `rm -rf` -> block (#847)",
+                  verdict(f"rm -rf {msys}", cwd=primary) == 2)
+        check("venv_junction: venv creation over the junction -> block",
+              verdict(r"& .\.venv\Scripts\python.exe -m venv .venv",
+                      cwd=worktree, tool="PowerShell") == 2)
+        check("venv_junction: venv reset over the junction -> block",
+              verdict(r"& .\.venv\Scripts\python.exe -m venv --clear .venv",
+                      cwd=worktree, tool="PowerShell") == 2)
+        check("venv_junction: hazard in a later clause is not laundered by the first -> block",
+              verdict(f"echo hi; rm -rf {worktree}", cwd=primary) == 2)
+
+        # ---- the safe forms stay allowed ----
+        check("venv_junction: `rmdir <junction>` with no /s (reparse-safe) -> allow",
+              verdict(f"rmdir {link}", cwd=primary) == 0)
+        check("venv_junction: `worktree_claim.py remove-worktree <wt>` -> allow",
+              verdict(f"E:/automation/fleet-config/.venv/Scripts/python.exe "
+                      f"skills/_lib/worktree_claim.py remove-worktree {worktree}",
+                      cwd=primary) == 0)
+        check("venv_junction: `rm -rf` on a real .venv (not a junction) -> allow",
+              verdict(f"rm -rf {primary}", cwd=tmp) == 0)
+        check("venv_junction: `rm -rf` on a path with no .venv at all -> allow",
+              verdict(f"rm -rf {tmp / 'nothing-here'}", cwd=tmp) == 0)
+        check("venv_junction: `git worktree remove` on a junction-free worktree -> allow",
+              verdict(f"git worktree remove {tmp / 'plain-wt'}", cwd=primary) == 0)
+
+        # ---- false positive 1: flags are not directory names ----
+        # Pre-fix this blocked, reporting `--clear` as the bad directory name.
+        check("venv_flags: venv reset with the canonical name -> allow (#847)",
+              verdict("python -m venv --clear .venv", cwd=tmp) == 0)
+        check("venv_flags: venv creation with a flag then the canonical name -> allow (#847)",
+              verdict("python -m venv --system-site-packages .venv", cwd=tmp) == 0)
+        check("venv_flags: a flag before a WRONG name still blocks the name",
+              verdict("python -m venv --clear venv", cwd=tmp) == 2)
+        check("venv_flags: wrong name with no flags still blocks (unchanged)",
+              verdict("python -m venv venv", cwd=tmp) == 2)
+
+        # ---- false positive 2: a heredoc body written to a file is text ----
+        # This exact shape refused fleet-config#847 from being filed.
+        doc = tmp / "issue.md"
+        hazard_text = "The shape is consistent with a venv reset or creation\n" \
+                      "run against a junctioned path -- `python -m venv venv`.\n"
+        heredoc = f"cat > {doc} <<'DOCEOF'\n{hazard_text}DOCEOF\n"
+        check("venv_heredoc: file-redirected heredoc quoting the hazard -> allow (#847)",
+              verdict(heredoc, cwd=tmp) == 0)
+        check("venv_heredoc: `>>` append heredoc quoting the hazard -> allow (#847)",
+              verdict(heredoc.replace(f"> {doc}", f">> {doc}"), cwd=tmp) == 0)
+        check("venv_heredoc: `gh issue create --body-file -` heredoc -> allow (#847)",
+              verdict(f"gh issue create --body-file - <<'MD'\n{hazard_text}MD\n", cwd=tmp) == 0)
+        # ... but a body the consuming command EXECUTES still counts, whether or
+        # not the line carries a file redirect. `python - <<'PY' > out.txt` is
+        # the case a redirect-only discriminator would have wrongly stripped.
+        check("venv_heredoc: non-redirected heredoc piping a real command -> block",
+              verdict(f"cat <<'SHEOF' | sh\n{hazard_text}SHEOF\n", cwd=tmp) == 2)
+        check("venv_heredoc: executed heredoc that ALSO redirects to a file -> block",
+              verdict(f"sh - <<'SHEOF' > {tmp / 'out.txt'}\n{hazard_text}SHEOF\n", cwd=tmp) == 2)
+        check("venv_heredoc: a real command AFTER a stripped heredoc still blocks",
+              verdict(heredoc + "python -m venv venv\n", cwd=tmp) == 2)
+    finally:
+        if sys.platform == "win32":
+            subprocess.run(["cmd", "/c", "rmdir", str(tmp / "repo-wt-847" / ".venv")],
+                           capture_output=True, encoding="oem", errors="replace")
+        shutil.rmtree(tmp, ignore_errors=True)
+
+    return check.failures, check.total
