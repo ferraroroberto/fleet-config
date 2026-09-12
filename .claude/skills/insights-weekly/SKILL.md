@@ -23,8 +23,10 @@ Run in order. A failure on one step prints a short error and stops.
 ### 1. Refresh the insights report
 
 ```
-claude -p "/insights" --permission-mode bypassPermissions
+MSYS_NO_PATHCONV=1 claude -p "/insights" --permission-mode bypassPermissions
 ```
+
+Run it through the **Bash tool exactly as written**. Without the prefix, Git Bash's MSYS path conversion rewrites the leading-slash `/insights` into `C:/Program Files/Git/insights` before `claude.exe` sees it, so the child gets a garbled prompt instead of the slash command (fleet-config#842). From the PowerShell tool, drop the prefix — PowerShell has no MSYS conversion and would read it as a command.
 
 `/insights` writes a fresh `report-<timestamp>.html` into `~/.claude/usage-data/`. If it can't refresh headlessly (no new file appears), proceed with the latest existing `report-*.html` — `report.py` always uses the two newest on disk. (On the scheduled job this skill is itself a `claude -p` run, so this is a normal nested invocation; on an interactive on-demand run it spawns a short child `claude`.)
 
