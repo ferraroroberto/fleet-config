@@ -45,6 +45,8 @@ class ProgressEvent:
 
 
 _DESCRIPTOR_UNSAFE = re.compile(r"[^A-Za-z0-9_.:=-]")
+DESCRIPTOR_PART_LIMIT = 40
+DESCRIPTOR_LIMIT = 80
 
 
 def describe_record(*parts: object) -> str:
@@ -54,11 +56,12 @@ def describe_record(*parts: object) -> str:
     block's own `type`) are ever passed in; anything else on the record can
     carry a prompt, a path or a secret. Sanitized and length-capped on top of
     that, because this string reaches the run log, which is read by people and
-    scraped by the Board.
+    scraped by the Board. The cap is applied to each part *and* to the joined
+    result, so no number of parts can widen one log line without bound.
     """
-    cleaned = [_DESCRIPTOR_UNSAFE.sub("?", str(part))[:40]
+    cleaned = [_DESCRIPTOR_UNSAFE.sub("?", str(part))[:DESCRIPTOR_PART_LIMIT]
                for part in parts if part not in (None, "")]
-    return "/".join(cleaned) or "unlabelled"
+    return ("/".join(cleaned) or "unlabelled")[:DESCRIPTOR_LIMIT]
 
 
 def error_category(text: str) -> str:

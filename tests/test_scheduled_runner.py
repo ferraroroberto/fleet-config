@@ -133,6 +133,8 @@ class ScheduledRunnerTests(unittest.TestCase):
         self.assertEqual(describe_record("system", None, ""), "system")
         self.assertEqual(describe_record(None), "unlabelled")
         self.assertEqual(len(describe_record("x" * 200)), 40)
+        # Capped as a whole too, so no number of parts widens one log line.
+        self.assertEqual(len(describe_record(*["x" * 50] * 5)), 80)
 
     def test_completed_prose_without_tools_is_no_work(self):
         for adapter in self.adapters:
