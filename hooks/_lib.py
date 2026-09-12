@@ -27,11 +27,12 @@ from typing import Any, Dict, Optional, Sequence
 STATE_DIR_ENV_VAR = "CLAUDE_HOOKS_STATE_DIR"
 
 # app-launcher stamps this into every PTY/remote session it spawns
-# (`src/session_host.agent_child_env`), scrubbing any inherited parent value
-# first, so the agent process — and every hook subprocess below it — carries
-# the id of *its own* launcher session. It is the only identifier a hook shares
-# with the launcher: the harness's own `payload["session_id"]` lives in a
-# different namespace entirely (fleet-config#835).
+# (`src/session_host.agent_child_env`), assigning it unconditionally rather
+# than inheriting, so the agent process — and every hook subprocess below it —
+# carries the id of *its own* launcher session even when a launcher session
+# spawns another. It is the only identifier a hook shares with the launcher:
+# the harness's own `payload["session_id"]` lives in a different namespace
+# entirely (fleet-config#835).
 LAUNCHER_SESSION_ID_ENV_VAR = "APP_LAUNCHER_SESSION_ID"
 
 logger = logging.getLogger("fleet_hooks")
