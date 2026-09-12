@@ -191,6 +191,70 @@ try:
     check("no run state" not in out,
           "capture.py collect: finds the run state instead of looking under today's date")
 
+    # A marker must expire. A `collect` whose `start` never ran (hub down,
+    # exit 3) would otherwise follow the *previous* run's marker and republish
+    # last week's capture as this week's entry -- the one failure mode SKILL.md
+    # calls out as making the ledger lie.
+    day = _dt.date.today()
+    check(capture.is_current_run(day.isoformat(), day),
+          "is_current_run: the run's own date is current")
+    check(capture.is_current_run((day - _dt.timedelta(days=1)).isoformat(), day),
+          "is_current_run: yesterday is current -- that is the midnight window")
+    check(not capture.is_current_run((day - _dt.timedelta(days=2)).isoformat(), day),
+          "is_current_run: a two-day-old marker is a previous run, not this one")
+    check(not capture.is_current_run((day - _dt.timedelta(days=7)).isoformat(), day),
+          "is_current_run: last week's marker is never adopted")
+    check(not capture.is_current_run((day + _dt.timedelta(days=1)).isoformat(), day),
+          "is_current_run: a future-dated marker is refused, not trusted")
+    check(not capture.is_current_run("not-a-date", day),
+          "is_current_run: an unparseable date is refused, never guessed")
+    check(not capture.is_current_run("", day),
+          "is_current_run: a missing date is refused")
+
+    # End-to-end: a stale marker is ignored, so `collect` reports the honest
+    # "no run state" exit 2 rather than silently collecting the older run.
+    stale_root = tmp / "stale-root"
+    stale_date = (day - _dt.timedelta(days=7)).isoformat()
+    stale_dir = stale_root / "runs" / stale_date
+    stale_dir.mkdir(parents=True)
+    (stale_dir / ".run-state.json").write_text(json.dumps({
+        "run_date": stale_date, "ledger_root": str(stale_root),
+        "out_dir": str(stale_dir), "targets": {}, "runs": {},
+        "skipped": [{"id": "peer", "detail": "dormant", "reason": "machine is dormant"}],
+    }), encoding="utf-8")
+    capture.mark_active_run(stale_root, stale_date, stale_dir)
+    code, out = _captured(
+        [str(SKILL / "capture.py"), "--ledger-root", str(stale_root), "collect"], REPO)
+    check(code == 2,
+          "capture.py collect: a stale marker is not adopted -- exit 2, not a "
+          "silent republish of last week's run (got %s)" % code)
+    check("no run state" in out,
+          "capture.py collect: says it found no run state rather than reporting the old one")
+    check(stale_date not in out,
+          "capture.py collect: never reports the stale run's date as this run's")
+    # ...and the stale marker stays targetable by hand, which is what --date is for.
+    code, out = _captured(
+        [str(SKILL / "capture.py"), "--ledger-root", str(stale_root),
+         "--date", stale_date, "collect"], REPO)
+    check("RUN_DATE=" + stale_date in out,
+          "capture.py collect: an explicit --date still re-targets an older run")
+
+    # The marker carries the run directory too, so a custom --out-dir set on
+    # `start` does not have to be repeated on the later verbs either.
+    cust_root = tmp / "custom-root"
+    cust_dir = tmp / "elsewhere" / "run"
+    cust_dir.mkdir(parents=True)
+    (cust_dir / ".run-state.json").write_text(json.dumps({
+        "run_date": day.isoformat(), "ledger_root": str(cust_root),
+        "out_dir": str(cust_dir), "targets": {}, "runs": {},
+        "skipped": [{"id": "peer", "detail": "dormant", "reason": "machine is dormant"}],
+    }), encoding="utf-8")
+    capture.mark_active_run(cust_root, day.isoformat(), cust_dir)
+    code, out = _captured(
+        [str(SKILL / "capture.py"), "--ledger-root", str(cust_root), "collect"], REPO)
+    check("OUT_DIR=" + str(cust_dir) in out,
+          "capture.py collect: follows the run directory `start` recorded, not just its date")
+
     # ------------------------------------------------- 3. peer addresses
 
     # The host is always loopback; a peer is dialled at the `ip` the inventory

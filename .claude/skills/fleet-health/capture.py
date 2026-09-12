@@ -309,6 +309,14 @@ def emit(mid: str, status: str, reason: str = "", **extra: Any) -> None:
 STATE_NAME = ".run-state.json"
 ACTIVE_NAME = ".active-run.json"
 
+# A capture is an hour long and starts at 23:30, so its marker is current on
+# the run's own date and on the next one -- never longer. Past that the marker
+# belongs to a *previous* run, and following it would let a `collect` whose
+# `start` never ran re-publish last week's capture as this week's entry: the
+# one failure mode that makes the ledger lie (SKILL.md). An expired marker is
+# ignored, so the caller gets the honest "no run state" exit 2 instead.
+ACTIVE_MAX_AGE_DAYS = 1
+
 
 def state_path(out_dir: Path) -> Path:
     return out_dir / STATE_NAME
@@ -332,7 +340,22 @@ def mark_active_run(root: Path, run_date: str, out_dir: Path) -> None:
         encoding="utf-8")
 
 
+def is_current_run(run_date: str, today: Optional[_dt.date] = None) -> bool:
+    """Is a marker's run date recent enough to still be this run's?
+
+    Rejects an unparseable date, a run older than ``ACTIVE_MAX_AGE_DAYS``, and
+    a future-dated one -- none of those can be the run in flight, and guessing
+    is worse than reporting no run state.
+    """
+    try:
+        marked = _dt.date.fromisoformat(run_date)
+    except (TypeError, ValueError):
+        return False
+    return 0 <= ((today or _dt.date.today()) - marked).days <= ACTIVE_MAX_AGE_DAYS
+
+
 def load_active_run(root: Path) -> dict:
+    """The run `start` recorded, or ``{}`` if there is no current one."""
     path = active_path(root)
     if not path.is_file():
         return {}
@@ -340,7 +363,9 @@ def load_active_run(root: Path) -> dict:
         payload = json.loads(path.read_text(encoding="utf-8")) or {}
     except (OSError, ValueError):
         return {}
-    return payload if isinstance(payload, dict) else {}
+    if not isinstance(payload, dict):
+        return {}
+    return payload if is_current_run(str(payload.get("run_date") or "")) else {}
 
 
 def load_state(out_dir: Path) -> dict:
@@ -376,12 +401,22 @@ def resolve_dirs(args, follow_active: bool = False) -> tuple[Path, Path, str]:
     the ledger append a third answer -- which it did on three consecutive
     runs, reproducing live at 00:07 (fleet-config#812). An explicit
     ``--date``/``--out-dir`` still wins, so a rerun stays targetable by hand.
+
+    The marker carries the run directory as well as the date, so a ``start``
+    given a custom ``--out-dir`` does not need it repeated on the later verbs
+    either.
     """
     root = Path(args.ledger_root or (Path.home() / ".claude" / "fleet-health"))
     active = load_active_run(root) if follow_active and not args.date else {}
     run_date = (args.date or str(active.get("run_date") or "")
                 or _dt.date.today().isoformat())
-    out_dir = Path(args.out_dir or (root / "runs" / run_date))
+    marked_dir = str(active.get("out_dir") or "")
+    if args.out_dir:
+        out_dir = Path(args.out_dir)
+    elif marked_dir:
+        out_dir = Path(marked_dir)
+    else:
+        out_dir = root / "runs" / run_date
     return root, out_dir, run_date
 
 
