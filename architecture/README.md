@@ -136,6 +136,45 @@ is the only guard against `audit_issue.py` refiling a closed-as-not-planned
 is otherwise invisible to the next sweep. Same silent-if-unrecognized parsing
 as `[vendored]` above — adding `[cert]` costs nothing on the map-build path.
 
+### Optional per-repo `[[design.accepted]]` table (fleet-config#836)
+
+A repo that examined a `design_lint` contract finding and accepted it records
+that verdict here. The typical case is a fork whose divergence from upstream is
+deliberate. Without this, `/design-sync` files the same finding again on every
+sweep: local-llm-hub-lite's `app-icon-family` FAIL was filed four times.
+
+```toml
+[[design.accepted]]
+check        = "app-icon-family"
+target       = "app_web/static/index.html"
+detail       = "shared brand_gen.render_set generator not adopted"
+reason       = "icons are byte-identical copies of upstream's generated set; lite refuses the generator dependency"
+record       = "https://github.com/<owner>/<repo>/issues/23"
+identical_to = "../local-llm-hub"
+paths        = ["app_web/static/icon-180.png", "app_web/static/manifest.webmanifest"]
+```
+
+| Field | Meaning |
+|---|---|
+| `check` | required; a `contracts` result id |
+| `target` | required; the finding's evidence file, repo-relative, line number dropped |
+| `detail` | required; the finding's exact detail string. When a new problem appears in the same check, the detail changes and the finding is raised again |
+| `reason` | required; one line saying why the finding is accepted |
+| `record` | optional; link to where it was triaged |
+| `identical_to` + `paths` | optional, and only as a pair: a repo path, relative to this repo's root, plus the files whose **committed** blobs must hash identical in both repos |
+
+`skills/_lib/design_lint/accepted.py` applies it to the `contracts` output
+every run. A match becomes `status: "ACCEPTED"` and stays in the output, never
+dropped. The declared assertion is re-verified every run. If it fails, or can't
+be established (for example the sibling repo is missing or a blob can't be
+read), the finding keeps its WARN/FAIL status with the reason appended, because
+unknown is never accepted. A malformed entry, or one that matched no WARN/FAIL
+finding, becomes an `accepted-exception` WARN row, so a stale declaration shows
+up instead of lingering. This table lives beside the reasoning it records.
+Prose in `CLAUDE.md` can't be parsed reliably, and a separate sidecar file would
+be one more thing to keep in sync. Same silent-if-unrecognized parsing as
+`[vendored]`/`[cert]`, so adding it costs nothing on the map-build path.
+
 ### Optional per-repo `[worktree]` table (fleet-config#620)
 
 `skills/_lib/worktree_claim.py` junctions a repo's `.venv` into every fresh

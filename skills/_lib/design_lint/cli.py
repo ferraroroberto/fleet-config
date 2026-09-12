@@ -12,6 +12,7 @@ import json
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
+from .accepted import apply_accepted
 from .adoption import adoption
 from .contracts import contracts
 from .css import parse_custom_props
@@ -72,8 +73,8 @@ def main(argv: Optional[List[str]] = None) -> int:
     if args.command in ("adoption", "all"):
         out["adoption"] = adoption(root, css_files)
     if args.command in ("contracts", "all"):
-        out["contracts"] = contracts(root, css_files, html_files, js_files,
-                                     spec_light, spec_dark)
+        out["contracts"] = apply_accepted(root, contracts(root, css_files, html_files,
+                                                          js_files, spec_light, spec_dark))
     if args.command in ("vendored", "all"):
         out["vendored"] = vendored(root, Path(args.scaffold))
     if args.command in ("siblings", "all"):
