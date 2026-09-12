@@ -239,11 +239,15 @@ def caller_session_id(env: Optional[Mapping[str, str]] = None) -> Optional[str]:
     identity from since fleet-config#848.
 
     Deliberately not the card's `label`: `label == "chief"` is assigned by
-    the launcher's chief-spawn path, but the board *also* re-derives it
-    heuristically for any live fleet-config PTY whose title, shared name or
-    first prompt happens to read "chief". A worker mislabelled that way would
-    be excluded from occupancy — the exact collision the guard exists to
-    prevent — so the exclusion below rests on the primary key instead.
+    the launcher's chief-spawn path, but `/api/board` also re-derives it on
+    every poll (`app/webapp/routers/board_chief.py`'s `_reconcile_chief_label`,
+    called from `board.py`) for any live PTY cwd'd in the fleet-config
+    checkout whose OSC title's last token, hook-state shared name, or first
+    submitted prompt reads "chief" — a deliberate self-heal for a chief
+    re-attached by Resume, and three signals an ordinary worker in this repo
+    can trip. A worker mislabelled that way would be excluded from occupancy,
+    the exact collision the guard exists to prevent, so the exclusion below
+    rests on the primary key instead.
     """
     source = os.environ if env is None else env
     value = str(source.get(LAUNCHER_SESSION_ID_ENV_VAR) or "").strip()
@@ -293,11 +297,17 @@ def repo_occupancy(
 def alive_worker_count(columns: Dict[str, Any], exclude_sid: Optional[str] = None) -> int:
     """Alive session cards, excluding the caller's own and the standing chief's.
 
-    `exclude_sid` drops the caller's own card (fleet-config#838):
+    `exclude_sid` drops the caller's own card here too (fleet-config#838):
     the count and the occupancy map are read from the same card list in the
     same dispatch, and a caller that excused itself from one but not the other
     would still be capped out by its own presence. The `label` test stays as
     the fallback for a chief that is not itself the caller.
+
+    It excuses *any* caller, not only chief, which is the honest reading of
+    "a session is not one of the workers it is counting" — and safe past
+    chief because a launcher-dispatched session is forced onto a worktree
+    regardless (`worktree_claim.py`, fleet-config#525), so the checkout
+    collision the cap is a proxy for is prevented downstream either way.
     """
     cards = list(columns.get("claude_turn") or []) + list(columns.get("your_turn") or [])
     return sum(
