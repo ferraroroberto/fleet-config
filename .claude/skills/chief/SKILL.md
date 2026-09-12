@@ -400,12 +400,15 @@ the worktrees (whose `.venv` is a junction into the primary's real venv). That
 buys the guarantee that the merged tree is what ran.
 
 **It also costs coverage, and the cost is invisible unless you report it.** A
-fresh checkout has none of the repo's gitignored runtime files, so the tests
-that need one **skip** rather than fail, and pytest prints the same green as a
-run that covered more. On the 2026-09-12 app-launcher round the skips went
-**17 → 19**, the whole delta being the `#444` real-agent pin — a fresh clone
-has no app registered under that id, because the registry lives in the
-gitignored `config/webapp_config.json`. A skip is not a pass.
+fresh checkout has none of the repo's gitignored runtime files and none of the
+host state keyed to a known path, so the tests that need either **skip** rather
+than fail, and pytest prints the same green as a run that covered more. On the
+2026-09-12 app-launcher round the skips went **17 → 19**, the whole delta being
+the `#444` real-agent pin. Its residual cause is **agent folder trust**: a
+never-opened directory paints Claude Code's trust prompt instead of the
+composer, and `--dangerously-skip-permissions` does not clear it
+(`app-launcher#932`, PR #937). It is not the gitignored
+`config/webapp_config.json` registry. A skip is not a pass.
 
 So a merge-verification report is only complete when it names that delta.
 Capture the baseline from the checkout that *has* the runtime files, then
@@ -427,9 +430,10 @@ those belong in what you relay to Roberto verbatim.
 
 **Never close the gap by copying a live config into a scratch checkout.** That
 puts real credentials in a throwaway tree, which is exactly what
-`app-launcher#907`/PR #911 exist to prevent. Accepting reduced coverage and
-saying so is the correct behaviour; a credential-free runtime registry, if one
-is ever provisioned, is the owning repo's work and does not change this rule.
+`app-launcher#907`/PR #911 exist to prevent. It would not close this delta
+anyway, and neither may a gate answer the trust prompt or write the user's
+global `~/.claude.json`. Accepting reduced coverage and saying so is the
+correct behaviour.
 
 **Verify from outside; never arbitrate between two agents' conflicting
 accounts.** When one worker reports that another overstepped its brief, check
