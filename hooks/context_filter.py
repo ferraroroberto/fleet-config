@@ -71,13 +71,20 @@ SWEEP_HELPER_RE = re.compile(
     re.IGNORECASE,
 )
 
-TIMESTAMP_RE = re.compile(
-    r"\b(?:\d{4}-\d{2}-\d{2}[T ][0-9:.+-]+|\d{2}:\d{2}:\d{2}(?:\.\d+)?)\b"
-)
-UUID_RE = re.compile(r"\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b", re.I)
-HEX_RE = re.compile(r"\b[0-9a-f]{12,}\b", re.I)
-NUMBER_RE = re.compile(r"\b\d+(?:\.\d+)?(?:ms|s|m|kb|mb|gb|%)?\b", re.I)
-PATH_RE = re.compile(r"([A-Za-z]:)?[/\\][^\s:]+")
+# Reading a file or tailing a log has no summarisable semantics: the content IS
+# the payload, so there is nothing a summary can faithfully stand in for. The
+# floor for these commands is therefore the whole char budget — under it the
+# output comes back verbatim, over it byte-truncated with an explicit marker
+# naming how many lines were withheld (fleet-config#837).
+#
+# What this replaces: a `cat`/`tail` used to come back as only the lines
+# matching SIGNAL_RE, which turned a 433-line source file into ten lines
+# containing the word "fail" and a monitoring digest into its five least
+# informative rows — both read at face value as "there is nothing there". The
+# issue's own phrasing is the rule adopted here: returning the raw output
+# truncated at a byte limit is strictly more honest than a summary the agent
+# cannot tell from an empty result.
+CONTENT_COMMANDS = {"cat", "tail"}
 
 
 @dataclass(frozen=True)
@@ -279,38 +286,36 @@ def redact_secret_markers(text: str) -> str:
     return SECRET_RE.sub("[REDACTED_SECRET]", text)
 
 
-def _template_line(line: str) -> str:
-    templated = TIMESTAMP_RE.sub("<time>", line)
-    templated = UUID_RE.sub("<uuid>", templated)
-    templated = HEX_RE.sub("<hex>", templated)
-    templated = PATH_RE.sub("<path>", templated)
-    templated = NUMBER_RE.sub("<num>", templated)
-    return templated.strip()
+def _collapse_identical_runs(lines: Iterable[str]) -> list[str]:
+    """Collapse runs of *byte-identical* adjacent lines into one ``[xN]`` row.
 
-
-def _collapse_repeated_templates(lines: Iterable[str]) -> list[str]:
+    Lines that differ in any way are never merged (fleet-config#837). The former
+    implementation keyed each run on a *template* of the line with timestamps,
+    uuids, hex digests, paths and numbers masked out — so two distinct worktree
+    paths rendered as a single ``[x2]`` row and the second path was simply gone,
+    with the count reading like corroboration. A count is not a substitute for
+    the values when the values are the payload, and every category that template
+    masked — a path, an id, a number — is exactly the kind of value that is the
+    payload. Collapsing identical lines stays lossless, so it stays.
+    """
     collapsed: list[str] = []
-    last_template = ""
-    last_line = ""
+    last_line: Optional[str] = None
+    last_key = ""
     count = 0
 
     def flush() -> None:
-        nonlocal count, last_line
-        if count <= 0:
+        if count <= 0 or last_line is None:
             return
-        if count == 1:
-            collapsed.append(last_line)
-        else:
-            collapsed.append(f"[x{count}] {last_line}")
+        collapsed.append(last_line if count == 1 else f"[x{count}] {last_line}")
 
     for line in lines:
-        template = _template_line(line)
-        if template and template == last_template:
+        key = line.rstrip()
+        if last_line is not None and key == last_key:
             count += 1
             continue
         flush()
-        last_template = template
         last_line = line
+        last_key = key
         count = 1
     flush()
     return collapsed
@@ -432,13 +437,7 @@ def command_specific_lines(command: str, lines: list[str]) -> Optional[list[str]
         return _pytest(lines)
     if base in {"npm", "pnpm", "yarn", "bun"} and re.search(r"\b(test|run\s+test)\b", lower):
         return _npm(lines)
-    if base in {"cat", "tail"}:
-        collapsed = _collapse_repeated_templates(lines)
-        signal = [line.rstrip() for line in collapsed if SIGNAL_RE.search(line)]
-        if signal:
-            return signal
-        if len(collapsed) < len(lines):
-            return collapsed[:20]
+    # `cat`/`tail` deliberately have no branch here — see CONTENT_COMMANDS.
     return None
 
 
@@ -468,6 +467,24 @@ def _json_summary(text: str) -> Optional[str]:
     return f"JSON {type(parsed).__name__}"
 
 
+def _verbatim(safe_raw: str, total_lines: int, max_chars: int) -> str:
+    """Return content-command output unsummarised, byte-truncated at the budget.
+
+    Truncation is announced with the two numbers that make the loss legible and
+    bounded — how many lines came back and how many were withheld — so it can
+    never be read as "that was the whole file" (fleet-config#837).
+    """
+    body = safe_raw.rstrip("\n")
+    if len(body) <= max_chars:
+        return body
+    head = body[:max_chars].rstrip()
+    kept = len(head.splitlines())
+    return head + (
+        f"\n[fleet-context-filter: VERBATIM HEAD — first {kept} of {total_lines} lines; "
+        f"{total_lines - kept} withheld past the {max_chars}-char budget]"
+    )
+
+
 def compress_output(
     command: str,
     raw: str,
@@ -483,31 +500,34 @@ def compress_output(
     raw_tokens = estimate_tokens(normalized)
     lines = safe_raw.splitlines()
 
-    json_summary = _json_summary(safe_raw)
-    if json_summary:
-        candidate_lines = [json_summary]
-    elif len(safe_raw) <= SMALL_OUTPUT_CHARS and len(lines) <= max_lines:
-        candidate_lines = lines
+    if command_base(command) in CONTENT_COMMANDS:
+        compressed = _verbatim(safe_raw, len(lines), max_chars)
     else:
-        candidate_lines = command_specific_lines(command, lines) or []
-        if not candidate_lines:
-            signal = [line.rstrip() for line in lines if SIGNAL_RE.search(line)]
-            head = [line.rstrip() for line in lines[: min(12, len(lines))]]
-            tail = [line.rstrip() for line in lines[-min(20, len(lines)) :]] if len(lines) > 12 else []
-            candidate_lines = head + ["[... middle omitted ...]"] + signal + tail
+        json_summary = _json_summary(safe_raw)
+        if json_summary:
+            candidate_lines = [json_summary]
+        elif len(safe_raw) <= SMALL_OUTPUT_CHARS and len(lines) <= max_lines:
+            candidate_lines = lines
+        else:
+            candidate_lines = command_specific_lines(command, lines) or []
+            if not candidate_lines:
+                signal = [line.rstrip() for line in lines if SIGNAL_RE.search(line)]
+                head = [line.rstrip() for line in lines[: min(12, len(lines))]]
+                tail = [line.rstrip() for line in lines[-min(20, len(lines)) :]] if len(lines) > 12 else []
+                candidate_lines = head + ["[... middle omitted ...]"] + signal + tail
 
-    candidate_lines = _collapse_repeated_templates(_dedupe_exact(candidate_lines))
-    if len(candidate_lines) > max_lines:
-        tail_budget = max(8, max_lines // 4)
-        candidate_lines = (
-            candidate_lines[: max_lines - tail_budget - 1]
-            + [f"[fleet-context-filter: omitted {len(candidate_lines) - max_lines + 1} low-signal lines]"]
-            + candidate_lines[-tail_budget:]
-        )
+        candidate_lines = _collapse_identical_runs(_dedupe_exact(candidate_lines))
+        if len(candidate_lines) > max_lines:
+            tail_budget = max(8, max_lines // 4)
+            candidate_lines = (
+                candidate_lines[: max_lines - tail_budget - 1]
+                + [f"[fleet-context-filter: omitted {len(candidate_lines) - max_lines + 1} low-signal lines]"]
+                + candidate_lines[-tail_budget:]
+            )
 
-    compressed = "\n".join(candidate_lines).strip()
-    if len(compressed) > max_chars:
-        compressed = compressed[:max_chars].rstrip() + "\n[fleet-context-filter: truncated at char budget]"
+        compressed = "\n".join(candidate_lines).strip()
+        if len(compressed) > max_chars:
+            compressed = compressed[:max_chars].rstrip() + "\n[fleet-context-filter: truncated at char budget]"
 
     if not compressed:
         compressed = "[fleet-context-filter: command produced no output]"

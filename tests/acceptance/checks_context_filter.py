@@ -216,6 +216,157 @@ def _context_filter_unit_checks() -> Tuple[int, int, int]:
             res.stdout.strip() + " | " + res.stderr.strip(),
         )
 
+    # ---- the filter must never silently read less than the command produced ----
+    # fleet-config#837: three separate degradations, each indistinguishable from
+    # a true negative. Unit-level here because the defects live in the compressor,
+    # not in the wiring; the wrapper-level halves follow underneath.
+    sys.path.insert(0, str(HOOKS))
+    import context_filter as _cf837  # noqa: E402
+
+    # (a) distinct adjacent lines must never merge into one [xN] row. The old
+    # run key was a *template* with paths/ids/numbers masked out, so two real
+    # worktree paths rendered as `[x2] <the first one>`.
+    distinct = "\n".join(
+        f"     {i}\t/e/automation/{name}"
+        for i, name in enumerate(
+            ["app-launcher-wt-885", "local-llm-hub-wt-561", "task-os-wt-184"], start=1
+        )
+    )
+    collapsed = _cf837.compress_output("git status --short", distinct).compressed
+    missing_paths = [
+        name for name in ("app-launcher-wt-885", "local-llm-hub-wt-561", "task-os-wt-184")
+        if name not in collapsed
+    ]
+    check(
+        "context_filter: distinct adjacent lines are never merged into [xN] (fleet-config#837)",
+        not missing_paths,
+        f"lost={missing_paths} | {collapsed}",
+    )
+    # Collapsing *identical* lines stays lossless, so it stays. (Signal lines are
+    # the ones `_dedupe_exact` leaves intact for the run collapser to count.)
+    identical = _cf837.compress_output(
+        "git status --short", "\n".join(["ERROR disk full"] * 40)
+    ).compressed
+    check(
+        "context_filter: identical adjacent lines still collapse losslessly",
+        "[x40] ERROR disk full" in identical,
+        identical,
+    )
+
+    # (b) a content command (`cat`/`tail`) is verbatim-or-byte-truncated, never a
+    # signal-line extract. `cat` of a 400-line source file used to come back as
+    # the ten lines containing the word "fail"; a monitoring digest came back as
+    # its five least informative rows, reading exactly like "nothing happened".
+    digest = "\n".join(
+        [f"job {n}: failed" for n in ("Insights", "Cleanup", "Context Audit")]
+        + [f"session 01K4{c}{c} state=working repo=E:/automation/app-launcher" for c in "ABCDEFGHIJKLMNOPQRST"]
+        + ["worktree E:/automation/app-launcher-wt-885",
+           "worktree E:/automation/local-llm-hub-wt-561",
+           "open PR #905", "open PR #918"]
+    )
+    cat_result = _cf837.compress_output("cat E:/tmp/monitor_tick.txt", digest)
+    dropped = [
+        needle for needle in ("01K4TT", "local-llm-hub-wt-561", "#905", "#918")
+        if needle not in cat_result.compressed
+    ]
+    check(
+        "context_filter: cat output is verbatim, not a signal-line extract (fleet-config#837)",
+        not dropped and cat_result.compressed_line_count == cat_result.line_count,
+        f"dropped={dropped} lines={cat_result.line_count}->{cat_result.compressed_line_count}",
+    )
+
+    # (c) over the char budget, the loss is announced with counts — the floor is
+    # "byte-truncated raw", never a summary the reader cannot tell from empty.
+    oversized = _cf837.compress_output(
+        "cat big.log", "\n".join(f"line {i} payload payload payload" for i in range(2000))
+    )
+    check(
+        "context_filter: over-budget content output is byte-truncated with a counted marker (fleet-config#837)",
+        "VERBATIM HEAD" in oversized.compressed
+        and "withheld past" in oversized.compressed
+        and "line 0 payload" in oversized.compressed
+        and oversized.compressed_line_count < oversized.line_count,
+        oversized.compressed.splitlines()[-1] if oversized.compressed else "<empty>",
+    )
+
+    # (d) a backgrounded command is never wrapped: the harness imposes no cap on
+    # one, so the wrapper's fixed 600s ceiling *introduces* a kill. A 10-minute
+    # monitoring poll came back as `exit code 124` with the tick lost.
+    for background, expect_passthrough in ((True, True), (False, False)):
+        bg_payload = {
+            "tool_name": "Bash",
+            "cwd": str(REPO),
+            "tool_input": {"command": "git log --oneline -5", "run_in_background": background},
+        }
+        code, stdout, stderr = run(
+            "context_filter_hook", bg_payload, {"FLEET_CONTEXT_FILTER_MODE": "rewrite"}
+        )
+        check(
+            f"context_filter_hook: run_in_background={background} -> "
+            f"{'passthrough' if expect_passthrough else 'still wrapped'} (fleet-config#837)",
+            code == 0 and (stdout.strip() == "") == expect_passthrough,
+            stdout + stderr,
+        )
+
+    # (e) fail open, loudly: the command has already run, so a fault in the
+    # filter itself must cost neither the output nor the exit code. Driven by
+    # pointing FLEET_CONTEXT_FILTER_DIR at a *file*, which makes the blob-cache
+    # mkdir and the telemetry append both raise mid-compression.
+    with tempfile.TemporaryDirectory() as tmp:
+        not_a_dir = Path(tmp) / "occupied"
+        not_a_dir.write_text("this is a file, not a directory", encoding="utf-8")
+        failing_cmd = 'Write-Output "payload the agent must still see"; exit 3'
+        res = subprocess.run(
+            [
+                PYTHON,
+                str(HOOKS / "context_filter_cli.py"),
+                "run",
+                "--tool", "PowerShell",
+                "--mode", "rewrite",
+                "--encoded", base64.b64encode(failing_cmd.encode("utf-8")).decode("ascii"),
+            ],
+            capture_output=True,
+            text=True,
+            env={**os.environ, "FLEET_CONTEXT_FILTER_DIR": str(not_a_dir)},
+            timeout=30,
+        )
+        check(
+            "context_filter_cli: a filter fault fails open with raw output and the "
+            "command's own exit code (fleet-config#837)",
+            res.returncode == 3
+            and "payload the agent must still see" in res.stdout
+            and "FILTER FAILED" in res.stdout,
+            f"rc={res.returncode} stdout={res.stdout.strip()[:200]} | {res.stderr.strip()[:200]}",
+        )
+
+    # (f) heavy filtering is legible as such: `lines=N->M` in the banner is what
+    # separates "mostly withheld" from "the command printed nothing".
+    with tempfile.TemporaryDirectory() as tmp:
+        long_cmd = "; ".join(f'Write-Output "row {i} aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"' for i in range(200))
+        res = subprocess.run(
+            [
+                PYTHON,
+                str(HOOKS / "context_filter_cli.py"),
+                "run",
+                "--tool", "PowerShell",
+                "--mode", "rewrite",
+                "--encoded", base64.b64encode(long_cmd.encode("utf-8")).decode("ascii"),
+            ],
+            capture_output=True,
+            text=True,
+            env={**os.environ, "FLEET_CONTEXT_FILTER_DIR": tmp},
+            timeout=60,
+        )
+        banner = res.stdout.splitlines()[0] if res.stdout.strip() else ""
+        check(
+            "context_filter_cli: banner reports lines=N->M and points at the full output (fleet-config#837)",
+            res.returncode == 0
+            and "lines=200->" in banner
+            and "raw_key=" in banner
+            and "retrieve " in res.stdout,
+            f"rc={res.returncode} banner={banner}",
+        )
+
     # ---- skill helpers are never wrapped; ordinary commands still are ----
     # A helper shipped with a skill produces one payload the orchestrator parses
     # directly, so wrapping it risks the #424 truncation for no compression

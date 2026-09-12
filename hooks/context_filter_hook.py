@@ -75,6 +75,15 @@ def main() -> None:
     if tool not in {"Bash", "PowerShell", "bash", "powershell"}:
         _lib.allow()
 
+    # A backgrounded command is the one shape the harness itself does not cap,
+    # and the wrapper's fixed 600s ceiling therefore *introduces* a kill that
+    # would not otherwise exist: a 10-minute monitoring poll came back as
+    # `exit code 124` with the tick simply lost (fleet-config#837). There is no
+    # compression upside either — background output is collected separately —
+    # so the honest move is not to wrap it at all.
+    if _lib.tool_input(payload).get("run_in_background"):
+        _lib.allow()
+
     command = _lib.command_string(payload)
     decision = context_filter.rewrite_decision(command)
     if not decision.should_wrap:
