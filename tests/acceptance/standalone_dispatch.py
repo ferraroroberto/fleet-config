@@ -76,6 +76,10 @@ _STANDALONE_UNIT_CHECKS: Tuple[Tuple[str, str, str], ...] = (
      "the fleet-wide scan that finally sees sister repos' descriptions, and the "
      "three-state compliant/over-cap/unmeasured partition -- is testable on its "
      "own against a synthetic multi-repo tree (fleet-config#626)"),
+    ("skill_frontmatter", "test_skill_frontmatter.py",
+     "every SKILL.md frontmatter this repo ships must parse as YAML, not just "
+     "carry a line a regex reads as a description -- the purge wrote one that "
+     "the harness dropped while check.py printed PASS (fleet-config#845)"),
     ("context_purge_gate", "test_context_purge_gate.py",
      "the skip-unchanged ledger's parse/render/diff core, testable "
      "without gh (fleet-config#287)"),

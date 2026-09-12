@@ -12,8 +12,10 @@ Measured surfaces:
   1. Skill descriptions  — word count (total + prose excluding quoted examples)
      for every `SKILL.md` **in the fleet**, flagged against the ~50-word cap.
      Trigger examples are exempt, so the prose count is the one that matters.
-     A description that cannot be measured is reported as `unmeasured`, never
-     folded into the compliant count (fleet-config#626).
+     A description that cannot be measured is reported as `unmeasured`, and a
+     frontmatter a YAML loader would reject (or silently truncate) as
+     `unparseable` — neither is ever folded into the compliant count
+     (fleet-config#626, #845).
   2. Always-on budget    — bytes / words / est-tokens of `global-CLAUDE.md` and
      every project `CLAUDE.md` under the fleet root, plus a fleet total.
   3. Single-home leaks   — substantial lines in a project `CLAUDE.md` that also
@@ -42,6 +44,7 @@ SCAFFOLD_FILE = FLEET_ROOT / "project-scaffolding" / "CLAUDE.md"
 
 sys.path.insert(0, str(REPO_ROOT / "skills" / "_lib"))
 from fleet_repo_scan import fleet_repos, is_linked_worktree  # noqa: E402
+from frontmatter import frontmatter_error  # noqa: E402
 from skill_description import frontmatter_description, prose_words, word_count  # noqa: E402
 from utf8_stdio import ensure_utf8_stdio  # noqa: E402
 
@@ -125,18 +128,22 @@ def skill_roots(
 
 def scan_skills(
     cap: int, roots: Optional[List[SkillRoot]] = None
-) -> Tuple[List[dict], List[dict]]:
+) -> Tuple[List[dict], List[dict], List[dict]]:
     """Measure every fleet skill description against `cap`.
 
-    Returns `(rows, unmeasured)`. A `SKILL.md` the audit cannot read, or whose
-    frontmatter carries no `description:`, lands in `unmeasured` — never in
-    `rows`, and never counted compliant. A repo directory that is missing
+    Returns `(rows, unmeasured, unparseable)`. A `SKILL.md` the audit cannot
+    read, or whose frontmatter carries no `description:`, lands in
+    `unmeasured`; one whose frontmatter does not parse as written lands in
+    `unparseable` with the reason — a regex still finds its description line,
+    but the harness does not (fleet-config#845). Neither lands in `rows`, and
+    neither is ever counted compliant. A repo directory that is missing
     entirely is one `unmeasured` entry for the repo. A repo that simply has no
     skills at a tier is not unmeasured: there is nothing there to measure.
     """
     roots = skill_roots(self_root=REPO_ROOT) if roots is None else roots
     rows: List[dict] = []
     unmeasured: List[dict] = []
+    unparseable: List[dict] = []
     missing_repos: set = set()
 
     for root in roots:
@@ -161,6 +168,10 @@ def scan_skills(
             if text is None:
                 unmeasured.append({**entry, "path": str(skill_md), "reason": "unreadable"})
                 continue
+            parse_error = frontmatter_error(text)
+            if parse_error:
+                unparseable.append({**entry, "path": str(skill_md), "reason": parse_error})
+                continue
             desc = frontmatter_description(text)
             if not desc:
                 unmeasured.append(
@@ -176,18 +187,23 @@ def scan_skills(
                     "over_cap": prose > cap,
                 }
             )
-    return rows, unmeasured
+    return rows, unmeasured, unparseable
 
 
-def per_repo_summary(rows: List[dict], unmeasured: List[dict]) -> List[dict]:
-    """One `{repo, skills, over_cap, unmeasured}` row per repo with any surface."""
-    repos = sorted({r["repo"] for r in rows} | {u["repo"] for u in unmeasured})
+def per_repo_summary(
+    rows: List[dict], unmeasured: List[dict], unparseable: List[dict]
+) -> List[dict]:
+    """One `{repo, skills, over_cap, unmeasured, unparseable}` row per repo with any surface."""
+    repos = sorted(
+        {r["repo"] for r in rows} | {u["repo"] for u in unmeasured} | {u["repo"] for u in unparseable}
+    )
     return [
         {
             "repo": name,
             "skills": sum(1 for r in rows if r["repo"] == name),
             "over_cap": sum(1 for r in rows if r["repo"] == name and r["over_cap"]),
             "unmeasured": sum(1 for u in unmeasured if u["repo"] == name),
+            "unparseable": sum(1 for u in unparseable if u["repo"] == name),
         }
         for name in repos
     ]
@@ -292,13 +308,14 @@ def main() -> int:
     ap.add_argument("--json", action="store_true", help="emit the full report as JSON")
     args = ap.parse_args()
 
-    skills, unmeasured = scan_skills(args.cap)
-    by_repo = per_repo_summary(skills, unmeasured)
+    skills, unmeasured, unparseable = scan_skills(args.cap)
+    by_repo = per_repo_summary(skills, unmeasured, unparseable)
     bd = scan_budget_and_drift(DEFAULT_IGNORE)
     report = {
         "cap": args.cap,
         "skills": skills,
         "unmeasured": unmeasured,
+        "unparseable": unparseable,
         "skills_by_repo": by_repo,
         **bd,
     }
@@ -310,9 +327,9 @@ def main() -> int:
     over = [s for s in skills if s["over_cap"]]
     print("=== context-audit ===")
     print(
-        f"MANIFEST: skills={len(skills) + len(unmeasured)} "
+        f"MANIFEST: skills={len(skills) + len(unmeasured) + len(unparseable)} "
         f"compliant={len(skills) - len(over)} over_cap={len(over)} "
-        f"unmeasured={len(unmeasured)} repos={len(by_repo)} "
+        f"unmeasured={len(unmeasured)} unparseable={len(unparseable)} repos={len(by_repo)} "
         f"claude_mds={len(bd['budget'])} leaks={len(bd['leaks'])} "
         f"total_est_tokens={bd['total_est_tokens']}"
     )
@@ -329,9 +346,18 @@ def main() -> int:
     for u in unmeasured:
         print(f"  {u['repo']}/{u['skill']:<28} {u['reason']} ({u['path']})")
 
-    print("\n-- per repo (skills / over cap / unmeasured) --")
+    print("\n-- unparseable frontmatter (NOT compliant — the harness does not read the description as written) --")
+    if not unparseable:
+        print("  none")
+    for u in unparseable:
+        print(f"  {u['repo']}/{u['skill']:<28} {u['reason']} ({u['path']})")
+
+    print("\n-- per repo (skills / over cap / unmeasured / unparseable) --")
     for r in by_repo:
-        print(f"  {r['repo']:<32} {r['skills']:>3} skills  {r['over_cap']:>2} over  {r['unmeasured']:>2} unmeasured")
+        print(
+            f"  {r['repo']:<32} {r['skills']:>3} skills  {r['over_cap']:>2} over  "
+            f"{r['unmeasured']:>2} unmeasured  {r['unparseable']:>2} unparseable"
+        )
 
     print("\n-- always-on budget (est tokens, desc) --")
     for b in bd["budget"]:
