@@ -53,7 +53,7 @@ Always ask before assuming: file/module location for new code; data shape or sch
 - A passing suite proves the code behaves as written — not that the symptom is gone or the fix is live in the deployed process. Re-run the original repro against that process and watch it pass before declaring done. (Deploy-coverage — `project-scaffolding#199`, `fleet-config#459` — confirms the fix shipped; this confirms it fixed what was reported.)
 - A regression test must first be proven to fail against pre-fix code (`git stash`), or its later pass means nothing.
 - If the repo declares a restart/refresh recipe for a long-lived local process, use it after code changes so the verified change is actually live (unless the user opted out). Don't ask a second permission just because the recipe restarts something — the local `CLAUDE.md` owns the command, scope, and build-identity check. No recipe, or the recipe says confirm first → stop and say exactly what's missing; never improvise process kills.
-- Any check, gate, health probe, or classifier that can fail to establish a fact must report that as its own state — `unknown` / `not confirmed` — never folded into the passing state. A null, a stale cache, an unresolved probe is not "fine"; a write acknowledged is not an outcome confirmed.
+- Any check, gate, health probe, or classifier that can fail to establish a fact must report that as its own state — `unknown` / `not confirmed` — never folded into the passing state. A null, a stale cache, an unresolved probe is not "fine"; a write acknowledged is not an outcome confirmed. Applies to health checks, verification gates, deploy-coverage checks, and delivery/status classifiers alike.
 
 ### Senior-dev check
 
