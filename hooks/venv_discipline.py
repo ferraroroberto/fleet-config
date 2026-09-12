@@ -2,7 +2,7 @@
 
 Every project in the fleet uses `.venv` (never `venv`), never activates,
 always invokes via `& .\\.venv\\Scripts\\python.exe ...`. This hook catches
-the four common drifts:
+the five common drifts:
 
   1. `python -m venv venv`   — wrong directory name
   2. `.\\.venv\\Scripts\\activate` / `source .venv/bin/activate`
@@ -11,15 +11,33 @@ the four common drifts:
                               — would hit the system Python instead
   4. A recursive delete, or a venv (re)creation, whose target resolves through
      a **`.venv` junction** — fleet-config#847
+  5. A recursive delete aimed straight at a **primary checkout's real `.venv`**
+     — fleet-config#828
 
-Rule 4 is the destructive one. A worktree's `.venv` is a *junction* to the
-primary checkout's real venv (`worktree_claim.py`: worktrees don't share
-untracked files, and a 24-repo fleet can't recreate heavy venvs per worktree),
-so `git worktree remove`, `rm -rf`, `Remove-Item -Recurse` and `rmdir /s` all
-follow the reparse point and delete the primary's real site-packages — which
-every other lane in that repo, and any running app, is importing from. Only
-`worktree_claim.py remove-worktree` is safe: it strips the junction with a
-bare `rmdir` (reparse-safe, never `/s`) *before* calling git.
+Rules 4 and 5 are the destructive ones, and they are the same loss by two
+routes. A worktree's `.venv` is a *junction* to the primary checkout's real
+venv (`worktree_claim.py`: worktrees don't share untracked files, and a 24-repo
+fleet can't recreate heavy venvs per worktree), so `git worktree remove`,
+`rm -rf`, `Remove-Item -Recurse` and `rmdir /s` all follow the reparse point
+and delete the primary's real site-packages — which every other lane in that
+repo, and any running app, is importing from. Only `worktree_claim.py
+remove-worktree` is safe: it strips the junction with a bare `rmdir`
+(reparse-safe, never `/s`) *before* calling git.
+
+Rule 5 closes the other route. `email-archiver`'s venv was emptied during an
+unattended `/cleanup-fleet-all` run and the evidence could not distinguish a
+delete that walked *through* a junction from one aimed at the primary's own
+`.venv` (fleet-config#828), because rule 4 answers only the first. Both end
+identically: `.venv` is machine-local, gitignored and **not recoverable from
+git**, so the only repair is recreate-and-reinstall by hand. A worktree's *own*
+real (non-junctioned) `.venv` is deliberately not covered — that one is the
+worktree's to dispose of, and `git worktree remove` is entitled to it.
+
+Every clause either rule classifies as destructive is appended to the
+`destructive-actions.jsonl` audit trail under `state_dir()`, blocked or not.
+That file is the answer to #828's third acceptance criterion: the run that
+emptied the venv retained only per-sub-agent progress markers, so the command
+was never identifiable at all. A refusal only the agent sees is not a record.
 
 Allow-listed:
   * `python -m venv .venv`                 — correct directory name
@@ -32,6 +50,10 @@ Allow-listed:
   * `pip install` / `pip uninstall` through a worktree's junctioned venv —
     the venv is *deliberately* shared, so mutating packages through it is the
     intended behaviour, not the footgun. Rule 4 is about delete and recreate.
+  * `python -m venv --clear .venv` against a *real* `.venv` — the sanctioned
+    in-place rebuild of a corrupt venv, and the escape hatch rule 5 points at.
+  * A recursive delete of a directory that holds no `.venv` at all, and of a
+    linked worktree's own real `.venv`.
 
 Heredoc bodies that the consuming command can only *write* — `cat`/`tee` into
 a file, or `--body-file -` — are stripped before any matching: that text is
@@ -43,12 +65,14 @@ rule 4 to exist, because the issue body quoted the hazard it describes
 
 from __future__ import annotations
 
+import datetime
+import json
 import os
 import re
 import stat
 import sys
 from pathlib import Path
-from typing import List, Optional, Tuple
+from typing import Any, Dict, List, NamedTuple, Optional, Tuple
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import _lib  # noqa: E402
@@ -281,6 +305,53 @@ def junctioned_venv_under(target: Path) -> Optional[Path]:
     return None
 
 
+def is_primary_checkout_dir(path: Path) -> bool:
+    """True when `path` is a repo's *main* working tree.
+
+    A linked worktree's `.git` is a **file** — a gitfile pointing at
+    `<primary>/.git/worktrees/<name>`; a primary checkout's is a directory.
+    That single distinction is the whole test, and reading it costs one stat
+    rather than a `git rev-parse` subprocess per operand.
+
+    Deliberately *not* named `is_primary_checkout`: `worktree_claim.py` owns a
+    function by that name which answers the same question from git itself
+    (`--git-common-dir` == `--git-dir`). A hook may not import `skills/_lib`
+    (the `tree_boundary` acceptance check enforces it), so this tier needs its
+    own answer — but the two are a stat-cheap and a git-exact reading of one
+    property, not a duplicate, and the names must not suggest otherwise.
+    """
+    try:
+        return (path / ".git").is_dir()
+    except OSError:
+        return False
+
+
+def primary_venv_under(target: Path) -> Optional[Path]:
+    """The primary checkout's real `.venv` a delete of `target` would destroy.
+
+    Two shapes, mirroring `junctioned_venv_under`: the venv named directly
+    (`<repo>/.venv`) and the checkout that holds it (`<repo>`). Returns None
+    for a reparse point — that is rule 4's, checked first — and None for a
+    linked worktree's own real `.venv`, which is the worktree's to dispose of.
+    """
+    if (target.name == ".venv" and target.is_dir()
+            and not is_reparse_point(target) and is_primary_checkout_dir(target.parent)):
+        return target
+    nested = target / ".venv"
+    if (nested.is_dir() and not is_reparse_point(nested)
+            and is_primary_checkout_dir(target)):
+        return nested
+    return None
+
+
+# The one non-delete verb `destructive_operands` reports. Rule 4 cares about it
+# — building over a junction writes into somebody else's venv — but rule 5 must
+# not: `python -m venv --clear .venv` against a repo's *own* real venv is the
+# sanctioned in-place rebuild, and the escape hatch rule 5's own refusal points
+# at. A guard that refuses its own remedy is the expensive kind of wrong.
+VENV_BUILD_VERB = "python -m venv"
+
+
 def destructive_operands(segment: str) -> Tuple[Optional[str], List[str]]:
     """`(verb, paths)` for a segment that deletes recursively or builds a venv.
 
@@ -328,22 +399,119 @@ def destructive_operands(segment: str) -> Tuple[Optional[str], List[str]]:
     # writes through it just as surely as a delete does.
     match = VENV_TARGET_RE.search(segment)
     if match:
-        return "python -m venv", [match.group(1)]
+        return VENV_BUILD_VERB, [match.group(1)]
 
     return None, []
 
 
-def junction_hazard(cmd: str, base: Path) -> Optional[Tuple[str, str, Path]]:
-    """`(verb, operand, junction)` for the first hazardous clause, else None."""
+class Clause(NamedTuple):
+    """One destructive clause, with the venv it would take out (if any).
+
+    `rule` is `"junction"` when the delete would follow a worktree's `.venv`
+    reparse point into the primary's real venv, `"primary"` when it is aimed at
+    a primary checkout's real venv directly, and `None` when it destroys
+    neither. A `None` clause is still a clause: it is recorded, never blocked.
+    """
+
+    rule: Optional[str]
+    verb: str
+    operand: str
+    venv: Optional[Path]
+
+
+def destructive_clauses(cmd: str, base: Path) -> List[Clause]:
+    """Every recursive-delete / venv-rebuild clause in `cmd`, in order.
+
+    Both hazard routes are judged here rather than in two parallel scanners:
+    they share the clause split, the operand resolution and the audit record,
+    and differ only in which predicate answers. Junction first — a worktree's
+    `.venv` is a reparse point, so rule 5's `is_dir()` would also be true of
+    its target and would mislabel the more specific case.
+    """
+    out: List[Clause] = []
     for segment in _SEGMENT_SPLIT_RE.split(cmd):
         verb, operands = destructive_operands(segment)
         if not verb:
             continue
+        if not operands:
+            out.append(Clause(None, verb, "", None))
+            continue
         for operand in operands:
-            junction = junctioned_venv_under(_operand_path(operand, base))
+            path = _operand_path(operand, base)
+            junction = junctioned_venv_under(path)
             if junction is not None:
-                return verb, operand, junction
-    return None
+                out.append(Clause("junction", verb, operand, junction))
+                continue
+            primary = (None if verb == VENV_BUILD_VERB
+                       else primary_venv_under(path))
+            out.append(Clause("primary" if primary else None, verb, operand, primary))
+    return out
+
+
+# ------------------------------------------------- destructive-action audit
+
+AUDIT_FILENAME = "destructive-actions.jsonl"
+# One rotation, not a rolling set: this is a forensic tail read after an
+# incident, not a metrics feed. Roughly 10k records at the excerpt limit below.
+AUDIT_MAX_BYTES = 4_000_000
+COMMAND_EXCERPT_LIMIT = 2000
+
+
+def audit_path() -> Path:
+    """Resolved at call time so `CLAUDE_HOOKS_STATE_DIR` always wins, exactly
+    as every other hook's state file does."""
+    return _lib.state_dir() / AUDIT_FILENAME
+
+
+def audit_record(payload: Dict[str, Any], cmd: str, clause: Clause,
+                 verdict: str) -> Dict[str, Any]:
+    """The JSON object one destructive clause contributes to the trail."""
+    return {
+        "ts": datetime.datetime.now(datetime.timezone.utc).isoformat(
+            timespec="seconds").replace("+00:00", "Z"),
+        "verdict": verdict,
+        "rule": clause.rule or "",
+        "verb": clause.verb,
+        "operand": clause.operand,
+        "venv": str(clause.venv) if clause.venv else "",
+        "tool": _lib.tool_name(payload) or "",
+        "cwd": str(_lib.cwd(payload)),
+        "launcher_session": _lib.launcher_session_id(),
+        "session": str(payload.get("session_id") or ""),
+        "command": cmd[:COMMAND_EXCERPT_LIMIT],
+    }
+
+
+def record_destructive_action(payload: Dict[str, Any], cmd: str,
+                              clause: Clause, verdict: str) -> None:
+    """Append one audit line. Never raises, never blocks the hook.
+
+    fleet-config#828: a `/cleanup-fleet-all` lane emptied a primary checkout's
+    `.venv` and the command was never identified, because the only retained
+    artifact of that run was a per-sub-agent progress marker — no transcript,
+    no commands. `ALLOW` records matter as much as `BLOCK` ones: a refusal the
+    agent alone sees answers "was it stopped", never "what ran".
+
+    Best-effort by construction. A guard that failed closed on an unwritable
+    state directory would convert an audit gap into a fleet-wide outage of
+    every Bash call, which is a strictly worse failure than the one it records.
+    """
+    try:
+        path = audit_path()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            if path.stat().st_size > AUDIT_MAX_BYTES:
+                os.replace(path, path.with_suffix(path.suffix + ".1"))
+        except OSError:
+            pass
+        line = json.dumps(audit_record(payload, cmd, clause, verdict),
+                          ensure_ascii=False)
+        # One `open(..., "a")` + one write: O_APPEND makes a single short line
+        # atomic against the concurrent sessions this file is shared by.
+        with path.open("a", encoding="utf-8") as fh:
+            fh.write(line + "\n")
+    except Exception:  # noqa: BLE001 - see docstring
+        pass
 
 
 def main() -> None:
@@ -398,20 +566,29 @@ def main() -> None:
                 "so you hit the venv, not the system Python."
             )
 
-    # 4) Anything that would delete or rebuild *through* a `.venv` junction.
-    # Checked last: it is the only rule that reads the filesystem, so the three
-    # pure-text rules above answer first and this one only runs on a command
-    # that is otherwise fine.
-    hazard = junction_hazard(cmd, _lib.cwd(payload))
-    if hazard is not None:
-        verb, operand, junction = hazard
+    # 4 + 5) Anything that would delete or rebuild a `.venv` — through a
+    # worktree's junction, or aimed at a primary checkout's real one. Checked
+    # last: these are the only rules that read the filesystem, so the three
+    # pure-text rules above answer first and these run only on a command that
+    # is otherwise fine.
+    #
+    # Every clause is recorded before anything is refused, because `_lib.block`
+    # does not return: an unrecorded block is exactly the blind spot #828 was
+    # filed about, one rung further up.
+    clauses = destructive_clauses(cmd, _lib.cwd(payload))
+    hazard = next((c for c in clauses if c.rule), None)
+    for clause in clauses:
+        record_destructive_action(
+            payload, cmd, clause, "BLOCK" if clause is hazard else "ALLOW")
+
+    if hazard is not None and hazard.rule == "junction":
         try:
-            real = os.path.realpath(junction)
+            real = os.path.realpath(hazard.venv)
         except OSError:
             real = "(unresolvable)"
         _lib.block(
-            "Blocked: `" + verb + " " + operand + "` would run through the .venv "
-            "junction at " + str(junction) + " -> " + str(real) + ". "
+            "Blocked: `" + hazard.verb + " " + hazard.operand + "` would run through "
+            "the .venv junction at " + str(hazard.venv) + " -> " + str(real) + ". "
             "That junction is the primary checkout's REAL venv, shared by every "
             "worktree in this repo and by any app running from it — a recursive "
             "delete or a venv rebuild follows it and guts the primary "
@@ -421,6 +598,26 @@ def main() -> None:
             "`worktree_claim.py remove-worktree <worktree-path>`. "
             "To remove just the junction and keep its target, `rmdir <path>` "
             "with no `/s`."
+        )
+
+    # Rule 5. Only reachable with `hazard.rule == "primary"`: `_lib.block` is
+    # NoReturn, so the junction branch above never falls through to here.
+    if hazard is not None:
+        _lib.block(
+            "Blocked: `" + hazard.verb + " " + hazard.operand + "` would delete the "
+            "primary checkout's real venv at " + str(hazard.venv) + ". "
+            "A `.venv` is machine-local and gitignored, so it is NOT recoverable "
+            "from git — the only repair is recreating it and reinstalling every "
+            "requirement by hand (fleet-config#828: an unattended lane emptied "
+            "one, and it cost a manual rebuild of 33 packages). Every other "
+            "session in this repo, and any app running out of this checkout, is "
+            "importing from it right now. "
+            "To rebuild a corrupt venv in place, use `python -m venv --clear "
+            "<path>` — it replaces the contents without removing the directory "
+            "other processes hold open. To tear down a worktree, use "
+            "`worktree_claim.py remove-worktree <worktree-path>`. If this venv "
+            "really must be deleted outright, that is a human's call — say so "
+            "and stop."
         )
 
     _lib.allow()

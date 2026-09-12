@@ -813,3 +813,153 @@ def _venv_junction_guard_unit_checks() -> Tuple[int, int]:
         shutil.rmtree(tmp, ignore_errors=True)
 
     return check.failures, check.total
+
+
+def _venv_primary_guard_unit_checks() -> Tuple[int, int]:
+    """`venv_discipline.py` rule 5 + the destructive-action audit trail
+    (fleet-config#828).
+
+    The incident: an unattended `/cleanup-fleet-all` lane emptied
+    `email-archiver`'s primary `.venv` -- directory surviving, contents gone --
+    and the command was never identified, because the run retained only
+    per-sub-agent progress markers. Rule 4 (#847) answers only a delete that
+    walks *through* a worktree's junction; the evidence could not rule out one
+    aimed at the primary's own `.venv`, and that route was undefended.
+
+    The first block below is the **reproduction**: it runs the candidate
+    commands for real against a real primary-plus-junctioned-worktree topology
+    and asserts which one actually produces the incident's signature. Of the
+    plausible candidates only `git worktree remove --force` over a live
+    junction does -- `rm -rf`, `Remove-Item -Recurse` and `shutil.rmtree` all
+    delete the reparse point without following it. That is what makes the
+    verdict cases below a regression test rather than an assertion about a
+    hazard nobody has demonstrated.
+
+    Every rule-5 case exits 0 against pre-fix code, where a recursive delete of
+    a primary checkout's real venv was explicitly out of scope
+    (`junctioned_venv_under`: "a real `.venv` directory is the caller's own to
+    delete").
+    """
+    check = _Checker()
+
+    tmp = Path(tempfile.mkdtemp(prefix="venv_primary_"))
+    try:
+        # ---- reproduction: does the hazard actually exist, and in which form?
+        if sys.platform == "win32" and shutil.which("git"):
+            repro = tmp / "repro"
+            primary = repro / "alpha"
+            (primary / "src").mkdir(parents=True)
+            (primary / ".gitignore").write_text(".venv/\n", encoding="utf-8")
+            for args in (("init", "-q", "-b", "main"), ("config", "user.email", "t@t"),
+                         ("config", "user.name", "t"), ("add", "-A"),
+                         ("commit", "-qm", "init")):
+                subprocess.run(["git", *args], cwd=str(primary), capture_output=True)
+            real = primary / ".venv"
+            real.mkdir()
+            (real / "pyvenv.cfg").write_text("home = x\n", encoding="utf-8")
+            wt = repro / "alpha-wt-99"
+            subprocess.run(["git", "worktree", "add", "-q", "-b", "fix/99-x", str(wt)],
+                           cwd=str(primary), capture_output=True)
+            subprocess.run(["cmd", "/c", "mklink", "/J", str(wt / ".venv"), str(real)],
+                           capture_output=True, encoding="oem", errors="replace")
+            if (wt / ".venv").exists():
+                subprocess.run(["git", "worktree", "remove", "--force", str(wt)],
+                               cwd=str(primary), capture_output=True)
+                check("venv_primary: repro -- `git worktree remove --force` over a live "
+                      "junction empties the primary venv, directory surviving (#828 signature)",
+                      real.is_dir() and not any(real.iterdir()),
+                      f"{real}: exists={real.is_dir()} "
+                      f"children={sorted(p.name for p in real.iterdir()) if real.is_dir() else '-'}")
+            else:
+                check.advisory("venv_primary: repro -- junction could not be created, "
+                               "reproduction skipped", False, str(wt / ".venv"))
+        else:
+            check.advisory("venv_primary: repro needs Windows junctions + git -- skipped",
+                           False, f"platform={sys.platform} git={bool(shutil.which('git'))}")
+
+        # ---- rule 5 verdicts, against a real primary checkout
+        state = tmp / "state"
+        repo = tmp / "repo"
+        (repo / ".git").mkdir(parents=True)      # primary checkout: `.git` is a DIR
+        (repo / ".venv" / "Scripts").mkdir(parents=True)
+        (repo / "build").mkdir()
+        # A linked worktree carrying its OWN real venv: `.git` is a gitFILE, so
+        # this venv is the worktree's to dispose of and must stay allowed.
+        sibling = tmp / "repo-wt-2"
+        (sibling / ".venv").mkdir(parents=True)
+        (sibling / ".git").write_text("gitdir: ../repo/.git/worktrees/repo-wt-2",
+                                      encoding="utf-8")
+
+        def verdict(command: str, cwd: Path, tool: str = "Bash") -> int:
+            code, _out, _err = run("venv_discipline",
+                                   {"tool_name": tool, "cwd": str(cwd),
+                                    "session_id": "sess-828",
+                                    "tool_input": {"command": command}},
+                                   {"CLAUDE_HOOKS_STATE_DIR": str(state)})
+            return code
+
+        check("venv_primary: `rm -rf <repo>/.venv` -> block",
+              verdict(f"rm -rf {repo}/.venv", cwd=repo) == 2)
+        check("venv_primary: bare `rm -rf .venv` from the checkout -> block",
+              verdict("rm -rf .venv", cwd=repo) == 2)
+        check("venv_primary: `Remove-Item -Recurse -Force .venv` -> block",
+              verdict("Remove-Item -Recurse -Force .venv", cwd=repo,
+                      tool="PowerShell") == 2)
+        check("venv_primary: `rmdir /s /q .venv` -> block",
+              verdict("rmdir /s /q .venv", cwd=repo) == 2)
+        check("venv_primary: `rm -rf <repo>` (the checkout holding it) -> block",
+              verdict(f"rm -rf {repo}", cwd=tmp) == 2)
+
+        check("venv_primary: `rm -rf <repo>/build` (no venv there) -> allow",
+              verdict(f"rm -rf {repo}/build", cwd=repo) == 0)
+        check("venv_primary: a worktree's OWN real venv is its own to delete -> allow",
+              verdict(f"rm -rf {sibling}/.venv", cwd=tmp) == 0)
+        check("venv_primary: `git worktree remove --force` on a junction-free "
+              "worktree -> allow",
+              verdict(f"git worktree remove --force {sibling}", cwd=repo) == 0)
+        # The escape hatch rule 5's own refusal points at. A guard that blocks
+        # its own remedy is the expensive kind of wrong (#464/#472, #847).
+        check("venv_primary: `python -m venv --clear .venv` in place -> allow",
+              verdict(r"& .\.venv\Scripts\python.exe -m venv --clear .venv",
+                      cwd=repo, tool="PowerShell") == 0)
+
+        # ---- the audit trail (#828 acceptance 3: attributable after the fact)
+        trail = state / "destructive-actions.jsonl"
+        check("venv_primary: audit trail written under the state dir", trail.is_file(),
+              f"expected {trail}")
+        rows = [json.loads(line) for line in
+                trail.read_text(encoding="utf-8").splitlines()] if trail.is_file() else []
+        blocked = [r for r in rows if r["verdict"] == "BLOCK"]
+        allowed = [r for r in rows if r["verdict"] == "ALLOW"]
+        check("venv_primary: every refused clause is recorded", len(blocked) == 5,
+              f"got {len(blocked)}: {[r['verb'] for r in blocked]}")
+        # The whole point: a refusal the agent alone sees answers "was it
+        # stopped", never "what ran". An ALLOWed destructive clause is the one
+        # #828 needed a record of and did not have.
+        check("venv_primary: allowed destructive clauses are recorded too",
+              len(allowed) == 4, f"got {len(allowed)}: {[r['verb'] for r in allowed]}")
+        check("venv_primary: each record carries the fields a post-mortem needs",
+              bool(rows) and all(
+                  set(r) >= {"ts", "verdict", "rule", "verb", "operand", "venv",
+                             "tool", "cwd", "launcher_session", "session", "command"}
+                  for r in rows),
+              f"first record keys: {sorted(rows[0]) if rows else '(none)'}")
+        check("venv_primary: the record names the session and the venv at risk",
+              bool(blocked) and all(r["session"] == "sess-828" for r in blocked)
+              and all(r["venv"] for r in blocked),
+              f"{[(r['session'], r['venv']) for r in blocked]}")
+        check("venv_primary: both hazard routes are distinguishable in the trail",
+              {r["rule"] for r in blocked} == {"primary"},
+              f"rules seen: {sorted({r['rule'] for r in blocked})}")
+        # An unwritable state dir must never take the fleet's Bash tool down
+        # with it -- the audit is best-effort by construction.
+        check("venv_primary: an unwritable audit path still allows a clean command",
+              run("venv_discipline",
+                  {"tool_name": "Bash", "cwd": str(repo),
+                   "tool_input": {"command": f"rm -rf {repo}/build"}},
+                  {"CLAUDE_HOOKS_STATE_DIR": str(repo / ".venv" / "Scripts" / "python.exe")}
+                  )[0] == 0)
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+    return check.failures, check.total
