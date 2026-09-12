@@ -63,7 +63,7 @@ Stops anything still running past its deadline, fetches every artefact, and emit
 - `MACHINE=<id>|status=not-covered|detail=<kind>|reason=<human reason>`
 - `CAPTURED=` / `NOT_COVERED=` totals
 
-Exit `3` (start) = inventory unreachable, the local hub is down — report and stop. Exit `4` = inventory fine but nothing could be captured; still write a ledger entry recording *why* every machine was skipped, because that is a real finding, not an empty run. Pass a matching `--out-dir`/`--date` to all three calls if you override either.
+Exit `3` (start) = inventory unreachable, the local hub is down — report and stop. Exit `4` = inventory fine but nothing could be captured; still write a ledger entry recording *why* every machine was skipped, because that is a real finding, not an empty run. The run date is resolved once by `start` and recorded, so `poll` and `collect` inherit it — pass nothing, including across midnight. `--date`/`--out-dir` are only for re-targeting an older run, and then all three calls need the same value.
 
 ### 3. Analyse each captured machine — adversarially
 
@@ -124,11 +124,12 @@ Print: how many machines were captured, how many not covered and why, each machi
 ## Notes
 
 - **Why each machine's own hub, not one central capture:** the diagnostics engine is deliberately local-only — `local-llm-hub`'s `docs/diagnostics.md` states triggering a capture on a peer is not offered, each host's hub owns its own sampler. No `machine_id` parameter on any route to abuse.
-- **Why addresses come from `models.yaml`:** the inventory API returns no LAN address, so a peer's hub cannot be dialled from the inventory alone. `capture.py` resolves `id → address` from the hub's own `hosts:` block, keyed by the ids the inventory already returned — still zero hardcoded names. If that file moves, set `FLEET_HEALTH_MODELS_YAML`.
+- **Why addresses come from the inventory:** each machine's row carries its own `ip`, so a peer's hub is dialled straight from the same payload the ids came from — one source, zero hardcoded names, nothing to keep in step. They used to be parsed out of the hub's `config/models.yaml`, which stopped carrying them when they moved to a gitignored `machines.local.yaml` (`local-llm-hub#525`): the block went empty, every peer classified `no-address`, and three consecutive runs reached only the host machine until an address overlay was hand-applied (fleet-config#812). A peer the inventory gives no address for is reported `no-address`, never dialled at a guessed hostname.
 - **Why one hour at 30 s, not the dry run's two hours:** a weekly unattended job wants the idle-resident picture (what is *always* loaded), which settles well inside an hour. Override per-run when investigating something specific.
 - **Known coverage gaps**, reported as not-covered rather than hidden: a peer hub that answers but 404s on the diagnostics API is on an older build and needs a host sync (engine landed in `ferraroroberto/local-llm-hub#315`); an SSH-only machine with no hub at all needs the portable sampler from `ferraroroberto/local-llm-hub#316`.
 - **A `healthy` verdict on a lightly-attributed platform means "unmeasured", not "fine".** The rules lean on app attribution and listening ports; where those are thin, the verdict is weak evidence. Say so in the entry rather than reporting a clean bill of health — the first cross-platform run found macOS at 99% unattributed with zero ports collected.
 - **This skill reports; a human decides.** It never acts on its own recommendations — no killing processes, no uninstalling, no config changes.
+- **No hand-applied workaround is needed, and none should be re-derived from the previous ledger entry.** Three consecutive runs delivered only because the attending agent rediscovered three fixes from last week's entry: a `PYTHONUTF8` wrapper, an address overlay, and a pinned `--date`. All three are fixed in the helpers (fleet-config#812) and covered by `tests/test_fleet_health.py`. If a run looks like it needs one of them again, that is a regression to file — not a step to repeat.
 
 ## Wiring the weekly schedule
 

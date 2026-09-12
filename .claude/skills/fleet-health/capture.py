@@ -11,9 +11,12 @@ below matches on a machine id — routing is decided by what a machine *answers*
 
 Captures are strictly local to each hub (``local-llm-hub`` ``docs/diagnostics.md``:
 "each host's hub owns its own sampler"), so a peer is driven through its own
-``/admin`` endpoint. The inventory payload carries no LAN address, so peer
-addresses are resolved from the hub's ``config/models.yaml`` ``hosts:`` block,
-keyed by the ids the inventory already returned.
+``/admin`` endpoint at the ``ip`` the inventory returns for it. The inventory is
+the only source for that: addresses used to be parsed out of the hub's
+``config/models.yaml``, which stopped carrying them when they moved to a
+gitignored ``machines.local.yaml`` (``local-llm-hub`` #525) -- the block simply
+went empty, every peer classified ``no-address``, and three consecutive weekly
+runs reached only the host until an overlay was hand-applied (fleet-config#812).
 
 Stdlib only (urllib) — same reason as ``hooks/notify_send.py``: this must run
 without a venv on any host.
@@ -37,7 +40,6 @@ import argparse
 import datetime as _dt
 import json
 import os
-import re
 import socket
 import sys
 import time
@@ -46,10 +48,20 @@ import urllib.request
 from pathlib import Path
 from typing import Any, Optional
 
+# Pin stdout/stderr to UTF-8 at the entry point. Windows falls back to cp1252
+# when stdout is piped or redirected, so a single non-latin-1 character in a
+# hub-supplied reason (an arrow, an emoji) raises UnicodeEncodeError and exits
+# 1 -- under capture only, never in a terminal, which is to say only in the
+# scheduled run. The durable fix belongs here rather than in a PYTHONUTF8
+# wrapper at the call site (global-CLAUDE.md, "Windows Python: UTF-8 stdout
+# under capture"; fleet-config#812, the fifth occurrence).
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+if hasattr(sys.stderr, "reconfigure"):
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+
 HUB = os.environ.get("FLEET_HEALTH_HUB", "http://127.0.0.1:8000")
 HUB_PORT = int(os.environ.get("FLEET_HEALTH_HUB_PORT", "8000"))
-MODELS_YAML = Path(os.environ.get(
-    "FLEET_HEALTH_MODELS_YAML", r"E:/automation/local-llm-hub/config/models.yaml"))
 
 # A weekly unattended run: one hour at 30 s ticks = 120 samples. Long enough to
 # catch the idle-resident picture that matters (what is *always* loaded), short
@@ -109,41 +121,6 @@ def _json(body: bytes) -> dict:
 # ---------------------------------------------------------------- discovery
 
 
-def load_addresses() -> dict[str, str]:
-    """Map machine id -> LAN address from the hub's ``hosts:`` block.
-
-    Deliberately a tiny hand-rolled scan rather than a yaml dependency: this is
-    stdlib-only, and the two fields needed (a host id key, its ``address``) sit
-    at fixed indents. Unknown ids simply resolve to no address, which the caller
-    reports as "not covered" rather than guessing a hostname.
-    """
-    if not MODELS_YAML.is_file():
-        return {}
-    addresses: dict[str, str] = {}
-    current: Optional[str] = None
-    in_hosts = False
-    try:
-        lines = MODELS_YAML.read_text(encoding="utf-8", errors="replace").splitlines()
-    except OSError:
-        return {}
-    for line in lines:
-        if re.match(r"^hosts:\s*$", line):
-            in_hosts = True
-            continue
-        if in_hosts and re.match(r"^\S", line):
-            break  # dedented out of the hosts block
-        if not in_hosts:
-            continue
-        host = re.match(r"^  ([A-Za-z0-9._-]+):\s*$", line)
-        if host:
-            current = host.group(1)
-            continue
-        addr = re.match(r"^\s+address:\s*([^\s#]+)", line)
-        if addr and current:
-            addresses[current] = addr.group(1).strip().strip('"\'')
-    return addresses
-
-
 def discover() -> list[dict]:
     """Every enrolled machine, straight from the hub inventory."""
     status, body = _get(f"{HUB}/admin/api/machines/status")
@@ -153,20 +130,22 @@ def discover() -> list[dict]:
     return machines if isinstance(machines, list) else []
 
 
-def diagnostics_base(machine: dict, addresses: dict[str, str]) -> Optional[str]:
+def diagnostics_base(machine: dict) -> Optional[str]:
     """The ``/admin`` base to drive this machine's own hub, or None.
 
     Routing is by capability only: the host we run on is reachable on loopback;
-    any peer is reachable at its declared LAN address. Whether that hub actually
-    *serves* diagnostics is decided by probing, not assumed here.
+    any peer is reachable at the ``ip`` its own inventory row carries. Whether
+    that hub actually *serves* diagnostics is decided by probing, not assumed
+    here, and a peer the inventory gives no address for resolves to no base
+    rather than a guessed hostname.
     """
     if machine.get("is_host"):
         return HUB
-    address = addresses.get(str(machine.get("id") or ""))
+    address = str(machine.get("ip") or "").strip()
     return f"http://{address}:{HUB_PORT}" if address else None
 
 
-def classify(machine: dict, addresses: dict[str, str]) -> tuple[str, str, Optional[str]]:
+def classify(machine: dict) -> tuple[str, str, Optional[str]]:
     """Return (status, reason, diagnostics_base).
 
     status is ``ready`` when a capture can be started, otherwise a
@@ -181,10 +160,11 @@ def classify(machine: dict, addresses: dict[str, str]) -> tuple[str, str, Option
     if state not in ("self", "up") or machine.get("reachable") is False:
         return "unreachable", f"machine did not answer the hub probe (state={state or 'unknown'})", None
 
-    base = diagnostics_base(machine, addresses)
+    base = diagnostics_base(machine)
     if base is None:
         return ("no-address",
-                "no LAN address declared for this machine, so its own hub cannot be dialled", None)
+                "the hub inventory returned no LAN address for this machine, "
+                "so its own hub cannot be dialled", None)
 
     status, _ = _get(f"{base}/admin/api/diagnostics/status", timeout=TIMEOUT_S)
     if status == 200:
@@ -327,10 +307,65 @@ def emit(mid: str, status: str, reason: str = "", **extra: Any) -> None:
 
 
 STATE_NAME = ".run-state.json"
+ACTIVE_NAME = ".active-run.json"
+
+# A capture is an hour long and starts at 23:30, so its marker is current on
+# the run's own date and on the next one -- never longer. Past that the marker
+# belongs to a *previous* run, and following it would let a `collect` whose
+# `start` never ran re-publish last week's capture as this week's entry: the
+# one failure mode that makes the ledger lie (SKILL.md). An expired marker is
+# ignored, so the caller gets the honest "no run state" exit 2 instead.
+ACTIVE_MAX_AGE_DAYS = 1
 
 
 def state_path(out_dir: Path) -> Path:
     return out_dir / STATE_NAME
+
+
+def active_path(root: Path) -> Path:
+    """Where `start` records which run the later verbs belong to.
+
+    It has to live at the ledger root rather than in the run directory: a
+    later verb cannot open the run's own state file without first knowing the
+    run date, which is the very thing that must not be re-derived.
+    """
+    return root / ACTIVE_NAME
+
+
+def mark_active_run(root: Path, run_date: str, out_dir: Path) -> None:
+    """Persist the run date `start` resolved, so nothing recomputes it."""
+    root.mkdir(parents=True, exist_ok=True)
+    active_path(root).write_text(
+        json.dumps({"run_date": run_date, "out_dir": str(out_dir)}, indent=2),
+        encoding="utf-8")
+
+
+def is_current_run(run_date: str, today: Optional[_dt.date] = None) -> bool:
+    """Is a marker's run date recent enough to still be this run's?
+
+    Rejects an unparseable date, a run older than ``ACTIVE_MAX_AGE_DAYS``, and
+    a future-dated one -- none of those can be the run in flight, and guessing
+    is worse than reporting no run state.
+    """
+    try:
+        marked = _dt.date.fromisoformat(run_date)
+    except (TypeError, ValueError):
+        return False
+    return 0 <= ((today or _dt.date.today()) - marked).days <= ACTIVE_MAX_AGE_DAYS
+
+
+def load_active_run(root: Path) -> dict:
+    """The run `start` recorded, or ``{}`` if there is no current one."""
+    path = active_path(root)
+    if not path.is_file():
+        return {}
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8")) or {}
+    except (OSError, ValueError):
+        return {}
+    if not isinstance(payload, dict):
+        return {}
+    return payload if is_current_run(str(payload.get("run_date") or "")) else {}
 
 
 def load_state(out_dir: Path) -> dict:
@@ -348,38 +383,60 @@ def save_state(out_dir: Path, state: dict) -> None:
     state_path(out_dir).write_text(json.dumps(state, indent=2), encoding="utf-8")
 
 
-def print_header(root: Path, out_dir: Path, today: str) -> None:
+def print_header(root: Path, out_dir: Path, run_date: str) -> None:
     print(f"LEDGER_ROOT={root}")
     print(f"LEDGER={root / 'fleet-health.md'}")
     print(f"OUT_DIR={out_dir}")
-    print(f"RUN_DATE={today}")
+    print(f"RUN_DATE={run_date}")
 
 
-def resolve_dirs(args) -> tuple[Path, Path, str]:
-    today = args.date or _dt.date.today().isoformat()
+def resolve_dirs(args, follow_active: bool = False) -> tuple[Path, Path, str]:
+    """Return (ledger root, run directory, run date) for this invocation.
+
+    The run date is a property of the *run*, not of the moment a verb happens
+    to be called. `start` resolves it once from the clock and records it;
+    `poll` and `collect` pass ``follow_active=True`` and read it back. The job
+    is scheduled at 23:30 and polls for well over an hour, so a date
+    re-derived per invocation splits one run across two directories and hands
+    the ledger append a third answer -- which it did on three consecutive
+    runs, reproducing live at 00:07 (fleet-config#812). An explicit
+    ``--date``/``--out-dir`` still wins, so a rerun stays targetable by hand.
+
+    The marker carries the run directory as well as the date, so a ``start``
+    given a custom ``--out-dir`` does not need it repeated on the later verbs
+    either.
+    """
     root = Path(args.ledger_root or (Path.home() / ".claude" / "fleet-health"))
-    out_dir = Path(args.out_dir or (root / "runs" / today))
-    return root, out_dir, today
+    active = load_active_run(root) if follow_active and not args.date else {}
+    run_date = (args.date or str(active.get("run_date") or "")
+                or _dt.date.today().isoformat())
+    marked_dir = str(active.get("out_dir") or "")
+    if args.out_dir:
+        out_dir = Path(args.out_dir)
+    elif marked_dir:
+        out_dir = Path(marked_dir)
+    else:
+        out_dir = root / "runs" / run_date
+    return root, out_dir, run_date
 
 
 def cmd_start(args) -> int:
     """Classify every machine, start every capture, persist the run state."""
-    root, out_dir, today = resolve_dirs(args)
+    root, out_dir, run_date = resolve_dirs(args)
 
     machines = discover()
     if not machines:
         print(f"inventory unreachable at {HUB}/admin/api/machines/status", file=sys.stderr)
         return 3
-    addresses = load_addresses()
 
-    print_header(root, out_dir, today)
+    print_header(root, out_dir, run_date)
     print(f"MACHINE_COUNT={len(machines)}")
 
     targets: dict[str, str] = {}
     skipped: list[dict] = []
     for machine in machines:
         mid = str(machine.get("id") or "?")
-        status, reason, base = classify(machine, addresses)
+        status, reason, base = classify(machine)
         if status == "ready" and base:
             targets[mid] = base
         else:
@@ -403,7 +460,7 @@ def cmd_start(args) -> int:
             emit(mid, "not-covered", result, detail="start-failed")
 
     save_state(out_dir, {
-        "run_date": today,
+        "run_date": run_date,
         "ledger_root": str(root),
         "out_dir": str(out_dir),
         "duration_s": args.duration_s,
@@ -412,6 +469,7 @@ def cmd_start(args) -> int:
         "runs": runs,
         "skipped": skipped,
     })
+    mark_active_run(root, run_date, out_dir)
 
     print(f"STARTED={len(runs)}")
     print(f"NOT_COVERED={len(skipped)}")
@@ -432,7 +490,7 @@ def cmd_poll(args) -> int:
     hour, so the skill polls by calling this repeatedly. Each call is fully
     synchronous — nothing is ever left running in the background.
     """
-    _root, out_dir, _today = resolve_dirs(args)
+    _root, out_dir, _run_date = resolve_dirs(args, follow_active=True)
     state = load_state(out_dir)
     if not state:
         print(f"no run state at {state_path(out_dir)} — run `start` first", file=sys.stderr)
@@ -467,7 +525,7 @@ def cmd_poll(args) -> int:
 
 def cmd_collect(args) -> int:
     """Stop anything still running, fetch every artefact, emit the manifest."""
-    root, out_dir, today = resolve_dirs(args)
+    root, out_dir, run_date = resolve_dirs(args, follow_active=True)
     state = load_state(out_dir)
     if not state:
         print(f"no run state at {state_path(out_dir)} — run `start` first", file=sys.stderr)
@@ -477,7 +535,7 @@ def cmd_collect(args) -> int:
     runs: dict[str, str] = state.get("runs") or {}
     skipped: list[dict] = state.get("skipped") or []
 
-    print_header(root, out_dir, today)
+    print_header(root, out_dir, run_date)
     for entry in skipped:
         emit(str(entry.get("id") or "?"), "not-covered",
              str(entry.get("reason") or ""), detail=str(entry.get("detail") or ""))
@@ -514,7 +572,9 @@ def main(argv: Optional[list[str]] = None) -> int:
     parser.add_argument("--ledger-root", default=None,
                         help="ledger root (default ~/.claude/fleet-health)")
     parser.add_argument("--date", default=None,
-                        help="run date YYYY-MM-DD (default today) — must match across calls")
+                        help="run date YYYY-MM-DD (default: the clock on `start`, "
+                             "then the date `start` recorded) — only needed to "
+                             "re-target an old run")
     sub = parser.add_subparsers(dest="cmd", required=True)
 
     start_cmd = sub.add_parser("start", help="classify machines and start every capture")

@@ -18,6 +18,13 @@ from typing import Tuple
 _STANDALONE_UNIT_CHECKS: Tuple[Tuple[str, str, str], ...] = (
     ("pi_policy_coverage", "test_pi_policy_coverage.py",
      "Pi shared decisions and real extension middleware failure/composition boundaries"),
+    ("fleet_health", "test_fleet_health.py",
+     "the three defects the weekly /fleet-health run kept surviving on "
+     "hand-applied workarounds -- the cp1252-under-capture crash at both "
+     "entry points, the run date recomputed per invocation across midnight, "
+     "and peer addresses read from a hub config file they had moved out of -- "
+     "are testable on their own against synthetic runs and a temp ledger "
+     "(fleet-config#812)"),
     ("audit_issue", "test_audit_issue.py",
      "the helper's marker / title-adoption / keep-close logic is testable "
      "on its own"),
