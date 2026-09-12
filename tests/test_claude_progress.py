@@ -322,10 +322,10 @@ delivered_formatter.finish(0)
 delivered_output = "\n".join(delivered_lines)
 check("no terminal result event" not in delivered_output,
       "the result event was received, so finish() must not claim otherwise")
-check("✅ completed" not in delivered_output,
-      "a result does not bless unknown event semantics (#750)")
-check("❓ not confirmed" in delivered_output,
-      "unknown records remain unconfirmed even with a terminal result (#750)")
+check("✅ completed" in delivered_output,
+      "a delivered run is not red merely for carrying unrecognised records (#810)")
+check("unknown stream record" in delivered_output,
+      "and the records it carried are still counted and named in its log (#841)")
 
 # The #560 case this must not weaken: no result event ever arrives, so the
 # same burst still means the stream was genuinely cut off mid-flight.

@@ -1,10 +1,14 @@
 """Provider-specific commands and JSONL translation for scheduled_runner.
 
 Adapters emit evidence, never schedule, retry, run checks, or decide success.
-Unknown records deliberately remain unknown even after a terminal event.
 
 An unknown record names what it was, so the next schema drift is diagnosable
-from the run log instead of being a bare count (fleet-config#841).
+from the run log instead of being a bare count (fleet-config#841). It is a
+statement about this parser, not about the run, and carries no verdict: a
+record type the CLI added last week says nothing about whether the run
+delivered (fleet-config#810). An adapter that recognises a surface and knows it
+cannot confirm that surface finished emits `unverified` instead -- the kind
+that does still decide the outcome.
 """
 from __future__ import annotations
 
@@ -19,10 +23,16 @@ from typing import Any, Optional
 class ProgressEvent:
     """Small provider-neutral progress boundary; no raw tool payloads."""
 
+    # One of: start, text, error, result, malformed, tool_start, tool_end,
+    # child_start, child_progress, child_end, unknown, unverified. The last two
+    # are deliberately different things -- "unknown" is a record shape this
+    # parser has not been taught (counted and named, no verdict), "unverified"
+    # is a surface it recognises and cannot confirm completed, which keeps the
+    # run out of a green verdict (fleet-config#810).
     kind: str
     id: str = ""
-    # Tool/child name on a lifecycle event; on an "unknown" event, the
-    # `describe_record` shape descriptor of the record that was not recognised.
+    # Tool/child name on a lifecycle event; on an "unknown"/"unverified" event,
+    # the `describe_record` shape descriptor of the record in question.
     name: str = ""
     text: str = ""
     failed: bool = False
@@ -85,9 +95,12 @@ def error_category(text: str) -> str:
 # emitting the background-task *store* alongside the task lifecycle, so every
 # backgrounded tool call produced three records the parser had never seen. With
 # `CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS=0` -- which this runner sets, so every
-# slow shell command becomes a background task -- that made `unverified_stream`
-# true on literally every scheduled run, and exit 122 stopped carrying
-# information. Neither record is evidence of anything:
+# slow shell command becomes a background task -- that reddened literally every
+# scheduled run, and exit 122 stopped carrying information. Teaching the parser
+# each new subtype is still the right fix, and fleet-config#810 removed the
+# deadline on doing it: an unknown record no longer decides a run on its own,
+# so the next drift costs a log line rather than a week of false reds. Neither
+# record is evidence of anything:
 #   * `background_tasks_changed` is a full snapshot of the in-flight set
 #     (`{"tasks": [...]}`), re-sent on every change and empty once drained.
 #   * `task_updated` is a UI patch (`{"patch": {"status": ..., "end_time": ...}}`)
@@ -302,6 +315,10 @@ class CodexAdapter:
                 return [ProgressEvent("unknown", name=describe_record(kind, item_type, item.get("status")))]
             return [ProgressEvent("tool_end", id=item["id"], name=item_type,
                                   failed=item.get("status") == "failed" or item.get("exit_code", 0) not in {0, None})]
-        # Native delegated-child completion is a separate unproven surface.
-        # A new collaboration item must never disappear into a green turn.
-        return [ProgressEvent("unknown", name=describe_record(kind, item_type))]
+        # Native delegated-child completion is a separate unproven surface, and
+        # the one adapter site that is not schema drift: a collaboration item
+        # registers no tool and no child, so nothing downstream would notice it
+        # never finished. `unverified`, not `unknown` -- it must not disappear
+        # into a green turn the way an unrecognised record now may
+        # (fleet-config#810).
+        return [ProgressEvent("unverified", name=describe_record(kind, item_type))]

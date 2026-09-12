@@ -118,6 +118,24 @@ SELF_REPORTED_FAILURE_EXIT_CODE = 123
 # one. The exit code is non-zero all the same, because an unattended job whose
 # outcome is unknown must show red, and it is distinct from stall/kill/
 # self-reported so the three stay tellable apart.
+#
+# The complement, and the reason this detector has to stay this narrow: an
+# unrecognised record *on its own* is not this signal. `--output-format
+# stream-json` gains record types routinely -- `KNOWN_IGNORED_SYSTEM_SUBTYPES`
+# has grown eight entries over as many months -- so scoring every one of them
+# red meant a fully delivered run went `not confirmed` the week upstream
+# shipped a new subtype, with no defect anywhere. On 2026-09-09
+# `fleet-health-weekly` delivered its digest, its ledger entry and its Telegram
+# ping under `150 unknown stream record(s)` and would still have exited 122
+# (fleet-config#810). That is the inverse of the class this file exists to
+# prevent: it manufactures a red rather than hiding one, and a schedule that
+# cries wolf on a timetable is how a real red gets ignored.
+#
+# So an unknown record is counted, named and logged, and decides nothing by
+# itself. What stays verdict-bearing is evidence a fact was never *established*:
+# a missing terminal result, a malformed record, a burst near shutdown, and the
+# records `ProgressFormatter._mark_unverified` counts -- see its docstring for
+# why those three call sites are a different thing from schema drift.
 UNKNOWN_BURST_WINDOW_SECONDS = 15.0
 UNKNOWN_BURST_THRESHOLD = 3
 # How many *distinct* unknown-record shapes the summary line names before it
@@ -301,6 +319,8 @@ class ProgressFormatter:
         self._unknown = 0
         self._unknown_labels: collections.Counter[str] = collections.Counter()
         self._unknown_timestamps: list[float] = []
+        self._unverified = 0
+        self._unverified_labels: collections.Counter[str] = collections.Counter()
         self._result_error = False
         self._saw_result = False
         self._saw_kill_signature = False
@@ -377,7 +397,8 @@ class ProgressFormatter:
         """
         return (self.adapter.retry_before_tools and self._saw_transient_api_error
                 and not self._saw_tool_use and not self._unknown and not self._malformed
-                and not self._children and not self._saw_kill_signature)
+                and not self._unverified and not self._children
+                and not self._saw_kill_signature)
 
     def reset_for_retry(self) -> None:
         """Clear per-attempt state, keeping the run-level clock.
@@ -395,8 +416,10 @@ class ProgressFormatter:
         self._assistant_texts.clear()
         self._unknown_timestamps.clear()
         self._unknown_labels.clear()
+        self._unverified_labels.clear()
         self._malformed = 0
         self._unknown = 0
+        self._unverified = 0
         self._result_error = False
         self._saw_result = False
         self._saw_kill_signature = False
@@ -484,22 +507,57 @@ class ProgressFormatter:
         healthy run and a truncated one both read "N unknown stream record(s)",
         so the number stopped being actionable and started being wallpaper. The
         label is a shape descriptor only (see `runner_adapters.describe_record`)
-        -- never payload -- and it changes nothing about the verdict: unknown
-        still means unknown.
+        -- never payload.
+
+        Counted, named, logged -- and, since fleet-config#810, not a verdict.
+        A record this parser has never seen is evidence about the parser, not
+        about the run; `_mark_unverified` is where a record that genuinely
+        leaves the outcome unestablished goes.
         """
         self._unknown += 1
         self._unknown_labels[label or "unlabelled"] += 1
         self._unknown_timestamps.append(self._clock())
 
-    def unknown_summary(self) -> str:
-        """`type/subtype ×N` breakdown of the unknown records, most-seen first."""
-        if not self._unknown_labels:
+    def _mark_unverified(self, label: str = "") -> None:
+        """Count one fact this run left unestablished. Verdict-bearing.
+
+        The other half of the split fleet-config#810 drew. Three call sites
+        reach here, and none of them is schema drift:
+
+        * a native delegated child whose completion this parser cannot read,
+          which must never disappear into a green turn (`CodexAdapter`);
+        * a drain deadline reached with a pipe still open or a descendant still
+          running -- this runner stopped watching before the run was over;
+        * a child that never exited inside the terminate timeout.
+
+        Each says the same thing: the outcome is a fact nobody established.
+        The global rule is that such a state is its own, never folded into the
+        passing one, so these keep `TRUNCATED_STREAM_EXIT_CODE`. Deliberately
+        outside the burst window and the `_unknown` count -- these are not
+        stream records, and `truncated_stream_burst` is a statement about the
+        stream.
+        """
+        self._unverified += 1
+        self._unverified_labels[label or "unlabelled"] += 1
+
+    @staticmethod
+    def _summarize(labels: "collections.Counter[str]") -> str:
+        """`shape ×N` breakdown, most-seen first, capped as one log line."""
+        if not labels:
             return ""
-        ranked = self._unknown_labels.most_common()
+        ranked = labels.most_common()
         named = ", ".join(f"{label} ×{count}"
                           for label, count in ranked[:UNKNOWN_LABEL_SUMMARY_LIMIT])
         hidden = len(ranked) - UNKNOWN_LABEL_SUMMARY_LIMIT
         return named + (f", +{hidden} more shape(s)" if hidden > 0 else "")
+
+    def unknown_summary(self) -> str:
+        """`type/subtype ×N` breakdown of the unknown records, most-seen first."""
+        return self._summarize(self._unknown_labels)
+
+    def unverified_summary(self) -> str:
+        """`shape ×N` breakdown of the records that left the outcome unproven."""
+        return self._summarize(self._unverified_labels)
 
     def emit_stderr(self, line: str) -> None:
         self._touch()
@@ -544,6 +602,8 @@ class ProgressFormatter:
         """Consume only the shared contract; provider fields stay at the edge."""
         if event.kind == "unknown":
             self._mark_unknown(event.name)
+        elif event.kind == "unverified":
+            self._mark_unverified(event.name)
         elif event.kind == "malformed":
             self._malformed += 1
         elif event.kind == "start":
@@ -587,7 +647,15 @@ class ProgressFormatter:
 
     @property
     def unverified_stream(self) -> bool:
-        return bool(not self._saw_result or self._unknown or self._malformed)
+        """True when something about this run's outcome was never established.
+
+        Not "something was unfamiliar" -- that was the fleet-config#810 bug.
+        A missing terminal result means delivery was never confirmed; a
+        malformed record means the adapter could not parse what it was sent;
+        `_unverified` counts the surfaces that named themselves unprovable.
+        An unknown record is none of those and is deliberately absent here.
+        """
+        return bool(not self._saw_result or self._malformed or self._unverified)
 
     @property
     def unfinished_work(self) -> bool:
@@ -629,6 +697,14 @@ class ProgressFormatter:
                 "⚠ ignored "
                 f"{self._malformed} malformed and {self._unknown} unknown stream record(s)"
                 + (f" · unknown: {breakdown}" if breakdown else "")
+            )
+        if self._unverified:
+            # Its own line, never folded into the "ignored" one above: these are
+            # the records that did decide the verdict, and a reader who sees
+            # "not confirmed" needs to be told which ones (fleet-config#810).
+            self.emit(
+                f"⚠ {self._unverified} record(s) left this run unverified "
+                f"· {self.unverified_summary()}"
             )
         if self._child_failures or self._child_cancellations:
             # Not a verdict (see `saw_kill_signature`) but never silent either:
@@ -710,7 +786,7 @@ class ProgressFormatter:
                 "started (check that the prompt asks for it, not just names it)"
             )
         elif self.unverified_stream and exit_code in {0, TRUNCATED_STREAM_EXIT_CODE}:
-            status = "❓ not confirmed · missing, malformed or unknown completion stream"
+            status = "❓ not confirmed · missing, malformed or unverifiable completion stream"
         else:
             status = "❌ failed" if failed else "✅ completed"
         result_note = " · no terminal result event" if not self._saw_result else ""
@@ -970,10 +1046,12 @@ def run_process(
                     break
                 if time.monotonic() >= drain_deadline:
                     orphaned = active is not None and active > 0 and not stopping
-                    # Unobserved descendant work closes the pre-effect replay
-                    # gate even when it closed both pipes and the parent failed.
+                    # This runner stopped watching before the run was over, so
+                    # its outcome is a fact nobody established: verdict-bearing,
+                    # and it closes the pre-effect replay gate even when both
+                    # pipes reached EOF and the parent failed.
                     if active != 0 or not all(reader.eof for reader in readers):
-                        progress._mark_unknown("drain/deadline-reached")
+                        progress._mark_unverified("drain/deadline-reached")
                     drain_message = (
                         f"owned scope drain deadline reached · active processes "
                         f"{active if active is not None else 'unknown'} · "
@@ -1003,7 +1081,7 @@ def run_process(
             try:
                 process.wait(timeout=TERMINATE_TIMEOUT_SECONDS)
             except subprocess.TimeoutExpired:
-                progress._mark_unknown("process/exit-wait-timeout")
+                progress._mark_unverified("process/exit-wait-timeout")
         if exit_code is None:
             exit_code = process.poll()
         process.stdout.close()
