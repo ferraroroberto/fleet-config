@@ -362,6 +362,69 @@ class ScheduledRunnerTests(unittest.TestCase):
         self.assertTrue(formatter.saw_transient_api_error)
         self.assertEqual(code, runner.INCOMPLETE_WORK_EXIT_CODE)
 
+    # ---- exit 118 always names which half of its evidence fired ----
+    #
+    # fleet-config#811. `weekly-recap-draft` run 20260906T210001 swept, rewrote
+    # and validated its ledger, posted to Telegram and left a clean tree, then
+    # reported `❌ failed · exit 118`: the 118 came from the OS-level orphan
+    # branch, `unfinished_work` was False, and the status chain's only 118
+    # branch tested `unfinished_work` — so the verdict fell through to the bare
+    # fallback and named no cause at all.
+
+    def test_owned_orphan_verdict_names_descendants_and_is_not_confirmed(self):
+        flags = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
+        good = "\n".join(json.dumps(e) for e in self.fixtures["Claude Code"])
+        script = (f"import subprocess,sys;"
+                  f"subprocess.Popen([sys.executable,'-c','import time;time.sleep(4)'],"
+                  f"stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,creationflags={flags});"
+                  f"print({good!r},flush=True)")
+        lines = []
+        formatter = runner.ProgressFormatter(emit=lines.append)
+        code = runner.run_process([sys.executable, "-c", script],
+                                  formatter=formatter, stall_timeout=0)
+        verdict = lines[-1]
+        print(f"orphan verdict: exit={code} · {verdict}", flush=True)
+        self.assertEqual(code, runner.INCOMPLETE_WORK_EXIT_CODE, verdict)
+        self.assertFalse(formatter.unfinished_work,
+                         "this run's 118 must come from the OS-level half only")
+        # Asserted ahead of the new accessor below so that what fails against
+        # pre-fix code is the defect itself — a verdict naming no cause at all —
+        # rather than merely a missing attribute.
+        self.assertNotIn("❌ failed", verdict)
+        self.assertIn("❓ not confirmed", verdict)
+        self.assertIn("owned descendant", verdict)
+        self.assertGreater(formatter.owned_orphans, 0, verdict)
+
+    def test_stream_level_incomplete_work_still_names_its_own_half(self):
+        good = self.fixtures["Claude Code"]
+        pending = {"type": "system", "subtype": "task_started", "task_id": "child-1"}
+        code, formatter, text = fake_run([*good[:-1], pending, good[-1]], ClaudeAdapter())
+        verdict = text.splitlines()[-1]
+        print(f"stream-level verdict: exit={code} · {verdict}", flush=True)
+        self.assertEqual(code, runner.INCOMPLETE_WORK_EXIT_CODE, text)
+        self.assertIn("❓ not confirmed · unfinished tools or children", verdict)
+        self.assertNotIn("owned descendant", verdict)
+        self.assertEqual(formatter.owned_orphans, 0, text)
+
+    def test_both_halves_of_incomplete_work_are_named_together(self):
+        formatter = runner.ProgressFormatter(emit=lambda _: None)
+        formatter._children.add("child-1")
+        formatter._mark_owned_orphans(3)
+        self.assertEqual(
+            formatter.incomplete_work_cause(),
+            "unfinished tools or children and 3 owned descendant(s) still "
+            "running after the provider exited",
+        )
+
+    def test_native_118_without_evidence_is_not_handed_a_cause(self):
+        # Neither detector fired, so the adapter established nothing and must
+        # not claim it did — the one 118 that legitimately keeps the fallback.
+        lines = []
+        formatter = runner.ProgressFormatter(emit=lines.append)
+        formatter._saw_result = True
+        formatter.finish(runner.INCOMPLETE_WORK_EXIT_CODE)
+        self.assertEqual(lines[-1], "[00:00] ❌ failed · exit 118")
+
     def test_explicit_selection_no_guessed_flags_or_fallback(self):
         command = CodexAdapter().build_command(["/smoke arg", "--model", "synthetic", "--sandbox", "read-only"], "codex-test")
         self.assertEqual(command[:2], ["codex-test", "exec"])
