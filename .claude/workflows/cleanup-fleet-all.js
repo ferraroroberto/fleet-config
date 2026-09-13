@@ -1,6 +1,6 @@
 export const meta = {
   name: 'cleanup-fleet-all',
-  description: 'Build, independently validate, ship and tear down fleet cleanup issues across all eight queued audit buckets — one bucket at a time, one repo at a time, with a bounded build/validate retry loop',
+  description: 'Build, independently validate, ship and tear down fleet cleanup issues across all nine queued audit buckets — one bucket at a time, one repo at a time, with a bounded build/validate retry loop',
   phases: [
     { title: 'Build' },
     { title: 'Validate' },
@@ -147,7 +147,17 @@ The full issue text is already read by /issue-start. If needed, fetch the curren
 Report via the required schema, including \`branch\` and the absolute \`worktree\` path you worked in (a later agent needs it to tear down; report it even when the build failed, and report an empty string only if no worktree was ever created). If verification is FAIL or SKIPPED, judge \`retryable\` yourself: true only if a second attempt has a real chance of fixing it (e.g. a straightforward bug in your own change); false for anything structural (no verification gate exists for this repo, the issue itself is unclear or unreproducible, or the real scope is bigger than one retry can close).`
 }
 
-function validatePrompt(issue, build) {
+// fleet-config#833: an instruction-file rewrite can pass every repo gate while
+// silently dropping a directive, so a prompt-drift lane's validator also runs
+// /context-purge's preservation harness. A failure here is a rejection like any
+// other: the fixed gate below retries once, then escalates.
+function preservationStep(bucket) {
+  if (bucket !== 'prompt-drift') return ''
+  return `
+7. This is a \`prompt-drift\` lane, so it also carries a preservation gate that the leniency rule below does not soften. From the worktree root run \`E:/automation/fleet-config/.venv/Scripts/python.exe E:/automation/fleet-config/.claude/skills/context-purge/check.py --base origin/<default-branch>\`. Any \`FAIL\` line or exit code other than 0 (exit 3 is UNKNOWN: the diff could not be taken) → \`pass: false\`, quoting the failing lines as feedback. Then, for each instruction file the diff edited, list the directives in its old text (every rule, prohibition, path, command, threshold and quoted trigger) and confirm the new text still discharges each; an undischarged directive → \`pass: false\` naming it.`
+}
+
+function validatePrompt(issue, build, bucket) {
   return `You are independently validating GitHub issue #${issue.number} in the ${issue.repo} repo. It was built in the worktree ${build.worktree || `E:\\automation\\${issue.repo}-wt-${issue.number}`}, on branch ${build.branch}. You did NOT write this change — you have no memory of building it, review it fresh and adversarially, but leniently.
 
 ${ISOLATION_RULES}
@@ -157,7 +167,7 @@ ${ISOLATION_RULES}
 3. Fetch the current issue text with \`gh issue view ${issue.number} --repo ferraroroberto/${issue.repo}\` and use it as the acceptance-criteria source.
 4. Read the diff against the repo's default branch (e.g. \`git diff origin/main...${build.branch}\`).
 5. Independently re-run the project's verification gate yourself per its CLAUDE.md — do not just trust the builder's report of PASS.
-6. Judge whether this diff plausibly and reasonably addresses the fetched acceptance criteria.
+6. Judge whether this diff plausibly and reasonably addresses the fetched acceptance criteria.${preservationStep(bucket)}
 
 Issue #${issue.number}: ${issue.title}
 
@@ -285,7 +295,7 @@ async function processIssue(bucket, issue) {
       break
     }
 
-    const verdict = await agent(validatePrompt(issue, build), {
+    const verdict = await agent(validatePrompt(issue, build, bucket), {
       phase: 'Validate',
       label: `${bucket}:validate:${issue.repo}#${issue.number}`,
       schema: VALIDATE_RESULT_SCHEMA,

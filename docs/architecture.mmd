@@ -159,6 +159,7 @@ flowchart TB
   PROMPTLEDGER["prompt-audit ledger issue (audit-managed)\nguide baselines + file-hash table · digest comments\n+ ~/.claude/prompt-audit/state.json — never committed"]
   PROMPTAUDIT -->|fleet membership · audit_issue.py · shared description measurement| LIB
   PROMPTAUDIT -->|digest comments| PROMPTLEDGER
+  PROMPTAUDIT -->|audit.py drift: one prompt-drift issue per repo| CLEANUPFLEET
   PROMPTAUDIT -->|reads, never edits| GCMDFILE
   PROMPTAUDIT -->|reads, never edits| SISTERSKILLS
   CONTEXTAUDIT -->|measures| GCMDFILE

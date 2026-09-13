@@ -78,6 +78,7 @@ KINDS = (
     "context-purge-digest",
     "sota-watch",
     "prompt-audit",
+    "prompt-drift",
     "e2e-redundancy",
     "cleanup-deferred",
 )

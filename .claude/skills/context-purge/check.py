@@ -26,8 +26,16 @@ audit.py trends on) so the purge report quotes exact numbers.
 
 stdlib only. CLI:
     E:/automation/fleet-config/.venv/Scripts/python.exe .claude/skills/context-purge/check.py <before-file> <after-file>
+    E:/automation/fleet-config/.venv/Scripts/python.exe .claude/skills/context-purge/check.py --base origin/main [--repo <path>]
+The `--base` form checks every instruction file (CLAUDE.md, AGENTS.md,
+SKILL.md, .claude/rules/*.md) the branch changed since its merge-base with
+<base>, committed or not, against its merge-base bytes — the one command a
+`prompt-drift` cleanup lane's validate stage runs (fleet-config#833). A deleted
+instruction file fails (its directives cannot be checked); an added one is
+reported and skipped (nothing to preserve).
 Exit 0 = all preservation checks pass; exit 2 = at least one failed (reasons on
-stdout). The semantic directive-inventory check stays with the orchestrator.
+stdout); exit 3 = the diff could not be taken (unknown, never a pass). The
+semantic directive-inventory check stays with the orchestrator.
 """
 
 from __future__ import annotations
@@ -36,8 +44,10 @@ import argparse
 import re
 import sys
 from pathlib import Path
+from typing import List, Optional, Tuple
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "skills" / "_lib"))
+import git_run  # noqa: E402
 from frontmatter import frontmatter_error  # noqa: E402
 from skill_description import frontmatter_description, quoted_phrases  # noqa: E402,F401
 from utf8_stdio import ensure_utf8_stdio  # noqa: E402
@@ -87,26 +97,92 @@ def check(before: str, after: str) -> list[str]:
     return failures
 
 
-def main() -> int:
+def is_instruction_file(relpath: str) -> bool:
+    """The instruction surface `/prompt-audit` scans, by repo-relative path."""
+    name = relpath.rsplit("/", 1)[-1]
+    if name in ("SKILL.md", "AGENTS.md") or name.endswith("CLAUDE.md"):
+        return True
+    return f"/{relpath}".find("/.claude/rules/") != -1 and name.endswith(".md")
+
+
+def changed_instruction_files(repo: Path, base: str) -> Optional[Tuple[str, List[Tuple[str, str]]]]:
+    """(merge-base sha, [(status, path)]) for instruction files changed since the
+    merge-base with `base`, working tree included; None when git cannot say."""
+    mb = git_run.run_git(["-C", str(repo), "merge-base", base, "HEAD"])
+    if mb.returncode != 0 or not mb.stdout.strip():
+        return None
+    sha = mb.stdout.strip()
+    diff = git_run.run_git(["-C", str(repo), "diff", "--name-status", "--no-renames", sha, "--"])
+    if diff.returncode != 0:
+        return None
+    out = []
+    for line in diff.stdout.splitlines():
+        status, _, path = line.partition("\t")
+        if path and is_instruction_file(path):
+            out.append((status.strip()[:1], path))
+    return sha, out
+
+
+def _report(before: str, after: str, label: str) -> List[str]:
+    b, a = est_tokens(before), est_tokens(after)
+    pct = 0.0 if b == 0 else (b - a) * 100.0 / b
+    print(f"TOKENS: {label}before={b} after={a} saved={b - a} ({pct:.0f}%)")
+    failures = check(before, after)
+    for f in failures:
+        print(f"FAIL  {label}{f}")
+    if not failures:
+        print(f"PASS  {label}marked blocks + quoted triggers preserved, frontmatter parses")
+    return failures
+
+
+def check_branch(repo: Path, base: str) -> int:
+    found = changed_instruction_files(repo, base)
+    if found is None:
+        print(f"UNKNOWN  could not diff {repo} against {base} — preservation not established")
+        return 3
+    sha, files = found
+    if not files:
+        print(f"NO_INSTRUCTION_FILES_CHANGED  since merge-base {sha[:12]} with {base}")
+        return 0
+    failed = 0
+    for status, path in files:
+        label = f"{path}: "
+        if status == "A":
+            print(f"SKIP  {label}added — nothing to preserve")
+            continue
+        if status == "D":
+            print(f"FAIL  {label}deleted — its directives cannot be checked")
+            failed += 1
+            continue
+        shown = git_run.run_git_bytes(["-C", str(repo), "show", f"{sha}:{path}"])
+        if shown.returncode != 0:
+            print(f"UNKNOWN  {label}merge-base bytes unreadable — preservation not established")
+            return 3
+        after = (repo / path).read_text(encoding="utf-8")
+        failed += bool(_report(shown.stdout.decode("utf-8", errors="replace"), after, label))
+    print(f"CHECKED={len(files)}|failed={failed}|base={base}|merge_base={sha[:12]}")
+    return 2 if failed else 0
+
+
+def main(argv: Optional[List[str]] = None) -> int:
     ensure_utf8_stdio()  # UTF-8 under capture (fleet gotcha) — stdout + stderr
     ap = argparse.ArgumentParser(description="Post-purge preservation checks + token delta.")
-    ap.add_argument("before", type=Path)
-    ap.add_argument("after", type=Path)
-    args = ap.parse_args()
+    ap.add_argument("before", type=Path, nargs="?")
+    ap.add_argument("after", type=Path, nargs="?")
+    ap.add_argument("--base", help="check every instruction file changed since the merge-base with this ref")
+    ap.add_argument("--repo", type=Path, default=Path("."), help="working tree for --base (default: cwd)")
+    args = ap.parse_args(argv)
+
+    if args.base:
+        if args.before or args.after:
+            ap.error("--base takes no before/after files")
+        return check_branch(args.repo, args.base)
+    if not (args.before and args.after):
+        ap.error("pass <before> <after>, or --base <ref>")
 
     before = args.before.read_text(encoding="utf-8")
     after = args.after.read_text(encoding="utf-8")
-
-    b, a = est_tokens(before), est_tokens(after)
-    pct = 0.0 if b == 0 else (b - a) * 100.0 / b
-    print(f"TOKENS: before={b} after={a} saved={b - a} ({pct:.0f}%)")
-
-    failures = check(before, after)
-    for f in failures:
-        print(f"FAIL  {f}")
-    if not failures:
-        print("PASS  marked blocks + quoted triggers preserved, frontmatter parses")
-    return 0 if not failures else 2
+    return 0 if not _report(before, after, "") else 2
 
 
 if __name__ == "__main__":

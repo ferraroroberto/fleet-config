@@ -215,7 +215,7 @@ window.CONFIG = {
     },
     {
       "nm": "cleanup-fleet-all",
-      "ds": "Unattended, all-bucket sibling of /cleanup-fleet — builds, validates, and ships every open cleanup issue across all eight queued…",
+      "ds": "Unattended, all-bucket sibling of /cleanup-fleet — builds, validates, and ships every open cleanup issue across all nine queued a…",
       "sched": true
     },
     {

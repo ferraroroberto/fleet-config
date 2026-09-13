@@ -1,13 +1,13 @@
 ---
 name: cleanup-fleet-all
-description: Unattended, all-bucket sibling of /cleanup-fleet — builds, validates, and ships every open cleanup issue across all eight queued audit buckets in one overnight pass. E.g. "/cleanup-fleet-all", "clean up the whole fleet overnight", "run cleanup on all buckets unattended". Runs headless via a scheduled claude -p job.
+description: Unattended, all-bucket sibling of /cleanup-fleet — builds, validates, and ships every open cleanup issue across all nine queued audit buckets in one overnight pass. E.g. "/cleanup-fleet-all", "clean up the whole fleet overnight", "run cleanup on all buckets unattended". Runs headless via a scheduled claude -p job.
 ---
 
 # cleanup-fleet-all
 
 **Capability preflight:** read [workflow-capabilities](../../../docs/workflow-capabilities.md) and bind dispatch, results, waits, cancellation, model tiers and questions to this session’s actual tools before proceeding. Tool names below are conditional Claude examples; the contract governs adaptation. Keep this skill’s worktree, independent-review, human-review and shipping gates.
 
-**Goal:** the genuinely unattended sibling of `/cleanup-fleet` (one bucket, stops for human approval in its default `hard` mode). This walks **all eight queued** audit buckets, serially, and ships every issue with **no human review gate** — replaced by an independent validator agent, so no single agent both builds and ships its own work unchecked. (`security` is never queued — `/codebase-audit` self-heals it inline — and `cert-drift`, `/design-sync`'s other kind, is review-only, never auto-migrated; nothing here touches either.)
+**Goal:** the genuinely unattended sibling of `/cleanup-fleet` (one bucket, stops for human approval in its default `hard` mode). This walks **all nine queued** audit buckets, serially, and ships every issue with **no human review gate** — replaced by an independent validator agent, so no single agent both builds and ships its own work unchecked. (`security` is never queued — `/codebase-audit` self-heals it inline — and `cert-drift`, `/design-sync`'s other kind, is review-only, never auto-migrated; nothing here touches either.)
 
 **Four agents per issue, never fewer:**
 
@@ -28,9 +28,9 @@ All retry/ship decision-making lives in **`.claude/workflows/cleanup-fleet-all.j
 
 ## Arguments
 
-`/cleanup-fleet-all [<bucket>...]` — zero or more bucket names, fuzzy-matched via the same synonym table `/cleanup-fleet` uses (`documentation`/`docs`, `claude-md-drift`/`drift`, `duplication`/`dupes`, `stale`/`dead`, `maintainability`/`maint`, `slop`/`bloat`, `bug`/`bugs`, `design-drift`/`design`).
+`/cleanup-fleet-all [<bucket>...]` — zero or more bucket names, fuzzy-matched via the same synonym table `/cleanup-fleet` uses (`documentation`/`docs`, `claude-md-drift`/`drift`, `duplication`/`dupes`, `stale`/`dead`, `maintainability`/`maint`, `slop`/`bloat`, `bug`/`bugs`, `design-drift`/`design`, `prompt-drift`/`prompt`).
 
-- **No arguments** → all eight queued buckets, the intended unattended shape.
+- **No arguments** → all nine queued buckets, the intended unattended shape.
 - **One or more bucket names** → restrict to just those — use this for an attended dry run of a small slice before trusting a full overnight sweep.
 
 ## Execution rules (read before running any command)
@@ -50,7 +50,7 @@ All retry/ship decision-making lives in **`.claude/workflows/cleanup-fleet-all.j
 
 ### 2. Resolve buckets
 
-Parse args through the synonym table (see "Arguments"). No args → all eight queued canonical labels (`documentation`, `claude-md-drift`, `duplication`, `stale`, `maintainability`, `slop`, `bug`, `design-drift`). `security` and `cert-drift` are never in this set — `security` is self-healed inline by `/codebase-audit`, and `cert-drift` is `/design-sync`'s review-only kind (a tailnet-cert migration is never auto-applied unattended). Unrecognized tokens are ignored with a one-line note, not a hard stop.
+Parse args through the synonym table (see "Arguments"). No args → all nine queued canonical labels (`documentation`, `claude-md-drift`, `duplication`, `stale`, `maintainability`, `slop`, `bug`, `design-drift`, `prompt-drift`). `security` and `cert-drift` are never in this set — `security` is self-healed inline by `/codebase-audit`, and `cert-drift` is `/design-sync`'s review-only kind (a tailnet-cert migration is never auto-applied unattended). Unrecognized tokens are ignored with a one-line note, not a hard stop.
 
 ### 3. Fetch every bucket — direct Issues API, one repo-scoped call per repo
 
@@ -72,6 +72,7 @@ Within each bucket, group surviving issues by `repository.name`:
 
 - Exactly one candidate → that's the issue.
 - More than one → select one, defer the rest (record for the final report). Preference: (1) the audit-managed issue (body contains `<!-- audit-managed:`), else (2) the smallest/clearest-acceptance one.
+- `prompt-drift` only: an issue whose body states **hard** tier is deferred, never dispatched (see **Hard rules**) — a rewrite that consequential always gets a human.
 
 ### 5. Pre-flight per selected repo
 
@@ -247,7 +248,7 @@ E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/hooks
   --kind cleanup --summary "<bucket> (all-mode)" --merged <merged-count> --review <escalated-count>
 ```
 
-(`--review` here means "escalated after 2 failed validation rounds," reusing the existing `--kind cleanup` semantics exactly — no code changes needed.) After every bucket has reported: fire one final roll-up call summing merged/escalated across all eight buckets, same `--kind cleanup` shape with `--summary "all buckets"`.
+(`--review` here means "escalated after 2 failed validation rounds," reusing the existing `--kind cleanup` semantics exactly — no code changes needed.) After every bucket has reported: fire one final roll-up call summing merged/escalated across all nine buckets, same `--kind cleanup` shape with `--summary "all buckets"`.
 
 **`notify_complete.py` is the only sanctioned way to send these pings** — never use an MCP chat tool to pick a chat; the helper resolves it from `projects.toml`. A silent no-op with no channel configured is correct, not a bug to route around.
 
@@ -320,6 +321,7 @@ Recap of the binding constraints above — see the referenced step for full deta
 - An open `cleanup-deferred` issue always means unprocessed work; a clean run closes it with a comment (`audit_issue.py upsert --reopen` on the other path). The always-printed report line is a separate fact, never collapsed into the issue.
 - A run that skipped every candidate repo prints `SCHEDULED-RUN-FAILED` — real work found and none touched, a delivery failure not a clean sweep.
 - `design-drift` fixes obey `/design-sync`'s structural rule: auto-fix token/palette/spacing, **never re-author navigation or components** (reuse the vendored `project-scaffolding` snippet verbatim); an unresolvable structural finding fails validation and escalates, never auto-merges a hand-rolled rewrite. `cert-drift` is not a bucket here — never auto-applied.
+- `prompt-drift` lanes obey `/cleanup-fleet`'s prompt-drift tier rule (its step 5 is the one home — not restated here): this run ships every lane with no human gate, so a `prompt-drift` issue whose body states **hard** tier is not dispatched — list it under deferred as `hard-tier prompt-drift — needs an attended /cleanup-fleet run`. Every `prompt-drift` lane's **validate** stage runs `.claude/skills/context-purge/check.py --base origin/<default>` and walks the directive inventory of each edited instruction file; a FAIL or UNKNOWN is `pass: false` (retry once, then escalate), never a warning. The decision script owns that brief (`validatePrompt`).
 - Never background a tool call and end the turn expecting a resume — including the `Workflow` call. Poll `TaskOutput` to completion within the same turn.
 - Post-flight dirty-tree check runs here, in this skill, never inside a spawned agent, right before a repo's status is trusted.
 - Max 2 build/validate rounds per issue. Second failure escalates — never force-merges, never silently drops the issue from the final report. Escalation means commented + torn down, not parked for later.
