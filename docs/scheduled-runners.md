@@ -1,6 +1,6 @@
 # Scheduled runners
 
-`skills/_lib/scheduled_runner.py` owns one scheduled-child lifecycle: elapsed progress, UTF-8 output, stall detection, cancellation, terminal evidence, delivery checks and eligible Claude retries. `runner_adapters.py` translates native commands/events into `ProgressEvent`; it never schedules work or duplicates the lifecycle. `claude_progress.py` remains the compatible command/import facade. App-launcher Jobs still executes the existing scripts; all eleven checked-in production launchers still use Claude.
+`skills/_lib/scheduled_runner.py` owns one scheduled-child lifecycle: elapsed progress, UTF-8 output, stall detection, cancellation, terminal evidence, delivery checks and eligible Claude retries. `runner_adapters.py` translates native commands/events into `ProgressEvent`; it never schedules work or duplicates the lifecycle. `claude_progress.py` remains the compatible command/import facade. App-launcher Jobs still executes the existing scripts; all twelve checked-in production launchers still use Claude.
 
 ## Select a provider explicitly
 

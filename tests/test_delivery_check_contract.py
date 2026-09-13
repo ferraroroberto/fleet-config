@@ -253,6 +253,37 @@ check(purge_codes["no-stamp"] != 0,
       f"context-purge: a digest with no stamp is unestablished, not a pass "
       f"(saw {purge_codes['no-stamp']})")
 
+# --- prompt-audit: strict, delivered by a posted scan OR an update issue (#834) ---
+PA_SCRIPT = REPO / ".claude" / "skills" / "prompt-audit" / "delivery_check.py"
+pa_mod = load_module(PA_SCRIPT, "prompt_audit_delivery_check")
+PA_ISSUES = [ledger_issue(882, "prompt-audit ledger", "prompt-audit")]
+PA_SCAN = "<!-- prompt-audit-digest run=2026-09-13 status=complete scan=posted update-issue=none -->"
+PA_UPDATE = "<!-- prompt-audit-digest run=2026-09-13 status=complete scan=not-run update-issue=#900 -->"
+PA_PARTIAL = "<!-- prompt-audit-digest run=2026-09-13 status=partial scan=posted update-issue=none -->"
+PA_NO_UPDATE = "<!-- prompt-audit-digest run=2026-09-13 status=complete scan=not-run update-issue=none -->"
+PA_DRY = "<!-- prompt-audit-digest run=2026-09-13 status=complete scan=dry-run update-issue=none -->"
+
+pa_codes = characterize(pa_mod, audit_issue, {
+    "scan-posted": lambda f: setattr(f, "comments", [_live(2, PA_SCAN)]),
+    "update-mode": lambda f: setattr(f, "comments", [_live(2, PA_UPDATE)]),
+    "partial": lambda f: setattr(f, "comments", [_live(2, PA_PARTIAL)]),
+    "update-not-filed": lambda f: setattr(f, "comments", [_live(2, PA_NO_UPDATE)]),
+    "dry-run-stamp": lambda f: setattr(f, "comments", [_live(2, PA_DRY)]),
+    "stale": lambda f: setattr(f, "comments", [_live(30, PA_SCAN)]),
+    "no-stamp": lambda f: setattr(f, "comments", [_live(2, "## prompt-audit digest `status=complete`")]),
+    "other-caller-stamp": lambda f: setattr(f, "comments", [_live(2, COMPLETE)]),
+    "no-ledger": lambda f: (setattr(f, "issues", []), setattr(f, "comments", [])),
+    "gh-error": lambda f: setattr(f, "raise_on_view", SystemExit("gh issue view failed (exit 1)")),
+}, issues=PA_ISSUES)
+
+check(pa_codes["scan-posted"] == 0 and pa_codes["update-mode"] == 0,
+      f"prompt-audit: a complete posted scan and a complete update-mode run both exit 0 (saw {pa_codes})")
+for label in ("partial", "update-not-filed", "dry-run-stamp", "stale", "no-stamp",
+              "other-caller-stamp", "no-ledger", "gh-error"):
+    check(pa_codes[label] != 0, f"prompt-audit: {label} exits non-zero (saw {pa_codes[label]})")
+check(dd.parse_stamp(PA_UPDATE, prefix="prompt-audit-digest").get("update-issue") == "#900",
+      "stamp: hyphenated keys parse whole (update-issue=, not issue=)")
+
 # The two callers must disagree exactly where they are meant to, and nowhere else.
 check(audit_codes["partial-stamp"] == 0 and purge_codes["partial-stamp"] != 0,
       "the two callers differ on the stamp -- and only there -- which is the whole "
@@ -318,7 +349,8 @@ finally:
 
 
 # Both launchers must actually wire the post-condition, or the mechanism is theory.
-for label, script in (("audit-fleet", AUDIT_SCRIPT), ("context-purge", PURGE_SCRIPT)):
+for label, script in (("audit-fleet", AUDIT_SCRIPT), ("context-purge", PURGE_SCRIPT),
+                      ("prompt-audit", PA_SCRIPT)):
     bat = script.parent / "run-weekly.bat"
     text = bat.read_text(encoding="utf-8")
     check(cp.DELIVERY_CHECK_FLAG in text, f"{label}: run-weekly.bat passes {cp.DELIVERY_CHECK_FLAG}")

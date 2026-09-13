@@ -28,6 +28,11 @@ Two strictness levels, because the callers genuinely differ:
   failure, so without consulting the stamp a successful digest comment plus a
   silently failed ping would read as full success.
 
+A strict caller whose stamp proves delivery with fields other than
+`delivery=posted` passes its own ``delivered`` predicate (`/prompt-audit`:
+`scan=posted` or `update-issue=#N`, fleet-config#834). `status=complete` is
+required either way.
+
 Strictness is a **constructor argument, not a CLI flag**, on purpose:
 `claude_progress.run_delivery_check` invokes the script as
 `[sys.executable, script]` with no arguments, so any strictness that depended
@@ -51,7 +56,7 @@ import re
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional, Sequence
+from typing import Callable, Optional, Sequence
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import audit_issue  # noqa: E402
@@ -59,7 +64,19 @@ import audit_issue  # noqa: E402
 DEFAULT_MAX_AGE_HOURS = 12.0
 
 # `<!-- <prefix> run=... status=... unreached=N delivery=... -->`
-_STAMP_FIELD_RE = re.compile(r"([a-z_]+)=([^\s>]+)")
+_STAMP_FIELD_RE = re.compile(r"([a-z_-]+)=([^\s>]+)")
+
+# Returns None when the stamp proves delivery, else the one-line reason it does not.
+DeliveredPredicate = Callable[[dict], Optional[str]]
+
+
+def delivery_posted(stamp: dict) -> Optional[str]:
+    """Default strict predicate: the chat ping landed (`delivery=posted`)."""
+    delivery = stamp.get("delivery")
+    if delivery == "posted":
+        return None
+    return (f"reports delivery={delivery or 'unknown'} -- the chat post was not "
+            f"confirmed, so this run did not fully deliver")
 
 
 def _stamp_re(prefix: str) -> re.Pattern[str]:
@@ -124,6 +141,7 @@ def classify(
     *,
     require_complete: bool = False,
     stamp_prefix: str = "context-purge-digest",
+    delivered: DeliveredPredicate = delivery_posted,
     repo: str = "",
     number: object = "",
 ) -> Verdict:
@@ -157,21 +175,19 @@ def classify(
 
     status = stamp.get("status")
     if status != "complete":
-        unreached = stamp.get("unreached", "?")
+        unreached = f" ({stamp['unreached']} repo(s) unreached)" if "unreached" in stamp else ""
         return Verdict(
             False, "partial",
-            f"digest on {where} is marked status={status or 'unknown'} "
-            f"({unreached} repo(s) unreached) -- the run did not complete")
+            f"digest on {where} is marked status={status or 'unknown'}"
+            f"{unreached} -- the run did not complete")
 
-    delivery = stamp.get("delivery")
-    if delivery != "posted":
-        return Verdict(
-            False, "delivery-unconfirmed",
-            f"digest on {where} reports delivery={delivery or 'unknown'} -- the "
-            f"chat post was not confirmed, so this run did not fully deliver")
+    reason = delivered(stamp)
+    if reason is not None:
+        return Verdict(False, "delivery-unconfirmed", f"digest on {where} {reason}")
 
+    proof = " ".join(f"{k}={v}" for k, v in stamp.items() if k not in ("run", "status"))
     return Verdict(True, "confirmed",
-                   f"digest comment on {where} is {age:.1f}h old (status=complete, delivery=posted)")
+                   f"digest comment on {where} is {age:.1f}h old (status=complete, {proof})")
 
 
 # ---- gh-backed check --------------------------------------------------------
@@ -184,6 +200,7 @@ def check_delivery(
     max_age_hours: float = DEFAULT_MAX_AGE_HOURS,
     require_complete: bool = False,
     stamp_prefix: str = "context-purge-digest",
+    delivered: DeliveredPredicate = delivery_posted,
     now: Optional[dt.datetime] = None,
 ) -> Verdict:
     """Read the managed ledger issue and classify this run's delivery.
@@ -214,7 +231,7 @@ def check_delivery(
     return classify(
         comments, now, max_age_hours,
         require_complete=require_complete, stamp_prefix=stamp_prefix,
-        repo=repo, number=keep,
+        delivered=delivered, repo=repo, number=keep,
     )
 
 
@@ -226,6 +243,7 @@ def main_for(
     description: str,
     require_complete: bool = False,
     stamp_prefix: str = "context-purge-digest",
+    delivered: DeliveredPredicate = delivery_posted,
     default_max_age_hours: float = DEFAULT_MAX_AGE_HOURS,
     argv: Optional[list[str]] = None,
 ) -> int:
@@ -242,6 +260,7 @@ def main_for(
         max_age_hours=args.max_age_hours,
         require_complete=require_complete,
         stamp_prefix=stamp_prefix,
+        delivered=delivered,
     )
     print(verdict.detail)
     return verdict.exit_code

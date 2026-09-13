@@ -116,10 +116,10 @@ flowchart TB
     CONFIGMAP["config-map"]
     FLEETHEALTH["fleet-health\ncapture.py · ledger.py"]
     SOTAWATCH["sota-watch\nwatchlist.toml · watchlist.py"]
-    PROMPTAUDIT["prompt-audit\nrules.md · sources.toml · audit.py\nfreshness gate → lint + judgment → digest"]
+    PROMPTAUDIT["prompt-audit\nrules.md · sources.toml · audit.py · delivery_check.py\nfreshness gate → lint + judgment → digest"]
     OTHERFLEET["insights-weekly · learning-log"]
     CHIEF["chief\nstanding Board-chat brain — app-launcher-spawned session,\nnot for ad-hoc invocation"]
-    SCHEDULED["run-weekly.bat ×11\nscheduled Claude launchers"]
+    SCHEDULED["run-weekly.bat ×12\nscheduled Claude launchers"]
   end
   fskills -.->|cwd-scoped, Claude Code only| CLAUDE
   AUDITFLEET -->|invokes per repo| OTHERGLOBAL
