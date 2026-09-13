@@ -444,7 +444,16 @@ def _trigger_delayed_index(project_name: str) -> None:
 
     Detached and fail-open, same shape as ``session_index.py``'s own trigger:
     never blocks or delays the ``Stop`` hook, never raises.
+
+    Skipped inside a scheduled run: the delayed child would outlive the
+    provider inside the runner's owned job, turning a delivered run into exit
+    118, and be killed by its teardown before indexing anything
+    (fleet-config#911). The next interactive ``SessionStart`` indexes the
+    settled capture instead.
     """
+    if _lib.is_scheduled_run():
+        logger.info("Delayed index skipped: scheduled run; next SessionStart indexes")
+        return
     if not INDEXER.exists():
         return
     try:

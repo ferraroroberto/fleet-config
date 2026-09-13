@@ -10,7 +10,8 @@ digesting stays "once per conversation, after it ends" instead of "every turn".
 Generic + ``projects.toml``-driven: it indexes only if the session's project
 opted into capture (``capture = true``); otherwise a silent no-op. Detached and
 fail-open — it spawns the indexer in the background so session start is never
-delayed by hub latency, and never blocks or errors out.
+delayed by hub latency, and never blocks or errors out. Never spawns inside a
+scheduled run, whose owned job would count the detached child (fleet-config#911).
 
 Wired by the ``SessionStart`` hook in a project's ``.claude/settings.json``.
 """
@@ -33,6 +34,11 @@ def main() -> int:
     project = _lib.detect_project(_lib.cwd(payload))
     if project is None or not project.extra.get("capture"):
         return 0  # project not opted into capture — silent no-op
+    if _lib.is_scheduled_run():
+        # A detached indexer still digesting when a short scheduled run's
+        # provider exits is an owned descendant: exit 118, then killed by the
+        # job teardown (fleet-config#911). The next interactive session indexes.
+        return 0
     if not INDEXER.exists():
         return 0
     try:
