@@ -83,7 +83,6 @@ DIGEST_FINDINGS_CAP = 200
 COMMENT_CHAR_CAP = 60000  # GitHub rejects bodies over 65536
 NEUTRAL = "neutral"
 VERDICTS = ("unchanged", "changed", "new-guide", "not-checked")
-FINDING_VERDICTS = ("violation", "consider", "compliant", "unmeasured")
 
 # kind caps for R-14 — (unit, limit)
 SIZE_CAPS = {"claude-md": ("lines", 200), "rules": ("lines", 200),
