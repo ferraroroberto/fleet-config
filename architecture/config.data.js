@@ -256,7 +256,7 @@ window.CONFIG = {
     {
       "nm": "prompt-audit",
       "ds": "Audits every fleet instruction file (CLAUDE.md, AGENTS.md, rules, SKILL.md) against the vendors' current prompting guides — first…",
-      "sched": false
+      "sched": true
     },
     {
       "nm": "sota-watch",

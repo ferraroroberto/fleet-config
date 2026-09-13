@@ -379,6 +379,20 @@ upd, ustatus = pa.render_digest({"date": "d", "scan_ran": False, "update_issue":
                                  "sources": ["VERDICT=changed|id=s1|sha=y|marker=none|reason=sha x -> y"]}, RULES)
 check(ustatus == "complete" and "not run — rule-set stale, see #900" in upd and "`guides=changed`" in upd,
       "update mode: complete, scan not run, points at the update issue")
+check("<!-- prompt-audit-digest run=d status=complete scan=not-run update-issue=#900 -->" in upd,
+      f"update mode stamps scan=not-run and the update issue for delivery_check.py (got {upd[:200]!r})")
+check("<!-- prompt-audit-digest run=2026-09-13 status=partial scan=posted update-issue=none -->" in md,
+      "scan mode stamps status and scan=posted near the top")
+dmd, _ = pa.render_digest(dict(run, dry_run=True), RULES)
+check("scan=dry-run" in dmd and "scan=posted" not in dmd, "a dry run never stamps scan=posted")
+check(all(ord(c) < 128 for c in upd.splitlines()[1]), "the stamp line is pure ASCII")
+nmd, nstatus = pa.render_digest({"date": "d", "scan_ran": True, "rubric": rub,
+                                 "sources": ["VERDICT=not-checked|id=s1|sha=unmeasured|marker=unmeasured|reason=fetch failed"],
+                                 "plan": ["PLAN=r/a.md|action=scan|reason=new|sha=aaaaaaaaaaaa"],
+                                 "judgments": {"r/a.md": []}}, RULES)
+check(nstatus == "complete" and "`guides=not-checked`" in nmd
+      and "<!-- prompt-audit-digest run=d status=complete scan=posted update-issue=none -->" in nmd,
+      "every source not-checked still scans and stamps a delivered scan (#834)")
 
 # ---- prompt-drift issues: routing, tiers, living-backlog merge (fleet-config#833) ----
 

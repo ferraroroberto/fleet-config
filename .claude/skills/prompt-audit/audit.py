@@ -84,6 +84,7 @@ BLOCK_MARKER = "<!-- prompt-audit-ledger -->"
 LEDGER_CAP = 600  # entries; overflow is simply rescanned next run (the safe direction)
 DIGEST_FINDINGS_CAP = 200
 COMMENT_CHAR_CAP = 60000  # GitHub rejects bodies over 65536
+STAMP_PREFIX = "prompt-audit-digest"  # read by delivery_check.py
 NEUTRAL = "neutral"
 VERDICTS = ("unchanged", "changed", "new-guide", "not-checked")
 
@@ -827,8 +828,13 @@ def render_digest(run: dict, rules: Dict[str, dict], master_text: str = "", lite
     unmeasured, unmeasured_rules, findings = parts["unmeasured"], parts["unmeasured_rules"], parts["findings"]
     scan_ran = bool(run.get("scan_ran"))
     status = "partial" if unmeasured or unmeasured_rules else "complete"
+    scan = "dry-run" if run.get("dry_run") else ("posted" if scan_ran else "not-run")
+    # Machine-readable, ASCII, near the top so the comment-size cap never cuts it:
+    # the scheduled job's delivery_check.py reads it (fleet-config#834).
+    stamp = (f"<!-- {STAMP_PREFIX} run={run.get('date') or 'unknown'} status={status} scan={scan} "
+             f"update-issue={run.get('update_issue') or 'none'} -->")
 
-    out = [f"## prompt-audit digest — {run.get('date', '')}", "",
+    out = [f"## prompt-audit digest — {run.get('date', '')}", stamp, "",
            f"`status={status}` · `guides={guides}` · `rubric={str(run.get('rubric', ''))[:12]}`"
            + (" · **dry run — nothing written**" if run.get("dry_run") else ""), ""]
     out.append(f"**Guides:** {len(srcs)} sources — " + ", ".join(

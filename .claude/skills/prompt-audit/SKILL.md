@@ -1,6 +1,6 @@
 ---
 name: prompt-audit
-description: Audits every fleet instruction file (CLAUDE.md, AGENTS.md, rules, SKILL.md) against the vendors' current prompting guides — first checking whether those guides changed, then linting and judging each file — posts a ledger digest and files per-repo prompt-drift cleanup issues. E.g. "/prompt-audit", "/prompt-audit --dry-run", "audit our prompts against the latest guidance".
+description: Audits every fleet instruction file (CLAUDE.md, AGENTS.md, rules, SKILL.md) against the vendors' current prompting guides — first checking whether those guides changed, then linting and judging each file — posts a ledger digest and files per-repo prompt-drift cleanup issues. Also runs unattended weekly. E.g. "/prompt-audit", "/prompt-audit --dry-run", "audit our prompts against the latest guidance".
 ---
 
 # prompt-audit
@@ -35,6 +35,7 @@ No argument → the full run.
 - **Degrade one item, never the run.** A failed fetch degrades that source; a failed judgment agent degrades that repo's files; the run still posts its digest (`status=partial` when any planned file ended unmeasured).
 - **Poll to completion in this turn** (fleet-config#314). Any background agent or command is collected before moving on; never end the turn expecting to be resumed.
 - **Numbers come from `audit.py`.** Counts, verdicts, plan actions and the digest's tallies are its output — copy them, never estimate them.
+- **Unattended runs** (the weekly `run-weekly.bat` job, fleet-config#834) follow the same steps plus two gates: the rate gate before step 6's fan-out, and step 9's delivery assertion. Nobody can answer a question, so never ask one.
 
 ## Steps
 
@@ -103,6 +104,14 @@ Nothing to scan (`scan=0`) → skip steps 5–6; the digest still posts and list
 
 ### 6. Judgment pass
 
+**Rate gate first** (every run that dispatches workers):
+
+```
+<py> C:/Users/rober/.claude/skills/_lib/rate_gate.py check --threshold 70
+```
+
+`DECISION=OK` or `UNKNOWN` → dispatch. `PAUSE` → dispatch nothing yet; wait in place against the printed `WAIT_SECONDS` / `RESETS_AT` with a foreground, bounded wait (`Monitor`'s until-loop, never a backgrounded sleep), then re-check. **Cap: 3 pause cycles.** Still `PAUSE` after the third → judge nothing: every planned file is `null` in `judgments` (unmeasured, so the digest still posts as `status=partial` and names them), and step 9 prints the failure marker. Record the `DECISION=` line(s) for the report.
+
 Group the planned files by repo. Split `fleet-config` into three groups (the global file and its always-on files, `skills/`, `.claude/skills/`); repos with at most two small files may share one worker, up to eight repos per worker. Dispatch one **easy-tier** worker per group through the capability contract (tier intent: [`docs/model-tiers.md`](../../../docs/model-tiers.md); stay within host slots and that doc's concurrency caps). No reliable spawn-and-collect → judge the groups serially in this session and say so in the report. Collect every worker's terminal result before step 7.
 
 Brief each worker with exactly this, filled in:
@@ -160,13 +169,21 @@ The helper prints `DIGEST=status=complete|partial` on stderr. The digest carries
 
 A failed write is reported with its error; the run does not claim delivery without the `LEDGER_COMMENT=` URL.
 
-### 9. Report
+### 9. Delivery assertion and report
+
+Before the report, check what this run actually delivered. **Delivered** means all of: a `LEDGER_COMMENT=` URL from step 8.2; `DIGEST=status=complete`; and either a scan (step 8.3 ran with no `DRIFT=…|error=` line — zero findings is still a delivery) or, in update mode, the rule-set update issue filed or commented (`update_issue` is `#N`). Anything else — no comment URL, a `partial` digest, a drift error, update mode with no issue, the rate gate's pause cap — prints this literal line in the report, one reason, ASCII after the dash:
+
+```
+SCHEDULED-RUN-FAILED — <what was not delivered, one line>
+```
+
+The scheduled adapter maps that marker to exit `123`; the scheduled job's `delivery_check.py` independently re-reads the ledger for the same facts from the digest's `<!-- prompt-audit-digest … -->` stamp. Never print the marker on a run that delivered, and never on `--dry-run` (it writes nothing by design; the job's post-condition still fails it, which is correct).
 
 A few lines: `status`, `guides`, sources checked/not-checked, files scanned/skipped/unmeasured, violation/consider totals, the update issue (if any), the ledger comment URL, and each `DRIFT=` line (repo, issue, tier).
 
 ## Notes
 
-- **Where fixes go.** Violations become `prompt-drift` issues, the ninth `/cleanup-fleet` bucket (fleet-config#833): easy-tier issues ship through `/issue-yolo`, hard-tier ones stop for review, and every lane must pass `/context-purge`'s preservation harness (`check.py --base`). Considers are advisory and stay in the digest — the first fleet run put 152 of 255 of them on a single rule, far too noisy to become lanes. The weekly schedule is #834.
+- **Where fixes go.** Violations become `prompt-drift` issues, the ninth `/cleanup-fleet` bucket (fleet-config#833): easy-tier issues ship through `/issue-yolo`, hard-tier ones stop for review, and every lane must pass `/context-purge`'s preservation harness (`check.py --base`). Considers are advisory and stay in the digest — the first fleet run put 152 of 255 of them on a single rule, far too noisy to become lanes. It runs weekly unattended (`run-weekly.bat`, an app-launcher Job slotted before `cleanup-fleet-all`, #834) so the bucket is fresh when cleanup starts.
 - **Why a guide change stops the scan.** Scanning against rules known to be stale produces findings that the next rule-set would contradict. The update issue is `enhancement`, never a cleanup bucket, so a human always reviews the rule-set change (#831 decision log, 2026-09-11).
 - **Why audience, not host.** The same `rules.md` runs on any agent; which vendor's rules are primary is decided by who reads the file (`sources.toml` `[audiences.*]`), so a neutral file read by several agents gets single-vendor advice as `consider`, never `violation`.
 - **Shared text is filed once.** A finding whose line also sits in `project-scaffolding/CLAUDE.md` belongs to the master, with the repos that inherited it listed — never N copies for N divergent fixes. Same for `global-CLAUDE.md` text that also lives in the lite port's global instructions.
