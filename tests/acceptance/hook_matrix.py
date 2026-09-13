@@ -223,6 +223,36 @@ def run_hook_matrix() -> Tuple[int, int]:
          {"tool_name": "PowerShell", "cwd": "E:/automation/app-launcher",
           "tool_input": {"command": '& .\\.venv\\Scripts\\python.exe -c "1"; & .\\.venv\\Scripts\\python.exe foo.py'}},
          0),
+        # The clause split ignored quoting, so a quoted `a|python|b`
+        # alternation handed rule 3 a bare `python` clause. A segment that
+        # opens inside quotes right after a lone `|` is now read as text
+        # (fleet-config#885); every other quoted shape keeps its reading, so a
+        # string a shell will run still blocks.
+        *[(f"venv: quoted alternation naming the interpreter -> allow (fleet-config#885): {c}",
+           "venv_discipline",
+           {"tool_name": tool, "cwd": "E:/automation/app-launcher", "tool_input": {"command": c}},
+           0)
+          for tool, c in (
+              ("PowerShell", "Get-CimInstance Win32_Process | Where-Object { $_.Name -match 'msedge|chrome|python|webview|app-launcher|tray' } | Select-Object -First 2 -ExpandProperty Name"),
+              ("PowerShell", "Get-Process | Where-Object { $_.Name -match 'msedge|python' } | Select-Object -First 1 -ExpandProperty Name"),
+              ("Bash", "grep -E 'foo|python|bar' file"),
+              ("Bash", 'grep -E "a|pip|b" file'),
+              ("Bash", "jq '.[] | select(.name|test(\"python\"))'"),
+              ("Bash", "gh pr create --title 'fix: python|pip regex' --body-file body.md"),
+          )],
+        *[(f"venv: bare interpreter beside quoted text -> block (fleet-config#885): {c}",
+           "venv_discipline",
+           {"tool_name": "Bash", "cwd": "E:/automation/app-launcher", "tool_input": {"command": c}},
+           2)
+          for c in (
+              ".venv/Scripts/python.exe -V && python x.py",
+              "echo hi | python -",
+              "ls; python3 -m pip install x",
+              "grep -E 'a|b' x|python -",
+              "echo x|python -c 'a;b'",
+              'bash -c "cd sub; python x.py"',
+              "ssh host 'cd repo | pip install -r req.txt'",
+          )],
 
         # ---- bash_windows_path_guard (issue #246) ----
         ("windows_path_guard: unquoted drive path -> block",
