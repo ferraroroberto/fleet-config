@@ -92,45 +92,12 @@ sleep, one digest, exit.
 ## Telling a quiet lane from a hung one (fleet-config#638)
 
 A job log that stops growing is the most misread signal on a long unattended
-run — one lane once went silent for 19 minutes and, from outside the process,
-was indistinguishable from a hang. Both wrong calls cost: a false stall
-triggers intervention in a run that halts on residue, a missed one wastes
-hours of an unattended night. Work these in order — cheap deterministic
-checks first, the process probe last.
-
-1. **Read the clock correctly before measuring any silence.** The `[h:mm:ss]`
-   prefix in `E:\automation\app-launcher\webapp\jobs\<job>\<run_id>\output.log`
-   is **elapsed since the run started**, not wall-clock
-   (`claude_progress.py:282`, off `time.monotonic`). A last line reading
-   `[06:08]` says nothing about the time of day. The `<run_id>` directory is a
-   `YYYYMMDDTHHMMSS` wall-clock start stamp, so a line's real time is
-   `run_id + elapsed`; the log file's mtime against now is the true silence.
-2. **Silence shorter than 45 minutes is not a stall, by construction.**
-   `claude_progress.py` runs a watchdog (`DEFAULT_STALL_TIMEOUT_SECONDS`,
-   2700s) that kills a run whose stream has genuinely gone quiet, emits `⏱ no
-   stream activity for …` into the log, and exits `124`. A permanently hung
-   lane is therefore not a failure mode you have to catch by hand — had it
-   truly stalled, the adapter would have ended it and said so. (Overridable
-   per-run via `--stall-timeout` or `CLAUDE_PROGRESS_STALL_TIMEOUT`; `0`
-   disables it, so confirm the bound holds before leaning on it.)
-3. **The normal shape of a long silence is one slow tool call.** An agent
-   running a repo's verification gate sits inside a single call for several
-   minutes and emits no milestone until it returns. Suspect that before
-   suspecting a hang — the same reflex as "suspect buffering before a hang"
-   (dispatch brief point 2), one level up.
-4. **For positive proof, sample the right process.** The work happens in the
-   `claude.exe` **child** of `claude_progress.py`. Sample its CPU twice, ~20s
-   apart; a rising counter means the lane is working:
-
-   ```powershell
-   Get-CimInstance Win32_Process | Where-Object { $_.ParentProcessId -eq <adapter-pid> }
-   # claude.exe CPU 287.78 -> 288.06 across 20s => working, not hung
-   ```
-
-   **The adapter's own idleness proves nothing.** `claude_progress.py` sits
-   idle by design between milestone boundaries, so an idle adapter is the
-   normal resting state of a healthy lane — the intuitive check is the
-   misleading one.
+run — a false stall triggers intervention in a run that halts on residue, a
+missed one wastes an unattended night. Before calling a silent lane stalled,
+work the four ordered checks in [lane-silence.md](lane-silence.md): read the
+log's elapsed-not-wall-clock prefix, treat silence under the 45-minute
+watchdog as not a stall, suspect one slow tool call, then sample the
+`claude.exe` child's CPU — never the adapter's.
 
 ## Reaching the launcher (auth story)
 
@@ -151,7 +118,7 @@ Use it instead of hand-assembling `curl`/JSON for the operations that recur
 every poll:
 
 - `chief_ops.py board` — the ~12-line digest (column counts, live sessions
-  with status/age/agent, PR/job cards, Claude's 5h rate-limit line) in one call.
+  with status/age/agent, PR/job cards, the 5h rate-limit line) in one call.
   Add `--json` for the raw `/api/board` payload. A count shown as `?` (e.g.
   `backlog=?`) is **unknown**, not zero — its source (GitHub cache or
   session-host) couldn't be read, and the `unknown:` line below says why.
@@ -400,40 +367,12 @@ the worktrees (whose `.venv` is a junction into the primary's real venv). That
 buys the guarantee that the merged tree is what ran.
 
 **It also costs coverage, and the cost is invisible unless you report it.** A
-fresh checkout has none of the repo's gitignored runtime files and none of the
-host state keyed to a known path, so the tests that need either **skip** rather
-than fail, and pytest prints the same green as a run that covered more. On the
-2026-09-12 app-launcher round the skips went **17 → 19**, the whole delta being
-the `#444` real-agent pin. Its residual cause is **agent folder trust**: a
-never-opened directory paints Claude Code's trust prompt instead of the
-composer, and `--dangerously-skip-permissions` does not clear it
-(`app-launcher#932`, PR #937). It is not the gitignored
-`config/webapp_config.json` registry. A skip is not a pass.
-
-So a merge-verification report is only complete when it names that delta.
-Capture the baseline from the checkout that *has* the runtime files, then
-compare the fresh-checkout run against it — always with `-rs`, or the skips
-come back unnamed:
-
-```
-E:/automation/fleet-config/.venv/Scripts/python.exe skills/_lib/skip_delta.py capture <primary-run.txt> --label "primary checkout" --out <baseline.json>
-E:/automation/fleet-config/.venv/Scripts/python.exe skills/_lib/skip_delta.py compare <fresh-run.txt> --baseline <baseline.json>
-```
-
-Report-only, always exits 0. Relay `STATUS` (the count fact) **and** `SET` (the
-set fact) — they fail independently, and each has its own unknown: `UNKNOWN`
-means no count was established, `UNCONFIRMED` means the skips were never named
-so a same-count-different-set loss can't be ruled out. Neither may be folded
-into a green. `STATUS=INCREASED` or `SET=CHANGED` means the gate covered less
-than the baseline; every `NEW=` line names a test that stopped running, and
-those belong in what you relay to Roberto verbatim.
-
-**Never close the gap by copying a live config into a scratch checkout.** That
-puts real credentials in a throwaway tree, which is exactly what
-`app-launcher#907`/PR #911 exist to prevent. It would not close this delta
-anyway, and neither may a gate answer the trust prompt or write the user's
-global `~/.claude.json`. Accepting reduced coverage and saying so is the
-correct behaviour.
+fresh checkout lacks the repo's gitignored runtime files and host state, so
+tests needing either skip rather than fail — a skip is not a pass. A
+merge-verification report is only complete when it names that skip delta
+(`skills/_lib/skip_delta.py` capture/compare, relaying `STATUS` **and** `SET`),
+and never closes the gap by copying a live config into a scratch checkout. The
+procedure, its unknown states and the measured incident: [merge-verification.md](merge-verification.md).
 
 **Verify from outside; never arbitrate between two agents' conflicting
 accounts.** When one worker reports that another overstepped its brief, check
@@ -479,8 +418,8 @@ step-5 state gate — two candidates already closed when the gate waved them
 through, with evidence tables, a named root cause and a derived "≈3h of lanes
 wasted". Every word came from one unchecked unit conversion: GitHub's UTC
 `closedAt` read as local time (the clock rule lives in `global-CLAUDE.md`'s
-recurring gotchas; elapsed-vs-wall-clock job logs are item 1 of "Telling a
-quiet lane from a hung one"). That run's *own* lanes had closed both issues,
+recurring gotchas; elapsed-vs-wall-clock job logs are item 1 of
+[lane-silence.md](lane-silence.md)). That run's *own* lanes had closed both issues,
 hours **after** the gate ran. Closed not-planned the next morning. The
 arithmetic is not the lesson — every later check re-confirmed the
 **conclusion** and never the **premise**: re-running `issue_state_gate.py
