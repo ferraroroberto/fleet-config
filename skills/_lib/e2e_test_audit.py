@@ -358,6 +358,28 @@ def split_resolved_dirs(repo_root: Path, test_dirs: List[str]) -> tuple:
     return existing, missing
 
 
+_COLLECTED_TOTAL_RE = re.compile(r"^(\d+) tests? collected", re.MULTILINE)
+_COLLECTED_PER_FILE_RE = re.compile(r"^\S+\.py: (\d+)$", re.MULTILINE)
+
+
+def parse_collected_count(stdout: str) -> Optional[int]:
+    """Node count from `pytest --collect-only -q` output, or None.
+
+    The `N tests collected` total wins when present. A repo whose `addopts`
+    already carries `-q` runs at `-qq`, where pytest prints only per-file
+    `tests/e2e/test_x.py: N` lines and no total — those are summed instead
+    (fleet-config#900: task-os and whatsapp-radar read "not measured"). Output
+    with neither shape is None, never a guessed zero.
+    """
+    m = _COLLECTED_TOTAL_RE.search(stdout)
+    if m:
+        return int(m.group(1))
+    per_file = _COLLECTED_PER_FILE_RE.findall(stdout)
+    if per_file:
+        return sum(int(n) for n in per_file)
+    return None
+
+
 def target_ratio(total_tests: int, target: int) -> float:
     if target <= 0:
         return 0.0
@@ -446,15 +468,15 @@ def collect_pytest_node_count(repo_root: Path, test_dirs: List[str]) -> Optional
             f"{repo_root} ({type(exc).__name__}: {exc})\n"
         )
         return None
-    m = re.search(r"^(\d+) tests? collected", res.stdout, re.MULTILINE)
-    if not m:
+    count = parse_collected_count(res.stdout or "")
+    if count is None:
         tail = (res.stdout or res.stderr or "").strip().replace("\n", " ")[-200:]
         sys.stderr.write(
-            f"e2e_test_audit: node count not measured — no 'N tests collected' line in "
-            f"pytest output for {repo_root} (exit {res.returncode}): {tail!r}\n"
+            f"e2e_test_audit: node count not measured — neither an 'N tests collected' line "
+            f"nor per-file 'path.py: N' lines in pytest output for {repo_root} "
+            f"(exit {res.returncode}): {tail!r}\n"
         )
-        return None
-    return int(m.group(1))
+    return count
 
 
 def _load_ux_surface(repo_root: Path) -> List[str]:

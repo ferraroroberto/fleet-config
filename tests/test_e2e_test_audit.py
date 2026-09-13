@@ -277,6 +277,28 @@ check(m.coverage_gaps(["/", "/settings", "/billing"], TEXT) == ["/billing"],
 check(m.coverage_gaps([], TEXT) == [], "no declared views -> no gaps")
 
 
+# ---- parse_collected_count (fleet-config#900) -------------------------------
+
+check(m.parse_collected_count("tests/e2e/test_a.py::test_x\n\n12 tests collected in 0.4s\n") == 12,
+      "parse_collected_count: the 'N tests collected' total is read")
+check(m.parse_collected_count("1 test collected in 0.1s\n") == 1,
+      "parse_collected_count: singular 'test collected' is read")
+QQ_OUTPUT = (
+    "tests/e2e/test_story_10_search.py: 1\n"
+    "tests/e2e/test_ios_safe_area.py: 4\n"
+    "tests/e2e/test_smoke.py: 5\n"
+    "\n"
+    "[e2e] browser sweep: no helper processes seen (scope E:\\automation\\task-os)\n"
+)
+check(m.parse_collected_count(QQ_OUTPUT) == 10,
+      "parse_collected_count: -qq per-file 'path.py: N' lines are summed when no total line exists")
+check(m.parse_collected_count("tests/e2e/test_a.py: 3\n\n7 tests collected in 0.2s\n") == 7,
+      "parse_collected_count: the total line wins over per-file lines")
+check(m.parse_collected_count("ERROR collecting tests/e2e/test_a.py\nno tests ran\n") is None,
+      "parse_collected_count: neither shape -> None, never a guessed zero")
+check(m.parse_collected_count("") is None, "parse_collected_count: empty output -> None")
+
+
 # ---- target_ratio ------------------------------------------------------------
 
 check(m.target_ratio(30, 15) == 2.0, "double the target ratio")
