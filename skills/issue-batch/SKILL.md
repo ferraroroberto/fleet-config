@@ -197,8 +197,10 @@ Workflow:
 
 1. cd to E:\automation\<repo>.
 2. Invoke the /issue-start skill with: `/issue-start <N> now`
-   - This handles: pre-flight, issue read, CLAUDE.md read, main sync,
-     branch cut, and the hand-off to implementation in fast mode.
+   - This handles: the step-0 repo claim (`worktree_claim.py acquire` —
+     follow its `MODE=`; a `WORKTREE=` path is where you build), pre-flight,
+     issue read, CLAUDE.md read, main sync, branch cut, and the hand-off to
+     implementation in fast mode.
 3. Build the change.
 4. Run the project's verification gate (per its CLAUDE.md).
 5. Run the /e2e skill (skills/e2e/SKILL.md): proportionate e2e for this

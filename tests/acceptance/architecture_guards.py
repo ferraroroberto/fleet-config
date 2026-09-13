@@ -342,8 +342,10 @@ def _unattended_worktree_mandate_check() -> Tuple[int, int]:
     being served live -- that is what broke the running launcher on 2026-07-30.
     Four skills carry the rule in prose, which a context purge or a well-meaning
     rewrite can quietly drop; this pins it. Checks the flag is named in each,
-    and that `/issue-start` still keys on the launcher's own session variable
-    rather than some re-derived heuristic. Returns the failure count.
+    that `/issue-start` still keys on the launcher's own session variable
+    rather than some re-derived heuristic, and that the skills handing off to
+    `/issue-start` still reach its step-0 claim (#894). Returns the failure
+    count.
     """
     check = _Checker()
     flag = "--force-worktree"
@@ -367,6 +369,25 @@ def _unattended_worktree_mandate_check() -> Tuple[int, int]:
     check(
         "worktree mandate: acquire actually implements --force-worktree",
         'print("MODE=worktree")' in wc and "force_worktree" in wc,
+    )
+
+    # A skill that *paraphrases* /issue-start instead of pointing at it drops
+    # step 0 -- /issue-yolo's Phase 2 summary did, and an app-launcher lane
+    # built in the live primary checkout (#894). Pin the pointer, not the prose.
+    yolo = (REPO / "skills" / "issue-yolo" / "SKILL.md").read_text(encoding="utf-8")
+    phase2 = yolo.partition("### Phase 2")[2].partition("### Phase 3")[0]
+    check(
+        "worktree mandate: /issue-yolo Phase 2 makes worktree_claim.py acquire its first step (#894)",
+        "worktree_claim.py acquire" in phase2 and "APP_LAUNCHER_SESSION_ID" in phase2,
+    )
+    check(
+        "worktree mandate: /issue-yolo Phase 2 does not restate /issue-start's git steps (#894)",
+        not any(step in phase2 for step in ("git checkout main", "git pull --ff-only", "git checkout -b")),
+    )
+    issue_add = (REPO / "skills" / "issue-add" / "SKILL.md").read_text(encoding="utf-8")
+    check(
+        "worktree mandate: /issue-add's one-shot hand-off starts at /issue-start step 0 (#894)",
+        "steps 1–6" not in issue_add and "steps 0–6" in issue_add,
     )
 
     return check.failures, check.total

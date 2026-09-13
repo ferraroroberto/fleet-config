@@ -62,16 +62,19 @@ turn. Do **not** stop.
 
 ### Phase 2 — Branch + build (`/issue-start now` flow)
 
-Run the `/issue-start <N> now` flow:
-- Pre-flight: must be in a git repo, working tree must be clean (commit/stash
-  any unrelated dirt first or stop), warn if already on a feature branch.
-- Sync the main branch: detect main (`git symbolic-ref refs/remotes/origin/HEAD`,
-  fall back to `main`), `git checkout main`, `git pull --ff-only`.
-- Cut the branch: prefix from label (`fix/` for `bug`, `feat/` for
-  `enhancement`, `chore/`, `docs/`); slug from the title; name
-  `<prefix>/<N>-<slug>`.
-- Build the change end-to-end. Forced fast mode regardless of the issue's
-  label — no plan-approval gate.
+Open [issue-start](../issue-start/SKILL.md) and run its steps **0 through 6** as
+`/issue-start <N> now` — from that file, never from memory or a summary. A
+paraphrase of those steps dropped step 0 and put a launcher lane's branch in
+the live primary checkout (fleet-config#894); delegate, don't restate.
+
+- **Step 0 is the first action, and a hard gate:**
+  `worktree_claim.py acquire . --issue <N>`, plus `--force-worktree` whenever
+  `APP_LAUNCHER_SESSION_ID` is set (exact command in that step). No `MODE=`
+  line printed → stop; do not touch a branch. `MODE=worktree` → step 5's
+  `setup-worktree`, `cd` into the printed `WORKTREE=` path, and run every
+  remaining phase (validate, ship) from there.
+- Fast mode is forced regardless of the issue's label — no plan-approval gate.
+- Build the change end-to-end.
 
 ### Phase 3 — Validate hard *(the non-negotiable phase)*
 
