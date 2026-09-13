@@ -356,7 +356,8 @@ check("`guides=not-checked`" in md and "`s2` **not-checked** — fetch failed" i
 check("scanned 2, skipped 1 (unchanged), unmeasured 1" in md, f"scan partition counts (got {md!r})")
 check("- `r/d.md`" in md.split("### Unmeasured", 1)[-1], "unmeasured file listed as unmeasured")
 check("Skipped — unchanged" in md and "- `r/c.md`" in md, "skipped file listed as skipped")
-check("**Findings:** 1 violation, 0 consider, across 1 files" in md, "compliant verdicts are not findings")
+check("**Findings in scanned files:** 1 violation, 0 consider, across 1 files — skipped files keep" in md,
+      "compliant verdicts are not findings, and a run with skips never reads as a fleet total")
 shared_run = {"date": "d", "rubric": rub, "scan_ran": True, "sources": [],
               "plan": ["PLAN=a/CLAUDE.md|action=scan|reason=new|sha=1", "PLAN=b/CLAUDE.md|action=scan|reason=new|sha=2"],
               "judgments": {k: [{"rule": "R-26", "verdict": v, "line": 5, "text": "## Streamlit conventions for apps"}]

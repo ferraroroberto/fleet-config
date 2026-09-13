@@ -818,9 +818,11 @@ def render_digest(run: dict, rules: Dict[str, dict], master_text: str = "", lite
     tally: Dict[str, Dict[str, int]] = {}
     for f in findings:
         tally.setdefault(f["rule"], {"violation": 0, "consider": 0})[f["verdict"]] += 1
-    out += ["", f"**Findings:** {sum(t['violation'] for t in tally.values())} violation, "
+    carried = (" — skipped files keep the findings of the digest that last scanned them, "
+               "so this is not a fleet total") if skip else ""
+    out += ["", f"**Findings in scanned files:** {sum(t['violation'] for t in tally.values())} violation, "
                 f"{sum(t['consider'] for t in tally.values())} consider, across "
-                f"{len({f['path'] for f in findings})} files", ""]
+                f"{len({f['path'] for f in findings})} files{carried}", ""]
     if tally:
         out += ["| rule | violation | consider |", "|---|---|---|"]
         out += [f"| {r} {rules.get(r, {}).get('title', '')} | {t['violation']} | {t['consider']} |"
