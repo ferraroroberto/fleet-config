@@ -350,5 +350,23 @@ const check = (cond, msg) => { console.log((cond ? 'OK   ' : 'FAIL ') + msg); if
   }
 }
 
+// --- Case 11: a prompt-drift validator runs the preservation gate (#833) ----
+// Only that bucket's brief carries it, and a rejection there is an ordinary
+// validator rejection: one retry, then escalation.
+{
+  const { sink, agentImpl } = promptSpy(l => reply(l, { validateFail: l.startsWith('prompt-drift:') }))
+  sink.args = { issuesByBucket: { 'prompt-drift': ISSUES.documentation.slice(0, 1), bug: ISSUES.bug } }
+  const res = await makeRunner(agentImpl, sink)
+  const pd = Object.entries(sink.prompts).find(([l]) => l.startsWith('prompt-drift:validate:'))
+  const other = Object.entries(sink.prompts).find(([l]) => l.startsWith('bug:validate:'))
+  check(!!pd && /context-purge\/check\.py --base origin\//.test(pd[1]) && /directive/.test(pd[1]),
+    'a prompt-drift validator is briefed with check.py --base and the directive-inventory walk')
+  check(!!other && !/context-purge\/check\.py/.test(other[1]), 'other buckets are not given the preservation gate')
+  const r = res.buckets[0].results[0]
+  check(r.status === 'escalated' && r.round === 2 &&
+    sink.order.filter(l => l.startsWith('prompt-drift:validate:')).length === 2,
+    'a failed preservation gate retries once, then escalates')
+}
+
 console.log(failures === 0 ? '\nALL CONTROL-FLOW CHECKS PASS' : `\n${failures} CHECK(S) FAILED`)
 process.exit(failures === 0 ? 0 : 1)

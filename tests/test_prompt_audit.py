@@ -380,6 +380,80 @@ upd, ustatus = pa.render_digest({"date": "d", "scan_ran": False, "update_issue":
 check(ustatus == "complete" and "not run — rule-set stale, see #900" in upd and "`guides=changed`" in upd,
       "update mode: complete, scan not run, points at the update issue")
 
+# ---- prompt-drift issues: routing, tiers, living-backlog merge (fleet-config#833) ----
+
+MASTER = "# Scaffold\n\n## Streamlit conventions for every app\n\n- Keep secrets in the env file always.\n"
+SKILL_TXT = ('---\nname: s\ndescription: Does a thing, e.g. "/s".\n---\n\n# s\n\n'
+             "<!-- map:mermaid:start -->\nClaude diagram\n<!-- map:mermaid:end -->\n\nRoute Claude requests here.\n")
+drift_findings = [
+    {"path": "project-scaffolding/CLAUDE.md", "rule": "R-26", "verdict": "violation", "line": 3,
+     "text": "## Streamlit conventions for every app", "note": "procedure inline"},
+    {"path": "alpha/CLAUDE.md", "rule": "R-26", "verdict": "consider", "line": 9,
+     "text": "## Streamlit conventions for every app", "note": "inherited"},
+    {"path": "beta/CLAUDE.md", "rule": "R-26", "verdict": "violation", "line": 12,
+     "text": "## Streamlit conventions for every app", "note": "inherited"},
+    {"path": "alpha/CLAUDE.md", "rule": "R-17", "verdict": "violation", "line": 3,
+     "text": "Route Claude requests through the hub.", "note": "one vendor named"},
+    {"path": "alpha/CLAUDE.md", "rule": "R-13", "verdict": "consider", "line": 5,
+     "text": "Never fork a local copy.", "note": "negative framing"},
+    {"path": "gamma/.claude/skills/s/SKILL.md", "rule": "R-17", "verdict": "violation", "line": 9,
+     "text": "Claude diagram", "note": "inside the marked block"},
+    {"path": "gamma/.claude/skills/s/SKILL.md", "rule": "R-15", "verdict": "violation", "line": 3,
+     "text": 'description: Does a thing, e.g. "/s".', "note": "prose"},
+    {"path": "fleet-config/global-CLAUDE.md", "rule": "R-03", "verdict": "violation", "line": 4,
+     "text": "Always double-check the result.", "note": "forced re-check"},
+]
+texts = {"gamma/.claude/skills/s/SKILL.md": SKILL_TXT, "alpha/CLAUDE.md": "# a\n"}
+per_repo = pa.drift_items(drift_findings, RULES, texts, MASTER, "")
+check(sorted(per_repo) == ["alpha", "fleet-config", "gamma", "project-scaffolding"],
+      f"violations route to their repo; considers alone file nothing (got {sorted(per_repo)})")
+shared = per_repo["project-scaffolding"]
+check(len(shared) == 1 and shared[0]["propagate"] == ["alpha", "beta"] and shared[0]["line"] == 3,
+      f"a line shared with the master is filed once there, propagating to every sister copy (got {shared})")
+check("beta" not in per_repo and all(i["rule"] != "R-26" for i in per_repo["alpha"]),
+      "neither sister's issue lists the shared line")
+check([i["rule"] for i in per_repo["alpha"]] == ["R-17"], "a consider never becomes a cleanup item")
+check(shared[0]["tier"] == "hard" and per_repo["fleet-config"][0]["tier"] == "hard",
+      "the scaffolding master and the global file are hard tier whatever the rule's own tier")
+check(per_repo["alpha"][0]["tier"] == "easy", "an easy rule in an ordinary file stays easy")
+gamma = {i["rule"]: i["tier"] for i in per_repo["gamma"]}
+check(gamma == {"R-17": "hard", "R-15": "easy"},
+      f"a fix inside a marked block is hard; description prose around the triggers stays easy (got {gamma})")
+check(pa.in_protected_span(SKILL_TXT, 2, "R-17") and not pa.in_protected_span(SKILL_TXT, 14, "R-17"),
+      "frontmatter lines are protected for every rule but the description-prose one")
+
+rub12 = "c" * 64
+body1, c1 = pa.merge_drift("", per_repo["alpha"], {"alpha/CLAUDE.md"}, set(), RULES, "2026-09-13", rub12)
+check(c1["new"] == 1 and c1["tier"] == "easy" and c1["open"] == 1, f"first run creates the item (got {c1})")
+check("**Tier (`/cleanup-fleet` prompt-drift rule): easy** — 1 open item(s): 1 easy, 0 hard." in body1,
+      "the body states the issue's tier for the cleanup scorer")
+check(pa.parse_drift_body(body1)[0][0]["rule"] == "R-17", "an item round-trips through its hidden identity")
+check(".." not in pa.render_drift_item(dict(per_repo["alpha"][0], note="ends in a period."), RULES, "d"),
+      "a note that already ends in a period is not doubled")
+ticked = body1.replace("- [ ] **`CLAUDE.md:3`**", "- [x] **`CLAUDE.md:3`**")
+moved = [dict(per_repo["alpha"][0], line=7)]
+body2, c2 = pa.merge_drift(ticked, moved, {"alpha/CLAUDE.md"}, set(), RULES, "2026-09-20", rub12)
+check(body2.count("R-17") == body1.count("R-17") and "- [x] **`CLAUDE.md:3`**" in body2 and c2["new"] == 0,
+      "a second run merges into the same item and preserves the tick (no duplicate)")
+check(c2["tier"] == "none" and len(pa.parse_drift_body(body2)[1]) == 2, "the run log gains one line per run")
+body3, c3 = pa.merge_drift(body1, moved, {"alpha/CLAUDE.md"}, set(), RULES, "2026-09-20", rub12)
+check("**`CLAUDE.md:7`**" in body3 and c3["matched"] == 1, "an unticked re-matched item refreshes its line number")
+body4, c4 = pa.merge_drift(body1, [], set(), set(), RULES, "2026-09-20", rub12)
+check(c4["kept"] == 1 and c4["not_resurfaced"] == 0 and "not re-surfaced 2026" not in body4,
+      "an item for a file not rescanned (unchanged) is kept as it is")
+body5, c5 = pa.merge_drift(body1, [], {"alpha/CLAUDE.md"}, set(), RULES, "2026-09-20", rub12)
+check(c5["not_resurfaced"] == 1 and "- [ ] " in body5 and "not re-surfaced 2026-09-20" in body5 and c5["tier"] == "none",
+      "a finding gone from a rescanned file is tagged, never ticked or deleted, and no longer counts as open")
+body6, c6 = pa.merge_drift(body1, [], {"alpha/CLAUDE.md"}, {("alpha/CLAUDE.md", "R-17")}, RULES, "2026-09-20", rub12)
+check(c6["kept"] == 1 and "not re-surfaced 2026" not in body6, "an item whose rule was unmeasured this run is kept, not tagged")
+sbody, _ = pa.merge_drift("", shared, {"project-scaffolding/CLAUDE.md", "alpha/CLAUDE.md", "beta/CLAUDE.md"},
+                          set(), RULES, "2026-09-13", rub12)
+narrowed = [dict(shared[0], propagate=["alpha"])]
+sbody2, _ = pa.merge_drift(sbody, narrowed, {"project-scaffolding/CLAUDE.md", "alpha/CLAUDE.md"}, set(),
+                           RULES, "2026-09-20", rub12)
+check("Propagate to: alpha, beta." in sbody2, "a sister not rescanned this run stays on the propagate list")
+check(pa.DRIFT_KIND in __import__("audit_issue").KINDS, "prompt-drift is a managed kind")
+
 # ---- contracts: rules.md, sources.toml, vendor neutrality ----
 
 check(sorted(r for r, v in RULES.items() if v["detect"] == "lint") == pa.LINT_RULES,

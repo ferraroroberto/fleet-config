@@ -7,9 +7,9 @@ description: Take one bucket of audit findings (a label like documentation, drif
 
 **Capability preflight:** read [workflow-capabilities](../../../docs/workflow-capabilities.md) and bind dispatch, results, waits, cancellation, model tiers and questions to this session’s actual tools before proceeding. Tool names below are conditional Claude examples; the contract governs adaptation. Keep this skill’s worktree, independent-review, human-review and shipping gates.
 
-**Goal:** `/audit-fleet` *finds* and files codebase findings, bucketed into seven labels, and `/design-sweep` files an eighth (`design-drift`); this skill *fixes* one bucket fleet-wide in a single pass. Pick a bucket → gather every open issue carrying that label → score each for complexity → deploy **one background sub-agent per repo**, sized via the easy/hard tier policy (`docs/model-tiers.md`) → aggregate.
+**Goal:** `/audit-fleet` *finds* and files codebase findings, bucketed into seven labels, `/design-sweep` files an eighth (`design-drift`) and `/prompt-audit` a ninth (`prompt-drift`); this skill *fixes* one bucket fleet-wide in a single pass. Pick a bucket → gather every open issue carrying that label → score each for complexity → deploy **one background sub-agent per repo**, sized via the easy/hard tier policy (`docs/model-tiers.md`) → aggregate.
 
-**`security` is not a cleanup bucket.** `/codebase-audit`'s seven finding buckets (incl. `slop`) are all queued here; `security` is the exception — self-healed inline by `/codebase-audit` itself (step 8b: redacted issue + auto-fix + auto-merge, or escalate on failure). `/design-sync`'s eighth queued bucket is `design-drift`; its sibling `cert-drift` is likewise **review-only** (a tailnet-cert migration must never be auto-applied). A `security` or `cert-drift` label never appears in this skill.
+**`security` is not a cleanup bucket.** `/codebase-audit`'s seven finding buckets (incl. `slop`) are all queued here; `security` is the exception — self-healed inline by `/codebase-audit` itself (step 8b: redacted issue + auto-fix + auto-merge, or escalate on failure). `/design-sync`'s eighth queued bucket is `design-drift`; its sibling `cert-drift` is likewise **review-only** (a tailnet-cert migration must never be auto-applied). `/prompt-audit`'s `prompt-drift` is the ninth, and it **is** queued — its tier rule and preservation gate below keep an instruction-file rewrite from dropping a directive. A `security` or `cert-drift` label never appears in this skill.
 
 **One agent per repo, never two:** the audit files exactly one managed issue per (repo, bucket), so one issue → one repo → one agent → one branch → one PR. Two agents on one checkout collide, so the skill hard-caps at one agent per repo per run and defers extras.
 
@@ -22,7 +22,7 @@ description: Take one bucket of audit findings (a label like documentation, drif
 
 `/cleanup-fleet [<bucket>] [<mode>]` — both optional, order-independent.
 
-**Bucket** — fuzzy-matched to one of the eight *queued* audit labels (case-insensitive; voice-dictation friendly):
+**Bucket** — fuzzy-matched to one of the nine *queued* audit labels (case-insensitive; voice-dictation friendly):
 
 | Says | Label |
 |------|-------|
@@ -34,10 +34,11 @@ description: Take one bucket of audit findings (a label like documentation, drif
 | `slop`, `bloat`, `ai-slop` | `slop` |
 | `bug`, `bugs` | `bug` |
 | `design`, `design-drift`, `css`, `css-drift` | `design-drift` |
+| `prompt`, `prompt-drift`, `prompting` | `prompt-drift` |
 
 (`security` is intentionally absent — self-healed inline by `/codebase-audit`; `cert-drift` is likewise absent — it's `/design-sync`'s review-only kind, never auto-fixed here.)
 
-If **no bucket** is given → run step 2's count query, then ask through the available user-input channel, listing the eight queued buckets each with its **live open-issue count**, and let the user pick.
+If **no bucket** is given → run step 2's count query, then ask through the available user-input channel, listing the nine queued buckets each with its **live open-issue count**, and let the user pick.
 
 **Mode** — `hard` (default) or `easy` / `silent`. (This is the CLI argument, distinct from the per-issue complexity *tier* below — always read as "`hard` mode" vs. "hard-tier issue" to keep the two straight.)
 
@@ -69,7 +70,7 @@ Parse the args (order-independent): the mode token is `hard`/`easy`/`silent`; an
 E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/gh_issue_fetch.py fetch
 ```
 
-Tally open issues per bucket label (drop `audit-meta` rows; a `security` or `cert-drift` row should never appear — neither is queued here — but drop them too if one somehow exists), then ask through the available user-input channel, listing the eight queued buckets with counts.
+Tally open issues per bucket label (drop `audit-meta` rows; a `security` or `cert-drift` row should never appear — neither is queued here — but drop them too if one somehow exists), then ask through the available user-input channel, listing the nine queued buckets with counts.
 
 ### 3. Fetch candidates — direct Issues API, one repo-scoped call per repo
 
@@ -95,6 +96,7 @@ Read each selected issue's title + body (for an audit bucket issue, also weigh t
 - **easy tier:** narrow surface, mechanical, clear acceptance, no design decision. Doc fixes, a handful of stale-code deletions, a missing README flag, a rename, a few tightly-scoped checklist items.
 - **hard tier:** multi-module, real design choices, a refactor, an unbounded body, or a **mixed** checklist (trivial *and* hard items together → treat the whole issue as hard-tier; it absorbs the easy parts too).
 - **`design-drift` specifically:** pure token/palette/spacing drift is easy-tier; any **structural** finding — a hand-rolled nav, a forked or re-authored vendored component, a layout rewrite — is hard-tier. `/design-sync`'s rule is *never re-author nav/components* (reuse the vendored snippet, don't rewrite), so a `design-drift` issue carrying one is worked build-and-stop for review, never auto-merged.
+- **`prompt-drift` specifically** (the one home of this rule; `/cleanup-fleet-all` links here). Tier follows how consequential the rewrite is, not which model runs it (`docs/model-tiers.md`). **Easy:** soften ALL-CAPS, delete a verification / re-check / "if in doubt" line, fix a description to third person, add an agent-neutrality marker, trim a time-sensitive phrase. **Hard (build-and-stop):** remove or restructure a step list, resolve a contradiction, any change to `global-CLAUDE.md` or `project-scaffolding/CLAUDE.md`, any fix touching a double-quoted trigger phrase or a marked block. `/prompt-audit` tags every checklist item `· easy` / `· hard` by this rule and states the issue's tier in its body; take that line as the score, and a mixed checklist is hard per the rounding rule below.
 
 When genuinely on the fence, round **up** to hard-tier in `hard` mode (a human will still review it) and **down**-or-defer in `easy`/`silent` mode (never auto-merge something you weren't sure about).
 
@@ -183,6 +185,14 @@ HARD RULES — both are live-incident scars, never work around them:
    chat tool (search/send/etc.) to find a chat or post the ping — the helper
    resolves the chat from projects.toml; choosing one yourself is a security
    violation and may post to the wrong chat.
+   prompt-drift issues only (label prompt-drift): Phase 3 must also pass the
+   preservation gate — from the worktree root, exit 0 required:
+     E:/automation/fleet-config/.venv/Scripts/python.exe E:/automation/fleet-config/.claude/skills/context-purge/check.py --base origin/<default-branch>
+   then walk each edited instruction file's directive inventory: every rule,
+   prohibition, path, command and quoted trigger in the old text is still
+   discharged by the new. A FAIL, an UNKNOWN (exit 3) or an undischarged
+   directive is a Phase 3 failure, never a warning. Quote check.py's
+   PASS/FAIL lines in the PR body's Validation section.
 3. If validation (Phase 3) fails at any point: STOP, do not push/merge, and
    report the failure. YOLO means "no plan gate", not "no safety". Then clean
    up after yourself — the open issue is the durable record, the branch is not
@@ -228,6 +238,11 @@ HARD RULES — both are live-incident scars, never work around them:
 3. Build the change.
 4. Run the project's verification gate (per its CLAUDE.md — e.g.
    `C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe -File scripts/verify-before-ship.ps1`).
+   prompt-drift issues only (label prompt-drift): also run the preservation
+   gate from the worktree root and walk each edited instruction file's
+   directive inventory, exactly as prompt 8a states; a FAIL or UNKNOWN is
+   Verification: FAIL.
+     E:/automation/fleet-config/.venv/Scripts/python.exe E:/automation/fleet-config/.claude/skills/context-purge/check.py --base origin/<default-branch>
 5. Commit your work on the branch — git add the files you changed and git
    commit them (conventional `type: subject` message, no AI-attribution
    trailer). Your handoff artefact is a committed branch, not a dirty working

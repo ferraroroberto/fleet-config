@@ -110,4 +110,68 @@ check(cp.check("# plain\n", "# plain, shorter\n") == [],
 # ---- token estimate ----
 check(cp.est_tokens("x" * 400) == 100, "est_tokens ~ chars/4")
 
+# ---- --base: every changed instruction file on a branch (fleet-config#833) ----
+check(cp.is_instruction_file("CLAUDE.md") and cp.is_instruction_file("a/.claude/skills/x/SKILL.md")
+      and cp.is_instruction_file(".claude/rules/style.md") and cp.is_instruction_file("AGENTS.md")
+      and not cp.is_instruction_file("README.md") and not cp.is_instruction_file("docs/CLAUDE-notes.txt"),
+      "instruction-file classification matches the /prompt-audit surface")
+
+import contextlib  # noqa: E402
+import io  # noqa: E402
+import shutil  # noqa: E402
+import tempfile  # noqa: E402
+
+sys.path.insert(0, str(REPO / "skills" / "_lib"))
+import git_run  # noqa: E402
+
+_tmp = Path(tempfile.mkdtemp(prefix="purge-base-"))
+try:
+    def _git(*a: str) -> None:
+        # An empty hooks dir: the synthetic repo must not run the machine's global commit hooks.
+        git_run.run_git(["-C", str(_tmp), "-c", "user.name=t", "-c", "user.email=t@t",
+                         "-c", f"core.hooksPath={_tmp / '.nohooks'}", "-c", "commit.gpgsign=false", *a], check=True)
+
+    (_tmp / ".claude" / "skills" / "foo").mkdir(parents=True)
+    (_tmp / ".claude" / "skills" / "foo" / "SKILL.md").write_text(SKILL_BEFORE, encoding="utf-8")
+    (_tmp / "CLAUDE.md").write_text(BEFORE_MD, encoding="utf-8")
+    (_tmp / "README.md").write_text("readme\n", encoding="utf-8")
+    _git("init", "-q", "-b", "main")
+    _git("add", "-A")
+    _git("commit", "-q", "-m", "base")
+    _git("checkout", "-q", "-b", "fix/1")
+
+    def _run_base() -> tuple:
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            code = cp.main(["--base", "main", "--repo", str(_tmp)])
+        return code, out.getvalue()
+
+    code, out = _run_base()
+    check(code == 0 and "NO_INSTRUCTION_FILES_CHANGED" in out, f"--base with nothing changed passes and says so (got {out!r})")
+    (_tmp / "README.md").write_text("readme edited\n", encoding="utf-8")
+    (_tmp / "CLAUDE.md").write_text(f"# Global\n\n{MERMAID}\n", encoding="utf-8")
+    code, out = _run_base()
+    check(code == 0 and "PASS  CLAUDE.md:" in out and "README" not in out,
+          f"--base checks a rewritten instruction file (uncommitted) and ignores other files (got {out!r})")
+    # Planted regressions: a dropped quoted trigger, then a changed marked block.
+    (_tmp / ".claude" / "skills" / "foo" / "SKILL.md").write_text(SKILL_AFTER_LOST, encoding="utf-8")
+    _git("commit", "-qam", "drop a trigger")
+    code, out = _run_base()
+    check(code == 2 and "FAIL  .claude/skills/foo/SKILL.md: quoted trigger phrase lost" in out,
+          f"--base fails a committed edit that dropped a quoted trigger (got {out!r})")
+    (_tmp / ".claude" / "skills" / "foo" / "SKILL.md").write_text(SKILL_BEFORE, encoding="utf-8")
+    (_tmp / "CLAUDE.md").write_text(BEFORE_MD.replace("flowchart LR", "flowchart TD"), encoding="utf-8")
+    code, out = _run_base()
+    check(code == 2 and "FAIL  CLAUDE.md: marked block not byte-identical" in out and "CHECKED=1|failed=1" in out,
+          f"--base fails a changed marked block (got {out!r})")
+    (_tmp / "CLAUDE.md").unlink()
+    code, out = _run_base()
+    check(code == 2 and "FAIL  CLAUDE.md: deleted" in out, "--base fails a deleted instruction file")
+    out = io.StringIO()
+    with contextlib.redirect_stdout(out):
+        code = cp.main(["--base", "no-such-ref", "--repo", str(_tmp)])
+    check(code == 3 and out.getvalue().startswith("UNKNOWN"), "an undiffable base is unknown (exit 3), never a pass")
+finally:
+    shutil.rmtree(_tmp, ignore_errors=True)
+
 _h.report_and_exit("test_context_purge_check")

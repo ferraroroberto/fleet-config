@@ -112,6 +112,11 @@ check("ledger" in ai.KINDS and "documentation" in ai.KINDS, "KINDS populated")
 check("practices" in ai.KINDS, "KINDS has practices")
 check("learning" in ai.KINDS, "KINDS has learning")
 check("design-drift" in ai.KINDS, "KINDS has design-drift")
+# prompt-drift (fleet-config#833) is /prompt-audit's queued cleanup bucket, filed by
+# audit.py, not a /codebase-audit finding bucket — so never self-fix churn.
+check("prompt-drift" in ai.KINDS and "prompt-drift" not in ai.BUCKET_KINDS,
+      "KINDS has prompt-drift; BUCKET_KINDS does not")
+check(ai.title_matches("audit: prompt-drift findings", "prompt-drift"), "title prompt-drift bucket")
 # slop + security are finding buckets (fleet-config#361): registered kinds AND
 # in BUCKET_KINDS, so their fix PRs are recognized as this repo's own self-fix
 # churn (security's issue is closed on merge, re-adopted by title — see the
