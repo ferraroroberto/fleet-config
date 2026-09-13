@@ -138,9 +138,16 @@ def filter_test_like_paths(paths: List[str]) -> List[str]:
     A CI-expectations e2e-surface sentence typically names source dirs too
     (`app/webapp/`, `src/session_host*.py`) alongside the actual test dir
     (`tests/e2e/`) — this audit only cares about the latter.
+
+    A span must look like a path — a `/` or `\\` separator, or a `.py` file —
+    before its segments are checked, so a backticked command word such as
+    `pytest` in the same sentence is never read as a test dir
+    (fleet-config#906).
     """
     out = []
     for p in paths:
+        if not ("/" in p or "\\" in p or p.endswith(".py")):
+            continue
         segments = re.split(r"[/\\]", p.lower())
         if any("test" in seg for seg in segments):
             out.append(p.rstrip("/"))
