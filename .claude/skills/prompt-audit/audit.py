@@ -1123,12 +1123,12 @@ def cmd_drift(args: argparse.Namespace, cfg: dict) -> int:
             print(f"DRIFT={repo}|issue={'#' + str(got['number']) if got.get('number') else 'new'}{line}|dry-run")
             print(body)
             continue
-        git_run.run_gh(["label", "create", DRIFT_LABEL, "--repo", slug, "--color", DRIFT_LABEL_COLOR,
-                        "--description", DRIFT_LABEL_DESC], timeout=60)  # exists already -> harmless failure
         with tempfile.NamedTemporaryFile("w", suffix=".md", delete=False, encoding="utf-8", newline="") as fh:
             fh.write(body)
             tmp = fh.name
         try:
+            git_run.run_gh(["label", "create", DRIFT_LABEL, "--repo", slug, "--color", DRIFT_LABEL_COLOR,
+                            "--description", DRIFT_LABEL_DESC], timeout=60)  # exists already -> harmless failure
             url = _audit_issue("upsert", "--repo", slug, "--kind", DRIFT_KIND, "--label", DRIFT_LABEL,
                                "--title", DRIFT_TITLE, "--body-file", tmp).strip()
             print(f"DRIFT={repo}|issue={url}{line}")
