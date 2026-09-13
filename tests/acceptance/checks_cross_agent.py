@@ -5,13 +5,16 @@ than prose: the Codex and Pi `session_state` adapters really do land a row in
 the same `sessions-state.json` Claude writes, and Codex's own hook wiring really
 does invoke the Python modules directly with a bounded timeout instead of
 routing through `run-hook.ps1` (which hung every PreToolUse until Codex's
-600-second default).
+600-second default). Both payload transports — Claude's `run-hook.ps1` shim and
+the direct-Python invocation Codex and Pi use — must hand a hook the payload's
+exact codepoints (fleet-config#912).
 
 Split out of the former 2681-line `unit_checks.py`; see `checks_context_filter`
 for why.
 """
 from __future__ import annotations
 
+import base64
 import json
 import os
 import re
@@ -22,7 +25,9 @@ from pathlib import Path
 from typing import Any, Dict, Tuple
 
 from acceptance.shared import (
+    HOOKS,
     NO_SETTINGS_JSON,
+    PYTHON,
     REPO,
     _Checker,
     hook_env,
@@ -345,3 +350,94 @@ def _codex_hooks_config_check() -> Tuple[int, int]:
     )
 
     return check.failures, check.total
+
+
+_POWERSHELL = Path(r"C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe")
+
+# Every non-ASCII class the shim mangled: BMP punctuation, Latin-1, an astral
+# emoji (a surrogate pair in .NET) and CJK.
+_UTF8_SAMPLE = "a\u2014b \u00b7 \U0001F600 \u4e2d\u6587"
+
+# Echoes the decoded command back as `ascii()`, so the assertion compares
+# codepoints and never depends on how stdout itself is decoded on the way out.
+_UTF8_PROBE_HOOK = '''
+import json, sys
+text = sys.stdin.buffer.read().decode("utf-8", errors="strict")
+print(ascii(json.loads(text)["tool_input"]["command"]))
+'''
+
+
+def _shim(shim: Path, hook: str, payload: Dict[str, Any], env: Dict[str, str]) -> subprocess.CompletedProcess:
+    """Invoke `run-hook.ps1` exactly as settings.json does, fed UTF-8 bytes."""
+    return subprocess.run(
+        [str(_POWERSHELL), "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass",
+         "-File", str(shim), "-Hook", hook],
+        input=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
+        capture_output=True,
+        timeout=60,
+        env=env,
+    )
+
+
+def _hook_transport_utf8_check() -> Tuple[int, int, int]:
+    """Non-ASCII survives both hook transports (fleet-config#912).
+
+    Returns `(failures, total, skipped)` -- run via `run_unit3`: without Windows
+    PowerShell the shim cannot be driven at all, and that is a skip, never a pass.
+
+    `run-hook.ps1` read stdin through `[Console]::In` (OEM code page) and piped
+    it on with `$OutputEncoding` (us-ascii), so an em dash reached every hook
+    as `???` -- and `context_filter_hook`'s rewrite ran the corrupted command.
+    Behind the shim, `_lib.read_stdin_json()` decoded the pipe as cp1252.
+    """
+    check = _Checker()
+    env = hook_env({"FLEET_CONTEXT_FILTER_MODE": "rewrite"})
+    payload = {"tool_name": "Bash", "cwd": str(REPO),
+               "tool_input": {"command": f"python -c \"print('{_UTF8_SAMPLE}')\""}}
+    command = payload["tool_input"]["command"]
+
+    # Direct-Python transport (Codex, Pi): no PowerShell needed.
+    res = subprocess.run(
+        [PYTHON, "-c", "import sys; sys.path.insert(0, sys.argv[1]); import _lib; "
+                       "print(ascii(_lib.read_stdin_json()['tool_input']['command']))", str(HOOKS)],
+        input=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
+        capture_output=True, timeout=15, env=env,
+    )
+    check(
+        "hook_transport: _lib.read_stdin_json decodes a UTF-8 pipe exactly",
+        res.returncode == 0 and res.stdout.decode("ascii", "replace").strip() == ascii(command),
+        res.stdout.decode("utf-8", "replace") + res.stderr.decode("utf-8", "replace"),
+    )
+
+    if not _POWERSHELL.exists():
+        check.skipped += 2
+        print("SKIP  hook_transport: run-hook.ps1 cases (Windows PowerShell not found)")
+        return check.failures, check.total, check.skipped
+
+    with tempfile.TemporaryDirectory(prefix="fleet-config-912-") as tmp:
+        shim_copy = Path(tmp) / "run-hook.ps1"
+        shutil.copyfile(HOOKS / "run-hook.ps1", shim_copy)
+        (Path(tmp) / "utf8_probe.py").write_text(_UTF8_PROBE_HOOK, encoding="utf-8")
+        res = _shim(shim_copy, "utf8_probe", payload, env)
+    check(
+        "hook_transport: run-hook.ps1 hands the hook the payload's exact codepoints",
+        res.returncode == 0 and res.stdout.decode("ascii", "replace").strip() == ascii(command),
+        res.stdout.decode("utf-8", "replace") + res.stderr.decode("utf-8", "replace"),
+    )
+
+    # End to end through the real shim and the real rewrite hook: the command
+    # the wrapper will execute is base64 of what the hook decoded.
+    res = _shim(HOOKS / "run-hook.ps1", "context_filter_hook", payload, env)
+    executed = ""
+    try:
+        rewritten = json.loads(res.stdout)["hookSpecificOutput"]["updatedInput"]["command"]
+        encoded = re.search(r"--encoded (\S+)", rewritten)
+        executed = base64.b64decode(encoded.group(1)).decode("utf-8") if encoded else ""
+    except (ValueError, KeyError, TypeError):
+        pass
+    check(
+        "hook_transport: context_filter_hook rewrite via run-hook.ps1 keeps the command intact",
+        res.returncode == 0 and executed == command,
+        f"executed={executed!r}\n" + res.stdout.decode("utf-8", "replace") + res.stderr.decode("utf-8", "replace"),
+    )
+    return check.failures, check.total, check.skipped
