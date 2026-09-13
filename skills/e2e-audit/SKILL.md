@@ -26,6 +26,9 @@ machinery as `/codebase-audit` and `/design-sync`, cleared later by
 - `--target N` is **not** an argument here — the target is fixed at
   project-scaffolding's 15; don't let a run override it ad hoc.
 - More than one path argument → say only one target is accepted and stop.
+- The word `budget` (`/e2e-audit budget`, `/e2e-audit budget <repo>`) → a
+  **budget-triggered** run, which is how `/e2e` step 6b invokes it. It changes
+  only step 6's no-findings outcome (see the exception there).
 
 ## Steps
 
@@ -221,6 +224,21 @@ confirmed clusters/outliers/gaps after step 4 → say `Suite is <ratio>x the
 target with no redundancy/gap candidates confirmed this run.` and still no-op
 the issue if none of this run's findings survived judgment (don't file an
 empty one).
+
+**Exception: a run triggered by `/e2e`'s budget step** (fleet-config#905).
+There the suite is already known to be over budget. Filing nothing would leave
+no open issue, so the next finish would run this whole audit again, and again
+after that. Instead, upsert the managed issue with exactly one finding:
+
+```markdown
+- [ ] **.fleet.toml** — suite is <count> collected nodes against a budget of <limit>, with no redundancy confirmed on <YYYY-MM-DD>; its size is structural. Fix: declare `[e2e] test_budget = <count>` under `[e2e]` to ratchet at the current size (lower it as the suite trims), or scope down which behaviours need standing e2e coverage.
+```
+
+File it through step 5's mechanics unchanged: `get`, then the standard body
+template with this line as the only `## Findings` entry plus the inventory,
+context and run-log sections, then `upsert`. The open issue stops the
+re-trigger, and the fix is a one-line, reviewable ratchet. An on-demand run
+keeps the no-op above.
 
 ## Hard rules
 

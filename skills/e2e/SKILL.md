@@ -182,8 +182,10 @@ scaffold's 15.
 - `E2E_BUDGET=over` → look for the repo's open managed issue:
   `E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/audit_issue.py get --repo <OWNER/REPO> --kind e2e-redundancy`.
   If one is open, cite it in the report. If none is open, run **`/e2e-audit`**
-  on this repo in this same run (report-only, and it files the deduped
-  issue), then cite what it filed. If the lookup itself fails, report
+  on this repo in this same run as `/e2e-audit budget` (report-only; it
+  files the deduped issue, and when no finding survives it still files the
+  `test_budget` ratchet finding, per its step 6 exception), then cite what it
+  filed. If the lookup itself fails, report
   `budget: over, audit issue state unknown` and do not run the audit blind.
   In a `plan` invocation, report the verdict only and run no audit.
 
