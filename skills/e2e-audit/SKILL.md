@@ -1,6 +1,6 @@
 ---
 name: e2e-audit
-description: On-demand audit of a repo's e2e/regression suite for redundancy, bloat, and coverage gaps against project-scaffolding's "<15 tests total" target — deterministic inventory + near-duplicate clustering via e2e_test_audit.py, then a deduped e2e-redundancy issue for /cleanup-fleet. Never rewrites/deletes tests. Never scheduled — run it after a burst of feature work. E.g. "/e2e-audit", "/e2e-audit app-launcher", "audit the e2e suite for bloat".
+description: On-demand audit of a repo's e2e/regression suite for redundancy, bloat, and coverage gaps against project-scaffolding's "<15 tests total" target — deterministic inventory + near-duplicate clustering via e2e_test_audit.py, then a deduped e2e-redundancy issue for /cleanup-fleet. Never rewrites/deletes tests. Never on a clock — /e2e triggers it when a suite exceeds its budget. E.g. "/e2e-audit", "/e2e-audit app-launcher", "audit the e2e suite for bloat".
 ---
 
 # e2e-audit
@@ -247,9 +247,11 @@ empty one).
   closing is the user's call via `/issue-finish`.
 - **No AI attribution; no hard-wrapped issue-body paragraphs** (per global
   CLAUDE.md).
-- **Never scheduled weekly.** On-demand only, per fleet-config#406 — do not
-  wire this into `run-weekly.bat` or any cron. Run it after a burst of
-  feature work, not on a clock.
+- **Never scheduled weekly.** Per fleet-config#406, do not wire this into
+  `run-weekly.bat` or any cron. It runs on demand, or when `/e2e`'s budget
+  step finds the suite over its `.fleet.toml` `[e2e] test_budget` (default
+  15) with no open `e2e-redundancy` issue (fleet-config#901). That trigger is
+  feature-driven: it fires on a finish, never on a clock.
 
 ## Notes
 
