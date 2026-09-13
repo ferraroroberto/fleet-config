@@ -49,7 +49,10 @@ Subcommands:
       `E2E_BUDGET_LIMIT`, `E2E_BUDGET_SOURCE` and `E2E_BUDGET_REASON`. The
       limit is `.fleet.toml` `[e2e] test_budget` when it is a positive integer
       (a per-repo ratchet), else project-scaffolding's 15. An unmeasurable
-      count is `unmeasured`, never `within`. Always exits 0.
+      count is `unmeasured`, never `within`. Always exits 0. Assumes the
+      caller already established that a suite exists (`/e2e` runs it only
+      after `e2e_route.py probe` prints `SUITE=present`): test dirs that
+      resolve to nothing print `unmeasured`, not `no-suite`.
 
 stdlib + the `git`/`gh`-free `git_run` helper + (best-effort) the target
 repo's own `.venv` pytest for the true node count.
@@ -412,7 +415,9 @@ def budget_limit(fleet_toml_text: Optional[str], default: int = DEFAULT_TARGET) 
     except tomllib.TOMLDecodeError:
         return default, "scaffold-target", ".fleet.toml could not be parsed"
     e2e = data.get("e2e")
-    raw = e2e.get("test_budget") if isinstance(e2e, dict) else None
+    if e2e is not None and not isinstance(e2e, dict):
+        return default, "scaffold-target", "[e2e] is not a table"
+    raw = e2e.get("test_budget") if e2e is not None else None
     if raw is None:
         return default, "scaffold-target", "no [e2e] test_budget declared"
     if isinstance(raw, bool) or not isinstance(raw, int) or raw <= 0:

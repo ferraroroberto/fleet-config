@@ -313,6 +313,8 @@ for bad in ("0", "-3", "true", "'480'", "4.5"):
     lim, src, note = m.budget_limit(f"[e2e]\ntest_budget = {bad}\n")
     check((lim, src) == (15, "scaffold-target") and "invalid" in note,
           f"budget_limit: invalid test_budget {bad} falls back to the target, with a note")
+check(m.budget_limit('e2e = "x"\n') == (15, "scaffold-target", "[e2e] is not a table"),
+      "budget_limit: a non-table e2e key -> scaffold target, named precisely")
 check(m.budget_limit("[e2e\n")[:2] == (15, "scaffold-target"),
       "budget_limit: unparsable .fleet.toml -> scaffold target")
 
