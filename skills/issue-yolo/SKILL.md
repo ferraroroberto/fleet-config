@@ -102,7 +102,7 @@ green-with-skips run is not green if the skip masks the area you touched.
 **3d. E2e leg — delegated to the `/e2e` skill.** Run `/e2e`
 (`skills/e2e/SKILL.md`): routes the branch diff through the repo's own
 `classify_e2e.py` (bootstrapping it on first contact), runs the proportionate
-slice (`skip` / `static` / `full`), applies its inline suite maintenance on
+slice (`skip` / `static` / `full` / `surface`), applies its inline suite maintenance on
 this branch. If the project has a `scripts/verify-before-ship.*` gate, run
 **that** first (one command, exit-0 only) — `/e2e` carries the gate's e2e
 result instead of re-running the same slice. Boot failure is a hard failure —

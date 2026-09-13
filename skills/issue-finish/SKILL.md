@@ -133,7 +133,7 @@ drift fixed) in the step-7 summary so the user can veto.
 Run the **`/e2e` skill** (`skills/e2e/SKILL.md`) — evaluation is mandatory
 before any PR; execution is proportionate. It probes the repo, routes the
 branch diff through the repo's own `classify_e2e.py` (bootstrapping it on first
-contact), runs the routed slice (`skip` / `static` / `full`), and applies its
+contact), runs the routed slice (`skip` / `static` / `full` / `surface`), and applies its
 inline suite maintenance (delete-with-the-feature, qualifying additions, table
 upkeep) on this branch. Integration rules:
 
@@ -175,8 +175,8 @@ Decision below is driven by the project's `## CI expectations` block
 - **Otherwise, skip-the-wait keyed on the `/e2e` routing.** If step 3c routed
   `skip` (classifier or judgment fail-safe positively cleared every changed
   path of browser impact) and the local gate is green → skip the watch and
-  merge immediately. Same for a green `static` slice: the repo's own `[e2e]`
-  table declared the smoke target sufficient for those paths. **State it**,
+  merge immediately. Same for a green `static` or `surface` slice: the repo's
+  own `[e2e]` table declared that target sufficient for those paths. **State it**,
   e.g. `CI not awaited — /e2e routed skip: docs-only diff`. Never re-derive the
   surface match by eye — the routing decision is step 3c's.
 - **Otherwise watch — but proactively, not passively.** Run `gh pr checks <PR>

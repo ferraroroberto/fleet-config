@@ -8,7 +8,9 @@ principle as `ux_surface.py` and `e2e_test_audit.py`.
 The routing *mechanism* itself is project-scaffolding's: each repo's own
 `scripts/classify_e2e.py` reads that repo's `.fleet.toml` `[e2e]` table and
 maps the diff to a tier (`skip` / `static` / `full`, fail-safe to `full` —
-see project-scaffolding `docs/e2e-routing.md`). This module never re-implements
+see project-scaffolding `docs/e2e-routing.md`), plus `surface`: a narrowing of
+`full` to one declared `[[e2e.surface]]`'s space-separated targets
+(project-scaffolding#258). This module never re-implements
 the classification; it locates, runs, boots, and reports around it.
 
 Subcommands:
@@ -33,7 +35,10 @@ Subcommands:
       Classifier absent → `SOURCE=judgment` + `E2E_TIER=unknown` (the skill's
       LLM judgment layer decides, fail-safe full). Classifier errors →
       `SOURCE=classifier-error` + `E2E_TIER=full` — uncertainty always
-      escalates, never narrows.
+      escalates, never narrows. So does a verdict this helper cannot vouch
+      for: a tier outside `skip`/`static`/`full`/`surface`, a `surface`
+      with no `E2E_SURFACE` name or an empty target list, or any `E2E_*` key
+      printed twice (fleet-config#902).
 
   bootstrap <repo-root> [--scaffold <path>] [--force]
       Self-healing adoption: copy the scaffold's parameterized
@@ -66,6 +71,7 @@ ensure_utf8_stdio()
 DEFAULT_SCAFFOLD = Path("E:/automation/project-scaffolding")
 CLASSIFIER_REL = Path("scripts/classify_e2e.py")
 SUITE_REL = Path("tests/e2e")
+KNOWN_TIERS = ("skip", "static", "full", "surface")
 _WEB_DEP = re.compile(r"\b(fastapi|flask|uvicorn|starlette)\b", re.IGNORECASE)
 _STREAMLIT_DEP = re.compile(r"\bstreamlit\b", re.IGNORECASE)
 
@@ -161,6 +167,29 @@ def detect_web_surface(repo: Path) -> Tuple[str, str, str]:
     return "no", "none", "no web framework signal"
 
 
+def unusable_verdict(e2e_lines: List[str]) -> Optional[str]:
+    """Why a classifier's `E2E_*` block can't be honoured, or None if it can.
+
+    The helper passes a verdict through verbatim, so it must never pass one
+    that narrows on nothing: an unrecognised tier, or a `surface` that names
+    no surface or no targets, would otherwise run an empty slice. A key
+    printed twice means the classifier contradicted itself, so neither
+    value is trusted.
+    """
+    keys = [ln.split("=", 1)[0] for ln in e2e_lines if "=" in ln]
+    repeated = sorted({k for k in keys if keys.count(k) > 1})
+    if repeated:
+        return f"repeated {', '.join(repeated)} lines"
+    kv = dict(ln.split("=", 1) for ln in e2e_lines if "=" in ln)
+    tier = kv.get("E2E_TIER", "")
+    if tier not in KNOWN_TIERS:
+        return f"unrecognised tier {tier!r}"
+    if tier == "surface" and (not kv.get("E2E_SURFACE", "").strip()
+                              or not kv.get("E2E_PYTEST_TARGET", "").split()):
+        return "surface verdict without a surface name or targets"
+    return None
+
+
 def files_identical(a: Path, b: Path) -> bool:
     ha, hb = _sha1(a), _sha1(b)
     return ha is not None and ha == hb
@@ -206,6 +235,12 @@ def cmd_route(repo: Path, files: List[str]) -> int:
         print("SOURCE=classifier-error")
         print("E2E_TIER=full")
         print(f"E2E_REASON=classifier exit {res.returncode} without a tier - fail-safe full")
+        return 0
+    unusable = unusable_verdict(e2e_lines)
+    if unusable:
+        print("SOURCE=classifier-error")
+        print("E2E_TIER=full")
+        print(f"E2E_REASON=classifier verdict unusable ({unusable}) - fail-safe full")
         return 0
     print("SOURCE=classifier")
     for ln in e2e_lines:
