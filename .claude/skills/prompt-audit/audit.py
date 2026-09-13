@@ -5,9 +5,9 @@ prompting guidance. "The helper measures, the orchestrator judges": this module
 does every exact, reproducible step — hashing fetched guides against their
 baselines, enumerating the scan surface, counting lint hits, collapsing findings
 shared with the scaffolding master, the skip-unchanged ledger, cadence state, and
-rendering the digest — so none of those numbers is ever invented by a model. It
-never fetches anything (the orchestrator's own tool does) and never edits an
-instruction file.
+rendering the digest and its chat line — so none of those numbers is ever
+invented by a model. It never fetches anything (the orchestrator's own tool does)
+and never edits an instruction file.
 
 Vendor and audience vocabulary is data (`sources.toml` `[audiences.*]`); the
 rule-set is `rules.md`, whose tags decide whether a hit is a `violation` or only
@@ -28,6 +28,7 @@ Subcommands (every line-oriented output uses the fleet `KEY=value|...` protocol)
   ledger write --run JSON [--date D] [--dry-run]
   ledger comment --body-file FILE
   digest --run JSON               the run digest markdown
+  ping --run JSON --comment-url U one ASCII chat line for a delivered run (exit 2 on a dry run)
   drift --run JSON [--dry-run] [--date D]
                                   upsert one `audit: prompt-drift findings` issue per repo
                                   DRIFT=<repo>|issue=...|tier=easy|hard|none|open=N|new=...
@@ -813,21 +814,51 @@ def partition_run(run: dict) -> dict:
     }
 
 
+def summarize_run(run: dict) -> dict:
+    """The verdicts both the digest and the ping report, computed once from `run`."""
+    srcs = [_kv(l) for l in run.get("sources", [])]
+    by_verdict = {v: [s for s in srcs if s.get("VERDICT") == v] for v in VERDICTS}
+    stale = by_verdict["changed"] + by_verdict["new-guide"]
+    parts = partition_run(run)
+    return {
+        "srcs": srcs, "by_verdict": by_verdict, "stale": stale, "parts": parts,
+        "guides": "changed" if stale else ("not-checked" if by_verdict["not-checked"] or not srcs else "unchanged"),
+        "status": "partial" if parts["unmeasured"] or parts["unmeasured_rules"] else "complete",
+        "violation": sum(1 for f in parts["findings"] if f["verdict"] == "violation"),
+        "consider": sum(1 for f in parts["findings"] if f["verdict"] == "consider"),
+    }
+
+
+def render_ping(run: dict, comment_url: str) -> str:
+    """One pure-ASCII chat line for a delivered run. Pure: every value comes from `run`.
+
+    ASCII separators only: a non-ASCII character in a Windows command line reaches
+    the chat as `??` (fleet-config#507).
+    """
+    s = summarize_run(run)
+    parts = s["parts"]
+    head = [f"prompt-audit {run.get('date') or 'unknown'}", f"status={s['status']}", f"guides={s['guides']}"]
+    if run.get("scan_ran"):
+        body = [f"scanned {len(parts['judged'])}, skipped {len(parts['skip'])}, unmeasured {len(parts['unmeasured'])}",
+                f"{s['violation']} violation, {s['consider']} consider"]
+    else:
+        body = [f"scan not run, rule-set update issue {run.get('update_issue') or 'not filed'}"]
+    line = " - ".join(head + body + [f"ledger {comment_url}"])
+    return line.encode("ascii", "replace").decode("ascii")
+
+
 def render_digest(run: dict, rules: Dict[str, dict], master_text: str = "", lite_text: str = "") -> Tuple[str, str]:
     """(markdown, status). Pure: every count comes from `run` (see `partition_run`), nothing is inferred.
 
     Unmeasured files and unmeasured rules are listed as such and make the run
     `partial` — never folded into compliant; skipped files are listed as skipped.
     """
-    srcs = [_kv(l) for l in run.get("sources", [])]
-    by_verdict = {v: [s for s in srcs if s.get("VERDICT") == v] for v in VERDICTS}
-    stale = by_verdict["changed"] + by_verdict["new-guide"]
-    guides = "changed" if stale else ("not-checked" if by_verdict["not-checked"] or not srcs else "unchanged")
-    parts = partition_run(run)
+    summary = summarize_run(run)
+    srcs, by_verdict, stale = summary["srcs"], summary["by_verdict"], summary["stale"]
+    guides, status, parts = summary["guides"], summary["status"], summary["parts"]
     plan, skip, judged = parts["plan"], parts["skip"], parts["judged"]
     unmeasured, unmeasured_rules, findings = parts["unmeasured"], parts["unmeasured_rules"], parts["findings"]
     scan_ran = bool(run.get("scan_ran"))
-    status = "partial" if unmeasured or unmeasured_rules else "complete"
     scan = "dry-run" if run.get("dry_run") else ("posted" if scan_ran else "not-run")
     # Machine-readable, ASCII, near the top so the comment-size cap never cuts it:
     # the scheduled job's delivery_check.py reads it (fleet-config#834).
@@ -854,8 +885,8 @@ def render_digest(run: dict, rules: Dict[str, dict], master_text: str = "", lite
         tally.setdefault(f["rule"], {"violation": 0, "consider": 0})[f["verdict"]] += 1
     carried = (" — skipped files keep the findings of the digest that last scanned them, "
                "so this is not a fleet total") if skip else ""
-    out += ["", f"**Findings in scanned files:** {sum(t['violation'] for t in tally.values())} violation, "
-                f"{sum(t['consider'] for t in tally.values())} consider, across "
+    out += ["", f"**Findings in scanned files:** {summary['violation']} violation, "
+                f"{summary['consider']} consider, across "
                 f"{len({f['path'] for f in findings})} files{carried}", ""]
     if tally:
         out += ["| rule | violation | consider |", "|---|---|---|"]
@@ -1345,6 +1376,15 @@ def cmd_digest(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_ping(args: argparse.Namespace) -> int:
+    run = json.loads(Path(args.run).read_text(encoding="utf-8"))
+    if run.get("dry_run"):
+        print("❌ ping: a dry run delivers nothing, so it sends no ping", file=sys.stderr)
+        return 2
+    print(render_ping(run, args.comment_url))
+    return 0
+
+
 def main(argv: Optional[List[str]] = None) -> int:
     ensure_utf8_stdio()
     ap = argparse.ArgumentParser(description="Deterministic half of /prompt-audit.")
@@ -1383,6 +1423,9 @@ def main(argv: Optional[List[str]] = None) -> int:
     lg.add_argument("--body-file")
     dg = sub.add_parser("digest")
     dg.add_argument("--run", required=True)
+    pg = sub.add_parser("ping")
+    pg.add_argument("--run", required=True)
+    pg.add_argument("--comment-url", required=True, help="the LEDGER_COMMENT= URL that proves delivery")
     dr = sub.add_parser("drift")
     dr.add_argument("--run", required=True)
     dr.add_argument("--date", default=None)
@@ -1410,6 +1453,8 @@ def main(argv: Optional[List[str]] = None) -> int:
         return cmd_ledger(args, cfg)
     if args.cmd == "drift":
         return cmd_drift(args, cfg)
+    if args.cmd == "ping":
+        return cmd_ping(args)
     return cmd_digest(args)
 
 

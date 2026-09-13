@@ -15,7 +15,7 @@ Files in this directory:
 
 - `rules.md` — the rule-set (`R-NN` blocks: tags, detect, why, fix shape, source). Read it before judging anything; its sha is the ledger's `rubric-sha`.
 - `sources.toml` — one block per vendor page with its baseline sha + marker, plus the audience vocabulary that decides which rules are primary for a file.
-- `audit.py` — every exact step: `sources`, `diff-source`, `inventory`, `lint`, `dedup`, `state`, `ledger`, `digest`, `drift`.
+- `audit.py` — every exact step: `sources`, `diff-source`, `inventory`, `lint`, `dedup`, `state`, `ledger`, `digest`, `drift`, `ping`.
 
 `<py>` below is `E:/automation/fleet-config/.venv/Scripts/python.exe`; `<audit>` is `.claude/skills/prompt-audit/audit.py`.
 
@@ -30,7 +30,7 @@ No argument → the full run.
 ## Execution rules (read first)
 
 - **Run from the `fleet-config` repo root.** Put fetched pages and run files in a freshly created, uniquely named scratch directory outside the repo (e.g. `<session temp>/prompt-audit-<date>-<time>`). Never delete through a variable-built path — a harness prompts on `rm` against a variable that could be empty, which blocks an unattended run; a new directory per run needs no cleanup.
-- **Writes are exactly these:** `~/.claude/prompt-audit/state.json`; the ledger issue body and one digest comment (through `audit.py ledger`, which goes through `skills/_lib/audit_issue.py` — never `gh issue create` a ledger by hand); in scan mode, one `kind=prompt-drift` issue per repo with something to say plus its `prompt-drift` label (through `audit.py drift`, same helper); and, in update mode only, one rule-set update issue. Nothing else, and none of it under `--dry-run`.
+- **Writes are exactly these:** `~/.claude/prompt-audit/state.json`; the ledger issue body and one digest comment (through `audit.py ledger`, which goes through `skills/_lib/audit_issue.py` — never `gh issue create` a ledger by hand); in scan mode, one `kind=prompt-drift` issue per repo with something to say plus its `prompt-drift` label (through `audit.py drift`, same helper); in update mode only, one rule-set update issue; and, on a delivered run only, one activity-log chat ping (step 10, through `hooks/notify_send.py`). Nothing else, and none of it under `--dry-run`.
 - **Unknown is never a pass.** A page that could not be fetched is `not-checked`, never `unchanged`. A file whose judgment did not come back is `unmeasured`, never `compliant`. A skipped file is listed as skipped, so "not in the findings" cannot read as "not looked at".
 - **Degrade one item, never the run.** A failed fetch degrades that source; a failed judgment agent degrades that repo's files; the run still posts its digest (`status=partial` when any planned file ended unmeasured).
 - **Poll to completion in this turn** (fleet-config#314). Any background agent or command is collected before moving on; never end the turn expecting to be resumed.
@@ -179,7 +179,23 @@ SCHEDULED-RUN-FAILED — <what was not delivered, one line>
 
 The scheduled adapter maps that marker to exit `123`; the scheduled job's `delivery_check.py` independently re-reads the ledger for the same facts from the digest's `<!-- prompt-audit-digest … -->` stamp. Never print the marker on a run that delivered, and never on `--dry-run` (it writes nothing by design; the job's post-condition still fails it, which is correct).
 
-A few lines: `status`, `guides`, sources checked/not-checked, files scanned/skipped/unmeasured, violation/consider totals, the update issue (if any), the ledger comment URL, and each `DRIFT=` line (repo, issue, tier).
+A few lines: `status`, `guides`, sources checked/not-checked, files scanned/skipped/unmeasured, violation/consider totals, the update issue (if any), the ledger comment URL, each `DRIFT=` line (repo, issue, tier), and step 10's `PING=` line.
+
+### 10. Chat ping — delivered runs only
+
+A run that step 9 found **delivered** posts one line to the activity-log chat. The helper renders it from `run.json`, so its counts match the digest, and pipes it to the fleet's one notifier. `--category log` resolves the chat from `hooks/projects.toml`; never pick a chat yourself.
+
+```
+<py> <audit> ping --run <scratch>/run.json --comment-url <LEDGER_COMMENT URL> | <py> hooks/notify_send.py --category log
+```
+
+The line is pure ASCII (fleet-config#507). Read the notifier's exit code and put exactly one of these in the report:
+
+- `PING=sent` when it exits 0.
+- `PING=not-delivered - notify_send exit <code>` when it exits non-zero. The notifier never raises, so a missing token or a network failure shows up only here.
+- `PING=not-sent - run not delivered` when step 9 printed the failure marker, and on `--dry-run` (the helper refuses a dry run with exit 2).
+
+The ping is a notice about the delivery, not part of it. A failed ping never counts as sent, and it never prints `SCHEDULED-RUN-FAILED`: the digest was delivered, and `delivery_check.py` confirms that separately from the ledger.
 
 ## Notes
 
