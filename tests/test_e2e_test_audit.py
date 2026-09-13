@@ -299,6 +299,41 @@ check(m.parse_collected_count("ERROR collecting tests/e2e/test_a.py\nno tests ra
 check(m.parse_collected_count("") is None, "parse_collected_count: empty output -> None")
 
 
+# ---- budget_limit / budget_verdict (fleet-config#901) ------------------------
+
+check(m.budget_limit(None) == (15, "scaffold-target", "no .fleet.toml"),
+      "budget_limit: no .fleet.toml -> scaffold target 15")
+check(m.budget_limit('layer = "working-web"\n')[:2] == (15, "scaffold-target"),
+      "budget_limit: no [e2e] table -> scaffold target")
+check(m.budget_limit("[e2e]\nfull_pytest_target = 'tests/e2e'\n")[:2] == (15, "scaffold-target"),
+      "budget_limit: [e2e] without test_budget -> scaffold target")
+check(m.budget_limit("[e2e]\ntest_budget = 480\n")[:2] == (480, "declared"),
+      "budget_limit: a positive integer test_budget is the declared ratchet")
+for bad in ("0", "-3", "true", "'480'", "4.5"):
+    lim, src, note = m.budget_limit(f"[e2e]\ntest_budget = {bad}\n")
+    check((lim, src) == (15, "scaffold-target") and "invalid" in note,
+          f"budget_limit: invalid test_budget {bad} falls back to the target, with a note")
+check(m.budget_limit('e2e = "x"\n') == (15, "scaffold-target", "[e2e] is not a table"),
+      "budget_limit: a non-table e2e key -> scaffold target, named precisely")
+check(m.budget_limit("[e2e\n")[:2] == (15, "scaffold-target"),
+      "budget_limit: unparsable .fleet.toml -> scaffold target")
+
+check(m.budget_verdict(True, 68, 510, 250, 15) == ("over", 510, "nodes"),
+      "budget_verdict: nodes over the limit -> over")
+check(m.budget_verdict(True, 2, 13, 13, 15) == ("within", 13, "nodes"),
+      "budget_verdict: nodes within the limit -> within")
+check(m.budget_verdict(True, 2, 15, 15, 15) == ("within", 15, "nodes"),
+      "budget_verdict: exactly at the limit is within")
+check(m.budget_verdict(True, 14, None, 43, 15) == ("over", 43, "functions-lower-bound"),
+      "budget_verdict: unmeasured nodes but functions already over -> over (lower bound)")
+check(m.budget_verdict(True, 3, None, 6, 15) == ("unmeasured", 6, "functions-lower-bound"),
+      "budget_verdict: unmeasured nodes and functions under the limit -> unmeasured, never within")
+check(m.budget_verdict(True, 0, None, 0, 15) == ("no-suite", 0, "files"),
+      "budget_verdict: resolved dirs with zero test files -> no-suite")
+check(m.budget_verdict(False, 0, None, 0, 15)[0] == "unmeasured",
+      "budget_verdict: unresolved test dirs -> unmeasured, never no-suite")
+
+
 # ---- target_ratio ------------------------------------------------------------
 
 check(m.target_ratio(30, 15) == 2.0, "double the target ratio")

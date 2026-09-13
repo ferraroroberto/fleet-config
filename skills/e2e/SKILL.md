@@ -156,6 +156,33 @@ Cleanup is part of the flow, not a periodic chore:
 
 Nothing here runs for `plan` invocations.
 
+### 6b. Suite budget — the `/e2e-audit` trigger
+
+Whenever `SUITE=present`, measure the suite against its budget (fleet-config#901).
+Bloat is feature-driven, so the check rides every finish rather than a clock:
+
+```
+E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/e2e_test_audit.py budget .
+```
+
+The limit is `.fleet.toml` `[e2e] test_budget` when declared (a per-repo
+ratchet: set at the current size, lowered as the suite trims), else the
+scaffold's 15.
+
+- `E2E_BUDGET=within` / `no-suite` → report the line, nothing else.
+- `E2E_BUDGET=unmeasured` → report `budget: unknown (<E2E_BUDGET_REASON>)`.
+  Never fold it into `within`.
+- `E2E_BUDGET=over` → look for the repo's open managed issue:
+  `E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/audit_issue.py get --repo <OWNER/REPO> --kind e2e-redundancy`.
+  If one is open, cite it in the report. If none is open, run **`/e2e-audit`**
+  on this repo in this same run (report-only, and it files the deduped
+  issue), then cite what it filed. If the lookup itself fails, report
+  `budget: over, audit issue state unknown` and do not run the audit blind.
+  In a `plan` invocation, report the verdict only and run no audit.
+
+The budget never blocks the finish. Its job is to make the overage
+impossible to miss and to file the pruning work exactly once.
+
 ### 7. Report
 
 One block, echoed verbatim by delegating skills into their finish summary:
@@ -167,6 +194,7 @@ One block, echoed verbatim by delegating skills into their finish summary:
   ran: <pytest target + browsers | nothing | carried from gate run>
   result: PASS | FAIL (<counts>) | not run (plan) | n/a
   maintenance: <n removed / n added / table rules added | none>
+  budget: <within | over (<count>/<limit>) — e2e-redundancy #<N> | unknown (<reason>) | n/a>
   suite: <n/a | absent — recommendation: <one line>>
 ```
 

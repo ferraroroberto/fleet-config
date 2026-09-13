@@ -28,7 +28,7 @@ module invents per repo. Headings inside a fenced code block are ignored, so a
 repo that *documents* the block template verbatim is not mistaken for one that
 declares it (fleet-config#602).
 
-Subcommand:
+Subcommands:
 
   scan <repo-root> [--target N]
       Prints one JSON blob to stdout: test_dirs, `test_dirs_resolved` +
@@ -41,6 +41,18 @@ Subcommand:
       results (empty inventory / node_count=null / no gaps checked), never a
       crash. `test_dirs_resolved: false` is the one result a caller must not
       read as "no tests": it means the scan had nowhere to look.
+
+  budget <repo-root>
+      The feature-driven trigger for `/e2e-audit` (fleet-config#901): `/e2e`
+      runs this on every finish. Prints `E2E_BUDGET=over|within|unmeasured|
+      no-suite` plus `E2E_BUDGET_COUNT`, `E2E_BUDGET_COUNT_KIND`,
+      `E2E_BUDGET_LIMIT`, `E2E_BUDGET_SOURCE` and `E2E_BUDGET_REASON`. The
+      limit is `.fleet.toml` `[e2e] test_budget` when it is a positive integer
+      (a per-repo ratchet), else project-scaffolding's 15. An unmeasurable
+      count is `unmeasured`, never `within`. Always exits 0. Assumes the
+      caller already established that a suite exists (`/e2e` runs it only
+      after `e2e_route.py probe` prints `SUITE=present`): test dirs that
+      resolve to nothing print `unmeasured`, not `no-suite`.
 
 stdlib + the `git`/`gh`-free `git_run` helper + (best-effort) the target
 repo's own `.venv` pytest for the true node count.
@@ -386,6 +398,54 @@ def target_ratio(total_tests: int, target: int) -> float:
     return round(total_tests / target, 2)
 
 
+def budget_limit(fleet_toml_text: Optional[str], default: int = DEFAULT_TARGET) -> tuple:
+    """`(limit, source, note)` for the suite budget.
+
+    `.fleet.toml` `[e2e] test_budget` wins when it is a positive integer —
+    a repo sets it at its current size and lowers it as it trims. Absent,
+    unparsable, or not a positive int (a bool, a string, 0) falls back to the
+    scaffold target, with a note saying why, so a typo can never silently
+    raise the bar.
+    """
+    if not fleet_toml_text:
+        return default, "scaffold-target", "no .fleet.toml"
+    import tomllib
+    try:
+        data = tomllib.loads(fleet_toml_text)
+    except tomllib.TOMLDecodeError:
+        return default, "scaffold-target", ".fleet.toml could not be parsed"
+    e2e = data.get("e2e")
+    if e2e is not None and not isinstance(e2e, dict):
+        return default, "scaffold-target", "[e2e] is not a table"
+    raw = e2e.get("test_budget") if e2e is not None else None
+    if raw is None:
+        return default, "scaffold-target", "no [e2e] test_budget declared"
+    if isinstance(raw, bool) or not isinstance(raw, int) or raw <= 0:
+        return default, "scaffold-target", f"invalid [e2e] test_budget {raw!r} ignored"
+    return raw, "declared", "[e2e] test_budget"
+
+
+def budget_verdict(dirs_resolved: bool, files: int, node_count: Optional[int],
+                   raw_tests: int, limit: int) -> tuple:
+    """`(verdict, count, count_kind)` for the suite budget.
+
+    Nodes are the measure (parametrize expansion and browser projections are
+    what the gate pays for). When nodes cannot be measured, the raw function
+    count is a lower bound: it can prove `over`, never `within`. Test dirs
+    that resolve to nothing on disk are `unmeasured` — the scan had nowhere to
+    look, which is not the same fact as "no suite" (fleet-config#602).
+    """
+    if not dirs_resolved:
+        return "unmeasured", 0, "unresolved-test-dirs"
+    if files == 0:
+        return "no-suite", 0, "files"
+    if node_count is not None:
+        return ("over" if node_count > limit else "within"), node_count, "nodes"
+    if raw_tests > limit:
+        return "over", raw_tests, "functions-lower-bound"
+    return "unmeasured", raw_tests, "functions-lower-bound"
+
+
 # ---- IO layer: gather from a repo -----------------------------------------
 
 def _list_files(repo_root: Path, rel_dir: str) -> List[str]:
@@ -534,6 +594,32 @@ def cmd_scan(repo_root: Path, target: int) -> int:
     return 0
 
 
+def cmd_budget(repo_root: Path) -> int:
+    claude_md_path = repo_root / "CLAUDE.md"
+    claude_md_text = (
+        claude_md_path.read_text(encoding="utf-8", errors="replace")
+        if claude_md_path.is_file() else None
+    )
+    test_dirs = resolve_test_dirs(claude_md_text)
+    files = [rel for d in test_dirs for rel in _list_files(repo_root, d)]
+    raw_tests = sum(len(parse_test_file(repo_root, rel)["tests"]) for rel in files)  # type: ignore[arg-type]
+    node_count = collect_pytest_node_count(repo_root, test_dirs) if files else None
+
+    fleet_toml = repo_root / ".fleet.toml"
+    toml_text = fleet_toml.read_text(encoding="utf-8", errors="replace") if fleet_toml.is_file() else None
+    limit, source, note = budget_limit(toml_text)
+    existing_dirs, _missing = split_resolved_dirs(repo_root, test_dirs)
+    verdict, count, kind = budget_verdict(bool(existing_dirs), len(files), node_count, raw_tests, limit)
+
+    print(f"E2E_BUDGET={verdict}")
+    print(f"E2E_BUDGET_COUNT={count}")
+    print(f"E2E_BUDGET_COUNT_KIND={kind}")
+    print(f"E2E_BUDGET_LIMIT={limit}")
+    print(f"E2E_BUDGET_SOURCE={source}")
+    print(f"E2E_BUDGET_REASON={kind} {count} vs limit {limit} ({note}); test dirs {','.join(test_dirs)}")
+    return 0
+
+
 def main(argv: Optional[List[str]] = None) -> int:
     ap = argparse.ArgumentParser(description="Deterministic e2e test-suite inventory for /e2e-audit.")
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -542,11 +628,16 @@ def main(argv: Optional[List[str]] = None) -> int:
     p_scan.add_argument("repo", type=Path)
     p_scan.add_argument("--target", type=int, default=DEFAULT_TARGET)
 
+    p_budget = sub.add_parser("budget", help="compare the suite's size to its declared budget")
+    p_budget.add_argument("repo", type=Path)
+
     args = ap.parse_args(argv)
     repo = args.repo.resolve()
     if not repo.is_dir():
         print(f"Not a directory: {repo}", file=sys.stderr)
         return 2
+    if args.cmd == "budget":
+        return cmd_budget(repo)
     return cmd_scan(repo, args.target)
 
 
