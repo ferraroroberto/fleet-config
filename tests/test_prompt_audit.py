@@ -365,6 +365,16 @@ shared_run = {"date": "d", "rubric": rub, "scan_ran": True, "sources": [],
 smd, _ = pa.render_digest(shared_run, RULES, master_text="## Streamlit conventions for apps\n")
 check("- **R-26** violation — `## Streamlit conventions for apps` — propagate to: a, b" in smd,
       f"a shared line is listed once, with its strongest verdict (got {smd!r})")
+part_run = {"date": "d", "rubric": rub, "scan_ran": True, "sources": [],
+            "plan": ["PLAN=r/a.md|action=scan|reason=new|sha=aaaaaaaaaaaa", "PLAN=r/b.md|action=scan|reason=new|sha=bbbbbbbbbbbb",
+                     "PLAN=r/c.md|action=scan|reason=new|sha=cccccccccccc", "PLAN=r/d.md|action=skip|reason=unchanged|sha=dddddddddddd"],
+            "judgments": {"r/a.md": [], "r/b.md": [{"rule": "R-18", "verdict": "unmeasured", "note": "file too long to finish"}],
+                          "r/c.md": None}}
+check(pa.partition_run(part_run)["recorded"] == {"r/a.md": "aaaaaaaaaaaa"},
+      "only a file judged with no unmeasured rule is recorded; unjudged, partly judged and skipped files are not")
+pmd, pstatus = pa.render_digest(part_run, RULES)
+check(pstatus == "partial" and "rule verdicts not established 1" in pmd and "- `r/b.md` **R-18** — file too long" in pmd,
+      "a per-rule unmeasured verdict is listed and makes the run partial, never dropped as compliant")
 upd, ustatus = pa.render_digest({"date": "d", "scan_ran": False, "update_issue": "#900", "rubric": rub,
                                  "sources": ["VERDICT=changed|id=s1|sha=y|marker=none|reason=sha x -> y"]}, RULES)
 check(ustatus == "complete" and "not run — rule-set stale, see #900" in upd and "`guides=changed`" in upd,

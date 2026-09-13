@@ -107,7 +107,7 @@ Group the planned files by repo. Split `fleet-config` into three groups (the glo
 
 Brief each worker with exactly this, filled in:
 
-> Read-only task: do not edit, create, move or delete any file, and do not run git, gh or any command that changes state. Read `E:/automation/fleet-config/.claude/skills/prompt-audit/rules.md` first, then each file below in full.
+> Read-only task: do not edit, create, move or delete any file, and do not run git, gh or any command that changes state. Read `<absolute path of this checkout>/.claude/skills/prompt-audit/rules.md` first, then each file below in full.
 > Files, with audience/kind and scoped sections: `<inventory FILE= / SECTION= lines>`.
 > Lint candidates: `<HIT= and HITS= lines for these files>`.
 > For every file, assess every rule whose `file:` scope covers the file's kind and whose tag applies to its reader (a single-vendor rule does not apply inside a section scoped to the other vendor; a `[conflict]` rule applies only to neutral readers). Every lint candidate gets a verdict: `violation` or `consider` (never stronger than its `cap`) when the rule's `Why:` genuinely applies, `compliant` with a one-clause note when it is a false positive. Judgment rules get `violation`, `consider` or `compliant` from your reading; a rule you could not establish is `unmeasured`, never `compliant`. `text` is the offending line copied verbatim.
@@ -143,16 +143,15 @@ The helper prints `DIGEST=status=complete|partial` on stderr. The digest carries
 
 ### 8. Record and post
 
-1. `<scratch>/recorded.txt`: one `<path> <sha>` line per file with a non-null judgment, `sha` from its `PLAN=` line (the bytes that were actually judged). Empty in update mode or when nothing was scanned.
-2. Write the ledger body (creates the `prompt-audit ledger` issue, label `audit-meta`, on the first run):
+1. Write the ledger body (creates the `prompt-audit ledger` issue, label `audit-meta`, on the first run). It records, from `run.json` itself, each file judged with no `unmeasured` rule at its `PLAN=` sha (the bytes that were actually judged); an unmeasured file or rule is left out so it is rescanned next run. Nothing is recorded in update mode or when nothing was scanned.
    ```
-   <py> <audit> ledger write --recorded <scratch>/recorded.txt
+   <py> <audit> ledger write --run <scratch>/run.json
    ```
-3. Post the digest:
+2. Post the digest:
    ```
    <py> <audit> ledger comment --body-file <scratch>/digest.md
    ```
-4. Scan mode only: `<py> <audit> state mark --scan`.
+3. Scan mode only: `<py> <audit> state mark --scan`.
 
 A failed write is reported with its error; the run does not claim delivery without the `LEDGER_COMMENT=` URL.
 

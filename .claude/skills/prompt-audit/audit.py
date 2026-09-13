@@ -25,7 +25,7 @@ Subcommands (every line-oriented output uses the fleet `KEY=value|...` protocol)
   dedup --findings JSON           annotated findings JSON + DEDUP= summary
   state show | state mark (--source ID --verdict V | --scan) [--date D]
   ledger plan [--only REPO] [--rescan-all]
-  ledger write --recorded FILE [--date D] [--dry-run]
+  ledger write --run JSON [--date D] [--dry-run]
   ledger comment --body-file FILE
   digest --run JSON               the run digest markdown
 
@@ -775,29 +775,53 @@ def _kv(line: str) -> dict:
     return out
 
 
-def render_digest(run: dict, rules: Dict[str, dict], master_text: str = "", lite_text: str = "") -> Tuple[str, str]:
-    """(markdown, status). Pure: every count comes from `run`, nothing is inferred.
+def partition_run(run: dict) -> dict:
+    """Split a run into what was judged, skipped and not established.
 
     `run`: {date, dry_run, sources: [VERDICT= lines], update_issue, scan_ran,
     plan: [PLAN= lines], judgments: {path: [finding, ...] | null}, rubric}.
-    A planned-scan file with no judgment (absent or null) is `unmeasured`, never
-    compliant; skipped files are listed as skipped.
+    A planned-scan file with no judgment (absent or null) is an unmeasured file; a
+    judged file carrying any per-rule `unmeasured` verdict is only partly
+    established. Only a file judged with no unmeasured rule is `recorded` (its
+    PLAN sha goes into the ledger) — anything less is rescanned next run rather
+    than skipped as if it had been fully assessed.
+    """
+    plan = [_kv(l) for l in run.get("plan", [])]
+    sha_of = {p["PLAN"]: p.get("sha", "") for p in plan}
+    scan = [p["PLAN"] for p in plan if p.get("action") == "scan"]
+    unreadable = [p["PLAN"] for p in plan if p.get("action") == "unmeasured"]
+    judgments = run.get("judgments") or {}
+    scan_ran = bool(run.get("scan_ran"))
+    judged = [k for k in scan if judgments.get(k) is not None] if scan_ran else []
+    unmeasured_rules = [dict(f, path=k) for k in judged for f in judgments[k] if f.get("verdict") == "unmeasured"]
+    partly = {f["path"] for f in unmeasured_rules}
+    return {
+        "plan": plan,
+        "skip": [p["PLAN"] for p in plan if p.get("action") == "skip"],
+        "judged": judged,
+        "unmeasured": (unreadable + [k for k in scan if judgments.get(k) is None]) if scan_ran else [],
+        "unmeasured_rules": unmeasured_rules,
+        "findings": [dict(f, path=k) for k in judged for f in judgments[k]
+                     if f.get("verdict") in ("violation", "consider")],
+        "recorded": {k: sha_of[k] for k in judged if k not in partly and sha_of.get(k) not in ("", "unmeasured")},
+    }
+
+
+def render_digest(run: dict, rules: Dict[str, dict], master_text: str = "", lite_text: str = "") -> Tuple[str, str]:
+    """(markdown, status). Pure: every count comes from `run` (see `partition_run`), nothing is inferred.
+
+    Unmeasured files and unmeasured rules are listed as such and make the run
+    `partial` — never folded into compliant; skipped files are listed as skipped.
     """
     srcs = [_kv(l) for l in run.get("sources", [])]
     by_verdict = {v: [s for s in srcs if s.get("VERDICT") == v] for v in VERDICTS}
     stale = by_verdict["changed"] + by_verdict["new-guide"]
     guides = "changed" if stale else ("not-checked" if by_verdict["not-checked"] or not srcs else "unchanged")
-    plan = [_kv(l) for l in run.get("plan", [])]
-    scan = [p["PLAN"] for p in plan if p.get("action") == "scan"]
-    skip = [p["PLAN"] for p in plan if p.get("action") == "skip"]
-    unreadable = [p["PLAN"] for p in plan if p.get("action") == "unmeasured"]
-    judgments = run.get("judgments") or {}
+    parts = partition_run(run)
+    plan, skip, judged = parts["plan"], parts["skip"], parts["judged"]
+    unmeasured, unmeasured_rules, findings = parts["unmeasured"], parts["unmeasured_rules"], parts["findings"]
     scan_ran = bool(run.get("scan_ran"))
-    unmeasured = (unreadable + [k for k in scan if judgments.get(k) is None]) if scan_ran else []
-    judged = [k for k in scan if judgments.get(k) is not None] if scan_ran else []
-    findings = [dict(f, path=k) for k in judged for f in judgments[k]
-                if f.get("verdict") in ("violation", "consider")]
-    status = "partial" if unmeasured else "complete"
+    status = "partial" if unmeasured or unmeasured_rules else "complete"
 
     out = [f"## prompt-audit digest — {run.get('date', '')}", "",
            f"`status={status}` · `guides={guides}` · `rubric={str(run.get('rubric', ''))[:12]}`"
@@ -813,7 +837,7 @@ def render_digest(run: dict, rules: Dict[str, dict], master_text: str = "", lite
         return "\n".join(out) + "\n", status
 
     out.append(f"**Scan:** {len(plan)} files — scanned {len(judged)}, skipped {len(skip)} (unchanged), "
-               f"unmeasured {len(unmeasured)}")
+               f"unmeasured {len(unmeasured)}, rule verdicts not established {len(unmeasured_rules)}")
     tally: Dict[str, Dict[str, int]] = {}
     for f in findings:
         tally.setdefault(f["rule"], {"violation": 0, "consider": 0})[f["verdict"]] += 1
@@ -857,6 +881,9 @@ def render_digest(run: dict, rules: Dict[str, dict], master_text: str = "", lite
     if unmeasured:
         out += ["### Unmeasured (not established — not compliant)", ""]
         out += [f"- `{k}`" for k in unmeasured] + [""]
+    if unmeasured_rules:
+        out += ["### Rules not established (file judged in part — rescanned next run)", ""]
+        out += [f"- `{f['path']}` **{f['rule']}** — {clean(f.get('note', ''))[:160]}" for f in unmeasured_rules] + [""]
     if skip:
         out += ["<details><summary>Skipped — unchanged since the last scan under this rubric "
                 f"({len(skip)})</summary>", ""]
@@ -1016,17 +1043,12 @@ def cmd_ledger(args: argparse.Namespace, cfg: dict) -> int:
               f"|scan={n['scan']}|skip={n['skip']}|unmeasured={n['unmeasured']}")
         return 0
     if args.action == "write":
-        by_key = {e.key: e.sha for e in inventory(_repos(args), cfg.get("audiences", {}))}
-        recorded: Dict[str, str] = {}
-        for raw in Path(args.recorded).read_text(encoding="utf-8").splitlines():
-            parts = raw.split()
-            if not parts:
-                continue
-            sha = parts[1] if len(parts) > 1 else by_key.get(parts[0])
-            if parts[0] not in by_key or not sha or sha == "unmeasured":
-                print(f"❌ not a measured file in the scan surface: {parts[0]}", file=sys.stderr)
-                return 2
-            recorded[parts[0]] = sha
+        surface = {e.key for e in inventory(_repos(args), cfg.get("audiences", {}))}
+        recorded = partition_run(json.loads(Path(args.run).read_text(encoding="utf-8")))["recorded"]
+        outside = sorted(set(recorded) - surface)
+        if outside:
+            print(f"❌ not in the scan surface: {', '.join(outside)}", file=sys.stderr)
+            return 2
         ledger = read_ledger_issue()
         files, dropped = merge_ledger(ledger, recorded, rubric)
         body = render_ledger_body(files, rubric, args.date or dt.date.today().isoformat(),
@@ -1102,7 +1124,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     lg.add_argument("action", choices=("plan", "write", "comment"))
     lg.add_argument("--only", default=None)
     lg.add_argument("--rescan-all", action="store_true")
-    lg.add_argument("--recorded")
+    lg.add_argument("--run", help="run.json: files judged with no unmeasured rule are recorded")
     lg.add_argument("--date", default=None)
     lg.add_argument("--dry-run", action="store_true")
     lg.add_argument("--body-file")
@@ -1124,8 +1146,8 @@ def main(argv: Optional[List[str]] = None) -> int:
     if args.cmd == "state":
         return cmd_state(args, cfg)
     if args.cmd == "ledger":
-        if args.action == "write" and not args.recorded:
-            ap.error("ledger write needs --recorded")
+        if args.action == "write" and not args.run:
+            ap.error("ledger write needs --run")
         if args.action == "comment" and not args.body_file:
             ap.error("ledger comment needs --body-file")
         return cmd_ledger(args, cfg)
