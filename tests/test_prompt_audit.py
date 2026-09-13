@@ -394,6 +394,44 @@ check(nstatus == "complete" and "`guides=not-checked`" in nmd
       and "<!-- prompt-audit-digest run=d status=complete scan=posted update-issue=none -->" in nmd,
       "every source not-checked still scans and stamps a delivered scan (#834)")
 
+# ---- chat ping: one ASCII line for a delivered run, counts shared with the digest (#831) ----
+
+URL = "https://github.com/o/r/issues/882#issuecomment-1"
+ping_run = dict(run, judgments=dict(run["judgments"], **{"r/b.md": [{"rule": "R-13", "verdict": "consider", "line": 2}]}))
+ping = pa.render_ping(ping_run, URL)
+check(ping == f"prompt-audit 2026-09-13 - status=partial - guides=not-checked - scanned 2, skipped 1, unmeasured 1"
+             f" - 1 violation, 1 consider - ledger {URL}", f"scan-mode ping line (got {ping!r})")
+pmd_ping, _ = pa.render_digest(ping_run, RULES)
+check("scanned 2, skipped 1 (unchanged), unmeasured 1" in pmd_ping and "1 violation, 1 consider" in pmd_ping,
+      "the ping and the digest report the same counts")
+uping = pa.render_ping({"date": "d", "scan_ran": False, "update_issue": "#900",
+                       "sources": ["VERDICT=changed|id=s1|sha=y|marker=none|reason=sha x -> y"]}, URL)
+check(uping == f"prompt-audit d - status=complete - guides=changed - scan not run, rule-set update issue #900 - ledger {URL}",
+      f"update-mode ping names the update issue instead of scan counts (got {uping!r})")
+check(all(ord(c) < 128 for c in pa.render_ping(ping_run, URL + "·")), "the ping line is pure ASCII (#507)")
+
+ping_tmp = Path(tempfile.mkdtemp(prefix="prompt-audit-ping-"))
+try:
+    run_file = write(ping_tmp / "run.json", json.dumps(ping_run))
+    dry_file = write(ping_tmp / "dry.json", json.dumps(dict(ping_run, dry_run=True)))
+    out, err = io.StringIO(), io.StringIO()
+    with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+        rc_ping = pa.main(["ping", "--run", str(run_file), "--comment-url", URL])
+        rc_dry = pa.main(["ping", "--run", str(dry_file), "--comment-url", URL])
+    check(rc_ping == 0 and out.getvalue() == ping + "\n", "ping CLI prints exactly the rendered line")
+    check(rc_dry == 2 and "dry run" in err.getvalue(), "ping CLI refuses a dry run, so a dry run sends nothing")
+finally:
+    shutil.rmtree(ping_tmp, ignore_errors=True)
+
+skill_md = (SKILL / "SKILL.md").read_text(encoding="utf-8")
+writes = next(l for l in skill_md.splitlines() if l.startswith("- **Writes are exactly these:**"))
+check("chat ping" in writes and "delivered run only" in writes, "the ping is listed among the skill's writes")
+step10 = skill_md.split("### 10.", 1)[-1]
+check("ping --run" in step10 and "notify_send.py --category log" in step10, "step 10 pipes the helper line to notify_send")
+check(all(m in step10 for m in ("PING=sent", "PING=not-delivered", "PING=not-sent")),
+      "a failed or skipped ping is reported as its own state, never as sent")
+check("never prints `SCHEDULED-RUN-FAILED`" in step10, "a failed ping never flips a delivered run to failed")
+
 # ---- prompt-drift issues: routing, tiers, living-backlog merge (fleet-config#833) ----
 
 MASTER = "# Scaffold\n\n## Streamlit conventions for every app\n\n- Keep secrets in the env file always.\n"
