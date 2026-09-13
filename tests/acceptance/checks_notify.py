@@ -736,8 +736,9 @@ def _notify_complete_unit_checks() -> Tuple[int, int]:
     # offender — separators, dashes, quotes.
     offenders: list[str] = []
     arg_text = re.compile(r'--(?:summary|text)\s+"([^"]*)"')
-    sources = sorted((REPO / ".claude" / "skills").rglob("SKILL.md"))
-    sources += sorted((REPO / "skills").rglob("SKILL.md"))
+    # `*.md`, not `SKILL.md`: a skill's on-demand companion files carry commands too.
+    sources = sorted((REPO / ".claude" / "skills").rglob("*.md"))
+    sources += sorted((REPO / "skills").rglob("*.md"))
     sources += sorted((REPO / "docs").rglob("*.md"))
     sources += [REPO / "README.md", REPO / "CLAUDE.md", REPO / "global-CLAUDE.md"]
     for source in sources:
