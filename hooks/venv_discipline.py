@@ -647,7 +647,10 @@ def _is_quoted_alternative(chain: List[Tuple[str, str, bool, bool]],
     inside quotes right after a lone `|`, with no whitespace in between, is
     read this way: a quoted string that a shell will run (`bash -c "a; python
     x"`, `ssh host 'a | pip install b'`) spaces or `;`/`&&`-joins its clauses,
-    and keeps the pre-#885 reading.
+    and keeps the pre-#885 reading. Accepted residual: a glued pipe in a
+    string a shell runs (`sh -c "cat r|pip install -r -"`, `"$(cat f|python
+    -)"`) now reads as text too, as does one after a quote the escape-blind
+    scan misreads. Rule 3 is a nudge, and it already missed `$(python x)`.
     """
     segment, _separator, _quoted, starts_quoted = chain[index]
     return (starts_quoted and index > 0 and chain[index - 1][1] == "|"
