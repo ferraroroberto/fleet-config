@@ -146,5 +146,46 @@ with tempfile.TemporaryDirectory() as td:
     check(rc == 0 and "SOURCE=classifier-error" in out and "E2E_TIER=full" in out,
           "classifier error escalates to full (fail-safe), never skip/unknown")
 
+    # ---- surface tier (fleet-config#902, project-scaffolding#258) ----
+    def _fake_classifier(name: str, body: str) -> Path:
+        repo = root / name
+        (repo / "scripts").mkdir(parents=True)
+        (repo / "scripts" / "classify_e2e.py").write_text(body, encoding="utf-8")
+        return repo
+
+    surface = _fake_classifier("surface", (
+        "print('E2E_TIER=surface')\n"
+        "print('E2E_BROWSERS=')\n"
+        "print('E2E_PYTEST_TARGET=tests/e2e/test_nav.py tests/e2e/test_smoke.py')\n"
+        "print('E2E_REASON=surface nav: app/nav/nav.css')\n"
+        "print('E2E_SURFACE=nav')\n"
+    ))
+    rc, out = _capture(er.cmd_route, surface, [])
+    check(rc == 0 and "SOURCE=classifier" in out and "E2E_TIER=surface" in out
+          and "E2E_SURFACE=nav" in out
+          and "E2E_PYTEST_TARGET=tests/e2e/test_nav.py tests/e2e/test_smoke.py" in out,
+          "a well-formed surface verdict passes through verbatim, multi-path target intact")
+
+    for name, lines, why in (
+        ("surface-no-targets",
+         "print('E2E_TIER=surface')\nprint('E2E_PYTEST_TARGET=')\nprint('E2E_SURFACE=nav')\n",
+         "a surface verdict with an empty target list"),
+        ("surface-no-name",
+         "print('E2E_TIER=surface')\nprint('E2E_PYTEST_TARGET=tests/e2e/test_nav.py')\n",
+         "a surface verdict naming no surface"),
+        ("unknown-tier",
+         "print('E2E_TIER=partial')\nprint('E2E_PYTEST_TARGET=tests/e2e/test_nav.py')\n",
+         "an unrecognised tier"),
+    ):
+        rc, out = _capture(er.cmd_route, _fake_classifier(name, lines), [])
+        check(rc == 0 and "SOURCE=classifier-error" in out and "E2E_TIER=full" in out
+              and "E2E_TIER=surface" not in out and "E2E_TIER=partial" not in out,
+              f"{why} escalates to whole-suite full, never passes through")
+
+check(er.unusable_verdict(["E2E_TIER=skip", "E2E_PYTEST_TARGET="]) is None,
+      "unusable_verdict: skip with an empty target is a legitimate verdict")
+check(er.unusable_verdict(["E2E_TIER=static", "E2E_PYTEST_TARGET=tests/e2e/test_smoke.py"]) is None,
+      "unusable_verdict: static passes")
+
 
 _h.report_and_exit("e2e_route")

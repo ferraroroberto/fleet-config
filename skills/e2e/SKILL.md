@@ -16,7 +16,9 @@ The routing *mechanism* is project-scaffolding's diff-proportionate e2e
 routing (`docs/e2e-routing.md`): each repo's own `scripts/classify_e2e.py`
 reads that repo's `.fleet.toml` `[e2e]` table and maps the changed-file set to
 a tier — `skip` (no browser suite), `static` (narrow smoke slice), `full` —
-fail-safe to `full`. This skill fronts it fleet-wide: runs it where adopted,
+fail-safe to `full`. A repo declaring `[[e2e.surface]]` also gets `surface`: a
+`full` diff whose every full-tier path sits in one declared surface runs only
+that surface's targets (project-scaffolding#258). This skill fronts it fleet-wide: runs it where adopted,
 **bootstraps it where missing** (self-healing adoption), and falls back to
 same-vocabulary LLM judgment only where the classifier can't exist yet.
 
@@ -101,14 +103,18 @@ E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skill
 ```
 
 - `SOURCE=classifier` → honor the printed `E2E_TIER` / `E2E_BROWSERS` /
-  `E2E_PYTEST_TARGET` / `E2E_REASON` **verbatim**. Never override downward.
+  `E2E_PYTEST_TARGET` / `E2E_REASON` (and `E2E_SURFACE` for `surface`)
+  **verbatim**. Never override downward. The helper has already turned an
+  unrecognised tier, or a `surface` with no name or targets, into
+  `SOURCE=classifier-error`.
 - `SOURCE=classifier-error` → the helper already escalated to `full`; run
   full and surface the error in the report.
 - `SOURCE=judgment` (no classifier and bootstrap wasn't possible this run) →
   classify the changed-file set yourself using the *same tier vocabulary* and
   the same fail-safe: only a diff you can positively argue has **no** browser
   impact (backend-only, docs-only, tooling-only) may route below `full`;
-  anything mixed, uncertain, or unfamiliar runs `full`.
+  anything mixed, uncertain, or unfamiliar runs `full`. Judgment **never**
+  emits `surface`; only a classifier reading a declared surface map may.
 - The `full` argument forces `E2E_TIER=full` regardless of the above; `plan`
   stops here and reports the decision without executing.
 
@@ -116,12 +122,13 @@ E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skill
 
 - `skip` → run nothing browser-shaped. Say so explicitly (`e2e: skip —
   <reason>`); the repo's deterministic pytest/gate still covers the backend.
-- `static` / `full` → run the printed pytest target through the **repo's own
-  venv** (`& .\.venv\Scripts\python.exe -m pytest <target>` plus the routed
-  `--browser` flags where the suite supports them). Browser legs come from
-  the table (`static_browsers`) or the repo's own conventions (phone-first
-  repos parametrize WebKit themselves) — never invent a leg the repo doesn't
-  declare.
+- `static` / `full` / `surface` → run the printed pytest target through the
+  **repo's own venv** (`& .\.venv\Scripts\python.exe -m pytest <target>` plus
+  the routed `--browser` flags where the suite supports them). Browser legs
+  come from the table (`static_browsers`) or the repo's own conventions
+  (phone-first repos parametrize WebKit themselves) — never invent a leg the
+  repo doesn't declare. A `surface` target is space-separated: pass each path
+  as its own pytest argument, with suite-default browsers exactly as `full`.
 - **Deduplicate against the verification gate:** when a repo's pre-ship gate
   (e.g. `scripts/verify-before-ship.ps1`) already executed this same routed
   slice in this session, do **not** re-run it — carry that result into the
@@ -190,7 +197,7 @@ One block, echoed verbatim by delegating skills into their finish summary:
 ```
 /e2e — <repo>
   source: classifier | judgment | bootstrapped-this-run | classifier-error
-  tier: skip | static | full | n/a   reason: <E2E_REASON or judgment rationale>
+  tier: skip | static | full | surface (<name>) | n/a   reason: <E2E_REASON or judgment rationale>
   ran: <pytest target + browsers | nothing | carried from gate run>
   result: PASS | FAIL (<counts>) | not run (plan) | n/a
   maintenance: <n removed / n added / table rules added | none>
