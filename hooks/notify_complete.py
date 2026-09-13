@@ -108,7 +108,10 @@ _ATTENTION_KINDS = ("start", "batch", "security")
 # and gets `8 swept · 2 drifted` in the chat. See `_lib.repair_mojibake` for why the
 # boundary can't be trusted (fleet-config#507): the emoji and em-dash in every
 # message above are Python literals for exactly the same reason, which is why
-# they always rendered while the argv-sourced `·` did not.
+# they always rendered while the argv-sourced `·` did not. The `???` seen in
+# practice was not argv at all: `run-hook.ps1` corrupted the command
+# `context_filter_hook` rewrites before it ever ran (fleet-config#912, fixed);
+# the token stays as the transport-independent path.
 SUMMARY_SEPARATOR = " · "
 _SUMMARY_SEPARATOR_TOKEN = re.compile(r"\s*\|\s*")
 

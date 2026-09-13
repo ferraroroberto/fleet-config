@@ -18,7 +18,7 @@ In Git Bash, `\"` inside a double-quoted string is an escaped literal `"`, not a
 
 - **Avoid `pwsh`** — the PATH `pwsh` is a 0-byte WindowsApps reparse stub that fails non-interactively. Use the absolute path `C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe`.
 - **Never call native `cmd.exe /c` from Git Bash.** MSYS rewrites the single-slash switch to `C:/`, so cmd opens interactively and never runs the command (fleet-config#385). Use the PowerShell tool/absolute `powershell.exe` path; if Bash must call cmd, the MSYS-safe spelling is `cmd.exe //c`.
-- **PowerShell scripts reading the agent's stdin JSON** use `[Console]::In.ReadToEnd()` — `$input` is unreliable across the shell → powershell.exe pipe.
+- **PowerShell scripts reading the agent's stdin JSON** read the whole stream explicitly — `$input` is unreliable across the shell → powershell.exe pipe — and **as UTF-8 on both legs**: `[Console]::In` decodes with the OEM code page (ibm850) and `$payload | python` encodes with `$OutputEncoding` (us-ascii in 5.1), so every non-ASCII codepoint arrives as `?` (fleet-config#912). Use `(New-Object IO.StreamReader([Console]::OpenStandardInput(), (New-Object Text.UTF8Encoding $false))).ReadToEnd()` and set `$OutputEncoding` to the same BOM-less encoding before piping on; avoid `[Console]::InputEncoding`, which needs a console a windowless hook may not have. The Python side decodes `sys.stdin.buffer` as UTF-8 too, since piped text stdin defaults to cp1252 (see `hooks/run-hook.ps1`, `_lib.read_stdin_json`).
 - `[math]::Round(x) + '%'` parses as arithmetic and throws — cast first: `[string][math]::Round(x) + '%'`.
 
 ## PYTHONPATH for out-of-tree Python scripts

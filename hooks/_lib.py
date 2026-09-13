@@ -539,7 +539,10 @@ def read_stdin_json() -> Dict[str, Any]:
     global _ACTIVE_EVENT, _ACTIVE_AGENT
     _ACTIVE_EVENT = None
     _ACTIVE_AGENT = None
-    raw = sys.stdin.read()
+    # Decode the raw bytes as UTF-8: a piped stdin's text layer defaults to
+    # cp1252 on Windows and turns an em dash into mojibake (fleet-config#912).
+    buffer = getattr(sys.stdin, "buffer", None)
+    raw = buffer.read().decode("utf-8", errors="replace") if buffer is not None else sys.stdin.read()
     if not raw or not raw.strip():
         return {}
     try:

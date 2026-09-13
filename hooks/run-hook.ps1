@@ -9,9 +9,9 @@
     commands point at this PowerShell script (forward-slash path) and pass
     the hook name as a parameter.
 
-    The shim reads stdin (per the global gotcha: `[Console]::In.ReadToEnd()`
-    is the only reliable way), then pipes it to the Python hook module via
-    the `py` launcher.
+    The shim reads the whole of stdin as UTF-8 (per the global gotcha:
+    `$input` is unreliable, and `[Console]::In` decodes with the OEM code
+    page), then pipes it UTF-8-encoded to the Python hook module.
 
     Exit code propagates: 0 = allow, 2 = block, anything else = treated as 0
     by Claude Code.
@@ -38,7 +38,16 @@ if (-not (Test-Path $hookPath)) {
     exit 0   # missing hook is a config bug, not a tool-call problem -- don't block
 }
 
-$payload = [Console]::In.ReadToEnd()
+# UTF-8 on both legs (fleet-config#912). `[Console]::In` decodes with the OEM
+# code page (ibm850) and `$payload | python` encodes with `$OutputEncoding`
+# (us-ascii in Windows PowerShell 5.1), so every non-ASCII codepoint reached the
+# hook as `?`. Wrap the raw stdin stream instead of setting
+# `[Console]::InputEncoding`, which calls the console API a windowless hook
+# process may not have. BOM-less, so the payload's first byte stays `{`.
+$utf8 = New-Object System.Text.UTF8Encoding($false)
+$stdin = New-Object System.IO.StreamReader([Console]::OpenStandardInput(), $utf8)
+$payload = $stdin.ReadToEnd()
+$OutputEncoding = $utf8
 
 # Prefer a real Python executable. WindowsApps aliases for `py` / `python` can
 # hang in non-interactive hook processes, so skip those stubs if they appear
