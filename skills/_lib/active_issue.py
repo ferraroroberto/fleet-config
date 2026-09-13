@@ -20,6 +20,7 @@ import json
 import os
 import re
 import shutil
+import socket
 import sys
 import tempfile
 import time
@@ -27,7 +28,7 @@ import uuid
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any, Dict, Iterator, Optional
+from typing import AbstractSet, Any, Callable, Dict, Iterator, Mapping, Optional
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import git_run  # noqa: E402
@@ -41,6 +42,22 @@ _REPLACE_ATTEMPTS = 3
 _LOCK_OWNER_PREFIX = "owner"
 _WIN_PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
 _WIN_STILL_ACTIVE = 259
+_WIN_ERROR_ACCESS_DENIED = 5
+_WIN_ERROR_INVALID_PARAMETER = 87
+
+# Optional owner fields on a claim row (fleet-config#852). Rows written before
+# them, or by a writer with no resolvable owner, simply omit the field.
+OWNER_SESSION_FIELD = "owner_session_id"
+OWNER_PID_FIELD = "owner_pid"
+OWNER_HOST_FIELD = "owner_host"
+# The agent process that owns the session. Never this helper's own pid (or
+# its shell's): both exit seconds after the write and would read as dead.
+_OWNER_PID_ENV = "CLAUDE_PID"
+_OWNER_SESSION_ENV = "APP_LAUNCHER_SESSION_ID"
+
+LIVENESS_LIVE = "live"
+LIVENESS_DEAD = "dead"
+LIVENESS_UNKNOWN = "unknown"
 
 
 def _pid_alive(pid: int) -> bool:
@@ -76,6 +93,52 @@ def _pid_alive(pid: int) -> bool:
         return True
     except OSError:
         return False
+    return True
+
+
+def pid_state(pid: int) -> Optional[bool]:
+    """Tri-state pid probe for claim-owner liveness: True alive, False
+    confirmed gone, None when the probe cannot tell.
+
+    Deliberately separate from :func:`_pid_alive`, whose bool folds "could
+    not open the process" into dead -- safe for the lock (age must also
+    exceed the stale horizon) but not for a claim, where ``dead`` needs
+    positive evidence (fleet-config#852). Access denied means the process
+    exists. The same pid-reuse caveat applies and errs toward alive.
+    """
+    if not isinstance(pid, int) or isinstance(pid, bool) or pid <= 0:
+        return None
+    if sys.platform == "win32":
+        from ctypes import wintypes
+
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)  # type: ignore[attr-defined]
+        kernel32.OpenProcess.restype = wintypes.HANDLE
+        kernel32.OpenProcess.argtypes = (wintypes.DWORD, wintypes.BOOL, wintypes.DWORD)
+        kernel32.GetExitCodeProcess.argtypes = (wintypes.HANDLE, ctypes.POINTER(wintypes.DWORD))
+        kernel32.CloseHandle.argtypes = (wintypes.HANDLE,)
+        handle = kernel32.OpenProcess(_WIN_PROCESS_QUERY_LIMITED_INFORMATION, False, pid)
+        if not handle:
+            error = ctypes.get_last_error()  # type: ignore[attr-defined]
+            if error == _WIN_ERROR_INVALID_PARAMETER:
+                return False
+            if error == _WIN_ERROR_ACCESS_DENIED:
+                return True
+            return None
+        try:
+            exit_code = wintypes.DWORD()
+            if not kernel32.GetExitCodeProcess(handle, ctypes.byref(exit_code)):
+                return None
+            return exit_code.value == _WIN_STILL_ACTIVE
+        finally:
+            kernel32.CloseHandle(handle)
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    except OSError:
+        return None
     return True
 
 
@@ -278,6 +341,83 @@ def marker_key(repo_name: str, issue: int) -> str:
     return f"{repo_name}#{issue}"
 
 
+def current_host() -> Optional[str]:
+    """This machine's host id, or None when it cannot be resolved."""
+    try:
+        host = socket.gethostname().strip()
+    except OSError:
+        return None
+    return host or None
+
+
+def owner_fields(environ: Optional[Mapping[str, str]] = None) -> Dict[str, Any]:
+    """Resolve the optional owner fields for a new claim row.
+
+    Each field is included only when positively known: the App Launcher
+    session id, the agent process pid, and the host both are scoped to. A
+    field that cannot be resolved is omitted, never guessed.
+    """
+    env = os.environ if environ is None else environ
+    fields: Dict[str, Any] = {}
+    session_id = (env.get(_OWNER_SESSION_ENV) or "").strip()
+    if session_id:
+        fields[OWNER_SESSION_FIELD] = session_id
+    raw_pid = (env.get(_OWNER_PID_ENV) or "").strip()
+    if raw_pid.isdigit() and int(raw_pid) > 0:
+        fields[OWNER_PID_FIELD] = int(raw_pid)
+    host = current_host()
+    if host and fields:
+        fields[OWNER_HOST_FIELD] = host
+    return fields
+
+
+def classify_owner(
+    row: Any,
+    *,
+    live_session_ids: Optional[AbstractSet[str]],
+    pid_probe: Callable[[int], Optional[bool]],
+    host: Optional[str],
+) -> str:
+    """Classify a claim row's owner as ``live`` / ``dead`` / ``unknown``.
+
+    Pure apart from the injected ``pid_probe`` (pass :func:`pid_state` for the
+    real one). ``live_session_ids`` is the set of live App Launcher session
+    ids, or None when that list could not be read; ``host`` is
+    :func:`current_host`. Evidence of life wins over evidence of death, and
+    ``dead`` needs positive evidence: the owner session absent from a
+    readable list, or the owner pid confirmed gone on the owner's own host.
+    Rows without owner fields, from another host, or with any unreadable
+    input are ``unknown``. Classification never mutates or prunes a row.
+    """
+    if not isinstance(row, dict):
+        return LIVENESS_UNKNOWN
+    session_id = row.get(OWNER_SESSION_FIELD)
+    pid = row.get(OWNER_PID_FIELD)
+    owner_host = row.get(OWNER_HOST_FIELD)
+    has_session = isinstance(session_id, str) and bool(session_id)
+    has_pid = isinstance(pid, int) and not isinstance(pid, bool) and pid > 0
+    if not isinstance(owner_host, str) or not owner_host or not host:
+        return LIVENESS_UNKNOWN
+    if owner_host.casefold() != host.casefold():
+        return LIVENESS_UNKNOWN
+
+    verdicts = []
+    if has_session and live_session_ids is not None:
+        verdicts.append(session_id in live_session_ids)
+    if has_pid:
+        try:
+            alive = pid_probe(pid)
+        except Exception:
+            alive = None
+        if alive is not None:
+            verdicts.append(bool(alive))
+    if any(verdicts):
+        return LIVENESS_LIVE
+    if verdicts:
+        return LIVENESS_DEAD
+    return LIVENESS_UNKNOWN
+
+
 def add_marker(
     repo: str | Path,
     issue: int,
@@ -285,6 +425,7 @@ def add_marker(
     *,
     now: Optional[datetime] = None,
     path: Optional[Path] = None,
+    environ: Optional[Mapping[str, str]] = None,
 ) -> Dict[str, Any]:
     """Add/refresh one marker and return the row written."""
     if issue <= 0:
@@ -299,6 +440,7 @@ def add_marker(
         "number": issue,
         "branch": branch,
         "started_at": _iso_z(moment),
+        **owner_fields(environ),
     }
     with state_lock(target):
         rows = prune_rows(read_rows(target), now=moment)
