@@ -138,6 +138,9 @@ clean = pa.lint_entry(entry_for(CLEAN), RULES, AUD)
 check(clean.hits == [], f"clean fixture -> no hits (got {[(h.rule, h.line) for h in clean.hits]})")
 check("|hits=none|" in pa.hits_line(clean), "clean HITS line says hits=none")
 
+multi = pa.lint_entry(entry_for("# M\n\nKeep the hub on one port.\nRoute Claude traffic through it.\n"), RULES, AUD)
+check([h.line for h in by_rule(multi, "R-17")] == [4], "R-17 anchors on the line naming the vendor term, not the paragraph start")
+
 long_md = pa.lint_entry(entry_for("line\n" * 201), RULES, AUD)
 check(long_md.counts().get("R-14") == 1 and long_md.size == "201l/200", "CLAUDE.md over 200 lines -> R-14")
 check(pa.lint_entry(entry_for("line\n" * 200), RULES, AUD).counts().get("R-14") is None, "exactly 200 lines is within cap")
@@ -354,6 +357,13 @@ check("scanned 2, skipped 1 (unchanged), unmeasured 1" in md, f"scan partition c
 check("- `r/d.md`" in md.split("### Unmeasured", 1)[-1], "unmeasured file listed as unmeasured")
 check("Skipped — unchanged" in md and "- `r/c.md`" in md, "skipped file listed as skipped")
 check("**Findings:** 1 violation, 0 consider, across 1 files" in md, "compliant verdicts are not findings")
+shared_run = {"date": "d", "rubric": rub, "scan_ran": True, "sources": [],
+              "plan": ["PLAN=a/CLAUDE.md|action=scan|reason=new|sha=1", "PLAN=b/CLAUDE.md|action=scan|reason=new|sha=2"],
+              "judgments": {k: [{"rule": "R-26", "verdict": v, "line": 5, "text": "## Streamlit conventions for apps"}]
+                            for k, v in (("a/CLAUDE.md", "consider"), ("b/CLAUDE.md", "violation"))}}
+smd, _ = pa.render_digest(shared_run, RULES, master_text="## Streamlit conventions for apps\n")
+check("- **R-26** violation — `## Streamlit conventions for apps` — propagate to: a, b" in smd,
+      f"a shared line is listed once, with its strongest verdict (got {smd!r})")
 upd, ustatus = pa.render_digest({"date": "d", "scan_ran": False, "update_issue": "#900", "rubric": rub,
                                  "sources": ["VERDICT=changed|id=s1|sha=y|marker=none|reason=sha x -> y"]}, RULES)
 check(ustatus == "complete" and "not run — rule-set stale, see #900" in upd and "`guides=changed`" in upd,

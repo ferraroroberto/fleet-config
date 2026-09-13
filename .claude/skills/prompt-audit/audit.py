@@ -407,6 +407,14 @@ LINE_PATTERNS: Dict[str, re.Pattern] = {
 _MODAL = re.compile(r"\b(always|must not|must|never|do not|don't)\s+([a-z][a-z-]*(?:\s+[a-z][a-z-]*){0,2})", re.I)
 # "I" only as a capitalised standalone word (never the I in "I/O"); the rest any case.
 _PERSON = re.compile(r"\bI\b(?!/)|\b(?i:me|my|we|our|you|your)\b")
+
+
+def audience_terms(audience_cfg: dict) -> re.Pattern:
+    """One audience's product terms as a case-sensitive whole-word pattern (never matches when empty)."""
+    terms = audience_cfg.get("terms", [])
+    return re.compile("|".join(rf"\b{re.escape(t)}\b" for t in terms) if terms else r"(?!)")
+
+
 LINT_RULES = sorted(set(PATTERNS) | set(LINE_PATTERNS) | {"R-14", "R-15", "R-16", "R-17"})
 
 
@@ -565,10 +573,11 @@ def lint_entry(entry: Entry, rules: Dict[str, dict], audiences: Dict[str, dict])
         joined = " ".join(l for _, l in para)
         if any(mk in joined for mk in all_markers):
             continue
-        named = [a for a, c in audiences.items()
-                 if any(re.search(rf"\b{re.escape(t)}\b", joined) for t in c.get("terms", []))]
+        named = [a for a, c in audiences.items() if audience_terms(c).search(joined)]
         if len(named) == 1:
-            add("R-17", first, 1, raw_lines[first - 1])
+            terms = audience_terms(audiences[named[0]])
+            anchor = next((n for n, l in para if terms.search(l)), first)
+            add("R-17", anchor, 1, raw_lines[anchor - 1])
     res.hits.sort(key=lambda h: (h.line, h.rule))
     return res
 
@@ -823,7 +832,10 @@ def render_digest(run: dict, rules: Dict[str, dict], master_text: str = "", lite
     local = []
     for f in annotated:
         if f["scope"] == "shared-with-scaffold":
-            shared.setdefault((f["rule"], norm_line(f.get("text", ""))), f)
+            key = (f["rule"], norm_line(f.get("text", "")))
+            # One entry per shared line; it carries the strongest verdict any copy received.
+            if key not in shared or f["verdict"] == "violation":
+                shared[key] = f
         else:
             local.append(f)
     if shared:
