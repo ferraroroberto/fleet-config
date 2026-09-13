@@ -611,15 +611,17 @@ _POP_VERBS = {"popd", "pop-location"}
 _UNKNOWN_DIR_RE = re.compile(r"[$`*?\[\](){}]|^~")
 
 
-def _chain(cmd: str) -> List[Tuple[str, str, bool]]:
-    """`(segment, separator, quoted)` for each `_SEGMENT_SPLIT_RE` segment.
+def _chain(cmd: str) -> List[Tuple[str, str, bool, bool]]:
+    """`(segment, separator, quoted, starts_quoted)` for each
+    `_SEGMENT_SPLIT_RE` segment.
 
-    `quoted` is True when the segment starts or ends inside a quoted string.
+    `quoted` is True when the segment starts or ends inside a quoted string;
+    `starts_quoted` only when it starts inside one (rule 3, fleet-config#885).
     The scan ignores escapes: a misread can only mark a segment quoted, and a
     quoted segment keeps the pre-#871 base.
     """
     parts = _CHAIN_SPLIT_RE.split(cmd)
-    out: List[Tuple[str, str, bool]] = []
+    out: List[Tuple[str, str, bool, bool]] = []
     quote: Optional[str] = None
     for index in range(0, len(parts), 2):
         segment = parts[index]
@@ -630,11 +632,32 @@ def _chain(cmd: str) -> List[Tuple[str, str, bool]]:
                 quote = ch
             elif ch == quote:
                 quote = None
-        out.append((segment, separator, starts_quoted or quote is not None))
+        out.append((segment, separator, starts_quoted or quote is not None,
+                    starts_quoted))
     return out
 
 
-def _separator_after(chain: List[Tuple[str, str, bool]], index: int) -> str:
+def _is_quoted_alternative(chain: List[Tuple[str, str, bool, bool]],
+                           index: int) -> bool:
+    """True when segment `index` is one branch of an `a|b` alternation in quotes.
+
+    fleet-config#885: `-match 'msedge|python|tray'`, `grep -E 'foo|pip|bar'`
+    and a title like `'fix: python|pip regex'` are text, but the naive split
+    hands rule 3 a bare `python` / `pip` clause. Only a segment that opens
+    inside quotes right after a lone `|`, with no whitespace in between, is
+    read this way: a quoted string that a shell will run (`bash -c "a; python
+    x"`, `ssh host 'a | pip install b'`) spaces or `;`/`&&`-joins its clauses,
+    and keeps the pre-#885 reading. Accepted residual: a glued pipe in a
+    string a shell runs (`sh -c "cat r|pip install -r -"`, `"$(cat f|python
+    -)"`) now reads as text too, as does one after a quote the escape-blind
+    scan misreads. Rule 3 is a nudge, and it already missed `$(python x)`.
+    """
+    segment, _separator, _quoted, starts_quoted = chain[index]
+    return (starts_quoted and index > 0 and chain[index - 1][1] == "|"
+            and not segment[:1].isspace())
+
+
+def _separator_after(chain: List[Tuple[str, str, bool, bool]], index: int) -> str:
     """The separator that really ends segment `index`.
 
     `2>&1` is split at its `&` like any other, so a segment ending in `>`/`<`
@@ -705,7 +728,7 @@ def destructive_clauses(cmd: str, base: Path) -> List[Clause]:
     out: List[Clause] = []
     stack: List[Path] = []
     chain = _chain(cmd)
-    for index, (segment, _separator, quoted) in enumerate(chain):
+    for index, (segment, _separator, quoted, _starts) in enumerate(chain):
         verb, operands = destructive_operands(segment)
         if verb:
             out.extend(_clauses_for(verb, operands, base))
@@ -821,9 +844,13 @@ def main() -> None:
 
     # 3) Bare python/pip when a project .venv is present. Evaluated per
     # clause (see _SEGMENT_SPLIT_RE) so a compound command can't launder a
-    # bare invocation behind an earlier, correctly-scoped one.
+    # bare invocation behind an earlier, correctly-scoped one. A quoted
+    # `a|python|b` alternation is not a clause (fleet-config#885).
     hit_verb = None
-    for segment in _SEGMENT_SPLIT_RE.split(cmd):
+    chain = _chain(cmd)
+    for index, (segment, _separator, _quoted, _starts) in enumerate(chain):
+        if _is_quoted_alternative(chain, index):
+            continue
         has_bare_python = bool(BARE_PYTHON_RE.search(segment))
         has_bare_pip    = bool(BARE_PIP_RE.search(segment))
         if (has_bare_python or has_bare_pip) and not _is_path_scoped(segment):
