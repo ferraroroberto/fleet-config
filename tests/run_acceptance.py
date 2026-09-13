@@ -61,6 +61,7 @@ from acceptance.checks_capture import (  # noqa: E402
 from acceptance.checks_context_filter import _context_filter_unit_checks  # noqa: E402
 from acceptance.checks_cross_agent import (  # noqa: E402
     _codex_hooks_config_check,
+    _copilot_statusline_utf8_check,
     _hook_transport_utf8_check,
     _session_state_agent_adapter_unit_checks,
 )
@@ -281,6 +282,9 @@ def main() -> int:
     # ---- both hook transports keep non-ASCII payloads exact (fleet-config#912) ----
     # run_unit3: without Windows PowerShell the shim half cannot run -- skipped.
     run_unit3(_hook_transport_utf8_check)
+
+    # ---- Copilot hook wiring + statusline keep non-ASCII stdin exact (fleet-config#913) ----
+    run_unit3(_copilot_statusline_utf8_check)
 
     # ---- settings: live ~/.claude/settings.json ⊇ template hook wiring ----
     # run_unit3: this check has a third state (skipped, when the live file is
