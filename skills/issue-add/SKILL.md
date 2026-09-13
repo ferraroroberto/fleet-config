@@ -21,7 +21,7 @@ user to paste the idea/transcript and stop until they do.
 
 The word `now` anywhere in the args (`/issue-add now <text>`, `/issue-add <text> now`)
 → **one-shot mode**: after the issue is created, immediately proceed to the
-`/issue-start <N> now` flow (sync main, cut the branch, build straight away)
+`/issue-start <N> now` flow (claim the repo, sync main, cut the branch, build straight away)
 without a stop in between. Strip the `now` token before treating the rest as
 the issue text.
 
@@ -153,7 +153,8 @@ the label applied.
   always exits 0.
 - **One-shot mode (`now`):** do **not** stop and do **not** fire the add ping —
   immediately proceed to the `/issue-start <N> now` flow on the same turn
-  (pre-flight, sync main, cut branch, build straight away, per that skill's
-  steps 1–6). Skip the plan-approval gate regardless of label, since `now` was
-  explicit. Only pause if a step fails or a genuinely expensive/ambiguous
+  (claim the repo, pre-flight, sync main, cut branch, build straight away, per
+  that skill's steps 0–6 — step 0's `worktree_claim.py acquire` first). Skip
+  the plan-approval gate regardless of label, since `now` was explicit. Only
+  pause if a step fails or a genuinely expensive/ambiguous
   decision surfaces. The start ping fires at the end of that flow instead.
