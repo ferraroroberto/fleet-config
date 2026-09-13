@@ -308,6 +308,11 @@ dropped:
   leave an explicit comment saying so and why — this is what stops the same
   parked issue from being re-litigated on a later sweep. Don't rely on
   remembering it was already discussed.
+- **Tear down a finished lane's clean worktree without asking (fleet-config#910;
+  the one exception to rail 4 and "Acting").** For a lane *you* dispatched whose
+  issue is CLOSED, work is on `origin/main` and `git status --porcelain` is
+  empty: `chief_ops.py stop <sid>`, then `skills/_lib/worktree_claim.py
+  remove-worktree <path>`, not `rm -rf`. Dirty, open, or not yours → ask.
 
 ## Incoming worker notifications (fleet-config#443)
 
