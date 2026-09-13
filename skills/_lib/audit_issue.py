@@ -77,6 +77,7 @@ KINDS = (
     "context-purge",
     "context-purge-digest",
     "sota-watch",
+    "prompt-audit",
     "e2e-redundancy",
     "cleanup-deferred",
 )
@@ -164,6 +165,8 @@ def title_matches(title: str, kind: str) -> bool:
         return t == "context-purge ledger"
     if kind == "sota-watch":
         return t == "sota-watch ledger"
+    if kind == "prompt-audit":
+        return t == "prompt-audit ledger"
     if kind == "cleanup-deferred":
         return t == "cleanup-fleet-all deferred repos"
     # bucket kinds: "audit: <kind> findings ..." (trailing count suffix tolerated)

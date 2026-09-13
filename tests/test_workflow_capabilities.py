@@ -101,7 +101,7 @@ class WorkflowCapabilitiesTests(unittest.TestCase):
         self.assertIn('unused results', self.invoke(False))
 
     def test_consumers_load_contract_and_do_not_assume_wakeups(self):
-        consumers = ['skills/issue-add', 'skills/issue-start', 'skills/issue-batch', 'skills/issue-finish-batch', 'skills/issue-yolo', 'skills/propagate-vendored', '.claude/skills/cleanup-fleet', '.claude/skills/cleanup-fleet-all', '.claude/skills/audit-fleet', '.claude/skills/design-sweep', '.claude/skills/learning-log', '.claude/skills/sota-watch']
+        consumers = ['skills/issue-add', 'skills/issue-start', 'skills/issue-batch', 'skills/issue-finish-batch', 'skills/issue-yolo', 'skills/propagate-vendored', '.claude/skills/cleanup-fleet', '.claude/skills/cleanup-fleet-all', '.claude/skills/audit-fleet', '.claude/skills/design-sweep', '.claude/skills/learning-log', '.claude/skills/sota-watch', '.claude/skills/prompt-audit']
         for consumer in consumers:
             text = (ROOT / consumer / 'SKILL.md').read_text(encoding='utf-8')
             self.assertIn('workflow-capabilities.md', text, consumer)

@@ -1,0 +1,185 @@
+# /prompt-audit freshness-gate sources and audience vocabulary (fleet-config#831, #832).
+#
+# One [sources.<id>] block per vendor page. `audit.py diff-source` hashes the
+# fetched `.md` twin (sha256, first 12 hex chars) and extracts the marker named by
+# `marker_kind`:
+#   model-list               first `marker_pattern` group in the text (default: the
+#                            "including <A>, <B>, <C>." model list of a hub page)
+#   llms-txt-lines           sorted unique `marker_pattern` groups (per-model guide
+#                            slugs in a docs index) — a gained slug is `new-guide`
+#   latest-model-frontmatter the YAML frontmatter `marker_key` value (flagship id) —
+#                            a different value is `new-guide`
+#   none                     sha only
+#
+# Baselines change only through a reviewed PR — a run that sees a moved baseline
+# files the rule-set update issue instead (see SKILL.md). `baseline_final_url` is
+# the URL after redirects; a moved redirect target is itself a restructuring signal.
+#
+# Dated changelogs (platform release notes, API changelog) are deliberately NOT
+# sources: they move every week with non-prompting content, so a sha baseline would
+# put every run into update mode, and "the docs site is up" is already proven by
+# every other source fetching.
+#
+# Seeded 2026-09-13 from verbatim curl fetches; two consecutive fetches of each page
+# hashed identically.
+
+check_every_days = 7
+
+# ---- audience vocabulary ---------------------------------------------------------
+# Which vendor's rules are primary for a file is decided by the FILE's audience, not
+# by the host running the audit. Everything not matched here is `neutral` (read by
+# several agents). `vendor` ties an audience to a rules.md tag; `markers` are the
+# scope markers that make a heading's section vendor-scoped; `terms` are the product
+# words the neutrality lint looks for (case-sensitive, whole word); `path_globs`
+# (fleet-root-relative, fnmatch) scope whole files; `unpointed` names files that are
+# vendor-scoped only when the repo has no AGENTS.md pointing at them.
+
+[audiences.claude]
+vendor = "anthropic"
+markers = ["Claude Code only"]
+terms = ["Claude", "Anthropic"]
+path_globs = ["*/.claude/rules/*.md"]
+unpointed = ["CLAUDE.md"]
+
+[audiences.openai]
+vendor = "openai"
+markers = ["Codex only"]
+terms = ["Codex", "OpenAI", "GPT"]
+path_globs = []
+unpointed = []
+
+# ---- Anthropic -------------------------------------------------------------------
+
+[sources.anthropic-docs-index]
+url = "https://platform.claude.com/docs/llms.txt"
+vendor = "anthropic"
+role = "index"
+marker_kind = "llms-txt-lines"
+marker_pattern = "prompt-engineering/(prompting-claude-[a-z0-9-]+)\\.md"
+baseline_sha = "407000057ec4"
+baseline_marker = "prompting-claude-fable-5,prompting-claude-fable-5-1,prompting-claude-opus-4-8,prompting-claude-opus-5,prompting-claude-sonnet-5"
+baseline_final_url = "https://platform.claude.com/llms.txt"
+baseline_date = 2026-09-13
+
+[sources.anthropic-best-practices]
+url = "https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/claude-prompting-best-practices.md"
+vendor = "anthropic"
+role = "hub"
+marker_kind = "model-list"
+baseline_sha = "f98aa130a797"
+baseline_marker = "Claude Fable 5.1, Claude Mythos 5.1, Claude Fable 5, Claude Mythos 5, Claude Opus 5, Claude Opus 4.8, Claude Opus 4.7, Claude Opus 4.6, Claude Sonnet 5, Claude Sonnet 4.6, and Claude Haiku 4.5"
+baseline_final_url = "https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/claude-prompting-best-practices.md"
+baseline_date = 2026-09-13
+
+[sources.anthropic-fable-5-1]
+url = "https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/prompting-claude-fable-5-1.md"
+vendor = "anthropic"
+role = "per-model"
+marker_kind = "none"
+baseline_sha = "4aa645dd26fe"
+baseline_marker = ""
+baseline_final_url = "https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/prompting-claude-fable-5-1.md"
+baseline_date = 2026-09-13
+
+[sources.anthropic-opus-5]
+url = "https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/prompting-claude-opus-5.md"
+vendor = "anthropic"
+role = "per-model"
+marker_kind = "none"
+baseline_sha = "65be3e0b437c"
+baseline_marker = ""
+baseline_final_url = "https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/prompting-claude-opus-5.md"
+baseline_date = 2026-09-13
+
+[sources.anthropic-sonnet-5]
+url = "https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/prompting-claude-sonnet-5.md"
+vendor = "anthropic"
+role = "per-model"
+marker_kind = "none"
+baseline_sha = "07e7db846f96"
+baseline_marker = ""
+baseline_final_url = "https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/prompting-claude-sonnet-5.md"
+baseline_date = 2026-09-13
+
+[sources.anthropic-skill-authoring]
+url = "https://platform.claude.com/docs/en/agents-and-tools/agent-skills/best-practices.md"
+vendor = "anthropic"
+role = "instruction-files"
+marker_kind = "none"
+baseline_sha = "542eee1e150f"
+baseline_marker = ""
+baseline_final_url = "https://platform.claude.com/docs/en/agents-and-tools/agent-skills/best-practices.md"
+baseline_date = 2026-09-13
+
+[sources.anthropic-memory]
+url = "https://code.claude.com/docs/en/memory.md"
+vendor = "anthropic"
+role = "instruction-files"
+marker_kind = "none"
+baseline_sha = "f212449ea6fb"
+baseline_marker = ""
+baseline_final_url = "https://code.claude.com/docs/en/memory.md"
+baseline_date = 2026-09-13
+
+# ---- OpenAI ----------------------------------------------------------------------
+
+[sources.openai-latest-model]
+url = "https://developers.openai.com/api/docs/guides/latest-model.md"
+vendor = "openai"
+role = "hub"
+marker_kind = "latest-model-frontmatter"
+marker_key = "model"
+baseline_sha = "aac7e7e1b0bf"
+baseline_marker = "gpt-6-astra"
+baseline_final_url = "https://developers.openai.com/api/docs/guides/latest-model.md"
+baseline_date = 2026-09-13
+
+[sources.openai-flagship-guide]
+url = "https://developers.openai.com/api/docs/guides/latest-model/gpt-6-astra.md"
+vendor = "openai"
+role = "per-model"
+marker_kind = "none"
+baseline_sha = "aac7e7e1b0bf"
+baseline_marker = ""
+baseline_final_url = "https://developers.openai.com/api/docs/guides/latest-model/gpt-6-astra.md"
+baseline_date = 2026-09-13
+
+[sources.openai-prompt-engineering]
+url = "https://developers.openai.com/api/docs/guides/prompt-engineering.md"
+vendor = "openai"
+role = "hub"
+marker_kind = "none"
+baseline_sha = "3a077358aaa7"
+baseline_marker = ""
+baseline_final_url = "https://developers.openai.com/api/docs/guides/prompt-engineering.md"
+baseline_date = 2026-09-13
+
+[sources.openai-gpt-5-2-guide]
+url = "https://developers.openai.com/cookbook/examples/gpt-5/gpt-5-2_prompting_guide.md"
+vendor = "openai"
+role = "per-model"
+marker_kind = "none"
+baseline_sha = "bb66d9c69604"
+baseline_marker = ""
+baseline_final_url = "https://developers.openai.com/cookbook/examples/gpt-5/gpt-5-2_prompting_guide.md"
+baseline_date = 2026-09-13
+
+[sources.openai-codex-guide]
+url = "https://developers.openai.com/cookbook/examples/gpt-5/codex_prompting_guide.md"
+vendor = "openai"
+role = "per-model"
+marker_kind = "none"
+baseline_sha = "314dec7a7ba1"
+baseline_marker = ""
+baseline_final_url = "https://developers.openai.com/cookbook/examples/gpt-5/codex_prompting_guide.md"
+baseline_date = 2026-09-13
+
+[sources.openai-agents-md]
+url = "https://developers.openai.com/codex/guides/agents-md.md"
+vendor = "openai"
+role = "instruction-files"
+marker_kind = "none"
+baseline_sha = "9d1f87a2d1cb"
+baseline_marker = ""
+baseline_final_url = "https://learn.chatgpt.com/docs/agent-configuration/agents-md.md"
+baseline_date = 2026-09-13
