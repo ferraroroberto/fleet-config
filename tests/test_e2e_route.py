@@ -176,16 +176,21 @@ with tempfile.TemporaryDirectory() as td:
         ("unknown-tier",
          "print('E2E_TIER=partial')\nprint('E2E_PYTEST_TARGET=tests/e2e/test_nav.py')\n",
          "an unrecognised tier"),
+        ("contradictory-tier",
+         "print('E2E_TIER=full')\nprint('E2E_PYTEST_TARGET=tests/e2e')\n"
+         "print('E2E_TIER=surface')\nprint('E2E_PYTEST_TARGET=tests/e2e/test_nav.py')\n"
+         "print('E2E_SURFACE=nav')\n",
+         "a classifier printing E2E_TIER twice"),
     ):
         rc, out = _capture(er.cmd_route, _fake_classifier(name, lines), [])
         check(rc == 0 and "SOURCE=classifier-error" in out and "E2E_TIER=full" in out
               and "E2E_TIER=surface" not in out and "E2E_TIER=partial" not in out,
               f"{why} escalates to whole-suite full, never passes through")
 
-check(er.unusable_verdict(["E2E_TIER=skip", "E2E_PYTEST_TARGET="]) is None,
-      "unusable_verdict: skip with an empty target is a legitimate verdict")
-check(er.unusable_verdict(["E2E_TIER=static", "E2E_PYTEST_TARGET=tests/e2e/test_smoke.py"]) is None,
-      "unusable_verdict: static passes")
+    check(er.unusable_verdict(["E2E_TIER=skip", "E2E_PYTEST_TARGET="]) is None,
+          "unusable_verdict: skip with an empty target is a legitimate verdict")
+    check(er.unusable_verdict(["E2E_TIER=static", "E2E_PYTEST_TARGET=tests/e2e/test_smoke.py"]) is None,
+          "unusable_verdict: static passes")
 
 
 _h.report_and_exit("e2e_route")

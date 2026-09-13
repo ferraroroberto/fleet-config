@@ -36,8 +36,9 @@ Subcommands:
       LLM judgment layer decides, fail-safe full). Classifier errors →
       `SOURCE=classifier-error` + `E2E_TIER=full` — uncertainty always
       escalates, never narrows. So does a verdict this helper cannot vouch
-      for: a tier outside `skip`/`static`/`full`/`surface`, or a `surface`
-      with no `E2E_SURFACE` name or an empty target list (fleet-config#902).
+      for: a tier outside `skip`/`static`/`full`/`surface`, a `surface`
+      with no `E2E_SURFACE` name or an empty target list, or any `E2E_*` key
+      printed twice (fleet-config#902).
 
   bootstrap <repo-root> [--scaffold <path>] [--force]
       Self-healing adoption: copy the scaffold's parameterized
@@ -171,8 +172,14 @@ def unusable_verdict(e2e_lines: List[str]) -> Optional[str]:
 
     The helper passes a verdict through verbatim, so it must never pass one
     that narrows on nothing: an unrecognised tier, or a `surface` that names
-    no surface or no targets, would otherwise run an empty slice.
+    no surface or no targets, would otherwise run an empty slice. A key
+    printed twice means the classifier contradicted itself, so neither
+    value is trusted.
     """
+    keys = [ln.split("=", 1)[0] for ln in e2e_lines if "=" in ln]
+    repeated = sorted({k for k in keys if keys.count(k) > 1})
+    if repeated:
+        return f"repeated {', '.join(repeated)} lines"
     kv = dict(ln.split("=", 1) for ln in e2e_lines if "=" in ln)
     tier = kv.get("E2E_TIER", "")
     if tier not in KNOWN_TIERS:
