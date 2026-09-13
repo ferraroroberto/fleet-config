@@ -68,8 +68,9 @@ Read the printed `MODE=`:
   junctioned from the primary). Steps 1, 4 and 5 branch on this; nothing you do
   touches the other session's tree.
 
-This is the single concurrency primitive — `/issue-yolo`, `/issue-batch`
-in-place, and `/cleanup-fleet` all inherit it by routing through this skill.
+This is the single concurrency primitive — `/issue-yolo`, `/issue-add now`,
+`/issue-batch` in-place, and `/cleanup-fleet` all inherit it by routing through
+this skill (by pointing here, never by paraphrasing these steps — #894).
 The claim is released by `/issue-finish` (or auto-expires after 8h if a
 session crashes). See `skills/_lib/worktree_claim.py` and README "Concurrent
 same-repo work".
