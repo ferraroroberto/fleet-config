@@ -42,6 +42,7 @@ Always ask before assuming: file/module location for new code; data shape or sch
 ### Execution: scope up front, then carry it through
 
 - Front-load the questions — settle scope, ambiguity, and hard-to-undo decisions before starting.
+- Carry-through applies to agreed work. When the user asks a question, describes a problem, or thinks out loud, the deliverable is your assessment, not a fix — change nothing until they ask for one.
 - Once scope is agreed, execute end-to-end to a verified, shippable state. No per-phase approval; "large" is not "stop".
 - Checkpoint on risk, not size: pause mid-task only for a real ambiguity, an unforeseen decision, or a finding that contradicts the plan.
 - After finishing and verifying a unit, check the related open issues; a natural continuation → state it and proceed, new branch off freshly-merged `main`. Pause for approval only when it's risky, ambiguous, or materially bigger than discussed.
@@ -257,7 +258,7 @@ curl -F file=@clip.wav http://127.0.0.1:8090/v1/audio/transcriptions
 
 ### Don't duplicate hub functionality in downstream apps
 
-Route downstream Claude/local-LLM access through the hub via standard SDKs — never re-implement inline `claude -p` subprocess wrappers (the hub owns subprocess management, prompt assembly, multi-turn flattening, host-routing, and observability).
+Route downstream LLM access — Anthropic- or OpenAI-shape, subscription or open-weight — through the hub via standard SDKs; never re-implement an inline agent-CLI subprocess wrapper (`claude -p`, `codex exec`, `gemini -p`) (the hub owns subprocess management, prompt assembly, multi-turn flattening, host-routing, and observability).
 
 - LLM call → `Anthropic(api_key="local-dummy", base_url="http://127.0.0.1:8000")` or `OpenAI(api_key="local-dummy", base_url="http://127.0.0.1:8000/v1")`.
 - Audio → POST directly to `http://127.0.0.1:8090/v1/audio/transcriptions`.
