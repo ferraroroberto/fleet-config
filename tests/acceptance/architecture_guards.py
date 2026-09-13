@@ -291,7 +291,7 @@ def _fleet_membership_drift_check() -> Tuple[int, int, int]:
         not undeclared,
         "add each to hooks/projects.toml before the [global] block:\n"
         + "\n".join(f'[{r}]\ncwd_prefix = "{root.as_posix()}/{r}"' for r in undeclared)
-        + "\n(then regenerate the maps per CLAUDE.md 'Adding a new fleet project'), "
+        + "\n(then regenerate the maps per docs/adding-a-fleet-project.md), "
         "or list it in [global] architecture_ignore to keep it off the map on purpose.",
     )
 
