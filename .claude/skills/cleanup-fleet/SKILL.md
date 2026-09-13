@@ -147,7 +147,7 @@ Read the stdout JSON directly — `{"dispatch": [...], "skipped_closed": [...], 
 Before the mass easy-tier dispatch below, call
 `E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/rate_gate.py check --threshold 70`
 once. `DECISION=PAUSE` → wait via the `Monitor` tool's until-loop pattern against
-the printed `WAIT_SECONDS`/`RESETS_AT` before firing the batch (see
+the printed `WAIT_SECONDS` (never `RESETS_AT`, fleet-config#891) before firing the batch (see
 `docs/rate-gate.md`), then re-check. **Cap: 3 pause cycles** — still `PAUSE`
 after the third → dispatch nothing and report every selected issue
 `SKIPPED (session limit — exceeded pause retries)` with the gate's `REASON`/`MODE`.

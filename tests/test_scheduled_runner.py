@@ -56,6 +56,16 @@ class ScheduledRunnerTests(unittest.TestCase):
                 )
                 self.assertEqual(code, 0, text)
 
+    def test_child_sees_its_own_stall_watchdog_for_the_rate_gate(self):
+        """fleet-config#891: the gate caps silent waits under this run's real watchdog."""
+        for adapter in self.adapters:
+            with self.subTest(adapter=adapter.label):
+                code, _, text = fake_run(
+                    self.fixtures[adapter.label], adapter,
+                    suffix="import os; sys.exit(0 if os.environ.get('FLEET_STALL_TIMEOUT_SECONDS') == '5.0' else 9)",
+                )
+                self.assertEqual(code, 0, text)
+
     def test_native_fixture_progress_completion_and_redaction(self):
         for adapter in self.adapters:
             with self.subTest(adapter=adapter.label):

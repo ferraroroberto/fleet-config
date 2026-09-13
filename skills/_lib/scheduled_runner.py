@@ -26,7 +26,7 @@ from typing import Any, NamedTuple, Optional, TextIO
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from no_window import NO_WINDOW  # noqa: E402
 from process_scope import ProcessScope, PipeReader, DRAIN_TIMEOUT_SECONDS, TERMINATE_TIMEOUT_SECONDS  # noqa: E402
-from rate_gate import UNATTENDED_ENV  # noqa: E402
+from rate_gate import STALL_TIMEOUT_ENV, UNATTENDED_ENV  # noqa: E402
 from runner_adapters import ClaudeAdapter, CodexAdapter, ProgressEvent  # noqa: E402
 
 MAX_SUMMARY_CHARS = 180
@@ -1053,6 +1053,9 @@ def run_process(
     # Nobody attends a run launched here, so the rate gate must not treat a
     # missing statusline signal as "proceed" (fleet-config#825).
     child_env[UNATTENDED_ENV] = "1"
+    # A silent rate-gate wait emits no stream record, so the gate caps its wait
+    # under this run's actual watchdog rather than a guessed one (fleet-config#891).
+    child_env[STALL_TIMEOUT_ENV] = str(max(0.0, float(stall_timeout)))
     if env:
         child_env.update(env)
     for key in progress.adapter.excluded_environment:
