@@ -152,6 +152,112 @@ try:
           "the reclaimer's own owner record survives our release")
     shutil.rmtree(tamper_lock_dir, ignore_errors=True)
 
+    # Claim owner fields + live/dead/unknown classifier (fleet-config#852).
+    host = ai.current_host()
+    check(isinstance(host, str) and bool(host), "current_host resolves on this machine")
+    check(ai.owner_fields({}) == {}, "owner: no launcher session and no agent pid -> no fields")
+    check(ai.owner_fields({"CLAUDE_PID": "abc"}) == {}
+          and ai.owner_fields({"CLAUDE_PID": "0"}) == {}
+          and ai.owner_fields({"APP_LAUNCHER_SESSION_ID": "  "}) == {},
+          "owner: malformed pid / blank session id are omitted, never guessed")
+    check(ai.owner_fields({"APP_LAUNCHER_SESSION_ID": "sid-1", "CLAUDE_PID": "4321"}) == {
+        "owner_session_id": "sid-1", "owner_pid": 4321, "owner_host": host,
+    }, "owner: session id, agent pid and host recorded")
+    check(ai.owner_fields({"CLAUDE_PID": "4321"}) == {"owner_pid": 4321, "owner_host": host},
+          "owner: a non-launcher agent session records pid + host only")
+
+    owner_target = tmp / "owner-active-issues.json"
+    ai.resolve_repo_name = lambda repo: Path(repo).name
+    try:
+        legacy = ai.add_marker(tmp / "legacy", 1, "feat/1-x", now=NOW, path=owner_target,
+                               environ={})
+        check(set(legacy) == {"repo", "number", "branch", "started_at"},
+              "add without an owner writes exactly the pre-#852 row shape")
+        owned = ai.add_marker(tmp / "owned", 2, "feat/2-x", now=NOW, path=owner_target,
+                              environ={"APP_LAUNCHER_SESSION_ID": "sid-2", "CLAUDE_PID": "99"})
+        stored = ai.read_rows(owner_target)
+        check(stored.get("owned#2") == owned and owned.get("owner_session_id") == "sid-2"
+              and owned.get("owner_pid") == 99 and owned.get("owner_host") == host,
+              "add persists the owner fields on the new row")
+        check(set(ai.prune_rows(stored, now=NOW)) == {"legacy#1", "owned#2"},
+              "old owner-less rows still parse and survive prune beside new rows")
+        check(ai.remove_marker(tmp / "owned", 2, now=NOW, path=owner_target) is True
+              and set(ai.read_rows(owner_target)) == {"legacy#1"},
+              "remove clears an owner-carrying row exactly as before")
+    finally:
+        ai.resolve_repo_name = original_resolver
+
+    def _classify(row, sessions=frozenset(), probe=lambda pid: None, at_host="HOST-A"):
+        return ai.classify_owner(row, live_session_ids=sessions, pid_probe=probe, host=at_host)
+
+    base = _row("r", 1)
+    s_row = {**base, "owner_session_id": "sid", "owner_host": "HOST-A"}
+    p_row = {**base, "owner_pid": 42, "owner_host": "HOST-A"}
+    sp_row = {**s_row, "owner_pid": 42}
+
+    def _boom(pid):
+        raise OSError("probe failed")
+
+    check(_classify("not a row") == "unknown", "classify: non-dict row -> unknown")
+    check(_classify(base, sessions=None, probe=lambda pid: False) == "unknown"
+          and _classify(base) == "unknown", "classify: legacy owner-less row -> unknown")
+    check(_classify(s_row, sessions={"sid"}) == "live", "classify: session in live list -> live")
+    check(_classify(s_row, sessions={"other"}) == "dead",
+          "classify: session absent from a readable list -> dead")
+    check(_classify(s_row, sessions=None) == "unknown",
+          "classify: unreadable session list -> unknown, never dead")
+    check(_classify(p_row, probe=lambda pid: True) == "live", "classify: pid alive -> live")
+    check(_classify(p_row, probe=lambda pid: False) == "dead", "classify: pid confirmed gone -> dead")
+    check(_classify(p_row, probe=lambda pid: None) == "unknown",
+          "classify: unresolvable pid probe -> unknown")
+    check(_classify(p_row, probe=_boom) == "unknown", "classify: raising pid probe -> unknown")
+    check(_classify(sp_row, sessions={"other"}, probe=lambda pid: True) == "live",
+          "classify: any evidence of life beats a missing session")
+    check(_classify(sp_row, sessions=None, probe=lambda pid: False) == "dead",
+          "classify: confirmed-dead pid is positive evidence despite an unreadable list")
+    check(_classify(sp_row, sessions=None, probe=lambda pid: None) == "unknown",
+          "classify: every axis unreadable -> unknown")
+    check(_classify(sp_row, sessions={"other"}, probe=lambda pid: False, at_host="HOST-B")
+          == "unknown", "classify: a row from another host -> unknown")
+    check(_classify(sp_row, sessions={"other"}, at_host=None) == "unknown",
+          "classify: unresolvable current host -> unknown")
+    check(_classify({**base, "owner_session_id": "sid"}, sessions={"other"}) == "unknown",
+          "classify: owner fields without a host -> unknown")
+    check(_classify({**p_row, "owner_pid": True}, probe=lambda pid: False) == "unknown",
+          "classify: a non-int pid is ignored, not probed")
+    check(_classify(s_row, sessions={"other"}, at_host="host-a") == "dead",
+          "classify: host comparison is case-insensitive")
+    check(base == _row("r", 1), "classify never mutates the row")
+
+    check(ai.pid_state(os.getpid()) is True, "pid_state: this process is alive")
+    gone = subprocess.Popen([sys.executable, "-c", "pass"], creationflags=NO_WINDOW)
+    gone.wait(timeout=10)
+    check(ai.pid_state(gone.pid) is False, "pid_state: an exited child is confirmed gone")
+    check(ai.pid_state(0) is None and ai.pid_state(-5) is None and ai.pid_state(True) is None,
+          "pid_state: invalid pids are unknown, not dead")
+    check(ai.classify_owner({**p_row, "owner_pid": gone.pid, "owner_host": host},
+                            live_session_ids=None, pid_probe=ai.pid_state, host=host) == "dead",
+          "classify with the real probe: an exited owner pid -> dead")
+    check(ai.classify_owner({**p_row, "owner_pid": os.getpid(), "owner_host": host},
+                            live_session_ids=None, pid_probe=ai.pid_state, host=host) == "live",
+          "classify with the real probe: a live owner pid -> live")
+
+    # CLI end to end, hermetic state dir: the real `add` records the owner.
+    cli_state = tmp / "cli-state"
+    cli_env = {**os.environ, "CLAUDE_HOOKS_STATE_DIR": str(cli_state),
+               "APP_LAUNCHER_SESSION_ID": "cli-sid", "CLAUDE_PID": str(os.getpid())}
+    cli = subprocess.run(
+        [sys.executable, str(ROOT / "skills" / "_lib" / "active_issue.py"), "add",
+         str(ROOT), "852", "feat/852-cli"],
+        capture_output=True, text=True, env=cli_env, creationflags=NO_WINDOW, timeout=60,
+    )
+    cli_rows = ai.read_rows(cli_state / ai.STATE_FILENAME)
+    cli_row = next(iter(cli_rows.values()), {})
+    check(cli.returncode == 0 and len(cli_rows) == 1
+          and cli_row.get("owner_session_id") == "cli-sid"
+          and cli_row.get("owner_pid") == os.getpid() and cli_row.get("owner_host") == host,
+          f"CLI add records the owner in the state file ({cli.stdout.strip()} {cli.stderr.strip()})")
+
     # The checked-in skills are the executable lifecycle contract; pin every
     # branch that bypasses another workflow instead of relying on prose review.
     start_skill = (ROOT / "skills" / "issue-start" / "SKILL.md").read_text(encoding="utf-8")
