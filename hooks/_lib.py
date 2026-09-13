@@ -111,6 +111,26 @@ def launcher_session_id() -> str:
     return os.environ.get(LAUNCHER_SESSION_ID_ENV_VAR, "").strip()
 
 
+# `skills/_lib/scheduled_runner.py` stamps this into the environment of every
+# scheduled child it launches, and the harness passes it on to hook
+# subprocesses (probed live: scheduled Claude run -> Git Bash -> PowerShell ->
+# Python, fleet-config#911). Mirrors `rate_gate.UNATTENDED_ENV`; the tree
+# boundary forbids importing it, so a test holds the two spellings together.
+SCHEDULED_RUN_ENV_VAR = "FLEET_SCHEDULED_RUN"
+
+
+def is_scheduled_run() -> bool:
+    """True inside a run launched by the scheduled runner, nobody attending.
+
+    Such a run owns every descendant in a Windows job: a fire-and-forget child
+    still alive when the provider exits turns a delivered run into exit 118 and
+    is then killed by the job teardown anyway (fleet-config#911). Hooks that
+    would detach background work check this and skip it. Resolved at call time,
+    like :func:`state_dir`.
+    """
+    return os.environ.get(SCHEDULED_RUN_ENV_VAR) == "1"
+
+
 # ------------------------------------------------------- credential patterns
 
 # The one definition of "what a live credential looks like" for this tier
