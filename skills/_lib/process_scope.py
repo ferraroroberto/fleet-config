@@ -326,7 +326,7 @@ class ProcessScope:
                 logger.info("owned job member list unavailable: error=%s", ctypes.get_last_error())
                 return None
             return [(pid, *self.job.describe_process(pid)) for pid in pids]
-        except (OSError, ValueError) as error:
+        except (OSError, ValueError, ctypes.ArgumentError) as error:
             logger.info("owned job members could not be described: %s", error)
             return None
 
