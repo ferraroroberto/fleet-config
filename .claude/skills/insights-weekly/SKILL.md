@@ -3,7 +3,7 @@ name: insights-weekly
 description: Diff Claude Code's newest /insights report against the previous one (via the local LLM hub) into a concise weekly "what changed" note posted to Telegram — how Claude Code usage is shifting week-over-week. E.g. "/insights-weekly", "what changed in my insights this week", "weekly insights diff". Also runs unattended weekly.
 ---
 
-# insights-weekly
+# insights-weekly *(Claude Code only — skip on other agents)*
 
 **Goal:** turn Claude Code's built-in **`/insights`** report into a weekly "what changed" signal. `/insights` writes a self-contained, dated `report-<timestamp>.html`; that timestamped series **is** the history. This skill refreshes it, hands the **newest two reports to the local LLM hub** to narrate the week-over-week delta, saves a dated traceable note, drops a concise digest in Telegram — on-demand or scheduled.
 

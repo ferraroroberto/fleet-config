@@ -5,7 +5,7 @@ description: Weekly learning log + forward horizon + productivity stats distille
 
 # learning-log
 
-**Capability preflight:** read [workflow-capabilities](../../../docs/workflow-capabilities.md) and bind dispatch, results, waits, cancellation, model tiers and questions to this session’s actual tools before proceeding. Tool names below are conditional Claude examples; the contract governs adaptation. Keep this skill’s worktree, independent-review, human-review and shipping gates.
+**Capability preflight:** read [workflow-capabilities](../../../docs/workflow-capabilities.md) and bind dispatch, results, waits, cancellation, model tiers and questions to this session’s actual tools before proceeding. Tool names below are conditional examples; the contract governs adaptation. Keep this skill’s worktree, independent-review, human-review and shipping gates.
 
 **Goal:** surface the learning journey and productivity shape hidden inside individual PRs/issues. Weekly: read every merged PR and closed issue across the `ferraroroberto` fleet since the last run, then (a) compute **exact productivity tables** (PRs / issues / LOC, by project and by work-type) and (b) fan out **one easy-tier sub-agent per work-type bucket** to *extract insights* (patterns, recurring root-causes, decisions, durable lessons). Aggregate into a themed log, **grade last week's horizon**, and set the next one.
 

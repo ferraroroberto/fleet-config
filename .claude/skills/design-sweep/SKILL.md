@@ -5,7 +5,7 @@ description: Run /design-sync across every FastAPI + static-PWA web app in the E
 
 # design-sweep
 
-**Capability preflight:** read [workflow-capabilities](../../../docs/workflow-capabilities.md) and bind dispatch, results, waits, cancellation, model tiers and questions to this session’s actual tools before proceeding. Tool names below are conditional Claude examples; the contract governs adaptation. Keep this skill’s worktree, independent-review, human-review and shipping gates.
+**Capability preflight:** read [workflow-capabilities](../../../docs/workflow-capabilities.md) and bind dispatch, results, waits, cancellation, model tiers and questions to this session’s actual tools before proceeding. Tool names below are conditional examples; the contract governs adaptation. Keep this skill’s worktree, independent-review, human-review and shipping gates.
 
 **Goal:** a fleet-wide, idempotent, scatter-gather wrapper around `/design-sync` (`fleet-config#178`). Deterministically gate the fleet down to its **token-styled web apps** (skip non-web repos and Streamlit POC spikes), run the per-repo `/design-sync` logic against each through a bounded window of **easy-tier** sub-agents, then collect the results into **one combined digest**: stdout (so a scheduled run captures it) + a Telegram ping via `notify_complete.py --kind design`.
 

@@ -332,36 +332,9 @@ The helper stamps the `<!-- audit-managed: kind=<bucket> -->` marker, applies
 the label, prints the canonical issue URL. **Titles are stable** — no `(N
 items)` count (lives in the body), so the title never changes run to run.
 
-**Body shape** for a fresh issue (no hard wraps in paragraphs — the global
-CLAUDE.md "Markdown that will be rendered" rule applies; the helper prepends the
-marker, don't write it yourself):
-
-```markdown
-Surfaced by `/codebase-audit`, kept up to date across runs. Scope: <whole repo | path>.
-
-## Findings
-
-- [ ] **<file>:<line>** — <what's wrong>. Fix: <fix shape>.
-- [ ] **<file>:<line>** — <what's wrong>. Fix: <fix shape>.
-- ...
-
-## Context
-
-<One short paragraph: the common thread across these findings, why they
-matter together, anything the next `/issue-start` should know.>
-
-<For bucket 3 (claude-md-drift), additionally list the rules that were
-broken, quoting the CLAUDE.md passage.>
-
-## Audit run log
-
-- <YYYY-MM-DD> @ <short-sha>: initial.
-```
-
-Title style — stable, no count: `audit: <bucket> findings`. Examples:
-`audit: duplication findings`, `audit: claude-md-drift findings`,
-`audit: maintainability findings`, `audit: slop findings`,
-`audit: documentation findings`.
+**Body shape** for a fresh issue and the stable title style (`audit: <bucket>
+findings`, never a count) are in [reference.md](reference.md), step 8. No hard
+wraps in paragraphs; the helper prepends the marker, don't write it yourself.
 
 Use a **repo-scoped, unique** temp file so multi-line markdown isn't mangled
 by shell escaping *and* concurrent audits never clobber each other's scratch:
@@ -376,216 +349,43 @@ hyphen; `<short-sha>` = `git rev-parse --short HEAD`). **Never** a fixed
 findings → skip this entire step. This is the one place the skill writes code,
 scoped to security and gated on the rules below.
 
-**One repo → one branch → one PR → one redacted issue, no matter how many gaps** —
-tracked by the single `audit: security findings` issue, never N public security
-commits.
-
-Do this in order; **run it inline (synchronously) in your own agent context — do
-NOT spawn a nested background sub-agent for the fix.** A nested background agent
-does not get an auto-resume wake-up (global CLAUDE.md, "A sub-agent does not
-self-resume"), so under `/audit-fleet` it would silently stall.
-
-1. **Claim the repo in forced worktree mode** (same collision primitive
-   `/issue-start` uses) so a concurrent `/cleanup-fleet` / human session on this
-   repo can't clobber you and vice-versa. `--force-worktree` skips the primary
-   claim entirely: unattended fleet-wide dispatch, and a *running* app or a live
-   junction is not a claim holder, so an ordinary `acquire` would hand you
-   `MODE=primary` and have you edit files a live process is serving
-   (fleet-config#515). Then `cd` into the printed `WORKTREE=` path — everything
-   after this step happens there, never in the primary checkout:
-   ```
-   E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/worktree_claim.py acquire <repo-root> --issue <security-issue-or-0> --force-worktree
-   E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/worktree_claim.py setup-worktree <repo-root> <security-issue-or-0> <branch>
-   ```
-   A live-e2e guard refusal is a hard STOP — report it and stop; setting
-   `E2E_LIVE=1` or any equivalent override is forbidden.
-
-2. **File the redacted issue** via the helper — **no vulnerability detail, ever**:
-   not the class, not the file, not the line, not a description. Title exactly
-   `audit: security findings`, label `security`. Body is only:
-   `A security gap was detected by /codebase-audit and is being self-healed in
-   this run. Detail is deliberately omitted from this public issue; see the
-   private security alert for the fix PR.` — nothing more.
-   ```
-   E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/audit_issue.py upsert \
-     --repo <OWNER/REPO> --kind security --label security \
-     --title "audit: security findings" --body-file <tmpfile>
-   ```
-
-3. **Fix + prove it, on one branch.** Run the `/issue-yolo <N>` flow against that
-   issue (branch off fresh `main`, patch every held-aside gap), with **two
-   non-negotiable additions**:
-   - **A regression test per gap is mandatory.** The fix ships with a test that
-     exercises the specific gap — fails before the patch, passes after. This
-     test is the coverage that makes unattended auto-merge safe: it catches a
-     wrong fix, so on a repo with a thin suite the fix is never resting on a
-     bare byte-compile. (Global CLAUDE.md: "Reproduce before fixing" / empirical
-     proof.)
-   - **Every artifact stays generic.** Commit message, PR title, PR body, the
-     test name and any comment — none may name the vulnerability class (no "SQL
-     injection", "XSS", "hardcoded credential", "path traversal", …). Use
-     `fix: harden input handling in <module>` shapes. The public diff already
-     reveals the fix on a public repo, so the mitigation is a *short exposure
-     window + a private review*, not secret text — don't add a neon label on top.
-   - Run the repo's **own verification gate** (per its CLAUDE.md) — the new
-     regression test included — as the hard pass/fail.
-
-4. **Auto-merge on green** (green = gate passes *including* the new test), exactly
-   like `/cleanup-fleet`'s easy tier: PR, wait for CI per `/issue-yolo`'s rules,
-   then merge + land per `/issue-yolo` step 8's **worktree** branch — `gh pr
-   merge <PR> --merge` with **no `--delete-branch`** and no `git checkout main`
-   — **tear the worktree down, land the primary, and release the claim**
-   (`worktree_claim.py remove-worktree <worktree-path>`, then `land-primary
-   <repo> <N>` — report its `PRIMARY=live behind=0` / `PRIMARY=stale
-   reason=<why>` line, since a merged fix that never reached the primary is not
-   live — then `release <repo>`; verify `CLAIM=free` and that `git worktree
-   list` shows the primary only; never `rm -rf` a worktree, its `.venv`
-   junction would take the primary's real venv with it). Delete the branch refs
-   explicitly (`git push origin --delete <branch>`; local `-D` only after
-   confirming the tip landed in `origin/<default>`). Tray restart
-   follows `/issue-yolo`'s safety rule: a detach-compliant tray restarts; an
-   unsafe/silent tray is **not** restarted unattended — note "tray not restarted,
-   still on old build" in the alert instead.
-
-5. **Close the redacted issue**, referencing the merged PR by number only (still
-   no vuln detail in the close comment).
-
-6. **Fire the private security alert** — the review channel the public issue
-   deliberately lacks, so you can inspect the actual fix and revert if it's
-   wrong. Routes to the attention chat, not the log:
-   ```
-   E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/hooks/notify_complete.py \
-     --kind security --issue <N> --pr <PR> --pr-url <PR_URL> --summary "auto-merged, review the diff"
-   ```
-
-**Escalate instead of merging blind when the safety net is absent.** If the
-repo has **no test surface at all** to add a regression test to, or the
-verification gate / added test does **not** pass, or `/issue-yolo`'s validation
-fails for any reason: **do not merge.** Leave the branch in place, leave the
-redacted issue **open**, and fire the same `--kind security` alert with
-`--summary "escalated - needs manual /issue-finish"` (drop `--pr`/`--pr-url` if
-no PR was opened). Never retry a failed security fix by guessing, and never
-force-merge one — half-healing a gap unreviewed is worse than leaving it for
-the human the alert just pinged.
+When it runs, open [security-self-heal.md](security-self-heal.md) and follow its
+six steps in order, **inline in your own agent context** — never a nested
+background sub-agent, which gets no auto-resume wake-up and would silently stall
+under `/audit-fleet`. In outline: claim the repo with `worktree_claim.py acquire
+<repo-root> --force-worktree` and work only in the printed `WORKTREE=`; file the
+redacted `audit: security findings` issue; fix every gap on one branch via
+`/issue-yolo` with a mandatory regression test per gap and generic artifact
+text; auto-merge only on a green gate; close the redacted issue; fire the private
+`--kind security` alert. No test surface, or a red gate → escalate, never merge
+blind. The invariants are restated under **Hard rules**.
 
 ### 9. Update the ledger
 
-**Whole-repo audits only** — skip if a scope path was passed.
+**Whole-repo audits only** — skip if a scope path was passed. It runs on
+**every** non-skipped path, including a clean pass that filed zero issues, so an
+unchanged repo is correctly skipped next time.
 
-Upsert the per-repo ledger issue so the next run can short-circuit at step 2:
+One command does the whole write — **never hand-author the ledger block, and
+never record the working checkout's commit**:
 
-- One command does the whole write — **never hand-author the ledger block, and
-  never record the working checkout's `HEAD`**:
+```
+E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/audit_issue.py ledger-write \
+  --repo <OWNER/REPO> --repo-path <REPO_PATH>
+```
 
-  ```
-  E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/audit_issue.py ledger-write \
-    --repo <OWNER/REPO> --repo-path <REPO_PATH>
-  ```
-
-  It composes the `<!-- audit-ledger -->` block itself — sha, today's date, and
-  the `rubric-sha` (sha256 of the project CLAUDE.md alone) — then creates,
-  edits, or collapses strays and ensures the `audit-meta` label, printing the
-  ledger issue URL. Capture that URL; the snapshot comment below posts to it.
-
-  Two things not to do by hand, both of which have already cost real audits:
-
-  - **Don't write the marker.** Hand-authoring drifts to an *open* comment block
-    (`<!-- audit-ledger` … `-->`) the step-2 gate cannot read, buying a full Opus
-    whole-repo audit every week (fleet-config#566). The parser reads both forms
-    and the helper normalizes back to the closed one, but the tool owns the
-    delimiter.
-  - **Don't record `HEAD`.** The helper records the repo's **default-branch**
-    commit, re-confirmed reachable from that branch. An audit off a feature
-    branch (or in a worktree) recording the checkout tip writes a commit the
-    fleet's squash-merge + delete-branch pipeline is *guaranteed* to destroy;
-    `rev-list <sha>..HEAD` then fails and the repo drops out of every later
-    sweep (fleet-config#567).
-
-  If the helper exits non-zero it could not verify a commit or read what it was
-  asked to write — **leave the ledger unchanged**, and say so in the run report.
-  A stale-but-valid baseline costs one wider audit next week; a poisoned one
-  costs every audit.
-
-- This runs on **every** non-skipped path — including a clean pass that filed
-  zero issues — so an unchanged repo is correctly skipped next time.
-
-Then **post one per-category snapshot comment** on the ledger issue —
-append-only telemetry showing the findings *trajectory* per repo. **Counts
-only** (never finding text — the bucket issues are the single source of truth
-for *what*; this is *how many*). Living in a comment keeps it off the step-2
-gate's hot path, which only reads the ledger *body*:
-
-- Use the per-bucket **findings-surfaced-this-run** counts — the exact same
-  numbers as the step-10 summary table's `findings` column. No recomputation.
-- Build a small **standalone** markdown table (header + separator + one data
-  row, so it renders on its own), prefixed with the hidden `<!-- audit-snapshot -->`
-  marker so a later LLM/tool can filter snapshot comments from other ledger
-  comments. Shape (`<sha>` is `git rev-parse --short HEAD`; `total` is the sum
-  of the seven finding buckets; `sec` is the **count** of security gaps
-  self-healed this run — a bare count, never any detail, and deliberately *not*
-  folded into `total` since it's a fix count, not a standing-backlog count):
-
-  ```markdown
-  <!-- audit-snapshot -->
-  | run | sha | dup | stale | drift | maint | slop | bug | doc | total | sec |
-  |-----|-----|-----|-------|-------|-------|------|-----|-----|-------|-----|
-  | <YYYY-MM-DD> | <sha> | 3 | 0 | 2 | 5 | 2 | 0 | 4 | 16 | 1 |
-  ```
-
-- Write it to a repo-scoped temp file (same convention as step 8, e.g.
-  `E:/tmp/audit-<owner>-<repo>-snapshot.md`) — never a fixed shared name — and
-  post it to the captured ledger URL:
-
-  ```
-  gh issue comment <ledger-url> --repo <OWNER/REPO> --body-file <tmpfile>
-  ```
-
-- **Posting the comment must never fail the run.** If `gh issue comment` errors,
-  note `snapshot: skipped (<reason>)` and carry on — the ledger body upsert
-  above is what the gate depends on; the snapshot is telemetry on top.
+Capture the ledger issue URL it prints. A non-zero exit → leave the ledger
+unchanged and say so in the run report. Then post the counts-only
+`<!-- audit-snapshot -->` comment to that URL (a post failure is non-fatal). Why
+hand-authoring and recording the checkout tip each broke real audits, and the
+snapshot table's exact shape: [reference.md](reference.md), step 9.
 
 ### 10. Final report
 
-Print one summary table and stop. Exact shape:
-
-```
-/codebase-audit summary — <repo>  (scope: <whole repo | path>)
-
-  bucket             findings  new  carried  stale*  filed
-  -----------------  --------  ---  -------  ------  --------------------------------------------
-  duplication              3    1        2       0   https://github.com/<owner>/<repo>/issues/<N>
-  stale                    0    0        0       0   (no findings)
-  claude-md-drift          2    0        2       0   https://github.com/<owner>/<repo>/issues/<N>
-  maintainability          5    2        2       1   https://github.com/<owner>/<repo>/issues/<N>
-  slop                     2    2        0       0   https://github.com/<owner>/<repo>/issues/<N>
-  bug                      0    0        0       0   (no findings)
-  documentation            4    1        1       2   https://github.com/<owner>/<repo>/issues/<N>
-
-  security (self-healed):  1  — PR merged, private alert sent; or "escalated" / "none"
-
-  * stale = carried from an earlier run, not re-verified this pass — kept on
-    the checklist and flagged for review, not deleted.
-  The security line is a count + disposition only — no finding detail (it never
-  appears in this report, the issue, or any commit).
-
-  skipped as duplicates:
-    - <file>:<line> — dupe of #<N>
-    - <file>:<line> — dupe of #<N>
-
-  files inspected: <count>   (prioritization: <none | recent + entry points | …>)
-
-  promotion candidates spotted:    (omit the block entirely if none)
-    - asset:      <repo-relative path / module> — <one-line capability>
-    - convention: <convention> — generalizable because <…>
-```
-
-The `new`/`carried`/`stale` columns are the **same counts** step 8 computed
-for the `## Audit run log` bullets — never recomputed here. `findings` is the
-total surviving-after-dedup count (step 9's snapshot comment reads this
-column). `/audit-fleet`'s digest uses the breakdown to separate genuinely new
-findings from standing backlog. The `promotion candidates spotted:` block is
-the only place those surface (no issue, no writes) — `/audit-fleet` reads it
-for the practices ledger; omit when none.
+Print one summary table and stop — its exact shape, and what each column means
+to `/audit-fleet`, is in [reference.md](reference.md), step 10. The
+`new`/`carried`/`stale` columns reuse step 8's counts, never recomputed; the
+security line is a count + disposition only, never finding detail.
 
 If every bucket was empty after dedupe, say so explicitly: `No actionable
 findings. Codebase passes the audit.` — and stop.
@@ -653,7 +453,7 @@ findings. Codebase passes the audit.` — and stop.
   `file:line`. "Lots of duplication in the auth module" is not a finding.
 - **Don't audit `node_modules/`, `.venv/`, `dist/`, generated code, or
   vendored third-party trees.** `git ls-files` already excludes most of
-  this, but double-check.
+  this.
 - **One label per issue** (the bucket label). Don't stack multiple type
   labels.
 - **No AI attribution in the issue body or any commit.** (Per global
@@ -663,63 +463,13 @@ findings. Codebase passes the audit.` — and stop.
 
 ## What's NOT a finding
 
-Concrete anti-examples. If a candidate finding looks like a **no**,
-**drop it** — don't try to find a way to make it count:
-
-- **Duplication.** No: three lines copied once between two files; a constant
-  repeated in two places (local clarity beats premature abstraction). **Yes:**
-  a 50-line block copied four times; two parallel implementations of the same
-  workflow under different names.
-- **Stale / dead code.** No: one slightly outdated comment, a six-month-old
-  `TODO`, an unused import (a linter catches the import; the comment doesn't
-  materially mislead). **Yes:** an entire orphaned module no caller references;
-  a removed feature's scaffolding still imported on startup; a
-  `# removed in v2` block shipped in v5.
-- **CLAUDE.md drift.** No: a typo in a rule's prose, one instance of slightly
-  inconsistent phrasing (the rule still reads correctly). **Yes:** a rule
-  violated systematically (CLAUDE.md says "use `.venv`" and three modules use
-  `venv/`); a hard rule contradicted by actual shipped behavior.
-- **Maintainability.** No: a function name that could be slightly more
-  descriptive, a 30-line function that could be 25, a *what* comment on already
-  obvious code. **Yes:** a 1500-line god module mixing four unrelated concerns;
-  a public API whose identifiers actively mislead about what they return;
-  copy-pasted error handling 12 times in one file.
-- **Bugs.** No: "this *might* race under high concurrency" without a concrete
-  scenario; a bug in code already superseded by other in-flight work; one you
-  can't point to a *currently reachable* call path for from a real entry point
-  — reachability from something that actually runs today is required, not just
-  "the line looks wrong." **Yes:** "this will mis-handle empty input because
-  line N reads `xs[0]` with no guard" — name the input, the line, the failure.
-- **Documentation.** No: a slightly stale README sentence, a flag described in
-  fractionally outdated wording, a missing entry for a trivial internal or
-  dev-only helper, a single outdated example a reader would self-correct in
-  context. **Yes:** a whole README section documenting a removed subsystem; a
-  headline user-facing command/feature absent from the docs entirely; the same
-  setup steps duplicated across `README` and a `docs/` file that now disagree
-  on the port; a dated `docs/2026-…-retrospective.md` the project's own
-  doc-lifecycle rule forbids — name the file/section and the rule or missing
-  feature. Bucket 6 is reserved for headline surfaces a new user/dev would
-  actually go looking for and not find.
-- **Slop.** No: a function a few lines longer than strictly necessary, one
-  extra helper, a single defensive `if` for an unlikely-but-possible input
-  (local clarity and honest guarding beat golf). **Yes:** a 40-line hand-rolled
-  reimplementation of a stdlib one-liner; an entire configurable abstraction
-  (strategy class, plugin registry, options dict) with exactly one hard-coded
-  caller and no second use in sight; three parallel error-handling arms for
-  exceptions the call can't raise; a generated-looking wall of boilerplate that
-  collapses to a fraction of the lines — name the span and the line count it
-  would shed. (If the fix is *reorganize* rather than *delete*, it's
-  maintainability, not slop.)
-- **Security.** No: "this input *could* be unsafe somewhere" with no reachable
-  sink — the bug bar applies, name the exploitable path. **Yes:** a
-  user-controlled value flowing unsanitized into a shell/SQL/eval sink; a
-  secret or credential committed in source; a missing authz check on a
-  state-changing route; `pickle.loads`/`yaml.load` on untrusted bytes — and it
-  takes the step-8b self-heal path, never a public checklist item.
-
-The pattern across all seven: **scale and impact matter**. One-off cosmetic
-blemishes are not findings. Systematic problems, structural rot, or concrete
-failure modes are.
+Concrete per-bucket anti-examples — a **no** and a **yes** for every bucket,
+security included — live in [not-a-finding.md](not-a-finding.md); read it
+before step 5's notes become findings. If a candidate finding looks like a
+**no**, **drop it** — don't try to find a way to make it count. The pattern
+across all seven: **scale and impact matter**. One-off cosmetic blemishes are
+not findings. Systematic problems, structural rot, or concrete failure modes
+are.
 
 ## Notes
 
