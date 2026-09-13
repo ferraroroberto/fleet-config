@@ -983,7 +983,7 @@ def render_drift_item(item: dict, rules: Dict[str, dict], date: str, box: str = 
     rel = item["path"].split("/", 1)[1]
     where = f"{rel}:{item['line']}" if item.get("line") else rel
     rule = rules.get(item["rule"], {})
-    parts = [f"**`{where}`** {item['rule']} {rule.get('title', '')} · {item['tier']} — {clean(item.get('note') or '') or 'see rule'}."]
+    parts = [f"**`{where}`** {item['rule']} {rule.get('title', '')} · {item['tier']} — {clean(item.get('note') or '').rstrip('.') or 'see rule'}."]
     if item.get("text"):
         parts.append(f"Offending: `{clean(item['text']).replace('`', chr(39))[:160]}`.")
     if rule.get("fix"):

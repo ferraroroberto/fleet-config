@@ -428,6 +428,8 @@ check(c1["new"] == 1 and c1["tier"] == "easy" and c1["open"] == 1, f"first run c
 check("**Tier (`/cleanup-fleet` prompt-drift rule): easy** — 1 open item(s): 1 easy, 0 hard." in body1,
       "the body states the issue's tier for the cleanup scorer")
 check(pa.parse_drift_body(body1)[0][0]["rule"] == "R-17", "an item round-trips through its hidden identity")
+check(".." not in pa.render_drift_item(dict(per_repo["alpha"][0], note="ends in a period."), RULES, "d"),
+      "a note that already ends in a period is not doubled")
 ticked = body1.replace("- [ ] **`CLAUDE.md:3`**", "- [x] **`CLAUDE.md:3`**")
 moved = [dict(per_repo["alpha"][0], line=7)]
 body2, c2 = pa.merge_drift(ticked, moved, {"alpha/CLAUDE.md"}, set(), RULES, "2026-09-20", rub12)
