@@ -920,6 +920,7 @@ _DRIFT_ITEM = re.compile(
     r"^- \[(?P<box>[ xX])\] (?P<content>.*?)<!-- prompt-drift: id=(?P<id>[0-9a-f]{12}) tier=(?P<tier>easy|hard)"
     r" path=(?P<path>\S+) rule=(?P<rule>R-\d{2}) propagate=(?P<propagate>\S*) last-seen=(?P<seen>\S+) -->[ \t]*$")
 _NOT_RESURFACED = re.compile(r" _\(not re-surfaced[^)]*\)_$")
+# The same block shape `/context-purge`'s check.py preserves byte-identical; keep the two in step.
 _MARKED_BLOCK = re.compile(r"<!--\s*([\w-]+:[\w-]+):start\s*-->.*?<!--\s*\1:end\s*-->", re.S)
 
 
@@ -931,7 +932,7 @@ def in_protected_span(text: str, line: Optional[int], rule: str) -> bool:
         first = text.count("\n", 0, m.start()) + 1
         if first <= line <= first + m.group(0).count("\n"):
             return True
-    return line < body_start(text) and text.startswith("---") and rule not in DESCRIPTION_PROSE_RULES
+    return line < body_start(text) and rule not in DESCRIPTION_PROSE_RULES
 
 
 def drift_tier(file_against: str, rule: str, line: Optional[int], rules: Dict[str, dict], file_text: str) -> str:
