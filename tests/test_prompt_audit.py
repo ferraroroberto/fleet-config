@@ -324,6 +324,8 @@ check({v[0] for k, v in pa.plan_scan(cur, led, "b" * 64).items() if k != "r/gone
       "a rules.md edit (new rubric) forces a full rescan")
 check(pa.plan_scan(cur, {"rubric": None, "files": {}}, rub)["r/CLAUDE.md"] == ("scan", "no-ledger"), "no ledger -> scan")
 check(pa.plan_scan(cur, led, rub, rescan_all=True)["r/CLAUDE.md"] == ("scan", "rescan-all"), "--rescan-all -> scan")
+check(pa.rules_rubric(b"# r\r\nline\r\n") == pa.rules_rubric(b"# r\nline\n") != pa.rules_rubric(b"# r\nline2\n"),
+      "rubric ignores CRLF/LF checkout differences but not content")
 merged, dropped = pa.merge_ledger(led, {"r/AGENTS.md": "999999999999"}, "b" * 64)
 check(merged == {"r/AGENTS.md": "999999999999"} and dropped == 0, "entries under an old rubric are not carried forward")
 merged, _ = pa.merge_ledger(led, {"r/AGENTS.md": "999999999999"}, rub)

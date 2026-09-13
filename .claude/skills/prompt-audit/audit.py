@@ -102,6 +102,17 @@ def clean(value: str) -> str:
     return re.sub(r"\s+", " ", value.replace("|", "/")).strip()
 
 
+def rules_rubric(data: Optional[bytes] = None) -> str:
+    """The ledger's rubric: sha256 of `rules.md` with line endings normalised.
+
+    `core.autocrlf` checks the same commit out as LF in one checkout and CRLF in
+    another; hashing raw bytes would read a checkout change as a rule-set edit and
+    force a pointless full rescan.
+    """
+    raw = RULES_MD.read_bytes() if data is None else data
+    return rubric_sha(raw.replace(b"\r\n", b"\n"))
+
+
 def load_toml(path: Path = SOURCES_TOML) -> dict:
     with open(path, "rb") as fh:
         return tomllib.load(fh)
@@ -912,7 +923,7 @@ def cmd_lint(args: argparse.Namespace, cfg: dict) -> int:
         if args.changed_only:
             ledger = read_ledger_issue()
             plan = plan_scan({e.key: e.sha for e in entries}, ledger,
-                             rubric_sha(RULES_MD.read_bytes()), args.rescan_all)
+                             rules_rubric(), args.rescan_all)
             entries = [e for e in entries if plan[e.key][0] == "scan"]
     total = 0
     for e in entries:
@@ -979,7 +990,7 @@ def cmd_state(args: argparse.Namespace, cfg: dict) -> int:
 
 
 def cmd_ledger(args: argparse.Namespace, cfg: dict) -> int:
-    rubric = rubric_sha(RULES_MD.read_bytes())
+    rubric = rules_rubric()
     if args.action == "plan":
         entries = _entries(args, cfg)
         ledger = read_ledger_issue()
@@ -1038,7 +1049,7 @@ def cmd_ledger(args: argparse.Namespace, cfg: dict) -> int:
 def cmd_digest(args: argparse.Namespace) -> int:
     run = json.loads(Path(args.run).read_text(encoding="utf-8"))
     rules = parse_rules(RULES_MD.read_text(encoding="utf-8"))
-    run.setdefault("rubric", rubric_sha(RULES_MD.read_bytes()))
+    run.setdefault("rubric", rules_rubric())
     master, lite = _master_and_lite(_repos(args))
     body, status = render_digest(run, rules, master, lite)
     print(body)
