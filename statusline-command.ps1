@@ -2,7 +2,15 @@
 # Reads the status JSON from stdin and prints one line.
 # Format: 4%c - 5%s - 10%w | sonnet | app-launcher (main)   (ctx/session/weekly used; ctx+session+weekly color-coded)
 
-$input_text = [Console]::In.ReadToEnd()
+# UTF-8 on both legs (fleet-config#913, same recipe as run-hook.ps1 / #912).
+# `[Console]::In` decodes with the OEM code page (ibm850), so a non-ASCII cwd
+# became mojibake: it still *printed* right only because Write-Host re-encoded
+# it with the same code page, but `Test-Path` missed and the branch vanished.
+# Wrap the raw stream rather than setting `[Console]::InputEncoding` /
+# `OutputEncoding`, which would change the code page of the console Claude
+# Code itself is running in.
+$utf8 = New-Object System.Text.UTF8Encoding($false)
+$input_text = (New-Object System.IO.StreamReader([Console]::OpenStandardInput(), $utf8)).ReadToEnd()
 if (-not $input_text) { exit 0 }
 try { $data = $input_text | ConvertFrom-Json } catch { exit 0 }
 
@@ -19,7 +27,9 @@ $branch = ''
 if ($dir -and (Test-Path $dir -ErrorAction SilentlyContinue)) {
     $branch = git -C $dir --no-optional-locks branch --show-current 2>$null
     if ($LASTEXITCODE -ne 0) { $branch = '' }
-    if ($branch) { $branch = $branch.Trim() }
+    # PowerShell decoded git's UTF-8 output with the console code page; undo
+    # that so a non-ASCII branch survives the UTF-8 write below.
+    if ($branch) { $branch = $utf8.GetString([Console]::OutputEncoding.GetBytes(($branch -join ''))).Trim() }
 }
 
 # --- first segment: "basename (branch)" or just "basename" ---
@@ -97,7 +107,11 @@ if ($usage_seg) { $segments += $usage_seg }
 if ($model)     { $segments += $model }
 if ($dir_seg)   { $segments += $dir_seg }
 
-Write-Host ($segments -join ' | ')
+# Raw UTF-8 bytes: Write-Host would encode with the console code page.
+$line_bytes = $utf8.GetBytes(($segments -join ' | ') + "`n")
+$stdout = [Console]::OpenStandardOutput()
+$stdout.Write($line_bytes, 0, $line_bytes.Length)
+$stdout.Flush()
 
 # --- rate-limits cache (app-launcher#326 / fleet-config#259) ---
 # Pure additive side effect: cache the same 5h/7d numbers this script just

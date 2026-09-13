@@ -441,3 +441,107 @@ def _hook_transport_utf8_check() -> Tuple[int, int, int]:
         f"executed={executed!r}\n" + res.stdout.decode("utf-8", "replace") + res.stderr.decode("utf-8", "replace"),
     )
     return check.failures, check.total, check.skipped
+
+
+def _copilot_hook_shells() -> list[Tuple[str, str]]:
+    """Every PowerShell Copilot's `powershell` hook key may run under.
+
+    Copilot 1.0.83 on this host ran it under PowerShell 7.6.6 (a live probe
+    hook logged the host; fleet-config#913), but which shell it picks is not
+    documented, so the command must hold in both.
+    """
+    shells = [("powershell 5.1", str(_POWERSHELL))] if _POWERSHELL.exists() else []
+    pwsh = shutil.which("pwsh")
+    if pwsh:
+        shells.append(("pwsh", pwsh))
+    return shells
+
+
+def _copilot_statusline_utf8_check() -> Tuple[int, int, int]:
+    """The other two PowerShell stdin readers keep non-ASCII exact (fleet-config#913).
+
+    Returns `(failures, total, skipped)` -- run via `run_unit3`; a missing
+    PowerShell is a skip, never a pass.
+
+    - `copilot-hooks/fleet-context-filter.json` piped `[Console]::In.ReadToEnd()`
+      into the hook: an em dash reached `context_filter_hook` as `???` (5.1) or
+      cp850 mojibake (pwsh), and the rewrite ran that. It now invokes Python
+      directly, which inherits the raw stdin bytes in either shell.
+    - `statusline-command.ps1` decoded the same way. The basename still printed
+      right (Write-Host re-encoded with the same code page), but `Test-Path`
+      missed the mangled cwd, so the branch segment silently vanished.
+    """
+    check = _Checker()
+    shells = _copilot_hook_shells()
+    if not shells:
+        check.skipped += 3
+        print("SKIP  copilot/statusline utf8: no Windows PowerShell or pwsh found")
+        return check.failures, check.total, check.skipped
+
+    command = f"python -c \"print('{_UTF8_SAMPLE}')\""
+    wiring = json.loads((REPO / "copilot-hooks" / "fleet-context-filter.json").read_text(encoding="utf-8"))
+    hook_cmd = wiring["hooks"]["preToolUse"][0]["powershell"]
+    hook_path = re.compile(r"'[^']*context_filter_hook\.py'")
+    copilot_payload = {"sessionId": "cop-913", "timestamp": 1789340000000, "cwd": str(REPO),
+                       # Raw codepoints, as Copilot sends them -- a default
+                       # json.dumps would \u-escape them and the case would pass on anything.
+                       "toolName": "powershell", "toolArgs": json.dumps({"command": command}, ensure_ascii=False)}
+
+    with tempfile.TemporaryDirectory(prefix="fleet-config-913-") as tmp:
+        probe = Path(tmp) / "utf8_probe.py"
+        probe.write_text(_UTF8_PROBE_HOOK.replace('["tool_input"]["command"]', '["toolArgs"]'), encoding="utf-8")
+        filter_dir = Path(tmp) / "filter"
+        filter_dir.mkdir()
+        env = hook_env({"FLEET_CONTEXT_FILTER_MODE": "rewrite", "FLEET_CONTEXT_FILTER_DIR": str(filter_dir)})
+        stdin = json.dumps(copilot_payload, ensure_ascii=False).encode("utf-8")
+        for name, shell in shells:
+            # Copilot's own hook command, pointed at a probe that echoes codepoints.
+            res = subprocess.run([shell, "-NoProfile", "-NonInteractive", "-Command",
+                                  hook_path.sub(f"'{probe.as_posix()}'", hook_cmd)],
+                                 input=stdin, capture_output=True, timeout=60, env=env)
+            check(
+                f"copilot hook ({name}): the hook receives the payload's exact codepoints",
+                bool(hook_path.search(hook_cmd)) and res.returncode == 0
+                and res.stdout.decode("ascii", "replace").strip() == ascii(copilot_payload["toolArgs"]),
+                res.stdout.decode("utf-8", "replace") + res.stderr.decode("utf-8", "replace"),
+            )
+            # End to end through the real rewrite hook: the command Copilot will
+            # execute is base64 of what the hook decoded.
+            res = subprocess.run([shell, "-NoProfile", "-NonInteractive", "-Command",
+                                  hook_path.sub(f"'{(HOOKS / 'context_filter_hook.py').as_posix()}'", hook_cmd)],
+                                 input=stdin, capture_output=True, timeout=60, env=env)
+            executed = ""
+            try:
+                rewritten = json.loads(json.loads(res.stdout)["modifiedArgs"])["command"]
+                encoded = re.search(r"--encoded (\S+)", rewritten)
+                executed = base64.b64decode(encoded.group(1)).decode("utf-8") if encoded else ""
+            except (ValueError, KeyError, TypeError):
+                pass
+            check(
+                f"copilot hook ({name}): context_filter_hook rewrite keeps the command intact",
+                res.returncode == 0 and executed == command,
+                f"executed={executed!r}\n" + res.stdout.decode("utf-8", "replace") + res.stderr.decode("utf-8", "replace"),
+            )
+
+        if not _POWERSHELL.exists():
+            check.skipped += 1
+            print("SKIP  statusline utf8: Windows PowerShell not found")
+            return check.failures, check.total, check.skipped
+        # settings.json runs the statusline under Windows PowerShell 5.1 with -File.
+        cwd = Path(tmp) / "café—中"
+        subprocess.run(["git", "init", "-q", "-b", "bré", str(cwd)], check=True, capture_output=True, timeout=30)
+        status = {"workspace": {"current_dir": str(cwd)}, "model": {"display_name": "Opus 5"}}
+        outputs = []
+        for stdin in (json.dumps(status, ensure_ascii=False).encode("utf-8"), b"", b"{not json"):
+            res = subprocess.run([str(_POWERSHELL), "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass",
+                                  "-File", str(REPO / "statusline-command.ps1")],
+                                 input=stdin, capture_output=True, timeout=60,
+                                 env=hook_env({"CLAUDE_HOOKS_STATE_DIR": str(Path(tmp) / "state")}))
+            outputs.append((res.returncode, res.stdout.decode("utf-8", "replace"), res.stderr.decode("utf-8", "replace")))
+    check(
+        "statusline: a non-ASCII cwd renders with its branch; empty/malformed stdin exit 0 silently",
+        outputs[0][:2] == (0, f"opus | café—中 (bré)\n")
+        and all(out == (0, "", "") for out in outputs[1:]),
+        repr(outputs),
+    )
+    return check.failures, check.total, check.skipped
