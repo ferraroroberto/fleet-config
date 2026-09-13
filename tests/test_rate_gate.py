@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import datetime as dt
 import json
+import os
 import subprocess
 import sys
 import tempfile
@@ -50,9 +51,43 @@ check(
     "used_percentage null -> UNKNOWN",
 )
 
+check(rg.decide({}, NOW).reason == "cache_missing", "empty cache names cache_missing")
+check(
+    rg.decide(_cache(None, None, "2026-07-04T11:59:00Z"), NOW).reason == "usage_missing",
+    "used_percentage null names usage_missing",
+)
+
 # ---- decide: stale cache -> UNKNOWN regardless of usage ----
 stale_cache = _cache(95.0, "2026-07-04T13:00:00Z", "2026-07-04T11:00:00Z")  # 1h old, default max_age=30min
 check(rg.decide(stale_cache, NOW).status == "UNKNOWN", "stale captured_at -> UNKNOWN even if usage is high")
+check(rg.decide(stale_cache, NOW).reason == "cache_stale", "stale captured_at names cache_stale")
+
+# ---- decide: unattended + no signal -> bounded PAUSE, never proceed (fleet-config#825) ----
+# The 2026-09-10 weekly chain proceeded on UNKNOWN into the 5-hour limit.
+for label, no_signal, reason in (
+    ("empty cache", {}, "cache_missing"),
+    ("stale cache", stale_cache, "cache_stale"),
+    ("null usage", _cache(None, None, "2026-07-04T11:59:00Z"), "usage_missing"),
+):
+    d = rg.decide(no_signal, NOW, unattended=True)
+    check(d.status == "PAUSE", f"unattended + {label} -> PAUSE, not UNKNOWN")
+    check(d.reason == reason, f"unattended + {label} keeps reason {reason}")
+    check(d.used_pct is None and d.resets_at is None, f"unattended + {label} invents no usage or reset")
+    check(d.wait_seconds == float(rg.UNKNOWN_WAIT_SECONDS), f"unattended + {label} waits UNKNOWN_WAIT_SECONDS")
+import scheduled_runner  # noqa: E402
+check(
+    rg.UNKNOWN_WAIT_SECONDS < scheduled_runner.DEFAULT_STALL_TIMEOUT_SECONDS,
+    "a silent no-signal pause wait stays under scheduled_runner's stall watchdog",
+)
+# A fresh signal decides exactly as it does interactively.
+check(rg.decide(_cache(42.0, None, "2026-07-04T11:55:00Z"), NOW, unattended=True).status == "OK",
+      "unattended + fresh low usage -> OK")
+check(rg.decide(_cache(80.0, None, "2026-07-04T11:55:00Z"), NOW, unattended=True).reason == "over_threshold",
+      "unattended + fresh high usage -> over_threshold PAUSE")
+
+check(rg.is_unattended({rg.UNATTENDED_ENV: "1"}), "FLEET_SCHEDULED_RUN=1 -> unattended")
+check(not rg.is_unattended({}), "no marker -> interactive")
+check(not rg.is_unattended({rg.UNATTENDED_ENV: "0"}), "FLEET_SCHEDULED_RUN=0 -> interactive")
 
 # ---- decide: fresh + below threshold -> OK ----
 fresh_low = _cache(42.0, "2026-07-04T14:00:00Z", "2026-07-04T11:55:00Z")
@@ -113,12 +148,24 @@ try:
 
     empty_dir = tmp / "empty"
     empty_dir.mkdir()
-    proc2 = subprocess.run(
-        [sys.executable, str(REPO / "skills" / "_lib" / "rate_gate.py"),
-         "check", "--state-dir", str(empty_dir)],
-        capture_output=True, text=True, encoding="utf-8", errors="replace",
-    )
-    check("DECISION=UNKNOWN" in proc2.stdout, "check CLI with no cache file -> UNKNOWN")
+    interactive_env = {k: v for k, v in os.environ.items() if k != rg.UNATTENDED_ENV}
+
+    def _run_check(*extra, env=interactive_env):
+        return subprocess.run(
+            [sys.executable, str(REPO / "skills" / "_lib" / "rate_gate.py"),
+             "check", "--state-dir", str(empty_dir), *extra],
+            capture_output=True, text=True, encoding="utf-8", errors="replace", env=env,
+        ).stdout
+
+    proc2 = _run_check()
+    check("DECISION=UNKNOWN" in proc2, "check CLI with no cache file -> UNKNOWN")
+    check("MODE=interactive" in proc2 and "REASON=cache_missing" in proc2, "check CLI names mode and reason")
+
+    scheduled = _run_check(env={**interactive_env, rg.UNATTENDED_ENV: "1"})
+    check("DECISION=PAUSE" in scheduled, f"check CLI under FLEET_SCHEDULED_RUN=1 with no cache -> PAUSE ({scheduled!r})")
+    check("MODE=unattended" in scheduled, "check CLI under FLEET_SCHEDULED_RUN=1 prints MODE=unattended")
+    check(f"WAIT_SECONDS={float(rg.UNKNOWN_WAIT_SECONDS)}" in scheduled, "unattended no-signal PAUSE prints its wait")
+    check("DECISION=PAUSE" in _run_check("--unattended"), "--unattended flag forces the unattended decision")
 finally:
     import shutil
     shutil.rmtree(tmp, ignore_errors=True)

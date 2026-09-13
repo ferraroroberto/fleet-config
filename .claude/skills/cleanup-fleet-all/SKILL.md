@@ -110,7 +110,7 @@ The **skip criteria are unchanged** and never soften — never stash, never forc
 E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/rate_gate.py check --threshold 70
 ```
 
-`DECISION=PAUSE` → wait via the `Monitor` tool's until-loop pattern against the printed `WAIT_SECONDS`/`RESETS_AT` before proceeding (per the Execution rules above — this must resolve within the same turn). `OK`/`UNKNOWN` → proceed immediately.
+`DECISION=PAUSE` → wait via the `Monitor` tool's until-loop pattern against the printed `WAIT_SECONDS`/`RESETS_AT` (per the Execution rules above — this must resolve within the same turn), then re-check. **Cap: 3 pause cycles.** Still `PAUSE` after the third → invoke no workflow: skip steps 7–7b, record every surviving repo as deferred through step 8c (`repo_state` `session-limit`, `skip_reason` the gate's `REASON`), and step 10 prints the session-limit marker. `OK`/`UNKNOWN` → proceed immediately. Under its scheduled launcher (`MODE=unattended`) no fresh statusline signal reads `PAUSE` (`REASON=cache_missing|cache_stale|usage_missing`), never `UNKNOWN` — it waits and re-reads rather than proceeding blind (fleet-config#825). Keep every gate line's `DECISION`/`REASON`/`MODE` for step 10.
 
 ### 7. Invoke the workflow and collect it to completion
 
@@ -297,6 +297,8 @@ The `candidates:` line is **mandatory on every run, even when both extra counts 
 
 The `skipped:` line is **mandatory too, even when every count is zero** (`skipped: 0 repos, 0 issues unprocessed`). Two non-interchangeable numbers: repos skipped, and how much live work went unprocessed. Repos whose state couldn't be established are counted apart from confirmed-dirty ones. Retry recovery count belongs on this line too.
 
+The `rate gate:` line is **mandatory too** — the step 6 decision and pause cycles used, e.g. `rate gate: OK 17.0% (unattended), 0 pauses` or `rate gate: PAUSE cache_stale (unattended), 3 pauses — no lane started`. **If step 6 exhausted its 3 pause cycles**, the first line reads `Cleanup-fleet-all SKIPPED (session limit — exceeded pause retries)` and the report prints the literal line `SCHEDULED-RUN-FAILED — session limit: rate gate still PAUSE (<REASON>) after 3 pause cycles, <M> issue(s) never started`.
+
 **If every candidate repo was skipped** (step 5 left `dispatch` empty while candidates existed), print the literal line `SCHEDULED-RUN-FAILED — every candidate repo was skipped (<N> repos, <M> issues unprocessed), no lane ran` — touching none of the real work found is not a clean sweep. Step 3's genuine empty-queue stop stays exempt.
 
 **If (and only if) step 7's workflow result carries a non-null `halted`** (`{ bucket, repo, issue, status, detail, remainingInBucket }`), also print the literal line `SCHEDULED-RUN-FAILED — halted at <repo>#<issue>: <detail>, <remainingInBucket + issues in later buckets> issue(s) never started`, exactly as shown above, so `claude_progress.py` maps this run to exit 123 instead of the harness's default exit 0 (fleet-config#612 — a run that halted 1 of 9 lanes reported exit 0, green on the Jobs card). A fully successful run (`halted` null) must **not** print this line — opt-in, not a default.
@@ -330,7 +332,7 @@ Recap of the binding constraints above — see the referenced step for full deta
 - A leftover worktree directory is judged by condition, never path or count (all five hold → zombie-pinned per step 8b; any one unestablished → RESIDUE). No rule may require attributing a zombie process to a directory — `CLEAR` is the whole requirement. No condition may depend on a tool the repo might not ship — the live-holder proof (`skills/_lib/dir_holders.py`) is repo-agnostic on purpose (fleet-config#571).
 - Teardown judges its own lane's mess, never the repo's — its own branch/worktree/dirty tree halts the run; foreign branches join `indexLock`/`behindOrigin`/`zombieShells` in the reported-only tier (fleet-config#572).
 - A stale `index.lock` and a behind-origin primary are reported, never halting, never silently repaired — lock deleted only when no live `git.exe` holds it and it's older than 5 minutes; behind-origin fast-forwarded `--ff-only` only, never merge/rebase/reset/`--force`; a refused fast-forward is `unknown`, not a pass.
-- A run that stops with lanes unprocessed must print the literal `SCHEDULED-RUN-FAILED` marker — pre-flight failure (step 1), every-candidate-repo-skipped stop (step 5), or residue halt (step 10, non-null `halted`) — so `claude_progress.py` maps the run to exit 123 instead of exit 0 (fleet-config#612). The step 3 empty-queue stop is exempt — legitimate success, never prints the marker.
+- A run that stops with lanes unprocessed must print the literal `SCHEDULED-RUN-FAILED` marker — pre-flight failure (step 1), every-candidate-repo-skipped stop (step 5), session-limit skip (step 6), or residue halt (step 10, non-null `halted`) — so `claude_progress.py` maps the run to exit 123 instead of exit 0 (fleet-config#612). The step 3 empty-queue stop is exempt — legitimate success, never prints the marker.
 - No AI attribution; no hard-wrapped issue/PR-body paragraphs (per global CLAUDE.md).
 
 ## Notes

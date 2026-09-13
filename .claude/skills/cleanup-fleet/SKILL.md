@@ -148,7 +148,11 @@ Before the mass easy-tier dispatch below, call
 `E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/rate_gate.py check --threshold 70`
 once. `DECISION=PAUSE` → wait via the `Monitor` tool's until-loop pattern against
 the printed `WAIT_SECONDS`/`RESETS_AT` before firing the batch (see
-`docs/rate-gate.md`); `OK`/`UNKNOWN` → proceed immediately.
+`docs/rate-gate.md`), then re-check. **Cap: 3 pause cycles** — still `PAUSE`
+after the third → dispatch nothing and report every selected issue
+`SKIPPED (session limit — exceeded pause retries)` with the gate's `REASON`/`MODE`.
+`OK`/`UNKNOWN` → proceed immediately. A scheduled run (`MODE=unattended`) with no
+fresh signal reads `PAUSE`, never `UNKNOWN` (fleet-config#825).
 
 Dispatch one fresh worker per selected issue through the capability contract, with model/effort resolved from the tier. Respect available host slots and the ≤3 Opus window where that model is selected; refill after collecting terminal results. Easy tier does not bypass host slot limits. Without fresh spawn and collection, stop with a concrete standalone-worker handoff; this orchestrator never becomes its own builder or independent reviewer.
 
