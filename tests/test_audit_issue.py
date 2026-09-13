@@ -67,6 +67,9 @@ check(ai.title_matches("audit: bug findings (3 items)", "bug"), "title bucket w/
 check(ai.title_matches("audit: bug findings", "bug"), "title bucket no count")
 check(ai.title_matches("audit: claude-md-drift findings (2 items)", "claude-md-drift"), "title hyphen kind")
 check(not ai.title_matches("audit: bug findings", "stale"), "title wrong kind")
+check(ai.title_matches("prompt-audit ledger", "prompt-audit"), "title prompt-audit ledger")
+check("prompt-audit" in ai.KINDS and "prompt-audit" not in ai.BUCKET_KINDS,
+      "prompt-audit is a managed kind, never a cleanup bucket")
 check(not ai.title_matches("fix a nasty bug in parser", "bug"), "title not a managed issue")
 check(not ai.title_matches("codebase-audit ledger v2", "ledger"), "title ledger strict")
 check(ai.title_matches("cleanup-fleet-all deferred repos", "cleanup-deferred"),

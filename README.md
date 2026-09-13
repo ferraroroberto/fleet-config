@@ -131,7 +131,7 @@ fleet-config/
 ├── agy/plugins/fleet-context-filter/   # Antigravity `agy` context-filter plugin (plugin.json + hooks.json) — installed by copy, not junction (#546); drift-guarded by tests/run_acceptance.py
 ├── copilot-hooks/                   # Copilot CLI hook wiring (fleet-context-filter.json: preToolUse + modifiedArgs, #547) — copied into ~/.copilot/hooks/, drift-guarded
 ├── skills/                         # junction → ~/.claude/skills, ~/.agents/skills (Codex+Pi), ~/.copilot/skills (Copilot) — GLOBAL tier: issue-* workflow, handoff-commit, codebase-audit, design-sync, screen, _lib/, …
-├── .claude/skills/                 # project-scoped — FLEET-ONLY tier, loads only in fleet-config: audit-fleet, chief, design-sweep, cleanup-fleet, cleanup-fleet-all, context-audit, context-purge, config-map, fleet-health, insights-weekly, learning-log, sota-watch, system-map (fleet-config#161)
+├── .claude/skills/                 # project-scoped — FLEET-ONLY tier, loads only in fleet-config: audit-fleet, chief, design-sweep, cleanup-fleet, cleanup-fleet-all, context-audit, context-purge, config-map, fleet-health, insights-weekly, learning-log, prompt-audit, sota-watch, system-map (fleet-config#161)
 ├── .claude/workflows/              # Workflow-tool scripts (no Bash/filesystem access) — cleanup-fleet-all.js
 ├── architecture/                   # fleet architecture + config maps: fleet.data.js / config.data.js (source of truth), rendered system-map.png / config-map.png / *.mmd, ARCHITECTURE.md
 ├── docs/                           # durable topic references, one file per topic (+ architecture.mmd, this repo's own internal diagram) — enumerating them here only goes stale; see the directory

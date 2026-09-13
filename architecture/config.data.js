@@ -254,6 +254,11 @@ window.CONFIG = {
       "sched": true
     },
     {
+      "nm": "prompt-audit",
+      "ds": "Audits every fleet instruction file (CLAUDE.md, AGENTS.md, rules, SKILL.md) against the vendors' current prompting guides — first…",
+      "sched": false
+    },
+    {
       "nm": "sota-watch",
       "ds": "Recurring state-of-the-art watch over the fleet's adopted tooling, model, and practice choices — walk the watchlist, deep-researc…",
       "sched": true

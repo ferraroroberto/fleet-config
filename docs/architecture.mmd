@@ -116,6 +116,7 @@ flowchart TB
     CONFIGMAP["config-map"]
     FLEETHEALTH["fleet-health\ncapture.py · ledger.py"]
     SOTAWATCH["sota-watch\nwatchlist.toml · watchlist.py"]
+    PROMPTAUDIT["prompt-audit\nrules.md · sources.toml · audit.py\nfreshness gate → lint + judgment → digest"]
     OTHERFLEET["insights-weekly · learning-log"]
     CHIEF["chief\nstanding Board-chat brain — app-launcher-spawned session,\nnot for ad-hoc invocation"]
     SCHEDULED["run-weekly.bat ×11\nscheduled Claude launchers"]
@@ -155,6 +156,11 @@ flowchart TB
   SOTALEDGER["sota-watch ledger issue (audit-managed)\n+ ~/.claude/sota-watch/state.json — never committed"]
   SOTAWATCH -->|deterministic upsert via audit_issue.py| LIB
   SOTAWATCH -->|run digest comments| SOTALEDGER
+  PROMPTLEDGER["prompt-audit ledger issue (audit-managed)\nguide baselines + file-hash table · digest comments\n+ ~/.claude/prompt-audit/state.json — never committed"]
+  PROMPTAUDIT -->|fleet membership · audit_issue.py · shared description measurement| LIB
+  PROMPTAUDIT -->|digest comments| PROMPTLEDGER
+  PROMPTAUDIT -->|reads, never edits| GCMDFILE
+  PROMPTAUDIT -->|reads, never edits| SISTERSKILLS
   CONTEXTAUDIT -->|measures| GCMDFILE
   CONTEXTAUDIT -->|measures| gskills
   CONTEXTAUDIT -->|measures| fskills

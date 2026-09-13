@@ -88,6 +88,13 @@ _STANDALONE_UNIT_CHECKS: Tuple[Tuple[str, str, str], ...] = (
     ("context_purge_gate", "test_context_purge_gate.py",
      "the skip-unchanged ledger's parse/render/diff core, testable "
      "without gh (fleet-config#287)"),
+    ("prompt_audit", "test_prompt_audit.py",
+     "/prompt-audit's deterministic half -- exact lint counts on planted and "
+     "clean fixtures, file/section audience classification, scaffold and lite "
+     "dedup, all four freshness-gate verdicts, corrupt-state degradation, the "
+     "rubric-keyed skip-unchanged plan, and a digest that never folds "
+     "unmeasured into compliant -- is testable on its own against a synthetic "
+     "fleet, with no gh, fetch, or real state touched (fleet-config#832)"),
     ("context_purge_digest", "test_context_purge_digest.py",
      "the per-run digest's rendering layer -- the three-way "
      "probed/not-probed/not-recorded split that keeps an unknown from "
