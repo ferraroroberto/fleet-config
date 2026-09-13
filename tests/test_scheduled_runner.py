@@ -46,6 +46,16 @@ class ScheduledRunnerTests(unittest.TestCase):
             .read_text(encoding="utf-8").splitlines() if line.strip()
         ]
 
+    def test_child_is_marked_unattended_for_the_rate_gate(self):
+        """fleet-config#825: without the marker the gate proceeds blind on UNKNOWN."""
+        for adapter in self.adapters:
+            with self.subTest(adapter=adapter.label):
+                code, _, text = fake_run(
+                    self.fixtures[adapter.label], adapter,
+                    suffix="import os; sys.exit(0 if os.environ.get('FLEET_SCHEDULED_RUN') == '1' else 9)",
+                )
+                self.assertEqual(code, 0, text)
+
     def test_native_fixture_progress_completion_and_redaction(self):
         for adapter in self.adapters:
             with self.subTest(adapter=adapter.label):
