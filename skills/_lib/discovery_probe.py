@@ -640,14 +640,6 @@ def _claude_instructions(paths: dict[str, Path]) -> dict[str, Any]:
         for index, line in enumerate(global_text.splitlines())
         if line.strip() and line not in visible
     ]
-    omitted_delimiters = {
-        "<!-- system-map:mermaid:start -->",
-        "<!-- system-map:mermaid:end -->",
-    }
-    only_known_delimiters_omitted = all(
-        global_text.splitlines()[item["line"] - 1].strip() in omitted_delimiters
-        for item in missing
-    )
     root_text = (paths["root"] / "CLAUDE.md").read_text(
         encoding="utf-8-sig").replace("\r\n", "\n").strip()
     nested_text = (paths["package"] / "CLAUDE.md").read_text(
@@ -655,7 +647,7 @@ def _claude_instructions(paths: dict[str, Path]) -> dict[str, Any]:
     global_eof = global_text[-256:] in visible
     root_full = root_text in visible
     nested_full = nested_text in visible
-    verified = global_eof and only_known_delimiters_omitted and root_full and nested_full
+    verified = global_eof and not missing and root_full and nested_full
     return {
         "client": "claude",
         "status": "verified" if verified else "failed",
@@ -669,7 +661,6 @@ def _claude_instructions(paths: dict[str, Path]) -> dict[str, Any]:
             "nonempty_lines": len(global_lines),
             "nonempty_lines_loaded": len(global_lines) - len(missing),
             "missing_line_metadata": missing,
-            "only_known_generated_delimiters_omitted": only_known_delimiters_omitted,
         },
         "root": {"bytes": len(root_text.encode("utf-8")), "full_and_eof_loaded": root_full},
         "nested": {"bytes": len(nested_text.encode("utf-8")), "full_and_eof_loaded": nested_full},

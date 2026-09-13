@@ -32,8 +32,8 @@ check = _h.check
 
 
 MERMAID = (
-    "<!-- system-map:mermaid:start -->\n### Fleet map\n```mermaid\nflowchart LR\n```\n"
-    "<!-- system-map:mermaid:end -->"
+    "<!-- example:generated:start -->\n### Generated map\n```mermaid\nflowchart LR\n```\n"
+    "<!-- example:generated:end -->"
 )
 BEFORE_MD = f"# Global\n\nLots of prose here.\n\n{MERMAID}\n\nMore prose.\n"
 
