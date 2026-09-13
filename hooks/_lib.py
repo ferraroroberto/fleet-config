@@ -443,18 +443,24 @@ def normalize_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
     # reliable tell (Claude and Grok never send it; verified live against
     # agy 1.1.8). Translated here, once, same contract as the Grok branch.
     # Copilot CLI (fleet-config#547): camelCase envelope with NO event name —
-    # `{"sessionId", "timestamp", "cwd", "toolName", "toolArgs": "<JSON string>"}`
-    # (verified live on 1.0.77). The string-typed `toolArgs` beside `toolName`
-    # is the tell: Claude sends tool_input as an object, Grok sends
-    # hookEventName, agy sends toolCall. The full parsed args dict is kept in
-    # tool_input because Copilot's modifiedArgs response replaces the WHOLE
-    # args object — a hook that rewrites `command` must echo the other keys.
-    if "toolArgs" in payload and isinstance(payload.get("toolArgs"), str) and "hookEventName" not in payload:
+    # `{"sessionId", "timestamp", "cwd", "toolName", "toolArgs": {...}}`.
+    # `toolArgs` was a JSON-encoded string through 1.0.77 and is an object
+    # from 1.0.83 (both verified live, fleet-config#918), so both shapes are
+    # accepted. `toolArgs` with no hookEventName and no toolCall is the tell:
+    # Claude sends tool_input, Grok sends hookEventName, agy sends toolCall.
+    # The full args dict is kept in tool_input because Copilot's modifiedArgs
+    # response replaces the WHOLE args object — a hook that rewrites `command`
+    # must echo the other keys.
+    raw_args = payload.get("toolArgs")
+    if isinstance(raw_args, (str, dict)) and "hookEventName" not in payload and "toolCall" not in payload:
         _ACTIVE_AGENT = "copilot"
-        try:
-            parsed_args = json.loads(payload.get("toolArgs") or "{}")
-        except (json.JSONDecodeError, TypeError):
-            parsed_args = {}
+        if isinstance(raw_args, dict):
+            parsed_args = dict(raw_args)
+        else:
+            try:
+                parsed_args = json.loads(raw_args or "{}")
+            except json.JSONDecodeError:
+                parsed_args = {}
         if not isinstance(parsed_args, dict):
             parsed_args = {}
         raw_tool = str(payload.get("toolName") or "").lower()
@@ -727,7 +733,9 @@ def rewrite_command(payload: Dict[str, Any], new_command: str, *, reason: str = 
         call's args before it runs — verified live, an overwritten
         ``CommandLine`` actually executed (fleet-config#546).
       - Copilot CLI: ``modifiedArgs`` is a JSON **string** replacing the whole
-        tool-args object — verified live on 1.0.77 (fleet-config#547) — so
+        tool-args object — verified live on 1.0.77 (fleet-config#547) and
+        still honored on 1.0.83, where ``toolArgs`` itself arrives as an
+        object (fleet-config#918) — so
         ``payload``'s other ``tool_input`` keys (description, mode,
         initial_wait, ...) are echoed back with only ``command`` rewritten.
       - Claude Code (and any harness :func:`normalize_payload` doesn't name

@@ -365,7 +365,7 @@ _agy_other = _lib.normalize_payload({"toolCall": {"name": "read_file", "args": {
 check(_agy_other.get("tool_name") == "read_file", "agy: unknown tool name passes through")
 check(_lib.shell_is_ambiguous(_agy_other) is False, "agy: non-shell tool is not marked ambiguous")
 
-# ---- Copilot CLI shape: string toolArgs envelope -> Claude vocabulary ----
+# ---- Copilot CLI shape: toolArgs envelope -> Claude vocabulary ----
 # fleet-config#547. Verified live against Copilot CLI 1.0.77: preToolUse stdin
 # is {"sessionId", "timestamp", "cwd", "toolName", "toolArgs": "<JSON string>"},
 # camelCase, no event name — the string-typed toolArgs is the tell.
@@ -386,6 +386,11 @@ check(_cop.get("tool_input", {}).get("mode") == "sync", "copilot: other toolArgs
 check(_cop.get("session_id") == "cop-sess-1", "copilot: sessionId lands as session_id")
 check(_lib.payload_agent(_cop) == "copilot", "copilot: agent hint is copilot")
 check(_lib.shell_is_ambiguous(_cop) is False, "copilot: not shell-ambiguous (toolName is the shell)")
+
+# Copilot 1.0.83 sends toolArgs as an object (fleet-config#918, verified live)
+_cop_obj = _lib.normalize_payload(dict(COPILOT_PRE_TOOL_USE, toolArgs={"command": "git status --short", "initial_wait": 30}))
+check(_lib.payload_agent(_cop_obj) == "copilot", "copilot: object toolArgs is still detected as copilot")
+check(_cop_obj.get("tool_input") == {"command": "git status --short", "initial_wait": 30}, "copilot: object toolArgs lands whole as tool_input")
 
 _cop_bad = _lib.normalize_payload({"toolName": "powershell", "toolArgs": "{not json"})
 check(_cop_bad.get("tool_input") == {}, "copilot: malformed toolArgs degrades to empty tool_input")
