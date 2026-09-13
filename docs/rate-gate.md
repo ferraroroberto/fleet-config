@@ -48,12 +48,14 @@ decide(cache: dict, now: datetime, threshold_pct: float = 70.0,
 - **`PAUSE`** (`over_threshold`) — `five_hour.used_percentage >= threshold_pct`.
   Carries the window's `resets_at` and a computed `wait_seconds` (`resets_at − now`
   plus a small buffer; a bounded fallback wait if `resets_at` is missing).
+  Unattended, that wait is capped under the stall watchdog; see "Unattended
+  waits vs the stall watchdog" below.
 
 CLI: `rate_gate.py check [--threshold 70] [--state-dir <path>] [--unattended]`
 prints `DECISION=OK|PAUSE|UNKNOWN`, `REASON=<reason above>`,
 `MODE=interactive|unattended`, `USED_PCT=<n|null>`, `RESETS_AT=<iso|null>`,
-`WAIT_SECONDS=<n|null>` for the calling skill to branch on and name in its
-digest. Mode is unattended when `FLEET_SCHEDULED_RUN=1` is in the environment
+`WAIT_SECONDS=<n|null>`, `WATCHDOG_SECONDS=<n|off|unknown|null>` for the
+calling skill to branch on and name in its digest. Mode is unattended when `FLEET_SCHEDULED_RUN=1` is in the environment
 (`scheduled_runner.py` exports it to every child it launches, so every
 `run-weekly.bat` job gets it) or `--unattended` is passed. No flag makes an
 unattended run less cautious.
@@ -104,15 +106,42 @@ The cache path resolves via `CLAUDE_HOOKS_STATE_DIR` first, falling back to
 `~/.claude/hooks/state` — the same resolution `hooks/session_state.py`'s
 `state_file()` uses, so both stay overridable the same way in tests.
 
+## Unattended waits vs the stall watchdog (fleet-config#891)
+
+`scheduled_runner.py` kills a child whose stream has been silent for its stall
+timeout (45 min by default, exit 124). A `Monitor` wait is silent. Probed on
+2026-09-13 with Claude Code 2.1.270: a synthetic `claude_progress.py` run with
+`--stall-timeout 120` started a `Monitor` until-loop that printed nothing for
+5 minutes, and the watchdog killed it at `02:10` with `⏱ stalled · exit 124`.
+The CLI emitted no `task_progress` or any other record while the monitor ran.
+An over-threshold wait of up to 5 hours was therefore always going to be
+killed as a hung job, with no digest.
+
+The fix keeps the watchdog exactly as strict and makes the wait fit it:
+
+- The runner exports the child's effective watchdog as
+  `FLEET_STALL_TIMEOUT_SECONDS` (`0.0` when the watchdog is off).
+- Unattended, every `PAUSE` wait (over-threshold, fallback and no-signal) is
+  capped at half that value, 1350 s under the default. The caller re-checks
+  after each capped wait, and that re-check is stream activity. The caller's
+  3-cycle cap still bounds the total, so a reset further out than about 3 × the
+  cap ends the run in its session-limit skip bucket instead of being killed.
+- `WATCHDOG_SECONDS=unknown` means the variable was missing or unreadable, for
+  example `--unattended` passed outside the runner. That is never read as "no
+  watchdog": the cap falls back to `UNKNOWN_WAIT_SECONDS` (600 s).
+- Interactive runs have no watchdog (`WATCHDOG_SECONDS=null`) and are not capped.
+
 ## How a skill waits on `PAUSE`
 
 Chained short `sleep` calls are explicitly disallowed (they're a workaround for
 the same thing a real polling primitive should do). The sanctioned mechanism is
-the `Monitor` tool's until-loop pattern, polling against the wall-clock
-`resets_at` target — e.g. `until [ "$(date -u +%s)" -ge <target_epoch> ]; do
-sleep 300; done`. After the wait, re-run `rate_gate.py check` and resume
-dispatch; if it still reads `PAUSE` (the reset landed later than expected, or
-another process consumed the fresh window first), loop again.
+the `Monitor` tool's until-loop pattern, polling against a wall-clock target of
+now + `WAIT_SECONDS` — e.g. `until [ "$(date -u +%s)" -ge <target_epoch> ]; do
+sleep 60; done`. Wait on `WAIT_SECONDS`, never on `RESETS_AT`: only
+`WAIT_SECONDS` carries the unattended watchdog cap above. After the wait, re-run
+`rate_gate.py check` and resume dispatch; if it still reads `PAUSE` (the reset
+has not landed yet, or another process consumed the fresh window first), loop
+again.
 
 ## Who calls it
 
