@@ -91,6 +91,27 @@ class _Accounting(ctypes.Structure):
     ]
 
 
+class _UnicodeString(ctypes.Structure):
+    _fields_ = [("length", wintypes.USHORT), ("maximum", wintypes.USHORT), ("buffer", ctypes.c_void_p)]
+
+
+def _command_line(handle: int) -> Optional[str]:
+    """ProcessCommandLineInformation (class 60): no PEB read, limited access suffices."""
+    ntdll = ctypes.WinDLL("ntdll")
+    query = ntdll.NtQueryInformationProcess
+    query.argtypes = [wintypes.HANDLE, ctypes.c_int, ctypes.c_void_p, wintypes.ULONG, ctypes.POINTER(wintypes.ULONG)]
+    query.restype = ctypes.c_long
+    needed = wintypes.ULONG(0)
+    query(handle, 60, None, 0, ctypes.byref(needed))
+    if not needed.value:
+        return None
+    raw = ctypes.create_string_buffer(needed.value)
+    if query(handle, 60, raw, needed.value, ctypes.byref(needed)) < 0:
+        return None
+    text = _UnicodeString.from_buffer(raw)
+    return ctypes.wstring_at(text.buffer, text.length // 2) if text.buffer else ""
+
+
 class _WindowsJob:
     def __init__(self) -> None:
         self.api = ctypes.WinDLL("kernel32", use_last_error=True)
@@ -108,6 +129,8 @@ class _WindowsJob:
             "GetProcessIdOfThread": ([wintypes.HANDLE], wintypes.DWORD),
             "ResumeThread": ([wintypes.HANDLE], wintypes.DWORD),
             "WaitForSingleObject": ([wintypes.HANDLE, wintypes.DWORD], wintypes.DWORD),
+            "OpenProcess": ([wintypes.DWORD, wintypes.BOOL, wintypes.DWORD], wintypes.HANDLE),
+            "QueryFullProcessImageNameW": ([wintypes.HANDLE, wintypes.DWORD, wintypes.LPWSTR, ctypes.POINTER(wintypes.DWORD)], wintypes.BOOL),
         }
         for name, (args, result) in signatures.items():
             function = getattr(self.api, name)
@@ -131,6 +154,36 @@ class _WindowsJob:
         if not self.api.QueryInformationJobObject(self.handle, 1, ctypes.byref(info), ctypes.sizeof(info), None):
             return None
         return int(info.active)
+
+    def process_ids(self) -> Optional[list[int]]:
+        """Live member PIDs (JobObjectBasicProcessIdList), or ``None`` if unqueryable."""
+        capacity = 16
+        while True:
+            class _IdList(ctypes.Structure):
+                _fields_ = [("assigned", wintypes.DWORD), ("listed", wintypes.DWORD),
+                            ("ids", ctypes.c_size_t * capacity)]
+            info = _IdList()
+            if not self.api.QueryInformationJobObject(self.handle, 3, ctypes.byref(info), ctypes.sizeof(info), None):
+                if ctypes.get_last_error() != 234:  # ERROR_MORE_DATA still fills what fits
+                    return None
+            if info.assigned > info.listed and capacity < 4096:
+                capacity *= 4
+                continue
+            return [int(info.ids[index]) for index in range(info.listed)]
+
+    def describe_process(self, pid: int) -> tuple[Optional[str], Optional[str]]:
+        """Image basename and command line of one PID; ``None`` for what can't be read."""
+        handle = self.api.OpenProcess(0x1000, False, pid)  # PROCESS_QUERY_LIMITED_INFORMATION
+        if not handle:
+            return None, None
+        try:
+            size = wintypes.DWORD(1024)
+            buffer = ctypes.create_unicode_buffer(size.value)
+            image = (Path(buffer.value).name if self.api.QueryFullProcessImageNameW(
+                handle, 0, buffer, ctypes.byref(size)) else None)
+            return image, _command_line(handle)
+        finally:
+            self.api.CloseHandle(handle)
 
     def resume(self, process: subprocess.Popen) -> None:
         # Popen closes CreateProcess's initial thread handle. Its suspended
@@ -256,6 +309,25 @@ class ProcessScope:
         except ProcessLookupError:
             return 0
         except OSError:
+            return None
+
+    def describe_active(self) -> Optional[list[tuple[int, Optional[str], Optional[str]]]]:
+        """``(pid, image, command line)`` for each live member; ``None`` when unknowable.
+
+        Read before teardown so an exit-118 log names what outlived the provider
+        instead of only counting it (fleet-config#911). POSIX process groups have
+        no member list here, so they report ``None`` rather than a guessed empty one.
+        """
+        if self.job is None:
+            return None
+        try:
+            pids = self.job.process_ids()
+            if pids is None:
+                logger.info("owned job member list unavailable: error=%s", ctypes.get_last_error())
+                return None
+            return [(pid, *self.job.describe_process(pid)) for pid in pids]
+        except (OSError, ValueError) as error:
+            logger.info("owned job members could not be described: %s", error)
             return None
 
     def terminate(self) -> bool:

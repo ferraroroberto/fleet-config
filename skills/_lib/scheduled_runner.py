@@ -1030,6 +1030,29 @@ def _watch_for_stall(
         return
 
 
+MAX_NAMED_DESCENDANTS = 8
+DESCENDANT_COMMAND_CHARS = 160
+
+
+def _owned_descendant_lines(members: Optional[list]) -> list[str]:
+    """One breadcrumb per owned process still alive at the drain deadline.
+
+    The count alone left #911's three processes undiagnosable from the log. The
+    command line is truncated and secret-redacted like every other echoed
+    value; ``None`` members (no job list, e.g. POSIX) say so rather than
+    implying there was nothing to name.
+    """
+    if members is None:
+        return ["owned descendants could not be named"]
+    lines = []
+    for pid, image, command in members[:MAX_NAMED_DESCENDANTS]:
+        detail = _one_line(command, DESCENDANT_COMMAND_CHARS) if command else "command line unreadable"
+        lines.append(f"owned descendant still running · pid {pid} · {image or 'image unreadable'} · {detail}")
+    if len(members) > MAX_NAMED_DESCENDANTS:
+        lines.append(f"… and {len(members) - MAX_NAMED_DESCENDANTS} more owned descendant(s)")
+    return lines
+
+
 def run_process(
     command: Sequence[str],
     *,
@@ -1091,6 +1114,7 @@ def run_process(
     exit_code = None
     orphaned = False
     orphan_count = 0
+    orphan_members: Optional[list] = None
     drain_deadline = None
     drain_message = None
     try:
@@ -1115,6 +1139,9 @@ def run_process(
                 if time.monotonic() >= drain_deadline:
                     orphaned = active is not None and active > 0 and not stopping
                     orphan_count = active if orphaned else 0
+                    if orphaned:
+                        # Named now: the teardown below kills them (fleet-config#911).
+                        orphan_members = scope.describe_active()
                     # This runner stopped watching before the run was over, so
                     # its outcome is a fact nobody established: verdict-bearing,
                     # and it closes the pre-effect replay gate even when both
@@ -1157,6 +1184,9 @@ def run_process(
         process.stderr.close()
     if drain_message:
         progress.emit_best_effort(drain_message)
+    if orphaned:
+        for line in _owned_descendant_lines(orphan_members):
+            progress.emit_best_effort(line)
     if exit_code is None:
         exit_code = CANCELLATION_UNCONFIRMED_EXIT_CODE
     if stall_state["cancelled"]:

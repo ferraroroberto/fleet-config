@@ -415,6 +415,36 @@ class ScheduledRunnerTests(unittest.TestCase):
         self.assertIn("owned descendant", verdict)
         self.assertGreater(formatter.owned_orphans, 0, verdict)
 
+    @unittest.skipUnless(sys.platform == "win32", "owned job member list is Windows-only")
+    def test_owned_orphan_log_names_each_descendant_redacted(self):
+        """fleet-config#911: the 118 log named a count, never which processes."""
+        flags = subprocess.CREATE_NO_WINDOW
+        good = "\n".join(json.dumps(e) for e in self.fixtures["Claude Code"])
+        script = (f"import subprocess,sys;"
+                  f"subprocess.Popen([sys.executable,'-c','import time;time.sleep(4)',"
+                  f"'orphan911marker','--token=sk-ant-abcdefghijklmnop'],"
+                  f"stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,creationflags={flags});"
+                  f"print({good!r},flush=True)")
+        lines = []
+        formatter = runner.ProgressFormatter(emit=lines.append)
+        code = runner.run_process([sys.executable, "-c", script],
+                                  formatter=formatter, stall_timeout=0)
+        text = "\n".join(lines)
+        named = [line for line in lines if "owned descendant still running · pid " in line]
+        print(f"named descendants: exit={code} · {named}", flush=True)
+        self.assertEqual(code, runner.INCOMPLETE_WORK_EXIT_CODE, text)
+        self.assertTrue(any("python" in line.lower() and "orphan911marker" in line for line in named), text)
+        self.assertNotIn("abcdefghijklmnop", text)
+        self.assertIn("❓ not confirmed", lines[-1])
+
+    def test_owned_descendant_lines_cap_and_unknown(self):
+        self.assertEqual(runner._owned_descendant_lines(None), ["owned descendants could not be named"])
+        members = [(pid, None, None) for pid in range(runner.MAX_NAMED_DESCENDANTS + 2)]
+        lines = runner._owned_descendant_lines(members)
+        self.assertEqual(len(lines), runner.MAX_NAMED_DESCENDANTS + 1)
+        self.assertIn("image unreadable · command line unreadable", lines[0])
+        self.assertIn("and 2 more", lines[-1])
+
     def test_stream_level_incomplete_work_still_names_its_own_half(self):
         good = self.fixtures["Claude Code"]
         pending = {"type": "system", "subtype": "task_started", "task_id": "child-1"}
