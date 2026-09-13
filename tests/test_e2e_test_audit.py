@@ -56,6 +56,18 @@ test_like = m.filter_test_like_paths(paths)
 check(test_like == ["tests/e2e"], "only the test-like path survives, trailing slash stripped")
 
 check(m.resolve_test_dirs(CLAUDE_MD) == ["tests/e2e"], "resolve_test_dirs uses the declared path")
+
+# fleet-config#906: a backticked command word is not a test dir.
+RADAR_MD = (
+    "## CI expectations\n"
+    "- CI's only signal beyond the local gate is the **e2e suite** (skipped locally — `pytest` shows "
+    "~13 skipped). e2e surface = `app/webapp/`, `app/tray/`, `tests/e2e/`, static assets.\n"
+)
+check(m.resolve_test_dirs(RADAR_MD) == ["tests/e2e"],
+      "resolve_test_dirs: a backticked `pytest` command on the e2e-surface line is not a test dir")
+check(m.filter_test_like_paths(["pytest", "tests/e2e/", "tests\\e2e", "test_smoke.py"])
+      == ["tests/e2e", "tests\\e2e", "test_smoke.py"],
+      "filter_test_like_paths: path-shaped spans kept, bare command words dropped")
 check(m.resolve_test_dirs(None) == list(m.DEFAULT_TEST_DIRS), "no CLAUDE.md -> default test dir")
 check(m.resolve_test_dirs("# no CI expectations here\n") == list(m.DEFAULT_TEST_DIRS),
       "no CI-expectations block -> default test dir")
