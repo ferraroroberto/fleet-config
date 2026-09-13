@@ -19,7 +19,7 @@ Required for `notify_on_idle` to name the right project in Telegram pings (else 
 
 ```powershell
 & E:/automation/fleet-config/.venv/Scripts/python.exe .claude/skills/system-map/build_data.py     # fleet.data.js
-& E:/automation/fleet-config/.venv/Scripts/python.exe .claude/skills/system-map/render_mermaid.py # system-map.mmd + global-CLAUDE.md block
+& E:/automation/fleet-config/.venv/Scripts/python.exe .claude/skills/system-map/render_mermaid.py # system-map.mmd
 & E:/automation/fleet-config/.venv/Scripts/python.exe .claude/skills/config-map/build_data.py     # config.data.js
 ```
 

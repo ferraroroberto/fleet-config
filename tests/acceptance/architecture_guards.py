@@ -400,8 +400,8 @@ def _mermaid_check() -> Tuple[int, int]:
     `fleet.data.js`:
       1. `system-map.mmd` is exactly what `render_mermaid.py` regenerates from
          the current `fleet.data.js` — a forgotten regen fails loud;
-      2. the marked `<!-- system-map:mermaid:start -->…:end` block inside
-         `global-CLAUDE.md` embeds that same flowchart body verbatim.
+      2. the map stays out of always-on context: `global-CLAUDE.md` carries no
+         generated flowchart, only a pointer to `system-map.mmd` (#897).
     Returns the failure count.
     """
     import importlib.util
@@ -415,15 +415,16 @@ def _mermaid_check() -> Tuple[int, int]:
 
     data = rm.load_data((REPO / "architecture" / "fleet.data.js").read_text(encoding="utf-8"))
     rendered = rm.render(data)
-    flowchart_body = rm.render_flowchart(data)
 
     committed = (REPO / "architecture" / "system-map.mmd").read_text(encoding="utf-8")
     check("mermaid: system-map.mmd matches render_mermaid.py output", rendered == committed)
 
     claude_md = (REPO / "global-CLAUDE.md").read_text(encoding="utf-8")
     check(
-        "mermaid: global-CLAUDE.md fleet-map block matches the current flowchart",
-        rm.CLAUDE_MD_START in claude_md and f"```mermaid\n{flowchart_body}```" in claude_md,
+        "mermaid: global-CLAUDE.md points at system-map.mmd instead of embedding the flowchart",
+        "architecture/system-map.mmd" in claude_md
+        and "system-map:mermaid" not in claude_md
+        and "flowchart LR" not in claude_md,
     )
 
     return check.failures, check.total
