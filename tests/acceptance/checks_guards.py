@@ -1130,3 +1130,170 @@ def _venv_git_clean_guard_unit_checks() -> Tuple[int, int]:
         shutil.rmtree(tmp, ignore_errors=True)
 
     return check.failures, check.total
+
+
+def _venv_cd_prefix_guard_unit_checks() -> Tuple[int, int]:
+    """`venv_discipline.py` rules 4 + 5 across a directory change
+    (fleet-config#871).
+
+    Agents here prefix almost every command with `cd /e/automation/<repo> &&`,
+    because the Bash tool resets cwd between calls. Rules 4 and 5 resolved
+    every operand against the payload cwd, so `cd <primary> && git clean -xfd`
+    issued from anywhere else was allowed, and its audit record named no venv.
+    Every case in `fixed_blocks` exits 0 against pre-fix code.
+
+    `hooks/` is junctioned live into `~/.claude/hooks`, so a false block here
+    stalls every running session the moment it merges: the allow table is the
+    real non-destructive shapes agents issue all day, and it is held to the
+    same bar as the blocks. Everything runs against temp directories only.
+    """
+    check = _Checker()
+
+    tmp = Path(tempfile.mkdtemp(prefix="venv_cd_prefix_"))
+    junctions = []
+    try:
+        state = tmp / "state"
+        repo = tmp / "repo"
+        (repo / ".git").mkdir(parents=True)      # primary checkout: `.git` is a DIR
+        (repo / ".venv" / "Scripts").mkdir(parents=True)
+        (repo / "src").mkdir()
+        (repo / "build").mkdir()
+        elsewhere = tmp / "elsewhere"            # a session cwd with nothing to lose
+        elsewhere.mkdir()
+
+        def verdict(command: str, cwd: Path, tool: str = "Bash") -> int:
+            code, _out, _err = run("venv_discipline",
+                                   {"tool_name": tool, "cwd": str(cwd),
+                                    "session_id": "sess-871",
+                                    "tool_input": {"command": command}},
+                                   {"CLAUDE_HOOKS_STATE_DIR": str(state)})
+            return code
+
+        msys_repo = "/" + str(repo)[0].lower() + str(repo)[2:].replace("\\", "/")
+        venv = os.path.normcase(str(repo / ".venv"))
+        # (label, command, cwd, tool) -- each one allowed before #871.
+        fixed_blocks = [
+            ("`cd <primary> && git clean -xfd`", f"cd {repo} && git clean -xfd",
+             elsewhere, "Bash"),
+            ("`cd <primary> && rm -rf .venv`", f"cd {repo} && rm -rf .venv", elsewhere, "Bash"),
+            ("`cd <msys primary> && git clean -xfd`", f"cd {msys_repo} && git clean -xfd",
+             elsewhere, "Bash"),
+            ("`cd <primary>` then `rm -rf .venv` on the next line",
+             f"cd {repo}\nrm -rf .venv", elsewhere, "Bash"),
+            ("the new base survives an unrelated clause",
+             f"cd {repo} && git status && git clean -xfd", elsewhere, "Bash"),
+            ("relative `cd` chains resolve", f"cd {repo}/src && cd .. && git clean -xfd",
+             elsewhere, "Bash"),
+            ("a redirected `cd` still moves", f"cd {repo} >/dev/null 2>&1 && git clean -xfd",
+             elsewhere, "Bash"),
+            ("`pushd <primary>`", f"pushd {repo} && rm -rf .venv && popd", elsewhere, "Bash"),
+            ("PowerShell `cd '<primary>'; Remove-Item -Recurse`",
+             f"cd '{repo}'; Remove-Item -Recurse -Force .venv", elsewhere, "PowerShell"),
+            ("PowerShell `Set-Location -Path`",
+             f"Set-Location -Path '{repo}'; Remove-Item -Recurse .venv", elsewhere,
+             "PowerShell"),
+        ]
+        for label, command, cwd, tool in fixed_blocks:
+            code = verdict(command, cwd, tool)
+            check(f"venv_cd_prefix: {label} -> block", code == 2, f"exit={code} cmd={command!r}")
+
+        # A `cd` that cannot succeed leaves the next `;` clause where it was.
+        code = verdict(f"cd {tmp}/missing; git clean -xfd", repo)
+        check("venv_cd_prefix: `cd <missing>; git clean -xfd` in the primary -> block",
+              code == 2, f"exit={code}")
+        kept_blocks = 1
+
+        if sys.platform == "win32":
+            linked = tmp / "repo-wt-5"
+            linked.mkdir()
+            (linked / ".git").write_text("gitdir: ../repo/.git/worktrees/repo-wt-5",
+                                         encoding="utf-8")
+            subprocess.run(["cmd", "/c", "mklink", "/J", str(linked / ".venv"),
+                            str(repo / ".venv")],
+                           capture_output=True, encoding="oem", errors="replace")
+            junctions.append(linked / ".venv")
+        else:
+            linked = None
+        junction_ok = linked is not None and (linked / ".venv").exists()
+        if junction_ok:
+            code = verdict(f"cd {linked} && rm -rf .venv", elsewhere)
+            check("venv_cd_prefix: `cd <worktree> && rm -rf .venv` -> rule 4 block",
+                  code == 2, f"exit={code}")
+        else:
+            check.advisory("venv_cd_prefix: junction could not be created, rule 4 case "
+                           "skipped", False, f"platform={sys.platform}")
+
+        trail = state / "destructive-actions.jsonl"
+        rows = [json.loads(line) for line in
+                trail.read_text(encoding="utf-8").splitlines()] if trail.is_file() else []
+        blocked = [r for r in rows if r["verdict"] == "BLOCK"]
+        primary_rows = [r for r in blocked if r["rule"] == "primary"]
+        check("venv_cd_prefix: every rule-5 refusal is recorded with the venv at risk",
+              len(primary_rows) == len(fixed_blocks) + kept_blocks
+              and all(os.path.normcase(r["venv"]) == venv for r in primary_rows),
+              f"got {[(r['rule'], r['venv'], r['command']) for r in blocked]}")
+        if junction_ok:
+            check("venv_cd_prefix: the worktree refusal is recorded as rule 4",
+                  [r["rule"] for r in blocked].count("junction") == 1,
+                  f"got {[(r['rule'], r['command']) for r in blocked]}")
+
+        # ---- false-block bar: the shapes agents issue dozens of times an hour
+        allows = [
+            ("`cd <primary>/src && git clean -xfd`", f"cd {repo}/src && git clean -xfd",
+             elsewhere, "Bash"),
+            ("`cd <primary> && git status`", f"cd {repo} && git status", elsewhere, "Bash"),
+            ("`cd <msys primary> && git log`", f"cd {msys_repo} && git log --oneline -5",
+             elsewhere, "Bash"),
+            ("`cd <primary> && git fetch && git pull`",
+             f"cd {repo} && git fetch origin && git pull --ff-only", elsewhere, "Bash"),
+            ("`cd <primary> && git diff`", f"cd {repo} && git diff main...HEAD", elsewhere,
+             "Bash"),
+            ("`cd <primary> && .venv/Scripts/python.exe -m pytest`",
+             f"cd {repo} && .venv/Scripts/python.exe -m pytest -q", elsewhere, "Bash"),
+            ("PowerShell `cd <primary>; & .\\.venv\\Scripts\\python.exe`",
+             f"cd '{repo}'; & .\\.venv\\Scripts\\python.exe -m compileall -q hooks",
+             elsewhere, "PowerShell"),
+            ("`cd <primary> && gh issue view`", f"cd {repo} && gh issue view 871 --json state",
+             elsewhere, "Bash"),
+            ("`cd <primary> && rm -rf build`", f"cd {repo} && rm -rf build", elsewhere, "Bash"),
+            ("`cd <primary> && git clean -xfd -e .venv`",
+             f"cd {repo} && git clean -xfd -e .venv", elsewhere, "Bash"),
+            ("`cd <primary> || git clean -xfd` (runs only where cd failed)",
+             f"cd {repo} || git clean -xfd", elsewhere, "Bash"),
+            ("`pushd <primary> && popd && git clean -xfd` (popd restores)",
+             f"pushd {repo} && popd && git clean -xfd", elsewhere, "Bash"),
+            ("`cd <elsewhere> && git clean -xfd` issued from the primary",
+             f"cd {elsewhere} && git clean -xfd", repo, "Bash"),
+            ("`cd ~ && git status`", "cd ~ && git status", repo, "Bash"),
+            ("a quoted `cd … && rm -rf .venv` in `echo`",
+             f'echo "cd {repo} && rm -rf .venv"', elsewhere, "Bash"),
+            ("a quoted `cd … && git clean -xfd` in a commit message",
+             f'git commit -m "docs: cd {repo} && git clean -xfd is refused"', elsewhere,
+             "Bash"),
+            ("a quoted `cd …; rm -rf .venv` in a gh comment",
+             f"gh issue comment 1 --body 'run: cd {repo}; rm -rf .venv'", elsewhere, "Bash"),
+            ("a text-sink heredoc body quoting the hazard",
+             f"cat > notes.md <<'EOF'\ncd {repo} && rm -rf .venv\nEOF", elsewhere, "Bash"),
+            ("an executed heredoc whose text splits at a stray quote",
+             f"cd {repo} && python - <<'PY'\nnote = \"a && rm -rf .venv, then \"\nPY",
+             elsewhere, "Bash"),
+            ("`rm -rf \"\"` names no path", f"cd {repo} && rm -rf \"\"", elsewhere, "Bash"),
+            ("a `--body-file -` heredoc body quoting the hazard",
+             f"gh issue create --title x --body-file - <<'EOF'\ncd {repo}\ngit clean -xfd\nEOF",
+             elsewhere, "Bash"),
+        ]
+        if junction_ok:
+            allows.append(("`cd <worktree> && git worktree list`",
+                           f"cd {linked} && git worktree list", elsewhere, "Bash"))
+        for label, command, cwd, tool in allows:
+            code = verdict(command, cwd, tool)
+            check(f"venv_cd_prefix: {label} -> allow", code == 0, f"exit={code} cmd={command!r}")
+    finally:
+        for link in junctions:
+            try:
+                os.rmdir(link)                   # reparse-safe: never follows it
+            except OSError:
+                pass
+        shutil.rmtree(tmp, ignore_errors=True)
+
+    return check.failures, check.total

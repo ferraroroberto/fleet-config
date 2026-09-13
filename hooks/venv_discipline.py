@@ -33,6 +33,12 @@ git**, so the only repair is recreate-and-reinstall by hand. A worktree's *own*
 real (non-junctioned) `.venv` is deliberately not covered — that one is the
 worktree's to dispose of, and `git worktree remove` is entitled to it.
 
+Both rules resolve an operand against the directory its clause actually runs
+in, not only the payload cwd: `cd <primary> && git clean -xfd` is judged in
+`<primary>` (fleet-config#871). `cd`/`chdir`/`Set-Location`/`sl`,
+`pushd`/`popd` carry across `&&`, `;` and newlines; any target the command
+string cannot pin down keeps the previous directory.
+
 Every clause either rule classifies as destructive is appended to the
 `destructive-actions.jsonl` audit trail under `state_dir()`, blocked or not.
 That file is the answer to #828's third acceptance criterion: the run that
@@ -551,36 +557,168 @@ class Clause(NamedTuple):
     venv: Optional[Path]
 
 
+def _clauses_for(verb: str, operands: List[str], base: Path) -> List[Clause]:
+    """One destructive segment's clauses, its operands resolved against `base`.
+
+    Junction first — a worktree's `.venv` is a reparse point, so rule 5's
+    `is_dir()` would also be true of its target and would mislabel the more
+    specific case.
+    """
+    if not operands:
+        return [Clause(None, verb, "", None)]
+    out: List[Clause] = []
+    for operand in operands:
+        # `rm -rf ""` names no path, and neither does the stray quote a split
+        # inside quoted text leaves behind (`… rm -rf .venv\"`); `_operand_path`
+        # would read either as `base` itself.
+        if verb == GIT_CLEAN_SPARING_VERB or not operand.strip().strip("'\""):
+            out.append(Clause(None, verb, operand, None))
+            continue
+        path = _operand_path(operand, base)
+        junction = (None if verb == GIT_CLEAN_VERB
+                    else junctioned_venv_under(path))
+        if junction is not None:
+            out.append(Clause("junction", verb, operand, junction))
+            continue
+        primary = (None if verb == VENV_BUILD_VERB
+                   else primary_venv_under(path))
+        out.append(Clause("primary" if primary else None, verb, operand, primary))
+    return out
+
+
+# ------------------------------------------ directory changes between clauses
+#
+# fleet-config#871: agents prefix almost every command with `cd <repo> &&`,
+# because the Bash tool resets cwd between calls, so judging every operand
+# against the payload cwd let `cd <primary> && git clean -xfd` through from
+# anywhere else. The clause split itself is unchanged — the same segments reach
+# `destructive_operands` — it only keeps its separators now, so a directory
+# change can be carried into the clauses that actually run after it.
+#
+# Every doubt keeps the previous base, which is exactly the pre-#871 reading,
+# so this can only add a judgment where the new directory is certain: a target
+# that is a variable, `~`, a glob, a command substitution or not an existing
+# directory; a
+# `cd` that starts or ends inside quotes (`echo "cd <repo> && rm -rf .venv"`
+# is text); and a `cd` followed by `||` (the next clause runs only where it
+# failed), `|` or a background `&` (both run it in a subshell). `( … )`
+# subshells are out of scope and keep that conservative reading.
+
+_CHAIN_SPLIT_RE = re.compile("(" + _SEGMENT_SPLIT_RE.pattern + ")")
+_CD_VERBS = {"cd", "chdir", "set-location", "sl"}
+_PUSH_VERBS = {"pushd", "push-location"}
+_POP_VERBS = {"popd", "pop-location"}
+_UNKNOWN_DIR_RE = re.compile(r"[$`*?\[\](){}]|^~")
+
+
+def _chain(cmd: str) -> List[Tuple[str, str, bool]]:
+    """`(segment, separator, quoted)` for each `_SEGMENT_SPLIT_RE` segment.
+
+    `quoted` is True when the segment starts or ends inside a quoted string.
+    The scan ignores escapes: a misread can only mark a segment quoted, and a
+    quoted segment keeps the pre-#871 base.
+    """
+    parts = _CHAIN_SPLIT_RE.split(cmd)
+    out: List[Tuple[str, str, bool]] = []
+    quote: Optional[str] = None
+    for index in range(0, len(parts), 2):
+        segment = parts[index]
+        separator = parts[index + 1] if index + 1 < len(parts) else ""
+        starts_quoted = quote is not None
+        for ch in segment:
+            if quote is None and ch in "'\"":
+                quote = ch
+            elif ch == quote:
+                quote = None
+        out.append((segment, separator, starts_quoted or quote is not None))
+    return out
+
+
+def _separator_after(chain: List[Tuple[str, str, bool]], index: int) -> str:
+    """The separator that really ends segment `index`.
+
+    `2>&1` is split at its `&` like any other, so a segment ending in `>`/`<`
+    before a lone `&` is a redirect, and the clause continues past it.
+    """
+    while (index + 1 < len(chain) and chain[index][1] == "&"
+           and chain[index][0].endswith((">", "<"))):
+        index += 1
+    return chain[index][1]
+
+
+def _carries_directory(separator: str) -> bool:
+    """True when the clause after `separator` runs in the directory just set."""
+    if "||" in separator or separator.startswith("|"):
+        return False
+    return not (separator.startswith("&") and not separator.startswith("&&"))
+
+
+def directory_change(segment: str, base: Path,
+                     stack: List[Path]) -> Optional[Tuple[str, Path]]:
+    """`(verb kind, new directory)` when `segment` knowably changes directory.
+
+    Kind is `"cd"`, `"push"` or `"pop"`. None for anything else, including a
+    change whose target cannot be known from the command string alone.
+    """
+    tokens = _tokens(segment)
+    if not tokens:
+        return None
+    verb = tokens[0].lower()
+    if verb not in _CD_VERBS | _PUSH_VERBS | _POP_VERBS:
+        return None
+    args: List[str] = []
+    rest = tokens[1:]
+    j = 0
+    while j < len(rest):
+        token = rest[j]
+        j += 1
+        redirect = _REDIRECT_RE.match(token)
+        if redirect:
+            # A bare operator (`>`, `2>`) takes the next token as its file.
+            if redirect.end() == len(token) and not redirect.group(1):
+                j += 1
+            continue
+        args.append(token)
+    if verb in _POP_VERBS:
+        return ("pop", stack[-1]) if stack and not args else None
+    operands = [t for t in args if not _is_flag(t)]
+    if len(operands) != 1 or _UNKNOWN_DIR_RE.search(operands[0]):
+        return None
+    target = Path(os.path.normpath(_operand_path(operands[0], base)))
+    try:
+        if not target.is_dir():
+            return None
+    except (OSError, ValueError):
+        return None
+    return ("push" if verb in _PUSH_VERBS else "cd"), target
+
+
 def destructive_clauses(cmd: str, base: Path) -> List[Clause]:
     """Every recursive-delete / venv-rebuild clause in `cmd`, in order.
 
     Both hazard routes are judged here rather than in two parallel scanners:
     they share the clause split, the operand resolution and the audit record,
-    and differ only in which predicate answers. Junction first — a worktree's
-    `.venv` is a reparse point, so rule 5's `is_dir()` would also be true of
-    its target and would mislabel the more specific case.
+    and differ only in which predicate answers. `base` starts at the payload
+    cwd and follows every directory change the chain knowably makes
+    (fleet-config#871).
     """
     out: List[Clause] = []
-    for segment in _SEGMENT_SPLIT_RE.split(cmd):
+    stack: List[Path] = []
+    chain = _chain(cmd)
+    for index, (segment, _separator, quoted) in enumerate(chain):
         verb, operands = destructive_operands(segment)
-        if not verb:
+        if verb:
+            out.extend(_clauses_for(verb, operands, base))
             continue
-        if not operands:
-            out.append(Clause(None, verb, "", None))
+        move = None if quoted else directory_change(segment, base, stack)
+        if move is None or not _carries_directory(_separator_after(chain, index)):
             continue
-        for operand in operands:
-            if verb == GIT_CLEAN_SPARING_VERB:
-                out.append(Clause(None, verb, operand, None))
-                continue
-            path = _operand_path(operand, base)
-            junction = (None if verb == GIT_CLEAN_VERB
-                        else junctioned_venv_under(path))
-            if junction is not None:
-                out.append(Clause("junction", verb, operand, junction))
-                continue
-            primary = (None if verb == VENV_BUILD_VERB
-                       else primary_venv_under(path))
-            out.append(Clause("primary" if primary else None, verb, operand, primary))
+        kind, target = move
+        if kind == "push":
+            stack.append(base)
+        elif kind == "pop":
+            stack.pop()
+        base = target
     return out
 
 
