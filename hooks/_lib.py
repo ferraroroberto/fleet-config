@@ -23,7 +23,7 @@ import subprocess
 import sys
 import time
 from pathlib import Path
-from typing import Any, Dict, Optional, Sequence
+from typing import Any, Dict, Optional, Sequence, TextIO
 
 STATE_DIR_ENV_VAR = "CLAUDE_HOOKS_STATE_DIR"
 
@@ -588,6 +588,26 @@ def read_stdin_json() -> Dict[str, Any]:
     return normalized
 
 
+def _print_text(text: str, stream: TextIO) -> None:
+    """Print model-facing plain text, as UTF-8 when Claude Code is the reader.
+
+    Behind a pipe, Python encodes stdio with the ANSI code page (cp1252) unless
+    `PYTHONUTF8` / `PYTHONIOENCODING` is set, so an em dash left as byte 0x97
+    and Claude Code, which decodes UTF-8, showed U+FFFD (fleet-config#924).
+    Re-encoding here, right before the process exits, leaves every other write
+    and every hook's own streams alone. Newline translation and the stream's
+    error handler are kept, so only the encoding of non-ASCII changes.
+
+    Foreign harnesses keep the locale encoding: no Codex, Grok, Copilot or agy
+    decode of these bytes has been verified. The JSON dialects never reach
+    here with non-ASCII anyway, since `json.dumps` escapes it.
+    """
+    reconfigure = getattr(stream, "reconfigure", None)
+    if _ACTIVE_AGENT is None and reconfigure is not None:
+        reconfigure(encoding="utf-8", errors=stream.errors)
+    print(text, file=stream, flush=True)
+
+
 def block(reason: str) -> "NoReturn":
     """Refuse the tool call, in whatever dialect the calling harness understands.
 
@@ -628,7 +648,7 @@ def block(reason: str) -> "NoReturn":
         warn(reason)
     if _ACTIVE_AGENT == "grok":
         print(json.dumps({"decision": "deny", "reason": reason}), flush=True)
-    print(reason, file=sys.stderr, flush=True)
+    _print_text(reason, sys.stderr)
     sys.exit(2)
 
 
@@ -714,7 +734,7 @@ def warn(message: str) -> "NoReturn":
             payload = {"systemMessage": message}
         print(json.dumps(payload), flush=True)
         sys.exit(0)
-    print(message, flush=True)
+    _print_text(message, sys.stdout)
     sys.exit(0)
 
 

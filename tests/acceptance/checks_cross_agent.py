@@ -366,6 +366,17 @@ text = sys.stdin.buffer.read().decode("utf-8", errors="strict")
 print(ascii(json.loads(text)["tool_input"]["command"]))
 '''
 
+# Refuses with a reason carrying every sample class, through the real
+# `_lib.block()` (fleet-config#924).
+_BLOCK_PROBE_REASON = f"Blocked: probe {_UTF8_SAMPLE}"
+_BLOCK_PROBE_HOOK = f'''
+import sys
+sys.path.insert(0, {str(HOOKS)!r})
+import _lib
+_lib.read_stdin_json()
+_lib.block({_BLOCK_PROBE_REASON!r})
+'''
+
 
 def _shim_console_code_pages() -> list[int]:
     """The console code pages every run-hook.ps1 case runs under (fleet-config#920).
@@ -415,9 +426,17 @@ def _hook_transport_utf8_check() -> Tuple[int, int, int]:
     Under a code-page-65001 console the shim also prepended a UTF-8 BOM, which
     `json.loads` rejects, so hooks read `{}` and failed open -- which is why the
     shim cases run under both console code pages (fleet-config#920).
+
+    On the way out, `_lib.block()` printed the refusal to a stderr pipe, which
+    Python encodes with the ANSI code page unless `PYTHONUTF8` /
+    `PYTHONIOENCODING` is set, so Claude Code read the em dash as U+FFFD
+    (fleet-config#924). The refusal cases strip both variables.
     """
     check = _Checker()
     env = hook_env({"FLEET_CONTEXT_FILTER_MODE": "rewrite"})
+    no_py_encoding_env = {k: v for k, v in env.items() if k not in ("PYTHONUTF8", "PYTHONIOENCODING")}
+    guard_payload = {"hook_event_name": "PreToolUse", "tool_name": "Bash", "cwd": str(REPO),
+                     "tool_input": {"command": r"ls C:\Windows\System32\drivers\etc"}}
     payload = {"tool_name": "Bash", "cwd": str(REPO),
                "tool_input": {"command": f"python -c \"print('{_UTF8_SAMPLE}')\""}}
     command = payload["tool_input"]["command"]
@@ -450,7 +469,7 @@ def _hook_transport_utf8_check() -> Tuple[int, int, int]:
     )
 
     if not _POWERSHELL.exists():
-        check.skipped += 4
+        check.skipped += 8
         print("SKIP  hook_transport: run-hook.ps1 cases (Windows PowerShell not found)")
         return check.failures, check.total, check.skipped
 
@@ -459,11 +478,30 @@ def _hook_transport_utf8_check() -> Tuple[int, int, int]:
             shim_copy = Path(tmp) / "run-hook.ps1"
             shutil.copyfile(HOOKS / "run-hook.ps1", shim_copy)
             (Path(tmp) / "utf8_probe.py").write_text(_UTF8_PROBE_HOOK, encoding="utf-8")
+            (Path(tmp) / "block_probe.py").write_text(_BLOCK_PROBE_HOOK, encoding="utf-8")
             res = _shim(shim_copy, "utf8_probe", payload, env, code_page)
+            refusal = _shim(shim_copy, "block_probe", guard_payload, no_py_encoding_env, code_page)
         check(
             f"hook_transport: run-hook.ps1 hands the hook the payload's exact codepoints (console cp {code_page})",
             res.returncode == 0 and res.stdout.decode("ascii", "replace").strip() == ascii(command),
             res.stdout.decode("utf-8", "replace") + res.stderr.decode("utf-8", "replace"),
+        )
+        check(
+            f"hook_transport: _lib.block() refusal via run-hook.ps1 is exact UTF-8 on stderr (console cp {code_page})",
+            refusal.returncode == 2 and refusal.stderr == (_BLOCK_PROBE_REASON + "\r\n").encode("utf-8"),
+            f"rc={refusal.returncode} stderr={refusal.stderr!r}",
+        )
+
+        # A real guard through the real shim still blocks, and its em dash arrives intact.
+        refusal = _shim(HOOKS / "run-hook.ps1", "bash_windows_path_guard", guard_payload, no_py_encoding_env, code_page)
+        try:
+            reason = refusal.stderr.decode("utf-8")
+        except UnicodeDecodeError:
+            reason = ""
+        check(
+            f"hook_transport: bash_windows_path_guard refusal via run-hook.ps1 keeps its em dash (console cp {code_page})",
+            refusal.returncode == 2 and " — Git Bash strips backslashes" in reason,
+            f"rc={refusal.returncode} stderr={refusal.stderr!r}",
         )
 
         # End to end through the real shim and the real rewrite hook: the command
