@@ -567,8 +567,10 @@ def read_stdin_json() -> Dict[str, Any]:
     _ACTIVE_AGENT = None
     # Decode the raw bytes as UTF-8: a piped stdin's text layer defaults to
     # cp1252 on Windows and turns an em dash into mojibake (fleet-config#912).
+    # `utf-8-sig` drops a leading BOM, which `json.loads` rejects outright — a
+    # shim writing through a UTF-8 console's encoding emits one (fleet-config#920).
     buffer = getattr(sys.stdin, "buffer", None)
-    raw = buffer.read().decode("utf-8", errors="replace") if buffer is not None else sys.stdin.read()
+    raw = buffer.read().decode("utf-8-sig", errors="replace") if buffer is not None else sys.stdin.read()
     if not raw or not raw.strip():
         return {}
     try:
