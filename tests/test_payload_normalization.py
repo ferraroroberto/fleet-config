@@ -368,7 +368,8 @@ check(_lib.shell_is_ambiguous(_agy_other) is False, "agy: non-shell tool is not 
 # ---- Copilot CLI shape: toolArgs envelope -> Claude vocabulary ----
 # fleet-config#547. Verified live against Copilot CLI 1.0.77: preToolUse stdin
 # is {"sessionId", "timestamp", "cwd", "toolName", "toolArgs": "<JSON string>"},
-# camelCase, no event name — the string-typed toolArgs is the tell.
+# camelCase, no event name — toolArgs without hookEventName/toolCall is the tell
+# (a string through 1.0.77, an object from 1.0.83; fleet-config#918).
 
 COPILOT_PRE_TOOL_USE = {
     "sessionId": "cop-sess-1",
