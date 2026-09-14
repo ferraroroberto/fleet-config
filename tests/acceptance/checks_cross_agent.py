@@ -367,15 +367,37 @@ print(ascii(json.loads(text)["tool_input"]["command"]))
 '''
 
 
-def _shim(shim: Path, hook: str, payload: Dict[str, Any], env: Dict[str, str]) -> subprocess.CompletedProcess:
-    """Invoke `run-hook.ps1` exactly as settings.json does, fed UTF-8 bytes."""
+def _shim_console_code_pages() -> list[int]:
+    """The console code pages every run-hook.ps1 case runs under (fleet-config#920).
+
+    Windows PowerShell 5.1 writes a native child's stdin with
+    `Console.InputEncoding`, which gains a UTF-8 BOM when the console is on code
+    page 65001 -- the page a pwsh 7 parent hands down, while Git Bash hands
+    down the OEM page. Pinning both makes the result independent of whoever
+    launched the gate.
+    """
+    import ctypes
+
+    return list(dict.fromkeys([ctypes.windll.kernel32.GetOEMCP(), 65001]))
+
+
+def _shim(shim: Path, hook: str, payload: Dict[str, Any], env: Dict[str, str],
+          code_page: int) -> subprocess.CompletedProcess:
+    """Invoke `run-hook.ps1` exactly as settings.json does, fed UTF-8 bytes.
+
+    CREATE_NO_WINDOW gives the spawn a private console, so `chcp` pins the code
+    page the shim sees without touching the console of the process running the
+    gate.
+    """
+    inner = (f'"{_POWERSHELL}" -NoProfile -NonInteractive -ExecutionPolicy Bypass '
+             f'-File "{shim}" -Hook {hook}')
     return subprocess.run(
-        [str(_POWERSHELL), "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass",
-         "-File", str(shim), "-Hook", hook],
+        f'cmd.exe /d /s /c "chcp {code_page} >nul & {inner}"',
         input=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
         capture_output=True,
         timeout=60,
         env=env,
+        creationflags=subprocess.CREATE_NO_WINDOW,
     )
 
 
@@ -389,6 +411,10 @@ def _hook_transport_utf8_check() -> Tuple[int, int, int]:
     it on with `$OutputEncoding` (us-ascii), so an em dash reached every hook
     as `???` -- and `context_filter_hook`'s rewrite ran the corrupted command.
     Behind the shim, `_lib.read_stdin_json()` decoded the pipe as cp1252.
+
+    Under a code-page-65001 console the shim also prepended a UTF-8 BOM, which
+    `json.loads` rejects, so hooks read `{}` and failed open -- which is why the
+    shim cases run under both console code pages (fleet-config#920).
     """
     check = _Checker()
     env = hook_env({"FLEET_CONTEXT_FILTER_MODE": "rewrite"})
@@ -409,37 +435,52 @@ def _hook_transport_utf8_check() -> Tuple[int, int, int]:
         res.stdout.decode("utf-8", "replace") + res.stderr.decode("utf-8", "replace"),
     )
 
-    if not _POWERSHELL.exists():
-        check.skipped += 2
-        print("SKIP  hook_transport: run-hook.ps1 cases (Windows PowerShell not found)")
-        return check.failures, check.total, check.skipped
-
-    with tempfile.TemporaryDirectory(prefix="fleet-config-912-") as tmp:
-        shim_copy = Path(tmp) / "run-hook.ps1"
-        shutil.copyfile(HOOKS / "run-hook.ps1", shim_copy)
-        (Path(tmp) / "utf8_probe.py").write_text(_UTF8_PROBE_HOOK, encoding="utf-8")
-        res = _shim(shim_copy, "utf8_probe", payload, env)
+    # A BOM-prefixed pipe used to fail `json.loads` and come back `{}`, so every
+    # guard behind it failed open (fleet-config#920).
+    res = subprocess.run(
+        [PYTHON, "-c", "import sys; sys.path.insert(0, sys.argv[1]); import _lib; "
+                       "print(ascii(_lib.read_stdin_json().get('tool_input', {}).get('command')))", str(HOOKS)],
+        input=b"\xef\xbb\xbf" + json.dumps(payload, ensure_ascii=False).encode("utf-8"),
+        capture_output=True, timeout=15, env=env,
+    )
     check(
-        "hook_transport: run-hook.ps1 hands the hook the payload's exact codepoints",
+        "hook_transport: _lib.read_stdin_json parses a BOM-prefixed UTF-8 pipe",
         res.returncode == 0 and res.stdout.decode("ascii", "replace").strip() == ascii(command),
         res.stdout.decode("utf-8", "replace") + res.stderr.decode("utf-8", "replace"),
     )
 
-    # End to end through the real shim and the real rewrite hook: the command
-    # the wrapper will execute is base64 of what the hook decoded.
-    res = _shim(HOOKS / "run-hook.ps1", "context_filter_hook", payload, env)
-    executed = ""
-    try:
-        rewritten = json.loads(res.stdout)["hookSpecificOutput"]["updatedInput"]["command"]
-        encoded = re.search(r"--encoded (\S+)", rewritten)
-        executed = base64.b64decode(encoded.group(1)).decode("utf-8") if encoded else ""
-    except (ValueError, KeyError, TypeError):
-        pass
-    check(
-        "hook_transport: context_filter_hook rewrite via run-hook.ps1 keeps the command intact",
-        res.returncode == 0 and executed == command,
-        f"executed={executed!r}\n" + res.stdout.decode("utf-8", "replace") + res.stderr.decode("utf-8", "replace"),
-    )
+    if not _POWERSHELL.exists():
+        check.skipped += 4
+        print("SKIP  hook_transport: run-hook.ps1 cases (Windows PowerShell not found)")
+        return check.failures, check.total, check.skipped
+
+    for code_page in _shim_console_code_pages():
+        with tempfile.TemporaryDirectory(prefix="fleet-config-912-") as tmp:
+            shim_copy = Path(tmp) / "run-hook.ps1"
+            shutil.copyfile(HOOKS / "run-hook.ps1", shim_copy)
+            (Path(tmp) / "utf8_probe.py").write_text(_UTF8_PROBE_HOOK, encoding="utf-8")
+            res = _shim(shim_copy, "utf8_probe", payload, env, code_page)
+        check(
+            f"hook_transport: run-hook.ps1 hands the hook the payload's exact codepoints (console cp {code_page})",
+            res.returncode == 0 and res.stdout.decode("ascii", "replace").strip() == ascii(command),
+            res.stdout.decode("utf-8", "replace") + res.stderr.decode("utf-8", "replace"),
+        )
+
+        # End to end through the real shim and the real rewrite hook: the command
+        # the wrapper will execute is base64 of what the hook decoded.
+        res = _shim(HOOKS / "run-hook.ps1", "context_filter_hook", payload, env, code_page)
+        executed = ""
+        try:
+            rewritten = json.loads(res.stdout)["hookSpecificOutput"]["updatedInput"]["command"]
+            encoded = re.search(r"--encoded (\S+)", rewritten)
+            executed = base64.b64decode(encoded.group(1)).decode("utf-8") if encoded else ""
+        except (ValueError, KeyError, TypeError):
+            pass
+        check(
+            f"hook_transport: context_filter_hook rewrite via run-hook.ps1 keeps the command intact (console cp {code_page})",
+            res.returncode == 0 and executed == command,
+            f"executed={executed!r}\n" + res.stdout.decode("utf-8", "replace") + res.stderr.decode("utf-8", "replace"),
+        )
     return check.failures, check.total, check.skipped
 
 

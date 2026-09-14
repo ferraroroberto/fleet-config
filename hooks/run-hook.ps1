@@ -48,6 +48,19 @@ $utf8 = New-Object System.Text.UTF8Encoding($false)
 $stdin = New-Object System.IO.StreamReader([Console]::OpenStandardInput(), $utf8)
 $payload = $stdin.ReadToEnd()
 $OutputEncoding = $utf8
+# The native pipe below writes the child's stdin through `Console.InputEncoding`,
+# and on a code-page-65001 console (what a pwsh 7 parent hands down) that
+# encoding emits a UTF-8 BOM ahead of the `{` (fleet-config#920). Swap in the
+# BOM-less instance of the *same* code page, so the shared console's CP is never
+# changed; any other page (or no console at all) has no preamble to strip.
+try {
+    if ([Console]::InputEncoding.CodePage -eq 65001 -and [Console]::InputEncoding.GetPreamble().Length -gt 0) {
+        [Console]::InputEncoding = $utf8
+    }
+} catch {
+    # No usable console API: nothing to swap, and `_lib.read_stdin_json()`
+    # tolerates a leading BOM regardless.
+}
 
 # Prefer a real Python executable. WindowsApps aliases for `py` / `python` can
 # hang in non-interactive hook processes, so skip those stubs if they appear
