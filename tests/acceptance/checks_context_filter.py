@@ -666,6 +666,31 @@ def _context_filter_unit_checks() -> Tuple[int, int, int]:
         stdout + stderr,
     )
 
+    # Copilot 1.0.83 sends toolArgs as an object, not a JSON string; the
+    # string-shaped modifiedArgs reply is still honored there (fleet-config#918).
+    copilot_object = dict(
+        copilot_payload,
+        toolArgs={"command": "git status --short", "description": "d", "mode": "sync", "initial_wait": 30},
+    )
+    code, stdout, stderr = run(
+        "context_filter_hook", copilot_object, {"FLEET_CONTEXT_FILTER_MODE": "rewrite"}
+    )
+    reply = json.loads(stdout) if code == 0 and stdout.strip() else {}
+    try:
+        cop_args = json.loads(reply.get("modifiedArgs") or "{}")
+    except (json.JSONDecodeError, TypeError):
+        cop_args = {}
+    check(
+        "context_filter_hook: copilot object toolArgs -> allow + string modifiedArgs (fleet-config#918)",
+        code == 0
+        and reply.get("permissionDecision") == "allow"
+        and str(cop_args.get("command") or "").startswith("& ")
+        and "--agent copilot" in str(cop_args.get("command") or "")
+        and cop_args.get("initial_wait") == 30
+        and cop_args.get("description") == "d",
+        stdout + stderr,
+    )
+
     # copilot streaming/skip commands fail open with no JSON emitted
     copilot_skip = dict(copilot_payload, toolArgs=json.dumps({"command": "npm run dev -- --watch"}))
     code, stdout, stderr = run(
