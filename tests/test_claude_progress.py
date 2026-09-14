@@ -11,6 +11,7 @@ import tempfile
 import threading
 import time
 from pathlib import Path
+from typing import Optional
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "skills" / "_lib"))
@@ -346,9 +347,13 @@ check("no terminal result event" in undelivered_output,
 # ---- stall watchdog: a silent run is killed, not left wedged (fleet-config#411) ----
 
 # The child leaves a grandchild holding the inherited stdout pipe and then goes
-# quiet — the exact shape that wedged a scheduled run for eight hours. Killing
-# only the direct child would leave that pipe open and hang the read loop here,
-# so this also pins the tree-kill.
+# quiet — the exact shape that wedged a scheduled run for eight hours. The exit
+# code and elapsed time cannot pin the tree-kill on their own: run_process polls
+# its pipes without blocking and leaves the read loop at a bounded drain deadline
+# whether or not the pipes reached EOF (fleet-config#926). So the grandchild
+# records its own PID, and each stall case asserts that process is gone once
+# run_process returns — killed by the watchdog's job-object kill, with the job
+# close in run_process's teardown as the backstop.
 INIT_LINE = (
     "print(json.dumps({'type':'system','subtype':'init',"
     "'claude_code_version':'stall-fixture','model':'fixture'}), flush=True); "
@@ -362,16 +367,85 @@ TOOL_LINE = (
     "[{'type':'tool_result','tool_use_id':'t1'}]}}), flush=True); "
 )
 RESULT_LINE = "print(json.dumps({'type':'result','subtype':'success','is_error':False,'result':'done'}), flush=True); "
-stall_script = (
-    "import json,subprocess,sys,time; "
-    + INIT_LINE
-    + "subprocess.Popen([sys.executable,'-c','import time; time.sleep(300)']); "
-    "time.sleep(300)"
+HEARTBEAT_LINE = (
+    "print(json.dumps({'type':'system','subtype':'thinking_tokens',"
+    "'estimated_tokens':1}), flush=True)"
 )
+GRANDCHILD_EXIT_WAIT_SECONDS = 5.0
+
+
+def stall_script(pid_file: Path) -> str:
+    """Child that spawns a pipe-holding grandchild, then goes silent.
+
+    The child keeps the stream alive until the grandchild has written its PID,
+    so a slow interpreter start on a loaded box cannot race the 2 s stall limit
+    and kill the tree before there is a PID to check.
+    """
+    # Written aside then renamed, so the child's exists() poll never sees an empty file.
+    grandchild = (f"import os,time; from pathlib import Path; "
+                  f"Path({str(pid_file) + '.tmp'!r}).write_text(str(os.getpid())); "
+                  f"os.replace({str(pid_file) + '.tmp'!r}, {str(pid_file)!r}); time.sleep(300)")
+    return (
+        "import json,subprocess,sys,time\n"
+        "from pathlib import Path\n"
+        + INIT_LINE + "\n"
+        + f"subprocess.Popen([sys.executable,'-c',{grandchild!r}])\n"
+        + "deadline = time.monotonic() + 60\n"
+        + f"while not Path({str(pid_file)!r}).exists() and time.monotonic() < deadline:\n"
+        + f"    {HEARTBEAT_LINE}; time.sleep(0.2)\n"
+        + "time.sleep(300)"
+    )
+
+
+def wait_for_exit(pid: int, timeout: float) -> Optional[bool]:
+    """True once ``pid`` has exited, False if still alive at ``timeout``, None if unknowable."""
+    if sys.platform == "win32":
+        import ctypes
+        from ctypes import wintypes
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        kernel32.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+        kernel32.OpenProcess.restype = wintypes.HANDLE
+        kernel32.WaitForSingleObject.argtypes = [wintypes.HANDLE, wintypes.DWORD]
+        kernel32.WaitForSingleObject.restype = wintypes.DWORD
+        kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
+        handle = kernel32.OpenProcess(0x00100000, False, pid)  # SYNCHRONIZE
+        if not handle:
+            # ERROR_INVALID_PARAMETER: no process has this PID any more.
+            return True if ctypes.get_last_error() == 87 else None
+        try:
+            result = kernel32.WaitForSingleObject(handle, int(timeout * 1000))
+        finally:
+            kernel32.CloseHandle(handle)
+        return {0x0: True, 0x102: False}.get(result)  # WAIT_OBJECT_0 / WAIT_TIMEOUT
+    deadline = time.monotonic() + timeout
+    while True:
+        try:
+            os.kill(pid, 0)
+        except ProcessLookupError:
+            return True
+        except OSError:
+            return None
+        if time.monotonic() >= deadline:
+            return False
+        time.sleep(0.05)
+
+
+def check_grandchild_reaped(pid_file: Path, case: str) -> None:
+    try:
+        pid = int(pid_file.read_text())
+    except (OSError, ValueError):
+        check(False, f"{case}: the grandchild reported its PID before the stall kill")
+        return
+    exited = wait_for_exit(pid, GRANDCHILD_EXIT_WAIT_SECONDS)
+    state = {True: "exited", False: "still running", None: "liveness unknown"}[exited]
+    check(exited is True, f"{case}: the stall kill reaped the pipe-holding grandchild (pid {pid} {state})")
+
+
+stall_dir = Path(tempfile.mkdtemp(prefix="claude_progress_stall_"))
 stall_lines: list[str] = []
 started = time.monotonic()
 stall_exit = cp.run_process(
-    [sys.executable, "-c", stall_script],
+    [sys.executable, "-c", stall_script(stall_dir / "stall.pid")],
     formatter=cp.ProgressFormatter(emit=stall_lines.append),
     stall_timeout=2.0,
 )
@@ -382,13 +456,16 @@ check(stall_exit == cp.STALL_EXIT_CODE,
 check(stall_elapsed < 60, f"the watchdog returns promptly (took {stall_elapsed:.1f}s)")
 check("no stream activity" in stall_output, "the stall is reported with its idle time")
 check("⏱ stalled" in stall_output, "the terminal milestone names the stall distinctly")
+check_grandchild_reaped(stall_dir / "stall.pid", "plain stall")
 
 # A jammed stdout must not cost the kill (fleet-config#514). The diagnostic emit
 # used to run *before* _kill_process_tree, so a blocked write parked the watchdog
 # thread and the child was never killed. This emit blocks forever on the stall
-# line; the run must still tear the tree down and exit STALL_EXIT_CODE — the
-# grandchild in stall_script holds the inherited stdout pipe, so the read loop
-# only reaches EOF if the whole tree really died.
+# line; the run must still tear the tree down and exit STALL_EXIT_CODE. The exit
+# code and elapsed time don't prove the kill: the watchdog kills the job object
+# (every descendant is a member from creation) *before* the emit, and the read
+# loop leaves at a bounded drain deadline either way, so the grandchild's own
+# PID is what shows the tree really died.
 blocked_lines: list[str] = []
 blocked_release = threading.Event()
 
@@ -401,7 +478,7 @@ def blocking_emit(line: str) -> None:
 
 blocked_started = time.monotonic()
 blocked_exit = cp.run_process(
-    [sys.executable, "-c", stall_script],
+    [sys.executable, "-c", stall_script(stall_dir / "blocked.pid")],
     formatter=cp.ProgressFormatter(emit=blocking_emit),
     stall_timeout=2.0,
 )
@@ -413,6 +490,8 @@ check(blocked_elapsed < 60,
       f"the blocked-emit stall still returns promptly (took {blocked_elapsed:.1f}s)")
 check(any("⏱ stalled" in line for line in blocked_lines),
       "finish() still reports the stall after the watchdog's emit blocked")
+check_grandchild_reaped(stall_dir / "blocked.pid", "blocked-emit stall")
+shutil.rmtree(stall_dir, ignore_errors=True)
 
 # A child that keeps talking must never be killed, however long it runs.
 chatty_script = (
