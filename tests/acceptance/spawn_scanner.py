@@ -30,7 +30,23 @@ from acceptance.shared import HOOKS, PYTHON, REPO, _Checker
 # excluded on purpose: the acceptance suite runs from a real console, and several
 # cases assert on spawn kwargs, so forcing the flag there would be noise.
 _SPAWN_SCAN_DIRS = ("hooks", "skills", ".claude/skills")
+# Not ours: Claude Code's account skill sync writes Anthropic's skills into
+# ~/.claude/skills/synced/, which the install junction maps onto skills/ here
+# (gitignored, but this scan walks the disk, not the index).
+_SPAWN_SCAN_EXCLUDE = ("skills/synced",)
 _SPAWN_ATTRS = {"run", "Popen", "call", "check_output", "check_call"}
+
+
+def _runtime_py_files() -> "list[Path]":
+    """Every `.py` under `_SPAWN_SCAN_DIRS`, minus `__pycache__` and `_SPAWN_SCAN_EXCLUDE`."""
+    files: list[Path] = []
+    for rel in _SPAWN_SCAN_DIRS:
+        for py in sorted((REPO / rel).rglob("*.py")):
+            label = py.relative_to(REPO).as_posix()
+            if "__pycache__" in py.parts or label.startswith(tuple(f"{d}/" for d in _SPAWN_SCAN_EXCLUDE)):
+                continue
+            files.append(py)
+    return files
 
 
 def _resolves_to_no_window(node) -> bool:
@@ -87,16 +103,13 @@ def _spawn_sites_missing_flags() -> "list[str]":
     import ast
 
     offenders: list[str] = []
-    for rel in _SPAWN_SCAN_DIRS:
-        for py in sorted((REPO / rel).rglob("*.py")):
-            if "__pycache__" in py.parts:
-                continue
-            try:
-                tree = ast.parse(py.read_text(encoding="utf-8"), filename=str(py))
-            except (OSError, SyntaxError) as exc:  # pragma: no cover - byte-compile catches these first
-                offenders.append(f"{py.relative_to(REPO).as_posix()}: unparseable ({exc})")
-                continue
-            offenders.extend(_missing_creationflags_in_tree(tree, py.relative_to(REPO).as_posix()))
+    for py in _runtime_py_files():
+        try:
+            tree = ast.parse(py.read_text(encoding="utf-8"), filename=str(py))
+        except (OSError, SyntaxError) as exc:  # pragma: no cover - byte-compile catches these first
+            offenders.append(f"{py.relative_to(REPO).as_posix()}: unparseable ({exc})")
+            continue
+        offenders.extend(_missing_creationflags_in_tree(tree, py.relative_to(REPO).as_posix()))
     return offenders
 
 
@@ -109,18 +122,15 @@ def _spawn_import_style_offenders() -> "list[str]":
     import ast
 
     offenders: list[str] = []
-    for rel in _SPAWN_SCAN_DIRS:
-        for py in sorted((REPO / rel).rglob("*.py")):
-            if "__pycache__" in py.parts:
-                continue
-            try:
-                tree = ast.parse(py.read_text(encoding="utf-8"), filename=str(py))
-            except (OSError, SyntaxError):  # pragma: no cover
-                continue
-            for node in ast.walk(tree):
-                if (isinstance(node, ast.ImportFrom) and node.module == "subprocess"
-                        and any(a.name in _SPAWN_ATTRS for a in node.names)):
-                    offenders.append(f"{py.relative_to(REPO).as_posix()}:{node.lineno}")
+    for py in _runtime_py_files():
+        try:
+            tree = ast.parse(py.read_text(encoding="utf-8"), filename=str(py))
+        except (OSError, SyntaxError):  # pragma: no cover
+            continue
+        for node in ast.walk(tree):
+            if (isinstance(node, ast.ImportFrom) and node.module == "subprocess"
+                    and any(a.name in _SPAWN_ATTRS for a in node.names)):
+                offenders.append(f"{py.relative_to(REPO).as_posix()}:{node.lineno}")
     return offenders
 
 
@@ -180,19 +190,16 @@ def _raw_exe_spawn_sites(exe_names: "set[str]", wrapper_files: "set[str]") -> "l
     import ast
 
     offenders: list[str] = []
-    for rel in _SPAWN_SCAN_DIRS:
-        for py in sorted((REPO / rel).rglob("*.py")):
-            if "__pycache__" in py.parts:
-                continue
-            label = py.relative_to(REPO).as_posix()
-            if label in wrapper_files:
-                continue
-            try:
-                tree = ast.parse(py.read_text(encoding="utf-8"), filename=str(py))
-            except (OSError, SyntaxError) as exc:  # pragma: no cover - byte-compile catches these first
-                offenders.append(f"{label}: unparseable ({exc})")
-                continue
-            offenders.extend(_raw_exe_spawns_in_tree(tree, label, exe_names))
+    for py in _runtime_py_files():
+        label = py.relative_to(REPO).as_posix()
+        if label in wrapper_files:
+            continue
+        try:
+            tree = ast.parse(py.read_text(encoding="utf-8"), filename=str(py))
+        except (OSError, SyntaxError) as exc:  # pragma: no cover - byte-compile catches these first
+            offenders.append(f"{label}: unparseable ({exc})")
+            continue
+        offenders.extend(_raw_exe_spawns_in_tree(tree, label, exe_names))
     return offenders
 
 
