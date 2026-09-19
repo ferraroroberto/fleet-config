@@ -187,9 +187,11 @@ not the isolation primitive:
 
 ```toml
 [worktree]
-extra_junctions    = ["vendor/comfyui"]
-blank_config_keys  = ["mirror.dir", "mirror.backup_dir"]
-secret_config_keys = ["auth.token"]
+extra_junctions       = ["vendor/comfyui"]
+blank_config_keys     = ["mirror.dir", "mirror.backup_dir"]
+secret_config_keys    = ["auth.token"]
+read_safe_config_keys = ["projects_dir", "apps_scan_root"]
+primary_instance_ok   = false
 ```
 
 | Field | Meaning |
@@ -197,6 +199,8 @@ secret_config_keys = ["auth.token"]
 | `extra_junctions` | list of paths, relative to the repo root, to junction into a worktree alongside `.venv` |
 | `blank_config_keys` | dotted keys in a copied `config/*.json` that point at real, machine-bound state (a synced mirror/backup folder, another repo's database) — blanked to `""`/`[]` in the worktree's copy instead of carrying the primary's real path across (fleet-config#713) |
 | `secret_config_keys` | dotted keys in a copied config whose values must never be reproduced in a worktree (a live credential, a secrets sub-table) — removed outright from the worktree's copy, whatever the value's type. Additive: applied on top of whichever blanking mode is in force, never disabling the default heuristic (fleet-config#839) |
+| `read_safe_config_keys` | dotted keys the app only ever **reads**, exempted from the default blanking heuristic so a side instance booted out of the worktree can actually reach them. Additive and fail-closed: an undeclared key is still blanked, and an explicit `blank_config_keys` entry wins over a read-safe one (fleet-config#937) |
+| `primary_instance_ok` | literal `true` if this repo's lanes genuinely run out of the primary checkout (`life-os`, whose gitignored identity/context/state exist only there). Read by `side-instance-preflight`; anything but a literal `true` — absent, a string, malformed — refuses, because the refusal is the default (fleet-config#937) |
 
 `.venv` is always junctioned first and remains the *only* target when this
 table (or `.fleet.toml` itself) is absent — an undeclared repo behaves
@@ -212,6 +216,14 @@ machine-bound — an `{onedrive}`-style template placeholder, or an absolute
 Windows path — is blanked, list entries filtered the same way. An explicit
 empty list (`blank_config_keys = []`) opts a repo out of that default
 heuristic entirely.
+
+`read_safe_config_keys` only ever modulates that default heuristic, and only
+in the safe direction. A repo that declares `blank_config_keys` has already
+named its blanking set exactly, so an entry there wins over a read-safe one:
+the dangerous mistake is failing to blank a path the running app **writes**,
+which points a worktree instance at the owner's live state. Exemption is by
+exact dotted key or declared sub-table; anything undeclared — including a key
+added to the config after the list was written — keeps being blanked.
 
 `secret_config_keys` is independent of that choice: declaring it switches
 nothing off, and a repo that declares it alongside `blank_config_keys` gets

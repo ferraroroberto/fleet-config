@@ -40,6 +40,13 @@ _STANDALONE_UNIT_CHECKS: Tuple[Tuple[str, str, str], ...] = (
      "the fleet-wide web-app gate -- `classify_web_app` over synthetic "
      "trees, the FastAPI-vs-Streamlit disambiguation, and the reuse of "
      "design_lint's token detection -- is testable on its own (fleet-config#180)"),
+    ("worktree_side_instance", "test_worktree_side_instance.py",
+     "the side-instance staging guards -- the primary-checkout refusal at "
+     "boot time (the one step a lane that never runs /issue-start still has "
+     "to take), the fail-closed read-safe/write-unsafe config split, and the "
+     "machine-global port reservation that makes two lanes exclusive before "
+     "either binds -- are testable on their own against temp trees and a "
+     "redirected state dir (fleet-config#937)"),
     ("worktree_claim", "test_worktree_claim.py",
      "the claim FSM -- atomic acquire, the worktree fallback when held, "
      "TTL stale-reclaim, and the sibling-path convention -- is testable "

@@ -26,6 +26,13 @@ import threading
 import time
 from pathlib import Path
 
+# The port registry `copy_runtime_config` now reserves into lives under
+# `hooks_state.state_dir()` (fleet-config#937), and `run_acceptance.py` runs
+# this file as a bare subprocess with the ambient environment -- `hook_env`'s
+# isolation only covers hook payload checks. Redirect it before the import, or
+# a gate run writes reservations into live fleet state.
+os.environ["CLAUDE_HOOKS_STATE_DIR"] = tempfile.mkdtemp(prefix="wc-state-")
+
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "skills" / "_lib"))
 import service_probe as sp  # noqa: E402
 import worktree_claim as wc  # noqa: E402

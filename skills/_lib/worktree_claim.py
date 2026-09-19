@@ -257,9 +257,15 @@ from worktree_config import (  # noqa: E402
     copy_env_file,
     copy_root_config,
     copy_runtime_config,
+    port_registry_state,
+    port_reservations,
+    release_ports,
+    reserve_port,
     remove_secret_config,
     worktree_blank_config_keys,
     worktree_port,
+    worktree_primary_instance_ok,
+    worktree_read_safe_config_keys,
     worktree_secret_config_keys,
 )
 
@@ -998,6 +1004,15 @@ def remove_worktree(wt: Path, *, force_nonstandard_name: bool = False) -> int:
               f"#   <repo>/.venv/Scripts/python.exe tests/e2e/_browser_sweep.py "
               f"{wt} --dry-run", file=sys.stderr)
         return 1
+    # Only once the tree is genuinely gone: a surviving worktree may still
+    # boot and bind, so handing its ports back here would invite exactly the
+    # collision the reservation exists to prevent. `_live_rows` would prune
+    # these eventually anyway -- this just makes the port reusable now
+    # instead of at the next reader (fleet-config#937).
+    released = release_ports(wt)
+    if released:
+        print(f"PORTS_RELEASED={len(released)}: "
+              f"{', '.join(str(p) for p in released)}", file=sys.stderr)
     print(f"Removed worktree: {wt}")
     return 0
 
@@ -1064,6 +1079,246 @@ def worktree_forced(argv_flag: bool, env: "Mapping[str, str]") -> Tuple[bool, st
     if env.get("APP_LAUNCHER_SESSION_ID") and env.get("WORKTREE_CLAIM_ALLOW_PRIMARY") != "1":
         return True, "APP_LAUNCHER_SESSION_ID (launcher-dispatched; fleet-config#525)"
     return False, ""
+
+
+# ---- side-instance preflight (fleet-config#937) ---------------------------
+
+SIDE_OK = "ok"
+SIDE_REFUSED = "refused"
+SIDE_UNKNOWN = "unknown"
+
+
+def side_instance_decision(is_primary: Optional[bool], env: "Mapping[str, str]",
+                           declared_ok: bool) -> Tuple[str, str]:
+    """May an app instance be booted out of this checkout? `(state, reason)`.
+
+    The pure half of `side-instance-preflight`. Three states, because the
+    dangerous one is the third: `is_primary=None` means we could not establish
+    which kind of checkout this is, and a gate that cannot establish a fact
+    reports `unknown` rather than folding it into the pass.
+
+    Why this exists at all, given `worktree_forced` already refuses a primary
+    checkout: that refusal runs inside `acquire`, and `acquire` is a step a
+    lane can simply not take. A free-text-dispatched lane that never invokes
+    `/issue-start` runs `git checkout -b` in whatever tree it woke up in, and
+    nothing ever asks. `branch_before_edit_guard` does not catch it either --
+    it blocks edits on the *default branch*, and the lane is on a feature
+    branch. So the live app served an hour of uncommitted JS and CSS to a
+    phone, with every guard intact and none of them consulted
+    (fleet-config#937). Booting is the one step a lane that wants a side
+    instance cannot skip, so the check belongs here too.
+
+    Two escapes, and both are deliberate rather than accidental:
+
+      - `WORKTREE_CLAIM_ALLOW_PRIMARY=1`, the same environment hatch
+        `worktree_forced` honours -- one spelling of "this session means it".
+      - a repo's own `[worktree] primary_instance_ok = true`, for a repo whose
+        operational lanes genuinely belong in the primary clone (`life-os`,
+        whose gitignored identity/context/state exist nowhere else). That
+        exception previously lived only in whichever session remembered to
+        export the variable.
+    """
+    if is_primary is None:
+        return SIDE_UNKNOWN, "cannot tell whether this is a primary checkout or a worktree"
+    if not is_primary:
+        return SIDE_OK, "linked worktree"
+    if declared_ok:
+        return SIDE_OK, "primary checkout, allowed by [worktree] primary_instance_ok"
+    if env.get("WORKTREE_CLAIM_ALLOW_PRIMARY") == "1":
+        return SIDE_OK, "primary checkout, allowed by WORKTREE_CLAIM_ALLOW_PRIMARY=1"
+    return SIDE_REFUSED, (
+        "primary checkout — booting here serves uncommitted work to whatever "
+        "depends on the live instance (fleet-config#937). Build in a worktree "
+        "(`setup-worktree`), or declare [worktree] primary_instance_ok = true "
+        "if this repo's lanes genuinely belong in the primary"
+    )
+
+
+def _primary_or_none(path: Path) -> Optional[bool]:
+    """`is_primary_checkout(path)`, or `None` when git cannot answer.
+
+    Distinct from `_is_primary_checkout_safe`, whose `False` is right for
+    `remove_worktree` (a non-repo is not a primary checkout, and the naming
+    guard catches it next). Here `False` would be a licence to boot, so an
+    unanswerable probe has to stay unanswered.
+    """
+    try:
+        return is_primary_checkout(path)
+    except (subprocess.CalledProcessError, OSError):
+        return None
+
+
+def _provisioned_configs(checkout: Path) -> list:
+    """The gitignored runtime configs a worktree setup would have provisioned.
+
+    Mirrors `copy_runtime_config`'s and `copy_root_config`'s own discovery --
+    `config/*.json` minus templates, plus root-level `*.json` git considers
+    ignored -- so the preflight reports on exactly the files setup rewrote,
+    with no second hardcoded list to drift.
+    """
+    found = []
+    config_dir = checkout / "config"
+    if config_dir.is_dir():
+        found.extend(sorted(p for p in config_dir.glob("*.json")
+                            if not p.name.endswith(".sample.json")))
+    candidates = sorted(p.name for p in checkout.glob("*.json")
+                        if not p.name.endswith(".sample.json"))
+    for name in sorted(_git_check_ignore(checkout, candidates)):
+        found.append(checkout / name)
+    return found
+
+
+def _unsafe_config_keys(raw: object, declared_keys: Optional[list],
+                        read_safe_keys: list) -> list:
+    """Dotted keys in a provisioned config that still hold a machine-bound value.
+
+    The check that makes incident 2 of fleet-config#937 impossible to repeat:
+    a lane that hand-restored a path to make its instance boot has no way to
+    know whether that path is read or written, and restoring a written one
+    points the test instance at the owner's live state. Anything the
+    provisioning pass would have emptied, and that is not *declared* read-safe,
+    is reported unsafe. Fail-closed: an undeclared key is unsafe, never
+    assumed fine.
+
+    Which "provisioning pass" is the repo's own choice, and the two modes are
+    asked the same question in their own terms. A repo that declares
+    `blank_config_keys` has named its blanking set exactly, so only those keys
+    are checked and the heuristic is not second-guessed; a repo that declares
+    nothing gets the heuristic, minus its declared read-safe keys.
+
+    `raw` is the already-parsed config. Both blanking passes mutate what they
+    are given and report what they actually emptied — on an already-blank copy
+    they report nothing, which is the pass — so this must be handed a throwaway
+    parse, never a structure the caller goes on to use.
+    """
+    if not isinstance(raw, dict):
+        return []
+    if declared_keys is not None:
+        return _blank_declared_keys(raw, declared_keys)
+    return _blank_default_heuristic(raw, read_safe=frozenset(read_safe_keys))
+
+
+def cmd_side_instance_preflight(args: argparse.Namespace) -> int:
+    """Refuse-or-report before a lane boots an app instance out of a checkout.
+
+    Exit 0 = safe to boot, 1 = refused, 2 = unknown. `unknown` is never
+    permission: it means the preflight could not establish a fact it needs, and
+    the caller has to resolve that rather than read silence as consent.
+
+    It has exactly one side effect: it **reserves** each provisioned config's
+    port for this checkout. That is deliberate -- a preflight that only
+    observed an unreserved port would name the collision risk without removing
+    it, and every worktree provisioned before reservations existed would report
+    `unknown` forever. Refusing is still the answer when another live worktree
+    already holds the port.
+
+    Beyond that it reports; it does not boot. Starting the app is
+    repo-specific -- a tray batch file, uvicorn, Streamlit -- and a `stand-up`
+    command that could not actually start most repos would be the helper that
+    looks total and isn't. What a lane still owns after a green preflight is
+    printed with the report, not left implied.
+    """
+    checkout = _resolve_path_arg(args.checkout or ".")
+    if checkout is None:
+        print(f"SIDE_INSTANCE=unknown reason=no such path: "
+              f"{Path(args.checkout or '.').resolve()}")
+        return 2
+    state, reason = side_instance_decision(
+        _primary_or_none(checkout), os.environ, worktree_primary_instance_ok(checkout))
+    print(f"SIDE_INSTANCE={state} checkout={checkout} reason={reason}")
+    if state != SIDE_OK:
+        return 1 if state == SIDE_REFUSED else 2
+
+    declared_keys = worktree_blank_config_keys(checkout)
+    read_safe_keys = worktree_read_safe_config_keys(checkout)
+    if read_safe_keys:
+        print(f"CONFIG_READ_SAFE={len(read_safe_keys)}: {', '.join(read_safe_keys)}")
+    else:
+        print("CONFIG_READ_SAFE=0: no [worktree] read_safe_config_keys declared — "
+              "every machine-bound value stays blank")
+
+    registry = port_registry_state()
+    reservations = port_reservations()
+    held = str(checkout.resolve())
+    failures: List[str] = []
+    unknowns: List[str] = []
+    if registry != "ok":
+        unknowns.append("the port reservation registry could not be read")
+        print("PORT_REGISTRY=unknown: reservations not established")
+
+    for dst in _provisioned_configs(checkout):
+        rel = dst.relative_to(checkout).as_posix()
+        try:
+            raw = json.loads(dst.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            # Same fail-open read the provisioning pass uses: a config that
+            # isn't ours to parse is the app's business to complain about.
+            continue
+        # Read the port first: `_unsafe_config_keys` blanks the structure it is
+        # given in order to learn what would have been blanked.
+        port = raw.get("port") if isinstance(raw, dict) else None
+        unsafe = _unsafe_config_keys(raw, declared_keys, read_safe_keys)
+        if unsafe:
+            failures.append(f"{rel} holds machine-bound values for undeclared keys: "
+                            f"{', '.join(unsafe)}")
+            print(f"CONFIG_UNSAFE={rel}: {', '.join(unsafe)}")
+        if not isinstance(port, int) or isinstance(port, bool):
+            continue
+        # Claim it rather than merely observing it. A config provisioned before
+        # reservations existed holds an unreserved port, and reporting that as
+        # `unknown` forever would make the check observational -- it would name
+        # the risk it is here to remove. Reserving on the spot makes the answer
+        # total: either this checkout now holds the port exclusively, or
+        # somebody else does and that is a real collision.
+        row = reservations.get(port)
+        if row is not None and row.get("worktree") != held:
+            print(f"PORT={port} config={rel} reservation=HELD BY {row.get('worktree')}")
+            failures.append(f"{rel}'s port {port} is reserved by "
+                            f"{row.get('worktree')} — two instances would collide")
+            continue
+        try:
+            holder = reserve_port(port, checkout, rel)
+        except (OSError, TimeoutError) as exc:
+            print(f"PORT={port} config={rel} reservation=unavailable "
+                  f"({exc.__class__.__name__})")
+            unknowns.append(f"{rel}'s port {port} could not be reserved, so "
+                            f"exclusivity is not established")
+            continue
+        if holder is not None:
+            print(f"PORT={port} config={rel} reservation=HELD BY {holder}")
+            failures.append(f"{rel}'s port {port} is reserved by {holder} — "
+                            f"two instances would collide")
+            continue
+        claimed = "" if row is not None else "  (claimed now)"
+        listening = "" if _port_is_free(port) else "  (already listening)"
+        print(f"PORT={port} config={rel} reservation=this checkout{claimed}{listening}")
+
+    # Only meaningful for a worktree, and only for a target the primary
+    # actually has: `setup_worktree` deliberately skips a declared-but-absent
+    # one, so a repo with no `.venv` at all is not misconfigured. What matters
+    # is a target that exists in the primary and did NOT make it across --
+    # app-launcher's gitignored `webapp/certificates/`, whose absence produces
+    # a browser warning that reads like a bug in the change under test.
+    primary = primary_for_worktree(checkout)
+    if primary is not None and primary.resolve() != checkout.resolve():
+        for rel in worktree_junction_targets(checkout):
+            if (primary / rel).is_dir() and not (checkout / rel).exists():
+                print(f"JUNCTION_MISSING={rel}")
+                failures.append(f"declared [worktree] target {rel} exists in the "
+                                f"primary but is missing here — the app will behave "
+                                f"as if it were never configured")
+
+    print("STILL_YOURS: start the app yourself (repo-specific); point the browser at "
+          "the port above, not the primary's; do not commit the provisioned config.")
+    if failures:
+        for line in failures:
+            print(f"REFUSED: {line}")
+        return 1
+    if unknowns:
+        for line in unknowns:
+            print(f"UNKNOWN: {line}")
+        return 2
+    return 0
 
 
 def cmd_acquire(args: argparse.Namespace) -> int:
@@ -1301,6 +1556,13 @@ def main(argv: Optional[list] = None) -> int:
                          "it does NOT select a tree; a mismatch prints "
                          "'UNKNOWN reason=...' and exits 2 (fleet-config#652)")
     md.set_defaults(func=cmd_mode)
+
+    si = sub.add_parser("side-instance-preflight",
+                        help="refuse-or-report before booting an app instance out "
+                             "of a checkout (0 ok / 1 refused / 2 unknown)")
+    si.add_argument("checkout", nargs="?", default=".",
+                    help="the checkout the instance would boot from (default: cwd)")
+    si.set_defaults(func=cmd_side_instance_preflight)
 
     st = sub.add_parser("status", help="show claim holder + worktree list")
     st.add_argument("repo_root")
