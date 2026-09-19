@@ -38,6 +38,7 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import re
 import sqlite3
 import sys
 from pathlib import Path
@@ -248,16 +249,47 @@ def _upsert(conn: sqlite3.Connection, row: dict, digest_text: str, body_text: st
 _BM25 = "bm25(conv_fts, 10.0, 1.0)"
 
 
-def _quote_terms(query: str) -> str:
-    """Re-express a query as quoted terms ANDed together.
+# Syntax FTS5 acts on. Uppercase-only for the operators because FTS5 is
+# case-sensitive about them: ``salt or pepper`` is three ordinary terms,
+# ``salt OR pepper`` is a union (verified against SQLite 3.50.4).
+_FTS5_SYNTAX = re.compile(r'["*^():]|\b(?:AND|OR|NOT|NEAR)\b')
 
-    The fallback for a query FTS5 refuses to parse. Bare punctuation a user
-    naturally types — ``notion:``, ``--resume``, ``what's`` — is FTS5 *syntax*,
-    so the raw query is tried first (operators keep working for anyone who wants
-    them) and this rescues the rest instead of surfacing a SQL error.
+
+def _looks_like_fts5(query: str) -> bool:
+    """True when the query carries syntax the user plainly meant for FTS5.
+
+    The gate that keeps two audiences apart. Anyone reaching for an operator
+    gets their query untouched; everyone else — the overwhelming majority,
+    typing words into a search box — is routed through ``_quote_terms`` so an
+    unfinished word can still match (#935).
     """
-    terms = [t.replace('"', "") for t in query.split()]
-    return " ".join(f'"{t}"' for t in terms if t)
+    return bool(_FTS5_SYNTAX.search(query))
+
+
+def _quote_terms(query: str) -> str:
+    """Re-express a query as quoted terms ANDed, the last one a prefix.
+
+    Quoting neutralises bare punctuation a user naturally types — ``notion:``,
+    ``--resume``, ``what's`` — which is FTS5 *syntax* and would otherwise
+    surface as a SQL error.
+
+    The trailing ``*`` is what makes an in-progress word findable: FTS5 matches
+    a bare term as a *complete token*, so ``head`` matched nothing until
+    ``headphones`` was finished and the search read as broken for every
+    keystroke of every word (#935). Only the **last** term is a prefix — it
+    models the word under the cursor, while every earlier term keeps its exact
+    meaning, so finishing a query never silently widens what came before.
+
+    Quoting first is also what makes the prefix safe: a bare ``*`` is a hard
+    FTS5 error ("unknown special query"), where ``"*"*`` and ``"--"*`` both
+    parse and simply match nothing.
+    """
+    terms = [t for t in (t.replace('"', "") for t in query.split()) if t]
+    if not terms:
+        return ""
+    quoted = [f'"{t}"' for t in terms]
+    quoted[-1] += "*"
+    return " ".join(quoted)
 
 
 def search(
@@ -272,6 +304,15 @@ def search(
     path = db_path(cfg)
     if not path.exists():
         return []
+
+    # A plain bag of words is rewritten up front rather than after a parse
+    # failure: it parses fine, it just cannot match an unfinished word, so the
+    # old raw-first order had no rescue path to reach (#935). Decided before
+    # the db is opened so an empty query costs nothing and leaks nothing.
+    expr = query if _looks_like_fts5(query) else _quote_terms(query)
+    if not expr.strip():
+        return []
+
     try:
         conn = connect(path)
     except (sqlite3.Error, OSError) as exc:
@@ -279,7 +320,7 @@ def search(
         return []
 
     where = ["conv_fts MATCH ?"]
-    params: list = [query]
+    params: list = [expr]
     if skill:
         where.append("c.skill = ?")
         params.append(skill)
@@ -296,10 +337,16 @@ def search(
     try:
         try:
             rows = conn.execute(sql, [*params, limit]).fetchall()
-        except sqlite3.OperationalError:
-            params[0] = _quote_terms(query)
-            if not params[0].strip():
+        except sqlite3.OperationalError as exc:
+            # Operator syntax FTS5 refused — a bare `*`, `notion:`, an
+            # unbalanced paren. Re-read it literally instead of surfacing a
+            # SQL error. Only the raw path can land here with a retry worth
+            # running; a query already quoted would just fail identically.
+            retry = _quote_terms(query)
+            if retry == expr or not retry.strip():
+                logger.error("unparseable query %r: %s", query, exc)
                 return []
+            params[0] = retry
             try:
                 rows = conn.execute(sql, [*params, limit]).fetchall()
             except sqlite3.OperationalError as exc:
