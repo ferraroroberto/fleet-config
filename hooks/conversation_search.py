@@ -249,9 +249,16 @@ def _upsert(conn: sqlite3.Connection, row: dict, digest_text: str, body_text: st
 _BM25 = "bm25(conv_fts, 10.0, 1.0)"
 
 
-# Syntax FTS5 acts on. Uppercase-only for the operators because FTS5 is
-# case-sensitive about them: ``salt or pepper`` is three ordinary terms,
-# ``salt OR pepper`` is a union (verified against SQLite 3.50.4).
+# Syntax FTS5 acts on. The operators are matched **uppercase only, and that is
+# load-bearing** — FTS5 is case-sensitive about them, so ``salt OR pepper`` is a
+# union while ``salt or pepper`` is three ordinary terms (verified against
+# SQLite 3.50.4). Do NOT add ``re.IGNORECASE`` or lowercase these alternatives
+# "for robustness": it would route every query containing a stray lowercase
+# ``and``/``or``/``not``/``near`` down the raw path, where it is a term rather
+# than an operator — so the common typed phrase silently stops prefix-matching,
+# and a deliberate union is the only thing that still looks right. The ``\b``
+# anchors matter for the same reason: without them ``NOTES`` matches ``NOT``
+# and ``ANDROID`` matches ``AND``.
 _FTS5_SYNTAX = re.compile(r'["*^():]|\b(?:AND|OR|NOT|NEAR)\b')
 
 
