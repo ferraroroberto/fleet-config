@@ -78,7 +78,7 @@ Tally open issues per bucket label (drop `audit-meta` rows; a `security` or `cer
 E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/gh_issue_fetch.py fetch --label <bucket-label>
 ```
 
-**Preferred primary fetch**, not `gh search issues --owner ferraroroberto` (Search-API-backed, eventually consistent — observed reporting 23 issues open for 5+ weeks after they closed, 46 wasted agent invocations, ~2.9M tokens confirming already-shipped work — fleet-config#623). `gh_issue_fetch.py` uses the direct Issues API, one `gh issue list --repo <owner>/<name> --state open` per repo. **Avoids a known-bad source, not "proven immune"** — step 8 still re-checks each selected issue's state immediately before dispatch; the two checks cover different failure modes.
+**Preferred primary fetch**, not `gh search issues --owner ferraroroberto` (Search-API-backed, eventually consistent — observed reporting issues open 5+ weeks after they closed, at real agent and token cost — fleet-config#623). `gh_issue_fetch.py` uses the direct Issues API, one `gh issue list --repo <owner>/<name> --state open` per repo. **Avoids a known-bad source, not "proven immune"** — step 8 still re-checks each selected issue's state immediately before dispatch; the two checks cover different failure modes.
 
 Read the JSON directly. **Drop any row carrying the `audit-meta` label** — those are the per-repo `codebase-audit ledger` and the `audit-fleet digest state` issues, never actionable. If the result is empty, print `No open <bucket> issues across the fleet 🎉` and stop. If the helper's stderr summary reports any `ERROR <repo>: <reason>` lines, note them in the plan — those repos are simply absent from this run's candidates, not a run-wide failure.
 
@@ -310,7 +310,7 @@ E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/hooks
 
 (In easy mode `--review 0` — the helper drops the review clause.) Silent no-op if no Telegram chat is configured; always exits 0.
 
-**`notify_complete.py` is the ONLY sanctioned way to send this roll-up ping — do NOT use any MCP chat tool (search/send/etc.) to find a chat or post the ping.** The helper resolves the channel deterministically from `projects.toml`; picking one yourself is both a security violation (an agent-inferred external write destination) and wrong (it may post to the wrong chat). A silent no-op when no channel is configured is correct — do not "fix" it by reaching for Slack tools.
+**`notify_complete.py` is the ONLY sanctioned way to send this roll-up ping — do NOT use any MCP chat tool (search/send/etc.) to find a chat or post the ping.** The helper resolves the channel deterministically from `projects.toml`; picking one yourself is a security violation (an agent-inferred external write destination) and may post to the wrong chat. A silent no-op when no channel is configured is correct — do not "fix" it by reaching for Slack tools.
 
 Then print the final summary block, with each hard-tier review row carrying its rationale summary inline, and any post-flight dirty-tree finding called out as its own line rather than folded silently into a clean-looking status:
 
@@ -361,6 +361,6 @@ Recap of the binding constraints above — see the referenced step for full deta
 ## Notes
 
 - **Where this sits:** `/codebase-audit` / `/audit-fleet` find and file (read-only on source); `/cleanup-fleet` fixes one bucket (write-capable via its agents); `/issue-triage` stays the read-only overview across all buckets.
-- **Noise control starts at filing time, not here** — `/codebase-audit`'s materiality bar (fleet-config#251) gates what becomes a checklist item; this skill's triage and approval gate are about execution *shape* and safety, not deselecting noise the audit shouldn't have filed.
+- **Noise control starts at filing time, not here** — `/codebase-audit`'s materiality bar (fleet-config#251) gates what becomes a checklist item; this skill's triage and approval gate are about execution *shape* and safety, not deselecting noise.
 - **Compose `/issue-yolo` and `/issue-start`+gate rather than re-implement** — they own the branch/build/validate/ship choreography; this skill is just bucket selection, tiering, and fan-out.
 - **Scheduling `easy` mode:** it degrades rather than blocks and never merges hard work, so `claude -p "/cleanup-fleet documentation easy" --permission-mode bypassPermissions` is safe after a weekly `/audit-fleet` — the easy pass clears the mechanical findings, the rest wait for an attended `hard` run.
