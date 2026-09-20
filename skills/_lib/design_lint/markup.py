@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import List, Tuple
 
 from .css import strip_comments
-from .files import read_text, rel
+from .files import is_third_party, read_text, rel
 
 
 _STANDALONE_MEDIA_RE = re.compile(r"@media[^{]*display-mode:\s*standalone[^{]*\{")
@@ -88,16 +88,6 @@ _EMOJI_RE = re.compile(
 _TAG_RE = re.compile(r"<[^>]*>")
 
 
-_VENDOR_DIR_PARTS = {"vendor", "vendors"}
-
-
-def _is_third_party(path: Path) -> bool:
-    """A bundled third-party library under `vendor/`. Distinct from the
-    fleet's own `_vendored/` component family, which stays in scope — those
-    are fleet-authored and byte-compared by the `vendored` lens."""
-    return any(part.lower() in _VENDOR_DIR_PARTS for part in path.parts)
-
-
 def find_emoji_sites(root: Path, html_files: List[Path], js_files: List[Path]
                       ) -> List[str]:
     """`file:line` for emoji glyphs in rendered text — HTML text nodes (tags
@@ -114,7 +104,7 @@ def find_emoji_sites(root: Path, html_files: List[Path], js_files: List[Path]
     VT100 DEC Special Graphics map)."""
     sites: List[str] = []
     for p in html_files:
-        if _is_third_party(p):
+        if is_third_party(p):
             continue
         text = strip_comments(read_text(p), "html")
         text_nodes = _TAG_RE.sub(" ", text)
@@ -122,7 +112,7 @@ def find_emoji_sites(root: Path, html_files: List[Path], js_files: List[Path]
             line = text_nodes.count("\n", 0, m.start()) + 1
             sites.append(f"{rel(root, p)}:{line}")
     for p in js_files:
-        if _is_third_party(p):
+        if is_third_party(p):
             continue
         text = strip_comments(read_text(p), "js", blank_regex_literals=True)
         for m in _EMOJI_RE.finditer(text):

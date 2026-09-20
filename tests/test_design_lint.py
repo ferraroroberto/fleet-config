@@ -570,6 +570,86 @@ finally:
     shutil.rmtree(_vend, ignore_errors=True)
 
 
+# ---- #940: third-party vendor/ CSS is out of scope for the app-authored
+#      contracts, and `_vendored/` is emphatically still in scope ----
+
+# Leaflet's real popup close button (home-automation#738): a hardcoded #757575
+# on a `button` selector is a button-tiers FAIL, and 24x24 is under the 44px
+# hit-target floor. Neither is home-automation's to fix.
+LEAFLET_CSS = """
+.leaflet-container a.leaflet-popup-close-button {
+  position: absolute; top: 0; right: 0; border: none;
+  width: 24px; height: 24px; color: #757575; background: transparent;
+}
+.leaflet-container a.leaflet-popup-close-button:focus { color: #585858; }
+"""
+# The same two violations, but in a project-scaffolding component we author.
+FLEET_COMPONENT_CSS = """
+.btn-scaffold { background: #ff0000; color: #ffffff; }
+.scaffold-close-btn { width: 24px; height: 24px; }
+"""
+# Nav-contract signals living only inside `_vendored/` — the load-bearing
+# proof that the exclusion did not turn a passing contract into a no-op.
+VENDORED_NAV_CSS = """
+body:has(dialog[open]) .tabs { visibility: hidden; }
+.tabs { height: 100dvh; padding-bottom: env(safe-area-inset-bottom); }
+@media (display-mode: standalone) {
+  .app { position: fixed; top: 0; height: 100lvh; overflow-y: auto; }
+}
+"""
+HIT_SPEC_940 = {"icons.size.inline": "16px", "components.hit-target.min": "44px"}
+
+
+def _contracts_940(files: dict[str, str]) -> dict:
+    t = Path(tempfile.mkdtemp(prefix="dl-940-"))
+    try:
+        for name, body in files.items():
+            path = t / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(body, encoding="utf-8")
+        css = sorted(t.rglob("*.css"))
+        return {c["id"]: c for c in dl.contracts(t, css, [], [], HIT_SPEC_940)}
+    finally:
+        shutil.rmtree(t, ignore_errors=True)
+
+
+third = _contracts_940({"app/webapp/static/vendor/leaflet/leaflet.css": LEAFLET_CSS})
+check(third["button-tiers"]["status"] == "NA",
+      "button-tiers: a third-party vendor/ stylesheet is not a button rule (#940)")
+check(third["hit-target"]["status"] == "NA",
+      "hit-target: a third-party vendor/ control is not an app touch target (#940)")
+
+own = _contracts_940({"app/webapp/static/_vendored/btn/btn.css": FLEET_COMPONENT_CSS})
+check(own["button-tiers"]["status"] == "FAIL" and "#ff0000" in own["button-tiers"]["detail"],
+      "button-tiers: `_vendored/` is ours and stays fully in scope (#940) — "
+      "`vendor` must not be read as a prefix of `_vendored`")
+check(own["hit-target"]["status"] == "WARN",
+      "hit-target: a compact control under `_vendored/` still WARNs (#940)")
+
+nav940 = _contracts_940({"app/webapp/static/_vendored/nav/nav-tabs.css": VENDORED_NAV_CSS})
+check(nav940["nav-contract"]["status"] == "PASS",
+      "nav-contract still fires on CSS that lives only under `_vendored/` — "
+      "the regression the #940 exclusion must not cause")
+
+# the escapee accounting follows the same rule, so the two cannot diverge
+_ad940 = Path(tempfile.mkdtemp(prefix="dl-ad940-"))
+try:
+    for name, body in (("app/webapp/static/vendor/leaflet/leaflet.css", LEAFLET_CSS),
+                       ("app/webapp/static/_vendored/btn/btn.css", FLEET_COMPONENT_CSS)):
+        path = _ad940 / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(body, encoding="utf-8")
+    fam940 = dl.adoption(_ad940, sorted(_ad940.rglob("*.css")))
+    files940 = {e["file"] for e in fam940["color"]["escapees"]}
+    check(all("/vendor/" not in f for f in files940),
+          "adoption: third-party vendor/ literals are not escapees (#940) — "
+          "the same exclusion the contracts apply")
+    check(any("_vendored/btn" in f for f in files940),
+          "adoption: `_vendored/` literals are still counted as escapees (#940)")
+finally:
+    shutil.rmtree(_ad940, ignore_errors=True)
+
+
 # ---- app-icon-family: one generated Lucide master across install surfaces (#369) ----
 
 APP_ICON_SPEC = {

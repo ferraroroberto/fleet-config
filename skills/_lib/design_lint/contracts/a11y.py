@@ -65,7 +65,10 @@ def _check_hit_target(ctx: _ContractsCtx) -> List[dict]:
     #     pseudo on the same class or a co-applied expansion utility in the
     #     markup. Effective rectangles and non-overlap are rendered facts —
     #     the browser leg (project-scaffolding#157) proves the geometry.
-    css_all, markup_all = ctx.css_all, ctx.markup_all
+    #     App-authored surfaces only (`files.is_third_party`,
+    #     fleet-config#940): a bundled library's control chrome is sized by
+    #     that library and can't be widened in the app that vendored it.
+    css_own, markup_own = ctx.css_own, ctx.markup_own
     min_m = re.match(r"(\d+)px", ctx.spec_light.get("components.hit-target.min", ""))
     if not min_m:
         return [_result("hit-target", "NA", "spec declares no components.hit-target token")]
@@ -73,7 +76,7 @@ def _check_hit_target(ctx: _ContractsCtx) -> List[dict]:
 
     # classes that carry a negative-inset ::before/::after hit expansion
     expansion_classes: set = set()
-    for bm in _BLOCK_RE.finditer(css_all):
+    for bm in _BLOCK_RE.finditer(css_own):
         sel_line = _last_selector_line(bm.group(1))
         body = bm.group(2)
         if not (re.search(r"inset:\s*-", body)
@@ -83,11 +86,11 @@ def _check_hit_target(ctx: _ContractsCtx) -> List[dict]:
         expansion_classes.update(_PSEUDO_CLASS_RE.findall(sel_line))
 
     markup_class_sets = [set(mm.group(1).split())
-                         for mm in _CLASS_ATTR_RE.finditer(markup_all)]
+                         for mm in _CLASS_ATTR_RE.finditer(markup_own)]
 
     flagged: List[str] = []
     n_candidates = 0
-    for bm in _BLOCK_RE.finditer(css_all):
+    for bm in _BLOCK_RE.finditer(css_own):
         sel_line = _last_selector_line(bm.group(1))
         if sel_line.startswith("@") or "nav" in sel_line.lower():
             continue
@@ -118,7 +121,7 @@ def _check_hit_target(ctx: _ContractsCtx) -> List[dict]:
             if any(cs & own_classes and cs & expansion_classes
                    for cs in markup_class_sets):
                 continue
-            flagged.append(f"{_loc_at(css_all, bm.start())} {comps[-1]} "
+            flagged.append(f"{_loc_at(css_own, bm.start())} {comps[-1]} "
                            f"{w_m.group(1)}x{h_m.group(1)}px")
     if flagged:
         return [_result("hit-target", "WARN",
