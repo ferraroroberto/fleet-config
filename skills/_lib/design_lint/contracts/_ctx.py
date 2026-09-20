@@ -20,8 +20,11 @@ class _ContractsCtx:
     root: Path
     css_all: str
     markup_all: str
-    # markup_all minus third-party `vendor/` bundles — what the *app*
-    # authored, for checks that judge the app's own design choices.
+    # Each `*_own` blob is its `*_all` counterpart minus third-party `vendor/`
+    # bundles — what the *app* authored, for checks that judge the app's own
+    # design choices. `files.is_third_party` states which blob a new contract
+    # should read and why; the choice is deliberate, never incidental.
+    css_own: str
     markup_own: str
     spec_light: Dict[str, str]
     spec_dark: Optional[Dict[str, str]]

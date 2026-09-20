@@ -118,7 +118,22 @@ The five sections it returns, and what each means:
   `tokenized / total` declaration ratio + up to 40 escapee `file:line`s + the
   literal-value histogram. This is the "how much, where" lens (#234): a
   correct-*valued* token used nowhere still scores low here. Ratios trend
-  across weekly sweeps (#180).
+  across weekly sweeps (#180). Counts app-authored CSS only, the same
+  exclusion the contracts apply (#940) — a vendored library will never use
+  our tokens and we will never repaint it, and because the escapee list is
+  capped one bundled library otherwise crowds the real findings out of it.
+
+**Third-party vs `_vendored/` (#940).** A `vendor/` path segment marks a
+genuinely third-party library bundled for offline use (Leaflet, xterm.js):
+out of scope for every check that judges what the *app authored* — button
+tiers, hit targets, icon sets, native checkboxes, token adoption — because
+there is no fix available in the repo that vendored it. `_vendored/` is the
+opposite: those are `project-scaffolding`'s own components, and they stay
+fully in scope (the nav contract keys on them). The match is an exact path
+segment, never a substring, so `vendor` cannot read as a prefix of
+`_vendored`. The rule lives in one place, `design_lint/files.py`'s
+`is_third_party`, which also states which blob a newly added contract should
+read.
 - **`contracts`** — PASS/WARN/FAIL/NA (or ACCEPTED, below) per design.md-v2 component contract,
   one per line below:
   - **focus ring** — tokenized `:focus-visible` ring.
@@ -153,7 +168,8 @@ The five sections it returns, and what each means:
   - **button-tier vocabulary** — hardcoded button fills and a filled
     "ghost" FAIL; a solid accent outside the primary class and a tint
     without accent text WARN — the tiers live in design.md `components`
-    (#296).
+    (#296). App-authored CSS only (#940 — Leaflet's popup close button is
+    Leaflet's tier choice, not the adopting app's).
   - **user-selectable theme** — pre-paint `data-theme` boot script in
     `<head>` + a persisted `.theme` localStorage toggle; either missing
     FAILs. A missing or spec-drifted scheme-gated `theme-color` meta pair
@@ -208,6 +224,8 @@ The five sections it returns, and what each means:
       no `::before` hit-area expansion on its own class and no
       co-applied expansion utility in the markup WARNs; NA when the spec
       lacks the token or the app authors no compact fixed-size controls.
+      App-authored surfaces only (#940 — a bundled library's control
+      chrome can't be widened in the app that vendored it).
     - **chart-tick-budget** — Chart.js present with no authored
       `maxTicksLimit`/`autoSkip` WARNs (phone x-axes collide); NA with no
       Chart.js.
