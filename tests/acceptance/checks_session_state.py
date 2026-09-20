@@ -409,3 +409,140 @@ def _session_state_unit_checks() -> Tuple[int, int]:
         shutil.rmtree(sessions_dir, ignore_errors=True)
 
     return check.failures, check.total
+
+
+def _index_lock_sessionstart_unit_checks() -> Tuple[int, int]:
+    """The stranded-index-lock tripwire (fleet-config#939).
+
+    Three properties carry the whole guard, and each is asserted against the
+    failure that produced the issue rather than against the happy path:
+
+    * it sweeps the **fleet**, not the session's cwd -- on 2026-09-20
+      `fleet-config` was the one clean repo out of 23 locked, and chief was
+      cwd'd in it, so a cwd-only tripwire would have reported all-clear
+      through the entire incident;
+    * a lock younger than the threshold is silent (a git operation legitimately
+      in flight) while one past it is named, and the threshold is the *same*
+      number `skills/_lib/index_lock.py` uses -- a hooks-tier copy that drifts
+      would report a different fleet than the weekly bucket does;
+    * it never blocks, and it never tells anyone to delete anything.
+    """
+    sys.path.insert(0, str(HOOKS))
+    import index_lock_sessionstart as ils  # noqa: E402
+
+    check = _Checker()
+
+    # ---- the hooks-tier threshold copy still agrees with the skills tier ----
+    # Same contract as NO_WINDOW's two copies: the trees are junctioned
+    # independently, so the constant is duplicated and this is what stops it
+    # drifting. Tests are not the hooks tier, so importing across is fine here.
+    sys.path.insert(0, str(REPO / "skills" / "_lib"))
+    import index_lock as skills_index_lock  # noqa: E402
+
+    check("index_lock_sessionstart: STALE_AFTER_SECONDS matches skills/_lib/index_lock",
+          ils.STALE_AFTER_SECONDS == skills_index_lock.STALE_AFTER_SECONDS,
+          f"hooks={ils.STALE_AFTER_SECONDS} skills={skills_index_lock.STALE_AFTER_SECONDS}")
+
+    tmp = Path(tempfile.mkdtemp(prefix="index_lock_tripwire_"))
+    try:
+        # ---- lock_path: ordinary checkout, linked worktree, non-repo ----
+        plain = tmp / "plain"
+        (plain / ".git").mkdir(parents=True)
+        check("lock_path: ordinary checkout -> .git/index.lock",
+              ils.lock_path(plain) == plain / ".git" / "index.lock")
+
+        wt, wt_gitdir = tmp / "wt", tmp / "primary" / ".git" / "worktrees" / "wt"
+        wt.mkdir()
+        wt_gitdir.mkdir(parents=True)
+        (wt / ".git").write_text(f"gitdir: {wt_gitdir}\n", encoding="utf-8")
+        check("lock_path: linked worktree follows its `gitdir:` pointer, not the primary's",
+              ils.lock_path(wt) == wt_gitdir / "index.lock")
+
+        check("lock_path: a directory that is not a checkout -> None",
+              ils.lock_path(tmp / "nope") is None)
+
+        # ---- held_locks: absent / fresh / past-threshold ----
+        now = 1_000_000.0
+        check("held_locks: no lock file -> nothing reported",
+              ils.held_locks([("plain", plain)], now=now) == [])
+
+        lock = plain / ".git" / "index.lock"
+        lock.write_bytes(b"")
+        os.utime(lock, (now - 60, now - 60))
+        check("held_locks: a lock younger than the threshold is silent (git op in flight)",
+              ils.held_locks([("plain", plain)], now=now) == [])
+
+        os.utime(lock, (now - 6 * 3600, now - 6 * 3600))
+        found = ils.held_locks([("plain", plain)], now=now)
+        check("held_locks: a lock past the threshold is reported",
+              len(found) == 1 and found[0][0] == "plain", f"got {found}")
+        check("held_locks: reports the age it measured, not a guess",
+              found and found[0][2] is not None and abs(found[0][2] - 6 * 3600) < 1)
+
+        # ---- build_context: names it, points at the lattice, forbids deletion ----
+        ctx = ils.build_context(found)
+        check("build_context: names the locked repo", "plain" in ctx)
+        check("build_context: points at skills/_lib/index_lock.py for the real verdict",
+              "index_lock.py" in ctx)
+        check("build_context: says never delete one on agent authority",
+              "Never delete" in ctx)
+        check("build_context: spells out that reads still exit 0",
+              "exit 0" in ctx)
+
+        many = [(f"r{i}", Path(f"X:/r{i}/.git/index.lock"), 7200.0)
+                for i in range(ils.MAX_NAMED + 5)]
+        big = ils.build_context(many)
+        check("build_context: caps the named list and counts the remainder",
+              "and 5 more" in big)
+
+        # ---- sweep_targets: the fleet, from a cwd that is not in it ----
+        fake_repo = tmp / "fleet-member"
+        (fake_repo / ".git").mkdir(parents=True)
+        toml = tmp / "projects.toml"
+        toml.write_text(
+            f'[fleet-member]\ncwd_prefix = "{str(fake_repo).replace(chr(92), "/")}"\n'
+            '\n[global]\nnever_kill_ports = []\n',
+            encoding="utf-8",
+        )
+        saved = os.environ.get("CLAUDE_HOOKS_PROJECTS_TOML")
+        try:
+            os.environ["CLAUDE_HOOKS_PROJECTS_TOML"] = str(toml)
+            names = [n for n, _ in ils.sweep_targets(Path(tempfile.gettempdir()))]
+            check("sweep_targets: covers fleet members even when cwd is outside the fleet "
+                  "(the 2026-09-20 shape: the clean repo was the one chief sat in)",
+                  "fleet-member" in names, f"got {names}")
+            check("sweep_targets: adds this session's own checkout (a lane's worktree is "
+                  "not a projects.toml member)",
+                  "wt" in [n for n, _ in ils.sweep_targets(wt)])
+        finally:
+            if saved is None:
+                os.environ.pop("CLAUDE_HOOKS_PROJECTS_TOML", None)
+            else:
+                os.environ["CLAUDE_HOOKS_PROJECTS_TOML"] = saved
+
+        # ---- end to end: a real stranded lock reaches the model ----
+        code, stdout, stderr = run(
+            "index_lock_sessionstart",
+            {"hook_event_name": "SessionStart", "source": "startup", "cwd": str(plain)},
+            extra_env={"CLAUDE_HOOKS_PROJECTS_TOML": str(toml)},
+        )
+        check(f"index_lock_sessionstart e2e: exits 0, never blocks ({stderr.strip()})", code == 0)
+        check("index_lock_sessionstart e2e: stdout carries the SessionStart envelope",
+              '"hookEventName": "SessionStart"' in stdout)
+        check("index_lock_sessionstart e2e: the nudge names the locked checkout",
+              "index.lock" in stdout and "fleet-config#939" in stdout)
+
+        # A clean fleet says nothing at all -- a tripwire that fires every
+        # session is one nobody reads.
+        lock.unlink()
+        code, stdout, _ = run(
+            "index_lock_sessionstart",
+            {"hook_event_name": "SessionStart", "source": "startup", "cwd": str(plain)},
+            extra_env={"CLAUDE_HOOKS_PROJECTS_TOML": str(toml)},
+        )
+        check("index_lock_sessionstart e2e: clean fleet -> exit 0 and silence",
+              code == 0 and not stdout.strip(), f"stdout={stdout!r}")
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+    return check.failures, check.total

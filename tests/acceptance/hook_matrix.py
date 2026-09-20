@@ -443,6 +443,26 @@ def run_hook_matrix() -> Tuple[int, int]:
         0,
     ))
 
+    # ---- index_lock_sessionstart: never blocks a session (fleet-config#939) ----
+    # A tripwire that can stop a session starting is worse than the condition
+    # it reports, so both the "fleet is clean" and the "cwd isn't a repo at
+    # all" paths must exit 0. The content-bearing case (a real stranded lock
+    # -> a nudge naming it) is covered by the dedicated unit-check function,
+    # which builds its own locked repo rather than waiting for the fleet to
+    # break.
+    cases.append((
+        "index_lock_sessionstart: non-repo cwd -> exit 0",
+        "index_lock_sessionstart",
+        {"hook_event_name": "SessionStart", "source": "startup", "cwd": tempfile.gettempdir()},
+        0,
+    ))
+    cases.append((
+        "index_lock_sessionstart: fleet-config cwd -> exit 0",
+        "index_lock_sessionstart",
+        {"hook_event_name": "SessionStart", "source": "startup", "cwd": str(REPO)},
+        0,
+    ))
+
     # ---- Grok Build payload shape, end to end (fleet-config#491) ----
     # Grok scans ~/.claude/settings.json for hooks by default, so every guard
     # here already runs inside a Grok session -- but its stdin envelope is
