@@ -97,6 +97,7 @@ fleet-config/
 │   ├── hub_bypass_warn.py             # PostToolUse on *.py: nudge inline `claude -p` → route through the local hub
 │   ├── browser_stealth_lint.py        # PostToolUse: nudge a browser-launch file missing the anti-bot stealth kwargs
 │   ├── chief_handover_sessionstart.py # SessionStart: hand the standing fleet chief its last-written run log back (fleet-config#442)
+│   ├── index_lock_sessionstart.py     # SessionStart: report any fleet repo sitting on a stranded `.git/index.lock` (fleet-config#939)
 │   ├── context_filter.py              # local deterministic output compressor used by the context-filter hook/eval
 │   ├── context_filter_cli.py          # wrapper/eval CLI: shadow, rewrite, retrieve, fixture benchmark
 │   ├── context_filter_hook.py         # PreToolUse rewriter: runs supported commands through the compressor (mode: see Graduation above)

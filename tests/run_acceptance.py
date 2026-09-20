@@ -93,6 +93,7 @@ from acceptance.checks_notify import (  # noqa: E402
 from acceptance.checks_session_state import (  # noqa: E402
     _chief_handover_sessionstart_unit_checks,
     _chief_steer_convention_unit_checks,
+    _index_lock_sessionstart_unit_checks,
     _lib_detect_project_unit_checks,
     _session_state_unit_checks,
 )
@@ -175,6 +176,7 @@ def main() -> int:
 
     # ---- chief_handover_sessionstart pure logic + end-to-end (fleet-config#442) ----
     run_unit(_chief_handover_sessionstart_unit_checks)
+    run_unit(_index_lock_sessionstart_unit_checks)
 
     # ---- chief steer convention: retired `CHIEF - ` marker + what replaced it (fleet-config#622) ----
     run_unit(_chief_steer_convention_unit_checks)
