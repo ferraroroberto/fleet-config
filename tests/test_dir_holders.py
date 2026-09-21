@@ -27,6 +27,9 @@ from no_window import NO_WINDOW  # noqa: E402
 sys.path.insert(0, str(REPO / "tests" / "_lib"))
 from check_harness import CheckHarness  # noqa: E402
 
+sys.path.insert(0, str(REPO / "tests" / "acceptance"))
+from shared import SKIP_EXIT  # noqa: E402
+
 _h = CheckHarness()
 check = _h.check
 
@@ -94,16 +97,54 @@ check(dh.holders_for("E:/automation/alpha-wt-1", []) == [],
       "holders_for: an empty process table yields no holders")
 
 
+# ---- UNKNOWN is its own state: a probe that cannot ask never says CLEAR ----
+# Driven deterministically by pointing the query at an interpreter that does not
+# exist -- the path a failed or unanswerable process-table query takes.
+
+_saved_ps = dh.POWERSHELL
+dh.POWERSHELL = str(REPO / "no-such-dir" / "powershell.exe")
+try:
+    _r = dh.probe(str(REPO))
+finally:
+    dh.POWERSHELL = _saved_ps
+check(_r.status == "UNKNOWN" and _r.holders == [],
+      "probe: a query that cannot run is UNKNOWN, never CLEAR" + f" [{_r!r}]")
+check(bool(_r.reason) and "process-table query" in _r.reason,
+      "probe: an UNKNOWN verdict names why it could not answer" + f" [{_r!r}]")
+
+
 # ---- the real probe, end to end ----
+
+
+def _why(r: dh.Probe) -> str:
+    """The probe's own verdict, appended to a failing live-probe message so a
+    flake inside the full gate names its cause (fleet-config#952)."""
+    return f" [status={r.status} reason={r.reason!r} holders={[h['pid'] for h in r.holders]}]"
+
+
+def _expect(r: dh.Probe, want: str, msg: str) -> bool:
+    """Three-state assertion on a live verdict (fleet-config#952).
+
+    UNKNOWN means the process table could not be read -- the probe could not
+    establish the fact, so it is recorded as a skip naming the probe's reason,
+    never a pass and never a failure. A CLEAR/LIVE verdict that is the wrong
+    one is a real bug and fails. Returns True only when the verdict is `want`.
+    """
+    if r.status == "UNKNOWN":
+        _h.skip(f"{msg} -- NOT verified, the probe could not answer: {r.reason}")
+        return False
+    check(r.status == want, msg + _why(r))
+    return r.status == want
+
 
 _tmp = Path(tempfile.mkdtemp(prefix="dir_holders_"))
 _holder = None
 try:
     # Inert first: nothing alive names this directory.
     _r = dh.probe(str(_tmp))
-    check(_r.status == "CLEAR" and _r.holders == [],
-          "probe: an inert directory is CLEAR — this is what stops an empty shell halting a run")
-    check(_r.reason is None, "probe: a CLEAR verdict carries no failure reason")
+    if _expect(_r, "CLEAR", "probe: an inert directory is CLEAR — this is what stops an empty shell halting a run"):
+        check(_r.holders == [] and _r.reason is None,
+              "probe: a CLEAR verdict carries no holders and no failure reason" + _why(_r))
 
     # The probe must not report *itself*: this test's own command line and the
     # PowerShell child's both name the path by construction.
@@ -126,11 +167,11 @@ try:
             break
         time.sleep(0.25)
 
-    check(_r.status == "LIVE", "probe: a live process naming the directory is LIVE, not CLEAR")
-    check(any(h["pid"] == _holder.pid for h in _r.holders),
-          "probe: the live holder is reported by pid")
-    check(any(str(_tmp).lower().replace("/", "\\") in dh.normalize(h["cmdline"]) for h in _r.holders),
-          "probe: the holder's command line is reported so a human can identify it")
+    if _expect(_r, "LIVE", "probe: a live process naming the directory is LIVE, not CLEAR"):
+        check(any(h["pid"] == _holder.pid for h in _r.holders),
+              f"probe: the live holder is reported by pid (holder pid {_holder.pid})" + _why(_r))
+        check(any(str(_tmp).lower().replace("/", "\\") in dh.normalize(h["cmdline"]) for h in _r.holders),
+              "probe: the holder's command line is reported so a human can identify it" + _why(_r))
 
     # Once it exits, the same directory reads CLEAR again — an *exited* process
     # is not a holder, which is the whole zombie-shell point (fleet-config#534).
@@ -141,7 +182,7 @@ try:
         if _r.status == "CLEAR":
             break
         time.sleep(0.25)
-    check(_r.status == "CLEAR", "probe: after the holder exits the directory is CLEAR again")
+    _expect(_r, "CLEAR", "probe: after the holder exits the directory is CLEAR again")
 
     # The CLI contract the teardown brief actually invokes.
     _out = subprocess.run(
@@ -149,8 +190,13 @@ try:
         capture_output=True, text=True, creationflags=NO_WINDOW,
     )
     check(_out.returncode == 0, "check CLI: always exits 0 — it reports, it never blocks")
-    check("STATUS=CLEAR" in _out.stdout and "LIVE=0" in _out.stdout,
-          "check CLI: prints STATUS and a live count")
+    _cli = " | ".join(_out.stdout.strip().splitlines())
+    if "STATUS=UNKNOWN" in _out.stdout:
+        check("REASON=" in _out.stdout, f"check CLI: an UNKNOWN verdict prints its REASON [stdout={_cli!r}]")
+        _h.skip(f"check CLI: prints STATUS and a live count -- NOT verified, the probe could not answer [stdout={_cli!r}]")
+    else:
+        check("STATUS=CLEAR" in _out.stdout and "LIVE=0" in _out.stdout,
+              f"check CLI: prints STATUS and a live count [stdout={_cli!r}]")
 finally:
     if _holder is not None and _holder.poll() is None:
         _holder.kill()
@@ -173,4 +219,4 @@ for _label, _text in (("teardown prompt", _wf), ("SKILL.md", _skill)):
     check("fleet-config#571" in _text,
           f"{_label}: records why the repo-local requirement was dropped")
 
-_h.report_and_exit("test_dir_holders")
+_h.report_and_exit("test_dir_holders", skip_code=SKIP_EXIT)

@@ -49,10 +49,16 @@ class CheckHarness:
         global CLAUDE.md forbids (fleet-config#730)."""
         self.skips.append(msg)
 
-    def report_and_exit(self, label: str) -> None:
+    def report_and_exit(self, label: str, skip_code: int = 0) -> None:
         """Print a pass/fail/skip summary; exit 1 if any check failed, else 0.
         Skips never fail the suite (see `skip()`) but are always listed, so a
-        run that verified nothing for a given fact is never silently green."""
+        run that verified nothing for a given fact is never silently green.
+
+        `skip_code` is the exit code when there were skips and no failures.
+        The acceptance gate only echoes a suite's stdout on a non-zero exit, so
+        a suite whose skips must surface there passes `shared.SKIP_EXIT`,
+        which the gate reports as SKIP with the listing, not as a bare `OK`
+        (fleet-config#952)."""
         if self.fails:
             print(f"FAILED {len(self.fails)} check(s):")
             for f in self.fails:
@@ -62,5 +68,8 @@ class CheckHarness:
             print(f"SKIPPED {len(self.skips)} check(s):")
             for s in self.skips:
                 print(f"  - {s}")
+            if skip_code:
+                print(f"{label}: checks that ran pass; the skipped ones were NOT verified")
+                raise SystemExit(skip_code)
         print(f"{label}: all checks pass")
         raise SystemExit(0)
