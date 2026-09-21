@@ -16,6 +16,7 @@ from __future__ import annotations
 import contextlib
 import io
 import json
+import re
 import shutil
 import subprocess
 import sys
@@ -1030,6 +1031,12 @@ check(pre_modal["modal-footer"]["status"] == "FAIL",
       "two always-visible footer actions (Cancel + Add and verify) -> FAIL")
 check(pre_modal["modal-top-anchor"]["status"] == "FAIL",
       "no max-height/overflow on .rename-dialog -> FAIL")
+# every modal FAIL names its first offending dialog in `evidence`, so a
+# [[design.accepted]] entry's `target` can match it (fleet-config#953)
+for _cid in ("modal-unstyled-rows", "modal-raw-fieldset", "modal-header",
+             "modal-footer", "modal-top-anchor"):
+    check(re.fullmatch(r"i\.html:\d+", pre_modal[_cid]["evidence"] or "") is not None,
+          f"{_cid}: FAIL carries a file:line evidence (#953)")
 
 POST_MODAL_HTML = """
 <dialog id="jobDialog" class="rename-dialog">
@@ -1626,6 +1633,20 @@ broken = lint_accepted("[[design.accepted]\n")
 check(broken["rows"]["app-icon-family"]["status"] == "FAIL"
       and any("could not read .fleet.toml" in w for w in broken["warns"]),
       "unparseable .fleet.toml -> findings raised, the read failure reported")
+
+# a modal-header FAIL is acceptable: its evidence names the dialog's file, so
+# `target` matches (fleet-config#953 — it once carried evidence: null)
+modal_raised = lint_accepted(None, index=PRE_MODAL_HTML)["rows"]["modal-header"]
+check(modal_raised["status"] == "FAIL"
+      and (modal_raised["evidence"] or "").startswith("index.html:"),
+      "modal-header FAIL carries the dialog's file:line as evidence")
+modal_accepted = lint_accepted(
+    accepted_toml(check="modal-header", target="index.html",
+                  detail=modal_raised["detail"], identical_to=None, paths=None),
+    index=PRE_MODAL_HTML)
+check(modal_accepted["rows"]["modal-header"]["status"] == "ACCEPTED"
+      and not modal_accepted["warns"],
+      "a modal-header FAIL is accepted via [[design.accepted]], no stray WARN")
 
 
 _h.report_and_exit("design_lint")
