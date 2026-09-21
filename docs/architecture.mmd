@@ -49,7 +49,8 @@ flowchart TB
   COPILOTHOOKS --> COPILOT
 
   subgraph hooks["hooks/ — junctioned into Claude + Codex; reached by Grok via compat"]
-    LIBPY["_lib.py — wire protocol + payload extraction, NO_WINDOW spawn flag\nstdin-JSON, normalize_payload: Grok camelCase -> Claude shape (#491)\nSECRET_PATTERNS · gh_json · powershell_exe — one copy per fact (#561)\nre-exports registry.py + edit_events.py so no hook's import changes (#819)"]
+    LIBPY["_lib.py — hook core + payload accessors, NO_WINDOW spawn flag\nSECRET_PATTERNS · gh_json · powershell_exe — one copy per fact (#561)\nre-exports harness_wire.py + registry.py + edit_events.py so no hook's import changes (#819/#931)"]
+    HARNESSWIREPY["harness_wire.py\nstdin-JSON, normalize_payload: Grok/Copilot/agy/Pi/Codex -> Claude shape (#491)\nblock · warn · rewrite_command · allow per-harness dialects (#931)"]
     REGISTRYPY["registry.py\nprojects.toml loader, cwd->project matching, Telegram/board-URL notify routing (#819)"]
     EDITEVENTSPY["edit_events.py\nEditEvent: native + Codex patch + Pi targets/outcomes (#744/#746/#819)"]
     PROJECTS["projects.toml\nper-project ports/gates/never-kill ports"]
@@ -63,6 +64,7 @@ flowchart TB
   hooks --> CODEX
   HOOKFILES --> LIBPY
   HOOKFILES --> PROJECTS
+  LIBPY --> HARNESSWIREPY
   LIBPY --> REGISTRYPY
   LIBPY --> EDITEVENTSPY
   REGISTRYPY --> PROJECTS

@@ -6,7 +6,7 @@ every entry here is live in every agent that reads those homes the moment it
 merges. Per-project nuance (ports, gate triggers, never-kill ports) lives in
 `hooks/projects.toml`, never in hook code.
 
-Pi invokes the applicable shell/edit subset through `pi/extensions/policy_hooks.ts`: each Python process has a 15-second bound and hidden window. `_lib` owns Pi payload normalization and the versioned allow/block/warn response; the extension maps refusals to native `{block: true, reason}` and appends advisories to model-visible result content. Missing/malformed responses block pre-call enforcement and report unverified post-edit checks. [Coverage, unsupported tools, and runtime evidence](adding-a-coding-harness.md#pi-policy-conformance).
+Pi invokes the applicable shell/edit subset through `pi/extensions/policy_hooks.ts`: each Python process has a 15-second bound and hidden window. `harness_wire` (re-exported by `_lib`) owns Pi payload normalization and the versioned allow/block/warn response; the extension maps refusals to native `{block: true, reason}` and appends advisories to model-visible result content. Missing/malformed responses block pre-call enforcement and report unverified post-edit checks. [Coverage, unsupported tools, and runtime evidence](adding-a-coding-harness.md#pi-policy-conformance).
 
 20 hooks under `hooks/` that enforce the rituals I kept correcting Claude on, across the home-stack fleet:
 

@@ -58,10 +58,10 @@ def main() -> int:
 from contextlib import redirect_stdout, redirect_stderr
 from pathlib import Path
 sys.path.insert(0, SOURCE)
-import _lib, py_syntax_check
+import _lib, harness_wire, py_syntax_check
 raw = json.load(sys.stdin)
 payload = _lib.normalize_payload(raw)
-_lib._ACTIVE_EVENT = payload.get("hook_event_name")
+harness_wire._ACTIVE_EVENT = payload.get("hook_event_name")
 _lib.read_stdin_json = lambda: payload
 compiled = []
 original_run = py_syntax_check.subprocess.run
