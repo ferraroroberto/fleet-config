@@ -5,15 +5,15 @@ description: Diff Claude Code's newest /insights report against the previous one
 
 # insights-weekly *(Claude Code only — skip on other agents)*
 
-**Goal:** turn Claude Code's built-in **`/insights`** report into a weekly "what changed" signal. `/insights` writes a self-contained, dated `report-<timestamp>.html`; that timestamped series **is** the history. This skill refreshes it, hands the **newest two reports to the local LLM hub** to narrate the week-over-week delta, saves a dated traceable note, drops a concise digest in Telegram — on-demand or scheduled.
+**Goal:** turn Claude Code's built-in **`/insights`** report into a weekly "what changed" signal. `/insights` writes a dated `report-<timestamp>.html`; that timestamped series **is** the history. This skill refreshes it, hands the **newest two reports to the local LLM hub** to narrate the week-over-week delta, saves a dated traceable note, and drops a concise digest in Telegram — on-demand or scheduled.
 
-**The hub does the analysis, not the orchestrator.** We do **not** re-aggregate the 200 raw `session-meta`/`facets` JSON files (insights already distilled them into the HTML), and the orchestrating session does **not** write the narrative itself — `report.py` delegates the comparison to `127.0.0.1:8000`. The whole artifact is **user-local and never committed** (`~/.claude/usage-data/` is outside this repo) — nothing to add to the repo or `.gitignore`.
+**The hub does the analysis, not the orchestrator.** Never re-aggregate the 200 raw `session-meta`/`facets` JSON files (insights already distilled them into the HTML), and never write the narrative in-session — `report.py` delegates the comparison to `127.0.0.1:8000`. The artifact is user-local and never committed (`~/.claude/usage-data/` is outside this repo) — nothing to add to the repo or `.gitignore`.
 
 ## Execution rules (read first)
 
 - **Run from the `fleet-config` repo root** (`E:/automation/fleet-config`) so helper paths resolve.
-- **Never commit insights data or reports.** Output lands under `~/.claude/usage-data/weekly/`, entirely outside the repo. Don't copy it in.
-- **The model is the hub's job.** `report.py` POSTs to the hub via stdlib `urllib` (zero-install) — never re-implement a `claude -p` wrapper. Default model `claude_sonnet` (reliably up via the hub's claude backend); override with `INSIGHTS_DIFF_MODEL` (e.g. `gemma4_26b`, `qwen3.5-4b`, `gemini_flash`) when that backend is loaded.
+- **Never commit insights data or reports.** Output lands under `~/.claude/usage-data/weekly/`, outside the repo. Don't copy it in.
+- **The model is the hub's job.** `report.py` POSTs to the hub via stdlib `urllib` (zero-install) — never re-implement a `claude -p` wrapper. Default model `claude_sonnet`; override with `INSIGHTS_DIFF_MODEL` (e.g. `gemma4_26b`, `qwen3.5-4b`, `gemini_flash`) when that backend is loaded.
 - **Degrade gracefully, never block on a prompt** (unattended): first run with one report → baseline, not a diff; hub unreachable → surface the error and skip the ping rather than hang.
 
 ## Steps
@@ -26,9 +26,9 @@ Run in order. A failure on one step prints a short error and stops.
 MSYS_NO_PATHCONV=1 claude -p "/insights" --permission-mode bypassPermissions
 ```
 
-Run it through the **Bash tool exactly as written**. Without the prefix, Git Bash's MSYS path conversion rewrites the leading-slash `/insights` into `C:/Program Files/Git/insights` before `claude.exe` sees it, so the child gets a garbled prompt instead of the slash command (fleet-config#842). From the PowerShell tool, drop the prefix — PowerShell has no MSYS conversion and would read it as a command.
+Run it through the **Bash tool exactly as written** — without the prefix, Git Bash's MSYS path conversion rewrites `/insights` into `C:/Program Files/Git/insights` before `claude.exe` sees it, so the child gets a garbled prompt (fleet-config#842). From the PowerShell tool, drop the prefix — PowerShell has no MSYS conversion and would read it as a command.
 
-`/insights` writes a fresh `report-<timestamp>.html` into `~/.claude/usage-data/`. If it can't refresh headlessly (no new file appears), proceed with the latest existing `report-*.html` — `report.py` always uses the two newest on disk. (On the scheduled job this skill is itself a `claude -p` run, so this is a normal nested invocation; on an interactive on-demand run it spawns a short child `claude`.)
+`/insights` writes a fresh `report-<timestamp>.html` into `~/.claude/usage-data/`. If it can't refresh headlessly (no new file appears), proceed with the latest existing `report-*.html` — `report.py` always uses the two newest on disk. (On the scheduled job this skill is itself a `claude -p` run, so this is a normal nested invocation.)
 
 ### 2. Diff the two newest reports via the hub
 
@@ -40,7 +40,7 @@ Finds the newest two `report-*.html`, strips each to clean text (`extract.py`), 
 
 ### 3. Post the digest to Telegram
 
-Post the digest **as the caption of the dated report file** — phone push shows the at-a-glance summary *and* the full markdown attached to open on mobile. **Activity-log** traffic, so route with `--category log` (helper resolves the `coding log` chat from `hooks/projects.toml` — never hardcode a channel id). Pass the **absolute** report path `report.py` printed on line 1 to `--file`, pipe the digest body via stdin (carries emoji / em-dash / bullet cleanly — `notify_send` decodes stdin as UTF-8):
+Post the digest **as the caption of the dated report file** — phone push shows the at-a-glance summary *and* the full markdown attached. **Activity-log** traffic, so route with `--category log` (the helper resolves the `coding log` chat from `hooks/projects.toml` — never hardcode a channel id). Pass the **absolute** report path `report.py` printed on line 1 to `--file`, and pipe the digest body via stdin (`notify_send` decodes stdin as UTF-8):
 
 ```
 cat <<'EOF' | E:/automation/fleet-config/.venv/Scripts/python.exe hooks/notify_send.py --category log \
@@ -60,6 +60,6 @@ Print: which two reports were compared (or "baseline"), the dated file path, the
 
 ## Wiring the weekly schedule
 
-Add an **app-launcher Jobs** entry (Windows Task Scheduler under `\AppLauncher\`) that runs weekly — **target the first run for a Friday** — pointing at `.claude/skills/insights-weekly/run-weekly.bat`; it preserves `/insights-weekly` plus bypass permissions and streams filtered milestones through `claude_progress.py`.
+An **app-launcher Jobs** entry (Windows Task Scheduler under `\AppLauncher\`) runs this weekly — **target the first run for a Friday** — pointing at `.claude/skills/insights-weekly/run-weekly.bat`, which preserves `/insights-weekly` plus bypass permissions and streams filtered milestones through `claude_progress.py`.
 
 cwd = `E:/automation/fleet-config`. Same executor as every other scheduled job (`/system-map`, `/audit-fleet`); the skill handles refresh + hub diff + Telegram itself. (Alternatively a scheduled cloud agent invoking the same skill.)

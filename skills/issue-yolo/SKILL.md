@@ -264,11 +264,10 @@ no-op is the correct outcome — don't "fix" it with MCP chat tools.
 
 ## Notes on safety
 
-- The "approval gate" skipped is the plan-mode pause vetting *approach* before
-  code is written. The validation gate NOT skipped is what proves the code
-  *works*. Different gates — don't conflate them.
-- Tempted to weaken Phase 3 to keep the run moving? That's not YOLO any more.
-  Stop and ask the user.
-- The tray restart at the end is what makes "merged" mean "live" for a project
-  running an older build while you ship. A YOLO run that merges but leaves the
-  tray on the previous build is not finished.
+- "Approval gate" (skipped) = the plan-mode pause vetting *approach* before
+  code is written; "validation gate" (not skipped) = what proves the code
+  *works* — don't conflate them.
+- Tempted to weaken Phase 3 to keep the run moving? That's not YOLO — stop and
+  ask the user.
+- The tray restart is what makes "merged" mean "live"; a run that merges but
+  leaves the tray on the previous build is not finished.
