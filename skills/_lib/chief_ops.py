@@ -71,9 +71,10 @@ Subcommands
       failure becomes an `error:` row rather than aborting the rest.
 
   dispatch <repo> <number> [--mode start|yolo] [--model M]
-           [--yolo-confirmed] [--base-url URL]
+           [--brief-file PATH] [--yolo-confirmed] [--base-url URL]
       Refuses (exit 1, no POST) on an occupied repo, an at/over-cap
-      worker count, or `yolo` without `--yolo-confirmed`; otherwise POSTs
+      worker count, `yolo` without `--yolo-confirmed`, or a `--brief-file`
+      that is missing, unreadable or empty; otherwise POSTs
       `/api/board/issues/start` and marks the new session chief-managed
       (`skills/_lib/chief_managed.py`, fleet-config#443) so
       `hooks/notify_on_idle.py` can route its blocked-on-input
@@ -87,6 +88,13 @@ Subcommands
       way through was to route around the guard entirely. Every *other* live
       session still occupies its repo: a second worker is refused exactly as
       before.
+
+      `--brief-file` (fleet-config#944) carries the lane's scope, queue and
+      constraints *in its launch command* — the one channel a lane trusts as
+      coming from Roberto. The text rides the POST as `brief`; the launcher
+      stores it in a file it owns and launches `/issue-<mode> <N> --brief
+      <path>` (app-launcher#1114), printed back as `LAUNCHED=`. A later `say`
+      arrives as unsigned paste and can never grant shipping.
 
   chief-sid [--base-url URL]
       Prints `CHIEF_SID=<sid>` (or `none`) for the live standing chief —
@@ -751,6 +759,19 @@ def _last_input(card: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     return record if isinstance(record, dict) else None
 
 
+def load_dispatch_brief(path: str) -> str:
+    """A `--brief-file`'s text, or ValueError naming why it can't be one.
+    Checked before any board read, so a bad brief never spawns a lane that
+    would then start on the bare issue alone (fleet-config#944)."""
+    try:
+        text = Path(path).read_text(encoding="utf-8")
+    except OSError as exc:
+        raise ValueError(f"brief file unreadable: {path} ({exc.strerror or exc})") from exc
+    if not text.strip():
+        raise ValueError(f"brief file is empty: {path}")
+    return text
+
+
 def read_brief(file_arg: Optional[str]) -> str:
     """`--file`'s content, or stdin when omitted. `say` never accepts prose
     as a bare CLI arg — it carries the brief the model already composed,
@@ -820,6 +841,14 @@ def cmd_issues(args: argparse.Namespace) -> int:
 
 
 def cmd_dispatch(args: argparse.Namespace) -> int:
+    brief = None
+    if args.brief_file is not None:
+        try:
+            brief = load_dispatch_brief(args.brief_file)
+        except ValueError as exc:
+            print(f"REFUSED={exc}")
+            return 1
+
     board = _request(args.base_url, "/api/board")
     columns = board.get("columns") or {}
     settings = _request(args.base_url, "/api/board/chief/settings")
@@ -842,6 +871,8 @@ def cmd_dispatch(args: argparse.Namespace) -> int:
     body = {"repo": args.repo, "number": args.number, "mode": args.mode}
     if args.model:
         body["model"] = args.model
+    if brief is not None:
+        body["brief"] = brief
     result = _request(args.base_url, "/api/board/issues/start", method="POST", body=body)
     sid = (result.get("session") or {}).get("session_id")
     if sid:
@@ -850,6 +881,8 @@ def cmd_dispatch(args: argparse.Namespace) -> int:
         except OSError:
             pass  # best-effort -- a marking failure must never undo a real dispatch
     print(f"DISPATCHED session={sid} repo={args.repo} issue={args.number}")
+    if result.get("launched"):
+        print(f"LAUNCHED={result['launched']}")
     return 0
 
 
@@ -1076,6 +1109,8 @@ def main(argv: Optional[List[str]] = None) -> int:
     d.add_argument("number", type=int)
     d.add_argument("--mode", choices=("start", "yolo"), default="start")
     d.add_argument("--model", default=None)
+    d.add_argument("--brief-file", default=None,
+                   help="lane brief, delivered in the launch command (#944)")
     d.add_argument("--yolo-confirmed", action="store_true")
     d.add_argument("--base-url", default=DEFAULT_BASE_URL)
     d.set_defaults(func=cmd_dispatch)
