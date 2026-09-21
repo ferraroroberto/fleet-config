@@ -112,7 +112,7 @@ a build it never tested). A FAIL from the routed slice stops the run.
 **3e. Behavioural verification — the change actually does what it claims.**
 Pick the smallest mode that genuinely covers the change:
 - **UI change** (Streamlit, FastAPI/Flask + browser, Electron, phone webapp):
-  use the **`verify` skill** to launch the app and drive the feature in a real
+  use the repo's launch skill (below) to launch the app and drive the feature in a real
   browser. Headed Playwright (or Playwright MCP) so the actual feature is
   exercised, not a mock. **Inspect the screenshot in-session only** — save to a
   local scratch path; **never attach it to the PR body, an issue, or a
@@ -147,8 +147,9 @@ Pick the smallest mode that genuinely covers the change:
 - **Background / scheduled work:** trigger it once manually and observe the
   side effect it's supposed to produce.
 
-If the project has its own `run`-style skill, prefer that — it knows how to
-launch the app. Fall back to the global `verify` skill otherwise.
+If the project has its own launch skill (e.g. app-launcher's project `verify`),
+prefer that — it knows how to launch the app. Fall back to Claude Code's
+built-in `run` skill otherwise; there is no user-scope `verify` skill.
 
 **3f. Sanity sweep for unintended damage.** `git diff main...HEAD`, read it.
 Anything outside the change's stated scope is a red flag — revert that hunk or

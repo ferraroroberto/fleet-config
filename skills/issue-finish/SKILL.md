@@ -100,8 +100,9 @@ E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skill
     Materiality bar: a wrong canvas color, missing dark theme, hand-rolled nav,
     or broken layout is a blocker; a 1-unit radius nitpick is not.
   - **Visual check (in-session only — never attach the image).** Launch the
-    feature-branch working tree, look at the touched view via the `verify`
-    skill (with `ux-full`, every `KEY_VIEWS` entry, not just the touched one).
+    feature-branch working tree, look at the touched view via the repo's own
+    launch skill (app-launcher's project `verify`), else Claude Code's built-in
+    `run` skill (with `ux-full`, every `KEY_VIEWS` entry, not just the touched one).
     Inspect the render against the spec — nav pill, layout, palette. Save the
     screenshot to a local scratch path, never commit it, and **never attach it
     to the PR body, an issue, or a comment** — assume every repo is public; a
@@ -121,7 +122,7 @@ E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skill
       Missing Playwright, missing Chrome, unreachable app, or exhausted
       profile-lock each report distinctly (never one generic error) — report
       only the one observed. Codes/background/recovery: `docs/codex-browser.md`.
-      Claude Code: the `verify` skill's MCP browser is the `iab`-equivalent path.
+      Claude Code: the launch skill's MCP browser is the `iab`-equivalent path.
 
 **Overrides** (words in the finish invocation): `ux`/`design` forces the gate
 even if `TOUCHED=no`; `no-ux` skips it; `ux-full` checks every `KEY_VIEWS`
