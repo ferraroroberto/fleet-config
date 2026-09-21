@@ -242,15 +242,14 @@ from no_window import NO_WINDOW  # noqa: E402
 from service_probe import service_state  # noqa: E402
 from utf8_stdio import ensure_utf8_stdio  # noqa: E402
 # Worktree runtime-config provisioning (ports + machine-bound value blanking)
-# lives in its own module (fleet-config#731) -- re-exported here so existing
-# callers and tests keep addressing these names as `worktree_claim.<name>`.
+# lives in its own module (fleet-config#731). The private names are imported
+# for this module's own use; the public ones are also what tests address as
+# `worktree_claim.<name>`. Import only what has a caller (fleet-config#929).
 from worktree_config import (  # noqa: E402
     WT_PORT_BASE,
     WT_PORT_SPAN,
     _git_check_ignore,
-    _looks_machine_bound,
     _port_is_free,
-    _repoint_config_port,
     _blank_declared_keys,
     _blank_default_heuristic,
     blank_machine_bound_config,
