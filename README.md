@@ -79,7 +79,8 @@ fleet-config/
 ├── shell/
 │   └── claude-otel-project.ps1     # dot-sourced from $PROFILE — wraps `claude` to auto-tag OTEL_RESOURCE_ATTRIBUTES with the repo name (docs/otel-project-attribution.md)
 ├── hooks/                          # junction → ~/.claude/hooks AND ~/.codex/hooks (Codex)
-│   ├── _lib.py                     # shared wire protocol + payload extraction (stdin-JSON, block/warn/allow, git/gh wrappers); re-exports registry.py + edit_events.py so no hook's import line changes (fleet-config#819)
+│   ├── _lib.py                     # shared hook core (state, spawn flag, git/gh wrappers, payload accessors); re-exports harness_wire.py + registry.py + edit_events.py so no hook's import line changes (fleet-config#819, #931)
+│   ├── harness_wire.py             # multi-harness wire protocol: stdin-JSON + normalize_payload inbound, block/warn/rewrite/allow dialects outbound (split from _lib.py, fleet-config#931)
 │   ├── registry.py                 # projects.toml loader + cwd→project matching + Telegram/board-URL notify routing (split from _lib.py, fleet-config#819)
 │   ├── edit_events.py              # shared EditEvent normalization + apply_patch envelope parsing (split from _lib.py, fleet-config#819)
 │   ├── projects.toml               # per-project nuance (ports, gate triggers, never-kill ports)
