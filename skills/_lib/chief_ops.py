@@ -263,6 +263,15 @@ def caller_session_id(env: Optional[Mapping[str, str]] = None) -> Optional[str]:
     return value or None
 
 
+def _holds_a_live_pty(card: Dict[str, Any]) -> bool:
+    """The one liveness test both dispatch gates share: alive, and not an
+    `external` (state-file-only, unverifiable) card. Kept in one place so the
+    occupancy gate and the worker cap can't disagree about whether a card is
+    real — they once did, and an alive external card read "repo free" and
+    "cap full" in the same dispatch (fleet-config#932)."""
+    return bool(card.get("alive")) and card.get("kind") != "external"
+
+
 def repo_occupancy(
     columns: Dict[str, Any],
     exclude_sid: Optional[str] = None,
@@ -286,7 +295,7 @@ def repo_occupancy(
     occ: Dict[str, Dict[str, Any]] = {}
     cards = list(columns.get("claude_turn") or []) + list(columns.get("your_turn") or [])
     for card in cards:
-        if not card.get("alive") or card.get("kind") == "external":
+        if not _holds_a_live_pty(card):
             continue
         if exclude_sid and str(card.get("session_id") or "") == exclude_sid:
             continue
@@ -304,7 +313,9 @@ def repo_occupancy(
 
 
 def alive_worker_count(columns: Dict[str, Any], exclude_sid: Optional[str] = None) -> int:
-    """Alive session cards, excluding the caller's own and the standing chief's.
+    """Alive, non-external session cards, excluding the caller's own and the
+    standing chief's — the same liveness test as `repo_occupancy`
+    (`_holds_a_live_pty`, fleet-config#932).
 
     `exclude_sid` drops the caller's own card here too (fleet-config#838):
     the count and the occupancy map are read from the same card list in the
@@ -322,7 +333,7 @@ def alive_worker_count(columns: Dict[str, Any], exclude_sid: Optional[str] = Non
     return sum(
         1
         for c in cards
-        if c.get("alive")
+        if _holds_a_live_pty(c)
         and c.get("label") != "chief"
         and not (exclude_sid and str(c.get("session_id") or "") == exclude_sid)
     )

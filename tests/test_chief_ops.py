@@ -170,6 +170,22 @@ count_dead = co.alive_worker_count({
 })
 check(count_dead == 0, "alive_worker_count excludes dead cards")
 
+# An `external` card is state-file-only and unverifiable, so it must not count
+# against the cap when repo_occupancy already refuses to let it hold a repo:
+# otherwise a board of alive external cards reads "repo free" and "cap full"
+# in the same dispatch (fleet-config#932).
+_external_board = {
+    "claude_turn": [_session_card(kind="external", project=f"repo-{i}") for i in range(3)],
+    "your_turn": [],
+}
+check(co.alive_worker_count(_external_board) == 0,
+      "alive_worker_count excludes an external (state-only) card, like repo_occupancy (#932)")
+check(
+    co.refuse_dispatch("whatsapp-radar", "start", co.repo_occupancy(_external_board),
+                       co.alive_worker_count(_external_board), 3, False) is None,
+    "dispatch is not capped out by external cards the occupancy gate ignores (#932)",
+)
+
 count_self = co.alive_worker_count(
     {
         "claude_turn": [
