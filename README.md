@@ -72,6 +72,7 @@ fleet-config/
 ├── codex_statusline.py             # opt-in, comment-preserving merge of native Codex footer fields into ~/.codex/config.toml
 ├── codex_model_policy.py           # opt-in, atomic merge of the versioned Codex model policy (codex/) into ~/.codex/config.toml
 ├── session_retention.py            # opt-in, atomic two-year Claude/Codex native-session retention config
+├── config_edit.py                  # atomic_write + line-level TOML regexes shared by the three root config writers above
 ├── .gitignore
 ├── install.ps1                     # creates junctions/symlinks into the agent homes: ~/.claude, ~/.agents, ~/.codex, ~/.pi/agent, ~/.copilot; also wires shell/claude-otel-project.ps1 into $PROFILE
 ├── uninstall.ps1                   # mirror of install.ps1: the manifest links + the $PROFILE OTel block, agy plugin, and copilot hook it writes outside it

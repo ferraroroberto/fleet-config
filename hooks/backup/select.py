@@ -15,7 +15,6 @@ import logging
 import os
 import re
 import sqlite3
-import stat
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -43,13 +42,7 @@ def is_reparse_point(path: Path) -> bool:
     Fails **closed**: a path we cannot stat is treated as a reparse point and
     skipped, because "unreadable" is not "safe to descend".
     """
-    try:
-        st = os.lstat(path)
-    except OSError:
-        return True
-    if sys.platform == "win32":
-        return bool(getattr(st, "st_file_attributes", 0) & stat.FILE_ATTRIBUTE_REPARSE_POINT)
-    return stat.S_ISLNK(st.st_mode)
+    return _lib.is_reparse_point(path, on_error=True)
 
 
 @dataclass

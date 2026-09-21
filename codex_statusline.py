@@ -12,9 +12,12 @@ import argparse
 import json
 import os
 import re
-import tempfile
+import sys
 import tomllib
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from config_edit import atomic_write  # noqa: E402
 
 
 REQUIRED_STATUS_ITEMS: tuple[str, ...] = (
@@ -291,18 +294,7 @@ def update_config(path: Path) -> tuple[bool, tuple[str, ...]]:
     updated, added = merge_status_line(original)
     if updated == original:
         return False, added
-    path.parent.mkdir(parents=True, exist_ok=True)
-    temporary: Path | None = None
-    try:
-        with tempfile.NamedTemporaryFile(
-            mode="w", encoding="utf-8", newline="", dir=path.parent, prefix=f".{path.name}.", delete=False
-        ) as handle:
-            temporary = Path(handle.name)
-            handle.write(updated)
-        os.replace(temporary, path)
-    finally:
-        if temporary is not None and temporary.exists():
-            temporary.unlink()
+    atomic_write(path, updated)
     return True, added
 
 

@@ -10,16 +10,16 @@ from __future__ import annotations
 import argparse
 import json
 import os
-import re
-import tempfile
+import sys
 import tomllib
 from pathlib import Path
 from typing import Any
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from config_edit import ASSIGNMENT_RE, TABLE_RE, atomic_write  # noqa: E402
+
 
 RETENTION_DAYS = 730
-_TABLE_RE = re.compile(r"^[ \t]*\[([^\]]+)\][ \t]*(?:#.*)?(?:\r?\n)?$")
-_ASSIGNMENT_RE = re.compile(r"^([ \t]*)([A-Za-z0-9_.-]+)[ \t]*=")
 
 
 class RetentionConfigError(ValueError):
@@ -93,14 +93,14 @@ def merge_codex_history(text: str) -> tuple[str, tuple[str, ...]]:
     output: list[str] = []
 
     for line in lines:
-        table_match = _TABLE_RE.match(line)
+        table_match = TABLE_RE.match(line)
         if table_match:
             table = table_match.group(1).strip()
             if table == "history":
                 history_header = len(output)
             output.append(line)
             continue
-        assignment = _ASSIGNMENT_RE.match(line)
+        assignment = ASSIGNMENT_RE.match(line)
         key = assignment.group(2) if assignment else None
         is_persistence = key == "history.persistence" and table is None
         is_persistence = is_persistence or (table == "history" and key == "persistence")
@@ -146,22 +146,6 @@ def merge_codex_history(text: str) -> tuple[str, tuple[str, ...]]:
     return updated, tuple(dict.fromkeys(changed))
 
 
-def _atomic_write(path: Path, text: str) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    temporary: Path | None = None
-    try:
-        with tempfile.NamedTemporaryFile(
-            mode="w", encoding="utf-8", newline="", dir=path.parent,
-            prefix=f".{path.name}.", delete=False,
-        ) as handle:
-            temporary = Path(handle.name)
-            handle.write(text)
-        os.replace(temporary, path)
-    finally:
-        if temporary is not None and temporary.exists():
-            temporary.unlink()
-
-
 def configure(claude_path: Path, codex_path: Path, *, apply: bool) -> tuple[str, str]:
     """Check or apply both configs, returning their individual states."""
 
@@ -183,10 +167,10 @@ def configure(claude_path: Path, codex_path: Path, *, apply: bool) -> tuple[str,
     codex_state = "unchanged" if codex_updated == codex_original else "update-needed"
     if apply:
         if claude_state != "unchanged":
-            _atomic_write(claude_path, json.dumps(claude_updated, indent=2, ensure_ascii=False) + "\n")
+            atomic_write(claude_path, json.dumps(claude_updated, indent=2, ensure_ascii=False) + "\n")
             claude_state = "updated"
         if codex_state != "unchanged":
-            _atomic_write(codex_path, codex_updated)
+            atomic_write(codex_path, codex_updated)
             codex_state = "updated"
     return claude_state, codex_state
 

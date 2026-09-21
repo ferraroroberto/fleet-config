@@ -85,7 +85,6 @@ import datetime
 import json
 import os
 import re
-import stat
 import sys
 from pathlib import Path
 from typing import Any, Dict, List, NamedTuple, Optional, Tuple
@@ -293,16 +292,9 @@ def is_reparse_point(path: Path) -> bool:
 
     Windows junctions set `FILE_ATTRIBUTE_REPARSE_POINT`; the `S_ISLNK`
     fallback covers POSIX symlinks, which is also what makes this testable off
-    Windows.
+    Windows. Fails open: a path it cannot stat reads as not a reparse point.
     """
-    try:
-        st = os.lstat(path)
-    except (OSError, ValueError):
-        return False
-    attributes = getattr(st, "st_file_attributes", 0)
-    if attributes & getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0):
-        return True
-    return stat.S_ISLNK(st.st_mode)
+    return _lib.is_reparse_point(path, on_error=False)
 
 
 def junctioned_venv_under(target: Path) -> Optional[Path]:

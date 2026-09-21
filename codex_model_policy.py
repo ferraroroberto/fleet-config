@@ -13,9 +13,12 @@ import os
 import re
 import shutil
 import subprocess
-import tempfile
+import sys
 import tomllib
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from config_edit import ASSIGNMENT_RE, TABLE_RE, atomic_write  # noqa: E402
 
 
 MAIN_MODEL = "gpt-5.6-sol"
@@ -26,8 +29,6 @@ ROLE_SPECS = {
     "normal": ("gpt-5.6-terra", "high"),
     "hard": ("gpt-5.6-sol", "high"),
 }
-_TABLE_RE = re.compile(r"^[ \t]*\[([^\]]+)\][ \t]*(?:#.*)?(?:\r?\n)?$")
-_ASSIGNMENT_RE = re.compile(r"^([ \t]*)([A-Za-z0-9_.-]+)[ \t]*=")
 NO_WINDOW = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
 
 
@@ -55,7 +56,7 @@ def _line_ending(text: str) -> str:
 def _table_ranges(lines: list[str]) -> list[tuple[str | None, int, int]]:
     """Return TOML table ranges, including the top-level range."""
 
-    headers = [(index, match.group(1).strip()) for index, line in enumerate(lines) if (match := _TABLE_RE.match(line))]
+    headers = [(index, match.group(1).strip()) for index, line in enumerate(lines) if (match := TABLE_RE.match(line))]
     ranges: list[tuple[str | None, int, int]] = [(None, 0, headers[0][0] if headers else len(lines))]
     for index, (start, name) in enumerate(headers):
         end = headers[index + 1][0] if index + 1 < len(headers) else len(lines)
@@ -82,7 +83,7 @@ def _merge_table(text: str, table: str | None, values: dict[str, str]) -> str:
     output: list[str] = []
     seen: set[str] = set()
     for index, line in enumerate(lines):
-        if body_start <= index < end and (match := _ASSIGNMENT_RE.match(line)) and match.group(2) in values:
+        if body_start <= index < end and (match := ASSIGNMENT_RE.match(line)) and match.group(2) in values:
             key = match.group(2)
             if key not in seen:
                 comment_start = line.find("#")
@@ -212,18 +213,6 @@ def validate_cli(config_text: str, catalog_text: str, executable: str) -> None:
             raise PolicyError(f"installed Codex catalog differs from policy: {slugs}")
 
 
-def _atomic_write(path: Path, text: str) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", newline="", dir=path.parent, prefix=f".{path.name}.", delete=False) as handle:
-        temporary = Path(handle.name)
-        handle.write(text)
-    try:
-        os.replace(temporary, path)
-    finally:
-        if temporary.exists():
-            temporary.unlink()
-
-
 def configure(config_path: Path, policy_root: Path, executable: str, *, apply: bool) -> str:
     """Validate, then check or atomically apply the user-level policy."""
 
@@ -243,8 +232,8 @@ def configure(config_path: Path, policy_root: Path, executable: str, *, apply: b
     if updated == original:
         return "unchanged"
     if apply:
-        _atomic_write(catalog_path, catalog_text)
-        _atomic_write(config_path, updated)
+        atomic_write(catalog_path, catalog_text)
+        atomic_write(config_path, updated)
         return "updated"
     return "update-needed"
 
