@@ -1,4 +1,4 @@
-"""Unit tests for .claude/skills/prompt-audit/audit.py (fleet-config#832).
+"""Unit tests for .claude/skills/prompt-audit/ — `audit.py` and its `prompt_audit` package (fleet-config#832, #931).
 
 Drives the deterministic half of /prompt-audit against a synthetic fleet in a temp
 dir (no real repo, ledger issue, or ~/.claude/prompt-audit is touched): lint hits on
@@ -28,7 +28,7 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parent.parent
 SKILL = REPO / ".claude" / "skills" / "prompt-audit"
 sys.path.insert(0, str(SKILL))
-import audit as pa  # noqa: E402
+import prompt_audit as pa  # noqa: E402
 
 sys.path.insert(0, str(REPO / "tests" / "_lib"))
 from check_harness import CheckHarness  # noqa: E402
@@ -532,7 +532,9 @@ def vendor_mentions(text: str) -> list:
 
 
 check(vendor_mentions((SKILL / "SKILL.md").read_text(encoding="utf-8")) == [], "no vendor or model name in SKILL.md")
-check(vendor_mentions((SKILL / "audit.py").read_text(encoding="utf-8")) == [], "no vendor or model name in audit.py")
+for _py in [SKILL / "audit.py", *sorted((SKILL / "prompt_audit").glob("*.py"))]:
+    check(vendor_mentions(_py.read_text(encoding="utf-8")) == [],
+          f"no vendor or model name in {_py.relative_to(SKILL).as_posix()}")
 prose = [l for l in pa.RULES_MD.read_text(encoding="utf-8").splitlines()
          if not l.startswith("Source:") and not l.startswith("### R-")]
 prose = [re.sub(r"`?\[(?:anthropic|openai|shared|conflict)\]`?", "", l) for l in prose]
