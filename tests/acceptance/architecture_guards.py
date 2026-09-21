@@ -5,7 +5,8 @@ Split out of the former tests/run_acceptance.py god-module: concern (b) --
 Mermaid companion render, week-over-week whatchanged diffs, and the live
 `~/.claude/settings.json` <-> template sync check. Each returns
 `(failures, total)` except `_settings_template_sync_check`, which returns a
-third `skipped` count (it can find no live settings.json to compare against).
+third `skipped` count (no live settings.json to compare against, or a
+template hook whose module is not live on `main` yet).
 """
 from __future__ import annotations
 
@@ -688,6 +689,47 @@ def _readme_layout_check() -> Tuple[int, int]:
     return check.failures, check.total
 
 
+def _settings_sync_split(
+    missing: list[tuple[str, str]], live_hooks: Path
+) -> Tuple[list[tuple[str, str]], list[tuple[str, str]]]:
+    """Split template-wired-but-not-live `(event, hook)` pairs into
+    `(unwired, pending_merge)` (fleet-config#942).
+
+    `~/.claude/hooks` is a junction to the primary checkout, so a hook added on
+    a branch has no module there until the change is on `main` and the primary
+    has pulled it. Wiring it live before then makes `run-hook.ps1` fail with
+    `Hook module not found` on every session fleet-wide; not wiring it made
+    this guard red for the whole life of the branch. A pair whose module is
+    absent from `live_hooks` is therefore `pending_merge` — its own state, not
+    a pass. A pair whose module IS present but is still unwired is the drift
+    this guard exists for, and stays `unwired`.
+    """
+    unwired = [pair for pair in missing if (live_hooks / f"{pair[1]}.py").exists()]
+    pending = [pair for pair in missing if pair not in unwired]
+    return unwired, pending
+
+
+def _settings_sync_split_check() -> Tuple[int, int]:
+    """Pin `_settings_sync_split`'s two states against a throwaway hooks dir,
+    so the pending-merge escape can never swallow a present-but-unwired hook
+    (fleet-config#942). Returns (failures, total)."""
+    import tempfile
+
+    check = _Checker()
+    with tempfile.TemporaryDirectory() as tmp:
+        hooks_dir = Path(tmp)
+        (hooks_dir / "present_hook.py").write_text("", encoding="utf-8")
+        present = ("SessionStart", "present_hook")
+        absent = ("SessionStart", "absent_hook")
+        check("settings_sync: a present-but-unwired hook is still unwired (fails)",
+              _settings_sync_split([present], hooks_dir) == ([present], []))
+        check("settings_sync: a hook whose module is not live yet is pending merge",
+              _settings_sync_split([absent], hooks_dir) == ([], [absent]))
+        check("settings_sync: a mixed set keeps the unwired half failing",
+              _settings_sync_split([absent, present], hooks_dir) == ([present], [absent]))
+    return check.failures, check.total
+
+
 def _settings_template_sync_check() -> Tuple[int, int, int]:
     """Every hook wired in settings.template.json must also be wired in the live
     ~/.claude/settings.json.
@@ -697,12 +739,16 @@ def _settings_template_sync_check() -> Tuple[int, int, int]:
     can ship in the repo yet never actually run. This guard fails loudly when a
     template-wired `(event, hook)` is missing from the live file. Direction is
     template ⊆ live only: machine-local *extra* hooks are legitimate and don't
-    fail. Skips gracefully (one line, exit 0) when the live file is absent, so
-    it never breaks on a machine without it. Prints exactly one line either way
-    — always one check, whether skipped or run — but a skip is its own state:
-    it contributes to neither Total nor Failed, only to the separate Skipped
-    counter, so a run that couldn't verify the live file never reads identical
-    to one that actually verified it and passed (fleet-config#461, #501).
+    fail. Prints exactly one line — always one check, whether it ran or not —
+    and has two non-passing, non-failing states, both counted only in the
+    separate Skipped counter so a run that couldn't verify never reads
+    identical to one that verified and passed (fleet-config#461, #501):
+
+    - SKIP — no live settings.json on this machine.
+    - PEND — every missing hook's module is absent from the junctioned
+      `~/.claude/hooks`, i.e. the hook is not on the live `main` yet and must
+      not be wired live until it is (`_settings_sync_split`, fleet-config#942).
+      Any missing hook whose module IS live still fails.
     """
     import re
 
@@ -726,10 +772,15 @@ def _settings_template_sync_check() -> Tuple[int, int, int]:
 
     template = wired(REPO / "settings.template.json")
     live = wired(live_path)
-    missing = sorted(template - live)
-    ok = not missing
-    print(f"{'OK   ' if ok else 'FAIL '} settings_sync: template hooks all wired live "
-          f"(missing: {missing or 'none'})")
-    return (0 if ok else 1), 1, 0
-
-
+    unwired, pending = _settings_sync_split(
+        sorted(template - live), Path.home() / ".claude" / "hooks")
+    if unwired:
+        print(f"FAIL  settings_sync: template hooks all wired live "
+              f"(missing: {unwired}; pending merge: {pending or 'none'})")
+        return 1, 1, 0
+    if pending:
+        print(f"PEND  settings_sync: not live on main yet, wire after merge "
+              f"(pending merge: {pending}) (skipped)")
+        return 0, 0, 1
+    print("OK    settings_sync: template hooks all wired live (missing: none)")
+    return 0, 1, 0
