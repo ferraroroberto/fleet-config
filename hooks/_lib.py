@@ -19,6 +19,7 @@ import logging
 import os
 import re
 import shutil
+import stat
 import subprocess
 import sys
 import time
@@ -1093,3 +1094,26 @@ def find_venv_python(start: Path) -> Optional[Path]:
                 return candidate
     return None
 
+
+# ------------------------------------------------------------ reparse points
+
+
+def is_reparse_point(path: Path, *, on_error: bool) -> bool:
+    """True if `path` is a Windows junction, symlink, or other reparse point.
+
+    On Windows `Path.is_symlink()` and `os.path.islink()` both return False for
+    a directory junction, so the `FILE_ATTRIBUTE_REPARSE_POINT` bit is the real
+    test; `S_ISLNK` covers POSIX symlinks (and keeps this testable off
+    Windows). `on_error` is what a path that cannot be stat'ed reads as — each
+    caller states its own policy: the backup walker fails closed (`True`,
+    "unreadable is not safe to descend"), the venv guard fails open (`False`,
+    a nudge must never fire on a path it can't read). One home so the next
+    reparse-point quirk is fixed once (fleet-config#928).
+    """
+    try:
+        st = os.lstat(path)
+    except (OSError, ValueError):
+        return on_error
+    if getattr(st, "st_file_attributes", 0) & getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0):
+        return True
+    return stat.S_ISLNK(st.st_mode)

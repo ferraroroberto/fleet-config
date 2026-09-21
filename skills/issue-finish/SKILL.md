@@ -426,8 +426,4 @@ working directory may differ from the project root. No chat configured →
 silent no-op, always exits 0 — a notification failure can never block or
 delay anything.
 
-**`notify_complete.py` is the ONLY sanctioned way to send this ping — do NOT use
-any MCP chat tool (search/send/etc.) to find a chat or post the ping.**
-Picking a chat yourself is both a security violation (an agent-inferred
-external write destination) and wrong (it may post to the wrong chat). A
-silent no-op is the correct outcome — do not "fix" it with MCP chat tools.
+**`notify_complete.py` is the ONLY sanctioned way to send this ping — never use an MCP chat tool to find a chat or post it, and a silent no-op is correct, not a bug to route around.** Why: [notify-ping](../../docs/notify-ping.md).

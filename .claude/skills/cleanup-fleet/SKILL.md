@@ -185,10 +185,9 @@ HARD RULES — both are live-incident scars, never work around them:
    delete the refs explicitly; report its PRIMARY= line, tray restart per the
    repo's CLAUDE.md), Phase 5 fire the /issue-yolo completion ping.
    KEEP Phase 5's ping — it carries this issue's PR link and must go out.
-   notify_complete.py is the ONLY sanctioned way to send it: do NOT use any MCP
-   chat tool (search/send/etc.) to find a chat or post the ping — the helper
-   resolves the chat from projects.toml; choosing one yourself is a security
-   violation and may post to the wrong chat.
+   notify_complete.py is the ONLY sanctioned way to send it: never use an MCP
+   chat tool to find a chat or post it; a silent no-op is correct. Why:
+   E:/automation/fleet-config/docs/notify-ping.md
    prompt-drift issues only (label prompt-drift): Phase 3 must also pass the
    preservation gate — from the worktree root, exit 0 required:
      E:/automation/fleet-config/.venv/Scripts/python.exe E:/automation/fleet-config/.claude/skills/context-purge/check.py --base origin/<default-branch>
@@ -310,7 +309,7 @@ E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/hooks
 
 (In easy mode `--review 0` — the helper drops the review clause.) Silent no-op if no Telegram chat is configured; always exits 0.
 
-**`notify_complete.py` is the ONLY sanctioned way to send this roll-up ping — do NOT use any MCP chat tool (search/send/etc.) to find a chat or post the ping.** The helper resolves the channel deterministically from `projects.toml`; picking one yourself is a security violation (an agent-inferred external write destination) and may post to the wrong chat. A silent no-op when no channel is configured is correct — do not "fix" it by reaching for Slack tools.
+**`notify_complete.py` is the ONLY sanctioned way to send this roll-up ping — never use an MCP chat tool to find a chat or post it, and a silent no-op is correct, not a bug to route around.** Why: [notify-ping](../../../docs/notify-ping.md).
 
 Then print the final summary block, with each hard-tier review row carrying its rationale summary inline, and any post-flight dirty-tree finding called out as its own line rather than folded silently into a clean-looking status:
 

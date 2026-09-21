@@ -255,12 +255,7 @@ title/URL lookup CWD-independent for subagent contexts.
 Silent no-op if no chat is configured; always exits 0 — never blocks or delays
 the finish.
 
-**`notify_complete.py` is the ONLY sanctioned way to send this ping — do NOT use
-any MCP chat tool (search/send/etc.) to find a chat or post the ping.** The
-helper resolves the destination chat deterministically from `projects.toml`;
-picking a chat yourself is both a security violation (an agent-inferred
-external write destination) and wrong (may post to the wrong chat). A silent
-no-op is the correct outcome — don't "fix" it with MCP chat tools.
+**`notify_complete.py` is the ONLY sanctioned way to send this ping — never use an MCP chat tool to find a chat or post it, and a silent no-op is correct, not a bug to route around.** Why: [notify-ping](../../docs/notify-ping.md).
 
 ## Notes on safety
 

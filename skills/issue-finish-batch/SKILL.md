@@ -136,7 +136,7 @@ E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/hooks
 
 (A `0`/empty `--blocked` drops the clause.) Silent no-op if no Telegram chat is configured; always exits 0.
 
-**`notify_complete.py` is the ONLY sanctioned way to send this roll-up ping — do NOT use any MCP chat tool (search/send/etc.) to find a chat or post the ping.** The helper resolves the destination chat deterministically from `projects.toml`; picking a chat yourself is a security violation (agent-inferred external write destination) and may post to the wrong chat. A silent no-op when no channel is configured is correct — do not "fix" it by reaching for Slack tools.
+**`notify_complete.py` is the ONLY sanctioned way to send this roll-up ping — never use an MCP chat tool to find a chat or post it, and a silent no-op is correct, not a bug to route around.** Why: [notify-ping](../../docs/notify-ping.md).
 
 Then print the final summary block:
 
