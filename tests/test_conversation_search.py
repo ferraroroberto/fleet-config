@@ -215,6 +215,41 @@ try:
     check(cs.search(cfg, "zzzznotpresent") == [],
           "search: no match -> empty list")
 
+    # --- an in-progress word must not be a dead end (#935) ---------------
+    # Whole-word-only matching made every keystroke before a word completed
+    # render as "Nothing matched", so the feature read as broken while typing.
+    check(len(cs.search(cfg, "headph")) == 1,
+          "search: a prefix of an indexed word matches (still-typing case)")
+    check(len(cs.search(cfg, "cyanoacry")) == 1,
+          "search: prefix reaches the body layer, not just the digest")
+    check(len(cs.search(cfg, "headphones bone")) == 1,
+          "search: a completed multi-word query still matches")
+    check(len(cs.search(cfg, "headphones con")) == 1,
+          "search: the last term of a multi-word query is the prefix")
+    # Only the final term is a prefix -- an already-typed word keeps its
+    # exact meaning, so a completed query is never silently widened.
+    check(len(cs.search(cfg, "headph bone")) == 0,
+          "search: a non-final term stays exact, never a prefix")
+    check(len(cs.search(cfg, "salt or pepper")) == 0,
+          "search: lowercase 'or' is a term, not an operator -> prefix path")
+
+    # Deliberate FTS5 operator expressions are passed through untouched.
+    check(len(cs.search(cfg, "headphones OR notion")) == 2,
+          "search: uppercase OR still ORs, not rewritten into a prefix query")
+    check(len(cs.search(cfg, "NEAR(titanium cyanoacrylate)")) == 1,
+          "search: NEAR() still parses")
+    check(len(cs.search(cfg, "headphon*")) == 1,
+          "search: a user's own trailing * is honoured, not double-starred")
+
+    # The footguns: FTS5 rejects a bare '*' outright ("unknown special
+    # query"), and a punctuation-only term must not reach it unquoted.
+    check(isinstance(cs.search(cfg, "*"), list),
+          "search: a bare * is rescued, never a crash")
+    check(isinstance(cs.search(cfg, "--"), list),
+          "search: punctuation-only query -> no crash")
+    check(cs.search(cfg, "   ") == [],
+          "search: whitespace-only query -> empty, never a SQL error")
+
     # The db is a pure derivative: deleting it must always be recoverable.
     cs.db_path(cfg).unlink()
     check(cs.search(cfg, "headphones") == [],

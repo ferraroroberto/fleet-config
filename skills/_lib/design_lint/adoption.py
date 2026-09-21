@@ -3,6 +3,13 @@
 How much of the stylesheet actually goes through tokens, split by family
 (color, font-size, radius, spacing), with the literal escapees that drag the
 ratio down.
+
+App-authored CSS only, the same exclusion the contracts apply
+(`files.is_third_party`, fleet-config#940). A vendored library will never use
+our tokens and we will never repaint it, so counting it measures something we
+do not control — and because the escapee list is capped, a single bundled
+library crowds the real findings out of it (home-automation#738: all 30 color
+escapees and all 4 radius escapees were Leaflet's).
 """
 from __future__ import annotations
 
@@ -11,7 +18,7 @@ from pathlib import Path
 from typing import Dict, List, Optional
 
 from .css import _ANY_DECL_RE, _COLOR_LITERAL_RE, strip_comments
-from .files import read_text, rel
+from .files import is_third_party, read_text, rel
 
 
 _COLOR_PROPS = ("color", "background", "background-color", "border",
@@ -50,6 +57,8 @@ def adoption(root: Path, css_files: List[Path]) -> Dict[str, object]:
         for f in ("color", "font-size", "radius", "spacing")
     }
     for path in css_files:
+        if is_third_party(path):
+            continue
         css = strip_comments(read_text(path), "css")
         for m in _ANY_DECL_RE.finditer(css):
             prop, value = m.group(1), m.group(2).strip()

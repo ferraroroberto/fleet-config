@@ -35,8 +35,8 @@ from no_window import NO_WINDOW  # noqa: E402
 def git_env(base: Optional[dict] = None) -> dict:
     """`base` (default `os.environ`) plus `GIT_OPTIONAL_LOCKS=0`.
 
-    **Do not "clean up" this variable.** `git status` (and `git diff`, and
-    friends) take `.git/index.lock` purely to write back a refreshed stat
+    **Do not "clean up" this variable.** `git status` takes
+    `.git/index.lock` purely to write back a refreshed stat
     cache — an optimisation, not part of producing the output. Kill such a
     process mid-refresh and it leaves exactly a 0-byte `index.lock` and
     nothing else touched. That is what happened fleet-wide on 2026-08-01:
@@ -50,6 +50,14 @@ def git_env(base: Optional[dict] = None) -> dict:
     sitting there — so `#570`'s raise-on-non-zero never fires and no sweep
     ever reports `UNKNOWN`. Detection is `index_lock.py`'s job; this is the
     half that stops them being created at all.
+
+    Measured, and narrower than "and friends" suggested (fleet-config#939):
+    of `status --porcelain=v2 --branch`, `diff --name-only HEAD`,
+    `diff --name-only --cached HEAD`, `ls-files --others`,
+    `rev-parse --verify` and `symbolic-ref`, **only `status` takes the
+    optional lock**. A helper that never runs `status` cannot strand one —
+    which is what let the 2026-09-20 hunt rule call sites in and out instead
+    of suspecting every `git` spawn equally.
 
     `GIT_OPTIONAL_LOCKS=0` suppresses only *optional* locks — a requested
     write still takes the real index lock, and still refuses when one is

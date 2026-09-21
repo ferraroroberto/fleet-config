@@ -49,6 +49,7 @@ from acceptance.architecture_guards import (  # noqa: E402
     _installer_symmetry_check,
     _readme_layout_check,
     _unattended_worktree_mandate_check,
+    _settings_sync_split_check,
     _settings_template_sync_check,
     _system_map_coverage_check,
     _system_map_whatchanged_check,
@@ -93,6 +94,7 @@ from acceptance.checks_notify import (  # noqa: E402
 from acceptance.checks_session_state import (  # noqa: E402
     _chief_handover_sessionstart_unit_checks,
     _chief_steer_convention_unit_checks,
+    _index_lock_sessionstart_unit_checks,
     _lib_detect_project_unit_checks,
     _session_state_unit_checks,
 )
@@ -175,6 +177,7 @@ def main() -> int:
 
     # ---- chief_handover_sessionstart pure logic + end-to-end (fleet-config#442) ----
     run_unit(_chief_handover_sessionstart_unit_checks)
+    run_unit(_index_lock_sessionstart_unit_checks)
 
     # ---- chief steer convention: retired `CHIEF - ` marker + what replaced it (fleet-config#622) ----
     run_unit(_chief_steer_convention_unit_checks)
@@ -288,8 +291,11 @@ def main() -> int:
 
     # ---- settings: live ~/.claude/settings.json ⊇ template hook wiring ----
     # run_unit3: this check has a third state (skipped, when the live file is
-    # absent) that must never fold into total_checks/failures (fleet-config#501).
+    # absent, or pending merge when a template hook's module is not live yet)
+    # that must never fold into total_checks/failures (fleet-config#501, #942).
     run_unit3(_settings_template_sync_check)
+    # The pending-merge split it rests on, pinned against a throwaway hooks dir (#942).
+    run_unit(_settings_sync_split_check)
 
     # ---- Windows console suppression on every runtime spawn (#399 / #412) ----
     run_unit(_no_window_unit_check)

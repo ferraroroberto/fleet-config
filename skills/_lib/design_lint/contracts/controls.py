@@ -149,13 +149,15 @@ def _check_button_tiers(ctx: _ContractsCtx) -> List[dict]:
     #     fleet-config#296). Hardcoded fills and a filled "ghost" are FAILs;
     #     a solid accent outside the primary and a tint without accent text
     #     are WARNs for /design-sync's judgment layer to arbitrate.
-    css_all = ctx.css_all
+    #     App-authored CSS only (`files.is_third_party`, fleet-config#940):
+    #     Leaflet's popup close button is Leaflet's tier choice, not ours.
+    css_own = ctx.css_own
     hardcoded: List[str] = []
     ghost_inverted: List[str] = []
     solid_strays: List[str] = []
     tint_off: List[str] = []
     n_btn = 0
-    for bm in _BLOCK_RE.finditer(css_all):
+    for bm in _BLOCK_RE.finditer(css_own):
         sel = _last_selector_line(bm.group(1))
         if not re.search(r"btn|button", sel, re.I):
             continue

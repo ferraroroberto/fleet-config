@@ -1,7 +1,8 @@
 """Which files a lens reads, and how their paths are spelled in findings.
 
-The one place that knows what counts as a repo file (tracked, non-skipped) and
-where an app keeps its `_vendored/` components. Every lens starts here.
+The one place that knows what counts as a repo file (tracked, non-skipped),
+where an app keeps its `_vendored/` components, and which trees are
+third-party rather than app-authored. Every lens starts here.
 """
 from __future__ import annotations
 
@@ -17,6 +18,35 @@ import git_run  # noqa: E402
 
 
 SKIP_DIR_PARTS = {".git", ".venv", "node_modules", "__pycache__", "spike", "spikes"}
+
+# A genuinely third-party library vendored for offline use (Leaflet, xterm.js)
+# sits under a `vendor/` segment. Deliberately *not* the fleet's own
+# `_vendored/` component family — those are project-scaffolding components we
+# author and byte-compare, so they stay fully in scope. Hence an exact
+# path-segment comparison, never a substring: `vendor` must not read as a
+# prefix of `_vendored` (fleet-config#416, #843, #940).
+THIRD_PARTY_DIR_PARTS = {"vendor", "vendors"}
+
+
+def is_third_party(path: Path) -> bool:
+    """True for a bundled third-party library under `vendor/`.
+
+    **The rule every lens inherits** (fleet-config#940): a check that judges
+    what the *app authored* — its button tiers, its touch targets, its token
+    adoption — must not read third-party bytes. We did not write them, we will
+    never restyle them, and a finding against them has no available fix, so it
+    can only sit unresolved in the repo's audit issue forever. A check that
+    instead asks "does this signal exist anywhere in what ships" (a focus ring,
+    a nav shell) legitimately reads everything. In the contracts lens that is
+    the `*_own` / `*_all` blob split on `_ContractsCtx`; a new contract picks
+    one deliberately rather than re-deciding the exclusion.
+
+    Matched by path segment rather than declared per repo (a `.fleet.toml`
+    key): the pattern needs no per-repo adoption step, and a repo that simply
+    forgot to declare its tree would regress to the exact false findings this
+    exists to stop — silently, which is the worse failure mode.
+    """
+    return any(part.lower() in THIRD_PARTY_DIR_PARTS for part in path.parts)
 
 
 def repo_files(root: Path, suffixes: Tuple[str, ...]) -> List[Path]:

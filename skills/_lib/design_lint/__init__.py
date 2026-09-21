@@ -39,7 +39,7 @@ Layout (fleet-config#564 — this was one 2071-line module carrying five
 independent lenses behind a single CLI dispatcher, and the contract set grows
 every time design.md gains a rule, so the file only went one way):
 
-  files.py       which files a lens reads; how paths are spelled in findings
+  files.py       which files a lens reads; which are third-party; path spelling
   spec.py        design.md frontmatter → a flat token dict
   css.py         comment stripping, @media flattening, custom props, declaration regexes
   markup.py      HTML/JS structural scans (app shell, nav nesting, emoji sites, editor modals)
@@ -72,7 +72,9 @@ from .css import (
 )
 from .files import (
     SKIP_DIR_PARTS,
+    THIRD_PARTY_DIR_PARTS,
     find_vendored_root,
+    is_third_party,
     read_text,
     rel,
     repo_files,
@@ -89,11 +91,13 @@ __all__ = [
     "DARK_SELECTOR_HINTS",
     "OPTIONAL_ROLES",
     "SKIP_DIR_PARTS",
+    "THIRD_PARTY_DIR_PARTS",
     "adoption",
     "compare_icon_sprite",
     "contracts",
     "find_emoji_sites",
     "find_vendored_root",
+    "is_third_party",
     "main",
     "map_tokens",
     "nav_nested_in_app",
