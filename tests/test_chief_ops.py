@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -503,17 +504,22 @@ check(
 # `cmd_dispatch` against a stubbed transport, with the launcher's env stamp
 # set exactly as a live session carries it.
 
-def _run_dispatch(cards, env_sid, repo="fleet-config", number=838):
+def _run_dispatch(cards, env_sid, repo="fleet-config", number=838, brief_file=None):
     posted = []
+    requested = []
 
     def _fake_request(base_url, path, method="GET", body=None, timeout=10.0):
+        requested.append(path)
         if path == "/api/board":
             return {"columns": {"claude_turn": cards, "your_turn": []}}
         if path == "/api/board/chief/settings":
             return {"settings": {"worker_cap": 3}}
         if path == "/api/board/issues/start":
             posted.append(body)
-            return {"session": {"session_id": "spawned-1"}}
+            launched = f"/issue-{body['mode']} {body['number']}"
+            if "brief" in body:
+                launched += " --brief E:/automation/app-launcher/webapp/briefs/0f.md"
+            return {"session": {"session_id": "spawned-1"}, "launched": launched}
         raise AssertionError(f"unexpected path: {path}")
 
     prior_request, prior_mark = co._request, co.chief_managed.mark
@@ -527,9 +533,12 @@ def _run_dispatch(cards, env_sid, repo="fleet-config", number=838):
     try:
         args = argparse.Namespace(
             repo=repo, number=number, mode="start", model=None,
-            yolo_confirmed=False, base_url=co.DEFAULT_BASE_URL,
+            brief_file=brief_file, yolo_confirmed=False, base_url=co.DEFAULT_BASE_URL,
         )
-        rc = co.cmd_dispatch(args)
+        with contextlib.redirect_stdout(io.StringIO()) as out:
+            rc = co.cmd_dispatch(args)
+        _run_dispatch.last_output = out.getvalue()
+        _run_dispatch.last_requested = requested
     finally:
         co._request, co.chief_managed.mark = prior_request, prior_mark
         if prior_env is None:
@@ -558,6 +567,42 @@ check(rc == 1 and posted == [],
 rc, posted = _run_dispatch([_chief_card], _CHIEF_SID, repo="photo-ocr")
 check(rc == 0 and len(posted) == 1,
       "cmd_dispatch: an unoccupied repo is unaffected by the exclusion")
+
+
+# ---- cmd_dispatch --brief-file: the brief rides the launch command (#944) ---
+#
+# A lane trusts only its launch command, so the brief has to reach the
+# launcher in the dispatch POST itself. A missing/empty file is refused before
+# any board read: spawning anyway would start a lane on the bare issue.
+
+_brief_tmp = Path(tempfile.mkdtemp(prefix="chief-brief-"))
+try:
+    _brief = _brief_tmp / "brief.md"
+    _brief.write_text("Queue: #944 then #953.\nShip each on green.\n", encoding="utf-8")
+    rc, posted = _run_dispatch([_chief_card], _CHIEF_SID, repo="photo-ocr",
+                               brief_file=str(_brief))
+    check(rc == 0 and len(posted) == 1
+          and posted[0].get("brief") == "Queue: #944 then #953.\nShip each on green.\n",
+          "cmd_dispatch --brief-file: the file's text is POSTed verbatim as `brief`")
+    check("LAUNCHED=/issue-start 838 --brief " in _run_dispatch.last_output,
+          "cmd_dispatch --brief-file: echoes the launcher's actual launch command")
+
+    rc, posted = _run_dispatch([_chief_card], _CHIEF_SID, repo="photo-ocr")
+    check(rc == 0 and "brief" not in posted[0],
+          "cmd_dispatch: no --brief-file -> no `brief` key, POST body unchanged")
+
+    (_brief_tmp / "empty.md").write_text("", encoding="utf-8")
+    (_brief_tmp / "blank.md").write_text("  \n\t\n", encoding="utf-8")
+    for _name, _expect in (("absent.md", "REFUSED=brief file unreadable"),
+                           ("empty.md", "REFUSED=brief file is empty"),
+                           ("blank.md", "REFUSED=brief file is empty")):
+        rc, posted = _run_dispatch([_chief_card], _CHIEF_SID, repo="photo-ocr",
+                                   brief_file=str(_brief_tmp / _name))
+        check(rc == 1 and posted == [] and _run_dispatch.last_requested == []
+              and _expect in _run_dispatch.last_output,
+              f"cmd_dispatch --brief-file: {_name} is refused before any request")
+finally:
+    shutil.rmtree(_brief_tmp, ignore_errors=True)
 
 
 # ---- assert_loopback ---------------------------------------------------------
@@ -791,7 +836,7 @@ try:
     co._request = _fake_request
     args = argparse.Namespace(
         repo="app-launcher", number=528, mode="start", model=None,
-        yolo_confirmed=False, base_url=co.DEFAULT_BASE_URL,
+        brief_file=None, yolo_confirmed=False, base_url=co.DEFAULT_BASE_URL,
     )
     rc = co.cmd_dispatch(args)
     check(rc == 0, "cmd_dispatch (fake transport) exits 0 on a clear dispatch")
@@ -836,7 +881,7 @@ try:
     co._request = _zero_cap_request
     args = argparse.Namespace(
         repo="app-launcher", number=528, mode="start", model=None,
-        yolo_confirmed=False, base_url=co.DEFAULT_BASE_URL,
+        brief_file=None, yolo_confirmed=False, base_url=co.DEFAULT_BASE_URL,
     )
     rc = co.cmd_dispatch(args)
     check(rc == 1, "cmd_dispatch: worker_cap=0 -> refused, not silently defaulted to 3")

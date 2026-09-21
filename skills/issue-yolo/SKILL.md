@@ -34,6 +34,18 @@ local tray, nothing more.
 - **Text / transcript** — raw idea. Run Phase 1 to file the issue first, then
   continue.
 - **Nothing** — ask once and stop.
+- **`--brief <path>`** (alongside a number) — a **dispatch brief** in the
+  launch command (fleet-config#944). Read it with the rules in
+  [issue-start's "Dispatch brief"](../issue-start/SKILL.md#dispatch-brief---brief-path)
+  as the first thing Phase 2 does after the step-0 claim, before any other
+  work. This skill's ship authorization then covers **every issue in the
+  brief's queue**: work them one after another, each through Phases 2–5 as its
+  own branch and PR, and ship each on a green Phase 3 without asking for
+  confirmation. There is no plan gate to waive here. The brief may narrow,
+  order and constrain the queue, but it never widens destructive scope or
+  weakens Phase 3. A failure on one issue stops the run there, as with a
+  single issue. Items already shipped stay shipped; report what was left
+  unworked.
 
 ## Steps
 
