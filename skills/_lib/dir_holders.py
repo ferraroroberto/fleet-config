@@ -57,6 +57,7 @@ import json
 import os
 import subprocess
 import sys
+import time
 from pathlib import Path
 from typing import Iterable, NamedTuple, Optional
 
@@ -133,29 +134,51 @@ def holders_for(path: str, processes: Iterable[dict], exclude: Iterable[int] = (
     return sorted(found, key=lambda h: h["pid"])
 
 
+QUERY_TIMEOUT_S = 60
+
+
 def _query() -> tuple[Optional[list[dict]], Optional[int], Optional[str]]:
-    """(processes, powershell pid, error) — never raises."""
+    """(processes, powershell pid, error) — never raises.
+
+    Every error names enough to diagnose it from the one REASON line alone:
+    elapsed time against the timeout, the exit code in hex too (a Windows
+    launch failure such as 0xC0000142 only reads as a huge signed decimal
+    otherwise), and whichever stream actually said something. The
+    fleet-config#952 gate flake failed with the reason never captured.
+    """
     if sys.platform != "win32":
         return None, None, f"process table probe is Windows-only (running on {sys.platform})"
+    started = time.monotonic()
+
+    def took() -> str:
+        return f"after {time.monotonic() - started:.1f}s of {QUERY_TIMEOUT_S}s"
+
     try:
         r = subprocess.run(
             [POWERSHELL, "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass",
              "-Command", _PS_SCRIPT],
             capture_output=True, text=True, encoding="utf-8", errors="replace",
-            creationflags=NO_WINDOW, timeout=60,
+            creationflags=NO_WINDOW, timeout=QUERY_TIMEOUT_S,
         )
     except (OSError, subprocess.SubprocessError) as exc:
-        return None, None, f"could not run the process-table query: {exc}"
+        return None, None, f"could not run the process-table query {took()}: {exc}"
     if r.returncode != 0:
-        first = (r.stderr or "").strip().splitlines()
-        return None, None, f"process-table query failed (exit {r.returncode})" + (f": {first[0]}" if first else "")
+        said = ((r.stderr or "").strip() or (r.stdout or "").strip()).splitlines()
+        return None, None, (
+            f"process-table query failed (exit {r.returncode} / 0x{r.returncode & 0xFFFFFFFF:08X}) {took()}"
+            + (f": {said[0][:300]}" if said else ": no output on stderr or stdout")
+        )
     try:
         payload = json.loads(r.stdout or "")
     except ValueError as exc:
-        return None, None, f"process-table query returned unreadable output: {exc}"
-    procs = payload.get("processes")
+        out = r.stdout or ""
+        return None, None, (
+            f"process-table query returned unreadable output {took()}: {exc}"
+            f" ({len(out)} chars, starts {out[:120]!r})"
+        )
+    procs = payload.get("processes") if isinstance(payload, dict) else None
     if not isinstance(procs, list):
-        return None, None, "process-table query returned no process list"
+        return None, None, f"process-table query returned no process list {took()}"
     return procs, payload.get("self"), None
 
 
