@@ -204,7 +204,13 @@ try {
     if ($cache -and (Test-Path $quotaScript) -and (Test-Path $quotaPython)) {
         $start = New-Object System.Diagnostics.ProcessStartInfo
         $start.FileName = $quotaPython
-        $start.Arguments = '"' + $quotaScript + '" claude --state-dir "' + $stateDir + '"'
+        # Windows PowerShell 5.1 has no ProcessStartInfo.ArgumentList, so the
+        # argv is quoted by hand: double any trailing backslashes, or a path
+        # written the ordinary Windows way (`...\state\`) escapes its own
+        # closing quote and the producer silently gets a malformed argv
+        # (fleet-config#800, #930).
+        $quotedState = $stateDir -replace '(\\+)$', '$1$1'
+        $start.Arguments = '"' + $quotaScript + '" claude --state-dir "' + $quotedState + '"'
         $start.UseShellExecute = $false
         $start.CreateNoWindow = $true
         $start.RedirectStandardInput = $true

@@ -38,8 +38,12 @@ _SPAWN_ATTRS = {"run", "Popen", "call", "check_output", "check_call"}
 
 
 def _runtime_py_files() -> "list[Path]":
-    """Every `.py` under `_SPAWN_SCAN_DIRS`, minus `__pycache__` and `_SPAWN_SCAN_EXCLUDE`."""
-    files: list[Path] = []
+    """Every `.py` under `_SPAWN_SCAN_DIRS`, minus `__pycache__` and
+    `_SPAWN_SCAN_EXCLUDE`, plus the repo-root modules (`codex_model_policy.py`
+    and its siblings run from `install.ps1` — runtime code outside the three
+    trees, which is how an inline `NO_WINDOW` ternary sat there unseen,
+    fleet-config#930)."""
+    files: list[Path] = sorted(REPO.glob("*.py"))
     for rel in _SPAWN_SCAN_DIRS:
         for py in sorted((REPO / rel).rglob("*.py")):
             label = py.relative_to(REPO).as_posix()
@@ -110,6 +114,43 @@ def _spawn_sites_missing_flags() -> "list[str]":
             offenders.append(f"{py.relative_to(REPO).as_posix()}: unparseable ({exc})")
             continue
         offenders.extend(_missing_creationflags_in_tree(tree, py.relative_to(REPO).as_posix()))
+    return offenders
+
+
+# The only two sanctioned definitions of the flag (fleet-config#399, #412). The
+# scan above accepts any name spelled `NO_WINDOW`, so a module that re-inlines
+# the ternary under that name would pass it; this is what catches that.
+_NO_WINDOW_HOMES = {"hooks/_lib.py", "skills/_lib/no_window.py"}
+
+
+def _no_window_redefinitions_in_tree(tree, label: str) -> "list[str]":
+    """Every module-level or nested assignment to `NO_WINDOW` in `tree`."""
+    import ast
+
+    return [
+        f"{label}:{node.lineno}"
+        for node in ast.walk(tree)
+        if isinstance(node, (ast.Assign, ast.AnnAssign))
+        and any(isinstance(t, ast.Name) and t.id == "NO_WINDOW"
+                for t in (node.targets if isinstance(node, ast.Assign) else [node.target]))
+    ]
+
+
+def _no_window_redefinitions() -> "list[str]":
+    """Runtime files that define their own `NO_WINDOW` instead of importing one
+    of `_NO_WINDOW_HOMES` (fleet-config#930)."""
+    import ast
+
+    offenders: list[str] = []
+    for py in _runtime_py_files():
+        label = py.relative_to(REPO).as_posix()
+        if label in _NO_WINDOW_HOMES:
+            continue
+        try:
+            tree = ast.parse(py.read_text(encoding="utf-8"), filename=str(py))
+        except (OSError, SyntaxError):  # pragma: no cover
+            continue
+        offenders.extend(_no_window_redefinitions_in_tree(tree, label))
     return offenders
 
 
@@ -306,6 +347,17 @@ def _no_window_unit_check() -> Tuple[int, int]:
     check("no_window: hooks/_lib NO_WINDOW agrees with the skills-tier copy",
           _lib.NO_WINDOW == no_window.NO_WINDOW,
           f"hooks={_lib.NO_WINDOW!r} skills={no_window.NO_WINDOW!r}")
+
+    import ast
+
+    redefinitions = _no_window_redefinitions()
+    check("no_window: NO_WINDOW is defined only in hooks/_lib.py and "
+          "skills/_lib/no_window.py; everything else imports it (#930)",
+          not redefinitions, "\n".join(redefinitions))
+    check("no_window: the redefinition matcher still sees an inline ternary",
+          _no_window_redefinitions_in_tree(ast.parse(
+              'NO_WINDOW = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0\n'), "probe")
+          == ["probe:1"])
 
     import_offenders = _spawn_import_style_offenders()
     check("no_window: no runtime file uses `from subprocess import <spawn>` "

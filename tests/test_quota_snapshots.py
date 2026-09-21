@@ -280,6 +280,24 @@ class NativeTransportTests(unittest.TestCase):
             # The existing reader needs no migration for this producer change.
             self.assertEqual(shared["provider"], "anthropic")
 
+    def test_statusline_state_dir_with_trailing_backslash_still_publishes(self) -> None:
+        # A path written the ordinary Windows way ends in `\`, which used to
+        # escape the closing quote of the hand-built argv and silently stop
+        # the shared quota snapshot being published (fleet-config#930).
+        if sys.platform != "win32":
+            self.skipTest("Native PowerShell integration requires Windows")
+        with tempfile.TemporaryDirectory() as directory:
+            env = dict(os.environ, CLAUDE_HOOKS_STATE_DIR=directory + "\\")
+            raw = {"rate_limits": {"five_hour": {"used_percentage": 12, "resets_at": RESET},
+                                   "seven_day": {"used_percentage": 34, "resets_at": RESET}}}
+            result = subprocess.run(["C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe",
+                                     "-NoProfile", "-File", str(REPO / "statusline-command.ps1")],
+                                    input=json.dumps(raw), capture_output=True, text=True,
+                                    env=env, timeout=15, creationflags=subprocess.CREATE_NO_WINDOW)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertTrue((Path(directory) / "quota-v1" / "claude-statusline.json").is_file(),
+                            "trailing-backslash state dir: shared quota snapshot was not published")
+
 
 if __name__ == "__main__":
     unittest.main()

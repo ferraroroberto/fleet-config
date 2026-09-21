@@ -19,6 +19,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from config_edit import ASSIGNMENT_RE, TABLE_RE, atomic_write  # noqa: E402
+sys.path.insert(0, str(Path(__file__).resolve().parent / "skills" / "_lib"))
+from no_window import NO_WINDOW  # noqa: E402
 
 
 MAIN_MODEL = "gpt-5.6-sol"
@@ -29,7 +31,6 @@ ROLE_SPECS = {
     "normal": ("gpt-5.6-terra", "high"),
     "hard": ("gpt-5.6-sol", "high"),
 }
-NO_WINDOW = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
 
 
 class PolicyError(ValueError):
