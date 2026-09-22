@@ -1,4 +1,4 @@
-"""The `design_review` command line — `probe`, `measure`, `evaluate`, `judge-prompt`, `judge-merge`, `render`.
+"""The `design_review` command line — `probe`, `measure`, `evaluate`, `judge-prompt`, `judge-merge`, `ledger`, `render`, `file`, `fleet`.
 
     <python> C:/Users/rober/.claude/skills/_lib/design_review probe <repo>
         [--url URL] [--projects-toml FILE]
@@ -12,20 +12,43 @@
         [--rubric FILE]
     <python> C:/Users/rober/.claude/skills/_lib/design_review judge-merge <run_dir> <answers.json> [<answers2.json> ...]
         [--rubric FILE] [--spec FILE] [--spec-dark FILE]
+    <python> C:/Users/rober/.claude/skills/_lib/design_review ledger <run_dir>
+        [--no-live] [--projects-toml FILE] [--rubric FILE] [--spec FILE] [--spec-dark FILE]
     <python> C:/Users/rober/.claude/skills/_lib/design_review render <evaluate.json|metrics.json>
         [--out FILE] [--rubric FILE] [--spec FILE] [--spec-dark FILE]
+    <python> C:/Users/rober/.claude/skills/_lib/design_review file <run_dir>
+        [--file] [--repo OWNER/NAME] [--projects-toml FILE]
+    <python> C:/Users/rober/.claude/skills/_lib/design_review fleet
+        [--devices iphone,desktop,android] [--file | --dry-run] [--projects-toml FILE] [--out-dir DIR] ...
 
-`probe`, `measure`, `judge-prompt`, `judge-merge` and `render` print
-KEY=VALUE lines (the `ux_surface` CLI style) so a skill can read the result
-back without parsing JSON:
+`probe`, `measure`, `judge-prompt`, `judge-merge`, `ledger`, `render`,
+`file` and `fleet` print KEY=VALUE lines (the `ux_surface` CLI style) so a
+skill can read the result back without parsing JSON:
 
     probe         TARGET= BASE_URL= ROOT= CLAUDE_MD= PROBE=listening|NOT_LISTENING|TIMEOUT|BAD_URL DETAIL=
     measure       TARGET= BASE_URL= COMMIT= INTERPRETER= RUN_DIR= METRICS= SCREENS=<ok>/<total> UNMEASURED=<reason>|none
     judge-prompt  PROMPT=<run_dir>/judge-prompt.md SCREENS=<n> QUESTIONS=<n>
     judge-merge   JUDGMENT=ok|unmeasured|not_confirmed ANSWERS=<yes>/<no>/<na> UNCATALOGUED=<n> ERRORS=<n>
                   [RUBRIC_MISMATCH=evaluate:<v> judgment:<v>] EVALUATE=
+    ledger        LEDGER=<ledger.json> RUN_ID= PREVIOUS=<run_id>|none FIXED=<n> [ids] REGRESSED=<n> [ids] NEW=<n> [ids]
+                  UNCHANGED=<n> UNMEASURED=<n> RUBRIC_CHANGED=<from>-><to>|none LIVE_BUILD=<sha>|unknown COMMIT= EVALUATE=
     render        REPORT= EVALUATE= TARGET= COMMIT= RUBRIC= GRADE= SCORE= FAILED=<n>/<total>
                   UNMEASURED=<n rules>|none CATEGORIES=<cat:grade,...> MOCKUPS=<ids>|none JUDGMENT=<status>|none
+    file          FILE=dry-run|filed REPO= ISSUE=<n>|none CHANGED=yes|no FILED=<n> [ids] UNCATALOGUED=<n>
+                  ACCEPTED=<ids>|none SPEC=<ids>|none SCAFFOLD=<ids>|none [PROBLEM=...] BODY=<issue-body.md> URL=<url>|none
+    fleet         FLEET_DIR= APPS=<n> APP=<name> probe= unmeasured= grade= score= failed= fixed= regressed= new= run=
+                  MEASURED=<n> UNMEASURED_APPS=<name:reason,...>|none SPEC= SCAFFOLD= PROMOTED= JUDGMENT=skipped
+                  FILING=dry-run|filed [ISSUE=<repo> <url|body path>] DIGEST= DIGEST_HTML=
+
+`ledger` records the run (`ledger.py`) and writes `diff` into
+`evaluate.json`, so it runs after `judge-merge` and before `render`. `file`
+is a dry run unless `--file` is passed: the merged body is always written
+as `<run_dir>/issue-body.md`, and only `--file` upserts it through
+`audit_issue.py`. `fleet` sweeps every declared web app serially (one
+browser at a time, an app not listening is `unmeasured`, nothing is ever
+started), skips the judgment stage, and writes `fleet-digest.json` +
+`fleet-digest.html` under `<state>/design-review/_fleet/<stamp>/`; filing
+there is likewise opt-in with `--file`.
 
 `measure` exits 0 whenever a `metrics.json` was written — an `unmeasured` run
 is a result, not a crash; exit 2 is reserved for a target that cannot be
@@ -57,9 +80,10 @@ from pathlib import Path
 from typing import Dict, List, Optional
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+import fleet_repo_scan  # noqa: E402
 from utf8_stdio import ensure_utf8_stdio  # noqa: E402
 
-from . import capture, evaluate, judgment, measure, plan, report, rubric as rubric_mod  # noqa: E402
+from . import capture, evaluate, filing, fleet, judgment, ledger, measure, plan, report, rubric as rubric_mod  # noqa: E402
 
 ensure_utf8_stdio()
 
@@ -288,6 +312,140 @@ def cmd_render(args: argparse.Namespace) -> int:
     return 0
 
 
+def _tables(projects_toml: Optional[str]) -> Dict[str, dict]:
+    return fleet_repo_scan.fleet_repo_tables(Path(projects_toml) if projects_toml else None)
+
+
+def _target_root(target: str, projects_toml: Optional[str]) -> Optional[Path]:
+    """The target's checkout from projects.toml (`.fleet.toml` and the origin remote live there), or None."""
+    root = Path(str(_tables(projects_toml).get(target, {}).get("cwd_prefix", "")))
+    return root if str(root) not in ("", ".") and root.is_dir() else None
+
+
+def cmd_ledger(args: argparse.Namespace) -> int:
+    run_dir = Path(args.run_dir)
+    metrics_path = run_dir / "metrics.json"
+    evaluate_path = run_dir / "evaluate.json"
+    try:
+        if evaluate_path.is_file():
+            doc = _load_json(evaluate_path)
+        else:
+            doc = _evaluate_file(metrics_path, args)
+    except rubric_mod.RubricError as exc:
+        print(f"ERROR=rubric: {exc}")
+        return 2
+    except ValueError as exc:
+        print(f"ERROR={exc}")
+        return 2
+    target = str(doc.get("target") or run_dir.parent.name)
+    run_id = ledger.run_id_of(run_dir, doc)
+    prev = ledger.previous(target, run_id)
+    d = ledger.diff(doc, prev)
+    doc["diff"] = d
+    try:
+        evaluate_path.write_text(json.dumps(doc, indent=2, ensure_ascii=True), encoding="utf-8")
+    except OSError as exc:
+        print(f"ERROR=cannot write {evaluate_path}: {exc}")
+        return 2
+    live = None
+    if not args.no_live and not doc.get("unmeasured"):
+        live = ledger.live_build(str(doc.get("base_url") or ""), _tables(args.projects_toml).get(target, {}).get("api_version_path"))
+    entry = ledger.record(run_dir, doc, live)
+    counts = ledger.diff_counts(d)
+    print(f"LEDGER={ledger.ledger_path(target)}")
+    print(f"RUN_ID={run_id}")
+    print(f"PREVIOUS={d.get('previous_run') or 'none'}")
+    for key in ("fixed", "regressed", "new", "unchanged", "unmeasured"):
+        print(f"{key.upper()}={counts[key]}" + (f" {','.join(d[key])}" if key in ("fixed", "regressed", "new") and d[key] else ""))
+    rc = d.get("rubric_changed")
+    print(f"RUBRIC_CHANGED={rc['from']}->{rc['to']}" if rc else "RUBRIC_CHANGED=none")
+    print(f"LIVE_BUILD={entry.get('live_build') or 'unknown'}")
+    print(f"COMMIT={entry.get('commit') or 'none'}")
+    print(f"EVALUATE={evaluate_path}")
+    return 0
+
+
+def cmd_file(args: argparse.Namespace) -> int:
+    run_dir = Path(args.run_dir)
+    try:
+        doc = _load_json(run_dir / "evaluate.json")
+    except ValueError as exc:
+        print(f"ERROR={exc}")
+        return 2
+    root = _target_root(str(doc.get("target") or run_dir.parent.name), args.projects_toml)
+    repo = args.repo or filing.repo_slug(root)
+    fetch = None
+    if args.existing_body:
+        # Tests: merge over this body instead of reading the managed issue (no `gh`).
+        try:
+            existing_text = Path(args.existing_body).read_text(encoding="utf-8") if Path(args.existing_body).is_file() else ""
+        except OSError as exc:
+            print(f"ERROR=cannot read {args.existing_body}: {exc}")
+            return 2
+        fetch = lambda r, k: {"number": None, "body": existing_text, "duplicates": []}  # noqa: E731
+    try:
+        out = filing.file_run(run_dir, repo, dry_run=not args.file, root=root, fetch=fetch)
+    except ValueError as exc:
+        print(f"ERROR={exc}")
+        return 2
+    routed = out["routed"]
+    print(f"FILE={'filed' if args.file else 'dry-run'}")
+    print(f"REPO={out['repo']}")
+    print(f"ISSUE={out['issue'] if out['issue'] is not None else 'none'}")
+    print(f"CHANGED={'yes' if out['changed'] else 'no'}")
+    print(f"FILED={len(routed['app'])} {','.join(s['id'] for s in routed['app']) or ''}".rstrip())
+    print(f"UNCATALOGUED={len(out['uncatalogued'])}")
+    print(f"ACCEPTED={','.join(s['id'] for s in routed['suppressed']) or 'none'}")
+    print(f"SPEC={','.join(s['id'] for s in routed['spec']) or 'none'}")
+    print(f"SCAFFOLD={','.join(s['id'] for s in routed['scaffold']) or 'none'}")
+    for p in out["problems"] + [f"accepted rule {rid} fails nowhere this run" for rid in routed["unmatched"]]:
+        print(f"PROBLEM={p}")
+    print(f"BODY={out['body_path']}")
+    print(f"URL={out['url'] or 'none'}")
+    return 0
+
+
+def cmd_fleet(args: argparse.Namespace) -> int:
+    try:
+        rb = rubric_mod.load_rubric(Path(args.rubric) if args.rubric else None)
+        devices = plan.device_list([d for d in (args.devices or "").split(",") if d])
+    except rubric_mod.RubricError as exc:
+        print(f"ERROR=rubric: {exc}")
+        return 2
+    except plan.PlanError as exc:
+        print(f"ERROR={exc}")
+        return 2
+    specs = rubric_mod.load_specs(Path(args.spec) if args.spec else None, Path(args.spec_dark) if args.spec_dark else None)
+    projects_toml = Path(args.projects_toml) if args.projects_toml else None
+    out_dir = Path(args.out_dir) if args.out_dir else None
+    if out_dir:
+        out_dir.mkdir(parents=True, exist_ok=True)
+    dig = fleet.run_fleet(rb, specs, devices, projects_toml, file_issues=bool(args.file), out_dir=out_dir,
+                          scaffold=args.scaffold, walk_timeout=args.walk_timeout, python_override=args.python)
+    print(f"FLEET_DIR={dig['out_dir']}")
+    print(f"APPS={len(dig['apps'])}")
+    for a in dig["apps"]:
+        o = a.get("overall") or {}
+        d = a.get("diff") or {}
+        print(f"APP={a['target']} probe={a['probe']} unmeasured={a.get('unmeasured') or 'none'} grade={o.get('grade') or '-'} "
+              f"score={o.get('score') if o else '-'} failed={len(a.get('failed') or [])} "
+              f"fixed={d.get('fixed', 0)} regressed={d.get('regressed', 0)} new={d.get('new', 0)} run={a['run_id']}")
+    measured = [a["target"] for a in dig["apps"] if not a.get("unmeasured")]
+    unm = [f"{a['target']}:{a['unmeasured']}" for a in dig["apps"] if a.get("unmeasured")]
+    print(f"MEASURED={len(measured)}")
+    print(f"UNMEASURED_APPS={','.join(unm) or 'none'}")
+    print(f"SPEC={','.join(s['id'] for s in dig['spec']) or 'none'}")
+    print(f"SCAFFOLD={','.join(s['id'] for s in dig['scaffold'] if not s.get('promoted')) or 'none'}")
+    print(f"PROMOTED={','.join(dig['promoted']) or 'none'}")
+    print("JUDGMENT=skipped")
+    print(f"FILING={dig['filing']['mode']}")
+    for repo, where in dig["filing"]["issues"].items():
+        print(f"ISSUE={repo} {where}")
+    print(f"DIGEST={Path(dig['out_dir']) / fleet.DIGEST_JSON}")
+    print(f"DIGEST_HTML={Path(dig['out_dir']) / fleet.DIGEST_HTML}")
+    return 0
+
+
 def main(argv: Optional[List[str]] = None) -> int:
     ap = argparse.ArgumentParser(description="/design-review deterministic core: probe, measure a live app, evaluate its metrics, render the report.")
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -340,5 +498,40 @@ def main(argv: Optional[List[str]] = None) -> int:
     r.add_argument("--spec-dark", help="override the dark spec path (tests)")
     r.set_defaults(fn=cmd_render)
 
+    lg = sub.add_parser("ledger", help="record the run in <state>/design-review/<target>/ledger.json and write `diff` into evaluate.json")
+    lg.add_argument("run_dir", help="a run directory holding evaluate.json (evaluated from metrics.json if absent)")
+    lg.add_argument("--no-live", action="store_true", help="skip the best-effort GET of the live build's version endpoint")
+    lg.add_argument("--projects-toml", help="override hooks/projects.toml (tests)")
+    lg.add_argument("--rubric", help="rubric file, used only when evaluate.json is absent")
+    lg.add_argument("--spec", help="override the light spec path (tests)")
+    lg.add_argument("--spec-dark", help="override the dark spec path (tests)")
+    lg.set_defaults(fn=cmd_ledger)
+
+    f = sub.add_parser("file", help="upsert the run's app-owned findings into the repo's managed design-review issue (dry run unless --file)")
+    f.add_argument("run_dir", help="a run directory holding evaluate.json")
+    f.add_argument("--file", action="store_true", help="actually upsert; without it the would-be body is written beside evaluate.json and nothing reaches GitHub")
+    f.add_argument("--repo", help="OWNER/NAME (default: the target checkout's origin remote)")
+    f.add_argument("--projects-toml", help="override hooks/projects.toml (tests)")
+    f.add_argument("--existing-body", help="merge over this file instead of the managed issue's body (tests; no gh call, implies dry run)")
+    f.set_defaults(fn=cmd_file)
+
+    fl = sub.add_parser("fleet", help="every projects.toml web app, serially: probe, measure, evaluate, ledger, render; one digest; judgment skipped")
+    fl.add_argument("--devices", default=",".join(plan.DEFAULT_DEVICES), help="subset of iphone,desktop,android")
+    fl.add_argument("--file", action="store_true", help="upsert the app issues and the two digest issues; default is a dry run")
+    fl.add_argument("--dry-run", action="store_true", help="the default, spelled out: write every would-be body beside the digest, file nothing")
+    fl.add_argument("--python", help="interpreter to run every walk with (tests)")
+    fl.add_argument("--scaffold", default=capture.DEFAULT_SCAFFOLD, help="project-scaffolding root (tests/e2e/_geometry.py)")
+    fl.add_argument("--rubric", help="rubric file (default: this repo's design.rubric.toml)")
+    fl.add_argument("--spec", help="override the light spec path (tests)")
+    fl.add_argument("--spec-dark", help="override the dark spec path (tests)")
+    fl.add_argument("--projects-toml", help="override hooks/projects.toml (tests)")
+    fl.add_argument("--out-dir", help="override the fleet digest directory (tests); default is under the hooks state dir")
+    fl.add_argument("--walk-timeout", type=float, default=capture.WALK_TIMEOUT_S)
+    fl.set_defaults(fn=cmd_fleet)
+
     args = ap.parse_args(argv)
+    if getattr(args, "cmd", None) == "fleet" and args.file and args.dry_run:
+        ap.error("--file and --dry-run are mutually exclusive")
+    if getattr(args, "cmd", None) == "file" and args.file and args.existing_body:
+        ap.error("--existing-body is a test override and implies a dry run; drop --file")
     return int(args.fn(args))

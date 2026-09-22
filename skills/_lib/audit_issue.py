@@ -21,12 +21,14 @@ Two subcommands:
          The skill reads the existing body, merges its findings, then calls upsert.
 
   upsert --repo OWNER/NAME --kind KIND --title T --body-file F [--label L]
-         [--reopen]
+         [--reopen] [--dry-run]
          0 matches -> create · 1 -> edit · >1 -> edit lowest, close the rest as
          duplicates. Stamps the marker. Prints the canonical issue URL.
          `--reopen` extends the 0-match case to the CLOSED issues before
          filing a new one — opt-in, for the one kind whose closed state is a
          meaningful "nothing outstanding" rather than "done forever".
+         `--dry-run` prints the plan (`ACTION=edit|create ISSUE= DUPLICATES=`)
+         and the marker-stamped body after `BODY:`, and writes nothing.
 
   close  --repo OWNER/NAME --kind KIND --comment TEXT
          Closes the open managed issue for that kind with the comment, so an
@@ -72,6 +74,7 @@ KINDS = (
     "bug",
     "documentation",
     "design-drift",
+    "design-review",
     "cert-drift",
     "context-audit",
     "context-purge",
@@ -86,6 +89,11 @@ KINDS = (
 _MARKER_RE = re.compile(
     r"^[ \t]*<!--[ \t]*audit-managed:[ \t]*kind=([\w-]+)[ \t]*-->[ \t]*$", re.MULTILINE
 )
+
+# The one managed `/design-review` issue per repo (fleet-config#974): rendered
+# findings keyed by rubric id in an app repo; the spec- or scaffold-owned list
+# in fleet-config / project-scaffolding. Stable title, no count suffix.
+DESIGN_REVIEW_TITLE = "design-review: rendered findings"
 
 # The /codebase-audit finding buckets — never the ledger/digest/practices/
 # design-drift/cert-drift kinds. Used to decide whether a merged PR closed one
@@ -170,6 +178,8 @@ def title_matches(title: str, kind: str) -> bool:
         return t == "prompt-audit ledger"
     if kind == "cleanup-deferred":
         return t == "cleanup-fleet-all deferred repos"
+    if kind == "design-review":
+        return t == DESIGN_REVIEW_TITLE
     # bucket kinds: "audit: <kind> findings ..." (trailing count suffix tolerated)
     return re.match(r"^audit:\s*" + re.escape(kind) + r"\s+findings\b", t) is not None
 
@@ -602,12 +612,27 @@ def _ensure_label(repo: str, label: str) -> None:
 
 # ---- subcommands ----------------------------------------------------------
 
-def cmd_get(repo: str, kind: str) -> None:
+def get_managed(repo: str, kind: str) -> dict:
+    """`{"number": N|None, "body": str, "duplicates": [n]}` for the managed issue of `kind`.
+
+    The Python entry point behind `get` (fleet-config#974): a caller that
+    merges a body in-process (`design_review.filing`) reads the existing one
+    here instead of shelling out to its own CLI.
+    """
     keep, dupes = plan(_list_open(repo), kind)
     body = ""
     if keep is not None:
         body = gh(["issue", "view", str(keep), "--repo", repo, "--json", "body", "-q", ".body"])
-    print(json.dumps({"number": keep, "body": body, "duplicates": dupes}))
+    return {"number": keep, "body": body, "duplicates": dupes}
+
+
+def cmd_get(repo: str, kind: str) -> None:
+    print(json.dumps(get_managed(repo, kind)))
+
+
+def upsert_issue(repo: str, kind: str, title: str, body: str, label: str | None, reopen: bool = False) -> str:
+    """The public upsert (fleet-config#974) — the same create / edit / collapse-strays path as `upsert`."""
+    return _upsert_issue(repo, kind, title, body, label, reopen)
 
 
 def _upsert_issue(
@@ -662,7 +687,8 @@ def _upsert_issue(
 
 
 def cmd_upsert(
-    repo: str, kind: str, title: str, body: str, label: str | None, reopen: bool = False
+    repo: str, kind: str, title: str, body: str, label: str | None, reopen: bool = False,
+    dry_run: bool = False,
 ) -> None:
     # A ledger is a machine contract, so it is validated and normalized here
     # rather than trusted from the caller's markdown — `--kind ledger` through
@@ -670,7 +696,28 @@ def cmd_upsert(
     # reached three repos (fleet-config#566).
     if kind == "ledger":
         body = normalize_ledger_body(body)
+    if dry_run:
+        print("\n".join(dry_run_lines(repo, kind, title, body)))
+        return
     print(_upsert_issue(repo, kind, title, body, label, reopen))
+
+
+def dry_run_lines(repo: str, kind: str, title: str, body: str) -> list[str]:
+    """What `upsert --dry-run` prints: the plan (which issue would be edited or
+    created, which strays collapsed) and the marker-stamped body — the one
+    read-only `gh` call is the open-issue listing. Nothing is written
+    (fleet-config#974: a filing path must be provable without touching a
+    real issue)."""
+    keep, dupes = plan(_list_open(repo), kind)
+    return [
+        "DRY_RUN=1",
+        f"ACTION={'edit' if keep is not None else 'create'}",
+        f"ISSUE={keep if keep is not None else 'none'}",
+        f"DUPLICATES={','.join(str(n) for n in dupes) or 'none'}",
+        f"TITLE={title}",
+        "BODY:",
+        ensure_marker(body, kind),
+    ]
 
 
 def cmd_close(repo: str, kind: str, comment: str) -> None:
@@ -865,6 +912,10 @@ def main(argv: list[str] | None = None) -> None:
         help="when no OPEN managed issue exists, reopen the closed one instead "
              "of filing a new one (cleanup-deferred; never for `security`)",
     )
+    u.add_argument(
+        "--dry-run", action="store_true",
+        help="print the plan (edit N / create) and the would-be body; write nothing",
+    )
 
     cl = sub.add_parser("close")
     cl.add_argument("--repo", required=True)
@@ -885,7 +936,7 @@ def main(argv: list[str] | None = None) -> None:
     elif args.cmd == "upsert":
         with open(args.body_file, encoding="utf-8") as fh:
             body = fh.read()
-        cmd_upsert(args.repo, args.kind, args.title, body, args.label, args.reopen)
+        cmd_upsert(args.repo, args.kind, args.title, body, args.label, args.reopen, args.dry_run)
     elif args.cmd == "close":
         cmd_close(args.repo, args.kind, args.comment)
     elif args.cmd == "gate":

@@ -32,6 +32,10 @@ Three rules keep an exception from becoming permanent blindness:
 Committed blobs, not the working tree, for the same reason as
 `vendored_drift`: these checkouts store LF and check out CRLF, so a
 filesystem read of a text file would differ from its own blob.
+
+The same table also holds `/design-review` exceptions (fleet-config#974):
+an entry with a `rule` key (a `design.rubric.toml` rule id) and no `check`
+belongs to `design_review.filing` and is skipped here without a WARN row.
 """
 from __future__ import annotations
 
@@ -83,6 +87,11 @@ def load_accepted(root: Path) -> Tuple[List[dict], List[dict]]:
         label = f"[[design.accepted]] #{index}"
         if not isinstance(entry, dict):
             problems.append(_row(f"{label} is not a table"))
+            continue
+        if "rule" in entry and "check" not in entry:
+            # A `/design-review` rubric-rule exception (fleet-config#974):
+            # read by `design_review.filing.load_accepted_rules`, not a
+            # `design_lint` contract finding — neither a match nor a problem here.
             continue
         missing = [k for k in _REQUIRED
                    if not isinstance(entry.get(k), str) or not entry[k].strip()]

@@ -175,6 +175,31 @@ Prose in `CLAUDE.md` can't be parsed reliably, and a separate sidecar file would
 be one more thing to keep in sync. Same silent-if-unrecognized parsing as
 `[vendored]`/`[cert]`, so adding it costs nothing on the map-build path.
 
+The same table also carries a `/design-review` **rubric-rule exception**
+(fleet-config#974) — an entry keyed by `rule` instead of `check`:
+
+```toml
+[[design.accepted]]
+rule   = "COMP-02"
+reason = "icon boxes follow the upstream set; the 16/20/24 steps are not adopted here"
+record = "https://github.com/<owner>/<repo>/issues/31"
+```
+
+| Field | Meaning |
+|---|---|
+| `rule` | required; a `design.rubric.toml` rule id (`TOUCH-01`, `COMP-02`, …) |
+| `reason` | required; one line saying why the rendered finding is accepted for this repo |
+| `record` | optional; link to where it was triaged |
+
+`skills/_lib/design_review/filing.py` reads it when the review files: a
+failing rule with an entry is listed under `## Accepted` in the repo's managed
+`design-review` issue, never under `## Findings`, and in fleet mode the repo is
+not counted toward promoting that rule to the scaffold list. An entry whose
+rule fails nowhere this run is reported as a `PROBLEM=` line, so a stale
+declaration is visible. The two loaders ignore each other's entries — a
+`rule`-keyed entry raises no `accepted-exception` row in `design_lint`, and a
+`check`-keyed one is not a rubric exception — so one table serves both skills.
+
 ### Optional per-repo `[worktree]` table (fleet-config#620)
 
 `skills/_lib/worktree_claim.py` junctions a repo's `.venv` into every fresh
