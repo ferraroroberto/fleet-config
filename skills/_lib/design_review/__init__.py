@@ -1,13 +1,14 @@
-"""Deterministic core of /design-review (fleet-config#970, step 1 = #971).
+"""Deterministic core of /design-review (fleet-config#970; step 1 = #971, step 2 = #972).
 
 What `design_lint` structurally cannot see — rendered facts: computed font
 sizes, WCAG contrast against the composited background, effective hit
 rectangles, icon boxes, overflow, accessible names — measured in a real
 browser against a *running* fleet app, scored against a versioned rubric,
-with no LLM in the loop. The skill (#972) orchestrates; this package
-measures and evaluates.
+rendered as one self-contained HTML report, with no LLM in the loop. The
+skill (`skills/design-review/SKILL.md`) orchestrates; this package probes,
+measures, evaluates and renders.
 
-Two legs, two interpreters (orchestrator decision, fleet-config#971):
+Three legs, two interpreters (orchestrator decision, fleet-config#971):
 
   measure   this repo's stdlib venv resolves the target and the run dir,
             probes the port, then spawns `walk.py` under the **target
@@ -16,6 +17,10 @@ Two legs, two interpreters (orchestrator decision, fleet-config#971):
             directory under the gitignored hooks state dir, never a tracked tree.
   evaluate  pure stdlib: `metrics.json` + `design.rubric.toml` + the spec
             token files -> rule results and category grades, as JSON.
+  render    pure stdlib: the evaluate document -> `report.html` beside it —
+            findings from `fix_template` + `standard`, now-vs-proposed
+            mock-ups from `mockups.py`, grades printed never recomputed,
+            no screenshot embedded or linked.
 
 Modules:
 
@@ -26,10 +31,13 @@ Modules:
   measure.py   the in-page measurement script + the per-screen metrics schema
   rubric.py    load/validate design.rubric.toml; thresholds + params from the spec
   evaluate.py  rule results, scoring formula, category + overall grades
-  cli.py       argparse: `measure <repo>` / `evaluate <metrics.json>`
+  mockups.py   the mock-up library keyed to the rubric's `mockup` ids
+  report.py    placeholder filling, section order, the HTML page
+  cli.py       argparse: `probe <repo>` / `measure <repo>` / `evaluate <metrics.json>` /
+               `render <evaluate.json|metrics.json>`
 
-Stable interfaces for the next steps (#972 renders, #973 adds `[[judgment]]`,
-#974 diffs by rule id):
+Stable interfaces for the next steps (#973 adds `judgment`, #974 adds `diff`
+and the ledger — both slots are already read by `report.py`, see its docstring):
 
   metrics.json     schema_version, rubric_version, target, commit, generated_at,
                    base_url, run_dir, devices, review, params{script,resolved},
@@ -37,13 +45,18 @@ Stable interfaces for the next steps (#972 renders, #973 adds `[[judgment]]`,
                      screen: id, device, theme, view, kind, status, reason, error,
                              screenshot, screenshot_full, metrics{...measure.py}
   evaluate output  schema_version, rubric_version, target, commit, generated_at,
-                   metrics_generated_at, base_url, run_dir, unmeasured, screens[],
+                   metrics_generated_at, base_url, run_dir, params, unmeasured, screens[],
                    rules[{id, category, severity, owner, status, reason, evidence,
-                          measured, threshold, title, standard, fix_template, mockup}],
+                          measured, threshold, params, title, standard, fix_template, mockup}],
                    categories{cat: {score, grade, unmeasured, failed, unmeasured_rules}},
                    overall{score, grade, unmeasured}
+                   [judgment{status, answers[], uncatalogued[]}]     # #973
+                   [diff{previous_run, fixed[], regressed[], new[], unchanged[]}]   # #974
   screen id        `<device>-<theme>-<view>` — `iphone-light-board`,
                    `desktop-dark-dialog-settings`
+
+`design_review.evaluate` is the *module* (the function is
+`design_review.evaluate.evaluate`), so no submodule is shadowed by a re-export.
 
 Read-only by construction: the walk clicks primary tabs, sets `details.open`,
 calls `dialog.showModal()`/`close()`; anything more is an opt-in
@@ -53,17 +66,21 @@ PR or comment.
 """
 from __future__ import annotations
 
+from . import evaluate, mockups, report
 from .capture import measure_target, probe_listening, resolve_interpreter, run_dir_for
 from .cli import main
-from .evaluate import evaluate, parse_color, spec_pairs
+from .evaluate import parse_color, spec_pairs
 from .measure import SCHEMA_VERSION, build_script, default_params, metric_paths, metric_value
+from .mockups import MOCKUP_IDS, render_mockup
 from .plan import DEVICES, Target, load_review_block, resolve_target, screen_id
+from .report import fill_template, finding_sentence, finding_values, render_report, report_summary, write_report
 from .rubric import Rubric, RubricError, load_rubric, load_specs, resolve_params, resolve_threshold, validate_rubric
 
 __all__ = [
-    "DEVICES", "Rubric", "RubricError", "SCHEMA_VERSION", "Target",
-    "build_script", "default_params", "evaluate", "load_review_block", "load_rubric", "load_specs",
-    "main", "measure_target", "metric_paths", "metric_value", "parse_color", "probe_listening",
+    "DEVICES", "MOCKUP_IDS", "Rubric", "RubricError", "SCHEMA_VERSION", "Target",
+    "build_script", "default_params", "evaluate", "fill_template", "finding_sentence", "finding_values",
+    "load_review_block", "load_rubric", "load_specs", "main", "measure_target", "metric_paths", "metric_value",
+    "mockups", "parse_color", "probe_listening", "render_mockup", "render_report", "report", "report_summary",
     "resolve_interpreter", "resolve_params", "resolve_target", "resolve_threshold", "run_dir_for",
-    "screen_id", "spec_pairs", "validate_rubric",
+    "screen_id", "spec_pairs", "validate_rubric", "write_report",
 ]

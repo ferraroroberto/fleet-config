@@ -4,7 +4,9 @@
 # data: a stable id, the rendered metric it reads (skills/_lib/design_review/
 # measure.py, or a derived metric in evaluate.py), the comparison that makes
 # it fail, a severity, the standard it cites, a fix template, an owner
-# (spec | scaffold | app) and a mock-up id (#972). No LLM assigns a grade:
+# (spec | scaffold | app) and a mock-up id — a key into the now-vs-proposed
+# library in skills/_lib/design_review/mockups.py, or "none"; validation
+# refuses an id the library does not have (#972). No LLM assigns a grade:
 # evaluate.py applies [penalties] once per failing rule and maps the score
 # through [grades]; [weights] blend the categories into the overall verdict.
 #
@@ -19,7 +21,7 @@
 # every evaluate output and every filed finding.
 
 [meta]
-version = "1.0.0"
+version = "1.1.0"   # 1.1.0: mock-up ids aligned to the #972 library (no threshold or severity change)
 seeded_from = "app-launcher rendered audit, 2026-09-21 (fleet-config#962)"
 
 [weights]
@@ -143,7 +145,7 @@ severity = "P0"
 owner = "spec"
 standard = "WCAG 2.2 SC 1.4.3 Contrast (Minimum), computed over colors.card"
 fix_template = "Spec pair {component} computes {ratio}:1 ({fg} on {bg}); AA needs {threshold}:1."
-mockup = "none"
+mockup = "contrast-swatches"
 
 [[rules]]
 id = "COLOR-02"
@@ -169,7 +171,7 @@ severity = "P1"
 owner = "spec"
 standard = "WCAG 2.2 SC 1.4.11 Non-text Contrast"
 fix_template = "{count} controls on {screen} have a border or fill under 3:1 against their surface ({sample})."
-mockup = "none"
+mockup = "form-primary"
 
 # ---------------------------------------------------------------------------
 # Touch
@@ -212,7 +214,7 @@ severity = "P1"
 owner = "app"
 standard = "design.md components.button-primary.height"
 fix_template = "Primary action on {screen} renders {value}px tall; button-primary is {threshold}px."
-mockup = "none"
+mockup = "form-primary"
 
 # ---------------------------------------------------------------------------
 # Navigation
@@ -270,7 +272,7 @@ severity = "P2"
 owner = "app"
 standard = "Nielsen: recognition over recall; long lists need a filter"
 fix_template = "{count} lists on {screen} exceed 12 rows with no filter in a {viewports}-viewport pane."
-mockup = "list-filter"
+mockup = "row-density"
 params = { viewports = 5 }
 
 [[rules]]
@@ -284,7 +286,7 @@ severity = "P1"
 owner = "app"
 standard = "Apple HIG Lists: one primary action per row, secondary actions in a menu"
 fix_template = "{count} rows on {screen} carry more than 2 controls ({sample}); move extras into a row menu."
-mockup = "row-menu"
+mockup = "action-row"
 
 [[rules]]
 id = "LAYOUT-04"
@@ -297,7 +299,7 @@ severity = "P1"
 owner = "app"
 standard = "design.md Colors: danger is state, never decoration"
 fix_template = "{value} rows on {screen} each show a danger button; move delete into the row menu or a bulk action."
-mockup = "row-menu"
+mockup = "destructive-in-menu"
 
 [[rules]]
 id = "LAYOUT-05"
@@ -323,7 +325,7 @@ severity = "P2"
 owner = "spec"
 standard = "design.md desktop measure contract"
 fix_template = "Content column is {share:.0%} of a {inner_w}px viewport on {screen}."
-mockup = "none"
+mockup = "wide-desktop"
 devices = ["desktop"]
 screens = ["tab"]
 params = { min_viewport = 1100 }

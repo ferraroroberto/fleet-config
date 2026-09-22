@@ -12,7 +12,7 @@ through `[params]`.
 Rubric file shape (flat, so #973 can append `[[judgment]]` entries without
 restructuring):
 
-    [meta]        version = "1.0.0"          # stamped on every metrics/evaluate output
+    [meta]        version = "1.1.0"          # stamped on every metrics/evaluate output
     [weights]     <category> = <float>       # category weight in the overall score
     [grades]      A = 90, B = 80, ...        # minimum score per letter, F = 0
     [penalties]   P0 = 25, P1 = 12, P2 = 6, P3 = 2   # per failing rule, once per rule
@@ -27,7 +27,9 @@ and reads as "the rule fails when `metric <fail_when> threshold`"; `true` and
 `measure.py` (`targets.small_count`) or a derived metric `evaluate.py`
 computes (`targets.small_share`, `icons.off_step_count`, `spec.pairs_under_aa`).
 `devices` / `screens` restrict where a rule applies (`screens` matches on the
-screen `kind`: `tab`, `dialog`, `step`).
+screen `kind`: `tab`, `dialog`, `step`). `mockup` is `none` or a key of the
+now-vs-proposed library (`mockups.MOCKUP_IDS`); an unknown key is refused
+here so a renamed template can never silently drop a rule's mock-up (#972).
 
 stdlib only.
 """
@@ -42,6 +44,8 @@ from typing import Dict, List, Optional
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from design_lint.spec import parse_spec  # noqa: E402
+
+from .mockups import MOCKUP_IDS, NONE as NO_MOCKUP  # noqa: E402
 
 DEFAULT_RUBRIC = Path(__file__).resolve().parent.parent.parent.parent / "design.rubric.toml"
 
@@ -178,6 +182,8 @@ def validate_rubric(data: dict, path: Optional[Path] = None) -> Rubric:
             raise RubricError(f"{rid}: fail_when={raw['fail_when']} needs a threshold or threshold_token")
         if raw["category"] not in weights:
             raise RubricError(f"{rid}: category {raw['category']!r} has no [weights] entry")
+        if raw["mockup"] != NO_MOCKUP and raw["mockup"] not in MOCKUP_IDS:
+            raise RubricError(f"{rid}: mockup {raw['mockup']!r} is not in the library ({sorted(MOCKUP_IDS)})")
         for kind in raw.get("screens", []) or []:
             if kind not in KINDS:
                 raise RubricError(f"{rid}: screens entry {kind!r} not in {KINDS}")

@@ -26,15 +26,23 @@ Output document:
 
     schema_version, rubric_version, target, commit, generated_at,
     metrics_generated_at, base_url, run_dir,
+    params:     {hit_min, primary_min, icon_steps}   # the resolved measurement floors
     screens:    [{id, device, theme, view, kind, status, reason}]
     rules:      [{id, category, severity, owner, title, standard, fix_template,
-                  mockup, status, reason, threshold: {value, source},
-                  evidence: [{screen, value, items: [...]}], measured: {screen: value}}]
+                  mockup, params, status, reason, threshold: {value, source},
+                  evidence: [{screen, value, items: [...], facts: {...}}],
+                  measured: {screen: value}}]
     categories: {<category>: {score, grade, unmeasured, failed: [id], unmeasured_rules: [id]}}
     overall:    {score, grade, unmeasured}
 
 `spec.*` rules evaluate the design system itself (light and dark token
 files), so their `screen` keys are `spec-light` / `spec-dark`.
+
+`params` (per rule: the rubric's `params` table; per document: the resolved
+floors) and `evidence[].facts` (the numerator/denominator behind a share —
+`{count, total}` for `targets.small_share`, empty otherwise) are additive
+keys added for the renderer (#972): every `fix_template` placeholder must be
+fillable from this document alone, never from a re-read of `metrics.json`.
 
 stdlib only.
 """
@@ -143,7 +151,12 @@ def spec_pairs(tokens: Dict[str, str]) -> List[Dict[str, object]]:
 
 # ---- derived metrics -------------------------------------------------------
 
-Derived = Tuple[Optional[float], List[object], Optional[str]]  # value, sample items, unmeasured reason
+# value, sample items, unmeasured reason — and, for a share metric, a 4th
+# element: the `facts` dict whose numerator/denominator survive into the
+# evidence (the renderer's `{count} of {total}`). `read_metric` normalises
+# both shapes to the 4-tuple.
+Derived = Tuple[Optional[float], List[object], Optional[str]]
+DerivedWithFacts = Tuple[Optional[float], List[object], Optional[str], Dict[str, object]]
 
 # A screen the rule has nothing to say about (no primary action to size, no
 # text to histogram): skipped, counted separately from `unmeasured`. A rule
@@ -157,11 +170,11 @@ def _share(num: object, den: object) -> Optional[float]:
     return 0.0 if den == 0 else round(float(num) / float(den), 4)
 
 
-def _d_small_share(m: dict, rule: Rule, ctx: dict) -> Derived:
+def _d_small_share(m: dict, rule: Rule, ctx: dict) -> DerivedWithFacts:
     total, count = measure.metric_value(m, "targets.total"), measure.metric_value(m, "targets.small_count")
     if total is None or count is None:
-        return None, [], _section_reason(m, "targets")
-    return _share(count, total), list(measure.metric_value(m, "targets.small") or []), None
+        return None, [], _section_reason(m, "targets"), {}
+    return _share(count, total), list(measure.metric_value(m, "targets.small") or []), None, {"count": count, "total": total}
 
 
 def _d_under14_share(m: dict, rule: Rule, ctx: dict) -> Derived:
@@ -256,7 +269,7 @@ def _d_pane_header_hidden(m: dict, rule: Rule, ctx: dict) -> Derived:
     return (1.0 if hidden else 0.0), [{"pane_header_visible": vis, "pane_scroll_top": top}], None
 
 
-DERIVED: Dict[str, Callable[[dict, Rule, dict], Derived]] = {
+DERIVED: Dict[str, Callable[[dict, Rule, dict], tuple]] = {
     "targets.small_share": _d_small_share,
     "text.under14_share": _d_under14_share,
     "icons.off_step_count": _d_icons_off_step,
@@ -275,6 +288,13 @@ _POPULATIONS = {
     "text.min_px": "text.runs",
 }
 
+# metrics with no list of their own borrow the sample that explains a failure
+_SAMPLE_SOURCES: Dict[str, Callable[[dict], List[object]]] = {
+    "text.min_px": lambda m: list(measure.metric_value(m, "text.under11") or []),
+    "layout.overflow_x": lambda m: [{"scroll_w": measure.metric_value(m, "layout.scroll_w"),
+                                     "inner_w": measure.metric_value(m, "layout.inner_w")}],
+}
+
 
 def _empty_population(m: dict, metric: str) -> bool:
     src = _POPULATIONS.get(metric)
@@ -289,30 +309,35 @@ def _section_reason(m: dict, section: str) -> str:
     return f"section {section}: {err}" if err else f"section {section}: metric missing"
 
 
-def read_metric(m: dict, rule: Rule, ctx: dict) -> Derived:
-    """`(value, sample items, unmeasured reason)` for one rule on one screen."""
+def read_metric(m: dict, rule: Rule, ctx: dict) -> DerivedWithFacts:
+    """`(value, sample items, unmeasured reason, facts)` for one rule on one screen."""
     if rule.metric in DERIVED:
-        return DERIVED[rule.metric](m, rule, ctx)
+        out = DERIVED[rule.metric](m, rule, ctx)
+        return out if len(out) == 4 else (out[0], out[1], out[2], {})  # type: ignore[return-value]
     value = measure.metric_value(m, rule.metric)
     section = rule.metric.split(".", 1)[0]
     if value is None:
         if section in measure.section_errors(m):
-            return None, [], _section_reason(m, section)
+            return None, [], _section_reason(m, section), {}
         # A null aggregate over an empty population (`targets.primary_min_height`
         # with no primary action on the screen) is N/A, not a failure to measure.
         if _empty_population(m, rule.metric):
-            return None, [], NOT_APPLICABLE
-        return None, [], _section_reason(m, section)
+            return None, [], NOT_APPLICABLE, {}
+        return None, [], _section_reason(m, section), {}
     items: List[object] = []
     if rule.metric.endswith("_count"):
-        items = list(measure.metric_value(m, rule.metric[: -len("_count")]) or [])
+        # `<name>_count` summarises `<name>` — or its plural (`glyph_icons`, `overlaps`).
+        base = rule.metric[: -len("_count")]
+        items = list(measure.metric_value(m, base) or measure.metric_value(m, base + "s") or [])
+    elif rule.metric in _SAMPLE_SOURCES:
+        items = _SAMPLE_SOURCES[rule.metric](m)
     elif isinstance(value, list):
         items, value = list(value), float(len(value))
     if isinstance(value, bool):
         value = 1.0 if value else 0.0
     if not isinstance(value, (int, float)):
-        return None, [], f"metric {rule.metric} is not numeric"
-    return float(value), items, None
+        return None, [], f"metric {rule.metric} is not numeric", {}
+    return float(value), items, None, {}
 
 
 def fails(value: float, fail_when: str, threshold: Optional[float]) -> bool:
@@ -346,7 +371,7 @@ def evaluate_rule(rule: Rule, doc: dict, specs: Dict[str, Dict[str, str]], ctx: 
     result: Dict[str, object] = {
         "id": rule.id, "category": rule.category, "severity": rule.severity, "owner": rule.owner,
         "title": rule.title, "standard": rule.standard, "fix_template": rule.fix_template, "mockup": rule.mockup,
-        "metric": rule.metric, "fail_when": rule.fail_when, "threshold": threshold,
+        "metric": rule.metric, "fail_when": rule.fail_when, "threshold": threshold, "params": dict(rule.params),
         "status": "unmeasured", "reason": "", "evidence": [], "measured": {},
     }
     if doc.get("unmeasured"):
@@ -362,7 +387,7 @@ def evaluate_rule(rule: Rule, doc: dict, specs: Dict[str, Dict[str, str]], ctx: 
         legs = [("spec-light", specs.get("light", {})), ("spec-dark", specs.get("dark", {}))]
         for sid, tokens in legs:
             value, items, why = _d_spec_pairs(tokens)
-            _fold(result, tally, sid, value, items, why, rule, thr)
+            _fold(result, tally, sid, value, items, why, rule, thr, {})
     else:
         for screen in doc.get("screens", []):
             if not _applies(rule, screen):
@@ -371,8 +396,8 @@ def evaluate_rule(rule: Rule, doc: dict, specs: Dict[str, Dict[str, str]], ctx: 
             if screen.get("status") != "ok" or not isinstance(screen.get("metrics"), dict):
                 tally.unmeasured.append(f"{sid}: {screen.get('reason') or 'walk error'}")
                 continue
-            value, items, why = read_metric(screen["metrics"], rule, ctx)
-            _fold(result, tally, sid, value, items, why, rule, thr)
+            value, items, why, facts = read_metric(screen["metrics"], rule, ctx)
+            _fold(result, tally, sid, value, items, why, rule, thr, facts)
 
     na = f"; n/a on {tally.not_applicable}" if tally.not_applicable else ""
     if tally.failed:
@@ -405,7 +430,7 @@ class _Tally:
 
 
 def _fold(result: dict, tally: _Tally, sid: str, value: Optional[float], items: List[object],
-          why: Optional[str], rule: Rule, thr: Optional[float]) -> None:
+          why: Optional[str], rule: Rule, thr: Optional[float], facts: Dict[str, object]) -> None:
     if why == NOT_APPLICABLE:
         tally.not_applicable += 1
         return
@@ -414,7 +439,7 @@ def _fold(result: dict, tally: _Tally, sid: str, value: Optional[float], items: 
         return
     result["measured"][sid] = value
     if fails(value, rule.fail_when, thr):
-        ev = {"screen": sid, "value": value, "items": items[:EVIDENCE_ITEMS]}
+        ev = {"screen": sid, "value": value, "items": items[:EVIDENCE_ITEMS], "facts": dict(facts)}
         tally.failed.append(ev)
         result["evidence"].append(ev)
     else:
@@ -471,6 +496,7 @@ def evaluate(doc: dict, rubric: Rubric, specs: Dict[str, Dict[str, str]],
         "metrics_rubric_version": doc.get("rubric_version"),
         "base_url": doc.get("base_url"),
         "run_dir": doc.get("run_dir"),
+        "params": ctx["params"],
         "unmeasured": doc.get("unmeasured"),
         "screens": [{k: s.get(k) for k in ("id", "device", "theme", "view", "kind", "status", "reason")}
                     for s in doc.get("screens", [])],
