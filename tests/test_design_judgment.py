@@ -254,6 +254,14 @@ check(p2.returncode == 0 and k2.get("JUDGMENT") == "ok" and k2.get("ANSWERS") ==
       and k2.get("EVALUATE") == str(run_dir / "evaluate.json"), f"judge-merge validates, merges and prints its lines ({p2.stdout}{p2.stderr[-200:]})")
 ev_after = json.loads((run_dir / "evaluate.json").read_text(encoding="utf-8"))
 check(ev_after.get("judgment", {}).get("status") == "ok" and len(ev_after["judgment"]["answers"]) == 10, "judgment written into evaluate.json")
+check("RUBRIC_MISMATCH=" not in p2.stdout, "no rubric mismatch line when evaluate.json and the checklist share a version")
+stale = json.loads((run_dir / "evaluate.json").read_text(encoding="utf-8"))
+stale["rubric_version"] = "0.9.0"
+(run_dir / "evaluate.json").write_text(json.dumps(stale), encoding="utf-8")
+p2b = _run("judge-merge", str(run_dir), str(FIX / "judge_answers_ok.json"), "--rubric", str(RUBRIC))
+check(p2b.returncode == 0 and "RUBRIC_MISMATCH=evaluate:0.9.0 judgment:1.2.0" in p2b.stdout and _kv(p2b).get("JUDGMENT") == "ok",
+      f"an evaluate.json scored under another rubric version is named, never silently reused ({p2b.stdout[-200:]})")
+(run_dir / "evaluate.json").write_text(json.dumps(ev_after), encoding="utf-8")
 check(all(ev_before[k] == ev_after[k] for k in ev_before) and set(ev_after) - set(ev_before) == {"judgment"},
       "judge-merge adds only the judgment key; every other key of evaluate.json is byte-equal")
 p3 = _run("render", str(run_dir / "evaluate.json"))

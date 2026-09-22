@@ -22,7 +22,8 @@ back without parsing JSON:
     probe         TARGET= BASE_URL= ROOT= CLAUDE_MD= PROBE=listening|NOT_LISTENING|TIMEOUT|BAD_URL DETAIL=
     measure       TARGET= BASE_URL= COMMIT= INTERPRETER= RUN_DIR= METRICS= SCREENS=<ok>/<total> UNMEASURED=<reason>|none
     judge-prompt  PROMPT=<run_dir>/judge-prompt.md SCREENS=<n> QUESTIONS=<n>
-    judge-merge   JUDGMENT=ok|unmeasured|not_confirmed ANSWERS=<yes>/<no>/<na> UNCATALOGUED=<n> ERRORS=<n> EVALUATE=
+    judge-merge   JUDGMENT=ok|unmeasured|not_confirmed ANSWERS=<yes>/<no>/<na> UNCATALOGUED=<n> ERRORS=<n>
+                  [RUBRIC_MISMATCH=evaluate:<v> judgment:<v>] EVALUATE=
     render        REPORT= EVALUATE= TARGET= COMMIT= RUBRIC= GRADE= SCORE= FAILED=<n>/<total>
                   UNMEASURED=<n rules>|none CATEGORIES=<cat:grade,...> MOCKUPS=<ids>|none JUDGMENT=<status>|none
 
@@ -246,6 +247,10 @@ def cmd_judge_merge(args: argparse.Namespace) -> int:
     print(f"ANSWERS={yes}/{no}/{na}")
     print(f"UNCATALOGUED={len(merged.get('uncatalogued') or [])}")
     print(f"ERRORS={len(merged.get('errors') or [])}")
+    if str(ev_doc.get("rubric_version")) != rb.version:
+        # The grades were scored under another rubric version than the checklist
+        # was answered against; #974's diff must read both stamps, not one.
+        print(f"RUBRIC_MISMATCH=evaluate:{ev_doc.get('rubric_version')} judgment:{rb.version}")
     for e in merged.get("errors") or []:
         print(f"ERROR_DETAIL={e}")
     for d in merged.get("disagreements") or []:

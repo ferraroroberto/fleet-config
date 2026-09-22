@@ -178,8 +178,10 @@ Validates every reply against the schema (each seed id exactly once,
 entry with a proposed metric + threshold), merges the judges, writes the
 `judgment` document into `<RUN_DIR>/evaluate.json`, and prints
 `JUDGMENT=ok|unmeasured|not_confirmed`, `ANSWERS=<yes>/<no>/<na>`,
-`UNCATALOGUED=<n>`, `ERRORS=<n>` (+ one `ERROR_DETAIL=` per violation and
-one `NOT_CONFIRMED=<id>:<votes>` per disagreement). A malformed or partial
+`UNCATALOGUED=<n>`, `ERRORS=<n>` (+ one `ERROR_DETAIL=` per violation, one
+`NOT_CONFIRMED=<id>:<votes>` per disagreement, and `RUBRIC_MISMATCH=` when
+`evaluate.json` was scored under another rubric version than the checklist
+— carry that line into the summary). A malformed or partial
 reply makes the **whole** judgment `unmeasured` — the report says so; it is
 a result, exit 0, and the run continues. Never re-prompt a judge to "fix"
 its JSON, never hand-edit a reply, never answer a question yourself.
