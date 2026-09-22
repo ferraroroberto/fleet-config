@@ -16,12 +16,24 @@
 # `nonzero` ignore the threshold. `devices` / `screens` restrict where a rule
 # applies. Rules the walk cannot measure on a screen report `unmeasured`.
 #
-# Kept flat so #973 can append `[[judgment]]` entries without restructuring.
-# Bump [meta].version on any rule change: it is stamped on every metrics.json,
-# every evaluate output and every filed finding.
+# Kept flat: [[rules]] is what the metrics decide, [[judgment]] (#973) is the
+# bounded checklist a fresh-context judge answers yes / no / na per question
+# from the local screenshots and metrics.json — never a previous report. Each
+# entry has a stable id (J-NN), the question, `maps_to` (the rule ids a `no`
+# may land on; empty means a `no` must be emitted as an UNCATALOGUED finding
+# with a proposed metric + threshold) and `screens` (all | tabs | dialogs).
+# Uncatalogued findings are listed in the report outside the grade.
+#
+# The ratchet (#973): an uncatalogued finding the user accepts becomes a
+# [[rules]] entry (when it can be measured — it then leaves the checklist) or
+# a [[judgment]] question, by PR, with a [meta].version bump. No automation
+# writes this file.
+#
+# Bump [meta].version on any rule or question change: it is stamped on every
+# metrics.json, every evaluate output and every filed finding.
 
 [meta]
-version = "1.1.0"   # 1.1.0: mock-up ids aligned to the #972 library (no threshold or severity change)
+version = "1.2.0"   # 1.2.0: [[judgment]] checklist J-01..J-10 (#973); 1.1.0: mock-up ids aligned to the #972 library
 seeded_from = "app-launcher rendered audit, 2026-09-21 (fleet-config#962)"
 
 [weights]
@@ -413,3 +425,71 @@ owner = "spec"
 standard = "WCAG 2.2 SC 1.4.4 Resize Text; Apple HIG: never disable pinch zoom"
 fix_template = "meta viewport locks zoom on {screen} and no text-size control exists."
 mockup = "none"
+
+# ---------------------------------------------------------------------------
+# Judgment checklist (#973) — answered yes / no / na by a fresh-context judge
+# from the run's local screenshots + metrics.json. `maps_to` lists the rule
+# ids a `no` may be attributed to; an empty list means a `no` must be raised
+# as an uncatalogued finding with a proposed metric + threshold. `screens`
+# scopes the question: all | tabs | dialogs. Each question states what makes
+# it a `no` so three independent judges reach the same vector.
+
+[[judgment]]
+id = "J-01"
+question = "On every tab screen that lists rows, is each row's primary action evident without learning an icon: the row itself is tappable, or its main action carries a visible text label? Answer no if any list's rows expose their main action only as an icon-only button. Answer na if no tab screen lists rows."
+maps_to = ["LAYOUT-03", "A11Y-01"]
+screens = "tabs"
+
+[[judgment]]
+id = "J-02"
+question = "On each screen, counting every control visible in the viewport or the full-page screenshot, is the most prominent control — the largest, or any filled button whatever its colour (accent and danger red alike) — the one that performs the screen's main task? Answer no if on any screen a secondary or destructive control is filled or larger while the main task's control is a plain, ghost, outlined or icon-only button. Answer na if no screen has more than one control."
+maps_to = ["TOUCH-03"]
+screens = "all"
+
+[[judgment]]
+id = "J-03"
+question = "Counting every control visible in the viewport or the full-page screenshot (collapsed sections appear expanded there), are destructive actions (delete, remove, kill, stop, reset, clear) the least prominent controls on their screen: a plain, ghost, text or outlined button, red text at most, or placed inside a menu? Answer no if any screenshot shows a destructive action as a filled button (accent- or danger-filled), including inside an expanded section of a full-page screenshot, whatever the metrics count. Answer na if no screenshot shows a destructive action."
+maps_to = ["LAYOUT-04"]
+screens = "all"
+
+[[judgment]]
+id = "J-04"
+question = "Does each screen read top to bottom in one column at phone width — a title or heading first, then content, then actions? Two separate checks, both must hold for a yes: (1) no iphone or android screenshot places two content blocks (cards, lists, panels) side by side — navigation tabs and a row's own inline controls do not count; (2) on every tab screen the first text read below the app's top bar is a title or section heading, not the label of a button, dropdown or input. Answer no if either check fails on any screen, and name that screen as evidence."
+maps_to = []
+screens = "all"
+
+[[judgment]]
+id = "J-05"
+question = "Is every icon-only control (a button showing no visible text) either a conventional glyph whose meaning is fixed by convention (close X, search magnifier, settings gear, plus, chevron, menu, pencil, trash, copy, refresh, play, stop) or placed directly beside a text label that names its object? Answer no if any icon-only control shows a non-conventional glyph with no adjacent label. Answer na if no screen has an icon-only control."
+maps_to = ["A11Y-01", "COMP-01"]
+screens = "all"
+
+[[judgment]]
+id = "J-06"
+question = "Do all top-level tab screens share one anatomy: the same header position and title placement, the same bottom navigation, and the same container type for their main content (all cards, or all lists, or all tables)? Answer no if any tab places its header or title differently from the others or wraps its main content in a different container type (for example one tab is a table while the rest are cards)."
+maps_to = ["NAV-02"]
+screens = "tabs"
+
+[[judgment]]
+id = "J-07"
+question = "Is every visible label plain words a user of the app would say (Apps, Jobs, Settings, Rename, Delete, Run) rather than an internal name? Labels means all of: button labels, tab labels, section headings, and the labels of form fields, dropdowns and toggles — in tab screens and dialogs alike. Answer no if any such label contains an identifier (UPPER_SNAKE_CASE, a key=value pair), a file path, a code term or an abbreviation not in common use, even inside a parenthesis or helper clause of the label. User-entered content (app names, session names, job names, row metadata) does not count."
+maps_to = []
+screens = "all"
+
+[[judgment]]
+id = "J-08"
+question = "Is casing consistent within each class of element — every button label in one style, every heading in one style, every tab label in one style (sentence case throughout or Title Case throughout)? Answer no if one class of element mixes sentence case and Title Case across screens, or uses ALL CAPS outside a badge or tag."
+maps_to = ["TYPE-05"]
+screens = "all"
+
+[[judgment]]
+id = "J-09"
+question = "Does every empty list or empty section visible in the screenshots show a sentence saying why it is empty, and either (a) hold a button or link inside the empty-state box itself — the dashed or bordered area that holds the sentence, not the surrounding card or section — or (b) name in that sentence the control elsewhere on the screen that fills it? Answer no if any empty list or section shows nothing, only a dash, or a bare sentence such as 'No items yet' that neither holds a control inside its own box nor names one; a form or button that sits below or beside the box in the same card does not count unless the sentence names it. Answer na if no screenshot shows an empty list or section."
+maps_to = []
+screens = "tabs"
+
+[[judgment]]
+id = "J-10"
+question = "In every list, can a row's key fact be read at a glance: the row leads with its name as the row's largest text, its state is a badge or a short word, and the row carries at most one secondary line of text? Answer no if any list's rows lead with an icon, an id or a timestamp instead of the name, or pack more than two lines of text into a row. Answer na if no tab screen lists rows."
+maps_to = ["TYPE-01", "LAYOUT-03"]
+screens = "tabs"

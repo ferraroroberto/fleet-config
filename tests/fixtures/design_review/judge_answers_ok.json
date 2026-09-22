@@ -1,0 +1,19 @@
+{
+  "answers": [
+    {"id": "J-01", "answer": "yes", "evidence": "iphone-light-home", "maps_to": null, "note": "Rows are tappable and carry a text label."},
+    {"id": "J-02", "answer": "yes", "evidence": "desktop-light-home", "maps_to": [], "note": null},
+    {"id": "J-03", "answer": "no", "evidence": "iphone-light-home", "maps_to": ["LAYOUT-04"], "note": "Every row shows a filled danger button."},
+    {"id": "J-04", "answer": "no", "evidence": "iphone-light-home", "maps_to": null, "note": "Two cards sit side by side at phone width."},
+    {"id": "J-05", "answer": "yes", "evidence": "iphone-light-home", "maps_to": null, "note": null},
+    {"id": "J-06", "answer": "yes", "evidence": "desktop-light-home", "maps_to": null, "note": null},
+    {"id": "J-07", "answer": "yes", "evidence": "iphone-light-home", "maps_to": null, "note": null},
+    {"id": "J-08", "answer": "yes", "evidence": "iphone-light-home", "maps_to": null, "note": null},
+    {"id": "J-09", "answer": "na", "evidence": null, "maps_to": null, "note": "No empty list is visible."},
+    {"id": "J-10", "answer": "yes", "evidence": "iphone-light-home", "maps_to": null, "note": null}
+  ],
+  "uncatalogued": [
+    {"question": "J-04", "title": "Side-by-side cards at phone width", "severity": "P2",
+     "detail": "The home tab places two cards in one row on the iphone projection.", "owner": "app",
+     "proposed": {"metric": "layout.side_by_side_blocks", "threshold": "> 0 on any phone-width screen"}}
+  ]
+}

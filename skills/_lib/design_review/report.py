@@ -20,16 +20,20 @@ Section order (fixed; a slot whose data is absent is omitted cleanly):
     5. strong       rules that pass, per category
     6. findings     per category: failing rules by severity then id, then the
                     category's unmeasured rules with their reason
-    7. judgment     reserved for #973 — rendered only when `doc["judgment"]` exists
+    7. judgment     the checklist answers + uncatalogued findings (#973) — rendered
+                    only when `doc["judgment"]` exists; outside the grade
     8. mockups      now-vs-proposed partials for failing rules with a template
     9. owners       where the fixes land: spec / scaffold / app
 
-Reserved slots — the later steps only add data, the template already reads:
+Slots — the steps only add data, the template already reads:
 
-    doc["judgment"] = {
-        "status":       "complete" | "partial" | "skipped",
-        "answers":      [{"id": "J-01", "question": str, "answer": str, "evidence": str}],
-        "uncatalogued": [{"title": str, "severity": "P0".."P3", "detail": str, "owner": str}],
+    doc["judgment"] = {                          # written by `judgment.py` (#973)
+        "status":       "ok" | "not_confirmed" | "unmeasured",
+        "reason":       str | None,              # shown beside the status
+        "answers":      [{"id": "J-01", "question": str, "answer": str, "evidence": str,
+                          "maps_to": [rule id], "note": str | None}],
+        "uncatalogued": [{"title": str, "severity": "P0".."P3", "detail": str, "owner": str,
+                          "proposed": {"metric": str, "threshold": str}}],
     }
     doc["diff"] = {
         "previous_run": str,        # the run dir / stamp compared against
@@ -419,15 +423,23 @@ def _judgment(doc: dict) -> str:
     if not isinstance(j, dict):
         return ""
     rows = "".join(
-        f'<tr><td class="ids">{_esc(a.get("id", ""))}</td><td>{_esc(a.get("question", ""))}</td><td>{_esc(a.get("answer", ""))}</td>'
-        f'<td>{_esc(a.get("evidence", ""))}</td></tr>' for a in j.get("answers") or [] if isinstance(a, dict))
-    table = (f'<div class="tbl"><table><thead><tr><th>Id</th><th>Question</th><th>Answer</th><th>Evidence</th></tr></thead>'
+        f'<tr><td class="ids">{_esc(a.get("id", ""))}</td><td>{_esc(a.get("question", ""))}</td>'
+        f'<td class="answer-{_esc(str(a.get("answer", "")).replace(" ", "-"))}">{_esc(a.get("answer", ""))}</td>'
+        f'<td class="ids">{_esc(a.get("evidence") or "—")}</td><td class="ids">{_esc(", ".join(a.get("maps_to") or []) or "—")}</td></tr>'
+        for a in j.get("answers") or [] if isinstance(a, dict))
+    table = (f'<div class="tbl"><table><thead><tr><th>Id</th><th>Question</th><th>Answer</th><th>Evidence</th><th>Maps to</th></tr></thead>'
              f'<tbody>{rows}</tbody></table></div>') if rows else '<p class="muted">No checklist answers.</p>'
     unc = [u for u in j.get("uncatalogued") or [] if isinstance(u, dict)]
-    lis = "".join(f'<li><span class="badge sev sev-{_esc(u.get("severity", ""))}">{_esc(u.get("severity", ""))}</span> <b>{_esc(u.get("title", ""))}</b> '
-                  f'{_esc(u.get("detail", ""))} <span class="muted small">owner {_esc(u.get("owner", ""))}</span></li>' for u in unc)
-    body = table + "<h3>Uncatalogued</h3>" + (f'<ul class="plain">{lis}</ul>' if lis else '<p class="muted">Nothing outside the rubric.</p>')
-    return _section("judgment", "Judgment", body, f"status: {_esc(j.get('status') or 'unknown')}")
+    lis = []
+    for u in unc:
+        prop = u.get("proposed") if isinstance(u.get("proposed"), dict) else {}
+        proposed = f' <span class="muted small">proposed rule: {_esc(prop.get("metric"))} fails at {_esc(prop.get("threshold"))}</span>' if prop.get("metric") else ""
+        lis.append(f'<li><span class="badge sev sev-{_esc(u.get("severity", ""))}">{_esc(u.get("severity", ""))}</span> <b>{_esc(u.get("title", ""))}</b> '
+                   f'{_esc(u.get("detail", ""))} <span class="muted small">owner {_esc(u.get("owner", ""))}</span>{proposed}</li>')
+    body = table + "<h3>Uncatalogued</h3>" + (f'<ul class="plain">{"".join(lis)}</ul>' if lis else '<p class="muted">Nothing outside the rubric.</p>')
+    lead = f"status: {_esc(j.get('status') or 'unknown')}" + (f" — {_esc(j['reason'])}" if j.get("reason") else "")
+    lead += "; checklist answers and uncatalogued findings sit outside the grade"
+    return _section("judgment", "Judgment", body, lead)
 
 
 def _mockups(doc: dict) -> str:
@@ -510,6 +522,7 @@ td.ids{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.8rem}
 .badge-unm{background:var(--attention)}
 .badge.sev{background:var(--p3)}
 .badge.sev-P0{background:var(--p0)}.badge.sev-P1{background:var(--p1)}.badge.sev-P2{background:var(--p2)}
+td.answer-yes{color:var(--success);font-weight:600}td.answer-no{color:var(--danger);font-weight:600}td.answer-na,td.answer-not-confirmed{color:var(--fg-muted);font-weight:600}
 .finding{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:12px 16px;margin:12px 0}
 .finding header{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 .finding .sentence{font-weight:600;margin:8px 0 4px}

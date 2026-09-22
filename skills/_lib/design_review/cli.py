@@ -1,4 +1,4 @@
-"""The `design_review` command line — `probe`, `measure`, `evaluate`, `render`.
+"""The `design_review` command line — `probe`, `measure`, `evaluate`, `judge-prompt`, `judge-merge`, `render`.
 
     <python> C:/Users/rober/.claude/skills/_lib/design_review probe <repo>
         [--url URL] [--projects-toml FILE]
@@ -8,16 +8,23 @@
         [--run-dir DIR] [--walk-timeout S]
     <python> C:/Users/rober/.claude/skills/_lib/design_review evaluate <metrics.json>
         [--out FILE] [--rubric FILE] [--spec FILE] [--spec-dark FILE]
+    <python> C:/Users/rober/.claude/skills/_lib/design_review judge-prompt <run_dir>
+        [--rubric FILE]
+    <python> C:/Users/rober/.claude/skills/_lib/design_review judge-merge <run_dir> <answers.json> [<answers2.json> ...]
+        [--rubric FILE] [--spec FILE] [--spec-dark FILE]
     <python> C:/Users/rober/.claude/skills/_lib/design_review render <evaluate.json|metrics.json>
         [--out FILE] [--rubric FILE] [--spec FILE] [--spec-dark FILE]
 
-`probe`, `measure` and `render` print KEY=VALUE lines (the `ux_surface` CLI
-style) so a skill can read the result back without parsing JSON:
+`probe`, `measure`, `judge-prompt`, `judge-merge` and `render` print
+KEY=VALUE lines (the `ux_surface` CLI style) so a skill can read the result
+back without parsing JSON:
 
-    probe    TARGET= BASE_URL= ROOT= CLAUDE_MD= PROBE=listening|NOT_LISTENING|TIMEOUT|BAD_URL DETAIL=
-    measure  TARGET= BASE_URL= COMMIT= INTERPRETER= RUN_DIR= METRICS= SCREENS=<ok>/<total> UNMEASURED=<reason>|none
-    render   REPORT= EVALUATE= TARGET= COMMIT= RUBRIC= GRADE= SCORE= FAILED=<n>/<total>
-             UNMEASURED=<n rules>|none CATEGORIES=<cat:grade,...> MOCKUPS=<ids>|none
+    probe         TARGET= BASE_URL= ROOT= CLAUDE_MD= PROBE=listening|NOT_LISTENING|TIMEOUT|BAD_URL DETAIL=
+    measure       TARGET= BASE_URL= COMMIT= INTERPRETER= RUN_DIR= METRICS= SCREENS=<ok>/<total> UNMEASURED=<reason>|none
+    judge-prompt  PROMPT=<run_dir>/judge-prompt.md SCREENS=<n> QUESTIONS=<n>
+    judge-merge   JUDGMENT=ok|unmeasured|not_confirmed ANSWERS=<yes>/<no>/<na> UNCATALOGUED=<n> ERRORS=<n> EVALUATE=
+    render        REPORT= EVALUATE= TARGET= COMMIT= RUBRIC= GRADE= SCORE= FAILED=<n>/<total>
+                  UNMEASURED=<n rules>|none CATEGORIES=<cat:grade,...> MOCKUPS=<ids>|none JUDGMENT=<status>|none
 
 `measure` exits 0 whenever a `metrics.json` was written — an `unmeasured` run
 is a result, not a crash; exit 2 is reserved for a target that cannot be
@@ -25,14 +32,20 @@ resolved or a rubric that does not validate. `probe` exits 0 with its verdict
 on the `PROBE=` line (the skill's pre-flight; it never starts anything).
 `evaluate` prints the JSON document on stdout and exits 0; with `--out` it
 writes the document there and prints the `render`-style summary lines
-instead. `render` accepts either an evaluate document or a raw
-`metrics.json` (evaluated first, and the evaluate document written beside
-the report so #974 can diff runs), and writes `report.html` into the run
-directory by default.
+instead. `judge-prompt` writes the deterministic judge prompt (#973) beside
+`metrics.json`; `judge-merge` validates one or more judge answer files,
+merges them, and writes the `judgment` document into the run's
+`evaluate.json` (evaluated from `metrics.json` first if absent) — an
+`unmeasured` judgment is a result, exit 0, never a partial acceptance. The
+Python side spawns no agent: the skill does. `render` accepts either an
+evaluate document (with or without `judgment`) or a raw `metrics.json`
+(evaluated first, and the evaluate document written beside the report so
+#974 can diff runs), and writes `report.html` into the run directory by
+default.
 
 Deliberately the only module that knows argparse and file locations —
-`plan`/`capture`/`rubric`/`evaluate`/`report` are importable and unit-tested
-without it.
+`plan`/`capture`/`rubric`/`evaluate`/`judgment`/`report` are importable and
+unit-tested without it.
 """
 from __future__ import annotations
 
@@ -45,7 +58,7 @@ from typing import Dict, List, Optional
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from utf8_stdio import ensure_utf8_stdio  # noqa: E402
 
-from . import capture, evaluate, measure, plan, report, rubric as rubric_mod  # noqa: E402
+from . import capture, evaluate, judgment, measure, plan, report, rubric as rubric_mod  # noqa: E402
 
 ensure_utf8_stdio()
 
@@ -139,6 +152,8 @@ def _print_summary(doc: Dict[str, object]) -> None:
     print(f"UNMEASURED={s['unmeasured_rules'] or 'none'}")
     print("CATEGORIES=" + ",".join(f"{c}:{g}" for c, g in s["categories"].items()))
     print("MOCKUPS=" + (",".join(s["mockups"]) or "none"))
+    j = doc.get("judgment")
+    print(f"JUDGMENT={(j.get('status') or 'unknown') if isinstance(j, dict) else 'none'}")
 
 
 def cmd_evaluate(args: argparse.Namespace) -> int:
@@ -158,6 +173,84 @@ def cmd_evaluate(args: argparse.Namespace) -> int:
         _print_summary(out)
         return 0
     print(json.dumps(out, indent=2, ensure_ascii=True))
+    return 0
+
+
+def cmd_judge_prompt(args: argparse.Namespace) -> int:
+    run_dir = Path(args.run_dir)
+    try:
+        rb = rubric_mod.load_rubric(Path(args.rubric) if args.rubric else None)
+        doc = _load_json(run_dir / "metrics.json")
+    except rubric_mod.RubricError as exc:
+        print(f"ERROR=rubric: {exc}")
+        return 2
+    except ValueError as exc:
+        print(f"ERROR={exc}")
+        return 2
+    if not rb.judgment:
+        print("ERROR=rubric has no [[judgment]] entries")
+        return 2
+    text = judgment.judge_prompt(doc, run_dir, rb)
+    out = run_dir / "judge-prompt.md"
+    try:
+        out.write_text(text, encoding="utf-8")
+    except OSError as exc:
+        print(f"ERROR=cannot write prompt: {exc}")
+        return 2
+    print(f"PROMPT={out}")
+    print(f"SCREENS={len(judgment.screen_rows(doc))}")
+    print(f"QUESTIONS={len(rb.judgment)}")
+    return 0
+
+
+def cmd_judge_merge(args: argparse.Namespace) -> int:
+    run_dir = Path(args.run_dir)
+    metrics_path = run_dir / "metrics.json"
+    evaluate_path = run_dir / "evaluate.json"
+    try:
+        rb = rubric_mod.load_rubric(Path(args.rubric) if args.rubric else None)
+        metrics = _load_json(metrics_path)
+        if evaluate_path.is_file():
+            ev_doc = _load_json(evaluate_path)
+        else:
+            ev_doc = _evaluate_file(metrics_path, args)
+    except rubric_mod.RubricError as exc:
+        print(f"ERROR=rubric: {exc}")
+        return 2
+    except ValueError as exc:
+        print(f"ERROR={exc}")
+        return 2
+    docs: List[Dict[str, object]] = []
+    for name in args.answers:
+        p = Path(name)
+        try:
+            text = p.read_text(encoding="utf-8")
+        except OSError as exc:
+            print(f"ERROR=cannot read answers {p}: {exc}")
+            return 2
+        payload, perr = judgment.parse_payload(text)
+        if perr:
+            jdoc = judgment.unmeasured_doc(rb, [f"{p.name}: {perr}"])
+        else:
+            jdoc, _errs = judgment.validate_answers(payload, rb, metrics)
+        docs.append(jdoc)
+    merged = judgment.merge_judges(docs)
+    ev_doc["judgment"] = merged
+    try:
+        evaluate_path.write_text(json.dumps(ev_doc, indent=2, ensure_ascii=True), encoding="utf-8")
+    except OSError as exc:
+        print(f"ERROR=cannot write {evaluate_path}: {exc}")
+        return 2
+    yes, no, na = judgment.answer_counts(merged)
+    print(f"JUDGMENT={merged['status']}")
+    print(f"ANSWERS={yes}/{no}/{na}")
+    print(f"UNCATALOGUED={len(merged.get('uncatalogued') or [])}")
+    print(f"ERRORS={len(merged.get('errors') or [])}")
+    for e in merged.get("errors") or []:
+        print(f"ERROR_DETAIL={e}")
+    for d in merged.get("disagreements") or []:
+        print(f"NOT_CONFIRMED={d['id']}:{'/'.join(str(v) for v in d['answers'])}")
+    print(f"EVALUATE={evaluate_path}")
     return 0
 
 
@@ -220,6 +313,19 @@ def main(argv: Optional[List[str]] = None) -> int:
     e.add_argument("--spec", help="override the light spec path (tests)")
     e.add_argument("--spec-dark", help="override the dark spec path (tests)")
     e.set_defaults(fn=cmd_evaluate)
+
+    jp = sub.add_parser("judge-prompt", help="write the deterministic judge prompt (#973) as <run_dir>/judge-prompt.md")
+    jp.add_argument("run_dir", help="a run directory holding metrics.json and shots/")
+    jp.add_argument("--rubric", help="rubric file (default: this repo's design.rubric.toml)")
+    jp.set_defaults(fn=cmd_judge_prompt)
+
+    jm = sub.add_parser("judge-merge", help="validate + merge judge answer files; write `judgment` into <run_dir>/evaluate.json")
+    jm.add_argument("run_dir", help="a run directory holding metrics.json (evaluate.json is written if absent)")
+    jm.add_argument("answers", nargs="+", help="one JSON answers file per judge")
+    jm.add_argument("--rubric", help="rubric file (default: this repo's design.rubric.toml)")
+    jm.add_argument("--spec", help="override the light spec path (tests; used only when evaluate.json is absent)")
+    jm.add_argument("--spec-dark", help="override the dark spec path (tests)")
+    jm.set_defaults(fn=cmd_judge_merge)
 
     r = sub.add_parser("render", help="the HTML report from an evaluate document (or a metrics.json, evaluated first)")
     r.add_argument("source", help="path to an evaluate.json (or a metrics.json)")
