@@ -147,7 +147,9 @@ for cat, v in out_v["categories"].items():
 typo = page.index('id="cat-typography"')
 ids_in_typo = [m.group(1) for m in re.finditer(r'<article class="finding sev-P\d" id="(TYPE-\d\d)"', page[typo:page.index('id="cat-color"')])]
 check(ids_in_typo == ["TYPE-02", "TYPE-01", "TYPE-03", "TYPE-04", "TYPE-05"], f"findings ordered by severity then id within a category: {ids_in_typo}")
-check("<img" not in page and ".png" not in page and "screenshot" not in page.lower().replace("no screenshot", ""), "no screenshot embedded, linked or named")
+shot_paths = [s.get(k) for s in _doc("violating")["screens"] for k in ("screenshot", "screenshot_full") if s.get(k)]
+check(shot_paths and all(str(p) not in page and Path(str(p)).name not in page for p in shot_paths) and "<img" not in page and ".png" not in page,
+      "no screenshot embedded or linked: none of the metrics' screenshot paths reach the page")
 check(not re.search(r'(src|href)="https?://', page) and "<script" not in page and "<link" not in page, "no external request, no script, no stylesheet link")
 check("prefers-color-scheme" in page and '[data-theme="dark"]' in page and ':root:not([data-theme="light"])' in page, "theme tokens with media + data-theme overrides")
 check('name="viewport"' in page, "viewport meta for phone width")

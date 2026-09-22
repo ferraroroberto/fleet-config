@@ -151,10 +151,12 @@ def spec_pairs(tokens: Dict[str, str]) -> List[Dict[str, object]]:
 
 # ---- derived metrics -------------------------------------------------------
 
-# value, sample items, unmeasured reason — plus an optional 4th element, the
-# `facts` dict a share metric carries so its numerator/denominator survive
-# into the evidence (the renderer's `{count} of {total}`).
+# value, sample items, unmeasured reason — and, for a share metric, a 4th
+# element: the `facts` dict whose numerator/denominator survive into the
+# evidence (the renderer's `{count} of {total}`). `read_metric` normalises
+# both shapes to the 4-tuple.
 Derived = Tuple[Optional[float], List[object], Optional[str]]
+DerivedWithFacts = Tuple[Optional[float], List[object], Optional[str], Dict[str, object]]
 
 # A screen the rule has nothing to say about (no primary action to size, no
 # text to histogram): skipped, counted separately from `unmeasured`. A rule
@@ -168,7 +170,7 @@ def _share(num: object, den: object) -> Optional[float]:
     return 0.0 if den == 0 else round(float(num) / float(den), 4)
 
 
-def _d_small_share(m: dict, rule: Rule, ctx: dict) -> Tuple[Optional[float], List[object], Optional[str], Dict[str, object]]:
+def _d_small_share(m: dict, rule: Rule, ctx: dict) -> DerivedWithFacts:
     total, count = measure.metric_value(m, "targets.total"), measure.metric_value(m, "targets.small_count")
     if total is None or count is None:
         return None, [], _section_reason(m, "targets"), {}
@@ -307,7 +309,7 @@ def _section_reason(m: dict, section: str) -> str:
     return f"section {section}: {err}" if err else f"section {section}: metric missing"
 
 
-def read_metric(m: dict, rule: Rule, ctx: dict) -> Tuple[Optional[float], List[object], Optional[str], Dict[str, object]]:
+def read_metric(m: dict, rule: Rule, ctx: dict) -> DerivedWithFacts:
     """`(value, sample items, unmeasured reason, facts)` for one rule on one screen."""
     if rule.metric in DERIVED:
         out = DERIVED[rule.metric](m, rule, ctx)
