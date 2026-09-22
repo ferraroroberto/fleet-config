@@ -1,0 +1,80 @@
+<!doctype html>
+<!-- Static fixture for the design_review browser leg (fleet-config#971).
+     Every planted defect below is asserted by tests/test_design_review.py;
+     keep the counts in sync with that file. Loaded via file://, no server. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>design_review fixture</title>
+<style>
+  :root { --fg: #1f2328; --bg: #ffffff; --muted: #656d76; }
+  :root[data-theme="dark"] { --fg: #e6edf3; --bg: #0d1117; --muted: #7d8590; }
+  html, body { margin: 0; background: var(--bg); color: var(--fg); font-family: system-ui, sans-serif; font-size: 16px; }
+  body { padding: 16px; }
+  nav.tabs { display: flex; gap: 8px; }
+  nav.tabs button { min-width: 60px; min-height: 44px; font: inherit; }
+  section[hidden] { display: none; }
+  h2 { font-size: 24px; margin: 8px 0; }
+  .tiny { font-size: 10px; }
+  .caption { font-size: 12px; }
+  .faint { color: #b0b0b0; }              /* ~2.2:1 on white -> low contrast */
+  .glyph { font-size: 14px; }
+  .small-btn { width: 24px; height: 24px; padding: 0; border: 1px solid #d1d9e0; background: #f6f8fa; font: inherit; }
+  .hit-target { position: relative; width: 34px; height: 34px; padding: 0; margin: 12px; font: inherit; }
+  .hit-target::before { content: ""; position: absolute; inset: -5px; }   /* 34 + 2*5 = 44 effective */
+  .ua-font { }                            /* a select with the UA font: no `font: inherit` */
+  .big { min-height: 44px; min-width: 88px; font: inherit; }
+  svg.i16 { width: 16px; height: 16px; }
+  svg.i22 { width: 22px; height: 22px; }
+  dialog { border: 1px solid #d1d9e0; border-radius: 12px; }
+  dialog button { min-height: 44px; min-width: 88px; font: inherit; }
+</style>
+<script>
+  // Minimal tab switcher: aria-controls -> show that pane, hide the others.
+  addEventListener('DOMContentLoaded', () => {
+    document.querySelectorAll('[role=tab]').forEach(tab => tab.addEventListener('click', () => {
+      document.querySelectorAll('[role=tab]').forEach(t => t.setAttribute('aria-selected', String(t === tab)));
+      document.querySelectorAll('[role=tabpanel]').forEach(p => p.hidden = (p.id !== tab.getAttribute('aria-controls')));
+    }));
+  });
+</script>
+</head>
+<body>
+  <nav class="tabs" role="tablist" aria-label="Primary">
+    <button type="button" role="tab" data-tab="home" aria-controls="paneHome" aria-selected="true">Home</button>
+    <button type="button" role="tab" data-tab="list" aria-controls="paneList" aria-selected="false">List</button>
+  </nav>
+  <main>
+    <section id="paneHome" role="tabpanel">
+      <h2>Home</h2>
+      <p>Body copy at sixteen pixels with proper contrast.</p>
+      <p class="caption">A caption at twelve pixels.</p>
+      <p class="tiny">Ten pixel legal text.</p>
+      <p class="faint">Faint text under AA.</p>
+      <p class="glyph">Next → step</p>
+      <button type="button" class="small-btn" aria-label="Tiny">x</button>
+      <button type="button" class="hit-target" aria-label="Expanded">o</button>
+      <button type="button" class="big"></button>
+      <select class="ua-font"><option>UA font select</option></select>
+      <svg class="i16" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="10"/></svg>
+      <svg class="i22" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="10"/></svg>
+      <details><summary>More</summary><p>Hidden until open: eleven point five.</p></details>
+    </section>
+    <section id="paneList" role="tabpanel" hidden>
+      <h2>List</h2>
+      <ul>
+        <li>Row one <button type="button" class="big">A</button></li>
+        <li>Row two <button type="button" class="big">B</button></li>
+      </ul>
+      <!-- two expanded targets touching: 34px boxes, -5px expansion each -> 10px overlap -->
+      <div style="display:flex;gap:0"><button type="button" class="hit-target" style="margin-right:0" aria-label="One">1</button><button type="button" class="hit-target" style="margin-left:0" aria-label="Two">2</button></div>
+    </section>
+  </main>
+  <dialog id="editDialog">
+    <h2>Edit</h2>
+    <p>Dialog body text.</p>
+    <button type="button">Close</button>
+  </dialog>
+</body>
+</html>

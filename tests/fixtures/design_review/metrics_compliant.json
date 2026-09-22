@@ -1,0 +1,59 @@
+{
+ "schema_version": 1,
+ "rubric_version": "1.0.0",
+ "target": "fixture-app",
+ "commit": "0000000000000000000000000000000000000000",
+ "generated_at": "2026-09-22T00:00:00Z",
+ "base_url": "https://127.0.0.1:9999",
+ "run_dir": "C:/state/design-review/fixture-app/20260922T000000Z",
+ "devices": ["desktop", "iphone"],
+ "review": {},
+ "params": {"script": {"hitMin": 44.0, "hitTol": 0.5, "primaryMin": 48.0}, "resolved": {"hit_min": 44.0, "primary_min": 48.0, "icon_steps": [16.0, 18.0, 24.0]}},
+ "interpreter": "C:/app/.venv/Scripts/python.exe",
+ "unmeasured": null,
+ "walk": {"returncode": 0},
+ "screens": [
+  {
+   "id": "desktop-light-home", "device": "desktop", "theme": "light", "view": "home", "kind": "tab",
+   "status": "ok", "reason": null, "error": null, "screenshot": "desktop-light-home.png", "screenshot_full": "desktop-light-home-full.png",
+   "metrics": {
+    "text": {"sizes": {"16": 20, "14.72": 2, "24": 1}, "weights": {"400": 20, "600": 3}, "runs": 23, "under14": 0, "under11": [], "under11_count": 0, "min_px": 14.72, "low_contrast": [], "low_contrast_count": 0, "body_font_family": "system-ui, sans-serif", "break_all": [], "break_all_count": 0, "uppercase": [], "uppercase_count": 0, "glyph_icons": [], "glyph_icon_count": 0},
+    "controls": {"total": 6, "font_family_mismatch": [], "font_family_mismatch_count": 0, "boundary_low": [], "boundary_low_count": 0, "ua_styled": [], "ua_styled_count": 0, "segmented_bad": [], "segmented_bad_count": 0},
+    "targets": {"total": 10, "small": [], "small_count": 0, "overlaps": [], "overlap_count": 0, "primary": [{"sel": "button.primary", "label": "Save", "h": 48, "w": 120}], "primary_min_height": 48, "in_summary": 0},
+    "icons": {"boxes": {"16x16": 4, "24x24": 1}},
+    "nav": {"primary_count": 4, "pane_scroll_top": 0, "pane_header_visible": true},
+    "layout": {"overflow_x": false, "scroll_w": 1440, "inner_w": 1440, "inner_h": 900, "pane_h": 1200, "lists": [], "rows_over_limit": [], "rows_over_limit_count": 0, "danger_rows": 0, "content_w": 1100, "radii": {"12px": 5}},
+    "a11y": {"unnamed": [], "unnamed_count": 0, "zoom_locked": false, "text_size_control": false},
+    "headings": ["H2:Home@24px"]
+   }
+  },
+  {
+   "id": "iphone-light-home", "device": "iphone", "theme": "light", "view": "home", "kind": "tab",
+   "status": "ok", "reason": null, "error": null, "screenshot": "iphone-light-home.png", "screenshot_full": "iphone-light-home-full.png",
+   "metrics": {
+    "text": {"sizes": {"16": 20, "14.72": 2, "24": 1}, "weights": {"400": 20, "600": 3}, "runs": 23, "under14": 0, "under11": [], "under11_count": 0, "min_px": 14.72, "low_contrast": [], "low_contrast_count": 0, "body_font_family": "system-ui, sans-serif", "break_all": [], "break_all_count": 0, "uppercase": [], "uppercase_count": 0, "glyph_icons": [], "glyph_icon_count": 0},
+    "controls": {"total": 6, "font_family_mismatch": [], "font_family_mismatch_count": 0, "boundary_low": [], "boundary_low_count": 0, "ua_styled": [], "ua_styled_count": 0, "segmented_bad": [], "segmented_bad_count": 0},
+    "targets": {"total": 10, "small": [], "small_count": 0, "overlaps": [], "overlap_count": 0, "primary": [{"sel": "button.primary", "label": "Save", "h": 48, "w": 120}], "primary_min_height": 48, "in_summary": 0},
+    "icons": {"boxes": {"16x16": 4, "24x24": 1}},
+    "nav": {"primary_count": 4, "pane_scroll_top": 0, "pane_header_visible": true},
+    "layout": {"overflow_x": false, "scroll_w": 430, "inner_w": 430, "inner_h": 932, "pane_h": 1500, "lists": [], "rows_over_limit": [], "rows_over_limit_count": 0, "danger_rows": 0, "content_w": 406, "radii": {"12px": 5}},
+    "a11y": {"unnamed": [], "unnamed_count": 0, "zoom_locked": false, "text_size_control": false},
+    "headings": ["H2:Home@24px"]
+   }
+  },
+  {
+   "id": "desktop-light-dialog-edit", "device": "desktop", "theme": "light", "view": "dialog-edit", "kind": "dialog",
+   "status": "ok", "reason": null, "error": null, "screenshot": "desktop-light-dialog-edit.png", "screenshot_full": null,
+   "metrics": {
+    "text": {"sizes": {"16": 3, "24": 1}, "weights": {"400": 3, "700": 1}, "runs": 4, "under14": 0, "under11": [], "under11_count": 0, "min_px": 16, "low_contrast": [], "low_contrast_count": 0, "body_font_family": "system-ui, sans-serif", "break_all": [], "break_all_count": 0, "uppercase": [], "uppercase_count": 0, "glyph_icons": [], "glyph_icon_count": 0},
+    "controls": {"total": 2, "font_family_mismatch": [], "font_family_mismatch_count": 0, "boundary_low": [], "boundary_low_count": 0, "ua_styled": [], "ua_styled_count": 0, "segmented_bad": [], "segmented_bad_count": 0},
+    "targets": {"total": 2, "small": [], "small_count": 0, "overlaps": [], "overlap_count": 0, "primary": [], "primary_min_height": null, "in_summary": 0},
+    "icons": {"boxes": {}},
+    "nav": {"primary_count": 4, "pane_scroll_top": 0, "pane_header_visible": true},
+    "layout": {"overflow_x": false, "scroll_w": 1440, "inner_w": 1440, "inner_h": 900, "pane_h": 1200, "lists": [], "rows_over_limit": [], "rows_over_limit_count": 0, "danger_rows": 0, "content_w": 1100, "radii": {"16px": 1}},
+    "a11y": {"unnamed": [], "unnamed_count": 0, "zoom_locked": false, "text_size_control": false},
+    "headings": ["H2:Edit@24px"]
+   }
+  }
+ ]
+}

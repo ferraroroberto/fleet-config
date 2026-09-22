@@ -1,0 +1,45 @@
+{
+ "schema_version": 1,
+ "rubric_version": "1.0.0",
+ "target": "fixture-app",
+ "commit": "1111111111111111111111111111111111111111",
+ "generated_at": "2026-09-22T00:00:00Z",
+ "base_url": "https://127.0.0.1:9999",
+ "run_dir": "C:/state/design-review/fixture-app/20260922T000001Z",
+ "devices": ["desktop", "iphone"],
+ "review": {},
+ "params": {"script": {"hitMin": 44.0, "hitTol": 0.5, "primaryMin": 48.0}, "resolved": {"hit_min": 44.0, "primary_min": 48.0, "icon_steps": [16.0, 18.0, 24.0]}},
+ "interpreter": "C:/app/.venv/Scripts/python.exe",
+ "unmeasured": null,
+ "walk": {"returncode": 0},
+ "screens": [
+  {
+   "id": "desktop-light-home", "device": "desktop", "theme": "light", "view": "home", "kind": "tab",
+   "status": "ok", "reason": null, "error": null, "screenshot": "desktop-light-home.png", "screenshot_full": "desktop-light-home-full.png",
+   "metrics": {
+    "text": {"sizes": {"10": 1, "12.48": 5, "16": 4}, "weights": {"400": 10}, "runs": 10, "under14": 6, "under11": [{"sel": "small.legal", "text": "fine print", "px": 10}], "under11_count": 1, "min_px": 10, "low_contrast": [{"sel": "span.muted", "text": "faint", "px": 12.48, "ratio": 2.9, "fg": "#9a9a9a", "bg": "#ffffff", "large": false}], "low_contrast_count": 1, "body_font_family": "system-ui, sans-serif", "break_all": [{"sel": "span.name", "text": "Accounting Quarterly"}], "break_all_count": 1, "uppercase": [{"sel": "span.label", "text": "SETTINGS"}], "uppercase_count": 1, "glyph_icons": [{"sel": "button.next", "text": "Next \u2192"}], "glyph_icon_count": 1},
+    "controls": {"total": 6, "font_family_mismatch": [{"sel": "select.model", "family": "Arial"}], "font_family_mismatch_count": 1, "boundary_low": [{"sel": "button.ghost", "label": "Cancel", "ratio": 1.4, "boundary": "#d1d9e0", "surface": "#ffffff"}], "boundary_low_count": 1, "ua_styled": [{"sel": "a", "why": "default link colour"}], "ua_styled_count": 1, "segmented_bad": [{"sel": "div.segmented", "options": 6, "wrapped": false}], "segmented_bad_count": 1},
+    "targets": {"total": 10, "small": [{"sel": "button.icon", "label": "Edit", "w": 32, "h": 32, "vw": 32, "vh": 32}, {"sel": "button.icon", "label": "Delete", "w": 32, "h": 32, "vw": 32, "vh": 32}, {"sel": "summary", "label": "More", "w": 400, "h": 24, "vw": 400, "vh": 24}], "small_count": 3, "overlaps": [{"a": "button.icon", "b": "button.icon"}], "overlap_count": 1, "primary": [{"sel": "button.primary", "label": "Save", "h": 36, "w": 120}], "primary_min_height": 36, "in_summary": 1},
+    "icons": {"boxes": {"16x16": 4, "22x22": 2}},
+    "nav": {"primary_count": 6, "pane_scroll_top": 120, "pane_header_visible": false},
+    "layout": {"overflow_x": true, "scroll_w": 1600, "inner_w": 1440, "inner_h": 900, "pane_h": 5000, "lists": [{"sel": "ul.sessions", "rows": 20, "has_filter": false}], "rows_over_limit": [{"sel": "li.row", "controls": 4}], "rows_over_limit_count": 1, "danger_rows": 3, "content_w": 700, "radii": {"12px": 5, "3px": 2}},
+    "a11y": {"unnamed": ["button.icon"], "unnamed_count": 1, "zoom_locked": true, "text_size_control": false},
+    "headings": ["H2:Home@24px"]
+   }
+  },
+  {
+   "id": "iphone-light-home", "device": "iphone", "theme": "light", "view": "home", "kind": "tab",
+   "status": "ok", "reason": null, "error": null, "screenshot": "iphone-light-home.png", "screenshot_full": "iphone-light-home-full.png",
+   "metrics": {
+    "text": {"sizes": {"10": 1, "12.48": 5, "16": 4}, "weights": {"400": 10}, "runs": 10, "under14": 6, "under11": [{"sel": "small.legal", "text": "fine print", "px": 10}], "under11_count": 1, "min_px": 10, "low_contrast": [{"sel": "span.muted", "text": "faint", "px": 12.48, "ratio": 2.9, "fg": "#9a9a9a", "bg": "#ffffff", "large": false}], "low_contrast_count": 1, "body_font_family": "system-ui, sans-serif", "break_all": [{"sel": "span.name", "text": "Accounting Quarterly"}], "break_all_count": 1, "uppercase": [{"sel": "span.label", "text": "SETTINGS"}], "uppercase_count": 1, "glyph_icons": [{"sel": "button.next", "text": "Next \u2192"}], "glyph_icon_count": 1},
+    "controls": {"total": 6, "font_family_mismatch": [{"sel": "select.model", "family": "Arial"}], "font_family_mismatch_count": 1, "boundary_low": [{"sel": "button.ghost", "label": "Cancel", "ratio": 1.4, "boundary": "#d1d9e0", "surface": "#ffffff"}], "boundary_low_count": 1, "ua_styled": [{"sel": "a", "why": "default link colour"}], "ua_styled_count": 1, "segmented_bad": [{"sel": "div.segmented", "options": 6, "wrapped": false}], "segmented_bad_count": 1},
+    "targets": {"total": 10, "small": [{"sel": "button.icon", "label": "Edit", "w": 32, "h": 32, "vw": 32, "vh": 32}, {"sel": "button.icon", "label": "Delete", "w": 32, "h": 32, "vw": 32, "vh": 32}, {"sel": "summary", "label": "More", "w": 400, "h": 24, "vw": 400, "vh": 24}], "small_count": 3, "overlaps": [{"a": "button.icon", "b": "button.icon"}], "overlap_count": 1, "primary": [{"sel": "button.primary", "label": "Save", "h": 36, "w": 120}], "primary_min_height": 36, "in_summary": 1},
+    "icons": {"boxes": {"16x16": 4, "22x22": 2}},
+    "nav": {"primary_count": 6, "pane_scroll_top": 120, "pane_header_visible": false},
+    "layout": {"overflow_x": true, "scroll_w": 520, "inner_w": 430, "inner_h": 932, "pane_h": 6000, "lists": [{"sel": "ul.sessions", "rows": 20, "has_filter": false}], "rows_over_limit": [{"sel": "li.row", "controls": 4}], "rows_over_limit_count": 1, "danger_rows": 3, "content_w": 406, "radii": {"12px": 5, "3px": 2}},
+    "a11y": {"unnamed": ["button.icon"], "unnamed_count": 1, "zoom_locked": true, "text_size_control": false},
+    "headings": ["H2:Home@24px"]
+   }
+  }
+ ]
+}

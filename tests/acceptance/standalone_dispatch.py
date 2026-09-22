@@ -163,6 +163,14 @@ _STANDALONE_UNIT_CHECKS: Tuple[Tuple[str, str, str], ...] = (
      "mapping, adoption ratios, contract checks, vendored byte-compare, "
      "and sibling duplicate detection -- are testable on their own "
      "(fleet-config#277)"),
+    ("design_review", "test_design_review.py",
+     "/design-review's deterministic core -- rubric load/validate, spec-token "
+     "threshold + measurement-floor resolution, the scoring formula on one "
+     "compliant and one violating fixture metrics.json, run-to-run determinism, "
+     "the unmeasured lattice (dead target, failed tab, failed section never "
+     "read as a pass), the NOT_LISTENING-vs-TIMEOUT probe, and the browser leg "
+     "against a static fixture page through a sibling venv's Playwright, "
+     "skipped honestly when none has it -- is testable on its own (fleet-config#971)"),
     ("rate_gate", "test_rate_gate.py",
      "/audit-fleet's and /cleanup-fleet's proactive session-rate-limit "
      "gate -- OK/PAUSE/UNKNOWN decisions, staleness handling, and the "
