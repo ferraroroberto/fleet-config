@@ -345,6 +345,115 @@ def _multipart(fields: dict, filename: str, payload: bytes) -> Tuple[bytes, str]
     return b"".join(chunks), "multipart/form-data; boundary=" + boundary
 
 
+MEDIA_GROUP_MIN = 2
+MEDIA_GROUP_MAX = 10
+
+
+def _multipart_media_group(fields: dict, files: List[Tuple[str, bytes]]) -> Tuple[bytes, str]:
+    """Build a ``multipart/form-data`` body carrying several documents.
+
+    Each file is attached as ``file0``, ``file1``, ... matching the
+    ``attach://file<i>`` references ``upload_files`` puts in the ``media``
+    field. Returns ``(body, content_type)``.
+    """
+    boundary = "----notifysend" + uuid.uuid4().hex
+    chunks: List[bytes] = []
+    for key, value in fields.items():
+        header = "--{0}\r\nContent-Disposition: form-data; name=\"{1}\"\r\n\r\n{2}\r\n".format(
+            boundary, key, value
+        )
+        chunks.append(header.encode("utf-8"))
+    for index, (filename, payload) in enumerate(files):
+        ctype = mimetypes.guess_type(filename)[0] or "application/octet-stream"
+        field_header = (
+            "--{0}\r\n"
+            "Content-Disposition: form-data; name=\"file{1}\"; filename=\"{2}\"\r\n"
+            "Content-Type: {3}\r\n\r\n"
+        ).format(boundary, index, filename, ctype)
+        chunks.append(field_header.encode("utf-8"))
+        chunks.append(payload)
+        chunks.append(b"\r\n")
+    chunks.append("--{0}--\r\n".format(boundary).encode("utf-8"))
+    return b"".join(chunks), "multipart/form-data; boundary=" + boundary
+
+
+def upload_files(
+    paths: List[str],
+    chat: str,
+    token: Optional[str] = None,
+    *,
+    caption: Optional[str] = None,
+) -> bool:
+    """Upload 2-10 files to ``chat`` as one Telegram message (``sendMediaGroup``).
+
+    Always ``document`` items, never ``photo`` - same no-recompression
+    rationale as :func:`upload_file`. ``caption`` lands on the first item only
+    (the Bot API's own contract); an over-long one is delivered as a follow-up
+    message instead, exactly like :func:`upload_file`.
+
+    Never raises - a missing token/file, a count outside 2-10, or any API
+    error is logged and reported as ``False``.
+    """
+    token = _resolve_token(token)
+    if not token:
+        logger.error("[X] %s not set - cannot upload to Telegram.", TOKEN_ENV_VAR)
+        return False
+    chat = parse_chat(chat)
+    if not chat:
+        logger.error("[X] No Telegram chat given - cannot upload.")
+        return False
+    if not (MEDIA_GROUP_MIN <= len(paths) <= MEDIA_GROUP_MAX):
+        logger.error("[X] Media group needs %d-%d files, got %d.",
+                     MEDIA_GROUP_MIN, MEDIA_GROUP_MAX, len(paths))
+        return False
+    files: List[Tuple[str, bytes]] = []
+    for path in paths:
+        file_path = Path(path)
+        if not file_path.is_file():
+            logger.error("[X] File not found: %s", path)
+            return False
+        files.append((file_path.name, file_path.read_bytes()))
+
+    body_text = _flatten_markup(caption or "")
+    media_caption = body_text if len(body_text) <= CAPTION_LIMIT else ""
+    media = []
+    for index, (filename, _payload) in enumerate(files):
+        item = {"type": "document", "media": "attach://file{0}".format(index)}
+        if index == 0 and media_caption:
+            item["caption"] = media_caption
+        media.append(item)
+
+    fields = {"chat_id": chat, "media": json.dumps(media)}
+    try:
+        data, content_type = _multipart_media_group(fields, files)
+        request = urllib.request.Request(
+            TELEGRAM_API.format(token=token, method="sendMediaGroup"),
+            data=data,
+            method="POST",
+            headers={"Content-Type": content_type},
+        )
+        try:
+            with _urlopen(request, 120) as response:
+                done = json.loads(response.read().decode("utf-8"))
+        except urllib.error.HTTPError as exc:
+            done = json.loads(exc.read().decode("utf-8", errors="replace"))
+    except urllib.error.URLError as exc:
+        logger.error("[X] Telegram media-group upload failed: %s", exc)
+        return False
+    except (ValueError, OSError, KeyError) as exc:
+        logger.error("[X] Telegram media-group response unreadable: %s", exc)
+        return False
+
+    if not done.get("ok"):
+        _log_rejection("sendMediaGroup", done)
+        return False
+    logger.info("[OK] Telegram media group uploaded to %s (%d files)", chat, len(files))
+
+    if body_text and not media_caption:
+        return notify(body_text, chat=chat, token=token)
+    return True
+
+
 def upload_file(
     path: str,
     chat: str,
@@ -476,9 +585,15 @@ def build_parser() -> argparse.ArgumentParser:
              "(issue #139) instead of hardcoding an id: 'attention' (come-look) "
              "or 'log' (activity record). Ignored when --chat is given.",
     )
-    parser.add_argument("--text", help="Message text (or caption with --file). If omitted, read from stdin.")
-    parser.add_argument(
+    parser.add_argument("--text", help="Message text (or caption with --file/--files). If omitted, read from stdin.")
+    upload_group = parser.add_mutually_exclusive_group()
+    upload_group.add_argument(
         "--file", help="Path to a file to upload (e.g. a PNG). --text becomes its caption.",
+    )
+    upload_group.add_argument(
+        "--files", nargs="+",
+        help="2-10 paths to upload together as one Telegram message (sendMediaGroup). "
+             "--text becomes the caption on the first item.",
     )
     parser.add_argument("--title", help="Optional title line for an uploaded --file.")
     return parser
@@ -505,6 +620,10 @@ def main(argv: Optional[List[str]] = None) -> int:
     if not chat:
         logger.error("[X] No chat: pass --chat or --category.")
         return 2
+
+    if args.files:
+        ok = upload_files(args.files, chat=chat, caption=_read_text(args.text) or None)
+        return 0 if ok else 1
 
     if args.file:
         # Caption follows the same rule as a plain message: --text wins, else
