@@ -89,6 +89,7 @@ from acceptance.checks_notify import (  # noqa: E402
     _notify_complete_unit_checks,
     _notify_chunking_unit_checks,
     _notify_media_group_unit_checks,
+    _notify_message_ids_unit_checks,
     _notify_send_unit_checks,
     _notify_routing_unit_checks,
 )
@@ -156,6 +157,7 @@ def main() -> int:
 
     # ---- notify_send sendMediaGroup path (fleet-config#976) ----
     run_unit(_notify_media_group_unit_checks)
+    run_unit(_notify_message_ids_unit_checks)
 
     # ---- Codex PermissionRequest + conservative Stop attention routing ----
     run_unit(_codex_attention_unit_checks)

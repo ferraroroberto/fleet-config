@@ -278,8 +278,27 @@ def _log_rejection(method: str, body: dict) -> None:
         logger.error("[X] chat was upgraded to a supergroup - update the id to %s", migrated)
 
 
-def notify(text: str, chat: str, token: Optional[str] = None) -> bool:
+def _collect_ids(body: dict, sent_ids: Optional[List[int]]) -> None:
+    """Append the ``message_id``(s) in an accepted Bot API response to ``sent_ids``.
+
+    ``result`` is one Message for sendMessage/sendDocument and a list of them
+    for sendMediaGroup. A caller that passes no list opted out, so it's a no-op.
+    """
+    if sent_ids is None:
+        return
+    result = body.get("result")
+    messages = result if isinstance(result, list) else [result]
+    for message in messages:
+        if isinstance(message, dict) and isinstance(message.get("message_id"), int):
+            sent_ids.append(message["message_id"])
+
+
+def notify(text: str, chat: str, token: Optional[str] = None, *,
+           sent_ids: Optional[List[int]] = None) -> bool:
     """Post ``text`` to ``chat`` as the Telegram bot. Return True on success.
+
+    ``sent_ids``, when given, collects the ``message_id`` of every chunk that
+    landed - so a caller can later delete what it sent (automation#135).
 
     Bodies over :data:`MESSAGE_LIMIT` are split into numbered messages rather
     than rejected. Returns True only if **every** chunk was accepted, so a
@@ -315,6 +334,7 @@ def notify(text: str, chat: str, token: Optional[str] = None) -> bool:
         if not body.get("ok"):
             _log_rejection("sendMessage", body)
             return False
+        _collect_ids(body, sent_ids)
 
     suffix = " ({0} parts)".format(len(parts)) if len(parts) > 1 else ""
     logger.info("[OK] Telegram notification posted to %s%s", chat, suffix)
@@ -383,6 +403,7 @@ def upload_files(
     token: Optional[str] = None,
     *,
     caption: Optional[str] = None,
+    sent_ids: Optional[List[int]] = None,
 ) -> bool:
     """Upload 2-10 files to ``chat`` as one Telegram message (``sendMediaGroup``).
 
@@ -447,10 +468,11 @@ def upload_files(
     if not done.get("ok"):
         _log_rejection("sendMediaGroup", done)
         return False
+    _collect_ids(done, sent_ids)
     logger.info("[OK] Telegram media group uploaded to %s (%d files)", chat, len(files))
 
     if body_text and not media_caption:
-        return notify(body_text, chat=chat, token=token)
+        return notify(body_text, chat=chat, token=token, sent_ids=sent_ids)
     return True
 
 
@@ -461,6 +483,7 @@ def upload_file(
     *,
     title: Optional[str] = None,
     comment: Optional[str] = None,
+    sent_ids: Optional[List[int]] = None,
 ) -> bool:
     """Upload a file (e.g. the system-map PNG) to ``chat`` as the bot.
 
@@ -520,13 +543,54 @@ def upload_file(
     if not done.get("ok"):
         _log_rejection("sendDocument", done)
         return False
+    _collect_ids(done, sent_ids)
     logger.info("[OK] Telegram file uploaded to %s", chat)
 
     # The caption did not fit - deliver the body as its own message(s) rather
     # than losing it. Reported as a failure if it does not land, because the
     # digest *is* the payload for insights-weekly / fleet-health.
     if body_text and not caption:
-        return notify(body_text, chat=chat, token=token)
+        return notify(body_text, chat=chat, token=token, sent_ids=sent_ids)
+    return True
+
+
+DELETE_BATCH_MAX = 100
+
+
+def delete_messages(ids: List[int], chat: str, token: Optional[str] = None) -> bool:
+    """Delete the bot's own messages ``ids`` from ``chat`` (``deleteMessages``).
+
+    Sent in batches of :data:`DELETE_BATCH_MAX`, the Bot API's cap. Telegram
+    silently skips ids it can't delete (already gone, or older than 48h), so a
+    rejection here means the whole request failed, not one stale id.
+
+    Never raises - a missing token, a network failure or a rejection is logged
+    and reported as ``False``.
+    """
+    token = _resolve_token(token)
+    if not token:
+        logger.error("[X] %s not set - cannot delete Telegram messages.", TOKEN_ENV_VAR)
+        return False
+    chat = parse_chat(chat)
+    if not chat:
+        logger.error("[X] No Telegram chat given - cannot delete messages.")
+        return False
+    if not ids:
+        return True
+    for start in range(0, len(ids), DELETE_BATCH_MAX):
+        batch = ids[start:start + DELETE_BATCH_MAX]
+        try:
+            body = _api("deleteMessages", token, {"chat_id": chat, "message_ids": batch})
+        except urllib.error.URLError as exc:
+            logger.error("[X] Telegram delete request failed: %s", exc)
+            return False
+        except (ValueError, OSError) as exc:
+            logger.error("[X] Telegram delete response unreadable: %s", exc)
+            return False
+        if not body.get("ok"):
+            _log_rejection("deleteMessages", body)
+            return False
+    logger.info("[OK] Telegram deleted %d message(s) in %s", len(ids), chat)
     return True
 
 
@@ -595,7 +659,15 @@ def build_parser() -> argparse.ArgumentParser:
         help="2-10 paths to upload together as one Telegram message (sendMediaGroup). "
              "--text becomes the caption on the first item.",
     )
+    upload_group.add_argument(
+        "--delete-ids", nargs="+", type=int, metavar="ID",
+        help="Delete these bot message ids from the chat instead of sending anything.",
+    )
     parser.add_argument("--title", help="Optional title line for an uploaded --file.")
+    parser.add_argument(
+        "--print-ids", action="store_true",
+        help="Print the sent message ids as a JSON list on stdout (logs stay on stderr).",
+    )
     return parser
 
 
@@ -621,8 +693,21 @@ def main(argv: Optional[List[str]] = None) -> int:
         logger.error("[X] No chat: pass --chat or --category.")
         return 2
 
+    if args.delete_ids:
+        return 0 if delete_messages(args.delete_ids, chat=chat) else 1
+
+    sent_ids: List[int] = []
+    code = _send(args, chat, sent_ids)
+    if args.print_ids:
+        print(json.dumps(sent_ids))
+    return code
+
+
+def _send(args: argparse.Namespace, chat: str, sent_ids: List[int]) -> int:
+    """Run the send the parsed CLI args ask for; return the process exit code."""
     if args.files:
-        ok = upload_files(args.files, chat=chat, caption=_read_text(args.text) or None)
+        ok = upload_files(args.files, chat=chat, caption=_read_text(args.text) or None,
+                          sent_ids=sent_ids)
         return 0 if ok else 1
 
     if args.file:
@@ -631,7 +716,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         # fragile shell quoting.
         ok = upload_file(
             args.file, chat=chat, title=args.title,
-            comment=_read_text(args.text) or None,
+            comment=_read_text(args.text) or None, sent_ids=sent_ids,
         )
         return 0 if ok else 1
 
@@ -640,7 +725,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         logger.error("[X] No message text (pass --text or pipe via stdin).")
         return 2
 
-    return 0 if notify(text, chat=chat) else 1
+    return 0 if notify(text, chat=chat, sent_ids=sent_ids) else 1
 
 
 if __name__ == "__main__":
