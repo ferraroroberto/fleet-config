@@ -585,14 +585,15 @@ def build_parser() -> argparse.ArgumentParser:
              "(issue #139) instead of hardcoding an id: 'attention' (come-look) "
              "or 'log' (activity record). Ignored when --chat is given.",
     )
-    parser.add_argument("--text", help="Message text (or caption with --file). If omitted, read from stdin.")
-    parser.add_argument(
+    parser.add_argument("--text", help="Message text (or caption with --file/--files). If omitted, read from stdin.")
+    upload_group = parser.add_mutually_exclusive_group()
+    upload_group.add_argument(
         "--file", help="Path to a file to upload (e.g. a PNG). --text becomes its caption.",
     )
-    parser.add_argument(
+    upload_group.add_argument(
         "--files", nargs="+",
         help="2-10 paths to upload together as one Telegram message (sendMediaGroup). "
-             "--text becomes the caption on the first item. Mutually exclusive with --file.",
+             "--text becomes the caption on the first item.",
     )
     parser.add_argument("--title", help="Optional title line for an uploaded --file.")
     return parser
