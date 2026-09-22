@@ -219,18 +219,20 @@ def probe_service(port: Optional[int], api_path: Optional[str]) -> Tuple[str, Op
         return SERVICE_UNKNOWN, None, f"could not read the TCP listener table to check :{port}"
     if port not in listening:
         return SERVICE_ABSENT, None, f"nothing listening on :{port}"
-    return SERVICE_LIVE, _running_sha(port, api_path), ""
+    return SERVICE_LIVE, running_sha(port, api_path), ""
 
 
 _INSECURE_CTX = ssl._create_unverified_context()  # self-signed certs are normal in our fleet
 
 
-def _running_sha(port: int, api_path: Optional[str]) -> Optional[str]:
+def running_sha(port: int, api_path: Optional[str]) -> Optional[str]:
     """The `git_sha` the live service reports, or None. Never raises.
 
     Most fleet apps serve HTTPS with a self-signed cert; a few (local-llm-hub)
     serve plain HTTP -- so HTTPS first, then HTTP. Decoration only: a failure
-    here costs the refusal message its commit, never its verdict.
+    here costs the refusal message its commit, never its verdict. Public since
+    fleet-config#974: `design_review.ledger` records it as `live_build`, the
+    one place a run's target commit and the served build are kept apart.
     """
     if not api_path:
         return None

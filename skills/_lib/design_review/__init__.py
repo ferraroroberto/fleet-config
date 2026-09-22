@@ -1,4 +1,4 @@
-"""Deterministic core of /design-review (fleet-config#970; step 1 = #971, step 2 = #972, step 3 = #973).
+"""Deterministic core of /design-review (fleet-config#970; steps #971 measure/evaluate, #972 render, #973 judgment, #974 ledger/filing/fleet).
 
 What `design_lint` structurally cannot see — rendered facts: computed font
 sizes, WCAG contrast against the composited background, effective hit
@@ -28,6 +28,13 @@ Four legs, two interpreters (orchestrator decision, fleet-config#971):
             findings from `fix_template` + `standard`, now-vs-proposed
             mock-ups from `mockups.py`, grades printed never recomputed,
             no screenshot embedded or linked.
+  ledger    pure stdlib (one best-effort GET): a few-KB entry per run in a
+            local state file, and the rule-id diff against the previous run
+            written into `evaluate.json["diff"]` (#974).
+  file      opt-in: app-owned findings -> the repo's one managed
+            `design-review` issue through `audit_issue.py`; dry run by default.
+  fleet     every declared web app serially, one digest, judgment skipped,
+            app rules failing in two or more apps promoted to the scaffold list.
 
 Modules:
 
@@ -42,12 +49,16 @@ Modules:
   judgment.py  judge prompt, answer schema validation, multi-judge merge (#973)
   mockups.py   the mock-up library keyed to the rubric's `mockup` ids
   report.py    placeholder filling, section order, the HTML page
+  ledger.py    the per-target ledger.json, `previous`, `diff` (#974)
+  filing.py    accepted rules, routing by owner, issue-body merge, the upsert (#974)
+  fleet.py     the serial fleet sweep, promotion, fleet-digest.json/.html (#974)
   cli.py       argparse: `probe <repo>` / `measure <repo>` / `evaluate <metrics.json>` /
                `judge-prompt <run_dir>` / `judge-merge <run_dir> <answers.json>...` /
-               `render <evaluate.json|metrics.json>`
+               `ledger <run_dir>` / `render <evaluate.json|metrics.json>` /
+               `file <run_dir> [--file]` / `fleet [--file]`
 
-Stable interfaces (#973 fills `judgment`; #974 adds `diff` and the ledger —
-both slots are read by `report.py`, see its docstring):
+Stable interfaces (#973 fills `judgment`; #974 fills `diff` and keeps the
+ledger — both slots are read by `report.py`, see its docstring):
 
   metrics.json     schema_version, rubric_version, target, commit, generated_at,
                    base_url, run_dir, devices, review, params{script,resolved},
@@ -64,9 +75,16 @@ both slots are read by `report.py`, see its docstring):
                              answers[{id, question, answer, evidence, maps_to, note}],
                              uncatalogued[{question, title, severity, detail, owner, proposed{metric, threshold}}],
                              errors[], disagreements[]}]                        # #973
-                   [diff{previous_run, fixed[], regressed[], new[], unchanged[]}]   # #974
+                   [diff{previous_run|null, fixed[], regressed[], new[], unchanged[], unmeasured[],
+                         rubric_changed{from, to}|null}]                                          # #974
   run dir          metrics.json, shots/<screen id>.png (+ -full.png), evaluate.json,
-                   judge-prompt.md, judge-<n>.json (the skill saves each judge's reply), report.html
+                   judge-prompt.md, judge-<n>.json (the skill saves each judge's reply), report.html,
+                   issue-body.md (the `file` leg's merged body, dry run or not)
+  ledger           <state>/design-review/<target>/ledger.json — {schema_version, keep, entries[]},
+                   entry {run_id, generated_at, commit, live_build|null, rubric_version,
+                          judgment_rubric_version|null, overall{score, grade}, categories{name: grade},
+                          rules{id: status}, uncatalogued[{question, title_norm, severity, owner}]}
+  fleet digest     <state>/design-review/_fleet/<stamp>/fleet-digest.json + .html (+ issue-<repo>.md bodies)
   screen id        `<device>-<theme>-<view>` — `iphone-light-board`,
                    `desktop-dark-dialog-settings`
 
@@ -81,7 +99,7 @@ PR or comment.
 """
 from __future__ import annotations
 
-from . import evaluate, judgment, mockups, report
+from . import evaluate, filing, fleet, judgment, ledger, mockups, report
 from .capture import measure_target, probe_listening, resolve_interpreter, run_dir_for
 from .cli import main
 from .evaluate import parse_color, spec_pairs
@@ -94,8 +112,8 @@ from .rubric import Judgment, Rubric, RubricError, load_rubric, load_specs, reso
 
 __all__ = [
     "DEVICES", "MOCKUP_IDS", "Judgment", "Rubric", "RubricError", "SCHEMA_VERSION", "Target",
-    "build_script", "default_params", "evaluate", "fill_template", "finding_sentence", "finding_values",
-    "judge_prompt", "judgment", "load_review_block", "load_rubric", "load_specs", "main", "measure_target",
+    "build_script", "default_params", "evaluate", "filing", "fill_template", "finding_sentence", "finding_values",
+    "fleet", "judge_prompt", "judgment", "ledger", "load_review_block", "load_rubric", "load_specs", "main", "measure_target",
     "merge_judges", "metric_paths", "metric_value", "mockups", "parse_color", "parse_payload", "probe_listening",
     "render_mockup", "render_report", "report", "report_summary", "resolve_interpreter", "resolve_params",
     "resolve_target", "resolve_threshold", "run_dir_for", "screen_id", "spec_pairs", "validate_answers",

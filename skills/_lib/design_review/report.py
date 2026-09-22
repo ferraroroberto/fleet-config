@@ -35,10 +35,12 @@ Slots — the steps only add data, the template already reads:
         "uncatalogued": [{"title": str, "severity": "P0".."P3", "detail": str, "owner": str,
                           "proposed": {"metric": str, "threshold": str}}],
     }
-    doc["diff"] = {
-        "previous_run": str,        # the run dir / stamp compared against
+    doc["diff"] = {                              # written by `ledger.py` (#974)
+        "previous_run": str | None,  # the run id compared against; None = first recorded run
         "fixed":        [rule id], "regressed": [rule id],
         "new":          [rule id], "unchanged": [rule id],
+        "unmeasured":   [rule id],   # unmeasured on either side — never fixed or regressed
+        "rubric_changed": {"from": str, "to": str} | None,
     }
 
 Placeholders (`fix_template`): `{count} {total} {screen} {value} {sample}
@@ -307,8 +309,16 @@ def _diff(doc: dict) -> str:
         pills = "".join(f'<span class="pill {cls}">{_esc(i)}</span>' for i in ids) or '<span class="muted">none</span>'
         return f'<div class="bucket"><h4>{_esc(name)} ({len(ids)})</h4>{pills}</div>'
     body = ('<div class="buckets">' + bucket("fixed", "pill-ok") + bucket("regressed", "pill-bad")
-            + bucket("new", "pill-bad") + bucket("unchanged", "pill-mute") + "</div>")
-    return _section("diff", "Since the previous run", body, f"compared against {_esc(d.get('previous_run') or 'unknown')}")
+            + bucket("new", "pill-bad") + bucket("unchanged", "pill-mute")
+            + (bucket("unmeasured", "pill-unm") if "unmeasured" in d else "") + "</div>")
+    prev = d.get("previous_run")
+    lead = f"compared against run {_esc(prev)}" if prev else "first recorded run for this target — nothing to compare against yet"
+    rc = d.get("rubric_changed")
+    if isinstance(rc, dict):
+        lead += f"; rubric changed from v{_esc(rc.get('from'))} to v{_esc(rc.get('to'))} between the runs, so a moved rule may be the rubric, not the app"
+    if "unmeasured" in d:
+        lead += "; a rule unmeasured on either side is listed as unmeasured, never as fixed or regressed"
+    return _section("diff", "Since the previous run", body, lead)
 
 
 def _method(doc: dict) -> str:
@@ -541,7 +551,7 @@ ul.plain li:first-child{border-top:0}
 .buckets{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px}
 .bucket{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:12px}
 .pill{display:inline-block;font:600 .78rem ui-monospace,SFMono-Regular,Menlo,monospace;border-radius:9999px;padding:2px 8px;margin:2px 4px 2px 0;border:1px solid var(--border)}
-.pill-ok{color:var(--success)}.pill-bad{color:var(--danger)}.pill-mute{color:var(--fg-muted)}
+.pill-ok{color:var(--success)}.pill-bad{color:var(--danger)}.pill-mute{color:var(--fg-muted)}.pill-unm{color:var(--attention)}
 footer{margin:40px 0 16px;color:var(--fg-muted);font-size:.78rem;border-top:1px solid var(--border-muted);padding-top:12px}
 """
 

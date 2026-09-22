@@ -188,6 +188,18 @@ _STANDALONE_UNIT_CHECKS: Tuple[Tuple[str, str, str], ...] = (
      "title-matched uncatalogued only), grades untouched by a judgment, and "
      "the judge-prompt / judge-merge / render CLI legs -- is testable on its "
      "own (fleet-config#973)"),
+    ("design_ledger", "test_design_ledger.py",
+     "/design-review's ledger, filing and fleet legs -- the few-KB ledger "
+     "entry (ids, statuses, grades, stamps; nothing captured), record / trim "
+     "/ previous, the rule-id diff (identical -> all unchanged, one flipped "
+     "id -> exactly that id, unmeasured never fixed or regressed, rubric "
+     "change noted), the report's diff slot, [[design.accepted]] rule "
+     "entries, owner routing (spec/scaffold never on the app), the "
+     "issue-body merge (checkbox kept, fixed tag, identical rerun = no "
+     "change), the dry-run upsert against a fake gh, the fleet digest "
+     "(a rule failing in two apps promoted once, an accepted app excluded) "
+     "and the ledger / file / fleet CLI legs on dead-port fixtures -- is "
+     "testable on its own, with no real issue touched (fleet-config#974)"),
     ("rate_gate", "test_rate_gate.py",
      "/audit-fleet's and /cleanup-fleet's proactive session-rate-limit "
      "gate -- OK/PAUSE/UNKNOWN decisions, staleness handling, and the "

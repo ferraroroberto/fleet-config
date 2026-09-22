@@ -42,7 +42,8 @@ work in this repo doesn't cost the whole catalogue:
   scheduled-run adapter, and the cross-skill `_lib/` primitives:
   claim-or-worktree concurrency, the issue lifecycle marker, the
   UX-conformance gate, the deploy-coverage gate, the design-review
-  measure/rubric/scoring/judgment/report core, and stranded index locks.
+  measure/rubric/scoring/judgment/report core with its run ledger, issue
+  filing and fleet sweep, and stranded index locks.
 - **[`docs/cross-agent-parity.md`](docs/cross-agent-parity.md)** — the
   per-agent capability matrix (Claude Code · Codex · Pi · Copilot · Grok ·
   Antigravity), what is wired and what is a documented non-goal, the
@@ -69,7 +70,7 @@ fleet-config/
 ├── global-CLAUDE.md                # exposed as ~/.claude/CLAUDE.md, ~/.codex/AGENTS.md, ~/.pi/agent/AGENTS.md, ~/.copilot/copilot-instructions.md (symlinks) — agent-neutral global instructions
 ├── design.md                       # exposed as ~/.claude/design.md (symlink) — fleet web-app design system (light); navigation + interaction contract (rationale + references: docs/design-system.md)
 ├── design.dark.md                  # exposed as ~/.claude/design.dark.md (symlink) — same token names, dark values (Vercel light/dark convention)
-├── design.rubric.toml              # /design-review rule set (ids, thresholds, severities, penalties, grades, mock-up ids) + the [[judgment]] checklist a fresh-context judge answers, read by skills/_lib/design_review/ — versioned on its own (fleet-config#971, #972, #973)
+├── design.rubric.toml              # /design-review rule set (ids, thresholds, severities, penalties, grades, mock-up ids) + the [[judgment]] checklist a fresh-context judge answers, read by skills/_lib/design_review/ — versioned on its own; runs are diffed by rule id from a local ledger under hooks/state/design-review/ and filed as one managed design-review issue per repo on request (fleet-config#971, #972, #973, #974)
 ├── statusline-command.ps1          # exposed as ~/.claude/statusline-command.ps1 (symlink) — custom statusline (Claude only)
 ├── codex_statusline.py             # opt-in, comment-preserving merge of native Codex footer fields into ~/.codex/config.toml
 ├── codex_model_policy.py           # opt-in, atomic merge of the versioned Codex model policy (codex/) into ~/.codex/config.toml
