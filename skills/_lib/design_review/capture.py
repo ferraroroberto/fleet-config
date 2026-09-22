@@ -3,11 +3,14 @@
 Sits between `plan.py` (what to visit) and `walk.py` (the Playwright child)
 and owns everything that is *not* browser code:
 
-  * the **run directory**, outside every repo tree:
+  * the **run directory**, outside every *tracked* tree:
     `<hooks state>/design-review/<target>/<UTC stamp>/` (the shared
-    `hooks_state.state_dir()` root, so `CLAUDE_HOOKS_STATE_DIR` redirects it
-    in tests). Screenshots land in `shots/` beside `metrics.json`; nothing is
-    ever written into the target or into this repo;
+    `hooks_state.state_dir()` root — `~/.claude/hooks/state/`, which on this
+    host is a junction into the primary clone's gitignored `hooks/state/`;
+    `CLAUDE_HOOKS_STATE_DIR` redirects it in tests). Screenshots land in
+    `shots/` beside `metrics.json`; nothing is written into the target repo
+    and nothing here can be committed. No retention sweep yet — a full
+    app-launcher run leaves ~144 PNGs; #972/#974 own the policy;
   * the **browser interpreter**: the target repo's own `.venv` python
     (`browser_verify.discover_venv_python`), probed with
     `browser_verify.playwright_probe_cmd`. This repo's venv is stdlib-only by

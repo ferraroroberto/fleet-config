@@ -13,7 +13,7 @@ Two legs, two interpreters (orchestrator decision, fleet-config#971):
             probes the port, then spawns `walk.py` under the **target
             repo's** `.venv` interpreter (where Playwright lives), collects
             `screens.json`, and writes `metrics.json` + screenshots to a run
-            directory *outside every tree*.
+            directory under the gitignored hooks state dir, never a tracked tree.
   evaluate  pure stdlib: `metrics.json` + `design.rubric.toml` + the spec
             token files -> rule results and category grades, as JSON.
 
