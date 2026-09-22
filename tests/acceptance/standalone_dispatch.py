@@ -171,6 +171,14 @@ _STANDALONE_UNIT_CHECKS: Tuple[Tuple[str, str, str], ...] = (
      "read as a pass), the NOT_LISTENING-vs-TIMEOUT probe, and the browser leg "
      "against a static fixture page through a sibling venv's Playwright, "
      "skipped honestly when none has it -- is testable on its own (fleet-config#971)"),
+    ("design_report", "test_design_report.py",
+     "/design-review's report renderer + mock-up library -- placeholder "
+     "filling that never raises, the rubric <-> library agreement in both "
+     "directions, every template from the violating fixture, the no-mock-up "
+     "note, the fixed section order with the reserved judgment/diff slots, "
+     "no screenshot and no external request, render determinism, and the "
+     "probe / evaluate --out / render CLI legs -- is testable on its own "
+     "(fleet-config#972)"),
     ("rate_gate", "test_rate_gate.py",
      "/audit-fleet's and /cleanup-fleet's proactive session-rate-limit "
      "gate -- OK/PAUSE/UNKNOWN decisions, staleness handling, and the "

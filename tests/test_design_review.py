@@ -30,16 +30,12 @@ from check_harness import CheckHarness  # noqa: E402
 from acceptance.shared import SKIP_EXIT  # noqa: E402
 
 import design_review as dr  # noqa: E402
-from design_review import capture, measure, plan, rubric as rb  # noqa: E402
-
-# `design_review.evaluate` the *function* shadows the submodule on the package
-# (deliberately, like design_lint's lens re-exports); reach the module by name.
-import importlib  # noqa: E402
-
-ev = importlib.import_module("design_review.evaluate")
+from design_review import capture, evaluate as ev, measure, plan, rubric as rb  # noqa: E402
 
 _h = CheckHarness()
 check = _h.check
+
+check(dr.evaluate is ev and callable(ev.evaluate), "the package exports the evaluate module; the function is evaluate.evaluate (#972)")
 
 FIX = REPO / "tests" / "fixtures" / "design_review"
 RUBRIC = REPO / "design.rubric.toml"
@@ -60,7 +56,7 @@ def _doc(name: str) -> dict:
 # ---- rubric: the real file loads and names only metrics that exist ----------
 
 rubric = dr.load_rubric(RUBRIC)
-check(rubric.version == "1.0.0", "rubric meta.version stamped")
+check(rubric.version == "1.1.0", "rubric meta.version stamped")
 check(len(rubric.rules) == 25, f"25 seed rules loaded (got {len(rubric.rules)})")
 check(rubric.categories == ["typography", "color", "touch", "navigation", "layout", "components", "a11y"],
       "categories in rubric order")
@@ -133,13 +129,13 @@ check(round(ev.contrast((255, 255, 255, 1), (0, 0, 0, 1)), 1) == 21.0, "WCAG 21:
 
 # ---- evaluate: compliant fixture passes every rule ---------------------------
 
-out_c = dr.evaluate(_doc("compliant"), rubric, _specs("compliant"))
+out_c = ev.evaluate(_doc("compliant"), rubric, _specs("compliant"))
 statuses_c = {r["id"]: r["status"] for r in out_c["rules"]}
 check(all(s == "pass" for s in statuses_c.values()), f"compliant: every rule passes ({[k for k, v in statuses_c.items() if v != 'pass']})")
 check(all(v["score"] == 100.0 and v["grade"] == "A" and not v["unmeasured"] for v in out_c["categories"].values()),
       "compliant: every category 100/A, measured")
 check(out_c["overall"] == {"score": 100.0, "grade": "A", "unmeasured": False}, "compliant: overall A")
-check(out_c["schema_version"] == 1 and out_c["rubric_version"] == "1.0.0" and out_c["target"] == "fixture-app"
+check(out_c["schema_version"] == 1 and out_c["rubric_version"] == "1.1.0" and out_c["target"] == "fixture-app"
       and out_c["commit"].startswith("0000") and out_c["generated_at"].endswith("Z"), "evaluate envelope keys")
 check([s["id"] for s in out_c["screens"]] == ["desktop-light-home", "iphone-light-home", "desktop-light-dialog-edit"],
       "evaluate echoes the screen list")
@@ -155,7 +151,7 @@ check(set(c01["measured"]) == {"spec-light", "spec-dark"}, "spec rule measured p
 
 # ---- evaluate: violating fixture fails every rule ----------------------------
 
-out_v = dr.evaluate(_doc("violating"), rubric, _specs("violating"))
+out_v = ev.evaluate(_doc("violating"), rubric, _specs("violating"))
 statuses_v = {r["id"]: r["status"] for r in out_v["rules"]}
 check(all(s == "fail" for s in statuses_v.values()), f"violating: every rule fails ({[k for k, v in statuses_v.items() if v != 'fail']})")
 check(all(r["evidence"] and r["evidence"][0]["screen"] for r in out_v["rules"]), "every failing rule carries evidence with a screen id")
@@ -179,7 +175,7 @@ check(ev.grade_for(89.99, rubric.grades) == "B" and ev.grade_for(0, rubric.grade
 
 # ---- determinism: same inputs, identical rule results ------------------------
 
-again = dr.evaluate(_doc("violating"), rubric, _specs("violating"))
+again = ev.evaluate(_doc("violating"), rubric, _specs("violating"))
 strip = lambda d: {k: v for k, v in d.items() if k != "generated_at"}  # noqa: E731
 check(strip(again) == strip(out_v), "two evaluations of one metrics.json are identical bar generated_at")
 
@@ -188,7 +184,7 @@ check(strip(again) == strip(out_v), "two evaluations of one metrics.json are ide
 down = _doc("compliant")
 down["screens"] = []
 down["unmeasured"] = {"reason": "NOT_LISTENING", "detail": "127.0.0.1:9999 refused the connection"}
-out_d = dr.evaluate(down, rubric, _specs("compliant"))
+out_d = ev.evaluate(down, rubric, _specs("compliant"))
 check(all(r["status"] == "unmeasured" and "NOT_LISTENING" in r["reason"] for r in out_d["rules"]),
       "a target that is not listening -> every rule unmeasured with that reason")
 check(all(v["unmeasured"] and v["score"] == 100.0 for v in out_d["categories"].values()) and out_d["overall"]["unmeasured"],
@@ -198,7 +194,7 @@ broken = _doc("compliant")
 broken["screens"][0]["status"] = "error"
 broken["screens"][0]["reason"] = "TAB_FAILED"
 broken["screens"][0]["metrics"] = None
-out_b = dr.evaluate(broken, rubric, _specs("compliant"))
+out_b = ev.evaluate(broken, rubric, _specs("compliant"))
 l01 = next(r for r in out_b["rules"] if r["id"] == "LAYOUT-01")
 check(l01["status"] == "unmeasured" and "desktop-light-home: TAB_FAILED" in l01["reason"],
       "a tab that failed to open makes its rules unmeasured, never pass, naming the screen")
@@ -207,17 +203,17 @@ check(out_b["categories"]["layout"]["unmeasured"], "category flagged when one ru
 sect = _doc("compliant")
 for s in sect["screens"]:
     s["metrics"]["targets"] = {"error": "GEOMETRY_MISSING"}
-out_s = dr.evaluate(sect, rubric, _specs("compliant"))
+out_s = ev.evaluate(sect, rubric, _specs("compliant"))
 st = {r["id"]: r["status"] for r in out_s["rules"]}
 check(st["TOUCH-01"] == "unmeasured" and st["TOUCH-02"] == "unmeasured" and st["LAYOUT-05"] == "unmeasured"
       and st["TYPE-01"] == "pass", "a failed section only unmeasures the rules that read it")
 check("GEOMETRY_MISSING" in next(r for r in out_s["rules"] if r["id"] == "TOUCH-01")["reason"], "section error text carried")
 
-nospec = dr.evaluate(_doc("compliant"), rubric, {"light": {}, "dark": {}})
+nospec = ev.evaluate(_doc("compliant"), rubric, {"light": {}, "dark": {}})
 check(next(r for r in nospec["rules"] if r["id"] == "COLOR-01")["status"] == "unmeasured", "no spec -> spec rule unmeasured")
 mixed = _doc("compliant")
 mixed["screens"][1]["metrics"]["layout"]["overflow_x"] = True
-out_m = dr.evaluate(mixed, rubric, _specs("compliant"))
+out_m = ev.evaluate(mixed, rubric, _specs("compliant"))
 check(next(r for r in out_m["rules"] if r["id"] == "LAYOUT-01")["status"] == "fail", "one failing screen fails the rule")
 
 # ---- measure.py helpers -------------------------------------------------------
@@ -337,7 +333,7 @@ else:
           f"measure CLI walks the fixture: 2 tabs + 1 dialog x light/dark ({proc.stdout[-300:]}{proc.stderr[-300:]})")
     check(lines.get("RUN_DIR") == str(run_dir) and Path(lines.get("METRICS", "")).is_file(), "RUN_DIR/METRICS lines point at the run dir")
     doc = json.loads(Path(lines["METRICS"]).read_text(encoding="utf-8"))
-    check(doc["interpreter"] == str(interp) and doc["schema_version"] == 1 and doc["rubric_version"] == "1.0.0", "metrics.json records the interpreter + versions")
+    check(doc["interpreter"] == str(interp) and doc["schema_version"] == 1 and doc["rubric_version"] == "1.1.0", "metrics.json records the interpreter + versions")
     if not (scaffold / "tests" / "e2e" / "_geometry.py").is_file():
         _h.skip("browser leg: project-scaffolding/tests/e2e/_geometry.py absent -- hit-target assertions NOT verified")
     check(doc["walk"]["info"]["geometry"] == ("loaded" if (scaffold / "tests" / "e2e" / "_geometry.py").is_file() else "GEOMETRY_MISSING"),
