@@ -1,0 +1,19 @@
+{
+  "commentary": "Overall the app looks fine but a few things stood out to me.",
+  "answers": [
+    {"id": "J-01", "answer": "yes", "evidence": "iphone-light-home", "maps_to": null, "note": null},
+    {"id": "J-01", "answer": "no", "evidence": "iphone-light-home", "maps_to": ["LAYOUT-03"], "note": "duplicate"},
+    {"id": "J-02", "answer": "maybe", "evidence": "iphone-light-home", "maps_to": null, "note": null},
+    {"id": "J-03", "answer": "no", "evidence": "nope-screen", "maps_to": ["LAYOUT-04"], "note": null},
+    {"id": "J-04", "answer": "no", "evidence": "iphone-light-home", "maps_to": null, "note": "no uncatalogued entry backs this"},
+    {"id": "J-05", "answer": "no", "evidence": "iphone-light-home", "maps_to": ["TYPE-01"], "note": "maps outside the question's list"},
+    {"id": "J-06", "answer": "yes", "evidence": "iphone-light-home", "maps_to": null, "note": null},
+    {"id": "J-07", "answer": "yes", "evidence": "iphone-light-home", "maps_to": null, "note": null},
+    {"id": "J-08", "answer": "yes", "evidence": "iphone-light-home", "maps_to": null, "note": null},
+    {"id": "J-09", "answer": "na", "evidence": null, "maps_to": null, "note": null}
+  ],
+  "uncatalogued": [
+    {"question": "J-06", "title": "Raised on a yes", "severity": "P9", "detail": "", "owner": "nobody",
+     "proposed": {"metric": "", "threshold": null}}
+  ]
+}

@@ -1,14 +1,15 @@
-"""Deterministic core of /design-review (fleet-config#970; step 1 = #971, step 2 = #972).
+"""Deterministic core of /design-review (fleet-config#970; step 1 = #971, step 2 = #972, step 3 = #973).
 
 What `design_lint` structurally cannot see — rendered facts: computed font
 sizes, WCAG contrast against the composited background, effective hit
 rectangles, icon boxes, overflow, accessible names — measured in a real
 browser against a *running* fleet app, scored against a versioned rubric,
-rendered as one self-contained HTML report, with no LLM in the loop. The
+rendered as one self-contained HTML report, with no LLM in the grade. The
 skill (`skills/design-review/SKILL.md`) orchestrates; this package probes,
-measures, evaluates and renders.
+measures, evaluates, bounds the judgment stage as a file contract, and
+renders.
 
-Three legs, two interpreters (orchestrator decision, fleet-config#971):
+Four legs, two interpreters (orchestrator decision, fleet-config#971):
 
   measure   this repo's stdlib venv resolves the target and the run dir,
             probes the port, then spawns `walk.py` under the **target
@@ -17,6 +18,12 @@ Three legs, two interpreters (orchestrator decision, fleet-config#971):
             directory under the gitignored hooks state dir, never a tracked tree.
   evaluate  pure stdlib: `metrics.json` + `design.rubric.toml` + the spec
             token files -> rule results and category grades, as JSON.
+  judgment  pure stdlib, spawns nothing: the `[[judgment]]` checklist -> one
+            deterministic judge prompt (local screenshots + metrics.json,
+            never a previous report); a judge's JSON reply -> schema-validated
+            answers or `unmeasured`; several judges -> agreed answers with
+            disagreements `not confirmed`. Written into `evaluate.json` as
+            `judgment`; outside the grade. The skill spawns the judge agent.
   render    pure stdlib: the evaluate document -> `report.html` beside it —
             findings from `fix_template` + `standard`, now-vs-proposed
             mock-ups from `mockups.py`, grades printed never recomputed,
@@ -29,15 +36,18 @@ Modules:
   capture.py   run dir, interpreter resolution, liveness probe, walk spawn, envelope
   walk.py      the Playwright child (tabs, details, dialogs, extra steps; screenshots)
   measure.py   the in-page measurement script + the per-screen metrics schema
-  rubric.py    load/validate design.rubric.toml; thresholds + params from the spec
+  rubric.py    load/validate design.rubric.toml (rules + judgment checklist);
+               thresholds + params from the spec
   evaluate.py  rule results, scoring formula, category + overall grades
+  judgment.py  judge prompt, answer schema validation, multi-judge merge (#973)
   mockups.py   the mock-up library keyed to the rubric's `mockup` ids
   report.py    placeholder filling, section order, the HTML page
   cli.py       argparse: `probe <repo>` / `measure <repo>` / `evaluate <metrics.json>` /
+               `judge-prompt <run_dir>` / `judge-merge <run_dir> <answers.json>...` /
                `render <evaluate.json|metrics.json>`
 
-Stable interfaces for the next steps (#973 adds `judgment`, #974 adds `diff`
-and the ledger — both slots are already read by `report.py`, see its docstring):
+Stable interfaces (#973 fills `judgment`; #974 adds `diff` and the ledger —
+both slots are read by `report.py`, see its docstring):
 
   metrics.json     schema_version, rubric_version, target, commit, generated_at,
                    base_url, run_dir, devices, review, params{script,resolved},
@@ -50,8 +60,13 @@ and the ledger — both slots are already read by `report.py`, see its docstring
                           measured, threshold, params, title, standard, fix_template, mockup}],
                    categories{cat: {score, grade, unmeasured, failed, unmeasured_rules}},
                    overall{score, grade, unmeasured}
-                   [judgment{status, answers[], uncatalogued[]}]     # #973
+                   [judgment{status: ok|not_confirmed|unmeasured, reason, rubric_version, judges,
+                             answers[{id, question, answer, evidence, maps_to, note}],
+                             uncatalogued[{question, title, severity, detail, owner, proposed{metric, threshold}}],
+                             errors[], disagreements[]}]                        # #973
                    [diff{previous_run, fixed[], regressed[], new[], unchanged[]}]   # #974
+  run dir          metrics.json, shots/<screen id>.png (+ -full.png), evaluate.json,
+                   judge-prompt.md, judge-<n>.json (the skill saves each judge's reply), report.html
   screen id        `<device>-<theme>-<view>` — `iphone-light-board`,
                    `desktop-dark-dialog-settings`
 
@@ -66,21 +81,23 @@ PR or comment.
 """
 from __future__ import annotations
 
-from . import evaluate, mockups, report
+from . import evaluate, judgment, mockups, report
 from .capture import measure_target, probe_listening, resolve_interpreter, run_dir_for
 from .cli import main
 from .evaluate import parse_color, spec_pairs
+from .judgment import judge_prompt, merge_judges, parse_payload, validate_answers
 from .measure import SCHEMA_VERSION, build_script, default_params, metric_paths, metric_value
 from .mockups import MOCKUP_IDS, render_mockup
 from .plan import DEVICES, Target, load_review_block, resolve_target, screen_id
 from .report import fill_template, finding_sentence, finding_values, render_report, report_summary, write_report
-from .rubric import Rubric, RubricError, load_rubric, load_specs, resolve_params, resolve_threshold, validate_rubric
+from .rubric import Judgment, Rubric, RubricError, load_rubric, load_specs, resolve_params, resolve_threshold, validate_rubric
 
 __all__ = [
-    "DEVICES", "MOCKUP_IDS", "Rubric", "RubricError", "SCHEMA_VERSION", "Target",
+    "DEVICES", "MOCKUP_IDS", "Judgment", "Rubric", "RubricError", "SCHEMA_VERSION", "Target",
     "build_script", "default_params", "evaluate", "fill_template", "finding_sentence", "finding_values",
-    "load_review_block", "load_rubric", "load_specs", "main", "measure_target", "metric_paths", "metric_value",
-    "mockups", "parse_color", "probe_listening", "render_mockup", "render_report", "report", "report_summary",
-    "resolve_interpreter", "resolve_params", "resolve_target", "resolve_threshold", "run_dir_for",
-    "screen_id", "spec_pairs", "validate_rubric", "write_report",
+    "judge_prompt", "judgment", "load_review_block", "load_rubric", "load_specs", "main", "measure_target",
+    "merge_judges", "metric_paths", "metric_value", "mockups", "parse_color", "parse_payload", "probe_listening",
+    "render_mockup", "render_report", "report", "report_summary", "resolve_interpreter", "resolve_params",
+    "resolve_target", "resolve_threshold", "run_dir_for", "screen_id", "spec_pairs", "validate_answers",
+    "validate_rubric", "write_report",
 ]

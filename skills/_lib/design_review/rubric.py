@@ -9,10 +9,10 @@ Measurement floors the in-page script needs *before* it runs (the 44px
 hit-target minimum, the 48px primary-button height) resolve the same way
 through `[params]`.
 
-Rubric file shape (flat, so #973 can append `[[judgment]]` entries without
-restructuring):
+Rubric file shape (flat: `[[rules]]` is what the metrics decide, `[[judgment]]`
+is the bounded checklist a fresh-context judge answers — #973):
 
-    [meta]        version = "1.1.0"          # stamped on every metrics/evaluate output
+    [meta]        version = "1.2.0"          # stamped on every metrics/evaluate output
     [weights]     <category> = <float>       # category weight in the overall score
     [grades]      A = 90, B = 80, ...        # minimum score per letter, F = 0
     [penalties]   P0 = 25, P1 = 12, P2 = 6, P3 = 2   # per failing rule, once per rule
@@ -20,6 +20,14 @@ restructuring):
     [[rules]]
       id, category, title, metric, fail_when, threshold, [threshold_token],
       severity, standard, fix_template, owner, mockup, [devices], [screens]
+    [[judgment]]
+      id (J-NN), question, maps_to (rule ids a `no` may land on; [] means a
+      `no` must be raised as an uncatalogued finding), screens (all | tabs | dialogs)
+
+A `[[judgment]]` entry is validated here (unique `J-NN` id, non-empty
+question, every `maps_to` id an existing rule, a known scope); answering and
+merging live in `judgment.py`. The ratchet — an accepted uncatalogued finding
+becoming a rule or a question — is a PR with a version bump, never code.
 
 `fail_when` is one of `gt`, `gte`, `lt`, `lte`, `eq`, `ne`, `true`, `nonzero`
 and reads as "the rule fails when `metric <fail_when> threshold`"; `true` and
@@ -53,6 +61,8 @@ SEVERITIES = ("P0", "P1", "P2", "P3")
 OWNERS = ("spec", "scaffold", "app")
 FAIL_WHEN = ("gt", "gte", "lt", "lte", "eq", "ne", "true", "nonzero")
 KINDS = ("tab", "dialog", "step")
+JUDGMENT_SCOPES = ("all", "tabs", "dialogs")
+_JUDGMENT_ID_RE = re.compile(r"^J-\d{2,}$")
 
 # Derived metrics evaluate.py computes from raw metrics + the spec. Listed
 # here so rubric validation can name a typo instead of silently `unmeasured`.
@@ -103,6 +113,18 @@ class Rule:
 
 
 @dataclass
+class Judgment:
+    """One checklist question (#973): stable id, the question, where a `no` may land, its screen scope."""
+    id: str
+    question: str
+    maps_to: List[str] = field(default_factory=list)
+    screens: str = "all"
+
+    def as_dict(self) -> Dict[str, object]:
+        return {"id": self.id, "question": self.question, "maps_to": list(self.maps_to), "screens": self.screens}
+
+
+@dataclass
 class Rubric:
     version: str
     weights: Dict[str, float]
@@ -111,6 +133,7 @@ class Rubric:
     params: Dict[str, dict]
     rules: List[Rule]
     path: Optional[Path] = None
+    judgment: List[Judgment] = field(default_factory=list)
 
     @property
     def categories(self) -> List[str]:
@@ -198,8 +221,44 @@ def validate_rubric(data: dict, path: Optional[Path] = None) -> Rubric:
             screens=[str(s) for s in raw.get("screens", []) or []],
             params=dict(raw.get("params", {}) or {}),
         ))
+    judgment = _validate_judgment(data.get("judgment"), ids)
     return Rubric(version=str(meta["version"]), weights=weights, grades=grades, penalties=penalties,
-                  params=params, rules=rules, path=path)
+                  params=params, rules=rules, path=path, judgment=judgment)
+
+
+def _validate_judgment(raw_entries: object, rule_ids: set) -> List[Judgment]:
+    """`[[judgment]]` -> Judgment list; absent is an empty checklist, malformed is refused."""
+    if raw_entries is None:
+        return []
+    if not isinstance(raw_entries, list):
+        raise RubricError("[[judgment]] must be an array of tables")
+    out: List[Judgment] = []
+    seen: set = set()
+    for i, raw in enumerate(raw_entries):
+        if not isinstance(raw, dict):
+            raise RubricError(f"judgment[{i}] is not a table")
+        jid = str(raw.get("id", "")).strip()
+        if not _JUDGMENT_ID_RE.match(jid):
+            raise RubricError(f"judgment[{i}]: id {jid!r} must look like J-01")
+        if jid in seen:
+            raise RubricError(f"judgment[{i}]: duplicate id {jid!r}")
+        seen.add(jid)
+        question = str(raw.get("question", "")).strip()
+        if not question:
+            raise RubricError(f"{jid}: question is required")
+        maps_to = raw.get("maps_to", [])
+        if not isinstance(maps_to, list) or any(not isinstance(m, str) for m in maps_to):
+            raise RubricError(f"{jid}: maps_to must be a list of rule ids")
+        unknown = [m for m in maps_to if m not in rule_ids]
+        if unknown:
+            raise RubricError(f"{jid}: maps_to names unknown rules {unknown}")
+        if len(set(maps_to)) != len(maps_to):
+            raise RubricError(f"{jid}: maps_to repeats a rule id")
+        scope = str(raw.get("screens", "all"))
+        if scope not in JUDGMENT_SCOPES:
+            raise RubricError(f"{jid}: screens {scope!r} not in {JUDGMENT_SCOPES}")
+        out.append(Judgment(id=jid, question=question, maps_to=list(maps_to), screens=scope))
+    return out
 
 
 def check_metric_names(rubric: Rubric, known_paths: List[str]) -> List[str]:
