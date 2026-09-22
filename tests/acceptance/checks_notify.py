@@ -124,6 +124,82 @@ def _notify_send_unit_checks() -> Tuple[int, int]:
     return check.failures, check.total
 
 
+def _notify_media_group_unit_checks() -> Tuple[int, int]:
+    """`upload_files` (fleet-config#976): the sendMediaGroup path for several
+    files in one Telegram message. Pure-logic validation (arg count, missing
+    files) plus the multipart builder's structure, without touching the
+    network - mirrors `_notify_send_unit_checks`'s no-network discipline."""
+    sys.path.insert(0, str(HOOKS))
+    import notify_send  # noqa: E402
+
+    check = _Checker()
+
+    check(
+        "upload_files: fewer than 2 files is rejected before any I/O",
+        notify_send.upload_files(["a.png"], chat="-1004408175579", token="fake-token") is False,
+    )
+    check(
+        "upload_files: more than 10 files is rejected before any I/O",
+        notify_send.upload_files(["a.png"] * 11, chat="-1004408175579", token="fake-token") is False,
+    )
+    check(
+        "upload_files: a missing file is caught before any network call",
+        notify_send.upload_files(
+            ["E:/does/not/exist/a.png", "E:/does/not/exist/b.png"],
+            chat="-1004408175579", token="fake-token",
+        ) is False,
+    )
+
+    # _multipart_media_group: structure a real caller relies on - one part per
+    # file named file0/file1/..., each carrying its own bytes verbatim, plus
+    # whatever top-level fields (chat_id, media) were passed through.
+    body, content_type = notify_send._multipart_media_group(
+        {"chat_id": "-1004408175579", "media": '[{"type":"document","media":"attach://file0"}]'},
+        [("first.png", b"\x89PNGfirst"), ("second.png", b"\x89PNGsecond")],
+    )
+    check("multipart media group: boundary in content-type matches the body",
+          content_type.split("boundary=")[1].encode() in body)
+    check("multipart media group: both filenames present",
+          b'filename="first.png"' in body and b'filename="second.png"' in body)
+    check("multipart media group: both payloads present, byte-exact",
+          b"\x89PNGfirst" in body and b"\x89PNGsecond" in body)
+    check("multipart media group: fields named file0/file1 per attach:// index",
+          b'name="file0"' in body and b'name="file1"' in body)
+    check("multipart media group: top-level fields (chat_id, media) present",
+          b'name="chat_id"' in body and b'name="media"' in body
+          and b"-1004408175579" in body)
+
+    # Network isolation, mirroring _notify_network_isolation_unit_checks's
+    # blocked-send check for notify(): a valid 2-file call must still open no
+    # socket and return False while FLEET_NOTIFY_BLOCK_NETWORK is set.
+    tmp = Path(tempfile.mkdtemp(prefix="notify_media_group_"))
+    try:
+        one = tmp / "one.png"
+        two = tmp / "two.png"
+        one.write_bytes(b"\x89PNGone")
+        two.write_bytes(b"\x89PNGtwo")
+        saved_block = os.environ.get(notify_send.NETWORK_BLOCK_ENV_VAR)
+        opened: list[str] = []
+        saved_urlopen = notify_send.urllib.request.urlopen
+        notify_send.urllib.request.urlopen = lambda *a, **k: opened.append("opened")
+        try:
+            os.environ[notify_send.NETWORK_BLOCK_ENV_VAR] = "1"
+            result = notify_send.upload_files([str(one), str(two)], chat="-1004408175579",
+                                              token="fake-token")
+            check("upload_files: a blocked send opens no socket", not opened)
+            check("upload_files: a blocked send reports False, never raises", result is False)
+        finally:
+            notify_send.urllib.request.urlopen = saved_urlopen
+            if saved_block is None:
+                os.environ.pop(notify_send.NETWORK_BLOCK_ENV_VAR, None)
+            else:
+                os.environ[notify_send.NETWORK_BLOCK_ENV_VAR] = saved_block
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+    return check.failures, check.total
+
+
 def _codex_attention_unit_checks() -> Tuple[int, int]:
     """Codex native approval routing and conservative Stop classification."""
     sys.path.insert(0, str(HOOKS))
