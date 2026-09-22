@@ -200,6 +200,132 @@ def _notify_media_group_unit_checks() -> Tuple[int, int]:
     return check.failures, check.total
 
 
+def _notify_message_ids_unit_checks() -> Tuple[int, int]:
+    """`sent_ids` / `delete_messages` / `--print-ids` (fleet-config#981): the
+    message-id plumbing a caller needs to delete what it sent. `_urlopen` is
+    replaced by a recorder serving canned Bot API bodies, so nothing leaves the
+    process and every request the transport *would* make is visible."""
+    sys.path.insert(0, str(HOOKS))
+    import notify_send  # noqa: E402
+
+    check = _Checker()
+    requests: list[tuple[str, dict]] = []
+    replies: list[dict] = []
+
+    class _Reply:
+        def __init__(self, body: dict) -> None:
+            self._raw = json.dumps(body).encode("utf-8")
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc) -> None:
+            return None
+
+        def read(self) -> bytes:
+            return self._raw
+
+    def fake_urlopen(request, timeout):
+        method = request.full_url.rsplit("/", 1)[-1]
+        payload = {}
+        if request.get_header("Content-type", "").startswith("application/json"):
+            payload = json.loads(request.data.decode("utf-8"))
+        requests.append((method, payload))
+        return _Reply(replies.pop(0))
+
+    saved_urlopen = notify_send._urlopen
+    notify_send._urlopen = fake_urlopen
+    tmp = Path(tempfile.mkdtemp(prefix="notify_ids_"))
+    try:
+        replies[:] = [{"ok": True, "result": {"message_id": 11}},
+                      {"ok": True, "result": {"message_id": 12}}]
+        ids: list[int] = []
+        ok = notify_send.notify("x" * (notify_send.MESSAGE_LIMIT + 10), chat="-100123",
+                                token="fake-token", sent_ids=ids)
+        check("notify: every chunk's message_id is collected", ok and ids == [11, 12])
+
+        replies[:] = [{"ok": True, "result": {"message_id": 5}}]
+        check("notify: omitting sent_ids still works (existing callers unchanged)",
+              notify_send.notify("hi", chat="-100123", token="fake-token") is True)
+
+        one, two = tmp / "one.png", tmp / "two.png"
+        one.write_bytes(b"PNGone")
+        two.write_bytes(b"PNGtwo")
+        replies[:] = [{"ok": True, "result": [{"message_id": 21}, {"message_id": 22}]}]
+        ids = []
+        ok = notify_send.upload_files([str(one), str(two)], chat="-100123", token="fake-token",
+                                      caption="cap", sent_ids=ids)
+        check("upload_files: every media-group item's message_id is collected",
+              ok and ids == [21, 22])
+
+        replies[:] = [{"ok": True, "result": [{"message_id": 31}, {"message_id": 32}]},
+                      {"ok": True, "result": {"message_id": 33}}]
+        ids = []
+        ok = notify_send.upload_files([str(one), str(two)], chat="-100123", token="fake-token",
+                                      caption="c" * (notify_send.CAPTION_LIMIT + 1), sent_ids=ids)
+        check("upload_files: the caption-overflow follow-up's id is collected too",
+              ok and ids == [31, 32, 33])
+
+        replies[:] = [{"ok": True, "result": {"message_id": 41}}]
+        ids = []
+        ok = notify_send.upload_file(str(one), chat="-100123", token="fake-token",
+                                     comment="cap", sent_ids=ids)
+        check("upload_file: the document's message_id is collected", ok and ids == [41])
+
+        replies[:] = [{"ok": False, "description": "Bad Request"}]
+        ids = []
+        ok = notify_send.notify("hi", chat="-100123", token="fake-token", sent_ids=ids)
+        check("notify: a rejected send collects no id", ok is False and ids == [])
+
+        requests.clear()
+        replies[:] = [{"ok": True, "result": True}, {"ok": True, "result": True}]
+        ok = notify_send.delete_messages(list(range(1, 151)), chat="-100123", token="fake-token")
+        check("delete_messages: batches at 100 via deleteMessages",
+              ok and [m for m, _ in requests] == ["deleteMessages", "deleteMessages"]
+              and len(requests[0][1]["message_ids"]) == 100
+              and len(requests[1][1]["message_ids"]) == 50)
+
+        replies[:] = [{"ok": False, "description": "Bad Request"}]
+        check("delete_messages: a rejection reports False",
+              notify_send.delete_messages([1], chat="-100123", token="fake-token") is False)
+
+        requests.clear()
+        check("delete_messages: an empty list is a no-op success with no request",
+              notify_send.delete_messages([], chat="-100123", token="fake-token") is True
+              and not requests)
+    finally:
+        notify_send._urlopen = saved_urlopen
+        shutil.rmtree(tmp, ignore_errors=True)
+
+    # Blocked transport: the real _urlopen must refuse the delete too.
+    saved_block = os.environ.get(notify_send.NETWORK_BLOCK_ENV_VAR)
+    opened: list[str] = []
+    saved_real = notify_send.urllib.request.urlopen
+    notify_send.urllib.request.urlopen = lambda *a, **k: opened.append("opened")
+    try:
+        os.environ[notify_send.NETWORK_BLOCK_ENV_VAR] = "1"
+        result = notify_send.delete_messages([1, 2], chat="-100123", token="fake-token")
+        check("delete_messages: a blocked delete opens no socket and reports False",
+              not opened and result is False)
+    finally:
+        notify_send.urllib.request.urlopen = saved_real
+        if saved_block is None:
+            os.environ.pop(notify_send.NETWORK_BLOCK_ENV_VAR, None)
+        else:
+            os.environ[notify_send.NETWORK_BLOCK_ENV_VAR] = saved_block
+
+    # --print-ids: stdout carries only the JSON list, even when the send fails.
+    env = dict(os.environ, **{notify_send.NETWORK_BLOCK_ENV_VAR: "1", "PYTHONUTF8": "1"})
+    proc = subprocess.run(
+        [PYTHON, str(HOOKS / "notify_send.py"), "--chat", "-100123", "--text", "hi", "--print-ids"],
+        capture_output=True, text=True, env=env, timeout=60,
+    )
+    check("--print-ids: stdout is exactly a JSON list (logs on stderr)",
+          proc.stdout.strip() == "[]" and proc.returncode == 1)
+
+    return check.failures, check.total
+
+
 def _codex_attention_unit_checks() -> Tuple[int, int]:
     """Codex native approval routing and conservative Stop classification."""
     sys.path.insert(0, str(HOOKS))
