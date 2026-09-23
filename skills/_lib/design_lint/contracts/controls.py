@@ -175,11 +175,14 @@ def _check_button_tiers(ctx: _ContractsCtx) -> List[dict]:
         if (re.search(r"\.[A-Za-z0-9_-]*ghost[A-Za-z0-9_-]*$", sel) and bg
                 and bg.split()[0] not in ("transparent", "none")):
             ghost_inverted.append(f"{sel} {{ background: {bg[:40]} }}")
-        if bg == "var(--accent)" and not re.search(r"detail-save|primary", sel):
+        if (bg in ("var(--accent)", "var(--accent-fill)")
+                and not re.search(r"detail-save|primary", sel)):
             solid_strays.append(sel)
         if "var(--accent-soft)" in bg:
             col = decls.get("color")
-            if col and col != "var(--accent)":
+            # accent-text is the contrast-safe role (#963); bare accent is the
+            # legacy recipe, still accepted until the apps adopt the new token
+            if col and col not in ("var(--accent-text)", "var(--accent)"):
                 tint_off.append(f"{sel} {{ color: {col[:30]} }}")
     bits = []
     if hardcoded:

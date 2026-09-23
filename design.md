@@ -17,8 +17,10 @@ colors:
   border-muted:  "#d8dee4"   # quieter hairline (dividers inside a card)
   fg:            "#1f2328"   # primary text
   fg-muted:      "#656d76"   # secondary text
-  accent:        "#0969da"   # links, primary CTA
+  accent:        "#0969da"   # links, focus ring, the base the accent derivatives mix from
   accent-fg:     "#ffffff"   # text/icon on an accent fill
+  accent-fill:   "#0969da"   # solid primary fill (button-primary) — equals accent here; dark steps it down so white text holds AA
+  accent-text:   "#0550ae"   # accent-coloured TEXT on an accent-soft tint (button-tint, nav-tab-active) — 6.04:1
   # accent derivatives — theme-independent color-mix over the per-theme accent (same strings in design.dark.md)
   accent-soft:          "color-mix(in srgb, var(--accent) 16%, transparent)"   # tinted fill (button-tint)
   accent-border-soft:   "color-mix(in srgb, var(--accent) 24%, transparent)"   # hairline on a tinted fill
@@ -26,6 +28,13 @@ colors:
   success:       "#1a7f37"
   danger:        "#cf222e"
   attention:     "#9a6700"
+  # status text on its own 16% tint (badge, banner, destructive tint) — the base stays for fills, icons and borders
+  success-text:   "#116329"   # 5.94:1 on the success tint
+  danger-text:    "#a40e26"   # 6.08:1 on the danger tint
+  attention-text: "#7d4e00"   # 5.75:1 on the attention tint
+  # neutral control surfaces
+  control-border: "#818b98"   # input/select boundary + switch off-track — 3.45:1 vs card (WCAG 1.4.11); card hairlines keep border
+  neutral-soft:   "color-mix(in srgb, var(--fg-muted) 16%, transparent)"   # chip / filter-pill fill; text on it is fg (fg-muted drops to 4.26:1)
   # rounded-square icon-tile fills (Home-screen tiles) — the only saturated surfaces
   tile-green:    "#1f883d"
   tile-blue:     "#0969da"
@@ -35,6 +44,7 @@ colors:
   # wide-gamut (P3) twins — identical token family in design.dark.md (Vercel convention).
   # A P3 display picks these up via `@media (color-gamut: p3)`; sRGB displays use the hex above.
   accent-p3:     "oklch(0.52 0.18 256)"
+  accent-fill-p3: "oklch(0.52 0.18 256)"
   success-p3:    "oklch(0.55 0.14 150)"
   danger-p3:     "oklch(0.55 0.20 25)"
   attention-p3:  "oklch(0.55 0.11 80)"
@@ -68,16 +78,17 @@ rows:
   lg: 60px        # spacious row — meta line + action rail
 components:
   card:           { backgroundColor: "{colors.card}", textColor: "{colors.fg}", rounded: "{rounded.lg}", padding: "{spacing.md}" }
-  button-primary: { backgroundColor: "{colors.accent}", textColor: "{colors.accent-fg}", borderColor: "{colors.accent-border-strong}", rounded: "{rounded.md}", typography: "{typography.label}", height: 48px }
-  button-tint:     { backgroundColor: "{colors.accent-soft}", textColor: "{colors.accent}", borderColor: "{colors.accent-border-soft}", rounded: "{rounded.md}", fontWeight: 700, height: 48px }   # secondary emphasis — the accent-tinted action (home-automation .big-btn)
+  button-primary: { backgroundColor: "{colors.accent-fill}", textColor: "{colors.accent-fg}", borderColor: "{colors.accent-border-strong}", rounded: "{rounded.md}", typography: "{typography.label}", height: 48px }
+  button-tint:     { backgroundColor: "{colors.accent-soft}", textColor: "{colors.accent-text}", borderColor: "{colors.accent-border-soft}", rounded: "{rounded.md}", fontWeight: 700, height: 48px }   # secondary emphasis — the accent-tinted action (home-automation .big-btn)
   button-ghost:    { backgroundColor: transparent, borderColor: "{colors.border}", textColor: "{colors.fg-muted}", rounded: "{rounded.md}" }   # quiet tertiary action — ghost = TRANSPARENT fill on a hairline border, never a tinted fill
   button-surface:  { backgroundColor: "{colors.canvas-subtle}", borderColor: "{colors.border}", textColor: "{colors.fg-muted}", rounded: "{rounded.md}", height: "{components.control.height}" }   # utility/toolbar/icon button at the control height
   button-disabled: { backgroundColor: "{colors.canvas-subtle}", borderColor: "{colors.border}", textColor: "{colors.fg-muted}" }   # ONE disabled recipe for every tier, both themes (home-automation#362) — never opacity on a solid fill
-  control:        { height: 36px, rounded: "{rounded.md}", backgroundColor: "{colors.canvas-subtle}", borderColor: "{colors.border}", textColor: "{colors.fg}" }   # shared height for inline select / input so a row of controls lines up
-  switch:         { width: 44px, height: 26px, rounded: "{rounded.pill}", thumbSize: 20px, trackOff: "{colors.border}", trackOn: "{colors.success}", thumbColor: "{colors.accent-fg}" }   # shadcn Switch — no text label; on = green (success), the universal on-state
+  control:        { height: 36px, rounded: "{rounded.md}", backgroundColor: "{colors.canvas-subtle}", borderColor: "{colors.control-border}", textColor: "{colors.fg}" }   # shared height for inline select / input so a row of controls lines up
+  switch:         { width: 44px, height: 26px, rounded: "{rounded.pill}", thumbSize: 20px, trackOff: "{colors.control-border}", trackOn: "{colors.success}", thumbColor: "{colors.accent-fg}" }   # shadcn Switch — no text label; on = green (success), the universal on-state
   nav-bar:        { backgroundColor: "{colors.card}", rounded: "{rounded.nav}", height: 61px, margin: 21px }
   nav-tab:        { textColor: "{colors.fg-muted}", rounded: "{rounded.pill}", height: 53px }
-  nav-tab-active: { backgroundColor: "{colors.accent-soft}", borderColor: "{colors.accent-border-soft}", textColor: "{colors.accent}" }   # accent-soft tint, not canvas-subtle — the inset surface reads as a black hole in dark mode (project-scaffolding#159)
+  nav-tab-active: { backgroundColor: "{colors.accent-soft}", borderColor: "{colors.accent-border-soft}", textColor: "{colors.accent-text}" }   # accent-soft tint, not canvas-subtle — the inset surface reads as a black hole in dark mode (project-scaffolding#159)
+  chip:           { backgroundColor: "{colors.neutral-soft}", textColor: "{colors.fg}", rounded: "{rounded.pill}" }   # neutral chip / filter pill — never canvas-subtle inside a card (the dark black hole again)
   disclosure:     { align: left, chevron: right, closedHeight: 52px, summaryPadding: "0 14px", bodyPadding: "12px 14px 14px" }   # collapsible details/summary header — the summary owns height+padding; the card's own padding is zeroed so cards align when closed
   modal:          { rounded: "{rounded.lg}", closeSize: 34px, rowPadding: "12px 0", primaryButton: "{components.button-primary}" }   # editor <dialog> — heading-lg title + × close, label/value rows on a top-border divider, one full-width primary
   list-row:       { rowPadding: "{components.modal.rowPadding}", divider: "{colors.border-muted}" }   # repeating entries inside a card — flat full-bleed rows on a top hairline, never nested canvas-subtle cards (photo-ocr .history-item, post-photo-ocr#73)
@@ -125,6 +136,29 @@ Home-screen rounded-square icon tiles. Every saturated color ships a `*-p3`
 behind `@media (color-gamut: p3)` so wide-gamut displays render the richer color
 and sRGB displays fall back to the hex value. Neutrals (canvas, card, border,
 text) are sRGB-only by design — they gain nothing from wide gamut.
+
+**A hue used as text and as a fill needs two tokens.** A base hue cannot be
+both a fill and legible text on its own 16% tint — the tint lifts the
+background and the pair drops under AA in both themes. So:
+
+- **Text on a tint** uses the `*-text` token: `accent-text` for `button-tint`
+  and `nav-tab-active`, `success-text` / `danger-text` / `attention-text` for
+  a badge, banner or destructive tint. Every pairing clears 4.5:1 in both
+  themes. The base `accent` stays for links, the focus ring and icons;
+  `success` / `danger` / `attention` stay for fills, dots and borders.
+- **The solid primary fill** uses `accent-fill`, not `accent`. It equals
+  `accent` in light; in dark it steps down so white text holds AA.
+- **Control boundaries** (input, select, the switch's off-track) use
+  `control-border`, which clears WCAG 1.4.11's 3:1 against `card`. Card
+  hairlines and dividers keep the quieter `border` / `border-muted`.
+- **Chips** fill with `neutral-soft` and set their text in `fg`; `fg-muted`
+  on it falls under AA.
+
+The `*-text`, `control-border` and `neutral-soft` roles are sRGB-only on
+purpose: each holds a verified ratio, and a wide-gamut variant would move it.
+`accent-fill` does ship a `-p3` twin, at the same lightness, so the fix holds
+on P3 displays. Icon-tile glyphs are graphics, so they need 3:1 against the
+tile fill (WCAG 1.4.11), not 4.5:1.
 
 ### Theme switching (user-selectable)
 
@@ -272,8 +306,8 @@ identically; treat every bullet as a hard requirement, not a suggestion.
   equal-width grid of tabs. The bar stands **61px** tall and sits with **equal
   21px margins on left, right, and bottom** so it reads
   centered and breathes evenly.
-- **One active tab at a time.** The active tab takes the accent-soft tint + accent
-  text and sits at `tabindex 0`; the others are `tabindex -1`, with
+- **One active tab at a time.** The active tab takes the accent-soft tint +
+  `accent-text` and sits at `tabindex 0`; the others are `tabindex -1`, with
   `aria-selected` tracked so it is announced correctly.
 - **Selection persists** across reloads and PWA relaunch via `localStorage`, so
   the app reopens on the tab you left.
@@ -305,8 +339,8 @@ identically; treat every bullet as a hard requirement, not a suggestion.
 
 **Four button tiers cover every action** — the vocabulary is fixed
 (fleet-config#296 settled it after a fleet sweep found the same class names
-meaning different buttons per app): `button-primary` (solid accent) for the
-one main action per view; `button-tint` (accent-soft fill, accent text, soft
+meaning different buttons per app): `button-primary` (solid `accent-fill`) for the
+one main action per view; `button-tint` (accent-soft fill, `accent-text`, soft
 accent border) for secondary emphasis; `button-ghost` for quiet tertiary
 actions — *ghost means transparent* on a hairline border; a tinted fill is a
 *tint*, never a "ghost"; `button-surface` (subtle surface at the `control`
@@ -314,9 +348,10 @@ height) for toolbar, utility, and icon buttons. Every tier shares the **one
 `button-disabled` recipe** (the flat `canvas-subtle` / `border` / `fg-muted`
 trio — AA in both themes, home-automation#362), never opacity on a solid fill.
 A destructive action may restate the tint recipe on `danger`
-(border/text/shade); status colors never fill a non-status button. `card` for
+(`danger` border and shade, `danger-text` text); status colors never fill a non-status button. `card` for
 every content group; `nav-bar` + `nav-tab` per the contract above. Inline form controls (`select`,
-`input`) share the `control` height (36px) so they line up on a row. The on/off
+`input`) share the `control` height (36px) so they line up on a row, and draw
+their boundary in `control-border`. The on/off
 `switch` is the shadcn Switch — a compact track + sliding thumb, **no text
 label** (state is read from thumb position + track color; `role="switch"` +
 `aria-checked` carry it for assistive tech), one canonical size everywhere. Its
@@ -463,6 +498,7 @@ byte-for-byte components.
 ## Do's and Don'ts
 
 - **Do** use the one blue accent for all interactive emphasis.
+- **Do** set text that sits on a tint in the matching `*-text` token, fill the primary with `accent-fill`, and outline inputs and the switch off-track with `control-border`.
 - **Do** model every interactive component on its shadcn component (structure + ARIA), then skin it with the fleet tokens.
 - **Do** draw every icon from **Lucide** — the shadcn-native set — vendored through `project-scaffolding`.
 - **Do** generate every installable app's Apple/PWA/favicon family from one Lucide master through `brand_gen`, with distinct regular and maskable assets.

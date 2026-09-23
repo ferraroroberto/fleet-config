@@ -111,16 +111,48 @@ check(rb.resolve_params(rubric, {}) == {"hit_min": 44, "primary_min": 48, "icon_
 check(rb.resolve_params(rubric, _specs("violating")["light"])["hit_min"] == 48.0, "a 48px spec floor is honoured")
 check(rb.px_value("44px") == 44.0 and rb.px_value("1.5rem") is None and rb.px_value(12) == 12.0, "px_value parsing")
 
-# ---- spec pairs: the audit's accent-on-accent-soft numbers -------------------
+# ---- spec pairs: this checkout's design*.md (not ~/.claude, which is the primary's) ----
 
-real_specs = rb.load_specs()
-if real_specs["light"] and real_specs["dark"]:
-    pl = {p["component"]: p["ratio"] for p in ev.spec_pairs(real_specs["light"])}
-    pd = {p["component"]: p["ratio"] for p in ev.spec_pairs(real_specs["dark"])}
-    check(pl.get("button-tint") == 4.13 and pl.get("nav-tab-active") == 4.13, f"light accent on accent-soft = 4.13 (got {pl.get('button-tint')})")
-    check(pd.get("button-tint") == 3.79 and pd.get("nav-tab-active") == 3.79, f"dark accent on accent-soft = 3.79 (got {pd.get('button-tint')})")
-else:
-    _h.skip("real ~/.claude/design*.md not present: accent-on-accent-soft 4.13/3.79 not verified")
+src_specs = rb.load_specs(REPO / "design.md", REPO / "design.dark.md")
+
+
+def _pair(tokens, fg_tok, bg_tok):
+    """WCAG ratio of `fg_tok` on `bg_tok`, both composited over `colors.card`; 0.0 if either is undefined."""
+    card = ev.parse_color(tokens["colors.card"], tokens)
+    fg, bg = ev.parse_color(tokens.get(fg_tok, ""), tokens), ev.parse_color(tokens.get(bg_tok, ""), tokens)
+    if fg is None or bg is None:
+        return 0.0
+    bg = ev.composite(bg, card)
+    return round(ev.contrast(ev.composite(fg, bg), bg), 2)
+
+
+# the audit's measurement, reproduced from tokens: accent text on its own tint
+check(_pair(src_specs["light"], "colors.accent", "colors.accent-soft") == 4.13, "light accent on accent-soft = 4.13 (the audit's number)")
+check(_pair(src_specs["dark"], "colors.accent", "colors.accent-soft") == 3.79, "dark accent on accent-soft = 3.79 (the audit's number)")
+# the fix (#963): every spec text/background pair clears AA, and the named roles hold their floors
+for _theme, _tokens in src_specs.items():
+    _pairs = {p["component"]: p for p in ev.spec_pairs(_tokens)}
+    for _name in ("button-primary", "button-tint", "nav-tab-active", "chip"):
+        _p = _pairs.get(_name) or {}
+        check((_p.get("ratio") or 0) >= _p.get("threshold", 4.5), f"{_theme} {_name} text clears AA (got {_p.get('ratio')})")
+    _low = [f"{n} {p['ratio']}" for n, p in _pairs.items() if p["ratio"] is not None and p["ratio"] < p["threshold"]]
+    check(not _low, f"{_theme}: no spec component pair below AA (got {_low})")
+    for _role in ("accent", "success", "danger", "attention"):
+        _tok = dict(_tokens, **{"colors._tint": f"color-mix(in srgb, var(--{_role}) 16%, transparent)"})
+        _r = _pair(_tok, f"colors.{_role}-text", "colors._tint")
+        check(_r >= 4.5, f"{_theme} {_role}-text on its 16% tint >= 4.5 (got {_r})")
+    _cb = _pair(_tokens, "colors.control-border", "colors.card")
+    check(_cb >= 3.0, f"{_theme} control-border vs card >= 3:1 (got {_cb})")
+    check(_tokens.get("components.control.borderColor") == _tokens.get("colors.control-border")
+          and _tokens.get("components.switch.trackOff") == _tokens.get("colors.control-border"),
+          f"{_theme}: control + switch off-track use control-border")
+    check(_tokens.get("components.button-primary.backgroundColor") == _tokens.get("colors.accent-fill"),
+          f"{_theme}: button-primary fills with accent-fill")
+    for _tile in ("green", "blue", "purple", "orange", "yellow"):
+        _r = _pair(_tokens, "colors.accent-fg", f"colors.tile-{_tile}")
+        check(_r >= 3.0, f"{_theme} glyph on tile-{_tile} >= 3:1 (non-text, got {_r})")
+_new = {k for k in src_specs["light"] if k.startswith("colors.")} ^ {k for k in src_specs["dark"] if k.startswith("colors.")}
+check(not _new, f"both themes define the same colour token names (differs: {sorted(_new)})")
 check(ev.parse_color("#fff", {}) == (255.0, 255.0, 255.0, 1.0), "short hex")
 check(ev.parse_color("color-mix(in srgb, var(--accent) 16%, transparent)", {"colors.accent": "#0969da"}) == (9.0, 105.0, 218.0, 0.16),
       "color-mix derivative -> accent at 16% alpha")

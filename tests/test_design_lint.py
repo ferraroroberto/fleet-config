@@ -131,6 +131,16 @@ check("--house" in res["unmapped"], "unclaimed app var surfaces as unmapped")
 app2 = {"light": {"--radius": ("16px", 1)}, "dark": {}}
 res2 = dl.map_tokens({"rounded.lg": "16px"}, {"rounded.lg": "16px"}, app2, "s.css")
 check(not res2["drift"], "root-only structural token inherits into dark, no drift")
+# contrast-safe roles (#963): optional while unadopted, mapped and drift-checked once adopted
+_cs_l = {"colors.accent-text": "#0550ae", "colors.control-border": "#818b98"}
+_cs_d = {"colors.accent-text": "#58a6ff", "colors.control-border": "#6e7681"}
+res3 = dl.map_tokens(_cs_l, _cs_d, {"light": {}, "dark": {}}, "s.css")
+check(not res3["missing"], "unadopted contrast-safe roles are not missing findings")
+res4 = dl.map_tokens(_cs_l, _cs_d, {"light": {"--accent-text": ("#0550ae", 1)},
+                                    "dark": {"--accent-text": ("#0969da", 9)}}, "s.css")
+check(any(m["role"] == "colors.accent-text" and m["theme"] == "light" for m in res4["matched"])
+      and any(d["role"] == "colors.accent-text" and d["theme"] == "dark" for d in res4["drift"]),
+      "an adopted --accent-text maps to its role and drifts when the dark value is wrong")
 
 
 # ---- adoption ratios ----
@@ -338,6 +348,18 @@ bt_tint_ok = run_contracts(
     ".big-btn { background: var(--accent-soft); color: var(--accent); "
     "border: 1px solid var(--accent-border-soft); }")
 check(bt_tint_ok["button-tiers"]["status"] == "PASS", "canonical tint recipe PASSes")
+bt_tint_text = run_contracts(
+    ".big-btn { background: var(--accent-soft); color: var(--accent-text); "
+    "border: 1px solid var(--accent-border-soft); }")
+check(bt_tint_text["button-tiers"]["status"] == "PASS",
+      "tint recipe with the contrast-safe accent-text PASSes (#963)")
+bt_fill_stray = run_contracts(".run-btn { background: var(--accent-fill); color: var(--accent-fg); }")
+check(bt_fill_stray["button-tiers"]["status"] == "WARN"
+      and ".run-btn" in bt_fill_stray["button-tiers"]["detail"],
+      "solid accent-fill outside the primary WARNs like solid accent (#963)")
+bt_fill_primary = run_contracts(".button-primary { background: var(--accent-fill); color: var(--accent-fg); }")
+check(bt_fill_primary["button-tiers"]["status"] == "PASS",
+      "the primary may fill with accent-fill (#963)")
 
 # ---- user-selectable theme (fleet-config#290) ----
 
