@@ -42,7 +42,7 @@ every time design.md gains a rule, so the file only went one way):
   files.py       which files a lens reads; which are third-party; path spelling
   spec.py        design.md frontmatter → a flat token dict
   css.py         comment stripping, @media flattening, custom props, declaration regexes
-  markup.py      HTML/JS structural scans (app shell, nav nesting, emoji sites, editor modals)
+  markup.py      HTML/JS structural scans (app shell, nav nesting, emoji + glyph-icon sites, editor modals)
   selectors.py   CSS selector splitting / compounding / scope resolution
   tokens.py      the `tokens` lens — spec role ↔ app custom property
   adoption.py    the `adoption` lens — per-family tokenized ratios

@@ -7,6 +7,8 @@ rather than about any one component.
 from __future__ import annotations
 
 import re
+import sys
+from pathlib import Path
 from typing import List
 
 from ..css import _BLOCK_RE
@@ -136,3 +138,52 @@ def _check_hit_target(ctx: _ContractsCtx) -> List[dict]:
             "expansion) — rendered rectangles/overlap need the browser leg")]
     return [_result("hit-target", "NA",
         "no fixed-size compact pointer-target rules found")]
+
+
+def _check_spec_contrast(ctx: _ContractsCtx) -> List[dict]:
+    # 28. the spec's own pairs clear AA — every `components.<name>` with a
+    #     textColor and backgroundColor, composited over `card`, per theme,
+    #     from the spec alone (fleet-config#963 found accent-on-accent-soft
+    #     at 4.13 / 3.79). The same for every app, so it flags the spec, not
+    #     the app. Colour maths is design_review's; imported here, at call
+    #     time, because design_review itself imports design_lint.spec.
+    sys.path.insert(0, str(Path(__file__).resolve().parents[2]))  # skills/_lib, as design_review.rubric does
+    from design_review.evaluate import spec_pairs
+
+    low: List[str] = []
+    measured = 0
+    for theme, tokens in (("light", ctx.spec_light), ("dark", ctx.spec_dark or {})):
+        for p in spec_pairs(tokens) if tokens else []:
+            if p["ratio"] is None:
+                continue
+            measured += 1
+            if p["ratio"] < p["threshold"]:
+                low.append(f"{theme} {p['component']} {p['ratio']}:1 < {p['threshold']}")
+    if not measured:
+        return [_result("spec-contrast", "NA", "spec declares no measurable text/background pair")]
+    if low:
+        return [_result("spec-contrast", "WARN",
+                         f"{len(low)} spec component pair(s) below AA — a spec fix "
+                         "(fleet-config design.md), not an app one: " + "; ".join(low[:6]))]
+    return [_result("spec-contrast", "PASS",
+                     f"all {measured} spec text/background pairs clear AA in both themes")]
+
+
+def _check_rendered_leg(ctx: _ContractsCtx) -> List[dict]:
+    # 29. rendered leg adoption — a static PASS proves authored CSS, not the
+    #     rendered box: hit-target passed on app-launcher while rendered
+    #     heights were 33-39px. The shared rendered-geometry helper
+    #     (project-scaffolding#157, `tests/e2e/_geometry.py`) is what measures
+    #     it. Without it the rendered leg is unmeasured, and says so here
+    #     rather than only in the /design-sync prose (fleet-config#969).
+    if not ctx.index_files:
+        return [_result("rendered-leg", "NA", "no index.html — no rendered UI to measure")]
+    helper = ctx.root / "tests" / "e2e" / "_geometry.py"
+    if helper.is_file():
+        return [_result("rendered-leg", "PASS",
+                         "rendered-geometry helper present (tests/e2e/_geometry.py) — run it; "
+                         "static PASS alone is not rendered conformance")]
+    return [_result("rendered-leg", "WARN",
+                     "rendered leg unmeasured: no tests/e2e/_geometry.py "
+                     "(project-scaffolding#157), so effective hit rectangles, overlap and "
+                     "overflow are unproven whatever the static checks say")]

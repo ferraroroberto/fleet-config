@@ -459,6 +459,62 @@ check(ts_nocontrol["text-size"]["status"] == "WARN" and "no persisted control" i
       "stamp without a persisted control WARNs")
 check(good["text-size"]["status"] == "NA", "no index.html -> text-size NA")
 
+# ---- typography, glyph icons, spec contrast, rendered leg (fleet-config#969) ----
+# every new check lands as WARN (never FAIL): the apps it flags fix it in their own lanes
+
+ff_ok = run_contracts(GOOD_CSS + "\nbutton, input,\nselect, textarea { font: inherit; }")
+check(ff_ok["form-font-inherit"]["status"] == "PASS", "global font: inherit on all four form tags PASS")
+ff_family = run_contracts(GOOD_CSS + "\nbutton, input, select, textarea { font-family: inherit; }")
+check(ff_family["form-font-inherit"]["status"] == "PASS", "font-family: inherit also counts")
+ff_scoped = run_contracts(GOOD_CSS + "\n.card button, input { font: inherit; }")
+check(ff_scoped["form-font-inherit"]["status"] == "WARN"
+      and "button" in ff_scoped["form-font-inherit"]["detail"]
+      and "input" not in ff_scoped["form-font-inherit"]["detail"].split("for:")[1].split("(")[0],
+      "a scoped `.card button` is not the global reset; only the missing tags are named")
+check(good["form-font-inherit"]["status"] == "WARN", "no reset at all WARNs")
+
+UP_SPEC = {"icons.size.inline": "16px", "typography.overline.textTransform": "uppercase"}
+up_bad = run_contracts(GOOD_CSS + "\n.chip { text-transform: uppercase; letter-spacing: .09em; }", spec_light=UP_SPEC)
+check(up_bad["uppercase-role"]["status"] == "WARN" and ".chip" in up_bad["uppercase-role"]["detail"],
+      "uppercase chip outside the overline role WARNs with the selector")
+up_ok = run_contracts(GOOD_CSS + "\n.list-overline { text-transform: uppercase; }", spec_light=UP_SPEC)
+check(up_ok["uppercase-role"]["status"] == "PASS", "uppercase on the legal overline role PASS")
+up_nolegal = run_contracts(GOOD_CSS + "\n.list-overline { text-transform: uppercase; }")
+check(up_nolegal["uppercase-role"]["status"] == "WARN", "with no legal caps role in the spec, any uppercase WARNs")
+
+ba_bad = run_contracts(GOOD_CSS + "\n.coding-name { word-break: break-all; }")
+check(ba_bad["break-all"]["status"] == "WARN" and ".coding-name" in ba_bad["break-all"]["detail"],
+      "break-all on a name WARNs with the selector")
+ba_ok = run_contracts(GOOD_CSS + "\n.file-path, .commit-sha { word-break: break-all; }")
+check(ba_ok["break-all"]["status"] == "PASS", "break-all on path/sha selectors PASS")
+
+gl_bad = run_contracts(GOOD_CSS, '<button class="refresh">↻</button>', js="el.textContent = '▾ ' + label;")
+check(gl_bad["glyph-icons"]["status"] == "WARN" and "i.html:1" in gl_bad["glyph-icons"]["detail"]
+      and "s.js:1" in gl_bad["glyph-icons"]["detail"],
+      "an arrow in markup and a caret in a JS UI string both WARN")
+gl_ok = run_contracts(GOOD_CSS, '<button class="refresh"><svg><use href="#i-refresh"/></svg></button>',
+                      js="const RE = /^[●○]$/; // → a comment arrow")
+check(gl_ok["glyph-icons"]["status"] == "PASS", "Lucide markup, regex literals and comments are not glyph icons")
+
+SC_BAD = {"colors.card": "#ffffff", "colors.accent": "#0969da",
+          "colors.accent-soft": "color-mix(in srgb, var(--accent) 16%, transparent)",
+          "components.button-tint.backgroundColor": "color-mix(in srgb, var(--accent) 16%, transparent)",
+          "components.button-tint.textColor": "#0969da"}
+sc_bad = run_contracts(GOOD_CSS, spec_light=SC_BAD)
+check(sc_bad["spec-contrast"]["status"] == "WARN" and "button-tint 4.13" in sc_bad["spec-contrast"]["detail"],
+      "the pre-#963 accent-on-accent-soft pair WARNs at 4.13")
+sc_ok = run_contracts(GOOD_CSS, spec_light=dict(SC_BAD, **{"components.button-tint.textColor": "#0550ae"}))
+check(sc_ok["spec-contrast"]["status"] == "PASS", "accent-text on the tint PASS")
+check(good["spec-contrast"]["status"] == "NA", "a spec with no component pairs -> NA")
+
+rl_none = run_contracts(GOOD_CSS, "<html></html>", html_name="index.html")
+check(rl_none["rendered-leg"]["status"] == "WARN" and "unmeasured" in rl_none["rendered-leg"]["detail"],
+      "no rendered-geometry helper -> rendered leg unmeasured WARN")
+rl_ok = run_contracts(GOOD_CSS, "<html></html>", html_name="index.html",
+                      files={"tests/e2e/_geometry.py": "# helper\n"})
+check(rl_ok["rendered-leg"]["status"] == "PASS", "tests/e2e/_geometry.py present -> PASS")
+check(good["rendered-leg"]["status"] == "NA", "no index.html -> rendered-leg NA")
+
 
 # ---- icon-set: emoji vs Lucide (design.md Icons, fleet-config#284) ----
 
