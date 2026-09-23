@@ -174,6 +174,11 @@ read.
     `<head>` + a persisted `.theme` localStorage toggle; either missing
     FAILs. A missing or spec-drifted scheme-gated `theme-color` meta pair
     WARNs, compared against the two specs' `canvas` (spec-driven, #290).
+  - **text-size** — the zoom-lock escape: a pre-paint `html[data-textsize]`
+    stamp read from a `.textsize` localStorage key in `<head>`, plus a
+    persisted control that writes it (a literal key or a named constant).
+    Any part missing WARNs, never FAILs, while apps adopt it one by one
+    (#967).
   - **icon-set** — emoji glyphs in rendered markup text or JS UI-copy
     strings: FAIL when no vendored Lucide sprite is adopted, WARN when
     emoji sit alongside an adopted sprite — one icon set, never
