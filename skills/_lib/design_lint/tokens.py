@@ -53,9 +53,12 @@ ALIASES: Dict[str, List[str]] = {
     "spacing.gutter": ["gap", "gutter"],
     "typography.heading-xl.fontSize": ["font-heading-xl"],
     "typography.heading-lg.fontSize": ["font-heading-lg"],
+    "typography.heading-md.fontSize": ["font-heading-md"],
     "typography.body.fontSize": ["font-body"],
+    "typography.body-sm.fontSize": ["font-body-sm"],
     "typography.label.fontSize": ["font-label"],
     "typography.caption.fontSize": ["font-caption"],
+    "typography.overline.fontSize": ["font-overline"],
     "components.control.height": ["control-h"],
     "icons.size.inline": ["icon-inline"],
     "icons.size.title": ["icon-title"],
@@ -75,6 +78,9 @@ OPTIONAL_ROLES = {
     "colors.accent-fill", "colors.accent-text", "colors.success-text",
     "colors.danger-text", "colors.attention-text", "colors.control-border",
     "colors.neutral-soft",
+    # type roles added with the whole-pixel scale (#964) — optional until adopted
+    "typography.heading-md.fontSize", "typography.body-sm.fontSize",
+    "typography.overline.fontSize",
 }
 
 

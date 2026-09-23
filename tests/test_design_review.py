@@ -153,6 +153,18 @@ for _theme, _tokens in src_specs.items():
         check(_r >= 3.0, f"{_theme} glyph on tile-{_tile} >= 3:1 (non-text, got {_r})")
 _new = {k for k in src_specs["light"] if k.startswith("colors.")} ^ {k for k in src_specs["dark"] if k.startswith("colors.")}
 check(not _new, f"both themes define the same colour token names (differs: {sorted(_new)})")
+
+# ---- type scale (#964): whole pixels, body-sm for secondary lines, one caps role ----
+
+_typo = {t: {k: v for k, v in s.items() if k.startswith("typography.")} for t, s in src_specs.items()}
+check(_typo["light"] == _typo["dark"], "typography is identical in both themes")
+_px = {k.split(".")[1]: float(v.replace("rem", "")) * 16 for k, v in _typo["light"].items() if k.endswith(".fontSize")}
+check(all(p == int(p) for p in _px.values()), f"every role lands on a whole pixel at a 16px root (got {_px})")
+check(sorted({int(p) for p in _px.values()}) == [12, 14, 16, 20, 24, 32], f"scale is 12/14/16/20/24/32 (got {sorted(set(_px.values()))})")
+check(_px.get("body-sm") == 14 and _typo["light"].get("typography.body-sm.fontWeight") == "400",
+      "body-sm is a 14px regular role for secondary lines")
+_caps = [k.split(".")[1] for k, v in _typo["light"].items() if k.endswith(".textTransform") and v == "uppercase"]
+check(_caps == ["overline"], f"overline is the only uppercase role (got {_caps})")
 check(ev.parse_color("#fff", {}) == (255.0, 255.0, 255.0, 1.0), "short hex")
 check(ev.parse_color("color-mix(in srgb, var(--accent) 16%, transparent)", {"colors.accent": "#0969da"}) == (9.0, 105.0, 218.0, 0.16),
       "color-mix derivative -> accent at 16% alpha")
