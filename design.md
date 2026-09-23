@@ -56,9 +56,12 @@ colors:
 typography:
   heading-xl: { fontFamily: "system-ui, -apple-system, Segoe UI, sans-serif", fontSize: 2rem,    fontWeight: 700, lineHeight: 1.15, letterSpacing: "-0.02em" }
   heading-lg: { fontFamily: "system-ui, sans-serif", fontSize: 1.5rem,  fontWeight: 700, lineHeight: 1.2 }
+  heading-md: { fontFamily: "system-ui, sans-serif", fontSize: 1.25rem, fontWeight: 700, lineHeight: 1.25 }   # 20px — section / group title between body and heading-lg
   body:       { fontFamily: "system-ui, sans-serif", fontSize: 1rem,    fontWeight: 400, lineHeight: 1.5 }
-  label:      { fontFamily: "system-ui, sans-serif", fontSize: 0.92rem, fontWeight: 600, lineHeight: 1.1 }
-  caption:    { fontFamily: "system-ui, sans-serif", fontSize: 0.78rem, fontWeight: 600, lineHeight: 1.1 }
+  body-sm:    { fontFamily: "system-ui, sans-serif", fontSize: 0.875rem, fontWeight: 400, lineHeight: 1.45 }   # 14px — every secondary line: paths, status, "last run", row meta, helper copy
+  label:      { fontFamily: "system-ui, sans-serif", fontSize: 0.875rem, fontWeight: 600, lineHeight: 1.1 }   # 14px — field and control labels, button text
+  caption:    { fontFamily: "system-ui, sans-serif", fontSize: 0.75rem, fontWeight: 600, lineHeight: 1.1 }   # 12px — chips, badges and timestamps only
+  overline:   { fontFamily: "system-ui, sans-serif", fontSize: 0.75rem, fontWeight: 600, lineHeight: 1.1, letterSpacing: "0.06em", textTransform: uppercase }   # 12px — list group headers only (date groups); the one legal caps use
 rounded:
   sm:   8px
   md:   12px
@@ -179,8 +182,22 @@ Reference impls: home-automation `app/webapp/static/index.html` + `main.js`
 ## Typography
 
 System font stack everywhere (no web-font payload, instant first paint). Bold,
-tight headings; relaxed body; ALL-CAPS avoided — use weight, not case, for
-hierarchy. The five roles cover every text need: don't introduce ad-hoc sizes.
+tight headings; relaxed body. The scale is whole pixels at a 16px root —
+12 / 14 / 16 / 20 / 24 / 32 — and the eight roles cover every text need: don't
+introduce ad-hoc sizes.
+
+- **Secondary lines use `body-sm`** (14px, regular): paths, status lines,
+  "last run", the meta line under a row title. Helper copy is `body-sm` in
+  `fg-muted` at regular weight, never italic.
+- **`caption` (12px) is for chips, badges and timestamps only**, never for a
+  line people read.
+- **`label`** carries field and control labels and button text;
+  **`heading-md`** titles a section or group inside a view.
+- **Caps are legal in one place.** `text-transform: uppercase` goes through
+  the `overline` role only, and only for list group headers (e.g. date
+  groups). Chips and badges are sentence case. Numbers and units are never
+  transformed: "3M 33S" reads as mega, not minutes. Everywhere else, use
+  weight, not case, for hierarchy.
 
 ## Layout
 
@@ -388,7 +405,7 @@ hand-picked per app.
 - **card** (`card`) — the base content group: `rounded.lg` (16px) surface at
   `spacing.md` padding on a hairline border. Its **header** is one row: a
   leading `icons.size.title` glyph + a bold title (`label`/`body` weight 700),
-  optional muted meta (`caption`, `fg-muted`), and a right-pinned chevron *or*
+  optional muted meta (`body-sm`, `fg-muted`), and a right-pinned chevron *or*
   meta value. A card that is collapsible drops its own padding to `0` and
   delegates to the disclosure contract (above).
 - **editor modal** (`modal`) — a native `<dialog>` for detail/rename/settings
@@ -518,6 +535,7 @@ byte-for-byte components.
 - **Don't** hand-roll a primitive (switch, select, dialog, tabs…) that shadcn already defines.
 - **Don't** mix a second icon set or hand-draw a one-off glyph — use the matching Lucide icon.
 - **Don't** declare one manifest icon as both `any` and `maskable`, or redraw the app identity independently for the tray.
+- **Don't** set a line people read in `caption`, or uppercase anything but an `overline` group header — secondary lines are `body-sm`, and numbers and units are never transformed.
 - **Don't** put a solid accent fill on any button except the view's primary action — secondary emphasis is the tint, never a second solid.
 - **Don't** introduce a second accent or per-app navigation variants.
 - **Don't** stretch content full-bleed on desktop — keep the centered 772px measure.

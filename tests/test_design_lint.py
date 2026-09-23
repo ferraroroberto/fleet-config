@@ -141,6 +141,11 @@ res4 = dl.map_tokens(_cs_l, _cs_d, {"light": {"--accent-text": ("#0550ae", 1)},
 check(any(m["role"] == "colors.accent-text" and m["theme"] == "light" for m in res4["matched"])
       and any(d["role"] == "colors.accent-text" and d["theme"] == "dark" for d in res4["drift"]),
       "an adopted --accent-text maps to its role and drifts when the dark value is wrong")
+# new type roles (#964): --font-body-sm maps to typography.body-sm; unadopted roles are not missing
+_ty = {"typography.body-sm.fontSize": "0.875rem", "typography.overline.fontSize": "0.75rem"}
+res5 = dl.map_tokens(_ty, _ty, {"light": {"--font-body-sm": ("0.875rem", 1)}, "dark": {}}, "s.css")
+check(any(m["role"] == "typography.body-sm.fontSize" for m in res5["matched"]) and not res5["missing"],
+      "--font-body-sm maps to the body-sm role; an unadopted overline is not a missing finding")
 
 
 # ---- adoption ratios ----
