@@ -25,9 +25,16 @@ ALIASES: Dict[str, List[str]] = {
     "colors.accent-soft": ["accent-soft"],
     "colors.accent-border-soft": ["accent-border-soft"],
     "colors.accent-border-strong": ["accent-border-strong"],
+    "colors.accent-fill": ["accent-fill"],
+    "colors.accent-text": ["accent-text"],
     "colors.success": ["on", "success", "ok"],
     "colors.danger": ["deficit", "danger", "error"],
     "colors.attention": ["attention", "warning"],
+    "colors.success-text": ["success-text"],
+    "colors.danger-text": ["danger-text"],
+    "colors.attention-text": ["attention-text"],
+    "colors.control-border": ["control-border"],
+    "colors.neutral-soft": ["neutral-soft"],
     "colors.tile-green": ["tile-green"],
     "colors.tile-blue": ["tile-blue"],
     "colors.tile-purple": ["tile-purple"],
@@ -64,6 +71,10 @@ OPTIONAL_ROLES = {
     # accent derivatives — only apps that ship a tint tier define them (#296)
     "colors.accent-soft", "colors.accent-border-soft",
     "colors.accent-border-strong",
+    # contrast-safe roles (#963) — optional until each app adopts them in its own lane
+    "colors.accent-fill", "colors.accent-text", "colors.success-text",
+    "colors.danger-text", "colors.attention-text", "colors.control-border",
+    "colors.neutral-soft",
 }
 
 
