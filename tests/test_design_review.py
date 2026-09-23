@@ -165,6 +165,23 @@ check(_px.get("body-sm") == 14 and _typo["light"].get("typography.body-sm.fontWe
       "body-sm is a 14px regular role for secondary lines")
 _caps = [k.split(".")[1] for k, v in _typo["light"].items() if k.endswith(".textTransform") and v == "uppercase"]
 check(_caps == ["overline"], f"overline is the only uppercase role (got {_caps})")
+
+# ---- action-row contract (#965): one trailing accessory, destructive in the menu ----
+
+_ar = {t: {k: v for k, v in s.items() if k.startswith("components.action-row.")} for t, s in src_specs.items()}
+check(bool(_ar["light"]) and set(_ar["light"]) == set(_ar["dark"]), "action-row is defined with the same keys in both themes")
+_arl = src_specs["light"]
+check(_arl.get("components.action-row.minHeight") == _arl.get("rows.md")
+      and _arl.get("components.action-row.accessorySize") == _arl.get("components.hit-target.min"),
+      "action-row height comes from rows.md and its accessory is the 44px hit target")
+check(_arl.get("components.action-row.trailingAccessories") == "1"
+      and _arl.get("components.action-row.extraVisibleActions") == "1",
+      "action-row allows one trailing accessory and at most one other visible action")
+for _theme, _s in src_specs.items():
+    check(_s.get("components.action-row.destructiveColor") == _s.get("colors.danger-text"),
+          f"{_theme}: destructive menu items use danger-text")
+    check(_s.get("components.action-row.filterBorder") == _s.get("colors.control-border"),
+          f"{_theme}: the list filter field uses control-border")
 check(ev.parse_color("#fff", {}) == (255.0, 255.0, 255.0, 1.0), "short hex")
 check(ev.parse_color("color-mix(in srgb, var(--accent) 16%, transparent)", {"colors.accent": "#0969da"}) == (9.0, 105.0, 218.0, 0.16),
       "color-mix derivative -> accent at 16% alpha")
