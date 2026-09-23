@@ -72,11 +72,11 @@ def _t_type_scale(rule: dict, v: Values) -> Mockup:
            f'<span class="mk-text" style="font-size:12px">Secondary line at 12px</span>'
            f'<span class="mk-text" style="font-size:11px">Caption at 11px &middot; status &middot; time</span>'
            f'<span class="mk-note">{_esc(f"{share:.0%}")} of text runs under 14px</span></div>')
-    proposed = ('<div class="mk-card"><span class="mk-text" style="font-size:17px">Item name</span>'
-                '<span class="mk-text" style="font-size:15px">Secondary line at label size</span>'
-                '<span class="mk-text" style="font-size:14px">Caption at 14px &middot; status &middot; time</span>'
-                '<span class="mk-note">no run under 14px; 11px kept for badges only</span></div>')
-    return {"now": now, "proposed": proposed, "caption": "Body scale: secondary text moves from caption to label size."}
+    proposed = ('<div class="mk-card"><span class="mk-text" style="font-size:16px">Item name</span>'
+                '<span class="mk-text" style="font-size:14px">Secondary line at body-sm</span>'
+                '<span class="mk-text" style="font-size:14px">Status &middot; last run at body-sm</span>'
+                '<span class="mk-note">secondary lines at 14px; 12px caption kept for chips, badges and timestamps</span></div>')
+    return {"now": now, "proposed": proposed, "caption": "Body scale: secondary lines move from caption to the 14px body-sm role."}
 
 
 def _t_hit_target(rule: dict, v: Values) -> Mockup:

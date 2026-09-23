@@ -56,7 +56,7 @@ def _doc(name: str) -> dict:
 # ---- rubric: the real file loads and names only metrics that exist ----------
 
 rubric = dr.load_rubric(RUBRIC)
-check(rubric.version == "1.2.0", "rubric meta.version stamped")
+check(rubric.version == "1.3.0", "rubric meta.version stamped")
 check(len(rubric.rules) == 25, f"25 seed rules loaded (got {len(rubric.rules)})")
 check(rubric.categories == ["typography", "color", "touch", "navigation", "layout", "components", "a11y"],
       "categories in rubric order")
@@ -226,7 +226,7 @@ check(all(s == "pass" for s in statuses_c.values()), f"compliant: every rule pas
 check(all(v["score"] == 100.0 and v["grade"] == "A" and not v["unmeasured"] for v in out_c["categories"].values()),
       "compliant: every category 100/A, measured")
 check(out_c["overall"] == {"score": 100.0, "grade": "A", "unmeasured": False}, "compliant: overall A")
-check(out_c["schema_version"] == 1 and out_c["rubric_version"] == "1.2.0" and out_c["target"] == "fixture-app"
+check(out_c["schema_version"] == 1 and out_c["rubric_version"] == "1.3.0" and out_c["target"] == "fixture-app"
       and out_c["commit"].startswith("0000") and out_c["generated_at"].endswith("Z"), "evaluate envelope keys")
 check([s["id"] for s in out_c["screens"]] == ["desktop-light-home", "iphone-light-home", "desktop-light-dialog-edit"],
       "evaluate echoes the screen list")
@@ -263,6 +263,16 @@ check(t01v["measured"]["desktop-light-home"] == 0.3 and t01v["evidence"][0]["ite
 check(next(r for r in out_v["rules"] if r["id"] == "TOUCH-03")["threshold"]["value"] == 40.0,
       "threshold_token: the violating spec's 40px button height is what TOUCH-03 compares against")
 check(ev.grade_for(89.99, rubric.grades) == "B" and ev.grade_for(0, rubric.grades) == "F", "grade mapping edges")
+
+# TYPE-05 follows #964: overline is the one legal caps role; badges and chips are sentence case.
+caps = _doc("violating")
+for s in caps["screens"]:
+    s["metrics"]["text"]["uppercase"] = [{"sel": "span.badge", "text": "NEW"}, {"sel": "span.chip", "text": "3M"},
+                                         {"sel": "div.list-overline", "text": "TODAY"}]
+t05 = next(r for r in ev.evaluate(caps, rubric, _specs("violating"))["rules"] if r["id"] == "TYPE-05")
+check(t05["measured"]["desktop-light-home"] == 2.0
+      and [i["sel"] for i in t05["evidence"][0]["items"]] == ["span.badge", "span.chip"],
+      f"TYPE-05 counts an uppercase badge and chip, not the overline (got {t05['measured']})")
 
 # ---- determinism: same inputs, identical rule results ------------------------
 
@@ -424,7 +434,7 @@ else:
           f"measure CLI walks the fixture: 2 tabs + 1 dialog x light/dark ({proc.stdout[-300:]}{proc.stderr[-300:]})")
     check(lines.get("RUN_DIR") == str(run_dir) and Path(lines.get("METRICS", "")).is_file(), "RUN_DIR/METRICS lines point at the run dir")
     doc = json.loads(Path(lines["METRICS"]).read_text(encoding="utf-8"))
-    check(doc["interpreter"] == str(interp) and doc["schema_version"] == 1 and doc["rubric_version"] == "1.2.0", "metrics.json records the interpreter + versions")
+    check(doc["interpreter"] == str(interp) and doc["schema_version"] == 1 and doc["rubric_version"] == "1.3.0", "metrics.json records the interpreter + versions")
     if not (scaffold / "tests" / "e2e" / "_geometry.py").is_file():
         _h.skip("browser leg: project-scaffolding/tests/e2e/_geometry.py absent -- hit-target assertions NOT verified")
     check(doc["walk"]["info"]["geometry"] == ("loaded" if (scaffold / "tests" / "e2e" / "_geometry.py").is_file() else "GEOMETRY_MISSING"),
