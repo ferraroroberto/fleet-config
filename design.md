@@ -88,7 +88,7 @@ components:
   button-disabled: { backgroundColor: "{colors.canvas-subtle}", borderColor: "{colors.border}", textColor: "{colors.fg-muted}" }   # ONE disabled recipe for every tier, both themes (home-automation#362) — never opacity on a solid fill
   control:        { height: 36px, rounded: "{rounded.md}", backgroundColor: "{colors.canvas-subtle}", borderColor: "{colors.control-border}", textColor: "{colors.fg}" }   # shared height for inline select / input so a row of controls lines up
   switch:         { width: 44px, height: 26px, rounded: "{rounded.pill}", thumbSize: 20px, trackOff: "{colors.control-border}", trackOn: "{colors.success}", thumbColor: "{colors.accent-fg}" }   # shadcn Switch — no text label; on = green (success), the universal on-state
-  nav-bar:        { backgroundColor: "{colors.card}", rounded: "{rounded.nav}", height: 61px, margin: 21px }
+  nav-bar:        { backgroundColor: "{colors.card}", rounded: "{rounded.nav}", height: 61px, margin: 21px, maxTabs: 5 }
   nav-tab:        { textColor: "{colors.fg-muted}", rounded: "{rounded.pill}", height: 53px }
   nav-tab-active: { backgroundColor: "{colors.accent-soft}", borderColor: "{colors.accent-border-soft}", textColor: "{colors.accent-text}" }   # accent-soft tint, not canvas-subtle — the inset surface reads as a black hole in dark mode (project-scaffolding#159)
   chip:           { backgroundColor: "{colors.neutral-soft}", textColor: "{colors.fg}", rounded: "{rounded.pill}" }   # neutral chip / filter pill — never canvas-subtle inside a card (the dark black hole again)
@@ -98,6 +98,7 @@ components:
   action-row:     { minHeight: "{rows.md}", title: "{typography.body}", titleWeight: 600, meta: "{typography.body-sm}", metaColor: "{colors.fg-muted}", leadingToggles: 1, trailingAccessories: 1, extraVisibleActions: 1, accessorySize: "{components.hit-target.min}", destructiveColor: "{colors.danger-text}", filterAboveRows: 12, filterHeight: 44px, filterBorder: "{colors.control-border}" }   # a list row that does something: tap the row = primary action, one trailing kebab/chevron, destructive only in the menu
   empty-state:    { iconSize: "{icons.size.feature}", gap: "{spacing.sm}", padding: "{spacing.xl} {spacing.md}", actionMinWidth: 96px, textColor: "{colors.fg-muted}" }   # icon + one-line reason + optional action, centered
   icon-tile:      { rounded: "{rounded.md}", iconSize: "{icons.size.feature}", iconColor: "{colors.accent-fg}" }   # Home-screen rounded-square — one tile-* fill, centered Lucide glyph
+  page-header:    { minHeight: "{rows.md}", padding: "0 14px", title: "{typography.body}", titleWeight: 700, context: "{typography.body-sm}", contextColor: "{colors.fg-muted}", trailingActions: 2, actionSize: "{components.hit-target.min}" }   # every pane's first element — the vendored home-head: tab title, one context line, trailing theme toggle + settings
   hit-target:     { min: 44px }   # minimum effective pointer-target square, app-wide — see Touch targets
 focus:            { outline: "2px solid {colors.accent}", offset: 2px }   # one tokenized :focus-visible ring app-wide (a control overrides only where it draws a custom ring)
 icons:
@@ -342,6 +343,14 @@ identically; treat every bullet as a hard requirement, not a suggestion.
   bar takes **no JS translate** there — CSS owns its position).
 - **Tap targets ≥ 44px.** Tabs show an icon **and** a short label, never
   icon-only. The icon is a **Lucide** glyph (see Icons).
+- **At most five primary destinations** (`nav-bar.maxTabs`), per HIG's
+  five-tab ceiling and Material's three to five. Five is what keeps every
+  label legible at 320px. A sixth tab forces 11px labels and ~53px tabs, and
+  pushes the nav toward icon-only. A rarely used destination (Settings above
+  all) is **not a tab**: it is a trailing action in the page header (a
+  `button-surface` gear beside the theme toggle), one tap from every tab.
+  An app with several such destinations may make the fifth tab "More"; it
+  still counts toward the five.
 - **Desktop / fine pointers** may render the same tabs inline at the top; the
   behavior (single active tab, persistence) is unchanged — only the placement
   differs.
@@ -406,6 +415,16 @@ composite components — each a fixed contract so the same pattern is
 pixel-identical across apps. All dimensions reference the tokens above; none are
 hand-picked per app.
 
+- **page header** (`page-header`) — **the first element of every tab's pane**,
+  so every tab opens the same way. It is one card row at `rows.md` (52px,
+  `0 14px` inset): a leading `icons.size.title` glyph plus a bold title that
+  **names the current tab**, one ellipsized context line (`body-sm`,
+  `fg-muted`; e.g. "3 running", "Last run 06:00"), and **at most two trailing
+  icon actions** at the 44px hit target: the theme toggle, and the Settings
+  entry when Settings is not a tab. Tab-specific toolbars sit **under** the
+  header, never in place of it. The vendored `home-head` component
+  (`project-scaffolding` `_vendored/home-head/`) is this shape; reuse it
+  verbatim on every pane, not just the home tab.
 - **card** (`card`) — the base content group: `rounded.lg` (16px) surface at
   `spacing.md` padding on a hairline border. Its **header** is one row: a
   leading `icons.size.title` glyph + a bold title (`label`/`body` weight 700),
@@ -540,6 +559,7 @@ byte-for-byte components.
 - **Do** model every interactive component on its shadcn component (structure + ARIA), then skin it with the fleet tokens.
 - **Do** draw every icon from **Lucide** — the shadcn-native set — vendored through `project-scaffolding`.
 - **Do** generate every installable app's Apple/PWA/favicon family from one Lucide master through `brand_gen`, with distinct regular and maskable assets.
+- **Do** cap primary navigation at five tabs, put Settings in the page header, and open every tab with the one `page-header` (the vendored `home-head`).
 - **Do** keep the bottom nav identical across apps — same radius, blur, and
   persistence behavior.
 - **Do** reserve bottom padding for the fixed nav so content is never occluded.

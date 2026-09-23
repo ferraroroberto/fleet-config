@@ -87,7 +87,7 @@ components:
   button-disabled: { backgroundColor: "{colors.canvas-subtle}", borderColor: "{colors.border}", textColor: "{colors.fg-muted}" }   # ONE disabled recipe for every tier, both themes (home-automation#362)
   control:        { height: 36px, rounded: "{rounded.md}", backgroundColor: "{colors.canvas-subtle}", borderColor: "{colors.control-border}", textColor: "{colors.fg}" }   # shared height for inline select / input so a row of controls lines up
   switch:         { width: 44px, height: 26px, rounded: "{rounded.pill}", thumbSize: 20px, trackOff: "{colors.control-border}", trackOn: "{colors.success}", thumbColor: "{colors.accent-fg}" }   # shadcn Switch — no text label; on = green (success), the universal on-state
-  nav-bar:        { backgroundColor: "{colors.card}", rounded: "{rounded.nav}", height: 61px, margin: 21px }
+  nav-bar:        { backgroundColor: "{colors.card}", rounded: "{rounded.nav}", height: 61px, margin: 21px, maxTabs: 5 }
   nav-tab:        { textColor: "{colors.fg-muted}", rounded: "{rounded.pill}", height: 53px }
   nav-tab-active: { backgroundColor: "{colors.accent-soft}", borderColor: "{colors.accent-border-soft}", textColor: "{colors.accent-text}" }   # accent-soft tint, not canvas-subtle — the inset surface (true black here) reads as a black hole (project-scaffolding#159)
   chip:           { backgroundColor: "{colors.neutral-soft}", textColor: "{colors.fg}", rounded: "{rounded.pill}" }   # neutral chip / filter pill — structural, identical to Light (see design.md)
@@ -97,6 +97,7 @@ components:
   action-row:     { minHeight: "{rows.md}", title: "{typography.body}", titleWeight: 600, meta: "{typography.body-sm}", metaColor: "{colors.fg-muted}", leadingToggles: 1, trailingAccessories: 1, extraVisibleActions: 1, accessorySize: "{components.hit-target.min}", destructiveColor: "{colors.danger-text}", filterAboveRows: 12, filterHeight: 44px, filterBorder: "{colors.control-border}" }   # tap the row = primary action — structural, identical to Light (see design.md)
   empty-state:    { iconSize: "{icons.size.feature}", gap: "{spacing.sm}", padding: "{spacing.xl} {spacing.md}", actionMinWidth: 96px, textColor: "{colors.fg-muted}" }   # icon + one-line reason + optional action, centered
   icon-tile:      { rounded: "{rounded.md}", iconSize: "{icons.size.feature}", iconColor: "{colors.accent-fg}" }   # Home-screen rounded-square — one tile-* fill, centered Lucide glyph
+  page-header:    { minHeight: "{rows.md}", padding: "0 14px", title: "{typography.body}", titleWeight: 700, context: "{typography.body-sm}", contextColor: "{colors.fg-muted}", trailingActions: 2, actionSize: "{components.hit-target.min}" }   # every pane's first element — structural, identical to Light (see design.md)
   hit-target:     { min: 44px }   # minimum effective pointer-target square — structural, identical to Light (see design.md Touch targets)
 focus:            { outline: "2px solid {colors.accent}", offset: 2px }   # one tokenized :focus-visible ring app-wide — identical behavior to Light, brighter accent value
 icons:
@@ -175,7 +176,9 @@ Identical to the [Light theme contract](design.md): fixed floating bottom-tab pi
 on coarse pointers, viewport-anchored via `100dvh` + `env(safe-area-inset-bottom)`,
 one active tab at a time (accent-soft tint + `accent-text`, `aria-selected` tracked),
 `localStorage`-persisted selection, hidden under an open modal
-(`body:has(dialog[open])`), tap targets ≥ 44px with icon + label, the same
+(`body:has(dialog[open])`), tap targets ≥ 44px with icon + label, at most five
+tabs with Settings as a page-header action, every pane opening with the one
+`page-header`, the same
 tokenized `:focus-visible` ring on every interactive element, and the same
 behavior rendered inline at the top on fine pointers. The dark theme changes the
 *colors* of these elements (the focus ring uses the brighter dark `accent`),
@@ -188,7 +191,7 @@ Structurally unchanged from the Light theme — the four button tiers
 shared `button-disabled` recipe; the accent derivatives are the same
 `color-mix` strings over the brighter dark accent), `card`,
 `control`, `switch`, `nav-bar`, `nav-tab`, `disclosure`, plus the `modal`,
-`list-row`, `action-row`, `empty-state`, and `icon-tile` **Component contracts** and the `icons.size` steps
+`page-header`, `list-row`, `action-row`, `empty-state`, and `icon-tile` **Component contracts** and the `icons.size` steps
 defined in `design.md` — all with the vendored snippets from
 `project-scaffolding` reused verbatim. Only values change for dark: the `switch`
 on-track is still **green (`success`)**, at the brighter dark `success` value;
