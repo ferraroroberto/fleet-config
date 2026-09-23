@@ -100,6 +100,12 @@ components:
   page-header:    { minHeight: "{rows.md}", padding: "0 14px", title: "{typography.body}", titleWeight: 700, context: "{typography.body-sm}", contextColor: "{colors.fg-muted}", trailingActions: 2, actionSize: "{components.hit-target.min}" }   # every pane's first element — structural, identical to Light (see design.md)
   hit-target:     { min: 44px }   # minimum effective pointer-target square — structural, identical to Light (see design.md Touch targets)
 focus:            { outline: "2px solid {colors.accent}", offset: 2px }   # one tokenized :focus-visible ring app-wide — identical behavior to Light, brighter accent value
+layout:                           # desktop placement (Layout) — theme-independent
+  measure:     772px              # centered content column below the wide breakpoint
+  wide:        1100px             # (min-width: 1100px) and (pointer: fine): left rail + master-detail
+  rail:        80px               # wide-layout nav rail — icon over a short label, never icon-only
+  list-pane:   1fr                # master-detail split: list : detail
+  detail-pane: 1.5fr
 text-size:                        # the user's zoom-lock escape (Layout, "Text size") — theme-independent
   key-suffix: ".textsize"         # localStorage key `<app>.textsize`, stamped pre-paint as html[data-textsize]
   small:   93.75%                 # root font-size per step; rem-based type scales, px geometry stays fixed
@@ -156,7 +162,10 @@ headers only).
 ## Layout
 
 Unchanged from the Light theme. Reserve bottom padding equal to the nav height +
-safe-area inset so the fixed bar never covers content.
+safe-area inset so the fixed bar never covers content. The wide layout
+(`layout.wide`, 1100px and fine pointer: left rail + master-detail, board
+exception) applies unchanged. The rail is a `card` surface, so in dark it
+sits one step above the canvas like any other card.
 
 ## Elevation & Depth
 
@@ -188,7 +197,8 @@ one active tab at a time (accent-soft tint + `accent-text`, `aria-selected` trac
 tabs with Settings as a page-header action, every pane opening with the one
 `page-header`, the same
 tokenized `:focus-visible` ring on every interactive element, and the same
-behavior rendered inline at the top on fine pointers. The dark theme changes the
+behavior rendered inline at the top on fine pointers, or as the left rail
+at `layout.wide` (1100px) and up. The dark theme changes the
 *colors* of these elements (the focus ring uses the brighter dark `accent`),
 never their *behavior*.
 
