@@ -95,6 +95,7 @@ components:
   disclosure:     { align: left, chevron: right, closedHeight: 52px, summaryPadding: "0 14px", bodyPadding: "12px 14px 14px" }   # collapsible details/summary header — the summary owns height+padding; the card's own padding is zeroed so cards align when closed
   modal:          { rounded: "{rounded.lg}", closeSize: 34px, rowPadding: "12px 0", primaryButton: "{components.button-primary}" }   # editor <dialog> — heading-lg title + × close, label/value rows on a top-border divider, one full-width primary
   list-row:       { rowPadding: "{components.modal.rowPadding}", divider: "{colors.border-muted}" }   # repeating entries inside a card — flat full-bleed rows on a top hairline, never nested canvas-subtle cards (photo-ocr .history-item, post-photo-ocr#73)
+  action-row:     { minHeight: "{rows.md}", title: "{typography.body}", titleWeight: 600, meta: "{typography.body-sm}", metaColor: "{colors.fg-muted}", leadingToggles: 1, trailingAccessories: 1, extraVisibleActions: 1, accessorySize: "{components.hit-target.min}", destructiveColor: "{colors.danger-text}", filterAboveRows: 12, filterHeight: 44px, filterBorder: "{colors.control-border}" }   # a list row that does something: tap the row = primary action, one trailing kebab/chevron, destructive only in the menu
   empty-state:    { iconSize: "{icons.size.feature}", gap: "{spacing.sm}", padding: "{spacing.xl} {spacing.md}", actionMinWidth: 96px, textColor: "{colors.fg-muted}" }   # icon + one-line reason + optional action, centered
   icon-tile:      { rounded: "{rounded.md}", iconSize: "{icons.size.feature}", iconColor: "{colors.accent-fg}" }   # Home-screen rounded-square — one tile-* fill, centered Lucide glyph
   hit-target:     { min: 44px }   # minimum effective pointer-target square, app-wide — see Touch targets
@@ -387,7 +388,10 @@ open state adds a `border-bottom: 1px solid {colors.border-muted}` on
 `disclosure.bodyPadding` (`12px 14px 14px` for a plain content block; drop the
 top value to `0` when the body's first child is a list whose own items already
 carry top padding) so text isn't flush against the left edge while the right
-edge keeps matching margin. Prefer bundling all four rules into **one shared
+edge keeps matching margin. **The `summary` holds the title, optional meta and
+the chevron — nothing else interactive.** Pickers, icon buttons and toggles go
+in the body as a toolbar row, because a near-miss on a control packed into the
+52px header toggles the card instead. Prefer bundling all four rules into **one shared
 modifier class** (e.g. `.card--collapsible`) applied to the card, rather than
 hand-listing every card's selector across separate padding/height/divider rules
 — that per-selector enumeration is exactly how the contract drifts per new card.
@@ -425,14 +429,31 @@ hand-picked per app.
   (`12px 0`, shared vocabulary with the modal), separated by a 1px `divider`
   (`border-muted`) top hairline on every row after the first (`.row + .row`) —
   **never** nested `canvas-subtle` cards with their own border/radius per entry.
-  Row internals (meta line, badges, action buttons) are unconstrained by this
-  rule. Reference impl: photo-ocr `styles.css` `.history-item` — first built as
+  Row internals (meta line, badges) are unconstrained by this rule; a row that
+  carries actions follows `action-row` below. Reference impl: photo-ocr `styles.css` `.history-item` — first built as
   per-entry cards, rejected on-device as too heavy, rebuilt flat (photo-ocr#73).
   **Row heights** (list-row, action-rail, and other repeating-row selectors)
   draw from the `rows` 3-step scale (`rows.sm` 44px / `rows.md` 52px /
   `rows.lg` 60px — `disclosure.closedHeight` is `rows.md`) via `var(--row-*)`
   or a `calc()` derivation, never an ad hoc literal — consolidated from five
   prior ad hoc heights (30/40/44/52/60px) in app-launcher#365/PR#380.
+- **action-row** (`action-row`) — a `list-row` whose entries *do* something
+  (launch, run, open). It follows the native list pattern (iOS, Material,
+  GitHub Mobile): **tapping the row performs its primary action**, and every
+  other action sits behind **one trailing accessory**, a 44px kebab (or a
+  chevron when the row only navigates). The row may add **at most one leading
+  toggle** (e.g. favorite) and **at most one other visible action**, and only
+  when that action is the row's dominant verb (Run on a job row), at real 44px
+  geometry. **Title:** `body` at weight 600, one line, truncated with an
+  ellipsis, never broken mid-word. **Context:** at most one `body-sm` line in
+  `fg-muted`. Height comes from the `rows` scale (`rows.md` minimum). **No
+  vertical rules** between controls inside a row; a list is not a
+  spreadsheet. **Destructive actions** (Kill, Stop, Delete) live in the row
+  menu as its last item, after a divider, in `danger-text`, behind a
+  confirm. A row never shows a visible danger button. **Long lists:** a list
+  that can exceed ~12 rows gets a filter field above it: 44px tall, a
+  `control-border` boundary on `card`, `rounded.md`. Reference impl:
+  app-launcher session rows (app-launcher#1025, tap the row + one kebab).
 - **dense collection** — how a card renders **saved automation/settings
   items** (schedules, pairings, overrides): each item is a flat `list-row`
   **summary row** — a compact human-readable summary line + the entry's
@@ -528,11 +549,13 @@ byte-for-byte components.
 - **Do** honor `prefers-reduced-motion` — collapse authored animation to near-instant.
 - **Do** ship the user-selectable theme: pre-paint `data-theme` boot script + persisted sun/moon toggle on the main view — never dark-only or OS-only.
 - **Do** render a repeating list of entries (history, activity log) as flat full-bleed rows on a hairline divider — never nested cards per entry.
+- **Do** make a list row's primary action the row itself, with one trailing kebab for the rest and a filter field above any list that can exceed ~12 rows.
 - **Do** pin every single-column stack grid's track to `minmax(0, 1fr)` — never a bare `1fr`/`auto`/implicit track behind a no-wrap or scrollable child.
 - **Do** give every non-navigation pointer target a ≥44×44px *effective* hit area — invisible expansion for isolated compact controls, real geometry for adjacent clusters; expanded rectangles never overlap.
 - **Do** preserve and label last-known data when a background refresh fails (`Last updated … · live data unavailable`) and disable freshness-sensitive actions — stale state is never actionable.
 - **Do** pair every colour-distinguished chart series with a non-colour cue (dash / point style / fill) and a viewport-aware tick budget.
 - **Don't** hand-roll a primitive (switch, select, dialog, tabs…) that shadcn already defines.
+- **Don't** show a destructive action as a visible per-row button, split a row into icon columns with vertical rules, or put controls inside a disclosure `summary`.
 - **Don't** mix a second icon set or hand-draw a one-off glyph — use the matching Lucide icon.
 - **Don't** declare one manifest icon as both `any` and `maskable`, or redraw the app identity independently for the tray.
 - **Don't** set a line people read in `caption`, or uppercase anything but an `overline` group header — secondary lines are `body-sm`, and numbers and units are never transformed.
