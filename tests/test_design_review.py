@@ -191,6 +191,19 @@ check(_ts["light"] == _ts["dark"] and _ts["light"].get("text-size.key-suffix") =
 check([_ts["light"].get(f"text-size.{k}") for k in ("small", "default", "large")] == ["93.75%", "100%", "112.5%"],
       f"text-size steps are 93.75% / 100% / 112.5% (got {_ts['light']})")
 
+# ---- wide desktop layout (#968) ----
+
+_lay = {t: {k: v for k, v in s.items() if k.startswith("layout.")} for t, s in src_specs.items()}
+check(_lay["light"] == _lay["dark"], "layout tokens are identical in both themes")
+check(_lay["light"].get("layout.measure") == "772px" and _lay["light"].get("layout.wide") == "1100px",
+      f"772px measure below a 1100px wide breakpoint (got {_lay['light']})")
+check(rb.px_value(_lay["light"].get("layout.rail", "")) is not None
+      and _lay["light"].get("layout.list-pane") and _lay["light"].get("layout.detail-pane"),
+      "wide layout declares the rail width and the list:detail split")
+check(float(rubric.rules[[r.id for r in rubric.rules].index("LAYOUT-06")].params.get("min_viewport", 0))
+      == rb.px_value(_lay["light"].get("layout.wide", "")),
+      "the rubric's wide-desktop rule measures from the spec's wide breakpoint")
+
 # ---- nav cap + page header (#966) ----
 
 for _theme, _s in src_specs.items():

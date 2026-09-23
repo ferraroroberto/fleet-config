@@ -101,6 +101,12 @@ components:
   page-header:    { minHeight: "{rows.md}", padding: "0 14px", title: "{typography.body}", titleWeight: 700, context: "{typography.body-sm}", contextColor: "{colors.fg-muted}", trailingActions: 2, actionSize: "{components.hit-target.min}" }   # every pane's first element — the vendored home-head: tab title, one context line, trailing theme toggle + settings
   hit-target:     { min: 44px }   # minimum effective pointer-target square, app-wide — see Touch targets
 focus:            { outline: "2px solid {colors.accent}", offset: 2px }   # one tokenized :focus-visible ring app-wide (a control overrides only where it draws a custom ring)
+layout:                           # desktop placement (Layout) — theme-independent
+  measure:     772px              # centered content column below the wide breakpoint
+  wide:        1100px             # (min-width: 1100px) and (pointer: fine): left rail + master-detail
+  rail:        80px               # wide-layout nav rail — icon over a short label, never icon-only
+  list-pane:   1fr                # master-detail split: list : detail
+  detail-pane: 1.5fr
 text-size:                        # the user's zoom-lock escape (Layout, "Text size") — theme-independent
   key-suffix: ".textsize"         # localStorage key `<app>.textsize`, stamped pre-paint as html[data-textsize]
   small:   93.75%                 # root font-size per step; rem-based type scales, px geometry stays fixed
@@ -210,8 +216,39 @@ introduce ad-hoc sizes.
 
 Card grid on a quiet canvas. Content column max ~480px on phones, centered. On
 wider viewports the same column stays **centered at `max-width: 772px`
-(`margin: 0 auto`)** rather than stretching full-bleed — the phone-first
-proportions hold on desktop, so an app reads the same at any width. A
+(`layout.measure`, `margin: 0 auto`)** rather than stretching full-bleed — the
+phone-first proportions hold on desktop, so an app reads the same at any width.
+
+**Wide layout — `(min-width: 1100px) and (pointer: fine)` (`layout.wide`).**
+At 1440px a lone 772px column leaves almost half the window empty, and a
+detail view opened from a list covers the list it came from. So on a wide,
+fine-pointer window the same app changes placement only. Components, tokens
+and behavior stay the same:
+
+- **The nav becomes a left rail** (`layout.rail`, 80px, full height, `card`
+  surface with a `border` hairline on its right edge). It shows the same tabs
+  as a vertical stack, each an icon over a short label, never icon-only. The
+  single active tab, `aria-selected`, persistence and the accent-soft +
+  `accent-text` active state are unchanged. The floating pill and its bottom
+  padding reservation do not apply here.
+- **Master-detail.** A tab whose list opens a detail (a session, a job, a
+  run) shows the list and the detail side by side (`layout.list-pane` :
+  `layout.detail-pane`, 1 : 1.5, each a `minmax(0, …)` track). The detail
+  replaces the overlay it uses on a phone. The selected row keeps the
+  accent-soft tint. A tab with no detail keeps the centered 772px measure in
+  the space right of the rail.
+- **The page header** heads the list pane. A pane scrolls on its own; the
+  window does not.
+- **Board exception.** A multi-column board (kanban) may span the full width
+  available to content at any desktop width. It is the one sanctioned
+  exception to the 772px measure. Its page header and toolbar span with it,
+  so the view never mixes two measures.
+
+Below 1100px, or on a coarse pointer at any width, nothing changes: the
+772px measure and the tab placement described in the Navigation contract
+apply.
+
+A
 single **`spacing.gutter` (12px)** sets every gap — between cards/tiles *and* from
 the page edges — so the spacing reads uniform in every direction.
 **Reserve bottom padding equal to the nav height + safe-area inset** so the fixed
@@ -375,9 +412,11 @@ identically; treat every bullet as a hard requirement, not a suggestion.
   `button-surface` gear beside the theme toggle), one tap from every tab.
   An app with several such destinations may make the fifth tab "More"; it
   still counts toward the five.
-- **Desktop / fine pointers** may render the same tabs inline at the top; the
-  behavior (single active tab, persistence) is unchanged — only the placement
-  differs.
+- **Desktop / fine pointers** below `layout.wide` (1100px) may render the
+  same tabs inline at the top of the 772px column. At 1100px and wider they
+  become the **left rail** of the wide layout (Layout): a vertical stack of
+  icon-over-label tabs. The behavior (single active tab, `aria-selected`,
+  persistence) is unchanged; only the placement differs.
 - **Focus is visible and identical everywhere.** One tokenized rule —
   `:focus-visible { outline: 2px solid {colors.accent}; outline-offset: 2px }` —
   covers *every* interactive element (button, input, switch, summary, tab)
@@ -606,7 +645,7 @@ byte-for-byte components.
 - **Don't** set a line people read in `caption`, or uppercase anything but an `overline` group header — secondary lines are `body-sm`, and numbers and units are never transformed.
 - **Don't** put a solid accent fill on any button except the view's primary action — secondary emphasis is the tint, never a second solid.
 - **Don't** introduce a second accent or per-app navigation variants.
-- **Don't** stretch content full-bleed on desktop — keep the centered 772px measure.
+- **Don't** stretch a single column full-bleed on desktop — keep the centered 772px measure below 1100px, and use the left rail + master-detail layout above it. A multi-column board is the one exception.
 - **Don't** use status colors decoratively — they signal state only.
 - **Don't** put raw infrastructure detail (hostnames, URLs, exception text) in user-facing failure copy — sanitize it; logs keep the detail.
 - **Don't** apply this spec to Streamlit POC spikes.
