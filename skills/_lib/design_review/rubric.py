@@ -12,7 +12,7 @@ through `[params]`.
 Rubric file shape (flat: `[[rules]]` is what the metrics decide, `[[judgment]]`
 is the bounded checklist a fresh-context judge answers — #973):
 
-    [meta]        version = "1.2.0"          # stamped on every metrics/evaluate output
+    [meta]        version = "1.3.0"          # stamped on every metrics/evaluate output
     [weights]     <category> = <float>       # category weight in the overall score
     [grades]      A = 90, B = 80, ...        # minimum score per letter, F = 0
     [penalties]   P0 = 25, P1 = 12, P2 = 6, P3 = 2   # per failing rule, once per rule

@@ -225,7 +225,7 @@ def _filtered_count(m: dict, section: str, key: str, rule: Rule, default_allow: 
 
 
 def _d_uppercase(m: dict, rule: Rule, ctx: dict) -> Derived:
-    return _filtered_count(m, "text", "uppercase", rule, r"badge|tag|kbd|eyebrow|abbr")
+    return _filtered_count(m, "text", "uppercase", rule, r"overline")
 
 
 def _d_break_all(m: dict, rule: Rule, ctx: dict) -> Derived:
