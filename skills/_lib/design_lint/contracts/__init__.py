@@ -3,7 +3,7 @@
 `contracts()` is a thin orchestrator — it builds the shared `_ContractsCtx`
 once and runs `_CONTRACT_CHECKS` in numbered order. Each check lives in the
 per-concern module its subject belongs to (a11y, controls, modal, nav, icons,
-charts, states), so adding a design.md rule means editing one small file and
+charts, states, typography), so adding a design.md rule means editing one small file and
 adding one row to the tuple below, not growing a single 1200-line section.
 """
 from __future__ import annotations
@@ -20,6 +20,8 @@ from .a11y import (
     _check_focus_visible_ring,
     _check_hit_target,
     _check_reduced_motion,
+    _check_rendered_leg,
+    _check_spec_contrast,
 )
 from .charts import _check_chart_noncolor_cue, _check_chart_tick_budget
 from .controls import (
@@ -32,10 +34,11 @@ from .controls import (
     _check_text_size,
     _check_theme_toggle,
 )
-from .icons import _check_app_icon_family, _check_icon_set, _check_icon_sizes
+from .icons import _check_app_icon_family, _check_glyph_icons, _check_icon_set, _check_icon_sizes
 from .modal import _check_editor_modal_contract, _check_native_dialog
 from .nav import _check_nav_contract, _check_viewport_lock
 from .states import _check_async_lifecycle
+from .typography import _check_break_all, _check_form_font_inherit, _check_uppercase_role
 
 
 _CONTRACT_CHECKS: Tuple[Callable[["_ContractsCtx"], List[dict]], ...] = (
@@ -53,6 +56,7 @@ _CONTRACT_CHECKS: Tuple[Callable[["_ContractsCtx"], List[dict]], ...] = (
     _check_theme_toggle,
     _check_text_size,
     _check_icon_set,
+    _check_glyph_icons,
     _check_app_icon_family,
     _check_chevron_placement,
     _check_row_height_scale,
@@ -61,6 +65,11 @@ _CONTRACT_CHECKS: Tuple[Callable[["_ContractsCtx"], List[dict]], ...] = (
     _check_chart_tick_budget,
     _check_chart_noncolor_cue,
     _check_async_lifecycle,
+    _check_form_font_inherit,
+    _check_uppercase_role,
+    _check_break_all,
+    _check_spec_contrast,
+    _check_rendered_leg,
 )
 
 

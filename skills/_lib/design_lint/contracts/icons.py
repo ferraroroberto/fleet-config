@@ -13,7 +13,7 @@ from typing import Dict, List
 
 from ..css import _BLOCK_RE, strip_comments
 from ..files import read_text, rel, repo_files
-from ..markup import find_emoji_sites
+from ..markup import find_emoji_sites, find_glyph_icon_sites
 from ..selectors import selector_group
 from ._ctx import _ContractsCtx, _result
 
@@ -76,6 +76,22 @@ def _check_icon_set(ctx: _ContractsCtx) -> List[dict]:
         return [_result("icon-set", "PASS",
                          "icon-set: lucide-sprite adopted, no emoji glyphs in rendered text")]
     return [_result("icon-set", "NA", "no emoji glyphs and no vendored icons/ component found")]
+
+
+def _check_glyph_icons(ctx: _ContractsCtx) -> List[dict]:
+    # 13b. text glyphs as icons — arrows (U+2190-21FF) and geometric shapes
+    #      (U+25A0-25FF) in rendered text stand in for a Lucide glyph: refresh
+    #      as a literal arrow, a caret as a triangle (fleet-config#969). The
+    #      emoji scan never saw them. WARN, never FAIL: the fix is per app.
+    if not ctx.html_files and not ctx.js_files:
+        return [_result("glyph-icons", "NA", "no HTML or JS to scan")]
+    sites = find_glyph_icon_sites(ctx.root, ctx.html_files, ctx.js_files)
+    if sites:
+        return [_result("glyph-icons", "WARN",
+                         f"{len(sites)} arrow/shape character(s) drawn as icons in rendered "
+                         "text; use the matching Lucide glyph (design.md Icons): "
+                         + ", ".join(sites[:8]))]
+    return [_result("glyph-icons", "PASS", "no arrow or geometric-shape characters in rendered text")]
 
 
 def _check_app_icon_family(ctx: _ContractsCtx) -> List[dict]:

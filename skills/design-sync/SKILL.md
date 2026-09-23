@@ -247,6 +247,33 @@ read.
       JS-rendered drawer is exactly the surface this contract is for and
       the check already reads `dataset.state` the same way, #416); NA
       when the app never uses `data-state`.
+  - **audit-promoted checks** — five static views of the 2026-09-21
+    rendered audit (#969). Every one WARNs and never FAILs, because the
+    apps they flag fix them in their own lanes:
+    - **form-font-inherit** — no global `font: inherit` (or
+      `font-family: inherit`) on bare `button`, `input`, `select` and
+      `textarea`, so controls render in the UA font (Arial on Windows
+      Chrome). Vendored CSS counts, since the scaffold base ships the rule
+      (project-scaffolding#266). A scoped `.card button` is not the reset.
+    - **uppercase-role** — `text-transform: uppercase` on any selector that
+      is not the spec's legal caps role. The allowed role is read from the
+      spec (`typography.*.textTransform`, today `overline`, #964).
+      App-authored CSS only.
+    - **break-all** — `word-break: break-all` on a selector that is not a
+      path, hash, URL or code string. Names want `overflow-wrap: anywhere`.
+    - **glyph-icons** — arrow (U+2190–21FF) and geometric-shape
+      (U+25A0–25FF) characters drawn as icons in rendered markup or JS UI
+      strings. Same comment, regex-literal and `vendor/` exclusions as
+      `icon-set`; the ranges don't overlap its emoji scan.
+    - **spec-contrast** — every `components.<name>` text/background pair in
+      the spec, composited over `card`, per theme, computed from the spec
+      alone. It flags the spec (fleet-config), not the app, and PASSes since
+      #963.
+  - **rendered-leg** — PASS when the repo has the shared rendered-geometry
+    helper (`tests/e2e/_geometry.py`, project-scaffolding#157), WARN
+    `rendered leg unmeasured` when it doesn't. A static `hit-target` PASS
+    once sat beside 33–39px rendered heights, so the missing harness now
+    shows in the contract counts, not only in this prose (#969).
   - **`ACCEPTED`** — a WARN/FAIL a repo already examined and accepted, via a
     `[[design.accepted]]` entry in its own `.fleet.toml` (schema:
     `architecture/README.md`, fleet-config#836). The row keeps the original

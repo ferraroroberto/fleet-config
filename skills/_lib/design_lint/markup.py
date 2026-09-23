@@ -85,12 +85,35 @@ _EMOJI_RE = re.compile(
     "⬀-⯿"           # misc symbols and arrows
     "]"
 )
+# Arrows and geometric shapes drawn as text in place of an icon (refresh as a
+# literal arrow, a dropdown caret as a triangle — fleet-config#969). Disjoint
+# from the emoji ranges above, so a site is never counted by both scans.
+_GLYPH_ICON_RE = re.compile(
+    "["
+    "←-⇿"   # arrows
+    "■-◿"   # geometric shapes (triangles, circles, squares)
+    "]"
+)
 _TAG_RE = re.compile(r"<[^>]*>")
 
 
 def find_emoji_sites(root: Path, html_files: List[Path], js_files: List[Path]
                       ) -> List[str]:
-    """`file:line` for emoji glyphs in rendered text — HTML text nodes (tags
+    """`file:line` for emoji glyphs in rendered text — see `_rendered_text_sites`."""
+    return _rendered_text_sites(root, html_files, js_files, _EMOJI_RE)
+
+
+def find_glyph_icon_sites(root: Path, html_files: List[Path], js_files: List[Path]
+                          ) -> List[str]:
+    """`file:line` for arrow / geometric-shape characters in rendered text —
+    text glyphs standing in for a Lucide icon (fleet-config#969). Same
+    exclusions as the emoji scan."""
+    return _rendered_text_sites(root, html_files, js_files, _GLYPH_ICON_RE)
+
+
+def _rendered_text_sites(root: Path, html_files: List[Path], js_files: List[Path],
+                         pattern: "re.Pattern[str]") -> List[str]:
+    """`file:line` for `pattern` in rendered text — HTML text nodes (tags
     stripped so attribute values don't count) and JS source (string literals
     used as UI copy, e.g. an empty-state message baked into a .js file, are
     indistinguishable from other JS text at grep level, so the whole file is
@@ -108,14 +131,14 @@ def find_emoji_sites(root: Path, html_files: List[Path], js_files: List[Path]
             continue
         text = strip_comments(read_text(p), "html")
         text_nodes = _TAG_RE.sub(" ", text)
-        for m in _EMOJI_RE.finditer(text_nodes):
+        for m in pattern.finditer(text_nodes):
             line = text_nodes.count("\n", 0, m.start()) + 1
             sites.append(f"{rel(root, p)}:{line}")
     for p in js_files:
         if is_third_party(p):
             continue
         text = strip_comments(read_text(p), "js", blank_regex_literals=True)
-        for m in _EMOJI_RE.finditer(text):
+        for m in pattern.finditer(text):
             line = text.count("\n", 0, m.start()) + 1
             sites.append(f"{rel(root, p)}:{line}")
     return sites
