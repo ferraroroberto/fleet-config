@@ -434,6 +434,31 @@ check(tt_drift["theme-toggle"]["status"] == "WARN"
 
 check(good["theme-toggle"]["status"] == "NA", "no index.html -> theme-toggle NA")
 
+# ---- user text-size setting (fleet-config#967): WARN-only while apps adopt ----
+
+TS_BOOT = ("<head><script>(function(){"
+           "var s = localStorage.getItem('app.textsize');"
+           "if (s) document.documentElement.dataset.textsize = s;"
+           "})();</script>")
+TS_CONTROL = "</head><body><script>localStorage.setItem('app.textsize', 'large');</script></body>"
+ts_ok = run_contracts(GOOD_CSS, TS_BOOT + TS_CONTROL, html_name="index.html")
+check(ts_ok["text-size"]["status"] == "PASS", "pre-paint data-textsize stamp + persisted control PASS")
+TS_CONST = ("<head><script>var TEXTSIZE_KEY = 'app.textsize';"
+            "document.documentElement.setAttribute('data-textsize', localStorage.getItem(TEXTSIZE_KEY) || 'default');"
+            "</script></head><body><script>localStorage.setItem(TEXTSIZE_KEY, 'small');</script></body>")
+ts_const = run_contracts(GOOD_CSS, TS_CONST, html_name="index.html")
+check(ts_const["text-size"]["status"] == "PASS", "setAttribute stamp + named-constant key PASS")
+ts_none = run_contracts(GOOD_CSS, "<head></head><body></body>", html_name="index.html")
+check(ts_none["text-size"]["status"] == "WARN" and "not adopted" in ts_none["text-size"]["detail"],
+      "no text-size mechanism WARNs (never FAIL) as not adopted")
+ts_noboot = run_contracts(GOOD_CSS, "<head>" + TS_CONTROL, html_name="index.html")
+check(ts_noboot["text-size"]["status"] == "WARN" and "no pre-paint" in ts_noboot["text-size"]["detail"],
+      "control without the pre-paint stamp WARNs (reflow)")
+ts_nocontrol = run_contracts(GOOD_CSS, TS_BOOT + "</head><body></body>", html_name="index.html")
+check(ts_nocontrol["text-size"]["status"] == "WARN" and "no persisted control" in ts_nocontrol["text-size"]["detail"],
+      "stamp without a persisted control WARNs")
+check(good["text-size"]["status"] == "NA", "no index.html -> text-size NA")
+
 
 # ---- icon-set: emoji vs Lucide (design.md Icons, fleet-config#284) ----
 

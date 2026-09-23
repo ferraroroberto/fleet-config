@@ -100,6 +100,11 @@ components:
   page-header:    { minHeight: "{rows.md}", padding: "0 14px", title: "{typography.body}", titleWeight: 700, context: "{typography.body-sm}", contextColor: "{colors.fg-muted}", trailingActions: 2, actionSize: "{components.hit-target.min}" }   # every pane's first element — structural, identical to Light (see design.md)
   hit-target:     { min: 44px }   # minimum effective pointer-target square — structural, identical to Light (see design.md Touch targets)
 focus:            { outline: "2px solid {colors.accent}", offset: 2px }   # one tokenized :focus-visible ring app-wide — identical behavior to Light, brighter accent value
+text-size:                        # the user's zoom-lock escape (Layout, "Text size") — theme-independent
+  key-suffix: ".textsize"         # localStorage key `<app>.textsize`, stamped pre-paint as html[data-textsize]
+  small:   93.75%                 # root font-size per step; rem-based type scales, px geometry stays fixed
+  default: 100%
+  large:   112.5%
 icons:
   size:                           # theme-independent; the full icon spec (set/grid/stroke/license) is in design.md
     inline:  16px                 # inline with body text / row affordances
@@ -137,7 +142,10 @@ so a white glyph holds 4.6:1. The brighter base hues gave 2.5–3.4:1.
 The user-selectable theme-switching contract (pre-paint boot script, persisted
 sun/moon toggle, dual `theme-color` metas) is defined in the
 [Light theme](design.md) and applies unchanged; this theme's `canvas`
-(`#0d1117`) is the dark `theme-color` meta value.
+(`#0d1117`) is the dark `theme-color` meta value. So does the text-size
+contract (Layout, "Text size"): the same `<app>.textsize` key and
+`html[data-textsize]` stamp, stamped by the same boot script, whichever theme
+is showing.
 
 ## Typography
 

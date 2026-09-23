@@ -183,6 +183,14 @@ for _theme, _s in src_specs.items():
     check(_s.get("components.action-row.filterBorder") == _s.get("colors.control-border"),
           f"{_theme}: the list filter field uses control-border")
 
+# ---- text-size escape (#967) ----
+
+_ts = {t: {k: v for k, v in s.items() if k.startswith("text-size.")} for t, s in src_specs.items()}
+check(_ts["light"] == _ts["dark"] and _ts["light"].get("text-size.key-suffix") == ".textsize",
+      "text-size contract is identical in both themes with the .textsize key suffix")
+check([_ts["light"].get(f"text-size.{k}") for k in ("small", "default", "large")] == ["93.75%", "100%", "112.5%"],
+      f"text-size steps are 93.75% / 100% / 112.5% (got {_ts['light']})")
+
 # ---- nav cap + page header (#966) ----
 
 for _theme, _s in src_specs.items():

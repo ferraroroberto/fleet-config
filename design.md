@@ -101,6 +101,11 @@ components:
   page-header:    { minHeight: "{rows.md}", padding: "0 14px", title: "{typography.body}", titleWeight: 700, context: "{typography.body-sm}", contextColor: "{colors.fg-muted}", trailingActions: 2, actionSize: "{components.hit-target.min}" }   # every pane's first element — the vendored home-head: tab title, one context line, trailing theme toggle + settings
   hit-target:     { min: 44px }   # minimum effective pointer-target square, app-wide — see Touch targets
 focus:            { outline: "2px solid {colors.accent}", offset: 2px }   # one tokenized :focus-visible ring app-wide (a control overrides only where it draws a custom ring)
+text-size:                        # the user's zoom-lock escape (Layout, "Text size") — theme-independent
+  key-suffix: ".textsize"         # localStorage key `<app>.textsize`, stamped pre-paint as html[data-textsize]
+  small:   93.75%                 # root font-size per step; rem-based type scales, px geometry stays fixed
+  default: 100%
+  large:   112.5%
 icons:
   set:     "Lucide"               # canonical fleet icon set — https://lucide.dev
   url:     "https://lucide.dev"
@@ -214,6 +219,25 @@ bar never covers content (`padding-bottom: calc(61px + env(safe-area-inset-botto
 Installable PWAs lock to a fixed scale: viewport
 `maximum-scale=1, user-scalable=no` + `touch-action: manipulation` on the body —
 no pinch, no double-tap zoom.
+**Text size — the escape that makes the zoom lock acceptable.** Locking the
+viewport fails WCAG 1.4.4 (Resize Text) unless the app offers its own way to
+enlarge text, so every app ships one, the same way it ships the theme toggle:
+
+- **Control:** a persisted **Text size** setting with three steps (Small /
+  Default / Large) in the app's Settings, as a segmented control.
+- **Persistence:** a per-app `localStorage` key ending **`.textsize`**
+  (`text-size.key-suffix`, e.g. `app-launcher.textsize`), values `small`,
+  `default` or `large`.
+- **Pre-paint stamp:** the **same inline `<head>` boot script** that stamps
+  `data-theme` also stamps `html[data-textsize]` from that key, before first
+  paint, so the page never reflows.
+- **What scales:** the root `font-size` takes the step (`text-size.small`
+  93.75% / `default` 100% / `large` 112.5%), so every rem-based type role
+  scales with it.
+- **What does not scale:** geometry stays in px — the nav pill, `rows`,
+  `hit-target`, the `control` height and the `icons.size` steps. Never
+  express geometry in rem, or the Large step would reflow the nav and the
+  rows along with the text.
 **Single-column stack containers pin their track to `minmax(0, 1fr)`** — any
 `display: grid` wrapper around vertically-stacked content (a pane, pane-body,
 or list container) that can hold a no-wrap or horizontally scrollable child
@@ -568,6 +592,7 @@ byte-for-byte components.
 - **Do** size every glyph from the canonical `icons.size` steps (16 / 18 / 20 / 24 — `inline` / `title` / `nav-tab` / `feature`) — don't hand-pick a one-off size.
 - **Do** honor `prefers-reduced-motion` — collapse authored animation to near-instant.
 - **Do** ship the user-selectable theme: pre-paint `data-theme` boot script + persisted sun/moon toggle on the main view — never dark-only or OS-only.
+- **Do** ship the persisted Small / Default / Large text-size setting (`<app>.textsize`, stamped pre-paint as `html[data-textsize]`) — it is what makes the zoom lock acceptable.
 - **Do** render a repeating list of entries (history, activity log) as flat full-bleed rows on a hairline divider — never nested cards per entry.
 - **Do** make a list row's primary action the row itself, with one trailing kebab for the rest and a filter field above any list that can exceed ~12 rows.
 - **Do** pin every single-column stack grid's track to `minmax(0, 1fr)` — never a bare `1fr`/`auto`/implicit track behind a no-wrap or scrollable child.

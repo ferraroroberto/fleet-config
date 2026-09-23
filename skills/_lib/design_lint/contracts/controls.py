@@ -278,6 +278,49 @@ def _check_theme_toggle(ctx: _ContractsCtx) -> List[dict]:
                      _evidence(markup_all, toggle_re, re.I))]
 
 
+def _check_text_size(ctx: _ContractsCtx) -> List[dict]:
+    # 12b. user text-size setting — the zoom-lock escape (design.md Layout
+    #      "Text size"; fleet-config#967): a pre-paint html[data-textsize]
+    #      stamp read from a `.textsize` localStorage key in <head>, plus a
+    #      persisted control that writes it. WARN, never FAIL: no app shipped
+    #      it when the contract landed, and adoption lands per app. Same key
+    #      shapes as theme-toggle (a `.textsize` literal or a named constant).
+    index_files, markup_all = ctx.index_files, ctx.markup_all
+    if not index_files:
+        return [_result("text-size", "NA", "no index.html found")]
+    stamp_re = r"dataset\.textsize|setAttribute\(\s*['\"]data-textsize['\"]"
+    key_re = r"(?:['\"][^'\"]*\.textsize['\"]|\w*text_?size\w*\s*)"
+    read_re = r"localStorage\.getItem\(\s*" + key_re + r"\)"
+    write_re = r"localStorage\.setItem\(\s*" + key_re + r","
+    missing_boot: List[str] = []
+    for p in index_files:
+        text = strip_comments(read_text(p), "html")
+        body_at = text.lower().find("<body")
+        head = text[:body_at] if body_at >= 0 else text
+        if not (re.search(stamp_re, head, re.I) and re.search(read_re, head, re.I)):
+            missing_boot.append(rel(ctx.root, p))
+    has_control = re.search(write_re, markup_all, re.I)
+    where = "(design.md Layout \"Text size\", fleet-config#967)"
+    if missing_boot and not has_control:
+        return [_result("text-size", "WARN",
+                         "not adopted: no pre-paint data-textsize stamp and no persisted "
+                         ".textsize control, so the viewport zoom lock has no escape "
+                         f"(WCAG 1.4.4) {where}")]
+    if missing_boot:
+        return [_result("text-size", "WARN",
+                         "persisted .textsize control present but no pre-paint "
+                         "data-textsize stamp in <head> (the page reflows after first "
+                         f"paint) {where}: " + ", ".join(missing_boot))]
+    if not has_control:
+        return [_result("text-size", "WARN",
+                         "pre-paint data-textsize stamp present but no persisted "
+                         f"control (no localStorage setItem on a .textsize key) {where}")]
+    return [_result("text-size", "PASS",
+                     f"pre-paint data-textsize stamp + persisted .textsize control on "
+                     f"{len(index_files)} index.html",
+                     _evidence(markup_all, write_re, re.I))]
+
+
 def _check_chevron_placement(ctx: _ContractsCtx) -> List[dict]:
     # 14. chevron placement — disclosure summaries pin the chevron right,
     #     never a leading arrow (design.md disclosure.chevron: right;

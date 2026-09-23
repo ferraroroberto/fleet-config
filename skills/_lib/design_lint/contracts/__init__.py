@@ -29,6 +29,7 @@ from .controls import (
     _check_no_native_checkbox,
     _check_row_height_scale,
     _check_switch_on_green,
+    _check_text_size,
     _check_theme_toggle,
 )
 from .icons import _check_app_icon_family, _check_icon_set, _check_icon_sizes
@@ -50,6 +51,7 @@ _CONTRACT_CHECKS: Tuple[Callable[["_ContractsCtx"], List[dict]], ...] = (
     _check_viewport_lock,
     _check_button_tiers,
     _check_theme_toggle,
+    _check_text_size,
     _check_icon_set,
     _check_app_icon_family,
     _check_chevron_placement,
