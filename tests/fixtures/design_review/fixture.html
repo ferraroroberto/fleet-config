@@ -29,6 +29,7 @@
   svg.i22 { width: 22px; height: 22px; }
   dialog { border: 1px solid #d1d9e0; border-radius: 12px; }
   dialog button { min-height: 44px; min-width: 88px; font: inherit; }
+  dialog summary { min-height: 44px; }
   .segmented { display: flex; gap: 4px; margin: 8px 0; }
   .segmented button { font: inherit; font-size: 12px; min-height: 44px; min-width: 44px; }
   .seg-tall button { white-space: nowrap; }
@@ -85,6 +86,9 @@
   <dialog id="editDialog">
     <h2>Edit</h2>
     <p>Dialog body text.</p>
+    <!-- #998: a closed disclosure the dialog walk never opens; engines still lay its content out
+         with real boxes, so nothing inside may reach any measured section -->
+    <details class="collapsed"><summary>Advanced</summary><input id="hiddenField" aria-label="Hidden field"><p class="faint">Faint and collapsed.</p></details>
     <button type="button">Close</button>
   </dialog>
 </body>

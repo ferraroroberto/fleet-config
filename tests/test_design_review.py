@@ -462,6 +462,10 @@ else:
     check(ay["unnamed"] == ["button.big"] and ay["zoom_locked"] is True, "unnamed button + locked zoom")
     dlg = by_id["desktop-light-dialog-editdialog"]["metrics"]
     check(dlg["controls"]["total"] == 1 and dlg["a11y"]["unnamed_count"] == 0, "dialog scope measures only the dialog")
+    if "error" not in dlg["targets"]:
+        check(dlg["targets"]["total"] == 2 and dlg["targets"]["overlap_count"] == 0,
+              f"dialog targets: summary + Close only, the closed-details input neither counted nor overlapping (#998) -- {dlg['targets']}")
+    check(dlg["text"]["low_contrast_count"] == 0, f"text inside a closed details is not measured (#998) -- {dlg['text']['low_contrast']}")
     check((run_dir / "shots" / "desktop-light-home.png").is_file() and (run_dir / "shots" / "desktop-light-home-full.png").is_file(),
           "screenshots in the run dir")
     dark = by_id["desktop-dark-home"]["metrics"]["text"]

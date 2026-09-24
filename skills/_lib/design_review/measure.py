@@ -81,6 +81,8 @@ _MEASURE_JS = r"""
   const hex = (c) => '#' + [0,1,2].map(i => Math.round(c[i]).toString(16).padStart(2,'0')).join('');
   const visible = (el) => { const r = el.getBoundingClientRect(); if (r.width<1||r.height<1) return false;
     const s = getComputedStyle(el); if (s.visibility==='hidden'||s.display==='none'||+s.opacity===0) return false;
+    // Content of a closed <details> keeps real boxes in both engines; only checkVisibility() says it is hidden (#998).
+    if (typeof el.checkVisibility === 'function' && !el.checkVisibility()) return false;
     // SVG has no offsetParent — climb to the nearest HTML ancestor for the check.
     let h = el; while (h && !(h instanceof HTMLElement)) h = h.parentElement;
     if (!h) return true;
