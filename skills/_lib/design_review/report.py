@@ -336,6 +336,9 @@ def _method(doc: dict) -> str:
         + (f" ({', '.join(f'{n} {k}' for k, n in sorted(kinds.items()))})" if kinds else ""),
         f"metrics captured {doc.get('metrics_generated_at') or 'unknown'}; evaluated {doc.get('generated_at') or 'unknown'}; run directory {doc.get('run_dir') or 'unknown'}",
     ]
+    if doc.get("mode") == "synthetic":
+        items.append("measured on the target's own synthetic instance (a throwaway copy with synthetic data, "
+                     "booted and stopped by this run), not the live app; compared only with earlier synthetic runs")
     if doc.get("unmeasured"):
         u = doc["unmeasured"] if isinstance(doc["unmeasured"], dict) else {"reason": doc["unmeasured"]}
         items.append(f"the whole run is unmeasured: {u.get('reason')} — {u.get('detail') or ''}".rstrip(" —"))

@@ -44,7 +44,7 @@ Public surface:
     load(target)                               -> [entry]
     entry_from_doc(doc, run_id, live_build)    -> entry
     record(run_dir, doc=None, live_build=None) -> entry     (appends / replaces same run_id, trims, atomic write)
-    previous(target, before_run_id)            -> entry | None
+    previous(target, before_run_id, mode)      -> entry | None   # same mode only: live vs synthetic (#995)
     diff(current_doc, previous_entry)          -> diff_doc
     live_build(base_url, api_version_path)     -> str | None
 
@@ -113,6 +113,7 @@ def entry_from_doc(doc: dict, run_id: str, live: Optional[str] = None) -> dict:
         "generated_at": doc.get("generated_at"),
         "commit": doc.get("commit"),
         "live_build": live,
+        "mode": doc.get("mode") or "live",
         "rubric_version": doc.get("rubric_version"),
         "judgment_rubric_version": (j.get("rubric_version") if j else None),
         "overall": {"score": overall.get("score"), "grade": overall.get("grade")},
@@ -167,15 +168,17 @@ def record(run_dir: Path, doc: Optional[dict] = None, live: Optional[str] = None
     return entry
 
 
-def previous(target: str, before_run_id: Optional[str] = None) -> Optional[dict]:
+def previous(target: str, before_run_id: Optional[str] = None, mode: str = "live") -> Optional[dict]:
     """The most recent entry that precedes `before_run_id` (run ids are UTC stamps, so string order is time order).
 
     A `before_run_id` the ledger does not hold yet (the normal case — `diff`
     runs before `record`) compares against the latest earlier entry; a run
     older than everything recorded has nothing to compare against (None),
-    never a later run.
+    never a later run. Only runs of the same `mode` compare: a synthetic
+    instance's run is never diffed against the live app's (#995); entries
+    written before modes existed are live.
     """
-    entries = [e for e in load(target) if e.get("run_id") != before_run_id]
+    entries = [e for e in load(target) if e.get("run_id") != before_run_id and (e.get("mode") or "live") == mode]
     if before_run_id:
         entries = [e for e in entries if str(e.get("run_id")) < str(before_run_id)]
     return entries[-1] if entries else None

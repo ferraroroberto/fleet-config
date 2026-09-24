@@ -34,11 +34,15 @@ stdlib only.
 """
 from __future__ import annotations
 
+import dataclasses
 import datetime as _dt
 import json
+import queue
 import socket
 import subprocess
 import sys
+import threading
+import time
 from pathlib import Path
 from typing import Dict, List, Optional
 from urllib.parse import urlsplit
@@ -50,13 +54,14 @@ import hooks_state  # noqa: E402
 from no_window import NO_WINDOW  # noqa: E402
 
 from . import measure  # noqa: E402
-from .plan import Target  # noqa: E402
+from .plan import PlanError, Target, synthetic_block  # noqa: E402
 from .rubric import Rubric, resolve_params  # noqa: E402
 
 WALK_PY = Path(__file__).resolve().parent / "walk.py"
 DEFAULT_SCAFFOLD = "E:/automation/project-scaffolding"
 PROBE_TIMEOUT_S = 5.0
 WALK_TIMEOUT_S = 1800.0
+SYNTHETIC_STOP_S = 30.0   # a launcher gets this long to clean up after its stdin closes
 SCHEMA_VERSION = measure.SCHEMA_VERSION
 
 
@@ -158,6 +163,7 @@ def envelope(target: Target, rubric: Rubric, run_dir: Path, devices: List[str], 
         "commit": commit,
         "generated_at": iso(now or utc_now()),
         "base_url": target.base_url,
+        "mode": "live",
         "run_dir": str(run_dir),
         "devices": list(devices),
         "review": target.review,
@@ -170,13 +176,15 @@ def envelope(target: Target, rubric: Rubric, run_dir: Path, devices: List[str], 
 
 
 def spawn_walk(python: str, target: Target, run_dir: Path, devices: List[str], params: Dict[str, object],
-               scaffold: str, timeout: float = WALK_TIMEOUT_S) -> Dict[str, object]:
+               scaffold: str, timeout: float = WALK_TIMEOUT_S, synthetic: bool = False) -> Dict[str, object]:
     """Run `walk.py` under the target interpreter; return `{returncode, stderr_tail, timed_out}`."""
     (run_dir / "params.json").write_text(json.dumps(params["script"]), encoding="utf-8")
     (run_dir / "review.json").write_text(json.dumps(target.review), encoding="utf-8")
     argv = [python, str(WALK_PY), "--url", target.base_url, "--out", str(run_dir),
             "--devices", ",".join(devices), "--scaffold", scaffold,
             "--params", str(run_dir / "params.json"), "--review", str(run_dir / "review.json")]
+    if synthetic:
+        argv.append("--synthetic")
     try:
         proc = subprocess.run(argv, capture_output=True, text=True, encoding="utf-8", errors="replace",
                               timeout=timeout, creationflags=NO_WINDOW)
@@ -188,14 +196,128 @@ def spawn_walk(python: str, target: Target, run_dir: Path, devices: List[str], p
     return {"returncode": proc.returncode, "stderr_tail": (proc.stderr or "")[-2000:], "timed_out": False}
 
 
+class SyntheticInstance:
+    """A target's declared synthetic launcher (#995), run under the target interpreter.
+
+    Contract: from the target root, `<python> <command...>` boots a throwaway
+    instance with synthetic data, prints `URL=<base>` on stdout once it is
+    ready, and runs until its stdin reaches EOF, then cleans up after itself
+    and exits. Its stdout and stderr go to `<run_dir>/synthetic.log`.
+    """
+
+    def __init__(self, python: str, target: Target, block: Dict[str, object], run_dir: Path) -> None:
+        self.command = [python] + list(block["command"])  # type: ignore[call-overload]
+        self.cwd = str(target.root)
+        self.startup_s = float(block["startup_timeout_s"])  # type: ignore[arg-type]
+        self.log_path = run_dir / "synthetic.log"
+        self.proc: Optional[subprocess.Popen] = None
+        self._lines: "queue.Queue[Optional[str]]" = queue.Queue()
+        self._log: List[str] = []
+
+    def _pump(self, stream) -> None:
+        for line in stream:
+            self._log.append(line)
+            self._lines.put(line)
+        self._lines.put(None)
+
+    def start(self) -> Dict[str, Optional[str]]:
+        """`{url, error}`: the printed URL, or why none came (exit, timeout, spawn failure)."""
+        try:
+            self.proc = subprocess.Popen(self.command, cwd=self.cwd, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                                         stderr=subprocess.STDOUT, text=True, encoding="utf-8", errors="replace",
+                                         creationflags=NO_WINDOW)
+        except OSError as exc:
+            return {"url": None, "error": f"could not start {self.command[1]}: {exc}"}
+        threading.Thread(target=self._pump, args=(self.proc.stdout,), daemon=True).start()
+        deadline = time.monotonic() + self.startup_s
+        while True:
+            left = deadline - time.monotonic()
+            if left <= 0:
+                return {"url": None, "error": f"no URL= line within {self.startup_s:g}s"}
+            try:
+                line = self._lines.get(timeout=min(left, 1.0))
+            except queue.Empty:
+                continue
+            if line is None:
+                return {"url": None, "error": f"launcher exited ({self.proc.wait()}) before printing URL="}
+            if line.startswith("URL="):
+                return {"url": line[4:].strip().rstrip("/"), "error": None}
+
+    def stop(self) -> str:
+        """`stopped` (exited after its stdin closed), `killed` (tree-killed after the grace), or `unknown`."""
+        proc = self.proc
+        if proc is None:
+            return "not_started"
+        try:
+            try:
+                if proc.stdin:
+                    proc.stdin.close()
+            except OSError:
+                pass
+            try:
+                proc.wait(timeout=SYNTHETIC_STOP_S)
+                return "stopped"
+            except subprocess.TimeoutExpired:
+                pass
+            if sys.platform == "win32":
+                subprocess.run(["taskkill", "/PID", str(proc.pid), "/T", "/F"], capture_output=True,
+                               creationflags=NO_WINDOW)
+            else:
+                proc.kill()
+            try:
+                proc.wait(timeout=10)
+                return "killed"
+            except subprocess.TimeoutExpired:
+                return "unknown"
+        finally:
+            self.log_path.write_text("".join(self._log)[-200000:], encoding="utf-8")
+
+
 def measure_target(target: Target, rubric: Rubric, spec_light: Dict[str, str], devices: List[str],
                    python_override: Optional[str] = None, scaffold: str = DEFAULT_SCAFFOLD,
-                   run_dir: Optional[Path] = None, walk_timeout: float = WALK_TIMEOUT_S) -> Dict[str, object]:
-    """The whole measure leg; returns the `metrics.json` document (also written to the run dir)."""
+                   run_dir: Optional[Path] = None, walk_timeout: float = WALK_TIMEOUT_S,
+                   synthetic: bool = False) -> Dict[str, object]:
+    """The whole measure leg; returns the `metrics.json` document (also written to the run dir).
+
+    `synthetic` walks the target's declared throwaway instance instead of the
+    live app (#995): the live port is never probed, the launcher is always
+    stopped, and how it stopped is recorded under `synthetic.stop`.
+    """
     run_dir = run_dir or run_dir_for(target.name)
     params = script_params(rubric, spec_light)
     doc = envelope(target, rubric, run_dir, devices, params, target_commit(target))
+    if not synthetic:
+        return _measure(doc, target, run_dir, devices, params, python_override, scaffold, walk_timeout, False)
 
+    doc["mode"] = "synthetic"
+    try:
+        block = synthetic_block(target)
+    except PlanError as exc:
+        doc["unmeasured"] = {"reason": "SYNTHETIC_UNDECLARED", "detail": str(exc)}
+        return _write(doc, run_dir)
+    interp = resolve_interpreter(target, python_override)
+    doc["interpreter"] = interp["python"]
+    if interp["status"] != "ok":
+        doc["unmeasured"] = {"reason": "PLAYWRIGHT_MISSING", "detail": interp["detail"]}
+        return _write(doc, run_dir)
+    instance = SyntheticInstance(str(interp["python"]), target, block, run_dir)
+    record: Dict[str, object] = {"command": block["command"], "log": str(instance.log_path), "stop": None}
+    doc["synthetic"] = record
+    try:
+        started = instance.start()
+        if not started["url"]:
+            doc["unmeasured"] = {"reason": "SYNTHETIC_FAILED", "detail": started["error"]}
+            return doc
+        target = dataclasses.replace(target, base_url=str(started["url"]))
+        doc["base_url"] = target.base_url
+        return _measure(doc, target, run_dir, devices, params, python_override, scaffold, walk_timeout, True)
+    finally:
+        record["stop"] = instance.stop()
+        _write(doc, run_dir)
+
+
+def _measure(doc: Dict[str, object], target: Target, run_dir: Path, devices: List[str], params: Dict[str, object],
+             python_override: Optional[str], scaffold: str, walk_timeout: float, synthetic: bool) -> Dict[str, object]:
     live = probe_listening(target.base_url)
     if live["status"] != "listening":
         doc["unmeasured"] = {"reason": live["status"], "detail": live["detail"]}
@@ -207,7 +329,7 @@ def measure_target(target: Target, rubric: Rubric, spec_light: Dict[str, str], d
         doc["unmeasured"] = {"reason": "PLAYWRIGHT_MISSING", "detail": interp["detail"]}
         return _write(doc, run_dir)
 
-    walk = spawn_walk(str(interp["python"]), target, run_dir, devices, params, scaffold, walk_timeout)
+    walk = spawn_walk(str(interp["python"]), target, run_dir, devices, params, scaffold, walk_timeout, synthetic)
     doc["walk"] = walk
     screens_path = run_dir / "screens.json"
     if walk["timed_out"]:

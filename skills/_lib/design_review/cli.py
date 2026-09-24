@@ -26,7 +26,7 @@
 skill can read the result back without parsing JSON:
 
     probe         TARGET= BASE_URL= ROOT= CLAUDE_MD= PROBE=listening|NOT_LISTENING|TIMEOUT|BAD_URL DETAIL=
-    measure       TARGET= BASE_URL= COMMIT= INTERPRETER= RUN_DIR= METRICS= SCREENS=<ok>/<total> UNMEASURED=<reason>|none
+    measure       TARGET= MODE=live|synthetic BASE_URL= COMMIT= INTERPRETER= RUN_DIR= METRICS= SCREENS=<ok>/<total> ABSENT=<n> UNMEASURED=<reason>|none
     judge-prompt  PROMPT=<run_dir>/judge-prompt.md SCREENS=<n> QUESTIONS=<n>
     judge-merge   JUDGMENT=ok|unmeasured|not_confirmed ANSWERS=<yes>/<no>/<na> UNCATALOGUED=<n> ERRORS=<n>
                   [RUBRIC_MISMATCH=evaluate:<v> judgment:<v>] EVALUATE=
@@ -116,7 +116,9 @@ def cmd_measure(args: argparse.Namespace) -> int:
         print(f"ERROR=rubric names unknown metrics on rules {bad}")
         return 2
     try:
-        target = plan.resolve_target(args.repo, Path(args.projects_toml) if args.projects_toml else None, args.url)
+        # A synthetic run's URL comes from the target's own launcher (#995), so no port lookup is needed.
+        url = args.url or (plan.SYNTHETIC_URL if args.synthetic else None)
+        target = plan.resolve_target(args.repo, Path(args.projects_toml) if args.projects_toml else None, url)
         devices = plan.device_list([d for d in (args.devices or "").split(",") if d])
     except plan.PlanError as exc:
         print(f"ERROR={exc}")
@@ -126,10 +128,12 @@ def cmd_measure(args: argparse.Namespace) -> int:
     if run_dir:
         run_dir.mkdir(parents=True, exist_ok=True)
     doc = capture.measure_target(target, rb, specs["light"], devices, python_override=args.python,
-                                 scaffold=args.scaffold, run_dir=run_dir, walk_timeout=args.walk_timeout)
+                                 scaffold=args.scaffold, run_dir=run_dir, walk_timeout=args.walk_timeout,
+                                 synthetic=args.synthetic)
     screens = doc.get("screens") or []
     ok = sum(1 for s in screens if s.get("status") == "ok")
     print(f"TARGET={doc['target']}")
+    print(f"MODE={doc.get('mode') or 'live'}")
     print(f"BASE_URL={doc['base_url']}")
     print(f"COMMIT={doc.get('commit') or 'none'}")
     print(f"INTERPRETER={doc.get('interpreter') or 'none'}")
@@ -340,7 +344,7 @@ def cmd_ledger(args: argparse.Namespace) -> int:
         return 2
     target = str(doc.get("target") or run_dir.parent.name)
     run_id = ledger.run_id_of(run_dir, doc)
-    prev = ledger.previous(target, run_id)
+    prev = ledger.previous(target, run_id, str(doc.get("mode") or "live"))
     d = ledger.diff(doc, prev)
     doc["diff"] = d
     try:
@@ -468,6 +472,8 @@ def main(argv: Optional[List[str]] = None) -> int:
     m.add_argument("--projects-toml", help="override hooks/projects.toml (tests)")
     m.add_argument("--run-dir", help="override the run directory (tests); default is under the hooks state dir")
     m.add_argument("--walk-timeout", type=float, default=capture.WALK_TIMEOUT_S)
+    m.add_argument("--synthetic", action="store_true",
+                   help="boot the target's [design.review.synthetic] launcher and walk that throwaway instance, not the live app")
     m.set_defaults(fn=cmd_measure)
 
     e = sub.add_parser("evaluate", help="rule results + category grades from a metrics.json, as JSON")

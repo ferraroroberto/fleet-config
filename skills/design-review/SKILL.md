@@ -42,6 +42,16 @@ text to an issue, PR or comment.
   one; `<repo>-wt-<N>` worktree paths resolve to their repo). No argument →
   the **current repo** (cwd).
 - `--no-publish` → write the report and print its path; skip the artifact.
+- `--synthetic` → measure the target's **synthetic instance** instead of the
+  live app: step 1's probe is skipped, and step 2 passes `--synthetic` to
+  `measure`, which boots the command the target declares in
+  `[design.review.synthetic]` (a throwaway copy with synthetic data), walks
+  the URL it prints — steps marked `synthetic = true` included, under that
+  block's own `no_go` — and stops it. Use it for surfaces the live walk must
+  not open, such as a session's Chat and Terminal views. A target without
+  the block measures `UNMEASURED=SYNTHETIC_UNDECLARED`; a launcher that
+  never prints its URL, `SYNTHETIC_FAILED`. Synthetic runs are diffed only
+  against earlier synthetic runs.
 - `--no-judgment` → skip step 4 (no judge agent spawned); the report has no
   judgment section and the summary says `judgment: skipped (--no-judgment)`.
 - `--judges N` → `N` independent fresh-context judges in step 4 (default
@@ -116,7 +126,7 @@ light / dark — every primary tab, every `<dialog>`, and any
 app-launcher matrix takes about four minutes and leaves ~144 PNGs in the
 run directory; run it once per review, never in a loop.
 
-Read the printed lines: `RUN_DIR=`, `METRICS=`, `SCREENS=<ok>/<total>`,
+Read the printed lines: `MODE=live|synthetic`, `RUN_DIR=`, `METRICS=`, `SCREENS=<ok>/<total>`,
 `ABSENT=<n>`, `UNMEASURED=<reason>|none`, `COMMIT=`. `ABSENT` counts extra
 steps whose target never appeared (`STEP_TARGET_ABSENT`, e.g. a row menu on
 an empty list): that surface does not exist in this app state, so it is

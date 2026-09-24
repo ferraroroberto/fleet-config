@@ -170,6 +170,14 @@ page_a = report.render_report(ev.evaluate(absent_doc, rubric, _specs("compliant"
 check("desktop-light-home-row-menu" in page_a and "step target absent" in page_a and "partly unmeasured" not in page_a,
       "an absent step screen is listed under method and caveats and does not mark the run unmeasured")
 
+# ---- #995: a synthetic run says so under method and caveats -----------------
+
+synth_doc = _doc("compliant")
+synth_doc["mode"] = "synthetic"
+page_syn = report.render_report(ev.evaluate(synth_doc, rubric, _specs("compliant")))
+check("synthetic instance" in page_syn and "synthetic instance" not in clean,
+      "a synthetic run is labelled as measured on the target's synthetic instance, a live run is not")
+
 # ---- unmeasured rendering ----------------------------------------------------
 
 down = _doc("compliant")
