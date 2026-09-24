@@ -117,7 +117,10 @@ app-launcher matrix takes about four minutes and leaves ~144 PNGs in the
 run directory; run it once per review, never in a loop.
 
 Read the printed lines: `RUN_DIR=`, `METRICS=`, `SCREENS=<ok>/<total>`,
-`UNMEASURED=<reason>|none`, `COMMIT=`. The run directory is
+`ABSENT=<n>`, `UNMEASURED=<reason>|none`, `COMMIT=`. `ABSENT` counts extra
+steps whose target never appeared (`STEP_TARGET_ABSENT`, e.g. a row menu on
+an empty list): that surface does not exist in this app state, so it is
+named in the report but leaves unrelated rules alone. The run directory is
 `~/.claude/hooks/state/design-review/<target>/<UTC stamp>/` — gitignored
 state, never a tracked tree. `UNMEASURED≠none` (`PLAYWRIGHT_MISSING`,
 `NOT_LISTENING` mid-run, `BROWSER_FAILED`, …) is a **result, not a crash**:

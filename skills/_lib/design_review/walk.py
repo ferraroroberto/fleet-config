@@ -34,7 +34,10 @@ Output: `<out>/screens.json` — a list of screen records
 screenshot_full, metrics}` — plus `<out>/walk.json` with engine versions and
 timings. A screen that fails to open is recorded with `status: "error"` and a
 distinct `reason` (`TIMEOUT`, `NOT_LISTENING`, `TAB_FAILED`, `DIALOG_FAILED`,
-`BROWSER_FAILED`); its rules evaluate to `unmeasured`, never pass.
+`BROWSER_FAILED`, `NO_GO`); its rules evaluate to `unmeasured`, never pass.
+A step whose target never attaches (a menu on an empty list) is `status:
+"absent"`, `reason: "STEP_TARGET_ABSENT"`: that surface does not exist in
+this app state, so it leaves unrelated rules alone (#995).
 
 Usage (normally via capture.py):
 
@@ -64,6 +67,7 @@ TAB_SETTLE_MS = 2200
 DETAILS_SETTLE_MS = 1200
 DIALOG_SETTLE_MS = 500
 STEP_SETTLE_MS = 1200
+STEP_TARGET_WAIT_MS = 5000   # a step target not attached by then is absent from this app state (#995)
 DEFAULT_TIMEOUT_MS = 15000
 
 _TABS_JS = """
@@ -90,6 +94,10 @@ _NO_GO_JS = "(el, sels) => sels.some(s => { try { return !!el.closest(s); } catc
 
 class NoGo(Exception):
     """A step's click target sits inside a declared `no_go` selector."""
+
+
+class TargetAbsent(Exception):
+    """A step's target never attached: the surface does not exist in this app state (an empty list)."""
 
 
 def step_clicks(step: dict) -> List[str]:
@@ -253,8 +261,14 @@ def walk_context(pw, device: str, theme: str, args: argparse.Namespace, script: 
             log.warning("FAIL %s: %s", sid, str(exc)[:200])
 
     def guarded(selector: str):
-        """The first match for `selector`, refused when it sits inside a no_go selector."""
+        """The first match for `selector`: absent when it never attaches, refused inside a no_go selector."""
         loc = page.locator(selector).first
+        try:
+            loc.wait_for(state="attached", timeout=STEP_TARGET_WAIT_MS)
+        except Exception as exc:  # noqa: BLE001 — Playwright's TimeoutError, the only way wait_for fails here
+            if classify_error(exc) != "TIMEOUT":
+                raise
+            raise TargetAbsent(f"{selector} never appeared within {STEP_TARGET_WAIT_MS} ms") from exc
         if no_go and loc.evaluate(_NO_GO_JS, no_go):
             raise NoGo(f"{selector} sits inside a no_go selector")
         return loc
@@ -292,6 +306,10 @@ def walk_context(pw, device: str, theme: str, args: argparse.Namespace, script: 
             screens.append(_record(id=sid, device=device, theme=theme, view=view, kind="step",
                                    screenshot=shot, screenshot_full=full, metrics=metrics))
             log.info("ok %s", sid)
+        except TargetAbsent as exc:
+            screens.append(_record(id=sid, device=device, theme=theme, view=view, kind="step",
+                                   status="absent", reason="STEP_TARGET_ABSENT", error=str(exc)[:300]))
+            log.info("absent %s: %s", sid, exc)
         except NoGo as exc:
             screens.append(_record(id=sid, device=device, theme=theme, view=view, kind="step",
                                    status="error", reason="NO_GO", error=str(exc)[:300]))

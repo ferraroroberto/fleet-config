@@ -397,6 +397,31 @@ try:
 except plan.PlanError:
     check(True, "unknown device refused")
 
+# ---- #995: a missing step target is its own state -----------------------------
+
+_absent = {"id": "desktop-light-home-row-menu", "device": "desktop", "theme": "light", "view": "home-row-menu",
+           "kind": "step", "status": "absent", "reason": "STEP_TARGET_ABSENT", "error": "#rowKebab never appeared",
+           "metrics": None}
+_doc_a = _doc("compliant")
+_doc_a["screens"].append(dict(_absent))
+_out_a = ev.evaluate(_doc_a, rubric, _specs("compliant"))
+_st_a = {r["id"]: r["status"] for r in _out_a["rules"]}
+check(_st_a == statuses_c, f"an absent step target leaves every rule as it was without that screen (#995) -- "
+      f"{ {k: v for k, v in _st_a.items() if v != statuses_c[k]} }")
+check(_out_a["overall"] == out_c["overall"] and not any(v["unmeasured"] for v in _out_a["categories"].values()),
+      "an absent step target does not flag any category or the verdict unmeasured")
+check(_out_a.get("absent_screens") == ["desktop-light-home-row-menu"], "evaluate lists the absent step screens")
+check(any("step target absent on 1" in r["reason"] for r in _out_a["rules"]), "a rule that would have read the screen says so in its reason")
+_doc_only = _doc("compliant")
+_doc_only["screens"] = [dict(_absent)]
+_out_only = ev.evaluate(_doc_only, rubric, _specs("compliant"))
+check(all(r["status"] == "unmeasured" for r in _out_only["rules"] if not r["metric"].startswith("spec.")),
+      "a screen-read rule whose only applicable screen is absent is unmeasured, never a vacuous pass")
+_doc_e = _doc("compliant")
+_doc_e["screens"].append({**_absent, "status": "error", "reason": "TIMEOUT"})
+check(any(r["status"] == "unmeasured" for r in ev.evaluate(_doc_e, rubric, _specs("compliant"))["rules"]),
+      "a step that errored for another reason still makes its rules unmeasured")
+
 # ---- capture: liveness probe, interpreter, run dir ---------------------------
 
 check(capture.probe_listening("file:///x.html")["status"] == "listening", "file:// is always listening")
@@ -536,6 +561,8 @@ else:
         {"tab": "list", "id": "row-menu", "open": "details.card", "clicks": [".card .kebab"]},
         {"tab": "list", "id": "row-delete", "open": "details.card", "clicks": [".card .kebab", ".card .danger-item"]},
         {"tab": "home", "id": "forbidden", "click": "#revealForbidden"},
+        {"tab": "home", "id": "absent", "click": "#noSuchTarget"},
+        {"tab": "list", "id": "absent-second", "open": "details.card", "clicks": [".card .kebab", "#noSuchMenuItem"]},
     ]}), encoding="utf-8")
     (STATE / "steps-params.json").write_text(json.dumps(measure.default_params()), encoding="utf-8")
     proc4 = subprocess.run(
@@ -558,5 +585,9 @@ else:
           f"a click inside a no_go zone is vetoed at click time, not only by selector equality (#995) -- {delete.get('reason')} {delete.get('error')}")
     forbidden = steps.get("desktop-light-home-forbidden", {})
     check(forbidden.get("reason") == "NO_GO", "a step whose click is literally a no_go selector is refused")
+    for _sid, _sel in (("desktop-light-home-absent", "#noSuchTarget"), ("desktop-light-list-absent-second", "#noSuchMenuItem")):
+        _s = steps.get(_sid, {})
+        check(_s.get("status") == "absent" and _s.get("reason") == "STEP_TARGET_ABSENT" and _sel in str(_s.get("error")),
+              f"a step target that never appears is recorded STEP_TARGET_ABSENT, naming the selector (#995) -- {_sid}: {_s.get('status')} {_s.get('reason')}")
 
 _h.report_and_exit("test_design_review", skip_code=SKIP_EXIT)

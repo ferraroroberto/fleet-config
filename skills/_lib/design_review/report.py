@@ -324,7 +324,8 @@ def _diff(doc: dict) -> str:
 def _method(doc: dict) -> str:
     screens = [s for s in doc.get("screens") or [] if isinstance(s, dict)]
     ok = [s for s in screens if s.get("status") == "ok"]
-    bad = [s for s in screens if s.get("status") != "ok"]
+    absent = [s for s in screens if s.get("status") == "absent"]
+    bad = [s for s in screens if s.get("status") not in ("ok", "absent")]
     devices = sorted({str(s.get("device")) for s in screens if s.get("device")})
     themes = sorted({str(s.get("theme")) for s in screens if s.get("theme")})
     kinds: Dict[str, int] = {}
@@ -340,6 +341,9 @@ def _method(doc: dict) -> str:
         items.append(f"the whole run is unmeasured: {u.get('reason')} — {u.get('detail') or ''}".rstrip(" —"))
     for s in bad:
         items.append(f"screen {s.get('id')} not measured: {s.get('reason') or 'walk error'} — its rules report unmeasured, never pass")
+    for s in absent:
+        items.append(f"screen {s.get('id')}: step target absent in this app state (STEP_TARGET_ABSENT) — left out of every rule, "
+                     "which is unmeasured only where no other screen measured it")
     if doc.get("metrics_rubric_version") and doc.get("metrics_rubric_version") != doc.get("rubric_version"):
         items.append(f"metrics were captured under rubric v{doc['metrics_rubric_version']} and evaluated under v{doc['rubric_version']}")
     params = doc.get("params") or {}

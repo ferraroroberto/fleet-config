@@ -136,6 +136,7 @@ def cmd_measure(args: argparse.Namespace) -> int:
     print(f"RUN_DIR={doc['run_dir']}")
     print(f"METRICS={Path(str(doc['run_dir'])) / 'metrics.json'}")
     print(f"SCREENS={ok}/{len(screens)}")
+    print(f"ABSENT={sum(1 for s in screens if s.get('status') == 'absent')}")  # step targets not in this app state (#995)
     unm = doc.get("unmeasured")
     print(f"UNMEASURED={unm['reason'] if unm else 'none'}")
     if unm and unm.get("detail"):
