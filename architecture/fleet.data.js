@@ -29,7 +29,7 @@ window.FLEET = {
   "compute": {"gpu": "GPU · &lt;model&gt; · &lt;NN&gt; GB", "cpu": "CPU · &lt;model&gt; · &lt;n&gt;c/&lt;n&gt;t", "ram": "RAM · &lt;NN&gt; GB"},
   "enabling": [
     {"ic": "🚀", "nm": "app-launcher", "port": ":8445", "ds": "<b>Where I live</b> — the central hub. Coding · Apps · Jobs · Life OS · Board (fleet kanban) · Settings, all from the phone. Born from one goal: do <i>everything</i> on the PC from mobile. The entry point to it all."},
-    {"ic": "🧠", "nm": "local-llm-hub", "port": ":8000", "ds": "Shared LLM gateway — routes to local models or claude -p.", "chips": ["claude -p", "agy gemini", "qwen35-4b :8088", "gemma-26b :8087", "voice → gaming+mac", "tts :8092+", "flux1-dev :8188", "flux2-klein :8190"]},
+    {"ic": "🧠", "nm": "local-llm-hub", "port": ":8000", "ds": "Shared LLM gateway — routes to local models or claude -p.", "chips": ["claude -p", "agy gemini", "qwen35-4b :8088", "gemma-26b :8087", "voice → gaming+mac", "tts :8092+", "flux1-dev :8188", "flux2-klein :8190", "typesafe jev (egress)"]},
     {"ic": "🎙️", "nm": "voice-transcriber", "port": ":8443", "ds": "Always-on voice→text (F8). Owns whisper :8090.", "chips": ["whisper :8090"]},
     {"ic": "📷", "nm": "photo-ocr", "port": ":8444", "ds": "Mobile OCR — photos → clean text. Reusable capture surface."},
     {"ic": "🚀", "nm": "App Launcher Lite", "repo": "app-launcher-lite", "port": ":8465", "ds": "<b>App Launcher Lite</b> — phone-first launcher hub, Copilot + GitLab lite fork of app-launcher. Coding (Copilot CLI PTY sessions) · Apps · Jobs · Team OS · Board (GitLab kanban) · Settings, all from the phone."},
@@ -39,6 +39,7 @@ window.FLEET = {
     {"ic": "🛒", "nm": "grocery", "repo": "grocery-shopping-automation", "port": 8502, "ds": "Inventory + shopping PWA, voice audit, HA voice commands + product search.", "tag": ["uses", "hub + whisper"]},
     {"ic": "💬", "nm": "whatsapp-radar", "ds": "Cut attention load from busy chats.", "tag": ["uses", "hub"]},
     {"ic": "🎲", "nm": "facilitation-shuffle", "ds": "1-2-4-all breakout shuffler for Zoom."},
+    {"ic": "🎤", "nm": "facilitation-suite", "port": ":8449", "ds": "<b>facilitation-suite</b> — one local app for live online workshops: a stage OBS captures, a presenter cockpit, Zoom-chat-driven activities read locally (no bot), breakout groups, per-item timers and session results."},
     {"ic": "💶", "nm": "family-accounting", "ds": "Shared household-expense tracker."},
     {"ic": "🧮", "nm": "mathgamesforkids", "ds": "Educational games & HTML experiments."},
     {"ic": "🌐", "nm": "website", "ds": "Multi-workshop landing site."},
@@ -53,7 +54,7 @@ window.FLEET = {
     {"ic": "💳", "nm": "accounting-quarterly", "ds": "Stripe payments → quarterly reports.", "tag": ["→", "Stripe"]},
     {"ic": "📊", "nm": "social-media-analytics", "ds": "Predict content performance."},
     {"ic": "💡", "nm": "inspiration-system", "ds": "Idea → 10 illustration ideas.", "tag": ["→", "Notion"]},
-    {"ic": "📝", "nm": "content-management", "ds": "Four content pipelines.", "tag": ["→", "Notion"]},
+    {"ic": "📝", "nm": "content-management", "ds": "Five content surfaces: reporting, planning, newsletter, engagement, check-IP.", "tag": ["→", "Notion"]},
     {"ic": "📧", "nm": "email-archiver", "ds": "Outlook → OneDrive archive. Its SQLite index records the follow-up flag, which task-os polls read-only to raise a task per flagged mail; main_batch.py exposes headless plan/apply/revert over the whole Inbox or targeted mail (by Message-ID, date, text or X-Archive-Ref) plus a renumber verb that re-sequences a folder into sent-date order, a draft verb that opens an unsent BCC-self Outlook draft for life-os, and read/send verbs that send one such draft only while its live fingerprint still matches the approved one, all with JSON I/O.", "tag": ["→", "OneDrive"]},
     {"ic": "📄", "nm": "pdf-to-markdown", "ds": "PDF → clean Markdown for LLMs."},
     {"ic": "🧾", "nm": "mass-html-to-markdown", "ds": "HTML → SQLite → Markdown (+ LLM-shortened variant)."},
@@ -75,7 +76,7 @@ window.FLEET = {
     {"ic": "💳", "nm": "Stripe", "fr": "accounting-quarterly"},
     {"ic": "📁", "nm": "OneDrive", "fr": "email-archiver · onedrive-mcp"},
     {"ic": "🐙", "nm": "GitHub", "fr": "all repos · PRs · CI"},
-    {"ic": "🎥", "nm": "Zoom", "fr": "facilitation-shuffle"}
+    {"ic": "🎥", "nm": "Zoom", "fr": "facilitation-shuffle · facilitation-suite"}
   ],
   "principles": [
     ["Phone-first", "one tap on the iPhone, not a desktop session"],

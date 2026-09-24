@@ -122,6 +122,11 @@ window.CONFIG = {
       "scope": "repo"
     },
     {
+      "nm": "design-review",
+      "ds": "Review a running fleet web app's rendered design — measure the live app in real browsers (iPhone/Android/desktop × light/dark), s…",
+      "scope": "repo"
+    },
+    {
       "nm": "design-sync",
       "ds": "Check a web app against the fleet design system with the deterministic design_lint helper — token drift (light + dark), component…",
       "scope": "repo"
@@ -291,6 +296,7 @@ window.CONFIG = {
     {
       "repo": "content-management",
       "items": [
+        "check-ip",
         "newsletter-triage",
         "schedule-autoheal"
       ]
@@ -305,6 +311,7 @@ window.CONFIG = {
         "geek-out",
         "general",
         "health",
+        "house",
         "ip-check",
         "is-this-ai",
         "journal-daily",
@@ -332,6 +339,13 @@ window.CONFIG = {
       "block": false,
       "reach": "Claude only",
       "ds": "SessionStart hook — hand the standing fleet chief its last written run log"
+    },
+    {
+      "nm": "index_lock_sessionstart",
+      "ev": "SessionStart",
+      "block": false,
+      "reach": "Claude only",
+      "ds": "SessionStart hook — report any fleet repo sitting on a stranded"
     },
     {
       "nm": "pre_commit_no_ai_trailer",
@@ -505,6 +519,10 @@ window.CONFIG = {
       "ds": "Shared normalized edit view + ``apply_patch`` envelope parsing (fleet-config#819)."
     },
     {
+      "nm": "harness_wire",
+      "ds": "The hooks' multi-harness wire protocol (split from `_lib.py`, fleet-config#931)."
+    },
+    {
       "nm": "hub_client",
       "ds": "Shared, fail-open client for the local LLM hub (127.0.0.1:8000)."
     },
@@ -568,9 +586,9 @@ window.CONFIG = {
     }
   ],
   "coverage": {
-    "total": 38,
-    "claude_md": "37/38",
-    "fleet_toml": "36/38"
+    "total": 39,
+    "claude_md": "38/39",
+    "fleet_toml": "37/39"
   },
   "principles": [
     [
