@@ -452,6 +452,10 @@ else:
         check("button.small-btn" in small and "button.hit-target" not in small, "24px button is small; 34px + ::before inset -5px measures 44 effective")
         check(tg["overlap_count"] == 0, "home: no expanded rects overlap")
         check(by_id["desktop-light-list"]["metrics"]["targets"]["overlap_count"] == 1, "list: two touching expanded targets overlap")
+    for theme in ("light", "dark"):
+        seg = by_id[f"desktop-{theme}-list"]["metrics"]["controls"]["segmented_bad"]
+        check(seg == [{"sel": "div.segmented.seg-wrap", "options": 2, "wrapped": True}],
+              f"COMP-03 {theme}: a 44px single-line segment is not wrapped; a label broken onto two lines is (#997) -- {seg}")
     check(ic["boxes"] == {"16x16": 1, "22x22": 1}, "icon boxes")
     check(nv["primary_count"] == 2 and nv["pane_header_visible"] is True, "nav: 2 primary tabs, header visible")
     check(ly["overflow_x"] is False and ly["inner_w"] == 1440, "no overflow at 1440")

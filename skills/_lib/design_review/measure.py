@@ -153,10 +153,22 @@ _MEASURE_JS = r"""
     // segmented controls: every tablist/radiogroup except the primary tablist
     const primary = document.querySelector('[role=tablist]');
     const segs = [];
+    // "wrapped" counts the label's own line boxes, never the option's box height: padding
+    // and a 44px min-height make a single-line segment tall without wrapping it (#997).
+    // Rects of every in-flow text node, clustered into lines by vertical overlap; text under an
+    // absolutely/fixed positioned element (a badge, an sr-only label) is not part of the label's flow.
+    const inFlow = (n, o) => { for (let e = n.parentElement; e && e !== o; e = e.parentElement) {
+      const p = getComputedStyle(e).position; if (p === 'absolute' || p === 'fixed') return false; } return true; };
+    const lineCount = o => { const rs = []; const w = document.createTreeWalker(o, NodeFilter.SHOW_TEXT);
+      for (let n = w.nextNode(); n; n = w.nextNode()) { if (!n.textContent.trim() || !inFlow(n, o)) continue;
+        const r = document.createRange(); r.selectNodeContents(n);
+        [...r.getClientRects()].forEach(b => { if (b.width > 0 && b.height > 0) rs.push(b); }); }
+      rs.sort((a, b) => a.top - b.top); let lines = 0, bottom = -Infinity;
+      rs.forEach(b => { if (b.top >= bottom - 1) { lines++; bottom = b.bottom; } else bottom = Math.max(bottom, b.bottom); });
+      return lines; };
     q('[role=tablist], [role=radiogroup], .segmented').filter(g => g !== primary).forEach(g => {
       const opts = [...g.querySelectorAll('[role=tab], [role=radio], button, label')].filter(visible);
-      const wrapped = opts.some(o => { const s = getComputedStyle(o); const lh = parseFloat(s.lineHeight) || parseFloat(s.fontSize) * 1.3;
-        return o.getBoundingClientRect().height > lh * 1.9 && /\s/.test(o.textContent.trim()); });
+      const wrapped = opts.some(o => lineCount(o) > 1);
       if (opts.length > params.segmentedMax || wrapped) segs.push({sel: sel(g), options: opts.length, wrapped}); });
     return { total, font_family_mismatch: mism.slice(0,CAP), font_family_mismatch_count: mism.length,
       boundary_low: lowB.slice(0,CAP), boundary_low_count: lowB.length, ua_styled: ua.slice(0,CAP), ua_styled_count: ua.length,
