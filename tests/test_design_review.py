@@ -503,11 +503,14 @@ else:
     check(ly["overflow_x"] is False and ly["inner_w"] == 1440, "no overflow at 1440")
     check(ay["unnamed"] == ["button.big"] and ay["zoom_locked"] is True, "unnamed button + locked zoom")
     dlg = by_id["desktop-light-dialog-editdialog"]["metrics"]
-    check(dlg["controls"]["total"] == 1 and dlg["a11y"]["unnamed_count"] == 0, "dialog scope measures only the dialog")
+    check(dlg["controls"]["total"] == 2 and dlg["a11y"]["unnamed_count"] == 0,
+          f"dialog scope measures only the dialog, its folded Options field opened and measured (#995) -- {dlg['controls']['total']}")
     if "error" not in dlg["targets"]:
-        check(dlg["targets"]["total"] == 2 and dlg["targets"]["overlap_count"] == 0,
-              f"dialog targets: summary + Close only, the closed-details input neither counted nor overlapping (#998) -- {dlg['targets']}")
-    check(dlg["text"]["low_contrast_count"] == 0, f"text inside a closed details is not measured (#998) -- {dlg['text']['low_contrast']}")
+        small_d = {s["sel"] for s in dlg["targets"]["small"]}
+        check(dlg["targets"]["total"] == 4 and dlg["targets"]["overlap_count"] == 0
+              and "input#openedField" in small_d and "input#hiddenField" not in small_d,
+              f"dialog targets: two summaries, the opened field and Close; the field the accordion re-closed is excluded (#995, #998) -- {dlg['targets']}")
+    check(dlg["text"]["low_contrast_count"] == 0, f"text inside a details that stays closed is not measured (#998) -- {dlg['text']['low_contrast']}")
     check((run_dir / "shots" / "desktop-light-home.png").is_file() and (run_dir / "shots" / "desktop-light-home-full.png").is_file(),
           "screenshots in the run dir")
     dark = by_id["desktop-dark-home"]["metrics"]["text"]
@@ -526,5 +529,22 @@ else:
                            capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=120)
     res2 = json.loads(proc3.stdout)
     check(res2["rules"] == res["rules"] and res2["categories"] == res["categories"], "two evaluate runs -> identical rules and grades")
+    # extra steps, driven through walk.py with a declared review block (the fixture repo has no [design.review])
+    step_dir = STATE / "fixture-steps"
+    (STATE / "steps-review.json").write_text(json.dumps({"extra_steps": [{"tab": "home", "id": "reveal", "click": "#revealBtn"}]}),
+                                             encoding="utf-8")
+    (STATE / "steps-params.json").write_text(json.dumps(measure.default_params()), encoding="utf-8")
+    proc4 = subprocess.run(
+        [str(interp), str(REPO / "skills" / "_lib" / "design_review" / "walk.py"), "--url", (FIX / "fixture.html").as_uri(),
+         "--out", str(step_dir), "--devices", "desktop", "--scaffold", str(scaffold),
+         "--review", str(STATE / "steps-review.json"), "--params", str(STATE / "steps-params.json")],
+        capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=600,
+    )
+    steps = {s["id"]: s for s in json.loads((step_dir / "screens.json").read_text(encoding="utf-8"))} if proc4.returncode == 0 else {}
+    reveal = steps.get("desktop-light-home-reveal", {})
+    check(reveal.get("status") == "ok", f"the reveal step is measured ({proc4.stderr[-300:]})")
+    if reveal.get("status") == "ok" and "error" not in reveal["metrics"]["targets"]:
+        check("input#foldedField" in {s["sel"] for s in reveal["metrics"]["targets"]["small"]},
+              "an extra step opens the closed details it reveals before measuring, so the folded field is measured (#995)")
 
 _h.report_and_exit("test_design_review", skip_code=SKIP_EXIT)
