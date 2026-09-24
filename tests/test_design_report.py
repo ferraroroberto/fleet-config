@@ -161,6 +161,15 @@ clean = report.render_report(out_c)
 check("No findings." in clean and '<span class="grade grade-A">A</span>' in clean and "No failing rule has a mock-up" in clean,
       "a compliant document renders an A with empty findings and no mock-ups")
 
+# ---- #995: an absent step target is a caveat, not an unmeasured screen --------
+
+absent_doc = _doc("compliant")
+absent_doc["screens"].append({"id": "desktop-light-home-row-menu", "device": "desktop", "theme": "light", "view": "home-row-menu",
+                              "kind": "step", "status": "absent", "reason": "STEP_TARGET_ABSENT", "metrics": None})
+page_a = report.render_report(ev.evaluate(absent_doc, rubric, _specs("compliant")))
+check("desktop-light-home-row-menu" in page_a and "step target absent" in page_a and "partly unmeasured" not in page_a,
+      "an absent step screen is listed under method and caveats and does not mark the run unmeasured")
+
 # ---- unmeasured rendering ----------------------------------------------------
 
 down = _doc("compliant")

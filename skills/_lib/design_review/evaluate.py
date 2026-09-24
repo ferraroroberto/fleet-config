@@ -20,7 +20,11 @@ Rule status lattice, most conservative wins:
 A screen the walk could not open, a section the script could not compute,
 a metric the rubric names but the script did not produce, and a target that
 was not listening at all each make the affected rules `unmeasured` with the
-concrete `reason` — never a pass.
+concrete `reason` — never a pass. A step screen whose target never appeared
+(`status: "absent"`, #995) is none of these: the surface does not exist in
+this app state, so it is left out of every rule, named in the rule's reason
+and in `absent_screens` -- and a rule left with no other screen is still
+`unmeasured`, never a vacuous pass.
 
 Output document:
 
@@ -28,6 +32,7 @@ Output document:
     metrics_generated_at, base_url, run_dir,
     params:     {hit_min, primary_min, icon_steps}   # the resolved measurement floors
     screens:    [{id, device, theme, view, kind, status, reason}]
+    absent_screens: [id]   # step screens whose target never appeared (#995)
     rules:      [{id, category, severity, owner, title, standard, fix_template,
                   mockup, params, status, reason, threshold: {value, source},
                   evidence: [{screen, value, items: [...], facts: {...}}],
@@ -162,6 +167,7 @@ DerivedWithFacts = Tuple[Optional[float], List[object], Optional[str], Dict[str,
 # text to histogram): skipped, counted separately from `unmeasured`. A rule
 # that is N/A on every screen still reports `pass` — vacuously, and says so.
 NOT_APPLICABLE = "n/a"
+ABSENT = "absent"  # walk.py's status for a step whose target never appeared (STEP_TARGET_ABSENT, #995)
 
 
 def _share(num: object, den: object) -> Optional[float]:
@@ -404,6 +410,9 @@ def evaluate_rule(rule: Rule, doc: dict, specs: Dict[str, Dict[str, str]], ctx: 
             if not _applies(rule, screen):
                 continue
             sid = str(screen.get("id"))
+            if screen.get("status") == ABSENT:
+                tally.absent += 1
+                continue
             if screen.get("status") != "ok" or not isinstance(screen.get("metrics"), dict):
                 tally.unmeasured.append(f"{sid}: {screen.get('reason') or 'walk error'}")
                 continue
@@ -411,6 +420,7 @@ def evaluate_rule(rule: Rule, doc: dict, specs: Dict[str, Dict[str, str]], ctx: 
             _fold(result, tally, sid, value, items, why, rule, thr, facts)
 
     na = f"; n/a on {tally.not_applicable}" if tally.not_applicable else ""
+    na += f"; step target absent on {tally.absent}" if tally.absent else ""
     if tally.failed:
         result["status"] = "fail"
         unm = f"; {len(tally.unmeasured)} unmeasured" if tally.unmeasured else ""
@@ -428,7 +438,7 @@ def evaluate_rule(rule: Rule, doc: dict, specs: Dict[str, Dict[str, str]], ctx: 
         result["reason"] = f"not applicable on any of {tally.not_applicable} screen(s) (vacuous pass)"
     else:
         result["status"] = "unmeasured"
-        result["reason"] = "no applicable screen in this run"
+        result["reason"] = "no applicable screen in this run" + na
     return result
 
 
@@ -438,6 +448,7 @@ class _Tally:
         self.unmeasured: List[str] = []
         self.passed = 0
         self.not_applicable = 0
+        self.absent = 0  # step screens whose target never appeared (#995): neither measured nor unmeasured
 
 
 def _fold(result: dict, tally: _Tally, sid: str, value: Optional[float], items: List[object],
@@ -511,6 +522,7 @@ def evaluate(doc: dict, rubric: Rubric, specs: Dict[str, Dict[str, str]],
         "unmeasured": doc.get("unmeasured"),
         "screens": [{k: s.get(k) for k in ("id", "device", "theme", "view", "kind", "status", "reason")}
                     for s in doc.get("screens", [])],
+        "absent_screens": [str(s.get("id")) for s in doc.get("screens", []) if s.get("status") == ABSENT],
         "rules": rules,
         "categories": categories,
         "overall": score_overall(categories, rubric),
