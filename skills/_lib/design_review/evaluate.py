@@ -244,13 +244,24 @@ def _d_lists_tall(m: dict, rule: Rule, ctx: dict) -> Derived:
 
 
 def _d_content_share(m: dict, rule: Rule, ctx: dict) -> Derived:
+    """design.md's wide layout (#996): a list-and-detail tab spans list + detail
+    (`content_span`), and a tab with no detail keeps the centred measure, which
+    is exempt when the pane holds it less a gutter each side. Older metrics
+    without `content_span` fall back to the pane width."""
     cw, iw = measure.metric_value(m, "layout.content_w"), measure.metric_value(m, "layout.inner_w")
     if cw is None or iw is None:
         return None, [], _section_reason(m, "layout")
     min_w = float(rule.params.get("min_viewport", 1100))
     if not isinstance(iw, (int, float)) or iw < min_w:
         return None, [], NOT_APPLICABLE
-    return _share(cw, iw), [{"content_w": cw, "inner_w": iw}], None
+    params = ctx.get("params", {})
+    measure_px = float(params.get("measure") or 772)
+    held = measure_px - 2 * float(params.get("gutter") or 12)
+    if isinstance(cw, (int, float)) and held - 1 <= cw <= measure_px + 1:
+        return None, [], NOT_APPLICABLE
+    span = measure.metric_value(m, "layout.content_span")
+    span = span if isinstance(span, (int, float)) else cw
+    return _share(span, iw), [{"content_w": cw, "content_span": span, "inner_w": iw}], None
 
 
 def _d_zoom_locked(m: dict, rule: Rule, ctx: dict) -> Derived:

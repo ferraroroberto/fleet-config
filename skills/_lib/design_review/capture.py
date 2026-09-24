@@ -142,6 +142,9 @@ def script_params(rubric: Rubric, spec_light: Dict[str, str]) -> Dict[str, objec
     script = measure.default_params(
         hit_min=float(resolved.get("hit_min") or 44.0),
         primary_min=float(resolved.get("primary_min") or 48.0),
+        # action-row's budget besides the row itself: leading toggle + extra action + trailing accessory (#996)
+        row_controls_max=int(sum(float(resolved.get(k) or 0) for k in
+                                 ("row_leading_toggles", "row_extra_actions", "row_trailing_accessories"))),
     )
     return {"script": script, "resolved": resolved}
 
