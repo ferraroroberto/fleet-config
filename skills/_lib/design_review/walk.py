@@ -14,9 +14,16 @@ What it does, per device x theme, and nothing else:
   2. click each primary tab (`[role=tablist] [role=tab]`, first tablist),
      screenshot, set every `details.open` in the visible pane, full-page
      screenshot, run the measurement script;
-  3. `showModal()` each `dialog[id]`, screenshot, measure, `close()`;
+  3. `showModal()` each `dialog[id]`, screenshot, set every `details.open`
+     in the dialog, measure, `close()`;
   4. any `[design.review].extra_steps` (one `click` on a declared selector
-     after a fresh `goto`, never on a `no_go` selector).
+     after a fresh `goto`, never on a `no_go` selector), screenshot, set
+     every `details.open` in the open dialog or else the page, measure.
+
+Disclosures are opened on every screen kind so folded content is measured
+open (fleet-config#995). One that stays closed -- an exclusive accordion
+closes its siblings -- stays excluded by `measure.py`'s `checkVisibility()`
+(#998). A screen that opened any also gets a full screenshot of that state.
 
 No submit, no fill, no session attach, no navigation away from the base URL.
 
@@ -68,6 +75,11 @@ _OPEN_DETAILS_JS = """
 () => { const pane = document.querySelector('[role=tabpanel]:not([hidden])')
   || document.querySelector('section.pane:not([hidden])') || document.querySelector('main') || document.body;
   let n = 0; pane.querySelectorAll('details').forEach(d => { if (!d.open) { d.open = true; n++; } }); return n; }
+"""
+# Dialogs and extra steps: the open dialog when there is one, else the page (#995).
+_OPEN_SCOPE_DETAILS_JS = """
+() => { const root = document.querySelector('dialog[open]') || document.body;
+  let n = 0; root.querySelectorAll('details').forEach(d => { if (!d.open) { d.open = true; n++; } }); return n; }
 """
 _DIALOG_IDS_JS = "() => [...document.querySelectorAll('dialog[id]')].map(d => d.id)"
 
@@ -130,6 +142,16 @@ def _shot(page, shots: Path, name: str, full: bool = False) -> str:
     path = shots / f"{name}{'-full' if full else ''}.png"
     page.screenshot(path=str(path), full_page=full)
     return path.name
+
+
+def _open_scope_details(page, shots: Path, sid: str) -> Optional[str]:
+    """Open every closed `<details>` in the dialog or page; the full screenshot of that state, if any opened."""
+    opened = int(page.evaluate(_OPEN_SCOPE_DETAILS_JS) or 0)
+    if not opened:
+        return None
+    page.wait_for_timeout(DETAILS_SETTLE_MS)
+    log.info("opened %d details on %s", opened, sid)
+    return _shot(page, shots, sid, full=True)
 
 
 def walk_context(pw, device: str, theme: str, args: argparse.Namespace, script: str,
@@ -203,10 +225,11 @@ def walk_context(pw, device: str, theme: str, args: argparse.Namespace, script: 
             page.evaluate("id => document.getElementById(id).showModal()", did)
             page.wait_for_timeout(DIALOG_SETTLE_MS)
             shot = _shot(page, shots, sid)
+            full = _open_scope_details(page, shots, sid)
             metrics = page.evaluate(script, params)
             page.evaluate("id => document.getElementById(id).close()", did)
             screens.append(_record(id=sid, device=device, theme=theme, view=view, kind="dialog",
-                                   screenshot=shot, metrics=metrics))
+                                   screenshot=shot, screenshot_full=full, metrics=metrics))
             log.info("ok %s", sid)
         except Exception as exc:  # noqa: BLE001
             screens.append(_record(id=sid, device=device, theme=theme, view=view, kind="dialog",
@@ -233,9 +256,10 @@ def walk_context(pw, device: str, theme: str, args: argparse.Namespace, script: 
             page.locator(str(step["click"])).first.click()
             page.wait_for_timeout(STEP_SETTLE_MS)
             shot = _shot(page, shots, sid)
+            full = _open_scope_details(page, shots, sid)
             metrics = page.evaluate(script, params)
             screens.append(_record(id=sid, device=device, theme=theme, view=view, kind="step",
-                                   screenshot=shot, metrics=metrics))
+                                   screenshot=shot, screenshot_full=full, metrics=metrics))
             log.info("ok %s", sid)
         except Exception as exc:  # noqa: BLE001
             screens.append(_record(id=sid, device=device, theme=theme, view=view, kind="step",

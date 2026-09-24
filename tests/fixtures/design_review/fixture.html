@@ -30,6 +30,7 @@
   dialog { border: 1px solid #d1d9e0; border-radius: 12px; }
   dialog button { min-height: 44px; min-width: 88px; font: inherit; }
   dialog summary { min-height: 44px; }
+  dialog input, #reveal input { font: inherit; }
   .faint-border { font: inherit; min-height: 44px; border: 1px solid #e5e5e5; background: #ffffff; }
   .text-only { font: inherit; min-height: 44px; border: 0; background: transparent; color: var(--fg); }
   .wrapped-field { display: inline-flex; height: 44px; border: 1px solid #818b98; }
@@ -57,6 +58,7 @@
       document.querySelectorAll('[role=tab]').forEach(t => t.setAttribute('aria-selected', String(t === tab)));
       document.querySelectorAll('[role=tabpanel]').forEach(p => p.hidden = (p.id !== tab.getAttribute('aria-controls')));
     }));
+    document.getElementById('revealBtn').addEventListener('click', () => { document.getElementById('reveal').hidden = false; });
   });
 </script>
 </head>
@@ -73,6 +75,9 @@
       <p class="tiny">Ten pixel legal text.</p>
       <p class="faint">Faint text under AA.</p>
       <p class="glyph">Next → step</p>
+      <!-- #995: an extra step (click #revealBtn) shows a section holding a folded field -->
+      <button type="button" id="revealBtn" class="big">Reveal</button>
+      <section id="reveal" hidden><details><summary>Folded</summary><input id="foldedField" aria-label="Folded field"></details></section>
       <button type="button" class="small-btn" aria-label="Tiny">x</button>
       <button type="button" class="hit-target" aria-label="Expanded">o</button>
       <button type="button" class="big"></button>
@@ -116,9 +121,11 @@
   <dialog id="editDialog">
     <h2>Edit</h2>
     <p>Dialog body text.</p>
-    <!-- #998: a closed disclosure the dialog walk never opens; engines still lay its content out
-         with real boxes, so nothing inside may reach any measured section -->
-    <details class="collapsed"><summary>Advanced</summary><input id="hiddenField" aria-label="Hidden field"><p class="faint">Faint and collapsed.</p></details>
+    <!-- #995: the walk opens every closed disclosure in a dialog before measuring, so Options'
+         field is measured. The two form an exclusive accordion (same name): opening Options closes
+         Advanced again, and what stays closed stays excluded (#998) -- engines still lay it out -->
+    <details class="collapsed" name="acc"><summary>Advanced</summary><input id="hiddenField" aria-label="Hidden field"><p class="faint">Faint and collapsed.</p></details>
+    <details name="acc"><summary>Options</summary><input id="openedField" aria-label="Opened field"></details>
     <button type="button">Close</button>
   </dialog>
 </body>
