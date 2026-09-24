@@ -1,4 +1,4 @@
-import type { HomeAutomationConfig } from "../types.js";
+import type { ActionAppConfig, HomeAutomationConfig } from "../types.js";
 
 const REQUEST_TIMEOUT_MS = 5000;
 
@@ -19,15 +19,33 @@ export async function callHomeAutomationAction(
   actionId: string,
   config: HomeAutomationConfig,
 ): Promise<void> {
-  const response = await fetch(`${config.baseUrl}/api/actions/${encodeURIComponent(actionId)}`, {
+  await callAppAction("home-automation", actionId, config);
+}
+
+/**
+ * The same call against any app with that contract (fleet-config#1006). The
+ * `Authorization` header is sent only when the app's config has a token
+ * (facilitation-suite trusts loopback callers). home-automation's ids are
+ * one segment, encoded whole exactly as before; facilitation-suite's actions
+ * may take an argument ("obs_profile/camera_pip"), so each of its segments is
+ * encoded on its own.
+ */
+export async function callAppAction(
+  app: string,
+  actionId: string,
+  config: ActionAppConfig,
+): Promise<void> {
+  const path = app === "home-automation"
+    ? encodeURIComponent(actionId)
+    : actionId.split("/").map(encodeURIComponent).join("/");
+  const headers: Record<string, string> = { "X-Automation-Source": "streamdeck" };
+  if (config.token) headers.Authorization = `Bearer ${config.token}`;
+  const response = await fetch(`${config.baseUrl}/api/actions/${path}`, {
     method: "POST",
-    headers: {
-      Authorization: `Bearer ${config.token}`,
-      "X-Automation-Source": "streamdeck",
-    },
+    headers,
     signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
   });
   if (!response.ok) {
-    throw new Error(`home-automation action "${actionId}" failed: HTTP ${response.status}`);
+    throw new Error(`${app} action "${actionId}" failed: HTTP ${response.status}`);
   }
 }

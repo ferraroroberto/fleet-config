@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import type { HomeAutomationConfig } from "../types.js";
+import type { ActionAppConfigs, HomeAutomationConfig } from "../types.js";
 
 /**
  * Minimal `KEY=VALUE` .env parser — just the two keys this plugin needs, no
@@ -39,17 +39,21 @@ function parseEnvFile(contents: string): Record<string, string> {
  * registry is already handled.
  */
 export function loadHomeAutomationConfig(sdPluginDir: string): HomeAutomationConfig {
+  return homeAutomationFrom(parseEnvFile(readEnv(sdPluginDir)), join(sdPluginDir, ".env"));
+}
+
+function readEnv(sdPluginDir: string): string {
   const envPath = join(sdPluginDir, ".env");
-  let contents: string;
   try {
-    contents = readFileSync(envPath, "utf-8");
+    return readFileSync(envPath, "utf-8");
   } catch (err) {
     throw new Error(`Failed to read ${envPath} (copy .env.sample and fill in real values)`, {
       cause: err,
     });
   }
+}
 
-  const values = parseEnvFile(contents);
+function homeAutomationFrom(values: Record<string, string>, envPath: string): HomeAutomationConfig {
   const baseUrl = values.HOME_AUTOMATION_BASE_URL?.trim();
   const token = values.HOME_AUTOMATION_TOKEN?.trim();
   if (!baseUrl) {
@@ -59,4 +63,40 @@ export function loadHomeAutomationConfig(sdPluginDir: string): HomeAutomationCon
     throw new Error(`HOME_AUTOMATION_TOKEN is not set in ${envPath}`);
   }
   return { baseUrl: baseUrl.replace(/\/+$/, ""), token };
+}
+
+/** facilitation-suite runs on this same PC; from loopback it needs no token. */
+export const DEFAULT_FACILITATION_SUITE_URL = "http://127.0.0.1:8449";
+
+/**
+ * Every app's connection (fleet-config#1006). home-automation is present only
+ * when its two keys are set (a missing/partial .env leaves it out, and its
+ * keys show `showAlert()` per press — as before); facilitation-suite always
+ * has its loopback default unless `FACILITATION_SUITE_BASE_URL` overrides it,
+ * with an optional `FACILITATION_SUITE_TOKEN`.
+ */
+export function loadActionAppConfigs(
+  sdPluginDir: string,
+  onError: (err: unknown) => void = () => {},
+): ActionAppConfigs {
+  let values: Record<string, string> = {};
+  const envPath = join(sdPluginDir, ".env");
+  try {
+    values = parseEnvFile(readEnv(sdPluginDir));
+  } catch (err) {
+    onError(err);
+  }
+  const configs: ActionAppConfigs = {};
+  try {
+    configs["home-automation"] = homeAutomationFrom(values, envPath);
+  } catch (err) {
+    onError(err);
+  }
+  const suiteUrl = values.FACILITATION_SUITE_BASE_URL?.trim() || DEFAULT_FACILITATION_SUITE_URL;
+  const suiteToken = values.FACILITATION_SUITE_TOKEN?.trim();
+  configs["facilitation-suite"] = {
+    baseUrl: suiteUrl.replace(/\/+$/, ""),
+    ...(suiteToken ? { token: suiteToken } : {}),
+  };
+  return configs;
 }
