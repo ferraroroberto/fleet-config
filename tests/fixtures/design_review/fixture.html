@@ -30,6 +30,19 @@
   dialog { border: 1px solid #d1d9e0; border-radius: 12px; }
   dialog button { min-height: 44px; min-width: 88px; font: inherit; }
   dialog summary { min-height: 44px; }
+  .faint-border { font: inherit; min-height: 44px; border: 1px solid #e5e5e5; background: #ffffff; }
+  .text-only { font: inherit; min-height: 44px; border: 0; background: transparent; color: var(--fg); }
+  .wrapped-field { display: inline-flex; height: 44px; border: 1px solid #818b98; }
+  .wrapped-field .bare { font: inherit; border: 0; background: transparent; }
+  .pill-switch { font: inherit; min-height: 44px; border: 1px solid #e5e5e5; background: transparent; }
+  .bare-switch { font: inherit; width: 44px; height: 24px; margin: 10px 0; border: 1px solid #e5e5e5; border-radius: 12px; background: transparent; }
+  .arows { list-style: none; padding: 0; }
+  .arow { display: flex; gap: 4px; }
+  .arow button { font: inherit; min-height: 44px; min-width: 44px; }
+  .arow .row-main { flex: 1; }
+  #paneList { max-width: 500px; }
+  aside.detail { display: none; position: fixed; top: 0; bottom: 0; left: 540px; right: 0; border-left: 1px solid #d1d9e0; }
+  body:has(#paneList:not([hidden])) aside.detail { display: block; }
   .segmented { display: flex; gap: 4px; margin: 8px 0; }
   .segmented button { font: inherit; font-size: 12px; min-height: 44px; min-width: 44px; }
   .seg-tall button { white-space: nowrap; }
@@ -67,12 +80,26 @@
       <svg class="i16" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="10"/></svg>
       <svg class="i22" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="10"/></svg>
       <details><summary>More</summary><p>Hidden until open: eleven point five.</p></details>
+      <!-- COLOR-03 (#996): an input's faint boundary fails 3:1; a text-labelled, borderless button is exempt -->
+      <input class="faint-border" aria-label="Faint input">
+      <button type="button" class="text-only">Text tab</button>
+      <!-- a field whose wrapper draws the control-border boundary (the vendored filter) is not boundary-less;
+           a text-labelled role=switch pill is exempt, a bare switch track with a faint edge is not -->
+      <label class="wrapped-field"><input class="bare" aria-label="Wrapped input"></label>
+      <button type="button" class="pill-switch" role="switch" aria-checked="false">Detached</button>
+      <button type="button" class="bare-switch" role="switch" aria-checked="false" aria-label="Bare switch"></button>
     </section>
     <section id="paneList" role="tabpanel" hidden>
       <h2>List</h2>
       <ul>
         <li>Row one <button type="button" class="big">A</button></li>
         <li>Row two <button type="button" class="big">B</button></li>
+      </ul>
+      <!-- LAYOUT-03 (#996): the row's own full-width main control is the row itself; star + Run + kebab
+           is action-row's budget (1 leading toggle, 1 extra action, 1 trailing accessory); a fourth is over -->
+      <ul class="arows">
+        <li class="arow arow-ok"><button type="button" aria-label="Favourite">F</button><button type="button" class="row-main">Budget row</button><button type="button">Run</button><button type="button" aria-label="More">M</button></li>
+        <li class="arow arow-over"><button type="button" class="row-main">Crowded row</button><button type="button">A</button><button type="button">B</button><button type="button">C</button><button type="button">D</button></li>
       </ul>
       <!-- two expanded targets touching: 34px boxes, -5px expansion each -> 10px overlap -->
       <div style="display:flex;gap:0"><button type="button" class="hit-target" style="margin-right:0" aria-label="One">1</button><button type="button" class="hit-target" style="margin-left:0" aria-label="Two">2</button></div>
@@ -83,6 +110,9 @@
       <div class="segmented seg-wrap" role="radiogroup" aria-label="Wrap"><button type="button" role="radio">Two line label</button><button type="button" role="radio">One</button></div>
     </section>
   </main>
+  <!-- LAYOUT-06 (#996): the list tab is list-and-detail -- a narrow list pane with a fixed,
+       full-height detail pane beside it, outside the tabpanel -->
+  <aside class="detail" aria-label="Detail"></aside>
   <dialog id="editDialog">
     <h2>Edit</h2>
     <p>Dialog body text.</p>

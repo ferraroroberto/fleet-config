@@ -97,7 +97,7 @@ expected = {"TYPE-01": "type-scale", "TOUCH-01": "hit-target", "NAV-01": "nav-fi
             "LAYOUT-03": "action-row", "LAYOUT-04": "destructive-in-menu", "TOUCH-03": "form-primary", "COLOR-03": "form-primary",
             "COLOR-01": "contrast-swatches", "LAYOUT-06": "wide-desktop"}
 check({r.id: r.mockup for r in rubric.rules if r.mockup != mockups.NONE} == expected, "the rule -> mockup map is the #972 decision")
-check(rubric.version == "1.3.0", "rubric at 1.3.0 (mock-up alignment in 1.1.0, judgment checklist in 1.2.0, #964 type rules in 1.3.0)")
+check(rubric.version == "1.4.0", "rubric at 1.4.0 (mock-up alignment in 1.1.0, judgment checklist in 1.2.0, #964 type rules in 1.3.0, #996 spec alignment in 1.4.0)")
 _base = {"meta": {"version": "x"}, "weights": {"c": 1.0}, "grades": {"A": 90, "F": 0},
          "penalties": {"P0": 25, "P1": 12, "P2": 6, "P3": 2},
          "rules": [{"id": "R-1", "category": "c", "title": "t", "metric": "layout.overflow_x", "fail_when": "true",
@@ -138,7 +138,7 @@ check(mockups.aa_background("#808080", "#808080", 21.0) is None, "aa_background 
 page = report.render_report(out_v)
 order = [m.group(1) for m in re.finditer(r'<section id="([a-z]+)"', page)]
 check(order == ["scorecard", "method", "strong", "findings", "mockups", "owners"], f"section order without judgment/diff: {order}")
-check("rubric v1.3.0" in page and f"rubric v{out_v['rubric_version']}" in page, "rubric version printed in the header")
+check("rubric v1.4.0" in page and f"rubric v{out_v['rubric_version']}" in page, "rubric version printed in the header")
 for rid in by_id:
     check(f'id="{rid}"' in page and f'<code class="rid">{rid}</code>' in page, f"{rid}: finding anchored + id visible")
 check('<span class="grade grade-F">F</span>' in page and f"{out_v['overall']['score']}" in page, "overall grade + score printed from the JSON")
@@ -208,7 +208,7 @@ def _kv(proc: subprocess.CompletedProcess) -> dict:
 
 p1 = _run("evaluate", str(FIX / "metrics_violating.json"), "--out", str(tmp / "evaluate.json"), *common)
 k1 = _kv(p1)
-check(p1.returncode == 0 and (tmp / "evaluate.json").is_file() and k1.get("GRADE") == "F" and k1.get("RUBRIC") == "1.3.0"
+check(p1.returncode == 0 and (tmp / "evaluate.json").is_file() and k1.get("GRADE") == "F" and k1.get("RUBRIC") == "1.4.0"
       and k1.get("FAILED") == f"{len(rubric.rules)}/{len(rubric.rules)}", f"evaluate --out writes the document and prints summary lines ({p1.stdout[-200:]}{p1.stderr[-200:]})")
 p2 = _run("render", str(tmp / "evaluate.json"))
 k2 = _kv(p2)

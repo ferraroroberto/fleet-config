@@ -56,7 +56,7 @@ def _doc(name: str) -> dict:
 # ---- rubric: the real file loads and names only metrics that exist ----------
 
 rubric = dr.load_rubric(RUBRIC)
-check(rubric.version == "1.3.0", "rubric meta.version stamped")
+check(rubric.version == "1.4.0", "rubric meta.version stamped")
 check(len(rubric.rules) == 25, f"25 seed rules loaded (got {len(rubric.rules)})")
 check(rubric.categories == ["typography", "color", "touch", "navigation", "layout", "components", "a11y"],
       "categories in rubric order")
@@ -106,7 +106,9 @@ check(rb.resolve_threshold(type03, light_c) == {"value": 11.0, "source": "rubric
 params_c = rb.resolve_params(rubric, light_c)
 check(params_c["hit_min"] == 44.0 and params_c["primary_min"] == 48.0, "hit_min/primary_min from spec tokens")
 check(params_c["icon_steps"] == [16.0, 18.0, 24.0], "icons.size group -> sorted px steps")
-check(rb.resolve_params(rubric, {}) == {"hit_min": 44, "primary_min": 48, "icon_steps": [16, 18, 20, 24]},
+check(rb.resolve_params(rubric, {}) == {"hit_min": 44, "primary_min": 48, "icon_steps": [16, 18, 20, 24],
+                                        "measure": 772, "gutter": 12, "row_leading_toggles": 1,
+                                        "row_trailing_accessories": 1, "row_extra_actions": 1},
       "no spec -> [params] defaults")
 check(rb.resolve_params(rubric, _specs("violating")["light"])["hit_min"] == 48.0, "a 48px spec floor is honoured")
 check(rb.px_value("44px") == 44.0 and rb.px_value("1.5rem") is None and rb.px_value(12) == 12.0, "px_value parsing")
@@ -204,6 +206,38 @@ check(float(rubric.rules[[r.id for r in rubric.rules].index("LAYOUT-06")].params
       == rb.px_value(_lay["light"].get("layout.wide", "")),
       "the rubric's wide-desktop rule measures from the spec's wide breakpoint")
 
+# ---- #996: LAYOUT-06, LAYOUT-03 and COLOR-03 follow the spec ------------------
+
+src_params = rb.resolve_params(rubric, src_specs["light"])
+check(src_params.get("measure") == 772.0 and src_params.get("gutter") == 12.0, "LAYOUT-06 reads layout.measure + spacing.gutter from the spec")
+check(capture.script_params(rubric, src_specs["light"])["script"].get("rowControlsMax") == 3,
+      "LAYOUT-03's per-row budget is action-row's leadingToggles + trailingAccessories + extraVisibleActions (1+1+1)")
+_bsel = [part.strip() for part in measure.default_params().get("boundaryControls", "button").split(",")]
+check(any(x.startswith("input") for x in _bsel) and not any(x.startswith("button") for x in _bsel) and "[role=switch]" in _bsel,
+      "COLOR-03 measures the controls the spec gives a boundary (input, select, textarea, switch), not text-labelled buttons")
+
+
+def _layout06(content_w, content_span):
+    doc = _doc("compliant")
+    lay = doc["screens"][0]["metrics"]["layout"]
+    lay["content_w"] = content_w
+    if content_span is None:
+        lay.pop("content_span", None)
+    else:
+        lay["content_span"] = content_span
+    return next(r for r in ev.evaluate(doc, rubric, src_specs)["rules"] if r["id"] == "LAYOUT-06")
+
+
+_md = _layout06(514, 1360)
+check(_md["status"] == "pass" and _md["measured"].get("desktop-light-home") == round(1360 / 1440, 4),
+      f"LAYOUT-06: a list pane plus its detail pane count together (#996) -- {_md['status']} {_md['measured']}")
+_ms = _layout06(748, 748)
+check(_ms["status"] == "pass" and "desktop-light-home" not in _ms["measured"] and "not applicable" in _ms["reason"],
+      f"LAYOUT-06: a no-detail tab holding the 772px measure (less its gutters) is exempt (#996) -- {_ms['reason']}")
+_nw = _layout06(480, 480)
+check(_nw["status"] == "fail", "LAYOUT-06: a phone-width column at 1440 still fails")
+check(_layout06(700, None)["status"] == "fail", "LAYOUT-06: metrics without content_span fall back to content_w")
+
 # ---- nav cap + page header (#966) ----
 
 for _theme, _s in src_specs.items():
@@ -226,7 +260,7 @@ check(all(s == "pass" for s in statuses_c.values()), f"compliant: every rule pas
 check(all(v["score"] == 100.0 and v["grade"] == "A" and not v["unmeasured"] for v in out_c["categories"].values()),
       "compliant: every category 100/A, measured")
 check(out_c["overall"] == {"score": 100.0, "grade": "A", "unmeasured": False}, "compliant: overall A")
-check(out_c["schema_version"] == 1 and out_c["rubric_version"] == "1.3.0" and out_c["target"] == "fixture-app"
+check(out_c["schema_version"] == 1 and out_c["rubric_version"] == "1.4.0" and out_c["target"] == "fixture-app"
       and out_c["commit"].startswith("0000") and out_c["generated_at"].endswith("Z"), "evaluate envelope keys")
 check([s["id"] for s in out_c["screens"]] == ["desktop-light-home", "iphone-light-home", "desktop-light-dialog-edit"],
       "evaluate echoes the screen list")
@@ -434,7 +468,7 @@ else:
           f"measure CLI walks the fixture: 2 tabs + 1 dialog x light/dark ({proc.stdout[-300:]}{proc.stderr[-300:]})")
     check(lines.get("RUN_DIR") == str(run_dir) and Path(lines.get("METRICS", "")).is_file(), "RUN_DIR/METRICS lines point at the run dir")
     doc = json.loads(Path(lines["METRICS"]).read_text(encoding="utf-8"))
-    check(doc["interpreter"] == str(interp) and doc["schema_version"] == 1 and doc["rubric_version"] == "1.3.0", "metrics.json records the interpreter + versions")
+    check(doc["interpreter"] == str(interp) and doc["schema_version"] == 1 and doc["rubric_version"] == "1.4.0", "metrics.json records the interpreter + versions")
     if not (scaffold / "tests" / "e2e" / "_geometry.py").is_file():
         _h.skip("browser leg: project-scaffolding/tests/e2e/_geometry.py absent -- hit-target assertions NOT verified")
     check(doc["walk"]["info"]["geometry"] == ("loaded" if (scaffold / "tests" / "e2e" / "_geometry.py").is_file() else "GEOMETRY_MISSING"),
@@ -452,6 +486,14 @@ else:
         check("button.small-btn" in small and "button.hit-target" not in small, "24px button is small; 34px + ::before inset -5px measures 44 effective")
         check(tg["overlap_count"] == 0, "home: no expanded rects overlap")
         check(by_id["desktop-light-list"]["metrics"]["targets"]["overlap_count"] == 1, "list: two touching expanded targets overlap")
+    lay_list, lay_home = by_id["desktop-light-list"]["metrics"]["layout"], ly
+    check(lay_list["rows_over_limit"] == [{"sel": "li.arow.arow-over", "controls": 4}],
+          f"LAYOUT-03: star + Run + kebab beside the row's main control is within budget; a fourth extra is over (#996) -- {lay_list['rows_over_limit']}")
+    check(lay_list["content_w"] <= 500 and lay_list.get("content_span", 0) >= 1400,
+          f"LAYOUT-06: content_span runs from the list pane across the detail pane (#996) -- {lay_list['content_w']} / {lay_list.get("content_span")}")
+    check(lay_home.get("content_span") == lay_home["content_w"], "LAYOUT-06: with no detail pane the span is the pane itself")
+    check({b["sel"] for b in ct["boundary_low"]} == {"input.faint-border", "button.bare-switch"},
+          f"COLOR-03: a faint input and a bare switch track fail; text-labelled buttons and switch pills are exempt; a wrapper-drawn boundary counts (#996) -- {[b['sel'] for b in ct['boundary_low']]}")
     for theme in ("light", "dark"):
         seg = by_id[f"desktop-{theme}-list"]["metrics"]["controls"]["segmented_bad"]
         check(seg == [{"sel": "div.segmented.seg-wrap", "options": 2, "wrapped": True}],

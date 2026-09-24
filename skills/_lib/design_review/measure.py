@@ -32,7 +32,7 @@ present on a successful run:
     icons     boxes {"WxH": n}
     nav       primary_count, pane_scroll_top, pane_header_visible
     layout    overflow_x, scroll_w, inner_w, inner_h, pane_h, lists [..],
-              rows_over_limit [..], danger_rows, content_w, radii {r: n}
+              rows_over_limit [..], danger_rows, content_w, content_span, radii {r: n}
     a11y      unnamed [..], unnamed_count, zoom_locked, text_size_control
     headings  ["H2:Title@16px", ...]
 
@@ -57,6 +57,14 @@ INTERACTIVE_SELECTOR = (
     "[role=button], [role=tab], [role=switch], [role=menuitem], [role=checkbox]"
 )
 FORM_CONTROL_SELECTOR = "button, input, select, textarea"
+# COLOR-03 measures only the controls design.md gives a drawn boundary (`control-border`: input,
+# select, the switch's track). A text-labelled button or tab is identified by its label, WCAG
+# 1.4.11's exception, and the nav draws inactive tabs without one by design (#996).
+BOUNDARY_CONTROL_SELECTOR = (
+    "input:not([type=checkbox]):not([type=radio]):not([type=range]):not([type=color]):not([type=file])"
+    ":not([type=button]):not([type=submit]):not([type=reset]):not([type=image]), "
+    "select, textarea, [role=switch]"
+)
 GLYPH_ICON_RE = r"[←-⇿■-◿⬀-⯿✖✕×⋮☰]"
 
 # `__GEOMETRY__` is replaced by `build_script`. The script is one arrow
@@ -138,8 +146,20 @@ _MEASURE_JS = r"""
     const mism = [], lowB = [], ua = []; let total = 0;
     q(params.formControls).forEach(el => { total++;
       const s = getComputedStyle(el);
-      if (s.fontFamily !== bodyFam) mism.push({sel: sel(el), family: s.fontFamily.slice(0,60)});
-      const surface = el.parentElement ? bgOf(el.parentElement) : [255,255,255,1];
+      if (s.fontFamily !== bodyFam) mism.push({sel: sel(el), family: s.fontFamily.slice(0,60)}); });
+    const drawsBorder = (st) => (parseFloat(st.borderTopWidth) || 0) > 0 && rgba(st.borderTopColor)[3] > 0;
+    q(params.boundaryControls).forEach(el => {
+      // A switch with visible text is a labelled toggle, identified by its label like a button (#996).
+      if (el.getAttribute('role') === 'switch' && el.textContent.trim()) return;
+      // A field whose wrapper draws the boundary (the vendored filter: a bordered label around a
+      // borderless input) takes the wrapper's -- the nearest bordered ancestor hugging it, 2 levels up.
+      let host = el, s = getComputedStyle(el);
+      if (!drawsBorder(s) && rgba(s.backgroundColor)[3] === 0) {
+        const h = el.getBoundingClientRect().height;
+        for (let a = el.parentElement, i = 0; a && i < 2; a = a.parentElement, i++) { const as = getComputedStyle(a);
+          if (drawsBorder(as) && a.getBoundingClientRect().height <= h * 2 + 2) { host = a; s = as; break; } }
+      }
+      const surface = host.parentElement ? bgOf(host.parentElement) : [255,255,255,1];
       const bw = parseFloat(s.borderTopWidth) || 0; const bc = rgba(s.borderTopColor);
       let boundary = null;
       if (bw > 0 && bc[3] > 0) boundary = over(bc, surface);
@@ -221,14 +241,27 @@ _MEASURE_JS = r"""
         const filter = !!host.querySelector('input[type=search], input[placeholder*="filter" i], input[placeholder*="search" i], [role=searchbox]');
         lists.push({sel: sel(l), rows, has_filter: filter}); } });
     q('li, tr, [role=listitem], [role=row]').forEach(row => {
+      // "besides the row itself": a row whose tap target is one control spanning most of it
+      // (action-row's main button) does not count that control (#996).
       const ctl = [...row.querySelectorAll(params.interactive)].filter(visible);
-      if (ctl.length > params.rowControlsMax) rowsOver.push({sel: sel(row), controls: ctl.length});
+      const rw = row.getBoundingClientRect().width;
+      const main = ctl.reduce((a, c) => (!a || c.getBoundingClientRect().width > a.getBoundingClientRect().width) ? c : a, null);
+      const extras = main && main.getBoundingClientRect().width >= rw * 0.5 ? ctl.filter(c => c !== main) : ctl;
+      if (extras.length > params.rowControlsMax) rowsOver.push({sel: sel(row), controls: extras.length});
       if (ctl.some(c => /danger|destructive|delete|remove/i.test(c.className || ''))) dangerRows.add(row); });
-    q('*').forEach(el => { const r = getComputedStyle(el).borderTopLeftRadius; if (r && r !== '0px') radii[r] = (radii[r]||0)+1; });
+    const all = q('*');
+    all.forEach(el => { const r = getComputedStyle(el).borderTopLeftRadius; if (r && r !== '0px') radii[r] = (radii[r]||0)+1; });
     const content = pane.getBoundingClientRect();
+    // content_span: the pane plus a detail pane docked beside it (master-detail, #996) -- a
+    // visible full-height element right of the pane, outside it and outside the nav.
+    let spanRight = content.right;
+    all.forEach(el => { if (el.contains(pane) || pane.contains(el) || el.closest('[role=tablist]')) return;
+      const r = el.getBoundingClientRect();
+      if (r.left >= content.right - 2 && r.height >= window.innerHeight * 0.5 && r.width >= window.innerWidth * 0.2)
+        spanRight = Math.max(spanRight, r.right); });
     return { overflow_x: de.scrollWidth > window.innerWidth + 1, scroll_w: de.scrollWidth, inner_w: window.innerWidth, inner_h: window.innerHeight,
       pane_h: pane.scrollHeight, lists: lists.slice(0,CAP), rows_over_limit: rowsOver.slice(0,CAP), rows_over_limit_count: rowsOver.length,
-      danger_rows: dangerRows.size, content_w: Math.round(content.width), radii };
+      danger_rows: dangerRows.size, content_w: Math.round(content.width), content_span: Math.round(spanRight - content.left), radii };
   });
 
   // ---- accessibility
@@ -281,6 +314,7 @@ def default_params(
         "primarySelector": primary_selector,
         "interactive": INTERACTIVE_SELECTOR,
         "formControls": FORM_CONTROL_SELECTOR,
+        "boundaryControls": BOUNDARY_CONTROL_SELECTOR,
         "glyphRe": GLYPH_ICON_RE,
     }
 
@@ -329,7 +363,7 @@ def metric_paths() -> List[str]:
         "icons": ["boxes"],
         "nav": ["primary_count", "pane_scroll_top", "pane_header_visible"],
         "layout": ["overflow_x", "scroll_w", "inner_w", "inner_h", "pane_h", "lists", "rows_over_limit",
-                   "rows_over_limit_count", "danger_rows", "content_w", "radii"],
+                   "rows_over_limit_count", "danger_rows", "content_w", "content_span", "radii"],
         "a11y": ["unnamed", "unnamed_count", "zoom_locked", "text_size_control"],
     }
     return [f"{s}.{k}" for s, ks in keys.items() for k in ks]
