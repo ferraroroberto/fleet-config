@@ -198,7 +198,10 @@ def walk_context(pw, device: str, theme: str, args: argparse.Namespace, script: 
     page = ctx.new_page()
     page.set_default_timeout(args.timeout_ms)
     tab_selector = str(review.get("tab_selector") or "[role=tab]")
-    no_go = [str(s) for s in review.get("no_go", [])]
+    # A synthetic run (#995) walks a throwaway instance: its own no_go, when declared, replaces the live list.
+    synth = review.get("synthetic") if isinstance(review.get("synthetic"), dict) else {}
+    no_go_src = synth.get("no_go") if args.synthetic and isinstance(synth.get("no_go"), list) else review.get("no_go", [])
+    no_go = [str(s) for s in no_go_src]
 
     def stamp_theme() -> None:
         page.evaluate("t => { document.documentElement.dataset.theme = t; }", theme)
@@ -276,6 +279,8 @@ def walk_context(pw, device: str, theme: str, args: argparse.Namespace, script: 
     for step in review.get("extra_steps", []) or []:
         if not isinstance(step, dict) or not step.get("id"):
             continue
+        if step.get("synthetic") and not args.synthetic:
+            continue  # never against the live app: it may open a surface (a session) the walk must not attach to
         clicks = step_clicks(step)
         if not clicks and not step.get("open"):
             continue
@@ -333,6 +338,8 @@ def main(argv: Optional[List[str]] = None) -> int:
     ap.add_argument("--params", default=None, help="JSON file with the measurement params")
     ap.add_argument("--review", default=None, help="JSON file with the target's [design.review] block")
     ap.add_argument("--timeout-ms", type=int, default=DEFAULT_TIMEOUT_MS)
+    ap.add_argument("--synthetic", action="store_true",
+                    help="the URL is the target's synthetic instance: run synthetic steps under its no_go (#995)")
     args = ap.parse_args(argv)
 
     logging.basicConfig(level=logging.INFO, format="%(message)s", stream=sys.stderr)

@@ -36,6 +36,20 @@ no `submit`, and every click is refused when its element sits inside a
     id       = "project-menu"
     open     = "details.projects" # optional: open this details first (not a click)
     clicks   = [".projects .row-kebab"]   # clicked in order, each vetoed by no_go
+    synthetic = false             # true: only on the synthetic instance (below)
+    [design.review.synthetic]     # optional: a throwaway instance with synthetic data
+    command  = ["scripts/design_review_synthetic.py"]  # argv after the target's
+                                  # venv python, run from the target root; prints
+                                  # `URL=<base>` once ready, exits when stdin closes
+    no_go    = [".session-open"]  # replaces the live no_go for that run only
+    startup_timeout_s = 120
+
+`measure <repo> --synthetic` boots the declared command instead of probing
+the live app, walks the URL it prints (steps marked `synthetic = true`
+included, the synthetic `no_go` in force), then closes its stdin and waits
+for it to exit -- killing its process tree only if it does not (#995). A
+live walk never runs a `synthetic = true` step: those may open surfaces,
+such as a session, that must not be attached to on the live app.
 """
 from __future__ import annotations
 
@@ -84,6 +98,42 @@ class Target:
 
 class PlanError(Exception):
     """A target that cannot be resolved — reported, never guessed around."""
+
+
+# The base URL a synthetic target starts with: replaced by the URL its launcher prints (#995).
+SYNTHETIC_URL = "synthetic:pending"
+SYNTHETIC_STARTUP_S = 120.0
+
+
+def synthetic_block(target: "Target") -> Dict[str, object]:
+    """The validated `[design.review.synthetic]` block: `{command: [argv], no_go, startup_timeout_s}`.
+
+    Raises `PlanError` naming what is wrong: no block, no root, a `command`
+    that is not a non-empty list of strings, or a script (its first element)
+    that is absolute, escapes the target root, or does not exist.
+    """
+    block = target.review.get("synthetic") if isinstance(target.review, dict) else None
+    if not isinstance(block, dict):
+        raise PlanError(f"{target.name} declares no [design.review.synthetic] block")
+    if target.root is None:
+        raise PlanError(f"{target.name} has no checkout to run its synthetic launcher from")
+    command = block.get("command")
+    if isinstance(command, str):
+        command = [command]
+    if not isinstance(command, list) or not command or not all(isinstance(c, str) and c for c in command):
+        raise PlanError("[design.review.synthetic].command must be a non-empty list of strings")
+    root = Path(target.root).resolve()
+    script = (root / command[0]).resolve()
+    if Path(command[0]).is_absolute() or root not in script.parents:
+        raise PlanError(f"synthetic command {command[0]!r} must be a path inside the target checkout")
+    if not script.is_file():
+        raise PlanError(f"synthetic command {command[0]!r} does not exist in {root}")
+    no_go = block.get("no_go")
+    return {
+        "command": [str(script)] + [str(c) for c in command[1:]],
+        "no_go": [str(s) for s in no_go] if isinstance(no_go, list) else None,
+        "startup_timeout_s": float(block.get("startup_timeout_s") or SYNTHETIC_STARTUP_S),
+    }
 
 
 def load_review_block(root: Optional[Path]) -> Dict[str, object]:

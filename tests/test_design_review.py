@@ -422,6 +422,83 @@ _doc_e["screens"].append({**_absent, "status": "error", "reason": "TIMEOUT"})
 check(any(r["status"] == "unmeasured" for r in ev.evaluate(_doc_e, rubric, _specs("compliant"))["rules"]),
       "a step that errored for another reason still makes its rules unmeasured")
 
+# ---- #995: the synthetic instance: contract, validation, lifecycle ------------
+
+import shutil  # noqa: E402
+import urllib.request  # noqa: E402
+
+
+def _synthetic_target(command, name="synthetic-target"):
+    root = STATE / name
+    root.mkdir(parents=True, exist_ok=True)
+    for f in ("synthetic_launcher.py", "fixture.html"):
+        shutil.copy(FIX / f, root / f)
+    return plan.Target(name=name, root=root, base_url=plan.SYNTHETIC_URL,
+                       review={"synthetic": {"command": command}} if command is not None else {})
+
+
+def _plan_error(target):
+    try:
+        plan.synthetic_block(target)
+    except plan.PlanError as exc:
+        return str(exc)
+    return None
+
+
+check("declares no [design.review.synthetic]" in (_plan_error(_synthetic_target(None)) or ""), "no block -> a named PlanError")
+check("inside the target checkout" in (_plan_error(_synthetic_target(["../synthetic_launcher.py"])) or ""),
+      "a command outside the target root is refused")
+check("does not exist" in (_plan_error(_synthetic_target(["missing.py"])) or ""), "a command that is not there is refused")
+check("non-empty list" in (_plan_error(_synthetic_target([])) or ""), "an empty command is refused")
+_blk = plan.synthetic_block(_synthetic_target(["synthetic_launcher.py", "--x"]))
+check(_blk["command"] == [str((STATE / "synthetic-target" / "synthetic_launcher.py").resolve()), "--x"]
+      and _blk["no_go"] is None and _blk["startup_timeout_s"] == plan.SYNTHETIC_STARTUP_S,
+      "a valid block resolves the script inside the root and keeps its arguments")
+
+
+def _port_open(url):
+    from urllib.parse import urlsplit
+    p = urlsplit(url)
+    try:
+        with socket.create_connection((p.hostname, p.port), timeout=1):
+            return True
+    except OSError:
+        return False
+
+
+_run = STATE / "synthetic-lifecycle"
+_run.mkdir(parents=True, exist_ok=True)
+_inst = capture.SyntheticInstance(sys.executable, _synthetic_target(["synthetic_launcher.py"]),
+                                  plan.synthetic_block(_synthetic_target(["synthetic_launcher.py"])), _run)
+_st = _inst.start()
+_served = bool(_st["url"]) and b"design_review fixture" in urllib.request.urlopen(_st["url"], timeout=5).read()
+_how = _inst.stop()
+check(_served and _how == "stopped" and not _port_open(_st["url"]),
+      f"the launcher prints its URL, serves it, and exits when its stdin closes (#995) -- {_st} {_how}")
+check("synthetic fixture: stopped" in (_run / "synthetic.log").read_text(encoding="utf-8"), "the launcher's output lands in synthetic.log")
+_fail = capture.SyntheticInstance(sys.executable, _synthetic_target(["synthetic_launcher.py", "--fail"]),
+                                  plan.synthetic_block(_synthetic_target(["synthetic_launcher.py", "--fail"])), _run)
+_fs = _fail.start()
+check(_fs["url"] is None and "exited (3) before printing URL=" in str(_fs["error"]) and _fail.stop() == "stopped",
+      f"a launcher that exits first is reported with its exit code, never a URL -- {_fs}")
+_saved_stop = capture.SYNTHETIC_STOP_S
+capture.SYNTHETIC_STOP_S = 1.0
+try:
+    _hang = capture.SyntheticInstance(sys.executable, _synthetic_target(["synthetic_launcher.py", "--hang"]),
+                                      plan.synthetic_block(_synthetic_target(["synthetic_launcher.py", "--hang"])), _run)
+    _hs = _hang.start()
+    _hh = _hang.stop()
+finally:
+    capture.SYNTHETIC_STOP_S = _saved_stop
+check(_hs["url"] and _hh == "killed" and not _port_open(_hs["url"]),
+      f"a launcher that ignores stdin EOF is tree-killed after the grace (#995) -- {_hh}")
+
+_doc_s = _doc("compliant")
+_doc_s["mode"] = "synthetic"
+_out_s = ev.evaluate(_doc_s, rubric, _specs("compliant"))
+check(_out_s["mode"] == "synthetic" and ev.evaluate(_doc("compliant"), rubric, _specs("compliant"))["mode"] == "live",
+      "evaluate carries the run's mode; a document without one is live")
+
 # ---- capture: liveness probe, interpreter, run dir ---------------------------
 
 check(capture.probe_listening("file:///x.html")["status"] == "listening", "file:// is always listening")
@@ -563,6 +640,7 @@ else:
         {"tab": "home", "id": "forbidden", "click": "#revealForbidden"},
         {"tab": "home", "id": "absent", "click": "#noSuchTarget"},
         {"tab": "list", "id": "absent-second", "open": "details.card", "clicks": [".card .kebab", "#noSuchMenuItem"]},
+        {"tab": "home", "id": "synthetic-only", "click": "#revealBtn", "synthetic": True},
     ]}), encoding="utf-8")
     (STATE / "steps-params.json").write_text(json.dumps(measure.default_params()), encoding="utf-8")
     proc4 = subprocess.run(
@@ -583,11 +661,52 @@ else:
     delete = steps.get("desktop-light-list-row-delete", {})
     check(delete.get("status") == "error" and delete.get("reason") == "NO_GO" and ".card .danger-item" in str(delete.get("error")),
           f"a click inside a no_go zone is vetoed at click time, not only by selector equality (#995) -- {delete.get('reason')} {delete.get('error')}")
+    check("desktop-light-home-synthetic-only" not in steps and proc4.returncode == 0,
+          "a live walk never runs a step marked synthetic (#995)")
     forbidden = steps.get("desktop-light-home-forbidden", {})
     check(forbidden.get("reason") == "NO_GO", "a step whose click is literally a no_go selector is refused")
     for _sid, _sel in (("desktop-light-home-absent", "#noSuchTarget"), ("desktop-light-list-absent-second", "#noSuchMenuItem")):
         _s = steps.get(_sid, {})
         check(_s.get("status") == "absent" and _s.get("reason") == "STEP_TARGET_ABSENT" and _sel in str(_s.get("error")),
               f"a step target that never appears is recorded STEP_TARGET_ABSENT, naming the selector (#995) -- {_sid}: {_s.get('status')} {_s.get('reason')}")
+
+    # measure --synthetic: boot the target's launcher, walk it with synthetic steps + no_go, stop it (#995)
+    syn_root = STATE / "synthetic-app"
+    syn_root.mkdir(parents=True, exist_ok=True)
+    for f in ("synthetic_launcher.py", "fixture.html"):
+        shutil.copy(FIX / f, syn_root / f)
+    (syn_root / ".fleet.toml").write_text(
+        '[design.review]\nno_go = ["#revealBtn"]\n'
+        '[design.review.synthetic]\ncommand = ["synthetic_launcher.py"]\nno_go = []\n'
+        '[[design.review.extra_steps]]\ntab = "home"\nid = "reveal-synthetic"\nclick = "#revealBtn"\nsynthetic = true\n',
+        encoding="utf-8")
+    syn_run = STATE / "synthetic-run"
+    proc5 = subprocess.run(
+        [sys.executable, str(REPO / "skills" / "_lib" / "design_review"), "measure", str(syn_root), "--synthetic",
+         "--devices", "desktop", "--python", str(interp), "--scaffold", str(scaffold), "--run-dir", str(syn_run),
+         "--rubric", str(RUBRIC), "--spec", str(FIX / "spec_compliant.md")],
+        capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=600,
+        env={**os.environ, "CLAUDE_HOOKS_STATE_DIR": str(STATE)},
+    )
+    syn_lines = dict(l.split("=", 1) for l in proc5.stdout.splitlines() if "=" in l)
+    check(proc5.returncode == 0 and syn_lines.get("MODE") == "synthetic" and syn_lines.get("UNMEASURED") == "none"
+          and syn_lines.get("SCREENS") == "8/8",
+          f"measure --synthetic walks the launcher's instance: 6 screens + the synthetic step in both themes ({proc5.stdout[-400:]}{proc5.stderr[-300:]})")
+    syn_doc = json.loads((syn_run / "metrics.json").read_text(encoding="utf-8")) if (syn_run / "metrics.json").is_file() else {}
+    syn_ids = {s["id"]: s for s in syn_doc.get("screens", [])}
+    check(syn_ids.get("desktop-light-home-reveal-synthetic", {}).get("status") == "ok",
+          "the synthetic step ran under the synthetic no_go, which lifts the live veto on #revealBtn")
+    check(syn_doc.get("mode") == "synthetic" and str(syn_doc.get("base_url", "")).startswith("http://127.0.0.1:")
+          and (syn_doc.get("synthetic") or {}).get("stop") == "stopped" and not _port_open(str(syn_doc.get("base_url"))),
+          f"metrics.json records the synthetic URL, and the launcher was stopped by closing its stdin -- {syn_doc.get('synthetic')}")
+    (syn_root / ".fleet.toml").write_text('[design.review.synthetic]\ncommand = ["synthetic_launcher.py", "--fail"]\n', encoding="utf-8")
+    proc6 = subprocess.run(
+        [sys.executable, str(REPO / "skills" / "_lib" / "design_review"), "measure", str(syn_root), "--synthetic",
+         "--devices", "desktop", "--python", str(interp), "--run-dir", str(STATE / "synthetic-run-fail")],
+        capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=300,
+        env={**os.environ, "CLAUDE_HOOKS_STATE_DIR": str(STATE)},
+    )
+    check(proc6.returncode == 0 and "UNMEASURED=SYNTHETIC_FAILED" in proc6.stdout and "MODE=synthetic" in proc6.stdout,
+          f"a launcher that never prints a URL makes the run SYNTHETIC_FAILED, not a crash -- {proc6.stdout[-300:]}")
 
 _h.report_and_exit("test_design_review", skip_code=SKIP_EXIT)

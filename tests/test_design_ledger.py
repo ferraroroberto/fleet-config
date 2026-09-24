@@ -87,8 +87,9 @@ N_FAIL = sum(1 for r in ev.evaluate(json.loads((FIX / "metrics_violating.json").
 # ---- ledger entry: shape and what it never carries ---------------------------
 
 entry = ledger.entry_from_doc(violating, "20260922T000001Z", live=None)
-check(sorted(entry) == ["categories", "commit", "generated_at", "judgment_rubric_version", "live_build", "overall",
+check(sorted(entry) == ["categories", "commit", "generated_at", "judgment_rubric_version", "live_build", "mode", "overall",
                         "rubric_version", "rules", "run_id", "uncatalogued"], f"entry keys as decided: {sorted(entry)}")
+check(entry["mode"] == "live", "a document without a mode is a live run")
 check(entry["rules"] and all(v in ("pass", "fail", "unmeasured") for v in entry["rules"].values())
       and len(entry["rules"]) == len(rubric.rules), "rules{id: status} covers every rubric rule")
 check(entry["overall"] == {"score": violating["overall"]["score"], "grade": violating["overall"]["grade"]}, "overall carries score + grade only")
@@ -129,6 +130,22 @@ check(ledger.previous("fixture-app", "20260922T999999Z")["run_id"] == "20260922T
 check(ledger.previous("fixture-app", "20260101T000000Z") is None, "a run older than every entry has no previous run — never a later one")
 check(ledger.previous("fixture-app", None)["run_id"] == "20260922T000023Z" and ledger.previous("never-seen") is None, "previous without a run id = latest; unknown target = None")
 check(not FORBIDDEN.search(ledger.ledger_path("fixture-app").read_text(encoding="utf-8")), "the ledger file carries nothing captured")
+
+# ---- #995: a synthetic run only ever compares with synthetic runs -------------
+
+for rid, mode in (("20260923T000001Z", "synthetic"), ("20260923T000002Z", None), ("20260923T000003Z", "synthetic")):
+    d = _clone(violating)
+    d["run_dir"] = str(STATE / "design-review" / "modes-app" / rid)
+    d["target"] = "modes-app"
+    if mode:
+        d["mode"] = mode
+    ledger.record(Path(d["run_dir"]), d)
+check(ledger.previous("modes-app", "20260923T999999Z")["run_id"] == "20260923T000002Z",
+      "a live run's previous run skips synthetic entries (#995)")
+check(ledger.previous("modes-app", "20260923T999999Z", "synthetic")["run_id"] == "20260923T000003Z"
+      and ledger.previous("modes-app", "20260923T000003Z", "synthetic")["run_id"] == "20260923T000001Z",
+      "a synthetic run's previous run is the latest earlier synthetic one (#995)")
+check(ledger.previous("modes-app", "20260923T000002Z") is None, "no earlier live run -> nothing to compare, never a synthetic one")
 
 # ---- diff semantics --------------------------------------------------------------
 
