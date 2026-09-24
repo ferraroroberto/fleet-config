@@ -29,6 +29,12 @@
   svg.i22 { width: 22px; height: 22px; }
   dialog { border: 1px solid #d1d9e0; border-radius: 12px; }
   dialog button { min-height: 44px; min-width: 88px; font: inherit; }
+  .segmented { display: flex; gap: 4px; margin: 8px 0; }
+  .segmented button { font: inherit; font-size: 12px; min-height: 44px; min-width: 44px; }
+  .seg-tall button { white-space: nowrap; }
+  .seg-wrap button:first-child { width: 60px; }
+  .segmented button { position: relative; }
+  .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: normal; }
 </style>
 <script>
   // Minimal tab switcher: aria-controls -> show that pane, hide the others.
@@ -69,6 +75,11 @@
       </ul>
       <!-- two expanded targets touching: 34px boxes, -5px expansion each -> 10px overlap -->
       <div style="display:flex;gap:0"><button type="button" class="hit-target" style="margin-right:0" aria-label="One">1</button><button type="button" class="hit-target" style="margin-left:0" aria-label="Two">2</button></div>
+      <!-- COMP-03 (#997): five single-line segments made 44px tall by min-height (one carrying an
+           sr-only span that wraps word by word in its 1px box) -> not wrapped;
+           a narrow segment whose label really breaks onto two lines -> wrapped -->
+      <div class="segmented seg-tall" role="radiogroup" aria-label="Tall"><button type="button" role="radio">Needs you</button><button type="button" role="radio">Your turn</button><button type="button" role="radio">Running</button><button type="button" role="radio">Done today</button><button type="button" role="radio">All<span class="sr-only"> sessions in every state</span></button></div>
+      <div class="segmented seg-wrap" role="radiogroup" aria-label="Wrap"><button type="button" role="radio">Two line label</button><button type="button" role="radio">One</button></div>
     </section>
   </main>
   <dialog id="editDialog">
