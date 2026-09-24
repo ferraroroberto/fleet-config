@@ -73,6 +73,62 @@
       "kind": "http-action",
       "label": "AC Off",
       "actionId": "ac_off"
+    },
+    {
+      "id": "fs-next",
+      "kind": "http-action",
+      "label": "Workshop · Next",
+      "actionId": "next",
+      "app": "facilitation-suite"
+    },
+    {
+      "id": "fs-prev",
+      "kind": "http-action",
+      "label": "Workshop · Previous",
+      "actionId": "prev",
+      "app": "facilitation-suite"
+    },
+    {
+      "id": "fs-capture",
+      "kind": "http-action",
+      "label": "Workshop · Capture",
+      "actionId": "capture_toggle",
+      "app": "facilitation-suite"
+    },
+    {
+      "id": "fs-timer",
+      "kind": "http-action",
+      "label": "Workshop · Timer",
+      "actionId": "timer_toggle",
+      "app": "facilitation-suite"
+    },
+    {
+      "id": "fs-timer-plus",
+      "kind": "http-action",
+      "label": "Workshop · +1 min",
+      "actionId": "timer_add_minute",
+      "app": "facilitation-suite"
+    },
+    {
+      "id": "fs-blackout",
+      "kind": "http-action",
+      "label": "Workshop · Blackout",
+      "actionId": "blackout",
+      "app": "facilitation-suite"
+    },
+    {
+      "id": "fs-names",
+      "kind": "http-action",
+      "label": "Workshop · Names",
+      "actionId": "names_toggle",
+      "app": "facilitation-suite"
+    },
+    {
+      "id": "fs-obs-pip",
+      "kind": "http-action",
+      "label": "Workshop · Camera PiP",
+      "actionId": "obs_profile/camera_pip",
+      "app": "facilitation-suite"
     }
   ]
 }

@@ -6,9 +6,9 @@ import { Back } from "./actions/back.js";
 import { CallAction } from "./actions/call-action.js";
 import { LaunchTarget } from "./actions/launch-target.js";
 import { OpenCoding } from "./actions/open-coding.js";
-import { loadHomeAutomationConfig } from "./lib/config.js";
+import { loadActionAppConfigs } from "./lib/config.js";
 import { loadResolvedTargets } from "./lib/registry.js";
-import type { HomeAutomationConfig, ResolvedTarget } from "./types.js";
+import type { ResolvedTarget } from "./types.js";
 
 streamDeck.logger.setLevel("info");
 
@@ -27,21 +27,16 @@ try {
   );
 }
 
-// A missing/unfilled .env leaves this undefined rather than crashing the
-// whole plugin — call-action.ts shows showAlert() per press while
-// unconfigured (mirrors the missing-registry handling above).
-let homeAutomationConfig: HomeAutomationConfig | undefined;
-try {
-  homeAutomationConfig = loadHomeAutomationConfig(SD_PLUGIN_DIR);
-} catch (err) {
-  streamDeck.logger.error(
-    "Failed to load home-automation connection config — see .env.sample.",
-    err,
-  );
-}
+// A missing/unfilled .env leaves home-automation out rather than crashing the
+// whole plugin — call-action.ts shows showAlert() per press for an app with
+// no connection (mirrors the missing-registry handling above).
+// facilitation-suite always has its loopback default (fleet-config#1006).
+const actionAppConfigs = loadActionAppConfigs(SD_PLUGIN_DIR, (err) =>
+  streamDeck.logger.error("Failed to load an http-action connection config — see .env.sample.", err),
+);
 
 streamDeck.actions.registerAction(new LaunchTarget(SD_PLUGIN_DIR, targets));
-streamDeck.actions.registerAction(new CallAction(targets, homeAutomationConfig));
+streamDeck.actions.registerAction(new CallAction(targets, actionAppConfigs));
 streamDeck.actions.registerAction(new OpenCoding());
 streamDeck.actions.registerAction(new Back());
 

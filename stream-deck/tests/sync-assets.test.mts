@@ -89,7 +89,13 @@ test("validateAndResolve resolves a valid http-action entry with no icon copy ne
   const { errors, resolvedTargets, piOptions, httpActionPiOptions } = validateAndResolve(registry, PROJECTS, io);
   assert.deepEqual(errors, []);
   assert.equal(resolvedTargets.length, 1);
-  assert.deepEqual(resolvedTargets[0], { kind: "http-action", id: "light-on", label: "Light On", actionId: "plug_on" });
+  assert.deepEqual(resolvedTargets[0], {
+    kind: "http-action",
+    id: "light-on",
+    label: "Light On",
+    actionId: "plug_on",
+    app: "home-automation",
+  });
   assert.deepEqual(piOptions, []);
   assert.match(httpActionPiOptions[0], /value="light-on"/);
 });
@@ -112,6 +118,26 @@ test("validateAndResolve fails when an http-action entry has no label", () => {
   const { errors, resolvedTargets } = validateAndResolve(registry, PROJECTS, io);
   assert.equal(resolvedTargets.length, 0);
   assert.match(errors[0], /needs a non-empty label/);
+});
+
+test("validateAndResolve carries a facilitation-suite app through (fleet-config#1006)", () => {
+  const io = { fileExists: () => true, readFile: () => fakePng(144, 144) };
+  const registry = {
+    targets: [{ id: "fs-next", kind: "http-action", label: "Workshop · Next", actionId: "next", app: "facilitation-suite" }],
+  };
+  const { errors, resolvedTargets } = validateAndResolve(registry, PROJECTS, io);
+  assert.deepEqual(errors, []);
+  assert.equal(resolvedTargets[0].app, "facilitation-suite");
+});
+
+test("validateAndResolve fails loudly on an unknown app", () => {
+  const io = { fileExists: () => true, readFile: () => fakePng(144, 144) };
+  const registry = {
+    targets: [{ id: "x", kind: "http-action", label: "X", actionId: "next", app: "nowhere" }],
+  };
+  const { errors, resolvedTargets } = validateAndResolve(registry, PROJECTS, io);
+  assert.equal(resolvedTargets.length, 0);
+  assert.match(errors[0], /unknown app "nowhere"/);
 });
 
 test("validateAndResolve fails loudly on an unknown target kind", () => {

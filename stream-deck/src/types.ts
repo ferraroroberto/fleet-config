@@ -8,16 +8,25 @@ export interface TrayTargetDefinition {
 }
 
 /**
- * An authenticated POST against one home-automation action (fleet-config#574).
- * `actionId` is home-automation's own `action_id` (e.g. "plug_on") — the base
- * URL and bearer token are connection config (src/lib/config.ts), not
- * per-entry fields, since there is exactly one HTTP target.
+ * The apps an http-action key can call — each exposes the same
+ * `POST /api/actions/{action_id}` contract (home-automation#641).
+ */
+export type ActionApp = "home-automation" | "facilitation-suite";
+export const ACTION_APPS: readonly ActionApp[] = ["home-automation", "facilitation-suite"];
+
+/**
+ * A POST against one app's action (fleet-config#574; the `app` field #1006).
+ * `actionId` is that app's own `action_id` (e.g. "plug_on", or
+ * "obs_profile/camera_pip" for facilitation-suite). `app` defaults to
+ * "home-automation"; the base URL and token are per-app connection config
+ * (src/lib/config.ts), not per-entry fields.
  */
 export interface HttpActionTargetDefinition {
   id: string;
   kind: "http-action";
   label: string;
   actionId: string;
+  app?: ActionApp;
 }
 
 // Future kinds (terminal/url/script — see fleet-config#370's "out of scope"
@@ -45,6 +54,7 @@ export interface ResolvedHttpActionTarget {
   id: string;
   label: string;
   actionId: string;
+  app: ActionApp;
 }
 
 export type ResolvedTarget = ResolvedTrayTarget | ResolvedHttpActionTarget;
@@ -68,3 +78,11 @@ export interface HomeAutomationConfig {
   baseUrl: string;
   token: string;
 }
+
+/** One app's connection: a token only when the app asks for one. */
+export interface ActionAppConfig {
+  baseUrl: string;
+  token?: string;
+}
+
+export type ActionAppConfigs = Partial<Record<ActionApp, ActionAppConfig>>;
