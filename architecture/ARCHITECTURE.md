@@ -113,6 +113,7 @@ The **work layer**, enabled by L2. Most mature ones are **web apps exposing an A
 | 💬 **whatsapp-radar** | Local-first spike to cut attention load from high-volume WhatsApp chats (monitor → process only new → deliver). | local app | hub (L2) |
 | 🌡️ **home-automation** | Home automation suite (ac/power). | `:8447` PWA | — (MELCloud Home) |
 | 🎲 **facilitation-shuffle** | Randomises workshop participants into 1-2-4-all breakout groups for Zoom. | Streamlit | — (Zoom) |
+| 🎤 **facilitation-suite** | One local app for live online workshops: a stage OBS captures, a presenter cockpit, Zoom-chat-driven activities read locally (no bot), breakout groups, per-item timers and session results. | `:8449` FastAPI+PWA | — (Zoom, OBS) |
 | 💶 **family-accounting** | Local shared household-expense tracker (import bank exports → classify). | Streamlit | — |
 | 🧮 **mathgamesforkids** | Educational games + math tools + HTML experiments. | static | — |
 | 🌐 **website** | Multi-workshop landing site (one template, per-workshop config). | static | — |
@@ -174,7 +175,7 @@ External connections come from **two sources**: the **orchestration layer** (app
 | 💳 **Stripe** | app: accounting-quarterly | payment classification |
 | 📁 **OneDrive** | apps: email-archiver, mcp-personal-onedrive | email archive, file browsing |
 | 🐙 **GitHub** | all repos | PRs, CI, issue workflow |
-| 🎥 **Zoom** | app: facilitation-shuffle | session facilitation |
+| 🎥 **Zoom** | apps: facilitation-shuffle, facilitation-suite | session facilitation |
 
 ---
 
