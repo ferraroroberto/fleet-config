@@ -16,17 +16,26 @@ has to re-derive:
 Read-only by construction: the walk only clicks primary tabs, sets
 `details.open`, and calls `dialog.showModal()` / `close()`. Anything else
 must be declared in `[design.review].extra_steps` — and even those are
-limited to `click` on a selector; there is no `fill`, no `submit`.
+limited to opening one `details` and clicking selectors; there is no `fill`,
+no `submit`, and every click is refused when its element sits inside a
+`no_go` selector (checked with `closest()` at click time, #995).
 
 `[design.review]` keys (all optional):
 
     theme_storage_key = "app-launcher.theme"   # localStorage key the app's theme boot reads
-    tab_selector      = "[role=tablist] [role=tab]"   # override primary-tab discovery
-    no_go             = ["#dangerZone button"]        # never clicked, even by an extra step
+    tab_selector      = "[role=tab]"             # override primary-tab discovery -- resolved
+                                                 # *inside* the first [role=tablist], so never
+                                                 # prefix it with "[role=tablist]" (#995)
+    no_go             = ["#dangerZone"]          # never clicked, nor anything inside it
     [[design.review.extra_steps]]
     tab      = "board"            # which tab screen the step extends
     id       = "row-kebab"        # suffix on the screen id
     click    = ".row .kebab"      # one selector to click, then measure
+    [[design.review.extra_steps]]
+    tab      = "claude"
+    id       = "project-menu"
+    open     = "details.projects" # optional: open this details first (not a click)
+    clicks   = [".projects .row-kebab"]   # clicked in order, each vetoed by no_go
 """
 from __future__ import annotations
 

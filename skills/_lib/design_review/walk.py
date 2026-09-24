@@ -16,9 +16,11 @@ What it does, per device x theme, and nothing else:
      screenshot, run the measurement script;
   3. `showModal()` each `dialog[id]`, screenshot, set every `details.open`
      in the dialog, measure, `close()`;
-  4. any `[design.review].extra_steps` (one `click` on a declared selector
-     after a fresh `goto`, never on a `no_go` selector), screenshot, set
-     every `details.open` in the open dialog or else the page, measure.
+  4. any `[design.review].extra_steps` after a fresh `goto`: optionally set
+     one declared `open` details, then each `clicks` selector in turn (or
+     the single `click`), screenshot, set every `details.open` in the open
+     dialog or else the page, measure. Every click is vetoed when the
+     element about to be clicked sits inside a `no_go` selector (#995).
 
 Disclosures are opened on every screen kind so folded content is measured
 open (fleet-config#995). One that stays closed -- an exclusive accordion
@@ -82,6 +84,20 @@ _OPEN_SCOPE_DETAILS_JS = """
   let n = 0; root.querySelectorAll('details').forEach(d => { if (!d.open) { d.open = true; n++; } }); return n; }
 """
 _DIALOG_IDS_JS = "() => [...document.querySelectorAll('dialog[id]')].map(d => d.id)"
+# Is the element inside any no_go selector? An invalid selector fails closed (#995).
+_NO_GO_JS = "(el, sels) => sels.some(s => { try { return !!el.closest(s); } catch (e) { return true; } })"
+
+
+class NoGo(Exception):
+    """A step's click target sits inside a declared `no_go` selector."""
+
+
+def step_clicks(step: dict) -> List[str]:
+    """The step's click sequence: `clicks = [...]`, else the single `click`."""
+    clicks = step.get("clicks")
+    if isinstance(clicks, list):
+        return [str(c) for c in clicks if c]
+    return [str(step["click"])] if step.get("click") else []
 
 
 def load_geometry_js(scaffold_root: Optional[str]) -> Optional[str]:
@@ -236,14 +252,25 @@ def walk_context(pw, device: str, theme: str, args: argparse.Namespace, script: 
                                    status="error", reason="DIALOG_FAILED", error=str(exc)[:300]))
             log.warning("FAIL %s: %s", sid, str(exc)[:200])
 
+    def guarded(selector: str):
+        """The first match for `selector`, refused when it sits inside a no_go selector."""
+        loc = page.locator(selector).first
+        if no_go and loc.evaluate(_NO_GO_JS, no_go):
+            raise NoGo(f"{selector} sits inside a no_go selector")
+        return loc
+
     for step in review.get("extra_steps", []) or []:
-        if not isinstance(step, dict) or not step.get("click") or not step.get("id"):
+        if not isinstance(step, dict) or not step.get("id"):
+            continue
+        clicks = step_clicks(step)
+        if not clicks and not step.get("open"):
             continue
         view = f"{step.get('tab', 'root')}-{step['id']}"
         sid = plan.screen_id(device, theme, view)
-        if step["click"] in no_go:
+        declared = [c for c in clicks if c in no_go]
+        if declared:
             screens.append(_record(id=sid, device=device, theme=theme, view=view, kind="step",
-                                   status="error", reason="NO_GO", error=f"{step['click']} is declared no_go"))
+                                   status="error", reason="NO_GO", error=f"{declared[0]} is declared no_go"))
             continue
         try:
             open_base()
@@ -253,14 +280,22 @@ def walk_context(pw, device: str, theme: str, args: argparse.Namespace, script: 
                 if idx is not None:
                     tablist.locator(tab_selector).nth(int(idx)).click()
                     page.wait_for_timeout(TAB_SETTLE_MS)
-            page.locator(str(step["click"])).first.click()
-            page.wait_for_timeout(STEP_SETTLE_MS)
+            if step.get("open"):
+                guarded(str(step["open"])).evaluate("d => { d.open = true; }")
+                page.wait_for_timeout(DETAILS_SETTLE_MS)
+            for selector in clicks:
+                guarded(selector).click()
+                page.wait_for_timeout(STEP_SETTLE_MS)
             shot = _shot(page, shots, sid)
             full = _open_scope_details(page, shots, sid)
             metrics = page.evaluate(script, params)
             screens.append(_record(id=sid, device=device, theme=theme, view=view, kind="step",
                                    screenshot=shot, screenshot_full=full, metrics=metrics))
             log.info("ok %s", sid)
+        except NoGo as exc:
+            screens.append(_record(id=sid, device=device, theme=theme, view=view, kind="step",
+                                   status="error", reason="NO_GO", error=str(exc)[:300]))
+            log.warning("NO_GO %s: %s", sid, exc)
         except Exception as exc:  # noqa: BLE001
             screens.append(_record(id=sid, device=device, theme=theme, view=view, kind="step",
                                    status="error", reason=classify_error(exc), error=str(exc)[:300]))
