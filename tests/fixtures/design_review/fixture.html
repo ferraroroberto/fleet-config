@@ -59,6 +59,9 @@
       document.querySelectorAll('[role=tabpanel]').forEach(p => p.hidden = (p.id !== tab.getAttribute('aria-controls')));
     }));
     document.getElementById('revealBtn').addEventListener('click', () => { document.getElementById('reveal').hidden = false; });
+    document.querySelector('.card .kebab').addEventListener('click', () => { document.querySelector('.card .row-menu').hidden = false; });
+    // the destructive action a no_go must veto: clicking it would remove the card
+    document.querySelector('.card .danger-item').addEventListener('click', () => { document.querySelector('.card').remove(); });
   });
 </script>
 </head>
@@ -102,6 +105,12 @@
       </ul>
       <!-- LAYOUT-03 (#996): the row's own full-width main control is the row itself; star + Run + kebab
            is action-row's budget (1 leading toggle, 1 extra action, 1 trailing accessory); a fourth is over -->
+      <!-- #995: a multi-click step -- open the closed card, tap the row kebab, the menu is measured;
+           a further click on the danger item sits inside a no_go zone and is vetoed at click time -->
+      <details class="card"><summary>Projects</summary>
+        <ul class="card-rows"><li class="card-row">Project one <button type="button" class="kebab" aria-label="Row menu">M</button></li></ul>
+        <div class="row-menu" hidden><button type="button" class="menu-item">Open</button><div class="danger-zone"><button type="button" class="danger-item">Delete</button></div></div>
+      </details>
       <ul class="arows">
         <li class="arow arow-ok"><button type="button" aria-label="Favourite">F</button><button type="button" class="row-main">Budget row</button><button type="button">Run</button><button type="button" aria-label="More">M</button></li>
         <li class="arow arow-over"><button type="button" class="row-main">Crowded row</button><button type="button">A</button><button type="button">B</button><button type="button">C</button><button type="button">D</button></li>

@@ -371,7 +371,8 @@ checklist), else a `[[judgment]]` question. Nothing automates that step.
   step 1 with the target `CLAUDE.md`'s restart pointer; the user runs it.
 - **Read-only walk, loopback only.** No form submits, no destructive
   clicks beyond the target's own opt-in `extra_steps`; a `no_go` selector
-  list in `.fleet.toml` is honoured by the walk.
+  list in `.fleet.toml` is honoured by the walk on every click of a step,
+  including anything inside a `no_go` element.
 - **Nothing is authored here.** Sentences are `fix_template` + `standard`;
   grades are the rubric's arithmetic; mock-ups are library templates filled
   from measurements. Where a value is missing the report says so — no

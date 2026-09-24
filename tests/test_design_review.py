@@ -531,8 +531,12 @@ else:
     check(res2["rules"] == res["rules"] and res2["categories"] == res["categories"], "two evaluate runs -> identical rules and grades")
     # extra steps, driven through walk.py with a declared review block (the fixture repo has no [design.review])
     step_dir = STATE / "fixture-steps"
-    (STATE / "steps-review.json").write_text(json.dumps({"extra_steps": [{"tab": "home", "id": "reveal", "click": "#revealBtn"}]}),
-                                             encoding="utf-8")
+    (STATE / "steps-review.json").write_text(json.dumps({"no_go": [".danger-zone", "#revealForbidden"], "extra_steps": [
+        {"tab": "home", "id": "reveal", "click": "#revealBtn"},
+        {"tab": "list", "id": "row-menu", "open": "details.card", "clicks": [".card .kebab"]},
+        {"tab": "list", "id": "row-delete", "open": "details.card", "clicks": [".card .kebab", ".card .danger-item"]},
+        {"tab": "home", "id": "forbidden", "click": "#revealForbidden"},
+    ]}), encoding="utf-8")
     (STATE / "steps-params.json").write_text(json.dumps(measure.default_params()), encoding="utf-8")
     proc4 = subprocess.run(
         [str(interp), str(REPO / "skills" / "_lib" / "design_review" / "walk.py"), "--url", (FIX / "fixture.html").as_uri(),
@@ -546,5 +550,13 @@ else:
     if reveal.get("status") == "ok" and "error" not in reveal["metrics"]["targets"]:
         check("input#foldedField" in {s["sel"] for s in reveal["metrics"]["targets"]["small"]},
               "an extra step opens the closed details it reveals before measuring, so the folded field is measured (#995)")
+    menu = steps.get("desktop-light-list-row-menu", {})
+    check(menu.get("status") == "ok" and "button.menu-item" in {s["sel"] for s in (menu.get("metrics") or {}).get("targets", {}).get("small", [])},
+          f"a multi-click step opens a closed card and taps its row kebab; the menu is measured (#995) -- {menu.get('status')} {menu.get('error')}")
+    delete = steps.get("desktop-light-list-row-delete", {})
+    check(delete.get("status") == "error" and delete.get("reason") == "NO_GO" and ".card .danger-item" in str(delete.get("error")),
+          f"a click inside a no_go zone is vetoed at click time, not only by selector equality (#995) -- {delete.get('reason')} {delete.get('error')}")
+    forbidden = steps.get("desktop-light-home-forbidden", {})
+    check(forbidden.get("reason") == "NO_GO", "a step whose click is literally a no_go selector is refused")
 
 _h.report_and_exit("test_design_review", skip_code=SKIP_EXIT)
