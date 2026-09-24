@@ -165,6 +165,9 @@ cwd_prefix = "E:/automation/externalrisk"
 [facilitation-shuffle]
 cwd_prefix = "E:/automation/facilitation-shuffle"
 
+[facilitation-suite]
+cwd_prefix = "E:/automation/facilitation-suite"
+
 [family-accounting]
 cwd_prefix = "E:/automation/family-accounting"
 

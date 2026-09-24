@@ -10,6 +10,7 @@
     "copilot-studio-transcripts",
     "email-archiver",
     "facilitation-shuffle",
+    "facilitation-suite",
     "family-accounting",
     "fleet-config",
     "gitlab-to-github-migrator",
@@ -153,6 +154,11 @@
       "ic": "🎲",
       "nm": "facilitation-shuffle",
       "ds": "1-2-4-all breakout shuffler for Zoom."
+    },
+    {
+      "ic": "🎤",
+      "nm": "facilitation-suite",
+      "ds": "Live online workshops: stage, presenter cockpit, Zoom-chat activities."
     },
     {
       "ic": "💶",
@@ -328,7 +334,7 @@
     {
       "ic": "🎥",
       "nm": "Zoom",
-      "fr": "facilitation-shuffle"
+      "fr": "facilitation-shuffle · facilitation-suite"
     }
   ],
   "principles": [
