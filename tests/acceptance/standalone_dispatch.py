@@ -139,6 +139,11 @@ _STANDALONE_UNIT_CHECKS: Tuple[Tuple[str, str, str], ...] = (
      "e2e-surface parsing, test-dir resolution, near-duplicate-name "
      "clustering, size-outlier and coverage-gap detection -- is testable "
      "on its own (fleet-config#406)"),
+    ("e2e_value", "test_e2e_value.py",
+     "/e2e-audit's time and failure layer -- progress-log parsing, "
+     "per-projection time, buckets, tail, runtime-drift candidates, the "
+     "race-candidate rule and the unknown states -- is testable on its own "
+     "(fleet-config#1018)"),
     ("html_shot", "test_html_shot.py",
      "the shared headless-browser measure-then-shoot helper -- shell discovery, "
      "full-Chrome fallback, loopback TLS scoping, URL construction, and the "

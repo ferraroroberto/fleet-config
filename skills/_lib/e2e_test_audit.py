@@ -54,6 +54,15 @@ Subcommands:
       after `e2e_route.py probe` prints `SUITE=present`): test dirs that
       resolve to nothing print `unmeasured`, not `no-suite`.
 
+  timing <repo-root> [--log <path>]
+  failures <repo-root> [--log <path>] [--prs N] [--no-gh]
+      Where the suite's time goes and what its failures were (fleet-config#1018),
+      read from the last completed gate run's progress log (`.fleet.toml`
+      `[e2e] progress_log`, else `[e2e] junit_xml`, else `--log`). JSON to
+      stdout, always exit 0; no source, no completed run or no e2e node is
+      `status: unknown` with the reason, never an estimate. The logic lives in
+      `e2e_value.py` (see its docstring for the shapes); it never starts a gate.
+
 stdlib + the `git`/`gh`-free `git_run` helper + (best-effort) the target
 repo's own `.venv` pytest for the true node count.
 """
@@ -75,6 +84,7 @@ from typing import Dict, List, Optional
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import git_run  # noqa: E402
 from no_window import NO_WINDOW  # noqa: E402
+import e2e_value  # noqa: E402
 from ux_surface import fenced_mask, parse_ux_surface_block  # noqa: E402
 from utf8_stdio import ensure_utf8_stdio  # noqa: E402
 
@@ -601,6 +611,11 @@ def cmd_scan(repo_root: Path, target: int) -> int:
     return 0
 
 
+def _test_dirs(repo_root: Path) -> List[str]:
+    claude_md = repo_root / "CLAUDE.md"
+    return resolve_test_dirs(claude_md.read_text(encoding="utf-8", errors="replace") if claude_md.is_file() else None)
+
+
 def cmd_budget(repo_root: Path) -> int:
     claude_md_path = repo_root / "CLAUDE.md"
     claude_md_text = (
@@ -638,6 +653,16 @@ def main(argv: Optional[List[str]] = None) -> int:
     p_budget = sub.add_parser("budget", help="compare the suite's size to its declared budget")
     p_budget.add_argument("repo", type=Path)
 
+    p_timing = sub.add_parser("timing", help="where the last completed gate run's time went")
+    p_timing.add_argument("repo", type=Path)
+    p_timing.add_argument("--log", type=Path, default=None)
+
+    p_fail = sub.add_parser("failures", help="failure history from the gate logs and GitHub text")
+    p_fail.add_argument("repo", type=Path)
+    p_fail.add_argument("--log", type=Path, default=None)
+    p_fail.add_argument("--prs", type=int, default=60)
+    p_fail.add_argument("--no-gh", action="store_true")
+
     args = ap.parse_args(argv)
     repo = args.repo.resolve()
     if not repo.is_dir():
@@ -645,6 +670,12 @@ def main(argv: Optional[List[str]] = None) -> int:
         return 2
     if args.cmd == "budget":
         return cmd_budget(repo)
+    if args.cmd == "timing":
+        print(json.dumps(e2e_value.timing(repo, _test_dirs(repo), args.log)))
+        return 0
+    if args.cmd == "failures":
+        print(json.dumps(e2e_value.failures(repo, args.log, args.prs, use_gh=not args.no_gh)))
+        return 0
     return cmd_scan(repo, args.target)
 
 
