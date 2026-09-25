@@ -165,28 +165,43 @@ Nothing here runs for `plan` invocations.
 
 ### 6b. Suite budget — the `/e2e-audit` trigger
 
-Whenever `SUITE=present`, measure the suite against its budget (fleet-config#901).
-Bloat is feature-driven, so the check rides every finish rather than a clock:
+Whenever `SUITE=present`, measure the suite against its budgets and its growth
+(fleet-config#901, #1018). Bloat is feature-driven, so the check rides every
+finish rather than a clock (fleet-config#406):
 
 ```
 E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/e2e_test_audit.py budget .
 ```
 
-The limit is `.fleet.toml` `[e2e] test_budget` when declared (a per-repo
-ratchet: set at the current size, lowered as the suite trims), else the
-scaffold's 15.
+It prints three measurements and one decision:
 
-- `E2E_BUDGET=within` / `no-suite` → report the line, nothing else.
-- `E2E_BUDGET=unmeasured` → report `budget: unknown (<E2E_BUDGET_REASON>)`.
-  Never fold it into `within`.
-- `E2E_BUDGET=over` → look for the repo's open managed issue:
+- **Nodes:** `E2E_BUDGET` against `.fleet.toml` `[e2e] test_budget` when
+  declared (a per-repo ratchet: set at the current size, lowered as the suite
+  trims), else the scaffold's 15.
+- **Time:** `E2E_TIME_BUDGET` for the browser leg of the latest quiet
+  full-tier gate run in the repo's progress log, against `[e2e]
+  time_budget_s` (`undeclared` when there is none). A loaded run, a run
+  routed below `full` or no log is `unknown`, never `within`.
+- **Growth:** `E2E_GROWTH`, test functions gained since the last
+  `/e2e-audit` recorded its count (`none-recorded` before the first).
+- **Decision:** `E2E_AUDIT_TRIGGER=yes|no|unknown` with its reason: `yes`
+  when over either budget or at +10 test functions since the last audit.
+
+Then:
+
+- `E2E_AUDIT_TRIGGER=no` → report the lines, nothing else.
+- `E2E_AUDIT_TRIGGER=unknown` → report `budget: unknown
+  (<E2E_AUDIT_TRIGGER_REASON>)`. Never fold it into `no`.
+- `E2E_AUDIT_TRIGGER=yes` → look for the repo's open managed issue:
   `E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/audit_issue.py get --repo <OWNER/REPO> --kind e2e-redundancy`.
   If one is open, cite it in the report. If none is open, run **`/e2e-audit`**
   on this repo in this same run as `/e2e-audit budget` (report-only; it
-  files the deduped issue, and when no finding survives it still files the
-  `test_budget` ratchet finding, per its step 6 exception), then cite what it
-  filed. If the lookup itself fails, report
-  `budget: over, audit issue state unknown` and do not run the audit blind.
+  files the deduped issue; when no finding survives an over-budget trigger it
+  still files the `test_budget` / `time_budget_s` ratchet finding, per its
+  step 6 exception, and a growth-only trigger that finds nothing files nothing
+  because its recorded count stops the re-trigger), then cite what it filed.
+  If the lookup itself fails, report
+  `budget: triggered, audit issue state unknown` and do not run the audit blind.
   In a `plan` invocation, report the verdict only and run no audit.
 
 The budget never blocks the finish. Its job is to make the overage
@@ -203,7 +218,7 @@ One block, echoed verbatim by delegating skills into their finish summary:
   ran: <pytest target + browsers | nothing | carried from gate run>
   result: PASS | FAIL (<counts>) | not run (plan) | n/a
   maintenance: <n removed / n added / table rules added | none>
-  budget: <within | over (<count>/<limit>) — e2e-redundancy #<N> | unknown (<reason>) | n/a>
+  budget: <nodes <count>/<limit>, time <s>/<limit> s | undeclared, growth <+N | none-recorded> — trigger <no | yes: e2e-redundancy #<N> | unknown (<reason>)> | n/a>
   suite: <n/a | absent — recommendation: <one line>>
 ```
 

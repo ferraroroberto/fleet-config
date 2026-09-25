@@ -1,6 +1,6 @@
 ---
 name: e2e-audit
-description: On-demand audit of a repo's e2e/regression suite for redundancy, bloat, coverage gaps, gate time and failure history against project-scaffolding's "<15 tests total" target — deterministic inventory + near-duplicate clustering via e2e_test_audit.py, then a deduped e2e-redundancy issue for /cleanup-fleet. Never rewrites/deletes tests. Never on a clock — /e2e triggers it when a suite exceeds its budget. E.g. "/e2e-audit", "/e2e-audit app-launcher", "audit the e2e suite for bloat".
+description: On-demand audit of a repo's e2e/regression suite for redundancy, bloat, coverage gaps, gate time and failure history against project-scaffolding's "<15 tests total" target — deterministic inventory + near-duplicate clustering via e2e_test_audit.py, then a deduped e2e-redundancy issue for /cleanup-fleet. Never rewrites/deletes tests. Never on a clock — /e2e triggers it when a suite exceeds its node or time budget or grows ~10 tests. E.g. "/e2e-audit", "/e2e-audit app-launcher", "audit the e2e suite for bloat".
 ---
 
 # e2e-audit
@@ -27,8 +27,10 @@ machinery as `/codebase-audit` and `/design-sync`, cleared later by
   project-scaffolding's 15; don't let a run override it ad hoc.
 - More than one path argument → say only one target is accepted and stop.
 - The word `budget` (`/e2e-audit budget`, `/e2e-audit budget <repo>`) → a
-  **budget-triggered** run, which is how `/e2e` step 6b invokes it. It changes
-  only step 6's no-findings outcome (see the exception there).
+  **triggered** run, which is how `/e2e` step 6b invokes it when
+  `E2E_AUDIT_TRIGGER=yes` (over the node budget, over the time budget, or ~10
+  new test functions since the last audit). It changes only step 6's
+  no-findings outcome (see the exception there).
 
 ## Steps
 
@@ -187,9 +189,13 @@ Surfaced by `/e2e-audit`, kept up to date across runs. Suite target: project-sca
 
 ## Findings
 
-- [ ] **<file>:<test name> ~ <file>:<test name>** — near-duplicate intent; candidate to merge. Fix: keep <which>, drop <which>, and say why.
-- [ ] **<file>** — <n> lines, far above the suite median; candidate to split or de-duplicate internally.
-- [ ] **<view>** — declared key view with no matching test found (confirmed by reading the suite, not just the substring check). Fix: add coverage for it.
+<ranked recommendations, most minutes saved per unit of coverage given up first; zero-coverage-cost items (workers, routing hygiene, a stale runtime figure) lead. Every item names the change, the estimate, the cost and the evidence:>
+
+- [ ] **<change>** (e.g. run the browser suite on n workers; keep projection X only for geometry, input and engine-branch tests; add a routing rule; merge setup-identical tests that each pay a page load; fix a named race; correct a stale runtime figure) — saves ~<m> min (<low>–<high> at ×1.15–×1.5 load, from measured durations). Gives up: <what the suite stops catching before merge, and how often that class caught something in `## Failure history`; "nothing" only when true>. Evidence: <log path, PR numbers, `file::test`>.
+- [ ] **<file>:<test name> ~ <file>:<test name>** — near-duplicate intent; merge candidate. Saves ~<s> s (its measured time, when `timing` has it). Gives up: nothing if the setup and assertion are identical; say so. Fix: keep <which>, drop <which>, and say why.
+- [ ] **<view>** — declared key view with no matching test found (confirmed by reading the suite). Costs ~<s> s. Fix: add coverage for it.
+
+Estimates come from measured durations only, never from node counts; without a timing source, say `saves: unknown (no timing source)`. Headless projections cannot see `env(safe-area-inset-*)` or installed-PWA geometry, so "gives up" never claims the suite caught what it cannot see (app-launcher#1099).
 
 ## Suite inventory
 
@@ -232,10 +238,20 @@ Surfaced by `/e2e-audit`, kept up to date across runs. Suite target: project-sca
 
 ## Run log
 
-- <YYYY-MM-DD> @ <short-sha>: initial.
+- <YYYY-MM-DD> @ <short-sha>: initial · tests=<raw tests> nodes=<collected nodes> · trigger: <on demand | the E2E_AUDIT_TRIGGER_REASON>.
 ```
 
 Title is **stable** — `audit: e2e-redundancy findings`, no count suffix.
+
+### 5b. Record the growth baseline
+
+Every run ends by recording this audit's test counts, whether or not it filed anything, so `/e2e`'s growth trigger measures from here:
+
+```
+E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/e2e_test_audit.py record <repo-root>
+```
+
+It writes machine-local hooks state (`e2e-audit/<owner>-<repo>.json`), never the repo, and prints `AUDIT_RECORD_TESTS=` for the run-log line.
 
 ### 6. Final report
 
@@ -279,6 +295,14 @@ context and run-log sections, then `upsert`. The open issue stops the
 re-trigger, and the fix is a one-line, reviewable ratchet. An on-demand run
 keeps the no-op above.
 
+The same holds for the **time budget** (fleet-config#1018): a run triggered by
+`E2E_TIME_BUDGET=over` that confirms no saving files one finding, `- [ ]
+**.fleet.toml** — the browser leg took <s> s on the quiet full run of <date>
+against a budget of <limit> s, with no saving confirmed; Fix: ratchet `[e2e]
+time_budget_s = <s>` or act on the ranked options above`. A run triggered by
+**growth alone** that confirms nothing files nothing: step 5b's record already
+stops the re-trigger.
+
 ## Hard rules
 
 - **Measure with `e2e_test_audit.py`, never by eye.** File/test counts, node
@@ -306,9 +330,12 @@ keeps the no-op above.
   CLAUDE.md).
 - **Never scheduled weekly.** Per fleet-config#406, do not wire this into
   `run-weekly.bat` or any cron. It runs on demand, or when `/e2e`'s budget
-  step finds the suite over its `.fleet.toml` `[e2e] test_budget` (default
-  15) with no open `e2e-redundancy` issue (fleet-config#901). That trigger is
+  step prints `E2E_AUDIT_TRIGGER=yes` with no open `e2e-redundancy` issue:
+  over `[e2e] test_budget` (default 15, fleet-config#901), over `[e2e]
+  time_budget_s`, or ~10 new test functions since the last audit
+  (fleet-config#1018, Roberto's 2026-09-25 decision). That trigger is
   feature-driven: it fires on a finish, never on a clock.
+- **Never starts a gate.** Time comes from logs the gate already wrote.
 
 ## Notes
 
