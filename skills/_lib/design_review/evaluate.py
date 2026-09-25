@@ -200,6 +200,8 @@ def _d_icons_off_step(m: dict, rule: Rule, ctx: dict) -> Derived:
     if not steps:
         return None, [], "icons.size steps unresolved from the spec"
     tol = float(rule.params.get("tolerance_px", 1.0))
+    # Which element each box is (#1020); a run from before that key has none, never an error.
+    elements = measure.metric_value(m, "icons.elements") or {}
     off: List[object] = []
     for key, n in sorted(boxes.items()):
         try:
@@ -207,7 +209,7 @@ def _d_icons_off_step(m: dict, rule: Rule, ctx: dict) -> Derived:
         except ValueError:
             continue
         if not any(abs(w - s) <= tol and abs(h - s) <= tol for s in steps):
-            off.append({"box": key, "count": n})
+            off.append({"box": key, "count": n, "elements": list(elements.get(key) or [])})
     return float(len(off)), off, None
 
 

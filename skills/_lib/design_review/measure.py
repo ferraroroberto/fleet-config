@@ -29,7 +29,7 @@ present on a successful run:
               segmented_bad [..], segmented_bad_count
     targets   total, small [..], small_count, overlaps [..], overlap_count,
               covered [..], covered_count, primary [..], primary_min_height, in_summary
-    icons     boxes {"WxH": n}
+    icons     boxes {"WxH": n}, elements {"WxH": [{glyph, host, label}, ..]}
     nav       primary_count, pane_scroll_top, pane_header_visible
     layout    overflow_x, scroll_w, inner_w, inner_h, pane_h, lists [..],
               rows_over_limit [..], danger_rows, content_w, content_span, radii {r: n}
@@ -236,10 +236,18 @@ _MEASURE_JS = r"""
       primary: primary.slice(0,CAP), primary_min_height: primary.length ? Math.min(...primary.map(p => p.h)) : null, in_summary: inSummary };
   });
 
-  // ---- icons
-  section('icons', () => { const boxes = {};
-    q('svg').forEach(el => { const r = el.getBoundingClientRect(); const k = Math.round(r.width)+'x'+Math.round(r.height); boxes[k] = (boxes[k]||0)+1; });
-    return { boxes }; });
+  // ---- icons: box sizes, and which element each box is (#1020) -- the glyph (a sprite
+  // `<use href="#i-NAME">`, else data-icon or the first non-`icon` class), the control or
+  // identified ancestor hosting it, and that host's accessible name; ICON_CAP per size.
+  section('icons', () => { const boxes = {}, elements = {}; const ICON_CAP = 12;
+    q('svg').forEach(el => { const r = el.getBoundingClientRect(); const k = Math.round(r.width)+'x'+Math.round(r.height); boxes[k] = (boxes[k]||0)+1;
+      const list = elements[k] || (elements[k] = []); if (list.length >= ICON_CAP) return;
+      const use = el.querySelector('use'); const href = use ? (use.getAttribute('href') || use.getAttribute('xlink:href') || '') : '';
+      const glyph = href.includes('#') ? href.slice(href.indexOf('#') + 1).replace(/^i-/, '')
+        : (el.getAttribute('data-icon') || (el.getAttribute('class') || '').trim().split(/\s+/).filter(c => c && c !== 'icon')[0] || '');
+      const ctl = el.closest(params.interactive); const host = ctl || el.closest('[id]') || el.parentElement || el;
+      list.push({glyph, host: sel(host), label: ctl ? txt(ctl).slice(0, 30) : ''}); });
+    return { boxes, elements }; });
 
   // ---- navigation
   section('nav', () => {
@@ -404,7 +412,7 @@ def metric_paths() -> List[str]:
                      "boundary_low_count", "ua_styled", "ua_styled_count", "segmented_bad", "segmented_bad_count"],
         "targets": ["total", "small", "small_count", "overlaps", "overlap_count", "covered", "covered_count",
                     "primary", "primary_min_height", "in_summary"],
-        "icons": ["boxes"],
+        "icons": ["boxes", "elements"],
         "nav": ["primary_count", "pane_scroll_top", "pane_header_visible"],
         "layout": ["overflow_x", "scroll_w", "inner_w", "inner_h", "pane_h", "lists", "rows_over_limit",
                    "rows_over_limit_count", "danger_rows", "content_w", "content_span", "radii"],

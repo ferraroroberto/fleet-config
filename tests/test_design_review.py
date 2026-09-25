@@ -294,6 +294,11 @@ check(any(i["component"] == "button-tint" and i["ratio"] == 4.13 for e in c01v["
 t01v = next(r for r in out_v["rules"] if r["id"] == "TOUCH-01")
 check(t01v["measured"]["desktop-light-home"] == 0.3 and t01v["evidence"][0]["items"][0]["sel"] == "button.icon",
       "TOUCH-01 share 3/10 with the small controls as evidence")
+c02v = {e["screen"]: e["items"] for e in next(r for r in out_v["rules"] if r["id"] == "COMP-02")["evidence"]}
+check(c02v.get("desktop-light-home") == [{"box": "22x22", "count": 2, "elements": [
+          {"glyph": "play", "host": "button.job-run", "label": "Run"}, {"glyph": "chevron-down", "host": "summary", "label": "More"}]}]
+      and c02v.get("iphone-light-home") == [{"box": "22x22", "count": 2, "elements": []}],
+      f"COMP-02 evidence names each off-step icon's glyph and host; a run from before icons.elements still evaluates (#1020) -- {c02v}")
 check(next(r for r in out_v["rules"] if r["id"] == "TOUCH-03")["threshold"]["value"] == 40.0,
       "threshold_token: the violating spec's 40px button height is what TOUCH-03 compares against")
 check(ev.grade_for(89.99, rubric.grades) == "B" and ev.grade_for(0, rubric.grades) == "F", "grade mapping edges")
@@ -601,6 +606,9 @@ else:
         check(seg == [{"sel": "div.segmented.seg-wrap", "options": 2, "wrapped": True}],
               f"COMP-03 {theme}: a 44px single-line segment is not wrapped; a label broken onto two lines is (#997) -- {seg}")
     check(ic["boxes"] == {"16x16": 1, "22x22": 1}, "icon boxes")
+    check(ic["elements"] == {"16x16": [{"glyph": "i16", "host": "section#paneHome", "label": ""}],
+                             "22x22": [{"glyph": "play", "host": "section#paneHome", "label": ""}]},
+          f"COMP-02: each icon box names its glyph (sprite <use> first, else a class) and its host (#1020) -- {ic.get('elements')}")
     check(nv["primary_count"] == 2 and nv["pane_header_visible"] is True, "nav: 2 primary tabs, header visible")
     check(ly["overflow_x"] is False and ly["inner_w"] == 1440, "no overflow at 1440")
     check(ay["unnamed"] == ["button.big"] and ay["zoom_locked"] is True, "unnamed button + locked zoom")

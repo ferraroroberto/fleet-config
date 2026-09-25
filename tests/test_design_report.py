@@ -60,6 +60,10 @@ check(report.fill_template("{count} of {total} on {screen}", {"count": 3, "total
 check(report.fill_template("{share:.0%} under", {"share": 0.7692}) == "77% under", "format spec honoured")
 check(report.fill_template("add `x {{ font: inherit; }}`", {}) == "add `x { font: inherit; }`", "literal {{ }} braces (TYPE-02)")
 check(report.fill_template("{count} of {total}", {"count": 3}) == "3 of {total}", "a missing value keeps its token")
+check(report.item_label({"box": "22x22", "count": 5, "elements": [{"glyph": "play", "host": "button.job-run", "label": "Run"},
+                                                               {"glyph": "", "host": "summary", "label": ""}]})
+      == "22x22px ×5 (play in button.job-run, svg in summary, +3 more)"
+      and report.item_label({"box": "22x22", "count": 2}) == "22x22px ×2", "COMP-02 sample names each icon's glyph and host (#1020)")
 check(report.fill_template("{share:.0%} of {x}", {}) == "{share:.0%} of {x}", "a missing value with a spec keeps token + spec")
 check(report.fill_template("{share:.0%}", {"share": "abc"}) == "{share:.0%}", "an unformattable value falls back to the template, no raise")
 check(report.unfilled("3 of {total} ({sample}) { font: inherit; }") == ["{sample}", "{total}"], "unfilled lists tokens, not CSS braces")
