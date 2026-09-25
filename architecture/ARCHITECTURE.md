@@ -114,6 +114,7 @@ The **work layer**, enabled by L2. Most mature ones are **web apps exposing an A
 | 🌡️ **home-automation** | Home automation suite (ac/power). | `:8447` PWA | — (MELCloud Home) |
 | 🎲 **facilitation-shuffle** | Randomises workshop participants into 1-2-4-all breakout groups for Zoom. | Streamlit | — (Zoom) |
 | 🎤 **facilitation-suite** | One local app for live online workshops: a stage OBS captures, a presenter cockpit, Zoom-chat-driven activities read locally (no bot), breakout groups, per-item timers and session results. | `:8449` FastAPI+PWA | — (Zoom, OBS) |
+| 🅿️ **parking-manager** | Household parking app: which days to book, time off, and the Thursday release, on the phone; runs the booking engine (private repo). | `:8450` FastAPI+PWA | — (parking site) |
 | 💶 **family-accounting** | Local shared household-expense tracker (import bank exports → classify). | Streamlit | — |
 | 🧮 **mathgamesforkids** | Educational games + math tools + HTML experiments. | static | — |
 | 🌐 **website** | Multi-workshop landing site (one template, per-workshop config). | static | — |
