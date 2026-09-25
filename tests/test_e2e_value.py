@@ -286,4 +286,61 @@ check(v.shared_state_evidence([(Path("x.log"), [serial_run, par_run])])
       == [{"nodeid": "tests/e2e/test_jobs.py::test_list[chromium]", "parallel_reds": 1, "green_serially": True}],
       "red under workers, green serially -> shared state (app-launcher#1231), never a flake")
 
+# ---- time budget, growth baseline and the audit trigger (step 3) ----------------------------------
+
+check(v.time_budget_limit('[e2e]\ntime_budget_s = 900\n') == (900, "[e2e] time_budget_s"), "time_budget_s read")
+for bad in ("true", "0", "-5", '"900"', "1.5"):
+    check(v.time_budget_limit(f"[e2e]\ntime_budget_s = {bad}\n")[0] is None, f"invalid time_budget_s {bad} ignored, never a raised bar")
+check(v.time_budget_limit(None) == (None, "no [e2e] time_budget_s declared"), "undeclared time budget")
+
+ROUTED = _log("2026-09-24", "09:00:00", [
+    "[09:00:00 +    0,0s] ==> phase: pytest (non-e2e)...",
+    "[09:00:00 +    0.1s] START tests/test_api.py::test_ok",
+    "[09:00:01 +    1.0s] DONE  tests/test_api.py::test_ok (1.0s)",
+    "[09:03:00 +    0,0s] ==> phase: e2e routing: full (e2e-test: tests/e2e/test_board.py)",
+    "[09:03:00 +    0,0s] ==> phase: pytest e2e parallel...",
+    "[09:03:00 +    0.1s] START tests/e2e/test_board.py::test_load[chromium]",
+    "[09:13:00 +  600.0s] DONE  tests/e2e/test_board.py::test_load[chromium] (600.0s) [gw0]",
+    "[09:13:00 +  600.0s] ==> phase: pytest e2e serial...",
+    "[09:13:00 +    0.1s] START tests/e2e/test_agent.py::test_reconnect[chromium]",
+    "[09:15:00 +  120.0s] DONE  tests/e2e/test_agent.py::test_reconnect[chromium] (120.0s)",
+    "[09:15:00 +  120.0s] pytest session finished (exit status 0)",
+])
+rr_run = v.parse_run(ROUTED)
+check(rr_run["routed_tier"] == "full" and rr_run["parallel"], "the routed tier is read from the gate's routing line")
+check(v.browser_leg_s(rr_run, ["tests/e2e"]) == 720.0, "the browser leg sums every phase that ran e2e nodes (parallel + serial pass)")
+
+tb = Path(tempfile.mkdtemp(prefix="e2e-value-budget-"))
+(tb / ".fleet.toml").write_text('[e2e]\nprogress_log = "gate.log"\ntime_budget_s = 600\n', encoding="utf-8")
+check(v.time_budget(tb, ["tests/e2e"])["verdict"] == "unknown", "a declared budget with no log is unknown, never within")
+(tb / "gate.log").write_text(ROUTED, encoding="utf-8")
+tv = v.time_budget(tb, ["tests/e2e"])
+check(tv["verdict"] == "over" and tv["seconds"] == 720.0 and tv["limit"] == 600, f"720 s browser leg over a 600 s budget -- {tv}")
+(tb / ".fleet.toml").write_text('[e2e]\nprogress_log = "gate.log"\ntime_budget_s = 900\n', encoding="utf-8")
+check(v.time_budget(tb, ["tests/e2e"])["verdict"] == "within", "within a 900 s budget")
+(tb / "gate.log").write_text(ROUTED.replace("e2e routing: full", "e2e routing: static"), encoding="utf-8")
+ts = v.time_budget(tb, ["tests/e2e"])
+check(ts["verdict"] == "unknown" and "full-tier" in ts["reason"], f"a run routed below full is not the suite -> unknown -- {ts}")
+(tb / "gate.log").write_text(ROUTED, encoding="utf-8")
+(tb / ".fleet.toml").write_text('[e2e]\nprogress_log = "gate.log"\n', encoding="utf-8")
+check(v.time_budget(tb, ["tests/e2e"])["verdict"] == "undeclared", "no time_budget_s -> undeclared, not a trigger")
+
+import os  # noqa: E402
+os.environ["CLAUDE_HOOKS_STATE_DIR"] = str(tb / "state")
+check(v.read_audit_record(tb) is None, "no record before the first audit")
+rec_path = v.write_audit_record(tb, 40, 120)
+check(rec_path.parent == tb / "state" / "e2e-audit" and v.read_audit_record(tb)["raw_tests"] == 40, "record lands in hooks state and reads back")
+check(v.growth(49, v.read_audit_record(tb))["trigger"] is False and v.growth(50, v.read_audit_record(tb))["trigger"] is True,
+      "the growth trigger fires at +10 test functions")
+check(v.growth(12, None) == {"state": "none-recorded", "delta": None, "since": None, "trigger": False}, "no baseline -> none-recorded, no trigger")
+g10 = v.growth(50, v.read_audit_record(tb))
+check(v.audit_trigger("within", "within", g10)[0] == "yes" and "+10 test functions" in v.audit_trigger("within", "within", g10)[1],
+      "growth alone triggers the audit")
+check(v.audit_trigger("over", "undeclared", v.growth(40, None)) == ("yes", "over the node budget"), "nodes over triggers")
+check(v.audit_trigger("within", "over", v.growth(40, None))[0] == "yes", "time over triggers")
+check(v.audit_trigger("within", "unknown", v.growth(41, v.read_audit_record(tb)))[0] == "unknown",
+      "an unmeasured leg with nothing else firing is unknown, never no")
+check(v.audit_trigger("within", "undeclared", v.growth(38, v.read_audit_record(tb))) ==
+      ("no", f"within every declared budget; -2 test functions since {v.read_audit_record(tb)['date']}"), "nothing fired -> no, with the delta")
+
 _h.report_and_exit("test_e2e_value")

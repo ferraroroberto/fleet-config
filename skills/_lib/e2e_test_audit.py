@@ -54,6 +54,20 @@ Subcommands:
       after `e2e_route.py probe` prints `SUITE=present`): test dirs that
       resolve to nothing print `unmeasured`, not `no-suite`.
 
+      It also prints the time budget and the growth trigger (fleet-config#1018):
+      `E2E_TIME_BUDGET=within|over|unknown|undeclared` (+ `_SECONDS`, `_LIMIT`,
+      `_REASON`) for the browser leg of the latest quiet full-tier run against
+      `.fleet.toml` `[e2e] time_budget_s`; `E2E_GROWTH=+N|none-recorded` test
+      functions since the last audit (`record` below); and
+      `E2E_AUDIT_TRIGGER=yes|no|unknown` + `_REASON`: over either budget, or
+      ~10 new test functions since the last audit. Whether a managed issue is
+      already open stays the caller's check.
+
+  record <repo-root>
+      Stores this audit's raw test and node counts in machine-local hooks state
+      (`e2e-audit/<owner>-<repo>.json`), the growth trigger's baseline. Every
+      `/e2e-audit` run ends with it, whether or not it filed anything.
+
   timing <repo-root> [--log <path>]
   failures <repo-root> [--log <path>] [--prs N] [--no-gh]
   routing <repo-root> [--prs N] [--until <ISO>] [--config <toml>] [--proposed <toml>]
@@ -643,6 +657,31 @@ def cmd_budget(repo_root: Path) -> int:
     print(f"E2E_BUDGET_LIMIT={limit}")
     print(f"E2E_BUDGET_SOURCE={source}")
     print(f"E2E_BUDGET_REASON={kind} {count} vs limit {limit} ({note}); test dirs {','.join(test_dirs)}")
+
+    tb = e2e_value.time_budget(repo_root, test_dirs)
+    print(f"E2E_TIME_BUDGET={tb['verdict']}")
+    print(f"E2E_TIME_BUDGET_SECONDS={tb['seconds'] if tb['seconds'] is not None else ''}")
+    print(f"E2E_TIME_BUDGET_LIMIT={tb['limit'] if tb['limit'] is not None else ''}")
+    print(f"E2E_TIME_BUDGET_REASON={tb['reason']}")
+    grow = e2e_value.growth(raw_tests, e2e_value.read_audit_record(repo_root))
+    delta = grow["delta"]
+    print(f"E2E_GROWTH={'none-recorded' if delta is None else format(delta, '+d')}")
+    print(f"E2E_GROWTH_SINCE={grow['since'] or ''}")
+    trigger, why = e2e_value.audit_trigger(verdict, str(tb["verdict"]), grow)
+    print(f"E2E_AUDIT_TRIGGER={trigger}")
+    print(f"E2E_AUDIT_TRIGGER_REASON={why}")
+    return 0
+
+
+def cmd_record(repo_root: Path) -> int:
+    test_dirs = _test_dirs(repo_root)
+    files = [rel for d in test_dirs for rel in _list_files(repo_root, d)]
+    raw_tests = sum(len(parse_test_file(repo_root, rel)["tests"]) for rel in files)  # type: ignore[arg-type]
+    node_count = collect_pytest_node_count(repo_root, test_dirs) if files else None
+    path = e2e_value.write_audit_record(repo_root, raw_tests, node_count)
+    print(f"AUDIT_RECORD={path}")
+    print(f"AUDIT_RECORD_TESTS={raw_tests}")
+    print(f"AUDIT_RECORD_NODES={node_count if node_count is not None else ''}")
     return 0
 
 
@@ -656,6 +695,9 @@ def main(argv: Optional[List[str]] = None) -> int:
 
     p_budget = sub.add_parser("budget", help="compare the suite's size to its declared budget")
     p_budget.add_argument("repo", type=Path)
+
+    p_record = sub.add_parser("record", help="store this audit's test counts: the growth trigger's baseline")
+    p_record.add_argument("repo", type=Path)
 
     p_timing = sub.add_parser("timing", help="where the last completed gate run's time went")
     p_timing.add_argument("repo", type=Path)
@@ -685,6 +727,8 @@ def main(argv: Optional[List[str]] = None) -> int:
         return 2
     if args.cmd == "budget":
         return cmd_budget(repo)
+    if args.cmd == "record":
+        return cmd_record(repo)
     if args.cmd == "timing":
         print(json.dumps(e2e_value.timing(repo, _test_dirs(repo), args.log)))
         return 0

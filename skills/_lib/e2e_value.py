@@ -54,6 +54,12 @@ serial run's per-test times onto 2/3/4/6 workers (LPT, x1.15/x1.3/x1.5 load
 inflation, per test and per module), and names tests red in a parallel run
 but green serially: shared state between tests, never a flake.
 
+The `/e2e` 6b trigger (step 3): `time_budget` gives `within|over|unknown|
+undeclared` for the browser leg of the latest quiet full-tier run against
+`.fleet.toml` `[e2e] time_budget_s`; `growth` counts test functions since the
+last audit's `write_audit_record` (machine-local hooks state); `audit_trigger`
+turns nodes, time and growth into one `yes|no|unknown`.
+
 `failures` is the raw material for the judgment layer's classing (real bug /
 race / test bug / flake-load / unknown). A test whose log failures stopped at
 two or more different steps is listed in `race_candidates`: the app-launcher
@@ -91,6 +97,7 @@ _DONE_RE = re.compile(r"^DONE\s+(.+?) \((\d+(?:\.\d+)?)s\)( \[gw\d+\])?$")
 _START_RE = re.compile(r"^START (.+)$")
 _FAIL_RE = re.compile(r"^(FAILED|ERROR) \((setup|call|teardown)\) (.+?)(?: \[gw\d+\])?$")
 _PHASE_RE = re.compile(r"^==> phase: (.*?)(?:\.\.\.)?$")
+_ROUTE_RE = re.compile(r"e2e routing: (?:tier=)?(skip|static|surface|full)\b")
 _SESSION_END_RE = re.compile(r"^pytest session finished \(exit status (\d+)\)")
 _EXCERPT_PREFIX = "    | "
 _STEP_RE = re.compile(r"^((?:[\w.-]+[\\/])*test_\w+\.py):(\d+):")
@@ -171,6 +178,7 @@ def parse_run(text: str) -> Dict[str, object]:
     failures: List[Dict[str, object]] = []
     exit_status: Optional[int] = None
     parallel = False
+    routed_tier: Optional[str] = None
     current_fail: Optional[Dict[str, object]] = None
     for raw in text.splitlines():
         if raw.startswith(_EXCERPT_PREFIX):
@@ -187,6 +195,8 @@ def parse_run(text: str) -> Dict[str, object]:
             if stamp < last - _dt.timedelta(hours=12):  # past midnight
                 stamp += _dt.timedelta(days=1)
             last = stamp
+        if routed_tier is None and (rm := _ROUTE_RE.search(body)):
+            routed_tier = rm.group(1)
         if (pm := _PHASE_RE.match(body)):
             phases.append({"name": pm.group(1).strip(), "at": last, "nodes": 0})
         elif (sm := _START_RE.match(body)):
@@ -212,7 +222,7 @@ def parse_run(text: str) -> Dict[str, object]:
         out_phases.append({"name": p["name"], "wall_s": round(wall, 1) if wall is not None else None, "nodes": p["nodes"]})
     return {
         "started": started, "finished": last, "nodes": nodes, "node_phase": node_phase, "phases": out_phases,
-        "failures": failures, "exit_status": exit_status, "parallel": parallel,
+        "failures": failures, "exit_status": exit_status, "parallel": parallel, "routed_tier": routed_tier,
         "complete": bool(nodes) and not open_nodes and exit_status is not None,
     }
 
@@ -242,7 +252,7 @@ def parse_junit(path: Path) -> Dict[str, object]:
                 failures.append({"outcome": tag.upper(), "when": "call", "nodeid": nodeid,
                                  "step": failure_step((el.text or "").splitlines())})
     return {"started": None, "finished": None, "nodes": nodes, "node_phase": {}, "phases": [],
-            "failures": failures, "exit_status": 1 if failures else 0, "parallel": False, "complete": bool(nodes)}
+            "failures": failures, "exit_status": 1 if failures else 0, "parallel": False, "routed_tier": None, "complete": bool(nodes)}
 
 
 def last_complete_run(text: str) -> Optional[Dict[str, object]]:
@@ -863,3 +873,125 @@ def parallel(repo_root: Path, test_dirs: Sequence[str], log: Optional[Path] = No
             proj = {"status": "unknown", "reason": "no completed serial run in any checkout's log"}
         evidence = shared_state_evidence(logs)
     return {"static": parallel_blockers(repo_root, test_dirs), "projection": proj, "shared_state": evidence}
+
+
+# ---- time budget and the growth baseline (step 3) ------------------------------------------------
+
+GROWTH_THRESHOLD = 10
+
+
+def time_budget_limit(fleet_toml_text: Optional[str]) -> Tuple[Optional[int], str]:
+    """`(limit_s, note)` from `.fleet.toml` `[e2e] time_budget_s`: a positive int, else None.
+
+    Same validation as the node budget: a bool, a string, 0 or a negative is
+    ignored with a note, so a typo can never silently raise the bar.
+    """
+    raw = e2e_table(fleet_toml_text).get("time_budget_s")
+    if raw is None:
+        return None, "no [e2e] time_budget_s declared"
+    if isinstance(raw, bool) or not isinstance(raw, int) or raw <= 0:
+        return None, f"invalid [e2e] time_budget_s {raw!r} ignored"
+    return raw, "[e2e] time_budget_s"
+
+
+def browser_leg_s(run: Dict[str, object], test_dirs: Sequence[str]) -> Optional[float]:
+    """Wall seconds of the phases that ran e2e nodes (a parallel pass and a serial pass both count)."""
+    node_phase: Dict[str, int] = run.get("node_phase") or {}  # type: ignore[assignment]
+    phases: List[Dict[str, object]] = run.get("phases") or []  # type: ignore[assignment]
+    idx = {node_phase[n] for n in run.get("nodes") or {} if is_e2e(n, test_dirs) and n in node_phase}  # type: ignore[union-attr]
+    walls = [phases[i].get("wall_s") for i in sorted(idx)]
+    if not idx or any(w is None for w in walls):
+        return None
+    return round(sum(float(w) for w in walls), 1)  # type: ignore[arg-type]
+
+
+def time_budget(repo_root: Path, test_dirs: Sequence[str], log: Optional[Path] = None) -> Dict[str, object]:
+    """`within` / `over` / `unknown` / `undeclared` for the browser leg of the latest quiet full-tier run.
+
+    A run the log records as routed below `full` is not the suite; a run that
+    overlapped another checkout's run is loaded. Neither gives a verdict, and
+    neither does a missing log: all three are `unknown`, never `within`.
+    """
+    toml = repo_root / ".fleet.toml"
+    limit, note = time_budget_limit(toml.read_text(encoding="utf-8", errors="replace") if toml.is_file() else None)
+    if limit is None:
+        return {"verdict": "undeclared", "seconds": None, "limit": None, "reason": note}
+    g = _gather(repo_root, log)
+    if "error" in g:
+        return {"verdict": "unknown", "seconds": None, "limit": limit, "reason": str(g["error"])}
+    logs: List[Tuple[Path, List[Dict[str, object]]]] = g["logs"]  # type: ignore[assignment]
+    full = [(p, r) for p, runs in logs for r in runs
+            if r["complete"] and r.get("routed_tier") in (None, "full") and isinstance(r.get("finished"), _dt.datetime)]
+    if not full:
+        return {"verdict": "unknown", "seconds": None, "limit": limit, "reason": "no completed full-tier run with a run window"}
+    path, run = max(full, key=lambda pr: pr[1]["finished"])  # type: ignore[arg-type,return-value]
+    load = load_state(run, [(p, [r for r in runs if r is not run]) for p, runs in logs])
+    seconds = browser_leg_s(run, test_dirs)
+    when = run["started"].isoformat() if run.get("started") else "?"  # type: ignore[union-attr]
+    if load["state"] != "quiet":
+        return {"verdict": "unknown", "seconds": seconds, "limit": limit, "reason": f"the latest full run ({when}) was {load['state']}"}
+    if seconds is None:
+        return {"verdict": "unknown", "seconds": None, "limit": limit, "reason": f"no e2e phase wall time in the run of {when}"}
+    return {"verdict": "over" if seconds > limit else "within", "seconds": seconds, "limit": limit,
+            "reason": f"browser leg {seconds:.0f} s on the quiet full run of {when} vs {limit} s ({note}); {path}"}
+
+
+def audit_record_path(repo_root: Path) -> Path:
+    """Where the last audit's test count lives: machine-local hooks state, one file per repo."""
+    from hooks_state import state_dir
+    name = (repo_slug(repo_root) or repo_root.resolve().name).replace("/", "-")
+    return state_dir() / "e2e-audit" / f"{name}.json"
+
+
+def read_audit_record(repo_root: Path) -> Optional[Dict[str, object]]:
+    p = audit_record_path(repo_root)
+    try:
+        data = json.loads(p.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    return data if isinstance(data, dict) and isinstance(data.get("raw_tests"), int) else None
+
+
+def write_audit_record(repo_root: Path, raw_tests: int, node_count: Optional[int]) -> Path:
+    p = audit_record_path(repo_root)
+    p.parent.mkdir(parents=True, exist_ok=True)
+    res = git_run.run_git(["-C", str(repo_root), "rev-parse", "--short", "HEAD"], timeout=30)
+    rec = {"raw_tests": raw_tests, "node_count": node_count,
+           "date": _dt.datetime.now(_dt.timezone.utc).date().isoformat(),
+           "sha": res.stdout.strip() if res.returncode == 0 else None}
+    tmp = p.with_suffix(".json.tmp")
+    tmp.write_text(json.dumps(rec), encoding="utf-8")
+    tmp.replace(p)
+    return p
+
+
+def growth(raw_tests: int, record: Optional[Dict[str, object]], threshold: int = GROWTH_THRESHOLD) -> Dict[str, object]:
+    """Test functions gained since the last audit; `none-recorded` before the first one."""
+    if record is None:
+        return {"state": "none-recorded", "delta": None, "since": None, "trigger": False}
+    delta = raw_tests - int(record["raw_tests"])  # type: ignore[call-overload]
+    return {"state": "measured", "delta": delta, "since": record.get("date"), "trigger": delta >= threshold}
+
+
+def audit_trigger(node_verdict: str, time_verdict: str, grow: Dict[str, object]) -> Tuple[str, str]:
+    """`(yes|no|unknown, reason)`: whether `/e2e` 6b should run `/e2e-audit budget` (fleet-config#1018).
+
+    Any one of: over the node budget, over the time budget, or ~10 new test
+    functions since the last audit. An unmeasured leg with nothing else firing
+    is `unknown`, never `no`. The open-issue check stays with the caller.
+    """
+    fired = []
+    if node_verdict == "over":
+        fired.append("over the node budget")
+    if time_verdict == "over":
+        fired.append("over the time budget")
+    if grow.get("trigger"):
+        fired.append(f"{format(int(grow['delta']), '+d')} test functions since the audit of {grow['since']}")
+    if fired:
+        return "yes", "; ".join(fired)
+    unknown = [n for n, v in (("nodes", node_verdict), ("time", time_verdict)) if v in ("unmeasured", "unknown")]
+    if unknown:
+        return "unknown", f"{' and '.join(unknown)} not measured; nothing else fired"
+    if grow.get("state") == "none-recorded":
+        return "no", "within every declared budget; no growth baseline yet (an audit's `record` sets it)"
+    return "no", f"within every declared budget; {format(int(grow['delta']), '+d')} test functions since {grow['since']}"
