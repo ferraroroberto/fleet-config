@@ -33,7 +33,7 @@
 # metrics.json, every evaluate output and every filed finding.
 
 [meta]
-version = "1.4.0"   # 1.4.0: LAYOUT-06 list + detail and the measure, LAYOUT-03 action-row budget, COLOR-03 boundary-bearing controls (#996); 1.3.0: TYPE-05 overline-only caps, TYPE-01 fix names body-sm (#992); 1.2.0: [[judgment]] checklist J-01..J-10 (#973); 1.1.0: mock-up ids aligned to the #972 library
+version = "1.5.0"   # 1.5.0: TOUCH-02 counts one layer only (a covered control is not an overlap), LAYOUT-07 bottom-bar clearance (#1019); 1.4.0: LAYOUT-06 list + detail and the measure, LAYOUT-03 action-row budget, COLOR-03 boundary-bearing controls (#996); 1.3.0: TYPE-05 overline-only caps, TYPE-01 fix names body-sm (#992); 1.2.0: [[judgment]] checklist J-01..J-10 (#973); 1.1.0: mock-up ids aligned to the #972 library
 seeded_from = "app-launcher rendered audit, 2026-09-21 (fleet-config#962)"
 
 [weights]
@@ -226,13 +226,13 @@ mockup = "hit-target"
 [[rules]]
 id = "TOUCH-02"
 category = "touch"
-title = "Effective hit rectangles overlap"
+title = "Effective hit rectangles overlap within one layer"
 metric = "targets.overlap_count"
 fail_when = "gt"
 threshold = 0
 severity = "P0"
 owner = "app"
-standard = "design.md Touch targets: expanded rects never intersect"
+standard = "design.md Touch targets: expanded rects never intersect (a control covered by a fixed layer where they meet takes no tap, so the pair is not counted)"
 fix_template = "{count} pairs of expanded hit areas overlap on {screen} ({sample}); space the controls or shrink the expansion."
 mockup = "none"
 
@@ -363,6 +363,19 @@ mockup = "wide-desktop"
 devices = ["desktop"]
 screens = ["tab"]
 params = { min_viewport = 1100 }
+
+[[rules]]
+id = "LAYOUT-07"
+category = "layout"
+title = "A list's last row stays under a fixed bottom bar at full scroll"
+metric = "clearance.hidden_row_count"
+fail_when = "gt"
+threshold = 0
+severity = "P1"
+owner = "app"
+standard = "Apple HIG Tab bars: scrolling content clears the bar; design.md navigation contract (floating bottom-tab pill)"
+fix_template = "{count} lists on {screen} end under a fixed bottom bar at full scroll ({sample}); pad the scroller's end by the bar's height."
+mockup = "none"
 
 # ---------------------------------------------------------------------------
 # Components

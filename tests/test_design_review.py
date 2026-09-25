@@ -56,8 +56,8 @@ def _doc(name: str) -> dict:
 # ---- rubric: the real file loads and names only metrics that exist ----------
 
 rubric = dr.load_rubric(RUBRIC)
-check(rubric.version == "1.4.0", "rubric meta.version stamped")
-check(len(rubric.rules) == 25, f"25 seed rules loaded (got {len(rubric.rules)})")
+check(rubric.version == "1.5.0", "rubric meta.version stamped")
+check(len(rubric.rules) == 26, f"26 seed rules loaded (got {len(rubric.rules)})")
 check(rubric.categories == ["typography", "color", "touch", "navigation", "layout", "components", "a11y"],
       "categories in rubric order")
 check(rb.check_metric_names(rubric, measure.metric_paths()) == [], "every rule metric is a script path or a derived metric")
@@ -260,7 +260,7 @@ check(all(s == "pass" for s in statuses_c.values()), f"compliant: every rule pas
 check(all(v["score"] == 100.0 and v["grade"] == "A" and not v["unmeasured"] for v in out_c["categories"].values()),
       "compliant: every category 100/A, measured")
 check(out_c["overall"] == {"score": 100.0, "grade": "A", "unmeasured": False}, "compliant: overall A")
-check(out_c["schema_version"] == 1 and out_c["rubric_version"] == "1.4.0" and out_c["target"] == "fixture-app"
+check(out_c["schema_version"] == 1 and out_c["rubric_version"] == "1.5.0" and out_c["target"] == "fixture-app"
       and out_c["commit"].startswith("0000") and out_c["generated_at"].endswith("Z"), "evaluate envelope keys")
 check([s["id"] for s in out_c["screens"]] == ["desktop-light-home", "iphone-light-home", "desktop-light-dialog-edit"],
       "evaluate echoes the screen list")
@@ -570,7 +570,7 @@ else:
           f"measure CLI walks the fixture: 2 tabs + 1 dialog x light/dark ({proc.stdout[-300:]}{proc.stderr[-300:]})")
     check(lines.get("RUN_DIR") == str(run_dir) and Path(lines.get("METRICS", "")).is_file(), "RUN_DIR/METRICS lines point at the run dir")
     doc = json.loads(Path(lines["METRICS"]).read_text(encoding="utf-8"))
-    check(doc["interpreter"] == str(interp) and doc["schema_version"] == 1 and doc["rubric_version"] == "1.4.0", "metrics.json records the interpreter + versions")
+    check(doc["interpreter"] == str(interp) and doc["schema_version"] == 1 and doc["rubric_version"] == "1.5.0", "metrics.json records the interpreter + versions")
     if not (scaffold / "tests" / "e2e" / "_geometry.py").is_file():
         _h.skip("browser leg: project-scaffolding/tests/e2e/_geometry.py absent -- hit-target assertions NOT verified")
     check(doc["walk"]["info"]["geometry"] == ("loaded" if (scaffold / "tests" / "e2e" / "_geometry.py").is_file() else "GEOMETRY_MISSING"),
@@ -669,6 +669,32 @@ else:
         _s = steps.get(_sid, {})
         check(_s.get("status") == "absent" and _s.get("reason") == "STEP_TARGET_ABSENT" and _sel in str(_s.get("error")),
               f"a step target that never appears is recorded STEP_TARGET_ABSENT, naming the selector (#995) -- {_sid}: {_s.get('status')} {_s.get('reason')}")
+
+    # layers: a control covered by a fixed bar is not an overlap; a list must scroll clear of the bar (#1019)
+    layers_dir = STATE / "fixture-layers"
+    proc_l = subprocess.run(
+        [str(interp), str(REPO / "skills" / "_lib" / "design_review" / "walk.py"), "--url", (FIX / "layers.html").as_uri(),
+         "--out", str(layers_dir), "--devices", "desktop", "--scaffold", str(scaffold),
+         "--params", str(STATE / "steps-params.json")],
+        capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=600,
+    )
+    lay = {s["id"]: s for s in json.loads((layers_dir / "screens.json").read_text(encoding="utf-8"))} if proc_l.returncode == 0 else {}
+    cov, clr = (lay.get(f"desktop-light-{v}", {}).get("metrics") or {} for v in ("covered", "clear"))
+    check(bool(cov) and bool(clr), f"the layers fixture walks both tabs ({proc_l.stderr[-300:]})")
+    if cov and clr and "error" not in cov["targets"] and "error" not in clr["targets"]:
+        check(cov["targets"]["covered_count"] == 1 and "button#underPill" in cov["targets"]["covered"][0].values(),
+              f"TOUCH-02: a control under the fixed pill is covered, not an overlap -- {cov['targets']['covered']}")
+        check(cov["targets"]["overlap_count"] == 1 and {cov["targets"]["overlaps"][0]["a"], cov["targets"]["overlaps"][0]["b"]} == {"button.hit-target"},
+              f"TOUCH-02: two touching controls in the flow still overlap -- {cov['targets']['overlaps']}")
+        check(clr["targets"]["overlap_count"] == 1 and clr["targets"]["covered_count"] == 0
+              and "button#abovePill" in (clr["targets"]["overlaps"][0]["a"], clr["targets"]["overlaps"][0]["b"]),
+              f"TOUCH-02: a control beside the pill whose expansion reaches into a tab still overlaps -- {clr['targets']}")
+    check(cov.get("clearance", {}).get("hidden_row_count") == 1 and cov["clearance"]["hidden_rows"][0]["bar"].startswith("nav.pill"),
+          f"LAYOUT-07: a list ending under the pill at full scroll is hidden -- {cov.get('clearance')}")
+    check(clr.get("clearance", {}).get("hidden_row_count") == 0 and clr["clearance"]["bars"] == ["nav.pill"],
+          f"LAYOUT-07: a list padded clear of the pill passes -- {clr.get('clearance')}")
+    check(by_id["desktop-light-home"]["metrics"]["clearance"] == {"bars": [], "hidden_rows": [], "hidden_row_count": 0},
+          "LAYOUT-07: a page with no fixed bottom bar has nothing to clear")
 
     # measure --synthetic: boot the target's launcher, walk it with synthetic steps + no_go, stop it (#995)
     syn_root = STATE / "synthetic-app"

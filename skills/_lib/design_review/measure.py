@@ -28,11 +28,12 @@ present on a successful run:
               boundary_low [..], boundary_low_count, ua_styled [..],
               segmented_bad [..], segmented_bad_count
     targets   total, small [..], small_count, overlaps [..], overlap_count,
-              primary [..], primary_min_height, in_summary
+              covered [..], covered_count, primary [..], primary_min_height, in_summary
     icons     boxes {"WxH": n}
     nav       primary_count, pane_scroll_top, pane_header_visible
     layout    overflow_x, scroll_w, inner_w, inner_h, pane_h, lists [..],
               rows_over_limit [..], danger_rows, content_w, content_span, radii {r: n}
+    clearance bars [..], hidden_rows [..], hidden_row_count
     a11y      unnamed [..], unnamed_count, zoom_locked, text_size_control
     headings  ["H2:Title@16px", ...]
 
@@ -103,6 +104,9 @@ _MEASURE_JS = r"""
   const sel = (el) => { let s = el.tagName.toLowerCase(); if (el.id) s += '#'+el.id;
     const c = (el.getAttribute('class')||'').trim().split(/\s+/).filter(Boolean).slice(0,3).join('.'); if (c) s += '.'+c; return s; };
   const txt = (el) => (el.getAttribute('aria-label')||el.textContent||'').trim().replace(/\s+/g,' ').slice(0,40);
+  // The fixed or sticky layer an element paints in (itself or its nearest such ancestor), else null: the flow.
+  const layerOf = (el) => { for (let e = el; e && e !== document.documentElement; e = e.parentElement) {
+    const p = getComputedStyle(e).position; if (p === 'fixed' || p === 'sticky') return e; } return null; };
   const effRect = __GEOMETRY__;
   const pane = document.querySelector('[role=tabpanel]:not([hidden])') || document.querySelector('section.pane:not([hidden])') || document.querySelector('main') || document.body;
   const dialog = document.querySelector('dialog[open]');
@@ -206,14 +210,29 @@ _MEASURE_JS = r"""
     const small = []; const floor = params.hitMin - params.hitTol;
     rects.forEach(x => { const w = x.rr - x.l, h = x.b - x.t;
       if (w < floor || h < floor) small.push({sel: sel(x.el), label: txt(x.el).slice(0,30), w: Math.round(w), h: Math.round(h), vw: Math.round(x.vw), vh: Math.round(x.vh)}); });
-    const overlaps = []; const n = Math.min(rects.length, 400);
+    // A pair is covered, not an overlap, when a fixed or sticky layer takes the tap where the two
+    // expanded rects meet and the other control's own box sits under that layer: the nav pill over
+    // scrolled content, a full-screen overlay over cards. Pairs within one layer still count, and so
+    // does a control beside a bar whose expansion merely reaches into it (#1019).
+    const covered = (a, b) => {
+      const x = (Math.max(a.l, b.l) + Math.min(a.rr, b.rr)) / 2, y = (Math.max(a.t, b.t) + Math.min(a.b, b.b)) / 2;
+      if (x < 0 || y < 0 || x >= innerWidth || y >= innerHeight) return false;
+      const hit = document.elementFromPoint(x, y); const cover = hit && layerOf(hit);
+      if (!cover) return false;
+      const under = [a, b].find(o => !cover.contains(o.el)); if (!under) return false;
+      const u = under.el.getBoundingClientRect(), c = cover.getBoundingClientRect();
+      return u.left < c.right && c.left < u.right && u.top < c.bottom && c.top < u.bottom; };
+    const overlaps = [], coveredPairs = []; let overlapCount = 0, coveredCount = 0; const n = Math.min(rects.length, 400);
     for (let i = 0; i < n; i++) for (let j = i + 1; j < n; j++) { const a = rects[i], b = rects[j];
       if (a.el.contains(b.el) || b.el.contains(a.el)) continue;
       const sep = a.rr <= b.l || b.rr <= a.l || a.b <= b.t || b.b <= a.t;
-      if (!sep && overlaps.length < CAP) overlaps.push({a: sel(a.el), b: sel(b.el)}); }
+      if (sep) continue;
+      if (covered(a, b)) { coveredCount++; if (coveredPairs.length < CAP) coveredPairs.push({a: sel(a.el), b: sel(b.el)}); }
+      else { overlapCount++; if (overlaps.length < CAP) overlaps.push({a: sel(a.el), b: sel(b.el)}); } }
     const primary = q(params.primarySelector).map(el => { const r = el.getBoundingClientRect(); return {sel: sel(el), label: txt(el).slice(0,30), h: Math.round(r.height), w: Math.round(r.width)}; });
     const inSummary = q('summary').reduce((acc, s) => acc + s.querySelectorAll(params.interactive.replace(/summary,\s*/, '')).length, 0);
-    return { total: els.length, small: small.slice(0,CAP), small_count: small.length, overlaps, overlap_count: overlaps.length,
+    return { total: els.length, small: small.slice(0,CAP), small_count: small.length, overlaps, overlap_count: overlapCount,
+      covered: coveredPairs, covered_count: coveredCount,
       primary: primary.slice(0,CAP), primary_min_height: primary.length ? Math.min(...primary.map(p => p.h)) : null, in_summary: inSummary };
   });
 
@@ -262,6 +281,31 @@ _MEASURE_JS = r"""
     return { overflow_x: de.scrollWidth > window.innerWidth + 1, scroll_w: de.scrollWidth, inner_w: window.innerWidth, inner_h: window.innerHeight,
       pane_h: pane.scrollHeight, lists: lists.slice(0,CAP), rows_over_limit: rowsOver.slice(0,CAP), rows_over_limit_count: rowsOver.length,
       danger_rows: dangerRows.size, content_w: Math.round(content.width), content_span: Math.round(spanRight - content.left), radii };
+  });
+
+  // ---- clearance: a list's last row must scroll clear of a fixed bar anchored to the bottom (#1019).
+  // Each scroller goes to its end (instant, whatever scroll-behavior says) and back; the walk runs
+  // this after its screenshots, so nothing captured moves.
+  section('clearance', () => {
+    const bars = [...document.querySelectorAll('body *')].filter(el => { if (getComputedStyle(el).position !== 'fixed' || !visible(el)) return false;
+      const r = el.getBoundingClientRect(); return r.bottom >= innerHeight * 0.75 && r.bottom <= innerHeight + 1 && r.height <= innerHeight * 0.3; })
+      .filter((el, _, all) => !all.some(o => o !== el && o.contains(el)));
+    const rows = [];
+    if (bars.length) q('ul, ol, table, [role=list]').forEach(l => { if (layerOf(l)) return;
+      const rs = [...l.querySelectorAll(':scope > li, :scope > tbody > tr, :scope > tr, :scope > [role=listitem]')].filter(visible);
+      if (rs.length) rows.push({list: l, row: rs[rs.length - 1]}); });
+    const scrollerOf = (el) => { for (let e = el.parentElement; e && e !== document.body && e !== document.documentElement; e = e.parentElement) {
+      const o = getComputedStyle(e).overflowY; if ((o === 'auto' || o === 'scroll') && e.scrollHeight > e.clientHeight + 1) return e; }
+      return document.scrollingElement || document.documentElement; };
+    const scrollers = new Map(); rows.forEach(r => { const s = scrollerOf(r.row); if (!scrollers.has(s)) scrollers.set(s, s.scrollTop); });
+    const hidden = [];
+    try {
+      scrollers.forEach((_, s) => s.scrollTo({top: s.scrollHeight, behavior: 'instant'}));
+      rows.forEach(({list, row}) => { const r = row.getBoundingClientRect();
+        const bar = bars.find(b => { const c = b.getBoundingClientRect(); return r.bottom > c.top + 1 && r.top < c.bottom && r.left < c.right && c.left < r.right; });
+        if (bar) hidden.push({sel: sel(list), row: sel(row), bar: sel(bar), under_px: Math.round(r.bottom - bar.getBoundingClientRect().top)}); });
+    } finally { scrollers.forEach((top, s) => s.scrollTo({top, behavior: 'instant'})); }
+    return { bars: bars.map(sel).slice(0, CAP), hidden_rows: hidden.slice(0, CAP), hidden_row_count: hidden.length };
   });
 
   // ---- accessibility
@@ -319,7 +363,7 @@ def default_params(
     }
 
 
-SECTIONS = ("text", "controls", "targets", "icons", "nav", "layout", "a11y", "headings")
+SECTIONS = ("text", "controls", "targets", "icons", "nav", "layout", "clearance", "a11y", "headings")
 
 
 def section_errors(metrics: Dict[str, object]) -> Dict[str, str]:
@@ -358,12 +402,13 @@ def metric_paths() -> List[str]:
                  "break_all_count", "uppercase", "uppercase_count", "glyph_icons", "glyph_icon_count"],
         "controls": ["total", "font_family_mismatch", "font_family_mismatch_count", "boundary_low",
                      "boundary_low_count", "ua_styled", "ua_styled_count", "segmented_bad", "segmented_bad_count"],
-        "targets": ["total", "small", "small_count", "overlaps", "overlap_count", "primary",
-                    "primary_min_height", "in_summary"],
+        "targets": ["total", "small", "small_count", "overlaps", "overlap_count", "covered", "covered_count",
+                    "primary", "primary_min_height", "in_summary"],
         "icons": ["boxes"],
         "nav": ["primary_count", "pane_scroll_top", "pane_header_visible"],
         "layout": ["overflow_x", "scroll_w", "inner_w", "inner_h", "pane_h", "lists", "rows_over_limit",
                    "rows_over_limit_count", "danger_rows", "content_w", "content_span", "radii"],
+        "clearance": ["bars", "hidden_rows", "hidden_row_count"],
         "a11y": ["unnamed", "unnamed_count", "zoom_locked", "text_size_control"],
     }
     return [f"{s}.{k}" for s, ks in keys.items() for k in ks]
