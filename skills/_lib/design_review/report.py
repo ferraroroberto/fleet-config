@@ -167,7 +167,13 @@ def item_label(item: object) -> str:
     if "a" in item and "b" in item:
         return f"{item['a']} ∩ {item['b']}"
     if "box" in item:
-        return f"{item['box']}px ×{item.get('count', 1)}"
+        label = f"{item['box']}px ×{item.get('count', 1)}"
+        els = [e for e in (item.get("elements") or []) if isinstance(e, dict)]
+        if els:
+            named = [f"{e.get('glyph') or 'svg'} in {e.get('host')}" for e in els[:SAMPLE_ITEMS]]
+            more = int(item.get("count", len(els))) - len(named)
+            label += f" ({', '.join(named)}{f', +{more} more' if more > 0 else ''})"
+        return label
     if "content_w" in item and "inner_w" in item:
         return f"content {_compact(item['content_w'])}px of {_compact(item['inner_w'])}px"
     if "scroll_w" in item and "inner_w" in item:
