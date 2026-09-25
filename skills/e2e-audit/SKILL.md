@@ -112,7 +112,9 @@ Both read the gate's own record: `.fleet.toml` `[e2e] progress_log` (a START/DON
 
 - **`timing`** — the latest completed run in any checkout of the repo (gates run in worktrees too): phase wall times, per-projection nodes/seconds/mean, the duration buckets (<1, 1–3, 3–6, 6–10, ≥10 s), the heaviest modules with their static cost drivers (`page_loads`, `pty_refs`, `real_agent`), the tail share, and `load`: `loaded` when another checkout's run overlapped it (suites in other repos are not visible; `scope` says so). `runtime_drift` lists every runtime figure on a CLAUDE.md/README line about the gate, with its nearest measured span; `candidate` is more than 25% off.
 - **`failures`** — every red in the logs on disk (test, projection, date, the step its traceback stopped at), mentions in the last 60 merged PR bodies and in `bug` issues (free text, a lower bound), and `race_candidates`: tests red at two or more different steps.
-- `status: unknown` (no source, no completed run, no e2e node) and `load: unknown` are their own states. **A loaded or unknown run never feeds a verdict:** report its numbers as loaded, and file no drift finding from it.
+- **`routing`** — the last 60 merged PRs through the repo's own `scripts/classify_e2e.py` (imported read-only, never reimplemented): the tier distribution, which rule labels forced `full` (every PR containing one, and single-cause PRs), the paths forcing it most, unclassified paths, and `shadowed` paths (a broad rule took a path a later, more specific, lower-tier rule also matches: a free fix by reordering). `--proposed <toml>` routes the same PRs through a candidate table and lists every tier change: the counterfactual a routing proposal needs.
+- **`parallel`** — static signs xdist workers would share state (`free_port_race`, `fixed_log_names`, `shared_append`, `load_sensitive_ungrouped`; a worker-id reference or a port retry marks one `mitigated`), session fixtures and module state for context, `pytest-xdist` installed/declared, an LPT projection of the last serial run onto 2/3/4/6 workers with ×1.15/×1.3/×1.5 inflation and the two serial floors (heaviest module, slowest test), and `shared_state`: tests red under workers and green serially. Those are shared state between tests, **never** flakes.
+- `status: unknown` (no source, no completed run, no e2e node, no classifier, no `gh`) and `load: unknown` are their own states. **A loaded or unknown run never feeds a verdict:** report its numbers as loaded, and file no drift finding from it.
 
 
 - **(a) Confirm each cluster.** Read the colliding tests' actual
@@ -133,12 +135,13 @@ Both read the gate's own record: `.fleet.toml` `[e2e] progress_log` (a START/DON
   ratio drift is not a finding; a real cluster of ≥3 tests re-asserting the
   same thing, a suite multiple times over target with no organizational
   structure, or a genuinely uncovered key view is.
-- **(e) Class every failure event** (log reds and mentions) as exactly one of: **real bug** (engine-specific), **race** (a real ordering bug one engine or load exposes first — app-launcher#732, #1222), **test bug**, **flake/load** (timeouts under concurrency, `ERR_NO_BUFFER_SPACE` port exhaustion, real-agent replay), or **unknown**. A mention is often a pre-fix red proof, not a failure of the suite: read the line. **Never assign `flake` by default.** A `race_candidate` (red at different steps, typically on the slower engine, under load, and green alone) stays `unknown` until someone repeats the app-launcher#1229 recipe: loop the test on that engine, hold the suspected slow dependency pending, and see whether the product, not the test, is waiting. Tests that need a PTY or overlay to paint and run near their wait budget are **load-sensitive**, not flakes (app-launcher#887).
-- **(f) Confirm each drift candidate.** Match the figure to the span it describes (whole gate, non-e2e, browser leg); a figure that still disagrees by more than 25% on a quiet run is a finding: correct the documented runtime.
 - **(d) Positive-shape reference.** `docs/playwright-ui-testing.md` documents
   what a *well-organized* suite looks like (the vendored `_geometry.py`
   helper, a `KEY_VIEWS`-driven matrix pattern) — when proposing a merge/split,
   point at that pattern rather than inventing a new structure.
+- **(e) Class every failure event** (log reds and mentions) as exactly one of: **real bug** (engine-specific), **race** (a real ordering bug one engine or load exposes first — app-launcher#732, #1222), **test bug**, **flake/load** (timeouts under concurrency, `ERR_NO_BUFFER_SPACE` port exhaustion, real-agent replay), or **unknown**. A mention is often a pre-fix red proof, not a failure of the suite: read the line. **Never assign `flake` by default.** A `race_candidate` (red at different steps, typically on the slower engine, under load, and green alone) stays `unknown` until someone repeats the app-launcher#1229 recipe: loop the test on that engine, hold the suspected slow dependency pending, and see whether the product, not the test, is waiting. Tests that need a PTY or overlay to paint and run near their wait budget are **load-sensitive**, not flakes (app-launcher#887).
+- **(f) Routing and parallelism are proposals, not changes.** A `shadowed` or unclassified path becomes a table-rule recommendation; a narrowing rule set needs its `--proposed` counterfactual in the finding. Adopting workers is its own issue, validated the app-launcher#1231 way: 3 gate runs at the proposed n, recording wall time, reds and peak TIME_WAIT against a serial control (fleet-config#440, #498).
+- **(g) Confirm each drift candidate.** Match the figure to the span it describes (whole gate, non-e2e, browser leg); a figure that still disagrees by more than 25% on a quiet run is a finding: correct the documented runtime.
 
 ### 5. Dedupe and upsert the `e2e-redundancy` issue
 
@@ -211,6 +214,14 @@ Surfaced by `/e2e-audit`, kept up to date across runs. Suite target: project-sca
 
 <from `timing`: source log + run date + load state; a table of phase | wall time; projection | nodes | seconds | mean; the duration buckets; the top 5 modules with seconds and cost drivers; the tail share. Or `timing: unknown (<reason>)`.>
 
+## Routing
+
+<from `routing`: PRs sampled, tier distribution, the share of browser-relevant PRs that went full, the forcing-class table (containing / single cause), the top forcing paths, shadowed and unclassified paths, and any `--proposed` counterfactual. Or `routing: unknown (<reason>)`.>
+
+## Parallelism
+
+<from `parallel`: xdist state, each blocker with file and state, the worker projection table (n | load / loadscope at the three inflations), the serial floors, and any shared-state evidence. Or `parallel: unknown (<reason>)`.>
+
 ## Failure history
 
 <from `failures` + step 4e: a projection table (red only on X / only on Y / both) and a flake list — test, red count, projections, class, tracking issue. Race candidates listed with their steps and "unknown until the #1229 recipe is run". Or `failures: unknown (<reason>)`.>
@@ -242,6 +253,8 @@ Print one summary and stop:
   coverage gaps: <n confirmed | none declared | none found>
   time: <browser <s> s over <n> nodes, <load> | unknown (<reason>)>
   failures: <n events, <n> race candidates | unknown (<reason>)>
+  routing: <n PRs: skip/static/surface/full counts, top forcing class | unknown (<reason>)>
+  parallel: <n blockers; n=4 projects <min> min | unknown (<reason>)>
   filed: https://github.com/<owner>/<repo>/issues/<N>   (e2e-redundancy)
 ```
 
