@@ -227,6 +227,15 @@ cwd_prefix = "E:/automation/notion-automation-files"
 [oracle-to-gcp]
 cwd_prefix = "E:/automation/oracle-to-gcp"
 
+[parking-manager]
+cwd_prefix          = "E:/automation/parking-manager"
+webapp_port         = 8450
+browser_scheme      = "https"
+gate_cmd            = "C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe -File scripts/verify-before-ship.ps1"
+tray_cmd            = "tray.bat"
+restart_cmd         = '& .\.venv\Scripts\python.exe -c "from app.webapp.manager import WebappManager; WebappManager().start(wait=True)"'
+api_version_path    = "/api/version"
+
 [pdf-to-markdown]
 cwd_prefix = "E:/automation/pdf-to-markdown"
 

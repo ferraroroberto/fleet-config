@@ -586,9 +586,9 @@ window.CONFIG = {
     }
   ],
   "coverage": {
-    "total": 39,
-    "claude_md": "38/39",
-    "fleet_toml": "37/39"
+    "total": 40,
+    "claude_md": "39/40",
+    "fleet_toml": "38/40"
   },
   "principles": [
     [
