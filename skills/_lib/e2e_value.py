@@ -37,6 +37,23 @@ With none of them, every verdict is `unknown (no timing source)`.
 marks this one `loaded`. Suites in other repos are not visible, which `scope`
 says. A loaded run is reported but never used for a budget or drift verdict.
 
+`routing <repo-root> [--prs N] [--until ISO] [--config toml] [--proposed toml]`
+imports the repo's own `scripts/classify_e2e.py` (never a copy) and routes
+the last N merged PRs' file lists through it: the tier distribution, which
+rule labels forced `full` (every PR containing one, and PRs where it was the
+only cause), the paths that forced it most, unclassified paths, and paths a
+broad rule took although a later, more specific, lower-tier rule matches too
+(a README under a static prefix: a free fix). `--proposed` routes the same PRs
+through a candidate table and lists every PR whose tier changes.
+
+`parallel <repo-root>` lists static signs that xdist workers would share
+state (a port picked and released, fixed log names, a file every process
+appends to, real-agent tests outside an `xdist_group` or serial pass; a
+worker-id reference or a retry marks one `mitigated`), projects the last
+serial run's per-test times onto 2/3/4/6 workers (LPT, x1.15/x1.3/x1.5 load
+inflation, per test and per module), and names tests red in a parallel run
+but green serially: shared state between tests, never a flake.
+
 `failures` is the raw material for the judgment layer's classing (real bug /
 race / test bug / flake-load / unknown). A test whose log failures stopped at
 two or more different steps is listed in `race_candidates`: the app-launcher
@@ -70,7 +87,7 @@ DRIFT_TOLERANCE = 0.25
 _HEADER_RE = re.compile(r"run started (\d{4}-\d{2}-\d{2}) (\d{2}:\d{2}:\d{2})")
 _LINE_RE = re.compile(r"^\[(\d{2}):(\d{2}):(\d{2}) \+\s*[\d.,]+s\] (.*)$")
 # Node ids can hold spaces (a parametrize id with a dict repr); an xdist run appends " [gw2]".
-_DONE_RE = re.compile(r"^DONE\s+(.+?) \((\d+(?:\.\d+)?)s\)(?: \[gw\d+\])?$")
+_DONE_RE = re.compile(r"^DONE\s+(.+?) \((\d+(?:\.\d+)?)s\)( \[gw\d+\])?$")
 _START_RE = re.compile(r"^START (.+)$")
 _FAIL_RE = re.compile(r"^(FAILED|ERROR) \((setup|call|teardown)\) (.+?)(?: \[gw\d+\])?$")
 _PHASE_RE = re.compile(r"^==> phase: (.*?)(?:\.\.\.)?$")
@@ -153,6 +170,7 @@ def parse_run(text: str) -> Dict[str, object]:
     open_nodes: set = set()
     failures: List[Dict[str, object]] = []
     exit_status: Optional[int] = None
+    parallel = False
     current_fail: Optional[Dict[str, object]] = None
     for raw in text.splitlines():
         if raw.startswith(_EXCERPT_PREFIX):
@@ -175,6 +193,7 @@ def parse_run(text: str) -> Dict[str, object]:
             open_nodes.add(sm.group(1))
         elif (dm := _DONE_RE.match(body)):
             nodes[dm.group(1)] = float(dm.group(2))
+            parallel = parallel or bool(dm.group(3))
             open_nodes.discard(dm.group(1))
             if phases:
                 node_phase[dm.group(1)] = len(phases) - 1
@@ -193,7 +212,7 @@ def parse_run(text: str) -> Dict[str, object]:
         out_phases.append({"name": p["name"], "wall_s": round(wall, 1) if wall is not None else None, "nodes": p["nodes"]})
     return {
         "started": started, "finished": last, "nodes": nodes, "node_phase": node_phase, "phases": out_phases,
-        "failures": failures, "exit_status": exit_status,
+        "failures": failures, "exit_status": exit_status, "parallel": parallel,
         "complete": bool(nodes) and not open_nodes and exit_status is not None,
     }
 
@@ -223,7 +242,7 @@ def parse_junit(path: Path) -> Dict[str, object]:
                 failures.append({"outcome": tag.upper(), "when": "call", "nodeid": nodeid,
                                  "step": failure_step((el.text or "").splitlines())})
     return {"started": None, "finished": None, "nodes": nodes, "node_phase": {}, "phases": [],
-            "failures": failures, "exit_status": 1 if failures else 0, "complete": bool(nodes)}
+            "failures": failures, "exit_status": 1 if failures else 0, "parallel": False, "complete": bool(nodes)}
 
 
 def last_complete_run(text: str) -> Optional[Dict[str, object]]:
@@ -544,3 +563,303 @@ def failures(repo_root: Path, log: Optional[Path] = None, prs: int = 60, use_gh:
         "log_events_by_projection": by_proj,
         "race_candidates": race_candidates(log_events),
     }
+
+
+# ---- routing report (step 2) ----------------------------------------------------------------
+
+
+def load_classifier(repo_root: Path):
+    """The repo's own `scripts/classify_e2e.py`, imported read-only, or None.
+
+    Imported, never reimplemented, so the report cannot drift from what the
+    gate actually does (the file is byte-verbatim from project-scaffolding).
+    """
+    path = repo_root / "scripts" / "classify_e2e.py"
+    if not path.is_file():
+        return None
+    import importlib.util
+    spec = importlib.util.spec_from_file_location(f"classify_e2e_{abs(hash(str(path)))}", path)
+    if spec is None or spec.loader is None:
+        return None
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = mod  # dataclasses resolve their module by name
+    try:
+        spec.loader.exec_module(mod)
+    except Exception:  # a broken classifier is `unknown`, reported by the caller
+        sys.modules.pop(spec.name, None)
+        return None
+    return mod if hasattr(mod, "classify") and hasattr(mod, "load_config") else None
+
+
+def merged_prs(repo_root: Path, prs: int, until: Optional[str] = None) -> Tuple[Optional[List[Dict[str, object]]], str]:
+    """`(prs newest first, status)`: number, mergedAt and file paths of merged PRs."""
+    slug = repo_slug(repo_root)
+    if slug is None:
+        return None, "unknown: no GitHub origin remote"
+    limit = prs + (200 if until else 0)
+    res = git_run.run_gh(["pr", "list", "--state", "merged", "--limit", str(limit), "--repo", slug,
+                          "--json", "number,mergedAt,files"], timeout=180, stdin=subprocess.DEVNULL)
+    if res.returncode != 0:
+        return None, "unknown: " + ((res.stderr or "").strip().splitlines() or ["gh failed"])[0][:160]
+    try:
+        items = json.loads(res.stdout or "[]")
+    except ValueError:
+        return None, "unknown: unparsable gh output"
+    items.sort(key=lambda it: str(it.get("mergedAt") or ""), reverse=True)
+    if until:
+        items = [it for it in items if str(it.get("mergedAt") or "") <= until]
+    items = items[:prs]
+    out = [{"number": it["number"], "mergedAt": it.get("mergedAt"),
+            "files": [f["path"] for f in (it.get("files") or []) if f.get("path")]} for it in items]
+    return out, f"ok ({len(out)} PRs)"
+
+
+def _more_specific(later, first) -> bool:
+    """Whether a later rule names a path more narrowly than the one that took it.
+
+    An exact path always does; a pure extension rule (`*.md`, no prefix) does
+    against a prefix rule, since it names a file type the prefix never meant;
+    between two prefixes, the longer one does.
+    """
+    if later.path is not None:
+        return first.path is None
+    if later.prefix is None:
+        return bool(later.extensions) and first.prefix is not None
+    return first.prefix is not None and len(later.prefix) > len(first.prefix)
+
+
+def shadowed_rules(path: str, rules: list) -> List[str]:
+    """Labels of later, lower-tier, more specific rules that also match a path an earlier rule took.
+
+    The first-match-wins table can route a README full because a broad prefix
+    rule sits above the docs rule (app-launcher#1220 (b)): a misroute the table
+    fixes for free by reordering. A general rule placed after a specific one
+    (`tests/` after `tests/e2e/`) is the intended order and is not reported.
+    """
+    name = path.rsplit("/", 1)[-1]
+    ext = name.rsplit(".", 1)[-1].lower() if "." in name else ""
+    hits = [r for r in rules if r.matches(path, ext)]
+    if len(hits) < 2:
+        return []
+    first = hits[0]
+    return [r.label for r in hits[1:] if r.tier < first.tier and _more_specific(r, first)]
+
+
+def routing_report(repo_root: Path, prs: int = 60, until: Optional[str] = None,
+                   config_path: Optional[Path] = None, proposed_path: Optional[Path] = None,
+                   pr_list: Optional[List[Dict[str, object]]] = None) -> Dict[str, object]:
+    mod = load_classifier(repo_root)
+    if mod is None:
+        return {"status": "unknown", "reason": "no importable scripts/classify_e2e.py in the repo"}
+    config = mod.load_config(config_path or (repo_root / ".fleet.toml"))
+    if pr_list is None:
+        pr_list, why = merged_prs(repo_root, prs, until)
+        if pr_list is None:
+            return {"status": "unknown", "reason": f"merged PRs: {why}"}
+    proposed = mod.load_config(proposed_path) if proposed_path else None
+    tiers: Dict[str, int] = {}
+    full_classes: Dict[str, int] = {}
+    single_cause: Dict[str, int] = {}
+    full_paths: Dict[str, int] = {}
+    unclassified: Dict[str, int] = {}
+    shadowed: Dict[str, Dict[str, object]] = {}
+    narrowed: List[Dict[str, object]] = []
+    rows = []
+    browser_relevant = 0
+    for pr in pr_list:
+        files = [str(f) for f in pr["files"]]  # type: ignore[union-attr]
+        r = mod.classify(files, config)
+        tiers[r.tier] = tiers.get(r.tier, 0) + 1
+        cats = [(f, *mod._classify_one(f.replace("\\", "/"), config.rules)) for f in files]
+        if any(c.name != "NONE" for _, c, _ in cats):
+            browser_relevant += 1
+        if r.tier == "full":
+            labels = sorted({lab for _, c, lab in cats if c.name == "FULL"})
+            for lab in labels:
+                full_classes[lab] = full_classes.get(lab, 0) + 1
+            if len(labels) == 1:
+                single_cause[labels[0]] = single_cause.get(labels[0], 0) + 1
+            for f, c, _ in cats:
+                if c.name == "FULL":
+                    full_paths[f] = full_paths.get(f, 0) + 1
+        for f, c, lab in cats:
+            if lab == "unclassified":
+                unclassified[f] = unclassified.get(f, 0) + 1
+            sh = shadowed_rules(f.replace("\\", "/"), config.rules)
+            if sh:
+                entry = shadowed.setdefault(f, {"path": f, "took": lab, "shadowed": sh, "prs": 0})
+                entry["prs"] = int(entry["prs"]) + 1  # type: ignore[call-overload]
+        if proposed is not None:
+            pr_ = mod.classify(files, proposed)
+            if pr_.tier != r.tier:
+                narrowed.append({"pr": pr["number"], "from": r.tier, "to": pr_.tier, "surface": pr_.surface})
+        rows.append({"pr": pr["number"], "tier": r.tier, "surface": r.surface})
+    full_n = tiers.get("full", 0)
+    return {
+        "status": "ok",
+        "prs": len(pr_list),
+        "config": str(config_path or (repo_root / ".fleet.toml")), "config_source": config.source,
+        "tiers": {k: tiers.get(k, 0) for k in ("skip", "static", "surface", "full")},
+        "browser_relevant": browser_relevant,
+        "browser_relevant_full": full_n,
+        "full_classes": dict(sorted(full_classes.items(), key=lambda kv: -kv[1])),
+        "single_cause": dict(sorted(single_cause.items(), key=lambda kv: -kv[1])),
+        "full_paths_top": [{"path": p, "prs": n} for p, n in sorted(full_paths.items(), key=lambda kv: -kv[1])[:10]],
+        "unclassified": [{"path": p, "prs": n} for p, n in sorted(unclassified.items(), key=lambda kv: -kv[1])],
+        "shadowed": sorted(shadowed.values(), key=lambda e: -int(e["prs"])),  # type: ignore[arg-type,call-overload]
+        "counterfactual": None if proposed is None else {"proposed": str(proposed_path), "changed": narrowed},
+        "per_pr": rows,
+    }
+
+
+# ---- parallelisability (step 2) -------------------------------------------------------------
+
+
+INFLATION = (1.15, 1.3, 1.5)
+WORKER_COUNTS = (2, 3, 4, 6)
+
+
+def lpt(durations: Sequence[float], workers: int) -> float:
+    """Makespan of a longest-processing-time-first schedule onto `workers` bins."""
+    if workers <= 0:
+        return math.inf
+    bins = [0.0] * workers
+    for d in sorted(durations, reverse=True):
+        i = bins.index(min(bins))
+        bins[i] += d
+    return max(bins) if bins else 0.0
+
+
+def projection(nodes: Dict[str, float]) -> Dict[str, object]:
+    """Serial time, LPT makespans at 2/3/4/6 workers with load inflation, and the two floors."""
+    if not nodes:
+        return {"status": "unknown", "reason": "no per-test durations"}
+    by_mod: Dict[str, float] = {}
+    for n, s in nodes.items():
+        by_mod[n.split("::", 1)[0]] = by_mod.get(n.split("::", 1)[0], 0.0) + s
+    serial = sum(nodes.values())
+    table = []
+    for w in WORKER_COUNTS:
+        load = lpt(list(nodes.values()), w)
+        scope = lpt(list(by_mod.values()), w)
+        table.append({"workers": w, "load_s": [round(load * f, 1) for f in INFLATION],
+                      "loadscope_s": [round(scope * f, 1) for f in INFLATION]})
+    heavy_mod = max(by_mod.items(), key=lambda kv: kv[1])
+    slow = max(nodes.items(), key=lambda kv: kv[1])
+    return {"status": "ok", "serial_s": round(serial, 1), "inflation": list(INFLATION), "table": table,
+            "floor_loadscope": {"module": heavy_mod[0], "seconds": round(heavy_mod[1], 1)},
+            "floor_load": {"test": slow[0], "seconds": slow[1]}}
+
+
+_BIND0_RE = re.compile(r"\.bind\(\s*\(\s*[\"'][^\"']*[\"']\s*,\s*0\s*\)\s*\)")
+# A retry around the port pick itself: a loop over attempts whose body re-picks a free port.
+_PORT_RETRY_RE = re.compile(r"for\s+\w*attempt\w*\s+in[^\n]*\n(?:[^\n]*\n){0,3}?[^\n]*free\w*port", re.I)
+_WORKER_RE = re.compile(r"PYTEST_XDIST_WORKER|worker_id\b|workerinput")
+_LOG_NAME_RE = re.compile(r"[\"']([\w./-]*[\w-]+\.log)[\"']")
+_APPEND_RE = re.compile(r"open\([^)]*,\s*[\"']a[\"']")
+_SESSION_FIX_RE = re.compile(r"@pytest\.fixture\([^)]*scope\s*=\s*[\"']session[\"'][^)]*\)\s*\n\s*def (\w+)")
+_MODULE_STATE_RE = re.compile(r"^[a-z_]\w*\s*(?::[^=]+)?=\s*(\{|\[|set\(|dict\(|list\()", re.M)
+_LOAD_SENSITIVE_RE = re.compile(r"real[_-]agent", re.I)
+_GROUPED_RE = re.compile(r"xdist_group|mark\.serial\b")
+
+
+def _test_tree_files(repo_root: Path, test_dirs: Sequence[str]) -> List[Path]:
+    """Every module under the e2e test dirs, plus the `tests/` conftest and `_*.py` plugins it loads."""
+    seen: Dict[str, Path] = {}
+    for d in test_dirs:
+        base = repo_root / d.strip("/")
+        if base.is_dir():
+            for p in base.glob("**/*.py"):
+                seen[str(p.resolve())] = p
+    tests = repo_root / "tests"
+    for p in ([tests / "conftest.py", *sorted(tests.glob("_*.py"))] if tests.is_dir() else []):
+        if p.is_file() and p.name != "__init__.py":
+            seen[str(p.resolve())] = p
+    return sorted(seen.values())
+
+
+def xdist_state(repo_root: Path) -> Dict[str, object]:
+    venv = repo_root / ".venv"
+    site = [venv / "Lib" / "site-packages", *sorted((venv / "lib").glob("python*/site-packages"))]
+    installed: Optional[bool] = None
+    if venv.is_dir():
+        installed = any((s / "xdist").is_dir() for s in site)
+    declared = False
+    for req in ("requirements.txt", "requirements-dev.txt", "pyproject.toml"):
+        p = repo_root / req
+        if p.is_file() and re.search(r"pytest[-_]xdist", p.read_text(encoding="utf-8", errors="replace"), re.I):
+            declared = True
+    return {"installed": "unknown (no .venv)" if installed is None else installed, "declared": declared}
+
+
+def parallel_blockers(repo_root: Path, test_dirs: Sequence[str]) -> Dict[str, object]:
+    """Static signs a suite would share state between xdist workers (app-launcher#1220 (c)).
+
+    Each entry is a candidate for the judgment layer, with the file and why.
+    A worker-id reference or a retry beside the risky shape marks it
+    `mitigated` rather than a blocker.
+    """
+    out: Dict[str, List[Dict[str, object]]] = {k: [] for k in (
+        "free_port_race", "fixed_log_names", "shared_append", "load_sensitive_ungrouped",
+        "session_fixtures", "module_state")}
+    for p in _test_tree_files(repo_root, test_dirs):
+        text = p.read_text(encoding="utf-8", errors="replace")
+        rel = str(p.relative_to(repo_root)).replace("\\", "/")
+        worker_aware = bool(_WORKER_RE.search(text))
+        if _BIND0_RE.search(text):
+            out["free_port_race"].append({"file": rel, "state": "mitigated" if _PORT_RETRY_RE.search(text) else "blocker",
+                                          "why": "binds port 0, releases it, then a child binds it"})
+        logs = sorted(set(_LOG_NAME_RE.findall(text)))
+        if logs:
+            out["fixed_log_names"].append({"file": rel, "names": logs, "state": "mitigated" if worker_aware else "blocker"})
+        if _APPEND_RE.search(text):
+            out["shared_append"].append({"file": rel, "state": "mitigated" if worker_aware else "blocker",
+                                         "why": "appends to a file every worker process would write"})
+        name = p.name
+        if name.startswith("test_") and _LOAD_SENSITIVE_RE.search(text):
+            out["load_sensitive_ungrouped"].append({"file": rel, "state": "mitigated" if _GROUPED_RE.search(text) else "blocker",
+                                                    "why": "real-agent test: needs one xdist_group or a serial pass"})
+        for fx in _SESSION_FIX_RE.findall(text):
+            out["session_fixtures"].append({"file": rel, "fixture": fx, "state": "info",
+                                            "per_worker_tmp": "tmp_path_factory" in text})
+        n = len(_MODULE_STATE_RE.findall(text))
+        if n and (name == "conftest.py" or name.startswith("_")):
+            out["module_state"].append({"file": rel, "count": n, "state": "info"})
+    blockers = sum(1 for v in out.values() for e in v if e["state"] == "blocker")
+    return {"xdist": xdist_state(repo_root), "blockers": blockers, **out}
+
+
+def shared_state_evidence(logs: List[Tuple[Path, List[Dict[str, object]]]]) -> List[Dict[str, object]]:
+    """Tests red in a parallel run and green in a serial one: shared state, never a flake (app-launcher#1231)."""
+    red_parallel: Dict[str, List[str]] = {}
+    green_serial: set = set()
+    for _path, runs in logs:
+        for r in runs:
+            failed = {str(f["nodeid"]) for f in r["failures"]}  # type: ignore[union-attr]
+            if r.get("parallel"):
+                for nid in failed:
+                    red_parallel.setdefault(nid, []).append(str(r.get("started")))
+            else:
+                green_serial.update(n for n in r["nodes"] if n not in failed)  # type: ignore[union-attr]
+    return [{"nodeid": n, "parallel_reds": len(v), "green_serially": True}
+            for n, v in sorted(red_parallel.items()) if n in green_serial]
+
+
+def parallel(repo_root: Path, test_dirs: Sequence[str], log: Optional[Path] = None) -> Dict[str, object]:
+    g = _gather(repo_root, log)
+    proj: Dict[str, object]
+    evidence: List[Dict[str, object]] = []
+    if "error" in g:
+        proj = {"status": "unknown", "reason": g["error"]}
+    else:
+        logs: List[Tuple[Path, List[Dict[str, object]]]] = g["logs"]  # type: ignore[assignment]
+        # The projection needs serial durations: a parallel run's per-test times are inflated by its own load.
+        serial = [r for _, runs in logs for r in runs if r["complete"] and not r.get("parallel")]
+        if serial:
+            run = max(serial, key=lambda r: r["finished"] or _dt.datetime.min)  # type: ignore[arg-type,return-value]
+            e2e = {n: s for n, s in run["nodes"].items() if is_e2e(n, test_dirs)}  # type: ignore[union-attr]
+            proj = {**projection(e2e), "run": run["started"].isoformat() if run.get("started") else None}  # type: ignore[union-attr]
+        else:
+            proj = {"status": "unknown", "reason": "no completed serial run in any checkout's log"}
+        evidence = shared_state_evidence(logs)
+    return {"static": parallel_blockers(repo_root, test_dirs), "projection": proj, "shared_state": evidence}

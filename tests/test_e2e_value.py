@@ -146,4 +146,144 @@ ju = v.timing(tmp, ["tests/e2e"], Path("junit.xml"))
 check(ju["status"] == "ok" and ju["projections"]["webkit"]["seconds"] == 3.5 and ju["load"]["state"] == "unknown"
       and ju["runtime_drift"]["status"] == "unknown", "a JUnit XML gives timings, but no window: load and drift unknown")
 
+# ---- routing report (step 2): the repo's own classifier, imported ------------------------------
+
+FAKE_CLASSIFIER = '''
+from dataclasses import dataclass
+from enum import IntEnum
+from pathlib import Path
+
+
+class Category(IntEnum):
+    NONE = 0
+    STATIC = 1
+    FULL = 2
+
+
+@dataclass
+class Rule:
+    tier: Category
+    prefix: object = None
+    path: object = None
+    extensions: object = None
+    label: str = "rule"
+
+    def matches(self, path, ext):
+        if self.path is not None:
+            return path == self.path
+        if self.prefix is not None and not path.startswith(self.prefix):
+            return False
+        if self.extensions is not None and ext not in self.extensions:
+            return False
+        return self.prefix is not None or self.extensions is not None
+
+
+@dataclass
+class Routing:
+    tier: str
+    surface: str = ""
+
+
+@dataclass
+class Config:
+    rules: list
+    source: str = "declared"
+
+
+def load_config(path):
+    static = Rule(Category.FULL, prefix="static/", label="static-code")
+    docs = Rule(Category.NONE, extensions=("md",), label="docs")
+    tests = Rule(Category.NONE, prefix="tests/", label="tests")
+    e2e = Rule(Category.FULL, prefix="tests/e2e/", label="e2e-test")
+    order = [docs, static] if "docs_first" in Path(path).read_text() else [static, docs]
+    return Config([e2e, tests] + order)
+
+
+def _classify_one(path, rules):
+    ext = path.rsplit(".", 1)[-1] if "." in path else ""
+    for r in rules:
+        if r.matches(path, ext):
+            return r.tier, r.label
+    return Category.FULL, "unclassified"
+
+
+def classify(paths, config):
+    top = max((_classify_one(p, config.rules)[0] for p in paths), default=Category.FULL)
+    return Routing({Category.FULL: "full", Category.STATIC: "static", Category.NONE: "skip"}[top])
+'''
+
+rt = Path(tempfile.mkdtemp(prefix="e2e-value-routing-"))
+check(v.routing_report(rt, pr_list=[])["status"] == "unknown", "no scripts/classify_e2e.py -> unknown, never an empty report")
+(rt / "scripts").mkdir()
+(rt / "scripts" / "classify_e2e.py").write_text(FAKE_CLASSIFIER, encoding="utf-8")
+(rt / ".fleet.toml").write_text("[e2e]\n", encoding="utf-8")
+(rt / "proposed.toml").write_text("docs_first = true\n", encoding="utf-8")
+prs = [
+    {"number": 1, "files": ["static/styles.css", "tests/e2e/test_a.py"]},
+    {"number": 2, "files": ["static/_vendored/nav/README.md"]},
+    {"number": 3, "files": ["docs/guide.md"]},
+    {"number": 4, "files": ["tools/build.sh"]},
+    {"number": 5, "files": ["tests/e2e/test_b.py", "tests/test_unit.py"]},
+]
+rr = v.routing_report(rt, pr_list=prs, proposed_path=rt / "proposed.toml")
+check(rr["status"] == "ok" and rr["tiers"] == {"skip": 1, "static": 0, "surface": 0, "full": 4} and rr["browser_relevant"] == 4,
+      f"tier distribution through the imported classifier -- {rr.get('tiers')}")
+check(rr["full_classes"] == {"static-code": 2, "e2e-test": 2, "unclassified": 1}
+      and rr["single_cause"] == {"static-code": 1, "unclassified": 1, "e2e-test": 1},
+      f"forcing classes: every PR containing one, and single-cause PRs -- {rr['full_classes']} / {rr['single_cause']}")
+check(rr["unclassified"] == [{"path": "tools/build.sh", "prs": 1}], "unclassified paths listed for a table rule")
+check([s["path"] for s in rr["shadowed"]] == ["static/_vendored/nav/README.md"] and rr["shadowed"][0]["shadowed"] == ["docs"],
+      f"a README a broad prefix rule took over the later *.md rule is shadowed; tests/ after tests/e2e/ is not -- {rr['shadowed']}")
+check(rr["counterfactual"]["changed"] == [{"pr": 2, "from": "full", "to": "skip", "surface": ""}],
+      f"--proposed lists every PR whose tier changes -- {rr['counterfactual']}")
+
+# ---- parallelisability (step 2) ---------------------------------------------------------------------
+
+check(v.lpt([5, 4, 3, 3], 2) == 8 and v.lpt([5, 4, 3, 3], 4) == 5 and v.lpt([], 3) == 0, "LPT makespans")
+pj = v.projection({"a.py::t1": 10.0, "a.py::t2": 10.0, "b.py::t1": 4.0})
+check(pj["serial_s"] == 24.0 and pj["table"][0] == {"workers": 2, "load_s": [16.1, 18.2, 21.0], "loadscope_s": [23.0, 26.0, 30.0]}
+      and pj["floor_loadscope"] == {"module": "a.py", "seconds": 20.0} and pj["floor_load"]["seconds"] == 10.0,
+      f"projection: per-test and per-module LPT with inflation, and both floors -- {pj.get('table')}")
+check(v.projection({})["status"] == "unknown", "no durations -> unknown")
+
+pt = Path(tempfile.mkdtemp(prefix="e2e-value-parallel-"))
+(pt / "tests" / "e2e").mkdir(parents=True)
+(pt / "tests" / "e2e" / "conftest.py").write_text(
+    "import socket, pytest\n\n\ndef _free_port():\n    s = socket.socket()\n    s.bind(('127.0.0.1', 0))\n    return s\n\n"
+    "LOG = 'e2e-autoboot-webapp.log'\n\n\n@pytest.fixture(scope=\"session\")\ndef server(tmp_path_factory):\n    pass\n", encoding="utf-8")
+(pt / "tests" / "_progress.py").write_text("def w(p):\n    open(p, 'a').write('x')\n", encoding="utf-8")
+(pt / "tests" / "e2e" / "test_agent.py").write_text("import pytest\n\npytestmark = pytest.mark.real_agent\n", encoding="utf-8")
+(pt / "tests" / "test_unit_elsewhere.py").write_text("LOG = 'other.log'\n", encoding="utf-8")
+pb = v.parallel_blockers(pt, ["tests/e2e"])
+check(pb["blockers"] == 4 and pb["free_port_race"][0]["state"] == "blocker"
+      and pb["fixed_log_names"][0]["names"] == ["e2e-autoboot-webapp.log"] and pb["shared_append"][0]["file"] == "tests/_progress.py"
+      and pb["load_sensitive_ungrouped"][0]["state"] == "blocker", f"the four app-launcher#1220 (c) blockers, pre-#1231 shape -- {pb}")
+check(all(e["file"] != "tests/test_unit_elsewhere.py" for e in pb["fixed_log_names"]), "non-e2e test modules outside the plugins are not scanned")
+check(pb["session_fixtures"] == [{"file": "tests/e2e/conftest.py", "fixture": "server", "state": "info", "per_worker_tmp": True}],
+      "session fixtures listed with per-worker tmp isolation")
+check(pb["xdist"] == {"installed": "unknown (no .venv)", "declared": False}, "no venv -> xdist installed is unknown, not False")
+(pt / "tests" / "e2e" / "conftest.py").write_text(
+    "import os, socket\nW = os.environ.get('PYTEST_XDIST_WORKER', '')\n\n\ndef boot():\n    for attempt in range(3):\n"
+    "        port = _free_port()\n\n\ndef _free_port():\n    s = socket.socket()\n    s.bind(('127.0.0.1', 0))\n    return s\n\n"
+    "LOG = f'e2e-autoboot-{W}.log' if W else 'e2e-autoboot.log'\n", encoding="utf-8")
+(pt / "tests" / "_progress.py").write_text("import os\n\n\ndef w(p):\n    if os.environ.get('PYTEST_XDIST_WORKER'):\n        return\n    open(p, 'a').write('x')\n", encoding="utf-8")
+(pt / "tests" / "e2e" / "test_agent.py").write_text("import pytest\n\npytestmark = [pytest.mark.real_agent, pytest.mark.serial]\n", encoding="utf-8")
+pb2 = v.parallel_blockers(pt, ["tests/e2e"])
+check(pb2["blockers"] == 0 and {e["state"] for k in ("free_port_race", "fixed_log_names", "shared_append", "load_sensitive_ungrouped")
+                                 for e in pb2[k]} == {"mitigated"}, f"after the #1231 fixes, every blocker reads mitigated -- {pb2}")
+
+serial_run = v.parse_run(_log("2026-09-23", "10:00:00", [
+    "[10:00:00 +    0,0s] START tests/e2e/test_jobs.py::test_list[chromium]",
+    "[10:00:02 +    2.0s] DONE  tests/e2e/test_jobs.py::test_list[chromium] (2.0s)",
+    "[10:00:02 +    2.0s] pytest session finished (exit status 0)"]))
+par_run = v.parse_run(_log("2026-09-24", "10:00:00", [
+    "[10:00:00 +    0,0s] START tests/e2e/test_jobs.py::test_list[chromium]",
+    "[10:00:03 +    3.0s] FAILED (call) tests/e2e/test_jobs.py::test_list[chromium] [gw2]",
+    "[10:00:03 +    3.0s] DONE  tests/e2e/test_jobs.py::test_list[chromium] (3.0s) [gw2]",
+    "[10:00:03 +    3.0s] pytest session finished (exit status 1)"]))
+check(par_run["parallel"] and not serial_run["parallel"], "a run with [gwN] DONE lines is parallel")
+check(v.shared_state_evidence([(Path("x.log"), [serial_run, par_run])])
+      == [{"nodeid": "tests/e2e/test_jobs.py::test_list[chromium]", "parallel_reds": 1, "green_serially": True}],
+      "red under workers, green serially -> shared state (app-launcher#1231), never a flake")
+
 _h.report_and_exit("test_e2e_value")

@@ -56,11 +56,15 @@ Subcommands:
 
   timing <repo-root> [--log <path>]
   failures <repo-root> [--log <path>] [--prs N] [--no-gh]
+  routing <repo-root> [--prs N] [--until <ISO>] [--config <toml>] [--proposed <toml>]
+  parallel <repo-root> [--log <path>]
       Where the suite's time goes and what its failures were (fleet-config#1018),
       read from the last completed gate run's progress log (`.fleet.toml`
       `[e2e] progress_log`, else `[e2e] junit_xml`, else `--log`). JSON to
       stdout, always exit 0; no source, no completed run or no e2e node is
-      `status: unknown` with the reason, never an estimate. The logic lives in
+      `status: unknown` with the reason, never an estimate. `routing` imports
+      the repo's own `scripts/classify_e2e.py` read-only; `parallel` reads the
+      test tree statically and projects serial durations. The logic lives in
       `e2e_value.py` (see its docstring for the shapes); it never starts a gate.
 
 stdlib + the `git`/`gh`-free `git_run` helper + (best-effort) the target
@@ -663,6 +667,17 @@ def main(argv: Optional[List[str]] = None) -> int:
     p_fail.add_argument("--prs", type=int, default=60)
     p_fail.add_argument("--no-gh", action="store_true")
 
+    p_route = sub.add_parser("routing", help="route recent merged PRs through the repo's own classifier")
+    p_route.add_argument("repo", type=Path)
+    p_route.add_argument("--prs", type=int, default=60)
+    p_route.add_argument("--until", default=None, help="only PRs merged at or before this ISO time")
+    p_route.add_argument("--config", type=Path, default=None, help="route with this .fleet.toml instead")
+    p_route.add_argument("--proposed", type=Path, default=None, help="a candidate .fleet.toml to compare")
+
+    p_par = sub.add_parser("parallel", help="parallel-worker blockers and a worker-count projection")
+    p_par.add_argument("repo", type=Path)
+    p_par.add_argument("--log", type=Path, default=None)
+
     args = ap.parse_args(argv)
     repo = args.repo.resolve()
     if not repo.is_dir():
@@ -672,6 +687,12 @@ def main(argv: Optional[List[str]] = None) -> int:
         return cmd_budget(repo)
     if args.cmd == "timing":
         print(json.dumps(e2e_value.timing(repo, _test_dirs(repo), args.log)))
+        return 0
+    if args.cmd == "routing":
+        print(json.dumps(e2e_value.routing_report(repo, args.prs, args.until, args.config, args.proposed)))
+        return 0
+    if args.cmd == "parallel":
+        print(json.dumps(e2e_value.parallel(repo, _test_dirs(repo), args.log)))
         return 0
     if args.cmd == "failures":
         print(json.dumps(e2e_value.failures(repo, args.log, args.prs, use_gh=not args.no_gh)))
