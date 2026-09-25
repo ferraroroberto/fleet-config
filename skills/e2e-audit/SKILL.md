@@ -1,6 +1,6 @@
 ---
 name: e2e-audit
-description: On-demand audit of a repo's e2e/regression suite for redundancy, bloat, and coverage gaps against project-scaffolding's "<15 tests total" target — deterministic inventory + near-duplicate clustering via e2e_test_audit.py, then a deduped e2e-redundancy issue for /cleanup-fleet. Never rewrites/deletes tests. Never on a clock — /e2e triggers it when a suite exceeds its budget. E.g. "/e2e-audit", "/e2e-audit app-launcher", "audit the e2e suite for bloat".
+description: On-demand audit of a repo's e2e/regression suite for redundancy, bloat, coverage gaps, gate time and failure history against project-scaffolding's "<15 tests total" target — deterministic inventory + near-duplicate clustering via e2e_test_audit.py, then a deduped e2e-redundancy issue for /cleanup-fleet. Never rewrites/deletes tests. Never on a clock — /e2e triggers it when a suite exceeds its budget. E.g. "/e2e-audit", "/e2e-audit app-launcher", "audit the e2e suite for bloat".
 ---
 
 # e2e-audit
@@ -99,7 +99,21 @@ Fields returned:
   has a `## UX surface` block (`ux_surface.py`); a gap is a crude substring
   check the LLM layer must sanity-check before filing (step 4).
 
-### 4. LLM judgment layer (only where measurement can't reach)
+### 3b. Time and failure history (fleet-config#1018)
+
+Node count is not the cost: app-launcher's #1215 trim cut nodes 18% and browser time 3.5%, because the time is page loads and PTY spawns. Two more read-only measurements, JSON to stdout:
+
+```
+E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/e2e_test_audit.py timing <repo-root>
+E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/e2e_test_audit.py failures <repo-root>
+```
+
+Both read the gate's own record: `.fleet.toml` `[e2e] progress_log` (a START/DONE/FAILED log like app-launcher's `tests/_progress_log.py` writes), else `[e2e] junit_xml`, else `--log <path>`. They **never start a gate** (a full run costs ~37 min and loads the box for everything else).
+
+- **`timing`** — the latest completed run in any checkout of the repo (gates run in worktrees too): phase wall times, per-projection nodes/seconds/mean, the duration buckets (<1, 1–3, 3–6, 6–10, ≥10 s), the heaviest modules with their static cost drivers (`page_loads`, `pty_refs`, `real_agent`), the tail share, and `load`: `loaded` when another checkout's run overlapped it (suites in other repos are not visible; `scope` says so). `runtime_drift` lists every runtime figure on a CLAUDE.md/README line about the gate, with its nearest measured span; `candidate` is more than 25% off.
+- **`failures`** — every red in the logs on disk (test, projection, date, the step its traceback stopped at), mentions in the last 60 merged PR bodies and in `bug` issues (free text, a lower bound), and `race_candidates`: tests red at two or more different steps.
+- `status: unknown` (no source, no completed run, no e2e node) and `load: unknown` are their own states. **A loaded or unknown run never feeds a verdict:** report its numbers as loaded, and file no drift finding from it.
+
 
 - **(a) Confirm each cluster.** Read the colliding tests' actual
   bodies/selectors. A genuine near-duplicate (same view, same assertion, same
@@ -119,6 +133,8 @@ Fields returned:
   ratio drift is not a finding; a real cluster of ≥3 tests re-asserting the
   same thing, a suite multiple times over target with no organizational
   structure, or a genuinely uncovered key view is.
+- **(e) Class every failure event** (log reds and mentions) as exactly one of: **real bug** (engine-specific), **race** (a real ordering bug one engine or load exposes first — app-launcher#732, #1222), **test bug**, **flake/load** (timeouts under concurrency, `ERR_NO_BUFFER_SPACE` port exhaustion, real-agent replay), or **unknown**. A mention is often a pre-fix red proof, not a failure of the suite: read the line. **Never assign `flake` by default.** A `race_candidate` (red at different steps, typically on the slower engine, under load, and green alone) stays `unknown` until someone repeats the app-launcher#1229 recipe: loop the test on that engine, hold the suspected slow dependency pending, and see whether the product, not the test, is waiting. Tests that need a PTY or overlay to paint and run near their wait budget are **load-sensitive**, not flakes (app-launcher#887).
+- **(f) Confirm each drift candidate.** Match the figure to the span it describes (whole gate, non-e2e, browser leg); a figure that still disagrees by more than 25% on a quiet run is a finding: correct the documented runtime.
 - **(d) Positive-shape reference.** `docs/playwright-ui-testing.md` documents
   what a *well-organized* suite looks like (the vendored `_geometry.py`
   helper, a `KEY_VIEWS`-driven matrix pattern) — when proposing a merge/split,
@@ -191,6 +207,14 @@ Surfaced by `/e2e-audit`, kept up to date across runs. Suite target: project-sca
 
 <one line per confirmed gap, or "none declared" / "none found">
 
+## Time
+
+<from `timing`: source log + run date + load state; a table of phase | wall time; projection | nodes | seconds | mean; the duration buckets; the top 5 modules with seconds and cost drivers; the tail share. Or `timing: unknown (<reason>)`.>
+
+## Failure history
+
+<from `failures` + step 4e: a projection table (red only on X / only on Y / both) and a flake list — test, red count, projections, class, tracking issue. Race candidates listed with their steps and "unknown until the #1229 recipe is run". Or `failures: unknown (<reason>)`.>
+
 ## Context
 
 <short paragraph: overall shape (e.g. "196 raw / ~400 collected nodes vs a 15-test target — no per-file duplication found, but the suite has never been pruned"), the biggest opportunity, anything the next fixer should know.>
@@ -216,6 +240,8 @@ Print one summary and stop:
   matrix clusters: <n> candidate(s) -> <n> confirmed, <n> legitimate coverage
   size outliers: <n> (<top files>)
   coverage gaps: <n confirmed | none declared | none found>
+  time: <browser <s> s over <n> nodes, <load> | unknown (<reason>)>
+  failures: <n events, <n> race candidates | unknown (<reason>)>
   filed: https://github.com/<owner>/<repo>/issues/<N>   (e2e-redundancy)
 ```
 
