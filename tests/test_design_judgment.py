@@ -50,7 +50,7 @@ SEED_IDS = [f"J-{i:02d}" for i in range(1, 11)]
 
 # ---- the checklist in the rubric ---------------------------------------------
 
-check(rubric.version == "1.4.0", "rubric at 1.4.0 (the [[judgment]] checklist arrived in 1.2.0)")
+check(rubric.version == "1.5.0", "rubric at 1.5.0 (the [[judgment]] checklist arrived in 1.2.0)")
 check([j.id for j in rubric.judgment] == SEED_IDS, f"the ten seed questions J-01..J-10 in order: {[j.id for j in rubric.judgment]}")
 rule_ids = {r.id for r in rubric.rules}
 for j in rubric.judgment:
@@ -259,7 +259,7 @@ stale = json.loads((run_dir / "evaluate.json").read_text(encoding="utf-8"))
 stale["rubric_version"] = "0.9.0"
 (run_dir / "evaluate.json").write_text(json.dumps(stale), encoding="utf-8")
 p2b = _run("judge-merge", str(run_dir), str(FIX / "judge_answers_ok.json"), "--rubric", str(RUBRIC))
-check(p2b.returncode == 0 and "RUBRIC_MISMATCH=evaluate:0.9.0 judgment:1.4.0" in p2b.stdout and _kv(p2b).get("JUDGMENT") == "ok",
+check(p2b.returncode == 0 and "RUBRIC_MISMATCH=evaluate:0.9.0 judgment:1.5.0" in p2b.stdout and _kv(p2b).get("JUDGMENT") == "ok",
       f"an evaluate.json scored under another rubric version is named, never silently reused ({p2b.stdout[-200:]})")
 (run_dir / "evaluate.json").write_text(json.dumps(ev_after), encoding="utf-8")
 check(all(ev_before[k] == ev_after[k] for k in ev_before) and set(ev_after) - set(ev_before) == {"judgment"},

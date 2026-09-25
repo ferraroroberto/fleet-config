@@ -1,0 +1,63 @@
+<!doctype html>
+<!-- Static fixture for TOUCH-02 layers and LAYOUT-07 clearance (fleet-config#1019).
+     The primary tabs are a floating pill fixed to the bottom of the viewport, as in the fleet's
+     navigation contract. Every planted case is asserted by tests/test_design_review.py. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>design_review layers fixture</title>
+<style>
+  html, body { margin: 0; background: #ffffff; color: #1f2328; font-family: system-ui, sans-serif; font-size: 16px; }
+  body { padding: 16px; }
+  section[hidden] { display: none; }
+  nav.pill { position: fixed; left: 16px; bottom: 16px; height: 56px; z-index: 10; display: flex; gap: 24px; align-items: center;
+             padding: 0 12px; background: #f6f8fa; border: 1px solid #d1d9e0; border-radius: 28px; }
+  nav.pill button { min-width: 88px; min-height: 44px; font: inherit; }
+  .hit-target { position: relative; width: 34px; height: 34px; padding: 0; margin: 0; font: inherit; }
+  .hit-target::before { content: ""; position: absolute; inset: -5px; }
+  .rows { list-style: none; margin: 0; padding: 0; }
+  .rows li { height: 40px; line-height: 40px; }
+  /* a content control that sits under the pill's first tab while the page is at the top */
+  #underPill { position: absolute; left: 30px; top: calc(100vh - 62px); width: 60px; height: 30px; font: inherit; }
+  /* a content control just above the pill: its own box clears the bar, its expansion reaches into the first tab */
+  #abovePill { position: absolute; left: 30px; top: calc(100vh - 118px); width: 60px; height: 44px; font: inherit; }
+  #abovePill::before { content: ""; position: absolute; inset: -12px; }
+  #paneClear .rows { padding-bottom: 96px; }
+</style>
+<script>
+  addEventListener('DOMContentLoaded', () => {
+    document.querySelectorAll('[role=tab]').forEach(tab => tab.addEventListener('click', () => {
+      document.querySelectorAll('[role=tab]').forEach(t => t.setAttribute('aria-selected', String(t === tab)));
+      document.querySelectorAll('[role=tabpanel]').forEach(p => p.hidden = (p.id !== tab.getAttribute('aria-controls')));
+    }));
+    const fill = (id) => { const ul = document.querySelector(`#${id} .rows`);
+      for (let i = 1; i <= 30; i++) { const li = document.createElement('li'); li.textContent = `Row ${i}`; ul.appendChild(li); } };
+    fill('paneCovered'); fill('paneClear');
+  });
+</script>
+</head>
+<body>
+  <main>
+    <!-- covered: #underPill is under the first tab (a covered pair, not counted); the two touching
+         hit-targets share the flow (one overlap); the list's last row ends under the pill (LAYOUT-07) -->
+    <section id="paneCovered" role="tabpanel">
+      <h2>Covered</h2>
+      <div style="display:flex"><button type="button" class="hit-target" aria-label="One">1</button><button type="button" class="hit-target" aria-label="Two">2</button></div>
+      <ul class="rows"></ul>
+      <button type="button" id="underPill">Under</button>
+    </section>
+    <!-- clear: #abovePill's expansion reaches into the first tab while its own box clears the bar
+         (still an overlap); the list is padded clear of the pill -->
+    <section id="paneClear" role="tabpanel" hidden>
+      <h2>Clear</h2>
+      <ul class="rows"></ul>
+      <button type="button" id="abovePill">Above</button>
+    </section>
+  </main>
+  <nav class="pill" role="tablist" aria-label="Primary">
+    <button type="button" role="tab" aria-controls="paneCovered" aria-selected="true">Covered</button>
+    <button type="button" role="tab" aria-controls="paneClear" aria-selected="false">Clear</button>
+  </nav>
+</body>
+</html>

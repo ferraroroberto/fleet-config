@@ -23,6 +23,7 @@
     "icons": {"boxes": {"16x16": 4, "22x22": 2}},
     "nav": {"primary_count": 6, "pane_scroll_top": 120, "pane_header_visible": false},
     "layout": {"overflow_x": true, "scroll_w": 1600, "inner_w": 1440, "inner_h": 900, "pane_h": 5000, "lists": [{"sel": "ul.sessions", "rows": 20, "has_filter": false}], "rows_over_limit": [{"sel": "li.row", "controls": 4}], "rows_over_limit_count": 1, "danger_rows": 3, "content_w": 700, "radii": {"12px": 5, "3px": 2}},
+    "clearance": {"bars": ["nav.pill"], "hidden_rows": [{"sel": "ul.sessions", "row": "li.row", "bar": "nav.pill", "under_px": 30}], "hidden_row_count": 1},
     "a11y": {"unnamed": ["button.icon"], "unnamed_count": 1, "zoom_locked": true, "text_size_control": false},
     "headings": ["H2:Home@24px"]
    }
@@ -37,6 +38,7 @@
     "icons": {"boxes": {"16x16": 4, "22x22": 2}},
     "nav": {"primary_count": 6, "pane_scroll_top": 120, "pane_header_visible": false},
     "layout": {"overflow_x": true, "scroll_w": 520, "inner_w": 430, "inner_h": 932, "pane_h": 6000, "lists": [{"sel": "ul.sessions", "rows": 20, "has_filter": false}], "rows_over_limit": [{"sel": "li.row", "controls": 4}], "rows_over_limit_count": 1, "danger_rows": 3, "content_w": 406, "radii": {"12px": 5, "3px": 2}},
+    "clearance": {"bars": ["nav.pill"], "hidden_rows": [{"sel": "ul.sessions", "row": "li.row", "bar": "nav.pill", "under_px": 30}], "hidden_row_count": 1},
     "a11y": {"unnamed": ["button.icon"], "unnamed_count": 1, "zoom_locked": true, "text_size_control": false},
     "headings": ["H2:Home@24px"]
    }

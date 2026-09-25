@@ -23,6 +23,7 @@
     "icons": {"boxes": {"16x16": 4, "24x24": 1}},
     "nav": {"primary_count": 4, "pane_scroll_top": 0, "pane_header_visible": true},
     "layout": {"overflow_x": false, "scroll_w": 1440, "inner_w": 1440, "inner_h": 900, "pane_h": 1200, "lists": [], "rows_over_limit": [], "rows_over_limit_count": 0, "danger_rows": 0, "content_w": 1100, "radii": {"12px": 5}},
+    "clearance": {"bars": ["nav.pill"], "hidden_rows": [], "hidden_row_count": 0},
     "a11y": {"unnamed": [], "unnamed_count": 0, "zoom_locked": false, "text_size_control": false},
     "headings": ["H2:Home@24px"]
    }
@@ -37,6 +38,7 @@
     "icons": {"boxes": {"16x16": 4, "24x24": 1}},
     "nav": {"primary_count": 4, "pane_scroll_top": 0, "pane_header_visible": true},
     "layout": {"overflow_x": false, "scroll_w": 430, "inner_w": 430, "inner_h": 932, "pane_h": 1500, "lists": [], "rows_over_limit": [], "rows_over_limit_count": 0, "danger_rows": 0, "content_w": 406, "radii": {"12px": 5}},
+    "clearance": {"bars": ["nav.pill"], "hidden_rows": [], "hidden_row_count": 0},
     "a11y": {"unnamed": [], "unnamed_count": 0, "zoom_locked": false, "text_size_control": false},
     "headings": ["H2:Home@24px"]
    }
@@ -51,6 +53,7 @@
     "icons": {"boxes": {}},
     "nav": {"primary_count": 4, "pane_scroll_top": 0, "pane_header_visible": true},
     "layout": {"overflow_x": false, "scroll_w": 1440, "inner_w": 1440, "inner_h": 900, "pane_h": 1200, "lists": [], "rows_over_limit": [], "rows_over_limit_count": 0, "danger_rows": 0, "content_w": 1100, "radii": {"16px": 1}},
+    "clearance": {"bars": ["nav.pill"], "hidden_rows": [], "hidden_row_count": 0},
     "a11y": {"unnamed": [], "unnamed_count": 0, "zoom_locked": false, "text_size_control": false},
     "headings": ["H2:Edit@24px"]
    }
