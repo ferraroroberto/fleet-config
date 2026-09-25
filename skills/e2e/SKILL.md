@@ -22,6 +22,28 @@ that surface's targets (project-scaffolding#258). This skill fronts it fleet-wid
 **bootstraps it where missing** (self-healing adoption), and falls back to
 same-vocabulary LLM judgment only where the classifier can't exist yet.
 
+## Browser projections: a second engine only where it matters
+
+A second browser projection (WebKit, usually with an iPhone descriptor) runs
+**only** for tests where the engine or the viewport changes the outcome:
+layout and geometry, touch targets, the nav, the composer and keyboard input,
+safe-area. Functional tests (routes, polling, payloads, menus, readbacks,
+dialogs with no geometry and no engine branch) run on **one** engine
+(fleet-config#1026, Roberto's 2026-09-25 decision). Evidence, app-launcher#1220:
+
+- 0 WebKit-engine product bugs in 400 merged PRs. Of 32 WebKit-only reds, one
+  was an engine-independent race that the slower engine showed first (#732);
+  the rest were test bugs, flakes or load.
+- WebKit was 61% of browser time (1212 s against 762 s, 310 nodes each).
+- iOS-specific bugs don't reproduce in desktop WebKit anyway: the headless
+  projection can't see `env(safe-area-inset-*)` or installed-PWA geometry
+  (#1099), and the phone-visible bugs of that window were found on the device.
+  The real iPhone check stays on-device.
+
+What it gives up: WebKit-only JS behaviour in functional flows (a
+Safari-divergent API on a path only a behavioural test drives), and the
+slower engine exposing a race first. Say so when you apply it.
+
 ## Arguments
 
 - Nothing (`/e2e`) → classify the accumulated diff (branch + working tree),
@@ -127,7 +149,8 @@ E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skill
   the routed `--browser` flags where the suite supports them). Browser legs
   come from the table (`static_browsers`) or the repo's own conventions
   (phone-first repos parametrize WebKit themselves) — never invent a leg the
-  repo doesn't declare. A `surface` target is space-separated: pass each path
+  repo doesn't declare, and never add a second projection to a functional
+  slice (see "Browser projections" above). A `surface` target is space-separated: pass each path
   as its own pytest argument, with suite-default browsers exactly as `full`.
 - **Deduplicate against the verification gate:** when a repo's pre-ship gate
   (e.g. `scripts/verify-before-ship.ps1`) already executed this same routed
@@ -153,7 +176,10 @@ Cleanup is part of the flow, not a periodic chore:
   regression test directly in this branch, respecting the <15-test target —
   at or over target, merge/delete before adding
   (`docs/playwright-ui-testing.md`: "if tempted to add #20, delete two
-  first").
+  first"). Put it on the second projection only when it asserts geometry,
+  touch, input, nav, composer or safe-area behaviour; otherwise pin it to one
+  engine with the repo's own mechanism (a `chromium_projection_only`-style
+  fixture or marker).
 - **Table maintenance** — two drift signals, fixed in the same branch when
   they fire: a path that routed `full` as *unmatched* but is plainly inert →
   add its narrowing rule + a representative assertion in

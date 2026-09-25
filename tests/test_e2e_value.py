@@ -343,4 +343,30 @@ check(v.audit_trigger("within", "unknown", v.growth(41, v.read_audit_record(tb))
 check(v.audit_trigger("within", "undeclared", v.growth(38, v.read_audit_record(tb))) ==
       ("no", f"within every declared budget; -2 test functions since {v.read_audit_record(tb)['date']}"), "nothing fired -> no, with the delta")
 
+# ---- second-projection fit (fleet-config#1026) --------------------------------------------------------
+
+pf_root = Path(tempfile.mkdtemp(prefix="e2e-value-projfit-"))
+(pf_root / "tests" / "e2e").mkdir(parents=True)
+(pf_root / "tests" / "e2e" / "test_mixed.py").write_text(
+    "def _open_board(page):\n    return page.locator('#row').bounding_box()\n\n\n"
+    "def test_row_fits(page):\n    assert _open_board(page)['width'] <= 390\n\n\n"
+    "def test_poll_payload(page):\n    assert page.request.get('/api/board').ok\n\n\n"
+    "class TestNav:\n    def test_tab_switch(self, page):\n        page.locator('[role=tablist] button').first.click()\n", encoding="utf-8")
+(pf_root / "tests" / "e2e" / "test_phone_only.py").write_text(
+    "import pytest\n\npytestmark = pytest.mark.usefixtures('iphone_viewport')\n\n\ndef test_menu(page):\n    page.click('#menu')\n", encoding="utf-8")
+pf_nodes = {
+    "tests/e2e/test_mixed.py::test_row_fits[webkit]": 3.0, "tests/e2e/test_mixed.py::test_row_fits[chromium]": 2.0,
+    "tests/e2e/test_mixed.py::test_poll_payload[webkit]": 4.0, "tests/e2e/test_mixed.py::test_poll_payload[chromium]": 2.5,
+    "tests/e2e/test_mixed.py::TestNav::test_tab_switch[webkit-390]": 1.5,
+    "tests/e2e/test_phone_only.py::test_menu[webkit]": 2.0,
+    "tests/e2e/test_gone.py::test_x[webkit]": 1.0,
+}
+pf = v.projection_fit(pf_nodes, pf_root)
+check(pf["candidates"] == [{"module": "tests/e2e/test_mixed.py", "tests": 1, "nodes": 1, "seconds": 4.0}] and pf["candidate_seconds"] == 4.0,
+      f"a behavioural test with no engine or viewport signal is a Chromium-only candidate; Chromium nodes are not counted -- {pf['candidates']}")
+check(pf["kept_nodes"] == 4 and {r["module"] for r in pf["kept"]} == {"tests/e2e/test_mixed.py", "tests/e2e/test_phone_only.py", "tests/e2e/test_gone.py"},
+      "kept: a signal in a called helper, a nav tablist in a class test, a module-level viewport fixture, and an unreadable module")
+check(v.projection_fit({"tests/e2e/test_mixed.py::test_poll_payload[chromium]": 2.5}, pf_root)["candidates"] == [],
+      "a Chromium-only suite has nothing to move")
+
 _h.report_and_exit("test_e2e_value")
