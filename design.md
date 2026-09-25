@@ -166,7 +166,9 @@ background and the pair drops under AA in both themes. So:
   `accent` in light; in dark it steps down so white text holds AA.
 - **Control boundaries** (input, select, the switch's off-track) use
   `control-border`, which clears WCAG 1.4.11's 3:1 against `card`. Card
-  hairlines and dividers keep the quieter `border` / `border-muted`.
+  hairlines and dividers keep the quieter `border` / `border-muted`. Nav tabs
+  take no `control-border`: unselected tabs are exempt (see the Navigation
+  contract's unselected-tab rule).
 - **Chips** fill with `neutral-soft` and set their text in `fg`; `fg-muted`
   on it falls under AA.
 
@@ -389,6 +391,15 @@ identically; treat every bullet as a hard requirement, not a suggestion.
 - **One active tab at a time.** The active tab takes the accent-soft tint +
   `accent-text` and sits at `tabindex 0`; the others are `tabindex -1`, with
   `aria-selected` tracked so it is announced correctly.
+- **Unselected tabs carry no boundary (1.4.11 exemption).** An unselected
+  tab has no outline, border or fill, in the floating pill and in the wide
+  layout's left rail alike. Its icon and text label identify it, which is
+  WCAG 2.2 SC 1.4.11 Non-text Contrast's exception for text-identified
+  controls, so the 3:1 component-boundary floor `control-border` meets for
+  inputs does not apply. Only the selected tab is drawn, with the accent-soft
+  tint + `accent-text`. Don't add a boundary to unselected tabs, and don't
+  let a contrast check flag one for the lack of it (rationale:
+  `docs/design-system.md`, Round 5).
 - **Selection persists** across reloads and PWA relaunch via `localStorage`, so
   the app reopens on the tab you left.
 - **The nav hides whenever a modal/overlay is open** (`body:has(dialog[open])`) so

@@ -192,7 +192,8 @@ alone. See `design.md` for the full note.
 Identical to the [Light theme contract](design.md): fixed floating bottom-tab pill
 on coarse pointers, viewport-anchored via `100dvh` + `env(safe-area-inset-bottom)`,
 one active tab at a time (accent-soft tint + `accent-text`, `aria-selected` tracked),
-`localStorage`-persisted selection, hidden under an open modal
+unselected tabs with no boundary (the 1.4.11 exemption: icon + label identify
+them, pill and rail alike), `localStorage`-persisted selection, hidden under an open modal
 (`body:has(dialog[open])`), tap targets ≥ 44px with icon + label, at most five
 tabs with Settings as a page-header action, every pane opening with the one
 `page-header`, the same
