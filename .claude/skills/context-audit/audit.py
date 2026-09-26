@@ -23,6 +23,10 @@ Measured surfaces:
   4. Header inventory     — `##`/`###` headers per project `CLAUDE.md` and the
      overlap with the project-scaffolding master, for drift review. Projects in
      the ignore-list (deliberate one-offs) are still measured but tagged.
+  5. Bootstrap loads      — per skill, the files a declaring repo's bootstrap
+     auto-loads on every invocation: est tokens, over-cap (a single Read returns
+     a partial view), missing, unmeasured, and credential-shaped hits by count
+     (`bootstrap_loads.py`, fleet-config#1014). Contents are never printed.
 
 stdlib only. Run from the `fleet-config` repo root: `E:/automation/fleet-config/.venv/Scripts/python.exe .claude/skills/context-audit/audit.py`.
 """
@@ -43,6 +47,8 @@ GLOBAL_FILE = REPO_ROOT / "global-CLAUDE.md"
 SCAFFOLD_FILE = FLEET_ROOT / "project-scaffolding" / "CLAUDE.md"
 
 sys.path.insert(0, str(REPO_ROOT / "skills" / "_lib"))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import bootstrap_loads  # noqa: E402
 from fleet_repo_scan import fleet_repos, is_linked_worktree  # noqa: E402
 from frontmatter import frontmatter_error  # noqa: E402
 from skill_description import frontmatter_description, prose_words, word_count  # noqa: E402
@@ -306,11 +312,14 @@ def main() -> int:
     ap = argparse.ArgumentParser(description="Measure the fleet's always-on context surface.")
     ap.add_argument("--cap", type=int, default=DEFAULT_CAP, help="skill-description prose word cap")
     ap.add_argument("--json", action="store_true", help="emit the full report as JSON")
+    ap.add_argument("--read-cap", type=int, default=bootstrap_loads.READ_CAP_TOKENS,
+                    help="est tokens past which one Read returns a partial view (bootstrap loads)")
     args = ap.parse_args()
 
     skills, unmeasured, unparseable = scan_skills(args.cap)
     by_repo = per_repo_summary(skills, unmeasured, unparseable)
     bd = scan_budget_and_drift(DEFAULT_IGNORE)
+    boot = bootstrap_loads.scan_fleet(REPO_ROOT / "hooks" / "projects.toml", args.read_cap)
     report = {
         "cap": args.cap,
         "skills": skills,
@@ -318,6 +327,7 @@ def main() -> int:
         "unparseable": unparseable,
         "skills_by_repo": by_repo,
         **bd,
+        "bootstrap_loads": boot,
     }
 
     if args.json:
@@ -331,7 +341,10 @@ def main() -> int:
         f"compliant={len(skills) - len(over)} over_cap={len(over)} "
         f"unmeasured={len(unmeasured)} unparseable={len(unparseable)} repos={len(by_repo)} "
         f"claude_mds={len(bd['budget'])} leaks={len(bd['leaks'])} "
-        f"total_est_tokens={bd['total_est_tokens']}"
+        f"total_est_tokens={bd['total_est_tokens']} "
+        f"bootstrap_over_cap={sum(len(r['over_cap']) for b in boot for r in b['skills'])} "
+        f"bootstrap_unmeasured={sum(len(r['unmeasured']) for b in boot for r in b['skills']) + sum(1 for b in boot if b['status'] != 'ok')} "
+        f"bootstrap_credential_files={sum(len(b['credential_files']) for b in boot)}"
     )
 
     print("\n-- skill descriptions (prose words, cap {}) --".format(args.cap))
@@ -376,6 +389,20 @@ def main() -> int:
     for d in sorted(bd["drift"], key=lambda r: r["shared_with_scaffold"], reverse=True):
         tag = " (ignored one-off)" if d["ignored"] else ""
         print(f"  {d['repo']:<28} {d['shared_with_scaffold']}/{d['headers']} headers shared{tag}")
+
+    print(f"\n-- bootstrap loads (est tokens per invocation; read cap {args.read_cap}) --")
+    if not boot:
+        print("  none declared")
+    for b in boot:
+        if b["status"] != "ok":
+            print(f"  {b['repo']}: {b['status']}")
+            continue
+        for r in sorted(b["skills"], key=lambda r: -r["est_tokens"]):
+            flags = "".join(f"  ⚠️ OVER-CAP {f}" for f in r["over_cap"])
+            flags += "".join(f"  ❓ UNMEASURED {f}" for f in r["unmeasured"])
+            print(f"  {b['repo']}/{r['skill']:<32} {r['est_tokens']:>6} tok  {len(r['files'])} files{flags}")
+        for c in b["credential_files"]:
+            print(f"  ⚠️ credential-shaped lines in an auto-loaded file: {b['repo']}/{c['path']} ({c['hits']})")
 
     return 0
 

@@ -121,7 +121,7 @@ flowchart TB
     AUDITFLEET["audit-fleet\ndelivery_check.py"] --> CLEANUPFLEET["cleanup-fleet\n(attended, single-bucket, human-gated)"]
     CLEANUPFLEET --> CLEANUPFLEETALL["cleanup-fleet-all\n(unattended, all-bucket, agent-validated)"]
     DESIGNSWEEP["design-sweep\nOpus orchestrator · Sonnet workers\ndesign_sweep_scan.py web-app gate"]
-    CONTEXTAUDIT["context-audit\naudit.py — fleet-wide description cap gate"] --> CONTEXTPURGE["context-purge\ncheck.py · gate.py · digest.py · delivery_check.py"]
+    CONTEXTAUDIT["context-audit\naudit.py — fleet-wide description cap gate\nbootstrap_loads.py — per-skill auto-load budget"] --> CONTEXTPURGE["context-purge\ncheck.py · gate.py · digest.py · delivery_check.py"]
     CONFIGMAP["config-map"]
     FLEETHEALTH["fleet-health\ncapture.py · ledger.py"]
     SOTAWATCH["sota-watch\nwatchlist.toml · watchlist.py"]
