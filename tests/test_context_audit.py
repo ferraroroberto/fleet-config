@@ -324,8 +324,14 @@ with tempfile.TemporaryDirectory() as tmp:
           f"credential-shaped assignments counted per file; prose mentioning 'password' is not one ({rep['credential_files']})")
     check("correct-horse" not in repr(rep) and "SYNTHETIC-NOT-REAL" not in repr(rep),
           "the report never carries a credential value")
-    check(boot.scan_repo("privy", repo, decl, read_cap=50_000)["skills"][0]["over_cap"] == [],
+    check(boot.scan_repo("privy", repo, decl, read_cap=60_000)["skills"][0]["over_cap"] == [],
           "the read cap is a parameter (audit.py --read-cap)")
+    # The one measured fact (#1014): Read truncated a 69,139-byte generated index
+    # (~29k real tokens). A ~4 chars/token estimate called it ~17k and "ok".
+    measured = Path(tmp) / "measured_index.md"
+    measured.write_text(("- 2026-09-01 · slug-" + "a" * 20 + " — decision; open loop\n") * 1032, encoding="utf-8")
+    check(len(measured.read_bytes()) >= 69_000 and boot.measure_file(measured, boot.READ_CAP_TOKENS)["state"] == "over-cap",
+          "a file the size of the index Read truncated is over-cap at the default cap, never ok")
 
     toml = Path(tmp) / "projects.toml"
     toml.write_text(

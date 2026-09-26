@@ -42,6 +42,15 @@ from typing import Dict, List, Optional
 # `audit.py --read-cap`.
 READ_CAP_TOKENS = 25_000
 
+# UTF-8 bytes per token for the cap question. `audit.py`'s ~4 chars/token is a
+# trend estimate; here the question is "will this load truncated?", and an
+# underestimate reports a truncated load as ok -- the exact failure this module
+# exists to catch. Calibrated on the one measured fact: Read refused a 69k-byte
+# life-os conversation index at ~29k tokens (#1014), about 2.4 bytes/token for
+# dense generated markdown. Plain English prose tokenizes looser, so this errs
+# toward flagging early, never toward passing a truncated file.
+CAP_BYTES_PER_TOKEN = 2.4
+
 _REF_RE = re.compile(r"<[a-z][a-z0-9-]*-root>/([^\s`'\")\]]+)")
 _HEADING_RE = re.compile(r"^(#{1,6})\s+(.*)$")
 CREDENTIAL_RE = re.compile(
@@ -51,8 +60,8 @@ CREDENTIAL_RE = re.compile(
 
 
 def _est_tokens(text: str) -> int:
-    """~4 chars/token, the same rough estimate `audit.py` uses."""
-    return round(len(text) / 4)
+    """Conservative token estimate for the read-cap question (see `CAP_BYTES_PER_TOKEN`)."""
+    return round(len(text.encode("utf-8")) / CAP_BYTES_PER_TOKEN)
 
 
 def section_refs(skill_md: str, sections: List[str]) -> List[str]:
