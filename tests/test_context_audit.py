@@ -269,4 +269,78 @@ with tempfile.TemporaryDirectory() as td:
           "adding two more worktrees changes nothing — the budget total is now "
           "stable across runs, which is what the #218 trend depends on")
 
+# ------------------------------------------------ bootstrap loads (#1014) ----
+# What a declaring repo's skills auto-load on every invocation. Synthetic tree
+# only: sizes and pattern counts are what's under test, never private content.
+
+boot = _load("context_audit_bootstrap", ".claude/skills/context-audit/bootstrap_loads.py")
+
+with tempfile.TemporaryDirectory() as tmp:
+    repo = Path(tmp) / "privy"
+    skills = repo / ".claude" / "skills"
+    (repo / "identity").mkdir(parents=True)
+    (repo / "identity" / "who.md").write_text("tiny identity\n", encoding="utf-8")
+    for name in ("alpha", "beta", "_shared"):
+        (skills / name / "context").mkdir(parents=True)
+    (skills / "alpha" / "SKILL.md").write_text(
+        "# alpha\n\n## Step 1 — load\n\n"
+        "- `Read <privy-root>/.claude/skills/alpha/context/setup.md` for setup.\n"
+        "- `Read <privy-root>/.claude/skills/alpha/context/absent.md` if present.\n"
+        "- `ls <privy-root>/.claude/skills/alpha/context/` to discover more.\n\n"
+        "## Email\n\n`Read <privy-root>/.claude/skills/_shared/email.md` only when needed.\n",
+        encoding="utf-8")
+    (skills / "alpha" / "context" / "setup.md").write_text(
+        "router admin\nwifi password: correct-horse-battery\napi_key = SYNTHETIC-NOT-REAL-1234\n"
+        "password policy is described elsewhere\n", encoding="utf-8")
+    (skills / "alpha" / "conversations").mkdir()
+    (skills / "alpha" / "conversations" / "index.md").write_text("x" * 4 * 30_000, encoding="utf-8")
+    (skills / "beta" / "SKILL.md").write_text("# beta\n\n## Step 1\n\nNothing to load.\n", encoding="utf-8")
+    (skills / "beta" / "description.md").write_bytes(b"\xff\xfe not utf-8")
+    (skills / "_shared" / "SKILL.md").write_text("# shared, not a skill\n", encoding="utf-8")
+    decl = {"bootstrap_shared": ["identity/who.md"],
+            "bootstrap_skill": ["{skill}/description.md", "{skill}/conversations/index.md"],
+            "bootstrap_sections": ["Step 1"]}
+
+    refs = boot.section_refs((skills / "alpha" / "SKILL.md").read_text(encoding="utf-8"), ["Step 1"])
+    check(refs == [".claude/skills/alpha/context/setup.md", ".claude/skills/alpha/context/absent.md"],
+          f"section_refs: Step 1's file refs only -- no directory to `ls`, nothing from a later section ({refs})")
+
+    rep = boot.scan_repo("privy", repo, decl)
+    by_skill = {r["skill"]: r for r in rep["skills"]}
+    check(sorted(by_skill) == ["alpha", "beta"], "scan_repo: `_`-prefixed folders are not skills")
+    alpha = {f["path"]: f for f in by_skill["alpha"]["files"]}
+    check(alpha[".claude/skills/alpha/conversations/index.md"]["state"] == "over-cap"
+          and by_skill["alpha"]["over_cap"] == [".claude/skills/alpha/conversations/index.md"],
+          "a file past the read cap is over-cap, never ok")
+    check(alpha[".claude/skills/alpha/context/absent.md"]["state"] == "missing"
+          and alpha[".claude/skills/alpha/description.md"]["state"] == "missing",
+          "a declared file that is absent is missing (optional), not unmeasured and not ok")
+    check(alpha["identity/who.md"]["state"] == "ok", "a small shared file is ok")
+    beta = {f["path"]: f for f in by_skill["beta"]["files"]}
+    check(beta[".claude/skills/beta/description.md"]["state"] == "unmeasured"
+          and by_skill["beta"]["unmeasured"] == [".claude/skills/beta/description.md"],
+          "a present file that can't be read is unmeasured, its own state")
+    check(rep["credential_files"] == [{"path": ".claude/skills/alpha/context/setup.md", "hits": 2}],
+          f"credential-shaped assignments counted per file; prose mentioning 'password' is not one ({rep['credential_files']})")
+    check("correct-horse" not in repr(rep) and "SYNTHETIC-NOT-REAL" not in repr(rep),
+          "the report never carries a credential value")
+    check(boot.scan_repo("privy", repo, decl, read_cap=60_000)["skills"][0]["over_cap"] == [],
+          "the read cap is a parameter (audit.py --read-cap)")
+    # The one measured fact (#1014): Read truncated a 69,139-byte generated index
+    # (~29k real tokens). A ~4 chars/token estimate called it ~17k and "ok".
+    measured = Path(tmp) / "measured_index.md"
+    measured.write_text(("- 2026-09-01 · slug-" + "a" * 20 + " — decision; open loop\n") * 1032, encoding="utf-8")
+    check(len(measured.read_bytes()) >= 69_000 and boot.measure_file(measured, boot.READ_CAP_TOKENS)["state"] == "over-cap",
+          "a file the size of the index Read truncated is over-cap at the default cap, never ok")
+
+    toml = Path(tmp) / "projects.toml"
+    toml.write_text(
+        f'[privy]\ncwd_prefix = "{repo.as_posix()}"\nbootstrap_shared = ["identity/who.md"]\n\n'
+        f'[plain]\ncwd_prefix = "{repo.as_posix()}"\n\n'
+        f'[gone]\ncwd_prefix = "{(Path(tmp) / "nope").as_posix()}"\nbootstrap_sections = ["Step 1"]\n',
+        encoding="utf-8")
+    fleet = {b["repo"]: b["status"] for b in boot.scan_fleet(toml)}
+    check(fleet == {"privy": "ok", "gone": "unmeasured: checkout missing"},
+          f"scan_fleet: only declaring repos, a missing checkout unmeasured ({fleet})")
+
 _h.report_and_exit("test_context_audit")

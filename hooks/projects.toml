@@ -204,6 +204,11 @@ capture_harnesses = ["claude", "codex"]
 capture_routing = "skills"
 skills_dir      = ".claude/skills"
 active_marker   = ".active-skill"
+# What every skill's bootstrap auto-loads (`_shared/bootstrap.md` §B, §D, §E),
+# measured by /context-audit's bootstrap-loads table (fleet-config#1014).
+bootstrap_shared   = ["identity/who-i-am.md", "identity/current-focus.md"]
+bootstrap_skill    = ["{skill}/description.md", "{skill}/conversations/index.md"]
+bootstrap_sections = ["Step 1"]
 
 [local-llm-hub-lite]
 cwd_prefix = "E:/automation/local-llm-hub-lite"
