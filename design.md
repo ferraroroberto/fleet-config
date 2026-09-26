@@ -255,6 +255,9 @@ single **`spacing.gutter` (12px)** sets every gap — between cards/tiles *and* 
 the page edges — so the spacing reads uniform in every direction.
 **Reserve bottom padding equal to the nav height + safe-area inset** so the fixed
 bar never covers content (`padding-bottom: calc(61px + env(safe-area-inset-bottom))`).
+**On a phone, the `.app` top padding is the safe area alone**
+(`env(safe-area-inset-top)`, no gutter), so the first card starts directly under
+the status bar. The sides keep the gutter (project-scaffolding#288).
 Installable PWAs lock to a fixed scale: viewport
 `maximum-scale=1, user-scalable=no` + `touch-action: manipulation` on the body —
 no pinch, no double-tap zoom.
@@ -413,6 +416,15 @@ identically; treat every bullet as a hard requirement, not a suggestion.
   (home-automation#303 — this removes the pill-drift *cause*; #300 proved a
   measured JS transform "correction" is actively harmful in standalone, so the
   bar takes **no JS translate** there — CSS owns its position).
+- **The standalone geometry needs the full-screen web view.** The `100lvh`
+  shell and the bar's top anchor assume the installed app's web view spans
+  the whole screen, status bar included. iOS gives an installed app the whole
+  screen only when the page head sets both
+  `<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">`
+  and `viewport-fit=cover` in the viewport meta. Every installable app sets
+  the pair. Without it, the pill lands one status-bar height too low, mostly
+  off-screen (project-scaffolding#287, parking-manager#24). Desktop engines
+  don't reproduce this, so the app's e2e smoke test asserts both tags.
 - **Tap targets ≥ 44px.** Tabs show an icon **and** a short label, never
   icon-only. The icon is a **Lucide** glyph (see Icons).
 - **At most five primary destinations** (`nav-bar.maxTabs`), per HIG's
