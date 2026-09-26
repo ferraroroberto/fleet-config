@@ -582,14 +582,26 @@ class ScheduledRunnerTests(unittest.TestCase):
                 with self.subTest(pipe=pipe, failure=failure), tempfile.TemporaryDirectory(prefix="runner_drain_") as folder:
                     marker = Path(folder) / "descendant_completed"
                     ready = Path(folder) / "descendant_started"
+                    release = Path(folder) / "provider_release"
                     descendant = f"import os,time;from pathlib import Path;Path({str(ready)!r}).write_text(str(os.getpid()));time.sleep(8);Path({str(marker)!r}).touch()"
                     out = "sys.stdout" if pipe in ("stdout", "both") else "subprocess.DEVNULL"
                     err = "sys.stderr" if pipe in ("stderr", "both") else "subprocess.DEVNULL"
+                    # The provider holds its exit until the test releases it: an
+                    # exit the runner sees before the cancel starts a 1s drain the
+                    # cancel then has to win, and under load it lost (#1039).
                     script = (f"import subprocess,sys,time;from pathlib import Path;"
                               f"subprocess.Popen([sys.executable,'-c',{descendant!r}],stdout={out},stderr={err},creationflags={flags});"
-                              f"print({good!r},flush=True)")
+                              f"print({good!r},flush=True);t=time.monotonic()+30\n"
+                              f"while not Path({str(release)!r}).exists() and time.monotonic()<t: time.sleep(.01)")
                     lines = []
+                    errors = []
+                    released = []
                     cancel = threading.Event()
+                    killing = threading.Event()
+                    real_kill = runner._kill_process_tree
+                    def kill(process):
+                        killing.set()
+                        return real_kill(process)
                     handles = []
                     api = ctypes.WinDLL("kernel32", use_last_error=True)
                     api.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
@@ -599,19 +611,33 @@ class ScheduledRunnerTests(unittest.TestCase):
                     api.CloseHandle.argtypes = [wintypes.HANDLE]
                     api.CloseHandle.restype = wintypes.BOOL
                     def request():
-                        deadline = time.monotonic()+6
-                        while time.monotonic() < deadline:
-                            try:
-                                pid = int(ready.read_text())
-                            except (OSError, ValueError):
-                                time.sleep(.01)
-                                continue
+                        try:
+                            # Setup only: nothing in the runner is timing while the
+                            # provider is held, so a saturated box may take its time.
+                            deadline = time.monotonic()+30
+                            while True:
+                                try:
+                                    pid = int(ready.read_text())
+                                    break
+                                except (OSError, ValueError):
+                                    if time.monotonic() >= deadline:
+                                        errors.append("the descendant never reported ready")
+                                        return
+                                    time.sleep(.01)
                             handle = api.OpenProcess(0x100000, False, pid)
-                            if handle:
-                                handles.append(handle)
-                            break
-                        if failure != "none":
-                            cancel.set()
+                            if not handle:
+                                errors.append(f"the descendant could not be opened: error {ctypes.get_last_error()}")
+                                return
+                            handles.append(handle)
+                            if failure != "none":
+                                cancel.set()
+                                # Released only once the watchdog has taken the
+                                # cancel, so the run is already stopping.
+                                if not killing.wait(3):
+                                    errors.append("the watchdog never acted on the cancel")
+                        finally:
+                            released.append(time.monotonic())
+                            release.touch()
                     thread = threading.Thread(target=request)
                     thread.start()
                     attribute = "terminate" if failure == "terminate" else "active"
@@ -619,9 +645,8 @@ class ScheduledRunnerTests(unittest.TestCase):
                     context = patch.object(_WindowsJob, attribute, return_value=value)
                     if failure == "none":
                         context = nullcontext()
-                    started = time.monotonic()
                     formatter = runner.ProgressFormatter(adapter=CodexAdapter(), emit=lines.append)
-                    with context:
+                    with context, patch.object(runner, "_kill_process_tree", kill):
                         code = runner.run_process(
                             [sys.executable, "-c", script],
                             formatter=formatter,
@@ -629,6 +654,7 @@ class ScheduledRunnerTests(unittest.TestCase):
                     returned = time.monotonic()
                     thread.join(timeout=4)
                     self.assertFalse(thread.is_alive())
+                    self.assertEqual(errors, [])
                     self.assertEqual(len(handles), 1, "must retain the live descendant handle")
                     try:
                         self.assertEqual(api.WaitForSingleObject(handles[0], 2000), 0,
@@ -636,7 +662,9 @@ class ScheduledRunnerTests(unittest.TestCase):
                     finally:
                         for handle in handles:
                             api.CloseHandle(handle)
-                    self.assertLess(returned-started, 5, "\n".join(lines))
+                    # Bounded from the release, when only the orphan is left:
+                    # starting three interpreters is not the drain under test.
+                    self.assertLess(returned-released[0], 5, "\n".join(lines))
                     self.assertEqual(code, runner.INCOMPLETE_WORK_EXIT_CODE if failure == "none" else runner.CANCELLATION_UNCONFIRMED_EXIT_CODE, "\n".join(lines))
                     self.assertFalse(marker.exists())
                     if failure == "none":
