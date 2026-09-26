@@ -1,0 +1,62 @@
+<!doctype html>
+<!-- Static fixture for the Android pointer emulation and ARIA grid rows (fleet-config#1017).
+     Each tab icon is 13px under a fine pointer and 20px under a coarse one, as in the vendored
+     nav, so a walk that lost touch emulation after a full-page screenshot measures 13x13 icons.
+     The month grid's week rows are not action rows; the list row beside it is. Every planted
+     case is asserted by tests/test_design_review.py. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>design_review pointer + grid fixture</title>
+<style>
+  html, body { margin: 0; background: #ffffff; color: #1f2328; font-family: system-ui, sans-serif; font-size: 16px; }
+  body { padding: 16px; min-height: 3000px; }
+  section[hidden] { display: none; }
+  nav[role=tablist] { display: flex; gap: 8px; margin-bottom: 16px; }
+  nav[role=tablist] button { min-width: 88px; min-height: 44px; font: inherit; display: inline-flex; align-items: center; gap: 6px; }
+  .tab-icon { width: 13px; height: 13px; }
+  @media (pointer: coarse) { .tab-icon { width: 20px; height: 20px; } }
+  [role=grid] { display: grid; gap: 2px; }
+  [role=row] { display: grid; grid-template-columns: repeat(7, 44px); gap: 2px; }
+  [role=gridcell] { width: 44px; height: 44px; font: inherit; }
+  .actions { list-style: none; margin: 16px 0 0; padding: 0; }
+  .actions li { display: flex; gap: 12px; align-items: center; }
+  .actions button { min-width: 44px; min-height: 44px; font: inherit; }
+</style>
+<script>
+  addEventListener('DOMContentLoaded', () => {
+    document.querySelectorAll('[role=tab]').forEach(tab => tab.addEventListener('click', () => {
+      document.querySelectorAll('[role=tab]').forEach(t => t.setAttribute('aria-selected', String(t === tab)));
+      document.querySelectorAll('[role=tabpanel]').forEach(p => p.hidden = (p.id !== tab.getAttribute('aria-controls')));
+    }));
+    const grid = document.querySelector('[role=grid]');
+    for (let w = 0; w < 5; w++) { const row = document.createElement('div'); row.setAttribute('role', 'row');
+      for (let d = 1; d <= 7; d++) { const b = document.createElement('button'); b.type = 'button';
+        b.setAttribute('role', 'gridcell'); b.textContent = String(w * 7 + d); row.appendChild(b); }
+      grid.appendChild(row); }
+  });
+</script>
+</head>
+<body>
+  <nav role="tablist" aria-label="Primary">
+    <button type="button" role="tab" aria-selected="true" aria-controls="paneCalendar" data-tab="calendar"><svg class="tab-icon" aria-hidden="true"></svg>Calendar</button>
+    <button type="button" role="tab" aria-selected="false" aria-controls="paneMore" data-tab="more"><svg class="tab-icon" aria-hidden="true"></svg>More</button>
+  </nav>
+  <main>
+    <!-- a 5-week month grid of 7 gridcell buttons per row (not an action row), and one list row with
+         four equal buttons: over the row budget of 3 extras besides the main control -->
+    <section id="paneCalendar" role="tabpanel">
+      <h2>Calendar</h2>
+      <div role="grid" aria-label="September"></div>
+      <ul class="actions">
+        <li class="over"><button type="button">A</button><button type="button">B</button><button type="button">C</button><button type="button">D</button><button type="button">E</button></li>
+      </ul>
+    </section>
+    <section id="paneMore" role="tabpanel" hidden>
+      <h2>More</h2>
+      <p>Measured after the first tab's full-page screenshot.</p>
+    </section>
+  </main>
+</body>
+</html>
