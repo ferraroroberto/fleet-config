@@ -547,6 +547,18 @@ def _safe_kill_force_push_unit_checks() -> Tuple[int, int]:
     check("force-push: chained after another command -> blocked",
           blocked(f"git status && {push} --force origin main"))
 
+    # A leading `+` forces that one refspec with no flag at all (fleet-config#960).
+    check("force-push: flagless +HEAD:main -> blocked (#960)", blocked(f"{push} origin +HEAD:main"))
+    check("force-push: flagless +main -> blocked (#960)", blocked(f"{push} origin +main"))
+    check("force-push: flagless +refs/heads/master among plain refspecs -> blocked (#960)",
+          blocked(f"{push} origin feature/x +refs/heads/master"))
+    check("force-push: flagless +feature/x -> allowed (own branch) (#960)",
+          not blocked(f"{push} origin +feature/x"))
+    check("force-push: flagless + only forces its own refspec: plain main beside +feature -> allowed (#960)",
+          not blocked(f"{push} origin main +feature/x"))
+    check("force-push: flagless push reports only the +refspecs (#960)",
+          skg.forced_push_refspecs(f"{push} origin main +HEAD:feature/x") == ["+HEAD:feature/x"])
+
     check("force-push: feature branch -> allowed", not blocked(f"{push} --force origin feature/foo"))
     check("force-push: branch whose NAME contains 'main' -> allowed (the #562 false positive)",
           not blocked(f"{push} --force origin chore/rename-main-config-loader"))

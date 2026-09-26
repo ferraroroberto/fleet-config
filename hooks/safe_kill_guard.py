@@ -95,16 +95,26 @@ def forced_push_refspecs(cmd: str) -> Optional[list[str]]:
     An **empty list** means the push named no refspec (`git push --force`,
     `git push -f origin`), so the destination is whatever branch is checked
     out — the caller resolves that separately rather than guessing.
+
+    With no force flag, a refspec with a leading `+` is still forced, for that
+    refspec alone (`git push origin +HEAD:main`, fleet-config#960), so only
+    those refspecs are returned.
     """
     for segment in re.split(r"[\n;|&]+", cmd):
-        if not GIT_PUSH_RE.search(segment) or not FORCE_FLAG_RE.search(segment):
+        if not GIT_PUSH_RE.search(segment):
             continue
+        forced = bool(FORCE_FLAG_RE.search(segment))
         tokens = segment.split()
         for i, token in enumerate(tokens):
             if token.lower() == "push":
                 # First positional after `push` is the remote; the rest are refspecs.
                 positional = [t for t in tokens[i + 1:] if not t.startswith("-")]
-                return positional[1:]
+                if forced:
+                    return positional[1:]
+                plus = [r for r in positional[1:] if r.startswith("+")]
+                if plus:
+                    return plus
+                break
     return None
 
 
