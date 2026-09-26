@@ -158,6 +158,16 @@ Subcommands
       same false pass) so a caller can gate on the exit code, not just parse
       text. UNKNOWN is never reported as DIRTY (fleet-config#570).
 
+  plan <show|lane|drop-lane|add|set|move|remove|wait|unwait|clear> ...
+      The only writer of `~/.claude/hooks/state/chief-plan.json`, the plan the
+      Board's "Chief's plan" card renders (fleet-config#1034,
+      app-launcher#1279). One line per update: `plan add app-launcher#1273
+      "title"`, `plan set app-launcher#1273 --status gate`, `plan lane
+      app-launcher gate --item "#1273"`, `plan wait "text" --ref repo#N`.
+      Validates the whole v1 document and replaces it atomically, or writes
+      nothing and exits 2. The logic lives in `skills/_lib/chief_plan.py`, the
+      contract in `docs/chief-plan.md`.
+
 `--verify`'s four-verdict classification is **not** here: the exchange-marker
 parser, the precedence rules, the output-age measurement they rest on and the
 verdict/reason rendering are one self-contained subsystem, and they live in
@@ -186,6 +196,7 @@ from typing import Any, Dict, List, Mapping, Optional, Tuple
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import chief_managed  # noqa: E402
+import chief_plan  # noqa: E402
 import dirty_tree_check  # noqa: E402
 import fleet_repo_scan  # noqa: E402
 import git_run  # noqa: E402
@@ -1151,6 +1162,9 @@ def main(argv: Optional[List[str]] = None) -> int:
     v.add_argument("--branch", default=None)
     v.add_argument("--default-branch", default=None)
     v.set_defaults(func=cmd_verify)
+
+    pl = sub.add_parser("plan", help="write the Board's structured plan (fleet-config#1034)")
+    chief_plan.add_cli(pl)
 
     args = p.parse_args(argv)
     try:
