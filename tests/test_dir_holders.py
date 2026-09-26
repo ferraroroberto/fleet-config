@@ -97,6 +97,26 @@ check(dh.holders_for("E:/automation/alpha-wt-1", []) == [],
       "holders_for: an empty process table yields no holders")
 
 
+# ---- parse_table: the query's JSON, control characters included (fleet-config#991) ----
+# PowerShell 5.1's ConvertTo-Json emits a raw control character in a command
+# line unescaped; one such process anywhere on the machine made the whole probe
+# UNKNOWN. Synthetic payloads only -- the real one depends on what is running.
+
+_raw = ('{"self": 4242, "processes": [{"ProcessId": 100, "Name": "tool.exe", '
+        '"CommandLine": "tool.exe --sep \t --esc \x1b[0m E:\\\\automation\\\\alpha-wt-1\\\\x"}]}')
+_procs, _self, _why = dh.parse_table(_raw)
+check(_why is None and _self == 4242 and _procs and "\x1b" in _procs[0]["CommandLine"],
+      f"parse_table: a raw tab/ESC inside a command line still parses [why={_why!r}]")
+check(_procs is not None and [h["pid"] for h in dh.holders_for("E:/automation/alpha-wt-1", _procs)] == [100],
+      "parse_table: that process can still be named as a holder")
+_procs, _self, _why = dh.parse_table('{"processes": [ {"ProcessId": ')
+check(_procs is None and _why is not None and _why.startswith("unreadable output"),
+      f"parse_table: truncated output is still unreadable, with its own reason [why={_why!r}]")
+_procs, _self, _why = dh.parse_table('{"self": 1}')
+check(_procs is None and _why == "no process list",
+      "parse_table: valid JSON without a process list keeps its distinct reason")
+
+
 # ---- UNKNOWN is its own state: a probe that cannot ask never says CLEAR ----
 # Driven deterministically by pointing the query at an interpreter that does not
 # exist -- the path a failed or unanswerable process-table query takes.

@@ -168,17 +168,27 @@ def _query() -> tuple[Optional[list[dict]], Optional[int], Optional[str]]:
             f"process-table query failed (exit {r.returncode} / 0x{r.returncode & 0xFFFFFFFF:08X}) {took()}"
             + (f": {said[0][:300]}" if said else ": no output on stderr or stdout")
         )
+    procs, ps_pid, why = parse_table(r.stdout or "")
+    if why is not None:
+        return None, None, f"process-table query returned {why} {took()}"
+    return procs, ps_pid, None
+
+
+def parse_table(out: str) -> tuple[Optional[list[dict]], Optional[int], Optional[str]]:
+    """(processes, powershell pid, why unreadable) from the query's JSON output.
+
+    `strict=False` (fleet-config#991): PowerShell 5.1's `ConvertTo-Json` leaves a
+    control character in a command line (a tab, an ESC) unescaped. Strict
+    parsing rejected the whole table, so one such process anywhere on the
+    machine made every probe UNKNOWN. Anything else malformed still fails here.
+    """
     try:
-        payload = json.loads(r.stdout or "")
+        payload = json.loads(out, strict=False)
     except ValueError as exc:
-        out = r.stdout or ""
-        return None, None, (
-            f"process-table query returned unreadable output {took()}: {exc}"
-            f" ({len(out)} chars, starts {out[:120]!r})"
-        )
+        return None, None, f"unreadable output ({exc}; {len(out)} chars, starts {out[:120]!r})"
     procs = payload.get("processes") if isinstance(payload, dict) else None
     if not isinstance(procs, list):
-        return None, None, f"process-table query returned no process list {took()}"
+        return None, None, "no process list"
     return procs, payload.get("self"), None
 
 
