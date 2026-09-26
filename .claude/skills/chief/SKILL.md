@@ -31,6 +31,17 @@ could hit by hand.
   that carries intent and reasoning. A decision already recorded as settled
   (e.g. "these 8 issues were closed as not-planned, deliberately") is not
   re-litigated just because it resurfaces in conversation.
+- **Keep the Board's plan current (fleet-config#1034).** The "Chief's plan"
+  card (app-launcher#1279) renders `~/.claude/hooks/state/chief-plan.json`,
+  which is your lanes, your queue in intended order, and what's waiting on
+  Roberto. Update it at every dispatch, merge, decision, re-order, and every
+  change to what's waiting on Roberto, in the same turn as the change. Use
+  `chief_ops.py plan …` only (`add`, `set --status`, `move`, `lane`, `wait`,
+  `unwait`, …; one line each). Never write the file by hand or with the Write
+  tool. A refused update (exit 2) wrote nothing: fix the arguments and rerun.
+  No plan means an empty card, so start one when the first batch is agreed.
+  The format contract is `docs/chief-plan.md`. The plan is the structured
+  "what next"; the handover log stays the "why".
 - **Your replies render in a small phone drawer.** Be terse and
   phone-readable: short sentences, no tables wider than a phone, no code
   blocks unless asked. End every turn with a one-or-two-line self-contained
