@@ -309,6 +309,12 @@ check(m.parse_collected_count("tests/e2e/test_a.py: 3\n\n7 tests collected in 0.
 check(m.parse_collected_count("ERROR collecting tests/e2e/test_a.py\nno tests ran\n") is None,
       "parse_collected_count: neither shape -> None, never a guessed zero")
 check(m.parse_collected_count("") is None, "parse_collected_count: empty output -> None")
+check(m.parse_collected_count("[e2e] browser sweep (scope ...): zombie=10  436/620 tests collected (184 deselected) in 0.46s\n") == 436,
+      "parse_collected_count: 'N/M tests collected (K deselected)' reads the selected N, mid-line after another summary (#1027)")
+check(m.parse_collected_count("436/620 tests collected (184 deselected) in 0.46s\n") == 436,
+      "parse_collected_count: the deselection form at the start of a line reads the selected N (#1027)")
+check(m.parse_collected_count("case_12 tests collected\n") is None,
+      "parse_collected_count: digits glued to a word are not a count (#1027)")
 
 
 # ---- budget_limit / budget_verdict (fleet-config#901) ------------------------

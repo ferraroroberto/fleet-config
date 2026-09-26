@@ -405,14 +405,18 @@ def split_resolved_dirs(repo_root: Path, test_dirs: List[str]) -> tuple:
     return existing, missing
 
 
-_COLLECTED_TOTAL_RE = re.compile(r"^(\d+) tests? collected", re.MULTILINE)
+# `N tests collected`, or `N/M tests collected (K deselected)` when markers deselect: N is what runs.
+# Not anchored to a line start: a session-finish hook can print its own summary first (#1027).
+_COLLECTED_TOTAL_RE = re.compile(r"(?<![\w/])(\d+)(?:/\d+)? tests? collected")
 _COLLECTED_PER_FILE_RE = re.compile(r"^\S+\.py: (\d+)$", re.MULTILINE)
 
 
 def parse_collected_count(stdout: str) -> Optional[int]:
     """Node count from `pytest --collect-only -q` output, or None.
 
-    The `N tests collected` total wins when present. A repo whose `addopts`
+    The `N tests collected` total wins when present; under deselection pytest
+    prints `N/M tests collected (K deselected)` and N, the selected count, is
+    the one budgeted (#1027). A repo whose `addopts`
     already carries `-q` runs at `-qq`, where pytest prints only per-file
     `tests/e2e/test_x.py: N` lines and no total — those are summed instead
     (fleet-config#900: task-os and whatsapp-radar read "not measured"). Output
