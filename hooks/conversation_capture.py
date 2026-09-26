@@ -470,9 +470,45 @@ def _trigger_delayed_index(project_name: str) -> None:
         pass  # fail-open — a failed trigger must never break the Stop hook
 
 
+# ----------------------------------------------------------- outcome breadcrumb
+
+# One line per Stop of a capture-enabled project, whatever happened (#983). Every
+# no-op here was stderr-only, and Claude Code keeps no Stop-hook stderr, so a
+# missing or stale capture could not be explained after the session ended.
+# Metadata only -- outcome, session id, routing, paths, turn counts -- never a
+# message's text: captures can hold private data.
+CAPTURE_LOG_FILENAME = "capture-events.jsonl"
+CAPTURE_LOG_MAX_BYTES = 2_000_000
+
+
+def capture_log_path() -> Path:
+    """Resolved at call time so `CLAUDE_HOOKS_STATE_DIR` always wins."""
+    return _lib.state_dir() / CAPTURE_LOG_FILENAME
+
+
+def record_capture_event(event: dict) -> None:
+    """Append one breadcrumb line. Never raises: capture stays fail-open."""
+    try:
+        path = capture_log_path()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            if path.stat().st_size > CAPTURE_LOG_MAX_BYTES:
+                os.replace(path, path.with_suffix(path.suffix + ".1"))
+        except OSError:
+            pass
+        stamp = datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
+        line = json.dumps({"ts": stamp, **event}, ensure_ascii=False)
+        # One short O_APPEND write is atomic against concurrent sessions.
+        with path.open("a", encoding="utf-8") as fh:
+            fh.write(line + "\n")
+    except (OSError, TypeError, ValueError) as exc:
+        logger.warning("Capture breadcrumb not written: %s", exc)
+
+
 def write_capture(
     cfg: CaptureConfig, out_dir: Path, source: Path, transcript: Transcript,
     *, filename_time: Optional[datetime] = None, dry_run: bool = False,
+    outcome: Optional[dict] = None,
 ) -> bool:
     """Atomically update an exact native session; no prompt hashes or short-ID matches.
 
@@ -492,13 +528,23 @@ def write_capture(
     capture" can never disagree with what a real run actually does (a naive
     dry-run that skips the dedup lookup entirely would report every already-
     captured session as new, fleet-config#785).
+
+    ``outcome``, when given, receives the result for the breadcrumb log:
+    ``result`` (captured / unchanged / retained_shrunk / would_capture), the
+    ``path`` updated or kept, and ``duplicates`` -- other captures of the same
+    session in other routing folders. Only the first match (routing-folder
+    order) is ever updated, so a duplicate goes stale silently; that is what
+    left a resumed session's skill-folder capture weeks old (#983).
     """
     from conversation_index import _read_header, conversations_dirs
 
+    note = outcome if outcome is not None else {}
     identity = transcript.session_id or str(source.resolve())
     key = hashlib.sha256(f"{transcript.harness}\0{identity}".encode()).hexdigest()
     digest = hashlib.sha256(json.dumps(transcript.messages, ensure_ascii=False).encode()).hexdigest()
     out_path = None
+    prior: dict = {}
+    duplicates: list[str] = []
     for directory, _label in conversations_dirs(cfg):
         if not directory.is_dir():
             continue
@@ -513,26 +559,32 @@ def write_capture(
             # turn-end for a project routing to many skill directories
             # (fleet-config#819); `conversation_index._read_header` already
             # does the bounded read.
-            prior = _read_header(path)
-            same = (prior.get("agent") == transcript.harness and
-                    ((transcript.session_id and prior.get("sid") == transcript.session_id)
-                     or (not transcript.session_id and prior.get("key") == key)))
-            if same:
-                out_path = path
-                try:
-                    prior_turns = int(prior.get("turns", "0"))
-                except ValueError:
-                    prior_turns = 0
-                if prior_turns > len(transcript.messages):
-                    logger.warning("Capture parse_failure: source shrank; retained prior capture")
-                    return False
-                if (prior.get("digest") == digest and prior.get("parent_sid", "") == transcript.parent_session_id
-                        and prior.get("format") == transcript.source_format):
-                    return False
-                break
-        if out_path:
-            break
+            header = _read_header(path)
+            same = (header.get("agent") == transcript.harness and
+                    ((transcript.session_id and header.get("sid") == transcript.session_id)
+                     or (not transcript.session_id and header.get("key") == key)))
+            if not same:
+                continue
+            if out_path is None:
+                out_path, prior = path, header
+            else:
+                duplicates.append(str(path))
+    note.update(path=str(out_path) if out_path else "", duplicates=duplicates)
+    if out_path is not None:
+        try:
+            prior_turns = int(prior.get("turns", "0"))
+        except ValueError:
+            prior_turns = 0
+        if prior_turns > len(transcript.messages):
+            logger.warning("Capture parse_failure: source shrank; retained prior capture")
+            note["result"] = "retained_shrunk"
+            return False
+        if (prior.get("digest") == digest and prior.get("parent_sid", "") == transcript.parent_session_id
+                and prior.get("format") == transcript.source_format):
+            note["result"] = "unchanged"
+            return False
     if dry_run:
+        note["result"] = "would_capture"
         return True
     now = datetime.now(timezone.utc)
     if out_path is None:
@@ -560,6 +612,7 @@ def write_capture(
         if temporary and temporary.exists():
             temporary.unlink()
     logger.info("Captured %s session %s -> %s", transcript.harness, transcript.session_id or "unknown", out_path)
+    note.update(result="captured", path=str(out_path))
     return True
 
 
@@ -577,19 +630,27 @@ def main() -> int:
     hint = _lib.payload_agent(payload)
     if hint and hint not in allowed:
         return 0
+    event: dict = {"project": project.name, "session": str(payload.get("session_id") or "")}
     raw_path = payload.get("transcript_path")
     if not isinstance(raw_path, str) or not raw_path:
         logger.warning("Capture unavailable: no transcript path")
+        record_capture_event({**event, "result": "unavailable", "detail": "no transcript path"})
         return 0
     source = Path(raw_path)
     transcript = read_transcript(source, harness=hint, session_id=payload.get("session_id") or "")
+    event.update(harness=transcript.harness or hint or "", session=transcript.session_id or event["session"])
     if transcript.status != "ok":
         logger.warning("Capture %s: %s", transcript.status, transcript.detail)
+        record_capture_event({**event, "result": transcript.status, "detail": transcript.detail})
         return 0
     if transcript.harness not in allowed or not transcript.messages:
+        record_capture_event({**event, "result": "skipped",
+                              "detail": "no messages" if not transcript.messages else "harness not allowed"})
         return 0
+    event["turns"] = len(transcript.messages)
 
     out_dir = cfg.root / cfg.conversations_dir
+    event["route"] = "flat"
     if cfg.routing == "skills":
         skills_root = cfg.root / cfg.skills_dir
         known = scan_known_skills(skills_root)
@@ -601,19 +662,31 @@ def main() -> int:
             marker.unlink()  # one-shot, even when rejected below — never let it linger
         except OSError:
             skill, written_at = None, None
-        if skill not in known:
+        event["marker"] = "absent" if skill is None else "current"
+        if skill is not None and skill not in known:
+            event["marker"] = "unknown_skill"
             skill = None
-        elif not marker_is_current(written_at, transcript):
+        elif skill is not None and not marker_is_current(written_at, transcript):
             logger.warning("Capture routing: ignored %r marker predating this session", skill)
+            event["marker"] = "stale"
             skill = None
+        event["route"] = "marker" if skill else "inferred"
         if not skill:
             skill = infer_skill_from_transcript(transcript, known, cfg.skills_dir)
+            if not skill:
+                event["route"] = "archive"
+        event["skill"] = skill or ""
         out_dir = skills_root / skill / "conversations" if skill else out_dir / "_archive"
+    outcome: dict = {}
     try:
-        if write_capture(cfg, out_dir, source, transcript):
+        if write_capture(cfg, out_dir, source, transcript, outcome=outcome):
             _trigger_delayed_index(project.name)
     except (OSError, UnicodeError) as exc:
         logger.error("Capture write failed: %s", exc)
+        outcome.update(result="write_failed", detail=type(exc).__name__)
+    if outcome.get("duplicates"):
+        logger.warning("Capture duplicates: session also captured in %s", outcome["duplicates"])
+    record_capture_event({**event, **outcome})
     return 0
 
 
