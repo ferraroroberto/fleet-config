@@ -16,17 +16,33 @@ from ..selectors import _compounds, _last_selector_line, _split_top_level_commas
 from ._ctx import _ContractsCtx, _evidence, _loc_at, _result
 
 
+_FOCUS_VISIBLE_RULE_RE = re.compile(
+    r"(?P<pre>[^{}]*?)(?P<fv>:focus-visible)(?P<post>[^{}]*)\{(?P<body>[^{}]*)\}")
+_TOKENIZED_OUTLINE_RE = re.compile(r"\boutline(?:-color)?\s*:[^;}]*var\(--")
+_BARE_FOCUS_VISIBLE = {":focus-visible", "*:focus-visible"}
+
+
 def _check_focus_visible_ring(ctx: _ContractsCtx) -> List[dict]:
-    # 1. tokenized :focus-visible ring
+    # 1. tokenized :focus-visible ring. Every :focus-visible rule is weighed,
+    # not just the first (fleet-config#994): a vendored component's scoped
+    # `outline: none` sorting ahead of the global ring must not mask it. A
+    # bare (global) tokenized rule is preferred as the evidence.
     css_all = ctx.css_all
-    fv = re.search(r":focus-visible[^{}]*\{([^{}]*)\}", css_all)
-    if not fv:
+    rules = list(_FOCUS_VISIBLE_RULE_RE.finditer(css_all))
+    if not rules:
         return [_result("focus-visible-ring", "FAIL", "no :focus-visible rule — keyboard focus falls to the browser default (design.md v2 focus contract)")]
-    if "var(--" in fv.group(1) and "outline" in fv.group(1):
+    tokenized = [m for m in rules if _TOKENIZED_OUTLINE_RE.search(m.group("body"))]
+
+    def bare(m: re.Match) -> bool:
+        selector = re.sub(r"/\*.*?\*/", "", m.group("pre") + m.group("fv") + m.group("post"), flags=re.S)
+        return any(s.strip() in _BARE_FOCUS_VISIBLE for s in selector.split(","))
+
+    if tokenized:
+        best = next((m for m in tokenized if bare(m)), tokenized[0])
         return [_result("focus-visible-ring", "PASS", "tokenized :focus-visible outline present",
-                         _evidence(css_all, r":focus-visible[^{}]*\{"))]
+                         _loc_at(css_all, best.start("fv")))]
     return [_result("focus-visible-ring", "WARN", "a :focus-visible rule exists but its outline is not tokenized",
-                     _evidence(css_all, r":focus-visible[^{}]*\{"))]
+                     _loc_at(css_all, rules[0].start("fv")))]
 
 
 def _check_reduced_motion(ctx: _ContractsCtx) -> List[dict]:
