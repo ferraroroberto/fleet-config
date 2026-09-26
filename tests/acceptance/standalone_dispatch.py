@@ -219,6 +219,12 @@ _STANDALONE_UNIT_CHECKS: Tuple[Tuple[str, str, str], ...] = (
      "with no live launcher or `gh` call required (fleet-config#445); the "
      "same file covers `steer_delivery.py`, the say --verify classifier "
      "(fleet-config#680)"),
+    ("audit_quote", "test_audit_quote.py",
+     "/codebase-audit's quote check -- a finding's verbatim quote matched "
+     "whitespace- and CRLF-tolerantly against the named file, MISMATCH, "
+     "NO_QUOTE and UNREADABLE as distinct non-passing verdicts, ticked and "
+     "carried items skipped, and the CLI exit codes -- is testable on its "
+     "own, against a synthetic repo (fleet-config#960)"),
     ("chief_managed", "test_chief_managed.py",
      "the chief-managed session marker -- mark read back through "
      "notify_on_idle.chief_managed_state (the one reader), cross-sid "

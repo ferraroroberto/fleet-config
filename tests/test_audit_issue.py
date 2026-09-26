@@ -541,6 +541,25 @@ try:
         # Non-ledger kinds are markdown, not a machine contract — passed through.
         ai.cmd_upsert("ferraroroberto/x", "bug", "audit: bug findings", "free prose", None)
     check(_seen == ["free prose"], "cmd_upsert: non-ledger bodies are passed through untouched")
+
+    # --verify-quotes (fleet-config#960): the whole write is refused when a
+    # finding's quote is not in its file; whitespace differences don't count.
+    import tempfile as _tf
+    with _tf.TemporaryDirectory() as _qd:
+        Path(_qd, "m.py").write_bytes(b"x  =   compute(\r\n  1)\r\n")
+        _good = "- [ ] **m.py:1** — slow. Quote: `x = compute( 1)`. Fix: cache.\n"
+        _absent = _good + "- [ ] **m.py:2** — made up. Quote: `never there`. Fix: n/a.\n"
+        _seen.clear()
+        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+            ai.cmd_upsert("ferraroroberto/x", "bug", "audit: bug findings", _good, None, verify_quotes=_qd)
+            check(_seen == [_good], "upsert --verify-quotes: a present, whitespace-differing quote is written")
+            _seen.clear()
+            try:
+                ai.cmd_upsert("ferraroroberto/x", "bug", "audit: bug findings", _absent, None, verify_quotes=_qd)
+                check(False, "upsert --verify-quotes: an absent quote refuses the write")
+            except SystemExit as _exc:
+                check(_seen == [] and "QUOTES=unverified count=1" in str(_exc),
+                      "upsert --verify-quotes: an absent quote refuses the write, nothing is written")
 finally:
     ai._upsert_issue = _orig_upsert
 
