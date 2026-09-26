@@ -44,7 +44,13 @@ rule labels forced `full` (every PR containing one, and PRs where it was the
 only cause), the paths that forced it most, unclassified paths, and paths a
 broad rule took although a later, more specific, lower-tier rule matches too
 (a README under a static prefix: a free fix). `--proposed` routes the same PRs
-through a candidate table and lists every PR whose tier changes.
+through a candidate table and lists every PR whose tier changes. When the
+classifier exposes `changed_selectors` and either table declares
+`shared_stylesheets`, each PR's changed CSS rules per sheet (merge commit vs
+its first parent) ride into both `classify()` calls, so the counterfactual
+shows stylesheet narrowing, and each sheet's PRs are bucketed: owned by one
+surface, unmapped selector, spans surfaces, no rule changed, unsafe, or
+unreadable (fleet-config#1033). An older classifier keeps file-list routing.
 
 `parallel <repo-root>` lists static signs that xdist workers would share
 state (a port picked and released, fixed log names, a file every process
@@ -606,14 +612,20 @@ def load_classifier(repo_root: Path):
     return mod if hasattr(mod, "classify") and hasattr(mod, "load_config") else None
 
 
-def merged_prs(repo_root: Path, prs: int, until: Optional[str] = None) -> Tuple[Optional[List[Dict[str, object]]], str]:
-    """`(prs newest first, status)`: number, mergedAt and file paths of merged PRs."""
+def merged_prs(repo_root: Path, prs: int, until: Optional[str] = None,
+               with_merge_commit: bool = False) -> Tuple[Optional[List[Dict[str, object]]], str]:
+    """`(prs newest first, status)`: number, mergedAt and file paths of merged PRs.
+
+    `with_merge_commit` adds each PR's `mergeCommit` sha ("" when gh has none),
+    which the stylesheet routing reads blobs from.
+    """
     slug = repo_slug(repo_root)
     if slug is None:
         return None, "unknown: no GitHub origin remote"
     limit = prs + (200 if until else 0)
     res = git_run.run_gh(["pr", "list", "--state", "merged", "--limit", str(limit), "--repo", slug,
-                          "--json", "number,mergedAt,files"], timeout=180, stdin=subprocess.DEVNULL)
+                          "--json", "number,mergedAt,files" + (",mergeCommit" if with_merge_commit else "")],
+                         timeout=180, stdin=subprocess.DEVNULL)
     if res.returncode != 0:
         return None, "unknown: " + ((res.stderr or "").strip().splitlines() or ["gh failed"])[0][:160]
     try:
@@ -626,7 +638,75 @@ def merged_prs(repo_root: Path, prs: int, until: Optional[str] = None) -> Tuple[
     items = items[:prs]
     out = [{"number": it["number"], "mergedAt": it.get("mergedAt"),
             "files": [f["path"] for f in (it.get("files") or []) if f.get("path")]} for it in items]
+    if with_merge_commit:
+        for row, it in zip(out, items):
+            row["mergeCommit"] = str((it.get("mergeCommit") or {}).get("oid") or "")
     return out, f"ok ({len(out)} PRs)"
+
+
+def _blob(repo_root: Path, rev: str, path: str) -> Tuple[bool, Optional[str]]:
+    """`(exists, text)` of `path` at `rev`: `(False, None)` only when the commit is
+    in the clone and the path is not in it; `(True, None)` when it could not be read."""
+    res = git_run.run_git(["-C", str(repo_root), "show", f"{rev}:{path}"], timeout=30)
+    if res.returncode == 0:
+        return True, res.stdout
+    commit = git_run.run_git(["-C", str(repo_root), "cat-file", "-e", f"{rev}^{{commit}}"], timeout=30)
+    return (commit.returncode != 0), None
+
+
+def pr_sheet_changes(mod, repo_root: Path, sha: str,
+                     sheets: Sequence[str]) -> Tuple[Dict[str, object], List[str]]:
+    """`(changed_selectors() per declared sheet the PR touched, the sheets that could not be read)`.
+
+    Merge commit vs its first parent, mirroring the classifier's own
+    `sheet_changes_from_git`: a sheet new in the PR diffs against the empty
+    text. No merge commit, an object missing from the clone, or a deleted sheet
+    gives None -- the whole suite, never a guess -- and is listed as unreadable,
+    so it is never counted as an unsafe CSS change.
+    """
+    out: Dict[str, object] = {}
+    unreadable: List[str] = []
+    for sheet in sheets:
+        if not sha:
+            out[sheet] = None
+            unreadable.append(sheet)
+            continue
+        old_exists, old = _blob(repo_root, f"{sha}^1", sheet)
+        _new_exists, new = _blob(repo_root, sha, sheet)
+        if not old_exists and new is not None:
+            old = ""
+        if old is None or new is None:
+            unreadable.append(sheet)
+        out[sheet] = mod.changed_selectors(old, new)
+    return out, unreadable
+
+
+def sheet_bucket(sels: object, surfaces: Sequence[object]) -> str:
+    """Why one PR's change to a shared sheet does or doesn't narrow (fleet-config#1033)."""
+    if sels is None:
+        return "unsafe"
+    if not sels:
+        return "no rule changed"
+    owners = set()
+    for sel in sels:  # type: ignore[attr-defined]
+        hits = [s for s in surfaces if s.owns_selector(sel)]  # type: ignore[attr-defined]
+        if not hits:
+            return "unmapped selector"
+        if len(hits) > 1:
+            return "spans surfaces"
+        owners.add(getattr(hits[0], "name", id(hits[0])))
+    return "owned by one surface" if len(owners) == 1 else "spans surfaces"
+
+
+def _routes_sheets(mod) -> bool:
+    """Whether this classifier can narrow a shared stylesheet (project-scaffolding#289)."""
+    import inspect
+    if not hasattr(mod, "changed_selectors"):
+        return False
+    try:
+        return len(inspect.signature(mod.classify).parameters) >= 3
+    except (TypeError, ValueError):
+        return False
 
 
 def _more_specific(later, first) -> bool:
@@ -667,11 +747,15 @@ def routing_report(repo_root: Path, prs: int = 60, until: Optional[str] = None,
     if mod is None:
         return {"status": "unknown", "reason": "no importable scripts/classify_e2e.py in the repo"}
     config = mod.load_config(config_path or (repo_root / ".fleet.toml"))
+    proposed = mod.load_config(proposed_path) if proposed_path else None
+    declared = sorted(set(getattr(config, "shared_stylesheets", ()) or ())
+                      | set(getattr(proposed, "shared_stylesheets", ()) or ()))
+    by_sheet = bool(declared) and _routes_sheets(mod)
     if pr_list is None:
-        pr_list, why = merged_prs(repo_root, prs, until)
+        pr_list, why = merged_prs(repo_root, prs, until, with_merge_commit=by_sheet)
         if pr_list is None:
             return {"status": "unknown", "reason": f"merged PRs: {why}"}
-    proposed = mod.load_config(proposed_path) if proposed_path else None
+    sheet_reasons: Dict[str, Dict[str, int]] = {}
     tiers: Dict[str, int] = {}
     full_classes: Dict[str, int] = {}
     single_cause: Dict[str, int] = {}
@@ -683,7 +767,16 @@ def routing_report(repo_root: Path, prs: int = 60, until: Optional[str] = None,
     browser_relevant = 0
     for pr in pr_list:
         files = [str(f) for f in pr["files"]]  # type: ignore[union-attr]
-        r = mod.classify(files, config)
+        slashed = {f.replace("\\", "/") for f in files}
+        touched = [sheet for sheet in declared if sheet in slashed] if by_sheet else []
+        changes, unreadable = (pr_sheet_changes(mod, repo_root, str(pr.get("mergeCommit") or ""), touched)
+                               if touched else ({}, []))
+        extra = (changes,) if by_sheet else ()
+        r = mod.classify(files, config, *extra)
+        for sheet, sels in changes.items():
+            bucket = "unreadable" if sheet in unreadable else sheet_bucket(sels, (proposed or config).surfaces)
+            counts = sheet_reasons.setdefault(sheet, {})
+            counts[bucket] = counts.get(bucket, 0) + 1
         tiers[r.tier] = tiers.get(r.tier, 0) + 1
         cats = [(f, *mod._classify_one(f.replace("\\", "/"), config.rules)) for f in files]
         if any(c.name != "NONE" for _, c, _ in cats):
@@ -705,7 +798,7 @@ def routing_report(repo_root: Path, prs: int = 60, until: Optional[str] = None,
                 entry = shadowed.setdefault(f, {"path": f, "took": lab, "shadowed": sh, "prs": 0})
                 entry["prs"] = int(entry["prs"]) + 1  # type: ignore[call-overload]
         if proposed is not None:
-            pr_ = mod.classify(files, proposed)
+            pr_ = mod.classify(files, proposed, *extra)
             if pr_.tier != r.tier:
                 narrowed.append({"pr": pr["number"], "from": r.tier, "to": pr_.tier, "surface": pr_.surface})
         rows.append({"pr": pr["number"], "tier": r.tier, "surface": r.surface})
@@ -723,6 +816,9 @@ def routing_report(repo_root: Path, prs: int = 60, until: Optional[str] = None,
         "unclassified": [{"path": p, "prs": n} for p, n in sorted(unclassified.items(), key=lambda kv: -kv[1])],
         "shadowed": sorted(shadowed.values(), key=lambda e: -int(e["prs"])),  # type: ignore[arg-type,call-overload]
         "counterfactual": None if proposed is None else {"proposed": str(proposed_path), "changed": narrowed},
+        "sheet_routing": ("n/a: no shared_stylesheets declared" if not declared
+                          else "n/a: classifier routes file lists only" if not by_sheet
+                          else {"sheets": declared, "reasons": sheet_reasons}),
         "per_pr": rows,
     }
 
