@@ -17,6 +17,7 @@ import tempfile
 import time
 from pathlib import Path
 from typing import Tuple
+from unittest.mock import patch
 
 from acceptance.shared import (
     HOOKS,
@@ -94,12 +95,17 @@ def _conversation_capture_unit_checks() -> Tuple[int, int]:
 
     # _trigger_delayed_index: the near-close trigger (fleet-config#673) — spawns
     # conversation_index.py detached, with the project name and a delay, and
-    # never lets a spawn failure raise out of the Stop hook.
+    # never lets a spawn failure raise out of the Stop hook. The spawn checks
+    # pin the environment interactive: a gate run inside a scheduled run
+    # inherits `FLEET_SCHEDULED_RUN=1`, and there the trigger skips the spawn
+    # by design (fleet-config#911, #1011).
+    interactive_env = {k: v for k, v in os.environ.items() if k != _lib.SCHEDULED_RUN_ENV_VAR}
     captured: dict = {}
     saved_popen = cc.subprocess.Popen
     cc.subprocess.Popen = lambda argv, **kw: captured.update(argv=argv, kw=kw)
     try:
-        cc._trigger_delayed_index("life-os")
+        with patch.dict(os.environ, interactive_env, clear=True):
+            cc._trigger_delayed_index("life-os")
     finally:
         cc.subprocess.Popen = saved_popen
     argv = captured.get("argv", [])
@@ -117,12 +123,23 @@ def _conversation_capture_unit_checks() -> Tuple[int, int]:
         raise OSError("spawn refused")
     cc.subprocess.Popen = _raise
     try:
-        cc._trigger_delayed_index("life-os")  # must not raise (fail-open)
+        with patch.dict(os.environ, interactive_env, clear=True):
+            cc._trigger_delayed_index("life-os")  # must not raise (fail-open)
         check("_trigger_delayed_index: a spawn failure is swallowed, not raised", True)
     except OSError:
         check("_trigger_delayed_index: a spawn failure is swallowed, not raised", False)
     finally:
         cc.subprocess.Popen = saved_popen
+
+    spawned: list = []
+    saved_popen = cc.subprocess.Popen
+    cc.subprocess.Popen = lambda argv, **kw: spawned.append(argv)
+    try:
+        with patch.dict(os.environ, {_lib.SCHEDULED_RUN_ENV_VAR: "1"}):
+            cc._trigger_delayed_index("life-os")
+    finally:
+        cc.subprocess.Popen = saved_popen
+    check("_trigger_delayed_index: a scheduled run skips the spawn (#911)", spawned == [])
 
     return check.failures, check.total
 
