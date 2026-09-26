@@ -104,9 +104,13 @@ _MEASURE_JS = r"""
   const sel = (el) => { let s = el.tagName.toLowerCase(); if (el.id) s += '#'+el.id;
     const c = (el.getAttribute('class')||'').trim().split(/\s+/).filter(Boolean).slice(0,3).join('.'); if (c) s += '.'+c; return s; };
   const txt = (el) => (el.getAttribute('aria-label')||el.textContent||'').trim().replace(/\s+/g,' ').slice(0,40);
-  // The fixed or sticky layer an element paints in (itself or its nearest such ancestor), else null: the flow.
+  // An open popup: a menu, listbox or dialog. Absolutely positioned, it paints over the flow like a fixed layer (#1029).
+  const POPUP = '[role=menu], [role=listbox], [role=dialog], dialog';
+  // The layer an element paints in (itself or its nearest such ancestor): a fixed or sticky box, or an
+  // absolutely positioned popup; else null, the flow.
   const layerOf = (el) => { for (let e = el; e && e !== document.documentElement; e = e.parentElement) {
-    const p = getComputedStyle(e).position; if (p === 'fixed' || p === 'sticky') return e; } return null; };
+    const p = getComputedStyle(e).position;
+    if (p === 'fixed' || p === 'sticky' || (p === 'absolute' && e.matches(POPUP))) return e; } return null; };
   const effRect = __GEOMETRY__;
   const pane = document.querySelector('[role=tabpanel]:not([hidden])') || document.querySelector('section.pane:not([hidden])') || document.querySelector('main') || document.body;
   const dialog = document.querySelector('dialog[open]');
@@ -270,9 +274,20 @@ _MEASURE_JS = r"""
     q('li, tr, [role=listitem], [role=row]').forEach(row => {
       // A week of a month grid is not an action row: the WAI-ARIA grid pattern's rows (#1017).
       if ((row.tagName === 'TR' || row.getAttribute('role') === 'row') && row.closest('[role=grid], [role=treegrid]')) return;
+      // An open disclosure inside the row holds the actions the row would otherwise show, so its
+      // controls are not the row's: a popup or a fixed box, an open <details>' body, or the region an
+      // expanded trigger names in aria-controls. The trigger itself (the kebab, the summary) still
+      // counts as the row's accessory (#1029).
+      const regions = [...row.querySelectorAll('[aria-expanded=true][aria-controls]')]
+        .flatMap(t => t.getAttribute('aria-controls').trim().split(/\s+/)).map(id => document.getElementById(id))
+        .filter(r => r && r !== row && row.contains(r));
+      const disclosed = (c) => { for (let e = c.parentElement; e && e !== row; e = e.parentElement) {
+        if (e.matches(POPUP) || regions.includes(e) || getComputedStyle(e).position === 'fixed') return true;
+        if (e.tagName === 'DETAILS' && e.open) { const s = c.closest('summary'); if (!s || s.parentElement !== e) return true; } }
+        return false; };
       // "besides the row itself": a row whose tap target is one control spanning most of it
       // (action-row's main button) does not count that control (#996).
-      const ctl = [...row.querySelectorAll(params.interactive)].filter(visible);
+      const ctl = [...row.querySelectorAll(params.interactive)].filter(visible).filter(c => !disclosed(c));
       const rw = row.getBoundingClientRect().width;
       const main = ctl.reduce((a, c) => (!a || c.getBoundingClientRect().width > a.getBoundingClientRect().width) ? c : a, null);
       const extras = main && main.getBoundingClientRect().width >= rw * 0.5 ? ctl.filter(c => c !== main) : ctl;

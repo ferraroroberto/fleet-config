@@ -1,0 +1,76 @@
+<!doctype html>
+<!-- Static fixture for open disclosures inside list rows (fleet-config#1029).
+     A row's open menu, its expanded drawer and its open <details> hold the actions a crowded
+     row would otherwise show, so their controls are not the row's own (LAYOUT-03), and a menu
+     drawn over its own row takes the tap from the controls under it (TOUCH-02). A row whose
+     trigger does not say it is expanded, and a closed crowded row, still count. Every planted
+     case is asserted by tests/test_design_review.py. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>design_review disclosure fixture</title>
+<style>
+  html, body { margin: 0; background: #ffffff; color: #1f2328; font-family: system-ui, sans-serif; font-size: 16px; }
+  body { padding: 16px; }
+  .rows { list-style: none; margin: 0; padding: 0; width: 720px; }
+  .rows > li { position: relative; margin-bottom: 24px; }
+  .rows button, .rows summary { min-height: 44px; min-width: 44px; font: inherit; }
+  .main { width: 600px; text-align: left; }
+  .menu-row { min-height: 240px; }
+  .line { display: flex; gap: 12px; align-items: center; }
+  .drawer { display: flex; gap: 12px; margin-top: 12px; }
+  /* the open menu floats over its own row's main control, above the flow */
+  [role=menu] { position: absolute; top: 0; left: 120px; z-index: 30; display: flex; flex-direction: column;
+                background: #ffffff; border: 1px solid #d1d9e0; padding: 4px; }
+  [role=menu] button { width: 200px; }
+  /* two items whose hit areas touch inside the menu: one layer, still an overlap */
+  .hit-target { position: relative; }
+  .hit-target::before { content: ""; position: absolute; inset: -5px; }
+  [role=menu] .hit-target { min-height: 40px; }
+</style>
+</head>
+<body>
+  <main>
+    <h2>Rows</h2>
+    <ul class="rows">
+      <!-- open menu: the kebab counts, its four items do not; each item over the main control is covered -->
+      <li class="menu-row">
+        <div class="line">
+          <button type="button" class="main">Menu row</button>
+          <button type="button" class="kebab" aria-label="More" aria-haspopup="menu" aria-expanded="true">⋮</button>
+        </div>
+        <div role="menu" aria-label="Row actions">
+          <button type="button" role="menuitem">Rename</button>
+          <button type="button" role="menuitem">Copy</button>
+          <button type="button" role="menuitem" class="hit-target">Pin</button>
+          <button type="button" role="menuitem" class="hit-target">Archive</button>
+        </div>
+      </li>
+      <!-- expanded drawer: the header is the row's main control; the region it controls is not counted -->
+      <li class="drawer-row">
+        <button type="button" class="main" aria-expanded="true" aria-controls="drawerOpen">Drawer row</button>
+        <div id="drawerOpen" class="drawer">
+          <button type="button">Rename</button><button type="button">Stop</button><button type="button">Chat</button><button type="button">Terminal</button>
+        </div>
+      </li>
+      <!-- open details: its summary is the row's accessory, its body is not counted -->
+      <li class="details-row">
+        <div class="line">
+          <button type="button" class="main">Details row</button>
+          <details open><summary>More</summary><div class="drawer"><button type="button">One</button><button type="button">Two</button><button type="button">Three</button></div></details>
+        </div>
+      </li>
+      <!-- a trigger that says it is collapsed: whatever shows beside it is the row's own -->
+      <li class="collapsed-row">
+        <button type="button" class="main" aria-expanded="false" aria-controls="drawerShut">Collapsed row</button>
+        <div id="drawerShut" class="drawer"><button type="button">A</button><button type="button">B</button><button type="button">C</button></div>
+      </li>
+      <!-- a closed crowded row: four controls and no main one -->
+      <li class="crowded-row">
+        <div class="line"><button type="button">W</button><button type="button">X</button><button type="button">Y</button><button type="button">Z</button></div>
+      </li>
+    </ul>
+  </main>
+</body>
+</html>

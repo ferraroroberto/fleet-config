@@ -56,7 +56,7 @@ def _doc(name: str) -> dict:
 # ---- rubric: the real file loads and names only metrics that exist ----------
 
 rubric = dr.load_rubric(RUBRIC)
-check(rubric.version == "1.5.1", "rubric meta.version stamped")
+check(rubric.version == "1.6.0", "rubric meta.version stamped")
 check(len(rubric.rules) == 26, f"26 seed rules loaded (got {len(rubric.rules)})")
 check(rubric.categories == ["typography", "color", "touch", "navigation", "layout", "components", "a11y"],
       "categories in rubric order")
@@ -260,7 +260,7 @@ check(all(s == "pass" for s in statuses_c.values()), f"compliant: every rule pas
 check(all(v["score"] == 100.0 and v["grade"] == "A" and not v["unmeasured"] for v in out_c["categories"].values()),
       "compliant: every category 100/A, measured")
 check(out_c["overall"] == {"score": 100.0, "grade": "A", "unmeasured": False}, "compliant: overall A")
-check(out_c["schema_version"] == 1 and out_c["rubric_version"] == "1.5.1" and out_c["target"] == "fixture-app"
+check(out_c["schema_version"] == 1 and out_c["rubric_version"] == "1.6.0" and out_c["target"] == "fixture-app"
       and out_c["commit"].startswith("0000") and out_c["generated_at"].endswith("Z"), "evaluate envelope keys")
 check([s["id"] for s in out_c["screens"]] == ["desktop-light-home", "iphone-light-home", "desktop-light-dialog-edit"],
       "evaluate echoes the screen list")
@@ -575,7 +575,7 @@ else:
           f"measure CLI walks the fixture: 2 tabs + 1 dialog x light/dark ({proc.stdout[-300:]}{proc.stderr[-300:]})")
     check(lines.get("RUN_DIR") == str(run_dir) and Path(lines.get("METRICS", "")).is_file(), "RUN_DIR/METRICS lines point at the run dir")
     doc = json.loads(Path(lines["METRICS"]).read_text(encoding="utf-8"))
-    check(doc["interpreter"] == str(interp) and doc["schema_version"] == 1 and doc["rubric_version"] == "1.5.1", "metrics.json records the interpreter + versions")
+    check(doc["interpreter"] == str(interp) and doc["schema_version"] == 1 and doc["rubric_version"] == "1.6.0", "metrics.json records the interpreter + versions")
     if not (scaffold / "tests" / "e2e" / "_geometry.py").is_file():
         _h.skip("browser leg: project-scaffolding/tests/e2e/_geometry.py absent -- hit-target assertions NOT verified")
     check(doc["walk"]["info"]["geometry"] == ("loaded" if (scaffold / "tests" / "e2e" / "_geometry.py").is_file() else "GEOMETRY_MISSING"),
@@ -720,6 +720,29 @@ else:
     cal = (pgs.get("android-light-calendar", {}).get("metrics") or {}).get("layout", {})
     check(cal.get("rows_over_limit") == [{"sel": "li.over", "controls": 5}],
           f"LAYOUT-03: the month grid's week rows are skipped; a list row with too many controls still fails (#1017) -- {cal.get('rows_over_limit')}")
+
+    # open disclosures in a row: not the row's controls (LAYOUT-03), and a popup over its row takes the tap (TOUCH-02) (#1029)
+    disc_dir = STATE / "fixture-disclosure"
+    proc_d = subprocess.run(
+        [str(interp), str(REPO / "skills" / "_lib" / "design_review" / "walk.py"), "--url", (FIX / "disclosure.html").as_uri(),
+         "--out", str(disc_dir), "--devices", "desktop,iphone", "--scaffold", str(scaffold),
+         "--params", str(STATE / "steps-params.json")],
+        capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=600,
+    )
+    discs = {s["id"]: s for s in json.loads((disc_dir / "screens.json").read_text(encoding="utf-8"))} if proc_d.returncode == 0 else {}
+    check(len(discs) == 4 and all(s["status"] == "ok" for s in discs.values()), f"the disclosure fixture walks desktop + iphone x 2 themes ({proc_d.stderr[-300:]})")
+    for _dev in ("desktop", "iphone"):
+        _m = (discs.get(f"{_dev}-light-root", {}).get("metrics") or {})
+        _rows = _m.get("layout", {}).get("rows_over_limit")
+        check(_rows == [{"sel": "li.collapsed-row", "controls": 3}, {"sel": "li.crowded-row", "controls": 4}],
+              f"LAYOUT-03 {_dev}: an open menu, an expanded aria-controls drawer and an open details body are not the row's controls; "
+              f"a collapsed trigger's neighbours and a crowded row still count (#1029) -- {_rows}")
+        _t = _m.get("targets", {})
+        if "error" not in _t:
+            check(_t.get("covered") == [{"a": "button.main", "b": "button"}],
+                  f"TOUCH-02 {_dev}: a menu item drawn over its own row's main control is covered, not an overlap (#1029) -- {_t.get('covered')}")
+            check(_t.get("overlap_count") == 2 and all("button.hit-target" in (o["a"], o["b"]) for o in _t.get("overlaps", [])),
+                  f"TOUCH-02 {_dev}: touching items inside the one menu still overlap (#1029) -- {_t.get('overlaps')}")
 
     # measure --synthetic: boot the target's launcher, walk it with synthetic steps + no_go, stop it (#995)
     syn_root = STATE / "synthetic-app"
