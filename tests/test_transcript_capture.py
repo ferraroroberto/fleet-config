@@ -55,9 +55,20 @@ class CaptureTests(unittest.TestCase):
         self.path = self.root / 'transcript.jsonl'
         self.project = _lib.ProjectConfig(name='probe', cwd_prefix=str(self.root), webapp_port=None, tray_cmd=None, restart_cmd=None, api_version_path=None,
             extra={'capture': True, 'capture_harnesses': ['claude', 'codex']})
+        # The outcome breadcrumb (#983) writes under the hooks-state dir: never live state.
+        self.state = self.root / 'state'
+        self.env = patch.dict(os.environ, {'CLAUDE_HOOKS_STATE_DIR': str(self.state)})
+        self.env.start()
 
     def tearDown(self):
+        self.env.stop()
         self.tmp.cleanup()
+
+    def events(self):
+        log = self.state / cc.CAPTURE_LOG_FILENAME
+        if not log.exists():
+            return []
+        return [json.loads(line) for line in log.read_text(encoding='utf-8').splitlines()]
 
     def capture(self, records, agent=None, sid=SID):
         self.path.write_text('\n'.join(json.dumps(x) for x in records) + '\n', encoding='utf-8')
@@ -204,6 +215,65 @@ class CaptureTests(unittest.TestCase):
         self.capture(stamped(invoked, time.time()), 'claude', THIRD)
         self.assertEqual(len(list(journal.glob('*.md'))), 1)
         self.assertEqual(len(list((skills / 'probe' / 'conversations').glob('*.md'))), 1)
+
+    def test_every_stop_leaves_a_breadcrumb(self):
+        """#983: each outcome is recorded durably, with metadata and no message text."""
+        self.capture(claude())
+        self.capture(claude())
+        truncated = json.dumps(claude()[0])[:-5]
+        self.path.write_text(truncated + '\n', encoding='utf-8')
+        payload = {'cwd': str(self.root), 'transcript_path': str(self.path), 'session_id': SID}
+        with patch.object(cc._lib, 'read_stdin_json', return_value=payload), \
+             patch.object(cc._lib, 'detect_project', return_value=self.project), \
+             patch.object(cc, '_trigger_delayed_index'):
+            self.assertEqual(cc.main(), 0)
+        results = [e['result'] for e in self.events()]
+        self.assertEqual(results, ['captured', 'unchanged', 'parse_failure'])
+        first = self.events()[0]
+        self.assertEqual((first['session'], first['project'], first['route'], first['turns']), (SID, 'probe', 'flat', 2))
+        self.assertTrue(first['path'].endswith('.md'))
+        raw = (self.state / cc.CAPTURE_LOG_FILENAME).read_text(encoding='utf-8')
+        self.assertNotIn('Lunar gardens', raw)
+
+    def test_resumed_session_updates_its_capture_and_names_duplicates(self):
+        """#983: a markerless resume updates the session's existing capture in place,
+        even when inference would pick another skill; a second copy of the same
+        session in another folder is reported, since only the first is updated."""
+        self.project.extra.update(capture_routing='skills')
+        skills = self.root / '.claude' / 'skills'
+        for name in ('alpha', 'beta'):
+            (skills / name).mkdir(parents=True)
+        (self.root / '.active-skill').write_text('beta', encoding='utf-8')
+        first_turn = stamped(claude(), time.time())
+        self.capture(first_turn)
+        beta = list((skills / 'beta' / 'conversations').glob('*.md'))
+        self.assertEqual(len(beta), 1)
+
+        resumed = first_turn + [dict(type=role, sessionId=SID, timestamp=first_turn[-1]['timestamp'],
+                                     message={'content': text})
+                                for role, text in [('user', 'Back again, see .claude/skills/alpha/notes.md'),
+                                                   ('assistant', 'Resumed answer')]]
+        self.capture(resumed)
+        self.assertEqual(list((skills / 'beta' / 'conversations').glob('*.md')), beta)
+        self.assertFalse((skills / 'alpha' / 'conversations').exists())
+        self.assertIn('turns="4"', beta[0].read_text(encoding='utf-8'))
+        last = self.events()[-1]
+        self.assertEqual((last['result'], last['marker'], last['route'], last['skill']),
+                         ('captured', 'absent', 'inferred', 'alpha'))
+        self.assertEqual((last['path'], last['duplicates']), (str(beta[0]), []))
+
+        # A legacy copy of the same session in a folder that sorts first wins the
+        # update; the breadcrumb names the copy left behind.
+        legacy = skills / 'alpha' / 'conversations'
+        legacy.mkdir(parents=True)
+        (legacy / '2026-08-01-0000-legacy.md').write_text(
+            f'<!-- capture sid="{SID}" agent="claude" updated="2026-08-01T00:00:00" -->\n# old\n',
+            encoding='utf-8')
+        self.capture(resumed + [dict(type='user', sessionId=SID, timestamp=first_turn[-1]['timestamp'],
+                                     message={'content': 'one more'})])
+        last = self.events()[-1]
+        self.assertEqual(last['path'], str(legacy / '2026-08-01-0000-legacy.md'))
+        self.assertEqual(last['duplicates'], [str(beta[0])])
 
     def test_marker_provenance_falls_back_to_age_without_timestamps(self):
         """An unstamped source cannot prove provenance, so bound the marker by age."""
