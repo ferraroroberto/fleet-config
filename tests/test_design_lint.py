@@ -271,6 +271,21 @@ BAD_CSS = """
 .toggle.on { background: var(--accent); }
 .app { max-width: 1160px; }
 """
+# fleet-config#994: a vendored component's scoped `outline: none` (action-row
+# draws its ring on the wrapper via :focus-within) sorting ahead of the app's
+# global tokenized ring must not mask it.
+SCOPED_FIRST_CSS = """
+.action-row-filter input:focus-visible { outline: none; }
+.action-row-filter:focus-within { outline: 2px solid var(--accent); }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+"""
+scoped_first = run_contracts(SCOPED_FIRST_CSS)
+check(scoped_first["focus-visible-ring"]["status"] == "PASS",
+      "scoped outline:none ahead of the global tokenized ring -> PASS (#994)")
+scoped_only = run_contracts(".action-row-filter input:focus-visible { outline: none; color: var(--fg); }\n")
+check(scoped_only["focus-visible-ring"]["status"] == "WARN",
+      "only a scoped outline:none (a var() elsewhere in the body) -> WARN, not PASS (#994)")
+
 bad = run_contracts(BAD_CSS, "<input type=\"checkbox\"><div class=\"modal\"></div>")
 check(bad["focus-visible-ring"]["status"] == "FAIL", "missing focus ring FAIL")
 check(bad["reduced-motion"]["status"] == "FAIL", "missing reduced motion FAIL")
@@ -1185,6 +1200,18 @@ check(post_modal["modal-header"]["status"] == "PASS",
       "header .dialog-close (aria-label=Close), no footer Cancel -> PASS")
 check(post_modal["modal-footer"]["status"] == "PASS",
       "one always-visible full-width solid-accent primary -> PASS")
+# fleet-config#994: #963 moved the solid primary to `accent-fill`
+# (project-scaffolding#274); the vendored button-primary reads var(--accent-fill).
+fill_modal = run_contracts(
+    POST_MODAL_CSS.replace("background: var(--accent);", "background: var(--accent-fill);"),
+    POST_MODAL_HTML)
+check(fill_modal["modal-footer"]["status"] == "PASS",
+      "an accent-fill solid primary is the solid-accent recipe -> PASS (#994)")
+soft_modal = run_contracts(
+    POST_MODAL_CSS.replace("background: var(--accent);", "background: var(--accent-soft);"),
+    POST_MODAL_HTML)
+check(soft_modal["modal-footer"]["status"] == "FAIL",
+      "an accent-soft tint is still not the solid primary -> FAIL (#994)")
 check(post_modal["modal-top-anchor"]["status"] == "PASS",
       "max-height + overflow-y: auto on .rename-dialog -> PASS")
 

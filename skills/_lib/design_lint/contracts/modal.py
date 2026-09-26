@@ -193,7 +193,9 @@ def _check_editor_modal_contract(ctx: _ContractsCtx) -> List[dict]:
         is_full_width = False
         for c in btn_classes:
             for _, _anc, body in _selector_hits(css_all, re.compile(r"\." + re.escape(c) + r"\b")):
-                if re.search(r"background(-color)?:\s*var\(--accent\)", body):
+                # `accent-fill` is the solid primary since #963
+                # (project-scaffolding#274, fleet-config#994).
+                if re.search(r"background(-color)?:\s*var\(--accent(-fill)?\)", body):
                     is_accent = True
                 if re.search(r"width:\s*100%|flex:\s*1\b|align-self:\s*stretch", body):
                     is_full_width = True
