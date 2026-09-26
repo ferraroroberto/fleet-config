@@ -183,7 +183,7 @@ doc_d = _flip(violating, "TOUCH-02", "unmeasured")
 doc_d["diff"] = ledger.diff(doc_d, older)
 page = report.render_report(doc_d)
 check('id="diff"' in page and "compared against run prev" in page and "unmeasured (1)" in page and "TOUCH-02" in page
-      and "rubric changed from v1.0.0 to v1.5.1" in page, "the report renders the unmeasured bucket and the rubric-change note")
+      and "rubric changed from v1.0.0 to v1.6.0" in page, "the report renders the unmeasured bucket and the rubric-change note")
 doc_f = _clone(violating)
 doc_f["diff"] = ledger.diff(doc_f, None)
 check("first recorded run for this target" in report.render_report(doc_f), "a first run says so instead of 'compared against unknown'")
