@@ -34,6 +34,7 @@ Always ask before assuming: file/module location for new code; data shape or sch
 ### While fixing
 
 - Empirical proof for retry/timeout/backoff logic — verify the API-semantics assumption with a 10-line probe before shipping.
+- A claimed limitation or blocker ("the API can't", "needs a credential", "impossible here") is a material claim — state it only with the verbatim error, the doc statement, or a live probe in hand; run the cheap probe before asking or declaring a step blocked.
 - Distinct error messages for distinct conditions ("down" vs "in flight past timeout").
 - Don't bundle independently-revertable bugs in one PR — if bug-A reverts without breaking bug-B's fix, ship two PRs.
 - Leave info-level log breadcrumbs after a hard bug, in the same commit as the fix — the next occurrence must be diagnosable from logs.
