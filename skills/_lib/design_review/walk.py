@@ -54,7 +54,7 @@ import logging
 import sys
 import time
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Callable, Dict, List, Optional
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import measure  # noqa: E402
@@ -162,20 +162,40 @@ def _record(**fields: object) -> Dict[str, object]:
     return base
 
 
-def _shot(page, shots: Path, name: str, full: bool = False) -> str:
+def _shot(page, shots: Path, name: str, full: bool = False,
+          after_full: Optional[Callable[[], None]] = None) -> str:
     path = shots / f"{name}{'-full' if full else ''}.png"
     page.screenshot(path=str(path), full_page=full)
+    if full and after_full:
+        after_full()
     return path.name
 
 
-def _open_scope_details(page, shots: Path, sid: str) -> Optional[str]:
+def touch_restorer(ctx, page, engine: str, ctx_args: dict) -> Optional[Callable[[], None]]:
+    """Re-enable touch emulation after a Chromium full-page screenshot (#1017).
+
+    A `full_page=True` capture resizes the Chromium viewport and drops the
+    device descriptor's touch emulation: `(pointer: coarse)` turns into
+    `(pointer: fine)` and `maxTouchPoints` into 0 until the page is closed,
+    reloads included, so every later screen measures the desktop layout.
+    CDP `Emulation.setTouchEmulationEnabled` puts it back. `None` for WebKit
+    (unaffected) and for a context without touch (desktop).
+    """
+    if engine != "chromium" or not ctx_args.get("has_touch"):
+        return None
+    cdp = ctx.new_cdp_session(page)
+    return lambda: cdp.send("Emulation.setTouchEmulationEnabled", {"enabled": True, "maxTouchPoints": 1})
+
+
+def _open_scope_details(page, shots: Path, sid: str,
+                        after_full: Optional[Callable[[], None]] = None) -> Optional[str]:
     """Open every closed `<details>` in the dialog or page; the full screenshot of that state, if any opened."""
     opened = int(page.evaluate(_OPEN_SCOPE_DETAILS_JS) or 0)
     if not opened:
         return None
     page.wait_for_timeout(DETAILS_SETTLE_MS)
     log.info("opened %d details on %s", opened, sid)
-    return _shot(page, shots, sid, full=True)
+    return _shot(page, shots, sid, full=True, after_full=after_full)
 
 
 def walk_context(pw, device: str, theme: str, args: argparse.Namespace, script: str,
@@ -197,6 +217,7 @@ def walk_context(pw, device: str, theme: str, args: argparse.Namespace, script: 
         ctx.add_init_script(f"try{{localStorage.setItem({json.dumps(str(key))},{json.dumps(theme)})}}catch(e){{}}")
     page = ctx.new_page()
     page.set_default_timeout(args.timeout_ms)
+    retouch = touch_restorer(ctx, page, profile["engine"], ctx_args)
     tab_selector = str(review.get("tab_selector") or "[role=tab]")
     # A synthetic run (#995) walks a throwaway instance: its own no_go, when declared, replaces the live list.
     synth = review.get("synthetic") if isinstance(review.get("synthetic"), dict) else {}
@@ -233,7 +254,7 @@ def walk_context(pw, device: str, theme: str, args: argparse.Namespace, script: 
             shot = _shot(page, shots, sid)
             page.evaluate(_OPEN_DETAILS_JS)
             page.wait_for_timeout(DETAILS_SETTLE_MS)
-            full = _shot(page, shots, sid, full=True)
+            full = _shot(page, shots, sid, full=True, after_full=retouch)
             metrics = page.evaluate(script, params)
             screens.append(_record(id=sid, device=device, theme=theme, view=view, kind="tab",
                                    screenshot=shot, screenshot_full=full, metrics=metrics))
@@ -252,7 +273,7 @@ def walk_context(pw, device: str, theme: str, args: argparse.Namespace, script: 
             page.evaluate("id => document.getElementById(id).showModal()", did)
             page.wait_for_timeout(DIALOG_SETTLE_MS)
             shot = _shot(page, shots, sid)
-            full = _open_scope_details(page, shots, sid)
+            full = _open_scope_details(page, shots, sid, retouch)
             metrics = page.evaluate(script, params)
             page.evaluate("id => document.getElementById(id).close()", did)
             screens.append(_record(id=sid, device=device, theme=theme, view=view, kind="dialog",
@@ -306,7 +327,7 @@ def walk_context(pw, device: str, theme: str, args: argparse.Namespace, script: 
                 guarded(selector).click()
                 page.wait_for_timeout(STEP_SETTLE_MS)
             shot = _shot(page, shots, sid)
-            full = _open_scope_details(page, shots, sid)
+            full = _open_scope_details(page, shots, sid, retouch)
             metrics = page.evaluate(script, params)
             screens.append(_record(id=sid, device=device, theme=theme, view=view, kind="step",
                                    screenshot=shot, screenshot_full=full, metrics=metrics))

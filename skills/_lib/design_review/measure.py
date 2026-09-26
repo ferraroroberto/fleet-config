@@ -268,6 +268,8 @@ _MEASURE_JS = r"""
         const filter = !!host.querySelector('input[type=search], input[placeholder*="filter" i], input[placeholder*="search" i], [role=searchbox]');
         lists.push({sel: sel(l), rows, has_filter: filter}); } });
     q('li, tr, [role=listitem], [role=row]').forEach(row => {
+      // A week of a month grid is not an action row: the WAI-ARIA grid pattern's rows (#1017).
+      if ((row.tagName === 'TR' || row.getAttribute('role') === 'row') && row.closest('[role=grid], [role=treegrid]')) return;
       // "besides the row itself": a row whose tap target is one control spanning most of it
       // (action-row's main button) does not count that control (#996).
       const ctl = [...row.querySelectorAll(params.interactive)].filter(visible);
