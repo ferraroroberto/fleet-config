@@ -21,7 +21,7 @@ Two subcommands:
          The skill reads the existing body, merges its findings, then calls upsert.
 
   upsert --repo OWNER/NAME --kind KIND --title T --body-file F [--label L]
-         [--reopen] [--dry-run]
+         [--reopen] [--dry-run] [--verify-quotes REPO_PATH]
          0 matches -> create · 1 -> edit · >1 -> edit lowest, close the rest as
          duplicates. Stamps the marker. Prints the canonical issue URL.
          `--reopen` extends the 0-match case to the CLOSED issues before
@@ -29,6 +29,8 @@ Two subcommands:
          meaningful "nothing outstanding" rather than "done forever".
          `--dry-run` prints the plan (`ACTION=edit|create ISSUE= DUPLICATES=`)
          and the marker-stamped body after `BODY:`, and writes nothing.
+         `--verify-quotes` refuses the whole write when any finding's verbatim
+         quote is not in its file (`audit_quote.py`, fleet-config#960).
 
   close  --repo OWNER/NAME --kind KIND --comment TEXT
          Closes the open managed issue for that kind with the comment, so an
@@ -688,7 +690,7 @@ def _upsert_issue(
 
 def cmd_upsert(
     repo: str, kind: str, title: str, body: str, label: str | None, reopen: bool = False,
-    dry_run: bool = False,
+    dry_run: bool = False, verify_quotes: str | None = None,
 ) -> None:
     # A ledger is a machine contract, so it is validated and normalized here
     # rather than trusted from the caller's markdown — `--kind ledger` through
@@ -696,6 +698,17 @@ def cmd_upsert(
     # reached three repos (fleet-config#566).
     if kind == "ledger":
         body = normalize_ledger_body(body)
+    if verify_quotes is not None:
+        # The one content check this helper runs, and only on request: a
+        # finding whose verbatim quote isn't in the named file is refused
+        # before anything is written (fleet-config#960). The check itself
+        # lives in `audit_quote.py`.
+        import audit_quote
+        bad = [v for v in audit_quote.check_body(body, Path(verify_quotes)) if v.status != "VERIFIED"]
+        if bad:
+            for v in bad:
+                print(f"{v.status} {v.path}:{v.line}", file=sys.stderr)
+            sys.exit(f"QUOTES=unverified count={len(bad)}: remove or fix these findings; nothing was written")
     if dry_run:
         print("\n".join(dry_run_lines(repo, kind, title, body)))
         return
@@ -916,6 +929,11 @@ def main(argv: list[str] | None = None) -> None:
         "--dry-run", action="store_true",
         help="print the plan (edit N / create) and the would-be body; write nothing",
     )
+    u.add_argument(
+        "--verify-quotes", default=None, metavar="REPO_PATH",
+        help="refuse (write nothing) unless every unticked, non-carried finding's "
+             "Quote: is found in its file under REPO_PATH (audit_quote.py, #960)",
+    )
 
     cl = sub.add_parser("close")
     cl.add_argument("--repo", required=True)
@@ -936,7 +954,8 @@ def main(argv: list[str] | None = None) -> None:
     elif args.cmd == "upsert":
         with open(args.body_file, encoding="utf-8") as fh:
             body = fh.read()
-        cmd_upsert(args.repo, args.kind, args.title, body, args.label, args.reopen, args.dry_run)
+        cmd_upsert(args.repo, args.kind, args.title, body, args.label, args.reopen, args.dry_run,
+                   args.verify_quotes)
     elif args.cmd == "close":
         cmd_close(args.repo, args.kind, args.comment)
     elif args.cmd == "gate":

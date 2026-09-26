@@ -13,8 +13,8 @@ Surfaced by `/codebase-audit`, kept up to date across runs. Scope: <whole repo |
 
 ## Findings
 
-- [ ] **<file>:<line>** — <what's wrong>. Fix: <fix shape>.
-- [ ] **<file>:<line>** — <what's wrong>. Fix: <fix shape>.
+- [ ] **<file>:<line>** — <what's wrong>. Quote: `<verbatim line(s)>`. Fix: <fix shape>.
+- [ ] **<file>:<line>** — <what's wrong>. Quote: `<verbatim line(s)>`. Fix: <fix shape>.
 - ...
 
 ## Context
@@ -116,13 +116,13 @@ Print one summary table and stop. Exact shape:
 ```
 /codebase-audit summary — <repo>  (scope: <whole repo | path>)
 
-  bucket             findings  new  carried  stale*  filed
-  -----------------  --------  ---  -------  ------  --------------------------------------------
-  duplication              3    1        2       0   https://github.com/<owner>/<repo>/issues/<N>
-  stale                    0    0        0       0   (no findings)
-  claude-md-drift          2    0        2       0   https://github.com/<owner>/<repo>/issues/<N>
-  maintainability          5    2        2       1   https://github.com/<owner>/<repo>/issues/<N>
-  slop                     2    2        0       0   https://github.com/<owner>/<repo>/issues/<N>
+  bucket             findings  new  carried  stale*  resurfaced  filed
+  -----------------  --------  ---  -------  ------  ----------  --------------------------------------------
+  duplication              3    1        2       0           0   https://github.com/<owner>/<repo>/issues/<N>
+  stale                    0    0        0       0           0   (no findings)
+  claude-md-drift          2    0        2       0           0   https://github.com/<owner>/<repo>/issues/<N>
+  maintainability          5    2        2       1           1   https://github.com/<owner>/<repo>/issues/<N>
+  slop                     2    2        0       0           0   https://github.com/<owner>/<repo>/issues/<N>
   bug                      0    0        0       0   (no findings)
   documentation            4    1        1       2   https://github.com/<owner>/<repo>/issues/<N>
 
@@ -136,6 +136,9 @@ Print one summary table and stop. Exact shape:
   skipped as duplicates:
     - <file>:<line> — dupe of #<N>
     - <file>:<line> — dupe of #<N>
+
+  unverified (not filed — the quote check did not return VERIFIED):
+    - <file>:<line> (MISMATCH | NO_QUOTE | UNREADABLE)
 
   files inspected: <count>   (prioritization: <none | recent + entry points | …>)
 

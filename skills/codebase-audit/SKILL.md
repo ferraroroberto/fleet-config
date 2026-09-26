@@ -287,7 +287,9 @@ template below. If it exists, **merge** this run's findings into the returned
 body — the issue is a *living backlog*, so:
 
 - **Preserve every already-ticked checkbox** (`- [x]`) verbatim — the user
-  fixed those; never reset them.
+  fixed those; never reset them — **except when this run finds the same
+  problem again** (below): a ticked item hides a regression, so it is
+  un-ticked and tagged, never left silently ticked (fleet-config#960 B).
 - **Match by file path first.** A finding for a file already listed is the same
   finding even if the line number moved — update the line to this run's value
   (re-verified while reading) and keep the existing checkbox state.
@@ -299,6 +301,10 @@ body — the issue is a *living backlog*, so:
   - **Re-matched this run** (found again, same file + problem): silently bump
     its hidden `last-seen` date, no visible tag — it reads as a normal,
     currently-live finding.
+  - **Re-surfaced this run** (found again, and its box is `[x]`): the fix did
+    not hold or regressed. Un-tick it (`- [ ]`), bump `last-seen`, and append
+    inline `_(re-surfaced <date>)_`. Count it separately from new and carried
+    (the `resurfaced` column in step 10's table and the run-log bullet).
   - **Not re-surfaced this run:** keep the line (never delete), append
     *inline on the same line* (a bare HTML comment on its own line risks
     GitHub treating it as breaking the list):
@@ -318,15 +324,37 @@ body — the issue is a *living backlog*, so:
   `/issue-finish` once all boxes are checked; a lane may close it only under
   the proven-landed bar in **Hard rules** below.
 - Append a dated bullet to the `## Audit run log` section:
-  `<YYYY-MM-DD> @ <short-sha>: +A new, B carried, C not re-surfaced`.
+  `<YYYY-MM-DD> @ <short-sha>: +A new, B carried, C not re-surfaced, D re-surfaced`.
+
+**2b. Verify every quote before filing** (fleet-config#960 A). Each new and
+re-matched finding carries ``Quote: `<verbatim text of the motivating line(s)>` ``
+(one to three lines copied from the file, joined with spaces, no backticks
+inside — see the body shape in reference.md). Write the merged body to the temp file, then:
+
+```
+E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/audit_quote.py check \
+  --repo-path <repo root> --body-file <tmpfile>
+```
+
+Every finding line prints `VERIFIED`, `MISMATCH`, `NO_QUOTE` or `UNREADABLE`
+(ticked and `_(carried …)_` items are skipped). **Only `VERIFIED` findings are
+filed**: remove every other one from the body before step 3 and list it in
+step 10's report as `unverified: <file>:<line> (<status>)`. A `file:line` can
+be hallucinated and still look valid; a quote that exists in the file can't —
+that matters most in the unattended `/audit-fleet` run, where nobody reads the
+findings before they are filed.
 
 **3. Upsert** (creates if absent, edits if present, collapses any strays):
 
 ```
 E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/audit_issue.py upsert \
   --repo <OWNER/REPO> --kind <bucket> --label <bucket-label> \
-  --title "audit: <bucket> findings" --body-file <tmpfile>
+  --title "audit: <bucket> findings" --body-file <tmpfile> --verify-quotes <repo root>
 ```
+
+`--verify-quotes` is the backstop for 2b: the helper re-runs the quote check
+and refuses the whole write (`QUOTES=unverified`, nothing written) if an
+unverified finding is still in the body.
 
 The helper stamps the `<!-- audit-managed: kind=<bucket> -->` marker, applies
 the label, prints the canonical issue URL. **Titles are stable** — no `(N
@@ -450,7 +478,10 @@ findings. Codebase passes the audit.` — and stop.
   *different* (hand-filed or other-bucket) open issue; record it as
   "skipped: dupe of #N".
 - **Citations or it didn't happen.** Every finding must point at a real
-  `file:line`. "Lots of duplication in the auth module" is not a finding.
+  `file:line` **and quote the line(s) it is about**, verbatim, checked by
+  `audit_quote.py` in step 8 (2b). A finding that cannot quote is reported as
+  unverified and not filed. "Lots of duplication in the auth module" is not a
+  finding.
 - **Don't audit `node_modules/`, `.venv/`, `dist/`, generated code, or
   vendored third-party trees.** `git ls-files` already excludes most of
   this.

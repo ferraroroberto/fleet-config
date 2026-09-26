@@ -147,7 +147,7 @@ Run a resting-state codebase audit on the <name> repo.
 Report back in this exact shape so the orchestrator can build the digest:
   - Repo: <name>
   - Result: AUDITED (<N> issues filed) | CLEAN (no findings) | SKIPPED-BY-LEDGER
-  - Filed: <bucket → issue URL (<new> new, <carried> carried, <stale> not re-surfaced), one per line; omit if none>
+  - Filed: <bucket → issue URL (<new> new, <carried> carried, <stale> not re-surfaced, <resurfaced> re-surfaced), one per line; omit if none>
   - Security: <NONE | HEALED (<count> gap(s), PR merged, private alert sent) |
     ESCALATED (<count>, branch left for manual /issue-finish)> — a bare count +
     disposition, NEVER any detail, file, or vulnerability class
@@ -158,7 +158,7 @@ Report back in this exact shape so the orchestrator can build the digest:
   - Note: <one line if anything surprising came up>
 ```
 
-The `new`/`carried`/`stale` counts per bucket come straight from `/codebase-audit` step 10's final report table (from step 8's run-log counts, never recomputed) — lets the digest (step 5) separate genuinely new findings from standing backlog.
+The `new`/`carried`/`stale`/`resurfaced` counts per bucket come straight from `/codebase-audit` step 10's final report table (from step 8's run-log counts, never recomputed) — lets the digest (step 5) separate genuinely new findings from standing backlog.
 
 Keep the window full: each time a sub-agent returns and its report is recorded, immediately dispatch the next pending repo (up to the 3-in-flight cap, subject to `rate_gate.py check`). Print a one-line progress marker per repo as it completes (e.g. `[3/12] photo-ocr — AUDITED`). Do **not** sleep between dispatches when the gate reads `OK` — refill the moment a slot frees. Entire loop runs in one turn: block on `TaskOutput` for the in-flight window, refill on each return, repeat until the to-audit list is drained — turn never ends with a sub-agent still dispatched (`fleet-config#506`).
 
@@ -242,6 +242,7 @@ Compose the digest as markdown (single long lines per paragraph, no hard wraps) 
 - **Stale-lock section** *(only when non-empty)*: repos with a stranded `.git/index.lock`, one line each with verdict and age (`email-archiver: 0-byte lock 15.2d old, no git process running — repo frozen against every write; needs a human to confirm the holder is dead and remove it`). **Never** resolved by the run itself — repeats verbatim until acted on (fleet-config#667).
 - **Session-limit section** *(only when non-empty)*: repos left unaudited because the step-3 3-pause safety net was hit.
 - **New findings this week:** built strictly from the `new` counts each sub-agent reported (step 3's `Filed:` breakdown) — only bucket/URL pairs where `new > 0`. List at the top.
+- **Re-surfaced this week** *(only when non-zero)*: bucket/URL pairs where `resurfaced > 0` — a finding that was ticked as fixed and was found again (a fix that didn't hold), listed right after the new findings (fleet-config#960).
 - **Standing backlog:** single fleet-wide count — sum of every `carried` + `stale` count across every audited repo, never an item list, e.g. `14 standing findings across 5 repos, unchanged or not re-verified this run — see each repo's audit issue for detail.`
 - **New fleet assets this week:** promotion candidates added to the practices ledger this run, with `PRACTICES_LEDGER_URL`. If none: `No new fleet assets catalogued this week.`
 - **Design & cert drift:** design-drift bucket reported alongside the six code buckets but never mixed into their counts. One line with fleet-wide open total and week-over-week delta from the `design-drift-last-run-at:` baseline (`6 open design-drift across 3 apps (+2 since last week); 1 cert-drift`), then — only for repos whose count **changed** since baseline — a per-repo delta line (`home-automation: 4 (+2)`). Steady repos fold into the total, not enumerated.
