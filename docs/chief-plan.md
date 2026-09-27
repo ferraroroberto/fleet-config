@@ -22,7 +22,11 @@ The contract between the fleet chief, which writes the plan, and app-launcher's 
     {"repo": "automation", "ref": "#135", "title": "parking burst trial", "status": "queued", "note": "before Thu 1 Oct 16:00"}
   ],
   "waiting_on_roberto": [
-    {"text": "Remember the last tab?", "ref": "app-launcher#1131"}
+    {"id": "q1", "text": "Remember the last tab?", "ref": "app-launcher#1131"},
+    {"id": "q2", "text": "Merge the two capture copies?", "repo": "life-os", "ref": "life-os#171",
+     "question": "Merge the two capture copies?", "detail": "One session was captured twice and the copies diverged.",
+     "recommendation": "Merge: one index, no lost turns.",
+     "options": [{"label": "Merge", "description": "keep one copy", "recommended": true}, {"label": "Leave"}]}
   ]
 }
 ```
@@ -37,9 +41,18 @@ The contract between the fleet chief, which writes the plan, and app-launcher's 
 | `queue[].ref` | `#N`, local to `repo`. |
 | `queue[].status` | `queued` \| `building` \| `gate` \| `merged` \| `parked` \| `waiting-roberto`. |
 | `queue[].note` | Free text, one short line. |
-| `waiting_on_roberto[]` | `text` required; `ref` optional and qualified (`repo#N`). |
+| `waiting_on_roberto[]` | `text` required: the short card line. `ref` optional and qualified (`repo#N`). Everything below is optional too (fleet-config#1049). |
+| `waiting_on_roberto[].id` | Stable, unique within the list: a lowercase letter, then up to 31 letters, digits or hyphens. The writer assigns the next `q<N>` when none is given. Older files may have items without one. |
+| `waiting_on_roberto[].repo` | The fleet repo the question is about. It matches `ref`'s repo when both are set; the writer derives it from `ref`. |
+| `waiting_on_roberto[].question` / `detail` / `recommendation` | The full question, descriptive context, and the chief's recommendation. One line each, at most 1000 characters. |
+| `waiting_on_roberto[].options[]` | 0–4 choices: `label` required (at most 80 characters, unique), `description` optional, `recommended` optional bool. At most one is recommended unless `multi`. |
+| `waiting_on_roberto[].multi` | `true` when more than one option may be chosen; needs `options`. |
 
-The writer is stricter than the readers. It writes only these fields, single-line strings of at most 200 characters, and the listed statuses.
+The writer is stricter than the readers. It writes only these fields, single-line strings (at most 200 characters unless a row above says otherwise), and the listed statuses.
+
+## Questions for Roberto
+
+A waiting item with `question` is one entry on the Board's one-shot answer sheet (app-launcher). Roberto answers the whole sheet at once; the answers reach the chief's terminal as one "Answers from the Board" message (app-launcher#1295). The chief acts on each answer and removes the item with `plan unwait <id>`. The Board never writes the plan file.
 
 ## Reader rules
 
@@ -66,8 +79,10 @@ chief_ops.py plan remove app-launcher#1273
 chief_ops.py plan lane app-launcher gate --item "#1273" [--session <sid>]    # upsert, one lane per repo
 chief_ops.py plan drop-lane app-launcher
 chief_ops.py plan wait "Remember the last tab?" --ref app-launcher#1131
-chief_ops.py plan unwait app-launcher#1131      # or the 1-based index, or the exact text
+chief_ops.py plan ask "<question>" [--repo R] [--ref R#N] [--detail "…"] [--recommend "…"] \
+    [--option "Label::description" …(≤4)] [--recommended "Label"] [--multi] [--id ID] [--text "card line"]
+chief_ops.py plan unwait q2                     # or the 1-based index, the repo#N ref, or the exact text
 chief_ops.py plan clear
 ```
 
-Success prints one line, `PLAN=written lanes=… queue=… waiting=… updated_at=…`. A refusal prints `ERROR: <reason>` to stderr and exits 2.
+Success prints one line, `PLAN=written lanes=… queue=… waiting=… updated_at=…`; `wait` and `ask` append the new item's ` id=…`. `show` prints the plan as JSON with one row per line. A refusal prints `ERROR: <reason>` to stderr and exits 2.

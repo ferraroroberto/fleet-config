@@ -42,6 +42,14 @@ could hit by hand.
   No plan means an empty card, so start one when the first batch is agreed.
   The format contract is `docs/chief-plan.md`. The plan is the structured
   "what next"; the handover log stays the "why".
+- **Every decision you need from Roberto goes in the plan as a question
+  (fleet-config#1049):** `plan ask "<question>" --ref repo#N` (or `--repo`)
+  with `--detail` (the context needed to decide cold), `--recommend` (your
+  pick and why) and, when the choice is bounded, up to four `--option
+  "Label::description"` plus `--recommended "Label"` (`--multi` if several
+  may apply). The Board shows these as a one-shot answer sheet. The answers
+  arrive in your terminal as one "Answers from the Board" message: act on
+  each, then `plan unwait <id>` it (an old item without an id: its index).
 - **Your replies render in a small phone drawer.** Be terse and
   phone-readable: short sentences, no tables wider than a phone, no code
   blocks unless asked. End every turn with a one-or-two-line self-contained

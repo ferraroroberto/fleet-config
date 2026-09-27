@@ -44,17 +44,27 @@ QUEUE_STATUSES = ("queued", "building", "gate", "merged", "parked", "waiting-rob
 
 # "One short line" -- long enough for a real title, short enough for a phone chip row.
 MAX_TEXT = 200
+# A question's prose (question, detail, recommendation) is still one line, but
+# it is read on the Board's answer sheet, not in a chip row (fleet-config#1049).
+MAX_PROSE = 1000
+MAX_LABEL = 80
+MAX_OPTIONS = 4
 
 TOP_FIELDS = {"version", "updated_at", "lanes", "queue", "waiting_on_roberto"}
 LANE_FIELDS = {"repo", "session", "item", "status"}
 QUEUE_FIELDS = {"repo", "ref", "title", "status", "note"}
-WAITING_FIELDS = {"text", "ref"}
+WAITING_FIELDS = {"text", "ref", "id", "repo", "question", "detail", "recommendation",
+                  "options", "multi"}
+OPTION_FIELDS = {"label", "description", "recommended"}
 
 _LOCAL_REF = re.compile(r"#[1-9][0-9]*")
 _REPO = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*")
 _QUALIFIED_REF = re.compile(r"([A-Za-z0-9][A-Za-z0-9._-]*)(#[1-9][0-9]*)")
 _ISO_Z = re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z")
 _CONTROL = re.compile(r"[\x00-\x1f\x7f]")
+# Letter-first, so `unwait <key>` can still tell an id from a 1-based index.
+_ID = re.compile(r"[a-z][a-z0-9-]{0,31}")
+_AUTO_ID = re.compile(r"q([1-9][0-9]*)")
 
 
 def plan_file() -> Path:
@@ -69,7 +79,8 @@ def empty_plan() -> Dict[str, Any]:
 
 # ---- validation --------------------------------------------------------------
 
-def _check_text(errors: List[str], where: str, value: Any, *, required: bool) -> None:
+def _check_text(errors: List[str], where: str, value: Any, *, required: bool,
+                limit: int = MAX_TEXT) -> None:
     if not isinstance(value, str):
         errors.append(f"{where}: must be a string")
         return
@@ -77,8 +88,8 @@ def _check_text(errors: List[str], where: str, value: Any, *, required: bool) ->
         errors.append(f"{where}: must not be empty")
     if _CONTROL.search(value):
         errors.append(f"{where}: must be one line with no control characters")
-    if len(value) > MAX_TEXT:
-        errors.append(f"{where}: longer than {MAX_TEXT} characters")
+    if len(value) > limit:
+        errors.append(f"{where}: longer than {limit} characters")
 
 
 def _check_fields(errors: List[str], where: str, row: Any, allowed: set, required: set) -> bool:
@@ -152,15 +163,72 @@ def validate(doc: Any) -> List[str]:
         if "note" in row:
             _check_text(errors, f"{where}.note", row["note"], required=False)
 
+    ids: set = set()
     for i, row in enumerate(doc["waiting_on_roberto"]):
         where = f"waiting_on_roberto[{i}]"
         if not _check_fields(errors, where, row, WAITING_FIELDS, {"text"}):
             continue
-        _check_text(errors, f"{where}.text", row.get("text"), required=True)
-        ref = row.get("ref", "")
-        if ref and (not isinstance(ref, str) or not _QUALIFIED_REF.fullmatch(ref)):
-            errors.append(f"{where}.ref: must be repo#N or empty")
+        _check_waiting(errors, where, row, ids)
     return errors
+
+
+def _check_waiting(errors: List[str], where: str, row: Dict[str, Any], ids: set) -> None:
+    """One waiting item: v1's `text`/`ref` plus the structured question (fleet-config#1049)."""
+    _check_text(errors, f"{where}.text", row.get("text"), required=True)
+    ref = row.get("ref", "")
+    ref_match = _QUALIFIED_REF.fullmatch(ref) if isinstance(ref, str) else None
+    if ref and not ref_match:
+        errors.append(f"{where}.ref: must be repo#N or empty")
+    if "id" in row:
+        if not isinstance(row["id"], str) or not _ID.fullmatch(row["id"]):
+            errors.append(f"{where}.id: must be a lowercase letter then up to 31 "
+                          "letters, digits or hyphens")
+        elif row["id"] in ids:
+            errors.append(f"{where}.id: {row['id']} is already used by another waiting item")
+        else:
+            ids.add(row["id"])
+    if "repo" in row:
+        _check_repo(errors, f"{where}.repo", row["repo"])
+        if ref_match and row["repo"] != ref_match.group(1):
+            errors.append(f"{where}.repo: {row['repo']} does not match ref {ref}")
+    for key in ("question", "detail", "recommendation"):
+        if key in row:
+            _check_text(errors, f"{where}.{key}", row[key], required=True, limit=MAX_PROSE)
+    multi = row.get("multi", False)
+    if not isinstance(multi, bool):
+        errors.append(f"{where}.multi: must be true or false")
+    if "options" not in row:
+        if multi is True:
+            errors.append(f"{where}.multi: needs options to choose from")
+        return
+    options = row["options"]
+    if not isinstance(options, list):
+        errors.append(f"{where}.options: must be a list")
+        return
+    if len(options) > MAX_OPTIONS:
+        errors.append(f"{where}.options: at most {MAX_OPTIONS} options, got {len(options)}")
+    labels: set = set()
+    recommended = 0
+    for j, option in enumerate(options):
+        at = f"{where}.options[{j}]"
+        if not _check_fields(errors, at, option, OPTION_FIELDS, {"label"}):
+            continue
+        label = option.get("label")
+        _check_text(errors, f"{at}.label", label, required=True, limit=MAX_LABEL)
+        if isinstance(label, str) and label.strip():
+            if label in labels:
+                errors.append(f"{at}.label: {label!r} is already an option")
+            labels.add(label)
+        if "description" in option:
+            _check_text(errors, f"{at}.description", option["description"], required=False)
+        if "recommended" in option:
+            if not isinstance(option["recommended"], bool):
+                errors.append(f"{at}.recommended: must be true or false")
+            elif option["recommended"]:
+                recommended += 1
+    if recommended > 1 and multi is not True:
+        errors.append(f"{where}.options: {recommended} options are recommended; "
+                      "at most one unless multi is true")
 
 
 # ---- load / write ------------------------------------------------------------
@@ -294,21 +362,95 @@ def remove_item(doc: Dict[str, Any], ref: str) -> None:
     doc["queue"].pop(_index(doc, ref))
 
 
-def add_waiting(doc: Dict[str, Any], text: str, ref: Optional[str] = None) -> None:
-    row: Dict[str, Any] = {"text": text}
+def _next_id(doc: Dict[str, Any]) -> str:
+    """`q<N>`, one past the highest auto id in use, so a cleared id is not reissued
+    while a later one is still waiting (an answer for it can't land on a new item)."""
+    taken = [int(m.group(1)) for row in doc["waiting_on_roberto"]
+             if (m := _AUTO_ID.fullmatch(str(row.get("id", ""))))]
+    return f"q{max(taken, default=0) + 1}"
+
+
+def add_waiting(doc: Dict[str, Any], text: str, ref: Optional[str] = None) -> str:
+    """Append a plain waiting item; returns its id."""
+    row: Dict[str, Any] = {"id": _next_id(doc), "text": text}
     if ref:
         split_ref(ref)
         row["ref"] = ref.strip()
     doc["waiting_on_roberto"].append(row)
+    return row["id"]
+
+
+def parse_option(spec: str) -> Dict[str, Any]:
+    """`"Label::description"` -> an option; no `::` means a bare label."""
+    label, _, description = spec.partition("::")
+    option: Dict[str, Any] = {"label": label.strip()}
+    if not option["label"]:
+        raise ValueError(f"--option needs a label before '::', got {spec!r}")
+    if description.strip():
+        option["description"] = description.strip()
+    return option
+
+
+def short_text(question: str) -> str:
+    """The card line for a question: whitespace collapsed, cut to MAX_TEXT."""
+    text = " ".join(question.split())
+    return text if len(text) <= MAX_TEXT else text[:MAX_TEXT - 1].rstrip() + "\u2026"
+
+
+def add_question(
+    doc: Dict[str, Any],
+    question: str,
+    *,
+    repo: Optional[str] = None,
+    ref: Optional[str] = None,
+    detail: Optional[str] = None,
+    recommendation: Optional[str] = None,
+    options: Optional[List[str]] = None,
+    recommended: Optional[List[str]] = None,
+    multi: bool = False,
+    item_id: Optional[str] = None,
+    text: Optional[str] = None,
+) -> str:
+    """Append a structured question for the Board's answer sheet; returns its id.
+
+    `options` are `"Label::description"` specs; `recommended` names option
+    labels to mark. `repo` is derived from `ref` when omitted. The shape rules
+    (option count, one recommendation unless `multi`, repo/ref agreement,
+    unique ids) are `validate()`'s, so they hold for every writer.
+    """
+    row: Dict[str, Any] = {"id": item_id or _next_id(doc),
+                           "text": short_text(question) if text is None else text}
+    if ref:
+        row["repo"] = repo or split_ref(ref)[0]
+        row["ref"] = ref.strip()
+    elif repo:
+        row["repo"] = repo
+    row["question"] = question.strip()
+    if detail:
+        row["detail"] = detail.strip()
+    if recommendation:
+        row["recommendation"] = recommendation.strip()
+    parsed = [parse_option(spec) for spec in options or []]
+    for label in recommended or []:
+        match = [opt for opt in parsed if opt["label"] == label.strip()]
+        if not match:
+            raise ValueError(f"--recommended {label!r} is not one of the --option labels")
+        match[0]["recommended"] = True
+    if parsed:
+        row["options"] = parsed
+    if multi:
+        row["multi"] = True
+    doc["waiting_on_roberto"].append(row)
+    return row["id"]
 
 
 def clear_waiting(doc: Dict[str, Any], key: str) -> None:
-    """Drop a waiting item by 1-based index, by its `repo#N` ref, or by exact text."""
+    """Drop a waiting item by 1-based index, by its id, by its `repo#N` ref, or by exact text."""
     rows = doc["waiting_on_roberto"]
     if key.isdigit():
         rows.pop(_position(int(key), len(rows)))
         return
-    kept = [row for row in rows if row.get("ref") != key and row["text"] != key]
+    kept = [row for row in rows if key not in (row.get("id"), row.get("ref"), row["text"])]
     if len(kept) == len(rows):
         raise ValueError(f"nothing waiting matches {key!r}")
     doc["waiting_on_roberto"] = kept
@@ -321,12 +463,41 @@ def _summary(doc: Dict[str, Any]) -> str:
             f"waiting={len(doc['waiting_on_roberto'])} updated_at={doc['updated_at']}")
 
 
+def render(doc: Dict[str, Any]) -> str:
+    """The plan as JSON with one row per line -- still parseable, but a question's
+    options stay on its own line instead of spreading over a screen."""
+    def dump(value: Any) -> str:
+        return json.dumps(value, ensure_ascii=False)
+
+    def tail(i: int, n: int) -> str:
+        return "," if i < n - 1 else ""
+
+    lines = ["{"]
+    for i, (key, value) in enumerate(doc.items()):
+        if isinstance(value, list) and value:
+            lines.append(f"  {dump(key)}: [")
+            lines += [f"    {dump(row)}{tail(j, len(value))}" for j, row in enumerate(value)]
+            lines.append(f"  ]{tail(i, len(doc))}")
+        else:
+            lines.append(f"  {dump(key)}: {dump(value)}{tail(i, len(doc))}")
+    lines.append("}")
+    return "\n".join(lines)
+
+
+def _ask(doc: Dict[str, Any], args: argparse.Namespace) -> str:
+    return add_question(doc, args.question, repo=args.repo, ref=args.ref,
+                        detail=args.detail, recommendation=args.recommend,
+                        options=args.option, recommended=args.recommended,
+                        multi=args.multi, item_id=args.id, text=args.text)
+
+
 def _run(args: argparse.Namespace) -> int:
     path = Path(args.plan_file) if args.plan_file else plan_file()
     action = args.plan_action
     if action == "show":
-        print(json.dumps(load(path), indent=2))
+        print(render(load(path)))
         return 0
+    added: List[str] = []
     mutations: Dict[str, Callable[[Dict[str, Any]], None]] = {
         "lane": lambda d: set_lane(d, args.repo, args.status, args.item, args.session),
         "drop-lane": lambda d: drop_lane(d, args.repo),
@@ -334,12 +505,13 @@ def _run(args: argparse.Namespace) -> int:
         "set": lambda d: set_item(d, args.ref, args.status, args.note, args.title),
         "move": lambda d: move_item(d, args.ref, args.to),
         "remove": lambda d: remove_item(d, args.ref),
-        "wait": lambda d: add_waiting(d, args.text, args.ref),
+        "wait": lambda d: added.append(add_waiting(d, args.text, args.ref)),
+        "ask": lambda d: added.append(_ask(d, args)),
         "unwait": lambda d: clear_waiting(d, args.key),
         "clear": lambda d: None,
     }
     doc = update(path, mutations[action], reset=action == "clear")
-    print(_summary(doc))
+    print(_summary(doc) + "".join(f" id={item}" for item in added))
     return 0
 
 
@@ -384,7 +556,22 @@ def add_cli(parser: argparse.ArgumentParser) -> None:
     wait.add_argument("text")
     wait.add_argument("--ref", default=None, help="<repo>#<N>")
 
-    unwait = acts.add_parser("unwait", help="clear a waiting item (index, repo#N or text)")
+    ask = acts.add_parser("ask", help="add a structured question for the Board's answer sheet")
+    ask.add_argument("question")
+    ask.add_argument("--repo", default=None, help="fleet repo (default: from --ref)")
+    ask.add_argument("--ref", default=None, help="<repo>#<N>")
+    ask.add_argument("--detail", default=None, help="descriptive context")
+    ask.add_argument("--recommend", default=None, help="your recommendation, free text")
+    ask.add_argument("--option", action="append", default=None,
+                     help='"Label::description"; repeat, up to 4')
+    ask.add_argument("--recommended", action="append", default=None,
+                     help="an --option label to mark recommended (more than one needs --multi)")
+    ask.add_argument("--multi", action="store_true", help="more than one option may be chosen")
+    ask.add_argument("--id", default=None, help="stable id (default: the next q<N>)")
+    ask.add_argument("--text", default=None,
+                     help="the short card line (default: the question, trimmed)")
+
+    unwait = acts.add_parser("unwait", help="clear a waiting item (index, id, repo#N or text)")
     unwait.add_argument("key")
 
     acts.add_parser("clear", help="reset to an empty plan")

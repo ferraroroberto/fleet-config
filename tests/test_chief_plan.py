@@ -146,6 +146,97 @@ check(doc["waiting_on_roberto"] == [], "clear_waiting matches by ref, by exact t
 check("nothing waiting" in _raises(cp.clear_waiting, doc, "gone"), "clear_waiting on no match refuses")
 
 
+# ---- structured questions (fleet-config#1049) ---------------------------------
+
+def _question(**extra) -> dict:
+    row = {"id": "q1", "text": "Merge the two capture copies?", "repo": "life-os",
+           "ref": "life-os#171", "question": "Merge the two capture copies?",
+           "detail": "Two copies of one session diverged.", "recommendation": "Merge.",
+           "options": [{"label": "Merge", "description": "keep one", "recommended": True},
+                       {"label": "Leave"}]}
+    row.update(extra)
+    doc = _valid()
+    doc["waiting_on_roberto"] = [row]
+    return doc
+
+
+def _errors(doc: dict, needle: str) -> bool:
+    return any(needle in e for e in cp.validate(doc))
+
+
+check(cp.validate(_question()) == [], "a fully structured question validates")
+check(cp.validate(_question(multi=True, options=[{"label": "A", "recommended": True},
+                                                 {"label": "B", "recommended": True}])) == [],
+      "multi allows several recommended options")
+old_v1 = _valid()
+old_v1["waiting_on_roberto"] = [{"text": "legacy", "ref": "app-launcher#1131"}, {"text": "bare"}]
+check(cp.validate(old_v1) == [], "an old v1 file (text/ref only, no id) is still valid")
+check(_errors(_question(id="1abc"), "waiting_on_roberto[0].id: must be a lowercase letter"),
+      "an id must start with a letter (so unwait can tell it from an index)")
+dup = _question()
+dup["waiting_on_roberto"].append({"id": "q1", "text": "again"})
+check(_errors(dup, "waiting_on_roberto[1].id: q1 is already used"), "a duplicate id is rejected")
+check(_errors(_question(repo="app-launcher"), "repo: app-launcher does not match ref life-os#171"),
+      "a repo that contradicts the ref is rejected")
+check(_errors(_question(repo="bad repo"), "waiting_on_roberto[0].repo: must be a repo name"),
+      "a malformed repo is rejected")
+check(_errors(_question(detail=""), "waiting_on_roberto[0].detail: must not be empty"),
+      "an empty detail is rejected")
+check(_errors(_question(question="two\nlines"), "waiting_on_roberto[0].question: must be one line"),
+      "a multi-line question is rejected")
+check(cp.validate(_question(detail="x" * cp.MAX_PROSE)) == []
+      and _errors(_question(detail="x" * (cp.MAX_PROSE + 1)), "detail: longer than"),
+      "detail takes the longer prose cap, and no more")
+check(_errors(_question(options=[{"label": str(n)} for n in range(5)]), "at most 4 options, got 5"),
+      "more than four options are rejected")
+check(_errors(_question(options="Merge"), "waiting_on_roberto[0].options: must be a list"),
+      "options must be a list")
+check(_errors(_question(options=[{"description": "no label"}]), "options[0]: missing field(s) label"),
+      "an option needs a label")
+check(_errors(_question(options=[{"label": "A", "why": "x"}]), "options[0]: unknown field(s) why"),
+      "an option refuses unknown fields")
+check(_errors(_question(options=[{"label": "A"}, {"label": "A"}]), "options[1].label: 'A' is already"),
+      "duplicate option labels are rejected")
+check(_errors(_question(options=[{"label": "A", "recommended": "yes"}]), "recommended: must be true or false"),
+      "recommended must be a bool")
+check(_errors(_question(options=[{"label": "A", "recommended": True}, {"label": "B", "recommended": True}]),
+              "2 options are recommended; at most one unless multi"),
+      "two recommended options without multi are rejected")
+check(_errors(_question(multi="yes"), "waiting_on_roberto[0].multi: must be true or false"),
+      "multi must be a bool")
+bare = _question()
+del bare["waiting_on_roberto"][0]["options"]
+bare["waiting_on_roberto"][0]["multi"] = True
+check(_errors(bare, "multi: needs options"), "multi without options is rejected")
+
+doc = cp.empty_plan()
+doc["updated_at"] = "2026-09-26T14:40:00Z"
+first = cp.add_question(doc, "  Merge   the capture copies?  ", ref="life-os#171",
+                        detail="Two copies diverged.", recommendation="Merge them.",
+                        options=["Merge::keep one", "Leave"], recommended=["Merge"])
+row = doc["waiting_on_roberto"][0]
+check(first == "q1" and row["repo"] == "life-os" and row["text"] == "Merge the capture copies?"
+      and row["options"] == [{"label": "Merge", "description": "keep one", "recommended": True},
+                             {"label": "Leave"}] and cp.validate(doc) == [],
+      "add_question auto-ids, derives repo from ref, trims text and parses options")
+plain = cp.add_waiting(doc, "Tab persistence?")
+check(plain == "q2", "a plain wait gets the next auto id too")
+cp.clear_waiting(doc, "q1")
+check(cp.add_question(doc, "Next?", repo="fleet-config") == "q3",
+      "a cleared id is not reissued while a later one is waiting")
+long_q = "why " * 80
+cp.add_question(doc, long_q, item_id="long-one")
+check(len(doc["waiting_on_roberto"][-1]["text"]) == cp.MAX_TEXT and cp.validate(doc) == [],
+      "a long question's card text is cut to MAX_TEXT")
+check("not one of the --option labels" in _raises(cp.add_question, doc, "Q?", options=["A"],
+                                                  recommended=["B"]),
+      "--recommended must name an --option label")
+check("needs a label" in _raises(cp.add_question, doc, "Q?", options=["::desc only"]),
+      "an --option with no label refuses")
+cp.clear_waiting(doc, "long-one")
+check([r["id"] for r in doc["waiting_on_roberto"]] == ["q2", "q3"], "clear_waiting matches by id")
+
+
 # ---- load / update against a real file ---------------------------------------
 
 tmp = Path(tempfile.mkdtemp(prefix="chief_plan_test_"))
@@ -215,6 +306,34 @@ try:
     shown = json.loads(r.stdout) if r.returncode == 0 else {}
     check(shown.get("queue", [{}])[0].get("status") == "gate" and shown.get("lanes", [{}])[0].get("item") == "#1273",
           "CLI show prints the plan as written")
+
+    r = plan("ask", "Merge the capture copies?", "--ref", "life-os#171",
+             "--detail", "Two copies diverged.", "--recommend", "Merge them.",
+             "--option", "Merge::keep one", "--option", "Leave", "--recommended", "Merge")
+    check(r.returncode == 0 and "waiting=2" in r.stdout and r.stdout.strip().endswith("id=q2"),
+          f"CLI ask writes and reports the new id ({r.stdout.strip()[-40:]!r}, {r.stderr.strip()[:120]})")
+    r = plan("show")
+    shown = json.loads(r.stdout) if r.returncode == 0 else {}
+    asked = (shown.get("waiting_on_roberto") or [{}])[-1]
+    check(asked.get("repo") == "life-os" and asked.get("recommendation") == "Merge them."
+          and asked.get("options", [{}])[0].get("recommended") is True,
+          "CLI ask round-trips through show")
+    asked_line = [ln for ln in r.stdout.splitlines() if '"question"' in ln]
+    check(r.stdout.count("\n") <= 14 and len(asked_line) == 1
+          and json.loads(asked_line[0].strip().rstrip(",")) == asked,
+          "CLI show prints one row per line, a question's options on its own line")
+    before = (cli_dir / "chief-plan.json").read_bytes()
+    r = plan("ask", "Pick?", "--option", "A", "--option", "B", "--recommended", "A", "--recommended", "B")
+    check(r.returncode == 2 and "at most one unless multi" in r.stderr
+          and (cli_dir / "chief-plan.json").read_bytes() == before,
+          "CLI ask refuses two recommendations without --multi and writes nothing")
+    r = plan("ask", "Pick some?", "--id", "pick", "--option", "A", "--option", "B",
+             "--recommended", "A", "--recommended", "B", "--multi", "--text", "Pick")
+    check(r.returncode == 0 and r.stdout.strip().endswith("id=pick"), "CLI ask takes --id, --multi and --text")
+    r = plan("ask", "Again?", "--id", "pick")
+    check(r.returncode == 2 and "pick is already used" in r.stderr, "CLI ask refuses a duplicate --id")
+    r = plan("unwait", "q2")
+    check(r.returncode == 0 and "waiting=2" in r.stdout, "CLI unwait removes an item by id")
     r = plan("clear")
     check(r.returncode == 0 and "queue=0" in r.stdout, "CLI clear resets to an empty plan")
 finally:
