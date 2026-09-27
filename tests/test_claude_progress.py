@@ -11,7 +11,7 @@ import tempfile
 import threading
 import time
 from pathlib import Path
-from typing import Optional
+from typing import Callable, Optional
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "skills" / "_lib"))
@@ -378,8 +378,9 @@ def stall_script(pid_file: Path) -> str:
     """Child that spawns a pipe-holding grandchild, then goes silent.
 
     The child keeps the stream alive until the grandchild has written its PID,
-    so a slow interpreter start on a loaded box cannot race the 2 s stall limit
-    and kill the tree before there is a PID to check.
+    so a slow grandchild start on a loaded box cannot race the 2 s stall limit
+    and kill the tree before there is a PID to check. The child's own start,
+    before its first line, is covered by the caller's ``ReadinessClock``.
     """
     # Written aside then renamed, so the child's exists() poll never sees an empty file.
     grandchild = (f"import os,time; from pathlib import Path; "
@@ -395,6 +396,33 @@ def stall_script(pid_file: Path) -> str:
         + f"    {HEARTBEAT_LINE}; time.sleep(0.2)\n"
         + "time.sleep(300)"
     )
+
+
+class ReadinessClock:
+    """A monotonic clock that stands at zero until ``ready()`` first holds.
+
+    The formatter's clock starts when the formatter is built, before the child
+    even exists, so on a loaded box the child's interpreter start alone could
+    use up the 2 s stall window: the watchdog then killed the tree before the
+    grandchild had a PID, or killed a chatty run before its first line
+    (fleet-config#1056). Holding the clock until the fixture is ready counts the
+    stall window from readiness, so the watchdog judges exactly the silence the
+    fixture produces. The watchdog's limit and every assertion are unchanged.
+    The hold is capped at ``max_hold`` seconds, so a fixture that never gets
+    ready still fails the promptness checks instead of hanging the suite.
+    """
+
+    def __init__(self, ready: Callable[[], bool], max_hold: float = 30.0) -> None:
+        self._ready = ready
+        self._hold_until = time.monotonic() + max_hold
+        self._ready_at: Optional[float] = None
+
+    def __call__(self) -> float:
+        if self._ready_at is None:
+            if not self._ready() and time.monotonic() < self._hold_until:
+                return 0.0
+            self._ready_at = time.monotonic()
+        return time.monotonic() - self._ready_at
 
 
 def wait_for_exit(pid: int, timeout: float) -> Optional[bool]:
@@ -446,7 +474,8 @@ stall_lines: list[str] = []
 started = time.monotonic()
 stall_exit = cp.run_process(
     [sys.executable, "-c", stall_script(stall_dir / "stall.pid")],
-    formatter=cp.ProgressFormatter(emit=stall_lines.append),
+    formatter=cp.ProgressFormatter(emit=stall_lines.append,
+                                   clock=ReadinessClock((stall_dir / "stall.pid").exists)),
     stall_timeout=2.0,
 )
 stall_elapsed = time.monotonic() - started
@@ -479,7 +508,8 @@ def blocking_emit(line: str) -> None:
 blocked_started = time.monotonic()
 blocked_exit = cp.run_process(
     [sys.executable, "-c", stall_script(stall_dir / "blocked.pid")],
-    formatter=cp.ProgressFormatter(emit=blocking_emit),
+    formatter=cp.ProgressFormatter(emit=blocking_emit,
+                                   clock=ReadinessClock((stall_dir / "blocked.pid").exists)),
     stall_timeout=2.0,
 )
 blocked_elapsed = time.monotonic() - blocked_started
@@ -505,7 +535,10 @@ chatty_script = (
 chatty_lines: list[str] = []
 chatty_exit = cp.run_process(
     [sys.executable, "-c", chatty_script],
-    formatter=cp.ProgressFormatter(emit=chatty_lines.append),
+    # Ready at the child's first milestone (init's "session started"): from
+    # there it talks every 0.2 s, and that is the cadence under test.
+    formatter=cp.ProgressFormatter(emit=chatty_lines.append,
+                                   clock=ReadinessClock(lambda: bool(chatty_lines))),
     stall_timeout=2.0,
 )
 chatty_output = "\n".join(chatty_lines)
