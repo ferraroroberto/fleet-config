@@ -26,7 +26,7 @@ import os
 import subprocess
 import sys
 from pathlib import Path
-from typing import List, Optional, Sequence
+from typing import List, Mapping, Optional, Sequence
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from no_window import NO_WINDOW  # noqa: E402
@@ -70,7 +70,8 @@ def git_env(base: Optional[dict] = None) -> dict:
 
 
 def run_git(
-    args: Sequence[str], *, check: bool = False, timeout: Optional[float] = None
+    args: Sequence[str], *, check: bool = False, timeout: Optional[float] = None,
+    extra_env: Optional[Mapping[str, str]] = None,
 ) -> subprocess.CompletedProcess:
     """Run `git <args>`, UTF-8 decoded with undecodable bytes replaced.
 
@@ -88,11 +89,16 @@ def run_git(
     window on screen (fleet-config#412). `env=git_env()` is the same
     one-place-fix argument for optional index locks — see that function
     (fleet-config#667).
+
+    `extra_env` layers variables that have no `-c` equivalent (e.g.
+    `GIT_INDEX_FILE`, fleet-config#957) over the ambient environment;
+    `git_env()` is applied last, so no caller can drop `GIT_OPTIONAL_LOCKS=0`.
     """
+    base = {**os.environ, **extra_env} if extra_env else None
     return subprocess.run(
         ["git", *args], capture_output=True, text=True,
         encoding="utf-8", errors="replace", check=check, timeout=timeout,
-        creationflags=NO_WINDOW, env=git_env(),
+        creationflags=NO_WINDOW, env=git_env(base),
     )
 
 

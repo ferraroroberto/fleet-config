@@ -46,6 +46,7 @@ from acceptance.architecture_guards import (  # noqa: E402
     _config_map_check,
     _fleet_membership_drift_check,
     _fleet_toml_check,
+    _gate_evidence_wiring_check,
     _mermaid_check,
     _installer_symmetry_check,
     _readme_layout_check,
@@ -278,6 +279,9 @@ def main() -> int:
 
     # ---- acceptance audited per criterion, unverifiable its own state (#958) ----
     run_unit(_acceptance_audit_wiring_check)
+
+    # ---- gate evidence bound to a tree hash, never 'green this session' (#957) ----
+    run_unit(_gate_evidence_wiring_check)
 
     # ---- system-map: week-over-week 'what changed' diff (whatchanged.py) ----
     run_unit(_system_map_whatchanged_check)

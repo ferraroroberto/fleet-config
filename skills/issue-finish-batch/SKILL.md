@@ -77,11 +77,12 @@ You are the only agent touching this checkout.
    update README/docs only if usage/config/output changed, run the project's
    verification gate (per its CLAUDE.md), commit any doc edits with a
    conventional message (no AI-attribution trailer), push, open a PR whose body
-   ends with "Closes #<N>", handle CI as advisory (skip the wait whenever local
-   e2e + pytest are green — either from this run's own gate, or from the prior
-   build/review's report *if and only if* it recorded a genuine PASS on the
-   e2e/behavioural leg, never a SKIPPED one; otherwise skip only when the diff
-   is provably CI-unrelated; rerun a single documented flake once), merge, land
+   ends with "Closes #<N>", handle CI as advisory (skip the wait only when
+   `gate_evidence.py check --label gate` — and `--label e2e-full` where the
+   e2e leg matters — prints FRESH for this tree; a prior build/review's
+   report is never evidence on its own: STALE/MISSING/UNKNOWN → re-run the
+   gate through the helper once, else watch CI; rerun a single documented
+   flake once), merge, land
    the primary, and restart the project's tray per its CLAUDE.md if it has one.
    Merge + land BOTH depend on the checkout mode -- run
    `worktree_claim.py mode <path>` FROM <path> (step 1's cd; it answers about
