@@ -493,6 +493,8 @@ def run_hook_matrix() -> Tuple[int, int]:
         ("venv creation as `venv`", "venv_discipline", "python -m venv venv"),
         ("native cmd.exe /c", "bash_cmdexe_syntax_guard", "cmd.exe /c dir"),
         ("unquoted Windows backslash path", "bash_windows_path_guard", "ls E:\\automation"),
+        ("live token in an inline gh issue body", "secret_scan_guard",
+         f'gh issue create --title t --body "key {FAKE_GHP}"'),
     ):
         cases.append((
             f"grok shape: {label} -> block (parity with Claude shape)",
@@ -507,6 +509,8 @@ def run_hook_matrix() -> Tuple[int, int]:
         ("clean commit message", "pre_commit_no_ai_trailer", 'git commit -m "feat: clean"'),
         ("ordinary status call", "safe_kill_guard", "git status"),
         ("venv python invocation", "venv_discipline", r"& .\.venv\Scripts\python.exe -V"),
+        ("placeholder in an inline gh issue body", "secret_scan_guard",
+         'gh issue create --title t --body "use xoxb-<token>"'),
     ):
         cases.append((
             f"grok shape: {label} -> allow",

@@ -72,6 +72,7 @@ from acceptance.checks_guards import (  # noqa: E402
     _branch_before_edit_guard_unit_checks,
     _gh_body_file_guard_unit_checks,
     _safe_kill_force_push_unit_checks,
+    _secret_scan_gh_unit_checks,
     _tier23_hooks_unit_checks,
     _venv_cd_prefix_guard_unit_checks,
     _venv_git_clean_guard_unit_checks,
@@ -227,6 +228,9 @@ def main() -> int:
 
     # ---- gh_body_file_guard: warn-only stdout assertions ----
     run_unit(_gh_body_file_guard_unit_checks)
+
+    # ---- secret_scan_guard: gh issue/PR bodies before they post (#959) ----
+    run_unit(_secret_scan_gh_unit_checks)
 
     # ---- bash_cmdexe_syntax_guard: block + warn assertions (#264, #385) ----
     run_unit(_bash_cmdexe_syntax_guard_unit_checks)

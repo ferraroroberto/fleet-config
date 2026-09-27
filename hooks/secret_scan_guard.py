@@ -1,8 +1,20 @@
-"""Block `git commit` when a live secret is about to be committed.
+"""Block a live secret before it is committed or published to GitHub.
 
-Triggers on `PreToolUse` for `Bash`. When the command is a `git commit`, scans
-the **staged diff** (`git diff --cached`) — and the command string itself — for
-a real credential. Today the one pattern that matters across this fleet is a
+Triggers on `PreToolUse` for `Bash`/`PowerShell`, on two independent sinks:
+
+- **`git commit`** — scans the **staged diff** (`git diff --cached`) and the
+  command string itself for a real credential.
+- **`gh issue|pr create|comment|edit` and `gh pr review`** — scans the command
+  string (inline `--body`/`-b`/`--title`) plus the contents of every file named
+  by `--body-file`/`-F`, resolved against the payload `cwd` (fleet-config#959).
+  Reading the file the command names is what makes the bytes scanned the bytes
+  published. Issue and PR bodies on a public repo are world-readable and indexed
+  the moment they post, and `gh_body_file_guard` steers bodies into exactly the
+  `--body-file` this reads. Fail-open: `-F -` (stdin), a `$VAR`/`$(…)` operand,
+  or a missing/unreadable file is allowed, with one info-level breadcrumb on
+  stderr for the unreadable case so a miss stays diagnosable.
+
+On the commit side, the one pattern that matters across this fleet is a
 Telegram **bot token** and Slack `xoxb-…` alike: the user keeps creds in a secret-managed
 location (`.env` / `TELEGRAM_BOT_TOKEN`), never in a tracked file. This is the wire
 that catches the mistake before a token lands in `git log` (fleet-config#74).
@@ -25,9 +37,12 @@ token and waved through an OpenAI key, a GitHub PAT, and an AWS access key id.
 
 from __future__ import annotations
 
+import logging
+import re
 import subprocess
 import sys
 from pathlib import Path
+from typing import List, Optional
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import _lib  # noqa: E402
@@ -58,13 +73,130 @@ def _staged_diff(repo_cwd: Path) -> str:
     return res.stdout or ""
 
 
+# `gh pr review` publishes a body too; `gh api` / `gh gist` / releases are out of
+# scope (fleet-config#959), and `gh issue view` / `gh pr list` never match.
+GH_PUBLISH_RE = re.compile(r"\bgh\s+(?:issue|pr)\s+(?:create|comment|edit|review)\b")
+
+# Enough for any real issue body; a larger file is scanned up to this prefix.
+MAX_BODY_BYTES = 1 << 20
+
+# A `\`-newline (Bash) or backtick-newline (PowerShell) continuation keeps one
+# command on one logical line, so `--body-file` on the next line still counts.
+_CONTINUATION_RE = re.compile(r"[\\`]\r?\n")
+_SEGMENT_SPLIT_RE = re.compile(r"[\n;|&]+")
+
+# Shell-ish words, quotes stripped, backslashes left alone. `shlex` is not
+# usable: POSIX mode eats the backslashes out of every Windows path. A quoted
+# run inside a word (`--body-file="C:/a b/pr.md"`) stays part of that word.
+_WORD_RE = re.compile(r"""(?:[^\s'"]+|'[^']*'|"[^"]*")+""")
+_QUOTED_RE = re.compile(r"""'([^']*)'|"([^"]*)\"""")
+
+# Git Bash hands us MSYS paths; `Path("/e/automation/x")` has no drive on
+# Windows, so translate it back to the drive form before resolving.
+_MSYS_DRIVE_RE = re.compile(r"^/([A-Za-z])/(.*)$")
+
+
+def _words(text: str) -> List[str]:
+    return [
+        _QUOTED_RE.sub(lambda m: m.group(1) if m.group(1) is not None else m.group(2), word)
+        for word in _WORD_RE.findall(text)
+    ]
+
+
+def body_file_operands(cmd: str) -> List[str]:
+    """Raw `--body-file`/`-F` operands of every `gh` publish segment in ``cmd``.
+
+    Covers `--body-file X`, `--body-file=X`, `-F X` and `-FX`. Only the words
+    after a `gh issue|pr <publish verb>` in the same segment are read, so a
+    `grep -F` elsewhere in the chain never names a file to scan.
+    """
+    operands: List[str] = []
+    for segment in _SEGMENT_SPLIT_RE.split(_CONTINUATION_RE.sub(" ", cmd)):
+        match = GH_PUBLISH_RE.search(segment)
+        if not match:
+            continue
+        words = _words(segment[match.end():])
+        i = 0
+        while i < len(words):
+            word = words[i]
+            if word in ("--body-file", "-F"):
+                if i + 1 < len(words):
+                    operands.append(words[i + 1])
+                i += 2
+                continue
+            if word.startswith("--body-file="):
+                operands.append(word[len("--body-file="):])
+            elif word.startswith("-F") and len(word) > 2:
+                operands.append(word[2:].lstrip("="))
+            i += 1
+    return operands
+
+
+def resolve_operand(raw: str, base: Path) -> Optional[Path]:
+    """``raw`` as a path to read, or ``None`` when it names no file we can see.
+
+    `-` is stdin; a `$VAR`, `$(…)` or backtick operand is expanded by the shell
+    only after the hook has run. Relative paths resolve against the payload cwd.
+    """
+    text = raw.strip()
+    if not text or text == "-" or "$" in text or "`" in text or text.startswith("("):
+        return None
+    msys = _MSYS_DRIVE_RE.match(text)
+    if msys:
+        text = f"{msys.group(1).upper()}:/{msys.group(2)}"
+    path = Path(text).expanduser()
+    return path if path.is_absolute() else base / path
+
+
+def _read_body(path: Path) -> Optional[str]:
+    try:
+        with path.open("rb") as fh:
+            data = fh.read(MAX_BODY_BYTES)
+    except OSError as exc:
+        _lib.logger.info("ℹ️ secret_scan_guard: body file not scanned (%s): %s", path, exc)
+        return None
+    # Windows PowerShell 5.1's `Out-File` / `>` write UTF-16 LE with a BOM.
+    if data.startswith((b"\xff\xfe", b"\xfe\xff")):
+        return data.decode("utf-16", errors="replace")
+    return data.decode("utf-8", errors="replace")
+
+
+def _guard_gh_publish(cmd: str, base: Path) -> None:
+    """Block when the command or a body file it names carries a live secret."""
+    parts = [cmd]
+    for raw in body_file_operands(cmd):
+        path = resolve_operand(raw, base)
+        body = _read_body(path) if path is not None else None
+        if body:
+            parts.append(body)
+    hit = _lib.scan_for_secret("\n".join(parts))
+    if hit:
+        _lib.block(
+            "Blocked: a live secret is about to be published to GitHub (" + hit[0] + "). "
+            "Issue and PR bodies and comments are world-readable on a public repo "
+            "and effectively unretractable once posted. Redact the token from the "
+            "body file (or the inline --body/--title) and retry. If this is a false "
+            "positive on a placeholder, shorten the token body so it no longer "
+            "looks live."
+        )
+
+
 def main() -> None:
     payload = _lib.read_stdin_json()
     if _lib.tool_name(payload) not in {"Bash", "PowerShell"}:
         _lib.allow()
 
     cmd = _lib.command_string(payload)
-    if not cmd or not _is_git_commit(cmd):
+    if not cmd:
+        _lib.allow()
+
+    # The gh trigger is the tight one, so it runs first: a gh command whose
+    # inline body merely mentions "git commit" gets the publish refusal.
+    if GH_PUBLISH_RE.search(cmd):
+        logging.basicConfig(level=logging.INFO, format="%(message)s", stream=sys.stderr)
+        _guard_gh_publish(cmd, _lib.cwd(payload))
+
+    if not _is_git_commit(cmd):
         _lib.allow()
 
     # Scan both the staged content and the command string itself (a secret could

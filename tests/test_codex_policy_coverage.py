@@ -138,6 +138,21 @@ try:
     check(safe_gh.returncode == 0 and not safe_gh.stdout and not safe_gh.stderr,
           "Codex gh-body negative: safe body-file command stays silent")
 
+    # Secret scan: a live token in a gh body file is a structured deny (#959).
+    body = root / "gh-body.md"
+    body.write_text("key " + "gh" + "p_" + "AbCdEfGhIjKlMnOpQrStUvWxYz012345" + "\n", encoding="utf-8")
+    for tool in ("Bash", "PowerShell"):
+        secret = drive("secret_scan_guard", pre_payload(
+            tool, {"command": f"gh issue create --title t --body-file {body.as_posix()}"}, root))
+        secret_hso = output_json(secret).get("hookSpecificOutput", {})
+        check(secret.returncode == 0 and secret_hso.get("permissionDecision") == "deny"
+              and "published to GitHub" in secret_hso.get("permissionDecisionReason", ""),
+              f"Codex secret-scan positive ({tool}): gh body-file token is denied",
+              secret.stdout + secret.stderr)
+    clean = drive("secret_scan_guard", pre_payload("Bash", {"command": "gh issue view 5"}, root))
+    check(clean.returncode == 0 and not clean.stdout,
+          "Codex secret-scan negative: gh read stays silent", clean.stdout + clean.stderr)
+
     # Dated docs: put the violation second to prove every patch target is read.
     dated = patch(("notes.txt", "safe"), ("docs/2026-09-05-retro.md", "bad"))
     dated_result = drive("docs_dated_filename_guard",

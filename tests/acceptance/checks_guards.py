@@ -243,6 +243,108 @@ def _gh_body_file_guard_unit_checks() -> Tuple[int, int]:
     return check.failures, check.total
 
 
+def _secret_scan_gh_unit_checks() -> Tuple[int, int]:
+    """secret_scan_guard's GitHub-publish sink (fleet-config#959): the bytes a
+    `gh issue|pr create|comment|edit` / `gh pr review` is about to post -- the
+    command string plus every `--body-file`/`-F` file it names -- are scanned
+    with `_lib.SECRET_PATTERNS`. Every blocking case exits 0 on pre-#959 code,
+    which allowed any command that was not a `git commit`."""
+    check = _Checker()
+    sys.path.insert(0, str(HOOKS))
+    import _lib  # noqa: E402
+    from acceptance.hook_matrix import FAKE_AKIA, FAKE_GHP, FAKE_SK, FAKE_XOXB
+
+    # Assembled from fragments, like hook_matrix's fakes: `<bot_id>:<35 chars>`.
+    fake_telegram = "7" + "123456789" + ":" + "AAH" + "x" * 32
+    fakes = {"Slack": FAKE_XOXB, "Telegram": fake_telegram, "sk-": FAKE_SK,
+             "GitHub": FAKE_GHP, "AWS": FAKE_AKIA}
+    check("secret_scan gh: one fake per SECRET_PATTERNS family",
+          len(fakes) == len(_lib.SECRET_PATTERNS)
+          and all(_lib.scan_for_secret(v) for v in fakes.values()))
+
+    tmp = Path(tempfile.mkdtemp(prefix="secret_scan_gh_"))
+    try:
+        def verdict(command: str, cwd: Path = tmp, tool: str = "Bash") -> Tuple[int, str, str]:
+            return run("secret_scan_guard", {"tool_name": tool, "cwd": str(cwd),
+                                             "tool_input": {"command": command}})
+
+        publishers = ("gh issue create --title t", "gh pr create --title t",
+                      "gh issue comment 5", "gh pr comment 5",
+                      "gh issue edit 5", "gh pr edit 5", "gh pr review 5 --comment")
+        for family, fake in fakes.items():
+            body = tmp / f"body-{family.strip('-')}.md"
+            body.write_text(f"Notes\n\nTOKEN = {fake}\n", encoding="utf-8")
+            codes = {p: verdict(f"{p} --body-file {body.as_posix()}")[0] for p in publishers}
+            check(f"secret_scan gh: {family} token in --body-file blocks every publish verb",
+                  all(code == 2 for code in codes.values()), repr(codes))
+
+        live = tmp / "live.md"
+        live.write_text(f"see {FAKE_GHP}\n", encoding="utf-8")
+        code, _out, err = verdict(f"gh issue create --title t --body-file {live.as_posix()}")
+        check("secret_scan gh: refusal names GitHub, distinct from the commit refusal",
+              code == 2 and "published to GitHub" in err and "staged for commit" not in err, err)
+        _code, _out, commit_err = verdict(f'git commit -m "wip {FAKE_GHP}"')
+        check("secret_scan gh: the commit refusal is unchanged",
+              "staged for commit" in commit_err and "published to GitHub" not in commit_err, commit_err)
+
+        check("secret_scan gh: inline --body token blocks",
+              verdict(f'gh issue create --title t --body "key {FAKE_SK}"')[0] == 2)
+        check("secret_scan gh: inline -b token blocks",
+              verdict(f"gh pr comment 5 -b 'key {FAKE_SK}'")[0] == 2)
+        check("secret_scan gh: token in --title blocks",
+              verdict(f'gh issue create --title "{FAKE_AKIA}" --body x')[0] == 2)
+        check("secret_scan gh: -F <file> blocks",
+              verdict(f"gh pr create -F {live.as_posix()}")[0] == 2)
+        check("secret_scan gh: -F<file> (attached) blocks",
+              verdict(f"gh pr create -F{live.as_posix()}")[0] == 2)
+        check("secret_scan gh: --body-file=<file> blocks",
+              verdict(f"gh issue edit 5 --body-file={live.as_posix()}")[0] == 2)
+        check("secret_scan gh: relative --body-file resolves against payload cwd",
+              verdict("gh issue create --title t --body-file live.md")[0] == 2)
+        spaced = tmp / "a b"
+        spaced.mkdir()
+        (spaced / "live.md").write_text(f"see {FAKE_GHP}\n", encoding="utf-8")
+        check("secret_scan gh: quoted Windows backslash path resolves",
+              verdict(f'gh issue create --title t --body-file "{spaced / "live.md"}"',
+                      tool="PowerShell")[0] == 2)
+        drive, rest = live.as_posix().split(":", 1)
+        check("secret_scan gh: Git Bash /<drive>/ path resolves",
+              verdict(f"gh issue create --title t --body-file /{drive.lower()}{rest}")[0] == 2)
+        check("secret_scan gh: --body-file on a continuation line is still read",
+              verdict(f"gh issue create --title t \\\n  --body-file {live.as_posix()}")[0] == 2)
+        utf16 = tmp / "utf16.md"
+        utf16.write_text(f"see {FAKE_GHP}\n", encoding="utf-16")
+        check("secret_scan gh: a UTF-16 (PowerShell Out-File) body is decoded and scanned",
+              verdict(f"gh issue create --title t --body-file {utf16.as_posix()}")[0] == 2)
+
+        placeholder = tmp / "placeholder.md"
+        placeholder.write_text("Set `xoxb-…` or `xoxb-<token>` in .env.\n", encoding="utf-8")
+        code, out, err = verdict(f"gh issue create --title t --body-file {placeholder.as_posix()}")
+        check("secret_scan gh: placeholder forms in a body pass silently",
+              code == 0 and not out, err)
+        check("secret_scan gh: inline placeholder passes",
+              verdict('gh issue comment 5 --body "use xoxb-<token> here"')[0] == 0)
+
+        code, out, err = verdict("gh issue create --title t --body-file missing.md")
+        check("secret_scan gh: missing body file -> allow, breadcrumb on stderr only",
+              code == 0 and not out and "not scanned" in err, err)
+        code, out, _err = verdict("gh issue create --title t -F -")
+        check("secret_scan gh: -F - (stdin) -> allow silently", code == 0 and not out)
+        check("secret_scan gh: $VAR operand -> allow",
+              verdict("gh issue create --title t --body-file $BODY")[0] == 0)
+        for read in ("gh issue view 5", "gh pr list --state open", "gh issue view 5 --comments"):
+            code, out, err = verdict(read)
+            check(f"secret_scan gh: read `{read}` -> allow silently",
+                  code == 0 and not out and not err)
+        check("secret_scan gh: only the gh segment's -F is read, not a sibling grep -F",
+              verdict(f"grep -F x {live.as_posix()} && gh issue create --title t "
+                      f"--body-file {placeholder.as_posix()}")[0] == 0)
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+    return check.failures, check.total
+
+
 def _bash_cmdexe_syntax_guard_unit_checks() -> Tuple[int, int]:
     """The guard blocks MSYS-mangled cmd /c, nudges cmd-only syntax, and stays
     silent on Bash-native or explicitly MSYS-safe equivalents."""

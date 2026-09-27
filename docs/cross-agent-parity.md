@@ -37,6 +37,7 @@ The table records observed delivery semantics rather than treating a registratio
 | Policy | Claude Code | Codex | Grok (Claude compat) | Pi | Copilot | Antigravity |
 |---|---|---|---|---|---|---|
 | GitHub inline-body quoting (`gh_body_file_guard`) | advises | advises | not verified | advises | unsupported | unsupported |
+| Live secret at commit or `gh` publish (`secret_scan_guard`) | blocks | blocks | not verified | not verified | unsupported | unsupported |
 | Dated filenames under `docs/` (`docs_dated_filename_guard`) | blocks | blocks | blocks | blocks | unsupported | unsupported |
 | Branch before launcher-dispatched edits (`branch_before_edit_guard`) | blocks | blocks | blocks | not verified | unsupported | unsupported |
 | Downstream inline `claude -p` (`hub_bypass_warn`) | advises | advises | not verified | not verified | unsupported | unsupported |
