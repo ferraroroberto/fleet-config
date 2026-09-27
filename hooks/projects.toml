@@ -209,6 +209,9 @@ active_marker   = ".active-skill"
 bootstrap_shared   = ["identity/who-i-am.md", "identity/current-focus.md"]
 bootstrap_skill    = ["{skill}/description.md", "{skill}/conversations/index.md"]
 bootstrap_sections = ["Step 1"]
+# The conversation index loads head-only (the newest 40 entries, life-os#171);
+# the audit reads that line cap from the file declaring it (fleet-config#1051).
+bootstrap_line_caps = { "{skill}/conversations/index.md" = ".claude/skills/_shared/bootstrap.md" }
 
 [local-llm-hub-lite]
 cwd_prefix = "E:/automation/local-llm-hub-lite"

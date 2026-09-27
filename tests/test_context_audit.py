@@ -343,4 +343,62 @@ with tempfile.TemporaryDirectory() as tmp:
     check(fleet == {"privy": "ok", "gone": "unmeasured: checkout missing"},
           f"scan_fleet: only declaring repos, a missing checkout unmeasured ({fleet})")
 
+# ------------------------------------- head-only loads by a declared cap (#1051) ----
+# A bootstrap that reads only the newest entries of an index is measured by
+# the lines it loads. Synthetic indexes and a synthetic declaring file only.
+
+with tempfile.TemporaryDirectory() as tmp:
+    repo = Path(tmp) / "capped"
+    skills = repo / ".claude" / "skills"
+    for name in ("big", "dense", "_shared"):
+        (skills / name / "conversations").mkdir(parents=True)
+    (skills / "big" / "SKILL.md").write_text("# big\n", encoding="utf-8")
+    (skills / "dense" / "SKILL.md").write_text("# dense\n", encoding="utf-8")
+    header = "# Conversations\n\nnewest first\n\n"
+    entry = "## 2026-09-01 · slug\n- decision\n- open loop\n- file\n- tags\n\n"
+    # 100 entries: whole file past the read cap, the newest 40 (4 + 6*40 = 244 lines) well under it.
+    (skills / "big" / "conversations" / "index.md").write_text(
+        header + entry.replace("decision", "d" * 1000) * 100, encoding="utf-8")
+    # Entries so heavy that even the newest 40 exceed the cap.
+    (skills / "dense" / "conversations" / "index.md").write_text(
+        header + entry.replace("decision", "d" * 3000) * 60, encoding="utf-8")
+    bootstrap_md = skills / "_shared" / "bootstrap.md"
+    bootstrap_md.write_text("Load only the newest 40 entries. Read the file's first **244 lines**.\n",
+                            encoding="utf-8")
+    decl = {"bootstrap_skill": ["{skill}/conversations/index.md"],
+            "bootstrap_line_caps": {"{skill}/conversations/index.md": ".claude/skills/_shared/bootstrap.md"}}
+
+    check(boot.read_line_cap(bootstrap_md) == (244, ""), "read_line_cap: reads the cap from the declaring file")
+
+    def index_row(rep, skill):
+        rows = {r["skill"]: r for r in rep["skills"]}
+        return rows[skill], rows[skill]["files"][0]
+
+    rep = boot.scan_repo("capped", repo, decl)
+    big_row, big = index_row(rep, "big")
+    check(big["whole_est_tokens"] > boot.READ_CAP_TOKENS and big["state"] == "ok"
+          and big["capped"] is True and big["line_cap"] == 244 and big_row["over_cap"] == [],
+          f"an index over the cap whole, whose newest 40 entries fit, is not over budget ({big['est_tokens']} of {big['whole_est_tokens']})")
+    dense_row, dense = index_row(rep, "dense")
+    check(dense["state"] == "over-cap" and dense_row["over_cap"] == [".claude/skills/dense/conversations/index.md"],
+          "an index whose newest 40 entries exceed the budget still is over-cap")
+    check(big_row["cap_unconfirmed"] == [] and "cap" not in big, "a readable cap is not flagged")
+
+    for label, content in (("reworded", "Load the newest forty entries.\n"),
+                           ("ambiguous", "first **244 lines** ... or first **300 lines**\n")):
+        bootstrap_md.write_text(content, encoding="utf-8")
+        big_row, big = index_row(boot.scan_repo("capped", repo, decl), "big")
+        check(big["state"] == "over-cap" and big["cap"].startswith("not confirmed")
+              and big_row["cap_unconfirmed"] == [".claude/skills/big/conversations/index.md"],
+              f"a {label} cap is not confirmed: whole-file measurement, flagged, never passing")
+    bootstrap_md.unlink()
+    big_row, big = index_row(boot.scan_repo("capped", repo, decl), "big")
+    check(big["state"] == "over-cap" and "unreadable" in big["cap"],
+          "a missing cap source is not confirmed, never passing")
+
+    no_caps = {"bootstrap_skill": ["{skill}/conversations/index.md"]}
+    big_row, big = index_row(boot.scan_repo("capped", repo, no_caps), "big")
+    check(big["state"] == "over-cap" and "cap" not in big and big_row["cap_unconfirmed"] == [],
+          "a repo that declares no cap is measured whole, as before, and not flagged")
+
 _h.report_and_exit("test_context_audit")
