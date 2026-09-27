@@ -394,6 +394,43 @@ def _unattended_worktree_mandate_check() -> Tuple[int, int]:
     return check.failures, check.total
 
 
+def _acceptance_audit_wiring_check() -> Tuple[int, int]:
+    """Acceptance is audited per criterion, unverifiable as its own state
+    (fleet-config#958). The rule lives in skill prose that a context purge or
+    a rewrite can quietly fold back into one yes/no sentence; this pins the
+    pointer to the helper and the per-criterion wording in each place. Returns
+    (failures, total)."""
+    check = _Checker()
+
+    def read(rel: str) -> str:
+        return (REPO / rel).read_text(encoding="utf-8")
+
+    finish = read("skills/issue-finish/SKILL.md")
+    step1 = finish.partition("### 1. Finalize the work")[2].partition("### 2.")[0]
+    check("acceptance audit: /issue-finish step 1 runs acceptance_audit.py extract + tally",
+          "acceptance_audit.py extract" in step1 and "tally <N>" in step1)
+    check("acceptance audit: /issue-finish step 1 names all three verdicts and the unattended rule",
+          all(v in step1 for v in ("`DONE`", "`NOT DONE`", "`UNVERIFIABLE`", "--unattended", "`blocked`")))
+    check("acceptance audit: /issue-finish carries 'code that handles a deliverable is not the deliverable'",
+          "Code that handles a" in step1 and "deliverable is not the deliverable" in step1)
+    check("acceptance audit: /issue-finish step 4 puts PR_TEST_PLAN lines in the PR body",
+          "PR_TEST_PLAN" in finish.partition("### 4.")[2].partition("### 5.")[0])
+
+    yolo = read("skills/issue-yolo/SKILL.md")
+    check("acceptance audit: /issue-yolo 3h verdict carries the per-criterion criteria array",
+          "{criterion, proof_location, verdict, evidence}" in yolo)
+    check("acceptance audit: docs/independent-review-gate.md matches the criteria array",
+          "{criterion, proof_location, verdict, evidence}" in read("docs/independent-review-gate.md"))
+    check("acceptance audit: /issue-add requires pass/fail-decidable criteria",
+          "decidable pass/fail" in read("skills/issue-add/SKILL.md"))
+    check("acceptance audit: /issue-finish-batch finishes unattended",
+          "`unattended` finish" in read("skills/issue-finish-batch/SKILL.md"))
+    check("acceptance audit: /cleanup-fleet-all's execute brief finishes unattended",
+          "tally --unattended" in read(".claude/workflows/cleanup-fleet-all.js"))
+
+    return check.failures, check.total
+
+
 def _mermaid_check() -> Tuple[int, int]:
     """The Mermaid companion render (`render_mermaid.py`) can't silently go stale.
 

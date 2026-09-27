@@ -317,6 +317,10 @@ _STANDALONE_UNIT_CHECKS: Tuple[Tuple[str, str, str], ...] = (
      "and the SKILL.md wiring that routes the orchestrator through it instead "
      "of a model-composed Monitor loop -- is testable on its own "
      "(fleet-config#609, reopened)"),
+    ("acceptance_audit", "test_acceptance_audit.py",
+     "/issue-finish's per-criterion acceptance tally -- checkbox parsing, a "
+     "missing verdict as incomplete, every state, and the unattended rule -- "
+     "is testable on its own with gh stubbed out (fleet-config#958)"),
     ("issue_state_gate", "test_issue_state_gate.py",
      "/cleanup-fleet's and /cleanup-fleet-all's pre-dispatch state re-check "
      "-- gh-outcome classification into open/closed/unknown, and the "

@@ -71,7 +71,9 @@ You are the only agent touching this checkout.
 1. cd to <path>. Confirm you are on <branch> (git checkout <branch> if needed);
    the change is already built and reviewed — do NOT re-build, redesign, or
    "improve" it.
-2. Run the /issue-finish flow in full: re-confirm the issue's acceptance points,
+2. Run the /issue-finish flow in full, as an `unattended` finish (its step-1
+   acceptance audit runs `tally --unattended`; `ACCEPTANCE=blocked` is a
+   blocker for step 4): audit the issue's acceptance per criterion,
    update README/docs only if usage/config/output changed, run the project's
    verification gate (per its CLAUDE.md), commit any doc edits with a
    conventional message (no AI-attribution trailer), push, open a PR whose body

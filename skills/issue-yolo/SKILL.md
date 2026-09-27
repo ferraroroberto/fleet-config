@@ -202,7 +202,13 @@ Spawn a genuinely fresh independent context through the capability contract. Cla
    would actually reject (gate genuinely fails, diff doesn't touch what the
    issue asked for, obvious bug) — never style preference.
 5. Report a schema-validated verdict: `pass: boolean`, `feedback: string`
-   (always filled in, briefly even on a pass).
+   (always filled in, briefly even on a pass), and `criteria`: one
+   `{criterion, proof_location, verdict, evidence}` per fetched acceptance
+   criterion (fleet-config#958) — `proof_location` `DIFF` / `CROSS-REPO` /
+   `EXTERNAL`, `verdict` `DONE` / `NOT DONE` / `UNVERIFIABLE`. `pass: true`
+   requires zero `NOT DONE`; an `UNVERIFIABLE` item is never counted as
+   satisfied — Phase 5's report lists each one. Leniency on style and
+   convention judgment is unchanged; this tightens only the accounting.
 
 **On `pass: false` — stop and report.** Surface the reviewer's `feedback`
 verbatim, leave the branch as-is, let the user decide retry / adjust scope /
@@ -244,7 +250,8 @@ Single concise summary:
 - Branch name + merge commit SHA
 - Validation: which Phase 3 gates ran and their results (one line each),
   **plus the 3h independent-review verdict** (`pass: true` + a one-line
-  summary of the reviewer's `feedback`)
+  summary of the reviewer's `feedback`, and each `UNVERIFIABLE` criterion
+  listed on its own line)
 - PR URL
 - Build line from the version endpoint (if the project has one)
 - Live tray status (if applicable)

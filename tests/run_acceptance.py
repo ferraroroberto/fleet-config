@@ -41,6 +41,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from acceptance.hook_matrix import run_hook_matrix  # noqa: E402
 from acceptance.architecture_guards import (  # noqa: E402
+    _acceptance_audit_wiring_check,
     _advisory_semantics_check,
     _config_map_check,
     _fleet_membership_drift_check,
@@ -274,6 +275,9 @@ def main() -> int:
     # ---- system-map: Mermaid companion render (render_mermaid.py) freshness ----
     run_unit(_mermaid_check)
     run_unit(_unattended_worktree_mandate_check)
+
+    # ---- acceptance audited per criterion, unverifiable its own state (#958) ----
+    run_unit(_acceptance_audit_wiring_check)
 
     # ---- system-map: week-over-week 'what changed' diff (whatchanged.py) ----
     run_unit(_system_map_whatchanged_check)
