@@ -471,6 +471,80 @@ def _codex_attention_unit_checks() -> Tuple[int, int]:
     return check.failures, check.total
 
 
+def _codex_attention_chief_unit_checks() -> Tuple[int, int]:
+    """A chief-managed Codex worker's PermissionRequest reaches the chief first,
+    falling back to Telegram when delivery is not confirmed (fleet-config#999).
+    Every managed-path case here sent Telegram only on pre-#999 code, and the
+    no-chat case sent nothing at all."""
+    sys.path.insert(0, str(HOOKS))
+    import codex_attention  # noqa: E402
+
+    check = _Checker()
+    noi = codex_attention.notify_on_idle
+    tmp = Path(tempfile.mkdtemp(prefix="codex_attention_chief_"))
+    chat_dir = tmp / "with-chat"
+    bare_dir = tmp / "no-chat"
+    chat_dir.mkdir()
+    bare_dir.mkdir()
+    registry = tmp / "projects.toml"
+    registry.write_text(f'[probe]\ncwd_prefix = "{chat_dir.as_posix()}"\ntelegram_chat_attention = "CHAT"\n',
+                        encoding="utf-8")
+    saved_env = {k: os.environ.get(k) for k in ("CLAUDE_HOOKS_PROJECTS_TOML", "CLAUDE_HOOKS_STATE_DIR")}
+    saved = (noi.chief_managed_state, noi.notify_chief, codex_attention.notify_send.notify,
+             codex_attention.hub_client.complete)
+    telegram: list[str] = []
+    chief: list[str] = []
+    state = {"managed": (True, noi.CHIEF_MANAGED), "delivered": True}
+
+    def payload(cwd: Path, turn: str, event: str = "PermissionRequest") -> dict:
+        return {"hook_event_name": event, "session_id": "codex-s", "turn_id": turn,
+                "tool_name": "apply_patch", "cwd": str(cwd)}
+
+    try:
+        os.environ["CLAUDE_HOOKS_PROJECTS_TOML"] = str(registry)
+        os.environ["CLAUDE_HOOKS_STATE_DIR"] = str(tmp / "state")
+        noi.chief_managed_state = lambda path=None: state["managed"]
+        noi.notify_chief = lambda text: chief.append(text) or state["delivered"]
+        codex_attention.notify_send.notify = lambda message, chat, token=None: telegram.append(message) or True
+
+        check("codex chief: managed + delivered -> the chief gets it, Telegram does not",
+              codex_attention.handle(payload(chat_dir, "t1")) and len(chief) == 1 and telegram == [])
+        check("codex chief: the chief message names the worker and what it awaits",
+              chief and "chief-managed worker needs input" in chief[0] and "approval to edit files" in chief[0])
+        check("codex chief: the same turn is not re-delivered",
+              not codex_attention.handle(payload(chat_dir, "t1")) and len(chief) == 1)
+        check("codex chief: works with no Telegram chat configured for the project",
+              codex_attention.handle(payload(bare_dir, "t2")) and len(chief) == 2 and telegram == [])
+
+        state["delivered"] = False
+        check("codex chief: delivery not confirmed -> falls back to the Telegram ping",
+              codex_attention.handle(payload(chat_dir, "t3")) and len(chief) == 3 and len(telegram) == 1)
+
+        state["delivered"] = True
+        state["managed"] = (False, noi.CHIEF_NOT_DISPATCHED)
+        check("codex chief: not chief-managed -> Telegram only, the chief is never tried",
+              codex_attention.handle(payload(chat_dir, "t4")) and len(chief) == 3 and len(telegram) == 2)
+        state["managed"] = (False, noi.CHIEF_UNDETERMINED)
+        check("codex chief: undetermined registry -> Telegram fallback, not the chief",
+              codex_attention.handle(payload(chat_dir, "t5")) and len(chief) == 3 and len(telegram) == 3)
+
+        state["managed"] = (True, noi.CHIEF_MANAGED)
+        codex_attention.hub_client.complete = lambda *a, **k: '{"verdict":"finished","confidence":0.99}'
+        codex_attention.handle({**payload(chat_dir, "t6", event="Stop"), "last_assistant_message": "Done."})
+        check("codex chief: a Stop never goes through the paste channel (the inbox owns turn-end)",
+              len(chief) == 3)
+    finally:
+        (noi.chief_managed_state, noi.notify_chief, codex_attention.notify_send.notify,
+         codex_attention.hub_client.complete) = saved
+        for key, value in saved_env.items():
+            if value is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = value
+        shutil.rmtree(tmp, ignore_errors=True)
+    return check.failures, check.total
+
+
 def _codex_native_probe_unit_checks() -> Tuple[int, int]:
     """The native lifecycle evidence verifier rejects false-positive sequences."""
     from probe_codex_permission_request import evaluate
