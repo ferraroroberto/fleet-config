@@ -468,6 +468,22 @@ def _gate_evidence_wiring_check() -> Tuple[int, int]:
     return check.failures, check.total
 
 
+def _chief_wait_event_check() -> Tuple[int, int]:
+    """The chief wakes on worker turn-end events, not a 10-minute sleep
+    (fleet-config#999). Pins the reference waiter to `wait-event` and keeps
+    the old `sleep 600` poll from creeping back. Returns (failures, total)."""
+    check = _Checker()
+    skill = (REPO / ".claude" / "skills" / "chief" / "SKILL.md").read_text(encoding="utf-8")
+    cadence = skill.partition("## Polling on a cadence")[2].partition("\n## ")[0]
+    check("chief wake: the reference waiter runs chief_ops.py wait-event",
+          '"$OPS" wait-event' in cadence)
+    check("chief wake: the 10-minute `sleep 600` poll script is gone", "sleep 600" not in skill)
+    incoming = skill.partition("## Incoming worker notifications")[2].partition("\n## ")[0]
+    check("chief wake: incoming notifications point at the wait-event wake, not a timed catch-all",
+          "wait-event" in incoming and "periodic Board poll is unaffected" not in incoming)
+    return check.failures, check.total
+
+
 def _mermaid_check() -> Tuple[int, int]:
     """The Mermaid companion render (`render_mermaid.py`) can't silently go stale.
 

@@ -211,6 +211,10 @@ _STANDALONE_UNIT_CHECKS: Tuple[Tuple[str, str, str], ...] = (
      "wait-seconds computation from resets_at -- is testable on its own, "
      "with no real rate-limits.json touched. Replaces the retired "
      "audit_retry dead-man's-switch check. (fleet-config#261)"),
+    ("chief_inbox", "test_chief_inbox.py",
+     "the chief inbox's writer -- Claude/Codex/Pi turn-end and exit through "
+     "the real adapter hooks, managed vs human-started vs undetermined -- "
+     "against a temp state dir (fleet-config#999)"),
     ("chief_ops", "test_chief_ops.py",
      "the fleet chief's deterministic ops helper -- repo occupancy, the "
      "alive-worker count, the three dispatch refusals (occupied repo, "

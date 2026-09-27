@@ -64,9 +64,9 @@ could hit by hand.
 ## Polling on a cadence — one-shot tasks, never a loop (fleet-config#637)
 
 A background task re-invokes you **when it exits** — not on each line it
-prints. So a periodic poll is a **one-shot** task: sleep the interval, emit
-one digest, exit. You report on the wake-up, then relaunch the same script for
-the next tick. Nothing re-arms it for you.
+prints. So a waiter is a **one-shot** task: wait for its trigger (a worker
+event, or a timeout), emit one digest, exit. You report on the wake-up, then
+relaunch the same script. Nothing re-arms it for you.
 
 - **Never a loop with an internal `sleep`.** It collects data faithfully and
   reports it to nobody until it terminates — exactly when the reporting has
@@ -86,25 +86,39 @@ all, so it must never end a turn waiting for one; you **do** get woken, so
 build your cadence out of short tasks that end. The rule you give workers is
 not the rule you follow.
 
+**Wake on events, not a timer (fleet-config#999).** A chief-managed worker's
+turn ending (`Stop`) or session exiting writes one event into the chief inbox
+(`hooks/chief_inbox.py`, on Claude, Codex and Pi alike). `chief_ops.py
+wait-event` blocks until events exist, claims every pending one exactly once,
+prints them, and **exits** — so you wake within seconds of a lane finishing,
+asking a question in plain text, or giving up, instead of at the next tick.
+Its timeout (default 1800 s) is the slow safety net for a worker killed too
+hard to fire a hook, and prints the board digest instead.
+
 Reference implementation — copy it rather than redesigning it, and launch it
-with the Bash tool's `run_in_background`, one tick per launch:
+with the Bash tool's `run_in_background`. **Re-arm it after every wake**, the
+events first, then everything else:
 
 ```bash
 #!/bin/bash
-# One-shot 10-minute poll: sleeps, prints one digest, then EXITS.
-# Only a background task's EXIT re-invokes the chief session.
+# One-shot waiter: exits on the first batch of worker events (or the
+# 30-min safety-net timeout). Only a background task's EXIT wakes the chief.
 PY=/e/automation/fleet-config/.venv/Scripts/python.exe
 OPS=/e/automation/fleet-config/skills/_lib/chief_ops.py
-sleep 600
-echo "=== poll $(date +%H:%M:%S) ==="
-"$PY" "$OPS" board 2>&1
+"$PY" "$OPS" wait-event 2>&1
+echo "=== woke $(date +%H:%M:%S) ==="
 echo "--- worktrees ---"
 ls -d /e/automation/*-wt-* 2>/dev/null || echo "none"
 ```
 
-Widen the digest to whatever the situation needs — a job's run status, `wc -c`
-of its log, lanes started, `tail -3` of the log — the shape stays the same:
-sleep, one digest, exit.
+On `WAIT_EVENT=events`: for each line, `chief_ops.py exchange <sid>` to read
+what the worker said, run `verify` on any completion claim (see "Verify before
+you trust a worker's report"), then absorb (nudge with `say`) or escalate. On
+`WAIT_EVENT=timeout`: read the board digest it printed, as the old timed poll
+did. Events wait in the inbox while nothing is armed, so a fresh boot or a
+missed re-arm loses nothing — the next `wait-event` returns them at once.
+Widen the tail of the script to whatever the situation needs (a job's run
+status, `wc -c` of its log); the shape stays the same: wait, one digest, exit.
 
 ## Telling a quiet lane from a hung one (fleet-config#638)
 
@@ -366,9 +380,12 @@ On one of these:
   expect), the notification falls back to the human Telegram chat rather
   than being dropped — that fallback is not a bug to route around.
 
-The periodic Board poll is unaffected and still catches what this event
-can't (a session that dies without ever going idle) — this is additive,
-not a replacement.
+A worker's turn ending — finished, a question asked in plain text (its
+`AskUserQuestion` is blocked), or gave up — reaches you separately, as a
+`wait-event` wake (see "Polling on a cadence"), not as a typed message, so it
+never collides with Roberto typing through the same input channel. The
+`wait-event` timeout's board digest is the safety net for a session that dies
+without firing any hook.
 
 ## Verify before you trust a worker's report
 

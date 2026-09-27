@@ -43,6 +43,7 @@ from acceptance.hook_matrix import run_hook_matrix  # noqa: E402
 from acceptance.architecture_guards import (  # noqa: E402
     _acceptance_audit_wiring_check,
     _advisory_semantics_check,
+    _chief_wait_event_check,
     _config_map_check,
     _fleet_membership_drift_check,
     _fleet_toml_check,
@@ -282,6 +283,9 @@ def main() -> int:
 
     # ---- gate evidence bound to a tree hash, never 'green this session' (#957) ----
     run_unit(_gate_evidence_wiring_check)
+
+    # ---- the chief wakes on worker turn-end events (#999) ----
+    run_unit(_chief_wait_event_check)
 
     # ---- system-map: week-over-week 'what changed' diff (whatchanged.py) ----
     run_unit(_system_map_whatchanged_check)

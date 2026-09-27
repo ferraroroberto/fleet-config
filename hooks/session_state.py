@@ -373,6 +373,10 @@ def main() -> None:
                 upsert_from_payload(
                     payload, status, allow_reopen=event == "UserPromptSubmit"
                 )
+        if event in ("Stop", "SessionEnd"):
+            # A chief-managed worker's turn-end wakes the chief (fleet-config#999).
+            import chief_inbox
+            chief_inbox.record_safely(payload, event)
     except Exception:  # noqa: BLE001 — state is advisory; never disturb the session
         pass
     _lib.allow()
