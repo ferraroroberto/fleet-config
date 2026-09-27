@@ -36,8 +36,30 @@ Run in parallel; stop on any failure:
 - `git status --porcelain` — uncommitted changes → commit now with a clear
   `type: summary` message (Git section of `CLAUDE.md`; no AI-attribution
   trailer).
-- Re-read the issue (`gh issue view <N>`) and confirm every acceptance point is
-  actually met. Unmet → stop and say so, don't finish a partial issue.
+- **Audit acceptance per criterion** (fleet-config#958). Code that handles a
+  deliverable is not the deliverable.
+  1. `E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/acceptance_audit.py extract <N>`
+     prints a JSON template, one entry per checkbox criterion; save it to a
+     scratch file and fill every entry: `proof_location` — where the proof
+     lives: `DIFF` (branch diff / gate output), `CROSS-REPO` (another repo's
+     state), `EXTERNAL` (live process, device, schedule, machine-local file);
+     `verdict` — `DONE` / `NOT DONE` / `UNVERIFIABLE`; `evidence` — one line;
+     for `UNVERIFIABLE`, `verifier` (who/what can establish it) and
+     `post_merge` (true when it can only be checked after merge).
+  2. `… acceptance_audit.py tally <N> <file>` — add `--unattended` when this
+     finish was invoked with `unattended` (`/issue-finish-batch`,
+     `/cleanup-fleet-all`). Act on the printed `ACCEPTANCE=`:
+     - `done` → proceed. `no_criteria` → judge the issue's prose; say so.
+     - `not_done` → stop and say which; don't finish a partial issue.
+     - `incomplete` → a criterion has no valid verdict; fill it — a gap is
+       never read as met.
+     - `unverifiable` → interactive: ask about each listed item one by one;
+       unattended: proceed. Either way, carry each `PR_TEST_PLAN` line into
+       the step-4 PR body and the step-7 summary individually — never a
+       blanket "please confirm the rest".
+     - `blocked` (unattended only) → an unverifiable item is not `EXTERNAL`
+       and post-merge by nature; stop and report it as the blocker.
+     - `unknown` → the issue could not be read; stop.
 
 ### 2. Documentation
 
@@ -150,7 +172,9 @@ upkeep) on this branch. Integration rules:
 - `git push -u origin <branch>`.
 - `gh pr create` with a body containing: a short **Summary**, a **Validation**
   line (what gate ran and its result), and `Closes #<N>` so the issue
-  auto-closes on merge. Match the PR-body style of recent merged PRs in the repo.
+  auto-closes on merge. Step 1's `PR_TEST_PLAN` lines go in as unticked test-plan
+  boxes, one per unverifiable criterion, naming its verifier.
+  Match the PR-body style of recent merged PRs in the repo.
   Do **not** include the `🤖 Generated with [Claude Code]` line at the bottom of the PR body.
 
 ### 5. Merge (CI is advisory — skip the wait when it adds no signal)
@@ -390,7 +414,8 @@ E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skill
 ### 7. Report
 
 Summarize: issue closed, PR merged, branch deleted, docs updated (or why not),
-gate result, the UX-conformance gate decision (ran / skipped / `ux-full`, plus
+gate result, the step-1 `ACCEPTANCE=` state with each unverifiable criterion
+listed individually (verifier named), the UX-conformance gate decision (ran / skipped / `ux-full`, plus
 any drift fixed — step 3b), the `/e2e` report block (source, tier + reason,
 result, maintenance — step 3c), the deploy-coverage decision (n/a / not
 touched / confirmed live / merged but not yet live / unknown — step 6b), and

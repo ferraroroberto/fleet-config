@@ -92,7 +92,9 @@ no padding.
     alone.
   - **Proposed approach** — a concrete, sensible direction; note real
     alternatives only when they matter. Don't design the whole implementation.
-  - **Acceptance criteria** — a short checklist of "done".
+  - **Acceptance criteria** — a short checklist of "done". Each criterion must
+    be decidable pass/fail by a reader with the repo in hand; "works
+    correctly" / "is robust" is not a criterion.
   - **How to verify** — the concrete steps/commands that prove the acceptance
     criteria hold, when they aren't self-evident from the checklist alone.
   - **Out of scope** — only if needed to head off scope creep.

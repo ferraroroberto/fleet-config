@@ -32,6 +32,13 @@ context:
    something a human reviewer would actually reject (gate genuinely fails, diff
    doesn't touch what the issue asked for, an obvious bug), never on style
    preference.
+   Acceptance is accounted per criterion, not as one boolean
+   (fleet-config#958): the verdict carries a `criteria` array of
+   `{criterion, proof_location, verdict, evidence}` — `proof_location`
+   `DIFF` / `CROSS-REPO` / `EXTERNAL`, `verdict` `DONE` / `NOT DONE` /
+   `UNVERIFIABLE`. `pass: true` requires zero `NOT DONE`, and an
+   `UNVERIFIABLE` item is reported, never counted as satisfied. The lenient
+   stance above is about judgment, not accounting, and is unchanged.
 3. **Execute** — ships an already-validated change: push, PR, CI-advisory wait,
    merge, tray restart. Never guesses past a failure; reports FAILED with a
    reason rather than force-completing.
@@ -107,3 +114,9 @@ mandatory human checkpoint in between. Concretely:
   ("Ship"), gating on a schema-validated `pass`/`feedback` verdict. A rejected
   verdict stops the run and surfaces the reviewer's feedback; Phase 4 only
   runs on `pass: true`.
+- **2026-09-27 (fleet-config#958):** The 3h verdict gained a per-criterion
+  `criteria` array, and `/issue-finish` step 1 audits acceptance the same way
+  through `skills/_lib/acceptance_audit.py`. "Could not be established from
+  this session" is now its own state (`UNVERIFIABLE`) instead of riding a
+  single `pass` through as met; unattended finishes ship one only when it is
+  `EXTERNAL` and checkable after merge by nature.
