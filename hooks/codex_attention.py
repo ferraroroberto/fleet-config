@@ -4,6 +4,11 @@
 final-message excerpt is classified through the local hub and alerts only for
 a strict, high-confidence ``awaiting_input`` result.  Every failure is
 fail-open and logged as ``not confirmed``.
+
+A chief-managed worker's ``PermissionRequest`` goes to the standing chief
+first (``route_to_chief``, fleet-config#999), falling back to the Telegram
+ping when delivery is not confirmed. Its turn-end reaches the chief through
+``chief_inbox`` instead, via ``session_state_codex``.
 """
 from __future__ import annotations
 
@@ -155,11 +160,46 @@ def _record_once(payload: dict[str, Any]) -> bool:
     return True
 
 
+def route_to_chief(payload: dict[str, Any]) -> bool:
+    """Deliver a chief-managed Codex worker's permission request to the chief.
+
+    The Codex twin of `notify_on_idle`'s `permission_prompt` routing
+    (fleet-config#443, #999): the chief wrote the brief and can usually
+    unblock the worker without paging Roberto. True only on confirmed
+    delivery; on any other outcome the caller falls back to the Telegram ping,
+    never retries. Needs no Telegram chat, so it runs before that check.
+    """
+    managed, reason = notify_on_idle.chief_managed_state()
+    if reason == notify_on_idle.CHIEF_UNDETERMINED:
+        logger.info("Codex attention: chief-managed lookup undetermined for launcher session %s "
+                    "-- falling back to the human ping", _lib.launcher_session_id())
+        return False
+    if not managed:
+        return False
+    cwd = _lib.cwd(payload)
+    project = _lib.detect_project(cwd)
+    context = permission_context(payload) or "a permission decision"
+    text = (f"{BELL} chief-managed worker needs input: Codex in "
+            f"{project.name if project else cwd.name} awaits {context}")
+    if notify_on_idle.notify_chief(text[:300]):
+        return True
+    logger.info("Codex attention: chief delivery not confirmed -- falling back to the human ping")
+    return False
+
+
 def handle(payload: dict[str, Any]) -> bool:
     """Classify, deduplicate, and deliver one Codex attention notification."""
     event = payload.get("hook_event_name")
     if event not in {"PermissionRequest", "Stop"}:
         return False
+    if event == "PermissionRequest":
+        key = _event_key(payload)
+        if key is not None and key in _read_dedup(_dedup_file()):
+            return False
+        if route_to_chief(payload):
+            if key is not None:
+                _record_once(payload)
+            return True
     chat, project = _lib.resolve_notify_target(_lib.cwd(payload), category="attention")
     if not chat:
         return False
