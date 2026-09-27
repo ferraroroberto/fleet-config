@@ -255,9 +255,8 @@ single **`spacing.gutter` (12px)** sets every gap — between cards/tiles *and* 
 the page edges — so the spacing reads uniform in every direction.
 **Reserve bottom padding equal to the nav height + safe-area inset** so the fixed
 bar never covers content (`padding-bottom: calc(61px + env(safe-area-inset-bottom))`).
-**On a phone, the `.app` top padding is the safe area alone**
-(`env(safe-area-inset-top)`, no gutter), so the first card starts directly under
-the status bar. The sides keep the gutter (project-scaffolding#288).
+On a phone, the `.app` top padding is the safe area alone, with no gutter (a
+Navigation contract rule, below).
 Installable PWAs lock to a fixed scale: viewport
 `maximum-scale=1, user-scalable=no` + `touch-action: manipulation` on the body —
 no pinch, no double-tap zoom.
@@ -391,6 +390,12 @@ identically; treat every bullet as a hard requirement, not a suggestion.
   equal-width grid of tabs. The bar stands **61px** tall and sits with **equal
   21px margins on left, right, and bottom** so it reads
   centered and breathes evenly.
+- **On a phone, the `.app` top padding is the safe area alone.** The vendored
+  nav's phone rule (`@media (pointer: coarse) and (max-width: 520px)`) sets
+  `padding-top: env(safe-area-inset-top, 0px)`, with no gutter, so the first
+  card starts directly under the status bar in every app. The sides and bottom
+  keep their padding. The vendored nav provides the rule, so a re-vendored app
+  carries no override of its own (project-scaffolding#288).
 - **One active tab at a time.** The active tab takes the accent-soft tint +
   `accent-text` and sits at `tabindex 0`; the others are `tabindex -1`, with
   `aria-selected` tracked so it is announced correctly.
