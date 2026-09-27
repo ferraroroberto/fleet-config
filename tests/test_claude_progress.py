@@ -11,7 +11,7 @@ import tempfile
 import threading
 import time
 from pathlib import Path
-from typing import Callable, Optional
+from typing import Optional
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "skills" / "_lib"))
@@ -19,6 +19,7 @@ import claude_progress as cp  # noqa: E402
 
 sys.path.insert(0, str(ROOT / "tests" / "_lib"))
 from check_harness import CheckHarness  # noqa: E402
+from readiness_clock import ReadinessClock  # noqa: E402
 
 _h = CheckHarness()
 check = _h.check
@@ -396,33 +397,6 @@ def stall_script(pid_file: Path) -> str:
         + f"    {HEARTBEAT_LINE}; time.sleep(0.2)\n"
         + "time.sleep(300)"
     )
-
-
-class ReadinessClock:
-    """A monotonic clock that stands at zero until ``ready()`` first holds.
-
-    The formatter's clock starts when the formatter is built, before the child
-    even exists, so on a loaded box the child's interpreter start alone could
-    use up the 2 s stall window: the watchdog then killed the tree before the
-    grandchild had a PID, or killed a chatty run before its first line
-    (fleet-config#1056). Holding the clock until the fixture is ready counts the
-    stall window from readiness, so the watchdog judges exactly the silence the
-    fixture produces. The watchdog's limit and every assertion are unchanged.
-    The hold is capped at ``max_hold`` seconds, so a fixture that never gets
-    ready still fails the promptness checks instead of hanging the suite.
-    """
-
-    def __init__(self, ready: Callable[[], bool], max_hold: float = 30.0) -> None:
-        self._ready = ready
-        self._hold_until = time.monotonic() + max_hold
-        self._ready_at: Optional[float] = None
-
-    def __call__(self) -> float:
-        if self._ready_at is None:
-            if not self._ready() and time.monotonic() < self._hold_until:
-                return 0.0
-            self._ready_at = time.monotonic()
-        return time.monotonic() - self._ready_at
 
 
 def wait_for_exit(pid: int, timeout: float) -> Optional[bool]:
