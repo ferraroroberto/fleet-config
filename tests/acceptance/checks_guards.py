@@ -301,6 +301,40 @@ def _secret_scan_gh_unit_checks() -> Tuple[int, int]:
               verdict(f"gh issue edit 5 --body-file={live.as_posix()}")[0] == 2)
         check("secret_scan gh: relative --body-file resolves against payload cwd",
               verdict("gh issue create --title t --body-file live.md")[0] == 2)
+
+        # A leading cd moves the base a relative body file resolves against
+        # (fleet-config#1054). `cdlive.md` exists only under `moved/`, and the
+        # payload cwd is `elsewhere/`, so every blocking case below read a
+        # missing file and failed open before the fix.
+        moved = tmp / "moved"
+        moved.mkdir()
+        (moved / "cdlive.md").write_text(f"see {FAKE_GHP}\n", encoding="utf-8")
+        elsewhere = tmp / "elsewhere"
+        elsewhere.mkdir()
+        check("secret_scan gh: cd <abs> && relative --body-file resolves in the new dir",
+              verdict(f"cd {moved.as_posix()} && gh issue create --title t "
+                      "--body-file cdlive.md", cwd=elsewhere)[0] == 2)
+        check("secret_scan gh: Set-Location <abs>; gh pr create -F <rel> (PowerShell)",
+              verdict(f'Set-Location "{moved}"; gh pr create -F cdlive.md',
+                      cwd=elsewhere, tool="PowerShell")[0] == 2)
+        check("secret_scan gh: Set-Location -Path <abs> is followed",
+              verdict(f"Set-Location -Path '{moved}'; gh pr create -F cdlive.md",
+                      cwd=elsewhere, tool="PowerShell")[0] == 2)
+        check("secret_scan gh: pushd <abs> is followed",
+              verdict(f"pushd {moved.as_posix()} && gh pr comment 5 -F cdlive.md",
+                      cwd=elsewhere)[0] == 2)
+        check("secret_scan gh: relative cd joins onto the payload cwd",
+              verdict("cd moved && gh issue create --title t --body-file cdlive.md")[0] == 2)
+        m_drive, m_rest = moved.as_posix().split(":", 1)
+        check("secret_scan gh: Git Bash cd /<drive>/ is followed",
+              verdict(f"cd /{m_drive.lower()}{m_rest} && gh issue create --title t "
+                      "--body-file cdlive.md", cwd=elsewhere)[0] == 2)
+        check("secret_scan gh: an absolute --body-file ignores a preceding cd",
+              verdict(f"cd {elsewhere.as_posix()} && gh issue create --title t "
+                      f"--body-file {live.as_posix()}")[0] == 2)
+        code, out, err = verdict("cd $X && gh issue create --title t --body-file live.md")
+        check("secret_scan gh: cd $VAR makes a relative body file fail open, breadcrumb on stderr",
+              code == 0 and not out and "not scanned" in err, err)
         spaced = tmp / "a b"
         spaced.mkdir()
         (spaced / "live.md").write_text(f"see {FAKE_GHP}\n", encoding="utf-8")

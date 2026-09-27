@@ -6,13 +6,15 @@ Triggers on `PreToolUse` for `Bash`/`PowerShell`, on two independent sinks:
   command string itself for a real credential.
 - **`gh issue|pr create|comment|edit` and `gh pr review`** — scans the command
   string (inline `--body`/`-b`/`--title`) plus the contents of every file named
-  by `--body-file`/`-F`, resolved against the payload `cwd` (fleet-config#959).
+  by `--body-file`/`-F`, resolved against the payload `cwd` (fleet-config#959)
+  as moved by any leading `cd`/`Set-Location`/`pushd` (fleet-config#1054).
   Reading the file the command names is what makes the bytes scanned the bytes
   published. Issue and PR bodies on a public repo are world-readable and indexed
   the moment they post, and `gh_body_file_guard` steers bodies into exactly the
   `--body-file` this reads. Fail-open: `-F -` (stdin), a `$VAR`/`$(…)` operand,
-  or a missing/unreadable file is allowed, with one info-level breadcrumb on
-  stderr for the unreadable case so a miss stays diagnosable.
+  a relative file after a non-literal `cd $X`, or a missing/unreadable file is
+  allowed, with one info-level breadcrumb on stderr for the last two cases so a
+  miss stays diagnosable.
 
 On the commit side, the one pattern that matters across this fleet is a
 Telegram **bot token** and Slack `xoxb-…` alike: the user keeps creds in a secret-managed
@@ -42,7 +44,7 @@ import re
 import subprocess
 import sys
 from pathlib import Path
-from typing import List, Optional
+from typing import List, Optional, Tuple
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import _lib  # noqa: E402
@@ -95,6 +97,11 @@ _QUOTED_RE = re.compile(r"""'([^']*)'|"([^"]*)\"""")
 # Windows, so translate it back to the drive form before resolving.
 _MSYS_DRIVE_RE = re.compile(r"^/([A-Za-z])/(.*)$")
 
+# Segment verbs that move the directory a later relative `--body-file` resolves
+# against (Bash and PowerShell spellings; PowerShell's are case-insensitive).
+_CD_VERBS = frozenset({"cd", "set-location", "sl", "chdir", "pushd", "push-location"})
+_POP_VERBS = frozenset({"popd", "pop-location"})
+
 
 def _words(text: str) -> List[str]:
     return [
@@ -103,17 +110,41 @@ def _words(text: str) -> List[str]:
     ]
 
 
-def body_file_operands(cmd: str) -> List[str]:
-    """Raw `--body-file`/`-F` operands of every `gh` publish segment in ``cmd``.
+def _cd_target(words: List[str]) -> Optional[str]:
+    """The one literal directory operand of a `cd`-like segment, else ``None``.
+
+    Option words (`-P`, `-Path`, `-LiteralPath`, …) are skipped; zero or several
+    remaining operands, or `cd -`, name no directory we can follow.
+    """
+    operands = [w for w in words[1:] if not w.startswith("-")]
+    return operands[0] if len(operands) == 1 else None
+
+
+def body_file_operands(cmd: str, base: Path) -> List[Tuple[str, Optional[Path]]]:
+    """``(operand, base)`` for every `--body-file`/`-F` of a `gh` publish segment.
 
     Covers `--body-file X`, `--body-file=X`, `-F X` and `-FX`. Only the words
     after a `gh issue|pr <publish verb>` in the same segment are read, so a
     `grep -F` elsewhere in the chain never names a file to scan.
+
+    ``base`` starts at the payload cwd and follows every `cd`/`Set-Location`/
+    `pushd`-style segment before the gh one (fleet-config#1054): `cd dir && gh
+    issue create --body-file rel.md` publishes `dir/rel.md`. A directory the
+    hook cannot read literally (`cd $X`, `cd -`, `popd`) makes the base
+    ``None`` until a later absolute `cd`.
     """
-    operands: List[str] = []
+    operands: List[Tuple[str, Optional[Path]]] = []
+    current: Optional[Path] = base
     for segment in _SEGMENT_SPLIT_RE.split(_CONTINUATION_RE.sub(" ", cmd)):
         match = GH_PUBLISH_RE.search(segment)
         if not match:
+            words = _words(segment)
+            verb = words[0].lower() if words else ""
+            if verb in _CD_VERBS:
+                target = _cd_target(words)
+                current = _resolve(target, current) if target is not None else None
+            elif verb in _POP_VERBS:
+                current = None
             continue
         words = _words(segment[match.end():])
         i = 0
@@ -121,22 +152,23 @@ def body_file_operands(cmd: str) -> List[str]:
             word = words[i]
             if word in ("--body-file", "-F"):
                 if i + 1 < len(words):
-                    operands.append(words[i + 1])
+                    operands.append((words[i + 1], current))
                 i += 2
                 continue
             if word.startswith("--body-file="):
-                operands.append(word[len("--body-file="):])
+                operands.append((word[len("--body-file="):], current))
             elif word.startswith("-F") and len(word) > 2:
-                operands.append(word[2:].lstrip("="))
+                operands.append((word[2:].lstrip("="), current))
             i += 1
     return operands
 
 
-def resolve_operand(raw: str, base: Path) -> Optional[Path]:
-    """``raw`` as a path to read, or ``None`` when it names no file we can see.
+def _resolve(raw: str, base: Optional[Path]) -> Optional[Path]:
+    """``raw`` as a path, or ``None`` when the hook cannot know where it points.
 
     `-` is stdin; a `$VAR`, `$(…)` or backtick operand is expanded by the shell
-    only after the hook has run. Relative paths resolve against the payload cwd.
+    only after the hook has run; a relative path under an unknown base (after
+    `cd $X`) has nowhere to resolve.
     """
     text = raw.strip()
     if not text or text == "-" or "$" in text or "`" in text or text.startswith("("):
@@ -145,7 +177,22 @@ def resolve_operand(raw: str, base: Path) -> Optional[Path]:
     if msys:
         text = f"{msys.group(1).upper()}:/{msys.group(2)}"
     path = Path(text).expanduser()
-    return path if path.is_absolute() else base / path
+    if path.is_absolute():
+        return path
+    return base / path if base is not None else None
+
+
+def resolve_operand(raw: str, base: Optional[Path]) -> Optional[Path]:
+    """A body-file operand as a path to read, or ``None`` (fail-open).
+
+    A literal relative operand whose base a preceding `cd $X` made unknown
+    leaves an info breadcrumb, so the unscanned publish stays diagnosable.
+    """
+    path = _resolve(raw, base)
+    if path is None and base is None and _resolve(raw, Path(".")) is not None:
+        _lib.logger.info("ℹ️ secret_scan_guard: body file not scanned (%s): "
+                         "a preceding cd names no literal directory", raw)
+    return path
 
 
 def _read_body(path: Path) -> Optional[str]:
@@ -164,8 +211,8 @@ def _read_body(path: Path) -> Optional[str]:
 def _guard_gh_publish(cmd: str, base: Path) -> None:
     """Block when the command or a body file it names carries a live secret."""
     parts = [cmd]
-    for raw in body_file_operands(cmd):
-        path = resolve_operand(raw, base)
+    for raw, raw_base in body_file_operands(cmd, base):
+        path = resolve_operand(raw, raw_base)
         body = _read_body(path) if path is not None else None
         if body:
             parts.append(body)
