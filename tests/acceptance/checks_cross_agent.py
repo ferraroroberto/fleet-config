@@ -38,6 +38,8 @@ from acceptance.shared import (
 _CODEX_POLICY_COVERAGE = (
     # policy, module, event, matcher, observed Codex status
     ("GitHub body quoting", "gh_body_file_guard", "PreToolUse", "Bash", "advises"),
+    ("Secret scan: commit and gh publish", "secret_scan_guard", "PreToolUse",
+     "Bash|PowerShell", "blocks"),
     ("Dated docs filenames", "docs_dated_filename_guard", "PreToolUse",
      "Edit|Write|MultiEdit", "blocks"),
     ("Branch before edit", "branch_before_edit_guard", "PreToolUse",

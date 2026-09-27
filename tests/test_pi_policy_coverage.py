@@ -83,6 +83,7 @@ class PiPolicies(unittest.TestCase):
                 self.assertEqual(hook('safe_kill_guard', payload(tool, command='git commit --no-verify'))['decision'], 'block')
                 fake = 'sk' + '-' + 'AbCdEfGhIjKlMnOpQrStUvWxYz012345'
                 self.assertEqual(hook('secret_scan_guard', payload(tool, command='git commit -m "'+fake+'"'))['decision'], 'block')
+                self.assertEqual(hook('secret_scan_guard', payload(tool, command='gh issue create --title t --body "'+fake+'"'))['decision'], 'block')
             self.assertEqual(hook('gh_body_file_guard', payload('bash', command="echo @'hi'@"))['decision'], 'warn')
             self.assertEqual(hook('docs_dated_filename_guard', payload('write', path='docs/2026-09-06-sentinel.md'))['decision'], 'block')
             bad = directory / 'bad.py'
