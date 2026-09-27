@@ -56,6 +56,15 @@ Subcommands
       named, on the human-readable path) so this answers the same question
       `dispatch` asks — see `dispatch` below.
 
+  wait-event [--timeout 1800] [--interval 5] [--base-url URL]
+      Block until a chief-managed worker's turn ends or its session exits
+      (`hooks/chief_inbox.py` publishes one event file per event), claim every
+      pending event exactly once, print them (`WAIT_EVENT=events n=N` plus one
+      line each) and exit 0 -- launched as a one-shot background task, its exit
+      is what wakes the chief (fleet-config#999). A burst settles for ~3s into
+      one wake. On timeout: `WAIT_EVENT=timeout` plus the board digest, the
+      safety net for a worker killed too hard to fire a hook.
+
   exchange <sid> [--tail N] [--base-url URL]
       Last assistant text for a live session, tailed to N chars (default
       2000). `<sid>` accepts either a full session id or the 8-char prefix
@@ -202,6 +211,7 @@ import chief_plan  # noqa: E402
 import dirty_tree_check  # noqa: E402
 import fleet_repo_scan  # noqa: E402
 import git_run  # noqa: E402
+import hooks_state  # noqa: E402
 from no_window import NO_WINDOW  # noqa: E402
 # `say --verify`'s delivery classifier is its own subsystem, in its own module
 # (fleet-config#680) -- this file keeps the CLI and the I/O that feeds it.
@@ -630,6 +640,110 @@ def format_occupancy(occupancy: Dict[str, Dict[str, Any]]) -> str:
     return "\n".join(lines)
 
 
+# ---- chief inbox: worker turn-end wake events (fleet-config#999) ------------
+
+# Written by `hooks/chief_inbox.py` (one JSON file per event); read here by
+# path, not import -- `hooks/` and `skills/_lib/` stay independent trees.
+CHIEF_INBOX_DIRNAME = "chief-inbox"
+# Same horizon as the chief-managed registry's TTL: an event older than the
+# dispatch it belongs to describes nothing the chief can still act on.
+INBOX_EVENT_TTL_SECONDS = 24 * 3600
+DEFAULT_WAIT_EVENT_TIMEOUT = 1800.0
+DEFAULT_WAIT_EVENT_INTERVAL = 5.0
+# After the first event lands, wait this long so lanes finishing together
+# arrive as one wake rather than several.
+WAIT_EVENT_SETTLE_SECONDS = 3.0
+
+
+def chief_inbox_dir() -> Path:
+    return hooks_state.state_dir() / CHIEF_INBOX_DIRNAME
+
+
+def _event_age_seconds(event: Dict[str, Any], now: datetime) -> Optional[float]:
+    try:
+        stamp = datetime.strptime(str(event.get("ts")), "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+    except ValueError:
+        return None
+    return (now - stamp).total_seconds()
+
+
+def claim_batch(inbox: Path, now: Optional[datetime] = None) -> List[Dict[str, Any]]:
+    """Claim every published event in ``inbox`` exactly once, oldest first.
+
+    Each ``*.json`` is renamed into a private claim folder before it is read:
+    a concurrent claimer loses the rename race and skips the file, and an
+    event published during the claim is simply not in this listing -- it lands
+    in the next batch. Events past the TTL, or unparseable, are dropped.
+    """
+    if not inbox.is_dir():
+        return []
+    moment = now or datetime.now(timezone.utc)
+    claim = inbox / f".claim-{os.getpid()}-{time.time_ns()}"
+    events: List[Dict[str, Any]] = []
+    try:
+        for path in sorted(inbox.glob("*.json")):
+            claim.mkdir(exist_ok=True)
+            held = claim / path.name
+            try:
+                os.replace(path, held)
+            except OSError:
+                continue  # another claimer took it first
+            try:
+                event = json.loads(held.read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                event = None
+            try:
+                held.unlink()
+            except OSError:
+                pass
+            if not isinstance(event, dict):
+                continue
+            age = _event_age_seconds(event, moment)
+            if age is not None and age > INBOX_EVENT_TTL_SECONDS:
+                continue
+            events.append(event)
+    finally:
+        try:
+            claim.rmdir()
+        except OSError:
+            pass
+    return events
+
+
+def format_inbox_digest(events: List[Dict[str, Any]], now: Optional[datetime] = None) -> str:
+    moment = now or datetime.now(timezone.utc)
+    lines = [f"WAIT_EVENT=events n={len(events)}"]
+    for event in events:
+        what = "turn ended" if event.get("event") == "Stop" else "session ended" \
+            if event.get("event") == "SessionEnd" else str(event.get("event"))
+        age = _event_age_seconds(event, moment)
+        issue = f"{event.get('repo')}#{event.get('number')}"
+        lines.append(
+            f"- {issue}: {what} ({event.get('agent') or '?'}) "
+            f"sid={str(event.get('launcher_sid') or '')[:8]} "
+            f"{'age=' + _fmt_age(age) if age is not None else 'age=?'}"
+        )
+    lines.append("Next: `exchange <sid>` for each, `verify` any completion claim, then absorb or escalate.")
+    return "\n".join(lines)
+
+
+def wait_for_events(
+    inbox: Path, timeout: float, interval: float, *,
+    settle: float = WAIT_EVENT_SETTLE_SECONDS, sleep=time.sleep, clock=time.monotonic,
+) -> List[Dict[str, Any]]:
+    """Block until the inbox yields events (plus a settle window) or ``timeout``."""
+    deadline = clock() + timeout
+    while True:
+        events = claim_batch(inbox)
+        if events:
+            sleep(settle)
+            return events + claim_batch(inbox)
+        remaining = deadline - clock()
+        if remaining <= 0:
+            return []
+        sleep(min(interval, remaining))
+
+
 # ---- thin I/O wrappers ------------------------------------------------------
 
 def _ssl_context() -> ssl.SSLContext:
@@ -802,6 +916,25 @@ def cmd_board(args: argparse.Namespace) -> int:
         print(json.dumps(board, indent=2))
     else:
         print(format_board_digest(board))
+    return 0
+
+
+def cmd_wait_event(args: argparse.Namespace) -> int:
+    """Exit on the first batch of worker events, or on timeout with the board.
+
+    Launched as a one-shot background task: its exit is what wakes the chief,
+    so it must never loop past a batch (fleet-config#637, #999). The timeout is
+    the safety net for a worker killed too hard to fire any hook.
+    """
+    events = wait_for_events(chief_inbox_dir(), args.timeout, args.interval)
+    if events:
+        print(format_inbox_digest(events))
+        return 0
+    print(f"WAIT_EVENT=timeout after {int(args.timeout)}s (no worker events)")
+    try:
+        print(format_board_digest(_request(args.base_url, "/api/board")))
+    except (ValueError, urllib.error.URLError) as exc:
+        print(f"board unavailable: {exc}")
     return 0
 
 
@@ -1127,6 +1260,12 @@ def main(argv: Optional[List[str]] = None) -> int:
     d.add_argument("--yolo-confirmed", action="store_true")
     d.add_argument("--base-url", default=DEFAULT_BASE_URL)
     d.set_defaults(func=cmd_dispatch)
+
+    we = sub.add_parser("wait-event", help="block until a worker's turn ends (fleet-config#999)")
+    we.add_argument("--timeout", type=float, default=DEFAULT_WAIT_EVENT_TIMEOUT)
+    we.add_argument("--interval", type=float, default=DEFAULT_WAIT_EVENT_INTERVAL)
+    we.add_argument("--base-url", default=DEFAULT_BASE_URL)
+    we.set_defaults(func=cmd_wait_event)
 
     cs = sub.add_parser("chief-sid", help="find the standing chief's live session id")
     cs.add_argument("--base-url", default=DEFAULT_BASE_URL)

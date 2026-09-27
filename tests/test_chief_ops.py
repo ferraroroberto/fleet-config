@@ -1405,4 +1405,86 @@ finally:
     shutil.rmtree(_prefix_tmp, ignore_errors=True)
 
 
+# ---- wait-event: the chief inbox, claimed exactly once (fleet-config#999) ----
+
+import contextlib  # noqa: E402
+import io  # noqa: E402
+import json  # noqa: E402
+import threading  # noqa: E402
+import time  # noqa: E402
+
+_inbox_tmp = Path(tempfile.mkdtemp(prefix="chief_inbox_ops_"))
+try:
+    inbox = _inbox_tmp / "chief-inbox"
+    now = datetime(2026, 9, 27, 12, 0, tzinfo=timezone.utc)
+
+    def publish(name: str, **fields) -> None:
+        inbox.mkdir(exist_ok=True)
+        row = {"event": "Stop", "launcher_sid": "a1b2c3d4e5f6", "repo": "fleet-config",
+               "number": 999, "agent": "claude", "ts": "2026-09-27T11:59:30Z", **fields}
+        (inbox / name).write_text(json.dumps(row), encoding="utf-8")
+
+    check(co.claim_batch(inbox, now=now) == [], "claim_batch: a missing inbox is an empty batch")
+    publish("1-a.json")
+    publish("2-b.json", event="SessionEnd", repo="app-launcher", number=7)
+    (inbox / ".event.x1.tmp").write_text("half-written", encoding="utf-8")
+    (inbox / "3-c.json").write_text("{not json", encoding="utf-8")
+    publish("4-d.json", ts="2026-09-25T11:00:00Z")
+    batch = co.claim_batch(inbox, now=now)
+    check([e["number"] for e in batch] == [999, 7],
+          "claim_batch: claims published events oldest first; skips temps, junk, and events past the TTL")
+    check(co.claim_batch(inbox, now=now) == [], "claim_batch: a second claim re-reports nothing (claimed once)")
+    check(sorted(p.name for p in inbox.iterdir()) == [".event.x1.tmp"],
+          "claim_batch: claimed files and the claim folder are gone; an unpublished temp is untouched")
+
+    digest = co.format_inbox_digest(batch, now=now)
+    check(digest.startswith("WAIT_EVENT=events n=2") and "fleet-config#999: turn ended (claude)" in digest
+          and "app-launcher#7: session ended" in digest and "sid=a1b2c3d4" in digest,
+          "format_inbox_digest: one line per event naming issue, kind, agent and sid")
+
+    # A burst settles into one wake: an event published during the settle window joins the batch.
+    publish("5-e.json", number=1)
+    slept = []
+    def settle_sleep(seconds):
+        slept.append(seconds)
+        publish("6-f.json", number=2)
+    got = co.wait_for_events(inbox, timeout=10, interval=1, sleep=settle_sleep)
+    check([e["number"] for e in got] == [1, 2] and slept == [co.WAIT_EVENT_SETTLE_SECONDS],
+          "wait_for_events: a burst within the settle window arrives as one wake")
+
+    # Empty inbox: returns [] once the (fake) clock passes the timeout, never loops forever.
+    ticks = iter(range(0, 1000, 5))
+    got = co.wait_for_events(inbox, timeout=12, interval=5, sleep=lambda s: None, clock=lambda: next(ticks))
+    check(got == [], "wait_for_events: an empty inbox returns [] at the timeout")
+
+    # Real timing: a writer thread's event makes the waiter return within the interval.
+    old_dir = co.chief_inbox_dir
+    co.chief_inbox_dir = lambda: inbox
+    try:
+        threading.Timer(0.5, lambda: publish("7-g.json", number=3)).start()
+        started = time.monotonic()
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            code = co.main(["wait-event", "--timeout", "30", "--interval", "0.2"])
+        took = time.monotonic() - started
+        check(code == 0 and "WAIT_EVENT=events n=1" in out.getvalue() and took < 0.5 + 0.2 + co.WAIT_EVENT_SETTLE_SECONDS + 3,
+              f"wait-event CLI: exits soon after an event lands (took {took:.1f}s)")
+
+        board_calls = []
+        old_request = co._request
+        co._request = lambda base, path: board_calls.append(path) or {}
+        try:
+            out = io.StringIO()
+            with contextlib.redirect_stdout(out):
+                code = co.main(["wait-event", "--timeout", "0.3", "--interval", "0.1"])
+        finally:
+            co._request = old_request
+        check(code == 0 and out.getvalue().startswith("WAIT_EVENT=timeout") and board_calls == ["/api/board"],
+              "wait-event CLI: an empty inbox times out with the board digest")
+    finally:
+        co.chief_inbox_dir = old_dir
+finally:
+    shutil.rmtree(_inbox_tmp, ignore_errors=True)
+
+
 _h.report_and_exit("test_chief_ops")

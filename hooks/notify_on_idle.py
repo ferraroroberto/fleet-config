@@ -189,25 +189,38 @@ def chief_managed_state(path: Optional[Path] = None) -> Tuple[bool, str]:
     are expected to report `CHIEF_UNDETERMINED` rather than fold it into the
     quiet path.
     """
+    row, reason = chief_managed_row(path)
+    return row is not None, reason
+
+
+def chief_managed_row(path: Optional[Path] = None) -> Tuple[Optional[dict], str]:
+    """This session's `chief-managed.json` row (`repo`, `number`,
+    `dispatched_at`) -> `(row, reason)`; `row` is `None` unless `reason` is
+    `CHIEF_MANAGED`. The one reader behind `chief_managed_state`, split out so
+    `chief_inbox` can carry the dispatched issue into its event
+    (fleet-config#999). Same keying and the same three non-managed reasons."""
     sid = _lib.launcher_session_id()
     if not sid:
-        return False, CHIEF_NOT_LAUNCHER
+        return None, CHIEF_NOT_LAUNCHER
     if path is None:
         path = _lib.state_dir() / "chief-managed.json"
     try:
         raw = path.read_text(encoding="utf-8-sig")
     except FileNotFoundError:
         # The registry is created by the first dispatch; absent means none.
-        return False, CHIEF_NOT_DISPATCHED
+        return None, CHIEF_NOT_DISPATCHED
     except OSError:
-        return False, CHIEF_UNDETERMINED
+        return None, CHIEF_UNDETERMINED
     try:
         data = json.loads(raw)
     except ValueError:
-        return False, CHIEF_UNDETERMINED
+        return None, CHIEF_UNDETERMINED
     if not isinstance(data, dict):
-        return False, CHIEF_UNDETERMINED
-    return (sid in data), (CHIEF_MANAGED if sid in data else CHIEF_NOT_DISPATCHED)
+        return None, CHIEF_UNDETERMINED
+    if sid not in data:
+        return None, CHIEF_NOT_DISPATCHED
+    row = data[sid]
+    return (row if isinstance(row, dict) else {}), CHIEF_MANAGED
 
 
 def parse_chief_sid(stdout: str) -> str:

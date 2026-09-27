@@ -22,6 +22,7 @@ always exits 0 — a broken adapter must never disturb a live Pi session.
 
 from __future__ import annotations
 
+import logging
 import sys
 from pathlib import Path
 from typing import Any, Dict
@@ -48,6 +49,8 @@ def _payload_from_event(event: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def main() -> None:
+    # Same stderr wiring as session_state, so chief_inbox's breadcrumbs land.
+    logging.basicConfig(level=logging.INFO, format="%(message)s", stream=sys.stderr)
     try:
         event = _lib.read_stdin_json()
         name = str(event.get("event") or "")
@@ -63,6 +66,12 @@ def main() -> None:
                     default_agent="pi",
                     allow_reopen=name == "input",
                 )
+        # Pi's turn-end and exit, in the inbox's harness-neutral vocabulary
+        # (fleet-config#999).
+        inbox_event = {"agent_settled": "Stop", "session_shutdown": "SessionEnd"}.get(name)
+        if inbox_event:
+            import chief_inbox
+            chief_inbox.record_safely(payload, inbox_event, default_agent="pi")
     except Exception:  # noqa: BLE001 — state is advisory; never disturb the session
         pass
     _lib.allow()

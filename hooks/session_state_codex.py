@@ -34,6 +34,7 @@ exits 0.
 
 from __future__ import annotations
 
+import logging
 import sys
 from pathlib import Path
 
@@ -49,6 +50,8 @@ _EVENT_STATUS = {
 
 
 def main() -> None:
+    # Same stderr wiring as session_state, so chief_inbox's breadcrumbs land.
+    logging.basicConfig(level=logging.INFO, format="%(message)s", stream=sys.stderr)
     try:
         payload = _lib.read_stdin_json()
         event = str(payload.get("hook_event_name") or "")
@@ -63,6 +66,11 @@ def main() -> None:
                     default_agent="codex",
                     allow_reopen=event == "UserPromptSubmit",
                 )
+        if event in ("Stop", "SessionEnd"):
+            # A chief-managed worker's turn-end wakes the chief (fleet-config#999),
+            # independent of codex_attention's Telegram path and its chat config.
+            import chief_inbox
+            chief_inbox.record_safely(payload, event, default_agent="codex")
     except Exception:  # noqa: BLE001 — state is advisory; never disturb the session
         pass
     _lib.allow()
