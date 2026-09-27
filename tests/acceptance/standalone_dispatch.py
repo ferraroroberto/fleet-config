@@ -321,6 +321,11 @@ _STANDALONE_UNIT_CHECKS: Tuple[Tuple[str, str, str], ...] = (
      "/issue-finish's per-criterion acceptance tally -- checkbox parsing, a "
      "missing verdict as incomplete, every state, and the unattended rule -- "
      "is testable on its own with gh stubbed out (fleet-config#958)"),
+    ("gate_evidence", "test_gate_evidence.py",
+     "FRESH/STALE/MISSING/UNKNOWN gate evidence bound to a working-tree hash "
+     "-- tracked edits, untracked files, identical commits, mid-run changes, "
+     "a linked worktree and the untouched real index -- against temp repos "
+     "(fleet-config#957)"),
     ("issue_state_gate", "test_issue_state_gate.py",
      "/cleanup-fleet's and /cleanup-fleet-all's pre-dispatch state re-check "
      "-- gh-outcome classification into open/closed/unknown, and the "

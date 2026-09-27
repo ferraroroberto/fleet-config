@@ -204,6 +204,16 @@ try:
     check("GIT_OPTIONAL_LOCKS" not in os.environ,
           "git_env: builds a copy — never mutates this process's own environment")
 
+    # ---- run_git(extra_env=...): passes variables through, never the lock opt-out (#957) ----
+    shown = git_run.run_git(
+        ["-c", "alias.showenv=!echo $GIT_OPTIONAL_LOCKS-$FLEET_957_PROBE", "showenv"],
+        extra_env={"GIT_OPTIONAL_LOCKS": "1", "FLEET_957_PROBE": "passed"},
+    )
+    check(shown.stdout.strip() == "0-passed",
+          f"run_git: extra_env reaches git and cannot drop GIT_OPTIONAL_LOCKS=0 (got {shown.stdout.strip()!r})")
+    check("FLEET_957_PROBE" not in os.environ,
+          "run_git: extra_env never mutates this process's own environment")
+
     # ---- a read through run_git does not take the optional index lock ----
     # Make the index stat-dirty (same content, new mtime) so a plain `git
     # status` *would* want to write the refreshed cache back. `.git/index`

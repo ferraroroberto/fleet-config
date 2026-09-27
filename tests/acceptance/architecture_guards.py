@@ -431,6 +431,43 @@ def _acceptance_audit_wiring_check() -> Tuple[int, int]:
     return check.failures, check.total
 
 
+def _gate_evidence_wiring_check() -> Tuple[int, int]:
+    """No finish decision rests on a remembered "green this session"
+    (fleet-config#957): steps 3, 3c and 5 of /issue-finish and /e2e's dedupe
+    rule ask `gate_evidence.py`, which binds a pass to the tree it ran
+    against. Pins the pointer and the absence of the old phrase in exactly the
+    decision paragraphs. Returns (failures, total)."""
+    check = _Checker()
+    finish = (REPO / "skills" / "issue-finish" / "SKILL.md").read_text(encoding="utf-8")
+
+    def section(text: str, start: str, end: str) -> str:
+        return text.partition(start)[2].partition(end)[0]
+
+    step3 = section(finish, "### 3. Verification gate", "### 3b.")
+    step3c = section(finish, "### 3c.", "### 4.")
+    step5 = section(finish, "### 5.", "### 6.")
+    check("gate evidence: /issue-finish step 3 runs the gate through gate_evidence.py run --label gate",
+          "gate_evidence.py run --label gate" in step3)
+    # "this session's to touch" (step 5's primary-checkout guard) is about
+    # ownership, not a remembered green, so only the bare phrase is banned.
+    remembered = re.compile(r"this session(?!'s)")
+    for name, body in (("3c", step3c), ("5", step5)):
+        check(f"gate evidence: /issue-finish step {name} asks gate_evidence.py check, never 'this session'",
+              "check --label gate" in body and not remembered.search(body))
+    check("gate evidence: the /issue-finish description no longer skips CI on 'green this session'",
+          "this session" not in finish.split("\n---", 1)[0])
+
+    e2e = (REPO / "skills" / "e2e" / "SKILL.md").read_text(encoding="utf-8")
+    dedupe = section(e2e, "**Deduplicate against the verification gate", "- **Synchronous only.**")
+    check("gate evidence: /e2e's dedupe rule asks check --label gate and records e2e-<tier>",
+          "check --label gate" in dedupe and "run --label e2e-" in dedupe and "in this session" not in dedupe)
+    batch = (REPO / "skills" / "issue-finish-batch" / "SKILL.md").read_text(encoding="utf-8")
+    check("gate evidence: /issue-finish-batch's brief skips CI only on FRESH evidence",
+          "gate_evidence.py check --label gate" in batch)
+
+    return check.failures, check.total
+
+
 def _mermaid_check() -> Tuple[int, int]:
     """The Mermaid companion render (`render_mermaid.py`) can't silently go stale.
 

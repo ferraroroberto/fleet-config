@@ -1,6 +1,6 @@
 ---
 name: issue-finish
-description: Finish an issue — confirm acceptance, update docs/README, run the verification gate, push, open a closing PR, treat CI as advisory (skip when local e2e + pytest are green this session or no e2e surface touched; flake reruns once), auto-merge, delete branch, restart tray. Use "/issue-finish"; pairs with /issue-start.
+description: Finish an issue — confirm acceptance, update docs/README, run the verification gate, push, open a closing PR, treat CI as advisory (skip only when the recorded local gate/e2e pass still matches the tree, or no e2e surface touched; flake reruns once), auto-merge, delete branch, restart tray. Use "/issue-finish"; pairs with /issue-start.
 ---
 
 # issue-finish
@@ -91,9 +91,24 @@ and continue to step 3 — never block the finish over it.
 ### 3. Verification gate
 
 Run the gate the project's `CLAUDE.md` specifies (e.g.
-`C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe -File scripts/verify-before-ship.ps1`).
-Must exit 0. Do not proceed on a red gate. No checker → say so explicitly,
-never claim tests passed when there are none.
+`C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe -File scripts/verify-before-ship.ps1`)
+**through the evidence helper**, so its result is bound to the tree it ran
+against (fleet-config#957):
+
+```
+E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/gate_evidence.py run --label gate -- <gate command argv>
+```
+
+It exits with the gate's own code; must exit 0. Do not proceed on a red gate.
+No checker → say so explicitly, never claim tests passed when there are none.
+Every later "is the gate still green?" question — steps 3c and 5 — is
+answered by `gate_evidence.py check --label gate`, never by memory:
+`FRESH` (the recorded pass matches the current tree), `STALE` (the tree
+changed since — e.g. a 3b drift-fix commit, `/e2e` suite upkeep),
+`MISSING`, or `UNKNOWN` (hash not computable). Anything but `FRESH` → re-run
+the gate once through the helper; a last line `EVIDENCE=not_recorded` means
+the gate itself changed the tree (the paths are named) — watch CI rather than
+loop.
 
 ### 3b. UX-conformance gate (web-app UX diffs only)
 
@@ -160,9 +175,10 @@ contact), runs the routed slice (`skip` / `static` / `full` / `surface`), and ap
 inline suite maintenance (delete-with-the-feature, qualifying additions, table
 upkeep) on this branch. Integration rules:
 
-- If step 3's gate already executed the routed e2e slice this session (the
-  scaffold-shaped `verify-before-ship` gates route internally), `/e2e`
-  carries that result — no double run.
+- If step 3's gate already executed the routed e2e slice (the
+  scaffold-shaped `verify-before-ship` gates route internally) **and**
+  `gate_evidence.py check --label gate` prints `FRESH`, `/e2e` carries that
+  result — no double run. Any other answer → run the slice.
 - A **FAIL** from the slice stops the finish exactly like a red gate.
 - Echo `/e2e`'s report block into the step-7 summary — the tier + reason
   always appear there, even when the outcome is `skip` or `n/a`.
@@ -192,15 +208,20 @@ Decision below is driven by the project's `## CI expectations` block
   to the conservative behavior: always `--watch` (skip nothing)**, subject to
   the local-e2e-proof rule below. Do not invent thresholds or surface paths the
   block doesn't state.
-- **Skip-the-wait when step 3c's `/e2e` run already proved it.** If step 3's
-  gate is green **and** step 3c executed (or carried from the gate) a passing
-  `full`-tier e2e run this session → skip the watch and merge immediately,
+- **Evidence first.** Every skip below requires
+  `gate_evidence.py check --label gate` to print `FRESH` *now*, just before
+  the merge. `STALE` / `MISSING` / `UNKNOWN` → re-run the gate once through
+  the helper, else watch; never skip the wait on remembered green.
+- **Skip-the-wait when step 3c's `/e2e` run already proved it.** If the gate
+  is `FRESH` **and** a passing `full`-tier e2e run is `FRESH` too — `check
+  --label e2e-full` (recorded by `/e2e`), or the gate itself ran the full
+  slice → skip the watch and merge immediately,
   **regardless of whether the diff touches declared e2e-surface paths**.
-  **State it**, e.g. `CI not awaited — /e2e full slice green this session`.
+  **State it**, e.g. `CI not awaited — /e2e full slice FRESH for this tree`.
 - **Otherwise, skip-the-wait keyed on the `/e2e` routing.** If step 3c routed
   `skip` (classifier or judgment fail-safe positively cleared every changed
-  path of browser impact) and the local gate is green → skip the watch and
-  merge immediately. Same for a green `static` or `surface` slice: the repo's
+  path of browser impact) and the local gate is `FRESH` → skip the watch and
+  merge immediately. Same for a `static` or `surface` slice whose `e2e-<tier>` evidence is `FRESH`: the repo's
   own `[e2e]` table declared that target sufficient for those paths. **State it**,
   e.g. `CI not awaited — /e2e routed skip: docs-only diff`. Never re-derive the
   surface match by eye — the routing decision is step 3c's.
@@ -414,7 +435,8 @@ E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skill
 ### 7. Report
 
 Summarize: issue closed, PR merged, branch deleted, docs updated (or why not),
-gate result, the step-1 `ACCEPTANCE=` state with each unverifiable criterion
+gate result with its evidence state at merge time (`gate: FRESH` / re-run /
+`STALE → CI watched`), the step-1 `ACCEPTANCE=` state with each unverifiable criterion
 listed individually (verifier named), the UX-conformance gate decision (ran / skipped / `ux-full`, plus
 any drift fixed — step 3b), the `/e2e` report block (source, tier + reason,
 result, maintenance — step 3c), the deploy-coverage decision (n/a / not

@@ -152,10 +152,18 @@ E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skill
   repo doesn't declare, and never add a second projection to a functional
   slice (see "Browser projections" above). A `surface` target is space-separated: pass each path
   as its own pytest argument, with suite-default browsers exactly as `full`.
-- **Deduplicate against the verification gate:** when a repo's pre-ship gate
-  (e.g. `scripts/verify-before-ship.ps1`) already executed this same routed
-  slice in this session, do **not** re-run it — carry that result into the
-  report. One proportionate run per session is the whole point.
+- **Deduplicate against the verification gate — by evidence, not memory**
+  (fleet-config#957): when a repo's pre-ship gate (e.g.
+  `scripts/verify-before-ship.ps1`) already executed this same routed slice
+  **and** `gate_evidence.py check --label gate` prints `FRESH`, do **not**
+  re-run it — carry that result into the report. `STALE` / `MISSING` /
+  `UNKNOWN` → run the slice. One proportionate run per tree is the whole
+  point.
+- **Record what you run.** Run the slice through
+  `E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/gate_evidence.py run --label e2e-<tier> -- <pytest argv>`
+  (`e2e-full`, `e2e-static`, `e2e-surface`), so a finisher's skip-the-CI-wait
+  decision can ask `check --label e2e-<tier>` whether the pass still matches
+  the tree after step 6's suite maintenance.
 - **Synchronous only.** Run to completion in the foreground (or poll a
   background task to completion within this turn) — never fire-and-forget
   and end the turn (global CLAUDE.md; fleet-config#314). Boot-or-adopt is
