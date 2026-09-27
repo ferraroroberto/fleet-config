@@ -120,6 +120,36 @@ missed re-arm loses nothing — the next `wait-event` returns them at once.
 Widen the tail of the script to whatever the situation needs (a job's run
 status, `wc -c` of its log); the shape stays the same: wait, one digest, exit.
 
+## Managing your own context — self-compact at a quiet tick (fleet-config#1052)
+
+One chief session is meant to run indefinitely. Don't wait for Claude Code's
+own auto-compact near the limit, where attention is most diluted and nothing
+guarantees the handover was refreshed. Compact yourself earlier, on your own
+terms:
+
+1. On each wake, `chief_ops.py context` prints your context use
+   (`percent=unknown` is never a trigger).
+2. At or over the threshold, and **only at a quiet tick**: no steer awaiting
+   verification, no half-made decision, no merge mid-flight.
+   - Refresh the handover log and the plan (`plan …`).
+   - Make sure the `wait-event` waiter is armed. A background task armed
+     before a compaction still wakes you afterwards (probed live, #1052).
+   - Run `chief_ops.py self-compact`.
+3. `COMPACT_QUEUED` → end the turn at once. The `/compact` runs when the turn
+   ends; SessionStart re-injects the handover, and the waiter's exit gives you
+   your next turn.
+
+`self-compact` reads the threshold from app-launcher Settings (0 = off; if it
+can't be read, 30, with the reason printed). It refuses, each with its own
+`REFUSED=` line, below the threshold, on an unknown percentage, on a handover
+log or plan older than 10 minutes, and whenever the caller isn't you, the live
+chief. Treat a refusal as information: fix the stale refresh, or wait for the
+next tick. Never retry past it.
+
+**Those refusals gate only this automatic trigger.** A `/compact` that
+Roberto types in your terminal or sends from the Board chat goes straight
+through at any percentage. Never refuse, delay or second-guess it.
+
 ## Telling a quiet lane from a hung one (fleet-config#638)
 
 A job log that stops growing is the most misread signal on a long unattended

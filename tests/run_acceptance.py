@@ -50,6 +50,7 @@ from acceptance.architecture_guards import (  # noqa: E402
     _gate_evidence_wiring_check,
     _mermaid_check,
     _installer_symmetry_check,
+    _manual_compact_never_gated_check,
     _readme_layout_check,
     _unattended_worktree_mandate_check,
     _settings_sync_split_check,
@@ -288,6 +289,9 @@ def main() -> int:
 
     # ---- the chief wakes on worker turn-end events (#999) ----
     run_unit(_chief_wait_event_check)
+
+    # ---- an operator-typed /compact is never gated (#1052) ----
+    run_unit(_manual_compact_never_gated_check)
 
     # ---- system-map: week-over-week 'what changed' diff (whatchanged.py) ----
     run_unit(_system_map_whatchanged_check)

@@ -1487,4 +1487,129 @@ finally:
     shutil.rmtree(_inbox_tmp, ignore_errors=True)
 
 
+# ---- context + self-compact (fleet-config#1052): launcher always stubbed ----
+# No test here reaches a real launcher or compacts a real session: `_request`,
+# the caller id and the state dir are all replaced for the block's duration.
+
+import urllib.error as _urlerr  # noqa: E402
+
+line, pct = co.format_context_line("abcdef1234", {"available": True, "percent": 17})
+check(line == "CONTEXT sid=abcdef12 percent=17" and pct == 17, "format_context_line: a known percentage")
+line, pct = co.format_context_line("abcdef1234", {"available": True, "percent": None})
+check(pct is None and "percent=unknown" in line, "format_context_line: a null percentage is unknown, never 0")
+line, pct = co.format_context_line("abcdef1234", {"available": False, "percent": None, "reason": "no statusline"})
+check(pct is None and "reason=no statusline" in line, "format_context_line: unavailable carries its reason")
+
+check(co.resolve_compact_threshold(None, 40) == (40, "threshold 40 (--threshold)"), "threshold: --threshold wins")
+check(co.resolve_compact_threshold({"auto_compact_threshold": 45}, None) == (45, "threshold 45 (Settings)"),
+      "threshold: the Settings value when present")
+check(co.resolve_compact_threshold({"auto_compact_threshold": 0}, None)[0] is None, "threshold: 0 in Settings is off")
+thr, note = co.resolve_compact_threshold(None, None, "launcher unreachable")
+check(thr == 30 and note == "threshold 30, default: launcher unreachable",
+      "threshold: an unreachable launcher falls back to 30 and says so")
+thr, note = co.resolve_compact_threshold({}, None)
+check(thr == 30 and "default: setting missing" in note, "threshold: a missing field falls back, named distinctly")
+
+refusals = {
+    "unknown": co.self_compact_refusal(None, 30, 10, 10),
+    "below": co.self_compact_refusal(17, 30, 10, 10),
+    "stale handover": co.self_compact_refusal(35, 30, 3600, 10),
+    "stale plan": co.self_compact_refusal(35, 30, 10, 3600),
+    "missing handover": co.self_compact_refusal(35, 30, None, 10),
+}
+check(all(refusals.values()) and len(set(refusals.values())) == len(refusals),
+      f"self_compact_refusal: unknown / below / stale handover / stale plan / missing each refuse, each with its own message")
+check("unknown" in refusals["unknown"] and "below threshold (17% < 30%)" == refusals["below"]
+      and refusals["stale handover"].startswith("handover log is stale")
+      and refusals["stale plan"].startswith("plan is stale"),
+      "self_compact_refusal: the messages name the condition")
+check(co.self_compact_refusal(30, 30, 10, 10) is None, "self_compact_refusal: at the threshold with a fresh refresh -> proceed")
+
+_compact_tmp = Path(tempfile.mkdtemp(prefix="self_compact_"))
+_saved = (co._request, co.caller_session_id, os.environ.get("CLAUDE_HOOKS_STATE_DIR"))
+try:
+    os.environ["CLAUDE_HOOKS_STATE_DIR"] = str(_compact_tmp)
+    (_compact_tmp / "chief-handover.md").write_text("fresh", encoding="utf-8")
+    (_compact_tmp / "chief-plan.json").write_text("{}", encoding="utf-8")
+    CHIEF = "chief000000000000000000000000001"
+    posts: list = []
+    world = {"percent": 42, "settings": {"auto_compact_threshold": 30}, "caller": CHIEF}
+
+    def fake_request(base, path, method="GET", body=None):
+        if path == "/api/board":
+            return {"columns": {"claude_turn": [{"alive": True, "label": "chief", "session_id": CHIEF}]}}
+        if path.endswith("/context"):
+            return {"available": True, "percent": world["percent"]}
+        if path == "/api/board/chief-settings":
+            if world["settings"] == "404":
+                raise _urlerr.HTTPError(path, 404, "Not Found", {}, None)
+            return world["settings"]
+        if path.endswith("/input"):
+            posts.append((path, body))
+            return {"reason": "deferred"}
+        raise AssertionError(f"unexpected launcher call {method} {path}")
+
+    co._request = fake_request
+    co.caller_session_id = lambda env=None: world["caller"]
+
+    def self_compact(*extra):
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            code = co.main(["self-compact", *extra])
+        return code, out.getvalue()
+
+    code, out = self_compact()
+    check(code == 0 and "COMPACT_QUEUED" in out and "verdict=deferred" in out and "threshold 30 (Settings)" in out,
+          "self-compact: over threshold with a fresh refresh queues /compact and reports the deferred verdict")
+    check(len(posts) == 1 and posts[0][0] == f"/api/claude-code/sessions/{CHIEF}/input"
+          and posts[0][1]["data"].startswith("/compact ") and "in-flight lanes" in posts[0][1]["data"],
+          "self-compact: posts exactly one /compact <focus> to its own session only")
+
+    posts.clear()
+    world["percent"] = 12
+    code, out = self_compact()
+    check(code == 1 and "REFUSED=below threshold" in out and not posts, "self-compact: below threshold refuses, posts nothing")
+    world["percent"] = None
+    code, out = self_compact()
+    check(code == 1 and "REFUSED=context percentage unknown" in out and not posts, "self-compact: unknown percentage refuses")
+    world["percent"] = 42
+    os.utime(_compact_tmp / "chief-plan.json", (time.time() - 7200, time.time() - 7200))
+    code, out = self_compact()
+    check(code == 1 and "REFUSED=plan is stale" in out and not posts, "self-compact: a stale plan refuses")
+    os.utime(_compact_tmp / "chief-plan.json", None)
+    world["settings"] = {"auto_compact_threshold": 0}
+    code, out = self_compact()
+    check(code == 1 and "REFUSED=auto-compact is off" in out and not posts, "self-compact: 0 in Settings is off")
+    world["settings"] = "404"
+    code, out = self_compact()
+    check(code == 0 and "threshold 30, default: launcher has no chief-settings endpoint (HTTP 404)" in out,
+          "self-compact: a launcher without the endpoint falls back to 30, named as such")
+    posts.clear()
+    world["caller"] = "worker0000000000000000000000002"
+    code, out = self_compact("--threshold", "10")
+    check(code == 1 and "REFUSED=the caller is not the live chief" in out and not posts,
+          "self-compact: never compacts a session other than the caller's own chief")
+    world["caller"] = None
+    code, out = self_compact()
+    check(code == 1 and "REFUSED=not a launcher session" in out and not posts, "self-compact: needs a launcher session")
+
+    world["caller"] = CHIEF
+    out = io.StringIO()
+    with contextlib.redirect_stdout(out):
+        code = co.main(["context"])
+    check(code == 0 and "percent=42" in out.getvalue(), "context CLI: defaults to the chief's session")
+    world["percent"] = None
+    out = io.StringIO()
+    with contextlib.redirect_stdout(out):
+        code = co.main(["context"])
+    check(code == 1 and "percent=unknown" in out.getvalue(), "context CLI: a null percentage prints unknown and exits 1")
+finally:
+    co._request, co.caller_session_id = _saved[0], _saved[1]
+    if _saved[2] is None:
+        os.environ.pop("CLAUDE_HOOKS_STATE_DIR", None)
+    else:
+        os.environ["CLAUDE_HOOKS_STATE_DIR"] = _saved[2]
+    shutil.rmtree(_compact_tmp, ignore_errors=True)
+
+
 _h.report_and_exit("test_chief_ops")

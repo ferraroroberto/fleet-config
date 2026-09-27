@@ -65,6 +65,22 @@ Subcommands
       one wake. On timeout: `WAIT_EVENT=timeout` plus the board digest, the
       safety net for a worker killed too hard to fire a hook.
 
+  context [<sid>] [--base-url URL]
+      Context-window use from the launcher (`/api/claude-code/sessions/<sid>/
+      context`, the statusline's `NN%c`); default: the live chief. A null
+      reading prints `percent=unknown` with its reason, never 0, and exits 1.
+
+  self-compact [--threshold N] [--focus TEXT] [--fresh-within S] [--base-url URL]
+      The chief's *automatic* compaction of itself (fleet-config#1052). The
+      threshold comes from app-launcher Settings (`/api/board/chief-settings`,
+      app-launcher#1298; 0 = off), else 30 with the fallback named. Refuses,
+      each with its own message, unless the caller is the live chief, the
+      percentage is known and at/over the threshold, and the handover log and
+      plan were both written within `--fresh-within` (600s). Then posts
+      `/compact <focus>` to its own input and reports the delivery verdict.
+      An operator-typed `/compact` never passes through here and is never
+      gated.
+
   exchange <sid> [--tail N] [--base-url URL]
       Last assistant text for a live session, tailed to N chars (default
       2000). `<sid>` accepts either a full session id or the 8-char prefix
@@ -744,6 +760,95 @@ def wait_for_events(
         sleep(min(interval, remaining))
 
 
+# ---- self-compact: the chief manages its own context (fleet-config#1052) ----
+
+# Fallback when app-launcher's Settings value (app-launcher#1298) can't be read.
+DEFAULT_COMPACT_THRESHOLD = 30
+# The pre-compact refresh must have just run: handover log and plan both
+# written within this window, or the compaction would drop state they lack.
+COMPACT_FRESH_SECONDS = 600
+DEFAULT_COMPACT_FOCUS = (
+    "Keep the in-flight lanes (sid, repo#N, state), steers still awaiting "
+    "verification, the waiting-on-Roberto items, and anything parked with its "
+    "reason. The handover log and the plan hold the rest."
+)
+
+
+def format_context_line(sid: str, info: Dict[str, Any]) -> Tuple[str, Optional[int]]:
+    """`(line, percent)`; a null or unavailable reading is `unknown`, never 0."""
+    percent = info.get("percent") if info.get("available") else None
+    if isinstance(percent, bool) or not isinstance(percent, (int, float)):
+        reason = info.get("reason") or ("percent not reported" if info.get("available") else "unavailable")
+        return f"CONTEXT sid={sid[:8]} percent=unknown reason={reason}", None
+    return f"CONTEXT sid={sid[:8]} percent={int(percent)}", int(percent)
+
+
+def resolve_compact_threshold(
+    settings: Optional[Dict[str, Any]], override: Optional[int], unread_reason: str = "launcher unreachable",
+) -> Tuple[Optional[int], str]:
+    """`(threshold, note)` -- `None` means auto-compact is off (Settings value 0).
+
+    An explicit `--threshold` wins. Otherwise the launcher's
+    `auto_compact_threshold`; an unreadable or missing value falls back to the
+    default and the note says why, never passing it off as configured.
+    """
+    if override is not None:
+        return override, f"threshold {override} (--threshold)"
+    if settings is None:
+        return DEFAULT_COMPACT_THRESHOLD, f"threshold {DEFAULT_COMPACT_THRESHOLD}, default: {unread_reason}"
+    value = settings.get("auto_compact_threshold")
+    if isinstance(value, bool) or not isinstance(value, int):
+        return DEFAULT_COMPACT_THRESHOLD, f"threshold {DEFAULT_COMPACT_THRESHOLD}, default: setting missing"
+    if value == 0:
+        return None, "auto-compact is off in Settings (0)"
+    return value, f"threshold {value} (Settings)"
+
+
+def file_age_seconds(path: Path, now: Optional[float] = None) -> Optional[float]:
+    try:
+        return (now if now is not None else time.time()) - path.stat().st_mtime
+    except OSError:
+        return None
+
+
+def self_compact_refusal(
+    percent: Optional[int], threshold: int, handover_age: Optional[float],
+    plan_age: Optional[float], fresh_seconds: float = COMPACT_FRESH_SECONDS,
+) -> Optional[str]:
+    """Why the *automatic* trigger must not compact now, or `None` to proceed.
+
+    Applies only to `self-compact`. An operator-typed `/compact` never passes
+    through here and is never gated (fleet-config#1052).
+    """
+    if percent is None:
+        return "context percentage unknown; not compacting on a guess"
+    if percent < threshold:
+        return f"below threshold ({percent}% < {threshold}%)"
+    for name, age in (("handover log", handover_age), ("plan", plan_age)):
+        if age is None:
+            return f"{name} missing; refresh it before compacting"
+        if age > fresh_seconds:
+            return f"{name} is stale (written {int(age // 60)}m ago, limit {int(fresh_seconds // 60)}m); refresh it first"
+    return None
+
+
+def fetch_context(base_url: str, sid: str) -> Dict[str, Any]:
+    return _request(base_url, f"/api/claude-code/sessions/{sid}/context")
+
+
+def fetch_chief_settings(base_url: str) -> Tuple[Optional[Dict[str, Any]], str]:
+    """app-launcher#1298's `{"auto_compact_threshold": int}` -> `(settings, "")`,
+    or `(None, why)` -- a launcher without the endpoint (404) is not the same
+    fact as one that could not be reached."""
+    try:
+        result = _request(base_url, "/api/board/chief-settings")
+    except urllib.error.HTTPError as exc:
+        return None, f"launcher has no chief-settings endpoint (HTTP {exc.code})"
+    except (urllib.error.URLError, ValueError):
+        return None, "launcher unreachable"
+    return (result, "") if isinstance(result, dict) else (None, "chief-settings reply was not an object")
+
+
 # ---- thin I/O wrappers ------------------------------------------------------
 
 def _ssl_context() -> ssl.SSLContext:
@@ -935,6 +1040,69 @@ def cmd_wait_event(args: argparse.Namespace) -> int:
         print(format_board_digest(_request(args.base_url, "/api/board")))
     except (ValueError, urllib.error.URLError) as exc:
         print(f"board unavailable: {exc}")
+    return 0
+
+
+def cmd_context(args: argparse.Namespace) -> int:
+    """Context-window use of `sid` (default: the live chief). Exit 1 when unknown."""
+    sid = args.sid
+    if sid is None:
+        sid = find_chief_session((_request(args.base_url, "/api/board").get("columns") or {}))
+        if not sid:
+            print("CONTEXT sid=none percent=unknown reason=no live chief session")
+            return 1
+    else:
+        resolved, reason = resolve_sid_via_board(args.base_url, sid)
+        if reason is not None:
+            print(f"UNRESOLVABLE reason={reason}")
+            return 1
+        sid = resolved
+    line, percent = format_context_line(str(sid), fetch_context(args.base_url, str(sid)))
+    print(line)
+    return 0 if percent is not None else 1
+
+
+def cmd_self_compact(args: argparse.Namespace) -> int:
+    """The chief's *automatic* compaction of itself, behind every refusal.
+
+    Targets only the caller's own session, and only when the caller is the
+    live chief. Posts `/compact <focus>` to its own input: mid-turn the submit
+    is deferred until the turn ends (app-launcher#763), so the chief ends its
+    turn and the compaction runs. Never involved in an operator-typed
+    `/compact`, which goes straight to the session ungated.
+    """
+    self_sid = caller_session_id()
+    if not self_sid:
+        print("REFUSED=not a launcher session; self-compact only compacts its own chief session")
+        return 1
+    chief = find_chief_session((_request(args.base_url, "/api/board").get("columns") or {}))
+    if chief != self_sid:
+        print("REFUSED=the caller is not the live chief; self-compact never compacts another session")
+        return 1
+    settings, unread = (None, "") if args.threshold is not None else fetch_chief_settings(args.base_url)
+    threshold, note = resolve_compact_threshold(settings, args.threshold, unread)
+    print(note)
+    if threshold is None:
+        print("REFUSED=auto-compact is off")
+        return 1
+    line, percent = format_context_line(self_sid, fetch_context(args.base_url, self_sid))
+    print(line)
+    state = hooks_state.state_dir()
+    reason = self_compact_refusal(
+        percent, threshold,
+        file_age_seconds(state / "chief-handover.md"),
+        file_age_seconds(state / chief_plan.STATE_FILENAME),
+        args.fresh_within,
+    )
+    if reason is not None:
+        print(f"REFUSED={reason}")
+        return 1
+    delivery = post_session_input(args.base_url, self_sid, f"/compact {args.focus}".strip())
+    if not delivery["ok"]:
+        print(f"NOT_QUEUED reason={delivery['reason'] or delivery['error']}")
+        return 2
+    verdict = delivery["reason"] or "submitted"
+    print(f"COMPACT_QUEUED sid={self_sid[:8]} verdict={verdict} -- end this turn; it runs when the turn ends")
     return 0
 
 
@@ -1266,6 +1434,20 @@ def main(argv: Optional[List[str]] = None) -> int:
     we.add_argument("--interval", type=float, default=DEFAULT_WAIT_EVENT_INTERVAL)
     we.add_argument("--base-url", default=DEFAULT_BASE_URL)
     we.set_defaults(func=cmd_wait_event)
+
+    ctx = sub.add_parser("context", help="a session's context-window use (default: the chief)")
+    ctx.add_argument("sid", nargs="?", default=None)
+    ctx.add_argument("--base-url", default=DEFAULT_BASE_URL)
+    ctx.set_defaults(func=cmd_context)
+
+    sc = sub.add_parser("self-compact", help="the chief compacts itself behind its refusals (fleet-config#1052)")
+    sc.add_argument("--threshold", type=int, default=None,
+                    help="override the Settings threshold (tests); default: app-launcher Settings, else 30")
+    sc.add_argument("--focus", default=DEFAULT_COMPACT_FOCUS)
+    sc.add_argument("--fresh-within", type=float, default=COMPACT_FRESH_SECONDS,
+                    help="max age in seconds of the handover log and the plan")
+    sc.add_argument("--base-url", default=DEFAULT_BASE_URL)
+    sc.set_defaults(func=cmd_self_compact)
 
     cs = sub.add_parser("chief-sid", help="find the standing chief's live session id")
     cs.add_argument("--base-url", default=DEFAULT_BASE_URL)

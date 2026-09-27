@@ -484,6 +484,49 @@ def _chief_wait_event_check() -> Tuple[int, int]:
     return check.failures, check.total
 
 
+def _manual_compact_never_gated_check() -> Tuple[int, int]:
+    """An operator-typed `/compact` is never intercepted (fleet-config#1052).
+
+    `chief_ops.py self-compact`'s refusals gate only the chief's *automatic*
+    trigger. Nothing may stand between the operator and a manual compaction:
+    no `PreCompact` hook is wired (one could block it), and every hook wired
+    on the prompt path lets a bare `/compact` through untouched. Returns
+    (failures, total)."""
+    import tempfile as _tempfile
+    from acceptance.shared import run
+
+    check = _Checker()
+    wired: set = set()
+    for rel in ("settings.template.json", "codex-hooks.json"):
+        data = json.loads((REPO / rel).read_text(encoding="utf-8"))
+        check(f"manual compact: {rel} wires no PreCompact hook",
+              not data.get("hooks", {}).get("PreCompact"))
+        for event in ("UserPromptSubmit", "UserPromptExpansion"):
+            for block in data.get("hooks", {}).get(event, []):
+                for hook in block.get("hooks", []):
+                    command = str(hook.get("command", ""))
+                    found = re.search(r"-Hook\s+(\w+)", command) or re.search(r"hooks/(\w+)\.py", command)
+                    if found:
+                        wired.add(found.group(1))
+    check("manual compact: the prompt-path hook set was found", bool(wired))
+    skill = (REPO / ".claude" / "skills" / "chief" / "SKILL.md").read_text(encoding="utf-8")
+    check("manual compact: the chief skill runs self-compact and says its refusals gate only the automatic trigger",
+          "chief_ops.py self-compact" in skill and "gate only this automatic trigger" in skill)
+    state = _tempfile.mkdtemp(prefix="manual_compact_")
+    try:
+        for hook in sorted(wired):
+            for prompt in ("/compact", "/compact keep the in-flight lanes"):
+                code, out, _err = run(hook, {"hook_event_name": "UserPromptSubmit", "prompt": prompt,
+                                             "session_id": "manual-compact", "cwd": str(REPO)},
+                                      extra_env={"CLAUDE_HOOKS_STATE_DIR": state})
+                check(f"manual compact: {hook} lets {prompt!r} through (exit 0, no block)",
+                      code == 0 and '"block"' not in out and '"deny"' not in out)
+    finally:
+        import shutil as _shutil
+        _shutil.rmtree(state, ignore_errors=True)
+    return check.failures, check.total
+
+
 def _mermaid_check() -> Tuple[int, int]:
     """The Mermaid companion render (`render_mermaid.py`) can't silently go stale.
 
