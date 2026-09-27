@@ -21,11 +21,23 @@ sys.path.insert(0, str(ROOT / "skills" / "_lib"))
 import scheduled_runner as runner
 from runner_adapters import ClaudeAdapter, CodexAdapter, describe_record
 import process_scope
+sys.path.insert(0, str(ROOT / "tests" / "_lib"))
+from readiness_clock import ReadinessClock
 
 
 def fake_run(events, adapter, child_exit=0, suffix=""):
     lines = []
-    formatter = runner.ProgressFormatter(adapter=adapter, emit=lines.append)
+    # The 5 s watchdog is a wedge guard, not the behaviour under test: counted
+    # from the child's first line, a loaded box's interpreter start cannot turn
+    # a verdict into a stall kill (fleet-config#1069).
+    first_line = threading.Event()
+    formatter = runner.ProgressFormatter(adapter=adapter, emit=lines.append,
+                                         clock=ReadinessClock(first_line.is_set))
+    handle_line = formatter.handle_line
+    def ready_then_handle(line):
+        first_line.set()
+        handle_line(line)
+    formatter.handle_line = ready_then_handle
     payload = "\n".join(json.dumps(e) if isinstance(e, dict) else e for e in events)
     script = f"import sys; print({payload!r}, flush=True); " + (suffix + "; " if suffix else "") + f"sys.exit({child_exit})"
     code = runner.run_process([sys.executable, "-c", script], formatter=formatter, stall_timeout=5)
@@ -523,7 +535,14 @@ class ScheduledRunnerTests(unittest.TestCase):
             marker = Path(folder) / "descendant_completed"
             ready = Path(folder) / "descendant_started"
             descendant = f"import time; from pathlib import Path; Path({str(ready)!r}).touch(); time.sleep(4); Path({str(marker)!r}).touch()"
-            child = f"import subprocess,sys; subprocess.Popen([sys.executable,'-c',{descendant!r}],stdout=sys.stdout,stderr=sys.stderr,creationflags={flags})"
+            # The parent exits only once its descendant is up. Exiting first
+            # started the runner's 1 s drain while the descendant's interpreter
+            # was still starting, and the setup waits below gave that start 2-3 s
+            # on a box where it can take longer (fleet-config#1069).
+            child = (f"import subprocess,sys,time;from pathlib import Path;"
+                     f"subprocess.Popen([sys.executable,'-c',{descendant!r}],stdout=sys.stdout,stderr=sys.stderr,creationflags={flags});"
+                     f"t=time.monotonic()+30\n"
+                     f"while not Path({str(ready)!r}).exists() and time.monotonic()<t: time.sleep(.01)")
             def capture(*args, **kwargs):
                 process = real_popen(*args, **kwargs)
                 captured.append(process)
@@ -531,11 +550,9 @@ class ScheduledRunnerTests(unittest.TestCase):
                 return process
             def cancel_after_exit():
                 try:
-                    assert launched.wait(3), "child never launched"
-                    captured[0].wait(timeout=3)
-                    deadline = time.monotonic() + 2
-                    while not ready.exists() and time.monotonic() < deadline:
-                        time.sleep(0.01)
+                    # Setup only: nothing is timed until the cancel below.
+                    assert launched.wait(30), "child never launched"
+                    captured[0].wait(timeout=30)
                     assert ready.exists(), "descendant did not start"
                     requested.append(time.monotonic())
                     cancel.set()
@@ -546,8 +563,11 @@ class ScheduledRunnerTests(unittest.TestCase):
             observer.start()
             try:
                 with patch.object(runner.subprocess, "Popen", side_effect=capture):
+                    # The parent is silent while it holds for its descendant, so
+                    # the stall window counts from the descendant's readiness.
                     code = runner.run_process([sys.executable, "-c", child],
-                                              formatter=runner.ProgressFormatter(emit=lambda _: None),
+                                              formatter=runner.ProgressFormatter(emit=lambda _: None,
+                                                                                 clock=ReadinessClock(ready.exists)),
                                               stall_timeout=5, cancel_event=cancel)
                 returned = time.monotonic()
             finally:
@@ -724,7 +744,10 @@ class ScheduledRunnerTests(unittest.TestCase):
                     stop_observer = threading.Event()
                     formatter = runner.ProgressFormatter(emit=lambda _: None)
                     def observe_readiness():
-                        deadline = time.monotonic() + 5
+                        # Two interpreter starts (child, then grandchild) on a
+                        # loaded box can outlast 5 s; the hold is setup, not
+                        # the idle period under test (fleet-config#1069).
+                        deadline = time.monotonic() + 30
                         while not started.exists() and time.monotonic() < deadline and not stop_observer.is_set():
                             # Fixture setup is not the idle period under test.
                             # Arm the real watchdog only after its target exists.
@@ -839,7 +862,10 @@ class WindowsScopeTests(unittest.TestCase):
             try:
                 with patch.object(process_scope._WindowsJob, "assign", delayed):
                     child = self.launch_compatible(scope, command)
-                deadline = time.monotonic() + 3
+                # Setup only: the launcher starts the base interpreter, so two
+                # interpreter starts on a loaded box can outlast 3 s. Membership
+                # is what's asserted, not start latency (fleet-config#1069).
+                deadline = time.monotonic() + 30
                 while not ready.exists() and time.monotonic() < deadline:
                     time.sleep(.01)
                 self.assertTrue(ready.exists())
@@ -912,7 +938,8 @@ class WindowsScopeTests(unittest.TestCase):
             def resume(process):
                 self.retain(process.pid)
                 original_resume(process)
-                deadline = time.monotonic() + 3
+                # Setup only, as in the delayed-assignment case above.
+                deadline = time.monotonic() + 30
                 while not ready.exists() and time.monotonic() < deadline:
                     time.sleep(.01)
                 self.assertTrue(ready.exists())

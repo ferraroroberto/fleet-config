@@ -21,8 +21,9 @@ import re
 import shutil
 import subprocess
 import tempfile
+import time
 from pathlib import Path
-from typing import Any, Dict, Tuple
+from typing import Any, Dict, Optional, Tuple
 
 from acceptance.shared import (
     HOOKS,
@@ -249,6 +250,64 @@ def _session_state_agent_adapter_unit_checks() -> Tuple[int, int]:
     return check.failures, check.total
 
 
+# What "returns promptly" grants a Codex hook's own work. The interpreter's
+# start is timed separately and added on top: on a loaded box a bare start of
+# the venv interpreter alone took 3-5 s, so a flat 5 s bound judged the box and
+# not the hook, while a hook that really hangs still blows this budget
+# (fleet-config#1069).
+_CODEX_HOOK_WORK_BUDGET_SECONDS = 5.0
+_INTERPRETER_START_CAP_SECONDS = 60
+
+
+def _interpreter_start_seconds(command: str, env: Dict[str, str]) -> Optional[float]:
+    """Seconds the command's interpreter takes to start and exit doing nothing.
+
+    Run through the same shell with the same environment just before the hook,
+    so the baseline pays every cost the hook's run pays except the hook itself.
+    None when the no-op start could not be measured.
+    """
+    interpreter = command.split()[0]
+    started = time.monotonic()
+    try:
+        res = subprocess.run(
+            f"{interpreter} -c pass",
+            capture_output=True,
+            text=True,
+            timeout=_INTERPRETER_START_CAP_SECONDS,
+            env=env,
+            shell=True,
+        )
+    except subprocess.TimeoutExpired:
+        return None
+    if res.returncode != 0:
+        return None
+    return time.monotonic() - started
+
+
+def _codex_hook_smoke_failure(command: str, env: Dict[str, str]) -> Optional[str]:
+    """Drive one configured hook with a minimal payload; None when it returned promptly."""
+    baseline = _interpreter_start_seconds(command, env)
+    if baseline is None:
+        return f"{command} -> not confirmed: a no-op start of its interpreter did not complete"
+    bound = baseline + _CODEX_HOOK_WORK_BUDGET_SECONDS
+    try:
+        res = subprocess.run(
+            command,
+            input="{}",
+            capture_output=True,
+            text=True,
+            timeout=bound,
+            env=env,
+            shell=True,
+        )
+    except subprocess.TimeoutExpired:
+        return (f"{command} -> timed out after {bound:.1f}s (interpreter start "
+                f"{baseline:.1f}s + {_CODEX_HOOK_WORK_BUDGET_SECONDS:.0f}s budget)")
+    if res.returncode != 0:
+        return f"{command} -> exit {res.returncode}: {(res.stderr or res.stdout).strip()}"
+    return None
+
+
 def _codex_hooks_config_check() -> Tuple[int, int]:
     """Codex hooks should run Python directly and fail fast.
 
@@ -325,25 +384,10 @@ def _codex_hooks_config_check() -> Tuple[int, int]:
     # hand-rolled copy of the env is how #813's hole outlived the fix to its
     # sibling.
     env = hook_env()
-    smoke_failures: list[str] = []
-    for command in commands:
-        try:
-            res = subprocess.run(
-                command,
-                input="{}",
-                capture_output=True,
-                text=True,
-                timeout=5,
-                env=env,
-                shell=True,
-            )
-        except subprocess.TimeoutExpired:
-            smoke_failures.append(f"{command} -> timed out")
-            continue
-        if res.returncode != 0:
-            smoke_failures.append(
-                f"{command} -> exit {res.returncode}: {(res.stderr or res.stdout).strip()}"
-            )
+    smoke_failures = [
+        failure for command in commands
+        if (failure := _codex_hook_smoke_failure(command, env)) is not None
+    ]
 
     check(
         "codex_hooks: configured commands return promptly",
