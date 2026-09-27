@@ -235,8 +235,10 @@ _STANDALONE_UNIT_CHECKS: Tuple[Tuple[str, str, str], ...] = (
      "qualified refs, one-line text, duplicates, unknown fields), every "
      "one-line mutation, the byte-identical no-write on a rejected "
      "mutation, a corrupt or future-version file refused rather than "
-     "overwritten, and the `chief_ops.py plan` CLI legs -- is testable on "
-     "its own, with no real chief-plan.json touched (fleet-config#1034)"),
+     "overwritten, the structured questions (ids, options, `plan ask`, "
+     "`unwait <id>`; fleet-config#1049) and the `chief_ops.py plan` CLI "
+     "legs -- is testable on its own, with no real chief-plan.json "
+     "touched (fleet-config#1034)"),
     ("dirty_tree_check", "test_dirty_tree_check.py",
      "the post-flight dirty-tree decision -- merged-mode expects a "
      "clean default branch, built-mode expects the reported feature "

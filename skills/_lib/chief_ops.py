@@ -158,12 +158,14 @@ Subcommands
       same false pass) so a caller can gate on the exit code, not just parse
       text. UNKNOWN is never reported as DIRTY (fleet-config#570).
 
-  plan <show|lane|drop-lane|add|set|move|remove|wait|unwait|clear> ...
+  plan <show|lane|drop-lane|add|set|move|remove|wait|ask|unwait|clear> ...
       The only writer of `~/.claude/hooks/state/chief-plan.json`, the plan the
       Board's "Chief's plan" card renders (fleet-config#1034,
       app-launcher#1279). One line per update: `plan add app-launcher#1273
       "title"`, `plan set app-launcher#1273 --status gate`, `plan lane
-      app-launcher gate --item "#1273"`, `plan wait "text" --ref repo#N`.
+      app-launcher gate --item "#1273"`, `plan wait "text" --ref repo#N`,
+      `plan ask "question" --ref repo#N --detail ... --recommend ... --option
+      "Label::desc" --recommended Label` (fleet-config#1049), `plan unwait <id>`.
       Validates the whole v1 document and replaces it atomically, or writes
       nothing and exits 2. The logic lives in `skills/_lib/chief_plan.py`, the
       contract in `docs/chief-plan.md`.
