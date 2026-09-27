@@ -400,6 +400,7 @@ def main() -> int:
         for r in sorted(b["skills"], key=lambda r: -r["est_tokens"]):
             flags = "".join(f"  ⚠️ OVER-CAP {f}" for f in r["over_cap"])
             flags += "".join(f"  ❓ UNMEASURED {f}" for f in r["unmeasured"])
+            flags += "".join(f"  ❓ CAP NOT CONFIRMED {f}" for f in r["cap_unconfirmed"])
             print(f"  {b['repo']}/{r['skill']:<32} {r['est_tokens']:>6} tok  {len(r['files'])} files{flags}")
         for c in b["credential_files"]:
             print(f"  ⚠️ credential-shaped lines in an auto-loaded file: {b['repo']}/{c['path']} ({c['hits']})")

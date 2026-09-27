@@ -15,6 +15,16 @@ A repo opts in by declaring its bootstrap in `hooks/projects.toml`:
     bootstrap_sections = ["Step 1"]                      # SKILL.md headings whose
                                                          # `<x-root>/path` refs load
 
+A bootstrap that reads only the head of a file declares where its line cap
+lives, and the audit measures what that head costs, not the whole file
+(fleet-config#1051 -- life-os loads the newest 40 conversation-index entries):
+
+    bootstrap_line_caps = { "{skill}/conversations/index.md" = ".claude/skills/_shared/bootstrap.md" }
+
+The number is read from the declaring file each run (`LINE_CAP_RE`), never
+copied here, so a reword there degrades to `cap not confirmed` -- whole-file
+measurement, flagged -- rather than a stale cap reported as passing.
+
 Each file is `ok`, `over-cap` (its estimate exceeds the read cap, so a single
 Read returns a partial view), `missing` (declared but absent: bootstraps treat
 most of these as optional, e.g. no conversation index yet) or `unmeasured`
@@ -34,7 +44,7 @@ from __future__ import annotations
 import re
 import tomllib
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 
 # Claude Code's Read returns a partial view past a token limit that is not a
 # documented constant (code.claude.com/docs/en/tools.md: "exceeds the token
@@ -57,6 +67,24 @@ CREDENTIAL_RE = re.compile(
     r"(?i)\b(?:password|passphrase|passwd|pwd|secret|api[_ -]?key|access[_ -]?token|token)\b"
     r"[^\S\n]*[:=][^\S\n]*[`'\"]?[^\s`'\"]{4,}"
 )
+
+
+# How a bootstrap states its head-only read: life-os's `_shared/bootstrap.md`
+# says "Read the file's first **244 lines**" (life-os#171). Exactly one match
+# in the declaring file is required; none or several is "not confirmed".
+LINE_CAP_RE = re.compile(r"first \*\*(\d+) lines\*\*")
+
+
+def read_line_cap(path: Path) -> Tuple[Optional[int], str]:
+    """The line cap `path` declares -> `(cap, "")`, or `(None, why not confirmed)`."""
+    try:
+        text = path.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError) as exc:
+        return None, f"cap source unreadable ({type(exc).__name__})"
+    found = set(LINE_CAP_RE.findall(text))
+    if len(found) != 1:
+        return None, f"{'no' if not found else 'ambiguous'} line cap stated in {path.name}"
+    return int(found.pop()), ""
 
 
 def _est_tokens(text: str) -> int:
@@ -92,8 +120,16 @@ def section_refs(skill_md: str, sections: List[str]) -> List[str]:
     return refs
 
 
-def measure_file(path: Path, read_cap: int) -> Dict[str, object]:
-    """Size and state of one auto-loaded file; never returns its text."""
+def measure_file(
+    path: Path, read_cap: int, line_cap: Optional[int] = None, cap_unconfirmed: str = "",
+) -> Dict[str, object]:
+    """Size and state of one auto-loaded file; never returns its text.
+
+    With `line_cap`, only the first `line_cap` lines are what a session loads,
+    so the state and `est_tokens` describe that head; `whole_est_tokens` keeps
+    the whole-file number as secondary detail. `cap_unconfirmed` (a declared
+    cap that could not be read) measures the whole file and says so.
+    """
     if not path.exists():
         return {"state": "missing", "est_tokens": None, "credential_hits": None}
     try:
@@ -101,10 +137,18 @@ def measure_file(path: Path, read_cap: int) -> Dict[str, object]:
     except (OSError, UnicodeDecodeError) as exc:
         return {"state": "unmeasured", "reason": type(exc).__name__,
                 "est_tokens": None, "credential_hits": None}
-    tokens = _est_tokens(text)
-    return {"state": "over-cap" if tokens > read_cap else "ok", "est_tokens": tokens,
-            "lines": text.count("\n") + (0 if text.endswith("\n") or not text else 1),
-            "credential_hits": len(CREDENTIAL_RE.findall(text))}
+    lines = text.splitlines(keepends=True)
+    loaded = "".join(lines[:line_cap]) if line_cap else text
+    tokens = _est_tokens(loaded)
+    result: Dict[str, object] = {
+        "state": "over-cap" if tokens > read_cap else "ok", "est_tokens": tokens,
+        "lines": len(lines), "credential_hits": len(CREDENTIAL_RE.findall(loaded))}
+    if line_cap:
+        result.update(line_cap=line_cap, capped=len(lines) > line_cap,
+                      whole_est_tokens=_est_tokens(text))
+    elif cap_unconfirmed:
+        result["cap"] = f"not confirmed: {cap_unconfirmed}"
+    return result
 
 
 def skill_loads(repo_dir: Path, skills_dir: str, skill: str, decl: dict) -> List[str]:
@@ -131,13 +175,17 @@ def scan_repo(name: str, repo_dir: Path, decl: dict, read_cap: int = READ_CAP_TO
     skills = sorted(p.name for p in root.iterdir()
                     if p.is_dir() and not p.name.startswith(("_", ".")) and (p / "SKILL.md").is_file()) \
         if root.is_dir() else []
+    caps = {pattern: read_line_cap(repo_dir / source)
+            for pattern, source in dict(decl.get("bootstrap_line_caps", {})).items()}
     cache: Dict[str, Dict[str, object]] = {}
     rows = []
     for skill in skills:
+        capped = {f"{skills_dir}/{pattern.format(skill=skill)}": cap for pattern, cap in caps.items()}
         files = []
         for rel in skill_loads(repo_dir, skills_dir, skill, decl):
             if rel not in cache:
-                cache[rel] = measure_file(repo_dir / rel, read_cap)
+                line_cap, why = capped.get(rel, (None, ""))
+                cache[rel] = measure_file(repo_dir / rel, read_cap, line_cap, why)
             files.append({"path": rel, **cache[rel]})
         measured = [f for f in files if isinstance(f["est_tokens"], int)]
         rows.append({
@@ -146,6 +194,7 @@ def scan_repo(name: str, repo_dir: Path, decl: dict, read_cap: int = READ_CAP_TO
             "est_tokens": sum(int(f["est_tokens"]) for f in measured),  # type: ignore[arg-type]
             "over_cap": [f["path"] for f in files if f["state"] == "over-cap"],
             "unmeasured": [f["path"] for f in files if f["state"] == "unmeasured"],
+            "cap_unconfirmed": [f["path"] for f in files if "cap" in f],
         })
     credential_files = sorted(
         ({"path": rel, "hits": m["credential_hits"]} for rel, m in cache.items() if m.get("credential_hits")),

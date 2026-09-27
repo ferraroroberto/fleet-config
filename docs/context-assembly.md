@@ -17,6 +17,9 @@ Anything loaded into every session, or every invocation of a skill, has to earn 
 bootstrap_shared   = ["identity/who-i-am.md"]           # repo-relative, loaded by every skill
 bootstrap_skill    = ["{skill}/conversations/index.md"] # relative to skills_dir
 bootstrap_sections = ["Step 1"]                         # SKILL.md headings whose <x-root>/path refs load
+bootstrap_line_caps = { "{skill}/conversations/index.md" = ".claude/skills/_shared/bootstrap.md" }  # optional: head-only loads
 ```
+
+A file listed in `bootstrap_line_caps` is loaded head-only, so the audit measures only the lines the bootstrap reads (fleet-config#1051: life-os reads the newest 40 conversation-index entries). The line count is read each run from the declaring file's own "first **N lines**" sentence, never copied into this repo. If it can't be read, the audit measures the whole file and flags `cap not confirmed`, so an unknown cap is never reported as passing. The whole-file size stays in the report as secondary detail.
 
 It reports each file as `ok`, `over-cap`, `missing` (declared but absent, usually optional) or `unmeasured` (present but unreadable), plus credential-shaped lines by file and count. It never prints a file's contents, so private repos are measured by size and pattern count only. A repo with no declaration isn't measured for bootstrap loads.
