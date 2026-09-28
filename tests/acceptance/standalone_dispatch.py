@@ -83,6 +83,11 @@ _STANDALONE_UNIT_CHECKS: Tuple[Tuple[str, str, str], ...] = (
      "parser filtering/deduplication, child exit-code propagation, and "
      "the checked-in contract that every run-weekly.bat uses the shared "
      "adapter"),
+    ("cpu_burn", "test_cpu_burn.py",
+     "the load-proof helper runs its burners and the command under proof "
+     "below normal priority, so a burn can't starve scheduled jobs, and "
+     "stops only the burners it started, even when the helper is hard-killed "
+     "(fleet-config#1076)"),
     ("context_purge_check", "test_context_purge_check.py",
      "the purge's mechanical preservation rules -- marked-block "
      "byte-identity and quoted trigger survival in SKILL.md descriptions "

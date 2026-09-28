@@ -370,6 +370,18 @@ with, adapted to its wording but never dropped:
    best judgment or wait — you relay a decision via `chief_ops.py say` if one
    is needed.
 
+**A brief that asks for a red-under-load proof names the helper
+(fleet-config#1076).** Hand-rolled burners at normal priority saturate the
+whole box: 24 of them on the 16-core machine starved a scheduled life-os job
+until its watchdog killed it. Tell the worker to run every burn through
+`tests/_lib/cpu_burn.py --burners N --runs K -- <test command>` (fleet-config's
+venv, from its repo root; a sister repo calls it by absolute path). It runs the
+burners and the test at below-normal priority, stops only the burners it
+started, and refuses more burners than cores without `--over-cores`. Below
+normal priority it takes about four burners per core to reproduce what 1.5
+per core did at normal priority (the #1056 and #1069 reds needed 64 on 16
+cores), and that oversubscription leaves normal-priority work untouched.
+
 ## Managing the backlog and parked work
 
 - **Decomposition makes "backlog zero" recede — say so, don't treat it as
