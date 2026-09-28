@@ -256,44 +256,55 @@ def render_stats(stats: dict, since: str, today: str) -> str:
 
 # ---- gh plumbing ----------------------------------------------------------
 
-def _gh_json(args: list[str]) -> list | dict:
+def _gh_json(args: list[str]) -> list | dict | None:
+    """Parsed ``gh`` JSON, or ``None`` when the call failed.
+
+    ``None`` is deliberately not ``[]``: an empty list is a real answer ("zero
+    PRs"), a failed call is an unknown, and folding one into the other
+    published "0 PRs" for a repo that was never read.
+    """
     try:
         proc = git_run.run_gh(args, timeout=120)
     except (OSError, subprocess.SubprocessError) as exc:
         print(f"gh {' '.join(args[:3])}… failed: {exc}", file=sys.stderr)
-        return []
+        return None
     if proc.returncode != 0:
         print(f"gh {' '.join(args[:3])}… exit {proc.returncode}: {proc.stderr.strip()[:160]}", file=sys.stderr)
-        return []
+        return None
     try:
         return json.loads(proc.stdout or "[]")
     except ValueError:
-        return []
+        print(f"gh {' '.join(args[:3])}… returned unparseable JSON", file=sys.stderr)
+        return None
 
 
-def list_repos(owner: str) -> list[str]:
+def list_repos(owner: str) -> list[str] | None:
+    """Public repo names, or ``None`` when the enumeration itself failed."""
     # Public repos only — the learning log + its stats are published in a public
     # ledger issue, so private-repo activity (and its names) is never in scope.
     data = _gh_json(["repo", "list", owner, "--no-archived", "--source", "--visibility", "public",
                      "--limit", "200", "--json", "name"])
-    return [r["name"] for r in data] if isinstance(data, list) else []
+    return [r["name"] for r in data] if isinstance(data, list) else None
 
 
-def gather_repo(owner: str, repo: str, since: str) -> tuple[list[dict], list[dict]]:
+def gather_repo(owner: str, repo: str, since: str) -> tuple[list[dict], list[dict]] | None:
+    """This repo's window, or ``None`` when either ``gh`` read failed."""
     full = f"{owner}/{repo}"
     prs_raw = _gh_json(["pr", "list", "--repo", full, "--state", "merged", "--limit", "400",
                         "--json", "number,title,additions,deletions,labels,mergedAt,url"])
     issues_raw = _gh_json(["issue", "list", "--repo", full, "--state", "closed", "--limit", "400",
                            "--json", "number,title,labels,closedAt,url"])
+    if not isinstance(prs_raw, list) or not isinstance(issues_raw, list):
+        return None
     prs = []
-    for p in (prs_raw if isinstance(prs_raw, list) else []):
+    for p in prs_raw:
         if (p.get("mergedAt") or "")[:10] < since:
             continue
         prs.append({"repo": repo, "number": p["number"], "title": p.get("title", ""),
                     "additions": p.get("additions"), "deletions": p.get("deletions"),
                     "url": p.get("url"), "bucket": pr_bucket(p.get("title", ""))})
     issues = []
-    for i in (issues_raw if isinstance(issues_raw, list) else []):
+    for i in issues_raw:
         if (i.get("closedAt") or "")[:10] < since:
             continue
         labels = [l.get("name", "") for l in (i.get("labels") or [])]
@@ -342,10 +353,19 @@ def cmd_gather(args) -> int:
     out_dir.mkdir(parents=True, exist_ok=True)
 
     repos = list_repos(args.owner)
+    if repos is None:
+        # No repo list means no stats at all -- never publish a zero-repo run.
+        print(f"repo enumeration for {args.owner} failed; nothing gathered", file=sys.stderr)
+        return 3
     all_prs: list[dict] = []
     all_issues: list[dict] = []
+    failed_repos: list[str] = []
     for repo in repos:
-        prs, issues = gather_repo(args.owner, repo, since)
+        result = gather_repo(args.owner, repo, since)
+        if result is None:
+            failed_repos.append(repo)
+            continue
+        prs, issues = result
         all_prs += prs
         all_issues += issues
         if prs or issues:
@@ -353,6 +373,9 @@ def cmd_gather(args) -> int:
 
     stats = compute_stats(all_prs, all_issues)
     stats_md = render_stats(stats, since, today)
+    if failed_repos:
+        stats_md += (f"\n_Incomplete: {len(failed_repos)} of {len(repos)} repos could not be read "
+                     f"and are not counted: {', '.join(failed_repos)}._\n")
     stats_file = out_dir / "stats.md"
     stats_file.write_text(stats_md, encoding="utf-8")
 
@@ -368,7 +391,9 @@ def cmd_gather(args) -> int:
     print(f"OUT_DIR={out_dir}")
     print(f"STATS_FILE={stats_file}")
     print(f"PRIOR_HORIZON_FILE={out_dir / 'prior-horizon.md'}")
-    print(f"TOTALS=PRs={t['prs']} issues={t['issues']} add={t['add']} del={t['del']} repos={len(repos)}")
+    print(f"TOTALS=PRs={t['prs']} issues={t['issues']} add={t['add']} del={t['del']} repos={len(repos)} failed_repos={len(failed_repos)}")
+    if failed_repos:
+        print(f"FAILED_REPOS={','.join(failed_repos)}")
     for bucket, slug, npr, nis, path in manifest:
         print(f"BUCKET={slug}|{bucket}|prs={npr}|issues={nis}|file={path}")
     print()

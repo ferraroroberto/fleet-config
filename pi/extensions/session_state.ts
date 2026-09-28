@@ -1,15 +1,16 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { spawn } from "node:child_process";
+import { join } from "node:path";
+import { PYTHON, ROOT } from "./policy_hooks.ts";
 
 // fleet-config#349 — reports Pi's lifecycle events into the same
 // sessions-state.json row session_state.py already maintains for Claude
 // Code, so a Pi terminal shows working/needs-you on the Fleet Board instead
-// of unknown. Shells out to session_state_pi.py (via ~/.claude/hooks, the
-// stable junction target every absolute-path hook invocation in this repo
-// uses) rather than duplicating the atomic-write/prune logic here — that
-// module documents itself as the sole writer.
-const PYTHON = "E:/automation/fleet-config/.venv/Scripts/python.exe";
-const SCRIPT = "C:/Users/rober/.claude/hooks/session_state_pi.py";
+// of unknown. Shells out to session_state_pi.py rather than duplicating the
+// atomic-write/prune logic here — that module documents itself as the sole
+// writer. The repo root and venv interpreter come from policy_hooks.ts, which
+// derives them from this file's own realpath (no hardcoded user paths).
+const SCRIPT = join(ROOT, "hooks", "session_state_pi.py");
 
 function report(event: string, sessionId: string | undefined, cwd: string | undefined) {
 	if (!sessionId) return;

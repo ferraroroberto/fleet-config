@@ -5,8 +5,8 @@ import { dirname, isAbsolute, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 // Transport and wiring only. Policy and native payload translation live in Python.
-const ROOT = join(dirname(realpathSync(fileURLToPath(import.meta.url))), "../..");
-const PYTHON = join(ROOT, ".venv", process.platform === "win32" ? "Scripts/python.exe" : "bin/python");
+export const ROOT = join(dirname(realpathSync(fileURLToPath(import.meta.url))), "../..");
+export const PYTHON = join(ROOT, ".venv", process.platform === "win32" ? "Scripts/python.exe" : "bin/python");
 const TIMEOUT_MS = 15_000;
 export const WARNING_PREFIX = "[Fleet policy] ";
 const SHELL = ["pre_commit_no_ai_trailer", "secret_scan_guard", "safe_kill_guard", "venv_discipline"];

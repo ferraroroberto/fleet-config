@@ -49,7 +49,7 @@ Then poll — **repeatedly, in the same turn**, until a call prints `DONE=yes`:
 E:/automation/fleet-config/.venv/Scripts/python.exe .claude/skills/fleet-health/capture.py poll
 ```
 
-Each call blocks for up to nine minutes then returns, printing per-machine `samples=` progress and `DONE=yes|no`. **fleet-config#314 discipline made concrete:** the blocking happens *inside* a tool call that returns, so the turn stays alive. Never background this and never end the turn waiting to be resumed — a scheduled headless `claude -p` that does so exits `0` having captured nothing while the job reports success.
+Each call blocks for up to nine minutes then returns, printing per-machine `samples=` progress and `DONE=yes|no`. A status probe that cannot answer is `capturing=unknown`, never finished: the machine stays pending (`DONE=no`) until the capture's deadline plus a ten-minute grace, then settles as `MACHINE=<id>|status=unconfirmed` (`UNCONFIRMED=<ids>`). Report an unconfirmed machine as such in the ledger entry — completion was not established. **fleet-config#314 discipline made concrete:** the blocking happens *inside* a tool call that returns, so the turn stays alive. Never background this and never end the turn waiting to be resumed — a scheduled headless `claude -p` that does so exits `0` having captured nothing while the job reports success.
 
 Finally:
 
@@ -61,6 +61,7 @@ Stops anything still running past its deadline, fetches every artefact, and emit
 
 - `MACHINE=<id>|status=captured|run_id=…|verdict=…|samples=…|report=…|export=…|drift=…`
 - `MACHINE=<id>|status=not-covered|detail=<kind>|reason=<human reason>`
+- `MACHINE=<id>|status=unconfirmed|…` — the final status probe failed, so whether the capture was still running is unknown; `collect` does not stop it and fetches what the hub returns
 - `CAPTURED=` / `NOT_COVERED=` totals
 
 Exit `3` (start) = inventory unreachable, the local hub is down — report and stop. Exit `4` = inventory fine but nothing could be captured; still write a ledger entry recording *why* every machine was skipped, because that is a real finding, not an empty run. The run date is resolved once by `start` and recorded, so `poll` and `collect` inherit it — pass nothing, including across midnight. `--date`/`--out-dir` are only for re-targeting an older run, and then all three calls need the same value.

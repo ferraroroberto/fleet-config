@@ -133,6 +133,52 @@ def _learning_log_unit_checks() -> Tuple[int, int]:
               "2026-06-15", "- [ ] h", "- fresh (repo#9)"
           ).count("\n- 2026-") <= ll.ARCHIVE_CAP)
 
+    # ---- a failed gh read is unknown, never "0 PRs" ----
+    import argparse
+    import contextlib
+    import io
+    import subprocess as sp
+    import tempfile
+
+    saved = (ll._gh_json, ll.read_ledger_body, ll.git_run.run_gh)
+    try:
+        ll.git_run.run_gh = lambda args, **kw: sp.CompletedProcess(args, 1, "", "boom")
+        check("learning_log: _gh_json returns None (not []) when gh exits non-zero",
+              ll._gh_json(["pr", "list"]) is None)
+        ll.git_run.run_gh = lambda args, **kw: sp.CompletedProcess(args, 0, "[]", "")
+        check("learning_log: _gh_json still returns [] for a real empty answer",
+              ll._gh_json(["pr", "list"]) == [])
+
+        ll._gh_json = lambda args: None
+        check("learning_log: list_repos returns None when enumeration fails",
+              ll.list_repos("o") is None)
+        check("learning_log: gather_repo returns None when a gh read fails",
+              ll.gather_repo("o", "r", "2026-01-01") is None)
+
+        ll.read_ledger_body = lambda repo: ""
+        gargs = argparse.Namespace(owner="o", repo="o/ledger", since="2026-01-01",
+                                   out_dir=tempfile.mkdtemp(prefix="ll_gather_"))
+        with contextlib.redirect_stderr(io.StringIO()):
+            check("learning_log: cmd_gather exits non-zero when repo enumeration fails",
+                  ll.cmd_gather(gargs) != 0)
+
+        def _fake(args):
+            if args[0] == "repo":
+                return [{"name": "good"}, {"name": "bad"}]
+            if "o/bad" in args:
+                return None
+            return []
+        ll._gh_json = _fake
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf), contextlib.redirect_stderr(io.StringIO()):
+            code = ll.cmd_gather(gargs)
+        out = buf.getvalue()
+        check("learning_log: a failed repo is its own manifest state, named, not counted as zero",
+              code == 0 and "FAILED_REPOS=bad" in out and "failed_repos=1" in out
+              and "Incomplete: 1 of 2 repos" in out)
+    finally:
+        ll._gh_json, ll.read_ledger_body, ll.git_run.run_gh = saved
+
     return check.failures, check.total
 
 

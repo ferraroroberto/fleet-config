@@ -50,6 +50,12 @@
 # send to the old id fails from then on (notify_send._log_rejection surfaces
 # the replacement id when that happens).
 #
+# Optional per-project key (fleet-config#442):
+#   chief_handover = true              # this project hosts the standing fleet chief
+# chief_handover_sessionstart hands the chief's last-written run log back on
+# SessionStart only in a project that sets this; every other project is a
+# silent no-op. Omit it (the default) for a project that never runs chief.
+#
 # Optional per-project key (fleet-config#242):
 #   board_url = "https://<pc>.<tailnet>.ts.net:8445"   # app-launcher Board base URL
 # When set, notify_on_idle appends a "📋 Open on the Board" deep link
@@ -143,6 +149,7 @@ cwd_prefix = "E:/automation/automation"
 
 [fleet-config]
 cwd_prefix = "E:/automation/fleet-config"
+chief_handover = true
 
 [fleet-config-lite]
 cwd_prefix = "E:/automation/fleet-config-lite"

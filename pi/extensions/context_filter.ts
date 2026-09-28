@@ -3,7 +3,7 @@ import { spawn } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { WARNING_PREFIX } from "./policy_hooks.ts";
+import { PYTHON, ROOT, WARNING_PREFIX } from "./policy_hooks.ts";
 
 // fleet-config#545 — the Pi port of the fleet context filter (#392/#541).
 // Pi's tool_result middleware can modify a tool's result in place, which is
@@ -13,8 +13,7 @@ import { WARNING_PREFIX } from "./policy_hooks.ts";
 // for everything that matters (mode resolution, skip rules, compression,
 // secret handling, telemetry) via `context_filter_cli.py compress`; this file
 // only ferries the output across and applies the returned patch.
-const PYTHON = "E:/automation/fleet-config/.venv/Scripts/python.exe";
-const CLI = "C:/Users/rober/.claude/hooks/context_filter_cli.py";
+const CLI = join(ROOT, "hooks", "context_filter_cli.py");
 const COMPRESS_TIMEOUT_MS = 10_000;
 
 // Fast-path pre-gate only: skip the Python spawn entirely when the filter is
