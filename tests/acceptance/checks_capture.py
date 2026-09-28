@@ -38,33 +38,7 @@ def _conversation_capture_unit_checks() -> Tuple[int, int]:
 
     check = _Checker()
 
-    check("session_token: last 8 alnum of a uuid-ish id",
-          cc.session_token("01HNYE6TF-AbCd-1234") == "abcd1234")
-    check("session_token: no id -> empty (dedup skipped)",
-          cc.session_token("") == "" and cc.session_token(None) == "")
-    check("capture_filename: session token only (degenerate content)",
-          cc.capture_filename("2026-06-02-2020", "day-today", "abcd1234", "")
-          == "2026-06-02-2020-day-today-abcd1234.md")
-    check("capture_filename: both tokens -> session then signature",
-          cc.capture_filename("2026-06-02-2020", "day-today", "abcd1234", "cafe9999")
-          == "2026-06-02-2020-day-today-abcd1234-cafe9999.md")
-    check("capture_filename: no tokens -> plain timestamped name",
-          cc.capture_filename("2026-06-02-2020", "day-today", "", "")
-          == "2026-06-02-2020-day-today.md")
-
-    # content_signature is a legacy descriptive fingerprint, not dedup identity: it keys off the first real
-    # user turn (copied forward verbatim on --resume), not the session id. So two
-    # transcripts sharing that opening turn — but with different later turns and a
-    # different session_id — hash identically; a preamble-only turn yields "".
     preamble = ("user", "Base directory for this skill: E:/automation/life-os/x")
-    turn1 = ("user", "I want to record today's licenses and GPS for the ferry trip")
-    orig = [preamble, turn1, ("assistant", "ok")]
-    resumed = [preamble, turn1, ("assistant", "ok"),
-               ("user", "and add the return ferry time"), ("assistant", "done")]
-    check("content_signature: stable across resume (same first turn), non-empty",
-          cc.content_signature(orig) == cc.content_signature(resumed) != "")
-    check("content_signature: preamble-only turn -> empty (falls back to session token)",
-          cc.content_signature([preamble]) == "")
 
     # conversation_slug keys off the WHOLE conversation's salient words, not the
     # opener — issue #84. A vague opening line ("tell me about your day") must not

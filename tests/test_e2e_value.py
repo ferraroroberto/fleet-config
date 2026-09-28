@@ -76,7 +76,6 @@ check(r2["nodes"]["tests/e2e/test_chat.py::test_link_opens[webkit-iphone]"] == 1
       "an xdist [gwN] tag is dropped and a backslash path normalised")
 check(v._wall_s(r2) == 15.0, "a run crossing midnight keeps a positive wall time")
 check(not v.parse_run(RUN3)["complete"], "a START without a DONE is not complete")
-check(v.last_complete_run(RUN1 + RUN3)["started"].day == 20, "the last completed run skips a trailing unfinished one")
 check(v.projection_of("t.py::a[webkit-900]") == "webkit" and v.projection_of("t.py::a[chromium]") == "chromium"
       and v.projection_of("t.py::a[x-1]") == "default" and v.projection_of("t.py::a") == "default", "projection from the param id")
 check(v.test_of("t.py::a[webkit-900]") == "t.py::a", "test id without its param id")

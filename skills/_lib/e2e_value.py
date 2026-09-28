@@ -257,14 +257,6 @@ def parse_junit(path: Path) -> Dict[str, object]:
             "failures": failures, "exit_status": 1 if failures else 0, "parallel": False, "routed_tier": None, "complete": bool(nodes)}
 
 
-def last_complete_run(text: str) -> Optional[Dict[str, object]]:
-    for chunk in reversed(split_runs(text)):
-        run = parse_run(chunk)
-        if run["complete"]:
-            return run
-    return None
-
-
 # ---- measurements ------------------------------------------------------------------
 
 

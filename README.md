@@ -114,7 +114,6 @@ fleet-config/
 │   ├── session_state_pi.py          # thin Pi adapter → session_state (shelled out to by pi/extensions/session_state.ts)
 │   ├── chief_inbox.py               # a chief-managed worker's Stop/SessionEnd → one event file the chief's `wait-event` claims (fleet-config#999)
 │   ├── notify_send.py               # shared Telegram transport (importable + CLI, stdlib-only)
-│   ├── slack_notify.py              # DEPRECATED shim -> notify_send.py, for sister repos that load it by path (fleet-config#540)
 │   ├── notify_complete.py           # deterministic skill-completion ping (issue-* skills call this); finish/yolo carry a work-summary roll-up
 │   ├── work_summary.py              # deterministic PR work-summary (file/LOC roll-up + per-file table) from `gh`, no LLM; importable + CLI
 │   ├── transcript_readers.py       # native Claude/Codex stored transcript normalization

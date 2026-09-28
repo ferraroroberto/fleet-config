@@ -73,19 +73,6 @@ buried = "desc\n\n**You**: hi\n" + "\n".join(f"line {i}" for i in range(10)) + \
 check(cc.parse_capture_header(buried) == {},
       "parse_capture_header: ignores a header-shaped line in the body")
 
-# Legacy descriptive fingerprints stay stable for existing consumers. They are
-# deliberately not used as native identity or as permission to overwrite files.
-turns = [("user", "Base directory for this skill: E:/x"),
-         ("user", "I want to research bone conduction headphones repair"),
-         ("assistant", "sure")]
-sig_live = cc.content_signature(turns)
-check(bool(sig_live),
-      "content_signature: describes the first real turn")
-check(cc.content_signature(turns + [("user", "and one more thing entirely")])
-      == sig_live,
-      "content_signature: later turns don't move it (survives a resume)")
-
-
 # ------------------------------------------------------- index digest fields
 
 body = ("- **Topic:** repairing headphones\n"

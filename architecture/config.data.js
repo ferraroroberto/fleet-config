@@ -547,10 +547,6 @@ window.CONFIG = {
       "ds": "Pi adapter for the Fleet Board session-state writer (fleet-config#349)."
     },
     {
-      "nm": "slack_notify",
-      "ds": "DEPRECATED compatibility shim — forwards to :mod:`notify_send` (Telegram)."
-    },
-    {
       "nm": "transcript_readers",
       "ds": "Native transcript readers; hook-envelope normalization remains in _lib."
     },
