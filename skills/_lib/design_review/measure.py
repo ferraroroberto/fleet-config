@@ -45,7 +45,12 @@ repo's interpreter (this repo's venv stays stdlib-only).
 """
 from __future__ import annotations
 
+import sys
+from pathlib import Path
 from typing import Dict, List, Optional
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from design_lint.rules import GLYPH_ICON_RENDERED_RE  # noqa: E402
 
 SCHEMA_VERSION = 1
 
@@ -66,7 +71,7 @@ BOUNDARY_CONTROL_SELECTOR = (
     ":not([type=button]):not([type=submit]):not([type=reset]):not([type=image]), "
     "select, textarea, [role=switch]"
 )
-GLYPH_ICON_RE = r"[←-⇿■-◿⬀-⯿✖✕×⋮☰]"
+GLYPH_ICON_RE = GLYPH_ICON_RENDERED_RE
 
 # `__GEOMETRY__` is replaced by `build_script`. The script is one arrow
 # function taking `params` so Playwright's `page.evaluate(script, params)`

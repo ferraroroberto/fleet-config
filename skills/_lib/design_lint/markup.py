@@ -14,6 +14,7 @@ from typing import List, Tuple
 
 from .css import strip_comments
 from .files import is_third_party, read_text, rel
+from .rules import GLYPH_ICON_CLASS
 
 
 _STANDALONE_MEDIA_RE = re.compile(r"@media[^{]*display-mode:\s*standalone[^{]*\{")
@@ -88,12 +89,7 @@ _EMOJI_RE = re.compile(
 # Arrows and geometric shapes drawn as text in place of an icon (refresh as a
 # literal arrow, a dropdown caret as a triangle — fleet-config#969). Disjoint
 # from the emoji ranges above, so a site is never counted by both scans.
-_GLYPH_ICON_RE = re.compile(
-    "["
-    "←-⇿"   # arrows
-    "■-◿"   # geometric shapes (triangles, circles, squares)
-    "]"
-)
+_GLYPH_ICON_RE = re.compile(f"[{GLYPH_ICON_CLASS}]")   # arrows, geometric shapes
 _TAG_RE = re.compile(r"<[^>]*>")
 
 

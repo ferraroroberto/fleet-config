@@ -112,6 +112,7 @@ from pathlib import Path
 from typing import Optional
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+import fleet_toml  # noqa: E402
 import git_run  # noqa: E402
 from hooks_state import state_dir  # noqa: E402
 # The read-modify-write transaction primitives for a shared `hooks/state/`
@@ -526,16 +527,8 @@ def _worktree_key_list(repo: Path, key: str) -> Optional[list]:
     the stripped non-empty strings, possibly `[]`. Same
     silent-degrade-on-any-error contract as `worktree_junction_targets`.
     """
-    fleet_toml = repo / ".fleet.toml"
-    if not fleet_toml.is_file():
-        return None
-    import tomllib
-    try:
-        data = tomllib.loads(fleet_toml.read_text(encoding="utf-8", errors="replace"))
-    except (OSError, tomllib.TOMLDecodeError):
-        return None
-    table = data.get("worktree")
-    if not isinstance(table, dict) or key not in table:
+    table = fleet_toml.table(fleet_toml.load(repo), "worktree")
+    if table is None or key not in table:
         return None
     keys = table.get(key)
     if not isinstance(keys, list):
@@ -611,18 +604,8 @@ def worktree_primary_instance_ok(repo: Path) -> bool:
     Anything other than a literal `true` -- absent, malformed, a string, a
     missing `.fleet.toml` -- is `False`. The refusal is the default.
     """
-    fleet_toml = repo / ".fleet.toml"
-    if not fleet_toml.is_file():
-        return False
-    import tomllib
-    try:
-        data = tomllib.loads(fleet_toml.read_text(encoding="utf-8", errors="replace"))
-    except (OSError, tomllib.TOMLDecodeError):
-        return False
-    table = data.get("worktree")
-    if not isinstance(table, dict):
-        return False
-    return table.get("primary_instance_ok") is True
+    table = fleet_toml.table(fleet_toml.load(repo), "worktree")
+    return table is not None and table.get("primary_instance_ok") is True
 
 
 def blank_machine_bound_config(dst: Path, declared_keys: Optional[list],

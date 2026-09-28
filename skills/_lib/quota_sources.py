@@ -2,18 +2,17 @@
 from __future__ import annotations
 
 import argparse
+import contextlib
 import json
 import logging
-import queue
 import re
 import shutil
 import subprocess
 import sys
-import threading
-import time
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Iterator, Optional
 
+from codex_app_server import AppServerExited, AppServerSession, AppServerTimeout
 from no_window import NO_WINDOW
 from quota_snapshot import (account_key, empty_source, identifier, iso_utc, observation,
                             parse_time, publish, read_snapshot, refresh_states, utc_now, window)
@@ -106,31 +105,32 @@ class NativeReadError(Exception):
     """Safe categorical failure; upstream messages may include account data."""
 
 
-def _request(process: subprocess.Popen[str], messages: queue.Queue[Any],
-             request_id: int, method: str, params: dict[str, Any]) -> dict[str, Any]:
-    assert process.stdin is not None
-    process.stdin.write(json.dumps({"id": request_id, "method": method, "params": params}) + "\n")
-    process.stdin.flush()
-    deadline = time.monotonic() + RPC_TIMEOUT_SECONDS
-    while True:
-        remaining = deadline - time.monotonic()
-        if remaining <= 0:
-            raise NativeReadError("native_timeout")
-        try:
-            message = messages.get(timeout=remaining)
-        except queue.Empty:
-            raise NativeReadError("native_timeout") from None
-        if message is None:
-            raise NativeReadError("native_exited")
-        if message.get("id") != request_id:
-            continue
-        if "error" in message:
-            error = message["error"]
-            code = error.get("code") if isinstance(error, dict) else None
-            raise NativeReadError("method_unsupported" if code == -32601 else "native_request_failed")
-        if not isinstance(message.get("result"), dict):
-            raise NativeReadError("source_shape")
-        return message["result"]
+def _result(response: dict[str, Any]) -> dict[str, Any]:
+    """The `result` object of one app-server response, or a categorical error."""
+    if "error" in response:
+        error = response["error"]
+        code = error.get("code") if isinstance(error, dict) else None
+        raise NativeReadError("method_unsupported" if code == -32601 else "native_request_failed")
+    if not isinstance(response.get("result"), dict):
+        raise NativeReadError("source_shape")
+    return response["result"]
+
+
+@contextlib.contextmanager
+def _native_errors() -> Iterator[None]:
+    """Map the session's transport failures onto the categorical vocabulary."""
+    try:
+        yield
+    except AppServerTimeout:
+        raise NativeReadError("native_timeout") from None
+    except AppServerExited:
+        raise NativeReadError("native_exited") from None
+
+
+def _request(session: AppServerSession, request_id: int, method: str,
+             params: dict[str, Any]) -> dict[str, Any]:
+    with _native_errors():
+        return _result(session.request(request_id, method, params, RPC_TIMEOUT_SECONDS))
 
 
 def collect_codex() -> dict[str, Any]:
@@ -143,8 +143,7 @@ def collect_codex() -> dict[str, Any]:
     executable = shutil.which("codex.exe") or shutil.which("codex")
     if not executable:
         return source
-    process = None
-    reader = None
+    session: Optional[AppServerSession] = None
     try:
         result = subprocess.run([executable, "--version"], capture_output=True, text=True,
                                 encoding="utf-8", timeout=10, creationflags=NO_WINDOW)
@@ -153,45 +152,17 @@ def collect_codex() -> dict[str, Any]:
         source["source"]["client_version"] = version
         if version not in CODEX_VERSIONS:
             return dict(source, state="unsupported", reason="client_version_unverified")
-        process = subprocess.Popen(
-            [executable, "app-server", "--stdio"], stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True,
-            encoding="utf-8", errors="replace", creationflags=NO_WINDOW,
-        )
-        messages: queue.Queue[Any] = queue.Queue(maxsize=100)
-
-        def read_output() -> Optional[bool]:
-            assert process is not None and process.stdout is not None
-            for line in process.stdout:
-                try:
-                    message = json.loads(line)
-                    if isinstance(message, dict):
-                        messages.put_nowait(message)
-                except ValueError:
-                    continue
-                except queue.Full:
-                    break
-            try:
-                messages.put_nowait(None)
-            except queue.Full:
-                pass
-            return None
-
-        reader = threading.Thread(target=read_output, daemon=True)
-        reader.start()
-        _request(process, messages, 1, "initialize",
-                 {"clientInfo": {"name": "fleet_quota_snapshot", "version": "1"}})
-        assert process.stdin is not None
-        process.stdin.write('{"method":"initialized"}\n')
-        process.stdin.flush()
-        account = _request(process, messages, 2, "account/read", {"refreshToken": False}).get("account")
+        session = AppServerSession.spawn(executable, queue_max=100)
+        with _native_errors():
+            _result(session.initialize("fleet_quota_snapshot", RPC_TIMEOUT_SECONDS))
+        account = _request(session, 2, "account/read", {"refreshToken": False}).get("account")
         if account is None:
             return dict(source, state="unknown", reason="account_unavailable")
         if not isinstance(account, dict) or "type" not in account:
             return dict(source, state="error", reason="source_shape")
         if account["type"] != "chatgpt":
             return dict(source, state="unsupported", reason="auth_mode_unsupported")
-        result = _request(process, messages, 3, "account/rateLimits/read", {})
+        result = _request(session, 3, "account/rateLimits/read", {})
         return codex_source(result, version)
     except NativeReadError as exc:
         reason = str(exc)
@@ -201,25 +172,8 @@ def collect_codex() -> dict[str, Any]:
         LOGGER.info("Codex quota read: native_process_failed")
         return dict(source, state="error", reason="native_process_failed")
     finally:
-        if process is not None:
-            try:
-                if process.stdin:
-                    process.stdin.close()
-            except OSError:
-                pass
-            try:
-                process.wait(timeout=3)
-            except subprocess.TimeoutExpired:
-                process.terminate()
-                try:
-                    process.wait(timeout=3)
-                except subprocess.TimeoutExpired:
-                    process.kill()
-                    process.wait(timeout=3)
-            if reader is not None:
-                reader.join(timeout=1)
-            if process.stdout:
-                process.stdout.close()
+        if session is not None:
+            session.close(3)
 
 
 def main(argv: Optional[list[str]] = None) -> int:

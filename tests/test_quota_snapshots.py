@@ -18,6 +18,7 @@ REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO / "skills" / "_lib"))
 import quota_snapshot as contract
 import quota_sources as sources
+from codex_app_server import AppServerSession
 
 NOW = dt.datetime(2026, 9, 5, 12, tzinfo=dt.timezone.utc)
 RESET = int((NOW + dt.timedelta(days=1)).timestamp())
@@ -240,10 +241,10 @@ class NativeTransportTests(unittest.TestCase):
             messages = queue.Queue()
             messages.put(message)
             with self.assertRaisesRegex(sources.NativeReadError, expected):
-                sources._request(process, messages, 1, "account/rateLimits/read", {})
+                sources._request(AppServerSession(process, messages), 1, "account/rateLimits/read", {})
         with patch.object(sources, "RPC_TIMEOUT_SECONDS", 0):
             with self.assertRaisesRegex(sources.NativeReadError, "native_timeout"):
-                sources._request(process, queue.Queue(), 1, "account/rateLimits/read", {})
+                sources._request(AppServerSession(process, queue.Queue()), 1, "account/rateLimits/read", {})
 
     def test_no_client_and_unverified_client_do_not_start_app_server(self) -> None:
         with patch.object(sources.shutil, "which", return_value=None):

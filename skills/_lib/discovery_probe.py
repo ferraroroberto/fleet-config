@@ -28,6 +28,7 @@ from pathlib import Path
 from typing import Any, Optional
 
 import scoped_discovery as discovery
+from codex_app_server import AppServerExited, AppServerSession, AppServerTimeout
 from git_run import run_git
 from no_window import NO_WINDOW
 
@@ -233,21 +234,6 @@ def _claude(paths: dict[str, Path]) -> dict[str, Any]:
     )
 
 
-def _json_rpc(process: subprocess.Popen[str], messages: queue.Queue[dict[str, Any]],
-              request_id: int, method: str, params: dict[str, Any]) -> dict[str, Any]:
-    assert process.stdin is not None
-    process.stdin.write(json.dumps({"id": request_id, "method": method, "params": params}) + "\n")
-    process.stdin.flush()
-    deadline = time.monotonic() + TIMEOUT
-    while True:
-        remaining = deadline - time.monotonic()
-        if remaining <= 0:
-            raise queue.Empty
-        message = messages.get(timeout=remaining)
-        if message.get("id") == request_id:
-            return message
-
-
 def _codex(paths: dict[str, Path]) -> dict[str, Any]:
     executable = shutil.which("codex.exe") or shutil.which("codex")
     version = _version(executable)
@@ -255,36 +241,16 @@ def _codex(paths: dict[str, Path]) -> dict[str, Any]:
         return _catalog_result("codex", None, None, {}, [])
     env = os.environ.copy()
     env["CODEX_HOME"] = str(paths["home"] / ".agents")
-    process = subprocess.Popen(
-        [executable, "app-server", "--stdio"], cwd=paths["root"], env=env,
-        stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
-        text=True, encoding="utf-8", errors="replace", creationflags=NO_WINDOW,
-    )
-    messages: queue.Queue[dict[str, Any]] = queue.Queue()
-
-    def read_output() -> None:
-        assert process.stdout is not None
-        for line in process.stdout:
-            try:
-                messages.put(json.loads(line))
-            except json.JSONDecodeError:
-                continue
-
-    threading.Thread(target=read_output, daemon=True).start()
+    session = AppServerSession.spawn(executable, cwd=paths["root"], env=env)
     catalogs: dict[str, list[dict[str, str]]] = {scope: [] for scope in SCOPES}
     errors: list[str] = []
     try:
-        initialized = _json_rpc(process, messages, 1, "initialize", {
-            "clientInfo": {"name": "fleet_config_discovery_probe", "version": "1"},
-        })
+        initialized = session.initialize("fleet_config_discovery_probe", TIMEOUT)
         if "error" in initialized:
             raise RuntimeError(str(initialized["error"]))
-        assert process.stdin is not None
-        process.stdin.write(json.dumps({"method": "initialized"}) + "\n")
-        process.stdin.flush()
-        result = _json_rpc(process, messages, 2, "skills/list", {
+        result = session.request(2, "skills/list", {
             "cwds": [str(paths[scope]) for scope in SCOPES], "forceReload": True,
-        })
+        }, TIMEOUT)
         if "error" in result:
             raise RuntimeError(str(result["error"]))
         by_cwd = {str(Path(item["cwd"]).resolve()): item for item in result.get("result", {}).get("data", [])}
@@ -297,16 +263,10 @@ def _codex(paths: dict[str, Path]) -> dict[str, Any]:
                     catalogs[scope].append({"name": skill["name"], "path": str(path),
                                             "source": str(_expected_skill_path(paths, skill["name"]))})
             catalogs[scope].sort(key=lambda item: EXPECTED[scope].index(item["name"]))
-    except (queue.Empty, OSError, RuntimeError, ValueError) as exc:
-        errors.append(str(exc))
+    except (AppServerTimeout, AppServerExited, OSError, RuntimeError, ValueError) as exc:
+        errors.append(str(exc) or type(exc).__name__)
     finally:
-        if process.stdin:
-            process.stdin.close()
-        try:
-            process.wait(timeout=10)
-        except subprocess.TimeoutExpired:
-            process.terminate()
-            process.wait(timeout=10)
+        session.close(10)
     return _catalog_result("codex", executable, version, catalogs, errors)
 
 

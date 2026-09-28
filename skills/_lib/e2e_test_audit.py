@@ -103,6 +103,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import git_run  # noqa: E402
 from no_window import NO_WINDOW  # noqa: E402
 import e2e_value  # noqa: E402
+import fleet_toml  # noqa: E402
 from ux_surface import fenced_mask, parse_ux_surface_block  # noqa: E402
 from utf8_stdio import ensure_utf8_stdio  # noqa: E402
 
@@ -448,20 +449,18 @@ def budget_limit(fleet_toml_text: Optional[str], default: int = DEFAULT_TARGET) 
     """
     if not fleet_toml_text:
         return default, "scaffold-target", "no .fleet.toml"
-    import tomllib
-    try:
-        data = tomllib.loads(fleet_toml_text)
-    except tomllib.TOMLDecodeError:
+    data = fleet_toml.parse(fleet_toml_text)
+    if data is None:
         return default, "scaffold-target", ".fleet.toml could not be parsed"
-    e2e = data.get("e2e")
-    if e2e is not None and not isinstance(e2e, dict):
+    if data.get("e2e") is not None and fleet_toml.table(data, "e2e") is None:
         return default, "scaffold-target", "[e2e] is not a table"
-    raw = e2e.get("test_budget") if e2e is not None else None
+    raw = (fleet_toml.table(data, "e2e") or {}).get("test_budget")
     if raw is None:
         return default, "scaffold-target", "no [e2e] test_budget declared"
-    if isinstance(raw, bool) or not isinstance(raw, int) or raw <= 0:
+    limit = fleet_toml.positive_int(raw)
+    if limit is None:
         return default, "scaffold-target", f"invalid [e2e] test_budget {raw!r} ignored"
-    return raw, "declared", "[e2e] test_budget"
+    return limit, "declared", "[e2e] test_budget"
 
 
 def budget_verdict(dirs_resolved: bool, files: int, node_count: Optional[int],
@@ -649,8 +648,7 @@ def cmd_budget(repo_root: Path) -> int:
     raw_tests = sum(len(parse_test_file(repo_root, rel)["tests"]) for rel in files)  # type: ignore[arg-type]
     node_count = collect_pytest_node_count(repo_root, test_dirs) if files else None
 
-    fleet_toml = repo_root / ".fleet.toml"
-    toml_text = fleet_toml.read_text(encoding="utf-8", errors="replace") if fleet_toml.is_file() else None
+    toml_text = fleet_toml.read_text(repo_root)
     limit, source, note = budget_limit(toml_text)
     existing_dirs, _missing = split_resolved_dirs(repo_root, test_dirs)
     verdict, count, kind = budget_verdict(bool(existing_dirs), len(files), node_count, raw_tests, limit)

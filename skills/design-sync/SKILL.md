@@ -262,7 +262,7 @@ read.
     - **break-all** — `word-break: break-all` on a selector that is not a
       path, hash, URL or code string. Names want `overflow-wrap: anywhere`.
     - **glyph-icons** — arrow (U+2190–21FF) and geometric-shape
-      (U+25A0–25FF) characters drawn as icons in rendered markup or JS UI
+      (U+25A0–25FF) characters and the kebab (U+22EE) drawn as icons in rendered markup or JS UI
       strings. Same comment, regex-literal and `vendor/` exclusions as
       `icon-set`; the ranges don't overlap its emoji scan.
     - **spec-contrast** — every `components.<name>` text/background pair in

@@ -91,6 +91,7 @@ from pathlib import Path
 from typing import Dict, List, Optional, Sequence, Tuple
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+import fleet_toml  # noqa: E402
 import git_run  # noqa: E402
 
 BUCKETS: Sequence[Tuple[str, float, float]] = (
@@ -120,15 +121,7 @@ _RUNTIME_CONTEXT_RE = re.compile(r"\b(gate|suite|e2e|verify|browser)\b", re.I)
 
 def e2e_table(fleet_toml_text: Optional[str]) -> Dict[str, object]:
     """The `.fleet.toml` `[e2e]` table, or `{}` when absent or unparsable."""
-    if not fleet_toml_text:
-        return {}
-    import tomllib
-    try:
-        data = tomllib.loads(fleet_toml_text)
-    except tomllib.TOMLDecodeError:
-        return {}
-    e2e = data.get("e2e")
-    return e2e if isinstance(e2e, dict) else {}
+    return fleet_toml.table(fleet_toml.parse(fleet_toml_text), "e2e") or {}
 
 
 def timing_source(repo_root: Path, log: Optional[Path]) -> Tuple[Optional[str], Optional[Path], str]:
@@ -137,8 +130,7 @@ def timing_source(repo_root: Path, log: Optional[Path]) -> Tuple[Optional[str], 
         path = log if log.is_absolute() else repo_root / log
         kind = "junit-xml" if path.suffix.lower() == ".xml" else "progress-log"
         return (kind, path, "--log") if path.is_file() else (None, None, f"--log {path} does not exist")
-    toml = repo_root / ".fleet.toml"
-    table = e2e_table(toml.read_text(encoding="utf-8", errors="replace") if toml.is_file() else None)
+    table = e2e_table(fleet_toml.read_text(repo_root))
     for key, kind in (("progress_log", "progress-log"), ("junit_xml", "junit-xml")):
         rel = table.get(key)
         if isinstance(rel, str) and rel.strip():
@@ -990,9 +982,10 @@ def time_budget_limit(fleet_toml_text: Optional[str]) -> Tuple[Optional[int], st
     raw = e2e_table(fleet_toml_text).get("time_budget_s")
     if raw is None:
         return None, "no [e2e] time_budget_s declared"
-    if isinstance(raw, bool) or not isinstance(raw, int) or raw <= 0:
+    limit = fleet_toml.positive_int(raw)
+    if limit is None:
         return None, f"invalid [e2e] time_budget_s {raw!r} ignored"
-    return raw, "[e2e] time_budget_s"
+    return limit, "[e2e] time_budget_s"
 
 
 def browser_leg_s(run: Dict[str, object], test_dirs: Sequence[str]) -> Optional[float]:
@@ -1013,8 +1006,7 @@ def time_budget(repo_root: Path, test_dirs: Sequence[str], log: Optional[Path] =
     overlapped another checkout's run is loaded. Neither gives a verdict, and
     neither does a missing log: all three are `unknown`, never `within`.
     """
-    toml = repo_root / ".fleet.toml"
-    limit, note = time_budget_limit(toml.read_text(encoding="utf-8", errors="replace") if toml.is_file() else None)
+    limit, note = time_budget_limit(fleet_toml.read_text(repo_root))
     if limit is None:
         return {"verdict": "undeclared", "seconds": None, "limit": None, "reason": note}
     g = _gather(repo_root, log)

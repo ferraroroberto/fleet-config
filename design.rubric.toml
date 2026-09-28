@@ -149,7 +149,7 @@ owner = "app"
 standard = "CSS Text 3: overflow-wrap: anywhere for long tokens, break-all only for opaque strings"
 fix_template = "{count} text nodes on {screen} use word-break: break-all outside a path/hash selector; use overflow-wrap: anywhere."
 mockup = "none"
-params = { allow = "path|url|sha|hash|mono|code" }
+params = { allow = "path|url|sha|hash|mono|code|token|uuid" }
 
 [[rules]]
 id = "TYPE-05"
