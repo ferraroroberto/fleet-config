@@ -258,6 +258,11 @@ _STANDALONE_UNIT_CHECKS: Tuple[Tuple[str, str, str], ...] = (
      "exclusion so the probe never reports itself, and a real spawned "
      "holder going LIVE then CLEAR -- is testable on its own, in a repo "
      "with no tests/e2e, no Playwright and no venv (fleet-config#571)"),
+    ("worktree_residue", "test_worktree_residue.py",
+     "teardown's worktree classifier -- a foreign, clean, squash-merged "
+     "worktree defers while the run's own leftover and a dirty or "
+     "unmerged foreign one still halt -- is testable on its own against "
+     "real throwaway git repos (fleet-config#1077)"),
     ("git_run", "test_git_run.py",
      "the shared `resolve_default_branch_ref` helper -- symbolic-ref "
      "success, candidate probing, terminal fallback, and the "
