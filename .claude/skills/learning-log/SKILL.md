@@ -39,7 +39,7 @@ E:/automation/fleet-config/.venv/Scripts/python.exe .claude/skills/learning-log/
 
 Lists every fleet repo (`gh repo list`), reads each repo's merged PRs + closed issues **per repo** (`gh pr list` / `gh issue list` — REST, so the full window is covered with no cap and no search rate-limit), buckets each item by work type, computes exact stats, writes into `<OUT_DIR>`: `stats.md` (the productivity tables), `prior-horizon.md`, and one `bucket-<slug>.md` per non-empty bucket. Prints a **manifest** — capture every line:
 
-- `SINCE=` / `TOTALS=` — window start and grand totals.
+- `SINCE=` / `TOTALS=` — window start and grand totals. `FAILED_REPOS=<names>` (with `failed_repos=N` in `TOTALS=`) lists repos whose `gh` reads failed: they are not counted as zero, and `stats.md` carries an "Incomplete" note — say so in the digest. A failed repo *enumeration* exits non-zero with nothing published.
 - `STATS_FILE=` — the productivity tables (paste verbatim into the digest).
 - `PRIOR_HORIZON_FILE=` — last week's horizon (grade against it).
 - `OUT_DIR=` and one `BUCKET=<slug>|<name>|prs=N|issues=M|file=<path>` per non-empty bucket — dispatch one sub-agent per line.

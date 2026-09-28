@@ -304,6 +304,92 @@ try:
     check("FLEET_HEALTH_MODELS_YAML" not in skill_md,
           "SKILL.md: stops telling the reader to point a removed env var at models.yaml")
 
+    # ------------------------------------------------- 4. unknown is not done
+
+    # A status probe that cannot answer is "unknown", never "finished": folding
+    # it into False ended the poll early and let `collect` POST /stop on a
+    # capture that was still running.
+    _real_get, _real_post = capture._get, capture._post
+    _answers: dict = {}
+    _stops: list = []
+    capture._get = lambda url, timeout=capture.TIMEOUT_S: _answers[url.split("/admin")[0]]
+    capture._post = lambda url, payload=None, timeout=capture.TIMEOUT_S: (
+        _stops.append(url) or (200, b"{}"))
+    try:
+        _answers["http://peer"] = (0, b"connection refused")
+        check(capture.poll_once("http://peer")[0] is None,
+              "poll_once: a failed probe is unknown (None), not 'not capturing'")
+        _answers["http://peer"] = (503, b"")
+        check(capture.poll_once("http://peer")[0] is None,
+              "poll_once: a 5xx probe is unknown (None)")
+        _answers["http://peer"] = (200, b'{"capturing": false}')
+        check(capture.poll_once("http://peer")[0] is False,
+              "poll_once: an answered 'not capturing' is False")
+        _answers["http://peer"] = (200, b'{"capturing": true, "active": {"samples_written": 4}}')
+        check(capture.poll_once("http://peer")[:2] == (True, 4),
+              "poll_once: an answered 'capturing' is True with its sample count")
+
+        _answers["http://peer"] = (0, b"connection refused")
+        progress = capture.poll_chunk({"peer": "http://peer"}, 0.01)
+        check(progress["peer"]["capturing"] is not False,
+              "poll_chunk: an unanswered probe leaves the machine pending, not done")
+
+        _answers["http://peer"] = (200, b'{"capturing": false}')
+        progress = capture.poll_chunk({"peer": "http://peer"}, 5.0)
+        check(progress["peer"]["capturing"] is False,
+              "poll_chunk: a confirmed finish settles the machine")
+
+        # cmd_poll / cmd_collect end to end against the stubbed hub.
+        import contextlib as _cx
+        import io as _io
+        import time as _time
+
+        def _state(started_at: float, duration_s: float) -> Path:
+            d = tmp / ("unknown-%d" % int(started_at))
+            d.mkdir(parents=True, exist_ok=True)
+            (d / ".run-state.json").write_text(json.dumps({
+                "run_date": "2026-01-02", "ledger_root": str(tmp), "out_dir": str(d),
+                "duration_s": duration_s, "started_at": started_at,
+                "targets": {"peer": "http://peer"}, "runs": {"peer": "run1"},
+                "skipped": [],
+            }), encoding="utf-8")
+            return d
+
+        class _PollArgs:
+            ledger_root = str(tmp)
+            date = "2026-01-02"
+            chunk_s = 0.01
+            out_dir = ""
+
+        def _run(fn, out_dir: Path) -> str:
+            _PollArgs.out_dir = str(out_dir)
+            buf = _io.StringIO()
+            with _cx.redirect_stdout(buf):
+                fn(_PollArgs)
+            return buf.getvalue()
+
+        _answers["http://peer"] = (0, b"connection refused")
+        live = _run(capture.cmd_poll, _state(_time.time(), 3600.0))
+        check("DONE=no" in live and "STILL_CAPTURING=peer" in live,
+              "cmd_poll: an unknown probe inside the capture window is DONE=no, not DONE=yes")
+        expired = _run(capture.cmd_poll, _state(_time.time() - 100000, 3600.0))
+        check("DONE=yes" in expired and "UNCONFIRMED=peer" in expired
+              and "status=unconfirmed" in expired,
+              "cmd_poll: past the deadline an unknown probe settles as UNCONFIRMED, its own state")
+
+        collected = _run(capture.cmd_collect, _state(_time.time() + 1, 3600.0))
+        check(not any(u.endswith("/diagnostics/stop") for u in _stops),
+              "cmd_collect: an unknown probe never POSTs /diagnostics/stop")
+        check("status=unconfirmed" in collected,
+              "cmd_collect: an unknown probe is reported as unconfirmed")
+
+        _answers["http://peer"] = (200, b'{"capturing": true}')
+        _run(capture.cmd_collect, _state(_time.time() + 2, 3600.0))
+        check(any(u.endswith("/diagnostics/stop") for u in _stops),
+              "cmd_collect: a confirmed still-running capture is still stopped")
+    finally:
+        capture._get, capture._post = _real_get, _real_post
+
 finally:
     shutil.rmtree(tmp, ignore_errors=True)
 

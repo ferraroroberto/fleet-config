@@ -75,6 +75,10 @@ DEFAULT_INTERVAL_S = float(os.environ.get("FLEET_HEALTH_INTERVAL_S", "30"))
 POLL_CHUNK_S = 540.0
 POLL_EVERY_S = 15.0
 
+# How long past a capture's own end an unanswerable status probe is tolerated
+# before the machine is settled as "unconfirmed" (never as "finished").
+UNKNOWN_GRACE_S = float(os.environ.get("FLEET_HEALTH_UNKNOWN_GRACE_S", "600"))
+
 TIMEOUT_S = 10.0
 REPORT_TIMEOUT_S = 60.0
 
@@ -203,16 +207,27 @@ def start(base: str, duration_s: float, interval_s: float) -> tuple[bool, str]:
     return False, f"start failed ({status}): {detail}"
 
 
-def poll_once(base: str) -> tuple[bool, int, str]:
-    """(still_capturing, samples_written, last_error)."""
+def poll_once(base: str) -> tuple[Optional[bool], int, str]:
+    """(still_capturing, samples_written, last_error).
+
+    ``still_capturing`` is tri-state: ``None`` means the probe could not
+    establish the fact (a blip, a 5xx), which is not "finished" -- folding it
+    into ``False`` ended the poll early and let ``collect`` stop a capture
+    that was still running.
+    """
     status, body = _get(f"{base}/admin/api/diagnostics/status")
     if status != 200:
-        return False, 0, f"status probe failed ({status})"
+        return None, 0, f"status probe failed ({status})"
     payload = _json(body)
     active = payload.get("active") or {}
     return (bool(payload.get("capturing")),
             int(active.get("samples_written") or 0),
             str(active.get("last_error") or ""))
+
+
+def _capturing_word(capturing: Optional[bool]) -> str:
+    """``true`` / ``false`` / ``unknown`` -- an unanswered probe is its own word."""
+    return "unknown" if capturing is None else str(capturing).lower()
 
 
 def poll_chunk(targets: dict[str, str], chunk_s: float) -> dict[str, dict]:
@@ -222,13 +237,14 @@ def poll_chunk(targets: dict[str, str], chunk_s: float) -> dict[str, dict]:
     and ends its turn exits 0 having done nothing (fleet-config#314).
     """
     deadline = time.monotonic() + chunk_s
+    # ``capturing`` is True / None (unknown) / False; only False is settled.
     progress: dict[str, dict] = {
         mid: {"capturing": True, "samples": 0, "error": ""} for mid in targets}
     while time.monotonic() < deadline:
-        if not any(p["capturing"] for p in progress.values()):
+        if all(p["capturing"] is False for p in progress.values()):
             break
         for mid, base in targets.items():
-            if not progress[mid]["capturing"]:
+            if progress[mid]["capturing"] is False:
                 continue
             capturing, samples, err = poll_once(base)
             # A finished run reports active=null, so samples_written reads 0.
@@ -239,8 +255,9 @@ def poll_chunk(targets: dict[str, str], chunk_s: float) -> dict[str, dict]:
                 "error": err or progress[mid]["error"],
             }
             print(f"  · {mid}: samples={progress[mid]['samples']} "
-                  f"capturing={capturing}", file=sys.stderr, flush=True)
-        if not any(p["capturing"] for p in progress.values()):
+                  f"capturing={_capturing_word(capturing)}",
+                  file=sys.stderr, flush=True)
+        if all(p["capturing"] is False for p in progress.values()):
             break
         time.sleep(POLL_EVERY_S)
     return progress
@@ -465,6 +482,7 @@ def cmd_start(args) -> int:
         "out_dir": str(out_dir),
         "duration_s": args.duration_s,
         "interval_s": args.interval_s,
+        "started_at": time.time(),
         "targets": targets,
         "runs": runs,
         "skipped": skipped,
@@ -512,14 +530,29 @@ def cmd_poll(args) -> int:
     for mid, info in progress.items():
         seen[mid] = max(int(info["samples"]), int(seen.get(mid, 0)))
         emit(mid, "progress", info["error"], samples=seen[mid],
-             capturing=str(bool(info["capturing"])).lower())
+             capturing=_capturing_word(info["capturing"]))
     state["samples"] = seen
     save_state(out_dir, state)
 
-    still = [mid for mid, info in progress.items() if info["capturing"]]
-    print(f"DONE={'no' if still else 'yes'}")
-    if still:
-        print(f"STILL_CAPTURING={','.join(still)}")
+    still = [mid for mid, info in progress.items() if info["capturing"] is True]
+    unknown = [mid for mid, info in progress.items() if info["capturing"] is None]
+    # An unanswered probe keeps its machine pending until the capture's own
+    # deadline (start + duration) plus a grace; only then is it settled -- as
+    # "unconfirmed", never as finished. A state with no ``started_at`` predates
+    # this and settles at once rather than polling forever.
+    give_up_at = (float(state.get("started_at") or 0)
+                  + float(state.get("duration_s") or 0) + UNKNOWN_GRACE_S)
+    if unknown and time.time() > give_up_at:
+        for mid in unknown:
+            emit(mid, "unconfirmed",
+                 "status probe never answered before the capture deadline; "
+                 "completion not confirmed", samples=seen[mid])
+        print(f"UNCONFIRMED={','.join(unknown)}")
+        unknown = []
+    waiting = still + unknown
+    print(f"DONE={'no' if waiting else 'yes'}")
+    if waiting:
+        print(f"STILL_CAPTURING={','.join(waiting)}")
     return 0
 
 
@@ -549,6 +582,11 @@ def cmd_collect(args) -> int:
         if capturing:
             # Past its deadline and still going: stop it so the run is readable.
             _post(f"{base}/admin/api/diagnostics/stop")
+        elif capturing is None:
+            # Could not establish whether it is running: never cut a capture
+            # short on a guess. Fetch what the hub will give and say so.
+            emit(mid, "unconfirmed",
+                 "final status probe failed; capture not stopped", run_id=run_id)
         files = fetch_artefacts(base, run_id, out_dir, mid)
         if not files:
             emit(mid, "not-covered", "capture completed but no artefacts could be fetched",

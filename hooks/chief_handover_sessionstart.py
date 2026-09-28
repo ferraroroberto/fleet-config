@@ -24,7 +24,8 @@ compaction (`decision: "block"`) or allow it silently — it has no documented
 post-compaction context at that point (https://code.claude.com/docs/en/hooks.md).
 The write side is therefore chief's own discipline, not a hook.
 
-Fires for every session cwd'd in fleet-config, not only chief's own —
+Fires for every session cwd'd in a project that sets ``chief_handover = true``
+in ``hooks/projects.toml`` (fleet-config today), not only chief's own —
 harmless for an ordinary dev session (one extra FYI paragraph it can
 ignore). No network call, no LLM call, no session-identity detection: cheap
 and cwd-gated only.
@@ -76,8 +77,8 @@ def build_context(content: str, path: Path) -> str:
 def main() -> int:
     payload = _lib.read_stdin_json()
     project = _lib.detect_project(_lib.cwd(payload))
-    if project is None or project.name != "fleet-config":
-        return 0  # not fleet-config -- chief only ever runs cwd'd here
+    if project is None or not project.extra.get("chief_handover"):
+        return 0  # project does not host the chief (`chief_handover` in projects.toml)
     path = handover_path()
     try:
         content = path.read_text(encoding="utf-8").strip()

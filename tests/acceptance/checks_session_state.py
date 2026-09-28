@@ -136,6 +136,33 @@ def _chief_handover_sessionstart_unit_checks() -> Tuple[int, int]:
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 
+    # ---- gating is a projects.toml key, not a hardcoded project name ----
+    tmp = Path(tempfile.mkdtemp(prefix="chief_handover_gate_"))
+    try:
+        proj_a, proj_b = tmp / "a", tmp / "b"
+        proj_a.mkdir()
+        proj_b.mkdir()
+        (tmp / "chief-handover.md").write_text("gate-check log line\n", encoding="utf-8")
+        toml = tmp / "projects.toml"
+        toml.write_text(
+            f'[opted-in]\ncwd_prefix = "{proj_a.as_posix()}"\nchief_handover = true\n\n'
+            f'[other]\ncwd_prefix = "{proj_b.as_posix()}"\n', encoding="utf-8")
+        env = {"CLAUDE_HOOKS_STATE_DIR": str(tmp), "CLAUDE_HOOKS_PROJECTS_TOML": str(toml)}
+        _c, out_a, _e = run(
+            "chief_handover_sessionstart",
+            {"hook_event_name": "SessionStart", "source": "startup", "cwd": str(proj_a)},
+            extra_env=env)
+        _c, out_b, _e = run(
+            "chief_handover_sessionstart",
+            {"hook_event_name": "SessionStart", "source": "startup", "cwd": str(proj_b)},
+            extra_env=env)
+        check("chief_handover_sessionstart gate: a project with chief_handover = true gets the log",
+              "gate-check log line" in out_a)
+        check("chief_handover_sessionstart gate: a project without the key is a silent no-op",
+              "gate-check log line" not in out_b)
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
     return check.failures, check.total
 
 
