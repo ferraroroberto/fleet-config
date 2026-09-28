@@ -73,6 +73,7 @@ function reply(label, kind) {
       behindOriginDetail: kind.behindOriginDetail || '',
       zombieShells: kind.zombieShells,
       foreignBranches: kind.foreignBranches,
+      foreignWorktrees: kind.foreignWorktrees,
     }
   }
   throw new Error('unknown label ' + label)
@@ -366,6 +367,106 @@ const check = (cond, msg) => { console.log((cond ? 'OK   ' : 'FAIL ') + msg); if
   check(r.status === 'escalated' && r.round === 2 &&
     sink.order.filter(l => l.startsWith('prompt-drift:validate:')).length === 2,
     'a failed preservation gate retries once, then escalates')
+}
+
+// --- Case 12: a foreign merged worktree defers its repo, the run continues (#1077) ---
+// On 2026-09-27 another lane created a worktree mid-run in a repo this run
+// later shipped in. Teardown read it as residue and halted with 41 issues
+// unstarted. A foreign, clean, merged worktree now passes teardown, and the
+// rest of that repo's issues are deferred -- in later buckets too -- while
+// every other repo keeps going.
+const ISSUES_1077 = {
+  documentation: [
+    { repo: 'alpha', number: 1, title: 'a', body: 'x' },
+    { repo: 'bravo', number: 2, title: 'b', body: 'x' },
+  ],
+  bug: [
+    { repo: 'alpha', number: 5, title: 'e', body: 'x' },
+    { repo: 'charlie', number: 3, title: 'c', body: 'x' },
+  ],
+}
+const FOREIGN_LINE = 'WORKTREE=E:/automation/alpha-wt-nav-41af40a BRANCH=chore/revendor-nav CLASS=foreign-merged REASON=squash-merged'
+{
+  const { sink, agentImpl } = tracker(l => reply(l, l === 'documentation:teardown:alpha#1' ? { foreignWorktrees: FOREIGN_LINE } : {}))
+  sink.args = { issuesByBucket: ISSUES_1077 }
+  const res = await makeRunner(agentImpl, sink)
+  check(res.halted === null, 'a foreign merged worktree never halts the run (#1077)')
+  check(!sink.order.some(l => l.includes('alpha#5')), 'the rest of that repo\'s work is not started, in later buckets too')
+  check(sink.order.includes('documentation:teardown:bravo#2') && sink.order.includes('bug:teardown:charlie#3'),
+    'every other repo keeps going')
+  const d = res.deferred || []
+  check(d.length === 1 && d[0].repo === 'alpha' && d[0].number === 5 && d[0].bucket === 'bug',
+    'the deferred issue is returned with its repo, number and bucket')
+  check(d.length === 1 && d[0].title === 'e' && d[0].body === 'x',
+    'a deferred item keeps title and body, so the retry pass can dispatch it')
+  check(d.length === 1 && d[0].repo_state === 'foreign-worktree' && d[0].skip_reason.includes('alpha-wt-nav-41af40a'),
+    'the deferral names the foreign worktree')
+  const a1 = res.buckets[0].results.find(r => r.issue.number === 1)
+  check(a1 && a1.residue === 'CLEAN' && (a1.foreignWorktrees || '').includes('CLASS=foreign-merged'),
+    'the lane that found it stays CLEAN and reports the foreign worktree')
+  const logs = sink.logs.join('\n')
+  check(/foreign worktree \(not residue\)/.test(logs) && /deferred alpha#5/.test(logs),
+    'the foreign worktree and the deferral both surface in the run log')
+}
+
+// --- Case 12b: anything else still halts (#1077) ---------------------------
+// The classifier calls the run's own leftover, a dirty foreign worktree and an
+// unmerged one residue; teardown then reports RESIDUE. That halts exactly as
+// before, even if the agent also filled in foreignWorktrees.
+{
+  const { sink, agentImpl } = tracker(l => reply(l, l === 'documentation:teardown:alpha#1'
+    ? { residue: true, foreignWorktrees: FOREIGN_LINE.replace('foreign-merged', 'foreign-dirty') }
+    : {}))
+  sink.args = { issuesByBucket: ISSUES_1077 }
+  const res = await makeRunner(agentImpl, sink)
+  check(res.halted !== null && res.halted.repo === 'alpha', 'a RESIDUE teardown still halts, whatever else it reports')
+  check(!sink.order.some(l => l.includes('bravo') || l.includes('charlie') || l.includes('alpha#5')),
+    'no lane starts after the halt')
+  check(Array.isArray(res.deferred) && res.deferred.length === 0,
+    'a halt is not turned into a deferral')
+}
+
+// --- Case 13: the teardown brief runs the classifier with the run's own set (#1077) ---
+// "Created by this run" is whatever the script passes the classifier: every
+// issue's conventional worktree path in that repo, plus every worktree and
+// branch a lane of this run reported. Asserted on the brief, since the brief
+// is where the classifier gets invoked.
+{
+  const { sink, agentImpl } = promptSpy(l => {
+    const n = (l.match(/#(\d+)$/) || [])[1]
+    if (l.includes(':build:')) return { status: 'built', branch: `fix/${n}-x`, worktree: `E:\\automation\\${l.split(':')[2].split('#')[0]}-wt-${n}-lane`, verification: 'PASS' }
+    return reply(l, {})
+  })
+  sink.args = { issuesByBucket: ISSUES_1077 }
+  await makeRunner(agentImpl, sink)
+  const p1 = sink.prompts['documentation:teardown:alpha#1']
+  const p5 = sink.prompts['bug:teardown:alpha#5']
+  check(!!p1 && !!p5, 'both alpha teardown prompts captured')
+  check(/worktree_residue\.py classify E:\/automation\/alpha /.test(p1), 'check 1 runs the classifier on the lane\'s repo')
+  check(p1.includes("--own-worktree 'E:\\automation\\alpha-wt-1'") && p1.includes("--own-worktree 'E:\\automation\\alpha-wt-5'"),
+    'every issue the run holds in the repo contributes its conventional worktree path, later buckets included')
+  check(p1.includes("--own-worktree 'E:\\automation\\alpha-wt-1-lane'") && p1.includes("--own-branch 'fix/1-x'"),
+    'the lane\'s own reported worktree and branch are own')
+  check(!p1.includes('bravo-wt') && !p1.includes('charlie-wt'), 'other repos\' paths are never passed')
+  check(p5.includes("--own-branch 'fix/1-x'") && p5.includes("--own-worktree 'E:\\automation\\alpha-wt-1-lane'"),
+    'an earlier lane of this run in the same repo stays own for later teardowns')
+  check(!/must list the primary only/.test(p1), 'the unconditional "primary only" rule is gone')
+  check(/VERDICT=foreign-deferred/.test(p1) && /foreignWorktrees/.test(p1) && /Never remove, prune/.test(p1),
+    'foreign-deferred passes, is reported in foreignWorktrees, and is never touched')
+  check(/VERDICT=residue/.test(p1) && /CLASS=own/.test(p1) && /foreign-dirty/.test(p1) && /foreign-unmerged/.test(p1),
+    'own, dirty and unmerged worktrees are still RESIDUE')
+  check(/VERDICT=unknown`, or the command could not run → RESIDUE/.test(p1), 'an unknown verdict is RESIDUE, never a pass')
+  check(/CLASS=foreign-merged`? is that same foreign worktree and passes check 2/.test(p1),
+    'check 2 does not re-flag the registered foreign worktree as a leftover directory')
+}
+
+// --- Case 14: SKILL.md carries the #1077 rules too ------------------------
+{
+  const skill = readFileSync(join(REPO, '.claude', 'skills', 'cleanup-fleet-all', 'SKILL.md'), 'utf8')
+  check(/foreignWorktrees/.test(skill) && /fleet-config#1077/.test(skill),
+    'SKILL.md documents foreignWorktrees and why a foreign worktree stopped halting runs')
+  check(/worktree_residue\.py classify/.test(skill), 'SKILL.md\'s post-flight enumeration uses the same classifier')
+  check(/`deferred`/.test(skill) && /7b/.test(skill), 'SKILL.md feeds the workflow\'s deferred list to the retry pass')
 }
 
 console.log(failures === 0 ? '\nALL CONTROL-FLOW CHECKS PASS' : `\n${failures} CHECK(S) FAILED`)

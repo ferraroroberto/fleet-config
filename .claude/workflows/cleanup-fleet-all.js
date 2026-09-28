@@ -46,6 +46,18 @@ export const meta = {
 // process objects on a host that has not rebooted (inert, undeletable until
 // reboot, and it halted four runs in one day). Teardown reports all three; only
 // `residue` gates the run.
+//
+// FOREIGN WORKTREES DEFER, NEVER HALT (fleet-config#1077). Pre-flight skips a
+// repo that already holds a worktree, but one can appear mid-run: on
+// 2026-09-27 a chief-dispatched lane created one ~10 minutes in, and the next
+// teardown in that repo read it as this run's residue and halted with 41
+// issues unstarted. Teardown now classifies extra worktrees with
+// skills/_lib/worktree_residue.py against everything this run created
+// (`ownWorktrees` below: every lane's reported worktree and branch, plus
+// `<repo>-wt-<N>` for every issue the run holds in that repo). Only a foreign,
+// clean, provably merged one passes -- reported in `foreignWorktrees`, and
+// the rest of that repo's issues go to `deferred` for the retry pass. The
+// run's own leftover, and any dirty or unmerged foreign one, still halts.
 
 const MAX_ROUNDS = 2
 
@@ -113,6 +125,7 @@ const TEARDOWN_RESULT_SCHEMA = {
     behindOriginDetail: { type: 'string' },
     zombieShells: { type: 'string' },
     foreignBranches: { type: 'string' },
+    foreignWorktrees: { type: 'string' },
   },
 }
 
@@ -193,8 +206,12 @@ Report via the required schema.`
 // The terminal step of every lane. fleet-config#518: the durable artifact of a
 // lane that did not ship is the GitHub issue plus a comment on it, never a
 // branch or a worktree left lying around for a human to find days later.
-function teardownPrompt(issue, lane) {
+function teardownPrompt(issue, lane, own) {
   const wt = lane.worktree || `E:\\automation\\${issue.repo}-wt-${issue.number}`
+  const ownArgs = [
+    ...own.paths.map(p => `--own-worktree '${p}'`),
+    ...own.branches.map(b => `--own-branch '${b}'`),
+  ].join(' ')
   const shipped = lane.status === 'merged'
   const commentStep = shipped
     ? `1. No issue comment needed — this one merged (${lane.pr || 'PR recorded'}).`
@@ -218,11 +235,17 @@ ${commentStep}
 5. From the primary checkout, delete the local lane branch if it still exists (\`git branch -D ${lane.branch || '<branch>'}\`) and make sure the primary is on its default branch, clean.
 6. VERIFY — do not assume any of the above worked. Run all six checks in the primary checkout and read the output. Checks 1–4 decide \`residue\`; checks 5 and 6 are **reported and never halt the run**.
 
-   **Check 1 — worktree registration.** \`git -C E:\\automation\\${issue.repo} worktree list\` → must list the primary only.
+   **Check 1 — worktree registration.** Classify every registered worktree past the primary against everything this run created. Its worktree paths and branches are passed in below; do not add or drop any:
+   \`E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/worktree_residue.py classify E:/automation/${issue.repo} ${ownArgs}\`
+   It prints one \`WORKTREE=… BRANCH=… CLASS=… REASON=…\` line per extra worktree, then \`VERDICT=\`. Take its verdict as given; do not re-judge a CLASS by your own reading.
+   - \`VERDICT=clean\` → the primary only. Passes.
+   - \`VERDICT=foreign-deferred\` → passes check 1. Every extra worktree is someone else's (it matches none of this run's paths or branches), clean, and its HEAD is proven merged into the default branch. Pre-flight defers any repo already holding a worktree, so this one appeared mid-run. On 2026-09-27 a chief-dispatched lane created one about ten minutes into the run; the old "primary only" rule read it as this run's residue, and the run halted with 41 issues unstarted (fleet-config#1077). Copy every \`WORKTREE=\` line into \`foreignWorktrees\` verbatim; the decision script defers this repo's remaining issues to the retry pass. **Never remove, prune or otherwise touch it**: it is not this run's.
+   - \`VERDICT=residue\` → RESIDUE: your own leftover (\`CLASS=own\`), or a foreign worktree that is dirty (\`foreign-dirty\`) or not proven merged (\`foreign-unmerged\`). Quote the \`WORKTREE=\` lines in \`detail\`. Leave foreign ones exactly as they are.
+   - \`VERDICT=unknown\`, or the command could not run → RESIDUE, never a pass. Quote its output in \`detail\`.
 
    **Check 2 — leftover sibling directory.** \`ls -d /e/automation/${issue.repo}-wt-* 2>/dev/null\`. Glob **only this lane's own repo name**, exactly as written — never a fleet-wide \`/e/automation/*-wt-*\`. Sweeps run concurrently across repos, so a fleet-wide glob makes this lane report another repo's in-flight worktree as its own residue; that happened on 2026-08-01 (app-launcher#709's lane flagged home-automation's live worktree). Keep it repo-scoped; this is not a thing to "simplify" later.
 
-   A hit is **residue by default**. It is not residue only when all five conditions below hold, each proved by running the command and reading its output — never inferred:
+   A hit whose path check 1 printed as \`CLASS=foreign-merged\` is that same foreign worktree and passes check 2. It is still registered, so the zombie-shell conditions below do not apply to it. Any other hit is **residue by default**. It is not residue only when all five conditions below hold, each proved by running the command and reading its output — never inferred:
 
    1. **Empty** — zero children, recursively: \`find '<path>' -mindepth 1 -print -quit\` prints nothing.
    2. **A real directory, not a reparse point/junction** — read the attribute bit explicitly: \`C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe -NoProfile -Command "(Get-Item -Force '<path>').Attributes"\` must not contain \`ReparsePoint\`. Do not infer this from the listing.
@@ -263,7 +286,7 @@ ${commentStep}
 
 If a directory refuses to delete because a process holds it (a leaked Playwright browser helper is the usual culprit — project-scaffolding#203), say exactly that in \`detail\`; do NOT kill processes you cannot identify and do NOT retry destructively.
 
-Report via the required schema. \`residue\` is **CLEAN** only when checks 1–4 came back exactly as described — with a leftover directory that satisfies all five zombie-shell conditions counting as passing check 2, and another lane's branch counting as passing check 3 — and if any of those checks could not be run, or came back ambiguous, that is RESIDUE, not CLEAN. A run-halting decision is made from this field, so a false CLEAN is far worse than an honest RESIDUE. Checks 5 and 6 never touch \`residue\` and never halt the run; report them in \`indexLock\`/\`indexLockDetail\` and \`behindOrigin\`/\`behindOriginDetail\`, along with \`zombieShells\` and \`foreignBranches\`, so they reach the human-facing summary. Narrowing what counts as *your* mess is not lowering the bar for it — your own leftover branch, worktree, or dirty tree is still RESIDUE and still halts the run.`
+Report via the required schema. \`residue\` is **CLEAN** only when checks 1–4 came back exactly as described — with a \`foreign-deferred\` classifier verdict counting as passing checks 1 and 2, a leftover directory that satisfies all five zombie-shell conditions counting as passing check 2, and another lane's branch counting as passing check 3 — and if any of those checks could not be run, or came back ambiguous, that is RESIDUE, not CLEAN. A run-halting decision is made from this field, so a false CLEAN is far worse than an honest RESIDUE. Checks 5 and 6 never touch \`residue\` and never halt the run; report them in \`indexLock\`/\`indexLockDetail\` and \`behindOrigin\`/\`behindOriginDetail\`, along with \`zombieShells\`, \`foreignBranches\` and \`foreignWorktrees\`, so they reach the human-facing summary. Narrowing what counts as *your* mess is not lowering the bar for it — your own leftover branch, worktree, or dirty tree is still RESIDUE and still halts the run.`
 }
 
 async function processIssue(bucket, issue) {
@@ -325,7 +348,7 @@ async function processIssue(bucket, issue) {
   }
 
   // Terminal step of every lane, no exceptions (fleet-config#518).
-  const teardown = await agent(teardownPrompt(issue, lane), {
+  const teardown = await agent(teardownPrompt(issue, lane, ownWorktrees(issue.repo, lane)), {
     phase: 'Teardown',
     label: `${bucket}:teardown:${issue.repo}#${issue.number}`,
     schema: TEARDOWN_RESULT_SCHEMA,
@@ -345,6 +368,7 @@ async function processIssue(bucket, issue) {
     behindOriginDetail: teardown ? teardown.behindOriginDetail : 'teardown agent returned no result',
     zombieShells: teardown ? teardown.zombieShells : undefined,
     foreignBranches: teardown ? teardown.foreignBranches : undefined,
+    foreignWorktrees: teardown ? teardown.foreignWorktrees : undefined,
   }
 }
 
@@ -357,6 +381,29 @@ const issuesByBucket = (rawArgs && rawArgs.issuesByBucket) || {}
 const bucketNames = Object.keys(issuesByBucket)
 const allResults = []
 let halted = null
+// fleet-config#1077: issues not started because a foreign worktree appeared in
+// their repo mid-run. Same item shape as step 5's skipped set, so the retry
+// pass (step 7b) re-gates both through repo_preflight.py together.
+const deferred = []
+const deferredRepos = {}
+
+// Everything this run created, or would create, per repo: `<repo>-wt-<N>` for
+// every issue it holds there, plus every worktree and branch a lane reported.
+// A registered worktree matching any of these is the run's own and still
+// halts; the match errs toward own on purpose.
+const runIssueNumbers = {}
+for (const issues of Object.values(issuesByBucket)) {
+  for (const it of issues || []) (runIssueNumbers[it.repo] = runIssueNumbers[it.repo] || new Set()).add(it.number)
+}
+const runLanes = {}
+
+function ownWorktrees(repo, lane) {
+  const lanes = [...(runLanes[repo] || []), lane]
+  const paths = new Set([...(runIssueNumbers[repo] || [])].map(n => `E:\\automation\\${repo}-wt-${n}`))
+  for (const l of lanes) if (l.worktree) paths.add(l.worktree)
+  const branches = new Set(lanes.map(l => l.branch).filter(Boolean))
+  return { paths: [...paths], branches: [...branches] }
+}
 
 for (const bucket of bucketNames) {
   if (halted) {
@@ -377,9 +424,18 @@ for (const bucket of bucketNames) {
   const results = []
   for (let i = 0; i < issues.length; i++) {
     const issue = issues[i]
+    if (deferredRepos[issue.repo]) {
+      deferred.push({
+        ...issue, bucket, repo_state: 'foreign-worktree',
+        skip_reason: `foreign worktree appeared mid-run: ${deferredRepos[issue.repo]}`,
+      })
+      log(`${bucket} [${i + 1}/${issues.length}]: deferred ${issue.repo}#${issue.number} — foreign worktree in the repo (fleet-config#1077)`)
+      continue
+    }
     log(`${bucket} [${i + 1}/${issues.length}]: starting ${issue.repo}#${issue.number}`)
     const r = await processIssue(bucket, issue)
     results.push(r)
+    ;(runLanes[issue.repo] = runLanes[issue.repo] || []).push({ worktree: r.worktree, branch: r.branch })
     log(`${bucket} [${i + 1}/${issues.length}]: ${issue.repo}#${issue.number} → ${r.status}, teardown ${r.residue}`)
 
     // Reported-only probes (#534) — surfaced in the stream so an overnight run
@@ -406,6 +462,14 @@ for (const bucket of bucketNames) {
       log(`HALT: ${issue.repo}#${issue.number} left residue — ${r.residueDetail}`)
       break
     }
+
+    // fleet-config#1077: a foreign, clean, merged worktree is not this run's
+    // mess and never halts, but the repo is no longer the one pre-flight
+    // cleared -- defer the rest of its work instead of building beside it.
+    if (r.foreignWorktrees && r.foreignWorktrees.trim()) {
+      deferredRepos[issue.repo] = r.foreignWorktrees.trim()
+      log(`  foreign worktree (not residue) — deferring the rest of ${issue.repo}: ${deferredRepos[issue.repo]}`)
+    }
   }
 
   const merged = results.filter(r => r.status === 'merged').length
@@ -416,4 +480,4 @@ for (const bucket of bucketNames) {
   allResults.push({ bucket, results })
 }
 
-return { buckets: allResults, halted }
+return { buckets: allResults, halted, deferred }
