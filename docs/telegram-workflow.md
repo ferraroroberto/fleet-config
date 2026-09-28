@@ -91,6 +91,30 @@ E:/automation/fleet-config/.venv/Scripts/python.exe ~/.claude/hooks/notify_send.
 
 `--chat` still wins when both are given; with neither, the CLI errors.
 
+**Multi-file send, sent ids and deletion** (#976, #982). Three more CLI modes, and the matching import surface, for callers that need to send an album or clean up after themselves (`ferraroroberto/automation#135` deletes its own chat's messages this way):
+
+```bash
+# 2-10 files as ONE Telegram message (sendMediaGroup); --text is the caption
+E:/automation/fleet-config/.venv/Scripts/python.exe ~/.claude/hooks/notify_send.py --category log --files a.png b.png c.png --text "batch"
+# report the sent message id(s) as a JSON list on stdout (logs stay on stderr)
+E:/automation/fleet-config/.venv/Scripts/python.exe ~/.claude/hooks/notify_send.py --category log --text "ping" --print-ids
+# delete the bot's own messages by id instead of sending anything
+E:/automation/fleet-config/.venv/Scripts/python.exe ~/.claude/hooks/notify_send.py --category log --delete-ids 101 102
+```
+
+```python
+import notify_send
+ids: list[int] = []
+notify_send.notify("hello", chat="-1004408175579", sent_ids=ids)                     # ids gains one id per chunk
+notify_send.upload_files(["a.png", "b.png"], chat="-1004408175579", caption="batch", sent_ids=ids)
+notify_send.delete_messages(ids, chat="-1004408175579")
+```
+
+- `--files` / `upload_files` take **2-10** paths (the `sendMediaGroup` bounds); any other count, or a missing file, logs and returns `False` / exit 1. Items are always `document`, never `photo` (same no-recompression rule as `--file`).
+- The caption lands on the **first item only**; over 1024 characters, the album goes uncaptioned and the body follows as its own message(s), exactly like `--file`. `--file`, `--files` and `--delete-ids` are mutually exclusive.
+- `sent_ids=` (import) / `--print-ids` (CLI) collect the `message_id` of every message an accepted send produced: one per `sendMessage` chunk, one per album item; a caller that passes nothing opts out.
+- `--delete-ids` / `delete_messages` batch in groups of 100 (the `deleteMessages` cap). Telegram silently skips ids it cannot delete (already gone, or older than 48 h), so `False` / exit 1 means the whole request failed, not one stale id.
+
 **Manual / conversational pings go here too.** When I ask a session to "ping me" or "notify me like you do when you finish a job" — *outside* a skill — the answer is still this CLI.
 
 ### The three Bot API constraints the transport absorbs
