@@ -143,6 +143,7 @@ fleet-config/
 ├── architecture/                   # fleet architecture + config maps: fleet.data.js / config.data.js (source of truth), rendered system-map.png / config-map.png / *.mmd, ARCHITECTURE.md
 ├── docs/                           # durable topic references, one file per topic (+ architecture.mmd, this repo's own internal diagram) — enumerating them here only goes stale; see the directory
 ├── tests/run_acceptance.py         # drives each hook with a sample stdin payload
+├── tests/_lib/cpu_burn.py          # red-under-load proofs: burners + command under proof at below-normal priority, so a burn can't starve scheduled jobs (fleet-config#1076)
 ├── settings.template.json          # the `hooks` block to merge into your ~/.claude/settings.json (Claude)
 ├── codex/                          # versioned Codex model policy data — agents/{easy,normal,hard}.toml role bindings + model_catalog.json, read by codex_model_policy.py
 └── codex-hooks.json                # exposed as ~/.codex/hooks.json (symlink) — Codex hook wiring (direct Python commands)
