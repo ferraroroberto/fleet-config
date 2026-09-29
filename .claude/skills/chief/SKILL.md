@@ -211,6 +211,11 @@ just the launcher call):
   is given without `--yolo-confirmed`, or if the brief file is missing or
   empty. Pass `--yolo-confirmed` only when the user's message contained the
   literal word "yolo".
+  **Check running fleet jobs first** (the `board` digest's `fleet jobs
+  running:` line): `dispatch` prints `WARNING=fleet-job-running job=<id>`
+  while one runs and refuses a fleet-wide brief (`/propagate-vendored`,
+  `/cleanup-fleet`) until it finishes. Prefer waiting for a fleet-wide job
+  to finish over `--allow-during-fleet-job` (fleet-config#1078).
   **The brief goes in `--brief-file`, at dispatch time, always**
   (fleet-config#944). Write it to a scratch file first. The launcher stores
   it and launches the lane as `/issue-<mode> <N> --brief <path>` (echoed back
