@@ -511,7 +511,7 @@ check(wc.format_primary_state(False, "working tree has uncommitted changes")
       == "PRIMARY=stale reason=working tree has uncommitted changes",
       "format_primary_state: refusal carries the reason verbatim")
 check(wc.format_primary_state(True, "ok", behind=2)
-      == "PRIMARY=stale reason=still 2 behind after pull --ff-only",
+      == "PRIMARY=stale reason=still 2 behind after the fast-forward",
       "format_primary_state: pull ran but tree still behind -> stale, not live")
 for unknown in (None, -1):
     check(wc.format_primary_state(True, "ok", behind=unknown)

@@ -100,6 +100,9 @@ const EXECUTE_RESULT_SCHEMA = {
     pr: { type: 'string' },
     mergeSha: { type: 'string' },
     reason: { type: 'string' },
+    // land-primary's RESTORED_UNTRACKED=/KEPT_ASIDE= lines, verbatim: live
+    // files the merge untracked, kept through the fast-forward (fleet-config#1086).
+    restoredUntracked: { type: 'string' },
   },
 }
 
@@ -126,6 +129,7 @@ const TEARDOWN_RESULT_SCHEMA = {
     zombieShells: { type: 'string' },
     foreignBranches: { type: 'string' },
     foreignWorktrees: { type: 'string' },
+    restoredUntracked: { type: 'string' },
   },
 }
 
@@ -151,8 +155,9 @@ ${ISOLATION_RULES}
    If /issue-start's own pre-flight reports the issue is already closed, STOP immediately — do not force scope onto a closed issue. Report status: "failed", verification: "SKIPPED", retryable: false, reason: "issue already closed", and alreadyClosed: true, then skip straight to the report at the end (do not attempt steps 3-4).
 3. Build the change.
 4. Run the project's verification gate per its CLAUDE.md (e.g. \`C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe -File scripts/verify-before-ship.ps1\`). It must exit 0. If the project has no checker, say so explicitly in your report and treat verification as SKIPPED, not PASS.
-5. Commit your work on the branch — \`git add\` the files you changed and \`git commit\` them (conventional \`type: subject\` message, no AI-attribution trailer). Your handoff artefact is a **committed branch**, not a dirty working tree: uncommitted work has no SHA, so an escalation or a crash between here and the next agent loses it outright instead of parking it recoverably in the reflog (fleet-config#641). If you genuinely changed nothing, commit nothing and say so — a clean tree with no new commits is a valid report, a dirty tree never is.
-6. STOP. Do NOT push, open a PR, merge, or run /issue-finish — a separate agent validates this before anything ships. "Do not ship" does not mean "do not commit": step 5 is required, and only the four actions named here are forbidden.${retryNote}
+5. If your change untracks a file — \`git rm --cached\`, a rename to \`.sample\`, or a \`.gitignore\` line over a tracked path — name each path in \`summary\`. Every checkout that pulls it would lose its live copy; the ship step preserves them and the PR body must say so (fleet-config#1086).
+6. Commit your work on the branch — \`git add\` the files you changed and \`git commit\` them (conventional \`type: subject\` message, no AI-attribution trailer). Your handoff artefact is a **committed branch**, not a dirty working tree: uncommitted work has no SHA, so an escalation or a crash between here and the next agent loses it outright instead of parking it recoverably in the reflog (fleet-config#641). If you genuinely changed nothing, commit nothing and say so — a clean tree with no new commits is a valid report, a dirty tree never is.
+7. STOP. Do NOT push, open a PR, merge, or run /issue-finish — a separate agent validates this before anything ships. "Do not ship" does not mean "do not commit": step 6 is required, and only the four actions named here are forbidden.${retryNote}
 
 Issue #${issue.number}: ${issue.title}
 The full issue text is already read by /issue-start. If needed, fetch the current text with \`gh issue view ${issue.number} --repo ferraroroberto/${issue.repo}\`.
@@ -195,7 +200,7 @@ function executePrompt(issue, build) {
 ${ISOLATION_RULES}
 
 1. \`cd\` into that worktree, confirm you're on branch ${build.branch}.
-2. Run the /issue-finish flow for this branch as an unattended finish (its step-1 acceptance audit runs \`tally --unattended\`; ACCEPTANCE=blocked is a FAILED ship, report it): push, gh pr create, CI-advisory wait (unless the diff is provably CI-unrelated per /issue-yolo's rule), then merge + land per /issue-finish step 5's WORKTREE branch — you are in a worktree, so \`gh pr merge <PR> --merge\` with NO --delete-branch (it fails its local half) and NO \`git checkout main\`; then remove-worktree, then \`worktree_claim.py land-primary <repo> ${issue.number}\`, then delete the branch refs explicitly. Report its PRIMARY=live/PRIMARY=stale line — a merged PR that never reached the primary is not live. Tray restart per the repo's CLAUDE.md. /issue-finish owns the worktree teardown for a successful ship — let it run its own teardown rather than hand-rolling one.
+2. Run the /issue-finish flow for this branch as an unattended finish (its step-1 acceptance audit runs \`tally --unattended\`; ACCEPTANCE=blocked is a FAILED ship, report it): push, gh pr create, CI-advisory wait (unless the diff is provably CI-unrelated per /issue-yolo's rule), then merge + land per /issue-finish step 5's WORKTREE branch — you are in a worktree, so \`gh pr merge <PR> --merge\` with NO --delete-branch (it fails its local half) and NO \`git checkout main\`; then remove-worktree, then \`worktree_claim.py land-primary <repo> ${issue.number}\`, then delete the branch refs explicitly. Report its PRIMARY=live/PRIMARY=stale line — a merged PR that never reached the primary is not live. If land-primary also printed \`RESTORED_UNTRACKED=\` or \`KEPT_ASIDE=\` lines (live files the merge untracked, kept through the fast-forward — fleet-config#1086), copy them verbatim into \`restoredUntracked\`; a \`KEPT_ASIDE\` file is only in its stash dir and needs a human. Tray restart per the repo's CLAUDE.md. /issue-finish owns the worktree teardown for a successful ship — let it run its own teardown rather than hand-rolling one.
 3. Fire the /issue-finish completion ping via notify_complete.py --kind finish — do NOT use any MCP chat tool to pick a channel yourself, the helper resolves it from projects.toml.
 
 If anything fails, do not force it through — leave the branch and PR (if any) as-is and report FAILED with the reason. Never guess-fix a shipping failure. A dedicated teardown agent runs after you either way.
@@ -279,14 +284,14 @@ ${commentStep}
    **Check 6 — primary current with origin (reported, never halts).** Clean is not current: a primary sitting eleven commits behind \`origin/main\` passes checks 1–4, and any later verification reading that working copy misreports shipped work as absent.
    - \`git -C E:\\automation\\${issue.repo} fetch origin\`, then \`git -C E:\\automation\\${issue.repo} rev-list --count HEAD..origin/<default-branch>\`.
    - \`0\` → \`behindOrigin: "current"\`.
-   - Non-zero, **and check 4 came back clean** (empty porcelain, HEAD on the default branch) → \`git -C E:\\automation\\${issue.repo} pull --ff-only\`. On success \`behindOrigin: "fast-forwarded"\`, with the commit delta and the before/after SHAs in \`behindOriginDetail\`. **Never a merge, never a rebase, never a reset, never \`--force\`.**
+   - Non-zero, **and check 4 came back clean** (empty porcelain, HEAD on the default branch) → \`E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/untrack_guard.py fast-forward E:\\automation\\${issue.repo} --ref origin/<default-branch>\`, never a bare \`git pull\`: a plain pull deletes every live file an incoming merge untracks, ignored or not, and the guard keeps them (fleet-config#1086). \`FF=done\` → \`behindOrigin: "fast-forwarded"\`, with the commit delta and the before/after SHAs in \`behindOriginDetail\`; copy a \`RESTORED_UNTRACKED=\` line (unless it says \`none\`) and every \`KEPT_ASIDE=\` line verbatim into \`restoredUntracked\`. **Never a merge, never a rebase, never a reset, never \`--force\`.**
    - Gate this on check 4 alone — what makes a pull unsafe is a dirty tree or HEAD off the default branch, not the mere existence of other refs. Gating it on check 3 too meant one foreign branch withheld the fast-forward from a perfectly healthy primary and left it two commits behind, which is precisely the "clean is not current" failure this check exists to prevent (fleet-config#572).
    - Never pull over an unclean primary. If check 4 failed (wrong branch, dirty tree), do **not** attempt the fast-forward at all → \`behindOrigin: "unknown"\` naming the count and the reason. This lane is already RESIDUE; mutating the tree on top of that would destroy the evidence a human needs.
-   - The fast-forward is refused (diverged history), the fetch failed, or check 5 left the lock in place (\`live-held\`/\`unknown\`) → \`behindOrigin: "unknown"\` with the reason. Do not escalate to any other kind of pull.
+   - The fast-forward is refused (\`FF=refused\`: diverged history, or a range the guard could not list), the fetch failed, or check 5 left the lock in place (\`live-held\`/\`unknown\`) → \`behindOrigin: "unknown"\` with the reason. Do not escalate to any other kind of pull.
 
 If a directory refuses to delete because a process holds it (a leaked Playwright browser helper is the usual culprit — project-scaffolding#203), say exactly that in \`detail\`; do NOT kill processes you cannot identify and do NOT retry destructively.
 
-Report via the required schema. \`residue\` is **CLEAN** only when checks 1–4 came back exactly as described — with a \`foreign-deferred\` classifier verdict counting as passing checks 1 and 2, a leftover directory that satisfies all five zombie-shell conditions counting as passing check 2, and another lane's branch counting as passing check 3 — and if any of those checks could not be run, or came back ambiguous, that is RESIDUE, not CLEAN. A run-halting decision is made from this field, so a false CLEAN is far worse than an honest RESIDUE. Checks 5 and 6 never touch \`residue\` and never halt the run; report them in \`indexLock\`/\`indexLockDetail\` and \`behindOrigin\`/\`behindOriginDetail\`, along with \`zombieShells\`, \`foreignBranches\` and \`foreignWorktrees\`, so they reach the human-facing summary. Narrowing what counts as *your* mess is not lowering the bar for it — your own leftover branch, worktree, or dirty tree is still RESIDUE and still halts the run.`
+Report via the required schema. \`residue\` is **CLEAN** only when checks 1–4 came back exactly as described — with a \`foreign-deferred\` classifier verdict counting as passing checks 1 and 2, a leftover directory that satisfies all five zombie-shell conditions counting as passing check 2, and another lane's branch counting as passing check 3 — and if any of those checks could not be run, or came back ambiguous, that is RESIDUE, not CLEAN. A run-halting decision is made from this field, so a false CLEAN is far worse than an honest RESIDUE. Checks 5 and 6 never touch \`residue\` and never halt the run; report them in \`indexLock\`/\`indexLockDetail\` and \`behindOrigin\`/\`behindOriginDetail\` (plus \`restoredUntracked\`), along with \`zombieShells\`, \`foreignBranches\` and \`foreignWorktrees\`, so they reach the human-facing summary. Narrowing what counts as *your* mess is not lowering the bar for it — your own leftover branch, worktree, or dirty tree is still RESIDUE and still halts the run.`
 }
 
 async function processIssue(bucket, issue) {
@@ -331,7 +336,7 @@ async function processIssue(bucket, issue) {
         schema: EXECUTE_RESULT_SCHEMA,
       })
       if (shipped && shipped.result === 'MERGED') {
-        lane = { ...lane, status: 'merged', round, pr: shipped.pr, mergeSha: shipped.mergeSha, reason: null }
+        lane = { ...lane, status: 'merged', round, pr: shipped.pr, mergeSha: shipped.mergeSha, reason: null, restoredUntracked: shipped.restoredUntracked }
       } else {
         lane = { ...lane, status: 'failed', round, reason: shipped ? shipped.reason : 'execute agent returned no result' }
       }
@@ -369,6 +374,10 @@ async function processIssue(bucket, issue) {
     zombieShells: teardown ? teardown.zombieShells : undefined,
     foreignBranches: teardown ? teardown.foreignBranches : undefined,
     foreignWorktrees: teardown ? teardown.foreignWorktrees : undefined,
+    // Both fast-forwards can keep a live file (land-primary at ship, check 6
+    // at teardown); the lane result reports every one (fleet-config#1086).
+    restoredUntracked: [lane.restoredUntracked, teardown && teardown.restoredUntracked]
+      .filter(v => v && v.trim()).join('; ') || undefined,
   }
 }
 
@@ -444,6 +453,7 @@ for (const bucket of bucketNames) {
     if (r.behindOrigin !== 'current') log(`  behind origin: ${r.behindOrigin} — ${r.behindOriginDetail || 'no detail reported'}`)
     if (r.zombieShells) log(`  zombie-pinned shells (not residue): ${r.zombieShells}`)
     if (r.foreignBranches) log(`  foreign branches (not residue): ${r.foreignBranches}`)
+    if (r.restoredUntracked) log(`  live files kept through the fast-forward (fleet-config#1086): ${r.restoredUntracked}`)
     if (r.alreadyClosed) log(`  already closed mid-run (fleet-config#623) — no teardown comment posted`)
 
     // Anti-cascade gate. A lane that could not be returned to clean stops the

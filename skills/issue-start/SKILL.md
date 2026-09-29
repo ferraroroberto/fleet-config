@@ -149,8 +149,14 @@ In parallel:
     `ASSERT_OWNER=pass` → proceed. `ASSERT_OWNER=refuse: <reason>` → stop and
     report the reason — do not checkout or pull; something else claimed this
     tree, or it went dirty, between step 0's `acquire` and here.
-  - `git checkout <main>` then `git pull --ff-only`. If the pull is not a
-    fast-forward, stop and report — don't merge or rebase blindly.
+  - `git checkout <main>`, then fast-forward it through the untrack guard —
+    never a bare `git pull`, which deletes every live file an incoming merge
+    untracks (fleet-config#1086):
+    ```
+    E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/untrack_guard.py fast-forward .
+    ```
+    `FF=refused` → stop and report — don't merge or rebase blindly. Report any
+    `RESTORED_UNTRACKED=`/`KEPT_ASIDE=` line it prints.
 
 ### 5. Cut the feature branch
 

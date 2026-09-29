@@ -55,7 +55,9 @@ From the repo root, all must pass:
 - Concurrency claim free:
   `E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/worktree_claim.py status .`
   → must print `CLAIM=free`. Held → stop; another session owns this repo.
-- `git pull --ff-only` (not fast-forwardable → stop and report).
+- `E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/untrack_guard.py fast-forward .` — a fast-forward that keeps every live file an incoming merge
+  untracks, never a bare `git pull` (fleet-config#1086). `FF=refused` → stop
+  and report; report any `RESTORED_UNTRACKED=`/`KEPT_ASIDE=` line.
 
 ### 2. Ephemeral branch — edits never happen on `main`
 

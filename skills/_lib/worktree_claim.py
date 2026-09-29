@@ -161,9 +161,12 @@ Subcommands:
       Make a worktree lane's merge *live*: fast-forward the primary checkout,
       or report why it couldn't. Same guard as assert-owner (clean tree, claim
       free or owned by <issue-N>) plus "already on the default branch", then
-      `pull --ff-only` and a `rev-list --count HEAD..origin/<default>` check.
-      Prints one `PRIMARY=live behind=0` / `PRIMARY=stale reason=<why>` line in
-      every outcome -- the line the finish summary quotes. Exit 0 only when
+      a guarded `merge --ff-only` (untrack_guard.py: every live file the merge
+      untracks is kept, fleet-config#1086) and a `rev-list --count
+      HEAD..origin/<default>` check. Prints one `PRIMARY=live behind=0` /
+      `PRIMARY=stale reason=<why>` line in every outcome -- the line the finish
+      summary quotes -- plus `RESTORED_UNTRACKED=` / `KEPT_ASIDE=` lines when
+      the guard kept a file. Exit 0 only when
       live. Never checks out, stashes or forces the primary: a refusal is
       reported, not recovered. Fleet-config#647.
 
@@ -240,6 +243,7 @@ from no_window import NO_WINDOW  # noqa: E402
 # FSM. `land-primary` is only its first caller, so it imports the one verdict
 # it needs rather than re-exporting the subsystem it no longer owns.
 from service_probe import service_state  # noqa: E402
+from untrack_guard import guarded_fast_forward, report_lines as untrack_report_lines  # noqa: E402
 from utf8_stdio import ensure_utf8_stdio  # noqa: E402
 # Worktree runtime-config provisioning (ports + machine-bound value blanking)
 # lives in its own module (fleet-config#731). The private names are imported
@@ -404,7 +408,8 @@ def land_primary_check(
     and `skills/` reach `~/.claude` through junctions rooted at the primary, so
     a merged hook or skill change does nothing fleet-wide until that tree moves.
 
-    The landing is a `pull --ff-only` and nothing else. `owner_check` supplies
+    The landing is a fast-forward and nothing else (guarded by
+    `untrack_guard`, fleet-config#1086). `owner_check` supplies
     the "is this tree anyone else's to touch?" half; the branch check enforces
     the other half -- only ever pull a tree *already sitting on* its default
     branch, because a worktree lane must never `git checkout` the primary.
@@ -459,7 +464,7 @@ def format_primary_state(ok: bool, reason: str, behind: Optional[int] = None) ->
         return "PRIMARY=live behind=0"
     if behind is None or behind < 0:
         return "PRIMARY=stale reason=could not count commits behind origin"
-    return f"PRIMARY=stale reason=still {behind} behind after pull --ff-only"
+    return f"PRIMARY=stale reason=still {behind} behind after the fast-forward"
 
 
 def try_acquire(
@@ -524,7 +529,7 @@ def count_behind(repo: Path, ref: str, *, fetch: bool = True) -> Optional[int]:
     a false `PRIMARY=live behind=0` is the one error direction this guard
     cannot afford. `land-primary` runs right after a `gh pr merge` that never
     touched local refs, so the stale case is the *normal* one, not the corner.
-    Pass `fetch=False` after a `pull --ff-only` has already fetched.
+    Pass `fetch=False` when the ref was already fetched.
 
     A failed fetch, a failed `rev-list`, or output that isn't a number returns
     `None` -- not 0. An uncountable distance is unknown, and unknown is never
@@ -1449,14 +1454,16 @@ def cmd_land_primary(args: argparse.Namespace) -> int:
         # produced, so there is no pull to run and no service to skew (#671).
         print(format_primary_state(True, reason, 0))
         return 0
-    pull = _git(repo, "pull", "--ff-only", check=False)
-    if pull.returncode != 0:
-        detail = ((pull.stderr or "") + (pull.stdout or "")).strip().splitlines()
-        print(format_primary_state(False, f"pull --ff-only failed: {detail[0] if detail else '?'}"))
+    # A plain `pull --ff-only` deletes every live file the merge untracks,
+    # ignored or not -- the guard keeps and reports them (fleet-config#1086).
+    ff = guarded_fast_forward(repo, ref)
+    if not ff.ok:
+        print(format_primary_state(False, f"fast-forward failed: {ff.detail}"))
         return 1
-    behind = count_behind(repo, ref, fetch=False)           # the pull just fetched
-    line = format_primary_state(True, reason, behind)
-    print(line)
+    behind = count_behind(repo, ref, fetch=False)           # count_behind fetched above
+    print(format_primary_state(True, reason, behind))
+    for line in untrack_report_lines(ff):
+        print(line)
     return 0 if behind == 0 else 1
 
 

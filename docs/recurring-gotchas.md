@@ -92,6 +92,14 @@ if sys.platform == "win32":
 
 **Never delete a lock on agent authority.** It is another process's file. Report it; the owner decides. The 2026-09-20 clear-out was 22 removals on explicit instruction, each re-verified 0-byte and `stale` with no `git` process running.
 
+## Untracking a live config deletes it on pull
+
+Untracking a machine-local file in a merge — `git rm --cached` plus a `.gitignore` line, or a rename to `<name>.sample` — is correct for the repo, and it **deletes the live copy from every checkout that later fast-forwards over it**. Git removes a working-tree file whose path the incoming commit drops from the index, even though the path is ignored afterwards. The pull exits 0 and `git status` reads clean, because the file is now both absent and ignored; the first sign is whatever reads the config next.
+
+On 2026-09-28 the `/cleanup-fleet-all` lane for automation#144 (commit 7118da7) fixed the audit finding "machine-local JSON configs are tracked" exactly that way, and its own `land-primary` fast-forward took nine live configs out of the `automation` primary. The nightly Folder Searcher job failed the next day on a missing config (fleet-config#1086). The gate and the reviewer never saw it: the lane built in a worktree, and the loss only happens at the primary's fast-forward. Recovery is `git show <untracking-commit>^:<path>` into the primary for each lost file; once ignored, a restored file is never recommitted.
+
+**The rules.** Every fast-forward of a live checkout goes through `skills/_lib/untrack_guard.py` (`fast-forward <repo> [--ref <ref>]`, or `guarded_fast_forward()` in-process), never a bare `git pull` — it preserves each live file the range deletes or renames away and puts back the ones that are ignored afterwards, reporting them as `RESTORED_UNTRACKED=` / `KEPT_ASIDE=`. A change that untracks a file names each path in its PR body. Any other repo that syncs live checkouts needs the same guard over its own pulls.
+
 ## Windows ephemeral port exhaustion takes down the whole fleet at once
 
 Symptom: **all** local web apps unresponsive at once (any subset of app-launcher/home-automation/whatsapp-radar/voice-transcriber/local-llm-hub), dead 1–4 min, self-heals with no restart, no code change. Simultaneity across independent processes is the tell — a shared kernel resource, not one app's diff. Cause: dynamic port range `49152–65535` (16,384 ports), `TcpTimedWaitDelay` unset → every closed outbound connection parks in `TIME_WAIT` ~120 s; a burst drains the range and **no process on the box can open an outbound socket** until it drains. (`fleet-config`#440.)
