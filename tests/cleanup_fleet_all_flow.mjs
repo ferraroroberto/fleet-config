@@ -500,5 +500,39 @@ const FOREIGN_LINE = 'WORKTREE=E:/automation/alpha-wt-nav-41af40a BRANCH=chore/r
     'SKILL.md documents restoredUntracked')
 }
 
+// --- Case 16: ship-gate invariants (fleet-config#1065) ---------------------
+// A self-contradictory Build or Validate reply (a PASS claim paired with a
+// contradicting field) must never let a lane ship, whatever the agent's own
+// `retryable`/`pass` claims say. This is the property the workflow script
+// itself must now enforce (previously only the cleanup_workflow.cjs bridge
+// checked it, so the native Workflow path could ship past it).
+{
+  // A build claiming 'PASS' verification but 'failed' status is coerced to a
+  // failed build, not trusted as a pass straight to Validate.
+  const { sink, agentImpl } = tracker(l => {
+    if (l.includes(':build:')) return { status: 'failed', verification: 'PASS', retryable: false }
+    return reply(l, {})
+  })
+  sink.args = { issuesByBucket: { bug: ISSUES.bug } }
+  const res = await makeRunner(agentImpl, sink)
+  const r = res.buckets[0].results[0]
+  check(r.status === 'escalated', 'a PASS/failed build is never trusted as a pass')
+  check(!sink.order.includes('bug:validate:charlie#3'), 'no validate after an inconsistent build result')
+  check(r.reason === 'failed build cannot pass verification', 'the invariant names itself in the escalation reason')
+}
+{
+  // A verdict claiming pass:true but verification:FAIL is coerced to a fail,
+  // never shipped.
+  const { sink, agentImpl } = tracker(l => {
+    if (l.includes(':validate:')) return { pass: true, feedback: 'looks fine', verification: 'FAIL' }
+    return reply(l, {})
+  })
+  sink.args = { issuesByBucket: { bug: ISSUES.bug } }
+  const res = await makeRunner(agentImpl, sink)
+  const r = res.buckets[0].results[0]
+  check(!sink.order.includes('bug:execute:charlie#3'), 'a pass:true/verification:FAIL verdict is never executed')
+  check(r.status === 'escalated', 'the inconsistent verdict escalates instead of shipping')
+}
+
 console.log(failures === 0 ? '\nALL CONTROL-FLOW CHECKS PASS' : `\n${failures} CHECK(S) FAILED`)
 process.exit(failures === 0 ? 0 : 1)

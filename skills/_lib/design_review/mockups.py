@@ -22,8 +22,13 @@ stdlib only; the CSS these partials rely on is `CSS`, inlined by `report.py`.
 from __future__ import annotations
 
 import html
+import sys
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Callable, Dict, List, Optional, Tuple
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))  # skills/_lib, as design_review.rubric does
+from design_lint.colormath import _hex, composite, contrast, parse_color  # noqa: E402
 
 NONE = "none"
 NON_TEXT_AA = 3.0  # WCAG 2.2 SC 1.4.11 Non-text Contrast — the floor COLOR-03's standard cites
@@ -170,17 +175,16 @@ def aa_background(fg_hex: str, bg_hex: str, need: float) -> Optional[Tuple[str, 
     pair measures `need`: `(hex, ratio, "black"|"white")`, or None if neither
     direction gets there. A computed example for the mock-up, not a token
     choice — the note says so."""
-    from . import evaluate as ev  # lazy: evaluate -> rubric -> mockups would otherwise be a cycle
-    fg, bg = ev.parse_color(fg_hex, {}), ev.parse_color(bg_hex, {})
+    fg, bg = parse_color(fg_hex, {}), parse_color(bg_hex, {})
     if fg is None or bg is None:
         return None
     found: List[Tuple[int, str, float, str]] = []  # (steps, hex, ratio, pole) — fewest steps wins
     for name, pole in (("black", (0.0, 0.0, 0.0, 1.0)), ("white", (255.0, 255.0, 255.0, 1.0))):
         for step in range(0, 51):
-            mix = ev.composite((pole[0], pole[1], pole[2], step / 50.0), bg)
-            ratio = ev.contrast(fg, mix)
+            mix = composite((pole[0], pole[1], pole[2], step / 50.0), bg)
+            ratio = contrast(fg, mix)
             if ratio >= need:
-                found.append((step, ev._hex(mix), round(ratio, 2), name))
+                found.append((step, _hex(mix), round(ratio, 2), name))
                 break
     if not found:
         return None

@@ -109,7 +109,7 @@ import subprocess
 import sys
 import time
 from pathlib import Path
-from typing import Optional
+from typing import List, Optional, Tuple
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import fleet_toml  # noqa: E402
@@ -692,6 +692,140 @@ def _provision_copied_config(dst: Path, wt: Path, assigned: "set",
               f"{', '.join(read_safe_keys)} ({dst.name})", file=sys.stderr)
 
 
+def _config_dir_candidates(repo: Path) -> list:
+    """`config/*.json` under `repo`, minus `*.sample.json` templates, sorted.
+
+    The one candidate-discovery rule `copy_runtime_config` and
+    `provisioned_configs` both need (fleet-config#1065) -- kept as a single
+    function so a lane preflighting an already-provisioned worktree can never
+    see a different candidate set than the one a real `copy_runtime_config`
+    call would have copied.
+    """
+    src_dir = repo / "config"
+    if not src_dir.is_dir():
+        return []
+    return sorted(p for p in src_dir.glob("*.json") if not p.name.endswith(".sample.json"))
+
+
+def _root_config_candidates(repo: Path) -> list:
+    """Root-level `*.json` under `repo` that git considers ignored, sorted.
+
+    `copy_root_config`'s and `provisioned_configs`'s shared discovery rule,
+    same reasoning as `_config_dir_candidates`.
+    """
+    candidates = sorted(p.name for p in repo.glob("*.json") if not p.name.endswith(".sample.json"))
+    return [repo / name for name in sorted(_git_check_ignore(repo, candidates))]
+
+
+def provisioned_configs(checkout: Path) -> list:
+    """The gitignored runtime configs a worktree setup would have provisioned
+    in `checkout` -- `config/*.json` minus templates, plus root-level
+    `*.json` git considers ignored. Shares its candidate discovery with
+    `copy_runtime_config` / `copy_root_config` (`_config_dir_candidates` /
+    `_root_config_candidates`) so there is exactly one place that decides
+    which files a worktree's runtime config actually is; a preflight and a
+    real setup could otherwise silently drift apart on what counts
+    (fleet-config#1065). Called on the checkout itself (not the primary): the
+    candidates it finds are already destination paths.
+    """
+    return _config_dir_candidates(checkout) + _root_config_candidates(checkout)
+
+
+def _unsafe_config_keys(raw: object, declared_keys: Optional[list],
+                        read_safe_keys: list) -> list:
+    """Dotted keys in a provisioned config that still hold a machine-bound value.
+
+    The check that makes incident 2 of fleet-config#937 impossible to repeat:
+    a lane that hand-restored a path to make its instance boot has no way to
+    know whether that path is read or written, and restoring a written one
+    points the test instance at the owner's live state. Anything the
+    provisioning pass would have emptied, and that is not *declared*
+    read-safe, is reported unsafe. Fail-closed: an undeclared key is unsafe,
+    never assumed fine.
+
+    Which "provisioning pass" is the repo's own choice, and the two modes are
+    asked the same question in their own terms. A repo that declares
+    `blank_config_keys` has named its blanking set exactly, so only those keys
+    are checked and the heuristic is not second-guessed; a repo that declares
+    nothing gets the heuristic, minus its declared read-safe keys.
+
+    `raw` is the already-parsed config. Both blanking passes mutate what they
+    are given and report what they actually emptied -- on an already-blank copy
+    they report nothing, which is the pass -- so this must be handed a
+    throwaway parse, never a structure the caller goes on to use.
+    """
+    if not isinstance(raw, dict):
+        return []
+    if declared_keys is not None:
+        return _blank_declared_keys(raw, declared_keys)
+    return _blank_default_heuristic(raw, read_safe=frozenset(read_safe_keys))
+
+
+def check_provisioned_configs(checkout: Path, declared_keys: Optional[list],
+                              read_safe_keys: list) -> Tuple[List[str], List[str]]:
+    """Re-verify every already-provisioned config in `checkout` is still safe
+    to boot: no undeclared machine-bound value survived a hand-restore
+    (`_unsafe_config_keys`), and no other live worktree already holds the same
+    port. `(failures, unknowns)`; also **reserves** each config's port for
+    `checkout` as a side effect (see the `side-instance-preflight` docstring in
+    `worktree_claim.py` for why observing alone is not enough). Every
+    `CONFIG_UNSAFE=`/`PORT=` line this prints is the one the CLI has always
+    printed; only the discovery and the check itself moved here, next to
+    `provisioned_configs` and the blanking helpers they share (fleet-config#1065).
+    """
+    failures: List[str] = []
+    unknowns: List[str] = []
+    held = str(checkout.resolve())
+    reservations = port_reservations()
+    for dst in provisioned_configs(checkout):
+        rel = dst.relative_to(checkout).as_posix()
+        try:
+            raw = json.loads(dst.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            # Same fail-open read the provisioning pass uses: a config that
+            # isn't ours to parse is the app's business to complain about.
+            continue
+        # Read the port first: `_unsafe_config_keys` blanks the structure it is
+        # given in order to learn what would have been blanked.
+        port = raw.get("port") if isinstance(raw, dict) else None
+        unsafe = _unsafe_config_keys(raw, declared_keys, read_safe_keys)
+        if unsafe:
+            failures.append(f"{rel} holds machine-bound values for undeclared keys: "
+                            f"{', '.join(unsafe)}")
+            print(f"CONFIG_UNSAFE={rel}: {', '.join(unsafe)}")
+        if not isinstance(port, int) or isinstance(port, bool):
+            continue
+        # Claim it rather than merely observing it. A config provisioned before
+        # reservations existed holds an unreserved port, and reporting that as
+        # `unknown` forever would make the check observational -- it would name
+        # the risk it is here to remove. Reserving on the spot makes the answer
+        # total: either this checkout now holds the port exclusively, or
+        # somebody else does and that is a real collision.
+        row = reservations.get(port)
+        if row is not None and row.get("worktree") != held:
+            print(f"PORT={port} config={rel} reservation=HELD BY {row.get('worktree')}")
+            failures.append(f"{rel}'s port {port} is reserved by "
+                            f"{row.get('worktree')} — two instances would collide")
+            continue
+        try:
+            holder = reserve_port(port, checkout, rel)
+        except (OSError, TimeoutError) as exc:
+            print(f"PORT={port} config={rel} reservation=unavailable "
+                  f"({exc.__class__.__name__})")
+            unknowns.append(f"{rel}'s port {port} could not be reserved, so "
+                            f"exclusivity is not established")
+            continue
+        if holder is not None:
+            print(f"PORT={port} config={rel} reservation=HELD BY {holder}")
+            failures.append(f"{rel}'s port {port} is reserved by {holder} — "
+                            f"two instances would collide")
+            continue
+        claimed = "" if row is not None else "  (claimed now)"
+        listening = "" if _port_is_free(port) else "  (already listening)"
+        print(f"PORT={port} config={rel} reservation=this checkout{claimed}{listening}")
+    return failures, unknowns
+
+
 def copy_runtime_config(repo: Path, wt: Path, assigned: Optional["set"] = None) -> list:
     """Copy the primary's gitignored `config/*.json` into a fresh worktree.
 
@@ -726,17 +860,15 @@ def copy_runtime_config(repo: Path, wt: Path, assigned: Optional["set"] = None) 
     (fleet-config#714 review).
     """
     copied = []
-    src_dir = repo / "config"
-    if not src_dir.is_dir():
+    candidates = _config_dir_candidates(repo)
+    if not candidates:
         return copied
     dst_dir = wt / "config"
     assigned = set() if assigned is None else assigned
     declared_keys = worktree_blank_config_keys(repo)
     secret_keys = worktree_secret_config_keys(repo)
     read_safe_keys = worktree_read_safe_config_keys(repo)
-    for src in sorted(src_dir.glob("*.json")):
-        if src.name.endswith(".sample.json"):
-            continue
+    for src in candidates:
         dst = dst_dir / src.name
         if dst.exists():
             continue
@@ -808,17 +940,15 @@ def copy_root_config(repo: Path, wt: Path, assigned: Optional["set"] = None) -> 
     file and a root-level file can't be repointed to the same port.
     """
     copied = []
-    candidates = sorted(p.name for p in repo.glob("*.json") if not p.name.endswith(".sample.json"))
-    ignored = _git_check_ignore(repo, candidates)
-    if not ignored:
+    candidates = _root_config_candidates(repo)
+    if not candidates:
         return copied
     assigned = set() if assigned is None else assigned
     declared_keys = worktree_blank_config_keys(repo)
     secret_keys = worktree_secret_config_keys(repo)
     read_safe_keys = worktree_read_safe_config_keys(repo)
-    for name in sorted(ignored):
-        src = repo / name
-        dst = wt / name
+    for src in candidates:
+        dst = wt / src.name
         if dst.exists():
             continue
         shutil.copy2(src, dst)

@@ -171,20 +171,22 @@ try:
           "read_safe_config_keys: an explicit blank_config_keys entry WINS over a "
           "read-safe one -- the dangerous mistake is failing to blank (#937)")
 
-    # The preflight's own re-check of an already-provisioned config.
+    # The preflight's own re-check of an already-provisioned config. Lives in
+    # worktree_config now, next to the blanking helpers it calls
+    # (fleet-config#1065) -- worktree_claim no longer reaches into them.
     clean = {"projects_dir": "E:\\automation", "sessions_state_file": ""}
-    check(wc._unsafe_config_keys(dict(clean), None, ["projects_dir"]) == [],
+    check(wcfg._unsafe_config_keys(dict(clean), None, ["projects_dir"]) == [],
           "_unsafe_config_keys: a declared read path in a provisioned config is clean")
     restored = {"projects_dir": "E:\\automation",
                 "sessions_state_file": "C:\\Users\\rober\\.claude\\hooks\\state\\x.json"}
-    check(wc._unsafe_config_keys(dict(restored), None, ["projects_dir"])
+    check(wcfg._unsafe_config_keys(dict(restored), None, ["projects_dir"])
           == ["sessions_state_file"],
           "_unsafe_config_keys: a hand-restored WRITE path is reported unsafe -- the "
           "exact mistake that would point a test instance at live state (#937)")
-    check(wc._unsafe_config_keys(dict(restored), ["mirror.dir"], []) == [],
+    check(wcfg._unsafe_config_keys(dict(restored), ["mirror.dir"], []) == [],
           "_unsafe_config_keys: a repo that declared blank_config_keys is judged on "
           "ITS OWN keys -- the heuristic is not second-guessed over its choice")
-    check(wc._unsafe_config_keys("not an object", None, []) == [],
+    check(wcfg._unsafe_config_keys("not an object", None, []) == [],
           "_unsafe_config_keys: a config that isn't a JSON object is not a finding")
 finally:
     shutil.rmtree(_blank_base, ignore_errors=True)

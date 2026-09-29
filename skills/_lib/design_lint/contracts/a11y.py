@@ -7,10 +7,9 @@ rather than about any one component.
 from __future__ import annotations
 
 import re
-import sys
-from pathlib import Path
 from typing import List
 
+from ..colormath import spec_pairs
 from ..css import _BLOCK_RE
 from ..selectors import _compounds, _last_selector_line, _split_top_level_commas
 from ._ctx import _ContractsCtx, _evidence, _loc_at, _result
@@ -161,11 +160,8 @@ def _check_spec_contrast(ctx: _ContractsCtx) -> List[dict]:
     #     textColor and backgroundColor, composited over `card`, per theme,
     #     from the spec alone (fleet-config#963 found accent-on-accent-soft
     #     at 4.13 / 3.79). The same for every app, so it flags the spec, not
-    #     the app. Colour maths is design_review's; imported here, at call
-    #     time, because design_review itself imports design_lint.spec.
-    sys.path.insert(0, str(Path(__file__).resolve().parents[2]))  # skills/_lib, as design_review.rubric does
-    from design_review.evaluate import spec_pairs
-
+    #     the app. Colour maths lives in `design_lint/colormath.py` (a leaf
+    #     module both `design_lint` and `design_review` import normally).
     low: List[str] = []
     measured = 0
     for theme, tokens in (("light", ctx.spec_light), ("dark", ctx.spec_dark or {})):

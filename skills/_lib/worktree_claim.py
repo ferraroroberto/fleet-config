@@ -247,24 +247,23 @@ from service_probe import service_state  # noqa: E402
 from untrack_guard import guarded_fast_forward, report_lines as untrack_report_lines  # noqa: E402
 from utf8_stdio import ensure_utf8_stdio  # noqa: E402
 # Worktree runtime-config provisioning (ports + machine-bound value blanking)
-# lives in its own module (fleet-config#731). The private names are imported
-# for this module's own use; the public ones are also what tests address as
-# `worktree_claim.<name>`. Import only what has a caller (fleet-config#929).
+# lives in its own module (fleet-config#731) -- including, since
+# fleet-config#1065, the side-instance preflight's own config discovery and
+# re-verification (`check_provisioned_configs`), which reuses that module's
+# own candidate discovery and blanking helpers rather than reaching into them
+# from here. Only public names are imported; the public ones are also what
+# tests address as `worktree_claim.<name>`. Import only what has a caller
+# (fleet-config#929).
 from worktree_config import (  # noqa: E402
     WT_PORT_BASE,
     WT_PORT_SPAN,
-    _git_check_ignore,
-    _port_is_free,
-    _blank_declared_keys,
-    _blank_default_heuristic,
     blank_machine_bound_config,
+    check_provisioned_configs,
     copy_env_file,
     copy_root_config,
     copy_runtime_config,
     port_registry_state,
-    port_reservations,
     release_ports,
-    reserve_port,
     remove_secret_config,
     worktree_blank_config_keys,
     worktree_port,
@@ -1145,56 +1144,6 @@ def _primary_or_none(path: Path) -> Optional[bool]:
         return None
 
 
-def _provisioned_configs(checkout: Path) -> list:
-    """The gitignored runtime configs a worktree setup would have provisioned.
-
-    Mirrors `copy_runtime_config`'s and `copy_root_config`'s own discovery --
-    `config/*.json` minus templates, plus root-level `*.json` git considers
-    ignored -- so the preflight reports on exactly the files setup rewrote,
-    with no second hardcoded list to drift.
-    """
-    found = []
-    config_dir = checkout / "config"
-    if config_dir.is_dir():
-        found.extend(sorted(p for p in config_dir.glob("*.json")
-                            if not p.name.endswith(".sample.json")))
-    candidates = sorted(p.name for p in checkout.glob("*.json")
-                        if not p.name.endswith(".sample.json"))
-    for name in sorted(_git_check_ignore(checkout, candidates)):
-        found.append(checkout / name)
-    return found
-
-
-def _unsafe_config_keys(raw: object, declared_keys: Optional[list],
-                        read_safe_keys: list) -> list:
-    """Dotted keys in a provisioned config that still hold a machine-bound value.
-
-    The check that makes incident 2 of fleet-config#937 impossible to repeat:
-    a lane that hand-restored a path to make its instance boot has no way to
-    know whether that path is read or written, and restoring a written one
-    points the test instance at the owner's live state. Anything the
-    provisioning pass would have emptied, and that is not *declared* read-safe,
-    is reported unsafe. Fail-closed: an undeclared key is unsafe, never
-    assumed fine.
-
-    Which "provisioning pass" is the repo's own choice, and the two modes are
-    asked the same question in their own terms. A repo that declares
-    `blank_config_keys` has named its blanking set exactly, so only those keys
-    are checked and the heuristic is not second-guessed; a repo that declares
-    nothing gets the heuristic, minus its declared read-safe keys.
-
-    `raw` is the already-parsed config. Both blanking passes mutate what they
-    are given and report what they actually emptied — on an already-blank copy
-    they report nothing, which is the pass — so this must be handed a throwaway
-    parse, never a structure the caller goes on to use.
-    """
-    if not isinstance(raw, dict):
-        return []
-    if declared_keys is not None:
-        return _blank_declared_keys(raw, declared_keys)
-    return _blank_default_heuristic(raw, read_safe=frozenset(read_safe_keys))
-
-
 def cmd_side_instance_preflight(args: argparse.Namespace) -> int:
     """Refuse-or-report before a lane boots an app instance out of a checkout.
 
@@ -1235,60 +1184,20 @@ def cmd_side_instance_preflight(args: argparse.Namespace) -> int:
               "every machine-bound value stays blank")
 
     registry = port_registry_state()
-    reservations = port_reservations()
-    held = str(checkout.resolve())
     failures: List[str] = []
     unknowns: List[str] = []
     if registry != "ok":
         unknowns.append("the port reservation registry could not be read")
         print("PORT_REGISTRY=unknown: reservations not established")
 
-    for dst in _provisioned_configs(checkout):
-        rel = dst.relative_to(checkout).as_posix()
-        try:
-            raw = json.loads(dst.read_text(encoding="utf-8"))
-        except (OSError, ValueError):
-            # Same fail-open read the provisioning pass uses: a config that
-            # isn't ours to parse is the app's business to complain about.
-            continue
-        # Read the port first: `_unsafe_config_keys` blanks the structure it is
-        # given in order to learn what would have been blanked.
-        port = raw.get("port") if isinstance(raw, dict) else None
-        unsafe = _unsafe_config_keys(raw, declared_keys, read_safe_keys)
-        if unsafe:
-            failures.append(f"{rel} holds machine-bound values for undeclared keys: "
-                            f"{', '.join(unsafe)}")
-            print(f"CONFIG_UNSAFE={rel}: {', '.join(unsafe)}")
-        if not isinstance(port, int) or isinstance(port, bool):
-            continue
-        # Claim it rather than merely observing it. A config provisioned before
-        # reservations existed holds an unreserved port, and reporting that as
-        # `unknown` forever would make the check observational -- it would name
-        # the risk it is here to remove. Reserving on the spot makes the answer
-        # total: either this checkout now holds the port exclusively, or
-        # somebody else does and that is a real collision.
-        row = reservations.get(port)
-        if row is not None and row.get("worktree") != held:
-            print(f"PORT={port} config={rel} reservation=HELD BY {row.get('worktree')}")
-            failures.append(f"{rel}'s port {port} is reserved by "
-                            f"{row.get('worktree')} — two instances would collide")
-            continue
-        try:
-            holder = reserve_port(port, checkout, rel)
-        except (OSError, TimeoutError) as exc:
-            print(f"PORT={port} config={rel} reservation=unavailable "
-                  f"({exc.__class__.__name__})")
-            unknowns.append(f"{rel}'s port {port} could not be reserved, so "
-                            f"exclusivity is not established")
-            continue
-        if holder is not None:
-            print(f"PORT={port} config={rel} reservation=HELD BY {holder}")
-            failures.append(f"{rel}'s port {port} is reserved by {holder} — "
-                            f"two instances would collide")
-            continue
-        claimed = "" if row is not None else "  (claimed now)"
-        listening = "" if _port_is_free(port) else "  (already listening)"
-        print(f"PORT={port} config={rel} reservation=this checkout{claimed}{listening}")
+    # Discovery, the unsafe-key re-check and the port-reservation loop all
+    # live next to `copy_runtime_config`/`copy_root_config` now, so the
+    # checked configs can never drift from what a real setup provisions
+    # (fleet-config#1065).
+    config_failures, config_unknowns = check_provisioned_configs(
+        checkout, declared_keys, read_safe_keys)
+    failures.extend(config_failures)
+    unknowns.extend(config_unknowns)
 
     # Only meaningful for a worktree, and only for a target the primary
     # actually has: `setup_worktree` deliberately skips a declared-but-absent

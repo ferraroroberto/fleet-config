@@ -58,6 +58,61 @@ _DESCRIPTOR_UNSAFE = re.compile(r"[^A-Za-z0-9_.:=-]")
 DESCRIPTOR_PART_LIMIT = 40
 DESCRIPTOR_LIMIT = 80
 
+RESERVED_FLAGS = ("-p", "--print", "--output-format", "--include-partial-messages")
+
+# Claude Code 2.1.237 changed how a bare `/<skill>` prompt is framed in headless
+# `-p` mode. The skill body now arrives as its own message flagged
+# `"isMeta": true, "turnCompanion": true` -- passive context -- while the user
+# turn carries only `<command-name>/<skill></command-name>`; the run that
+# exposed this recorded `input_tokens: 2` against 52,603 cached ones. A skill
+# whose text opens with an imperative still gets executed. One that opens with
+# descriptive prose reads as reference material, and the model answers "Ready --
+# what would you like to do?" and stops (fleet-config#689).
+#
+# So the adapter stops depending on slash expansion and asks for the skill by
+# name. Appending the instruction *after* the slash command is not an option:
+# trailing text lands in `<command-args>`, where the skill parses it as its own
+# arguments.
+_SLASH_COMMAND_RE = re.compile(r"^/(?P<name>[A-Za-z0-9][A-Za-z0-9._-]*)(?P<rest>\s[\s\S]*)?$")
+
+CLAUDE_SKILL_PROMPT_TEMPLATE = (
+    "Run the {name} skill now via the Skill tool, end to end and fully unattended, "
+    "following its SKILL.md steps exactly. Skill arguments: {arguments}. "
+    "Nobody is attending this run: never ask a question, never end your turn "
+    "waiting to be resumed, and poll every background call to completion inside "
+    "your own turn."
+)
+
+# Codex has no Skill tool -- its own build_command used to render the Claude
+# template above and then rewrite one substring in it (`.replace(" via the
+# Skill tool", ...)`), which would silently stop matching the moment the
+# Claude wording changed (fleet-config#1065). A separate template says the
+# same thing in Codex's own words instead of patching Claude's.
+CODEX_SKILL_PROMPT_TEMPLATE = (
+    "Run the {name} skill now using its discovered SKILL.md and available native "
+    "tools, end to end and fully unattended, following its SKILL.md steps exactly. "
+    "Skill arguments: {arguments}. Nobody is attending this run: never ask a "
+    "question, never end your turn waiting to be resumed, and poll every "
+    "background call to completion inside your own turn."
+)
+
+
+def normalize_skill_prompt(prompt: str, template: str = CLAUDE_SKILL_PROMPT_TEMPLATE) -> str:
+    """Rewrite a bare ``/<skill>`` prompt into an explicit instruction.
+
+    Anything that is not a slash command comes back untouched -- a caller that
+    already phrases its own instruction keeps it verbatim. Trailing text after
+    the command name is forwarded as the skill's arguments, which is what slash
+    expansion would have done with it anyway. ``template`` lets a non-Claude
+    adapter phrase the same instruction in its own words rather than patching
+    Claude's rendered text (see ``CODEX_SKILL_PROMPT_TEMPLATE``).
+    """
+    match = _SLASH_COMMAND_RE.match(prompt.strip())
+    if match is None:
+        return prompt
+    arguments = (match.group("rest") or "").strip()
+    return template.format(name=match.group("name"), arguments=arguments or "none")
+
 
 def describe_record(*parts: object) -> str:
     """Name an unrecognised record by shape alone -- never by its payload.
@@ -132,9 +187,6 @@ class ClaudeAdapter:
         return {"CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS": "0"}
 
     def build_command(self, arguments: Sequence[str], executable: Optional[str] = None) -> list[str]:
-        # Deferred import keeps the compatibility prompt helper at its old API.
-        from scheduled_runner import RESERVED_FLAGS, normalize_skill_prompt
-
         if not arguments:
             raise ValueError("a Claude prompt is required")
         for argument in arguments[1:]:
@@ -230,9 +282,7 @@ class CodexAdapter:
     def build_command(self, arguments: Sequence[str], executable: Optional[str] = None) -> list[str]:
         if not arguments:
             raise ValueError("a Codex prompt is required")
-        from scheduled_runner import normalize_skill_prompt
-
-        prompt = normalize_skill_prompt(arguments[0]).replace(" via the Skill tool", " using its discovered SKILL.md and available native tools")
+        prompt = normalize_skill_prompt(arguments[0], CODEX_SKILL_PROMPT_TEMPLATE)
         native: list[str] = []
         model = False
         permission = False
