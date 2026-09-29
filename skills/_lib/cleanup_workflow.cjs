@@ -56,11 +56,24 @@ async function next(state) {
       validate(prior.result, opts.schema)
       // The two ship-gate invariants beyond schema shape (pass requires
       // verification PASS; a PASS build requires status built) are enforced
-      // once, in the workflow script itself (`inconsistentBuild` /
-      // `inconsistentValidate`), so this bridge and the native Workflow path
-      // executing the same source can never disagree (fleet-config#1065).
-      if (opts.phase === 'Validate' && !prior.result.feedback.trim()) {
-        throw new Error('validator requires non-empty feedback')
+      // *twice*, deliberately, not duplicated by accident: the workflow
+      // script's own `inconsistentBuild`/`inconsistentValidate` protect the
+      // native Workflow path, which never runs through this bridge's agent()
+      // at all, by self-healing a contradiction into a normal escalation.
+      // This check protects the *other* call path — `node cleanup_workflow.cjs
+      // <state.json>`, the standalone CLI fallback SKILL.md documents for
+      // when native Workflow isn't available — by failing loud (non-zero
+      // exit) the moment a replayed result is self-contradictory, rather than
+      // letting bad input silently reach business logic. The workflow script
+      // has no module system (it must stay a bare, pasteable script body for
+      // the native Workflow tool), so the two checks cannot share code; keep
+      // both conditions identical to `inconsistentBuild`/`inconsistentValidate`
+      // if either ever changes (fleet-config#1065).
+      if (opts.phase === 'Validate' && (!prior.result.feedback.trim() || (prior.result.pass && prior.result.verification !== 'PASS'))) {
+        throw new Error('validator requires feedback and a consistent verification verdict')
+      }
+      if (opts.phase === 'Build' && prior.result.verification === 'PASS' && prior.result.status !== 'built') {
+        throw new Error('failed build cannot pass verification')
       }
     }
     return prior.result
