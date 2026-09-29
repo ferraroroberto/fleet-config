@@ -179,6 +179,49 @@ def _learning_log_unit_checks() -> Tuple[int, int]:
     finally:
         ll._gh_json, ll.read_ledger_body, ll.git_run.run_gh = saved
 
+    # ---- a failed prior-ledger read must never look like "no ledger yet"
+    # to a caller about to overwrite it (fleet-config#1061) ----
+    saved_run_audit = ll.run_audit_issue
+    try:
+        ll.run_audit_issue = lambda *a, **k: (_ for _ in ()).throw(RuntimeError("boom"))
+        threw = False
+        try:
+            ll.read_ledger_body("o/ledger", required=True)
+        except RuntimeError:
+            threw = True
+        check("learning_log: read_ledger_body(required=True) re-raises instead of swallowing",
+              threw)
+        with contextlib.redirect_stderr(io.StringIO()):
+            check("learning_log: read_ledger_body(required=False) still swallows, returns ''",
+                  ll.read_ledger_body("o/ledger") == "")
+    finally:
+        ll.run_audit_issue = saved_run_audit
+
+    saved_read = ll.read_ledger_body
+    try:
+        ll.read_ledger_body = lambda repo, **kw: (_ for _ in ()).throw(RuntimeError("boom"))
+        out_path = Path(tempfile.mkdtemp(prefix="ll_assemble_")) / "ledger-body.md"
+        aargs = argparse.Namespace(repo="o/ledger", horizon_file=None, discoveries_file=None,
+                                    out=str(out_path))
+        with contextlib.redirect_stderr(io.StringIO()), contextlib.redirect_stdout(io.StringIO()):
+            code = ll.cmd_assemble_ledger(aargs)
+        check("learning_log: cmd_assemble_ledger exits non-zero and writes nothing when the "
+              "prior ledger cannot be read, instead of publishing an archive built from an "
+              "empty prior",
+              code != 0 and not out_path.exists())
+
+        ll.read_ledger_body = lambda repo, **kw: (
+            "<!-- learning-log-state -->\nlast-run-at: 2026-06-08\n\n"
+            "## Decision / discovery archive\n- 2026-06-08: prior learning (repo#9)\n")
+        with contextlib.redirect_stdout(io.StringIO()):
+            code = ll.cmd_assemble_ledger(aargs)
+        check("learning_log: cmd_assemble_ledger still writes the body when the prior ledger "
+              "read succeeds",
+              code == 0 and out_path.exists()
+              and "2026-06-08: prior learning (repo#9)" in out_path.read_text(encoding="utf-8"))
+    finally:
+        ll.read_ledger_body = saved_read
+
     return check.failures, check.total
 
 

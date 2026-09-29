@@ -78,6 +78,8 @@ def load_accepted(root: Path) -> Tuple[List[dict], List[dict]]:
     if design is None:
         return [], []
     raw = design.get("accepted") if isinstance(design, dict) else None
+    if raw is None:
+        return [], []
     if not isinstance(raw, list):
         return [], [_row("[design] must hold an array of [[design.accepted]] tables")]
 
