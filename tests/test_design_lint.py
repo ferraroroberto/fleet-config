@@ -1769,6 +1769,14 @@ check(broken["rows"]["app-icon-family"]["status"] == "FAIL"
       and any("could not read .fleet.toml" in w for w in broken["warns"]),
       "unparseable .fleet.toml -> findings raised, the read failure reported")
 
+# a [design] table with no [[design.accepted]] array (e.g. only [design.review],
+# as parking-manager declares) is not malformed -> no accepted-exception WARN
+# (fleet-config#1061)
+review_only = lint_accepted("[design.review]\nsomething = true\n")
+check(review_only["rows"]["app-icon-family"]["status"] == "FAIL"
+      and not review_only["warns"],
+      "[design] present without [[design.accepted]] -> no accepted-exception WARN")
+
 # a modal-header FAIL is acceptable: its evidence names the dialog's file, so
 # `target` matches (fleet-config#953 — it once carried evidence: null)
 modal_raised = lint_accepted(None, index=PRE_MODAL_HTML)["rows"]["modal-header"]

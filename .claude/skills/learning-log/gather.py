@@ -335,11 +335,23 @@ def write_bucket_files(out_dir: Path, prs: list[dict], issues: list[dict]) -> li
     return manifest
 
 
-def read_ledger_body(repo: str) -> str:
+def read_ledger_body(repo: str, *, required: bool = False) -> str:
+    """The prior ledger's body, or `""` when there is none yet.
+
+    A transient `audit_issue.py get` failure (gh auth / rate-limit / network)
+    is swallowed and reported to stderr by default -- `gather` treats a
+    stale-but-not-wiped prior as an acceptable best-effort fallback for
+    `since`/horizon display. Pass `required=True` to re-raise instead: a
+    caller that is about to *overwrite* the ledger (`assemble-ledger`) must
+    not treat a failed read the same as "no ledger exists yet", or it
+    replaces the durable archive with an empty one on a single flaky call
+    (fleet-config#1061)."""
     try:
         raw = run_audit_issue(HELPER, "get", "--repo", repo, "--kind", "learning", timeout=60)
         return json.loads(raw or "{}").get("body") or ""
     except (OSError, subprocess.SubprocessError, RuntimeError, ValueError) as exc:
+        if required:
+            raise
         print(f"ledger get failed: {exc}", file=sys.stderr)
     return ""
 
@@ -403,7 +415,12 @@ def cmd_gather(args) -> int:
 
 def cmd_assemble_ledger(args) -> int:
     today = _dt.date.today().isoformat()
-    prior_body = read_ledger_body(args.repo)
+    try:
+        prior_body = read_ledger_body(args.repo, required=True)
+    except (OSError, subprocess.SubprocessError, RuntimeError, ValueError) as exc:
+        print(f"assemble-ledger: could not read the prior ledger, refusing to "
+              f"overwrite the archive: {exc}", file=sys.stderr)
+        return 3
     horizon = Path(args.horizon_file).read_text(encoding="utf-8") if args.horizon_file else ""
     discoveries = Path(args.discoveries_file).read_text(encoding="utf-8") if args.discoveries_file else ""
     body = build_ledger_body(prior_body, today, horizon, discoveries)
