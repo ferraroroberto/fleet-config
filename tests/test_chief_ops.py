@@ -1424,6 +1424,11 @@ try:
                "number": 999, "agent": "claude", "ts": "2026-09-27T11:59:30Z", **fields}
         (inbox / name).write_text(json.dumps(row), encoding="utf-8")
 
+    def real_ts() -> str:
+        # wait_for_events filters with the real clock, so its events must be
+        # stamped with it too -- a fixed date expires 24 h later (fleet-config#1084).
+        return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
     check(co.claim_batch(inbox, now=now) == [], "claim_batch: a missing inbox is an empty batch")
     publish("1-a.json")
     publish("2-b.json", event="SessionEnd", repo="app-launcher", number=7)
@@ -1443,11 +1448,11 @@ try:
           "format_inbox_digest: one line per event naming issue, kind, agent and sid")
 
     # A burst settles into one wake: an event published during the settle window joins the batch.
-    publish("5-e.json", number=1)
+    publish("5-e.json", number=1, ts=real_ts())
     slept = []
     def settle_sleep(seconds):
         slept.append(seconds)
-        publish("6-f.json", number=2)
+        publish("6-f.json", number=2, ts=real_ts())
     got = co.wait_for_events(inbox, timeout=10, interval=1, sleep=settle_sleep)
     check([e["number"] for e in got] == [1, 2] and slept == [co.WAIT_EVENT_SETTLE_SECONDS],
           "wait_for_events: a burst within the settle window arrives as one wake")
@@ -1461,7 +1466,7 @@ try:
     old_dir = co.chief_inbox_dir
     co.chief_inbox_dir = lambda: inbox
     try:
-        threading.Timer(0.5, lambda: publish("7-g.json", number=3)).start()
+        threading.Timer(0.5, lambda: publish("7-g.json", number=3, ts=real_ts())).start()
         started = time.monotonic()
         out = io.StringIO()
         with contextlib.redirect_stdout(out):
