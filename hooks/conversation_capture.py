@@ -329,29 +329,6 @@ def conversation_slug(messages: list[tuple[str, str]]) -> str:
     return "-".join(ranked[:3])
 
 
-def session_token(session_id: str) -> str:
-    """Legacy last-eight filename token; never evidence to replace a capture."""
-    cleaned = re.sub(r"[^a-z0-9]", "", (session_id or "").lower())
-    return cleaned[-8:]
-
-
-def signature_of(clean: str) -> str:
-    """The short hash used as a conversation's content signature.
-
-    Split from :func:`content_signature` so a caller holding the normalized
-    opening turn from *any* source — a live transcript or a rendered capture —
-    hashes it exactly the same way.
-    """
-    if not clean:
-        return ""
-    return hashlib.sha1(clean.encode("utf-8")).hexdigest()[:8]
-
-
-def content_signature(messages: list[tuple[str, str]]) -> str:
-    """Legacy descriptive fingerprint, retained for consumers; never dedup identity."""
-    return signature_of(first_real_turn(messages))
-
-
 # ------------------------------------------------------------ capture header
 
 # Legacy sid/agent/updated headers remain readable; new attrs are additive.
@@ -385,12 +362,6 @@ def strip_capture_header(text: str) -> str:
     lines = text.splitlines()
     kept = [ln for i, ln in enumerate(lines) if not (i < 6 and _CAPTURE_HEADER_RE.match(ln))]
     return "\n".join(kept)
-
-
-def capture_filename(timestamp: str, slug: str, sid_token: str, sig_token: str) -> str:
-    """Legacy filename constructor retained for consumers; new writes use a truncated key."""
-    suffix = "".join(f"-{t}" for t in (sid_token, sig_token) if t)
-    return f"{timestamp}-{slug}{suffix}.md"
 
 
 def render_markdown(

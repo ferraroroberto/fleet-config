@@ -87,14 +87,6 @@ class Target:
     base_url: str
     review: Dict[str, object] = field(default_factory=dict)
 
-    def as_dict(self) -> Dict[str, object]:
-        return {
-            "name": self.name,
-            "root": str(self.root) if self.root else None,
-            "base_url": self.base_url,
-            "review": self.review,
-        }
-
 
 class PlanError(Exception):
     """A target that cannot be resolved — reported, never guessed around."""

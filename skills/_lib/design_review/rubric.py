@@ -102,15 +102,6 @@ class Rule:
     screens: List[str] = field(default_factory=list)
     params: Dict[str, object] = field(default_factory=dict)
 
-    def as_dict(self) -> Dict[str, object]:
-        return {
-            "id": self.id, "category": self.category, "title": self.title, "metric": self.metric,
-            "fail_when": self.fail_when, "threshold": self.threshold, "threshold_token": self.threshold_token,
-            "severity": self.severity, "standard": self.standard, "fix_template": self.fix_template,
-            "owner": self.owner, "mockup": self.mockup, "devices": list(self.devices),
-            "screens": list(self.screens), "params": dict(self.params),
-        }
-
 
 @dataclass
 class Judgment:
@@ -119,9 +110,6 @@ class Judgment:
     question: str
     maps_to: List[str] = field(default_factory=list)
     screens: str = "all"
-
-    def as_dict(self) -> Dict[str, object]:
-        return {"id": self.id, "question": self.question, "maps_to": list(self.maps_to), "screens": self.screens}
 
 
 @dataclass
