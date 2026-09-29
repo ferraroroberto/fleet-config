@@ -4,7 +4,7 @@
 (`/design-review`, reads the rendered page) each check the same design rules,
 so each rule parameter is defined once here and both legs import it. The rubric
 TOML cannot import, so its copy of a parameter is pinned to these constants by
-`tests/test_design_lint.py` instead.
+`tests/test_design_review.py` instead.
 """
 from __future__ import annotations
 
