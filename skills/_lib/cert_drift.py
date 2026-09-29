@@ -66,11 +66,11 @@ import argparse
 import os
 import re
 import sys
-import tomllib
 from pathlib import Path
 from typing import Dict, List, Optional
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+import fleet_toml  # noqa: E402
 import git_run  # noqa: E402
 from utf8_stdio import ensure_utf8_stdio  # noqa: E402
 
@@ -270,15 +270,8 @@ def read_cert_optout(repo_root: Path) -> Optional[Dict[str, str]]:
     Returns `None` if `.fleet.toml` is absent, unreadable, or `not_applicable`
     is not truthy — callers then fall back to signal-based classification.
     """
-    toml_path = repo_root / ".fleet.toml"
-    if not toml_path.is_file():
-        return None
-    try:
-        data = tomllib.loads(toml_path.read_text(encoding="utf-8"))
-    except (OSError, tomllib.TOMLDecodeError):
-        return None
-    cert = data.get("cert")
-    if not isinstance(cert, dict) or not cert.get("not_applicable"):
+    cert = fleet_toml.table(fleet_toml.load(repo_root), "cert")
+    if cert is None or not cert.get("not_applicable"):
         return None
     return {
         "reason": str(cert.get("reason", "")).strip(),

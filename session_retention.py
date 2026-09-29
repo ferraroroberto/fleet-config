@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from config_edit import ASSIGNMENT_RE, TABLE_RE, atomic_write  # noqa: E402
+from config_edit import ASSIGNMENT_RE, TABLE_RE, atomic_write, inline_comment  # noqa: E402
 
 
 RETENTION_DAYS = 730
@@ -51,26 +51,6 @@ def merge_claude_settings(settings: dict[str, Any]) -> tuple[dict[str, Any], tup
         del env["CLAUDE_CODE_SKIP_PROMPT_HISTORY"]
         changed.append("env.CLAUDE_CODE_SKIP_PROMPT_HISTORY")
     return updated, tuple(changed)
-
-
-def _inline_comment(line: str) -> str:
-    """Return a TOML line's inline comment, ignoring hashes inside strings."""
-
-    quote: str | None = None
-    escaped = False
-    for index, char in enumerate(line):
-        if quote:
-            if quote == '"' and escaped:
-                escaped = False
-            elif quote == '"' and char == "\\":
-                escaped = True
-            elif char == quote:
-                quote = None
-        elif char in "'\"":
-            quote = char
-        elif char == "#":
-            return line[index:].rstrip("\r\n")
-    return ""
 
 
 def merge_codex_history(text: str) -> tuple[str, tuple[str, ...]]:
@@ -113,7 +93,7 @@ def merge_codex_history(text: str) -> tuple[str, tuple[str, ...]]:
             persistence_found = True
             indent = assignment.group(1) if assignment else ""
             rendered_key = key or "persistence"
-            comment = _inline_comment(line)
+            comment = inline_comment(line)
             suffix = f" {comment}" if comment else ""
             replacement = f'{indent}{rendered_key} = "save-all"{suffix}{newline}'
             if line != replacement:

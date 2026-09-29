@@ -11,12 +11,13 @@ import re
 from typing import List
 
 from ..css import _ANY_DECL_RE, _BLOCK_RE
+from ..rules import BREAK_ALL_OK
 from ..selectors import selector_group
 from ._ctx import _ContractsCtx, _loc_at, _result
 
 _FORM_TAGS = ("button", "input", "select", "textarea")
 # selectors where break-all is right: opaque strings with no word boundaries
-_BREAK_ALL_OK_RE = re.compile(r"path|url|sha|hash|mono|code|token|uuid", re.I)
+_BREAK_ALL_OK_RE = re.compile(BREAK_ALL_OK, re.I)
 
 
 def _rules(css: str):

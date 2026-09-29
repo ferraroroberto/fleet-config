@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import socket
 import subprocess
 import sys
@@ -62,6 +63,27 @@ check(rubric.categories == ["typography", "color", "touch", "navigation", "layou
       "categories in rubric order")
 check(rb.check_metric_names(rubric, measure.metric_paths()) == [], "every rule metric is a script path or a derived metric")
 check(all(r.severity in rb.SEVERITIES and r.owner in rb.OWNERS for r in rubric.rules), "severity/owner vocab")
+
+# ---- rules the static (design_lint) and rendered legs share are defined once (#1062) ----
+from design_lint import markup as _lint_markup, rules as _lint_rules  # noqa: E402
+from design_lint.contracts import typography as _lint_typography  # noqa: E402
+
+_type04 = next(r for r in rubric.rules if r.id == "TYPE-04")
+check(_type04.params.get("allow") == _lint_rules.BREAK_ALL_OK,
+      "rubric TYPE-04 allow-list equals design_lint's break-all allow-list")
+check(_lint_typography._BREAK_ALL_OK_RE.pattern == _lint_rules.BREAK_ALL_OK,
+      "the static break-all check uses the shared allow-list")
+_token_sel = [{"sel": ".token-value"}]
+check(ev._filtered_count({"text": {"break_all": _token_sel}}, "text", "break_all", _type04,
+                         _lint_rules.BREAK_ALL_OK)[0] == 0,
+      "a .token-* selector passes the rendered break-all check like the static one")
+check(measure.GLYPH_ICON_RE == _lint_rules.GLYPH_ICON_RENDERED_RE, "measure's glyph regex is the shared one")
+check(_lint_markup._GLYPH_ICON_RE.pattern == f"[{_lint_rules.GLYPH_ICON_CLASS}]",
+      "the static glyph scan uses the shared arrow/shape class")
+_rendered_probe = "←⇿■◿⋮⬀⯿✖✕☰"  # one glyph per rendered-leg range, endpoints included
+check(all(_lint_markup._EMOJI_RE.search(c) or _lint_markup._GLYPH_ICON_RE.search(c) for c in _rendered_probe)
+      and re.search(measure.GLYPH_ICON_RE, "×"),
+      "every rendered-leg glyph but the documented × is owned by a static scan (no static blind spot)")
 check({"P0": 25.0, "P1": 12.0, "P2": 6.0, "P3": 2.0} == rubric.penalties, "penalties 25/12/6/2")
 check(set(rubric.weights) == set(rubric.categories), "every category weighted")
 

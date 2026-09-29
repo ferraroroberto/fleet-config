@@ -19,7 +19,7 @@ Subcommands:
       Facts only, no git, no execution. Prints:
         CLASSIFIER=present|absent            scripts/classify_e2e.py
         CLASSIFIER_MATCHES_SCAFFOLD=yes|no|n/a
-        E2E_TABLE=present|absent|invalid     [e2e] in .fleet.toml (tomllib)
+        E2E_TABLE=present|absent|invalid     [e2e] in .fleet.toml
         SUITE=present|absent                 test files under tests/e2e/
         SUITE_DIR=tests/e2e
         WEB_SURFACE=yes|no                   is this a webapp/Streamlit repo?
@@ -63,6 +63,7 @@ from pathlib import Path
 from typing import List, Optional, Tuple
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+import fleet_toml  # noqa: E402
 from no_window import NO_WINDOW  # noqa: E402
 from utf8_stdio import ensure_utf8_stdio  # noqa: E402
 
@@ -98,15 +99,10 @@ def classifier_state(repo: Path, scaffold: Path) -> Tuple[str, str]:
 
 def e2e_table_state(repo: Path) -> str:
     """`present` / `absent` / `invalid` for the `.fleet.toml` `[e2e]` table."""
-    fleet_toml = repo / ".fleet.toml"
-    if not fleet_toml.is_file():
-        return "absent"
-    import tomllib
-    try:
-        data = tomllib.loads(fleet_toml.read_text(encoding="utf-8", errors="replace"))
-    except tomllib.TOMLDecodeError:
-        return "invalid"
-    return "present" if isinstance(data.get("e2e"), dict) else "absent"
+    data, state = fleet_toml.load_state(repo)
+    if data is None:
+        return state
+    return "present" if fleet_toml.table(data, "e2e") is not None else "absent"
 
 
 def suite_state(repo: Path) -> str:
@@ -135,15 +131,7 @@ def _dependency_text(repo: Path) -> str:
 
 
 def _fleet_layer(repo: Path) -> Optional[str]:
-    fleet_toml = repo / ".fleet.toml"
-    if not fleet_toml.is_file():
-        return None
-    import tomllib
-    try:
-        data = tomllib.loads(fleet_toml.read_text(encoding="utf-8", errors="replace"))
-    except tomllib.TOMLDecodeError:
-        return None
-    layer = data.get("layer")
+    layer = (fleet_toml.load(repo) or {}).get("layer")
     return layer if isinstance(layer, str) else None
 
 

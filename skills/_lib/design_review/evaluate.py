@@ -60,6 +60,8 @@ from typing import Callable, Dict, List, Optional, Tuple
 from . import measure
 from .rubric import Rubric, Rule, resolve_params, resolve_threshold
 
+from design_lint.rules import BREAK_ALL_OK  # noqa: E402  (`measure` put design_lint on sys.path)
+
 SCHEMA_VERSION = 1
 EVIDENCE_ITEMS = 8
 AA_NORMAL = 4.5
@@ -237,7 +239,7 @@ def _d_uppercase(m: dict, rule: Rule, ctx: dict) -> Derived:
 
 
 def _d_break_all(m: dict, rule: Rule, ctx: dict) -> Derived:
-    return _filtered_count(m, "text", "break_all", rule, r"path|url|sha|hash|mono|code")
+    return _filtered_count(m, "text", "break_all", rule, BREAK_ALL_OK)
 
 
 def _d_lists_tall(m: dict, rule: Rule, ctx: dict) -> Derived:

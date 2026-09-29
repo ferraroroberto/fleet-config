@@ -17,7 +17,7 @@ import tomllib
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from config_edit import atomic_write  # noqa: E402
+from config_edit import CODE, COMMENT, atomic_write, classify, syntax_mask  # noqa: E402
 
 
 REQUIRED_STATUS_ITEMS: tuple[str, ...] = (
@@ -36,56 +36,6 @@ _DOTTED_STATUS_LINE_RE = re.compile(r"^[ \t]*tui[ \t]*\.[ \t]*status_line[ \t]*=
 
 class ConfigError(ValueError):
     """Raised when the target config cannot be safely updated."""
-
-
-def _syntax_mask(text: str) -> str:
-    """Blank TOML strings and comments while retaining positions and newlines."""
-
-    masked = list(text)
-    quote: str | None = None
-    triple = False
-    escaped = False
-    comment = False
-    index = 0
-    while index < len(text):
-        char = text[index]
-        if comment:
-            if char in "\r\n":
-                comment = False
-            else:
-                masked[index] = " "
-            index += 1
-            continue
-        if quote:
-            if quote == '"' and escaped:
-                escaped = False
-            elif quote == '"' and char == "\\":
-                escaped = True
-            elif triple and text.startswith(quote * 3, index):
-                masked[index : index + 3] = "   "
-                quote = None
-                triple = False
-                index += 3
-                continue
-            elif not triple and char == quote:
-                quote = None
-            if char not in "\r\n":
-                masked[index] = " "
-            index += 1
-            continue
-        if char == "#":
-            comment = True
-            masked[index] = " "
-        elif char in "'\"":
-            quote = char
-            triple = text.startswith(char * 3, index)
-            if triple:
-                masked[index : index + 3] = "   "
-                index += 2
-            else:
-                masked[index] = " "
-        index += 1
-    return "".join(masked)
 
 
 def default_config_path() -> Path:
@@ -108,46 +58,13 @@ def _array_end(text: str, start: int) -> int:
     """Find an array's closing bracket without treating strings/comments as syntax."""
 
     depth = 0
-    quote: str | None = None
-    triple = False
-    escaped = False
-    comment = False
-    index = start
-    while index < len(text):
-        char = text[index]
-        if comment:
-            if char in "\r\n":
-                comment = False
-            index += 1
-            continue
-        if quote:
-            if quote == '"' and escaped:
-                escaped = False
-            elif quote == '"' and char == "\\":
-                escaped = True
-            elif triple and text.startswith(quote * 3, index):
-                quote = None
-                triple = False
-                index += 3
-                continue
-            elif not triple and char == quote:
-                quote = None
-            index += 1
-            continue
-        if char == "#":
-            comment = True
-        elif char in "'\"":
-            quote = char
-            triple = text.startswith(char * 3, index)
-            if triple:
-                index += 2
-        elif char == "[":
+    for index, char in enumerate(syntax_mask(text[start:]), start=start):
+        if char == "[":
             depth += 1
         elif char == "]":
             depth -= 1
             if depth == 0:
                 return index + 1
-        index += 1
     raise ConfigError("[tui].status_line has no closing ]")
 
 
@@ -166,30 +83,9 @@ def _parse_status_items(value: str) -> list[str]:
 def _last_value_character(value: str) -> int | None:
     """Return the last non-comment, non-whitespace index before an array's ``]``."""
 
-    comment = False
-    quote: str | None = None
-    escaped = False
     last: int | None = None
-    for index, char in enumerate(value[1:-1], start=1):
-        if comment:
-            if char in "\r\n":
-                comment = False
-            continue
-        if quote:
-            last = index
-            if quote == '"' and escaped:
-                escaped = False
-            elif quote == '"' and char == "\\":
-                escaped = True
-            elif char == quote:
-                quote = None
-            continue
-        if char == "#":
-            comment = True
-        elif char in "'\"":
-            quote = char
-            last = index
-        elif not char.isspace():
+    for index, kind in enumerate(classify(value)[:-1]):
+        if index and kind != COMMENT and not (kind == CODE and value[index].isspace()):
             last = index
     return last
 
@@ -250,7 +146,7 @@ def merge_status_line(text: str) -> tuple[str, tuple[str, ...]]:
         raise ConfigError(f"config.toml is not valid TOML: {exc}") from exc
 
     newline = "\r\n" if "\r\n" in text else "\n"
-    syntax = _syntax_mask(text)
+    syntax = syntax_mask(text)
     assignments = [(match, "tui") for match in _STATUS_LINE_RE.finditer(syntax)]
     assignments.extend((match, None) for match in _DOTTED_STATUS_LINE_RE.finditer(syntax))
     for match, expected_table in sorted(assignments, key=lambda candidate: candidate[0].start()):

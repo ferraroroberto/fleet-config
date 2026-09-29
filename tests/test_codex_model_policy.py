@@ -37,6 +37,14 @@ class CodexModelPolicyTests(unittest.TestCase):
         self.assertIn("notify = [\"keep\"]\r\n", updated)
         self.assertNotIn("\n", updated.replace("\r\n", ""))
 
+    def test_merge_keeps_only_the_real_comment_when_a_string_holds_a_hash(self) -> None:
+        original = 'model = "legacy#1" # real comment\nnotify = ["keep"]\n'
+
+        updated, _ = policy.merge_policy(original, ROOT / "tmp" / "catalog.json", ROOT / "codex")
+
+        self.assertIn('model = "gpt-5.6-sol" # real comment\n', updated)
+        self.assertNotIn("legacy", updated)
+
     def test_merge_is_idempotent(self) -> None:
         first, _ = policy.merge_policy("[tui]\nstatus_line = [\"model\"]\n", ROOT / "tmp" / "catalog.json", ROOT / "codex")
         second, changed = policy.merge_policy(first, ROOT / "tmp" / "catalog.json", ROOT / "codex")

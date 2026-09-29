@@ -18,7 +18,7 @@ import tomllib
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from config_edit import ASSIGNMENT_RE, TABLE_RE, atomic_write  # noqa: E402
+from config_edit import ASSIGNMENT_RE, TABLE_RE, atomic_write, inline_comment  # noqa: E402
 sys.path.insert(0, str(Path(__file__).resolve().parent / "skills" / "_lib"))
 from no_window import NO_WINDOW  # noqa: E402
 
@@ -87,8 +87,7 @@ def _merge_table(text: str, table: str | None, values: dict[str, str]) -> str:
         if body_start <= index < end and (match := ASSIGNMENT_RE.match(line)) and match.group(2) in values:
             key = match.group(2)
             if key not in seen:
-                comment_start = line.find("#")
-                comment = line[comment_start:].rstrip("\r\n") if comment_start >= 0 else ""
+                comment = inline_comment(line)
                 suffix = f" {comment}" if comment else ""
                 line_end = "\r\n" if line.endswith("\r\n") else "\n"
                 output.append(f"{match.group(1)}{key} = {values[key]}{suffix}{line_end}")

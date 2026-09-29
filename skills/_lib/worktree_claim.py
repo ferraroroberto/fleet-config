@@ -235,6 +235,7 @@ from pathlib import Path
 from typing import Callable, List, Mapping, Optional, Tuple
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+import fleet_toml  # noqa: E402
 import git_run  # noqa: E402
 from no_window import NO_WINDOW  # noqa: E402
 # The live-service capability lives in its own module (fleet-config#680) --
@@ -738,20 +739,12 @@ def worktree_junction_targets(repo: Path) -> list:
     the primary.
     """
     targets = [".venv"]
-    fleet_toml = repo / ".fleet.toml"
-    if not fleet_toml.is_file():
-        return targets
-    import tomllib
-    try:
-        data = tomllib.loads(fleet_toml.read_text(encoding="utf-8", errors="replace"))
-    except (OSError, tomllib.TOMLDecodeError):
-        # OSError covers a partially-deleted/leftover worktree whose .fleet.toml
-        # exists but is unreadable (permission error, vanished mid-read, ...) --
-        # remove_worktree must still strip .venv rather than crash before it
-        # gets the chance to (fleet-config#620 teardown-safety follow-up).
-        return targets
-    table = data.get("worktree")
-    if not isinstance(table, dict):
+    # An unreadable .fleet.toml (a partially-deleted/leftover worktree: permission
+    # error, vanished mid-read, ...) reads as absent: remove_worktree must still
+    # strip .venv rather than crash before it gets the chance to (fleet-config#620
+    # teardown-safety follow-up).
+    table = fleet_toml.table(fleet_toml.load(repo), "worktree")
+    if table is None:
         return targets
     extra = table.get("extra_junctions")
     if not isinstance(extra, list):
