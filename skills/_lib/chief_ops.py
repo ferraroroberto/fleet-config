@@ -46,7 +46,8 @@ Subcommands
 -----------
   board [--base-url URL] [--json]
       The ~12-line phone-readable digest: column counts, one line per live
-      session, PR/job cards, the 5h rate-limit line. A count or reading that
+      session, PR/job cards, running fleet-wide jobs (`/api/jobs`,
+      fleet-config#1078), the 5h rate-limit line. A count or reading that
       can't be established prints `?` with its reason, never `0`/`None`
       (fleet-config#840).
 
@@ -96,10 +97,16 @@ Subcommands
       failure becomes an `error:` row rather than aborting the rest.
 
   dispatch <repo> <number> [--mode start|yolo] [--model M]
-           [--brief-file PATH] [--yolo-confirmed] [--base-url URL]
+           [--brief-file PATH] [--yolo-confirmed] [--allow-during-fleet-job]
+           [--base-url URL]
       Refuses (exit 1, no POST) on an occupied repo, an at/over-cap
       worker count, `yolo` without `--yolo-confirmed`, or a `--brief-file`
-      that is missing, unreadable or empty; otherwise POSTs
+      that is missing, unreadable or empty. It also reads `/api/jobs` and
+      prints `WARNING=fleet-job-running job=<id>` for each running
+      fleet-wide job (`FLEET_JOB_PATTERNS`), or `WARNING=fleet-jobs-unknown`
+      when that can't be read. A fleet-wide brief (`/propagate-vendored`,
+      `/cleanup-fleet`) is refused while one runs, or while that is unknown,
+      unless `--allow-during-fleet-job` (fleet-config#1078). Otherwise POSTs
       `/api/board/issues/start` and marks the new session chief-managed
       (`skills/_lib/chief_managed.py`, fleet-config#443) so
       `hooks/notify_on_idle.py` can route its blocked-on-input
@@ -208,8 +215,10 @@ stdlib only, plus the `gh` CLI for `issues`.
 from __future__ import annotations
 
 import argparse
+import fnmatch
 import json
 import os
+import re
 import ssl
 import subprocess
 import sys
@@ -265,6 +274,21 @@ LOOPBACK_HOSTS = {"127.0.0.1", "::1", "localhost"}
 # `skills/_lib/` are independent trees by convention, and `worktree_claim.py`
 # already reads the same variable the same way.
 LAUNCHER_SESSION_ID_ENV_VAR = "APP_LAUNCHER_SESSION_ID"
+
+# Scheduled launcher jobs whose scope is the whole fleet (fleet-config#1078).
+# Every fleet repo is in their scope, so any dispatch while one runs can
+# collide with it: on 2026-09-27 a `/propagate-vendored` lane's worktrees
+# halted a running cleanup-fleet-all after 9 of 50 issues.
+FLEET_JOB_PATTERNS = (
+    "cleanup-fleet-*",
+    "codebase-audit-fleet",
+    "design-sweep-fleet",
+    "prompt-audit-fleet",
+)
+# A brief that itself fans out across the fleet.
+FLEET_WIDE_BRIEF_RE = re.compile(r"/(?:propagate-vendored|cleanup-fleet)\b")
+# `/api/jobs` shells out to schtasks per job: ~4 s cold, well under 1 s warm.
+JOBS_TIMEOUT = 30.0
 
 
 # ---- loopback guard (pure) -------------------------------------------------
@@ -497,6 +521,44 @@ def refuse_dispatch(
     return None
 
 
+def running_fleet_jobs(jobs_payload: Dict[str, Any]) -> List[str]:
+    """Pure: ids of the running jobs in an `/api/jobs` payload that are fleet-wide."""
+    return [
+        str(job.get("id"))
+        for job in jobs_payload.get("jobs") or []
+        if job.get("running") is True
+        and any(fnmatch.fnmatchcase(str(job.get("id")), pat) for pat in FLEET_JOB_PATTERNS)
+    ]
+
+
+def is_fleet_wide_brief(brief: Optional[str]) -> bool:
+    return bool(brief) and FLEET_WIDE_BRIEF_RE.search(brief) is not None
+
+
+def fetch_running_fleet_jobs(base_url: str) -> Tuple[Optional[List[str]], Optional[str]]:
+    """(running fleet-wide job ids, None) or (None, why unreadable).
+
+    Never raises: a jobs API that can't be read is its own `unknown` state,
+    never folded into "none running".
+    """
+    try:
+        return running_fleet_jobs(_request(base_url, "/api/jobs", timeout=JOBS_TIMEOUT)), None
+    except (OSError, ValueError) as exc:
+        return None, f"{type(exc).__name__}: {exc}"
+
+
+def fleet_job_refusal(
+    running: Optional[List[str]], error: Optional[str], fleet_wide_brief: bool, allowed: bool,
+) -> Optional[str]:
+    """Refuse a fleet-wide brief while a fleet-wide job runs, or while that
+    can't be ruled out. A per-issue lane is only warned, never refused."""
+    if not fleet_wide_brief or allowed or running == []:
+        return None
+    blocker = (f"fleet job {', '.join(running)} is running" if running
+               else f"fleet-job state unknown ({error})")
+    return f"fleet-wide brief while {blocker}; wait for it to finish, or pass --allow-during-fleet-job"
+
+
 def resolve_repo_path(repo: str, repos: Optional[Dict[str, Any]] = None) -> Path:
     """Resolve `repo` to a directory: a literal existing path first, else a
     fleet-registry name.
@@ -594,13 +656,17 @@ def _format_rate_limit_line(board: Dict[str, Any]) -> str:
     return line + " stale" if row.get("stale") else line
 
 
-def format_board_digest(board: Dict[str, Any]) -> str:
+def format_board_digest(
+    board: Dict[str, Any],
+    fleet_jobs: Optional[Tuple[Optional[List[str]], Optional[str]]] = None,
+) -> str:
     """The ~12-line phone-readable digest: counts, live sessions, PR/job
-    cards, one rate-limit line.
+    cards, running fleet-wide jobs, one rate-limit line.
 
     A count whose source can't be established renders `?` and the next line
     says why — the token shape stays `key=value` so the chief's poll still
-    parses it."""
+    parses it. `fleet_jobs` is `fetch_running_fleet_jobs`'s result; None
+    (not fetched) omits that line."""
     cols = board.get("columns") or {}
     tokens: List[str] = []
     unknown: Dict[str, List[str]] = {}
@@ -639,6 +705,12 @@ def format_board_digest(board: Dict[str, Any]) -> str:
         else:
             lines.append(f"  PR {card.get('repo')}#{card.get('number')}: {card.get('title')}")
 
+    if fleet_jobs is not None:
+        running, error = fleet_jobs
+        if running is None:
+            lines.append(f"fleet jobs running: ? ({error})")
+        else:
+            lines.append(f"fleet jobs running: {', '.join(running) or 'none'}")
     lines.append(_format_rate_limit_line(board))
     return "\n".join(lines)
 
@@ -1020,7 +1092,7 @@ def cmd_board(args: argparse.Namespace) -> int:
     if args.json:
         print(json.dumps(board, indent=2))
     else:
-        print(format_board_digest(board))
+        print(format_board_digest(board, fetch_running_fleet_jobs(args.base_url)))
     return 0
 
 
@@ -1181,6 +1253,17 @@ def cmd_dispatch(args: argparse.Namespace) -> int:
     if reason is not None:
         print(f"REFUSED={reason}")
         return 1
+
+    running, jobs_error = fetch_running_fleet_jobs(args.base_url)
+    reason = fleet_job_refusal(running, jobs_error, is_fleet_wide_brief(brief),
+                               args.allow_during_fleet_job)
+    if reason is not None:
+        print(f"REFUSED={reason}")
+        return 1
+    if running is None:
+        print(f"WARNING=fleet-jobs-unknown reason={jobs_error}")
+    for job_id in running or []:
+        print(f"WARNING=fleet-job-running job={job_id}")
 
     body = {"repo": args.repo, "number": args.number, "mode": args.mode}
     if args.model:
@@ -1426,6 +1509,8 @@ def main(argv: Optional[List[str]] = None) -> int:
     d.add_argument("--brief-file", default=None,
                    help="lane brief, delivered in the launch command (#944)")
     d.add_argument("--yolo-confirmed", action="store_true")
+    d.add_argument("--allow-during-fleet-job", action="store_true",
+                   help="dispatch a fleet-wide brief while a fleet-wide job runs (#1078)")
     d.add_argument("--base-url", default=DEFAULT_BASE_URL)
     d.set_defaults(func=cmd_dispatch)
 

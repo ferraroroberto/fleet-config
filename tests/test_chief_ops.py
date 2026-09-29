@@ -504,12 +504,17 @@ check(
 # `cmd_dispatch` against a stubbed transport, with the launcher's env stamp
 # set exactly as a live session carries it.
 
-def _run_dispatch(cards, env_sid, repo="fleet-config", number=838, brief_file=None):
+def _run_dispatch(cards, env_sid, repo="fleet-config", number=838, brief_file=None,
+                  jobs=None, allow_during_fleet_job=False):
     posted = []
     requested = []
 
     def _fake_request(base_url, path, method="GET", body=None, timeout=10.0):
         requested.append(path)
+        if path == "/api/jobs":
+            if isinstance(jobs, Exception):
+                raise jobs
+            return jobs if jobs is not None else {"jobs": []}
         if path == "/api/board":
             return {"columns": {"claude_turn": cards, "your_turn": []}}
         if path == "/api/board/chief/settings":
@@ -534,6 +539,7 @@ def _run_dispatch(cards, env_sid, repo="fleet-config", number=838, brief_file=No
         args = argparse.Namespace(
             repo=repo, number=number, mode="start", model=None,
             brief_file=brief_file, yolo_confirmed=False, base_url=co.DEFAULT_BASE_URL,
+            allow_during_fleet_job=allow_during_fleet_job,
         )
         with contextlib.redirect_stdout(io.StringIO()) as out:
             rc = co.cmd_dispatch(args)
@@ -603,6 +609,117 @@ try:
               f"cmd_dispatch --brief-file: {_name} is refused before any request")
 finally:
     shutil.rmtree(_brief_tmp, ignore_errors=True)
+
+
+# ---- fleet-wide jobs: warn on dispatch, refuse fleet-wide lanes (#1078) -----
+#
+# On 2026-09-27 a fleet-wide `/propagate-vendored` lane was dispatched while
+# the scheduled cleanup-fleet-all run was mid-flight; its worktrees halted
+# that run after 9 of 50 issues. `/api/jobs` is stubbed: every job carries
+# `id` and `running`, exactly as the launcher reports them.
+
+def _job(job_id, running):
+    return {"id": job_id, "name": job_id, "running": running}
+
+
+_JOBS_CLEANUP_RUNNING = {"jobs": [
+    _job("insights-weekly", True),              # not fleet-wide: never warns
+    _job("cleanup-fleet-all-weekly", True),
+    _job("codebase-audit-fleet", False),
+]}
+
+check(co.running_fleet_jobs(_JOBS_CLEANUP_RUNNING) == ["cleanup-fleet-all-weekly"],
+      "#1078 running_fleet_jobs: only running fleet-wide jobs, never a per-repo one")
+check(co.running_fleet_jobs({"jobs": [_job(j, True) for j in (
+          "codebase-audit-fleet", "design-sweep-fleet", "prompt-audit-fleet", "cleanup-fleet-docs")]})
+      == ["codebase-audit-fleet", "design-sweep-fleet", "prompt-audit-fleet", "cleanup-fleet-docs"],
+      "#1078 running_fleet_jobs: every fleet-wide id the issue names, cleanup-fleet-* included")
+check(co.running_fleet_jobs({"jobs": []}) == [],
+      "#1078 running_fleet_jobs: no jobs running is an empty list")
+
+for _text, _expect in (("Run /propagate-vendored nav across adopters.", True),
+                       ("Then run /cleanup-fleet documentation.", True),
+                       ("Queue: #1082 then #1078.", False)):
+    check(co.is_fleet_wide_brief(_text) is _expect,
+          f"#1078 is_fleet_wide_brief({_text!r}) is {_expect}")
+
+_fw_tmp = Path(tempfile.mkdtemp(prefix="chief-fleetjob-"))
+try:
+    _fw_brief = _fw_tmp / "fleet.md"
+    _fw_brief.write_text("Run /propagate-vendored nav to every adopter.\n", encoding="utf-8")
+    _plain_brief = _fw_tmp / "plain.md"
+    _plain_brief.write_text("Queue: #12 then #13.\n", encoding="utf-8")
+
+    rc, posted = _run_dispatch([_chief_card], _CHIEF_SID, repo="photo-ocr",
+                               brief_file=str(_plain_brief), jobs=_JOBS_CLEANUP_RUNNING)
+    check(rc == 0 and len(posted) == 1
+          and "WARNING=fleet-job-running job=cleanup-fleet-all-weekly" in _run_dispatch.last_output,
+          "#1078 dispatch: a per-issue lane during a fleet job still dispatches, with the warning")
+
+    rc, posted = _run_dispatch([_chief_card], _CHIEF_SID, repo="photo-ocr",
+                               brief_file=str(_fw_brief), jobs=_JOBS_CLEANUP_RUNNING)
+    check(rc == 1 and posted == [] and "REFUSED=" in _run_dispatch.last_output
+          and "cleanup-fleet-all-weekly" in _run_dispatch.last_output
+          and "--allow-during-fleet-job" in _run_dispatch.last_output,
+          "#1078 dispatch: a fleet-wide brief during a fleet job is refused, no POST, override named")
+
+    rc, posted = _run_dispatch([_chief_card], _CHIEF_SID, repo="photo-ocr",
+                               brief_file=str(_fw_brief), jobs=_JOBS_CLEANUP_RUNNING,
+                               allow_during_fleet_job=True)
+    check(rc == 0 and len(posted) == 1
+          and "WARNING=fleet-job-running" in _run_dispatch.last_output,
+          "#1078 dispatch: --allow-during-fleet-job lets a fleet-wide brief through, still warned")
+
+    rc, posted = _run_dispatch([_chief_card], _CHIEF_SID, repo="photo-ocr",
+                               brief_file=str(_fw_brief), jobs={"jobs": [_job("insights-weekly", True)]})
+    check(rc == 0 and len(posted) == 1 and "WARNING=" not in _run_dispatch.last_output,
+          "#1078 dispatch: no fleet job running -> no warning, fleet-wide brief dispatches")
+
+    rc, posted = _run_dispatch([_chief_card], _CHIEF_SID, repo="photo-ocr",
+                               brief_file=str(_plain_brief), jobs=OSError("connection refused"))
+    check(rc == 0 and len(posted) == 1
+          and "WARNING=fleet-jobs-unknown" in _run_dispatch.last_output
+          and "connection refused" in _run_dispatch.last_output,
+          "#1078 dispatch: an unreadable jobs API is its own `unknown` warning, never 'none running'")
+
+    rc, posted = _run_dispatch([_chief_card], _CHIEF_SID, repo="photo-ocr",
+                               brief_file=str(_fw_brief), jobs=OSError("connection refused"))
+    check(rc == 1 and posted == [],
+          "#1078 dispatch: a fleet-wide brief with fleet-job state unknown is refused, not waved through")
+finally:
+    shutil.rmtree(_fw_tmp, ignore_errors=True)
+
+_digest_board = {"columns": {"claude_turn": [], "your_turn": [], "other": []}}
+check("fleet jobs running: cleanup-fleet-all-weekly"
+      in co.format_board_digest(_digest_board, fleet_jobs=(["cleanup-fleet-all-weekly"], None)),
+      "#1078 board digest lists running fleet jobs")
+check("fleet jobs running: none"
+      in co.format_board_digest(_digest_board, fleet_jobs=([], None)),
+      "#1078 board digest says so when no fleet job is running")
+check("fleet jobs running: ? (timed out)"
+      in co.format_board_digest(_digest_board, fleet_jobs=(None, "timed out")),
+      "#1078 board digest renders an unreadable jobs API as `?` with its reason")
+
+
+def _run_board(jobs):
+    def _fake_request(base_url, path, method="GET", body=None, timeout=10.0):
+        if path == "/api/board":
+            return _digest_board
+        if path == "/api/jobs":
+            return jobs
+        raise AssertionError(f"unexpected path: {path}")
+    prior = co._request
+    co._request = _fake_request
+    try:
+        with contextlib.redirect_stdout(io.StringIO()) as out:
+            co.cmd_board(argparse.Namespace(base_url=co.DEFAULT_BASE_URL, json=False))
+    finally:
+        co._request = prior
+    return out.getvalue()
+
+
+check("fleet jobs running: cleanup-fleet-all-weekly" in _run_board(_JOBS_CLEANUP_RUNNING),
+      "#1078 `board` reads /api/jobs so every poll sees running fleet jobs")
 
 
 # ---- assert_loopback ---------------------------------------------------------
@@ -831,12 +948,15 @@ try:
             return {"settings": {"worker_cap": 3}}
         if path == "/api/board/issues/start":
             return {"session": {"session_id": "new-sid-99"}}
+        if path == "/api/jobs":
+            return {"jobs": []}
         raise AssertionError(f"unexpected path: {path}")
 
     co._request = _fake_request
     args = argparse.Namespace(
         repo="app-launcher", number=528, mode="start", model=None,
         brief_file=None, yolo_confirmed=False, base_url=co.DEFAULT_BASE_URL,
+        allow_during_fleet_job=False,
     )
     rc = co.cmd_dispatch(args)
     check(rc == 0, "cmd_dispatch (fake transport) exits 0 on a clear dispatch")
