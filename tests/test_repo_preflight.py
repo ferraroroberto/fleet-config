@@ -250,4 +250,86 @@ state, reason, note = rp.check(Path("E:/automation/definitely-not-a-repo-642"))
 check(state == rp.MISSING and "no such path" in reason and note is None,
       "check: a nonexistent path is `missing`, with no git call attempted")
 
+
+# ---- leftover <repo>-wt-* directories git no longer knows about (fleet-config#1082) ----
+#
+# A real on-disk layout under a temp fleet root, with git and the process-table
+# probe stubbed: pre-flight must glob `<repo>-wt-*` exactly as teardown check 2
+# does, so a leftover it could have seen skips the repo up front instead of
+# halting the run hours later.
+
+import tempfile  # noqa: E402
+
+import dir_holders  # noqa: E402
+
+
+def _preflight_with_leftovers(dirs, probe_status, registered=(), holders=None, reason=None):
+    """`rp.check` on a temp `alpha` repo with `dirs` created beside it.
+
+    `dirs` maps a sibling directory name to a list of child file names.
+    `registered` names siblings `git worktree list` still reports.
+    """
+    with tempfile.TemporaryDirectory() as root:
+        fleet = Path(root)
+        repo = fleet / "alpha"
+        repo.mkdir()
+        for name, children in dirs.items():
+            (fleet / name).mkdir()
+            for child in children:
+                (fleet / name / child).write_text("x", encoding="utf-8")
+        porcelain = f"worktree {repo.as_posix()}\nHEAD abc\nbranch refs/heads/main\n"
+        for name in registered:
+            porcelain += f"\nworktree {(fleet / name).as_posix()}\nHEAD def\nbranch refs/heads/fix/1-x\n"
+        answers = {"branch": "main", "status": "", "worktree": porcelain}
+        probed: list[str] = []
+
+        def fake_probe(path):
+            probed.append(Path(path).name)
+            return dir_holders.Probe(probe_status, holders or [], reason)
+
+        with patch.object(rp, "_run_git", side_effect=lambda _p, *args: answers[args[0]]), \
+             patch.object(rp, "fetch", return_value=None), \
+             patch.object(dir_holders, "probe", side_effect=fake_probe):
+            state, why, _ = rp.check(repo, default_branch="main")
+        return state, why, probed
+
+
+LIVE_HOLDERS = [
+    {"pid": 42752, "name": "python.exe", "exe": "python.exe", "cmdline": "e2e_stub_child.py"},
+    {"pid": 92636, "name": "OpenConsole.exe", "exe": "OpenConsole.exe", "cmdline": "OpenConsole.exe"},
+]
+
+state, why, _ = _preflight_with_leftovers({"alpha-wt-1292": []}, "LIVE", holders=LIVE_HOLDERS)
+check(state == "leftover-dir" and "alpha-wt-1292" in why and "42752" in why and "92636" in why,
+      "#1082: a live-held, unregistered, empty <repo>-wt-* dir skips the repo at pre-flight, "
+      "naming the path and holder pids")
+
+state, why, probed = _preflight_with_leftovers({"alpha-wt-709": []}, "CLEAR")
+check(state == rp.AVAILABLE and probed == ["alpha-wt-709"],
+      "#1082: a zombie-pinned shell (empty, real dir, unregistered, STATUS=CLEAR) still dispatches")
+
+state, why, _ = _preflight_with_leftovers({"alpha-wt-5": []}, "UNKNOWN", reason="no PowerShell")
+check(state == "leftover-dir" and "no PowerShell" in why,
+      "#1082: a leftover whose holder probe could not run is not proven inert -- skipped, reason kept")
+
+state, why, _ = _preflight_with_leftovers({"alpha-wt-6": ["stray.txt"]}, "CLEAR")
+check(state == "leftover-dir" and "alpha-wt-6" in why and "not empty" in why,
+      "#1082: a non-empty unregistered leftover skips the repo even with no live holder")
+
+state, why, probed = _preflight_with_leftovers({"alpha-wt-7": ["README.md"]}, "LIVE",
+                                               registered=("alpha-wt-7",), holders=LIVE_HOLDERS)
+check(state == rp.WORKTREE and probed == [],
+      "#1082: a registered worktree stays `worktree` and is not re-judged as a leftover dir")
+
+state, why, probed = _preflight_with_leftovers({"alphabet-wt-3": [], "beta-wt-1": []}, "LIVE",
+                                               holders=LIVE_HOLDERS)
+check(state == rp.AVAILABLE and probed == [],
+      "#1082: the glob is per repo -- another repo's wt dir never skips this one")
+
+check(rp.judge_leftover(rp.LeftoverDir("E:/x/alpha-wt-1", True, None, "CLEAR", (), None))
+      is not None,
+      "#1082: a junction is never an inert shell")
+check(rp.judge_leftover(rp.LeftoverDir("E:/x/alpha-wt-1", False, True, "CLEAR", (), None)) is None,
+      "#1082: empty + real dir + CLEAR is inert")
+
 _h.report_and_exit("test_repo_preflight")

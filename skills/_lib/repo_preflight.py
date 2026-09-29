@@ -34,6 +34,22 @@ earlier, because the tree may have changed in either direction" -- is
 therefore structural rather than a line of prose an orchestrator has to
 remember to obey.
 
+**Leftover `<repo>-wt-*` directories git no longer knows about**
+(fleet-config#1082). `git worktree list` cannot see an unregistered sibling
+directory, but teardown check 2 globs `<repo>-wt-*` and halts the whole run on
+any hit it cannot prove inert. So a live-held leftover that already existed
+before the run was invisible here and halted the run hours later, after the
+first lane in that repo. Pre-flight now runs the same per-repo glob and
+judges each unregistered hit read-only by the zombie-shell conditions it can
+prove without touching anything: a real directory (not a reparse point),
+empty, and `dir_holders.py` `STATUS=CLEAR`. Condition 3 (unregistered) is how
+the hit was selected. Condition 5 (`remove-worktree` ran and refused) is
+deliberately not attempted, because pre-flight never removes what the run did
+not create. A directory that meets the other four cannot halt teardown anyway:
+either removal succeeds or the directory is exactly the zombie shell the
+exception covers. Any other hit, including `LIVE` and `UNKNOWN`, makes the
+repo `leftover-dir`, and the reason names each path and its holder pids.
+
 A check that cannot establish a repo's state reports `unknown` (its own
 state, never folded into either a pass or a confirmed skip), per global
 CLAUDE.md. `unknown` does not dispatch -- an unreadable repo is not a repo
@@ -76,11 +92,14 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
+import stat
 import sys
 from pathlib import Path
 from typing import Any, Callable, Dict, List, NamedTuple, Optional, Tuple
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+import dir_holders  # noqa: E402
 import git_run  # noqa: E402
 
 DEFAULT_FLEET_ROOT = Path("E:/automation")
@@ -92,8 +111,24 @@ MISSING = "missing"
 DIRTY = "dirty"
 OFF_BRANCH = "off-branch"
 WORKTREE = "worktree"
+LEFTOVER_DIR = "leftover-dir"
 # The state for "could not establish", never folded into either of the above.
 UNKNOWN = "unknown"
+
+
+class LeftoverDir(NamedTuple):
+    """One unregistered `<repo>-wt-*` sibling, as gathered by `scan_leftovers`.
+
+    `None` in `reparse`/`empty` means the fact could not be read, which is
+    never taken as a pass.
+    """
+
+    path: str
+    reparse: Optional[bool]
+    empty: Optional[bool]
+    holders: str  # dir_holders status: "CLEAR" | "LIVE" | "UNKNOWN"
+    holder_pids: Tuple[int, ...]
+    probe_reason: Optional[str]
 
 
 class RepoFacts(NamedTuple):
@@ -109,12 +144,31 @@ class RepoFacts(NamedTuple):
     default_branch: str
     porcelain_empty: bool
     extra_worktrees: Tuple[str, ...]
+    leftover_dirs: Tuple[LeftoverDir, ...] = ()
 
 
 # Re-exported, not redefined (fleet-config#677) -- see `git_run.Unreadable` for
 # why an unreadable repo gets no verdict at all rather than a manufactured one.
 # `except repo_preflight.Unreadable` at any call site still resolves here.
 Unreadable = git_run.Unreadable
+
+
+def judge_leftover(d: LeftoverDir) -> Optional[str]:
+    """Pure: None when the directory is a provably inert shell, else why not."""
+    problems = []
+    if d.reparse is None:
+        problems.append("attributes unreadable")
+    elif d.reparse:
+        problems.append("a reparse point/junction")
+    elif d.empty is None:
+        problems.append("contents unreadable")
+    elif not d.empty:
+        problems.append("not empty")
+    if d.holders == "LIVE":
+        problems.append("held live by pid " + ", ".join(str(p) for p in d.holder_pids))
+    elif d.holders != "CLEAR":
+        problems.append(f"live-holder probe {d.holders}: {d.probe_reason or 'no reason given'}")
+    return "; ".join(problems) or None
 
 
 def classify_repo(facts: RepoFacts) -> Tuple[str, str]:
@@ -141,6 +195,17 @@ def classify_repo(facts: RepoFacts) -> Tuple[str, str]:
             "pre-existing worktree(s) from an earlier run or a live session: "
             + ", ".join(facts.extra_worktrees),
         )
+    problems = [
+        f"{d.path} ({why})"
+        for d in facts.leftover_dirs
+        if (why := judge_leftover(d)) is not None
+    ]
+    if problems:
+        return (
+            LEFTOVER_DIR,
+            "leftover wt dir(s) not provably inert, teardown would halt on them: "
+            + "; ".join(problems),
+        )
     return AVAILABLE, ""
 
 
@@ -157,6 +222,51 @@ def parse_worktree_list(porcelain: str) -> Tuple[str, ...]:
         if line.startswith("worktree ")
     ]
     return tuple(paths[1:])
+
+
+def _is_reparse(path: Path) -> Optional[bool]:
+    try:
+        st = os.lstat(path)
+    except OSError:
+        return None
+    attrs = getattr(st, "st_file_attributes", None)
+    if attrs is None:  # non-Windows: a symlink is the nearest equivalent
+        return stat.S_ISLNK(st.st_mode)
+    return bool(attrs & stat.FILE_ATTRIBUTE_REPARSE_POINT)
+
+
+def _is_empty(path: Path) -> Optional[bool]:
+    # No top-level child means no descendant, so this is the recursive check.
+    try:
+        with os.scandir(path) as it:
+            return next(it, None) is None
+    except OSError:
+        return None
+
+
+def scan_leftovers(repo_path: Path, registered: Tuple[str, ...]) -> Tuple[LeftoverDir, ...]:
+    """Every `<repo>-wt-*` sibling git does not list, with its read-only facts.
+
+    The glob is per repo, exactly as teardown check 2's, never a fleet-wide
+    `*-wt-*`: another repo's in-flight worktree is not this repo's leftover
+    (app-launcher#709).
+    """
+    known = {dir_holders.normalize(p) for p in registered}
+    found = []
+    for hit in sorted(repo_path.parent.glob(f"{repo_path.name}-wt-*")):
+        if dir_holders.normalize(str(hit)) in known:
+            continue
+        reparse = _is_reparse(hit)
+        probe = dir_holders.probe(str(hit))
+        found.append(LeftoverDir(
+            path=str(hit),
+            reparse=reparse,
+            empty=_is_empty(hit) if reparse is False else None,
+            holders=probe.status,
+            holder_pids=tuple(h["pid"] for h in probe.holders),
+            probe_reason=probe.reason,
+        ))
+    return tuple(found)
 
 
 # Stripped stdout, or `Unreadable` -- never an empty string standing in for a
@@ -199,12 +309,14 @@ def gather(repo_path: Path, default_branch: Optional[str] = None) -> RepoFacts:
     current_branch = _run_git(repo_path, "branch", "--show-current")
     porcelain = _run_git(repo_path, "status", "--porcelain")
     worktrees = _run_git(repo_path, "worktree", "list", "--porcelain")
+    extra = parse_worktree_list(worktrees)
     return RepoFacts(
         exists=True,
         current_branch=current_branch,
         default_branch=resolved_default,
         porcelain_empty=porcelain == "",
-        extra_worktrees=parse_worktree_list(worktrees),
+        extra_worktrees=extra,
+        leftover_dirs=scan_leftovers(repo_path, extra),
     )
 
 
