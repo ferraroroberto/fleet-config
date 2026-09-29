@@ -52,6 +52,11 @@ _STANDALONE_UNIT_CHECKS: Tuple[Tuple[str, str, str], ...] = (
      "TTL stale-reclaim, and the sibling-path convention -- is testable "
      "on its own; the same file covers `service_probe.py`, the live-service "
      "capability land-primary's fourth guard calls (fleet-config#680)"),
+    ("untrack_guard", "test_untrack_guard.py",
+     "a fast-forward keeps every live file the merged range untracks -- "
+     "the automation#144 config loss reproduced through land-primary against "
+     "a fixture repo, plus the refusal and unknown-ignore paths that must "
+     "never lose a file (fleet-config#1086)"),
     ("cleanup_fleet_all_flow", "test_cleanup_fleet_all_flow.py",
      "the cleanup-fleet-all workflow script's control flow -- strict lane "
      "seriality, teardown on every terminal path, and halt-on-residue -- is "

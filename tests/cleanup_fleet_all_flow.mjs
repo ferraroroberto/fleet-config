@@ -227,8 +227,8 @@ const check = (cond, msg) => { console.log((cond ? 'OK   ' : 'FAIL ') + msg); if
     'the repo-scoped glob carries the why-comment (and the incident) so it is not "simplified"')
   check(/index\.lock/.test(p) && /live-held/.test(p) && /stale-cleared/.test(p),
     'check 5 (stale index.lock, with a live-holder branch) is briefed')
-  check(/rev-list --count HEAD\.\.origin/.test(p) && /--ff-only/.test(p) && !/pull --rebase/.test(p),
-    'check 6 fast-forwards with --ff-only only')
+  check(/rev-list --count HEAD\.\.origin/.test(p) && /untrack_guard\.py fast-forward/.test(p) && !/pull --rebase/.test(p),
+    'check 6 fast-forwards only, through the guarded merge --ff-only (#1086)')
   check(/never halt/i.test(p), 'checks 5 and 6 are explicitly non-halting')
   check(/dir_holders\.py check/.test(p) && /STATUS=CLEAR/.test(p),
     'the zombie-shell rule names the repo-agnostic live-holder probe and its CLEAR verdict')
@@ -467,6 +467,37 @@ const FOREIGN_LINE = 'WORKTREE=E:/automation/alpha-wt-nav-41af40a BRANCH=chore/r
     'SKILL.md documents foreignWorktrees and why a foreign worktree stopped halting runs')
   check(/worktree_residue\.py classify/.test(skill), 'SKILL.md\'s post-flight enumeration uses the same classifier')
   check(/`deferred`/.test(skill) && /7b/.test(skill), 'SKILL.md feeds the workflow\'s deferred list to the retry pass')
+}
+
+// --- Case 15: live files an untracking merge would delete are kept and reported (#1086) ---
+// Both fast-forwards a lane runs -- land-primary at ship, check 6 at teardown --
+// go through untrack_guard, and whatever either kept reaches the lane result
+// and the run log. Never a bare `git pull` in the teardown brief.
+{
+  const { sink, agentImpl } = promptSpy(l => {
+    if (l.includes(':execute:')) return { result: 'MERGED', pr: 'pr/1', mergeSha: 'deadbee', restoredUntracked: 'RESTORED_UNTRACKED=config/a.json' }
+    if (l === 'documentation:teardown:bravo#2') return { ...reply(l, {}), restoredUntracked: 'KEPT_ASIDE=config/b.json stash=C:/tmp/untrack-guard-x' }
+    return reply(l, {})
+  })
+  sink.args = { issuesByBucket: ISSUES }
+  const res = await makeRunner(agentImpl, sink)
+  const byNum = n => res.buckets.flatMap(b => b.results).find(r => r.issue.number === n)
+  check((byNum(1).restoredUntracked || '') === 'RESTORED_UNTRACKED=config/a.json',
+    'a file land-primary kept at ship reaches the lane result')
+  check((byNum(2).restoredUntracked || '').includes('RESTORED_UNTRACKED=config/a.json')
+    && byNum(2).restoredUntracked.includes('KEPT_ASIDE=config/b.json'),
+    'ship and teardown reports are merged, neither dropped')
+  check(/live files kept through the fast-forward/.test(sink.logs.join('\n')), 'the kept files surface in the run log')
+  const td = sink.prompts['documentation:teardown:alpha#1']
+  check(/untrack_guard\.py fast-forward/.test(td) && !/pull --ff-only`/.test(td),
+    'teardown check 6 fast-forwards through the guard, never a bare pull')
+  check(/restoredUntracked/.test(sink.prompts['documentation:execute:alpha#1']),
+    'the ship brief asks for land-primary\'s restore lines')
+  check(/untracks a file/.test(sink.prompts['documentation:build:alpha#1']),
+    'the build brief makes an untracking change name its paths')
+  const skill = readFileSync(join(REPO, '.claude', 'skills', 'cleanup-fleet-all', 'SKILL.md'), 'utf8')
+  check(/restoredUntracked/.test(skill) && /fleet-config#1086/.test(skill),
+    'SKILL.md documents restoredUntracked')
 }
 
 console.log(failures === 0 ? '\nALL CONTROL-FLOW CHECKS PASS' : `\n${failures} CHECK(S) FAILED`)

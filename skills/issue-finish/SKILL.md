@@ -190,6 +190,10 @@ upkeep) on this branch. Integration rules:
   line (what gate ran and its result), and `Closes #<N>` so the issue
   auto-closes on merge. Step 1's `PR_TEST_PLAN` lines go in as unticked test-plan
   boxes, one per unverifiable criterion, naming its verifier.
+  If the diff **untracks a file** (`git rm --cached`, a rename to `.sample`,
+  a `.gitignore` line over a tracked path), say so in the Summary, naming each
+  path: every checkout that pulls it loses its live copy unless its
+  fast-forward goes through `untrack_guard.py` (fleet-config#1086).
   Match the PR-body style of recent merged PRs in the repo.
   Do **not** include the `🤖 Generated with [Claude Code]` line at the bottom of the PR body.
 
@@ -274,8 +278,15 @@ Decision below is driven by the project's `## CI expectations` block
     `ASSERT_OWNER=refuse: <reason>` (dirty tree, or another issue's claim live)
     → **stop immediately, do not checkout or pull** — surface the refusal
     reason rather than improvising a recovery. Only on a pass: `git checkout
-    <main>` then `git pull --ff-only`, then release the claim so the next
-    session can own the primary:
+    <main>`, then fast-forward it through the untrack guard (never a bare
+    `git pull` — it deletes every live file the merge untracks,
+    fleet-config#1086):
+    ```
+    E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/untrack_guard.py fast-forward .
+    ```
+    `FF=done` → carry any `RESTORED_UNTRACKED=`/`KEPT_ASIDE=` line into the
+    step-7 summary; `FF=refused` → stop and report. Then release the claim so
+    the next session can own the primary:
     ```
     E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/worktree_claim.py release <repo>
     ```
@@ -307,9 +318,12 @@ Decision below is driven by the project's `## CI expectations` block
        E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/worktree_claim.py land-primary <repo> <N>
        ```
        It applies the same guard as `assert-owner` (clean tree, claim free or
-       owned by `<N>`) plus "already on the default branch", then `pull
-       --ff-only` and a `rev-list --count HEAD..origin/<default>` check. It
-       prints exactly one line either way:
+       owned by `<N>`) plus "already on the default branch", then a
+       fast-forward guarded by `untrack_guard.py` and a `rev-list --count
+       HEAD..origin/<default>` check. It prints exactly one `PRIMARY=` line
+       either way, plus a `RESTORED_UNTRACKED=`/`KEPT_ASIDE=` line for each
+       live file the merge untracked and the guard kept (fleet-config#1086) —
+       carry those into the summary too:
        - `PRIMARY=live behind=0` — the merge is live locally.
        - `PRIMARY=stale reason=<why>` — it could not establish that. **Do not
          improvise, do not stash, do not force, do not `git checkout`.**
@@ -443,7 +457,8 @@ result, maintenance — step 3c), the deploy-coverage decision (n/a / not
 touched / confirmed live / merged but not yet live / unknown — step 6b), and
 the live build line. **Worktree mode also carries step 5's `PRIMARY=` line
 verbatim** — `PRIMARY=live behind=0` or `PRIMARY=stale reason=<why>` — right
-next to the merge result. Merged and live are two facts; a summary reporting
+next to the merge result, with any `RESTORED_UNTRACKED=`/`KEPT_ASIDE=` line
+(both modes; a `KEPT_ASIDE` file is only in its stash dir and needs a human). Merged and live are two facts; a summary reporting
 only the first is reporting a deploy it never established.
 
 Then append the **work-summary** — the file/LOC shape of what shipped — by

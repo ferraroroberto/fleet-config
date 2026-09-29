@@ -75,6 +75,7 @@ import audit_issue  # noqa: E402
 import fleet_repo_scan  # noqa: E402
 import git_run  # noqa: E402
 import index_lock  # noqa: E402
+import untrack_guard  # noqa: E402
 from no_window import NO_WINDOW  # noqa: E402
 
 # Re-exported: `is_fleet_repo` now lives beside the crawl that uses it
@@ -139,6 +140,8 @@ def scan(root: str, only: str | None = None, dry_run: bool = False) -> dict:
     results: dict = {
         "to_audit": [], "unchanged": [], "self_fix": [], "below_threshold": [], "skipped": [],
         "stale_lock": [], "errors": [], "enumerated": 0,
+        # Not a bucket: a repo here is also in exactly one of BUCKETS.
+        "restored_untracked": [],
     }
 
     for d in fleet_repo_scan.iter_fleet_repos(root, only):
@@ -188,11 +191,17 @@ def scan(root: str, only: str | None = None, dry_run: bool = False) -> dict:
             continue
 
         if not dry_run:
-            try:
-                git_run.run_git_checked(["-C", repo_path, "pull", "--ff-only"])
-            except SystemExit:
+            # Guarded: a plain pull deletes every live file an incoming merge
+            # untracks, ignored or not (fleet-config#1086).
+            ff = untrack_guard.guarded_fast_forward(Path(repo_path), "@{u}")
+            if not ff.ok:
                 results["skipped"].append({"repo": name, "reason": "non-ff"})
                 continue
+            if ff.restored or ff.kept_aside:
+                results["restored_untracked"].append({
+                    "repo": name, "restored": ff.restored, "kept_aside": ff.kept_aside,
+                    "stash": str(ff.stash) if ff.stash else None,
+                })
 
         try:
             outcome = audit_issue.evaluate_repo(repo, repo_path, dry_run=dry_run)

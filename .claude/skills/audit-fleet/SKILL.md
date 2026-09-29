@@ -69,7 +69,7 @@ E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skill
 
 Once read, `SWEEP_RESULT`'s content is this step's JSON output.
 
-The script (`skills/_lib/fleet_audit_scan.py`, built on `audit_issue.py`'s `evaluate_repo`) walks `E:\automation\*\`, skips linked worktrees (`<repo>-wt-<N>`: `.git` is a file, not a dir — without this guard a worktree surfaces as a spurious off-branch repo), filters to repos with a `ferraroroberto` remote, skips dirty/off-branch repos, syncs the rest (`fetch` + `pull --ff-only`), and runs the **same ledger-gate + self-fix-churn decision `/codebase-audit` step 2 uses** (`evaluate_repo` — one implementation) per repo.
+The script (`skills/_lib/fleet_audit_scan.py`, built on `audit_issue.py`'s `evaluate_repo`) walks `E:\automation\*\`, skips linked worktrees (`<repo>-wt-<N>`: `.git` is a file, not a dir — without this guard a worktree surfaces as a spurious off-branch repo), filters to repos with a `ferraroroberto` remote, skips dirty/off-branch repos, syncs the rest (`fetch` + a guarded `merge --ff-only` via `untrack_guard.py`, which keeps every live file an incoming merge untracks — fleet-config#1086), and runs the **same ledger-gate + self-fix-churn decision `/codebase-audit` step 2 uses** (`evaluate_repo` — one implementation) per repo.
 
 JSON shape:
 
@@ -81,11 +81,12 @@ JSON shape:
  "skipped": [{"repo": "...", "reason": "dirty"|"off-branch"|"non-ff"|"index-lock in flight"}, ...],
  "stale_lock": [{"repo": "...", "path": "...", "verdict": "stale"|"stale_unconfirmed", "age_seconds": N, "size": N, "reason": "..."}, ...],
  "errors": [{"repo": "...", "reason": "..."}, ...],
+ "restored_untracked": [{"repo": "...", "restored": ["path", ...], "kept_aside": ["path", ...], "stash": "..."|null}, ...],
  "enumerated": N,
  "accounting": {"enumerated": N, "bucketed": N, "unaccounted": 0, "balanced": true}}
 ```
 
-`enumerated` counts repos the walk *found*, before any decision; `accounting` asserts the seven buckets sum back to it. A repo in no bucket shows nonzero `unaccounted` / `balanced: false` (fleet-config#567). Never report counts that don't add up as healthy.
+`enumerated` counts repos the walk *found*, before any decision; `accounting` asserts the seven buckets sum back to it. `restored_untracked` is not a bucket: it annotates a repo already in one. A repo in no bucket shows nonzero `unaccounted` / `balanced: false` (fleet-config#567). Never report counts that don't add up as healthy.
 
 A `stale_lock` entry is a repo carrying a stranded `.git/index.lock` — **the one bucket that never self-heals**: surface every entry by name, every week, until a human clears it. Invisible to every read (`status`, `fetch`, `rev-list`, an up-to-date `pull --ff-only` all exit 0) while the repo is frozen against every write (fleet-config#667). `verdict: stale` = no git process running at all; `stale_unconfirmed` = past threshold but couldn't be established — both need a look, neither auto-repaired. **Never delete a lock from this skill**, and never instruct a sub-agent to — it's another process's file; fix is a human confirming the holder is dead, then removing it.
 
@@ -239,6 +240,7 @@ Compose the digest as markdown (single long lines per paragraph, no hard wraps) 
 - **Self-fix section** *(only when non-empty)*: repos classified `SELF-FIX` — one line each naming closed issue numbers (`website: closed #71, #64 — ledger advanced, no organic change`).
 - **Below-threshold section** *(only when non-empty)*: repos classified `SKIP_BELOW_THRESHOLD` — one line each with accumulated vs threshold weighted-LOC (`accounting-quarterly: 591/1000 weighted lines since 2026-07-04 — accumulating, not yet audited`). NOT counted toward standing backlog.
 - **Skipped section:** repos skipped for dirty/off-branch/non-ff/index-lock-in-flight.
+- **Restored-untracked section** *(only when non-empty)*: one line per `restored_untracked` entry naming the paths the sync fast-forward would have deleted and put back (`automation: kept 2 live files the merge untracked — config/a.json, config/b.json`); any `kept_aside` path is named with its `stash` dir as needing a human (fleet-config#1086).
 - **Stale-lock section** *(only when non-empty)*: repos with a stranded `.git/index.lock`, one line each with verdict and age (`email-archiver: 0-byte lock 15.2d old, no git process running — repo frozen against every write; needs a human to confirm the holder is dead and remove it`). **Never** resolved by the run itself — repeats verbatim until acted on (fleet-config#667).
 - **Session-limit section** *(only when non-empty)*: repos left unaudited because the step-3 3-pause safety net was hit.
 - **New findings this week:** built strictly from the `new` counts each sub-agent reported (step 3's `Filed:` breakdown) — only bucket/URL pairs where `new > 0`. List at the top.
