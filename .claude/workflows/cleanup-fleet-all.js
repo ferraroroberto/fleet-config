@@ -92,6 +92,22 @@ const VALIDATE_RESULT_SCHEMA = {
   },
 }
 
+// Two ship-gate invariants no JSON-schema `enum`/`required` above can express
+// (fleet-config#1065): a self-contradictory agent reply must never let a lane
+// ship. This script is the single decision source both the native Workflow
+// path and the interactive skills/_lib/cleanup_workflow.cjs bridge execute
+// (same source, two callers) — enforcing both here, once, means neither path
+// can diverge from the other. cleanup_workflow.cjs used to duplicate this
+// gate in its own `agent()`, which is exactly what let the native path ship a
+// `pass: true` / `verification: FAIL` verdict the bridge would have rejected.
+function inconsistentBuild(build) {
+  return build.verification === 'PASS' && build.status !== 'built'
+}
+
+function inconsistentValidate(verdict) {
+  return verdict.pass && verdict.verification !== 'PASS'
+}
+
 const EXECUTE_RESULT_SCHEMA = {
   type: 'object',
   required: ['result'],
@@ -313,6 +329,14 @@ async function processIssue(bucket, issue) {
       lane.worktree = build.worktree || lane.worktree
     }
 
+    // Ship-gate invariant #1 (fleet-config#1065): a PASS build must claim
+    // status 'built'. A self-contradictory reply is never trusted as PASS,
+    // regardless of what else it claims (including its own `retryable`).
+    if (build && inconsistentBuild(build)) {
+      build.verification = 'FAIL'
+      build.reason = build.reason || 'failed build cannot pass verification'
+    }
+
     if (!build || build.verification !== 'PASS') {
       const reason = build ? (build.reason || `verification ${build.verification}`) : 'build agent returned no result'
       if (build && build.retryable && round < MAX_ROUNDS) {
@@ -328,6 +352,13 @@ async function processIssue(bucket, issue) {
       label: `${bucket}:validate:${issue.repo}#${issue.number}`,
       schema: VALIDATE_RESULT_SCHEMA,
     })
+
+    // Ship-gate invariant #2 (fleet-config#1065): pass requires verification
+    // PASS. A `pass: true` / `verification: FAIL` verdict is never trusted.
+    if (verdict && inconsistentValidate(verdict)) {
+      verdict.pass = false
+      verdict.feedback = verdict.feedback || 'validator requires a consistent pass/verification verdict'
+    }
 
     if (verdict && verdict.pass) {
       const shipped = await agent(executePrompt(issue, build), {

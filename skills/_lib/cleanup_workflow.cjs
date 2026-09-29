@@ -54,11 +54,13 @@ async function next(state) {
     if (prior.id !== id || !Object.hasOwn(prior, 'result')) throw new Error('result does not match the next request')
     if (prior.result !== null) {
       validate(prior.result, opts.schema)
-      if (opts.phase === 'Validate' && (!prior.result.feedback.trim() || (prior.result.pass && prior.result.verification !== 'PASS'))) {
-        throw new Error('validator requires feedback and a consistent verification verdict')
-      }
-      if (opts.phase === 'Build' && prior.result.verification === 'PASS' && prior.result.status !== 'built') {
-        throw new Error('failed build cannot pass verification')
+      // The two ship-gate invariants beyond schema shape (pass requires
+      // verification PASS; a PASS build requires status built) are enforced
+      // once, in the workflow script itself (`inconsistentBuild` /
+      // `inconsistentValidate`), so this bridge and the native Workflow path
+      // executing the same source can never disagree (fleet-config#1065).
+      if (opts.phase === 'Validate' && !prior.result.feedback.trim()) {
+        throw new Error('validator requires non-empty feedback')
       }
     }
     return prior.result

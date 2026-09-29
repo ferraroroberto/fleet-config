@@ -27,7 +27,13 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from no_window import NO_WINDOW  # noqa: E402
 from process_scope import ProcessScope, PipeReader, DRAIN_TIMEOUT_SECONDS, TERMINATE_TIMEOUT_SECONDS  # noqa: E402
 from rate_gate import STALL_TIMEOUT_ENV, UNATTENDED_ENV  # noqa: E402
-from runner_adapters import ClaudeAdapter, CodexAdapter, ProgressEvent  # noqa: E402
+from runner_adapters import (  # noqa: E402
+    RESERVED_FLAGS,
+    ClaudeAdapter,
+    CodexAdapter,
+    ProgressEvent,
+    normalize_skill_prompt,
+)
 
 MAX_SUMMARY_CHARS = 180
 SUMMARY_KEYS = (
@@ -42,7 +48,6 @@ SUMMARY_KEYS = (
     "skill",
     "bucket",
 )
-RESERVED_FLAGS = ("-p", "--print", "--output-format", "--include-partial-messages")
 STALL_FLAG = "--stall-timeout"
 
 # An outer, adapter-side post-condition, checked after the child exits and
@@ -852,48 +857,6 @@ class ProgressFormatter:
             status = "❌ failed" if failed else "✅ completed"
         result_note = " · no terminal result event" if not self._saw_result else ""
         self.emit(f"{status} · exit {exit_code}{result_note}")
-
-
-# Claude Code 2.1.237 changed how a bare `/<skill>` prompt is framed in headless
-# `-p` mode. The skill body now arrives as its own message flagged
-# `"isMeta": true, "turnCompanion": true` -- passive context -- while the user
-# turn carries only `<command-name>/<skill></command-name>`; the run that
-# exposed this recorded `input_tokens: 2` against 52,603 cached ones. A skill
-# whose text opens with an imperative still gets executed. One that opens with
-# descriptive prose reads as reference material, and the model answers "Ready --
-# what would you like to do?" and stops (fleet-config#689).
-#
-# So the adapter stops depending on slash expansion and asks for the skill by
-# name. Appending the instruction *after* the slash command is not an option:
-# trailing text lands in `<command-args>`, where the skill parses it as its own
-# arguments.
-_SLASH_COMMAND_RE = re.compile(r"^/(?P<name>[A-Za-z0-9][A-Za-z0-9._-]*)(?P<rest>\s[\s\S]*)?$")
-
-SKILL_PROMPT_TEMPLATE = (
-    "Run the {name} skill now via the Skill tool, end to end and fully unattended, "
-    "following its SKILL.md steps exactly. Skill arguments: {arguments}. "
-    "Nobody is attending this run: never ask a question, never end your turn "
-    "waiting to be resumed, and poll every background call to completion inside "
-    "your own turn."
-)
-
-
-def normalize_skill_prompt(prompt: str) -> str:
-    """Rewrite a bare ``/<skill>`` prompt into an explicit instruction.
-
-    Anything that is not a slash command comes back untouched -- a caller that
-    already phrases its own instruction keeps it verbatim. Trailing text after
-    the command name is forwarded as the skill's arguments, which is what slash
-    expansion would have done with it anyway.
-    """
-    match = _SLASH_COMMAND_RE.match(prompt.strip())
-    if match is None:
-        return prompt
-    arguments = (match.group("rest") or "").strip()
-    return SKILL_PROMPT_TEMPLATE.format(
-        name=match.group("name"),
-        arguments=arguments or "none",
-    )
 
 
 def build_command(arguments: Sequence[str], executable: Optional[str] = None) -> list[str]:
