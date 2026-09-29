@@ -94,12 +94,13 @@ const VALIDATE_RESULT_SCHEMA = {
 
 // Two ship-gate invariants no JSON-schema `enum`/`required` above can express
 // (fleet-config#1065): a self-contradictory agent reply must never let a lane
-// ship. This script is the single decision source both the native Workflow
-// path and the interactive skills/_lib/cleanup_workflow.cjs bridge execute
-// (same source, two callers) — enforcing both here, once, means neither path
-// can diverge from the other. cleanup_workflow.cjs used to duplicate this
-// gate in its own `agent()`, which is exactly what let the native path ship a
-// `pass: true` / `verification: FAIL` verdict the bridge would have rejected.
+// ship. This script is the decision source both the native Workflow path and
+// the interactive skills/_lib/cleanup_workflow.cjs bridge execute, so enforcing
+// them here covers both. Before, only the bridge checked them, which let the
+// native path ship a `pass: true` / `verification: FAIL` verdict. The bridge
+// keeps its own fail-loud rejection of a contradictory replayed result on
+// purpose (it has no shared module to import this from); keep the two
+// conditions identical.
 function inconsistentBuild(build) {
   return build.verification === 'PASS' && build.status !== 'built'
 }
