@@ -63,6 +63,7 @@ from typing import Dict, List, Optional
 # same way `design_lint/files.py` reaches `git_run`.
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import fleet_repo_scan  # noqa: E402
+import wide_views  # noqa: E402
 
 LOOPBACK = "127.0.0.1"
 
@@ -86,6 +87,10 @@ class Target:
     root: Optional[Path]
     base_url: str
     review: Dict[str, object] = field(default_factory=dict)
+    # `[design] wide_views` (#1113): tab ids exempt from the 772px measure; the error is
+    # a malformed declaration, which the evaluation reports rather than guesses around.
+    wide_views: List[str] = field(default_factory=list)
+    wide_views_error: Optional[str] = None
 
 
 class PlanError(Exception):
@@ -185,8 +190,10 @@ def resolve_target(
         raise PlanError(f"unknown target {repo!r}: not a hooks/projects.toml repo nor a directory")
 
     review = load_review_block(root)
+    wide, wide_error = wide_views.load_wide_views(root)
     if url_override:
-        return Target(name=name, root=root, base_url=url_override.rstrip("/"), review=review)
+        return Target(name=name, root=root, base_url=url_override.rstrip("/"), review=review,
+                      wide_views=wide, wide_views_error=wide_error)
 
     table = tables.get(name, {})
     port = table.get("webapp_port")
@@ -196,7 +203,8 @@ def resolve_target(
             f"{name} declares no webapp_port/browser_scheme in hooks/projects.toml — "
             "pass --url for a non-fleet target"
         )
-    return Target(name=name, root=root, base_url=f"{scheme}://{LOOPBACK}:{int(port)}", review=review)
+    return Target(name=name, root=root, base_url=f"{scheme}://{LOOPBACK}:{int(port)}", review=review,
+                  wide_views=wide, wide_views_error=wide_error)
 
 
 def screen_id(device: str, theme: str, view: str) -> str:

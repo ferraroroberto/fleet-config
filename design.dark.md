@@ -163,8 +163,8 @@ headers only).
 
 Unchanged from the Light theme. Reserve bottom padding equal to the nav height +
 safe-area inset so the fixed bar never covers content. The wide layout
-(`layout.wide`, 1100px and fine pointer: left rail + master-detail, board
-exception) applies unchanged. The rail is a `card` surface, so in dark it
+(`layout.wide`, 1100px and fine pointer: left rail + master-detail, width
+by the shape of the view) applies unchanged. The rail is a `card` surface, so in dark it
 sits one step above the canvas like any other card.
 
 ## Elevation & Depth

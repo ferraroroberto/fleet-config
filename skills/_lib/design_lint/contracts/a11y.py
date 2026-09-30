@@ -7,12 +7,17 @@ rather than about any one component.
 from __future__ import annotations
 
 import re
+import sys
+from pathlib import Path
 from typing import List
 
 from ..colormath import spec_pairs
 from ..css import _BLOCK_RE
 from ..selectors import _compounds, _last_selector_line, _split_top_level_commas
 from ._ctx import _ContractsCtx, _evidence, _loc_at, _result
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))  # skills/_lib, as design_lint.files does
+import wide_views  # noqa: E402
 
 
 _FOCUS_VISIBLE_RULE_RE = re.compile(
@@ -74,6 +79,17 @@ def _check_desktop_measure(ctx: _ContractsCtx) -> List[dict]:
         return [_result("desktop-measure", "WARN",
                          f"content capped at {near.group(1)}px — spec is 772px",
                          _evidence(decls, near_re))]
+    # Width follows the shape of the view (#1113): an app that declares wide views has one
+    # full-width layout by design, and CSS cannot say which views are which. Its other views'
+    # measure is what `/design-review`'s LAYOUT-06 verifies, so this is a WARN, not a FAIL.
+    # A declaration that cannot be read stays a FAIL: unknown is never a pass.
+    wide, wide_err = wide_views.load_wide_views(ctx.root)
+    if wide_err:
+        return [_result("desktop-measure", "FAIL", f"no desktop content cap found — spec: centered max-width 772px; {wide_err}")]
+    if wide:
+        return [_result("desktop-measure", "WARN",
+                         f"no 772px cap in the CSS; wide views declared ({', '.join(wide)}) — the measure of the "
+                         "other views is verified by /design-review LAYOUT-06")]
     return [_result("desktop-measure", "FAIL", "no desktop content cap found — spec: centered max-width 772px")]
 
 

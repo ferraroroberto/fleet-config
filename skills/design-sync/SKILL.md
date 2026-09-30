@@ -138,7 +138,7 @@ read.
   one per line below:
   - **focus ring** — tokenized `:focus-visible` ring.
   - **reduced motion** — `prefers-reduced-motion` respected.
-  - **desktop measure** — the centered 772px desktop measure.
+  - **desktop measure** — the centered 772px desktop measure; an app that declares `[design] wide_views` in its `.fleet.toml` (#1113) gets a WARN, not a FAIL, when no cap exists — the other views are `/design-review`'s LAYOUT-06.
   - **switch on-track** — on-track color = success (green); FAIL if it is
     the accent.
   - **checkboxes** — a checkbox control must be skinned off the browser's

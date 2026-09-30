@@ -208,6 +208,9 @@ def finding_values(rule: dict, doc: Optional[dict] = None) -> Dict[str, object]:
     hit_min = (doc.get("params") or {}).get("hit_min")
     if hit_min is not None:
         out["hit_min"] = _compact(hit_min)
+    measure_px = (doc.get("params") or {}).get("measure")
+    if measure_px is not None:
+        out["measure"] = _compact(measure_px)
     for key in ("viewports", "min_viewport", "tolerance_px"):
         if key in (rule.get("params") or {}):
             out[key] = _compact(rule["params"][key])
@@ -228,7 +231,7 @@ def finding_values(rule: dict, doc: Optional[dict] = None) -> Dict[str, object]:
     first = items[0] if items and isinstance(items[0], dict) else {}
     # An item-level `threshold` (COLOR-01's per-pair AA floor) is the one the
     # sentence means; the rule's own threshold there is the pair *count*.
-    for key in ("component", "ratio", "fg", "bg", "inner_w", "content_w", "threshold"):
+    for key in ("component", "ratio", "fg", "bg", "inner_w", "content_w", "threshold", "arm"):
         if key in first:
             out[key] = _compact(first[key])
     return {k: v for k, v in out.items() if v is not None}

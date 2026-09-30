@@ -323,6 +323,20 @@ check(_tok["status"] == "PASS" and (_tok.get("evidence") or "").endswith(":4"),
       f"desktop-measure: max-width through a 772px custom property is the fleet measure (#1087) -- {_tok}")
 check(near["switch-on-green"]["status"] == "NA", "no switch -> NA")
 
+# width follows the shape of the view: declared wide views turn the no-cap FAIL into a WARN (#1113)
+_WIDE = '[design]\nwide_views = ["board", "table"]\n'
+_nocap = "@media (max-width: 720px) { .row { grid-template-columns: 1fr; } }\n"
+_w = run_contracts(_nocap, files={".fleet.toml": _WIDE})["desktop-measure"]
+check(_w["status"] == "WARN" and "board, table" in _w["detail"] and "LAYOUT-06" in _w["detail"],
+      f"desktop-measure: no cap plus declared wide views WARNs and names them -- {_w}")
+check(run_contracts(_nocap, files={".fleet.toml": 'layer = "x"\n'})["desktop-measure"]["status"] == "FAIL",
+      "desktop-measure: a .fleet.toml with no wide_views leaves the FAIL")
+_wb = run_contracts(_nocap, files={".fleet.toml": "[design]\nwide_views = [\n"})["desktop-measure"]
+check(_wb["status"] == "FAIL" and "unparseable" in _wb["detail"],
+      f"desktop-measure: an unreadable declaration stays a FAIL, unknown is never a pass -- {_wb}")
+check(run_contracts(".app { max-width: 772px; margin: 0 auto; }", files={".fleet.toml": _WIDE})["desktop-measure"]["status"] == "PASS",
+      "desktop-measure: a real 772px cap still PASSes when wide views are declared")
+
 # icon sizes come FROM the spec (spec-driven, not hardcoded)
 icon_css = ".icon { width: 16px; } .big-icon { width: 40px; height: 40px; }"
 strays = run_contracts(icon_css, spec_light={"icons.size.inline": "16px"})

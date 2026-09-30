@@ -241,10 +241,18 @@ and behavior stay the same:
   the space right of the rail.
 - **The page header** heads the list pane. A pane scrolls on its own; the
   window does not.
-- **Board exception.** A multi-column board (kanban) may span the full width
-  available to content at any desktop width. It is the one sanctioned
-  exception to the 772px measure. Its page header and toolbar span with it,
-  so the view never mixes two measures.
+- **Width follows the shape of the view, per view, never per app.** A view
+  whose content is one-dimensional (prose, a form, settings, a single list, a
+  card list, a detail pane) keeps the centred measure. A view whose content is
+  two-dimensional, where the columns themselves carry the meaning, may span
+  the full width available to content at any desktop width: board lanes
+  (kanban), a data table with many fields, a tree or grid whose columns are
+  attributes, calendar days or a timeline. A full-width view's page header and
+  toolbar span with it, so one view never mixes two measures, and a
+  full-width app's one-dimensional views (settings, a form, a detail) still
+  keep the measure. An app declares its wide views in its `.fleet.toml`
+  (`[design] wide_views = ["board", "table"]`, the tab ids); an undeclared
+  view keeps the measure.
 
 Below 1100px, or on a coarse pointer at any width, nothing changes: the
 772px measure and the tab placement described in the Navigation contract
@@ -673,7 +681,7 @@ byte-for-byte components.
 - **Don't** set a line people read in `caption`, or uppercase anything but an `overline` group header — secondary lines are `body-sm`, and numbers and units are never transformed.
 - **Don't** put a solid accent fill on any button except the view's primary action — secondary emphasis is the tint, never a second solid.
 - **Don't** introduce a second accent or per-app navigation variants.
-- **Don't** stretch a single column full-bleed on desktop — keep the centered 772px measure below 1100px, and use the left rail + master-detail layout above it. A multi-column board is the one exception.
+- **Don't** stretch a single column full-bleed on desktop — keep the centered 772px measure below 1100px, and use the left rail + master-detail layout above it. Only a view whose content is two-dimensional (board lanes, a many-field table, a tree with attribute columns, calendar days) may span the window, and the app declares it in `wide_views`.
 - **Don't** use status colors decoratively — they signal state only.
 - **Don't** put raw infrastructure detail (hostnames, URLs, exception text) in user-facing failure copy — sanitize it; logs keep the detail.
 - **Don't** apply this spec to Streamlit POC spikes.

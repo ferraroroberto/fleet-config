@@ -200,6 +200,21 @@ declaration is visible. The two loaders ignore each other's entries — a
 `rule`-keyed entry raises no `accepted-exception` row in `design_lint`, and a
 `check`-keyed one is not a rubric exception — so one table serves both skills.
 
+### Optional per-repo `[design] wide_views` key (fleet-config#1113)
+
+design.md's Layout rule is that width follows the shape of a view's content: a one-dimensional view (settings, a form, one list, a detail) keeps the 772px measure, and a two-dimensional one (board lanes, a many-field table, a tree with attribute columns, calendar days) may span the window. An app names its two-dimensional views once:
+
+```toml
+[design]
+wide_views = ["board", "table", "today"]
+```
+
+| Field | Meaning |
+|---|---|
+| `wide_views` | optional; a list of non-empty view ids, the same tab ids the `/design-review` walk derives (`desktop-light-<id>`). An undeclared view keeps the measure |
+
+`skills/_lib/wide_views.py` is the one reader. `/design-review` records the list in `metrics.json`, and LAYOUT-06 fails a declared view that does not fill the window and an undeclared one-dimensional column wider than the measure. `design_lint`'s `desktop-measure` cannot see views, so with wide views declared and no 772px cap in the CSS it returns WARN, not FAIL, and leaves the other views to LAYOUT-06. A malformed key is never read as empty or as an exemption: LAYOUT-06 reports it as unmeasured, and `desktop-measure` keeps its FAIL with the reason. Same silent-if-unrecognized parsing as the other `[design]` keys.
+
 ### Optional per-repo `[worktree]` table (fleet-config#620)
 
 `skills/_lib/worktree_claim.py` junctions a repo's `.venv` into every fresh
