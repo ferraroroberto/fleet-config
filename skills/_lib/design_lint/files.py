@@ -95,10 +95,20 @@ def find_vendored_root(root: Path) -> Optional[Path]:
     local-llm-hub), so this searches rather than hardcoding the scaffold's
     path (fleet-config#291, #292). Bounded to two path segments ahead of
     `static/_vendored` — deeper nesting isn't a layout seen in the fleet.
+
+    With more than one copy (a second front end's `app/player/static/_vendored`),
+    the app's is the scaffold's `app/webapp/static` layout, else one whose
+    `static/` holds the app shell (`index.html`), else the shallowest, then by
+    name (#1087) — never simply the alphabetically first.
     """
-    candidates = sorted(p for p in root.glob("*/static/_vendored") if p.is_dir())
-    candidates += sorted(p for p in root.glob("*/*/static/_vendored") if p.is_dir())
-    for c in candidates:
-        if not any(part in SKIP_DIR_PARTS for part in c.parts):
-            return c
-    return None
+    candidates = [p for pattern in ("*/static/_vendored", "*/*/static/_vendored")
+                  for p in root.glob(pattern)
+                  if p.is_dir() and not any(part in SKIP_DIR_PARTS for part in p.parts)]
+    if not candidates:
+        return None
+    return min(candidates, key=lambda p: (
+        p.relative_to(root).as_posix() != "app/webapp/static/_vendored",
+        not (p.parent / "index.html").is_file(),
+        len(p.relative_to(root).parts),
+        p.as_posix(),
+    ))
