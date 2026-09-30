@@ -134,6 +134,26 @@ check(doc["queue"][1]["note"] == "shipped 4190488" and doc["queue"][1]["title"] 
       "set_item sets note and title")
 check("nothing to set" in _raises(cp.set_item, doc, "automation#135"), "set_item with no change refuses")
 
+# waiting-roberto only behind an answerable question (fleet-config#1102)
+wdoc = _valid()
+wdoc["waiting_on_roberto"].append({"text": "legacy line", "ref": "automation#135"})  # an old plain item
+err = _raises(cp.set_item, wdoc, "automation#135", status="waiting-roberto")
+check("plan ask" in err and "automation#135" in err,
+      f"set_item --status waiting-roberto without a question refuses, naming plan ask -- {err!r}")
+check("plan ask" in _raises(cp.add_item, wdoc, "life-os#180", "t", status="waiting-roberto"),
+      "add_item --status waiting-roberto without a question refuses")
+cp.add_question(wdoc, "Keep the burst trial on Thursday?", ref="automation#135", recommendation="yes")
+cp.set_item(wdoc, "automation#135", status="waiting-roberto")
+check(wdoc["queue"][1]["status"] == "waiting-roberto" and cp.validate(wdoc) == [],
+      "set_item --status waiting-roberto passes once a plan ask names the ref")
+_legacy = _valid()
+_legacy["queue"][1]["status"] = "waiting-roberto"
+check(cp.validate(_legacy) == [], "a plan file written before #1102 with a bare waiting-roberto row still validates")
+_wid = cp.add_waiting(wdoc, "Remember the last tab?", ref="app-launcher#1131")
+_wrow = next(r for r in wdoc["waiting_on_roberto"] if r.get("id") == _wid)
+check(_wrow.get("question") == "Remember the last tab?" and _wrow.get("repo") == "app-launcher",
+      f"plan wait files its text as an answerable question -- {_wrow}")
+
 # model on lanes and queue rows (fleet-config#1101)
 mdoc = _valid()
 cp.add_item(mdoc, "life-os#171", "sweep fix", model="sonnet")
@@ -333,8 +353,14 @@ try:
           f"CLI add --model with an unknown value exits 2 and writes nothing ({r.stderr.strip()[:120]})")
     r = plan("set", "app-launcher#1273", "--model", "")
     check(r.returncode == 0 and "model" not in json.loads(plan("show").stdout)["queue"][0], 'CLI set --model "" clears it')
+    before = (cli_dir / "chief-plan.json").read_bytes()
+    r = plan("set", "app-launcher#1273", "--status", "waiting-roberto")
+    check(r.returncode == 2 and "plan ask" in r.stderr and (cli_dir / "chief-plan.json").read_bytes() == before,
+          f"CLI set --status waiting-roberto without a question exits 2, names plan ask, writes nothing ({r.stderr.strip()[:160]})")
     r = plan("wait", "Remember the last tab?", "--ref", "app-launcher#1131")
     check(r.returncode == 0 and "waiting=1" in r.stdout, "CLI wait adds a waiting item")
+    check(json.loads(plan("show").stdout)["waiting_on_roberto"][0].get("question") == "Remember the last tab?",
+          "CLI wait files an answerable question (#1102)")
     before = (cli_dir / "chief-plan.json").read_bytes()
     r = plan("add", "app-launcher#1273", "again")
     check(r.returncode == 2 and "ERROR:" in r.stderr and (cli_dir / "chief-plan.json").read_bytes() == before,
@@ -355,7 +381,7 @@ try:
     check(asked.get("repo") == "life-os" and asked.get("recommendation") == "Merge them."
           and asked.get("options", [{}])[0].get("recommended") is True,
           "CLI ask round-trips through show")
-    asked_line = [ln for ln in r.stdout.splitlines() if '"question"' in ln]
+    asked_line = [ln for ln in r.stdout.splitlines() if 'Merge the capture copies?' in ln]
     check(r.stdout.count("\n") <= 14 and len(asked_line) == 1
           and json.loads(asked_line[0].strip().rstrip(",")) == asked,
           "CLI show prints one row per line, a question's options on its own line")

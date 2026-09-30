@@ -347,11 +347,29 @@ def drop_lane(doc: Dict[str, Any], repo: str) -> None:
     doc["lanes"] = kept
 
 
+def _require_question(doc: Dict[str, Any], ref: str) -> None:
+    """A row may wait on Roberto only while an open `plan ask` question names it (#1102).
+
+    A bare `waiting-roberto` status renders on the Board as "waiting on you" with
+    nothing to answer. Enforced by the mutations, not `validate()`, so a plan file
+    written before the rule still loads.
+    """
+    repo, local = split_ref(ref)
+    qualified = f"{repo}{local}"
+    if not any(row.get("question") and row.get("ref") == qualified for row in doc["waiting_on_roberto"]):
+        raise ValueError(
+            f"{qualified} can wait on Roberto only behind an answerable question: run "
+            f'`plan ask "<question>" --ref {qualified} --detail "..." --recommend "..." '
+            f'[--option "Label::description" ...]` first, then set waiting-roberto')
+
+
 def add_item(doc: Dict[str, Any], ref: str, title: str, status: str = "queued",
              note: Optional[str] = None, at: Optional[int] = None,
              model: Optional[str] = None) -> None:
     """Queue `ref`; `at` is a 1-based position (default: the end)."""
     repo, local = split_ref(ref)
+    if status == "waiting-roberto":
+        _require_question(doc, ref)
     row: Dict[str, Any] = {"repo": repo, "ref": local, "title": title, "status": status}
     if note:
         row["note"] = note
@@ -367,6 +385,8 @@ def set_item(doc: Dict[str, Any], ref: str, status: Optional[str] = None,
     if status is None and note is None and title is None and model is None:
         raise ValueError("nothing to set: pass --status, --note, --title or --model")
     row = doc["queue"][_index(doc, ref)]
+    if status == "waiting-roberto":
+        _require_question(doc, ref)
     _set_model(row, model)
     if status is not None:
         row["status"] = status
@@ -404,13 +424,13 @@ def _next_id(doc: Dict[str, Any]) -> str:
 
 
 def add_waiting(doc: Dict[str, Any], text: str, ref: Optional[str] = None) -> str:
-    """Append a plain waiting item; returns its id."""
-    row: Dict[str, Any] = {"id": _next_id(doc), "text": text}
-    if ref:
-        split_ref(ref)
-        row["ref"] = ref.strip()
-    doc["waiting_on_roberto"].append(row)
-    return row["id"]
+    """`plan wait`: the text becomes an answerable question; returns its id.
+
+    A plain waiting line had nothing for Roberto to answer on the Board's sheet
+    (#1102), so `wait` is now the shortest `plan ask`. Prefer `ask` with
+    `--detail` and `--recommend` for a real decision.
+    """
+    return add_question(doc, text, ref=ref)
 
 
 def parse_option(spec: str) -> Dict[str, Any]:
@@ -589,7 +609,7 @@ def add_cli(parser: argparse.ArgumentParser) -> None:
     rm.add_argument("ref")
 
     wait = acts.add_parser("wait", help="add a waiting-on-Roberto item")
-    wait.add_argument("text")
+    wait.add_argument("text", help="filed as a question (the short form of `ask`, #1102)")
     wait.add_argument("--ref", default=None, help="<repo>#<N>")
 
     ask = acts.add_parser("ask", help="add a structured question for the Board's answer sheet")

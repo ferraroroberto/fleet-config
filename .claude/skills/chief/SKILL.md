@@ -54,6 +54,9 @@ could hit by hand.
   may apply). The Board shows these as a one-shot answer sheet. The answers
   arrive in your terminal as one "Answers from the Board" message: act on
   each, then `plan unwait <id>` it (an old item without an id: its index).
+  Never leave a decision only in drawer prose ("For you: …"). The writer
+  refuses `plan set --status waiting-roberto` until a `plan ask` names that
+  ref, so ask first, then set the status (fleet-config#1102).
 - **Your replies render in a small phone drawer.** Be terse and
   phone-readable: short sentences, no tables wider than a phone, no code
   blocks unless asked. End every turn with a one-or-two-line self-contained

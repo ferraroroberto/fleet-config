@@ -12,6 +12,7 @@ reach it at all).
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
@@ -133,6 +134,38 @@ def _chief_handover_sessionstart_unit_checks() -> Tuple[int, int]:
               '"hookEventName": "SessionStart"' in stdout)
         check("chief_handover_sessionstart e2e: additionalContext carries the log content",
               "#445 shipped, #443 in review" in stdout)
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+    # ---- a compacted/resumed chief is told to re-read its current skill (#1102) ----
+    tmp = Path(tempfile.mkdtemp(prefix="chief_skill_refresh_"))
+    try:
+        (tmp / "chief-handover.md").write_text("log line\n", encoding="utf-8")
+        (tmp / "sessions-state.json").write_text(json.dumps({
+            "sid-chief": {"name": "chief", "launcher_session_id": "L-chief"},
+            "sid-dev": {"name": None, "launcher_session_id": "L-dev"}}), encoding="utf-8")
+        env = {"CLAUDE_HOOKS_STATE_DIR": str(tmp), "APP_LAUNCHER_SESSION_ID": ""}
+        version = hashlib.sha256(chs.skill_path().read_bytes()).hexdigest()[:12]
+
+        def refresh_out(sid: str, source: str, launcher: str = "") -> str:
+            _c, out, _e = run("chief_handover_sessionstart",
+                              {"hook_event_name": "SessionStart", "source": source, "cwd": str(REPO),
+                               "session_id": sid},
+                              extra_env={**env, "APP_LAUNCHER_SESSION_ID": launcher})
+            return out
+
+        out = refresh_out("sid-chief", "compact")
+        check("chief skill refresh: a compacted chief is told to re-read SKILL.md, with the file's current hash",
+              "Chief skill refresh" in out and "SKILL.md" in out and version in out and "log line" in out)
+        check("chief skill refresh: matched by the launcher session id too (the #835 lesson)",
+              "Chief skill refresh" in refresh_out("sid-new", "resume", launcher="L-chief"))
+        check("chief skill refresh: an ordinary fleet-config session gets the log but no refresh",
+              "Chief skill refresh" not in (o := refresh_out("sid-dev", "compact")) and "log line" in o)
+        check("chief skill refresh: a fresh startup gets none (/chief loads the current skill)",
+              "Chief skill refresh" not in refresh_out("sid-chief", "startup"))
+        (tmp / "sessions-state.json").write_text("{not json", encoding="utf-8")
+        check("chief skill refresh: an unreadable sessions state sends the conditional pointer, not silence",
+              "If you are the standing chief: re-read" in refresh_out("sid-chief", "compact"))
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 
