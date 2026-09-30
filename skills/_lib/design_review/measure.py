@@ -221,8 +221,19 @@ _MEASURE_JS = r"""
       if (w < floor || h < floor) small.push({sel: sel(x.el), label: txt(x.el).slice(0,30), w: Math.round(w), h: Math.round(h), vw: Math.round(x.vw), vh: Math.round(x.vh)}); });
     // A pair is covered, not an overlap, when a fixed or sticky layer takes the tap where the two
     // expanded rects meet and the other control's own box sits under that layer: the nav pill over
-    // scrolled content, a full-screen overlay over cards. Pairs within one layer still count, and so
-    // does a control beside a bar whose expansion merely reaches into it (#1019).
+    // scrolled content, a full-screen overlay over cards (#1019). It is covered too when one control's
+    // layer paints on top of the whole intersection: a switch whose expansion reaches into a nav tab
+    // never gets a tap there, whatever the scroll offset (#1094). Pairs within one layer still count,
+    // and so does a control painted over a layer's control, since it wins taps inside it.
+    const SAMPLES = 5;
+    const layerWins = (a, b) => [[a, b], [b, a]].some(([top, other]) => {
+      const cover = layerOf(top.el); if (!cover || cover.contains(other.el)) return false;
+      const l = Math.max(a.l, b.l, 0), r = Math.min(a.rr, b.rr, innerWidth), t = Math.max(a.t, b.t, 0), bt = Math.min(a.b, b.b, innerHeight);
+      if (l >= r || t >= bt) return false;
+      for (let i = 0; i < SAMPLES; i++) for (let j = 0; j < SAMPLES; j++) {
+        const hit = document.elementFromPoint(l + (r - l) * (i + 0.5) / SAMPLES, t + (bt - t) * (j + 0.5) / SAMPLES);
+        if (!hit || !cover.contains(hit)) return false; }
+      return true; });
     const covered = (a, b) => {
       const x = (Math.max(a.l, b.l) + Math.min(a.rr, b.rr)) / 2, y = (Math.max(a.t, b.t) + Math.min(a.b, b.b)) / 2;
       if (x < 0 || y < 0 || x >= innerWidth || y >= innerHeight) return false;
@@ -230,7 +241,7 @@ _MEASURE_JS = r"""
       if (!cover) return false;
       const under = [a, b].find(o => !cover.contains(o.el)); if (!under) return false;
       const u = under.el.getBoundingClientRect(), c = cover.getBoundingClientRect();
-      return u.left < c.right && c.left < u.right && u.top < c.bottom && c.top < u.bottom; };
+      return (u.left < c.right && c.left < u.right && u.top < c.bottom && c.top < u.bottom) || layerWins(a, b); };
     const overlaps = [], coveredPairs = []; let overlapCount = 0, coveredCount = 0; const n = Math.min(rects.length, 400);
     for (let i = 0; i < n; i++) for (let j = i + 1; j < n; j++) { const a = rects[i], b = rects[j];
       if (a.el.contains(b.el) || b.el.contains(a.el)) continue;
