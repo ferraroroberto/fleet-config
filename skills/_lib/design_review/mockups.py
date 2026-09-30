@@ -224,6 +224,13 @@ def _t_wide_desktop(rule: dict, v: Values) -> Mockup:
         w = max(10, min(int(round(pct * 100)), 100))
         return (f'<div class="mk-desktop"><span class="mk-column" style="width:{w}%"><span class="mk-title">Content column</span></span>'
                 f'<span class="mk-note">{_esc(note)}</span></div>')
+    if v.get("arm") == "stretched":
+        # A one-dimensional view stretched past the measure (#1113): the fix is a narrower column.
+        content_w = _int(v.get("content_w"), inner_w)
+        measure = _int(v.get("measure"), 772)
+        return {"now": frame(content_w / inner_w, f"{content_w}px of a {inner_w}px viewport"),
+                "proposed": frame(measure / inner_w, f"held to the {measure}px measure, or declared in wide_views"),
+                "caption": "Desktop measure: a one-dimensional view keeps the centred column; only a two-dimensional view spans the window."}
     now = frame(share, f"{share:.0%} of a {inner_w}px viewport")
     floor = v.get("min_viewport")
     proposed = frame(threshold, f"at least {threshold:.0%} of the viewport" + (f" at {_fmt(floor)}px and wider" if floor is not None else ""))

@@ -32,6 +32,7 @@ from acceptance.shared import SKIP_EXIT  # noqa: E402
 
 import design_review as dr  # noqa: E402
 from design_review import capture, evaluate as ev, measure, plan, rubric as rb  # noqa: E402
+from design_review import mockups as mockups_mod, report as report_mod  # noqa: E402
 
 _h = CheckHarness()
 check = _h.check
@@ -57,7 +58,7 @@ def _doc(name: str) -> dict:
 # ---- rubric: the real file loads and names only metrics that exist ----------
 
 rubric = dr.load_rubric(RUBRIC)
-check(rubric.version == "1.6.2", "rubric meta.version stamped")
+check(rubric.version == "1.7.0", "rubric meta.version stamped")
 check(len(rubric.rules) == 26, f"26 seed rules loaded (got {len(rubric.rules)})")
 check(rubric.categories == ["typography", "color", "touch", "navigation", "layout", "components", "a11y"],
       "categories in rubric order")
@@ -239,7 +240,7 @@ check(any(x.startswith("input") for x in _bsel) and not any(x.startswith("button
       "COLOR-03 measures the controls the spec gives a boundary (input, select, textarea, switch), not text-labelled buttons")
 
 
-def _layout06(content_w, content_span):
+def _layout06(content_w, content_span, wide_views=None, wide_views_error=None):
     doc = _doc("compliant")
     lay = doc["screens"][0]["metrics"]["layout"]
     lay["content_w"] = content_w
@@ -247,6 +248,10 @@ def _layout06(content_w, content_span):
         lay.pop("content_span", None)
     else:
         lay["content_span"] = content_span
+    if wide_views is not None:
+        doc["wide_views"] = wide_views
+    if wide_views_error is not None:
+        doc["wide_views_error"] = wide_views_error
     return next(r for r in ev.evaluate(doc, rubric, src_specs)["rules"] if r["id"] == "LAYOUT-06")
 
 
@@ -259,6 +264,45 @@ check(_ms["status"] == "pass" and "desktop-light-home" not in _ms["measured"] an
 _nw = _layout06(480, 480)
 check(_nw["status"] == "fail", "LAYOUT-06: a phone-width column at 1440 still fails")
 check(_layout06(700, None)["status"] == "fail", "LAYOUT-06: metrics without content_span fall back to content_w")
+
+# ---- #1113: width follows the shape of the view --------------------------------
+_st = _layout06(1400, 1400)
+check(_st["status"] == "fail" and _st["evidence"][0]["items"][0].get("arm") == "stretched",
+      f"LAYOUT-06: an undeclared one-dimensional view stretched past the measure fails -- {_st['status']} {_st['reason']}")
+check(_layout06(1400, 1400, wide_views=["home"])["status"] == "pass",
+      "LAYOUT-06: a view declared in wide_views may span the window")
+check(_layout06(1400, 1400, wide_views=["other"])["status"] == "fail",
+      "LAYOUT-06: a declaration for another view exempts nothing")
+_dn = _layout06(748, 748, wide_views=["home"])
+check(_dn["status"] == "fail" and "desktop-light-home" in _dn["measured"],
+      f"LAYOUT-06: a declared wide view still has to fill the window, so a lone measure column fails -- {_dn['status']}")
+check(_layout06(514, 1360)["status"] == "pass", "LAYOUT-06: an undeclared list + detail span is not a stretched column")
+_bad = _layout06(1400, 1400, wide_views=["home"], wide_views_error="unparseable .fleet.toml: boom")
+check(_bad["status"] == "unmeasured" and "wide_views" in _bad["reason"],
+      f"LAYOUT-06: a malformed declaration is unmeasured, never a pass or an exemption -- {_bad['status']} {_bad['reason']}")
+_vals = report_mod.finding_values(_st, {"params": {"measure": 772}})
+check(_vals.get("arm") == "stretched" and _vals.get("content_w") == 1400 and _vals.get("measure") == 772,
+      f"LAYOUT-06: the stretched arm reaches the report values -- {_vals}")
+_mk, _mk_err = mockups_mod.render_mockup(_st, _vals)
+check(_mk_err is None and _mk and "held to the 772px measure" in _mk["proposed"],
+      f"LAYOUT-06: the wide-desktop mock-up proposes the measure for a stretched view -- {_mk_err}")
+check("1400px" in report_mod.finding_sentence(_st, {"params": {"measure": 772}}),
+      "LAYOUT-06: the fix sentence names the column width")
+
+# `[design] wide_views` loads through one shared reader (#1113)
+import wide_views as wv  # noqa: E402
+
+_wv_dir = Path(tempfile.mkdtemp(prefix="wv-"))
+check(wv.load_wide_views(None) == ([], None) and wv.load_wide_views(_wv_dir) == ([], None), "wide_views: no root / no file is the normal, empty case")
+(_wv_dir / ".fleet.toml").write_text('layer = "working-web"\n[design]\nwide_views = ["board", " table "]\n', encoding="utf-8")
+check(wv.load_wide_views(_wv_dir) == (["board", "table"], None), "wide_views: a declared list loads, ids stripped")
+(_wv_dir / ".fleet.toml").write_text('[design]\nwide_views = "board"\n', encoding="utf-8")
+check(wv.load_wide_views(_wv_dir)[0] == [] and "list of non-empty" in (wv.load_wide_views(_wv_dir)[1] or ""), "wide_views: a non-list is an error, not a guess")
+(_wv_dir / ".fleet.toml").write_text('[design]\nwide_views = [\n', encoding="utf-8")
+check("unparseable" in (wv.load_wide_views(_wv_dir)[1] or ""), "wide_views: an unparseable file is an error, not an empty list")
+(_wv_dir / ".fleet.toml").write_text('[design]\nwide_views = ["board"]\n', encoding="utf-8")
+_tgt = plan.resolve_target(str(_wv_dir), url_override="https://127.0.0.1:1")
+check(_tgt.wide_views == ["board"] and _tgt.wide_views_error is None, "plan.resolve_target carries the declaration")
 
 # ---- nav cap + page header (#966) ----
 
@@ -282,7 +326,7 @@ check(all(s == "pass" for s in statuses_c.values()), f"compliant: every rule pas
 check(all(v["score"] == 100.0 and v["grade"] == "A" and not v["unmeasured"] for v in out_c["categories"].values()),
       "compliant: every category 100/A, measured")
 check(out_c["overall"] == {"score": 100.0, "grade": "A", "unmeasured": False}, "compliant: overall A")
-check(out_c["schema_version"] == 1 and out_c["rubric_version"] == "1.6.2" and out_c["target"] == "fixture-app"
+check(out_c["schema_version"] == 1 and out_c["rubric_version"] == "1.7.0" and out_c["target"] == "fixture-app"
       and out_c["commit"].startswith("0000") and out_c["generated_at"].endswith("Z"), "evaluate envelope keys")
 check([s["id"] for s in out_c["screens"]] == ["desktop-light-home", "iphone-light-home", "desktop-light-dialog-edit"],
       "evaluate echoes the screen list")
@@ -654,7 +698,7 @@ else:
           f"measure CLI walks the fixture: 2 tabs + 1 dialog x light/dark ({proc.stdout[-300:]}{proc.stderr[-300:]})")
     check(lines.get("RUN_DIR") == str(run_dir) and Path(lines.get("METRICS", "")).is_file(), "RUN_DIR/METRICS lines point at the run dir")
     doc = json.loads(Path(lines["METRICS"]).read_text(encoding="utf-8"))
-    check(doc["interpreter"] == str(interp) and doc["schema_version"] == 1 and doc["rubric_version"] == "1.6.2", "metrics.json records the interpreter + versions")
+    check(doc["interpreter"] == str(interp) and doc["schema_version"] == 1 and doc["rubric_version"] == "1.7.0", "metrics.json records the interpreter + versions")
     if not (scaffold / "tests" / "e2e" / "_geometry.py").is_file():
         _h.skip("browser leg: project-scaffolding/tests/e2e/_geometry.py absent -- hit-target assertions NOT verified")
     check(doc["walk"]["info"]["geometry"] == ("loaded" if (scaffold / "tests" / "e2e" / "_geometry.py").is_file() else "GEOMETRY_MISSING"),

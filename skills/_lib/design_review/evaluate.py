@@ -177,23 +177,35 @@ def _d_lists_tall(m: dict, rule: Rule, ctx: dict) -> Derived:
 
 
 def _d_content_share(m: dict, rule: Rule, ctx: dict) -> Derived:
-    """design.md's wide layout (#996): a list-and-detail tab spans list + detail
-    (`content_span`), and a tab with no detail keeps the centred measure, which
-    is exempt when the pane holds it less a gutter each side. Older metrics
-    without `content_span` fall back to the pane width."""
+    """design.md's width rule (#996, #1113): width follows the shape of the view.
+
+    A list-and-detail tab spans list + detail (`content_span`). A view the app
+    declares wide (`[design] wide_views`) must actually fill the window: its
+    span is held to the same share floor, with no exemption for the centred
+    measure. An undeclared view keeps the measure: a column holding it (less a
+    gutter each side) is exempt, a column *wider* than it with no detail pane
+    docked beside it is a one-dimensional view stretched across the window
+    (value 0.0, `arm: stretched`), and anything narrower falls to the share
+    floor. Older metrics without `content_span` fall back to the pane width."""
     cw, iw = measure.metric_value(m, "layout.content_w"), measure.metric_value(m, "layout.inner_w")
     if cw is None or iw is None:
         return None, [], _section_reason(m, "layout")
     min_w = float(rule.params.get("min_viewport", 1100))
     if not isinstance(iw, (int, float)) or iw < min_w:
         return None, [], NOT_APPLICABLE
+    if ctx.get("wide_views_error"):
+        return None, [], f"wide_views: {ctx['wide_views_error']}"
     params = ctx.get("params", {})
     measure_px = float(params.get("measure") or 772)
     held = measure_px - 2 * float(params.get("gutter") or 12)
-    if isinstance(cw, (int, float)) and held - 1 <= cw <= measure_px + 1:
-        return None, [], NOT_APPLICABLE
+    declared_wide = ctx.get("view") in set(ctx.get("wide_views") or ())
     span = measure.metric_value(m, "layout.content_span")
     span = span if isinstance(span, (int, float)) else cw
+    if not declared_wide and isinstance(cw, (int, float)):
+        if held - 1 <= cw <= measure_px + 1:
+            return None, [], NOT_APPLICABLE
+        if cw > measure_px + 1 and span <= cw + 1:
+            return 0.0, [{"content_w": cw, "content_span": span, "inner_w": iw, "arm": "stretched"}], None
     return _share(span, iw), [{"content_w": cw, "content_span": span, "inner_w": iw}], None
 
 
@@ -343,7 +355,7 @@ def evaluate_rule(rule: Rule, doc: dict, specs: Dict[str, Dict[str, str]], ctx: 
             if screen.get("status") != "ok" or not isinstance(screen.get("metrics"), dict):
                 tally.unmeasured.append(f"{sid}: {screen.get('reason') or 'walk error'}")
                 continue
-            value, items, why, facts = read_metric(screen["metrics"], rule, ctx)
+            value, items, why, facts = read_metric(screen["metrics"], rule, {**ctx, "view": screen.get("view")})
             _fold(result, tally, sid, value, items, why, rule, thr, facts)
 
     na = f"; n/a on {tally.not_applicable}" if tally.not_applicable else ""
@@ -430,7 +442,9 @@ def score_overall(categories: Dict[str, dict], rubric: Rubric) -> Dict[str, obje
 def evaluate(doc: dict, rubric: Rubric, specs: Dict[str, Dict[str, str]],
              now: Optional[_dt.datetime] = None) -> Dict[str, object]:
     """The whole stage: one metrics document -> rule results + grades."""
-    ctx = {"params": resolve_params(rubric, specs.get("light", {}))}
+    ctx = {"params": resolve_params(rubric, specs.get("light", {})),
+           "wide_views": [str(v) for v in doc.get("wide_views") or []],
+           "wide_views_error": doc.get("wide_views_error")}
     rules = [evaluate_rule(rule, doc, specs, ctx) for rule in rubric.rules]
     categories = score_categories(rules, rubric)
     stamp = (now or _dt.datetime.now(_dt.timezone.utc)).astimezone(_dt.timezone.utc)
