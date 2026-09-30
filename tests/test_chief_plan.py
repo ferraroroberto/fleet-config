@@ -134,6 +134,30 @@ check(doc["queue"][1]["note"] == "shipped 4190488" and doc["queue"][1]["title"] 
       "set_item sets note and title")
 check("nothing to set" in _raises(cp.set_item, doc, "automation#135"), "set_item with no change refuses")
 
+# model on lanes and queue rows (fleet-config#1101)
+mdoc = _valid()
+cp.add_item(mdoc, "life-os#171", "sweep fix", model="sonnet")
+check(mdoc["queue"][-1]["model"] == "sonnet" and cp.validate(mdoc) == [], "add_item writes a model")
+cp.set_item(mdoc, "life-os#171", model="opus")
+check(mdoc["queue"][-1]["model"] == "opus", "set_item changes the model")
+cp.set_item(mdoc, "life-os#171", model="")
+check("model" not in mdoc["queue"][-1], 'set_item --model "" clears it')
+check("must be one of" in _raises(cp.set_item, mdoc, "life-os#171", model="fable"), "set_item refuses an unknown model")
+check("must be one of" in _raises(cp.add_item, mdoc, "life-os#172", "t", model="gpt"), "add_item refuses an unknown model")
+cp.set_lane(mdoc, "app-launcher", "building", item="#1274", model="opus")
+check(mdoc["lanes"][0]["model"] == "opus", "set_lane writes the lane's model")
+cp.set_lane(mdoc, "app-launcher", "gate", item="#1274")
+check(mdoc["lanes"][0] == {"repo": "app-launcher", "status": "gate", "item": "#1274", "model": "opus"},
+      "a lane status change without --model keeps the lane's model")
+cp.set_lane(mdoc, "app-launcher", "idle", model="")
+check("model" not in mdoc["lanes"][0], 'set_lane --model "" clears it')
+check("must be one of" in _raises(cp.set_lane, mdoc, "fleet-config", "building", model="Opus"), "set_lane refuses an unknown model")
+bad = _valid()
+bad["queue"][0]["model"] = "haiku"
+bad["lanes"][0]["model"] = 5
+check(any("queue[0].model" in e for e in cp.validate(bad)) and any("lanes[0].model" in e for e in cp.validate(bad)),
+      "validate refuses an unknown model on a lane or queue row")
+
 cp.remove_item(doc, "life-os#169")
 check([r["ref"] for r in doc["queue"]] == ["#1273", "#135"], "remove_item drops the item")
 
@@ -296,6 +320,19 @@ try:
     check(r.returncode == 0, "CLI set changes status")
     r = plan("lane", "app-launcher", "gate", "--item", "#1273")
     check(r.returncode == 0 and "lanes=1" in r.stdout, "CLI lane upserts a lane")
+    r = plan("set", "app-launcher#1273", "--model", "sonnet")
+    check(r.returncode == 0 and json.loads(plan("show").stdout)["queue"][0].get("model") == "sonnet",
+          f"CLI set --model writes the model ({r.stderr.strip()[:120]})")
+    r = plan("lane", "app-launcher", "building", "--item", "#1273", "--model", "opus")
+    check(r.returncode == 0 and json.loads(plan("show").stdout)["lanes"][0].get("model") == "opus",
+          "CLI lane --model writes the lane's model")
+    before = (cli_dir / "chief-plan.json").read_bytes()
+    r = plan("add", "app-launcher#1274", "x", "--model", "fable")
+    check(r.returncode == 2 and "ERROR:" in r.stderr and "--model must be one of" in r.stderr
+          and (cli_dir / "chief-plan.json").read_bytes() == before,
+          f"CLI add --model with an unknown value exits 2 and writes nothing ({r.stderr.strip()[:120]})")
+    r = plan("set", "app-launcher#1273", "--model", "")
+    check(r.returncode == 0 and "model" not in json.loads(plan("show").stdout)["queue"][0], 'CLI set --model "" clears it')
     r = plan("wait", "Remember the last tab?", "--ref", "app-launcher#1131")
     check(r.returncode == 0 and "waiting=1" in r.stdout, "CLI wait adds a waiting item")
     before = (cli_dir / "chief-plan.json").read_bytes()
