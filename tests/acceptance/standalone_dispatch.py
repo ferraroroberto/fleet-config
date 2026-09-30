@@ -268,6 +268,12 @@ _STANDALONE_UNIT_CHECKS: Tuple[Tuple[str, str, str], ...] = (
      "worktree defers while the run's own leftover and a dirty or "
      "unmerged foreign one still halt -- is testable on its own against "
      "real throwaway git repos (fleet-config#1077)"),
+    ("entry_inventory", "test_entry_inventory.py",
+     "the dead-code spike's entry-point inventory and four-state verdict "
+     "-- job/launcher/manual/doc/no-launcher entries, import reachability "
+     "with tests never roots, dynamic dispatch forced unknown, seasonal "
+     "keeps, byte-identical reruns, a clean target tree -- is testable on "
+     "its own against a synthetic git repo (fleet-config#961)"),
     ("git_run", "test_git_run.py",
      "the shared `resolve_default_branch_ref` helper -- symbolic-ref "
      "success, candidate probing, terminal fallback, and the "
