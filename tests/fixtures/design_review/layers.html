@@ -1,5 +1,5 @@
 <!doctype html>
-<!-- Static fixture for TOUCH-02 layers and LAYOUT-07 clearance (fleet-config#1019).
+<!-- Static fixture for TOUCH-02 layers and LAYOUT-07 clearance (fleet-config#1019, #1094).
      The primary tabs are a floating pill fixed to the bottom of the viewport, as in the fleet's
      navigation contract. Every planted case is asserted by tests/test_design_review.py. -->
 <html lang="en">
@@ -20,9 +20,12 @@
   .rows li { height: 40px; line-height: 40px; }
   /* a content control that sits under the pill's first tab while the page is at the top */
   #underPill { position: absolute; left: 30px; top: calc(100vh - 62px); width: 60px; height: 30px; font: inherit; }
-  /* a content control just above the pill: its own box clears the bar, its expansion reaches into the first tab */
+  /* a content control just above the pill: its own box clears the bar, its expansion reaches into the first
+     tab, where the pill paints on top and takes every tap (#1094) */
   #abovePill { position: absolute; left: 30px; top: calc(100vh - 118px); width: 60px; height: 44px; font: inherit; }
   #abovePill::before { content: ""; position: absolute; inset: -12px; }
+  /* a content control painted over the pill's second tab: it wins taps inside the tab, so the pair counts */
+  #overPill { position: absolute; z-index: 20; left: 150px; top: calc(100vh - 60px); width: 60px; height: 30px; font: inherit; }
   #paneClear .rows { padding-bottom: 96px; }
 </style>
 <script>
@@ -47,12 +50,14 @@
       <ul class="rows"></ul>
       <button type="button" id="underPill">Under</button>
     </section>
-    <!-- clear: #abovePill's expansion reaches into the first tab while its own box clears the bar
-         (still an overlap); the list is padded clear of the pill -->
+    <!-- clear: #abovePill's expansion reaches into the first tab while its own box clears the bar, and
+         the pill takes every tap where they meet (covered, #1094); #overPill paints over the second tab
+         and takes taps there (an overlap); the list is padded clear of the pill -->
     <section id="paneClear" role="tabpanel" hidden>
       <h2>Clear</h2>
       <ul class="rows"></ul>
       <button type="button" id="abovePill">Above</button>
+      <button type="button" id="overPill">Over</button>
     </section>
   </main>
   <nav class="pill" role="tablist" aria-label="Primary">
