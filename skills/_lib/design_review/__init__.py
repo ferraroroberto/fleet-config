@@ -64,7 +64,7 @@ ledger — both slots are read by `report.py`, see its docstring):
                    base_url, run_dir, devices, review, params{script,resolved},
                    interpreter, unmeasured{reason,detail}|null, walk, screens[]
                      screen: id, device, theme, view, kind, status, reason, error,
-                             screenshot, screenshot_full, metrics{...measure.py}
+                             screenshot, screenshot_full, note, metrics{...measure.py}
   evaluate output  schema_version, rubric_version, target, commit, generated_at,
                    metrics_generated_at, base_url, run_dir, params, unmeasured, screens[],
                    rules[{id, category, severity, owner, status, reason, evidence,
