@@ -133,7 +133,8 @@ _MEASURE_JS = r"""
     while (walker.nextNode()) { const t = walker.currentNode; const raw = t.nodeValue.trim(); if (!raw) continue;
       const el = t.parentElement; if (!el || !visible(el) || !inScope(el)) continue;
       if (el.closest('svg, script, style, noscript, .xterm, .xterm-rows')) continue;
-      if (glyphRe.test(raw) && !seen.has(el)) glyphs.push({sel: sel(el), text: raw.slice(0, 40)});
+      // Preformatted text is content the app prints (a log, a code sample), not an icon it authors (#1119).
+      if (glyphRe.test(raw) && !seen.has(el) && !el.closest('pre, code, samp, kbd')) glyphs.push({sel: sel(el), text: raw.slice(0, 40)});
       if (seen.has(el)) continue; seen.add(el);
       const s = getComputedStyle(el); const px = Math.round(parseFloat(s.fontSize)*100)/100;
       runs++; sizes[px] = (sizes[px]||0)+1; weights[s.fontWeight] = (weights[s.fontWeight]||0)+1;
