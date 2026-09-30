@@ -273,6 +273,12 @@ _STANDALONE_UNIT_CHECKS: Tuple[Tuple[str, str, str], ...] = (
      "as UTC stall records, evidence captured once per cooldown, one "
      "instance per state dir -- is testable on its own with injected "
      "delays, since a real whole-box stall can't be caused (fleet-config#1106)"),
+    ("entry_inventory", "test_entry_inventory.py",
+     "the dead-code spike's entry-point inventory and four-state verdict "
+     "-- job/launcher/manual/doc/no-launcher entries, import reachability "
+     "with tests never roots, dynamic dispatch forced unknown, seasonal "
+     "keeps, byte-identical reruns, a clean target tree -- is testable on "
+     "its own against a synthetic git repo (fleet-config#961)"),
     ("git_run", "test_git_run.py",
      "the shared `resolve_default_branch_ref` helper -- symbolic-ref "
      "success, candidate probing, terminal fallback, and the "
