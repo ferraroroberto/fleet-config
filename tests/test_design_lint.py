@@ -146,6 +146,21 @@ _ty = {"typography.body-sm.fontSize": "0.875rem", "typography.overline.fontSize"
 res5 = dl.map_tokens(_ty, _ty, {"light": {"--font-body-sm": ("0.875rem", 1)}, "dark": {}}, "s.css")
 check(any(m["role"] == "typography.body-sm.fontSize" for m in res5["matched"]) and not res5["missing"],
       "--font-body-sm maps to the body-sm role; an unadopted overline is not a missing finding")
+# a derived value references the app's own alias of a role (#1087): `var(--muted)` is the
+# spec's `var(--fg-muted)` when --muted is the app's fg-muted, so it matches, not drifts
+_ns = {"colors.fg-muted": "#59636e", "colors.neutral-soft": "color-mix(in srgb, var(--fg-muted) 16%, transparent)"}
+_ns_d = {"colors.fg-muted": "#9198a1", "colors.neutral-soft": "color-mix(in srgb, var(--fg-muted) 16%, transparent)"}
+_ns_app = {"light": {"--muted": ("#59636e", 1), "--neutral-soft": ("color-mix(in srgb, var(--muted) 16%, transparent)", 2)},
+           "dark": {"--muted": ("#9198a1", 5)}}
+res6 = dl.map_tokens(_ns, _ns_d, _ns_app, "s.css")
+check(("colors.neutral-soft", "light") in {(m["role"], m["theme"]) for m in res6["matched"]}
+      and not [d for d in res6["drift"] if d["role"] == "colors.neutral-soft"],
+      f"var(--muted) in a derived value is the app's alias of --fg-muted, not drift -- {res6['drift']}")
+_ns_bad = {"light": {"--muted": ("#59636e", 1), "--neutral-soft": ("color-mix(in srgb, var(--ink) 16%, transparent)", 2)},
+           "dark": {"--muted": ("#9198a1", 5)}}
+res7 = dl.map_tokens(_ns, _ns_d, _ns_bad, "s.css")
+check(any(d["role"] == "colors.neutral-soft" and d["kind"] == "value-drift" for d in res7["drift"]),
+      "a derived value built on the wrong role still drifts")
 
 
 # ---- adoption ratios ----

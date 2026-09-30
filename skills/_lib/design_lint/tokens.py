@@ -6,6 +6,7 @@ unmapped comparison the LLM half of /design-sync then reasons about.
 """
 from __future__ import annotations
 
+import re
 from typing import Dict, List, Tuple
 
 from .css import normalize_value
@@ -84,6 +85,18 @@ OPTIONAL_ROLES = {
 }
 
 
+_VAR_REF_RE = re.compile(r"var\(\s*(--[\w-]+)")
+
+
+def _spec_refs(value: str, spec_name: Dict[str, str]) -> str:
+    """`value` with each `var(--x)` renamed to the spec role the app's `--x` maps to (#1087).
+
+    A derived token is written against the app's own names — `color-mix(… var(--muted) …)`
+    where `--muted` is the app's fg-muted — while the spec writes `var(--fg-muted)`.
+    """
+    return _VAR_REF_RE.sub(lambda m: "var(" + spec_name.get(m.group(1), m.group(1)), value)
+
+
 def map_tokens(
     spec_light: Dict[str, str],
     spec_dark: Dict[str, str],
@@ -94,15 +107,19 @@ def map_tokens(
     drift: List[dict] = []
     missing: List[dict] = []
     claimed: set = set()
+    # role -> the app var carrying it, resolved before any comparison so a derived value
+    # can name another role through the app's alias (`_spec_refs`).
+    chosen: Dict[str, str] = {}
+    for role, candidates in ALIASES.items():
+        var = next((f"--{c}" for c in candidates if f"--{c}" in app["light"] or f"--{c}" in app["dark"]), None)
+        if var is not None:
+            chosen[role] = var
+    spec_name = {var: "--" + role.split(".", 1)[1] for role, var in chosen.items()}
     for role, candidates in ALIASES.items():
         spec_vals = {"light": spec_light.get(role), "dark": spec_dark.get(role)}
         if spec_vals["light"] is None and spec_vals["dark"] is None:
             continue
-        var = None
-        for cand in candidates:
-            if f"--{cand}" in app["light"] or f"--{cand}" in app["dark"]:
-                var = f"--{cand}"
-                break
+        var = chosen.get(role)
         if var is None:
             if role not in OPTIONAL_ROLES:
                 missing.append({"role": role, "candidates": candidates})
@@ -127,7 +144,7 @@ def map_tokens(
                               "file": fname, "line": 0, "kind": "missing-theme-value"})
                 continue
             app_v, line = got
-            if normalize_value(app_v) != normalize_value(spec_v):
+            if normalize_value(_spec_refs(app_v, spec_name)) != normalize_value(spec_v):
                 drift.append({"role": role, "var": var, "theme": theme,
                               "app": app_v, "spec": spec_v,
                               "file": fname, "line": line, "kind": "value-drift"})
