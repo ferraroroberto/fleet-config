@@ -55,6 +55,12 @@ The writer is stricter than the readers. It writes only these fields, single-lin
 
 A waiting item with `question` is one entry on the Board's one-shot answer sheet (app-launcher). Roberto answers the whole sheet at once; the answers reach the chief's terminal as one "Answers from the Board" message (app-launcher#1295). The chief acts on each answer and removes the item with `plan unwait <id>`. The Board never writes the plan file.
 
+Every decision waiting on Roberto is an answerable question, and the writer enforces it (fleet-config#1102):
+
+- `plan set <repo#N> --status waiting-roberto`, and `plan add … --status waiting-roberto`, are refused (exit 2, naming `plan ask`) unless an open `waiting_on_roberto` item with a `question` has that `ref`. Ask first, then set the status.
+- `plan wait "<text>"` files its text as the question, the short form of `plan ask`. It never writes an item with nothing to answer.
+- `validate()` does not enforce either rule, so a file written before them still loads.
+
 ## Reader rules
 
 Readers must be tolerant, so the card never errors:
@@ -79,7 +85,7 @@ chief_ops.py plan move app-launcher#1273 --to 1
 chief_ops.py plan remove app-launcher#1273
 chief_ops.py plan lane app-launcher gate --item "#1273" [--session <sid>] [--model opus]    # upsert, one lane per repo; an omitted --model keeps the lane's
 chief_ops.py plan drop-lane app-launcher
-chief_ops.py plan wait "Remember the last tab?" --ref app-launcher#1131
+chief_ops.py plan wait "Remember the last tab?" --ref app-launcher#1131      # = plan ask with only the question
 chief_ops.py plan ask "<question>" [--repo R] [--ref R#N] [--detail "…"] [--recommend "…"] \
     [--option "Label::description" …(≤4)] [--recommended "Label"] [--multi] [--id ID] [--text "card line"]
 chief_ops.py plan unwait q2                     # or the 1-based index, the repo#N ref, or the exact text

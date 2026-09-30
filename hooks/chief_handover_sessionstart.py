@@ -30,16 +30,33 @@ harmless for an ordinary dev session (one extra FYI paragraph it can
 ignore). No network call, no LLM call, no session-identity detection: cheap
 and cwd-gated only.
 
+Chief skill refresh (fleet-config#1102): a chief that loaded ``/chief``
+days ago keeps running on that copy across compactions, so a rule added to
+``.claude/skills/chief/SKILL.md`` since never reaches it. On any non-startup
+start (``compact``, ``resume``, ``clear``) of the chief's own session -- its
+``sessions-state.json`` row, by the payload's session id or the launcher
+session id, is named ``chief`` -- this hook also tells it to re-read the skill,
+naming the file's content hash. The skill (~37K chars) is over the
+``additionalContext`` ceiling, so it is pointed at, never inlined. An
+unreadable state file is its own case: the pointer goes out conditionally
+("if you are the standing chief"), never folded into "not the chief".
+
 Wired by the ``SessionStart`` hook in ``settings.template.json``.
 """
 
 from __future__ import annotations
 
+import hashlib
+import json
 import sys
 from pathlib import Path
+from typing import Any, Dict, Optional
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import _lib  # noqa: E402
+import session_state  # noqa: E402
+
+CHIEF_NAME = "chief"
 
 # additionalContext has a ~10K-char ceiling (Claude Code docs); stay well
 # under it and point at the full file instead of truncating silently mid-word.
@@ -74,6 +91,51 @@ def build_context(content: str, path: Path) -> str:
     )
 
 
+def skill_path() -> Path:
+    """The chief skill in this checkout (``hooks/`` resolves through its junction)."""
+    return Path(__file__).resolve().parent.parent / ".claude" / "skills" / "chief" / "SKILL.md"
+
+
+def is_chief_session(payload: Dict[str, Any]) -> Optional[bool]:
+    """True/False from ``sessions-state.json``; None when that file can't be read."""
+    path = session_state.state_file()
+    try:
+        rows = json.loads(path.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return False
+    except (OSError, ValueError):
+        return None
+    if not isinstance(rows, dict):
+        return None
+    sid, launcher_sid = str(payload.get("session_id") or ""), _lib.launcher_session_id()
+    return any(
+        isinstance(row, dict) and row.get("name") == CHIEF_NAME
+        and ((sid and key == sid) or (launcher_sid and row.get("launcher_session_id") == launcher_sid))
+        for key, row in rows.items())
+
+
+def skill_refresh(payload: Dict[str, Any]) -> Optional[str]:
+    """The re-read instruction for a compacted/resumed chief, or None (#1102)."""
+    source = str(payload.get("source") or "")
+    if source in ("", "startup"):
+        return None  # a fresh chief loads the current skill through /chief itself
+    chief = is_chief_session(payload)
+    if chief is False:
+        return None
+    path = skill_path()
+    try:
+        version = hashlib.sha256(path.read_bytes()).hexdigest()[:12]
+    except OSError:
+        return None
+    if chief is None:
+        return (f"If you are the standing chief: re-read {path} (sha256 {version}) now -- whether this "
+                f"session is the chief could not be read from {session_state.state_file()}.")
+    return (f"Chief skill refresh (fleet-config#1102): this chief session is continuing after a {source}, "
+            f"and skill rules added since you first loaded /chief do not reach you otherwise. Re-read "
+            f"{path} in full now (Read tool; version sha256 {version}) and follow its current text over "
+            f"anything you remember of it.")
+
+
 def main() -> int:
     payload = _lib.read_stdin_json()
     project = _lib.detect_project(_lib.cwd(payload))
@@ -83,8 +145,12 @@ def main() -> int:
     try:
         content = path.read_text(encoding="utf-8").strip()
     except OSError:
-        return 0  # no log yet (first-ever run, or nothing written) -- silent no-op
-    if not content:
+        content = ""  # no log yet (first-ever run, or nothing written)
+    parts = [build_context(content, path)] if content else []
+    refresh = skill_refresh(payload)
+    if refresh:
+        parts.append(refresh)
+    if not parts:
         return 0
     # `_lib.warn()` owns the per-harness SessionStart dialect (fleet-config#818):
     # Claude gets the hookSpecificOutput.additionalContext envelope this hook
@@ -92,7 +158,7 @@ def main() -> int:
     # which loads this repo's hooks by default -- gets the plain-stdout
     # fallback it actually reads, instead of a Claude-shaped envelope it
     # silently drops.
-    _lib.warn(build_context(content, path))
+    _lib.warn("\n\n".join(parts))
 
 
 if __name__ == "__main__":
