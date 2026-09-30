@@ -308,15 +308,17 @@ def main(argv: Optional[List[str]] = None) -> int:
         pythonw = Path(sys.executable).with_name("pythonw.exe")
         cmd = [str(pythonw if pythonw.exists() else sys.executable), str(Path(__file__).resolve()), "run",
                "--threshold", str(args.threshold)] + (["--state-dir", args.state_dir] if args.state_dir else [])
-        flags = NO_WINDOW | subprocess.CREATE_NEW_PROCESS_GROUP
-        try:  # outlive the starting session's job when it allows breakaway
-            proc = subprocess.Popen(cmd, creationflags=flags | 0x01000000, close_fds=True,  # CREATE_BREAKAWAY_FROM_JOB
-                                    stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        except OSError:
-            proc = subprocess.Popen(cmd, creationflags=flags, close_fds=True,
-                                    stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        print(f"STARTED pid={proc.pid} log={folder / 'stalls.jsonl'}")
-        return 0
+        # Outlive the starting session's job when it allows breakaway (CREATE_BREAKAWAY_FROM_JOB), else plain.
+        for extra in (subprocess.CREATE_NEW_PROCESS_GROUP | 0x01000000, subprocess.CREATE_NEW_PROCESS_GROUP):
+            try:
+                proc = subprocess.Popen(cmd, creationflags=NO_WINDOW | extra, close_fds=True, stdin=subprocess.DEVNULL,
+                                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            except OSError:
+                continue
+            print(f"STARTED pid={proc.pid} breakaway={bool(extra & 0x01000000)} log={folder / 'stalls.jsonl'}")
+            return 0
+        print("ERROR: the probe could not be started", file=sys.stderr)
+        return 1
     lock = single_instance(folder)
     if lock is None:
         print("ALREADY_RUNNING")
