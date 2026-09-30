@@ -277,8 +277,15 @@ _STANDALONE_UNIT_CHECKS: Tuple[Tuple[str, str, str], ...] = (
      "the dead-code spike's entry-point inventory and four-state verdict "
      "-- job/launcher/manual/doc/no-launcher entries, import reachability "
      "with tests never roots, dynamic dispatch forced unknown, seasonal "
-     "keeps, byte-identical reruns, a clean target tree -- is testable on "
-     "its own against a synthetic git repo (fleet-config#961)"),
+     "keeps, byte-identical reruns, a clean target tree, and the start "
+     "beacon's live/cold/young/inactive reading -- is testable on its own "
+     "against a synthetic git repo (fleet-config#961, #1114)"),
+    ("start_beacon", "test_start_beacon.py",
+     "the interpreter-start beacon -- one ledger record per process even "
+     "when site loads a venv twice, the `-m` module name, an unwritable "
+     "ledger leaving the host's exit code and output untouched and logged "
+     "once, install/uninstall adding and deleting only the .pth -- is "
+     "testable on its own with real child interpreters (fleet-config#1114)"),
     ("git_run", "test_git_run.py",
      "the shared `resolve_default_branch_ref` helper -- symbolic-ref "
      "success, candidate probing, terminal fallback, and the "

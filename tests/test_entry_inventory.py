@@ -127,6 +127,63 @@ try:
           and down["unknown_reasons"].get("evidence-unavailable", 0) >= 3 and down["counts"].get("cold", 0) == 0,
           f"an unreadable evidence source makes entries unknown, never cold -- {down['counts']} {down['unknown_reasons']}")
 
+    # ---- interpreter-start beacon (fleet-config#1114) ----
+    def beacon(installed: str, hits: dict, state: str = "active", uninstalled=None) -> dict:
+        return {**EVIDENCE, "beacon": {"state": state, "installed_utc": installed, "uninstalled_utc": uninstalled,
+                                       "pth_present": state == "active", "hits": hits, "outside": 0, "no_script": 0, "malformed": 0},
+                "beacon_error": None}
+
+    HITS = {"tools/manual_tool.py": "2026-09-20T10:00:00Z", "-m tools.seasonal": "2026-08-01T10:00:00Z",
+            "tools/doc_only.py": "2026-05-01T10:00:00Z", "tests/test_x.py": "2026-09-20T10:00:00Z"}
+    mature = ei.verdict(repo, beacon("2026-06-01T00:00:00Z", HITS), date(2026, 9, 30))
+    m = {r["path"]: r for r in mature["files"]}
+    check(m["tools/manual_tool.py"]["state"] == "live" and m["tools/manual_tool.py"]["last_seen_source"] == "beacon"
+          and m["tools/seasonal.py"]["state"] == "live",
+          f"a beacon hit inside the window makes a script live, `-m pkg.mod` included -- {m['tools/manual_tool.py']} {m['tools/seasonal.py']}")
+    check((m["tools/orphan_main.py"]["state"], m["tools/orphan_main.py"]["reason"]) == ("cold", "beacon-no-hit")
+          and m["tools/doc_only.py"]["state"] == "cold" and m["tools/doc_only.py"]["last_seen"] == "2026-05-01T10:00:00Z",
+          f"with the whole window covered, no hit (or only an old one) is cold -- {m['tools/orphan_main.py']} {m['tools/doc_only.py']}")
+    check((m["tools/manual.bat"]["state"], m["tools/manual.bat"]["reason"]) == ("unknown", "manual-launcher")
+          and m["tools/dyn.py"]["reason"] == "dynamic-dispatch" and "tests/test_x.py" not in m
+          and mature["evidence"]["beacon"]["covers_window"] is True,
+          "a launcher is not beacon-visible, dynamic dispatch stays unknown, and a test hit is never a root")
+    young = ei.verdict(repo, beacon("2026-09-01T00:00:00Z", HITS), date(2026, 9, 30))
+    y = {r["path"]: r for r in young["files"]}
+    check((y["tools/orphan_main.py"]["state"], y["tools/orphan_main.py"]["reason"]) == ("unknown", "beacon-young")
+          and y["tools/manual_tool.py"]["state"] == "live" and young["counts"]["cold"] == 2
+          and (y["tools/doc_only.py"]["state"], y["tools/doc_only.py"]["reason"]) == ("unknown", "beacon-young")
+          and young["evidence"]["beacon"]["covers_window"] is False,
+          f"a beacon younger than the window leaves no-hit scripts unknown, never cold; hits still count -- {young['counts']}")
+    for label, ev in (("removed", beacon("2026-06-01T00:00:00Z", {}, state="removed")),
+                      ("uninstalled early", beacon("2026-06-01T00:00:00Z", {}, state="uninstalled", uninstalled="2026-09-01T00:00:00Z")),
+                      ("unreadable", {**beacon("2026-06-01T00:00:00Z", {}), "beacon": [], "beacon_error": "OSError: denied"})):
+        doc_b = ei.verdict(repo, ev, date(2026, 9, 30))
+        check({r["path"]: r for r in doc_b["files"]}["tools/orphan_main.py"]["reason"] == "beacon-inactive"
+              and doc_b["counts"]["cold"] == 2, f"a {label} beacon is unknown: beacon-inactive, never cold -- {doc_b['counts']}")
+    check(ei.verdict(repo, beacon("2026-06-01T00:00:00Z", {}, state="uninstalled", uninstalled="2026-10-01T00:00:00Z"),
+                     date(2026, 9, 30))["evidence"]["beacon"]["covers_window"] is True,
+          "a beacon uninstalled after as-of still covered the window")
+
+    venv = tmp / "venv"
+    (venv / "Lib" / "site-packages").mkdir(parents=True)
+    ledger = tmp / "starts.tsv"
+    check(ei.collect_beacon(repo, venv, ledger)["state"] == "absent", "no ledger and no .pth: the repo has no beacon")
+    (venv / "Lib" / "site-packages" / "fleet_start_beacon.pth").write_text("import sys\n", encoding="utf-8")
+    ledger.write_text("# installed 2026-06-01T00:00:00Z venv=x\n"
+                      f"2026-09-20T10:00:00Z\tfixture\t{repo / 'tools' / 'manual_tool.py'}\n"
+                      f"2026-09-21T10:00:00Z\tfixture\t{repo / 'tools' / 'manual_tool.py'}\n"
+                      "2026-09-21T10:00:00Z\tfixture\t-m tools.seasonal\n"
+                      "2026-09-21T10:00:00Z\tfixture\tC:\\elsewhere\\x.py\n"
+                      "2026-09-21T10:00:00Z\tfixture\t-c\n"
+                      "2026-09-21T10:0garbled\n", encoding="utf-8")
+    got = ei.collect_beacon(repo, venv, ledger)
+    check(got["state"] == "active" and got["installed_utc"] == "2026-06-01T00:00:00Z"
+          and got["hits"] == {"-m tools.seasonal": "2026-09-21T10:00:00Z", "tools/manual_tool.py": "2026-09-21T10:00:00Z"}
+          and (got["outside"], got["no_script"], got["malformed"]) == (1, 1, 1),
+          f"collect keeps the last hit per repo script, and counts outside/-c/malformed lines apart -- {got}")
+    (venv / "Lib" / "site-packages" / "fleet_start_beacon.pth").unlink()
+    check(ei.collect_beacon(repo, venv, ledger)["state"] == "removed", "a .pth deleted without an uninstall header is `removed`")
+
     # ---- determinism and report-only ----
     out1, out2 = tmp / "o1", tmp / "o2"
     for out in (out1, out2):

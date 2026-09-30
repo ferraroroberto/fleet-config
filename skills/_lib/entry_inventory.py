@@ -9,6 +9,9 @@ which entry points are *alive*.
   Windows scheduled tasks whose action points into the repo, each with a
   last-run time converted to UTC. A source that can't be read is recorded as an
   error, and every entry point it would have covered becomes `unknown`.
+  It also summarises the interpreter-start beacon's ledger when the repo has one
+  (`start_beacon.py`, fleet-config#1114): the last hit per script and how much
+  of the window the beacon covered.
 - `verdict <repo>` is a pure function of the git tree (`git ls-files`), that
   snapshot, `--as-of` and `--window-days`: the same inputs give byte-identical
   output. `run <repo>` is `collect` then `verdict`.
@@ -21,8 +24,11 @@ entry point. Tests are never roots, so a module only tests import is
 
 States, never folded into one another:
 - `live`: an entry point (or a module one reaches) run within the window;
-- `cold`: covered by a job/task, but not run within the window (a candidate, never a deletion);
-- `unknown`: no evidence source covers it, or it uses dynamic dispatch
+- `cold`: covered by a job/task, but not run within the window, or a Python entry
+  with no beacon hit while the beacon covered the whole window (`beacon-no-hit`).
+  It is a candidate, never a deletion;
+- `unknown`: no evidence source covers it, or the beacon has not covered the
+  whole window yet (`beacon-young`) or stopped covering it (`beacon-inactive`), or it uses dynamic dispatch
   (`importlib`, `__import__`, `exec`/`eval`, `getattr` with a computed name), or its
   name is mentioned as text elsewhere (name matching is conservative: a collision
   makes code look used). Reported per reason, and never counted as dead;
@@ -54,6 +60,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from git_run import run_git  # noqa: E402
 from hooks_state import state_dir  # noqa: E402
 from no_window import NO_WINDOW  # noqa: E402
+import start_beacon  # noqa: E402
 
 SCHEMA = 1
 WINDOW_DAYS = 90
@@ -135,10 +142,52 @@ def collect_tasks(repo: Path) -> List[Dict[str, Any]]:
     return sorted(out, key=lambda t: (t["name"], t["target"]))
 
 
-def collect(repo: Path, jobs_url: str = JOBS_URL, tasks: bool = True) -> Dict[str, Any]:
+def collect_beacon(repo: Path, venv: Path, ledger: Optional[Path] = None) -> Dict[str, Any]:
+    """The interpreter-start ledger (fleet-config#1114) summarised: coverage and last hit per target.
+
+    `state`: `absent` (no ledger, no `.pth`: the repo has no beacon), `active`
+    (installed and the `.pth` still present), `uninstalled` (coverage ended at
+    the header), `removed` (the `.pth` is gone with no uninstall header, so
+    coverage ended at an unknown time), `no-header` (records with no install
+    header). Only `active` and `uninstalled` can turn a missing hit into `cold`.
+    """
+    ledger = ledger or start_beacon.ledger_path(repo)
+    pth = start_beacon.pth_path(venv)
+    present = bool(pth and pth.exists())
+    out: Dict[str, Any] = {"pth_present": present, "installed_utc": None, "uninstalled_utc": None,
+                           "hits": {}, "outside": 0, "no_script": 0, "malformed": 0}
+    if not ledger.exists():
+        out["state"] = "active" if present else "absent"
+        return out
+    headers, raw_hits, out["malformed"] = start_beacon.read_ledger(ledger)
+    installs = [i for i, (kind, _) in enumerate(headers) if kind == "installed"]
+    if installs:
+        out["installed_utc"] = headers[installs[-1]][1]
+        after = [utc for kind, utc in headers[installs[-1] + 1:] if kind == "uninstalled"]
+        out["uninstalled_utc"] = after[0] if after else None
+        out["state"] = "uninstalled" if after else ("active" if present else "removed")
+    else:
+        out["state"] = "no-header"
+    hits: Dict[str, str] = {}
+    for raw, utc in raw_hits.items():
+        if raw in ("", "-c"):
+            out["no_script"] += 1
+            continue
+        target = raw if raw.startswith("-m ") else _repo_rel(repo, raw)
+        if target is None:
+            out["outside"] += 1
+        elif utc > hits.get(target, ""):
+            hits[target] = utc
+    out["hits"] = dict(sorted(hits.items()))
+    return out
+
+
+def collect(repo: Path, jobs_url: str = JOBS_URL, tasks: bool = True, venv: Optional[Path] = None,
+            ledger: Optional[Path] = None) -> Dict[str, Any]:
     evidence: Dict[str, Any] = {"schema": SCHEMA, "repo": repo.name,
                                 "collected_utc": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")}
-    for key, fn in (("jobs", lambda: collect_jobs(repo, jobs_url)), ("tasks", (lambda: collect_tasks(repo)) if tasks else list)):
+    for key, fn in (("jobs", lambda: collect_jobs(repo, jobs_url)), ("tasks", (lambda: collect_tasks(repo)) if tasks else list),
+                    ("beacon", lambda: collect_beacon(repo, venv or repo / ".venv", ledger))):
         try:
             evidence[key], evidence[f"{key}_error"] = fn(), None
         except Exception as exc:  # noqa: BLE001 -- an unreadable source is recorded, and its entries go unknown
@@ -285,6 +334,19 @@ def verdict(repo: Path, evidence: Dict[str, Any], as_of: date, window_days: int 
             if not is_test(path) and (path in text or (path.endswith(".py") and PurePosixPath(path).name in text)):
                 launched_by.setdefault(path, set()).add(f"doc:{doc}")
 
+    # Interpreter-start hits (fleet-config#1114): a `-m pkg.mod` hit resolves from the repo root.
+    beacon = evidence.get("beacon") if isinstance(evidence.get("beacon"), dict) else {}
+    beacon_state = "error" if evidence.get("beacon_error") else beacon.get("state", "absent")
+    beacon_hits: Dict[str, str] = {}
+    for raw, utc in (beacon.get("hits") or {}).items():
+        if raw.startswith("-m "):
+            stem = raw[3:].strip().replace(".", "/")
+            raw = next((c for c in (f"{stem}.py", f"{stem}/__main__.py") if c in fileset), "")
+        if raw in fileset and not is_test(raw) and utc > beacon_hits.get(raw, ""):
+            beacon_hits[raw] = utc
+    for path in beacon_hits:
+        launched_by.setdefault(path, set()).add("beacon")
+
     entries = sorted({p for p, f in py.items() if f.main_guard and not is_test(p)} | set(launchers)
                      | {t for t, srcs in launched_by.items() if any(not s.startswith("doc:") for s in srcs)})
     # Last seen: direct evidence, then propagated down launcher chains (a job's .bat runs its .py).
@@ -303,9 +365,18 @@ def verdict(repo: Path, evidence: Dict[str, Any], as_of: date, window_days: int 
                     if best is None or (seen or "") > (best[0] or ""):
                         last_seen[target] = (seen, f"{source} via {src[9:]}")
                         changed = True
+    for path, utc in beacon_hits.items():
+        if path not in last_seen or utc > (last_seen[path][0] or ""):
+            last_seen[path] = (utc, "beacon")
 
-    cutoff = (datetime.combine(as_of, datetime.min.time(), timezone.utc) - timedelta(days=window_days)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    as_of_utc = datetime.combine(as_of, datetime.min.time(), timezone.utc)
+    cutoff = (as_of_utc - timedelta(days=window_days)).strftime("%Y-%m-%dT%H:%M:%SZ")
     evidence_down = [k for k in ("jobs", "tasks") if evidence.get(f"{k}_error")]
+    # A missing hit means "not run" only when the beacon covered the whole window:
+    # installed by the cutoff and still in place (or uninstalled no earlier than as-of).
+    coverage_end = beacon.get("uninstalled_utc") or (evidence.get("collected_utc") if beacon_state == "active" else None)
+    beacon_covers = (beacon_state in ("active", "uninstalled") and bool(beacon.get("installed_utc"))
+                     and beacon["installed_utc"] <= cutoff and (coverage_end or "") >= as_of_utc.strftime("%Y-%m-%dT%H:%M:%SZ"))
     importers: Dict[str, Set[str]] = {}
     for path, facts in py.items():
         for target in import_edges(facts, fileset):
@@ -323,9 +394,20 @@ def verdict(repo: Path, evidence: Dict[str, Any], as_of: date, window_days: int 
                        dynamic=sorted(facts.dynamic))
         elif seen is not None:
             row.update(last_seen=seen[0], last_seen_source=seen[1])
-            row.update(state="live" if seen[0] and seen[0] >= cutoff else "cold")
+            if seen[0] and seen[0] >= cutoff:
+                row.update(state="live")
+            elif seen[1] == "beacon" and not beacon_covers:  # an old hit says nothing about an uncovered window
+                row.update(state="unknown", reason="beacon-young" if beacon_state == "active" else "beacon-inactive")
+            else:
+                row.update(state="cold")
         elif evidence_down:
             row.update(state="unknown", reason="evidence-unavailable")
+        elif beacon_state != "absent" and path.endswith(".py"):
+            # The beacon sees Python starts only; launchers keep their reasons below.
+            if beacon_covers:
+                row.update(state="cold", reason="beacon-no-hit", last_seen=None, last_seen_source="beacon")
+            else:
+                row.update(state="unknown", reason="beacon-young" if beacon_state == "active" else "beacon-inactive")
         elif path in launchers or any(s.startswith("launcher:") for s in srcs):
             row.update(state="unknown", reason="manual-launcher")
         elif srcs:
@@ -389,7 +471,10 @@ def verdict(repo: Path, evidence: Dict[str, Any], as_of: date, window_days: int 
         if r["state"] == "unknown":
             reasons[r["reason"]] = reasons.get(r["reason"], 0) + 1
     return {"schema": SCHEMA, "repo": repo.name, "as_of": as_of.isoformat(), "window_days": window_days,
-            "evidence": {k: evidence.get(k) for k in ("collected_utc", "jobs_error", "tasks_error")},
+            "evidence": {**{k: evidence.get(k) for k in ("collected_utc", "jobs_error", "tasks_error", "beacon_error")},
+                         "beacon": {"state": beacon_state, "covers_window": beacon_covers, "hits": len(beacon_hits),
+                                    **{k: beacon.get(k) for k in ("installed_utc", "uninstalled_utc", "pth_present",
+                                                                  "outside", "no_script", "malformed")}}},
             "counts": counts, "unknown_reasons": reasons,
             "candidates": [{"path": r["path"], "state": r["state"], "reason": r.get("reason"), "lines": r["lines"]}
                            for r in sorted(candidates, key=lambda r: r["path"])],
@@ -403,6 +488,7 @@ def table(doc: Dict[str, Any]) -> str:
     lines = [f"{doc['repo']} as of {doc['as_of']} (window {doc['window_days']} d): "
              + ", ".join(f"{k}={v}" for k, v in sorted(doc["counts"].items())),
              "unknown by reason: " + (", ".join(f"{k}={v}" for k, v in sorted(doc["unknown_reasons"].items())) or "none"),
+             "beacon: " + ", ".join(f"{k}={v}" for k, v in sorted(doc["evidence"]["beacon"].items())),
              f"candidates: {len(doc['candidates'])} files, {doc['candidate_lines']} lines",
              "| state | reason | lines | path |", "|---|---|--:|---|"]
     lines += [f"| {c['state']} | {c['reason']} | {c['lines']} | {c['path']} |" for c in doc["candidates"]]
@@ -427,13 +513,16 @@ def main(argv: Optional[List[str]] = None) -> int:
     ap.add_argument("--keep", default=None, help="JSON list of {path, reason, expires} keep entries")
     ap.add_argument("--out-dir", default=None, help="output folder (default: <hooks state>/dead_code/<repo>)")
     ap.add_argument("--jobs-url", default=JOBS_URL)
+    ap.add_argument("--venv", default=None, help="venv carrying the start beacon (default: <repo>/.venv)")
     args = ap.parse_args(argv)
     repo = Path(args.repo).resolve()
     out_dir = Path(args.out_dir) if args.out_dir else state_dir() / "dead_code" / repo.name
     if args.command in ("collect", "run"):
-        evidence = collect(repo, args.jobs_url)
+        evidence = collect(repo, args.jobs_url, venv=Path(args.venv).resolve() if args.venv else None)
+        beacon = evidence["beacon"] if isinstance(evidence["beacon"], dict) else {}
         print(f"EVIDENCE={_write_output(out_dir, 'evidence.json', evidence)} jobs={len(evidence['jobs'])} "
-              f"tasks={len(evidence['tasks'])} jobs_error={evidence['jobs_error']} tasks_error={evidence['tasks_error']}")
+              f"tasks={len(evidence['tasks'])} jobs_error={evidence['jobs_error']} tasks_error={evidence['tasks_error']} "
+              f"beacon={beacon.get('state')} beacon_hits={len(beacon.get('hits') or {})} beacon_error={evidence['beacon_error']}")
         if args.command == "collect":
             return 0
     evidence_path = Path(args.evidence) if args.evidence else out_dir / "evidence.json"
