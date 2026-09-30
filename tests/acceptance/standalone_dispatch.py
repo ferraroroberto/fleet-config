@@ -268,6 +268,11 @@ _STANDALONE_UNIT_CHECKS: Tuple[Tuple[str, str, str], ...] = (
      "worktree defers while the run's own leftover and a dirty or "
      "unmerged foreign one still halt -- is testable on its own against "
      "real throwaway git repos (fleet-config#1077)"),
+    ("stall_probe", "test_stall_probe.py",
+     "the host stall probe -- a late sleep and a slow loopback GET logged "
+     "as UTC stall records, evidence captured once per cooldown, one "
+     "instance per state dir -- is testable on its own with injected "
+     "delays, since a real whole-box stall can't be caused (fleet-config#1106)"),
     ("git_run", "test_git_run.py",
      "the shared `resolve_default_branch_ref` helper -- symbolic-ref "
      "success, candidate probing, terminal fallback, and the "
