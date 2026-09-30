@@ -474,6 +474,36 @@ check(ts_nocontrol["text-size"]["status"] == "WARN" and "no persisted control" i
       "stamp without a persisted control WARNs")
 check(good["text-size"]["status"] == "NA", "no index.html -> text-size NA")
 
+# built storage keys (#1087): the scaffold's own boot script reads `app + '.theme'` /
+# `app + '.textsize'`, and its vendored text-size.js writes through a `storageKey(app)` helper
+SCAFFOLD_BOOT = ("<head><script>(function () { var app = 'my-app'; var root = document.documentElement;"
+                 "var theme = null; var size = null;"
+                 "try { theme = localStorage.getItem(app + '.theme'); size = localStorage.getItem(app + '.textsize'); } catch (e) {}"
+                 "var dark = theme ? theme === 'dark' : window.matchMedia('(prefers-color-scheme: dark)').matches;"
+                 "root.dataset.theme = dark ? 'dark' : 'light';"
+                 "root.dataset.textsize = size === 'small' || size === 'large' ? size : 'default'; })();</script>")
+BUILT_CONTROLS = ("</head><body><script>"
+                  "function storageKey(app) { return app + '.textsize'; }"
+                  "localStorage.setItem(storageKey(APP), size);"
+                  "localStorage.setItem(APP + '.theme', next);"
+                  "</script></body>")
+built = run_contracts(GOOD_CSS, SCAFFOLD_BOOT + TT_METAS + BUILT_CONTROLS, spec_light=TT_SPEC,
+                      spec_dark=TT_DARK, html_name="index.html")
+check(built["theme-toggle"]["status"] == "PASS",
+      f"theme-toggle: `app + '.theme'` boot read and toggle write PASS (#1087) -- {built['theme-toggle']}")
+check(built["text-size"]["status"] == "PASS",
+      f"text-size: `app + '.textsize'` boot read and a `storageKey(app)` helper write PASS (#1087) -- {built['text-size']}")
+TMPL = ("<head><script>var t = localStorage.getItem(`${app}.theme`);"
+        "document.documentElement.dataset.theme = t || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');"
+        "</script>" + TT_METAS + "</head><body><script>localStorage.setItem(`${app}.theme`, t);</script></body>")
+tmpl = run_contracts(GOOD_CSS, TMPL, spec_light=TT_SPEC, spec_dark=TT_DARK, html_name="index.html")
+check(tmpl["theme-toggle"]["status"] == "PASS", f"theme-toggle: a template-literal key PASSes (#1087) -- {tmpl['theme-toggle']}")
+UNRELATED = ("</head><body><script>function storageKey(app) { return app + '.session'; }"
+             "localStorage.setItem(storageKey(APP), id); localStorage.setItem(APP + '.session', id);</script></body>")
+unrel = run_contracts(GOOD_CSS, TS_BOOT + UNRELATED, html_name="index.html")
+check(unrel["text-size"]["status"] == "WARN" and "no persisted control" in unrel["text-size"]["detail"],
+      f"text-size: a helper or concatenation building another key is not the control -- {unrel['text-size']}")
+
 # ---- typography, glyph icons, spec contrast, rendered leg (fleet-config#969) ----
 # every new check lands as WARN (never FAIL): the apps it flags fix it in their own lanes
 

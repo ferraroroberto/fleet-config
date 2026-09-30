@@ -208,20 +208,37 @@ def _check_button_tiers(ctx: _ContractsCtx) -> List[dict]:
                      f"{n_btn} button rule(s) conform to the tier vocabulary")]
 
 
+def _storage_key_re(markup: str, suffix: str, const_re: str) -> str:
+    """A localStorage key naming `<app>.<suffix>`, in any shape the fleet writes it (#1087).
+
+    A literal (`'app.theme'`, `` `${app}.theme` ``), a concatenation
+    (`app + '.theme'` — the scaffold's own boot script), a `const_re`-named
+    constant (`THEME_KEY`), or a call to a helper in `markup` whose body
+    builds the key (the vendored text-size.js `storageKey(app)`).
+    """
+    built = rf"['\"`][^'\"`]*\.{suffix}['\"`]"
+    helpers = set(re.findall(rf"function\s+(\w+)\s*\([^)]*\)\s*\{{[^{{}}]*?{built}", markup))
+    helpers |= set(re.findall(rf"\b(\w+)\s*=\s*(?:function\s*)?\([^)]*\)\s*(?:=>)?\s*\{{?[^;{{}}]*?{built}", markup))
+    alts = [built, rf"[\w.$]+\s*\+\s*{built}", const_re]
+    alts += [rf"{re.escape(h)}\s*\([^()]*\)" for h in sorted(helpers)]
+    return "(?:" + "|".join(alts) + ")"
+
+
 def _check_theme_toggle(ctx: _ContractsCtx) -> List[dict]:
     # 12. user-selectable theme — pre-paint data-theme boot + persisted .theme
     #     toggle + dual scheme-gated theme-color metas (design.md Colors "Theme
     #     switching"; fleet-config#290). Grep-level only — whether the glyph
     #     shows the action stays LLM judgment in /design-sync step 4. Both
-    #     stamp idioms (dataset.theme / setAttribute) and both key shapes
-    #     (`.theme` literal / a theme-named constant) are canonical.
+    #     stamp idioms (dataset.theme / setAttribute) and every key shape
+    #     `_storage_key_re` reads (literal, concatenation, constant, helper) are
+    #     canonical.
     index_files, markup_all = ctx.index_files, ctx.markup_all
     spec_light, spec_dark = ctx.spec_light, ctx.spec_dark
     if not index_files:
         return [_result("theme-toggle", "NA", "no index.html found")]
     stamp_re = r"dataset\.theme|setAttribute\(\s*['\"]data-theme['\"]"
-    toggle_re = (r"localStorage\.setItem\(\s*"
-                 r"(?:['\"][^'\"]*\.theme['\"]|\w*theme\w*\s*,)")
+    key_re = _storage_key_re(markup_all, "theme", r"\w*theme\w*")
+    toggle_re = r"localStorage\.setItem\(\s*" + key_re + r"\s*,"
     missing_boot: List[str] = []
     meta_gaps: List[str] = []
     for p in index_files:
@@ -229,7 +246,7 @@ def _check_theme_toggle(ctx: _ContractsCtx) -> List[dict]:
         body_at = text.lower().find("<body")
         head = text[:body_at] if body_at >= 0 else text
         boot = (re.search(stamp_re, head)
-                and re.search(r"localStorage\.getItem\(\s*['\"][^'\"]*\.theme['\"]", head)
+                and re.search(r"localStorage\.getItem\(\s*" + key_re + r"\s*\)", head)
                 and "prefers-color-scheme" in head)
         if not boot:
             missing_boot.append(rel(ctx.root, p))
@@ -284,14 +301,14 @@ def _check_text_size(ctx: _ContractsCtx) -> List[dict]:
     #      stamp read from a `.textsize` localStorage key in <head>, plus a
     #      persisted control that writes it. WARN, never FAIL: no app shipped
     #      it when the contract landed, and adoption lands per app. Same key
-    #      shapes as theme-toggle (a `.textsize` literal or a named constant).
+    #      shapes as theme-toggle (`_storage_key_re`).
     index_files, markup_all = ctx.index_files, ctx.markup_all
     if not index_files:
         return [_result("text-size", "NA", "no index.html found")]
     stamp_re = r"dataset\.textsize|setAttribute\(\s*['\"]data-textsize['\"]"
-    key_re = r"(?:['\"][^'\"]*\.textsize['\"]|\w*text_?size\w*\s*)"
-    read_re = r"localStorage\.getItem\(\s*" + key_re + r"\)"
-    write_re = r"localStorage\.setItem\(\s*" + key_re + r","
+    key_re = _storage_key_re(markup_all, "textsize", r"\w*text_?size\w*")
+    read_re = r"localStorage\.getItem\(\s*" + key_re + r"\s*\)"
+    write_re = r"localStorage\.setItem\(\s*" + key_re + r"\s*,"
     missing_boot: List[str] = []
     for p in index_files:
         text = strip_comments(read_text(p), "html")
