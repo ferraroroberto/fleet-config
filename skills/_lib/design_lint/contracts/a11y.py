@@ -53,17 +53,27 @@ def _check_reduced_motion(ctx: _ContractsCtx) -> List[dict]:
     return [_result("reduced-motion", "FAIL", "no prefers-reduced-motion handling (design.md v2 Motion section)")]
 
 
+# An at-rule's condition (`@media (max-width: 720px)`) is a breakpoint, never a declaration (#1087).
+_AT_PRELUDE_RE = re.compile(r"@(?:media|container|supports)\b[^{;]*")
+
+
 def _check_desktop_measure(ctx: _ContractsCtx) -> List[dict]:
-    # 3. desktop measure (centered 772px column)
-    css_all = ctx.css_all
-    if re.search(r"max-width:\s*772px", css_all):
+    # 3. desktop measure (centered 772px column, spec `layout.measure`). Only
+    # declarations count: at-rule conditions are blanked, length-preserving so
+    # evidence lines stay true. A cap through a custom property set to 772px
+    # (`max-width: var(--layout-measure)`) is the measure too (#1087).
+    decls = _AT_PRELUDE_RE.sub(lambda m: re.sub(r"[^\n]", " ", m.group(0)), ctx.css_all)
+    tokens = sorted(set(re.findall(r"(--[\w-]+)\s*:\s*772px", decls)))
+    cap_re = r"max-width:\s*(?:772px" + "".join(rf"|var\(\s*{re.escape(t)}\b" for t in tokens) + ")"
+    if re.search(cap_re, decls):
         return [_result("desktop-measure", "PASS", "content measure capped at the fleet 772px",
-                         _evidence(css_all, r"max-width:\s*772px"))]
-    near = re.search(r"max-width:\s*(6\d\d|7\d\d|8\d\d)px", css_all)
+                         _evidence(decls, cap_re))]
+    near_re = r"max-width:\s*(6\d\d|7\d\d|8\d\d)px"
+    near = re.search(near_re, decls)
     if near:
         return [_result("desktop-measure", "WARN",
-                         f"content capped at {near.group(0).split(':')[1].strip()} — spec is 772px",
-                         _evidence(css_all, r"max-width:\s*(6\d\d|7\d\d|8\d\d)px"))]
+                         f"content capped at {near.group(1)}px — spec is 772px",
+                         _evidence(decls, near_re))]
     return [_result("desktop-measure", "FAIL", "no desktop content cap found — spec: centered max-width 772px")]
 
 
