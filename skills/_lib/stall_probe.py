@@ -26,6 +26,8 @@ Report-only: nothing here changes a machine setting (TCP, port range, WSL).
     python stall_probe.py run [--threshold 1.0] [--state-dir DIR]   # foreground
     python stall_probe.py start                                      # background, no window
     python stall_probe.py status                                     # heartbeat + stall count
+    python stall_probe.py install-logon                              # Startup-folder launcher, no admin
+    python stall_probe.py uninstall-logon
 """
 from __future__ import annotations
 
@@ -291,20 +293,98 @@ def single_instance(folder: Path):
     return handle
 
 
+# ---- logon start -------------------------------------------------------------
+
+STARTUP_BAT_NAME = "FleetStallProbe.bat"
+REPO_ROOT = Path(__file__).resolve().parents[2]
+VENV_PYTHON = REPO_ROOT / ".venv" / "Scripts" / "python.exe"
+
+
+def startup_dir() -> Path:
+    """The per-user Startup folder: a plain file write, no admin, no Task Scheduler."""
+    appdata = os.environ.get("APPDATA")
+    if not appdata:
+        raise RuntimeError("APPDATA environment variable is not set")
+    return Path(appdata) / "Microsoft" / "Windows" / "Start Menu" / "Programs" / "Startup"
+
+
+def _logon_bat_content(python: Path, log: Path) -> bytes:
+    """`start` is idempotent (ALREADY_RUNNING when a probe holds the lock), so a logon that
+    races a probe started by hand is safe. Its output lands in `startup.log`: a logon
+    launch that dies silently is otherwise undiagnosable (cf. app-launcher#582)."""
+    script = Path(__file__).resolve()
+    return (
+        "@echo off\r\n"
+        f'cd /d "{REPO_ROOT}"\r\n'
+        f'>>"{log}" echo [%date% %time%] logon start\r\n'
+        f'"{python}" "{script}" start >>"{log}" 2>&1\r\n'
+        f'>>"{log}" echo [%date% %time%] start returned errorlevel %ERRORLEVEL%\r\n'
+    ).encode("utf-8")
+
+
+def install_logon(folder: Path, target_dir: Optional[Path] = None, python: Path = VENV_PYTHON) -> int:
+    """Write the Startup wrapper and read it back. Distinct outcomes: INSTALLED, UPDATED,
+    ALREADY_INSTALLED (exit 0) and WRITE_FAILED (exit 1)."""
+    path = (target_dir if target_dir is not None else startup_dir()) / STARTUP_BAT_NAME
+    if not python.is_file():
+        print(f"WRITE_FAILED: the venv interpreter is missing at {python} (create the repo .venv first)", file=sys.stderr)
+        return 1
+    data = _logon_bat_content(python, folder / "startup.log")
+    try:
+        existing = path.read_bytes() if path.is_file() else None
+        if existing == data:
+            print(f"ALREADY_INSTALLED {path}")
+            return 0
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(data)  # bytes: text mode would turn our CRLF into CRCRLF
+        if path.read_bytes() != data:
+            raise OSError("read-back differs from what was written")
+    except OSError as exc:
+        print(f"WRITE_FAILED: {path}: {exc}", file=sys.stderr)
+        return 1
+    print(f"{'UPDATED' if existing is not None else 'INSTALLED'} {path}")
+    return 0
+
+
+def uninstall_logon(target_dir: Optional[Path] = None) -> int:
+    path = (target_dir if target_dir is not None else startup_dir()) / STARTUP_BAT_NAME
+    try:
+        path.unlink()
+    except FileNotFoundError:
+        print(f"NOT_INSTALLED {path}")
+        return 0
+    except OSError as exc:
+        print(f"REMOVE_FAILED: {path}: {exc}", file=sys.stderr)
+        return 1
+    print(f"UNINSTALLED {path}")
+    return 0
+
+
 def main(argv: Optional[List[str]] = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
-    ap.add_argument("command", choices=("run", "start", "status"))
+    ap.add_argument("command", choices=("run", "start", "status", "install-logon", "uninstall-logon"))
     ap.add_argument("--threshold", type=float, default=THRESHOLD_S)
     ap.add_argument("--state-dir", default=None, help="override the hooks state dir (tests)")
+    ap.add_argument("--startup-dir", default=None, help="override the Startup folder (tests)")
     args = ap.parse_args(argv)
     folder = probe_dir(Path(args.state_dir) if args.state_dir else None)
+    startup = Path(args.startup_dir) if args.startup_dir else None
+    if args.command == "uninstall-logon":
+        return uninstall_logon(startup)
     folder.mkdir(parents=True, exist_ok=True)
+    if args.command == "install-logon":
+        return install_logon(folder, startup)
     if args.command == "status":
         status = json.loads((folder / "status.json").read_text(encoding="utf-8")) if (folder / "status.json").exists() else None
         lines = (folder / "stalls.jsonl").read_text(encoding="utf-8").splitlines() if (folder / "stalls.jsonl").exists() else []
         print(json.dumps({"status": status, "stall_lines": len(lines), "log": str(folder / "stalls.jsonl")}))
         return 0 if status else 1
     if args.command == "start":
+        held = single_instance(folder)
+        if held is None:  # a probe is running: don't spawn a process that would only exit 2
+            print("ALREADY_RUNNING")
+            return 0
+        held.close()
         pythonw = Path(sys.executable).with_name("pythonw.exe")
         cmd = [str(pythonw if pythonw.exists() else sys.executable), str(Path(__file__).resolve()), "run",
                "--threshold", str(args.threshold)] + (["--state-dir", args.state_dir] if args.state_dir else [])

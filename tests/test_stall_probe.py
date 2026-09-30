@@ -9,10 +9,13 @@ Run: `E:/automation/fleet-config/.venv/Scripts/python.exe tests/test_stall_probe
 """
 from __future__ import annotations
 
+import contextlib
 import http.server
+import io
 import json
 import re
 import shutil
+import subprocess
 import sys
 import tempfile
 import threading
@@ -99,6 +102,50 @@ try:
     second = sp.single_instance(folder_b)
     check(first is not None and second is None, "a second probe on the same state dir is refused")
     first.close()
+
+    # ---- `start` never spawns a second probe while one holds the lock ----
+    held = sp.single_instance(folder_b)
+    started = subprocess.run([sys.executable, str(REPO / "skills" / "_lib" / "stall_probe.py"), "start",
+                              "--state-dir", str(tmp / "b")], capture_output=True, text=True, timeout=30)
+    check(held is not None and started.returncode == 0 and started.stdout.strip() == "ALREADY_RUNNING",
+          f"start reports ALREADY_RUNNING and spawns nothing when a probe is up -- {started.stdout!r} {started.stderr!r}")
+    held.close()
+
+    # ---- logon start: a Startup-folder wrapper, always a temp dir here, never the real one ----
+    startup = tmp / "Startup"
+    fake_python = tmp / "python.exe"
+    fake_python.write_bytes(b"")
+    captured = io.StringIO()
+
+    def run_cmd(fn, *a, **k):
+        captured.seek(0)
+        captured.truncate()
+        with contextlib.redirect_stdout(captured), contextlib.redirect_stderr(captured):
+            code = fn(*a, **k)
+        return code, captured.getvalue()
+
+    code, text = run_cmd(sp.install_logon, folder_b, startup, fake_python)
+    bat = startup / sp.STARTUP_BAT_NAME
+    body = bat.read_bytes() if bat.exists() else b""
+    check(code == 0 and text.startswith("INSTALLED") and body.startswith(b"@echo off\r\n")
+          and str(fake_python).encode() in body and b" start >>" in body and b"\r\r" not in body,
+          f"install writes the wrapper (CRLF, venv python, `start`) and reads it back -- {code} {text!r}")
+    code, text = run_cmd(sp.install_logon, folder_b, startup, fake_python)
+    check(code == 0 and text.startswith("ALREADY_INSTALLED") and bat.read_bytes() == body,
+          f"a second install is a no-op -- {code} {text!r}")
+    bat.write_bytes(b"stale")
+    code, text = run_cmd(sp.install_logon, folder_b, startup, fake_python)
+    check(code == 0 and text.startswith("UPDATED") and bat.read_bytes() == body, f"a stale wrapper is rewritten -- {code} {text!r}")
+    code, text = run_cmd(sp.uninstall_logon, startup)
+    check(code == 0 and text.startswith("UNINSTALLED") and not bat.exists(), f"uninstall removes it -- {code} {text!r}")
+    code, text = run_cmd(sp.uninstall_logon, startup)
+    check(code == 0 and text.startswith("NOT_INSTALLED"), f"a second uninstall is a no-op -- {code} {text!r}")
+    blocker = tmp / "not-a-dir"
+    blocker.write_bytes(b"")
+    code, text = run_cmd(sp.install_logon, folder_b, blocker / "Startup", fake_python)
+    check(code == 1 and text.startswith("WRITE_FAILED"), f"an unwritable Startup dir is WRITE_FAILED, not a crash -- {code} {text!r}")
+    code, text = run_cmd(sp.install_logon, folder_b, startup, tmp / "missing.exe")
+    check(code == 1 and "WRITE_FAILED" in text and not bat.exists(), f"a missing venv python is refused before writing -- {code} {text!r}")
 
     # ---- the real cheap evidence sources have the expected shape ----
     pdh = sp._safely(sp.pdh_counters)
