@@ -659,6 +659,7 @@ class ScheduledRunnerTests(unittest.TestCase):
                             released.append(time.monotonic())
                             release.touch()
                     thread = threading.Thread(target=request)
+                    started, wall_started = time.monotonic(), time.time()
                     thread.start()
                     attribute = "terminate" if failure == "terminate" else "active"
                     value = False if failure == "terminate" else None
@@ -673,8 +674,17 @@ class ScheduledRunnerTests(unittest.TestCase):
                             stall_timeout=0, cancel_event=cancel if failure != "none" else None)
                     returned = time.monotonic()
                     thread.join(timeout=4)
-                    self.assertFalse(thread.is_alive())
-                    self.assertEqual(errors, [])
+                    # Names the path of a failure (fleet-config#1074): a run that returned
+                    # before the cancel either saw the provider exit on its own (its 30 s
+                    # hold ran out after a slow descendant start: `ready` written late, no
+                    # kill) or saw it fail (no `ready`, the runner's lines say why).
+                    ready_at = f"{ready.stat().st_mtime - wall_started:.1f}s" if ready.exists() else "never"
+                    state = (f"code={code} errors={errors} cancel={cancel.is_set()} kill={killing.is_set()} "
+                             f"ready_written={ready_at} returned={returned - started:.1f}s "
+                             f"released={[f'{r - started:.1f}s' for r in released]} (all from the request thread's start)\n"
+                             + "\n".join(lines))
+                    self.assertFalse(thread.is_alive(), state)
+                    self.assertEqual(errors, [], state)
                     self.assertEqual(len(handles), 1, "must retain the live descendant handle")
                     try:
                         self.assertEqual(api.WaitForSingleObject(handles[0], 2000), 0,
