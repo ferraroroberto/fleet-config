@@ -20,6 +20,8 @@ Native Claude and Codex quota measurements now share a [versioned snapshot contr
 
 An always-on [host stall probe](docs/stall-probe.md) logs every whole-box freeze over 1 s in UTC, with the machine's memory, TCP, job and scheduled-task state captured as it ends, so the cause of the fleet-wide 7-25 s stalls can be named from evidence (fleet-config#1106).
 
+A [dead-code start beacon](docs/dead-code-beacon.md) records every interpreter start from a repo's `.venv` in a machine-local ledger. It is one reversible `.pth` file that never breaks its host. The entry-point inventory reads the ledger to move scripts only a human launches from `unknown` to `live` or `cold` over a 90-day window (fleet-config#1114; pilot: `automation`).
+
 Scheduled skills can now explicitly select Claude or Codex through one [shared runner](docs/scheduled-runners.md), with terminal evidence, delivery checks and owned-process cancellation. Windows launchers are created suspended so the venv's base interpreter inherits ownership before it can run; `tests/probe_scheduled_runner.py --ownership-only` checks the boundary without model calls. Existing Claude launchers remain unchanged; Pi/Grok and Codex delegated-child execution remain unverified.
 
 Opted-in conversations now normalize native Claude/Codex stored transcripts before shared capture and search. Exact harness/session identity keeps unrelated equal prompts separate and preserves Codex fork lineage; [capture setup, reader contract and native evidence](docs/conversation-capture.md) document the explicit Codex opt-in and current limits.
