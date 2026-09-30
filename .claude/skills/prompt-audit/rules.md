@@ -44,8 +44,8 @@ Source: https://platform.claude.com/docs/en/build-with-claude/prompt-engineering
 ### R-04 No periodic progress-summary scaffolding        tags: [shared] [file: any] [tier: easy]
 Detect: lint — "every N tool calls", "every few tool calls", "after every N steps".
 Why: "If you've added scaffolding to force interim status messages ('After every 3 tool calls, summarize progress'), try removing it." The coding-model guide agrees: "remove all prompting for the model to communicate an upfront plan, preambles, or other status updates during the rollout, as this can cause the model to stop abruptly before the rollout is complete."
-Fix shape: delete; if updates matter to a human reader, say what an update should contain, not how often.
-Source: https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/prompting-claude-sonnet-5 (User-facing progress updates) · https://developers.openai.com/cookbook/examples/gpt-5/codex_prompting_guide (Getting Started)
+Fix shape: delete; if updates matter to a human reader, say what an update should contain, not how often. A harness-injected reminder that fires after N silent steps is a turn-scoped mechanism, not instruction-file prose — R-04 still applies to a static "every N tool calls" line.
+Source: https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/prompting-claude-sonnet-5 (User-facing progress updates) · https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/prompting-claude-opus-5-5 (User-facing progress updates) · https://developers.openai.com/cookbook/examples/gpt-5/codex_prompting_guide (Getting Started)
 
 ### R-05 No narration suppression        tags: [anthropic] [file: any] [tier: easy]
 Detect: lint — "hold (all) findings/results/updates/output for/until the final …".
@@ -68,8 +68,8 @@ Source: https://platform.claude.com/docs/en/build-with-claude/prompt-engineering
 ### R-08 No "do not think" rules        tags: [anthropic] [file: any] [tier: easy]
 Detect: lint — "do not / don't / never think" or "… reason" (not followed by about / of / that).
 Why: "If your system prompt contains a rule instructing the model not to think or not to reason, remove it; that kind of instruction increases tag leakage."
-Fix shape: delete; control depth through effort, not prose.
-Source: https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/prompting-claude-opus-5 (Running with thinking disabled)
+Fix shape: delete; control depth through effort, not prose. Thinking is always on for the newest models, so a "do not think" line is dead text there too.
+Source: https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/prompting-claude-opus-5 (Running with thinking disabled) · https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/claude-prompting-best-practices (Leverage thinking & interleaved thinking capabilities)
 
 ### R-09 No recall-suppressing review instructions        tags: [anthropic] [file: any] [tier: easy]
 Detect: lint — "only report high-/critical-severity", "be conservative", "don't nitpick".
@@ -100,14 +100,14 @@ Source: https://developers.openai.com/cookbook/examples/gpt-5/codex_prompting_gu
 ### R-13 Positive framing over negatives        tags: [anthropic] [file: any] [tier: hard]
 Detect: lint — lines containing never / do not / don't / avoid / must not (count), reported with the ratio to all instruction lines.
 Why: "Tell [the model] what to do instead of what not to do." Positive examples showing the wanted behaviour "tend to be more effective than negative examples or instructions that tell the model what not to do."
-Fix shape: rewrite the rule as the behaviour wanted, keeping a negative only where it names a real hazard (a destructive command); never mass-rewrite — judgment decides per line.
-Source: https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/claude-prompting-best-practices (Control the format of responses) · https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/prompting-claude-sonnet-5 (Response length and verbosity)
+Fix shape: rewrite the rule as the behaviour wanted, keeping a negative only where it names a real hazard (a destructive command); never mass-rewrite — judgment decides per line. Exception: a named anti-pattern list for design output is compliant — the model "responds well to instructions that name specific patterns to avoid".
+Source: https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/claude-prompting-best-practices (Control the format of responses) · https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/prompting-claude-sonnet-5 (Response length and verbosity) · https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/prompting-claude-opus-5-5 (Frontend design defaults)
 
 ### R-14 Instruction-file size cap        tags: [shared] [file: any] [tier: hard]
 Detect: lint — `CLAUDE.md` / `.claude/rules/*.md` over 200 lines; `SKILL.md` body over 500 lines; `AGENTS.md` over 32768 bytes.
 Why: "target under 200 lines per CLAUDE.md file. Longer files consume more context and reduce adherence." "Keep SKILL.md body under 500 lines for optimal performance." The `AGENTS.md` loader "stops adding files once the combined size reaches the limit defined by `project_doc_max_bytes` (32 KiB by default)" — past the cap, instructions are silently truncated.
-Fix shape: move procedures and scoped detail into skills, path-scoped rules or referenced docs (R-26); never compress by deleting directives — `/context-purge` owns lossless compression.
-Source: https://code.claude.com/docs/en/memory (Write effective instructions) · https://platform.claude.com/docs/en/agents-and-tools/agent-skills/best-practices (Token budgets) · https://developers.openai.com/codex/guides/agents-md
+Fix shape: move procedures and scoped detail into skills, path-scoped rules or referenced docs (R-26); never compress by deleting directives — `/context-purge` owns lossless compression. An `@path` import does not shrink the budget: "Splitting into `@path` imports helps organization but doesn't reduce context, since imported files load at launch."
+Source: https://code.claude.com/docs/en/memory (Write effective instructions; Troubleshoot memory issues → My CLAUDE.md is too large) · https://platform.claude.com/docs/en/agents-and-tools/agent-skills/best-practices (Token budgets) · https://developers.openai.com/codex/guides/agents-md
 
 ### R-15 Skill description: short, third person        tags: [anthropic] [file: skill] [tier: easy]
 Detect: lint — description over 1024 characters; first- or second-person words (I, me, my, we, our, you, your) in the description prose, with quoted trigger phrases excluded. Prose word count is reported against the fleet's 50-word cap (owned by `/context-audit`).
@@ -125,7 +125,7 @@ Source: https://code.claude.com/docs/en/memory (Write effective instructions) ·
 Detect: lint — in an agent-neutral file or section, a paragraph that names one audience's product terms (`sources.toml` `terms`) and none of the other's, without any audience marker.
 Why: a neutral file is read by several agents; guidance tuned for one model is noise or harm for another. Both vendors stress auditing instruction files for guidance that does not apply to the reader, and the per-model guides carry their own hedge: a technique measured on one model is re-checked before being applied to another.
 Fix shape: add the audience marker listed in `sources.toml` to the heading, or move the paragraph to the vendor-scoped file. A paragraph that merely names a product as data (a model id in a routing table) is compliant.
-Source: https://developers.openai.com/api/docs/guides/latest-model (Instruction following) · https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/claude-prompting-best-practices (Model-specific guidance)
+Source: https://developers.openai.com/api/docs/guides/latest-model (Instruction following) · https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/claude-prompting-best-practices (General principles)
 
 ### R-18 Give the reason behind the rule        tags: [anthropic] [file: any] [tier: hard]
 Detect: judgment — a directive whose motivation is neither stated nor linked (an issue number or a one-clause "because" counts).
@@ -135,9 +135,9 @@ Source: https://platform.claude.com/docs/en/build-with-claude/prompt-engineering
 
 ### R-19 Explicit scope boundary        tags: [shared] [file: any] [tier: hard]
 Detect: judgment — a task-shaped instruction (a skill, a workflow section) with no statement of what is in and out of scope.
-Why: current models "can also expand the scope of a task, adding steps that weren't requested"; "Deliver what was asked, at the scope intended." The other vendor: "infer the user's intent and task scope from the instructions and prior conversation context."
+Why: current models "can also expand the scope of a task, adding steps that weren't requested"; "Deliver what was asked, at the scope intended." The other vendor: "infer the user's intent and task scope from the instructions and prior conversation context." And the scope is the deliverable: "The user's request — or the plan they approved — sets the scope, and the scope is the deliverable: don't quietly narrow, widen, or swap it."
 Fix shape: one sentence naming the deliverable and what is explicitly out of scope.
-Source: https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/prompting-claude-opus-5 (Task scope and over-verification) · https://developers.openai.com/api/docs/guides/latest-model (Initiative and follow-through)
+Source: https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/prompting-claude-opus-5 (Task scope and over-verification) · https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/prompting-claude-fable-5-1 (Finish the whole task) · https://developers.openai.com/api/docs/guides/latest-model (Initiative and follow-through)
 
 ### R-20 Explicit length calibration        tags: [shared] [file: any] [tier: hard]
 Detect: judgment — an instruction that produces a written artefact (report, issue body, digest, summary) with no length or density guidance.
@@ -147,7 +147,7 @@ Source: https://platform.claude.com/docs/en/build-with-claude/prompt-engineering
 
 ### R-21 Autonomy with an assessment carve-out        tags: [shared] [file: any] [tier: hard]
 Detect: judgment — an unattended or long-running workflow that does not say to carry reversible work through without asking, or that has such a block without the "a question is answered with an assessment, not a fix" exception.
-Why: the autonomy block — "The user is not watching in real time … For reversible actions that follow from the original request, proceed without asking" — is paired with "when the user is describing a problem, asking a question, or thinking out loud … the deliverable is your assessment." The other vendor: "bias towards action and carry the user's intended task to completion" unless "clearly destructive or irreversible".
+Why: the autonomy block — "The user is not watching in real time … For reversible actions that follow from the original request, proceed without asking" — is paired with "when the user is describing a problem, asking a question, or thinking out loud … the deliverable is your assessment." The other vendor: "bias towards action and carry the user's intended task to completion" unless "clearly destructive or irreversible". When a question comes up partway, the workflow does everything that doesn't depend on the answer first, then states the assumption made — or asks at the end of a turn that also delivers progress.
 Fix shape: add the missing half; keep the opening sentence as written.
 Source: https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/prompting-claude-fable-5-1 (Finish the whole task) · https://developers.openai.com/api/docs/guides/latest-model (Initiative and follow-through)
 
@@ -185,9 +185,9 @@ Source: https://code.claude.com/docs/en/memory · https://developers.openai.com/
 
 ### R-27 Instruction files advise; hooks and CI enforce        tags: [shared] [file: claude-md] [tier: hard]
 Detect: judgment — an always-on rule stated as an absolute guarantee ("this can never happen") that no hook, test or CI check actually enforces.
-Why: instruction files are "context rather than enforced configuration" — "there's no guarantee of strict compliance". "If the instruction is something that must run at a specific point … write it as a hook instead." A guarantee that nothing enforces teaches readers to trust it.
+Why: instruction files are "context, not enforced configuration" — "there's no guarantee of strict compliance". "If the instruction is something that must run at a specific point … write it as a hook instead." A guarantee that nothing enforces teaches readers to trust it.
 Fix shape: name the enforcing hook/check, or reword as guidance and file the enforcement gap.
-Source: https://code.claude.com/docs/en/memory · https://developers.openai.com/codex/guides/agents-md
+Source: https://code.claude.com/docs/en/memory (Write effective instructions; Troubleshoot memory issues → Claude isn't following my CLAUDE.md) · https://developers.openai.com/codex/guides/agents-md
 
 ### R-28 Subagent delegation stance stays scoped        tags: [conflict] [file: any] [tier: hard]
 Detect: judgment — an agent-neutral file that tells the reader to delegate more, or less, without a vendor scope marker.
@@ -201,6 +201,30 @@ Why: the flagship "is better able to follow longer instructions, but can also be
 Fix shape: one sentence on precedence, scoped to what the skill must still never do (its safety gates).
 Source: https://developers.openai.com/api/docs/guides/latest-model (Instruction following)
 
+### R-30 No reasoning-in-the-answer instructions        tags: [anthropic] [file: any] [tier: easy]
+Detect: lint — "explain/show your reasoning in the response", "write out your reasoning", "show your work", "think out loud in your answer".
+Why: "Remove instructions that stood in for thinking. If your prompt asked the model to write out its reasoning in the response as a substitute for thinking, remove that instruction … a prompt that pushes the model to reproduce its reasoning in the response text can be declined with the `reasoning_extraction` refusal category."
+Fix shape: delete the line; if the reasoning is needed downstream, read the summarized thinking instead.
+Source: https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/prompting-claude-opus-5-5 (Prompts written for thinking disabled; Safeguard refusals)
+
+### R-31 A text-only stop is a report, not completion        tags: [anthropic] [file: any] [tier: hard]
+Detect: judgment — an unattended or scheduled workflow that treats the agent's turn ending as proof the task finished, with no completion condition or open-items checklist, or that re-prompts a stalled run without a cap.
+Why: "Treat a text-only end of turn as a report rather than as proof the task is done. Keep the task's parts in a checklist the model updates … stop after two or three automatic continuations on the same task rather than repeating them indefinitely, so that a run that is genuinely stuck ends and can be reviewed."
+Fix shape: state the completion condition up front (the delivery assertion), keep a checklist of parts, and cap automatic continuations at two or three.
+Source: https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/prompting-claude-opus-5-5 (Unattended agentic runs)
+
+### R-32 A blocking skill names itself        tags: [openai] [file: skill] [tier: easy]
+Detect: judgment — a skill that makes the reader pause, ask or refuse, with no instruction to cite the gate (skill file and the instruction quoted) when it does.
+Why: "If a skill causes you to ask for permission or confirmation, pause, leave requested work unfinished, or diverge from the user's intent, name and link to the exact SKILL.md file you read, quote the relevant instruction, and briefly explain how it applies. Distinguish explicit skill requirements from your interpretation of guidelines."
+Fix shape: one line beside the gate: when it stops, it names the skill and quotes the rule.
+Source: https://developers.openai.com/api/docs/guides/latest-model (Instruction following)
+
+### R-33 No invented gates or disclaimers        tags: [openai] [file: any] [tier: hard]
+Detect: judgment — approval flows, warnings or compliance checklists that answer a hypothetical risk rather than a named destructive action (complements R-22).
+Why: "Do not introduce unsolicited warnings, disclaimers, approval flows, or safety/compliance checklists due to hypothetical risk."
+Fix shape: delete the gate, or tie it to the concrete destructive action R-22 enumerates.
+Source: https://developers.openai.com/api/docs/guides/latest-model (Initiative and follow-through)
+
 ## Background appendix — guidance with no instruction-file signal
 
 Recorded so a cold reader has the reasoning; none of these are scanned. Tags name whose guidance each is.
@@ -212,11 +236,20 @@ Recorded so a cold reader has the reasoning; none of these are scanned. Tags nam
 - `[anthropic]` **Search a fast-moving name as written when it is unfamiliar** (low effort) — applies to research skills; `/sota-watch` already works that way.
 - `[anthropic]` **Gerund skill names** ("Consider using gerund form"). Not adopted as a rule: fleet skills are routed by existing verb/noun names (`issue-add`, `sota-watch`), and renaming breaks every trigger. New skills may use it.
 - `[openai]` **Slop-word lists** (phrases to avoid in generated prose) — an output-style concern for user-facing writing, not for instructions.
+- `[anthropic]` **Tell the model what output the user can't see** — "If your product collapses or hides tool output, tell the model. Otherwise it may run commands to 'show' the user output that your UI never displays." Delivered as a turn-scoped system message, so a harness concern.
+- `[anthropic]` **Writing density / mannered prose** — a section on style calibration for generated prose, not for instructions.
+- `[anthropic]` **Mark pasted text** with `<pasted_content>` tags plus a system-prompt note — a harness concern; skills that ingest transcripts (`/issue-add`) may adopt it.
+- `[anthropic]` **Parallel-calls instruction as a turn-scoped system message** in long loops — a harness concern.
+- `[anthropic]` **HTML block comments are stripped** from `CLAUDE.md` before injection, so they are a token-free place for maintainer notes.
+- `[anthropic]` **`CLAUDE.md` shadows `AGENTS.md`**: when any `CLAUDE.md` exists, the agent reads only that unless `claude-md-and-agents-md` is set. A fact for the fleet's `AGENTS.md` interop, not a file defect.
+- `[shared]` **Effort names aren't comparable across models** — "Effort level names don't correspond to the same amount of thinking across models". The owner is `docs/model-tiers.md`.
 
-Source: https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/claude-prompting-best-practices (Long context prompting) · https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/prompting-claude-fable-5-1 (Keep the conversation history append-only; Search triggering at low effort) · https://platform.claude.com/docs/en/agents-and-tools/agent-skills/best-practices (Naming conventions) · https://developers.openai.com/api/docs/guides/latest-model (Personality and writing style; Update API and model parameters)
+Source: https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/claude-prompting-best-practices (Long context prompting; Optimize parallel tool calling) · https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/prompting-claude-fable-5-1 (Keep the conversation history append-only; Search triggering at low effort; Ask for user-facing progress updates; Writing density) · https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/prompting-claude-opus-5-5 (Calibrate effort; Mark pasted text in user messages) · https://platform.claude.com/docs/en/agents-and-tools/agent-skills/best-practices (Naming conventions) · https://code.claude.com/docs/en/memory (Import additional files) · https://developers.openai.com/api/docs/guides/latest-model (Personality and writing style; Update API and model parameters)
 
 ## Recorded as rejected
 
 - `[anthropic]` **"XML tags are unnecessary", "role prompting is unnecessary", "many-shot examples are unnecessary"** (vendor blog, Nov 2025). Contradicted by the Sept-2026 docs page, which keeps "Structure prompts with XML tags", "Give [the model] a role", and "Use examples effectively" (3–5 examples). The docs page wins; R-24 and R-25 follow the docs.
+- `[openai]` **"Always put proper spaces between words and/or numbers"** in inter-agent messages — too narrow for an instruction-file rule.
+- `[openai]` **"Do not settle for a partial or 'helpful enough' solution"** — R-21 already covers it.
 
 Source: https://claude.com/blog/best-practices-for-prompt-engineering · https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/claude-prompting-best-practices

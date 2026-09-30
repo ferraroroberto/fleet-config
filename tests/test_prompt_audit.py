@@ -138,6 +138,26 @@ clean = pa.lint_entry(entry_for(CLEAN), RULES, AUD)
 check(clean.hits == [], f"clean fixture -> no hits (got {[(h.rule, h.line) for h in clean.hits]})")
 check("|hits=none|" in pa.hits_line(clean), "clean HITS line says hits=none")
 
+# R-30 (#1070): reasoning-in-the-answer instructions; a plain "explain" or a fence is not a hit
+R30 = """# Reasoning
+
+- Explain your reasoning in the response.
+- Write out your reasoning before the verdict.
+- Show your work.
+- Think out loud in your answer.
+- Explain the change to the reviewer.
+- Read the summarized thinking when the reasoning is needed downstream.
+
+```
+show your work
+```
+"""
+r30 = pa.lint_entry(entry_for(R30), RULES, AUD)
+check(r30.counts() == {"R-30": 4}, f"R-30 counts the four reasoning-in-the-answer lines only (got {r30.counts()})")
+check(by_rule(r30, "R-30")[0].cap == "consider", "R-30 is single-vendor: consider in a neutral file")
+check(pa.lint_entry(entry_for(R30, audience="claude"), RULES, AUD).hits[0].cap == "violation",
+      "R-30 is a violation in a claude-scoped file")
+
 multi = pa.lint_entry(entry_for("# M\n\nKeep the hub on one port.\nRoute Claude traffic through it.\n"), RULES, AUD)
 check([h.line for h in by_rule(multi, "R-17")] == [4], "R-17 anchors on the line naming the vendor term, not the paragraph start")
 

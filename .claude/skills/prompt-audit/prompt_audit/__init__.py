@@ -12,7 +12,7 @@ Layout, in dependency order (no module imports a later one):
   sources.py    vendor-guide freshness gate
   inventory.py  audiences + the scan-surface inventory
   rules.py      `rules.md` parsing and per-audience verdicts
-  lint.py       the R-01..R-17 lint engine
+  lint.py       the lint engine (R-01..R-17, R-30)
   dedup.py      findings shared with the scaffolding master / lite global
   state.py      cadence state
   ledger.py     the skip-unchanged ledger issue
