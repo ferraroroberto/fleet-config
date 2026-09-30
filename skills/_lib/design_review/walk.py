@@ -31,13 +31,16 @@ No submit, no fill, no session attach, no navigation away from the base URL.
 
 Output: `<out>/screens.json` — a list of screen records
 `{id, device, theme, view, kind, status, reason, error, screenshot,
-screenshot_full, metrics}` — plus `<out>/walk.json` with engine versions and
+screenshot_full, note, metrics}` — plus `<out>/walk.json` with engine versions and
 timings. A screen that fails to open is recorded with `status: "error"` and a
 distinct `reason` (`TIMEOUT`, `NOT_LISTENING`, `TAB_FAILED`, `DIALOG_FAILED`,
 `BROWSER_FAILED`, `NO_GO`); its rules evaluate to `unmeasured`, never pass.
 A step whose target never attaches (a menu on an empty list) is `status:
 "absent"`, `reason: "STEP_TARGET_ABSENT"`: that surface does not exist in
 this app state, so it leaves unrelated rules alone (#995).
+A full-page capture never fails its screen (#1085): a page over the
+engines' 32767 device-px limit is captured clipped to it, any other
+capture error skips it, and the screen keeps its metrics with a `note`.
 
 Usage (normally via capture.py):
 
@@ -54,7 +57,7 @@ import logging
 import sys
 import time
 from pathlib import Path
-from typing import Callable, Dict, List, Optional
+from typing import Callable, Dict, List, Optional, Tuple
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import measure  # noqa: E402
@@ -69,6 +72,11 @@ DIALOG_SETTLE_MS = 500
 STEP_SETTLE_MS = 1200
 STEP_TARGET_WAIT_MS = 5000   # a step target not attached by then is absent from this app state (#995)
 DEFAULT_TIMEOUT_MS = 15000
+# Neither engine captures an image over this many device px on a side: an iPhone (3x) page
+# over ~10,900 CSS px tall fails its full-page screenshot (#1085).
+SCREENSHOT_MAX_PX = 32767
+_PAGE_SIZE_JS = ("() => ({dpr: devicePixelRatio, width: document.documentElement.scrollWidth,"
+                 " height: document.documentElement.scrollHeight})")
 
 _TABS_JS = """
 sel => { const list = document.querySelector('[role=tablist]'); const root = list || document;
@@ -156,19 +164,47 @@ def _record(**fields: object) -> Dict[str, object]:
     base: Dict[str, object] = {
         "id": None, "device": None, "theme": None, "view": None, "kind": None,
         "status": "ok", "reason": None, "error": None,
-        "screenshot": None, "screenshot_full": None, "metrics": None,
+        "screenshot": None, "screenshot_full": None, "note": None, "metrics": None,
     }
     base.update(fields)
     return base
 
 
-def _shot(page, shots: Path, name: str, full: bool = False,
-          after_full: Optional[Callable[[], None]] = None) -> str:
-    path = shots / f"{name}{'-full' if full else ''}.png"
-    page.screenshot(path=str(path), full_page=full)
-    if full and after_full:
-        after_full()
+def _shot(page, shots: Path, name: str) -> str:
+    path = shots / f"{name}.png"
+    page.screenshot(path=str(path))
     return path.name
+
+
+def _full_shot(page, shots: Path, name: str,
+               after_full: Optional[Callable[[], None]] = None) -> Tuple[Optional[str], Optional[str]]:
+    """The full-page capture and a note; never fatal to the screen, whose metrics don't need it (#1085).
+
+    A page over the engine's SCREENSHOT_MAX_PX limit is captured clipped to its first
+    SCREENSHOT_MAX_PX device px; a capture that still fails is skipped. The note says which.
+    """
+    path = shots / f"{name}-full.png"
+    try:
+        try:
+            page.screenshot(path=str(path), full_page=True)
+            return path.name, None
+        except Exception as exc:  # noqa: BLE001 — Playwright's Error; only the size limit gets a clipped retry
+            if str(SCREENSHOT_MAX_PX) not in str(exc):
+                raise
+            size = page.evaluate(_PAGE_SIZE_JS)
+            limit = int(SCREENSHOT_MAX_PX // (float(size["dpr"]) or 1.0))
+            clip = {"x": 0, "y": 0, "width": min(int(size["width"]), limit), "height": min(int(size["height"]), limit)}
+            page.screenshot(path=str(path), full_page=True, clip=clip)
+            log.info("clipped the full-page capture of %s to %d of %d CSS px", name, clip["height"], size["height"])
+            return path.name, (f"full-page capture clipped to the first {clip['height']} of {size['height']} CSS px "
+                               f"(engine limit {SCREENSHOT_MAX_PX} device px)")
+    except Exception as exc:  # noqa: BLE001 — a lost capture is a note, the metrics still stand
+        first = str(exc).splitlines()[0][:200] if str(exc) else type(exc).__name__
+        log.warning("skipped the full-page capture of %s: %s", name, first)
+        return None, f"full-page capture skipped: {first}"
+    finally:
+        if after_full:
+            after_full()
 
 
 def touch_restorer(ctx, page, engine: str, ctx_args: dict) -> Optional[Callable[[], None]]:
@@ -188,14 +224,14 @@ def touch_restorer(ctx, page, engine: str, ctx_args: dict) -> Optional[Callable[
 
 
 def _open_scope_details(page, shots: Path, sid: str,
-                        after_full: Optional[Callable[[], None]] = None) -> Optional[str]:
-    """Open every closed `<details>` in the dialog or page; the full screenshot of that state, if any opened."""
+                        after_full: Optional[Callable[[], None]] = None) -> Tuple[Optional[str], Optional[str]]:
+    """Open every closed `<details>` in the dialog or page; the full screenshot of that state, if any opened, and its note."""
     opened = int(page.evaluate(_OPEN_SCOPE_DETAILS_JS) or 0)
     if not opened:
-        return None
+        return None, None
     page.wait_for_timeout(DETAILS_SETTLE_MS)
     log.info("opened %d details on %s", opened, sid)
-    return _shot(page, shots, sid, full=True, after_full=after_full)
+    return _full_shot(page, shots, sid, after_full)
 
 
 def walk_context(pw, device: str, theme: str, args: argparse.Namespace, script: str,
@@ -254,10 +290,10 @@ def walk_context(pw, device: str, theme: str, args: argparse.Namespace, script: 
             shot = _shot(page, shots, sid)
             page.evaluate(_OPEN_DETAILS_JS)
             page.wait_for_timeout(DETAILS_SETTLE_MS)
-            full = _shot(page, shots, sid, full=True, after_full=retouch)
+            full, note = _full_shot(page, shots, sid, retouch)
             metrics = page.evaluate(script, params)
             screens.append(_record(id=sid, device=device, theme=theme, view=view, kind="tab",
-                                   screenshot=shot, screenshot_full=full, metrics=metrics))
+                                   screenshot=shot, screenshot_full=full, note=note, metrics=metrics))
             log.info("ok %s", sid)
         except Exception as exc:  # noqa: BLE001 — the walk must continue past one broken tab
             reason = classify_error(exc)
@@ -273,11 +309,11 @@ def walk_context(pw, device: str, theme: str, args: argparse.Namespace, script: 
             page.evaluate("id => document.getElementById(id).showModal()", did)
             page.wait_for_timeout(DIALOG_SETTLE_MS)
             shot = _shot(page, shots, sid)
-            full = _open_scope_details(page, shots, sid, retouch)
+            full, note = _open_scope_details(page, shots, sid, retouch)
             metrics = page.evaluate(script, params)
             page.evaluate("id => document.getElementById(id).close()", did)
             screens.append(_record(id=sid, device=device, theme=theme, view=view, kind="dialog",
-                                   screenshot=shot, screenshot_full=full, metrics=metrics))
+                                   screenshot=shot, screenshot_full=full, note=note, metrics=metrics))
             log.info("ok %s", sid)
         except Exception as exc:  # noqa: BLE001
             screens.append(_record(id=sid, device=device, theme=theme, view=view, kind="dialog",
@@ -327,10 +363,10 @@ def walk_context(pw, device: str, theme: str, args: argparse.Namespace, script: 
                 guarded(selector).click()
                 page.wait_for_timeout(STEP_SETTLE_MS)
             shot = _shot(page, shots, sid)
-            full = _open_scope_details(page, shots, sid, retouch)
+            full, note = _open_scope_details(page, shots, sid, retouch)
             metrics = page.evaluate(script, params)
             screens.append(_record(id=sid, device=device, theme=theme, view=view, kind="step",
-                                   screenshot=shot, screenshot_full=full, metrics=metrics))
+                                   screenshot=shot, screenshot_full=full, note=note, metrics=metrics))
             log.info("ok %s", sid)
         except TargetAbsent as exc:
             screens.append(_record(id=sid, device=device, theme=theme, view=view, kind="step",

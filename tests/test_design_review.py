@@ -57,7 +57,7 @@ def _doc(name: str) -> dict:
 # ---- rubric: the real file loads and names only metrics that exist ----------
 
 rubric = dr.load_rubric(RUBRIC)
-check(rubric.version == "1.6.1", "rubric meta.version stamped")
+check(rubric.version == "1.6.2", "rubric meta.version stamped")
 check(len(rubric.rules) == 26, f"26 seed rules loaded (got {len(rubric.rules)})")
 check(rubric.categories == ["typography", "color", "touch", "navigation", "layout", "components", "a11y"],
       "categories in rubric order")
@@ -282,7 +282,7 @@ check(all(s == "pass" for s in statuses_c.values()), f"compliant: every rule pas
 check(all(v["score"] == 100.0 and v["grade"] == "A" and not v["unmeasured"] for v in out_c["categories"].values()),
       "compliant: every category 100/A, measured")
 check(out_c["overall"] == {"score": 100.0, "grade": "A", "unmeasured": False}, "compliant: overall A")
-check(out_c["schema_version"] == 1 and out_c["rubric_version"] == "1.6.1" and out_c["target"] == "fixture-app"
+check(out_c["schema_version"] == 1 and out_c["rubric_version"] == "1.6.2" and out_c["target"] == "fixture-app"
       and out_c["commit"].startswith("0000") and out_c["generated_at"].endswith("Z"), "evaluate envelope keys")
 check([s["id"] for s in out_c["screens"]] == ["desktop-light-home", "iphone-light-home", "desktop-light-dialog-edit"],
       "evaluate echoes the screen list")
@@ -570,6 +570,63 @@ check(walk.classify_error(TimeoutError("Timeout 15000ms exceeded")) == "TIMEOUT"
 check(walk.classify_error(RuntimeError("net::ERR_CONNECTION_REFUSED at https://127.0.0.1:8445")) == "NOT_LISTENING", "refused classified")
 check(walk.classify_error(RuntimeError("Element is not visible")) == "RENDER_FAILED", "other -> RENDER_FAILED")
 
+# ---- walk: a full-page capture over the engine's size limit keeps the screen's metrics (#1085) ----
+
+_TOO_TALL = "Page.screenshot: Cannot take screenshot larger than 32767 pixels on any dimension"
+
+
+class _FakePage:
+    """A Playwright page stub: one tab-less root screen; `full` decides how a full-page capture behaves."""
+
+    def __init__(self, full: str) -> None:
+        self.full, self.shots = full, []
+
+    def set_default_timeout(self, _ms): pass
+    def goto(self, *_a, **_k): pass
+    def wait_for_timeout(self, _ms): pass
+    def locator(self, _sel): return type("L", (), {"count": lambda _self: 0})()
+
+    def evaluate(self, js, *_args):
+        if js is walk._TABS_JS or js is walk._DIALOG_IDS_JS:
+            return []
+        if js is walk._OPEN_DETAILS_JS:
+            return 1
+        if "devicePixelRatio" in js:
+            return {"dpr": 3, "width": 430, "height": 11338}
+        return {"measured": True} if js == "MEASURE" else None
+
+    def screenshot(self, path, full_page=False, clip=None):
+        self.shots.append({"full_page": full_page, "clip": clip})
+        if full_page and (self.full == "raise" or (self.full == "clip" and clip is None)):
+            raise RuntimeError(_TOO_TALL)
+
+
+def _walk_one(full: str):
+    page = _FakePage(full)
+    ctx = type("C", (), {"add_init_script": lambda *_: None, "new_page": lambda _s: page, "close": lambda _s: None})()
+    browser = type("B", (), {"new_context": lambda _s, **_k: ctx, "close": lambda _s: None})()
+    pw = type("P", (), {"webkit": type("E", (), {"launch": lambda _s: browser})(), "devices": {"iPhone 15 Pro Max": {}}})()
+    args = type("A", (), {"url": "https://127.0.0.1:1", "timeout_ms": 1000, "synthetic": False})()
+    with tempfile.TemporaryDirectory() as tmp:
+        return walk.walk_context(pw, "iphone", "light", args, "MEASURE", {}, {}, Path(tmp)), page
+
+
+for _mode in ("raise", "clip"):
+    (_scr,), _pg = _walk_one(_mode)
+    check(_scr["status"] == "ok" and _scr["metrics"] == {"measured": True},
+          f"a full-page capture over the 32767px limit ({_mode}) keeps the screen ok with its metrics -- {_scr}")
+_scr_raise = _walk_one("raise")[0][0]
+check(_scr_raise["screenshot_full"] is None and "skipped" in (_scr_raise.get("note") or ""),
+      f"a full-page capture that can't be taken even clipped is skipped with a note -- {_scr_raise}")
+_scr_clip, _pg_clip = _walk_one("clip")
+_scr_clip = _scr_clip[0]
+check(_scr_clip["screenshot_full"] == "iphone-light-root-full.png" and "clipped" in (_scr_clip.get("note") or "")
+      and _pg_clip.shots[-1]["clip"] == {"x": 0, "y": 0, "width": 430, "height": 32767 // 3},
+      f"a too-tall page is captured clipped to the limit's first device px, with a note -- {_scr_clip} {_pg_clip.shots}")
+_scr_ok = _walk_one("ok")[0][0]
+check(_scr_ok["status"] == "ok" and _scr_ok["screenshot_full"] == "iphone-light-root-full.png" and _scr_ok.get("note") is None,
+      f"a page within the limit is captured whole, without a note -- {_scr_ok}")
+
 # ---- browser leg: the static fixture page through a sibling venv --------------
 
 FLEET = REPO.parent
@@ -597,7 +654,7 @@ else:
           f"measure CLI walks the fixture: 2 tabs + 1 dialog x light/dark ({proc.stdout[-300:]}{proc.stderr[-300:]})")
     check(lines.get("RUN_DIR") == str(run_dir) and Path(lines.get("METRICS", "")).is_file(), "RUN_DIR/METRICS lines point at the run dir")
     doc = json.loads(Path(lines["METRICS"]).read_text(encoding="utf-8"))
-    check(doc["interpreter"] == str(interp) and doc["schema_version"] == 1 and doc["rubric_version"] == "1.6.1", "metrics.json records the interpreter + versions")
+    check(doc["interpreter"] == str(interp) and doc["schema_version"] == 1 and doc["rubric_version"] == "1.6.2", "metrics.json records the interpreter + versions")
     if not (scaffold / "tests" / "e2e" / "_geometry.py").is_file():
         _h.skip("browser leg: project-scaffolding/tests/e2e/_geometry.py absent -- hit-target assertions NOT verified")
     check(doc["walk"]["info"]["geometry"] == ("loaded" if (scaffold / "tests" / "e2e" / "_geometry.py").is_file() else "GEOMETRY_MISSING"),
