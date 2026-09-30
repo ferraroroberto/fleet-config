@@ -8,7 +8,10 @@ Run: `E:/automation/fleet-config/.venv/Scripts/python.exe tests/test_ux_surface.
 
 from __future__ import annotations
 
+import contextlib
+import io
 import sys
+import tempfile
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "skills" / "_lib"))
@@ -117,6 +120,35 @@ Copy-paste default:
 """
 check(ux.parse_ux_surface_block(FENCED_SUFFIXED) is None, "fenced suffixed heading is ignored")
 
+# an annotated answer reads by its leading yes/no word (#1087): facilitation-suite's block
+# as it stood before its #135 read SPEC_APPLIES=no, and every UI PR there skipped the gate
+FS_ANNOTATED = """\
+## UX surface
+*The design-conformance gate the `/issue-{start,finish,yolo}` skills read (convention: `project-scaffolding#83`).*
+
+- design spec applies: yes (the app and the presenter; the stage follows the session theme)
+- paths:
+  - app/webapp/static/**/*.css
+  - app/webapp/static/**/*.{js,html}
+- key views:
+  - /           (Sessions · Plan · Groups · Results tabs, Settings behind the header gear)
+  - /presenter  (the live cockpit)
+"""
+parsed_fs = ux.parse_ux_surface_block(FS_ANNOTATED)
+check(parsed_fs is not None and parsed_fs["spec_applies"] is True and parsed_fs["key_views"] == ["/", "/presenter"],
+      f"an annotated `yes (...)` answer applies the spec -- {parsed_fs}")
+for _ans, _want in (("yes, app only", True), ("Yes.", True), ("true", True), ("no (a Streamlit spike)", False),
+                    ("no, yes later", False), ("yesterday", False), ("maybe", False), ("", False)):
+    _got = ux.parse_ux_surface_block(f"## UX surface\n- design spec applies: {_ans}\n")["spec_applies"]
+    check(_got is _want, f"`design spec applies: {_ans}` reads {_want} -- got {_got}")
+with tempfile.TemporaryDirectory() as _tmp:
+    (Path(_tmp) / "CLAUDE.md").write_text(FS_ANNOTATED, encoding="utf-8")
+    _buf = io.StringIO()
+    with contextlib.redirect_stdout(_buf):
+        ux.cmd_applies(Path(_tmp))
+    check("SPEC_APPLIES=yes" in _buf.getvalue().splitlines(),
+          f"`ux_surface.py applies` on the annotated block prints SPEC_APPLIES=yes -- {_buf.getvalue()!r}")
+
 
 # ---- brace expansion ----
 
@@ -171,9 +203,6 @@ check(ux.touched_paths(["app/server.py", "README.md"], PATHS) == [],
 # non-zero exit and returned `[]`, printing the same `TOUCHED=no` a genuinely
 # clean diff prints — so /issue-finish skipped the design gate on the strength
 # of a probe that never ran.
-import contextlib  # noqa: E402
-import io  # noqa: E402
-import tempfile  # noqa: E402
 
 
 def _run_check(changed_stub):

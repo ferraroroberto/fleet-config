@@ -146,8 +146,10 @@ def parse_ux_surface_block(text: str) -> Optional[Dict[str, object]]:
         if indent == 0:  # a top-level key
             low = body.lower()
             if low.startswith("design spec applies:"):
+                # The leading word is the answer; a note after it (`yes (the app, not the stage)`)
+                # is the author's, not a `no` (#1087).
                 val = body.split(":", 1)[1].split("#")[0].strip().lower()
-                spec_applies = val in ("yes", "true")
+                spec_applies = re.match(r"(yes|true)\b", val) is not None
                 current = None
             elif low.startswith("paths:"):
                 current = "paths"
