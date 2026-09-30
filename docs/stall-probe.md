@@ -31,7 +31,18 @@ Everything lives under `~/.claude/hooks/state/stall-probe/` (machine-local, neve
 & E:/automation/fleet-config/.venv/Scripts/python.exe E:/automation/fleet-config/skills/_lib/stall_probe.py run      # foreground (debugging)
 ```
 
-`start` launches `pythonw.exe` detached from the starting session's job where the job allows it, so the probe outlives an agent session. It does not survive a reboot. Starting it at logon (an app-launcher `apps.json` row with `autostart`, or a Task Scheduler logon task) is a machine-level choice for Roberto, not something an agent sets up.
+`start` launches `pythonw.exe` detached from the starting session's job where the job allows it, so the probe outlives an agent session. It is idempotent: when a probe already holds `probe.lock` it prints `ALREADY_RUNNING` and spawns nothing. It does not survive a reboot on its own; see the next section.
+
+## Starting it at logon
+
+`install-logon` drops `FleetStallProbe.bat` into the current user's Startup folder (`%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup`). It is a plain file write in the user's own profile: no admin rights, no Task Scheduler (the same mechanism as app-launcher's `src/boot_autostart.py`; app-launcher's own `apps.json` autostart launches only tray-kind rows, so it can't start this). The wrapper runs this repo's `.venv` Python with `stall_probe.py start` and appends the result to `stall-probe/startup.log`, so a logon launch that fails is diagnosable.
+
+```powershell
+& E:/automation/fleet-config/.venv/Scripts/python.exe E:/automation/fleet-config/skills/_lib/stall_probe.py install-logon
+& E:/automation/fleet-config/.venv/Scripts/python.exe E:/automation/fleet-config/skills/_lib/stall_probe.py uninstall-logon
+```
+
+Run `install-logon` from the primary checkout (the wrapper records the paths of the checkout that ran it). Outcomes: `INSTALLED`, `UPDATED` (a stale wrapper was rewritten), `ALREADY_INSTALLED` and `WRITE_FAILED` (exit 1); each write is read back. `uninstall-logon` prints `UNINSTALLED`, `NOT_INSTALLED` or `REMOVE_FAILED`. Neither touches a probe that is already running.
 
 ## Reading a stall
 
