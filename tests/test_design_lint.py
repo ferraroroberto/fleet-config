@@ -1570,6 +1570,23 @@ for _layout_name, _static_prefix in (("app_web/static", "app_web/static"),  # lo
         shutil.rmtree(_scaf, ignore_errors=True)
         shutil.rmtree(_app, ignore_errors=True)
 
+# a second `_vendored` copy elsewhere is not the app's: the scaffold layout wins over an
+# alphabetically earlier `app/player/static`, and else the static dir holding the app shell (#1087)
+for _case, _dirs, _want in (
+        ("scaffold layout over app/player", {"app/player/static": False, "app/webapp/static": False}, "app/webapp/static"),
+        ("the shell's static dir over a bare one", {"web/a/static": False, "web/b/static": True}, "web/b/static")):
+    _app = Path(tempfile.mkdtemp(prefix="dl-app3-"))
+    try:
+        for _d, _shell in _dirs.items():
+            (_app / _d / "_vendored/switch").mkdir(parents=True)
+            if _shell:
+                (_app / _d / "index.html").write_text("<!doctype html>", encoding="utf-8")
+        _found = dl.find_vendored_root(_app)
+        check(_found is not None and _found.relative_to(_app).as_posix() == f"{_want}/_vendored",
+              f"vendored root: {_case} -> {_want} -- {_found}")
+    finally:
+        shutil.rmtree(_app, ignore_errors=True)
+
 # nav-contract provenance follows the same discovery, not just the vendored lens (#291)
 _t = Path(tempfile.mkdtemp(prefix="dl-nav2-"))
 try:
