@@ -298,6 +298,14 @@ check(bad["nav-contract"]["status"] == "FAIL", "no nav signals FAIL")
 
 near = run_contracts(".app { max-width: 780px; margin: 0 auto; }")
 check(near["desktop-measure"]["status"] == "WARN", "near-772 cap WARNs with the value")
+
+# a breakpoint is not the content measure, and the measure may come through a token (#1087)
+_bp = run_contracts("@media (max-width: 720px) { .row { grid-template-columns: 1fr; } }\n")["desktop-measure"]
+check(_bp["status"] == "FAIL", f"desktop-measure: a (max-width: 720px) media query is a breakpoint, not a cap -- {_bp}")
+_tok = run_contracts(":root { --layout-measure: 772px; }\n.review-host { max-width: 820px; }\n"
+                     "@media (min-width: 720px) {\n  .app { max-width: var(--layout-measure); margin: 0 auto; }\n}\n")["desktop-measure"]
+check(_tok["status"] == "PASS" and (_tok.get("evidence") or "").endswith(":4"),
+      f"desktop-measure: max-width through a 772px custom property is the fleet measure (#1087) -- {_tok}")
 check(near["switch-on-green"]["status"] == "NA", "no switch -> NA")
 
 # icon sizes come FROM the spec (spec-driven, not hardcoded)
