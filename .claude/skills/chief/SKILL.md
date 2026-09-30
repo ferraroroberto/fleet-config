@@ -41,7 +41,11 @@ could hit by hand.
   tool. A refused update (exit 2) wrote nothing: fix the arguments and rerun.
   No plan means an empty card, so start one when the first batch is agreed.
   The format contract is `docs/chief-plan.md`. The plan is the structured
-  "what next"; the handover log stays the "why".
+  "what next"; the handover log stays the "why". Every lane and every
+  queued build item carries its model (fleet-config#1101): `--model
+  opus|sonnet` on `plan lane` and `plan add`/`set`, picked per task by
+  `docs/model-tiers.md` (Sonnet for mechanical work, Opus for hard
+  reasoning), matching what you dispatched it with.
 - **Every decision you need from Roberto goes in the plan as a question
   (fleet-config#1049):** `plan ask "<question>" --ref repo#N` (or `--repo`)
   with `--detail` (the context needed to decide cold), `--recommend` (your

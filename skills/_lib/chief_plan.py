@@ -41,6 +41,8 @@ VERSION = 1
 
 LANE_STATUSES = ("building", "gate", "idle", "waiting")
 QUEUE_STATUSES = ("queued", "building", "gate", "merged", "parked", "waiting-roberto")
+# The model a lane or build item runs on, picked per task by docs/model-tiers.md (fleet-config#1101).
+MODELS = ("opus", "sonnet")
 
 # "One short line" -- long enough for a real title, short enough for a phone chip row.
 MAX_TEXT = 200
@@ -51,8 +53,8 @@ MAX_LABEL = 80
 MAX_OPTIONS = 4
 
 TOP_FIELDS = {"version", "updated_at", "lanes", "queue", "waiting_on_roberto"}
-LANE_FIELDS = {"repo", "session", "item", "status"}
-QUEUE_FIELDS = {"repo", "ref", "title", "status", "note"}
+LANE_FIELDS = {"repo", "session", "item", "status", "model"}
+QUEUE_FIELDS = {"repo", "ref", "title", "status", "note", "model"}
 WAITING_FIELDS = {"text", "ref", "id", "repo", "question", "detail", "recommendation",
                   "options", "multi"}
 OPTION_FIELDS = {"label", "description", "recommended"}
@@ -110,6 +112,11 @@ def _check_repo(errors: List[str], where: str, value: Any) -> None:
         errors.append(f"{where}: must be a repo name")
 
 
+def _check_model(errors: List[str], where: str, row: Dict[str, Any]) -> None:
+    if "model" in row and row["model"] not in MODELS:
+        errors.append(f"{where}.model: must be one of {', '.join(MODELS)}")
+
+
 def validate(doc: Any) -> List[str]:
     """Every reason `doc` is not a v1 plan this writer may publish; empty = valid."""
     errors: List[str] = []
@@ -142,6 +149,7 @@ def validate(doc: Any) -> List[str]:
         item = lane.get("item", "")
         if item and (not isinstance(item, str) or not _LOCAL_REF.fullmatch(item)):
             errors.append(f"{where}.item: must be #N or empty")
+        _check_model(errors, where, lane)
 
     seen = set()
     for i, row in enumerate(doc["queue"]):
@@ -162,6 +170,7 @@ def validate(doc: Any) -> List[str]:
             errors.append(f"{where}.status: must be one of {', '.join(QUEUE_STATUSES)}")
         if "note" in row:
             _check_text(errors, f"{where}.note", row["note"], required=False)
+        _check_model(errors, where, row)
 
     ids: set = set()
     for i, row in enumerate(doc["waiting_on_roberto"]):
@@ -296,19 +305,39 @@ def _index(doc: Dict[str, Any], ref: str) -> int:
     raise ValueError(f"{ref} is not in the queue")
 
 
+def _set_model(row: Dict[str, Any], model: Optional[str]) -> None:
+    """`None` leaves the row's model alone, `""` clears it, anything else must be in MODELS."""
+    if model is None:
+        return
+    if not model:
+        row.pop("model", None)
+    elif model in MODELS:
+        row["model"] = model
+    else:
+        raise ValueError(f"--model must be one of {', '.join(MODELS)} (\"\" clears it), got {model!r}")
+
+
 def set_lane(doc: Dict[str, Any], repo: str, status: str,
-             item: Optional[str] = None, session: Optional[str] = None) -> None:
-    """Upsert the lane for `repo` (one lane per repo)."""
+             item: Optional[str] = None, session: Optional[str] = None,
+             model: Optional[str] = None) -> None:
+    """Upsert the lane for `repo` (one lane per repo).
+
+    `item` and `session` are replaced with the row; the lane's model outlives a
+    status change, so an omitted `model` keeps it and `""` clears it (#1101).
+    """
+    existing = next((i for i, lane in enumerate(doc["lanes"]) if lane["repo"] == repo), None)
     lane: Dict[str, Any] = {"repo": repo, "status": status}
     if item:
         lane["item"] = item
     if session:
         lane["session"] = session
-    for i, existing in enumerate(doc["lanes"]):
-        if existing["repo"] == repo:
-            doc["lanes"][i] = lane
-            return
-    doc["lanes"].append(lane)
+    if existing is not None and "model" in doc["lanes"][existing]:
+        lane["model"] = doc["lanes"][existing]["model"]
+    _set_model(lane, model)
+    if existing is None:
+        doc["lanes"].append(lane)
+    else:
+        doc["lanes"][existing] = lane
 
 
 def drop_lane(doc: Dict[str, Any], repo: str) -> None:
@@ -319,22 +348,26 @@ def drop_lane(doc: Dict[str, Any], repo: str) -> None:
 
 
 def add_item(doc: Dict[str, Any], ref: str, title: str, status: str = "queued",
-             note: Optional[str] = None, at: Optional[int] = None) -> None:
+             note: Optional[str] = None, at: Optional[int] = None,
+             model: Optional[str] = None) -> None:
     """Queue `ref`; `at` is a 1-based position (default: the end)."""
     repo, local = split_ref(ref)
     row: Dict[str, Any] = {"repo": repo, "ref": local, "title": title, "status": status}
     if note:
         row["note"] = note
+    _set_model(row, model)
     position = len(doc["queue"]) if at is None else _position(at, len(doc["queue"]) + 1)
     doc["queue"].insert(position, row)
 
 
 def set_item(doc: Dict[str, Any], ref: str, status: Optional[str] = None,
-             note: Optional[str] = None, title: Optional[str] = None) -> None:
-    """Change an item in place; an empty `note` clears it."""
-    if status is None and note is None and title is None:
-        raise ValueError("nothing to set: pass --status, --note or --title")
+             note: Optional[str] = None, title: Optional[str] = None,
+             model: Optional[str] = None) -> None:
+    """Change an item in place; an empty `note` or `model` clears it."""
+    if status is None and note is None and title is None and model is None:
+        raise ValueError("nothing to set: pass --status, --note, --title or --model")
     row = doc["queue"][_index(doc, ref)]
+    _set_model(row, model)
     if status is not None:
         row["status"] = status
     if title is not None:
@@ -499,10 +532,10 @@ def _run(args: argparse.Namespace) -> int:
         return 0
     added: List[str] = []
     mutations: Dict[str, Callable[[Dict[str, Any]], None]] = {
-        "lane": lambda d: set_lane(d, args.repo, args.status, args.item, args.session),
+        "lane": lambda d: set_lane(d, args.repo, args.status, args.item, args.session, args.model),
         "drop-lane": lambda d: drop_lane(d, args.repo),
-        "add": lambda d: add_item(d, args.ref, args.title, args.status, args.note, args.at),
-        "set": lambda d: set_item(d, args.ref, args.status, args.note, args.title),
+        "add": lambda d: add_item(d, args.ref, args.title, args.status, args.note, args.at, args.model),
+        "set": lambda d: set_item(d, args.ref, args.status, args.note, args.title, args.model),
         "move": lambda d: move_item(d, args.ref, args.to),
         "remove": lambda d: remove_item(d, args.ref),
         "wait": lambda d: added.append(add_waiting(d, args.text, args.ref)),
@@ -528,6 +561,7 @@ def add_cli(parser: argparse.ArgumentParser) -> None:
     lane.add_argument("status", choices=LANE_STATUSES)
     lane.add_argument("--item", default=None, help="#N the lane is on")
     lane.add_argument("--session", default=None)
+    lane.add_argument("--model", default=None, help=f"{'|'.join(MODELS)}; omitted keeps it, \"\" clears it")
 
     drop = acts.add_parser("drop-lane", help="remove a repo's lane")
     drop.add_argument("repo")
@@ -538,12 +572,14 @@ def add_cli(parser: argparse.ArgumentParser) -> None:
     add.add_argument("--status", choices=QUEUE_STATUSES, default="queued")
     add.add_argument("--note", default=None)
     add.add_argument("--at", type=int, default=None, help="1-based position (default: end)")
+    add.add_argument("--model", default=None, help="|".join(MODELS))
 
-    set_p = acts.add_parser("set", help="change a queued item's status, note or title")
+    set_p = acts.add_parser("set", help="change a queued item's status, note, title or model")
     set_p.add_argument("ref")
     set_p.add_argument("--status", choices=QUEUE_STATUSES, default=None)
     set_p.add_argument("--note", default=None, help='"" clears it')
     set_p.add_argument("--title", default=None)
+    set_p.add_argument("--model", default=None, help=f"{'|'.join(MODELS)}; \"\" clears it")
 
     move = acts.add_parser("move", help="move a queued item to a 1-based position")
     move.add_argument("ref")

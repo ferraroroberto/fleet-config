@@ -35,12 +35,13 @@ The contract between the fleet chief, which writes the plan, and app-launcher's 
 | --- | --- |
 | `version` | `1`. |
 | `updated_at` | UTC, `YYYY-MM-DDTHH:MM:SSZ`, stamped by the writer on every write. |
-| `lanes[]` | One live worker lane per repo: `repo` and `status` required; `item` (`#N`) and `session` optional. |
+| `lanes[]` | One live worker lane per repo: `repo` and `status` required; `item` (`#N`), `session` and `model` optional. |
 | `lanes[].status` | `building` \| `gate` \| `idle` \| `waiting`. |
 | `queue[]` | The chief's intended order, first to last: `repo`, `ref`, `title` and `status` required; `note` optional. `repo` + `ref` is unique. |
 | `queue[].ref` | `#N`, local to `repo`. |
 | `queue[].status` | `queued` \| `building` \| `gate` \| `merged` \| `parked` \| `waiting-roberto`. |
 | `queue[].note` | Free text, one short line. |
+| `lanes[].model` / `queue[].model` | The model the lane or build item runs on: `opus` \| `sonnet`, picked per task by `docs/model-tiers.md` (fleet-config#1101). Optional, so older files stay valid. |
 | `waiting_on_roberto[]` | `text` required: the short card line. `ref` optional and qualified (`repo#N`). Everything below is optional too (fleet-config#1049). |
 | `waiting_on_roberto[].id` | Stable, unique within the list: a lowercase letter, then up to 31 letters, digits or hyphens. The writer assigns the next `q<N>` when none is given. Older files may have items without one. |
 | `waiting_on_roberto[].repo` | The fleet repo the question is about. It matches `ref`'s repo when both are set; the writer derives it from `ref`. |
@@ -72,11 +73,11 @@ Each update is one line. Queue items are addressed as `<repo>#<N>`.
 
 ```text
 chief_ops.py plan show
-chief_ops.py plan add app-launcher#1273 "Code tab: Chat by default" [--status gate] [--note "…"] [--at 1]
-chief_ops.py plan set app-launcher#1273 --status merged [--note "4190488"] [--title "…"]   # --note "" clears
+chief_ops.py plan add app-launcher#1273 "Code tab: Chat by default" [--status gate] [--note "…"] [--at 1] [--model sonnet]
+chief_ops.py plan set app-launcher#1273 --status merged [--note "4190488"] [--title "…"] [--model opus]   # --note "" / --model "" clear
 chief_ops.py plan move app-launcher#1273 --to 1
 chief_ops.py plan remove app-launcher#1273
-chief_ops.py plan lane app-launcher gate --item "#1273" [--session <sid>]    # upsert, one lane per repo
+chief_ops.py plan lane app-launcher gate --item "#1273" [--session <sid>] [--model opus]    # upsert, one lane per repo; an omitted --model keeps the lane's
 chief_ops.py plan drop-lane app-launcher
 chief_ops.py plan wait "Remember the last tab?" --ref app-launcher#1131
 chief_ops.py plan ask "<question>" [--repo R] [--ref R#N] [--detail "…"] [--recommend "…"] \
