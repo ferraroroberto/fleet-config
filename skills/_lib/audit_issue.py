@@ -77,6 +77,7 @@ KINDS = (
     "documentation",
     "design-drift",
     "design-review",
+    "perf-review",
     "cert-drift",
     "context-audit",
     "context-purge",
@@ -96,6 +97,10 @@ _MARKER_RE = re.compile(
 # findings keyed by rubric id in an app repo; the spec- or scaffold-owned list
 # in fleet-config / project-scaffolding. Stable title, no count suffix.
 DESIGN_REVIEW_TITLE = "design-review: rendered findings"
+
+# The one managed `/perf-review` issue per repo (fleet-config#1121): phone-load
+# budgets vs measured, a hand-curated Fixes checklist, a run log.
+PERF_REVIEW_TITLE = "perf-review: phone-load findings"
 
 # The /codebase-audit finding buckets — never the ledger/digest/practices/
 # design-drift/cert-drift kinds. Used to decide whether a merged PR closed one
@@ -182,6 +187,8 @@ def title_matches(title: str, kind: str) -> bool:
         return t == "cleanup-fleet-all deferred repos"
     if kind == "design-review":
         return t == DESIGN_REVIEW_TITLE
+    if kind == "perf-review":
+        return t == PERF_REVIEW_TITLE
     # bucket kinds: "audit: <kind> findings ..." (trailing count suffix tolerated)
     return re.match(r"^audit:\s*" + re.escape(kind) + r"\s+findings\b", t) is not None
 
