@@ -1,0 +1,32 @@
+# /perf-review default budgets (fleet-config#1121). A target overrides any key
+# under `[perf.review.budgets]` in its own .fleet.toml, same table shape.
+# Bump `version` whenever a number changes: the ledger diff notes it.
+version = "1"
+
+# The phone profile the Chromium leg throttles to over CDP: a phone on the
+# tailnet over 4G. The WebKit (iPhone) leg cannot be throttled.
+[phone]
+rtt_ms = 80
+down_mbps = 10
+up_mbps = 5
+
+# A fresh install / cleared cache.
+[cold]
+ready_ms = 3000
+bytes_kb = 600
+
+# A relaunch of the installed PWA: HTTP cache and localStorage kept.
+[warm]
+ready_ms = 1000
+data_ms = 1500
+bytes_kb = 100
+
+# Server-side, GETs at phone-poll spacing, first (cold) request excluded.
+[endpoints]
+api_p95_ms = 250
+index_p95_ms = 50
+
+# The entry document, fetched on every launch.
+[index]
+compressed = true
+revalidates = true

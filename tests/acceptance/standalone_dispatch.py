@@ -215,6 +215,16 @@ _STANDALONE_UNIT_CHECKS: Tuple[Tuple[str, str, str], ...] = (
      "(a rule failing in two apps promoted once, an accepted app excluded) "
      "and the ledger / file / fleet CLI legs on dead-port fixtures -- is "
      "testable on its own, with no real issue touched (fleet-config#974)"),
+    ("perf_review", "test_perf_review.py",
+     "/perf-review's probe self-test against a local fixture server (slow vs "
+     "fast endpoint at short spacing, cold request kept apart, GET only; a "
+     "plain vs gzip+ETag+304 entry document), the budget verdict "
+     "(unmeasured never a pass, an untrusted warm cache never scored), the "
+     "issue body (no scheme/host/IP, curated Fixes kept, one run-log line), "
+     "the ledger diff, the endpoint schedule, the measure / file CLI legs, "
+     "and the no-route() guard that keeps the warm leg's HTTP cache on -- "
+     "is testable on its own, with no live app or issue touched "
+     "(fleet-config#1121)"),
     ("rate_gate", "test_rate_gate.py",
      "/audit-fleet's and /cleanup-fleet's proactive session-rate-limit "
      "gate -- OK/PAUSE/UNKNOWN decisions, staleness handling, and the "
