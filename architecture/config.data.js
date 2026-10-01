@@ -143,7 +143,7 @@ window.CONFIG = {
     },
     {
       "nm": "e2e-audit",
-      "ds": "On-demand audit of a repo's e2e/regression suite for redundancy, bloat, and coverage gaps against project-scaffolding's \"&lt;15 test…",
+      "ds": "On-demand audit of a repo's e2e/regression suite for redundancy, bloat, coverage gaps, gate time and failure history against proj…",
       "scope": "repo"
     },
     {
@@ -184,6 +184,11 @@ window.CONFIG = {
     {
       "nm": "issue-yolo",
       "ds": "One-shot the GitHub-issue workflow end-to-end — file the issue, cut the branch, build, validate hard (including an independent fr…",
+      "scope": "repo"
+    },
+    {
+      "nm": "perf-review",
+      "ds": "Measure how fast a running fleet web app loads on a phone — a throttled phone-profile load (cold and warm) plus GET-only endpoint…",
       "scope": "repo"
     },
     {
@@ -302,12 +307,19 @@ window.CONFIG = {
       ]
     },
     {
+      "repo": "grocery-shopping-automation",
+      "items": [
+        "supermarket-benchmark"
+      ]
+    },
+    {
       "repo": "life-os",
       "items": [
         "_recap",
         "_shared",
         "_template",
         "alt-text",
+        "finance",
         "geek-out",
         "general",
         "health",
@@ -355,13 +367,6 @@ window.CONFIG = {
       "ds": "Block `git commit` with an AI attribution trailer."
     },
     {
-      "nm": "secret_scan_guard",
-      "ev": "PreToolUse · Bash",
-      "block": true,
-      "reach": "Claude + Codex",
-      "ds": "Block `git commit` when a live secret is about to be committed."
-    },
-    {
       "nm": "gh_body_file_guard",
       "ev": "PreToolUse · Bash",
       "block": false,
@@ -381,6 +386,13 @@ window.CONFIG = {
       "block": true,
       "reach": "Claude + Codex",
       "ds": "Block unquoted Windows drive-letter backslash paths in Bash commands."
+    },
+    {
+      "nm": "secret_scan_guard",
+      "ev": "PreToolUse · Bash·PowerShell",
+      "block": true,
+      "reach": "Claude + Codex",
+      "ds": "Block a live secret before it is committed or published to GitHub."
     },
     {
       "nm": "safe_kill_guard",
@@ -489,6 +501,10 @@ window.CONFIG = {
     {
       "nm": "backup_private",
       "ds": "Thin CLI entry point for the daily fleet-private backup engine."
+    },
+    {
+      "nm": "chief_inbox",
+      "ds": "Chief inbox: a chief-managed worker's turn-end becomes a wake event (fleet-config#999)."
     },
     {
       "nm": "codex_attention",
