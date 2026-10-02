@@ -24,7 +24,7 @@ page text or a screenshot.
 
 Optional `[perf.review]` keys in the target's `.fleet.toml`:
 
-    ready_selector   = "#unitsGrid .card"   # "ready" = this visible; default: first contentful paint
+    ready_selector   = "#unitsGrid .card"   # "ready" = this visible on the landing view (checked: ready.selector); default: first contentful paint
     exclude          = ["/api/location"]    # path prefixes never timed (outside calls, costly reads)
     endpoints        = ["/api/extra"]       # timed even when the boot did not request them
     api_version_path = "/api/version"       # where the live build's git_sha is read

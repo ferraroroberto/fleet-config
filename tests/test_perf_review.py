@@ -188,6 +188,38 @@ spiky_body = report.merge_body("", report.verdict(probe, {"legs": {"android_cold
 check("median of 3" in spiky_body and "3072" in spiky_body and "outlier" in spiky_body,
       "the issue body says the cold number is a median and names the outlier")
 
+# ---- ready selector: a declared one must be visible on the landing view (fleet-config#1140) ----
+# home-automation declared an AC-unit card that sits on another tab: both legs went `unmeasured` silently
+# and a config test that only checked the markup exists passed anyway.
+def ready_checks(cold_kw: dict, warm_kw: dict, cold_status: str = "ok") -> tuple:
+    got = report.verdict(probe, {"legs": {"android_cold": leg(**{"status": cold_status, **cold_kw}),
+                                          "android_warm": leg(cache="trusted", **warm_kw)}}, budgets)
+    return {c["id"]: c for c in got["checks"]}, got
+
+
+good, _ = ready_checks({"ready_by": "selector"}, {"ready_by": "selector"})
+check(good["ready.selector"]["status"] == "pass" and good["ready.selector"]["measured"] == "visible",
+      "a declared selector visible on both legs passes")
+hidden, hv = ready_checks({"ready_by": "selector-not-visible", "ready_ms": None}, {"ready_by": "selector-not-visible", "ready_ms": None})
+check(hidden["ready.selector"]["status"] == "fail" and "cold" in hidden["ready.selector"]["measured"]
+      and "warm" in hidden["ready.selector"]["measured"], "a declared selector that never shows fails, naming the legs")
+check(hidden["cold.ready_ms"]["status"] == "unmeasured" and hv["summary"]["overall"] == "over-budget",
+      "the unmeasured ready time is no longer silent: the selector check fails the run")
+check("ready_selector" in report.fixes_section(hv) and "landing view" in report.fixes_section(hv),
+      "the seeded Fixes line tells the owner to fix the selector, not the app")
+warm_only, _ = ready_checks({"ready_by": "selector"}, {"ready_by": "selector-not-visible", "ready_ms": None})
+check(warm_only["ready.selector"]["status"] == "fail" and warm_only["ready.selector"]["measured"] == "not visible on warm",
+      "a selector visible on the cold load but not the warm one still fails")
+fcp, fv = ready_checks({"ready_by": "fcp"}, {"ready_by": "fcp"})
+check("ready.selector" not in fcp, "no declared selector -> no selector check (ready falls back to first contentful paint)")
+check("first contentful paint" in report.render_body(fv, "r", "b") and "ready_selector" in report.render_body(fv, "r", "b"),
+      "the body warns that FCP can be a painted shell and asks for a declared selector")
+errored, _ = ready_checks({"ready_by": "selector"}, {"ready_by": "selector"}, cold_status="error")
+check("ready.selector" not in errored or errored["ready.selector"]["status"] != "pass",
+      "a failed cold leg never lets the selector check pass")
+no_leg = report.verdict(probe, {"legs": {}}, budgets)
+check(not any(c["id"] == "ready.selector" for c in no_leg["checks"]), "no load leg -> no selector check, nothing invented")
+
 # ---- issue body -------------------------------------------------------------
 body = report.merge_body("", v, "20261001T000000Z", "abc1234", "2026-10-01")
 check(not re.search(r"://|127\.0\.0\.1|\.ts\.net|localhost", body), "the issue body carries no scheme, host or IP")
