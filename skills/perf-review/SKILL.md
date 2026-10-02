@@ -92,9 +92,13 @@ Reading the cold numbers (fleet-config#1139):
   outlier (over twice the median and 500 ms above it); say so in the report.
   A lone slow first load after a restart is not a regression, but three slow
   loads are.
-- `ready_selector` must be **visible on the landing view**. A selector that
-  never shows reads as `unmeasured`: when a declared selector comes back
-  `unmeasured`, suspect the selector first, not the app.
+- `ready_selector` must be **visible on the landing view**. The helper
+  probes it: `CHECK ready.selector` is `fail` ("not visible on cold and
+  warm") when a declared selector never shows, and the ready checks go
+  `unmeasured` behind it. Fix the selector in the target's `.fleet.toml`
+  first; it is a config fix, not an app finding. Do not rank a playbook
+  pattern for it. With no selector declared, "ready" is first contentful
+  paint and the report says it can be a painted shell.
 
 ### 2. Rank the fixes
 

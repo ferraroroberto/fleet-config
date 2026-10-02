@@ -44,6 +44,8 @@ REMEDY = {
     "warm.ready_ms": "P6 paint the last good data first",
     "cold.bytes_kb": "P2 compress responses / P9 load heavy libraries on first use",
     "cold.ready_ms": "P2 compress responses / P9 load heavy libraries on first use",
+    "ready.selector": "fix the target's `[perf.review] ready_selector`: it must be visible on the landing view, "
+                      "not a card on another tab (a config fix, not an app fix)",
 }
 
 
@@ -90,6 +92,21 @@ def cold_ready(cold: dict) -> dict:
     return {"value": round(median), "samples": raw, "outliers": outliers}
 
 
+def ready_selector_state(cold: dict, warm: dict) -> Optional[dict]:
+    """`{measured, status}` for a declared `ready_selector`, or None when none was declared (ready = FCP).
+
+    A selector that never shows leaves "ready" `unmeasured` on both legs, which on its own reads as a slow
+    or unreachable app; this names the real cause (home-automation declared a card on another tab, #776).
+    """
+    if cold.get("status") != "ok" or cold.get("ready_by") not in ("selector", "selector-not-visible"):
+        return None
+    hidden = [name for name, leg in (("cold", cold), ("warm", warm))
+              if leg.get("status") == "ok" and leg.get("ready_by") == "selector-not-visible"]
+    if hidden:
+        return {"measured": "not visible on " + " and ".join(hidden), "status": "fail"}
+    return {"measured": "visible", "status": "pass"}
+
+
 def verdict(probe: dict, load: dict, budgets: dict) -> dict:
     """`{"checks": [{id, label, budget, measured, status}], "endpoints": [...], "summary": {...}}`."""
     checks: List[dict] = []
@@ -114,6 +131,10 @@ def verdict(probe: dict, load: dict, budgets: dict) -> dict:
         add(cid, label, limit, value, _status(value, limit))
         if cid == "cold.ready_ms":
             checks[-1].update(samples=cold_sampled["samples"], outliers=cold_sampled["outliers"])
+
+    selector = ready_selector_state(cold, warm)
+    if selector:
+        add("ready.selector", "Declared ready selector", "visible", selector["measured"], selector["status"])
 
     index = probe.get("index", {})
     for cid, label in (("index.compressed", "Entry document compressed"),
@@ -144,7 +165,8 @@ def verdict(probe: dict, load: dict, budgets: dict) -> dict:
     if info is not None:
         info["kb"] = kb(iphone)
     return {"checks": checks, "endpoints": endpoints, "summary": {**counts, "overall": overall},
-            "iphone_cold": info, "budgets_version": budgets.get("version")}
+            "iphone_cold": info, "budgets_version": budgets.get("version"),
+            "ready_by": cold.get("ready_by") if cold.get("status") == "ok" else None}
 
 
 def _fmt(v) -> str:
@@ -171,6 +193,10 @@ def render_body(v: dict, run_id: str, build: Optional[str]) -> str:
     if ios:
         lines += ["", f"iPhone (WebKit, cold, unthrottled loopback; reported, not scored): ready {_fmt(ios['ready_ms'])} ms, "
                       f"boot data {_fmt(ios['data_ms'])} ms, {_fmt(ios['requests'])} requests, {_fmt(ios['kb'])} KB."]
+    if v.get("ready_by") == "fcp":
+        lines += ["", "No `ready_selector` is declared, so \"ready\" is first contentful paint, which can go green on a "
+                      "painted shell before any card has data. Declare the first card that needs live data, one that "
+                      "is visible on the landing view."]
     cold = next((c for c in v["checks"] if c["id"] == "cold.ready_ms"), {})
     if len(cold.get("samples", [])) > 1:
         shown = ", ".join(_fmt(x) for x in cold["samples"])
