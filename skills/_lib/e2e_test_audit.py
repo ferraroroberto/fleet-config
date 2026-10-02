@@ -799,7 +799,8 @@ def main(argv: Optional[List[str]] = None) -> int:
         print(json.dumps(e2e_value.timing(repo, _test_dirs(repo), args.log)))
         return 0
     if args.cmd == "routing":
-        print(json.dumps(e2e_value.routing_report(repo, args.prs, args.until, args.config, args.proposed)))
+        print(json.dumps(e2e_value.routing_report(repo, args.prs, args.until, args.config, args.proposed,
+                                                  test_dirs=_test_dirs(repo))))
         return 0
     if args.cmd == "parallel":
         print(json.dumps(e2e_value.parallel(repo, _test_dirs(repo), args.log)))

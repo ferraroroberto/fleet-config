@@ -52,7 +52,11 @@ rule labels forced `full` (every PR containing one, and PRs where it was the
 only cause), the paths that forced it most, unclassified paths, and paths a
 broad rule took although a later, more specific, lower-tier rule matches too
 (a README under a static prefix: a free fix). `--proposed` routes the same PRs
-through a candidate table and lists every PR whose tier changes. `gate` is
+through a candidate table and lists every PR whose tier changes. `import_holes`
+reads the other way (task-os#287): every file the suite loads (the test dirs,
+the conftest, `_*.py` plugins) or imports one level deep, routed through the
+same classifier, listing those the table sends to `none`: a diff touching only
+a shared fixture would run no browser suite. `gate` is
 `e2e_route.gate_contract`: whether the repo's gate runs the classifier at all
 and splits its multi-target output (fleet-config#1134). When the
 classifier exposes `changed_selectors` and either table declares
@@ -969,9 +973,65 @@ def classify_cmd(paths: Sequence[str]) -> str:
     return "python scripts/classify_e2e.py " + " ".join(paths)
 
 
+def _repo_file(repo_root: Path, dotted: str) -> Optional[str]:
+    """The repo-relative `.py` a dotted module name resolves to (`a/b.py` or `a/b/__init__.py`), or None."""
+    rel = dotted.replace(".", "/")
+    for cand in (f"{rel}.py", f"{rel}/__init__.py"):
+        if (repo_root / cand).is_file():
+            return cand
+    return None
+
+
+def import_holes(repo_root: Path, mod, config, test_dirs: Sequence[str]) -> List[Dict[str, object]]:
+    """Files the e2e suite loads or imports that the routing table sends to `none` (task-os#287).
+
+    A diff touching only such a file runs no browser suite, though 12 of
+    task-os's e2e modules imported `tests/fixtures/*.py` and `tests/conftest.py`.
+    The `routing` scan lists paths from merged PRs, so a file nobody changed
+    lately never showed. This reads the other direction: every module under
+    the test dirs, the conftest and the `_*.py` plugins (`kind: loaded`), plus
+    every repo file those modules import (`kind: imported`, `imported_by`
+    counting the importers), each routed through the repo's own classifier.
+    One level only: a fixture's own imports are not followed. Backend source
+    the suite boots (`src/*.py` routed `none`) lands here too; whether that
+    is a hole or a deliberate gate-time trade is the owner's call.
+    """
+    import ast
+    tree = _test_tree_files(repo_root, test_dirs)
+    loaded = {str(p.relative_to(repo_root)).replace("\\", "/") for p in tree}
+    imported: Dict[str, int] = {}
+    for p in tree:
+        try:
+            parsed = ast.parse(p.read_text(encoding="utf-8", errors="replace"))
+        except SyntaxError:
+            continue
+        seen: set = set()
+        for n in ast.walk(parsed):
+            names: List[str] = []
+            if isinstance(n, ast.Import):
+                names = [a.name for a in n.names]
+            elif isinstance(n, ast.ImportFrom) and n.level == 0 and n.module:
+                names = [n.module] + [f"{n.module}.{a.name}" for a in n.names]
+            for name in names:
+                hit = _repo_file(repo_root, name)
+                if hit:
+                    seen.add(hit)
+        for hit in seen:
+            imported[hit] = imported.get(hit, 0) + 1
+    out = []
+    for path in sorted(loaded | set(imported)):
+        cat, label = mod._classify_one(path, config.rules)
+        if getattr(cat, "name", cat) != "NONE":
+            continue
+        out.append({"path": path, "rule": label, "kind": "loaded" if path in loaded else "imported",
+                    "imported_by": imported.get(path, 0), "check": classify_cmd([path])})
+    return sorted(out, key=lambda e: (-int(e["imported_by"]), str(e["path"])))  # type: ignore[call-overload]
+
+
 def routing_report(repo_root: Path, prs: int = 60, until: Optional[str] = None,
                    config_path: Optional[Path] = None, proposed_path: Optional[Path] = None,
-                   pr_list: Optional[List[Dict[str, object]]] = None) -> Dict[str, object]:
+                   pr_list: Optional[List[Dict[str, object]]] = None,
+                   test_dirs: Sequence[str] = ("tests/e2e",)) -> Dict[str, object]:
     mod = load_classifier(repo_root)
     if mod is None:
         return {"status": "unknown", "reason": "no importable scripts/classify_e2e.py in the repo"}
@@ -1049,6 +1109,7 @@ def routing_report(repo_root: Path, prs: int = 60, until: Optional[str] = None,
         "unclassified": [{"path": p, "prs": n, "check": classify_cmd([p])}
                          for p, n in sorted(unclassified.items(), key=lambda kv: -kv[1])],
         "shadowed": sorted(shadowed.values(), key=lambda e: -int(e["prs"])),  # type: ignore[arg-type,call-overload]
+        "import_holes": import_holes(repo_root, mod, config, test_dirs),
         "counterfactual": None if proposed is None else {"proposed": str(proposed_path), "changed": narrowed},
         "sheet_routing": ("n/a: no shared_stylesheets declared" if not declared
                           else "n/a: classifier routes file lists only" if not by_sheet

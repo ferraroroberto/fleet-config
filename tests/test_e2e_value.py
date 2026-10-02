@@ -242,6 +242,26 @@ check(rr["gate"] == {"verdict": "not-consumed", "reason": rr["gate"]["reason"], 
 check(rr["counterfactual"]["changed"] == [{"pr": 2, "from": "full", "to": "skip", "surface": ""}],
       f"--proposed lists every PR whose tier changes -- {rr['counterfactual']}")
 
+# Import holes (task-os#287): files the suite imports that the table routes to `none`.
+for rel, body in {
+    "tests/e2e/test_a.py": "import os\nfrom tests.fixtures.fake import Fake\nfrom tests.conftest import write_config\nimport static.helper\n",
+    "tests/e2e/test_b.py": "from tests.fixtures import fake\nfrom tests.conftest import write_config\n",
+    "tests/fixtures/__init__.py": "",
+    "tests/fixtures/fake.py": "",
+    "tests/fixtures/unused.py": "",
+    "tests/conftest.py": "",
+    "static/helper.py": "",
+}.items():
+    (rt / rel).parent.mkdir(parents=True, exist_ok=True)
+    (rt / rel).write_text(body, encoding="utf-8")
+ih = v.routing_report(rt, pr_list=[])["import_holes"]
+check([(h["path"], h["kind"], h["imported_by"], h["rule"]) for h in ih]
+      == [("tests/conftest.py", "loaded", 2, "tests"), ("tests/fixtures/fake.py", "imported", 2, "tests"),
+         ("tests/fixtures/__init__.py", "imported", 1, "tests")],
+      f"a fixture, its package and a conftest the e2e modules import, routed `none`, are holes; a full-routed "
+      f"import, an unimported fixture and the stdlib are not -- {ih}")
+check(ih[0]["check"] == "python scripts/classify_e2e.py tests/conftest.py", "a hole carries the command that routes it")
+
 # ---- stylesheet-aware routing (fleet-config#1033) ------------------------------------------------------
 # A sheet-aware classifier (project-scaffolding#289's shape, reduced): `changed_selectors` diffs two
 # texts line by line, any line holding `UNSAFE` poisons the sheet, and `classify` narrows a diff to the
