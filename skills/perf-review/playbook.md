@@ -16,6 +16,9 @@ the app on a throttled phone profile, cold and warm.
 - Evidence: app-launcher#1324's numbers (`/api/jobs` p95 448 ms, ~15 s to open)
   are what made the fixes in #1345 obvious. An n=20 p95 was one outlier
   (213 ms) that n=80 put at 32 ms. Trust p95 only at a decent n.
+- A cold number is the median of three fresh loads, and the report names an
+  outlier. A short run (`--duration` too small for enough endpoint samples)
+  leaves a check `unmeasured`, so the verdict is `unmeasured`, never `pass`.
 - Cost: none, it is this skill.
 
 ## P2 — Compress responses
@@ -24,22 +27,46 @@ Starlette's `GZipMiddleware` (`minimum_size=1000`). Keep streaming responses
 (MJPEG, SSE, chunked audio) out of it: route them around it or exclude them
 by content type.
 
+- **Order matters.** Register `GZipMiddleware` first, so it sits **inside**
+  any `BaseHTTPMiddleware` (an auth gate). Outside one, gzip sees re-streamed
+  chunks: `minimum_size` is ignored (a 50-byte JSON got compressed) and a
+  bodyless 304 is gzipped too. A one-line test that `/healthz` stays
+  uncompressed catches it.
+- **Verify a stream survives.** Starlette's gzip skips `text/event-stream`,
+  but nothing in `/perf-review` checks it: its probe only sends bounded GETs,
+  and a stream never ends. Once per app, `GET` the stream with
+  `Accept-Encoding: gzip` and confirm there is no `Content-Encoding` and the
+  first event arrives at once.
 - Evidence: home-automation's pilot measurement (2026-10-01): its static
   JS/CSS/HTML is 1316 KB raw and 383 KB gzipped; the 153 KB entry document
   gzips to 29 KB; `/api/presence` 14.8 → 4.3 KB. No fleet app compressed at
-  the time.
+  the time. voice-transcriber#218: cold transfer 184 → 73 KB, warm 28 → 4 KB
+  together with P3.
 - Cost: ~5 lines + one test.
 
 ## P3 — ETag + 304 on the entry document
 
-Cache the stamped `index.html` body in memory keyed on the file's
-`(mtime_ns, size)`, ETag `sha256(body)[:20]`, answer a matching
-`If-None-Match` (tolerate `W/` and `*`) with a body-less 304, and keep
-`Cache-Control: no-cache, must-revalidate` so the phone still revalidates.
+Answer a matching `If-None-Match` (tolerate `W/` and `*`) with a body-less 304,
+and keep `Cache-Control: no-cache, must-revalidate` so the phone still
+revalidates. Key the ETag on a **build fingerprint**, not the body alone: the
+stamped HTML names only the directly referenced assets, so a changed transitive
+module leaves the HTML byte-identical and a body-only ETag would answer 304
+for an out-of-date build. Hash the stamped HTML plus the git sha plus every
+asset hash, and send it as a **weak** validator (`W/"..."`), because the wire
+bytes vary with `Content-Encoding`.
 
+- Test that the ETag changes for a new commit, for a changed transitive
+  module, and for an edited `index.html`. This is the risky half of P3 and the
+  helper cannot see it: a 304 that is stale across builds needs two builds,
+  and `/perf-review` is read-only.
+- Optional: caching the body in memory keyed on `(mtime_ns, size)`. Re-reading
+  a small file per request left `/` p95 at 27 ms in voice-transcriber, so add it
+  only when `endpoints.index_p95_ms` fails.
 - Evidence: app-launcher PR #1345 (`webapp/routers/misc.py`): `/` p95
   4.0 → 2.3 ms, and a 135 KB body no longer re-sent on each launch.
-- Cost: ~45 lines + one test.
+  voice-transcriber#219 (fingerprint + weak ETag). home-automation already
+  takes the ETag over a stamped body that carries the build's asset hash.
+- Cost: ~45 lines + three tests.
 
 ## P4 — Serve hot reads from memory
 
@@ -97,8 +124,14 @@ Chart and map libraries (hundreds of KB) loaded by a classic `<script>` run
 before the boot module on every cold launch. Import them on first use of the
 view that needs them.
 
+- Move the library's **stylesheet** with its script. home-automation still
+  linked `leaflet.css` as a render-blocking `<link>` in `<head>` after its
+  script moved to first use (#793); the red test is that the index must not
+  link it.
 - Evidence: home-automation loads chart.js + leaflet (350 KB raw, ~110 KB
   gzipped) at boot for two tabs.
+- Rule the harness out before proposing this for a slow cold paint: the same
+  stylesheets paint in ~300 ms when no proxy stall is present.
 - Cost: ~25 lines.
 
 ## P10 — Log over-budget requests

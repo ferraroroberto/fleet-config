@@ -263,6 +263,20 @@ remedy_ids = set(re.findall(r"\bP\d+\b", " ".join(report.REMEDY.values())))
 check(remedy_ids and all(re.search(rf"^## {pid} ", playbook_text, re.M) for pid in remedy_ids),
       f"every playbook id the REMEDY map names exists as a heading in playbook.md ({sorted(remedy_ids)})")
 
+# ---- the playbook keeps the two fix lanes' corrections (fleet-config#1140) ----
+# These are prose, so the test pins only the load-bearing terms: drop one and the next review proposes the old, wrong fix.
+skill_text = (REPO / "skills" / "perf-review" / "SKILL.md").read_text(encoding="utf-8")
+p2 = re.search(r"^## P2 .*?(?=^## P)", playbook_text, re.S | re.M).group(0)
+p3 = re.search(r"^## P3 .*?(?=^## P)", playbook_text, re.S | re.M).group(0)
+check("BaseHTTPMiddleware" in p2 and "minimum_size" in p2 and "/healthz" in p2,
+      "P2: gzip registered first, inside any BaseHTTPMiddleware, with the /healthz test")
+check("text/event-stream" in p2 and "Accept-Encoding" in p2, "P2: how to verify a stream survives compression, which the helper cannot")
+check("fingerprint" in p3 and "git sha" in p3 and "W/" in p3 and "sha256(body)" not in p3,
+      "P3: the ETag carries a build fingerprint and is weak; the body-only recipe is gone")
+check("transitive" in p3 and "index.html" in p3, "P3: the invalidation test names a transitive module and an edited entry document")
+check("--duration" in skill_text and "never `pass`" in skill_text, "SKILL.md: a short run cannot produce a clean pass")
+check("hypothesis" in skill_text and "net log" in skill_text, "SKILL.md: a cold-paint finding is a hypothesis until a trace confirms it")
+
 # ---- issue body -------------------------------------------------------------
 body = report.merge_body("", v, "20261001T000000Z", "abc1234", "2026-10-01")
 check(not re.search(r"://|127\.0\.0\.1|\.ts\.net|localhost", body), "the issue body carries no scheme, host or IP")
