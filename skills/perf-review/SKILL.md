@@ -86,6 +86,13 @@ What it measures:
   share of the transfer). The HTTP leg times only query-less endpoints, so
   without this a big API payload hides behind an assets guess. Read the `TOP`
   lines before ranking: one response at 70% of the transfer is P12, not P2/P9.
+- A failing `warm.bytes_kb` also prints a `SPLIT` line: KB of `/api/` data
+  re-fetched vs KB of other responses that missed the cache (assets, entry
+  document). The 100 KB budget is reachable when the bytes are cached assets
+  but not for an app whose boot legitimately re-fetches live data (task-os:
+  256 KB warm, nearly all `/api/`). Mostly `/api/` is a payload problem
+  (P12, P8); never propose a cache fix for it. Mostly other is a cache
+  problem (P3, P11).
 - A warm leg whose cache could not be trusted is marked `unmeasured`, never
   scored. That happens when the app's cert does not verify for any name the
   probe can map to loopback.

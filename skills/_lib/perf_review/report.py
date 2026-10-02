@@ -39,7 +39,9 @@ REMEDY = {
     "index.revalidates": "P3 ETag + 304 on the entry document",
     "endpoints.index_p95_ms": "P3 cache the stamped entry document in memory",
     "endpoints.api_p95_ms": "P4 serve hot reads from memory",
-    "warm.bytes_kb": "name the largest response first (`TOP` lines): P12 slim an oversized payload / P2 compress responses / P3 ETag + 304",
+    "warm.bytes_kb": "read the warm split first (`SPLIT` line). `/api/` bytes dominate: P12 slim an oversized payload / "
+                     "P8 fetch only what's new (a data problem; cache fixes will not help). Other bytes dominate: "
+                     "P3 ETag + 304 / P11 stamps / P2 compress",
     "warm.data_ms": "P4 serve hot reads from memory / P5 concurrent boot",
     "warm.ready_ms": "P6 paint the last good data first",
     "cold.bytes_kb": "name the largest response first (`TOP` lines): P12 slim an oversized payload / P2 compress responses / "
@@ -100,6 +102,24 @@ def top_responses(leg: dict) -> List[dict]:
     return [{**r, "share": round(100 * r["bytes"] / total) if total else None} for r in leg.get("top_responses") or []]
 
 
+def bytes_split(leg: dict) -> Optional[dict]:
+    """`{api_kb, asset_kb}` of a leg's transferred bytes, or None when the leg did not record the split.
+
+    A relaunch that fails its transfer budget has two different problems: assets that missed the HTTP cache
+    (a stamping / ETag fix) and live `/api/` data it must re-fetch (a payload fix). After task-os's fixes its
+    warm transfer was all data, and a cache fix would have been the wrong advice (#1151).
+    """
+    if leg.get("api_bytes") is None or leg.get("asset_bytes") is None:
+        return None
+    return {"api_kb": round(leg["api_bytes"] / 1024), "asset_kb": round(leg["asset_bytes"] / 1024)}
+
+
+def _split_line(label: str, s: dict) -> str:
+    return (f"{label} transfer is {s['api_kb']} KB of `/api/` data re-fetched and {s['asset_kb']} KB of other "
+            f"responses that missed the cache (assets, entry document): " +
+            ("a data problem, not a cache problem." if s["api_kb"] > s["asset_kb"] else "a cache problem, not a data problem."))
+
+
 def _top_line(r: dict) -> str:
     share = f", {r['share']}% of the transfer" if r.get("share") is not None else ""
     kind = f" {r['kind']}," if r.get("kind") else ""
@@ -152,6 +172,8 @@ def verdict(probe: dict, load: dict, budgets: dict) -> dict:
         if cid.endswith(".bytes_kb") and checks[-1]["status"] == "fail":
             leg = cold if cid.startswith("cold.") else warm
             checks[-1]["top_responses"] = top_responses(leg)
+            if cid == "warm.bytes_kb":
+                checks[-1]["split"] = bytes_split(leg)
 
     selector = ready_selector_state(cold, warm)
     if selector:
@@ -231,6 +253,8 @@ def render_body(v: dict, run_id: str, build: Optional[str]) -> str:
     for c in v["checks"]:
         if c.get("top_responses"):
             lines += ["", f"Largest responses behind \"{c['label']}\":", ""] + [f"- {_top_line(r)}" for r in c["top_responses"]]
+        if c.get("split"):
+            lines += ["", _split_line("Warm relaunch", c["split"])]
     lines += ["", "## Endpoints", "", "| Endpoint | n | p50 ms | p95 ms | cold ms | Budget | |", "|---|---|---|---|---|---|---|"]
     lines += [f"| `{e['path']}` | {e.get('n')} | {_fmt(e.get('p50'))} | {_fmt(e.get('p95'))} | {_fmt(e.get('cold_ms'))} "
               f"| {e['budget']} | {_MARK[e['status']]} |" for e in v["endpoints"]]
