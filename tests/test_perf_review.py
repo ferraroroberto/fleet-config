@@ -356,6 +356,42 @@ check(d["previous_run"] == "r1" and d["fixed"] == ["/api/slow"] and not d["regre
       f"the ledger diff names exactly what was fixed; the API aggregate, still unmeasured via /api/broken, is not ({d})")
 check(json.dumps(report.load_ledger("fixture-app")).count("://") == 0, "the ledger stores no URL")
 
+# ---- declaring a ready selector moves the baseline; the diff says so (fleet-config#1151) ----
+# task-os's cold ready went 516 -> 1967 ms with no code change: first contentful paint of a painted shell became
+# "the first card with data is visible". Read as a regression, it would send a fixer after nothing.
+def ran(run_id: str, ready_by: str | None, cold_ms: int) -> tuple:
+    got = report.verdict(probe, {"legs": {"android_cold": leg(ready_ms=cold_ms, ready_by=ready_by),
+                                          "android_warm": leg(cache="trusted", ready_by=ready_by)}}, budgets)
+    return got, report.record("baseline-app", run_id, got, "c", "b")
+
+
+_, first = ran("b1", "fcp", 516)
+second_v, second = ran("b2", "selector", 1967)
+check(first.get("ready_by") == "fcp" and second.get("ready_by") == "selector", "the ledger entry records what 'ready' meant for the run")
+moved_diff = report.diff(second, report.previous_entry("baseline-app", "b2"))
+check(moved_diff["ready_baseline_changed"] == {"from": "fcp", "to": "selector"},
+      f"fcp -> selector is flagged as a baseline change ({moved_diff['ready_baseline_changed']})")
+moved_body = report.render_body({**second_v, "diff": moved_diff}, "r", "b")
+check("do not compare" in moved_body and "first contentful paint" in moved_body and "not a regression" in moved_body,
+      "the issue body says the ready times do not compare and that the rise is not a regression")
+check("do not compare" not in report.render_body(second_v, "r", "b"), "a body without a baseline change says nothing about one")
+_, third = ran("b3", "selector", 1900)
+check(report.diff(third, report.previous_entry("baseline-app", "b3"))["ready_baseline_changed"] is None,
+      "selector -> selector is not a baseline change")
+_, hidden_run = ran("b4", "selector-not-visible", 1900)
+check(report.diff(hidden_run, report.previous_entry("baseline-app", "b4"))["ready_baseline_changed"] is None,
+      "a selector that did not show is still the selector baseline: nothing to flag against a selector run")
+check(report.diff({"ready_by": "selector", "checks": {}, "endpoints": {}}, {"run_id": "old", "checks": {}, "endpoints": {}})["ready_baseline_changed"] is None,
+      "a previous run that never recorded ready_by leaves the change unknown, never claimed")
+check(report.diff({"ready_by": None, "checks": {}, "endpoints": {}}, {"run_id": "p", "ready_by": "fcp", "checks": {}, "endpoints": {}})["ready_baseline_changed"] is None,
+      "a current run with no known ready basis (failed load leg) flags nothing")
+check(report.diff(second, None)["ready_baseline_changed"] is None, "a first run has no baseline to change")
+cli_src = (REPO / "skills" / "_lib" / "perf_review" / "cli.py").read_text(encoding="utf-8")
+check("ready_baseline_changed" in cli_src and "baselines do not compare" in cli_src, "the measure DIFF line carries the baseline change")
+skill_ready = (REPO / "skills" / "perf-review" / "SKILL.md").read_text(encoding="utf-8").replace("\n  ", " ")
+check("coarse-pointer phone" in skill_ready and "moves the baseline" in skill_ready and "baselines do not compare" in skill_ready,
+      "SKILL.md: the selector must match the phone's landing view, and declaring one moves the baseline")
+
 # ---- schedule ---------------------------------------------------------------
 sched = cli.schedule({"api": {"/api/a": {"interval_s": 15.0, "query": False}, "/api/b": {"interval_s": None, "query": False},
                               "/api/geo": {"interval_s": 2.0, "query": True}, "/api/skip/x": {"interval_s": 1.0, "query": False},

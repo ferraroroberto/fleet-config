@@ -110,6 +110,16 @@ Reading the cold numbers (fleet-config#1139):
   outlier (over twice the median and 500 ms above it); say so in the report.
   A lone slow first load after a restart is not a regression, but three slow
   loads are.
+- The load profile is a **coarse-pointer phone**, so a desktop-first app can
+  land on a different tab than a human sees on the PC (task-os: Today, not
+  Board). Declare the selector for the tab the phone lands on.
+- **Declaring or changing `ready_selector` moves the baseline.** "Ready"
+  goes from a painted shell (first contentful paint) to data visible, so the
+  number rises with no code change (task-os cold ready: 516 to 1967 ms). The
+  `DIFF` line says `ready_by=fcp->selector (baselines do not compare)` and
+  the report repeats it. Say so; it is the stricter definition, not a
+  regression. A previous run from before `ready_by` was recorded leaves the
+  change unflagged, so state it yourself for a first declaration.
 - `ready_selector` must be **visible on the landing view**. The helper
   probes it: `CHECK ready.selector` is `fail` ("not visible on cold and
   warm") when a declared selector never shows, and the ready checks go
