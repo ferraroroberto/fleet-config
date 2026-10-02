@@ -27,7 +27,7 @@ With none of them, every verdict is `unknown (no timing source)`.
     phases        [{name, wall_s, nodes}]
     projections   {name: {nodes, seconds, mean_s}}        executed e2e nodes only
     buckets       [{bucket, nodes, seconds}]               executed e2e nodes only
-    modules       [{module, seconds, nodes, page_loads, pty_refs, real_agent}]  heaviest first
+    modules       [{module, seconds, nodes, page_loads, shots, pty_refs, real_agent}]  heaviest first
     tail          {slowest_n, slowest_share, top5pct_n, top5pct_share, max_s}
     first_node    {nodeid, seconds, median_s}              carries the session boot
     waits         [{file, line, kind, ms, scope, text, nodes, measured_s, paid_s}]  by measured seconds
@@ -330,27 +330,34 @@ def tail(nodes: Dict[str, float], slowest_n: int = 22) -> Dict[str, object]:
 
 
 _PAGE_LOAD_RE = re.compile(r"\.(?:goto|reload)\(")
+_SHOT_RE = re.compile(r"\.screenshot\(")
 
 
-def loaders(text: str) -> set:
-    """Functions in a module that load a page themselves: a `boot_home()` helper or an `authed_page` fixture."""
+def loaders(text: str, pattern: "re.Pattern[str]" = _PAGE_LOAD_RE) -> set:
+    """Functions in a module whose body matches `pattern`: by default a `boot_home()` helper or an `authed_page` fixture."""
     import ast
     try:
         tree = ast.parse(text)
     except SyntaxError:
         return set()
     return {n.name for n in ast.walk(tree) if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))
-            and not n.name.startswith("test_") and _PAGE_LOAD_RE.search(ast.get_source_segment(text, n) or "")}
+            and not n.name.startswith("test_") and pattern.search(ast.get_source_segment(text, n) or "")}
 
 
-def cost_drivers(text: str, shared_loaders: frozenset = frozenset()) -> Dict[str, int]:
-    """What a module pays for per test, counted statically: page loads, PTY references, real-agent marks.
+def cost_drivers(text: str, shared_loaders: frozenset = frozenset(),
+                 shared_shot_helpers: frozenset = frozenset()) -> Dict[str, int]:
+    """What a module pays for per test, counted statically: page loads, screenshots, PTY references, real-agent marks.
 
     A page load reached through a helper (`boot_home(page)`) or a fixture
     (`def test_x(authed_page)`) counts once per test that reaches it, and the
     helper's own `goto` is not counted again: home-automation's modules that
     boot through a helper read 0 before (fleet-config#1134). `shared_loaders`
     are the conftest/helper-module loaders the module can call or request.
+    `shots` counts screenshots the same way: a call to a helper that
+    screenshots (`shot(page, "x")`, `shared_shot_helpers` from the conftest)
+    counts once per call site, a direct `.screenshot(` once. Call sites, not
+    executions: a shot in a loop is a lower bound. It is context, never a fold
+    target (task-os#278: about 195 shots, a third or more of the wall time).
     """
     import ast
     drivers = {"pty_refs": len(re.findall(r"\bpty\b", text, re.I)),
@@ -358,23 +365,28 @@ def cost_drivers(text: str, shared_loaders: frozenset = frozenset()) -> Dict[str
     try:
         tree = ast.parse(text)
     except SyntaxError:
-        return {"page_loads": len(_PAGE_LOAD_RE.findall(text)), **drivers}
-    names = loaders(text) | set(shared_loaders)
-    defs = [n for n in ast.walk(tree) if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)) and n.name in names]
-    in_loader = sum(len(_PAGE_LOAD_RE.findall(ast.get_source_segment(text, n) or "")) for n in defs)
-    calls = sum(1 for c in ast.walk(tree) if isinstance(c, ast.Call)
-                and isinstance(c.func, ast.Name) and c.func.id in names)
-    requests = sum(1 for fn in ast.walk(tree) if isinstance(fn, (ast.FunctionDef, ast.AsyncFunctionDef))
-                   and fn.name.startswith("test_") for a in fn.args.args if a.arg in names)
-    return {"page_loads": len(_PAGE_LOAD_RE.findall(text)) - in_loader + calls + requests, **drivers}
+        return {"page_loads": len(_PAGE_LOAD_RE.findall(text)), "shots": len(_SHOT_RE.findall(text)), **drivers}
+    fns = [n for n in ast.walk(tree) if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))]
+
+    def reached(pattern: "re.Pattern[str]", names: set) -> int:
+        """Matches in `text`, minus those inside the named helpers, plus a call or a fixture request per use."""
+        inside = sum(len(pattern.findall(ast.get_source_segment(text, n) or "")) for n in fns if n.name in names)
+        calls = sum(1 for c in ast.walk(tree) if isinstance(c, ast.Call)
+                    and isinstance(c.func, ast.Name) and c.func.id in names)
+        requests = sum(1 for fn in fns if fn.name.startswith("test_") for a in fn.args.args if a.arg in names)
+        return len(pattern.findall(text)) - inside + calls + requests
+
+    return {"page_loads": reached(_PAGE_LOAD_RE, loaders(text) | set(shared_loaders)),
+            "shots": reached(_SHOT_RE, loaders(text, _SHOT_RE) | set(shared_shot_helpers)), **drivers}
 
 
-def shared_loaders(repo_root: Path, test_dirs: Sequence[str]) -> frozenset:
-    """Loaders defined in the test tree's conftest and `_*.py` helper modules, callable from any test module."""
+def shared_loaders(repo_root: Path, test_dirs: Sequence[str],
+                   pattern: "re.Pattern[str]" = _PAGE_LOAD_RE) -> frozenset:
+    """Helpers matching `pattern` defined in the test tree's conftest and `_*.py` modules, callable from any test module."""
     out: set = set()
     for p in _test_tree_files(repo_root, test_dirs):
         if p.name == "conftest.py" or p.name.startswith("_"):
-            out |= loaders(p.read_text(encoding="utf-8", errors="replace"))
+            out |= loaders(p.read_text(encoding="utf-8", errors="replace"), pattern)
     return frozenset(out)
 
 
@@ -385,10 +397,12 @@ def modules(nodes: Dict[str, float], repo_root: Path, test_dirs: Sequence[str] =
         agg.setdefault(nid.split("::", 1)[0], []).append(s)
     ranked = sorted(agg.items(), key=lambda kv: -sum(kv[1]))[:top]
     shared = shared_loaders(repo_root, test_dirs) if test_dirs else frozenset()
+    shared_shots = shared_loaders(repo_root, test_dirs, _SHOT_RE) if test_dirs else frozenset()
     out = []
     for mod, vals in ranked:
         path = repo_root / mod
-        drivers = cost_drivers(path.read_text(encoding="utf-8", errors="replace"), shared) if path.is_file() else {}
+        drivers = (cost_drivers(path.read_text(encoding="utf-8", errors="replace"), shared, shared_shots)
+                   if path.is_file() else {})
         out.append({"module": mod, "seconds": round(sum(vals), 1), "nodes": len(vals), **drivers})
     return out
 
