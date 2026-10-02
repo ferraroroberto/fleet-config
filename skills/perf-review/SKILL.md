@@ -81,6 +81,11 @@ What it measures:
 - **Code leg** (stdlib, read-only): `cache.stamping` classifies the target's
   `src/static_versioning.py` as one fleet hash, a transitive graph hash, or
   an unsafe per-file hash (playbook P11). No such module, no check.
+- A failing `cold.bytes_kb` or `warm.bytes_kb` check also lists the five
+  largest responses (`TOP` lines: path without query, wire bytes, encoding,
+  share of the transfer). The HTTP leg times only query-less endpoints, so
+  without this a big API payload hides behind an assets guess. Read the `TOP`
+  lines before ranking: one response at 70% of the transfer is P12, not P2/P9.
 - A warm leg whose cache could not be trusted is marked `unmeasured`, never
   scored. That happens when the app's cert does not verify for any name the
   probe can map to loopback.

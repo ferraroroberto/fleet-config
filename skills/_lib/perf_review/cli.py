@@ -145,6 +145,8 @@ def cmd_measure(a: argparse.Namespace) -> int:
     for c in v["checks"]:
         sampled = f" samples={','.join(report._fmt(x) for x in c['samples'])} outliers={','.join(map(str, c['outliers'])) or 'none'}" if c.get("samples") else ""
         print(f"CHECK {c['status']:<10} {c['id']:<24} measured={report._fmt(c['measured'])} budget={report._fmt(c['budget'])}{sampled}")
+        for r in c.get("top_responses", []):
+            print(f"TOP {c['id']:<24} {report._top_line(r)}")
     for e in v["endpoints"]:
         print(f"ENDPOINT {e['status']:<10} {e['path']:<28} n={e.get('n')} p50={report._fmt(e.get('p50'))} p95={report._fmt(e.get('p95'))}")
     print(f"DIFF previous={d['previous_run']} fixed={','.join(d['fixed']) or 'none'} regressed={','.join(d['regressed']) or 'none'}")

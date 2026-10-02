@@ -165,6 +165,21 @@ importer on the old import URLs.
   fails on `per-file` (`stamping.py`). Cost: ~20 lines + a test that edits a
   nested module and expects the importer's stamp to change.
 
+## P12 — Send only what the screen renders
+
+When the `TOP` lines show one response is most of a failing transfer check,
+fix that response before reaching for compression or lazy libraries. An
+opt-in slim form (`?descriptions=false`) on the boot call, with the default
+shape unchanged for every other caller, takes out the field nothing renders.
+Whatever the drawer or detail view needs, it fetches on open.
+
+- Evidence: task-os#291. `GET /api/tasks/tree?include_closed=true` was 5.56 MB,
+  4.35 MB of it the `description` of closed tasks the rows never read. Gzip alone
+  (P2) took it to 1.67 MB; the slim form took it to 104 KB on the wire.
+- Check: `TOP` lines under `cold.bytes_kb` / `warm.bytes_kb` list the five
+  largest responses (path, wire bytes, encoding, share of the transfer). Cost:
+  ~10 lines + a test that the key is absent when opted out and present by default.
+
 ## Rollout notes
 
 - Copy and adapt P3/P4/P10 per app for now; once a second app adopts one,
