@@ -196,7 +196,17 @@ Cleanup is part of the flow, not a periodic chore:
   first"). Put it on the second projection only when it asserts geometry,
   touch, input, nav, composer or safe-area behaviour; otherwise pin it to one
   engine with the repo's own mechanism (a `chromium_projection_only`-style
-  fixture or marker).
+  fixture or marker). Never wait by the clock in a new test: drive a poll
+  with `page.clock` and a loading state with a fetch held until the test
+  releases it, not a fixed sleep or `setTimeout` (fleet-config#1134: those
+  waits were most of one suite's removable time).
+- **Moved, folded or rewritten assertions** (a fold, a move to the unit
+  suite, a rewrite) → prove each one bites: mutate the app so the behaviour
+  breaks and watch the new assertion fail, and put an old → new assertion
+  table with those runs in the PR body. A negative assertion
+  (`not_to_contain_text`) needs a needle the stub or fixture can actually
+  produce; one that stays green against a deliberately broken app was
+  vacuous (home-automation#781).
 - **Table maintenance** — two drift signals, fixed in the same branch when
   they fire: a path that routed `full` as *unmatched* but is plainly inert →
   add its narrowing rule + a representative assertion in
