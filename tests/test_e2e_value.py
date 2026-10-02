@@ -633,8 +633,12 @@ wnodes = {"tests/e2e/test_feedback.py::test_loading[chromium]": 1.9, "tests/e2e/
           "tests/e2e/test_feedback.py::test_settle[chromium]": 0.9, "tests/e2e/test_feedback.py::test_retry[chromium]": 15.6,
           "tests/e2e/test_feedback.py::test_retry[webkit]": 15.8}
 ranked = v.rank_waits(sites, wnodes, wr)
-check(ranked[0]["scope"] == "test_retry" and ranked[0]["measured_s"] == 31.4 and ranked[0]["nodes"] == 2,
-      f"waits rank by the measured seconds of the tests that pay them -- {ranked[0]}")
+check(ranked[-1]["scope"] == "test_retry" and ranked[-1]["measured_s"] == 31.4 and ranked[-1]["nodes"] == 2
+      and ranked[-1]["ceiling"] is True and not any(r["ceiling"] for r in ranked[:-1]),
+      f"a `timeout=` is a ceiling, not a wait: it ranks after every fixed wait, flagged -- {ranked}")
+check([r["scope"] for r in ranked[:3]] == ["SLOW_INIT", "test_settle", "_wait_up"],
+      f"fixed sleeps and page timers rank by the seconds they are paid, not by the seconds of the test around them -- "
+      f"{[(r['scope'], r['paid_s']) for r in ranked]}")
 slp = next(r for r in ranked if r["scope"] == "test_settle")
 tmr = next(r for r in ranked if r["scope"] == "SLOW_INIT")
 check(slp["paid_s"] == 0.5 and tmr["nodes"] == 2 and tmr["measured_s"] == 4.0 and tmr["paid_s"] == 1.5,
