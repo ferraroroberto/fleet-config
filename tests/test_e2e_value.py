@@ -230,9 +230,13 @@ check(rr["status"] == "ok" and rr["tiers"] == {"skip": 1, "static": 0, "surface"
 check(rr["full_classes"] == {"static-code": 2, "e2e-test": 2, "unclassified": 1}
       and rr["single_cause"] == {"static-code": 1, "unclassified": 1, "e2e-test": 1},
       f"forcing classes: every PR containing one, and single-cause PRs -- {rr['full_classes']} / {rr['single_cause']}")
-check(rr["unclassified"] == [{"path": "tools/build.sh", "prs": 1}], "unclassified paths listed for a table rule")
+check(rr["unclassified"] == [{"path": "tools/build.sh", "prs": 1, "check": "python scripts/classify_e2e.py tools/build.sh"}],
+      "unclassified paths listed for a table rule, with the command that checks one")
 check([s["path"] for s in rr["shadowed"]] == ["static/_vendored/nav/README.md"] and rr["shadowed"][0]["shadowed"] == ["docs"],
       f"a README a broad prefix rule took over the later *.md rule is shadowed; tests/ after tests/e2e/ is not -- {rr['shadowed']}")
+check(rr["shadowed"][0]["next_rule"] == "docs" and rr["shadowed"][0]["drop_safe"] is True
+      and rr["shadowed"][0]["check"] == "python scripts/classify_e2e.py static/_vendored/nav/README.md",
+      f"the report names the next-matching rule and the check command -- {rr['shadowed'][0]}")
 check(rr["counterfactual"]["changed"] == [{"pr": 2, "from": "full", "to": "skip", "surface": ""}],
       f"--proposed lists every PR whose tier changes -- {rr['counterfactual']}")
 
@@ -492,5 +496,140 @@ check(pf["kept_nodes"] == 4 and {r["module"] for r in pf["kept"]} == {"tests/e2e
       "kept: a signal in a called helper, a nav tablist in a class test, a module-level viewport fixture, and an unreadable module")
 check(v.projection_fit({"tests/e2e/test_mixed.py::test_poll_payload[chromium]": 2.5}, pf_root)["candidates"] == [],
       "a Chromium-only suite has nothing to move")
+
+# ---- learnings from two slimming lanes (fleet-config#1134) ---------------------------------------------
+
+# A skipped node pays no browser time: home-automation's progress log writes `SKIPPED (setup)` and then
+# `DONE`, and voice-transcriber's "30 -> 22 nodes" counted 9 skipped WebKit nodes as savings.
+SKIPPY = _log("2026-10-01", "10:00:00", [
+    "[10:00:00 +    0,0s] ==> phase: pytest e2e (tests/e2e)...",
+    "[10:00:00 +    0.1s] START tests/e2e/test_board.py::test_load[chromium]",
+    "[10:00:03 +    3.0s] DONE  tests/e2e/test_board.py::test_load[chromium] (3.0s)",
+    "[10:00:03 +    3.0s] START tests/e2e/test_board.py::test_load[webkit]",
+    "[10:00:03 +    3.0s] SKIPPED (setup) tests/e2e/test_board.py::test_load[webkit]",
+    "[10:00:03 +    3.0s] DONE  tests/e2e/test_board.py::test_load[webkit] (0.0s)",
+    "[10:00:03 +    3.0s] START tests/e2e/test_board.py::test_poll[chromium]",
+    "[10:00:04 +    4.0s] DONE  tests/e2e/test_board.py::test_poll[chromium] (1.0s)",
+    "[10:00:04 +    4.0s] pytest session finished (exit status 0)",
+])
+sk = v.parse_run(SKIPPY)
+check(sk["skipped"] == ["tests/e2e/test_board.py::test_load[webkit]"] and sk["complete"],
+      f"a SKIPPED line marks its node skipped, the run stays complete -- {sk.get('skipped')}")
+check(v.executed_e2e(sk, ["tests/e2e"]) == {"tests/e2e/test_board.py::test_load[chromium]": 3.0,
+                                            "tests/e2e/test_board.py::test_poll[chromium]": 1.0},
+      "executed e2e nodes leave the skipped one out")
+
+# A backend-only gate run, or a narrow surface slice, finishing later must not displace the full run.
+SLICE = _log("2026-10-01", "12:00:00", [
+    "[12:00:00 +    0,0s] ==> phase: e2e routing: tier=surface target=tests/e2e/test_board.py",
+    "[12:00:00 +    0,0s] ==> phase: pytest e2e (surface)...",
+    "[12:00:00 +    0.1s] START tests/e2e/test_board.py::test_poll[chromium]",
+    "[12:00:01 +    1.0s] DONE  tests/e2e/test_board.py::test_poll[chromium] (1.0s)",
+    "[12:00:01 +    1.0s] pytest session finished (exit status 0)",
+])
+BACKEND = _log("2026-10-01", "13:00:00", [
+    "[13:00:00 +    0,0s] ==> phase: pytest (non-e2e)...",
+    "[13:00:00 +    0.1s] START tests/test_api.py::test_ok",
+    "[13:00:01 +    1.0s] DONE  tests/test_api.py::test_ok (1.0s)",
+    "[13:00:01 +    1.0s] pytest session finished (exit status 0)",
+])
+tt = Path(tempfile.mkdtemp(prefix="e2e-value-tier-"))
+(tt / ".fleet.toml").write_text('[e2e]\nprogress_log = "gate.log"\n', encoding="utf-8")
+(tt / "gate.log").write_text(SKIPPY + SLICE + BACKEND, encoding="utf-8")
+ttm = v.timing(tt, ["tests/e2e"])
+check(ttm["status"] == "ok" and ttm["run"]["started"] == "2026-10-01T10:00:00" and ttm["run"]["slice"] is None,
+      f"timing takes the latest full-tier run with e2e nodes, not a later slice or backend-only run -- {ttm.get('run')}")
+check(ttm["run"]["e2e_nodes"] == 2 and ttm["run"]["e2e_skipped"] == 1 and ttm["projections"]["chromium"]["nodes"] == 2
+      and "webkit" not in ttm["projections"], f"executed nodes only; skipped nodes reported apart -- {ttm['run']}")
+check(ttm["first_node"]["nodeid"] == "tests/e2e/test_board.py::test_load[chromium]" and ttm["first_node"]["seconds"] == 3.0,
+      f"the first executed node is named: it carries the session boot -- {ttm.get('first_node')}")
+(tt / "gate.log").write_text(SLICE + BACKEND, encoding="utf-8")
+tsl = v.timing(tt, ["tests/e2e"])
+check(tsl["status"] == "ok" and tsl["run"]["routed_tier"] == "surface" and "surface" in str(tsl["run"]["slice"]),
+      f"with only a slice on record, timing measures it and says it is a slice, not the suite -- {tsl.get('run')}")
+
+# page_loads: a module booting through a helper or a fixture paid page loads the old count missed.
+BOOT_MOD = (
+    "def boot_home(page):\n    page.goto('/')\n\n\n"
+    "def test_a(page):\n    boot_home(page)\n\n\n"
+    "def test_b(page):\n    boot_home(page)\n    page.reload()\n\n\n"
+    "def test_c(authed_page):\n    assert authed_page.title()\n"
+)
+check(v.cost_drivers(BOOT_MOD, frozenset({"authed_page"}))["page_loads"] == 4,
+      "page loads count calls to a loading helper and tests taking a loading fixture, not the helper's own goto")
+check(v.loaders("import pytest\n\n@pytest.fixture\ndef authed_page(page):\n    page.goto('/login')\n    return page\n\n"
+                "def _nothing():\n    return 1\n") == {"authed_page"}, "a fixture or helper holding a goto is a loader")
+
+# runtime_drift: a threshold, a history figure and an unrelated README line are not runtime claims.
+claims = v.runtime_claims(
+    "- Local runtime contract: 270 executions in ~3.5 min (3m30s, pytest). Investigate if a full run exceeds "
+    "**~7 min** (the previous ~10 min was 2x an older measurement).\n"
+    "Renew iCloud browser trust: open the Presence card, type the code (`expired` after 10 min / `failed`).\n"
+    "A background telemetry sampler runs on a gentle cadence (default 5 min), so its reading gate defaults off.\n",
+    "CLAUDE.md")
+check([c["claimed_min"] for c in claims] == [3.5],
+      f"only the measured runtime is a claim: thresholds, history and figures far from a gate word are not -- {claims}")
+
+# waits: fixed sleeps, page timers, real poll constants and long timeouts, with what each one is paid.
+wr = Path(tempfile.mkdtemp(prefix="e2e-value-waits-"))
+(wr / "tests" / "e2e").mkdir(parents=True)
+(wr / "tests" / "e2e" / "test_feedback.py").write_text(
+    "POLL_MS = 15_000\n"
+    "SLOW_INIT = '''\n"
+    "window.fetch = function(u) {\n"
+    "  return new Promise(function(res) { setTimeout(function() { res(orig(u)); }, 750); });\n"
+    "};\n'''\n\n\n"
+    "def _install(page):\n    page.add_init_script(SLOW_INIT)\n\n\n"
+    "def test_loading(page):\n    _install(page)\n    page.goto('/')\n\n\n"
+    "def test_settle(page):\n    page.goto('/')\n    page.wait_for_timeout(500)\n\n\n"
+    "def test_retry(page):\n    page.goto('/')\n    expect(page.locator('#s')).to_have_text('Online', timeout=20_000)\n", encoding="utf-8")
+(wr / "tests" / "e2e" / "conftest.py").write_text(
+    "import time\n\n\ndef _wait_up(url):\n    time.sleep(0.4)\n", encoding="utf-8")
+sites = v.wait_sites(wr, ["tests/e2e"])
+kinds = {(s["file"].rsplit("/", 1)[-1], s["kind"], s["ms"], s["scope"]) for s in sites}
+check(kinds == {("test_feedback.py", "poll-constant", 15000, "POLL_MS"), ("test_feedback.py", "page-timer", 750, "SLOW_INIT"),
+                ("test_feedback.py", "sleep", 500, "test_settle"), ("test_feedback.py", "long-timeout", 20000, "test_retry"),
+                ("conftest.py", "sleep", 400, "_wait_up")},
+      f"every wait shape with its milliseconds and enclosing scope -- {sorted(kinds)}")
+wnodes = {"tests/e2e/test_feedback.py::test_loading[chromium]": 1.9, "tests/e2e/test_feedback.py::test_loading[webkit]": 2.1,
+          "tests/e2e/test_feedback.py::test_settle[chromium]": 0.9, "tests/e2e/test_feedback.py::test_retry[chromium]": 15.6,
+          "tests/e2e/test_feedback.py::test_retry[webkit]": 15.8}
+ranked = v.rank_waits(sites, wnodes, wr)
+check(ranked[0]["scope"] == "test_retry" and ranked[0]["measured_s"] == 31.4 and ranked[0]["nodes"] == 2,
+      f"waits rank by the measured seconds of the tests that pay them -- {ranked[0]}")
+slp = next(r for r in ranked if r["scope"] == "test_settle")
+tmr = next(r for r in ranked if r["scope"] == "SLOW_INIT")
+check(slp["paid_s"] == 0.5 and tmr["nodes"] == 2 and tmr["measured_s"] == 4.0 and tmr["paid_s"] == 1.5,
+      f"a fixed sleep or page timer is paid on every executed node that reaches it -- {slp} / {tmr}")
+check(next(r for r in ranked if r["scope"] == "_wait_up")["nodes"] is None,
+      "a wait in a shared conftest is not attributed to tests")
+
+# routing: the rule that wins once the first one stops matching, and the command that checks it.
+class _R:  # noqa: E302
+    def __init__(self, tier, label, prefix=None, path=None, extensions=None):
+        self.tier, self.label, self.prefix, self.path, self.extensions = tier, label, prefix, path, extensions
+
+    def matches(self, path, ext):
+        if self.path is not None:
+            return path == self.path
+        if self.prefix is not None and not path.startswith(self.prefix):
+            return False
+        if self.extensions is not None and ext not in self.extensions:
+            return False
+        return self.prefix is not None or self.extensions is not None
+
+
+HA_RULES = [_R(1, "vendored-static", prefix="app/webapp/static/_vendored/", extensions=("html", "md")),
+            _R(2, "webapp", prefix="app/webapp/"), _R(0, "docs", extensions=("md",))]
+she = v.shadow_entry("app/webapp/static/_vendored/nav/README.md", HA_RULES)
+check(she is not None and she["shadowed"] == ["docs"] and she["next_rule"] == "webapp" and she["next_tier"] == 2
+      and she["drop_safe"] is False,
+      f"home-automation#778: dropping md from the static rule hands the README to the full webapp rule, not docs -- {she}")
+safe = v.shadow_entry("static/_vendored/nav/README.md", [_R(2, "static-code", prefix="static/"), _R(0, "docs", extensions=("md",))])
+check(safe is not None and safe["next_rule"] == "docs" and safe["drop_safe"] is True, f"no rule in between: dropping is safe -- {safe}")
+check(v.shadow_entry("tests/e2e/test_a.py", [_R(2, "e2e", prefix="tests/e2e/"), _R(0, "tests", prefix="tests/")]) is None,
+      "a general rule after a specific one is the intended order")
+check(v.classify_cmd(["tray.bat", ".gitignore"]) == "python scripts/classify_e2e.py tray.bat .gitignore",
+      "the exact classifier command that checks a proposed rule's paths")
 
 _h.report_and_exit("test_e2e_value")

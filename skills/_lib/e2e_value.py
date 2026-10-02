@@ -21,16 +21,24 @@ With none of them, every verdict is `unknown (no timing source)`.
 
     status        ok | unknown          reason (when unknown)
     source        {kind, path}
-    run           {started, finished, wall_s, complete, exit_status}
+    run           {started, finished, wall_s, complete, exit_status, routed_tier, slice,
+                   nodes, e2e_nodes (executed), e2e_skipped, e2e_summed_s}
     load          {state: quiet|loaded|unknown, scope, overlaps [..], checked [..]}
     phases        [{name, wall_s, nodes}]
-    projections   {name: {nodes, seconds, mean_s}}        e2e nodes only
-    buckets       [{bucket, nodes, seconds}]               e2e nodes only
+    projections   {name: {nodes, seconds, mean_s}}        executed e2e nodes only
+    buckets       [{bucket, nodes, seconds}]               executed e2e nodes only
     modules       [{module, seconds, nodes, page_loads, pty_refs, real_agent}]  heaviest first
     tail          {slowest_n, slowest_share, top5pct_n, top5pct_share, max_s}
+    first_node    {nodeid, seconds, median_s}              carries the session boot
+    waits         [{file, line, kind, ms, scope, text, nodes, measured_s, paid_s}]  by measured seconds
     failures      [{test, nodeid, projection, date, source, when, step}]  every log on disk
     race_candidates [{test, projections, steps [..], events}]
     runtime_drift {status, measured_min, claims [{file, line, text, claimed_min, delta}]}
+
+The run measured is the latest completed full-tier run that executed e2e
+nodes; a later backend-only run or surface slice does not displace it, and
+when only a slice is on record `run.slice` says so (fleet-config#1134).
+Skipped nodes are not executed nodes: they are counted apart.
 
 `load` compares this run's window with every other checkout of the repo
 (`git worktree list`) that holds the same progress log: an overlapping run
@@ -107,13 +115,20 @@ _LINE_RE = re.compile(r"^\[(\d{2}):(\d{2}):(\d{2}) \+\s*[\d.,]+s\] (.*)$")
 _DONE_RE = re.compile(r"^DONE\s+(.+?) \((\d+(?:\.\d+)?)s\)( \[gw\d+\])?$")
 _START_RE = re.compile(r"^START (.+)$")
 _FAIL_RE = re.compile(r"^(FAILED|ERROR) \((setup|call|teardown)\) (.+?)(?: \[gw\d+\])?$")
+# A skipped node still gets its DONE line; it ran no browser (fleet-config#1134).
+_SKIP_RE = re.compile(r"^SKIPPED \((?:setup|call|teardown)\) (.+?)(?: \[gw\d+\])?$")
 _PHASE_RE = re.compile(r"^==> phase: (.*?)(?:\.\.\.)?$")
 _ROUTE_RE = re.compile(r"e2e routing: (?:tier=)?(skip|static|surface|full)\b")
 _SESSION_END_RE = re.compile(r"^pytest session finished \(exit status (\d+)\)")
 _EXCERPT_PREFIX = "    | "
 _STEP_RE = re.compile(r"^((?:[\w.-]+[\\/])*test_\w+\.py):(\d+):")
 _MINUTES_RE = re.compile(r"~?\s*(\d+(?:\.\d+)?)\s*(?:min\b|mins\b|minutes\b)", re.I)
-_RUNTIME_CONTEXT_RE = re.compile(r"\b(gate|suite|e2e|verify|browser)\b", re.I)
+_RUNTIME_CONTEXT_RE = re.compile(r"\b(gate|suite|e2e|verify|browser|pytest|runtime)\b", re.I)
+CLAIM_WINDOW = 80
+# The words just before a figure that make it a threshold, a history or a setting, not a measured runtime.
+_NOT_A_CLAIM_RE = re.compile(
+    r"\b(?:exceeds?|exceeding|over|above|beyond|more than|longer than|if|investigate|budget|limit|timeout|"
+    r"after|every|cadence|default|previous|prior|was|were|old|before)\b[^.;]{0,12}$|>\s*\**\s*$", re.I)
 
 
 # ---- config -----------------------------------------------------------------
@@ -178,6 +193,7 @@ def parse_run(text: str) -> Dict[str, object]:
     node_phase: Dict[str, int] = {}
     open_nodes: set = set()
     failures: List[Dict[str, object]] = []
+    skipped: set = set()
     exit_status: Optional[int] = None
     parallel = False
     routed_tier: Optional[str] = None
@@ -213,6 +229,8 @@ def parse_run(text: str) -> Dict[str, object]:
         elif (fm := _FAIL_RE.match(body)):
             current_fail = {"outcome": fm.group(1), "when": fm.group(2), "nodeid": fm.group(3), "excerpt": []}
             failures.append(current_fail)
+        elif (km := _SKIP_RE.match(body)):
+            skipped.add(km.group(1))
         elif (em := _SESSION_END_RE.match(body)):
             exit_status = int(em.group(1)) if exit_status in (None, 0) else exit_status
     for f in failures:
@@ -225,7 +243,7 @@ def parse_run(text: str) -> Dict[str, object]:
     return {
         "started": started, "finished": last, "nodes": nodes, "node_phase": node_phase, "phases": out_phases,
         "failures": failures, "exit_status": exit_status, "parallel": parallel, "routed_tier": routed_tier,
-        "complete": bool(nodes) and not open_nodes and exit_status is not None,
+        "skipped": sorted(skipped), "complete": bool(nodes) and not open_nodes and exit_status is not None,
     }
 
 
@@ -243,18 +261,22 @@ def parse_junit(path: Path) -> Dict[str, object]:
     """Per-node seconds and failures from a JUnit XML; no phases, no window."""
     nodes: Dict[str, float] = {}
     failures: List[Dict[str, object]] = []
+    skipped: set = set()
     root = ET.parse(path).getroot()
     for case in root.iter("testcase"):
         cls = (case.get("classname") or "").replace(".", "/")
         nodeid = f"{cls}.py::{case.get('name')}" if cls else str(case.get("name"))
         nodes[nodeid] = float(case.get("time") or 0.0)
+        if case.find("skipped") is not None:
+            skipped.add(nodeid)
         for tag in ("failure", "error"):
             el = case.find(tag)
             if el is not None:
                 failures.append({"outcome": tag.upper(), "when": "call", "nodeid": nodeid,
                                  "step": failure_step((el.text or "").splitlines())})
     return {"started": None, "finished": None, "nodes": nodes, "node_phase": {}, "phases": [],
-            "failures": failures, "exit_status": 1 if failures else 0, "parallel": False, "routed_tier": None, "complete": bool(nodes)}
+            "failures": failures, "exit_status": 1 if failures else 0, "parallel": False, "routed_tier": None,
+            "skipped": sorted(skipped), "complete": bool(nodes)}
 
 
 # ---- measurements ------------------------------------------------------------------
@@ -263,6 +285,12 @@ def parse_junit(path: Path) -> Dict[str, object]:
 def is_e2e(nodeid: str, test_dirs: Sequence[str]) -> bool:
     norm = nodeid.replace("\\", "/")
     return any(norm.startswith(d.strip("/") + "/") for d in test_dirs)
+
+
+def executed_e2e(run: Dict[str, object], test_dirs: Sequence[str]) -> Dict[str, float]:
+    """The run's e2e nodes that actually ran: a skipped node costs no browser time (fleet-config#1134)."""
+    skipped = set(run.get("skipped") or ())  # type: ignore[arg-type]
+    return {n: s for n, s in run["nodes"].items() if is_e2e(n, test_dirs) and n not in skipped}  # type: ignore[union-attr]
 
 
 def projections(nodes: Dict[str, float]) -> Dict[str, Dict[str, object]]:
@@ -295,26 +323,199 @@ def tail(nodes: Dict[str, float], slowest_n: int = 22) -> Dict[str, object]:
             "top5pct_n": top5, "top5pct_share": round(sum(vals[:top5]) / total, 3), "max_s": vals[0]}
 
 
-def cost_drivers(text: str) -> Dict[str, int]:
-    """What a module pays for per test, counted statically: page loads, PTY references, real-agent marks."""
-    return {
-        "page_loads": len(re.findall(r"\.(?:goto|reload)\(", text)),
-        "pty_refs": len(re.findall(r"\bpty\b", text, re.I)),
-        "real_agent": len(re.findall(r"real[_-]agent", text, re.I)),
-    }
+_PAGE_LOAD_RE = re.compile(r"\.(?:goto|reload)\(")
 
 
-def modules(nodes: Dict[str, float], repo_root: Path, top: int = TOP_MODULES) -> List[Dict[str, object]]:
+def loaders(text: str) -> set:
+    """Functions in a module that load a page themselves: a `boot_home()` helper or an `authed_page` fixture."""
+    import ast
+    try:
+        tree = ast.parse(text)
+    except SyntaxError:
+        return set()
+    return {n.name for n in ast.walk(tree) if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))
+            and not n.name.startswith("test_") and _PAGE_LOAD_RE.search(ast.get_source_segment(text, n) or "")}
+
+
+def cost_drivers(text: str, shared_loaders: frozenset = frozenset()) -> Dict[str, int]:
+    """What a module pays for per test, counted statically: page loads, PTY references, real-agent marks.
+
+    A page load reached through a helper (`boot_home(page)`) or a fixture
+    (`def test_x(authed_page)`) counts once per test that reaches it, and the
+    helper's own `goto` is not counted again: home-automation's modules that
+    boot through a helper read 0 before (fleet-config#1134). `shared_loaders`
+    are the conftest/helper-module loaders the module can call or request.
+    """
+    import ast
+    drivers = {"pty_refs": len(re.findall(r"\bpty\b", text, re.I)),
+               "real_agent": len(re.findall(r"real[_-]agent", text, re.I))}
+    try:
+        tree = ast.parse(text)
+    except SyntaxError:
+        return {"page_loads": len(_PAGE_LOAD_RE.findall(text)), **drivers}
+    names = loaders(text) | set(shared_loaders)
+    defs = [n for n in ast.walk(tree) if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)) and n.name in names]
+    in_loader = sum(len(_PAGE_LOAD_RE.findall(ast.get_source_segment(text, n) or "")) for n in defs)
+    calls = sum(1 for c in ast.walk(tree) if isinstance(c, ast.Call)
+                and isinstance(c.func, ast.Name) and c.func.id in names)
+    requests = sum(1 for fn in ast.walk(tree) if isinstance(fn, (ast.FunctionDef, ast.AsyncFunctionDef))
+                   and fn.name.startswith("test_") for a in fn.args.args if a.arg in names)
+    return {"page_loads": len(_PAGE_LOAD_RE.findall(text)) - in_loader + calls + requests, **drivers}
+
+
+def shared_loaders(repo_root: Path, test_dirs: Sequence[str]) -> frozenset:
+    """Loaders defined in the test tree's conftest and `_*.py` helper modules, callable from any test module."""
+    out: set = set()
+    for p in _test_tree_files(repo_root, test_dirs):
+        if p.name == "conftest.py" or p.name.startswith("_"):
+            out |= loaders(p.read_text(encoding="utf-8", errors="replace"))
+    return frozenset(out)
+
+
+def modules(nodes: Dict[str, float], repo_root: Path, test_dirs: Sequence[str] = (),
+            top: int = TOP_MODULES) -> List[Dict[str, object]]:
     agg: Dict[str, List[float]] = {}
     for nid, s in nodes.items():
         agg.setdefault(nid.split("::", 1)[0], []).append(s)
     ranked = sorted(agg.items(), key=lambda kv: -sum(kv[1]))[:top]
+    shared = shared_loaders(repo_root, test_dirs) if test_dirs else frozenset()
     out = []
     for mod, vals in ranked:
         path = repo_root / mod
-        drivers = cost_drivers(path.read_text(encoding="utf-8", errors="replace")) if path.is_file() else {}
+        drivers = cost_drivers(path.read_text(encoding="utf-8", errors="replace"), shared) if path.is_file() else {}
         out.append({"module": mod, "seconds": round(sum(vals), 1), "nodes": len(vals), **drivers})
     return out
+
+
+def first_node(nodes: Dict[str, float]) -> Optional[Dict[str, object]]:
+    """The first executed e2e node and the suite's median: the session app boot lands on it.
+
+    In a surface slice that node is the touched file, so a per-module
+    before/after comparison must discount it (fleet-config#1134).
+    """
+    if not nodes:
+        return None
+    nid, s = next(iter(nodes.items()))
+    vals = sorted(nodes.values())
+    return {"nodeid": nid, "seconds": s, "median_s": vals[len(vals) // 2]}
+
+
+# ---- waits: where a suite pays wall time without doing anything (fleet-config#1134) --------------------
+# home-automation's biggest savings were waits, not merges: a real 15 s poll a test waited out (31 s of
+# the suite, now `page.clock`) and nine copies of a fixed 750 ms page timer (16 s, now held responses).
+# Merging 34 nodes saved about 10 s. A wait is found statically, so this works with no timing source.
+
+LONG_TIMEOUT_MS = 10_000
+POLL_CONSTANT_MIN_MS = 1_000
+_SLEEP_MS_RE = re.compile(r"\bwait_for_timeout\(\s*([\d_]+(?:\.\d+)?)\s*\)")
+_SLEEP_S_RE = re.compile(r"\b(?:time|asyncio)\.sleep\(\s*([\d_]*\.?\d+)\s*\)")
+_TIMEOUT_KW_RE = re.compile(r"\btimeout\s*=\s*([\d_]+)\b")
+_POLL_CONST_RE = re.compile(r"^\s*([A-Z][A-Z0-9_]*(?:_MS|_INTERVAL|POLL[A-Z0-9_]*))\s*=\s*([\d_]+)\s*(?:#.*)?$", re.M)
+
+
+def _js_timer_ms(text: str) -> List[Tuple[int, int]]:
+    """`(offset, ms)` for every `setTimeout(fn, <ms>)`: the literal last argument of the call."""
+    out = []
+    for m in re.finditer(r"\bsetTimeout\(", text):
+        depth, i = 1, m.end()
+        while i < len(text) and depth:
+            depth += {"(": 1, ")": -1}.get(text[i], 0)
+            i += 1
+        tail = re.search(r",\s*([\d_]+)\s*$", text[m.end():i - 1])
+        if tail:
+            out.append((m.start(), int(tail.group(1).replace("_", ""))))
+    return out
+
+
+def _scopes(text: str) -> List[Tuple[int, int, str]]:
+    """`(first_line, last_line, name)` of every function and module-level assignment, innermost last."""
+    import ast
+    try:
+        tree = ast.parse(text)
+    except SyntaxError:
+        return []
+    out = []
+    for n in ast.walk(tree):
+        if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            out.append((n.lineno, n.end_lineno or n.lineno, n.name))
+    for n in tree.body:
+        if isinstance(n, (ast.Assign, ast.AnnAssign)):
+            target = n.targets[0] if isinstance(n, ast.Assign) else n.target
+            if isinstance(target, ast.Name):
+                out.append((n.lineno, n.end_lineno or n.lineno, target.id))
+    return sorted(out, key=lambda s: (s[0], -s[1]))
+
+
+def wait_sites(repo_root: Path, test_dirs: Sequence[str]) -> List[Dict[str, object]]:
+    """Every place the test tree waits by the clock, with its milliseconds and enclosing scope.
+
+    `sleep` (`wait_for_timeout`, `time.sleep`) is paid in full on every run;
+    `page-timer` (a `setTimeout` in an init script or evaluated JS) is paid
+    whenever a test waits for its effect; `poll-constant` (`POLL_MS = 15_000`)
+    and `long-timeout` (`timeout=` of 10 s or more) mark a test that may wait
+    out a real poll or timer. Fix shapes: `page.clock` for a poll-driven test,
+    a fetch held until the test releases it for a loading state.
+    """
+    out: List[Dict[str, object]] = []
+    for p in _test_tree_files(repo_root, test_dirs):
+        text = p.read_text(encoding="utf-8", errors="replace")
+        rel = str(p.relative_to(repo_root)).replace("\\", "/")
+        scopes = _scopes(text)
+        hits: List[Tuple[int, str, int]] = []
+        hits += [(m.start(), "sleep", int(float(m.group(1).replace("_", "")))) for m in _SLEEP_MS_RE.finditer(text)]
+        hits += [(m.start(), "sleep", int(float(m.group(1).replace("_", "")) * 1000)) for m in _SLEEP_S_RE.finditer(text)]
+        hits += [(off, "page-timer", ms) for off, ms in _js_timer_ms(text)]
+        hits += [(m.start(), "long-timeout", int(m.group(1).replace("_", ""))) for m in _TIMEOUT_KW_RE.finditer(text)
+                 if int(m.group(1).replace("_", "")) >= LONG_TIMEOUT_MS]
+        hits += [(m.start(2), "poll-constant", int(m.group(2).replace("_", ""))) for m in _POLL_CONST_RE.finditer(text)
+                 if int(m.group(2).replace("_", "")) >= POLL_CONSTANT_MIN_MS]
+        for off, kind, ms in sorted(hits):
+            line = text.count("\n", 0, off) + 1
+            inner = [name for a, b, name in scopes if a <= line <= b]
+            out.append({"file": rel, "line": line, "kind": kind, "ms": ms, "scope": inner[-1] if inner else None,
+                        "text": text.splitlines()[line - 1].strip()[:120]})
+    return out
+
+
+def rank_waits(sites: List[Dict[str, object]], nodes: Dict[str, float], repo_root: Path) -> List[Dict[str, object]]:
+    """Each wait joined to the executed nodes that pay it, ranked by their measured seconds.
+
+    A wait inside a test belongs to that test; one in a module helper or a
+    module-level script belongs to every test in the module whose body (with
+    the helpers it calls) names that scope; a wait in a conftest or a shared
+    helper module is not attributed (`nodes: null`). `paid_s` is the fixed
+    cost of a `sleep` or `page-timer` over those nodes; `measured_s` is what
+    the nodes took in all, the ceiling on what removing the wait can save.
+    """
+    by_test: Dict[Tuple[str, str], List[float]] = {}
+    for nid, s in nodes.items():
+        mod, _, rest = nid.partition("::")
+        by_test.setdefault((mod, test_of(rest).split("::")[-1]), []).append(s)
+    texts: Dict[str, Dict[str, str]] = {}
+    out = []
+    for site in sites:
+        mod, scope = str(site["file"]), site["scope"]
+        name = mod.rsplit("/", 1)[-1]
+        row = {**site, "nodes": None, "measured_s": None, "paid_s": None}
+        if name.startswith("test_"):
+            if mod not in texts:
+                path = repo_root / mod
+                texts[mod] = _test_texts(path.read_text(encoding="utf-8", errors="replace")) if path.is_file() else {}
+            tests = texts[mod]
+            if scope is None:
+                hit = list(tests)
+            elif scope in tests:
+                hit = [str(scope)]
+            else:
+                hit = [t for t, body in tests.items() if re.search(rf"\b{re.escape(str(scope))}\b", body)]
+            vals = [s for t in hit for s in by_test.get((mod, t), [])]
+            row["nodes"], row["measured_s"] = len(vals), round(sum(vals), 1)
+            if site["kind"] in ("sleep", "page-timer"):
+                row["paid_s"] = round(int(site["ms"]) / 1000 * len(vals), 1)  # type: ignore[call-overload]
+        out.append(row)
+    # Attributed waits rank by what their nodes took; an unattributed one by its own length.
+    return sorted(out, key=lambda r: -(float(r["measured_s"]) if r["nodes"] is not None  # type: ignore[arg-type]
+                                       else int(r["ms"]) / 1000))  # type: ignore[call-overload]
 
 
 def race_candidates(failures: List[Dict[str, object]]) -> List[Dict[str, object]]:
@@ -332,12 +533,21 @@ def race_candidates(failures: List[Dict[str, object]]) -> List[Dict[str, object]
 
 
 def runtime_claims(text: str, file: str) -> List[Dict[str, object]]:
-    """Runtime figures ("~19 min") on lines that talk about the gate or suite."""
+    """Runtime figures ("~19 min") that sit near a word about the gate or suite.
+
+    A figure counts only when a gate/suite word is within `CLAIM_WINDOW`
+    characters of it, and not when the words just before it make it a
+    threshold ("investigate if a run exceeds ~7 min"), a history ("the
+    previous ~10 min") or a setting ("default 5 min"). home-automation's
+    audit took those, an iCloud `expired after 10 min` and a telemetry cadence
+    as runtime claims (fleet-config#1134).
+    """
     out = []
     for i, line in enumerate(text.splitlines(), 1):
-        if not _RUNTIME_CONTEXT_RE.search(line):
-            continue
         for m in _MINUTES_RE.finditer(line):
+            near = line[max(0, m.start() - CLAIM_WINDOW):m.end() + CLAIM_WINDOW]
+            if not _RUNTIME_CONTEXT_RE.search(near) or _NOT_A_CLAIM_RE.search(line[max(0, m.start() - 40):m.start()]):
+                continue
             out.append({"file": file, "line": i, "text": line.strip()[:160], "claimed_min": float(m.group(1))})
     return out
 
@@ -464,30 +674,42 @@ def timing(repo_root: Path, test_dirs: Sequence[str], log: Optional[Path] = None
     done = [(p, r) for p, runs in logs for r in runs if r["complete"]]
     if not done:
         return {"status": "unknown", "reason": "no completed gate run in any checkout's log", "source": g["source"]}
-    path, run = max(done, key=lambda pr: pr[1]["finished"] or _dt.datetime.min)  # type: ignore[arg-type,return-value]
+    # A later backend-only run or surface slice is not the suite (fleet-config#1134): prefer the latest
+    # full-tier run that ran e2e nodes, as `time_budget` does, and say so when only a slice is on record.
+    with_e2e = [(p, r) for p, r in done if executed_e2e(r, test_dirs)]
+    full = [(p, r) for p, r in with_e2e if r.get("routed_tier") in (None, "full")]
+    pool = full or with_e2e or done
+    path, run = max(pool, key=lambda pr: pr[1]["finished"] or _dt.datetime.min)  # type: ignore[arg-type,return-value]
+    slice_note = (None if full or not with_e2e else
+                  f"no completed full-tier run on record; this run was routed {run.get('routed_tier')}, a slice of the suite")
     if g["source"]["kind"] == "junit-xml":  # type: ignore[index]
         load: Dict[str, object] = {"state": "unknown", "reason": "a JUnit XML carries no run window",
                                    "scope": "", "overlaps": [], "checked": []}
     else:
         load = load_state(run, [(p, [r for r in runs if r is not run]) for p, runs in logs])
     nodes: Dict[str, float] = run["nodes"]  # type: ignore[assignment]
-    e2e = {n: s for n, s in nodes.items() if is_e2e(n, test_dirs)}
+    e2e = executed_e2e(run, test_dirs)
+    skipped = [n for n in run.get("skipped") or () if is_e2e(n, test_dirs)]  # type: ignore[union-attr]
     wall = _wall_s(run)
     return {
         "status": "ok" if e2e else "unknown",
-        "reason": None if e2e else f"no node under {', '.join(test_dirs)} in the last completed run",
+        "reason": None if e2e else f"no executed node under {', '.join(test_dirs)} in the last completed run",
         "source": {**g["source"], "run_log": str(path)},  # type: ignore[dict-item]
         "run": {"started": run["started"].isoformat() if run.get("started") else None,  # type: ignore[union-attr]
                 "finished": run["finished"].isoformat() if run.get("finished") else None,  # type: ignore[union-attr]
                 "wall_s": round(wall, 1) if wall is not None else None,
                 "complete": run["complete"], "exit_status": run["exit_status"],
-                "nodes": len(nodes), "e2e_nodes": len(e2e), "e2e_summed_s": round(sum(e2e.values()), 1)},
+                "routed_tier": run.get("routed_tier"), "slice": slice_note,
+                "nodes": len(nodes), "e2e_nodes": len(e2e), "e2e_skipped": len(skipped),
+                "e2e_summed_s": round(sum(e2e.values()), 1)},
         "load": load,
         "phases": run["phases"],
         "projections": projections(e2e),
         "buckets": buckets(e2e),
-        "modules": modules(e2e, repo_root),
+        "modules": modules(e2e, repo_root, test_dirs),
         "tail": tail(e2e),
+        "first_node": first_node(e2e),
+        "waits": rank_waits(wait_sites(repo_root, test_dirs), e2e, repo_root),
         "projection_fit": projection_fit(e2e, repo_root),
         "runtime_drift": runtime_drift(repo_root, run, str(load["state"])),
     }
@@ -707,21 +929,42 @@ def _more_specific(later, first) -> bool:
     return first.prefix is not None and len(later.prefix) > len(first.prefix)
 
 
-def shadowed_rules(path: str, rules: list) -> List[str]:
-    """Labels of later, lower-tier, more specific rules that also match a path an earlier rule took.
+def shadow_entry(path: str, rules: list) -> Optional[Dict[str, object]]:
+    """A shadowed path's lower-tier rules plus the rule that wins once the first one stops matching.
 
     The first-match-wins table can route a README full because a broad prefix
-    rule sits above the docs rule (app-launcher#1220 (b)): a misroute the table
-    fixes for free by reordering. A general rule placed after a specific one
-    (`tests/` after `tests/e2e/`) is the intended order and is not reported.
+    rule sits above the docs rule (app-launcher#1220 (b)). `shadowed` lists
+    the later, lower-tier, more specific rules that also match; a general rule
+    placed after a specific one (`tests/` after `tests/e2e/`) is the intended
+    order and is not reported. Dropping the path from the first rule hands it to `hits[1]`, which can be
+    a broad full rule in between rather than the shadowed one:
+    home-automation's vendored READMEs went to `app/webapp/`, not `*.md`
+    (fleet-config#1134). `drop_safe` is true only when `hits[1]` is itself a
+    shadowed rule; otherwise the fix is an explicit rule, checked with
+    `classify_cmd` on the candidate table.
     """
     name = path.rsplit("/", 1)[-1]
     ext = name.rsplit(".", 1)[-1].lower() if "." in name else ""
     hits = [r for r in rules if r.matches(path, ext)]
     if len(hits) < 2:
-        return []
+        return None
     first = hits[0]
-    return [r.label for r in hits[1:] if r.tier < first.tier and _more_specific(r, first)]
+    shadowed = [r for r in hits[1:] if r.tier < first.tier and _more_specific(r, first)]
+    if not shadowed:
+        return None
+    nxt = hits[1]
+    return {"shadowed": [r.label for r in shadowed], "next_rule": nxt.label, "next_tier": _tier_name(nxt.tier),
+            "drop_safe": nxt in shadowed}
+
+
+def _tier_name(tier: object) -> object:
+    """A rule tier as the classifier names it (`FULL`), or the raw value for a plain int."""
+    return getattr(tier, "name", tier)
+
+
+def classify_cmd(paths: Sequence[str]) -> str:
+    """The classifier invocation that routes exactly these paths: a proposed rule's check, in seconds."""
+    return "python scripts/classify_e2e.py " + " ".join(paths)
 
 
 def routing_report(repo_root: Path, prs: int = 60, until: Optional[str] = None,
@@ -777,9 +1020,9 @@ def routing_report(repo_root: Path, prs: int = 60, until: Optional[str] = None,
         for f, c, lab in cats:
             if lab == "unclassified":
                 unclassified[f] = unclassified.get(f, 0) + 1
-            sh = shadowed_rules(f.replace("\\", "/"), config.rules)
+            sh = shadow_entry(f.replace("\\", "/"), config.rules)
             if sh:
-                entry = shadowed.setdefault(f, {"path": f, "took": lab, "shadowed": sh, "prs": 0})
+                entry = shadowed.setdefault(f, {"path": f, "took": lab, **sh, "check": classify_cmd([f]), "prs": 0})
                 entry["prs"] = int(entry["prs"]) + 1  # type: ignore[call-overload]
         if proposed is not None:
             pr_ = mod.classify(files, proposed, *extra)
@@ -797,7 +1040,8 @@ def routing_report(repo_root: Path, prs: int = 60, until: Optional[str] = None,
         "full_classes": dict(sorted(full_classes.items(), key=lambda kv: -kv[1])),
         "single_cause": dict(sorted(single_cause.items(), key=lambda kv: -kv[1])),
         "full_paths_top": [{"path": p, "prs": n} for p, n in sorted(full_paths.items(), key=lambda kv: -kv[1])[:10]],
-        "unclassified": [{"path": p, "prs": n} for p, n in sorted(unclassified.items(), key=lambda kv: -kv[1])],
+        "unclassified": [{"path": p, "prs": n, "check": classify_cmd([p])}
+                         for p, n in sorted(unclassified.items(), key=lambda kv: -kv[1])],
         "shadowed": sorted(shadowed.values(), key=lambda e: -int(e["prs"])),  # type: ignore[arg-type,call-overload]
         "counterfactual": None if proposed is None else {"proposed": str(proposed_path), "changed": narrowed},
         "sheet_routing": ("n/a: no shared_stylesheets declared" if not declared
@@ -952,7 +1196,7 @@ def parallel(repo_root: Path, test_dirs: Sequence[str], log: Optional[Path] = No
         serial = [r for _, runs in logs for r in runs if r["complete"] and not r.get("parallel")]
         if serial:
             run = max(serial, key=lambda r: r["finished"] or _dt.datetime.min)  # type: ignore[arg-type,return-value]
-            e2e = {n: s for n, s in run["nodes"].items() if is_e2e(n, test_dirs)}  # type: ignore[union-attr]
+            e2e = executed_e2e(run, test_dirs)
             proj = {**projection(e2e), "run": run["started"].isoformat() if run.get("started") else None}  # type: ignore[union-attr]
         else:
             proj = {"status": "unknown", "reason": "no completed serial run in any checkout's log"}

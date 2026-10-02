@@ -359,4 +359,26 @@ check(m.target_ratio(0, 15) == 0.0, "zero tests ratio")
 check(m.target_ratio(10, 0) == 0.0, "zero target guarded, never divides by zero")
 
 
+# ---- never-failing negative assertions (fleet-config#1134) -----------------------------------------
+# home-automation#781: the leak check asserted the UI never shows an IP that had left the mocked 503
+# body, so it passed whatever the UI rendered. Before the fix the needle existed only in the assertions.
+
+check(m.negative_needles('expect(t).not_to_contain_text("192.0.2.90")\nassert "rows" not in body\n'
+                         'expect(t).not_to_contain_text(DETAIL)\n')
+      == [(1, "192.0.2.90"), (2, "rows")], "negative assertions on a literal, not on a name")
+vac_files = [{"file": "tests/e2e/test_energy.py"}]
+vac_texts = {
+    "tests/e2e/test_energy.py": ('def test_unavailable(page):\n    stub(page, 503, {"detail": "portal timed out"})\n'
+                                 '    expect(t).not_to_contain_text("192.0.2.90")\n'
+                                 '    expect(f).not_to_contain_text("192.0.2.90")\n'
+                                 '    expect(t).not_to_contain_text("portal timed out")\n'),
+    "app/webapp/static/app.js": "toast('Last saved');\n",
+}
+vc = m.vacuous_candidates(vac_files, vac_texts)
+check([(c["line"], c["needle"]) for c in vc] == [(3, "192.0.2.90"), (4, "192.0.2.90")],
+      f"a needle found only in negative assertions is a candidate; one the stub serves is not -- {vc}")
+vac_texts["tests/e2e/test_energy.py"] = vac_texts["tests/e2e/test_energy.py"].replace(
+    '"portal timed out"}', '"portal timed out", "host": "192.0.2.90"}')
+check(m.vacuous_candidates(vac_files, vac_texts) == [], "once the mock serves the needle, the check can fail: no candidate")
+
 _h.report_and_exit("e2e_test_audit")
