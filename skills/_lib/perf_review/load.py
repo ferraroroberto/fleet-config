@@ -14,6 +14,11 @@ Three legs, written to `<out>/load.json`:
   android_warm  a new page in the same context — a PWA relaunch, with the
                 HTTP cache and localStorage the cold leg left behind.
 
+`--cold-samples N` (default 3) adds N-1 more fresh-context cold loads after
+the warm leg and lists every cold "ready" in `android_cold.ready_samples_ms`;
+`/perf-review` scores their median, because one cold load right after an
+app restart can read ~3 s on an app that loads in ~370 ms (fleet-config#1140).
+
 Read-only by construction: navigate and wait, nothing else — no click, no
 fill. Two traps it must not fall into (both measured, #1121):
 
@@ -36,6 +41,7 @@ import statistics
 import sys
 import time
 from pathlib import Path
+from typing import Optional
 from urllib.parse import urlsplit, urlunsplit
 
 from playwright.sync_api import Error as PwError
@@ -53,6 +59,7 @@ PAINT_JS = """() => {
 # (fleet-config#1139). A phone has no such step. Only `direct://` takes effect: in a net log
 # `--no-proxy-server` and `--proxy-bypass-list` still report "auto detect, from system".
 CHROMIUM_ARGS = ["--proxy-server=direct://"]
+SAMPLE_SETTLE_MS = 2000  # an extra cold sample only needs its paint metrics, not the poll-interval window
 
 
 def _path(url: str, base: str) -> str:
@@ -164,6 +171,21 @@ class CdpLeg:
         return out
 
 
+def _cold_sample(browser, pw, ctx_url: str, ctx_base: str, a, trusted: bool) -> Optional[int]:
+    """One more cold load in a fresh context (its own empty HTTP cache); its ready_ms, or None."""
+    ctx = browser.new_context(ignore_https_errors=not trusted, **pw.devices["Pixel 7"])
+    try:
+        page = ctx.new_page()
+        CdpLeg(ctx, page, ctx_base, a)
+        t0 = time.perf_counter()
+        page.goto(ctx_url, wait_until="commit")
+        return _finish(page, *_ready(page, a.ready_selector, a.boot_window_ms, t0), settle_ms=SAMPLE_SETTLE_MS)["ready_ms"]
+    except PwError:
+        return None
+    finally:
+        ctx.close()
+
+
 def chromium_legs(pw, url: str, base: str, a) -> dict:
     trusted = bool(a.tls_name)
     args = [f"--host-resolver-rules=MAP {a.tls_name} 127.0.0.1"] if trusted else []
@@ -198,6 +220,8 @@ def chromium_legs(pw, url: str, base: str, a) -> dict:
                                        settle_ms=a.boot_window_ms)
         legs["android_warm"].update(status="ok", cache="trusted" if trusted or url.startswith("http:") else "untrusted",
                                     **warm.summary(a.boot_window_ms))
+        legs["android_cold"]["ready_samples_ms"] = [legs["android_cold"]["ready_ms"]] + [
+            _cold_sample(browser, pw, ctx_url, ctx_base, a, trusted) for _ in range(max(a.cold_samples, 1) - 1)]
         return {"legs": legs, "api": api}
     finally:
         browser.close()
@@ -214,6 +238,7 @@ def main(argv=None) -> int:
     ap.add_argument("--up-mbps", type=float, default=5)
     ap.add_argument("--settle-s", type=int, default=40)
     ap.add_argument("--boot-window-ms", type=int, default=8000)
+    ap.add_argument("--cold-samples", type=int, default=3)
     ap.add_argument("--skip-webkit", action="store_true")
     a = ap.parse_args(argv)
     url = a.url.rstrip("/") + "/"

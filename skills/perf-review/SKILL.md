@@ -66,7 +66,8 @@ What it measures:
 - **Load leg** (Playwright, under the target's own `.venv`):
   - iPhone (WebKit) cold. It is unthrottled, so it is reported, not scored.
   - Android (Chromium) cold and warm, throttled to the phone profile.
-    "Warm" is a PWA relaunch: HTTP cache and `localStorage` kept.
+    "Warm" is a PWA relaunch: HTTP cache and `localStorage` kept. Cold is
+    taken three times, each in a fresh context, and scored by its median.
   - "Ready" is the target's declared `ready_selector` being visible, else
     first contentful paint.
   - "Boot data" is when the last `/api/` response of the boot landed.
@@ -86,8 +87,11 @@ Reading the cold numbers (fleet-config#1139):
   touching app code. The known cause, Windows proxy auto-detect, is fixed in
   `load.py` (`--proxy-server=direct://`; `--no-proxy-server` and
   `--proxy-bypass-list` do not take effect).
-- Judge a cold number on the **median of three** loads, and say so in the
-  report. One cold sample is not a regression.
+- The scored cold "ready" is the **median of three** fresh-context loads
+  (`--cold-samples`). `CHECK cold.ready_ms` lists the samples and names an
+  outlier (over twice the median and 500 ms above it); say so in the report.
+  A lone slow first load after a restart is not a regression, but three slow
+  loads are.
 - `ready_selector` must be **visible on the landing view**. A selector that
   never shows reads as `unmeasured`: when a declared selector comes back
   `unmeasured`, suspect the selector first, not the app.

@@ -11,6 +11,7 @@ import copy
 import json
 import os
 import re
+import statistics
 import sys
 import tempfile
 import tomllib
@@ -23,6 +24,10 @@ import hooks_state  # noqa: E402
 
 BUDGETS_PATH = Path(__file__).resolve().parent / "budgets.toml"
 LEDGER_KEEP = 20
+# A cold sample is an outlier when it sits more than twice the median AND at least this far above it:
+# a first load right after a restart read 3072 ms on an app that otherwise loads in ~370 ms (#1140).
+OUTLIER_FACTOR = 2.0
+OUTLIER_MIN_MS = 500
 TITLE = audit_issue.PERF_REVIEW_TITLE
 KIND = "perf-review"
 LABEL = "perf-review"
@@ -68,6 +73,23 @@ def _status(value: Optional[float], limit: float) -> str:
     return "unmeasured" if value is None else ("pass" if value <= limit else "fail")
 
 
+def cold_ready(cold: dict) -> dict:
+    """The scored cold "ready": the median of the cold loads that reached ready, and which loads were outliers.
+
+    `load.py` takes several fresh-context cold loads and lists them in `ready_samples_ms` (None = never
+    reached ready); a leg without the list scores its one reading. One slow first load must not fail an app.
+    """
+    if cold.get("status") != "ok":
+        return {"value": None, "samples": [], "outliers": []}
+    raw = list(cold.get("ready_samples_ms") or [cold.get("ready_ms")])
+    reached = [s for s in raw if s is not None]
+    if not reached:
+        return {"value": None, "samples": raw, "outliers": []}
+    median = statistics.median(reached)
+    outliers = [s for s in reached if s > median * OUTLIER_FACTOR and s - median >= OUTLIER_MIN_MS]
+    return {"value": round(median), "samples": raw, "outliers": outliers}
+
+
 def verdict(probe: dict, load: dict, budgets: dict) -> dict:
     """`{"checks": [{id, label, budget, measured, status}], "endpoints": [...], "summary": {...}}`."""
     checks: List[dict] = []
@@ -79,9 +101,9 @@ def verdict(probe: dict, load: dict, budgets: dict) -> dict:
     cold, warm = legs.get("android_cold", {}), legs.get("android_warm", {})
     warm_ok = warm.get("status") == "ok" and warm.get("cache") == "trusted"
     kb = lambda leg: None if leg.get("status") != "ok" else round(leg.get("bytes", 0) / 1024)  # noqa: E731
+    cold_sampled = cold_ready(cold)
     for cid, label, value, limit in (
-        ("cold.ready_ms", "Cold launch: ready (ms)", cold.get("ready_ms") if cold.get("status") == "ok" else None,
-         budgets["cold"]["ready_ms"]),
+        ("cold.ready_ms", "Cold launch: ready (ms)", cold_sampled["value"], budgets["cold"]["ready_ms"]),
         ("cold.bytes_kb", "Cold launch: transferred (KB)", kb(cold), budgets["cold"]["bytes_kb"]),
         ("warm.ready_ms", "Warm relaunch: ready (ms)", warm.get("ready_ms") if warm_ok else None,
          budgets["warm"]["ready_ms"]),
@@ -90,6 +112,8 @@ def verdict(probe: dict, load: dict, budgets: dict) -> dict:
         ("warm.bytes_kb", "Warm relaunch: transferred (KB)", kb(warm) if warm_ok else None, budgets["warm"]["bytes_kb"]),
     ):
         add(cid, label, limit, value, _status(value, limit))
+        if cid == "cold.ready_ms":
+            checks[-1].update(samples=cold_sampled["samples"], outliers=cold_sampled["outliers"])
 
     index = probe.get("index", {})
     for cid, label in (("index.compressed", "Entry document compressed"),
@@ -147,6 +171,11 @@ def render_body(v: dict, run_id: str, build: Optional[str]) -> str:
     if ios:
         lines += ["", f"iPhone (WebKit, cold, unthrottled loopback; reported, not scored): ready {_fmt(ios['ready_ms'])} ms, "
                       f"boot data {_fmt(ios['data_ms'])} ms, {_fmt(ios['requests'])} requests, {_fmt(ios['kb'])} KB."]
+    cold = next((c for c in v["checks"] if c["id"] == "cold.ready_ms"), {})
+    if len(cold.get("samples", [])) > 1:
+        shown = ", ".join(_fmt(x) for x in cold["samples"])
+        flagged = f"; outlier {', '.join(_fmt(x) for x in cold['outliers'])} ms, not what the app does at rest" if cold.get("outliers") else ""
+        lines += ["", f"Cold launch ready is the median of {len(cold['samples'])} fresh loads ({shown} ms){flagged}."]
     lines += ["", "## Endpoints", "", "| Endpoint | n | p50 ms | p95 ms | cold ms | Budget | |", "|---|---|---|---|---|---|---|"]
     lines += [f"| `{e['path']}` | {e.get('n')} | {_fmt(e.get('p50'))} | {_fmt(e.get('p95'))} | {_fmt(e.get('cold_ms'))} "
               f"| {e['budget']} | {_MARK[e['status']]} |" for e in v["endpoints"]]
