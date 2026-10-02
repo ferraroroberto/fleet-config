@@ -30,7 +30,7 @@ With none of them, every verdict is `unknown (no timing source)`.
     modules       [{module, seconds, nodes, page_loads, shots, pty_refs, real_agent}]  heaviest first
     tail          {slowest_n, slowest_share, top5pct_n, top5pct_share, max_s}
     first_node    {nodeid, seconds, median_s}              carries the session boot
-    waits         [{file, line, kind, ms, scope, text, nodes, measured_s, paid_s}]  by measured seconds
+    waits         [{file, line, kind, ms, scope, text, nodes, measured_s, paid_s, ceiling}]  paid seconds first, `timeout=` ceilings last
     failures      [{test, nodeid, projection, date, source, when, step}]  every log on disk
     race_candidates [{test, projections, steps [..], events}]
     runtime_drift {status, measured_min, claims [{file, line, text, claimed_min, delta}]}
@@ -533,9 +533,21 @@ def rank_waits(sites: List[Dict[str, object]], nodes: Dict[str, float], repo_roo
             if site["kind"] in ("sleep", "page-timer"):
                 row["paid_s"] = round(int(site["ms"]) / 1000 * len(vals), 1)  # type: ignore[call-overload]
         out.append(row)
-    # Attributed waits rank by what their nodes took; an unattributed one by its own length.
-    return sorted(out, key=lambda r: -(float(r["measured_s"]) if r["nodes"] is not None  # type: ignore[arg-type]
-                                       else int(r["ms"]) / 1000))  # type: ignore[call-overload]
+    for r in out:
+        r["ceiling"] = r["kind"] == "long-timeout"
+
+    def cost(r: Dict[str, object]) -> float:
+        """What the wait is known to cost: seconds paid, else the nodes' seconds, else its own length."""
+        if r["paid_s"] is not None:
+            return float(r["paid_s"])  # type: ignore[arg-type]
+        if r["nodes"] is not None:
+            return float(r["measured_s"])  # type: ignore[arg-type]
+        return int(r["ms"]) / 1000  # type: ignore[call-overload]
+
+    # A fixed sleep or page timer ranks by the seconds it is paid, a poll constant by its nodes' seconds. A
+    # `timeout=` is a ceiling the test may never reach, so it ranks after every wait that is actually paid
+    # (task-os#284: a story with 30 s ceilings had 1.5 s of real waits in its 20.9 s).
+    return sorted(out, key=lambda r: (bool(r["ceiling"]), -cost(r)))
 
 
 def race_candidates(failures: List[Dict[str, object]]) -> List[Dict[str, object]]:
