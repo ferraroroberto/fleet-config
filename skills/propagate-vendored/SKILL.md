@@ -141,6 +141,17 @@ carriers", which is a different and unearned claim.
 A repo appearing in neither list carries nothing catalogued and is genuinely
 not an adopter — skip it, it is out of scope for this component.
 
+**`classify_e2e` only — check each adopter's consumer.** Re-vendoring the
+classifier never checked the gates that read it: a new classifier joined a
+surface's targets with spaces, and one repo's gate passed them to pytest as one
+argument, so every branch touching two e2e modules failed (home-automation#784,
+fleet-config#1134). For every adopter and carrier, run
+`E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/e2e_route.py probe E:/automation/<repo>`
+and carry its `GATE_ROUTING` into the step-3 report and the step-6 summary:
+`broken` (the gate never splits the target) is a gate fix the wave must not
+ship past silently, so name it per repo; `not-consumed` means the re-vendor
+changes nothing that repo's gate runs.
+
 ### 3. `--dry-run` / `check` stops here
 
 Print the report and stop — no clone, no branch, no PR, nothing written:
@@ -149,7 +160,7 @@ Print the report and stop — no clone, no branch, no PR, nothing written:
 /propagate-vendored <component> --dry-run — scaffold @ <short-sha> (<ref>)
 
   adopters (declared in [vendored]):
-    <repo>   pinned <short-sha>   local: OK|DRIFT (<n> files)   vs HEAD: current|BEHIND (<n> files)
+    <repo>   pinned <short-sha>   local: OK|DRIFT (<n> files)   vs HEAD: current|BEHIND (<n> files)   [classify_e2e: gate <GATE_ROUTING>]
     …
   undeclared carriers (component present, no manifest entry):
     <repo>   <component-path>   identical to HEAD — adopt

@@ -237,6 +237,8 @@ check([s["path"] for s in rr["shadowed"]] == ["static/_vendored/nav/README.md"] 
 check(rr["shadowed"][0]["next_rule"] == "docs" and rr["shadowed"][0]["drop_safe"] is True
       and rr["shadowed"][0]["check"] == "python scripts/classify_e2e.py static/_vendored/nav/README.md",
       f"the report names the next-matching rule and the check command -- {rr['shadowed'][0]}")
+check(rr["gate"] == {"verdict": "not-consumed", "reason": rr["gate"]["reason"], "readers": []},
+      f"the report says whether the gate runs this routing at all -- {rr['gate']}")
 check(rr["counterfactual"]["changed"] == [{"pr": 2, "from": "full", "to": "skip", "surface": ""}],
       f"--proposed lists every PR whose tier changes -- {rr['counterfactual']}")
 
