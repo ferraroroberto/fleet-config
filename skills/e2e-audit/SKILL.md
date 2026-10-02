@@ -31,6 +31,10 @@ machinery as `/codebase-audit` and `/design-sync`, cleared later by
   `E2E_AUDIT_TRIGGER=yes` (over the node budget, over the time budget, or ~10
   new test functions since the last audit). It changes only step 6's
   no-findings outcome (see the exception there).
+- The word `local` (`/e2e-audit local <repo>`) → a **dry run**: steps 1–4 and
+  the step-6 summary only. Write the would-be issue body to step 5's temp file
+  and print its path; skip step 5's `get`/`upsert` and step 5b's `record`, so
+  nothing reaches GitHub and the growth baseline does not move.
 
 ## Steps
 
@@ -100,6 +104,17 @@ Fields returned:
 - **`key_views_declared` / `coverage_gaps`** — only populated when the repo
   has a `## UX surface` block (`ux_surface.py`); a gap is a crude substring
   check the LLM layer must sanity-check before filing (step 4).
+- **`waits`** — every clock wait in the test tree, with file, line,
+  milliseconds and enclosing scope: `sleep` (`wait_for_timeout`,
+  `time.sleep`), `page-timer` (a `setTimeout` in an init script),
+  `poll-constant` (`POLL_MS = 15_000`), `long-timeout` (`timeout=` of 10 s or
+  more). Static, so present even with no timing source; `timing` ranks the
+  same list by seconds (step 3b).
+- **`vacuous_candidates`** — negative text assertions
+  (`not_to_contain_text("x")`, `assert "x" not in`) whose needle appears
+  nowhere else in the repo, so nothing can ever render it: the shape of a
+  leak check that passed whatever the UI showed (home-automation#781).
+  Candidates only (step 4i).
 
 ### 3b. Time and failure history (fleet-config#1018)
 
@@ -112,13 +127,18 @@ E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skill
 
 Both read the gate's own record: `.fleet.toml` `[e2e] progress_log` (a START/DONE/FAILED log like app-launcher's `tests/_progress_log.py` writes), else `[e2e] junit_xml`, else `--log <path>`. They **never start a gate** (a full run costs ~37 min and loads the box for everything else).
 
-- **`timing`** — the latest completed run in any checkout of the repo (gates run in worktrees too): phase wall times, per-projection nodes/seconds/mean, the duration buckets (<1, 1–3, 3–6, 6–10, ≥10 s), the heaviest modules with their static cost drivers (`page_loads`, `pty_refs`, `real_agent`), the tail share, and `load`: `loaded` when another checkout's run overlapped it (suites in other repos are not visible; `scope` says so). `projection_fit` applies `/e2e`'s second-projection rule (fleet-config#1026) per test (its body plus the module helpers it calls): tests on WebKit/Firefox showing a geometry, touch, input, engine-branch, nav or composer signal are `kept`; the rest are Chromium-only `candidates`, with their second-projection seconds. `runtime_drift` lists every runtime figure on a CLAUDE.md/README line about the gate, with its nearest measured span; `candidate` is more than 25% off.
+- **`timing`** — the latest completed full-tier run that executed e2e nodes, in any checkout of the repo (gates run in worktrees too; a later backend-only run or surface slice never displaces it, and `run.slice` says when only a slice is on record). Nodes are **executed** nodes; skipped ones are `e2e_skipped`, never a saving. `first_node` is the node the session app boot lands on (2.5–3.5 s in both lanes of #1134): discount it in any per-module before/after. `waits` ranks the scan's waits by the measured seconds of the nodes that pay them (`measured_s`, the ceiling on any saving; `paid_s`, the fixed cost of a sleep or page timer). Also: phase wall times, per-projection nodes/seconds/mean, the duration buckets (<1, 1–3, 3–6, 6–10, ≥10 s), the heaviest modules with their static cost drivers (`page_loads`, `pty_refs`, `real_agent`), the tail share, and `load`: `loaded` when another checkout's run overlapped it (suites in other repos are not visible; `scope` says so). `projection_fit` applies `/e2e`'s second-projection rule (fleet-config#1026) per test (its body plus the module helpers it calls): tests on WebKit/Firefox showing a geometry, touch, input, engine-branch, nav or composer signal are `kept`; the rest are Chromium-only `candidates`, with their second-projection seconds. `runtime_drift` lists every runtime figure on a CLAUDE.md/README line about the gate, with its nearest measured span; `candidate` is more than 25% off.
 - **`failures`** — every red in the logs on disk (test, projection, date, the step its traceback stopped at), mentions in the last 60 merged PR bodies and in `bug` issues (free text, a lower bound), and `race_candidates`: tests red at two or more different steps.
-- **`routing`** — the last 60 merged PRs through the repo's own `scripts/classify_e2e.py` (imported read-only, never reimplemented): the tier distribution, which rule labels forced `full` (every PR containing one, and single-cause PRs), the paths forcing it most, unclassified paths, and `shadowed` paths (a broad rule took a path a later, more specific, lower-tier rule also matches: a free fix by reordering). `--proposed <toml>` routes the same PRs through a candidate table and lists every tier change: the counterfactual a routing proposal needs. Keep the candidate at the repo root: the classifier resolves paths against the table's folder. When the classifier exposes `changed_selectors` and a table declares `shared_stylesheets`, each PR's changed CSS rules per sheet ride into both routings, and `sheet_routing` buckets each sheet PR: owned by one surface, unmapped selector, spans surfaces, no rule changed, unsafe, or unreadable (fleet-config#1033).
+- **`routing`** — the last 60 merged PRs through the repo's own `scripts/classify_e2e.py` (imported read-only, never reimplemented): the tier distribution, which rule labels forced `full` (every PR containing one, and single-cause PRs), the paths forcing it most, unclassified paths, and `shadowed` paths (a broad rule took a path a later, more specific, lower-tier rule also matches). Each shadowed path names `next_rule`, the rule that wins once the first stops matching, and `drop_safe`: false means an in-between rule would take it (home-automation's vendored READMEs went to the full `app/webapp/` rule, not `*.md`), so the fix is an explicit rule. Shadowed and unclassified paths carry `check`, the exact `classify_e2e.py` command that routes them. `gate` is whether the repo's gate runs this routing at all (`e2e_route.gate_contract`): `not-consumed` means table edits save the gate nothing, `broken` means the gate passes multi-target output as one pytest argument. `--proposed <toml>` routes the same PRs through a candidate table and lists every tier change: the counterfactual a routing proposal needs. Keep the candidate at the repo root: the classifier resolves paths against the table's folder. When the classifier exposes `changed_selectors` and a table declares `shared_stylesheets`, each PR's changed CSS rules per sheet ride into both routings, and `sheet_routing` buckets each sheet PR: owned by one surface, unmapped selector, spans surfaces, no rule changed, unsafe, or unreadable (fleet-config#1033).
 - **`parallel`** — static signs xdist workers would share state (`free_port_race`, `fixed_log_names`, `shared_append`, `load_sensitive_ungrouped`; a worker-id reference or a port retry marks one `mitigated`), session fixtures and module state for context, `pytest-xdist` installed/declared, an LPT projection of the last serial run onto 2/3/4/6 workers with ×1.15/×1.3/×1.5 inflation and the two serial floors (heaviest module, slowest test), and `shared_state`: tests red under workers and green serially. Those are shared state between tests, **never** flakes.
+- **No timing source** is itself the first finding, because every estimate is `unknown` without one. Recommend a durable, append-only progress log in the **primary** checkout (browser runs only, last ~20 runs, a named mutex; home-automation#780), not a per-checkout file overwritten each run, which dies with every worktree; or `--junitxml` in the gate plus `[e2e] junit_xml`. The fixer gets per-test seconds once with `pytest <e2e dir> --durations=0`; this skill never runs it.
 - `status: unknown` (no source, no completed run, no e2e node, no classifier, no `gh`) and `load: unknown` are their own states. **A loaded or unknown run never feeds a verdict:** report its numbers as loaded, and file no drift finding from it.
 
+### 4. Apply judgment
 
+Rank by **executed nodes and measured seconds**, never collected nodes. In both #1134 lanes the time was in waits: a real 15 s poll a test waited out (about 29 s saved with `page.clock`, home-automation#783) and nine copies of a fixed 750 ms page timer (16 s, home-automation#789), while folding 34 nodes saved about 7–10 s.
+
+- **(a0) Waits first.** Confirm each `waits` entry before proposing any fold. A poll-driven test → drive it with `page.clock` (`install()`, then `run_for(<poll ms>)`) and keep a red proof that disabling the poll fails it. A loading state → a fetch held until the test releases it (an init script that wraps `fetch` in a promise the test resolves), instead of a fixed timer. A `long-timeout` is only a hint: read whether the test really waits that long.
 - **(a) Confirm each cluster.** Read the colliding tests' actual
   bodies/selectors. A genuine near-duplicate (same view, same assertion, same
   setup) is a merge candidate — say which to keep. A coincidental name
@@ -126,10 +146,18 @@ Both read the gate's own record: `.fleet.toml` `[e2e] progress_log` (a START/DON
   cluster into the issue.
 - **(a2) Confirm each matrix cluster.** Read the members' bodies. Twins that
   differ only in which violation they assert, all swept over the same matrix,
-  collapse into one parametrized test with no coverage loss — usually the
-  largest node-count win available. Tests that genuinely assert different
-  behaviour across the matrix are legitimate coverage: drop them, don't pad
-  the issue.
+  collapse into one test with no coverage loss. **Parametrizing N tests into
+  one saves functions, not nodes**: a 3-way parametrize over 2 projections
+  still collects 6. Nodes fall only when legs merge into one test body and
+  one page load (home-automation's security editors: 6 → 3). Tests that
+  genuinely assert different behaviour across the matrix are legitimate
+  coverage: drop them, don't pad the issue.
+- **(a3) Price every fold in nodes and seconds, separately.** A fold whose
+  cases each `goto` or `reload` saves about 0 s (a reload costs what a
+  separate test did; home-automation#787). A fold across feature modules
+  that each own a stub breaks a one-module-per-feature layout for a second or
+  two; a shared helper inside the modules is usually the better fix
+  (home-automation#789 de-duplicated 20 tests that way).
 - **(b) Confirm each coverage gap.** The helper's check is a crude substring
   match on test names/paths — read the actual suite before filing; a view
   covered under a very differently-worded test name is a false positive.
@@ -142,9 +170,11 @@ Both read the gate's own record: `.fleet.toml` `[e2e] progress_log` (a START/DON
   helper, a `KEY_VIEWS`-driven matrix pattern) — when proposing a merge/split,
   point at that pattern rather than inventing a new structure.
 - **(e) Class every failure event** (log reds and mentions) as exactly one of: **real bug** (engine-specific), **race** (a real ordering bug one engine or load exposes first — app-launcher#732, #1222), **test bug**, **flake/load** (timeouts under concurrency, `ERR_NO_BUFFER_SPACE` port exhaustion, real-agent replay), or **unknown**. A mention is often a pre-fix red proof, not a failure of the suite: read the line. **Never assign `flake` by default.** A `race_candidate` (red at different steps, typically on the slower engine, under load, and green alone) stays `unknown` until someone repeats the app-launcher#1229 recipe: loop the test on that engine, hold the suspected slow dependency pending, and see whether the product, not the test, is waiting. Tests that need a PTY or overlay to paint and run near their wait budget are **load-sensitive**, not flakes (app-launcher#887).
-- **(f) Routing and parallelism are proposals, not changes.** A `shadowed` or unclassified path becomes a table-rule recommendation; a narrowing rule set needs its `--proposed` counterfactual in the finding. Adopting workers is its own issue, validated the app-launcher#1231 way: 3 gate runs at the proposed n, recording wall time, reds and peak TIME_WAIT against a serial control (fleet-config#440, #498).
+- **(f) Routing and parallelism are proposals, not changes.** Read `routing.gate` first: `broken` is a finding of its own, ranked first (it fails every branch touching two e2e modules); `not-consumed` means no rule change saves gate time, so never rank one as time (voice-transcriber's routing PR changed nothing its gate ran). A `shadowed` or unclassified path becomes a table-rule recommendation: use `next_rule`, not the shadowed rule, to say where the path lands, and propose an explicit rule when `drop_safe` is false. A narrowing rule set needs its `--proposed` counterfactual **and** the `check` command run on the candidate table for every affected path. A counterfactual with 0 tier changes is hygiene, worth doing, never ranked as time. Before routing a launcher or hygiene file (`.bat`, `.gitignore`, a sample config) to `none`, read the e2e conftest to confirm the suite can never execute it. Adopting workers is its own issue, validated the app-launcher#1231 way: 3 gate runs at the proposed n, recording wall time, reds and peak TIME_WAIT against a serial control (fleet-config#440, #498).
 - **(g) Confirm each drift candidate.** Match the figure to the span it describes (whole gate, non-e2e, browser leg); a figure that still disagrees by more than 25% on a quiet run is a finding: correct the documented runtime.
 - **(h) Confirm each second-projection candidate** (`projection_fit`, fleet-config#1026). Read the test: one that asserts no geometry, touch, input, nav, composer or safe-area behaviour and has no engine branch belongs on one engine. The finding is one ranked item for the confirmed set: seconds saved (their second-projection time), and what it gives up: WebKit-only JS behaviour in those flows and the slower engine exposing a race first (cite how often `## Failure history` shows either). Name the repo's own mechanism for pinning; never edit a test.
+- **(i) Confirm each vacuous candidate.** Read the test and the app: a needle the app builds by concatenation (`'broken: ' + reason`) can render, so drop it; a needle subsumed by a broader assertion in the same test is redundant, not vacuous. File only one the fixture or stub cannot produce, with the proof the fixer must run: make the app produce the needle and watch the assertion stay green.
+- **(j) Moving or rewriting an assertion needs a red proof.** Every finding that folds a test, moves an assertion to another suite or rewrites one says so in its `Fix:`: the fixing PR carries an old → new assertion table and a mutation run per moved assertion (break the app, watch the new assertion fail).
 
 ### 5. Dedupe and upsert the `e2e-redundancy` issue
 
@@ -193,7 +223,8 @@ Surfaced by `/e2e-audit`, kept up to date across runs. Suite target: project-sca
 <ranked recommendations, most minutes saved per unit of coverage given up first; zero-coverage-cost items (workers, routing hygiene, a stale runtime figure) lead. Every item names the change, the estimate, the cost and the evidence:>
 
 - [ ] **<change>** (e.g. run the browser suite on n workers; keep projection X only for geometry, input and engine-branch tests; add a routing rule; merge setup-identical tests that each pay a page load; fix a named race; correct a stale runtime figure) — saves ~<m> min (<low>–<high> at ×1.15–×1.5 load, from measured durations). Gives up: <what the suite stops catching before merge, and how often that class caught something in `## Failure history`; "nothing" only when true>. Evidence: <log path, PR numbers, `file::test`>.
-- [ ] **<file>:<test name> ~ <file>:<test name>** — near-duplicate intent; merge candidate. Saves ~<s> s (its measured time, when `timing` has it). Gives up: nothing if the setup and assertion are identical; say so. Fix: keep <which>, drop <which>, and say why.
+- [ ] **<file>:<line> <wait>** (e.g. a real 15 s poll; a fixed 750 ms timer in 9 tests) — saves up to ~<measured_s> s over <n> executed nodes. Gives up: nothing when the red proof shows the test still fails without the behaviour. Fix: `page.clock` / a held fetch; keep a red proof.
+- [ ] **<file>:<test name> ~ <file>:<test name>** — near-duplicate intent; merge candidate. Saves <n> executed nodes and ~<s> s (measured; 0 s when every case reloads), stated separately. Gives up: nothing if the setup and assertion are identical; say so. Fix: keep <which>, drop <which>, and say why.
 - [ ] **<view>** — declared key view with no matching test found (confirmed by reading the suite). Costs ~<s> s. Fix: add coverage for it.
 
 Estimates come from measured durations only, never from node counts; without a timing source, say `saves: unknown (no timing source)`. Headless projections cannot see `env(safe-area-inset-*)` or installed-PWA geometry, so "gives up" never claims the suite caught what it cannot see (app-launcher#1099).
@@ -219,7 +250,7 @@ Estimates come from measured durations only, never from node counts; without a t
 
 ## Time
 
-<from `timing`: source log + run date + load state; a table of phase | wall time; projection | nodes | seconds | mean; the duration buckets; the top 5 modules with seconds and cost drivers; the tail share. Or `timing: unknown (<reason>)`.>
+<from `timing`: source log + run date + tier (+ `slice` if any) + load state; a table of phase | wall time; projection | executed nodes | seconds | mean, and skipped nodes; the duration buckets; the top 5 modules with seconds and cost drivers; the first node and its boot share; the top waits with measured seconds; the tail share. Or `timing: unknown (<reason>)` plus the timing-source recommendation from step 3b.>
 
 ## Routing
 
@@ -268,9 +299,10 @@ Print one summary and stop:
   matrix clusters: <n> candidate(s) -> <n> confirmed, <n> legitimate coverage
   size outliers: <n> (<top files>)
   coverage gaps: <n confirmed | none declared | none found>
-  time: <browser <s> s over <n> nodes, <load> | unknown (<reason>)>
+  time: <browser <s> s over <n> executed nodes (<k> skipped), <load> | unknown (<reason>)>
+  waits: <n> (<top: file:line, kind, measured s>)   vacuous: <n> candidate(s) -> <n> confirmed
   failures: <n events, <n> race candidates | unknown (<reason>)>
-  routing: <n PRs: skip/static/surface/full counts, top forcing class | unknown (<reason>)>
+  routing: <n PRs: skip/static/surface/full counts, top forcing class; gate <verdict> | unknown (<reason>)>
   parallel: <n blockers; n=4 projects <min> min | unknown (<reason>)>
   filed: https://github.com/<owner>/<repo>/issues/<N>   (e2e-redundancy)
 ```
