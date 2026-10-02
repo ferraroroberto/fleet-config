@@ -92,7 +92,7 @@ t = v.tail(e2e, slowest_n=1)
 check(t["slowest_share"] == round(12.0 / 18.5, 3) and t["top5pct_n"] == 1 and t["max_s"] == 12.0, f"tail share -- {t}")
 check(v.tail({})["slowest_share"] is None, "an empty run has no tail share, not 0")
 check(v.cost_drivers("page.goto(u)\npage.reload()\nspawn a PTY\n@pytest.mark.real_agent\n")
-      == {"page_loads": 2, "pty_refs": 1, "real_agent": 1}, "static cost drivers")
+      == {"page_loads": 2, "shots": 0, "pty_refs": 1, "real_agent": 1}, "static cost drivers")
 
 events = v.failure_events([(Path("a.log"), [r1, r2])])
 check(len(events) == 2 and events[0]["date"] == "2026-09-20" and events[0]["projection"] == "webkit", "failure events with date and projection")
@@ -581,6 +581,22 @@ check(v.cost_drivers(BOOT_MOD, frozenset({"authed_page"}))["page_loads"] == 4,
       "page loads count calls to a loading helper and tests taking a loading fixture, not the helper's own goto")
 check(v.loaders("import pytest\n\n@pytest.fixture\ndef authed_page(page):\n    page.goto('/login')\n    return page\n\n"
                 "def _nothing():\n    return 1\n") == {"authed_page"}, "a fixture or helper holding a goto is a loader")
+
+# shots (task-os#278): screenshot calls were a third of a suite's wall time and nothing counted them. A call
+# to a helper that screenshots counts once per call site; the helper's own `screenshot` is not counted again.
+SHOT_MOD = (
+    "def shot(page, name):\n    page.screenshot(path=name)\n\n\n"
+    "def test_a(page):\n    shot(page, 'a')\n    shot(page, 'b')\n    page.screenshot(path='c')\n"
+)
+check(v.cost_drivers(SHOT_MOD)["shots"] == 3, "shots count helper calls and direct screenshots, not the helper's own call")
+check(v.cost_drivers("def test_x(page):\n    shot(page, 'a')\n    shot(page, 'b')\n", frozenset(), frozenset({"shot"}))["shots"] == 2,
+      "a shot helper defined in a shared conftest counts at the call sites in a module")
+sh = Path(tempfile.mkdtemp(prefix="e2e-value-shots-"))
+(sh / "tests" / "e2e").mkdir(parents=True)
+(sh / "tests" / "e2e" / "conftest.py").write_text("def shot(page, name):\n    page.screenshot(path=name)\n", encoding="utf-8")
+(sh / "tests" / "e2e" / "test_a.py").write_text("def test_a(page):\n    shot(page, 'a')\n    shot(page, 'b')\n", encoding="utf-8")
+mods = v.modules({"tests/e2e/test_a.py::test_a[chromium]": 4.0}, sh, ["tests/e2e"])
+check(mods[0]["shots"] == 2, f"modules() reports shots through the conftest's shot helper -- {mods}")
 
 # runtime_drift: a threshold, a history figure and an unrelated README line are not runtime claims.
 claims = v.runtime_claims(
