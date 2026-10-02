@@ -256,6 +256,27 @@ check("P12" in report.fixes_section(hv) and "TOP" in report.fixes_section(hv),
 check("Largest responses" not in report.render_body(report.verdict(probe, load, budgets), "r", "b"),
       "a run with no failing transfer check adds no largest-responses section")
 
+# ---- a failing warm transfer says whether it is data or cache (fleet-config#1151) ----
+# task-os's relaunch ended at 256 KB against 100, nearly all `/api/` data: a cache fix would be the wrong advice.
+api_heavy, ah = bytes_checks({}, {"bytes": 256 * 1024, "api_bytes": 240 * 1024, "asset_bytes": 16 * 1024})
+check(api_heavy["warm.bytes_kb"]["status"] == "fail" and api_heavy["warm.bytes_kb"]["split"] == {"api_kb": 240, "asset_kb": 16},
+      "a failing warm transfer carries the split between /api/ data and other responses")
+check("a data problem, not a cache problem" in report.render_body(ah, "r", "b") and "240 KB" in report.render_body(ah, "r", "b"),
+      "the body calls a mostly-/api/ warm transfer a data problem")
+asset_heavy, sh = bytes_checks({}, {"bytes": 300 * 1024, "api_bytes": 10 * 1024, "asset_bytes": 290 * 1024})
+check("a cache problem, not a data problem" in report.render_body(sh, "r", "b"), "the body calls a mostly-asset warm transfer a cache problem")
+no_split, _ = bytes_checks({}, {"bytes": 300 * 1024})
+check(no_split["warm.bytes_kb"]["status"] == "fail" and no_split["warm.bytes_kb"]["split"] is None,
+      "a warm leg that recorded no split reports none, never a made-up 0/0")
+check("split" not in bytes_checks({}, {"bytes": 50 * 1024, "api_bytes": 50 * 1024, "asset_bytes": 0})[0]["warm.bytes_kb"],
+      "a warm transfer within budget carries no split")
+check("split" not in heavy["cold.bytes_kb"], "the split belongs to the warm check only; a failing cold check carries none")
+warm_fix = report.REMEDY["warm.bytes_kb"]
+check("SPLIT" in warm_fix and "P12" in warm_fix and "P3" in warm_fix and "will not help" in warm_fix,
+      "the warm remedy names both branches: payload (P12, P8) and cache (P3, P11)")
+skill_flat = (REPO / "skills" / "perf-review" / "SKILL.md").read_text(encoding="utf-8").replace("\n  ", " ")
+check("SPLIT" in skill_flat and "never propose a cache fix" in skill_flat, "SKILL.md: no cache fix for a data-dominated warm transfer")
+
 # ---- cache-busting stamps must cover the import graph (fleet-config#1140) ----
 # voice-transcriber stamped each module from its own bytes only, so editing a nested module left a cached
 # importer on the old import URLs (its #220/#221). One fleet hash over every asset, or a transitive
@@ -422,6 +443,12 @@ else:
           and top[0]["encoding"] == "identity" and top[0]["kind"] == "Fetch" and "?" not in top[0]["path"]
           and [r["bytes"] for r in top] == sorted((r["bytes"] for r in top), reverse=True),
           f"browser leg: the cold leg lists its largest responses, biggest first, query stripped ({top})")
+    # the fixture sends no cache headers, so the warm relaunch re-fetches /api/big: it must land in api_bytes
+    check(all(isinstance(leg_.get(k), int) for leg_ in (cold, warm) for k in ("api_bytes", "asset_bytes"))
+          and warm["api_bytes"] + warm["asset_bytes"] == warm["bytes"] and cold["api_bytes"] + cold["asset_bytes"] == cold["bytes"],
+          f"browser leg: transferred bytes split into api_bytes + asset_bytes that sum to the total ({warm})")
+    check(cold["api_bytes"] >= len(BIG) and cold["asset_bytes"] > 0 and cold["asset_bytes"] < len(BIG),
+          f"browser leg: the 200 KB /api/ payload is counted as API, the entry document as other ({cold.get('api_bytes')}, {cold.get('asset_bytes')})")
 old_srv.shutdown()
 new_srv.shutdown()
 _h.report_and_exit("test_perf_review", skip_code=SKIP_EXIT)

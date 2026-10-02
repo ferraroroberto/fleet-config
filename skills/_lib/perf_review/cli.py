@@ -145,6 +145,8 @@ def cmd_measure(a: argparse.Namespace) -> int:
     for c in v["checks"]:
         sampled = f" samples={','.join(report._fmt(x) for x in c['samples'])} outliers={','.join(map(str, c['outliers'])) or 'none'}" if c.get("samples") else ""
         print(f"CHECK {c['status']:<10} {c['id']:<24} measured={report._fmt(c['measured'])} budget={report._fmt(c['budget'])}{sampled}")
+        if c.get("split"):
+            print(f"SPLIT {c['id']:<24} api={c['split']['api_kb']} KB other={c['split']['asset_kb']} KB")
         for r in c.get("top_responses", []):
             print(f"TOP {c['id']:<24} {report._top_line(r)}")
     for e in v["endpoints"]:

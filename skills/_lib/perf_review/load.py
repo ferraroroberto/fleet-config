@@ -155,8 +155,11 @@ class CdpLeg:
             if r["path"].startswith("/api/") and "end" in r and (r["end"] - t0) * 1000 <= boot_window_ms:
                 api_done.setdefault(r["path"], (r["end"] - t0) * 1000)
         net = [r for r in rows if not r["cached"]]
+        api_bytes = sum(r["bytes"] for r in net if r["path"].startswith("/api/"))
         return {"requests": len(rows), "from_cache": len(rows) - len(net),
                 "bytes": sum(r["bytes"] for r in net),
+                # live data re-fetched vs everything else (assets, entry document) that missed the cache: different fixes
+                "api_bytes": api_bytes, "asset_bytes": sum(r["bytes"] for r in net) - api_bytes,
                 "data_ms": round(max(api_done.values())) if api_done else None,
                 "top_responses": self.top_responses(net),
                 "non_get": [r["method"] + " " + r["path"] for r in rows if r["method"] != "GET"]}
