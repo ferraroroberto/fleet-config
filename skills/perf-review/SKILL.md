@@ -75,6 +75,9 @@ What it measures:
   - `/` plus every query-less `/api/` GET the boot made, each at the poll
     interval the page was seen using.
   - Whether `/` is compressed and answers a repeat with 304.
+- **Code leg** (stdlib, read-only): `cache.stamping` classifies the target's
+  `src/static_versioning.py` as one fleet hash, a transitive graph hash, or
+  an unsafe per-file hash (playbook P11). No such module, no check.
 - A warm leg whose cache could not be trusted is marked `unmeasured`, never
   scored. That happens when the app's cert does not verify for any name the
   probe can map to loopback.

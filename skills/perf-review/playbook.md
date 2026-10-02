@@ -111,6 +111,27 @@ discards its stdout.
   It caught the `/api/board` tail #1345 could not explain.
 - Cost: ~70 lines.
 
+## P11 — Cache-busting stamps cover the import graph
+
+Stamp JS and CSS so a stamp changes whenever **anything the file loads** changes,
+then cache them for a year. Either:
+
+- one **fleet hash** over every asset (app-launcher, home-automation and most
+  fleet apps; any edit rotates every stamp), or
+- per-file stamps hashed over the file **plus every module it transitively
+  imports** (a visited set, so an import cycle terminates).
+
+A per-file stamp from the file's own bytes only is the trap: behind a one-year
+`immutable` cache, editing a nested module leaves a phone that cached the
+importer on the old import URLs.
+
+- Evidence: voice-transcriber#220/#221 reproduced it red 3 of 5 and fixed it
+  with a transitive import-graph hash. home-automation was probed under its fleet
+  hash: editing only a nested module rotated the importer's stamp.
+- Check: `cache.stamping` reads the target's `src/static_versioning.py` and
+  fails on `per-file` (`stamping.py`). Cost: ~20 lines + a test that edits a
+  nested module and expects the importer's stamp to change.
+
 ## Rollout notes
 
 - Copy and adapt P3/P4/P10 per app for now; once a second app adopts one,

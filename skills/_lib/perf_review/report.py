@@ -44,6 +44,7 @@ REMEDY = {
     "warm.ready_ms": "P6 paint the last good data first",
     "cold.bytes_kb": "P2 compress responses / P9 load heavy libraries on first use",
     "cold.ready_ms": "P2 compress responses / P9 load heavy libraries on first use",
+    "cache.stamping": "P11 cache-busting stamps cover the import graph (one fleet hash, or a transitive graph hash)",
     "ready.selector": "fix the target's `[perf.review] ready_selector`: it must be visible on the landing view, "
                       "not a card on another tab (a config fix, not an app fix)",
 }
@@ -135,6 +136,11 @@ def verdict(probe: dict, load: dict, budgets: dict) -> dict:
     selector = ready_selector_state(cold, warm)
     if selector:
         add("ready.selector", "Declared ready selector", "visible", selector["measured"], selector["status"])
+
+    strategy = (probe.get("stamping") or {}).get("strategy", "none")
+    if strategy != "none":
+        add("cache.stamping", "Cache-busting stamps cover the import graph", "fleet-hash or graph-hash", strategy,
+            {"fleet-hash": "pass", "graph-hash": "pass", "per-file": "fail"}.get(strategy, "unmeasured"))
 
     index = probe.get("index", {})
     for cid, label in (("index.compressed", "Entry document compressed"),

@@ -32,7 +32,7 @@ from design_review.filing import repo_slug  # noqa: E402
 from design_review.plan import PlanError, resolve_target  # noqa: E402
 from no_window import NO_WINDOW  # noqa: E402
 
-from . import http_probe, report  # noqa: E402
+from . import http_probe, report, stamping  # noqa: E402
 
 LOAD_PY = Path(__file__).resolve().parent / "load.py"
 DEFAULT_SPACING_S = 30.0
@@ -132,7 +132,7 @@ def cmd_measure(a: argparse.Namespace) -> int:
         else:
             load = run_load(str(interp["python"]), target.base_url, run_dir, block, budgets, a.settle)
     plan = schedule(load, block, a.min_spacing)
-    probe = {"index": http_probe.index_checks(target.base_url),
+    probe = {"index": http_probe.index_checks(target.base_url), "stamping": stamping.classify(target.root),
              "endpoints": http_probe.time_endpoints(target.base_url, plan, a.duration)}
     v = report.verdict(probe, load, budgets)
     build = service_probe.running_sha(urlsplit(target.base_url).port or 0, str(block.get("api_version_path", "/api/version")))
