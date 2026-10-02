@@ -56,6 +56,9 @@ waiting.
   target `CLAUDE.md`'s restart recipe as the next action for the user. Never
   run it yourself.
 - `PERF=unmeasured reason=BAD_TARGET|BAD_FLEET_TOML` → stop and print it.
+- A short run (`--duration` too small for enough endpoint samples) leaves a
+  check `unmeasured`, so the verdict is `unmeasured`, never `pass`. That is
+  correct: a clean `pass` needs a full run.
 - Otherwise it prints one `CHECK` line per budget, one `ENDPOINT` line per
   timed path, a `DIFF` line against the previous run, and `PERF=pass|over-budget|unmeasured`.
   Exit is 0, 1 or 3 respectively. The run dir (`RUN_DIR=`) holds
@@ -111,6 +114,13 @@ LOC, cheapest first.
 
 - **Check the target's code before proposing a pattern.** It may already be
   in place. home-automation already had P5–P7 when it was piloted.
+- **A cold-paint finding is a hypothesis until a trace confirms it.** Record
+  a net log (or the DevTools network timeline) and see what the time sits in
+  front of. The first lead on home-automation's "3 s stall" was render-blocking
+  CSS; one trace showed it was the harness.
+- **Say what the helper cannot see.** It never checks that a streaming
+  response survives compression, or that a 304 stays correct across builds
+  (playbook P2 and P3 give the one-off check and the test).
 - **Prefer one fix per issue/PR**, so each reverts on its own.
 
 ### 3. Report
