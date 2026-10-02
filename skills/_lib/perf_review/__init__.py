@@ -16,6 +16,9 @@ Two legs, two interpreters (the `/design-review` split):
             spacing (p50/p95, cold apart), and whether `/` is compressed and
             answers a repeat with 304.
 
+`stamping.py` (stdlib, read-only) names how the target stamps its static assets
+(`fleet-hash`, `graph-hash`, `per-file` or `unknown`) from `src/static_versioning.py`.
+
 `report.py` scores both against `budgets.toml` (a target overrides any key in
 `[perf.review.budgets]`), keeps a local ledger at
 `<hooks state>/perf-review/<target>/ledger.json`, and renders the one managed
@@ -35,5 +38,5 @@ Optional `[perf.review]` keys in the target's `.fleet.toml`:
 """
 from __future__ import annotations
 
-from . import http_probe, report  # noqa: F401
+from . import http_probe, report, stamping  # noqa: F401
 from .cli import main  # noqa: F401

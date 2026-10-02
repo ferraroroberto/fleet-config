@@ -46,7 +46,7 @@ from acceptance.shared import SKIP_EXIT  # noqa: E402
 
 import audit_issue  # noqa: E402
 from no_window import NO_WINDOW  # noqa: E402
-from perf_review import cli, http_probe, report  # noqa: E402
+from perf_review import cli, http_probe, report, stamping  # noqa: E402
 
 _h = CheckHarness()
 check = _h.check
@@ -219,6 +219,49 @@ check("ready.selector" not in errored or errored["ready.selector"]["status"] != 
       "a failed cold leg never lets the selector check pass")
 no_leg = report.verdict(probe, {"legs": {}}, budgets)
 check(not any(c["id"] == "ready.selector" for c in no_leg["checks"]), "no load leg -> no selector check, nothing invented")
+
+# ---- cache-busting stamps must cover the import graph (fleet-config#1140) ----
+# voice-transcriber stamped each module from its own bytes only, so editing a nested module left a cached
+# importer on the old import URLs (its #220/#221). One fleet hash over every asset, or a transitive
+# import-graph hash, is safe; a per-file hash of the file's own bytes is not.
+def stamp_root(source: str | None) -> Path:
+    root_dir = Path(tempfile.mkdtemp(prefix="perf-review-stamp-"))
+    if source is not None:
+        (root_dir / "src").mkdir()
+        (root_dir / "src" / "static_versioning.py").write_text(source, encoding="utf-8")
+    return root_dir
+
+
+FLEET = "def compute_asset_hashes(static_dir):\n    return {}\n\n\ndef fleet_hash_of(hashes):\n    return 'x'\n"
+GRAPH = "def asset_hash(path):\n    return 'x'\n\n\ndef _graph_hash(name, content_hashes, static_dir):\n    return 'y'\n"
+PER_FILE = "def asset_hash(path):\n    return 'x'\n\n\nclass BuildInfo:\n    pass\n"
+check(stamping.classify(stamp_root(FLEET))["strategy"] == "fleet-hash", "one fleet hash over every asset is recognised")
+check(stamping.classify(stamp_root(GRAPH))["strategy"] == "graph-hash", "a transitive import-graph hash is recognised")
+check(stamping.classify(stamp_root(PER_FILE))["strategy"] == "per-file", "a per-file hash with no graph walk is recognised")
+check(stamping.classify(stamp_root("# per-file transitive fleet_hash_of graph\nx = 1\n"))["strategy"] == "unknown",
+      "a stamping module whose shape is not recognised is unknown; words in comments decide nothing")
+check(stamping.classify(stamp_root(None))["strategy"] == "none", "a repo with no static_versioning module has nothing to check")
+check(stamping.classify(Path(tempfile.gettempdir()) / "perf-review-no-such-dir")["strategy"] == "none", "a missing root is none, not a crash")
+
+
+def stamp_check(strategy: str) -> dict:
+    got = report.verdict({**probe, "stamping": {"strategy": strategy}}, load, budgets)
+    return {c["id"]: c for c in got["checks"]}
+
+
+check(stamp_check("fleet-hash")["cache.stamping"]["status"] == "pass" and stamp_check("graph-hash")["cache.stamping"]["status"] == "pass",
+      "fleet-hash and graph-hash stamping pass")
+bad = stamp_check("per-file")["cache.stamping"]
+check(bad["status"] == "fail" and bad["measured"] == "per-file", "per-file stamping without a graph hash fails")
+check(stamp_check("unknown")["cache.stamping"]["status"] == "unmeasured", "an unrecognised stamping module is unmeasured, never a pass")
+check("cache.stamping" not in stamp_check("none"), "no stamping module -> no check")
+check("cache.stamping" not in {c["id"]: c for c in report.verdict(probe, load, budgets)["checks"]}, "a probe without stamping adds no check")
+check("P11" in report.fixes_section(report.verdict({**probe, "stamping": {"strategy": "per-file"}}, load, budgets)),
+      "the seeded Fixes line names playbook P11")
+playbook_text = (REPO / "skills" / "perf-review" / "playbook.md").read_text(encoding="utf-8")
+remedy_ids = set(re.findall(r"\bP\d+\b", " ".join(report.REMEDY.values())))
+check(remedy_ids and all(re.search(rf"^## {pid} ", playbook_text, re.M) for pid in remedy_ids),
+      f"every playbook id the REMEDY map names exists as a heading in playbook.md ({sorted(remedy_ids)})")
 
 # ---- issue body -------------------------------------------------------------
 body = report.merge_body("", v, "20261001T000000Z", "abc1234", "2026-10-01")
