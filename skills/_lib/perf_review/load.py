@@ -48,6 +48,13 @@ PAINT_JS = """() => {
 }"""
 
 
+# Chromium inherits Windows "Automatically detect settings", and an HTTPS hostname is no implicit proxy
+# bypass (a bare loopback address is), so a cold autoproxy cache stalls the first request ~2.7 s on WPAD
+# (fleet-config#1139). A phone has no such step. Only `direct://` takes effect: in a net log
+# `--no-proxy-server` and `--proxy-bypass-list` still report "auto detect, from system".
+CHROMIUM_ARGS = ["--proxy-server=direct://"]
+
+
 def _path(url: str, base: str) -> str:
     parts = urlsplit(url)
     return parts.path if url.startswith(base) else "(external)"
@@ -160,7 +167,7 @@ class CdpLeg:
 def chromium_legs(pw, url: str, base: str, a) -> dict:
     trusted = bool(a.tls_name)
     args = [f"--host-resolver-rules=MAP {a.tls_name} 127.0.0.1"] if trusted else []
-    browser = pw.chromium.launch(args=args)
+    browser = pw.chromium.launch(args=[*CHROMIUM_ARGS, *args])
     try:
         ctx_url, ctx_base = url, base
         if trusted:

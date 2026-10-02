@@ -193,6 +193,18 @@ load_src = (REPO / "skills" / "_lib" / "perf_review" / "load.py").read_text(enco
 check(not re.search(r"\.route\(|route_from_har|\.unroute\(", load_src),
       "load.py installs no route(): Playwright disables the HTTP cache under routing")
 
+# ---- the Chromium leg bypasses Windows proxy auto-detect (fleet-config#1139) ----
+# The harness addresses the app by an HTTPS hostname, which is no implicit proxy bypass, so with
+# "Automatically detect settings" on, a cold autoproxy cache stalls the first request ~2.7 s (WPAD).
+# `--no-proxy-server` and `--proxy-bypass-list` did not take effect in a net log; `direct://` did.
+load_code = "\n".join(ln for ln in load_src.split('"""', 2)[2].splitlines() if not ln.lstrip().startswith("#"))
+check(re.search(r"^CHROMIUM_ARGS\s*=\s*\[[^\]]*--proxy-server=direct://", load_code, re.M) is not None,
+      "load.py declares --proxy-server=direct:// in CHROMIUM_ARGS")
+check(not re.search(r"--no-proxy-server|--proxy-bypass-list", load_code),
+      "load.py uses neither --no-proxy-server nor --proxy-bypass-list (measured: they leave auto-detect on)")
+check(re.search(r"chromium\.launch\(args=\[\*CHROMIUM_ARGS\b", load_code) is not None,
+      "the proxy flag is unconditional: Chromium launches with CHROMIUM_ARGS with or without --tls-name")
+
 # ---- CLI: dead port, fixture, file dry-run ------------------------------------
 root = Path(tempfile.mkdtemp(prefix="perf-review-target-"))
 out = io.StringIO()
