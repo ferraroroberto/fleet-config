@@ -74,6 +74,90 @@ try:
     check(str(http_rec.get("evidence", "")).startswith("skipped") and len(calls) == 1,
           f"evidence is captured once per cooldown, not per stall -- {http_rec} calls={len(calls)}")
 
+    # ---- a gap that was mostly machine sleep is a suspend, not a stall (fleet-config#1123) ----
+    # Shapes copied from the System log of a real sleep/resume (Kernel-Power 42/107, Power-Troubleshooter 1).
+    power_fixture = [
+        {"id": 42, "provider": "Microsoft-Windows-Kernel-Power", "time_utc": "2026-10-01T07:44:55.735Z",
+         "message": "The system is entering sleep. | Sleep Reason: Battery"},
+        {"id": 107, "provider": "Microsoft-Windows-Kernel-Power", "time_utc": "2026-10-01T07:45:06.203Z",
+         "message": "The system has resumed from sleep."},
+        {"id": 1, "provider": "Microsoft-Windows-Power-Troubleshooter", "time_utc": "2026-10-01T07:46:46.280Z",
+         "message": "The system has returned from a low power state. | Sleep Time: 07:44:55 | Wake Time: 07:46:45 | "
+                    "Wake Source: Unknown, but possibily due to timer - the scheduled task 'X' requested the wake."},
+    ]
+
+    def suspend_probe(name: str, skip_s: float, gap_s: float, unbiased=None):
+        """A probe whose first sleep is `gap_s` long, `skip_s` of it spent with the unbiased clock stopped."""
+        folder_x = sp.probe_dir(tmp / name)
+        folder_x.mkdir(parents=True)
+        fake_calls: list = []
+        probe_x = sp.Probe(sp.Log(folder_x), threshold=0.3, evidence=lambda: fake_calls.append(1) or {"fake": True})
+        skipped = [0.0]
+        probe_x.unbiased = unbiased or (lambda: time.monotonic() - skipped[0])
+        probe_x.power_events = lambda _start, _end: sp.summarize_power_events(power_fixture)
+        probe_x.power_settle_s = 0
+        gaps = iter([gap_s])
+
+        def asleep(s):
+            gap = next(gaps, None)
+            if gap is not None:
+                skipped[0] += skip_s
+            time.sleep(gap if gap is not None else s)
+        probe_x.sleep = asleep
+        probe_x.run(duration_s=gap_s + 0.5)
+        return probe_x, folder_x, fake_calls
+
+    probe_s, folder_s, evidence_calls = suspend_probe("s", skip_s=0.8, gap_s=0.9)
+    check(wait_for(lambda: any(r["kind"] == "suspend" for r in records(folder_s))), f"a sleep/resume gap is logged -- {records(folder_s)}")
+    suspend_rec = next((r for r in records(folder_s) if r["kind"] == "suspend"), {})
+    check(not any(r["kind"] == "sleep" for r in records(folder_s)) and probe_s.stalls == 0 and probe_s.suspends == 1,
+          f"...as a suspend, not a stall: the stall count stays 0 -- {records(folder_s)} stalls={probe_s.stalls}")
+    check(suspend_rec.get("seen_by") == "sleep" and 0.7 <= suspend_rec.get("suspended_s", 0) <= 0.9
+          and UTC.fullmatch(suspend_rec.get("start_utc", "")) and 0.8 <= suspend_rec.get("gap_s", 0) < 2,
+          f"the suspend record carries UTC start/end, the gap, how much of it was sleep and which leg saw it -- {suspend_rec}")
+    check(suspend_rec.get("power", {}).get("sleep_reason") == "Battery"
+          and "scheduled task" in str(suspend_rec.get("power", {}).get("wake_source"))
+          and len(suspend_rec.get("power", {}).get("events", [])) == 3,
+          f"it carries the System log's sleep reason, wake source and the events around it -- {suspend_rec.get('power')}")
+    check("evidence" not in suspend_rec and not evidence_calls,
+          f"a suspend does not run the heavy capture (wake-up catch-up, and it would burn the cooldown) -- {suspend_rec}")
+    status = json.loads((folder_s / "status.json").read_text(encoding="utf-8"))
+    check(status.get("stalls_logged") == 0 and status.get("suspends_logged") == 1, f"the heartbeat counts them apart -- {status}")
+
+    # a gap where the machine slept for under half of it is still a stall
+    probe_m, folder_m, _ = suspend_probe("m", skip_s=0.35, gap_s=0.9)
+    check(wait_for(lambda: any(r["kind"] == "sleep" for r in records(folder_m))) and probe_m.suspends == 0,
+          f"a gap that was mostly awake stays a stall -- {records(folder_m)}")
+    # a clock that can't answer must not read as 'not asleep' *or* 'asleep': the gap is a stall with suspended_s null
+    probe_u, folder_u, _ = suspend_probe("u", skip_s=0.8, gap_s=0.9, unbiased=lambda: None)
+    unknown_rec = next((r for r in records(folder_u) if r["kind"] == "sleep"), None)
+    check(unknown_rec is not None and unknown_rec["suspended_s"] is None and probe_u.suspends == 0,
+          f"an unreadable unbiased clock is recorded as unknown, not folded into either answer -- {records(folder_u)}")
+
+    # ---- the pieces behind it ----
+    summary = sp.summarize_power_events(power_fixture)
+    check(summary["sleep_reason"] == "Battery" and summary["wake_source"].startswith("Unknown, but possibily due to timer"),
+          f"sleep reason and wake source are pulled out of the event messages -- {summary}")
+    empty = sp.summarize_power_events([])
+    check(empty == {"sleep_reason": None, "wake_source": None, "events": []}, f"no events -> None fields, not made-up values -- {empty}")
+    unbiased_now = sp.unbiased_s()
+    check(isinstance(unbiased_now, float) and 0 < unbiased_now <= time.monotonic(),
+          f"QueryUnbiasedInterruptTime reads, and never runs ahead of the monotonic clock (which runs through sleep) -- {unbiased_now}")
+    quiet = sp._safely(lambda: sp.power_events(time.time() - 5, time.time()))
+    check(isinstance(quiet, dict) and "error" not in quiet and quiet["events"] == [] and quiet["sleep_reason"] is None,
+          f"the real System-log query runs, and an event-free window is an empty result, not an error -- {quiet}")
+    folder_c = sp.probe_dir(tmp / "c")
+    folder_c.mkdir(parents=True)
+    log_c = sp.Log(folder_c)
+    log_c.append({"kind": "sleep", "gap_s": 2.0})
+    log_c.append({"kind": "suspend", "gap_s": 100.0})
+    status_out = io.StringIO()
+    with contextlib.redirect_stdout(status_out):
+        sp.main(["status", "--state-dir", str(tmp / "c")])
+    counted = json.loads(status_out.getvalue())
+    check(counted["stall_lines"] == 1 and counted["suspend_lines"] == 1,
+          f"`status` keeps suspends out of the stall-line count -- {counted}")
+
     # ---- HTTP leg: a slow loopback response is a stall ----
     class Slow(http.server.BaseHTTPRequestHandler):
         def do_GET(self):  # noqa: N802

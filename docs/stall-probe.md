@@ -6,12 +6,13 @@ Whole-box stalls on the main fleet machine (7-25 s, every local process stops an
 
 - **Scheduler leg:** the main loop times `sleep(0.1)`. A wake more than the threshold (1 s) late is logged as `kind: sleep` (every process was starved).
 - **Network leg:** a thread GETs an in-memory static file from the probe's own loopback HTTP server once a second. A request slower than the threshold is `kind: http`; a failed one is `kind: http-error`.
+- **Suspend:** a machine sleep stalls both legs, because `time.monotonic()` runs through it, but it is not a stall (fleet-config#1123). Both legs also read `QueryUnbiasedInterruptTime`, which stops while the machine sleeps; the difference across the gap is how much of it was sleep (`suspended_s`). A gap more than half sleep, and at least the threshold, is logged as `kind: suspend` (`seen_by` names the leg) and is left out of the stall count. A gap that was mostly awake stays a stall, with its `suspended_s` visible. If the unbiased clock can't be read, `suspended_s` is `null` and the gap stays a stall: unknown is never read as asleep or as awake.
 
 ## What it records
 
 Everything lives under `~/.claude/hooks/state/stall-probe/` (machine-local, never committed):
 
-- `stalls.jsonl`: one line per stall, with `kind`, `start_utc`, `end_utc`, `gap_s` and `threshold_s`, all in UTC per the three-clocks rule. It rotates once to `stalls.jsonl.1` at 5 MB.
+- `stalls.jsonl`: one line per stall or suspend, with `kind`, `start_utc`, `end_utc`, `gap_s`, `suspended_s` and `threshold_s`, all in UTC per the three-clocks rule. It rotates once to `stalls.jsonl.1` at 5 MB.
 - `evidence`: captured on its own thread, at most once per 30 s, just after the stall. It holds:
   - PDH counters by English name: commit, available memory, hard-fault page reads, CPU, disk latency and queue, the Memory Compression and VmmemWSL working sets, and established TCPv4 connections;
   - `GlobalMemoryStatusEx`;
@@ -20,7 +21,8 @@ Everything lives under `~/.claude/hooks/state/stall-probe/` (machine-local, neve
   - scheduled tasks and Defender scans that ran in the last two minutes, from one PowerShell call.
 
   A source that fails records its error instead of a value. A stall inside the cooldown is logged with `evidence: skipped …`.
-- `status.json`: a heartbeat every 5 min (`pid`, `heartbeat_utc`, `started_utc`, `stalls_logged`). A stale heartbeat means the probe is not running, so a quiet log is not evidence of a quiet box.
+- `power` (suspend records only, instead of `evidence`): the System log's sleep and resume events around the gap, read about 8 s after the wake because Power-Troubleshooter logs it a few seconds late. It holds `sleep_reason` (Kernel-Power 42, e.g. `Battery` for a critical-battery trigger), `wake_source` (Power-Troubleshooter 1, e.g. a scheduled task's wake timer) and the raw `events` (Kernel-Power 42, 107, 187, 524; Power-Troubleshooter 1; the Kernel-General 1 clock correction), each with provider, id, time and message. A field no event carries is `null`, and an empty `events` list means the log held none: a sleep nobody asked for stays visible rather than hidden. A suspend skips the heavy `evidence` capture: it would only show the wake-up catch-up, and it would spend the 30 s cooldown that a real stall right after wake needs.
+- `status.json`: a heartbeat every 5 min (`pid`, `heartbeat_utc`, `started_utc`, `stalls_logged`, `suspends_logged`). A stale heartbeat means the probe is not running, so a quiet log is not evidence of a quiet box.
 - `probe.lock`: one probe per state dir. A second `run` prints `ALREADY_RUNNING` and exits 2.
 
 ## Commands
@@ -45,5 +47,7 @@ Everything lives under `~/.claude/hooks/state/stall-probe/` (machine-local, neve
 Run `install-logon` from the primary checkout (the wrapper records the paths of the checkout that ran it). Outcomes: `INSTALLED`, `UPDATED` (a stale wrapper was rewritten), `ALREADY_INSTALLED` and `WRITE_FAILED` (exit 1); each write is read back. `uninstall-logon` prints `UNINSTALLED`, `NOT_INSTALLED` or `REMOVE_FAILED`. Neither touches a probe that is already running.
 
 ## Reading a stall
+
+`status` prints `stall_lines` (stalls only) and `suspend_lines` apart. A suspend is not a freeze: the box was asleep, and the question is why (read `power`). The wall clock stands still during a sleep and is corrected by a hardware-clock sync minutes after the wake, so a suspend's `start_utc` and `end_utc` can be off by up to the gap: trust `gap_s` and `suspended_s`, and take real times from the `power` events. A wake can also arrive in two steps (a 13 s gap, then a 97 s one) within one sleep, which gives two suspend lines.
 
 Correlate `start_utc` with job logs only after converting them to UTC. Sleep and http records within the same second or two are one freeze. The evidence is sampled *after* the stall, so it shows what the machine looked like on the way out: commit near its limit, a large compression working set, or a burst of hard faults point at memory pressure. A matching scheduled task or Defender scan in `recent_activity` points at that task. Thousands of `TIME_WAIT` point at port exhaustion. Machine-level remedies (WSL memory cap, TCP or port-range settings) are Roberto's call and are never applied by an agent.
