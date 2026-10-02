@@ -52,7 +52,9 @@ rule labels forced `full` (every PR containing one, and PRs where it was the
 only cause), the paths that forced it most, unclassified paths, and paths a
 broad rule took although a later, more specific, lower-tier rule matches too
 (a README under a static prefix: a free fix). `--proposed` routes the same PRs
-through a candidate table and lists every PR whose tier changes. When the
+through a candidate table and lists every PR whose tier changes. `gate` is
+`e2e_route.gate_contract`: whether the repo's gate runs the classifier at all
+and splits its multi-target output (fleet-config#1134). When the
 classifier exposes `changed_selectors` and either table declares
 `shared_stylesheets`, each PR's changed CSS rules per sheet (merge commit vs
 its first parent) ride into both `classify()` calls, so the counterfactual
@@ -1030,9 +1032,13 @@ def routing_report(repo_root: Path, prs: int = 60, until: Optional[str] = None,
                 narrowed.append({"pr": pr["number"], "from": r.tier, "to": pr_.tier, "surface": pr_.surface})
         rows.append({"pr": pr["number"], "tier": r.tier, "surface": r.surface})
     full_n = tiers.get("full", 0)
+    from e2e_route import gate_contract
+    gate, gate_reason, readers = gate_contract(repo_root)
     return {
         "status": "ok",
         "prs": len(pr_list),
+        # Whether the gate runs this routing at all: a `not-consumed` table saves the gate nothing (fleet-config#1134).
+        "gate": {"verdict": gate, "reason": gate_reason, "readers": [{"file": f, "split": sp} for f, sp in readers]},
         "config": str(config_path or (repo_root / ".fleet.toml")), "config_source": config.source,
         "tiers": {k: tiers.get(k, 0) for k in ("skip", "static", "surface", "full")},
         "browser_relevant": browser_relevant,

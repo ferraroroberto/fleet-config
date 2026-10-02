@@ -193,4 +193,54 @@ with tempfile.TemporaryDirectory() as td:
           "unusable_verdict: static passes")
 
 
+# ---- gate contract: the gate splits the classifier's space-joined targets (fleet-config#1134) ----------
+# home-automation#784: the classifier joins a surface's targets with spaces, the gate passed them to
+# pytest as one argument, and every branch touching two e2e modules failed with exit 4.
+
+HA_BEFORE = (
+    '$tier = "full"; $e2eTarget = "tests/e2e"; $e2eBrowsers = ""\n'
+    '$classifyOut = & $py "scripts/classify_e2e.py"\n'
+    '    $e2eTarget = $kv["E2E_PYTEST_TARGET"]\n'
+    '$e2eArgs = @($e2eTarget, "-p", "tests._progress_log")\n'
+    'foreach ($b in ($e2eBrowsers -split \',\' | Where-Object { $_ })) { $e2eArgs += @("--browser", $b) }\n'
+)
+HA_AFTER = HA_BEFORE.replace('@($e2eTarget, "-p", "tests._progress_log")',
+                             '@($e2eTarget -split \'\\s+\' | Where-Object { $_ }) + @("-p", "tests._progress_log")')
+INLINE = '    $targets = @(([string]$kv["E2E_PYTEST_TARGET"]) -split \'\\s+\' | Where-Object { $_ })\n'
+check(er.target_split(HA_BEFORE) == "no", "home-automation#784's gate: the target lands in a variable never split")
+check(er.target_split(HA_AFTER) == "yes", "#785's fix: the variable is split on whitespace before pytest")
+check(er.target_split(INLINE) == "yes", "app-launcher's shape: split on the line that reads the key")
+check(er.target_split("pytest tests/e2e -q\n") is None, "a gate that never reads the key is not a reader")
+check(er.target_split("# reads E2E_PYTEST_TARGET\n& $py -m pytest @args\n") is None, "a comment is not a read")
+check(er.target_split('Run-Gate (Get-E2E "E2E_PYTEST_TARGET")\n') == "unknown", "a read this check cannot follow is unknown")
+
+SURFACE_CLASSIFIER = 'def route():\n    return Routing("surface", [], " ".join(targets), [], "self")\n'
+with tempfile.TemporaryDirectory() as gd:
+    g = Path(gd)
+    check(er.gate_contract(g)[0] == "n/a", "no classifier: nothing to consume")
+    (g / "scripts").mkdir()
+    (g / "scripts" / "classify_e2e.py").write_text(SURFACE_CLASSIFIER, encoding="utf-8")
+    (g / "scripts" / "verify-before-ship.ps1").write_text("& $py -m pytest tests/e2e -q\n", encoding="utf-8")
+    nc = er.gate_contract(g)
+    check(nc[0] == "not-consumed" and nc[2] == [],
+          f"voice-transcriber's shape: the gate never runs the classifier, so the [e2e] table changes nothing -- {nc}")
+    (g / "scripts" / "verify-before-ship.ps1").write_text(HA_BEFORE, encoding="utf-8")
+    br = er.gate_contract(g)
+    check(br[0] == "broken" and br[2] == [("scripts/verify-before-ship.ps1", "no")],
+          f"an unsplit read with a classifier that emits several targets is broken -- {br}")
+    (g / "scripts" / "classify_e2e.py").write_text("def route():\n    return Routing('full', [], 'tests/e2e')\n",
+                                                   encoding="utf-8")
+    check(er.gate_contract(g)[0] == "latent", "the same gate over a one-target classifier is latent")
+    (g / "scripts" / "classify_e2e.py").write_text(SURFACE_CLASSIFIER, encoding="utf-8")
+    (g / "scripts" / "verify-before-ship.ps1").write_text(HA_AFTER, encoding="utf-8")
+    check(er.gate_contract(g)[0] == "ok", "a split read is ok")
+    (g / "scripts" / "verify-before-ship.ps1").write_text('$o = & $py "scripts/classify_e2e.py"\n& .\\scripts\\route.ps1 $o\n',
+                                                          encoding="utf-8")
+    (g / "scripts" / "route.ps1").write_text(INLINE, encoding="utf-8")
+    ok2 = er.gate_contract(g)
+    check(ok2[0] == "ok" and ok2[2] == [("scripts/route.ps1", "yes")],
+          f"app-launcher's split across two scripts: the reader is found in the helper -- {ok2}")
+    (g / "scripts" / "route.ps1").unlink()
+    check(er.gate_contract(g)[0] == "unknown", "the classifier is run but nothing reads the key: unknown, never ok")
+
 _h.report_and_exit("e2e_route")

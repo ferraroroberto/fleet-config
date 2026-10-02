@@ -25,8 +25,13 @@ Subcommands:
         WEB_SURFACE=yes|no                   is this a webapp/Streamlit repo?
         WEB_KIND=webapp|streamlit|none
         WEB_REASON=<short>
+        GATE_ROUTING=ok|broken|latent|not-consumed|unknown|n/a
+        GATE_ROUTING_REASON=<short>
       WEB_* drives the skill's "no suite at all — worth adding one?"
-      evaluation, which applies to web-surfaced repos only.
+      evaluation, which applies to web-surfaced repos only. GATE_ROUTING is
+      the gate contract (fleet-config#1134): whether the repo's own gate
+      scripts run the classifier at all, and split its space-joined
+      `E2E_PYTEST_TARGET` before pytest (home-automation#784 did not).
 
   route <repo-root> [files...] [--scaffold <path>]
       Run the repo's own classifier (cwd = repo root, this interpreter — the
@@ -183,6 +188,102 @@ def files_identical(a: Path, b: Path) -> bool:
     return ha is not None and ha == hb
 
 
+# ---- gate contract: does the repo's gate honour the classifier's targets? (fleet-config#1134) ----------
+
+TARGET_KEY = "E2E_PYTEST_TARGET"
+GATE_GLOBS = ("scripts/*.ps1", "scripts/*.sh", "scripts/*.bat", "*.ps1", "*.bat", "*.sh",
+              ".github/workflows/*.yml", ".github/workflows/*.yaml")
+_SPLIT_RE = re.compile(r"-split\b|\.Split\(|\.split\(|\bread\s+-r?a\b|\bshlex\.split\(", re.IGNORECASE)
+_ASSIGN_RES = (
+    re.compile(r"^\s*\$(\w+)\s*=", re.MULTILINE),          # PowerShell: $e2eTarget = $kv["E2E_PYTEST_TARGET"]
+    re.compile(r"^\s*(?:export\s+)?(\w+)=", re.MULTILINE),  # sh: TARGET=${E2E_PYTEST_TARGET}
+    re.compile(r"^\s*(\w+)\s*=", re.MULTILINE),             # Python: target = kv["E2E_PYTEST_TARGET"]
+)
+
+
+def target_split(text: str) -> Optional[str]:
+    """`yes` / `no` / `unknown` for one gate file's handling of `E2E_PYTEST_TARGET`, None when it never reads it.
+
+    The classifier prints several targets space-joined (a declared surface,
+    or two lone e2e modules a diff touched), so a gate that passes the value
+    as one pytest argument exits 4 on every multi-module branch:
+    home-automation#784, while app-launcher's gate split it all along. `yes`:
+    the line reading the key splits it, or the variable it lands in is split
+    later; `no`: it lands in a variable that is never split; `unknown`: the
+    file reads the key in a shape this check cannot follow.
+    """
+    if TARGET_KEY not in text:
+        return None
+    lines = [ln for ln in text.splitlines() if TARGET_KEY in ln and not ln.lstrip().startswith("#")]
+    if not lines:
+        return None
+    if any(_SPLIT_RE.search(ln) for ln in lines):
+        return "yes"
+    names = set()
+    for ln in lines:
+        for rx in _ASSIGN_RES:
+            m = rx.match(ln)
+            if m and m.group(1) != TARGET_KEY:
+                names.add(m.group(1))
+                break
+    if not names:
+        return "unknown"
+    for name in names:
+        n = re.escape(name)
+        if re.search(rf"\${n}\s+-split\b|\${n}\.Split\(|\b{n}\.split\(|read\s+-r?a\s+\w+\s*<<<\s*\"?\$\{{?{n}\b",
+                     text, re.IGNORECASE):
+            return "yes"
+    return "no"
+
+
+def gate_contract(repo: Path) -> Tuple[str, str, List[Tuple[str, str]]]:
+    """`(verdict, reason, [(file, split)])` for how the repo's gate consumes the classifier.
+
+    `n/a` (no classifier), `not-consumed` (no gate script runs it: the
+    `[e2e]` table is advice only and the gate runs whatever it hardcodes, as
+    voice-transcriber's did while its routing rules were tuned), `ok`,
+    `broken` (a reader never splits and the classifier can emit several
+    targets), `latent` (never split, but this classifier emits one target),
+    `unknown` (a reader this check cannot follow, or the classifier is run but
+    no file reads the key).
+    """
+    classifier = repo / CLASSIFIER_REL
+    if not classifier.is_file():
+        return "n/a", "no scripts/classify_e2e.py", []
+    readers: List[Tuple[str, str]] = []
+    runs = False
+    seen = set()
+    for pattern in GATE_GLOBS:
+        for p in sorted(repo.glob(pattern)):
+            if p in seen or not p.is_file():
+                continue
+            seen.add(p)
+            try:
+                text = p.read_text(encoding="utf-8", errors="replace")
+            except OSError:
+                continue
+            runs = runs or "classify_e2e" in text
+            split = target_split(text)
+            if split is not None:
+                readers.append((p.relative_to(repo).as_posix(), split))
+    if not readers:
+        if runs:
+            return "unknown", "a gate runs classify_e2e.py but no script reads E2E_PYTEST_TARGET", []
+        return "not-consumed", "no gate script runs classify_e2e.py: the [e2e] table changes nothing the gate runs", []
+    bad = [f for f, s in readers if s == "no"]
+    if bad:
+        try:
+            multi = 'Routing("surface"' in classifier.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            multi = True
+        if multi:
+            return "broken", f"{', '.join(bad)} passes the space-joined targets as one pytest argument (exit 4 on a two-module diff)", readers
+        return "latent", f"{', '.join(bad)} never splits the target; this classifier emits one target today", readers
+    if any(s == "unknown" for _, s in readers):
+        return "unknown", "a gate reads E2E_PYTEST_TARGET in a shape this check cannot follow", readers
+    return "ok", "every gate reading E2E_PYTEST_TARGET splits it", readers
+
+
 # ---- subcommands ----------------------------------------------------------
 
 def cmd_probe(repo: Path, scaffold: Path) -> int:
@@ -196,6 +297,9 @@ def cmd_probe(repo: Path, scaffold: Path) -> int:
     print(f"WEB_SURFACE={web}")
     print(f"WEB_KIND={kind}")
     print(f"WEB_REASON={reason}")
+    gate, gate_reason, _readers = gate_contract(repo)
+    print(f"GATE_ROUTING={gate}")
+    print(f"GATE_ROUTING_REASON={gate_reason}")
     return 0
 
 

@@ -67,8 +67,17 @@ E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skill
 ```
 
 It prints `CLASSIFIER=`, `CLASSIFIER_MATCHES_SCAFFOLD=`, `E2E_TABLE=`,
-`SUITE=`, `WEB_SURFACE=`, `WEB_KIND=`, `WEB_REASON=`. Every branch below is
+`SUITE=`, `WEB_SURFACE=`, `WEB_KIND=`, `WEB_REASON=`, `GATE_ROUTING=`. Every branch below is
 keyed on these printed facts — never re-derive them by eye.
+
+`GATE_ROUTING` is the gate contract (fleet-config#1134): whether the repo's own
+gate runs the classifier and splits its space-joined `E2E_PYTEST_TARGET`.
+`broken` means every branch touching two e2e modules fails the gate with a
+pytest usage error (home-automation#784): say so in the report and, outside a
+`plan` run, file it on the repo unless an open issue already tracks it.
+`not-consumed` means the gate runs a fixed target whatever the table says, so
+table edits change only this skill's own slice, never the gate's time; say so
+whenever you touch the table.
 
 ### 2. No suite at all (`SUITE=absent`) — evaluate, don't route
 
@@ -252,6 +261,7 @@ One block, echoed verbatim by delegating skills into their finish summary:
   ran: <pytest target + browsers | nothing | carried from gate run>
   result: PASS | FAIL (<counts>) | not run (plan) | n/a
   maintenance: <n removed / n added / table rules added | none>
+  gate: <GATE_ROUTING> (<GATE_ROUTING_REASON>)
   budget: <nodes <count>/<limit>, time <s>/<limit> s | undeclared, growth <+N | none-recorded> — trigger <no | yes: e2e-redundancy #<N> | unknown (<reason>)> | n/a>
   suite: <n/a | absent — recommendation: <one line>>
 ```
