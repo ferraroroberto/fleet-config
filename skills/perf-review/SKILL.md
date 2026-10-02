@@ -78,6 +78,20 @@ What it measures:
   scored. That happens when the app's cert does not verify for any name the
   probe can map to loopback.
 
+Reading the cold numbers (fleet-config#1139):
+
+- A cold paint on a **round number** (3000, 4089) with the rest of the
+  timeline shifted by the same amount is the harness, not the app. Record a
+  Chromium net log and look for the gap and what it sits in front of before
+  touching app code. The known cause, Windows proxy auto-detect, is fixed in
+  `load.py` (`--proxy-server=direct://`; `--no-proxy-server` and
+  `--proxy-bypass-list` do not take effect).
+- Judge a cold number on the **median of three** loads, and say so in the
+  report. One cold sample is not a regression.
+- `ready_selector` must be **visible on the landing view**. A selector that
+  never shows reads as `unmeasured`: when a declared selector comes back
+  `unmeasured`, suspect the selector first, not the app.
+
 ### 2. Rank the fixes
 
 For each `fail`, name the playbook pattern (`verdict.json` and the seed
