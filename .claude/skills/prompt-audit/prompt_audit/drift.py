@@ -6,7 +6,7 @@ Part of the `prompt_audit` package (fleet-config#931); see `__init__.py`.
 from __future__ import annotations
 
 import re
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Set, Tuple
 
 from .common import HOME_REPO, LEDGER_REPO, MASTER_REPO, clean, sha12
 from .lint import body_start
@@ -60,12 +60,13 @@ def _master_line(master_text: str, norm: str) -> Optional[int]:
 
 
 def drift_items(findings: List[dict], rules: Dict[str, dict], texts: Dict[str, str],
-                master_text: str, lite_text: str) -> Dict[str, List[dict]]:
+                master_text: str, lite_text: str, provisional: Set[str] = frozenset()) -> Dict[str, List[dict]]:
     """Per target repo, the violations to file — shared text once, on the master.
 
     `findings` is every judged finding (considers included, so a shared line's
     `propagate to` names every repo carrying it); only a line whose strongest
     verdict is in DRIFT_VERDICTS is filed. `texts` maps a finding path to its bytes.
+    A rule in `provisional` cites a guide that changed this run (fleet-config#1132).
     """
     master_key = f"{MASTER_REPO}/CLAUDE.md"
     grouped: Dict[Tuple[str, str, str], dict] = {}
@@ -89,7 +90,7 @@ def drift_items(findings: List[dict], rules: Dict[str, dict], texts: Dict[str, s
         out.setdefault(repo, []).append({
             "id": sha12(f"{against}|{rule}|{norm}".encode()), "path": against, "rule": rule, "line": line,
             "tier": drift_tier(against, rule, line, rules, text), "text": g.get("text", ""),
-            "note": g.get("note", ""), "propagate": sorted(g["propagate"]),
+            "note": g.get("note", ""), "propagate": sorted(g["propagate"]), "provisional": rule in provisional,
         })
     return out
 
@@ -105,6 +106,9 @@ def render_drift_item(item: dict, rules: Dict[str, dict], date: str, box: str = 
         parts.append(f"Fix: {rule['fix']}")
     if item.get("propagate"):
         parts.append(f"Propagate to: {', '.join(item['propagate'])}.")
+    if item.get("provisional"):
+        parts.append(f"Provisional: {item['rule']} cites a vendor guide that changed on {date}; "
+                     "check it against the pending rule-set update before fixing.")
     comment = _drift_comment(item["id"], item["tier"], item["path"], item["rule"],
                              ",".join(item.get("propagate", [])), date)
     return f"- [{box}] {' '.join(parts)}{comment}"

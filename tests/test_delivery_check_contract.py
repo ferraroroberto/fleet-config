@@ -253,21 +253,27 @@ check(purge_codes["no-stamp"] != 0,
       f"context-purge: a digest with no stamp is unestablished, not a pass "
       f"(saw {purge_codes['no-stamp']})")
 
-# --- prompt-audit: strict, delivered by a posted scan OR an update issue (#834) ---
+# --- prompt-audit: strict, delivered by a posted scan, plus the update issue when guides changed (#834, #1132) ---
 PA_SCRIPT = REPO / ".claude" / "skills" / "prompt-audit" / "delivery_check.py"
 pa_mod = load_module(PA_SCRIPT, "prompt_audit_delivery_check")
 PA_ISSUES = [ledger_issue(882, "prompt-audit ledger", "prompt-audit")]
-PA_SCAN = "<!-- prompt-audit-digest run=2026-09-13 status=complete scan=posted update-issue=none -->"
-PA_UPDATE = "<!-- prompt-audit-digest run=2026-09-13 status=complete scan=not-run update-issue=#900 -->"
-PA_PARTIAL = "<!-- prompt-audit-digest run=2026-09-13 status=partial scan=posted update-issue=none -->"
-PA_NO_UPDATE = "<!-- prompt-audit-digest run=2026-09-13 status=complete scan=not-run update-issue=none -->"
-PA_DRY = "<!-- prompt-audit-digest run=2026-09-13 status=complete scan=dry-run update-issue=none -->"
+PA_SCAN = "<!-- prompt-audit-digest run=2026-09-13 status=complete scan=posted guides=unchanged update-issue=none -->"
+PA_NOT_CHECKED = "<!-- prompt-audit-digest run=2026-09-13 status=complete scan=posted guides=not-checked update-issue=none -->"
+PA_BOTH = "<!-- prompt-audit-digest run=2026-09-13 status=complete scan=posted guides=changed update-issue=#900 -->"
+PA_CHANGED_NO_ISSUE = "<!-- prompt-audit-digest run=2026-09-13 status=complete scan=posted guides=changed update-issue=none -->"
+PA_UPDATE = "<!-- prompt-audit-digest run=2026-09-13 status=complete scan=not-run guides=changed update-issue=#900 -->"
+PA_NO_GUIDES = "<!-- prompt-audit-digest run=2026-09-13 status=complete scan=posted update-issue=none -->"
+PA_PARTIAL = "<!-- prompt-audit-digest run=2026-09-13 status=partial scan=posted guides=unchanged update-issue=none -->"
+PA_DRY = "<!-- prompt-audit-digest run=2026-09-13 status=complete scan=dry-run guides=unchanged update-issue=none -->"
 
 pa_codes = characterize(pa_mod, audit_issue, {
     "scan-posted": lambda f: setattr(f, "comments", [_live(2, PA_SCAN)]),
-    "update-mode": lambda f: setattr(f, "comments", [_live(2, PA_UPDATE)]),
+    "scan-guides-not-checked": lambda f: setattr(f, "comments", [_live(2, PA_NOT_CHECKED)]),
+    "scan-and-update": lambda f: setattr(f, "comments", [_live(2, PA_BOTH)]),
+    "changed-no-update-issue": lambda f: setattr(f, "comments", [_live(2, PA_CHANGED_NO_ISSUE)]),
+    "update-without-scan": lambda f: setattr(f, "comments", [_live(2, PA_UPDATE)]),
+    "no-guides-field": lambda f: setattr(f, "comments", [_live(2, PA_NO_GUIDES)]),
     "partial": lambda f: setattr(f, "comments", [_live(2, PA_PARTIAL)]),
-    "update-not-filed": lambda f: setattr(f, "comments", [_live(2, PA_NO_UPDATE)]),
     "dry-run-stamp": lambda f: setattr(f, "comments", [_live(2, PA_DRY)]),
     "stale": lambda f: setattr(f, "comments", [_live(30, PA_SCAN)]),
     "no-stamp": lambda f: setattr(f, "comments", [_live(2, "## prompt-audit digest `status=complete`")]),
@@ -276,9 +282,10 @@ pa_codes = characterize(pa_mod, audit_issue, {
     "gh-error": lambda f: setattr(f, "raise_on_view", SystemExit("gh issue view failed (exit 1)")),
 }, issues=PA_ISSUES)
 
-check(pa_codes["scan-posted"] == 0 and pa_codes["update-mode"] == 0,
-      f"prompt-audit: a complete posted scan and a complete update-mode run both exit 0 (saw {pa_codes})")
-for label in ("partial", "update-not-filed", "dry-run-stamp", "stale", "no-stamp",
+for label in ("scan-posted", "scan-guides-not-checked", "scan-and-update"):
+    check(pa_codes[label] == 0, f"prompt-audit: {label} exits 0 (saw {pa_codes[label]})")
+for label in ("changed-no-update-issue", "update-without-scan", "no-guides-field",
+              "partial", "dry-run-stamp", "stale", "no-stamp",
               "other-caller-stamp", "no-ledger", "gh-error"):
     check(pa_codes[label] != 0, f"prompt-audit: {label} exits non-zero (saw {pa_codes[label]})")
 check(dd.parse_stamp(PA_UPDATE, prefix="prompt-audit-digest").get("update-issue") == "#900",

@@ -21,7 +21,7 @@ from .lint import hit_detail, hits_line, lint_entry
 from .dedup import dedup
 from .state import load_state, save_state, source_due
 from .ledger import _audit_issue, merge_ledger, plan_scan, read_ledger_issue, render_ledger_body
-from .digest import partition_run, render_digest, render_ping
+from .digest import partition_run, provisional_rules, render_digest, render_ping
 from .drift import DRIFT_KIND, DRIFT_LABEL, DRIFT_LABEL_COLOR, DRIFT_LABEL_DESC, DRIFT_TITLE, OWNER, drift_items, merge_drift
 
 
@@ -39,7 +39,8 @@ def cmd_drift(args: argparse.Namespace, cfg: dict) -> int:
     all_findings = [dict(f, path=k) for k in parts["judged"] for f in (run.get("judgments") or {})[k]
                     if f.get("verdict") in ("violation", "consider")]
     entries = {e.key: e.text for e in inventory(repos, cfg.get("audiences", {}))}
-    per_repo = drift_items(all_findings, rules, entries, master, lite)
+    provisional = provisional_rules(rules, cfg.get("sources", {}), run.get("sources", []))
+    per_repo = drift_items(all_findings, rules, entries, master, lite, provisional)
     judged = set(parts["judged"])
     unmeasured = {(f["path"], f["rule"]) for f in parts["unmeasured_rules"]}
     date = args.date or dt.date.today().isoformat()
@@ -271,23 +272,25 @@ def cmd_ledger(args: argparse.Namespace, cfg: dict) -> int:
     return 0
 
 
-def cmd_digest(args: argparse.Namespace) -> int:
+def cmd_digest(args: argparse.Namespace, cfg: dict) -> int:
     run = json.loads(Path(args.run).read_text(encoding="utf-8"))
     rules = parse_rules(RULES_MD.read_text(encoding="utf-8"))
     run.setdefault("rubric", rules_rubric())
     master, lite = _master_and_lite(_repos(args))
-    body, status = render_digest(run, rules, master, lite)
+    provisional = provisional_rules(rules, cfg.get("sources", {}), run.get("sources", []))
+    body, status = render_digest(run, rules, master, lite, provisional)
     print(body)
     print(f"DIGEST=status={status}", file=sys.stderr)
     return 0
 
 
-def cmd_ping(args: argparse.Namespace) -> int:
+def cmd_ping(args: argparse.Namespace, cfg: dict) -> int:
     run = json.loads(Path(args.run).read_text(encoding="utf-8"))
     if run.get("dry_run"):
         print("❌ ping: a dry run delivers nothing, so it sends no ping", file=sys.stderr)
         return 2
-    print(render_ping(run, args.comment_url))
+    rules = parse_rules(RULES_MD.read_text(encoding="utf-8"))
+    print(render_ping(run, args.comment_url, provisional_rules(rules, cfg.get("sources", {}), run.get("sources", []))))
     return 0
 
 
@@ -360,5 +363,5 @@ def main(argv: Optional[List[str]] = None) -> int:
     if args.cmd == "drift":
         return cmd_drift(args, cfg)
     if args.cmd == "ping":
-        return cmd_ping(args)
-    return cmd_digest(args)
+        return cmd_ping(args, cfg)
+    return cmd_digest(args, cfg)

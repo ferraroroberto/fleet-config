@@ -7,7 +7,7 @@ description: Audits every fleet instruction file (CLAUDE.md, AGENTS.md, rules, S
 
 **Capability preflight:** read [workflow-capabilities](../../../docs/workflow-capabilities.md) and bind dispatch, results, waits, cancellation, model tiers and questions to this session’s actual tools before proceeding. Tool names below are conditional examples; the contract governs adaptation. Keep this skill’s worktree, independent-review, human-review and shipping gates.
 
-**Goal:** keep the fleet's instruction files in step with what the vendors' *current* prompting guidance says — and notice when that guidance itself moves. Three phases, in order: a **freshness gate** (did any guide change since `sources.toml`'s baselines?), a **scan** (deterministic lint + a per-repo judgment pass against `rules.md`), and **outputs** (one digest comment on the `kind=prompt-audit` ledger, plus one `audit: prompt-drift findings` issue per repo with violations). A fourth lens on the same files `/context-audit` sizes and `/context-purge` compresses: prompt-engineering quality, not token budget or layering.
+**Goal:** keep the fleet's instruction files in step with what the vendors' *current* prompting guidance says — and notice when that guidance itself moves. Three phases, in order: a **freshness gate** (did any guide change since `sources.toml`'s baselines? — a change files the rule-set update issue, and the scan still runs), a **scan** (deterministic lint + a per-repo judgment pass against `rules.md`), and **outputs** (one digest comment on the `kind=prompt-audit` ledger, plus one `audit: prompt-drift findings` issue per repo with violations). A fourth lens on the same files `/context-audit` sizes and `/context-purge` compresses: prompt-engineering quality, not token budget or layering.
 
 The deliverables are the digest and the `prompt-drift` issues. This skill **reports**; it never edits an instruction file, never commits, and never opens a PR. Fixes are `/cleanup-fleet prompt-drift`'s job, under that skill's tier rule and preservation gate (fleet-config#833).
 
@@ -30,7 +30,7 @@ No argument → the full run.
 ## Execution rules (read first)
 
 - **Run from the `fleet-config` repo root.** Put fetched pages and run files in a freshly created, uniquely named scratch directory outside the repo (e.g. `<session temp>/prompt-audit-<date>-<time>`). Never delete through a variable-built path — a harness prompts on `rm` against a variable that could be empty, which blocks an unattended run; a new directory per run needs no cleanup.
-- **Writes are exactly these:** `~/.claude/prompt-audit/state.json`; the ledger issue body and one digest comment (through `audit.py ledger`, which goes through `skills/_lib/audit_issue.py` — never `gh issue create` a ledger by hand); in scan mode, one `kind=prompt-drift` issue per repo with something to say plus its `prompt-drift` label (through `audit.py drift`, same helper); in update mode only, one rule-set update issue; and, on a delivered run only, one activity-log chat ping (step 10, through `hooks/notify_send.py`). Nothing else, and none of it under `--dry-run`.
+- **Writes are exactly these:** `~/.claude/prompt-audit/state.json`; the ledger issue body and one digest comment (through `audit.py ledger`, which goes through `skills/_lib/audit_issue.py` — never `gh issue create` a ledger by hand); one `kind=prompt-drift` issue per repo with something to say plus its `prompt-drift` label (through `audit.py drift`, same helper); when a guide changed, one rule-set update issue; and, on a delivered run only, one activity-log chat ping (step 10, through `hooks/notify_send.py`). Nothing else, and none of it under `--dry-run`.
 - **Unknown is never a pass.** A page that could not be fetched is `not-checked`, never `unchanged`. A file whose judgment did not come back is `unmeasured`, never `compliant`. A skipped file is listed as skipped, so "not in the findings" cannot read as "not looked at".
 - **Degrade one item, never the run.** A failed fetch degrades that source; a failed judgment agent degrades that repo's files; the run still posts its digest (`status=partial` when any planned file ended unmeasured).
 - **Poll to completion in this turn** (fleet-config#314). Any background agent or command is collected before moving on; never end the turn expecting to be resumed.
@@ -68,11 +68,11 @@ One `VERDICT=unchanged|changed|new-guide|not-checked|id=…|sha=…|marker=…|r
 <py> <audit> state mark --source <id> --verdict <verdict>
 ```
 
-**Any `changed` or `new-guide` → step 3 (update mode).** Otherwise → step 4.
+**Any `changed` or `new-guide` → step 3, then step 4.** Otherwise → step 4.
 
-### 3. Update mode — the rule-set is stale
+### 3. Rule-set update issue — a guide moved
 
-Do not scan the fleet against a rule-set now known to be out of date.
+File the rule-set delta for a human, then scan anyway against the current `rules.md` (decision log in Notes, 2026-10-02).
 
 1. Read each changed guide's fetched file in full, alongside `rules.md` and `sources.toml`.
 2. Draft the delta: the exact new, changed or retired `R-NN` blocks (same format, `Why:` quoting the new text, `Source:` with the section name), any "Recorded as rejected" entry, and the new `sources.toml` baseline values for every changed source (`baseline_sha`, `baseline_marker`, `baseline_final_url` from its `VERDICT` line, today's `baseline_date`). A `new-guide` adds a `[sources.*]` block for the new page. Say plainly when the change is cosmetic and the rules need no edit — the new baselines alone are then the delta.
@@ -81,7 +81,7 @@ Do not scan the fleet against a rule-set now known to be out of date.
    gh issue list --repo ferraroroberto/fleet-config --state open --search "prompt-audit: vendor guidance changed in:title" --json number,title,url
    ```
    An open issue titled exactly `prompt-audit: vendor guidance changed — update rule-set` → add the draft as a comment there. None → create it (`--label enhancement --assignee @me --body-file <draft>`). Never both; under `--dry-run`, print the draft and file nothing.
-4. Continue at step 7 with `scan_ran: false` and `update_issue: "#<N>"`. The run is still `status=complete`: the update issue is the delivery. Once a human merges the rule-set PR, `rules.md`'s hash changes and the next run rescans everything.
+4. Continue at step 4, carrying `update_issue: "#<N>"` into `run.json` (step 7). You mark nothing by hand: `audit.py digest`, `drift` and `ping` read the `VERDICT=` lines and mark each finding whose rule's `Source:` cites a changed guide as provisional. Once a human merges the rule-set PR, `rules.md`'s hash changes and the next run rescans everything.
 
 ### 4. Plan the scan
 
@@ -140,19 +140,19 @@ Write `<scratch>/run.json`:
 }
 ```
 
-`judgments` holds each judged file's findings list, or `null` for an unmeasured one; a planned file left out of `judgments` is treated as unmeasured. Then:
+`update_issue` is the `"#<N>"` from step 3 when a guide changed, else `null`. `judgments` holds each judged file's findings list, or `null` for an unmeasured one; a planned file left out of `judgments` is treated as unmeasured. Then:
 
 ```
 <py> <audit> digest --run <scratch>/run.json > <scratch>/digest.md
 ```
 
-The helper prints `DIGEST=status=complete|partial` on stderr. The digest carries `status`, `guides`, the rubric, per-source outliers, scanned/skipped/unmeasured counts, findings by rule, findings shared with the scaffolding master collapsed to one entry with a `propagate to:` list (`audit.py dedup` logic), repo-local findings, the unmeasured list, and the skipped list.
+The helper prints `DIGEST=status=complete|partial` on stderr. The digest carries `status`, `guides`, the rubric, per-source outliers, the update issue and the provisional rules when a guide changed, scanned/skipped/unmeasured counts, findings by rule, findings shared with the scaffolding master collapsed to one entry with a `propagate to:` list (`audit.py dedup` logic), repo-local findings, the unmeasured list, and the skipped list.
 
 `--dry-run` → print `digest.md`, then `<py> <audit> drift --run <scratch>/run.json --dry-run` (the issue bodies that would be filed), and stop here.
 
 ### 8. Record and post
 
-1. Write the ledger body (creates the `prompt-audit ledger` issue, label `audit-meta`, on the first run). It records, from `run.json` itself, each file judged with no `unmeasured` rule at its `PLAN=` sha (the bytes that were actually judged); an unmeasured file or rule is left out so it is rescanned next run. Nothing is recorded in update mode or when nothing was scanned.
+1. Write the ledger body (creates the `prompt-audit ledger` issue, label `audit-meta`, on the first run). It records, from `run.json` itself, each file judged with no `unmeasured` rule at its `PLAN=` sha (the bytes that were actually judged); an unmeasured file or rule is left out so it is rescanned next run. Nothing is recorded when nothing was scanned. Files judged while a guide changed are recorded too: merging the rule-set PR changes the rubric, which rescans them.
    ```
    <py> <audit> ledger write --run <scratch>/run.json
    ```
@@ -160,18 +160,18 @@ The helper prints `DIGEST=status=complete|partial` on stderr. The digest carries
    ```
    <py> <audit> ledger comment --body-file <scratch>/digest.md
    ```
-3. Scan mode only — file the cleanup issues:
+3. File the cleanup issues:
    ```
    <py> <audit> drift --run <scratch>/run.json
    ```
-   One `DRIFT=<repo>|issue=<url>|tier=easy|hard|none|open=N|new=…|matched=…|kept=…|not_resurfaced=…` line per repo touched. Only `violation` verdicts are filed; `consider` stays advisory in the digest. A line shared with the scaffolding master is filed once, on `project-scaffolding`, with `Propagate to:` naming every sister carrying it, and is left off the sisters' issues; `global-CLAUDE.md` and `skills/` findings file on `fleet-config`. Each item is tagged `· easy` / `· hard` by `/cleanup-fleet`'s prompt-drift tier rule and the body states the issue's tier. Re-runs merge (the living-backlog rules of `/codebase-audit` step 8): a ticked box is never touched, a re-matched item refreshes its line, an item for a file this run did not rescan is kept as-is, and an item gone from a rescanned file is tagged `not re-surfaced`, never ticked or deleted. A repo this run had nothing new to say about is left untouched. A `DRIFT=<repo>|error=…` line is that repo's failure (exit 1), reported, never folded into success.
-4. Scan mode only: `<py> <audit> state mark --scan`.
+   One `DRIFT=<repo>|issue=<url>|tier=easy|hard|none|open=N|new=…|matched=…|kept=…|not_resurfaced=…` line per repo touched. Only `violation` verdicts are filed; `consider` stays advisory in the digest. A violation on a rule citing a changed guide carries a `Provisional:` note. A line shared with the scaffolding master is filed once, on `project-scaffolding`, with `Propagate to:` naming every sister carrying it, and is left off the sisters' issues; `global-CLAUDE.md` and `skills/` findings file on `fleet-config`. Each item is tagged `· easy` / `· hard` by `/cleanup-fleet`'s prompt-drift tier rule and the body states the issue's tier. Re-runs merge (the living-backlog rules of `/codebase-audit` step 8): a ticked box is never touched, a re-matched item refreshes its line, an item for a file this run did not rescan is kept as-is, and an item gone from a rescanned file is tagged `not re-surfaced`, never ticked or deleted. A repo this run had nothing new to say about is left untouched. A `DRIFT=<repo>|error=…` line is that repo's failure (exit 1), reported, never folded into success.
+4. `<py> <audit> state mark --scan`.
 
 A failed write is reported with its error; the run does not claim delivery without the `LEDGER_COMMENT=` URL.
 
 ### 9. Delivery assertion and report
 
-Before the report, check what this run actually delivered. **Delivered** means all of: a `LEDGER_COMMENT=` URL from step 8.2; `DIGEST=status=complete`; and either a scan (step 8.3 ran with no `DRIFT=…|error=` line — zero findings is still a delivery) or, in update mode, the rule-set update issue filed or commented (`update_issue` is `#N`). Anything else — no comment URL, a `partial` digest, a drift error, update mode with no issue, the rate gate's pause cap — prints this literal line in the report, one reason, ASCII after the dash:
+Before the report, check what this run actually delivered. **Delivered** means all of: a `LEDGER_COMMENT=` URL from step 8.2; `DIGEST=status=complete`; a scan (step 8.3 ran with no `DRIFT=…|error=` line — zero findings is still a delivery); and, when a guide changed, the rule-set update issue filed or commented (`update_issue` is `#N`). Anything else — no comment URL, a `partial` digest, a drift error, a changed guide with no update issue, the rate gate's pause cap — prints this literal line in the report, one reason, ASCII after the dash:
 
 ```
 SCHEDULED-RUN-FAILED — <what was not delivered, one line>
@@ -200,7 +200,9 @@ The ping is a notice about the delivery, not part of it. A failed ping never cou
 ## Notes
 
 - **Where fixes go.** Violations become `prompt-drift` issues, the ninth `/cleanup-fleet` bucket (fleet-config#833): easy-tier issues ship through `/issue-yolo`, hard-tier ones stop for review, and every lane must pass `/context-purge`'s preservation harness (`check.py --base`). Considers are advisory and stay in the digest — the first fleet run put 152 of 255 of them on a single rule, far too noisy to become lanes. It runs weekly unattended (`run-weekly.bat`, an app-launcher Job slotted before `cleanup-fleet-all`, #834) so the bucket is fresh when cleanup starts.
-- **Why a guide change stops the scan.** Scanning against rules known to be stale produces findings that the next rule-set would contradict. The update issue is `enhancement`, never a cleanup bucket, so a human always reviews the rule-set change (#831 decision log, 2026-09-11).
+- **Decision log — a guide change and the scan.** The update issue is `enhancement`, never a cleanup bucket, so a human always reviews the rule-set change.
+  - 2026-09-11 (#831): a changed guide stopped the scan, because findings against a stale rule-set may be contradicted by the next one.
+  - 2026-10-02 (#1132, Roberto's "scan anyway"): superseded. Vendor pages moved faster than rule-set PRs merged, so the stop starved the scan: no file was judged from 09-13 to 10-02, and the 09-27 run stopped for #1070 with 4 pages moved again. The scan now always runs against the current `rules.md`; the update issue is still filed alongside; findings on a rule whose `Source:` cites a changed guide are marked provisional in the digest and the `prompt-drift` body. Delivered = a posted scan, plus the update issue when a guide changed.
 - **Why audience, not host.** The same `rules.md` runs on any agent; which vendor's rules are primary is decided by who reads the file (`sources.toml` `[audiences.*]`), so a neutral file read by several agents gets single-vendor advice as `consider`, never `violation`.
 - **Shared text is filed once.** A finding whose line also sits in `project-scaffolding/CLAUDE.md` belongs to the master, with the repos that inherited it listed — never N copies for N divergent fixes. Same for `global-CLAUDE.md` text that also lives in the lite port's global instructions.
 - **Neighbouring lenses.** `/context-audit` measures size and single-home altitude; `/context-purge` compresses losslessly; `/sota-watch` watches adopted tooling choices. None of them reads vendor prompting guidance.

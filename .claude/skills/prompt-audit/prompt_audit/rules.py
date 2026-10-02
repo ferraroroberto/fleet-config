@@ -14,6 +14,7 @@ from .common import ALWAYS_ON_KINDS, NEUTRAL
 # ---- rules ----------------------------------------------------------------------
 
 _RULE_HEAD = re.compile(r"^### (R-\d{2}) (.+?)\s+tags:\s*(.+)$")
+_URL = re.compile(r"https?://[^\s()·]+")
 
 
 def parse_rules(text: str) -> Dict[str, dict]:
@@ -28,12 +29,16 @@ def parse_rules(text: str) -> Dict[str, dict]:
             current = {"id": m.group(1), "title": m.group(2).strip(),
                        "vendor": plain[0].strip() if plain else "",
                        "file": kv.get("file", "any").strip(), "tier": kv.get("tier", "").strip(),
-                       "detect": "", "fix": ""}
+                       "detect": "", "fix": "", "sources": []}
             rules[current["id"]] = current
+        elif line.startswith("#"):
+            current = None  # any other heading ends the rule: the appendix's Source: is nobody's
         elif current and line.startswith("Detect:"):
             current["detect"] = line.split(":", 1)[1].strip().split(" ", 1)[0]
         elif current and line.startswith("Fix shape:"):
             current["fix"] = line.split(":", 1)[1].strip()
+        elif current and line.startswith("Source:"):
+            current["sources"] = _URL.findall(line)
     return rules
 
 

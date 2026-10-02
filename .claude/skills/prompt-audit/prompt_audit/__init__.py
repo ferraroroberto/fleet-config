@@ -56,6 +56,7 @@ from .ledger import (
 )
 from .digest import (
     partition_run,
+    provisional_rules,
     render_digest,
     render_ping,
 )

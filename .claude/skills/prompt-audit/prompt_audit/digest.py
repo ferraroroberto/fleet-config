@@ -5,7 +5,7 @@ Part of the `prompt_audit` package (fleet-config#931); see `__init__.py`.
 
 from __future__ import annotations
 
-from typing import Dict, Tuple
+from typing import Dict, Iterable, Set, Tuple
 
 from .common import COMMENT_CHAR_CAP, DIGEST_FINDINGS_CAP, STAMP_PREFIX, VERDICTS, clean
 from .dedup import dedup, norm_line
@@ -22,6 +22,28 @@ def _kv(line: str) -> dict:
         if sep:
             out[k] = v
     return out
+
+
+def _page(url: str) -> str:
+    """A guide URL compared by page: `sources.toml` fetches `<page>.md`, `rules.md` cites `<page>`."""
+    url = url.split("#", 1)[0].rstrip("/")
+    return url[:-3] if url.endswith(".md") else url
+
+
+def provisional_rules(rules: Dict[str, dict], sources: Dict[str, dict], verdict_lines: Iterable[str]) -> Set[str]:
+    """Rules whose `Source:` cites a guide this run found `changed` or `new-guide` (fleet-config#1132).
+
+    The scan still runs against the current `rules.md` when a guide moved; a
+    finding on one of these rules may be contradicted by the pending rule-set
+    update, so the digest and the prompt-drift body mark it provisional.
+    """
+    pages = set()
+    for line in verdict_lines:
+        v = _kv(line)
+        if v.get("VERDICT") in ("changed", "new-guide"):
+            cfg = sources.get(v.get("id", ""), {})
+            pages |= {_page(u) for u in (cfg.get("url"), cfg.get("baseline_final_url")) if u}
+    return {rid for rid, r in rules.items() if pages & {_page(u) for u in r.get("sources", [])}}
 
 
 def partition_run(run: dict) -> dict:
@@ -71,7 +93,7 @@ def summarize_run(run: dict) -> dict:
     }
 
 
-def render_ping(run: dict, comment_url: str) -> str:
+def render_ping(run: dict, comment_url: str, provisional: Set[str] = frozenset()) -> str:
     """One pure-ASCII chat line for a delivered run. Pure: every value comes from `run`.
 
     ASCII separators only: a non-ASCII character in a Windows command line reaches
@@ -81,19 +103,24 @@ def render_ping(run: dict, comment_url: str) -> str:
     parts = s["parts"]
     head = [f"prompt-audit {run.get('date') or 'unknown'}", f"status={s['status']}", f"guides={s['guides']}"]
     if run.get("scan_ran"):
+        prov = sum(1 for f in parts["findings"] if f["verdict"] == "violation" and f["rule"] in provisional)
         body = [f"scanned {len(parts['judged'])}, skipped {len(parts['skip'])}, unmeasured {len(parts['unmeasured'])}",
-                f"{s['violation']} violation, {s['consider']} consider"]
+                f"{s['violation']} violation{f' ({prov} provisional)' if prov else ''}, {s['consider']} consider"]
+        if s["stale"]:
+            body.append(f"rule-set update issue {run.get('update_issue') or 'not filed'}")
     else:
         body = [f"scan not run, rule-set update issue {run.get('update_issue') or 'not filed'}"]
     line = " - ".join(head + body + [f"ledger {comment_url}"])
     return line.encode("ascii", "replace").decode("ascii")
 
 
-def render_digest(run: dict, rules: Dict[str, dict], master_text: str = "", lite_text: str = "") -> Tuple[str, str]:
+def render_digest(run: dict, rules: Dict[str, dict], master_text: str = "", lite_text: str = "",
+                  provisional: Set[str] = frozenset()) -> Tuple[str, str]:
     """(markdown, status). Pure: every count comes from `run` (see `partition_run`), nothing is inferred.
 
     Unmeasured files and unmeasured rules are listed as such and make the run
     `partial` — never folded into compliant; skipped files are listed as skipped.
+    A finding on a rule in `provisional` (see `provisional_rules`) is marked so.
     """
     summary = summarize_run(run)
     srcs, by_verdict, stale = summary["srcs"], summary["by_verdict"], summary["stale"]
@@ -105,7 +132,10 @@ def render_digest(run: dict, rules: Dict[str, dict], master_text: str = "", lite
     # Machine-readable, ASCII, near the top so the comment-size cap never cuts it:
     # the scheduled job's delivery_check.py reads it (fleet-config#834).
     stamp = (f"<!-- {STAMP_PREFIX} run={run.get('date') or 'unknown'} status={status} scan={scan} "
-             f"update-issue={run.get('update_issue') or 'none'} -->")
+             f"guides={guides} update-issue={run.get('update_issue') or 'none'} -->")
+
+    def prov(f: dict) -> str:
+        return " _(provisional)_" if f["rule"] in provisional else ""
 
     out = [f"## prompt-audit digest — {run.get('date', '')}", stamp, "",
            f"`status={status}` · `guides={guides}` · `rubric={str(run.get('rubric', ''))[:12]}`"
@@ -115,10 +145,14 @@ def render_digest(run: dict, rules: Dict[str, dict], master_text: str = "", lite
     for s in stale + by_verdict["not-checked"]:
         out.append(f"- `{s.get('id')}` **{s.get('VERDICT')}** — {s.get('reason', '')}")
     out.append("")
+    ref = run.get("update_issue") or "(update issue not filed)"
     if not scan_ran:
-        ref = run.get("update_issue") or "(update issue not filed)"
-        out += [f"**Scan:** not run — rule-set stale, see {ref}", ""]
+        out += [f"**Scan:** not run — rule-set update issue {ref}", ""]
         return "\n".join(out) + "\n", status
+    if stale:
+        cited = sorted({f["rule"] for f in findings} & set(provisional))
+        out += [f"**Rule-set update:** {ref}. The scan ran against the current `rules.md`; findings on a rule "
+                f"citing a changed guide are _provisional_: {', '.join(cited) or 'none this run'}.", ""]
 
     out.append(f"**Scan:** {len(plan)} files — scanned {len(judged)}, skipped {len(skip)} (unchanged), "
                f"unmeasured {len(unmeasured)}, rule verdicts not established {len(unmeasured_rules)}")
@@ -132,7 +166,8 @@ def render_digest(run: dict, rules: Dict[str, dict], master_text: str = "", lite
                 f"{len({f['path'] for f in findings})} files{carried}", ""]
     if tally:
         out += ["| rule | violation | consider |", "|---|---|---|"]
-        out += [f"| {r} {rules.get(r, {}).get('title', '')} | {t['violation']} | {t['consider']} |"
+        out += [f"| {r} {rules.get(r, {}).get('title', '')}{' (provisional)' if r in provisional else ''} "
+                f"| {t['violation']} | {t['consider']} |"
                 for r, t in sorted(tally.items())]
         out.append("")
 
@@ -150,7 +185,7 @@ def render_digest(run: dict, rules: Dict[str, dict], master_text: str = "", lite
     if shared:
         out += ["### Shared with the scaffolding master (file once there)", ""]
         for f in shared.values():
-            out.append(f"- **{f['rule']}** {f['verdict']} — `{clean(f.get('text', ''))[:100]}` "
+            out.append(f"- **{f['rule']}** {f['verdict']}{prov(f)} — `{clean(f.get('text', ''))[:100]}` "
                        f"— propagate to: {', '.join(f.get('propagate_to', []))}")
         out.append("")
     if local:
@@ -158,7 +193,8 @@ def render_digest(run: dict, rules: Dict[str, dict], master_text: str = "", lite
         for f in local[:DIGEST_FINDINGS_CAP]:
             where = f"{f['path']}:{f['line']}" if f.get("line") else f["path"]
             extra = f" — propagate to: {', '.join(f['propagate_to'])}" if f.get("propagate_to") else ""
-            out.append(f"- `{where}` **{f['rule']}** {f['verdict']} — {clean(f.get('note') or f.get('text', ''))[:160]}{extra}")
+            out.append(f"- `{where}` **{f['rule']}** {f['verdict']}{prov(f)} — "
+                       f"{clean(f.get('note') or f.get('text', ''))[:160]}{extra}")
         if len(local) > DIGEST_FINDINGS_CAP:
             out.append(f"- … {len(local) - DIGEST_FINDINGS_CAP} more not listed (cap {DIGEST_FINDINGS_CAP})")
         out.append("")
