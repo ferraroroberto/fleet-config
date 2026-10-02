@@ -7,16 +7,20 @@ is one digest comment on the audit-managed `prompt-audit ledger` issue
 (`kind=prompt-audit`) in `ferraroroberto/fleet-config`, carrying the stamp
 `audit.py digest` writes:
 
-    <!-- prompt-audit-digest run=<date> status=... scan=... update-issue=... -->
+    <!-- prompt-audit-digest run=<date> status=... scan=... guides=... update-issue=... -->
 
 **Strict, with no flag to forget** -- the adapter invokes this bare. Exit 0
 needs all of:
 
   1. a digest comment inside the window         -> the run delivered at all
   2. `status=complete`                           -> every planned file judged
-  3. `scan=posted` or `update-issue=#N`          -> a scan was posted, or the
-                                                    rule-set update issue was
-                                                    (update mode is a success)
+  3. `scan=posted`                               -> the scan ran and posted
+  4. `guides=changed` needs `update-issue=#N`    -> a moved guide also filed the
+                                                    rule-set update issue
+
+A changed guide no longer stops the scan (fleet-config#1132, 2026-10-02): an
+update issue without a posted scan is not a delivery, and a stamp with no
+`guides=` field cannot show the update issue was due, so it is not one either.
 
 A dry run (`scan=dry-run`) posts no comment, so it fails (1) unless an earlier
 real run's digest is still inside the window. No stamp, no fields, or an
@@ -49,15 +53,17 @@ _ISSUE_REF = re.compile(r"^(#\d+|https://github\.com/\S+/issues/\d+)$")
 
 
 def delivered(stamp: dict) -> Optional[str]:
-    """None when the stamp proves a scan or an update issue was delivered."""
+    """None when the stamp proves a posted scan, plus the update issue when a guide changed."""
     scan = stamp.get("scan")
+    guides = stamp.get("guides")
     update = stamp.get("update-issue")
-    if scan == "posted":
-        return None
-    if update and _ISSUE_REF.match(update):
-        return None
-    return (f"reports scan={scan or 'unknown'} update-issue={update or 'unknown'} -- "
-            f"neither a posted scan nor a filed rule-set update issue")
+    if scan != "posted":
+        return f"reports scan={scan or 'unknown'} -- the scan was not posted"
+    if guides not in ("unchanged", "not-checked", "changed"):
+        return f"reports guides={guides or 'unknown'} -- whether a rule-set update issue was due is not established"
+    if guides == "changed" and not (update and _ISSUE_REF.match(update)):
+        return f"reports guides=changed update-issue={update or 'unknown'} -- the rule-set update issue was not filed"
+    return None
 
 
 def main(argv: list[str] | None = None) -> int:

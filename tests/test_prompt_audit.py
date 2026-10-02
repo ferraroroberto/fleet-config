@@ -397,11 +397,11 @@ check(pstatus == "partial" and "rule verdicts not established 1" in pmd and "- `
       "a per-rule unmeasured verdict is listed and makes the run partial, never dropped as compliant")
 upd, ustatus = pa.render_digest({"date": "d", "scan_ran": False, "update_issue": "#900", "rubric": rub,
                                  "sources": ["VERDICT=changed|id=s1|sha=y|marker=none|reason=sha x -> y"]}, RULES)
-check(ustatus == "complete" and "not run — rule-set stale, see #900" in upd and "`guides=changed`" in upd,
-      "update mode: complete, scan not run, points at the update issue")
-check("<!-- prompt-audit-digest run=d status=complete scan=not-run update-issue=#900 -->" in upd,
-      f"update mode stamps scan=not-run and the update issue for delivery_check.py (got {upd[:200]!r})")
-check("<!-- prompt-audit-digest run=2026-09-13 status=partial scan=posted update-issue=none -->" in md,
+check(ustatus == "complete" and "**Scan:** not run — rule-set update issue #900" in upd and "`guides=changed`" in upd,
+      "a run whose scan did not run says so and names the update issue")
+check("<!-- prompt-audit-digest run=d status=complete scan=not-run guides=changed update-issue=#900 -->" in upd,
+      f"a not-run scan stamps scan=not-run for delivery_check.py to refuse (got {upd[:200]!r})")
+check("<!-- prompt-audit-digest run=2026-09-13 status=partial scan=posted guides=not-checked update-issue=none -->" in md,
       "scan mode stamps status and scan=posted near the top")
 dmd, _ = pa.render_digest(dict(run, dry_run=True), RULES)
 check("scan=dry-run" in dmd and "scan=posted" not in dmd, "a dry run never stamps scan=posted")
@@ -411,8 +411,40 @@ nmd, nstatus = pa.render_digest({"date": "d", "scan_ran": True, "rubric": rub,
                                  "plan": ["PLAN=r/a.md|action=scan|reason=new|sha=aaaaaaaaaaaa"],
                                  "judgments": {"r/a.md": []}}, RULES)
 check(nstatus == "complete" and "`guides=not-checked`" in nmd
-      and "<!-- prompt-audit-digest run=d status=complete scan=posted update-issue=none -->" in nmd,
+      and "<!-- prompt-audit-digest run=d status=complete scan=posted guides=not-checked update-issue=none -->" in nmd,
       "every source not-checked still scans and stamps a delivered scan (#834)")
+
+# ---- scan anyway: a changed guide files the update issue and the scan still runs (#1132) ----
+
+SKILL_CHANGED = "VERDICT=changed|id=anthropic-skill-authoring|sha=y|marker=none|reason=sha x -> y"
+prov = pa.provisional_rules(RULES, CFG["sources"], [SKILL_CHANGED, "VERDICT=unchanged|id=anthropic-memory|sha=x|marker=none|reason=identical"])
+check({"R-11", "R-14", "R-15"} <= prov and "R-01" not in prov and "R-33" not in prov,
+      f"a rule is provisional when its Source: line cites a changed source; the appendix after R-33 never leaks into it (got {sorted(prov)})")
+check(pa.provisional_rules(RULES, CFG["sources"], [SKILL_CHANGED.replace("VERDICT=changed", "VERDICT=not-checked")]) == set()
+      and pa.provisional_rules(RULES, CFG["sources"], []) == set(),
+      "a not-checked or absent verdict makes nothing provisional")
+check("R-14" in pa.provisional_rules(RULES, CFG["sources"], ["VERDICT=new-guide|id=anthropic-memory|sha=y|marker=none|reason=r"]),
+      "a new-guide verdict counts as changed, matching a Source: URL without the .md suffix")
+both_run = {"date": "d", "scan_ran": True, "update_issue": "#900", "rubric": rub, "sources": [SKILL_CHANGED],
+            "plan": ["PLAN=r/.claude/skills/a/SKILL.md|action=scan|reason=new|sha=aaaaaaaaaaaa"],
+            "judgments": {"r/.claude/skills/a/SKILL.md": [
+                {"rule": "R-15", "verdict": "violation", "line": 3, "text": "description: I do x", "note": "first person"},
+                {"rule": "R-01", "verdict": "violation", "line": 5, "text": "MUST", "note": "caps"}]}}
+bmd, bstatus = pa.render_digest(both_run, RULES, provisional=prov)
+check(bstatus == "complete"
+      and "<!-- prompt-audit-digest run=d status=complete scan=posted guides=changed update-issue=#900 -->" in bmd,
+      f"a changed guide still scans: stamp carries the posted scan, guides=changed and the update issue (got {bmd[:300]!r})")
+r15 = next(l for l in bmd.splitlines() if "**R-15**" in l)
+r01 = next(l for l in bmd.splitlines() if "**R-01**" in l)
+check("provisional" in r15 and "provisional" not in r01,
+      f"only a finding whose rule cites a changed source is marked provisional (got {r15!r} / {r01!r})")
+check("#900" in bmd and "R-15" in bmd.split("**Findings in scanned files:**", 1)[0],
+      "the digest names the update issue and lists the provisional rules before the findings")
+check("_(provisional)_" not in pa.render_digest(both_run, RULES)[0],
+      "no provisional set, no provisional marks")
+bping = pa.render_ping(both_run, "https://github.com/o/r/issues/882#issuecomment-1", prov)
+check(bping.endswith("2 violation (1 provisional), 0 consider - rule-set update issue #900 - ledger https://github.com/o/r/issues/882#issuecomment-1"),
+      f"the ping of a scan with changed guides names the update issue and the provisional count (got {bping!r})")
 
 # ---- chat ping: one ASCII line for a delivered run, counts shared with the digest (#831) ----
 
@@ -518,6 +550,17 @@ check(c5["not_resurfaced"] == 1 and "- [ ] " in body5 and "not re-surfaced 2026-
       "a finding gone from a rescanned file is tagged, never ticked or deleted, and no longer counts as open")
 body6, c6 = pa.merge_drift(body1, [], {"alpha/CLAUDE.md"}, {("alpha/CLAUDE.md", "R-17")}, RULES, "2026-09-20", rub12)
 check(c6["kept"] == 1 and "not re-surfaced 2026" not in body6, "an item whose rule was unmeasured this run is kept, not tagged")
+
+prov_repo = pa.drift_items(drift_findings, RULES, texts, MASTER, "", provisional={"R-15"})
+gamma_items = {i["rule"]: i for i in prov_repo["gamma"]}
+check(gamma_items["R-15"]["provisional"] and not gamma_items["R-17"]["provisional"]
+      and [i["id"] for i in prov_repo["gamma"]] == [i["id"] for i in per_repo["gamma"]],
+      "drift items carry the provisional flag without changing their identity (#1132)")
+prov_line = pa.render_drift_item(gamma_items["R-15"], RULES, "d")
+plain_line = pa.render_drift_item(gamma_items["R-17"], RULES, "d")
+check("Provisional:" in prov_line and "Provisional:" not in plain_line,
+      f"a provisional violation is marked in the prompt-drift body; others are not (got {prov_line!r})")
+check(pa.parse_drift_body(prov_line)[0][0]["rule"] == "R-15", "a provisional item still round-trips through its hidden identity")
 sbody, _ = pa.merge_drift("", shared, {"project-scaffolding/CLAUDE.md", "alpha/CLAUDE.md", "beta/CLAUDE.md"},
                           set(), RULES, "2026-09-13", rub12)
 narrowed = [dict(shared[0], propagate=["alpha"])]

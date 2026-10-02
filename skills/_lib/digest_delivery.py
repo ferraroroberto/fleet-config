@@ -30,7 +30,8 @@ Two strictness levels, because the callers genuinely differ:
 
 A strict caller whose stamp proves delivery with fields other than
 `delivery=posted` passes its own ``delivered`` predicate (`/prompt-audit`:
-`scan=posted` or `update-issue=#N`, fleet-config#834). `status=complete` is
+`scan=posted`, plus `update-issue=#N` when `guides=changed`, fleet-config#834,
+#1132). `status=complete` is
 required either way.
 
 Strictness is a **constructor argument, not a CLI flag**, on purpose:

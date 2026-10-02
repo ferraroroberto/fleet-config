@@ -6,7 +6,8 @@ REM so the prompt-drift bucket is populated when cleanup starts (fleet-config#83
 REM
 REM --delivery-check is an outer post-condition, run after the child exits
 REM whatever its exit code was: a fresh ledger digest must carry status=complete
-REM and either scan=posted or update-issue=#N, or the job goes red.
+REM and scan=posted, plus update-issue=#N when guides=changed (fleet-config#1132),
+REM or the job goes red.
 REM
 REM Optional %1 is forwarded as the skill argument (e.g. --dry-run, which posts
 REM nothing and so fails the delivery check by design).
