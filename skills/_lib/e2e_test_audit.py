@@ -35,8 +35,11 @@ Subcommands:
       `test_dirs_missing`, per-file inventory (path, lines, test names,
       parametrize signatures), totals (files, raw_tests, node_count|null), the
       target ratio, near-duplicate-name `clusters`, shared-matrix
-      `matrix_clusters`, and (if the repo has a `## UX surface` block)
-      coverage-gap candidates. Always exits 0 — a missing test dir,
+      `matrix_clusters`, (if the repo has a `## UX surface` block)
+      coverage-gap candidates, `waits` (fixed sleeps, page timers, poll
+      constants and long timeouts in the test tree, from `e2e_value`) and
+      `vacuous_candidates` (negative assertions whose needle appears nowhere
+      else in the repo, fleet-config#1134). Always exits 0 — a missing test dir,
       unmeasurable node count, or absent UX-surface block are legitimate
       results (empty inventory / node_count=null / no gaps checked), never a
       crash. `test_dirs_resolved: false` is the one result a caller must not
@@ -392,6 +395,65 @@ def coverage_gaps(key_views: List[str], all_test_text: str) -> List[str]:
     return gaps
 
 
+# A negative text assertion on a literal: `not_to_contain_text("192.0.2.90")`, `assert "x" not in body`.
+_NEG_ASSERT_RE = re.compile(
+    r"""(?:not_to_contain_text|not_to_have_text)\(\s*(['"])(?P<a>[^'"\n]{3,})\1\s*[,)]"""
+    r"""|\bassert\s+(['"])(?P<b>[^'"\n]{3,})\3\s+not\s+in\b""")
+_BINARY_SUFFIXES = {".png", ".jpg", ".jpeg", ".gif", ".ico", ".webp", ".woff", ".woff2", ".ttf", ".otf",
+                    ".pdf", ".zip", ".gz", ".pyc", ".mp3", ".mp4", ".wav", ".db", ".sqlite"}
+_MAX_TEXT_BYTES = 2_000_000
+
+
+def negative_needles(text: str) -> List[tuple]:
+    """`(line, needle)` for every negative text assertion on a string literal."""
+    out = []
+    for i, line in enumerate(text.splitlines(), 1):
+        for m in _NEG_ASSERT_RE.finditer(line):
+            out.append((i, m.group("a") or m.group("b")))
+    return out
+
+
+def vacuous_candidates(files: List[Dict[str, object]], texts: Dict[str, str]) -> List[Dict[str, object]]:
+    """Negative assertions whose needle appears nowhere else in the repo: nothing can ever render it.
+
+    home-automation's energy leak check asserted the UI never shows
+    "192.0.2.90", but that IP had left the mocked 503 body when the
+    integration changed, so it passed whatever the UI rendered (#781). Before
+    the fix the needle existed only in those two assertions. A candidate,
+    not a verdict: the judgment layer proves it with a mutation (make the app
+    leak, watch the assertion stay green). `texts` is every tracked text file,
+    by repo-relative path.
+    """
+    out = []
+    for f in files:
+        rel = str(f["file"])
+        for line, needle in negative_needles(texts.get(rel, "")):
+            elsewhere = any(needle in ln and needle not in {n for _, n in negative_needles(ln)}
+                            for text in texts.values() if needle in text for ln in text.splitlines())
+            if not elsewhere:
+                out.append({"file": rel, "line": line, "needle": needle})
+    return out
+
+
+def _repo_texts(repo_root: Path) -> Dict[str, str]:
+    """Every tracked text file's content by repo-relative path (a plain walk outside git)."""
+    res = git_run.run_git(["-C", str(repo_root), "ls-files"])
+    if res.returncode == 0 and res.stdout.strip():
+        rels = [ln.strip() for ln in res.stdout.splitlines() if ln.strip()]
+    else:
+        rels = []
+        for dirpath, dirnames, filenames in os.walk(repo_root):
+            dirnames[:] = [d for d in dirnames if d not in (".git", ".venv", "node_modules", "__pycache__")]
+            rels += [os.path.relpath(os.path.join(dirpath, fn), repo_root).replace("\\", "/") for fn in filenames]
+    out: Dict[str, str] = {}
+    for rel in rels:
+        p = repo_root / rel
+        if p.suffix.lower() in _BINARY_SUFFIXES or not p.is_file() or p.stat().st_size > _MAX_TEXT_BYTES:
+            continue
+        out[rel] = p.read_text(encoding="utf-8", errors="replace")
+    return out
+
+
 def split_resolved_dirs(repo_root: Path, test_dirs: List[str]) -> tuple:
     """`(existing, missing)` split of `test_dirs` against what's on disk.
 
@@ -624,6 +686,8 @@ def scan(repo_root: Path, target: int = DEFAULT_TARGET) -> Dict[str, object]:
         "size_outliers": size_outliers(files),
         "key_views_declared": key_views,
         "coverage_gaps": coverage_gaps(key_views, all_test_text) if key_views else [],
+        "waits": e2e_value.wait_sites(repo_root, existing_dirs),
+        "vacuous_candidates": vacuous_candidates(files, _repo_texts(repo_root)) if files else [],
     }
 
 
