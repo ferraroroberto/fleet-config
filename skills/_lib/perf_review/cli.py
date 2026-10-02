@@ -143,7 +143,8 @@ def cmd_measure(a: argparse.Namespace) -> int:
         (run_dir / name).write_text(json.dumps(doc, indent=1), encoding="utf-8")
     (run_dir / "issue-body.md").write_text(report.merge_body("", v, run_id, build, _dt.date.today().isoformat()), encoding="utf-8")
     for c in v["checks"]:
-        print(f"CHECK {c['status']:<10} {c['id']:<24} measured={report._fmt(c['measured'])} budget={report._fmt(c['budget'])}")
+        sampled = f" samples={','.join(report._fmt(x) for x in c['samples'])} outliers={','.join(map(str, c['outliers'])) or 'none'}" if c.get("samples") else ""
+        print(f"CHECK {c['status']:<10} {c['id']:<24} measured={report._fmt(c['measured'])} budget={report._fmt(c['budget'])}{sampled}")
     for e in v["endpoints"]:
         print(f"ENDPOINT {e['status']:<10} {e['path']:<28} n={e.get('n')} p50={report._fmt(e.get('p50'))} p95={report._fmt(e.get('p95'))}")
     print(f"DIFF previous={d['previous_run']} fixed={','.join(d['fixed']) or 'none'} regressed={','.join(d['regressed']) or 'none'}")

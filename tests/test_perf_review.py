@@ -160,6 +160,34 @@ check(uby["warm.data_ms"] == "unmeasured" and uby["warm.bytes_kb"] == "unmeasure
 empty = report.verdict({"index": dead, "endpoints": {}}, {"legs": {}}, budgets)
 check(empty["summary"]["fail"] == 0 and empty["summary"]["overall"] == "unmeasured", "nothing measured -> unmeasured, not pass")
 
+# ---- cold-load sampling: median of three, outlier flagged (fleet-config#1140) ----
+# One cold load right after a restart read 3072 ms on an app that loads in ~370 ms; two re-runs read 368 and 372.
+def cold_check(**kw) -> dict:
+    got = report.verdict(probe, {"legs": {"android_cold": leg(**kw), "android_warm": leg(cache="trusted")}}, budgets)
+    return {c["id"]: c for c in got["checks"]}["cold.ready_ms"]
+
+
+spiky = cold_check(ready_ms=3072, ready_samples_ms=[3072, 368, 372])
+check(spiky["measured"] == 372 and spiky["status"] == "pass",
+      f"one cold outlier among three loads does not fail the app: the median is scored ({spiky['measured']}, {spiky['status']})")
+check(spiky.get("samples") == [3072, 368, 372] and spiky.get("outliers") == [3072], "the samples and the outlier are reported")
+steady = cold_check(ready_ms=380, ready_samples_ms=[380, 368, 372])
+check(steady["measured"] == 372 and steady.get("outliers") == [], "three agreeing loads flag no outlier")
+stalled = cold_check(ready_ms=3500, ready_samples_ms=[3500, 3600, 3400])
+check(stalled["measured"] == 3500 and stalled["status"] == "fail" and stalled.get("outliers") == [],
+      "a consistently slow cold load still fails: the median is over budget and nothing is an outlier")
+single = cold_check(ready_ms=2000)
+check(single["measured"] == 2000 and single.get("samples") == [2000], "a leg with no samples list scores its one reading")
+part = cold_check(ready_ms=None, ready_samples_ms=[None, 500, 520])
+check(part["measured"] == 510 and part["status"] == "pass", "a sample that never reached ready is skipped, the rest are scored")
+none = cold_check(ready_ms=None, ready_samples_ms=[None, None, None])
+check(none["measured"] is None and none["status"] == "unmeasured", "no sample reaching ready is unmeasured, never a pass")
+spiky_body = report.merge_body("", report.verdict(probe, {"legs": {"android_cold": leg(ready_ms=3072, ready_samples_ms=[3072, 368, 372]),
+                                                                  "android_warm": leg(cache="trusted")}}, budgets),
+                               "20261002T000000Z", "abc1234", "2026-10-02")
+check("median of 3" in spiky_body and "3072" in spiky_body and "outlier" in spiky_body,
+      "the issue body says the cold number is a median and names the outlier")
+
 # ---- issue body -------------------------------------------------------------
 body = report.merge_body("", v, "20261001T000000Z", "abc1234", "2026-10-01")
 check(not re.search(r"://|127\.0\.0\.1|\.ts\.net|localhost", body), "the issue body carries no scheme, host or IP")
@@ -192,6 +220,7 @@ check(sched["/api/a"] == 60 and sched["/api/b"] == cli.DEFAULT_SPACING_S and sch
 load_src = (REPO / "skills" / "_lib" / "perf_review" / "load.py").read_text(encoding="utf-8")
 check(not re.search(r"\.route\(|route_from_har|\.unroute\(", load_src),
       "load.py installs no route(): Playwright disables the HTTP cache under routing")
+check("--cold-samples" in load_src and re.search(r'"--cold-samples".*default=3', load_src), "load.py takes 3 cold samples by default")
 
 # ---- the Chromium leg bypasses Windows proxy auto-detect (fleet-config#1139) ----
 # The harness addresses the app by an HTTPS hostname, which is no implicit proxy bypass, so with
@@ -253,6 +282,8 @@ else:
     cold, warm = legs.get("android_cold", {}), legs.get("android_warm", {})
     check(cold.get("status") == "ok" and cold.get("ready_by") == "selector" and cold.get("ready_ms") is not None,
           f"browser leg: cold ready via the declared selector ({cold or proc.stderr[-300:]})")
+    check(len(cold.get("ready_samples_ms", [])) == 3 and all(isinstance(x, int) for x in cold.get("ready_samples_ms", [])),
+          f"browser leg: three cold loads, each reached the declared selector ({cold.get('ready_samples_ms')})")
     check(warm.get("cache") == "trusted" and warm.get("from_cache", 0) >= 0, "browser leg: plain-http warm cache is trusted")
     api = doc.get("api", {}).get("/api/fast", {})
     check(api.get("interval_s") is not None and 1.0 <= api["interval_s"] <= 2.5,
