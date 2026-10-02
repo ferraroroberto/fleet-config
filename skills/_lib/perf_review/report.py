@@ -228,6 +228,7 @@ def _fmt(v) -> str:
 
 
 _MARK = {"pass": "✅", "fail": "⚠️", "unmeasured": "❔"}
+_BASIS = {"fcp": "first contentful paint", "selector": "the declared ready selector being visible"}
 
 
 def render_body(v: dict, run_id: str, build: Optional[str]) -> str:
@@ -245,6 +246,10 @@ def render_body(v: dict, run_id: str, build: Optional[str]) -> str:
         lines += ["", "No `ready_selector` is declared, so \"ready\" is first contentful paint, which can go green on a "
                       "painted shell before any card has data. Declare the first card that needs live data, one that "
                       "is visible on the landing view."]
+    moved = (v.get("diff") or {}).get("ready_baseline_changed")
+    if moved:
+        lines += ["", f"\"Ready\" changed from {_BASIS[moved['from']]} to {_BASIS[moved['to']]} since the previous run, so the "
+                      "ready times do not compare with it. A rise is the stricter definition, not a regression."]
     cold = next((c for c in v["checks"] if c["id"] == "cold.ready_ms"), {})
     if len(cold.get("samples", [])) > 1:
         shown = ", ".join(_fmt(x) for x in cold["samples"])
@@ -299,6 +304,7 @@ def load_ledger(target: str) -> List[dict]:
 def record(target: str, run_id: str, v: dict, commit: Optional[str], build: Optional[str]) -> dict:
     """Append this run's few-hundred-byte entry (ids, statuses, numbers — nothing captured); keep the last `LEDGER_KEEP`."""
     entry = {"run_id": run_id, "commit": commit, "live_build": build, "budgets_version": v.get("budgets_version"),
+             "ready_by": v.get("ready_by"),
              "checks": {c["id"]: {"status": c["status"], "measured": c["measured"]} for c in v["checks"]},
              "endpoints": {e["path"]: {"status": e["status"], "p95": e.get("p95")} for e in v["endpoints"]}}
     entries = [e for e in load_ledger(target) if e.get("run_id") != run_id] + [entry]
@@ -311,11 +317,26 @@ def record(target: str, run_id: str, v: dict, commit: Optional[str], build: Opti
     return entry
 
 
+def _ready_basis(ready_by: Optional[str]) -> Optional[str]:
+    """`fcp` or `selector` (a selector that never showed is still a selector baseline); None when unknown."""
+    return {"fcp": "fcp", "selector": "selector", "selector-not-visible": "selector"}.get(ready_by or "")
+
+
 def diff(current: dict, previous: Optional[dict]) -> dict:
-    """Check and endpoint ids that went fail->pass (`fixed`) or pass->fail (`regressed`) since `previous`."""
-    out = {"previous_run": previous.get("run_id") if previous else None, "fixed": [], "regressed": []}
+    """Check and endpoint ids that went fail->pass (`fixed`) or pass->fail (`regressed`) since `previous`.
+
+    `ready_baseline_changed` is `{"from", "to"}` when what "ready" means moved between first contentful paint and
+    a declared selector. Declaring the first selector took task-os's cold ready from 516 to 1967 ms with no code
+    change (a painted shell vs data visible), so the two runs' ready times must not be read against each other.
+    A previous run that did not record `ready_by` leaves it unknown, so nothing is claimed.
+    """
+    out = {"previous_run": previous.get("run_id") if previous else None, "fixed": [], "regressed": [],
+           "ready_baseline_changed": None}
     if not previous:
         return out
+    before, now = _ready_basis(previous.get("ready_by")), _ready_basis(current.get("ready_by"))
+    if before and now and before != now:
+        out["ready_baseline_changed"] = {"from": before, "to": now}
     for key in ("checks", "endpoints"):
         before, now = previous.get(key, {}), current.get(key, {})
         for k in sorted(set(before) & set(now)):
