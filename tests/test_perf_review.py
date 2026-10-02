@@ -52,7 +52,8 @@ _h = CheckHarness()
 check = _h.check
 
 PAGE = b"""<!doctype html><html><body><h1 id="ready">hi</h1>
-<script>fetch('/api/fast'); setInterval(function () { fetch('/api/fast'); }, 1500);</script></body></html>"""
+<script>fetch('/api/fast'); fetch('/api/big?all=1'); setInterval(function () { fetch('/api/fast'); }, 1500);</script></body></html>"""
+BIG = b'{"rows": "' + b"x" * 200_000 + b'"}'
 ETAG = '"fixture-1"'
 
 
@@ -87,6 +88,8 @@ class Fixture(BaseHTTPRequestHandler):
             return self._send(200, b'{"ok": true}')
         if self.path == "/api/fast":
             return self._send(200, b'{"ok": true}')
+        if self.path.split("?")[0] == "/api/big":
+            return self._send(200, BIG)
         if self.path == "/api/broken":
             return self._send(500, b'{"ok": false}')
         return self._send(404, b"{}")
@@ -220,6 +223,39 @@ check("ready.selector" not in errored or errored["ready.selector"]["status"] != 
 no_leg = report.verdict(probe, {"legs": {}}, budgets)
 check(not any(c["id"] == "ready.selector" for c in no_leg["checks"]), "no load leg -> no selector check, nothing invented")
 
+# ---- a failing transfer check names the largest responses (fleet-config#1151) ----
+# task-os's "6.6 MB cold load" was one API response (5.56 MB, 4.35 MB of it a field nothing rendered); the check
+# said only "over budget" and the playbook pointed at assets, so it was found by hand.
+TOP = [{"path": "/api/tasks/tree", "bytes": 5_830_000, "encoding": "identity", "kind": "Fetch"},
+       {"path": "/static/app.js", "bytes": 120_000, "encoding": "gzip", "kind": "Script"}]
+
+
+def bytes_checks(cold_kw: dict, warm_kw: dict | None = None) -> tuple:
+    got = report.verdict(probe, {"legs": {"android_cold": leg(**cold_kw),
+                                          "android_warm": leg(cache="trusted", **(warm_kw or {}))}}, budgets)
+    return {c["id"]: c for c in got["checks"]}, got
+
+
+heavy, hv = bytes_checks({"bytes": 6_000_000, "top_responses": TOP})
+check(heavy["cold.bytes_kb"]["status"] == "fail" and [r["path"] for r in heavy["cold.bytes_kb"]["top_responses"]] == ["/api/tasks/tree", "/static/app.js"],
+      "a failing cold transfer check carries the largest responses, biggest first")
+check(heavy["cold.bytes_kb"]["top_responses"][0]["share"] == 97 and heavy["cold.bytes_kb"]["top_responses"][0]["encoding"] == "identity",
+      "each response keeps its encoding and its share of the transfer (5.83 of 6.00 MB = 97%)")
+check("top_responses" not in heavy["warm.bytes_kb"], "a passing transfer check lists no responses")
+fine, _ = bytes_checks({"bytes": 100 * 1024, "top_responses": TOP})
+check("top_responses" not in fine["cold.bytes_kb"], "a cold transfer within budget lists no responses")
+bare, _ = bytes_checks({"bytes": 6_000_000})
+check(bare["cold.bytes_kb"]["status"] == "fail" and bare["cold.bytes_kb"]["top_responses"] == [],
+      "a failing check on a leg that recorded no responses reports an empty list, never an invented one")
+heavy_body = report.render_body(hv, "r", "b")
+check("`/api/tasks/tree`" in heavy_body and "5.56 MB" in heavy_body and "97% of the transfer" in heavy_body
+      and not re.search(r"://|127\.0\.0\.1|\.ts\.net|localhost", heavy_body),
+      "the issue body names the response, its wire size and share, as a path only (no scheme, host or IP)")
+check("P12" in report.fixes_section(hv) and "TOP" in report.fixes_section(hv),
+      "the seeded Fixes line for a failing transfer points at the TOP lines and P12, not only compression")
+check("Largest responses" not in report.render_body(report.verdict(probe, load, budgets), "r", "b"),
+      "a run with no failing transfer check adds no largest-responses section")
+
 # ---- cache-busting stamps must cover the import graph (fleet-config#1140) ----
 # voice-transcriber stamped each module from its own bytes only, so editing a nested module left a cached
 # importer on the old import URLs (its #220/#221). One fleet hash over every asset, or a transitive
@@ -274,6 +310,9 @@ check("text/event-stream" in p2 and "Accept-Encoding" in p2, "P2: how to verify 
 check("fingerprint" in p3 and "git sha" in p3 and "W/" in p3 and "sha256(body)" not in p3,
       "P3: the ETag carries a build fingerprint and is weak; the body-only recipe is gone")
 check("transitive" in p3 and "index.html" in p3, "P3: the invalidation test names a transitive module and an edited entry document")
+p12 = re.search(r"^## P12 .*?(?=^## )", playbook_text, re.S | re.M).group(0)
+check("TOP" in p12 and "descriptions=false" in p12 and "task-os#291" in p12, "P12: slim the oversized response, keyed to the TOP lines and its evidence")
+check("TOP" in skill_text and "P12" in skill_text, "SKILL.md: read the TOP lines before ranking a transfer fix")
 check("--duration" in skill_text and "never `pass`" in skill_text, "SKILL.md: a short run cannot produce a clean pass")
 check("hypothesis" in skill_text and "net log" in skill_text, "SKILL.md: a cold-paint finding is a hypothesis until a trace confirms it")
 
@@ -378,7 +417,11 @@ else:
     check(api.get("interval_s") is not None and 1.0 <= api["interval_s"] <= 2.5,
           f"browser leg: the 1.5 s poll interval is learned ({api})")
     check(not cold.get("non_get") and not warm.get("non_get"), "browser leg: no non-GET request seen")
-
+    top = cold.get("top_responses", [])
+    check(0 < len(top) <= 5 and top[0]["path"] == "/api/big" and top[0]["bytes"] >= len(BIG)
+          and top[0]["encoding"] == "identity" and top[0]["kind"] == "Fetch" and "?" not in top[0]["path"]
+          and [r["bytes"] for r in top] == sorted((r["bytes"] for r in top), reverse=True),
+          f"browser leg: the cold leg lists its largest responses, biggest first, query stripped ({top})")
 old_srv.shutdown()
 new_srv.shutdown()
 _h.report_and_exit("test_perf_review", skip_code=SKIP_EXIT)

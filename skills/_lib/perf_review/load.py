@@ -60,6 +60,7 @@ PAINT_JS = """() => {
 # `--no-proxy-server` and `--proxy-bypass-list` still report "auto detect, from system".
 CHROMIUM_ARGS = ["--proxy-server=direct://"]
 SAMPLE_SETTLE_MS = 2000  # an extra cold sample only needs its paint metrics, not the poll-interval window
+TOP_RESPONSES = 5  # how many of the largest responses a leg keeps for the transfer checks
 
 
 def _path(url: str, base: str) -> str:
@@ -137,8 +138,11 @@ class CdpLeg:
                              query=bool(urlsplit(ev["request"]["url"]).query), start=ev["timestamp"])
 
     def _received(self, ev) -> None:
+        row = self._row(ev)
         if ev["response"].get("fromDiskCache"):
-            self._row(ev)["cached"] = True
+            row["cached"] = True
+        headers = {k.lower(): v for k, v in (ev["response"].get("headers") or {}).items()}
+        row.update(encoding=headers.get("content-encoding", "identity"), kind=ev.get("type"))
 
     def _done(self, ev) -> None:
         self._row(ev).update(end=ev["timestamp"], bytes=ev.get("encodedDataLength", 0))
@@ -154,7 +158,19 @@ class CdpLeg:
         return {"requests": len(rows), "from_cache": len(rows) - len(net),
                 "bytes": sum(r["bytes"] for r in net),
                 "data_ms": round(max(api_done.values())) if api_done else None,
+                "top_responses": self.top_responses(net),
                 "non_get": [r["method"] + " " + r["path"] for r in rows if r["method"] != "GET"]}
+
+    @staticmethod
+    def top_responses(net: list, keep: int = TOP_RESPONSES) -> list:
+        """The `keep` biggest network responses: path without query, bytes on the wire, content-encoding, resource type.
+
+        A transfer budget that fails says nothing about *which* bytes; one API payload was 5.56 MB of a "6.6 MB"
+        cold load in task-os (#280) while the playbook pointed at assets. Responses with no size are left out.
+        """
+        ranked = sorted((r for r in net if r["bytes"] > 0), key=lambda r: r["bytes"], reverse=True)[:keep]
+        return [{"path": r["path"], "bytes": r["bytes"], "encoding": r.get("encoding", "identity"),
+                 "kind": r.get("kind")} for r in ranked]
 
     def api_paths(self) -> dict:
         """Every `/api/` path seen: its poll interval (median gap between requests) and whether it carried a query."""

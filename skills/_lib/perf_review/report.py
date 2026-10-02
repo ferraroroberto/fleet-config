@@ -39,10 +39,11 @@ REMEDY = {
     "index.revalidates": "P3 ETag + 304 on the entry document",
     "endpoints.index_p95_ms": "P3 cache the stamped entry document in memory",
     "endpoints.api_p95_ms": "P4 serve hot reads from memory",
-    "warm.bytes_kb": "P2 compress responses / P3 ETag + 304",
+    "warm.bytes_kb": "name the largest response first (`TOP` lines): P12 slim an oversized payload / P2 compress responses / P3 ETag + 304",
     "warm.data_ms": "P4 serve hot reads from memory / P5 concurrent boot",
     "warm.ready_ms": "P6 paint the last good data first",
-    "cold.bytes_kb": "P2 compress responses / P9 load heavy libraries on first use",
+    "cold.bytes_kb": "name the largest response first (`TOP` lines): P12 slim an oversized payload / P2 compress responses / "
+                     "P9 load heavy libraries on first use",
     "cold.ready_ms": "P2 compress responses / P9 load heavy libraries on first use",
     "cache.stamping": "P11 cache-busting stamps cover the import graph (one fleet hash, or a transitive graph hash)",
     "ready.selector": "fix the target's `[perf.review] ready_selector`: it must be visible on the landing view, "
@@ -93,6 +94,22 @@ def cold_ready(cold: dict) -> dict:
     return {"value": round(median), "samples": raw, "outliers": outliers}
 
 
+def top_responses(leg: dict) -> List[dict]:
+    """The leg's largest responses, each with its `share` of the leg's transferred bytes (a percentage, 0-100)."""
+    total = leg.get("bytes") or 0
+    return [{**r, "share": round(100 * r["bytes"] / total) if total else None} for r in leg.get("top_responses") or []]
+
+
+def _top_line(r: dict) -> str:
+    share = f", {r['share']}% of the transfer" if r.get("share") is not None else ""
+    kind = f" {r['kind']}," if r.get("kind") else ""
+    return f"`{r['path']}`:{kind} {_fmt_bytes(r['bytes'])} on the wire, {r.get('encoding') or 'identity'}{share}"
+
+
+def _fmt_bytes(n: int) -> str:
+    return f"{n / 1024 / 1024:.2f} MB" if n >= 1024 * 1024 else f"{n / 1024:.0f} KB"
+
+
 def ready_selector_state(cold: dict, warm: dict) -> Optional[dict]:
     """`{measured, status}` for a declared `ready_selector`, or None when none was declared (ready = FCP).
 
@@ -132,6 +149,9 @@ def verdict(probe: dict, load: dict, budgets: dict) -> dict:
         add(cid, label, limit, value, _status(value, limit))
         if cid == "cold.ready_ms":
             checks[-1].update(samples=cold_sampled["samples"], outliers=cold_sampled["outliers"])
+        if cid.endswith(".bytes_kb") and checks[-1]["status"] == "fail":
+            leg = cold if cid.startswith("cold.") else warm
+            checks[-1]["top_responses"] = top_responses(leg)
 
     selector = ready_selector_state(cold, warm)
     if selector:
@@ -208,6 +228,9 @@ def render_body(v: dict, run_id: str, build: Optional[str]) -> str:
         shown = ", ".join(_fmt(x) for x in cold["samples"])
         flagged = f"; outlier {', '.join(_fmt(x) for x in cold['outliers'])} ms, not what the app does at rest" if cold.get("outliers") else ""
         lines += ["", f"Cold launch ready is the median of {len(cold['samples'])} fresh loads ({shown} ms){flagged}."]
+    for c in v["checks"]:
+        if c.get("top_responses"):
+            lines += ["", f"Largest responses behind \"{c['label']}\":", ""] + [f"- {_top_line(r)}" for r in c["top_responses"]]
     lines += ["", "## Endpoints", "", "| Endpoint | n | p50 ms | p95 ms | cold ms | Budget | |", "|---|---|---|---|---|---|---|"]
     lines += [f"| `{e['path']}` | {e.get('n')} | {_fmt(e.get('p50'))} | {_fmt(e.get('p95'))} | {_fmt(e.get('cold_ms'))} "
               f"| {e['budget']} | {_MARK[e['status']]} |" for e in v["endpoints"]]
