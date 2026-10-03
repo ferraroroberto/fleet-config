@@ -97,6 +97,9 @@ function validateTrayTarget(target, projects, io, errors) {
   };
 }
 
+// The apps an http-action key may call (src/types.ts ACTION_APPS, fleet-config#1006).
+const ACTION_APPS = ["home-automation", "facilitation-suite"];
+
 function validateHttpActionTarget(target, errors) {
   if (typeof target.label !== "string" || target.label.trim() === "") {
     errors.push(`target "${target.id}": http-action entry needs a non-empty label`);
@@ -106,7 +109,12 @@ function validateHttpActionTarget(target, errors) {
     errors.push(`target "${target.id}": http-action entry needs a non-empty actionId`);
     return null;
   }
-  return { kind: "http-action", id: target.id, label: target.label, actionId: target.actionId };
+  const app = target.app ?? "home-automation";
+  if (!ACTION_APPS.includes(app)) {
+    errors.push(`target "${target.id}": unknown app "${app}" (one of ${ACTION_APPS.join(", ")})`);
+    return null;
+  }
+  return { kind: "http-action", id: target.id, label: target.label, actionId: target.actionId, app };
 }
 
 /**

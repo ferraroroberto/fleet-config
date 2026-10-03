@@ -1,8 +1,8 @@
 import streamDeck, { action, KeyDownEvent, SingletonAction } from "@elgato/streamdeck";
 
-import { callHomeAutomationAction } from "../lib/http-client.js";
+import { callAppAction } from "../lib/http-client.js";
 import { resolveTarget } from "../lib/registry.js";
-import type { CallActionSettings, HomeAutomationConfig, ResolvedTarget } from "../types.js";
+import type { ActionAppConfigs, CallActionSettings, ResolvedTarget } from "../types.js";
 
 /**
  * Generic action, visible in the actions list so it can be dragged onto the
@@ -17,7 +17,7 @@ import type { CallActionSettings, HomeAutomationConfig, ResolvedTarget } from ".
 export class CallAction extends SingletonAction<CallActionSettings> {
   constructor(
     private readonly targets: ResolvedTarget[],
-    private readonly config: HomeAutomationConfig | undefined,
+    private readonly configs: ActionAppConfigs,
   ) {
     super();
   }
@@ -35,16 +35,17 @@ export class CallAction extends SingletonAction<CallActionSettings> {
       await ev.action.showAlert();
       return;
     }
-    if (!this.config) {
+    const config = this.configs[target.app];
+    if (!config) {
       streamDeck.logger.error(
-        "call-action: home-automation connection is not configured — see .env.sample",
+        `call-action: ${target.app} connection is not configured — see .env.sample`,
       );
       await ev.action.showAlert();
       return;
     }
 
     try {
-      await callHomeAutomationAction(target.actionId, this.config);
+      await callAppAction(target.app, target.actionId, config);
       await ev.action.showOk();
     } catch (err) {
       streamDeck.logger.error(`call-action: failed to call "${target.id}"`, err);
