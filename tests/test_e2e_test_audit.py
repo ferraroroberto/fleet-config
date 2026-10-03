@@ -287,6 +287,11 @@ check(m.coverage_gaps(["/", "/settings"], TEXT) == [], "both declared views are 
 check(m.coverage_gaps(["/", "/settings", "/billing"], TEXT) == ["/billing"],
       "an uncovered declared view is reported as a gap")
 check(m.coverage_gaps([], TEXT) == [], "no declared views -> no gaps")
+# A single-page app declares `/` as its one key view (fleet-config#1175, app-launcher#1375): every test loads it, and the
+# `home` token the check invented never appeared in 314 test names, so the gap fired on every run.
+UNRELATED = "tests/e2e/test_board.py test_board_drawer_opens\ntests/e2e/test_chat.py test_chat_send"
+check(m.coverage_gaps(["/"], UNRELATED) == [], "the root view is loaded by every test: never a gap")
+check(m.coverage_gaps(["/", "/billing"], UNRELATED) == ["/billing"], "the root view is skipped; another uncovered view still is a gap")
 
 
 # ---- parse_collected_count (fleet-config#900) -------------------------------
