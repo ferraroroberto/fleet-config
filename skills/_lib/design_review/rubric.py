@@ -75,7 +75,7 @@ DERIVED_METRICS = (
     "text.break_all_non_path",
     "layout.lists_unfiltered_tall",
     "layout.content_share",
-    "a11y.zoom_locked_no_control",
+    "a11y.no_text_size_control",
     "nav.pane_header_hidden",
     "controls.switch_on_not_accent",
     "feedback.toast_tinted",

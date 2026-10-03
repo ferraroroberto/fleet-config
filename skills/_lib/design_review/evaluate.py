@@ -210,11 +210,16 @@ def _d_content_share(m: dict, rule: Rule, ctx: dict) -> Derived:
     return _share(span, iw), [{"content_w": cw, "content_span": span, "inner_w": iw}], None
 
 
-def _d_zoom_locked(m: dict, rule: Rule, ctx: dict) -> Derived:
-    locked, ctl = measure.metric_value(m, "a11y.zoom_locked"), measure.metric_value(m, "a11y.text_size_control")
-    if locked is None or ctl is None:
+def _d_no_text_size_control(m: dict, rule: Rule, ctx: dict) -> Derived:
+    """A11Y-02: the app carries the vendored text-size control, whether or not its viewport locks zoom (fleet-config#1211).
+
+    The control is the fact judged. `zoom_locked` is evidence only: a viewport that cannot pinch-zoom makes a missing
+    control worse, but an app that allows pinch still owes the Settings control (Roberto's decision, 2026-10-03)."""
+    ctl = measure.metric_value(m, "a11y.text_size_control")
+    if ctl is None:
         return None, [], _section_reason(m, "a11y")
-    if locked and not ctl:
+    locked = measure.metric_value(m, "a11y.zoom_locked")
+    if not ctl:
         # The control is one fact about the app, not about a screen: Settings is rendered only while open, so it
         # is absent from every other screen. Seen on any walked screen -> the app has it (#1185).
         if ctx.get("text_size_control_seen"):
@@ -224,7 +229,7 @@ def _d_zoom_locked(m: dict, rule: Rule, ctx: dict) -> Derived:
         if measure.metric_value(m, "a11y.text_size_stamped") is True:
             return None, [], ("text size: <html data-textsize> is stamped but no walked screen showed the control "
                               "(its Settings pane was not opened) -- declare the Settings step in [design.review] extra_steps")
-    return (1.0 if (locked and not ctl) else 0.0), [{"zoom_locked": locked, "text_size_control": ctl}], None
+    return (0.0 if ctl else 1.0), [{"zoom_locked": locked, "text_size_control": ctl}], None
 
 
 def _d_pane_header_hidden(m: dict, rule: Rule, ctx: dict) -> Derived:
@@ -307,7 +312,7 @@ DERIVED: Dict[str, Callable[[dict, Rule, dict], tuple]] = {
     "text.break_all_non_path": _d_break_all,
     "layout.lists_unfiltered_tall": _d_lists_tall,
     "layout.content_share": _d_content_share,
-    "a11y.zoom_locked_no_control": _d_zoom_locked,
+    "a11y.no_text_size_control": _d_no_text_size_control,
     "nav.pane_header_hidden": _d_pane_header_hidden,
     "controls.switch_on_not_accent": _d_switch_on_accent,
     "feedback.toast_tinted": _d_toast_tinted,
