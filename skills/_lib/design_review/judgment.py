@@ -35,7 +35,7 @@ scope, every `no` either mapped to one of its question's rule ids or backed
 by an `uncatalogued` entry naming that question, `uncatalogued` only on a
 `no`. One alias is accepted: `<screen id>-full` (the filename stem of the
 screen's full-page PNG, which the prompt lists) reads as that screen's id,
-and every such reading is recorded in `normalized` (fleet-config#1158: six of
+and every such reading is recorded in `normalized` (fleet-config#1158: five of
 seven recorded `unmeasured` judgments were only this). Any other violation -> `{status: "unmeasured", reason, errors: [...]}` with
 empty answers — never a partial acceptance, never a silent drop.
 

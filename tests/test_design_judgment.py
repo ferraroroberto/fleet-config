@@ -164,7 +164,7 @@ yes_ev = json.loads(json.dumps(ok_payload))
 yes_ev["answers"][0]["evidence"] = None
 d, e = jm.validate_answers(yes_ev, rubric, metrics)
 check(d["status"] == "unmeasured" and any("evidence is required for a 'yes'" in x for x in e), "a yes without evidence is refused")
-# fleet-config#1158: six of the seven recorded `unmeasured` judgments (voice-transcriber#210 twice, task-os#278,
+# fleet-config#1158: five of the seven recorded `unmeasured` judgments (voice-transcriber#210 twice, task-os#278,
 # photo-ocr#126, app-launcher 2026-09-26) failed on ONE cause: the judge cited the `-full` page PNG's stem
 # ("iphone-light-history-full") as evidence, the filename the prompt itself lists, and the whole checklist was lost.
 full_stem = json.loads(json.dumps(ok_payload))
