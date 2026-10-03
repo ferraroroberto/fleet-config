@@ -58,8 +58,8 @@ def _doc(name: str) -> dict:
 # ---- rubric: the real file loads and names only metrics that exist ----------
 
 rubric = dr.load_rubric(RUBRIC)
-check(rubric.version == "1.7.9", "rubric meta.version stamped")
-check(len(rubric.rules) == 26, f"26 seed rules loaded (got {len(rubric.rules)})")
+check(rubric.version == "1.8.0", "rubric meta.version stamped")
+check(len(rubric.rules) == 27, f"27 seed rules loaded (got {len(rubric.rules)})")
 check(rubric.categories == ["typography", "color", "touch", "navigation", "layout", "components", "a11y"],
       "categories in rubric order")
 check(rb.check_metric_names(rubric, measure.metric_paths()) == [], "every rule metric is a script path or a derived metric")
@@ -318,6 +318,39 @@ check(ev.parse_color("color-mix(in srgb, var(--accent) 16%, transparent)", {"col
 check(ev.parse_color("transparent", {})[3] == 0.0 and ev.parse_color("oklch(0.5 0.1 200)", {}) is None, "transparent / unknown")
 check(round(ev.contrast((255, 255, 255, 1), (0, 0, 0, 1)), 1) == 21.0, "WCAG 21:1")
 
+# ---- NAV-03: Settings is never a primary tab (#1200) ----
+def _nav03(mutate) -> dict:
+    d = _doc("compliant")
+    for s in d["screens"]:
+        mutate(s["metrics"])
+    return next(r for r in ev.evaluate(d, rubric, _specs("compliant"))["rules"] if r["id"] == "NAV-03")
+
+
+def _settings_tab(m):
+    m["nav"]["settings_tab_count"] = 1
+    m["nav"]["settings_tabs"] = [{"sel": "button#tabSettings", "label": "Settings"}]
+
+
+_n3 = _nav03(_settings_tab)
+check(_n3["status"] == "fail" and _n3["evidence"][0]["items"] == [{"sel": "button#tabSettings", "label": "Settings"}],
+      f"NAV-03: a Settings tab fails and names the tab -- {_n3['status']}")
+check(_nav03(lambda m: None)["status"] == "pass", "NAV-03: no Settings tab (the header carries the gear) passes")
+
+
+def _nav_errored(m):
+    m["nav"] = {"error": "boom"}
+
+
+check(_nav03(_nav_errored)["status"] == "unmeasured", "NAV-03: an errored nav section is unmeasured, never a pass")
+
+
+def _nav_pre_1200(m):
+    for k in ("settings_tab_count", "settings_tabs"):
+        m["nav"].pop(k)
+
+
+check(_nav03(_nav_pre_1200)["status"] == "unmeasured", "NAV-03: a run from before the metric existed is unmeasured, never a pass")
+
 # ---- evaluate: compliant fixture passes every rule ---------------------------
 
 out_c = ev.evaluate(_doc("compliant"), rubric, _specs("compliant"))
@@ -326,7 +359,7 @@ check(all(s == "pass" for s in statuses_c.values()), f"compliant: every rule pas
 check(all(v["score"] == 100.0 and v["grade"] == "A" and not v["unmeasured"] for v in out_c["categories"].values()),
       "compliant: every category 100/A, measured")
 check(out_c["overall"] == {"score": 100.0, "grade": "A", "unmeasured": False}, "compliant: overall A")
-check(out_c["schema_version"] == 1 and out_c["rubric_version"] == "1.7.9" and out_c["target"] == "fixture-app"
+check(out_c["schema_version"] == 1 and out_c["rubric_version"] == "1.8.0" and out_c["target"] == "fixture-app"
       and out_c["commit"].startswith("0000") and out_c["generated_at"].endswith("Z"), "evaluate envelope keys")
 check([s["id"] for s in out_c["screens"]] == ["desktop-light-home", "iphone-light-home", "desktop-light-dialog-edit"],
       "evaluate echoes the screen list")
@@ -388,7 +421,7 @@ check(all(r["measured"] for r in out_v["rules"]), "every failing rule carries me
 cat_v = out_v["categories"]
 check(cat_v["typography"]["score"] == 100 - (12 + 25 + 12 + 12 + 6) and cat_v["typography"]["grade"] == "F",
       "typography: penalties once per rule (P1+P0+P1+P1+P2)")
-check(cat_v["touch"]["score"] == 100 - (25 + 25 + 12) and cat_v["navigation"]["score"] == 100 - (12 + 6),
+check(cat_v["touch"]["score"] == 100 - (25 + 25 + 12) and cat_v["navigation"]["score"] == 100 - (12 + 6 + 12),
       "touch / navigation scores")
 check(cat_v["typography"]["failed"] == ["TYPE-01", "TYPE-02", "TYPE-03", "TYPE-04", "TYPE-05"], "failed ids listed in rule order")
 check(out_v["overall"]["grade"] == "F" and not out_v["overall"]["unmeasured"], "violating: overall F, fully measured")
@@ -773,7 +806,7 @@ else:
           f"measure CLI walks the fixture: 2 tabs + 1 dialog x light/dark ({proc.stdout[-300:]}{proc.stderr[-300:]})")
     check(lines.get("RUN_DIR") == str(run_dir) and Path(lines.get("METRICS", "")).is_file(), "RUN_DIR/METRICS lines point at the run dir")
     doc = json.loads(Path(lines["METRICS"]).read_text(encoding="utf-8"))
-    check(doc["interpreter"] == str(interp) and doc["schema_version"] == 1 and doc["rubric_version"] == "1.7.9", "metrics.json records the interpreter + versions")
+    check(doc["interpreter"] == str(interp) and doc["schema_version"] == 1 and doc["rubric_version"] == "1.8.0", "metrics.json records the interpreter + versions")
     if not (scaffold / "tests" / "e2e" / "_geometry.py").is_file():
         _h.skip("browser leg: project-scaffolding/tests/e2e/_geometry.py absent -- hit-target assertions NOT verified")
     check(doc["walk"]["info"]["geometry"] == ("loaded" if (scaffold / "tests" / "e2e" / "_geometry.py").is_file() else "GEOMETRY_MISSING"),
@@ -970,6 +1003,20 @@ else:
           f"TOUCH-02: options clipped by their scroller are not overlaps with the control beneath it (#1155) -- {_scroll.get('overlaps')} ({proc_cl.stderr[-300:]})")
     check(_escape.get("overlap_count") == 1 and {_escape["overlaps"][0]["a"], _escape["overlaps"][0]["b"]} == {"button.hit-target"},
           f"TOUCH-02: a popup escaping a static overflow-hidden box is not clipped by it; its touching items still overlap (#1155) -- {_escape.get('overlaps')}")
+
+    # settings tab: a tab named Settings and a text-less gear tab count; the header gear and a plain tab do not (#1200)
+    st_dir = STATE / "fixture-settings-tab"
+    proc_st = subprocess.run(
+        [str(interp), str(REPO / "skills" / "_lib" / "design_review" / "walk.py"), "--url", (FIX / "settings_tab.html").as_uri(),
+         "--out", str(st_dir), "--devices", "desktop", "--scaffold", str(scaffold),
+         "--params", str(STATE / "steps-params.json")],
+        capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=600,
+    )
+    sts = json.loads((st_dir / "screens.json").read_text(encoding="utf-8")) if proc_st.returncode == 0 else []
+    _st_nav = ((sts[0].get("metrics") or {}).get("nav") or {}) if sts else {}
+    check(_st_nav.get("primary_count") == 4 and _st_nav.get("settings_tab_count") == 2
+          and [t["label"] for t in _st_nav.get("settings_tabs", [])] == ["Settings", ""] ,
+          f"NAV-03: the tab named Settings and the text-less gear tab are counted, the header gear and Logs are not (#1200) -- {_st_nav} ({proc_st.stderr[-300:]})")
 
     # fold: a popup over a chip far below the fold is covered there too; the walk puts the scroll back (#1155)
     fold_dir = STATE / "fixture-fold"
