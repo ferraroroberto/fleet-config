@@ -107,7 +107,7 @@ Fields returned:
 - **`waits`** — every clock wait in the test tree, with file, line,
   milliseconds and enclosing scope: `sleep` (`wait_for_timeout`,
   `time.sleep`), `poll-sleep` (the same call inside a `while` loop that can
-  end on its condition: it costs its interval at most, never `paid_s`, and
+  end on its condition, or a `for` retry loop whose `if` breaks or returns: it costs its interval at most, never `paid_s`, and
   ranks last like a ceiling), `page-timer` (a `setTimeout` in an init
   script), `poll-constant` (`POLL_MS = 15_000`), `long-timeout` (`timeout=`
   of 10 s or more). Static, so present even with no timing source; `timing` ranks the
