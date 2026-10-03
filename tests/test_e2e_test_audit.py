@@ -386,6 +386,19 @@ vac_texts["tests/e2e/test_energy.py"] = vac_texts["tests/e2e/test_energy.py"].re
     '"portal timed out"}', '"portal timed out", "host": "192.0.2.90"}')
 check(m.vacuous_candidates(vac_files, vac_texts) == [], "once the mock serves the needle, the check can fail: no candidate")
 
+# ---- SKILL.md names every subcommand (fleet-config#1175, app-launcher#1375) -----------------
+# Step 3b showed `timing` and `failures` as commands and described `routing` and `parallel` as if run alongside; the fixer
+# found them in `--help`. Every subcommand the parser defines must appear as a command line in the audit or `/e2e` skill.
+import re
+
+_root = Path(__file__).resolve().parent.parent
+_skill_text = "\n".join((_root / "skills" / s / "SKILL.md").read_text(encoding="utf-8") for s in ("e2e-audit", "e2e"))
+_subcommands = re.findall(r'sub\.add_parser\("(\w+)"', (_root / "skills" / "_lib" / "e2e_test_audit.py").read_text(encoding="utf-8"))
+check(sorted(_subcommands) == ["budget", "failures", "parallel", "record", "routing", "scan", "timing"],
+      f"the parser's subcommands as the test reads them -- {_subcommands}")
+_missing = [c for c in _subcommands if not re.search(rf"e2e_test_audit\.py {c}\b", _skill_text)]
+check(_missing == [], f"every subcommand has a command line in the audit or /e2e skill -- missing {_missing}")
+
 # ---- timing CLI: the suite's node count reaches the staleness check (fleet-config#1175) -----
 
 import contextlib
