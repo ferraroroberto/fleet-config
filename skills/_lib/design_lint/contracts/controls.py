@@ -9,6 +9,7 @@ from __future__ import annotations
 import re
 from typing import Dict, List, Set
 
+from ..colormath import is_green, parse_color
 from ..css import _ANY_DECL_RE, _BLOCK_RE, _COLOR_LITERAL_RE, normalize_value, strip_comments
 from ..files import read_text, rel
 from ..selectors import (
@@ -30,15 +31,31 @@ def _on_track_role(css_all: str, body: str) -> str:
     if not ref:
         return ""
     name = ref.group(1)
-    if name == "on":
-        decl = re.search(r"--on\s*:\s*([^;}]*)", css_all)
-        inner = re.search(r"var\(--([\w-]+)", decl.group(1)) if decl else None
-        if not inner:
-            return ""
-        name = inner.group(1)
-    if name.startswith("accent"):
-        return "accent"
-    return "success" if name == "success" else ""
+    if name != "on":
+        return _role_of_value(f"var(--{name})", css_all)
+    # Every theme declares its own `--on`; green in any of them is green (the fleet's apps write
+    # `--on: #1a7f37; /* success */` literally, so a literal is judged by the colour it is).
+    roles = {_role_of_value(m.group(1).strip(), css_all) for m in re.finditer(r"--on\s*:\s*([^;}]*)", css_all)}
+    if "success" in roles:
+        return "success"
+    return roles.pop() if len(roles) == 1 else ""
+
+
+def _role_of_value(value: str, css_all: str) -> str:
+    """`accent`, `success` or `` for one declared colour: a token reference, or a literal."""
+    ref = re.search(r"var\(--([\w-]+)", value)
+    if ref:
+        name = ref.group(1)
+        if name.startswith("accent"):
+            return "accent"
+        return "success" if name == "success" else ""
+    rgba = parse_color(value, {})
+    if rgba is None:
+        return ""
+    if is_green(rgba):
+        return "success"
+    accents = {parse_color(m.group(1).strip(), {}) for m in re.finditer(r"--accent(?:-fill)?\s*:\s*([^;}]*)", css_all)}
+    return "accent" if rgba in accents else ""
 
 
 def _check_switch_on_accent(ctx: _ContractsCtx) -> List[dict]:

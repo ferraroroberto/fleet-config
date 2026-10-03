@@ -7,10 +7,10 @@ reads the app's own CSS, so it decides without one.
 """
 from __future__ import annotations
 
-import colorsys
 import re
 from typing import List, Optional
 
+from ..colormath import is_green
 from ..css import _ANY_DECL_RE, _BLOCK_RE
 from ._ctx import _ContractsCtx, _loc_at, _result
 
@@ -23,12 +23,6 @@ _TINT_PROPS = ("background", "background-color", "border", "border-color", "bord
                "border-top", "border-top-color", "box-shadow", "outline", "outline-color")
 
 
-def _is_green(r: int, g: int, b: int) -> bool:
-    """Hue 75-170 degrees and HSL saturation >= 0.25: the same test the rendered leg applies."""
-    h, l, s = colorsys.rgb_to_hls(r / 255, g / 255, b / 255)
-    return s >= 0.25 and 75 <= h * 360 <= 170 and 0 < l < 1
-
-
 def _green_in(value: str) -> Optional[str]:
     """The green token or literal a declaration value draws with, else None."""
     var = _GREEN_VAR_RE.search(value)
@@ -37,11 +31,11 @@ def _green_in(value: str) -> Optional[str]:
     for m in _HEX_RE.finditer(value):
         h = m.group(1)
         h = "".join(c * 2 for c in h) if len(h) == 3 else h
-        if _is_green(int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)):
+        if is_green((int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16), 1.0)):
             return m.group(0)
     for m in _RGB_RE.finditer(value):
         r, g, b = (min(255, int(x)) for x in m.groups())
-        if _is_green(r, g, b):
+        if is_green((r, g, b, 1.0)):
             return m.group(0)
     return None
 

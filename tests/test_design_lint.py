@@ -344,6 +344,18 @@ _on_acc = run_contracts(":root { --on: var(--accent); }\n.toggle.on { background
 check(_on_acc["status"] == "PASS", f"switch-on-accent: --on aliasing the accent PASSes -- {_on_acc}")
 _on_grn = run_contracts(":root { --on: var(--success); }\n.toggle.on { background: var(--on); }\n")["switch-on-accent"]
 check(_on_grn["status"] == "FAIL", f"switch-on-accent: --on aliasing success FAILs -- {_on_grn}")
+# the fleet's real shape: --on is a literal per theme (`--on: #1a7f37; /* success */`), judged by the colour it is
+_lit_green = run_contracts(":root { --accent: #0969da; --on: #1a7f37; }\n[data-theme=dark] { --accent: #2f81f7; --on: #3fb950; }\n"
+                           ".toggle.on { background: var(--on); }\n")["switch-on-accent"]
+check(_lit_green["status"] == "FAIL", f"switch-on-accent: --on as a green literal in both themes FAILs -- {_lit_green}")
+_lit_acc = run_contracts(":root { --accent: #0969da; --accent-fill: #0969da; --on: #0969da; }\n[data-theme=dark] { --accent: #2f81f7; --accent-fill: #1f6feb; --on: #1f6feb; }\n"
+                         ".toggle.on { background: var(--on); }\n")["switch-on-accent"]
+check(_lit_acc["status"] == "PASS", f"switch-on-accent: --on equal to the app's own accent literals PASSes -- {_lit_acc}")
+_lit_mixed = run_contracts(":root { --accent: #0969da; --on: #0969da; }\n[data-theme=dark] { --accent: #2f81f7; --on: #3fb950; }\n"
+                           ".toggle.on { background: var(--on); }\n")["switch-on-accent"]
+check(_lit_mixed["status"] == "FAIL", f"switch-on-accent: green in either theme is a FAIL, not a PASS -- {_lit_mixed}")
+_lit_other = run_contracts(":root { --on: #8250df; }\n.toggle.on { background: var(--on); }\n")["switch-on-accent"]
+check(_lit_other["status"] == "WARN", f"switch-on-accent: a literal that is neither green nor the accent WARNs -- {_lit_other}")
 _on_lit = run_contracts(".toggle.on { background: #1a7f37; }\n")["switch-on-accent"]
 check(_on_lit["status"] == "WARN", f"switch-on-accent: an untokenized colour WARNs, never PASSes -- {_on_lit}")
 _on_unk = run_contracts(".toggle.on { background: var(--on); }\n")["switch-on-accent"]
