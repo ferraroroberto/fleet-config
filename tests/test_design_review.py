@@ -1097,6 +1097,21 @@ else:
     check(_sg_icons.get("boxes") == {"22x22": 1, "20x20": 1},
           f"COMP-02: the two stretched 162x64 chart SVGs are not icons; the 22px and 20px icons still are (#1211) -- {_sg_icons} ({proc_sg.stderr[-300:]})")
 
+    # UA-font nav tab: voice-transcriber's <button class="tab"> tabs had no `font: inherit` and read Arial under a system-ui body;
+    # TYPE-02 reads them (a tab is a <button>), an inheriting button beside them is not reported (#1211)
+    uf_dir = STATE / "fixture-ua-font-tab"
+    proc_uf = subprocess.run(
+        [str(interp), str(REPO / "skills" / "_lib" / "design_review" / "walk.py"), "--url", (FIX / "ua_font_tab.html").as_uri(),
+         "--out", str(uf_dir), "--devices", "desktop", "--scaffold", str(scaffold),
+         "--params", str(STATE / "steps-params.json")],
+        capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=600,
+    )
+    ufs = json.loads((uf_dir / "screens.json").read_text(encoding="utf-8")) if proc_uf.returncode == 0 else []
+    _uf_ctl = ((ufs[0].get("metrics") or {}).get("controls") or {}) if ufs else {}
+    check(_uf_ctl.get("font_family_mismatch_count") == 2
+          and [m["sel"] for m in _uf_ctl.get("font_family_mismatch", [])] == ["button#tabRecord.tab", "button#tabHistory.tab"],
+          f"TYPE-02: the two UA-font nav tabs are reported, the inheriting button is not (#1211) -- {_uf_ctl} ({proc_uf.stderr[-300:]})")
+
     # switch on-state: the track colour of each switch that is on is read, an off switch is counted only (#1200)
     sw_dir = STATE / "fixture-switch"
     proc_sw = subprocess.run(

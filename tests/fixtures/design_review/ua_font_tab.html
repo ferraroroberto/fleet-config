@@ -1,0 +1,41 @@
+<!doctype html>
+<!-- Static fixture for TYPE-02 (fleet-config#1211): voice-transcriber's nav tabs and header buttons were <button>
+     elements with no `font: inherit` reset, so they computed to the user-agent font (Arial; MS Shell Dlg on
+     Windows) while the body was system-ui. The tabs here keep the UA font on purpose; the second tablist
+     inherits and must not be reported. Asserted by tests/test_design_review.py. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>design_review ua-font-tab fixture</title>
+<style>
+  html, body { margin: 0; background: #ffffff; color: #1f2328; font-family: system-ui, -apple-system, "Segoe UI", sans-serif; font-size: 16px; }
+  body { padding: 16px; }
+  nav { display: flex; gap: 8px; margin-bottom: 12px; }
+  .tab { min-width: 60px; min-height: 44px; }                 /* no `font: inherit`: the UA font */
+  .tab-ok { min-width: 60px; min-height: 44px; font: inherit; }
+  section[hidden] { display: none; }
+</style>
+<script>
+  addEventListener('DOMContentLoaded', () => {
+    document.querySelectorAll('[role=tab]').forEach(tab => tab.addEventListener('click', () => {
+      document.querySelectorAll('[role=tab]').forEach(t => t.setAttribute('aria-selected', String(t === tab)));
+      document.querySelectorAll('[role=tabpanel]').forEach(p => p.hidden = (p.id !== tab.getAttribute('aria-controls')));
+    }));
+  });
+</script>
+</head>
+<body>
+  <nav role="tablist" aria-label="Primary">
+    <button type="button" id="tabRecord" class="tab" role="tab" aria-controls="paneRecord" aria-selected="true">Record</button>
+    <button type="button" id="tabHistory" class="tab" role="tab" aria-controls="paneHistory" aria-selected="false">History</button>
+  </nav>
+  <nav aria-label="Inheriting">
+    <button type="button" id="okButton" class="tab-ok">Inherits</button>
+  </nav>
+  <main>
+    <section id="paneRecord" role="tabpanel"><h2>Record</h2><p>Record pane.</p></section>
+    <section id="paneHistory" role="tabpanel" hidden><h2>History</h2><p>History pane.</p></section>
+  </main>
+</body>
+</html>
