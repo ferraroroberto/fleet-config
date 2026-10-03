@@ -27,6 +27,8 @@ no `submit`, and every click is refused when its element sits inside a
                                                  # *inside* the first [role=tablist], so never
                                                  # prefix it with "[role=tablist]" (#995)
     no_go             = ["#dangerZone"]          # never clicked, nor anything inside it
+    exclude_selectors = [".preview-frame"]       # embedded content (not the app's own UI): nothing
+                                                 # inside it is measured or scored (#1185)
     [[design.review.extra_steps]]
     tab      = "board"            # which tab screen the step extends
     id       = "row-kebab"        # suffix on the screen id
@@ -135,6 +137,14 @@ def synthetic_block(target: "Target") -> Dict[str, object]:
         "no_go": [str(s) for s in no_go] if isinstance(no_go, list) else None,
         "startup_timeout_s": float(block.get("startup_timeout_s") or SYNTHETIC_STARTUP_S),
     }
+
+
+def exclude_selectors(review: Dict[str, object]) -> List[str]:
+    """`[design.review].exclude_selectors` as a list of non-empty CSS selector strings (a bare string is one)."""
+    raw = review.get("exclude_selectors") if isinstance(review, dict) else None
+    if isinstance(raw, str):
+        raw = [raw]
+    return [s.strip() for s in raw if isinstance(s, str) and s.strip()] if isinstance(raw, list) else []
 
 
 def load_review_block(root: Optional[Path]) -> Dict[str, object]:

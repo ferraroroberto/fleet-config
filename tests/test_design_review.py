@@ -58,7 +58,7 @@ def _doc(name: str) -> dict:
 # ---- rubric: the real file loads and names only metrics that exist ----------
 
 rubric = dr.load_rubric(RUBRIC)
-check(rubric.version == "1.7.7", "rubric meta.version stamped")
+check(rubric.version == "1.7.8", "rubric meta.version stamped")
 check(len(rubric.rules) == 26, f"26 seed rules loaded (got {len(rubric.rules)})")
 check(rubric.categories == ["typography", "color", "touch", "navigation", "layout", "components", "a11y"],
       "categories in rubric order")
@@ -326,13 +326,23 @@ check(all(s == "pass" for s in statuses_c.values()), f"compliant: every rule pas
 check(all(v["score"] == 100.0 and v["grade"] == "A" and not v["unmeasured"] for v in out_c["categories"].values()),
       "compliant: every category 100/A, measured")
 check(out_c["overall"] == {"score": 100.0, "grade": "A", "unmeasured": False}, "compliant: overall A")
-check(out_c["schema_version"] == 1 and out_c["rubric_version"] == "1.7.7" and out_c["target"] == "fixture-app"
+check(out_c["schema_version"] == 1 and out_c["rubric_version"] == "1.7.8" and out_c["target"] == "fixture-app"
       and out_c["commit"].startswith("0000") and out_c["generated_at"].endswith("Z"), "evaluate envelope keys")
 check([s["id"] for s in out_c["screens"]] == ["desktop-light-home", "iphone-light-home", "desktop-light-dialog-edit"],
       "evaluate echoes the screen list")
 t03 = next(r for r in out_c["rules"] if r["id"] == "TOUCH-03")
 check(set(t03["measured"]) == {"desktop-light-home", "iphone-light-home"} and "n/a on 1" in t03["reason"],
       "a null aggregate over an empty population is N/A, not unmeasured")
+
+# ---- exclude_selectors: embedded content is declared, never guessed (fleet-config#1185) -----------------------------------
+check(plan.exclude_selectors({}) == [] and plan.exclude_selectors({"exclude_selectors": ".preview-frame"}) == [".preview-frame"]
+      and plan.exclude_selectors({"exclude_selectors": [" .a ", "", 3, "#b"]}) == [".a", "#b"] and plan.exclude_selectors({"exclude_selectors": 7}) == [],
+      "plan.exclude_selectors: a string is one selector, blanks and non-strings are dropped, anything else is none")
+check(measure.default_params()["excludeSelectors"] == [] and measure.default_params(exclude_selectors=[".x"])["excludeSelectors"] == [".x"]
+      and capture.script_params(rubric, src_specs["light"], {"exclude_selectors": [".x"]})["script"]["excludeSelectors"] == [".x"]
+      and capture.script_params(rubric, src_specs["light"])["script"]["excludeSelectors"] == [],
+      "the declaration rides into the script's params; none declared is an empty list")
+check("el.closest(EXCLUDE)" in measure._MEASURE_JS, "every measure's visibility test refuses an element inside an excluded selector")
 
 # ---- A11Y-02 and the vendored text-size control (fleet-config#1185) -------------
 # parking-manager#58 / facilitation-suite#164: the control lives in Settings, which is in the DOM only while open, so a per-screen
@@ -763,7 +773,7 @@ else:
           f"measure CLI walks the fixture: 2 tabs + 1 dialog x light/dark ({proc.stdout[-300:]}{proc.stderr[-300:]})")
     check(lines.get("RUN_DIR") == str(run_dir) and Path(lines.get("METRICS", "")).is_file(), "RUN_DIR/METRICS lines point at the run dir")
     doc = json.loads(Path(lines["METRICS"]).read_text(encoding="utf-8"))
-    check(doc["interpreter"] == str(interp) and doc["schema_version"] == 1 and doc["rubric_version"] == "1.7.7", "metrics.json records the interpreter + versions")
+    check(doc["interpreter"] == str(interp) and doc["schema_version"] == 1 and doc["rubric_version"] == "1.7.8", "metrics.json records the interpreter + versions")
     if not (scaffold / "tests" / "e2e" / "_geometry.py").is_file():
         _h.skip("browser leg: project-scaffolding/tests/e2e/_geometry.py absent -- hit-target assertions NOT verified")
     check(doc["walk"]["info"]["geometry"] == ("loaded" if (scaffold / "tests" / "e2e" / "_geometry.py").is_file() else "GEOMETRY_MISSING"),
@@ -831,6 +841,36 @@ else:
                            capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=120)
     res2 = json.loads(proc3.stdout)
     check(res2["rules"] == res["rules"] and res2["categories"] == res["categories"], "two evaluate runs -> identical rules and grades")
+    # embedded content (fleet-config#1185): a declared [design.review].exclude_selectors keeps a session-themed preview out of scoring
+    def _embedded_walk(label: str, fleet_toml: str) -> dict:
+        tgt = STATE / f"embedded-{label}"
+        tgt.mkdir(parents=True, exist_ok=True)
+        (tgt / ".fleet.toml").write_text(fleet_toml, encoding="utf-8")
+        p = subprocess.run(
+            [sys.executable, str(REPO / "skills" / "_lib" / "design_review"), "measure", str(tgt),
+             "--url", (FIX / "embedded.html").as_uri(), "--devices", "desktop", "--python", str(interp),
+             "--scaffold", str(scaffold), "--run-dir", str(STATE / f"embedded-run-{label}"), "--rubric", str(RUBRIC),
+             "--spec", str(FIX / "spec_compliant.md")],
+            capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=600,
+            env={**os.environ, "CLAUDE_HOOKS_STATE_DIR": str(STATE)})
+        kv = dict(l.split("=", 1) for l in p.stdout.splitlines() if "=" in l)
+        return json.loads(Path(kv["METRICS"]).read_text(encoding="utf-8")) if "METRICS" in kv else {"error": p.stdout[-300:] + p.stderr[-300:]}
+
+    emb_all = _embedded_walk("all", '[design]\nwide_views = []\n')
+    emb_ex = _embedded_walk("excluded", '[design.review]\nexclude_selectors = [".preview-frame"]\n')
+    if "error" in emb_all or "error" in emb_ex:
+        check(False, f"embedded fixture walk produced metrics -- {emb_all.get('error')} {emb_ex.get('error')}")
+    else:
+        m_all, m_ex = emb_all["screens"][0]["metrics"], emb_ex["screens"][0]["metrics"]
+        check(m_all["text"]["under11_count"] == 2 and m_all["text"]["uppercase_count"] == 1 and m_all["targets"]["small_count"] >= 1 and "excluded" not in m_all,
+              f"without a declaration the embedded preview is measured as app UI -- {m_all['text']['under11']} {m_all['text']['uppercase']} {m_all['targets']['small_count']}")
+        check(m_ex["text"]["under11_count"] == 0 and m_ex["text"]["uppercase_count"] == 0 and m_ex["targets"]["small_count"] == 0
+              and m_ex["controls"]["total"] == 0 and m_ex["a11y"]["unnamed_count"] == 0,
+              f"a declared exclude_selectors leaves the preview out of text, targets and controls -- {m_ex['text']['under11']} {m_ex['targets']['small_count']}")
+        check(m_ex["excluded"] == {"selectors": [".preview-frame"], "elements": 1} and m_ex["text"]["runs"] == 1,
+              f"the run records what it excluded and still measures the app's own text -- {m_ex.get('excluded')} runs={m_ex['text']['runs']}")
+        check(emb_ex["params"]["script"]["excludeSelectors"] == [".preview-frame"] and emb_all["params"]["script"]["excludeSelectors"] == [],
+              "metrics.json records the exclusion in the params the run measured with")
     # extra steps, driven through walk.py with a declared review block (the fixture repo has no [design.review])
     step_dir = STATE / "fixture-steps"
     (STATE / "steps-review.json").write_text(json.dumps({"no_go": [".danger-zone", "#revealForbidden"], "extra_steps": [

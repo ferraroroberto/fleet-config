@@ -54,7 +54,7 @@ import hooks_state  # noqa: E402
 from no_window import NO_WINDOW  # noqa: E402
 
 from . import measure  # noqa: E402
-from .plan import PlanError, Target, synthetic_block  # noqa: E402
+from .plan import PlanError, Target, exclude_selectors, synthetic_block  # noqa: E402
 from .rubric import Rubric, resolve_params  # noqa: E402
 
 WALK_PY = Path(__file__).resolve().parent / "walk.py"
@@ -141,8 +141,11 @@ def target_commit(target: Target) -> Optional[str]:
     return proc.stdout.strip() or None
 
 
-def script_params(rubric: Rubric, spec_light: Dict[str, str]) -> Dict[str, object]:
-    """`{"script": <what the page script receives>, "resolved": <rubric params>}`."""
+def script_params(rubric: Rubric, spec_light: Dict[str, str], review: Optional[Dict[str, object]] = None) -> Dict[str, object]:
+    """`{"script": <what the page script receives>, "resolved": <rubric params>}`.
+
+    `review` is the target's `[design.review]` block: its `exclude_selectors` ride into the script's params,
+    so `metrics.json` records what a run left out of scoring (#1185)."""
     resolved = resolve_params(rubric, spec_light)
     script = measure.default_params(
         hit_min=float(resolved.get("hit_min") or 44.0),
@@ -150,6 +153,7 @@ def script_params(rubric: Rubric, spec_light: Dict[str, str]) -> Dict[str, objec
         # action-row's budget besides the row itself: leading toggle + extra action + trailing accessory (#996)
         row_controls_max=int(sum(float(resolved.get(k) or 0) for k in
                                  ("row_leading_toggles", "row_extra_actions", "row_trailing_accessories"))),
+        exclude_selectors=exclude_selectors(review or {}),
     )
     return {"script": script, "resolved": resolved}
 
@@ -286,7 +290,7 @@ def measure_target(target: Target, rubric: Rubric, spec_light: Dict[str, str], d
     stopped, and how it stopped is recorded under `synthetic.stop`.
     """
     run_dir = run_dir or run_dir_for(target.name)
-    params = script_params(rubric, spec_light)
+    params = script_params(rubric, spec_light, target.review)
     doc = envelope(target, rubric, run_dir, devices, params, target_commit(target))
     if not synthetic:
         return _measure(doc, target, run_dir, devices, params, python_override, scaffold, walk_timeout, False)
