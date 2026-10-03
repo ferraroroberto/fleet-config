@@ -408,6 +408,12 @@ checklist), else a `[[judgment]]` question. Nothing automates that step.
   clicks beyond the target's own opt-in `extra_steps`; a `no_go` selector
   list in `.fleet.toml` is honoured by the walk on every click of a step,
   including anything inside a `no_go` element.
+- **Embedded content is the target's to declare.** A preview themed by
+  something other than the app (a session-themed slide) is named in
+  `[design.review] exclude_selectors`; nothing inside it is measured or
+  scored, and `metrics.json` records the exclusion (#1185). Never exclude
+  something by judgment during a run, and never put a failing region of the
+  app's own UI on the list: that hides a defect instead of fixing it.
 - **Nothing is authored here.** Sentences are `fix_template` + `standard`;
   grades are the rubric's arithmetic; mock-ups are library templates filled
   from measurements. Where a value is missing the report says so — no

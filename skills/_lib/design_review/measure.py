@@ -47,7 +47,7 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Sequence
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from design_lint.rules import GLYPH_ICON_RENDERED_RE  # noqa: E402
@@ -93,7 +93,11 @@ _MEASURE_JS = r"""
   const ratio = (a,b) => { const l1=lum(a), l2=lum(b); return (Math.max(l1,l2)+0.05)/(Math.min(l1,l2)+0.05); };
   const r2 = (x) => Math.round(x*100)/100;
   const hex = (c) => '#' + [0,1,2].map(i => Math.round(c[i]).toString(16).padStart(2,'0')).join('');
-  const visible = (el) => { const r = el.getBoundingClientRect(); if (r.width<1||r.height<1) return false;
+  // Embedded content (a scaled preview themed by the session, not by the app) is declared in
+  // [design.review].exclude_selectors and is never measured as app UI: not visible, to every measure (#1185).
+  const EXCLUDE = (params.excludeSelectors || []).join(', ');
+  const visible = (el) => { if (EXCLUDE && el.closest(EXCLUDE)) return false;
+    const r = el.getBoundingClientRect(); if (r.width<1||r.height<1) return false;
     const s = getComputedStyle(el); if (s.visibility==='hidden'||s.display==='none'||+s.opacity===0) return false;
     // Content of a closed <details> keeps real boxes in both engines; only checkVisibility() says it is hidden (#998).
     if (typeof el.checkVisibility === 'function' && !el.checkVisibility()) return false;
@@ -403,6 +407,7 @@ _MEASURE_JS = r"""
     return { unnamed: unnamed.slice(0,CAP), unnamed_count: unnamed.length, zoom_locked: locked, text_size_control: tsc, text_size_stamped: stamped };
   });
 
+  if (EXCLUDE) section('excluded', () => ({ selectors: params.excludeSelectors, elements: scope.querySelectorAll(EXCLUDE).length }));
   section('headings', () => q('h1,h2,h3,h4').map(h => h.tagName+':'+h.textContent.trim().slice(0,30)+'@'+getComputedStyle(h).fontSize).slice(0, CAP));
   return out;
 }
@@ -428,6 +433,7 @@ def default_params(
     row_controls_max: int = 2,
     segmented_max: int = 5,
     primary_selector: str = "[class*=primary], button[type=submit]",
+    exclude_selectors: Sequence[str] = (),
 ) -> Dict[str, object]:
     """The parameter object the script receives; recorded verbatim in
     `metrics.json` so a consumer can see which floors a run measured with."""
@@ -444,6 +450,7 @@ def default_params(
         "formControls": FORM_CONTROL_SELECTOR,
         "boundaryControls": BOUNDARY_CONTROL_SELECTOR,
         "glyphRe": GLYPH_ICON_RE,
+        "excludeSelectors": [str(s) for s in exclude_selectors],
     }
 
 

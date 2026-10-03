@@ -1,0 +1,27 @@
+<!doctype html>
+<!-- Embedded-content fixture for the design_review exclusion leg (fleet-config#1185): the .preview-frame block stands for a
+     session-themed preview inside an app (facilitation-suite's stage slide); its tiny uppercase title and small button
+     must be measured as app UI by default and left out when [design.review].exclude_selectors names the frame. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>design_review embedded fixture</title>
+<style>
+  html, body { margin: 0; background: #fff; color: #1f2328; font-family: system-ui, sans-serif; font-size: 16px; }
+  body { padding: 16px; }
+  .preview-frame { margin-top: 16px; background: #222; color: #ddd; padding: 8px; }
+  .preview-frame h4 { margin: 0; font-size: 9px; text-transform: uppercase; }
+  .preview-frame button { width: 20px; height: 20px; padding: 0; font-size: 9px; }
+</style>
+</head>
+<body>
+  <main>
+    <p>Plain application text at sixteen pixels.</p>
+    <div class="preview-frame">
+      <h4>Embedded slide title</h4>
+      <button type="button" aria-label="slide control">x</button>
+    </div>
+  </main>
+</body>
+</html>
