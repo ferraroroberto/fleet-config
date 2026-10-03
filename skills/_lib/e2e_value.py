@@ -1151,6 +1151,17 @@ def _repo_file(repo_root: Path, dotted: str) -> Optional[str]:
     return None
 
 
+_ROUTING_SOURCES = (".fleet.toml", "scripts/classify_e2e.py")
+
+
+def _tracked_files(repo_root: Path) -> Optional[set]:
+    """Repo-relative paths git tracks, or None when git gives no answer (not a repo, git missing): then nothing is filtered."""
+    res = git_run.run_git(["-C", str(repo_root), "ls-files", "-z"], timeout=30)
+    if res.returncode != 0:
+        return None
+    return {p for p in res.stdout.split("\0") if p}
+
+
 def _read_files(parsed, repo_root: Path) -> set:
     """Repo files (not `.py`) a parsed module names as a repo-relative path: `'a/b.json'` or `ROOT / 'a' / 'b.json'`.
 
@@ -1194,10 +1205,13 @@ def import_holes(repo_root: Path, mod, config, test_dirs: Sequence[str]) -> List
     the test dirs, the conftest and the `_*.py` plugins (`kind: loaded`), plus
     every repo file those modules import (`kind: imported`, `imported_by`
     counting the importers), plus every non-Python repo file those modules name
-    as a repo-relative path (`kind: read`, `imported_by` counting the readers:
+    as a repo-relative path (`kind: read`, tracked files only, `imported_by` counting the readers:
     facilitation-suite's conftest read `config/config.sample.json` for every
     instance while the table routed `config/` to `none`), each routed through
-    the repo's own classifier. One level only: a fixture's own imports are not followed. Backend source
+    the repo's own classifier. The files that define routing itself (`.fleet.toml`
+    and `scripts/classify_e2e.py`, the classifier's own `_ROUTING_SOURCES`) are
+    listed too (`kind: routing-source`): a diff editing only the table reroutes
+    the suite without running it (facilitation-suite#165). One level only: a fixture's own imports are not followed. Backend source
     the suite boots (`src/*.py` routed `none`) lands here too; whether that
     is a hole or a deliberate gate-time trade is the owner's call.
     """
@@ -1206,6 +1220,7 @@ def import_holes(repo_root: Path, mod, config, test_dirs: Sequence[str]) -> List
     loaded = {str(p.relative_to(repo_root)).replace("\\", "/") for p in tree}
     imported: Dict[str, int] = {}
     read: set = set()
+    tracked = _tracked_files(repo_root)  # a gitignored local file a test reads is never in a PR diff
     for p in tree:
         try:
             parsed = ast.parse(p.read_text(encoding="utf-8", errors="replace"))
@@ -1222,16 +1237,17 @@ def import_holes(repo_root: Path, mod, config, test_dirs: Sequence[str]) -> List
                 hit = _repo_file(repo_root, name)
                 if hit:
                     seen.add(hit)
-        files = _read_files(parsed, repo_root)
+        files = {f for f in _read_files(parsed, repo_root) if tracked is None or f in tracked}
         read |= files - seen
         for hit in seen | files:
             imported[hit] = imported.get(hit, 0) + 1
+    sources = {p for p in getattr(mod, "_ROUTING_SOURCES", _ROUTING_SOURCES) if (repo_root / p).is_file()}
     out = []
-    for path in sorted(loaded | set(imported)):
+    for path in sorted(loaded | set(imported) | sources):
         cat, label = mod._classify_one(path, config.rules)
         if getattr(cat, "name", cat) != "NONE":
             continue
-        out.append({"path": path, "rule": label, "kind": "loaded" if path in loaded else "read" if path in read else "imported",
+        out.append({"path": path, "rule": label, "kind": "loaded" if path in loaded else "read" if path in read else "imported" if path in imported else "routing-source",
                     "imported_by": imported.get(path, 0), "check": classify_cmd([path])})
     return sorted(out, key=lambda e: (-int(e["imported_by"]), str(e["path"])))  # type: ignore[call-overload]
 

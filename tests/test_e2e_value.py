@@ -308,6 +308,38 @@ check(cf["holes_opened"] == ["static/_vendored/nav/README.md"] and cf["holes_clo
       f"{cf['holes_opened']} / {cf['holes_closed']}")
 check(v.routing_report(rt, pr_list=prs)["counterfactual"] is None, "no --proposed table, no counterfactual")
 
+# A gitignored local file the suite reads (facilitation-suite's `sessions.local.yaml`) can never be in a PR diff: not a hole.
+# A tree with no git answer keeps every existing file, never a guess.
+import git_run  # noqa: E402
+rg = Path(tempfile.mkdtemp(prefix="e2e-value-tracked-"))
+(rg / "scripts").mkdir()
+(rg / "scripts" / "classify_e2e.py").write_text(FAKE_CLASSIFIER, encoding="utf-8")
+(rg / ".fleet.toml").write_text("[e2e]\n", encoding="utf-8")
+(rg / "tests" / "e2e").mkdir(parents=True)
+(rg / "tests" / "data").mkdir()
+(rg / "tests" / "e2e" / "test_g.py").write_text("A = 'tests/data/tracked.yaml'\nB = 'tests/data/local.yaml'\n", encoding="utf-8")
+(rg / "tests" / "data" / "tracked.yaml").write_text("a: 1\n", encoding="utf-8")
+(rg / "tests" / "data" / "local.yaml").write_text("a: 2\n", encoding="utf-8")
+(rg / ".gitignore").write_text("local.yaml\n", encoding="utf-8")
+check([h["path"] for h in v.routing_report(rg, pr_list=[])["import_holes"] if h["kind"] == "read"]
+      == ["tests/data/local.yaml", "tests/data/tracked.yaml"], "outside a git tree every existing file is kept")
+git_run.run_git(["-C", str(rg), "init", "-q"], check=True)
+git_run.run_git(["-C", str(rg), "add", "tests", ".gitignore"], check=True)
+check([h["path"] for h in v.routing_report(rg, pr_list=[])["import_holes"] if h["kind"] == "read"] == ["tests/data/tracked.yaml"],
+      "a gitignored file the suite reads is not a hole; a tracked one is")
+
+# Routing sources (fleet-config#1165, facilitation-suite#165): a diff that edits only `.fleet.toml` (the table itself) was routed
+# `skip` by the `*.toml` rule, so a routing change never ran the browser suite it reroutes.
+check(not any(h["kind"] == "routing-source" for h in v.routing_report(rt, pr_list=[])["import_holes"]),
+      "a table that routes `.fleet.toml` and the classifier `full` has no routing-source hole")
+rs = Path(tempfile.mkdtemp(prefix="e2e-value-routing-source-"))
+(rs / "scripts").mkdir()
+(rs / "scripts" / "classify_e2e.py").write_text(FAKE_CLASSIFIER.replace('extensions=("md",)', 'extensions=("md", "toml", "py")'), encoding="utf-8")
+(rs / ".fleet.toml").write_text("[e2e]\n", encoding="utf-8")
+rsh = [(h["path"], h["kind"], h["imported_by"], h["rule"]) for h in v.routing_report(rs, pr_list=[])["import_holes"]]
+check(rsh == [(".fleet.toml", "routing-source", 0, "docs"), ("scripts/classify_e2e.py", "routing-source", 0, "docs")],
+      f"the table and the classifier that reads it are holes when the table routes them `none` -- {rsh}")
+
 # ---- stylesheet-aware routing (fleet-config#1033) ------------------------------------------------------
 # A sheet-aware classifier (project-scaffolding#289's shape, reduced): `changed_selectors` diffs two
 # texts line by line, any line holding `UNSAFE` poisons the sheet, and `classify` narrows a diff to the
