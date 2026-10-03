@@ -136,6 +136,7 @@ _STEP_RE = re.compile(r"^((?:[\w.-]+[\\/])*test_\w+\.py):(\d+):")
 _MINUTES_RE = re.compile(r"~?\s*(\d+(?:\.\d+)?)\s*(?:min\b|mins\b|minutes\b)", re.I)
 _RUNTIME_CONTEXT_RE = re.compile(r"\b(gate|suite|e2e|verify|browser|pytest|runtime)\b", re.I)
 CLAIM_WINDOW = 80
+SPAN_WORD_WINDOW = 30
 # The words just before a figure that make it a threshold, a history or a setting, not a measured runtime.
 _NOT_A_CLAIM_RE = re.compile(
     r"\b(?:exceeds?|exceeding|over|above|beyond|more than|longer than|if|investigate|budget|limit|timeout|"
@@ -814,14 +815,23 @@ def runtime_claims(text: str, file: str) -> List[Dict[str, object]]:
     threshold ("investigate if a run exceeds ~7 min"), a history ("the
     previous ~10 min") or a setting ("default 5 min"). home-automation's
     audit took those, an iCloud `expired after 10 min` and a telemetry cadence
-    as runtime claims (fleet-config#1134).
+    as runtime claims (fleet-config#1134). On one line only the first figure (its
+    headline) and a figure with a gate/suite/browser word in the `SPAN_WORD_WINDOW`
+    characters before it count: a history list, a worker-count scenario and a
+    phase with no span in the log are noise (app-launcher#1375).
     """
     out = []
     for i, line in enumerate(text.splitlines(), 1):
+        kept = 0
         for m in _MINUTES_RE.finditer(line):
             near = line[max(0, m.start() - CLAIM_WINDOW):m.end() + CLAIM_WINDOW]
             if not _RUNTIME_CONTEXT_RE.search(near) or _NOT_A_CLAIM_RE.search(line[max(0, m.start() - 40):m.start()]):
                 continue
+            # The first figure on a line is its headline; every later one needs a span word right before it, or it is
+            # a history, a scenario or a phase the log has no span for (app-launcher#1375: one bullet gave five claims).
+            if kept and not _RUNTIME_CONTEXT_RE.search(line[max(0, m.start() - SPAN_WORD_WINDOW):m.start()]):
+                continue
+            kept += 1
             out.append({"file": file, "line": i, "text": line.strip()[:160], "claimed_min": float(m.group(1))})
     return out
 
