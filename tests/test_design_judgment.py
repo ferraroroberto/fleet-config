@@ -164,6 +164,26 @@ yes_ev = json.loads(json.dumps(ok_payload))
 yes_ev["answers"][0]["evidence"] = None
 d, e = jm.validate_answers(yes_ev, rubric, metrics)
 check(d["status"] == "unmeasured" and any("evidence is required for a 'yes'" in x for x in e), "a yes without evidence is refused")
+# fleet-config#1158: five of the seven recorded `unmeasured` judgments (voice-transcriber#210 twice, task-os#278,
+# photo-ocr#126, app-launcher 2026-09-26) failed on ONE cause: the judge cited the `-full` page PNG's stem
+# ("iphone-light-history-full") as evidence, the filename the prompt itself lists, and the whole checklist was lost.
+full_stem = json.loads(json.dumps(ok_payload))
+full_stem["answers"][2]["evidence"] = "iphone-light-home-full"
+d, e = jm.validate_answers(full_stem, rubric, metrics)
+check(d["status"] == "ok" and not e and d["answers"][2]["evidence"] == "iphone-light-home" and len(d["answers"]) == len(SEED_IDS),
+      f"one `<screen id>-full` evidence no longer loses the checklist: it reads as the screen's id -- {e}")
+check(d.get("normalized") == [{"id": "J-03", "from": "iphone-light-home-full", "to": "iphone-light-home"}],
+      f"the alias is recorded, never silent -- {d.get('normalized')}")
+check(good.get("normalized") == [], "a reply that needed no alias records none")
+ghost = json.loads(json.dumps(ok_payload))
+ghost["answers"][2]["evidence"] = "nope-screen-full"
+d, e = jm.validate_answers(ghost, rubric, metrics)
+check(d["status"] == "unmeasured" and any("'nope-screen-full' is not a screen id" in x for x in e),
+      "a `-full` stem of no screen is still refused: only a real screen's own full-page file is an alias")
+m2 = jm.merge_judges([jm.validate_answers(full_stem, rubric, metrics)[0], jm.validate_answers(full_stem, rubric, metrics)[0]])
+check(m2["status"] == "ok" and len(m2.get("normalized") or []) == 2, f"a merge carries every judge's aliases -- {m2.get('normalized')}")
+check("never a file name" in prompt and "-full" in prompt.split("never a file name")[1][:200],
+      "the prompt says to cite the screen id, never a file name, and names the `-full` image")
 empty_rubric = rb.validate_rubric(_base)
 d, e = jm.validate_answers(ok_payload, empty_rubric, metrics)
 check(d["status"] == "unmeasured" and "no [[judgment]] entries" in e[0], "a rubric without a checklist cannot be judged")
@@ -288,6 +308,11 @@ prose = run_dir / "judge-prose.json"
 prose.write_text("I think the app looks fine overall.\n{\"answers\": []}", encoding="utf-8")
 p6 = _run("judge-merge", str(run_dir), str(prose), "--rubric", str(RUBRIC))
 check(p6.returncode == 0 and _kv(p6).get("JUDGMENT") == "unmeasured" and "not a single JSON object" in p6.stdout, "a prose reply is unmeasured, exit 0")
+stem = run_dir / "judge-stem.json"
+stem.write_text(json.dumps(full_stem), encoding="utf-8")
+p6b = _run("judge-merge", str(run_dir), str(stem), "--rubric", str(RUBRIC))
+check(p6b.returncode == 0 and _kv(p6b).get("JUDGMENT") == "ok" and "NORMALIZED=J-03:iphone-light-home-full->iphone-light-home" in p6b.stdout,
+      f"judge-merge reads a `-full` evidence stem as the screen and says so on a NORMALIZED line ({p6b.stdout[-300:]})")
 p7 = _run("judge-merge", str(run_dir), str(run_dir / "missing.json"), "--rubric", str(RUBRIC))
 check(p7.returncode == 2 and p7.stdout.startswith("ERROR="), "a missing answers file exits 2")
 p8 = _run("judge-prompt", str(run_dir / "nowhere"))

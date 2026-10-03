@@ -201,7 +201,10 @@ entry with a proposed metric + threshold), merges the judges, writes the
 `judgment` document into `<RUN_DIR>/evaluate.json`, and prints
 `JUDGMENT=ok|unmeasured|not_confirmed`, `ANSWERS=<yes>/<no>/<na>`,
 `UNCATALOGUED=<n>`, `ERRORS=<n>` (+ one `ERROR_DETAIL=` per violation, one
-`NOT_CONFIRMED=<id>:<votes>` per disagreement, and `RUBRIC_MISMATCH=` when
+`NOT_CONFIRMED=<id>:<votes>` per disagreement, one `NORMALIZED=<id>:<from>-><to>` per
+`<screen id>-full` evidence read as its screen (the full-page PNG's stem; five of
+seven recorded `unmeasured` judgments were only this, fleet-config#1158; say how
+many in the summary), and `RUBRIC_MISMATCH=` when
 `evaluate.json` was scored under another rubric version than the checklist
 — carry that line into the summary). A malformed or partial
 reply makes the **whole** judgment `unmeasured` — the report says so; it is
