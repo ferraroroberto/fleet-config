@@ -139,8 +139,8 @@ read.
   - **focus ring** — tokenized `:focus-visible` ring.
   - **reduced motion** — `prefers-reduced-motion` respected.
   - **desktop measure** — the centered 772px desktop measure; an app that declares `[design] wide_views` in its `.fleet.toml` (#1113) gets a WARN, not a FAIL, when no cap exists — the other views are `/design-review`'s LAYOUT-06.
-  - **switch on-track** — on-track color = success (green); FAIL if it is
-    the accent.
+  - **switch on-track** — on-track color = the accent (`accent-fill`, #1200);
+    FAIL if it is green (`success`), WARN if it cannot be resolved to either.
   - **checkboxes** — a checkbox control must be skinned off the browser's
     own tick (`appearance: none`), per design.md's Checkbox -> shadcn
     `checkbox` mapping. A real `<input type=checkbox>` is the shadcn

@@ -86,7 +86,7 @@ components:
   button-surface:  { backgroundColor: "{colors.canvas-subtle}", borderColor: "{colors.border}", textColor: "{colors.fg-muted}", rounded: "{rounded.md}", height: "{components.control.height}" }   # utility/toolbar/icon button at the control height
   button-disabled: { backgroundColor: "{colors.canvas-subtle}", borderColor: "{colors.border}", textColor: "{colors.fg-muted}" }   # ONE disabled recipe for every tier, both themes (home-automation#362)
   control:        { height: 36px, rounded: "{rounded.md}", backgroundColor: "{colors.canvas-subtle}", borderColor: "{colors.control-border}", textColor: "{colors.fg}" }   # shared height for inline select / input so a row of controls lines up
-  switch:         { width: 44px, height: 26px, rounded: "{rounded.pill}", thumbSize: 20px, trackOff: "{colors.control-border}", trackOn: "{colors.success}", thumbColor: "{colors.accent-fg}" }   # shadcn Switch — no text label; on = green (success), the universal on-state
+  switch:         { width: 44px, height: 26px, rounded: "{rounded.pill}", thumbSize: 20px, trackOff: "{colors.control-border}", trackOn: "{colors.accent-fill}", thumbColor: "{colors.accent-fg}" }   # shadcn Switch — no text label; on = the app's accent (fleet-config#1200), never green
   nav-bar:        { backgroundColor: "{colors.card}", rounded: "{rounded.nav}", height: 61px, margin: 21px, maxTabs: 5 }
   nav-tab:        { textColor: "{colors.fg-muted}", rounded: "{rounded.pill}", height: 53px }
   nav-tab-active: { backgroundColor: "{colors.accent-soft}", borderColor: "{colors.accent-border-soft}", textColor: "{colors.accent-text}" }   # accent-soft tint, not canvas-subtle — the inset surface (true black here) reads as a black hole (project-scaffolding#159)
@@ -195,7 +195,7 @@ one active tab at a time (accent-soft tint + `accent-text`, `aria-selected` trac
 unselected tabs with no boundary (the 1.4.11 exemption: icon + label identify
 them, pill and rail alike), `localStorage`-persisted selection, hidden under an open modal
 (`body:has(dialog[open])`), tap targets ≥ 44px with icon + label, at most five
-tabs with Settings as a page-header action, every pane opening with the one
+tabs with Settings never a tab but the page-header gear beside the theme toggle on every tab, every pane opening with the one
 `page-header`, the same
 tokenized `:focus-visible` ring on every interactive element, and the same
 behavior rendered inline at the top on fine pointers, or as the left rail
@@ -210,10 +210,12 @@ Structurally unchanged from the Light theme — the four button tiers
 shared `button-disabled` recipe; the accent derivatives are the same
 `color-mix` strings over the brighter dark accent), `card`,
 `control`, `switch`, `nav-bar`, `nav-tab`, `disclosure`, plus the `modal`,
-`page-header`, `list-row`, `action-row`, `empty-state`, and `icon-tile` **Component contracts** and the `icons.size` steps
+`page-header`, `list-row`, `action-row`, `empty-state`, `icon-tile`, and `toast` **Component contracts** and the `icons.size` steps
 defined in `design.md` — all with the vendored snippets from
 `project-scaffolding` reused verbatim. Only values change for dark: the `switch`
-on-track is still **green (`success`)**, at the brighter dark `success` value;
+on-track is the **accent (`accent-fill`)**, at the dark `accent-fill` value
+(never green); the `toast` is the same neutral frosted glass over the dark
+nav-bar fill, and only a real error tints;
 the `modal` disabled recipe holds AA on the dark surface (~5.5:1); the
 `icon-tile` fills use the brighter dark `tile-*` values. The **Base UI — model
 components on shadcn** rule in `design.md` applies here unchanged: every
