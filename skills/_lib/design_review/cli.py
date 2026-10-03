@@ -28,7 +28,7 @@ skill can read the result back without parsing JSON:
     probe         TARGET= BASE_URL= ROOT= CLAUDE_MD= PROBE=listening|NOT_LISTENING|TIMEOUT|BAD_URL DETAIL=
     measure       TARGET= MODE=live|synthetic BASE_URL= COMMIT= INTERPRETER= RUN_DIR= METRICS= SCREENS=<ok>/<total> ABSENT=<n> UNMEASURED=<reason>|none
     judge-prompt  PROMPT=<run_dir>/judge-prompt.md SCREENS=<n> QUESTIONS=<n>
-    judge-merge   JUDGMENT=ok|unmeasured|not_confirmed ANSWERS=<yes>/<no>/<na> UNCATALOGUED=<n> ERRORS=<n>
+    judge-merge   JUDGMENT=ok|unmeasured|not_confirmed ANSWERS=<yes>/<no>/<na> UNCATALOGUED=<n> ERRORS=<n>  [NORMALIZED=<id>:<from>-><to>]
                   [RUBRIC_MISMATCH=evaluate:<v> judgment:<v>] EVALUATE=
     ledger        LEDGER=<ledger.json> RUN_ID= PREVIOUS=<run_id>|none FIXED=<n> [ids] REGRESSED=<n> [ids] NEW=<n> [ids]
                   UNCHANGED=<n> UNMEASURED=<n> RUBRIC_CHANGED=<from>-><to>|none LIVE_BUILD=<sha>|unknown COMMIT= EVALUATE=
@@ -284,6 +284,8 @@ def cmd_judge_merge(args: argparse.Namespace) -> int:
         print(f"ERROR_DETAIL={e}")
     for d in merged.get("disagreements") or []:
         print(f"NOT_CONFIRMED={d['id']}:{'/'.join(str(v) for v in d['answers'])}")
+    for n in merged.get("normalized") or []:
+        print(f"NORMALIZED={n['id']}:{n['from']}->{n['to']}")
     print(f"EVALUATE={evaluate_path}")
     return 0
 

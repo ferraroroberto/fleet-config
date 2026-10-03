@@ -33,7 +33,10 @@ Judge output schema (one JSON object, nothing else):
 answers in the enum, `evidence` a real screen id inside the question's
 scope, every `no` either mapped to one of its question's rule ids or backed
 by an `uncatalogued` entry naming that question, `uncatalogued` only on a
-`no`. Any violation -> `{status: "unmeasured", reason, errors: [...]}` with
+`no`. One alias is accepted: `<screen id>-full` (the filename stem of the
+screen's full-page PNG, which the prompt lists) reads as that screen's id,
+and every such reading is recorded in `normalized` (fleet-config#1158: six of
+seven recorded `unmeasured` judgments were only this). Any other violation -> `{status: "unmeasured", reason, errors: [...]}` with
 empty answers — never a partial acceptance, never a silent drop.
 
 `merge_judges` (for `--judges 2`) keeps the answers every judge agrees on,
@@ -48,7 +51,8 @@ The judgment document written into `evaluate.json["judgment"]`:
      "rubric_version": str, "judges": int,
      "answers": [{"id", "question", "answer", "evidence", "maps_to": [...], "note"}],
      "uncatalogued": [{"question", "title", "severity", "detail", "owner", "proposed": {...}}],
-     "errors": [str], "disagreements": [{"id", "answers": [...]}]}
+     "errors": [str], "disagreements": [{"id", "answers": [...]}],
+     "normalized": [{"id", "from", "to"}]}
 
 Nothing here touches `categories` / `overall`: grades are the rubric's
 arithmetic over the metrics and the report prints them from the JSON, so an
@@ -73,6 +77,7 @@ STATUS_NOT_CONFIRMED = "not_confirmed"
 STATUS_UNMEASURED = "unmeasured"
 NOT_CONFIRMED = "not confirmed"
 SHOTS_DIR = "shots"
+FULL_SUFFIX = "-full"
 SCOPE_KINDS: Dict[str, Optional[Tuple[str, ...]]] = {"all": None, "tabs": ("tab",), "dialogs": ("dialog",)}
 
 _FENCE_RE = re.compile(r"^\s*```(?:json)?\s*\n(.*?)\n\s*```\s*$", re.DOTALL)
@@ -141,7 +146,8 @@ def judge_prompt(doc: dict, run_dir: Path, rubric: Rubric) -> str:
                  "appear there) — and every `desktop-light` tab `-full` PNG; open other devices and themes only to "
                  "settle a doubt, light and dark render the same layout in different colours. Judge what the "
                  "screenshots show; the metrics file supports a reading and never overrides what is visible. Cite as "
-                 "evidence the screen you actually looked at.")
+                 "evidence the screen you actually looked at, by its id from the first column of the table, never a file "
+                 "name: the `-full` PNG of a screen is cited by that screen's id, without `-full`.")
     lines.append("")
     lines.append("## Checklist")
     lines.append("")
@@ -184,7 +190,7 @@ def judge_prompt(doc: dict, run_dir: Path, rubric: Rubric) -> str:
     lines.append("")
     lines.append(f"- `answers` holds every id {', '.join(j.id for j in rubric.judgment)} exactly once and no other id.")
     lines.append("- `answer` is one of `yes`, `no`, `na`.")
-    lines.append("- `evidence` is a screen id from the table, inside the question's scope; it may be null only when the answer is `na`.")
+    lines.append("- `evidence` is a screen id from the table's first column (never a file name, and without any `-full`), inside the question's scope; it may be null only when the answer is `na`.")
     lines.append("- `maps_to` lists only rule ids from that question's own list; use null or [] when the answer is not `no`.")
     lines.append("- every `no` either has a non-empty `maps_to` or an `uncatalogued` entry whose `question` is that id, with `proposed.metric` and `proposed.threshold` filled.")
     lines.append("- an `uncatalogued` entry may only name a question you answered `no`.")
@@ -246,6 +252,7 @@ def validate_answers(payload: object, rubric: Rubric, doc: dict) -> Tuple[dict, 
         raw_unc = []
 
     seen: Dict[str, dict] = {}
+    normalized: List[dict] = []
     for i, a in enumerate(raw_answers):
         if not isinstance(a, dict):
             errors.append(f"answers[{i}] is not an object")
@@ -265,6 +272,9 @@ def validate_answers(payload: object, rubric: Rubric, doc: dict) -> Tuple[dict, 
         if answer not in ANSWERS:
             errors.append(f"{jid}: answer {answer!r} not in {ANSWERS}")
         evidence = a.get("evidence")
+        if isinstance(evidence, str) and evidence not in screens and evidence.endswith(FULL_SUFFIX) and evidence[:-len(FULL_SUFFIX)] in screens:
+            normalized.append({"id": jid, "from": evidence, "to": evidence[:-len(FULL_SUFFIX)]})
+            evidence = evidence[:-len(FULL_SUFFIX)]
         if evidence is None or evidence == "":
             if answer != "na":
                 errors.append(f"{jid}: evidence is required for a {answer!r} answer")
@@ -330,7 +340,7 @@ def validate_answers(payload: object, rubric: Rubric, doc: dict) -> Tuple[dict, 
         return unmeasured_doc(rubric, errors), errors
     answers = [seen[j.id] for j in rubric.judgment]
     return {"status": STATUS_OK, "reason": None, "rubric_version": rubric.version, "judges": 1,
-            "answers": answers, "uncatalogued": unc_out, "errors": [], "disagreements": []}, []
+            "answers": answers, "uncatalogued": unc_out, "errors": [], "disagreements": [], "normalized": normalized}, []
 
 
 # ---- merging ------------------------------------------------------------------
@@ -397,7 +407,8 @@ def merge_judges(docs: List[dict]) -> dict:
     return {"status": STATUS_NOT_CONFIRMED if disagreements else STATUS_OK,
             "reason": f"{len(disagreements)} question(s) not confirmed across {len(docs)} judges" if disagreements else None,
             "rubric_version": first.get("rubric_version"), "judges": len(docs),
-            "answers": answers, "uncatalogued": unc, "errors": [], "disagreements": disagreements}
+            "answers": answers, "uncatalogued": unc, "errors": [], "disagreements": disagreements,
+            "normalized": [n for d in docs for n in d.get("normalized") or []]}
 
 
 def _unmeasured_like(template: dict, errors: List[str], judges: int) -> dict:
