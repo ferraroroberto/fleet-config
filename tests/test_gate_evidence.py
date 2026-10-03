@@ -14,10 +14,12 @@ from __future__ import annotations
 
 import contextlib
 import io
+import os
 import shutil
 import subprocess
 import sys
 import tempfile
+import time
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
@@ -82,6 +84,30 @@ try:
     check(state == "STALE" and "a.txt" in detail, f"editing a tracked file -> STALE naming it ({detail})")
     git(repo, "checkout", "-q", "--", "a.txt")
     check(ge.check(repo, "gate")[0] == "FRESH", "reverting the edit -> FRESH again")
+
+    # fleet-config#1192: a same-size rewrite in the same second as the last index write. Git for Windows compares stat
+    # times at one-second resolution, so such an edit is invisible to the stat cache unless git treats the entry as
+    # "racily clean" (entry mtime >= the index file's mtime) and re-reads it. The hash works on a COPY of the index, so
+    # the copy must keep the real index's mtime. Forced here rather than raced: file and index are both stamped to
+    # the same instant, well in the past, so the outcome never depends on how fast the box ran this test.
+    racy = init_repo(empty_commit=False)
+    try:
+        racy_file = racy / "a.txt"
+        racy_file.write_text("one\n", encoding="utf-8")
+        long_ago = time.time_ns() - 60 * 1_000_000_000
+        os.utime(racy_file, ns=(long_ago, long_ago))
+        git(racy, "add", "-A")
+        git(racy, "commit", "-q", "-m", "init")
+        os.utime(ge.git_path(racy, "index"), ns=(long_ago, long_ago))
+        quiet_run(racy, "gate", OK_CMD)
+        check(ge.check(racy, "gate")[0] == "FRESH", "same-second fixture: unchanged tree -> FRESH")
+        racy_file.write_text("two\n", encoding="utf-8")  # same size as "one\n"
+        os.utime(racy_file, ns=(long_ago, long_ago))        # and the very mtime the index entry recorded
+        state, detail = ge.check(racy, "gate")
+        check(state == "STALE" and "a.txt" in detail,
+              f"a same-size edit in the same second as the index write -> STALE naming it, not a stat-cache FRESH ({state}: {detail})")
+    finally:
+        shutil.rmtree(racy, ignore_errors=True)
 
     (repo / "new.txt").write_text("fresh file\n", encoding="utf-8")
     check(ge.check(repo, "gate")[0] == "STALE", "adding an untracked non-ignored file -> STALE")
