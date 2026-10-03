@@ -31,6 +31,10 @@
   dialog button { min-height: 44px; min-width: 88px; font: inherit; }
   dialog summary { min-height: 44px; }
   dialog input, #reveal input { font: inherit; }
+  /* COLOR-03 (#1185): the 44px-field recipe -- a transparent border band, the visible boundary an inset shadow */
+  .inset-ok, .inset-faint { font: inherit; height: 44px; box-sizing: border-box; border: 4px solid transparent; background: #ffffff; }
+  .inset-ok { box-shadow: inset 0 0 0 1px #6b7280; }
+  .inset-faint { box-shadow: inset 0 0 0 1px #e5e5e5; }
   .faint-border { font: inherit; min-height: 44px; border: 1px solid #e5e5e5; background: #ffffff; }
   .text-only { font: inherit; min-height: 44px; border: 0; background: transparent; color: var(--fg); }
   .wrapped-field { display: inline-flex; height: 44px; border: 1px solid #818b98; }
@@ -97,6 +101,8 @@
       <details><summary>More</summary><p>Hidden until open: eleven point five.</p></details>
       <!-- COLOR-03 (#996): an input's faint boundary fails 3:1; a text-labelled, borderless button is exempt -->
       <input class="faint-border" aria-label="Faint input">
+      <input class="inset-ok" aria-label="Inset boundary input">
+      <input class="inset-faint" aria-label="Faint inset boundary input">
       <button type="button" class="text-only">Text tab</button>
       <!-- a field whose wrapper draws the control-border boundary (the vendored filter) is not boundary-less;
            a text-labelled role=switch pill is exempt, a bare switch track with a faint edge is not -->
