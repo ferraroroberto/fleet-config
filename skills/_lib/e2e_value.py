@@ -31,6 +31,8 @@ With none of them, every verdict is `unknown (no timing source)`.
     tail          {slowest_n, slowest_share, top5pct_n, top5pct_share, max_s}
     first_node    {nodeid, seconds, median_s}              carries the session boot
     waits         [{file, line, kind, ms, scope, text, nodes, measured_s, paid_s, ceiling}]  paid seconds first, `timeout=` ceilings last
+    slow_nodes    [{nodeid, seconds, median_s}]            executed nodes over 10x the median and 1 s, boot node left out
+    app_timers    [{file, line, kind, ms, text}]           literal 1 s+ timers in app JS (tests, vendored, minified left out)
     failures      [{test, nodeid, projection, date, source, when, step}]  every log on disk
     race_candidates [{test, projections, steps [..], events}]
     runtime_drift {status, measured_min, claims [{file, line, text, claimed_min, delta}]}
@@ -97,6 +99,7 @@ from __future__ import annotations
 import datetime as _dt
 import json
 import math
+import os
 import re
 import subprocess
 import sys
@@ -433,10 +436,10 @@ _TIMEOUT_KW_RE = re.compile(r"\btimeout\s*=\s*([\d_]+)\b")
 _POLL_CONST_RE = re.compile(r"^\s*([A-Z][A-Z0-9_]*(?:_MS|_INTERVAL|POLL[A-Z0-9_]*))\s*=\s*([\d_]+)\s*(?:#.*)?$", re.M)
 
 
-def _js_timer_ms(text: str) -> List[Tuple[int, int]]:
-    """`(offset, ms)` for every `setTimeout(fn, <ms>)`: the literal last argument of the call."""
+def _js_timer_ms(text: str, fn: str = "setTimeout") -> List[Tuple[int, int]]:
+    """`(offset, ms)` for every `<fn>(cb, <ms>)`: the literal last argument of the call."""
     out = []
-    for m in re.finditer(r"\bsetTimeout\(", text):
+    for m in re.finditer(rf"\b{fn}\(", text):
         depth, i = 1, m.end()
         while i < len(text) and depth:
             depth += {"(": 1, ")": -1}.get(text[i], 0)
@@ -495,6 +498,59 @@ def wait_sites(repo_root: Path, test_dirs: Sequence[str]) -> List[Dict[str, obje
             out.append({"file": rel, "line": line, "kind": kind, "ms": ms, "scope": inner[-1] if inner else None,
                         "text": text.splitlines()[line - 1].strip()[:120]})
     return out
+
+
+SLOW_NODE_FACTOR = 10
+SLOW_NODE_MIN_S = 1.0
+APP_TIMER_MIN_MS = 1_000
+_APP_SKIP_DIRS = frozenset({"node_modules", "_vendored", "vendor", "dist", "build", ".git", ".venv", "venv", "__pycache__"})
+_APP_SLEEP_RE = re.compile(r"\bsleep\(\s*([\d_]+)\s*\)")
+
+
+def slow_nodes(nodes: Dict[str, float]) -> List[Dict[str, object]]:
+    """Executed nodes far above the suite's median: the `find the wait` candidates (fleet-config#1157).
+
+    A wait that lives in app source (a 1 s status poll in `poll.js`, waited out
+    twice by one test) is invisible to the test-tree scan; the per-node seconds
+    show it as an outlier. The first node carries the session boot (its own
+    finding), so it is left out. Candidates only: read the test and the app's
+    timers (`app_timers`) before pricing one.
+    """
+    if len(nodes) < 2:
+        return []
+    items = list(nodes.items())[1:]
+    vals = sorted(nodes.values())
+    median = vals[len(vals) // 2]
+    floor = max(SLOW_NODE_FACTOR * median, SLOW_NODE_MIN_S)
+    return [{"nodeid": n, "seconds": s, "median_s": median} for n, s in sorted(items, key=lambda kv: -kv[1]) if s > floor]
+
+
+def app_timers(repo_root: Path, test_dirs: Sequence[str]) -> List[Dict[str, object]]:
+    """Literal timers of 1 s or more in the app's own JavaScript: what a test may be waiting out.
+
+    `setTimeout`/`setInterval` (last argument) and `sleep(<ms>)`, longest
+    first. Tests, vendored copies, `node_modules` and minified files are left
+    out. A hint to confirm by reading, never a cost: only the test's own
+    stubbed endpoints decide whether the timer runs (fleet-config#1157).
+    """
+    skip = {str((repo_root / d.strip("/")).resolve()) for d in test_dirs}
+    out: List[Dict[str, object]] = []
+    for dirpath, dirnames, filenames in os.walk(repo_root):
+        dirnames[:] = [d for d in dirnames if d not in _APP_SKIP_DIRS and str((Path(dirpath) / d).resolve()) not in skip]
+        for fn in filenames:
+            if not fn.endswith((".js", ".mjs")) or fn.endswith(".min.js"):
+                continue
+            path = Path(dirpath) / fn
+            text = path.read_text(encoding="utf-8", errors="replace")
+            hits = [(off, "timeout", ms) for off, ms in _js_timer_ms(text)]
+            hits += [(off, "interval", ms) for off, ms in _js_timer_ms(text, "setInterval")]
+            hits += [(m.start(), "sleep", int(m.group(1).replace("_", ""))) for m in _APP_SLEEP_RE.finditer(text)]
+            rel = path.relative_to(repo_root).as_posix()
+            for off, kind, ms in hits:
+                if ms >= APP_TIMER_MIN_MS:
+                    line = text.count("\n", 0, off) + 1
+                    out.append({"file": rel, "line": line, "kind": kind, "ms": ms, "text": text.splitlines()[line - 1].strip()[:120]})
+    return sorted(out, key=lambda t: (-int(t["ms"]), str(t["file"]), int(t["line"])))  # type: ignore[call-overload]
 
 
 def rank_waits(sites: List[Dict[str, object]], nodes: Dict[str, float], repo_root: Path) -> List[Dict[str, object]]:
@@ -742,6 +798,8 @@ def timing(repo_root: Path, test_dirs: Sequence[str], log: Optional[Path] = None
         "tail": tail(e2e),
         "first_node": first_node(e2e),
         "waits": rank_waits(wait_sites(repo_root, test_dirs), e2e, repo_root),
+        "slow_nodes": slow_nodes(e2e),
+        "app_timers": app_timers(repo_root, test_dirs),
         "projection_fit": projection_fit(e2e, repo_root),
         "runtime_drift": runtime_drift(repo_root, run, str(load["state"])),
     }
