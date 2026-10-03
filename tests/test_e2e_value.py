@@ -747,6 +747,27 @@ check(prk["test_deadline"]["paid_s"] is None and prk["test_deadline"]["ceiling"]
       and [r["scope"] for r in v.rank_waits(list(psites.values()), pn, pr_)][-2:] == ["test_deadline", "test_cond"],
       f"a poll sleep is never priced as paid seconds and ranks after every fixed wait -- {prk['test_deadline']}")
 
+# slow_fixtures (fleet-config#1170, local-llm-hub#644): 40 s of a 76 s run was a session fixture's `httpx.get(..., timeout=_WARMUP_TIMEOUT)`
+# with `_WARMUP_TIMEOUT = 90.0` (seconds). `waits` read `timeout=` as integer milliseconds, so a float-seconds timeout never matched
+# and the audit ranked 4 s of sleeps first.
+sf = Path(tempfile.mkdtemp(prefix="e2e-value-slowfix-"))
+(sf / "tests" / "e2e").mkdir(parents=True)
+(sf / "tests" / "e2e" / "test_tab.py").write_text(
+    "import httpx\nimport pytest\n\n_WARMUP_TIMEOUT = 90.0\n_QUICK = 5.0\n\n\n"
+    "@pytest.fixture(scope='session', autouse=True)\ndef _warm(admin_url):\n"
+    "    httpx.get(admin_url, params={}, timeout=_WARMUP_TIMEOUT)\n\n\n"
+    "@pytest.fixture\ndef _short(admin_url):\n    httpx.get(admin_url, timeout=_QUICK)\n\n\n"
+    "def _fetch(url):\n    return httpx.get(url, timeout=45)\n\n\n"
+    "def _click(page):\n    page.click('a', timeout=45000)\n    page.wait_for_selector('b', timeout=60.0 * 1000)\n\n\n"
+    "def test_x(page):\n    httpx.get('u', timeout=120.0)\n    page.wait_for_selector('#x', timeout=60000)\n", encoding="utf-8")
+slow = v.slow_fixtures(sf, ["tests/e2e"])
+check([(r["name"], r["fixture_scope"], r["autouse"], r["timeout_s"]) for r in slow] == [("_warm", "session", True, 90.0), ("_fetch", None, False, 45.0)],
+      f"a fixture or helper (not a test) with a seconds-valued timeout of 30 s or more is listed, longest first; a short one, a test, "
+      f"and a Playwright millisecond timeout are not -- {slow}")
+check(slow[0]["file"] == "tests/e2e/test_tab.py" and slow[0]["line"] == 9 and slow[0]["is_fixture"] is True and slow[1]["is_fixture"] is False,
+      f"each entry names its file, line and whether it is a pytest fixture -- {slow[0]}")
+check(v.slow_fixtures(Path(tempfile.mkdtemp(prefix="e2e-value-slowfix-none-")), ["tests/e2e"]) == [], "no test tree, no slow fixtures")
+
 # slow_nodes + app_timers (fleet-config#1157, photo-ocr#127): a 1 s poll in app source (`poll.js`) was waited out twice
 # by one test, invisible to a scan of the test tree. The junit showed it: 2.6 s against a 0.2 s median.
 sn = v.slow_nodes({"tests/e2e/test_a.py::test_boot[chromium]": 7.1, "tests/e2e/test_a.py::test_fast[chromium]": 0.2,

@@ -687,6 +687,7 @@ def scan(repo_root: Path, target: int = DEFAULT_TARGET) -> Dict[str, object]:
         "key_views_declared": key_views,
         "coverage_gaps": coverage_gaps(key_views, all_test_text) if key_views else [],
         "waits": e2e_value.wait_sites(repo_root, existing_dirs),
+        "slow_fixtures": e2e_value.slow_fixtures(repo_root, existing_dirs),
         "vacuous_candidates": vacuous_candidates(files, _repo_texts(repo_root)) if files else [],
     }
 

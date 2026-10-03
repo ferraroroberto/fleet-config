@@ -34,6 +34,7 @@ With none of them, every verdict is `unknown (no timing source)`.
     waits         [{file, line, kind, ms, scope, text, nodes, measured_s, paid_s, ceiling}]  paid seconds first, `timeout=` ceilings and `poll-sleep`s last
     slow_nodes    [{nodeid, seconds, median_s}]            executed nodes over 10x the median and 1 s, boot node left out
     app_timers    [{file, line, kind, ms, text}]           literal 1 s+ timers in app JS (tests, vendored, minified left out)
+    slow_fixtures [{file, line, name, is_fixture, fixture_scope, autouse, timeout_s}]  fixtures/helpers with a 30 s+ seconds timeout
     failures      [{test, nodeid, projection, date, source, when, step}]  every log on disk
     race_candidates [{test, projections, steps [..], events}]
     runtime_drift {status, measured_min, claims [{file, line, text, claimed_min, delta}]}
@@ -618,6 +619,81 @@ def app_timers(repo_root: Path, test_dirs: Sequence[str]) -> List[Dict[str, obje
     return sorted(out, key=lambda t: (-int(t["ms"]), str(t["file"]), int(t["line"])))  # type: ignore[call-overload]
 
 
+SLOW_FIXTURE_TIMEOUT_S = 30.0
+# Callers whose `timeout=` is seconds even as an int; a Playwright `timeout=` is integer milliseconds.
+_SECONDS_API_ROOTS = frozenset({"httpx", "requests", "urllib", "urlopen", "subprocess", "socket"})
+
+
+def _dotted_root(func) -> str:
+    """The leftmost name of a call target (`httpx.get` -> `httpx`, `urlopen` -> `urlopen`), or ''."""
+    import ast
+    while isinstance(func, ast.Attribute):
+        func = func.value
+    return func.id if isinstance(func, ast.Name) else ""
+
+
+def _fixture_info(fn) -> Optional[Tuple[Optional[str], bool]]:
+    """`(scope, autouse)` when `fn` carries a `pytest.fixture` decorator, else None."""
+    import ast
+    for d in fn.decorator_list:
+        target = d.func if isinstance(d, ast.Call) else d
+        name = target.attr if isinstance(target, ast.Attribute) else getattr(target, "id", "")
+        if name != "fixture":
+            continue
+        kws = {k.arg: k.value for k in d.keywords} if isinstance(d, ast.Call) else {}
+        scope = kws.get("scope")
+        autouse = kws.get("autouse")
+        return (scope.value if isinstance(scope, ast.Constant) else None,
+                bool(isinstance(autouse, ast.Constant) and autouse.value))
+    return None
+
+
+def slow_fixtures(repo_root: Path, test_dirs: Sequence[str]) -> List[Dict[str, object]]:
+    """Fixtures and helpers (never tests) holding a seconds-valued timeout of 30 s or more (fleet-config#1170).
+
+    local-llm-hub's biggest cost was a session fixture: `httpx.get(...,
+    timeout=_WARMUP_TIMEOUT)` with `_WARMUP_TIMEOUT = 90.0`, a cold scan of the
+    host's own session history that took 40 s of a 76 s run. `waits` reads
+    `timeout=` as integer milliseconds, so a seconds timeout never matched and
+    4 s of sleeps ranked first. A float literal, or a module constant holding
+    one, is seconds; an int is seconds only in a call to `httpx`, `requests`,
+    `urlopen`, `subprocess` or `socket` (a Playwright `timeout=45000` is
+    milliseconds). The timeout is a ceiling, not the cost: `pytest
+    --durations=0` (the `setup` rows) says what the fixture really took, and a
+    long `first_node` points here.
+    """
+    import ast
+    out: List[Dict[str, object]] = []
+    for p in _test_tree_files(repo_root, test_dirs):
+        try:
+            tree = ast.parse(p.read_text(encoding="utf-8", errors="replace"))
+        except SyntaxError:
+            continue
+        consts = {n.targets[0].id: n.value.value for n in tree.body
+                  if isinstance(n, ast.Assign) and len(n.targets) == 1 and isinstance(n.targets[0], ast.Name)
+                  and isinstance(n.value, ast.Constant) and isinstance(n.value.value, (int, float))
+                  and not isinstance(n.value.value, bool)}
+        rel = p.relative_to(repo_root).as_posix()
+        for fn in ast.walk(tree):
+            if not isinstance(fn, (ast.FunctionDef, ast.AsyncFunctionDef)) or fn.name.startswith("test_"):
+                continue
+            best = 0.0
+            for call in (n for n in ast.walk(fn) if isinstance(n, ast.Call)):
+                for kw in call.keywords:
+                    if kw.arg != "timeout":
+                        continue
+                    val = kw.value.value if isinstance(kw.value, ast.Constant) else consts.get(getattr(kw.value, "id", ""))
+                    if isinstance(val, bool) or not isinstance(val, (int, float)):
+                        continue
+                    if isinstance(val, float) or _dotted_root(call.func) in _SECONDS_API_ROOTS:
+                        best = max(best, float(val))
+            if best >= SLOW_FIXTURE_TIMEOUT_S:
+                info = _fixture_info(fn)
+                out.append({"file": rel, "line": fn.lineno, "name": fn.name, "is_fixture": info is not None,
+                            "fixture_scope": info[0] if info else None, "autouse": bool(info and info[1]), "timeout_s": best})
+    return sorted(out, key=lambda r: (-float(r["timeout_s"]), str(r["file"]), int(r["line"])))  # type: ignore[call-overload]
+
+
 def rank_waits(sites: List[Dict[str, object]], nodes: Dict[str, float], repo_root: Path) -> List[Dict[str, object]]:
     """Each wait joined to the executed nodes that pay it, ranked by their measured seconds.
 
@@ -885,6 +961,7 @@ def timing(repo_root: Path, test_dirs: Sequence[str], log: Optional[Path] = None
         "waits": rank_waits(wait_sites(repo_root, test_dirs), e2e, repo_root),
         "slow_nodes": slow_nodes(e2e),
         "app_timers": app_timers(repo_root, test_dirs),
+        "slow_fixtures": slow_fixtures(repo_root, test_dirs),
         "projection_fit": projection_fit(e2e, repo_root),
         "runtime_drift": runtime_drift(repo_root, run, str(load["state"])),
     }
