@@ -140,6 +140,66 @@ check(
 )
 
 
+# ---- Telegram channel sessions are standing, not workers (fleet-config#1212) --
+#
+# The session-host tags the three always-on Telegram channel sessions (cwd
+# life-os) with a `telegram:<profile>` board label. They never claim the
+# checkout, so before the fix they made life-os permanently undispatchable and
+# also ate three slots of the worker cap.
+
+_TG_LABELS = ("telegram:health", "telegram:school", "telegram:house")
+_tg_only = {
+    "claude_turn": [
+        _session_card(project="life-os", label=lbl, session_id=f"tg-{i}")
+        for i, lbl in enumerate(_TG_LABELS)
+    ],
+    "your_turn": [],
+}
+check(
+    co.repo_occupancy(_tg_only) == {},
+    "repo_occupancy: telegram:* channel sessions do not occupy their repo (#1212)",
+)
+check(
+    co.alive_worker_count(_tg_only) == 0,
+    "alive_worker_count: telegram:* channel sessions do not use up lane capacity (#1212)",
+)
+check(
+    co.refuse_dispatch("life-os", "start", co.repo_occupancy(_tg_only),
+                       co.alive_worker_count(_tg_only), 3, False) is None,
+    "dispatch into life-os is not refused by its standing telegram sessions (#1212)",
+)
+
+_tg_plus_worker = {
+    "claude_turn": [
+        _session_card(project="life-os", label="telegram:health", session_id="tg-0"),
+        _session_card(project="life-os", label="", session_id=_WORKER_SID),
+    ],
+    "your_turn": [],
+}
+check(
+    co.repo_occupancy(_tg_plus_worker).get("life-os", {}).get("session_id") == _WORKER_SID,
+    "repo_occupancy: a normal life-os session still occupies it beside a telegram one (#1212)",
+)
+check(
+    co.alive_worker_count(_tg_plus_worker) == 1,
+    "alive_worker_count: only the normal session counts beside a telegram one (#1212)",
+)
+check(
+    "life-os" in co.repo_occupancy({
+        "claude_turn": [_session_card(project="life-os", label="my-telegram:notes")],
+        "your_turn": [],
+    }),
+    "repo_occupancy: the exclusion is the `telegram:` prefix, not a substring (#1212)",
+)
+check(
+    "life-os" in co.repo_occupancy({
+        "claude_turn": [_session_card(project="life-os", label=None)],
+        "your_turn": [],
+    }),
+    "repo_occupancy: a card with no label (None) still occupies (#1212)",
+)
+
+
 # ---- caller_session_id: the launcher's own id space (fleet-config#838/#848) --
 
 check(

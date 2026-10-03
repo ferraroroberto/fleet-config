@@ -561,6 +561,9 @@ what it re-tested is a hypothesis — file it as a question, or don't file it.
    count includes *your own* card, matched on the launcher session id, so
    your standing presence in `fleet-config` does not make that repo
    undispatchable (fleet-config#838); every other live session still does.
+   The standing `telegram:*` channel sessions (label prefix) are skipped by
+   both counts too: they are not workers and never hold a checkout
+   (fleet-config#1212).
    This is a hard refusal, not a rule to remember; on `REFUSED=...`, tell the
    user what's running and queue the request in-conversation, revisiting
    when they confirm or a worker finishes.

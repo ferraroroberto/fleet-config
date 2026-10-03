@@ -275,6 +275,10 @@ LOOPBACK_HOSTS = {"127.0.0.1", "::1", "localhost"}
 # already reads the same variable the same way.
 LAUNCHER_SESSION_ID_ENV_VAR = "APP_LAUNCHER_SESSION_ID"
 
+# Board-label prefix of the standing Telegram channel sessions (app-launcher's
+# `channel_profiles.py`). Named here, not imported, for the same reason.
+CHANNEL_SESSION_LABEL_PREFIX = "telegram:"
+
 # Scheduled launcher jobs whose scope is the whole fleet (fleet-config#1078).
 # Every fleet repo is in their scope, so any dispatch while one runs can
 # collide with it: on 2026-09-27 a `/propagate-vendored` lane's worktrees
@@ -343,6 +347,16 @@ def _holds_a_live_pty(card: Dict[str, Any]) -> bool:
     return bool(card.get("alive")) and card.get("kind") != "external"
 
 
+def _is_channel_session(card: Dict[str, Any]) -> bool:
+    """A standing Telegram channel session: the launcher's session-host tags
+    each with a `telegram:<profile>` board label (app-launcher
+    `channel_profiles.py`, app-launcher#1389). Always-on by design, never a
+    worker: it does not claim a checkout, and a dispatched lane builds in its
+    own worktree regardless. Shared by the occupancy gate and the worker cap so
+    the two can't disagree about it (fleet-config#932, #1212)."""
+    return str(card.get("label") or "").startswith(CHANNEL_SESSION_LABEL_PREFIX)
+
+
 def repo_occupancy(
     columns: Dict[str, Any],
     exclude_sid: Optional[str] = None,
@@ -352,6 +366,10 @@ def repo_occupancy(
 
     A dead (`alive: False`) or `external` (state-file-only, unverifiable)
     card never blocks a dispatch — only a live PTY actually holds the repo.
+
+    A standing `telegram:*` channel session (`_is_channel_session`) is skipped
+    too: three of them run permanently in life-os, so counting them made
+    every life-os dispatch refuse (fleet-config#1212).
 
     `exclude_sid` drops one card by session id: the caller's own. The standing
     chief runs as an ordinary launcher PTY with cwd `E:/automation/fleet-config`,
@@ -366,7 +384,7 @@ def repo_occupancy(
     occ: Dict[str, Dict[str, Any]] = {}
     cards = list(columns.get("claude_turn") or []) + list(columns.get("your_turn") or [])
     for card in cards:
-        if not _holds_a_live_pty(card):
+        if not _holds_a_live_pty(card) or _is_channel_session(card):
             continue
         if exclude_sid and str(card.get("session_id") or "") == exclude_sid:
             continue
@@ -399,12 +417,17 @@ def alive_worker_count(columns: Dict[str, Any], exclude_sid: Optional[str] = Non
     chief because a launcher-dispatched session is forced onto a worktree
     regardless (`worktree_claim.py`, fleet-config#525), so the checkout
     collision the cap is a proxy for is prevented downstream either way.
+
+    Standing `telegram:*` channel sessions are not workers either
+    (`_is_channel_session`, fleet-config#1212): three always-on ones would
+    otherwise hold three lane slots forever.
     """
     cards = list(columns.get("claude_turn") or []) + list(columns.get("your_turn") or [])
     return sum(
         1
         for c in cards
         if _holds_a_live_pty(c)
+        and not _is_channel_session(c)
         and c.get("label") != "chief"
         and not (exclude_sid and str(c.get("session_id") or "") == exclude_sid)
     )
