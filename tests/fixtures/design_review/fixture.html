@@ -2,7 +2,7 @@
 <!-- Static fixture for the design_review browser leg (fleet-config#971).
      Every planted defect below is asserted by tests/test_design_review.py;
      keep the counts in sync with that file. Loaded via file://, no server. -->
-<html lang="en">
+<html lang="en" data-textsize="default">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
@@ -70,6 +70,9 @@
     <button type="button" role="tab" data-tab="home" aria-controls="paneHome" aria-selected="true">Home</button>
     <button type="button" role="tab" data-tab="list" aria-controls="paneList" aria-selected="false">List</button>
   </nav>
+  <!-- A text-size control named only by aria-labelledby, hidden like a Settings pane the walk never opens (#1185):
+       the a11y probe must find it by its naming alone, and hidden controls are not measured as controls. -->
+  <div hidden role="group" aria-labelledby="tsLabel"><span id="tsLabel">Text size</span></div>
   <main>
     <section id="paneHome" role="tabpanel">
       <h2>Home</h2>

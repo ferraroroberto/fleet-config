@@ -34,7 +34,7 @@ present on a successful run:
     layout    overflow_x, scroll_w, inner_w, inner_h, pane_h, lists [..],
               rows_over_limit [..], danger_rows, content_w, content_span, radii {r: n}
     clearance bars [..], hidden_rows [..], hidden_row_count
-    a11y      unnamed [..], unnamed_count, zoom_locked, text_size_control
+    a11y      unnamed [..], unnamed_count, zoom_locked, text_size_control, text_size_stamped
     headings  ["H2:Title@16px", ...]
 
 Lists are capped (`CAP`) so a screen with hundreds of small controls still
@@ -392,8 +392,15 @@ _MEASURE_JS = r"""
       if (!name && !el.querySelector('img[alt], svg[aria-label], svg title')) unnamed.push(sel(el)); });
     const vp = document.querySelector('meta[name=viewport]'); const c = (vp && vp.getAttribute('content') || '').toLowerCase();
     const locked = /user-scalable\s*=\s*(no|0)/.test(c) || /maximum-scale\s*=\s*1(\.0*)?(\s|,|$)/.test(c);
-    const tsc = !!document.querySelector('[aria-label*="text size" i], [aria-label*="font size" i], [data-text-size], #textSize, #fontSize');
-    return { unnamed: unnamed.slice(0,CAP), unnamed_count: unnamed.length, zoom_locked: locked, text_size_control: tsc };
+    // A text-size control by its own markers: the vendored one is `#textSizeControl` with `data-textsize` buttons
+    // (never on <html>, which carries the boot script's stamp), named by aria-label or by aria-labelledby (#1185).
+    const sizeWords = /(text|font)\s*size/i;
+    const named = (el) => sizeWords.test(el.getAttribute('aria-label') || '')
+      || (el.getAttribute('aria-labelledby') || '').split(/\s+/).some(id => { const t = id && document.getElementById(id); return !!t && sizeWords.test(t.textContent || ''); });
+    const tsc = !!document.querySelector('[data-text-size], [data-textsize]:not(html), #textSize, #fontSize, #textSizeControl')
+      || [...document.querySelectorAll('[aria-label], [aria-labelledby]')].some(named);
+    const stamped = document.documentElement.hasAttribute('data-textsize');
+    return { unnamed: unnamed.slice(0,CAP), unnamed_count: unnamed.length, zoom_locked: locked, text_size_control: tsc, text_size_stamped: stamped };
   });
 
   section('headings', () => q('h1,h2,h3,h4').map(h => h.tagName+':'+h.textContent.trim().slice(0,30)+'@'+getComputedStyle(h).fontSize).slice(0, CAP));
@@ -486,6 +493,6 @@ def metric_paths() -> List[str]:
         "layout": ["overflow_x", "scroll_w", "inner_w", "inner_h", "pane_h", "lists", "rows_over_limit",
                    "rows_over_limit_count", "danger_rows", "content_w", "content_span", "radii"],
         "clearance": ["bars", "hidden_rows", "hidden_row_count"],
-        "a11y": ["unnamed", "unnamed_count", "zoom_locked", "text_size_control"],
+        "a11y": ["unnamed", "unnamed_count", "zoom_locked", "text_size_control", "text_size_stamped"],
     }
     return [f"{s}.{k}" for s, ks in keys.items() for k in ks]

@@ -214,6 +214,16 @@ def _d_zoom_locked(m: dict, rule: Rule, ctx: dict) -> Derived:
     locked, ctl = measure.metric_value(m, "a11y.zoom_locked"), measure.metric_value(m, "a11y.text_size_control")
     if locked is None or ctl is None:
         return None, [], _section_reason(m, "a11y")
+    if locked and not ctl:
+        # The control is one fact about the app, not about a screen: Settings is rendered only while open, so it
+        # is absent from every other screen. Seen on any walked screen -> the app has it (#1185).
+        if ctx.get("text_size_control_seen"):
+            return 0.0, [{"zoom_locked": locked, "text_size_control": False, "seen_on_another_screen": True}], None
+        # The vendored boot script stamped <html data-textsize> but no walked screen showed the control: it lives
+        # in a pane this walk never opened. Not established -> unmeasured, never a pass and never a false fail.
+        if measure.metric_value(m, "a11y.text_size_stamped") is True:
+            return None, [], ("text size: <html data-textsize> is stamped but no walked screen showed the control "
+                              "(its Settings pane was not opened) -- declare the Settings step in [design.review] extra_steps")
     return (1.0 if (locked and not ctl) else 0.0), [{"zoom_locked": locked, "text_size_control": ctl}], None
 
 
@@ -446,7 +456,11 @@ def evaluate(doc: dict, rubric: Rubric, specs: Dict[str, Dict[str, str]],
     """The whole stage: one metrics document -> rule results + grades."""
     ctx = {"params": resolve_params(rubric, specs.get("light", {})),
            "wide_views": [str(v) for v in doc.get("wide_views") or []],
-           "wide_views_error": doc.get("wide_views_error")}
+           "wide_views_error": doc.get("wide_views_error"),
+           "text_size_control_seen": any(
+               isinstance(s, dict) and s.get("status") == "ok" and isinstance(s.get("metrics"), dict)
+               and measure.metric_value(s["metrics"], "a11y.text_size_control") is True
+               for s in doc.get("screens") or [])}
     rules = [evaluate_rule(rule, doc, specs, ctx) for rule in rubric.rules]
     categories = score_categories(rules, rubric)
     stamp = (now or _dt.datetime.now(_dt.timezone.utc)).astimezone(_dt.timezone.utc)

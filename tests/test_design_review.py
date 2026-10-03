@@ -58,7 +58,7 @@ def _doc(name: str) -> dict:
 # ---- rubric: the real file loads and names only metrics that exist ----------
 
 rubric = dr.load_rubric(RUBRIC)
-check(rubric.version == "1.7.6", "rubric meta.version stamped")
+check(rubric.version == "1.7.7", "rubric meta.version stamped")
 check(len(rubric.rules) == 26, f"26 seed rules loaded (got {len(rubric.rules)})")
 check(rubric.categories == ["typography", "color", "touch", "navigation", "layout", "components", "a11y"],
       "categories in rubric order")
@@ -326,13 +326,41 @@ check(all(s == "pass" for s in statuses_c.values()), f"compliant: every rule pas
 check(all(v["score"] == 100.0 and v["grade"] == "A" and not v["unmeasured"] for v in out_c["categories"].values()),
       "compliant: every category 100/A, measured")
 check(out_c["overall"] == {"score": 100.0, "grade": "A", "unmeasured": False}, "compliant: overall A")
-check(out_c["schema_version"] == 1 and out_c["rubric_version"] == "1.7.6" and out_c["target"] == "fixture-app"
+check(out_c["schema_version"] == 1 and out_c["rubric_version"] == "1.7.7" and out_c["target"] == "fixture-app"
       and out_c["commit"].startswith("0000") and out_c["generated_at"].endswith("Z"), "evaluate envelope keys")
 check([s["id"] for s in out_c["screens"]] == ["desktop-light-home", "iphone-light-home", "desktop-light-dialog-edit"],
       "evaluate echoes the screen list")
 t03 = next(r for r in out_c["rules"] if r["id"] == "TOUCH-03")
 check(set(t03["measured"]) == {"desktop-light-home", "iphone-light-home"} and "n/a on 1" in t03["reason"],
       "a null aggregate over an empty population is N/A, not unmeasured")
+
+# ---- A11Y-02 and the vendored text-size control (fleet-config#1185) -------------
+# parking-manager#58 / facilitation-suite#164: the control lives in Settings, which is in the DOM only while open, so a per-screen
+# probe fails every other screen by construction. The vendored markers are #textSizeControl + data-textsize buttons (the probe
+# looked for data-text-size) and the boot script stamps html[data-textsize].
+
+
+def _a11y02(mutate) -> dict:
+    d = _doc("violating")
+    for s in d["screens"]:
+        mutate(s["metrics"]["a11y"], s)
+    return next(r for r in ev.evaluate(d, rubric, _specs("violating"))["rules"] if r["id"] == "A11Y-02")
+
+
+base = _a11y02(lambda a, s: None)
+check(base["status"] == "fail" and len(base["evidence"]) == 2, "A11Y-02: zoom locked with no control anywhere still fails every screen")
+seen = _a11y02(lambda a, s: a.update(text_size_control=(s["id"] == "iphone-light-home")))
+check(seen["status"] == "pass" and sorted(seen["measured"]) == ["desktop-light-home", "iphone-light-home"],
+      f"A11Y-02: a control seen on one walked screen (Settings open) is the app's, not a failure of the others -- {seen['status']}")
+stamped = _a11y02(lambda a, s: a.update(text_size_stamped=True))
+check(stamped["status"] == "unmeasured"
+      and "data-textsize" in stamped["reason"] and "extra_steps" in stamped["reason"] and not stamped["evidence"],
+      f"A11Y-02: only the boot stamp seen -> unmeasured, naming the fix, never a pass or a false fail -- {stamped['status']}: {stamped['reason']}")
+unstamped = _a11y02(lambda a, s: a.update(text_size_stamped=False))
+check(unstamped["status"] == "fail", "A11Y-02: no stamp and no control is still a real failure")
+for probe in ("data-textsize", "data-text-size", "aria-labelledby", "#textSizeControl"):
+    check(probe in str(measure._MEASURE_JS), f"the a11y probe looks for {probe}")
+check('[data-textsize]:not(html)' in measure._MEASURE_JS, "the probe never reads the boot stamp on <html> as the control")
 l06 = next(r for r in out_c["rules"] if r["id"] == "LAYOUT-06")
 check(set(l06["measured"]) == {"desktop-light-home"}, "devices=[desktop] restricts LAYOUT-06 to desktop screens")
 n01 = next(r for r in out_c["rules"] if r["id"] == "NAV-01")
@@ -735,7 +763,7 @@ else:
           f"measure CLI walks the fixture: 2 tabs + 1 dialog x light/dark ({proc.stdout[-300:]}{proc.stderr[-300:]})")
     check(lines.get("RUN_DIR") == str(run_dir) and Path(lines.get("METRICS", "")).is_file(), "RUN_DIR/METRICS lines point at the run dir")
     doc = json.loads(Path(lines["METRICS"]).read_text(encoding="utf-8"))
-    check(doc["interpreter"] == str(interp) and doc["schema_version"] == 1 and doc["rubric_version"] == "1.7.6", "metrics.json records the interpreter + versions")
+    check(doc["interpreter"] == str(interp) and doc["schema_version"] == 1 and doc["rubric_version"] == "1.7.7", "metrics.json records the interpreter + versions")
     if not (scaffold / "tests" / "e2e" / "_geometry.py").is_file():
         _h.skip("browser leg: project-scaffolding/tests/e2e/_geometry.py absent -- hit-target assertions NOT verified")
     check(doc["walk"]["info"]["geometry"] == ("loaded" if (scaffold / "tests" / "e2e" / "_geometry.py").is_file() else "GEOMETRY_MISSING"),
@@ -774,6 +802,8 @@ else:
     check(nv["primary_count"] == 2 and nv["pane_header_visible"] is True, "nav: 2 primary tabs, header visible")
     check(ly["overflow_x"] is False and ly["inner_w"] == 1440, "no overflow at 1440")
     check(ay["unnamed"] == ["button.big"] and ay["zoom_locked"] is True, "unnamed button + locked zoom")
+    check(ay["text_size_control"] is True and ay["text_size_stamped"] is True,
+          f"a11y probe: a hidden group named by aria-labelledby is the text-size control; html[data-textsize] is the stamp (#1185) -- {ay}")
     dlg = by_id["desktop-light-dialog-editdialog"]["metrics"]
     check(dlg["controls"]["total"] == 2 and dlg["a11y"]["unnamed_count"] == 0,
           f"dialog scope measures only the dialog, its folded Options field opened and measured (#995) -- {dlg['controls']['total']}")
