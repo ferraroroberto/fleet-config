@@ -60,9 +60,10 @@ waiting.
   check `unmeasured`, so the verdict is `unmeasured`, never `pass`. That is
   correct: a clean `pass` needs a full run.
 - Otherwise it prints one `CHECK` line per budget, one `ENDPOINT` line per
-  timed path, a `DIFF` line against the previous run, and `PERF=pass|over-budget|unmeasured`.
+  timed path, a `DIFF` line against the previous run, a `BUILD` line and `PERF=pass|over-budget|unmeasured`.
   Exit is 0, 1 or 3 respectively. The run dir (`RUN_DIR=`) holds
   `load.json`, `probe.json`, `verdict.json` and a preview `issue-body.md`.
+  `BUILD state=` compares the build the app serves (its `api_version_path` `git_sha`) with the checkout's HEAD: `live`, `behind` (`behind_by=N` commits), `differs` or `unknown` (no build id: never read as live). On `behind` or `differs` a `BUILD_WARNING` follows: a fix merged since is **not live in this run** (facilitation-suite#164: a session held the app, so no restart, and a re-run measured the old build). Say so first in the report, give the repo's own restart instruction, and never read the `DIFF` as "not fixed"; this skill restarts nothing.
 
 What it measures:
 

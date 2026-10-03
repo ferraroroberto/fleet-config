@@ -462,6 +462,37 @@ check(not re.search(r"--no-proxy-server|--proxy-bypass-list", load_code),
 check(re.search(r"chromium\.launch\(args=\[\*CHROMIUM_ARGS\b", load_code) is not None,
       "the proxy flag is unconditional: Chromium launches with CHROMIUM_ARGS with or without --tls-name")
 
+# ---- merged but not live (fleet-config#1180, facilitation-suite#164) ----
+# A fix that merged while a session held the app was never restarted: the re-run measured the old build and `DIFF` could not
+# tell "not deployed" from "not fixed". The served build id is compared with the checkout's HEAD.
+import git_run  # noqa: E402
+
+gr = Path(tempfile.mkdtemp(prefix="perf-review-git-"))
+git_run.run_git(["-C", str(gr), "init", "-q", "-b", "main"], check=True)
+git_run.run_git(["-C", str(gr), "config", "user.email", "t@example.invalid"], check=True)
+git_run.run_git(["-C", str(gr), "config", "user.name", "t"], check=True)
+git_run.run_git(["-C", str(gr), "config", "core.hooksPath", str(gr / ".no-hooks")], check=True)  # the global pre-commit hook allowlists one author
+shas = []
+for i in range(3):
+    (gr / "f.txt").write_text(str(i), encoding="utf-8")
+    git_run.run_git(["-C", str(gr), "add", "f.txt"], check=True)
+    git_run.run_git(["-C", str(gr), "commit", "-q", "-m", f"c{i}"], check=True)
+    shas.append(git_run.run_git(["-C", str(gr), "rev-parse", "HEAD"], check=True).stdout.strip())
+check(cli.deploy_state(gr, shas[2])["state"] == "live" and cli.deploy_state(gr, shas[2][:7])["state"] == "live",
+      "the served build is HEAD (full or short sha): live")
+behind = cli.deploy_state(gr, shas[0][:7])
+check(behind["state"] == "behind" and behind["ahead"] == 2 and behind["head"] == shas[2][:7] and behind["live"] == shas[0][:7],
+      f"a served build two commits before HEAD is behind by 2, ids shortened -- {behind}")
+check(cli.deploy_state(gr, "0" * 40)["state"] == "differs", "a served build that is no commit of this checkout differs")
+check(cli.deploy_state(gr, None)["state"] == "unknown" and "build id" in str(cli.deploy_state(gr, None)["reason"]),
+      "an app that serves no build id is unknown, never live")
+check(cli.deploy_state(Path(tempfile.mkdtemp(prefix="perf-review-nogit-")), shas[0])["state"] == "unknown",
+      "a target whose HEAD cannot be read is unknown")
+check("behind HEAD by 2" in report.render_body({**v, "deploy": behind}, "r9", shas[0][:7])
+      and "not live" in report.render_body({**v, "deploy": behind}, "r9", shas[0][:7])
+      and "not live" not in report.render_body({**v, "deploy": {"state": "live"}}, "r9", "abc1234"),
+      "the issue body warns that a fix merged since is not live when the served build is behind, and only then")
+
 # ---- CLI: dead port, fixture, file dry-run ------------------------------------
 root = Path(tempfile.mkdtemp(prefix="perf-review-target-"))
 out = io.StringIO()
@@ -477,7 +508,10 @@ with redirect_stdout(out):
 text = out.getvalue()
 check(rc_fix == 1 and "PERF=over-budget" in text and "index.compressed" in text,
       f"measure on the fixture: uncompressed / is over budget (exit {rc_fix})")
+check(re.search(r"^BUILD state=unknown live=unknown head=\w+ ", text, re.M) is not None and "BUILD_WARNING" not in text,
+      f"measure prints a BUILD line: a fixture serving no build id is `unknown`, never `live`, and raises no warning -- {text[-300:]}")
 run_dir = Path(re.search(r"RUN_DIR=(.+)", text).group(1).strip())
+check(json.loads((run_dir / "verdict.json").read_text(encoding="utf-8"))["deploy"]["state"] == "unknown", "verdict.json carries the deploy state")
 check(all((run_dir / n).is_file() for n in ("probe.json", "verdict.json", "issue-body.md")), "the run dir holds probe, verdict and body")
 audit_issue._list_open = lambda repo: []  # the dry run's one gh read, faked
 audit_issue.get_managed = lambda repo, kind: {"number": None, "body": "", "duplicates": []}

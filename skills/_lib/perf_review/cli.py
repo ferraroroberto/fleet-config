@@ -25,6 +25,7 @@ from urllib.parse import urlsplit
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import audit_issue  # noqa: E402
+import git_run  # noqa: E402
 import hooks_state  # noqa: E402
 import service_probe  # noqa: E402
 from design_review.capture import probe_listening, resolve_interpreter, target_commit  # noqa: E402
@@ -90,6 +91,49 @@ def run_load(python: str, base_url: str, run_dir: Path, block: dict, budgets: di
         return {"legs": {"android_cold": {"status": "error", "error": f"load leg failed: {exc}"[:300]}}, "api": {}}
 
 
+def deploy_state(root: Optional[Path], live: Optional[str]) -> dict:
+    """Whether the build the app serves is the checkout's HEAD (fleet-config#1180, facilitation-suite#164).
+
+    A fix that merged while a session held the app was never restarted, so the re-run measured the old build and
+    `DIFF` could not tell "not deployed" from "not fixed". `live` is the `git_sha` the app reports; `state` is
+    `live` (it is HEAD), `behind` (an ancestor of HEAD, `ahead` commits back), `differs` (not an ancestor, or no
+    commit of this checkout) or `unknown` (the app serves no build id, or HEAD cannot be read), never folded
+    into `live`.
+    """
+    out: dict = {"state": "unknown", "live": None, "head": None, "ahead": None, "reason": None}
+    if not live:
+        out["reason"] = "the app serves no build id (`[perf.review] api_version_path`)"
+        return out
+    out["live"] = str(live)[:7]
+    if root is None:
+        out["reason"] = "no repo checkout to compare against"
+        return out
+
+    def git(*args: str):
+        return git_run.run_git(["-C", str(root), *args])
+
+    head = git("rev-parse", "HEAD")
+    if head.returncode != 0 or not head.stdout.strip():
+        out["reason"] = "the checkout's HEAD could not be read"
+        return out
+    head_sha = head.stdout.strip()
+    out["head"] = head_sha[:7]
+    served = git("rev-parse", "--verify", "--quiet", f"{live}^{{commit}}")
+    if served.returncode != 0 or not served.stdout.strip():
+        out.update(state="differs", reason="the served build is not a commit of this checkout")
+        return out
+    served_sha = served.stdout.strip()
+    if served_sha == head_sha:
+        out["state"] = "live"
+        return out
+    if git("merge-base", "--is-ancestor", served_sha, head_sha).returncode != 0:
+        out.update(state="differs", reason="the served build is not an ancestor of HEAD")
+        return out
+    count = git("rev-list", "--count", f"{served_sha}..{head_sha}")
+    out.update(state="behind", ahead=int(count.stdout.strip()) if count.returncode == 0 and count.stdout.strip().isdigit() else None)
+    return out
+
+
 def schedule(load: dict, block: dict, min_spacing: float) -> Dict[str, float]:
     """Which paths to time and how far apart: `/` plus every query-less `/api/` GET the page made, at its own poll interval."""
     exclude = [str(p) for p in block.get("exclude", [])]
@@ -136,6 +180,7 @@ def cmd_measure(a: argparse.Namespace) -> int:
              "endpoints": http_probe.time_endpoints(target.base_url, plan, a.duration)}
     v = report.verdict(probe, load, budgets)
     build = service_probe.running_sha(urlsplit(target.base_url).port or 0, str(block.get("api_version_path", "/api/version")))
+    v["deploy"] = deploy_state(target.root, build)
     run_id = run_dir.name
     entry = report.record(target.name, run_id, v, target_commit(target), build)
     d = report.diff(entry, report.previous_entry(target.name, run_id))
@@ -156,6 +201,12 @@ def cmd_measure(a: argparse.Namespace) -> int:
     slower = ",".join(f"{e['path']}:{report._fmt(e['from'])}->{report._fmt(e['to'])}" for e in d["slower"]) or "none"
     print(f"DIFF previous={d['previous_run']} fixed={','.join(d['fixed']) or 'none'} regressed={','.join(d['regressed']) or 'none'} "
           f"slower_p95_ms={slower}{baseline}")
+    dep = v["deploy"]
+    print(f"BUILD state={dep['state']} live={dep['live'] or 'unknown'} head={dep['head'] or 'unknown'}"
+          + (f" behind_by={dep['ahead']}" if dep["ahead"] is not None else "") + (f" ({dep['reason']})" if dep["reason"] else ""))
+    if dep["state"] in ("behind", "differs"):
+        print("BUILD_WARNING the app serves an older build than the checkout's HEAD: a fix merged since is NOT live in this run. "
+              "Restart it per the repo's CLAUDE.md (never from this skill), then re-run; do not read DIFF as 'not fixed'.")
     print(f"PERF={v['summary']['overall']} pass={v['summary']['pass']} fail={v['summary']['fail']} unmeasured={v['summary']['unmeasured']}")
     return EXIT[v["summary"]["overall"]]
 
