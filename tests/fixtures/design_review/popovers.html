@@ -1,0 +1,40 @@
+<!doctype html>
+<!-- Static fixture for the walk's popover families (fleet-config#1155). Every row carries a menu
+     <details> whose body is positioned over the page; the app shows one at a time, so the walk opens
+     the first of the family. The toolbar's popover is a second family, opened too, and the inline
+     accordions all open. Asserted by tests/test_design_review.py. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>design_review popovers fixture</title>
+<style>
+  html, body { margin: 0; background: #ffffff; color: #1f2328; font-family: system-ui, sans-serif; font-size: 16px; }
+  body { padding: 16px; }
+  .rows { list-style: none; margin: 0; padding: 0; }
+  .rows li { display: flex; align-items: center; gap: 12px; height: 48px; }
+  details { position: relative; }
+  summary { min-width: 44px; min-height: 44px; line-height: 44px; cursor: pointer; }
+  .pop { position: absolute; top: 44px; left: 0; z-index: 5; background: #ffffff; border: 1px solid #d1d9e0; }
+  .pop button { display: block; width: 160px; height: 44px; margin: 0; font: inherit; }
+  .acc input { width: 200px; height: 44px; font: inherit; }
+</style>
+</head>
+<body>
+  <main>
+    <h2>Popovers</h2>
+    <details class="tool-menu"><summary>Tools</summary><div class="pop" role="menu" aria-label="Tools">
+      <button type="button" class="tool-item">Export</button></div></details>
+    <ul class="rows">
+      <li>Row one<details class="row-menu"><summary>Menu</summary><div class="pop" role="menu" aria-label="Row one">
+        <button type="button" class="row-item">Later</button><button type="button" class="row-item">Tomorrow</button></div></details></li>
+      <li>Row two<details class="row-menu"><summary>Menu</summary><div class="pop" role="menu" aria-label="Row two">
+        <button type="button" class="row-item">Later</button><button type="button" class="row-item">Tomorrow</button></div></details></li>
+      <li>Row three<details class="row-menu has-value"><summary>Menu</summary><div class="pop" role="menu" aria-label="Row three">
+        <button type="button" class="row-item">Later</button><button type="button" class="row-item">Tomorrow</button></div></details></li>
+    </ul>
+    <details class="acc"><summary>Advanced</summary><input aria-label="Advanced field"></details>
+    <details class="acc"><summary>Options</summary><input aria-label="Options field"></details>
+  </main>
+</body>
+</html>

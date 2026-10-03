@@ -25,7 +25,9 @@ What it does, per device x theme, and nothing else:
 Disclosures are opened on every screen kind so folded content is measured
 open (fleet-config#995). One that stays closed -- an exclusive accordion
 closes its siblings -- stays excluded by `measure.py`'s `checkVisibility()`
-(#998). A screen that opened any also gets a full screenshot of that state.
+(#998). A popover-shaped disclosure (its body positioned over the page) opens
+only as the first of its family -- the row menus of a list never coexist in the
+app (#1155). A screen that opened any also gets a full screenshot of that state.
 
 No submit, no fill, no session attach, no navigation away from the base URL.
 
@@ -85,15 +87,30 @@ sel => { const list = document.querySelector('[role=tablist]'); const root = lis
     id: t.dataset.tab || (t.getAttribute('aria-controls') || '').replace(/^pane[-_]?/i, '') || t.id || t.textContent.trim().toLowerCase()
   })); }
 """
+# Open every closed `<details>` under `root`, but only one popover per family (#1155): a disclosure
+# whose body is positioned over the page (a row's menu) is one of a family -- its `name` group, else
+# its first class -- of which the app shows one at a time, so opening them all stacks menus that never
+# coexist. The first of each family opens (or the one already open stays); inline disclosures all open.
+_OPEN_ALL_JS = """
+const openAll = (root) => {
+  const popover = d => [...d.children].some(c => c.tagName !== 'SUMMARY' && /^(absolute|fixed)$/.test(getComputedStyle(c).position));
+  const family = d => d.getAttribute('name') || d.classList[0] || '';
+  const all = [...root.querySelectorAll('details')]; const shown = new Set();
+  all.forEach(d => { if (d.open && popover(d)) shown.add(family(d)); });
+  let n = 0; all.forEach(d => { if (d.open) return;
+    if (popover(d)) { if (shown.has(family(d))) return; shown.add(family(d)); }
+    d.open = true; n++; });
+  return n; };
+"""
 _OPEN_DETAILS_JS = """
 () => { const pane = document.querySelector('[role=tabpanel]:not([hidden])')
   || document.querySelector('section.pane:not([hidden])') || document.querySelector('main') || document.body;
-  let n = 0; pane.querySelectorAll('details').forEach(d => { if (!d.open) { d.open = true; n++; } }); return n; }
+  """ + _OPEN_ALL_JS + """ return openAll(pane); }
 """
 # Dialogs and extra steps: the open dialog when there is one, else the page (#995).
 _OPEN_SCOPE_DETAILS_JS = """
 () => { const root = document.querySelector('dialog[open]') || document.body;
-  let n = 0; root.querySelectorAll('details').forEach(d => { if (!d.open) { d.open = true; n++; } }); return n; }
+  """ + _OPEN_ALL_JS + """ return openAll(root); }
 """
 _DIALOG_IDS_JS = "() => [...document.querySelectorAll('dialog[id]')].map(d => d.id)"
 # Is the element inside any no_go selector? An invalid selector fails closed (#995).
