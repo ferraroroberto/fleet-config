@@ -456,6 +456,43 @@ for bad, label in (("nope", "unknown target"), ("no-port", "declared repo withou
         check(False, f"PlanError on {label}")
     except plan.PlanError:
         check(True, label)
+# A repo with no `webapp_port` in projects.toml but a `port` in its own `.fleet.toml` resolves (fleet-config#1180,
+# facilitation-suite#164: `measure facilitation-suite` stopped with BAD_TARGET and needed `--url`). The scheme is probed.
+fs_dir = tmp / "fs-app"
+fs_dir.mkdir()
+(fs_dir / ".fleet.toml").write_text('layer = "working-web"\nport = ":8449"\n', encoding="utf-8")
+fs_projects = tmp / "fs-projects.toml"
+fs_projects.write_text(f'[fs-app]\ncwd_prefix = "{fs_dir.as_posix()}"\n[demo-app]\ncwd_prefix = "{repo_dir.as_posix()}"\n'
+                       f'webapp_port = 8555\nbrowser_scheme = "https"\n', encoding="utf-8")
+probed: list = []
+fs_t = plan.resolve_target("fs-app", fs_projects, scheme_probe=lambda port: probed.append(port) or "https")
+check(fs_t.base_url == "https://127.0.0.1:8449" and probed == [8449] and fs_t.root == fs_dir,
+      f"no webapp_port: the repo's own .fleet.toml `port` and a probed scheme make the base url -- {fs_t.base_url}")
+check(plan.resolve_target("fs-app", fs_projects, scheme_probe=lambda port: "http").base_url == "http://127.0.0.1:8449",
+      "a plain-HTTP app resolves to http")
+probed.clear()
+check(plan.resolve_target("demo-app", fs_projects, scheme_probe=lambda port: probed.append(port) or "http").base_url == "https://127.0.0.1:8555"
+      and probed == [], "projects.toml wins: its port and scheme are used and nothing is probed")
+for raw, want in (('":8449"', 8449), ("8449", 8449), ('"127.0.0.1:8449"', 8449), ('"abc"', None), ("0", None), ("70000", None), ('""', None)):
+    (fs_dir / ".fleet.toml").write_text(f"port = {raw}\n", encoding="utf-8")
+    check(plan.declared_port(fs_dir) == want, f"`.fleet.toml` port {raw} -> {want}")
+(fs_dir / ".fleet.toml").write_text("layer = [broken", encoding="utf-8")
+check(plan.declared_port(fs_dir) is None and plan.declared_port(None) is None and plan.declared_port(tmp / "absent") is None,
+      "an unparseable, absent or rootless .fleet.toml declares no port")
+try:
+    plan.resolve_target("fs-app", fs_projects, scheme_probe=lambda port: "https")
+    check(False, "PlanError when neither projects.toml nor .fleet.toml declares a port")
+except plan.PlanError as exc:
+    check("no `port` in its .fleet.toml" in str(exc), f"the refusal names both places it looked -- {exc}")
+import socket as _socket  # noqa: E402
+import threading as _threading  # noqa: E402
+_srv = _socket.socket()
+_srv.bind(("127.0.0.1", 0))
+_srv.listen(1)
+_threading.Thread(target=lambda: _srv.accept()[0].close(), daemon=True).start()
+check(plan.probe_scheme(_srv.getsockname()[1]) == "http", "a port that does not complete a TLS handshake is http")
+_srv.close()
+check(plan.probe_scheme(1) == "http", "a port nothing listens on is http (the listening probe then reports it, never a guess)")
 (repo_dir / ".fleet.toml").write_text("layer = [broken", encoding="utf-8")
 check("error" in plan.load_review_block(repo_dir), "an unparseable .fleet.toml is an error key, not an empty block")
 check(plan.load_review_block(tmp / "absent") == {} and plan.load_review_block(None) == {}, "no file / no root -> {}")

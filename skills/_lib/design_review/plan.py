@@ -53,16 +53,20 @@ such as a session, that must not be attached to on the live app.
 """
 from __future__ import annotations
 
+import re
+import socket
+import ssl
 import sys
 import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Callable, Dict, List, Optional
 
 # `fleet_repo_scan` is a sibling top-level module in skills/_lib; reached the
 # same way `design_lint/files.py` reaches `git_run`.
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import fleet_repo_scan  # noqa: E402
+import fleet_toml  # noqa: E402
 import wide_views  # noqa: E402
 
 LOOPBACK = "127.0.0.1"
@@ -157,18 +161,46 @@ def load_review_block(root: Optional[Path]) -> Dict[str, object]:
     return dict(review) if isinstance(review, dict) else {}
 
 
+def declared_port(root: Optional[Path]) -> Optional[int]:
+    """The loopback port a repo's own `.fleet.toml` declares (`port = ":8449"`, `8449` or `"127.0.0.1:8449"`), else None."""
+    data = fleet_toml.parse(fleet_toml.read_text(root)) if root else None
+    raw = (data or {}).get("port")
+    m = re.search(r"(\d{1,5})\s*$", str(raw)) if isinstance(raw, (str, int)) and not isinstance(raw, bool) else None
+    port = int(m.group(1)) if m else 0
+    return port if 0 < port < 65536 else None
+
+
+def probe_scheme(port: int, timeout: float = 3.0) -> str:
+    """`https` when the loopback port completes a TLS handshake, else `http`.
+
+    A port nothing listens on reads `http` too: the caller's listening probe then reports it as not listening,
+    so no wrong scheme is ever acted on.
+    """
+    ctx = ssl.create_default_context()
+    ctx.check_hostname, ctx.verify_mode = False, ssl.CERT_NONE
+    try:
+        with socket.create_connection((LOOPBACK, port), timeout=timeout) as raw, ctx.wrap_socket(raw):
+            return "https"
+    except (OSError, ssl.SSLError):
+        return "http"
+
+
 def resolve_target(
     repo: str,
     projects_toml: Optional[Path] = None,
     url_override: Optional[str] = None,
+    scheme_probe: Callable[[int], str] = probe_scheme,
 ) -> Target:
     """Turn a repo name or path into a `Target` with a loopback base URL.
 
     `repo` is matched first as a `hooks/projects.toml` table name, then as a
     path whose directory name is one. `url_override` (tests, a static fixture
     page) skips the port lookup entirely but keeps the name/root resolution.
-    Raises `PlanError` when nothing declares a `webapp_port` for the repo and
-    no override was given — the walk must never fall back to a guessed port.
+    A repo with no `webapp_port` in projects.toml falls back to the `port` its own
+    `.fleet.toml` declares, the scheme probed on that loopback port (fleet-config#1180:
+    facilitation-suite declared only the latter and `measure <name>` stopped with
+    BAD_TARGET). Raises `PlanError` when neither declares a port and no override was
+    given — the walk must never fall back to a guessed port.
     """
     tables = fleet_repo_scan.fleet_repo_tables(projects_toml)
     name: Optional[str] = None
@@ -198,9 +230,12 @@ def resolve_target(
     table = tables.get(name, {})
     port = table.get("webapp_port")
     scheme = table.get("browser_scheme")
+    if not port:
+        port = declared_port(root)
+        scheme = scheme_probe(port) if port else None
     if not port or not scheme:
         raise PlanError(
-            f"{name} declares no webapp_port/browser_scheme in hooks/projects.toml — "
+            f"{name} declares no webapp_port/browser_scheme in hooks/projects.toml and no `port` in its .fleet.toml — "
             "pass --url for a non-fleet target"
         )
     return Target(name=name, root=root, base_url=f"{scheme}://{LOOPBACK}:{int(port)}", review=review,
