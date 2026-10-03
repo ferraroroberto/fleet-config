@@ -845,6 +845,26 @@ check([(t["file"], t["line"], t["kind"], t["ms"]) for t in at] ==
       f"app-source timers of 1 s or more, longest first; sub-second, vendored, node_modules, test and minified files are left out -- {at}")
 check(v.app_timers(Path(tempfile.mkdtemp(prefix="e2e-value-empty-")), ["tests/e2e"]) == [], "no app JS, no timers")
 
+# Named constants (fleet-config#1175, app-launcher#1375): the polls the slow tests waited out were `setInterval(fn, RUNNING_APPS_POLL_MS)`
+# and `setTimeout(tick, LIVE_POLL_MS)` with the constant declared in the same file or exported from another module.
+nt = Path(tempfile.mkdtemp(prefix="e2e-value-namedtimers-"))
+(nt / "tests" / "e2e").mkdir(parents=True)
+(nt / "app" / "static").mkdir(parents=True)
+(nt / "app" / "static" / "state.js").write_text(
+    "export const RUNNING_APPS_POLL_MS = 4000;\nexport const TUNNEL_POLL_MS = 4_000;\nexport const SHORT_MS = 250;\nexport const DUP_MS = 2000;\n",
+    encoding="utf-8")
+(nt / "app" / "static" / "main.js").write_text(
+    "import { RUNNING_APPS_POLL_MS, SHORT_MS } from './state.js';\nsetInterval(refreshApps, RUNNING_APPS_POLL_MS);\n"
+    "setInterval(blink, SHORT_MS);\nsetTimeout(later, UNKNOWN_MS);\nsetTimeout(dup, DUP_MS);\n", encoding="utf-8")
+(nt / "app" / "static" / "session-transcript.js").write_text(
+    "const LIVE_POLL_MS = 3000;\nconst DUP_MS = 9000;\nfunction arm() { setTimeout(tick, LIVE_POLL_MS); }\nsetTimeout(dup2, DUP_MS);\n", encoding="utf-8")
+(nt / "app" / "static" / "other.js").write_text("setTimeout(dup3, DUP_MS);\n", encoding="utf-8")
+ntm = [(t["file"].rsplit("/", 1)[1], t["line"], t["kind"], t["ms"], t.get("name")) for t in v.app_timers(nt, ["tests/e2e"])]
+check(ntm == [("session-transcript.js", 4, "timeout", 9000, "DUP_MS"), ("main.js", 2, "interval", 4000, "RUNNING_APPS_POLL_MS"),
+              ("session-transcript.js", 3, "timeout", 3000, "LIVE_POLL_MS")],
+      f"a delay that is a named constant resolves through the file's own `const NAME = <ms>` or another module's export; a constant under "
+      f"1 s, one declared nowhere and one declared with different values in two other files (not the file's own) are left out -- {ntm}")
+
 # first_node.boot (fleet-config#1157, photo-ocr#127): a "session boot 6.9 s" finding was one cold run in a fresh
 # worktree; warm, the same node took under 0.3 s. A boot is a finding only once a second run in the same
 # checkout repeats it.
