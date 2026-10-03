@@ -58,7 +58,7 @@ def _doc(name: str) -> dict:
 # ---- rubric: the real file loads and names only metrics that exist ----------
 
 rubric = dr.load_rubric(RUBRIC)
-check(rubric.version == "1.7.8", "rubric meta.version stamped")
+check(rubric.version == "1.7.9", "rubric meta.version stamped")
 check(len(rubric.rules) == 26, f"26 seed rules loaded (got {len(rubric.rules)})")
 check(rubric.categories == ["typography", "color", "touch", "navigation", "layout", "components", "a11y"],
       "categories in rubric order")
@@ -326,7 +326,7 @@ check(all(s == "pass" for s in statuses_c.values()), f"compliant: every rule pas
 check(all(v["score"] == 100.0 and v["grade"] == "A" and not v["unmeasured"] for v in out_c["categories"].values()),
       "compliant: every category 100/A, measured")
 check(out_c["overall"] == {"score": 100.0, "grade": "A", "unmeasured": False}, "compliant: overall A")
-check(out_c["schema_version"] == 1 and out_c["rubric_version"] == "1.7.8" and out_c["target"] == "fixture-app"
+check(out_c["schema_version"] == 1 and out_c["rubric_version"] == "1.7.9" and out_c["target"] == "fixture-app"
       and out_c["commit"].startswith("0000") and out_c["generated_at"].endswith("Z"), "evaluate envelope keys")
 check([s["id"] for s in out_c["screens"]] == ["desktop-light-home", "iphone-light-home", "desktop-light-dialog-edit"],
       "evaluate echoes the screen list")
@@ -773,7 +773,7 @@ else:
           f"measure CLI walks the fixture: 2 tabs + 1 dialog x light/dark ({proc.stdout[-300:]}{proc.stderr[-300:]})")
     check(lines.get("RUN_DIR") == str(run_dir) and Path(lines.get("METRICS", "")).is_file(), "RUN_DIR/METRICS lines point at the run dir")
     doc = json.loads(Path(lines["METRICS"]).read_text(encoding="utf-8"))
-    check(doc["interpreter"] == str(interp) and doc["schema_version"] == 1 and doc["rubric_version"] == "1.7.8", "metrics.json records the interpreter + versions")
+    check(doc["interpreter"] == str(interp) and doc["schema_version"] == 1 and doc["rubric_version"] == "1.7.9", "metrics.json records the interpreter + versions")
     if not (scaffold / "tests" / "e2e" / "_geometry.py").is_file():
         _h.skip("browser leg: project-scaffolding/tests/e2e/_geometry.py absent -- hit-target assertions NOT verified")
     check(doc["walk"]["info"]["geometry"] == ("loaded" if (scaffold / "tests" / "e2e" / "_geometry.py").is_file() else "GEOMETRY_MISSING"),
@@ -799,8 +799,11 @@ else:
     check(lay_list["content_w"] <= 500 and lay_list.get("content_span", 0) >= 1400,
           f"LAYOUT-06: content_span runs from the list pane across the detail pane (#996) -- {lay_list['content_w']} / {lay_list.get("content_span")}")
     check(lay_home.get("content_span") == lay_home["content_w"], "LAYOUT-06: with no detail pane the span is the pane itself")
-    check({b["sel"] for b in ct["boundary_low"]} == {"input.faint-border", "button.bare-switch"},
-          f"COLOR-03: a faint input and a bare switch track fail; text-labelled buttons and switch pills are exempt; a wrapper-drawn boundary counts (#996) -- {[b['sel'] for b in ct['boundary_low']]}")
+    check({b["sel"] for b in ct["boundary_low"]} == {"input.faint-border", "button.bare-switch", "input.inset-faint"},
+          f"COLOR-03: a faint input, a faint inset-shadow field and a bare switch track fail; text-labelled buttons and switch pills are exempt; a wrapper-drawn boundary counts (#996) and so does a 3:1 inset-shadow boundary (#1185) -- {[b['sel'] for b in ct['boundary_low']]}")
+    via = {b["sel"]: b["via"] for b in ct["boundary_low"]}
+    check(via.get("input.inset-faint") == "inset-shadow" and via.get("input.faint-border") == "border" and "input.inset-ok" not in via,
+          f"COLOR-03: the boundary read from an inset shadow says so, and a 4.8:1 inset boundary passes -- {via}")
     for theme in ("light", "dark"):
         seg = by_id[f"desktop-{theme}-list"]["metrics"]["controls"]["segmented_bad"]
         check(seg == [{"sel": "div.segmented.seg-wrap", "options": 2, "wrapped": True}],

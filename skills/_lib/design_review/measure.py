@@ -166,25 +166,37 @@ _MEASURE_JS = r"""
       const s = getComputedStyle(el);
       if (s.fontFamily !== bodyFam) mism.push({sel: sel(el), family: s.fontFamily.slice(0,60)}); });
     const drawsBorder = (st) => (parseFloat(st.borderTopWidth) || 0) > 0 && rgba(st.borderTopColor)[3] > 0;
+    // An inset box-shadow with no offset and no blur is a drawn edge too: the 44px-field recipe keeps the visible
+    // control inside a transparent border band and draws its 1px boundary as `inset 0 0 0 1px` (#1185). Its colours.
+    const insetEdges = (st) => { const v = st.boxShadow; if (!v || v === 'none') return [];
+      return v.split(/,(?![^(]*\))/).map(p => { if (!/\binset\b/.test(p)) return null;
+        const m = p.match(/rgba?\([^)]*\)/); if (!m) return null;
+        const [x, y, blur, spread] = (p.replace(m[0], '').match(/-?\d*\.?\d+px/g) || []).map(parseFloat);
+        if (x !== 0 || y !== 0 || blur !== 0 || !(spread >= 1)) return null;
+        const c = rgba(m[0]); return c[3] > 0 ? c : null; }).filter(Boolean); };
     q(params.boundaryControls).forEach(el => {
       // A switch with visible text is a labelled toggle, identified by its label like a button (#996).
       if (el.getAttribute('role') === 'switch' && el.textContent.trim()) return;
       // A field whose wrapper draws the boundary (the vendored filter: a bordered label around a
       // borderless input) takes the wrapper's -- the nearest bordered ancestor hugging it, 2 levels up.
       let host = el, s = getComputedStyle(el);
-      if (!drawsBorder(s) && rgba(s.backgroundColor)[3] === 0) {
+      if (!drawsBorder(s) && !insetEdges(s).length && rgba(s.backgroundColor)[3] === 0) {
         const h = el.getBoundingClientRect().height;
         for (let a = el.parentElement, i = 0; a && i < 2; a = a.parentElement, i++) { const as = getComputedStyle(a);
           if (drawsBorder(as) && a.getBoundingClientRect().height <= h * 2 + 2) { host = a; s = as; break; } }
       }
       const surface = host.parentElement ? bgOf(host.parentElement) : [255,255,255,1];
       const bw = parseFloat(s.borderTopWidth) || 0; const bc = rgba(s.borderTopColor);
-      let boundary = null;
+      let boundary = null, via = 'border';
       if (bw > 0 && bc[3] > 0) boundary = over(bc, surface);
-      else { const own = rgba(s.backgroundColor); if (own[3] > 0) boundary = over(own, surface); }
+      else {
+        const edges = insetEdges(s).map(c => over(c, surface)).sort((a, b) => ratio(b, surface) - ratio(a, surface));
+        if (edges.length) { boundary = edges[0]; via = 'inset-shadow'; }
+        else { const own = rgba(s.backgroundColor); if (own[3] > 0) { boundary = over(own, surface); via = 'fill'; } }
+      }
       if (boundary) { const cr = ratio(boundary, surface);
-        if (cr < params.boundaryMin) lowB.push({sel: sel(el), label: txt(el), ratio: r2(cr), boundary: hex(boundary), surface: hex(surface)}); }
-      else lowB.push({sel: sel(el), label: txt(el), ratio: 1, boundary: 'none', surface: hex(surface)});
+        if (cr < params.boundaryMin) lowB.push({sel: sel(el), label: txt(el), ratio: r2(cr), boundary: hex(boundary), surface: hex(surface), via}); }
+      else lowB.push({sel: sel(el), label: txt(el), ratio: 1, boundary: 'none', surface: hex(surface), via: 'none'});
     });
     q('a[href]').forEach(el => { const c = getComputedStyle(el).color;
       if (c === 'rgb(0, 0, 238)' || c === 'rgb(85, 26, 139)') ua.push({sel: sel(el), why: 'default link colour'}); });
