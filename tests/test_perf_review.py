@@ -411,6 +411,22 @@ check(not re.search(r"\.route\(|route_from_har|\.unroute\(", load_src),
       "load.py installs no route(): Playwright disables the HTTP cache under routing")
 check("--cold-samples" in load_src and re.search(r'"--cold-samples".*default=3', load_src), "load.py takes 3 cold samples by default")
 
+# ---- the API prefix is inferred, not assumed to be `/api/` (fleet-config#1170, local-llm-hub#644) ----
+# local-llm-hub serves its API under `/admin/api/`: matching `startswith("/api/")` counted no boot call, so `warm.data_ms` and
+# `endpoints.api_p95_ms` came back unmeasured and the warm SPLIT line read `api=0 KB` beside TOP lines naming `/admin/api/hub/stats`.
+import ast as _ast
+_fn = next((n for n in _ast.parse(load_src).body if isinstance(n, _ast.FunctionDef) and n.name == "is_api_path"), None)
+check(_fn is not None, "load.py defines is_api_path, the one place that decides what an API path is")
+if _fn is not None:
+    _ns: dict = {}
+    exec(compile(_ast.Module([_fn], []), "load.py", "exec"), _ns)  # the one function, so Playwright is not imported
+    api = _ns["is_api_path"]
+    check(api("/api/units") and api("/admin/api/hub/stats") and api("/v1/api/x"),
+          "a path with an `/api/` segment is an API path, whatever sits in front of it")
+    check(not (api("/") or api("/static/app.js") or api("/apiary/x") or api("/capi/x") or api("(external)") or api("/admin/apix")),
+          "a static asset, the entry page, an external call and a look-alike segment are not API paths")
+check('startswith("/api/")' not in load_src, "no boot-call match is pinned to a leading `/api/` any more")
+
 # ---- the Chromium leg bypasses Windows proxy auto-detect (fleet-config#1139) ----
 # The harness addresses the app by an HTTPS hostname, which is no implicit proxy bypass, so with
 # "Automatically detect settings" on, a cold autoproxy cache stalls the first request ~2.7 s (WPAD).
