@@ -205,16 +205,23 @@ Validates every reply against the schema (each seed id exactly once,
 `no` mapped to one of its question's rule ids or backed by an uncatalogued
 entry with a proposed metric + threshold), merges the judges, writes the
 `judgment` document into `<RUN_DIR>/evaluate.json`, and prints
-`JUDGMENT=ok|unmeasured|not_confirmed`, `ANSWERS=<yes>/<no>/<na>`,
-`UNCATALOGUED=<n>`, `ERRORS=<n>` (+ one `ERROR_DETAIL=` per violation, one
+`JUDGMENT=ok|partial|unmeasured|not_confirmed`, `ANSWERS=<yes>/<no>/<na>`,
+`UNCATALOGUED=<n>`, `ERRORS=<n>`, `DROPPED=<n>` (+ one `ERROR_DETAIL=` per
+envelope violation, one `DROPPED_DETAIL=<why>` per dropped answer — name each
+in the summary, one
 `NOT_CONFIRMED=<id>:<votes>` per disagreement, one `NORMALIZED=<id>:<from>-><to>` per
 `<screen id>-full` evidence read as its screen (the full-page PNG's stem; five of
 seven recorded `unmeasured` judgments were only this, fleet-config#1158; say how
 many in the summary), and `RUBRIC_MISMATCH=` when
 `evaluate.json` was scored under another rubric version than the checklist
-— carry that line into the summary). A malformed or partial
-reply makes the **whole** judgment `unmeasured` — the report says so; it is
-a result, exit 0, and the run continues. Never re-prompt a judge to "fix"
+— carry that line into the summary). **The checklist is partial**
+(fleet-config#1185): a malformed answer (an answer outside `yes | no | na`
+such as `maybe`, a missing `severity`, evidence that is no screen id) is
+dropped **on its own** and listed with its reason, the valid answers are kept,
+and the judgment is `partial`; a `no` whose uncatalogued entry was dropped
+goes with it. Only a reply that is not one JSON object of the two keys, or from
+which no answer survives, makes the **whole** judgment `unmeasured` — the
+report says so; it is a result, exit 0, and the run continues. Never re-prompt a judge to "fix"
 its JSON, never hand-edit a reply, never answer a question yourself.
 Grades cannot move here: `judge-merge` adds one key and touches nothing
 else, and the tests assert it.
@@ -325,7 +332,7 @@ Print one block and stop:
   screens:    <ok>/<total> measured   (<UNMEASURED reason | none>)
   since:      <PREVIOUS run id | first recorded run> · <n> fixed <ids> · <n> regressed <ids> · <n> new <ids> · <n> unchanged · <n> unmeasured
               <rubric changed <from> → <to>>   · commit <sha7> · live build <sha7 | unknown>
-  judgment:   <ok | not_confirmed | unmeasured> · <yes>/<no>/<na> · <n> uncatalogued · <n> judge(s)
+  judgment:   <ok | partial (<n> dropped) | not_confirmed | unmeasured> · <yes>/<no>/<na> · <n> uncatalogued · <n> judge(s)
               | skipped (--no-judgment) | not run (no fresh-context spawn on this host)
   mock-ups:   <template ids drawn | none>
   filed:      <REPO>#<ISSUE> <URL> · <n> app-owned · <n> uncatalogued · accepted <ids | none> · changed <yes | no>
@@ -408,7 +415,7 @@ checklist), else a `[[judgment]]` question. Nothing automates that step.
 - **Judgment is bounded and never a grade input.** The checklist is rubric
   data; the judge is a fresh context that sees only this run's screenshots
   and `metrics.json` (never `evaluate.json`, `report.html`, a previous run
-  or an expected answer); its reply is schema-validated all-or-nothing; a
+  or an expected answer); its reply is schema-validated per answer (a malformed answer is dropped and reported, the valid ones kept; an unreadable reply is `unmeasured`); a
   `no` lands on a rule id or is an uncatalogued finding outside the grade.
   This session never answers a question itself and never edits a reply.
 - **Screenshots and captured page text stay in the run directory.** Never

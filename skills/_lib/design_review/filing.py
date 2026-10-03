@@ -67,7 +67,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import audit_issue  # noqa: E402
 import git_run  # noqa: E402
 
-from .judgment import STATUS_OK, normalise_title  # noqa: E402
+from .judgment import STATUS_OK, STATUS_PARTIAL, normalise_title  # noqa: E402
 from .report import SEVERITY_ORDER, worst_screen  # noqa: E402
 
 KIND = "design-review"
@@ -186,9 +186,9 @@ def route(doc: dict, accepted: Dict[str, dict], promoted: Optional[set] = None) 
 
 
 def uncatalogued_of(doc: dict) -> List[dict]:
-    """Uncatalogued judgment findings worth filing — status `ok` only; question, title, severity, owner."""
+    """Uncatalogued judgment findings worth filing — status `ok` or `partial` (the kept entries are valid); question, title, severity, owner."""
     j = doc.get("judgment")
-    if not isinstance(j, dict) or j.get("status") != STATUS_OK:
+    if not isinstance(j, dict) or j.get("status") not in (STATUS_OK, STATUS_PARTIAL):
         return []
     out = []
     for u in j.get("uncatalogued") or []:
