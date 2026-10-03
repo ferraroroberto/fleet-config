@@ -360,6 +360,29 @@ check(d["previous_run"] == "r1" and d["fixed"] == ["/api/slow"] and not d["regre
       f"the ledger diff names exactly what was fixed; the API aggregate, still unmeasured via /api/broken, is not ({d})")
 check(json.dumps(report.load_ledger("fixture-app")).count("://") == 0, "the ledger stores no URL")
 
+# ---- a within-budget slowdown is reported (fleet-config#1180, parking-manager#68) ----
+# `/` p95 went 31 -> 43 ms after a per-request fingerprint, under the 50 ms budget: `DIFF` said `regressed=none`.
+def _ep(status, p95):
+    return {"status": status, "p95": p95}
+
+
+slow_prev = {"run_id": "p", "checks": {}, "endpoints": {"/": _ep("pass", 31.0), "/api/a": _ep("pass", 100.0), "/api/b": _ep("pass", 40.0),
+                                                        "/api/c": _ep("pass", 30.0), "/api/d": _ep("unmeasured", None), "/api/e": _ep("fail", 300.0)}}
+slow_now = {"run_id": "n", "checks": {}, "endpoints": {"/": _ep("pass", 43.0), "/api/a": _ep("pass", 110.0), "/api/b": _ep("pass", 49.0),
+                                                       "/api/c": _ep("fail", 60.0), "/api/d": _ep("pass", 80.0), "/api/e": _ep("fail", 400.0)}}
+sd = report.diff(slow_now, slow_prev)
+check(sd["slower"] == [{"path": "/", "from": 31.0, "to": 43.0, "status": "pass"}, {"path": "/api/e", "from": 300.0, "to": 400.0, "status": "fail"}],
+      f"an endpoint p95 up 25% and 10 ms is slower even inside its budget; +10% or +9 ms, a pass->fail flip (`regressed`) and an "
+      f"unmeasured one are not -- {sd['slower']}")
+check(sd["regressed"] == ["/api/c"], "a status flip is still `regressed`, never listed twice")
+check(report.diff(slow_now, None)["slower"] == [] and report.diff(slow_now, {"run_id": "q", "checks": {}, "endpoints": {}})["slower"] == [],
+      "a first run, or a previous run that timed nothing, has nothing to be slower than")
+slow_body = report.render_body({**v, "diff": sd}, "r9", "abc1234")
+check("`/` p95 31 → 43 ms, still within budget" in slow_body and "`/api/e` p95 300 → 400 ms, over budget" in slow_body,
+      f"the issue body says which endpoints got slower and whether each is still within its budget -- {slow_body[-400:]}")
+check("Slower than the previous run" not in report.render_body({**v, "diff": report.diff(slow_prev, slow_prev)}, "r9", "abc1234"),
+      "no slowdown, no paragraph")
+
 # ---- declaring a ready selector moves the baseline; the diff says so (fleet-config#1151) ----
 # task-os's cold ready went 516 -> 1967 ms with no code change: first contentful paint of a painted shell became
 # "the first card with data is visible". Read as a regression, it would send a fixer after nothing.

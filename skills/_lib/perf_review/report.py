@@ -28,6 +28,10 @@ LEDGER_KEEP = 20
 # a first load right after a restart read 3072 ms on an app that otherwise loads in ~370 ms (#1140).
 OUTLIER_FACTOR = 2.0
 OUTLIER_MIN_MS = 500
+# An endpoint is "slower" than the previous run when its p95 rose by this factor AND this many ms: parking-manager's `/`
+# went 31 -> 43 ms (+39%, +12 ms) under a 50 ms budget, so every status stayed `pass` and `DIFF` read clean (#1180).
+SLOWER_FACTOR = 1.25
+SLOWER_MIN_MS = 10.0
 TITLE = audit_issue.PERF_REVIEW_TITLE
 KIND = "perf-review"
 LABEL = "perf-review"
@@ -251,6 +255,11 @@ def render_body(v: dict, run_id: str, build: Optional[str]) -> str:
     if moved:
         lines += ["", f"\"Ready\" changed from {_BASIS[moved['from']]} to {_BASIS[moved['to']]} since the previous run, so the "
                       "ready times do not compare with it. A rise is the stricter definition, not a regression."]
+    slower = (v.get("diff") or {}).get("slower")
+    if slower:
+        lines += ["", "Slower than the previous run:", ""] + [
+            f"- `{e['path']}` p95 {_fmt(e['from'])} → {_fmt(e['to'])} ms, " + ("still within budget" if e["status"] == "pass" else "over budget")
+            for e in slower]
     cold = next((c for c in v["checks"] if c["id"] == "cold.ready_ms"), {})
     if len(cold.get("samples", [])) > 1:
         shown = ", ".join(_fmt(x) for x in cold["samples"])
@@ -331,7 +340,7 @@ def diff(current: dict, previous: Optional[dict]) -> dict:
     change (a painted shell vs data visible), so the two runs' ready times must not be read against each other.
     A previous run that did not record `ready_by` leaves it unknown, so nothing is claimed.
     """
-    out = {"previous_run": previous.get("run_id") if previous else None, "fixed": [], "regressed": [],
+    out = {"previous_run": previous.get("run_id") if previous else None, "fixed": [], "regressed": [], "slower": [],
            "ready_baseline_changed": None}
     if not previous:
         return out
@@ -346,7 +355,16 @@ def diff(current: dict, previous: Optional[dict]) -> dict:
                 out["fixed"].append(k)
             elif pair == ("pass", "fail"):
                 out["regressed"].append(k)
+            elif key == "endpoints" and _slower(before[k].get("p95"), now[k].get("p95")):
+                out["slower"].append({"path": k, "from": before[k]["p95"], "to": now[k]["p95"], "status": now[k]["status"]})
     return out
+
+
+def _slower(before: Optional[float], now: Optional[float]) -> bool:
+    """A material p95 rise: both measured, up by `SLOWER_FACTOR` and `SLOWER_MIN_MS`, whatever the budget says."""
+    if before is None or now is None:
+        return False
+    return now >= before * SLOWER_FACTOR and now - before >= SLOWER_MIN_MS
 
 
 def previous_entry(target: str, run_id: str) -> Optional[dict]:
