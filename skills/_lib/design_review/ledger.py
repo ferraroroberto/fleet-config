@@ -64,7 +64,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import hooks_state  # noqa: E402
 import service_probe  # noqa: E402
 
-from .judgment import STATUS_OK, normalise_title  # noqa: E402
+from .judgment import STATUS_OK, STATUS_PARTIAL, normalise_title  # noqa: E402
 
 LEDGER_KEEP = 20
 LEDGER_NAME = "ledger.json"
@@ -102,7 +102,7 @@ def entry_from_doc(doc: dict, run_id: str, live: Optional[str] = None) -> dict:
     """One ledger entry from an evaluate document. Ids, statuses, grades, stamps — nothing captured."""
     j = doc.get("judgment") if isinstance(doc.get("judgment"), dict) else None
     unc: List[dict] = []
-    if j and j.get("status") == STATUS_OK:
+    if j and j.get("status") in (STATUS_OK, STATUS_PARTIAL):
         for u in j.get("uncatalogued") or []:
             if isinstance(u, dict):
                 unc.append({"question": u.get("question"), "title_norm": normalise_title(u.get("title")),

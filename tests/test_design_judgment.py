@@ -4,8 +4,9 @@ Pure-logic: the `[[judgment]]` checklist loads and validates (ids, maps_to,
 scope), the judge prompt is deterministic and carries only the checklist,
 the screen list with local screenshot paths and the metrics path (never
 evaluate.json / report.html / another run / an answer), the answer schema is
-all-or-nothing (a malformed or partial payload is `unmeasured` with every
-error listed, never a partial acceptance), the multi-judge merge keeps only
+partial (fleet-config#1185: a malformed answer is dropped and reported, the valid
+ones are kept; a bad envelope or a payload with nothing valid is `unmeasured`
+with every error listed), the multi-judge merge keeps only
 agreed answers and uncatalogued findings every judge raised, the judgment never
 moves a grade, and the `judge-prompt` / `judge-merge` / `render` CLI legs.
 No browser, no agent spawned.
@@ -121,7 +122,7 @@ check(obj is None and err and "not a single JSON object" in err, "prose around t
 obj, err = jm.parse_payload("")
 check(obj is None and err == "empty reply", "an empty reply is rejected")
 
-# ---- validate_answers: all-or-nothing ----------------------------------------
+# ---- validate_answers: envelope strict, answers partial -----------------------
 
 good, errs = jm.validate_answers(ok_payload, rubric, metrics)
 check(not errs and good["status"] == "ok" and [a["id"] for a in good["answers"]] == SEED_IDS, f"a complete valid payload validates: {errs}")
@@ -134,7 +135,7 @@ check(jm.answer_counts(good) == (7, 2, 1), f"answer counts yes/no/na: {jm.answer
 
 bad, errs = jm.validate_answers(bad_payload, rubric, metrics)
 check(bad["status"] == "unmeasured" and bad["answers"] == [] and bad["uncatalogued"] == [] and bad["errors"] == errs and len(errs) >= 8,
-      f"a malformed payload is unmeasured with no partial answers ({len(errs)} errors)")
+      f"a payload with a bad envelope (a free-form top-level key) is unmeasured, its answers kept nowhere ({len(errs)} errors)")
 joined = "\n".join(errs)
 for needle, label in (("unknown top-level keys ['commentary']", "free-form commentary key"),
                       ("J-01: answered more than once", "duplicate id"),
@@ -152,18 +153,19 @@ check(bad["reason"].startswith(f"{len(errs)} schema violations:"), f"the reason 
 
 for payload, label in (("free text", "a string payload"), (["a"], "a list payload"), ({}, "an empty object"), (None, "None")):
     d, e = jm.validate_answers(payload, rubric, metrics)
-    check(d["status"] == "unmeasured" and e and d["answers"] == [], f"{label} is unmeasured, never partially accepted")
+    check(d["status"] == "unmeasured" and e and d["answers"] == [], f"{label} is unmeasured: there is no answer to keep")
 compliant = json.loads((FIX / "metrics_compliant.json").read_text(encoding="utf-8"))
 dlg = json.loads(json.dumps(ok_payload))
 dlg["answers"][0]["evidence"] = "desktop-light-dialog-edit"
 d, e = jm.validate_answers(dlg, rubric, compliant)
-check(d["status"] == "unmeasured" and any("outside the question's scope (tabs)" in x for x in e), "evidence outside a tabs question's scope is refused")
+check(d["status"] == "partial" and not e and any("outside the question's scope (tabs)" in x["reason"] for x in d["dropped"])
+      and [a["id"] for a in d["answers"]] == SEED_IDS[1:], "evidence outside a tabs question's scope drops that one answer and keeps the other nine")
 d, e = jm.validate_answers(ok_payload, rubric, compliant)
 check(d["status"] == "ok", "the same payload validates against the compliant fixture (its screens are a superset)")
 yes_ev = json.loads(json.dumps(ok_payload))
 yes_ev["answers"][0]["evidence"] = None
 d, e = jm.validate_answers(yes_ev, rubric, metrics)
-check(d["status"] == "unmeasured" and any("evidence is required for a 'yes'" in x for x in e), "a yes without evidence is refused")
+check(d["status"] == "partial" and any("evidence is required for a 'yes'" in x["reason"] for x in d["dropped"]), "a yes without evidence is dropped, the rest kept")
 # fleet-config#1158: five of the seven recorded `unmeasured` judgments (voice-transcriber#210 twice, task-os#278,
 # photo-ocr#126, app-launcher 2026-09-26) failed on ONE cause: the judge cited the `-full` page PNG's stem
 # ("iphone-light-history-full") as evidence, the filename the prompt itself lists, and the whole checklist was lost.
@@ -178,8 +180,8 @@ check(good.get("normalized") == [], "a reply that needed no alias records none")
 ghost = json.loads(json.dumps(ok_payload))
 ghost["answers"][2]["evidence"] = "nope-screen-full"
 d, e = jm.validate_answers(ghost, rubric, metrics)
-check(d["status"] == "unmeasured" and any("'nope-screen-full' is not a screen id" in x for x in e),
-      "a `-full` stem of no screen is still refused: only a real screen's own full-page file is an alias")
+check(d["status"] == "partial" and any("'nope-screen-full' is not a screen id" in x["reason"] for x in d["dropped"]) and "J-03" not in [a["id"] for a in d["answers"]],
+      "a `-full` stem of no screen is still not accepted (that answer is dropped): only a real screen's own full-page file is an alias")
 m2 = jm.merge_judges([jm.validate_answers(full_stem, rubric, metrics)[0], jm.validate_answers(full_stem, rubric, metrics)[0]])
 check(m2["status"] == "ok" and len(m2.get("normalized") or []) == 2, f"a merge carries every judge's aliases -- {m2.get('normalized')}")
 check("never a file name" in prompt and "-full" in prompt.split("never a file name")[1][:200],
@@ -187,6 +189,41 @@ check("never a file name" in prompt and "-full" in prompt.split("never a file na
 empty_rubric = rb.validate_rubric(_base)
 d, e = jm.validate_answers(ok_payload, empty_rubric, metrics)
 check(d["status"] == "unmeasured" and "no [[judgment]] entries" in e[0], "a rubric without a checklist cannot be judged")
+
+# fleet-config#1185: Roberto's decision (2026-10-03) reverses the all-or-nothing contract of #973 -- drop only what is
+# malformed, keep the valid answers, say what was dropped and why. Shapes recorded in the local run ledger: a `maybe`
+# answer (app-launcher) and uncatalogued entries without `severity` (facilitation-suite#164).
+part_payload = json.loads((FIX / "judge_answers_partial.json").read_text(encoding="utf-8"))
+part, perrs = jm.validate_answers(part_payload, rubric, metrics)
+check(part["status"] == "partial" and not perrs, f"a reply with a `maybe` and an entry missing severity is partial, not unmeasured: {part['status']} {perrs}")
+check([a["id"] for a in part["answers"]] == [i for i in SEED_IDS if i not in ("J-02", "J-04")] and jm.answer_counts(part) == (6, 1, 1),
+      f"the valid answers are kept in rubric order: {[a['id'] for a in part['answers']]} {jm.answer_counts(part)}")
+check({d["id"] for d in part["dropped"]} == {"J-02", "J-04", "uncatalogued[0]"}, f"every drop is listed by id: {part['dropped']}")
+check(any("answer 'maybe'" in d["reason"] for d in part["dropped"]) and any("severity None" in d["reason"] for d in part["dropped"])
+      and any("no maps_to and no uncatalogued entry" in d["reason"] for d in part["dropped"]),
+      "each drop names its reason, including the `no` left unbacked when its uncatalogued entry was dropped")
+check(part["uncatalogued"] == [] and part["errors"] == [] and part["reason"].startswith("3 malformed entries dropped"), f"reason counts the drops: {part['reason']}")
+check(good["dropped"] == [] and good["status"] == "ok", "a clean reply records no drops and stays ok")
+dup = json.loads(json.dumps(ok_payload))
+dup["answers"].append(dict(dup["answers"][0], answer="no", maps_to=["LAYOUT-03"]))
+d, e = jm.validate_answers(dup, rubric, metrics)
+check(d["status"] == "partial" and "J-01" not in [a["id"] for a in d["answers"]] and any(x["reason"] == "J-01: answered more than once" for x in d["dropped"]),
+      "a question answered twice is dropped entirely (neither answer is the final word)")
+gone = json.loads(json.dumps(ok_payload))
+gone["answers"] = [a for a in gone["answers"] if a["id"] != "J-10"]
+d, e = jm.validate_answers(gone, rubric, metrics)
+check(d["status"] == "partial" and any(x["reason"] == "unanswered: J-10" for x in d["dropped"]), "an unanswered question is reported, the nine others kept")
+orphan = json.loads(json.dumps(ok_payload))
+orphan["answers"][3]["answer"] = "maybe"
+d, e = jm.validate_answers(orphan, rubric, metrics)
+check(d["status"] == "partial" and d["uncatalogued"] == [] and any("which has no kept answer" in x["reason"] for x in d["dropped"]),
+      "an uncatalogued entry whose answer was dropped goes with it")
+nothing = json.loads(json.dumps(ok_payload))
+for a in nothing["answers"]:
+    a["answer"] = "maybe"
+d, e = jm.validate_answers(nothing, rubric, metrics)
+check(d["status"] == "unmeasured" and e and d["answers"] == [] and d["dropped"] == [], "a reply from which no answer survives is unmeasured")
+check("an answer that breaks the schema is dropped and reported" in prompt and "whole judgment `unmeasured`" in prompt, "the prompt states the partial contract")
 
 # ---- merge_judges --------------------------------------------------------------
 
@@ -217,6 +254,14 @@ third["uncatalogued"][0]["question"] = "J-03"
 third["answers"][2]["maps_to"] = []
 m4 = jm.merge_judges([good, third])
 check(m4["uncatalogued"] == [], "a finding neither title- nor question-matched by the other judge is dropped")
+mp = jm.merge_judges([good, part])
+check(mp["status"] == "not_confirmed" and {d["id"] for d in mp["disagreements"]} == {"J-02", "J-04"}
+      and [(d["judge"], d["id"]) for d in mp["dropped"]] == [(2, "J-02"), (2, "uncatalogued[0]"), (2, "J-04")],
+      f"a question one judge dropped is not confirmed, and every judge's drops are carried: {mp['disagreements']} {mp['dropped']}")
+mq = jm.merge_judges([part, part])
+check(mq["status"] == "partial" and len(mq["dropped"]) == 6 and [a["id"] for a in mq["answers"]] == [i for i in SEED_IDS if i not in ("J-02", "J-04")],
+      f"two judges that dropped the same entries merge to partial: {mq['status']}")
+check(jm.merge_judges([part])["status"] == "partial", "one partial judge passes through as partial")
 merged = jm.merge_judges([good, bad])
 check(merged["status"] == "unmeasured" and merged["judges"] == 2 and merged["reason"].startswith("judge 2 unmeasured")
       and all(x.startswith("judge 2: ") for x in merged["errors"]) and merged["answers"] == [], "an unmeasured judge makes the merge unmeasured")
@@ -238,6 +283,10 @@ check('id="judgment"' in page and "status: ok" in page and "outside the grade" i
       and "proposed rule: layout.side_by_side_blocks" in page and 'class="answer-no"' in page and "LAYOUT-04" in page,
       "the report renders the answers, the maps_to column, the uncatalogued finding and its proposed rule")
 check(f"{out['overall']['score']}" in page and '<span class="grade grade-F">F</span>' in page, "the page still prints the evaluate document's grade")
+with_j["judgment"] = part
+page_p = report.render_report(with_j)
+check("status: partial" in page_p and "<h3>Dropped</h3>" in page_p and "answer" in page_p and "maybe" in page_p and 'class="answer-yes"' in page_p,
+      "a partial judgment renders its kept answers and a Dropped list with the reasons")
 with_j["judgment"] = bad
 page_u = report.render_report(with_j)
 check("status: unmeasured" in page_u and "schema violation" in page_u and "No checklist answers." in page_u, "an unmeasured judgment renders its reason and no answers")
@@ -304,6 +353,11 @@ p5 = _run("judge-merge", str(run_dir), str(FIX / "judge_answers_ok.json"), str(t
 k5 = _kv(p5)
 check(p5.returncode == 0 and k5.get("JUDGMENT") == "not_confirmed" and k5.get("ANSWERS") == "6/2/1" and "NOT_CONFIRMED=J-02:yes/no" in p5.stdout,
       f"judge-merge with two judges lists the disagreement ({p5.stdout[-300:]})")
+p5b = _run("judge-merge", str(run_dir), str(FIX / "judge_answers_partial.json"), "--rubric", str(RUBRIC))
+k5b = _kv(p5b)
+check(p5b.returncode == 0 and k5b.get("JUDGMENT") == "partial" and k5b.get("ANSWERS") == "6/1/1" and k5b.get("DROPPED") == "3" and k5b.get("ERRORS") == "0"
+      and "DROPPED_DETAIL=J-02: answer 'maybe'" in p5b.stdout, f"judge-merge prints partial, the counts and a DROPPED_DETAIL per drop ({p5b.stdout[-400:]})")
+check(json.loads((run_dir / "evaluate.json").read_text(encoding="utf-8"))["judgment"]["status"] == "partial", "the partial judgment is written into evaluate.json")
 prose = run_dir / "judge-prose.json"
 prose.write_text("I think the app looks fine overall.\n{\"answers\": []}", encoding="utf-8")
 p6 = _run("judge-merge", str(run_dir), str(prose), "--rubric", str(RUBRIC))

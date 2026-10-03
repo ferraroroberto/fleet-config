@@ -197,8 +197,9 @@ _STANDALONE_UNIT_CHECKS: Tuple[Tuple[str, str, str], ...] = (
     ("design_judgment", "test_design_judgment.py",
      "/design-review's bounded judgment stage -- the [[judgment]] checklist "
      "loading + validation, the deterministic judge prompt bounded to the "
-     "run's own screenshots and metrics, the all-or-nothing answer schema "
-     "(malformed or partial -> unmeasured with every error listed), the "
+     "run's own screenshots and metrics, the partial answer schema "
+     "(a malformed answer is dropped and reported, the valid ones kept; a bad "
+     "envelope or nothing valid -> unmeasured with every error listed), the "
      "multi-judge merge (agreed answers kept, disagreements not confirmed, "
      "title-matched uncatalogued only), grades untouched by a judgment, and "
      "the judge-prompt / judge-merge / render CLI legs -- is testable on its "

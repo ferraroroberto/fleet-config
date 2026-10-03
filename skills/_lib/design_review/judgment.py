@@ -29,29 +29,38 @@ Judge output schema (one JSON object, nothing else):
                        "detail": str, "owner": "spec" | "scaffold" | "app",
                        "proposed": {"metric": str, "threshold": str | number}}]}
 
-`validate_answers` is all-or-nothing: every seed id answered exactly once,
+`validate_answers` keeps what is valid and drops what is not (fleet-config#1185,
+reversing the all-or-nothing contract of #973 on Roberto's decision of
+2026-10-03). Per answer: every seed id answered exactly once,
 answers in the enum, `evidence` a real screen id inside the question's
 scope, every `no` either mapped to one of its question's rule ids or backed
 by an `uncatalogued` entry naming that question, `uncatalogued` only on a
 `no`. One alias is accepted: `<screen id>-full` (the filename stem of the
 screen's full-page PNG, which the prompt lists) reads as that screen's id,
 and every such reading is recorded in `normalized` (fleet-config#1158: five of
-seven recorded `unmeasured` judgments were only this). Any other violation -> `{status: "unmeasured", reason, errors: [...]}` with
-empty answers — never a partial acceptance, never a silent drop.
+seven recorded `unmeasured` judgments were only this). A violation drops only the answer or uncatalogued entry it sits on — an
+answer left without its backing `no` entry goes too — and every drop is
+listed in `dropped` as `{id, reason}` (`status: "partial"`), never silent. A
+bad envelope (not one JSON object, an unknown top-level key, `answers` not a
+list) or a payload from which no answer survives is
+`{status: "unmeasured", reason, errors: [...]}` with empty answers. The skill
+still never edits a reply and never re-prompts a judge.
 
 `merge_judges` (for `--judges 2`) keeps the answers every judge agrees on,
-lists disagreements as `not confirmed` (status `not_confirmed`), and keeps
+lists disagreements as `not confirmed` (status `not_confirmed`; a question one
+judge dropped is a disagreement too), carries every judge's `dropped`, and keeps
 an uncatalogued finding only when every judge raised it — the same title
 after normalisation (case, punctuation and whitespace folded) or the same
 question, so an agreed unmapped `no` never loses its finding to wording.
 
 The judgment document written into `evaluate.json["judgment"]`:
 
-    {"status": "ok" | "not_confirmed" | "unmeasured", "reason": str | null,
+    {"status": "ok" | "partial" | "not_confirmed" | "unmeasured", "reason": str | null,
      "rubric_version": str, "judges": int,
      "answers": [{"id", "question", "answer", "evidence", "maps_to": [...], "note"}],
      "uncatalogued": [{"question", "title", "severity", "detail", "owner", "proposed": {...}}],
      "errors": [str], "disagreements": [{"id", "answers": [...]}],
+     "dropped": [{"id", "reason"}],   # + "judge": n after a merge
      "normalized": [{"id", "from", "to"}]}
 
 Nothing here touches `categories` / `overall`: grades are the rubric's
@@ -73,6 +82,7 @@ from .rubric import OWNERS, SEVERITIES, Judgment, Rubric
 
 ANSWERS = ("yes", "no", "na")
 STATUS_OK = "ok"
+STATUS_PARTIAL = "partial"
 STATUS_NOT_CONFIRMED = "not_confirmed"
 STATUS_UNMEASURED = "unmeasured"
 NOT_CONFIRMED = "not confirmed"
@@ -173,8 +183,9 @@ def judge_prompt(doc: dict, run_dir: Path, rubric: Rubric) -> str:
     lines.append("## Output")
     lines.append("")
     lines.append("Reply with exactly one JSON object and nothing else — no prose before or after it, no markdown "
-                 "fence. Free-form commentary is rejected: the payload is schema-validated and any violation makes "
-                 "the whole judgment `unmeasured`.")
+                 "fence. Free-form commentary is rejected: the payload is schema-validated, an answer that breaks the "
+                 "schema is dropped and reported (your other answers are kept), and a reply that is not one JSON "
+                 "object of exactly the two keys below makes the whole judgment `unmeasured`.")
     lines.append("")
     lines.append("```")
     lines.append(json.dumps({
@@ -217,130 +228,157 @@ def parse_payload(text: str) -> Tuple[Optional[object], Optional[str]]:
 
 
 def unmeasured_doc(rubric: Rubric, errors: List[str], judges: int = 1) -> dict:
-    """The all-or-nothing refusal: status unmeasured, every error listed, no answer kept."""
+    """The refusal: status unmeasured, every error listed, no answer kept."""
     return {"status": STATUS_UNMEASURED, "reason": f"{len(errors)} schema violation{'s' if len(errors) != 1 else ''}: {errors[0]}" if errors else "no errors listed",
-            "rubric_version": rubric.version, "judges": judges, "answers": [], "uncatalogued": [], "errors": list(errors), "disagreements": []}
+            "rubric_version": rubric.version, "judges": judges, "answers": [], "uncatalogued": [], "errors": list(errors), "disagreements": [], "dropped": []}
 
 
 def validate_answers(payload: object, rubric: Rubric, doc: dict) -> Tuple[dict, List[str]]:
     """Schema-validate one judge's payload against the rubric checklist and the run's screens.
 
-    Returns `(judgment_doc, errors)`. Errors non-empty -> the document is
-    `status: unmeasured` with every error listed and no answer kept.
+    Returns `(judgment_doc, errors)`. A payload whose envelope is wrong, or
+    from which no answer survives, is `status: unmeasured` with every error
+    listed and `errors` non-empty. Otherwise each malformed answer (or
+    uncatalogued entry) is dropped on its own and recorded in `dropped`
+    (`status: partial`), the valid answers are kept, and `errors` is empty.
     """
-    errors: List[str] = []
     questions: Dict[str, Judgment] = {j.id: j for j in rubric.judgment}
     if not questions:
-        errors.append("rubric has no [[judgment]] entries")
+        errors = ["rubric has no [[judgment]] entries"]
         return unmeasured_doc(rubric, errors), errors
     screens = {s["id"]: s for s in screen_rows(doc)}
     if not isinstance(payload, dict):
-        errors.append(f"payload is {type(payload).__name__}, not a JSON object")
+        errors = [f"payload is {type(payload).__name__}, not a JSON object"]
         return unmeasured_doc(rubric, errors), errors
+    envelope: List[str] = []
     extra = sorted(set(payload) - {"answers", "uncatalogued"})
     if extra:
-        errors.append(f"unknown top-level keys {extra}")
+        envelope.append(f"unknown top-level keys {extra}")
     raw_answers = payload.get("answers")
     if not isinstance(raw_answers, list):
-        errors.append("answers must be a list")
+        envelope.append("answers must be a list")
         raw_answers = []
     raw_unc = payload.get("uncatalogued", [])
     if raw_unc is None:
         raw_unc = []
     if not isinstance(raw_unc, list):
-        errors.append("uncatalogued must be a list")
+        envelope.append("uncatalogued must be a list")
         raw_unc = []
 
+    dropped: List[Tuple[str, str]] = []  # (what was dropped, why)
     seen: Dict[str, dict] = {}
+    duplicated: set = set()
     normalized: List[dict] = []
     for i, a in enumerate(raw_answers):
         if not isinstance(a, dict):
-            errors.append(f"answers[{i}] is not an object")
+            dropped.append((f"answers[{i}]", f"answers[{i}] is not an object"))
             continue
         jid = str(a.get("id", "")).strip()
         if jid not in questions:
-            errors.append(f"answers[{i}]: unknown id {jid!r}")
+            dropped.append((f"answers[{i}]", f"answers[{i}]: unknown id {jid!r}"))
             continue
-        if jid in seen:
-            errors.append(f"{jid}: answered more than once")
+        if jid in seen or jid in duplicated:
+            # Two answers to one question: neither is the judge's final word, so neither stands.
+            seen.pop(jid, None)
+            duplicated.add(jid)
+            dropped.append((jid, f"{jid}: answered more than once"))
             continue
         q = questions[jid]
+        errs: List[str] = []
         bad_keys = sorted(set(a) - {"id", "answer", "evidence", "maps_to", "note"})
         if bad_keys:
-            errors.append(f"{jid}: unknown keys {bad_keys}")
+            errs.append(f"{jid}: unknown keys {bad_keys}")
         answer = a.get("answer")
         if answer not in ANSWERS:
-            errors.append(f"{jid}: answer {answer!r} not in {ANSWERS}")
+            errs.append(f"{jid}: answer {answer!r} not in {ANSWERS}")
         evidence = a.get("evidence")
+        alias = None
         if isinstance(evidence, str) and evidence not in screens and evidence.endswith(FULL_SUFFIX) and evidence[:-len(FULL_SUFFIX)] in screens:
-            normalized.append({"id": jid, "from": evidence, "to": evidence[:-len(FULL_SUFFIX)]})
+            alias = {"id": jid, "from": evidence, "to": evidence[:-len(FULL_SUFFIX)]}
             evidence = evidence[:-len(FULL_SUFFIX)]
         if evidence is None or evidence == "":
             if answer != "na":
-                errors.append(f"{jid}: evidence is required for a {answer!r} answer")
+                errs.append(f"{jid}: evidence is required for a {answer!r} answer")
             evidence = None
         elif not isinstance(evidence, str) or evidence not in screens:
-            errors.append(f"{jid}: evidence {evidence!r} is not a screen id of this run")
+            errs.append(f"{jid}: evidence {evidence!r} is not a screen id of this run")
         elif not _in_scope(screens[evidence], q.screens):
-            errors.append(f"{jid}: evidence {evidence!r} is outside the question's scope ({q.screens})")
+            errs.append(f"{jid}: evidence {evidence!r} is outside the question's scope ({q.screens})")
         maps_to = a.get("maps_to")
         if maps_to is None:
             maps_to = []
         if not isinstance(maps_to, list) or any(not isinstance(m, str) for m in maps_to):
-            errors.append(f"{jid}: maps_to must be a list of rule ids or null")
+            errs.append(f"{jid}: maps_to must be a list of rule ids or null")
             maps_to = []
         outside = [m for m in maps_to if m not in q.maps_to]
         if outside:
-            errors.append(f"{jid}: maps_to {outside} not in the question's list {q.maps_to or '[]'}")
+            errs.append(f"{jid}: maps_to {outside} not in the question's list {q.maps_to or '[]'}")
         if maps_to and answer != "no":
-            errors.append(f"{jid}: maps_to given on a {answer!r} answer")
+            errs.append(f"{jid}: maps_to given on a {answer!r} answer")
         note = a.get("note")
         if note is not None and not isinstance(note, str):
-            errors.append(f"{jid}: note must be a string or null")
+            errs.append(f"{jid}: note must be a string or null")
+        if errs:
+            dropped.extend((jid, e) for e in errs)
+            continue
+        if alias:
+            normalized.append(alias)
         seen[jid] = {"id": jid, "question": q.question, "answer": answer, "evidence": evidence,
-                     "maps_to": [m for m in maps_to if m in q.maps_to], "note": (note or None)}
-    missing = [jid for jid in questions if jid not in seen]
-    if missing:
-        errors.append(f"unanswered: {', '.join(missing)}")
+                     "maps_to": list(maps_to), "note": (note or None)}
 
     unc_out: List[dict] = []
     unc_by_q: Dict[str, int] = {}
     for i, u in enumerate(raw_unc):
+        label = f"uncatalogued[{i}]"
         if not isinstance(u, dict):
-            errors.append(f"uncatalogued[{i}] is not an object")
+            dropped.append((label, f"{label} is not an object"))
             continue
         qid = str(u.get("question", "")).strip()
+        errs = []
         if qid not in questions:
-            errors.append(f"uncatalogued[{i}]: question {qid!r} is not a checklist id")
-        elif qid in seen and seen[qid]["answer"] != "no":
-            errors.append(f"uncatalogued[{i}]: names {qid} which was answered {seen[qid]['answer']!r}, not 'no'")
+            errs.append(f"{label}: question {qid!r} is not a checklist id")
+        elif qid not in seen:
+            errs.append(f"{label}: names {qid}, which has no kept answer")
+        elif seen[qid]["answer"] != "no":
+            errs.append(f"{label}: names {qid} which was answered {seen[qid]['answer']!r}, not 'no'")
         title = u.get("title")
         if not isinstance(title, str) or not title.strip():
-            errors.append(f"uncatalogued[{i}]: title is required")
+            errs.append(f"{label}: title is required")
         if u.get("severity") not in SEVERITIES:
-            errors.append(f"uncatalogued[{i}]: severity {u.get('severity')!r} not in {SEVERITIES}")
+            errs.append(f"{label}: severity {u.get('severity')!r} not in {SEVERITIES}")
         if u.get("owner") not in OWNERS:
-            errors.append(f"uncatalogued[{i}]: owner {u.get('owner')!r} not in {OWNERS}")
+            errs.append(f"{label}: owner {u.get('owner')!r} not in {OWNERS}")
         detail = u.get("detail")
         if not isinstance(detail, str) or not detail.strip():
-            errors.append(f"uncatalogued[{i}]: detail is required")
+            errs.append(f"{label}: detail is required")
         proposed = u.get("proposed")
         if not isinstance(proposed, dict) or not str(proposed.get("metric") or "").strip() or proposed.get("threshold") in (None, ""):
-            errors.append(f"uncatalogued[{i}]: proposed.metric and proposed.threshold are required")
-            proposed = {"metric": None, "threshold": None}
+            errs.append(f"{label}: proposed.metric and proposed.threshold are required")
+        if errs:
+            dropped.extend((label, e) for e in errs)
+            continue
         unc_by_q[qid] = unc_by_q.get(qid, 0) + 1
-        unc_out.append({"question": qid, "title": str(title or "").strip(), "severity": u.get("severity"),
-                        "detail": str(detail or "").strip(), "owner": u.get("owner"),
+        unc_out.append({"question": qid, "title": title.strip(), "severity": u.get("severity"),
+                        "detail": detail.strip(), "owner": u.get("owner"),
                         "proposed": {"metric": proposed.get("metric"), "threshold": proposed.get("threshold")}})
-    for jid, a in seen.items():
-        if a["answer"] == "no" and not a["maps_to"] and not unc_by_q.get(jid):
-            errors.append(f"{jid}: answered 'no' with no maps_to and no uncatalogued entry")
+    # A `no` that nothing backs (no mapped rule, no surviving uncatalogued entry) is dropped, never kept bare.
+    for jid in [j for j, a in seen.items() if a["answer"] == "no" and not a["maps_to"] and not unc_by_q.get(j)]:
+        del seen[jid]
+        dropped.append((jid, f"{jid}: answered 'no' with no maps_to and no uncatalogued entry"))
+    named = {d[0] for d in dropped}
+    unanswered = [j.id for j in rubric.judgment if j.id not in seen and j.id not in named]
+    if unanswered:
+        dropped.append((", ".join(unanswered), f"unanswered: {', '.join(unanswered)}"))
 
-    if errors:
+    answers = [seen[j.id] for j in rubric.judgment if j.id in seen]
+    if envelope or not answers:
+        errors = envelope + [r for _what, r in dropped]
         return unmeasured_doc(rubric, errors), errors
-    answers = [seen[j.id] for j in rubric.judgment]
-    return {"status": STATUS_OK, "reason": None, "rubric_version": rubric.version, "judges": 1,
-            "answers": answers, "uncatalogued": unc_out, "errors": [], "disagreements": [], "normalized": normalized}, []
+    drops = [{"id": what, "reason": why} for what, why in dropped]
+    return {"status": STATUS_PARTIAL if drops else STATUS_OK,
+            "reason": f"{len(drops)} malformed {'entry' if len(drops) == 1 else 'entries'} dropped, the rest kept: {drops[0]['reason']}" if drops else None,
+            "rubric_version": rubric.version, "judges": 1,
+            "answers": answers, "uncatalogued": unc_out, "errors": [], "disagreements": [], "dropped": drops, "normalized": normalized}, []
 
 
 # ---- merging ------------------------------------------------------------------
@@ -358,7 +396,7 @@ def merge_judges(docs: List[dict]) -> dict:
     """
     if not docs:
         return {"status": STATUS_UNMEASURED, "reason": "no judge document", "rubric_version": None, "judges": 0,
-                "answers": [], "uncatalogued": [], "errors": ["no judge document"], "disagreements": []}
+                "answers": [], "uncatalogued": [], "errors": ["no judge document"], "disagreements": [], "dropped": []}
     bad = [(i + 1, d) for i, d in enumerate(docs) if d.get("status") == STATUS_UNMEASURED]
     if bad:
         errors = [f"judge {i}: {e}" for i, d in bad for e in (d.get("errors") or [d.get("reason") or "unmeasured"])]
@@ -372,25 +410,22 @@ def merge_judges(docs: List[dict]) -> dict:
     first = docs[0]
     answers: List[dict] = []
     disagreements: List[dict] = []
-    for a in first.get("answers") or []:
-        jid = a["id"]
-        others = [next((x for x in (d.get("answers") or []) if x.get("id") == jid), None) for d in docs[1:]]
-        if any(o is None for o in others):
-            votes = [a.get("answer")] + [o.get("answer") if o else None for o in others]
-            answers.append({**a, "answer": NOT_CONFIRMED, "evidence": None, "maps_to": [], "note": f"judges answered {votes}"})
-            disagreements.append({"id": jid, "answers": votes})
-            continue
-        votes = [a.get("answer")] + [o.get("answer") for o in others]
-        if len(set(votes)) == 1:
+    by_judge = [{x.get("id"): x for x in (d.get("answers") or [])} for d in docs]
+    for jid in sorted({k for m in by_judge for k in m}):
+        got = [m.get(jid) for m in by_judge]
+        votes = [g.get("answer") if g else None for g in got]
+        template = next(g for g in got if g)
+        if all(got) and len(set(votes)) == 1:
             maps: List[str] = []
-            for src in [a] + others:
+            for src in got:
                 for m in src.get("maps_to") or []:
                     if m not in maps:
                         maps.append(m)
-            answers.append({**a, "maps_to": maps})
+            answers.append({**template, "maps_to": maps})
         else:
-            answers.append({**a, "answer": NOT_CONFIRMED, "evidence": None, "maps_to": [],
-                            "note": "judges answered " + " / ".join(str(v) for v in votes)})
+            # A question one judge dropped has no second opinion: not confirmed, like a split vote.
+            note = f"judges answered {votes}" if not all(got) else "judges answered " + " / ".join(str(v) for v in votes)
+            answers.append({**template, "answer": NOT_CONFIRMED, "evidence": None, "maps_to": [], "note": note})
             disagreements.append({"id": jid, "answers": votes})
     # An uncatalogued finding survives when every judge raised it: same title
     # after normalisation, or the same question — two judges who both answered
@@ -404,16 +439,19 @@ def merge_judges(docs: List[dict]) -> dict:
         if all(any((key and normalise_title(x.get("title")) == key) or (qid and x.get("question") == qid)
                    for x in (d.get("uncatalogued") or [])) for d in docs[1:]):
             unc.append(json.loads(json.dumps(u)))
-    return {"status": STATUS_NOT_CONFIRMED if disagreements else STATUS_OK,
-            "reason": f"{len(disagreements)} question(s) not confirmed across {len(docs)} judges" if disagreements else None,
+    dropped = [{**x, "judge": i + 1} for i, d in enumerate(docs) for x in d.get("dropped") or []]
+    status = STATUS_NOT_CONFIRMED if disagreements else STATUS_PARTIAL if dropped else STATUS_OK
+    reason = (f"{len(disagreements)} question(s) not confirmed across {len(docs)} judges" if disagreements
+              else f"{len(dropped)} malformed {'entry' if len(dropped) == 1 else 'entries'} dropped across {len(docs)} judges, the rest kept" if dropped else None)
+    return {"status": status, "reason": reason,
             "rubric_version": first.get("rubric_version"), "judges": len(docs),
-            "answers": answers, "uncatalogued": unc, "errors": [], "disagreements": disagreements,
+            "answers": answers, "uncatalogued": unc, "errors": [], "disagreements": disagreements, "dropped": dropped,
             "normalized": [n for d in docs for n in d.get("normalized") or []]}
 
 
 def _unmeasured_like(template: dict, errors: List[str], judges: int) -> dict:
     return {"status": STATUS_UNMEASURED, "reason": errors[0] if errors else "unmeasured", "rubric_version": template.get("rubric_version"),
-            "judges": judges, "answers": [], "uncatalogued": [], "errors": list(errors), "disagreements": []}
+            "judges": judges, "answers": [], "uncatalogued": [], "errors": list(errors), "disagreements": [], "dropped": []}
 
 
 def answer_counts(jdoc: dict) -> Tuple[int, int, int]:

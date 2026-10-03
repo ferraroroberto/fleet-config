@@ -71,10 +71,10 @@ ledger — both slots are read by `report.py`, see its docstring):
                           measured, threshold, params, title, standard, fix_template, mockup}],
                    categories{cat: {score, grade, unmeasured, failed, unmeasured_rules}},
                    overall{score, grade, unmeasured}
-                   [judgment{status: ok|not_confirmed|unmeasured, reason, rubric_version, judges,
+                   [judgment{status: ok|partial|not_confirmed|unmeasured, reason, rubric_version, judges,
                              answers[{id, question, answer, evidence, maps_to, note}],
                              uncatalogued[{question, title, severity, detail, owner, proposed{metric, threshold}}],
-                             errors[], disagreements[]}]                        # #973
+                             errors[], disagreements[], dropped[{id, reason}]}]      # #973, #1185
                    [diff{previous_run|null, fixed[], regressed[], new[], unchanged[], unmeasured[],
                          rubric_changed{from, to}|null}]                                          # #974
   run dir          metrics.json, shots/<screen id>.png (+ -full.png), evaluate.json,

@@ -28,7 +28,7 @@ Section order (fixed; a slot whose data is absent is omitted cleanly):
 Slots — the steps only add data, the template already reads:
 
     doc["judgment"] = {                          # written by `judgment.py` (#973)
-        "status":       "ok" | "not_confirmed" | "unmeasured",
+        "status":       "ok" | "partial" | "not_confirmed" | "unmeasured",
         "reason":       str | None,              # shown beside the status
         "answers":      [{"id": "J-01", "question": str, "answer": str, "evidence": str,
                           "maps_to": [rule id], "note": str | None}],
@@ -470,7 +470,10 @@ def _judgment(doc: dict) -> str:
         proposed = f' <span class="muted small">proposed rule: {_esc(prop.get("metric"))} fails at {_esc(prop.get("threshold"))}</span>' if prop.get("metric") else ""
         lis.append(f'<li><span class="badge sev sev-{_esc(u.get("severity", ""))}">{_esc(u.get("severity", ""))}</span> <b>{_esc(u.get("title", ""))}</b> '
                    f'{_esc(u.get("detail", ""))} <span class="muted small">owner {_esc(u.get("owner", ""))}</span>{proposed}</li>')
-    body = table + "<h3>Uncatalogued</h3>" + (f'<ul class="plain">{"".join(lis)}</ul>' if lis else '<p class="muted">Nothing outside the rubric.</p>')
+    dropped = [d for d in j.get("dropped") or [] if isinstance(d, dict)]
+    drop_html = ('<h3>Dropped</h3><p class="muted small">Malformed entries left out of the answers above; the rest were kept.</p><ul class="plain">'
+                 + "".join(f'<li><span class="ids">{_esc(d.get("id", ""))}</span> {_esc(d.get("reason", ""))}</li>' for d in dropped) + "</ul>") if dropped else ""
+    body = table + drop_html + "<h3>Uncatalogued</h3>" + (f'<ul class="plain">{"".join(lis)}</ul>' if lis else '<p class="muted">Nothing outside the rubric.</p>')
     lead = f"status: {_esc(j.get('status') or 'unknown')}" + (f" — {_esc(j['reason'])}" if j.get("reason") else "")
     lead += "; checklist answers and uncatalogued findings sit outside the grade"
     return _section("judgment", "Judgment", body, lead)
