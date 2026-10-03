@@ -87,7 +87,7 @@ components:
   button-surface:  { backgroundColor: "{colors.canvas-subtle}", borderColor: "{colors.border}", textColor: "{colors.fg-muted}", rounded: "{rounded.md}", height: "{components.control.height}" }   # utility/toolbar/icon button at the control height
   button-disabled: { backgroundColor: "{colors.canvas-subtle}", borderColor: "{colors.border}", textColor: "{colors.fg-muted}" }   # ONE disabled recipe for every tier, both themes (home-automation#362) — never opacity on a solid fill
   control:        { height: 36px, rounded: "{rounded.md}", backgroundColor: "{colors.canvas-subtle}", borderColor: "{colors.control-border}", textColor: "{colors.fg}" }   # shared height for inline select / input so a row of controls lines up
-  switch:         { width: 44px, height: 26px, rounded: "{rounded.pill}", thumbSize: 20px, trackOff: "{colors.control-border}", trackOn: "{colors.success}", thumbColor: "{colors.accent-fg}" }   # shadcn Switch — no text label; on = green (success), the universal on-state
+  switch:         { width: 44px, height: 26px, rounded: "{rounded.pill}", thumbSize: 20px, trackOff: "{colors.control-border}", trackOn: "{colors.accent-fill}", thumbColor: "{colors.accent-fg}" }   # shadcn Switch — no text label; on = the app's accent (fleet-config#1200), never green
   nav-bar:        { backgroundColor: "{colors.card}", rounded: "{rounded.nav}", height: 61px, margin: 21px, maxTabs: 5 }
   nav-tab:        { textColor: "{colors.fg-muted}", rounded: "{rounded.pill}", height: 53px }
   nav-tab-active: { backgroundColor: "{colors.accent-soft}", borderColor: "{colors.accent-border-soft}", textColor: "{colors.accent-text}" }   # accent-soft tint, not canvas-subtle — the inset surface reads as a black hole in dark mode (project-scaffolding#159)
@@ -98,7 +98,8 @@ components:
   action-row:     { minHeight: "{rows.md}", title: "{typography.body}", titleWeight: 600, meta: "{typography.body-sm}", metaColor: "{colors.fg-muted}", leadingToggles: 1, trailingAccessories: 1, extraVisibleActions: 1, accessorySize: "{components.hit-target.min}", destructiveColor: "{colors.danger-text}", filterAboveRows: 12, filterHeight: 44px, filterBorder: "{colors.control-border}" }   # a list row that does something: tap the row = primary action, one trailing kebab/chevron, destructive only in the menu
   empty-state:    { iconSize: "{icons.size.feature}", gap: "{spacing.sm}", padding: "{spacing.xl} {spacing.md}", actionMinWidth: 96px, textColor: "{colors.fg-muted}" }   # icon + one-line reason + optional action, centered
   icon-tile:      { rounded: "{rounded.md}", iconSize: "{icons.size.feature}", iconColor: "{colors.accent-fg}" }   # Home-screen rounded-square — one tile-* fill, centered Lucide glyph
-  page-header:    { minHeight: "{rows.md}", padding: "0 14px", title: "{typography.body}", titleWeight: 700, context: "{typography.body-sm}", contextColor: "{colors.fg-muted}", trailingActions: 2, actionSize: "{components.hit-target.min}" }   # every pane's first element — the vendored home-head: tab title, one context line, trailing theme toggle + settings
+  page-header:    { minHeight: "{rows.md}", padding: "0 14px", title: "{typography.body}", titleWeight: 700, context: "{typography.body-sm}", contextColor: "{colors.fg-muted}", trailingActions: 2, actionSize: "{components.hit-target.min}" }   # every pane's first element — the vendored home-head: tab title, one context line, trailing theme toggle + Settings gear, always both, on every tab
+  toast:          { backgroundColor: "{colors.card}", textColor: "{colors.fg}", borderColor: "{colors.border}", rounded: "{rounded.md}", padding: "12px 18px", typography: "{typography.label}", fontWeight: 700, maxWidth: 560px, offsetAboveNav: 8px }   # neutral frosted toast (fleet-config#1200) — the nav-bar glass, centred above the nav; only a real error tints (danger), success never does
   hit-target:     { min: 44px }   # minimum effective pointer-target square, app-wide — see Touch targets
 focus:            { outline: "2px solid {colors.accent}", offset: 2px }   # one tokenized :focus-visible ring app-wide (a control overrides only where it draws a custom ring)
 layout:                           # desktop placement (Layout) — theme-independent
@@ -302,6 +303,8 @@ fleet-config#294).
 Cards sit one step above the canvas via surface color + a hairline border, not
 heavy shadows. The bottom-nav bar is the *only* element with a real shadow +
 backdrop blur, because it is the only thing that floats over scrolling content.
+The one transient exception is the `toast`, which reuses the nav-bar's glass
+treatment so the two floating layers read as one family.
 
 ## Shapes
 
@@ -341,7 +344,8 @@ the whole `data-state` vocabulary for async surfaces (home-automation#409):
 
 Feedback stays at the right altitude: **passive/background status renders
 inline beside the affected surface; a global toast is reserved for
-user-initiated command progress/results.** Announce state changes through a
+user-initiated command progress/results, rendered as the one neutral frosted
+`toast`.** Announce state changes through a
 `role="status"` live region (`aria-live="polite"`, `assertive` only for
 errors) without moving focus. Failure copy is sanitized — no hostnames, URLs,
 exception classes, or timeout internals in user-facing text (logs keep the
@@ -443,11 +447,14 @@ identically; treat every bullet as a hard requirement, not a suggestion.
 - **At most five primary destinations** (`nav-bar.maxTabs`), per HIG's
   five-tab ceiling and Material's three to five. Five is what keeps every
   label legible at 320px. A sixth tab forces 11px labels and ~53px tabs, and
-  pushes the nav toward icon-only. A rarely used destination (Settings above
-  all) is **not a tab**: it is a trailing action in the page header (a
-  `button-surface` gear beside the theme toggle), one tap from every tab.
-  An app with several such destinations may make the fifth tab "More"; it
-  still counts toward the five.
+  pushes the nav toward icon-only. **Settings is never a tab**, at any nav
+  size and in any app, however few tabs the app has: it is always the trailing
+  gear in the page header (a `button-surface` gear beside the theme toggle),
+  on every tab and one tap from each. A gear-only tab, or a "More" tab that
+  holds only Settings, is the same violation. The fleet's signature header is
+  the title on the left and `[theme toggle] [Settings gear]` on the right
+  (fleet-config#1200). Any other rarely used destination may share a fifth
+  "More" tab; it still counts toward the five.
 - **Desktop / fine pointers** below `layout.wide` (1100px) may render the
   same tabs inline at the top of the 772px column. At 1100px and wider they
   become the **left rail** of the wide layout (Layout): a vertical stack of
@@ -481,10 +488,13 @@ their boundary in `control-border`. The on/off
 `switch` is the shadcn Switch — a compact track + sliding thumb, **no text
 label** (state is read from thumb position + track color; `role="switch"` +
 `aria-checked` carry it for assistive tech), one canonical size everywhere. Its
-track is **green (`success`) when on** — green is the universal "on / active"
-read, so it is the fleet default rather than the blue accent; a **state** toggle
-(alarm armed, a destructive mode) may substitute another status color
-(`danger` / `attention`) where that state carries its own meaning. Collapsible `details/summary`
+track is the **accent (`accent-fill`) when on**, so a switch sits in the same
+palette as the buttons and tabs beside it; green reads as off-palette next to
+the rest of the app (fleet-config#1200 reversed the earlier green-on decision,
+rationale in `docs/design-system.md`). A **state** toggle (alarm armed, a
+destructive mode) may substitute a status color (`danger` / `attention`) where
+that state carries its own meaning; `success` is never a switch's on-colour.
+Collapsible `details/summary`
 headers (`disclosure`) left-align the icon + title with the chevron pinned right,
 and follow one fixed structural contract so a vertical stack of collapsible
 cards is pixel-identical whether open or closed: the **card's own `padding` is
@@ -519,8 +529,9 @@ hand-picked per app.
   `0 14px` inset): a leading `icons.size.title` glyph plus a bold title that
   **names the current tab**, one ellipsized context line (`body-sm`,
   `fg-muted`; e.g. "3 running", "Last run 06:00"), and **at most two trailing
-  icon actions** at the 44px hit target: the theme toggle, and the Settings
-  entry when Settings is not a tab. Tab-specific toolbars sit **under** the
+  icon actions** at the 44px hit target: the theme toggle and the Settings
+  gear, **always both, on every tab at every nav size** (Settings is never a
+  tab, see Navigation). Tab-specific toolbars sit **under** the
   header, never in place of it. The vendored `home-head` component
   (`project-scaffolding` `_vendored/home-head/`) is this shape; reuse it
   verbatim on every pane, not just the home tab.
@@ -593,6 +604,25 @@ hand-picked per app.
   squircle) filled with **one** of the five `tile-*` colors (the only saturated
   surfaces), a centered `icons.size.feature` Lucide glyph in `accent-fg`. The
   fill signals category, not state; never use a `tile-*` color elsewhere.
+- **toast** (`toast`) — the one transient message for a user-initiated command
+  (feedback altitude, Async data & feedback). The **neutral frosted** recipe
+  from app-launcher (`styles.css`, "Neutral frosted toast", ported from
+  home-automation #782): `position: fixed`, centred (`left: 50%` +
+  `translateX(-50%)`), sitting `toast.offsetAboveNav` (8px) above the floating
+  nav (nav height + 2× nav margin + `env(safe-area-inset-bottom)`) so the nav
+  never hides it, and above every overlay. The surface is the **nav-bar's glass**:
+  the translucent card fill and its hairline, `backdrop-filter: blur(20px)
+  saturate(1.25)` (with the `-webkit-` twin), `rounded.md`, the theme shadow.
+  Text is `fg`, `label` at weight 700, line-height 1.5, centred, padded
+  `12px 18px`. **`width: max-content`** with `max-width: min(100vw - 24px,
+  560px)` makes it one line whenever the message fits (without it the box
+  shrinks to the 50vw left of its anchor and wraps at half the screen);
+  `text-wrap: balance` splits a longer message evenly. **Only a real error
+  tints** — a `danger` 75% mix fill, `danger` border and `accent-fg` text.
+  Success, info and warning toasts stay neutral: the message says what
+  happened, colour does not. Announce through a `role="status"` live region
+  (`assertive` for the error). Vendor it from `project-scaffolding` rather than
+  re-authoring it.
 
 ## Base UI — model components on shadcn
 
@@ -658,12 +688,13 @@ byte-for-byte components.
 - **Do** model every interactive component on its shadcn component (structure + ARIA), then skin it with the fleet tokens.
 - **Do** draw every icon from **Lucide** — the shadcn-native set — vendored through `project-scaffolding`.
 - **Do** generate every installable app's Apple/PWA/favicon family from one Lucide master through `brand_gen`, with distinct regular and maskable assets.
-- **Do** cap primary navigation at five tabs, put Settings in the page header, and open every tab with the one `page-header` (the vendored `home-head`).
+- **Do** cap primary navigation at five tabs, put Settings in the page header as the gear beside the theme toggle on every tab (never as a tab), and open every tab with the one `page-header` (the vendored `home-head`).
 - **Do** keep the bottom nav identical across apps — same radius, blur, and
   persistence behavior.
 - **Do** reserve bottom padding for the fixed nav so content is never occluded.
 - **Do** give every interactive element the one tokenized `:focus-visible` ring — never leave focus to the browser default.
-- **Do** color a switch's on-track green (`success`) — the universal on-state.
+- **Do** color a switch's on-track in the accent (`accent-fill`) — never green.
+- **Do** show every command result in the one neutral frosted `toast`; only a real error tints.
 - **Do** size every glyph from the canonical `icons.size` steps (16 / 18 / 20 / 24 — `inline` / `title` / `nav-tab` / `feature`) — don't hand-pick a one-off size.
 - **Do** honor `prefers-reduced-motion` — collapse authored animation to near-instant.
 - **Do** ship the user-selectable theme: pre-paint `data-theme` boot script + persisted sun/moon toggle on the main view — never dark-only or OS-only.
@@ -683,5 +714,6 @@ byte-for-byte components.
 - **Don't** introduce a second accent or per-app navigation variants.
 - **Don't** stretch a single column full-bleed on desktop — keep the centered 772px measure below 1100px, and use the left rail + master-detail layout above it. Only a view whose content is two-dimensional (board lanes, a many-field table, a tree with attribute columns, calendar days) may span the window, and the app declares it in `wide_views`.
 - **Don't** use status colors decoratively — they signal state only.
+- **Don't** make Settings a tab (or a gear-only tab), tint a success toast, or turn a switch green when on.
 - **Don't** put raw infrastructure detail (hostnames, URLs, exception text) in user-facing failure copy — sanitize it; logs keep the detail.
 - **Don't** apply this spec to Streamlit POC spikes.

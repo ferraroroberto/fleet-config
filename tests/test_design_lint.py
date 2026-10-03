@@ -222,7 +222,7 @@ GOOD_CSS = """
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 @media (prefers-reduced-motion: reduce) { * { transition-duration: 0.01ms !important; } }
 .app { max-width: 772px; margin: 0 auto; }
-.toggle.on { background: var(--on); }
+.toggle.on { background: var(--accent-fill); }
 body:has(dialog[open]) .tabs { visibility: hidden; }
 .tabs { height: 100dvh; padding-bottom: env(safe-area-inset-bottom); }
 @media (display-mode: standalone) {
@@ -233,7 +233,7 @@ good = run_contracts(GOOD_CSS, "<dialog class=\"d\"></dialog>")
 check(good["focus-visible-ring"]["status"] == "PASS", "tokenized focus ring PASS")
 check(good["reduced-motion"]["status"] == "PASS", "reduced motion PASS")
 check(good["desktop-measure"]["status"] == "PASS", "772px measure PASS")
-check(good["switch-on-green"]["status"] == "PASS", "green on-track PASS")
+check(good["switch-on-accent"]["status"] == "PASS", "accent on-track PASS")
 check(good["no-native-checkbox"]["status"] == "PASS", "no checkboxes PASS")
 check(good["native-dialog"]["status"] == "PASS", "native dialog PASS")
 check(good["nav-contract"]["status"] == "PASS", "nav signals + shell PASS")
@@ -283,7 +283,7 @@ check(not dl.standalone_shell_present(
     "markers outside a standalone media block don't count")
 
 BAD_CSS = """
-.toggle.on { background: var(--accent); }
+.toggle.on { background: var(--success); }
 .app { max-width: 1160px; }
 """
 # fleet-config#994: a vendored component's scoped `outline: none` (action-row
@@ -305,8 +305,8 @@ bad = run_contracts(BAD_CSS, "<input type=\"checkbox\"><div class=\"modal\"></di
 check(bad["focus-visible-ring"]["status"] == "FAIL", "missing focus ring FAIL")
 check(bad["reduced-motion"]["status"] == "FAIL", "missing reduced motion FAIL")
 check(bad["desktop-measure"]["status"] == "FAIL", "1160px cap is not near-772 -> FAIL")
-check(bad["switch-on-green"]["status"] == "FAIL",
-      "accent on-track FAILs (the green decision is enforced)")
+check(bad["switch-on-accent"]["status"] == "FAIL",
+      "green on-track FAILs (the accent decision is enforced, #1200)")
 check(bad["no-native-checkbox"]["status"] == "FAIL", "native checkbox FAIL")
 check(bad["native-dialog"]["status"] == "WARN", "hand-rolled modal WARN")
 check(bad["nav-contract"]["status"] == "FAIL", "no nav signals FAIL")
@@ -321,7 +321,17 @@ _tok = run_contracts(":root { --layout-measure: 772px; }\n.review-host { max-wid
                      "@media (min-width: 720px) {\n  .app { max-width: var(--layout-measure); margin: 0 auto; }\n}\n")["desktop-measure"]
 check(_tok["status"] == "PASS" and (_tok.get("evidence") or "").endswith(":4"),
       f"desktop-measure: max-width through a 772px custom property is the fleet measure (#1087) -- {_tok}")
-check(near["switch-on-green"]["status"] == "NA", "no switch -> NA")
+check(near["switch-on-accent"]["status"] == "NA", "no switch -> NA")
+
+# --on is an app's own alias: judge the colour it resolves to, never the name (#1200)
+_on_acc = run_contracts(":root { --on: var(--accent); }\n.toggle.on { background: var(--on); }\n")["switch-on-accent"]
+check(_on_acc["status"] == "PASS", f"switch-on-accent: --on aliasing the accent PASSes -- {_on_acc}")
+_on_grn = run_contracts(":root { --on: var(--success); }\n.toggle.on { background: var(--on); }\n")["switch-on-accent"]
+check(_on_grn["status"] == "FAIL", f"switch-on-accent: --on aliasing success FAILs -- {_on_grn}")
+_on_lit = run_contracts(".toggle.on { background: #1a7f37; }\n")["switch-on-accent"]
+check(_on_lit["status"] == "WARN", f"switch-on-accent: an untokenized colour WARNs, never PASSes -- {_on_lit}")
+_on_unk = run_contracts(".toggle.on { background: var(--on); }\n")["switch-on-accent"]
+check(_on_unk["status"] == "WARN", f"switch-on-accent: an unresolvable --on WARNs, never PASSes -- {_on_unk}")
 
 # width follows the shape of the view: declared wide views turn the no-cap FAIL into a WARN (#1113)
 _WIDE = '[design]\nwide_views = ["board", "table"]\n'
@@ -1693,12 +1703,12 @@ finally:
 
 # ---- real-spec smoke: the shipped design.md parses and carries v2 groups ----
 
-real_spec = Path.home() / ".claude" / "design.md"
+real_spec = Path(__file__).resolve().parent.parent / "design.md"   # the repo's own spec, so a branch checks its own edit
 if real_spec.is_file():
     parsed = dl.parse_spec(real_spec.read_text(encoding="utf-8", errors="replace"))
     check(parsed.get("colors.canvas") == "#ffffff", "real design.md: canvas parses")
-    check(parsed.get("components.switch.trackOn") == parsed.get("colors.success"),
-          "real design.md: switch trackOn resolves to success (the green decision)")
+    check(parsed.get("components.switch.trackOn") == parsed.get("colors.accent-fill"),
+          "real design.md: switch trackOn resolves to accent-fill (the accent decision, #1200)")
     check(parsed.get("icons.size.nav-tab") == "20px",
           "real design.md: nav-tab icon step is the phone-validated 20px")
     check((parsed.get("colors.accent-soft") or "").startswith("color-mix("),

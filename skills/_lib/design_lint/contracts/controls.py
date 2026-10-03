@@ -20,19 +20,41 @@ from ..selectors import (
 from ._ctx import _ContractsCtx, _evidence, _loc_at, _result
 
 
-def _check_switch_on_green(ctx: _ContractsCtx) -> List[dict]:
-    # 4. switch on-track color (THE green decision)
+def _on_track_role(css_all: str, body: str) -> str:
+    """The colour role a switch's on-track resolves to: `accent`, `success` or ``.
+
+    `--on` is an app's own alias, so it is followed to its declaration (one hop)
+    rather than judged by name; a role that cannot be established is ``""``.
+    """
+    ref = re.search(r"var\(--([\w-]+)", body)
+    if not ref:
+        return ""
+    name = ref.group(1)
+    if name == "on":
+        decl = re.search(r"--on\s*:\s*([^;}]*)", css_all)
+        inner = re.search(r"var\(--([\w-]+)", decl.group(1)) if decl else None
+        if not inner:
+            return ""
+        name = inner.group(1)
+    if name.startswith("accent"):
+        return "accent"
+    return "success" if name == "success" else ""
+
+
+def _check_switch_on_accent(ctx: _ContractsCtx) -> List[dict]:
+    # 4. switch on-track color (THE accent decision, fleet-config#1200 — reversed Round 3's green)
     css_all = ctx.css_all
     sw = re.search(r"\.toggle\.on[^{}]*\{([^{}]*)\}", css_all)
     if not sw:
-        return [_result("switch-on-green", "NA", "no .toggle.on rule found (app may not ship a switch)")]
+        return [_result("switch-on-accent", "NA", "no .toggle.on rule found (app may not ship a switch)")]
     body = sw.group(1)
     ev = _evidence(css_all, r"\.toggle\.on[^{}]*\{")
-    if re.search(r"var\(--(on|success)\b", body):
-        return [_result("switch-on-green", "PASS", "switch on-track uses the success token", ev)]
-    if "var(--accent" in body:
-        return [_result("switch-on-green", "FAIL", "switch on-track is the accent — design.md v2 says success (green)", ev)]
-    return [_result("switch-on-green", "WARN", f"switch on-track is not tokenized: {body.strip()[:60]}", ev)]
+    role = _on_track_role(css_all, body)
+    if role == "accent":
+        return [_result("switch-on-accent", "PASS", "switch on-track uses the accent", ev)]
+    if role == "success":
+        return [_result("switch-on-accent", "FAIL", "switch on-track is green (success) — design.md says the accent (accent-fill)", ev)]
+    return [_result("switch-on-accent", "WARN", f"switch on-track is not tokenized to the accent: {body.strip()[:60]}", ev)]
 
 
 # An attribute-selector span (`input:not([type="checkbox"])`) is a *query*,

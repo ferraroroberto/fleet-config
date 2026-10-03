@@ -30,7 +30,7 @@ from .controls import (
     _check_disclosure_box,
     _check_no_native_checkbox,
     _check_row_height_scale,
-    _check_switch_on_green,
+    _check_switch_on_accent,
     _check_text_size,
     _check_theme_toggle,
 )
@@ -45,7 +45,7 @@ _CONTRACT_CHECKS: Tuple[Callable[["_ContractsCtx"], List[dict]], ...] = (
     _check_focus_visible_ring,
     _check_reduced_motion,
     _check_desktop_measure,
-    _check_switch_on_green,
+    _check_switch_on_accent,
     _check_no_native_checkbox,
     _check_disclosure_box,
     _check_native_dialog,
