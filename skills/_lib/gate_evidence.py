@@ -33,7 +33,7 @@ Tree hash = the content of the whole working tree, untracked-but-not-ignored
 files included, without touching the real index: copy the index (resolved via
 ``rev-parse --git-path index``, so a linked worktree works) to a temp file,
 point ``GIT_INDEX_FILE`` at it, ``git add -A``, ``git write-tree``, delete the
-copy. Committing identical content therefore stays FRESH; any edit or new
+copy (mtime kept, see the comment in ``tree_hash``). Committing identical content therefore stays FRESH; any edit or new
 untracked file goes STALE. Evidence lives at ``rev-parse --git-path
 gate-evidence.json``, outside the working tree (writing it must not change
 the hash it records) and per worktree. Ignored files (``.env``, ``.venv``)
@@ -99,7 +99,11 @@ def tree_hash(repo: Path) -> Tuple[Optional[str], str]:
     tmp = Path(tmp_name)
     try:
         if index.exists():
-            shutil.copyfile(index, tmp)
+            # copy2, not copyfile: git decides an entry is "racily clean" (its content must be re-read, its stat
+            # cannot be trusted) by comparing the entry's mtime to the INDEX FILE's mtime, at one-second
+            # resolution on Git for Windows. A copy stamped "now" erases that, so a same-size rewrite in the
+            # same second as the last index write read as unchanged and FRESH (fleet-config#1192).
+            shutil.copy2(index, tmp)
         else:
             tmp.unlink()  # a fresh repo has no index yet; git creates the temp one
         env = {"GIT_INDEX_FILE": str(tmp)}
