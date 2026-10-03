@@ -182,6 +182,18 @@ page_syn = report.render_report(ev.evaluate(synth_doc, rubric, _specs("compliant
 check("synthetic instance" in page_syn and "synthetic instance" not in clean,
       "a synthetic run is labelled as measured on the target's synthetic instance, a live run is not")
 
+# ---- #1163: a live walk says which states it could not reach -----------------
+# photo-ocr#129: the walk saw an empty capture, so the per-photo controls were never measured and TOUCH-01 read as fixed.
+page_live = clean
+check("states not walked" in page_live and "no [design.review.synthetic] is declared" in page_live,
+      "a live run with no synthetic instance declared says states needing data the app did not hold were not walked")
+live_decl = _doc("compliant")
+live_decl["review"] = {"synthetic": {"command": ["scripts/seed.py"]}}
+page_decl = report.render_report(ev.evaluate(live_decl, rubric, _specs("compliant")))
+check("states not walked" in page_decl and "--synthetic" in page_decl and "no [design.review.synthetic]" not in page_decl,
+      "with a synthetic instance declared, the note points at --synthetic")
+check("states not walked" not in page_syn, "a synthetic run walked the seeded state: no such note")
+
 # ---- unmeasured rendering ----------------------------------------------------
 
 down = _doc("compliant")
