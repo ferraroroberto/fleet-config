@@ -30,6 +30,7 @@ Output document:
 
     schema_version, rubric_version, target, commit, generated_at,
     metrics_generated_at, base_url, run_dir,
+    synthetic_declared: bool   # the target declares [design.review.synthetic]; the report's `states not walked` note reads it (#1163)
     params:     {hit_min, primary_min, icon_steps}   # the resolved measurement floors
     screens:    [{id, device, theme, view, kind, status, reason}]
     absent_screens: [id]   # step screens whose target never appeared (#995)
@@ -460,6 +461,7 @@ def evaluate(doc: dict, rubric: Rubric, specs: Dict[str, Dict[str, str]],
         "metrics_rubric_version": doc.get("rubric_version"),
         "base_url": doc.get("base_url"),
         "mode": doc.get("mode") or "live",
+        "synthetic_declared": isinstance((doc.get("review") or {}).get("synthetic"), dict),
         "run_dir": doc.get("run_dir"),
         "params": ctx["params"],
         "unmeasured": doc.get("unmeasured"),

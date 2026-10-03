@@ -348,6 +348,14 @@ def _method(doc: dict) -> str:
     if doc.get("mode") == "synthetic":
         items.append("measured on the target's own synthetic instance (a throwaway copy with synthetic data, "
                      "booted and stopped by this run), not the live app; compared only with earlier synthetic runs")
+    else:
+        # fleet-config#1163: the walk measures what the live app held at capture time, so a state that needs data
+        # it did not have (list rows, per-item controls, populated overlays) is never measured and its rules can
+        # read as passing (photo-ocr: per-photo controls under 44px beside a fixed TOUCH-01).
+        items.append("states not walked: only what the live app held at capture time was measured, so states that need data it "
+                     "did not have (list rows, per-item controls, populated overlays) are not covered by any rule here; "
+                     + ("run with --synthetic to walk the declared seeded instance" if doc.get("synthetic_declared")
+                        else "no [design.review.synthetic] is declared, so a populated state cannot be walked either"))
     if doc.get("unmeasured"):
         u = doc["unmeasured"] if isinstance(doc["unmeasured"], dict) else {"reason": doc["unmeasured"]}
         items.append(f"the whole run is unmeasured: {u.get('reason')} — {u.get('detail') or ''}".rstrip(" —"))

@@ -51,7 +51,13 @@ text to an issue, PR or comment.
   not open, such as a session's Chat and Terminal views. A target without
   the block measures `UNMEASURED=SYNTHETIC_UNDECLARED`; a launcher that
   never prints its URL, `SYNTHETIC_FAILED`. Synthetic runs are diffed only
-  against earlier synthetic runs.
+  against earlier synthetic runs. A **live** run measures only what the app
+  held at capture time, so the report's method list says `states not walked`
+  (rows, per-item controls and populated overlays an empty app never shows;
+  photo-ocr#129: sub-44px per-photo controls beside a fixed TOUCH-01) and, with
+  a synthetic instance declared, points at `--synthetic`; carry that line into
+  the summary, and when a rule reads as fixed, say that only the walked states
+  were measured (fleet-config#1163).
 - `--no-judgment` → skip step 4 (no judge agent spawned); the report has no
   judgment section and the summary says `judgment: skipped (--no-judgment)`.
 - `--judges N` → `N` independent fresh-context judges in step 4 (default
