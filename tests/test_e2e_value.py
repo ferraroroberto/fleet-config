@@ -281,6 +281,14 @@ check(reads == [("tests/data/seed.yaml", "read", 2, "tests"), ("docs/sample.md",
       f"a data file the suite reads by repo-relative literal or `/` chain, routed `none`, is a hole; a missing file, a full-routed one "
       f"and a non-path string are not -- {reads}")
 check(all(h["kind"] != "read" for h in ih if h["path"].endswith(".py")), "a Python file is an import, never a read")
+# An absolute path to a real file outside the repo (a system font a story loads) replaced the repo root and crashed `routing` on
+# facilitation-suite (`C:/Windows/Fonts/segoepr.ttf` is not in the subpath of the repo): it is not a repo file, so it is skipped.
+outside = Path(tempfile.mkdtemp(prefix="e2e-value-outside-")) / "font.ttf"
+outside.write_text("x", encoding="utf-8")
+(rt / "tests" / "e2e" / "test_f.py").write_text(f"FONT = {outside.as_posix()!r}\nWIN = {str(outside)!r}\n", encoding="utf-8")
+ih2 = v.routing_report(rt, pr_list=[])["import_holes"]
+check([h["path"] for h in ih2 if h["kind"] == "read"] == [h["path"] for h in ih if h["kind"] == "read"],
+      f"an absolute path outside the repo is no read and does not stop the report -- {ih2}")
 
 # --proposed re-checks the table's other findings against the candidate (fleet-config#1165, facilitation-suite#165): the
 # counterfactual only listed PR tier changes, so the fixer swapped the file in and classified paths by hand to prove a hole closed.

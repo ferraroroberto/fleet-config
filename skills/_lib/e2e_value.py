@@ -105,7 +105,7 @@ import re
 import subprocess
 import sys
 import xml.etree.ElementTree as ET
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 from typing import Dict, List, Optional, Sequence, Tuple
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -1176,8 +1176,10 @@ def _read_files(parsed, repo_root: Path) -> set:
         c = c.replace("\\", "/")
         if not c or len(c) > 200 or "\n" in c or c.startswith("/") or ".." in c.split("/") or c.endswith(".py"):
             continue
-        p = root / c
-        if "." in c.rsplit("/", 1)[-1] and p.is_file():
+        if PureWindowsPath(c).anchor:  # `C:/Windows/Fonts/x.ttf`: `root / c` would drop the root and leave the repo
+            continue
+        p = (root / c).resolve()
+        if "." in c.rsplit("/", 1)[-1] and p.is_file() and root in p.parents:
             out.add(p.relative_to(root).as_posix())
     return out
 
