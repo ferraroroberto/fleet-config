@@ -476,18 +476,23 @@ _POLL_CONST_RE = re.compile(r"^\s*([A-Z][A-Z0-9_]*(?:_MS|_INTERVAL|POLL[A-Z0-9_]
 _NOOP_CALLBACK_RE = re.compile(r"^(?:function\s*\(\s*\)\s*\{\s*\}|\(\s*\)\s*=>\s*(?:\{\s*\}|undefined|null|void 0))$")
 
 
-def _js_timer_calls(text: str, fn: str = "setTimeout") -> List[Tuple[int, int, str]]:
-    """`(offset, ms, callback)` for every `<fn>(cb, <ms>)`: the literal last argument of the call and the text before it."""
+def _js_timer_args(text: str, fn: str = "setTimeout") -> List[Tuple[int, str, str]]:
+    """`(offset, delay, callback)` for every `<fn>(cb, <delay>)`: the last argument of the call and the text before it."""
     out = []
     for m in re.finditer(rf"\b{fn}\(", text):
         depth, i = 1, m.end()
         while i < len(text) and depth:
             depth += {"(": 1, ")": -1}.get(text[i], 0)
             i += 1
-        tail = re.search(r",\s*([\d_]+)\s*$", text[m.end():i - 1])
+        tail = re.search(r",\s*([\w.]+)\s*$", text[m.end():i - 1])
         if tail:
-            out.append((m.start(), int(tail.group(1).replace("_", "")), text[m.end():m.end() + tail.start()].strip()))
+            out.append((m.start(), tail.group(1), text[m.end():m.end() + tail.start()].strip()))
     return out
+
+
+def _js_timer_calls(text: str, fn: str = "setTimeout") -> List[Tuple[int, int, str]]:
+    """`(offset, ms, callback)` for every `<fn>(cb, <ms>)` whose delay is a number literal."""
+    return [(off, int(d.replace("_", "")), cb) for off, d, cb in _js_timer_args(text, fn) if re.fullmatch(r"\d[\d_]*", d)]
 
 
 def _js_timer_ms(text: str, fn: str = "setTimeout") -> List[Tuple[int, int]]:
@@ -606,31 +611,56 @@ def slow_nodes(nodes: Dict[str, float]) -> List[Dict[str, object]]:
     return [{"nodeid": n, "seconds": s, "median_s": median} for n, s in sorted(items, key=lambda kv: -kv[1]) if s > floor]
 
 
+_JS_CONST_RE = re.compile(r"^\s*(?:export\s+)?const\s+([A-Z][A-Z0-9_]*)\s*=\s*(\d[\d_]*)\s*;?\s*(?://.*)?$", re.M)
+
+
 def app_timers(repo_root: Path, test_dirs: Sequence[str]) -> List[Dict[str, object]]:
-    """Literal timers of 1 s or more in the app's own JavaScript: what a test may be waiting out.
+    """Timers of 1 s or more in the app's own JavaScript: what a test may be waiting out.
 
     `setTimeout`/`setInterval` (last argument) and `sleep(<ms>)`, longest
-    first. Tests, vendored copies, `node_modules` and minified files are left
-    out. A hint to confirm by reading, never a cost: only the test's own
-    stubbed endpoints decide whether the timer runs (fleet-config#1157).
+    first. A delay that is a named constant (`setInterval(tick, RUNNING_APPS_POLL_MS)`)
+    resolves through `const NAME = <ms>` in the same file, else in another
+    module's `export const`, and carries its `name`; a name declared nowhere, or
+    with different values in other files and none in this one, is left out
+    rather than guessed (app-launcher#1375: the 3 s and 4 s polls the slowest
+    tests waited out were all named constants). Tests, vendored copies,
+    `node_modules` and minified files are left out. A hint to confirm by
+    reading, never a cost: only the test's own stubbed endpoints decide
+    whether the timer runs (fleet-config#1157).
     """
     skip = {str((repo_root / d.strip("/")).resolve()) for d in test_dirs}
-    out: List[Dict[str, object]] = []
+    sources: List[Tuple[str, str]] = []
     for dirpath, dirnames, filenames in os.walk(repo_root):
         dirnames[:] = [d for d in dirnames if d not in _APP_SKIP_DIRS and str((Path(dirpath) / d).resolve()) not in skip]
         for fn in filenames:
-            if not fn.endswith((".js", ".mjs")) or fn.endswith(".min.js"):
-                continue
-            path = Path(dirpath) / fn
-            text = path.read_text(encoding="utf-8", errors="replace")
-            hits = [(off, "timeout", ms) for off, ms in _js_timer_ms(text)]
-            hits += [(off, "interval", ms) for off, ms in _js_timer_ms(text, "setInterval")]
-            hits += [(m.start(), "sleep", int(m.group(1).replace("_", ""))) for m in _APP_SLEEP_RE.finditer(text)]
-            rel = path.relative_to(repo_root).as_posix()
-            for off, kind, ms in hits:
-                if ms >= APP_TIMER_MIN_MS:
-                    line = text.count("\n", 0, off) + 1
-                    out.append({"file": rel, "line": line, "kind": kind, "ms": ms, "text": text.splitlines()[line - 1].strip()[:120]})
+            if fn.endswith((".js", ".mjs")) and not fn.endswith(".min.js"):
+                path = Path(dirpath) / fn
+                sources.append((path.relative_to(repo_root).as_posix(), path.read_text(encoding="utf-8", errors="replace")))
+    consts: Dict[str, Dict[str, int]] = {}
+    for rel, text in sources:
+        for m in _JS_CONST_RE.finditer(text):
+            consts.setdefault(m.group(1), {})[rel] = int(m.group(2).replace("_", ""))
+
+    def resolve(name: str, rel: str) -> Optional[int]:
+        if rel in consts.get(name, {}):
+            return consts[name][rel]
+        values = set(consts.get(name, {}).values())
+        return values.pop() if len(values) == 1 else None
+
+    out: List[Dict[str, object]] = []
+    for rel, text in sources:
+        hits: List[Tuple[int, str, int, Optional[str]]] = []
+        for fn, kind in (("setTimeout", "timeout"), ("setInterval", "interval")):
+            for off, delay, _cb in _js_timer_args(text, fn):
+                if re.fullmatch(r"\d[\d_]*", delay):
+                    hits.append((off, kind, int(delay.replace("_", "")), None))
+                elif re.fullmatch(r"[A-Z][A-Z0-9_]*", delay) and (ms := resolve(delay, rel)) is not None:
+                    hits.append((off, kind, ms, delay))
+        hits += [(m.start(), "sleep", int(m.group(1).replace("_", "")), None) for m in _APP_SLEEP_RE.finditer(text)]
+        for off, kind, ms, name in hits:
+            if ms >= APP_TIMER_MIN_MS:
+                line = text.count("\n", 0, off) + 1
+                out.append({"file": rel, "line": line, "kind": kind, "ms": ms, "name": name, "text": text.splitlines()[line - 1].strip()[:120]})
     return sorted(out, key=lambda t: (-int(t["ms"]), str(t["file"]), int(t["line"])))  # type: ignore[call-overload]
 
 
