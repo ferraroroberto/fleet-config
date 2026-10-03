@@ -1,0 +1,29 @@
+<!doctype html>
+<!-- Static fixture for the icon scan (fleet-config#1211): local-llm-hub's sparklines are 162x64 chart SVGs with
+     preserveAspectRatio="none" (stretched to fill their box, which an icon never is) and COMP-02 scored them as
+     icons off the size steps. The stretched chart must not count; a real off-step icon (22x22) and an on-step one
+     (20x20) still do. Asserted by tests/test_design_review.py. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>design_review stretched-graphic fixture</title>
+<style>
+  html, body { margin: 0; background: #ffffff; color: #1f2328; font-family: system-ui, sans-serif; font-size: 16px; }
+  body { padding: 16px; }
+  .spark { width: 162px; height: 64px; display: block; }
+</style>
+</head>
+<body>
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+    <symbol id="i-dot" viewBox="0 0 24 24"><circle cx="12" cy="12" r="6"/></symbol>
+  </svg>
+  <main>
+    <h2>Hub</h2>
+    <svg class="spark" viewBox="0 0 100 40" preserveAspectRatio="none" role="img" aria-label="CPU load"><path d="M0,30 L50,10 L100,20" fill="none" stroke="#0969da" stroke-width="2" vector-effect="non-scaling-stroke"/></svg>
+    <svg class="spark" viewBox="0 0 100 40" preserveAspectRatio="none" role="img" aria-label="Memory"><path d="M0,20 L50,25 L100,5" fill="none" stroke="#0969da" stroke-width="2" vector-effect="non-scaling-stroke"/></svg>
+    <p><svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-dot"/></svg>
+       <svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-dot"/></svg></p>
+  </main>
+</body>
+</html>

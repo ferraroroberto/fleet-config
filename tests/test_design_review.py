@@ -58,7 +58,7 @@ def _doc(name: str) -> dict:
 # ---- rubric: the real file loads and names only metrics that exist ----------
 
 rubric = dr.load_rubric(RUBRIC)
-check(rubric.version == "1.11.0", "rubric meta.version stamped")
+check(rubric.version == "1.11.1", "rubric meta.version stamped")
 check(len(rubric.rules) == 29, f"29 seed rules loaded (got {len(rubric.rules)})")
 check(rubric.categories == ["typography", "color", "touch", "navigation", "layout", "components", "a11y"],
       "categories in rubric order")
@@ -413,7 +413,7 @@ check(all(s == "pass" for s in statuses_c.values()), f"compliant: every rule pas
 check(all(v["score"] == 100.0 and v["grade"] == "A" and not v["unmeasured"] for v in out_c["categories"].values()),
       "compliant: every category 100/A, measured")
 check(out_c["overall"] == {"score": 100.0, "grade": "A", "unmeasured": False}, "compliant: overall A")
-check(out_c["schema_version"] == 1 and out_c["rubric_version"] == "1.11.0" and out_c["target"] == "fixture-app"
+check(out_c["schema_version"] == 1 and out_c["rubric_version"] == "1.11.1" and out_c["target"] == "fixture-app"
       and out_c["commit"].startswith("0000") and out_c["generated_at"].endswith("Z"), "evaluate envelope keys")
 check([s["id"] for s in out_c["screens"]] == ["desktop-light-home", "iphone-light-home", "desktop-light-dialog-edit"],
       "evaluate echoes the screen list")
@@ -872,7 +872,7 @@ else:
           f"measure CLI walks the fixture: 2 tabs + 1 dialog x light/dark ({proc.stdout[-300:]}{proc.stderr[-300:]})")
     check(lines.get("RUN_DIR") == str(run_dir) and Path(lines.get("METRICS", "")).is_file(), "RUN_DIR/METRICS lines point at the run dir")
     doc = json.loads(Path(lines["METRICS"]).read_text(encoding="utf-8"))
-    check(doc["interpreter"] == str(interp) and doc["schema_version"] == 1 and doc["rubric_version"] == "1.11.0", "metrics.json records the interpreter + versions")
+    check(doc["interpreter"] == str(interp) and doc["schema_version"] == 1 and doc["rubric_version"] == "1.11.1", "metrics.json records the interpreter + versions")
     if not (scaffold / "tests" / "e2e" / "_geometry.py").is_file():
         _h.skip("browser leg: project-scaffolding/tests/e2e/_geometry.py absent -- hit-target assertions NOT verified")
     check(doc["walk"]["info"]["geometry"] == ("loaded" if (scaffold / "tests" / "e2e" / "_geometry.py").is_file() else "GEOMETRY_MISSING"),
@@ -1083,6 +1083,19 @@ else:
     check(_st_nav.get("primary_count") == 4 and _st_nav.get("settings_tab_count") == 2
           and [t["label"] for t in _st_nav.get("settings_tabs", [])] == ["Settings", ""] ,
           f"NAV-03: the tab named Settings and the text-less gear tab are counted, the header gear and Logs are not (#1200) -- {_st_nav} ({proc_st.stderr[-300:]})")
+
+    # stretched graphic: a chart SVG with preserveAspectRatio="none" is not an icon; a real off-step icon still is (#1211)
+    sg_dir = STATE / "fixture-stretched-graphic"
+    proc_sg = subprocess.run(
+        [str(interp), str(REPO / "skills" / "_lib" / "design_review" / "walk.py"), "--url", (FIX / "stretched_graphic.html").as_uri(),
+         "--out", str(sg_dir), "--devices", "desktop", "--scaffold", str(scaffold),
+         "--params", str(STATE / "steps-params.json")],
+        capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=600,
+    )
+    sgs = json.loads((sg_dir / "screens.json").read_text(encoding="utf-8")) if proc_sg.returncode == 0 else []
+    _sg_icons = ((sgs[0].get("metrics") or {}).get("icons") or {}) if sgs else {}
+    check(_sg_icons.get("boxes") == {"22x22": 1, "20x20": 1},
+          f"COMP-02: the two stretched 162x64 chart SVGs are not icons; the 22px and 20px icons still are (#1211) -- {_sg_icons} ({proc_sg.stderr[-300:]})")
 
     # switch on-state: the track colour of each switch that is on is read, an off switch is counted only (#1200)
     sw_dir = STATE / "fixture-switch"

@@ -317,7 +317,9 @@ _MEASURE_JS = r"""
   // `<use href="#i-NAME">`, else data-icon or the first non-`icon` class), the control or
   // identified ancestor hosting it, and that host's accessible name; ICON_CAP per size.
   section('icons', () => { const boxes = {}, elements = {}; const ICON_CAP = 12;
-    q('svg').forEach(el => { const r = el.getBoundingClientRect(); const k = Math.round(r.width)+'x'+Math.round(r.height); boxes[k] = (boxes[k]||0)+1;
+    // A chart is not an icon (#1211): an SVG with preserveAspectRatio="none" is stretched to fill its box, which an icon
+    // never is (local-llm-hub's 162x64 sparklines were scored off the icon size steps).
+    q('svg').filter(el => el.getAttribute('preserveAspectRatio') !== 'none').forEach(el => { const r = el.getBoundingClientRect(); const k = Math.round(r.width)+'x'+Math.round(r.height); boxes[k] = (boxes[k]||0)+1;
       const list = elements[k] || (elements[k] = []); if (list.length >= ICON_CAP) return;
       const use = el.querySelector('use'); const href = use ? (use.getAttribute('href') || use.getAttribute('xlink:href') || '') : '';
       const glyph = href.includes('#') ? href.slice(href.indexOf('#') + 1).replace(/^i-/, '')
