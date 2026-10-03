@@ -1,0 +1,30 @@
+<!doctype html>
+<!-- Static fixture for COLOR-05 (fleet-config#1200): a toast is the neutral frosted surface, only an error
+     tints. Three visible toasts -- neutral, green-bordered, red error -- and one hidden; the green one is the
+     only one the rubric counts as tinted. Asserted by tests/test_design_review.py. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>design_review toast fixture</title>
+<style>
+  html, body { margin: 0; background: #ffffff; color: #1f2328; font-family: system-ui, sans-serif; font-size: 16px; }
+  body { padding: 16px; }
+  .toast { position: fixed; left: 16px; width: 260px; padding: 12px 18px; border-radius: 12px; border: 1px solid rgba(31, 35, 40, 0.12); background: rgba(255, 255, 255, 0.85); color: #1f2328; }
+  .toast.neutral { bottom: 16px; }
+  .toast.saved { bottom: 80px; border-color: #1a7f37; }
+  .toast.error { bottom: 144px; background: #cf222e; border-color: #cf222e; color: #ffffff; }
+  .toast.gone { bottom: 208px; display: none; border-color: #1a7f37; }
+</style>
+</head>
+<body>
+  <main>
+    <h2>Toasts</h2>
+    <p>Page content.</p>
+  </main>
+  <div class="toast neutral" role="status">Copied</div>
+  <div class="toast saved" role="status">Saved</div>
+  <div class="toast error" role="alert">Could not save</div>
+  <div class="toast gone" role="status">Hidden</div>
+</body>
+</html>

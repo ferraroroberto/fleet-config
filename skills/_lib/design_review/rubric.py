@@ -78,6 +78,7 @@ DERIVED_METRICS = (
     "a11y.zoom_locked_no_control",
     "nav.pane_header_hidden",
     "controls.switch_on_not_accent",
+    "feedback.toast_tinted",
 )
 
 

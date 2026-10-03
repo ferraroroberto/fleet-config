@@ -34,6 +34,7 @@ from .controls import (
     _check_text_size,
     _check_theme_toggle,
 )
+from .feedback import _check_toast_neutral
 from .icons import _check_app_icon_family, _check_glyph_icons, _check_icon_set, _check_icon_sizes
 from .modal import _check_editor_modal_contract, _check_native_dialog
 from .nav import _check_nav_contract, _check_viewport_lock
@@ -46,6 +47,7 @@ _CONTRACT_CHECKS: Tuple[Callable[["_ContractsCtx"], List[dict]], ...] = (
     _check_reduced_motion,
     _check_desktop_measure,
     _check_switch_on_accent,
+    _check_toast_neutral,
     _check_no_native_checkbox,
     _check_disclosure_box,
     _check_native_dialog,

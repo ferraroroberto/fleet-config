@@ -141,6 +141,9 @@ read.
   - **desktop measure** — the centered 772px desktop measure; an app that declares `[design] wide_views` in its `.fleet.toml` (#1113) gets a WARN, not a FAIL, when no cap exists — the other views are `/design-review`'s LAYOUT-06.
   - **switch on-track** — on-track color = the accent (`accent-fill`, #1200);
     FAIL if it is green (`success`), WARN if it cannot be resolved to either.
+  - **toast neutral** — no rule on a `toast`/`snackbar` selector draws a green
+    (success token, `--on`, or a green literal) background or border (#1200);
+    NA when the app has no toast CSS. Only a real error tints.
   - **checkboxes** — a checkbox control must be skinned off the browser's
     own tick (`appearance: none`), per design.md's Checkbox -> shadcn
     `checkbox` mapping. A real `<input type=checkbox>` is the shadcn

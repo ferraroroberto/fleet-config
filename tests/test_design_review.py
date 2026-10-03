@@ -58,8 +58,8 @@ def _doc(name: str) -> dict:
 # ---- rubric: the real file loads and names only metrics that exist ----------
 
 rubric = dr.load_rubric(RUBRIC)
-check(rubric.version == "1.9.0", "rubric meta.version stamped")
-check(len(rubric.rules) == 28, f"28 seed rules loaded (got {len(rubric.rules)})")
+check(rubric.version == "1.10.0", "rubric meta.version stamped")
+check(len(rubric.rules) == 29, f"29 seed rules loaded (got {len(rubric.rules)})")
 check(rubric.categories == ["typography", "color", "touch", "navigation", "layout", "components", "a11y"],
       "categories in rubric order")
 check(rb.check_metric_names(rubric, measure.metric_paths()) == [], "every rule metric is a script path or a derived metric")
@@ -380,6 +380,31 @@ for _s in _c4_old["screens"]:
 check(next(r for r in ev.evaluate(_c4_old, rubric, _specs("compliant"))["rules"] if r["id"] == "COLOR-04")["status"] == "unmeasured",
       "COLOR-04: a run from before the metric existed is unmeasured, never a pass")
 
+# ---- COLOR-05: a toast is neutral, a success tint fails (#1200) ----
+def _col05(feedback_by_screen) -> dict:
+    d = _doc("compliant")
+    for s, patch in zip(d["screens"], feedback_by_screen):
+        s["metrics"]["feedback"] = patch
+    return next(r for r in ev.evaluate(d, rubric, _specs("compliant"))["rules"] if r["id"] == "COLOR-05")
+
+
+_toast_ok = {"toast_count": 1, "toasts_tinted": [], "toasts_tinted_count": 0}
+_toast_green = {"toast_count": 1, "toasts_tinted": [{"sel": "div.toast", "label": "Saved", "via": "border"}], "toasts_tinted_count": 1}
+_toast_none = {"toast_count": 0, "toasts_tinted": [], "toasts_tinted_count": 0}
+_c5_green = _col05([_toast_green, _toast_none, _toast_none])
+check(_c5_green["status"] == "fail" and _c5_green["evidence"][0]["items"][0]["via"] == "border",
+      f"COLOR-05: a toast with a green border fails and says where the tint is -- {_c5_green['status']}")
+check(_col05([_toast_ok, _toast_none, _toast_none])["status"] == "pass", "COLOR-05: a neutral toast passes")
+_c5_none = _col05([_toast_none, _toast_none, _toast_none])
+check(_c5_none["status"] == "pass" and "not applicable" in _c5_none["reason"],
+      f"COLOR-05: no toast on screen is a vacuous pass that says so, not a measured one -- {_c5_none['reason']}")
+_c5_gone = _doc("compliant")
+for _s in _c5_gone["screens"]:
+    _s["metrics"].pop("feedback")
+check(next(r for r in ev.evaluate(_c5_gone, rubric, _specs("compliant"))["rules"] if r["id"] == "COLOR-05")["status"] == "unmeasured",
+      "COLOR-05: a run from before the section existed is unmeasured, never a pass")
+check(_col05([{"error": "boom"}, _toast_none, _toast_none])["status"] == "unmeasured", "COLOR-05: an errored section is unmeasured")
+
 # ---- evaluate: compliant fixture passes every rule ---------------------------
 
 out_c = ev.evaluate(_doc("compliant"), rubric, _specs("compliant"))
@@ -388,7 +413,7 @@ check(all(s == "pass" for s in statuses_c.values()), f"compliant: every rule pas
 check(all(v["score"] == 100.0 and v["grade"] == "A" and not v["unmeasured"] for v in out_c["categories"].values()),
       "compliant: every category 100/A, measured")
 check(out_c["overall"] == {"score": 100.0, "grade": "A", "unmeasured": False}, "compliant: overall A")
-check(out_c["schema_version"] == 1 and out_c["rubric_version"] == "1.9.0" and out_c["target"] == "fixture-app"
+check(out_c["schema_version"] == 1 and out_c["rubric_version"] == "1.10.0" and out_c["target"] == "fixture-app"
       and out_c["commit"].startswith("0000") and out_c["generated_at"].endswith("Z"), "evaluate envelope keys")
 check([s["id"] for s in out_c["screens"]] == ["desktop-light-home", "iphone-light-home", "desktop-light-dialog-edit"],
       "evaluate echoes the screen list")
@@ -835,7 +860,7 @@ else:
           f"measure CLI walks the fixture: 2 tabs + 1 dialog x light/dark ({proc.stdout[-300:]}{proc.stderr[-300:]})")
     check(lines.get("RUN_DIR") == str(run_dir) and Path(lines.get("METRICS", "")).is_file(), "RUN_DIR/METRICS lines point at the run dir")
     doc = json.loads(Path(lines["METRICS"]).read_text(encoding="utf-8"))
-    check(doc["interpreter"] == str(interp) and doc["schema_version"] == 1 and doc["rubric_version"] == "1.9.0", "metrics.json records the interpreter + versions")
+    check(doc["interpreter"] == str(interp) and doc["schema_version"] == 1 and doc["rubric_version"] == "1.10.0", "metrics.json records the interpreter + versions")
     if not (scaffold / "tests" / "e2e" / "_geometry.py").is_file():
         _h.skip("browser leg: project-scaffolding/tests/e2e/_geometry.py absent -- hit-target assertions NOT verified")
     check(doc["walk"]["info"]["geometry"] == ("loaded" if (scaffold / "tests" / "e2e" / "_geometry.py").is_file() else "GEOMETRY_MISSING"),
@@ -1060,6 +1085,20 @@ else:
     check(_sw_ct.get("switch_count") == 3 and _sw_ct.get("switch_on_count") == 2
           and [t["track"] for t in _sw_ct.get("switches_on", [])] == ["#1a7f37", "#0969da"],
           f"COLOR-04: the track colour of each on switch is read, the off one is only counted (#1200) -- {_sw_ct.get('switches_on')} ({proc_sw.stderr[-300:]})")
+
+    # toast tint: a visible fixed toast with a green border counts, the neutral and the red error do not (#1200)
+    ts_dir = STATE / "fixture-toast"
+    proc_ts = subprocess.run(
+        [str(interp), str(REPO / "skills" / "_lib" / "design_review" / "walk.py"), "--url", (FIX / "toast.html").as_uri(),
+         "--out", str(ts_dir), "--devices", "desktop", "--scaffold", str(scaffold),
+         "--params", str(STATE / "steps-params.json")],
+        capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=600,
+    )
+    tss = json.loads((ts_dir / "screens.json").read_text(encoding="utf-8")) if proc_ts.returncode == 0 else []
+    _ts_fb = ((tss[0].get("metrics") or {}).get("feedback") or {}) if tss else {}
+    check(_ts_fb.get("toast_count") == 3 and _ts_fb.get("toasts_tinted_count") == 1
+          and _ts_fb["toasts_tinted"][0]["sel"].startswith("div.toast.saved") and _ts_fb["toasts_tinted"][0]["via"] == "border",
+          f"COLOR-05: of three visible toasts only the green-bordered one is tinted; the hidden one is not counted (#1200) -- {_ts_fb} ({proc_ts.stderr[-300:]})")
 
     # fold: a popup over a chip far below the fold is covered there too; the walk puts the scroll back (#1155)
     fold_dir = STATE / "fixture-fold"

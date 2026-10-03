@@ -31,6 +31,7 @@ present on a successful run:
               covered [..], covered_count, primary [..], primary_min_height, in_summary
     icons     boxes {"WxH": n}, elements {"WxH": [{glyph, host, label}, ..]}
     nav       primary_count, pane_scroll_top, pane_header_visible, settings_tab_count
+    feedback  toast_count, toasts_tinted [..], toasts_tinted_count
     layout    overflow_x, scroll_w, inner_w, inner_h, pane_h, lists [..],
               rows_over_limit [..], danger_rows, content_w, content_span, radii {r: n}
     clearance bars [..], hidden_rows [..], hidden_row_count
@@ -346,6 +347,25 @@ _MEASURE_JS = r"""
       settings_tab_count: settingsTabs.length, settings_tabs: settingsTabs };
   });
 
+  // ---- feedback: a toast is neutral, only a real error tints (#1200). A toast is a visible fixed-position
+  // element whose class says toast/snackbar; a green background or border (hue 75-170, saturation >= 0.25 once
+  // composited over its surface) is the success tint the standard forbids. Most screens show no toast: the
+  // count says so, and evaluate.py reads zero as not applicable, never as neutral.
+  section('feedback', () => {
+    const isGreen = (c) => { const r = c[0]/255, g = c[1]/255, b = c[2]/255; const mx = Math.max(r,g,b), mn = Math.min(r,g,b), d = mx - mn;
+      if (d === 0) return false; const l = (mx + mn) / 2; const sat = d / (1 - Math.abs(2*l - 1));
+      const h = (mx === r ? ((g - b) / d) % 6 : mx === g ? (b - r) / d + 2 : (r - g) / d + 4) * 60; const hue = (h + 360) % 360;
+      return sat >= 0.25 && hue >= 75 && hue <= 170; };
+    const toasts = q('[class*=toast], [class*=snackbar]').filter(el => getComputedStyle(el).position === 'fixed');
+    const tinted = [];
+    toasts.forEach(el => { const st = getComputedStyle(el); const surface = el.parentElement ? bgOf(el.parentElement) : [255,255,255,1];
+      const own = rgba(st.backgroundColor); const bc = rgba(st.borderTopColor); const via = [];
+      if (own[3] > 0.05 && isGreen(over(own, surface))) via.push('background');
+      if ((parseFloat(st.borderTopWidth) || 0) > 0 && bc[3] > 0.05 && isGreen(over(bc, surface))) via.push('border');
+      if (via.length) tinted.push({sel: sel(el), label: txt(el).slice(0,30), via: via.join('+')}); });
+    return { toast_count: toasts.length, toasts_tinted: tinted.slice(0,CAP), toasts_tinted_count: tinted.length };
+  });
+
   // ---- layout
   section('layout', () => {
     const de = document.documentElement;
@@ -485,7 +505,7 @@ def default_params(
     }
 
 
-SECTIONS = ("text", "controls", "targets", "icons", "nav", "layout", "clearance", "a11y", "headings")
+SECTIONS = ("text", "controls", "targets", "icons", "nav", "feedback", "layout", "clearance", "a11y", "headings")
 
 
 def section_errors(metrics: Dict[str, object]) -> Dict[str, str]:
@@ -529,6 +549,7 @@ def metric_paths() -> List[str]:
                     "primary", "primary_min_height", "in_summary"],
         "icons": ["boxes", "elements"],
         "nav": ["primary_count", "pane_scroll_top", "pane_header_visible", "settings_tab_count", "settings_tabs"],
+        "feedback": ["toast_count", "toasts_tinted", "toasts_tinted_count"],
         "layout": ["overflow_x", "scroll_w", "inner_w", "inner_h", "pane_h", "lists", "rows_over_limit",
                    "rows_over_limit_count", "danger_rows", "content_w", "content_span", "radii"],
         "clearance": ["bars", "hidden_rows", "hidden_row_count"],
