@@ -37,6 +37,14 @@ by content type.
   and a stream never ends. Once per app, `GET` the stream with
   `Accept-Encoding: gzip` and confirm there is no `Content-Encoding` and the
   first event arrives at once.
+- **Keep precompressed media out too.** The middleware skips a response only
+  for `text/event-stream` or when it already carries a `Content-Encoding`;
+  everything else over `minimum_size` is compressed, so stored JPEGs, audio
+  and other already-compressed bodies are gzipped for no gain. Mark those
+  responses `Content-Encoding: identity` (the middleware treats it as already
+  encoded) and add a test that the media endpoint comes back without `gzip`
+  (photo-ocr#136: a test with the middleware on returned its stored photos
+  `Content-Encoding: gzip` until the header was set).
 - Evidence: home-automation's pilot measurement (2026-10-01): its static
   JS/CSS/HTML is 1316 KB raw and 383 KB gzipped; the 153 KB entry document
   gzips to 29 KB; `/api/presence` 14.8 → 4.3 KB. No fleet app compressed at
