@@ -28,8 +28,9 @@ It assigns no status of its own.
 
 ## Arguments
 
-- A repo name (a `hooks/projects.toml` table with a `webapp_port`) or a path
-  → the target. No argument → the current repo.
+- A repo name (a `hooks/projects.toml` table) or a path → the target. Its port is the table's `webapp_port` and
+  `browser_scheme`, else the `port` its own `.fleet.toml` declares with the scheme probed on that loopback port
+  (facilitation-suite declares only the latter). No argument → the current repo.
 - `file` → after measuring, upsert the repo's one managed `perf-review`
   issue (step 4). Without it, step 4 is a dry run.
 
