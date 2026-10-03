@@ -646,6 +646,34 @@ check(slp["paid_s"] == 0.5 and tmr["nodes"] == 2 and tmr["measured_s"] == 4.0 an
 check(next(r for r in ranked if r["scope"] == "_wait_up")["nodes"] is None,
       "a wait in a shared conftest is not attributed to tests")
 
+# slow_nodes + app_timers (fleet-config#1157, photo-ocr#127): a 1 s poll in app source (`poll.js`) was waited out twice
+# by one test, invisible to a scan of the test tree. The junit showed it: 2.6 s against a 0.2 s median.
+sn = v.slow_nodes({"tests/e2e/test_a.py::test_boot[chromium]": 7.1, "tests/e2e/test_a.py::test_fast[chromium]": 0.2,
+                   "tests/e2e/test_a.py::test_fast2[chromium]": 0.2, "tests/e2e/test_a.py::test_fast3[chromium]": 0.2, "tests/e2e/test_a.py::test_fast4[chromium]": 0.2,
+                   "tests/e2e/test_a.py::test_fast5[chromium]": 0.3, "tests/e2e/test_a.py::test_fast6[chromium]": 0.2,
+                   "tests/e2e/test_a.py::test_extract[chromium]": 2.6, "tests/e2e/test_a.py::test_mid[chromium]": 0.9})
+check([r["nodeid"].rsplit("::", 1)[1] for r in sn] == ["test_extract[chromium]"],
+      f"a node 10x the median and over 1 s is a find-the-wait candidate; the boot node and a sub-second one are not -- {sn}")
+check(v.slow_nodes({}) == [] and v.slow_nodes({"tests/e2e/test_a.py::test_x[chromium]": 9.0}) == [],
+      "no nodes, or one node (nothing to be an outlier against), yields no candidates")
+ap = Path(tempfile.mkdtemp(prefix="e2e-value-apptimers-"))
+(ap / "tests" / "e2e").mkdir(parents=True)
+(ap / "app" / "static").mkdir(parents=True)
+(ap / "app" / "static" / "_vendored").mkdir()
+(ap / "node_modules" / "x").mkdir(parents=True)
+(ap / "app" / "static" / "poll.js").write_text(
+    "export async function poll(id) {\n  for (;;) {\n    await sleep(1000);\n    const r = await fetch(id);\n  }\n}\n"
+    "setInterval(tick, 30_000);\nsetTimeout(() => hide(), 250);\nsetTimeout(function () { save(); }, 4000);\n", encoding="utf-8")
+(ap / "app" / "static" / "_vendored" / "lib.js").write_text("setTimeout(f, 9000);\n", encoding="utf-8")
+(ap / "node_modules" / "x" / "i.js").write_text("setTimeout(f, 9000);\n", encoding="utf-8")
+(ap / "tests" / "e2e" / "helper.js").write_text("setTimeout(f, 9000);\n", encoding="utf-8")
+(ap / "app" / "static" / "app.min.js").write_text("setTimeout(f,9000);\n", encoding="utf-8")
+at = v.app_timers(ap, ["tests/e2e"])
+check([(t["file"], t["line"], t["kind"], t["ms"]) for t in at] ==
+      [("app/static/poll.js", 7, "interval", 30000), ("app/static/poll.js", 9, "timeout", 4000), ("app/static/poll.js", 3, "sleep", 1000)],
+      f"app-source timers of 1 s or more, longest first; sub-second, vendored, node_modules, test and minified files are left out -- {at}")
+check(v.app_timers(Path(tempfile.mkdtemp(prefix="e2e-value-empty-")), ["tests/e2e"]) == [], "no app JS, no timers")
+
 # routing: the rule that wins once the first one stops matching, and the command that checks it.
 class _R:  # noqa: E302
     def __init__(self, tier, label, prefix=None, path=None, extensions=None):
