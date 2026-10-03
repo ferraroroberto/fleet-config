@@ -26,7 +26,7 @@ present on a successful run:
               body_font_family, break_all [..], uppercase [..], glyph_icons [..]
     controls  total, font_family_mismatch [..], font_family_mismatch_count,
               boundary_low [..], boundary_low_count, ua_styled [..],
-              segmented_bad [..], segmented_bad_count
+              segmented_bad [..], segmented_bad_count, switch_count, switch_on_count, switches_on
     targets   total, small [..], small_count, overlaps [..], overlap_count,
               covered [..], covered_count, primary [..], primary_min_height, in_summary
     icons     boxes {"WxH": n}, elements {"WxH": [{glyph, host, label}, ..]}
@@ -222,7 +222,15 @@ _MEASURE_JS = r"""
       const opts = [...g.querySelectorAll('[role=tab], [role=radio], button, label')].filter(visible);
       const wrapped = opts.some(o => lineCount(o) > 1);
       if (opts.length > params.segmentedMax || wrapped) segs.push({sel: sel(g), options: opts.length, wrapped}); });
+    // The switch's on-state colour (#1200): a switch that is on draws its track in the accent. Only a track the
+    // element paints itself is read; one drawn by a pseudo-element or child has no readable colour (null).
+    const switches = q('[role=switch]').filter(visible), switchesOn = [];
+    switches.forEach(el => { if (!(el.checked === true || el.getAttribute('aria-checked') === 'true')) return;
+      const own = rgba(getComputedStyle(el).backgroundColor);
+      const surface = el.parentElement ? bgOf(el.parentElement) : [255,255,255,1];
+      switchesOn.push({sel: sel(el), track: own[3] > 0 ? hex(over(own, surface)) : null}); });
     return { total, font_family_mismatch: mism.slice(0,CAP), font_family_mismatch_count: mism.length,
+      switch_count: switches.length, switch_on_count: switchesOn.length, switches_on: switchesOn.slice(0,CAP),
       boundary_low: lowB.slice(0,CAP), boundary_low_count: lowB.length, ua_styled: ua.slice(0,CAP), ua_styled_count: ua.length,
       segmented_bad: segs.slice(0,CAP), segmented_bad_count: segs.length };
   });
@@ -515,7 +523,8 @@ def metric_paths() -> List[str]:
                  "low_contrast", "low_contrast_count", "body_font_family", "break_all",
                  "break_all_count", "uppercase", "uppercase_count", "glyph_icons", "glyph_icon_count"],
         "controls": ["total", "font_family_mismatch", "font_family_mismatch_count", "boundary_low",
-                     "boundary_low_count", "ua_styled", "ua_styled_count", "segmented_bad", "segmented_bad_count"],
+                     "boundary_low_count", "ua_styled", "ua_styled_count", "segmented_bad", "segmented_bad_count",
+                     "switch_count", "switch_on_count", "switches_on"],
         "targets": ["total", "small", "small_count", "overlaps", "overlap_count", "covered", "covered_count",
                     "primary", "primary_min_height", "in_summary"],
         "icons": ["boxes", "elements"],

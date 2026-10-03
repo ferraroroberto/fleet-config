@@ -1,0 +1,25 @@
+<!doctype html>
+<!-- Static fixture for COLOR-04 (fleet-config#1200): a switch that is on draws its track in the accent.
+     One switch is on in green, one on in the accent, one off; asserted by tests/test_design_review.py. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>design_review switch fixture</title>
+<style>
+  html, body { margin: 0; background: #ffffff; color: #1f2328; font-family: system-ui, sans-serif; font-size: 16px; }
+  body { padding: 16px; }
+  .sw { display: block; width: 44px; height: 26px; min-height: 44px; margin: 8px 0; border: 0; border-radius: 9999px; padding: 0; background: #818b98; }
+  .sw[aria-checked="true"].green { background: #1a7f37; }
+  .sw[aria-checked="true"].blue { background: #0969da; }
+</style>
+</head>
+<body>
+  <main>
+    <h2>Switches</h2>
+    <button type="button" role="switch" class="sw green" aria-checked="true" aria-label="Green on"></button>
+    <button type="button" role="switch" class="sw blue" aria-checked="true" aria-label="Accent on"></button>
+    <button type="button" role="switch" class="sw" aria-checked="false" aria-label="Off"></button>
+  </main>
+</body>
+</html>

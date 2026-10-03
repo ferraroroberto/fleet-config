@@ -236,6 +236,56 @@ def _d_pane_header_hidden(m: dict, rule: Rule, ctx: dict) -> Derived:
     return (1.0 if hidden else 0.0), [{"pane_header_visible": vis, "pane_scroll_top": top}], None
 
 
+# One rgb step per channel of slack: the measured track is composited and rounded, the spec token is a literal.
+SWITCH_ACCENT_TOLERANCE = 3.0
+
+
+def _accent_colors(tokens: Dict[str, str]) -> List[tuple]:
+    out = []
+    for name in ("colors.accent-fill", "colors.accent"):
+        rgba = parse_color(tokens.get(name, ""), tokens) if tokens.get(name) else None
+        if rgba is not None:
+            out.append(rgba[:3])
+    return out
+
+
+def _d_switch_on_accent(m: dict, rule: Rule, ctx: dict) -> Derived:
+    """Count of on switches whose track is not the theme's accent (#1200).
+
+    The on-colour is one fact about the app, so an off-only screen defers to an on-state seen anywhere in
+    the run; a run that never saw a switch on, or could not read its track, is `unmeasured`, never a pass.
+    """
+    total, on = measure.metric_value(m, "controls.switch_count"), measure.metric_value(m, "controls.switches_on")
+    if total is None or on is None:
+        return None, [], _section_reason(m, "controls")
+    if not total:
+        return None, [], NOT_APPLICABLE
+    if not on:
+        if ctx.get("switch_on_seen"):
+            return None, [], NOT_APPLICABLE
+        return None, [], "switches on this screen are all off: their on-colour is not established"
+    accents = _accent_colors((ctx.get("specs") or {}).get(str(ctx.get("theme")), {}))
+    if not accents:
+        return None, [], "spec accent token unavailable"
+    bad, unread = [], 0
+    for sw in on:  # type: ignore[union-attr]
+        track = parse_color(str(sw.get("track") or ""), {})
+        if track is None:
+            unread += 1
+            continue
+        if not any(max(abs(track[i] - a[i]) for i in range(3)) <= SWITCH_ACCENT_TOLERANCE for a in accents):
+            bad.append({"sel": sw.get("sel"), "track": sw.get("track"), "expected": [_hex(a) for a in accents]})
+    if bad:
+        return float(len(bad)), bad, None
+    if unread:
+        return None, [], f"{unread} switch(es) on, track colour not readable"
+    return 0.0, [], None
+
+
+def _hex(rgb: tuple) -> str:
+    return "#" + "".join(f"{round(c):02x}" for c in rgb)
+
+
 DERIVED: Dict[str, Callable[[dict, Rule, dict], tuple]] = {
     "targets.small_share": _d_small_share,
     "text.under14_share": _d_under14_share,
@@ -246,6 +296,7 @@ DERIVED: Dict[str, Callable[[dict, Rule, dict], tuple]] = {
     "layout.content_share": _d_content_share,
     "a11y.zoom_locked_no_control": _d_zoom_locked,
     "nav.pane_header_hidden": _d_pane_header_hidden,
+    "controls.switch_on_not_accent": _d_switch_on_accent,
 }
 
 
@@ -367,7 +418,8 @@ def evaluate_rule(rule: Rule, doc: dict, specs: Dict[str, Dict[str, str]], ctx: 
             if screen.get("status") != "ok" or not isinstance(screen.get("metrics"), dict):
                 tally.unmeasured.append(f"{sid}: {screen.get('reason') or 'walk error'}")
                 continue
-            value, items, why, facts = read_metric(screen["metrics"], rule, {**ctx, "view": screen.get("view")})
+            value, items, why, facts = read_metric(screen["metrics"], rule,
+                                                   {**ctx, "view": screen.get("view"), "theme": screen.get("theme"), "specs": specs})
             _fold(result, tally, sid, value, items, why, rule, thr, facts)
 
     na = f"; n/a on {tally.not_applicable}" if tally.not_applicable else ""
@@ -457,6 +509,10 @@ def evaluate(doc: dict, rubric: Rubric, specs: Dict[str, Dict[str, str]],
     ctx = {"params": resolve_params(rubric, specs.get("light", {})),
            "wide_views": [str(v) for v in doc.get("wide_views") or []],
            "wide_views_error": doc.get("wide_views_error"),
+           "switch_on_seen": any(
+               isinstance(s, dict) and s.get("status") == "ok" and isinstance(s.get("metrics"), dict)
+               and bool(measure.metric_value(s["metrics"], "controls.switches_on"))
+               for s in doc.get("screens") or []),
            "text_size_control_seen": any(
                isinstance(s, dict) and s.get("status") == "ok" and isinstance(s.get("metrics"), dict)
                and measure.metric_value(s["metrics"], "a11y.text_size_control") is True

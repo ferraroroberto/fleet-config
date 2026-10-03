@@ -18,7 +18,7 @@
    "status": "ok", "reason": null, "error": null, "screenshot": "desktop-light-home.png", "screenshot_full": "desktop-light-home-full.png",
    "metrics": {
     "text": {"sizes": {"16": 20, "14.72": 2, "24": 1}, "weights": {"400": 20, "600": 3}, "runs": 23, "under14": 0, "under11": [], "under11_count": 0, "min_px": 14.72, "low_contrast": [], "low_contrast_count": 0, "body_font_family": "system-ui, sans-serif", "break_all": [], "break_all_count": 0, "uppercase": [], "uppercase_count": 0, "glyph_icons": [], "glyph_icon_count": 0},
-    "controls": {"total": 6, "font_family_mismatch": [], "font_family_mismatch_count": 0, "boundary_low": [], "boundary_low_count": 0, "ua_styled": [], "ua_styled_count": 0, "segmented_bad": [], "segmented_bad_count": 0},
+    "controls": {"total": 6, "font_family_mismatch": [], "font_family_mismatch_count": 0, "boundary_low": [], "boundary_low_count": 0, "ua_styled": [], "ua_styled_count": 0, "segmented_bad": [], "segmented_bad_count": 0, "switch_count": 0, "switch_on_count": 0, "switches_on": []},
     "targets": {"total": 10, "small": [], "small_count": 0, "overlaps": [], "overlap_count": 0, "primary": [{"sel": "button.primary", "label": "Save", "h": 48, "w": 120}], "primary_min_height": 48, "in_summary": 0},
     "icons": {"boxes": {"16x16": 4, "24x24": 1}},
     "nav": {"primary_count": 4, "pane_scroll_top": 0, "pane_header_visible": true, "settings_tab_count": 0, "settings_tabs": []},
@@ -33,7 +33,7 @@
    "status": "ok", "reason": null, "error": null, "screenshot": "iphone-light-home.png", "screenshot_full": "iphone-light-home-full.png",
    "metrics": {
     "text": {"sizes": {"16": 20, "14.72": 2, "24": 1}, "weights": {"400": 20, "600": 3}, "runs": 23, "under14": 0, "under11": [], "under11_count": 0, "min_px": 14.72, "low_contrast": [], "low_contrast_count": 0, "body_font_family": "system-ui, sans-serif", "break_all": [], "break_all_count": 0, "uppercase": [], "uppercase_count": 0, "glyph_icons": [], "glyph_icon_count": 0},
-    "controls": {"total": 6, "font_family_mismatch": [], "font_family_mismatch_count": 0, "boundary_low": [], "boundary_low_count": 0, "ua_styled": [], "ua_styled_count": 0, "segmented_bad": [], "segmented_bad_count": 0},
+    "controls": {"total": 6, "font_family_mismatch": [], "font_family_mismatch_count": 0, "boundary_low": [], "boundary_low_count": 0, "ua_styled": [], "ua_styled_count": 0, "segmented_bad": [], "segmented_bad_count": 0, "switch_count": 0, "switch_on_count": 0, "switches_on": []},
     "targets": {"total": 10, "small": [], "small_count": 0, "overlaps": [], "overlap_count": 0, "primary": [{"sel": "button.primary", "label": "Save", "h": 48, "w": 120}], "primary_min_height": 48, "in_summary": 0},
     "icons": {"boxes": {"16x16": 4, "24x24": 1}},
     "nav": {"primary_count": 4, "pane_scroll_top": 0, "pane_header_visible": true, "settings_tab_count": 0, "settings_tabs": []},
@@ -48,7 +48,7 @@
    "status": "ok", "reason": null, "error": null, "screenshot": "desktop-light-dialog-edit.png", "screenshot_full": null,
    "metrics": {
     "text": {"sizes": {"16": 3, "24": 1}, "weights": {"400": 3, "700": 1}, "runs": 4, "under14": 0, "under11": [], "under11_count": 0, "min_px": 16, "low_contrast": [], "low_contrast_count": 0, "body_font_family": "system-ui, sans-serif", "break_all": [], "break_all_count": 0, "uppercase": [], "uppercase_count": 0, "glyph_icons": [], "glyph_icon_count": 0},
-    "controls": {"total": 2, "font_family_mismatch": [], "font_family_mismatch_count": 0, "boundary_low": [], "boundary_low_count": 0, "ua_styled": [], "ua_styled_count": 0, "segmented_bad": [], "segmented_bad_count": 0},
+    "controls": {"total": 2, "font_family_mismatch": [], "font_family_mismatch_count": 0, "boundary_low": [], "boundary_low_count": 0, "ua_styled": [], "ua_styled_count": 0, "segmented_bad": [], "segmented_bad_count": 0, "switch_count": 0, "switch_on_count": 0, "switches_on": []},
     "targets": {"total": 2, "small": [], "small_count": 0, "overlaps": [], "overlap_count": 0, "primary": [], "primary_min_height": null, "in_summary": 0},
     "icons": {"boxes": {}},
     "nav": {"primary_count": 4, "pane_scroll_top": 0, "pane_header_visible": true, "settings_tab_count": 0, "settings_tabs": []},
