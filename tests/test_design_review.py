@@ -58,7 +58,7 @@ def _doc(name: str) -> dict:
 # ---- rubric: the real file loads and names only metrics that exist ----------
 
 rubric = dr.load_rubric(RUBRIC)
-check(rubric.version == "1.10.0", "rubric meta.version stamped")
+check(rubric.version == "1.11.0", "rubric meta.version stamped")
 check(len(rubric.rules) == 29, f"29 seed rules loaded (got {len(rubric.rules)})")
 check(rubric.categories == ["typography", "color", "touch", "navigation", "layout", "components", "a11y"],
       "categories in rubric order")
@@ -413,7 +413,7 @@ check(all(s == "pass" for s in statuses_c.values()), f"compliant: every rule pas
 check(all(v["score"] == 100.0 and v["grade"] == "A" and not v["unmeasured"] for v in out_c["categories"].values()),
       "compliant: every category 100/A, measured")
 check(out_c["overall"] == {"score": 100.0, "grade": "A", "unmeasured": False}, "compliant: overall A")
-check(out_c["schema_version"] == 1 and out_c["rubric_version"] == "1.10.0" and out_c["target"] == "fixture-app"
+check(out_c["schema_version"] == 1 and out_c["rubric_version"] == "1.11.0" and out_c["target"] == "fixture-app"
       and out_c["commit"].startswith("0000") and out_c["generated_at"].endswith("Z"), "evaluate envelope keys")
 check([s["id"] for s in out_c["screens"]] == ["desktop-light-home", "iphone-light-home", "desktop-light-dialog-edit"],
       "evaluate echoes the screen list")
@@ -455,6 +455,18 @@ check(stamped["status"] == "unmeasured"
       f"A11Y-02: only the boot stamp seen -> unmeasured, naming the fix, never a pass or a false fail -- {stamped['status']}: {stamped['reason']}")
 unstamped = _a11y02(lambda a, s: a.update(text_size_stamped=False))
 check(unstamped["status"] == "fail", "A11Y-02: no stamp and no control is still a real failure")
+# Roberto's 2026-10-03 decision (fleet-config#1211): every fleet app carries the text-size control, whether or not it locks zoom.
+unlocked = _a11y02(lambda a, s: a.update(zoom_locked=False, text_size_control=False))
+check(unlocked["status"] == "fail" and len(unlocked["evidence"]) == 2,
+      f"A11Y-02: an app with zoom NOT locked and no text-size control fails -- {unlocked['status']} (#1211)")
+check(_a11y02(lambda a, s: a.update(zoom_locked=False, text_size_control=True))["status"] == "pass",
+      "A11Y-02: the control present passes with zoom unlocked")
+check(_a11y02(lambda a, s: a.update(zoom_locked=True, text_size_control=True))["status"] == "pass",
+      "A11Y-02: the control present passes with zoom locked")
+check(_a11y02(lambda a, s: a.update(zoom_locked=None))["status"] == "fail",
+      "A11Y-02: an unreadable zoom lock no longer hides a missing control (the control is the fact judged)")
+check(_a11y02(lambda a, s: a.update(zoom_locked=False, text_size_control=False, text_size_stamped=True))["status"] == "unmeasured",
+      "A11Y-02: unlocked, only the boot stamp seen -> unmeasured, the same as locked")
 for probe in ("data-textsize", "data-text-size", "aria-labelledby", "#textSizeControl"):
     check(probe in str(measure._MEASURE_JS), f"the a11y probe looks for {probe}")
 check('[data-textsize]:not(html)' in measure._MEASURE_JS, "the probe never reads the boot stamp on <html> as the control")
@@ -860,7 +872,7 @@ else:
           f"measure CLI walks the fixture: 2 tabs + 1 dialog x light/dark ({proc.stdout[-300:]}{proc.stderr[-300:]})")
     check(lines.get("RUN_DIR") == str(run_dir) and Path(lines.get("METRICS", "")).is_file(), "RUN_DIR/METRICS lines point at the run dir")
     doc = json.loads(Path(lines["METRICS"]).read_text(encoding="utf-8"))
-    check(doc["interpreter"] == str(interp) and doc["schema_version"] == 1 and doc["rubric_version"] == "1.10.0", "metrics.json records the interpreter + versions")
+    check(doc["interpreter"] == str(interp) and doc["schema_version"] == 1 and doc["rubric_version"] == "1.11.0", "metrics.json records the interpreter + versions")
     if not (scaffold / "tests" / "e2e" / "_geometry.py").is_file():
         _h.skip("browser leg: project-scaffolding/tests/e2e/_geometry.py absent -- hit-target assertions NOT verified")
     check(doc["walk"]["info"]["geometry"] == ("loaded" if (scaffold / "tests" / "e2e" / "_geometry.py").is_file() else "GEOMETRY_MISSING"),
