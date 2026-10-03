@@ -55,7 +55,7 @@ rule labels forced `full` (every PR containing one, and PRs where it was the
 only cause), the paths that forced it most, unclassified paths, and paths a
 broad rule took although a later, more specific, lower-tier rule matches too
 (a README under a static prefix: a free fix). `--proposed` routes the same PRs
-through a candidate table and lists every PR whose tier changes. `import_holes`
+through a candidate table and lists every PR whose tier changes; the counterfactual also re-runs `unclassified`, `shadowed` and `import_holes` against it (`holes_opened` / `holes_closed`). `import_holes`
 reads the other way (task-os#287): every file the suite loads (the test dirs,
 the conftest, `_*.py` plugins) or imports one level deep, routed through the
 same classifier, listing those the table sends to `none`: a diff touching only
@@ -1234,6 +1234,44 @@ def import_holes(repo_root: Path, mod, config, test_dirs: Sequence[str]) -> List
     return sorted(out, key=lambda e: (-int(e["imported_by"]), str(e["path"])))  # type: ignore[call-overload]
 
 
+def _counterfactual(repo_root: Path, mod, proposed, test_dirs: Sequence[str], path: str, narrowed: List[Dict[str, object]],
+                    holes: List[Dict[str, object]], unclassified: List[Dict[str, object]],
+                    shadowed: List[Dict[str, object]]) -> Dict[str, object]:
+    """What a candidate table changes: PR tiers, plus the findings re-run against it (facilitation-suite#165).
+
+    `unclassified`, `shadowed` and `import_holes` are the declared table's
+    findings recomputed with the candidate's rules, and `holes_opened` /
+    `holes_closed` are the import-hole paths that appear or disappear, so a
+    routing proposal's effect on coverage is read here rather than proved by
+    swapping the file in and classifying paths by hand.
+    """
+    after = import_holes(repo_root, mod, proposed, test_dirs)
+    before_paths = {str(h["path"]) for h in holes}
+    after_paths = {str(h["path"]) for h in after}
+    return {"proposed": path, "changed": narrowed, "unclassified": unclassified, "shadowed": shadowed, "import_holes": after,
+            "holes_opened": sorted(after_paths - before_paths), "holes_closed": sorted(before_paths - after_paths)}
+
+
+def _note_paths(files: Sequence[str], labels: Sequence[str], rules: list,
+                unclassified: Dict[str, int], shadowed: Dict[str, Dict[str, object]]) -> None:
+    """Tally one PR's unclassified and shadowed paths under `rules` (labels are what each path matched)."""
+    for f, lab in zip(files, labels):
+        if lab == "unclassified":
+            unclassified[f] = unclassified.get(f, 0) + 1
+        sh = shadow_entry(f.replace("\\", "/"), rules)
+        if sh:
+            entry = shadowed.setdefault(f, {"path": f, "took": lab, **sh, "check": classify_cmd([f]), "prs": 0})
+            entry["prs"] = int(entry["prs"]) + 1  # type: ignore[call-overload]
+
+
+def _unclassified_rows(unclassified: Dict[str, int]) -> List[Dict[str, object]]:
+    return [{"path": p, "prs": n, "check": classify_cmd([p])} for p, n in sorted(unclassified.items(), key=lambda kv: -kv[1])]
+
+
+def _shadowed_rows(shadowed: Dict[str, Dict[str, object]]) -> List[Dict[str, object]]:
+    return sorted(shadowed.values(), key=lambda e: -int(e["prs"]))  # type: ignore[arg-type,call-overload]
+
+
 def routing_report(repo_root: Path, prs: int = 60, until: Optional[str] = None,
                    config_path: Optional[Path] = None, proposed_path: Optional[Path] = None,
                    pr_list: Optional[List[Dict[str, object]]] = None,
@@ -1257,6 +1295,8 @@ def routing_report(repo_root: Path, prs: int = 60, until: Optional[str] = None,
     full_paths: Dict[str, int] = {}
     unclassified: Dict[str, int] = {}
     shadowed: Dict[str, Dict[str, object]] = {}
+    p_unclassified: Dict[str, int] = {}
+    p_shadowed: Dict[str, Dict[str, object]] = {}
     narrowed: List[Dict[str, object]] = []
     rows = []
     browser_relevant = 0
@@ -1285,19 +1325,16 @@ def routing_report(repo_root: Path, prs: int = 60, until: Optional[str] = None,
             for f, c, _ in cats:
                 if c.name == "FULL":
                     full_paths[f] = full_paths.get(f, 0) + 1
-        for f, c, lab in cats:
-            if lab == "unclassified":
-                unclassified[f] = unclassified.get(f, 0) + 1
-            sh = shadow_entry(f.replace("\\", "/"), config.rules)
-            if sh:
-                entry = shadowed.setdefault(f, {"path": f, "took": lab, **sh, "check": classify_cmd([f]), "prs": 0})
-                entry["prs"] = int(entry["prs"]) + 1  # type: ignore[call-overload]
+        _note_paths(files, [lab for _, _, lab in cats], config.rules, unclassified, shadowed)
         if proposed is not None:
+            _note_paths(files, [mod._classify_one(f.replace("\\", "/"), proposed.rules)[1] for f in files],
+                        proposed.rules, p_unclassified, p_shadowed)
             pr_ = mod.classify(files, proposed, *extra)
             if pr_.tier != r.tier:
                 narrowed.append({"pr": pr["number"], "from": r.tier, "to": pr_.tier, "surface": pr_.surface})
         rows.append({"pr": pr["number"], "tier": r.tier, "surface": r.surface})
     full_n = tiers.get("full", 0)
+    holes = import_holes(repo_root, mod, config, test_dirs)
     from e2e_route import gate_contract
     gate, gate_reason, readers = gate_contract(repo_root)
     return {
@@ -1312,11 +1349,12 @@ def routing_report(repo_root: Path, prs: int = 60, until: Optional[str] = None,
         "full_classes": dict(sorted(full_classes.items(), key=lambda kv: -kv[1])),
         "single_cause": dict(sorted(single_cause.items(), key=lambda kv: -kv[1])),
         "full_paths_top": [{"path": p, "prs": n} for p, n in sorted(full_paths.items(), key=lambda kv: -kv[1])[:10]],
-        "unclassified": [{"path": p, "prs": n, "check": classify_cmd([p])}
-                         for p, n in sorted(unclassified.items(), key=lambda kv: -kv[1])],
-        "shadowed": sorted(shadowed.values(), key=lambda e: -int(e["prs"])),  # type: ignore[arg-type,call-overload]
-        "import_holes": import_holes(repo_root, mod, config, test_dirs),
-        "counterfactual": None if proposed is None else {"proposed": str(proposed_path), "changed": narrowed},
+        "unclassified": _unclassified_rows(unclassified),
+        "shadowed": _shadowed_rows(shadowed),
+        "import_holes": holes,
+        "counterfactual": None if proposed is None else _counterfactual(
+            repo_root, mod, proposed, test_dirs, str(proposed_path), narrowed, holes,
+            _unclassified_rows(p_unclassified), _shadowed_rows(p_shadowed)),
         "sheet_routing": ("n/a: no shared_stylesheets declared" if not declared
                           else "n/a: classifier routes file lists only" if not by_sheet
                           else {"sheets": declared, "reasons": sheet_reasons}),
