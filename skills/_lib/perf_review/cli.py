@@ -153,7 +153,9 @@ def cmd_measure(a: argparse.Namespace) -> int:
         print(f"ENDPOINT {e['status']:<10} {e['path']:<28} n={e.get('n')} p50={report._fmt(e.get('p50'))} p95={report._fmt(e.get('p95'))}")
     moved = d["ready_baseline_changed"]
     baseline = f" ready_by={moved['from']}->{moved['to']} (baselines do not compare)" if moved else ""
-    print(f"DIFF previous={d['previous_run']} fixed={','.join(d['fixed']) or 'none'} regressed={','.join(d['regressed']) or 'none'}{baseline}")
+    slower = ",".join(f"{e['path']}:{report._fmt(e['from'])}->{report._fmt(e['to'])}" for e in d["slower"]) or "none"
+    print(f"DIFF previous={d['previous_run']} fixed={','.join(d['fixed']) or 'none'} regressed={','.join(d['regressed']) or 'none'} "
+          f"slower_p95_ms={slower}{baseline}")
     print(f"PERF={v['summary']['overall']} pass={v['summary']['pass']} fail={v['summary']['fail']} unmeasured={v['summary']['unmeasured']}")
     return EXIT[v["summary"]["overall"]]
 

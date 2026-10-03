@@ -163,7 +163,7 @@ Summarize to the user:
 - the verdict line and the over-budget checks, with measured vs budget;
 - the slowest endpoints;
 - the ranked fixes with their pattern ids and rough LOC;
-- what changed since the last run (`DIFF`).
+- what changed since the last run (`DIFF`): `fixed`, `regressed` (a status flip) and `slower_p95_ms`, an endpoint whose p95 rose 25% and 10 ms or more since the last run **even while it stays inside its budget**. Say it as a regression: parking-manager's `/` went 31 to 43 ms under a 50 ms budget after a per-request fingerprint, every status stayed `pass`, and `regressed=none` read clean.
 
 Then stop. Each fix ships through the target repo's own issue → branch → PR
 → gate; this skill never edits the target.
