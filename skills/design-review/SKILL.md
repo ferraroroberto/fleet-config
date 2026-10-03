@@ -297,7 +297,7 @@ strays collapsed — the `design-drift` mechanics): each line is
 its checkbox; a rule that passes again keeps its line, unticked, tagged
 `_(fixed — passes since <date> @ <sha>)_`; an unmeasured one is
 `_(carried — unmeasured this run)_`; uncatalogued findings (judgment
-status `ok` only) are their own list keyed by question + title, titles and
+status `ok` or `partial`) are their own list keyed by question + title, titles and
 severities only; a dated bullet lands in `## Review run log`. **Spec- and
 scaffold-owned rules are not filed on the app** — they print as `SPEC=`
 / `SCAFFOLD=` here and reach fleet-config / project-scaffolding through
