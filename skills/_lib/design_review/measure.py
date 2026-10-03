@@ -215,8 +215,9 @@ _MEASURE_JS = r"""
   section('targets', () => {
     if (!effRect) throw new Error('GEOMETRY_MISSING');
     const els = q(params.interactive).filter(el => !el.disabled);
-    const rects = els.map(el => { const r = effRect(el);
-      return {el, l: r.left - r.expandLeft, t: r.top - r.expandTop, rr: r.right + r.expandRight, b: r.bottom + r.expandBottom, vw: r.right - r.left, vh: r.bottom - r.top}; });
+    const rectOf = (el) => { const r = effRect(el);
+      return {el, l: r.left - r.expandLeft, t: r.top - r.expandTop, rr: r.right + r.expandRight, b: r.bottom + r.expandBottom, vw: r.right - r.left, vh: r.bottom - r.top}; };
+    const rects = els.map(rectOf);
     const small = []; const floor = params.hitMin - params.hitTol;
     rects.forEach(x => { const w = x.rr - x.l, h = x.b - x.t;
       if (w < floor || h < floor) small.push({sel: sel(x.el), label: txt(x.el).slice(0,30), w: Math.round(w), h: Math.round(h), vw: Math.round(x.vw), vh: Math.round(x.vh)}); });
@@ -251,14 +252,28 @@ _MEASURE_JS = r"""
         const hit = document.elementFromPoint(l + (r - l) * (i + 0.5) / SAMPLES, t + (bt - t) * (j + 0.5) / SAMPLES);
         if (!hit || !cover.contains(hit)) return false; }
       return true; });
-    const covered = (a, b) => {
+    const meetsInView = (a, b) => { const x = (Math.max(a.l, b.l) + Math.min(a.rr, b.rr)) / 2, y = (Math.max(a.t, b.t) + Math.min(a.b, b.b)) / 2;
+      return x >= 0 && y >= 0 && x < innerWidth && y < innerHeight; };
+    const coveredInView = (a, b) => {
       const x = (Math.max(a.l, b.l) + Math.min(a.rr, b.rr)) / 2, y = (Math.max(a.t, b.t) + Math.min(a.b, b.b)) / 2;
-      if (x < 0 || y < 0 || x >= innerWidth || y >= innerHeight) return false;
       const hit = document.elementFromPoint(x, y); const cover = hit && layerOf(hit);
       if (!cover) return false;
       const under = [a, b].find(o => !cover.contains(o.el)); if (!under) return false;
       const u = under.el.getBoundingClientRect(), c = cover.getBoundingClientRect();
       return (u.left < c.right && c.left < u.right && u.top < c.bottom && c.top < u.bottom) || layerWins(a, b); };
+    // elementFromPoint sees nothing outside the viewport, so a pair that meets below the fold (the last
+    // row's menu on a long list) is scrolled into view, re-measured and decided there. Every scroller
+    // on the way, the page included, goes back to where it was, instantly (#1155).
+    const covered = (a, b) => {
+      if (meetsInView(a, b)) return coveredInView(a, b);
+      const fixed = (o) => { const ly = layerOf(o.el); return !!ly && getComputedStyle(ly).position === 'fixed'; };
+      const anchor = [a, b].find(o => !fixed(o)) || a;
+      const saved = []; for (let e = anchor.el.parentElement; e; e = e.parentElement) saved.push([e, e.scrollTop, e.scrollLeft]);
+      try { anchor.el.scrollIntoView({block: 'center', inline: 'center', behavior: 'instant'});
+        const a2 = clipped(rectOf(a.el)), b2 = clipped(rectOf(b.el));
+        const meet = !(a2.rr <= b2.l || b2.rr <= a2.l || a2.b <= b2.t || b2.b <= a2.t);
+        return meet && meetsInView(a2, b2) && coveredInView(a2, b2);
+      } finally { saved.forEach(([e, top, left]) => e.scrollTo({top, left, behavior: 'instant'})); } };
     const overlaps = [], coveredPairs = []; let overlapCount = 0, coveredCount = 0; const n = Math.min(hits.length, 400);
     for (let i = 0; i < n; i++) for (let j = i + 1; j < n; j++) { const a = hits[i], b = hits[j];
       if (a.el.contains(b.el) || b.el.contains(a.el)) continue;
