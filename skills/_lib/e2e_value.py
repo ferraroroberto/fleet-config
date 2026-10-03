@@ -29,7 +29,7 @@ With none of them, every verdict is `unknown (no timing source)`.
     buckets       [{bucket, nodes, seconds}]               executed e2e nodes only
     modules       [{module, seconds, nodes, page_loads, shots, pty_refs, real_agent}]  heaviest first
     tail          {slowest_n, slowest_share, top5pct_n, top5pct_share, max_s}
-    first_node    {nodeid, seconds, median_s}              carries the session boot
+    first_node    {nodeid, seconds, median_s, boot}        carries the session boot; boot: single-run | repeated | not-repeated
     waits         [{file, line, kind, ms, scope, text, nodes, measured_s, paid_s, ceiling}]  paid seconds first, `timeout=` ceilings last
     slow_nodes    [{nodeid, seconds, median_s}]            executed nodes over 10x the median and 1 s, boot node left out
     app_timers    [{file, line, kind, ms, text}]           literal 1 s+ timers in app JS (tests, vendored, minified left out)
@@ -410,17 +410,33 @@ def modules(nodes: Dict[str, float], repo_root: Path, test_dirs: Sequence[str] =
     return out
 
 
-def first_node(nodes: Dict[str, float]) -> Optional[Dict[str, object]]:
+BOOT_EXCESS_S = 1.0
+
+
+def first_node(nodes: Dict[str, float], earlier: Sequence[Dict[str, float]] = ()) -> Optional[Dict[str, object]]:
     """The first executed e2e node and the suite's median: the session app boot lands on it.
 
     In a surface slice that node is the touched file, so a per-module
     before/after comparison must discount it (fleet-config#1134).
+
+    `earlier` is the executed nodes of earlier completed runs in the same
+    log (one checkout, so a later run is warm), newest first. `boot` says
+    whether the excess is a measured cost (fleet-config#1157, photo-ocr#127:
+    a 7 s first node was one cold run in a fresh worktree, under 0.3 s warm):
+    `single-run` (nothing to compare: cold, unconfirmed), `repeated` (this and
+    the previous run both carry 1 s or more over the median) or `not-repeated`.
     """
     if not nodes:
         return None
     nid, s = next(iter(nodes.items()))
     vals = sorted(nodes.values())
-    return {"nodeid": nid, "seconds": s, "median_s": vals[len(vals) // 2]}
+    median = vals[len(vals) // 2]
+    boot = "single-run"
+    if earlier:
+        prev = earlier[0]
+        prev_excess = next(iter(prev.values())) - sorted(prev.values())[len(prev) // 2]
+        boot = "repeated" if s - median >= BOOT_EXCESS_S and prev_excess >= BOOT_EXCESS_S else "not-repeated"
+    return {"nodeid": nid, "seconds": s, "median_s": median, "boot": boot}
 
 
 # ---- waits: where a suite pays wall time without doing anything (fleet-config#1134) --------------------
@@ -778,6 +794,12 @@ def timing(repo_root: Path, test_dirs: Sequence[str], log: Optional[Path] = None
     nodes: Dict[str, float] = run["nodes"]  # type: ignore[assignment]
     e2e = executed_e2e(run, test_dirs)
     skipped = [n for n in run.get("skipped") or () if is_e2e(n, test_dirs)]  # type: ignore[union-attr]
+    # Earlier completed runs that executed e2e nodes, from the measured run's own log (one checkout), newest first.
+    own = next((runs for p, runs in logs if p == path), [])
+    earlier_executed = [ex for r in sorted((r for r in own if r["complete"] and r is not run and r["finished"]
+                                            and run["finished"] and r["finished"] < run["finished"]),  # type: ignore[operator]
+                                           key=lambda r: r["finished"], reverse=True)  # type: ignore[arg-type,return-value]
+                        if (ex := executed_e2e(r, test_dirs))]
     wall = _wall_s(run)
     return {
         "status": "ok" if e2e else "unknown",
@@ -796,7 +818,7 @@ def timing(repo_root: Path, test_dirs: Sequence[str], log: Optional[Path] = None
         "buckets": buckets(e2e),
         "modules": modules(e2e, repo_root, test_dirs),
         "tail": tail(e2e),
-        "first_node": first_node(e2e),
+        "first_node": first_node(e2e, earlier_executed),
         "waits": rank_waits(wait_sites(repo_root, test_dirs), e2e, repo_root),
         "slow_nodes": slow_nodes(e2e),
         "app_timers": app_timers(repo_root, test_dirs),

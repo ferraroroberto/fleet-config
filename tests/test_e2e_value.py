@@ -674,6 +674,32 @@ check([(t["file"], t["line"], t["kind"], t["ms"]) for t in at] ==
       f"app-source timers of 1 s or more, longest first; sub-second, vendored, node_modules, test and minified files are left out -- {at}")
 check(v.app_timers(Path(tempfile.mkdtemp(prefix="e2e-value-empty-")), ["tests/e2e"]) == [], "no app JS, no timers")
 
+# first_node.boot (fleet-config#1157, photo-ocr#127): a "session boot 6.9 s" finding was one cold run in a fresh
+# worktree; warm, the same node took under 0.3 s. A boot is a finding only once a second run in the same
+# checkout repeats it.
+def _boot_run(day: str, start: str, first_s: float) -> str:
+    h, m, sec = (int(x) for x in start.split(":"))
+    lines = [f"[{start} +    0,0s] ==> phase: pytest e2e (tests/e2e)..."]
+    for i, secs in enumerate([first_s, 0.5, 0.5, 0.5]):
+        nid = f"tests/e2e/test_board.py::test_n{i}[chromium]"
+        lines += [f"[{start} +    0.1s] START {nid}", f"[{start} +    1.0s] DONE  {nid} ({secs}s)"]
+    lines.append(f"[{start} +    9.0s] pytest session finished (exit status 0)")
+    return _log(day, start, lines)
+
+
+bt = Path(tempfile.mkdtemp(prefix="e2e-value-boot-"))
+(bt / ".fleet.toml").write_text('[e2e]\nprogress_log = "gate.log"\n', encoding="utf-8")
+(bt / "gate.log").write_text(_boot_run("2026-10-01", "10:00:00", 7.1), encoding="utf-8")
+check(v.timing(bt, ["tests/e2e"])["first_node"]["boot"] == "single-run",
+      "one run on record: the first node is a cold single run, unconfirmed")
+(bt / "gate.log").write_text(_boot_run("2026-10-01", "10:00:00", 7.1) + _boot_run("2026-10-01", "11:00:00", 6.0), encoding="utf-8")
+check(v.timing(bt, ["tests/e2e"])["first_node"]["boot"] == "repeated",
+      "the two newest runs of one log both carry the boot: a repeated cost")
+(bt / "gate.log").write_text(_boot_run("2026-10-01", "10:00:00", 7.1) + _boot_run("2026-10-01", "11:00:00", 0.6), encoding="utf-8")
+fn = v.timing(bt, ["tests/e2e"])["first_node"]
+check(fn["boot"] == "not-repeated" and fn["seconds"] == 0.6,
+      f"a warm re-run without the boot: the cold run was a one-off, not a finding -- {fn}")
+
 # routing: the rule that wins once the first one stops matching, and the command that checks it.
 class _R:  # noqa: E302
     def __init__(self, tier, label, prefix=None, path=None, extensions=None):
