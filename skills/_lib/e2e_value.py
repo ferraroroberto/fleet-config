@@ -473,8 +473,11 @@ _TIMEOUT_KW_RE = re.compile(r"\btimeout\s*=\s*([\d_]+)\b")
 _POLL_CONST_RE = re.compile(r"^\s*([A-Z][A-Z0-9_]*(?:_MS|_INTERVAL|POLL[A-Z0-9_]*))\s*=\s*([\d_]+)\s*(?:#.*)?$", re.M)
 
 
-def _js_timer_ms(text: str, fn: str = "setTimeout") -> List[Tuple[int, int]]:
-    """`(offset, ms)` for every `<fn>(cb, <ms>)`: the literal last argument of the call."""
+_NOOP_CALLBACK_RE = re.compile(r"^(?:function\s*\(\s*\)\s*\{\s*\}|\(\s*\)\s*=>\s*(?:\{\s*\}|undefined|null|void 0))$")
+
+
+def _js_timer_calls(text: str, fn: str = "setTimeout") -> List[Tuple[int, int, str]]:
+    """`(offset, ms, callback)` for every `<fn>(cb, <ms>)`: the literal last argument of the call and the text before it."""
     out = []
     for m in re.finditer(rf"\b{fn}\(", text):
         depth, i = 1, m.end()
@@ -483,8 +486,13 @@ def _js_timer_ms(text: str, fn: str = "setTimeout") -> List[Tuple[int, int]]:
             i += 1
         tail = re.search(r",\s*([\d_]+)\s*$", text[m.end():i - 1])
         if tail:
-            out.append((m.start(), int(tail.group(1).replace("_", ""))))
+            out.append((m.start(), int(tail.group(1).replace("_", "")), text[m.end():m.end() + tail.start()].strip()))
     return out
+
+
+def _js_timer_ms(text: str, fn: str = "setTimeout") -> List[Tuple[int, int]]:
+    """`(offset, ms)` for every `<fn>(cb, <ms>)`: the literal last argument of the call."""
+    return [(off, ms) for off, ms, _cb in _js_timer_calls(text, fn)]
 
 
 def _scopes(text: str) -> List[Tuple[int, int, str]]:
@@ -553,9 +561,11 @@ def wait_sites(repo_root: Path, test_dirs: Sequence[str]) -> List[Dict[str, obje
         rel = str(p.relative_to(repo_root)).replace("\\", "/")
         scopes = _scopes(text)
         hits: List[Tuple[int, str, int]] = []
+        timers = _js_timer_calls(text)
+        noop = {off for off, _ms, cb in timers if _NOOP_CALLBACK_RE.match(cb)}
         hits += [(m.start(), "sleep", int(float(m.group(1).replace("_", "")))) for m in _SLEEP_MS_RE.finditer(text)]
         hits += [(m.start(), "sleep", int(float(m.group(1).replace("_", "")) * 1000)) for m in _SLEEP_S_RE.finditer(text)]
-        hits += [(off, "page-timer", ms) for off, ms in _js_timer_ms(text)]
+        hits += [(off, "page-timer", ms) for off, ms, _cb in timers]
         hits += [(m.start(), "long-timeout", int(m.group(1).replace("_", ""))) for m in _TIMEOUT_KW_RE.finditer(text)
                  if int(m.group(1).replace("_", "")) >= LONG_TIMEOUT_MS]
         hits += [(m.start(2), "poll-constant", int(m.group(2).replace("_", ""))) for m in _POLL_CONST_RE.finditer(text)
@@ -567,7 +577,7 @@ def wait_sites(repo_root: Path, test_dirs: Sequence[str]) -> List[Dict[str, obje
                 kind = "poll-sleep"
             inner = [name for a, b, name in scopes if a <= line <= b]
             out.append({"file": rel, "line": line, "kind": kind, "ms": ms, "scope": inner[-1] if inner else None,
-                        "text": text.splitlines()[line - 1].strip()[:120]})
+                        "unawaited": off in noop, "text": text.splitlines()[line - 1].strip()[:120]})
     return out
 
 
@@ -732,11 +742,11 @@ def rank_waits(sites: List[Dict[str, object]], nodes: Dict[str, float], repo_roo
                 hit = [t for t, body in tests.items() if re.search(rf"\b{re.escape(str(scope))}\b", body)]
             vals = [s for t in hit for s in by_test.get((mod, t), [])]
             row["nodes"], row["measured_s"] = len(vals), round(sum(vals), 1)
-            if site["kind"] in ("sleep", "page-timer"):
+            if site["kind"] in ("sleep", "page-timer") and not site.get("unawaited"):
                 row["paid_s"] = round(int(site["ms"]) / 1000 * len(vals), 1)  # type: ignore[call-overload]
         out.append(row)
     for r in out:
-        r["ceiling"] = r["kind"] in ("long-timeout", "poll-sleep")
+        r["ceiling"] = r["kind"] in ("long-timeout", "poll-sleep") or bool(r.get("unawaited"))
 
     def cost(r: Dict[str, object]) -> float:
         """What the wait is known to cost: seconds paid, else the nodes' seconds, else its own length."""
