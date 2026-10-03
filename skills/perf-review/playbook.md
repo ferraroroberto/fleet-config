@@ -67,6 +67,15 @@ bytes vary with `Content-Encoding`.
   module, and for an edited `index.html`. This is the risky half of P3 and the
   helper cannot see it: a 304 that is stale across builds needs two builds,
   and `/perf-review` is read-only.
+- **Do not walk the static tree with a `stat` per file per request.** `Path.rglob`
+  plus a `stat` each cost 11.6 ms per hit on Windows (200 calls), and
+  parking-manager's `/` went p50 20 → 34 ms and p95 31 → 43 ms: still inside
+  the 50 ms budget, so every check stayed green. Walk with `os.scandir` (size
+  and mtime come with the directory listing; 1.2 ms), key a per-file digest
+  cache on `(mtime_ns, size)`, and re-compare `/` p50 with the previous run after
+  adding the fingerprint (`DIFF` flags a rise as `slower_p95_ms`). Computing it
+  once at startup is right only when a restart is the only way the tree changes.
+  Evidence: parking-manager#68.
 - Optional: caching the body in memory keyed on `(mtime_ns, size)`. Re-reading
   a small file per request left `/` p95 at 27 ms in voice-transcriber, so add it
   only when `endpoints.index_p95_ms` fails.

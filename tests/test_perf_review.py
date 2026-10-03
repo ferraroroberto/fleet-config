@@ -335,6 +335,9 @@ check("text/event-stream" in p2 and "Accept-Encoding" in p2, "P2: how to verify 
 check("fingerprint" in p3 and "git sha" in p3 and "W/" in p3 and "sha256(body)" not in p3,
       "P3: the ETag carries a build fingerprint and is weak; the body-only recipe is gone")
 check("transitive" in p3 and "index.html" in p3, "P3: the invalidation test names a transitive module and an edited entry document")
+check("os.scandir" in p3 and "(mtime_ns, size)" in p3 and "per request" in p3 and "parking-manager#68" in p3 and "p50" in p3,
+      "P3: the fingerprint is not recomputed with a stat walk per request: scandir, a digest cache keyed on (mtime_ns, size), and `/` p50 "
+      "re-compared with the previous run (fleet-config#1180: 11.6 ms per request, 31 -> 43 ms p95 under budget)")
 p12 = re.search(r"^## P12 .*?(?=^## )", playbook_text, re.S | re.M).group(0)
 check("TOP" in p12 and "descriptions=false" in p12 and "task-os#291" in p12, "P12: slim the oversized response, keyed to the TOP lines and its evidence")
 check("TOP" in skill_text and "P12" in skill_text, "SKILL.md: read the TOP lines before ranking a transfer fix")
