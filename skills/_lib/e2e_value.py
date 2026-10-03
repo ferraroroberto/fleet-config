@@ -510,8 +510,11 @@ def _poll_loops(text: str) -> List[Tuple[int, int]]:
     """`(first_line, last_line)` of every `while` loop that can end on its own condition.
 
     A loop whose test is not a bare `True`, or whose body can `break`, `return`
-    or `raise`, stops as soon as the condition it waits for holds. A `for` loop
-    over taps and an endless `while True` with no exit are not polls.
+    or `raise`, stops as soon as the condition it waits for holds. A bounded
+    `for _ in range(40)` retry loop is a poll too when an `if` inside it
+    `break`s or `return`s (app-launcher#1375: its `_wait_for_calls` was priced at
+    the 40-iteration ceiling); a `for` loop over taps and an endless `while True`
+    with no exit are not polls.
     """
     import ast
     try:
@@ -520,12 +523,14 @@ def _poll_loops(text: str) -> List[Tuple[int, int]]:
         return []
     out = []
     for n in ast.walk(tree):
-        if not isinstance(n, ast.While):
-            continue
-        endless = isinstance(n.test, ast.Constant) and n.test.value is True
-        exits = any(isinstance(c, (ast.Break, ast.Return, ast.Raise)) for b in n.body for c in ast.walk(b))
-        if not endless or exits:
-            out.append((n.lineno, n.end_lineno or n.lineno))
+        if isinstance(n, ast.While):
+            endless = isinstance(n.test, ast.Constant) and n.test.value is True
+            exits = any(isinstance(c, (ast.Break, ast.Return, ast.Raise)) for b in n.body for c in ast.walk(b))
+            if not endless or exits:
+                out.append((n.lineno, n.end_lineno or n.lineno))
+        elif isinstance(n, ast.For):
+            if any(isinstance(c, (ast.Break, ast.Return)) for b in n.body for i in ast.walk(b) if isinstance(i, ast.If) for c in ast.walk(i)):
+                out.append((n.lineno, n.end_lineno or n.lineno))
     return out
 
 

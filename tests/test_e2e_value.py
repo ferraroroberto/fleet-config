@@ -757,16 +757,22 @@ pr_ = Path(tempfile.mkdtemp(prefix="e2e-value-pollsleep-"))
     "def test_cond(page):\n    while not ready():\n        page.wait_for_timeout(300)\n\n\n"
     "def test_forever(page):\n    while True:\n        time.sleep(0.4)\n\n\n"
     "def test_taps(page):\n    for _ in range(5):\n        time.sleep(0.15)\n\n\n"
+    "def _wait_for_calls(page, calls, n):\n    for _ in range(40):\n        if len(calls) >= n:\n            return\n"
+    "        page.wait_for_timeout(250)\n\n\n"
+    "def test_for_break(page):\n    for _ in range(10):\n        if ready():\n            break\n        time.sleep(0.1)\n\n\n"
     "def test_fixed(page):\n    time.sleep(0.6)\n", encoding="utf-8")
 psites = {s["scope"]: s for s in v.wait_sites(pr_, ["tests/e2e"])}
 check({k: psites[k]["kind"] for k in psites} == {"test_deadline": "poll-sleep", "test_cond": "poll-sleep", "test_forever": "sleep",
-                                                  "test_taps": "sleep", "test_fixed": "sleep"},
-      f"a sleep in a loop that can end on its condition is a poll, not a fixed wait; a for-loop or endless loop sleep still is one -- "
+                                                  "test_taps": "sleep", "_wait_for_calls": "poll-sleep", "test_for_break": "poll-sleep",
+                                                  "test_fixed": "sleep"},
+      f"a sleep in a loop that can end on its condition is a poll, not a fixed wait; a `for` retry loop that returns or breaks "
+      f"on a condition is one too (app-launcher#1375: `for _ in range(40)` priced 2.5 s for a 250 ms interval); "
+      f"a for-loop over taps with no exit and an endless loop sleep still are fixed -- "
       f"{ {k: s['kind'] for k, s in psites.items()} }")
 pn = {f"tests/e2e/test_poll.py::{t}[chromium]": 1.0 for t in ("test_deadline", "test_cond", "test_forever", "test_taps", "test_fixed")}
 prk = {r["scope"]: r for r in v.rank_waits(list(psites.values()), pn, pr_)}
 check(prk["test_deadline"]["paid_s"] is None and prk["test_deadline"]["ceiling"] is True and prk["test_fixed"]["paid_s"] == 0.6
-      and [r["scope"] for r in v.rank_waits(list(psites.values()), pn, pr_)][-2:] == ["test_deadline", "test_cond"],
+      and {r["scope"] for r in v.rank_waits(list(psites.values()), pn, pr_)[-4:]} == {"test_deadline", "test_cond", "_wait_for_calls", "test_for_break"},
       f"a poll sleep is never priced as paid seconds and ranks after every fixed wait -- {prk['test_deadline']}")
 
 # slow_fixtures (fleet-config#1170, local-llm-hub#644): 40 s of a 76 s run was a session fixture's `httpx.get(..., timeout=_WARMUP_TIMEOUT)`
