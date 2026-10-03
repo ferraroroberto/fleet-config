@@ -1,0 +1,66 @@
+<!doctype html>
+<!-- Static fixture for TOUCH-02 and clipped targets (fleet-config#1155). Options scrolled out of a
+     short scroller sit over the control beneath it, where they take no tap; a popup that escapes an
+     overflow-hidden box (its containing block is outside it) is not clipped by that box. Asserted by
+     tests/test_design_review.py. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>design_review clipped fixture</title>
+<style>
+  html, body { margin: 0; background: #ffffff; color: #1f2328; font-family: system-ui, sans-serif; font-size: 16px; }
+  body { padding: 16px; }
+  section[hidden] { display: none; }
+  .scroller { height: 100px; width: 200px; overflow-y: auto; }
+  .scroller button { display: block; width: 180px; height: 44px; margin: 0; font: inherit; }
+  .under { display: block; width: 180px; height: 44px; margin: 0; font: inherit; }
+  .anchor { position: relative; margin-left: 600px; }
+  .wrap { overflow: hidden; height: 20px; width: 100px; }
+  [role=menu] { position: absolute; top: 30px; left: 0; display: flex; }
+  .hit-target { position: relative; width: 34px; height: 34px; padding: 0; margin: 0; font: inherit; }
+  .hit-target::before { content: ""; position: absolute; inset: -5px; }
+</style>
+<script>
+  addEventListener('DOMContentLoaded', () => {
+    document.querySelectorAll('[role=tab]').forEach(tab => tab.addEventListener('click', () => {
+      document.querySelectorAll('[role=tab]').forEach(t => t.setAttribute('aria-selected', String(t === tab)));
+      document.querySelectorAll('[role=tabpanel]').forEach(p => p.hidden = (p.id !== tab.getAttribute('aria-controls')));
+    }));
+  });
+</script>
+</head>
+<body>
+  <nav role="tablist" aria-label="Primary">
+    <button type="button" role="tab" aria-controls="paneScroll" aria-selected="true">Scroll</button>
+    <button type="button" role="tab" aria-controls="paneEscape" aria-selected="false">Escape</button>
+  </nav>
+  <main>
+    <!-- scroll: options 3-6 lie past the scroller's 100px box, over button.under; none overlaps it -->
+    <section id="paneScroll" role="tabpanel">
+      <h2>Scroll</h2>
+      <div class="scroller">
+        <button type="button" class="opt">Option one</button>
+        <button type="button" class="opt">Option two</button>
+        <button type="button" class="opt">Option three</button>
+        <button type="button" class="opt">Option four</button>
+        <button type="button" class="opt">Option five</button>
+        <button type="button" class="opt">Option six</button>
+      </div>
+      <button type="button" class="under">Under</button>
+    </section>
+    <!-- escape: the menu's containing block is .anchor, outside .wrap, so .wrap does not clip it and its
+         two touching hit-targets still overlap -->
+    <section id="paneEscape" role="tabpanel" hidden>
+      <h2>Escape</h2>
+      <div class="anchor">
+        <div class="wrap">
+          <div role="menu" aria-label="Escaping menu">
+            <button type="button" class="hit-target" aria-label="One">1</button><button type="button" class="hit-target" aria-label="Two">2</button>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+</body>
+</html>
