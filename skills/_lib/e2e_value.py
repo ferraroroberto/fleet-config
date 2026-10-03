@@ -906,7 +906,30 @@ def skip_reason_counts(run: Dict[str, object], skipped: Sequence[str]) -> Option
     return [{"reason": r, "nodes": c} for r, c in sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))]
 
 
-def timing(repo_root: Path, test_dirs: Sequence[str], log: Optional[Path] = None) -> Dict[str, object]:
+STALE_NODE_TOLERANCE = 0.10
+
+
+def stale_nodes(run_nodes: int, suite_nodes: Optional[int]) -> Dict[str, object]:
+    """Whether a run's e2e node count still matches the suite's collected node count (fleet-config#1175).
+
+    app-launcher's only timing log was a 612-node run from before the suite
+    shrank to 485, and `timing` called it `ok`: every `paid_s` was doubled and
+    `runtime_drift` measured a 29.5 min gate against a real 13.9. More than
+    10% apart in either direction is `stale`; a suite count that was not
+    measured (or is 0) is `unchecked`, never `fresh`.
+    """
+    if not suite_nodes:
+        return {"status": "unchecked", "run_nodes": run_nodes, "suite_nodes": suite_nodes,
+                "reason": "the suite's collected node count was not measured, so the run's age against it is unknown"}
+    if abs(run_nodes - suite_nodes) / suite_nodes > STALE_NODE_TOLERANCE:
+        return {"status": "stale", "run_nodes": run_nodes, "suite_nodes": suite_nodes,
+                "reason": f"the run covers {run_nodes} e2e nodes and the suite collects {suite_nodes} now (more than "
+                          f"{round(STALE_NODE_TOLERANCE * 100)}% apart): a fresh baseline is needed before ranking"}
+    return {"status": "fresh", "run_nodes": run_nodes, "suite_nodes": suite_nodes, "reason": None}
+
+
+def timing(repo_root: Path, test_dirs: Sequence[str], log: Optional[Path] = None,
+           suite_nodes: Optional[int] = None) -> Dict[str, object]:
     g = _gather(repo_root, log)
     if "error" in g:
         return {"status": "unknown", "reason": g["error"], "source": g.get("source")}
@@ -938,9 +961,16 @@ def timing(repo_root: Path, test_dirs: Sequence[str], log: Optional[Path] = None
                                            key=lambda r: r["finished"], reverse=True)  # type: ignore[arg-type,return-value]
                         if (ex := executed_e2e(r, test_dirs))]
     wall = _wall_s(run)
+    # A slice covers fewer nodes than the suite by design (`run.slice` says so); only a full-tier run is held to its count.
+    fresh = ({"status": "slice", "run_nodes": len(e2e) + len(skipped), "suite_nodes": suite_nodes, "reason": slice_note}
+             if slice_note else stale_nodes(len(e2e) + len(skipped), suite_nodes))
+    status, reason = ("ok" if e2e else "unknown"), (None if e2e else f"no executed node under {', '.join(test_dirs)} in the last completed run")
+    if e2e and fresh["status"] == "stale":
+        status, reason = "stale", fresh["reason"]
     return {
-        "status": "ok" if e2e else "unknown",
-        "reason": None if e2e else f"no executed node under {', '.join(test_dirs)} in the last completed run",
+        "status": status,
+        "reason": reason,
+        "freshness": fresh,
         "source": {**g["source"], "run_log": str(path)},  # type: ignore[dict-item]
         "run": {"started": run["started"].isoformat() if run.get("started") else None,  # type: ignore[union-attr]
                 "finished": run["finished"].isoformat() if run.get("finished") else None,  # type: ignore[union-attr]

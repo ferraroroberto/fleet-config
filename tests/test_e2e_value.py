@@ -643,10 +643,32 @@ check(ttm["run"]["e2e_nodes"] == 2 and ttm["run"]["e2e_skipped"] == 1 and ttm["p
       and "webkit" not in ttm["projections"], f"executed nodes only; skipped nodes reported apart -- {ttm['run']}")
 check(ttm["first_node"]["nodeid"] == "tests/e2e/test_board.py::test_load[chromium]" and ttm["first_node"]["seconds"] == 3.0,
       f"the first executed node is named: it carries the session boot -- {ttm.get('first_node')}")
+
+# Staleness (fleet-config#1175, app-launcher#1375): the only log on disk was a 612-node run from before the suite was
+# 485 nodes, and timing reported `ok` over it, doubling every paid figure. The run covers 3 e2e nodes (2 executed, 1 skipped).
+check(ttm["freshness"]["status"] == "unchecked" and "not measured" in ttm["freshness"]["reason"],
+      f"no suite node count given: the freshness is its own `unchecked` state, never folded into fresh -- {ttm['freshness']}")
+tfresh = v.timing(tt, ["tests/e2e"], suite_nodes=3)
+check(tfresh["status"] == "ok" and tfresh["freshness"] == {"status": "fresh", "run_nodes": 3, "suite_nodes": 3, "reason": None},
+      f"a run covering the suite's node count is fresh, and names both counts it compared -- {tfresh['freshness']}")
+tstale = v.timing(tt, ["tests/e2e"], suite_nodes=5)
+check(tstale["status"] == "stale" and tstale["freshness"]["status"] == "stale" and "fresh baseline" in tstale["reason"]
+      and "3" in tstale["reason"] and "5" in tstale["reason"] and tstale["run"]["e2e_nodes"] == 2,
+      f"a run covering 3 nodes of a 5-node suite is stale: status `stale`, the numbers kept for reading, a fresh baseline asked for -- "
+      f"{tstale['status']} {tstale.get('reason')}")
+check(v.stale_nodes(100, 109)["status"] == "fresh" and v.stale_nodes(100, 112)["status"] == "stale"
+      and v.stale_nodes(112, 100)["status"] == "stale" and v.stale_nodes(100, 95)["status"] == "fresh"
+      and v.stale_nodes(100, 90)["status"] == "stale",
+      "the tolerance is 10% of the suite's collected nodes, in either direction")
+check(v.stale_nodes(612, 485)["status"] == "stale", "app-launcher's 612-node log against its 485-node suite is stale")
+check(v.stale_nodes(5, 0)["status"] == "unchecked" and v.stale_nodes(5, None)["status"] == "unchecked",
+      "an empty or unmeasured suite count is unchecked, never fresh")
 (tt / "gate.log").write_text(SLICE + BACKEND, encoding="utf-8")
 tsl = v.timing(tt, ["tests/e2e"])
 check(tsl["status"] == "ok" and tsl["run"]["routed_tier"] == "surface" and "surface" in str(tsl["run"]["slice"]),
       f"with only a slice on record, timing measures it and says it is a slice, not the suite -- {tsl.get('run')}")
+check(v.timing(tt, ["tests/e2e"], suite_nodes=50)["status"] == "ok" and v.timing(tt, ["tests/e2e"], suite_nodes=50)["freshness"]["status"] == "slice",
+      "a slice covers fewer nodes than the suite by design: it is never called stale")
 
 # page_loads: a module booting through a helper or a fixture paid page loads the old count missed.
 BOOT_MOD = (

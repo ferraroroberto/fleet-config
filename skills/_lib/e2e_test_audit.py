@@ -71,7 +71,7 @@ Subcommands:
       (`e2e-audit/<owner>-<repo>.json`), the growth trigger's baseline. Every
       `/e2e-audit` run ends with it, whether or not it filed anything.
 
-  timing <repo-root> [--log <path>]
+  timing <repo-root> [--log <path>] [--suite-nodes N]
   failures <repo-root> [--log <path>] [--prs N] [--no-gh]
   routing <repo-root> [--prs N] [--until <ISO>] [--config <toml>] [--proposed <toml>]
   parallel <repo-root> [--log <path>]
@@ -79,7 +79,10 @@ Subcommands:
       read from the last completed gate run's progress log (`.fleet.toml`
       `[e2e] progress_log`, else `[e2e] junit_xml`, else `--log`). JSON to
       stdout, always exit 0; no source, no completed run or no e2e node is
-      `status: unknown` with the reason, never an estimate. `routing` imports
+      `status: unknown` with the reason, never an estimate. `timing` holds the run
+      to the suite's collected node count (`--suite-nodes`, else a best-effort
+      `pytest --collect-only`): more than 10% apart is `status: stale`, and an
+      unmeasured count is `freshness: unchecked` (fleet-config#1175). `routing` imports
       the repo's own `scripts/classify_e2e.py` read-only; `parallel` reads the
       test tree statically and projects serial durations. The logic lives in
       `e2e_value.py` (see its docstring for the shapes); it never starts a gate.
@@ -769,6 +772,8 @@ def main(argv: Optional[List[str]] = None) -> int:
     p_timing = sub.add_parser("timing", help="where the last completed gate run's time went")
     p_timing.add_argument("repo", type=Path)
     p_timing.add_argument("--log", type=Path, default=None)
+    p_timing.add_argument("--suite-nodes", type=int, default=None,
+                          help="the suite's collected node count (default: measured with pytest --collect-only)")
 
     p_fail = sub.add_parser("failures", help="failure history from the gate logs and GitHub text")
     p_fail.add_argument("repo", type=Path)
@@ -797,7 +802,9 @@ def main(argv: Optional[List[str]] = None) -> int:
     if args.cmd == "record":
         return cmd_record(repo)
     if args.cmd == "timing":
-        print(json.dumps(e2e_value.timing(repo, _test_dirs(repo), args.log)))
+        test_dirs = _test_dirs(repo)
+        suite_nodes = args.suite_nodes if args.suite_nodes is not None else collect_pytest_node_count(repo, test_dirs)
+        print(json.dumps(e2e_value.timing(repo, test_dirs, args.log, suite_nodes)))
         return 0
     if args.cmd == "routing":
         print(json.dumps(e2e_value.routing_report(repo, args.prs, args.until, args.config, args.proposed,
