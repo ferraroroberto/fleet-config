@@ -646,6 +646,29 @@ check(slp["paid_s"] == 0.5 and tmr["nodes"] == 2 and tmr["measured_s"] == 4.0 an
 check(next(r for r in ranked if r["scope"] == "_wait_up")["nodes"] is None,
       "a wait in a shared conftest is not attributed to tests")
 
+# poll loops (fleet-config#1165, facilitation-suite#165): a sleep inside a condition loop ends when the condition holds,
+# so it costs its interval at most. 6 of 11 listed sleeps were that; the "paid" figure overstated the saving 1.75x.
+pr_ = Path(tempfile.mkdtemp(prefix="e2e-value-pollsleep-"))
+(pr_ / "tests" / "e2e").mkdir(parents=True)
+(pr_ / "tests" / "e2e" / "test_poll.py").write_text(
+    "import time\n\n\n"
+    "def test_deadline(page):\n    deadline = time.monotonic() + 5\n    while time.monotonic() < deadline:\n"
+    "        if ready():\n            break\n        time.sleep(0.2)\n\n\n"
+    "def test_cond(page):\n    while not ready():\n        page.wait_for_timeout(300)\n\n\n"
+    "def test_forever(page):\n    while True:\n        time.sleep(0.4)\n\n\n"
+    "def test_taps(page):\n    for _ in range(5):\n        time.sleep(0.15)\n\n\n"
+    "def test_fixed(page):\n    time.sleep(0.6)\n", encoding="utf-8")
+psites = {s["scope"]: s for s in v.wait_sites(pr_, ["tests/e2e"])}
+check({k: psites[k]["kind"] for k in psites} == {"test_deadline": "poll-sleep", "test_cond": "poll-sleep", "test_forever": "sleep",
+                                                  "test_taps": "sleep", "test_fixed": "sleep"},
+      f"a sleep in a loop that can end on its condition is a poll, not a fixed wait; a for-loop or endless loop sleep still is one -- "
+      f"{ {k: s['kind'] for k, s in psites.items()} }")
+pn = {f"tests/e2e/test_poll.py::{t}[chromium]": 1.0 for t in ("test_deadline", "test_cond", "test_forever", "test_taps", "test_fixed")}
+prk = {r["scope"]: r for r in v.rank_waits(list(psites.values()), pn, pr_)}
+check(prk["test_deadline"]["paid_s"] is None and prk["test_deadline"]["ceiling"] is True and prk["test_fixed"]["paid_s"] == 0.6
+      and [r["scope"] for r in v.rank_waits(list(psites.values()), pn, pr_)][-2:] == ["test_deadline", "test_cond"],
+      f"a poll sleep is never priced as paid seconds and ranks after every fixed wait -- {prk['test_deadline']}")
+
 # slow_nodes + app_timers (fleet-config#1157, photo-ocr#127): a 1 s poll in app source (`poll.js`) was waited out twice
 # by one test, invisible to a scan of the test tree. The junit showed it: 2.6 s against a 0.2 s median.
 sn = v.slow_nodes({"tests/e2e/test_a.py::test_boot[chromium]": 7.1, "tests/e2e/test_a.py::test_fast[chromium]": 0.2,

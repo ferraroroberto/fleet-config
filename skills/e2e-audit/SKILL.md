@@ -106,9 +106,11 @@ Fields returned:
   check the LLM layer must sanity-check before filing (step 4).
 - **`waits`** — every clock wait in the test tree, with file, line,
   milliseconds and enclosing scope: `sleep` (`wait_for_timeout`,
-  `time.sleep`), `page-timer` (a `setTimeout` in an init script),
-  `poll-constant` (`POLL_MS = 15_000`), `long-timeout` (`timeout=` of 10 s or
-  more). Static, so present even with no timing source; `timing` ranks the
+  `time.sleep`), `poll-sleep` (the same call inside a `while` loop that can
+  end on its condition: it costs its interval at most, never `paid_s`, and
+  ranks last like a ceiling), `page-timer` (a `setTimeout` in an init
+  script), `poll-constant` (`POLL_MS = 15_000`), `long-timeout` (`timeout=`
+  of 10 s or more). Static, so present even with no timing source; `timing` ranks the
   same list by seconds (step 3b).
 - **`vacuous_candidates`** — negative text assertions
   (`not_to_contain_text("x")`, `assert "x" not in`) whose needle appears
@@ -138,7 +140,7 @@ Both read the gate's own record: `.fleet.toml` `[e2e] progress_log` (a START/DON
 
 Rank by **executed nodes and measured seconds**, never collected nodes. In both #1134 lanes the time was in waits: a real 15 s poll a test waited out (about 29 s saved with `page.clock`, home-automation#783) and nine copies of a fixed 750 ms page timer (16 s, home-automation#789), while folding 34 nodes saved about 7–10 s.
 
-- **(a0) Waits first.** Confirm each `waits` entry before proposing any fold. A poll-driven test → drive it with `page.clock` (`install()`, then `run_for(<poll ms>)`) and keep a red proof that disabling the poll fails it. A loading state → a fetch held until the test releases it (an init script that wraps `fetch` in a promise the test resolves), instead of a fixed timer. A `long-timeout` is only a hint, and never the story's measured cost: task-os's archive story had 30 s `timeout=` ceilings and 1.5 s of real waits in its 20.9 s (task-os#284), and the sleeps and polls the scan listed saved about 3 s in all. Read whether the test really waits that long, and price a wait by `paid_s`. **A wait that lives in app source is invisible to `waits`** (photo-ocr#127: a 1 s `sleep(1000)` status poll in `poll.js`, waited out twice by one test, was 4 of the 7 s saved, and only the JUnit showed it: 2.6 s against a 0.2 s median). For every `slow_nodes` entry, read the test, then match it to an `app_timers` entry its stubbed endpoints would trigger; a poll or timer it waits out is a wait to drive with `page.clock`, priced by the node's seconds. A `slow_nodes` entry with no timer behind it is a candidate for the fixer to read, never a number to file.
+- **(a0) Waits first.** Confirm each `waits` entry before proposing any fold. A poll-driven test → drive it with `page.clock` (`install()`, then `run_for(<poll ms>)`) and keep a red proof that disabling the poll fails it. A loading state → a fetch held until the test releases it (an init script that wraps `fetch` in a promise the test resolves), instead of a fixed timer. A `long-timeout` is only a hint, and never the story's measured cost: task-os's archive story had 30 s `timeout=` ceilings and 1.5 s of real waits in its 20.9 s (task-os#284), and the sleeps and polls the scan listed saved about 3 s in all. Read whether the test really waits that long, and price a wait by `paid_s`. A `poll-sleep` is a deadline poll, not a wait: leave it unless the loop's own condition is wrong (facilitation-suite#165: 6 of 11 sleeps were polls, and the 3.5 s "paid" figure was about 2 s measured). A fixed wait next to an opt-in capture (`time.sleep(0.6)` before a `shot()` that only runs under an env flag) is paid on every run though no shot is taken: move it into the capture helper (`shot(..., settle=0.6)`). **A wait that lives in app source is invisible to `waits`** (photo-ocr#127: a 1 s `sleep(1000)` status poll in `poll.js`, waited out twice by one test, was 4 of the 7 s saved, and only the JUnit showed it: 2.6 s against a 0.2 s median). For every `slow_nodes` entry, read the test, then match it to an `app_timers` entry its stubbed endpoints would trigger; a poll or timer it waits out is a wait to drive with `page.clock`, priced by the node's seconds. A `slow_nodes` entry with no timer behind it is a candidate for the fixer to read, never a number to file.
 - **(a) Confirm each cluster.** Read the colliding tests' actual
   bodies/selectors. A genuine near-duplicate (same view, same assertion, same
   setup) is a merge candidate — say which to keep. A coincidental name

@@ -31,7 +31,7 @@ With none of them, every verdict is `unknown (no timing source)`.
     modules       [{module, seconds, nodes, page_loads, shots, pty_refs, real_agent}]  heaviest first
     tail          {slowest_n, slowest_share, top5pct_n, top5pct_share, max_s}
     first_node    {nodeid, seconds, median_s, boot}        carries the session boot; boot: single-run | repeated | not-repeated
-    waits         [{file, line, kind, ms, scope, text, nodes, measured_s, paid_s, ceiling}]  paid seconds first, `timeout=` ceilings last
+    waits         [{file, line, kind, ms, scope, text, nodes, measured_s, paid_s, ceiling}]  paid seconds first, `timeout=` ceilings and `poll-sleep`s last
     slow_nodes    [{nodeid, seconds, median_s}]            executed nodes over 10x the median and 1 s, boot node left out
     app_timers    [{file, line, kind, ms, text}]           literal 1 s+ timers in app JS (tests, vendored, minified left out)
     failures      [{test, nodeid, projection, date, source, when, step}]  every log on disk
@@ -505,10 +505,36 @@ def _scopes(text: str) -> List[Tuple[int, int, str]]:
     return sorted(out, key=lambda s: (s[0], -s[1]))
 
 
+def _poll_loops(text: str) -> List[Tuple[int, int]]:
+    """`(first_line, last_line)` of every `while` loop that can end on its own condition.
+
+    A loop whose test is not a bare `True`, or whose body can `break`, `return`
+    or `raise`, stops as soon as the condition it waits for holds. A `for` loop
+    over taps and an endless `while True` with no exit are not polls.
+    """
+    import ast
+    try:
+        tree = ast.parse(text)
+    except SyntaxError:
+        return []
+    out = []
+    for n in ast.walk(tree):
+        if not isinstance(n, ast.While):
+            continue
+        endless = isinstance(n.test, ast.Constant) and n.test.value is True
+        exits = any(isinstance(c, (ast.Break, ast.Return, ast.Raise)) for b in n.body for c in ast.walk(b))
+        if not endless or exits:
+            out.append((n.lineno, n.end_lineno or n.lineno))
+    return out
+
+
 def wait_sites(repo_root: Path, test_dirs: Sequence[str]) -> List[Dict[str, object]]:
     """Every place the test tree waits by the clock, with its milliseconds and enclosing scope.
 
-    `sleep` (`wait_for_timeout`, `time.sleep`) is paid in full on every run;
+    `sleep` (`wait_for_timeout`, `time.sleep`) is paid in full on every run,
+    except one inside a condition loop: that is `poll-sleep`, which ends when
+    the condition holds and costs its interval at most per check
+    (facilitation-suite#165: 6 of 11 listed sleeps, the saving overstated 1.75x);
     `page-timer` (a `setTimeout` in an init script or evaluated JS) is paid
     whenever a test waits for its effect; `poll-constant` (`POLL_MS = 15_000`)
     and `long-timeout` (`timeout=` of 10 s or more) mark a test that may wait
@@ -528,8 +554,11 @@ def wait_sites(repo_root: Path, test_dirs: Sequence[str]) -> List[Dict[str, obje
                  if int(m.group(1).replace("_", "")) >= LONG_TIMEOUT_MS]
         hits += [(m.start(2), "poll-constant", int(m.group(2).replace("_", ""))) for m in _POLL_CONST_RE.finditer(text)
                  if int(m.group(2).replace("_", "")) >= POLL_CONSTANT_MIN_MS]
+        loops = _poll_loops(text)
         for off, kind, ms in sorted(hits):
             line = text.count("\n", 0, off) + 1
+            if kind == "sleep" and any(a <= line <= b for a, b in loops):
+                kind = "poll-sleep"
             inner = [name for a, b, name in scopes if a <= line <= b]
             out.append({"file": rel, "line": line, "kind": kind, "ms": ms, "scope": inner[-1] if inner else None,
                         "text": text.splitlines()[line - 1].strip()[:120]})
@@ -626,7 +655,7 @@ def rank_waits(sites: List[Dict[str, object]], nodes: Dict[str, float], repo_roo
                 row["paid_s"] = round(int(site["ms"]) / 1000 * len(vals), 1)  # type: ignore[call-overload]
         out.append(row)
     for r in out:
-        r["ceiling"] = r["kind"] == "long-timeout"
+        r["ceiling"] = r["kind"] in ("long-timeout", "poll-sleep")
 
     def cost(r: Dict[str, object]) -> float:
         """What the wait is known to cost: seconds paid, else the nodes' seconds, else its own length."""
@@ -637,7 +666,7 @@ def rank_waits(sites: List[Dict[str, object]], nodes: Dict[str, float], repo_roo
         return int(r["ms"]) / 1000  # type: ignore[call-overload]
 
     # A fixed sleep or page timer ranks by the seconds it is paid, a poll constant by its nodes' seconds. A
-    # `timeout=` is a ceiling the test may never reach, so it ranks after every wait that is actually paid
+    # `timeout=` or a poll-loop sleep is a ceiling the test may never reach, so it ranks after every wait that is actually paid
     # (task-os#284: a story with 30 s ceilings had 1.5 s of real waits in its 20.9 s).
     return sorted(out, key=lambda r: (bool(r["ceiling"]), -cost(r)))
 
