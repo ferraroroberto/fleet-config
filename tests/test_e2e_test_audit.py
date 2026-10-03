@@ -381,4 +381,33 @@ vac_texts["tests/e2e/test_energy.py"] = vac_texts["tests/e2e/test_energy.py"].re
     '"portal timed out"}', '"portal timed out", "host": "192.0.2.90"}')
 check(m.vacuous_candidates(vac_files, vac_texts) == [], "once the mock serves the needle, the check can fail: no candidate")
 
+# ---- timing CLI: the suite's node count reaches the staleness check (fleet-config#1175) -----
+
+import contextlib
+import io
+import json
+import tempfile
+
+tr = Path(tempfile.mkdtemp(prefix="e2e-audit-timing-"))
+(tr / ".fleet.toml").write_text('[e2e]\nprogress_log = "gate.log"\n', encoding="utf-8")
+(tr / "gate.log").write_text(
+    "verify-before-ship run started 2026-10-01 10:00:00\n"
+    "[10:00:00 +    0,0s] ==> phase: pytest e2e (tests/e2e)...\n"
+    "[10:00:00 +    0.1s] START tests/e2e/test_a.py::test_x[chromium]\n"
+    "[10:00:02 +    2.0s] DONE  tests/e2e/test_a.py::test_x[chromium] (2.0s)\n"
+    "[10:00:02 +    2.0s] pytest session finished (exit status 0)\n", encoding="utf-8")
+
+
+def _timing_cli(*extra: str) -> dict:
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        rc = m.main(["timing", str(tr), *extra])
+    return {"rc": rc, **json.loads(buf.getvalue())}
+
+
+stale = _timing_cli("--suite-nodes", "5")
+check(stale["rc"] == 0 and stale["status"] == "stale" and stale["freshness"]["suite_nodes"] == 5,
+      f"`timing --suite-nodes 5` over a 1-node run reports it stale -- {stale['status']}")
+check(_timing_cli("--suite-nodes", "1")["status"] == "ok", "`timing --suite-nodes 1` over a 1-node run is fresh")
+
 _h.report_and_exit("e2e_test_audit")
