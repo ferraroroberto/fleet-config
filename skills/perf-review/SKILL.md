@@ -73,7 +73,12 @@ What it measures:
     taken three times, each in a fresh context, and scored by its median.
   - "Ready" is the target's declared `ready_selector` being visible, else
     first contentful paint.
-  - "Boot data" is when the last `/api/` response of the boot landed.
+  - "Boot data" is when the last `/api/` response of the boot landed. An API
+    path is any path with an `/api/` segment, so an app mounted under
+    `/admin/api/` is measured too (local-llm-hub#644: with a leading-`/api/`
+    match, `warm.data_ms` and `endpoints.api_p95_ms` read unmeasured and the
+    `SPLIT` line `api=0 KB`). A boot-data check still `unmeasured` is a
+    measurement gap, never a pass.
 - **HTTP leg** (stdlib):
   - `/` plus every query-less `/api/` GET the boot made, each at the poll
     interval the page was seen using.

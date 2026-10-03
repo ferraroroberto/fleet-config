@@ -10,7 +10,7 @@ Three legs, written to `<out>/load.json`:
                 throttled and cannot map a hostname, so it reports cold only.
   android_cold  Chromium, "Pixel 7", fresh context, CDP-throttled to the
                 phone profile; stays on the page `settle_s` to learn how
-                often the app polls each `/api/` path.
+                often the app polls each API path (`/api/` in the path, so `/admin/api/` counts).
   android_warm  a new page in the same context — a PWA relaunch, with the
                 HTTP cache and localStorage the cold leg left behind.
 
@@ -63,6 +63,15 @@ SAMPLE_SETTLE_MS = 2000  # an extra cold sample only needs its paint metrics, no
 TOP_RESPONSES = 5  # how many of the largest responses a leg keeps for the transfer checks
 
 
+def is_api_path(path: str) -> bool:
+    """Whether a request path is the app's API: it has an `/api/` segment, wherever the app mounts it.
+
+    local-llm-hub serves its API under `/admin/api/`; matching only a leading `/api/` counted no boot call there
+    (fleet-config#1170), so the boot-data and API checks came back unmeasured and the warm split read `api=0 KB`.
+    """
+    return "/api/" in path
+
+
 def _path(url: str, base: str) -> str:
     parts = urlsplit(url)
     return parts.path if url.startswith(base) else "(external)"
@@ -106,7 +115,7 @@ def webkit_cold(pw, url: str, base: str, a) -> dict:
             total += r.sizes().get("responseBodySize", 0)
             p = _path(r.url, base)
             done = r.timing["startTime"] + r.timing["responseEnd"] - origin
-            if p.startswith("/api/") and done <= a.boot_window_ms:
+            if is_api_path(p) and done <= a.boot_window_ms:
                 api_done.setdefault(p, done)
         leg.update(status="ok", requests=len(seen), bytes=total,
                    data_ms=round(max(api_done.values())) if api_done else None, non_get=non_get)
@@ -152,10 +161,10 @@ class CdpLeg:
         t0 = min((r["start"] for r in rows), default=0)
         api_done = {}
         for r in sorted(rows, key=lambda r: r["start"]):
-            if r["path"].startswith("/api/") and "end" in r and (r["end"] - t0) * 1000 <= boot_window_ms:
+            if is_api_path(r["path"]) and "end" in r and (r["end"] - t0) * 1000 <= boot_window_ms:
                 api_done.setdefault(r["path"], (r["end"] - t0) * 1000)
         net = [r for r in rows if not r["cached"]]
-        api_bytes = sum(r["bytes"] for r in net if r["path"].startswith("/api/"))
+        api_bytes = sum(r["bytes"] for r in net if is_api_path(r["path"]))
         return {"requests": len(rows), "from_cache": len(rows) - len(net),
                 "bytes": sum(r["bytes"] for r in net),
                 # live data re-fetched vs everything else (assets, entry document) that missed the cache: different fixes
@@ -179,7 +188,7 @@ class CdpLeg:
         """Every `/api/` path seen: its poll interval (median gap between requests) and whether it carried a query."""
         starts, query = {}, {}
         for r in self.rows.values():
-            if r.get("path", "").startswith("/api/") and r.get("method") == "GET":
+            if is_api_path(r.get("path", "")) and r.get("method") == "GET":
                 starts.setdefault(r["path"], []).append(r["start"])
                 query[r["path"]] = query.get(r["path"], False) or r["query"]
         out = {}
