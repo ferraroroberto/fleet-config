@@ -217,6 +217,10 @@ fcp, fv = ready_checks({"ready_by": "fcp"}, {"ready_by": "fcp"})
 check("ready.selector" not in fcp, "no declared selector -> no selector check (ready falls back to first contentful paint)")
 check("first contentful paint" in report.render_body(fv, "r", "b") and "ready_selector" in report.render_body(fv, "r", "b"),
       "the body warns that FCP can be a painted shell and asks for a declared selector")
+# photo-ocr#128: a landing view with no data-dependent card (a static capture surface) has nothing honest to wait
+# for; the hint names the fallback instead of leaving the owner to invent one.
+check("primary action" in report.render_body(fv, "r", "b"),
+      "the body says what to declare when the landing view has no card that needs live data")
 errored, _ = ready_checks({"ready_by": "selector"}, {"ready_by": "selector"}, cold_status="error")
 check("ready.selector" not in errored or errored["ready.selector"]["status"] != "pass",
       "a failed cold leg never lets the selector check pass")

@@ -113,6 +113,12 @@ Reading the cold numbers (fleet-config#1139):
 - The load profile is a **coarse-pointer phone**, so a desktop-first app can
   land on a different tab than a human sees on the PC (task-os: Today, not
   Board). Declare the selector for the tab the phone lands on.
+- **A landing view with no data-dependent card** (a capture surface whose
+  config and history fill other tabs) has nothing honest to wait for.
+  Declare its **primary action**, the control the user needs to start the
+  task (photo-ocr: the Add photo button, `ready.selector` visible). Say in
+  the report that ready then barely moves from first contentful paint, so a
+  green ready check on such an app says less than one on a data card.
 - **Declaring or changing `ready_selector` moves the baseline.** "Ready"
   goes from a painted shell (first contentful paint) to data visible, so the
   number rises with no code change (task-os cold ready: 516 to 1967 ms). The

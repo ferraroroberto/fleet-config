@@ -245,7 +245,8 @@ def render_body(v: dict, run_id: str, build: Optional[str]) -> str:
     if v.get("ready_by") == "fcp":
         lines += ["", "No `ready_selector` is declared, so \"ready\" is first contentful paint, which can go green on a "
                       "painted shell before any card has data. Declare the first card that needs live data, one that "
-                      "is visible on the landing view."]
+                      "is visible on the landing view; with no such card, the landing view's primary action (the "
+                      "button that starts the task)."]
     moved = (v.get("diff") or {}).get("ready_baseline_changed")
     if moved:
         lines += ["", f"\"Ready\" changed from {_BASIS[moved['from']]} to {_BASIS[moved['to']]} since the previous run, so the "
