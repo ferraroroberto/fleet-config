@@ -255,6 +255,13 @@ def render_body(v: dict, run_id: str, build: Optional[str]) -> str:
     if moved:
         lines += ["", f"\"Ready\" changed from {_BASIS[moved['from']]} to {_BASIS[moved['to']]} since the previous run, so the "
                       "ready times do not compare with it. A rise is the stricter definition, not a regression."]
+    dep = v.get("deploy") or {}
+    if dep.get("state") in ("behind", "differs"):
+        by = f" by {dep['ahead']} commit(s)" if dep.get("ahead") else ""
+        lines += ["", f"⚠️ The served build (`{dep.get('live')}`) is behind HEAD{by}" if dep.get("state") == "behind" else
+                  f"⚠️ The served build (`{dep.get('live')}`) is not an ancestor of HEAD (`{dep.get('head')}`)",
+                  "", "A fix merged since is not live in this run: restart the app per the repo's own instructions, then re-measure "
+                      "before reading any result as \"not fixed\"."]
     slower = (v.get("diff") or {}).get("slower")
     if slower:
         lines += ["", "Slower than the previous run:", ""] + [
