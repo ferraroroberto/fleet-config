@@ -731,6 +731,17 @@ claims = v.runtime_claims(
 check([c["claimed_min"] for c in claims] == [3.5],
       f"only the measured runtime is a claim: thresholds, history and figures far from a gate word are not -- {claims}")
 
+# One bullet carrying a headline figure, its phase figures and a history list produced five claims, each paired with the nearest
+# span (fleet-config#1175, app-launcher#1375): only the headline and the figures with a span word right before them are claims.
+bullet = ("- **Full-suite runtime ~12.5 min** on this dev box (re-measured at 475 executed nodes: non-e2e ~3.6 min, browser parallel pass "
+          "~8.5 min, serial pass ~0.4 min; the same suite before the trims was ~13.9 min, at 620 dual-projection nodes ~22 min; `4` workers "
+          "≈ 17 min)\n")
+bc = v.runtime_claims(bullet, "CLAUDE.md")
+check([c["claimed_min"] for c in bc] == [12.5, 3.6, 8.5],
+      f"the headline and the figures a span word precedes are claims; a serial-pass, a history and a scenario figure are not -- {bc}")
+check([c["claimed_min"] for c in v.runtime_claims("Typical green: **~4 min** (deps ~1 min, the non-e2e suite ~3 min).\n", "CLAUDE.md")] == [4.0, 3.0],
+      "a figure with a gate word right before it stays a claim; `deps ~1 min` is not")
+
 # waits: fixed sleeps, page timers, real poll constants and long timeouts, with what each one is paid.
 wr = Path(tempfile.mkdtemp(prefix="e2e-value-waits-"))
 (wr / "tests" / "e2e").mkdir(parents=True)
