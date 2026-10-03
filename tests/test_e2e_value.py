@@ -242,6 +242,20 @@ check(rr["gate"] == {"verdict": "not-consumed", "reason": rr["gate"]["reason"], 
 check(rr["counterfactual"]["changed"] == [{"pr": 2, "from": "full", "to": "skip", "surface": ""}],
       f"--proposed lists every PR whose tier changes -- {rr['counterfactual']}")
 
+# A merged PR whose file list is empty (GitHub answers 422 when it cannot generate the diff) is unreadable, never `full`
+# (fleet-config#1138): `classify([])` fails safe to `full`, which put 46 of 60 PRs above a 15-PR browser-relevant count.
+ru = v.routing_report(rt, pr_list=prs + [{"number": 6, "files": []}, {"number": 7, "files": []}],
+                      proposed_path=rt / "proposed.toml")
+check(rr["prs_unreadable"] == 0 and ru["prs_unreadable"] == 2 and ru["prs"] == 7,
+      f"PRs with no file list are counted in prs_unreadable, beside the total -- {ru.get('prs')} / {ru.get('prs_unreadable')}")
+check(ru["tiers"] == rr["tiers"] and ru["browser_relevant_full"] <= ru["browser_relevant"],
+      f"an unreadable PR is in no tier, so browser_relevant_full cannot exceed browser_relevant -- {ru['tiers']}")
+check(sum(ru["tiers"].values()) == ru["prs"] - ru["prs_unreadable"]
+      and [r["pr"] for r in ru["per_pr"]] == [r["pr"] for r in rr["per_pr"]],
+      "the tiers sum to the readable PRs; per_pr lists no unreadable PR")
+check(ru["counterfactual"]["changed"] == rr["counterfactual"]["changed"],
+      "an unreadable PR is left out of the --proposed counterfactual")
+
 # Import holes (task-os#287): files the suite imports that the table routes to `none`.
 for rel, body in {
     "tests/e2e/test_a.py": "import os\nfrom tests.fixtures.fake import Fake\nfrom tests.conftest import write_config\nimport static.helper\n",
