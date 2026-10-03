@@ -109,7 +109,8 @@ Fields returned:
   `time.sleep`), `poll-sleep` (the same call inside a `while` loop that can
   end on its condition, or a `for` retry loop whose `if` breaks or returns: it costs its interval at most, never `paid_s`, and
   ranks last like a ceiling), `page-timer` (a `setTimeout` in an init
-  script), `poll-constant` (`POLL_MS = 15_000`), `long-timeout` (`timeout=`
+  script; `unawaited: true` when its callback is empty, a no-op handle the
+  test never waits for: never priced, ranked last, app-launcher#1375), `poll-constant` (`POLL_MS = 15_000`), `long-timeout` (`timeout=`
   of 10 s or more). Static, so present even with no timing source; `timing` ranks the
   same list by seconds (step 3b).
 - **`slow_fixtures`** — fixtures and helpers (never tests) holding a

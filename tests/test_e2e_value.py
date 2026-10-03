@@ -775,6 +775,27 @@ check(prk["test_deadline"]["paid_s"] is None and prk["test_deadline"]["ceiling"]
       and {r["scope"] for r in v.rank_waits(list(psites.values()), pn, pr_)[-4:]} == {"test_deadline", "test_cond", "_wait_for_calls", "test_for_break"},
       f"a poll sleep is never priced as paid seconds and ranks after every fixed wait -- {prk['test_deadline']}")
 
+# Unawaited timers (fleet-config#1175, app-launcher#1375): `terminal.batchQuietTimer = setTimeout(function () {}, 60000);` is a no-op
+# handle the test never waits for, and the audit ranked it first at 120 s paid for a node that measured 5 s.
+ut = Path(tempfile.mkdtemp(prefix="e2e-value-noop-"))
+(ut / "tests" / "e2e").mkdir(parents=True)
+(ut / "tests" / "e2e" / "test_probe.py").write_text(
+    "def test_handle(page):\n"
+    "    page.evaluate('''() => { terminal.quiet = setTimeout(function () {}, 60000); }''')\n\n\n"
+    "def test_arrow(page):\n"
+    "    page.evaluate('''() => { terminal.q2 = setTimeout(() => {}, 45000); }''')\n\n\n"
+    "def test_real(page):\n"
+    "    page.add_init_script('''setTimeout(function () { window.ready = true; }, 750);''')\n", encoding="utf-8")
+usites = {s["scope"]: s for s in v.wait_sites(ut, ["tests/e2e"])}
+check(usites["test_handle"]["unawaited"] is True and usites["test_arrow"]["unawaited"] is True and usites["test_real"]["unawaited"] is False,
+      f"a setTimeout with an empty callback is flagged unawaited; one that does something is not -- {usites}")
+unodes = {"tests/e2e/test_probe.py::test_handle[chromium]": 5.0, "tests/e2e/test_probe.py::test_arrow[chromium]": 4.0,
+          "tests/e2e/test_probe.py::test_real[chromium]": 1.0}
+urank = v.rank_waits(list(usites.values()), unodes, ut)
+check(urank[0]["scope"] == "test_real" and urank[0]["paid_s"] == 0.8
+      and all(r["paid_s"] is None and r["unawaited"] for r in urank[1:]) and [r["scope"] for r in urank[1:]][0] in ("test_handle", "test_arrow"),
+      f"an unawaited timer is never priced as paid seconds and ranks after every real wait -- {[(r['scope'], r['paid_s']) for r in urank]}")
+
 # slow_fixtures (fleet-config#1170, local-llm-hub#644): 40 s of a 76 s run was a session fixture's `httpx.get(..., timeout=_WARMUP_TIMEOUT)`
 # with `_WARMUP_TIMEOUT = 90.0` (seconds). `waits` read `timeout=` as integer milliseconds, so a float-seconds timeout never matched
 # and the audit ranked 4 s of sleeps first.
