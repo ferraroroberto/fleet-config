@@ -1504,8 +1504,15 @@ def routing_report(repo_root: Path, prs: int = 60, until: Optional[str] = None,
     narrowed: List[Dict[str, object]] = []
     rows = []
     browser_relevant = 0
+    unreadable_prs = 0
     for pr in pr_list:
         files = [str(f) for f in pr["files"]]  # type: ignore[union-attr]
+        if not files:
+            # GitHub answers 422 for a diff it cannot generate and `gh` returns `files: []`; `classify([])` fails
+            # safe to `full`, which counted every such PR as a full-tier one. No file list is no evidence of a tier
+            # -- its own count, in no tier and no counterfactual (fleet-config#1138).
+            unreadable_prs += 1
+            continue
         slashed = {f.replace("\\", "/") for f in files}
         touched = [sheet for sheet in declared if sheet in slashed] if by_sheet else []
         changes, unreadable = (pr_sheet_changes(mod, repo_root, str(pr.get("mergeCommit") or ""), touched)
@@ -1544,6 +1551,8 @@ def routing_report(repo_root: Path, prs: int = 60, until: Optional[str] = None,
     return {
         "status": "ok",
         "prs": len(pr_list),
+        # PRs `gh` returned with no file list: counted in `prs`, in no tier below (fleet-config#1138).
+        "prs_unreadable": unreadable_prs,
         # Whether the gate runs this routing at all: a `not-consumed` table saves the gate nothing (fleet-config#1134).
         "gate": {"verdict": gate, "reason": gate_reason, "readers": [{"file": f, "split": sp} for f, sp in readers]},
         "config": str(config_path or (repo_root / ".fleet.toml")), "config_source": config.source,
