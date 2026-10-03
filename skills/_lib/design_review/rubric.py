@@ -19,7 +19,7 @@ is the bounded checklist a fresh-context judge answers — #973):
     [params.<name>]  token = "components.hit-target.min", default = 44
     [[rules]]
       id, category, title, metric, fail_when, threshold, [threshold_token],
-      severity, standard, fix_template, owner, mockup, [devices], [screens]
+      severity, standard, fix_template, owner, mockup, [adopt], [devices], [screens]
     [[judgment]]
       id (J-NN), question, maps_to (rule ids a `no` may land on; [] means a
       `no` must be raised as an uncatalogued finding), screens (all | tabs | dialogs)
@@ -98,6 +98,7 @@ class Rule:
     owner: str
     mockup: str
     threshold_token: Optional[str] = None
+    adopt: str = ""
     devices: List[str] = field(default_factory=list)
     screens: List[str] = field(default_factory=list)
     params: Dict[str, object] = field(default_factory=dict)
@@ -193,6 +194,8 @@ def validate_rubric(data: dict, path: Optional[Path] = None) -> Rubric:
             raise RubricError(f"{rid}: fail_when={raw['fail_when']} needs a threshold or threshold_token")
         if raw["category"] not in weights:
             raise RubricError(f"{rid}: category {raw['category']!r} has no [weights] entry")
+        if raw.get("adopt") and raw["owner"] == "app":
+            raise RubricError(f"{rid}: adopt is for spec- or scaffold-owned rules; an app-owned rule is already the app's to fix")
         if raw["mockup"] != NO_MOCKUP and raw["mockup"] not in MOCKUP_IDS:
             raise RubricError(f"{rid}: mockup {raw['mockup']!r} is not in the library ({sorted(MOCKUP_IDS)})")
         for kind in raw.get("screens", []) or []:
@@ -203,6 +206,7 @@ def validate_rubric(data: dict, path: Optional[Path] = None) -> Rubric:
             fail_when=str(raw["fail_when"]),
             threshold=float(threshold) if isinstance(threshold, (int, float)) and not isinstance(threshold, bool) else None,
             threshold_token=str(raw["threshold_token"]) if raw.get("threshold_token") else None,
+            adopt=str(raw.get("adopt") or "").strip(),
             severity=str(raw["severity"]), standard=str(raw["standard"]), fix_template=str(raw["fix_template"]),
             owner=str(raw["owner"]), mockup=str(raw["mockup"]),
             devices=[str(d) for d in raw.get("devices", []) or []],

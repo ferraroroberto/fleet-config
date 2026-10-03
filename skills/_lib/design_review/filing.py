@@ -148,7 +148,8 @@ def summary_of(rule: dict, target: Optional[str] = None) -> dict:
     return {"id": str(rule.get("id")), "severity": str(rule.get("severity")), "owner": str(rule.get("owner")),
             "title": str(rule.get("title") or ""), "standard": str(rule.get("standard") or ""),
             "screens": len(ev), "worst": str(worst.get("screen")) if worst else None,
-            "apps": [target] if target else []}
+            "apps": [target] if target else [],
+            **({"adopt": str(rule.get("adopt"))} if rule.get("adopt") else {})}
 
 
 def route(doc: dict, accepted: Dict[str, dict], promoted: Optional[set] = None) -> Dict[str, list]:
@@ -156,10 +157,13 @@ def route(doc: dict, accepted: Dict[str, dict], promoted: Optional[set] = None) 
 
     `suppressed` = accepted in `.fleet.toml`; `unmatched` = accepted ids that
     fail nowhere this run; `promoted` = app-owned ids fleet mode lifted to the
-    scaffold list (left off this app's issue). Accepted wins over promoted:
+    scaffold list (left off this app's issue); `adopt` = failing spec- or
+    scaffold-owned rules whose fix already ships (the rubric's `adopt` hint),
+    which the app can apply today (fleet-config#1163, photo-ocr#129): they are
+    also on their owner's list, so the fleet digest still reads them there. Accepted wins over promoted:
     a repo that accepted a rule is not listed under it anywhere.
     """
-    out: Dict[str, list] = {"app": [], "spec": [], "scaffold": [], "suppressed": [], "unmatched": [], "promoted": []}
+    out: Dict[str, list] = {"app": [], "spec": [], "scaffold": [], "suppressed": [], "unmatched": [], "promoted": [], "adopt": []}
     failing = {str(r.get("id")): r for r in doc.get("rules") or [] if isinstance(r, dict) and r.get("status") == "fail"}
     for rid in accepted:
         if rid not in failing:
@@ -174,7 +178,9 @@ def route(doc: dict, accepted: Dict[str, dict], promoted: Optional[set] = None) 
             out["promoted"].append(s)
             continue
         out[owner].append(s)
-    for key in ("app", "spec", "scaffold", "suppressed", "promoted"):
+        if owner != "app" and s.get("adopt"):
+            out["adopt"].append(s)
+    for key in ("app", "spec", "scaffold", "suppressed", "promoted", "adopt"):
         out[key].sort(key=lambda s: (SEVERITY_ORDER.get(s["severity"], 9), s["id"]))
     return out
 
@@ -200,7 +206,7 @@ def _detail(s: dict) -> str:
     apps = list(s.get("apps") or [])
     if s.get("promoted") or len(apps) > 1:
         return f"fails in {len(apps)} apps: {', '.join(apps)}" if apps else "fails in several apps"
-    if apps and s.get("owner") in ("spec", "scaffold"):
+    if apps and s.get("owner") in ("spec", "scaffold") and not s.get("adopt"):
         return f"apps: {', '.join(apps)}"
     n = int(s.get("screens") or 0)
     worst = s.get("worst")
@@ -211,8 +217,11 @@ def finding_line(s: dict, ticked: bool = False) -> str:
     owner = s.get("owner") or "app"
     if s.get("promoted"):
         owner = "app → scaffold"
+    elif s.get("adopt"):
+        owner = f"{owner} → app"
     std = f" · {s['standard']}" if s.get("standard") else ""
-    return f"- [{'x' if ticked else ' '}] **{s['id']}** ({s.get('severity')}, {owner}) — {s.get('title')} — {_detail(s)}{std}"
+    fix = f" · adopt: {s['adopt']}" if s.get("adopt") else ""
+    return f"- [{'x' if ticked else ' '}] **{s['id']}** ({s.get('severity')}, {owner}) — {s.get('title')} — {_detail(s)}{std}{fix}"
 
 
 def uncatalogued_line(u: dict, ticked: bool = False) -> str:
@@ -367,6 +376,8 @@ def log_line(doc: dict, run_id: str, today: str, routed: Dict[str, list], filed:
         extra.append("accepted: " + ", ".join(s["id"] for s in routed["suppressed"]))
     if routed.get("spec") or routed.get("scaffold"):
         extra.append("owned elsewhere: " + ", ".join(s["id"] for s in routed.get("spec", []) + routed.get("scaffold", [])))
+    if routed.get("adopt"):
+        extra.append("adoptable here: " + ", ".join(s["id"] for s in routed["adopt"]))
     if routed.get("promoted"):
         extra.append("promoted to the fleet scaffold list: " + ", ".join(s["id"] for s in routed["promoted"]))
     if routed.get("unmatched"):
@@ -415,8 +426,9 @@ def file_body(doc: dict, run_id: str, root: Optional[Path], existing: str, today
         statuses[s["id"]] = "promoted"
     today = today or _dt.date.today().isoformat()
     stamp = f"{today} @ {str(doc.get('commit') or 'none')[:7]}"
-    line = log_line(doc, run_id, today, routed, len(routed["app"]))
-    body = merge_body(existing, routed["app"], unc, routed["suppressed"], statuses, line,
+    findings = sorted(routed["app"] + routed["adopt"], key=lambda s: (SEVERITY_ORDER.get(s["severity"], 9), s["id"]))
+    line = log_line(doc, run_id, today, routed, len(findings))
+    body = merge_body(existing, findings, unc, routed["suppressed"], statuses, line,
                       intro(doc.get("rubric_version"), doc.get("target")), stamp, doc.get("rubric_version"))
     return {"body": body, "routed": routed, "uncatalogued": unc, "problems": list(problems or []),
             "changed": changed_sections(existing, body) if existing else True}

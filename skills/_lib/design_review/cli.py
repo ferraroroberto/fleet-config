@@ -35,7 +35,7 @@ skill can read the result back without parsing JSON:
     render        REPORT= EVALUATE= TARGET= COMMIT= RUBRIC= GRADE= SCORE= FAILED=<n>/<total>
                   UNMEASURED=<n rules>|none CATEGORIES=<cat:grade,...> MOCKUPS=<ids>|none JUDGMENT=<status>|none
     file          FILE=dry-run|filed REPO= ISSUE=<n>|none CHANGED=yes|no FILED=<n> [ids] UNCATALOGUED=<n>
-                  ACCEPTED=<ids>|none SPEC=<ids>|none SCAFFOLD=<ids>|none [PROBLEM=...] BODY=<issue-body.md> URL=<url>|none
+                  ACCEPTED=<ids>|none SPEC=<ids>|none SCAFFOLD=<ids>|none ADOPT=<ids>|none [PROBLEM=...] BODY=<issue-body.md> URL=<url>|none
     fleet         FLEET_DIR= APPS=<n> APP=<name> probe= unmeasured= grade= score= failed= fixed= regressed= new= run=
                   MEASURED=<n> UNMEASURED_APPS=<name:reason,...>|none SPEC= SCAFFOLD= PROMOTED= JUDGMENT=skipped
                   FILING=dry-run|filed [ISSUE=<repo> <url|body path>] DIGEST= DIGEST_HTML=
@@ -400,11 +400,13 @@ def cmd_file(args: argparse.Namespace) -> int:
     print(f"REPO={out['repo']}")
     print(f"ISSUE={out['issue'] if out['issue'] is not None else 'none'}")
     print(f"CHANGED={'yes' if out['changed'] else 'no'}")
-    print(f"FILED={len(routed['app'])} {','.join(s['id'] for s in routed['app']) or ''}".rstrip())
+    filed = routed["app"] + routed["adopt"]
+    print(f"FILED={len(filed)} {','.join(s['id'] for s in filed) or ''}".rstrip())
     print(f"UNCATALOGUED={len(out['uncatalogued'])}")
     print(f"ACCEPTED={','.join(s['id'] for s in routed['suppressed']) or 'none'}")
     print(f"SPEC={','.join(s['id'] for s in routed['spec']) or 'none'}")
     print(f"SCAFFOLD={','.join(s['id'] for s in routed['scaffold']) or 'none'}")
+    print(f"ADOPT={','.join(s['id'] for s in routed['adopt']) or 'none'}")
     for p in out["problems"] + [f"accepted rule {rid} fails nowhere this run" for rid in routed["unmatched"]]:
         print(f"PROBLEM={p}")
     print(f"BODY={out['body_path']}")

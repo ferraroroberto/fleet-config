@@ -19,6 +19,7 @@ Run: `E:/automation/fleet-config/.venv/Scripts/python.exe tests/test_design_ledg
 from __future__ import annotations
 
 import json
+import tomllib
 import os
 import re
 import shutil
@@ -183,7 +184,7 @@ doc_d = _flip(violating, "TOUCH-02", "unmeasured")
 doc_d["diff"] = ledger.diff(doc_d, older)
 page = report.render_report(doc_d)
 check('id="diff"' in page and "compared against run prev" in page and "unmeasured (1)" in page and "TOUCH-02" in page
-      and "rubric changed from v1.0.0 to v1.7.5" in page, "the report renders the unmeasured bucket and the rubric-change note")
+      and "rubric changed from v1.0.0 to v1.7.6" in page, "the report renders the unmeasured bucket and the rubric-change note")
 doc_f = _clone(violating)
 doc_f["diff"] = ledger.diff(doc_f, None)
 check("first recorded run for this target" in report.render_report(doc_f), "a first run says so instead of 'compared against unknown'")
@@ -225,6 +226,27 @@ promoted = filing.route(violating, {}, promoted={"TOUCH-01"})
 check([s["id"] for s in promoted["promoted"]] == ["TOUCH-01"] and "TOUCH-01" not in [s["id"] for s in promoted["app"]], "a promoted id leaves the app list")
 check(filing.route(violating, {"TOUCH-01": {"reason": "r", "record": None}}, promoted={"TOUCH-01"})["promoted"] == [], "accepted wins over promoted")
 
+# fleet-config#1163 (photo-ocr#129): TYPE-02, A11Y-02 and COLOR-03 are owned by the scaffold/spec, but the fix already
+# ships (`_vendored/base`, `_vendored/text-size`, the `control-border` token), so the app can adopt it today. They
+# stay on the spec/scaffold lists (the fleet digest reads those) and are also routed to the app as adoptable.
+adopt_ids = [s["id"] for s in routed["adopt"]]
+check(adopt_ids == ["A11Y-02", "COLOR-03", "TYPE-02"] or sorted(adopt_ids) == ["A11Y-02", "COLOR-03", "TYPE-02"],
+      f"a failing spec/scaffold rule whose fix already ships is routed to the app as adoptable -- {adopt_ids}")
+check({"A11Y-02", "COLOR-03"} <= {s["id"] for s in routed["spec"]} and "TYPE-02" in [s["id"] for s in routed["scaffold"]],
+      "an adoptable rule also stays on its owner's list: the fleet digest still reads it there")
+check(all(s.get("adopt") for s in routed["adopt"]) and not any("adopt" in s for s in routed["app"] + [x for x in routed["spec"] if x["id"] not in adopt_ids]),
+      "only the adoptable summaries carry the hint; app-owned and nothing-to-adopt summaries are unchanged")
+check("NAV-01" not in adopt_ids and "TYPE-01" not in adopt_ids, "a spec gap with no existing fix (NAV-01, TYPE-01) is not offered as adoptable")
+check([s["id"] for s in filing.route(violating, {"COLOR-03": {"reason": "r", "record": None}})["adopt"]] == [i for i in adopt_ids if i != "COLOR-03"],
+      "an accepted rule is not offered as adoptable")
+_bad = tomllib.loads((REPO / "design.rubric.toml").read_text(encoding="utf-8"))
+next(r for r in _bad["rules"] if r["owner"] == "app")["adopt"] = "vendor something"
+try:
+    rb.validate_rubric(_bad)
+    check(False, "a rule owned by the app cannot declare an adopt hint")
+except rb.RubricError as exc:
+    check("adopt" in str(exc), f"a rule owned by the app cannot declare an adopt hint ({exc})")
+
 # ---- issue-body merge ----------------------------------------------------------------
 
 fb1 = filing.file_body(violating, "20260922T000001Z", acc_root, "", today="2026-09-22")
@@ -234,7 +256,12 @@ check(line.startswith("- [ ] **TOUCH-01** (P0, app) — ") and " — 2 screens, 
       f"finding line format: {line}")
 check("- **COMP-02** (P3, app)" in body1 and "accepted: icon steps are the upstream set (https://github.com/o/r/issues/1)" in body1
       and "- [ ] **COMP-02**" not in body1, "an accepted rule sits under Accepted, never under Findings")
-check(not any(f"**{s['id']}**" in body1 for s in routed["spec"] + routed["scaffold"]), "no spec/scaffold-owned line on the app body")
+check(not any(f"**{s['id']}**" in body1 for s in routed["spec"] + routed["scaffold"] if s["id"] not in adopt_ids),
+      "no spec/scaffold-owned line on the app body unless its fix already ships")
+cb = next(l for l in body1.splitlines() if "**COLOR-03**" in l)
+check(cb.startswith("- [ ] **COLOR-03** (P1, spec → app) — ") and "adopt: " in cb and "control-border" in cb,
+      f"an adoptable finding is a checkbox on the app issue, labelled spec → app, naming the existing fix: {cb}")
+check("adoptable here: " in body1 and "A11Y-02" in body1.split("adoptable here: ")[1].splitlines()[0], "the run log names what is adoptable here")
 check("## Review run log" in body1 and "run 20260922T000001Z" in body1 and "accepted: COMP-02" in body1 and "owned elsewhere:" in body1
       and "accepted but not failing: ZZZ-99" in body1, "the run log names the run, the accepted ids and what is owned elsewhere")
 check(not FORBIDDEN.search(body1), "the body carries no screenshot path, captured text sample or judge prose")
@@ -431,7 +458,7 @@ p3 = _run("render", str(r2 / "evaluate.json"))
 check(p3.returncode == 0 and "compared against run 20260922T100000Z" in (r2 / "report.html").read_text(encoding="utf-8"), "render from evaluate.json carries the diff into the page")
 p4 = _run("file", str(r2), "--repo", "o/r", "--projects-toml", str(fixture_toml), "--existing-body", str(WORK / "none.md"))
 k4 = _kv(p4)
-check(p4.returncode == 0 and k4.get("FILE") == "dry-run" and k4.get("ISSUE") == "none" and k4.get("URL") == "none" and k4.get("FILED", "").startswith(f"{N_APP - 1} ")
+check(p4.returncode == 0 and k4.get("FILE") == "dry-run" and k4.get("ISSUE") == "none" and k4.get("URL") == "none" and k4.get("FILED", "").startswith(f"{N_APP - 1 + len(adopt_ids)} ") and k4.get("ADOPT") == ",".join(adopt_ids)
       and k4.get("SPEC") and k4.get("SCAFFOLD") and (r2 / "issue-body.md").is_file(), f"file CLI dry run: FILED/SPEC/SCAFFOLD lines, body beside evaluate.json, no URL ({p4.stdout[-400:]}{p4.stderr[-300:]})")
 p5 = _run("file", str(r2), "--repo", "o/r", "--projects-toml", str(fixture_toml), "--existing-body", str(r2 / "issue-body.md"))
 check(p5.returncode == 0 and _kv(p5).get("CHANGED") == "no", "file CLI over its own previous body reports CHANGED=no")
