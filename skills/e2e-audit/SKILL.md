@@ -103,7 +103,9 @@ Fields returned:
   Context, not automatically a finding.
 - **`key_views_declared` / `coverage_gaps`** — only populated when the repo
   has a `## UX surface` block (`ux_surface.py`); a gap is a crude substring
-  check the LLM layer must sanity-check before filing (step 4).
+  check the LLM layer must sanity-check before filing (step 4). The root view
+  `/` is never listed: every test loads it (a single-page app declares it as
+  its one key view).
 - **`waits`** — every clock wait in the test tree, with file, line,
   milliseconds and enclosing scope: `sleep` (`wait_for_timeout`,
   `time.sleep`), `poll-sleep` (the same call inside a `while` loop that can

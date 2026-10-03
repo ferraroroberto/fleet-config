@@ -388,12 +388,16 @@ def coverage_gaps(key_views: List[str], all_test_text: str) -> List[str]:
     differently in test names) are possible — the LLM layer should sanity-
     check a reported gap before filing it as a finding, per the skill's
     materiality bar.
+
+    The root view `/` is never a gap (fleet-config#1175): every test loads it,
+    and a single-page app declares it as its one key view, which the old
+    `home` token guess reported on every run (app-launcher#1375).
     """
     gaps = []
     low_text = all_test_text.lower()
     for view in key_views:
-        token = view.strip("/").split("/")[0] or "home"
-        if token.lower() not in low_text:
+        token = view.strip("/").split("/")[0]
+        if token and token.lower() not in low_text:
             gaps.append(view)
     return gaps
 
