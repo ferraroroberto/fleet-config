@@ -286,6 +286,19 @@ def _hex(rgb: tuple) -> str:
     return "#" + "".join(f"{round(c):02x}" for c in rgb)
 
 
+def _d_toast_tinted(m: dict, rule: Rule, ctx: dict) -> Derived:
+    """Count of visible toasts drawn with a green (success) tint (#1200).
+
+    A screen with no toast says nothing about toasts, so zero is not applicable here, never a measured pass.
+    """
+    total, tinted = measure.metric_value(m, "feedback.toast_count"), measure.metric_value(m, "feedback.toasts_tinted")
+    if total is None or tinted is None:
+        return None, [], _section_reason(m, "feedback")
+    if not total:
+        return None, [], NOT_APPLICABLE
+    return float(len(tinted)), list(tinted), None  # type: ignore[arg-type]
+
+
 DERIVED: Dict[str, Callable[[dict, Rule, dict], tuple]] = {
     "targets.small_share": _d_small_share,
     "text.under14_share": _d_under14_share,
@@ -297,6 +310,7 @@ DERIVED: Dict[str, Callable[[dict, Rule, dict], tuple]] = {
     "a11y.zoom_locked_no_control": _d_zoom_locked,
     "nav.pane_header_hidden": _d_pane_header_hidden,
     "controls.switch_on_not_accent": _d_switch_on_accent,
+    "feedback.toast_tinted": _d_toast_tinted,
 }
 
 

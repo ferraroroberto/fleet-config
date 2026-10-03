@@ -323,6 +323,22 @@ check(_tok["status"] == "PASS" and (_tok.get("evidence") or "").endswith(":4"),
       f"desktop-measure: max-width through a 772px custom property is the fleet measure (#1087) -- {_tok}")
 check(near["switch-on-accent"]["status"] == "NA", "no switch -> NA")
 
+# toast-neutral: a toast is the neutral frosted surface; only an error tints (#1200)
+_t_ok = run_contracts(".toast { background: var(--tabbar-bg); border: 1px solid var(--tabbar-border); }\n"
+                      ".toast.error { background: var(--danger); border-color: var(--danger); }\n")["toast-neutral"]
+check(_t_ok["status"] == "PASS", f"toast-neutral: a neutral toast with a red error variant PASSes -- {_t_ok}")
+for _label, _css in (
+        ("a success-variant border on a token", ".toast { border: 1px solid var(--tabbar-border); }\n.toast.success { border-color: var(--success); }\n"),
+        ("a green hex border", ".toast { border: 1px solid #1a7f37; }\n"),
+        ("a green rgba fill (snackbar)", ".snackbar-ok { background: rgba(26, 127, 55, 0.2); }\n"),
+        ("the --on alias in a color-mix", ".toast-saved { background: color-mix(in srgb, var(--on) 20%, transparent); }\n")):
+    _t_bad = run_contracts(_css)["toast-neutral"]
+    check(_t_bad["status"] == "FAIL" and _t_bad.get("evidence"), f"toast-neutral: {_label} FAILs with evidence -- {_t_bad}")
+check(run_contracts(".toast { background: #0969da; }\n")["toast-neutral"]["status"] == "PASS",
+      "toast-neutral: a blue (non-green) colour is not this check's business")
+check(run_contracts(".row.success { border-color: var(--success); }\n")["toast-neutral"]["status"] == "NA",
+      "toast-neutral: green on a non-toast rule is not a toast; no toast rule -> NA")
+
 # --on is an app's own alias: judge the colour it resolves to, never the name (#1200)
 _on_acc = run_contracts(":root { --on: var(--accent); }\n.toggle.on { background: var(--on); }\n")["switch-on-accent"]
 check(_on_acc["status"] == "PASS", f"switch-on-accent: --on aliasing the accent PASSes -- {_on_acc}")
