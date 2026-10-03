@@ -220,6 +220,22 @@ _MEASURE_JS = r"""
     const small = []; const floor = params.hitMin - params.hitTol;
     rects.forEach(x => { const w = x.rr - x.l, h = x.b - x.t;
       if (w < floor || h < floor) small.push({sel: sel(x.el), label: txt(x.el).slice(0,30), w: Math.round(w), h: Math.round(h), vw: Math.round(x.vw), vh: Math.round(x.vh)}); });
+    // A target takes no tap outside an ancestor that clips its overflow: options scrolled out of a
+    // menu's max-height lie over the rows beneath it. The overlap test clips each rect to every such
+    // box on its containing-block chain (an absolutely positioned popup escapes a static clipper
+    // between it and its containing block); a target clipped away entirely leaves the test (#1155).
+    const cbParent = (e) => { const p = getComputedStyle(e).position; if (p === 'fixed') return null;
+      let a = e.parentElement;
+      if (p === 'absolute') while (a && a !== document.body && getComputedStyle(a).position === 'static' && getComputedStyle(a).transform === 'none') a = a.parentElement;
+      return a; };
+    const clipped = (x) => { let {l, t, rr, b} = x;
+      for (let a = cbParent(x.el); a && a !== document.body && a !== document.documentElement; a = cbParent(a)) {
+        const s = getComputedStyle(a); if (s.overflowX === 'visible' && s.overflowY === 'visible') continue;
+        const c = a.getBoundingClientRect(); const cl = c.left + a.clientLeft, ct = c.top + a.clientTop;
+        if (s.overflowX !== 'visible') { l = Math.max(l, cl); rr = Math.min(rr, cl + a.clientWidth); }
+        if (s.overflowY !== 'visible') { t = Math.max(t, ct); b = Math.min(b, ct + a.clientHeight); } }
+      return {...x, l, t, rr, b}; };
+    const hits = rects.map(clipped).filter(x => x.l < x.rr && x.t < x.b);
     // A pair is covered, not an overlap, when a fixed or sticky layer takes the tap where the two
     // expanded rects meet and the other control's own box sits under that layer: the nav pill over
     // scrolled content, a full-screen overlay over cards (#1019). It is covered too when one control's
@@ -243,8 +259,8 @@ _MEASURE_JS = r"""
       const under = [a, b].find(o => !cover.contains(o.el)); if (!under) return false;
       const u = under.el.getBoundingClientRect(), c = cover.getBoundingClientRect();
       return (u.left < c.right && c.left < u.right && u.top < c.bottom && c.top < u.bottom) || layerWins(a, b); };
-    const overlaps = [], coveredPairs = []; let overlapCount = 0, coveredCount = 0; const n = Math.min(rects.length, 400);
-    for (let i = 0; i < n; i++) for (let j = i + 1; j < n; j++) { const a = rects[i], b = rects[j];
+    const overlaps = [], coveredPairs = []; let overlapCount = 0, coveredCount = 0; const n = Math.min(hits.length, 400);
+    for (let i = 0; i < n; i++) for (let j = i + 1; j < n; j++) { const a = hits[i], b = hits[j];
       if (a.el.contains(b.el) || b.el.contains(a.el)) continue;
       const sep = a.rr <= b.l || b.rr <= a.l || a.b <= b.t || b.b <= a.t;
       if (sep) continue;
