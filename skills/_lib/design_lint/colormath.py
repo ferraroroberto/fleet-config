@@ -19,6 +19,7 @@ stdlib only.
 """
 from __future__ import annotations
 
+import colorsys
 import re
 from typing import Dict, List, Optional, Tuple
 
@@ -64,6 +65,12 @@ def parse_color(value: str, tokens: Dict[str, str], depth: int = 0) -> Optional[
             return None
         return (base[0], base[1], base[2], float(m.group(2)) / 100.0)
     return None
+
+
+def is_green(c: RGBA) -> bool:
+    """Hue 75-170 degrees and HSL saturation >= 0.25 — the success family; `/design-review`'s feedback section applies the same test."""
+    h, lightness, s = colorsys.rgb_to_hls(c[0] / 255, c[1] / 255, c[2] / 255)
+    return s >= 0.25 and 75 <= h * 360 <= 170 and 0 < lightness < 1
 
 
 def composite(fg: RGBA, bg: RGBA) -> RGBA:
