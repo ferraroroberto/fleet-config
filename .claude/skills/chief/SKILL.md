@@ -290,11 +290,12 @@ just the launcher call):
   alluding to it.
 - Stop a worker: `chief_ops.py stop <sid>` (quit by default; add `--kill`
   only on an explicit "kill/force" ask).
-- Free-text goal (no issue yet — not covered by `chief_ops.py`, use the
-  launcher endpoint directly): `curl -sk -X POST
-  https://127.0.0.1:8445/api/board/dispatch` `{"repo": "<repo>", "goal":
-  "...", "mode": "add"|"build"|"yolo", "model": "sonnet"}` — `add` files
-  the issue only, `build` files and builds, `yolo` ships.
+- Free-text goal (no issue yet): the launcher no longer takes free text
+  (app-launcher#1382 removed the Board's free-text dispatch). File the issue
+  first — `gh issue create` with `--assignee @me`, a type label and a
+  self-contained body, or `/issue-add` in a worker — then start it with
+  `chief_ops.py dispatch <repo> <number>` as above. Filing never starts work;
+  only the `dispatch` does.
 - Escalate to Roberto specifically: `chief_ops.py escalate --file <path>`
   (fleet-config#443) — a visibly distinct, higher-priority Telegram ping
   (forced `@mention`), for a genuine blocker only: a plan gate holding a
@@ -542,10 +543,10 @@ what it re-tested is a hypothesis — file it as a question, or don't file it.
 
 ## Safety rails (non-negotiable)
 
-1. **Default verb is the safe one.** Issue starts use `mode: "start"`;
-   free-text dispatches use `mode: "add"` (or `"build"` when the user
-   plainly asked to build). Escalate to `"yolo"` **only when the user's
-   message contains the literal word "yolo"** — never infer it.
+1. **Default verb is the safe one.** Issue starts use `mode: "start"`; a
+   free-text ask is filed as an issue first and then started the same way.
+   Escalate to `"yolo"` **only when the user's message contains the literal
+   word "yolo"** — never infer it.
    `chief_ops.py dispatch` backs this mechanically: it refuses `--mode
    yolo` outright unless `--yolo-confirmed` is also passed, so only pass
    that flag when you've confirmed the literal word.
