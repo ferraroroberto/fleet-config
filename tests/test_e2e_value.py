@@ -282,6 +282,24 @@ check(reads == [("tests/data/seed.yaml", "read", 2, "tests"), ("docs/sample.md",
       f"and a non-path string are not -- {reads}")
 check(all(h["kind"] != "read" for h in ih if h["path"].endswith(".py")), "a Python file is an import, never a read")
 
+# --proposed re-checks the table's other findings against the candidate (fleet-config#1165, facilitation-suite#165): the
+# counterfactual only listed PR tier changes, so the fixer swapped the file in and classified paths by hand to prove a hole closed.
+(rt / "static" / "_vendored" / "nav").mkdir(parents=True, exist_ok=True)
+(rt / "static" / "_vendored" / "nav" / "README.md").write_text("# nav\n", encoding="utf-8")
+(rt / "tests" / "e2e" / "test_e.py").write_text("README = 'static/_vendored/nav/README.md'\n", encoding="utf-8")
+rp = v.routing_report(rt, pr_list=prs, proposed_path=rt / "proposed.toml")
+cf = rp["counterfactual"]
+check([s_["path"] for s_ in rp["shadowed"]] == ["static/_vendored/nav/README.md"] and cf["shadowed"] == [],
+      f"the candidate table's shadowed paths are re-evaluated: the README the declared table shadows is not shadowed under it -- {cf['shadowed']}")
+check([u["path"] for u in cf["unclassified"]] == ["tools/build.sh"],
+      f"the candidate table's unclassified paths are re-evaluated -- {cf['unclassified']}")
+check(cf["holes_opened"] == ["static/_vendored/nav/README.md"] and cf["holes_closed"] == []
+      and "static/_vendored/nav/README.md" in [h["path"] for h in cf["import_holes"]]
+      and "static/_vendored/nav/README.md" not in [h["path"] for h in rp["import_holes"]],
+      f"a README the suite reads that the candidate routes `none` is a hole it opens; one it newly routes `full` is closed -- "
+      f"{cf['holes_opened']} / {cf['holes_closed']}")
+check(v.routing_report(rt, pr_list=prs)["counterfactual"] is None, "no --proposed table, no counterfactual")
+
 # ---- stylesheet-aware routing (fleet-config#1033) ------------------------------------------------------
 # A sheet-aware classifier (project-scaffolding#289's shape, reduced): `changed_selectors` diffs two
 # texts line by line, any line holding `UNSAFE` poisons the sheet, and `classify` narrows a diff to the
