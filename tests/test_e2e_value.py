@@ -700,6 +700,34 @@ fn = v.timing(bt, ["tests/e2e"])["first_node"]
 check(fn["boot"] == "not-repeated" and fn["seconds"] == 0.6,
       f"a warm re-run without the boot: the cold run was a one-off, not a finding -- {fn}")
 
+# checkout + skip reasons (fleet-config#1157, photo-ocr#127): the baseline ran from a linked worktree with no
+# certificates, so the cert test skipped as "not HTTPS" and the suite booted over plain HTTP. A run in a linked
+# worktree can differ from the primary in skips and boot; say so, and say why each node skipped.
+ck = Path(tempfile.mkdtemp(prefix="e2e-value-checkout-"))
+(ck / "primary" / ".git").mkdir(parents=True)
+(ck / "linked").mkdir()
+(ck / "linked" / ".git").write_text("gitdir: ../primary/.git/worktrees/linked", encoding="utf-8")
+(ck / "primary" / "webapp").mkdir()
+(ck / "primary" / "webapp" / "junit.xml").write_text("<x/>", encoding="utf-8")
+(ck / "bare").mkdir()
+check(v.checkout_of(ck / "primary" / "webapp" / "junit.xml")["linked_worktree"] is False
+      and v.checkout_of(ck / "primary" / "webapp" / "junit.xml")["root"] == str((ck / "primary").resolve()),
+      "a file inside a normal checkout: the root is the checkout, not a linked worktree")
+check(v.checkout_of(ck / "linked" / "x.xml")["linked_worktree"] is True, "a `.git` file marks a linked worktree")
+check(v.checkout_of(ck / "bare" / "x.xml") == {"root": None, "linked_worktree": None},
+      "outside any checkout the answer is unknown, never a guess")
+sj = Path(tempfile.mkdtemp(prefix="e2e-value-skipreasons-"))
+(sj / ".git").write_text("gitdir: ../elsewhere/.git/worktrees/sj", encoding="utf-8")
+(sj / "junit.xml").write_text(
+    '<testsuite><testcase classname="tests.e2e.test_cert" name="test_cert_lifetime[chromium]" time="0.0"><skipped message="not HTTPS" type="pytest.skip">x</skipped></testcase>'
+    '<testcase classname="tests.e2e.test_cert" name="test_cert_lifetime[webkit]" time="0.0"><skipped message="not HTTPS" type="pytest.skip">x</skipped></testcase>'
+    '<testcase classname="tests.e2e.test_board" name="test_load[chromium]" time="1.0"/></testsuite>', encoding="utf-8")
+sjt = v.timing(sj, ["tests/e2e"], Path("junit.xml"))
+check(sjt["run"]["skip_reasons"] == [{"reason": "not HTTPS", "nodes": 2}] and sjt["run"]["checkout"]["linked_worktree"] is True,
+      f"a JUnit run in a linked worktree names the checkout and why each node skipped -- {sjt['run']}")
+check(v.timing(tt, ["tests/e2e"])["run"]["skip_reasons"] is None,
+      "a progress log carries no skip reason: unknown, not an empty list")
+
 # routing: the rule that wins once the first one stops matching, and the command that checks it.
 class _R:  # noqa: E302
     def __init__(self, tier, label, prefix=None, path=None, extensions=None):

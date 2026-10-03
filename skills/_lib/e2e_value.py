@@ -22,6 +22,7 @@ With none of them, every verdict is `unknown (no timing source)`.
     status        ok | unknown          reason (when unknown)
     source        {kind, path}
     run           {started, finished, wall_s, complete, exit_status, routed_tier, slice,
+                   checkout {root, linked_worktree}, skip_reasons [{reason, nodes}] | null (JUnit only),
                    nodes, e2e_nodes (executed), e2e_skipped, e2e_summed_s}
     load          {state: quiet|loaded|unknown, scope, overlaps [..], checked [..]}
     phases        [{name, wall_s, nodes}]
@@ -266,18 +267,37 @@ def failure_step(excerpt: List[str]) -> Optional[str]:
     return step
 
 
+def checkout_of(path: Path) -> Dict[str, object]:
+    """The git checkout holding `path`: its root, and whether it is a linked worktree (`.git` is a file).
+
+    A run measured in a linked worktree can differ from the primary in what
+    skips and how it boots: gitignored runtime files (certificates, `.env`)
+    are not there (fleet-config#1157, photo-ocr#127). Outside any checkout
+    both answers are `None`: unknown, never a guess.
+    """
+    here = path.resolve()
+    for d in [here, *here.parents]:
+        git = d / ".git"
+        if git.exists():
+            return {"root": str(d), "linked_worktree": git.is_file()}
+    return {"root": None, "linked_worktree": None}
+
+
 def parse_junit(path: Path) -> Dict[str, object]:
     """Per-node seconds and failures from a JUnit XML; no phases, no window."""
     nodes: Dict[str, float] = {}
     failures: List[Dict[str, object]] = []
     skipped: set = set()
+    skip_reasons: Dict[str, str] = {}
     root = ET.parse(path).getroot()
     for case in root.iter("testcase"):
         cls = (case.get("classname") or "").replace(".", "/")
         nodeid = f"{cls}.py::{case.get('name')}" if cls else str(case.get("name"))
         nodes[nodeid] = float(case.get("time") or 0.0)
-        if case.find("skipped") is not None:
+        sk = case.find("skipped")
+        if sk is not None:
             skipped.add(nodeid)
+            skip_reasons[nodeid] = (sk.get("message") or "").strip()[:120]
         for tag in ("failure", "error"):
             el = case.find(tag)
             if el is not None:
@@ -285,7 +305,7 @@ def parse_junit(path: Path) -> Dict[str, object]:
                                  "step": failure_step((el.text or "").splitlines())})
     return {"started": None, "finished": None, "nodes": nodes, "node_phase": {}, "phases": [],
             "failures": failures, "exit_status": 1 if failures else 0, "parallel": False, "routed_tier": None,
-            "skipped": sorted(skipped), "complete": bool(nodes)}
+            "skipped": sorted(skipped), "skip_reasons": skip_reasons, "complete": bool(nodes)}
 
 
 # ---- measurements ------------------------------------------------------------------
@@ -769,6 +789,18 @@ def _gather(repo_root: Path, log: Optional[Path]) -> Dict[str, object]:
     return {"source": source, "logs": logs}
 
 
+def skip_reason_counts(run: Dict[str, object], skipped: Sequence[str]) -> Optional[List[Dict[str, object]]]:
+    """Why the e2e nodes skipped, most common first; `None` when the source records no reason (a progress log)."""
+    reasons = run.get("skip_reasons")
+    if reasons is None:
+        return None
+    counts: Dict[str, int] = {}
+    for n in skipped:
+        r = str(reasons.get(n) or "no reason recorded")  # type: ignore[union-attr]
+        counts[r] = counts.get(r, 0) + 1
+    return [{"reason": r, "nodes": c} for r, c in sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))]
+
+
 def timing(repo_root: Path, test_dirs: Sequence[str], log: Optional[Path] = None) -> Dict[str, object]:
     g = _gather(repo_root, log)
     if "error" in g:
@@ -810,6 +842,8 @@ def timing(repo_root: Path, test_dirs: Sequence[str], log: Optional[Path] = None
                 "wall_s": round(wall, 1) if wall is not None else None,
                 "complete": run["complete"], "exit_status": run["exit_status"],
                 "routed_tier": run.get("routed_tier"), "slice": slice_note,
+                "checkout": checkout_of(path),
+                "skip_reasons": skip_reason_counts(run, skipped),
                 "nodes": len(nodes), "e2e_nodes": len(e2e), "e2e_skipped": len(skipped),
                 "e2e_summed_s": round(sum(e2e.values()), 1)},
         "load": load,
