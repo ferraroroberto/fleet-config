@@ -1151,6 +1151,37 @@ def _repo_file(repo_root: Path, dotted: str) -> Optional[str]:
     return None
 
 
+def _read_files(parsed, repo_root: Path) -> set:
+    """Repo files (not `.py`) a parsed module names as a repo-relative path: `'a/b.json'` or `ROOT / 'a' / 'b.json'`.
+
+    Only a path that exists under the repo counts, so a stray string or a path
+    built from a variable is skipped, never guessed (facilitation-suite#165).
+    """
+    import ast
+
+    def parts(n) -> List[str]:
+        if isinstance(n, ast.BinOp) and isinstance(n.op, ast.Div):
+            return parts(n.left) + parts(n.right)
+        return [n.value] if isinstance(n, ast.Constant) and isinstance(n.value, str) else []
+
+    cands = set()
+    for n in ast.walk(parsed):
+        if isinstance(n, ast.Constant) and isinstance(n.value, str):
+            cands.add(n.value)
+        elif isinstance(n, ast.BinOp) and isinstance(n.op, ast.Div):
+            cands.add("/".join(p.strip("/") for p in parts(n)))
+    root = repo_root.resolve()
+    out = set()
+    for c in cands:
+        c = c.replace("\\", "/")
+        if not c or len(c) > 200 or "\n" in c or c.startswith("/") or ".." in c.split("/") or c.endswith(".py"):
+            continue
+        p = root / c
+        if "." in c.rsplit("/", 1)[-1] and p.is_file():
+            out.add(p.relative_to(root).as_posix())
+    return out
+
+
 def import_holes(repo_root: Path, mod, config, test_dirs: Sequence[str]) -> List[Dict[str, object]]:
     """Files the e2e suite loads or imports that the routing table sends to `none` (task-os#287).
 
@@ -1160,8 +1191,11 @@ def import_holes(repo_root: Path, mod, config, test_dirs: Sequence[str]) -> List
     lately never showed. This reads the other direction: every module under
     the test dirs, the conftest and the `_*.py` plugins (`kind: loaded`), plus
     every repo file those modules import (`kind: imported`, `imported_by`
-    counting the importers), each routed through the repo's own classifier.
-    One level only: a fixture's own imports are not followed. Backend source
+    counting the importers), plus every non-Python repo file those modules name
+    as a repo-relative path (`kind: read`, `imported_by` counting the readers:
+    facilitation-suite's conftest read `config/config.sample.json` for every
+    instance while the table routed `config/` to `none`), each routed through
+    the repo's own classifier. One level only: a fixture's own imports are not followed. Backend source
     the suite boots (`src/*.py` routed `none`) lands here too; whether that
     is a hole or a deliberate gate-time trade is the owner's call.
     """
@@ -1169,6 +1203,7 @@ def import_holes(repo_root: Path, mod, config, test_dirs: Sequence[str]) -> List
     tree = _test_tree_files(repo_root, test_dirs)
     loaded = {str(p.relative_to(repo_root)).replace("\\", "/") for p in tree}
     imported: Dict[str, int] = {}
+    read: set = set()
     for p in tree:
         try:
             parsed = ast.parse(p.read_text(encoding="utf-8", errors="replace"))
@@ -1185,14 +1220,16 @@ def import_holes(repo_root: Path, mod, config, test_dirs: Sequence[str]) -> List
                 hit = _repo_file(repo_root, name)
                 if hit:
                     seen.add(hit)
-        for hit in seen:
+        files = _read_files(parsed, repo_root)
+        read |= files - seen
+        for hit in seen | files:
             imported[hit] = imported.get(hit, 0) + 1
     out = []
     for path in sorted(loaded | set(imported)):
         cat, label = mod._classify_one(path, config.rules)
         if getattr(cat, "name", cat) != "NONE":
             continue
-        out.append({"path": path, "rule": label, "kind": "loaded" if path in loaded else "imported",
+        out.append({"path": path, "rule": label, "kind": "loaded" if path in loaded else "read" if path in read else "imported",
                     "imported_by": imported.get(path, 0), "check": classify_cmd([path])})
     return sorted(out, key=lambda e: (-int(e["imported_by"]), str(e["path"])))  # type: ignore[call-overload]
 

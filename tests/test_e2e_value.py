@@ -262,6 +262,26 @@ check([(h["path"], h["kind"], h["imported_by"], h["rule"]) for h in ih]
       f"import, an unimported fixture and the stdlib are not -- {ih}")
 check(ih[0]["check"] == "python scripts/classify_e2e.py tests/conftest.py", "a hole carries the command that routes it")
 
+# Runtime-read data files (fleet-config#1165, facilitation-suite#165): `tests/conftest.py` read
+# `config/config.sample.json` for every e2e instance and the table routed `config/` to `none`; the scan only followed imports.
+for rel, body in {
+    "tests/e2e/test_c.py": ("from pathlib import Path\nROOT = Path(__file__).parents[2]\n"
+                            "SAMPLE = ROOT / 'docs' / 'sample.md'\nSEED = open('tests/data/seed.yaml')\n"
+                            "GONE = 'tests/data/missing.yaml'\nBUILT = 'static/app.json'\nNOTE = 'two words.md'\n"),
+    "tests/e2e/test_d.py": "SEED = 'tests/data/seed.yaml'\n",
+    "tests/data/seed.yaml": "a: 1\n",
+    "docs/sample.md": "# sample\n",
+    "static/app.json": "{}\n",
+}.items():
+    (rt / rel).parent.mkdir(parents=True, exist_ok=True)
+    (rt / rel).write_text(body, encoding="utf-8")
+ih = v.routing_report(rt, pr_list=[])["import_holes"]
+reads = [(h["path"], h["kind"], h["imported_by"], h["rule"]) for h in ih if h["kind"] == "read"]
+check(reads == [("tests/data/seed.yaml", "read", 2, "tests"), ("docs/sample.md", "read", 1, "docs")],
+      f"a data file the suite reads by repo-relative literal or `/` chain, routed `none`, is a hole; a missing file, a full-routed one "
+      f"and a non-path string are not -- {reads}")
+check(all(h["kind"] != "read" for h in ih if h["path"].endswith(".py")), "a Python file is an import, never a read")
+
 # ---- stylesheet-aware routing (fleet-config#1033) ------------------------------------------------------
 # A sheet-aware classifier (project-scaffolding#289's shape, reduced): `changed_selectors` diffs two
 # texts line by line, any line holding `UNSAFE` poisons the sheet, and `classify` narrows a diff to the
