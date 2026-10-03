@@ -30,7 +30,7 @@ present on a successful run:
     targets   total, small [..], small_count, overlaps [..], overlap_count,
               covered [..], covered_count, primary [..], primary_min_height, in_summary
     icons     boxes {"WxH": n}, elements {"WxH": [{glyph, host, label}, ..]}
-    nav       primary_count, pane_scroll_top, pane_header_visible
+    nav       primary_count, pane_scroll_top, pane_header_visible, settings_tab_count
     layout    overflow_x, scroll_w, inner_w, inner_h, pane_h, lists [..],
               rows_over_limit [..], danger_rows, content_w, content_span, radii {r: n}
     clearance bars [..], hidden_rows [..], hidden_row_count
@@ -323,8 +323,19 @@ _MEASURE_JS = r"""
     const tabs = list ? [...list.querySelectorAll('[role=tab]')] : [];
     const heading = pane.querySelector('h1, h2, h3');
     const top = heading ? heading.getBoundingClientRect().top : null;
+    // Settings is never a primary tab (#1200): a tab whose own name says settings, or a text-less tab drawing a gear glyph.
+    const SETTINGS_WORD = /(^|[^a-z])(settings?|preferences)([^a-z]|$)/i, GEAR_GLYPH = /^(i-)?(settings|gear|cog|sliders)/i;
+    const settingsTabs = tabs.filter(t => {
+      const visible = (t.textContent || '').replace(/\s+/g, ' ').trim();
+      const names = [visible, t.getAttribute('aria-label') || '', t.getAttribute('title') || '', t.getAttribute('data-tab') || '', t.id || ''];
+      if (names.some(n => SETTINGS_WORD.test(n))) return true;
+      const use = t.querySelector('use'); const href = use ? (use.getAttribute('href') || use.getAttribute('xlink:href') || '') : '';
+      const glyph = href.includes('#') ? href.slice(href.indexOf('#') + 1) : ((t.querySelector('svg') || t).getAttribute('data-icon') || '');
+      return !visible && GEAR_GLYPH.test(glyph);
+    }).map(t => ({ sel: sel(t), label: ((t.textContent || '').replace(/\s+/g, ' ').trim() || t.getAttribute('aria-label') || '').slice(0, 30) }));
     return { primary_count: tabs.length, pane_scroll_top: pane.scrollTop || 0,
-      pane_header_visible: heading ? (top >= 0 && top <= window.innerHeight) : null };
+      pane_header_visible: heading ? (top >= 0 && top <= window.innerHeight) : null,
+      settings_tab_count: settingsTabs.length, settings_tabs: settingsTabs };
   });
 
   // ---- layout
@@ -508,7 +519,7 @@ def metric_paths() -> List[str]:
         "targets": ["total", "small", "small_count", "overlaps", "overlap_count", "covered", "covered_count",
                     "primary", "primary_min_height", "in_summary"],
         "icons": ["boxes", "elements"],
-        "nav": ["primary_count", "pane_scroll_top", "pane_header_visible"],
+        "nav": ["primary_count", "pane_scroll_top", "pane_header_visible", "settings_tab_count", "settings_tabs"],
         "layout": ["overflow_x", "scroll_w", "inner_w", "inner_h", "pane_h", "lists", "rows_over_limit",
                    "rows_over_limit_count", "danger_rows", "content_w", "content_span", "radii"],
         "clearance": ["bars", "hidden_rows", "hidden_row_count"],

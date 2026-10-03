@@ -1,0 +1,46 @@
+<!doctype html>
+<!-- Static fixture for NAV-03 (fleet-config#1200): Settings is never a primary tab. Two of the
+     four tabs are Settings -- one by name, one a text-less gear glyph -- while the header gear
+     button (not a tab) and an ordinary tab must not count. Asserted by tests/test_design_review.py. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>design_review settings-tab fixture</title>
+<style>
+  html, body { margin: 0; background: #ffffff; color: #1f2328; font-family: system-ui, sans-serif; font-size: 16px; }
+  body { padding: 16px; }
+  section[hidden] { display: none; }
+  button { font: inherit; min-width: 44px; min-height: 44px; }
+</style>
+<script>
+  addEventListener('DOMContentLoaded', () => {
+    document.querySelectorAll('[role=tab]').forEach(tab => tab.addEventListener('click', () => {
+      document.querySelectorAll('[role=tab]').forEach(t => t.setAttribute('aria-selected', String(t === tab)));
+      document.querySelectorAll('[role=tabpanel]').forEach(p => p.hidden = (p.id !== tab.getAttribute('aria-controls')));
+    }));
+  });
+</script>
+</head>
+<body>
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+    <symbol id="i-settings" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/></symbol>
+    <symbol id="i-home" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16"/></symbol>
+  </svg>
+  <header>
+    <button type="button" id="headerGear" aria-label="Open the gear panel"><svg width="20" height="20"><use href="#i-settings"/></svg></button>
+  </header>
+  <nav role="tablist" aria-label="Primary">
+    <button type="button" role="tab" aria-controls="paneHome" aria-selected="true"><svg width="20" height="20"><use href="#i-home"/></svg> Home</button>
+    <button type="button" role="tab" aria-controls="paneNamed" aria-selected="false">Settings</button>
+    <button type="button" role="tab" aria-controls="paneGear" aria-selected="false"><svg width="20" height="20"><use href="#i-settings"/></svg></button>
+    <button type="button" role="tab" aria-controls="paneLogs" aria-selected="false">Logs</button>
+  </nav>
+  <main>
+    <section id="paneHome" role="tabpanel"><h2>Home</h2><p>Home pane.</p></section>
+    <section id="paneNamed" role="tabpanel" hidden><h2>Named</h2><p>A tab named Settings.</p></section>
+    <section id="paneGear" role="tabpanel" hidden><h2>Gear</h2><p>A text-less gear tab.</p></section>
+    <section id="paneLogs" role="tabpanel" hidden><h2>Logs</h2><p>Logs pane.</p></section>
+  </main>
+</body>
+</html>
