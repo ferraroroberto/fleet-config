@@ -1,0 +1,43 @@
+<!doctype html>
+<!-- Static fixture for TOUCH-02 below the fold (fleet-config#1155). A popup that paints over a chip
+     beneath it takes the tap there, wherever the page is scrolled; the pair sits far below the fold,
+     where elementFromPoint sees nothing. Two touching flow controls down there still overlap, and the
+     walk leaves the page where it found it. Asserted by tests/test_design_review.py. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>design_review fold fixture</title>
+<style>
+  html, body { margin: 0; background: #ffffff; color: #1f2328; font-family: system-ui, sans-serif; font-size: 16px; }
+  body { padding: 16px; }
+  .rows { list-style: none; margin: 0; padding: 0; }
+  .rows li { height: 40px; line-height: 40px; }
+  .tail { position: relative; height: 120px; }
+  [role=menu] { position: absolute; top: 0; left: 0; z-index: 5; background: #ffffff; border: 1px solid #d1d9e0; }
+  [role=menu] button { display: block; width: 160px; height: 44px; margin: 0; font: inherit; }
+  .chip { position: absolute; top: 30px; left: 20px; display: inline-block; width: 120px; height: 44px; line-height: 44px; color: #0b5cad; }
+  .hit-target { position: relative; width: 34px; height: 34px; padding: 0; margin: 0; font: inherit; }
+  .hit-target::before { content: ""; position: absolute; inset: -5px; }
+</style>
+<script>
+  addEventListener('DOMContentLoaded', () => {
+    const ul = document.querySelector('.rows');
+    for (let i = 1; i <= 40; i++) { const li = document.createElement('li'); li.textContent = `Row ${i}`; ul.appendChild(li); }
+  });
+</script>
+</head>
+<body>
+  <main>
+    <h2>Fold</h2>
+    <ul class="rows"></ul>
+    <!-- the popup's option paints over the chip: covered, not an overlap -->
+    <div class="tail">
+      <div role="menu" aria-label="Row menu"><button type="button" class="opt">Later</button></div>
+      <a href="#chip" class="chip">Chip</a>
+    </div>
+    <!-- two touching controls in the flow: an overlap, below the fold too -->
+    <div><button type="button" class="hit-target" aria-label="One">1</button><button type="button" class="hit-target" aria-label="Two">2</button></div>
+  </main>
+</body>
+</html>
