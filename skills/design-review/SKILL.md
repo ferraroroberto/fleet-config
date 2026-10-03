@@ -286,16 +286,22 @@ its checkbox; a rule that passes again keeps its line, unticked, tagged
 `_(carried — unmeasured this run)_`; uncatalogued findings (judgment
 status `ok` only) are their own list keyed by question + title, titles and
 severities only; a dated bullet lands in `## Review run log`. **Spec- and
-scaffold-owned rules are never filed on the app** — they print as `SPEC=`
+scaffold-owned rules are not filed on the app** — they print as `SPEC=`
 / `SCAFFOLD=` here and reach fleet-config / project-scaffolding through
-the fleet digest. A `[[design.accepted]]` entry with `rule = "<id>"` and a
+the fleet digest — **except** one whose fix already ships: a rule with an
+`adopt` hint in the rubric (TYPE-02: vendor `_vendored/base`; A11Y-02:
+vendor `_vendored/text-size`; COLOR-03: the `control-border` token) is
+also filed as an app checkbox labelled `spec → app`, naming that fix, and
+prints as `ADOPT=` (photo-ocr#129: an app sat at B with three such rules
+and nothing app-owned to fix; fleet-config#1163). It stays on its owner's
+list too. Rules with no existing fix (TYPE-01) stay off the app. A `[[design.accepted]]` entry with `rule = "<id>"` and a
 `reason` in the target's `.fleet.toml` suppresses that rule (listed under
 `## Accepted`); one that fails nowhere prints `PROBLEM=`.
 
 Read `FILE=dry-run|filed`, `REPO=`, `ISSUE=<n>|none`, `CHANGED=yes|no`
 (Findings / Uncatalogued / Accepted differ from the issue — the run log
 alone is not a change), `FILED=<n> <ids>`, `UNCATALOGUED=`, `ACCEPTED=`,
-`SPEC=`, `SCAFFOLD=`, `BODY=` (the merged body, `<RUN_DIR>/issue-body.md`,
+`SPEC=`, `SCAFFOLD=`, `ADOPT=` (`FILED=` counts these too), `BODY=` (the merged body, `<RUN_DIR>/issue-body.md`,
 written on a dry run too), `URL=`. Never `gh issue create` or `edit` by
 hand, never paste the body yourself, never tick or close anything, never
 add `Closes #`.
@@ -407,8 +413,8 @@ checklist), else a `[[judgment]]` question. Nothing automates that step.
   ids and the `standard` citation, nothing else.
 - **Filing is opt-in and machine-composed.** Nothing reaches GitHub without
   the `file` argument; the body is always the helper's merge, never typed
-  here; one managed issue per repo; spec- and scaffold-owned rules never on
-  an app; never tick, close or `Closes #`.
+  here; one managed issue per repo; spec- and scaffold-owned rules on an
+  app only as `adopt` items (their fix already ships); never tick, close or `Closes #`.
 - **Fleet mode is serial and never restarts.** One browser at a time, an
   app not listening is `unmeasured`, judgment skipped, promotion decided by
   the helper (two or more apps), run once.

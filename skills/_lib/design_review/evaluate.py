@@ -328,6 +328,7 @@ def evaluate_rule(rule: Rule, doc: dict, specs: Dict[str, Dict[str, str]], ctx: 
         "id": rule.id, "category": rule.category, "severity": rule.severity, "owner": rule.owner,
         "title": rule.title, "standard": rule.standard, "fix_template": rule.fix_template, "mockup": rule.mockup,
         "metric": rule.metric, "fail_when": rule.fail_when, "threshold": threshold, "params": dict(rule.params),
+        **({"adopt": rule.adopt} if rule.adopt else {}),
         "status": "unmeasured", "reason": "", "evidence": [], "measured": {},
     }
     if doc.get("unmeasured"):
