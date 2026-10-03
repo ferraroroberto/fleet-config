@@ -1347,6 +1347,23 @@ def _read_files(parsed, repo_root: Path) -> set:
     return out
 
 
+def _module_hits(parsed, repo_root: Path) -> set:
+    """Repo `.py` files a parsed module imports, absolute imports at any depth (a function body included)."""
+    import ast
+    seen: set = set()
+    for n in ast.walk(parsed):
+        names: List[str] = []
+        if isinstance(n, ast.Import):
+            names = [a.name for a in n.names]
+        elif isinstance(n, ast.ImportFrom) and n.level == 0 and n.module:
+            names = [n.module] + [f"{n.module}.{a.name}" for a in n.names]
+        for name in names:
+            hit = _repo_file(repo_root, name)
+            if hit:
+                seen.add(hit)
+    return seen
+
+
 def import_holes(repo_root: Path, mod, config, test_dirs: Sequence[str]) -> List[Dict[str, object]]:
     """Files the e2e suite loads or imports that the routing table sends to `none` (task-os#287).
 
@@ -1363,7 +1380,7 @@ def import_holes(repo_root: Path, mod, config, test_dirs: Sequence[str]) -> List
     the repo's own classifier. The files that define routing itself (`.fleet.toml`
     and `scripts/classify_e2e.py`, the classifier's own `_ROUTING_SOURCES`) are
     listed too (`kind: routing-source`): a diff editing only the table reroutes
-    the suite without running it (facilitation-suite#165). One level only: a fixture's own imports are not followed. Backend source
+    the suite without running it (facilitation-suite#165). A test-support helper (a `.py` under a `tests/` directory) is followed through its own imports, function bodies included, to any depth (parking-manager#58: `tests/mockup_seed.py` imported `tests/burst_fixture.py` inside a function); app source is never walked, and absolute imports only. Backend source
     the suite boots (`src/*.py` routed `none`) lands here too; whether that
     is a hole or a deliberate gate-time trade is the owner's call.
     """
@@ -1378,21 +1395,28 @@ def import_holes(repo_root: Path, mod, config, test_dirs: Sequence[str]) -> List
             parsed = ast.parse(p.read_text(encoding="utf-8", errors="replace"))
         except SyntaxError:
             continue
-        seen: set = set()
-        for n in ast.walk(parsed):
-            names: List[str] = []
-            if isinstance(n, ast.Import):
-                names = [a.name for a in n.names]
-            elif isinstance(n, ast.ImportFrom) and n.level == 0 and n.module:
-                names = [n.module] + [f"{n.module}.{a.name}" for a in n.names]
-            for name in names:
-                hit = _repo_file(repo_root, name)
-                if hit:
-                    seen.add(hit)
+        seen = _module_hits(parsed, repo_root)
         files = {f for f in _read_files(parsed, repo_root) if tracked is None or f in tracked}
         read |= files - seen
         for hit in seen | files:
             imported[hit] = imported.get(hit, 0) + 1
+    # A test-support helper (a `.py` under a `tests/` directory) is part of the suite: follow what it imports, to any depth
+    # (parking-manager#58: `mockup_seed.seed_live` imports `tests.burst_fixture` in its body). App source is never walked.
+    queue = [f for f in imported if "tests" in f.split("/")[:-1] and f.endswith(".py")]
+    walked: set = set()
+    while queue:
+        helper = queue.pop()
+        if helper in walked:
+            continue
+        walked.add(helper)
+        try:
+            parsed = ast.parse((repo_root / helper).read_text(encoding="utf-8", errors="replace"))
+        except SyntaxError:
+            continue
+        for hit in _module_hits(parsed, repo_root) - {helper}:
+            imported[hit] = imported.get(hit, 0) + 1
+            if "tests" in hit.split("/")[:-1]:
+                queue.append(hit)
     sources = {p for p in getattr(mod, "_ROUTING_SOURCES", _ROUTING_SOURCES) if (repo_root / p).is_file()}
     out = []
     for path in sorted(loaded | set(imported) | sources):

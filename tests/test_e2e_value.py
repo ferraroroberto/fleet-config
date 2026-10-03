@@ -290,6 +290,29 @@ ih2 = v.routing_report(rt, pr_list=[])["import_holes"]
 check([h["path"] for h in ih2 if h["kind"] == "read"] == [h["path"] for h in ih if h["kind"] == "read"],
       f"an absolute path outside the repo is no read and does not stop the report -- {ih2}")
 
+# Helper imports (fleet-config#1175, parking-manager#58): a conftest fixture called `mockup_seed.seed_live`, which imports
+# `tests.burst_fixture` inside the function. The scan listed `mockup_seed.py` (one level) and missed `burst_fixture.py` (two).
+# A test-support file (under a `tests/` directory) is followed; an app module's own imports are not.
+for rel, body in {
+    "tests/e2e/test_h.py": "from tests.mockup_seed import seed_live\n",
+    "tests/mockup_seed.py": "def seed_live(path):\n    from tests.burst_fixture import write_burst\n    return write_burst(path)\n",
+    "tests/burst_fixture.py": "from tests.deep_helper import deep\n",
+    "tests/deep_helper.py": "",
+    "tests/only_via_app.py": "",
+    "static/helper.py": "from tests.only_via_app import x\n",
+}.items():
+    (rt / rel).parent.mkdir(parents=True, exist_ok=True)
+    (rt / rel).write_text(body, encoding="utf-8")
+hh = {h["path"]: (h["kind"], h["imported_by"]) for h in v.routing_report(rt, pr_list=[])["import_holes"]}
+check(hh.get("tests/mockup_seed.py") == ("imported", 1) and hh.get("tests/burst_fixture.py") == ("imported", 1)
+      and hh.get("tests/deep_helper.py") == ("imported", 1),
+      f"imports made by a test-support helper, in a function body or at the top, are followed through the chain -- {hh}")
+check("tests/only_via_app.py" not in hh,
+      "a module imported only by app source is not followed: the scan walks test support, never the app's import graph")
+for rel in ("tests/e2e/test_h.py", "tests/mockup_seed.py", "tests/burst_fixture.py", "tests/deep_helper.py", "tests/only_via_app.py"):
+    (rt / rel).unlink()
+(rt / "static" / "helper.py").write_text("", encoding="utf-8")
+
 # --proposed re-checks the table's other findings against the candidate (fleet-config#1165, facilitation-suite#165): the
 # counterfactual only listed PR tier changes, so the fixer swapped the file in and classified paths by hand to prove a hole closed.
 (rt / "static" / "_vendored" / "nav").mkdir(parents=True, exist_ok=True)
