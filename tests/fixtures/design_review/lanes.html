@@ -1,0 +1,52 @@
+<!doctype html>
+<!-- Static fixture for LAYOUT-02's filter lookup (fleet-config#1155). A board's lanes are each a
+     labelled <section>; the one filter above them serves every lane's list, so a long lane list has a
+     filter. The second tab has lanes and no filter anywhere in the pane. Asserted by
+     tests/test_design_review.py. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>design_review lanes fixture</title>
+<style>
+  html, body { margin: 0; background: #ffffff; color: #1f2328; font-family: system-ui, sans-serif; font-size: 16px; }
+  body { padding: 16px; }
+  section[hidden] { display: none; }
+  .lanes { display: flex; gap: 16px; }
+  .lanes ul { list-style: none; margin: 0; padding: 0; }
+  .lanes li { height: 32px; line-height: 32px; }
+</style>
+<script>
+  addEventListener('DOMContentLoaded', () => {
+    document.querySelectorAll('[role=tab]').forEach(tab => tab.addEventListener('click', () => {
+      document.querySelectorAll('[role=tab]').forEach(t => t.setAttribute('aria-selected', String(t === tab)));
+      document.querySelectorAll('[role=tabpanel]').forEach(p => p.hidden = (p.id !== tab.getAttribute('aria-controls')));
+    }));
+    document.querySelectorAll('.lanes ul').forEach(ul => {
+      for (let i = 1; i <= 20; i++) { const li = document.createElement('li'); li.textContent = `Item ${i}`; ul.appendChild(li); } });
+  });
+</script>
+</head>
+<body>
+  <nav role="tablist" aria-label="Primary">
+    <button type="button" role="tab" aria-controls="paneFiltered" aria-selected="true">Filtered</button>
+    <button type="button" role="tab" aria-controls="paneBare" aria-selected="false">Bare</button>
+  </nav>
+  <main>
+    <section id="paneFiltered" role="tabpanel">
+      <h2>Filtered</h2>
+      <input type="text" class="filter-q" placeholder="Filter text…" aria-label="Filter">
+      <div class="lanes">
+        <section aria-label="Lane one"><h3>Lane one</h3><ul class="lane-list"></ul></section>
+        <section aria-label="Lane two"><h3>Lane two</h3><ul class="lane-list"></ul></section>
+      </div>
+    </section>
+    <section id="paneBare" role="tabpanel" hidden>
+      <h2>Bare</h2>
+      <div class="lanes">
+        <section aria-label="Lane three"><h3>Lane three</h3><ul class="lane-list"></ul></section>
+      </div>
+    </section>
+  </main>
+</body>
+</html>

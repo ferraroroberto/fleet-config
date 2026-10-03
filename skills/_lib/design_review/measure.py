@@ -285,8 +285,12 @@ _MEASURE_JS = r"""
     const de = document.documentElement;
     const lists = []; const rowsOver = []; const dangerRows = new Set(); const radii = {};
     q('ul, ol, table, [role=list]').forEach(l => { const rows = l.querySelectorAll(':scope > li, :scope > tbody > tr, :scope > tr, :scope > [role=listitem]').length;
-      if (rows > params.listRowsMax) { const host = l.closest('[role=tabpanel], section, main') || pane;
-        const filter = !!host.querySelector('input[type=search], input[placeholder*="filter" i], input[placeholder*="search" i], [role=searchbox]');
+      // The filter may sit any level up to the pane: a board's lanes are each a <section>, and the
+      // one filter above them serves every lane's list (#1155).
+      if (rows > params.listRowsMax) { let filter = false;
+        for (let e = l.parentElement; e && !filter; e = e.parentElement) {
+          filter = !!e.querySelector('input[type=search], input[placeholder*="filter" i], input[placeholder*="search" i], [role=searchbox]');
+          if (e === pane || e.matches('[role=tabpanel], main, body')) break; }
         lists.push({sel: sel(l), rows, has_filter: filter}); } });
     q('li, tr, [role=listitem], [role=row]').forEach(row => {
       // A week of a month grid is not an action row: the WAI-ARIA grid pattern's rows (#1017).
