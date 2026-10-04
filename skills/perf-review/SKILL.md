@@ -77,7 +77,18 @@ What it measures:
     "Warm" is a PWA relaunch: HTTP cache and `localStorage` kept. Cold is
     taken three times, each in a fresh context, and scored by its median.
   - "Ready" is the target's declared `ready_selector` being visible, else
-    first contentful paint.
+    first contentful paint. The page checks the selector on every animation
+    frame and reports that frame's page time, on the same clock as first
+    contentful paint. Before fleet-config#1236 it was Playwright's
+    `wait_for_selector`, which re-checks only every 500 ms after the first
+    270 ms. Readings landed on its ticks (~960, ~1460, ~1970 ms), 260–380 ms
+    late on facilitation-suite and parking-manager. Runs from before the fix
+    read high, so a drop across it is the harness, not the app. The budgets
+    are unchanged: `warm.ready_ms` 1000 now means the selector is on screen
+    within 1000 ms of navigation start.
+  - A warm leg no faster than cold, with `from_cache` 0 and bodies of ~150 B,
+    means every asset revalidates (`no-cache`) behind a serial module chain.
+    That is the app's caching, not this harness: playbook P11.
   - "Boot data" is when the last `/api/` response of the boot landed. An API
     path is any path with an `/api/` segment, so an app mounted under
     `/admin/api/` is measured too (local-llm-hub#644: with a leading-`/api/`

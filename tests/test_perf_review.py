@@ -552,6 +552,43 @@ check(pc["warm.bytes_kb"]["polls"] == {"requests": 7, "kb": 90}, "the warm check
 check("7 periodic poll request(s) (90 KB)" in report.render_body(pv, "r", "b"), "the report body names the poll count")
 check("polls" not in bytes_checks({}, {"bytes": 10 * 1024})[0]["warm.bytes_kb"], "a leg with no polls carries no poll note")
 
+# ---- "ready" is the frame the selector became visible, not a coarse poll (fleet-config#1236) ----
+# Playwright's wait_for_selector re-checks at 0, 20, 50, 100, 100, then every 500 ms, so a selector that showed at
+# 1100 ms was reported at the next tick (~1455 ms). Two unrelated apps read the same "warm ready" for that reason.
+# `_ready` now has the page time the first animation frame it sees the selector visible.
+
+
+class _Handle:
+    def __init__(self, value) -> None:
+        self.value = value
+
+    def json_value(self):
+        return self.value
+
+
+class _ReadyPage:
+    def __init__(self, visible_at=None) -> None:
+        self.visible_at, self.calls = visible_at, []
+
+    def wait_for_selector(self, *args, **kwargs):
+        raise AssertionError("wait_for_selector polls every 500 ms; ready must not use it")
+
+    def wait_for_function(self, expression, arg=None, polling=None, timeout=None):
+        self.calls.append({"arg": arg, "polling": polling, "timeout": timeout})
+        if self.visible_at is None:
+            raise Exception("Timeout 8000ms exceeded")  # the stubbed playwright Error
+        return _Handle(self.visible_at)
+
+
+_rp = _ReadyPage(visible_at=1100.4)
+_got = load_mod._ready(_rp, ".session-row", 8000)
+check(_got == (1100, "selector"), f"ready_ms is the page time the selector became visible, not the poll that saw it ({_got})")
+check(_rp.calls[:1] == [{"arg": ".session-row", "polling": "raf", "timeout": 8000}],
+      f"the selector is checked every animation frame, with the boot window as its timeout ({_rp.calls})")
+check(load_mod._ready(_ReadyPage(), ".x", 8000) == (None, "selector-not-visible"),
+      "a selector never visible within the window is reported, not timed")
+check(load_mod._ready(_ReadyPage(), "", 8000) == (None, "fcp"), "no selector declared -> first contentful paint")
+
 # ---- the Chromium leg bypasses Windows proxy auto-detect (fleet-config#1139) ----
 # The harness addresses the app by an HTTPS hostname, which is no implicit proxy bypass, so with
 # "Automatically detect settings" on, a cold autoproxy cache stalls the first request ~2.7 s (WPAD).

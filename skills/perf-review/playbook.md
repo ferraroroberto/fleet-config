@@ -175,6 +175,14 @@ A per-file stamp from the file's own bytes only is the trap: behind a one-year
 `immutable` cache, editing a nested module leaves a phone that cached the
 importer on the old import URLs.
 
+- The opposite trap: serving every asset `no-cache` ("revalidate, no stamping
+  step") makes a warm launch as slow as a cold one. Each asset costs a 304
+  round trip, and the ES-module imports chain them serially. On
+  facilitation-suite and parking-manager, warm ready was ~1100–1200 ms
+  against ~1250 ms cold over 80 ms RTT: 39 and 31 requests, none from cache,
+  9–10 round trips deep (fleet-config#1236). home-automation's stamped,
+  `immutable` assets serve 63 of 80 warm requests from cache and are ready in
+  ~200 ms. The fix is project-scaffolding's `docs/app-onboarding.md` §4a.
 - Evidence: voice-transcriber#220/#221 reproduced it red 3 of 5 and fixed it
   with a transitive import-graph hash. home-automation was probed under its fleet
   hash: editing only a nested module rotated the importer's stamp.
