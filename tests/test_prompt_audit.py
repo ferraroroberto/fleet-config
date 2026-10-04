@@ -913,11 +913,87 @@ check(shell_grants == [], f"no pilot case grants a shell tool (got {shell_grants
 check(all(list((p.parent / "graders").glob("*.md")) for s in pilot
           for p in (REPO / "skills" / s / "evals").glob("*/prompt.md")), "every pilot case has graders")
 
+# ---- weekly evals (#1131): rotation, fold-in honesty, R-44 into prompt-drift, delivery untouched ----
+
+rot = er.pick_rotation({"a": "1", "b": "2", "c": "3", "d": "4", "e": "5", "f": "6", "g": "7", "h": "8"},
+                       {"a": {"last": "2026-09-01", "sha": "1"}, "b": {"last": "2026-09-08", "sha": "0"},
+                        "c": {"last": "2026-09-08", "sha": "3"}, "d": {"last": "2026-09-15", "sha": "x"},
+                        "e": {"last": "2026-09-15", "sha": "y"}, "f": {"last": "2026-09-15", "sha": "z"},
+                        "g": {"last": "2026-09-22", "sha": "w"}, "h": {"last": "2026-09-22", "sha": "8"}})
+check(rot == ["a", "b", "c", "d", "e", "f"],
+      f"rotation: the 3 least recently evaluated plus at most 3 changed since their last eval (got {rot})")
+check(er.pick_rotation({"new": "1", "old": "2"}, {"old": {"last": "2026-09-01", "sha": "2"}}) == ["new", "old"],
+      "rotation: a never-evaluated skill goes first; only eligible skills are picked")
+check(er.pick_rotation({}, {"gone": {"last": "2026-09-01", "sha": "1"}}) == [],
+      "rotation: a skill without evals/ is never picked, even if it was evaluated before")
+
+
+def agg(started, statuses):
+    return {"started": started, "paths": {"s": "fleet-config/skills/s/SKILL.md"},
+            "rows": [{"skill": "s", "tier": t, "weight": w, "case": c, "status": st}
+                     for (t, w, c), st in statuses.items()]}
+
+
+T = {("haiku", "advisory", "c1"): "pass", ("sonnet", "scored", "c1"): "pass", ("opus", "scored", "c1"): "pass",
+     ("haiku", "advisory", "c2"): "pass", ("x", "extra", "c1"): "pass"}
+prev_agg = agg("2026-09-29T21:00:00+00:00", T)
+now_agg = agg("2026-10-04T21:00:00+00:00", T | ({("sonnet", "scored", "c1"): "fail", ("haiku", "advisory", "c2"): "fail",
+                                                      ("x", "extra", "c1"): "fail"}))
+folded = pa.fold_evals(now_agg, prev_agg, dt.date(2026, 10, 5))
+check([(f["verdict"], f["note"]) for f in folded["findings"]] ==
+      [("consider", "eval case c2 passed last run and fails now on haiku"),
+       ("violation", "eval case c1 passed last run and fails now on sonnet")],
+      f"fold: a scored pass->fail is a violation, an advisory one a consider, an extra model nothing (got {folded['findings']})")
+check(pa.fold_evals(None, prev_agg)["status"] == "not-checked", "fold: no aggregate is not-checked")
+ev_dir = Path(tempfile.mkdtemp(prefix="evals-fold-"))
+try:
+    (ev_dir / "20260929T210000.json").write_text(json.dumps(prev_agg), encoding="utf-8")
+    (ev_dir / "20261004T210000.json").write_text(json.dumps(now_agg), encoding="utf-8")
+    (ev_dir / "latest.json").write_text(json.dumps(now_agg), encoding="utf-8")
+    (ev_dir / "rotation.json").write_text(json.dumps({"s": {"last": "2026-10-04", "sha": "x"}}), encoding="utf-8")
+    newest_e, prev_e = pa.latest_two(ev_dir)
+    check(newest_e == now_agg and prev_e == prev_agg,
+          "latest_two reads only the timestamped aggregates; latest.json and rotation.json are not runs")
+finally:
+    shutil.rmtree(ev_dir, ignore_errors=True)
+check(pa.fold_evals(now_agg, prev_agg, dt.date(2026, 10, 20))["status"] == "not-checked", "fold: a stale aggregate is not-checked")
+check(any("evals: not-checked" in l for l in pa.eval_digest_lines(pa.fold_evals(None, None))),
+      "digest: a missing aggregate prints evals: not-checked")
+check(any("evals: not-checked" in l for l in pa.eval_digest_lines(None)), "digest: a run without the fold-in prints not-checked")
+sc = {(x["skill"], x["tier"]): x for x in folded["scores"]}
+check(sc[("s", "sonnet")]["passed"] == 0 and sc[("s", "sonnet")]["delta"] == -1, "digest scores carry the pass count and its delta")
+
+drift_run_findings = [dict(f) for f in folded["findings"] if f["verdict"] in ("violation", "consider")]
+eval_items = pa.drift_items(drift_run_findings, RULES, {"fleet-config/skills/s/SKILL.md": "x\n"}, "", "")
+check([(i["rule"], i["path"]) for i in eval_items.get("fleet-config", [])] == [("R-44", "fleet-config/skills/s/SKILL.md")],
+      f"a scored pass->fail becomes exactly one R-44 prompt-drift item; the consider is not filed (got {eval_items})")
+eval_body, _ = pa.merge_drift("", eval_items["fleet-config"], set(), set(), RULES, "2026-10-05", "r" * 12)
+check(len([l for l in eval_body.splitlines() if l.startswith("- [ ]") and " R-44 " in l]) == 1 and "· hard" in eval_body, "the R-44 item renders once, hard tier")
+
+dc = __import__("delivery_check")
+base_run = {"date": "2026-10-05", "dry_run": False, "sources": [], "update_issue": None, "scan_ran": True,
+            "plan": [], "judgments": {}, "coverage": [], "leads": None}
+stamps = []
+for ev in (folded, pa.fold_evals(None, None), {"status": "error-garbage"}):
+    body_e, status_e = pa.render_digest(dict(base_run, evals=ev), RULES)
+    stamps.append((status_e, re.search(r"<!-- prompt-audit-digest [^>]*-->", body_e).group(0)))
+check(len({st for st in stamps}) == 1 and stamps[0][0] == "complete",
+      "an eval-job failure or a missing aggregate leaves the digest status and stamp unchanged")
+check(dc.delivered({"scan": "posted", "guides": "unchanged", "update-issue": "none"}) is None,
+      "the delivery check passes on the stamp the eval section cannot change")
+
+bat = (SKILL / "evals" / "run-weekly.bat").read_text(encoding="utf-8")
+bat_cmds = [l.strip() for l in bat.splitlines() if l.strip() and not l.strip().upper().startswith(("REM", "@ECHO"))]
+check(bat_cmds[0] == r"cd /d E:\automation\fleet-config"
+      and bat_cmds[1].startswith(r"E:\automation\fleet-config\.venv\Scripts\python.exe ")
+      and "eval_rotation.py --rotate" in bat_cmds[1] and len(bat_cmds) == 2 and "start " not in bat.lower(),
+      f"the eval job launcher is cd /d + this repo's venv Python running eval_rotation.py --rotate in the foreground (got {bat_cmds})")
+
 # ---- contracts: rules.md, sources.toml, vendor neutrality ----
 
 check(sorted(r for r, v in RULES.items() if v["detect"] == "lint") == pa.LINT_RULES,
       "every audit.py lint rule is a `Detect: lint` rule in rules.md and vice versa")
-check(all(v["detect"] in ("lint", "judgment") for v in RULES.values()), "every rule declares lint or judgment")
+check(all(v["detect"] in ("lint", "judgment", "eval") for v in RULES.values()), "every rule declares lint, judgment or eval")
 check(sorted(r for r, v in RULES.items() if v["assist"]) == pa.ASSIST_RULES,
       "every lint-assisted judgment rule in rules.md has a lint assist in audit.py and vice versa")
 _page_sections = {"Avoid time-sensitive information", "Naming conventions", "Token budgets", "Writing effective descriptions",
