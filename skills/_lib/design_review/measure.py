@@ -467,6 +467,50 @@ _MEASURE_JS = r"""
 """
 
 
+# Which theme did the page render? (fleet-config#1216) The walk stamps `data-theme` and sets the context's
+# color scheme, but an app that picks its theme from something else after load re-applies its own choice. Read
+# the attribute as it stands now and the relative luminance of the canvas the page is painted on: `body`'s
+# background composited down through its ancestors over white. `luminance` is null when a layer is not plain
+# rgb() (a wide-gamut colour), so a colour space the browser will not flatten is unknown, never guessed.
+RENDERED_THEME_JS = """
+() => {
+  const parse = c => { const m = /^rgba?\\(([^)]*)\\)$/.exec(c); if (!m) return null;
+    const p = m[1].split(/[ ,\\/]+/).filter(Boolean).map(Number); return [p[0], p[1], p[2], p.length > 3 ? p[3] : 1]; };
+  const layers = []; let ok = true;
+  for (let n = document.body; n && n.nodeType === 1; n = n.parentElement) {
+    const raw = getComputedStyle(n).backgroundColor; if (raw === 'transparent') continue;
+    const c = parse(raw); if (!c) { ok = false; break; }
+    if (c[3] > 0) { layers.push(c); if (c[3] >= 0.999) break; } }
+  let lum = null;
+  if (ok) { let rgb = [255, 255, 255];
+    for (let i = layers.length - 1; i >= 0; i--) { const [r, g, b, a] = layers[i]; rgb = [r * a + rgb[0] * (1 - a), g * a + rgb[1] * (1 - a), b * a + rgb[2] * (1 - a)]; }
+    const lin = v => { v /= 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); };
+    lum = Math.round((0.2126 * lin(rgb[0]) + 0.7152 * lin(rgb[1]) + 0.0722 * lin(rgb[2])) * 1000) / 1000; }
+  return { attr: document.documentElement.dataset.theme || '', luminance: lum };
+}
+"""
+
+# A canvas this dark or this light is unambiguous; the band between is a mid-grey page that says nothing either way.
+DARK_BELOW, LIGHT_ABOVE = 0.2, 0.5
+
+
+def theme_agreement(requested: str, observed: Optional[dict]) -> "tuple[Optional[bool], Optional[dict]]":
+    """`(applied, observed + rendered)`: did the page render the theme the walk asked for?
+
+    `applied` is `False` when the `data-theme` attribute or a clearly dark/light canvas names the other theme (the
+    attribute is the walk's own stamp, so it only disagrees when the app overwrote it), `True` when nothing
+    disagrees, and `None` when the page could not be read at all: unknown is never folded into either answer.
+    """
+    if not isinstance(observed, dict):
+        return None, None
+    attr = str(observed.get("attr") or "")
+    lum = observed.get("luminance")
+    lum = float(lum) if isinstance(lum, (int, float)) and not isinstance(lum, bool) else None
+    rendered = "dark" if lum is not None and lum < DARK_BELOW else ("light" if lum is not None and lum > LIGHT_ABOVE else None)
+    disagrees = (attr in ("light", "dark") and attr != requested) or (rendered is not None and rendered != requested)
+    return (not disagrees), {"attr": attr, "luminance": lum, "rendered": rendered or attr or None}
+
+
 def build_script(geometry_js: Optional[str]) -> str:
     """The evaluate-ready script with the scaffold's effective-rect JS spliced in.
 

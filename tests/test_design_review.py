@@ -58,7 +58,7 @@ def _doc(name: str) -> dict:
 # ---- rubric: the real file loads and names only metrics that exist ----------
 
 rubric = dr.load_rubric(RUBRIC)
-check(rubric.version == "1.11.1", "rubric meta.version stamped")
+check(rubric.version == "1.12.0", "rubric meta.version stamped")
 check(len(rubric.rules) == 29, f"29 seed rules loaded (got {len(rubric.rules)})")
 check(rubric.categories == ["typography", "color", "touch", "navigation", "layout", "components", "a11y"],
       "categories in rubric order")
@@ -413,7 +413,7 @@ check(all(s == "pass" for s in statuses_c.values()), f"compliant: every rule pas
 check(all(v["score"] == 100.0 and v["grade"] == "A" and not v["unmeasured"] for v in out_c["categories"].values()),
       "compliant: every category 100/A, measured")
 check(out_c["overall"] == {"score": 100.0, "grade": "A", "unmeasured": False}, "compliant: overall A")
-check(out_c["schema_version"] == 1 and out_c["rubric_version"] == "1.11.1" and out_c["target"] == "fixture-app"
+check(out_c["schema_version"] == 1 and out_c["rubric_version"] == "1.12.0" and out_c["target"] == "fixture-app"
       and out_c["commit"].startswith("0000") and out_c["generated_at"].endswith("Z"), "evaluate envelope keys")
 check([s["id"] for s in out_c["screens"]] == ["desktop-light-home", "iphone-light-home", "desktop-light-dialog-edit"],
       "evaluate echoes the screen list")
@@ -667,6 +667,58 @@ _doc_e["screens"].append({**_absent, "status": "error", "reason": "TIMEOUT"})
 check(any(r["status"] == "unmeasured" for r in ev.evaluate(_doc_e, rubric, _specs("compliant"))["rules"]),
       "a step that errored for another reason still makes its rules unmeasured")
 
+# ---- #1216: a leg whose app ignores the stamped theme is not measured as the requested one ----
+
+_dark_obs = {"attr": "dark", "luminance": 0.005}
+_light_obs = {"attr": "light", "luminance": 0.93}
+check(measure.theme_agreement("light", _light_obs)[0] is True and measure.theme_agreement("dark", _dark_obs)[0] is True,
+      "a page that renders the requested theme is applied")
+check(measure.theme_agreement("light", _dark_obs)[0] is False, "light requested, dark rendered (attribute and canvas) is not applied")
+check(measure.theme_agreement("light", {"attr": "light", "luminance": 0.005})[0] is False,
+      "an app that ignores the stamp but paints a dark canvas is caught by the luminance alone")
+check(measure.theme_agreement("light", {"attr": "dark", "luminance": None})[0] is False,
+      "an app that re-applies its own attribute is caught by the attribute alone")
+check(measure.theme_agreement("light", {"attr": "light", "luminance": None})[0] is True
+      and measure.theme_agreement("light", {"attr": "light", "luminance": 0.35})[0] is True,
+      "an unreadable or mid-grey canvas is not a disagreement")
+check(measure.theme_agreement("light", None)[0] is None, "no observation is unknown, never a verdict")
+_applied, _seen = measure.theme_agreement("light", _dark_obs)
+check(_seen["attr"] == "dark" and _seen["rendered"] == "dark", f"the observation names what rendered -- {_seen}")
+check([r.id for r in rubric.rules if r.theme_dependent] == ["COLOR-02", "COLOR-03", "COLOR-04", "COLOR-05"],
+      "the rules that judge a palette are declared theme_dependent in the rubric")
+
+_doc_t = _doc("compliant")
+_light_sid = "desktop-light-home"
+for _s in _doc_t["screens"]:
+    _s["theme_applied"] = True
+_base_t = {r["id"]: r for r in ev.evaluate(_doc_t, rubric, _specs("compliant"))["rules"]}
+for _s in _doc_t["screens"]:
+    if _s["id"] == _light_sid:
+        _s["theme_applied"] = False
+        _s["theme_observed"] = {"attr": "dark", "luminance": 0.005, "rendered": "dark"}
+_out_t = ev.evaluate(_doc_t, rubric, _specs("compliant"))
+_rt = {r["id"]: r for r in _out_t["rules"]}
+for _rid in ("COLOR-02", "COLOR-03", "COLOR-04", "COLOR-05"):
+    check(_rt[_rid]["status"] == "unmeasured" and "requested light" in _rt[_rid]["reason"] and "rendered dark" in _rt[_rid]["reason"]
+          and _light_sid not in _rt[_rid]["measured"],
+          f"{_rid} on a screen that did not render the requested theme is unmeasured, naming both themes -- {_rt[_rid]['status']} {_rt[_rid]['reason']}")
+check(all(_rt[r]["status"] == _base_t[r]["status"] and _rt[r]["measured"] == _base_t[r]["measured"]
+          for r in _rt if not _rt[r]["metric"].startswith("spec.") and r not in ("COLOR-02", "COLOR-03", "COLOR-04", "COLOR-05")),
+      "touch, layout, nav and type rules still score that screen, unchanged")
+check(_out_t["theme_mismatch_screens"] == [{"id": _light_sid, "requested": "light", "rendered": "dark"}],
+      f"evaluate lists the screens that did not render the requested theme -- {_out_t.get('theme_mismatch_screens')}")
+_unk = _doc("compliant")
+for _s in _unk["screens"]:
+    _s["theme_applied"] = None
+_unk_out = ev.evaluate(_unk, rubric, _specs("compliant"))
+check({r["id"]: r["status"] for r in _unk_out["rules"]} == {k: v["status"] for k, v in _base_t.items()} and _unk_out["theme_mismatch_screens"] == [],
+      "a screen whose theme could not be observed is left as it was, never flagged")
+_html_t = report_mod._method(_out_t)
+check("did not render the requested theme" in _html_t and _light_sid in _html_t,
+      "the report's method section says which leg was not the theme it is labelled")
+check("did not render the requested theme" not in report_mod._method(ev.evaluate(_doc("compliant"), rubric, _specs("compliant"))),
+      "no caveat when every screen rendered what was asked")
+
 # ---- #995: the synthetic instance: contract, validation, lifecycle ------------
 
 import shutil  # noqa: E402
@@ -872,7 +924,7 @@ else:
           f"measure CLI walks the fixture: 2 tabs + 1 dialog x light/dark ({proc.stdout[-300:]}{proc.stderr[-300:]})")
     check(lines.get("RUN_DIR") == str(run_dir) and Path(lines.get("METRICS", "")).is_file(), "RUN_DIR/METRICS lines point at the run dir")
     doc = json.loads(Path(lines["METRICS"]).read_text(encoding="utf-8"))
-    check(doc["interpreter"] == str(interp) and doc["schema_version"] == 1 and doc["rubric_version"] == "1.11.1", "metrics.json records the interpreter + versions")
+    check(doc["interpreter"] == str(interp) and doc["schema_version"] == 1 and doc["rubric_version"] == "1.12.0", "metrics.json records the interpreter + versions")
     if not (scaffold / "tests" / "e2e" / "_geometry.py").is_file():
         _h.skip("browser leg: project-scaffolding/tests/e2e/_geometry.py absent -- hit-target assertions NOT verified")
     check(doc["walk"]["info"]["geometry"] == ("loaded" if (scaffold / "tests" / "e2e" / "_geometry.py").is_file() else "GEOMETRY_MISSING"),
@@ -943,6 +995,34 @@ else:
                            capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=120)
     res2 = json.loads(proc3.stdout)
     check(res2["rules"] == res["rules"] and res2["categories"] == res["categories"], "two evaluate runs -> identical rules and grades")
+    check(all(s.get("theme_applied") is True for s in doc["screens"]),
+          f"a page that honours the stamped theme reads theme_applied true on every screen -- {[(s['id'], s.get('theme_applied')) for s in doc['screens']]}")
+    # a theme the app picks for itself (fleet-config#1216)
+    _tf = STATE / "theme-fight-run"
+    _p = subprocess.run(
+        [sys.executable, str(REPO / "skills" / "_lib" / "design_review"), "measure", str(REPO),
+         "--url", (FIX / "theme_fight.html").as_uri(), "--devices", "desktop", "--python", str(interp),
+         "--scaffold", str(scaffold), "--run-dir", str(_tf), "--rubric", str(RUBRIC), "--spec", str(FIX / "spec_compliant.md")],
+        capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=600,
+        env={**os.environ, "CLAUDE_HOOKS_STATE_DIR": str(STATE)})
+    _kv = dict(l.split("=", 1) for l in _p.stdout.splitlines() if "=" in l)
+    if "METRICS" not in _kv:
+        check(False, f"theme-fight fixture walk produced metrics -- {_p.stdout[-300:]}{_p.stderr[-300:]}")
+    else:
+        _tdoc = json.loads(Path(_kv["METRICS"]).read_text(encoding="utf-8"))
+        _tby = {s["id"]: s for s in _tdoc["screens"]}
+        _tl, _td = _tby["desktop-light-root"], _tby["desktop-dark-root"]
+        check(_tl["theme_applied"] is False and _tl["theme_observed"]["attr"] == "dark" and _td["theme_applied"] is True,
+              f"an app that re-applies dark is not applied on its light leg, and is on its dark leg -- {_tl.get('theme_observed')}")
+        _tev = ev.evaluate(_tdoc, rubric, rb.load_specs(FIX / "spec_compliant.md", FIX / "spec_compliant.md"))
+        _trules = {r["id"]: r for r in _tev["rules"]}
+        _c4 = _trules["COLOR-04"]
+        check("desktop-light-root" not in _c4["measured"] and "desktop-dark-root" in _c4["measured"]
+              and "desktop-light-root" not in [e["screen"] for e in _c4["evidence"]]
+              and "1 unmeasured" in _c4["reason"] and _tev["theme_mismatch_screens"] == [{"id": "desktop-light-root", "requested": "light", "rendered": "dark"}],
+              f"COLOR-04 reads the light leg that rendered dark as unmeasured, never as a failure against the light spec -- {_c4['status']} {_c4['reason']}")
+        check("desktop-light-root" in _trules["TOUCH-01"]["measured"] and "desktop-light-root" in _trules["LAYOUT-01"]["measured"],
+              "its touch and layout rules still score that screen")
     # embedded content (fleet-config#1185): a declared [design.review].exclude_selectors keeps a session-themed preview out of scoring
     def _embedded_walk(label: str, fleet_toml: str) -> dict:
         tgt = STATE / f"embedded-{label}"

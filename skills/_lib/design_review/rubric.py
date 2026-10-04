@@ -19,7 +19,7 @@ is the bounded checklist a fresh-context judge answers — #973):
     [params.<name>]  token = "components.hit-target.min", default = 44
     [[rules]]
       id, category, title, metric, fail_when, threshold, [threshold_token],
-      severity, standard, fix_template, owner, mockup, [adopt], [devices], [screens]
+      severity, standard, fix_template, owner, mockup, [adopt], [theme_dependent], [devices], [screens]
     [[judgment]]
       id (J-NN), question, maps_to (rule ids a `no` may land on; [] means a
       `no` must be raised as an uncatalogued finding), screens (all | tabs | dialogs)
@@ -101,6 +101,7 @@ class Rule:
     mockup: str
     threshold_token: Optional[str] = None
     adopt: str = ""
+    theme_dependent: bool = False  # judges the rendered palette: unmeasured on a screen that did not render the requested theme (#1216)
     devices: List[str] = field(default_factory=list)
     screens: List[str] = field(default_factory=list)
     params: Dict[str, object] = field(default_factory=dict)
@@ -209,6 +210,7 @@ def validate_rubric(data: dict, path: Optional[Path] = None) -> Rubric:
             threshold=float(threshold) if isinstance(threshold, (int, float)) and not isinstance(threshold, bool) else None,
             threshold_token=str(raw["threshold_token"]) if raw.get("threshold_token") else None,
             adopt=str(raw.get("adopt") or "").strip(),
+            theme_dependent=bool(raw.get("theme_dependent", False)),
             severity=str(raw["severity"]), standard=str(raw["standard"]), fix_template=str(raw["fix_template"]),
             owner=str(raw["owner"]), mockup=str(raw["mockup"]),
             devices=[str(d) for d in raw.get("devices", []) or []],

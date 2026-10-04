@@ -1,0 +1,27 @@
+<!doctype html>
+<!-- Static fixture for the theme-applied check (fleet-config#1216): an app that picks its own theme after load.
+     A moment after load it re-applies data-theme="dark", whatever the walk stamped, so a leg that asked for light
+     renders dark (a server-driven appearance the app follows). Asserted by tests/test_design_review.py. -->
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>design_review theme-fight fixture</title>
+<style>
+  html, body { margin: 0; font-family: system-ui, sans-serif; font-size: 16px; }
+  :root { --bg: #ffffff; --fg: #1f2328; --accent: #0969da; }
+  :root[data-theme="dark"] { --bg: #0d1117; --fg: #e6edf3; --accent: #1f6feb; }
+  html, body { background: var(--bg); color: var(--fg); }
+  body { padding: 16px; }
+  .sw { display: block; width: 44px; height: 26px; min-height: 44px; margin: 8px 0; border: 0; border-radius: 9999px; padding: 0; background: #818b98; }
+  .sw[aria-checked="true"] { background: var(--accent); }
+</style>
+</head>
+<body>
+  <main>
+    <h2>Appearance follows the app</h2>
+    <button type="button" role="switch" class="sw" aria-checked="true" aria-label="Notifications"></button>
+  </main>
+  <script>setTimeout(function () { document.documentElement.dataset.theme = 'dark'; }, 300);</script>
+</body>
+</html>
