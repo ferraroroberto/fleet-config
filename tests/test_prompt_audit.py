@@ -569,13 +569,93 @@ sbody2, _ = pa.merge_drift(sbody, narrowed, {"project-scaffolding/CLAUDE.md", "a
 check("Propagate to: alpha, beta." in sbody2, "a sister not rescanned this run stays on the propagate list")
 check(pa.DRIFT_KIND in __import__("audit_issue").KINDS, "prompt-drift is a managed kind")
 
+# ---- skill structure (#1126): fence length, R-15 frontmatter, R-34..R-37, skill-ref inventory ----
+
+# A four-backtick fence holds three-backtick lines; a toggle-on-every-fence parser lints its middle.
+NESTED_FENCE = "# N\n\n````md\n```bash\nCRITICAL inside the example\n```\n````\n\nKeep it short.\n"
+check(pa.lint_entry(entry_for(NESTED_FENCE), RULES, AUD).hits == [],
+      "a three-backtick line inside a four-backtick fence does not close it (fence length tracked)")
+
+
+def skill_text(body: str, name: str = "good", desc: str = "Audits the thing. E.g. \"/good\".") -> str:
+    return f"---\nname: {name}\ndescription: {desc}\n---\n\n# s\n\n{body}\n"
+
+
+def skill_hits(text: str, rule: str, vocab=None) -> list:
+    res = pa.lint_entry(entry_for(text, kind="skill", key="x/.claude/skills/s/SKILL.md"), RULES, AUD, mcp_vocab=vocab)
+    return by_rule(res, rule)
+
+
+check(len(skill_hits(skill_text("Body.", name="Bad_Name"), "R-15")) == 1, "R-15: a name outside [a-z0-9-] is a hit")
+check(len(skill_hits(skill_text("Body.", name="a" * 65), "R-15")) == 1, "R-15: a name over 64 chars is a hit")
+check(len(skill_hits(skill_text("Body.", desc="Audits <example>things</example>."), "R-15")) == 1,
+      "R-15: an XML tag in the description is a hit")
+check(skill_hits(skill_text("Body.", name="good-name-2"), "R-15") == [], "R-15: a valid name and plain description pass")
+
+R36 = skill_text("Run scripts\\helper.py next.\nOpen E:\\automation\\fleet-config\\docs now.\n"
+                 "Use `tools\\lint.py` too.\nUse scripts/helper.py and snake\\_case.\n"
+                 "Run `& .\\.venv\\Scripts\\python.exe -m x`.\n\n```bat\ncd /d E:\\automation\\x\n```")
+r36 = skill_hits(R36, "R-36")
+check(sorted((h.line, h.cap) for h in r36) == [(8, "violation"), (9, "consider"), (10, "violation"), (12, "consider")],
+      f"R-36: relative backslash path -> violation, drive or venv path -> consider, fence/forward/escape ignored (got {[(h.line, h.cap) for h in r36]})")
+check(skill_hits(skill_text("Use scripts/helper.py."), "R-36") == [], "R-36: forward-slash paths pass")
+
+vocab = pa.mcp_vocabulary(["Load `mcp__web__navigate` and `mcp__web__read_page`.", "`mcp__dev__computer_` prefix"])
+check(sorted(vocab) == ["navigate", "read_page"], f"R-37 vocabulary: qualified names only, prefix forms skipped (got {sorted(vocab)})")
+R37 = skill_text("Call `navigate` first.\nThen `mcp__web__read_page` (`read_page`).\nUse `other_tool`.\n\n```\n`navigate`\n```")
+r37 = skill_hits(R37, "R-37", vocab)
+check([h.line for h in r37] == [8], f"R-37: a bare known tool name is a hit; a line carrying the qualified form, unknown names and fences are not (got {[h.line for h in r37]})")
+check(skill_hits(R37, "R-37", {}) == [], "R-37: an empty vocabulary flags nothing")
+
+tmp2 = Path(tempfile.mkdtemp(prefix="prompt-audit-refs-"))
+try:
+    f2 = tmp2 / "automation"
+    sdir = f2 / "repo-c" / ".claude" / "skills" / "s1"
+    write(sdir / "SKILL.md", skill_text(
+        "See [the reference](reference.md) and `docs/shared.md`.\n"
+        "Delegate to [s2](../s2/SKILL.md). Cases: [c](evals/case/prompt.md), [t](conversations/t.md).\n"
+        "Not there: `missing.md`. Repo file: [readme](../../../CLAUDE.md)."))
+    write(sdir / "reference.md", "# Ref\n\nSee [leaf](leaf.md) and [shared](../../../docs/shared.md).\n"
+          "Mentions `other.md` without linking it.\n" + "x\n" * 120)
+    write(sdir / "other.md", "# Other\n")
+    write(sdir / "leaf.md", "# Leaf\n")
+    write(sdir / "evals" / "case" / "prompt.md", "# case\n")
+    write(sdir / "conversations" / "t.md", "# t\n")
+    write(f2 / "repo-c" / "docs" / "shared.md", "# Shared\n\n## Contents\n\n- one\n" + "y\n" * 120)
+    write(f2 / "repo-c" / ".claude" / "skills" / "s2" / "SKILL.md", skill_text("See [ref2](ref2.md)."))
+    write(f2 / "repo-c" / ".claude" / "skills" / "s2" / "ref2.md", "# Ref2\n\nSee [s1](../s1/SKILL.md).\n")
+    write(f2 / "repo-c" / "CLAUDE.md", CLEAN)
+    proj2 = write(tmp2 / "projects.toml", f'[repo-c]\ncwd_prefix = "{(f2 / "repo-c").as_posix()}"\n')
+    ents = pa.inventory(pa.fleet_repos(proj2), AUD)
+    refs = [e.key for e in ents if e.kind == "skill-ref"]
+    check(refs == ["repo-c/.claude/skills/s1/reference.md", "repo-c/docs/shared.md", "repo-c/.claude/skills/s2/ref2.md"],
+          f"skill-ref: linked and backticked references in order; delegation, evals/, conversations/, missing and CLAUDE.md excluded (got {refs})")
+    by_key = {e.key: e for e in ents}
+    s1 = pa.lint_entry(by_key["repo-c/.claude/skills/s1/SKILL.md"], RULES, AUD)
+    r34 = by_rule(s1, "R-34")
+    check(len(r34) == 1 and r34[0].line == 8 and r34[0].count == 1 and "leaf.md" in r34[0].text,
+          f"R-34: a reference that links a leaf SKILL.md does not reference is a hit at the SKILL.md line (got {[(h.line, h.text) for h in r34]})")
+    check(by_rule(pa.lint_entry(by_key["repo-c/.claude/skills/s2/SKILL.md"], RULES, AUD), "R-34") == [],
+          "R-34: a reference that only delegates to another skill's SKILL.md is not nesting")
+    r35 = by_rule(pa.lint_entry(by_key["repo-c/.claude/skills/s1/reference.md"], RULES, AUD), "R-35")
+    check(len(r35) == 1, "R-35: a reference over 100 lines with no contents heading is a hit")
+    check(by_rule(pa.lint_entry(by_key["repo-c/docs/shared.md"], RULES, AUD), "R-35") == [],
+          "R-35: a long reference with a Contents heading passes")
+    check(by_rule(pa.lint_entry(by_key["repo-c/.claude/skills/s2/ref2.md"], RULES, AUD), "R-35") == [],
+          "R-35: a short reference passes")
+    check(not any(h.rule in ("R-01", "R-13", "R-14") for e in ents if e.kind == "skill-ref"
+                  for h in pa.lint_entry(e, RULES, AUD).hits),
+          "skill-ref files are linted only by rules scoped to them")
+finally:
+    shutil.rmtree(tmp2, ignore_errors=True)
+
 # ---- contracts: rules.md, sources.toml, vendor neutrality ----
 
 check(sorted(r for r, v in RULES.items() if v["detect"] == "lint") == pa.LINT_RULES,
       "every audit.py lint rule is a `Detect: lint` rule in rules.md and vice versa")
 check(all(v["detect"] in ("lint", "judgment") for v in RULES.values()), "every rule declares lint or judgment")
 vendors = {c["vendor"] for c in AUD.values()} | {"shared", "conflict"}
-check(all(v["vendor"] in vendors and v["file"] in ("any", "claude-md", "skill") and v["tier"] in ("easy", "hard")
+check(all(v["vendor"] in vendors and v["file"] in ("any", "claude-md", "skill", "skill-ref") and v["tier"] in ("easy", "hard")
           for v in RULES.values()), "every rule carries a known vendor tag, file scope and tier")
 check(list(RULES) == [f"R-{i:02d}" for i in range(1, len(RULES) + 1)], "rule ids are sequential")
 

@@ -100,7 +100,7 @@ Nothing to scan (`scan=0`) → skip steps 5–6; the digest still posts and list
 <py> <audit> inventory [--only <repo>]
 ```
 
-`HIT=<path>:<line>|rule=…|cap=violation|consider|count=…|text=…` per candidate and `HITS=<path>|audience=…|kind=…|lines=…|size=…|hits=…|neg=…|desc_words=…` per file; `inventory` adds each file's `audience` and any `SECTION=` scoped to one vendor's agent. A hit is a **candidate** — the judgment pass confirms or rejects it. `cap` is the strongest verdict the rule can reach for that reader (from the rule's tag and the file's audience); a judgment never exceeds it.
+`HIT=<path>:<line>|rule=…|cap=violation|consider|count=…|text=…` per candidate and `HITS=<path>|audience=…|kind=…|lines=…|size=…|hits=…|neg=…|desc_words=…` per file; `inventory` adds each file's `audience` and any `SECTION=` scoped to one vendor's agent. `kind=skill-ref` is a `.md` file a `SKILL.md` references (its skill-structure rules live in `rules.md`'s `## Skill structure`); only rules scoped `skill-ref` apply to it. A hit is a **candidate** — the judgment pass confirms or rejects it. `cap` is the strongest verdict the rule can reach for that reader (from the rule's tag and the file's audience); a judgment never exceeds it.
 
 ### 6. Judgment pass
 

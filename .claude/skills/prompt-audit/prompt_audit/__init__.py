@@ -10,9 +10,9 @@ Layout, in dependency order (no module imports a later one):
 
   common.py     paths, fleet constants, the `skills/_lib` imports, small pure helpers
   sources.py    vendor-guide freshness gate
-  inventory.py  audiences + the scan-surface inventory
+  inventory.py  audiences, skill references + the scan-surface inventory
   rules.py      `rules.md` parsing and per-audience verdicts
-  lint.py       the lint engine (R-01..R-17, R-30)
+  lint.py       the lint engine (R-01..R-17, R-30, R-34..R-37)
   dedup.py      findings shared with the scaffolding master / lite global
   state.py      cadence state
   ledger.py     the skip-unchanged ledger issue
@@ -37,12 +37,14 @@ from .sources import diff_source, extract_marker
 from .inventory import (
     Entry,
     inventory,
+    references,
     sections,
 )
 from .rules import parse_rules, verdict_cap
 from .lint import (
     LINT_RULES,
     LintResult,
+    mcp_vocabulary,
     hits_line,
     lint_entry,
 )

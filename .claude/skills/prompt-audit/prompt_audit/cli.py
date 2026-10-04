@@ -17,7 +17,7 @@ from .common import KIND, LEDGER_REPO, LITE_GLOBAL, LITE_REPO, MASTER_REPO, REPO
 from .sources import diff_source
 from .inventory import Entry, _read, inventory, kind_of, sections
 from .rules import parse_rules
-from .lint import hit_detail, hits_line, lint_entry
+from .lint import hit_detail, hits_line, lint_entry, mcp_vocabulary
 from .dedup import dedup
 from .state import load_state, save_state, source_due
 from .ledger import _audit_issue, merge_ledger, plan_scan, read_ledger_issue, render_ledger_body
@@ -139,13 +139,16 @@ def cmd_inventory(args: argparse.Namespace, cfg: dict) -> int:
 def cmd_lint(args: argparse.Namespace, cfg: dict) -> int:
     rules = parse_rules(RULES_MD.read_text(encoding="utf-8"))
     audiences = cfg.get("audiences", {})
+    # R-37's vocabulary is every qualified tool name in the fleet's skills, whatever --only narrows to.
+    fleet = inventory(_repos(args), audiences)
+    vocab = mcp_vocabulary(e.text for e in fleet if e.kind == "skill")
     if args.file:
         path = Path(args.file).resolve()
         entry = Entry(key=path.as_posix(), path=path, repo="", kind=kind_of(path.name) or "claude-md",
                       data=_read(path))
         if "/.claude/rules/" in path.as_posix():
             entry.kind = "rules"
-        match = next((e for e in _entries(args, cfg) if e.path.resolve() == path), None)
+        match = next((e for e in fleet if e.path.resolve() == path), None)
         if match is not None:
             entry = match
         entries = [entry]
@@ -161,7 +164,7 @@ def cmd_lint(args: argparse.Namespace, cfg: dict) -> int:
         if e.data is None:
             print(f"HITS={e.key}|audience={e.audience}|kind={e.kind}|lines=unmeasured|hits=unmeasured")
             continue
-        res = lint_entry(e, rules, audiences)
+        res = lint_entry(e, rules, audiences, vocab)
         if args.detail or args.file:
             for line in hit_detail(res):
                 print(line)
