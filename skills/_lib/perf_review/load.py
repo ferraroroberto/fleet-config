@@ -61,6 +61,7 @@ PAINT_JS = """() => {
 CHROMIUM_ARGS = ["--proxy-server=direct://"]
 SAMPLE_SETTLE_MS = 2000  # an extra cold sample only needs its paint metrics, not the poll-interval window
 TOP_RESPONSES = 5  # how many of the largest responses a leg keeps for the transfer checks
+POLL_GAP_S = 1.0  # a repeat GET of one API path starting later than this after the last is a poll, not boot traffic
 
 
 def is_api_path(path: str) -> bool:
@@ -124,6 +125,57 @@ def webkit_cold(pw, url: str, base: str, a) -> dict:
         browser.close()
 
 
+def top_responses(net: list, keep: int = TOP_RESPONSES) -> list:
+    """The `keep` biggest network responses: path without query, bytes on the wire, content-encoding, resource type.
+
+    A transfer budget that fails says nothing about *which* bytes; one API payload was 5.56 MB of a "6.6 MB"
+    cold load in task-os (#280) while the playbook pointed at assets. Responses with no size are left out.
+    """
+    ranked = sorted((r for r in net if r["bytes"] > 0), key=lambda r: r["bytes"], reverse=True)[:keep]
+    return [{"path": r["path"], "bytes": r["bytes"], "encoding": r.get("encoding", "identity"),
+             "kind": r.get("kind")} for r in ranked]
+
+
+def poll_ids(rows: list) -> set:
+    """`id()` of every row that is a poll: a GET to an `/api/` path starting over `POLL_GAP_S` after the previous
+    request to that path started.
+
+    A poll is steady-state traffic, not the cost of opening the app, so the boot figures leave it out
+    (fleet-config#1218). The first request of a path, and a burst inside the gap, stay boot traffic. The gap is the
+    one `CdpLeg.api_paths` uses to find a poll interval.
+    """
+    last, polls = {}, set()
+    for r in sorted(rows, key=lambda r: r["start"]):
+        if r.get("method") != "GET" or not is_api_path(r["path"]):
+            continue
+        if r["path"] in last and r["start"] - last[r["path"]] > POLL_GAP_S:
+            polls.add(id(r))
+        last[r["path"]] = r["start"]
+    return polls
+
+
+def summarize_rows(rows: list, boot_window_ms: int) -> dict:
+    """A leg's boot figures from its request rows; periodic polls are counted apart as `poll_requests`/`poll_bytes`."""
+    t0 = min((r["start"] for r in rows), default=0)
+    polls = poll_ids(rows)
+    boot = [r for r in rows if id(r) not in polls]
+    api_done = {}
+    for r in sorted(boot, key=lambda r: r["start"]):
+        if is_api_path(r["path"]) and "end" in r and (r["end"] - t0) * 1000 <= boot_window_ms:
+            api_done.setdefault(r["path"], (r["end"] - t0) * 1000)
+    net = [r for r in boot if not r["cached"]]
+    api_bytes = sum(r["bytes"] for r in net if is_api_path(r["path"]))
+    return {"requests": len(boot), "from_cache": len(boot) - len(net),
+            "bytes": sum(r["bytes"] for r in net),
+            # live data re-fetched vs everything else (assets, entry document) that missed the cache: different fixes
+            "api_bytes": api_bytes, "asset_bytes": sum(r["bytes"] for r in net) - api_bytes,
+            "poll_requests": len(polls),
+            "poll_bytes": sum(r["bytes"] for r in rows if id(r) in polls and not r["cached"]),
+            "data_ms": round(max(api_done.values())) if api_done else None,
+            "top_responses": top_responses(net),
+            "non_get": [r["method"] + " " + r["path"] for r in rows if r["method"] != "GET"]}
+
+
 class CdpLeg:
     """Per-request facts from Chrome's network domain: start, finish, bytes on the wire, cache."""
 
@@ -157,32 +209,7 @@ class CdpLeg:
         self._row(ev).update(end=ev["timestamp"], bytes=ev.get("encodedDataLength", 0))
 
     def summary(self, boot_window_ms: int) -> dict:
-        rows = [r for r in self.rows.values() if "start" in r]
-        t0 = min((r["start"] for r in rows), default=0)
-        api_done = {}
-        for r in sorted(rows, key=lambda r: r["start"]):
-            if is_api_path(r["path"]) and "end" in r and (r["end"] - t0) * 1000 <= boot_window_ms:
-                api_done.setdefault(r["path"], (r["end"] - t0) * 1000)
-        net = [r for r in rows if not r["cached"]]
-        api_bytes = sum(r["bytes"] for r in net if is_api_path(r["path"]))
-        return {"requests": len(rows), "from_cache": len(rows) - len(net),
-                "bytes": sum(r["bytes"] for r in net),
-                # live data re-fetched vs everything else (assets, entry document) that missed the cache: different fixes
-                "api_bytes": api_bytes, "asset_bytes": sum(r["bytes"] for r in net) - api_bytes,
-                "data_ms": round(max(api_done.values())) if api_done else None,
-                "top_responses": self.top_responses(net),
-                "non_get": [r["method"] + " " + r["path"] for r in rows if r["method"] != "GET"]}
-
-    @staticmethod
-    def top_responses(net: list, keep: int = TOP_RESPONSES) -> list:
-        """The `keep` biggest network responses: path without query, bytes on the wire, content-encoding, resource type.
-
-        A transfer budget that fails says nothing about *which* bytes; one API payload was 5.56 MB of a "6.6 MB"
-        cold load in task-os (#280) while the playbook pointed at assets. Responses with no size are left out.
-        """
-        ranked = sorted((r for r in net if r["bytes"] > 0), key=lambda r: r["bytes"], reverse=True)[:keep]
-        return [{"path": r["path"], "bytes": r["bytes"], "encoding": r.get("encoding", "identity"),
-                 "kind": r.get("kind")} for r in ranked]
+        return summarize_rows([r for r in self.rows.values() if "start" in r], boot_window_ms)
 
     def api_paths(self) -> dict:
         """Every `/api/` path seen: its poll interval (median gap between requests) and whether it carried a query."""
@@ -194,7 +221,7 @@ class CdpLeg:
         out = {}
         for p, ts in starts.items():
             ts.sort()
-            gaps = [b - a for a, b in zip(ts, ts[1:]) if b - a > 1.0]
+            gaps = [b - a for a, b in zip(ts, ts[1:]) if b - a > POLL_GAP_S]
             out[p] = {"interval_s": round(statistics.median(gaps), 1) if gaps else None, "query": query[p]}
         return out
 

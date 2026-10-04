@@ -192,6 +192,8 @@ def cmd_measure(a: argparse.Namespace) -> int:
         print(f"CHECK {c['status']:<10} {c['id']:<24} measured={report._fmt(c['measured'])} budget={report._fmt(c['budget'])}{sampled}")
         if c.get("split"):
             print(f"SPLIT {c['id']:<24} api={c['split']['api_kb']} KB other={c['split']['asset_kb']} KB")
+        if c.get("polls"):
+            print(f"POLLS {c['id']:<24} poll_requests={c['polls']['requests']} poll_bytes_kb={c['polls']['kb']} (left out of the boot figures)")
         for r in c.get("top_responses", []):
             print(f"TOP {c['id']:<24} {report._top_line(r)}")
     for e in v["endpoints"]:
