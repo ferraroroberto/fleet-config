@@ -103,6 +103,12 @@ What it measures:
   256 KB warm, nearly all `/api/`). Mostly `/api/` is a payload problem
   (P12, P8); never propose a cache fix for it. Mostly other is a cache
   problem (P3, P11).
+- Periodic polls are not boot traffic: a GET to an `/api/` path starting more
+  than 1.0 s after the previous request to that path is left out of
+  `requests`, `from_cache`, `bytes`, `api_bytes` and `TOP`, so the budgets and
+  the `SPLIT` line read boot-only figures. A `POLLS` line (and a report
+  sentence) names the `poll_requests` / `poll_bytes` left out, so nothing is
+  hidden. Budgets are unchanged.
 - A warm leg whose cache could not be trusted is marked `unmeasured`, never
   scored. That happens when the app's cert does not verify for any name the
   probe can map to loopback.

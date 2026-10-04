@@ -492,6 +492,66 @@ if _fn is not None:
           "a static asset, the entry page, an external call and a look-alike segment are not API paths")
 check('startswith("/api/")' not in load_src, "no boot-call match is pinned to a leading `/api/` any more")
 
+# ---- periodic polls are not boot traffic (fleet-config#1218) ----
+# A status refresh every few seconds was counted in the warm relaunch's requests/bytes/top_responses, so the warm transfer
+# budget scored steady-state traffic as the cost of opening the app. `load.py` imports Playwright at the top, so the pure row
+# summary is loaded with `playwright.sync_api` stubbed.
+import types as _types
+
+_stubs = {"playwright": _types.ModuleType("playwright"), "playwright.sync_api": _types.ModuleType("playwright.sync_api")}
+_stubs["playwright.sync_api"].Error = Exception
+_stubs["playwright.sync_api"].sync_playwright = None
+_saved = {k: sys.modules.get(k) for k in _stubs}
+sys.modules.update(_stubs)
+try:
+    from perf_review import load as load_mod
+finally:
+    for _k, _v in _saved.items():
+        if _v is None:
+            sys.modules.pop(_k, None)
+        else:
+            sys.modules[_k] = _v
+
+
+def row(path: str, start: float, nbytes: int, method: str = "GET", cached: bool = False) -> dict:
+    return {"path": path, "method": method, "start": start, "end": start + 0.05, "bytes": nbytes, "cached": cached}
+
+
+boot_rows = [row("/", 0.0, 4000), row("/static/app.js", 0.1, 60000), row("/api/status", 0.3, 2000),
+             row("/api/status", 5.3, 2000), row("/api/status", 10.3, 2000)]
+boot = load_mod.summarize_rows(boot_rows, 8000)
+check(boot["requests"] == 3 and boot["poll_requests"] == 2 and boot["poll_bytes"] == 4000,
+      f"one boot request and two later polls of a path: requests=1 for it, poll_requests=2, poll_bytes=4000 ({boot})")
+check(boot["bytes"] == 66000 and boot["api_bytes"] == 2000 and boot["asset_bytes"] == 64000,
+      "the polls' bytes are in poll_bytes, not in bytes, api_bytes or asset_bytes")
+check(sum(r["path"] == "/api/status" for r in boot["top_responses"]) == 1,
+      "top_responses lists the boot response of a polled path once, never its polls")
+burst = load_mod.summarize_rows([row("/api/units", 0.2, 900), row("/api/units", 0.8, 900), row("/api/units", 1.7, 900)], 8000)
+check(burst["requests"] == 3 and burst["poll_requests"] == 0,
+      f"requests to one path each inside the 1.0 s gap of the last are all boot traffic ({burst})")
+mixed = load_mod.summarize_rows([row("/api/a", 0.0, 100), row("/api/b", 0.2, 100), row("/api/a", 2.0, 100)], 8000)
+check(mixed["requests"] == 2 and mixed["poll_requests"] == 1, "the gap is per path: another path's request in between resets nothing")
+nonapi = load_mod.summarize_rows([row("/static/x.js", 0.0, 10), row("/static/x.js", 9.0, 10)], 8000)
+check(nonapi["requests"] == 2 and nonapi["poll_requests"] == 0, "a repeat request to a non-/api/ path is never a poll")
+post = load_mod.summarize_rows([row("/api/save", 0.0, 10, "POST"), row("/api/save", 9.0, 10, "POST")], 8000)
+check(post["requests"] == 2 and post["poll_requests"] == 0 and post["non_get"] == ["POST /api/save"] * 2,
+      "a POST is never a poll, and non-GET requests are still reported")
+cached_poll = load_mod.summarize_rows([row("/api/status", 0.0, 10), row("/api/status", 5.0, 10, cached=True)], 8000)
+check(cached_poll["requests"] == 1 and cached_poll["from_cache"] == 0 and cached_poll["poll_requests"] == 1
+      and cached_poll["poll_bytes"] == 0, "a poll served from cache is a poll: out of requests and from_cache, no bytes")
+late = load_mod.summarize_rows([row("/api/status", 0.0, 10), row("/api/status", 9.0, 10)], 8000)
+check(late["data_ms"] == 50, "boot data landing reads the first completion of the path, never a later poll")
+check(load_mod.summarize_rows([], 8000)["requests"] == 0, "an empty leg summarises to zero requests")
+
+polled_warm = leg(cache="trusted", bytes=40 * 1024, poll_requests=7, poll_bytes=90 * 1024)
+pv = report.verdict(probe, {"legs": {"android_cold": leg(), "android_warm": polled_warm}}, budgets)
+pc = {c["id"]: c for c in pv["checks"]}
+check(pc["warm.bytes_kb"]["status"] == "pass" and pc["warm.bytes_kb"]["measured"] == 40,
+      "the warm budget check reads the boot-only bytes, so polls cannot fail it")
+check(pc["warm.bytes_kb"]["polls"] == {"requests": 7, "kb": 90}, "the warm check carries the poll count and size")
+check("7 periodic poll request(s) (90 KB)" in report.render_body(pv, "r", "b"), "the report body names the poll count")
+check("polls" not in bytes_checks({}, {"bytes": 10 * 1024})[0]["warm.bytes_kb"], "a leg with no polls carries no poll note")
+
 # ---- the Chromium leg bypasses Windows proxy auto-detect (fleet-config#1139) ----
 # The harness addresses the app by an HTTPS hostname, which is no implicit proxy bypass, so with
 # "Automatically detect settings" on, a cold autoproxy cache stalls the first request ~2.7 s (WPAD).

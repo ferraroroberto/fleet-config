@@ -119,6 +119,22 @@ def bytes_split(leg: dict) -> Optional[dict]:
     return {"api_kb": round(leg["api_bytes"] / 1024), "asset_kb": round(leg["asset_bytes"] / 1024)}
 
 
+def poll_summary(leg: dict) -> Optional[dict]:
+    """`{requests, kb}` of the periodic polls a leg left out of its boot figures, or None when it recorded none.
+
+    A poll is steady-state traffic, not the cost of opening the app, so `load.py` counts it apart (fleet-config#1218);
+    the budget and the split read the boot figures and this keeps the excluded traffic visible.
+    """
+    if not leg.get("poll_requests"):
+        return None
+    return {"requests": leg["poll_requests"], "kb": round(leg.get("poll_bytes", 0) / 1024)}
+
+
+def _poll_line(label: str, p: dict) -> str:
+    return (f"{label} figures leave out {p['requests']} periodic poll request(s) ({p['kb']} KB): steady-state traffic, "
+            f"not the cost of opening the app.")
+
+
 def _split_line(label: str, s: dict) -> str:
     return (f"{label} transfer is {s['api_kb']} KB of `/api/` data re-fetched and {s['asset_kb']} KB of other "
             f"responses that missed the cache (assets, entry document): " +
@@ -174,8 +190,10 @@ def verdict(probe: dict, load: dict, budgets: dict) -> dict:
         add(cid, label, limit, value, _status(value, limit))
         if cid == "cold.ready_ms":
             checks[-1].update(samples=cold_sampled["samples"], outliers=cold_sampled["outliers"])
+        leg = cold if cid.startswith("cold.") else warm
+        if cid.endswith(".bytes_kb") and poll_summary(leg):
+            checks[-1]["polls"] = poll_summary(leg)
         if cid.endswith(".bytes_kb") and checks[-1]["status"] == "fail":
-            leg = cold if cid.startswith("cold.") else warm
             checks[-1]["top_responses"] = top_responses(leg)
             if cid == "warm.bytes_kb":
                 checks[-1]["split"] = bytes_split(leg)
@@ -280,6 +298,8 @@ def render_body(v: dict, run_id: str, build: Optional[str]) -> str:
             lines += ["", f"Largest responses behind \"{c['label']}\":", ""] + [f"- {_top_line(r)}" for r in c["top_responses"]]
         if c.get("split"):
             lines += ["", _split_line("Warm relaunch", c["split"])]
+        if c.get("polls"):
+            lines += ["", _poll_line("Warm relaunch" if c["id"].startswith("warm.") else "Cold launch", c["polls"])]
     lines += ["", "## Endpoints", "", "| Endpoint | n | p50 ms | p95 ms | cold ms | Budget | |", "|---|---|---|---|---|---|---|"]
     lines += [f"| `{e['path']}` | {e.get('n')} | {_fmt(e.get('p50'))} | {_fmt(e.get('p95'))} | {_fmt(e.get('cold_ms'))} "
               f"| {e['budget']} | {_MARK[e['status']]} |" for e in v["endpoints"]]
