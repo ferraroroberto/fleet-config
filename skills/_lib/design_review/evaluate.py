@@ -64,7 +64,7 @@ import sys
 from pathlib import Path
 from typing import Callable, Dict, List, Optional, Tuple
 
-from . import measure
+from . import measure, plan
 from .rubric import Rubric, Rule, resolve_params, resolve_threshold
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))  # skills/_lib, as design_review.rubric does
@@ -228,11 +228,15 @@ def _d_no_text_size_control(m: dict, rule: Rule, ctx: dict) -> Derived:
         # is absent from every other screen. Seen on any walked screen -> the app has it (#1185).
         if ctx.get("text_size_control_seen"):
             return 0.0, [{"zoom_locked": locked, "text_size_control": False, "seen_on_another_screen": True}], None
-        # The vendored boot script stamped <html data-textsize> but no walked screen showed the control: it lives
-        # in a pane this walk never opened. Not established -> unmeasured, never a pass and never a false fail.
-        if measure.metric_value(m, "a11y.text_size_stamped") is True:
-            return None, [], ("text size: <html data-textsize> is stamped but no walked screen showed the control "
-                              "(its Settings pane was not opened) -- declare the Settings step in [design.review] extra_steps")
+        # The vendored boot script stamped <html data-textsize> but no walked screen showed the control. When the walk
+        # opened the Settings gear and still did not see it, it is missing (fails, below); when the pane was never
+        # opened (no gear, or the click refused or failed) it is not established -> unmeasured, never a pass and
+        # never a false fail (#1217).
+        if measure.metric_value(m, "a11y.text_size_stamped") is True and ctx.get("settings_gear") != "ok":
+            gear = {"absent": "no Settings gear was found to open (SETTINGS_GEAR_ABSENT)",
+                    "error": "the Settings gear could not be opened"}.get(str(ctx.get("settings_gear")), "its Settings pane was not opened")
+            return None, [], (f"text size: <html data-textsize> is stamped but no walked screen showed the control "
+                              f"({gear}) -- declare the Settings step in [design.review] extra_steps")
     return (0.0 if ctl else 1.0), [{"zoom_locked": locked, "text_size_control": ctl}], None
 
 
@@ -545,6 +549,17 @@ def score_overall(categories: Dict[str, dict], rubric: Rubric) -> Dict[str, obje
             "unmeasured": any(v["unmeasured"] for v in categories.values())}
 
 
+def _settings_gear_state(screens: List[dict]) -> Optional[str]:
+    """What the built-in Settings step did across the walk (#1217): `ok` when any leg opened and measured the pane,
+    else `absent` (no gear button), else `error` (refused by no_go, or the click failed); `None` when it never ran."""
+    mine = [s for s in screens if isinstance(s, dict) and s.get("view") == plan.SETTINGS_GEAR_VIEW]
+    for state, test in (("ok", lambda s: s.get("status") == "ok"), ("absent", lambda s: s.get("status") == ABSENT),
+                        ("error", lambda s: s.get("status") not in ("ok", ABSENT))):
+        if any(test(s) for s in mine):
+            return state
+    return None
+
+
 def evaluate(doc: dict, rubric: Rubric, specs: Dict[str, Dict[str, str]],
              now: Optional[_dt.datetime] = None) -> Dict[str, object]:
     """The whole stage: one metrics document -> rule results + grades."""
@@ -555,6 +570,7 @@ def evaluate(doc: dict, rubric: Rubric, specs: Dict[str, Dict[str, str]],
                isinstance(s, dict) and s.get("status") == "ok" and isinstance(s.get("metrics"), dict)
                and bool(measure.metric_value(s["metrics"], "controls.switches_on"))
                for s in doc.get("screens") or []),
+           "settings_gear": _settings_gear_state(doc.get("screens") or []),
            "text_size_control_seen": any(
                isinstance(s, dict) and s.get("status") == "ok" and isinstance(s.get("metrics"), dict)
                and measure.metric_value(s["metrics"], "a11y.text_size_control") is True

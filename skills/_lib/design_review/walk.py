@@ -16,7 +16,12 @@ What it does, per device x theme, and nothing else:
      screenshot, run the measurement script;
   3. `showModal()` each `dialog[id]`, screenshot, set every `details.open`
      in the dialog, measure, `close()`;
-  4. any `[design.review].extra_steps` after a fresh `goto`: optionally set
+  4. the Settings gear (#1217): after a fresh `goto`, click the header button named "Settings" -- the vendored
+     `home-head` gear, found by role and accessible name, never a per-app selector -- screenshot the pane it
+     opens, set every `details.open` in it, measure. The one click the walk makes without a declaration:
+     it only switches a view and writes nothing. Refused when the gear sits inside a `no_go` selector; an app
+     with no such button records `SETTINGS_GEAR_ABSENT`, its own state, never a pass;
+  5. any `[design.review].extra_steps` after a fresh `goto`: optionally set
      one declared `open` details, then each `clicks` selector in turn (or
      the single `click`), screenshot, set every `details.open` in the open
      dialog or else the page, measure. Every click is vetoed when the
@@ -29,7 +34,8 @@ closes its siblings -- stays excluded by `measure.py`'s `checkVisibility()`
 only as the first of its family -- the row menus of a list never coexist in the
 app (#1155). A screen that opened any also gets a full screenshot of that state.
 
-No submit, no fill, no session attach, no navigation away from the base URL.
+No submit, no fill, no session attach, no navigation away from the base URL. The only click beyond the
+primary tabs that needs no declaration is the Settings gear (#1217).
 
 Output: `<out>/screens.json` — a list of screen records
 `{id, device, theme, view, kind, status, reason, error, screenshot,
@@ -39,7 +45,8 @@ distinct `reason` (`TIMEOUT`, `NOT_LISTENING`, `TAB_FAILED`, `DIALOG_FAILED`,
 `BROWSER_FAILED`, `NO_GO`); its rules evaluate to `unmeasured`, never pass.
 A step whose target never attaches (a menu on an empty list) is `status:
 "absent"`, `reason: "STEP_TARGET_ABSENT"`: that surface does not exist in
-this app state, so it leaves unrelated rules alone (#995).
+this app state, so it leaves unrelated rules alone (#995). The Settings step
+does the same with `reason: "SETTINGS_GEAR_ABSENT"` when no Settings button exists (#1217).
 `theme_applied` is whether the page rendered the theme the leg asked for (`false` when the app re-applied
 its own after the stamp, `null` when it could not be read); `theme_observed` is `{attr, luminance, rendered}`.
 The walk records it and never fights the app for it (#1216).
@@ -59,6 +66,7 @@ import argparse
 import importlib.util
 import json
 import logging
+import re
 import sys
 import time
 from pathlib import Path
@@ -76,6 +84,9 @@ DETAILS_SETTLE_MS = 1200
 DIALOG_SETTLE_MS = 500
 STEP_SETTLE_MS = 1200
 STEP_TARGET_WAIT_MS = 5000   # a step target not attached by then is absent from this app state (#995)
+GEAR_WAIT_MS = 1000          # the base page has settled (SETTLE_MS); a gear not visible this much later is not there (#1217)
+# The vendored home-head gear is an icon-only button named "Settings" (project-scaffolding#316): found by role and name.
+_SETTINGS_NAME = re.compile(r"^\s*settings\s*$", re.I)
 DEFAULT_TIMEOUT_MS = 15000
 # Neither engine captures an image over this many device px on a side: an iPhone (3x) page
 # over ~10,900 CSS px tall fails its full-page screenshot (#1085).
@@ -122,6 +133,10 @@ _NO_GO_JS = "(el, sels) => sels.some(s => { try { return !!el.closest(s); } catc
 
 class NoGo(Exception):
     """A step's click target sits inside a declared `no_go` selector."""
+
+
+class GearAbsent(Exception):
+    """The page has no button named "Settings" to open."""
 
 
 class TargetAbsent(Exception):
@@ -356,6 +371,12 @@ def walk_context(pw, device: str, theme: str, args: argparse.Namespace, script: 
                                    status="error", reason="DIALOG_FAILED", error=str(exc)[:300]))
             log.warning("FAIL %s: %s", sid, str(exc)[:200])
 
+    def refuse_no_go(loc, label: str):
+        """`loc` itself, refused when its element sits inside a no_go selector."""
+        if no_go and loc.evaluate(_NO_GO_JS, no_go):
+            raise NoGo(f"{label} sits inside a no_go selector")
+        return loc
+
     def guarded(selector: str):
         """The first match for `selector`: absent when it never attaches, refused inside a no_go selector."""
         loc = page.locator(selector).first
@@ -365,9 +386,40 @@ def walk_context(pw, device: str, theme: str, args: argparse.Namespace, script: 
             if classify_error(exc) != "TIMEOUT":
                 raise
             raise TargetAbsent(f"{selector} never appeared within {STEP_TARGET_WAIT_MS} ms") from exc
-        if no_go and loc.evaluate(_NO_GO_JS, no_go):
-            raise NoGo(f"{selector} sits inside a no_go selector")
-        return loc
+        return refuse_no_go(loc, selector)
+
+    # The Settings pane behind the header gear: reviewed on every app, with no declaration (#1217).
+    gear_view = plan.SETTINGS_GEAR_VIEW
+    gear_sid = plan.screen_id(device, theme, gear_view)
+    try:
+        open_base()
+        gear = page.get_by_role("button", name=_SETTINGS_NAME).locator("visible=true").first
+        try:
+            gear.wait_for(state="attached", timeout=GEAR_WAIT_MS)
+        except Exception as exc:  # noqa: BLE001 — Playwright's TimeoutError: no such button on this page
+            if classify_error(exc) != "TIMEOUT":
+                raise
+            raise GearAbsent("no visible button named Settings") from exc
+        refuse_no_go(gear, "the Settings gear").click()
+        page.wait_for_timeout(STEP_SETTLE_MS)
+        shot = _shot(page, shots, gear_sid)
+        full, note = _open_scope_details(page, shots, gear_sid, retouch)
+        metrics = page.evaluate(script, params)
+        screens.append(_record(id=gear_sid, device=device, theme=theme, view=gear_view, kind="step",
+                               screenshot=shot, screenshot_full=full, note=note, metrics=metrics, **theme_fields()))
+        log.info("ok %s", gear_sid)
+    except GearAbsent as exc:
+        screens.append(_record(id=gear_sid, device=device, theme=theme, view=gear_view, kind="step",
+                               status="absent", reason="SETTINGS_GEAR_ABSENT", error=str(exc)[:300]))
+        log.info("absent %s: %s", gear_sid, exc)
+    except NoGo as exc:
+        screens.append(_record(id=gear_sid, device=device, theme=theme, view=gear_view, kind="step",
+                               status="error", reason="NO_GO", error=str(exc)[:300]))
+        log.warning("NO_GO %s: %s", gear_sid, exc)
+    except Exception as exc:  # noqa: BLE001
+        screens.append(_record(id=gear_sid, device=device, theme=theme, view=gear_view, kind="step",
+                               status="error", reason=classify_error(exc), error=str(exc)[:300]))
+        log.warning("FAIL %s: %s", gear_sid, str(exc)[:200])
 
     for step in review.get("extra_steps", []) or []:
         if not isinstance(step, dict) or not step.get("id"):

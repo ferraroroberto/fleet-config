@@ -58,7 +58,7 @@ def _doc(name: str) -> dict:
 # ---- rubric: the real file loads and names only metrics that exist ----------
 
 rubric = dr.load_rubric(RUBRIC)
-check(rubric.version == "1.12.0", "rubric meta.version stamped")
+check(rubric.version == "1.13.0", "rubric meta.version stamped")
 check(len(rubric.rules) == 29, f"29 seed rules loaded (got {len(rubric.rules)})")
 check(rubric.categories == ["typography", "color", "touch", "navigation", "layout", "components", "a11y"],
       "categories in rubric order")
@@ -413,7 +413,7 @@ check(all(s == "pass" for s in statuses_c.values()), f"compliant: every rule pas
 check(all(v["score"] == 100.0 and v["grade"] == "A" and not v["unmeasured"] for v in out_c["categories"].values()),
       "compliant: every category 100/A, measured")
 check(out_c["overall"] == {"score": 100.0, "grade": "A", "unmeasured": False}, "compliant: overall A")
-check(out_c["schema_version"] == 1 and out_c["rubric_version"] == "1.12.0" and out_c["target"] == "fixture-app"
+check(out_c["schema_version"] == 1 and out_c["rubric_version"] == "1.13.0" and out_c["target"] == "fixture-app"
       and out_c["commit"].startswith("0000") and out_c["generated_at"].endswith("Z"), "evaluate envelope keys")
 check([s["id"] for s in out_c["screens"]] == ["desktop-light-home", "iphone-light-home", "desktop-light-dialog-edit"],
       "evaluate echoes the screen list")
@@ -878,7 +878,9 @@ def _walk_one(full: str):
     pw = type("P", (), {"webkit": type("E", (), {"launch": lambda _s: browser})(), "devices": {"iPhone 15 Pro Max": {}}})()
     args = type("A", (), {"url": "https://127.0.0.1:1", "timeout_ms": 1000, "synthetic": False})()
     with tempfile.TemporaryDirectory() as tmp:
-        return walk.walk_context(pw, "iphone", "light", args, "MEASURE", {}, {}, Path(tmp)), page
+        screens = walk.walk_context(pw, "iphone", "light", args, "MEASURE", {}, {}, Path(tmp))
+    # The stub has no Settings gear to find (the Settings step is covered by the browser leg below, #1217).
+    return [s for s in screens if s["view"] != plan.SETTINGS_GEAR_VIEW], page
 
 
 for _mode in ("raise", "clip"):
@@ -920,17 +922,18 @@ else:
         env={**os.environ, "CLAUDE_HOOKS_STATE_DIR": str(STATE)},
     )
     lines = dict(l.split("=", 1) for l in proc.stdout.splitlines() if "=" in l)
-    check(proc.returncode == 0 and lines.get("UNMEASURED") == "none" and lines.get("SCREENS") == "6/6",
-          f"measure CLI walks the fixture: 2 tabs + 1 dialog x light/dark ({proc.stdout[-300:]}{proc.stderr[-300:]})")
+    check(proc.returncode == 0 and lines.get("UNMEASURED") == "none" and lines.get("SCREENS") == "6/8" and lines.get("ABSENT") == "2",
+          f"measure CLI walks the fixture: 2 tabs + 1 dialog x light/dark, plus the absent Settings gear (#1217) ({proc.stdout[-300:]}{proc.stderr[-300:]})")
     check(lines.get("RUN_DIR") == str(run_dir) and Path(lines.get("METRICS", "")).is_file(), "RUN_DIR/METRICS lines point at the run dir")
     doc = json.loads(Path(lines["METRICS"]).read_text(encoding="utf-8"))
-    check(doc["interpreter"] == str(interp) and doc["schema_version"] == 1 and doc["rubric_version"] == "1.12.0", "metrics.json records the interpreter + versions")
+    check(doc["interpreter"] == str(interp) and doc["schema_version"] == 1 and doc["rubric_version"] == "1.13.0", "metrics.json records the interpreter + versions")
     if not (scaffold / "tests" / "e2e" / "_geometry.py").is_file():
         _h.skip("browser leg: project-scaffolding/tests/e2e/_geometry.py absent -- hit-target assertions NOT verified")
     check(doc["walk"]["info"]["geometry"] == ("loaded" if (scaffold / "tests" / "e2e" / "_geometry.py").is_file() else "GEOMETRY_MISSING"),
           "walk reports whether the scaffold geometry JS loaded")
     by_id = {s["id"]: s for s in doc["screens"]}
-    check(set(by_id) == {f"desktop-{t}-{v}" for t in ("light", "dark") for v in ("home", "list", "dialog-editdialog")}, "screen ids from tabs + dialog")
+    check(set(by_id) == {f"desktop-{t}-{v}" for t in ("light", "dark") for v in ("home", "list", "dialog-editdialog", "gear-settings")}
+      and by_id["desktop-light-gear-settings"]["reason"] == "SETTINGS_GEAR_ABSENT", "screen ids from tabs + dialog + the Settings gear step (absent here)")
     home = by_id["desktop-light-home"]["metrics"]
     tx, ct, tg, ic, nv, ly, ay = (home[k] for k in ("text", "controls", "targets", "icons", "nav", "layout", "a11y"))
     check(tx["min_px"] == 10 and tx["under11_count"] == 1 and {"10", "12", "14", "16", "24"} <= set(tx["sizes"]), "text size histogram + 10px floor")
@@ -995,8 +998,8 @@ else:
                            capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=120)
     res2 = json.loads(proc3.stdout)
     check(res2["rules"] == res["rules"] and res2["categories"] == res["categories"], "two evaluate runs -> identical rules and grades")
-    check(all(s.get("theme_applied") is True for s in doc["screens"]),
-          f"a page that honours the stamped theme reads theme_applied true on every screen -- {[(s['id'], s.get('theme_applied')) for s in doc['screens']]}")
+    check(all(s.get("theme_applied") is True for s in doc["screens"] if s["status"] == "ok"),
+          f"a page that honours the stamped theme reads theme_applied true on every measured screen -- {[(s['id'], s.get('theme_applied')) for s in doc['screens']]}")
     # a theme the app picks for itself (fleet-config#1216)
     _tf = STATE / "theme-fight-run"
     _p = subprocess.run(
@@ -1220,6 +1223,41 @@ else:
           and _ts_fb["toasts_tinted"][0]["sel"].startswith("div.toast.saved") and _ts_fb["toasts_tinted"][0]["via"] == "border",
           f"COLOR-05: of three visible toasts only the green-bordered one is tinted; the hidden one is not counted (#1200) -- {_ts_fb} ({proc_ts.stderr[-300:]})")
 
+    # settings gear: the walk opens the header gear on every app, with no extra_steps, and measures the Settings pane (#1217)
+    def _gear_walk(variant: str, review: dict) -> tuple:
+        out = STATE / f"fixture-gear-{variant or 'default'}"
+        rv = STATE / f"gear-review-{variant or 'default'}.json"
+        rv.write_text(json.dumps(review), encoding="utf-8")
+        pr = subprocess.run(
+            [str(interp), str(REPO / "skills" / "_lib" / "design_review" / "walk.py"),
+             "--url", (FIX / "settings_gear.html").as_uri() + (f"?{variant}" if variant else ""),
+             "--out", str(out), "--devices", "desktop", "--scaffold", str(scaffold),
+             "--review", str(rv), "--params", str(STATE / "steps-params.json")],
+            capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=600,
+        )
+        scr = json.loads((out / "screens.json").read_text(encoding="utf-8")) if pr.returncode == 0 else []
+        res = ev.evaluate({"screens": scr, "target": "gear-fixture", "wide_views": []}, rubric, _specs("compliant"))
+        return {s["id"]: s for s in scr}, next(r for r in res["rules"] if r["id"] == "A11Y-02"), pr.stderr[-300:]
+
+    g_ok, g_ok_a11y, g_err = _gear_walk("", {})
+    g_set = g_ok.get("desktop-light-gear-settings", {})
+    check(g_set.get("status") == "ok" and g_set.get("kind") == "step"
+          and (g_set.get("metrics") or {}).get("a11y", {}).get("text_size_control") is True,
+          f"a default walk (no extra_steps) clicks the header gear and measures the Settings pane it opens (#1217) -- {g_set.get('status')} {g_set.get('reason')} {g_err}")
+    check(g_ok_a11y["status"] == "pass", f"A11Y-02 passes on a fixture whose text-size control sits behind the gear (#1217) -- {g_ok_a11y['status']}: {g_ok_a11y['reason']}")
+    g_no, g_no_a11y, _ = _gear_walk("nocontrol", {})
+    check(g_no.get("desktop-light-gear-settings", {}).get("status") == "ok" and g_no_a11y["status"] == "fail",
+          f"A11Y-02 fails when the Settings pane the gear opens holds no text-size control, even though the boot stamp is present (#1217) -- {g_no_a11y['status']}: {g_no_a11y['reason']}")
+    g_zone, g_zone_a11y, _ = _gear_walk("zone", {"no_go": [".danger-zone"]})
+    g_zs = g_zone.get("desktop-light-gear-settings", {})
+    check(g_zs.get("status") == "error" and g_zs.get("reason") == "NO_GO" and not g_zs.get("metrics") and g_zone_a11y["status"] == "unmeasured",
+          f"a gear inside a declared no_go selector is never clicked; A11Y-02 is unmeasured, never a pass (#1217) -- {g_zs.get('status')} {g_zs.get('reason')} {g_zone_a11y['status']}")
+    g_none, g_none_a11y, _ = _gear_walk("nogear", {})
+    g_ns = g_none.get("desktop-light-gear-settings", {})
+    check(g_ns.get("status") == "absent" and g_ns.get("reason") == "SETTINGS_GEAR_ABSENT" and g_none_a11y["status"] == "unmeasured"
+          and "no Settings gear" in g_none_a11y["reason"],
+          f"an app with no header gear reports SETTINGS_GEAR_ABSENT as its own state and A11Y-02 unmeasured (#1217) -- {g_ns.get('status')} {g_ns.get('reason')} {g_none_a11y['reason']}")
+
     # fold: a popup over a chip far below the fold is covered there too; the walk puts the scroll back (#1155)
     fold_dir = STATE / "fixture-fold"
     proc_fo = subprocess.run(
@@ -1228,7 +1266,7 @@ else:
          "--params", str(STATE / "steps-params.json")],
         capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=600,
     )
-    fos = {s["id"]: s for s in json.loads((fold_dir / "screens.json").read_text(encoding="utf-8"))} if proc_fo.returncode == 0 else {}
+    fos = {s["id"]: s for s in json.loads((fold_dir / "screens.json").read_text(encoding="utf-8")) if s["view"] != plan.SETTINGS_GEAR_VIEW} if proc_fo.returncode == 0 else {}
     check(len(fos) == 4, f"the fold fixture walks desktop + iphone x 2 themes ({proc_fo.stderr[-300:]})")
     for _dev in ("desktop", "iphone"):
         _m = fos.get(f"{_dev}-light-root", {}).get("metrics") or {}
@@ -1250,7 +1288,7 @@ else:
          "--params", str(STATE / "steps-params.json")],
         capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=600,
     )
-    pos = {s["id"]: s for s in json.loads((pop_dir / "screens.json").read_text(encoding="utf-8"))} if proc_po.returncode == 0 else {}
+    pos = {s["id"]: s for s in json.loads((pop_dir / "screens.json").read_text(encoding="utf-8")) if s["view"] != plan.SETTINGS_GEAR_VIEW} if proc_po.returncode == 0 else {}
     check(len(pos) == 4, f"the popovers fixture walks desktop + iphone x 2 themes ({proc_po.stderr[-300:]})")
     for _sid, _s in sorted(pos.items()):
         _total = ((_s.get("metrics") or {}).get("targets") or {}).get("total")
@@ -1264,7 +1302,7 @@ else:
          "--params", str(STATE / "steps-params.json")],
         capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=600,
     )
-    pgs = {s["id"]: s for s in json.loads((pg_dir / "screens.json").read_text(encoding="utf-8"))} if proc_pg.returncode == 0 else {}
+    pgs = {s["id"]: s for s in json.loads((pg_dir / "screens.json").read_text(encoding="utf-8")) if s["view"] != plan.SETTINGS_GEAR_VIEW} if proc_pg.returncode == 0 else {}
     check(len(pgs) == 4 and all(s["status"] == "ok" for s in pgs.values()), f"the pointer/grid fixture walks 2 tabs x 2 themes on android ({proc_pg.stderr[-300:]})")
     for _sid, _s in sorted(pgs.items()):
         _boxes = (_s.get("metrics") or {}).get("icons", {}).get("boxes")
@@ -1281,7 +1319,7 @@ else:
          "--params", str(STATE / "steps-params.json")],
         capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=600,
     )
-    discs = {s["id"]: s for s in json.loads((disc_dir / "screens.json").read_text(encoding="utf-8"))} if proc_d.returncode == 0 else {}
+    discs = {s["id"]: s for s in json.loads((disc_dir / "screens.json").read_text(encoding="utf-8")) if s["view"] != plan.SETTINGS_GEAR_VIEW} if proc_d.returncode == 0 else {}
     check(len(discs) == 4 and all(s["status"] == "ok" for s in discs.values()), f"the disclosure fixture walks desktop + iphone x 2 themes ({proc_d.stderr[-300:]})")
     for _dev in ("desktop", "iphone"):
         _m = (discs.get(f"{_dev}-light-root", {}).get("metrics") or {})
@@ -1316,8 +1354,8 @@ else:
     )
     syn_lines = dict(l.split("=", 1) for l in proc5.stdout.splitlines() if "=" in l)
     check(proc5.returncode == 0 and syn_lines.get("MODE") == "synthetic" and syn_lines.get("UNMEASURED") == "none"
-          and syn_lines.get("SCREENS") == "8/8",
-          f"measure --synthetic walks the launcher's instance: 6 screens + the synthetic step in both themes ({proc5.stdout[-400:]}{proc5.stderr[-300:]})")
+          and syn_lines.get("SCREENS") == "8/10",
+          f"measure --synthetic walks the launcher's instance: 6 screens + the synthetic step in both themes, plus the absent gear ({proc5.stdout[-400:]}{proc5.stderr[-300:]})")
     syn_doc = json.loads((syn_run / "metrics.json").read_text(encoding="utf-8")) if (syn_run / "metrics.json").is_file() else {}
     syn_ids = {s["id"]: s for s in syn_doc.get("screens", [])}
     check(syn_ids.get("desktop-light-home-reveal-synthetic", {}).get("status") == "ok",
