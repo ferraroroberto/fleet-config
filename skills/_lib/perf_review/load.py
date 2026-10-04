@@ -39,7 +39,6 @@ import argparse
 import json
 import statistics
 import sys
-import time
 from pathlib import Path
 from typing import Optional
 from urllib.parse import urlsplit, urlunsplit
@@ -78,12 +77,26 @@ def _path(url: str, base: str) -> str:
     return parts.path if url.startswith(base) else "(external)"
 
 
-def _ready(page, selector: str, timeout_ms: int, t0: float):
-    """`(ready_ms, ready_by)` — the declared selector visible, else first contentful paint."""
+# Playwright's visibility test (a box with area, `visibility: visible`, not inside a hidden subtree), checked by the page
+# itself on every animation frame. It answers the page time of that frame, so "ready" shares a clock with FCP.
+VISIBLE_AT_JS = """(sel) => {
+  const el = document.querySelector(sel);
+  if (!el || (el.checkVisibility && !el.checkVisibility()) || getComputedStyle(el).visibility !== 'visible') return false;
+  const box = el.getBoundingClientRect();
+  return box.width > 0 && box.height > 0 && performance.now();
+}"""
+
+
+def _ready(page, selector: str, timeout_ms: int):
+    """`(ready_ms, ready_by)` — when the declared selector became visible, else first contentful paint.
+
+    Not `wait_for_selector`: it re-checks at 0, 20, 50, 100, 100 ms, then every 500 ms, so a selector visible at
+    1100 ms read ~1455 ms, and two unrelated apps shared that "warm ready" (fleet-config#1236).
+    """
     if selector:
         try:
-            page.wait_for_selector(selector, state="visible", timeout=timeout_ms)
-            return round((time.perf_counter() - t0) * 1000), "selector"
+            visible_at = page.wait_for_function(VISIBLE_AT_JS, arg=selector, polling="raf", timeout=timeout_ms)
+            return round(visible_at.json_value()), "selector"
         except PwError:
             return None, "selector-not-visible"
     return None, "fcp"
@@ -107,9 +120,8 @@ def webkit_cold(pw, url: str, base: str, a) -> dict:
         seen, non_get = [], []
         page.on("request", lambda r: non_get.append(r.method + " " + _path(r.url, base)) if r.method != "GET" else None)
         page.on("requestfinished", lambda r: seen.append(r))
-        t0 = time.perf_counter()
         page.goto(url, wait_until="commit")
-        leg = _finish(page, *_ready(page, a.ready_selector, a.boot_window_ms, t0), settle_ms=a.boot_window_ms)
+        leg = _finish(page, *_ready(page, a.ready_selector, a.boot_window_ms), settle_ms=a.boot_window_ms)
         origin = page.evaluate("performance.timeOrigin")
         api_done, total = {}, 0
         for r in seen:
@@ -232,9 +244,8 @@ def _cold_sample(browser, pw, ctx_url: str, ctx_base: str, a, trusted: bool) -> 
     try:
         page = ctx.new_page()
         CdpLeg(ctx, page, ctx_base, a)
-        t0 = time.perf_counter()
         page.goto(ctx_url, wait_until="commit")
-        return _finish(page, *_ready(page, a.ready_selector, a.boot_window_ms, t0), settle_ms=SAMPLE_SETTLE_MS)["ready_ms"]
+        return _finish(page, *_ready(page, a.ready_selector, a.boot_window_ms), settle_ms=SAMPLE_SETTLE_MS)["ready_ms"]
     except PwError:
         return None
     finally:
@@ -254,7 +265,6 @@ def chromium_legs(pw, url: str, base: str, a) -> dict:
         ctx = browser.new_context(ignore_https_errors=not trusted, **pw.devices["Pixel 7"])
         page = ctx.new_page()
         cold = CdpLeg(ctx, page, ctx_base, a)
-        t0 = time.perf_counter()
         try:
             page.goto(ctx_url, wait_until="commit")
         except PwError:
@@ -263,15 +273,14 @@ def chromium_legs(pw, url: str, base: str, a) -> dict:
             browser.close()  # the mapped name did not verify: fall back, warm cache untrusted
             a.tls_name = ""
             return chromium_legs(pw, url, base, a)
-        legs = {"android_cold": _finish(page, *_ready(page, a.ready_selector, a.boot_window_ms, t0),
+        legs = {"android_cold": _finish(page, *_ready(page, a.ready_selector, a.boot_window_ms),
                                         settle_ms=a.settle_s * 1000)}
         legs["android_cold"].update(status="ok", **cold.summary(a.boot_window_ms))
         api = cold.api_paths()
         warm_page = ctx.new_page()
         warm = CdpLeg(ctx, warm_page, ctx_base, a)
-        t0 = time.perf_counter()
         warm_page.goto(ctx_url, wait_until="commit")
-        legs["android_warm"] = _finish(warm_page, *_ready(warm_page, a.ready_selector, a.boot_window_ms, t0),
+        legs["android_warm"] = _finish(warm_page, *_ready(warm_page, a.ready_selector, a.boot_window_ms),
                                        settle_ms=a.boot_window_ms)
         legs["android_warm"].update(status="ok", cache="trusted" if trusted or url.startswith("http:") else "untrusted",
                                     **warm.summary(a.boot_window_ms))
