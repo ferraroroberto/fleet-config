@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import gzip
 import math
+import socket
 import ssl
 import threading
 import time
@@ -18,6 +19,11 @@ import urllib.request
 from typing import Dict, List, Optional, Tuple
 
 TIMEOUT_S = 30.0
+# Pseudo-statuses, reported where a status goes. A response that never ends (an SSE feed, a long poll
+# that keeps pinging) defeats a socket timeout, which only bounds the gap between bytes, so each
+# request also carries a deadline on the whole exchange (fleet-config#1221).
+SKIPPED_STREAM = "skipped (stream)"
+TIMEOUT = "timeout"
 
 
 def _tls() -> ssl.SSLContext:
@@ -42,20 +48,48 @@ def percentile(values: List[float], pct: float) -> Optional[float]:
 
 
 def get(url: str, headers: Optional[Dict[str, str]] = None) -> Tuple[float, object, bytes, Dict[str, str]]:
-    """One GET: `(elapsed_ms, status, body, lowercased headers)`; status is the exception name on a transport failure."""
+    """One GET: `(elapsed_ms, status, body, lowercased headers)`.
+
+    `status` is the HTTP code, or a name for what stopped the request: `SKIPPED_STREAM` for a
+    `text/event-stream` response (decided from the headers, the body is never read), `TIMEOUT`
+    when `TIMEOUT_S` ran out on the whole request, or the exception name on a transport failure.
+    """
     req = urllib.request.Request(url, method="GET", headers=headers or {})
     t0 = time.perf_counter()
+    deadline = t0 + TIMEOUT_S
+    hdrs: Dict[str, str] = {}
     try:
         with urllib.request.urlopen(req, context=_CTX, timeout=TIMEOUT_S) as resp:
-            body = resp.read()
-            status: object = resp.status
             hdrs = {k.lower(): v for k, v in resp.headers.items()}
+            status: object = resp.status
+            if hdrs.get("content-type", "").lower().startswith("text/event-stream"):
+                body, status = b"", SKIPPED_STREAM
+            else:
+                body = _read_until(resp, deadline)
+                if body is None:
+                    body, status = b"", TIMEOUT
     except urllib.error.HTTPError as exc:  # 304 and 4xx/5xx arrive here
         body, status = exc.read() or b"", exc.code
         hdrs = {k.lower(): v for k, v in (exc.headers or {}).items()}
+    except (TimeoutError, socket.timeout):
+        body, status, hdrs = b"", TIMEOUT, {}
     except (urllib.error.URLError, OSError) as exc:
-        body, status, hdrs = b"", type(exc).__name__, {}
+        reason = getattr(exc, "reason", None)
+        timed_out = isinstance(reason, (TimeoutError, socket.timeout))
+        body, status, hdrs = b"", TIMEOUT if timed_out else type(exc).__name__, {}
     return round((time.perf_counter() - t0) * 1000, 1), status, body, hdrs
+
+
+def _read_until(resp, deadline: float) -> Optional[bytes]:
+    """The whole body, or `None` when it was still arriving at `deadline`."""
+    chunks: List[bytes] = []
+    while True:
+        if time.perf_counter() >= deadline:
+            return None
+        chunk = resp.read1(65536)  # read() would wait for the full 64 KB of a slow dribble
+        if not chunk:
+            return b"".join(chunks)
+        chunks.append(chunk)
 
 
 def index_checks(base_url: str) -> Dict[str, object]:
@@ -94,6 +128,8 @@ def time_endpoints(base_url: str, spacing_s: Dict[str, float], duration_s: float
         while True:
             ms, status, body, _ = get(base + path)
             rows[path].append((ms, status, len(body)))
+            if status == SKIPPED_STREAM:  # one look is enough; polling a feed would only open it again
+                return
             if time.monotonic() + every >= end:
                 return
             time.sleep(max(0.0, every - ms / 1000.0))
