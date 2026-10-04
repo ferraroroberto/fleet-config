@@ -45,7 +45,7 @@ def parse_rules(text: str) -> Dict[str, dict]:
 def rule_applies_to_kind(rule: dict, kind: str) -> bool:
     scope = rule.get("file", "any")
     if scope == "any":
-        return True
+        return kind != "skill-ref"  # a skill's reference files answer only to rules scoped to them
     if scope == "claude-md":
         return kind in ALWAYS_ON_KINDS
     return scope == kind

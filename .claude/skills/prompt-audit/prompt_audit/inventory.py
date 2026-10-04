@@ -11,7 +11,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
-from .common import HOME_REPO, MASTER_REPO, NEUTRAL, _FENCE, is_linked_worktree, sha12
+from .common import HOME_REPO, MASTER_REPO, NEUTRAL, is_linked_worktree, sha12, unfenced_lines
 
 
 # ---- audiences + inventory ------------------------------------------------------
@@ -24,6 +24,7 @@ class Entry:
     kind: str
     audience: str = NEUTRAL
     data: Optional[bytes] = None
+    repo_dir: Optional[Path] = None  # set by inventory(); R-34 resolves references against it
 
     @property
     def sha(self) -> str:
@@ -45,6 +46,51 @@ def kind_of(relpath: str) -> Optional[str]:
     if name == "AGENTS.md":
         return "agents-md"
     return None
+
+
+# ---- skill references (fleet-config#1126) ----------------------------------------
+
+_MD_LINK = re.compile(r"\]\(([^)\s]+)")
+_TICKED = re.compile(r"`([^`\s]+)`")
+REF_SKIP_DIRS = {"conversations", "evals", "__pycache__"}
+
+
+def _ref_target(raw: str, bases: Tuple[Path, ...], repo_dir: Path) -> Optional[Path]:
+    """The existing in-repo `.md` file a link or backticked path names (under `repo_dir`), else None."""
+    target = raw.split("#", 1)[0]
+    if (not target.endswith(".md") or "://" in target or target.startswith(("/", "~", "mailto:"))
+            or re.match(r"^[A-Za-z]:", target) or any(c in target for c in "<>*$")):
+        return None
+    root = repo_dir.resolve()
+    for base in bases:
+        cand = (base / target).resolve()
+        if cand.is_file() and cand.is_relative_to(root):
+            rel = cand.relative_to(root)
+            if REF_SKIP_DIRS.intersection(rel.parts) or kind_of(rel.as_posix()) is not None:
+                return None  # a case file, another skill's SKILL.md (delegation), or an always-on file
+            return repo_dir / rel
+    return None
+
+
+def references(path: Path, text: str, repo_dir: Path, ticked: bool = True) -> List[Tuple[int, Path]]:
+    """(line, file) for each local `.md` a file references, first mention only, fences excluded.
+
+    A reference is a markdown link (resolved against the file's directory) or,
+    with `ticked`, a backticked relative path that exists (the file's directory,
+    then the repo root). Never another skill's SKILL.md, an always-on instruction
+    file, or anything under conversations/, evals/ or __pycache__.
+    """
+    here = path.resolve()
+    seen: Dict[Path, int] = {}
+    for n, line in unfenced_lines(text):
+        cands = [(t, (path.parent,)) for t in _MD_LINK.findall(line)]
+        if ticked:
+            cands += [(t, (path.parent, repo_dir)) for t in _TICKED.findall(line)]
+        for raw, bases in cands:
+            target = _ref_target(raw, bases, repo_dir)
+            if target is not None and target.resolve() != here and target not in seen:
+                seen[target] = n
+    return sorted(((n, t) for t, n in seen.items()), key=lambda x: x[0])
 
 
 def agents_pointer(repo_dir: Path, target: str) -> bool:
@@ -79,7 +125,8 @@ def inventory(repos: Dict[str, Path], audiences: Dict[str, dict],
 
     (1) the home repo's global file, (2) the scaffolding master, (3) every repo's
     CLAUDE.md / AGENTS.md / .claude/rules/*.md, (4) every SKILL.md in the home
-    repo's two skill tiers and each repo's .claude/skills/.
+    repo's two skill tiers and each repo's .claude/skills/, (5) the `skill-ref`
+    files those SKILL.md files reference (`references()`), shared docs included.
     """
     live = {name: d for name, d in sorted(repos.items())
             if d.is_dir() and not is_linked_worktree(d)}
@@ -100,20 +147,25 @@ def inventory(repos: Dict[str, Path], audiences: Dict[str, dict],
             wanted += [(name, p) for p in sorted((d / ".claude" / "skills").glob("*/SKILL.md"))]
 
     seen, out = set(), []
+
+    def add(name: str, path: Path, kind: Optional[str]) -> None:
+        rel = path.relative_to(live[name]).as_posix()
+        key = f"{name}/{rel}"
+        if key in seen or kind is None:
+            return
+        seen.add(key)
+        entry = Entry(key=key, path=path, repo=name, kind=kind, data=_read(path), repo_dir=live[name])
+        entry.audience = audience_of(entry, live[name], audiences)
+        out.append(entry)
+
     for name, path in wanted:
         if only and name != only:
             continue
-        if not path.is_file():
-            continue
-        rel = path.relative_to(live[name]).as_posix()
-        key = f"{name}/{rel}"
-        kind = kind_of(rel)
-        if key in seen or kind is None:
-            continue
-        seen.add(key)
-        entry = Entry(key=key, path=path, repo=name, kind=kind, data=_read(path))
-        entry.audience = audience_of(entry, live[name], audiences)
-        out.append(entry)
+        if path.is_file():
+            add(name, path, kind_of(path.relative_to(live[name]).as_posix()))
+    for skill in [e for e in out if e.kind == "skill"]:
+        for _, ref in references(skill.path, skill.text, live[skill.repo]):
+            add(skill.repo, ref, "skill-ref")
     return out
 
 
@@ -124,12 +176,8 @@ def sections(text: str, file_audience: str, audiences: Dict[str, dict]) -> List[
     """Heading sections whose audience differs from the file's (marker-scoped)."""
     lines = text.splitlines()
     heads = []
-    in_fence = False
-    for i, line in enumerate(lines, start=1):
-        if _FENCE.match(line):
-            in_fence = not in_fence
-            continue
-        m = None if in_fence else _HEADING.match(line)
+    for i, line in unfenced_lines(text):
+        m = _HEADING.match(line)
         if m:
             heads.append((i, len(m.group(1)), m.group(2).strip()))
     out = []

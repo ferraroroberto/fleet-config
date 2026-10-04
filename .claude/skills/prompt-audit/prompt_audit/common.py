@@ -10,7 +10,7 @@ import re
 import sys
 import tomllib
 from pathlib import Path
-from typing import Optional
+from typing import List, Optional, Tuple
 
 
 SKILL_DIR = Path(__file__).resolve().parents[1]
@@ -20,7 +20,7 @@ import git_run  # noqa: E402
 from audit_issue import rubric_sha  # noqa: E402
 from audit_issue_client import run_audit_issue  # noqa: E402
 from fleet_repo_scan import fleet_repos, is_linked_worktree  # noqa: E402
-from frontmatter import frontmatter_error  # noqa: E402
+from frontmatter import frontmatter_error, frontmatter_field  # noqa: E402
 from skill_description import frontmatter_description, prose_words, strip_quoted  # noqa: E402
 from utf8_stdio import ensure_utf8_stdio  # noqa: E402
 
@@ -47,7 +47,7 @@ VERDICTS = ("unchanged", "changed", "new-guide", "not-checked")
 
 # kind caps for R-14 — (unit, limit)
 SIZE_CAPS = {"claude-md": ("lines", 200), "rules": ("lines", 200),
-             "skill": ("body-lines", 500), "agents-md": ("bytes", 32768)}
+             "skill": ("body-lines", 500), "agents-md": ("bytes", 32768)}  # skill-ref: no cap
 ALWAYS_ON_KINDS = {"claude-md", "agents-md", "rules"}
 
 
@@ -78,5 +78,34 @@ def load_toml(path: Path = SOURCES_TOML) -> dict:
         return tomllib.load(fh)
 
 
-# Shared by inventory (section scanning) and lint (fence-aware detectors).
-_FENCE = re.compile(r"^\s*(```|~~~)")
+# Shared by inventory (section scanning, references) and lint (fence-aware detectors).
+_FENCE = re.compile(r"^\s*(`{3,}|~{3,})(.*)$")
+
+
+def fence_flags(lines: List[str]) -> List[bool]:
+    """True for each line that is a fence or inside one.
+
+    Tracks the opening fence's character and length (CommonMark): a fence closes
+    only on the same character, at least as long, with nothing after it — so a
+    four-backtick example can carry three-backtick lines (fleet-config#1126).
+    """
+    flags: List[bool] = []
+    fence: Optional[str] = None
+    for line in lines:
+        m = _FENCE.match(line)
+        if fence is None:
+            opens = m is not None and not (m.group(1)[0] == "`" and "`" in m.group(2))
+            if opens:
+                fence = m.group(1)
+            flags.append(opens)
+            continue
+        flags.append(True)
+        if m and m.group(1)[0] == fence[0] and len(m.group(1)) >= len(fence) and not m.group(2).strip():
+            fence = None
+    return flags
+
+
+def unfenced_lines(text: str) -> List[Tuple[int, str]]:
+    """(1-based line number, raw text) for every line outside a code fence."""
+    lines = text.splitlines()
+    return [(i, line) for i, (line, fenced) in enumerate(zip(lines, fence_flags(lines)), start=1) if not fenced]

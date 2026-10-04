@@ -13,7 +13,7 @@ Source: <page> · <page>
 ```
 
 - **Vendor tag** — whose guidance the rule is. `[shared]`: both vendors → a `violation` in any file. A single-vendor tag: a `violation` only in a file or section scoped to that vendor's agent; in an agent-neutral file (read by several agents) it is at most `consider`; in a file scoped to the *other* vendor it does not apply. `[conflict]`: the vendors disagree → a `violation` only when a neutral file hardcodes one side outside an agent-neutrality marker; it does not apply inside a vendor-scoped section. Audience comes from the file, never from the host running the audit (`sources.toml` `[audiences.*]`).
-- **File scope** — `any`; `claude-md` = the always-on instruction files (`CLAUDE.md`, `AGENTS.md`, `.claude/rules/*.md`); `skill` = a `SKILL.md`.
+- **File scope** — `any` (every instruction file, not a `skill-ref`); `claude-md` = the always-on instruction files (`CLAUDE.md`, `AGENTS.md`, `.claude/rules/*.md`); `skill` = a `SKILL.md`; `skill-ref` = a `.md` file a `SKILL.md` references by markdown link or by a backticked relative path that exists, shared docs outside the skill directory included (never another skill's `SKILL.md`, an always-on file, or anything under `conversations/`, `evals/`, `__pycache__`).
 - **Tier** — who can fix it unattended. `easy`: a mechanical rewrite (delete a line, soften a word, add a marker). `hard`: restructuring, removing a step list, resolving a contradiction, or any edit to `global-CLAUDE.md` / `project-scaffolding/CLAUDE.md` regardless of the rule's own tier.
 - **Detect** — `lint` rules are counted exactly by `audit.py lint` (a hit is a candidate, confirmed or rejected by the judgment pass); `judgment` rules have no mechanical signal and are assessed by the judgment agent alone.
 - **Verdicts** — per rule, per file: `violation`, `consider`, `compliant`, or `unmeasured` (not established — never folded into `compliant`).
@@ -110,10 +110,10 @@ Fix shape: move procedures and scoped detail into skills, path-scoped rules or r
 Source: https://code.claude.com/docs/en/memory (Write effective instructions; Troubleshoot memory issues → My CLAUDE.md is too large) · https://platform.claude.com/docs/en/agents-and-tools/agent-skills/best-practices (Token budgets) · https://developers.openai.com/codex/guides/agents-md
 
 ### R-15 Skill description: short, third person        tags: [anthropic] [file: skill] [tier: easy]
-Detect: lint — description over 1024 characters; first- or second-person words (I, me, my, we, our, you, your) in the description prose, with quoted trigger phrases excluded. Prose word count is reported against the fleet's 50-word cap (owned by `/context-audit`).
-Why: the description "is injected into the system prompt, and inconsistent point-of-view can cause discovery problems" — "Always write in third person." The field has a 1024-character maximum.
-Fix shape: rewrite the prose in third person; leave quoted trigger phrases verbatim (they are user utterances and the routing surface).
-Source: https://platform.claude.com/docs/en/agents-and-tools/agent-skills/best-practices (Writing effective descriptions)
+Detect: lint — description over 1024 characters; first- or second-person words (I, me, my, we, our, you, your) in the description prose, with quoted trigger phrases excluded; an XML tag in the description; a `name` that is not 1–64 characters of lowercase letters, digits and hyphens. Prose word count is reported against the fleet's 50-word cap (owned by `/context-audit`). Judgment adds: the description says both what the skill does and when to use it.
+Why: the description "is injected into the system prompt, and inconsistent point-of-view can cause discovery problems" — "Always write in third person." The field has a 1024-character maximum and "cannot contain XML tags"; `name` is "Maximum 64 characters" of "lowercase letters, numbers, and hyphens only". "The description should include both what the Skill does and when to use it."
+Fix shape: rewrite the prose in third person; leave quoted trigger phrases verbatim (they are user utterances and the routing surface); drop the tag or reword it as prose; rename to the allowed charset; add the missing what or when clause.
+Source: https://platform.claude.com/docs/en/agents-and-tools/agent-skills/best-practices (Writing effective descriptions; YAML frontmatter requirements; Core quality)
 
 ### R-16 No contradictory rules        tags: [shared] [file: any] [tier: hard]
 Detect: lint — within one file, the same action phrase under both an always/must and a never/do-not modal ("always commit to X" vs "never commit to X"). Judgment adds contradictions the pattern cannot see, including across the global file and a project file.
@@ -224,6 +224,34 @@ Detect: judgment — approval flows, warnings or compliance checklists that answ
 Why: "Do not introduce unsolicited warnings, disclaimers, approval flows, or safety/compliance checklists due to hypothetical risk."
 Fix shape: delete the gate, or tie it to the concrete destructive action R-22 enumerates.
 Source: https://developers.openai.com/api/docs/guides/latest-model (Initiative and follow-through)
+
+## Skill structure
+
+How a skill's files are laid out, so the reader finds what it needs when it partially reads them. R-34 to R-37 are its lint half.
+
+### R-34 Reference files one level deep        tags: [anthropic] [file: skill] [tier: hard]
+Detect: lint — a reference file (a `.md` that SKILL.md references by markdown link or by a backticked relative path that exists, inside the skill directory or a shared doc outside it; another skill's SKILL.md is delegation, not a reference) which itself links (markdown link) another local `.md` that SKILL.md does not reference directly. A backticked path inside a reference file is a mention, not an onward reference.
+Why: "[The model] may partially read files when they're referenced from other referenced files … resulting in incomplete information." "Keep references one level deep from SKILL.md."
+Fix shape: reference the leaf file from SKILL.md directly, or fold it into its parent.
+Source: https://platform.claude.com/docs/en/agents-and-tools/agent-skills/best-practices (Avoid deeply nested references)
+
+### R-35 Long reference files open with a contents list        tags: [anthropic] [file: skill-ref] [tier: easy]
+Detect: lint — a reference file (see R-34) over 100 lines with no Contents / Table of contents heading in its first 40 lines.
+Why: "For reference files longer than 100 lines, include a table of contents at the top. This ensures [the model] can see the full scope of available information even when previewing with partial reads."
+Fix shape: add a `## Contents` list of the file's sections under its title.
+Source: https://platform.claude.com/docs/en/agents-and-tools/agent-skills/best-practices (Structure longer reference files with table of contents)
+
+### R-36 Forward-slash paths        tags: [anthropic] [file: skill] [tier: easy]
+Detect: lint — a backslash path outside code fences. A relative skill-file path (`scripts\x.py`) caps at violation; an absolute drive path (`E:\automation\…`) or a Windows venv path (`.\.venv\Scripts\python.exe`) caps at consider, because it is a host-local fact and forward slashes also work on Windows.
+Why: "Always use forward slashes in file paths, even on Windows … Windows-style paths cause errors on Unix systems." The skills are junctioned into every other agent harness, and the lite port runs on another machine.
+Fix shape: rewrite with forward slashes (`E:/automation/...`); leave fenced `.bat`/cmd bodies alone.
+Source: https://platform.claude.com/docs/en/agents-and-tools/agent-skills/best-practices (Avoid Windows-style paths; Runtime environment)
+
+### R-37 MCP tools named fully qualified        tags: [anthropic] [file: skill] [tier: easy]
+Detect: lint — a backticked bare tool name `T` where `mcp__<server>__T` appears anywhere in the fleet's skills (a self-maintaining vocabulary), on a line that does not carry the qualified form. The host's own qualified form (`mcp__server__tool` in the host harness) counts as qualified; the guide's `Server:tool` is the API spelling.
+Why: "always use fully qualified tool names to avoid 'tool not found' errors … Without the server prefix, [the model] may fail to locate the tool, especially when multiple MCP servers are available."
+Fix shape: use the qualified name, at least on each first mention per section.
+Source: https://platform.claude.com/docs/en/agents-and-tools/agent-skills/best-practices (MCP tool references)
 
 ## Background appendix — guidance with no instruction-file signal
 
