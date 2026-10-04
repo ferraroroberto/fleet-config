@@ -75,10 +75,12 @@ After editing `registry/targets.json` or the plugin code, the `streamdeck-deploy
 
 ## Adding an HTTP-action target
 
-An `http-action` entry is a `Call Action` key that calls one of home-automation's registered `action_id`s (see `home-automation/README.md`'s "Generalized action alias" section for the full current list).
+An `http-action` entry is a `Call Action` key that calls one registered `action_id` of an app with the `POST /api/actions/{action_id}` contract: **home-automation** (the default — see `home-automation/README.md`'s "Generalized action alias" section for its list) or **facilitation-suite** (#1006 — the live-workshop app on `:8449`; its action list is in the app under Settings → Stream Deck buttons, e.g. `next`, `capture_toggle`, `obs_profile/camera_pip`).
 
-1. Edit `registry/targets.json`, add an entry: `id` (this plugin's own key, kebab-case), `"kind": "http-action"`, `label` (shown in the Property Inspector dropdown), and `actionId` (home-automation's `action_id` — sent verbatim, not cross-validated against home-automation's live list, so a typo fails at press-time with a clear 404 rather than at build time).
-2. Run `npm run verify` — it fails loudly on an empty `label`/`actionId` or an unknown `kind`.
+1. Edit `registry/targets.json`, add an entry: `id` (this plugin's own key, kebab-case), `"kind": "http-action"`, `label` (shown in the Property Inspector dropdown), `actionId` (the app's own `action_id`, `name/arg` for an action with an argument — sent as path segments, not cross-validated against the app's live list, so a typo fails at press-time with a clear 404 rather than at build time), and optionally `"app": "facilitation-suite"` (omit it for home-automation).
+2. Run `npm run verify` — it fails loudly on an empty `label`/`actionId`, an unknown `kind` or an unknown `app`.
+
+Connections live in the plugin's `.env` (see `.env.sample`): home-automation needs `HOME_AUTOMATION_BASE_URL` + `HOME_AUTOMATION_TOKEN`; facilitation-suite defaults to `http://127.0.0.1:8449` with no token (it trusts callers on its own PC). Once the suite serves HTTPS (a Tailscale cert, for its phone remote) it no longer answers plain HTTP: set `FACILITATION_SUITE_BASE_URL=https://<this PC>.<tailnet>.ts.net:8449` — still no token, since the plugin runs on the same PC. `FACILITATION_SUITE_TOKEN` is only for a suite on another machine.
 3. No icon is required — `Call Action` ships one bundled icon for every instance; set a per-key title/icon in the Stream Deck app itself if you want one to stand out.
 4. If the **set** of `http-action` targets changed, redo the manual profile-export step above to add/remove the physical key, same as a tray-target set change.
 
