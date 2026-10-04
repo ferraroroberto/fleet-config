@@ -31,6 +31,17 @@ about the repos that didn't (project-scaffolding#230):
      own `[components]` catalog, the canonical `key -> src` map of what it
      publishes (`parse_scaffold_catalog`).
 
+A fourth is about what a wave would *change* for a behind adopter (fleet-config#1227):
+
+  4. **contract change** — between the adopter's pinned `sha` and the tip, did the
+     component's CSS lose selectors, and did its README change? A byte-for-byte
+     re-vendor is hash-verified, so nothing else notices that selectors an
+     adopter's markup relies on are gone: the `modal` split (project-scaffolding
+     #300) dropped the footer button and input/select recipe, a wave shipped it,
+     and two apps reached live builds with unstyled controls. A removed selector
+     marks the adopter `breaking` and lands it in `coverage.contract_breaking`,
+     which the skill treats as a stop for the wave.
+
 Both `/propagate-vendored --dry-run` and any future audit call `scan_fleet`
 directly rather than re-deriving any of these checks by hand.
 
@@ -65,6 +76,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import re
 import sys
 import tomllib
 from pathlib import Path
@@ -181,6 +193,109 @@ def sha256_bytes(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
+_OPAQUE_AT_RULES = ("@keyframes", "@-webkit-keyframes", "@font-face", "@page", "@property", "@counter-style",
+                    "@font-feature-values", "@viewport")
+_COMBINATOR = re.compile(r"\s*([>+~])\s*")
+
+
+def _normalize_selector(sel: str) -> str:
+    return _COMBINATOR.sub(r" \1 ", " ".join(sel.split())).strip()
+
+
+def _split_selector_list(prelude: str) -> List[str]:
+    """Comma-separated selectors of one rule, splitting only at the top level (a `:is(.a, .b)` stays whole)."""
+    parts, depth, cur = [], 0, []
+    for ch in prelude:
+        if ch in "([":
+            depth += 1
+        elif ch in ")]":
+            depth = max(depth - 1, 0)
+        if ch == "," and depth == 0:
+            parts.append("".join(cur))
+            cur = []
+        else:
+            cur.append(ch)
+    parts.append("".join(cur))
+    return [n for n in (_normalize_selector(p) for p in parts) if n]
+
+
+def css_selectors(css: str) -> set:
+    """Every rule selector in a stylesheet, whitespace-normalised, one per comma-separated item.
+
+    Rules inside `@media` / `@supports` / `@layer` bodies count; at-rule preludes and the steps of `@keyframes` /
+    `@font-face` bodies do not. Declarations, comments and quoted strings are skipped. Whole selectors rather than
+    class names, because the recipe a component dropped is often element-scoped (`.modal-footer button`,
+    `.modal input`), which a class-name scan cannot see. This is a detector, not a CSS parser: a selector that was
+    reworded reads as one removed and one added, which stops a wave for a human look, never the reverse.
+    """
+    text = re.sub(r"/\*.*?\*/", "", css, flags=re.S)
+    found: set = set()
+    stack: List[bool] = []  # one entry per open block: True when its body holds no rule selectors
+    buf: List[str] = []
+    quote = ""
+    for ch in text:
+        if quote:
+            buf.append(ch)
+            if ch == quote:
+                quote = ""
+            continue
+        if ch in "\"'":
+            quote = ch
+            buf.append(ch)
+        elif ch == "{":
+            prelude = "".join(buf).strip()
+            opaque = bool(stack and stack[-1]) or prelude.lower().startswith(_OPAQUE_AT_RULES)
+            if prelude and not prelude.startswith("@") and not opaque:
+                found.update(_split_selector_list(prelude))
+            stack.append(opaque)
+            buf = []
+        elif ch == "}":
+            if stack:
+                stack.pop()
+            buf = []
+        elif ch == ";":
+            buf = []
+        else:
+            buf.append(ch)
+    return found
+
+
+def contract_change(old_files: Dict[str, str], new_files: Dict[str, str]) -> Dict[str, object]:
+    """What a re-vendor from `old_files` to `new_files` (relpath -> text of a component's CSS and README) changes.
+
+    `removed_selectors` is the component-wide set difference, so a selector that moved between the component's own
+    files is not removed; a selector that moved to *another* component (the `modal` -> `button.css` split) is, which
+    is the case this exists for. `breaking` is true exactly when a selector was removed. A README change is reported
+    with the lines it dropped but never stops a wave on its own: wording is a review item, not a broken page.
+    """
+    def selectors(files: Dict[str, str]) -> set:
+        out: set = set()
+        for name, text in files.items():
+            if name.lower().endswith(".css"):
+                out |= css_selectors(text)
+        return out
+
+    def readmes(files: Dict[str, str]) -> Dict[str, str]:
+        return {n: t for n, t in files.items() if Path(n).name.lower().startswith("readme")}
+
+    before, after = selectors(old_files), selectors(new_files)
+    old_readme, new_readme = readmes(old_files), readmes(new_files)
+    kept = {ln.strip() for t in new_readme.values() for ln in t.splitlines()}
+    dropped: List[str] = []
+    for text in old_readme.values():
+        for ln in (x.strip() for x in text.splitlines()):
+            if ln and ln not in kept and ln not in dropped:
+                dropped.append(ln)
+    removed = sorted(before - after)
+    return {
+        "removed_selectors": removed,
+        "added_selectors": sorted(after - before),
+        "readme_changed": old_readme != new_readme,
+        "readme_removed_lines": dropped,
+        "breaking": bool(removed),
+    }
+
+
 # ---- IO layer ---------------------------------------------------------------
 
 def hash_dir_local(path: Path) -> Dict[str, str]:
@@ -237,18 +352,17 @@ def _git_show_bytes(repo: Path, ref: str, relpath: str) -> Optional[bytes]:
     return proc.stdout if proc.returncode == 0 else None
 
 
-def hash_dir_at_ref(scaffold_root: Path, ref: str, subpath: str) -> Dict[str, str]:
-    """relpath -> sha256 hex for every file under `subpath` as committed at
-    `ref` in the scaffold repo. Works for both a directory-shaped component
-    (`app/webapp/static/_vendored/nav`, keyed by path relative to `subpath`)
-    and a single-file one (`app/tray/tray_lifecycle.ps1`, keyed by basename —
-    matching `hash_dir_local`'s single-file case). `{}` when `subpath` didn't
-    exist at `ref` (or any other git failure) — a legitimate answer, not an
-    error: the caller reports it as 100%-differing rather than raising."""
+def read_dir_at_ref(scaffold_root: Path, ref: str, subpath: str) -> Dict[str, bytes]:
+    """relpath -> raw bytes for every file under `subpath` as committed at `ref` in the scaffold repo.
+
+    Works for both a directory-shaped component (`app/webapp/static/_vendored/nav`, keyed by path relative to
+    `subpath`) and a single-file one (`app/tray/tray_lifecycle.ps1`, keyed by basename — matching
+    `hash_dir_local`'s single-file case). `{}` when `subpath` didn't exist at `ref` (or any other git failure) — a
+    legitimate answer, not an error: the caller reports it as 100%-differing rather than raising."""
     listing = git_run.run_git(["-C", str(scaffold_root), "ls-tree", "-r", "--name-only", ref, "--", subpath])
     if listing.returncode != 0:
         return {}
-    out: Dict[str, str] = {}
+    out: Dict[str, bytes] = {}
     prefix = subpath.rstrip("/") + "/"
     for rel in (ln.strip() for ln in listing.stdout.splitlines()):
         if not rel:
@@ -256,9 +370,20 @@ def hash_dir_at_ref(scaffold_root: Path, ref: str, subpath: str) -> Dict[str, st
         blob = _git_show_bytes(scaffold_root, ref, rel)
         if blob is None:
             continue
-        relpath = rel[len(prefix):] if rel.startswith(prefix) else Path(rel).name
-        out[relpath] = sha256_bytes(blob)
+        out[rel[len(prefix):] if rel.startswith(prefix) else Path(rel).name] = blob
     return out
+
+
+def hash_dir_at_ref(scaffold_root: Path, ref: str, subpath: str) -> Dict[str, str]:
+    """relpath -> sha256 hex for every file under `subpath` as committed at `ref` (see `read_dir_at_ref`)."""
+    return {rel: sha256_bytes(blob) for rel, blob in read_dir_at_ref(scaffold_root, ref, subpath).items()}
+
+
+def contract_texts_at_ref(scaffold_root: Path, ref: str, subpath: str) -> Dict[str, str]:
+    """The CSS and README files of a component at `ref`, decoded for `contract_change`."""
+    return {rel: blob.decode("utf-8", errors="replace")
+            for rel, blob in read_dir_at_ref(scaffold_root, ref, subpath).items()
+            if rel.lower().endswith(".css") or Path(rel).name.lower().startswith("readme")}
 
 
 def resolve_ref_sha(repo: Path, ref: str) -> Optional[str]:
@@ -300,6 +425,8 @@ def scan_fleet(
     head_ref = fleet_repo_scan.default_ref(scaffold_root) or "HEAD"
     head_sha = resolve_ref_sha(scaffold_root, head_ref) or head_ref
     head_cache: Dict[str, Dict[str, str]] = {}
+    head_texts: Dict[str, Dict[str, str]] = {}
+    contract_cache: Dict[tuple, Dict[str, object]] = {}
 
     adopters: List[Dict[str, object]] = []
     no_manifest: List[str] = []
@@ -342,12 +469,20 @@ def scan_fleet(
                 head_cache[src] = hash_dir_at_ref(scaffold_root, head_ref, src)
             local = hash_component_local(repo_dir, dest)
             result = classify_adopter(local, pinned, head_cache[src])
-            adopters.append({
+            row: Dict[str, object] = {
                 "repo": repo_name, "component": component,
                 "src": src, "dest": dest,
                 "pinned_sha": sha, "head_sha": head_sha,
                 **result,
-            })
+            }
+            if result["behind_head"]:
+                if src not in head_texts:
+                    head_texts[src] = contract_texts_at_ref(scaffold_root, head_ref, src)
+                if (sha, src) not in contract_cache:
+                    contract_cache[(sha, src)] = contract_change(
+                        contract_texts_at_ref(scaffold_root, sha, src), head_texts[src])
+                row["contract"] = contract_cache[(sha, src)]
+            adopters.append(row)
 
     catalog, catalog_error = scaffold_catalog(scaffold_root)
     if catalog_error:
@@ -382,6 +517,11 @@ def scan_fleet(
             "undeclared_carriers": len({str(c["repo"]) for c in carriers}),
             "carriers_unknown": sorted(unreadable),
             "catalog_known": catalog_error is None,
+            # Behind adopters whose pin has selectors the tip dropped: the wave must stop for these (fleet-config#1227).
+            "contract_breaking": [
+                {"repo": a["repo"], "component": a["component"], "pinned_sha": a["pinned_sha"],
+                 "removed_selectors": a["contract"]["removed_selectors"]}
+                for a in adopters if a.get("contract", {}).get("breaking")],
         },
     }
 

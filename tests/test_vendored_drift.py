@@ -423,4 +423,99 @@ finally:
     shutil.rmtree(root, ignore_errors=True)
 
 
+# ---- contract change: a wave that removes selectors must be visible (fleet-config#1227) ----
+#
+# project-scaffolding#300 split `modal` so its CSS no longer carried the footer button and the input/select recipe. The
+# re-vendor was byte-for-byte and hash-verified, so nothing flagged that selectors the adopters relied on were gone, and
+# two apps reached live builds with unstyled controls.
+
+MODAL_V1 = """/* modal v1 */
+.modal { position: fixed; }
+.modal-footer button { min-height: 48px; }
+.modal input, .modal select { font: inherit; }
+@media (max-width: 600px) { .modal { inset: 0; } }
+"""
+MODAL_V2 = """/* modal v2: the controls moved to button.css and select-native.css */
+.modal { position: fixed; }
+@media (max-width: 600px) { .modal { inset: 0; } }
+.modal-title { margin: 0; }
+"""
+
+check(vd.css_selectors(MODAL_V1) == {".modal", ".modal-footer button", ".modal input", ".modal select"},
+      "css_selectors: comma lists split, an @media body is read, comments and declarations are not selectors")
+check(vd.css_selectors(".a:hover,\n.b   >   .c { color: red; }") == {".a:hover", ".b > .c"},
+      "css_selectors: whitespace is normalised, so reflowing a rule is not a different selector")
+check(vd.css_selectors("@keyframes spin { from { opacity: 0; } 50% { opacity: .5; } to { opacity: 1; } }") == set(),
+      "css_selectors: keyframe steps are not selectors")
+check(vd.css_selectors("") == set(), "css_selectors: empty text -> no selectors")
+
+dropped = vd.contract_change({"modal.css": MODAL_V1}, {"modal.css": MODAL_V2})
+check(dropped["removed_selectors"] == [".modal input", ".modal select", ".modal-footer button"],
+      f"contract_change: selectors the new version dropped are reported, sorted ({dropped['removed_selectors']})")
+check(dropped["added_selectors"] == [".modal-title"], "contract_change: a selector only the new version has is reported as added")
+check(dropped["breaking"] is True, "contract_change: removed selectors make the change breaking")
+
+grew = vd.contract_change({"modal.css": MODAL_V1}, {"modal.css": MODAL_V1 + ".modal-title { margin: 0; }\n"})
+check(grew["removed_selectors"] == [] and grew["breaking"] is False and grew["added_selectors"] == [".modal-title"],
+      "contract_change: only adding a selector is not breaking")
+reordered = vd.contract_change({"a.css": ".x { color: red; }\n.y { color: blue; }\n"}, {"a.css": ".y { color: blue; }\n.x { color: green; }\n"})
+check(reordered["breaking"] is False, "contract_change: reordering rules or changing declarations is not breaking")
+moved = vd.contract_change({"a.css": ".x { c: 1; }\n"}, {"b.css": ".x { c: 1; }\n"})
+check(moved["breaking"] is False, "contract_change: a selector that moved to another file of the component is still there")
+check(vd.contract_change({"a.css": ".x { c: 1; }"}, {})["removed_selectors"] == [".x"],
+      "contract_change: a component the tip no longer has reports all its selectors removed")
+check(vd.contract_change({}, {})["breaking"] is False, "contract_change: nothing on either side is not breaking")
+
+readme = vd.contract_change({"README.md": "# modal\nUse .modal-save for the footer.\nKeep.\n"}, {"README.md": "# modal\nKeep.\nNew line.\n"})
+check(readme["readme_changed"] is True and readme["readme_removed_lines"] == ["Use .modal-save for the footer."]
+      and readme["breaking"] is False,
+      "contract_change: a README change is reported with the lines it dropped, and does not by itself stop a wave")
+check(vd.contract_change({"README.md": "x\n"}, {"README.md": "x\n"})["readme_changed"] is False,
+      "contract_change: an unchanged README is not reported")
+check(vd.contract_change({"nav.html": "<a class=old>"}, {"nav.html": "<a>"})["breaking"] is False,
+      "contract_change: only CSS contributes selectors")
+
+root = Path(tempfile.mkdtemp(prefix="vendored_contract_"))
+try:
+    scaffold = root / "project-scaffolding"
+    _init_repo(scaffold)
+    modal = scaffold / "app" / "webapp" / "static" / "_vendored" / "modal"
+    modal.mkdir(parents=True)
+    (modal / "modal.css").write_text(MODAL_V1, encoding="utf-8", newline="")
+    (modal / "README.md").write_text("# modal\n", encoding="utf-8", newline="")
+    _git(scaffold, "add", "-A")
+    _git(scaffold, "commit", "-q", "-m", "v1")
+    m_v1 = _git(scaffold, "rev-parse", "HEAD")
+    (modal / "modal.css").write_text(MODAL_V2, encoding="utf-8", newline="")
+    _git(scaffold, "add", "-A")
+    _git(scaffold, "commit", "-q", "-m", "v2")
+    m_v2 = _git(scaffold, "rev-parse", "HEAD")
+
+    def _adopter(name: str, sha: str, css: str) -> Path:
+        d = root / name
+        dest = d / "app" / "webapp" / "static" / "_vendored" / "modal"
+        dest.mkdir(parents=True)
+        (dest / "modal.css").write_text(css, encoding="utf-8", newline="")
+        (dest / "README.md").write_text("# modal\n", encoding="utf-8", newline="")
+        (d / ".fleet.toml").write_text(
+            'layer = "working-web"\nicon = "x"\ndescription = "d"\n\n'
+            f'[vendored]\nmodal = {{ src = "app/webapp/static/_vendored/modal", sha = "{sha}", '
+            'dest = "app/webapp/static/_vendored/modal" }\n', encoding="utf-8")
+        return d
+
+    repos = {"project-scaffolding": scaffold, "old-pin": _adopter("old-pin", m_v1, MODAL_V1),
+             "current": _adopter("current", m_v2, MODAL_V2)}
+    report = vd.scan_fleet(scaffold, repos=repos)
+    by_repo = {a["repo"]: a for a in report["adopters"]}
+    check(by_repo["old-pin"]["contract"]["removed_selectors"] == [".modal input", ".modal select", ".modal-footer button"],
+          "scan_fleet: a behind adopter carries the selectors its pin has and the tip dropped")
+    check("contract" not in by_repo["current"], "scan_fleet: an adopter already at the tip has no contract change to report")
+    check(report["coverage"]["contract_breaking"] == [
+        {"repo": "old-pin", "component": "modal", "pinned_sha": m_v1,
+         "removed_selectors": [".modal input", ".modal select", ".modal-footer button"]}],
+        f"scan_fleet: coverage names the breaking adopter, its pin and the removed selectors ({report['coverage']['contract_breaking']})")
+finally:
+    shutil.rmtree(root, ignore_errors=True)
+
+
 _h.report_and_exit("test_vendored_drift")
