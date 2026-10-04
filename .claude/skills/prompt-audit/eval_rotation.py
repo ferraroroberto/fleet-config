@@ -12,6 +12,10 @@ aggregate: skill x model x case -> pass / fail / error, notional cost, seconds.
   case never run is `not-run`. Neither is ever `pass`.
 - Verdicts: a failing case on the `sonnet` or `opus` tier is a `failure`; a failure
   on `haiku` alone is advice (`consider`).
+- Under `--ablation none` (every case slash-invoked) a `tool_used: Skill` grader is
+  informational: a slash command expands inline and never calls the Skill tool, so it
+  could only ever read 0x and fail every case. Its result stays in the row's `reason`
+  but is left out of the pass decision (fleet-config#1238).
 - Credentials: by default the child sessions use the CLI's own credential, which is
   plugin eval's design. `--hub URL` routes them through a local Anthropic-shape
   gateway instead (thinking off, a dummy key); tier ids then come from its
@@ -153,10 +157,33 @@ def weight_of(tier: str) -> str:
     return "advisory" if tier in ADVISORY_TIERS else "scored"
 
 
+def informational_graders(case: dict) -> set:
+    """Names of the case's graders that cannot count under `--ablation none`: `tool_used: Skill`, which a
+    slash-invoked case never satisfies (the per-run grader entries carry only a name, so the type is read here)."""
+    return {g.get("name") for g in case.get("graders") or []
+            if g.get("type") == "tool_used" and (g.get("config") or {}).get("tool") == "Skill"}
+
+
+def run_passed(run: dict, informational: set, threshold: float = 1) -> Optional[bool]:
+    """Whether one run passed once the informational graders are set aside, by the CLI's own rule (weighted share of
+    passing graders reaches the suite threshold). `None` when no scored grader is left: unknown, never a pass.
+    Without informational graders, or without a per-run grader list, the run's own `passed` stands."""
+    graders = run.get("graders")
+    if not informational or not isinstance(graders, list):
+        return bool(run.get("passed"))
+    scored = [g for g in graders if g.get("name") not in informational]
+    total = sum(float(g.get("weight") or 1) for g in scored)
+    if total <= 0:
+        return None
+    return sum(float(g.get("weight") or 1) for g in scored if g.get("passed")) / total >= threshold
+
+
 def case_rows(result: Optional[dict], skill: str, tier: str, model: str, cases: List[str],
-              error: str = "") -> List[dict]:
-    """One row per case from a plugin-eval aggregate. Missing result -> every case `error`; absent case -> `not-run`."""
+              error: str = "", ablation: str = "with-without") -> List[dict]:
+    """One row per case from a plugin-eval aggregate. Missing result -> every case `error`; absent case -> `not-run`.
+    Under `ablation == "none"` the case's informational graders are reported in `reason` but not scored."""
     by_name = {c.get("name"): c for c in (result or {}).get("cases", [])}
+    threshold = float(((result or {}).get("suite") or {}).get("threshold", 1))
     rows = []
     for name in cases:
         c = by_name.get(name)
@@ -177,9 +204,16 @@ def case_rows(result: Optional[dict], skill: str, tier: str, model: str, cases: 
         elif errors:
             status, reason = "error", str(errors[0])[:300]
         else:
-            passed = sum(1 for r in runs if r.get("passed"))
+            info = informational_graders(c) if ablation == "none" else set()
+            outcomes = [run_passed(r, info, threshold) for r in runs]
+            passed = sum(1 for o in outcomes if o)
             status = "pass" if passed * 2 > len(runs) else "fail"
             reason = f"{passed}/{len(runs)} runs passed"
+            if None in outcomes:
+                status, reason = "error", "no scored grader left after setting the informational ones aside"
+            for name in sorted(info):
+                fired = sum(1 for r in runs for g in r.get("graders") or [] if g.get("name") == name and g.get("passed"))
+                reason += f"; {name} (informational): {fired}/{len(runs)} runs"
         rows.append(dict(base, status=status, reason=reason, cost_usd=cost, seconds=secs))
     return rows
 
@@ -225,7 +259,7 @@ def run_skill(claude: str, skill: str, skill_dir: Path, models: Dict[str, str], 
         except (OSError, subprocess.TimeoutExpired) as exc:
             error = f"plugin eval did not finish: {exc}"
         result = _read_result(out_dir / "aggregate-result.json")
-        rows += case_rows(result, skill, tier, model, cases, error)
+        rows += case_rows(result, skill, tier, model, cases, error, ablation)
     return rows
 
 

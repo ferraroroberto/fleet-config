@@ -873,6 +873,47 @@ check([er.weight_of(t) for t in ("haiku", "sonnet", "opus", "qwen-x")] == ["advi
 check(all(r["status"] == "error" for r in er.case_rows(None, "s", "opus", "m", ["a", "b"], "exit 2")),
       "no result file -> every case error, never pass")
 
+# ---- slash-invoked cases: the `tool_used: Skill` grader is informational under --ablation none (#1238) ----
+# Shape of a real `quick` / `typo-lands-verified` run: both regex graders and the llm judge PASS, `skill-loaded`
+# reads "Skill called 0x" because a slash command expands inline and never calls the Skill tool.
+SL_GRADERS = [{"name": "ephemeral-branch", "type": "regex"}, {"name": "order", "type": "llm"},
+              {"name": "skill-loaded", "type": "tool_used", "config": {"tool": "Skill"}}]
+
+
+def sl_run(content_ok=True, loaded=False, drop_content=False):
+    graders = [{"name": "skill-loaded", "passed": loaded, "weight": 1}]
+    if not drop_content:
+        graders = [{"name": "ephemeral-branch", "passed": True, "weight": 1},
+                   {"name": "order", "passed": content_ok, "weight": 1}] + graders
+    return {"passed": False, "error": None, "costUsd": 0.1, "durationSeconds": 5, "score": 0.75, "graders": graders}
+
+
+def sl_rows(runs, ablation, graders=SL_GRADERS, threshold=1):
+    result = {"suite": {"threshold": threshold}, "cases": [{"name": "c", "graders": graders, "arms": {"with": runs}}]}
+    return er.case_rows(result, "s", "sonnet", "m", ["c"], ablation=ablation)[0]
+
+
+sl = sl_rows([sl_run()] * 3, "none")
+check(sl["status"] == "pass", f"under --ablation none a run whose content graders all pass is pass though skill-loaded read 0x (got {sl})")
+check("skill-loaded (informational): 0/3" in sl["reason"], f"...and the informational grader is still reported, not hidden (got {sl['reason']})")
+check(sl_rows([sl_run()] * 3, "with-without")["status"] == "fail",
+      "under with-without nothing changes: the run's own passed flag decides (the CLI excludes with-only graders itself)")
+check(sl_rows([sl_run()] * 3, "none", graders=[])["status"] == "fail" and er.case_rows(
+    {"cases": [{"name": "c", "graders": SL_GRADERS, "arms": {"with": [sl_run()] * 3}}]}, "s", "sonnet", "m", ["c"])[0]["status"] == "fail",
+      "the default ablation (and a case that names no informational grader) keeps the pre-#1238 behaviour")
+check(sl_rows([sl_run(content_ok=False)] * 3, "none")["status"] == "fail",
+      "a failing content grader is still a fail under --ablation none")
+check(sl_rows([sl_run(content_ok=False), sl_run(), sl_run()], "none")["status"] == "pass"
+      and sl_rows([sl_run(content_ok=False), sl_run(content_ok=False), sl_run()], "none")["status"] == "fail",
+      "the majority rule over runs is unchanged")
+check(sl_rows([sl_run(drop_content=True)] * 3, "none")["status"] == "error",
+      "a run with no scored grader left is error (unknown), never pass")
+nolist = sl_rows([{"passed": True, "error": None}] * 3, "none")
+check(nolist["status"] == "pass" and sl_rows([{"passed": False, "error": None}] * 3, "none")["status"] == "fail",
+      "a run with no per-run grader list falls back to its own passed flag")
+check("skill-loaded (informational): 3/3" in sl_rows([sl_run(loaded=True)] * 3, "none")["reason"],
+      "an informational grader that did pass is reported as such")
+
 ev_tmp = Path(tempfile.mkdtemp(prefix="skill-evals-test-"))
 try:
     write(ev_tmp / "skills" / "has" / "SKILL.md", SKILL_GOOD)
@@ -954,6 +995,11 @@ try:
     newest_e, prev_e = pa.latest_two(ev_dir)
     check(newest_e == now_agg and prev_e == prev_agg,
           "latest_two reads only the timestamped aggregates; latest.json and rotation.json are not runs")
+    # an aggregate marked invalidated (#1238) is kept on disk but is not a run: it can be neither newest nor previous
+    (ev_dir / "20261005T000000.json").write_text(json.dumps(dict(now_agg, invalidated="fleet-config#1238")), encoding="utf-8")
+    newest_i, prev_i = pa.latest_two(ev_dir)
+    check(newest_i == now_agg and prev_i == prev_agg and (ev_dir / "20261005T000000.json").is_file(),
+          "latest_two skips an invalidated aggregate (kept on disk) instead of reading its rows as a run")
 finally:
     shutil.rmtree(ev_dir, ignore_errors=True)
 check(pa.fold_evals(now_agg, prev_agg, dt.date(2026, 10, 20))["status"] == "not-checked", "fold: a stale aggregate is not-checked")

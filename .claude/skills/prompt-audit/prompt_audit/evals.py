@@ -42,11 +42,18 @@ def _load(path: Path) -> Optional[dict]:
     return data if isinstance(data, dict) and isinstance(data.get("rows"), list) else None
 
 
+def _is_run(path: Path) -> bool:
+    """A timestamped aggregate that has not been invalidated. An aggregate found to be measuring a harness defect
+    carries a top-level `invalidated` (the issue that explains it): it stays on disk but is not a run (#1238)."""
+    data = _load(path)
+    return data is not None and not data.get("invalidated")
+
+
 def latest_two(root: Optional[Path] = None) -> Tuple[Optional[dict], Optional[dict]]:
     """(newest, the one before it) of the timestamped aggregates; `latest.json` is a copy, not a run."""
     root = root or evals_dir()
     # Only the job's timestamped aggregates (`20261004T210000.json`); `latest.json` and `rotation.json` are not runs.
-    runs = sorted(p for p in root.glob("*.json") if RUN_NAME.match(p.name)) if root.is_dir() else []
+    runs = sorted(p for p in root.glob("*.json") if RUN_NAME.match(p.name) and _is_run(p)) if root.is_dir() else []
     newest = _load(runs[-1]) if runs else None
     previous = _load(runs[-2]) if len(runs) > 1 else None
     return newest, previous
