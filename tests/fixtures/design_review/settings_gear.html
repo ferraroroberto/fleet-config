@@ -1,0 +1,47 @@
+<!doctype html>
+<!-- Static fixture for the built-in Settings step (fleet-config#1217): Settings is the header gear (the vendored
+     home-head contract: a button named "Settings"), never a tab, and the text-size control exists in the DOM only
+     while the pane it opens is shown. Query variants: `?nocontrol` opens a pane without the control; `?zone` puts the
+     gear inside `.danger-zone` (a declared no_go); `?nogear` has no gear at all. Asserted by tests/test_design_review.py. -->
+<html lang="en" data-textsize="md">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>design_review settings gear fixture</title>
+<style>
+  html, body { margin: 0; background: #ffffff; color: #1f2328; font-family: system-ui, sans-serif; font-size: 16px; }
+  body { padding: 16px; }
+  .home-head { display: flex; align-items: center; gap: 12px; min-height: 52px; }
+  .home-head .home-toggle { min-width: 44px; min-height: 44px; }
+  [role=tablist] { display: flex; gap: 8px; }
+  [role=tab] { min-height: 44px; min-width: 44px; }
+  .danger-zone { display: inline-block; }
+</style>
+</head>
+<body>
+  <div class="home-head" id="head"><span class="home-title">Fixture</span></div>
+  <div role="tablist"><button type="button" role="tab" aria-selected="true" data-tab="home">Home</button><button type="button" role="tab" data-tab="list">List</button></div>
+  <main id="home"><h2>Home</h2><p>Page content.</p></main>
+  <section id="settingsPane" hidden></section>
+<script>
+  const q = location.search;
+  const gear = document.createElement("button");
+  gear.type = "button";
+  gear.className = "home-toggle home-settings";
+  gear.setAttribute("aria-label", "Settings");
+  gear.textContent = "⚙";
+  gear.addEventListener("click", () => {
+    const pane = document.getElementById("settingsPane");
+    pane.hidden = false;
+    document.getElementById("home").hidden = true;
+    pane.innerHTML = "<h2>Settings</h2>" + (q.includes("nocontrol") ? "<p>No text-size control here.</p>"
+      : '<div id="textSizeControl" role="group" aria-label="Text size"><button type="button" data-textsize="sm">A-</button><button type="button" data-textsize="lg">A+</button></div>');
+  });
+  const head = document.getElementById("head");
+  if (!q.includes("nogear")) {
+    if (q.includes("zone")) { const z = document.createElement("span"); z.className = "danger-zone"; z.appendChild(gear); head.appendChild(z); }
+    else head.appendChild(gear);
+  }
+</script>
+</body>
+</html>

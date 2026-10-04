@@ -29,8 +29,8 @@ grade, and composes no issue body. The one judgment it applies is **bounded**: a
 fresh agent that sees only this run's screenshots and `metrics.json`,
 yes / no / na per question, schema-validated, never a grade input.
 
-**Read-only, always.** The walk clicks primary tabs, opens `<details>` and
-`<dialog>`s, screenshots, measures, and leaves. It never starts, restarts
+**Read-only, always.** The walk clicks primary tabs and the header Settings
+gear, opens `<details>` and `<dialog>`s, screenshots, measures, and leaves. It never starts, restarts
 or kills the app or anything else, never writes into the target repo,
 never commits run output, and never attaches a screenshot or captured page
 text to an issue, PR or comment.
@@ -127,8 +127,8 @@ Prints `TARGET= BASE_URL= ROOT= CLAUDE_MD= PROBE= DETAIL=`. Read `PROBE=`:
 Runs the walk as a child of the **target repo's** `.venv` interpreter (that
 is where Playwright lives; this repo's venv is stdlib-only), over the fixed
 matrix `iphone` (WebKit) / `android` (Chromium) / `desktop` (Chromium) ×
-light / dark — every primary tab, every `<dialog>`, and any
-`[design.review].extra_steps` the target's `.fleet.toml` opts into. A full
+light / dark — every primary tab, every `<dialog>`, the Settings pane behind
+the header gear, and any `[design.review].extra_steps` the target's `.fleet.toml` opts into. A full
 app-launcher matrix takes about four minutes and leaves ~144 PNGs in the
 run directory; run it once per review, never in a loop.
 
@@ -413,9 +413,15 @@ checklist), else a `[[judgment]]` question. Nothing automates that step.
 - **Never start, restart or kill anything.** A dead port ends the run at
   step 1 with the target `CLAUDE.md`'s restart pointer; the user runs it.
 - **Read-only walk, loopback only.** No form submits, no destructive
-  clicks beyond the target's own opt-in `extra_steps`; a `no_go` selector
-  list in `.fleet.toml` is honoured by the walk on every click of a step,
-  including anything inside a `no_go` element.
+  clicks beyond the target's own opt-in `extra_steps` and the one built-in
+  click, the header **Settings gear** (#1217: the `home-head` button named
+  "Settings", found by role and accessible name; it only switches a view
+  and writes nothing; Roberto's decision, 2026-10-04); a `no_go` selector
+  list in `.fleet.toml` is honoured on every click of a step and on the
+  gear, including anything inside a `no_go` element. An app with no such
+  button is `SETTINGS_GEAR_ABSENT`, its own state in the report (A11Y-02
+  stays `unmeasured`, never a pass); a pane the gear opens without the
+  text-size control fails A11Y-02.
 - **Embedded content is the target's to declare.** A preview themed by
   something other than the app (a session-themed slide) is named in
   `[design.review] exclude_selectors`; nothing inside it is measured or

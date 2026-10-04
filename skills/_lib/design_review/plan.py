@@ -13,7 +13,8 @@ has to re-derive:
     used (`iphone` WebKit / `android` Chromium / `desktop` Chromium), each
     crossed with `light` and `dark`.
 
-Read-only by construction: the walk only clicks primary tabs, sets
+Read-only by construction: the walk only clicks primary tabs and the header
+Settings gear (a button that switches a view and writes nothing, #1217), sets
 `details.open`, and calls `dialog.showModal()` / `close()`. Anything else
 must be declared in `[design.review].extra_steps` — and even those are
 limited to opening one `details` and clicking selectors; there is no `fill`,
@@ -250,6 +251,10 @@ def resolve_target(
         )
     return Target(name=name, root=root, base_url=f"{scheme}://{LOOPBACK}:{int(port)}", review=review,
                   wide_views=wide, wide_views_error=wide_error)
+
+
+# The view name of the built-in Settings-gear screen (#1217): never a tab's id, so a Settings tab cannot collide with it.
+SETTINGS_GEAR_VIEW = "gear-settings"
 
 
 def screen_id(device: str, theme: str, view: str) -> str:

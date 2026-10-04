@@ -371,7 +371,9 @@ def _method(doc: dict) -> str:
     for s in bad:
         items.append(f"screen {s.get('id')} not measured: {s.get('reason') or 'walk error'} — its rules report unmeasured, never pass")
     for s in absent:
-        items.append(f"screen {s.get('id')}: step target absent in this app state (STEP_TARGET_ABSENT) — left out of every rule, "
+        reason = s.get("reason") or "STEP_TARGET_ABSENT"
+        what = "no Settings gear in this app" if reason == "SETTINGS_GEAR_ABSENT" else "step target absent in this app state"
+        items.append(f"screen {s.get('id')}: {what} ({reason}) — left out of every rule, "
                      "which is unmeasured only where no other screen measured it")
     if doc.get("metrics_rubric_version") and doc.get("metrics_rubric_version") != doc.get("rubric_version"):
         items.append(f"metrics were captured under rubric v{doc['metrics_rubric_version']} and evaluated under v{doc['rubric_version']}")
