@@ -280,8 +280,9 @@ _STANDALONE_UNIT_CHECKS: Tuple[Tuple[str, str, str], ...] = (
      "unmerged foreign one still halt -- is testable on its own against "
      "real throwaway git repos (fleet-config#1077)"),
     ("stall_probe", "test_stall_probe.py",
-     "the host stall probe -- a late sleep and a slow loopback GET logged "
-     "as UTC stall records, evidence captured once per cooldown, one "
+     "the host stall probe -- a late sleep, a slow loopback GET and a slow "
+     "per-volume disk read logged as UTC stall records, evidence captured "
+     "once per cooldown, one "
      "instance per state dir -- is testable on its own with injected "
      "delays, since a real whole-box stall can't be caused (fleet-config#1106)"),
     ("entry_inventory", "test_entry_inventory.py",
