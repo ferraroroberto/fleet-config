@@ -138,6 +138,18 @@ status is *unestablished*, never "clean") and `catalog_known`. **If
 carrier detection did not run at all** — say so; do not report "no undeclared
 carriers", which is a different and unearned claim.
 
+**Contract-change check — a removed selector stops the wave** (fleet-config#1227).
+Every `behind_head` adopter carries `contract`: the component's CSS selectors and
+README compared between that adopter's pinned `sha` and the scaffold tip.
+`removed_selectors` are selectors the pin has and the tip does not; `readme_changed`
+and `readme_removed_lines` report the README. A byte-for-byte re-vendor is
+hash-verified, so nothing else notices a split like project-scaffolding#300, which
+moved the footer button and the input/select recipe out of `modal.css` and left
+two apps unstyled in live builds. `coverage.contract_breaking` lists every adopter
+whose `contract.breaking` is true (a selector was removed). A README change on its
+own is reported but never stops the wave. The comparison is whole selectors, so a
+reworded selector reads as one removed: it stops for a human look, never the reverse.
+
 A repo appearing in neither list carries nothing catalogued and is genuinely
 not an adopter — skip it, it is out of scope for this component.
 
@@ -170,11 +182,21 @@ Print the report and stop — no clone, no branch, no PR, nothing written:
 
   coverage: <n> declared adopters, <m> undeclared carriers, <k> unknown (<repos, or "none">)
             catalog: <c> components known | NOT KNOWN (<reason>)
+            contract: <j> adopter(s) would lose selectors (<repo> @ <short-pin>: <removed selectors>, or "none")
+            README changed for: <repos, or "none">
 
 Run `/propagate-vendored <component>` (no --dry-run) to fan out the real wave.
 ```
 
 ### 4. Real run: fan out one sub-agent per target repo
+
+**Stop first on a contract change.** If `coverage.contract_breaking` is non-empty,
+do not dispatch anything. Print each component, the pinned sha and the
+`removed_selectors`, say which adopters it affects, and ask whether the markup of
+those adopters still works without them (the scaffold's split issue says where the
+selectors went). Include the component only on an explicit yes naming it; a yes for
+one component never covers another. Adopters of other components are not held up.
+The README note rides along in the report.
 
 Target repos = every `behind_head`/`local_drift` adopter from step 2, plus
 every `matches_head: true` carrier (adopt-only — its bytes are already current).
@@ -293,6 +315,7 @@ As each agent returns, surface its report with a status mark (`✅ merged` /
               - reported only (differ from HEAD, human call): <repos, or "none">
             <k> repo(s) unknown (manifest unreadable): <repos, or "none">
             catalog: <c> components known | NOT KNOWN — carrier detection did not run (<reason>)
+            contract: <j> adopter(s) held for removed selectors: <repo/component, or "none">
 
   no per-repo issues filed (by design — see the scaffold record).
 ```
