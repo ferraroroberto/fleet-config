@@ -16,6 +16,7 @@ Layout, in dependency order (no module imports a later one):
   dedup.py      findings shared with the scaffolding master / lite global
   state.py      cadence state
   coverage.py   tracked-guide sections no `Source:` line cites (+ the page cache)
+  leads.py      hand-fed outside claims (`leads.toml`) and their trace results
   ledger.py     the skip-unchanged ledger issue
   digest.py     run digest + chat ping
   drift.py      the prompt-drift cleanup-issue merge/backlog engine
@@ -42,6 +43,8 @@ from .inventory import (
     sections,
 )
 from .rules import parse_rules, verdict_cap
+from .leads import LeadsError, claim_id, load_leads, resolve as resolve_leads, suggestions_comment
+from .leads import mark as mark_lead, digest_lines as lead_digest_lines
 from .coverage import (
     cache_page,
     cited_sections,

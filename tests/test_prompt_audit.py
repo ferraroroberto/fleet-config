@@ -770,6 +770,64 @@ finally:
     os.environ.pop("PROMPT_AUDIT_STATE_DIR", None)
     shutil.rmtree(cache_dir, ignore_errors=True)
 
+# ---- leads intake (#1129): parse, loud on malformed, traced never re-sent, state persists, unverified only reported ----
+
+seed = pa.load_leads(CFG["sources"])
+check(len(seed) == 1 and seed[0]["id"] == "skills-outdated-video" and len(seed[0]["claims"]) == 7,
+      f"leads.toml carries the video lead with its 7 claims (got {[(l['id'], len(l['claims'])) for l in seed]})")
+check(pa.resolve_leads(seed, {})["open"] == [], "every seeded claim is traced, so none is open")
+
+leads_dir = Path(tempfile.mkdtemp(prefix="prompt-audit-leads-"))
+try:
+    bad_toml = write(leads_dir / "bad.toml", "[leads.x\nurl = 1\n")
+    bad_schema = write(leads_dir / "schema.toml", '[leads.x]\nurl = "https://e.test"\nkind = "podcast"\nadded = 2026-10-02\nclaims = [{ text = "t" }]\n')
+    bad_trace = write(leads_dir / "trace.toml", '[leads.x]\nurl = "https://e.test"\nkind = "post"\nadded = 2026-10-02\nclaims = [{ text = "t", trace = "nope#Sec" }]\n')
+    for f, why in ((bad_toml, "invalid TOML"), (bad_schema, "unknown kind"), (bad_trace, "trace to an untracked source"),
+                   (leads_dir / "missing.toml", "missing file")):
+        try:
+            pa.load_leads(CFG["sources"], f)
+            raised = False
+        except pa.LeadsError:
+            raised = True
+        check(raised, f"leads: {why} fails loudly with LeadsError, never reads as no leads")
+
+    mixed = write(leads_dir / "mixed.toml", '[leads.y]\nurl = "https://e.test/p"\nkind = "post"\nadded = 2026-10-03\nclaims = [\n'
+                  '  { text = "Already traced", trace = "anthropic-skill-authoring#Token budgets" },\n'
+                  '  { text = "Needs tracing", trace = "" },\n'
+                  '  { text = "Nobody says this", trace = "" },\n]\n')
+    ml = pa.load_leads(CFG["sources"], mixed)
+    ids = {c["text"]: c["id"] for c in ml[0]["claims"]}
+    first = pa.resolve_leads(ml, {})
+    check(first["open"] == [ids["Needs tracing"], ids["Nobody says this"]],
+          "leads: only claims with an empty trace are open; a traced claim is never sent to the worker")
+    st = pa.mark_lead({}, ids["Needs tracing"], "traced", "anthropic-best-practices#Tool usage", dt.date(2026, 10, 4))
+    st = pa.mark_lead(st, ids["Nobody says this"], "unverified", "")
+    state_dir2 = leads_dir / "state"
+    os.environ["PROMPT_AUDIT_STATE_DIR"] = str(state_dir2)
+    __import__("prompt_audit.state", fromlist=["save_state"]).save_state(st)
+    again2 = pa.resolve_leads(ml, pa.load_state())
+    check(again2["open"] == [], "leads: trace results persist in state.json and a second run re-traces nothing")
+    os.environ.pop("PROMPT_AUDIT_STATE_DIR", None)
+
+    lines = pa.lead_digest_lines(again2)
+    check(any("**unverified**: Nobody says this" in l for l in lines) and "unverified 1" in lines[0],
+          f"leads: an untraced claim is listed as unverified in the digest (got {lines})")
+    lead_run = {"date": "2026-10-04", "dry_run": False, "sources": [], "update_issue": None, "scan_ran": True,
+                "plan": [], "judgments": {}, "coverage": [], "leads": again2}
+    lead_body, lead_status = pa.render_digest(lead_run, RULES)
+    check(lead_status == "complete" and "**unverified**: Nobody says this" in lead_body
+          and pa.partition_run(lead_run)["findings"] == [],
+          "leads: an unverified claim creates no finding, so no rule and no prompt-drift item")
+    check("**Leads:** not-checked" in pa.render_digest(dict(lead_run, leads=None), RULES)[0],
+          "leads: a run without the leads step prints not-checked")
+    sugg = pa.suggestions_comment(again2)
+    check(sugg is not None and 'trace = "anthropic-best-practices#Tool usage"' in sugg and "Nobody says this" not in sugg,
+          "leads: a traced result becomes a suggested trace value on the update issue; unverified does not")
+    check(pa.suggestions_comment(again2, sugg) is None, "leads: a suggestion already on the issue is not posted again")
+finally:
+    os.environ.pop("PROMPT_AUDIT_STATE_DIR", None)
+    shutil.rmtree(leads_dir, ignore_errors=True)
+
 # ---- contracts: rules.md, sources.toml, vendor neutrality ----
 
 check(sorted(r for r, v in RULES.items() if v["detect"] == "lint") == pa.LINT_RULES,
