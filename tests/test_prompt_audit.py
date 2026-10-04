@@ -828,6 +828,91 @@ finally:
     os.environ.pop("PROMPT_AUDIT_STATE_DIR", None)
     shutil.rmtree(leads_dir, ignore_errors=True)
 
+# ---- skill evals (#1130): argv, verdict tiers, honest errors, wrapper, the 9 pilot cases ----
+
+import eval_rotation as er  # noqa: E402
+
+ev_argv = er.eval_argv("claude", Path("w"), "m", "j", Path("o"), "none", runs=2)
+check("--no-publish" in ev_argv and ev_argv[ev_argv.index("--max-cost-usd") + 1] == "10",
+      f"every plugin-eval argv carries --no-publish and --max-cost-usd 10 (got {ev_argv})")
+
+
+def ev_row(tier, status, case="c1", skill="s"):
+    return {"skill": skill, "tier": tier, "model": tier, "case": case, "status": status, "cost_usd": 0.0, "seconds": 0}
+
+
+def ev_verdict(rows):
+    return er.verdicts(rows)[0]["verdict"]
+
+
+check(ev_verdict([ev_row("haiku", "fail"), ev_row("sonnet", "pass"), ev_row("opus", "pass")]) == "consider",
+      "a haiku-only failure is advice (consider)")
+check(ev_verdict([ev_row("haiku", "pass"), ev_row("sonnet", "fail"), ev_row("opus", "pass")]) == "failure",
+      "a sonnet failure is a failure")
+check(ev_verdict([ev_row("haiku", "fail"), ev_row("sonnet", "pass"), ev_row("opus", "fail")]) == "failure",
+      "an opus failure is a failure even with haiku failing too")
+check(ev_verdict([ev_row("haiku", "pass"), ev_row("sonnet", "error"), ev_row("opus", "pass")]) == "unmeasured",
+      "an errored scored tier is unmeasured, never pass")
+check(ev_verdict([ev_row("haiku", "pass"), ev_row("sonnet", "pass")]) == "unmeasured",
+      "a tier that never ran leaves the case unmeasured")
+check(ev_verdict([ev_row(t, "pass") for t in er.TIERS] + [ev_row("extra-model", "fail")]) == "pass",
+      "an extra (non-tier) model never changes a verdict")
+
+ev_result = {"cases": [
+    {"name": "ok", "arms": {"with": [{"passed": True, "error": None, "costUsd": 0.1, "durationSeconds": 5}] * 3}},
+    {"name": "bad", "arms": {"with": [{"passed": False, "error": "exit 1: API Error: 400", "costUsd": 0, "durationSeconds": 1}]}},
+    {"name": "mixed", "arms": {"with": [{"passed": True, "error": None}, {"passed": True, "error": "timeout"}]}},
+]}
+ev_rows = {r["case"]: r for r in er.case_rows(ev_result, "s", "sonnet", "m", ["ok", "bad", "mixed", "gone"])}
+check(ev_rows["ok"]["status"] == "pass" and abs(ev_rows["ok"]["cost_usd"] - 0.3) < 1e-9, "a clean passing case is pass with its cost")
+check(ev_rows["bad"]["status"] == "error" and "400" in ev_rows["bad"]["reason"], "an errored run is recorded as error with its reason")
+check(ev_rows["mixed"]["status"] == "error", "a case with any errored run is error, never pass")
+check(ev_rows["gone"]["status"] == "not-run", "a case missing from the result is not-run")
+check([er.weight_of(t) for t in ("haiku", "sonnet", "opus", "qwen-x")] == ["advisory", "scored", "scored", "extra"],
+      "each row records how it counts: scored, advisory (haiku) or extra (a non-tier model)")
+check(all(r["status"] == "error" for r in er.case_rows(None, "s", "opus", "m", ["a", "b"], "exit 2")),
+      "no result file -> every case error, never pass")
+
+ev_tmp = Path(tempfile.mkdtemp(prefix="skill-evals-test-"))
+try:
+    write(ev_tmp / "skills" / "has" / "SKILL.md", SKILL_GOOD)
+    write(ev_tmp / "skills" / "has" / "ref.md", "# ref\n")
+    write(ev_tmp / "skills" / "has" / "evals" / "c1" / "prompt.md", "---\nmax_turns: 2\n---\n\n/has go\n")
+    write(ev_tmp / "skills" / "has" / "evals" / "c1" / "graders" / "g.md", "---\ntype: llm\n---\n\nPASS if ok.\n")
+    write(ev_tmp / "skills" / "none" / "SKILL.md", SKILL_GOOD)
+    write(ev_tmp / ".claude" / "skills" / "proj" / "SKILL.md", SKILL_GOOD)
+    write(ev_tmp / ".claude" / "skills" / "proj" / "evals" / "c2" / "prompt.md", "Check the thing in plain words.\n")
+    kept = Path(tempfile.mkdtemp(prefix="claude-eval-"))
+    elsewhere = ev_tmp / "claude-eval-notmine"
+    elsewhere.mkdir()
+    gone = er.drop_kept_temps(f"  kept temp (run failed): {kept}\n  kept temp (run failed): {elsewhere}\nother line\n")
+    check(gone == [kept] and not kept.exists() and elsewhere.exists(),
+          "only a claude-eval-* sandbox directly under the temp dir is removed")
+    found = er.eval_skills(ev_tmp)
+    check(sorted(found) == ["has", "proj"], f"only skills carrying evals/<case>/prompt.md are eligible (got {sorted(found)})")
+    wrap = er.build_wrapper(found["has"], ev_tmp / "wrap")
+    check((wrap / ".claude-plugin" / "plugin.json").is_file() and (wrap / "skills" / "has" / "ref.md").is_file()
+          and not (wrap / "skills" / "has" / "evals").exists() and (wrap / "evals" / "c1" / "prompt.md").is_file(),
+          "the wrapper carries the manifest and the skill without its cases, and the cases at the eval root")
+    check(er.ablation_for(found["has"]) == "none" and er.ablation_for(found["proj"]) == "with-without",
+          "slash-invoked cases run without a baseline arm; natural-language ones with it")
+    ev_out = er.write_aggregate([ev_row(t, "pass") for t in er.TIERS], {"started": "2026-10-04T12:00:00+00:00"},
+                                ev_tmp / "agg")
+    agg = json.loads((ev_tmp / "agg" / "latest.json").read_text(encoding="utf-8"))
+    check(ev_out.is_file() and agg["verdicts"][0]["verdict"] == "pass" and len(agg["rows"]) == 3,
+          "the aggregate is written with rows and verdicts, plus latest.json")
+finally:
+    shutil.rmtree(ev_tmp, ignore_errors=True)
+
+pilot = {s: sorted(p.parent.name for p in (REPO / "skills" / s / "evals").glob("*/prompt.md"))
+         for s in ("issue-start", "quick", "perf-review")}
+check(all(len(v) == 3 for v in pilot.values()), f"three pilot cases per skill (got {pilot})")
+shell_grants = [p for s in pilot for p in (REPO / "skills" / s / "evals").glob("*/prompt.md")
+                if re.search(r"^allowed_tools:.*\b(?:Bash|PowerShell)\b", p.read_text(encoding="utf-8"), re.M)]
+check(shell_grants == [], f"no pilot case grants a shell tool (got {shell_grants})")
+check(all(list((p.parent / "graders").glob("*.md")) for s in pilot
+          for p in (REPO / "skills" / s / "evals").glob("*/prompt.md")), "every pilot case has graders")
+
 # ---- contracts: rules.md, sources.toml, vendor neutrality ----
 
 check(sorted(r for r, v in RULES.items() if v["detect"] == "lint") == pa.LINT_RULES,
