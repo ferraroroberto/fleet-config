@@ -181,6 +181,111 @@ try:
           f"a slow loopback GET is logged as an http stall -- {records(folder_b)}")
     check(not any(r["kind"] == "sleep" for r in records(folder_b)), "no scheduler stall is invented on a quiet run")
 
+    # ---- disk leg: a slow unbuffered read on one volume is a `kind: disk` stall; the other volume is the control ----
+    class FakeReader:
+        """Stands in for DiskReader: the first `slow_first` reads take `delay_s`, the rest are instant."""
+        def __init__(self, delay_s: float = 0.0, slow_first: int = 0) -> None:
+            self.delay_s, self.slow_first, self.reads, self.closed = delay_s, slow_first, 0, False
+
+        def read(self) -> bytes:
+            self.reads += 1
+            if self.reads <= self.slow_first:
+                time.sleep(self.delay_s)
+            return b"\0" * 4096
+
+        def close(self) -> None:
+            self.closed = True
+
+    def disk_probe(name: str, readers: dict, unbiased=None, opener=None):
+        folder_d = sp.probe_dir(tmp / name)
+        folder_d.mkdir(parents=True)
+        calls_d: list = []
+        probe_d = sp.Probe(sp.Log(folder_d), threshold=0.3, evidence=lambda: calls_d.append(1) or {"fake": True},
+                           disk_dirs={vol: tmp / name / vol.strip(":") for vol in readers})
+        probe_d.open_disk = opener or (lambda volume, _folder: readers[volume])
+        if unbiased:
+            probe_d.unbiased = unbiased
+        probe_d.power_events = lambda _start, _end: sp.summarize_power_events([])
+        probe_d.power_settle_s = 0
+        probe_d.disk_every_s = 0.05
+        return probe_d, folder_d, calls_d
+
+    e_reader, c_reader = FakeReader(0.6, slow_first=1), FakeReader()
+    probe_d, folder_d, disk_calls = disk_probe("d", {"E:": e_reader, "C:": c_reader})
+    probe_d.run(duration_s=1.5)
+    check(wait_for(lambda: any(r["kind"] == "disk" for r in records(folder_d))), f"a slow read is logged as a disk stall -- {records(folder_d)}")
+    disk_recs = [r for r in records(folder_d) if r["kind"] == "disk"]
+    check(len(disk_recs) == 1 and disk_recs[0]["volume"] == "E:" and 0.5 <= disk_recs[0]["gap_s"] < 2
+          and UTC.fullmatch(disk_recs[0]["start_utc"]) and UTC.fullmatch(disk_recs[0]["end_utc"]) and disk_recs[0]["threshold_s"] == 0.3,
+          f"the record names the volume and carries UTC start/end and the gap, and the fast control volume logs nothing -- {disk_recs}")
+    check(probe_d.stalls == 1 and disk_calls == [1] and disk_recs[0].get("evidence") == {"fake": True},
+          f"a disk stall counts as a stall and captures the evidence block -- stalls={probe_d.stalls} calls={disk_calls}")
+    check(e_reader.reads > 3 and c_reader.reads > 3 and wait_for(lambda: e_reader.closed and c_reader.closed),
+          f"each volume is read on its own cadence (a stuck E: read must not stop C:) and the readers are closed -- {e_reader.reads}/{c_reader.reads}")
+    status_d = json.loads((folder_d / "status.json").read_text(encoding="utf-8"))
+    check(sorted(status_d.get("disk_volumes", [])) == ["C:", "E:"] and set(status_d.get("disk_reads", {})) == {"C:", "E:"}
+          and probe_d.disk_reads["E:"] > 3 and probe_d.disk_reads["C:"] > 3,
+          f"the heartbeat names the volumes read and carries the per-volume read counts, so a quiet log can be told from a dead leg -- {status_d} {probe_d.disk_reads}")
+
+    # a read that straddled a machine sleep is a suspend seen by the disk leg, not a disk stall
+    skipped_d = [0.0]
+
+    class SleepyReader(FakeReader):
+        def read(self) -> bytes:
+            if self.reads == 0:
+                skipped_d[0] += 0.8
+            return super().read()
+    probe_z, folder_z, _ = disk_probe("z", {"E:": SleepyReader(0.9, slow_first=1)}, unbiased=lambda: time.monotonic() - skipped_d[0])
+    probe_z.run(duration_s=1.6)
+    check(wait_for(lambda: any(r["kind"] == "suspend" for r in records(folder_z))) and probe_z.stalls == 0
+          and next(r for r in records(folder_z) if r["kind"] == "suspend").get("seen_by") == "disk"
+          and not any(r["kind"] == "disk" for r in records(folder_z)),
+          f"a read that spanned a machine sleep is a suspend, not a disk stall -- {records(folder_z)}")
+
+    # a volume that cannot be read is a finding (`disk-error`), logged once per distinct error, and the leg keeps retrying
+    attempts: list = []
+
+    def failing_open(volume, _folder):
+        attempts.append(volume)
+        raise OSError("drive not ready")
+    probe_f, folder_f, _ = disk_probe("f", {"E:": None}, opener=failing_open)
+    probe_f.run(duration_s=1.0)
+    errors = [r for r in records(folder_f) if r["kind"] == "disk-error"]
+    check(len(errors) == 1 and errors[0]["volume"] == "E:" and "drive not ready" in errors[0]["error"] and UTC.fullmatch(errors[0]["start_utc"])
+          and len(attempts) > 3 and probe_f.stalls == 0,
+          f"an unreadable volume logs one disk-error and keeps retrying, without becoming a stall -- {errors} attempts={len(attempts)}")
+
+    # the real unbuffered reader: sector-aligned 4 KB reads at random offsets of a prepared file
+    disk_folder = tmp / "diskfile"
+    one_mb = 1 << 20
+    prepared = sp.prepare_disk_file(disk_folder, one_mb)
+    check(prepared.stat().st_size == one_mb, f"the probe file is created at the requested size -- {prepared}")
+    stamp = prepared.stat().st_mtime_ns
+    check(sp.prepare_disk_file(disk_folder, one_mb) == prepared and prepared.stat().st_mtime_ns == stamp,
+          "an existing probe file of the right size is reused, not rewritten")
+    prepared.write_bytes(b"short")
+    sp.prepare_disk_file(disk_folder, one_mb)
+    check(prepared.stat().st_size == one_mb, "a probe file of the wrong size is rebuilt")
+    content = prepared.read_bytes()
+    reader = sp.DiskReader(prepared)
+    try:
+        chunks = [reader.read() for _ in range(5)]
+    finally:
+        reader.close()
+    check(all(len(c) == sp.DISK_READ_BYTES and content.find(c) % sp.DISK_READ_BYTES == 0 for c in chunks),
+          "each read returns 4 KB that sits at a 4 KB-aligned offset of the file (FILE_FLAG_NO_BUFFERING needs sector alignment)")
+    check(len({c for c in chunks}) > 1, "the offset is random, not fixed")
+    try:
+        sp.DiskReader(disk_folder / "missing.bin")
+        missing = None
+    except OSError as exc:
+        missing = exc
+    check(missing is not None, f"opening a missing file raises instead of reading nothing -- {missing}")
+    dirs = sp.default_disk_dirs(Path("E:/some/repo"), Path("C:/Users/x/state"))
+    check(sorted(dirs) == ["C:", "E:"] and all(str(p).upper().startswith(v) for v, p in dirs.items())
+          and sp.default_disk_dirs(Path("C:/a"), Path("C:/b")).keys() == {"C:"},
+          f"volumes derive from where the repo and the state dir live (no hardcoded drive); one volume when they share a drive -- {dirs}")
+
     # ---- one instance at a time ----
     first = sp.single_instance(folder_b)
     second = sp.single_instance(folder_b)
@@ -239,6 +344,17 @@ try:
     check(mem.get("commit_limit_gb", 0) > 0 and "commit_used_gb" in mem, f"GlobalMemoryStatusEx shape -- {mem}")
     tcp = sp._safely(sp.tcp_states)
     check(isinstance(tcp, dict) and "error" not in tcp and sum(tcp.values()) > 0, f"netstat TCP state counts -- {tcp}")
+    disk_pdh = sp._safely(lambda: sp.pdh_counters(sp.PDH_COUNTERS + sp.disk_counter_names(["C:"])))
+    check(all(isinstance(disk_pdh.get(name), float) for name in sp.disk_counter_names(["C:"])) and sp.disk_counter_names(["C:"]),
+          f"per-volume latency and queue counters read by English name, not just _Total -- {disk_pdh}")
+    hwinfo = sp._safely(sp.hwinfo_process)
+    check("error" not in hwinfo and isinstance(hwinfo.get("running"), bool) and "start_utc" in hwinfo,
+          f"HWiNFO64's process state reads: running or not, plus its start time (null when unreadable) -- {hwinfo}")
+    parsed = sp.parse_hwinfo(json.dumps({"running": True, "start_utc": "2026-10-04T05:09:05Z"}))
+    check(parsed == {"running": True, "start_utc": "2026-10-04T05:09:05Z"}
+          and sp.parse_hwinfo(json.dumps({"running": False, "start_utc": None})) == {"running": False, "start_utc": None}
+          and "error" in sp.parse_hwinfo("") and "error" in sp.parse_hwinfo("not json"),
+          f"the HWiNFO reply parses; an empty or garbled reply is an error, never read as 'not running' -- {parsed}")
 finally:
     shutil.rmtree(tmp, ignore_errors=True)
 

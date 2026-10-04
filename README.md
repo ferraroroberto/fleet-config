@@ -18,7 +18,7 @@ Shared issue/audit workflows bind delegation, result collection and questions to
 
 Native Claude and Codex quota measurements now share a [versioned snapshot contract](docs/quota-snapshots.md). Claude publishes from its existing statusline; Codex refreshes on demand through its native account method. Sources retain their own windows, provenance and freshness, with unknown account scopes explicit and the legacy Claude cache preserved.
 
-An always-on [host stall probe](docs/stall-probe.md) logs every whole-box freeze over 1 s in UTC, with the machine's memory, TCP, job and scheduled-task state captured as it ends, so the cause of the fleet-wide 7-25 s stalls can be named from evidence (fleet-config#1106).
+An always-on [host stall probe](docs/stall-probe.md) logs every whole-box freeze over 1 s in UTC (scheduler, loopback network, and a per-volume disk read on E: and C:), with the machine's memory, disk, TCP, job and scheduled-task state captured as it ends, so the cause of the fleet-wide 7-25 s stalls can be named from evidence (fleet-config#1106).
 
 A [dead-code start beacon](docs/dead-code-beacon.md) records every interpreter start from a repo's `.venv` in a machine-local ledger. It is one reversible `.pth` file that never breaks its host. The entry-point inventory reads the ledger to move scripts only a human launches from `unknown` to `live` or `cold` over a 90-day window (fleet-config#1114; pilot: `automation`).
 
