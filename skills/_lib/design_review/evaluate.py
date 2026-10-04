@@ -20,7 +20,10 @@ Rule status lattice, most conservative wins:
 A screen the walk could not open, a section the script could not compute,
 a metric the rubric names but the script did not produce, and a target that
 was not listening at all each make the affected rules `unmeasured` with the
-concrete `reason` — never a pass. A step screen whose target never appeared
+concrete `reason` — never a pass. A screen whose app rendered another theme than the walk asked for (`theme_applied: false`, #1216)
+is `unmeasured` for the rules the rubric marks `theme_dependent`, naming both themes -- never a pass and
+never a failure against the wrong palette -- while every other rule still scores it.
+A step screen whose target never appeared
 (`status: "absent"`, #995) is none of these: the surface does not exist in
 this app state, so it is left out of every rule, named in the rule's reason
 and in `absent_screens` -- and a rule left with no other screen is still
@@ -34,6 +37,7 @@ Output document:
     params:     {hit_min, primary_min, icon_steps}   # the resolved measurement floors
     screens:    [{id, device, theme, view, kind, status, reason}]
     absent_screens: [id]   # step screens whose target never appeared (#995)
+    theme_mismatch_screens: [{id, requested, rendered}]   # screens whose app did not render the requested theme (#1216)
     rules:      [{id, category, severity, owner, title, standard, fix_template,
                   mockup, params, status, reason, threshold: {value, source},
                   evidence: [{screen, value, items: [...], facts: {...}}],
@@ -437,6 +441,9 @@ def evaluate_rule(rule: Rule, doc: dict, specs: Dict[str, Dict[str, str]], ctx: 
             if screen.get("status") != "ok" or not isinstance(screen.get("metrics"), dict):
                 tally.unmeasured.append(f"{sid}: {screen.get('reason') or 'walk error'}")
                 continue
+            if rule.theme_dependent and screen.get("theme_applied") is False:
+                tally.unmeasured.append(f"{sid}: {_theme_reason(screen)}")
+                continue
             value, items, why, facts = read_metric(screen["metrics"], rule,
                                                    {**ctx, "view": screen.get("view"), "theme": screen.get("theme"), "specs": specs})
             _fold(result, tally, sid, value, items, why, rule, thr, facts)
@@ -462,6 +469,22 @@ def evaluate_rule(rule: Rule, doc: dict, specs: Dict[str, Dict[str, str]], ctx: 
         result["status"] = "unmeasured"
         result["reason"] = "no applicable screen in this run" + na
     return result
+
+
+def _theme_reason(screen: dict) -> str:
+    """Why a palette rule cannot score a screen: it rendered another theme than the walk asked for (#1216)."""
+    seen = screen.get("theme_observed") if isinstance(screen.get("theme_observed"), dict) else {}
+    return f"theme not applied (requested {screen.get('theme')}, rendered {seen.get('rendered') or 'another theme'})"
+
+
+def theme_mismatches(screens: List[dict]) -> List[Dict[str, object]]:
+    """The screens whose app did not render the requested theme; a screen the walk could not observe is not listed."""
+    out: List[Dict[str, object]] = []
+    for s in screens:
+        if isinstance(s, dict) and s.get("status") == "ok" and s.get("theme_applied") is False:
+            seen = s.get("theme_observed") if isinstance(s.get("theme_observed"), dict) else {}
+            out.append({"id": str(s.get("id")), "requested": s.get("theme"), "rendered": seen.get("rendered") or None})
+    return out
 
 
 class _Tally:
@@ -557,6 +580,7 @@ def evaluate(doc: dict, rubric: Rubric, specs: Dict[str, Dict[str, str]],
         "screens": [{k: s.get(k) for k in ("id", "device", "theme", "view", "kind", "status", "reason")}
                     for s in doc.get("screens", [])],
         "absent_screens": [str(s.get("id")) for s in doc.get("screens", []) if s.get("status") == ABSENT],
+        "theme_mismatch_screens": theme_mismatches(doc.get("screens", [])),
         "rules": rules,
         "categories": categories,
         "overall": score_overall(categories, rubric),

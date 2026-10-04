@@ -144,6 +144,14 @@ continue, and the report will carry every affected rule as `unmeasured`
 rather than passed. Exit 2 (target unresolved, rubric invalid) → stop and
 print the `ERROR=` line.
 
+Each screen also records whether the app rendered the theme the leg asked
+for (`theme_applied`, from `html[data-theme]` and the canvas luminance). An
+app that re-applies its own theme after the walk stamps one makes a "light"
+leg render dark (#1216); that screen is `unmeasured` for the colour rules
+COLOR-02 to COLOR-05, never pass or fail against the wrong palette, and the
+report's method section says so. The walk never fights the app for it. Say
+it when you summarise: a light grade from such a run is not a light grade.
+
 ### 3. Evaluate — rules, scores, grades
 
 ```

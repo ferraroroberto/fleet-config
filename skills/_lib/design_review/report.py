@@ -359,6 +359,15 @@ def _method(doc: dict) -> str:
     if doc.get("unmeasured"):
         u = doc["unmeasured"] if isinstance(doc["unmeasured"], dict) else {"reason": doc["unmeasured"]}
         items.append(f"the whole run is unmeasured: {u.get('reason')} — {u.get('detail') or ''}".rstrip(" —"))
+    mismatched = [s for s in doc.get("theme_mismatch_screens") or [] if isinstance(s, dict)]
+    if mismatched:
+        # fleet-config#1216: the app owns its theme and re-applied its own after the walk stamped one, so a leg
+        # labelled light can have been dark; reading it as light would judge the wrong palette (and fail it).
+        shown = ", ".join(str(s.get("id")) for s in mismatched[:6]) + (f" (+{len(mismatched) - 6} more)" if len(mismatched) > 6 else "")
+        items.append(f"{len(mismatched)} screen(s) did not render the requested theme ({shown}): the app set its own theme after the walk "
+                     "stamped one, so the legs labelled that way did not measure it. Their colour rules (COLOR-02 to COLOR-05) are "
+                     "unmeasured, never pass or fail; touch, layout, navigation and type still scored them. The fix is the app's: "
+                     "follow the stamped theme, or declare [design.review] theme_storage_key")
     for s in bad:
         items.append(f"screen {s.get('id')} not measured: {s.get('reason') or 'walk error'} — its rules report unmeasured, never pass")
     for s in absent:

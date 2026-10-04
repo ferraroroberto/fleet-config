@@ -33,13 +33,16 @@ No submit, no fill, no session attach, no navigation away from the base URL.
 
 Output: `<out>/screens.json` — a list of screen records
 `{id, device, theme, view, kind, status, reason, error, screenshot,
-screenshot_full, note, metrics}` — plus `<out>/walk.json` with engine versions and
+screenshot_full, note, metrics, theme_applied, theme_observed}` — plus `<out>/walk.json` with engine versions and
 timings. A screen that fails to open is recorded with `status: "error"` and a
 distinct `reason` (`TIMEOUT`, `NOT_LISTENING`, `TAB_FAILED`, `DIALOG_FAILED`,
 `BROWSER_FAILED`, `NO_GO`); its rules evaluate to `unmeasured`, never pass.
 A step whose target never attaches (a menu on an empty list) is `status:
 "absent"`, `reason: "STEP_TARGET_ABSENT"`: that surface does not exist in
 this app state, so it leaves unrelated rules alone (#995).
+`theme_applied` is whether the page rendered the theme the leg asked for (`false` when the app re-applied
+its own after the stamp, `null` when it could not be read); `theme_observed` is `{attr, luminance, rendered}`.
+The walk records it and never fights the app for it (#1216).
 A full-page capture never fails its screen (#1085): a page over the
 engines' 32767 device-px limit is captured clipped to it, any other
 capture error skips it, and the screen keeps its metrics with a `note`.
@@ -182,6 +185,7 @@ def _record(**fields: object) -> Dict[str, object]:
         "id": None, "device": None, "theme": None, "view": None, "kind": None,
         "status": "ok", "reason": None, "error": None,
         "screenshot": None, "screenshot_full": None, "note": None, "metrics": None,
+        "theme_applied": None, "theme_observed": None,
     }
     base.update(fields)
     return base
@@ -280,6 +284,20 @@ def walk_context(pw, device: str, theme: str, args: argparse.Namespace, script: 
     def stamp_theme() -> None:
         page.evaluate("t => { document.documentElement.dataset.theme = t; }", theme)
 
+    def theme_fields() -> Dict[str, object]:
+        """Which theme this screen actually rendered (#1216); unknown when the page cannot be read.
+
+        The app owns its theme, so a mismatch is recorded and never fought: no re-stamping here.
+        """
+        try:
+            applied, seen = measure.theme_agreement(theme, page.evaluate(measure.RENDERED_THEME_JS))
+        except Exception as exc:  # noqa: BLE001 — an unreadable page is an unknown theme, not a failed screen
+            log.warning("could not read the rendered theme: %s", str(exc)[:200])
+            return {}
+        if applied is False:
+            log.warning("theme not applied: asked for %s, rendered %s", theme, (seen or {}).get("rendered"))
+        return {"theme_applied": applied, "theme_observed": seen}
+
     def open_base() -> None:
         page.goto(args.url, wait_until="domcontentloaded")
         stamp_theme()
@@ -310,7 +328,7 @@ def walk_context(pw, device: str, theme: str, args: argparse.Namespace, script: 
             full, note = _full_shot(page, shots, sid, retouch)
             metrics = page.evaluate(script, params)
             screens.append(_record(id=sid, device=device, theme=theme, view=view, kind="tab",
-                                   screenshot=shot, screenshot_full=full, note=note, metrics=metrics))
+                                   screenshot=shot, screenshot_full=full, note=note, metrics=metrics, **theme_fields()))
             log.info("ok %s", sid)
         except Exception as exc:  # noqa: BLE001 — the walk must continue past one broken tab
             reason = classify_error(exc)
@@ -328,9 +346,10 @@ def walk_context(pw, device: str, theme: str, args: argparse.Namespace, script: 
             shot = _shot(page, shots, sid)
             full, note = _open_scope_details(page, shots, sid, retouch)
             metrics = page.evaluate(script, params)
+            observed = theme_fields()
             page.evaluate("id => document.getElementById(id).close()", did)
             screens.append(_record(id=sid, device=device, theme=theme, view=view, kind="dialog",
-                                   screenshot=shot, screenshot_full=full, note=note, metrics=metrics))
+                                   screenshot=shot, screenshot_full=full, note=note, metrics=metrics, **observed))
             log.info("ok %s", sid)
         except Exception as exc:  # noqa: BLE001
             screens.append(_record(id=sid, device=device, theme=theme, view=view, kind="dialog",
@@ -383,7 +402,7 @@ def walk_context(pw, device: str, theme: str, args: argparse.Namespace, script: 
             full, note = _open_scope_details(page, shots, sid, retouch)
             metrics = page.evaluate(script, params)
             screens.append(_record(id=sid, device=device, theme=theme, view=view, kind="step",
-                                   screenshot=shot, screenshot_full=full, note=note, metrics=metrics))
+                                   screenshot=shot, screenshot_full=full, note=note, metrics=metrics, **theme_fields()))
             log.info("ok %s", sid)
         except TargetAbsent as exc:
             screens.append(_record(id=sid, device=device, theme=theme, view=view, kind="step",
