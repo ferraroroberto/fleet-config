@@ -15,6 +15,8 @@ from typing import Dict, List, Optional, Tuple
 
 from .common import KIND, LEDGER_REPO, LITE_GLOBAL, LITE_REPO, MASTER_REPO, REPO_ROOT, RULES_MD, SOURCES_TOML, TITLE, VERDICTS, clean, ensure_utf8_stdio, fleet_repos, git_run, load_toml, rules_rubric
 from .sources import diff_source
+from .coverage import (cache_page, coverage, coverage_comment, known_items, page_sections,
+                       page_text, section_text)
 from .inventory import Entry, _read, inventory, kind_of, sections
 from .rules import parse_rules
 from .lint import hit_detail, hits_line, lint_entry, mcp_vocabulary
@@ -108,7 +110,83 @@ def cmd_sources(cfg: dict) -> int:
     return 0
 
 
-def cmd_diff_source(cfg: dict, sid: str, file: str, final_url: Optional[str]) -> int:
+UPDATE_TITLE = "prompt-audit: vendor guidance changed — update rule-set"
+
+
+def _update_issue() -> Tuple[Optional[int], str]:
+    """(number, body + every comment) of the open rule-set update issue, or (None, "").
+
+    Raises on a gh failure: a coverage post must never mistake "could not read" for "nothing posted yet".
+    """
+    res = git_run.run_gh(["issue", "list", "--repo", LEDGER_REPO, "--state", "open", "--search",
+                          "prompt-audit: vendor guidance changed in:title", "--json", "number,title"], timeout=60)
+    if res.returncode != 0:
+        raise RuntimeError(f"gh issue list failed: {(res.stderr or res.stdout).strip()[:200]}")
+    hit = next((i for i in json.loads(res.stdout or "[]") if i.get("title") == UPDATE_TITLE), None)
+    if hit is None:
+        return None, ""
+    view = git_run.run_gh(["issue", "view", str(hit["number"]), "--repo", LEDGER_REPO, "--json", "body,comments"],
+                          timeout=60)
+    if view.returncode != 0:
+        raise RuntimeError(f"gh issue view failed: {(view.stderr or view.stdout).strip()[:200]}")
+    data = json.loads(view.stdout)
+    return hit["number"], "\n".join([data.get("body") or ""] + [c.get("body") or "" for c in data.get("comments", [])])
+
+
+def cmd_coverage(args: argparse.Namespace, cfg: dict) -> int:
+    """Every tracked page's uncovered sections as JSON; `--extract` prints the new ones' text, `--post` files them."""
+    scratch = Path(args.scratch) if args.scratch else None
+    rules_text = RULES_MD.read_text(encoding="utf-8")
+    known, number = "", None
+    if args.post or not args.offline:
+        try:
+            number, known = _update_issue()
+        except Exception as exc:
+            if args.post:
+                print(f"❌ coverage: cannot read the update issue, nothing posted — {exc}", file=sys.stderr)
+                return 1
+            print(f"⚠️ coverage: update issue unreadable, every uncovered section reported as new — {exc}",
+                  file=sys.stderr)
+    results = [coverage(sid, src, page_text(sid, scratch), rules_text, known_items(known))
+               for sid, src in cfg.get("sources", {}).items()]
+    if args.extract:
+        for r in results:
+            text = page_text(r["id"], scratch) or ""
+            for sec in r["new"]:
+                print(f"<section page=\"{r['id']}\" title=\"{sec}\">\n{section_text(text, sec)}</section>\n")
+        return 0
+    if args.post:
+        drafts = Path(args.drafts).read_text(encoding="utf-8") if args.drafts else ""
+        body = coverage_comment(results, drafts)
+        if body is None:
+            print("COVERAGE_POST=none|reason=no new uncovered sections")
+            return 0
+        if args.dry_run:
+            print(body)
+            print("COVERAGE_POST=dry-run")
+            return 0
+        with tempfile.NamedTemporaryFile("w", suffix=".md", delete=False, encoding="utf-8") as fh:
+            fh.write(body)
+            tmp = fh.name
+        try:
+            if number is None:
+                res = git_run.run_gh(["issue", "create", "--repo", LEDGER_REPO, "--title", UPDATE_TITLE,
+                                      "--label", "enhancement", "--assignee", "@me", "--body-file", tmp], timeout=120)
+            else:
+                res = git_run.run_gh(["issue", "comment", str(number), "--repo", LEDGER_REPO, "--body-file", tmp],
+                                     timeout=120)
+        finally:
+            Path(tmp).unlink(missing_ok=True)
+        if res.returncode != 0:
+            print(f"❌ coverage post failed: {(res.stderr or res.stdout).strip()}", file=sys.stderr)
+            return 1
+        print(f"COVERAGE_POST={(res.stdout or '').strip()}")
+        return 0
+    print(json.dumps(results, indent=2))
+    return 0
+
+
+def cmd_diff_source(cfg: dict, sid: str, file: str, final_url: Optional[str], cache: bool = False) -> int:
     src = cfg.get("sources", {}).get(sid)
     if src is None:
         print(f"❌ unknown source id {sid!r} — not in {SOURCES_TOML.name}", file=sys.stderr)
@@ -117,6 +195,8 @@ def cmd_diff_source(cfg: dict, sid: str, file: str, final_url: Optional[str]) ->
     data = _read(p) if p.is_file() else None
     v = diff_source(src, data, final_url)
     print(f"VERDICT={v['verdict']}|id={sid}|sha={v['sha']}|marker={clean(v['marker'])}|reason={clean(v['reason'])}")
+    if cache and data and v["verdict"] != "not-checked":
+        print(f"PAGE_CACHED={cache_page(sid, data).as_posix()}")
     return 0
 
 
@@ -307,6 +387,14 @@ def main(argv: Optional[List[str]] = None) -> int:
     d.add_argument("--id", required=True)
     d.add_argument("--file", required=True)
     d.add_argument("--final-url", default=None)
+    d.add_argument("--cache", action="store_true", help="keep the fetched bytes for the coverage check")
+    cv = sub.add_parser("coverage")
+    cv.add_argument("--scratch", default=None, help="this run's fetched pages (<id>.md); the cache fills the rest")
+    cv.add_argument("--extract", action="store_true", help="print the text of each new uncovered section")
+    cv.add_argument("--post", action="store_true", help="comment the new uncovered sections on the update issue")
+    cv.add_argument("--drafts", default=None, help="drafted entries to attach to the --post comment")
+    cv.add_argument("--dry-run", action="store_true", help="with --post: print the comment, post nothing")
+    cv.add_argument("--offline", action="store_true", help="skip reading the update issue (every uncovered is new)")
     inv = sub.add_parser("inventory")
     inv.add_argument("--only", default=None)
     li = sub.add_parser("lint")
@@ -348,7 +436,9 @@ def main(argv: Optional[List[str]] = None) -> int:
     if args.cmd == "sources":
         return cmd_sources(cfg)
     if args.cmd == "diff-source":
-        return cmd_diff_source(cfg, args.id, args.file, args.final_url)
+        return cmd_diff_source(cfg, args.id, args.file, args.final_url, args.cache)
+    if args.cmd == "coverage":
+        return cmd_coverage(args, cfg)
     if args.cmd == "inventory":
         return cmd_inventory(args, cfg)
     if args.cmd == "lint":

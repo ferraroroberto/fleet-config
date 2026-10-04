@@ -15,6 +15,7 @@ Layout, in dependency order (no module imports a later one):
   lint.py       the lint engine (R-01..R-17, R-30, R-34..R-37; assists for R-39, R-43)
   dedup.py      findings shared with the scaffolding master / lite global
   state.py      cadence state
+  coverage.py   tracked-guide sections no `Source:` line cites (+ the page cache)
   ledger.py     the skip-unchanged ledger issue
   digest.py     run digest + chat ping
   drift.py      the prompt-drift cleanup-issue merge/backlog engine
@@ -41,6 +42,17 @@ from .inventory import (
     sections,
 )
 from .rules import parse_rules, verdict_cap
+from .coverage import (
+    cache_page,
+    cited_sections,
+    coverage,
+    coverage_comment,
+    digest_line,
+    item_id,
+    known_items,
+    page_sections,
+    pages_dir,
+)
 from .lint import (
     ASSIST_RULES,
     LINT_RULES,
