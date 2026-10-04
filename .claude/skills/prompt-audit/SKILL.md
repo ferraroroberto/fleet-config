@@ -30,7 +30,7 @@ No argument → the full run.
 ## Execution rules (read first)
 
 - **Run from the `fleet-config` repo root.** Put fetched pages and run files in a freshly created, uniquely named scratch directory outside the repo (e.g. `<session temp>/prompt-audit-<date>-<time>`). Never delete through a variable-built path — a harness prompts on `rm` against a variable that could be empty, which blocks an unattended run; a new directory per run needs no cleanup.
-- **Writes are exactly these:** `~/.claude/prompt-audit/state.json`; the ledger issue body and one digest comment (through `audit.py ledger`, which goes through `skills/_lib/audit_issue.py` — never `gh issue create` a ledger by hand); one `kind=prompt-drift` issue per repo with something to say plus its `prompt-drift` label (through `audit.py drift`, same helper); when a guide changed, one rule-set update issue; and, on a delivered run only, one activity-log chat ping (step 10, through `hooks/notify_send.py`). Nothing else, and none of it under `--dry-run`.
+- **Writes are exactly these:** `~/.claude/prompt-audit/state.json` and the page cache beside it (`pages/<id>.md`, step 2); the ledger issue body and one digest comment (through `audit.py ledger`, which goes through `skills/_lib/audit_issue.py` — never `gh issue create` a ledger by hand); one `kind=prompt-drift` issue per repo with something to say plus its `prompt-drift` label (through `audit.py drift`, same helper); when a guide changed, one rule-set update issue; when the coverage check finds new uncovered sections, one comment on that issue (creating it if none is open, step 2b); and, on a delivered run only, one activity-log chat ping (step 10, through `hooks/notify_send.py`). Nothing else, and none of it under `--dry-run`.
 - **Unknown is never a pass.** A page that could not be fetched is `not-checked`, never `unchanged`. A file whose judgment did not come back is `unmeasured`, never `compliant`. A skipped file is listed as skipped, so "not in the findings" cannot read as "not looked at".
 - **Degrade one item, never the run.** A failed fetch degrades that source; a failed judgment agent degrades that repo's files; the run still posts its digest (`status=partial` when any planned file ended unmeasured).
 - **Poll to completion in this turn** (fleet-config#314). Any background agent or command is collected before moving on; never end the turn expecting to be resumed.
@@ -59,16 +59,34 @@ curl -sSL --max-time 60 -o <scratch>/<id>.part -w "%{http_code} %{url_effective}
 Only when curl exits 0 **and** the status is `200`, promote it: `mv <scratch>/<id>.part <scratch>/<id>.md`. A failed or truncated download stays a `.part` file that `diff-source` never reads, so it reports `not-checked` instead of hashing partial bytes into a false `changed`. A web tool that summarises or converts pages cannot establish a hash; if verbatim fetching is unavailable, skip the fetch and let `diff-source` report `not-checked` (the digest says so, and the scan still runs against the current `rules.md`). Independent fetches may run in parallel. Then, per due source:
 
 ```
-<py> <audit> diff-source --id <id> --file <scratch>/<id>.md --final-url <url_effective>
+<py> <audit> diff-source --id <id> --file <scratch>/<id>.md --final-url <url_effective> --cache
 ```
 
-One `VERDICT=unchanged|changed|new-guide|not-checked|id=…|sha=…|marker=…|reason=…` line each; keep them all. Unless `--dry-run`, record every verdict except `not-checked` (which was never checked):
+`--cache` keeps the fetched bytes in `~/.claude/prompt-audit/pages/<id>.md` (`PAGE_CACHED=`) for the coverage check; leave it off under `--dry-run`. One `VERDICT=unchanged|changed|new-guide|not-checked|id=…|sha=…|marker=…|reason=…` line each; keep them all. Unless `--dry-run`, record every verdict except `not-checked` (which was never checked):
 
 ```
 <py> <audit> state mark --source <id> --verdict <verdict>
 ```
 
-**Any `changed` or `new-guide` → step 3, then step 4.** Otherwise → step 4.
+**Any `changed` or `new-guide` → step 3, then step 2b and step 4.** Otherwise → step 2b, then step 4.
+
+### 2b. Coverage check — tracked sections no rule cites
+
+The freshness gate only sees a page that moved. This step diffs every tracked page's leaf sections against the `Source:` lines in `rules.md` (rules, appendix, rejected and Covered elsewhere), so guidance that was never encoded keeps surfacing (fleet-config#1128). It is deterministic and costs no tokens most weeks.
+
+```
+<py> <audit> coverage --scratch <scratch> > <scratch>/coverage.json
+```
+
+One object per source: `id`, `status` (`checked` / `not-checked` / `not-applicable`), `uncovered`, `new` (uncovered and not yet on the update issue), `unsectioned_sources`. A fresh source reads its cached page; a page with neither a fetched nor a cached copy is `not-checked`, never 0 uncovered. Carry the whole list into `run.json` as `"coverage"` (step 7).
+
+Any `new` entry → draft, then post:
+
+1. `<py> <audit> coverage --scratch <scratch> --extract > <scratch>/uncovered.md` prints only the new sections' text.
+2. Dispatch one **easy-tier** worker (same capability contract and rate gate as step 6), briefed read-only to read `rules.md` and `<scratch>/uncovered.md` (never the whole pages) and write, for each section, an `R-NN` block or an appendix / rejected / Covered-elsewhere entry in `rules.md`'s format, with a `Source:` line citing that section, into `<scratch>/drafts.md`. A failed worker posts without drafts.
+3. Unless `--dry-run`: `<py> <audit> coverage --scratch <scratch> --post --drafts <scratch>/drafts.md`. It re-reads the update issue, so a section already posted is never posted twice (`COVERAGE_POST=none`). Under `--dry-run`, add `--dry-run` to print the comment.
+
+Uncovered sections never stop the scan, set `update_issue`, or mark a finding provisional: the rule-set is incomplete, not stale. The skill reports; it never edits `rules.md`.
 
 ### 3. Rule-set update issue — a guide moved
 
@@ -134,6 +152,7 @@ Write `<scratch>/run.json`:
   "dry_run": false,
   "sources": ["<every VERDICT= line from steps 1-2>"],
   "update_issue": null,
+  "coverage": ["<the coverage.json list from step 2b>"],
   "scan_ran": true,
   "plan": ["<every PLAN= line from step 4>"],
   "judgments": {"<path>": [<findings>] }
@@ -146,7 +165,7 @@ Write `<scratch>/run.json`:
 <py> <audit> digest --run <scratch>/run.json > <scratch>/digest.md
 ```
 
-The helper prints `DIGEST=status=complete|partial` on stderr. The digest carries `status`, `guides`, the rubric, per-source outliers, the update issue and the provisional rules when a guide changed, scanned/skipped/unmeasured counts, findings by rule, findings shared with the scaffolding master collapsed to one entry with a `propagate to:` list (`audit.py dedup` logic), repo-local findings, the unmeasured list, and the skipped list.
+The helper prints `DIGEST=status=complete|partial` on stderr. The digest carries `status`, `guides`, the rubric, per-source outliers, one `coverage: <id> uncovered N (new M)` line per tracked page (`coverage: not-checked` when step 2b did not run), the update issue and the provisional rules when a guide changed, scanned/skipped/unmeasured counts, findings by rule, findings shared with the scaffolding master collapsed to one entry with a `propagate to:` list (`audit.py dedup` logic), repo-local findings, the unmeasured list, and the skipped list.
 
 `--dry-run` → print `digest.md`, then `<py> <audit> drift --run <scratch>/run.json --dry-run` (the issue bodies that would be filed), and stop here.
 

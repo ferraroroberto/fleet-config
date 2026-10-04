@@ -686,6 +686,90 @@ try:
 finally:
     shutil.rmtree(tmp3, ignore_errors=True)
 
+# ---- coverage check (#1128): page cache, fence-aware sections, uncovered set, honesty, dedup ----
+
+COV_PAGE = """# Guide
+
+## Core
+
+### Alpha rule
+
+Text.
+
+### Beta rule
+
+````markdown
+### Not a section
+```bash
+### Still not a section
+```
+## Nor this
+````
+
+### Gamma rule
+
+- [ ] A checklist line
+
+## Lone leaf
+"""
+leaves, checklist = pa.page_sections(COV_PAGE)
+check(leaves == ["Alpha rule", "Beta rule", "Gamma rule", "Lone leaf"],
+      f"coverage parser: headings inside a four-backtick fence holding a three-backtick fence are not sections (got {leaves})")
+check(checklist == ["A checklist line"], f"coverage parser: checklist lines are read (got {checklist})")
+
+COV_RULES = """### R-90 Fixture        tags: [shared] [file: any] [tier: easy]
+Detect: lint — x
+Source: https://example.test/guide (Alpha rule; Core → Gamma rule)
+
+- appendix
+Source: https://example.test/guide · https://other.test/page (Beta rule)
+"""
+COV_SRC = {"url": "https://example.test/guide.md", "role": "instruction-files"}
+cov = pa.coverage("guide", COV_SRC, COV_PAGE, COV_RULES)
+check(cov["status"] == "checked" and cov["uncovered"] == ["Beta rule", "Lone leaf"] and cov["new"] == cov["uncovered"],
+      f"coverage: exactly the sections no Source line cites, another page's citation does not count (got {cov})")
+check(len(cov["unsectioned_sources"]) == 1 and "· https://other.test/page" in cov["unsectioned_sources"][0],
+      "coverage: a Source line citing the page with no section is named")
+check(pa.digest_line(cov).startswith("coverage: guide uncovered 2 (new 2)"), f"coverage digest line (got {pa.digest_line(cov)})")
+
+nc = pa.coverage("guide", COV_SRC, None, COV_RULES)
+check(nc["status"] == "not-checked" and pa.digest_line(nc) == "coverage: guide not-checked",
+      "coverage: an unreadable page is not-checked, never uncovered 0")
+check(pa.coverage("idx", {"role": "index"}, "## A\n", COV_RULES)["status"] == "not-applicable",
+      "coverage: an index page is not applicable")
+
+posted = pa.coverage_comment([cov])
+check(posted is not None and posted.count("prompt-audit-coverage: id=") == 2, "coverage: new sections make one comment")
+again = pa.coverage("guide", COV_SRC, COV_PAGE, COV_RULES, pa.known_items(posted))
+check(again["new"] == [] and again["uncovered"] == cov["uncovered"] and pa.coverage_comment([again]) is None,
+      "coverage dedup: a re-run with the same uncovered set adds no second comment")
+
+cov_run = {"date": "2026-10-04", "dry_run": False, "sources": ["VERDICT=unchanged|id=guide|sha=x|marker=|reason=identical"],
+           "update_issue": None, "scan_ran": True, "plan": [], "judgments": {}, "coverage": [cov]}
+cov_body, cov_status = pa.render_digest(cov_run, RULES)
+check(cov_status == "complete" and "guides=unchanged" in cov_body and "Rule-set update:" not in cov_body
+      and "coverage: guide uncovered 2" in cov_body,
+      "coverage: uncovered sections never put the run into update mode or stop the scan")
+check(pa.provisional_rules(RULES, {"guide": COV_SRC}, cov_run["sources"]) == set(),
+      "coverage: uncovered sections mark no rule provisional")
+check("coverage: not-checked" in pa.render_digest(dict(cov_run, coverage=None), RULES)[0],
+      "coverage: a run that never ran the check prints not-checked")
+
+cache_dir = Path(tempfile.mkdtemp(prefix="prompt-audit-cache-"))
+try:
+    os.environ["PROMPT_AUDIT_STATE_DIR"] = str(cache_dir)
+    page_file = write(cache_dir / "fetched" / "x.md", "")
+    page_file.write_bytes(b"## A\r\nbytes \xe2\x80\x94 verbatim\n")
+    sid0 = next(iter(CFG["sources"]))
+    with contextlib.redirect_stdout(io.StringIO()):
+        pa.main(["diff-source", "--id", sid0, "--file", str(page_file), "--cache"])
+    cached = cache_dir / "pages" / f"{sid0}.md"
+    check(cached.is_file() and cached.read_bytes() == page_file.read_bytes(),
+          "diff-source --cache keeps the fetched bytes verbatim in pages/<id>.md")
+finally:
+    os.environ.pop("PROMPT_AUDIT_STATE_DIR", None)
+    shutil.rmtree(cache_dir, ignore_errors=True)
+
 # ---- contracts: rules.md, sources.toml, vendor neutrality ----
 
 check(sorted(r for r, v in RULES.items() if v["detect"] == "lint") == pa.LINT_RULES,

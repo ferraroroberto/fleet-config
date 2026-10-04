@@ -8,6 +8,7 @@ from __future__ import annotations
 from typing import Dict, Iterable, Set, Tuple
 
 from .common import COMMENT_CHAR_CAP, DIGEST_FINDINGS_CAP, STAMP_PREFIX, VERDICTS, clean
+from .coverage import digest_line
 from .dedup import dedup, norm_line
 
 
@@ -144,6 +145,13 @@ def render_digest(run: dict, rules: Dict[str, dict], master_text: str = "", lite
         f"{v} {len(by_verdict[v])}" for v in VERDICTS))
     for s in stale + by_verdict["not-checked"]:
         out.append(f"- `{s.get('id')}` **{s.get('VERDICT')}** — {s.get('reason', '')}")
+    # Coverage (#1128): incomplete rules are reported, never a reason to stop or mark the scan
+    # provisional. A run that never ran the check says so instead of implying 0 uncovered.
+    cov = run.get("coverage")
+    if isinstance(cov, list) and cov:
+        out += [f"- {digest_line(c)}" for c in cov if c.get("status") != "not-applicable"]
+    else:
+        out.append("- coverage: not-checked")
     out.append("")
     ref = run.get("update_issue") or "(update issue not filed)"
     if not scan_ran:
