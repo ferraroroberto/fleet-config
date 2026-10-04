@@ -17,6 +17,7 @@ Layout, in dependency order (no module imports a later one):
   state.py      cadence state
   coverage.py   tracked-guide sections no `Source:` line cites (+ the page cache)
   leads.py      hand-fed outside claims (`leads.toml`) and their trace results
+  evals.py      the skill-eval job's aggregates, folded into the digest and R-44
   ledger.py     the skip-unchanged ledger issue
   digest.py     run digest + chat ping
   drift.py      the prompt-drift cleanup-issue merge/backlog engine
@@ -45,6 +46,7 @@ from .inventory import (
 from .rules import parse_rules, verdict_cap
 from .leads import LeadsError, claim_id, load_leads, resolve as resolve_leads, suggestions_comment
 from .leads import mark as mark_lead, digest_lines as lead_digest_lines
+from .evals import digest_lines as eval_digest_lines, fold as fold_evals, latest_two
 from .coverage import (
     cache_page,
     cited_sections,

@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import argparse
 import datetime as dt
+import hashlib
 import json
 import os
 import shutil
@@ -45,6 +46,8 @@ ADVISORY_TIERS = {"haiku"}          # a failure only here is advice, never a vio
 MAX_COST_USD = 10
 RUN_TIMEOUT_S = 3600                # one plugin-eval invocation (all cases of one skill on one model)
 SKIP_COPY = shutil.ignore_patterns("evals", "__pycache__", "conversations")
+ROTATE_BASE, ROTATE_EXTRA = 3, 3    # skills a week, plus at most this many whose SKILL.md changed
+ROTATE_CONCURRENCY = 2
 
 
 def out_root() -> Path:
@@ -61,6 +64,36 @@ def eval_skills(repo_root: Path = REPO_ROOT) -> Dict[str, Path]:
             if any((c / "prompt.md").is_file() for c in cases.glob("*")):
                 found.setdefault(skill_md.parent.name, skill_md.parent)
     return found
+
+
+def skill_sha(skill_dir: Path) -> str:
+    return hashlib.sha256((skill_dir / "SKILL.md").read_bytes()).hexdigest()[:12]
+
+
+def pick_rotation(eligible: Dict[str, str], state: Dict[str, dict]) -> List[str]:
+    """This week's skills: the ROTATE_BASE least recently evaluated (never-evaluated first, then oldest,
+    then name), plus up to ROTATE_EXTRA others whose SKILL.md sha changed since their last eval."""
+    def age(name: str) -> Tuple[str, str]:
+        return ((state.get(name) or {}).get("last", ""), name)
+
+    base = sorted(eligible, key=age)[:ROTATE_BASE]
+    changed = sorted((s for s in eligible if s not in base and (state.get(s) or {}).get("sha")
+                      and state[s]["sha"] != eligible[s]), key=age)[:ROTATE_EXTRA]
+    return base + changed
+
+
+def rotation_state(root: Optional[Path] = None) -> Dict[str, dict]:
+    try:
+        data = json.loads(((root or out_root()) / "rotation.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def save_rotation(state: Dict[str, dict], root: Optional[Path] = None) -> None:
+    root = root or out_root()
+    root.mkdir(parents=True, exist_ok=True)
+    (root / "rotation.json").write_text(json.dumps(state, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
 
 def build_wrapper(skill_dir: Path, dest: Path) -> Path:
@@ -174,14 +207,14 @@ def verdicts(rows: List[dict]) -> List[dict]:
 
 
 def run_skill(claude: str, skill: str, skill_dir: Path, models: Dict[str, str], judge: str,
-              env: Dict[str, str], runs: Optional[int], work: Path) -> List[dict]:
+              env: Dict[str, str], runs: Optional[int], work: Path, concurrency: int = 1) -> List[dict]:
     cases = sorted(p.parent.name for p in (skill_dir / "evals").glob("*/prompt.md"))
     wrapper = build_wrapper(skill_dir, work / f"plugin-{skill}")
     ablation = ablation_for(skill_dir)
     rows: List[dict] = []
     for tier, model in models.items():
         out_dir = work / f"out-{skill}-{tier}"
-        argv = eval_argv(claude, wrapper, model, judge, out_dir, ablation, runs)
+        argv = eval_argv(claude, wrapper, model, judge, out_dir, ablation, runs, concurrency)
         print(f"ℹ️ eval {skill} on {tier} ({model}): {len(cases)} case(s)", flush=True)
         try:
             proc = subprocess.run(argv, cwd=wrapper, env=env, capture_output=True, text=True, encoding="utf-8",
@@ -249,7 +282,10 @@ def main(argv: Optional[List[str]] = None) -> int:
     for stream in (sys.stdout, sys.stderr):
         stream.reconfigure(encoding="utf-8")
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    ap.add_argument("--skills", required=True, help="comma-separated skill names that carry evals/")
+    pick = ap.add_mutually_exclusive_group(required=True)
+    pick.add_argument("--skills", help="comma-separated skill names that carry evals/")
+    pick.add_argument("--rotate", action="store_true",
+                      help=f"the weekly pick: {ROTATE_BASE} skills plus up to {ROTATE_EXTRA} changed since their last eval")
     ap.add_argument("--hub", default=None, help="route child sessions through this local gateway URL")
     ap.add_argument("--extra-model", action="append", default=[],
                     help="also run this model id, reported but never part of a verdict")
@@ -259,7 +295,15 @@ def main(argv: Optional[List[str]] = None) -> int:
     args = ap.parse_args(argv)
 
     known = eval_skills()
-    picked = [s.strip() for s in args.skills.split(",") if s.strip()]
+    out_dir = Path(args.out_dir) if args.out_dir else None
+    rotation = rotation_state(out_dir)
+    if args.rotate:
+        picked = pick_rotation({s: skill_sha(d) for s, d in known.items()}, rotation)
+    else:
+        picked = [s.strip() for s in args.skills.split(",") if s.strip()]
+    if not picked:
+        print("❌ no skill carries evals/ cases", file=sys.stderr)
+        return 2
     missing = [s for s in picked if s not in known]
     if missing:
         print(f"❌ no evals/ cases for: {', '.join(missing)}", file=sys.stderr)
@@ -280,21 +324,32 @@ def main(argv: Optional[List[str]] = None) -> int:
             "models": models, "judge": judge, "route": "gateway" if args.hub else "cli-credential",
             "max_cost_usd_per_run": MAX_COST_USD,
             "paths": {s: f"fleet-config/{known[s].relative_to(REPO_ROOT).as_posix()}/SKILL.md" for s in picked}}
+    concurrency = ROTATE_CONCURRENCY if args.rotate else 1
     if args.dry_run:
         for s in picked:
             for tier, model in models.items():
                 print(" ".join(eval_argv(claude, Path(f"<wrapper-{s}>"), model, judge, Path("<out>"),
-                                         ablation_for(known[s]), args.runs)))
+                                         ablation_for(known[s]), args.runs, concurrency)))
         return 0
     work = Path(tempfile.mkdtemp(prefix="skill-evals-"))
     try:
-        rows = [r for s in picked for r in run_skill(claude, s, known[s], models, judge, env, args.runs, work)]
+        rows = [r for s in picked
+                for r in run_skill(claude, s, known[s], models, judge, env, args.runs, work, concurrency)]
     finally:
         shutil.rmtree(work, ignore_errors=True)
-    path = write_aggregate(rows, meta, Path(args.out_dir) if args.out_dir else None)
+    path = write_aggregate(rows, meta, out_dir)
+    today = dt.date.today().isoformat()
+    for s in picked:  # a skill nothing measured stays due next week
+        if any(r["skill"] == s and r["status"] in ("pass", "fail") for r in rows):
+            rotation[s] = {"last": today, "sha": skill_sha(known[s])}
+    save_rotation(rotation, out_dir)
     print(table(rows))
     counts = {v: sum(1 for x in verdicts(rows) if x["verdict"] == v) for v in ("pass", "consider", "failure", "unmeasured")}
     print(f"EVALS={path.as_posix()}|" + "|".join(f"{k}={v}" for k, v in counts.items()))
+    measured = [r for r in rows if r["weight"] != "extra" and r["status"] in ("pass", "fail")]
+    if not measured:
+        print("❌ no scored run produced a result; every tier errored or never ran", file=sys.stderr)
+        return 1  # the job goes red; /prompt-audit reads the aggregate as not established either way
     return 0
 
 

@@ -15,7 +15,7 @@ Files in this directory:
 
 - `rules.md` — the rule-set (`R-NN` blocks: tags, detect, why, fix shape, source). Read it before judging anything; its sha is the ledger's `rubric-sha`.
 - `leads.toml` — hand-fed outside claims (videos, posts, talks), each traced to a vendor section or left for the run to trace (step 2c).
-- `eval_rotation.py` — runs the `evals/<case>/` suites that skills carry (fleet-config's tiers) through the CLI's plugin-eval command on each model tier, and writes an aggregate to `~/.claude/prompt-audit/evals/` (fleet-config#1130). Run it by hand for now; it is not a step of this skill.
+- `eval_rotation.py` — runs the `evals/<case>/` suites that skills carry (fleet-config's tiers) through the CLI's plugin-eval command on each model tier, and writes an aggregate to `~/.claude/prompt-audit/evals/` (fleet-config#1130). Its own weekly job (`evals/run-weekly.bat`, `--rotate`: three skills plus up to three whose `SKILL.md` changed) runs before this skill's; step 2d reads the result.
 - `sources.toml` — one block per vendor page with its baseline sha + marker, plus the audience vocabulary that decides which rules are primary for a file.
 - `audit.py` — every exact step: `sources`, `diff-source`, `inventory`, `lint`, `dedup`, `state`, `ledger`, `digest`, `drift`, `ping`.
 
@@ -70,7 +70,7 @@ Only when curl exits 0 **and** the status is `200`, promote it: `mv <scratch>/<i
 <py> <audit> state mark --source <id> --verdict <verdict>
 ```
 
-**Any `changed` or `new-guide` → step 3, then steps 2b, 2c and 4.** Otherwise → steps 2b, 2c, then 4.
+**Any `changed` or `new-guide` → step 3, then steps 2b, 2c, 2d and 4.** Otherwise → steps 2b, 2c, 2d, then 4.
 
 ### 2b. Coverage check — tracked sections no rule cites
 
@@ -105,6 +105,14 @@ Any `open` claim → one **easy-tier** worker per claim (rate gate as step 6), b
 ```
 
 Then re-run `<py> <audit> leads > <scratch>/leads.json` and carry it into `run.json` as `"leads"`. A traced result is owned by the coverage check from then on; an `untracked-vendor` page is handled like a `new-guide`. Unless `--dry-run`, `<py> <audit> leads --post` comments the suggested `trace =` values and proposed `[sources.*]` blocks on the update issue (once per claim). An `unverified` claim is listed in the digest for a human; it never becomes a rule or a `prompt-drift` item, and the skill never edits `leads.toml`.
+
+### 2d. Skill evals — fold in the eval job's result
+
+```
+<py> <audit> evals > <scratch>/evals.json
+```
+
+It reads the newest two aggregates the weekly eval job wrote and prints `status`, a pass count and delta per skill and model, and the R-44 findings: a case that passed last time and fails now is a `violation` on a scored tier and a `consider` on the advisory one. A missing, unreadable or stale aggregate is `status: not-checked`, and the digest says `evals: not-checked`, never a pass. Carry the object into `run.json` as `"evals"`. Step 8.3's `drift` files the R-44 violations into the repo's `prompt-drift` issue like any judged finding. The eval job's success or failure never changes this run's status or its delivery assertion.
 
 ### 3. Rule-set update issue — a guide moved
 
@@ -172,6 +180,7 @@ Write `<scratch>/run.json`:
   "update_issue": null,
   "coverage": ["<the coverage.json list from step 2b>"],
   "leads": "<the leads.json object from step 2c, or null>",
+  "evals": "<the evals.json object from step 2d>",
   "scan_ran": true,
   "plan": ["<every PLAN= line from step 4>"],
   "judgments": {"<path>": [<findings>] }
@@ -184,7 +193,7 @@ Write `<scratch>/run.json`:
 <py> <audit> digest --run <scratch>/run.json > <scratch>/digest.md
 ```
 
-The helper prints `DIGEST=status=complete|partial` on stderr. The digest carries `status`, `guides`, the rubric, per-source outliers, one `coverage: <id> uncovered N (new M)` line per tracked page (`coverage: not-checked` when step 2b did not run), a leads section (`**Leads:** not-checked` when step 2c did not run), the update issue and the provisional rules when a guide changed, scanned/skipped/unmeasured counts, findings by rule, findings shared with the scaffolding master collapsed to one entry with a `propagate to:` list (`audit.py dedup` logic), repo-local findings, the unmeasured list, and the skipped list.
+The helper prints `DIGEST=status=complete|partial` on stderr. The digest carries `status`, `guides`, the rubric, per-source outliers, one `coverage: <id> uncovered N (new M)` line per tracked page (`coverage: not-checked` when step 2b did not run), a leads section (`**Leads:** not-checked` when step 2c did not run), an evals section (`evals: not-checked` when there is no fresh aggregate), the update issue and the provisional rules when a guide changed, scanned/skipped/unmeasured counts, findings by rule, findings shared with the scaffolding master collapsed to one entry with a `propagate to:` list (`audit.py dedup` logic), repo-local findings, the unmeasured list, and the skipped list.
 
 `--dry-run` → print `digest.md`, then `<py> <audit> drift --run <scratch>/run.json --dry-run` (the issue bodies that would be filed), and stop here.
 

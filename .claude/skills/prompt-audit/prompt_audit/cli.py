@@ -15,6 +15,7 @@ from typing import Dict, List, Optional, Tuple
 
 from .common import KIND, LEDGER_REPO, LITE_GLOBAL, LITE_REPO, MASTER_REPO, REPO_ROOT, RULES_MD, SOURCES_TOML, TITLE, VERDICTS, clean, ensure_utf8_stdio, fleet_repos, git_run, load_toml, rules_rubric
 from .sources import diff_source
+from .evals import fold as fold_evals, latest_two
 from .leads import LeadsError, load_leads, mark as mark_lead, resolve as resolve_leads, suggestions_comment
 from .coverage import (cache_page, coverage, coverage_comment, known_items, page_sections,
                        page_text, section_text)
@@ -41,6 +42,9 @@ def cmd_drift(args: argparse.Namespace, cfg: dict) -> int:
     parts = partition_run(run)
     all_findings = [dict(f, path=k) for k in parts["judged"] for f in (run.get("judgments") or {})[k]
                     if f.get("verdict") in ("violation", "consider")]
+    # R-44 (#1131): eval regressions the fold-in found, filed like any judged finding.
+    all_findings += [dict(f) for f in (run.get("evals") or {}).get("findings", [])
+                     if f.get("verdict") in ("violation", "consider")]
     entries = {e.key: e.text for e in inventory(repos, cfg.get("audiences", {}))}
     provisional = provisional_rules(rules, cfg.get("sources", {}), run.get("sources", []))
     per_repo = drift_items(all_findings, rules, entries, master, lite, provisional)
@@ -189,6 +193,16 @@ def _post_update(number: Optional[int], body: str, key: str) -> int:
         print(f"❌ {key} failed: {(res.stderr or res.stdout).strip()}", file=sys.stderr)
         return 1
     print(f"{key}={(res.stdout or '').strip()}")
+    return 0
+
+
+def cmd_evals(args: argparse.Namespace) -> int:
+    """The newest skill-eval aggregate folded against the one before it, as JSON for `run.json`."""
+    newest, previous = latest_two(Path(args.dir) if args.dir else None)
+    today = dt.date.fromisoformat(args.date) if args.date else None
+    folded = fold_evals(newest, previous, today)
+    print(json.dumps(folded, indent=2))
+    print(f"EVALS=status={folded['status']}|findings={len(folded['findings'])}", file=sys.stderr)
     return 0
 
 
@@ -436,6 +450,9 @@ def main(argv: Optional[List[str]] = None) -> int:
     d.add_argument("--file", required=True)
     d.add_argument("--final-url", default=None)
     d.add_argument("--cache", action="store_true", help="keep the fetched bytes for the coverage check")
+    evp = sub.add_parser("evals")
+    evp.add_argument("--dir", default=None, help="aggregate directory (default ~/.claude/prompt-audit/evals)")
+    evp.add_argument("--date", default=None, help="today, for the staleness check (tests)")
     ld = sub.add_parser("leads")
     ld.add_argument("action", nargs="?", choices=("list", "mark"), default="list")
     ld.add_argument("--claim")
@@ -496,6 +513,8 @@ def main(argv: Optional[List[str]] = None) -> int:
         return cmd_coverage(args, cfg)
     if args.cmd == "leads":
         return cmd_leads(args, cfg)
+    if args.cmd == "evals":
+        return cmd_evals(args)
     if args.cmd == "inventory":
         return cmd_inventory(args, cfg)
     if args.cmd == "lint":
