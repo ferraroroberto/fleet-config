@@ -33,7 +33,13 @@ of (security is not a checklist bucket — see step 8b):
    abstraction beyond what the task required, dead error handling for
    scenarios that can't happen, planning-doc clutter, comments that explain
    *what* instead of *why*, long files that should be split, identifiers that
-   lie about what they hold.
+   lie about what they hold. It also covers **unexplained magic constants**:
+   a bare numeric literal that sets a timeout, retry count, cap, threshold,
+   sleep or backoff, with neither a named constant nor an adjacent comment
+   saying why that value. The next reader cannot tell a measured value from a
+   guess, so nobody dares change it (Anthropic's skill-authoring guide calls
+   these "voodoo constants", fleet-config#1230). Example and counter-example:
+   [not-a-finding.md](not-a-finding.md), Maintainability.
 5. **Bugs** — actual correctness issues spotted while reading. Off-by-one,
    wrong default, race condition, missing await, wrong type, broken
    invariant. Only file what you'd bet money on — speculation goes nowhere.

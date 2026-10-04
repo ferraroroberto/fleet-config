@@ -299,7 +299,7 @@ Source: https://platform.claude.com/docs/en/agents-and-tools/agent-skills/best-p
 
 Guidance on a tracked page that another owner already measures, so no rule here duplicates it.
 
-- **Script code quality** — solve errors instead of deferring them, no unexplained ("voodoo") constants, explicit error handling. That is code, not instruction prose: `/codebase-audit`'s job.
+- **Script code quality** — solve errors instead of deferring them, no unexplained ("voodoo") constants, explicit error handling. That is code, not instruction prose: `/codebase-audit`'s job (its Maintainability bucket names magic constants, fleet-config#1230).
 - **Concise is key** — `/context-purge` (lossless compression) and R-14 (size caps).
 - **Progressive disclosure** — R-14's fix shape (move detail into referenced files) and R-34 (keep those references one level deep).
 - **Template and example patterns** — R-24.

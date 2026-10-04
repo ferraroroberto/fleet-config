@@ -23,6 +23,16 @@ Concrete anti-examples. If a candidate finding looks like a **no**,
   obvious code. **Yes:** a 1500-line god module mixing four unrelated concerns;
   a public API whose identifiers actively mislead about what they return;
   copy-pasted error handling 12 times in one file.
+  - **Magic constants.** No: a named constant whose reason sits beside it
+    (`SAMPLE_SETTLE_MS = 2000  # an extra cold sample only needs its paint
+    metrics`); a value whose reason is in the adjacent comment or the
+    function's docstring; a self-evident literal (0, 1, a unit conversion such
+    as `* 1000`, an HTTP status, `[:7]` for a short sha); a test fixture's
+    value. **Yes:** `subprocess.run(argv, timeout=37)` or `for _ in range(4):
+    ... time.sleep(2.5)` with no name and no reason, in a script that runs
+    unattended. Quote the line and give the fix shape: a named constant with
+    a one-clause reason (measured, the API's limit, or a stated guess).
+    Rewriting the value is out of scope; the finding is the missing reason.
 - **Bugs.** No: "this *might* race under high concurrency" without a concrete
   scenario; a bug in code already superseded by other in-flight work; one you
   can't point to a *currently reachable* call path for from a real entry point
