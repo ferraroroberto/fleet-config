@@ -21,6 +21,7 @@ from typing import Dict, List, Optional
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import audit_issue  # noqa: E402
 import hooks_state  # noqa: E402
+from .http_probe import SKIPPED_STREAM  # noqa: E402
 
 BUDGETS_PATH = Path(__file__).resolve().parent / "budgets.toml"
 LEDGER_KEEP = 20
@@ -198,11 +199,13 @@ def verdict(probe: dict, load: dict, budgets: dict) -> dict:
     endpoints = []
     for path, row in sorted(probe.get("endpoints", {}).items()):
         limit = budgets["endpoints"]["index_p95_ms" if path == "/" else "api_p95_ms"]
-        ok_codes = all(c in ("200", "304") for c in row.get("codes", []))
-        status = _status(row.get("p95"), limit) if ok_codes else "unmeasured"
+        codes = row.get("codes", [])
+        ok_codes = all(c in ("200", "304") for c in codes)
+        status = "skipped" if codes == [SKIPPED_STREAM] else (_status(row.get("p95"), limit) if ok_codes else "unmeasured")
         endpoints.append({"path": path, **row, "budget": limit, "status": status})
     for cid in ("endpoints.index_p95_ms", "endpoints.api_p95_ms"):
-        rows = [e for e in endpoints if (e["path"] == "/") == (cid == "endpoints.index_p95_ms")]
+        # a skipped feed was left alone on purpose: it neither passes nor spoils the check
+        rows = [e for e in endpoints if e["status"] != "skipped" and (e["path"] == "/") == (cid == "endpoints.index_p95_ms")]
         statuses = {e["status"] for e in rows}
         status = "fail" if "fail" in statuses else ("pass" if statuses == {"pass"} else "unmeasured")
         over = [e["path"] for e in rows if e["status"] == "fail"]
@@ -231,7 +234,7 @@ def _fmt(v) -> str:
     return str(v)
 
 
-_MARK = {"pass": "✅", "fail": "⚠️", "unmeasured": "❔"}
+_MARK = {"pass": "✅", "fail": "⚠️", "unmeasured": "❔", "skipped": f"⏭️ {SKIPPED_STREAM}"}
 _BASIS = {"fcp": "first contentful paint", "selector": "the declared ready selector being visible"}
 
 

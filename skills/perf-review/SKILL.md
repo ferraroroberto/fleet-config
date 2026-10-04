@@ -60,6 +60,9 @@ waiting.
 - A short run (`--duration` too small for enough endpoint samples) leaves a
   check `unmeasured`, so the verdict is `unmeasured`, never `pass`. That is
   correct: a clean `pass` needs a full run.
+- A `text/event-stream` endpoint is never timed (an SSE feed has no end): its `ENDPOINT` line reads `skipped (stream)`
+  and it neither passes nor spoils the API check. Every request also has a 30 s deadline on the whole exchange; one
+  that runs out reads `timeout` (`unmeasured`), so a stalled route cannot hang the run.
 - Otherwise it prints one `CHECK` line per budget, one `ENDPOINT` line per
   timed path, a `DIFF` line against the previous run, a `BUILD` line and `PERF=pass|over-budget|unmeasured`.
   Exit is 0, 1 or 3 respectively. The run dir (`RUN_DIR=`) holds

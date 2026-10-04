@@ -92,6 +92,17 @@ class Fixture(BaseHTTPRequestHandler):
             return self._send(200, BIG)
         if self.path == "/api/broken":
             return self._send(500, b'{"ok": false}')
+        if self.path in ("/api/stream", "/api/dribble"):  # never-ending bodies; the pings keep a socket timeout from ever firing
+            self.send_response(200)
+            self.send_header("Content-Type", "text/event-stream" if self.path == "/api/stream" else "application/json")
+            self.end_headers()
+            try:
+                while True:
+                    self.wfile.write(b"data: ping\n\n")
+                    self.wfile.flush()
+                    time.sleep(0.05)
+            except OSError:
+                return
         return self._send(404, b"{}")
 
     def do_POST(self) -> None:
@@ -125,6 +136,22 @@ check(fast["p95"] is not None and fast["p95"] < 100, f"fast endpoint p95 < 100 m
 check(slow["codes"] == ["200"] and timed["/api/broken"]["codes"] == ["500"], "every status seen is reported")
 check(set(old_srv.RequestHandlerClass.methods) == {"GET"},
       "the probe only ever sent GET")
+
+# ---- a never-ending body must not hang the timing leg (fleet-config#1221) ----
+http_probe.TIMEOUT_S = 1.0
+hung: dict = {}
+worker = threading.Thread(daemon=True, target=lambda: hung.update(
+    http_probe.time_endpoints(old_url, {"/api/stream": 0.05, "/api/dribble": 0.05, "/api/fast": 0.05}, 1.0, stagger_s=0)))
+worker.start()
+worker.join(20)
+check(not worker.is_alive(), "the timing leg finishes although the app serves a Server-Sent Events route and a never-ending body")
+if hung:
+    check(hung["/api/stream"]["codes"] == [http_probe.SKIPPED_STREAM] and hung["/api/stream"]["n"] == 0,
+          f"an event-stream endpoint is skipped, not timed ({hung['/api/stream']['codes']})")
+    check(hung["/api/dribble"]["codes"] == [http_probe.TIMEOUT] and (hung["/api/dribble"]["cold_ms"] or 0) < 5000,
+          f"a body that never ends is a hard per-request timeout ({hung['/api/dribble']['codes']})")
+    check(hung["/api/fast"]["codes"] == ["200"], "a healthy endpoint is still timed beside them")
+http_probe.TIMEOUT_S = 30.0
 
 plain, modern = http_probe.index_checks(old_url), http_probe.index_checks(new_url)
 check(plain["compressed"] is False and plain["etag"] is False and plain["revalidates"] is False,
@@ -160,6 +187,18 @@ untrusted = report.verdict(probe, {"legs": {"android_cold": leg(), "android_warm
 uby = {c["id"]: c["status"] for c in untrusted["checks"]}
 check(uby["warm.data_ms"] == "unmeasured" and uby["warm.bytes_kb"] == "unmeasured",
       "a warm leg without a trusted cache is unmeasured, never scored")
+feed_probe = {"index": modern, "endpoints": {"/": {"n": 5, "p95": 12.0, "codes": ["200"]},
+                                             "/api/fast": {"n": 5, "p95": 20.0, "codes": ["200"]},
+                                             "/api/stream": {"n": 0, "p95": None, "codes": [http_probe.SKIPPED_STREAM]}}}
+fv1221 = report.verdict(feed_probe, load, budgets)
+fby = {c["id"]: c["status"] for c in fv1221["checks"]}
+check({e["path"]: e["status"] for e in fv1221["endpoints"]}["/api/stream"] == "skipped" and fby["endpoints.api_p95_ms"] == "pass",
+      "a skipped event-stream endpoint is listed as skipped and does not spoil the API check")
+check("skipped (stream)" in report.render_body(fv1221, "r", "b"), "the report names the skipped streaming endpoint")
+stalled = report.verdict({**feed_probe, "endpoints": {**feed_probe["endpoints"], "/api/slowfeed": {"n": 0, "p95": None, "codes": [http_probe.TIMEOUT]}}}, load, budgets)
+check({e["path"]: e["status"] for e in stalled["endpoints"]}["/api/slowfeed"] == "unmeasured"
+      and {c["id"]: c["status"] for c in stalled["checks"]}["endpoints.api_p95_ms"] == "unmeasured",
+      "a request that timed out is unmeasured, never a pass")
 empty = report.verdict({"index": dead, "endpoints": {}}, {"legs": {}}, budgets)
 check(empty["summary"]["fail"] == 0 and empty["summary"]["overall"] == "unmeasured", "nothing measured -> unmeasured, not pass")
 
