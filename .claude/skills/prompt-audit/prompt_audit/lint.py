@@ -1,11 +1,13 @@
-"""The lint engine (R-01..R-17, R-30, R-34..R-37): exact hit counts per instruction file.
+"""The lint engine (R-01..R-17, R-30, R-34..R-37, assists for R-39 and R-43): exact hit counts per instruction file.
 
 Part of the `prompt_audit` package (fleet-config#931); see `__init__.py`.
 """
 
 from __future__ import annotations
 
+import ast
 import re
+import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable, Dict, Iterable, List, Optional, Set, Tuple
@@ -67,6 +69,13 @@ _REL_PATH = re.compile(r"(?<![\w.:\\/%-])(?:[\w.-]+\\)+[A-Za-z0-9.][\w.-]*")
 _VENV_PATH = re.compile(r"(?:^|\\)\.venv\\", re.I)
 # R-37: qualified tool names; the tool is what follows the last `__`.
 _QUALIFIED = re.compile(r"mcp__[A-Za-z0-9_-]+")
+# R-39 assist: a numbered step heading ("### 3. Sync", "### 3b. UX", "## Step 2") or a top-level numbered item.
+_STEP_HEADING = re.compile(r"^#{2,4}\s+(?:Step\s+)?\d+[a-z]?[.):]?\s", re.I)
+_STEP_ITEM = re.compile(r"^\d+[.)]\s")
+_CHECKBOX = re.compile(r"^\s*(?:[-*]|\d+[.)])\s+\[[ xX]\]")
+LONG_WORKFLOW_STEPS = 6
+# R-43 assist: a bundled script named in SKILL.md (backticked or linked `.py`).
+_SCRIPT_REF = re.compile(r"`([^`\s]+\.py)`|\]\(([^)\s]+\.py)\)")
 
 
 def audience_terms(audience_cfg: dict) -> re.Pattern:
@@ -77,6 +86,8 @@ def audience_terms(audience_cfg: dict) -> re.Pattern:
 
 LINT_RULES = sorted(set(PATTERNS) | set(LINE_PATTERNS)
                     | {"R-14", "R-15", "R-16", "R-17", "R-34", "R-35", "R-36", "R-37"})
+# Judgment rules whose candidates lint nominates (`Detect: judgment, lint-assisted`).
+ASSIST_RULES = ["R-39", "R-43"]
 
 
 def mcp_vocabulary(texts: Iterable[str]) -> Dict[str, Set[str]]:
@@ -168,8 +179,12 @@ def lint_entry(entry: Entry, rules: Dict[str, dict], audiences: Dict[str, dict],
             return
         cap = verdict_cap(rule["vendor"], audience_at(line_no, entry.audience, secs), audiences)
         if cap is not None:
-            # A rule whose Detect line states a per-hit cap (R-36) sets it wherever the rule applies.
-            res.hits.append(Hit(rule_id, line_no, count, _excerpt(excerpt), cap_as or cap))
+            # A rule whose Detect line states a per-hit cap (R-36) sets it wherever the rule applies;
+            # a consider-only rule (a first-cycle noise guard) never reaches violation.
+            cap = cap_as or cap
+            if rule.get("consider_only"):
+                cap = "consider"
+            res.hits.append(Hit(rule_id, line_no, count, _excerpt(excerpt), cap))
 
     instr = negative = 0
     for n, line in lines:
@@ -291,6 +306,17 @@ def lint_skill_structure(entry: Entry, text: str, mcp_vocab: Dict[str, Set[str]]
                 add("R-34", n, len(leaves),
                     f"{rel(ref)} references {', '.join(rel(l) for l in leaves)} - not referenced from SKILL.md")
 
+    # R-39 assist: a long numbered workflow with no copyable checklist (a fenced one counts: it is
+    # meant to be copied).
+    steps = workflow_steps(text, body)
+    if len(steps) >= LONG_WORKFLOW_STEPS and not any(_CHECKBOX.match(l) for l in text.splitlines()):
+        add("R-39", steps[0], len(steps), f"{len(steps)} top-level steps, no copyable checklist")
+
+    # R-43 assist: bundled scripts whose third-party imports SKILL.md never names.
+    if entry.repo_dir is not None:
+        for n, script, missing in unnamed_imports(entry.path, text, entry.repo_dir):
+            add("R-43", n, len(missing), f"{script} imports {', '.join(missing)} - not named in SKILL.md")
+
     for n, line in unfenced_lines(text):
         if n < body:
             continue
@@ -306,6 +332,74 @@ def lint_skill_structure(entry: Entry, text: str, mcp_vocab: Dict[str, Set[str]]
         bare = {t for t in _TICKED.findall(line) if t in mcp_vocab and not any(q in line for q in mcp_vocab[t])}
         if bare:
             add("R-37", n, len(bare), line)
+
+
+def workflow_steps(text: str, body: int) -> List[int]:
+    """Line numbers of a SKILL.md's top-level steps: numbered headings, else its longest top-level numbered list."""
+    lines = [(n, l) for n, l in unfenced_lines(text) if n >= body]
+    heads = [n for n, l in lines if _STEP_HEADING.match(l)]
+    if heads:
+        return heads
+    best: List[int] = []
+    run: List[int] = []
+    for n, l in lines:
+        if _STEP_ITEM.match(l):
+            run.append(n)
+        elif l.strip() and not l.startswith((" ", "\t")):
+            best, run = max(best, run, key=len), []
+    return max(best, run, key=len)
+
+
+def _imports(source: str) -> Set[str]:
+    """Top-level absolute import names of a Python file (relative imports are local by definition)."""
+    try:
+        tree = ast.parse(source)
+    except SyntaxError:
+        return set()
+    names: Set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            names.update(a.name.split(".")[0] for a in node.names)
+        elif isinstance(node, ast.ImportFrom) and node.level == 0 and node.module:
+            names.add(node.module.split(".")[0])
+    return names
+
+
+def _is_local(name: str, dirs: List[Path]) -> bool:
+    return any((d / f"{name}.py").is_file() or (d / name).is_dir() for d in dirs)
+
+
+def unnamed_imports(skill_path: Path, text: str, repo_dir: Path) -> List[Tuple[int, str, List[str]]]:
+    """(line, script, packages) for each bundled script SKILL.md names whose non-stdlib, non-local
+    imports SKILL.md never mentions (R-43's lint assist)."""
+    root = repo_dir.resolve()
+    lowered = text.lower()
+    out, seen = [], set()
+    for n, line in unfenced_lines(text):
+        for ticked, linked in _SCRIPT_REF.findall(line):
+            raw = ticked or linked
+            for base in (skill_path.parent, repo_dir):
+                cand = (base / raw).resolve()
+                if cand.is_file() and cand.is_relative_to(root):
+                    break
+            else:
+                continue
+            if cand in seen or "tests" in cand.relative_to(root).parts:
+                continue  # a test file is the repo's, not a script the skill bundles
+            seen.add(cand)
+            try:
+                source = cand.read_text(encoding="utf-8", errors="replace")
+            except OSError:
+                continue
+            local_dirs = [cand.parent, cand.parent / "_lib", skill_path.parent, skill_path.parent.parent / "_lib", repo_dir,
+                          repo_dir / "skills" / "_lib"]
+            missing = sorted(m for m in _imports(source)
+                             if m not in sys.stdlib_module_names and m != "__future__"
+                             and not _is_local(m, local_dirs)
+                             and not re.search(rf"\b{re.escape(m.lower())}\b", lowered))
+            if missing:
+                out.append((n, cand.relative_to(root).as_posix(), missing))
+    return out
 
 
 def hits_line(res: LintResult) -> str:

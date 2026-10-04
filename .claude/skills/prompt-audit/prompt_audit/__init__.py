@@ -12,7 +12,7 @@ Layout, in dependency order (no module imports a later one):
   sources.py    vendor-guide freshness gate
   inventory.py  audiences, skill references + the scan-surface inventory
   rules.py      `rules.md` parsing and per-audience verdicts
-  lint.py       the lint engine (R-01..R-17, R-30, R-34..R-37)
+  lint.py       the lint engine (R-01..R-17, R-30, R-34..R-37; assists for R-39, R-43)
   dedup.py      findings shared with the scaffolding master / lite global
   state.py      cadence state
   ledger.py     the skip-unchanged ledger issue
@@ -42,6 +42,7 @@ from .inventory import (
 )
 from .rules import parse_rules, verdict_cap
 from .lint import (
+    ASSIST_RULES,
     LINT_RULES,
     LintResult,
     mcp_vocabulary,

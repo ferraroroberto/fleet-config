@@ -15,7 +15,7 @@ Source: <page> · <page>
 - **Vendor tag** — whose guidance the rule is. `[shared]`: both vendors → a `violation` in any file. A single-vendor tag: a `violation` only in a file or section scoped to that vendor's agent; in an agent-neutral file (read by several agents) it is at most `consider`; in a file scoped to the *other* vendor it does not apply. `[conflict]`: the vendors disagree → a `violation` only when a neutral file hardcodes one side outside an agent-neutrality marker; it does not apply inside a vendor-scoped section. Audience comes from the file, never from the host running the audit (`sources.toml` `[audiences.*]`).
 - **File scope** — `any` (every instruction file, not a `skill-ref`); `claude-md` = the always-on instruction files (`CLAUDE.md`, `AGENTS.md`, `.claude/rules/*.md`); `skill` = a `SKILL.md`; `skill-ref` = a `.md` file a `SKILL.md` references by markdown link or by a backticked relative path that exists, shared docs outside the skill directory included (never another skill's `SKILL.md`, an always-on file, or anything under `conversations/`, `evals/`, `__pycache__`).
 - **Tier** — who can fix it unattended. `easy`: a mechanical rewrite (delete a line, soften a word, add a marker). `hard`: restructuring, removing a step list, resolving a contradiction, or any edit to `global-CLAUDE.md` / `project-scaffolding/CLAUDE.md` regardless of the rule's own tier.
-- **Detect** — `lint` rules are counted exactly by `audit.py lint` (a hit is a candidate, confirmed or rejected by the judgment pass); `judgment` rules have no mechanical signal and are assessed by the judgment agent alone.
+- **Detect** — `lint` rules are counted exactly by `audit.py lint` (a hit is a candidate, confirmed or rejected by the judgment pass); `judgment` rules have no mechanical signal and are assessed by the judgment agent alone; `judgment, lint-assisted` rules are judged, but `audit.py lint` nominates candidates for them the same way. A Detect line saying "Consider-only for its first weekly cycle" caps every verdict at `consider` (lint and judgment) until that dated sentence is deleted — the noise guard for a new rule likely to fire widely.
 - **Verdicts** — per rule, per file: `violation`, `consider`, `compliant`, or `unmeasured` (not established — never folded into `compliant`).
 - **Prose is vendor-neutral.** Vendors are named only in tags and `Source:` lines; a quoted guide sentence says "[the model]" where the guide names one.
 
@@ -227,7 +227,7 @@ Source: https://developers.openai.com/api/docs/guides/latest-model (Initiative a
 
 ## Skill structure
 
-How a skill's files are laid out, so the reader finds what it needs when it partially reads them. R-34 to R-37 are its lint half.
+How a skill's files are laid out, so the reader finds what it needs when it partially reads them. R-34 to R-37 are its lint half; R-38 to R-43 its judgment half.
 
 ### R-34 Reference files one level deep        tags: [anthropic] [file: skill] [tier: hard]
 Detect: lint — a reference file (a `.md` that SKILL.md references by markdown link or by a backticked relative path that exists, inside the skill directory or a shared doc outside it; another skill's SKILL.md is delegation, not a reference) which itself links (markdown link) another local `.md` that SKILL.md does not reference directly. A backticked path inside a reference file is a mention, not an onward reference.
@@ -253,6 +253,54 @@ Why: "always use fully qualified tool names to avoid 'tool not found' errors …
 Fix shape: use the qualified name, at least on each first mention per section.
 Source: https://platform.claude.com/docs/en/agents-and-tools/agent-skills/best-practices (MCP tool references)
 
+### R-38 Degrees of freedom match fragility        tags: [anthropic] [file: skill] [tier: hard]
+Detect: judgment — a fragile, order-sensitive operation (destructive git, a migration, a wire format) given only as loose prose; or an exact script imposed where several approaches are valid.
+Why: "Match the level of specificity to the task's fragility and variability."
+Fix shape: pin the fragile step to an exact command or bundled script; loosen the rest to a goal plus heuristics.
+Source: https://platform.claude.com/docs/en/agents-and-tools/agent-skills/best-practices (Set appropriate degrees of freedom)
+
+### R-39 Long workflows give a copyable checklist        tags: [anthropic] [file: skill] [tier: hard]
+Detect: judgment, lint-assisted — lint counts top-level steps; a workflow of six or more steps with no checklist the agent can copy and tick is a candidate. Consider-only for its first weekly cycle (the run on or after 2026-10-05): it becomes a normal rule on 2026-10-12, when this sentence is deleted.
+Why: "For particularly complex workflows, provide a checklist that [the model] can copy into its response and check off as it progresses."
+Fix shape: add a `- [ ]` checklist that mirrors the step headings.
+Source: https://platform.claude.com/docs/en/agents-and-tools/agent-skills/best-practices (Use workflows for complex tasks)
+
+### R-40 Quality-critical steps loop on a machine check        tags: [anthropic] [file: skill] [tier: hard]
+Detect: judgment — a quality-critical or destructive step with no validate → fix → repeat loop on a named check (a gate command, a validator script, a plan file validated before execution).
+Why: "Common pattern: Run validator → fix errors → repeat. This pattern greatly improves output quality." Plan-validate-execute is for "Batch operations, destructive changes, complex validation rules, high-stakes operations."
+Fix shape: name the check and the loop ("run X; on failure fix and re-run until it passes, at most N times"). Not a conflict with R-03, which removes self-re-check prose; R-03's fix shape already says to name the one real check.
+Source: https://platform.claude.com/docs/en/agents-and-tools/agent-skills/best-practices (Implement feedback loops; Create verifiable intermediate outputs)
+
+### R-41 One term per concept        tags: [anthropic] [file: skill] [tier: hard]
+Detect: judgment — the same concept named with several terms in one skill (gate / check / verification step used interchangeably). Consider-only for its first weekly cycle (the run on or after 2026-10-05): it becomes a normal rule on 2026-10-12, when this sentence is deleted.
+Why: "Choose one term and use it throughout the Skill … Consistency helps [the model] parse and follow instructions."
+Fix shape: pick the term the skill's helpers print, and replace the synonyms.
+Source: https://platform.claude.com/docs/en/agents-and-tools/agent-skills/best-practices (Use consistent terminology)
+
+### R-42 A default, not a menu        tags: [anthropic] [file: skill] [tier: easy]
+Detect: judgment — several interchangeable tools or approaches offered with no default and no condition for the alternative.
+Why: "Don't present multiple approaches unless necessary … Provide a default (with escape hatch)."
+Fix shape: name the default; keep one alternative with the condition that selects it.
+Source: https://platform.claude.com/docs/en/agents-and-tools/agent-skills/best-practices (Avoid offering too many options)
+
+### R-43 Bundled scripts: intent and dependencies stated        tags: [anthropic] [file: skill] [tier: easy]
+Detect: judgment, lint-assisted — each bundled script SKILL.md references says whether to run it or read it; lint lists the non-stdlib imports of bundled scripts that SKILL.md does not name.
+Why: "Make clear in your instructions whether [the model] should: Execute the script … Read it as reference"; "List required packages in your SKILL.md and verify they're available."
+Fix shape: "Run `x.py` to …" or "See `x.py` for …"; one line naming any third-party package.
+Source: https://platform.claude.com/docs/en/agents-and-tools/agent-skills/best-practices (Provide utility scripts; Package dependencies; Avoid assuming tools are installed)
+
+## Covered elsewhere
+
+Guidance on a tracked page that another owner already measures, so no rule here duplicates it.
+
+- **Script code quality** — solve errors instead of deferring them, no unexplained ("voodoo") constants, explicit error handling. That is code, not instruction prose: `/codebase-audit`'s job.
+- **Concise is key** — `/context-purge` (lossless compression) and R-14 (size caps).
+- **Progressive disclosure** — R-14's fix shape (move detail into referenced files) and R-34 (keep those references one level deep).
+- **Template and example patterns** — R-24.
+- **Testing and evaluation** — the skill evals (`/prompt-audit`'s eval steps), not lint.
+
+Source: https://platform.claude.com/docs/en/agents-and-tools/agent-skills/best-practices (Solve, don't defer; Code and scripts) · https://platform.claude.com/docs/en/agents-and-tools/agent-skills/best-practices (Concise is key) · https://platform.claude.com/docs/en/agents-and-tools/agent-skills/best-practices (Progressive disclosure patterns; Visual overview: From simple to complex; Pattern 1: High-level guide with references; Pattern 2: Domain-specific organization; Pattern 3: Conditional details) · https://platform.claude.com/docs/en/agents-and-tools/agent-skills/best-practices (Template pattern; Examples pattern) · https://platform.claude.com/docs/en/agents-and-tools/agent-skills/best-practices (Test with all models you plan to use; Build evaluations first; Develop Skills iteratively with Claude; Observe how Claude navigates Skills; Testing)
+
 ## Background appendix — guidance with no instruction-file signal
 
 Recorded so a cold reader has the reasoning; none of these are scanned. Tags name whose guidance each is.
@@ -270,9 +318,13 @@ Recorded so a cold reader has the reasoning; none of these are scanned. Tags nam
 - `[anthropic]` **Parallel-calls instruction as a turn-scoped system message** in long loops — a harness concern.
 - `[anthropic]` **HTML block comments are stripped** from `CLAUDE.md` before injection, so they are a token-free place for maintainer notes.
 - `[anthropic]` **`CLAUDE.md` shadows `AGENTS.md`**: when any `CLAUDE.md` exists, the agent reads only that unless `claude-md-and-agents-md` is set. A fact for the fleet's `AGENTS.md` interop, not a file defect.
+- `[anthropic]` **Conditional workflow pattern** — "Guide [the model] through decision points" with a branch per case. Fleet skills already branch by argument and label (`/issue-start`'s mode table); R-38 judges whether a branch is pinned tightly enough.
+- `[anthropic]` **Visual analysis** — render inputs as images for the model to read. A technique for skills whose inputs are visual (`/design-review` already screenshots); no instruction-file signal.
+- `[anthropic]` **Runtime environment and package availability** — the vendor-hosted app and API code-execution sandboxes (what is preinstalled, no network). The fleet runs its skills locally in the coding-agent CLI, so only the forward-slash consequence (R-36) and the "list your packages" consequence (R-43) apply.
+- `[anthropic]` **Next steps** — links to the quickstart and the other skill guides; navigation, not guidance.
 - `[shared]` **Effort names aren't comparable across models** — "Effort level names don't correspond to the same amount of thinking across models". The owner is `docs/model-tiers.md`.
 
-Source: https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/claude-prompting-best-practices (Long context prompting; Optimize parallel tool calling) · https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/prompting-claude-fable-5-1 (Keep the conversation history append-only; Search triggering at low effort; Ask for user-facing progress updates; Writing density) · https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/prompting-claude-opus-5-5 (Calibrate effort; Mark pasted text in user messages) · https://platform.claude.com/docs/en/agents-and-tools/agent-skills/best-practices (Naming conventions) · https://code.claude.com/docs/en/memory (Import additional files) · https://developers.openai.com/api/docs/guides/latest-model (Personality and writing style; Update API and model parameters)
+Source: https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/claude-prompting-best-practices (Long context prompting; Optimize parallel tool calling) · https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/prompting-claude-fable-5-1 (Keep the conversation history append-only; Search triggering at low effort; Ask for user-facing progress updates; Writing density) · https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/prompting-claude-opus-5-5 (Calibrate effort; Mark pasted text in user messages) · https://platform.claude.com/docs/en/agents-and-tools/agent-skills/best-practices (Naming conventions; Conditional workflow pattern; Use visual analysis; Runtime environment; Package dependencies; Next steps) · https://code.claude.com/docs/en/memory (Import additional files) · https://developers.openai.com/api/docs/guides/latest-model (Personality and writing style; Update API and model parameters)
 
 ## Recorded as rejected
 

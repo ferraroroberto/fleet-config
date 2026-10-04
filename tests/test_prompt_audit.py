@@ -649,11 +649,69 @@ try:
 finally:
     shutil.rmtree(tmp2, ignore_errors=True)
 
+# ---- skill structure, judgment half (#1127): R-39 and R-43 lint assists, consider-only guard ----
+
+LONG_FLOW = skill_text("## Steps\n\n" + "".join(f"### {i}. Step {i}\n\nDo thing {i}.\n\n" for i in range(1, 8)))
+r39 = skill_hits(LONG_FLOW, "R-39")
+check(len(r39) == 1 and r39[0].count == 7 and r39[0].line == 10,
+      f"R-39 assist: seven numbered step headings and no checklist is a candidate at the first step (got {[(h.line, h.count) for h in r39]})")
+check(skill_hits(LONG_FLOW + "\n```\n- [ ] 1. Step 1\n- [ ] 2. Step 2\n```\n", "R-39") == [],
+      "R-39 assist: a copyable checklist (fenced counts) clears it")
+check(skill_hits(skill_text("".join(f"{i}. Do thing {i}.\n" for i in range(1, 6))), "R-39") == [],
+      "R-39 assist: a five-item numbered list is under the threshold")
+check(len(skill_hits(skill_text("".join(f"{i}. Do thing {i}.\n" for i in range(1, 8))), "R-39")) == 1,
+      "R-39 assist: a seven-item top-level numbered list counts when there are no step headings")
+check(RULES["R-39"]["consider_only"] and RULES["R-41"]["consider_only"] and not RULES["R-38"]["consider_only"],
+      "R-39 and R-41 carry the consider-only first-cycle flag; the others do not")
+check(all(h.cap == "consider" for h in pa.lint_entry(entry_for(LONG_FLOW, kind="skill", audience="claude",
+                                                             key="x/.claude/skills/s/SKILL.md"), RULES, AUD).hits
+          if h.rule == "R-39"),
+      "a consider-only rule caps at consider even for a vendor-scoped reader")
+
+tmp3 = Path(tempfile.mkdtemp(prefix="prompt-audit-r43-"))
+try:
+    repo3 = tmp3 / "repo-d"
+    sk = repo3 / ".claude" / "skills" / "s3"
+    write(sk / "helper.py", "import json\nimport requests\nimport yaml\nfrom . import sibling\nimport localmod\n")
+    write(sk / "localmod.py", "X = 1\n")
+    write(sk / "clean.py", "import json\nimport localmod\n")
+    write(repo3 / "tests" / "test_x.py", "import pytest\n")
+    body43 = "Run `helper.py` to fetch.\nRun `clean.py` to tidy.\nNeeds the yaml package. Tests: `tests/test_x.py`.\n"
+    write(sk / "SKILL.md", skill_text(body43))
+    e43 = pa.Entry(key="repo-d/.claude/skills/s3/SKILL.md", path=sk / "SKILL.md", repo="repo-d", kind="skill",
+                   data=(sk / "SKILL.md").read_bytes(), repo_dir=repo3)
+    r43 = by_rule(pa.lint_entry(e43, RULES, AUD), "R-43")
+    check(len(r43) == 1 and r43[0].line == 8 and r43[0].count == 1 and "requests" in r43[0].text,
+          f"R-43 assist: a third-party import SKILL.md never names is a candidate; stdlib, local, relative and named imports are not (got {[(h.line, h.text) for h in r43]})")
+finally:
+    shutil.rmtree(tmp3, ignore_errors=True)
+
 # ---- contracts: rules.md, sources.toml, vendor neutrality ----
 
 check(sorted(r for r, v in RULES.items() if v["detect"] == "lint") == pa.LINT_RULES,
       "every audit.py lint rule is a `Detect: lint` rule in rules.md and vice versa")
 check(all(v["detect"] in ("lint", "judgment") for v in RULES.values()), "every rule declares lint or judgment")
+check(sorted(r for r, v in RULES.items() if v["assist"]) == pa.ASSIST_RULES,
+      "every lint-assisted judgment rule in rules.md has a lint assist in audit.py and vice versa")
+_page_sections = {"Avoid time-sensitive information", "Naming conventions", "Token budgets", "Writing effective descriptions",
+                  "YAML frontmatter requirements", "Core quality", "Avoid deeply nested references",
+                  "Structure longer reference files with table of contents", "Avoid Windows-style paths",
+                  "Runtime environment", "MCP tool references", "Set appropriate degrees of freedom",
+                  "Use workflows for complex tasks", "Implement feedback loops", "Create verifiable intermediate outputs",
+                  "Use consistent terminology", "Avoid offering too many options", "Provide utility scripts",
+                  "Package dependencies", "Avoid assuming tools are installed", "Solve, don't defer", "Code and scripts",
+                  "Concise is key", "Progressive disclosure patterns", "Visual overview: From simple to complex",
+                  "Pattern 1: High-level guide with references", "Pattern 2: Domain-specific organization",
+                  "Pattern 3: Conditional details", "Template pattern", "Examples pattern",
+                  "Test with all models you plan to use", "Build evaluations first",
+                  "Develop Skills iteratively with Claude", "Observe how Claude navigates Skills", "Testing",
+                  "Conditional workflow pattern", "Use visual analysis", "Next steps"}
+_cited = set()
+for _l in pa.RULES_MD.read_text(encoding="utf-8").splitlines():
+    if _l.startswith("Source:"):
+        for _m in re.finditer(r"agent-skills/best-practices \(([^)]*)\)", _l):
+            _cited.update(s.strip() for s in _m.group(1).split(";"))
+check(_page_sections <= _cited, f"every leaf section of the skill-authoring page has a home (missing {sorted(_page_sections - _cited)})")
 vendors = {c["vendor"] for c in AUD.values()} | {"shared", "conflict"}
 check(all(v["vendor"] in vendors and v["file"] in ("any", "claude-md", "skill", "skill-ref") and v["tier"] in ("easy", "hard")
           for v in RULES.values()), "every rule carries a known vendor tag, file scope and tier")

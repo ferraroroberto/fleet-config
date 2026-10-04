@@ -29,12 +29,17 @@ def parse_rules(text: str) -> Dict[str, dict]:
             current = {"id": m.group(1), "title": m.group(2).strip(),
                        "vendor": plain[0].strip() if plain else "",
                        "file": kv.get("file", "any").strip(), "tier": kv.get("tier", "").strip(),
-                       "detect": "", "fix": "", "sources": []}
+                       "detect": "", "assist": False, "consider_only": False, "fix": "", "sources": []}
             rules[current["id"]] = current
         elif line.startswith("#"):
             current = None  # any other heading ends the rule: the appendix's Source: is nobody's
         elif current and line.startswith("Detect:"):
-            current["detect"] = line.split(":", 1)[1].strip().split(" ", 1)[0]
+            body = line.split(":", 1)[1].strip()
+            current["detect"] = re.match(r"[a-z]+", body).group(0) if re.match(r"[a-z]+", body) else ""
+            # "judgment, lint-assisted": the judgment pass decides, lint only nominates candidates.
+            current["assist"] = body.startswith(f"{current['detect']}, lint-assisted")
+            # A dated first-cycle noise guard: hits cap at consider until the sentence is deleted.
+            current["consider_only"] = "Consider-only" in body
         elif current and line.startswith("Fix shape:"):
             current["fix"] = line.split(":", 1)[1].strip()
         elif current and line.startswith("Source:"):
