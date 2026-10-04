@@ -15,6 +15,7 @@ Files in this directory:
 
 - `rules.md` — the rule-set (`R-NN` blocks: tags, detect, why, fix shape, source). Read it before judging anything; its sha is the ledger's `rubric-sha`.
 - `leads.toml` — hand-fed outside claims (videos, posts, talks), each traced to a vendor section or left for the run to trace (step 2c).
+- `eval_rotation.py` — runs the `evals/<case>/` suites that skills carry (fleet-config's tiers) through the CLI's plugin-eval command on each model tier, and writes an aggregate to `~/.claude/prompt-audit/evals/` (fleet-config#1130). Run it by hand for now; it is not a step of this skill.
 - `sources.toml` — one block per vendor page with its baseline sha + marker, plus the audience vocabulary that decides which rules are primary for a file.
 - `audit.py` — every exact step: `sources`, `diff-source`, `inventory`, `lint`, `dedup`, `state`, `ledger`, `digest`, `drift`, `ping`.
 

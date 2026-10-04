@@ -126,6 +126,9 @@ with tempfile.TemporaryDirectory() as td:
     # fleet-config-shaped repo: two tiers.
     _write(root / "self" / "skills" / "alpha" / "SKILL.md", _skill(LEAN))
     _write(root / "self" / ".claude" / "skills" / "beta" / "SKILL.md", _skill(FAT))
+    # Eval cases (fleet-config#1130) sit beside a SKILL.md and must never be measured as one.
+    _write(root / "self" / "skills" / "alpha" / "evals" / "c1" / "prompt.md", "---\nmax_turns: 2\n---\n\n/alpha\n")
+    _write(root / "self" / "skills" / "alpha" / "evals" / "SKILL.md", _skill(FAT))
     # A sister repo with a project-scoped skill — invisible to the old scan.
     _write(root / "sister" / ".claude" / "skills" / "gamma" / "SKILL.md", _skill(FAT))
     # A sister repo that carries no skills at all: nothing to measure, not a gap.
