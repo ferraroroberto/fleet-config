@@ -9,6 +9,7 @@ from typing import Dict, Iterable, Set, Tuple
 
 from .common import COMMENT_CHAR_CAP, DIGEST_FINDINGS_CAP, STAMP_PREFIX, VERDICTS, clean
 from .coverage import digest_line
+from .leads import digest_lines as lead_digest_lines
 from .dedup import dedup, norm_line
 
 
@@ -153,6 +154,8 @@ def render_digest(run: dict, rules: Dict[str, dict], master_text: str = "", lite
     else:
         out.append("- coverage: not-checked")
     out.append("")
+    # Leads (#1129): an unverified claim is reported for a human, never a rule or a prompt-drift item.
+    out += lead_digest_lines(run.get("leads")) + [""]
     ref = run.get("update_issue") or "(update issue not filed)"
     if not scan_ran:
         out += [f"**Scan:** not run — rule-set update issue {ref}", ""]

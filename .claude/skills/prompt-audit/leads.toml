@@ -1,0 +1,23 @@
+# Hand-fed leads for /prompt-audit (fleet-config#1129).
+#
+# Advice about prompts and skills that reached the fleet through a video, a post or a
+# talk. Edited by hand through a PR, like sources.toml; /sota-watch never writes here.
+# A lead never becomes a rule by itself: each claim names the tracked vendor section
+# that says the same thing (`trace = "<sources.toml id>#<section title>"`), or leaves
+# `trace = ""` for the weekly run to trace once and report (`audit.py leads`).
+#
+# kind: video | post | talk | thread. One claim per line, in the filer's own words.
+
+[leads.skills-outdated-video]
+url = "https://youtu.be/e7TY56-yIvM"
+kind = "video"
+added = 2026-10-02
+claims = [
+  { text = "Long reference files need a table of contents", trace = "anthropic-skill-authoring#Structure longer reference files with table of contents" },
+  { text = "Match a skill's degrees of freedom to how fragile the task is", trace = "anthropic-skill-authoring#Set appropriate degrees of freedom" },
+  { text = "Test skills on every model you plan to use", trace = "anthropic-skill-authoring#Test with all models you plan to use" },
+  { text = "Keep references one level deep from SKILL.md", trace = "anthropic-skill-authoring#Avoid deeply nested references" },
+  { text = "Give complex workflows a checklist to copy and tick", trace = "anthropic-skill-authoring#Use workflows for complex tasks" },
+  { text = "Build self-correction loops: validate, fix, repeat", trace = "anthropic-skill-authoring#Implement feedback loops" },
+  { text = "List the packages a skill depends on", trace = "anthropic-skill-authoring#Package dependencies" },
+]

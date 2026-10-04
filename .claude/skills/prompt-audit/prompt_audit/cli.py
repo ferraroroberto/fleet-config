@@ -15,6 +15,7 @@ from typing import Dict, List, Optional, Tuple
 
 from .common import KIND, LEDGER_REPO, LITE_GLOBAL, LITE_REPO, MASTER_REPO, REPO_ROOT, RULES_MD, SOURCES_TOML, TITLE, VERDICTS, clean, ensure_utf8_stdio, fleet_repos, git_run, load_toml, rules_rubric
 from .sources import diff_source
+from .leads import LeadsError, load_leads, mark as mark_lead, resolve as resolve_leads, suggestions_comment
 from .coverage import (cache_page, coverage, coverage_comment, known_items, page_sections,
                        page_text, section_text)
 from .inventory import Entry, _read, inventory, kind_of, sections
@@ -165,24 +166,71 @@ def cmd_coverage(args: argparse.Namespace, cfg: dict) -> int:
             print(body)
             print("COVERAGE_POST=dry-run")
             return 0
-        with tempfile.NamedTemporaryFile("w", suffix=".md", delete=False, encoding="utf-8") as fh:
-            fh.write(body)
-            tmp = fh.name
-        try:
-            if number is None:
-                res = git_run.run_gh(["issue", "create", "--repo", LEDGER_REPO, "--title", UPDATE_TITLE,
-                                      "--label", "enhancement", "--assignee", "@me", "--body-file", tmp], timeout=120)
-            else:
-                res = git_run.run_gh(["issue", "comment", str(number), "--repo", LEDGER_REPO, "--body-file", tmp],
-                                     timeout=120)
-        finally:
-            Path(tmp).unlink(missing_ok=True)
-        if res.returncode != 0:
-            print(f"❌ coverage post failed: {(res.stderr or res.stdout).strip()}", file=sys.stderr)
-            return 1
-        print(f"COVERAGE_POST={(res.stdout or '').strip()}")
-        return 0
+        return _post_update(number, body, "COVERAGE_POST")
     print(json.dumps(results, indent=2))
+    return 0
+
+
+def _post_update(number: Optional[int], body: str, key: str) -> int:
+    """Comment `body` on the open update issue, or open it with `body` when none is open."""
+    with tempfile.NamedTemporaryFile("w", suffix=".md", delete=False, encoding="utf-8") as fh:
+        fh.write(body)
+        tmp = fh.name
+    try:
+        if number is None:
+            res = git_run.run_gh(["issue", "create", "--repo", LEDGER_REPO, "--title", UPDATE_TITLE,
+                                  "--label", "enhancement", "--assignee", "@me", "--body-file", tmp], timeout=120)
+        else:
+            res = git_run.run_gh(["issue", "comment", str(number), "--repo", LEDGER_REPO, "--body-file", tmp],
+                                 timeout=120)
+    finally:
+        Path(tmp).unlink(missing_ok=True)
+    if res.returncode != 0:
+        print(f"❌ {key} failed: {(res.stderr or res.stdout).strip()}", file=sys.stderr)
+        return 1
+    print(f"{key}={(res.stdout or '').strip()}")
+    return 0
+
+
+def cmd_leads(args: argparse.Namespace, cfg: dict) -> int:
+    """`leads.toml` with each claim's standing as JSON; `mark` records a trace result, `--post` files suggestions."""
+    try:
+        leads = load_leads(cfg.get("sources", {}))
+    except LeadsError as exc:
+        print(f"❌ leads.toml malformed — {exc}", file=sys.stderr)
+        return 3  # distinct from a usage error (2): the file is broken, not the call
+    state = load_state()
+    if args.action == "mark":
+        ids = {c["id"] for lead in leads for c in lead["claims"]}
+        if args.claim not in ids or not args.result:
+            print("❌ leads mark needs --claim <id from `audit.py leads`> and --result", file=sys.stderr)
+            return 2
+        try:
+            mark_lead(state, args.claim, args.result, args.where or "")
+        except ValueError as exc:
+            print(f"❌ {exc}", file=sys.stderr)
+            return 2
+        save_state(state)
+        print(f"✅ marked claim {args.claim} {args.result}")
+        return 0
+    resolved = resolve_leads(leads, state)
+    if args.post:
+        try:
+            number, known = _update_issue()
+        except Exception as exc:
+            print(f"❌ leads: cannot read the update issue, nothing posted — {exc}", file=sys.stderr)
+            return 1
+        body = suggestions_comment(resolved, known)
+        if body is None:
+            print("LEADS_POST=none|reason=no new trace results")
+            return 0
+        if args.dry_run:
+            print(body)
+            print("LEADS_POST=dry-run")
+            return 0
+        return _post_update(number, body, "LEADS_POST")
+    print(json.dumps(resolved, indent=2))
+    print(f"LEADS={len(resolved['leads'])}|open={len(resolved['open'])}", file=sys.stderr)
     return 0
 
 
@@ -388,6 +436,13 @@ def main(argv: Optional[List[str]] = None) -> int:
     d.add_argument("--file", required=True)
     d.add_argument("--final-url", default=None)
     d.add_argument("--cache", action="store_true", help="keep the fetched bytes for the coverage check")
+    ld = sub.add_parser("leads")
+    ld.add_argument("action", nargs="?", choices=("list", "mark"), default="list")
+    ld.add_argument("--claim")
+    ld.add_argument("--result", help="traced | untracked-vendor | unverified")
+    ld.add_argument("--where", help="the vendor section or page the claim traced to")
+    ld.add_argument("--post", action="store_true", help="comment new trace results on the update issue")
+    ld.add_argument("--dry-run", action="store_true", help="with --post: print the comment, post nothing")
     cv = sub.add_parser("coverage")
     cv.add_argument("--scratch", default=None, help="this run's fetched pages (<id>.md); the cache fills the rest")
     cv.add_argument("--extract", action="store_true", help="print the text of each new uncovered section")
@@ -439,6 +494,8 @@ def main(argv: Optional[List[str]] = None) -> int:
         return cmd_diff_source(cfg, args.id, args.file, args.final_url, args.cache)
     if args.cmd == "coverage":
         return cmd_coverage(args, cfg)
+    if args.cmd == "leads":
+        return cmd_leads(args, cfg)
     if args.cmd == "inventory":
         return cmd_inventory(args, cfg)
     if args.cmd == "lint":

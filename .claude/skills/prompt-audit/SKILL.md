@@ -14,6 +14,7 @@ The deliverables are the digest and the `prompt-drift` issues. This skill **repo
 Files in this directory:
 
 - `rules.md` — the rule-set (`R-NN` blocks: tags, detect, why, fix shape, source). Read it before judging anything; its sha is the ledger's `rubric-sha`.
+- `leads.toml` — hand-fed outside claims (videos, posts, talks), each traced to a vendor section or left for the run to trace (step 2c).
 - `sources.toml` — one block per vendor page with its baseline sha + marker, plus the audience vocabulary that decides which rules are primary for a file.
 - `audit.py` — every exact step: `sources`, `diff-source`, `inventory`, `lint`, `dedup`, `state`, `ledger`, `digest`, `drift`, `ping`.
 
@@ -30,7 +31,7 @@ No argument → the full run.
 ## Execution rules (read first)
 
 - **Run from the `fleet-config` repo root.** Put fetched pages and run files in a freshly created, uniquely named scratch directory outside the repo (e.g. `<session temp>/prompt-audit-<date>-<time>`). Never delete through a variable-built path — a harness prompts on `rm` against a variable that could be empty, which blocks an unattended run; a new directory per run needs no cleanup.
-- **Writes are exactly these:** `~/.claude/prompt-audit/state.json` and the page cache beside it (`pages/<id>.md`, step 2); the ledger issue body and one digest comment (through `audit.py ledger`, which goes through `skills/_lib/audit_issue.py` — never `gh issue create` a ledger by hand); one `kind=prompt-drift` issue per repo with something to say plus its `prompt-drift` label (through `audit.py drift`, same helper); when a guide changed, one rule-set update issue; when the coverage check finds new uncovered sections, one comment on that issue (creating it if none is open, step 2b); and, on a delivered run only, one activity-log chat ping (step 10, through `hooks/notify_send.py`). Nothing else, and none of it under `--dry-run`.
+- **Writes are exactly these:** `~/.claude/prompt-audit/state.json` and the page cache beside it (`pages/<id>.md`, step 2); the ledger issue body and one digest comment (through `audit.py ledger`, which goes through `skills/_lib/audit_issue.py` — never `gh issue create` a ledger by hand); one `kind=prompt-drift` issue per repo with something to say plus its `prompt-drift` label (through `audit.py drift`, same helper); when a guide changed, one rule-set update issue; when the coverage check finds new uncovered sections or a lead gets a new trace result, one comment on that issue each (creating it if none is open, steps 2b and 2c); lead trace results in `state.json` (step 2c); and, on a delivered run only, one activity-log chat ping (step 10, through `hooks/notify_send.py`). Nothing else, and none of it under `--dry-run`.
 - **Unknown is never a pass.** A page that could not be fetched is `not-checked`, never `unchanged`. A file whose judgment did not come back is `unmeasured`, never `compliant`. A skipped file is listed as skipped, so "not in the findings" cannot read as "not looked at".
 - **Degrade one item, never the run.** A failed fetch degrades that source; a failed judgment agent degrades that repo's files; the run still posts its digest (`status=partial` when any planned file ended unmeasured).
 - **Poll to completion in this turn** (fleet-config#314). Any background agent or command is collected before moving on; never end the turn expecting to be resumed.
@@ -68,7 +69,7 @@ Only when curl exits 0 **and** the status is `200`, promote it: `mv <scratch>/<i
 <py> <audit> state mark --source <id> --verdict <verdict>
 ```
 
-**Any `changed` or `new-guide` → step 3, then step 2b and step 4.** Otherwise → step 2b, then step 4.
+**Any `changed` or `new-guide` → step 3, then steps 2b, 2c and 4.** Otherwise → steps 2b, 2c, then 4.
 
 ### 2b. Coverage check — tracked sections no rule cites
 
@@ -87,6 +88,22 @@ Any `new` entry → draft, then post:
 3. Unless `--dry-run`: `<py> <audit> coverage --scratch <scratch> --post --drafts <scratch>/drafts.md`. It re-reads the update issue, so a section already posted is never posted twice (`COVERAGE_POST=none`). Under `--dry-run`, add `--dry-run` to print the comment.
 
 Uncovered sections never stop the scan, set `update_issue`, or mark a finding provisional: the rule-set is incomplete, not stale. The skill reports; it never edits `rules.md`.
+
+### 2c. Leads — trace outside claims to a vendor sentence
+
+```
+<py> <audit> leads > <scratch>/leads.json
+```
+
+The JSON lists each lead's claims with a `status` (`traced`, `untracked-vendor`, `unverified`, `open`) and an `open` id list. Exit `3` means `leads.toml` is malformed: report it and carry `"leads": null` (the digest prints `not-checked`); never read it as "no leads". A claim with a `trace` is never re-traced, and neither is one already resolved in `state.json`.
+
+Any `open` claim → one **easy-tier** worker per claim (rate gate as step 6), briefed read-only: find the vendor sentence that says the same thing, searching the cached pages in `~/.claude/prompt-audit/pages/` first, then the vendor docs indexes (`llms.txt`). It returns one of `traced <source id>#<section>`, `untracked-vendor <url>` (a vendor page `sources.toml` does not track) or `unverified`. Record each unless `--dry-run`:
+
+```
+<py> <audit> leads mark --claim <id> --result traced|untracked-vendor|unverified --where "<source id>#<section> or <url>"
+```
+
+Then re-run `<py> <audit> leads > <scratch>/leads.json` and carry it into `run.json` as `"leads"`. A traced result is owned by the coverage check from then on; an `untracked-vendor` page is handled like a `new-guide`. Unless `--dry-run`, `<py> <audit> leads --post` comments the suggested `trace =` values and proposed `[sources.*]` blocks on the update issue (once per claim). An `unverified` claim is listed in the digest for a human; it never becomes a rule or a `prompt-drift` item, and the skill never edits `leads.toml`.
 
 ### 3. Rule-set update issue — a guide moved
 
@@ -153,6 +170,7 @@ Write `<scratch>/run.json`:
   "sources": ["<every VERDICT= line from steps 1-2>"],
   "update_issue": null,
   "coverage": ["<the coverage.json list from step 2b>"],
+  "leads": "<the leads.json object from step 2c, or null>",
   "scan_ran": true,
   "plan": ["<every PLAN= line from step 4>"],
   "judgments": {"<path>": [<findings>] }
@@ -165,7 +183,7 @@ Write `<scratch>/run.json`:
 <py> <audit> digest --run <scratch>/run.json > <scratch>/digest.md
 ```
 
-The helper prints `DIGEST=status=complete|partial` on stderr. The digest carries `status`, `guides`, the rubric, per-source outliers, one `coverage: <id> uncovered N (new M)` line per tracked page (`coverage: not-checked` when step 2b did not run), the update issue and the provisional rules when a guide changed, scanned/skipped/unmeasured counts, findings by rule, findings shared with the scaffolding master collapsed to one entry with a `propagate to:` list (`audit.py dedup` logic), repo-local findings, the unmeasured list, and the skipped list.
+The helper prints `DIGEST=status=complete|partial` on stderr. The digest carries `status`, `guides`, the rubric, per-source outliers, one `coverage: <id> uncovered N (new M)` line per tracked page (`coverage: not-checked` when step 2b did not run), a leads section (`**Leads:** not-checked` when step 2c did not run), the update issue and the provisional rules when a guide changed, scanned/skipped/unmeasured counts, findings by rule, findings shared with the scaffolding master collapsed to one entry with a `propagate to:` list (`audit.py dedup` logic), repo-local findings, the unmeasured list, and the skipped list.
 
 `--dry-run` → print `digest.md`, then `<py> <audit> drift --run <scratch>/run.json --dry-run` (the issue bodies that would be filed), and stop here.
 
