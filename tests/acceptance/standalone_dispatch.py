@@ -336,6 +336,11 @@ _STANDALONE_UNIT_CHECKS: Tuple[Tuple[str, str, str], ...] = (
     ("watchlist", "test_watchlist.py",
      "the due/fresh/delegated cadence logic and the seed watchlist's "
      "shape are testable on their own (fleet-config#393)"),
+    ("fleet10x", "test_fleet10x.py",
+     "/fleet-10x's deterministic halves -- active-repo selection, the "
+     "recommendation schema, evidence links, impact-over-cost ranking, the "
+     "rendered read-only brief and the run footer -- are testable on their "
+     "own against fixtures and a throwaway repo (fleet-config#1253)"),
     ("fleet_toml_reader", "test_fleet_toml.py",
      "the one `.fleet.toml` reader: absent / invalid / ok stay distinct states, a non-table is never a "
      "table, and a non-positive-int budget is never accepted (fleet-config#1062)"),
