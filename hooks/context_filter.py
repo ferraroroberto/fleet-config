@@ -86,6 +86,11 @@ SWEEP_HELPER_RE = re.compile(
 # cannot tell from an empty result.
 CONTENT_COMMANDS = {"cat", "tail"}
 
+# JSON output is payload on the same terms (fleet-config#1269). It used to come
+# back as `JSON object: 3 top-level keys; keys: body, number, title` -- the
+# values gone, and a single-line output got no retrieve footer either, so
+# `gh issue view --json body` read as an issue with no body.
+
 
 @dataclass(frozen=True)
 class CompressionResult:
@@ -100,6 +105,9 @@ class CompressionResult:
     duration_ms: float
     raw_key: Optional[str]
     secret_like: bool
+    # True when any of the (redacted) output is not in `compressed` -- the
+    # condition for pointing the reader at the cached raw output.
+    withheld: bool
 
 
 @dataclass(frozen=True)
@@ -441,38 +449,25 @@ def command_specific_lines(command: str, lines: list[str]) -> Optional[list[str]
     return None
 
 
-def _looks_json(text: str) -> bool:
+def _is_json(text: str) -> bool:
     stripped = text.strip()
-    return stripped[:1] in {"{", "["}
-
-
-def _json_summary(text: str) -> Optional[str]:
-    if not _looks_json(text):
-        return None
+    if stripped[:1] not in {"{", "["}:
+        return False
     try:
-        parsed = json.loads(text)
+        json.loads(stripped)
     except json.JSONDecodeError:
-        return None
-    if isinstance(parsed, list):
-        keys = sorted({k for item in parsed[:25] if isinstance(item, dict) for k in item.keys()})
-        if len(parsed) < 8 and len(text) <= SMALL_OUTPUT_CHARS:
-            return None
-        return f"JSON array: {len(parsed)} items; keys: {', '.join(keys[:20])}"
-    if isinstance(parsed, dict):
-        keys = sorted(parsed.keys())
-        if len(keys) < 12 and len(text) <= SMALL_OUTPUT_CHARS:
-            return None
-        preview = ", ".join(str(k) for k in keys[:30])
-        return f"JSON object: {len(keys)} top-level keys; keys: {preview}"
-    return f"JSON {type(parsed).__name__}"
+        return False
+    return True
 
 
 def _verbatim(safe_raw: str, total_lines: int, max_chars: int) -> str:
-    """Return content-command output unsummarised, byte-truncated at the budget.
+    """Return content output unsummarised, byte-truncated at the budget.
 
-    Truncation is announced with the two numbers that make the loss legible and
-    bounded — how many lines came back and how many were withheld — so it can
-    never be read as "that was the whole file" (fleet-config#837).
+    Truncation is announced with the numbers that make the loss legible and
+    bounded, so it can never be read as "that was the whole file"
+    (fleet-config#837). Characters as well as lines: one long line cut at the
+    budget is "first 1 of 1 lines", which alone says nothing was withheld
+    (fleet-config#1269).
     """
     body = safe_raw.rstrip("\n")
     if len(body) <= max_chars:
@@ -480,8 +475,8 @@ def _verbatim(safe_raw: str, total_lines: int, max_chars: int) -> str:
     head = body[:max_chars].rstrip()
     kept = len(head.splitlines())
     return head + (
-        f"\n[fleet-context-filter: VERBATIM HEAD — first {kept} of {total_lines} lines; "
-        f"{total_lines - kept} withheld past the {max_chars}-char budget]"
+        f"\n[fleet-context-filter: VERBATIM HEAD — first {len(head)} of {len(body)} chars, "
+        f"{kept} of {total_lines} lines; the rest withheld past the {max_chars}-char budget]"
     )
 
 
@@ -500,13 +495,10 @@ def compress_output(
     raw_tokens = estimate_tokens(normalized)
     lines = safe_raw.splitlines()
 
-    if command_base(command) in CONTENT_COMMANDS:
+    if command_base(command) in CONTENT_COMMANDS or _is_json(safe_raw):
         compressed = _verbatim(safe_raw, len(lines), max_chars)
     else:
-        json_summary = _json_summary(safe_raw)
-        if json_summary:
-            candidate_lines = [json_summary]
-        elif len(safe_raw) <= SMALL_OUTPUT_CHARS and len(lines) <= max_lines:
+        if len(safe_raw) <= SMALL_OUTPUT_CHARS and len(lines) <= max_lines:
             candidate_lines = lines
         else:
             candidate_lines = command_specific_lines(command, lines) or []
@@ -555,4 +547,5 @@ def compress_output(
         duration_ms=duration_ms,
         raw_key=raw_key,
         secret_like=secret_like,
+        withheld=compressed.strip() != safe_raw.strip(),
     )

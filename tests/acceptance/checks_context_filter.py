@@ -289,6 +289,26 @@ def _context_filter_unit_checks() -> Tuple[int, int, int]:
         oversized.compressed.splitlines()[-1] if oversized.compressed else "<empty>",
     )
 
+    # (c2) JSON is payload too (fleet-config#1269): a key list in place of the
+    # values read as the whole result, and a single-line output never got the
+    # retrieve footer because its line count could not drop.
+    issue_json = json.dumps({"number": 1, "title": "t", "body": "body-sentinel " * 300})
+    json_result = _cf837.compress_output("gh issue view 1 --json number,title,body", issue_json)
+    check(
+        "context_filter: JSON output comes back verbatim, not as its key list (fleet-config#1269)",
+        json_result.compressed == issue_json and not getattr(json_result, "withheld", True),
+        json_result.compressed[:200],
+    )
+    huge_json = json.dumps([{"id": i, "note": "x" * 40} for i in range(1000)])
+    huge_result = _cf837.compress_output("gh api repos/o/r/issues", huge_json)
+    check(
+        "context_filter: one over-budget line is truncated with a char-counted marker (fleet-config#1269)",
+        getattr(huge_result, "withheld", False)
+        and huge_result.compressed.startswith(huge_json[:500])
+        and f"of {len(huge_json)} chars" in huge_result.compressed,
+        huge_result.compressed.splitlines()[-1] if huge_result.compressed else "<empty>",
+    )
+
     # (d) a backgrounded command is never wrapped: the harness imposes no cap on
     # one, so the wrapper's fixed 600s ceiling *introduces* a kill. A 10-minute
     # monitoring poll came back as `exit code 124` with the tick lost.
@@ -365,6 +385,29 @@ def _context_filter_unit_checks() -> Tuple[int, int, int]:
             and "raw_key=" in banner
             and "retrieve " in res.stdout,
             f"rc={res.returncode} banner={banner}",
+        )
+        # ...and so does a single line truncated at the char budget, whose
+        # line count cannot drop (fleet-config#1269).
+        one_line = "Write-Output ('[' + ((1..4000) -join ',') + ']')"
+        one_line_chars = len("[" + ",".join(str(i) for i in range(1, 4001)) + "]")
+        res = subprocess.run(
+            [
+                PYTHON,
+                str(HOOKS / "context_filter_cli.py"),
+                "run",
+                "--tool", "PowerShell",
+                "--mode", "rewrite",
+                "--encoded", base64.b64encode(one_line.encode("utf-8")).decode("ascii"),
+            ],
+            capture_output=True,
+            text=True,
+            env={**os.environ, "FLEET_CONTEXT_FILTER_DIR": tmp},
+            timeout=60,
+        )
+        check(
+            "context_filter_cli: a truncated single line still points at the full output (fleet-config#1269)",
+            res.returncode == 0 and f"of {one_line_chars} chars" in res.stdout and "retrieve " in res.stdout,
+            f"rc={res.returncode} tail={res.stdout.strip()[-300:]}",
         )
 
     # ---- skill helpers are never wrapped; ordinary commands still are ----
