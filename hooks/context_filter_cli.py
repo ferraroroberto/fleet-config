@@ -18,7 +18,6 @@ import subprocess
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
-from statistics import median
 from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -101,7 +100,12 @@ def _run_command(tool: str, command: str, cwd: str | None) -> subprocess.Complet
         args = [_lib.powershell_exe(), "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", command]
     elif tool.lower() == "bash":
         bash = shutil.which("bash")
-        args = [bash, "-lc", command] if bash else [command]
+        # Non-login: the body inherits the harness shell's environment, as it
+        # would unwrapped. A login shell re-sourced /etc/profile on every call
+        # (~280 ms) and diverged from that environment, e.g. LANG=en_US.UTF-8
+        # instead of the harness's C.UTF-8 changed `sort` and `wc -m` output
+        # (fleet-config#1272).
+        args = [bash, "-c", command] if bash else [command]
     else:
         args = [command]
     timeout = _timeout_seconds()
@@ -304,6 +308,10 @@ def _load_manifest(fixtures: Path) -> list[dict[str, Any]]:
 
 
 def run_eval(args: argparse.Namespace) -> int:
+    # Deferred: `run` sits in front of every wrapped shell call and never needs
+    # it (fleet-config#1272).
+    from statistics import median
+
     fixtures = Path(args.fixtures)
     cases = _load_manifest(fixtures)
     rows: list[dict[str, Any]] = []

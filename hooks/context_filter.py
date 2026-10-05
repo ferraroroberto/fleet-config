@@ -7,7 +7,6 @@ diagnostic lines, file paths, and exit-relevant summaries visible.
 
 from __future__ import annotations
 
-import hashlib
 import json
 import os
 import re
@@ -206,6 +205,11 @@ def _prune_old_blobs(target_dir: Path) -> None:
 
 def cache_raw_output(command: str, raw: str) -> str:
     """Persist raw output locally and return its content-addressed key."""
+    # Deferred: loading OpenSSL costs ~7 ms, and this module is imported by the
+    # hook on every shell call while only a withheld output reaches here
+    # (fleet-config#1272).
+    import hashlib
+
     stamp = str(time.time_ns())
     digest = hashlib.sha256((command + "\0" + stamp + "\0" + raw).encode("utf-8", "replace")).hexdigest()
     key = digest[:16]
