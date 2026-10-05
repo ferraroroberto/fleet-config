@@ -74,6 +74,31 @@ def _check_switch_on_accent(ctx: _ContractsCtx) -> List[dict]:
     return [_result("switch-on-accent", "WARN", f"switch on-track is not tokenized to the accent: {body.strip()[:60]}", ev)]
 
 
+_CLOSE_BG_RE = re.compile(r"--close-bg\s*:\s*([^;}]*)")
+
+
+def _check_icon_button_unpainted(ctx: _ContractsCtx) -> List[dict]:
+    # icon buttons draw nothing at rest (fleet-config#1259): the vendored header toggles and modal close
+    # paint `var(--close-bg, transparent)`, so the app's own `--close-bg` value decides, in every theme.
+    css = ctx.css_own
+    decls = list(_CLOSE_BG_RE.finditer(css))
+    if not decls:
+        if "var(--close-bg" in css:
+            return [_result("icon-button-unpainted", "PASS",
+                            "--close-bg is unset, so the vendored toggles and modal close take the transparent default")]
+        return [_result("icon-button-unpainted", "NA", "no --close-bg declared or read (no vendored header toggles or modal close)")]
+    for m in decls:
+        value = m.group(1).strip()
+        rgba = parse_color(value, {})
+        if value.lower() != "none" and (rgba is None or rgba[3] > 0):
+            return [_result("icon-button-unpainted", "FAIL",
+                            f"--close-bg: {value[:40]} paints the header toggles and modal close at rest — design.md's "
+                            "icon-button is a glyph on nothing; set --close-bg: transparent (or leave it unset)",
+                            _loc_at(css, m.start()))]
+    return [_result("icon-button-unpainted", "PASS", "--close-bg is transparent in every theme that sets it",
+                    _loc_at(css, decls[0].start()))]
+
+
 # An attribute-selector span (`input:not([type="checkbox"])`) is a *query*,
 # not a control. Blanked before the control scan, length- and newline-neutral
 # so `_evidence` still reports the right file:line (fleet-config#843).

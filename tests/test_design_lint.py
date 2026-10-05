@@ -339,6 +339,24 @@ check(run_contracts(".toast { background: #0969da; }\n")["toast-neutral"]["statu
 check(run_contracts(".row.success { border-color: var(--success); }\n")["toast-neutral"]["status"] == "NA",
       "toast-neutral: green on a non-toast rule is not a toast; no toast rule -> NA")
 
+# icon-button-unpainted: the vendored header toggles and modal close draw no fill at rest (#1259)
+_HEAD = ".home-head .home-toggle { background: var(--close-bg, transparent); }\n"
+for _label, _css in (
+        ("--close-bg: transparent in both themes",
+         ":root { --close-bg: transparent; }\n[data-theme=dark] { --close-bg: transparent; }\n" + _HEAD),
+        ("a zero-alpha rgba", ":root { --close-bg: rgba(0, 0, 0, 0); }\n" + _HEAD),
+        ("--close-bg left unset (the scaffold default)", _HEAD)):
+    _ib = run_contracts(_css)["icon-button-unpainted"]
+    check(_ib["status"] == "PASS", f"icon-button-unpainted: {_label} PASSes -- {_ib}")
+for _label, _css in (
+        ("the canvas-subtle fill in light", ":root { --close-bg: var(--card-off); }\n" + _HEAD),
+        ("a dark-only literal fill", ":root { --close-bg: transparent; }\n[data-theme=dark] { --close-bg: #30363d; }\n" + _HEAD)):
+    _ib = run_contracts(_css)["icon-button-unpainted"]
+    check(_ib["status"] == "FAIL" and (_ib.get("evidence") or "").startswith("s.css:"),
+          f"icon-button-unpainted: {_label} FAILs with evidence -- {_ib}")
+check(run_contracts(".card { background: var(--card); }\n")["icon-button-unpainted"]["status"] == "NA",
+      "icon-button-unpainted: no --close-bg declared or read -> NA")
+
 # --on is an app's own alias: judge the colour it resolves to, never the name (#1200)
 _on_acc = run_contracts(":root { --on: var(--accent); }\n.toggle.on { background: var(--on); }\n")["switch-on-accent"]
 check(_on_acc["status"] == "PASS", f"switch-on-accent: --on aliasing the accent PASSes -- {_on_acc}")

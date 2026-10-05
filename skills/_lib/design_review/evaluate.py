@@ -322,6 +322,7 @@ _POPULATIONS = {
 # metrics with no list of their own borrow the sample that explains a failure
 _SAMPLE_SOURCES: Dict[str, Callable[[dict], List[object]]] = {
     "text.min_px": lambda m: list(measure.metric_value(m, "text.under11") or []),
+    "controls.reference_pill_variants": lambda m: list(measure.metric_value(m, "controls.reference_pill_styles") or []),
     "layout.overflow_x": lambda m: [{"scroll_w": measure.metric_value(m, "layout.scroll_w"),
                                      "inner_w": measure.metric_value(m, "layout.inner_w")}],
 }
