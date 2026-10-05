@@ -496,11 +496,6 @@ def _js_timer_calls(text: str, fn: str = "setTimeout") -> List[Tuple[int, int, s
     return [(off, int(d.replace("_", "")), cb) for off, d, cb in _js_timer_args(text, fn) if re.fullmatch(r"\d[\d_]*", d)]
 
 
-def _js_timer_ms(text: str, fn: str = "setTimeout") -> List[Tuple[int, int]]:
-    """`(offset, ms)` for every `<fn>(cb, <ms>)`: the literal last argument of the call."""
-    return [(off, ms) for off, ms, _cb in _js_timer_calls(text, fn)]
-
-
 def _scopes(text: str) -> List[Tuple[int, int, str]]:
     """`(first_line, last_line, name)` of every function and module-level assignment, innermost last."""
     import ast
