@@ -394,6 +394,84 @@ def _unattended_worktree_mandate_check() -> Tuple[int, int]:
     return check.failures, check.total
 
 
+# Sentence-level scan for an instruction to delete a git lock. A sentence that
+# mentions a lock is flagged when a delete verb in it is not preceded, within
+# a short window, by a negation ("never delete", "no delete") or by a human
+# actor ("a human ... removes it") -- the two legitimate ways a skill talks
+# about removing one. Heuristic on purpose: it pins the shape the drift took
+# (#1243's "report it as a stale lock, delete it, retry"), not English at large.
+_SENTENCE_SPLIT_RE = re.compile(r"(?<=[.!?])\s+|\n\s*[-*]\s+|\n\n")
+_LOCK_RE = re.compile(r"index\.lock|\blocks?\b", re.IGNORECASE)
+_DELETE_VERB_RE = re.compile(
+    r"\b(delete[sd]?|deleting|remov(?:e|es|ed|ing)|rm|clear(?:s|ed|ing)?|unlink)\b|stale-cleared",
+    re.IGNORECASE,
+)
+_NEGATION_RE = re.compile(r"\b(never|not|no|don't|nothing|neither|nor|without|cannot)\b", re.IGNORECASE)
+# How far back from a delete verb a negation or "human" still governs it.
+_VERB_GOVERNOR_WINDOW = 60
+# `gh pr merge ... --merge` (a merge commit); `--merged` is a different flag.
+_MERGE_COMMIT_RE = re.compile(r"gh pr merge[^\n`]*--merge\b(?!d)")
+
+
+def _lock_delete_instructions(text: str) -> list[str]:
+    """Return every sentence in `text` that tells its reader to delete a lock."""
+    hits = []
+    for sentence in _SENTENCE_SPLIT_RE.split(text):
+        if not sentence or not _LOCK_RE.search(sentence):
+            continue
+        for verb in _DELETE_VERB_RE.finditer(sentence):
+            before = sentence[max(0, verb.start() - _VERB_GOVERNOR_WINDOW):verb.start()]
+            if not _NEGATION_RE.search(before) and "human" not in before.lower():
+                hits.append(" ".join(sentence.split())[:160])
+                break
+    return hits
+
+
+def _skill_git_rules_check() -> Tuple[int, int]:
+    """No skill tells an agent to delete an index.lock or merge-commit a PR
+    (fleet-config#1243).
+
+    Global CLAUDE.md: "Report a lock, never delete one -- it is another
+    process's file" (#667), and the pipeline squash-merges. Both drifted into
+    skill prose that runs unattended -- `/cleanup-fleet-all` deleted stale
+    locks and `/issue-finish` merged with `--merge` -- so the drift executed
+    rather than merely reading wrong. Scans every skill markdown file and the
+    workflow scripts; the scanner itself is pinned against fixed sentences so
+    a loosened heuristic can't pass by matching nothing. Returns the failure
+    count.
+    """
+    check = _Checker()
+
+    check("skill git rules: the scanner flags a delete-the-lock instruction",
+          bool(_lock_delete_instructions(
+              "Older than 5 minutes -> report it by name and age as a stale lock, delete it, retry the pull.")))
+    check("skill git rules: the scanner passes a prohibition and a human-actor clause",
+          not _lock_delete_instructions(
+              "**Never delete a lock from this skill**. The fix is a human confirming the "
+              "holder is dead, then removing it."))
+    check("skill git rules: the merge-commit pattern ignores --merged",
+          bool(_MERGE_COMMIT_RE.search("`gh pr merge 12 --merge`"))
+          and not _MERGE_COMMIT_RE.search("`gh pr merge 12 --squash`; git branch --merged main"))
+
+    files = sorted(
+        [p for root in ("skills", ".claude/skills") for p in (REPO / root).rglob("*.md")]
+        + list((REPO / ".claude" / "workflows").glob("*.js"))
+    )
+    lock_hits, merge_hits = [], []
+    for path in files:
+        text = path.read_text(encoding="utf-8")
+        rel = path.relative_to(REPO).as_posix()
+        lock_hits += [f"{rel}: {s}" for s in _lock_delete_instructions(text)]
+        merge_hits += [f"{rel}: {m.group(0)}" for m in _MERGE_COMMIT_RE.finditer(text)]
+
+    check(f"skill git rules: no skill instructs deleting an index.lock ({len(files)} files)",
+          not lock_hits, "\n".join(lock_hits))
+    check("skill git rules: every `gh pr merge` squash-merges, none uses --merge",
+          not merge_hits, "\n".join(merge_hits))
+
+    return check.failures, check.total
+
+
 def _acceptance_audit_wiring_check() -> Tuple[int, int]:
     """Acceptance is audited per criterion, unverifiable as its own state
     (fleet-config#958). The rule lives in skill prose that a context purge or

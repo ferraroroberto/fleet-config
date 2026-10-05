@@ -247,9 +247,9 @@ Decision below is driven by the project's `## CI expectations` block
   protection, the skip-rule must **fall back to watching** (`--admin` is out of
   scope). This skips only the *remote CI wait*; never the step-3 gate.
 - **Merge — the flag depends on the checkout mode** (from pre-flight):
-  - **Primary checkout:** `gh pr merge <PR> --merge --delete-branch` — merge
-    commit; branch deleted on both remote and local.
-  - **Linked worktree:** `gh pr merge <PR> --merge` — **no `--delete-branch`**.
+  - **Primary checkout:** `gh pr merge <PR> --squash --delete-branch` — squash
+    merge (the fleet pipeline's rule); branch deleted on both remote and local.
+  - **Linked worktree:** `gh pr merge <PR> --squash` — **no `--delete-branch`**.
     From inside a worktree that flag fails its *local* half every time
     (`'main' is already used by worktree at <primary>`): `gh` tries to check out
     the default branch to delete the ref, and the primary holds it. The remote
@@ -259,13 +259,14 @@ Decision below is driven by the project's `## CI expectations` block
     git push origin --delete <branch>
     git -C <repo> branch -D <branch>
     ```
-    **Gate the local delete on an ancestry check** — confirm the tip is already
-    in the default branch: `git -C <repo> branch --merged origin/<default>`
-    lists it, or `git -C <repo> diff --quiet origin/<default> <branch>` is
-    clean. Use `-D`, not `-d`: a **squash** merge rewrites the SHA, so `-d`'s
-    merged-check fails on a genuinely-merged branch. The ancestry check is what
-    makes `-D` safe — never skip it, never `-D` a tip you haven't confirmed
-    landed.
+    **Gate the local delete on a landed check** — confirm the tip's content is
+    already in the default branch: `git -C <repo> diff --quiet
+    origin/<default> <branch>` is clean. Not `git branch --merged`: the
+    squash merge rewrites the SHA, so the tip is never an ancestor of the
+    default branch and a genuinely-merged branch reads as unmerged
+    (fleet-config#567). The same rewrite is why it's `-D`, not `-d`. The landed
+    check is what makes `-D` safe — never skip it, never `-D` a tip you haven't
+    confirmed landed.
 - **Land + clean up, by checkout mode** (from pre-flight):
   - **Primary checkout:** before switching, guard against landing this merge on
     a tree that isn't this session's to touch — the claim system routes a

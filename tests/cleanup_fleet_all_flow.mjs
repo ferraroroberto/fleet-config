@@ -148,13 +148,14 @@ const check = (cond, msg) => { console.log((cond ? 'OK   ' : 'FAIL ') + msg); if
 }
 
 // --- Case 5: reported-only probes never gate a lane (#534) ----------------
-// A stale-and-cleared index.lock, a fast-forwarded behind-origin primary and a
-// zombie-pinned empty shell are all real conditions a human must see, and none
-// of them is residue. If any of them ever starts halting the run, this fails.
+// A stale index.lock (left for a human, #1243), the behind-origin check it
+// therefore cannot complete, and a zombie-pinned empty shell are all real
+// conditions a human must see, and none of them is residue. If any of them
+// ever starts halting the run, this fails.
 {
   const { sink, agentImpl } = tracker(l => reply(l, {
-    indexLock: 'stale-cleared', indexLockDetail: '4h12m old, no live git',
-    behindOrigin: 'fast-forwarded', behindOriginDetail: '11 behind, a1b2c3d->e4f5a6b',
+    indexLock: 'stale', indexLockDetail: '4h12m old, no live git',
+    behindOrigin: 'unknown', behindOriginDetail: '11 behind, stale index.lock in place',
     zombieShells: 'E:\\automation\\alpha-wt-1 (6 zombies, live=0)',
   }))
   sink.args = { issuesByBucket: ISSUES }
@@ -163,12 +164,12 @@ const check = (cond, msg) => { console.log((cond ? 'OK   ' : 'FAIL ') + msg); if
   const all = res.buckets.flatMap(b => b.results)
   check(all.length === 3 && all.every(r => r.residue === 'CLEAN'), 'reported-only probes leave residue CLEAN')
   const r = all[0]
-  check(r.indexLock === 'stale-cleared' && r.behindOriginDetail.includes('11 behind'),
+  check(r.indexLock === 'stale' && r.behindOriginDetail.includes('11 behind'),
     'index.lock + behind-origin verdicts reach the workflow result')
   check(typeof r.zombieShells === 'string' && r.zombieShells.includes('live=0'),
     'zombie-pinned shells are reported by path and count, not dropped')
   const logs = sink.logs.join('\n')
-  check(/index\.lock: stale-cleared/.test(logs) && /behind origin: fast-forwarded/.test(logs)
+  check(/index\.lock: stale —/.test(logs) && /behind origin: unknown/.test(logs)
     && /zombie-pinned shells/.test(logs), 'all three surface in the run log')
 }
 
@@ -225,8 +226,10 @@ const check = (cond, msg) => { console.log((cond ? 'OK   ' : 'FAIL ') + msg); if
   check(!/ls -d \/e\/automation\/\*-wt-\*/.test(p), 'no fleet-wide leftover-directory command')
   check(/never a fleet-wide/i.test(p) && /home-automation/.test(p),
     'the repo-scoped glob carries the why-comment (and the incident) so it is not "simplified"')
-  check(/index\.lock/.test(p) && /live-held/.test(p) && /stale-cleared/.test(p),
+  check(/index\.lock/.test(p) && /live-held/.test(p) && /"stale"/.test(p),
     'check 5 (stale index.lock, with a live-holder branch) is briefed')
+  check(!/stale-cleared/.test(p) && /Never delete an index\.lock/.test(p),
+    'check 5 reports a stale lock and never deletes it (#667, #1243)')
   check(/rev-list --count HEAD\.\.origin/.test(p) && /untrack_guard\.py fast-forward/.test(p) && !/pull --rebase/.test(p),
     'check 6 fast-forwards only, through the guarded merge --ff-only (#1086)')
   check(/never halt/i.test(p), 'checks 5 and 6 are explicitly non-halting')
