@@ -4,28 +4,6 @@ Versioned home for my user-scope [Claude Code](https://docs.claude.com/en/docs/c
 
 The hooks here are project-aware via a single `hooks/projects.toml` registry: generic at code level, per-project nuance (ports, pre-ship gate triggers, "never kill these ports") in one TOML file.
 
-Shared guards emit the calling harness's refusal format. Codex `PreToolUse` uses a structured denial; its installed-runtime control/refusal probe is documented in [Adding a coding harness](docs/adding-a-coding-harness.md#codex-refusal-conformance).
-
-Project and package skills now receive individual discovery links for Claude and Codex/Pi at their existing scope. `install.ps1` reconciles registered checkouts; `install.ps1 -ProjectRoot <checkout>` handles one checkout or worktree without changing user homes. Existing real sources and conflicting names are preserved and reported. See [scoped discovery and instruction verification](docs/install.md#scoped-project-discovery).
-
-Python syntax feedback covers every surviving Python target in a successful Codex patch, including renames. Unknown targets or outcomes are explicitly unverified; the [shared edit contract and disposable runtime probe](docs/adding-a-coding-harness.md#shared-edit-events-and-codex-syntax-feedback) document the supported payload.
-
-Codex also carries the applicable command and edit policies from Claude Code: GitHub body quoting, dated-doc blocking, branch-before-edit enforcement, local-hub routing, and browser-launch safety. Their observed block/advice semantics and explicit unsupported surfaces are recorded in the [cross-agent policy coverage table](docs/cross-agent-parity.md#command-and-edit-policy-coverage).
-
-Pi now invokes the shared command/edit guards through `pi/extensions/policy_hooks.ts`, preserving compression and lifecycle reporting. [Pi policy conformance](docs/adding-a-coding-harness.md#pi-policy-conformance) distinguishes installed-runtime evidence with deterministic model responses from subscription authentication.
-
-Shared issue/audit workflows bind delegation, result collection and questions to the current session through the [interactive capability contract](docs/workflow-capabilities.md). Claude and Codex native multi-worker proofs are recorded per surface; independent-review and human-review gates remain mandatory when tools are absent.
-
-Native Claude and Codex quota measurements now share a [versioned snapshot contract](docs/quota-snapshots.md). Claude publishes from its existing statusline; Codex refreshes on demand through its native account method. Sources retain their own windows, provenance and freshness, with unknown account scopes explicit and the legacy Claude cache preserved.
-
-An always-on [host stall probe](docs/stall-probe.md) logs every whole-box freeze over 1 s in UTC (scheduler, loopback network, and a per-volume disk read on E: and C:), with the machine's memory, disk, TCP, job and scheduled-task state captured as it ends, so the cause of the fleet-wide 7-25 s stalls can be named from evidence (fleet-config#1106).
-
-A [dead-code start beacon](docs/dead-code-beacon.md) records every interpreter start from a repo's `.venv` in a machine-local ledger. It is one reversible `.pth` file that never breaks its host. The entry-point inventory reads the ledger to move scripts only a human launches from `unknown` to `live` or `cold` over a 90-day window (fleet-config#1114; pilot: `automation`).
-
-Scheduled skills can now explicitly select Claude or Codex through one [shared runner](docs/scheduled-runners.md), with terminal evidence, delivery checks and owned-process cancellation. Windows launchers are created suspended so the venv's base interpreter inherits ownership before it can run; `tests/probe_scheduled_runner.py --ownership-only` checks the boundary without model calls. Existing Claude launchers remain unchanged; Pi/Grok and Codex delegated-child execution remain unverified.
-
-Opted-in conversations now normalize native Claude/Codex stored transcripts before shared capture and search. Exact harness/session identity keeps unrelated equal prompts separate and preserves Codex fork lineage; [capture setup, reader contract and native evidence](docs/conversation-capture.md) document the explicit Codex opt-in and current limits.
-
 ## Why this repo exists
 
 `~/.claude/` is a kitchen sink — cache, transcripts, plans — so it can't all be a git repo. But the *config* inside it (hooks, skills, the global `CLAUDE.md`) is real source code: it shapes every Claude session, breaks silently when typoed, and needs to be reviewed, diffed, and reverted like any other code. Before this repo, edits to `~/.claude/hooks/*` and friends were unversioned. Now they aren't.
@@ -62,6 +40,40 @@ work in this repo doesn't cost the whole catalogue:
 - **[`docs/architecture.mmd`](docs/architecture.mmd)** — this repo's own
   internal structure diagram, hand-authored and under a same-PR anti-staleness
   contract.
+
+Per-topic references that the intro used to carry, one file each:
+
+- **[`docs/adding-a-coding-harness.md`](docs/adding-a-coding-harness.md)** —
+  how shared guards emit each harness's refusal format ([Codex refusal
+  conformance](docs/adding-a-coding-harness.md#codex-refusal-conformance)),
+  the [shared edit contract and Codex syntax
+  feedback](docs/adding-a-coding-harness.md#shared-edit-events-and-codex-syntax-feedback)
+  (renames included; unknown targets or outcomes are unverified), and [Pi
+  policy conformance](docs/adding-a-coding-harness.md#pi-policy-conformance)
+  (`pi/extensions/policy_hooks.ts`).
+- **[`docs/cross-agent-parity.md`](docs/cross-agent-parity.md#command-and-edit-policy-coverage)**
+  — which command and edit policies Codex and Pi carry, with observed
+  block/advice semantics and explicit unsupported surfaces.
+- **[`docs/install.md`](docs/install.md#scoped-project-discovery)** — scoped
+  per-project skill discovery links (`install.ps1 -ProjectRoot <checkout>`).
+- **[`docs/workflow-capabilities.md`](docs/workflow-capabilities.md)** — the
+  interactive capability contract binding delegation, collection and
+  questions for shared issue/audit workflows; independent-review and
+  human-review gates stay mandatory when tools are absent.
+- **[`docs/quota-snapshots.md`](docs/quota-snapshots.md)** — the versioned
+  Claude/Codex quota snapshot contract.
+- **[`docs/stall-probe.md`](docs/stall-probe.md)** — the always-on host stall
+  probe for whole-box freezes (fleet-config#1106).
+- **[`docs/dead-code-beacon.md`](docs/dead-code-beacon.md)** — the reversible
+  `.pth` start beacon feeding the entry-point inventory (fleet-config#1114;
+  pilot: `automation`).
+- **[`docs/scheduled-runners.md`](docs/scheduled-runners.md)** — the shared
+  Claude/Codex scheduled-skill runner, with its ownership probe
+  (`tests/probe_scheduled_runner.py --ownership-only`). Pi/Grok and Codex
+  delegated-child execution remain unverified.
+- **[`docs/conversation-capture.md`](docs/conversation-capture.md)** —
+  native Claude/Codex transcript capture, the explicit Codex opt-in and
+  current limits.
 
 The rest of `docs/` is one file per durable topic — see the directory.
 
@@ -109,7 +121,7 @@ fleet-config/
 │   ├── index_lock_sessionstart.py     # SessionStart: report any fleet repo sitting on a stranded `.git/index.lock` (fleet-config#939)
 │   ├── context_filter.py              # local deterministic output compressor used by the context-filter hook/eval
 │   ├── context_filter_cli.py          # wrapper/eval CLI: shadow, rewrite, retrieve, fixture benchmark
-│   ├── context_filter_hook.py         # PreToolUse rewriter: runs supported commands through the compressor (mode: see Graduation above)
+│   ├── context_filter_hook.py         # PreToolUse rewriter: runs supported commands through the compressor (mode: see docs/hooks.md, Graduation)
 │   ├── restart_and_verify_webapp.py   # also exposed as /restart-webapp
 │   ├── notify_on_idle.py            # Notification hook (via run-hook.ps1): opt-in Telegram ping
 │   ├── codex_attention.py           # safe, redacted PermissionRequest + Stop question Telegram ping
