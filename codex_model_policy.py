@@ -92,8 +92,10 @@ def _merge_table(text: str, table: str | None, values: dict[str, str]) -> str:
                 line_end = "\r\n" if line.endswith("\r\n") else "\n"
                 output.append(f"{match.group(1)}{key} = {values[key]}{suffix}{line_end}")
                 seen.add(key)
-            continue
-        output.append(line)
+        else:
+            output.append(line)
+        # Also when the table's last line was itself a replaced managed key: the
+        # unseen keys still belong after it (fleet-config#1252).
         if index == end - 1:
             output.extend(f"{key} = {value}{newline}" for key, value in values.items() if key not in seen)
     if body_start == end:
