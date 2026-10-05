@@ -133,6 +133,12 @@ _WT_SEP = "-wt-"
 WT_PORT_BASE = 8500
 WT_PORT_SPAN = 500
 
+# Loopback connect timeout for `_port_is_free`, a stated bound rather than a
+# measured one: a local connect succeeds or is refused almost at once, so 0.2 s
+# is a generous ceiling. It decides a fact -- a connect that times out is a
+# non-zero `connect_ex`, so a listener too backed up to accept within it reads as free.
+PORT_PROBE_TIMEOUT_S = 0.2
+
 
 def _git(repo: Path, *args: str, check: bool = True) -> subprocess.CompletedProcess:
     return git_run.run_git(["-C", str(repo), *args], check=check)
@@ -141,7 +147,7 @@ def _git(repo: Path, *args: str, check: bool = True) -> subprocess.CompletedProc
 def _port_is_free(port: int) -> bool:
     """True if nothing is listening on 127.0.0.1:`port` right now."""
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-        sock.settimeout(0.2)
+        sock.settimeout(PORT_PROBE_TIMEOUT_S)
         return sock.connect_ex(("127.0.0.1", port)) != 0
 
 

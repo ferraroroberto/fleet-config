@@ -80,6 +80,10 @@ GLYPH_ICON_RE = GLYPH_ICON_RENDERED_RE
 _MEASURE_JS = r"""
 (params) => {
   const CAP = 80;
+  // The pairwise overlap test is O(n^2) over hit targets, so it scans only the first OVERLAP_SCAN_MAX of
+  // them: a stated cost bound (400 targets = ~80k pair checks), well above a normal screen. `targets.overlap_scan_truncated`
+  // records when it bit, so targets past it are known to be unchecked rather than silently skipped.
+  const OVERLAP_SCAN_MAX = 400;
   const out = {};
   const section = (name, fn) => { try { out[name] = fn(); } catch (e) { out[name] = {error: String(e && e.message || e).slice(0, 300)}; } };
 
@@ -299,7 +303,7 @@ _MEASURE_JS = r"""
         const meet = !(a2.rr <= b2.l || b2.rr <= a2.l || a2.b <= b2.t || b2.b <= a2.t);
         return meet && meetsInView(a2, b2) && coveredInView(a2, b2);
       } finally { saved.forEach(([e, top, left]) => e.scrollTo({top, left, behavior: 'instant'})); } };
-    const overlaps = [], coveredPairs = []; let overlapCount = 0, coveredCount = 0; const n = Math.min(hits.length, 400);
+    const overlaps = [], coveredPairs = []; let overlapCount = 0, coveredCount = 0; const n = Math.min(hits.length, OVERLAP_SCAN_MAX);
     for (let i = 0; i < n; i++) for (let j = i + 1; j < n; j++) { const a = hits[i], b = hits[j];
       if (a.el.contains(b.el) || b.el.contains(a.el)) continue;
       const sep = a.rr <= b.l || b.rr <= a.l || a.b <= b.t || b.b <= a.t;
@@ -309,6 +313,7 @@ _MEASURE_JS = r"""
     const primary = q(params.primarySelector).map(el => { const r = el.getBoundingClientRect(); return {sel: sel(el), label: txt(el).slice(0,30), h: Math.round(r.height), w: Math.round(r.width)}; });
     const inSummary = q('summary').reduce((acc, s) => acc + s.querySelectorAll(params.interactive.replace(/summary,\s*/, '')).length, 0);
     return { total: els.length, small: small.slice(0,CAP), small_count: small.length, overlaps, overlap_count: overlapCount,
+      overlap_scan_truncated: hits.length > OVERLAP_SCAN_MAX,
       covered: coveredPairs, covered_count: coveredCount,
       primary: primary.slice(0,CAP), primary_min_height: primary.length ? Math.min(...primary.map(p => p.h)) : null, in_summary: inSummary };
   });

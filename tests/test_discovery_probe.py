@@ -53,16 +53,23 @@ class DiscoveryProbeTests(unittest.TestCase):
             def run():
                 result = subprocess.CompletedProcess([], 0, "\n".join(json.dumps(r) for r in records), "")
                 with patch.object(probe, "_run", return_value=result), patch.object(probe, "_version", return_value="fixture"), patch.object(probe.shutil, "which", return_value="fixture"):
-                    return probe._codex_model_instructions({"root": root, "package": package}, "fixture")["status"]
+                    return probe._codex_model_instructions({"root": root, "package": package}, "fixture")
 
-            self.assertEqual(run(), "verified")
+            self.assertEqual(run()["status"], "verified")
+            self.assertTrue(run()["root_target_eof_loaded"] and run()["nested_target_eof_loaded"])
+            command["aggregated_output"] = "CLAUDE_ROOT_EOF_748"
+            partial = run()
+            self.assertEqual(partial["status"], "failed")
+            self.assertTrue(partial["root_target_eof_loaded"])
+            self.assertFalse(partial["nested_target_eof_loaded"])
+            command["aggregated_output"] = expected.replace(",", "\n")
             command["command"] = command["command"].replace("/", "\\\\")
-            self.assertEqual(run(), "verified")
+            self.assertEqual(run()["status"], "verified")
             command["exit_code"] = 1
-            self.assertEqual(run(), "unknown")
+            self.assertEqual(run()["status"], "unknown")
             command["exit_code"] = 0
             command["aggregated_output"] = "no marker was read"
-            self.assertEqual(run(), "failed")
+            self.assertEqual(run()["status"], "failed")
 
     def test_full_proof_and_missing_required_client_are_nonpassing(self):
         result = {"skills": [{"client": "claude", "status": "verified"},

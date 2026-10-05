@@ -264,6 +264,12 @@ ensure_utf8_stdio()
 DEFAULT_BASE_URL = "https://127.0.0.1:8445"
 DEFAULT_OWNER = "ferraroroberto"
 DEFAULT_TAIL = 2000
+# Worker cap used when the launcher's /api/board/chief/settings carries no
+# `worker_cap`. The 3 is the default the /chief SKILL.md documents ("default
+# cap 3") and has been in this helper since it was extracted (#447). An
+# explicit 0 is a real setting and fails closed (#709), so this applies only
+# to an absent value.
+DEFAULT_WORKER_CAP = 3
 DEFAULT_VERIFY_TIMEOUT = 20.0
 
 LOOPBACK_HOSTS = {"127.0.0.1", "::1", "localhost"}
@@ -1262,7 +1268,7 @@ def cmd_dispatch(args: argparse.Namespace) -> int:
     columns = board.get("columns") or {}
     settings = _request(args.base_url, "/api/board/chief/settings")
     _worker_cap_raw = (settings.get("settings") or {}).get("worker_cap")
-    worker_cap = int(_worker_cap_raw) if _worker_cap_raw is not None else 3
+    worker_cap = int(_worker_cap_raw) if _worker_cap_raw is not None else DEFAULT_WORKER_CAP
 
     self_sid = caller_session_id()
     reason = refuse_dispatch(

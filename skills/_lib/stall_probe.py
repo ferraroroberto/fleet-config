@@ -77,6 +77,12 @@ DISK_DIR_NAME = ".fleet-stall-probe"  # at the volume root, outside the repos' t
 DISK_FILE_NAME = "disk-probe.bin"
 HEARTBEAT_S = 300.0
 EVIDENCE_COOLDOWN_S = 30.0
+# Evidence-call timeouts (seconds), stated bounds rather than measured ones: an always-on probe must
+# never hang on a probe that is itself stalling, so each is a generous ceiling over a healthy run.
+POWERSHELL_EVIDENCE_TIMEOUT_S = 90  # activity and power-event queries: generous bound for a cold PowerShell start plus an event-log read
+HWINFO_QUERY_TIMEOUT_S = 30         # one HWiNFO process lookup, so a tighter ceiling than the event-log queries
+NETSTAT_TIMEOUT_S = 30              # one `netstat -ano -p tcp` on a busy box
+JOBS_API_TIMEOUT_S = 20             # one loopback call to the launcher jobs API
 SUSPEND_SHARE = 0.5     # a gap is a suspend when more than this share of it was machine sleep
 POWER_SETTLE_S = 8.0    # Power-Troubleshooter logs the wake a few seconds after it
 POWER_LOOKBACK_S = 30.0
@@ -208,7 +214,7 @@ def memory_status() -> Dict[str, Any]:
 def tcp_states() -> Dict[str, Any]:
     """Counts per TCP state from one `netstat -ano -p tcp` (port-exhaustion check, #440)."""
     res = subprocess.run(["netstat", "-ano", "-p", "tcp"], capture_output=True, text=True,
-                         encoding="oem", errors="replace", timeout=30, creationflags=NO_WINDOW)
+                         encoding="oem", errors="replace", timeout=NETSTAT_TIMEOUT_S, creationflags=NO_WINDOW)
     counts: Dict[str, int] = {}
     for line in res.stdout.splitlines():
         parts = line.split()
@@ -220,7 +226,7 @@ def tcp_states() -> Dict[str, Any]:
 def running_jobs(url: str = LAUNCHER_JOBS_URL) -> Any:
     ctx = ssl.create_default_context()
     ctx.check_hostname, ctx.verify_mode = False, ssl.CERT_NONE
-    with urllib.request.urlopen(url, timeout=20, context=ctx) as resp:
+    with urllib.request.urlopen(url, timeout=JOBS_API_TIMEOUT_S, context=ctx) as resp:
         jobs = json.loads(resp.read().decode("utf-8")).get("jobs") or []
     return sorted(str(job.get("id")) for job in jobs if job.get("running") is True)
 
@@ -236,7 +242,7 @@ def run_powershell(script: str, timeout: float) -> Union[str, Dict[str, Any]]:
 
 
 def recent_activity() -> Any:
-    out = run_powershell(_ACTIVITY_PS, 90)
+    out = run_powershell(_ACTIVITY_PS, POWERSHELL_EVIDENCE_TIMEOUT_S)
     if isinstance(out, dict):
         return out
     return json.loads(out) if out.strip() else {}
@@ -254,7 +260,7 @@ def power_events(start_wall: float, end_wall: float) -> Dict[str, Any]:
     """The System log's sleep/resume events between two wall-clock times, plus the sleep reason and
     wake source pulled out of them (`None` when no event carries one -- not 'no sleep')."""
     ps = _POWER_PS.format(start=utc(start_wall - POWER_LOOKBACK_S), end=utc(end_wall))
-    out = run_powershell(ps, 90)
+    out = run_powershell(ps, POWERSHELL_EVIDENCE_TIMEOUT_S)
     if isinstance(out, dict):
         return out
     parsed = json.loads(out) if out.strip() else []
@@ -289,7 +295,7 @@ def parse_hwinfo(text: str) -> Dict[str, Any]:
 
 
 def hwinfo_process() -> Dict[str, Any]:
-    out = run_powershell(_HWINFO_PS, 30)
+    out = run_powershell(_HWINFO_PS, HWINFO_QUERY_TIMEOUT_S)
     if isinstance(out, dict):
         return out
     return parse_hwinfo(out)

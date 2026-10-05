@@ -54,6 +54,12 @@ def _is_git_commit(cmd: str) -> bool:
     return "git" in cmd and "commit" in cmd
 
 
+# Staged-diff timeout, a stated bound rather than a measured one: this runs on every commit in every
+# repo, so a hung `git diff --cached` may stall the commit by at most this long, after which `_staged_diff`
+# degrades to scanning just the command string.
+STAGED_DIFF_TIMEOUT_S = 10
+
+
 def _staged_diff(repo_cwd: Path) -> str:
     """Return the staged diff for the repo at ``repo_cwd`` (best-effort).
 
@@ -69,7 +75,7 @@ def _staged_diff(repo_cwd: Path) -> str:
     in that repo while every read keeps exiting 0 (fleet-config#667).
     """
     try:
-        res = _lib.run_git(["-C", str(repo_cwd), "diff", "--cached"], timeout=10)
+        res = _lib.run_git(["-C", str(repo_cwd), "diff", "--cached"], timeout=STAGED_DIFF_TIMEOUT_S)
     except (OSError, subprocess.SubprocessError):
         return ""
     return res.stdout or ""

@@ -562,6 +562,14 @@ _TRANSIENT_GH_RE = re.compile(
 )
 _GH_RETRY_BACKOFF_SECONDS = 2.0
 
+# `gh ... --limit` caps, both stated bounds rather than measured ones.
+# OPEN_ISSUE_FETCH_LIMIT is well above any repo's open-issue count, so the
+# managed-issue lookup sees every candidate. MERGED_PR_FETCH_LIMIT is the
+# self-fix-churn window: `audit_only_churn` fails closed on any PR outside it,
+# so this number decides how long a repo stays audit-eligible.
+OPEN_ISSUE_FETCH_LIMIT = 300
+MERGED_PR_FETCH_LIMIT = 100
+
 
 def gh(args: list[str], *, _retried: bool = False) -> str:
     """The `gh` shell-out — public (fleet-config#502): sibling helpers
@@ -584,7 +592,7 @@ def gh(args: list[str], *, _retried: bool = False) -> str:
 def _list_open(repo: str) -> list[dict]:
     out = gh([
         "issue", "list", "--repo", repo, "--state", "open",
-        "--limit", "300", "--json", "number,title,body",
+        "--limit", str(OPEN_ISSUE_FETCH_LIMIT), "--json", "number,title,body",
     ])
     return json.loads(out) if out else []
 
@@ -764,7 +772,7 @@ def cmd_close(repo: str, kind: str, comment: str) -> None:
 
 def _fetch_merged_prs(repo: str) -> list[dict]:
     out = gh([
-        "pr", "list", "--repo", repo, "--state", "merged", "--limit", "100",
+        "pr", "list", "--repo", repo, "--state", "merged", "--limit", str(MERGED_PR_FETCH_LIMIT),
         "--json", "number,mergeCommit,closingIssuesReferences,headRefName,additions,deletions",
     ])
     return json.loads(out) if out else []
