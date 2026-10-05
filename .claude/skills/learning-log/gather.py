@@ -56,6 +56,14 @@ HORIZON_HEADER = "## Horizon → next week"
 # cap) while keeping the body well under the limit even before dedup trims it
 # further.
 ARCHIVE_CAP = 150
+# `gh ... list --limit` caps, stated bounds rather than measured ones. The
+# window is NOT uncapped: a repo with more merged PRs / closed issues than
+# PER_REPO_LIST_LIMIT, or an owner with more public repos than REPO_LIST_LIMIT,
+# is silently truncated by `gh`, so a `--since` backfill can under-count.
+# 400 per repo is generous for one weekly window; 200 repos is well above the
+# fleet's size.
+PER_REPO_LIST_LIMIT = 400
+REPO_LIST_LIMIT = 200
 # The fleet architecture map regenerated weekly by /system-map (cross-linked, not owned here).
 FLEET_MAP_URL = "https://github.com/ferraroroberto/fleet-config/blob/main/architecture/system-map.png"
 
@@ -283,16 +291,16 @@ def list_repos(owner: str) -> list[str] | None:
     # Public repos only — the learning log + its stats are published in a public
     # ledger issue, so private-repo activity (and its names) is never in scope.
     data = _gh_json(["repo", "list", owner, "--no-archived", "--source", "--visibility", "public",
-                     "--limit", "200", "--json", "name"])
+                     "--limit", str(REPO_LIST_LIMIT), "--json", "name"])
     return [r["name"] for r in data] if isinstance(data, list) else None
 
 
 def gather_repo(owner: str, repo: str, since: str) -> tuple[list[dict], list[dict]] | None:
     """This repo's window, or ``None`` when either ``gh`` read failed."""
     full = f"{owner}/{repo}"
-    prs_raw = _gh_json(["pr", "list", "--repo", full, "--state", "merged", "--limit", "400",
+    prs_raw = _gh_json(["pr", "list", "--repo", full, "--state", "merged", "--limit", str(PER_REPO_LIST_LIMIT),
                         "--json", "number,title,additions,deletions,labels,mergedAt,url"])
-    issues_raw = _gh_json(["issue", "list", "--repo", full, "--state", "closed", "--limit", "400",
+    issues_raw = _gh_json(["issue", "list", "--repo", full, "--state", "closed", "--limit", str(PER_REPO_LIST_LIMIT),
                            "--json", "number,title,labels,closedAt,url"])
     if not isinstance(prs_raw, list) or not isinstance(issues_raw, list):
         return None
