@@ -249,6 +249,11 @@ window.CONFIG = {
       "sched": true
     },
     {
+      "nm": "fleet-10x",
+      "ds": "Ask every active fleet repo \"how could this app be 10x better, even at twice the effort?\" — one read-only Sonnet researcher per r…",
+      "sched": false
+    },
+    {
       "nm": "fleet-health",
       "ds": "Weekly hardware health checkup of every fleet machine — capture each box's resource envelope through its own hub, diff against la…",
       "sched": true
@@ -303,6 +308,7 @@ window.CONFIG = {
       "items": [
         "check-ip",
         "newsletter-triage",
+        "podcast",
         "schedule-autoheal"
       ]
     },

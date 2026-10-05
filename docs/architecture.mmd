@@ -133,6 +133,7 @@ report.py: budgets.toml verdict · ledger under ~/.claude/hooks/state/perf-revie
     CONFIGMAP["config-map"]
     FLEETHEALTH["fleet-health\ncapture.py · ledger.py"]
     SOTAWATCH["sota-watch\nwatchlist.toml · watchlist.py"]
+    FLEET10X["fleet-10x\nfleet10x.py select · brief · rank · footer\nSonnet researcher per repo → Opus synthesis"]
     PROMPTAUDIT["prompt-audit\nrules.md · sources.toml · audit.py → prompt_audit/ package (#931) · delivery_check.py\nfreshness gate → lint + judgment → digest"]
     OTHERFLEET["insights-weekly · learning-log"]
     CHIEF["chief\nstanding Board-chat brain — app-launcher-spawned session,\nnot for ad-hoc invocation"]
@@ -172,6 +173,9 @@ report.py: budgets.toml verdict · ledger under ~/.claude/hooks/state/perf-revie
   FLEETHEALTH -->|appends| HEALTHLEDGER
   SOTALEDGER["sota-watch ledger issue (audit-managed)\n+ ~/.claude/sota-watch/state.json — never committed"]
   SOTAWATCH -->|deterministic upsert via audit_issue.py| LIB
+  TENXREPORT["~/.claude/hooks/state/fleet-10x/YYYY-MM-DD/\nbriefs · repos/*.json · ranked.md · report.md — never committed"]
+  FLEET10X -->|fleet_repo_scan · fleet_toml · quota_snapshot| LIB
+  FLEET10X -->|writes| TENXREPORT
   SOTAWATCH -->|run digest comments| SOTALEDGER
   PROMPTLEDGER["prompt-audit ledger issue (audit-managed)\nguide baselines + file-hash table · digest comments\n+ ~/.claude/prompt-audit/state.json — never committed"]
   PROMPTAUDIT -->|fleet membership · audit_issue.py · shared description measurement| LIB
