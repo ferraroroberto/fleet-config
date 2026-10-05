@@ -32,7 +32,8 @@ It assigns no status of its own.
   `browser_scheme`, else the `port` its own `.fleet.toml` declares with the scheme probed on that loopback port
   (facilitation-suite declares only the latter). No argument → the current repo.
 - `file` → after measuring, upsert the repo's one managed `perf-review`
-  issue (step 4). Without it, step 4 is a dry run.
+  issue (step 4, `--apply`). Without it, run step 4's dry run: it prints the
+  plan and the issue body and writes nothing.
 
 ## Steps
 
@@ -187,10 +188,11 @@ Summarize to the user:
 - the ranked fixes with their pattern ids and rough LOC;
 - what changed since the last run (`DIFF`): `fixed`, `regressed` (a status flip) and `slower_p95_ms`, an endpoint whose p95 rose 25% and 10 ms or more since the last run **even while it stays inside its budget**. Say it as a regression: parking-manager's `/` went 31 to 43 ms under a 50 ms budget after a per-request fingerprint, every status stayed `pass`, and `regressed=none` read clean.
 
-Then stop. Each fix ships through the target repo's own issue → branch → PR
+Then do step 4: its dry run without `file`, its `--apply` with `file`. Then stop.
+Each fix ships through the target repo's own issue → branch → PR
 → gate; this skill never edits the target.
 
-### 4. File (`file` only)
+### 4. File (`--apply` only with `file`; otherwise the dry run)
 
 ```
 ... perf_review file <repo>            # dry run: prints the plan and the body
