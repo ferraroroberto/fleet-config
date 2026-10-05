@@ -19,7 +19,13 @@ import tomllib
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from config_edit import ASSIGNMENT_RE, TABLE_RE, atomic_write, inline_comment  # noqa: E402
+from config_edit import (  # noqa: E402
+    ASSIGNMENT_RE,
+    TABLE_RE,
+    atomic_write,
+    default_codex_config_path,
+    inline_comment,
+)
 sys.path.insert(0, str(Path(__file__).resolve().parent / "skills" / "_lib"))
 from no_window import NO_WINDOW  # noqa: E402
 
@@ -36,13 +42,6 @@ ROLE_SPECS = {
 
 class PolicyError(ValueError):
     """Raised when the policy cannot be safely validated or applied."""
-
-
-def default_config_path() -> Path:
-    """Return the user-level Codex config path, respecting ``CODEX_HOME``."""
-
-    home = os.environ.get("CODEX_HOME")
-    return Path(home) / "config.toml" if home else Path.home() / ".codex" / "config.toml"
 
 
 def default_policy_root() -> Path:
@@ -244,7 +243,7 @@ def _parser() -> argparse.ArgumentParser:
     action = parser.add_mutually_exclusive_group(required=True)
     action.add_argument("--apply", action="store_true", help="atomically reconcile the user config")
     action.add_argument("--check", action="store_true", help="validate and report whether reconciliation is needed")
-    parser.add_argument("--config", type=Path, default=default_config_path())
+    parser.add_argument("--config", type=Path, default=default_codex_config_path())
     parser.add_argument("--policy-root", type=Path, default=default_policy_root())
     parser.add_argument("--codex", default="codex", help="Codex executable used for disposable validation")
     return parser

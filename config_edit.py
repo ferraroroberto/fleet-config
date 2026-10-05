@@ -4,7 +4,8 @@
 edit a user-level config file in place. They share the atomic-write sequence
 and the line-oriented TOML table/assignment regexes, so both live here once —
 the third-caller rule from the global CLAUDE.md. The one quote- and
-comment-aware TOML scanner lives here too (fleet-config#1062).
+comment-aware TOML scanner lives here too (fleet-config#1062), and so does
+the `CODEX_HOME`-aware Codex config path all three resolve.
 """
 
 from __future__ import annotations
@@ -106,3 +107,9 @@ def atomic_write(path: Path, text: str) -> None:
     finally:
         if temporary is not None and temporary.exists():
             temporary.unlink()
+
+
+def default_codex_config_path() -> Path:
+    """Return Codex's user config path, respecting ``CODEX_HOME``."""
+    codex_home = os.environ.get("CODEX_HOME")
+    return Path(codex_home) / "config.toml" if codex_home else Path.home() / ".codex" / "config.toml"
