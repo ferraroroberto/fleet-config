@@ -275,12 +275,16 @@ def walk_context(pw, device: str, theme: str, args: argparse.Namespace, script: 
     """Every screen for one device x theme leg."""
     profile = plan.DEVICES[device]
     screens: List[Dict[str, object]] = []
+
+    def failed(view: str, kind: str, reason: str, exc: BaseException, status: str = "error") -> None:
+        """Record a screen that could not be captured; the caller logs it, at the level its arm warrants."""
+        screens.append(_record(id=plan.screen_id(device, theme, view), device=device, theme=theme, view=view,
+                               kind=kind, status=status, reason=reason, error=str(exc)[:300]))
+
     try:
         browser = getattr(pw, profile["engine"]).launch()
     except Exception as exc:  # noqa: BLE001 — a missing engine is a per-device fact, not a crash
-        screens.append(_record(id=plan.screen_id(device, theme, "root"), device=device, theme=theme,
-                               view="root", kind="tab", status="error", reason="BROWSER_FAILED",
-                               error=str(exc)[:300]))
+        failed("root", "tab", "BROWSER_FAILED", exc)
         return screens
     ctx_args: dict = dict(pw.devices[profile["descriptor"]]) if "descriptor" in profile else {"viewport": dict(profile["viewport"])}
     ctx = browser.new_context(ignore_https_errors=True, color_scheme=theme, **ctx_args)
@@ -318,12 +322,37 @@ def walk_context(pw, device: str, theme: str, args: argparse.Namespace, script: 
         stamp_theme()
         page.wait_for_timeout(SETTLE_MS)
 
+    def capture(sid: str, view: str, kind: str, before_record: Optional[Callable[[], None]] = None) -> None:
+        """Screenshot, open the scope's details, measure and record the screen in front of the walk.
+
+        `before_record` runs after the theme is read and before the record lands (a dialog closes there).
+        """
+        shot = _shot(page, shots, sid)
+        full, note = _open_scope_details(page, shots, sid, retouch)
+        metrics = page.evaluate(script, params)
+        observed = theme_fields()
+        if before_record:
+            before_record()
+        screens.append(_record(id=sid, device=device, theme=theme, view=view, kind=kind,
+                               screenshot=shot, screenshot_full=full, note=note, metrics=metrics, **observed))
+        log.info("ok %s", sid)
+
+    def step_failed(sid: str, view: str, exc: Exception, absent: type, absent_reason: str) -> None:
+        """The Settings gear's and the extra steps' shared arms: target absent, refused by no_go, or failed."""
+        if isinstance(exc, absent):
+            failed(view, "step", absent_reason, exc, status="absent")
+            log.info("absent %s: %s", sid, exc)
+        elif isinstance(exc, NoGo):
+            failed(view, "step", "NO_GO", exc)
+            log.warning("NO_GO %s: %s", sid, exc)
+        else:
+            failed(view, "step", classify_error(exc), exc)
+            log.warning("FAIL %s: %s", sid, str(exc)[:200])
+
     try:
         open_base()
     except Exception as exc:  # noqa: BLE001
-        screens.append(_record(id=plan.screen_id(device, theme, "root"), device=device, theme=theme,
-                               view="root", kind="tab", status="error", reason=classify_error(exc),
-                               error=str(exc)[:300]))
+        failed("root", "tab", classify_error(exc), exc)
         ctx.close()
         browser.close()
         return screens
@@ -347,9 +376,7 @@ def walk_context(pw, device: str, theme: str, args: argparse.Namespace, script: 
             log.info("ok %s", sid)
         except Exception as exc:  # noqa: BLE001 — the walk must continue past one broken tab
             reason = classify_error(exc)
-            screens.append(_record(id=sid, device=device, theme=theme, view=view, kind="tab",
-                                   status="error", reason="TAB_FAILED" if reason == "RENDER_FAILED" else reason,
-                                   error=str(exc)[:300]))
+            failed(view, "tab", "TAB_FAILED" if reason == "RENDER_FAILED" else reason, exc)
             log.warning("FAIL %s: %s", sid, str(exc)[:200])
 
     for did in page.evaluate(_DIALOG_IDS_JS) or []:
@@ -358,17 +385,9 @@ def walk_context(pw, device: str, theme: str, args: argparse.Namespace, script: 
         try:
             page.evaluate("id => document.getElementById(id).showModal()", did)
             page.wait_for_timeout(DIALOG_SETTLE_MS)
-            shot = _shot(page, shots, sid)
-            full, note = _open_scope_details(page, shots, sid, retouch)
-            metrics = page.evaluate(script, params)
-            observed = theme_fields()
-            page.evaluate("id => document.getElementById(id).close()", did)
-            screens.append(_record(id=sid, device=device, theme=theme, view=view, kind="dialog",
-                                   screenshot=shot, screenshot_full=full, note=note, metrics=metrics, **observed))
-            log.info("ok %s", sid)
+            capture(sid, view, "dialog", lambda: page.evaluate("id => document.getElementById(id).close()", did))
         except Exception as exc:  # noqa: BLE001
-            screens.append(_record(id=sid, device=device, theme=theme, view=view, kind="dialog",
-                                   status="error", reason="DIALOG_FAILED", error=str(exc)[:300]))
+            failed(view, "dialog", "DIALOG_FAILED", exc)
             log.warning("FAIL %s: %s", sid, str(exc)[:200])
 
     def refuse_no_go(loc, label: str):
@@ -402,24 +421,9 @@ def walk_context(pw, device: str, theme: str, args: argparse.Namespace, script: 
             raise GearAbsent("no visible button named Settings") from exc
         refuse_no_go(gear, "the Settings gear").click()
         page.wait_for_timeout(STEP_SETTLE_MS)
-        shot = _shot(page, shots, gear_sid)
-        full, note = _open_scope_details(page, shots, gear_sid, retouch)
-        metrics = page.evaluate(script, params)
-        screens.append(_record(id=gear_sid, device=device, theme=theme, view=gear_view, kind="step",
-                               screenshot=shot, screenshot_full=full, note=note, metrics=metrics, **theme_fields()))
-        log.info("ok %s", gear_sid)
-    except GearAbsent as exc:
-        screens.append(_record(id=gear_sid, device=device, theme=theme, view=gear_view, kind="step",
-                               status="absent", reason="SETTINGS_GEAR_ABSENT", error=str(exc)[:300]))
-        log.info("absent %s: %s", gear_sid, exc)
-    except NoGo as exc:
-        screens.append(_record(id=gear_sid, device=device, theme=theme, view=gear_view, kind="step",
-                               status="error", reason="NO_GO", error=str(exc)[:300]))
-        log.warning("NO_GO %s: %s", gear_sid, exc)
+        capture(gear_sid, gear_view, "step")
     except Exception as exc:  # noqa: BLE001
-        screens.append(_record(id=gear_sid, device=device, theme=theme, view=gear_view, kind="step",
-                               status="error", reason=classify_error(exc), error=str(exc)[:300]))
-        log.warning("FAIL %s: %s", gear_sid, str(exc)[:200])
+        step_failed(gear_sid, gear_view, exc, GearAbsent, "SETTINGS_GEAR_ABSENT")
 
     for step in review.get("extra_steps", []) or []:
         if not isinstance(step, dict) or not step.get("id"):
@@ -450,24 +454,9 @@ def walk_context(pw, device: str, theme: str, args: argparse.Namespace, script: 
             for selector in clicks:
                 guarded(selector).click()
                 page.wait_for_timeout(STEP_SETTLE_MS)
-            shot = _shot(page, shots, sid)
-            full, note = _open_scope_details(page, shots, sid, retouch)
-            metrics = page.evaluate(script, params)
-            screens.append(_record(id=sid, device=device, theme=theme, view=view, kind="step",
-                                   screenshot=shot, screenshot_full=full, note=note, metrics=metrics, **theme_fields()))
-            log.info("ok %s", sid)
-        except TargetAbsent as exc:
-            screens.append(_record(id=sid, device=device, theme=theme, view=view, kind="step",
-                                   status="absent", reason="STEP_TARGET_ABSENT", error=str(exc)[:300]))
-            log.info("absent %s: %s", sid, exc)
-        except NoGo as exc:
-            screens.append(_record(id=sid, device=device, theme=theme, view=view, kind="step",
-                                   status="error", reason="NO_GO", error=str(exc)[:300]))
-            log.warning("NO_GO %s: %s", sid, exc)
+            capture(sid, view, "step")
         except Exception as exc:  # noqa: BLE001
-            screens.append(_record(id=sid, device=device, theme=theme, view=view, kind="step",
-                                   status="error", reason=classify_error(exc), error=str(exc)[:300]))
-            log.warning("FAIL %s: %s", sid, str(exc)[:200])
+            step_failed(sid, view, exc, TargetAbsent, "STEP_TARGET_ABSENT")
 
     ctx.close()
     browser.close()
