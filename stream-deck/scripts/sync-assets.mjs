@@ -97,7 +97,7 @@ function validateTrayTarget(target, projects, io, errors) {
   };
 }
 
-// The apps an http-action key may call (src/types.ts ACTION_APPS, fleet-config#1006).
+// The apps an http-action key may call: the runtime list behind src/types.ts's ActionApp (fleet-config#1006).
 const ACTION_APPS = ["home-automation", "facilitation-suite"];
 
 function validateHttpActionTarget(target, errors) {
