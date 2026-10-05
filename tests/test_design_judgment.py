@@ -51,7 +51,7 @@ SEED_IDS = [f"J-{i:02d}" for i in range(1, 11)]
 
 # ---- the checklist in the rubric ---------------------------------------------
 
-check(rubric.version == "1.15.0", "rubric at 1.15.0 (the [[judgment]] checklist arrived in 1.2.0)")
+check(rubric.version == "1.16.0", "rubric at 1.16.0 (the [[judgment]] checklist arrived in 1.2.0)")
 check([j.id for j in rubric.judgment] == SEED_IDS, f"the ten seed questions J-01..J-10 in order: {[j.id for j in rubric.judgment]}")
 rule_ids = {r.id for r in rubric.rules}
 for j in rubric.judgment:
@@ -59,6 +59,12 @@ for j in rubric.judgment:
           f"{j.id}: question, scope and maps_to validate")
     check("Answer no if" in j.question, f"{j.id}: the question states what makes it a no")
 check(any(not j.maps_to for j in rubric.judgment) and any(j.maps_to for j in rubric.judgment), "some questions map to rules, some must be uncatalogued")
+# J-04 (#1249): design.md's page header, when it names the screen, is the tab's title; it is not the app's top bar. A header that
+# carries only the app's name still fails. The wording was probed with a fresh judge on a phone-width screen of each kind (a named
+# header + filter field answered yes 3/3; an app-name-only header + filter field answered no 3/3; the old wording answered no on the named one).
+_j04 = next(j.question for j in rubric.judgment if j.id == "J-04")
+check("page header" in _j04 and "names the screen" in _j04 and "a filter or search field under it passes" in _j04
+      and "carries only the app's name" in _j04, "J-04 counts a page header that names the screen as the title and still fails an app-name-only header (#1249)")
 
 _base = {"meta": {"version": "x"}, "weights": {"c": 1.0}, "grades": {"A": 90, "F": 0},
          "penalties": {"P0": 25, "P1": 12, "P2": 6, "P3": 2},
@@ -328,7 +334,7 @@ stale = json.loads((run_dir / "evaluate.json").read_text(encoding="utf-8"))
 stale["rubric_version"] = "0.9.0"
 (run_dir / "evaluate.json").write_text(json.dumps(stale), encoding="utf-8")
 p2b = _run("judge-merge", str(run_dir), str(FIX / "judge_answers_ok.json"), "--rubric", str(RUBRIC))
-check(p2b.returncode == 0 and "RUBRIC_MISMATCH=evaluate:0.9.0 judgment:1.15.0" in p2b.stdout and _kv(p2b).get("JUDGMENT") == "ok",
+check(p2b.returncode == 0 and "RUBRIC_MISMATCH=evaluate:0.9.0 judgment:1.16.0" in p2b.stdout and _kv(p2b).get("JUDGMENT") == "ok",
       f"an evaluate.json scored under another rubric version is named, never silently reused ({p2b.stdout[-200:]})")
 (run_dir / "evaluate.json").write_text(json.dumps(ev_after), encoding="utf-8")
 check(all(ev_before[k] == ev_after[k] for k in ev_before) and set(ev_after) - set(ev_before) == {"judgment"},
