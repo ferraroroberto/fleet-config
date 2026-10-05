@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
 
-import { DEFAULT_FACILITATION_SUITE_URL, loadActionAppConfigs, loadHomeAutomationConfig } from "../src/lib/config.ts";
+import { DEFAULT_FACILITATION_SUITE_URL, loadActionAppConfigs } from "../src/lib/config.ts";
 
 const dirs: string[] = [];
 function makeSdPluginDir(envContents: string | undefined): string {
@@ -20,31 +20,37 @@ after(() => {
   for (const dir of dirs) rmSync(dir, { recursive: true, force: true });
 });
 
-test("loadHomeAutomationConfig parses base URL and token, trimming a trailing slash", () => {
+test("loadActionAppConfigs parses home-automation's base URL and token, trimming a trailing slash", () => {
   const dir = makeSdPluginDir(
     "HOME_AUTOMATION_BASE_URL=https://ha.example.ts.net:8447/\nHOME_AUTOMATION_TOKEN=secret-token\n",
   );
-  assert.deepEqual(loadHomeAutomationConfig(dir), {
+  const errors: unknown[] = [];
+  assert.deepEqual(loadActionAppConfigs(dir, (err) => errors.push(err))["home-automation"], {
     baseUrl: "https://ha.example.ts.net:8447",
     token: "secret-token",
   });
+  assert.equal(errors.length, 0);
 });
 
-test("loadHomeAutomationConfig ignores blank lines and # comments", () => {
+test("loadActionAppConfigs ignores blank lines and # comments", () => {
   const dir = makeSdPluginDir(
     "# home-automation connection\n\nHOME_AUTOMATION_BASE_URL=https://ha.example.ts.net:8447\nHOME_AUTOMATION_TOKEN=secret-token\n",
   );
-  assert.equal(loadHomeAutomationConfig(dir).token, "secret-token");
+  assert.equal(loadActionAppConfigs(dir)["home-automation"]?.token, "secret-token");
 });
 
-test("loadHomeAutomationConfig throws when the .env file is missing", () => {
+test("loadActionAppConfigs reports a missing .env and leaves home-automation out", () => {
   const dir = makeSdPluginDir(undefined);
-  assert.throws(() => loadHomeAutomationConfig(dir), /Failed to read/);
+  const errors: unknown[] = [];
+  assert.equal(loadActionAppConfigs(dir, (err) => errors.push(err))["home-automation"], undefined);
+  assert.match(String(errors[0]), /Failed to read/);
 });
 
-test("loadHomeAutomationConfig throws when HOME_AUTOMATION_TOKEN is unset", () => {
+test("loadActionAppConfigs reports an unset HOME_AUTOMATION_TOKEN and leaves home-automation out", () => {
   const dir = makeSdPluginDir("HOME_AUTOMATION_BASE_URL=https://ha.example.ts.net:8447\n");
-  assert.throws(() => loadHomeAutomationConfig(dir), /HOME_AUTOMATION_TOKEN is not set/);
+  const errors: unknown[] = [];
+  assert.equal(loadActionAppConfigs(dir, (err) => errors.push(err))["home-automation"], undefined);
+  assert.match(String(errors[0]), /HOME_AUTOMATION_TOKEN is not set/);
 });
 
 test("loadActionAppConfigs gives facilitation-suite its loopback default without a token (fleet-config#1006)", () => {

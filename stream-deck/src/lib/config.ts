@@ -30,18 +30,6 @@ function parseEnvFile(contents: string): Record<string, string> {
   return values;
 }
 
-/**
- * Loads the home-automation connection config from the plugin bundle's own
- * `.env` (gitignored, `.env.sample` committed) — never committed, per the
- * fleet's standing secrets convention. Throws a clear error on a missing
- * file or missing values; the caller (plugin.ts) logs and leaves the config
- * undefined rather than crashing the whole plugin, matching how a missing
- * registry is already handled.
- */
-export function loadHomeAutomationConfig(sdPluginDir: string): HomeAutomationConfig {
-  return homeAutomationFrom(parseEnvFile(readEnv(sdPluginDir)), join(sdPluginDir, ".env"));
-}
-
 function readEnv(sdPluginDir: string): string {
   const envPath = join(sdPluginDir, ".env");
   try {
@@ -69,11 +57,14 @@ function homeAutomationFrom(values: Record<string, string>, envPath: string): Ho
 export const DEFAULT_FACILITATION_SUITE_URL = "http://127.0.0.1:8449";
 
 /**
- * Every app's connection (fleet-config#1006). home-automation is present only
- * when its two keys are set (a missing/partial .env leaves it out, and its
- * keys show `showAlert()` per press — as before); facilitation-suite always
- * has its loopback default unless `FACILITATION_SUITE_BASE_URL` overrides it,
- * with an optional `FACILITATION_SUITE_TOKEN`.
+ * Every app's connection (fleet-config#1006), read from the plugin bundle's own
+ * `.env` (gitignored, `.env.sample` committed) — never committed, per the fleet's
+ * standing secrets convention. home-automation is present only when its two keys
+ * are set (a missing/partial .env leaves it out and reports through `onError`, and
+ * its keys show `showAlert()` per press); facilitation-suite always has its
+ * loopback default unless `FACILITATION_SUITE_BASE_URL` overrides it, with an
+ * optional `FACILITATION_SUITE_TOKEN`. A missing .env is reported, never thrown,
+ * so a bad config cannot crash the whole plugin.
  */
 export function loadActionAppConfigs(
   sdPluginDir: string,

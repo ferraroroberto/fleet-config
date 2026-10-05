@@ -12,7 +12,6 @@ export interface TrayTargetDefinition {
  * `POST /api/actions/{action_id}` contract (home-automation#641).
  */
 export type ActionApp = "home-automation" | "facilitation-suite";
-export const ACTION_APPS: readonly ActionApp[] = ["home-automation", "facilitation-suite"];
 
 /**
  * A POST against one app's action (fleet-config#574; the `app` field #1006).
