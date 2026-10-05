@@ -175,8 +175,8 @@ Subcommands
 
   escalate [--file PATH]
       A visibly distinct, higher-priority Telegram ping ("chief needs
-      Roberto specifically") — forces `--mention` and the `attention`
-      category via `hooks/notify_send.py`, never a routine worker status.
+      Roberto specifically") — routes to the `attention` category via
+      `hooks/notify_send.py`, never a routine worker status.
 
   verify <repo> --expect merged|built [--branch NAME]
          [--default-branch NAME]
