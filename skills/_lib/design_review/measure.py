@@ -26,7 +26,9 @@ present on a successful run:
               body_font_family, break_all [..], uppercase [..], glyph_icons [..]
     controls  total, font_family_mismatch [..], font_family_mismatch_count,
               boundary_low [..], boundary_low_count, ua_styled [..],
-              segmented_bad [..], segmented_bad_count, switch_count, switch_on_count, switches_on
+              segmented_bad [..], segmented_bad_count, switch_count, switch_on_count, switches_on,
+              icon_button_count, icon_buttons_painted [..], icon_buttons_painted_count,
+              reference_pill_count, reference_pill_styles [..], reference_pill_variants
     targets   total, small [..], small_count, overlaps [..], overlap_count,
               covered [..], covered_count, primary [..], primary_min_height, in_summary
     icons     boxes {"WxH": n}, elements {"WxH": [{glyph, host, label}, ..]}
@@ -234,7 +236,44 @@ _MEASURE_JS = r"""
       const own = rgba(getComputedStyle(el).backgroundColor);
       const surface = el.parentElement ? bgOf(el.parentElement) : [255,255,255,1];
       switchesOn.push({sel: sel(el), track: own[3] > 0 ? hex(over(own, surface)) : null}); });
+    // Icon buttons draw nothing at rest (#1259): a glyph-only button with a fill, border or shadow that shows
+    // against its surface is painted. A state (pressed, current, expanded, selected, checked) may draw itself.
+    const shows = (c, surface) => c[3] > 0.02 && Math.max(...[0,1,2].map(i => Math.abs(over(c, surface)[i] - surface[i]))) > 2;
+    const textShown = (el) => [el, ...el.querySelectorAll('*')].some(e => [...e.childNodes].some(n => n.nodeType === 3 && n.textContent.trim())
+      && (() => { const r = e.getBoundingClientRect(), st = getComputedStyle(e);
+        return r.width > 2 && r.height > 2 && (st.clip === 'auto' || !st.clip) && st.clipPath === 'none'; })());
+    const STATE = '[aria-pressed=true], [aria-current]:not([aria-current=false]), [aria-expanded=true], [aria-selected=true], [aria-checked=true]';
+    const iconButtons = q('button:not([role]), [role=button]').filter(el => el.querySelector('svg, img') && !textShown(el) && !el.matches(STATE));
+    const painted = [];
+    iconButtons.forEach(el => { const st = getComputedStyle(el); const surface = el.parentElement ? bgOf(el.parentElement) : [255,255,255,1];
+      const via = [];
+      if (shows(rgba(st.backgroundColor), surface) || st.backgroundImage !== 'none') via.push('fill');
+      if (['Top','Right','Bottom','Left'].some(k => (parseFloat(st['border'+k+'Width']) || 0) > 0
+          && !['none','hidden'].includes(st['border'+k+'Style']) && shows(rgba(st['border'+k+'Color']), surface))) via.push('border');
+      const shadows = st.boxShadow && st.boxShadow !== 'none' ? (st.boxShadow.match(/rgba?\([^)]*\)/g) || ['#000']) : [];
+      if (shadows.some(c => rgba(c)[3] > 0.02)) via.push('shadow');
+      if (via.length) painted.push({sel: sel(el), label: txt(el).slice(0,30), via: via.join('+'), fill: hex(over(rgba(st.backgroundColor), surface))}); });
+    // Reference pills are one shape (#1259): every link drawn as a chip or pill on a screen shares its height,
+    // radius, padding and font size. Colour is not compared: a status pill keeps its status colour on the same shape.
+    const radiusPx = (v, r) => { const n = parseFloat(v) || 0; return /%$/.test(v) ? n / 100 * Math.min(r.width, r.height) : n; };
+    const pillStyles = {}; let pillCount = 0;
+    q('a[href], [role=link]').filter(el => el.getAttribute('role') !== 'tab' && !el.closest('[role=tablist], pre, code') && textShown(el))
+      .forEach(el => { const st = getComputedStyle(el), r = el.getBoundingClientRect();
+        const surface = el.parentElement ? bgOf(el.parentElement) : [255,255,255,1];
+        const drawn = shows(rgba(st.backgroundColor), surface) || ((parseFloat(st.borderTopWidth) || 0) > 0 && shows(rgba(st.borderTopColor), surface));
+        const rad = radiusPx(st.borderTopLeftRadius, r), h = Math.round(r.height);
+        const chipClass = /(^|[\s_-])(chip|pill)([\s_-]|$)/i.test(el.getAttribute('class') || '');
+        if (!chipClass && !(drawn && rad >= r.height / 2 - 1)) return;
+        pillCount++;
+        const shape = { h, radius: rad >= r.height / 2 - 1 ? 'pill' : Math.round(rad) + 'px',
+          padding: [st.paddingTop, st.paddingRight, st.paddingBottom, st.paddingLeft].map(p => Math.round(parseFloat(p) || 0) + 'px').join(' '),
+          font: st.fontSize };
+        const key = [shape.h, shape.radius, shape.padding, shape.font].join('|');
+        const v = pillStyles[key] || (pillStyles[key] = {...shape, count: 0, sel: sel(el), label: txt(el).slice(0,30)}); v.count++; });
+    const pillVariants = Object.values(pillStyles).sort((a, b) => b.count - a.count);
     return { total, font_family_mismatch: mism.slice(0,CAP), font_family_mismatch_count: mism.length,
+      icon_button_count: iconButtons.length, icon_buttons_painted: painted.slice(0,CAP), icon_buttons_painted_count: painted.length,
+      reference_pill_count: pillCount, reference_pill_styles: pillVariants.slice(0,CAP), reference_pill_variants: pillVariants.length,
       switch_count: switches.length, switch_on_count: switchesOn.length, switches_on: switchesOn.slice(0,CAP),
       boundary_low: lowB.slice(0,CAP), boundary_low_count: lowB.length, ua_styled: ua.slice(0,CAP), ua_styled_count: ua.length,
       segmented_bad: segs.slice(0,CAP), segmented_bad_count: segs.length };
@@ -595,7 +634,8 @@ def metric_paths() -> List[str]:
                  "break_all_count", "uppercase", "uppercase_count", "glyph_icons", "glyph_icon_count"],
         "controls": ["total", "font_family_mismatch", "font_family_mismatch_count", "boundary_low",
                      "boundary_low_count", "ua_styled", "ua_styled_count", "segmented_bad", "segmented_bad_count",
-                     "switch_count", "switch_on_count", "switches_on"],
+                     "switch_count", "switch_on_count", "switches_on", "icon_button_count", "icon_buttons_painted",
+                     "icon_buttons_painted_count", "reference_pill_count", "reference_pill_styles", "reference_pill_variants"],
         "targets": ["total", "small", "small_count", "overlaps", "overlap_count", "covered", "covered_count",
                     "primary", "primary_min_height", "in_summary"],
         "icons": ["boxes", "elements"],

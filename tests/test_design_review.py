@@ -60,8 +60,8 @@ def _doc(name: str) -> dict:
 # ---- rubric: the real file loads and names only metrics that exist ----------
 
 rubric = dr.load_rubric(RUBRIC)
-check(rubric.version == "1.13.0", "rubric meta.version stamped")
-check(len(rubric.rules) == 29, f"29 seed rules loaded (got {len(rubric.rules)})")
+check(rubric.version == "1.14.0", "rubric meta.version stamped")
+check(len(rubric.rules) == 31, f"31 seed rules loaded (got {len(rubric.rules)})")
 check(rubric.categories == ["typography", "color", "touch", "navigation", "layout", "components", "a11y"],
       "categories in rubric order")
 check(rb.check_metric_names(rubric, measure.metric_paths()) == [], "every rule metric is a script path or a derived metric")
@@ -407,6 +407,36 @@ check(next(r for r in ev.evaluate(_c5_gone, rubric, _specs("compliant"))["rules"
       "COLOR-05: a run from before the section existed is unmeasured, never a pass")
 check(_col05([{"error": "boom"}, _toast_none, _toast_none])["status"] == "unmeasured", "COLOR-05: an errored section is unmeasured")
 
+# ---- COMP-05 / COMP-06: icon buttons draw nothing at rest, reference pills are one shape (#1259) ----
+def _comp(rule_id: str, controls_by_screen) -> dict:
+    d = _doc("compliant")
+    for s, patch in zip(d["screens"], controls_by_screen):
+        s["metrics"]["controls"].update(patch)
+    return next(r for r in ev.evaluate(d, rubric, _specs("compliant"))["rules"] if r["id"] == rule_id)
+
+
+_painted = {"icon_button_count": 2, "icon_buttons_painted_count": 1,
+            "icon_buttons_painted": [{"sel": "button.home-toggle", "label": "Switch to dark", "via": "fill", "fill": "#f6f8fa"}]}
+_c05 = _comp("COMP-05", [_painted, {}, {}])
+check(_c05["status"] == "fail" and _c05["evidence"][0]["items"][0]["via"] == "fill",
+      f"COMP-05: an icon-only button filled at rest fails and says how it is painted -- {_c05['status']}")
+check(_comp("COMP-05", [{}, {}, {}])["status"] == "pass", "COMP-05: unpainted icon buttons pass")
+_pill = lambda h, radius, n: {"h": h, "radius": radius, "padding": "2px 8px 2px 8px", "font": "12px", "count": n, "sel": "a.chip", "label": "x"}
+_c06 = _comp("COMP-06", [{"reference_pill_count": 3, "reference_pill_variants": 2,
+                          "reference_pill_styles": [_pill(22, "pill", 2), _pill(36, "12px", 1)]}, {}, {}])
+check(_c06["status"] == "fail" and [i["h"] for i in _c06["evidence"][0]["items"]] == [22, 36],
+      f"COMP-06: two reference-pill shapes on one screen fail and list both -- {_c06['status']}")
+check(_comp("COMP-06", [{"reference_pill_count": 0, "reference_pill_styles": [], "reference_pill_variants": 0}, {}, {}])["status"] == "pass",
+      "COMP-06: a screen with no reference pill passes")
+for _rid, _keys in (("COMP-05", ("icon_button_count", "icon_buttons_painted", "icon_buttons_painted_count")),
+                    ("COMP-06", ("reference_pill_count", "reference_pill_styles", "reference_pill_variants"))):
+    _old = _doc("compliant")
+    for _s in _old["screens"]:
+        for _k in _keys:
+            _s["metrics"]["controls"].pop(_k)
+    check(next(r for r in ev.evaluate(_old, rubric, _specs("compliant"))["rules"] if r["id"] == _rid)["status"] == "unmeasured",
+          f"{_rid}: a run from before the metric existed is unmeasured, never a pass")
+
 # ---- evaluate: compliant fixture passes every rule ---------------------------
 
 out_c = ev.evaluate(_doc("compliant"), rubric, _specs("compliant"))
@@ -415,7 +445,7 @@ check(all(s == "pass" for s in statuses_c.values()), f"compliant: every rule pas
 check(all(v["score"] == 100.0 and v["grade"] == "A" and not v["unmeasured"] for v in out_c["categories"].values()),
       "compliant: every category 100/A, measured")
 check(out_c["overall"] == {"score": 100.0, "grade": "A", "unmeasured": False}, "compliant: overall A")
-check(out_c["schema_version"] == 1 and out_c["rubric_version"] == "1.13.0" and out_c["target"] == "fixture-app"
+check(out_c["schema_version"] == 1 and out_c["rubric_version"] == "1.14.0" and out_c["target"] == "fixture-app"
       and out_c["commit"].startswith("0000") and out_c["generated_at"].endswith("Z"), "evaluate envelope keys")
 check([s["id"] for s in out_c["screens"]] == ["desktop-light-home", "iphone-light-home", "desktop-light-dialog-edit"],
       "evaluate echoes the screen list")
@@ -1087,7 +1117,7 @@ else:
           f"measure CLI walks the fixture: 2 tabs + 1 dialog x light/dark, plus the absent Settings gear (#1217) ({proc.stdout[-300:]}{proc.stderr[-300:]})")
     check(lines.get("RUN_DIR") == str(run_dir) and Path(lines.get("METRICS", "")).is_file(), "RUN_DIR/METRICS lines point at the run dir")
     doc = json.loads(Path(lines["METRICS"]).read_text(encoding="utf-8"))
-    check(doc["interpreter"] == str(interp) and doc["schema_version"] == 1 and doc["rubric_version"] == "1.13.0", "metrics.json records the interpreter + versions")
+    check(doc["interpreter"] == str(interp) and doc["schema_version"] == 1 and doc["rubric_version"] == "1.14.0", "metrics.json records the interpreter + versions")
     if not (scaffold / "tests" / "e2e" / "_geometry.py").is_file():
         _h.skip("browser leg: project-scaffolding/tests/e2e/_geometry.py absent -- hit-target assertions NOT verified")
     check(doc["walk"]["info"]["geometry"] == ("loaded" if (scaffold / "tests" / "e2e" / "_geometry.py").is_file() else "GEOMETRY_MISSING"),
@@ -1327,6 +1357,25 @@ else:
     check(_st_nav.get("primary_count") == 4 and _st_nav.get("settings_tab_count") == 2
           and [t["label"] for t in _st_nav.get("settings_tabs", [])] == ["Settings", ""] ,
           f"NAV-03: the tab named Settings and the text-less gear tab are counted, the header gear and Logs are not (#1200) -- {_st_nav} ({proc_st.stderr[-300:]})")
+
+    # icon buttons and reference pills: what is painted at rest, and how many pill shapes a screen draws (#1259)
+    ip_dir = STATE / "fixture-icon-pill"
+    proc_ip = subprocess.run(
+        [str(interp), str(REPO / "skills" / "_lib" / "design_review" / "walk.py"), "--url", (FIX / "icon_pill.html").as_uri(),
+         "--out", str(ip_dir), "--devices", "desktop", "--scaffold", str(scaffold),
+         "--params", str(STATE / "steps-params.json")],
+        capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=600,
+    )
+    ips = json.loads((ip_dir / "screens.json").read_text(encoding="utf-8")) if proc_ip.returncode == 0 else []
+    _ip = ((ips[0].get("metrics") or {}).get("controls") or {}) if ips else {}
+    check(_ip.get("icon_button_count") == 5 and _ip.get("icon_buttons_painted_count") == 4
+          and sorted(b["via"] for b in _ip.get("icon_buttons_painted", [])) == ["border", "fill", "fill", "shadow"],
+          f"COMP-05: the filled, bordered, shadowed and screen-reader-only icon buttons are painted; the clean one is not, "
+          f"the pressed and the labelled ones are not counted (#1259) -- {_ip.get('icon_buttons_painted')} ({proc_ip.stderr[-300:]})")
+    check(_ip.get("reference_pill_count") == 4 and _ip.get("reference_pill_variants") == 2
+          and [(v["radius"], v["count"]) for v in _ip.get("reference_pill_styles", [])] == [("pill", 3), ("12px", 1)],
+          f"COMP-06: three link chips share one shape whatever their colour, the boxed one is a second shape; a plain link "
+          f"and a status pill are not reference pills (#1259) -- {_ip.get('reference_pill_styles')}")
 
     # stretched graphic: a chart SVG with preserveAspectRatio="none" is not an icon; a real off-step icon still is (#1211)
     sg_dir = STATE / "fixture-stretched-graphic"

@@ -184,7 +184,7 @@ doc_d = _flip(violating, "TOUCH-02", "unmeasured")
 doc_d["diff"] = ledger.diff(doc_d, older)
 page = report.render_report(doc_d)
 check('id="diff"' in page and "compared against run prev" in page and "unmeasured (1)" in page and "TOUCH-02" in page
-      and "rubric changed from v1.0.0 to v1.13.0" in page, "the report renders the unmeasured bucket and the rubric-change note")
+      and "rubric changed from v1.0.0 to v1.14.0" in page, "the report renders the unmeasured bucket and the rubric-change note")
 doc_f = _clone(violating)
 doc_f["diff"] = ledger.diff(doc_f, None)
 check("first recorded run for this target" in report.render_report(doc_f), "a first run says so instead of 'compared against unknown'")
@@ -229,10 +229,12 @@ check(filing.route(violating, {"TOUCH-01": {"reason": "r", "record": None}}, pro
 # fleet-config#1163 (photo-ocr#129): TYPE-02, A11Y-02 and COLOR-03 are owned by the scaffold/spec, but the fix already
 # ships (`_vendored/base`, `_vendored/text-size`, the `control-border` token), so the app can adopt it today. They
 # stay on the spec/scaffold lists (the fleet digest reads those) and are also routed to the app as adoptable.
+# COMP-05 (#1259) joins them: the vendored icon button and the transparent `--close-bg` default already ship.
 adopt_ids = [s["id"] for s in routed["adopt"]]
-check(adopt_ids == ["A11Y-02", "COLOR-03", "TYPE-02"] or sorted(adopt_ids) == ["A11Y-02", "COLOR-03", "TYPE-02"],
+check(sorted(adopt_ids) == ["A11Y-02", "COLOR-03", "COMP-05", "TYPE-02"],
       f"a failing spec/scaffold rule whose fix already ships is routed to the app as adoptable -- {adopt_ids}")
-check({"A11Y-02", "COLOR-03"} <= {s["id"] for s in routed["spec"]} and "TYPE-02" in [s["id"] for s in routed["scaffold"]],
+check({"A11Y-02", "COLOR-03"} <= {s["id"] for s in routed["spec"]}
+      and {"TYPE-02", "COMP-05"} <= {s["id"] for s in routed["scaffold"]},
       "an adoptable rule also stays on its owner's list: the fleet digest still reads it there")
 check(all(s.get("adopt") for s in routed["adopt"]) and not any("adopt" in s for s in routed["app"] + [x for x in routed["spec"] if x["id"] not in adopt_ids]),
       "only the adoptable summaries carry the hint; app-owned and nothing-to-adopt summaries are unchanged")

@@ -1,0 +1,55 @@
+<!doctype html>
+<!-- Static fixture for COMP-05 and COMP-06 (fleet-config#1259). Icon-only buttons: one filled, one bordered,
+     one shadowed and one filled with only screen-reader text are painted; a transparent one is not; a pressed
+     filled one is a state and a labelled filled one is not icon-only, so neither is counted. Reference pills:
+     three link chips on one shape (one in a status colour) and one link chip resized into a control box, which
+     makes two shapes; a plain link and a non-link status pill are not reference pills. Asserted by
+     tests/test_design_review.py. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>design_review icon button and pill fixture</title>
+<style>
+  html, body { margin: 0; background: #ffffff; color: #1f2328; font-family: system-ui, sans-serif; font-size: 16px; }
+  body { padding: 16px; }
+  .row { display: flex; gap: 16px; align-items: center; margin: 12px 0; }
+  .ib { position: relative; width: 34px; height: 34px; padding: 0; border: 0; border-radius: 12px; background: transparent;
+        color: #656d76; display: inline-flex; align-items: center; justify-content: center; }
+  .ib::before { content: ""; position: absolute; inset: -5px; }
+  .ib svg { width: 16px; height: 16px; }
+  .ib.filled, .ib.sronly, .ib[aria-pressed="true"], .ib.labelled { background: #eaeef2; }
+  .ib.bordered { border: 1px solid #818b98; }
+  .ib.shadowed { box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3); }
+  .ib.labelled { width: auto; padding: 0 10px; gap: 6px; }
+  .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+  .chip { display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 9999px; border: 1px solid #b6d1f3;
+          background: #dbe9fa; color: #0550ae; font-size: 12px; line-height: 1.5; text-decoration: none; }
+  .chip.closed { color: #656d76; background: #f6f8fa; border-color: #d1d9e0; }
+  .chip.boxed { min-height: 36px; padding: 0 10px; border-radius: 12px; font-size: 14px; }
+  .pill { padding: 2px 8px; border-radius: 9999px; background: #dafbe1; color: #116329; font-size: 12px; }
+</style>
+</head>
+<body>
+  <main>
+    <h2>Icon buttons and reference pills</h2>
+    <div class="row">
+      <button type="button" class="ib filled" aria-label="Filled"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/></svg></button>
+      <button type="button" class="ib bordered" aria-label="Bordered"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/></svg></button>
+      <button type="button" class="ib shadowed" aria-label="Shadowed"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/></svg></button>
+      <button type="button" class="ib sronly"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/></svg><span class="sr">Screen-reader only</span></button>
+      <button type="button" class="ib clean" aria-label="Clean"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/></svg></button>
+      <button type="button" class="ib pressed" aria-pressed="true" aria-label="Pressed"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/></svg></button>
+      <button type="button" class="ib labelled"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/></svg>Save</button>
+    </div>
+    <div class="row">
+      <a class="chip" href="#notes">notes</a>
+      <a class="chip" href="#ideas">ideas</a>
+      <a class="chip closed" href="#issue">repo#12</a>
+      <a class="chip boxed" href="#projects">projects</a>
+      <a href="#docs">docs</a>
+      <span class="pill">done</span>
+    </div>
+  </main>
+</body>
+</html>

@@ -84,14 +84,16 @@ components:
   button-primary: { backgroundColor: "{colors.accent-fill}", textColor: "{colors.accent-fg}", borderColor: "{colors.accent-border-strong}", rounded: "{rounded.md}", typography: "{typography.label}", height: 48px }
   button-tint:     { backgroundColor: "{colors.accent-soft}", textColor: "{colors.accent-text}", borderColor: "{colors.accent-border-soft}", rounded: "{rounded.md}", fontWeight: 700, height: 48px }   # secondary emphasis — the accent-tinted action (home-automation .big-btn)
   button-ghost:    { backgroundColor: transparent, borderColor: "{colors.border}", textColor: "{colors.fg-muted}", rounded: "{rounded.md}" }   # quiet tertiary action — ghost = TRANSPARENT fill on a hairline border, never a tinted fill
-  button-surface:  { backgroundColor: "{colors.canvas-subtle}", borderColor: "{colors.border}", textColor: "{colors.fg-muted}", rounded: "{rounded.md}", height: "{components.control.height}" }   # utility/toolbar/icon button at the control height
+  button-surface:  { backgroundColor: "{colors.canvas-subtle}", borderColor: "{colors.border}", textColor: "{colors.fg-muted}", rounded: "{rounded.md}", height: "{components.control.height}" }   # LABELLED utility/toolbar button at the control height — a glyph-only control is the icon-button, never this tier
   button-disabled: { backgroundColor: "{colors.canvas-subtle}", borderColor: "{colors.border}", textColor: "{colors.fg-muted}" }   # ONE disabled recipe for every tier, both themes (home-automation#362) — never opacity on a solid fill
+  icon-button:    { backgroundColor: transparent, borderColor: transparent, shadow: none, textColor: "{colors.fg-muted}", hoverColor: "{colors.fg}", pressedColor: "{colors.accent-text}", glyph: "{icons.size.inline}", target: "{components.hit-target.min}" }   # a glyph on nothing (fleet-config#1259) — no fill, border or shadow at rest; hover/press move the glyph colour only; the 44px target is invisible
   control:        { height: 36px, rounded: "{rounded.md}", backgroundColor: "{colors.canvas-subtle}", borderColor: "{colors.control-border}", textColor: "{colors.fg}" }   # shared height for inline select / input so a row of controls lines up
   switch:         { width: 44px, height: 26px, rounded: "{rounded.pill}", thumbSize: 20px, trackOff: "{colors.control-border}", trackOn: "{colors.accent-fill}", thumbColor: "{colors.accent-fg}" }   # shadcn Switch — no text label; on = the app's accent (fleet-config#1200), never green
   nav-bar:        { backgroundColor: "{colors.card}", rounded: "{rounded.nav}", height: 61px, margin: 21px, maxTabs: 5 }
   nav-tab:        { textColor: "{colors.fg-muted}", rounded: "{rounded.pill}", height: 53px }
   nav-tab-active: { backgroundColor: "{colors.accent-soft}", borderColor: "{colors.accent-border-soft}", textColor: "{colors.accent-text}" }   # accent-soft tint, not canvas-subtle — the inset surface reads as a black hole in dark mode (project-scaffolding#159)
-  chip:           { backgroundColor: "{colors.neutral-soft}", textColor: "{colors.fg}", rounded: "{rounded.pill}" }   # neutral chip / filter pill — never canvas-subtle inside a card (the dark black hole again)
+  chip:           { backgroundColor: "{colors.neutral-soft}", textColor: "{colors.fg}", rounded: "{rounded.pill}", padding: "2px {spacing.sm}", typography: "{typography.caption}" }   # neutral chip / filter pill — never canvas-subtle inside a card (the dark black hole again)
+  reference-pill: { backgroundColor: "{colors.accent-soft}", textColor: "{colors.accent-text}", borderColor: "{colors.accent-border-soft}", rounded: "{rounded.pill}", padding: "{components.chip.padding}", typography: "{components.chip.typography}" }   # a link to something openable (folder, AI conversation, issue, URL) — the chip geometry, never resized into a control box (fleet-config#1259)
   disclosure:     { align: left, chevron: right, closedHeight: 52px, summaryPadding: "0 14px", bodyPadding: "12px 14px 14px" }   # collapsible details/summary header — the summary owns height+padding; the card's own padding is zeroed so cards align when closed
   modal:          { rounded: "{rounded.lg}", closeSize: 34px, rowPadding: "12px 0", primaryButton: "{components.button-primary}" }   # editor <dialog> — heading-lg title + × close, label/value rows on a top-border divider, one full-width primary
   list-row:       { rowPadding: "{components.modal.rowPadding}", divider: "{colors.border-muted}" }   # repeating entries inside a card — flat full-bleed rows on a top hairline, never nested canvas-subtle cards (photo-ocr .history-item, post-photo-ocr#73)
@@ -171,7 +173,8 @@ background and the pair drops under AA in both themes. So:
   take no `control-border`: unselected tabs are exempt (see the Navigation
   contract's unselected-tab rule).
 - **Chips** fill with `neutral-soft` and set their text in `fg`; `fg-muted`
-  on it falls under AA.
+  on it falls under AA. A **reference pill** (a chip that links somewhere)
+  is `accent-text` on `accent-soft`, the `button-tint` pairing.
 
 The `*-text`, `control-border` and `neutral-soft` roles are sRGB-only on
 purpose: each holds a verified ratio, and a wide-gamut variant would move it.
@@ -449,7 +452,7 @@ identically; treat every bullet as a hard requirement, not a suggestion.
   label legible at 320px. A sixth tab forces 11px labels and ~53px tabs, and
   pushes the nav toward icon-only. **Settings is never a tab**, at any nav
   size and in any app, however few tabs the app has: it is always the trailing
-  gear in the page header (a `button-surface` gear beside the theme toggle),
+  gear in the page header (an `icon-button` gear beside the theme toggle),
   on every tab and one tap from each. A gear-only tab, or a "More" tab that
   holds only Settings, is the same violation. The fleet's signature header is
   the title on the left and `[theme toggle] [Settings gear]` on the right
@@ -477,7 +480,9 @@ one main action per view; `button-tint` (accent-soft fill, `accent-text`, soft
 accent border) for secondary emphasis; `button-ghost` for quiet tertiary
 actions — *ghost means transparent* on a hairline border; a tinted fill is a
 *tint*, never a "ghost"; `button-surface` (subtle surface at the `control`
-height) for toolbar, utility, and icon buttons. Every tier shares the **one
+height) for labelled toolbar and utility buttons. A glyph-only control is
+none of the four: it is the **icon button** (Component contracts), which
+draws no surface at all. Every tier shares the **one
 `button-disabled` recipe** (the flat `canvas-subtle` / `border` / `fg-muted`
 trio — AA in both themes, home-automation#362), never opacity on a solid fill.
 A destructive action may restate the tint recipe on `danger`
@@ -529,7 +534,7 @@ hand-picked per app.
   `0 14px` inset): a leading `icons.size.title` glyph plus a bold title that
   **names the current tab**, one ellipsized context line (`body-sm`,
   `fg-muted`; e.g. "3 running", "Last run 06:00"), and **at most two trailing
-  icon actions** at the 44px hit target: the theme toggle and the Settings
+  icon buttons** at the 44px hit target: the theme toggle and the Settings
   gear, **always both, on every tab at every nav size** (Settings is never a
   tab, see Navigation). Tab-specific toolbars sit **under** the
   header, never in place of it. The vendored `home-head` component
@@ -542,9 +547,9 @@ hand-picked per app.
   meta value. A card that is collapsible drops its own padding to `0` and
   delegates to the disclosure contract (above).
 - **editor modal** (`modal`) — a native `<dialog>` for detail/rename/settings
-  editing. **Header:** a `heading-lg` title on the left, a square `modal.closeSize`
-  (34px) × button on the right (an `icons.size.title` glyph, `rounded.md`,
-  muted). **Body:** stacked label/value rows, each `modal.rowPadding` (`12px 0`)
+  editing. **Header:** a `heading-lg` title on the left, a × `icon-button`
+  on the right whose invisible box is `modal.closeSize` (34px), an
+  `icons.size.title` glyph in `fg-muted` on no fill. **Body:** stacked label/value rows, each `modal.rowPadding` (`12px 0`)
   on a `border-muted` top divider, the value control filling ≥55% of the row.
   **Footer:** exactly one full-width `button-primary`. Its **disabled** state
   must clear AA contrast in *both* themes (never the browser default, which
@@ -604,6 +609,33 @@ hand-picked per app.
   squircle) filled with **one** of the five `tile-*` colors (the only saturated
   surfaces), a centered `icons.size.feature` Lucide glyph in `accent-fg`. The
   fill signals category, not state; never use a `tile-*` color elsewhere.
+- **icon button** (`icon-button`) — every glyph-only control: a pencil, a
+  trash, a calendar, a ×, a mic, the header's theme toggle and Settings gear,
+  the modal close, the row kebab. It is its own component, never a
+  `button-surface` with the label left off. **At rest it draws only the
+  glyph**: no fill, border or shadow, in either theme, whatever size its
+  target is. The glyph is `icons.size.inline` (16px) in `fg-muted`; hover
+  darkens it to `fg`, a pressed toggle (`aria-pressed="true"`) takes
+  `accent-text`, and a destructive one stays quiet until hovered, then takes
+  the danger tone. Only the glyph's colour moves, never a painted square. The
+  box is invisible and reaches `hit-target.min` (44px) by either Touch-targets
+  route: a `::before` that grows it, or real 44px geometry (the action-row
+  kebab). Two side by side sit far enough apart that their targets touch and
+  never overlap. Focus is the app-wide `:focus-visible` ring. A state may draw
+  itself: a pressed, current, expanded, selected or checked control is not at
+  rest. The vendored header toggles and modal close are icon buttons through
+  `--close-bg: transparent` (the scaffold default) and keep the
+  `icons.size.title` glyph their components ship. Vendor `project-scaffolding`'s
+  `_vendored/icon-button/`. Reference impl: task-os `.icon-btn` (task-os#357).
+- **reference pill** (`reference-pill`) — a link to something the user can
+  open (a folder, an AI conversation, an issue, a URL) is one pill: the `chip`
+  geometry (`rounded.pill`, `2px` × `spacing.sm` padding, `caption` type) in
+  `accent-text` on `accent-soft` with an `accent-border-soft` hairline. No
+  context resizes it: in a toolbar, a drawer field or a form row it keeps the
+  chip geometry, never the `control` height or `rounded.md`. A chip that opens
+  nothing stays the neutral `chip`; a status pill keeps its status colours (a
+  `*-text` on its tint, a muted closed state) on the same shape. Reference
+  impl: task-os `.chip, .pill` (task-os#357).
 - **toast** (`toast`) — the one transient message for a user-initiated command
   (feedback altitude, Async data & feedback). The **neutral frosted** recipe
   from app-launcher (`styles.css`, "Neutral frosted toast", ported from
@@ -695,6 +727,7 @@ byte-for-byte components.
 - **Do** give every interactive element the one tokenized `:focus-visible` ring — never leave focus to the browser default.
 - **Do** color a switch's on-track in the accent (`accent-fill`) — never green.
 - **Do** show every command result in the one neutral frosted `toast`; only a real error tints.
+- **Do** draw every glyph-only control as the `icon-button`, a glyph on nothing with its 44px target invisible, and every link to something openable as the one `reference-pill`.
 - **Do** size every glyph from the canonical `icons.size` steps (16 / 18 / 20 / 24 — `inline` / `title` / `nav-tab` / `feature`) — don't hand-pick a one-off size.
 - **Do** honor `prefers-reduced-motion` — collapse authored animation to near-instant.
 - **Do** ship the user-selectable theme: pre-paint `data-theme` boot script + persisted sun/moon toggle on the main view — never dark-only or OS-only.
@@ -705,6 +738,7 @@ byte-for-byte components.
 - **Do** give every non-navigation pointer target a ≥44×44px *effective* hit area — invisible expansion for isolated compact controls, real geometry for adjacent clusters; expanded rectangles never overlap.
 - **Do** preserve and label last-known data when a background refresh fails (`Last updated … · live data unavailable`) and disable freshness-sensitive actions — stale state is never actionable.
 - **Do** pair every colour-distinguished chart series with a non-colour cue (dash / point style / fill) and a viewport-aware tick budget.
+- **Don't** paint an icon-only button (a fill, border or shadow at rest), or resize a reference pill into a control box.
 - **Don't** hand-roll a primitive (switch, select, dialog, tabs…) that shadcn already defines.
 - **Don't** show a destructive action as a visible per-row button, split a row into icon columns with vertical rules, or put controls inside a disclosure `summary`.
 - **Don't** mix a second icon set or hand-draw a one-off glyph — use the matching Lucide icon.

@@ -83,14 +83,16 @@ components:
   button-primary: { backgroundColor: "{colors.accent-fill}", textColor: "{colors.accent-fg}", borderColor: "{colors.accent-border-strong}", rounded: "{rounded.md}", typography: "{typography.label}", height: 48px }
   button-tint:     { backgroundColor: "{colors.accent-soft}", textColor: "{colors.accent-text}", borderColor: "{colors.accent-border-soft}", rounded: "{rounded.md}", fontWeight: 700, height: 48px }   # secondary emphasis — structural, identical to Light (see design.md)
   button-ghost:    { backgroundColor: transparent, borderColor: "{colors.border}", textColor: "{colors.fg-muted}", rounded: "{rounded.md}" }   # ghost = TRANSPARENT fill on a hairline border — structural, identical to Light
-  button-surface:  { backgroundColor: "{colors.canvas-subtle}", borderColor: "{colors.border}", textColor: "{colors.fg-muted}", rounded: "{rounded.md}", height: "{components.control.height}" }   # utility/toolbar/icon button at the control height
+  button-surface:  { backgroundColor: "{colors.canvas-subtle}", borderColor: "{colors.border}", textColor: "{colors.fg-muted}", rounded: "{rounded.md}", height: "{components.control.height}" }   # LABELLED utility/toolbar button at the control height — a glyph-only control is the icon-button
   button-disabled: { backgroundColor: "{colors.canvas-subtle}", borderColor: "{colors.border}", textColor: "{colors.fg-muted}" }   # ONE disabled recipe for every tier, both themes (home-automation#362)
+  icon-button:    { backgroundColor: transparent, borderColor: transparent, shadow: none, textColor: "{colors.fg-muted}", hoverColor: "{colors.fg}", pressedColor: "{colors.accent-text}", glyph: "{icons.size.inline}", target: "{components.hit-target.min}" }   # a glyph on nothing — structural, identical to Light (see design.md)
   control:        { height: 36px, rounded: "{rounded.md}", backgroundColor: "{colors.canvas-subtle}", borderColor: "{colors.control-border}", textColor: "{colors.fg}" }   # shared height for inline select / input so a row of controls lines up
   switch:         { width: 44px, height: 26px, rounded: "{rounded.pill}", thumbSize: 20px, trackOff: "{colors.control-border}", trackOn: "{colors.accent-fill}", thumbColor: "{colors.accent-fg}" }   # shadcn Switch — no text label; on = the app's accent (fleet-config#1200), never green
   nav-bar:        { backgroundColor: "{colors.card}", rounded: "{rounded.nav}", height: 61px, margin: 21px, maxTabs: 5 }
   nav-tab:        { textColor: "{colors.fg-muted}", rounded: "{rounded.pill}", height: 53px }
   nav-tab-active: { backgroundColor: "{colors.accent-soft}", borderColor: "{colors.accent-border-soft}", textColor: "{colors.accent-text}" }   # accent-soft tint, not canvas-subtle — the inset surface (true black here) reads as a black hole (project-scaffolding#159)
-  chip:           { backgroundColor: "{colors.neutral-soft}", textColor: "{colors.fg}", rounded: "{rounded.pill}" }   # neutral chip / filter pill — structural, identical to Light (see design.md)
+  chip:           { backgroundColor: "{colors.neutral-soft}", textColor: "{colors.fg}", rounded: "{rounded.pill}", padding: "2px {spacing.sm}", typography: "{typography.caption}" }   # neutral chip / filter pill — structural, identical to Light (see design.md)
+  reference-pill: { backgroundColor: "{colors.accent-soft}", textColor: "{colors.accent-text}", borderColor: "{colors.accent-border-soft}", rounded: "{rounded.pill}", padding: "{components.chip.padding}", typography: "{components.chip.typography}" }   # a link to something openable — structural, identical to Light (see design.md)
   disclosure:     { align: left, chevron: right, closedHeight: 52px, summaryPadding: "0 14px", bodyPadding: "12px 14px 14px" }   # collapsible details/summary header — structural, identical to Light (see design.md)
   modal:          { rounded: "{rounded.lg}", closeSize: 34px, rowPadding: "12px 0", primaryButton: "{components.button-primary}" }   # editor <dialog> — structural, identical to Light (see design.md)
   list-row:       { rowPadding: "{components.modal.rowPadding}", divider: "{colors.border-muted}" }   # repeating entries inside a card — structural, identical to Light (see design.md)
@@ -210,7 +212,7 @@ Structurally unchanged from the Light theme — the four button tiers
 shared `button-disabled` recipe; the accent derivatives are the same
 `color-mix` strings over the brighter dark accent), `card`,
 `control`, `switch`, `nav-bar`, `nav-tab`, `disclosure`, plus the `modal`,
-`page-header`, `list-row`, `action-row`, `empty-state`, `icon-tile`, and `toast` **Component contracts** and the `icons.size` steps
+`page-header`, `list-row`, `action-row`, `empty-state`, `icon-tile`, `icon-button`, `reference-pill` and `toast` **Component contracts** and the `icons.size` steps
 defined in `design.md` — all with the vendored snippets from
 `project-scaffolding` reused verbatim. Only values change for dark: the `switch`
 on-track is the **accent (`accent-fill`)**, at the dark `accent-fill` value

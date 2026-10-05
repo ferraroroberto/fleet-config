@@ -144,6 +144,12 @@ read.
   - **toast neutral** — no rule on a `toast`/`snackbar` selector draws a green
     (success token, `--on`, or a green literal) background or border (#1200);
     NA when the app has no toast CSS. Only a real error tints.
+  - **icon button unpainted** — the app's `--close-bg` (the vendored header
+    toggles' and modal close's fill) is `transparent` (or zero-alpha) in every
+    theme that sets it, or is unset, which takes the scaffold's transparent
+    default: PASS. Any fill FAILs, because an icon button is a glyph on nothing
+    (#1259). NA when the app neither sets nor reads `--close-bg`. This contract
+    owns `--close-bg`, so it is never an `unmapped` leftover for step 4a.
   - **checkboxes** — a checkbox control must be skinned off the browser's
     own tick (`appearance: none`), per design.md's Checkbox -> shadcn
     `checkbox` mapping. A real `<input type=checkbox>` is the shadcn

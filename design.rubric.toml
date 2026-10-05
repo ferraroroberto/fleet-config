@@ -33,7 +33,7 @@
 # metrics.json, every evaluate output and every filed finding.
 
 [meta]
-version = "1.13.0"   # per-bump history: git log -- design.rubric.toml, and the issues/PRs it cites
+version = "1.14.0"   # per-bump history: git log -- design.rubric.toml, and the issues/PRs it cites
 seeded_from = "app-launcher rendered audit, 2026-09-21 (fleet-config#962)"
 
 [weights]
@@ -476,6 +476,33 @@ severity = "P3"
 owner = "app"
 standard = "design.md Colors: one accent for links; hairlines from colors.border"
 fix_template = "{count} UA-styled elements on {screen} ({sample})."
+mockup = "none"
+
+[[rules]]
+id = "COMP-05"
+category = "components"
+title = "An icon-only button draws a fill, border or shadow at rest"
+metric = "controls.icon_buttons_painted_count"
+fail_when = "gt"
+threshold = 0
+severity = "P2"
+owner = "scaffold"
+adopt = "vendor the scaffold's `_vendored/icon-button` for glyph-only controls and set `--close-bg: transparent` (or drop it) so the vendored header toggles and modal close draw no fill"
+standard = "design.md icon-button: a glyph on nothing, no fill, border or shadow at rest; a pressed, current, expanded, selected or checked state may draw itself (fleet-config#1259)"
+fix_template = "{count} icon-only buttons on {screen} are painted at rest ({sample}); an icon button is a glyph on nothing, its 44px target invisible."
+mockup = "none"
+
+[[rules]]
+id = "COMP-06"
+category = "components"
+title = "Reference pills on one screen differ in height, radius, padding or font size"
+metric = "controls.reference_pill_variants"
+fail_when = "gt"
+threshold = 1
+severity = "P2"
+owner = "app"
+standard = "design.md reference-pill: a reference to something openable is one pill, the chip geometry, never resized into a control box by its context; a status pill keeps its colour on the same shape (fleet-config#1259)"
+fix_template = "{value} different reference-pill shapes on {screen} ({sample}); draw every link chip with the one chip geometry."
 mockup = "none"
 
 # ---------------------------------------------------------------------------
