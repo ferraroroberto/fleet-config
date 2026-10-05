@@ -119,6 +119,13 @@ BUCKETS: Sequence[Tuple[str, float, float]] = (
 KNOWN_PROJECTIONS = ("chromium", "webkit", "firefox")
 TOP_MODULES = 10
 DRIFT_TOLERANCE = 0.25
+# Subprocess timeouts (seconds), stated bounds rather than measured ones: a measurement that only reads
+# git/gh must give up on a wedged call instead of hanging the audit. GIT_TIMEOUT_S bounds every local git
+# read (a rev lookup or a file listing, even on a large repo, finishes far inside it); GH_TIMEOUT_S bounds a
+# network `gh` list; GH_FILES_TIMEOUT_S is longer because `gh pr list --json files` returns every PR's file list.
+GIT_TIMEOUT_S = 30
+GH_TIMEOUT_S = 120
+GH_FILES_TIMEOUT_S = 180
 
 _HEADER_RE = re.compile(r"run started (\d{4}-\d{2}-\d{2}) (\d{2}:\d{2}:\d{2})")
 _LINE_RE = re.compile(r"^\[(\d{2}):(\d{2}):(\d{2}) \+\s*[\d.,]+s\] (.*)$")
@@ -878,7 +885,7 @@ def sibling_logs(repo_root: Path, rel_log: Optional[str]) -> List[Path]:
     """The same progress log in every other checkout of this repo (`git worktree list`)."""
     if not rel_log:
         return []
-    res = git_run.run_git(["-C", str(repo_root), "worktree", "list", "--porcelain"], timeout=30)
+    res = git_run.run_git(["-C", str(repo_root), "worktree", "list", "--porcelain"], timeout=GIT_TIMEOUT_S)
     if res.returncode != 0:
         return []
     here = repo_root.resolve()
@@ -1068,7 +1075,7 @@ def text_mentions(text: str) -> List[Dict[str, str]]:
 
 def repo_slug(repo_root: Path) -> Optional[str]:
     """`owner/repo` from the checkout's GitHub `origin` remote, else None."""
-    res = git_run.run_git(["-C", str(repo_root), "remote", "get-url", "origin"], timeout=30)
+    res = git_run.run_git(["-C", str(repo_root), "remote", "get-url", "origin"], timeout=GIT_TIMEOUT_S)
     m = re.search(r"github\.com[:/]([^/\s]+/[^/\s]+?)(?:\.git)?/?$", res.stdout.strip()) if res.returncode == 0 else None
     return m.group(1) if m else None
 
@@ -1087,7 +1094,7 @@ def gh_mentions(repo_root: Path, prs: int) -> Dict[str, object]:
                         "--json", "number,title,body,createdAt"]),
     )
     for label, args in queries:
-        res = git_run.run_gh([*args, "--repo", slug], timeout=120, stdin=subprocess.DEVNULL)
+        res = git_run.run_gh([*args, "--repo", slug], timeout=GH_TIMEOUT_S, stdin=subprocess.DEVNULL)
         if res.returncode != 0:
             status[label] = "unknown: " + ((res.stderr or "").strip().splitlines() or ["gh failed"])[0][:160]
             continue
@@ -1163,7 +1170,7 @@ def merged_prs(repo_root: Path, prs: int, until: Optional[str] = None,
     limit = prs + (200 if until else 0)
     res = git_run.run_gh(["pr", "list", "--state", "merged", "--limit", str(limit), "--repo", slug,
                           "--json", "number,mergedAt,files" + (",mergeCommit" if with_merge_commit else "")],
-                         timeout=180, stdin=subprocess.DEVNULL)
+                         timeout=GH_FILES_TIMEOUT_S, stdin=subprocess.DEVNULL)
     if res.returncode != 0:
         return None, "unknown: " + ((res.stderr or "").strip().splitlines() or ["gh failed"])[0][:160]
     try:
@@ -1185,10 +1192,10 @@ def merged_prs(repo_root: Path, prs: int, until: Optional[str] = None,
 def _blob(repo_root: Path, rev: str, path: str) -> Tuple[bool, Optional[str]]:
     """`(exists, text)` of `path` at `rev`: `(False, None)` only when the commit is
     in the clone and the path is not in it; `(True, None)` when it could not be read."""
-    res = git_run.run_git(["-C", str(repo_root), "show", f"{rev}:{path}"], timeout=30)
+    res = git_run.run_git(["-C", str(repo_root), "show", f"{rev}:{path}"], timeout=GIT_TIMEOUT_S)
     if res.returncode == 0:
         return True, res.stdout
-    commit = git_run.run_git(["-C", str(repo_root), "cat-file", "-e", f"{rev}^{{commit}}"], timeout=30)
+    commit = git_run.run_git(["-C", str(repo_root), "cat-file", "-e", f"{rev}^{{commit}}"], timeout=GIT_TIMEOUT_S)
     return (commit.returncode != 0), None
 
 
@@ -1313,7 +1320,7 @@ _ROUTING_SOURCES = (".fleet.toml", "scripts/classify_e2e.py")
 
 def _tracked_files(repo_root: Path) -> Optional[set]:
     """Repo-relative paths git tracks, or None when git gives no answer (not a repo, git missing): then nothing is filtered."""
-    res = git_run.run_git(["-C", str(repo_root), "ls-files", "-z"], timeout=30)
+    res = git_run.run_git(["-C", str(repo_root), "ls-files", "-z"], timeout=GIT_TIMEOUT_S)
     if res.returncode != 0:
         return None
     return {p for p in res.stdout.split("\0") if p}
@@ -1803,7 +1810,7 @@ def read_audit_record(repo_root: Path) -> Optional[Dict[str, object]]:
 def write_audit_record(repo_root: Path, raw_tests: int, node_count: Optional[int]) -> Path:
     p = audit_record_path(repo_root)
     p.parent.mkdir(parents=True, exist_ok=True)
-    res = git_run.run_git(["-C", str(repo_root), "rev-parse", "--short", "HEAD"], timeout=30)
+    res = git_run.run_git(["-C", str(repo_root), "rev-parse", "--short", "HEAD"], timeout=GIT_TIMEOUT_S)
     rec = {"raw_tests": raw_tests, "node_count": node_count,
            "date": _dt.datetime.now(_dt.timezone.utc).date().isoformat(),
            "sha": res.stdout.strip() if res.returncode == 0 else None}
