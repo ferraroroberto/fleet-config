@@ -29,6 +29,13 @@ from .digest import partition_run, provisional_rules, render_digest, render_ping
 from .drift import DRIFT_KIND, DRIFT_LABEL, DRIFT_LABEL_COLOR, DRIFT_LABEL_DESC, DRIFT_TITLE, OWNER, drift_items, merge_drift
 
 
+# `gh` call timeouts (seconds), stated bounds rather than measured ones, so an unattended weekly run
+# cannot hang on one call. GH_QUICK_TIMEOUT_S covers issue reads and the one-shot label create;
+# GH_WRITE_TIMEOUT_S is doubled for issue create/comment, which upload a body file.
+GH_QUICK_TIMEOUT_S = 60
+GH_WRITE_TIMEOUT_S = 120
+
+
 # ---- CLI ------------------------------------------------------------------------
 
 def cmd_drift(args: argparse.Namespace, cfg: dict) -> int:
@@ -80,7 +87,7 @@ def cmd_drift(args: argparse.Namespace, cfg: dict) -> int:
             tmp = fh.name
         try:
             git_run.run_gh(["label", "create", DRIFT_LABEL, "--repo", slug, "--color", DRIFT_LABEL_COLOR,
-                            "--description", DRIFT_LABEL_DESC], timeout=60)  # exists already -> harmless failure
+                            "--description", DRIFT_LABEL_DESC], timeout=GH_QUICK_TIMEOUT_S)  # exists already -> harmless failure
             url = _audit_issue("upsert", "--repo", slug, "--kind", DRIFT_KIND, "--label", DRIFT_LABEL,
                                "--title", DRIFT_TITLE, "--body-file", tmp).strip()
             print(f"DRIFT={repo}|issue={url}{line}")
@@ -124,14 +131,14 @@ def _update_issue() -> Tuple[Optional[int], str]:
     Raises on a gh failure: a coverage post must never mistake "could not read" for "nothing posted yet".
     """
     res = git_run.run_gh(["issue", "list", "--repo", LEDGER_REPO, "--state", "open", "--search",
-                          "prompt-audit: vendor guidance changed in:title", "--json", "number,title"], timeout=60)
+                          "prompt-audit: vendor guidance changed in:title", "--json", "number,title"], timeout=GH_QUICK_TIMEOUT_S)
     if res.returncode != 0:
         raise RuntimeError(f"gh issue list failed: {(res.stderr or res.stdout).strip()[:200]}")
     hit = next((i for i in json.loads(res.stdout or "[]") if i.get("title") == UPDATE_TITLE), None)
     if hit is None:
         return None, ""
     view = git_run.run_gh(["issue", "view", str(hit["number"]), "--repo", LEDGER_REPO, "--json", "body,comments"],
-                          timeout=60)
+                          timeout=GH_QUICK_TIMEOUT_S)
     if view.returncode != 0:
         raise RuntimeError(f"gh issue view failed: {(view.stderr or view.stdout).strip()[:200]}")
     data = json.loads(view.stdout)
@@ -183,10 +190,10 @@ def _post_update(number: Optional[int], body: str, key: str) -> int:
     try:
         if number is None:
             res = git_run.run_gh(["issue", "create", "--repo", LEDGER_REPO, "--title", UPDATE_TITLE,
-                                  "--label", "enhancement", "--assignee", "@me", "--body-file", tmp], timeout=120)
+                                  "--label", "enhancement", "--assignee", "@me", "--body-file", tmp], timeout=GH_WRITE_TIMEOUT_S)
         else:
             res = git_run.run_gh(["issue", "comment", str(number), "--repo", LEDGER_REPO, "--body-file", tmp],
-                                 timeout=120)
+                                 timeout=GH_WRITE_TIMEOUT_S)
     finally:
         Path(tmp).unlink(missing_ok=True)
     if res.returncode != 0:
@@ -409,7 +416,7 @@ def cmd_ledger(args: argparse.Namespace, cfg: dict) -> int:
         print("❌ no prompt-audit ledger issue yet — run `ledger write` first", file=sys.stderr)
         return 2
     res = git_run.run_gh(["issue", "comment", str(number), "--repo", LEDGER_REPO,
-                          "--body-file", args.body_file], timeout=120)
+                          "--body-file", args.body_file], timeout=GH_WRITE_TIMEOUT_S)
     if res.returncode != 0:
         print(f"❌ gh issue comment failed: {(res.stderr or res.stdout).strip()}", file=sys.stderr)
         return 1
