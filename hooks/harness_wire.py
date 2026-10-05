@@ -7,7 +7,8 @@ Two halves of one subsystem, both keyed off which harness sent the payload:
   Antigravity, Pi, Codex) into Claude Code's shape, recording the harness and
   event in `_ACTIVE_AGENT` / `_ACTIVE_EVENT`.
 * **Outbound** — `block()`, `warn()`, `rewrite_command()` and `allow()` answer
-  in that harness's dialect.
+  in that harness's dialect. Under `hook_dispatch.py` they record a `Verdict`
+  instead, and `emit_collected()` answers once for every hook in the process.
 
 `_lib.py` re-exports every public name here, so hooks keep calling
 `_lib.block(...)` etc. unchanged. The two globals live **here**: anything that
@@ -22,9 +23,45 @@ import logging
 import re
 import sys
 from pathlib import Path
-from typing import Any, Dict, Optional, TextIO
+from typing import Any, Dict, List, NamedTuple, Optional, TextIO
 
 logger = logging.getLogger("fleet_hooks")
+
+
+# ------------------------------------------------------------ verdict collection
+
+
+class Verdict(NamedTuple):
+    """One hook's answer, recorded instead of written while collecting."""
+
+    kind: str  # "block" | "warn" | "rewrite"
+    text: str  # refusal reason, nudge, or the rewritten command
+    reason: str = ""  # rewrite_command()'s permissionDecisionReason
+    payload: Optional[Dict[str, Any]] = None  # rewrite_command()'s payload
+
+
+class Collected(SystemExit):
+    """Ends a hook's `main()` once its verdict is recorded, the way the real
+    emitters end it with `sys.exit()`. A `SystemExit`, so a hook's own
+    `except Exception` can't swallow it and run on past its answer."""
+
+    def __init__(self) -> None:
+        super().__init__(0)
+
+
+# `hook_dispatch.py` sets this to a list while one hook's `main()` runs
+# (fleet-config#1274). `None`, which is how every one-hook process runs, leaves
+# the four emitters below byte-for-byte what they were.
+_COLLECTOR: Optional[List[Verdict]] = None
+
+
+def _collect(verdict: Optional[Verdict]) -> None:
+    """Record `verdict` (None for an allow) and end the hook, when collecting."""
+    if _COLLECTOR is None:
+        return
+    if verdict is not None:
+        _COLLECTOR.append(verdict)
+    raise Collected()
 
 
 # ------------------------------------------- foreign-harness payload normalization
@@ -407,6 +444,7 @@ def block(reason: str) -> "NoReturn":
     stdout stays clean and its behaviour is byte-for-byte unchanged. Codex
     PreToolUse uses its verified structured deny with exit 0 (fleet-config#759).
     """
+    _collect(Verdict("block", reason))
     if _ACTIVE_AGENT == "pi":
         if _ACTIVE_EVENT == "PreToolUse":
             print(json.dumps({"fleet_policy": 1, "decision": "block", "message": reason}), flush=True)
@@ -490,6 +528,7 @@ def warn(message: str) -> "NoReturn":
     Claude's, and none of the shapes above are part of the Grok/Copilot/agy
     contract.
     """
+    _collect(Verdict("warn", message))
     if _ACTIVE_AGENT == "pi":
         print(json.dumps({"fleet_policy": 1, "decision": "warn", "message": message}), flush=True)
         sys.exit(0)
@@ -552,28 +591,65 @@ def rewrite_command(payload: Dict[str, Any], new_command: str, *, reason: str = 
     sites. ``reason`` rides Claude's ``permissionDecisionReason`` only; the
     other two dialects have no equivalent field.
     """
+    _collect(Verdict("rewrite", new_command, reason, payload))
+    print(json.dumps(_rewrite_output(payload, new_command, reason), separators=(",", ":")), flush=True)
+    sys.exit(0)
+
+
+def _rewrite_output(payload: Dict[str, Any], new_command: str, reason: str) -> Dict[str, Any]:
     if _ACTIVE_AGENT == "antigravity":
-        output: Dict[str, Any] = {"decision": "allow", "overwrite": {"CommandLine": new_command}}
-    elif _ACTIVE_AGENT == "copilot":
+        return {"decision": "allow", "overwrite": {"CommandLine": new_command}}
+    if _ACTIVE_AGENT == "copilot":
         raw_tool_input = payload.get("tool_input")
         args_out = dict(raw_tool_input) if isinstance(raw_tool_input, dict) else {}
         args_out["command"] = new_command
-        output = {"permissionDecision": "allow", "modifiedArgs": json.dumps(args_out)}
-    else:
-        output = {
-            "hookSpecificOutput": {
-                "hookEventName": "PreToolUse",
-                "permissionDecision": "allow",
-                "permissionDecisionReason": reason,
-                "updatedInput": {"command": new_command},
-            }
+        return {"permissionDecision": "allow", "modifiedArgs": json.dumps(args_out)}
+    return {
+        "hookSpecificOutput": {
+            "hookEventName": "PreToolUse",
+            "permissionDecision": "allow",
+            "permissionDecisionReason": reason,
+            "updatedInput": {"command": new_command},
         }
-    print(json.dumps(output, separators=(",", ":")), flush=True)
-    sys.exit(0)
+    }
 
 
 def allow() -> "NoReturn":
     """Exit 0 silently → action proceeds, Claude sees nothing."""
+    _collect(None)
     if _ACTIVE_AGENT == "pi":
         print(json.dumps({"fleet_policy": 1, "decision": "allow", "message": ""}), flush=True)
     sys.exit(0)
+
+
+def emit_collected(verdicts: List[Verdict]) -> "NoReturn":
+    """Answer once for every hook `hook_dispatch.py` ran in this process.
+
+    Folds the verdicts the way the harness folds parallel hook processes: any
+    block refuses, with every refusal's reason in order, and any rewrite is
+    dropped with it. Otherwise a rewrite applies. Claude's rewrite envelope
+    also carries the nudges in its top-level `systemMessage`, the field a
+    lone `warn()` uses on `PreToolUse`. Otherwise the nudges go out as one
+    `warn()`, and with no verdict at all the call is allowed. The dialect of
+    each answer is still the emitters' own, picked from `_ACTIVE_AGENT` /
+    `_ACTIVE_EVENT`, which the caller sets by reading the payload first.
+    """
+    blocks = [v.text for v in verdicts if v.kind == "block"]
+    if blocks:
+        block("\n\n".join(blocks))
+    warns = [v.text for v in verdicts if v.kind == "warn"]
+    rewrites = [v for v in verdicts if v.kind == "rewrite"]
+    if rewrites:
+        if len(rewrites) > 1:
+            logger.warning("%d hooks rewrote one command; the last one applies", len(rewrites))
+        last = rewrites[-1]
+        output = _rewrite_output(last.payload or {}, last.text, last.reason)
+        if warns and _ACTIVE_AGENT is None:
+            output["systemMessage"] = "\n\n".join(warns)
+        elif warns:
+            logger.warning("%s rewrite has no nudge field; dropped: %s", _ACTIVE_AGENT, warns)
+        print(json.dumps(output, separators=(",", ":")), flush=True)
+        sys.exit(0)
+    if warns:
+        warn("\n\n".join(warns))
+    allow()

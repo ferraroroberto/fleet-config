@@ -28,8 +28,14 @@ FAKE_SK = "sk" + "-" + "AbCdEfGhIjKlMnOpQrStUvWxYz012345"
 FAKE_AKIA = "AK" + "IA" + "IOSFODNN7EXAMPLE"
 
 
-def run_hook_matrix() -> Tuple[int, int]:
-    cases: List[Tuple[str, str, Dict[str, Any], int]] = [
+Case = Tuple[str, str, Dict[str, Any], int]
+
+
+def matrix_cases() -> Tuple[List[Case], Path]:
+    """Every `(label, hook, payload, expected exit)` case, plus the temp dir
+    holding the py_syntax_check fixture files, which the caller removes.
+    `checks_dispatch` replays the same cases through `hook_dispatch.py`."""
+    cases: List[Case] = [
         # ---- pre_commit_no_ai_trailer ----
         ("pre_commit: Co-Authored-By Claude -> block",
          "pre_commit_no_ai_trailer",
@@ -538,6 +544,11 @@ def run_hook_matrix() -> Tuple[int, int]:
         2,
     ))
 
+    return cases, tmp
+
+
+def run_hook_matrix() -> Tuple[int, int]:
+    cases, tmp = matrix_cases()
     failures = 0
     for name, hook, payload, expected in cases:
         code, _stdout, stderr = run(hook, payload)

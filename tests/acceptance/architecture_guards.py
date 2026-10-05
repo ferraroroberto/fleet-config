@@ -17,7 +17,7 @@ import re
 import subprocess
 import sys
 from pathlib import Path
-from typing import Tuple
+from typing import List, Tuple
 
 from acceptance.shared import HOOKS, PYTHON, REPO, _Checker
 
@@ -1006,7 +1006,32 @@ def _settings_sync_split_check() -> Tuple[int, int]:
               _settings_sync_split([absent], hooks_dir) == ([], [absent]))
         check("settings_sync: a mixed set keeps the unwired half failing",
               _settings_sync_split([absent, present], hooks_dir) == ([present], [absent]))
+    shim = ("C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe -NoProfile -File "
+            "C:/Users/rober/.claude/hooks/run-hook.ps1 -Hook safe_kill_guard")
+    dispatch = ("E:/automation/fleet-config/.venv/Scripts/python.exe "
+                "C:/Users/rober/.claude/hooks/hook_dispatch.py safe_kill_guard venv_discipline")
+    check("settings_sync: a run-hook.ps1 command wires its -Hook module",
+          _wired_hook_names(shim) == ["safe_kill_guard"])
+    check("settings_sync: a hook_dispatch.py command wires every module it names (#1274)",
+          _wired_hook_names(dispatch) == ["safe_kill_guard", "venv_discipline"])
+    check("settings_sync: any other command wires no hook module",
+          _wired_hook_names("C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe -File statusline.ps1") == [])
     return check.failures, check.total
+
+
+_RUN_HOOK_RE = re.compile(r"-Hook\s+(\w+)")
+_DISPATCH_RE = re.compile(r"hook_dispatch\.py((?:\s+\w+)+)")
+
+
+def _wired_hook_names(command: str) -> List[str]:
+    """The hook modules one settings.json command runs: the `-Hook <name>` of a
+    `run-hook.ps1` command, or every name after `hook_dispatch.py`
+    (fleet-config#1274), so a hook moved into the dispatcher is still covered."""
+    m = _RUN_HOOK_RE.search(command)
+    if m:
+        return [m.group(1)]
+    m = _DISPATCH_RE.search(command)
+    return m.group(1).split() if m else []
 
 
 def _settings_template_sync_check() -> Tuple[int, int, int]:
@@ -1029,9 +1054,6 @@ def _settings_template_sync_check() -> Tuple[int, int, int]:
       not be wired live until it is (`_settings_sync_split`, fleet-config#942).
       Any missing hook whose module IS live still fails.
     """
-    import re
-
-    hook_re = re.compile(r"-Hook\s+(\w+)")
 
     def wired(path: Path) -> set[tuple[str, str]]:
         data = json.loads(path.read_text(encoding="utf-8"))
@@ -1039,9 +1061,8 @@ def _settings_template_sync_check() -> Tuple[int, int, int]:
         for event, blocks in data.get("hooks", {}).items():
             for block in blocks:
                 for hook in block.get("hooks", []):
-                    m = hook_re.search(hook.get("command", ""))
-                    if m:
-                        pairs.add((event, m.group(1)))
+                    for name in _wired_hook_names(hook.get("command", "")):
+                        pairs.add((event, name))
         return pairs
 
     live_path = Path.home() / ".claude" / "settings.json"
