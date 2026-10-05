@@ -58,7 +58,7 @@ No component argument → stop: "Pass a component name, e.g.
   on the very first adopter merge (the substring-match gotcha in
   `~/.claude/CLAUDE.md`).
 - **Adopt before re-vendor.** A repo with no `[vendored].<component>` entry
-  yet is not skipped — see step 4a's "adopt" sub-step. This is how the manifest
+  yet is not skipped — see step 4, item 2a (ADOPT). This is how the manifest
   grows to cover the real nav + tray consumers.
 - **State coverage; a partial wave must never read as a complete one.** The
   adopter list comes from the adopters' own `[vendored]` entries, so a repo
@@ -123,7 +123,7 @@ every repo holding a catalogued component's files at the scaffold's own path
 with no manifest entry, each carrying:
 
 - `matches_head: true` — byte-identical to the scaffold tip. Nothing to decide:
-  the repo simply never recorded what it copied. An **adopt** candidate (step 4a).
+  the repo simply never recorded what it copied. An **adopt** candidate (step 4, item 2a (ADOPT)).
 - `matches_head: false` — present but different, with `diff_files`. "Never
   declared it" and "deliberately forked it" are indistinguishable from the
   bytes, so **this reports; it does not overwrite.** Never fold one of these
@@ -332,7 +332,7 @@ even when every number is zero, and never compress "found no carriers" and
 - **fleet-config#338 ships the skill + manifest schema + drift helper only —
   it never edits a sister repo.** The nav + tray adopters (app-launcher,
   home-automation, local-llm-hub, photo-ocr, voice-transcriber, whatsapp-radar,
-  grocery-shopping-automation) get their `[vendored]` entries written by step 4a
+  grocery-shopping-automation) get their `[vendored]` entries written by step 4, item 2a
   ("ADOPT") the first time this skill actually runs against them.
 - **Quality gate is upstream, not here.** `project-scaffolding#152` (source
   behavioral tests + a same-day-second-bug freeze rule) keeps a defective

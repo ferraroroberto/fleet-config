@@ -84,7 +84,7 @@ is always printed, and the primary stays free for a human session.
 
 A human running this skill in their own terminal has no such variable and keeps
 the default claim-or-worktree behaviour — one worktree per issue for a single
-interactive session would be pure overhead (README "Concurrent same-repo work").
+interactive session would be pure overhead (docs/skills.md "Concurrent same-repo work").
 
 Read the printed `MODE=`:
 - **`MODE=primary`** — you are the first session here. Work **in place** on the
@@ -98,8 +98,8 @@ This is the single concurrency primitive — `/issue-yolo`, `/issue-add now`,
 `/issue-batch` in-place, and `/cleanup-fleet` all inherit it by routing through
 this skill (by pointing here, never by paraphrasing these steps — #894).
 The claim is released by `/issue-finish` (or auto-expires after 8h if a
-session crashes). See `skills/_lib/worktree_claim.py` and README "Concurrent
-same-repo work".
+session crashes). See `skills/_lib/worktree_claim.py` and docs/skills.md
+"Concurrent same-repo work".
 
 ### 1. Pre-flight
 
