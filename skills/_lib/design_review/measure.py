@@ -75,6 +75,8 @@ BOUNDARY_CONTROL_SELECTOR = (
     "select, textarea, [role=switch]"
 )
 GLYPH_ICON_RE = GLYPH_ICON_RENDERED_RE
+# A control's label is "short" up to this many characters; a glyph at either end of a longer run is punctuation (#1261).
+GLYPH_LABEL_MAX_CHARS = 24
 
 # `__GEOMETRY__` is replaced by `build_script`. The script is one arrow
 # function taking `params` so Playwright's `page.evaluate(script, params)`
@@ -141,11 +143,18 @@ _MEASURE_JS = r"""
     const walker = document.createTreeWalker(scope, NodeFilter.SHOW_TEXT);
     const seen = new Set();
     const glyphRe = new RegExp(params.glyphRe, 'u');
+    // A glyph is an icon only when it stands alone or leads or ends a short control label (a button, link or tab).
+    // Inside a sentence or a title it is punctuation: user content such as a task title is data, not an icon the
+    // app drew, and it comes and goes with the data, not the build (#1261).
+    const glyphEdge = new RegExp('^(?:' + params.glyphRe + ')|(?:' + params.glyphRe + ')$', 'u');
+    const CONTROL = 'button, a, [role=button], [role=link], [role=tab], [role=menuitem]';
+    const isGlyphIcon = (raw, el) => [...raw].length <= 2
+      || (raw.length <= params.glyphLabelMax && !!el.closest(CONTROL) && glyphEdge.test(raw));
     while (walker.nextNode()) { const t = walker.currentNode; const raw = t.nodeValue.trim(); if (!raw) continue;
       const el = t.parentElement; if (!el || !visible(el) || !inScope(el)) continue;
       if (el.closest('svg, script, style, noscript, .xterm, .xterm-rows')) continue;
       // Preformatted text is content the app prints (a log, a code sample), not an icon it authors (#1119).
-      if (glyphRe.test(raw) && !seen.has(el) && !el.closest('pre, code, samp, kbd')) glyphs.push({sel: sel(el), text: raw.slice(0, 40)});
+      if (glyphRe.test(raw) && !seen.has(el) && !el.closest('pre, code, samp, kbd') && isGlyphIcon(raw, el)) glyphs.push({sel: sel(el), text: raw.slice(0, 40)});
       if (seen.has(el)) continue; seen.add(el);
       const s = getComputedStyle(el); const px = Math.round(parseFloat(s.fontSize)*100)/100;
       runs++; sizes[px] = (sizes[px]||0)+1; weights[s.fontWeight] = (weights[s.fontWeight]||0)+1;
@@ -591,6 +600,7 @@ def default_params(
         "formControls": FORM_CONTROL_SELECTOR,
         "boundaryControls": BOUNDARY_CONTROL_SELECTOR,
         "glyphRe": GLYPH_ICON_RE,
+        "glyphLabelMax": GLYPH_LABEL_MAX_CHARS,
         "excludeSelectors": [str(s) for s in exclude_selectors],
     }
 

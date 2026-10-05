@@ -87,6 +87,9 @@
       <p class="glyph">Next → step</p>
       <!-- #1119: a glyph the app prints as log/code text is not an icon; one in a control's label is -->
       <div><button type="button" class="big glyph-btn">Go →</button></div>
+      <!-- #1261: a lone arrow and a leading glyph in a control label are icons; an arrow inside a sentence or a user's own title (p.glyph above) is punctuation -->
+      <div><button type="button" class="big glyph-lone" aria-label="Next">→</button></div>
+      <div><button type="button" class="big glyph-run">▶ Run</button></div>
       <pre class="log faint">log → faint</pre>
       <p><code>a → b</code> <samp>✓ ok</samp> <kbd>⏎ →</kbd></p>
       <!-- #995: an extra step (click #revealBtn) shows a section holding a folded field -->
