@@ -33,6 +33,7 @@ from acceptance.shared import SKIP_EXIT  # noqa: E402
 import design_review as dr  # noqa: E402
 from design_review import capture, evaluate as ev, measure, plan, rubric as rb  # noqa: E402
 from design_review import mockups as mockups_mod, report as report_mod  # noqa: E402
+from design_lint.colormath import composite, contrast  # noqa: E402
 
 _h = CheckHarness()
 check = _h.check
@@ -147,8 +148,8 @@ def _pair(tokens, fg_tok, bg_tok):
     fg, bg = ev.parse_color(tokens.get(fg_tok, ""), tokens), ev.parse_color(tokens.get(bg_tok, ""), tokens)
     if fg is None or bg is None:
         return 0.0
-    bg = ev.composite(bg, card)
-    return round(ev.contrast(ev.composite(fg, bg), bg), 2)
+    bg = composite(bg, card)
+    return round(contrast(composite(fg, bg), bg), 2)
 
 
 # the audit's measurement, reproduced from tokens: accent text on its own tint
@@ -316,7 +317,7 @@ check(ev.parse_color("#fff", {}) == (255.0, 255.0, 255.0, 1.0), "short hex")
 check(ev.parse_color("color-mix(in srgb, var(--accent) 16%, transparent)", {"colors.accent": "#0969da"}) == (9.0, 105.0, 218.0, 0.16),
       "color-mix derivative -> accent at 16% alpha")
 check(ev.parse_color("transparent", {})[3] == 0.0 and ev.parse_color("oklch(0.5 0.1 200)", {}) is None, "transparent / unknown")
-check(round(ev.contrast((255, 255, 255, 1), (0, 0, 0, 1)), 1) == 21.0, "WCAG 21:1")
+check(round(contrast((255, 255, 255, 1), (0, 0, 0, 1)), 1) == 21.0, "WCAG 21:1")
 
 # ---- NAV-03: Settings is never a primary tab (#1200) ----
 def _nav03(mutate) -> dict:
