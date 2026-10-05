@@ -406,6 +406,10 @@ _STANDALONE_UNIT_CHECKS: Tuple[Tuple[str, str, str], ...] = (
     ("session_retention", "test_session_retention.py",
      "the opt-in Claude/Codex retention merger preserves unrelated settings, pins a two-year floor, "
      "removes truncation controls, and remains idempotent (#797)"),
+    ("hook_dispatch", "test_hook_dispatch.py",
+     "the one-process dispatcher's failure paths -- a crash, a raw "
+     "sys.exit(2), stray stdout, a swallowed verdict -- need throwaway hook "
+     "modules no real hook resembles (#1274)"),
     ("bash_windows_path_guard", "test_bash_windows_path_guard.py",
      "the guard's root-cause attribution -- a trailing backslash immediately "
      "before a closing double-quote escapes it instead of closing the "

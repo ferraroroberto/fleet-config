@@ -40,6 +40,7 @@ if hasattr(sys.stdout, "reconfigure"):
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from acceptance.hook_matrix import run_hook_matrix  # noqa: E402
+from acceptance.checks_dispatch import _hook_dispatch_checks  # noqa: E402
 from acceptance.architecture_guards import (  # noqa: E402
     _acceptance_audit_wiring_check,
     _advisory_semantics_check,
@@ -152,6 +153,9 @@ def main() -> int:
 
     # ---- hook-payload acceptance matrix + foreign-harness (Grok) parity ----
     run_unit(run_hook_matrix)
+
+    # ---- hook_dispatch.py: one process answers as its hooks' own did (#1274) ----
+    run_unit(_hook_dispatch_checks)
 
     # ---- context filter hook JSON + fixture eval ----
     # run_unit3: three of its cases probe integrations installed *outside* this

@@ -55,6 +55,8 @@ flowchart TB
     EDITEVENTSPY["edit_events.py\nEditEvent: native + Codex patch + Pi targets/outcomes (#744/#746/#819)"]
     PROJECTS["projects.toml\nper-project ports/gates/never-kill ports"]
     RUNHOOK["run-hook.ps1 — Claude Code shim (Git Bash routes through it)"]
+    HOOKDISPATCH["hook_dispatch.py — many hooks in one Python process (#1274)
+folds verdicts via harness_wire.emit_collected"]
     HOOKFILES["pre_commit_no_ai_trailer · secret_scan_guard · safe_kill_guard ·\nvenv_discipline · py_syntax_check · notify_on_idle · session_state ·\nblock_askuserquestion_chief · chief_handover_sessionstart · …"]
     NOTIFYPY["notify_send.py -> notify_complete.py -> work_summary.py"]
     CONVPY["conversation memory engine (projects.toml opt-in, #586)\ntranscript_readers (native Claude/Codex) -> conversation_capture (Stop)\nharness-qualified capture + native-session/fork header\nsession_index (SessionStart) -> conversation_index -> index.md + index.json\nconversation_search — FTS5 over digests + transcripts, returns resume cmd"]
@@ -69,6 +71,8 @@ flowchart TB
   LIBPY --> EDITEVENTSPY
   REGISTRYPY --> PROJECTS
   RUNHOOK --> HOOKFILES
+  HOOKDISPATCH --> HOOKFILES
+  HOOKDISPATCH --> HARNESSWIREPY
   BACKUPPY --> LIBPY
   BACKUPPY --> PROJECTS
   BACKUPPY -->|"success to coding log, failure to coding alerts"| NOTIFYPY
