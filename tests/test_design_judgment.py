@@ -51,7 +51,7 @@ SEED_IDS = [f"J-{i:02d}" for i in range(1, 11)]
 
 # ---- the checklist in the rubric ---------------------------------------------
 
-check(rubric.version == "1.16.0", "rubric at 1.16.0 (the [[judgment]] checklist arrived in 1.2.0)")
+check(rubric.version == "1.17.0", "rubric at 1.17.0 (the [[judgment]] checklist arrived in 1.2.0)")
 check([j.id for j in rubric.judgment] == SEED_IDS, f"the ten seed questions J-01..J-10 in order: {[j.id for j in rubric.judgment]}")
 rule_ids = {r.id for r in rubric.rules}
 for j in rubric.judgment:
@@ -65,6 +65,14 @@ check(any(not j.maps_to for j in rubric.judgment) and any(j.maps_to for j in rub
 _j04 = next(j.question for j in rubric.judgment if j.id == "J-04")
 check("page header" in _j04 and "names the screen" in _j04 and "a filter or search field under it passes" in _j04
       and "carries only the app's name" in _j04, "J-04 counts a page header that names the screen as the title and still fails an app-name-only header (#1249)")
+# J-06 (#1241): design.md prescribes lanes or a data table for two-dimensional views, so the container clause compares only the
+# one-dimensional tabs; header placement and the bottom navigation are still compared across all tabs. Probed with a fresh judge on
+# four desktop tab screens (Today list, Board lanes, Table, Archive cards, one header and one bottom nav): the old wording answered
+# no 2/2, the new one yes 3/3; a Board whose header sits differently still answers no.
+_j06 = next(j.question for j in rubric.judgment if j.id == "J-06")
+check("one-dimensional" in _j06 and "two-dimensional view (board lanes, a data table" in _j06 and "left out of the container comparison" in _j06
+      and "places its header or title differently" in _j06 and "bottom navigation differs" in _j06,
+      "J-06 compares container types only among one-dimensional tabs and still compares header placement and navigation (#1241)")
 
 _base = {"meta": {"version": "x"}, "weights": {"c": 1.0}, "grades": {"A": 90, "F": 0},
          "penalties": {"P0": 25, "P1": 12, "P2": 6, "P3": 2},
@@ -334,7 +342,7 @@ stale = json.loads((run_dir / "evaluate.json").read_text(encoding="utf-8"))
 stale["rubric_version"] = "0.9.0"
 (run_dir / "evaluate.json").write_text(json.dumps(stale), encoding="utf-8")
 p2b = _run("judge-merge", str(run_dir), str(FIX / "judge_answers_ok.json"), "--rubric", str(RUBRIC))
-check(p2b.returncode == 0 and "RUBRIC_MISMATCH=evaluate:0.9.0 judgment:1.16.0" in p2b.stdout and _kv(p2b).get("JUDGMENT") == "ok",
+check(p2b.returncode == 0 and "RUBRIC_MISMATCH=evaluate:0.9.0 judgment:1.17.0" in p2b.stdout and _kv(p2b).get("JUDGMENT") == "ok",
       f"an evaluate.json scored under another rubric version is named, never silently reused ({p2b.stdout[-200:]})")
 (run_dir / "evaluate.json").write_text(json.dumps(ev_after), encoding="utf-8")
 check(all(ev_before[k] == ev_after[k] for k in ev_before) and set(ev_after) - set(ev_before) == {"judgment"},

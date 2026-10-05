@@ -33,7 +33,7 @@
 # metrics.json, every evaluate output and every filed finding.
 
 [meta]
-version = "1.16.0"   # per-bump history: git log -- design.rubric.toml, and the issues/PRs it cites
+version = "1.17.0"   # per-bump history: git log -- design.rubric.toml, and the issues/PRs it cites
 seeded_from = "app-launcher rendered audit, 2026-09-21 (fleet-config#962)"
 
 [weights]
@@ -574,7 +574,7 @@ screens = "all"
 
 [[judgment]]
 id = "J-06"
-question = "Do all top-level tab screens share one anatomy: the same header position and title placement, the same bottom navigation, and the same container type for their main content (all cards, or all lists, or all tables)? Answer no if any tab places its header or title differently from the others or wraps its main content in a different container type (for example one tab is a table while the rest are cards)."
+question = "Do all top-level tab screens share one anatomy: the same header position and title placement, the same bottom navigation, and, among the tabs that are one-dimensional views, the same container type for their main content (all cards, or all lists)? A tab that is a two-dimensional view (board lanes, a data table with many fields, a tree with attribute columns, calendar days) uses the container its shape needs and is left out of the container comparison: a table or lane tab beside list and card tabs is what the design system prescribes, not a mismatch. Answer no if any tab places its header or title differently from the others, if the bottom navigation differs, or if the one-dimensional tabs wrap their main content in different container types (for example one tab is a list of cards while another is a bare list)."
 maps_to = ["NAV-02"]
 screens = "tabs"
 
