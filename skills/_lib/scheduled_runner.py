@@ -70,6 +70,14 @@ DELIVERY_NOT_CONFIRMED_EXIT_CODE = 121
 # timeout, and observed gaps between stream events run to a few minutes at most.
 DEFAULT_STALL_TIMEOUT_SECONDS = 2700.0
 STALL_EXIT_CODE = 124
+# Stall-watchdog poll interval. A cancellable run is polled every 0.1 s so a
+# cancel request kills the tree promptly. Otherwise the poll is a tenth of the
+# stall timeout, clamped: never faster than 1 s (nothing gains from sub-second
+# polling of a minutes-scale limit) and never slower than 30 s (so the kill
+# lands within a bounded delay after the limit even for a very long timeout).
+CANCEL_POLL_SECONDS = 0.1
+STALL_POLL_MIN_SECONDS = 1.0
+STALL_POLL_MAX_SECONDS = 30.0
 
 # Claude Code's own background-task ceiling (currently 600s) kills any sub-agent
 # still in flight and exits 0 regardless — the exact false-success shape #314
@@ -964,7 +972,10 @@ def _watch_for_stall(
     cancel_event: Optional[threading.Event] = None,
 ) -> None:
     """Kill the run once its stream has been silent longer than ``stall_timeout``."""
-    poll_seconds = 0.1 if cancel_event is not None else max(1.0, min(30.0, stall_timeout / 10))
+    poll_seconds = (
+        CANCEL_POLL_SECONDS if cancel_event is not None
+        else max(STALL_POLL_MIN_SECONDS, min(STALL_POLL_MAX_SECONDS, stall_timeout / 10))
+    )
     while not stop_event.wait(poll_seconds):
         if cancel_event is not None and cancel_event.is_set():
             state["cancelled"] = True
