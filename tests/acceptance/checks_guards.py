@@ -695,6 +695,23 @@ def _safe_kill_force_push_unit_checks() -> Tuple[int, int]:
     check("force-push: flagless push reports only the +refspecs (#960)",
           skg.forced_push_refspecs(f"{push} origin main +HEAD:feature/x") == ["+HEAD:feature/x"])
 
+    # Git's global options sit between `git` and `push` (fleet-config#1275).
+    gpush = "git -C /some/repo " + "push"
+    check("force-push: -C <dir> --force origin main -> blocked (#1275)",
+          blocked(f"{gpush} --force origin main"))
+    check("force-push: -c k=v -f origin master -> blocked (#1275)",
+          blocked("git -c push.default=current " + "push -f origin master"))
+    check("force-push: --git-dir=<d> and --work-tree <d> before push -> blocked (#1275)",
+          blocked("git --git-dir=/r/.git --work-tree /r " + "push --force origin main"))
+    check("force-push: quoted -C path with a space -> blocked (#1275)",
+          blocked('git -C "/some repo" ' + "push --force origin main"))
+    check("force-push: -C <dir> to a branch NAMED *-main-* -> allowed (#562 holds)",
+          not blocked(f"{gpush} --force origin feature/main-thing"))
+    check("force-push: -C <dir> with no force flag -> not a forced push",
+          skg.forced_push_refspecs(f"{gpush} origin main") is None)
+    check("force-push: a force flag on another git subcommand is not a push",
+          skg.forced_push_refspecs("git -C /r checkout -f main") is None)
+
     check("force-push: feature branch -> allowed", not blocked(f"{push} --force origin feature/foo"))
     check("force-push: branch whose NAME contains 'main' -> allowed (the #562 false positive)",
           not blocked(f"{push} --force origin chore/rename-main-config-loader"))
@@ -723,6 +740,22 @@ def _safe_kill_force_push_unit_checks() -> Tuple[int, int]:
         subprocess.run(["git", "-C", str(tmp), "checkout", "-b", "feat/x"], capture_output=True)
         check("force-push: refspec-less push on a feature branch -> allowed",
               not skg.forced_push_hits_protected(f"{push} --force origin", tmp))
+        # `-C <dir>` names the repo the push runs in — the branch comes from it,
+        # not from the payload cwd (fleet-config#1275).
+        other = Path(tempfile.mkdtemp(prefix="fc-push-cwd-"))
+        try:
+            subprocess.run(["git", "-C", str(tmp), "symbolic-ref", "HEAD", "refs/heads/main"], capture_output=True)
+            check("force-push: refspec-less -C <repo on main> from another cwd -> blocked (#1275)",
+                  skg.forced_push_hits_protected(f"git -C {tmp} " + "push --force", other))
+            subprocess.run(["git", "-C", str(other), "init", "-b", "main"], capture_output=True)
+            subprocess.run(["git", "-C", str(tmp), "symbolic-ref", "HEAD", "refs/heads/feat/y"], capture_output=True)
+            check("force-push: refspec-less -C <repo on a feature branch> while cwd is on main -> allowed (#1275)",
+                  not skg.forced_push_hits_protected(f"git -C {tmp} " + "push --force", other))
+            subprocess.run(["git", "-C", str(tmp), "symbolic-ref", "HEAD", "refs/heads/main"], capture_output=True)
+            check("force-push: relative -C resolves against the payload cwd (#1275)",
+                  skg.forced_push_hits_protected(f"git -C {tmp.name} " + "push --force", tmp.parent))
+        finally:
+            shutil.rmtree(other, ignore_errors=True)
         check("_current_branch: unresolvable cwd reports '' (fails open, never guesses)",
               skg._current_branch(tmp / "not-a-repo-here") == "")
     finally:

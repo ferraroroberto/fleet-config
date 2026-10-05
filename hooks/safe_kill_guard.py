@@ -69,7 +69,17 @@ GIT_BYPASS_PATTERNS = (
 # feature-branch force-push this module's own docstring promises to allow
 # (fleet-config#562). A fleet-wide guard that blocks valid work is the expensive
 # kind of wrong — #464/#472 reverted a hook within the hour for exactly that.
-GIT_PUSH_RE = re.compile(r"\bgit\s+push\b", re.IGNORECASE)
+# Git's global options may sit between `git` and the subcommand
+# (`git -C <dir> push …`, fleet-config#1275), so a push is found by walking those
+# options token by token, not by a `git\s+push` adjacency regex.
+GIT_TOKEN_RE = re.compile(r"(?:^|[\\/])git(?:\.exe)?$", re.IGNORECASE)
+# Global options that consume the next token unless written `--opt=value`.
+GIT_GLOBAL_OPTS_WITH_VALUE = {
+    "-c", "-C", "--git-dir", "--work-tree", "--namespace", "--exec-path",
+    "--super-prefix", "--config-env", "--attr-source",
+}
+# Quote-aware split, so `-C "E:/my repo"` stays one token.
+_TOKEN_RE = re.compile(r"\"[^\"]*\"|'[^']*'|\S+")
 # `--force`, `--force-with-lease[=ref]`, and short-flag clusters carrying `f`
 # (`-f`, `-fu`, `-uf`). Anchored to a token start so `--foo` can't match.
 FORCE_FLAG_RE = re.compile(
@@ -89,6 +99,42 @@ def destination_branch(refspec: str) -> str:
     return dest[len(prefix):] if dest.startswith(prefix) else dest
 
 
+def _push_args(segment: str) -> Optional[tuple[list[str], Optional[str]]]:
+    """For a `git [global options] push …` segment: the tokens after `push` and
+    the `-C` directory (``None`` when absent; several `-C`s compose, as in git).
+    ``None`` when the segment isn't a push."""
+    tokens = [t.strip("\"'") for t in _TOKEN_RE.findall(segment)]
+    for start, token in enumerate(tokens):
+        if not GIT_TOKEN_RE.search(token):
+            continue
+        i, git_dir = start + 1, None
+        while i < len(tokens) and tokens[i].startswith("-"):
+            opt = tokens[i]
+            if opt == "-C" and i + 1 < len(tokens):
+                git_dir = tokens[i + 1] if git_dir is None else str(Path(git_dir) / tokens[i + 1])
+            i += 2 if opt in GIT_GLOBAL_OPTS_WITH_VALUE else 1
+        if i < len(tokens) and tokens[i].lower() == "push":
+            return tokens[i + 1:], git_dir
+    return None
+
+
+def _parse_forced_push(cmd: str) -> Optional[tuple[list[str], Optional[str]]]:
+    """`(refspecs, -C dir)` of a forced `git push`, or ``None`` when `cmd` isn't one."""
+    for segment in re.split(r"[\n;|&]+", cmd):
+        parsed = _push_args(segment)
+        if parsed is None:
+            continue
+        args, git_dir = parsed
+        # First positional after `push` is the remote; the rest are refspecs.
+        positional = [t for t in args if not t.startswith("-")]
+        if FORCE_FLAG_RE.search(" ".join(args)):
+            return positional[1:], git_dir
+        plus = [r for r in positional[1:] if r.startswith("+")]
+        if plus:
+            return plus, git_dir
+    return None
+
+
 def forced_push_refspecs(cmd: str) -> Optional[list[str]]:
     """Refspecs of a forced `git push`, or ``None`` when `cmd` isn't one.
 
@@ -98,24 +144,12 @@ def forced_push_refspecs(cmd: str) -> Optional[list[str]]:
 
     With no force flag, a refspec with a leading `+` is still forced, for that
     refspec alone (`git push origin +HEAD:main`, fleet-config#960), so only
-    those refspecs are returned.
+    those refspecs are returned. Git's global options before `push`
+    (`-C <dir>`, `-c k=v`, `--git-dir`, `--work-tree`) don't hide it
+    (fleet-config#1275).
     """
-    for segment in re.split(r"[\n;|&]+", cmd):
-        if not GIT_PUSH_RE.search(segment):
-            continue
-        forced = bool(FORCE_FLAG_RE.search(segment))
-        tokens = segment.split()
-        for i, token in enumerate(tokens):
-            if token.lower() == "push":
-                # First positional after `push` is the remote; the rest are refspecs.
-                positional = [t for t in tokens[i + 1:] if not t.startswith("-")]
-                if forced:
-                    return positional[1:]
-                plus = [r for r in positional[1:] if r.startswith("+")]
-                if plus:
-                    return plus
-                break
-    return None
+    parsed = _parse_forced_push(cmd)
+    return None if parsed is None else parsed[0]
 
 
 def _current_branch(cwd_path: Path) -> str:
@@ -140,10 +174,13 @@ def _current_branch(cwd_path: Path) -> str:
 
 def forced_push_hits_protected(cmd: str, cwd_path: Path) -> bool:
     """True when `cmd` force-pushes to `main`/`master`."""
-    refspecs = forced_push_refspecs(cmd)
-    if refspecs is None:
+    parsed = _parse_forced_push(cmd)
+    if parsed is None:
         return False
-    targets = [destination_branch(r) for r in refspecs] or [_current_branch(cwd_path)]
+    refspecs, git_dir = parsed
+    # A refspec-less push runs in the repo `-C` names, relative to the payload cwd.
+    repo = cwd_path / git_dir if git_dir else cwd_path
+    targets = [destination_branch(r) for r in refspecs] or [_current_branch(repo)]
     return any(t.lower() in PROTECTED_BRANCHES for t in targets if t)
 
 
