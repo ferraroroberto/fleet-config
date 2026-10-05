@@ -46,6 +46,8 @@ E:/automation/fleet-config/.venv/Scripts/python.exe .claude/skills/system-map/bu
 E:/automation/fleet-config/.venv/Scripts/python.exe tests/run_acceptance.py
 ```
 
+A `build_data: REFUSED <repo>: …` line means that repo's `.fleet.toml` description is longer than its card shows in two lines (per-layer cap: `architecture/README.md`, fleet-config#1250). The file is still regenerated with the repo's residual fallback card, but the run exits 1. Name every refused repo in the step-7 report; the fix is a shorter description in the owning repo, never a raised cap.
+
 The `system_map:` checks fail loud if the fleet, `fleet.data.js`, and `ARCHITECTURE.md` disagree (a forgotten repo, a stale entry, or a doc that omits a mapped repo). Fix any failure before rendering.
 
 **This skill owns fleet-wide `.fleet.toml` freshness** (fleet-config#562). The `fleet_toml:` aggregate checks read *sibling repos'* live checkouts, so a `.fleet.toml` commit in any other repo would otherwise turn fleet-config's own gate red — blocking every `/issue-finish`, `/quick`, and `/issue-yolo` here for a reason no commit in this repo can fix. They therefore report as `SKIP` in `tests/run_acceptance.py` (advisory: drift is named, run not failed) and only fleet-config's own card is gated hard there. Here they are load-bearing: **any `SKIP  fleet_toml:` line in this step is a failure of this run** — the regeneration above resolves it, so re-run `build_data.py`, and if a line survives, fix it in the owning repo (or drop it from `_adopted`) before rendering. Never leave the step with drift outstanding: the weekly run is the only thing that clears it.
