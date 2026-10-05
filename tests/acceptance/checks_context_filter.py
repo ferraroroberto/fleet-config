@@ -614,6 +614,42 @@ def _context_filter_unit_checks() -> Tuple[int, int, int]:
                 res.stdout.strip() + " | " + res.stderr.strip(),
             )
 
+    # ---- Bash bodies run in a non-login shell, in the caller's environment (#1272) ----
+    # `bash -lc` re-sourced /etc/profile on every wrapped call (~280 ms) and
+    # replaced the harness's environment with the profile's: LANG came back as
+    # en_US.UTF-8 where the harness has none, which changed `sort` and `wc -m`
+    # output against the same command run unwrapped.
+    if shutil.which("bash"):
+        body = 'shopt -q login_shell && echo login || echo plain; echo "LANG=${LANG-unset}"'
+        encoded = base64.b64encode(body.encode("utf-8")).decode("ascii")
+        with tempfile.TemporaryDirectory() as tmp:
+            env = {k: v for k, v in os.environ.items() if k not in {"LANG", "LC_ALL", "LC_CTYPE"}}
+            res = subprocess.run(
+                [PYTHON, str(HOOKS / "context_filter_cli.py"), "run", "--tool", "Bash",
+                 "--mode", "rewrite", "--encoded", encoded, "--cwd", tmp],
+                capture_output=True, text=True, encoding="utf-8", errors="replace",
+                env={**env, "FLEET_CONTEXT_FILTER_DIR": tmp}, timeout=60,
+            )
+        check(
+            "context_filter_cli: Bash body runs non-login in the caller's environment (fleet-config#1272)",
+            res.returncode == 0 and res.stdout.split() == ["plain", "LANG=unset"],
+            res.stdout.strip() + " | " + res.stderr.strip(),
+        )
+
+    # The hook imports context_filter on every shell call and the wrapper adds
+    # its own interpreter start, so modules only `eval` or a cached blob need
+    # stay out of both import paths.
+    probe = (
+        "import sys; sys.path.insert(0, sys.argv[1]); import context_filter_cli, context_filter_hook; "
+        "print(sorted(m for m in ('hashlib', 'statistics') if m in sys.modules))"
+    )
+    res = subprocess.run([PYTHON, "-c", probe, str(HOOKS)], capture_output=True, text=True, timeout=30)
+    check(
+        "context_filter: hook and wrapper import paths defer hashlib and statistics (fleet-config#1272)",
+        res.returncode == 0 and res.stdout.strip() == "[]",
+        res.stdout.strip() + " | " + res.stderr.strip(),
+    )
+
     # ---- mode file resolution: env override -> mode.json -> off (#541) ----
     # The machine-wide switch is ~/.fleet-context-filter/mode.json (written by
     # the app-launcher toggle); the env var stays the per-process override and
