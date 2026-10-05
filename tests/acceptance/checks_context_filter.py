@@ -362,7 +362,9 @@ def _context_filter_unit_checks() -> Tuple[int, int, int]:
     # (f) heavy filtering is legible as such: `lines=N->M` in the banner is what
     # separates "mostly withheld" from "the command printed nothing".
     with tempfile.TemporaryDirectory() as tmp:
-        long_cmd = "; ".join(f'Write-Output "row {i} aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"' for i in range(200))
+        # One simple command: a `;`-joined list is compound output, returned
+        # whole (fleet-config#1268), and this case is about withheld lines.
+        long_cmd = "Write-Output ((0..199) -replace '^(.*)$', 'row $1 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa')"
         res = subprocess.run(
             [
                 PYTHON,
@@ -410,6 +412,41 @@ def _context_filter_unit_checks() -> Tuple[int, int, int]:
             f"rc={res.returncode} tail={res.stdout.strip()[-300:]}",
         )
 
+    # (g) output that comes back whole carries no banner: ~30 tokens on every
+    # call outweighed the filter's whole saving once most commands are wrapped
+    # (fleet-config#1268). Nothing withheld means nothing to retrieve, either.
+    with tempfile.TemporaryDirectory() as tmp:
+        whole_cmd = 'Write-Output "first line"; Write-Output "second line"'
+        res = subprocess.run(
+            [
+                PYTHON, str(HOOKS / "context_filter_cli.py"), "run",
+                "--tool", "PowerShell", "--mode", "rewrite",
+                "--encoded", base64.b64encode(whole_cmd.encode("utf-8")).decode("ascii"),
+            ],
+            capture_output=True, text=True, env={**os.environ, "FLEET_CONTEXT_FILTER_DIR": tmp}, timeout=60,
+        )
+        check(
+            "context_filter_cli: output returned whole comes back raw, no banner, no blob (fleet-config#1268)",
+            res.returncode == 0
+            and res.stdout.replace("\r\n", "\n") == "first line\nsecond line\n"
+            and not (Path(tmp) / "blobs").exists()
+            and (Path(tmp) / "shadow.jsonl").exists(),
+            f"rc={res.returncode} stdout={res.stdout!r}",
+        )
+        (Path(tmp) / "mode.json").write_text(json.dumps({"mode": "rewrite"}), encoding="utf-8")
+        res = subprocess.run(
+            [PYTHON, str(HOOKS / "context_filter_cli.py"), "compress", "--agent", "pi"],
+            input=json.dumps({"command": "git status --short", "output": " M a.py\n"}),
+            capture_output=True, text=True,
+            env={**os.environ, "FLEET_CONTEXT_FILTER_MODE": "", "FLEET_CONTEXT_FILTER_DIR": tmp}, timeout=30,
+        )
+        reply = json.loads(res.stdout) if res.returncode == 0 and res.stdout.strip() else {}
+        check(
+            "context_filter_cli: compress leaves a whole output unwrapped (fleet-config#1268)",
+            reply.get("wrap") is False and reply.get("mode") == "rewrite",
+            f"rc={res.returncode} reply={reply}",
+        )
+
     # ---- skill helpers are never wrapped; ordinary commands still are ----
     # A helper shipped with a skill produces one payload the orchestrator parses
     # directly, so wrapping it risks the #424 truncation for no compression
@@ -433,6 +470,9 @@ def _context_filter_unit_checks() -> Tuple[int, int, int]:
          python_prefix + '"C:/Users/rober/.claude/skills/_lib/design_lint" all E:/automation/home-automation',
          True, 564),
         ("ordinary python -c", python_prefix + '-c "print(1)"', False, 427),
+        # #1268: reading a helper's source is not running it.
+        ("rg over a skill helper's source",
+         'rg -n def "E:/automation/fleet-config/skills/_lib/worktree_claim.py"', False, 1268),
         ("ordinary git", "git status --short", False, 427),
         # ...and the extension-less branch must not swallow ordinary work under
         # a skill directory, which matches the same bare `skills/<x>/<y>` shape.
@@ -449,6 +489,94 @@ def _context_filter_unit_checks() -> Tuple[int, int, int]:
             f"context_filter_hook: {label} {verb} (fleet-config#{issue})",
             code == 0 and (stdout.strip() == "") == expect_passthrough,
             stdout + stderr,
+        )
+
+    # ---- the shapes agents actually write are wrapped; unsafe ones still not (#1268) ----
+    # Under 1% of shell output was wrapped: a `cd X &&` prefix, any pipe, an
+    # env prefix, or a skill *file path* anywhere in the command each excluded
+    # it before the base command was looked at.
+    sys.path.insert(0, str(HOOKS))
+    import context_filter as _cf1268  # noqa: E402
+
+    decision_cases = [
+        ("cd X && git status", "cd E:/automation/fleet-config && git status", "Bash", True),
+        ("quoted cd; git diff", 'cd "E:/a b"; git diff --stat', "Bash", True),
+        ("env prefix", "PYTHONUTF8=1 python x.py", "Bash", True),
+        ("pipe to stdout", "git log | head", "Bash", True),
+        ("cd + pipe", "cd /e/x && grep -rn foo . | head -40", "Bash", True),
+        ("reading a skill helper's source", "grep -n def skills/_lib/worktree_claim.py", "Bash", True),
+        ("python heredoc with > in its body",
+         "cd /e/x && python - <<'EOF'\nif 2 > 1:\n    print('x')\nEOF", "Bash", True),
+        ("stdout to a file", "git log > out.txt", "Bash", False),
+        ("stdout appended to a file", "cd /e/x && git log >> out.txt", "Bash", False),
+        ("heredoc written to a file", "cat > f.txt <<'EOF'\nhello\nEOF", "Bash", False),
+        ("PowerShell Out-File", "git log | Out-File log.txt", "PowerShell", False),
+        ("git push behind cd", "cd /e/x && git push origin HEAD", "Bash", False),
+        ("streaming", "tail -f app.log | grep ERROR", "Bash", False),
+        ("background job", "python server.py &", "Bash", False),
+        ("running a skill helper behind cd",
+         "cd /e/x && E:/automation/fleet-config/.venv/Scripts/python.exe skills/_lib/chief_ops.py board | head", "Bash", False),
+        ("export after cd", "cd /e/x && export A=1; git status", "Bash", False),
+        ("cd mid-command", "git status && cd sub", "Bash", False),
+        ("&& under the 5.1 wrapper", "git status && git log -1", "PowerShell", False),
+        ("&& under bash", "git status && git log -1", "Bash", True),
+    ]
+    for label, command, tool, expect_wrap in decision_cases:
+        decision = _cf1268.rewrite_decision(command, tool=tool)
+        check(
+            f"context_filter: {label} -> {'wrapped' if expect_wrap else 'not wrapped'} (fleet-config#1268)",
+            decision.should_wrap == expect_wrap,
+            f"{command!r} -> {decision.reason}",
+        )
+    split = _cf1268.rewrite_decision('cd "E:/a b" && cd sub && git status | head', tool="Bash")
+    check(
+        "context_filter: leading cd segments split off verbatim as the prefix (fleet-config#1268)",
+        split.should_wrap
+        and split.prefix == 'cd "E:/a b" && cd sub && '
+        and split.body == "git status | head",
+        f"prefix={split.prefix!r} body={split.body!r} reason={split.reason}",
+    )
+
+    # Compound output is the last stage's, so it is never read through the
+    # first command's summariser: the status filter would drop every log line.
+    status_then_log = "\n".join(
+        [f" M hooks/file_{i}.py" for i in range(60)] + [f"abc{i:04d} commit subject {i}" for i in range(60)]
+    )
+    compound = _cf1268.compress_output("cd /e/x && git status --short && git log --oneline -60", status_then_log)
+    check(
+        "context_filter: compound output keeps every line, never a summariser's pick (fleet-config#1268)",
+        "abc0059 commit subject 59" in compound.compressed and "hooks/file_59.py" in compound.compressed,
+        compound.compressed[-200:],
+    )
+
+    # The rewrite runs for real: the cd stays in the harness's shell and the
+    # wrapper inherits its directory, from somewhere else entirely.
+    import shutil  # noqa: E402
+
+    probes = [("Bash", f'cd "{REPO.as_posix()}" && git rev-parse --show-toplevel')]
+    probes.append(("PowerShell", f'cd "{REPO.as_posix()}"; git rev-parse --show-toplevel'))
+    for tool, command in probes:
+        code, stdout, stderr = run(
+            "context_filter_hook",
+            {"tool_name": tool, "cwd": str(Path.home()), "tool_input": {"command": command}},
+            {"FLEET_CONTEXT_FILTER_MODE": "rewrite"},
+        )
+        rewritten = json.loads(stdout)["hookSpecificOutput"]["updatedInput"]["command"] if code == 0 and stdout.strip() else ""
+        shell = shutil.which("bash") if tool == "Bash" else "C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe"
+        argv = [shell, "-c", rewritten] if tool == "Bash" else [shell, "-NoProfile", "-Command", rewritten]
+        with tempfile.TemporaryDirectory() as tmp:
+            res = subprocess.run(
+                argv, capture_output=True, text=True, encoding="utf-8", errors="replace", cwd=tmp,
+                env={**os.environ, "FLEET_CONTEXT_FILTER_DIR": tmp}, timeout=60,
+            ) if rewritten and shell else None
+        out = (res.stdout + res.stderr) if res else ""
+        check(
+            f"context_filter_hook: {tool} cd prefix runs in the outer shell, the wrapper in its directory (fleet-config#1268)",
+            rewritten.startswith(command.split("git rev-parse")[0].rstrip())
+            and "--cwd" not in rewritten
+            and res is not None and res.returncode == 0
+            and REPO.as_posix().lower() in out.replace("\\", "/").lower(),
+            f"rewritten={rewritten[:160]} out={out.strip()[:300]}",
         )
 
     # ---- wrapper stdout re-emission survives non-cp1252 output (#426) ----
@@ -937,6 +1065,9 @@ def _context_filter_unit_checks() -> Tuple[int, int, int]:
         stale.write_text("old raw output", encoding="utf-8")
         old = time.time() - (8 * 24 * 3600)
         os.utime(stale, (old, old))
+        # An output with lines withheld: only that caches a blob, and caching
+        # is what runs the GC (fleet-config#1268).
+        withholding = "Write-Output ((0..199) -replace '^(.*)$', 'row $1 aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa')"
         res = subprocess.run(
             [
                 PYTHON,
@@ -944,7 +1075,7 @@ def _context_filter_unit_checks() -> Tuple[int, int, int]:
                 "run",
                 "--tool", "PowerShell",
                 "--mode", "rewrite",
-                "--encoded", encoded,
+                "--encoded", base64.b64encode(withholding.encode("utf-8")).decode("ascii"),
             ],
             capture_output=True,
             text=True,

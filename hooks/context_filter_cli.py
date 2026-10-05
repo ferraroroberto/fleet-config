@@ -221,6 +221,18 @@ def _retrieve_footer(compressed: Any) -> str:
     )
 
 
+def _shown(compressed: Any) -> str | None:
+    """What the agent sees for a rewritten output, or None for "the raw output".
+
+    Output that came back whole and unredacted needs no banner: it would only
+    cost ~30 tokens per call, and once most commands are wrapped that overhead
+    outweighed everything the filter saved (fleet-config#1268).
+    """
+    if not compressed.withheld and not compressed.secret_like:
+        return None
+    return _header(compressed) + "\n" + compressed.compressed + _retrieve_footer(compressed)
+
+
 def run_wrapped(args: argparse.Namespace) -> int:
     command = _decode_command(args.encoded)
     try:
@@ -256,13 +268,17 @@ def run_wrapped(args: argparse.Namespace) -> int:
             mode=args.mode,
             agent=args.agent or "claude",
             session_id=args.session_id,
-            cwd=args.cwd,
+            # No --cwd: the hook left a `cd` prefix in the harness's shell and
+            # this process inherited the directory it moved to.
+            cwd=args.cwd or os.getcwd(),
             command=command,
             tool=args.tool,
             compressed=compressed,
             exit_code=result.returncode,
         )
-        filtered = _header(compressed) + "\n" + compressed.compressed + _retrieve_footer(compressed)
+        filtered = _shown(compressed)
+        if filtered is None:
+            filtered = raw.rstrip("\n")
     except Exception as exc:  # noqa: BLE001 - any filter fault degrades to raw
         print(f"fleet-context-filter: filter failed, passing raw output through: {exc!r}", file=sys.stderr)
         filtered = (
@@ -392,6 +408,7 @@ def run_compress(args: argparse.Namespace) -> int:
     if mode not in {"shadow", "rewrite"} or not command:
         print(json.dumps({"mode": mode, "wrap": False}))
         return 0
+    # No tool: Pi already ran the command, so no shell dialect is at stake.
     decision = context_filter.rewrite_decision(command)
     if not decision.should_wrap:
         print(json.dumps({"mode": mode, "wrap": False}))
@@ -418,11 +435,11 @@ def run_compress(args: argparse.Namespace) -> int:
         print(json.dumps({"mode": mode, "wrap": False}))
         return 0
 
-    if mode == "shadow":
+    text = _shown(compressed)
+    if mode == "shadow" or text is None:
         print(json.dumps({"mode": mode, "wrap": False}))
         return 0
 
-    text = _header(compressed) + "\n" + compressed.compressed + _retrieve_footer(compressed)
     print(json.dumps({"mode": mode, "wrap": True, "text": text}))
     return 0
 
