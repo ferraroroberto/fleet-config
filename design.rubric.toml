@@ -33,7 +33,7 @@
 # metrics.json, every evaluate output and every filed finding.
 
 [meta]
-version = "1.15.0"   # per-bump history: git log -- design.rubric.toml, and the issues/PRs it cites
+version = "1.16.0"   # per-bump history: git log -- design.rubric.toml, and the issues/PRs it cites
 seeded_from = "app-launcher rendered audit, 2026-09-21 (fleet-config#962)"
 
 [weights]
@@ -562,7 +562,7 @@ screens = "all"
 
 [[judgment]]
 id = "J-04"
-question = "Does each screen read top to bottom in one column at phone width — a title or heading first, then content, then actions? Two separate checks, both must hold for a yes: (1) no iphone or android screenshot places two content blocks (cards, lists, panels) side by side — navigation tabs and a row's own inline controls do not count; (2) on every tab screen the first text read below the app's top bar is a title or section heading, not the label of a button, dropdown or input. Answer no if either check fails on any screen, and name that screen as evidence."
+question = "Does each screen read top to bottom in one column at phone width — a title or heading first, then content, then actions? Two separate checks, both must hold for a yes: (1) no iphone or android screenshot places two content blocks (cards, lists, panels) side by side — navigation tabs and a row's own inline controls do not count; (2) on every tab screen the first text read below the app's top bar is a title or section heading, not the label of a button, dropdown or input. The page header (the card or bar at the top of a tab's pane that carries the tab's title, a context line and the theme and Settings controls) is the tab's title, not the app's top bar, when its heading names the screen (Today, Board, Apps): check (2) is then met by that heading, and a filter or search field under it passes. Check (2) fails when a tab's header carries only the app's name, or there is no header naming the screen. Answer no if either check fails on any screen, and name that screen as evidence."
 maps_to = []
 screens = "all"
 
