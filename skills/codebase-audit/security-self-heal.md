@@ -59,7 +59,7 @@ self-resume"), so under `/audit-fleet` it would silently stall.
 4. **Auto-merge on green** (green = gate passes *including* the new test), exactly
    like `/cleanup-fleet`'s easy tier: PR, wait for CI per `/issue-yolo`'s rules,
    then merge + land per `/issue-yolo` step 8's **worktree** branch — `gh pr
-   merge <PR> --merge` with **no `--delete-branch`** and no `git checkout main`
+   merge <PR> --squash` with **no `--delete-branch`** and no `git checkout main`
    — **tear the worktree down, land the primary, and release the claim**
    (`worktree_claim.py remove-worktree <worktree-path>`, then `land-primary
    <repo> <N>` — report its `PRIMARY=live behind=0` / `PRIMARY=stale

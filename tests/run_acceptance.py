@@ -55,6 +55,7 @@ from acceptance.architecture_guards import (  # noqa: E402
     _unattended_worktree_mandate_check,
     _settings_sync_split_check,
     _settings_template_sync_check,
+    _skill_git_rules_check,
     _system_map_coverage_check,
     _system_map_whatchanged_check,
 )
@@ -280,6 +281,9 @@ def main() -> int:
     # ---- system-map: Mermaid companion render (render_mermaid.py) freshness ----
     run_unit(_mermaid_check)
     run_unit(_unattended_worktree_mandate_check)
+
+    # ---- no skill deletes an index.lock or merge-commits a PR (#1243) ----
+    run_unit(_skill_git_rules_check)
 
     # ---- acceptance audited per criterion, unverifiable its own state (#958) ----
     run_unit(_acceptance_audit_wiring_check)
