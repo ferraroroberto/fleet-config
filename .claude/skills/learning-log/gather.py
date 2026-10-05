@@ -2,8 +2,8 @@
 
 The deterministic half of the redesigned skill. It reads the fleet's merged PRs
 and closed issues **per repo** (REST `gh pr list` / `gh issue list` — not the
-rate-limited cross-repo search, so the full window since the last run is covered
-with no cap), buckets each item by work type, computes exact productivity stats
+rate-limited cross-repo search; each list is capped at PER_REPO_LIST_LIMIT items
+and the repo list at REPO_LIST_LIMIT, see below), buckets each item by work type, computes exact productivity stats
 (no LLM), and partitions the items into per-bucket files for the Sonnet
 sub-agents to mine for insight.
 
