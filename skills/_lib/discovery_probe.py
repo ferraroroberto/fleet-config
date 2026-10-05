@@ -424,7 +424,8 @@ def _codex_model_instructions(paths: dict[str, Path], model: str) -> dict[str, A
         return {"client": "codex-model", "status": "missing"}
     root_target = (paths["root"] / "CLAUDE.md").resolve()
     nested_target = (paths["package"] / "CLAUDE.md").resolve()
-    expected = "CLAUDE_ROOT_EOF_748,CLAUDE_NESTED_EOF_748"
+    root_marker, nested_marker = "CLAUDE_ROOT_EOF_748", "CLAUDE_NESTED_EOF_748"
+    expected = f"{root_marker},{nested_marker}"
     command = (
         f"Get-Content -LiteralPath '{root_target}','{nested_target}'"
     )
@@ -506,9 +507,9 @@ the comma-separated EOF marker values from the two files, in root then nested or
         "tool_exit_code": completed.get("exit_code"),
         "synthetic_target_scope_verified": scope_verified,
         "root_target_bytes": root_target.stat().st_size,
-        "root_target_eof_loaded": markers_verified,
+        "root_target_eof_loaded": root_marker in output,
         "nested_target_bytes": nested_target.stat().st_size,
-        "nested_target_eof_loaded": markers_verified,
+        "nested_target_eof_loaded": nested_marker in output,
         "exact_marker_response": markers_verified,
     }
     if reason:
