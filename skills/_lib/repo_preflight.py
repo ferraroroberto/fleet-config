@@ -101,6 +101,7 @@ from typing import Any, Callable, Dict, List, NamedTuple, Optional, Tuple
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import dir_holders  # noqa: E402
 import git_run  # noqa: E402
+import worktree_residue  # noqa: E402
 
 DEFAULT_FLEET_ROOT = Path("E:/automation")
 
@@ -212,16 +213,12 @@ def classify_repo(facts: RepoFacts) -> Tuple[str, str]:
 def parse_worktree_list(porcelain: str) -> Tuple[str, ...]:
     """Every worktree past the primary, from `git worktree list --porcelain`.
 
-    The first `worktree ` line is the primary checkout; anything after it is
-    residue from an earlier run or a live human session. Returns paths in the
-    order git reported them.
+    The first record is the primary checkout; anything after it is residue
+    from an earlier run or a live human session. Returns paths in the order
+    git reported them. The parsing itself is `worktree_residue`'s, the one
+    porcelain parser.
     """
-    paths = [
-        line[len("worktree ") :].strip()
-        for line in porcelain.splitlines()
-        if line.startswith("worktree ")
-    ]
-    return tuple(paths[1:])
+    return tuple(entry.path for entry in worktree_residue.parse_worktree_porcelain(porcelain))
 
 
 def _is_reparse(path: Path) -> Optional[bool]:

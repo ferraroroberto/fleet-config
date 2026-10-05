@@ -14,6 +14,7 @@ Run: `E:/automation/fleet-config/.venv/Scripts/python.exe tests/test_design_revi
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
 import socket
@@ -33,6 +34,7 @@ from acceptance.shared import SKIP_EXIT  # noqa: E402
 import design_review as dr  # noqa: E402
 from design_review import capture, evaluate as ev, measure, plan, rubric as rb  # noqa: E402
 from design_review import mockups as mockups_mod, report as report_mod  # noqa: E402
+from design_lint.colormath import composite, contrast  # noqa: E402
 
 _h = CheckHarness()
 check = _h.check
@@ -147,8 +149,8 @@ def _pair(tokens, fg_tok, bg_tok):
     fg, bg = ev.parse_color(tokens.get(fg_tok, ""), tokens), ev.parse_color(tokens.get(bg_tok, ""), tokens)
     if fg is None or bg is None:
         return 0.0
-    bg = ev.composite(bg, card)
-    return round(ev.contrast(ev.composite(fg, bg), bg), 2)
+    bg = composite(bg, card)
+    return round(contrast(composite(fg, bg), bg), 2)
 
 
 # the audit's measurement, reproduced from tokens: accent text on its own tint
@@ -316,7 +318,7 @@ check(ev.parse_color("#fff", {}) == (255.0, 255.0, 255.0, 1.0), "short hex")
 check(ev.parse_color("color-mix(in srgb, var(--accent) 16%, transparent)", {"colors.accent": "#0969da"}) == (9.0, 105.0, 218.0, 0.16),
       "color-mix derivative -> accent at 16% alpha")
 check(ev.parse_color("transparent", {})[3] == 0.0 and ev.parse_color("oklch(0.5 0.1 200)", {}) is None, "transparent / unknown")
-check(round(ev.contrast((255, 255, 255, 1), (0, 0, 0, 1)), 1) == 21.0, "WCAG 21:1")
+check(round(contrast((255, 255, 255, 1), (0, 0, 0, 1)), 1) == 21.0, "WCAG 21:1")
 
 # ---- NAV-03: Settings is never a primary tab (#1200) ----
 def _nav03(mutate) -> dict:
@@ -898,6 +900,165 @@ check(_scr_clip["screenshot_full"] == "iphone-light-root-full.png" and "clipped"
 _scr_ok = _walk_one("ok")[0][0]
 check(_scr_ok["status"] == "ok" and _scr_ok["screenshot_full"] == "iphone-light-root-full.png" and _scr_ok.get("note") is None,
       f"a page within the limit is captured whole, without a note -- {_scr_ok}")
+
+# ---- walk: every ok/error/absent arm of walk_context, records + log lines (#1244) ----
+
+
+class _ArmLoc:
+    """A Playwright locator stub: actions on `sel` raise whatever the page's `fail` map names."""
+
+    def __init__(self, page, sel: str) -> None:
+        self.page, self.sel = page, sel
+
+    first = property(lambda self: self)
+    def count(self): return 1
+    def nth(self, i): return _ArmLoc(self.page, f"{self.sel}#{i}")
+    def locator(self, sel): return _ArmLoc(self.page, sel) if self.sel == "[role=tablist]" else self
+    def wait_for(self, **_k): self.page.act("wait", self.sel)
+    def click(self): self.page.act("click", self.sel)
+
+    def evaluate(self, js, *_args):
+        return self.sel in self.page.no_go_hits if js is walk._NO_GO_JS else None
+
+
+class _ArmPage:
+    """Three tabs (one fine, one broken, one timing out), two dialogs (one won't open), a scripted gear."""
+
+    def __init__(self, fail: dict, no_go_hits: set, goto_error=None) -> None:
+        self.fail, self.no_go_hits, self.goto_error = fail, no_go_hits, goto_error
+
+    def act(self, kind, sel):
+        if (kind, sel) in self.fail:
+            raise self.fail[(kind, sel)]
+
+    def set_default_timeout(self, _ms): pass
+    def wait_for_timeout(self, _ms): pass
+    def screenshot(self, **_k): pass
+    def locator(self, sel): return _ArmLoc(self, sel)
+    def get_by_role(self, *_a, **_k): return _ArmLoc(self, "gear")
+
+    def goto(self, *_a, **_k):
+        if self.goto_error:
+            raise self.goto_error
+
+    def evaluate(self, js, *args):
+        if js is walk._TABS_JS:
+            return [{"index": 0, "id": "home"}, {"index": 1, "id": "broken"}, {"index": 2, "id": "slow"}]
+        if js is walk._DIALOG_IDS_JS:
+            return ["fine", "stuck"]
+        if "showModal" in js and args == ("stuck",):
+            raise RuntimeError("dialog stuck would not open")
+        if js is walk.measure.RENDERED_THEME_JS:
+            return {"attr": "light", "luminance": 0.95}
+        return {"m": 1} if js == "MEASURE" else 0
+
+
+_ARM_STEPS = [
+    {"id": "declared", "click": "#danger"},
+    {"id": "gone", "click": "#gone"},
+    {"id": "inside", "click": "#inside"},
+    {"id": "crash", "click": "#crash"},
+    {"id": "waiterr", "click": "#waiterr"},
+    {"id": "fine", "tab": "home", "open": "#det", "clicks": ["#a", "#b"]},
+    {"id": "live-only", "click": "#x", "synthetic": True},
+    {"id": "noop"},
+]
+_ARM_FAIL = {
+    ("click", "[role=tab]#1"): RuntimeError("Element is not visible"),
+    ("click", "[role=tab]#2"): TimeoutError("Timeout 1000ms exceeded"),
+    ("wait", "#gone"): TimeoutError("Timeout 5000ms exceeded"),
+    ("click", "#crash"): RuntimeError("boom"),
+    ("wait", "#waiterr"): RuntimeError("element detached"),
+}
+_GEAR_MODES = {
+    "ok": ({}, set()),
+    "absent": ({("wait", "gear"): TimeoutError("Timeout 1000ms exceeded")}, set()),
+    "nogo": ({}, {"gear"}),
+    "crash": ({("click", "gear"): RuntimeError("gear click failed")}, set()),
+}
+
+
+class _LogTap(logging.Handler):
+    def __init__(self) -> None:
+        super().__init__()
+        self.lines = []
+
+    def emit(self, record):
+        self.lines.append(f"{record.levelname} {record.getMessage()}")
+
+
+def _walk_arms(gear: str = "ok", launch_error=None, goto_error=None):
+    fail, hits = _GEAR_MODES[gear]
+    page = _ArmPage({**_ARM_FAIL, **fail}, hits | {"#inside"}, goto_error)
+    ctx = type("C", (), {"add_init_script": lambda *_: None, "new_page": lambda _s: page, "close": lambda _s: None})()
+    browser = type("B", (), {"new_context": lambda _s, **_k: ctx, "close": lambda _s: None})()
+
+    def launch(_s):
+        if launch_error:
+            raise launch_error
+        return browser
+    pw = type("P", (), {"chromium": type("E", (), {"launch": launch})(), "devices": {}})()
+    args = type("A", (), {"url": "https://127.0.0.1:1", "timeout_ms": 1000, "synthetic": False})()
+    tap, wlog = _LogTap(), logging.getLogger("design_review.walk")
+    level = wlog.level
+    wlog.addHandler(tap)
+    wlog.setLevel(logging.INFO)
+    try:
+        with tempfile.TemporaryDirectory() as tmp:
+            screens = walk.walk_context(pw, "desktop", "light", args, "MEASURE", {},
+                                        {"no_go": ["#danger"], "extra_steps": _ARM_STEPS}, Path(tmp))
+    finally:
+        wlog.removeHandler(tap)
+        wlog.setLevel(level)
+    return [(s["id"], s["kind"], s["status"], s["reason"], s["error"], s["metrics"], s["theme_applied"]) for s in screens], tap.lines
+
+
+_arm_screens, _arm_log = _walk_arms("ok")
+check(_arm_screens == [
+    ("desktop-light-home", "tab", "ok", None, None, {"m": 1}, True),
+    ("desktop-light-broken", "tab", "error", "TAB_FAILED", "Element is not visible", None, None),
+    ("desktop-light-slow", "tab", "error", "TIMEOUT", "Timeout 1000ms exceeded", None, None),
+    ("desktop-light-dialog-fine", "dialog", "ok", None, None, {"m": 1}, True),
+    ("desktop-light-dialog-stuck", "dialog", "error", "DIALOG_FAILED", "dialog stuck would not open", None, None),
+    ("desktop-light-gear-settings", "step", "ok", None, None, {"m": 1}, True),
+    ("desktop-light-root-declared", "step", "error", "NO_GO", "#danger is declared no_go", None, None),
+    ("desktop-light-root-gone", "step", "absent", "STEP_TARGET_ABSENT", "#gone never appeared within 5000 ms", None, None),
+    ("desktop-light-root-inside", "step", "error", "NO_GO", "#inside sits inside a no_go selector", None, None),
+    ("desktop-light-root-crash", "step", "error", "RENDER_FAILED", "boom", None, None),
+    ("desktop-light-root-waiterr", "step", "error", "RENDER_FAILED", "element detached", None, None),
+    ("desktop-light-home-fine", "step", "ok", None, None, {"m": 1}, True),
+], f"walk_context records every tab/dialog/step arm with its own status and reason -- {_arm_screens}")
+check(_arm_log == [
+    "INFO ok desktop-light-home",
+    "WARNING FAIL desktop-light-broken: Element is not visible",
+    "WARNING FAIL desktop-light-slow: Timeout 1000ms exceeded",
+    "INFO ok desktop-light-dialog-fine",
+    "WARNING FAIL desktop-light-dialog-stuck: dialog stuck would not open",
+    "INFO ok desktop-light-gear-settings",
+    "INFO absent desktop-light-root-gone: #gone never appeared within 5000 ms",
+    "WARNING NO_GO desktop-light-root-inside: #inside sits inside a no_go selector",
+    "WARNING FAIL desktop-light-root-crash: boom",
+    "WARNING FAIL desktop-light-root-waiterr: element detached",
+    "INFO ok desktop-light-home-fine",
+], f"walk_context logs one line per arm, at its own level -- {_arm_log}")
+_gear_arms = {}
+for _mode in ("absent", "nogo", "crash"):
+    _scr, _lines = _walk_arms(_mode)
+    _gear_arms[_mode] = ([s for s in _scr if s[0] == "desktop-light-gear-settings"], [l for l in _lines if "gear-settings" in l])
+check(_gear_arms == {
+    "absent": ([("desktop-light-gear-settings", "step", "absent", "SETTINGS_GEAR_ABSENT", "no visible button named Settings", None, None)],
+               ["INFO absent desktop-light-gear-settings: no visible button named Settings"]),
+    "nogo": ([("desktop-light-gear-settings", "step", "error", "NO_GO", "the Settings gear sits inside a no_go selector", None, None)],
+             ["WARNING NO_GO desktop-light-gear-settings: the Settings gear sits inside a no_go selector"]),
+    "crash": ([("desktop-light-gear-settings", "step", "error", "RENDER_FAILED", "gear click failed", None, None)],
+              ["WARNING FAIL desktop-light-gear-settings: gear click failed"]),
+}, f"the Settings gear's absent / no_go / failed arms -- {_gear_arms}")
+check(_walk_arms(launch_error=RuntimeError("no chromium")) == (
+    [("desktop-light-root", "tab", "error", "BROWSER_FAILED", "no chromium", None, None)], []),
+      "a browser that won't launch is one BROWSER_FAILED root screen, nothing logged")
+check(_walk_arms(goto_error=RuntimeError("net::ERR_CONNECTION_REFUSED")) == (
+    [("desktop-light-root", "tab", "error", "NOT_LISTENING", "net::ERR_CONNECTION_REFUSED", None, None)], []),
+      "a base page that won't load is one classified root screen, nothing logged")
 
 # ---- browser leg: the static fixture page through a sibling venv --------------
 

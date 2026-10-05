@@ -60,7 +60,7 @@ import time
 import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from hooks_state import state_dir  # noqa: E402
@@ -225,13 +225,21 @@ def running_jobs(url: str = LAUNCHER_JOBS_URL) -> Any:
     return sorted(str(job.get("id")) for job in jobs if job.get("running") is True)
 
 
-def recent_activity() -> Any:
-    res = subprocess.run([POWERSHELL, "-NoProfile", "-NonInteractive", "-Command", _ACTIVITY_PS],
+def run_powershell(script: str, timeout: float) -> Union[str, Dict[str, Any]]:
+    """One PowerShell call's stdout, or the `{"error": ...}` record its source logs on a non-zero exit."""
+    res = subprocess.run([POWERSHELL, "-NoProfile", "-NonInteractive", "-Command", script],
                          capture_output=True, text=True, encoding="utf-8", errors="replace",
-                         timeout=90, creationflags=NO_WINDOW)
+                         timeout=timeout, creationflags=NO_WINDOW)
     if res.returncode != 0:
         return {"error": f"powershell exit {res.returncode}: {res.stderr.strip()[:200]}"}
-    return json.loads(res.stdout) if res.stdout.strip() else {}
+    return res.stdout
+
+
+def recent_activity() -> Any:
+    out = run_powershell(_ACTIVITY_PS, 90)
+    if isinstance(out, dict):
+        return out
+    return json.loads(out) if out.strip() else {}
 
 
 def unbiased_s() -> Optional[float]:
@@ -246,12 +254,10 @@ def power_events(start_wall: float, end_wall: float) -> Dict[str, Any]:
     """The System log's sleep/resume events between two wall-clock times, plus the sleep reason and
     wake source pulled out of them (`None` when no event carries one -- not 'no sleep')."""
     ps = _POWER_PS.format(start=utc(start_wall - POWER_LOOKBACK_S), end=utc(end_wall))
-    res = subprocess.run([POWERSHELL, "-NoProfile", "-NonInteractive", "-Command", ps],
-                         capture_output=True, text=True, encoding="utf-8", errors="replace",
-                         timeout=90, creationflags=NO_WINDOW)
-    if res.returncode != 0:
-        return {"error": f"powershell exit {res.returncode}: {res.stderr.strip()[:200]}"}
-    parsed = json.loads(res.stdout) if res.stdout.strip() else []
+    out = run_powershell(ps, 90)
+    if isinstance(out, dict):
+        return out
+    parsed = json.loads(out) if out.strip() else []
     return summarize_power_events(parsed if isinstance(parsed, list) else [parsed])
 
 
@@ -283,12 +289,10 @@ def parse_hwinfo(text: str) -> Dict[str, Any]:
 
 
 def hwinfo_process() -> Dict[str, Any]:
-    res = subprocess.run([POWERSHELL, "-NoProfile", "-NonInteractive", "-Command", _HWINFO_PS],
-                         capture_output=True, text=True, encoding="utf-8", errors="replace",
-                         timeout=30, creationflags=NO_WINDOW)
-    if res.returncode != 0:
-        return {"error": f"powershell exit {res.returncode}: {res.stderr.strip()[:200]}"}
-    return parse_hwinfo(res.stdout)
+    out = run_powershell(_HWINFO_PS, 30)
+    if isinstance(out, dict):
+        return out
+    return parse_hwinfo(out)
 
 
 def _safely(fn) -> Any:

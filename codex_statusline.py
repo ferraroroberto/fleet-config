@@ -10,14 +10,20 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import re
 import sys
 import tomllib
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from config_edit import CODE, COMMENT, atomic_write, classify, syntax_mask  # noqa: E402
+from config_edit import (  # noqa: E402
+    CODE,
+    COMMENT,
+    atomic_write,
+    classify,
+    default_codex_config_path,
+    syntax_mask,
+)
 
 
 REQUIRED_STATUS_ITEMS: tuple[str, ...] = (
@@ -36,13 +42,6 @@ _DOTTED_STATUS_LINE_RE = re.compile(r"^[ \t]*tui[ \t]*\.[ \t]*status_line[ \t]*=
 
 class ConfigError(ValueError):
     """Raised when the target config cannot be safely updated."""
-
-
-def default_config_path() -> Path:
-    """Return Codex's user config path, respecting ``CODEX_HOME``."""
-
-    codex_home = os.environ.get("CODEX_HOME")
-    return Path(codex_home) / "config.toml" if codex_home else Path.home() / ".codex" / "config.toml"
 
 
 def _table_at(text: str, position: int) -> str | None:
@@ -201,7 +200,7 @@ def _parser() -> argparse.ArgumentParser:
     actions = parser.add_mutually_exclusive_group(required=True)
     actions.add_argument("--apply", action="store_true", help="update the target config atomically")
     actions.add_argument("--check", action="store_true", help="report whether an update is needed")
-    parser.add_argument("--config", type=Path, default=default_config_path(), help="Codex config.toml path")
+    parser.add_argument("--config", type=Path, default=default_codex_config_path(), help="Codex config.toml path")
     return parser
 
 

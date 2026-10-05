@@ -16,7 +16,13 @@ from pathlib import Path
 from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from config_edit import ASSIGNMENT_RE, TABLE_RE, atomic_write, inline_comment  # noqa: E402
+from config_edit import (  # noqa: E402
+    ASSIGNMENT_RE,
+    TABLE_RE,
+    atomic_write,
+    default_codex_config_path,
+    inline_comment,
+)
 
 
 RETENTION_DAYS = 730
@@ -29,11 +35,6 @@ class RetentionConfigError(ValueError):
 def default_claude_settings_path() -> Path:
     config_dir = os.environ.get("CLAUDE_CONFIG_DIR")
     return Path(config_dir) / "settings.json" if config_dir else Path.home() / ".claude" / "settings.json"
-
-
-def default_codex_config_path() -> Path:
-    config_dir = os.environ.get("CODEX_HOME")
-    return Path(config_dir) / "config.toml" if config_dir else Path.home() / ".codex" / "config.toml"
 
 
 def merge_claude_settings(settings: dict[str, Any]) -> tuple[dict[str, Any], tuple[str, ...]]:

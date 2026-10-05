@@ -68,17 +68,7 @@ from . import measure, plan
 from .rubric import Rubric, Rule, resolve_params, resolve_threshold
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))  # skills/_lib, as design_review.rubric does
-from design_lint.colormath import (  # noqa: E402
-    AA_LARGE,
-    AA_NORMAL,
-    RGBA,
-    _hex,
-    composite,
-    contrast,
-    luminance,
-    parse_color,
-    spec_pairs,
-)
+from design_lint.colormath import _hex, parse_color, spec_pairs  # noqa: E402
 from design_lint.rules import BREAK_ALL_OK  # noqa: E402
 
 SCHEMA_VERSION = 1
@@ -293,10 +283,6 @@ def _d_switch_on_accent(m: dict, rule: Rule, ctx: dict) -> Derived:
     if unread:
         return None, [], f"{unread} switch(es) on, track colour not readable"
     return 0.0, [], None
-
-
-def _hex(rgb: tuple) -> str:
-    return "#" + "".join(f"{round(c):02x}" for c in rgb)
 
 
 def _d_toast_tinted(m: dict, rule: Rule, ctx: dict) -> Derived:

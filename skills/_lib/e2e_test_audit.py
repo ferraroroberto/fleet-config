@@ -103,7 +103,7 @@ import statistics
 import subprocess
 import sys
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import git_run  # noqa: E402
@@ -654,13 +654,23 @@ def _load_ux_surface(repo_root: Path) -> List[str]:
     return list(block["key_views"]) if block else []  # type: ignore[index]
 
 
+def _test_dirs(repo_root: Path) -> List[str]:
+    claude_md = repo_root / "CLAUDE.md"
+    return resolve_test_dirs(claude_md.read_text(encoding="utf-8", errors="replace") if claude_md.is_file() else None)
+
+
+def _suite_size(repo_root: Path, test_dirs: List[str]) -> Tuple[List[str], int, Optional[int]]:
+    """The suite's test files, raw test-function count, and pytest node count
+    (None when there are no files or it cannot be measured) — `budget` and
+    `record` size the suite the same way."""
+    files = [rel for d in test_dirs for rel in _list_files(repo_root, d)]
+    raw_tests = sum(len(parse_test_file(repo_root, rel)["tests"]) for rel in files)  # type: ignore[arg-type]
+    node_count = collect_pytest_node_count(repo_root, test_dirs) if files else None
+    return files, raw_tests, node_count
+
+
 def scan(repo_root: Path, target: int = DEFAULT_TARGET) -> Dict[str, object]:
-    claude_md_path = repo_root / "CLAUDE.md"
-    claude_md_text = (
-        claude_md_path.read_text(encoding="utf-8", errors="replace")
-        if claude_md_path.is_file() else None
-    )
-    test_dirs = resolve_test_dirs(claude_md_text)
+    test_dirs = _test_dirs(repo_root)
     existing_dirs, missing_dirs = split_resolved_dirs(repo_root, test_dirs)
 
     files: List[Dict[str, object]] = []
@@ -704,21 +714,9 @@ def cmd_scan(repo_root: Path, target: int) -> int:
     return 0
 
 
-def _test_dirs(repo_root: Path) -> List[str]:
-    claude_md = repo_root / "CLAUDE.md"
-    return resolve_test_dirs(claude_md.read_text(encoding="utf-8", errors="replace") if claude_md.is_file() else None)
-
-
 def cmd_budget(repo_root: Path) -> int:
-    claude_md_path = repo_root / "CLAUDE.md"
-    claude_md_text = (
-        claude_md_path.read_text(encoding="utf-8", errors="replace")
-        if claude_md_path.is_file() else None
-    )
-    test_dirs = resolve_test_dirs(claude_md_text)
-    files = [rel for d in test_dirs for rel in _list_files(repo_root, d)]
-    raw_tests = sum(len(parse_test_file(repo_root, rel)["tests"]) for rel in files)  # type: ignore[arg-type]
-    node_count = collect_pytest_node_count(repo_root, test_dirs) if files else None
+    test_dirs = _test_dirs(repo_root)
+    files, raw_tests, node_count = _suite_size(repo_root, test_dirs)
 
     toml_text = fleet_toml.read_text(repo_root)
     limit, source, note = budget_limit(toml_text)
@@ -748,10 +746,7 @@ def cmd_budget(repo_root: Path) -> int:
 
 
 def cmd_record(repo_root: Path) -> int:
-    test_dirs = _test_dirs(repo_root)
-    files = [rel for d in test_dirs for rel in _list_files(repo_root, d)]
-    raw_tests = sum(len(parse_test_file(repo_root, rel)["tests"]) for rel in files)  # type: ignore[arg-type]
-    node_count = collect_pytest_node_count(repo_root, test_dirs) if files else None
+    _files, raw_tests, node_count = _suite_size(repo_root, _test_dirs(repo_root))
     path = e2e_value.write_audit_record(repo_root, raw_tests, node_count)
     print(f"AUDIT_RECORD={path}")
     print(f"AUDIT_RECORD_TESTS={raw_tests}")

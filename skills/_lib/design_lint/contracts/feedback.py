@@ -10,7 +10,7 @@ from __future__ import annotations
 import re
 from typing import List, Optional
 
-from ..colormath import is_green
+from ..colormath import is_green, parse_color
 from ..css import _ANY_DECL_RE, _BLOCK_RE
 from ._ctx import _ContractsCtx, _loc_at, _result
 
@@ -29,10 +29,10 @@ def _green_in(value: str) -> Optional[str]:
     if var:
         return var.group(0)
     for m in _HEX_RE.finditer(value):
-        h = m.group(1)
-        h = "".join(c * 2 for c in h) if len(h) == 3 else h
-        if is_green((int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16), 1.0)):
+        if is_green(parse_color(m.group(0), {})):  # the located token is exactly #rgb / #rrggbb, so it always parses
             return m.group(0)
+    # Kept local: unlike parse_color it reads space-separated `rgb(0 200 0 / 50%)`, a value cut before
+    # its `)`, and clamps channels over 255.
     for m in _RGB_RE.finditer(value):
         r, g, b = (min(255, int(x)) for x in m.groups())
         if is_green((r, g, b, 1.0)):
