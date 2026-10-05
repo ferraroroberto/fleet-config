@@ -6,7 +6,7 @@ Self-portrait of the whole `E:/automation` fleet. Built in #94; made **self-desc
 
 ## The visual: `system-map.html` → `system-map.png`
 
-A **light-theme, horizontal, Janis-style** infographic — grouped zone panels, every project a card with a one-line description. Built as **hand-authored HTML/CSS**, chosen over Mermaid so each block carries real text and the layout is fully controlled.
+A **light-theme, horizontal, Janis-style** infographic — grouped zone panels, every project a card with a short description (at most two lines; cap below). Built as **hand-authored HTML/CSS**, chosen over Mermaid so each block carries real text and the layout is fully controlled.
 
 **Data flow:** `fleet.data.js` (`window.FLEET = { …strict JSON… }`: governance / access / edge / compute / enabling / web / pipe / external + principles) is the file `system-map.html` renders — but it is **generated**, never hand-edited. `build_data.py` assembles it from two inputs:
 
@@ -22,7 +22,7 @@ Each repo carries a `.fleet.toml` at its root declaring its one card on the map.
 ```toml
 layer       = "working-pipe"   # governance | enabling | working-web | working-pipe
 icon        = "📄"             # emoji shown on the card
-description  = "PDF → clean Markdown for LLMs."   # one line; injected as innerHTML
+description  = "PDF → clean Markdown for LLMs."   # two card lines max (cap below); injected as innerHTML
 # --- optional ---
 display_name = "grocery"        # when the card label ≠ repo directory name
 port         = ":8444"          # fixed loopback port the app serves (enabling tier)
@@ -34,13 +34,24 @@ tag          = ["→", "Notion"]  # [relation, target] edge annotation (working 
 |---|---|---|---|
 | `layer` | ✓ | section (`governance`/`enabling`/`web`/`pipe`) | enum above; `working-web`→`web`, `working-pipe`→`pipe` |
 | `icon` | ✓ | `ic` | one emoji |
-| `description` | ✓ | `ds` | injected as innerHTML — write `&amp;`/`<b>` exactly as it should render |
+| `description` | ✓ | `ds` | injected as innerHTML — write `&amp;`/`<b>` exactly as it should render; capped per layer (below) |
 | `display_name` | | `nm` (+ `repo`) | only when the label differs from the repo dir name |
 | `port` | | `port` | enabling cards render it; `:NNNN` form |
 | `chips` | | `chips` | enabling cards |
 | `tag` | | `tag` | working cards; `[relation, target]` |
 
-**Keep it current:** update `.fleet.toml` in the same PR as any material change (layer, port, role, one-line description, exposed services). A repo listed in the residual's `_adopted` registry whose `.fleet.toml` goes missing is reported by the drift test (advisory here, gating in `/system-map`). After editing any `.fleet.toml`, run `E:/automation/fleet-config/.venv/Scripts/python.exe .claude/skills/system-map/build_data.py` to regenerate `fleet.data.js`.
+**Description cap (fleet-config#1250).** A description must fit two lines of its card, so the cap depends on the card's width and font, i.e. on the layer:
+
+| `layer` | Cap (characters, as written) | Measured two-line fit |
+|---|---|---|
+| `governance` | 130 | 137 (513 px card, page font) |
+| `enabling` | 80 | 84 (232 px card, 12 px) |
+| `working-web` | 95 | 98 (234 px card, 10.5 px) |
+| `working-pipe` | 70 | 72 (181 px card, 10.5 px) |
+
+Measured by rendering `system-map.html` in headless Chrome and growing a plain-prose sentence inside each card's `.ds` box until it wrapped to a third line; each cap rounds down to keep a margin. Markup counts as written (`&amp;` is five), which only errs short. One clause is the target: detail goes in `chips` or `tag`, or stays in the repo's README. `DESCRIPTION_CAP` in `build_data.py` is the authoritative copy of the numbers; project-scaffolding's `.fleet.toml` header comment restates them so every new repo inherits the rule (project-scaffolding#322). Over the cap, `build_data.py` refuses the declaration by repo name and keeps that repo's residual fallback card (a repo with no fallback card fails the build outright), exiting 1 so `/system-map` reports it. `tests/run_acceptance.py`'s `description_cap` checks fail hard if any card in the committed `fleet.data.js` or any residual fallback card is over the cap; a sibling's over-cap `.fleet.toml` shows up in the advisory `every present .fleet.toml is valid` line. If the map's CSS changes card widths or fonts, re-measure and update this table, `DESCRIPTION_CAP` and the scaffold comment together.
+
+**Keep it current:** update `.fleet.toml` in the same PR as any material change (layer, port, role, description, exposed services). A repo listed in the residual's `_adopted` registry whose `.fleet.toml` goes missing is reported by the drift test (advisory here, gating in `/system-map`). After editing any `.fleet.toml`, run `E:/automation/fleet-config/.venv/Scripts/python.exe .claude/skills/system-map/build_data.py` to regenerate `fleet.data.js`.
 
 ### Optional per-repo `[vendored]` table (fleet-config#338)
 

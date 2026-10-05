@@ -45,6 +45,7 @@ from acceptance.architecture_guards import (  # noqa: E402
     _advisory_semantics_check,
     _chief_wait_event_check,
     _config_map_check,
+    _description_cap_check,
     _fleet_membership_drift_check,
     _fleet_toml_check,
     _gate_evidence_wiring_check,
@@ -272,6 +273,9 @@ def main() -> int:
     # so they report as skipped rather than failing this gate (fleet-config#562).
     run_unit3(_fleet_toml_check)
     run_unit(_advisory_semantics_check)
+
+    # ---- system-map: no card description past two lines (#1250) ----
+    run_unit(_description_cap_check)
 
     # ---- projects.toml is the fleet-membership list: no repo on disk may be
     # missing from it (fleet-config#640). run_unit3: skipped, not passed, when

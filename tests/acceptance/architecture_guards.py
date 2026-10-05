@@ -235,6 +235,74 @@ def _fleet_toml_check() -> Tuple[int, int, int]:
     return check.failures, check.total, check.skipped
 
 
+def _description_cap_check() -> Tuple[int, int]:
+    """No map card's description runs past what its card shows in two lines (#1250).
+
+    Hard, unlike `_fleet_toml_check`'s fleet-wide half: both inputs live in
+    this repo. The committed `fleet.data.js` changes only when it is
+    regenerated here, and `build_data.py` refuses an over-cap `.fleet.toml`
+    (keeping the residual fallback card), so a sibling repo's commit can never
+    turn this red. The residual's fallback cards are this repo's own text.
+    Also pins the refusal itself against fixtures. Returns the failure count.
+    """
+    import importlib.util
+
+    check = _Checker()
+
+    bd_path = REPO / ".claude" / "skills" / "system-map" / "build_data.py"
+    spec = importlib.util.spec_from_file_location("system_map_build_data_cap", bd_path)
+    bd = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(bd)
+    layer_of = {section: layer for layer, section in bd.LAYER_SECTION.items()}
+
+    def over_cap(data: dict) -> list:
+        return [
+            f"{e.get('repo', e['nm'])} ({len(e['ds'])} > {bd.DESCRIPTION_CAP[layer_of[s]]})"
+            for s in layer_of
+            for e in data.get(s, [])
+            if len(e["ds"]) > bd.DESCRIPTION_CAP[layer_of[s]]
+        ]
+
+    raw = (REPO / "architecture" / "fleet.data.js").read_text(encoding="utf-8")
+    mapped = over_cap(json.loads(raw[raw.index("{"): raw.rindex("}") + 1]))
+    check(f"description_cap: every mapped card fits two lines (over: {mapped or 'none'})", not mapped,
+          f"shorten the owning repo's .fleet.toml description.\n{_REGEN_HINT}")
+    fallback = over_cap(bd.load_residual())
+    check(f"description_cap: every residual fallback card fits two lines (over: {fallback or 'none'})",
+          not fallback, "shorten the card in architecture/fleet.residual.json.")
+
+    cap = bd.DESCRIPTION_CAP["working-pipe"]
+    meta = {"layer": "working-pipe", "icon": "📄", "description": "x" * cap}
+    check("description_cap: a description at the cap is accepted",
+          bd.card_from_toml("ghost-repo", meta)[1]["ds"] == "x" * cap)
+    try:
+        bd.card_from_toml("ghost-repo", {**meta, "description": "x" * (cap + 1)})
+        refused_by_name = False
+    except bd.DescriptionTooLong as exc:
+        refused_by_name = "ghost-repo" in str(exc)
+    check("description_cap: card_from_toml refuses one char over the cap, by repo name", refused_by_name)
+
+    long_toml = f'layer = "working-pipe"\nicon = "📄"\ndescription = "{"x" * (cap + 1)}"\n'
+    residual = {"pipe": [{"ic": "📄", "nm": "ghost-repo", "ds": "short fallback"}]}
+    real_read = bd.read_fleet_toml
+    bd.read_fleet_toml = lambda _repo_dir: long_toml
+    try:
+        refused: list = []
+        built = bd.build(residual, {"ghost-repo": REPO}, refused)
+        check("description_cap: build keeps the fallback card for a refused repo and names it",
+              built["pipe"] == residual["pipe"] and len(refused) == 1 and "ghost-repo" in refused[0])
+        try:
+            bd.build({"pipe": []}, {"ghost-repo": REPO}, [])
+            raised = False
+        except bd.DescriptionTooLong as exc:
+            raised = "ghost-repo" in str(exc)
+        check("description_cap: build raises for a refused repo with no fallback card", raised)
+    finally:
+        bd.read_fleet_toml = real_read
+
+    return check.failures, check.total
+
+
 def _fleet_membership_drift_check() -> Tuple[int, int, int]:
     """The fleet on disk and the fleet in `projects.toml` are the same set (#640).
 

@@ -25,11 +25,14 @@ not reliably on ``PATH`` on this machine; see ``_lib.find_python_executable``)::
     E:/automation/fleet-config/.venv/Scripts/python.exe .claude/skills/system-map/build_data.py            # regenerate fleet.data.js
     E:/automation/fleet-config/.venv/Scripts/python.exe .claude/skills/system-map/build_data.py --check     # exit 1 if the file is stale
 
+Either form also exits 1 when it refused an over-cap description (named on
+stderr); the regenerated file then carries that repo's residual fallback card.
+
 ``.fleet.toml`` schema (full reference: architecture/README.md)::
 
     layer       = "working-pipe"   # governance | enabling | working-web | working-pipe
     icon        = "📄"
-    description = "PDF → clean Markdown for LLMs."   # injected as innerHTML
+    description = "PDF → clean Markdown for LLMs."   # injected as innerHTML; ≤ DESCRIPTION_CAP[layer]
     # optional:
     display_name = "grocery"        # when the card label ≠ repo dir name
     port         = ":8444"
@@ -78,6 +81,25 @@ HEADER = """\
 // Membership is governed by hooks/projects.toml (minus [global] architecture_ignore).
 """
 
+# Longest `description` (characters, as written) each layer's card shows in two
+# lines. Measured in headless Chrome on system-map.html: the widest prose that
+# still wraps to two lines was 72 (pipe card, 181 px at 10.5 px), 98 (web,
+# 234 px at 10.5 px), 84 (enabling, 232 px at 12 px) and 137 (governance,
+# 513 px at the page font); each cap rounds down to keep a margin. Counting the
+# text as written (`&amp;` is five) only errs short. Detail beyond that goes in
+# `chips`/`tag` (fleet-config#1250).
+DESCRIPTION_CAP = {
+    "governance": 130,
+    "enabling": 80,
+    "working-web": 95,
+    "working-pipe": 70,
+}
+
+
+class DescriptionTooLong(ValueError):
+    """A `.fleet.toml` description longer than its layer's card holds."""
+
+
 # Canonical key order inside a repo card, matching the committed style.
 _CARD_KEY_ORDER = ["ic", "nm", "repo", "port", "ds", "chips", "tag"]
 
@@ -124,7 +146,8 @@ def card_from_toml(repo_name: str, meta: dict) -> tuple[str, dict]:
     """Build ``(section, card)`` from a parsed ``.fleet.toml``.
 
     Raises ``ValueError`` on a missing/invalid ``layer`` or missing required field
-    so a malformed declaration fails loud rather than silently dropping a repo.
+    so a malformed declaration fails loud rather than silently dropping a repo,
+    and ``DescriptionTooLong`` when ``description`` exceeds ``DESCRIPTION_CAP``.
     """
     layer = meta.get("layer")
     if layer not in LAYER_SECTION:
@@ -134,8 +157,15 @@ def card_from_toml(repo_name: str, meta: dict) -> tuple[str, dict]:
     for required in ("icon", "description"):
         if not meta.get(required):
             raise ValueError(f"{repo_name}: .fleet.toml is missing required `{required}`")
+    cap = DESCRIPTION_CAP[layer]
+    if len(meta["description"]) > cap:
+        raise DescriptionTooLong(
+            f"{repo_name}: .fleet.toml `description` is {len(meta['description'])} chars; "
+            f"a {layer} card holds {cap} (two lines). Shorten it in {repo_name}; "
+            "put extra detail in `chips`/`tag`."
+        )
 
-    nm = meta.get("display_name") or repo_name
+    nm =meta.get("display_name") or repo_name
     card: dict = {"ic": meta["icon"], "nm": nm}
     if nm != repo_name:  # keep the repo handle when the display label differs
         card["repo"] = repo_name
@@ -154,20 +184,32 @@ def _card_repo(entry: dict) -> str:
     return entry.get("repo", entry["nm"])
 
 
-def build(residual: dict, repos: dict[str, Path]) -> dict:
+def build(residual: dict, repos: dict[str, Path], refused: list[str] | None = None) -> dict:
     """Overlay every repo's ``.fleet.toml`` card onto the residual fallback.
 
     Adopted repos override their fallback card *in place* (curated order holds);
     a repo new to the map appends to its section. ``_adopted`` is dropped — it is
     residual metadata, not map data.
+
+    An over-cap description is refused: the repo keeps its residual fallback
+    card and the reason is appended to ``refused``. With no fallback card the
+    refusal raises, since the repo would otherwise vanish from the map.
     """
     data = copy.deepcopy(residual)
     data.pop("_adopted", None)
+    fallback = {_card_repo(e) for s in LAYER_SECTION.values() for e in data.get(s, [])}
     for repo_name, repo_dir in sorted(repos.items()):
         text = read_fleet_toml(repo_dir)
         if text is None:
             continue  # fallback: keep whatever the residual already has
-        section, card = card_from_toml(repo_name, tomllib.loads(text))
+        try:
+            section, card = card_from_toml(repo_name, tomllib.loads(text))
+        except DescriptionTooLong as exc:
+            if repo_name not in fallback:
+                raise DescriptionTooLong(f"{exc} No residual fallback card to show instead.") from exc
+            if refused is not None:
+                refused.append(str(exc))
+            continue
         bucket = data.setdefault(section, [])
         for i, entry in enumerate(bucket):
             if _card_repo(entry) == repo_name:
@@ -195,9 +237,12 @@ def serialize(data: dict) -> str:
     return HEADER + "window.FLEET = {\n" + ",\n".join(parts) + "\n};\n"
 
 
-def regenerate() -> str:
-    """Build the aggregated fleet data and return the serialized ``fleet.data.js``."""
-    return serialize(build(load_residual(), fleet_repos()))
+def regenerate(refused: list[str] | None = None) -> str:
+    """Build the aggregated fleet data and return the serialized ``fleet.data.js``.
+
+    Over-cap descriptions are reported through ``refused`` (see ``build``).
+    """
+    return serialize(build(load_residual(), fleet_repos(), refused))
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -206,11 +251,14 @@ def main(argv: list[str] | None = None) -> int:
                     help="exit 1 if fleet.data.js is stale (do not write)")
     args = ap.parse_args(argv)
 
+    refused: list[str] = []
     try:
-        rendered = regenerate()
+        rendered = regenerate(refused)
     except ValueError as exc:
         print(f"build_data: {exc}", file=sys.stderr)
         return 1
+    for reason in refused:
+        print(f"build_data: REFUSED {reason} Kept its residual fallback card.", file=sys.stderr)
 
     current = DATA_JS.read_text(encoding="utf-8")
     if args.check:
@@ -219,14 +267,14 @@ def main(argv: list[str] | None = None) -> int:
                   "`E:/automation/fleet-config/.venv/Scripts/python.exe .claude/skills/system-map/build_data.py` and commit.", file=sys.stderr)
             return 1
         print("build_data: fleet.data.js is up to date.")
-        return 0
+        return 1 if refused else 0
 
     if rendered != current:
         DATA_JS.write_text(rendered, encoding="utf-8")
         print(f"build_data: regenerated {DATA_JS.name}.")
     else:
         print(f"build_data: {DATA_JS.name} already up to date.")
-    return 0
+    return 1 if refused else 0
 
 
 if __name__ == "__main__":

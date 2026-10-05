@@ -100,7 +100,7 @@
       "ic": "🚀",
       "nm": "app-launcher",
       "port": ":8445",
-      "ds": "<b>Where I live</b> — the central hub. Coding · Apps · Jobs · automation · Life OS, all from the phone. Born from one goal: do <i>everything</i> on the PC from mobile. The entry point to it all."
+      "ds": "<b>Where I live</b> — phone-first hub: Coding · Apps · Jobs · Life OS · Board."
     },
     {
       "ic": "🧠",
@@ -299,6 +299,12 @@
         "→",
         "Minecraft Realm"
       ]
+    },
+    {
+      "ic": "☁️",
+      "nm": "Oracle to GCP",
+      "repo": "oracle-to-gcp",
+      "ds": "Oracle SQL → BigQuery translator prototype with mock validation."
     }
   ],
   "external": [
