@@ -63,11 +63,11 @@
       ]
     },
     {
-      "name": "large json",
+      "name": "large json (values survive, never a key list)",
       "command": "gh pr list --json number,title,author,labels",
       "fixture": "large_json.txt",
-      "min_reduction_pct": 70,
-      "must_contain": ["JSON array: 12 items", "author", "labels"]
+      "min_reduction_pct": 0,
+      "must_contain": ["\"number\": 201", "Fix tray restart status", "\"number\": 212", "Track context filter spike"]
     }
   ]
 }

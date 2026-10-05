@@ -206,8 +206,10 @@ def _retrieve_footer(compressed: Any) -> str:
 
     The header already carried `raw_key=`, but nothing said what to do with it,
     so the full output was cached and unreachable in practice (fleet-config#837).
+    Keyed on what was withheld, not on the line count, which cannot drop for a
+    single long line (fleet-config#1269).
     """
-    if not compressed.raw_key or compressed.compressed_line_count >= compressed.line_count:
+    if not compressed.raw_key or not compressed.withheld:
         return ""
     cli = Path(__file__).resolve()
     python = _lib.find_python_executable() or sys.executable
