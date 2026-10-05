@@ -43,33 +43,52 @@ SIGNAL_RE = re.compile(
 # can drift apart.
 SECRET_RE = _lib.SECRET_RE
 
-# Deterministic fleet sweep helpers (fleet_audit_scan.py, design_sweep_scan.py,
-# fleet_repo_scan.py, cert_drift.py, ...) walk the whole fleet and are read by
-# the orchestrator as a single JSON payload — compressing or truncating them
-# has no upside and a wrapper-timeout truncation is strictly worse than the
-# uncompressed command timing out on its own terms (fleet-config#424).
+# A helper shipped with a skill (fleet_audit_scan.py, chief_ops.py,
+# worktree_claim.py, the design_lint package, ...) prints one payload its
+# caller reads whole, often JSON, so compressing or truncating it has no upside
+# and a wrapper-timeout truncation is strictly worse than the command timing
+# out on its own terms (fleet-config#424). Some are long-running by design:
+# `.claude/skills/fleet-health/capture.py` blocks for `POLL_CHUNK_S = 540`
+# seconds, 60s under the 600s wrapper cap (fleet-config#427), and `design_lint`
+# is an extension-less package directory (fleet-config#564).
 #
-# Matches a .py under *any* skill directory, not just the shared `_lib` one
-# (fleet-config#427): fleet-only skills keep their helpers beside the skill, and
-# those are the longest-running of the lot — `.claude/skills/fleet-health/
-# capture.py` blocks for `POLL_CHUNK_S = 540` seconds by design, 60s under the
-# 600s wrapper cap, and `.claude/skills/system-map/build_data.py` crawls every
-# repo in the fleet. The invariant is "a Python helper shipped with a skill",
-# which the `_lib` path segment only partially expressed.
-#
-# Second alternative (fleet-config#564): a helper is no longer necessarily a
-# single `.py`. `design_lint` became an executable *package directory*, so
-# /design-sync now runs `<python> .../skills/_lib/design_lint all <root>` with no
-# file extension — the same whole-repo crawl emitting the same single JSON
-# payload, and the busiest of the lot. Dropping the `.py` requirement outright
-# would swallow ordinary work (`cat skills/design-sync/SKILL.md` matches a bare
-# `skills/<x>/<y>` shape), so the extension-less form is recognized only when a
-# python executable is what's running it.
-SWEEP_HELPER_RE = re.compile(
-    r"skills[/\\][^\s'\"/\\]+[/\\][^\s'\"]+\.py"
-    r"|python[^\s'\"]*[\"']?\s+[\"']?[^\s'\"]*skills[/\\][^\s'\"/\\]+[/\\][^\s'\"]+",
+# Matched only where a python interpreter *runs* something under a skill
+# directory (fleet-config#1268). The former pattern matched any
+# `skills/<dir>/<file>.py` anywhere in the command, so reading a helper's
+# source (`sed -n`, `grep -n`, `cat`) was excluded as if it were a sweep.
+SKILL_HELPER_RUN_RE = re.compile(
+    r"(?:^|[\s/\\\"'&;(|])(?:python3?|py)(?:\.exe)?[\"']?\s+[^|;&\n]*?skills[/\\][^\s'\"/\\]+[/\\]",
     re.IGNORECASE,
 )
+
+# Leading `cd <dir> &&` / `cd <dir>;` segments (fleet-config#1268). The
+# harness's shell persists its cwd between tool calls, so the hook leaves these
+# in the outer shell and wraps only what follows them; the wrapper then runs in
+# the directory the prefix moved to.
+CD_PREFIX_RE = re.compile(r"""\s*cd\s+(?:"[^"\n]*"|'[^'\n]*'|[^\s;&|'"<>()]+)\s*(?:&&|;)\s*""")
+# `VAR=val cmd`: bash scopes the assignments to that one command, so the whole
+# string runs unchanged and only classification skips them.
+ENV_PREFIX_RE = re.compile(r"""(?:[A-Za-z_][A-Za-z0-9_]*=(?:"[^"\n]*"|'[^'\n]*'|[^\s;&|'"<>()]*)\s+)+""")
+HEREDOC_RE = re.compile(r"""(?<!<)<<-?\s*(['"]?)([A-Za-z_][A-Za-z0-9_]*)\1""")
+# Shell state that would land in the wrapper's throwaway shell instead of the
+# harness's persistent one.
+STATE_MUTATION_RE = re.compile(
+    r"(?:^|[;&|\n({])\s*(?:cd|pushd|popd|export|source|\.|set|unset|alias|set-location)(?:\s|$)",
+    re.IGNORECASE,
+)
+# stdout to a file or /dev/null: nothing comes back to the agent to compress.
+OUTPUT_TO_FILE_RE = re.compile(
+    r"(?:^|[\s;|&(])[1&]?>>?(?![&>])|\|\s*(?:out-file|set-content|add-content|out-null)\b",
+    re.IGNORECASE,
+)
+# A lone `&` after a word is bash's background operator: the job would outlive
+# the wrapper still holding its pipes. A PowerShell call operator follows an
+# operator or starts the statement, so it never matches.
+BACKGROUND_RE = re.compile(r"[^\s;|&(){}<>]\s*&(?![&>])")
+# Syntax pwsh 7 (the PowerShell tool) accepts and the wrapper's Windows
+# PowerShell 5.1 rejects with a ParserError.
+PS7_ONLY_RE = re.compile(r"&&|\|\||\?\?")
+COMPOUND_RE = re.compile(r"(?<!\|)\|(?!\|)|&&|\|\||;|\n")
 
 # Reading a file or tailing a log has no summarisable semantics: the content IS
 # the payload, so there is nothing a summary can faithfully stand in for. The
@@ -115,6 +134,11 @@ class RewriteDecision:
     should_wrap: bool
     reason: str
     command: str
+    # When wrapping: `prefix` stays in the harness's shell (leading `cd`
+    # segments, verbatim) and `body` is what the wrapper runs. They concatenate
+    # back to `command`.
+    prefix: str = ""
+    body: str = ""
 
 
 def estimate_tokens(text: str) -> int:
@@ -262,31 +286,85 @@ def is_streaming_or_interactive(command: str) -> bool:
     return False
 
 
-def rewrite_decision(command: str) -> RewriteDecision:
+def split_cd_prefix(command: str) -> tuple[str, str]:
+    """Split leading `cd <dir> &&` / `cd <dir>;` segments off `command`.
+
+    Returns `(prefix, body)`, which concatenate back to `command`.
+    """
+    end = 0
+    while True:
+        match = CD_PREFIX_RE.match(command, end)
+        if not match or match.end() == end:
+            return command[:end], command[end:]
+        end = match.end()
+
+
+def effective_command(command: str) -> str:
+    """The command that decides the output's shape: cd and env prefixes skipped."""
+    body = split_cd_prefix(command.strip())[1]
+    match = ENV_PREFIX_RE.match(body)
+    return body[match.end():] if match else body
+
+
+def strip_heredoc_bodies(command: str) -> str:
+    """`command` without heredoc bodies, whose text is data, not shell syntax."""
+    kept: list[str] = []
+    pending: list[str] = []
+    for line in command.split("\n"):
+        if pending:
+            if line.strip() == pending[0]:
+                pending.pop(0)
+            continue
+        kept.append(line)
+        pending.extend(match.group(2) for match in HEREDOC_RE.finditer(line))
+    return "\n".join(kept)
+
+
+def is_compound(command: str) -> bool:
+    """True when the output is not one simple command's own (a pipeline, or
+    several statements), so no per-command summariser may read it."""
+    return bool(COMPOUND_RE.search(strip_heredoc_bodies(effective_command(command)).strip()))
+
+
+SUPPORTED_COMMANDS = {
+    "git", "gh", "pytest", "python", "npm", "pnpm", "yarn", "bun",
+    "rg", "grep", "docker", "kubectl", "ruff", "mypy", "tsc",
+    "eslint", "go", "cargo", "dotnet", "uv", "pip", "cat", "tail",
+}
+
+
+def rewrite_decision(command: str, tool: str = "") -> RewriteDecision:
+    """Whether to wrap `command`, and how to split it (see RewriteDecision).
+
+    `tool` is the shell that will run it (`Bash` / `PowerShell`); empty when
+    the output is already captured (Pi's `compress`) and nothing is executed.
+    """
     cmd = command.strip()
     if not cmd:
         return RewriteDecision(False, "empty", command)
     if "fleet_context_filter" in cmd or "context_filter_cli.py" in cmd:
         return RewriteDecision(False, "already wrapped", command)
-    if SWEEP_HELPER_RE.search(cmd):
-        return RewriteDecision(False, "known long-running fleet sweep helper", command)
+    if SKILL_HELPER_RUN_RE.search(cmd):
+        return RewriteDecision(False, "skill helper (its caller reads the payload whole)", command)
     if is_streaming_or_interactive(cmd):
         return RewriteDecision(False, "streaming/interactive", command)
     if re.search(r"\b(git\s+push|npm\s+publish|twine\s+upload|docker\s+push)\b", cmd, re.I):
         return RewriteDecision(False, "publish/destructive", command)
-    if any(op in cmd for op in (" | ", " > ", " >> ", " < ")):
-        return RewriteDecision(False, "pipe/redirect", command)
-    if cmd.startswith(("cd ", "set ", "export ", "source ", ". ")):
-        return RewriteDecision(False, "shell state mutation", command)
 
-    supported = {
-        "git", "gh", "pytest", "python", "npm", "pnpm", "yarn", "bun",
-        "rg", "grep", "docker", "kubectl", "ruff", "mypy", "tsc",
-        "eslint", "go", "cargo", "dotnet", "uv", "pip", "cat", "tail",
-    }
-    base = command_base(cmd)
-    if base in supported:
-        return RewriteDecision(True, "supported command", command)
+    prefix, body = split_cd_prefix(cmd)
+    shape = strip_heredoc_bodies(body)
+    if OUTPUT_TO_FILE_RE.search(shape):
+        return RewriteDecision(False, "output redirected to a file", command)
+    if BACKGROUND_RE.search(shape):
+        return RewriteDecision(False, "background job", command)
+    if STATE_MUTATION_RE.search(shape):
+        return RewriteDecision(False, "shell state mutation", command)
+    if tool.lower() == "powershell" and PS7_ONLY_RE.search(shape):
+        return RewriteDecision(False, "PowerShell 7 syntax (the wrapper runs 5.1)", command)
+
+    base = command_base(effective_command(body))
+    if base in SUPPORTED_COMMANDS:
+        return RewriteDecision(True, "supported command", command, prefix=prefix, body=body)
     return RewriteDecision(False, f"unsupported command: {base or '<unknown>'}", command)
 
 
@@ -494,14 +572,18 @@ def compress_output(
     safe_raw = redact_secret_markers(normalized)
     raw_tokens = estimate_tokens(normalized)
     lines = safe_raw.splitlines()
+    shaping = effective_command(command)
 
-    if command_base(command) in CONTENT_COMMANDS or _is_json(safe_raw):
+    # Compound output (a pipeline's last stage, or several statements) is
+    # returned like content (fleet-config#1268): `git status && git log` read
+    # through the status summariser would drop every log line.
+    if command_base(shaping) in CONTENT_COMMANDS or is_compound(command) or _is_json(safe_raw):
         compressed = _verbatim(safe_raw, len(lines), max_chars)
     else:
         if len(safe_raw) <= SMALL_OUTPUT_CHARS and len(lines) <= max_lines:
             candidate_lines = lines
         else:
-            candidate_lines = command_specific_lines(command, lines) or []
+            candidate_lines = command_specific_lines(shaping, lines) or []
             if not candidate_lines:
                 signal = [line.rstrip() for line in lines if SIGNAL_RE.search(line)]
                 head = [line.rstrip() for line in lines[: min(12, len(lines))]]
@@ -524,14 +606,17 @@ def compress_output(
     if not compressed:
         compressed = "[fleet-context-filter: command produced no output]"
 
-    raw_key = None
-    if cache_raw and not secret_like and normalized:
-        raw_key = cache_raw_output(command, normalized)
-
     compressed_tokens = estimate_tokens(compressed)
     if compressed_tokens > raw_tokens:
         compressed = safe_raw
         compressed_tokens = estimate_tokens(compressed)
+
+    withheld = compressed.strip() != safe_raw.strip()
+    # Only output with something withheld has anything to retrieve; most
+    # wrapped calls come back whole (fleet-config#1268).
+    raw_key = None
+    if cache_raw and withheld and not secret_like and normalized:
+        raw_key = cache_raw_output(command, normalized)
 
     duration_ms = (time.perf_counter() - start) * 1000
     reduction = 0.0 if raw_tokens == 0 else (raw_tokens - compressed_tokens) / raw_tokens * 100
@@ -547,5 +632,5 @@ def compress_output(
         duration_ms=duration_ms,
         raw_key=raw_key,
         secret_like=secret_like,
-        withheld=compressed.strip() != safe_raw.strip(),
+        withheld=withheld,
     )
