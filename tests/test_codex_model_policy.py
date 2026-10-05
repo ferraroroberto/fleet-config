@@ -53,6 +53,33 @@ class CodexModelPolicyTests(unittest.TestCase):
         self.assertEqual(second, first)
         self.assertEqual(changed, ())
 
+    def test_table_ending_on_a_managed_key_still_gets_the_missing_keys(self) -> None:
+        # The append of unseen keys used to ride on the table's last line being
+        # emitted unchanged, so a table whose last line was itself a managed key
+        # lost them (fleet-config#1252).
+        catalog = ROOT / "tmp" / "catalog.json"
+        easy_description = "Fleet easy tier; model and effort are versioned."
+        cases = {
+            "root": 'model = "legacy"\n',
+            "agents": '[agents]\ndefault_subagent_model = "legacy"\n',
+            "role": f'[agents.easy]\ndescription = "{easy_description}"\n',
+        }
+        for name, original in cases.items():
+            with self.subTest(table=name):
+                updated, changed = policy.merge_policy(original, catalog, ROOT / "codex")
+
+                parsed = tomllib.loads(updated)
+                self.assertEqual(changed, ("model-policy",))
+                self.assertEqual(parsed["model"], policy.MAIN_MODEL)
+                self.assertEqual(parsed["model_reasoning_effort"], policy.MAIN_EFFORT)
+                self.assertIn("model_catalog_json", parsed)
+                self.assertEqual(parsed["agents"]["default_subagent_model"], "gpt-5.6-terra")
+                self.assertEqual(parsed["agents"]["default_subagent_reasoning_effort"], "high")
+                for role in policy.ROLE_SPECS:
+                    self.assertIn("config_file", parsed["agents"][role])
+                    self.assertIn("description", parsed["agents"][role])
+                self.assertEqual(policy.merge_policy(updated, catalog, ROOT / "codex")[0], updated)
+
     def test_invalid_toml_is_rejected(self) -> None:
         with self.assertRaises(policy.PolicyError):
             policy.merge_policy("[agents\n", ROOT / "tmp" / "catalog.json", ROOT / "codex")
