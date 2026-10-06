@@ -71,13 +71,8 @@ GIT_BYPASS_PATTERNS = (
 # kind of wrong — #464/#472 reverted a hook within the hour for exactly that.
 # Git's global options may sit between `git` and the subcommand
 # (`git -C <dir> push …`, fleet-config#1275), so a push is found by walking those
-# options token by token, not by a `git\s+push` adjacency regex.
-GIT_TOKEN_RE = re.compile(r"(?:^|[\\/])git(?:\.exe)?$", re.IGNORECASE)
-# Global options that consume the next token unless written `--opt=value`.
-GIT_GLOBAL_OPTS_WITH_VALUE = {
-    "-c", "-C", "--git-dir", "--work-tree", "--namespace", "--exec-path",
-    "--super-prefix", "--config-env", "--attr-source",
-}
+# options token by token (`_lib.GIT_GLOBAL_OPTS_WITH_VALUE`), not by a
+# `git\s+push` adjacency regex.
 # Quote-aware split, so `-C "E:/my repo"` stays one token.
 _TOKEN_RE = re.compile(r"\"[^\"]*\"|'[^']*'|\S+")
 # `--force`, `--force-with-lease[=ref]`, and short-flag clusters carrying `f`
@@ -105,14 +100,14 @@ def _push_args(segment: str) -> Optional[tuple[list[str], Optional[str]]]:
     ``None`` when the segment isn't a push."""
     tokens = [t.strip("\"'") for t in _TOKEN_RE.findall(segment)]
     for start, token in enumerate(tokens):
-        if not GIT_TOKEN_RE.search(token):
+        if not _lib.GIT_TOKEN_RE.search(token):
             continue
         i, git_dir = start + 1, None
         while i < len(tokens) and tokens[i].startswith("-"):
             opt = tokens[i]
             if opt == "-C" and i + 1 < len(tokens):
                 git_dir = tokens[i + 1] if git_dir is None else str(Path(git_dir) / tokens[i + 1])
-            i += 2 if opt in GIT_GLOBAL_OPTS_WITH_VALUE else 1
+            i += 2 if opt in _lib.GIT_GLOBAL_OPTS_WITH_VALUE else 1
         if i < len(tokens) and tokens[i].lower() == "push":
             return tokens[i + 1:], git_dir
     return None

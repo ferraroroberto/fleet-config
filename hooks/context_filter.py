@@ -68,7 +68,6 @@ CD_PREFIX_RE = re.compile(r"""\s*cd\s+(?:"[^"\n]*"|'[^'\n]*'|[^\s;&|'"<>()]+)\s*
 # `VAR=val cmd`: bash scopes the assignments to that one command, so the whole
 # string runs unchanged and only classification skips them.
 ENV_PREFIX_RE = re.compile(r"""(?:[A-Za-z_][A-Za-z0-9_]*=(?:"[^"\n]*"|'[^'\n]*'|[^\s;&|'"<>()]*)\s+)+""")
-HEREDOC_RE = re.compile(r"""(?<!<)<<-?\s*(['"]?)([A-Za-z_][A-Za-z0-9_]*)\1""")
 # Shell state that would land in the wrapper's throwaway shell instead of the
 # harness's persistent one.
 STATE_MUTATION_RE = re.compile(
@@ -310,24 +309,10 @@ def effective_command(command: str) -> str:
     return body[match.end():] if match else body
 
 
-def strip_heredoc_bodies(command: str) -> str:
-    """`command` without heredoc bodies, whose text is data, not shell syntax."""
-    kept: list[str] = []
-    pending: list[str] = []
-    for line in command.split("\n"):
-        if pending:
-            if line.strip() == pending[0]:
-                pending.pop(0)
-            continue
-        kept.append(line)
-        pending.extend(match.group(2) for match in HEREDOC_RE.finditer(line))
-    return "\n".join(kept)
-
-
 def is_compound(command: str) -> bool:
     """True when the output is not one simple command's own (a pipeline, or
     several statements), so no per-command summariser may read it."""
-    return bool(COMPOUND_RE.search(strip_heredoc_bodies(effective_command(command)).strip()))
+    return bool(COMPOUND_RE.search(_lib.strip_heredoc_bodies(effective_command(command)).strip()))
 
 
 SUPPORTED_COMMANDS = {
@@ -356,7 +341,7 @@ def rewrite_decision(command: str, tool: str = "") -> RewriteDecision:
         return RewriteDecision(False, "publish/destructive", command)
 
     prefix, body = split_cd_prefix(cmd)
-    shape = strip_heredoc_bodies(body)
+    shape = _lib.strip_heredoc_bodies(body)
     if OUTPUT_TO_FILE_RE.search(shape):
         return RewriteDecision(False, "output redirected to a file", command)
     if BACKGROUND_RE.search(shape):

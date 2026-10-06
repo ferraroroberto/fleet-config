@@ -53,6 +53,53 @@ def matrix_cases() -> Tuple[List[Case], Path]:
          "pre_commit_no_ai_trailer",
          {"tool_name": "Bash", "tool_input": {"command": 'git status'}},
          0),
+        # fleet-config#1288: the session-link trailer the harness asks agents to
+        # append, and a precondition that scans only a real `git … commit`.
+        ("pre_commit: session-link trailer in a heredoc message -> block",
+         "pre_commit_no_ai_trailer",
+         {"tool_name": "Bash", "tool_input": {"command": (
+             "git commit -m \"$(cat <<'EOF'\nfix: x\n\n- why\n\n"
+             "Claude-Session: https://claude.ai/code/session_x\nEOF\n)\"")}},
+         2),
+        ("pre_commit: session-link trailer from PowerShell -> block",
+         "pre_commit_no_ai_trailer",
+         {"tool_name": "PowerShell", "tool_input": {"command": (
+             "git commit -m @'\nfix: x\n\nClaude-Session: https://claude.ai/code/session_x\n'@")}},
+         2),
+        ("pre_commit: 'Claude session' in prose -> allow",
+         "pre_commit_no_ai_trailer",
+         {"tool_name": "Bash", "tool_input": {"command": 'git commit -m "fix: keep the Claude session id in the log"'}},
+         0),
+        ("pre_commit: git -C <path> commit with a trailer -> block",
+         "pre_commit_no_ai_trailer",
+         {"tool_name": "Bash", "tool_input": {"command": 'git -C E:/repo commit -m "feat: x\n\nCo-Authored-By: Claude <noreply@anthropic.com>"'}},
+         2),
+        ("pre_commit: quoted git.exe path after the call operator -> block",
+         "pre_commit_no_ai_trailer",
+         {"tool_name": "PowerShell", "tool_input": {"command": '& "C:/Program Files/Git/cmd/git.exe" -c core.quotepath=off commit -m "feat: x`n`nCo-Authored-By: Claude"'}},
+         2),
+        ("pre_commit: commit after cd && with a heredoc -F message -> block",
+         "pre_commit_no_ai_trailer",
+         {"tool_name": "Bash", "tool_input": {"command": "cd E:/repo && git commit -F - <<'EOF'\nfeat: x\n\n🤖 Generated with Claude Code\nEOF"}},
+         2),
+        ("pre_commit: gh issue body written by heredoc quoting a trailer -> allow",
+         "pre_commit_no_ai_trailer",
+         {"tool_name": "Bash", "tool_input": {"command": (
+             "cat > /tmp/body.md <<'EOF'\nThe guard misses a git commit carrying\n"
+             "git commit -m \"Co-Authored-By: Claude\"\nEOF\n"
+             "gh issue create --title t --body-file /tmp/body.md")}},
+         0),
+        ("pre_commit: inline gh body naming git commit and a trailer -> allow",
+         "pre_commit_no_ai_trailer",
+         {"tool_name": "Bash", "tool_input": {"command": (
+             'gh issue create --title t --body "every git commit must drop\n'
+             'git commit -m \'Co-Authored-By: Claude\'"')}},
+         0),
+        ("pre_commit: PowerShell here-string body quoting a trailer -> allow",
+         "pre_commit_no_ai_trailer",
+         {"tool_name": "PowerShell", "tool_input": {"command": (
+             "Set-Content body.md @'\ngit commit -m \"Co-Authored-By: Claude\" is what it's for\n'@")}},
+         0),
 
         # ---- secret_scan_guard ----
         # cwd is a non-repo tempdir so `git diff --cached` is empty and only the

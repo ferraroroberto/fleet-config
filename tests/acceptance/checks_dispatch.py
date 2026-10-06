@@ -29,7 +29,10 @@ BASH_HOOKS = [
     "bash_windows_path_guard", "secret_scan_guard", "safe_kill_guard",
     "venv_discipline", "context_filter_hook",
 ]
-POWERSHELL_HOOKS = ["secret_scan_guard", "safe_kill_guard", "venv_discipline", "context_filter_hook"]
+POWERSHELL_HOOKS = [
+    "pre_commit_no_ai_trailer", "secret_scan_guard", "safe_kill_guard", "venv_discipline",
+    "context_filter_hook",
+]
 
 Result = Tuple[int, bytes, bytes]
 
@@ -114,6 +117,12 @@ def _hook_dispatch_checks() -> Tuple[int, int]:
     code, out, err = dispatch(POWERSHELL_HOOKS, {**bash("Stop-Process -Name python -Force"),
                                                  "tool_name": "PowerShell"})
     check("hook_dispatch: the PowerShell list refuses a blanket python kill", code == 2, f"{code} {err!r}")
+
+    trailer = "Claude-Session: https://claude.ai/code/session_x"
+    for tool, hooks in (("Bash", BASH_HOOKS), ("PowerShell", POWERSHELL_HOOKS)):
+        code, out, err = dispatch(hooks, {**bash(f'git commit -m "fix: x\n\n{trailer}"'), "tool_name": tool})
+        check(f"hook_dispatch: the {tool} list refuses a session-link trailer (fleet-config#1288)",
+              code == 2 and b"AI attribution" in err, f"{code} {err!r}")
 
     code, out, err = dispatch(["no_such_hook"], bash("git status"))
     check("hook_dispatch: a missing module alone is a non-blocking error (exit 1)",

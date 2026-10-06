@@ -376,6 +376,34 @@ def git_env(base: Optional[dict] = None) -> dict:
     return env
 
 
+# Recognising a git invocation inside a shell command (`safe_kill_guard`'s
+# force-push check, `pre_commit_no_ai_trailer`'s commit check). Git's global
+# options may sit between `git` and the subcommand (`git -C <dir> push …`,
+# fleet-config#1275), so callers walk them token by token rather than trusting a
+# `git\s+<sub>` adjacency regex.
+GIT_TOKEN_RE = re.compile(r"(?:^|[\\/])git(?:\.exe)?$", re.IGNORECASE)
+# Global options that consume the next token unless written `--opt=value`.
+GIT_GLOBAL_OPTS_WITH_VALUE = {
+    "-c", "-C", "--git-dir", "--work-tree", "--namespace", "--exec-path",
+    "--super-prefix", "--config-env", "--attr-source",
+}
+HEREDOC_RE = re.compile(r"""(?<!<)<<-?\s*(['"]?)([A-Za-z_][A-Za-z0-9_]*)\1""")
+
+
+def strip_heredoc_bodies(command: str) -> str:
+    """`command` without heredoc bodies, whose text is data, not shell syntax."""
+    kept: list[str] = []
+    pending: list[str] = []
+    for line in command.split("\n"):
+        if pending:
+            if line.strip() == pending[0]:
+                pending.pop(0)
+            continue
+        kept.append(line)
+        pending.extend(match.group(2) for match in HEREDOC_RE.finditer(line))
+    return "\n".join(kept)
+
+
 def run_git(
     args: Sequence[str], *, check: bool = False, timeout: Optional[float] = None
 ) -> subprocess.CompletedProcess:

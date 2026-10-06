@@ -44,7 +44,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/hooks/hook_dispatch.py secret_scan_guard safe_kill_guard venv_discipline context_filter_hook"
+            "command": "E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/hooks/hook_dispatch.py pre_commit_no_ai_trailer secret_scan_guard safe_kill_guard venv_discipline context_filter_hook"
           }
         ]
       },
