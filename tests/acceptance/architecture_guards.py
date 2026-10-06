@@ -796,6 +796,16 @@ def _config_map_check() -> Tuple[int, int, int]:
     check("config_map: the hook_dispatch.py form yields every hook it names",
           {"pre_commit_no_ai_trailer", "context_filter_hook", "safe_kill_guard"} <= template_names
           and "hook_dispatch" not in template_names)
+    # Since the dispatcher, Bash and PowerShell are two entries naming the same hooks: a hook
+    # keeps every matcher it is wired on, not only the first (fleet-config#1296).
+    events = {h["nm"]: h["ev"] for h in bd.hooks_inventory({})[0]}
+    check("config_map: a dispatcher hook wired on Bash and PowerShell lists both matchers",
+          events.get("pre_commit_no_ai_trailer") == "PreToolUse · Bash·PowerShell"
+          and events.get("safe_kill_guard") == "PreToolUse · Bash·PowerShell",
+          f"got {events.get('pre_commit_no_ai_trailer')!r}, {events.get('safe_kill_guard')!r}")
+    check("config_map: a hook wired on Bash alone keeps the Bash matcher only",
+          events.get("gh_body_file_guard") == "PreToolUse · Bash",
+          f"got {events.get('gh_body_file_guard')!r}")
 
     wc_spec = importlib.util.spec_from_file_location("config_map_whatchanged", cm_dir / "whatchanged.py")
     wc = importlib.util.module_from_spec(wc_spec)
