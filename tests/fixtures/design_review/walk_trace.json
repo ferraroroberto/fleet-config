@@ -1,0 +1,5974 @@
+{
+ "arms": {
+  "screens": [
+   {
+    "id": "desktop-light-home",
+    "device": "desktop",
+    "theme": "light",
+    "view": "home",
+    "kind": "tab",
+    "status": "ok",
+    "reason": null,
+    "error": null,
+    "screenshot": "desktop-light-home.png",
+    "screenshot_full": "desktop-light-home-full.png",
+    "note": null,
+    "metrics": {
+     "m": 1
+    },
+    "theme_applied": true,
+    "theme_observed": {
+     "attr": "light",
+     "luminance": 0.95,
+     "rendered": "light"
+    }
+   },
+   {
+    "id": "desktop-light-broken",
+    "device": "desktop",
+    "theme": "light",
+    "view": "broken",
+    "kind": "tab",
+    "status": "error",
+    "reason": "TAB_FAILED",
+    "error": "Element is not visible",
+    "screenshot": null,
+    "screenshot_full": null,
+    "note": null,
+    "metrics": null,
+    "theme_applied": null,
+    "theme_observed": null
+   },
+   {
+    "id": "desktop-light-slow",
+    "device": "desktop",
+    "theme": "light",
+    "view": "slow",
+    "kind": "tab",
+    "status": "error",
+    "reason": "TIMEOUT",
+    "error": "Timeout 1000ms exceeded",
+    "screenshot": null,
+    "screenshot_full": null,
+    "note": null,
+    "metrics": null,
+    "theme_applied": null,
+    "theme_observed": null
+   },
+   {
+    "id": "desktop-light-dialog-fine",
+    "device": "desktop",
+    "theme": "light",
+    "view": "dialog-fine",
+    "kind": "dialog",
+    "status": "ok",
+    "reason": null,
+    "error": null,
+    "screenshot": "desktop-light-dialog-fine.png",
+    "screenshot_full": null,
+    "note": null,
+    "metrics": {
+     "m": 1
+    },
+    "theme_applied": true,
+    "theme_observed": {
+     "attr": "light",
+     "luminance": 0.95,
+     "rendered": "light"
+    }
+   },
+   {
+    "id": "desktop-light-dialog-stuck",
+    "device": "desktop",
+    "theme": "light",
+    "view": "dialog-stuck",
+    "kind": "dialog",
+    "status": "error",
+    "reason": "DIALOG_FAILED",
+    "error": "dialog stuck would not open",
+    "screenshot": null,
+    "screenshot_full": null,
+    "note": null,
+    "metrics": null,
+    "theme_applied": null,
+    "theme_observed": null
+   },
+   {
+    "id": "desktop-light-gear-settings",
+    "device": "desktop",
+    "theme": "light",
+    "view": "gear-settings",
+    "kind": "step",
+    "status": "ok",
+    "reason": null,
+    "error": null,
+    "screenshot": "desktop-light-gear-settings.png",
+    "screenshot_full": null,
+    "note": null,
+    "metrics": {
+     "m": 1
+    },
+    "theme_applied": true,
+    "theme_observed": {
+     "attr": "light",
+     "luminance": 0.95,
+     "rendered": "light"
+    }
+   },
+   {
+    "id": "desktop-light-root-declared",
+    "device": "desktop",
+    "theme": "light",
+    "view": "root-declared",
+    "kind": "step",
+    "status": "error",
+    "reason": "NO_GO",
+    "error": "#danger is declared no_go",
+    "screenshot": null,
+    "screenshot_full": null,
+    "note": null,
+    "metrics": null,
+    "theme_applied": null,
+    "theme_observed": null
+   },
+   {
+    "id": "desktop-light-root-gone",
+    "device": "desktop",
+    "theme": "light",
+    "view": "root-gone",
+    "kind": "step",
+    "status": "absent",
+    "reason": "STEP_TARGET_ABSENT",
+    "error": "#gone never appeared within 5000 ms",
+    "screenshot": null,
+    "screenshot_full": null,
+    "note": null,
+    "metrics": null,
+    "theme_applied": null,
+    "theme_observed": null
+   },
+   {
+    "id": "desktop-light-root-inside",
+    "device": "desktop",
+    "theme": "light",
+    "view": "root-inside",
+    "kind": "step",
+    "status": "error",
+    "reason": "NO_GO",
+    "error": "#inside sits inside a no_go selector",
+    "screenshot": null,
+    "screenshot_full": null,
+    "note": null,
+    "metrics": null,
+    "theme_applied": null,
+    "theme_observed": null
+   },
+   {
+    "id": "desktop-light-root-crash",
+    "device": "desktop",
+    "theme": "light",
+    "view": "root-crash",
+    "kind": "step",
+    "status": "error",
+    "reason": "RENDER_FAILED",
+    "error": "boom",
+    "screenshot": null,
+    "screenshot_full": null,
+    "note": null,
+    "metrics": null,
+    "theme_applied": null,
+    "theme_observed": null
+   },
+   {
+    "id": "desktop-light-root-waiterr",
+    "device": "desktop",
+    "theme": "light",
+    "view": "root-waiterr",
+    "kind": "step",
+    "status": "error",
+    "reason": "RENDER_FAILED",
+    "error": "element detached",
+    "screenshot": null,
+    "screenshot_full": null,
+    "note": null,
+    "metrics": null,
+    "theme_applied": null,
+    "theme_observed": null
+   },
+   {
+    "id": "desktop-light-home-fine",
+    "device": "desktop",
+    "theme": "light",
+    "view": "home-fine",
+    "kind": "step",
+    "status": "ok",
+    "reason": null,
+    "error": null,
+    "screenshot": "desktop-light-home-fine.png",
+    "screenshot_full": null,
+    "note": null,
+    "metrics": {
+     "m": 1
+    },
+    "theme_applied": true,
+    "theme_observed": {
+     "attr": "light",
+     "luminance": 0.95,
+     "rendered": "light"
+    }
+   }
+  ],
+  "log": [
+   "INFO ok desktop-light-home",
+   "WARNING FAIL desktop-light-broken: Element is not visible",
+   "WARNING FAIL desktop-light-slow: Timeout 1000ms exceeded",
+   "INFO ok desktop-light-dialog-fine",
+   "WARNING FAIL desktop-light-dialog-stuck: dialog stuck would not open",
+   "INFO ok desktop-light-gear-settings",
+   "INFO absent desktop-light-root-gone: #gone never appeared within 5000 ms",
+   "WARNING NO_GO desktop-light-root-inside: #inside sits inside a no_go selector",
+   "WARNING FAIL desktop-light-root-crash: boom",
+   "WARNING FAIL desktop-light-root-waiterr: element detached",
+   "INFO ok desktop-light-home-fine"
+  ],
+  "trace": [
+   [
+    "launch",
+    "chromium"
+   ],
+   [
+    "browser.new_context",
+    {
+     "ignore_https_errors": true,
+     "color_scheme": "light",
+     "viewport": {
+      "width": 1440,
+      "height": 900
+     }
+    }
+   ],
+   [
+    "ctx.new_page"
+   ],
+   [
+    "set_default_timeout",
+    1000
+   ],
+   [
+    "goto",
+    "https://127.0.0.1:1",
+    {
+     "wait_until": "domcontentloaded"
+    }
+   ],
+   [
+    "evaluate",
+    "t => { document.documentElement.dataset.theme = t; }",
+    [
+     "light"
+    ]
+   ],
+   [
+    "wait_for_timeout",
+    2500
+   ],
+   [
+    "evaluate",
+    "_TABS_JS",
+    [
+     "[role=tab]"
+    ]
+   ],
+   [
+    "locator",
+    "[role=tablist]"
+   ],
+   [
+    "count",
+    "[role=tablist]"
+   ],
+   [
+    "locator",
+    "[role=tablist]"
+   ],
+   [
+    "first",
+    "[role=tablist]"
+   ],
+   [
+    "loc.locator",
+    "[role=tablist]",
+    "[role=tab]"
+   ],
+   [
+    "nth",
+    "[role=tab]",
+    0
+   ],
+   [
+    "click",
+    "[role=tab]#0"
+   ],
+   [
+    "wait_for_timeout",
+    2200
+   ],
+   [
+    "screenshot",
+    "desktop-light-home.png",
+    false,
+    null
+   ],
+   [
+    "evaluate",
+    "_OPEN_DETAILS_JS",
+    []
+   ],
+   [
+    "wait_for_timeout",
+    1200
+   ],
+   [
+    "screenshot",
+    "desktop-light-home-full.png",
+    true,
+    null
+   ],
+   [
+    "evaluate",
+    "MEASURE",
+    [
+     {
+      "p": 1
+     }
+    ]
+   ],
+   [
+    "evaluate",
+    "measure.RENDERED_THEME_JS",
+    []
+   ],
+   [
+    "loc.locator",
+    "[role=tablist]",
+    "[role=tab]"
+   ],
+   [
+    "nth",
+    "[role=tab]",
+    1
+   ],
+   [
+    "click",
+    "[role=tab]#1"
+   ],
+   [
+    "loc.locator",
+    "[role=tablist]",
+    "[role=tab]"
+   ],
+   [
+    "nth",
+    "[role=tab]",
+    2
+   ],
+   [
+    "click",
+    "[role=tab]#2"
+   ],
+   [
+    "evaluate",
+    "_DIALOG_IDS_JS",
+    []
+   ],
+   [
+    "evaluate",
+    "id => document.getElementById(id).showModal()",
+    [
+     "fine"
+    ]
+   ],
+   [
+    "wait_for_timeout",
+    500
+   ],
+   [
+    "screenshot",
+    "desktop-light-dialog-fine.png",
+    false,
+    null
+   ],
+   [
+    "evaluate",
+    "_OPEN_SCOPE_DETAILS_JS",
+    []
+   ],
+   [
+    "evaluate",
+    "MEASURE",
+    [
+     {
+      "p": 1
+     }
+    ]
+   ],
+   [
+    "evaluate",
+    "measure.RENDERED_THEME_JS",
+    []
+   ],
+   [
+    "evaluate",
+    "id => document.getElementById(id).close()",
+    [
+     "fine"
+    ]
+   ],
+   [
+    "evaluate",
+    "id => document.getElementById(id).showModal()",
+    [
+     "stuck"
+    ]
+   ],
+   [
+    "goto",
+    "https://127.0.0.1:1",
+    {
+     "wait_until": "domcontentloaded"
+    }
+   ],
+   [
+    "evaluate",
+    "t => { document.documentElement.dataset.theme = t; }",
+    [
+     "light"
+    ]
+   ],
+   [
+    "wait_for_timeout",
+    2500
+   ],
+   [
+    "get_by_role",
+    "button",
+    "^\\s*settings\\s*$"
+   ],
+   [
+    "loc.locator",
+    "gear",
+    "visible=true"
+   ],
+   [
+    "first",
+    "gear"
+   ],
+   [
+    "wait_for",
+    "gear",
+    {
+     "state": "attached",
+     "timeout": 1000
+    }
+   ],
+   [
+    "loc.evaluate",
+    "gear",
+    "_NO_GO_JS",
+    [
+     [
+      "#danger"
+     ]
+    ]
+   ],
+   [
+    "click",
+    "gear"
+   ],
+   [
+    "wait_for_timeout",
+    1200
+   ],
+   [
+    "screenshot",
+    "desktop-light-gear-settings.png",
+    false,
+    null
+   ],
+   [
+    "evaluate",
+    "_OPEN_SCOPE_DETAILS_JS",
+    []
+   ],
+   [
+    "evaluate",
+    "MEASURE",
+    [
+     {
+      "p": 1
+     }
+    ]
+   ],
+   [
+    "evaluate",
+    "measure.RENDERED_THEME_JS",
+    []
+   ],
+   [
+    "goto",
+    "https://127.0.0.1:1",
+    {
+     "wait_until": "domcontentloaded"
+    }
+   ],
+   [
+    "evaluate",
+    "t => { document.documentElement.dataset.theme = t; }",
+    [
+     "light"
+    ]
+   ],
+   [
+    "wait_for_timeout",
+    2500
+   ],
+   [
+    "locator",
+    "#gone"
+   ],
+   [
+    "first",
+    "#gone"
+   ],
+   [
+    "wait_for",
+    "#gone",
+    {
+     "state": "attached",
+     "timeout": 5000
+    }
+   ],
+   [
+    "goto",
+    "https://127.0.0.1:1",
+    {
+     "wait_until": "domcontentloaded"
+    }
+   ],
+   [
+    "evaluate",
+    "t => { document.documentElement.dataset.theme = t; }",
+    [
+     "light"
+    ]
+   ],
+   [
+    "wait_for_timeout",
+    2500
+   ],
+   [
+    "locator",
+    "#inside"
+   ],
+   [
+    "first",
+    "#inside"
+   ],
+   [
+    "wait_for",
+    "#inside",
+    {
+     "state": "attached",
+     "timeout": 5000
+    }
+   ],
+   [
+    "loc.evaluate",
+    "#inside",
+    "_NO_GO_JS",
+    [
+     [
+      "#danger"
+     ]
+    ]
+   ],
+   [
+    "goto",
+    "https://127.0.0.1:1",
+    {
+     "wait_until": "domcontentloaded"
+    }
+   ],
+   [
+    "evaluate",
+    "t => { document.documentElement.dataset.theme = t; }",
+    [
+     "light"
+    ]
+   ],
+   [
+    "wait_for_timeout",
+    2500
+   ],
+   [
+    "locator",
+    "#crash"
+   ],
+   [
+    "first",
+    "#crash"
+   ],
+   [
+    "wait_for",
+    "#crash",
+    {
+     "state": "attached",
+     "timeout": 5000
+    }
+   ],
+   [
+    "loc.evaluate",
+    "#crash",
+    "_NO_GO_JS",
+    [
+     [
+      "#danger"
+     ]
+    ]
+   ],
+   [
+    "click",
+    "#crash"
+   ],
+   [
+    "goto",
+    "https://127.0.0.1:1",
+    {
+     "wait_until": "domcontentloaded"
+    }
+   ],
+   [
+    "evaluate",
+    "t => { document.documentElement.dataset.theme = t; }",
+    [
+     "light"
+    ]
+   ],
+   [
+    "wait_for_timeout",
+    2500
+   ],
+   [
+    "locator",
+    "#waiterr"
+   ],
+   [
+    "first",
+    "#waiterr"
+   ],
+   [
+    "wait_for",
+    "#waiterr",
+    {
+     "state": "attached",
+     "timeout": 5000
+    }
+   ],
+   [
+    "goto",
+    "https://127.0.0.1:1",
+    {
+     "wait_until": "domcontentloaded"
+    }
+   ],
+   [
+    "evaluate",
+    "t => { document.documentElement.dataset.theme = t; }",
+    [
+     "light"
+    ]
+   ],
+   [
+    "wait_for_timeout",
+    2500
+   ],
+   [
+    "loc.locator",
+    "[role=tablist]",
+    "[role=tab]"
+   ],
+   [
+    "nth",
+    "[role=tab]",
+    0
+   ],
+   [
+    "click",
+    "[role=tab]#0"
+   ],
+   [
+    "wait_for_timeout",
+    2200
+   ],
+   [
+    "locator",
+    "#det"
+   ],
+   [
+    "first",
+    "#det"
+   ],
+   [
+    "wait_for",
+    "#det",
+    {
+     "state": "attached",
+     "timeout": 5000
+    }
+   ],
+   [
+    "loc.evaluate",
+    "#det",
+    "_NO_GO_JS",
+    [
+     [
+      "#danger"
+     ]
+    ]
+   ],
+   [
+    "loc.evaluate",
+    "#det",
+    "d => { d.open = true; }",
+    []
+   ],
+   [
+    "wait_for_timeout",
+    1200
+   ],
+   [
+    "locator",
+    "#a"
+   ],
+   [
+    "first",
+    "#a"
+   ],
+   [
+    "wait_for",
+    "#a",
+    {
+     "state": "attached",
+     "timeout": 5000
+    }
+   ],
+   [
+    "loc.evaluate",
+    "#a",
+    "_NO_GO_JS",
+    [
+     [
+      "#danger"
+     ]
+    ]
+   ],
+   [
+    "click",
+    "#a"
+   ],
+   [
+    "wait_for_timeout",
+    1200
+   ],
+   [
+    "locator",
+    "#b"
+   ],
+   [
+    "first",
+    "#b"
+   ],
+   [
+    "wait_for",
+    "#b",
+    {
+     "state": "attached",
+     "timeout": 5000
+    }
+   ],
+   [
+    "loc.evaluate",
+    "#b",
+    "_NO_GO_JS",
+    [
+     [
+      "#danger"
+     ]
+    ]
+   ],
+   [
+    "click",
+    "#b"
+   ],
+   [
+    "wait_for_timeout",
+    1200
+   ],
+   [
+    "screenshot",
+    "desktop-light-home-fine.png",
+    false,
+    null
+   ],
+   [
+    "evaluate",
+    "_OPEN_SCOPE_DETAILS_JS",
+    []
+   ],
+   [
+    "evaluate",
+    "MEASURE",
+    [
+     {
+      "p": 1
+     }
+    ]
+   ],
+   [
+    "evaluate",
+    "measure.RENDERED_THEME_JS",
+    []
+   ],
+   [
+    "ctx.close"
+   ],
+   [
+    "browser.close"
+   ]
+  ]
+ },
+ "gear-absent": {
+  "screens": [
+   {
+    "id": "desktop-light-home",
+    "device": "desktop",
+    "theme": "light",
+    "view": "home",
+    "kind": "tab",
+    "status": "ok",
+    "reason": null,
+    "error": null,
+    "screenshot": "desktop-light-home.png",
+    "screenshot_full": "desktop-light-home-full.png",
+    "note": null,
+    "metrics": {
+     "m": 1
+    },
+    "theme_applied": true,
+    "theme_observed": {
+     "attr": "light",
+     "luminance": 0.95,
+     "rendered": "light"
+    }
+   },
+   {
+    "id": "desktop-light-broken",
+    "device": "desktop",
+    "theme": "light",
+    "view": "broken",
+    "kind": "tab",
+    "status": "error",
+    "reason": "TAB_FAILED",
+    "error": "Element is not visible",
+    "screenshot": null,
+    "screenshot_full": null,
+    "note": null,
+    "metrics": null,
+    "theme_applied": null,
+    "theme_observed": null
+   },
+   {
+    "id": "desktop-light-slow",
+    "device": "desktop",
+    "theme": "light",
+    "view": "slow",
+    "kind": "tab",
+    "status": "error",
+    "reason": "TIMEOUT",
+    "error": "Timeout 1000ms exceeded",
+    "screenshot": null,
+    "screenshot_full": null,
+    "note": null,
+    "metrics": null,
+    "theme_applied": null,
+    "theme_observed": null
+   },
+   {
+    "id": "desktop-light-dialog-fine",
+    "device": "desktop",
+    "theme": "light",
+    "view": "dialog-fine",
+    "kind": "dialog",
+    "status": "ok",
+    "reason": null,
+    "error": null,
+    "screenshot": "desktop-light-dialog-fine.png",
+    "screenshot_full": null,
+    "note": null,
+    "metrics": {
+     "m": 1
+    },
+    "theme_applied": true,
+    "theme_observed": {
+     "attr": "light",
+     "luminance": 0.95,
+     "rendered": "light"
+    }
+   },
+   {
+    "id": "desktop-light-dialog-stuck",
+    "device": "desktop",
+    "theme": "light",
+    "view": "dialog-stuck",
+    "kind": "dialog",
+    "status": "error",
+    "reason": "DIALOG_FAILED",
+    "error": "dialog stuck would not open",
+    "screenshot": null,
+    "screenshot_full": null,
+    "note": null,
+    "metrics": null,
+    "theme_applied": null,
+    "theme_observed": null
+   },
+   {
+    "id": "desktop-light-gear-settings",
+    "device": "desktop",
+    "theme": "light",
+    "view": "gear-settings",
+    "kind": "step",
+    "status": "absent",
+    "reason": "SETTINGS_GEAR_ABSENT",
+    "error": "no visible button named Settings",
+    "screenshot": null,
+    "screenshot_full": null,
+    "note": null,
+    "metrics": null,
+    "theme_applied": null,
+    "theme_observed": null
+   },
+   {
+    "id": "desktop-light-root-declared",
+    "device": "desktop",
+    "theme": "light",
+    "view": "root-declared",
+    "kind": "step",
+    "status": "error",
+    "reason": "NO_GO",
+    "error": "#danger is declared no_go",
+    "screenshot": null,
+    "screenshot_full": null,
+    "note": null,
+    "metrics": null,
+    "theme_applied": null,
+    "theme_observed": null
+   },
+   {
+    "id": "desktop-light-root-gone",
+    "device": "desktop",
+    "theme": "light",
+    "view": "root-gone",
+    "kind": "step",
+    "status": "absent",
+    "reason": "STEP_TARGET_ABSENT",
+    "error": "#gone never appeared within 5000 ms",
+    "screenshot": null,
+    "screenshot_full": null,
+    "note": null,
+    "metrics": null,
+    "theme_applied": null,
+    "theme_observed": null
+   },
+   {
+    "id": "desktop-light-root-inside",
+    "device": "desktop",
+    "theme": "light",
+    "view": "root-inside",
+    "kind": "step",
+    "status": "error",
+    "reason": "NO_GO",
+    "error": "#inside sits inside a no_go selector",
+    "screenshot": null,
+    "screenshot_full": null,
+    "note": null,
+    "metrics": null,
+    "theme_applied": null,
+    "theme_observed": null
+   },
+   {
+    "id": "desktop-light-root-crash",
+    "device": "desktop",
+    "theme": "light",
+    "view": "root-crash",
+    "kind": "step",
+    "status": "error",
+    "reason": "RENDER_FAILED",
+    "error": "boom",
+    "screenshot": null,
+    "screenshot_full": null,
+    "note": null,
+    "metrics": null,
+    "theme_applied": null,
+    "theme_observed": null
+   },
+   {
+    "id": "desktop-light-root-waiterr",
+    "device": "desktop",
+    "theme": "light",
+    "view": "root-waiterr",
+    "kind": "step",
+    "status": "error",
+    "reason": "RENDER_FAILED",
+    "error": "element detached",
+    "screenshot": null,
+    "screenshot_full": null,
+    "note": null,
+    "metrics": null,
+    "theme_applied": null,
+    "theme_observed": null
+   },
+   {
+    "id": "desktop-light-home-fine",
+    "device": "desktop",
+    "theme": "light",
+    "view": "home-fine",
+    "kind": "step",
+    "status": "ok",
+    "reason": null,
+    "error": null,
+    "screenshot": "desktop-light-home-fine.png",
+    "screenshot_full": null,
+    "note": null,
+    "metrics": {
+     "m": 1
+    },
+    "theme_applied": true,
+    "theme_observed": {
+     "attr": "light",
+     "luminance": 0.95,
+     "rendered": "light"
+    }
+   }
+  ],
+  "log": [
+   "INFO ok desktop-light-home",
+   "WARNING FAIL desktop-light-broken: Element is not visible",
+   "WARNING FAIL desktop-light-slow: Timeout 1000ms exceeded",
+   "INFO ok desktop-light-dialog-fine",
+   "WARNING FAIL desktop-light-dialog-stuck: dialog stuck would not open",
+   "INFO absent desktop-light-gear-settings: no visible button named Settings",
+   "INFO absent desktop-light-root-gone: #gone never appeared within 5000 ms",
+   "WARNING NO_GO desktop-light-root-inside: #inside sits inside a no_go selector",
+   "WARNING FAIL desktop-light-root-crash: boom",
+   "WARNING FAIL desktop-light-root-waiterr: element detached",
+   "INFO ok desktop-light-home-fine"
+  ],
+  "trace": [
+   [
+    "launch",
+    "chromium"
+   ],
+   [
+    "browser.new_context",
+    {
+     "ignore_https_errors": true,
+     "color_scheme": "light",
+     "viewport": {
+      "width": 1440,
+      "height": 900
+     }
+    }
+   ],
+   [
+    "ctx.new_page"
+   ],
+   [
+    "set_default_timeout",
+    1000
+   ],
+   [
+    "goto",
+    "https://127.0.0.1:1",
+    {
+     "wait_until": "domcontentloaded"
+    }
+   ],
+   [
+    "evaluate",
+    "t => { document.documentElement.dataset.theme = t; }",
+    [
+     "light"
+    ]
+   ],
+   [
+    "wait_for_timeout",
+    2500
+   ],
+   [
+    "evaluate",
+    "_TABS_JS",
+    [
+     "[role=tab]"
+    ]
+   ],
+   [
+    "locator",
+    "[role=tablist]"
+   ],
+   [
+    "count",
+    "[role=tablist]"
+   ],
+   [
+    "locator",
+    "[role=tablist]"
+   ],
+   [
+    "first",
+    "[role=tablist]"
+   ],
+   [
+    "loc.locator",
+    "[role=tablist]",
+    "[role=tab]"
+   ],
+   [
+    "nth",
+    "[role=tab]",
+    0
+   ],
+   [
+    "click",
+    "[role=tab]#0"
+   ],
+   [
+    "wait_for_timeout",
+    2200
+   ],
+   [
+    "screenshot",
+    "desktop-light-home.png",
+    false,
+    null
+   ],
+   [
+    "evaluate",
+    "_OPEN_DETAILS_JS",
+    []
+   ],
+   [
+    "wait_for_timeout",
+    1200
+   ],
+   [
+    "screenshot",
+    "desktop-light-home-full.png",
+    true,
+    null
+   ],
+   [
+    "evaluate",
+    "MEASURE",
+    [
+     {
+      "p": 1
+     }
+    ]
+   ],
+   [
+    "evaluate",
+    "measure.RENDERED_THEME_JS",
+    []
+   ],
+   [
+    "loc.locator",
+    "[role=tablist]",
+    "[role=tab]"
+   ],
+   [
+    "nth",
+    "[role=tab]",
+    1
+   ],
+   [
+    "click",
+    "[role=tab]#1"
+   ],
+   [
+    "loc.locator",
+    "[role=tablist]",
+    "[role=tab]"
+   ],
+   [
+    "nth",
+    "[role=tab]",
+    2
+   ],
+   [
+    "click",
+    "[role=tab]#2"
+   ],
+   [
+    "evaluate",
+    "_DIALOG_IDS_JS",
+    []
+   ],
+   [
+    "evaluate",
+    "id => document.getElementById(id).showModal()",
+    [
+     "fine"
+    ]
+   ],
+   [
+    "wait_for_timeout",
+    500
+   ],
+   [
+    "screenshot",
+    "desktop-light-dialog-fine.png",
+    false,
+    null
+   ],
+   [
+    "evaluate",
+    "_OPEN_SCOPE_DETAILS_JS",
+    []
+   ],
+   [
+    "evaluate",
+    "MEASURE",
+    [
+     {
+      "p": 1
+     }
+    ]
+   ],
+   [
+    "evaluate",
+    "measure.RENDERED_THEME_JS",
+    []
+   ],
+   [
+    "evaluate",
+    "id => document.getElementById(id).close()",
+    [
+     "fine"
+    ]
+   ],
+   [
+    "evaluate",
+    "id => document.getElementById(id).showModal()",
+    [
+     "stuck"
+    ]
+   ],
+   [
+    "goto",
+    "https://127.0.0.1:1",
+    {
+     "wait_until": "domcontentloaded"
+    }
+   ],
+   [
+    "evaluate",
+    "t => { document.documentElement.dataset.theme = t; }",
+    [
+     "light"
+    ]
+   ],
+   [
+    "wait_for_timeout",
+    2500
+   ],
+   [
+    "get_by_role",
+    "button",
+    "^\\s*settings\\s*$"
+   ],
+   [
+    "loc.locator",
+    "gear",
+    "visible=true"
+   ],
+   [
+    "first",
+    "gear"
+   ],
+   [
+    "wait_for",
+    "gear",
+    {
+     "state": "attached",
+     "timeout": 1000
+    }
+   ],
+   [
+    "goto",
+    "https://127.0.0.1:1",
+    {
+     "wait_until": "domcontentloaded"
+    }
+   ],
+   [
+    "evaluate",
+    "t => { document.documentElement.dataset.theme = t; }",
+    [
+     "light"
+    ]
+   ],
+   [
+    "wait_for_timeout",
+    2500
+   ],
+   [
+    "locator",
+    "#gone"
+   ],
+   [
+    "first",
+    "#gone"
+   ],
+   [
+    "wait_for",
+    "#gone",
+    {
+     "state": "attached",
+     "timeout": 5000
+    }
+   ],
+   [
+    "goto",
+    "https://127.0.0.1:1",
+    {
+     "wait_until": "domcontentloaded"
+    }
+   ],
+   [
+    "evaluate",
+    "t => { document.documentElement.dataset.theme = t; }",
+    [
+     "light"
+    ]
+   ],
+   [
+    "wait_for_timeout",
+    2500
+   ],
+   [
+    "locator",
+    "#inside"
+   ],
+   [
+    "first",
+    "#inside"
+   ],
+   [
+    "wait_for",
+    "#inside",
+    {
+     "state": "attached",
+     "timeout": 5000
+    }
+   ],
+   [
+    "loc.evaluate",
+    "#inside",
+    "_NO_GO_JS",
+    [
+     [
+      "#danger"
+     ]
+    ]
+   ],
+   [
+    "goto",
+    "https://127.0.0.1:1",
+    {
+     "wait_until": "domcontentloaded"
+    }
+   ],
+   [
+    "evaluate",
+    "t => { document.documentElement.dataset.theme = t; }",
+    [
+     "light"
+    ]
+   ],
+   [
+    "wait_for_timeout",
+    2500
+   ],
+   [
+    "locator",
+    "#crash"
+   ],
+   [
+    "first",
+    "#crash"
+   ],
+   [
+    "wait_for",
+    "#crash",
+    {
+     "state": "attached",
+     "timeout": 5000
+    }
+   ],
+   [
+    "loc.evaluate",
+    "#crash",
+    "_NO_GO_JS",
+    [
+     [
+      "#danger"
+     ]
+    ]
+   ],
+   [
+    "click",
+    "#crash"
+   ],
+   [
+    "goto",
+    "https://127.0.0.1:1",
+    {
+     "wait_until": "domcontentloaded"
+    }
+   ],
+   [
+    "evaluate",
+    "t => { document.documentElement.dataset.theme = t; }",
+    [
+     "light"
+    ]
+   ],
+   [
+    "wait_for_timeout",
+    2500
+   ],
+   [
+    "locator",
+    "#waiterr"
+   ],
+   [
+    "first",
+    "#waiterr"
+   ],
+   [
+    "wait_for",
+    "#waiterr",
+    {
+     "state": "attached",
+     "timeout": 5000
+    }
+   ],
+   [
+    "goto",
+    "https://127.0.0.1:1",
+    {
+     "wait_until": "domcontentloaded"
+    }
+   ],
+   [
+    "evaluate",
+    "t => { document.documentElement.dataset.theme = t; }",
+    [
+     "light"
+    ]
+   ],
+   [
+    "wait_for_timeout",
+    2500
+   ],
+   [
+    "loc.locator",
+    "[role=tablist]",
+    "[role=tab]"
+   ],
+   [
+    "nth",
+    "[role=tab]",
+    0
+   ],
+   [
+    "click",
+    "[role=tab]#0"
+   ],
+   [
+    "wait_for_timeout",
+    2200
+   ],
+   [
+    "locator",
+    "#det"
+   ],
+   [
+    "first",
+    "#det"
+   ],
+   [
+    "wait_for",
+    "#det",
+    {
+     "state": "attached",
+     "timeout": 5000
+    }
+   ],
+   [
+    "loc.evaluate",
+    "#det",
+    "_NO_GO_JS",
+    [
+     [
+      "#danger"
+     ]
+    ]
+   ],
+   [
+    "loc.evaluate",
+    "#det",
+    "d => { d.open = true; }",
+    []
+   ],
+   [
+    "wait_for_timeout",
+    1200
+   ],
+   [
+    "locator",
+    "#a"
+   ],
+   [
+    "first",
+    "#a"
+   ],
+   [
+    "wait_for",
+    "#a",
+    {
+     "state": "attached",
+     "timeout": 5000
+    }
+   ],
+   [
+    "loc.evaluate",
+    "#a",
+    "_NO_GO_JS",
+    [
+     [
+      "#danger"
+     ]
+    ]
+   ],
+   [
+    "click",
+    "#a"
+   ],
+   [
+    "wait_for_timeout",
+    1200
+   ],
+   [
+    "locator",
+    "#b"
+   ],
+   [
+    "first",
+    "#b"
+   ],
+   [
+    "wait_for",
+    "#b",
+    {
+     "state": "attached",
+     "timeout": 5000
+    }
+   ],
+   [
+    "loc.evaluate",
+    "#b",
+    "_NO_GO_JS",
+    [
+     [
+      "#danger"
+     ]
+    ]
+   ],
+   [
+    "click",
+    "#b"
+   ],
+   [
+    "wait_for_timeout",
+    1200
+   ],
+   [
+    "screenshot",
+    "desktop-light-home-fine.png",
+    false,
+    null
+   ],
+   [
+    "evaluate",
+    "_OPEN_SCOPE_DETAILS_JS",
+    []
+   ],
+   [
+    "evaluate",
+    "MEASURE",
+    [
+     {
+      "p": 1
+     }
+    ]
+   ],
+   [
+    "evaluate",
+    "measure.RENDERED_THEME_JS",
+    []
+   ],
+   [
+    "ctx.close"
+   ],
+   [
+    "browser.close"
+   ]
+  ]
+ },
+ "gear-nogo": {
+  "screens": [
+   {
+    "id": "desktop-light-home",
+    "device": "desktop",
+    "theme": "light",
+    "view": "home",
+    "kind": "tab",
+    "status": "ok",
+    "reason": null,
+    "error": null,
+    "screenshot": "desktop-light-home.png",
+    "screenshot_full": "desktop-light-home-full.png",
+    "note": null,
+    "metrics": {
+     "m": 1
+    },
+    "theme_applied": true,
+    "theme_observed": {
+     "attr": "light",
+     "luminance": 0.95,
+     "rendered": "light"
+    }
+   },
+   {
+    "id": "desktop-light-broken",
+    "device": "desktop",
+    "theme": "light",
+    "view": "broken",
+    "kind": "tab",
+    "status": "error",
+    "reason": "TAB_FAILED",
+    "error": "Element is not visible",
+    "screenshot": null,
+    "screenshot_full": null,
+    "note": null,
+    "metrics": null,
+    "theme_applied": null,
+    "theme_observed": null
+   },
+   {
+    "id": "desktop-light-slow",
+    "device": "desktop",
+    "theme": "light",
+    "view": "slow",
+    "kind": "tab",
+    "status": "error",
+    "reason": "TIMEOUT",
+    "error": "Timeout 1000ms exceeded",
+    "screenshot": null,
+    "screenshot_full": null,
+    "note": null,
+    "metrics": null,
+    "theme_applied": null,
+    "theme_observed": null
+   },
+   {
+    "id": "desktop-light-dialog-fine",
+    "device": "desktop",
+    "theme": "light",
+    "view": "dialog-fine",
+    "kind": "dialog",
+    "status": "ok",
+    "reason": null,
+    "error": null,
+    "screenshot": "desktop-light-dialog-fine.png",
+    "screenshot_full": null,
+    "note": null,
+    "metrics": {
+     "m": 1
+    },
+    "theme_applied": true,
+    "theme_observed": {
+     "attr": "light",
+     "luminance": 0.95,
+     "rendered": "light"
+    }
+   },
+   {
+    "id": "desktop-light-dialog-stuck",
+    "device": "desktop",
+    "theme": "light",
+    "view": "dialog-stuck",
+    "kind": "dialog",
+    "status": "error",
+    "reason": "DIALOG_FAILED",
+    "error": "dialog stuck would not open",
+    "screenshot": null,
+    "screenshot_full": null,
+    "note": null,
+    "metrics": null,
+    "theme_applied": null,
+    "theme_observed": null
+   },
+   {
+    "id": "desktop-light-gear-settings",
+    "device": "desktop",
+    "theme": "light",
+    "view": "gear-settings",
+    "kind": "step",
+    "status": "error",
+    "reason": "NO_GO",
+    "error": "the Settings gear sits inside a no_go selector",
+    "screenshot": null,
+    "screenshot_full": null,
+    "note": null,
+    "metrics": null,
+    "theme_applied": null,
+    "theme_observed": null
+   },
+   {
+    "id": "desktop-light-root-declared",
+    "device": "desktop",
+    "theme": "light",
+    "view": "root-declared",
+    "kind": "step",
+    "status": "error",
+    "reason": "NO_GO",
+    "error": "#danger is declared no_go",
+    "screenshot": null,
+    "screenshot_full": null,
+    "note": null,
+    "metrics": null,
+    "theme_applied": null,
+    "theme_observed": null
+   },
+   {
+    "id": "desktop-light-root-gone",
+    "device": "desktop",
+    "theme": "light",
+    "view": "root-gone",
+    "kind": "step",
+    "status": "absent",
+    "reason": "STEP_TARGET_ABSENT",
+    "error": "#gone never appeared within 5000 ms",
+    "screenshot": null,
+    "screenshot_full": null,
+    "note": null,
+    "metrics": null,
+    "theme_applied": null,
+    "theme_observed": null
+   },
+   {
+    "id": "desktop-light-root-inside",
+    "device": "desktop",
+    "theme": "light",
+    "view": "root-inside",
+    "kind": "step",
+    "status": "error",
+    "reason": "NO_GO",
+    "error": "#inside sits inside a no_go selector",
+    "screenshot": null,
+    "screenshot_full": null,
+    "note": null,
+    "metrics": null,
+    "theme_applied": null,
+    "theme_observed": null
+   },
+   {
+    "id": "desktop-light-root-crash",
+    "device": "desktop",
+    "theme": "light",
+    "view": "root-crash",
+    "kind": "step",
+    "status": "error",
+    "reason": "RENDER_FAILED",
+    "error": "boom",
+    "screenshot": null,
+    "screenshot_full": null,
+    "note": null,
+    "metrics": null,
+    "theme_applied": null,
+    "theme_observed": null
+   },
+   {
+    "id": "desktop-light-root-waiterr",
+    "device": "desktop",
+    "theme": "light",
+    "view": "root-waiterr",
+    "kind": "step",
+    "status": "error",
+    "reason": "RENDER_FAILED",
+    "error": "element detached",
+    "screenshot": null,
+    "screenshot_full": null,
+    "note": null,
+    "metrics": null,
+    "theme_applied": null,
+    "theme_observed": null
+   },
+   {
+    "id": "desktop-light-home-fine",
+    "device": "desktop",
+    "theme": "light",
+    "view": "home-fine",
+    "kind": "step",
+    "status": "ok",
+    "reason": null,
+    "error": null,
+    "screenshot": "desktop-light-home-fine.png",
+    "screenshot_full": null,
+    "note": null,
+    "metrics": {
+     "m": 1
+    },
+    "theme_applied": true,
+    "theme_observed": {
+     "attr": "light",
+     "luminance": 0.95,
+     "rendered": "light"
+    }
+   }
+  ],
+  "log": [
+   "INFO ok desktop-light-home",
+   "WARNING FAIL desktop-light-broken: Element is not visible",
+   "WARNING FAIL desktop-light-slow: Timeout 1000ms exceeded",
+   "INFO ok desktop-light-dialog-fine",
+   "WARNING FAIL desktop-light-dialog-stuck: dialog stuck would not open",
+   "WARNING NO_GO desktop-light-gear-settings: the Settings gear sits inside a no_go selector",
+   "INFO absent desktop-light-root-gone: #gone never appeared within 5000 ms",
+   "WARNING NO_GO desktop-light-root-inside: #inside sits inside a no_go selector",
+   "WARNING FAIL desktop-light-root-crash: boom",
+   "WARNING FAIL desktop-light-root-waiterr: element detached",
+   "INFO ok desktop-light-home-fine"
+  ],
+  "trace": [
+   [
+    "launch",
+    "chromium"
+   ],
+   [
+    "browser.new_context",
+    {
+     "ignore_https_errors": true,
+     "color_scheme": "light",
+     "viewport": {
+      "width": 1440,
+      "height": 900
+     }
+    }
+   ],
+   [
+    "ctx.new_page"
+   ],
+   [
+    "set_default_timeout",
+    1000
+   ],
+   [
+    "goto",
+    "https://127.0.0.1:1",
+    {
+     "wait_until": "domcontentloaded"
+    }
+   ],
+   [
+    "evaluate",
+    "t => { document.documentElement.dataset.theme = t; }",
+    [
+     "light"
+    ]
+   ],
+   [
+    "wait_for_timeout",
+    2500
+   ],
+   [
+    "evaluate",
+    "_TABS_JS",
+    [
+     "[role=tab]"
+    ]
+   ],
+   [
+    "locator",
+    "[role=tablist]"
+   ],
+   [
+    "count",
+    "[role=tablist]"
+   ],
+   [
+    "locator",
+    "[role=tablist]"
+   ],
+   [
+    "first",
+    "[role=tablist]"
+   ],
+   [
+    "loc.locator",
+    "[role=tablist]",
+    "[role=tab]"
+   ],
+   [
+    "nth",
+    "[role=tab]",
+    0
+   ],
+   [
+    "click",
+    "[role=tab]#0"
+   ],
+   [
+    "wait_for_timeout",
+    2200
+   ],
+   [
+    "screenshot",
+    "desktop-light-home.png",
+    false,
+    null
+   ],
+   [
+    "evaluate",
+    "_OPEN_DETAILS_JS",
+    []
+   ],
+   [
+    "wait_for_timeout",
+    1200
+   ],
+   [
+    "screenshot",
+    "desktop-light-home-full.png",
+    true,
+    null
+   ],
+   [
+    "evaluate",
+    "MEASURE",
+    [
+     {
+      "p": 1
+     }
+    ]
+   ],
+   [
+    "evaluate",
+    "measure.RENDERED_THEME_JS",
+    []
+   ],
+   [
+    "loc.locator",
+    "[role=tablist]",
+    "[role=tab]"
+   ],
+   [
+    "nth",
+    "[role=tab]",
+    1
+   ],
+   [
+    "click",
+    "[role=tab]#1"
+   ],
+   [
+    "loc.locator",
+    "[role=tablist]",
+    "[role=tab]"
+   ],
+   [
+    "nth",
+    "[role=tab]",
+    2
+   ],
+   [
+    "click",
+    "[role=tab]#2"
+   ],
+   [
+    "evaluate",
+    "_DIALOG_IDS_JS",
+    []
+   ],
+   [
+    "evaluate",
+    "id => document.getElementById(id).showModal()",
+    [
+     "fine"
+    ]
+   ],
+   [
+    "wait_for_timeout",
+    500
+   ],
+   [
+    "screenshot",
+    "desktop-light-dialog-fine.png",
+    false,
+    null
+   ],
+   [
+    "evaluate",
+    "_OPEN_SCOPE_DETAILS_JS",
+    []
+   ],
+   [
+    "evaluate",
+    "MEASURE",
+    [
+     {
+      "p": 1
+     }
+    ]
+   ],
+   [
+    "evaluate",
+    "measure.RENDERED_THEME_JS",
+    []
+   ],
+   [
+    "evaluate",
+    "id => document.getElementById(id).close()",
+    [
+     "fine"
+    ]
+   ],
+   [
+    "evaluate",
+    "id => document.getElementById(id).showModal()",
+    [
+     "stuck"
+    ]
+   ],
+   [
+    "goto",
+    "https://127.0.0.1:1",
+    {
+     "wait_until": "domcontentloaded"
+    }
+   ],
+   [
+    "evaluate",
+    "t => { document.documentElement.dataset.theme = t; }",
+    [
+     "light"
+    ]
+   ],
+   [
+    "wait_for_timeout",
+    2500
+   ],
+   [
+    "get_by_role",
+    "button",
+    "^\\s*settings\\s*$"
+   ],
+   [
+    "loc.locator",
+    "gear",
+    "visible=true"
+   ],
+   [
+    "first",
+    "gear"
+   ],
+   [
+    "wait_for",
+    "gear",
+    {
+     "state": "attached",
+     "timeout": 1000
+    }
+   ],
+   [
+    "loc.evaluate",
+    "gear",
+    "_NO_GO_JS",
+    [
+     [
+      "#danger"
+     ]
+    ]
+   ],
+   [
+    "goto",
+    "https://127.0.0.1:1",
+    {
+     "wait_until": "domcontentloaded"
+    }
+   ],
+   [
+    "evaluate",
+    "t => { document.documentElement.dataset.theme = t; }",
+    [
+     "light"
+    ]
+   ],
+   [
+    "wait_for_timeout",
+    2500
+   ],
+   [
+    "locator",
+    "#gone"
+   ],
+   [
+    "first",
+    "#gone"
+   ],
+   [
+    "wait_for",
+    "#gone",
+    {
+     "state": "attached",
+     "timeout": 5000
+    }
+   ],
+   [
+    "goto",
+    "https://127.0.0.1:1",
+    {
+     "wait_until": "domcontentloaded"
+    }
+   ],
+   [
+    "evaluate",
+    "t => { document.documentElement.dataset.theme = t; }",
+    [
+     "light"
+    ]
+   ],
+   [
+    "wait_for_timeout",
+    2500
+   ],
+   [
+    "locator",
+    "#inside"
+   ],
+   [
+    "first",
+    "#inside"
+   ],
+   [
+    "wait_for",
+    "#inside",
+    {
+     "state": "attached",
+     "timeout": 5000
+    }
+   ],
+   [
+    "loc.evaluate",
+    "#inside",
+    "_NO_GO_JS",
+    [
+     [
+      "#danger"
+     ]
+    ]
+   ],
+   [
+    "goto",
+    "https://127.0.0.1:1",
+    {
+     "wait_until": "domcontentloaded"
+    }
+   ],
+   [
+    "evaluate",
+    "t => { document.documentElement.dataset.theme = t; }",
+    [
+     "light"
+    ]
+   ],
+   [
+    "wait_for_timeout",
+    2500
+   ],
+   [
+    "locator",
+    "#crash"
+   ],
+   [
+    "first",
+    "#crash"
+   ],
+   [
+    "wait_for",
+    "#crash",
+    {
+     "state": "attached",
+     "timeout": 5000
+    }
+   ],
+   [
+    "loc.evaluate",
+    "#crash",
+    "_NO_GO_JS",
+    [
+     [
+      "#danger"
+     ]
+    ]
+   ],
+   [
+    "click",
+    "#crash"
+   ],
+   [
+    "goto",
+    "https://127.0.0.1:1",
+    {
+     "wait_until": "domcontentloaded"
+    }
+   ],
+   [
+    "evaluate",
+    "t => { document.documentElement.dataset.theme = t; }",
+    [
+     "light"
+    ]
+   ],
+   [
+    "wait_for_timeout",
+    2500
+   ],
+   [
+    "locator",
+    "#waiterr"
+   ],
+   [
+    "first",
+    "#waiterr"
+   ],
+   [
+    "wait_for",
+    "#waiterr",
+    {
+     "state": "attached",
+     "timeout": 5000
+    }
+   ],
+   [
+    "goto",
+    "https://127.0.0.1:1",
+    {
+     "wait_until": "domcontentloaded"
+    }
+   ],
+   [
+    "evaluate",
+    "t => { document.documentElement.dataset.theme = t; }",
+    [
+     "light"
+    ]
+   ],
+   [
+    "wait_for_timeout",
+    2500
+   ],
+   [
+    "loc.locator",
+    "[role=tablist]",
+    "[role=tab]"
+   ],
+   [
+    "nth",
+    "[role=tab]",
+    0
+   ],
+   [
+    "click",
+    "[role=tab]#0"
+   ],
+   [
+    "wait_for_timeout",
+    2200
+   ],
+   [
+    "locator",
+    "#det"
+   ],
+   [
+    "first",
+    "#det"
+   ],
+   [
+    "wait_for",
+    "#det",
+    {
+     "state": "attached",
+     "timeout": 5000
+    }
+   ],
+   [
+    "loc.evaluate",
+    "#det",
+    "_NO_GO_JS",
+    [
+     [
+      "#danger"
+     ]
+    ]
+   ],
+   [
+    "loc.evaluate",
+    "#det",
+    "d => { d.open = true; }",
+    []
+   ],
+   [
+    "wait_for_timeout",
+    1200
+   ],
+   [
+    "locator",
+    "#a"
+   ],
+   [
+    "first",
+    "#a"
+   ],
+   [
+    "wait_for",
+    "#a",
+    {
+     "state": "attached",
+     "timeout": 5000
+    }
+   ],
+   [
+    "loc.evaluate",
+    "#a",
+    "_NO_GO_JS",
+    [
+     [
+      "#danger"
+     ]
+    ]
+   ],
+   [
+    "click",
+    "#a"
+   ],
+   [
+    "wait_for_timeout",
+    1200
+   ],
+   [
+    "locator",
+    "#b"
+   ],
+   [
+    "first",
+    "#b"
+   ],
+   [
+    "wait_for",
+    "#b",
+    {
+     "state": "attached",
+     "timeout": 5000
+    }
+   ],
+   [
+    "loc.evaluate",
+    "#b",
+    "_NO_GO_JS",
+    [
+     [
+      "#danger"
+     ]
+    ]
+   ],
+   [
+    "click",
+    "#b"
+   ],
+   [
+    "wait_for_timeout",
+    1200
+   ],
+   [
+    "screenshot",
+    "desktop-light-home-fine.png",
+    false,
+    null
+   ],
+   [
+    "evaluate",
+    "_OPEN_SCOPE_DETAILS_JS",
+    []
+   ],
+   [
+    "evaluate",
+    "MEASURE",
+    [
+     {
+      "p": 1
+     }
+    ]
+   ],
+   [
+    "evaluate",
+    "measure.RENDERED_THEME_JS",
+    []
+   ],
+   [
+    "ctx.close"
+   ],
+   [
+    "browser.close"
+   ]
+  ]
+ },
+ "gear-crash": {
+  "screens": [
+   {
+    "id": "desktop-light-home",
+    "device": "desktop",
+    "theme": "light",
+    "view": "home",
+    "kind": "tab",
+    "status": "ok",
+    "reason": null,
+    "error": null,
+    "screenshot": "desktop-light-home.png",
+    "screenshot_full": "desktop-light-home-full.png",
+    "note": null,
+    "metrics": {
+     "m": 1
+    },
+    "theme_applied": true,
+    "theme_observed": {
+     "attr": "light",
+     "luminance": 0.95,
+     "rendered": "light"
+    }
+   },
+   {
+    "id": "desktop-light-broken",
+    "device": "desktop",
+    "theme": "light",
+    "view": "broken",
+    "kind": "tab",
+    "status": "error",
+    "reason": "TAB_FAILED",
+    "error": "Element is not visible",
+    "screenshot": null,
+    "screenshot_full": null,
+    "note": null,
+    "metrics": null,
+    "theme_applied": null,
+    "theme_observed": null
+   },
+   {
+    "id": "desktop-light-slow",
+    "device": "desktop",
+    "theme": "light",
+    "view": "slow",
+    "kind": "tab",
+    "status": "error",
+    "reason": "TIMEOUT",
+    "error": "Timeout 1000ms exceeded",
+    "screenshot": null,
+    "screenshot_full": null,
+    "note": null,
+    "metrics": null,
+    "theme_applied": null,
+    "theme_observed": null
+   },
+   {
+    "id": "desktop-light-dialog-fine",
+    "device": "desktop",
+    "theme": "light",
+    "view": "dialog-fine",
+    "kind": "dialog",
+    "status": "ok",
+    "reason": null,
+    "error": null,
+    "screenshot": "desktop-light-dialog-fine.png",
+    "screenshot_full": null,
+    "note": null,
+    "metrics": {
+     "m": 1
+    },
+    "theme_applied": true,
+    "theme_observed": {
+     "attr": "light",
+     "luminance": 0.95,
+     "rendered": "light"
+    }
+   },
+   {
+    "id": "desktop-light-dialog-stuck",
+    "device": "desktop",
+    "theme": "light",
+    "view": "dialog-stuck",
+    "kind": "dialog",
+    "status": "error",
+    "reason": "DIALOG_FAILED",
+    "error": "dialog stuck would not open",
+    "screenshot": null,
+    "screenshot_full": null,
+    "note": null,
+    "metrics": null,
+    "theme_applied": null,
+    "theme_observed": null
+   },
+   {
+    "id": "desktop-light-gear-settings",
+    "device": "desktop",
+    "theme": "light",
+    "view": "gear-settings",
+    "kind": "step",
+    "status": "error",
+    "reason": "RENDER_FAILED",
+    "error": "gear click failed",
+    "screenshot": null,
+    "screenshot_full": null,
+    "note": null,
+    "metrics": null,
+    "theme_applied": null,
+    "theme_observed": null
+   },
+   {
+    "id": "desktop-light-root-declared",
+    "device": "desktop",
+    "theme": "light",
+    "view": "root-declared",
+    "kind": "step",
+    "status": "error",
+    "reason": "NO_GO",
+    "error": "#danger is declared no_go",
+    "screenshot": null,
+    "screenshot_full": null,
+    "note": null,
+    "metrics": null,
+    "theme_applied": null,
+    "theme_observed": null
+   },
+   {
+    "id": "desktop-light-root-gone",
+    "device": "desktop",
+    "theme": "light",
+    "view": "root-gone",
+    "kind": "step",
+    "status": "absent",
+    "reason": "STEP_TARGET_ABSENT",
+    "error": "#gone never appeared within 5000 ms",
+    "screenshot": null,
+    "screenshot_full": null,
+    "note": null,
+    "metrics": null,
+    "theme_applied": null,
+    "theme_observed": null
+   },
+   {
+    "id": "desktop-light-root-inside",
+    "device": "desktop",
+    "theme": "light",
+    "view": "root-inside",
+    "kind": "step",
+    "status": "error",
+    "reason": "NO_GO",
+    "error": "#inside sits inside a no_go selector",
+    "screenshot": null,
+    "screenshot_full": null,
+    "note": null,
+    "metrics": null,
+    "theme_applied": null,
+    "theme_observed": null
+   },
+   {
+    "id": "desktop-light-root-crash",
+    "device": "desktop",
+    "theme": "light",
+    "view": "root-crash",
+    "kind": "step",
+    "status": "error",
+    "reason": "RENDER_FAILED",
+    "error": "boom",
+    "screenshot": null,
+    "screenshot_full": null,
+    "note": null,
+    "metrics": null,
+    "theme_applied": null,
+    "theme_observed": null
+   },
+   {
+    "id": "desktop-light-root-waiterr",
+    "device": "desktop",
+    "theme": "light",
+    "view": "root-waiterr",
+    "kind": "step",
+    "status": "error",
+    "reason": "RENDER_FAILED",
+    "error": "element detached",
+    "screenshot": null,
+    "screenshot_full": null,
+    "note": null,
+    "metrics": null,
+    "theme_applied": null,
+    "theme_observed": null
+   },
+   {
+    "id": "desktop-light-home-fine",
+    "device": "desktop",
+    "theme": "light",
+    "view": "home-fine",
+    "kind": "step",
+    "status": "ok",
+    "reason": null,
+    "error": null,
+    "screenshot": "desktop-light-home-fine.png",
+    "screenshot_full": null,
+    "note": null,
+    "metrics": {
+     "m": 1
+    },
+    "theme_applied": true,
+    "theme_observed": {
+     "attr": "light",
+     "luminance": 0.95,
+     "rendered": "light"
+    }
+   }
+  ],
+  "log": [
+   "INFO ok desktop-light-home",
+   "WARNING FAIL desktop-light-broken: Element is not visible",
+   "WARNING FAIL desktop-light-slow: Timeout 1000ms exceeded",
+   "INFO ok desktop-light-dialog-fine",
+   "WARNING FAIL desktop-light-dialog-stuck: dialog stuck would not open",
+   "WARNING FAIL desktop-light-gear-settings: gear click failed",
+   "INFO absent desktop-light-root-gone: #gone never appeared within 5000 ms",
+   "WARNING NO_GO desktop-light-root-inside: #inside sits inside a no_go selector",
+   "WARNING FAIL desktop-light-root-crash: boom",
+   "WARNING FAIL desktop-light-root-waiterr: element detached",
+   "INFO ok desktop-light-home-fine"
+  ],
+  "trace": [
+   [
+    "launch",
+    "chromium"
+   ],
+   [
+    "browser.new_context",
+    {
+     "ignore_https_errors": true,
+     "color_scheme": "light",
+     "viewport": {
+      "width": 1440,
+      "height": 900
+     }
+    }
+   ],
+   [
+    "ctx.new_page"
+   ],
+   [
+    "set_default_timeout",
+    1000
+   ],
+   [
+    "goto",
+    "https://127.0.0.1:1",
+    {
+     "wait_until": "domcontentloaded"
+    }
+   ],
+   [
+    "evaluate",
+    "t => { document.documentElement.dataset.theme = t; }",
+    [
+     "light"
+    ]
+   ],
+   [
+    "wait_for_timeout",
+    2500
+   ],
+   [
+    "evaluate",
+    "_TABS_JS",
+    [
+     "[role=tab]"
+    ]
+   ],
+   [
+    "locator",
+    "[role=tablist]"
+   ],
+   [
+    "count",
+    "[role=tablist]"
+   ],
+   [
+    "locator",
+    "[role=tablist]"
+   ],
+   [
+    "first",
+    "[role=tablist]"
+   ],
+   [
+    "loc.locator",
+    "[role=tablist]",
+    "[role=tab]"
+   ],
+   [
+    "nth",
+    "[role=tab]",
+    0
+   ],
+   [
+    "click",
+    "[role=tab]#0"
+   ],
+   [
+    "wait_for_timeout",
+    2200
+   ],
+   [
+    "screenshot",
+    "desktop-light-home.png",
+    false,
+    null
+   ],
+   [
+    "evaluate",
+    "_OPEN_DETAILS_JS",
+    []
+   ],
+   [
+    "wait_for_timeout",
+    1200
+   ],
+   [
+    "screenshot",
+    "desktop-light-home-full.png",
+    true,
+    null
+   ],
+   [
+    "evaluate",
+    "MEASURE",
+    [
+     {
+      "p": 1
+     }
+    ]
+   ],
+   [
+    "evaluate",
+    "measure.RENDERED_THEME_JS",
+    []
+   ],
+   [
+    "loc.locator",
+    "[role=tablist]",
+    "[role=tab]"
+   ],
+   [
+    "nth",
+    "[role=tab]",
+    1
+   ],
+   [
+    "click",
+    "[role=tab]#1"
+   ],
+   [
+    "loc.locator",
+    "[role=tablist]",
+    "[role=tab]"
+   ],
+   [
+    "nth",
+    "[role=tab]",
+    2
+   ],
+   [
+    "click",
+    "[role=tab]#2"
+   ],
+   [
+    "evaluate",
+    "_DIALOG_IDS_JS",
+    []
+   ],
+   [
+    "evaluate",
+    "id => document.getElementById(id).showModal()",
+    [
+     "fine"
+    ]
+   ],
+   [
+    "wait_for_timeout",
+    500
+   ],
+   [
+    "screenshot",
+    "desktop-light-dialog-fine.png",
+    false,
+    null
+   ],
+   [
+    "evaluate",
+    "_OPEN_SCOPE_DETAILS_JS",
+    []
+   ],
+   [
+    "evaluate",
+    "MEASURE",
+    [
+     {
+      "p": 1
+     }
+    ]
+   ],
+   [
+    "evaluate",
+    "measure.RENDERED_THEME_JS",
+    []
+   ],
+   [
+    "evaluate",
+    "id => document.getElementById(id).close()",
+    [
+     "fine"
+    ]
+   ],
+   [
+    "evaluate",
+    "id => document.getElementById(id).showModal()",
+    [
+     "stuck"
+    ]
+   ],
+   [
+    "goto",
+    "https://127.0.0.1:1",
+    {
+     "wait_until": "domcontentloaded"
+    }
+   ],
+   [
+    "evaluate",
+    "t => { document.documentElement.dataset.theme = t; }",
+    [
+     "light"
+    ]
+   ],
+   [
+    "wait_for_timeout",
+    2500
+   ],
+   [
+    "get_by_role",
+    "button",
+    "^\\s*settings\\s*$"
+   ],
+   [
+    "loc.locator",
+    "gear",
+    "visible=true"
+   ],
+   [
+    "first",
+    "gear"
+   ],
+   [
+    "wait_for",
+    "gear",
+    {
+     "state": "attached",
+     "timeout": 1000
+    }
+   ],
+   [
+    "loc.evaluate",
+    "gear",
+    "_NO_GO_JS",
+    [
+     [
+      "#danger"
+     ]
+    ]
+   ],
+   [
+    "click",
+    "gear"
+   ],
+   [
+    "goto",
+    "https://127.0.0.1:1",
+    {
+     "wait_until": "domcontentloaded"
+    }
+   ],
+   [
+    "evaluate",
+    "t => { document.documentElement.dataset.theme = t; }",
+    [
+     "light"
+    ]
+   ],
+   [
+    "wait_for_timeout",
+    2500
+   ],
+   [
+    "locator",
+    "#gone"
+   ],
+   [
+    "first",
+    "#gone"
+   ],
+   [
+    "wait_for",
+    "#gone",
+    {
+     "state": "attached",
+     "timeout": 5000
+    }
+   ],
+   [
+    "goto",
+    "https://127.0.0.1:1",
+    {
+     "wait_until": "domcontentloaded"
+    }
+   ],
+   [
+    "evaluate",
+    "t => { document.documentElement.dataset.theme = t; }",
+    [
+     "light"
+    ]
+   ],
+   [
+    "wait_for_timeout",
+    2500
+   ],
+   [
+    "locator",
+    "#inside"
+   ],
+   [
+    "first",
+    "#inside"
+   ],
+   [
+    "wait_for",
+    "#inside",
+    {
+     "state": "attached",
+     "timeout": 5000
+    }
+   ],
+   [
+    "loc.evaluate",
+    "#inside",
+    "_NO_GO_JS",
+    [
+     [
+      "#danger"
+     ]
+    ]
+   ],
+   [
+    "goto",
+    "https://127.0.0.1:1",
+    {
+     "wait_until": "domcontentloaded"
+    }
+   ],
+   [
+    "evaluate",
+    "t => { document.documentElement.dataset.theme = t; }",
+    [
+     "light"
+    ]
+   ],
+   [
+    "wait_for_timeout",
+    2500
+   ],
+   [
+    "locator",
+    "#crash"
+   ],
+   [
+    "first",
+    "#crash"
+   ],
+   [
+    "wait_for",
+    "#crash",
+    {
+     "state": "attached",
+     "timeout": 5000
+    }
+   ],
+   [
+    "loc.evaluate",
+    "#crash",
+    "_NO_GO_JS",
+    [
+     [
+      "#danger"
+     ]
+    ]
+   ],
+   [
+    "click",
+    "#crash"
+   ],
+   [
+    "goto",
+    "https://127.0.0.1:1",
+    {
+     "wait_until": "domcontentloaded"
+    }
+   ],
+   [
+    "evaluate",
+    "t => { document.documentElement.dataset.theme = t; }",
+    [
+     "light"
+    ]
+   ],
+   [
+    "wait_for_timeout",
+    2500
+   ],
+   [
+    "locator",
+    "#waiterr"
+   ],
+   [
+    "first",
+    "#waiterr"
+   ],
+   [
+    "wait_for",
+    "#waiterr",
+    {
+     "state": "attached",
+     "timeout": 5000
+    }
+   ],
+   [
+    "goto",
+    "https://127.0.0.1:1",
+    {
+     "wait_until": "domcontentloaded"
+    }
+   ],
+   [
+    "evaluate",
+    "t => { document.documentElement.dataset.theme = t; }",
+    [
+     "light"
+    ]
+   ],
+   [
+    "wait_for_timeout",
+    2500
+   ],
+   [
+    "loc.locator",
+    "[role=tablist]",
+    "[role=tab]"
+   ],
+   [
+    "nth",
+    "[role=tab]",
+    0
+   ],
+   [
+    "click",
+    "[role=tab]#0"
+   ],
+   [
+    "wait_for_timeout",
+    2200
+   ],
+   [
+    "locator",
+    "#det"
+   ],
+   [
+    "first",
+    "#det"
+   ],
+   [
+    "wait_for",
+    "#det",
+    {
+     "state": "attached",
+     "timeout": 5000
+    }
+   ],
+   [
+    "loc.evaluate",
+    "#det",
+    "_NO_GO_JS",
+    [
+     [
+      "#danger"
+     ]
+    ]
+   ],
+   [
+    "loc.evaluate",
+    "#det",
+    "d => { d.open = true; }",
+    []
+   ],
+   [
+    "wait_for_timeout",
+    1200
+   ],
+   [
+    "locator",
+    "#a"
+   ],
+   [
+    "first",
+    "#a"
+   ],
+   [
+    "wait_for",
+    "#a",
+    {
+     "state": "attached",
+     "timeout": 5000
+    }
+   ],
+   [
+    "loc.evaluate",
+    "#a",
+    "_NO_GO_JS",
+    [
+     [
+      "#danger"
+     ]
+    ]
+   ],
+   [
+    "click",
+    "#a"
+   ],
+   [
+    "wait_for_timeout",
+    1200
+   ],
+   [
+    "locator",
+    "#b"
+   ],
+   [
+    "first",
+    "#b"
+   ],
+   [
+    "wait_for",
+    "#b",
+    {
+     "state": "attached",
+     "timeout": 5000
+    }
+   ],
+   [
+    "loc.evaluate",
+    "#b",
+    "_NO_GO_JS",
+    [
+     [
+      "#danger"
+     ]
+    ]
+   ],
+   [
+    "click",
+    "#b"
+   ],
+   [
+    "wait_for_timeout",
+    1200
+   ],
+   [
+    "screenshot",
+    "desktop-light-home-fine.png",
+    false,
+    null
+   ],
+   [
+    "evaluate",
+    "_OPEN_SCOPE_DETAILS_JS",
+    []
+   ],
+   [
+    "evaluate",
+    "MEASURE",
+    [
+     {
+      "p": 1
+     }
+    ]
+   ],
+   [
+    "evaluate",
+    "measure.RENDERED_THEME_JS",
+    []
+   ],
+   [
+    "ctx.close"
+   ],
+   [
+    "browser.close"
+   ]
+  ]
+ },
+ "gear-wait-error": {
+  "screens": [
+   {
+    "id": "desktop-light-home",
+    "device": "desktop",
+    "theme": "light",
+    "view": "home",
+    "kind": "tab",
+    "status": "ok",
+    "reason": null,
+    "error": null,
+    "screenshot": "desktop-light-home.png",
+    "screenshot_full": "desktop-light-home-full.png",
+    "note": null,
+    "metrics": {
+     "m": 1
+    },
+    "theme_applied": true,
+    "theme_observed": {
+     "attr": "light",
+     "luminance": 0.95,
+     "rendered": "light"
+    }
+   },
+   {
+    "id": "desktop-light-broken",
+    "device": "desktop",
+    "theme": "light",
+    "view": "broken",
+    "kind": "tab",
+    "status": "error",
+    "reason": "TAB_FAILED",
+    "error": "Element is not visible",
+    "screenshot": null,
+    "screenshot_full": null,
+    "note": null,
+    "metrics": null,
+    "theme_applied": null,
+    "theme_observed": null
+   },
+   {
+    "id": "desktop-light-slow",
+    "device": "desktop",
+    "theme": "light",
+    "view": "slow",
+    "kind": "tab",
+    "status": "error",
+    "reason": "TIMEOUT",
+    "error": "Timeout 1000ms exceeded",
+    "screenshot": null,
+    "screenshot_full": null,
+    "note": null,
+    "metrics": null,
+    "theme_applied": null,
+    "theme_observed": null
+   },
+   {
+    "id": "desktop-light-dialog-fine",
+    "device": "desktop",
+    "theme": "light",
+    "view": "dialog-fine",
+    "kind": "dialog",
+    "status": "ok",
+    "reason": null,
+    "error": null,
+    "screenshot": "desktop-light-dialog-fine.png",
+    "screenshot_full": null,
+    "note": null,
+    "metrics": {
+     "m": 1
+    },
+    "theme_applied": true,
+    "theme_observed": {
+     "attr": "light",
+     "luminance": 0.95,
+     "rendered": "light"
+    }
+   },
+   {
+    "id": "desktop-light-dialog-stuck",
+    "device": "desktop",
+    "theme": "light",
+    "view": "dialog-stuck",
+    "kind": "dialog",
+    "status": "error",
+    "reason": "DIALOG_FAILED",
+    "error": "dialog stuck would not open",
+    "screenshot": null,
+    "screenshot_full": null,
+    "note": null,
+    "metrics": null,
+    "theme_applied": null,
+    "theme_observed": null
+   },
+   {
+    "id": "desktop-light-gear-settings",
+    "device": "desktop",
+    "theme": "light",
+    "view": "gear-settings",
+    "kind": "step",
+    "status": "error",
+    "reason": "RENDER_FAILED",
+    "error": "gear detached",
+    "screenshot": null,
+    "screenshot_full": null,
+    "note": null,
+    "metrics": null,
+    "theme_applied": null,
+    "theme_observed": null
+   },
+   {
+    "id": "desktop-light-root-declared",
+    "device": "desktop",
+    "theme": "light",
+    "view": "root-declared",
+    "kind": "step",
+    "status": "error",
+    "reason": "NO_GO",
+    "error": "#danger is declared no_go",
+    "screenshot": null,
+    "screenshot_full": null,
+    "note": null,
+    "metrics": null,
+    "theme_applied": null,
+    "theme_observed": null
+   },
+   {
+    "id": "desktop-light-root-gone",
+    "device": "desktop",
+    "theme": "light",
+    "view": "root-gone",
+    "kind": "step",
+    "status": "absent",
+    "reason": "STEP_TARGET_ABSENT",
+    "error": "#gone never appeared within 5000 ms",
+    "screenshot": null,
+    "screenshot_full": null,
+    "note": null,
+    "metrics": null,
+    "theme_applied": null,
+    "theme_observed": null
+   },
+   {
+    "id": "desktop-light-root-inside",
+    "device": "desktop",
+    "theme": "light",
+    "view": "root-inside",
+    "kind": "step",
+    "status": "error",
+    "reason": "NO_GO",
+    "error": "#inside sits inside a no_go selector",
+    "screenshot": null,
+    "screenshot_full": null,
+    "note": null,
+    "metrics": null,
+    "theme_applied": null,
+    "theme_observed": null
+   },
+   {
+    "id": "desktop-light-root-crash",
+    "device": "desktop",
+    "theme": "light",
+    "view": "root-crash",
+    "kind": "step",
+    "status": "error",
+    "reason": "RENDER_FAILED",
+    "error": "boom",
+    "screenshot": null,
+    "screenshot_full": null,
+    "note": null,
+    "metrics": null,
+    "theme_applied": null,
+    "theme_observed": null
+   },
+   {
+    "id": "desktop-light-root-waiterr",
+    "device": "desktop",
+    "theme": "light",
+    "view": "root-waiterr",
+    "kind": "step",
+    "status": "error",
+    "reason": "RENDER_FAILED",
+    "error": "element detached",
+    "screenshot": null,
+    "screenshot_full": null,
+    "note": null,
+    "metrics": null,
+    "theme_applied": null,
+    "theme_observed": null
+   },
+   {
+    "id": "desktop-light-home-fine",
+    "device": "desktop",
+    "theme": "light",
+    "view": "home-fine",
+    "kind": "step",
+    "status": "ok",
+    "reason": null,
+    "error": null,
+    "screenshot": "desktop-light-home-fine.png",
+    "screenshot_full": null,
+    "note": null,
+    "metrics": {
+     "m": 1
+    },
+    "theme_applied": true,
+    "theme_observed": {
+     "attr": "light",
+     "luminance": 0.95,
+     "rendered": "light"
+    }
+   }
+  ],
+  "log": [
+   "INFO ok desktop-light-home",
+   "WARNING FAIL desktop-light-broken: Element is not visible",
+   "WARNING FAIL desktop-light-slow: Timeout 1000ms exceeded",
+   "INFO ok desktop-light-dialog-fine",
+   "WARNING FAIL desktop-light-dialog-stuck: dialog stuck would not open",
+   "WARNING FAIL desktop-light-gear-settings: gear detached",
+   "INFO absent desktop-light-root-gone: #gone never appeared within 5000 ms",
+   "WARNING NO_GO desktop-light-root-inside: #inside sits inside a no_go selector",
+   "WARNING FAIL desktop-light-root-crash: boom",
+   "WARNING FAIL desktop-light-root-waiterr: element detached",
+   "INFO ok desktop-light-home-fine"
+  ],
+  "trace": [
+   [
+    "launch",
+    "chromium"
+   ],
+   [
+    "browser.new_context",
+    {
+     "ignore_https_errors": true,
+     "color_scheme": "light",
+     "viewport": {
+      "width": 1440,
+      "height": 900
+     }
+    }
+   ],
+   [
+    "ctx.new_page"
+   ],
+   [
+    "set_default_timeout",
+    1000
+   ],
+   [
+    "goto",
+    "https://127.0.0.1:1",
+    {
+     "wait_until": "domcontentloaded"
+    }
+   ],
+   [
+    "evaluate",
+    "t => { document.documentElement.dataset.theme = t; }",
+    [
+     "light"
+    ]
+   ],
+   [
+    "wait_for_timeout",
+    2500
+   ],
+   [
+    "evaluate",
+    "_TABS_JS",
+    [
+     "[role=tab]"
+    ]
+   ],
+   [
+    "locator",
+    "[role=tablist]"
+   ],
+   [
+    "count",
+    "[role=tablist]"
+   ],
+   [
+    "locator",
+    "[role=tablist]"
+   ],
+   [
+    "first",
+    "[role=tablist]"
+   ],
+   [
+    "loc.locator",
+    "[role=tablist]",
+    "[role=tab]"
+   ],
+   [
+    "nth",
+    "[role=tab]",
+    0
+   ],
+   [
+    "click",
+    "[role=tab]#0"
+   ],
+   [
+    "wait_for_timeout",
+    2200
+   ],
+   [
+    "screenshot",
+    "desktop-light-home.png",
+    false,
+    null
+   ],
+   [
+    "evaluate",
+    "_OPEN_DETAILS_JS",
+    []
+   ],
+   [
+    "wait_for_timeout",
+    1200
+   ],
+   [
+    "screenshot",
+    "desktop-light-home-full.png",
+    true,
+    null
+   ],
+   [
+    "evaluate",
+    "MEASURE",
+    [
+     {
+      "p": 1
+     }
+    ]
+   ],
+   [
+    "evaluate",
+    "measure.RENDERED_THEME_JS",
+    []
+   ],
+   [
+    "loc.locator",
+    "[role=tablist]",
+    "[role=tab]"
+   ],
+   [
+    "nth",
+    "[role=tab]",
+    1
+   ],
+   [
+    "click",
+    "[role=tab]#1"
+   ],
+   [
+    "loc.locator",
+    "[role=tablist]",
+    "[role=tab]"
+   ],
+   [
+    "nth",
+    "[role=tab]",
+    2
+   ],
+   [
+    "click",
+    "[role=tab]#2"
+   ],
+   [
+    "evaluate",
+    "_DIALOG_IDS_JS",
+    []
+   ],
+   [
+    "evaluate",
+    "id => document.getElementById(id).showModal()",
+    [
+     "fine"
+    ]
+   ],
+   [
+    "wait_for_timeout",
+    500
+   ],
+   [
+    "screenshot",
+    "desktop-light-dialog-fine.png",
+    false,
+    null
+   ],
+   [
+    "evaluate",
+    "_OPEN_SCOPE_DETAILS_JS",
+    []
+   ],
+   [
+    "evaluate",
+    "MEASURE",
+    [
+     {
+      "p": 1
+     }
+    ]
+   ],
+   [
+    "evaluate",
+    "measure.RENDERED_THEME_JS",
+    []
+   ],
+   [
+    "evaluate",
+    "id => document.getElementById(id).close()",
+    [
+     "fine"
+    ]
+   ],
+   [
+    "evaluate",
+    "id => document.getElementById(id).showModal()",
+    [
+     "stuck"
+    ]
+   ],
+   [
+    "goto",
+    "https://127.0.0.1:1",
+    {
+     "wait_until": "domcontentloaded"
+    }
+   ],
+   [
+    "evaluate",
+    "t => { document.documentElement.dataset.theme = t; }",
+    [
+     "light"
+    ]
+   ],
+   [
+    "wait_for_timeout",
+    2500
+   ],
+   [
+    "get_by_role",
+    "button",
+    "^\\s*settings\\s*$"
+   ],
+   [
+    "loc.locator",
+    "gear",
+    "visible=true"
+   ],
+   [
+    "first",
+    "gear"
+   ],
+   [
+    "wait_for",
+    "gear",
+    {
+     "state": "attached",
+     "timeout": 1000
+    }
+   ],
+   [
+    "goto",
+    "https://127.0.0.1:1",
+    {
+     "wait_until": "domcontentloaded"
+    }
+   ],
+   [
+    "evaluate",
+    "t => { document.documentElement.dataset.theme = t; }",
+    [
+     "light"
+    ]
+   ],
+   [
+    "wait_for_timeout",
+    2500
+   ],
+   [
+    "locator",
+    "#gone"
+   ],
+   [
+    "first",
+    "#gone"
+   ],
+   [
+    "wait_for",
+    "#gone",
+    {
+     "state": "attached",
+     "timeout": 5000
+    }
+   ],
+   [
+    "goto",
+    "https://127.0.0.1:1",
+    {
+     "wait_until": "domcontentloaded"
+    }
+   ],
+   [
+    "evaluate",
+    "t => { document.documentElement.dataset.theme = t; }",
+    [
+     "light"
+    ]
+   ],
+   [
+    "wait_for_timeout",
+    2500
+   ],
+   [
+    "locator",
+    "#inside"
+   ],
+   [
+    "first",
+    "#inside"
+   ],
+   [
+    "wait_for",
+    "#inside",
+    {
+     "state": "attached",
+     "timeout": 5000
+    }
+   ],
+   [
+    "loc.evaluate",
+    "#inside",
+    "_NO_GO_JS",
+    [
+     [
+      "#danger"
+     ]
+    ]
+   ],
+   [
+    "goto",
+    "https://127.0.0.1:1",
+    {
+     "wait_until": "domcontentloaded"
+    }
+   ],
+   [
+    "evaluate",
+    "t => { document.documentElement.dataset.theme = t; }",
+    [
+     "light"
+    ]
+   ],
+   [
+    "wait_for_timeout",
+    2500
+   ],
+   [
+    "locator",
+    "#crash"
+   ],
+   [
+    "first",
+    "#crash"
+   ],
+   [
+    "wait_for",
+    "#crash",
+    {
+     "state": "attached",
+     "timeout": 5000
+    }
+   ],
+   [
+    "loc.evaluate",
+    "#crash",
+    "_NO_GO_JS",
+    [
+     [
+      "#danger"
+     ]
+    ]
+   ],
+   [
+    "click",
+    "#crash"
+   ],
+   [
+    "goto",
+    "https://127.0.0.1:1",
+    {
+     "wait_until": "domcontentloaded"
+    }
+   ],
+   [
+    "evaluate",
+    "t => { document.documentElement.dataset.theme = t; }",
+    [
+     "light"
+    ]
+   ],
+   [
+    "wait_for_timeout",
+    2500
+   ],
+   [
+    "locator",
+    "#waiterr"
+   ],
+   [
+    "first",
+    "#waiterr"
+   ],
+   [
+    "wait_for",
+    "#waiterr",
+    {
+     "state": "attached",
+     "timeout": 5000
+    }
+   ],
+   [
+    "goto",
+    "https://127.0.0.1:1",
+    {
+     "wait_until": "domcontentloaded"
+    }
+   ],
+   [
+    "evaluate",
+    "t => { document.documentElement.dataset.theme = t; }",
+    [
+     "light"
+    ]
+   ],
+   [
+    "wait_for_timeout",
+    2500
+   ],
+   [
+    "loc.locator",
+    "[role=tablist]",
+    "[role=tab]"
+   ],
+   [
+    "nth",
+    "[role=tab]",
+    0
+   ],
+   [
+    "click",
+    "[role=tab]#0"
+   ],
+   [
+    "wait_for_timeout",
+    2200
+   ],
+   [
+    "locator",
+    "#det"
+   ],
+   [
+    "first",
+    "#det"
+   ],
+   [
+    "wait_for",
+    "#det",
+    {
+     "state": "attached",
+     "timeout": 5000
+    }
+   ],
+   [
+    "loc.evaluate",
+    "#det",
+    "_NO_GO_JS",
+    [
+     [
+      "#danger"
+     ]
+    ]
+   ],
+   [
+    "loc.evaluate",
+    "#det",
+    "d => { d.open = true; }",
+    []
+   ],
+   [
+    "wait_for_timeout",
+    1200
+   ],
+   [
+    "locator",
+    "#a"
+   ],
+   [
+    "first",
+    "#a"
+   ],
+   [
+    "wait_for",
+    "#a",
+    {
+     "state": "attached",
+     "timeout": 5000
+    }
+   ],
+   [
+    "loc.evaluate",
+    "#a",
+    "_NO_GO_JS",
+    [
+     [
+      "#danger"
+     ]
+    ]
+   ],
+   [
+    "click",
+    "#a"
+   ],
+   [
+    "wait_for_timeout",
+    1200
+   ],
+   [
+    "locator",
+    "#b"
+   ],
+   [
+    "first",
+    "#b"
+   ],
+   [
+    "wait_for",
+    "#b",
+    {
+     "state": "attached",
+     "timeout": 5000
+    }
+   ],
+   [
+    "loc.evaluate",
+    "#b",
+    "_NO_GO_JS",
+    [
+     [
+      "#danger"
+     ]
+    ]
+   ],
+   [
+    "click",
+    "#b"
+   ],
+   [
+    "wait_for_timeout",
+    1200
+   ],
+   [
+    "screenshot",
+    "desktop-light-home-fine.png",
+    false,
+    null
+   ],
+   [
+    "evaluate",
+    "_OPEN_SCOPE_DETAILS_JS",
+    []
+   ],
+   [
+    "evaluate",
+    "MEASURE",
+    [
+     {
+      "p": 1
+     }
+    ]
+   ],
+   [
+    "evaluate",
+    "measure.RENDERED_THEME_JS",
+    []
+   ],
+   [
+    "ctx.close"
+   ],
+   [
+    "browser.close"
+   ]
+  ]
+ },
+ "launch-error": {
+  "screens": [
+   {
+    "id": "desktop-dark-root",
+    "device": "desktop",
+    "theme": "dark",
+    "view": "root",
+    "kind": "tab",
+    "status": "error",
+    "reason": "BROWSER_FAILED",
+    "error": "no chromium",
+    "screenshot": null,
+    "screenshot_full": null,
+    "note": null,
+    "metrics": null,
+    "theme_applied": null,
+    "theme_observed": null
+   }
+  ],
+  "log": [],
+  "trace": [
+   [
+    "launch",
+    "chromium"
+   ]
+  ]
+ },
+ "goto-error": {
+  "screens": [
+   {
+    "id": "iphone-light-root",
+    "device": "iphone",
+    "theme": "light",
+    "view": "root",
+    "kind": "tab",
+    "status": "error",
+    "reason": "NOT_LISTENING",
+    "error": "net::ERR_CONNECTION_REFUSED",
+    "screenshot": null,
+    "screenshot_full": null,
+    "note": null,
+    "metrics": null,
+    "theme_applied": null,
+    "theme_observed": null
+   }
+  ],
+  "log": [],
+  "trace": [
+   [
+    "launch",
+    "webkit"
+   ],
+   [
+    "browser.new_context",
+    {
+     "ignore_https_errors": true,
+     "color_scheme": "light",
+     "viewport": {
+      "width": 430,
+      "height": 739
+     },
+     "has_touch": true
+    }
+   ],
+   [
+    "ctx.new_page"
+   ],
+   [
+    "set_default_timeout",
+    1000
+   ],
+   [
+    "goto",
+    "https://127.0.0.1:1",
+    {
+     "wait_until": "domcontentloaded"
+    }
+   ],
+   [
+    "ctx.close"
+   ],
+   [
+    "browser.close"
+   ]
+  ]
+ },
+ "android-touch": {
+  "screens": [
+   {
+    "id": "android-dark-board",
+    "device": "android",
+    "theme": "dark",
+    "view": "board",
+    "kind": "tab",
+    "status": "ok",
+    "reason": null,
+    "error": null,
+    "screenshot": "android-dark-board.png",
+    "screenshot_full": "android-dark-board-full.png",
+    "note": "full-page capture clipped to the first 10922 of 40000 CSS px (engine limit 32767 device px)",
+    "metrics": {
+     "m": 1
+    },
+    "theme_applied": false,
+    "theme_observed": {
+     "attr": "light",
+     "luminance": 0.95,
+     "rendered": "light"
+    }
+   },
+   {
+    "id": "android-dark-tab1",
+    "device": "android",
+    "theme": "dark",
+    "view": "tab1",
+    "kind": "tab",
+    "status": "ok",
+    "reason": null,
+    "error": null,
+    "screenshot": "android-dark-tab1.png",
+    "screenshot_full": "android-dark-tab1-full.png",
+    "note": "full-page capture clipped to the first 10922 of 40000 CSS px (engine limit 32767 device px)",
+    "metrics": {
+     "m": 1
+    },
+    "theme_applied": false,
+    "theme_observed": {
+     "attr": "light",
+     "luminance": 0.95,
+     "rendered": "light"
+    }
+   },
+   {
+    "id": "android-dark-dialog-edit",
+    "device": "android",
+    "theme": "dark",
+    "view": "dialog-edit",
+    "kind": "dialog",
+    "status": "ok",
+    "reason": null,
+    "error": null,
+    "screenshot": "android-dark-dialog-edit.png",
+    "screenshot_full": "android-dark-dialog-edit-full.png",
+    "note": "full-page capture clipped to the first 10922 of 40000 CSS px (engine limit 32767 device px)",
+    "metrics": {
+     "m": 1
+    },
+    "theme_applied": false,
+    "theme_observed": {
+     "attr": "light",
+     "luminance": 0.95,
+     "rendered": "light"
+    }
+   },
+   {
+    "id": "android-dark-gear-settings",
+    "device": "android",
+    "theme": "dark",
+    "view": "gear-settings",
+    "kind": "step",
+    "status": "ok",
+    "reason": null,
+    "error": null,
+    "screenshot": "android-dark-gear-settings.png",
+    "screenshot_full": "android-dark-gear-settings-full.png",
+    "note": "full-page capture clipped to the first 10922 of 40000 CSS px (engine limit 32767 device px)",
+    "metrics": {
+     "m": 1
+    },
+    "theme_applied": false,
+    "theme_observed": {
+     "attr": "light",
+     "luminance": 0.95,
+     "rendered": "light"
+    }
+   },
+   {
+    "id": "android-dark-missing-menu",
+    "device": "android",
+    "theme": "dark",
+    "view": "missing-menu",
+    "kind": "step",
+    "status": "ok",
+    "reason": null,
+    "error": null,
+    "screenshot": "android-dark-missing-menu.png",
+    "screenshot_full": "android-dark-missing-menu-full.png",
+    "note": "full-page capture clipped to the first 10922 of 40000 CSS px (engine limit 32767 device px)",
+    "metrics": {
+     "m": 1
+    },
+    "theme_applied": false,
+    "theme_observed": {
+     "attr": "light",
+     "luminance": 0.95,
+     "rendered": "light"
+    }
+   },
+   {
+    "id": "android-dark-board-pick",
+    "device": "android",
+    "theme": "dark",
+    "view": "board-pick",
+    "kind": "step",
+    "status": "ok",
+    "reason": null,
+    "error": null,
+    "screenshot": "android-dark-board-pick.png",
+    "screenshot_full": "android-dark-board-pick-full.png",
+    "note": "full-page capture clipped to the first 10922 of 40000 CSS px (engine limit 32767 device px)",
+    "metrics": {
+     "m": 1
+    },
+    "theme_applied": false,
+    "theme_observed": {
+     "attr": "light",
+     "luminance": 0.95,
+     "rendered": "light"
+    }
+   }
+  ],
+  "log": [
+   "INFO clipped the full-page capture of android-dark-board to 10922 of 40000 CSS px",
+   "WARNING theme not applied: asked for dark, rendered light",
+   "INFO ok android-dark-board",
+   "INFO clipped the full-page capture of android-dark-tab1 to 10922 of 40000 CSS px",
+   "WARNING theme not applied: asked for dark, rendered light",
+   "INFO ok android-dark-tab1",
+   "INFO opened 2 details on android-dark-dialog-edit",
+   "INFO clipped the full-page capture of android-dark-dialog-edit to 10922 of 40000 CSS px",
+   "WARNING theme not applied: asked for dark, rendered light",
+   "INFO ok android-dark-dialog-edit",
+   "INFO opened 2 details on android-dark-gear-settings",
+   "INFO clipped the full-page capture of android-dark-gear-settings to 10922 of 40000 CSS px",
+   "WARNING theme not applied: asked for dark, rendered light",
+   "INFO ok android-dark-gear-settings",
+   "INFO opened 2 details on android-dark-missing-menu",
+   "INFO clipped the full-page capture of android-dark-missing-menu to 10922 of 40000 CSS px",
+   "WARNING theme not applied: asked for dark, rendered light",
+   "INFO ok android-dark-missing-menu",
+   "INFO opened 2 details on android-dark-board-pick",
+   "INFO clipped the full-page capture of android-dark-board-pick to 10922 of 40000 CSS px",
+   "WARNING theme not applied: asked for dark, rendered light",
+   "INFO ok android-dark-board-pick"
+  ],
+  "trace": [
+   [
+    "launch",
+    "chromium"
+   ],
+   [
+    "browser.new_context",
+    {
+     "ignore_https_errors": true,
+     "color_scheme": "dark",
+     "viewport": {
+      "width": 412,
+      "height": 839
+     },
+     "has_touch": true
+    }
+   ],
+   [
+    "ctx.add_init_script",
+    "try{localStorage.setItem(\"app-theme\",\"dark\")}catch(e){}"
+   ],
+   [
+    "ctx.new_page"
+   ],
+   [
+    "set_default_timeout",
+    1000
+   ],
+   [
+    "ctx.new_cdp_session"
+   ],
+   [
+    "goto",
+    "https://127.0.0.1:1",
+    {
+     "wait_until": "domcontentloaded"
+    }
+   ],
+   [
+    "evaluate",
+    "t => { document.documentElement.dataset.theme = t; }",
+    [
+     "dark"
+    ]
+   ],
+   [
+    "wait_for_timeout",
+    2500
+   ],
+   [
+    "evaluate",
+    "_TABS_JS",
+    [
+     ".tab"
+    ]
+   ],
+   [
+    "locator",
+    "[role=tablist]"
+   ],
+   [
+    "count",
+    "[role=tablist]"
+   ],
+   [
+    "locator",
+    "[role=tablist]"
+   ],
+   [
+    "first",
+    "[role=tablist]"
+   ],
+   [
+    "loc.locator",
+    "[role=tablist]",
+    ".tab"
+   ],
+   [
+    "nth",
+    ".tab",
+    0
+   ],
+   [
+    "click",
+    ".tab#0"
+   ],
+   [
+    "wait_for_timeout",
+    2200
+   ],
+   [
+    "screenshot",
+    "android-dark-board.png",
+    false,
+    null
+   ],
+   [
+    "evaluate",
+    "_OPEN_DETAILS_JS",
+    []
+   ],
+   [
+    "wait_for_timeout",
+    1200
+   ],
+   [
+    "screenshot",
+    "android-dark-board-full.png",
+    true,
+    null
+   ],
+   [
+    "evaluate",
+    "_PAGE_SIZE_JS",
+    []
+   ],
+   [
+    "screenshot",
+    "android-dark-board-full.png",
+    true,
+    {
+     "x": 0,
+     "y": 0,
+     "width": 430,
+     "height": 10922
+    }
+   ],
+   [
+    "cdp.send",
+    "Emulation.setTouchEmulationEnabled",
+    {
+     "enabled": true,
+     "maxTouchPoints": 1
+    }
+   ],
+   [
+    "evaluate",
+    "MEASURE",
+    [
+     {
+      "p": 1
+     }
+    ]
+   ],
+   [
+    "evaluate",
+    "measure.RENDERED_THEME_JS",
+    []
+   ],
+   [
+    "loc.locator",
+    "[role=tablist]",
+    ".tab"
+   ],
+   [
+    "nth",
+    ".tab",
+    1
+   ],
+   [
+    "click",
+    ".tab#1"
+   ],
+   [
+    "wait_for_timeout",
+    2200
+   ],
+   [
+    "screenshot",
+    "android-dark-tab1.png",
+    false,
+    null
+   ],
+   [
+    "evaluate",
+    "_OPEN_DETAILS_JS",
+    []
+   ],
+   [
+    "wait_for_timeout",
+    1200
+   ],
+   [
+    "screenshot",
+    "android-dark-tab1-full.png",
+    true,
+    null
+   ],
+   [
+    "evaluate",
+    "_PAGE_SIZE_JS",
+    []
+   ],
+   [
+    "screenshot",
+    "android-dark-tab1-full.png",
+    true,
+    {
+     "x": 0,
+     "y": 0,
+     "width": 430,
+     "height": 10922
+    }
+   ],
+   [
+    "cdp.send",
+    "Emulation.setTouchEmulationEnabled",
+    {
+     "enabled": true,
+     "maxTouchPoints": 1
+    }
+   ],
+   [
+    "evaluate",
+    "MEASURE",
+    [
+     {
+      "p": 1
+     }
+    ]
+   ],
+   [
+    "evaluate",
+    "measure.RENDERED_THEME_JS",
+    []
+   ],
+   [
+    "evaluate",
+    "_DIALOG_IDS_JS",
+    []
+   ],
+   [
+    "evaluate",
+    "id => document.getElementById(id).showModal()",
+    [
+     "edit"
+    ]
+   ],
+   [
+    "wait_for_timeout",
+    500
+   ],
+   [
+    "screenshot",
+    "android-dark-dialog-edit.png",
+    false,
+    null
+   ],
+   [
+    "evaluate",
+    "_OPEN_SCOPE_DETAILS_JS",
+    []
+   ],
+   [
+    "wait_for_timeout",
+    1200
+   ],
+   [
+    "screenshot",
+    "android-dark-dialog-edit-full.png",
+    true,
+    null
+   ],
+   [
+    "evaluate",
+    "_PAGE_SIZE_JS",
+    []
+   ],
+   [
+    "screenshot",
+    "android-dark-dialog-edit-full.png",
+    true,
+    {
+     "x": 0,
+     "y": 0,
+     "width": 430,
+     "height": 10922
+    }
+   ],
+   [
+    "cdp.send",
+    "Emulation.setTouchEmulationEnabled",
+    {
+     "enabled": true,
+     "maxTouchPoints": 1
+    }
+   ],
+   [
+    "evaluate",
+    "MEASURE",
+    [
+     {
+      "p": 1
+     }
+    ]
+   ],
+   [
+    "evaluate",
+    "measure.RENDERED_THEME_JS",
+    []
+   ],
+   [
+    "evaluate",
+    "id => document.getElementById(id).close()",
+    [
+     "edit"
+    ]
+   ],
+   [
+    "goto",
+    "https://127.0.0.1:1",
+    {
+     "wait_until": "domcontentloaded"
+    }
+   ],
+   [
+    "evaluate",
+    "t => { document.documentElement.dataset.theme = t; }",
+    [
+     "dark"
+    ]
+   ],
+   [
+    "wait_for_timeout",
+    2500
+   ],
+   [
+    "get_by_role",
+    "button",
+    "^\\s*settings\\s*$"
+   ],
+   [
+    "loc.locator",
+    "gear",
+    "visible=true"
+   ],
+   [
+    "first",
+    "gear"
+   ],
+   [
+    "wait_for",
+    "gear",
+    {
+     "state": "attached",
+     "timeout": 1000
+    }
+   ],
+   [
+    "click",
+    "gear"
+   ],
+   [
+    "wait_for_timeout",
+    1200
+   ],
+   [
+    "screenshot",
+    "android-dark-gear-settings.png",
+    false,
+    null
+   ],
+   [
+    "evaluate",
+    "_OPEN_SCOPE_DETAILS_JS",
+    []
+   ],
+   [
+    "wait_for_timeout",
+    1200
+   ],
+   [
+    "screenshot",
+    "android-dark-gear-settings-full.png",
+    true,
+    null
+   ],
+   [
+    "evaluate",
+    "_PAGE_SIZE_JS",
+    []
+   ],
+   [
+    "screenshot",
+    "android-dark-gear-settings-full.png",
+    true,
+    {
+     "x": 0,
+     "y": 0,
+     "width": 430,
+     "height": 10922
+    }
+   ],
+   [
+    "cdp.send",
+    "Emulation.setTouchEmulationEnabled",
+    {
+     "enabled": true,
+     "maxTouchPoints": 1
+    }
+   ],
+   [
+    "evaluate",
+    "MEASURE",
+    [
+     {
+      "p": 1
+     }
+    ]
+   ],
+   [
+    "evaluate",
+    "measure.RENDERED_THEME_JS",
+    []
+   ],
+   [
+    "goto",
+    "https://127.0.0.1:1",
+    {
+     "wait_until": "domcontentloaded"
+    }
+   ],
+   [
+    "evaluate",
+    "t => { document.documentElement.dataset.theme = t; }",
+    [
+     "dark"
+    ]
+   ],
+   [
+    "wait_for_timeout",
+    2500
+   ],
+   [
+    "locator",
+    "#det"
+   ],
+   [
+    "first",
+    "#det"
+   ],
+   [
+    "wait_for",
+    "#det",
+    {
+     "state": "attached",
+     "timeout": 5000
+    }
+   ],
+   [
+    "loc.evaluate",
+    "#det",
+    "d => { d.open = true; }",
+    []
+   ],
+   [
+    "wait_for_timeout",
+    1200
+   ],
+   [
+    "screenshot",
+    "android-dark-missing-menu.png",
+    false,
+    null
+   ],
+   [
+    "evaluate",
+    "_OPEN_SCOPE_DETAILS_JS",
+    []
+   ],
+   [
+    "wait_for_timeout",
+    1200
+   ],
+   [
+    "screenshot",
+    "android-dark-missing-menu-full.png",
+    true,
+    null
+   ],
+   [
+    "evaluate",
+    "_PAGE_SIZE_JS",
+    []
+   ],
+   [
+    "screenshot",
+    "android-dark-missing-menu-full.png",
+    true,
+    {
+     "x": 0,
+     "y": 0,
+     "width": 430,
+     "height": 10922
+    }
+   ],
+   [
+    "cdp.send",
+    "Emulation.setTouchEmulationEnabled",
+    {
+     "enabled": true,
+     "maxTouchPoints": 1
+    }
+   ],
+   [
+    "evaluate",
+    "MEASURE",
+    [
+     {
+      "p": 1
+     }
+    ]
+   ],
+   [
+    "evaluate",
+    "measure.RENDERED_THEME_JS",
+    []
+   ],
+   [
+    "goto",
+    "https://127.0.0.1:1",
+    {
+     "wait_until": "domcontentloaded"
+    }
+   ],
+   [
+    "evaluate",
+    "t => { document.documentElement.dataset.theme = t; }",
+    [
+     "dark"
+    ]
+   ],
+   [
+    "wait_for_timeout",
+    2500
+   ],
+   [
+    "loc.locator",
+    "[role=tablist]",
+    ".tab"
+   ],
+   [
+    "nth",
+    ".tab",
+    0
+   ],
+   [
+    "click",
+    ".tab#0"
+   ],
+   [
+    "wait_for_timeout",
+    2200
+   ],
+   [
+    "locator",
+    "#a"
+   ],
+   [
+    "first",
+    "#a"
+   ],
+   [
+    "wait_for",
+    "#a",
+    {
+     "state": "attached",
+     "timeout": 5000
+    }
+   ],
+   [
+    "click",
+    "#a"
+   ],
+   [
+    "wait_for_timeout",
+    1200
+   ],
+   [
+    "screenshot",
+    "android-dark-board-pick.png",
+    false,
+    null
+   ],
+   [
+    "evaluate",
+    "_OPEN_SCOPE_DETAILS_JS",
+    []
+   ],
+   [
+    "wait_for_timeout",
+    1200
+   ],
+   [
+    "screenshot",
+    "android-dark-board-pick-full.png",
+    true,
+    null
+   ],
+   [
+    "evaluate",
+    "_PAGE_SIZE_JS",
+    []
+   ],
+   [
+    "screenshot",
+    "android-dark-board-pick-full.png",
+    true,
+    {
+     "x": 0,
+     "y": 0,
+     "width": 430,
+     "height": 10922
+    }
+   ],
+   [
+    "cdp.send",
+    "Emulation.setTouchEmulationEnabled",
+    {
+     "enabled": true,
+     "maxTouchPoints": 1
+    }
+   ],
+   [
+    "evaluate",
+    "MEASURE",
+    [
+     {
+      "p": 1
+     }
+    ]
+   ],
+   [
+    "evaluate",
+    "measure.RENDERED_THEME_JS",
+    []
+   ],
+   [
+    "ctx.close"
+   ],
+   [
+    "browser.close"
+   ]
+  ]
+ },
+ "iphone-root": {
+  "screens": [
+   {
+    "id": "iphone-dark-root",
+    "device": "iphone",
+    "theme": "dark",
+    "view": "root",
+    "kind": "tab",
+    "status": "ok",
+    "reason": null,
+    "error": null,
+    "screenshot": "iphone-dark-root.png",
+    "screenshot_full": null,
+    "note": "full-page capture skipped: Page.screenshot: Cannot take screenshot larger than 32767 pixels on any dimension",
+    "metrics": {
+     "m": 1
+    },
+    "theme_applied": null,
+    "theme_observed": null
+   },
+   {
+    "id": "iphone-dark-gear-settings",
+    "device": "iphone",
+    "theme": "dark",
+    "view": "gear-settings",
+    "kind": "step",
+    "status": "ok",
+    "reason": null,
+    "error": null,
+    "screenshot": "iphone-dark-gear-settings.png",
+    "screenshot_full": null,
+    "note": "full-page capture skipped: Page.screenshot: Cannot take screenshot larger than 32767 pixels on any dimension",
+    "metrics": {
+     "m": 1
+    },
+    "theme_applied": null,
+    "theme_observed": null
+   }
+  ],
+  "log": [
+   "WARNING skipped the full-page capture of iphone-dark-root: Page.screenshot: Cannot take screenshot larger than 32767 pixels on any dimension",
+   "WARNING could not read the rendered theme: page closed",
+   "INFO ok iphone-dark-root",
+   "INFO opened 1 details on iphone-dark-gear-settings",
+   "WARNING skipped the full-page capture of iphone-dark-gear-settings: Page.screenshot: Cannot take screenshot larger than 32767 pixels on any dimension",
+   "WARNING could not read the rendered theme: page closed",
+   "INFO ok iphone-dark-gear-settings"
+  ],
+  "trace": [
+   [
+    "launch",
+    "webkit"
+   ],
+   [
+    "browser.new_context",
+    {
+     "ignore_https_errors": true,
+     "color_scheme": "dark",
+     "viewport": {
+      "width": 430,
+      "height": 739
+     },
+     "has_touch": true
+    }
+   ],
+   [
+    "ctx.new_page"
+   ],
+   [
+    "set_default_timeout",
+    1000
+   ],
+   [
+    "goto",
+    "https://127.0.0.1:1",
+    {
+     "wait_until": "domcontentloaded"
+    }
+   ],
+   [
+    "evaluate",
+    "t => { document.documentElement.dataset.theme = t; }",
+    [
+     "dark"
+    ]
+   ],
+   [
+    "wait_for_timeout",
+    2500
+   ],
+   [
+    "evaluate",
+    "_TABS_JS",
+    [
+     "[role=tab]"
+    ]
+   ],
+   [
+    "locator",
+    "[role=tablist]"
+   ],
+   [
+    "count",
+    "[role=tablist]"
+   ],
+   [
+    "screenshot",
+    "iphone-dark-root.png",
+    false,
+    null
+   ],
+   [
+    "evaluate",
+    "_OPEN_DETAILS_JS",
+    []
+   ],
+   [
+    "wait_for_timeout",
+    1200
+   ],
+   [
+    "screenshot",
+    "iphone-dark-root-full.png",
+    true,
+    null
+   ],
+   [
+    "evaluate",
+    "_PAGE_SIZE_JS",
+    []
+   ],
+   [
+    "screenshot",
+    "iphone-dark-root-full.png",
+    true,
+    {
+     "x": 0,
+     "y": 0,
+     "width": 430,
+     "height": 10922
+    }
+   ],
+   [
+    "evaluate",
+    "MEASURE",
+    [
+     {
+      "p": 1
+     }
+    ]
+   ],
+   [
+    "evaluate",
+    "measure.RENDERED_THEME_JS",
+    []
+   ],
+   [
+    "evaluate",
+    "_DIALOG_IDS_JS",
+    []
+   ],
+   [
+    "goto",
+    "https://127.0.0.1:1",
+    {
+     "wait_until": "domcontentloaded"
+    }
+   ],
+   [
+    "evaluate",
+    "t => { document.documentElement.dataset.theme = t; }",
+    [
+     "dark"
+    ]
+   ],
+   [
+    "wait_for_timeout",
+    2500
+   ],
+   [
+    "get_by_role",
+    "button",
+    "^\\s*settings\\s*$"
+   ],
+   [
+    "loc.locator",
+    "gear",
+    "visible=true"
+   ],
+   [
+    "first",
+    "gear"
+   ],
+   [
+    "wait_for",
+    "gear",
+    {
+     "state": "attached",
+     "timeout": 1000
+    }
+   ],
+   [
+    "click",
+    "gear"
+   ],
+   [
+    "wait_for_timeout",
+    1200
+   ],
+   [
+    "screenshot",
+    "iphone-dark-gear-settings.png",
+    false,
+    null
+   ],
+   [
+    "evaluate",
+    "_OPEN_SCOPE_DETAILS_JS",
+    []
+   ],
+   [
+    "wait_for_timeout",
+    1200
+   ],
+   [
+    "screenshot",
+    "iphone-dark-gear-settings-full.png",
+    true,
+    null
+   ],
+   [
+    "evaluate",
+    "_PAGE_SIZE_JS",
+    []
+   ],
+   [
+    "screenshot",
+    "iphone-dark-gear-settings-full.png",
+    true,
+    {
+     "x": 0,
+     "y": 0,
+     "width": 430,
+     "height": 10922
+    }
+   ],
+   [
+    "evaluate",
+    "MEASURE",
+    [
+     {
+      "p": 1
+     }
+    ]
+   ],
+   [
+    "evaluate",
+    "measure.RENDERED_THEME_JS",
+    []
+   ],
+   [
+    "ctx.close"
+   ],
+   [
+    "browser.close"
+   ]
+  ]
+ },
+ "synthetic": {
+  "screens": [
+   {
+    "id": "desktop-dark-home",
+    "device": "desktop",
+    "theme": "dark",
+    "view": "home",
+    "kind": "tab",
+    "status": "ok",
+    "reason": null,
+    "error": null,
+    "screenshot": "desktop-dark-home.png",
+    "screenshot_full": "desktop-dark-home-full.png",
+    "note": null,
+    "metrics": {
+     "m": 1
+    },
+    "theme_applied": false,
+    "theme_observed": {
+     "attr": "light",
+     "luminance": 0.95,
+     "rendered": "light"
+    }
+   },
+   {
+    "id": "desktop-dark-gear-settings",
+    "device": "desktop",
+    "theme": "dark",
+    "view": "gear-settings",
+    "kind": "step",
+    "status": "ok",
+    "reason": null,
+    "error": null,
+    "screenshot": "desktop-dark-gear-settings.png",
+    "screenshot_full": null,
+    "note": null,
+    "metrics": {
+     "m": 1
+    },
+    "theme_applied": false,
+    "theme_observed": {
+     "attr": "light",
+     "luminance": 0.95,
+     "rendered": "light"
+    }
+   },
+   {
+    "id": "desktop-dark-root-s1",
+    "device": "desktop",
+    "theme": "dark",
+    "view": "root-s1",
+    "kind": "step",
+    "status": "error",
+    "reason": "NO_GO",
+    "error": "#synthdanger is declared no_go",
+    "screenshot": null,
+    "screenshot_full": null,
+    "note": null,
+    "metrics": null,
+    "theme_applied": null,
+    "theme_observed": null
+   },
+   {
+    "id": "desktop-dark-root-s2",
+    "device": "desktop",
+    "theme": "dark",
+    "view": "root-s2",
+    "kind": "step",
+    "status": "ok",
+    "reason": null,
+    "error": null,
+    "screenshot": "desktop-dark-root-s2.png",
+    "screenshot_full": null,
+    "note": null,
+    "metrics": {
+     "m": 1
+    },
+    "theme_applied": false,
+    "theme_observed": {
+     "attr": "light",
+     "luminance": 0.95,
+     "rendered": "light"
+    }
+   },
+   {
+    "id": "desktop-dark-root-s3",
+    "device": "desktop",
+    "theme": "dark",
+    "view": "root-s3",
+    "kind": "step",
+    "status": "ok",
+    "reason": null,
+    "error": null,
+    "screenshot": "desktop-dark-root-s3.png",
+    "screenshot_full": null,
+    "note": null,
+    "metrics": {
+     "m": 1
+    },
+    "theme_applied": false,
+    "theme_observed": {
+     "attr": "light",
+     "luminance": 0.95,
+     "rendered": "light"
+    }
+   }
+  ],
+  "log": [
+   "WARNING theme not applied: asked for dark, rendered light",
+   "INFO ok desktop-dark-home",
+   "WARNING theme not applied: asked for dark, rendered light",
+   "INFO ok desktop-dark-gear-settings",
+   "WARNING theme not applied: asked for dark, rendered light",
+   "INFO ok desktop-dark-root-s2",
+   "WARNING theme not applied: asked for dark, rendered light",
+   "INFO ok desktop-dark-root-s3"
+  ],
+  "trace": [
+   [
+    "launch",
+    "chromium"
+   ],
+   [
+    "browser.new_context",
+    {
+     "ignore_https_errors": true,
+     "color_scheme": "dark",
+     "viewport": {
+      "width": 1440,
+      "height": 900
+     }
+    }
+   ],
+   [
+    "ctx.new_page"
+   ],
+   [
+    "set_default_timeout",
+    1000
+   ],
+   [
+    "goto",
+    "https://127.0.0.1:1",
+    {
+     "wait_until": "domcontentloaded"
+    }
+   ],
+   [
+    "evaluate",
+    "t => { document.documentElement.dataset.theme = t; }",
+    [
+     "dark"
+    ]
+   ],
+   [
+    "wait_for_timeout",
+    2500
+   ],
+   [
+    "evaluate",
+    "_TABS_JS",
+    [
+     "[role=tab]"
+    ]
+   ],
+   [
+    "locator",
+    "[role=tablist]"
+   ],
+   [
+    "count",
+    "[role=tablist]"
+   ],
+   [
+    "locator",
+    "[role=tablist]"
+   ],
+   [
+    "first",
+    "[role=tablist]"
+   ],
+   [
+    "loc.locator",
+    "[role=tablist]",
+    "[role=tab]"
+   ],
+   [
+    "nth",
+    "[role=tab]",
+    0
+   ],
+   [
+    "click",
+    "[role=tab]#0"
+   ],
+   [
+    "wait_for_timeout",
+    2200
+   ],
+   [
+    "screenshot",
+    "desktop-dark-home.png",
+    false,
+    null
+   ],
+   [
+    "evaluate",
+    "_OPEN_DETAILS_JS",
+    []
+   ],
+   [
+    "wait_for_timeout",
+    1200
+   ],
+   [
+    "screenshot",
+    "desktop-dark-home-full.png",
+    true,
+    null
+   ],
+   [
+    "evaluate",
+    "MEASURE",
+    [
+     {
+      "p": 1
+     }
+    ]
+   ],
+   [
+    "evaluate",
+    "measure.RENDERED_THEME_JS",
+    []
+   ],
+   [
+    "evaluate",
+    "_DIALOG_IDS_JS",
+    []
+   ],
+   [
+    "goto",
+    "https://127.0.0.1:1",
+    {
+     "wait_until": "domcontentloaded"
+    }
+   ],
+   [
+    "evaluate",
+    "t => { document.documentElement.dataset.theme = t; }",
+    [
+     "dark"
+    ]
+   ],
+   [
+    "wait_for_timeout",
+    2500
+   ],
+   [
+    "get_by_role",
+    "button",
+    "^\\s*settings\\s*$"
+   ],
+   [
+    "loc.locator",
+    "gear",
+    "visible=true"
+   ],
+   [
+    "first",
+    "gear"
+   ],
+   [
+    "wait_for",
+    "gear",
+    {
+     "state": "attached",
+     "timeout": 1000
+    }
+   ],
+   [
+    "loc.evaluate",
+    "gear",
+    "_NO_GO_JS",
+    [
+     [
+      "#synthdanger"
+     ]
+    ]
+   ],
+   [
+    "click",
+    "gear"
+   ],
+   [
+    "wait_for_timeout",
+    1200
+   ],
+   [
+    "screenshot",
+    "desktop-dark-gear-settings.png",
+    false,
+    null
+   ],
+   [
+    "evaluate",
+    "_OPEN_SCOPE_DETAILS_JS",
+    []
+   ],
+   [
+    "evaluate",
+    "MEASURE",
+    [
+     {
+      "p": 1
+     }
+    ]
+   ],
+   [
+    "evaluate",
+    "measure.RENDERED_THEME_JS",
+    []
+   ],
+   [
+    "goto",
+    "https://127.0.0.1:1",
+    {
+     "wait_until": "domcontentloaded"
+    }
+   ],
+   [
+    "evaluate",
+    "t => { document.documentElement.dataset.theme = t; }",
+    [
+     "dark"
+    ]
+   ],
+   [
+    "wait_for_timeout",
+    2500
+   ],
+   [
+    "locator",
+    "#live"
+   ],
+   [
+    "first",
+    "#live"
+   ],
+   [
+    "wait_for",
+    "#live",
+    {
+     "state": "attached",
+     "timeout": 5000
+    }
+   ],
+   [
+    "loc.evaluate",
+    "#live",
+    "_NO_GO_JS",
+    [
+     [
+      "#synthdanger"
+     ]
+    ]
+   ],
+   [
+    "click",
+    "#live"
+   ],
+   [
+    "wait_for_timeout",
+    1200
+   ],
+   [
+    "screenshot",
+    "desktop-dark-root-s2.png",
+    false,
+    null
+   ],
+   [
+    "evaluate",
+    "_OPEN_SCOPE_DETAILS_JS",
+    []
+   ],
+   [
+    "evaluate",
+    "MEASURE",
+    [
+     {
+      "p": 1
+     }
+    ]
+   ],
+   [
+    "evaluate",
+    "measure.RENDERED_THEME_JS",
+    []
+   ],
+   [
+    "goto",
+    "https://127.0.0.1:1",
+    {
+     "wait_until": "domcontentloaded"
+    }
+   ],
+   [
+    "evaluate",
+    "t => { document.documentElement.dataset.theme = t; }",
+    [
+     "dark"
+    ]
+   ],
+   [
+    "wait_for_timeout",
+    2500
+   ],
+   [
+    "locator",
+    "#ok"
+   ],
+   [
+    "first",
+    "#ok"
+   ],
+   [
+    "wait_for",
+    "#ok",
+    {
+     "state": "attached",
+     "timeout": 5000
+    }
+   ],
+   [
+    "loc.evaluate",
+    "#ok",
+    "_NO_GO_JS",
+    [
+     [
+      "#synthdanger"
+     ]
+    ]
+   ],
+   [
+    "click",
+    "#ok"
+   ],
+   [
+    "wait_for_timeout",
+    1200
+   ],
+   [
+    "screenshot",
+    "desktop-dark-root-s3.png",
+    false,
+    null
+   ],
+   [
+    "evaluate",
+    "_OPEN_SCOPE_DETAILS_JS",
+    []
+   ],
+   [
+    "evaluate",
+    "MEASURE",
+    [
+     {
+      "p": 1
+     }
+    ]
+   ],
+   [
+    "evaluate",
+    "measure.RENDERED_THEME_JS",
+    []
+   ],
+   [
+    "ctx.close"
+   ],
+   [
+    "browser.close"
+   ]
+  ]
+ },
+ "live-with-synthetic-block": {
+  "screens": [
+   {
+    "id": "desktop-light-root",
+    "device": "desktop",
+    "theme": "light",
+    "view": "root",
+    "kind": "tab",
+    "status": "ok",
+    "reason": null,
+    "error": null,
+    "screenshot": "desktop-light-root.png",
+    "screenshot_full": "desktop-light-root-full.png",
+    "note": null,
+    "metrics": {
+     "m": 1
+    },
+    "theme_applied": true,
+    "theme_observed": {
+     "attr": "light",
+     "luminance": 0.95,
+     "rendered": "light"
+    }
+   },
+   {
+    "id": "desktop-light-gear-settings",
+    "device": "desktop",
+    "theme": "light",
+    "view": "gear-settings",
+    "kind": "step",
+    "status": "ok",
+    "reason": null,
+    "error": null,
+    "screenshot": "desktop-light-gear-settings.png",
+    "screenshot_full": null,
+    "note": null,
+    "metrics": {
+     "m": 1
+    },
+    "theme_applied": true,
+    "theme_observed": {
+     "attr": "light",
+     "luminance": 0.95,
+     "rendered": "light"
+    }
+   },
+   {
+    "id": "desktop-light-root-s3",
+    "device": "desktop",
+    "theme": "light",
+    "view": "root-s3",
+    "kind": "step",
+    "status": "error",
+    "reason": "NO_GO",
+    "error": "#live is declared no_go",
+    "screenshot": null,
+    "screenshot_full": null,
+    "note": null,
+    "metrics": null,
+    "theme_applied": null,
+    "theme_observed": null
+   }
+  ],
+  "log": [
+   "INFO ok desktop-light-root",
+   "INFO ok desktop-light-gear-settings"
+  ],
+  "trace": [
+   [
+    "launch",
+    "chromium"
+   ],
+   [
+    "browser.new_context",
+    {
+     "ignore_https_errors": true,
+     "color_scheme": "light",
+     "viewport": {
+      "width": 1440,
+      "height": 900
+     }
+    }
+   ],
+   [
+    "ctx.new_page"
+   ],
+   [
+    "set_default_timeout",
+    1000
+   ],
+   [
+    "goto",
+    "https://127.0.0.1:1",
+    {
+     "wait_until": "domcontentloaded"
+    }
+   ],
+   [
+    "evaluate",
+    "t => { document.documentElement.dataset.theme = t; }",
+    [
+     "light"
+    ]
+   ],
+   [
+    "wait_for_timeout",
+    2500
+   ],
+   [
+    "evaluate",
+    "_TABS_JS",
+    [
+     "[role=tab]"
+    ]
+   ],
+   [
+    "locator",
+    "[role=tablist]"
+   ],
+   [
+    "count",
+    "[role=tablist]"
+   ],
+   [
+    "locator",
+    "[role=tablist]"
+   ],
+   [
+    "first",
+    "[role=tablist]"
+   ],
+   [
+    "screenshot",
+    "desktop-light-root.png",
+    false,
+    null
+   ],
+   [
+    "evaluate",
+    "_OPEN_DETAILS_JS",
+    []
+   ],
+   [
+    "wait_for_timeout",
+    1200
+   ],
+   [
+    "screenshot",
+    "desktop-light-root-full.png",
+    true,
+    null
+   ],
+   [
+    "evaluate",
+    "MEASURE",
+    [
+     {
+      "p": 1
+     }
+    ]
+   ],
+   [
+    "evaluate",
+    "measure.RENDERED_THEME_JS",
+    []
+   ],
+   [
+    "evaluate",
+    "_DIALOG_IDS_JS",
+    []
+   ],
+   [
+    "goto",
+    "https://127.0.0.1:1",
+    {
+     "wait_until": "domcontentloaded"
+    }
+   ],
+   [
+    "evaluate",
+    "t => { document.documentElement.dataset.theme = t; }",
+    [
+     "light"
+    ]
+   ],
+   [
+    "wait_for_timeout",
+    2500
+   ],
+   [
+    "get_by_role",
+    "button",
+    "^\\s*settings\\s*$"
+   ],
+   [
+    "loc.locator",
+    "gear",
+    "visible=true"
+   ],
+   [
+    "first",
+    "gear"
+   ],
+   [
+    "wait_for",
+    "gear",
+    {
+     "state": "attached",
+     "timeout": 1000
+    }
+   ],
+   [
+    "loc.evaluate",
+    "gear",
+    "_NO_GO_JS",
+    [
+     [
+      "#live"
+     ]
+    ]
+   ],
+   [
+    "click",
+    "gear"
+   ],
+   [
+    "wait_for_timeout",
+    1200
+   ],
+   [
+    "screenshot",
+    "desktop-light-gear-settings.png",
+    false,
+    null
+   ],
+   [
+    "evaluate",
+    "_OPEN_SCOPE_DETAILS_JS",
+    []
+   ],
+   [
+    "evaluate",
+    "MEASURE",
+    [
+     {
+      "p": 1
+     }
+    ]
+   ],
+   [
+    "evaluate",
+    "measure.RENDERED_THEME_JS",
+    []
+   ],
+   [
+    "ctx.close"
+   ],
+   [
+    "browser.close"
+   ]
+  ]
+ }
+}
