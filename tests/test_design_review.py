@@ -1090,6 +1090,217 @@ check(_walk_arms(goto_error=RuntimeError("net::ERR_CONNECTION_REFUSED")) == (
     [("desktop-light-root", "tab", "error", "NOT_LISTENING", "net::ERR_CONNECTION_REFUSED", None, None)], []),
       "a base page that won't load is one classified root screen, nothing logged")
 
+# ---- walk: every browser action of every walk_context path, against a golden trace (#1244) ----
+# The records and log lines above can't see the order of gotos, clicks, waits, captures and
+# evaluates, so a restructure could reorder what a browser sees and still pass them. Each
+# scenario here records every call the walk makes on the playwright/browser/context/page/locator
+# fakes, plus the full screen records and log lines, and must equal the golden captured from the
+# code before the per-leg split. Regenerate only for an intended behaviour change:
+# DESIGN_REVIEW_WRITE_WALK_GOLDEN=1.
+
+WALK_GOLDEN = FIX / "walk_trace.json"
+_TRACE_JS = {value: name for name, value in vars(walk).items() if name.endswith("_JS") and isinstance(value, str)}
+_TRACE_JS[walk.measure.RENDERED_THEME_JS] = "measure.RENDERED_THEME_JS"
+
+
+class _TraceLoc:
+    """A locator stub that logs every call to the page's trace."""
+
+    def __init__(self, page, sel: str) -> None:
+        self.page, self.sel = page, sel
+
+    @property
+    def first(self):
+        self.page.log("first", self.sel)
+        return self
+
+    def count(self):
+        self.page.log("count", self.sel)
+        return 1 if self.page.has_tablist or self.sel != "[role=tablist]" else 0
+
+    def nth(self, i):
+        self.page.log("nth", self.sel, i)
+        return _TraceLoc(self.page, f"{self.sel}#{i}")
+
+    def locator(self, sel):
+        self.page.log("loc.locator", self.sel, sel)
+        return _TraceLoc(self.page, sel if self.sel == "[role=tablist]" else self.sel)
+
+    def wait_for(self, **kwargs):
+        self.page.log("wait_for", self.sel, kwargs)
+        self.page.act("wait", self.sel)
+
+    def click(self):
+        self.page.log("click", self.sel)
+        self.page.act("click", self.sel)
+
+    def evaluate(self, js, *args):
+        self.page.log("loc.evaluate", self.sel, _TRACE_JS.get(js, js), list(args))
+        return self.sel in self.page.no_go_hits if js is walk._NO_GO_JS else None
+
+
+class _TracePage:
+    """A page stub that logs every call; the scenario decides what the page holds and what fails."""
+
+    def __init__(self, trace: list, cfg: dict) -> None:
+        self.trace, self.cfg = trace, cfg
+        self.fail = cfg.get("fail", {})
+        self.no_go_hits = cfg.get("no_go_hits", set())
+        self.has_tablist = cfg.get("has_tablist", True)
+
+    def log(self, *entry):
+        self.trace.append(list(entry))
+
+    def act(self, kind, sel):
+        if (kind, sel) in self.fail:
+            raise self.fail[(kind, sel)]
+
+    def set_default_timeout(self, ms): self.log("set_default_timeout", ms)
+    def wait_for_timeout(self, ms): self.log("wait_for_timeout", ms)
+
+    def locator(self, sel):
+        self.log("locator", sel)
+        return _TraceLoc(self, sel)
+
+    def get_by_role(self, role, name=None):
+        self.log("get_by_role", role, getattr(name, "pattern", name))
+        return _TraceLoc(self, "gear")
+
+    def goto(self, url, **kwargs):
+        self.log("goto", url, kwargs)
+        if self.cfg.get("goto_error"):
+            raise self.cfg["goto_error"]
+
+    def screenshot(self, path, full_page=False, clip=None):
+        self.log("screenshot", Path(path).name, full_page, clip)
+        full = self.cfg.get("full", "ok")
+        if full_page and (full == "raise" or (full == "clip" and clip is None)):
+            raise RuntimeError(_TOO_TALL)
+
+    def evaluate(self, js, *args):
+        name = _TRACE_JS.get(js, js)
+        self.log("evaluate", name, list(args))
+        if name == "_TABS_JS":
+            return self.cfg.get("tabs", [])
+        if name == "_DIALOG_IDS_JS":
+            return self.cfg.get("dialogs", [])
+        if name in ("_OPEN_DETAILS_JS", "_OPEN_SCOPE_DETAILS_JS"):
+            return self.cfg.get("opened", 0)
+        if name == "_PAGE_SIZE_JS":
+            return {"dpr": 3, "width": 430, "height": 40000}
+        if name == "measure.RENDERED_THEME_JS":
+            if self.cfg.get("theme_read") == "raise":
+                raise RuntimeError("page closed")
+            return self.cfg.get("rendered", {"attr": "light", "luminance": 0.95})
+        if "showModal" in js and args and args[0] in self.cfg.get("stuck_dialogs", ()):
+            raise RuntimeError(f"dialog {args[0]} would not open")
+        return {"m": 1} if js == "MEASURE" else None
+
+
+def _walk_traced(cfg: dict) -> dict:
+    trace: list = []
+    page = _TracePage(trace, cfg)
+
+    class _Ctx:
+        def add_init_script(self, script): trace.append(["ctx.add_init_script", script])
+        def close(self): trace.append(["ctx.close"])
+
+        def new_page(self):
+            trace.append(["ctx.new_page"])
+            return page
+
+        def new_cdp_session(self, _page):
+            trace.append(["ctx.new_cdp_session"])
+            return type("Cdp", (), {"send": lambda _s, method, params: trace.append(["cdp.send", method, params])})()
+
+    class _Browser:
+        def close(self): trace.append(["browser.close"])
+
+        def new_context(self, **kwargs):
+            trace.append(["browser.new_context", kwargs])
+            return _Ctx()
+
+    class _Engine:
+        def __init__(self, engine: str) -> None:
+            self.engine = engine
+
+        def launch(self):
+            trace.append(["launch", self.engine])
+            if cfg.get("launch_error"):
+                raise cfg["launch_error"]
+            return _Browser()
+
+    pw = type("P", (), {"webkit": _Engine("webkit"), "chromium": _Engine("chromium"),
+                        "devices": {"iPhone 15 Pro Max": {"viewport": {"width": 430, "height": 739}, "has_touch": True},
+                                    "Pixel 7": {"viewport": {"width": 412, "height": 839}, "has_touch": True}}})()
+    args = type("A", (), {"url": "https://127.0.0.1:1", "timeout_ms": 1000, "synthetic": cfg.get("synthetic", False)})()
+    tap, wlog = _LogTap(), logging.getLogger("design_review.walk")
+    level = wlog.level
+    wlog.addHandler(tap)
+    wlog.setLevel(logging.INFO)
+    try:
+        with tempfile.TemporaryDirectory() as tmp:
+            screens = walk.walk_context(pw, cfg["device"], cfg["theme"], args, "MEASURE", {"p": 1},
+                                        cfg.get("review", {}), Path(tmp))
+    finally:
+        wlog.removeHandler(tap)
+        wlog.setLevel(level)
+    # A JSON round trip, so the in-memory result compares equal to the golden file's.
+    return json.loads(json.dumps({"screens": screens, "log": tap.lines, "trace": trace}))
+
+
+_ARMS_PAGE = {"tabs": [{"index": 0, "id": "home"}, {"index": 1, "id": "broken"}, {"index": 2, "id": "slow"}],
+              "dialogs": ["fine", "stuck"], "stuck_dialogs": ("stuck",), "no_go_hits": {"#inside"}, "fail": _ARM_FAIL,
+              "review": {"no_go": ["#danger"], "extra_steps": _ARM_STEPS}}
+_TRACE_SCENARIOS = {
+    "arms": {**_ARMS_PAGE, "device": "desktop", "theme": "light"},
+    "gear-absent": {**_ARMS_PAGE, "device": "desktop", "theme": "light",
+                    "fail": {**_ARM_FAIL, ("wait", "gear"): TimeoutError("Timeout 1000ms exceeded")}},
+    "gear-nogo": {**_ARMS_PAGE, "device": "desktop", "theme": "light", "no_go_hits": {"#inside", "gear"}},
+    "gear-crash": {**_ARMS_PAGE, "device": "desktop", "theme": "light",
+                   "fail": {**_ARM_FAIL, ("click", "gear"): RuntimeError("gear click failed")}},
+    "gear-wait-error": {**_ARMS_PAGE, "device": "desktop", "theme": "light",
+                        "fail": {**_ARM_FAIL, ("wait", "gear"): RuntimeError("gear detached")}},
+    "launch-error": {"device": "desktop", "theme": "dark", "launch_error": RuntimeError("no chromium")},
+    "goto-error": {"device": "iphone", "theme": "light", "goto_error": RuntimeError("net::ERR_CONNECTION_REFUSED")},
+    # Touch restore after every full-page capture, a stored theme, a custom tab selector, an app that
+    # re-applied its own theme, clipped full captures, a step whose tab is missing, one with only `open`.
+    "android-touch": {"device": "android", "theme": "dark", "opened": 2, "full": "clip",
+                      "rendered": {"attr": "light", "luminance": 0.95},
+                      "tabs": [{"index": 0, "id": "board"}, {"index": 1, "id": None}], "dialogs": ["edit"],
+                      "review": {"theme_storage_key": "app-theme", "tab_selector": ".tab",
+                                 "extra_steps": [{"id": "menu", "tab": "missing", "open": "#det"},
+                                                 {"id": "pick", "tab": "board", "clicks": ["#a", ""]},
+                                                 "not-a-step", {"click": "#no-id"}]}},
+    # No tablist and no tabs: the root screen; full captures that fail even clipped; an unreadable theme.
+    "iphone-root": {"device": "iphone", "theme": "dark", "has_tablist": False, "opened": 1, "full": "raise",
+                    "theme_read": "raise"},
+    # A synthetic run swaps in its own no_go and runs the synthetic-only steps.
+    "synthetic": {"device": "desktop", "theme": "dark", "synthetic": True,
+                  "tabs": [{"index": 0, "id": "home"}],
+                  "review": {"no_go": ["#live"], "synthetic": {"no_go": ["#synthdanger"]},
+                             "extra_steps": [{"id": "s1", "click": "#synthdanger", "synthetic": True},
+                                             {"id": "s2", "click": "#live", "synthetic": True},
+                                             {"id": "s3", "click": "#ok"}]}},
+    # A live run skips synthetic steps and keeps the live no_go even when a synthetic one is declared.
+    "live-with-synthetic-block": {"device": "desktop", "theme": "light",
+                                  "review": {"no_go": ["#live"], "synthetic": {"no_go": ["#synthdanger"]},
+                                             "extra_steps": [{"id": "s1", "click": "#synthdanger", "synthetic": True},
+                                                             {"id": "s3", "click": "#live"}]}},
+}
+
+_walk_traces = {name: _walk_traced(cfg) for name, cfg in _TRACE_SCENARIOS.items()}
+if os.environ.get("DESIGN_REVIEW_WRITE_WALK_GOLDEN") == "1":
+    WALK_GOLDEN.write_text(json.dumps(_walk_traces, indent=1, ensure_ascii=False) + "\n", encoding="utf-8")
+_walk_golden = json.loads(WALK_GOLDEN.read_text(encoding="utf-8"))
+check(set(_walk_traces) == set(_walk_golden), f"walk trace scenarios match the golden's -- {sorted(_walk_traces)}")
+for _name in _TRACE_SCENARIOS:
+    for _part in ("screens", "log", "trace"):
+        _got, _want = _walk_traces[_name][_part], _walk_golden.get(_name, {}).get(_part)
+        _at = next((i for i, (g, w) in enumerate(zip(_got, _want or [])) if g != w), min(len(_got), len(_want or [])))
+        check(_got == _want, f"walk_context {_name}: {_part} matches the golden (first difference at #{_at}: "
+                             f"got {_got[_at:_at + 1]} want {(_want or [])[_at:_at + 1]})")
+
 # ---- browser leg: the static fixture page through a sibling venv --------------
 
 FLEET = REPO.parent
