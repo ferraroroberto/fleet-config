@@ -1,0 +1,4987 @@
+[
+[
+"parse_run",
+{
+"started": "datetime.datetime(2026, 9, 20, 10, 0)",
+"finished": "datetime.datetime(2026, 9, 20, 10, 1, 18)",
+"nodes": {
+"tests/test_api.py::test_ok": 0.1,
+"tests/e2e/test_board.py::test_load[chromium]": 2.0,
+"tests/e2e/test_board.py::test_load[webkit]": 4.0,
+"tests/e2e/test_chat.py::test_link_opens[webkit-iphone]": 12.0,
+"tests/e2e/test_redact.py::test_mask[{'a': 1} b]": 0.5
+},
+"node_phase": {
+"tests/test_api.py::test_ok": 0,
+"tests/e2e/test_board.py::test_load[chromium]": 1,
+"tests/e2e/test_board.py::test_load[webkit]": 1,
+"tests/e2e/test_chat.py::test_link_opens[webkit-iphone]": 1,
+"tests/e2e/test_redact.py::test_mask[{'a': 1} b]": 1
+},
+"phases": [
+{
+"name": "pytest (non-e2e)",
+"wall_s": 60.0,
+"nodes": 1
+},
+{
+"name": "pytest e2e (tests/e2e)",
+"wall_s": 18.0,
+"nodes": 4
+}
+],
+"failures": [
+{
+"outcome": "FAILED",
+"when": "call",
+"nodeid": "tests/e2e/test_chat.py::test_link_opens[webkit-iphone]",
+"step": "tests/e2e/test_chat.py:40"
+}
+],
+"exit_status": 1,
+"parallel": false,
+"routed_tier": null,
+"skipped": [],
+"complete": true
+}
+],
+[
+"parse_run",
+{
+"started": "datetime.datetime(2026, 9, 21, 23, 59, 50)",
+"finished": "datetime.datetime(2026, 9, 22, 0, 0, 5)",
+"nodes": {
+"tests/e2e/test_chat.py::test_link_opens[webkit-iphone]": 15.0
+},
+"node_phase": {
+"tests/e2e/test_chat.py::test_link_opens[webkit-iphone]": 0
+},
+"phases": [
+{
+"name": "pytest e2e (tests/e2e)",
+"wall_s": 15.0,
+"nodes": 1
+}
+],
+"failures": [
+{
+"outcome": "FAILED",
+"when": "call",
+"nodeid": "tests/e2e/test_chat.py::test_link_opens[webkit-iphone]",
+"step": "tests/e2e/test_chat.py:52"
+}
+],
+"exit_status": 1,
+"parallel": true,
+"routed_tier": null,
+"skipped": [],
+"complete": true
+}
+],
+[
+"_wall_s",
+15.0
+],
+[
+"parse_run",
+{
+"started": "datetime.datetime(2026, 9, 22, 9, 0)",
+"finished": "datetime.datetime(2026, 9, 22, 9, 0)",
+"nodes": {},
+"node_phase": {},
+"phases": [
+{
+"name": "pytest e2e (tests/e2e)",
+"wall_s": 0.0,
+"nodes": 0
+}
+],
+"failures": [],
+"exit_status": null,
+"parallel": false,
+"routed_tier": null,
+"skipped": [],
+"complete": false
+}
+],
+[
+"projection_of",
+"webkit"
+],
+[
+"projection_of",
+"chromium"
+],
+[
+"projection_of",
+"default"
+],
+[
+"projection_of",
+"default"
+],
+[
+"test_of",
+"t.py::a"
+],
+[
+"is_e2e",
+false
+],
+[
+"is_e2e",
+true
+],
+[
+"is_e2e",
+true
+],
+[
+"is_e2e",
+true
+],
+[
+"is_e2e",
+true
+],
+[
+"projections",
+{
+"chromium": {
+"nodes": 1,
+"seconds": 2.0,
+"mean_s": 2.0
+},
+"webkit": {
+"nodes": 2,
+"seconds": 16.0,
+"mean_s": 8.0
+},
+"default": {
+"nodes": 1,
+"seconds": 0.5,
+"mean_s": 0.5
+}
+}
+],
+[
+"buckets",
+[
+{
+"bucket": "<1s",
+"nodes": 1,
+"seconds": 0.5
+},
+{
+"bucket": "1-3s",
+"nodes": 1,
+"seconds": 2.0
+},
+{
+"bucket": "3-6s",
+"nodes": 1,
+"seconds": 4.0
+},
+{
+"bucket": "6-10s",
+"nodes": 0,
+"seconds": 0
+},
+{
+"bucket": ">=10s",
+"nodes": 1,
+"seconds": 12.0
+}
+]
+],
+[
+"tail",
+{
+"slowest_n": 1,
+"slowest_share": 0.649,
+"top5pct_n": 1,
+"top5pct_share": 0.649,
+"max_s": 12.0
+}
+],
+[
+"tail",
+{
+"slowest_n": 22,
+"slowest_share": null,
+"top5pct_n": 0,
+"top5pct_share": null,
+"max_s": null
+}
+],
+[
+"cost_drivers",
+{
+"page_loads": 2,
+"shots": 0,
+"pty_refs": 1,
+"real_agent": 1
+}
+],
+[
+"failure_events",
+[
+{
+"test": "tests/e2e/test_chat.py::test_link_opens",
+"nodeid": "tests/e2e/test_chat.py::test_link_opens[webkit-iphone]",
+"projection": "webkit",
+"date": "2026-09-20",
+"source": "a.log",
+"when": "call",
+"step": "tests/e2e/test_chat.py:40"
+},
+{
+"test": "tests/e2e/test_chat.py::test_link_opens",
+"nodeid": "tests/e2e/test_chat.py::test_link_opens[webkit-iphone]",
+"projection": "webkit",
+"date": "2026-09-21",
+"source": "a.log",
+"when": "call",
+"step": "tests/e2e/test_chat.py:52"
+}
+]
+],
+[
+"race_candidates",
+[
+{
+"test": "tests/e2e/test_chat.py::test_link_opens",
+"projections": [
+"webkit"
+],
+"steps": [
+"tests/e2e/test_chat.py:40",
+"tests/e2e/test_chat.py:52"
+],
+"events": 2
+}
+]
+],
+[
+"race_candidates",
+[]
+],
+[
+"text_mentions",
+[
+{
+"test": "test_compose_bar",
+"nodeid": "test_compose_bar",
+"projection": "default",
+"line": "- The first had 1 red, `test_compose_bar.py::test_send[chromium]`, which passed alone."
+},
+{
+"test": "test_send",
+"nodeid": "test_send[chromium]",
+"projection": "chromium",
+"line": "- The first had 1 red, `test_compose_bar.py::test_send[chromium]`, which passed alone."
+}
+]
+],
+[
+"parse_run",
+{
+"started": "datetime.datetime(2026, 9, 20, 10, 0, 30)",
+"finished": "datetime.datetime(2026, 9, 20, 10, 2)",
+"nodes": {
+"tests/e2e/x.py::t": 90.0
+},
+"node_phase": {},
+"phases": [],
+"failures": [],
+"exit_status": 0,
+"parallel": false,
+"routed_tier": null,
+"skipped": [],
+"complete": true
+}
+],
+[
+"load_state",
+{
+"state": "loaded",
+"scope": "other checkouts of this repo; suites in other repos are not visible",
+"overlaps": [
+{
+"log": "wt.log",
+"started": "2026-09-20T10:00:30",
+"finished": "2026-09-20T10:02:00"
+}
+],
+"checked": [
+"wt.log"
+]
+}
+],
+[
+"load_state",
+{
+"state": "quiet",
+"scope": "other checkouts of this repo; suites in other repos are not visible",
+"overlaps": [],
+"checked": []
+}
+],
+[
+"load_state",
+{
+"state": "unknown",
+"reason": "the run has no start/finish time",
+"scope": "other checkouts of this repo; suites in other repos are not visible",
+"overlaps": [],
+"checked": []
+}
+],
+[
+"timing",
+{
+"status": "unknown",
+"reason": "no timing source ([e2e] progress_log / junit_xml undeclared, no --log)",
+"source": null
+}
+],
+[
+"timing",
+{
+"status": "unknown",
+"reason": "[e2e] progress_log = 'gate.log' does not exist",
+"source": null
+}
+],
+[
+"timing",
+{
+"status": "unknown",
+"reason": "no completed gate run in any checkout's log",
+"source": {
+"kind": "progress-log",
+"path": "<TMP>/e2e-value-/gate.log",
+"from": "[e2e] progress_log"
+}
+}
+],
+[
+"timing",
+{
+"status": "ok",
+"reason": null,
+"freshness": {
+"status": "unchecked",
+"run_nodes": 1,
+"suite_nodes": null,
+"reason": "the suite's collected node count was not measured, so the run's age against it is unknown"
+},
+"source": {
+"kind": "progress-log",
+"path": "<TMP>/e2e-value-/gate.log",
+"from": "[e2e] progress_log",
+"run_log": "<TMP>/e2e-value-/gate.log"
+},
+"run": {
+"started": "2026-09-21T23:59:50",
+"finished": "2026-09-22T00:00:05",
+"wall_s": 15.0,
+"complete": true,
+"exit_status": 1,
+"routed_tier": null,
+"slice": null,
+"checkout": {
+"root": null,
+"linked_worktree": null
+},
+"skip_reasons": null,
+"nodes": 1,
+"e2e_nodes": 1,
+"e2e_skipped": 0,
+"e2e_summed_s": 15.0
+},
+"load": {
+"state": "quiet",
+"scope": "other checkouts of this repo; suites in other repos are not visible",
+"overlaps": [],
+"checked": [
+"<TMP>/e2e-value-/gate.log"
+]
+},
+"phases": [
+{
+"name": "pytest e2e (tests/e2e)",
+"wall_s": 15.0,
+"nodes": 1
+}
+],
+"projections": {
+"webkit": {
+"nodes": 1,
+"seconds": 15.0,
+"mean_s": 15.0
+}
+},
+"buckets": [
+{
+"bucket": "<1s",
+"nodes": 0,
+"seconds": 0
+},
+{
+"bucket": "1-3s",
+"nodes": 0,
+"seconds": 0
+},
+{
+"bucket": "3-6s",
+"nodes": 0,
+"seconds": 0
+},
+{
+"bucket": "6-10s",
+"nodes": 0,
+"seconds": 0
+},
+{
+"bucket": ">=10s",
+"nodes": 1,
+"seconds": 15.0
+}
+],
+"modules": [
+{
+"module": "tests/e2e/test_chat.py",
+"seconds": 15.0,
+"nodes": 1
+}
+],
+"tail": {
+"slowest_n": 22,
+"slowest_share": 1.0,
+"top5pct_n": 1,
+"top5pct_share": 1.0,
+"max_s": 15.0
+},
+"first_node": {
+"nodeid": "tests/e2e/test_chat.py::test_link_opens[webkit-iphone]",
+"seconds": 15.0,
+"median_s": 15.0,
+"boot": "not-repeated"
+},
+"waits": [],
+"slow_nodes": [],
+"app_timers": [],
+"slow_fixtures": [],
+"projection_fit": {
+"projections": [
+"webkit",
+"firefox"
+],
+"kept": [
+{
+"module": "tests/e2e/test_chat.py",
+"tests": 1,
+"nodes": 1,
+"seconds": 15.0
+}
+],
+"candidates": [],
+"kept_nodes": 1,
+"candidate_nodes": 0,
+"candidate_seconds": 0
+},
+"runtime_drift": {
+"status": "candidates",
+"measured_min": {
+"gate": 0.2,
+"pytest e2e (tests/e2e)": 0.2
+},
+"claims": [
+{
+"file": "CLAUDE.md",
+"line": 1,
+"text": "- The full gate takes ~10 min.",
+"claimed_min": 10.0,
+"nearest_span": "gate",
+"delta": 39.0,
+"candidate": true
+}
+]
+}
+}
+],
+[
+"failures",
+{
+"logs": {
+"status": "ok",
+"read": [
+"<TMP>/e2e-value-/gate.log"
+]
+},
+"gh": {
+"prs": "skipped",
+"bug_issues": "skipped"
+},
+"log_events": [
+{
+"test": "tests/e2e/test_chat.py::test_link_opens",
+"nodeid": "tests/e2e/test_chat.py::test_link_opens[webkit-iphone]",
+"projection": "webkit",
+"date": "2026-09-20",
+"source": "<TMP>/e2e-value-/gate.log",
+"when": "call",
+"step": "tests/e2e/test_chat.py:40"
+},
+{
+"test": "tests/e2e/test_chat.py::test_link_opens",
+"nodeid": "tests/e2e/test_chat.py::test_link_opens[webkit-iphone]",
+"projection": "webkit",
+"date": "2026-09-21",
+"source": "<TMP>/e2e-value-/gate.log",
+"when": "call",
+"step": "tests/e2e/test_chat.py:52"
+}
+],
+"mentions": [],
+"log_events_by_projection": {
+"webkit": 2
+},
+"race_candidates": [
+{
+"test": "tests/e2e/test_chat.py::test_link_opens",
+"projections": [
+"webkit"
+],
+"steps": [
+"tests/e2e/test_chat.py:40",
+"tests/e2e/test_chat.py:52"
+],
+"events": 2
+}
+]
+}
+],
+[
+"timing",
+{
+"status": "ok",
+"reason": null,
+"freshness": {
+"status": "unchecked",
+"run_nodes": 1,
+"suite_nodes": null,
+"reason": "the suite's collected node count was not measured, so the run's age against it is unknown"
+},
+"source": {
+"kind": "junit-xml",
+"path": "<TMP>/e2e-value-/junit.xml",
+"from": "--log",
+"run_log": "<TMP>/e2e-value-/junit.xml"
+},
+"run": {
+"started": null,
+"finished": null,
+"wall_s": null,
+"complete": true,
+"exit_status": 1,
+"routed_tier": null,
+"slice": null,
+"checkout": {
+"root": null,
+"linked_worktree": null
+},
+"skip_reasons": [],
+"nodes": 1,
+"e2e_nodes": 1,
+"e2e_skipped": 0,
+"e2e_summed_s": 3.5
+},
+"load": {
+"state": "unknown",
+"reason": "a JUnit XML carries no run window",
+"scope": "",
+"overlaps": [],
+"checked": []
+},
+"phases": [],
+"projections": {
+"webkit": {
+"nodes": 1,
+"seconds": 3.5,
+"mean_s": 3.5
+}
+},
+"buckets": [
+{
+"bucket": "<1s",
+"nodes": 0,
+"seconds": 0
+},
+{
+"bucket": "1-3s",
+"nodes": 0,
+"seconds": 0
+},
+{
+"bucket": "3-6s",
+"nodes": 1,
+"seconds": 3.5
+},
+{
+"bucket": "6-10s",
+"nodes": 0,
+"seconds": 0
+},
+{
+"bucket": ">=10s",
+"nodes": 0,
+"seconds": 0
+}
+],
+"modules": [
+{
+"module": "tests/e2e/test_board.py",
+"seconds": 3.5,
+"nodes": 1,
+"page_loads": 1,
+"shots": 0,
+"pty_refs": 0,
+"real_agent": 0
+}
+],
+"tail": {
+"slowest_n": 22,
+"slowest_share": 1.0,
+"top5pct_n": 1,
+"top5pct_share": 1.0,
+"max_s": 3.5
+},
+"first_node": {
+"nodeid": "tests/e2e/test_board.py::test_load[webkit]",
+"seconds": 3.5,
+"median_s": 3.5,
+"boot": "single-run"
+},
+"waits": [],
+"slow_nodes": [],
+"app_timers": [],
+"slow_fixtures": [],
+"projection_fit": {
+"projections": [
+"webkit",
+"firefox"
+],
+"kept": [],
+"candidates": [
+{
+"module": "tests/e2e/test_board.py",
+"tests": 1,
+"nodes": 1,
+"seconds": 3.5
+}
+],
+"kept_nodes": 0,
+"candidate_nodes": 1,
+"candidate_seconds": 3.5
+},
+"runtime_drift": {
+"status": "unknown",
+"reason": "the run's wall time is not in the log",
+"claims": []
+}
+}
+],
+[
+"routing_report",
+{
+"status": "unknown",
+"reason": "no importable scripts/classify_e2e.py in the repo"
+}
+],
+[
+"routing_report",
+{
+"status": "ok",
+"prs": 5,
+"prs_unreadable": 0,
+"gate": {
+"verdict": "not-consumed",
+"reason": "no gate script runs classify_e2e.py: the [e2e] table changes nothing the gate runs",
+"readers": []
+},
+"config": "<TMP>/e2e-value-routing-/.fleet.toml",
+"config_source": "declared",
+"tiers": {
+"skip": 1,
+"static": 0,
+"surface": 0,
+"full": 4
+},
+"browser_relevant": 4,
+"browser_relevant_full": 4,
+"full_classes": {
+"e2e-test": 2,
+"static-code": 2,
+"unclassified": 1
+},
+"single_cause": {
+"static-code": 1,
+"unclassified": 1,
+"e2e-test": 1
+},
+"full_paths_top": [
+{
+"path": "static/styles.css",
+"prs": 1
+},
+{
+"path": "tests/e2e/test_a.py",
+"prs": 1
+},
+{
+"path": "static/_vendored/nav/README.md",
+"prs": 1
+},
+{
+"path": "tools/build.sh",
+"prs": 1
+},
+{
+"path": "tests/e2e/test_b.py",
+"prs": 1
+}
+],
+"unclassified": [
+{
+"path": "tools/build.sh",
+"prs": 1,
+"check": "python scripts/classify_e2e.py tools/build.sh"
+}
+],
+"shadowed": [
+{
+"path": "static/_vendored/nav/README.md",
+"took": "static-code",
+"shadowed": [
+"docs"
+],
+"next_rule": "docs",
+"next_tier": "NONE",
+"drop_safe": true,
+"check": "python scripts/classify_e2e.py static/_vendored/nav/README.md",
+"prs": 1
+}
+],
+"import_holes": [],
+"counterfactual": {
+"proposed": "<TMP>/e2e-value-routing-/proposed.toml",
+"changed": [
+{
+"pr": 2,
+"from": "full",
+"to": "skip",
+"surface": ""
+}
+],
+"unclassified": [
+{
+"path": "tools/build.sh",
+"prs": 1,
+"check": "python scripts/classify_e2e.py tools/build.sh"
+}
+],
+"shadowed": [],
+"import_holes": [],
+"holes_opened": [],
+"holes_closed": []
+},
+"sheet_routing": "n/a: no shared_stylesheets declared",
+"per_pr": [
+{
+"pr": 1,
+"tier": "full",
+"surface": ""
+},
+{
+"pr": 2,
+"tier": "full",
+"surface": ""
+},
+{
+"pr": 3,
+"tier": "skip",
+"surface": ""
+},
+{
+"pr": 4,
+"tier": "full",
+"surface": ""
+},
+{
+"pr": 5,
+"tier": "full",
+"surface": ""
+}
+]
+}
+],
+[
+"routing_report",
+{
+"status": "ok",
+"prs": 7,
+"prs_unreadable": 2,
+"gate": {
+"verdict": "not-consumed",
+"reason": "no gate script runs classify_e2e.py: the [e2e] table changes nothing the gate runs",
+"readers": []
+},
+"config": "<TMP>/e2e-value-routing-/.fleet.toml",
+"config_source": "declared",
+"tiers": {
+"skip": 1,
+"static": 0,
+"surface": 0,
+"full": 4
+},
+"browser_relevant": 4,
+"browser_relevant_full": 4,
+"full_classes": {
+"e2e-test": 2,
+"static-code": 2,
+"unclassified": 1
+},
+"single_cause": {
+"static-code": 1,
+"unclassified": 1,
+"e2e-test": 1
+},
+"full_paths_top": [
+{
+"path": "static/styles.css",
+"prs": 1
+},
+{
+"path": "tests/e2e/test_a.py",
+"prs": 1
+},
+{
+"path": "static/_vendored/nav/README.md",
+"prs": 1
+},
+{
+"path": "tools/build.sh",
+"prs": 1
+},
+{
+"path": "tests/e2e/test_b.py",
+"prs": 1
+}
+],
+"unclassified": [
+{
+"path": "tools/build.sh",
+"prs": 1,
+"check": "python scripts/classify_e2e.py tools/build.sh"
+}
+],
+"shadowed": [
+{
+"path": "static/_vendored/nav/README.md",
+"took": "static-code",
+"shadowed": [
+"docs"
+],
+"next_rule": "docs",
+"next_tier": "NONE",
+"drop_safe": true,
+"check": "python scripts/classify_e2e.py static/_vendored/nav/README.md",
+"prs": 1
+}
+],
+"import_holes": [],
+"counterfactual": {
+"proposed": "<TMP>/e2e-value-routing-/proposed.toml",
+"changed": [
+{
+"pr": 2,
+"from": "full",
+"to": "skip",
+"surface": ""
+}
+],
+"unclassified": [
+{
+"path": "tools/build.sh",
+"prs": 1,
+"check": "python scripts/classify_e2e.py tools/build.sh"
+}
+],
+"shadowed": [],
+"import_holes": [],
+"holes_opened": [],
+"holes_closed": []
+},
+"sheet_routing": "n/a: no shared_stylesheets declared",
+"per_pr": [
+{
+"pr": 1,
+"tier": "full",
+"surface": ""
+},
+{
+"pr": 2,
+"tier": "full",
+"surface": ""
+},
+{
+"pr": 3,
+"tier": "skip",
+"surface": ""
+},
+{
+"pr": 4,
+"tier": "full",
+"surface": ""
+},
+{
+"pr": 5,
+"tier": "full",
+"surface": ""
+}
+]
+}
+],
+[
+"routing_report",
+{
+"status": "ok",
+"prs": 0,
+"prs_unreadable": 0,
+"gate": {
+"verdict": "not-consumed",
+"reason": "no gate script runs classify_e2e.py: the [e2e] table changes nothing the gate runs",
+"readers": []
+},
+"config": "<TMP>/e2e-value-routing-/.fleet.toml",
+"config_source": "declared",
+"tiers": {
+"skip": 0,
+"static": 0,
+"surface": 0,
+"full": 0
+},
+"browser_relevant": 0,
+"browser_relevant_full": 0,
+"full_classes": {},
+"single_cause": {},
+"full_paths_top": [],
+"unclassified": [],
+"shadowed": [],
+"import_holes": [
+{
+"path": "tests/conftest.py",
+"rule": "tests",
+"kind": "loaded",
+"imported_by": 2,
+"check": "python scripts/classify_e2e.py tests/conftest.py"
+},
+{
+"path": "tests/fixtures/fake.py",
+"rule": "tests",
+"kind": "imported",
+"imported_by": 2,
+"check": "python scripts/classify_e2e.py tests/fixtures/fake.py"
+},
+{
+"path": "tests/fixtures/__init__.py",
+"rule": "tests",
+"kind": "imported",
+"imported_by": 1,
+"check": "python scripts/classify_e2e.py tests/fixtures/__init__.py"
+}
+],
+"counterfactual": null,
+"sheet_routing": "n/a: no shared_stylesheets declared",
+"per_pr": []
+}
+],
+[
+"routing_report",
+{
+"status": "ok",
+"prs": 0,
+"prs_unreadable": 0,
+"gate": {
+"verdict": "not-consumed",
+"reason": "no gate script runs classify_e2e.py: the [e2e] table changes nothing the gate runs",
+"readers": []
+},
+"config": "<TMP>/e2e-value-routing-/.fleet.toml",
+"config_source": "declared",
+"tiers": {
+"skip": 0,
+"static": 0,
+"surface": 0,
+"full": 0
+},
+"browser_relevant": 0,
+"browser_relevant_full": 0,
+"full_classes": {},
+"single_cause": {},
+"full_paths_top": [],
+"unclassified": [],
+"shadowed": [],
+"import_holes": [
+{
+"path": "tests/conftest.py",
+"rule": "tests",
+"kind": "loaded",
+"imported_by": 2,
+"check": "python scripts/classify_e2e.py tests/conftest.py"
+},
+{
+"path": "tests/data/seed.yaml",
+"rule": "tests",
+"kind": "read",
+"imported_by": 2,
+"check": "python scripts/classify_e2e.py tests/data/seed.yaml"
+},
+{
+"path": "tests/fixtures/fake.py",
+"rule": "tests",
+"kind": "imported",
+"imported_by": 2,
+"check": "python scripts/classify_e2e.py tests/fixtures/fake.py"
+},
+{
+"path": "docs/sample.md",
+"rule": "docs",
+"kind": "read",
+"imported_by": 1,
+"check": "python scripts/classify_e2e.py docs/sample.md"
+},
+{
+"path": "tests/fixtures/__init__.py",
+"rule": "tests",
+"kind": "imported",
+"imported_by": 1,
+"check": "python scripts/classify_e2e.py tests/fixtures/__init__.py"
+}
+],
+"counterfactual": null,
+"sheet_routing": "n/a: no shared_stylesheets declared",
+"per_pr": []
+}
+],
+[
+"routing_report",
+{
+"status": "ok",
+"prs": 0,
+"prs_unreadable": 0,
+"gate": {
+"verdict": "not-consumed",
+"reason": "no gate script runs classify_e2e.py: the [e2e] table changes nothing the gate runs",
+"readers": []
+},
+"config": "<TMP>/e2e-value-routing-/.fleet.toml",
+"config_source": "declared",
+"tiers": {
+"skip": 0,
+"static": 0,
+"surface": 0,
+"full": 0
+},
+"browser_relevant": 0,
+"browser_relevant_full": 0,
+"full_classes": {},
+"single_cause": {},
+"full_paths_top": [],
+"unclassified": [],
+"shadowed": [],
+"import_holes": [
+{
+"path": "tests/conftest.py",
+"rule": "tests",
+"kind": "loaded",
+"imported_by": 2,
+"check": "python scripts/classify_e2e.py tests/conftest.py"
+},
+{
+"path": "tests/data/seed.yaml",
+"rule": "tests",
+"kind": "read",
+"imported_by": 2,
+"check": "python scripts/classify_e2e.py tests/data/seed.yaml"
+},
+{
+"path": "tests/fixtures/fake.py",
+"rule": "tests",
+"kind": "imported",
+"imported_by": 2,
+"check": "python scripts/classify_e2e.py tests/fixtures/fake.py"
+},
+{
+"path": "docs/sample.md",
+"rule": "docs",
+"kind": "read",
+"imported_by": 1,
+"check": "python scripts/classify_e2e.py docs/sample.md"
+},
+{
+"path": "tests/fixtures/__init__.py",
+"rule": "tests",
+"kind": "imported",
+"imported_by": 1,
+"check": "python scripts/classify_e2e.py tests/fixtures/__init__.py"
+}
+],
+"counterfactual": null,
+"sheet_routing": "n/a: no shared_stylesheets declared",
+"per_pr": []
+}
+],
+[
+"routing_report",
+{
+"status": "ok",
+"prs": 0,
+"prs_unreadable": 0,
+"gate": {
+"verdict": "not-consumed",
+"reason": "no gate script runs classify_e2e.py: the [e2e] table changes nothing the gate runs",
+"readers": []
+},
+"config": "<TMP>/e2e-value-routing-/.fleet.toml",
+"config_source": "declared",
+"tiers": {
+"skip": 0,
+"static": 0,
+"surface": 0,
+"full": 0
+},
+"browser_relevant": 0,
+"browser_relevant_full": 0,
+"full_classes": {},
+"single_cause": {},
+"full_paths_top": [],
+"unclassified": [],
+"shadowed": [],
+"import_holes": [
+{
+"path": "tests/conftest.py",
+"rule": "tests",
+"kind": "loaded",
+"imported_by": 2,
+"check": "python scripts/classify_e2e.py tests/conftest.py"
+},
+{
+"path": "tests/data/seed.yaml",
+"rule": "tests",
+"kind": "read",
+"imported_by": 2,
+"check": "python scripts/classify_e2e.py tests/data/seed.yaml"
+},
+{
+"path": "tests/fixtures/fake.py",
+"rule": "tests",
+"kind": "imported",
+"imported_by": 2,
+"check": "python scripts/classify_e2e.py tests/fixtures/fake.py"
+},
+{
+"path": "docs/sample.md",
+"rule": "docs",
+"kind": "read",
+"imported_by": 1,
+"check": "python scripts/classify_e2e.py docs/sample.md"
+},
+{
+"path": "tests/burst_fixture.py",
+"rule": "tests",
+"kind": "imported",
+"imported_by": 1,
+"check": "python scripts/classify_e2e.py tests/burst_fixture.py"
+},
+{
+"path": "tests/deep_helper.py",
+"rule": "tests",
+"kind": "imported",
+"imported_by": 1,
+"check": "python scripts/classify_e2e.py tests/deep_helper.py"
+},
+{
+"path": "tests/fixtures/__init__.py",
+"rule": "tests",
+"kind": "imported",
+"imported_by": 1,
+"check": "python scripts/classify_e2e.py tests/fixtures/__init__.py"
+},
+{
+"path": "tests/mockup_seed.py",
+"rule": "tests",
+"kind": "imported",
+"imported_by": 1,
+"check": "python scripts/classify_e2e.py tests/mockup_seed.py"
+}
+],
+"counterfactual": null,
+"sheet_routing": "n/a: no shared_stylesheets declared",
+"per_pr": []
+}
+],
+[
+"routing_report",
+{
+"status": "ok",
+"prs": 5,
+"prs_unreadable": 0,
+"gate": {
+"verdict": "not-consumed",
+"reason": "no gate script runs classify_e2e.py: the [e2e] table changes nothing the gate runs",
+"readers": []
+},
+"config": "<TMP>/e2e-value-routing-/.fleet.toml",
+"config_source": "declared",
+"tiers": {
+"skip": 1,
+"static": 0,
+"surface": 0,
+"full": 4
+},
+"browser_relevant": 4,
+"browser_relevant_full": 4,
+"full_classes": {
+"e2e-test": 2,
+"static-code": 2,
+"unclassified": 1
+},
+"single_cause": {
+"static-code": 1,
+"unclassified": 1,
+"e2e-test": 1
+},
+"full_paths_top": [
+{
+"path": "static/styles.css",
+"prs": 1
+},
+{
+"path": "tests/e2e/test_a.py",
+"prs": 1
+},
+{
+"path": "static/_vendored/nav/README.md",
+"prs": 1
+},
+{
+"path": "tools/build.sh",
+"prs": 1
+},
+{
+"path": "tests/e2e/test_b.py",
+"prs": 1
+}
+],
+"unclassified": [
+{
+"path": "tools/build.sh",
+"prs": 1,
+"check": "python scripts/classify_e2e.py tools/build.sh"
+}
+],
+"shadowed": [
+{
+"path": "static/_vendored/nav/README.md",
+"took": "static-code",
+"shadowed": [
+"docs"
+],
+"next_rule": "docs",
+"next_tier": "NONE",
+"drop_safe": true,
+"check": "python scripts/classify_e2e.py static/_vendored/nav/README.md",
+"prs": 1
+}
+],
+"import_holes": [
+{
+"path": "tests/conftest.py",
+"rule": "tests",
+"kind": "loaded",
+"imported_by": 2,
+"check": "python scripts/classify_e2e.py tests/conftest.py"
+},
+{
+"path": "tests/data/seed.yaml",
+"rule": "tests",
+"kind": "read",
+"imported_by": 2,
+"check": "python scripts/classify_e2e.py tests/data/seed.yaml"
+},
+{
+"path": "tests/fixtures/fake.py",
+"rule": "tests",
+"kind": "imported",
+"imported_by": 2,
+"check": "python scripts/classify_e2e.py tests/fixtures/fake.py"
+},
+{
+"path": "docs/sample.md",
+"rule": "docs",
+"kind": "read",
+"imported_by": 1,
+"check": "python scripts/classify_e2e.py docs/sample.md"
+},
+{
+"path": "tests/fixtures/__init__.py",
+"rule": "tests",
+"kind": "imported",
+"imported_by": 1,
+"check": "python scripts/classify_e2e.py tests/fixtures/__init__.py"
+}
+],
+"counterfactual": {
+"proposed": "<TMP>/e2e-value-routing-/proposed.toml",
+"changed": [
+{
+"pr": 2,
+"from": "full",
+"to": "skip",
+"surface": ""
+}
+],
+"unclassified": [
+{
+"path": "tools/build.sh",
+"prs": 1,
+"check": "python scripts/classify_e2e.py tools/build.sh"
+}
+],
+"shadowed": [],
+"import_holes": [
+{
+"path": "tests/conftest.py",
+"rule": "tests",
+"kind": "loaded",
+"imported_by": 2,
+"check": "python scripts/classify_e2e.py tests/conftest.py"
+},
+{
+"path": "tests/data/seed.yaml",
+"rule": "tests",
+"kind": "read",
+"imported_by": 2,
+"check": "python scripts/classify_e2e.py tests/data/seed.yaml"
+},
+{
+"path": "tests/fixtures/fake.py",
+"rule": "tests",
+"kind": "imported",
+"imported_by": 2,
+"check": "python scripts/classify_e2e.py tests/fixtures/fake.py"
+},
+{
+"path": "docs/sample.md",
+"rule": "docs",
+"kind": "read",
+"imported_by": 1,
+"check": "python scripts/classify_e2e.py docs/sample.md"
+},
+{
+"path": "static/_vendored/nav/README.md",
+"rule": "docs",
+"kind": "read",
+"imported_by": 1,
+"check": "python scripts/classify_e2e.py static/_vendored/nav/README.md"
+},
+{
+"path": "tests/fixtures/__init__.py",
+"rule": "tests",
+"kind": "imported",
+"imported_by": 1,
+"check": "python scripts/classify_e2e.py tests/fixtures/__init__.py"
+}
+],
+"holes_opened": [
+"static/_vendored/nav/README.md"
+],
+"holes_closed": []
+},
+"sheet_routing": "n/a: no shared_stylesheets declared",
+"per_pr": [
+{
+"pr": 1,
+"tier": "full",
+"surface": ""
+},
+{
+"pr": 2,
+"tier": "full",
+"surface": ""
+},
+{
+"pr": 3,
+"tier": "skip",
+"surface": ""
+},
+{
+"pr": 4,
+"tier": "full",
+"surface": ""
+},
+{
+"pr": 5,
+"tier": "full",
+"surface": ""
+}
+]
+}
+],
+[
+"routing_report",
+{
+"status": "ok",
+"prs": 5,
+"prs_unreadable": 0,
+"gate": {
+"verdict": "not-consumed",
+"reason": "no gate script runs classify_e2e.py: the [e2e] table changes nothing the gate runs",
+"readers": []
+},
+"config": "<TMP>/e2e-value-routing-/.fleet.toml",
+"config_source": "declared",
+"tiers": {
+"skip": 1,
+"static": 0,
+"surface": 0,
+"full": 4
+},
+"browser_relevant": 4,
+"browser_relevant_full": 4,
+"full_classes": {
+"e2e-test": 2,
+"static-code": 2,
+"unclassified": 1
+},
+"single_cause": {
+"static-code": 1,
+"unclassified": 1,
+"e2e-test": 1
+},
+"full_paths_top": [
+{
+"path": "static/styles.css",
+"prs": 1
+},
+{
+"path": "tests/e2e/test_a.py",
+"prs": 1
+},
+{
+"path": "static/_vendored/nav/README.md",
+"prs": 1
+},
+{
+"path": "tools/build.sh",
+"prs": 1
+},
+{
+"path": "tests/e2e/test_b.py",
+"prs": 1
+}
+],
+"unclassified": [
+{
+"path": "tools/build.sh",
+"prs": 1,
+"check": "python scripts/classify_e2e.py tools/build.sh"
+}
+],
+"shadowed": [
+{
+"path": "static/_vendored/nav/README.md",
+"took": "static-code",
+"shadowed": [
+"docs"
+],
+"next_rule": "docs",
+"next_tier": "NONE",
+"drop_safe": true,
+"check": "python scripts/classify_e2e.py static/_vendored/nav/README.md",
+"prs": 1
+}
+],
+"import_holes": [
+{
+"path": "tests/conftest.py",
+"rule": "tests",
+"kind": "loaded",
+"imported_by": 2,
+"check": "python scripts/classify_e2e.py tests/conftest.py"
+},
+{
+"path": "tests/data/seed.yaml",
+"rule": "tests",
+"kind": "read",
+"imported_by": 2,
+"check": "python scripts/classify_e2e.py tests/data/seed.yaml"
+},
+{
+"path": "tests/fixtures/fake.py",
+"rule": "tests",
+"kind": "imported",
+"imported_by": 2,
+"check": "python scripts/classify_e2e.py tests/fixtures/fake.py"
+},
+{
+"path": "docs/sample.md",
+"rule": "docs",
+"kind": "read",
+"imported_by": 1,
+"check": "python scripts/classify_e2e.py docs/sample.md"
+},
+{
+"path": "tests/fixtures/__init__.py",
+"rule": "tests",
+"kind": "imported",
+"imported_by": 1,
+"check": "python scripts/classify_e2e.py tests/fixtures/__init__.py"
+}
+],
+"counterfactual": null,
+"sheet_routing": "n/a: no shared_stylesheets declared",
+"per_pr": [
+{
+"pr": 1,
+"tier": "full",
+"surface": ""
+},
+{
+"pr": 2,
+"tier": "full",
+"surface": ""
+},
+{
+"pr": 3,
+"tier": "skip",
+"surface": ""
+},
+{
+"pr": 4,
+"tier": "full",
+"surface": ""
+},
+{
+"pr": 5,
+"tier": "full",
+"surface": ""
+}
+]
+}
+],
+[
+"routing_report",
+{
+"status": "ok",
+"prs": 0,
+"prs_unreadable": 0,
+"gate": {
+"verdict": "not-consumed",
+"reason": "no gate script runs classify_e2e.py: the [e2e] table changes nothing the gate runs",
+"readers": []
+},
+"config": "<TMP>/e2e-value-tracked-/.fleet.toml",
+"config_source": "declared",
+"tiers": {
+"skip": 0,
+"static": 0,
+"surface": 0,
+"full": 0
+},
+"browser_relevant": 0,
+"browser_relevant_full": 0,
+"full_classes": {},
+"single_cause": {},
+"full_paths_top": [],
+"unclassified": [],
+"shadowed": [],
+"import_holes": [
+{
+"path": "tests/data/local.yaml",
+"rule": "tests",
+"kind": "read",
+"imported_by": 1,
+"check": "python scripts/classify_e2e.py tests/data/local.yaml"
+},
+{
+"path": "tests/data/tracked.yaml",
+"rule": "tests",
+"kind": "read",
+"imported_by": 1,
+"check": "python scripts/classify_e2e.py tests/data/tracked.yaml"
+}
+],
+"counterfactual": null,
+"sheet_routing": "n/a: no shared_stylesheets declared",
+"per_pr": []
+}
+],
+[
+"routing_report",
+{
+"status": "ok",
+"prs": 0,
+"prs_unreadable": 0,
+"gate": {
+"verdict": "not-consumed",
+"reason": "no gate script runs classify_e2e.py: the [e2e] table changes nothing the gate runs",
+"readers": []
+},
+"config": "<TMP>/e2e-value-tracked-/.fleet.toml",
+"config_source": "declared",
+"tiers": {
+"skip": 0,
+"static": 0,
+"surface": 0,
+"full": 0
+},
+"browser_relevant": 0,
+"browser_relevant_full": 0,
+"full_classes": {},
+"single_cause": {},
+"full_paths_top": [],
+"unclassified": [],
+"shadowed": [],
+"import_holes": [
+{
+"path": "tests/data/tracked.yaml",
+"rule": "tests",
+"kind": "read",
+"imported_by": 1,
+"check": "python scripts/classify_e2e.py tests/data/tracked.yaml"
+}
+],
+"counterfactual": null,
+"sheet_routing": "n/a: no shared_stylesheets declared",
+"per_pr": []
+}
+],
+[
+"routing_report",
+{
+"status": "ok",
+"prs": 0,
+"prs_unreadable": 0,
+"gate": {
+"verdict": "not-consumed",
+"reason": "no gate script runs classify_e2e.py: the [e2e] table changes nothing the gate runs",
+"readers": []
+},
+"config": "<TMP>/e2e-value-routing-/.fleet.toml",
+"config_source": "declared",
+"tiers": {
+"skip": 0,
+"static": 0,
+"surface": 0,
+"full": 0
+},
+"browser_relevant": 0,
+"browser_relevant_full": 0,
+"full_classes": {},
+"single_cause": {},
+"full_paths_top": [],
+"unclassified": [],
+"shadowed": [],
+"import_holes": [
+{
+"path": "tests/conftest.py",
+"rule": "tests",
+"kind": "loaded",
+"imported_by": 2,
+"check": "python scripts/classify_e2e.py tests/conftest.py"
+},
+{
+"path": "tests/data/seed.yaml",
+"rule": "tests",
+"kind": "read",
+"imported_by": 2,
+"check": "python scripts/classify_e2e.py tests/data/seed.yaml"
+},
+{
+"path": "tests/fixtures/fake.py",
+"rule": "tests",
+"kind": "imported",
+"imported_by": 2,
+"check": "python scripts/classify_e2e.py tests/fixtures/fake.py"
+},
+{
+"path": "docs/sample.md",
+"rule": "docs",
+"kind": "read",
+"imported_by": 1,
+"check": "python scripts/classify_e2e.py docs/sample.md"
+},
+{
+"path": "tests/fixtures/__init__.py",
+"rule": "tests",
+"kind": "imported",
+"imported_by": 1,
+"check": "python scripts/classify_e2e.py tests/fixtures/__init__.py"
+}
+],
+"counterfactual": null,
+"sheet_routing": "n/a: no shared_stylesheets declared",
+"per_pr": []
+}
+],
+[
+"routing_report",
+{
+"status": "ok",
+"prs": 0,
+"prs_unreadable": 0,
+"gate": {
+"verdict": "not-consumed",
+"reason": "no gate script runs classify_e2e.py: the [e2e] table changes nothing the gate runs",
+"readers": []
+},
+"config": "<TMP>/e2e-value-routing-source-/.fleet.toml",
+"config_source": "declared",
+"tiers": {
+"skip": 0,
+"static": 0,
+"surface": 0,
+"full": 0
+},
+"browser_relevant": 0,
+"browser_relevant_full": 0,
+"full_classes": {},
+"single_cause": {},
+"full_paths_top": [],
+"unclassified": [],
+"shadowed": [],
+"import_holes": [
+{
+"path": ".fleet.toml",
+"rule": "docs",
+"kind": "routing-source",
+"imported_by": 0,
+"check": "python scripts/classify_e2e.py .fleet.toml"
+},
+{
+"path": "scripts/classify_e2e.py",
+"rule": "docs",
+"kind": "routing-source",
+"imported_by": 0,
+"check": "python scripts/classify_e2e.py scripts/classify_e2e.py"
+}
+],
+"counterfactual": null,
+"sheet_routing": "n/a: no shared_stylesheets declared",
+"per_pr": []
+}
+],
+[
+"routing_report",
+{
+"status": "ok",
+"prs": 5,
+"prs_unreadable": 0,
+"gate": {
+"verdict": "not-consumed",
+"reason": "no gate script runs classify_e2e.py: the [e2e] table changes nothing the gate runs",
+"readers": []
+},
+"config": "<TMP>/git_fixture_/.fleet.toml",
+"config_source": "declared",
+"tiers": {
+"skip": 0,
+"static": 0,
+"surface": 0,
+"full": 5
+},
+"browser_relevant": 5,
+"browser_relevant_full": 5,
+"full_classes": {
+"static": 5
+},
+"single_cause": {
+"static": 5
+},
+"full_paths_top": [
+{
+"path": "static/styles.css",
+"prs": 5
+}
+],
+"unclassified": [],
+"shadowed": [],
+"import_holes": [],
+"counterfactual": {
+"proposed": "<TMP>/git_fixture_/proposed.toml",
+"changed": [
+{
+"pr": 11,
+"from": "full",
+"to": "surface",
+"surface": "board"
+}
+],
+"unclassified": [],
+"shadowed": [],
+"import_holes": [],
+"holes_opened": [],
+"holes_closed": []
+},
+"sheet_routing": {
+"sheets": [
+"static/styles.css"
+],
+"reasons": {
+"static/styles.css": {
+"owned by one surface": 1,
+"unmapped selector": 1,
+"unsafe": 1,
+"unreadable": 2
+}
+}
+},
+"per_pr": [
+{
+"pr": 11,
+"tier": "full",
+"surface": ""
+},
+{
+"pr": 12,
+"tier": "full",
+"surface": ""
+},
+{
+"pr": 13,
+"tier": "full",
+"surface": ""
+},
+{
+"pr": 14,
+"tier": "full",
+"surface": ""
+},
+{
+"pr": 15,
+"tier": "full",
+"surface": ""
+}
+]
+}
+],
+[
+"load_classifier",
+"<TMP>/git_fixture_/scripts/classify_e2e.py"
+],
+[
+"pr_sheet_changes",
+[
+{
+"static/styles.css": [
+".board-card"
+]
+},
+[]
+]
+],
+[
+"routing_report",
+{
+"status": "ok",
+"prs": 5,
+"prs_unreadable": 0,
+"gate": {
+"verdict": "not-consumed",
+"reason": "no gate script runs classify_e2e.py: the [e2e] table changes nothing the gate runs",
+"readers": []
+},
+"config": "<TMP>/git_fixture_/.fleet.toml",
+"config_source": "declared",
+"tiers": {
+"skip": 0,
+"static": 0,
+"surface": 0,
+"full": 5
+},
+"browser_relevant": 5,
+"browser_relevant_full": 5,
+"full_classes": {
+"static": 5
+},
+"single_cause": {
+"static": 5
+},
+"full_paths_top": [
+{
+"path": "static/styles.css",
+"prs": 5
+}
+],
+"unclassified": [],
+"shadowed": [],
+"import_holes": [],
+"counterfactual": {
+"proposed": "<TMP>/git_fixture_/proposed.toml",
+"changed": [],
+"unclassified": [],
+"shadowed": [],
+"import_holes": [],
+"holes_opened": [],
+"holes_closed": []
+},
+"sheet_routing": "n/a: classifier routes file lists only",
+"per_pr": [
+{
+"pr": 11,
+"tier": "full",
+"surface": ""
+},
+{
+"pr": 12,
+"tier": "full",
+"surface": ""
+},
+{
+"pr": 13,
+"tier": "full",
+"surface": ""
+},
+{
+"pr": 14,
+"tier": "full",
+"surface": ""
+},
+{
+"pr": 15,
+"tier": "full",
+"surface": ""
+}
+]
+}
+],
+[
+"lpt",
+8.0
+],
+[
+"lpt",
+5.0
+],
+[
+"lpt",
+0.0
+],
+[
+"projection",
+{
+"status": "ok",
+"serial_s": 24.0,
+"inflation": [
+1.15,
+1.3,
+1.5
+],
+"table": [
+{
+"workers": 2,
+"load_s": [
+16.1,
+18.2,
+21.0
+],
+"loadscope_s": [
+23.0,
+26.0,
+30.0
+]
+},
+{
+"workers": 3,
+"load_s": [
+11.5,
+13.0,
+15.0
+],
+"loadscope_s": [
+23.0,
+26.0,
+30.0
+]
+},
+{
+"workers": 4,
+"load_s": [
+11.5,
+13.0,
+15.0
+],
+"loadscope_s": [
+23.0,
+26.0,
+30.0
+]
+},
+{
+"workers": 6,
+"load_s": [
+11.5,
+13.0,
+15.0
+],
+"loadscope_s": [
+23.0,
+26.0,
+30.0
+]
+}
+],
+"floor_loadscope": {
+"module": "a.py",
+"seconds": 20.0
+},
+"floor_load": {
+"test": "a.py::t1",
+"seconds": 10.0
+}
+}
+],
+[
+"projection",
+{
+"status": "unknown",
+"reason": "no per-test durations"
+}
+],
+[
+"parallel_blockers",
+{
+"xdist": {
+"installed": "unknown (no .venv)",
+"declared": false
+},
+"blockers": 4,
+"free_port_race": [
+{
+"file": "tests/e2e/conftest.py",
+"state": "blocker",
+"why": "binds port 0, releases it, then a child binds it"
+}
+],
+"fixed_log_names": [
+{
+"file": "tests/e2e/conftest.py",
+"names": [
+"e2e-autoboot-webapp.log"
+],
+"state": "blocker"
+}
+],
+"shared_append": [
+{
+"file": "tests/_progress.py",
+"state": "blocker",
+"why": "appends to a file every worker process would write"
+}
+],
+"load_sensitive_ungrouped": [
+{
+"file": "tests/e2e/test_agent.py",
+"state": "blocker",
+"why": "real-agent test: needs one xdist_group or a serial pass"
+}
+],
+"session_fixtures": [
+{
+"file": "tests/e2e/conftest.py",
+"fixture": "server",
+"state": "info",
+"per_worker_tmp": true
+}
+],
+"module_state": []
+}
+],
+[
+"parallel_blockers",
+{
+"xdist": {
+"installed": "unknown (no .venv)",
+"declared": false
+},
+"blockers": 0,
+"free_port_race": [
+{
+"file": "tests/e2e/conftest.py",
+"state": "mitigated",
+"why": "binds port 0, releases it, then a child binds it"
+}
+],
+"fixed_log_names": [
+{
+"file": "tests/e2e/conftest.py",
+"names": [
+"e2e-autoboot.log"
+],
+"state": "mitigated"
+}
+],
+"shared_append": [
+{
+"file": "tests/_progress.py",
+"state": "mitigated",
+"why": "appends to a file every worker process would write"
+}
+],
+"load_sensitive_ungrouped": [
+{
+"file": "tests/e2e/test_agent.py",
+"state": "mitigated",
+"why": "real-agent test: needs one xdist_group or a serial pass"
+}
+],
+"session_fixtures": [],
+"module_state": []
+}
+],
+[
+"parse_run",
+{
+"started": "datetime.datetime(2026, 9, 23, 10, 0)",
+"finished": "datetime.datetime(2026, 9, 23, 10, 0, 2)",
+"nodes": {
+"tests/e2e/test_jobs.py::test_list[chromium]": 2.0
+},
+"node_phase": {},
+"phases": [],
+"failures": [],
+"exit_status": 0,
+"parallel": false,
+"routed_tier": null,
+"skipped": [],
+"complete": true
+}
+],
+[
+"parse_run",
+{
+"started": "datetime.datetime(2026, 9, 24, 10, 0)",
+"finished": "datetime.datetime(2026, 9, 24, 10, 0, 3)",
+"nodes": {
+"tests/e2e/test_jobs.py::test_list[chromium]": 3.0
+},
+"node_phase": {},
+"phases": [],
+"failures": [
+{
+"outcome": "FAILED",
+"when": "call",
+"nodeid": "tests/e2e/test_jobs.py::test_list[chromium]",
+"step": null
+}
+],
+"exit_status": 1,
+"parallel": true,
+"routed_tier": null,
+"skipped": [],
+"complete": true
+}
+],
+[
+"shared_state_evidence",
+[
+{
+"nodeid": "tests/e2e/test_jobs.py::test_list[chromium]",
+"parallel_reds": 1,
+"green_serially": true
+}
+]
+],
+[
+"time_budget_limit",
+[
+900,
+"[e2e] time_budget_s"
+]
+],
+[
+"time_budget_limit",
+[
+null,
+"invalid [e2e] time_budget_s True ignored"
+]
+],
+[
+"time_budget_limit",
+[
+null,
+"invalid [e2e] time_budget_s 0 ignored"
+]
+],
+[
+"time_budget_limit",
+[
+null,
+"invalid [e2e] time_budget_s -5 ignored"
+]
+],
+[
+"time_budget_limit",
+[
+null,
+"invalid [e2e] time_budget_s '900' ignored"
+]
+],
+[
+"time_budget_limit",
+[
+null,
+"invalid [e2e] time_budget_s 1.5 ignored"
+]
+],
+[
+"time_budget_limit",
+[
+null,
+"no [e2e] time_budget_s declared"
+]
+],
+[
+"parse_run",
+{
+"started": "datetime.datetime(2026, 9, 24, 9, 0)",
+"finished": "datetime.datetime(2026, 9, 24, 9, 15)",
+"nodes": {
+"tests/test_api.py::test_ok": 1.0,
+"tests/e2e/test_board.py::test_load[chromium]": 600.0,
+"tests/e2e/test_agent.py::test_reconnect[chromium]": 120.0
+},
+"node_phase": {
+"tests/test_api.py::test_ok": 0,
+"tests/e2e/test_board.py::test_load[chromium]": 2,
+"tests/e2e/test_agent.py::test_reconnect[chromium]": 3
+},
+"phases": [
+{
+"name": "pytest (non-e2e)",
+"wall_s": 180.0,
+"nodes": 1
+},
+{
+"name": "e2e routing: full (e2e-test: tests/e2e/test_board.py)",
+"wall_s": 0.0,
+"nodes": 0
+},
+{
+"name": "pytest e2e parallel",
+"wall_s": 600.0,
+"nodes": 1
+},
+{
+"name": "pytest e2e serial",
+"wall_s": 120.0,
+"nodes": 1
+}
+],
+"failures": [],
+"exit_status": 0,
+"parallel": true,
+"routed_tier": "full",
+"skipped": [],
+"complete": true
+}
+],
+[
+"browser_leg_s",
+720.0
+],
+[
+"time_budget",
+{
+"verdict": "unknown",
+"seconds": null,
+"limit": 600,
+"reason": "[e2e] progress_log = 'gate.log' does not exist"
+}
+],
+[
+"time_budget",
+{
+"verdict": "over",
+"seconds": 720.0,
+"limit": 600,
+"reason": "browser leg 720 s on the quiet full run of 2026-09-24T09:00:00 vs 600 s ([e2e] time_budget_s); <TMP>/e2e-value-budget-/gate.log"
+}
+],
+[
+"time_budget",
+{
+"verdict": "within",
+"seconds": 720.0,
+"limit": 900,
+"reason": "browser leg 720 s on the quiet full run of 2026-09-24T09:00:00 vs 900 s ([e2e] time_budget_s); <TMP>/e2e-value-budget-/gate.log"
+}
+],
+[
+"time_budget",
+{
+"verdict": "unknown",
+"seconds": null,
+"limit": 900,
+"reason": "no completed full-tier run with a run window"
+}
+],
+[
+"time_budget",
+{
+"verdict": "undeclared",
+"seconds": null,
+"limit": null,
+"reason": "no [e2e] time_budget_s declared"
+}
+],
+[
+"read_audit_record",
+null
+],
+[
+"write_audit_record",
+"<TMP>/e2e-value-budget-/state/e2e-audit/e2e-value-budget-.json"
+],
+[
+"read_audit_record",
+{
+"raw_tests": 40,
+"node_count": 120,
+"date": "<TODAY>",
+"sha": null
+}
+],
+[
+"read_audit_record",
+{
+"raw_tests": 40,
+"node_count": 120,
+"date": "<TODAY>",
+"sha": null
+}
+],
+[
+"growth",
+{
+"state": "measured",
+"delta": 9,
+"since": "<TODAY>",
+"trigger": false
+}
+],
+[
+"read_audit_record",
+{
+"raw_tests": 40,
+"node_count": 120,
+"date": "<TODAY>",
+"sha": null
+}
+],
+[
+"growth",
+{
+"state": "measured",
+"delta": 10,
+"since": "<TODAY>",
+"trigger": true
+}
+],
+[
+"growth",
+{
+"state": "none-recorded",
+"delta": null,
+"since": null,
+"trigger": false
+}
+],
+[
+"read_audit_record",
+{
+"raw_tests": 40,
+"node_count": 120,
+"date": "<TODAY>",
+"sha": null
+}
+],
+[
+"growth",
+{
+"state": "measured",
+"delta": 10,
+"since": "<TODAY>",
+"trigger": true
+}
+],
+[
+"audit_trigger",
+[
+"yes",
+"+10 test functions since the audit of <TODAY>"
+]
+],
+[
+"audit_trigger",
+[
+"yes",
+"+10 test functions since the audit of <TODAY>"
+]
+],
+[
+"growth",
+{
+"state": "none-recorded",
+"delta": null,
+"since": null,
+"trigger": false
+}
+],
+[
+"audit_trigger",
+[
+"yes",
+"over the node budget"
+]
+],
+[
+"growth",
+{
+"state": "none-recorded",
+"delta": null,
+"since": null,
+"trigger": false
+}
+],
+[
+"audit_trigger",
+[
+"yes",
+"over the time budget"
+]
+],
+[
+"read_audit_record",
+{
+"raw_tests": 40,
+"node_count": 120,
+"date": "<TODAY>",
+"sha": null
+}
+],
+[
+"growth",
+{
+"state": "measured",
+"delta": 1,
+"since": "<TODAY>",
+"trigger": false
+}
+],
+[
+"audit_trigger",
+[
+"unknown",
+"time not measured; nothing else fired"
+]
+],
+[
+"read_audit_record",
+{
+"raw_tests": 40,
+"node_count": 120,
+"date": "<TODAY>",
+"sha": null
+}
+],
+[
+"growth",
+{
+"state": "measured",
+"delta": -2,
+"since": "<TODAY>",
+"trigger": false
+}
+],
+[
+"audit_trigger",
+[
+"no",
+"within every declared budget; -2 test functions since <TODAY>"
+]
+],
+[
+"read_audit_record",
+{
+"raw_tests": 40,
+"node_count": 120,
+"date": "<TODAY>",
+"sha": null
+}
+],
+[
+"projection_fit",
+{
+"projections": [
+"webkit",
+"firefox"
+],
+"kept": [
+{
+"module": "tests/e2e/test_mixed.py",
+"tests": 2,
+"nodes": 2,
+"seconds": 4.5
+},
+{
+"module": "tests/e2e/test_phone_only.py",
+"tests": 1,
+"nodes": 1,
+"seconds": 2.0
+},
+{
+"module": "tests/e2e/test_gone.py",
+"tests": 1,
+"nodes": 1,
+"seconds": 1.0
+}
+],
+"candidates": [
+{
+"module": "tests/e2e/test_mixed.py",
+"tests": 1,
+"nodes": 1,
+"seconds": 4.0
+}
+],
+"kept_nodes": 4,
+"candidate_nodes": 1,
+"candidate_seconds": 4.0
+}
+],
+[
+"projection_fit",
+{
+"projections": [
+"webkit",
+"firefox"
+],
+"kept": [],
+"candidates": [],
+"kept_nodes": 0,
+"candidate_nodes": 0,
+"candidate_seconds": 0
+}
+],
+[
+"parse_run",
+{
+"started": "datetime.datetime(2026, 10, 1, 10, 0)",
+"finished": "datetime.datetime(2026, 10, 1, 10, 0, 4)",
+"nodes": {
+"tests/e2e/test_board.py::test_load[chromium]": 3.0,
+"tests/e2e/test_board.py::test_load[webkit]": 0.0,
+"tests/e2e/test_board.py::test_poll[chromium]": 1.0
+},
+"node_phase": {
+"tests/e2e/test_board.py::test_load[chromium]": 0,
+"tests/e2e/test_board.py::test_load[webkit]": 0,
+"tests/e2e/test_board.py::test_poll[chromium]": 0
+},
+"phases": [
+{
+"name": "pytest e2e (tests/e2e)",
+"wall_s": 4.0,
+"nodes": 3
+}
+],
+"failures": [],
+"exit_status": 0,
+"parallel": false,
+"routed_tier": null,
+"skipped": [
+"tests/e2e/test_board.py::test_load[webkit]"
+],
+"complete": true
+}
+],
+[
+"executed_e2e",
+{
+"tests/e2e/test_board.py::test_load[chromium]": 3.0,
+"tests/e2e/test_board.py::test_poll[chromium]": 1.0
+}
+],
+[
+"timing",
+{
+"status": "ok",
+"reason": null,
+"freshness": {
+"status": "unchecked",
+"run_nodes": 3,
+"suite_nodes": null,
+"reason": "the suite's collected node count was not measured, so the run's age against it is unknown"
+},
+"source": {
+"kind": "progress-log",
+"path": "<TMP>/e2e-value-tier-/gate.log",
+"from": "[e2e] progress_log",
+"run_log": "<TMP>/e2e-value-tier-/gate.log"
+},
+"run": {
+"started": "2026-10-01T10:00:00",
+"finished": "2026-10-01T10:00:04",
+"wall_s": 4.0,
+"complete": true,
+"exit_status": 0,
+"routed_tier": null,
+"slice": null,
+"checkout": {
+"root": null,
+"linked_worktree": null
+},
+"skip_reasons": null,
+"nodes": 3,
+"e2e_nodes": 2,
+"e2e_skipped": 1,
+"e2e_summed_s": 4.0
+},
+"load": {
+"state": "quiet",
+"scope": "other checkouts of this repo; suites in other repos are not visible",
+"overlaps": [],
+"checked": [
+"<TMP>/e2e-value-tier-/gate.log"
+]
+},
+"phases": [
+{
+"name": "pytest e2e (tests/e2e)",
+"wall_s": 4.0,
+"nodes": 3
+}
+],
+"projections": {
+"chromium": {
+"nodes": 2,
+"seconds": 4.0,
+"mean_s": 2.0
+}
+},
+"buckets": [
+{
+"bucket": "<1s",
+"nodes": 0,
+"seconds": 0
+},
+{
+"bucket": "1-3s",
+"nodes": 1,
+"seconds": 1.0
+},
+{
+"bucket": "3-6s",
+"nodes": 1,
+"seconds": 3.0
+},
+{
+"bucket": "6-10s",
+"nodes": 0,
+"seconds": 0
+},
+{
+"bucket": ">=10s",
+"nodes": 0,
+"seconds": 0
+}
+],
+"modules": [
+{
+"module": "tests/e2e/test_board.py",
+"seconds": 4.0,
+"nodes": 2
+}
+],
+"tail": {
+"slowest_n": 22,
+"slowest_share": 1.0,
+"top5pct_n": 1,
+"top5pct_share": 0.75,
+"max_s": 3.0
+},
+"first_node": {
+"nodeid": "tests/e2e/test_board.py::test_load[chromium]",
+"seconds": 3.0,
+"median_s": 3.0,
+"boot": "single-run"
+},
+"waits": [],
+"slow_nodes": [],
+"app_timers": [],
+"slow_fixtures": [],
+"projection_fit": {
+"projections": [
+"webkit",
+"firefox"
+],
+"kept": [],
+"candidates": [],
+"kept_nodes": 0,
+"candidate_nodes": 0,
+"candidate_seconds": 0
+},
+"runtime_drift": {
+"status": "no-claims",
+"measured_min": {
+"gate": 0.1,
+"pytest e2e (tests/e2e)": 0.1
+},
+"claims": []
+}
+}
+],
+[
+"timing",
+{
+"status": "ok",
+"reason": null,
+"freshness": {
+"status": "fresh",
+"run_nodes": 3,
+"suite_nodes": 3,
+"reason": null
+},
+"source": {
+"kind": "progress-log",
+"path": "<TMP>/e2e-value-tier-/gate.log",
+"from": "[e2e] progress_log",
+"run_log": "<TMP>/e2e-value-tier-/gate.log"
+},
+"run": {
+"started": "2026-10-01T10:00:00",
+"finished": "2026-10-01T10:00:04",
+"wall_s": 4.0,
+"complete": true,
+"exit_status": 0,
+"routed_tier": null,
+"slice": null,
+"checkout": {
+"root": null,
+"linked_worktree": null
+},
+"skip_reasons": null,
+"nodes": 3,
+"e2e_nodes": 2,
+"e2e_skipped": 1,
+"e2e_summed_s": 4.0
+},
+"load": {
+"state": "quiet",
+"scope": "other checkouts of this repo; suites in other repos are not visible",
+"overlaps": [],
+"checked": [
+"<TMP>/e2e-value-tier-/gate.log"
+]
+},
+"phases": [
+{
+"name": "pytest e2e (tests/e2e)",
+"wall_s": 4.0,
+"nodes": 3
+}
+],
+"projections": {
+"chromium": {
+"nodes": 2,
+"seconds": 4.0,
+"mean_s": 2.0
+}
+},
+"buckets": [
+{
+"bucket": "<1s",
+"nodes": 0,
+"seconds": 0
+},
+{
+"bucket": "1-3s",
+"nodes": 1,
+"seconds": 1.0
+},
+{
+"bucket": "3-6s",
+"nodes": 1,
+"seconds": 3.0
+},
+{
+"bucket": "6-10s",
+"nodes": 0,
+"seconds": 0
+},
+{
+"bucket": ">=10s",
+"nodes": 0,
+"seconds": 0
+}
+],
+"modules": [
+{
+"module": "tests/e2e/test_board.py",
+"seconds": 4.0,
+"nodes": 2
+}
+],
+"tail": {
+"slowest_n": 22,
+"slowest_share": 1.0,
+"top5pct_n": 1,
+"top5pct_share": 0.75,
+"max_s": 3.0
+},
+"first_node": {
+"nodeid": "tests/e2e/test_board.py::test_load[chromium]",
+"seconds": 3.0,
+"median_s": 3.0,
+"boot": "single-run"
+},
+"waits": [],
+"slow_nodes": [],
+"app_timers": [],
+"slow_fixtures": [],
+"projection_fit": {
+"projections": [
+"webkit",
+"firefox"
+],
+"kept": [],
+"candidates": [],
+"kept_nodes": 0,
+"candidate_nodes": 0,
+"candidate_seconds": 0
+},
+"runtime_drift": {
+"status": "no-claims",
+"measured_min": {
+"gate": 0.1,
+"pytest e2e (tests/e2e)": 0.1
+},
+"claims": []
+}
+}
+],
+[
+"timing",
+{
+"status": "stale",
+"reason": "the run covers 3 e2e nodes and the suite collects 5 now (more than 10% apart): a fresh baseline is needed before ranking",
+"freshness": {
+"status": "stale",
+"run_nodes": 3,
+"suite_nodes": 5,
+"reason": "the run covers 3 e2e nodes and the suite collects 5 now (more than 10% apart): a fresh baseline is needed before ranking"
+},
+"source": {
+"kind": "progress-log",
+"path": "<TMP>/e2e-value-tier-/gate.log",
+"from": "[e2e] progress_log",
+"run_log": "<TMP>/e2e-value-tier-/gate.log"
+},
+"run": {
+"started": "2026-10-01T10:00:00",
+"finished": "2026-10-01T10:00:04",
+"wall_s": 4.0,
+"complete": true,
+"exit_status": 0,
+"routed_tier": null,
+"slice": null,
+"checkout": {
+"root": null,
+"linked_worktree": null
+},
+"skip_reasons": null,
+"nodes": 3,
+"e2e_nodes": 2,
+"e2e_skipped": 1,
+"e2e_summed_s": 4.0
+},
+"load": {
+"state": "quiet",
+"scope": "other checkouts of this repo; suites in other repos are not visible",
+"overlaps": [],
+"checked": [
+"<TMP>/e2e-value-tier-/gate.log"
+]
+},
+"phases": [
+{
+"name": "pytest e2e (tests/e2e)",
+"wall_s": 4.0,
+"nodes": 3
+}
+],
+"projections": {
+"chromium": {
+"nodes": 2,
+"seconds": 4.0,
+"mean_s": 2.0
+}
+},
+"buckets": [
+{
+"bucket": "<1s",
+"nodes": 0,
+"seconds": 0
+},
+{
+"bucket": "1-3s",
+"nodes": 1,
+"seconds": 1.0
+},
+{
+"bucket": "3-6s",
+"nodes": 1,
+"seconds": 3.0
+},
+{
+"bucket": "6-10s",
+"nodes": 0,
+"seconds": 0
+},
+{
+"bucket": ">=10s",
+"nodes": 0,
+"seconds": 0
+}
+],
+"modules": [
+{
+"module": "tests/e2e/test_board.py",
+"seconds": 4.0,
+"nodes": 2
+}
+],
+"tail": {
+"slowest_n": 22,
+"slowest_share": 1.0,
+"top5pct_n": 1,
+"top5pct_share": 0.75,
+"max_s": 3.0
+},
+"first_node": {
+"nodeid": "tests/e2e/test_board.py::test_load[chromium]",
+"seconds": 3.0,
+"median_s": 3.0,
+"boot": "single-run"
+},
+"waits": [],
+"slow_nodes": [],
+"app_timers": [],
+"slow_fixtures": [],
+"projection_fit": {
+"projections": [
+"webkit",
+"firefox"
+],
+"kept": [],
+"candidates": [],
+"kept_nodes": 0,
+"candidate_nodes": 0,
+"candidate_seconds": 0
+},
+"runtime_drift": {
+"status": "no-claims",
+"measured_min": {
+"gate": 0.1,
+"pytest e2e (tests/e2e)": 0.1
+},
+"claims": []
+}
+}
+],
+[
+"stale_nodes",
+{
+"status": "fresh",
+"run_nodes": 100,
+"suite_nodes": 109,
+"reason": null
+}
+],
+[
+"stale_nodes",
+{
+"status": "stale",
+"run_nodes": 100,
+"suite_nodes": 112,
+"reason": "the run covers 100 e2e nodes and the suite collects 112 now (more than 10% apart): a fresh baseline is needed before ranking"
+}
+],
+[
+"stale_nodes",
+{
+"status": "stale",
+"run_nodes": 112,
+"suite_nodes": 100,
+"reason": "the run covers 112 e2e nodes and the suite collects 100 now (more than 10% apart): a fresh baseline is needed before ranking"
+}
+],
+[
+"stale_nodes",
+{
+"status": "fresh",
+"run_nodes": 100,
+"suite_nodes": 95,
+"reason": null
+}
+],
+[
+"stale_nodes",
+{
+"status": "stale",
+"run_nodes": 100,
+"suite_nodes": 90,
+"reason": "the run covers 100 e2e nodes and the suite collects 90 now (more than 10% apart): a fresh baseline is needed before ranking"
+}
+],
+[
+"stale_nodes",
+{
+"status": "stale",
+"run_nodes": 612,
+"suite_nodes": 485,
+"reason": "the run covers 612 e2e nodes and the suite collects 485 now (more than 10% apart): a fresh baseline is needed before ranking"
+}
+],
+[
+"stale_nodes",
+{
+"status": "unchecked",
+"run_nodes": 5,
+"suite_nodes": 0,
+"reason": "the suite's collected node count was not measured, so the run's age against it is unknown"
+}
+],
+[
+"stale_nodes",
+{
+"status": "unchecked",
+"run_nodes": 5,
+"suite_nodes": null,
+"reason": "the suite's collected node count was not measured, so the run's age against it is unknown"
+}
+],
+[
+"timing",
+{
+"status": "ok",
+"reason": null,
+"freshness": {
+"status": "slice",
+"run_nodes": 1,
+"suite_nodes": null,
+"reason": "no completed full-tier run on record; this run was routed surface, a slice of the suite"
+},
+"source": {
+"kind": "progress-log",
+"path": "<TMP>/e2e-value-tier-/gate.log",
+"from": "[e2e] progress_log",
+"run_log": "<TMP>/e2e-value-tier-/gate.log"
+},
+"run": {
+"started": "2026-10-01T12:00:00",
+"finished": "2026-10-01T12:00:01",
+"wall_s": 1.0,
+"complete": true,
+"exit_status": 0,
+"routed_tier": "surface",
+"slice": "no completed full-tier run on record; this run was routed surface, a slice of the suite",
+"checkout": {
+"root": null,
+"linked_worktree": null
+},
+"skip_reasons": null,
+"nodes": 1,
+"e2e_nodes": 1,
+"e2e_skipped": 0,
+"e2e_summed_s": 1.0
+},
+"load": {
+"state": "quiet",
+"scope": "other checkouts of this repo; suites in other repos are not visible",
+"overlaps": [],
+"checked": [
+"<TMP>/e2e-value-tier-/gate.log"
+]
+},
+"phases": [
+{
+"name": "e2e routing: tier=surface target=tests/e2e/test_board.py",
+"wall_s": 0.0,
+"nodes": 0
+},
+{
+"name": "pytest e2e (surface)",
+"wall_s": 1.0,
+"nodes": 1
+}
+],
+"projections": {
+"chromium": {
+"nodes": 1,
+"seconds": 1.0,
+"mean_s": 1.0
+}
+},
+"buckets": [
+{
+"bucket": "<1s",
+"nodes": 0,
+"seconds": 0
+},
+{
+"bucket": "1-3s",
+"nodes": 1,
+"seconds": 1.0
+},
+{
+"bucket": "3-6s",
+"nodes": 0,
+"seconds": 0
+},
+{
+"bucket": "6-10s",
+"nodes": 0,
+"seconds": 0
+},
+{
+"bucket": ">=10s",
+"nodes": 0,
+"seconds": 0
+}
+],
+"modules": [
+{
+"module": "tests/e2e/test_board.py",
+"seconds": 1.0,
+"nodes": 1
+}
+],
+"tail": {
+"slowest_n": 22,
+"slowest_share": 1.0,
+"top5pct_n": 1,
+"top5pct_share": 1.0,
+"max_s": 1.0
+},
+"first_node": {
+"nodeid": "tests/e2e/test_board.py::test_poll[chromium]",
+"seconds": 1.0,
+"median_s": 1.0,
+"boot": "single-run"
+},
+"waits": [],
+"slow_nodes": [],
+"app_timers": [],
+"slow_fixtures": [],
+"projection_fit": {
+"projections": [
+"webkit",
+"firefox"
+],
+"kept": [],
+"candidates": [],
+"kept_nodes": 0,
+"candidate_nodes": 0,
+"candidate_seconds": 0
+},
+"runtime_drift": {
+"status": "no-claims",
+"measured_min": {
+"gate": 0.0,
+"pytest e2e (surface)": 0.0
+},
+"claims": []
+}
+}
+],
+[
+"timing",
+{
+"status": "ok",
+"reason": null,
+"freshness": {
+"status": "slice",
+"run_nodes": 1,
+"suite_nodes": 50,
+"reason": "no completed full-tier run on record; this run was routed surface, a slice of the suite"
+},
+"source": {
+"kind": "progress-log",
+"path": "<TMP>/e2e-value-tier-/gate.log",
+"from": "[e2e] progress_log",
+"run_log": "<TMP>/e2e-value-tier-/gate.log"
+},
+"run": {
+"started": "2026-10-01T12:00:00",
+"finished": "2026-10-01T12:00:01",
+"wall_s": 1.0,
+"complete": true,
+"exit_status": 0,
+"routed_tier": "surface",
+"slice": "no completed full-tier run on record; this run was routed surface, a slice of the suite",
+"checkout": {
+"root": null,
+"linked_worktree": null
+},
+"skip_reasons": null,
+"nodes": 1,
+"e2e_nodes": 1,
+"e2e_skipped": 0,
+"e2e_summed_s": 1.0
+},
+"load": {
+"state": "quiet",
+"scope": "other checkouts of this repo; suites in other repos are not visible",
+"overlaps": [],
+"checked": [
+"<TMP>/e2e-value-tier-/gate.log"
+]
+},
+"phases": [
+{
+"name": "e2e routing: tier=surface target=tests/e2e/test_board.py",
+"wall_s": 0.0,
+"nodes": 0
+},
+{
+"name": "pytest e2e (surface)",
+"wall_s": 1.0,
+"nodes": 1
+}
+],
+"projections": {
+"chromium": {
+"nodes": 1,
+"seconds": 1.0,
+"mean_s": 1.0
+}
+},
+"buckets": [
+{
+"bucket": "<1s",
+"nodes": 0,
+"seconds": 0
+},
+{
+"bucket": "1-3s",
+"nodes": 1,
+"seconds": 1.0
+},
+{
+"bucket": "3-6s",
+"nodes": 0,
+"seconds": 0
+},
+{
+"bucket": "6-10s",
+"nodes": 0,
+"seconds": 0
+},
+{
+"bucket": ">=10s",
+"nodes": 0,
+"seconds": 0
+}
+],
+"modules": [
+{
+"module": "tests/e2e/test_board.py",
+"seconds": 1.0,
+"nodes": 1
+}
+],
+"tail": {
+"slowest_n": 22,
+"slowest_share": 1.0,
+"top5pct_n": 1,
+"top5pct_share": 1.0,
+"max_s": 1.0
+},
+"first_node": {
+"nodeid": "tests/e2e/test_board.py::test_poll[chromium]",
+"seconds": 1.0,
+"median_s": 1.0,
+"boot": "single-run"
+},
+"waits": [],
+"slow_nodes": [],
+"app_timers": [],
+"slow_fixtures": [],
+"projection_fit": {
+"projections": [
+"webkit",
+"firefox"
+],
+"kept": [],
+"candidates": [],
+"kept_nodes": 0,
+"candidate_nodes": 0,
+"candidate_seconds": 0
+},
+"runtime_drift": {
+"status": "no-claims",
+"measured_min": {
+"gate": 0.0,
+"pytest e2e (surface)": 0.0
+},
+"claims": []
+}
+}
+],
+[
+"timing",
+{
+"status": "ok",
+"reason": null,
+"freshness": {
+"status": "slice",
+"run_nodes": 1,
+"suite_nodes": 50,
+"reason": "no completed full-tier run on record; this run was routed surface, a slice of the suite"
+},
+"source": {
+"kind": "progress-log",
+"path": "<TMP>/e2e-value-tier-/gate.log",
+"from": "[e2e] progress_log",
+"run_log": "<TMP>/e2e-value-tier-/gate.log"
+},
+"run": {
+"started": "2026-10-01T12:00:00",
+"finished": "2026-10-01T12:00:01",
+"wall_s": 1.0,
+"complete": true,
+"exit_status": 0,
+"routed_tier": "surface",
+"slice": "no completed full-tier run on record; this run was routed surface, a slice of the suite",
+"checkout": {
+"root": null,
+"linked_worktree": null
+},
+"skip_reasons": null,
+"nodes": 1,
+"e2e_nodes": 1,
+"e2e_skipped": 0,
+"e2e_summed_s": 1.0
+},
+"load": {
+"state": "quiet",
+"scope": "other checkouts of this repo; suites in other repos are not visible",
+"overlaps": [],
+"checked": [
+"<TMP>/e2e-value-tier-/gate.log"
+]
+},
+"phases": [
+{
+"name": "e2e routing: tier=surface target=tests/e2e/test_board.py",
+"wall_s": 0.0,
+"nodes": 0
+},
+{
+"name": "pytest e2e (surface)",
+"wall_s": 1.0,
+"nodes": 1
+}
+],
+"projections": {
+"chromium": {
+"nodes": 1,
+"seconds": 1.0,
+"mean_s": 1.0
+}
+},
+"buckets": [
+{
+"bucket": "<1s",
+"nodes": 0,
+"seconds": 0
+},
+{
+"bucket": "1-3s",
+"nodes": 1,
+"seconds": 1.0
+},
+{
+"bucket": "3-6s",
+"nodes": 0,
+"seconds": 0
+},
+{
+"bucket": "6-10s",
+"nodes": 0,
+"seconds": 0
+},
+{
+"bucket": ">=10s",
+"nodes": 0,
+"seconds": 0
+}
+],
+"modules": [
+{
+"module": "tests/e2e/test_board.py",
+"seconds": 1.0,
+"nodes": 1
+}
+],
+"tail": {
+"slowest_n": 22,
+"slowest_share": 1.0,
+"top5pct_n": 1,
+"top5pct_share": 1.0,
+"max_s": 1.0
+},
+"first_node": {
+"nodeid": "tests/e2e/test_board.py::test_poll[chromium]",
+"seconds": 1.0,
+"median_s": 1.0,
+"boot": "single-run"
+},
+"waits": [],
+"slow_nodes": [],
+"app_timers": [],
+"slow_fixtures": [],
+"projection_fit": {
+"projections": [
+"webkit",
+"firefox"
+],
+"kept": [],
+"candidates": [],
+"kept_nodes": 0,
+"candidate_nodes": 0,
+"candidate_seconds": 0
+},
+"runtime_drift": {
+"status": "no-claims",
+"measured_min": {
+"gate": 0.0,
+"pytest e2e (surface)": 0.0
+},
+"claims": []
+}
+}
+],
+[
+"cost_drivers",
+{
+"page_loads": 4,
+"shots": 0,
+"pty_refs": 0,
+"real_agent": 0
+}
+],
+[
+"loaders",
+[
+"authed_page"
+]
+],
+[
+"cost_drivers",
+{
+"page_loads": 0,
+"shots": 3,
+"pty_refs": 0,
+"real_agent": 0
+}
+],
+[
+"cost_drivers",
+{
+"page_loads": 0,
+"shots": 2,
+"pty_refs": 0,
+"real_agent": 0
+}
+],
+[
+"modules",
+[
+{
+"module": "tests/e2e/test_a.py",
+"seconds": 4.0,
+"nodes": 1,
+"page_loads": 0,
+"shots": 2,
+"pty_refs": 0,
+"real_agent": 0
+}
+]
+],
+[
+"runtime_claims",
+[
+{
+"file": "CLAUDE.md",
+"line": 1,
+"text": "- Local runtime contract: 270 executions in ~3.5 min (3m30s, pytest). Investigate if a full run exceeds **~7 min** (the previous ~10 min was 2x an older measure",
+"claimed_min": 3.5
+}
+]
+],
+[
+"runtime_claims",
+[
+{
+"file": "CLAUDE.md",
+"line": 1,
+"text": "- **Full-suite runtime ~12.5 min** on this dev box (re-measured at 475 executed nodes: non-e2e ~3.6 min, browser parallel pass ~8.5 min, serial pass ~0.4 min; t",
+"claimed_min": 12.5
+},
+{
+"file": "CLAUDE.md",
+"line": 1,
+"text": "- **Full-suite runtime ~12.5 min** on this dev box (re-measured at 475 executed nodes: non-e2e ~3.6 min, browser parallel pass ~8.5 min, serial pass ~0.4 min; t",
+"claimed_min": 3.6
+},
+{
+"file": "CLAUDE.md",
+"line": 1,
+"text": "- **Full-suite runtime ~12.5 min** on this dev box (re-measured at 475 executed nodes: non-e2e ~3.6 min, browser parallel pass ~8.5 min, serial pass ~0.4 min; t",
+"claimed_min": 8.5
+}
+]
+],
+[
+"runtime_claims",
+[
+{
+"file": "CLAUDE.md",
+"line": 1,
+"text": "Typical green: **~4 min** (deps ~1 min, the non-e2e suite ~3 min).",
+"claimed_min": 4.0
+},
+{
+"file": "CLAUDE.md",
+"line": 1,
+"text": "Typical green: **~4 min** (deps ~1 min, the non-e2e suite ~3 min).",
+"claimed_min": 3.0
+}
+]
+],
+[
+"wait_sites",
+[
+{
+"file": "tests/e2e/conftest.py",
+"line": 5,
+"kind": "sleep",
+"ms": 400,
+"scope": "_wait_up",
+"unawaited": false,
+"text": "time.sleep(0.4)"
+},
+{
+"file": "tests/e2e/test_feedback.py",
+"line": 1,
+"kind": "poll-constant",
+"ms": 15000,
+"scope": "POLL_MS",
+"unawaited": false,
+"text": "POLL_MS = 15_000"
+},
+{
+"file": "tests/e2e/test_feedback.py",
+"line": 4,
+"kind": "page-timer",
+"ms": 750,
+"scope": "SLOW_INIT",
+"unawaited": false,
+"text": "return new Promise(function(res) { setTimeout(function() { res(orig(u)); }, 750); });"
+},
+{
+"file": "tests/e2e/test_feedback.py",
+"line": 20,
+"kind": "sleep",
+"ms": 500,
+"scope": "test_settle",
+"unawaited": false,
+"text": "page.wait_for_timeout(500)"
+},
+{
+"file": "tests/e2e/test_feedback.py",
+"line": 25,
+"kind": "long-timeout",
+"ms": 20000,
+"scope": "test_retry",
+"unawaited": false,
+"text": "expect(page.locator('#s')).to_have_text('Online', timeout=20_000)"
+}
+]
+],
+[
+"rank_waits",
+[
+{
+"file": "tests/e2e/test_feedback.py",
+"line": 4,
+"kind": "page-timer",
+"ms": 750,
+"scope": "SLOW_INIT",
+"unawaited": false,
+"text": "return new Promise(function(res) { setTimeout(function() { res(orig(u)); }, 750); });",
+"nodes": 2,
+"measured_s": 4.0,
+"paid_s": 1.5,
+"ceiling": false
+},
+{
+"file": "tests/e2e/test_feedback.py",
+"line": 20,
+"kind": "sleep",
+"ms": 500,
+"scope": "test_settle",
+"unawaited": false,
+"text": "page.wait_for_timeout(500)",
+"nodes": 1,
+"measured_s": 0.9,
+"paid_s": 0.5,
+"ceiling": false
+},
+{
+"file": "tests/e2e/conftest.py",
+"line": 5,
+"kind": "sleep",
+"ms": 400,
+"scope": "_wait_up",
+"unawaited": false,
+"text": "time.sleep(0.4)",
+"nodes": null,
+"measured_s": null,
+"paid_s": null,
+"ceiling": false
+},
+{
+"file": "tests/e2e/test_feedback.py",
+"line": 1,
+"kind": "poll-constant",
+"ms": 15000,
+"scope": "POLL_MS",
+"unawaited": false,
+"text": "POLL_MS = 15_000",
+"nodes": 0,
+"measured_s": 0,
+"paid_s": null,
+"ceiling": false
+},
+{
+"file": "tests/e2e/test_feedback.py",
+"line": 25,
+"kind": "long-timeout",
+"ms": 20000,
+"scope": "test_retry",
+"unawaited": false,
+"text": "expect(page.locator('#s')).to_have_text('Online', timeout=20_000)",
+"nodes": 2,
+"measured_s": 31.4,
+"paid_s": null,
+"ceiling": true
+}
+]
+],
+[
+"wait_sites",
+[
+{
+"file": "tests/e2e/test_poll.py",
+"line": 9,
+"kind": "poll-sleep",
+"ms": 200,
+"scope": "test_deadline",
+"unawaited": false,
+"text": "time.sleep(0.2)"
+},
+{
+"file": "tests/e2e/test_poll.py",
+"line": 14,
+"kind": "poll-sleep",
+"ms": 300,
+"scope": "test_cond",
+"unawaited": false,
+"text": "page.wait_for_timeout(300)"
+},
+{
+"file": "tests/e2e/test_poll.py",
+"line": 19,
+"kind": "sleep",
+"ms": 400,
+"scope": "test_forever",
+"unawaited": false,
+"text": "time.sleep(0.4)"
+},
+{
+"file": "tests/e2e/test_poll.py",
+"line": 24,
+"kind": "sleep",
+"ms": 150,
+"scope": "test_taps",
+"unawaited": false,
+"text": "time.sleep(0.15)"
+},
+{
+"file": "tests/e2e/test_poll.py",
+"line": 31,
+"kind": "poll-sleep",
+"ms": 250,
+"scope": "_wait_for_calls",
+"unawaited": false,
+"text": "page.wait_for_timeout(250)"
+},
+{
+"file": "tests/e2e/test_poll.py",
+"line": 38,
+"kind": "poll-sleep",
+"ms": 100,
+"scope": "test_for_break",
+"unawaited": false,
+"text": "time.sleep(0.1)"
+},
+{
+"file": "tests/e2e/test_poll.py",
+"line": 42,
+"kind": "sleep",
+"ms": 600,
+"scope": "test_fixed",
+"unawaited": false,
+"text": "time.sleep(0.6)"
+}
+]
+],
+[
+"rank_waits",
+[
+{
+"file": "tests/e2e/test_poll.py",
+"line": 42,
+"kind": "sleep",
+"ms": 600,
+"scope": "test_fixed",
+"unawaited": false,
+"text": "time.sleep(0.6)",
+"nodes": 1,
+"measured_s": 1.0,
+"paid_s": 0.6,
+"ceiling": false
+},
+{
+"file": "tests/e2e/test_poll.py",
+"line": 19,
+"kind": "sleep",
+"ms": 400,
+"scope": "test_forever",
+"unawaited": false,
+"text": "time.sleep(0.4)",
+"nodes": 1,
+"measured_s": 1.0,
+"paid_s": 0.4,
+"ceiling": false
+},
+{
+"file": "tests/e2e/test_poll.py",
+"line": 24,
+"kind": "sleep",
+"ms": 150,
+"scope": "test_taps",
+"unawaited": false,
+"text": "time.sleep(0.15)",
+"nodes": 1,
+"measured_s": 1.0,
+"paid_s": 0.1,
+"ceiling": false
+},
+{
+"file": "tests/e2e/test_poll.py",
+"line": 9,
+"kind": "poll-sleep",
+"ms": 200,
+"scope": "test_deadline",
+"unawaited": false,
+"text": "time.sleep(0.2)",
+"nodes": 1,
+"measured_s": 1.0,
+"paid_s": null,
+"ceiling": true
+},
+{
+"file": "tests/e2e/test_poll.py",
+"line": 14,
+"kind": "poll-sleep",
+"ms": 300,
+"scope": "test_cond",
+"unawaited": false,
+"text": "page.wait_for_timeout(300)",
+"nodes": 1,
+"measured_s": 1.0,
+"paid_s": null,
+"ceiling": true
+},
+{
+"file": "tests/e2e/test_poll.py",
+"line": 31,
+"kind": "poll-sleep",
+"ms": 250,
+"scope": "_wait_for_calls",
+"unawaited": false,
+"text": "page.wait_for_timeout(250)",
+"nodes": 0,
+"measured_s": 0,
+"paid_s": null,
+"ceiling": true
+},
+{
+"file": "tests/e2e/test_poll.py",
+"line": 38,
+"kind": "poll-sleep",
+"ms": 100,
+"scope": "test_for_break",
+"unawaited": false,
+"text": "time.sleep(0.1)",
+"nodes": 0,
+"measured_s": 0,
+"paid_s": null,
+"ceiling": true
+}
+]
+],
+[
+"rank_waits",
+[
+{
+"file": "tests/e2e/test_poll.py",
+"line": 42,
+"kind": "sleep",
+"ms": 600,
+"scope": "test_fixed",
+"unawaited": false,
+"text": "time.sleep(0.6)",
+"nodes": 1,
+"measured_s": 1.0,
+"paid_s": 0.6,
+"ceiling": false
+},
+{
+"file": "tests/e2e/test_poll.py",
+"line": 19,
+"kind": "sleep",
+"ms": 400,
+"scope": "test_forever",
+"unawaited": false,
+"text": "time.sleep(0.4)",
+"nodes": 1,
+"measured_s": 1.0,
+"paid_s": 0.4,
+"ceiling": false
+},
+{
+"file": "tests/e2e/test_poll.py",
+"line": 24,
+"kind": "sleep",
+"ms": 150,
+"scope": "test_taps",
+"unawaited": false,
+"text": "time.sleep(0.15)",
+"nodes": 1,
+"measured_s": 1.0,
+"paid_s": 0.1,
+"ceiling": false
+},
+{
+"file": "tests/e2e/test_poll.py",
+"line": 9,
+"kind": "poll-sleep",
+"ms": 200,
+"scope": "test_deadline",
+"unawaited": false,
+"text": "time.sleep(0.2)",
+"nodes": 1,
+"measured_s": 1.0,
+"paid_s": null,
+"ceiling": true
+},
+{
+"file": "tests/e2e/test_poll.py",
+"line": 14,
+"kind": "poll-sleep",
+"ms": 300,
+"scope": "test_cond",
+"unawaited": false,
+"text": "page.wait_for_timeout(300)",
+"nodes": 1,
+"measured_s": 1.0,
+"paid_s": null,
+"ceiling": true
+},
+{
+"file": "tests/e2e/test_poll.py",
+"line": 31,
+"kind": "poll-sleep",
+"ms": 250,
+"scope": "_wait_for_calls",
+"unawaited": false,
+"text": "page.wait_for_timeout(250)",
+"nodes": 0,
+"measured_s": 0,
+"paid_s": null,
+"ceiling": true
+},
+{
+"file": "tests/e2e/test_poll.py",
+"line": 38,
+"kind": "poll-sleep",
+"ms": 100,
+"scope": "test_for_break",
+"unawaited": false,
+"text": "time.sleep(0.1)",
+"nodes": 0,
+"measured_s": 0,
+"paid_s": null,
+"ceiling": true
+}
+]
+],
+[
+"wait_sites",
+[
+{
+"file": "tests/e2e/test_probe.py",
+"line": 2,
+"kind": "page-timer",
+"ms": 60000,
+"scope": "test_handle",
+"unawaited": true,
+"text": "page.evaluate('''() => { terminal.quiet = setTimeout(function () {}, 60000); }''')"
+},
+{
+"file": "tests/e2e/test_probe.py",
+"line": 6,
+"kind": "page-timer",
+"ms": 45000,
+"scope": "test_arrow",
+"unawaited": true,
+"text": "page.evaluate('''() => { terminal.q2 = setTimeout(() => {}, 45000); }''')"
+},
+{
+"file": "tests/e2e/test_probe.py",
+"line": 10,
+"kind": "page-timer",
+"ms": 750,
+"scope": "test_real",
+"unawaited": false,
+"text": "page.add_init_script('''setTimeout(function () { window.ready = true; }, 750);''')"
+}
+]
+],
+[
+"rank_waits",
+[
+{
+"file": "tests/e2e/test_probe.py",
+"line": 10,
+"kind": "page-timer",
+"ms": 750,
+"scope": "test_real",
+"unawaited": false,
+"text": "page.add_init_script('''setTimeout(function () { window.ready = true; }, 750);''')",
+"nodes": 1,
+"measured_s": 1.0,
+"paid_s": 0.8,
+"ceiling": false
+},
+{
+"file": "tests/e2e/test_probe.py",
+"line": 2,
+"kind": "page-timer",
+"ms": 60000,
+"scope": "test_handle",
+"unawaited": true,
+"text": "page.evaluate('''() => { terminal.quiet = setTimeout(function () {}, 60000); }''')",
+"nodes": 1,
+"measured_s": 5.0,
+"paid_s": null,
+"ceiling": true
+},
+{
+"file": "tests/e2e/test_probe.py",
+"line": 6,
+"kind": "page-timer",
+"ms": 45000,
+"scope": "test_arrow",
+"unawaited": true,
+"text": "page.evaluate('''() => { terminal.q2 = setTimeout(() => {}, 45000); }''')",
+"nodes": 1,
+"measured_s": 4.0,
+"paid_s": null,
+"ceiling": true
+}
+]
+],
+[
+"slow_fixtures",
+[
+{
+"file": "tests/e2e/test_tab.py",
+"line": 9,
+"name": "_warm",
+"is_fixture": true,
+"fixture_scope": "session",
+"autouse": true,
+"timeout_s": 90.0
+},
+{
+"file": "tests/e2e/test_tab.py",
+"line": 18,
+"name": "_fetch",
+"is_fixture": false,
+"fixture_scope": null,
+"autouse": false,
+"timeout_s": 45.0
+}
+]
+],
+[
+"slow_fixtures",
+[]
+],
+[
+"slow_nodes",
+[
+{
+"nodeid": "tests/e2e/test_a.py::test_extract[chromium]",
+"seconds": 2.6,
+"median_s": 0.2
+}
+]
+],
+[
+"slow_nodes",
+[]
+],
+[
+"slow_nodes",
+[]
+],
+[
+"app_timers",
+[
+{
+"file": "app/static/poll.js",
+"line": 7,
+"kind": "interval",
+"ms": 30000,
+"name": null,
+"text": "setInterval(tick, 30_000);"
+},
+{
+"file": "app/static/poll.js",
+"line": 9,
+"kind": "timeout",
+"ms": 4000,
+"name": null,
+"text": "setTimeout(function () { save(); }, 4000);"
+},
+{
+"file": "app/static/poll.js",
+"line": 3,
+"kind": "sleep",
+"ms": 1000,
+"name": null,
+"text": "await sleep(1000);"
+}
+]
+],
+[
+"app_timers",
+[]
+],
+[
+"app_timers",
+[
+{
+"file": "app/static/session-transcript.js",
+"line": 4,
+"kind": "timeout",
+"ms": 9000,
+"name": "DUP_MS",
+"text": "setTimeout(dup2, DUP_MS);"
+},
+{
+"file": "app/static/main.js",
+"line": 2,
+"kind": "interval",
+"ms": 4000,
+"name": "RUNNING_APPS_POLL_MS",
+"text": "setInterval(refreshApps, RUNNING_APPS_POLL_MS);"
+},
+{
+"file": "app/static/session-transcript.js",
+"line": 3,
+"kind": "timeout",
+"ms": 3000,
+"name": "LIVE_POLL_MS",
+"text": "function arm() { setTimeout(tick, LIVE_POLL_MS); }"
+}
+]
+],
+[
+"timing",
+{
+"status": "ok",
+"reason": null,
+"freshness": {
+"status": "unchecked",
+"run_nodes": 4,
+"suite_nodes": null,
+"reason": "the suite's collected node count was not measured, so the run's age against it is unknown"
+},
+"source": {
+"kind": "progress-log",
+"path": "<TMP>/e2e-value-boot-/gate.log",
+"from": "[e2e] progress_log",
+"run_log": "<TMP>/e2e-value-boot-/gate.log"
+},
+"run": {
+"started": "2026-10-01T10:00:00",
+"finished": "2026-10-01T10:00:00",
+"wall_s": 0.0,
+"complete": true,
+"exit_status": 0,
+"routed_tier": null,
+"slice": null,
+"checkout": {
+"root": null,
+"linked_worktree": null
+},
+"skip_reasons": null,
+"nodes": 4,
+"e2e_nodes": 4,
+"e2e_skipped": 0,
+"e2e_summed_s": 8.6
+},
+"load": {
+"state": "quiet",
+"scope": "other checkouts of this repo; suites in other repos are not visible",
+"overlaps": [],
+"checked": [
+"<TMP>/e2e-value-boot-/gate.log"
+]
+},
+"phases": [
+{
+"name": "pytest e2e (tests/e2e)",
+"wall_s": 0.0,
+"nodes": 4
+}
+],
+"projections": {
+"chromium": {
+"nodes": 4,
+"seconds": 8.6,
+"mean_s": 2.15
+}
+},
+"buckets": [
+{
+"bucket": "<1s",
+"nodes": 3,
+"seconds": 1.5
+},
+{
+"bucket": "1-3s",
+"nodes": 0,
+"seconds": 0
+},
+{
+"bucket": "3-6s",
+"nodes": 0,
+"seconds": 0
+},
+{
+"bucket": "6-10s",
+"nodes": 1,
+"seconds": 7.1
+},
+{
+"bucket": ">=10s",
+"nodes": 0,
+"seconds": 0
+}
+],
+"modules": [
+{
+"module": "tests/e2e/test_board.py",
+"seconds": 8.6,
+"nodes": 4
+}
+],
+"tail": {
+"slowest_n": 22,
+"slowest_share": 1.0,
+"top5pct_n": 1,
+"top5pct_share": 0.826,
+"max_s": 7.1
+},
+"first_node": {
+"nodeid": "tests/e2e/test_board.py::test_n0[chromium]",
+"seconds": 7.1,
+"median_s": 0.5,
+"boot": "single-run"
+},
+"waits": [],
+"slow_nodes": [],
+"app_timers": [],
+"slow_fixtures": [],
+"projection_fit": {
+"projections": [
+"webkit",
+"firefox"
+],
+"kept": [],
+"candidates": [],
+"kept_nodes": 0,
+"candidate_nodes": 0,
+"candidate_seconds": 0
+},
+"runtime_drift": {
+"status": "no-claims",
+"measured_min": {
+"gate": 0.0
+},
+"claims": []
+}
+}
+],
+[
+"timing",
+{
+"status": "ok",
+"reason": null,
+"freshness": {
+"status": "unchecked",
+"run_nodes": 4,
+"suite_nodes": null,
+"reason": "the suite's collected node count was not measured, so the run's age against it is unknown"
+},
+"source": {
+"kind": "progress-log",
+"path": "<TMP>/e2e-value-boot-/gate.log",
+"from": "[e2e] progress_log",
+"run_log": "<TMP>/e2e-value-boot-/gate.log"
+},
+"run": {
+"started": "2026-10-01T11:00:00",
+"finished": "2026-10-01T11:00:00",
+"wall_s": 0.0,
+"complete": true,
+"exit_status": 0,
+"routed_tier": null,
+"slice": null,
+"checkout": {
+"root": null,
+"linked_worktree": null
+},
+"skip_reasons": null,
+"nodes": 4,
+"e2e_nodes": 4,
+"e2e_skipped": 0,
+"e2e_summed_s": 7.5
+},
+"load": {
+"state": "quiet",
+"scope": "other checkouts of this repo; suites in other repos are not visible",
+"overlaps": [],
+"checked": [
+"<TMP>/e2e-value-boot-/gate.log"
+]
+},
+"phases": [
+{
+"name": "pytest e2e (tests/e2e)",
+"wall_s": 0.0,
+"nodes": 4
+}
+],
+"projections": {
+"chromium": {
+"nodes": 4,
+"seconds": 7.5,
+"mean_s": 1.88
+}
+},
+"buckets": [
+{
+"bucket": "<1s",
+"nodes": 3,
+"seconds": 1.5
+},
+{
+"bucket": "1-3s",
+"nodes": 0,
+"seconds": 0
+},
+{
+"bucket": "3-6s",
+"nodes": 0,
+"seconds": 0
+},
+{
+"bucket": "6-10s",
+"nodes": 1,
+"seconds": 6.0
+},
+{
+"bucket": ">=10s",
+"nodes": 0,
+"seconds": 0
+}
+],
+"modules": [
+{
+"module": "tests/e2e/test_board.py",
+"seconds": 7.5,
+"nodes": 4
+}
+],
+"tail": {
+"slowest_n": 22,
+"slowest_share": 1.0,
+"top5pct_n": 1,
+"top5pct_share": 0.8,
+"max_s": 6.0
+},
+"first_node": {
+"nodeid": "tests/e2e/test_board.py::test_n0[chromium]",
+"seconds": 6.0,
+"median_s": 0.5,
+"boot": "repeated"
+},
+"waits": [],
+"slow_nodes": [],
+"app_timers": [],
+"slow_fixtures": [],
+"projection_fit": {
+"projections": [
+"webkit",
+"firefox"
+],
+"kept": [],
+"candidates": [],
+"kept_nodes": 0,
+"candidate_nodes": 0,
+"candidate_seconds": 0
+},
+"runtime_drift": {
+"status": "no-claims",
+"measured_min": {
+"gate": 0.0
+},
+"claims": []
+}
+}
+],
+[
+"timing",
+{
+"status": "ok",
+"reason": null,
+"freshness": {
+"status": "unchecked",
+"run_nodes": 4,
+"suite_nodes": null,
+"reason": "the suite's collected node count was not measured, so the run's age against it is unknown"
+},
+"source": {
+"kind": "progress-log",
+"path": "<TMP>/e2e-value-boot-/gate.log",
+"from": "[e2e] progress_log",
+"run_log": "<TMP>/e2e-value-boot-/gate.log"
+},
+"run": {
+"started": "2026-10-01T11:00:00",
+"finished": "2026-10-01T11:00:00",
+"wall_s": 0.0,
+"complete": true,
+"exit_status": 0,
+"routed_tier": null,
+"slice": null,
+"checkout": {
+"root": null,
+"linked_worktree": null
+},
+"skip_reasons": null,
+"nodes": 4,
+"e2e_nodes": 4,
+"e2e_skipped": 0,
+"e2e_summed_s": 2.1
+},
+"load": {
+"state": "quiet",
+"scope": "other checkouts of this repo; suites in other repos are not visible",
+"overlaps": [],
+"checked": [
+"<TMP>/e2e-value-boot-/gate.log"
+]
+},
+"phases": [
+{
+"name": "pytest e2e (tests/e2e)",
+"wall_s": 0.0,
+"nodes": 4
+}
+],
+"projections": {
+"chromium": {
+"nodes": 4,
+"seconds": 2.1,
+"mean_s": 0.53
+}
+},
+"buckets": [
+{
+"bucket": "<1s",
+"nodes": 4,
+"seconds": 2.1
+},
+{
+"bucket": "1-3s",
+"nodes": 0,
+"seconds": 0
+},
+{
+"bucket": "3-6s",
+"nodes": 0,
+"seconds": 0
+},
+{
+"bucket": "6-10s",
+"nodes": 0,
+"seconds": 0
+},
+{
+"bucket": ">=10s",
+"nodes": 0,
+"seconds": 0
+}
+],
+"modules": [
+{
+"module": "tests/e2e/test_board.py",
+"seconds": 2.1,
+"nodes": 4
+}
+],
+"tail": {
+"slowest_n": 22,
+"slowest_share": 1.0,
+"top5pct_n": 1,
+"top5pct_share": 0.286,
+"max_s": 0.6
+},
+"first_node": {
+"nodeid": "tests/e2e/test_board.py::test_n0[chromium]",
+"seconds": 0.6,
+"median_s": 0.5,
+"boot": "not-repeated"
+},
+"waits": [],
+"slow_nodes": [],
+"app_timers": [],
+"slow_fixtures": [],
+"projection_fit": {
+"projections": [
+"webkit",
+"firefox"
+],
+"kept": [],
+"candidates": [],
+"kept_nodes": 0,
+"candidate_nodes": 0,
+"candidate_seconds": 0
+},
+"runtime_drift": {
+"status": "no-claims",
+"measured_min": {
+"gate": 0.0
+},
+"claims": []
+}
+}
+],
+[
+"checkout_of",
+{
+"root": "<TMP>/e2e-value--/primary",
+"linked_worktree": false
+}
+],
+[
+"checkout_of",
+{
+"root": "<TMP>/e2e-value--/primary",
+"linked_worktree": false
+}
+],
+[
+"checkout_of",
+{
+"root": "<TMP>/e2e-value--/linked",
+"linked_worktree": true
+}
+],
+[
+"checkout_of",
+{
+"root": null,
+"linked_worktree": null
+}
+],
+[
+"timing",
+{
+"status": "ok",
+"reason": null,
+"freshness": {
+"status": "unchecked",
+"run_nodes": 3,
+"suite_nodes": null,
+"reason": "the suite's collected node count was not measured, so the run's age against it is unknown"
+},
+"source": {
+"kind": "junit-xml",
+"path": "<TMP>/e2e-value-skipreasons-/junit.xml",
+"from": "--log",
+"run_log": "<TMP>/e2e-value-skipreasons-/junit.xml"
+},
+"run": {
+"started": null,
+"finished": null,
+"wall_s": null,
+"complete": true,
+"exit_status": 0,
+"routed_tier": null,
+"slice": null,
+"checkout": {
+"root": "<TMP>/e2e-value-skipreasons-",
+"linked_worktree": true
+},
+"skip_reasons": [
+{
+"reason": "not HTTPS",
+"nodes": 2
+}
+],
+"nodes": 3,
+"e2e_nodes": 1,
+"e2e_skipped": 2,
+"e2e_summed_s": 1.0
+},
+"load": {
+"state": "unknown",
+"reason": "a JUnit XML carries no run window",
+"scope": "",
+"overlaps": [],
+"checked": []
+},
+"phases": [],
+"projections": {
+"chromium": {
+"nodes": 1,
+"seconds": 1.0,
+"mean_s": 1.0
+}
+},
+"buckets": [
+{
+"bucket": "<1s",
+"nodes": 0,
+"seconds": 0
+},
+{
+"bucket": "1-3s",
+"nodes": 1,
+"seconds": 1.0
+},
+{
+"bucket": "3-6s",
+"nodes": 0,
+"seconds": 0
+},
+{
+"bucket": "6-10s",
+"nodes": 0,
+"seconds": 0
+},
+{
+"bucket": ">=10s",
+"nodes": 0,
+"seconds": 0
+}
+],
+"modules": [
+{
+"module": "tests/e2e/test_board.py",
+"seconds": 1.0,
+"nodes": 1
+}
+],
+"tail": {
+"slowest_n": 22,
+"slowest_share": 1.0,
+"top5pct_n": 1,
+"top5pct_share": 1.0,
+"max_s": 1.0
+},
+"first_node": {
+"nodeid": "tests/e2e/test_board.py::test_load[chromium]",
+"seconds": 1.0,
+"median_s": 1.0,
+"boot": "single-run"
+},
+"waits": [],
+"slow_nodes": [],
+"app_timers": [],
+"slow_fixtures": [],
+"projection_fit": {
+"projections": [
+"webkit",
+"firefox"
+],
+"kept": [],
+"candidates": [],
+"kept_nodes": 0,
+"candidate_nodes": 0,
+"candidate_seconds": 0
+},
+"runtime_drift": {
+"status": "unknown",
+"reason": "the run's wall time is not in the log",
+"claims": []
+}
+}
+],
+[
+"timing",
+{
+"status": "ok",
+"reason": null,
+"freshness": {
+"status": "slice",
+"run_nodes": 1,
+"suite_nodes": null,
+"reason": "no completed full-tier run on record; this run was routed surface, a slice of the suite"
+},
+"source": {
+"kind": "progress-log",
+"path": "<TMP>/e2e-value-tier-/gate.log",
+"from": "[e2e] progress_log",
+"run_log": "<TMP>/e2e-value-tier-/gate.log"
+},
+"run": {
+"started": "2026-10-01T12:00:00",
+"finished": "2026-10-01T12:00:01",
+"wall_s": 1.0,
+"complete": true,
+"exit_status": 0,
+"routed_tier": "surface",
+"slice": "no completed full-tier run on record; this run was routed surface, a slice of the suite",
+"checkout": {
+"root": null,
+"linked_worktree": null
+},
+"skip_reasons": null,
+"nodes": 1,
+"e2e_nodes": 1,
+"e2e_skipped": 0,
+"e2e_summed_s": 1.0
+},
+"load": {
+"state": "quiet",
+"scope": "other checkouts of this repo; suites in other repos are not visible",
+"overlaps": [],
+"checked": [
+"<TMP>/e2e-value-tier-/gate.log"
+]
+},
+"phases": [
+{
+"name": "e2e routing: tier=surface target=tests/e2e/test_board.py",
+"wall_s": 0.0,
+"nodes": 0
+},
+{
+"name": "pytest e2e (surface)",
+"wall_s": 1.0,
+"nodes": 1
+}
+],
+"projections": {
+"chromium": {
+"nodes": 1,
+"seconds": 1.0,
+"mean_s": 1.0
+}
+},
+"buckets": [
+{
+"bucket": "<1s",
+"nodes": 0,
+"seconds": 0
+},
+{
+"bucket": "1-3s",
+"nodes": 1,
+"seconds": 1.0
+},
+{
+"bucket": "3-6s",
+"nodes": 0,
+"seconds": 0
+},
+{
+"bucket": "6-10s",
+"nodes": 0,
+"seconds": 0
+},
+{
+"bucket": ">=10s",
+"nodes": 0,
+"seconds": 0
+}
+],
+"modules": [
+{
+"module": "tests/e2e/test_board.py",
+"seconds": 1.0,
+"nodes": 1
+}
+],
+"tail": {
+"slowest_n": 22,
+"slowest_share": 1.0,
+"top5pct_n": 1,
+"top5pct_share": 1.0,
+"max_s": 1.0
+},
+"first_node": {
+"nodeid": "tests/e2e/test_board.py::test_poll[chromium]",
+"seconds": 1.0,
+"median_s": 1.0,
+"boot": "single-run"
+},
+"waits": [],
+"slow_nodes": [],
+"app_timers": [],
+"slow_fixtures": [],
+"projection_fit": {
+"projections": [
+"webkit",
+"firefox"
+],
+"kept": [],
+"candidates": [],
+"kept_nodes": 0,
+"candidate_nodes": 0,
+"candidate_seconds": 0
+},
+"runtime_drift": {
+"status": "no-claims",
+"measured_min": {
+"gate": 0.0,
+"pytest e2e (surface)": 0.0
+},
+"claims": []
+}
+}
+],
+[
+"shadow_entry",
+{
+"shadowed": [
+"docs"
+],
+"next_rule": "webapp",
+"next_tier": 2,
+"drop_safe": false
+}
+],
+[
+"shadow_entry",
+{
+"shadowed": [
+"docs"
+],
+"next_rule": "docs",
+"next_tier": 0,
+"drop_safe": true
+}
+],
+[
+"shadow_entry",
+null
+],
+[
+"classify_cmd",
+"python scripts/classify_e2e.py tray.bat .gitignore"
+],
+[
+"parallel",
+{
+"static": {
+"xdist": {
+"installed": "unknown (no .venv)",
+"declared": false
+},
+"blockers": 0,
+"free_port_race": [
+{
+"file": "tests/e2e/conftest.py",
+"state": "mitigated",
+"why": "binds port 0, releases it, then a child binds it"
+}
+],
+"fixed_log_names": [
+{
+"file": "tests/e2e/conftest.py",
+"names": [
+"e2e-autoboot.log"
+],
+"state": "mitigated"
+}
+],
+"shared_append": [
+{
+"file": "tests/_progress.py",
+"state": "mitigated",
+"why": "appends to a file every worker process would write"
+}
+],
+"load_sensitive_ungrouped": [
+{
+"file": "tests/e2e/test_agent.py",
+"state": "mitigated",
+"why": "real-agent test: needs one xdist_group or a serial pass"
+}
+],
+"session_fixtures": [],
+"module_state": []
+},
+"projection": {
+"status": "unknown",
+"reason": "no timing source ([e2e] progress_log / junit_xml undeclared, no --log)"
+},
+"shared_state": []
+}
+],
+[
+"e2e_test_audit.main",
+[
+"timing",
+"<TMP>/e2e-value-",
+"--suite-nodes",
+"3"
+],
+0,
+"{\"status\": \"stale\", \"reason\": \"the run covers 1 e2e nodes and the suite collects 3 now (more than 10% apart): a fresh baseline is needed before ranking\", \"freshness\": {\"status\": \"stale\", \"run_nodes\": 1, \"suite_nodes\": 3, \"reason\": \"the run covers 1 e2e nodes and the suite collects 3 now (more than 10% apart): a fresh baseline is needed before ranking\"}, \"source\": {\"kind\": \"progress-log\", \"path\": \"C://Users//rober//AppData//Local//Temp//e2e-value-//gate.log\", \"from\": \"[e2e] progress_log\", \"run_log\": \"C://Users//rober//AppData//Local//Temp//e2e-value-//gate.log\"}, \"run\": {\"started\": \"2026-09-21T23:59:50\", \"finished\": \"2026-09-22T00:00:05\", \"wall_s\": 15.0, \"complete\": true, \"exit_status\": 1, \"routed_tier\": null, \"slice\": null, \"checkout\": {\"root\": null, \"linked_worktree\": null}, \"skip_reasons\": null, \"nodes\": 1, \"e2e_nodes\": 1, \"e2e_skipped\": 0, \"e2e_summed_s\": 15.0}, \"load\": {\"state\": \"quiet\", \"scope\": \"other checkouts of this repo; suites in other repos are not visible\", \"overlaps\": [], \"checked\": [\"C://Users//rober//AppData//Local//Temp//e2e-value-//gate.log\"]}, \"phases\": [{\"name\": \"pytest e2e (tests/e2e)\", \"wall_s\": 15.0, \"nodes\": 1}], \"projections\": {\"webkit\": {\"nodes\": 1, \"seconds\": 15.0, \"mean_s\": 15.0}}, \"buckets\": [{\"bucket\": \"<1s\", \"nodes\": 0, \"seconds\": 0}, {\"bucket\": \"1-3s\", \"nodes\": 0, \"seconds\": 0}, {\"bucket\": \"3-6s\", \"nodes\": 0, \"seconds\": 0}, {\"bucket\": \"6-10s\", \"nodes\": 0, \"seconds\": 0}, {\"bucket\": \">=10s\", \"nodes\": 1, \"seconds\": 15.0}], \"modules\": [{\"module\": \"tests/e2e/test_chat.py\", \"seconds\": 15.0, \"nodes\": 1}], \"tail\": {\"slowest_n\": 22, \"slowest_share\": 1.0, \"top5pct_n\": 1, \"top5pct_share\": 1.0, \"max_s\": 15.0}, \"first_node\": {\"nodeid\": \"tests/e2e/test_chat.py::test_link_opens[webkit-iphone]\", \"seconds\": 15.0, \"median_s\": 15.0, \"boot\": \"not-repeated\"}, \"waits\": [], \"slow_nodes\": [], \"app_timers\": [], \"slow_fixtures\": [], \"projection_fit\": {\"projections\": [\"webkit\", \"firefox\"], \"kept\": [{\"module\": \"tests/e2e/test_chat.py\", \"tests\": 1, \"nodes\": 1, \"seconds\": 15.0}], \"candidates\": [], \"kept_nodes\": 1, \"candidate_nodes\": 0, \"candidate_seconds\": 0}, \"runtime_drift\": {\"status\": \"candidates\", \"measured_min\": {\"gate\": 0.2, \"pytest e2e (tests/e2e)\": 0.2}, \"claims\": [{\"file\": \"CLAUDE.md\", \"line\": 1, \"text\": \"- The full gate takes ~10 min.\", \"claimed_min\": 10.0, \"nearest_span\": \"gate\", \"delta\": 39.0, \"candidate\": true}]}}\n"
+],
+[
+"e2e_test_audit.main",
+[
+"timing",
+"<TMP>/e2e-value-tier-",
+"--suite-nodes",
+"5"
+],
+0,
+"{\"status\": \"ok\", \"reason\": null, \"freshness\": {\"status\": \"slice\", \"run_nodes\": 1, \"suite_nodes\": 5, \"reason\": \"no completed full-tier run on record; this run was routed surface, a slice of the suite\"}, \"source\": {\"kind\": \"progress-log\", \"path\": \"C://Users//rober//AppData//Local//Temp//e2e-value-tier-//gate.log\", \"from\": \"[e2e] progress_log\", \"run_log\": \"C://Users//rober//AppData//Local//Temp//e2e-value-tier-//gate.log\"}, \"run\": {\"started\": \"2026-10-01T12:00:00\", \"finished\": \"2026-10-01T12:00:01\", \"wall_s\": 1.0, \"complete\": true, \"exit_status\": 0, \"routed_tier\": \"surface\", \"slice\": \"no completed full-tier run on record; this run was routed surface, a slice of the suite\", \"checkout\": {\"root\": null, \"linked_worktree\": null}, \"skip_reasons\": null, \"nodes\": 1, \"e2e_nodes\": 1, \"e2e_skipped\": 0, \"e2e_summed_s\": 1.0}, \"load\": {\"state\": \"quiet\", \"scope\": \"other checkouts of this repo; suites in other repos are not visible\", \"overlaps\": [], \"checked\": [\"C://Users//rober//AppData//Local//Temp//e2e-value-tier-//gate.log\"]}, \"phases\": [{\"name\": \"e2e routing: tier=surface target=tests/e2e/test_board.py\", \"wall_s\": 0.0, \"nodes\": 0}, {\"name\": \"pytest e2e (surface)\", \"wall_s\": 1.0, \"nodes\": 1}], \"projections\": {\"chromium\": {\"nodes\": 1, \"seconds\": 1.0, \"mean_s\": 1.0}}, \"buckets\": [{\"bucket\": \"<1s\", \"nodes\": 0, \"seconds\": 0}, {\"bucket\": \"1-3s\", \"nodes\": 1, \"seconds\": 1.0}, {\"bucket\": \"3-6s\", \"nodes\": 0, \"seconds\": 0}, {\"bucket\": \"6-10s\", \"nodes\": 0, \"seconds\": 0}, {\"bucket\": \">=10s\", \"nodes\": 0, \"seconds\": 0}], \"modules\": [{\"module\": \"tests/e2e/test_board.py\", \"seconds\": 1.0, \"nodes\": 1}], \"tail\": {\"slowest_n\": 22, \"slowest_share\": 1.0, \"top5pct_n\": 1, \"top5pct_share\": 1.0, \"max_s\": 1.0}, \"first_node\": {\"nodeid\": \"tests/e2e/test_board.py::test_poll[chromium]\", \"seconds\": 1.0, \"median_s\": 1.0, \"boot\": \"single-run\"}, \"waits\": [], \"slow_nodes\": [], \"app_timers\": [], \"slow_fixtures\": [], \"projection_fit\": {\"projections\": [\"webkit\", \"firefox\"], \"kept\": [], \"candidates\": [], \"kept_nodes\": 0, \"candidate_nodes\": 0, \"candidate_seconds\": 0}, \"runtime_drift\": {\"status\": \"no-claims\", \"measured_min\": {\"gate\": 0.0, \"pytest e2e (surface)\": 0.0}, \"claims\": []}}\n"
+],
+[
+"e2e_test_audit.main",
+[
+"failures",
+"<TMP>/e2e-value-",
+"--no-gh"
+],
+0,
+"{\"logs\": {\"status\": \"ok\", \"read\": [\"C://Users//rober//AppData//Local//Temp//e2e-value-//gate.log\"]}, \"gh\": {\"prs\": \"skipped\", \"bug_issues\": \"skipped\"}, \"log_events\": [{\"test\": \"tests/e2e/test_chat.py::test_link_opens\", \"nodeid\": \"tests/e2e/test_chat.py::test_link_opens[webkit-iphone]\", \"projection\": \"webkit\", \"date\": \"2026-09-20\", \"source\": \"C://Users//rober//AppData//Local//Temp//e2e-value-//gate.log\", \"when\": \"call\", \"step\": \"tests/e2e/test_chat.py:40\"}, {\"test\": \"tests/e2e/test_chat.py::test_link_opens\", \"nodeid\": \"tests/e2e/test_chat.py::test_link_opens[webkit-iphone]\", \"projection\": \"webkit\", \"date\": \"2026-09-21\", \"source\": \"C://Users//rober//AppData//Local//Temp//e2e-value-//gate.log\", \"when\": \"call\", \"step\": \"tests/e2e/test_chat.py:52\"}], \"mentions\": [], \"log_events_by_projection\": {\"webkit\": 2}, \"race_candidates\": [{\"test\": \"tests/e2e/test_chat.py::test_link_opens\", \"projections\": [\"webkit\"], \"steps\": [\"tests/e2e/test_chat.py:40\", \"tests/e2e/test_chat.py:52\"], \"events\": 2}]}\n"
+],
+[
+"e2e_test_audit.main",
+[
+"parallel",
+"<TMP>/e2e-value--"
+],
+0,
+"{\"static\": {\"xdist\": {\"installed\": \"unknown (no .venv)\", \"declared\": false}, \"blockers\": 0, \"free_port_race\": [{\"file\": \"tests/e2e/conftest.py\", \"state\": \"mitigated\", \"why\": \"binds port 0, releases it, then a child binds it\"}], \"fixed_log_names\": [{\"file\": \"tests/e2e/conftest.py\", \"names\": [\"e2e-autoboot.log\"], \"state\": \"mitigated\"}], \"shared_append\": [{\"file\": \"tests/_progress.py\", \"state\": \"mitigated\", \"why\": \"appends to a file every worker process would write\"}], \"load_sensitive_ungrouped\": [{\"file\": \"tests/e2e/test_agent.py\", \"state\": \"mitigated\", \"why\": \"real-agent test: needs one xdist_group or a serial pass\"}], \"session_fixtures\": [], \"module_state\": []}, \"projection\": {\"status\": \"unknown\", \"reason\": \"no timing source ([e2e] progress_log / junit_xml undeclared, no --log)\"}, \"shared_state\": []}\n"
+],
+[
+"e2e_test_audit.main",
+[
+"budget",
+"<TMP>/e2e-value-budget-"
+],
+0,
+"E2E_BUDGET=unmeasured\nE2E_BUDGET_COUNT=0\nE2E_BUDGET_COUNT_KIND=unresolved-test-dirs\nE2E_BUDGET_LIMIT=15\nE2E_BUDGET_SOURCE=scaffold-target\nE2E_BUDGET_REASON=unresolved-test-dirs 0 vs limit 15 (no [e2e] test_budget declared); test dirs tests/e2e\nE2E_TIME_BUDGET=undeclared\nE2E_TIME_BUDGET_SECONDS=\nE2E_TIME_BUDGET_LIMIT=\nE2E_TIME_BUDGET_REASON=no [e2e] time_budget_s declared\nE2E_GROWTH=-40\nE2E_GROWTH_SINCE=<TODAY>\nE2E_AUDIT_TRIGGER=unknown\nE2E_AUDIT_TRIGGER_REASON=nodes not measured; nothing else fired\n"
+],
+[
+"e2e_test_audit.main",
+[
+"scan",
+"<TMP>/e2e-value-waits-"
+],
+0,
+"{\"test_dirs\": [\"tests/e2e\"], \"test_dirs_resolved\": true, \"test_dirs_missing\": [], \"files\": [{\"file\": \"tests/e2e/test_feedback.py\", \"lines\": 25, \"tests\": [\"test_loading\", \"test_settle\", \"test_retry\"], \"parametrized\": {}}], \"totals\": {\"files\": 1, \"raw_tests\": 3, \"node_count\": null}, \"target\": 15, \"ratio\": 0.2, \"clusters\": [], \"matrix_clusters\": [], \"size_outliers\": [], \"key_views_declared\": [], \"coverage_gaps\": [], \"waits\": [{\"file\": \"tests/e2e/conftest.py\", \"line\": 5, \"kind\": \"sleep\", \"ms\": 400, \"scope\": \"_wait_up\", \"unawaited\": false, \"text\": \"time.sleep(0.4)\"}, {\"file\": \"tests/e2e/test_feedback.py\", \"line\": 1, \"kind\": \"poll-constant\", \"ms\": 15000, \"scope\": \"POLL_MS\", \"unawaited\": false, \"text\": \"POLL_MS = 15_000\"}, {\"file\": \"tests/e2e/test_feedback.py\", \"line\": 4, \"kind\": \"page-timer\", \"ms\": 750, \"scope\": \"SLOW_INIT\", \"unawaited\": false, \"text\": \"return new Promise(function(res) { setTimeout(function() { res(orig(u)); }, 750); });\"}, {\"file\": \"tests/e2e/test_feedback.py\", \"line\": 20, \"kind\": \"sleep\", \"ms\": 500, \"scope\": \"test_settle\", \"unawaited\": false, \"text\": \"page.wait_for_timeout(500)\"}, {\"file\": \"tests/e2e/test_feedback.py\", \"line\": 25, \"kind\": \"long-timeout\", \"ms\": 20000, \"scope\": \"test_retry\", \"unawaited\": false, \"text\": \"expect(page.locator('#s')).to_have_text('Online', timeout=20_000)\"}], \"slow_fixtures\": [], \"vacuous_candidates\": []}\n"
+],
+[
+"e2e_test_audit.main",
+[
+"scan",
+"<TMP>/e2e-value-slowfix-"
+],
+0,
+"{\"test_dirs\": [\"tests/e2e\"], \"test_dirs_resolved\": true, \"test_dirs_missing\": [], \"files\": [{\"file\": \"tests/e2e/test_tab.py\", \"lines\": 29, \"tests\": [\"test_x\"], \"parametrized\": {}}], \"totals\": {\"files\": 1, \"raw_tests\": 1, \"node_count\": null}, \"target\": 15, \"ratio\": 0.07, \"clusters\": [], \"matrix_clusters\": [], \"size_outliers\": [], \"key_views_declared\": [], \"coverage_gaps\": [], \"waits\": [{\"file\": \"tests/e2e/test_tab.py\", \"line\": 23, \"kind\": \"long-timeout\", \"ms\": 45000, \"scope\": \"_click\", \"unawaited\": false, \"text\": \"page.click('a', timeout=45000)\"}, {\"file\": \"tests/e2e/test_tab.py\", \"line\": 29, \"kind\": \"long-timeout\", \"ms\": 60000, \"scope\": \"test_x\", \"unawaited\": false, \"text\": \"page.wait_for_selector('#x', timeout=60000)\"}], \"slow_fixtures\": [{\"file\": \"tests/e2e/test_tab.py\", \"line\": 9, \"name\": \"_warm\", \"is_fixture\": true, \"fixture_scope\": \"session\", \"autouse\": true, \"timeout_s\": 90.0}, {\"file\": \"tests/e2e/test_tab.py\", \"line\": 18, \"name\": \"_fetch\", \"is_fixture\": false, \"fixture_scope\": null, \"autouse\": false, \"timeout_s\": 45.0}], \"vacuous_candidates\": []}\n"
+],
+[
+"e2e_test_audit.main",
+[
+"record",
+"<TMP>/e2e-value-budget-"
+],
+0,
+"AUDIT_RECORD=<TMP>/e2e-value-budget-/state/e2e-audit/e2e-value-budget-.json\nAUDIT_RECORD_TESTS=0\nAUDIT_RECORD_NODES=\n"
+],
+[
+"e2e_test_audit.main",
+[
+"budget",
+"<TMP>/e2e-value-budget-"
+],
+0,
+"E2E_BUDGET=unmeasured\nE2E_BUDGET_COUNT=0\nE2E_BUDGET_COUNT_KIND=unresolved-test-dirs\nE2E_BUDGET_LIMIT=15\nE2E_BUDGET_SOURCE=scaffold-target\nE2E_BUDGET_REASON=unresolved-test-dirs 0 vs limit 15 (no [e2e] test_budget declared); test dirs tests/e2e\nE2E_TIME_BUDGET=undeclared\nE2E_TIME_BUDGET_SECONDS=\nE2E_TIME_BUDGET_LIMIT=\nE2E_TIME_BUDGET_REASON=no [e2e] time_budget_s declared\nE2E_GROWTH=+0\nE2E_GROWTH_SINCE=<TODAY>\nE2E_AUDIT_TRIGGER=unknown\nE2E_AUDIT_TRIGGER_REASON=nodes not measured; nothing else fired\n"
+]
+]

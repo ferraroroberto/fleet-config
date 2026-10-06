@@ -13,13 +13,78 @@ import tempfile
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "skills" / "_lib"))
-import e2e_value as v  # noqa: E402
+import e2e_value as _e2e_value  # noqa: E402
 
 sys.path.insert(0, str(Path(__file__).resolve().parent / "_lib"))
 from check_harness import CheckHarness  # noqa: E402
 
 _h = CheckHarness()
 check = _h.check
+
+# ---- characterization pin (fleet-config#1247) ----------------------------------------------------------
+# Every call this file makes through `v` is recorded with its full result (or the exception it raised),
+# and the record must equal a golden captured before e2e_value.py was split into modules. The asserts
+# below check chosen fields; the golden checks everything else they return. `v` is a proxy, never a
+# patched module, so a call inside e2e_value is not recorded and how the code is divided can't change
+# the record. Temp dirs and today's date are normalised. Regenerate only for an intended behaviour
+# change: E2E_VALUE_WRITE_CALL_GOLDEN=1.
+import inspect  # noqa: E402
+import json  # noqa: E402
+import os  # noqa: E402
+import re  # noqa: E402
+from datetime import datetime, timezone  # noqa: E402
+
+CALL_GOLDEN = Path(__file__).resolve().parent / "fixtures" / "e2e_value_calls.json"
+SURFACE_GOLDEN = Path(__file__).resolve().parent / "fixtures" / "e2e_value_surface.json"
+_TMP_ROOT = Path(tempfile.gettempdir()).resolve()
+_TMP_RE = re.compile(
+    "(?:" + "|".join(re.escape(s) for s in {str(_TMP_ROOT), _TMP_ROOT.as_posix(), tempfile.gettempdir()}) + ")"
+    r"[\\/]([^\\/'\"\s]*?)[a-z0-9_]{8}(?=[\\/'\"\s]|$)", re.I)
+_TMP_NAME_RE = re.compile(r"\b(e2e-value-(?:[a-z]+-)*|git_fixture_)[a-z0-9_]{8}\b")
+_TODAY = datetime.now(timezone.utc).date().isoformat()
+
+
+def _norm(value: object) -> object:
+    """`value` as JSON-able data with temp dirs and today's date masked."""
+    if isinstance(value, dict):
+        return {str(_norm(k)): _norm(x) for k, x in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_norm(x) for x in value]
+    if isinstance(value, (set, frozenset)):
+        return sorted((_norm(x) for x in value), key=lambda x: json.dumps(x, sort_keys=True))
+    if isinstance(value, (bool, int, float)) or value is None:
+        return value
+    if inspect.ismodule(value):  # the classifier, loaded under a per-load name: its file is what's stable
+        value = Path(getattr(value, "__file__", None) or value.__name__)
+    text = value.as_posix() if isinstance(value, Path) else value if isinstance(value, str) else repr(value)
+    text = _TMP_RE.sub(lambda m: "<TMP>/" + m.group(1), text).replace("\\", "/")
+    text = _TMP_NAME_RE.sub(lambda m: m.group(1), text)  # a temp dir's name used bare (a per-repo state file)
+    return text.replace(_TODAY, "<TODAY>")
+
+
+class _CallPin:
+    """`e2e_value` with every function call this file makes recorded."""
+
+    def __init__(self, module) -> None:
+        self._module, self.calls = module, []
+
+    def __getattr__(self, name: str):
+        attr = getattr(self._module, name)
+        if not inspect.isfunction(attr):
+            return attr
+
+        def recorded(*args, **kwargs):
+            try:
+                result = attr(*args, **kwargs)
+            except Exception as exc:
+                self.calls.append([name, "raised", _norm(f"{type(exc).__name__}: {exc}")])
+                raise
+            self.calls.append([name, _norm(result)])
+            return result
+        return recorded
+
+
+v = _CallPin(_e2e_value)
 
 
 def _log(day: str, start: str, lines: list) -> str:
@@ -994,5 +1059,56 @@ check(v.shadow_entry("tests/e2e/test_a.py", [_R(2, "e2e", prefix="tests/e2e/"), 
       "a general rule after a specific one is the intended order")
 check(v.classify_cmd(["tray.bat", ".gitignore"]) == "python scripts/classify_e2e.py tray.bat .gitignore",
       "the exact classifier command that checks a proposed rule's paths")
+
+# ---- characterization pin: e2e_test_audit.py's caller paths into e2e_value (fleet-config#1247) ----------
+# Every subcommand that reaches e2e_value without GitHub, on the fixture repos above; `routing` lists
+# merged PRs through `gh`, so its report is pinned through `routing_report(pr_list=...)` above instead.
+import contextlib  # noqa: E402
+import io  # noqa: E402
+
+import e2e_test_audit  # noqa: E402
+
+v.parallel(pt, ["tests/e2e"])
+for _argv in (["timing", str(tmp), "--suite-nodes", "3"], ["timing", str(tt), "--suite-nodes", "5"],
+              ["failures", str(tmp), "--no-gh"], ["parallel", str(pt)], ["budget", str(tb)],
+              ["scan", str(wr)], ["scan", str(sf)], ["record", str(tb)], ["budget", str(tb)]):
+    _out = io.StringIO()
+    with contextlib.redirect_stdout(_out):
+        _code = e2e_test_audit.main(_argv)
+    v.calls.append(["e2e_test_audit.main", _norm(_argv), _code, _norm(_out.getvalue())])
+
+# ---- characterization pin: the calls above, and the module's public surface (fleet-config#1247) ---------
+
+
+def _surface(module) -> dict:
+    """Every public name (and `_wall_s`, which this file calls): a function's signature, a constant's value."""
+    out = {}
+    for name in sorted(vars(module)):
+        attr = getattr(module, name)
+        if name.startswith("_") and name != "_wall_s" or inspect.ismodule(attr):
+            continue
+        if inspect.isfunction(attr):
+            out[name] = f"def {name}{inspect.signature(attr)}"
+        elif isinstance(attr, (bool, int, float, str, tuple, frozenset)):
+            out[name] = f"{type(attr).__name__} {attr!r}"
+    return out
+
+
+_surface_now = _surface(_e2e_value)
+if os.environ.get("E2E_VALUE_WRITE_CALL_GOLDEN") == "1":
+    CALL_GOLDEN.write_text(json.dumps(v.calls, indent=0, ensure_ascii=False) + "\n", encoding="utf-8")
+    SURFACE_GOLDEN.write_text(json.dumps(_surface_now, indent=1, ensure_ascii=False) + "\n", encoding="utf-8")
+_calls_want = json.loads(CALL_GOLDEN.read_text(encoding="utf-8"))
+_calls_got = json.loads(json.dumps(v.calls))
+_at = next((i for i, (g, w) in enumerate(zip(_calls_got, _calls_want)) if g != w),
+           min(len(_calls_got), len(_calls_want)))
+check(_calls_got == _calls_want,
+      f"every e2e_value call's result matches the golden ({len(_calls_got)} calls, golden {len(_calls_want)}; "
+      f"first difference at #{_at}: got {str(_calls_got[_at:_at + 1])[:600]} want {str(_calls_want[_at:_at + 1])[:600]})")
+_surface_want = json.loads(SURFACE_GOLDEN.read_text(encoding="utf-8"))
+check(_surface_now == _surface_want,
+      "e2e_value's public names, signatures and constants match the golden -- "
+      f"missing {sorted(set(_surface_want) - set(_surface_now))}, extra {sorted(set(_surface_now) - set(_surface_want))}, "
+      f"changed {sorted(k for k in set(_surface_now) & set(_surface_want) if _surface_now[k] != _surface_want[k])}")
 
 _h.report_and_exit("test_e2e_value")
