@@ -38,23 +38,29 @@ SKILLS_LIB = REPO / "skills" / "_lib"
 TESTS_LIB = REPO / "tests" / "_lib"
 
 
+def _importable_names(tree: Path) -> set:
+    """Top-level import names a directory provides: its modules and its packages."""
+    return ({p.stem for p in tree.glob("*.py")}
+            | {p.parent.name for p in tree.glob("*/__init__.py")})
+
+
 def _skills_only_module_names() -> set:
-    """Top-level module names that exist in `skills/_lib/` but not in `hooks/`.
+    """Top-level import names that exist in `skills/_lib/` but not in `hooks/`.
 
     Importing one of these from a hook can only work by reaching across the
-    boundary. Names present in *both* trees (there are none today, but a future
-    `no_window.py` twin would be one) are excluded, because those resolve from
-    the hook's own directory and are not a violation.
+    boundary. Packages count as much as modules (`design_lint`, `e2e_value`,
+    fleet-config#1296). Names present in *both* trees (there are none today,
+    but a future `no_window.py` twin would be one) are excluded, because those
+    resolve from the hook's own directory and are not a violation.
     """
-    hooks_names = {p.stem for p in HOOKS.glob("*.py")}
-    return {p.stem for p in SKILLS_LIB.glob("*.py")} - hooks_names
+    return _importable_names(SKILLS_LIB) - _importable_names(HOOKS)
 
 
-def _cross_tree_offenders() -> List[str]:
-    """`path:line` for every hooks/ site that reaches into the skills tree."""
+def _cross_tree_offenders(hooks_dir: Path = HOOKS) -> List[str]:
+    """`path:line` for every site under `hooks_dir` that reaches into the skills tree."""
     skills_only = _skills_only_module_names()
     offenders: List[str] = []
-    for py in sorted(HOOKS.rglob("*.py")):
+    for py in sorted(hooks_dir.rglob("*.py")):
         if "__pycache__" in py.parts:
             continue
         try:
@@ -62,7 +68,7 @@ def _cross_tree_offenders() -> List[str]:
             tree = ast.parse(source, filename=str(py))
         except (OSError, SyntaxError):  # pragma: no cover - unparseable file
             continue
-        loc = py.relative_to(REPO).as_posix()
+        loc = py.relative_to(hooks_dir.parent).as_posix()
         for node in ast.walk(tree):
             # `import git_run` / `from git_run import ...` for a name that only
             # the sibling tree provides.
@@ -178,6 +184,21 @@ def _hooks_tree_boundary_check() -> Tuple[int, int]:
         "tree_boundary: the scanner still recognizes the pre-#564 violation shape",
         len(seen) == 2,
         f"probe matched {len(seen)} node(s), expected 2",
+    )
+
+    # A skills/_lib *package* is as unreachable from a hook as a module (#1296):
+    # `e2e_value` became one in #1294, beside design_lint, design_review, perf_review.
+    scratch = Path(tempfile.mkdtemp(prefix="test_tree_boundary_hooks_"))
+    try:
+        (scratch / "probe_hook.py").write_text(
+            "import e2e_value\nfrom design_lint.css import strip_comments\n", encoding="utf-8")
+        pkg_offenders = _cross_tree_offenders(scratch)
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+    check(
+        "tree_boundary: a hooks/ import of a skills/_lib package is an offender",
+        len(pkg_offenders) == 2,
+        f"scratch probe matched {pkg_offenders!r}, expected the e2e_value and design_lint imports",
     )
 
     _git_helper_parity(check)
