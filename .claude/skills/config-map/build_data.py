@@ -313,18 +313,22 @@ def _parse_wiring(path: Path) -> list[tuple[str, str, str]]:
         for block in blocks:
             matcher = block.get("matcher", "")
             for hook in block.get("hooks", []):
-                command = hook.get("command", "")
-                name = _hook_name_from_command(command)
-                if name:
+                for name in _hook_names_from_command(hook.get("command", "")):
                     wiring.append((name, event, matcher))
     return wiring
 
 
-def _hook_name_from_command(command: str) -> str | None:
-    """Extract the hook module from Claude's shim form or Codex's direct-Python form."""
+def _hook_names_from_command(command: str) -> list[str]:
+    """The hook modules one command runs: Claude's shim form, the one-process
+    ``hook_dispatch.py <hook> ...`` form (fleet-config#1274), or Codex's
+    direct-Python form."""
     m = re.search(r"-Hook\s+(\w+)", command)
     if m:
-        return m.group(1)
+        return [m.group(1)]
+
+    m = re.search(r"[/\\]hook_dispatch\.py((?:\s+\w+)+)\s*$", command)
+    if m:
+        return m.group(1).split()
 
     m = re.search(
         r"(?:^|\s)(?:py|python(?:\.exe)?|[^'\"\s]*[/\\]python(?:\.exe)?)\s+['\"]?[^'\"\s]*[/\\]hooks[/\\](\w+)\.py\b",
@@ -332,9 +336,9 @@ def _hook_name_from_command(command: str) -> str | None:
         re.IGNORECASE,
     )
     if m:
-        return m.group(1)
+        return [m.group(1)]
 
-    return None
+    return []
 
 
 def hooks_inventory(residual: dict) -> tuple[list[dict], list[dict]]:
