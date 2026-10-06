@@ -35,40 +35,16 @@
         "hooks": [
           {
             "type": "command",
-            "command": "C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File C:/Users/rober/.claude/hooks/run-hook.ps1 -Hook pre_commit_no_ai_trailer"
-          },
-          {
-            "type": "command",
-            "command": "C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File C:/Users/rober/.claude/hooks/run-hook.ps1 -Hook gh_body_file_guard"
-          },
-          {
-            "type": "command",
-            "command": "C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File C:/Users/rober/.claude/hooks/run-hook.ps1 -Hook bash_cmdexe_syntax_guard"
-          },
-          {
-            "type": "command",
-            "command": "C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File C:/Users/rober/.claude/hooks/run-hook.ps1 -Hook bash_windows_path_guard"
+            "command": "E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/hooks/hook_dispatch.py pre_commit_no_ai_trailer gh_body_file_guard bash_cmdexe_syntax_guard bash_windows_path_guard secret_scan_guard safe_kill_guard venv_discipline context_filter_hook"
           }
         ]
       },
       {
-        "matcher": "Bash|PowerShell",
+        "matcher": "PowerShell",
         "hooks": [
           {
             "type": "command",
-            "command": "C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File C:/Users/rober/.claude/hooks/run-hook.ps1 -Hook secret_scan_guard"
-          },
-          {
-            "type": "command",
-            "command": "C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File C:/Users/rober/.claude/hooks/run-hook.ps1 -Hook safe_kill_guard"
-          },
-          {
-            "type": "command",
-            "command": "C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File C:/Users/rober/.claude/hooks/run-hook.ps1 -Hook venv_discipline"
-          },
-          {
-            "type": "command",
-            "command": "C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File C:/Users/rober/.claude/hooks/run-hook.ps1 -Hook context_filter_hook"
+            "command": "E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/hooks/hook_dispatch.py secret_scan_guard safe_kill_guard venv_discipline context_filter_hook"
           }
         ]
       },

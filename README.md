@@ -104,7 +104,7 @@ fleet-config/
 │   ├── edit_events.py              # shared EditEvent normalization + apply_patch envelope parsing (split from _lib.py, fleet-config#819)
 │   ├── projects.toml               # per-project nuance (ports, gate triggers, never-kill ports)
 │   ├── run-hook.ps1                # Claude Code shim — settings.template.json routes hooks through this
-│   ├── hook_dispatch.py            # runs several hooks in one venv-Python process and folds their verdicts into one answer; inert until settings.json points at it (fleet-config#1274)
+│   ├── hook_dispatch.py            # runs several hooks in one venv-Python process and folds their verdicts into one answer; the template's `Bash` and `PowerShell` PreToolUse entries run through it (fleet-config#1274)
 │   ├── pre_commit_no_ai_trailer.py
 │   ├── secret_scan_guard.py
 │   ├── gh_body_file_guard.py       # PreToolUse on Bash: nudge gh --body heredocs/backticks → --body-file; PowerShell here-strings in Bash

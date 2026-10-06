@@ -790,6 +790,13 @@ def _config_map_check() -> Tuple[int, int, int]:
         "E:/automation/fleet-config/.venv/Scripts/python.exe .claude/skills/config-map/build_data.py",
     )
 
+    # The template's shell matchers run through hook_dispatch.py (fleet-config#1274):
+    # every hook it names must reach the map, not "hook_dispatch" as one hook.
+    template_names = {name for name, _, _ in bd._parse_wiring(REPO / "settings.template.json")}
+    check("config_map: the hook_dispatch.py form yields every hook it names",
+          {"pre_commit_no_ai_trailer", "context_filter_hook", "safe_kill_guard"} <= template_names
+          and "hook_dispatch" not in template_names)
+
     wc_spec = importlib.util.spec_from_file_location("config_map_whatchanged", cm_dir / "whatchanged.py")
     wc = importlib.util.module_from_spec(wc_spec)
     wc_spec.loader.exec_module(wc)  # type: ignore[union-attr]
