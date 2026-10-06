@@ -104,6 +104,10 @@ def hook_env(extra_env: Dict[str, str] | None = None) -> Dict[str, str]:
     # unconditionally, exactly like the Telegram token; the checks that need it
     # set their own value through `extra_env`.
     env.pop(LAUNCHER_SESSION_ID_ENV_VAR, None)
+    # Same hazard one variable over (fleet-config#1281): a suite run from a
+    # `claude -p` (a scheduled run, an eval) inherits `sdk-cli`, which makes
+    # every launcher-stamped hook treat itself as a nested child.
+    env.pop("CLAUDE_CODE_ENTRYPOINT", None)
     env["CLAUDE_SETTINGS_JSON_PATH"] = NO_SETTINGS_JSON
     env["FLEET_CONFIG_ENV_PATH"] = NO_DOTENV
     env["FLEET_NOTIFY_BLOCK_NETWORK"] = "1"

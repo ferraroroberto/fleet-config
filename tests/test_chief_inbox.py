@@ -34,12 +34,15 @@ check = _h.check
 WORKER_SID = "a1b2c3d4e5f60718293a4b5c6d7e8f90"
 
 
-def drive(hook: str, payload: dict, state: Path, launcher_sid: str = "", agent: str = "") -> subprocess.CompletedProcess:
+def drive(hook: str, payload: dict, state: Path, launcher_sid: str = "", agent: str = "",
+          entrypoint: str = "") -> subprocess.CompletedProcess:
     env = hook_env({"CLAUDE_HOOKS_STATE_DIR": str(state),
                     "CLAUDE_SESSIONS_DIR": str(state / "no-sessions"),
                     "APP_LAUNCHER_AGENT": agent})
     if launcher_sid:
         env["APP_LAUNCHER_SESSION_ID"] = launcher_sid
+    if entrypoint:
+        env["CLAUDE_CODE_ENTRYPOINT"] = entrypoint
     return subprocess.run([PYTHON, str(HOOKS / f"{hook}.py")], input=json.dumps(payload),
                           capture_output=True, text=True, timeout=30, env=env,
                           creationflags=_lib.NO_WINDOW)
@@ -120,6 +123,40 @@ for label, hook, stop_payload, end_payload, default_agent in HARNESSES:
               f"{label} Stop, malformed registry: nothing written, hook exits 0")
         check("undetermined" in res.stderr,
               f"{label} Stop, malformed registry: logs an undetermined line ({res.stderr.strip()[:120]!r})")
+    finally:
+        shutil.rmtree(state, ignore_errors=True)
+
+# A `claude -p` child spawned inside a managed lane inherits the lane's
+# APP_LAUNCHER_SESSION_ID; Claude Code stamps it CLAUDE_CODE_ENTRYPOINT=sdk-cli
+# (probed live, fleet-config#1281). Its turn/session end is not the lane's, and
+# its Board row must not carry the lane's launcher id (the exact join would
+# hand the lane's card the child's status and transcript).
+for event_name in ("Stop", "SessionEnd"):
+    state = fresh_state(MANAGED)
+    try:
+        res = drive("session_state", claude(event_name), state, launcher_sid=WORKER_SID, entrypoint="sdk-cli")
+        check(res.returncode == 0 and events(state) == [],
+              f"Claude {event_name}, print-mode child of a managed lane: no inbox event under the parent's sid")
+    finally:
+        shutil.rmtree(state, ignore_errors=True)
+    # The lane itself (interactive `cli`) still reports its own turn/session end.
+    state = fresh_state(MANAGED)
+    try:
+        drive("session_state", claude(event_name), state, launcher_sid=WORKER_SID, entrypoint="cli")
+        rows = events(state)
+        check(len(rows) == 1 and rows[0].get("launcher_sid") == WORKER_SID,
+              f"Claude {event_name}, the interactive lane itself: its own event is still written ({rows})")
+    finally:
+        shutil.rmtree(state, ignore_errors=True)
+
+for entrypoint, expected in (("sdk-cli", None), ("cli", WORKER_SID)):
+    state = fresh_state(MANAGED)
+    try:
+        drive("session_state", claude("UserPromptSubmit"), state, launcher_sid=WORKER_SID, entrypoint=entrypoint)
+        board = json.loads((state / "sessions-state.json").read_text(encoding="utf-8"))
+        stamped = (board.get("claude-uuid") or {}).get("launcher_session_id", "missing")
+        check(stamped == expected,
+              f"session_state row, entrypoint {entrypoint}: launcher_session_id is {expected!r} (got {stamped!r})")
     finally:
         shutil.rmtree(state, ignore_errors=True)
 
