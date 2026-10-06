@@ -292,8 +292,10 @@ read.
     (`--icon-inline` collapses the icon-button glyph to zero); WARN names
     one the component falls back on, with the fallback value. A nested
     `var()` inside a fallback counts only when the outer token is
-    undefined. A token the README calls a per-context knob
-    (`--icon-btn-box`) is exempt. The README's "Required design tokens"
+    undefined. A token the README documents as optional is exempt: its
+    "Required design tokens" row says "optional" (#1301), or a prose line
+    calls it a per-context knob (`--icon-btn-box`). A row that only names a
+    fallback is not optional. The README's "Required design tokens"
     table is a cross-check only: a token the CSS reads but the table omits
     is noted in the detail for a fix upstream in project-scaffolding, and
     never changes the status. NA when nothing is declared; an unreadable
