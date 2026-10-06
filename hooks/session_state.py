@@ -48,7 +48,9 @@ The hook payload's ``session_id`` is Claude Code's transcript UUID, not the
 launcher session-host id. App Launcher injects its exact identity as inherited
 ``APP_LAUNCHER_SESSION_ID`` / ``APP_LAUNCHER_AGENT`` values; when present this
 writer persists them for an exact agent-aware consumer join. External sessions
-have no launcher id and retain the normalized-cwd fallback.
+have no launcher id and retain the normalized-cwd fallback; so does a
+print-mode ``claude -p`` child of a lane, which inherits the stamp but is not
+the lane (``_lib.own_launcher_session_id``, fleet-config#1281).
 
 Like every hook here this is advisory-only: any failure is swallowed and the
 hook exits 0. Advisory is not silent, though — a state write that never
@@ -308,7 +310,7 @@ def upsert_from_payload(
     project = _lib.detect_project(cwd_path)
     transcript = payload.get("transcript_path")
     name, name_source = _lookup_session_name(session_id)
-    launcher_session_id = _lib.launcher_session_id() or None
+    launcher_session_id = _lib.own_launcher_session_id() or None
     agent = (
         os.environ.get("APP_LAUNCHER_AGENT", "").strip().lower()
         or _lib.payload_agent(payload)

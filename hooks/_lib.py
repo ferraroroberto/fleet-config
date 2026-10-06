@@ -38,6 +38,12 @@ STATE_DIR_ENV_VAR = "CLAUDE_HOOKS_STATE_DIR"
 # entirely (fleet-config#835).
 LAUNCHER_SESSION_ID_ENV_VAR = "APP_LAUNCHER_SESSION_ID"
 
+# Claude Code sets this in its own process env -- `cli` for an interactive
+# session, `sdk-*` for print mode / the Agent SDK -- overwriting an inherited
+# value (probed live, fleet-config#1281). app-launcher scrubs it from every
+# session it spawns, so in a launcher lane it is always the harness's own.
+ENTRYPOINT_ENV_VAR = "CLAUDE_CODE_ENTRYPOINT"
+
 logger = logging.getLogger("fleet_hooks")
 
 
@@ -111,6 +117,23 @@ def launcher_session_id() -> str:
     subprocess's env override always wins.
     """
     return os.environ.get(LAUNCHER_SESSION_ID_ENV_VAR, "").strip()
+
+
+def own_launcher_session_id() -> str:
+    """:func:`launcher_session_id`, but ``""`` inside a nested print-mode child.
+
+    A ``claude -p`` that a launcher lane starts (skill evals, a design-review
+    judge) inherits the lane's ``APP_LAUNCHER_SESSION_ID``, so without this its
+    own ``Stop``/``SessionEnd`` reached the chief as the *lane's* turn and
+    session end, and its Board row hijacked the lane's card (fleet-config#1281).
+    Launcher lanes are interactive PTYs, never print mode, so an ``sdk-*``
+    entrypoint marks a session the launcher did not start. Readers that
+    attribute a session's *own* lifecycle use this; readers guarding the
+    lane's tree (a child edits the same checkout) keep the inherited id.
+    """
+    if os.environ.get(ENTRYPOINT_ENV_VAR, "").strip().lower().startswith("sdk"):
+        return ""
+    return launcher_session_id()
 
 
 # `skills/_lib/scheduled_runner.py` stamps this into the environment of every

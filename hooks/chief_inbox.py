@@ -20,7 +20,8 @@ make "claim atomically" and "append concurrently" fight. One file per event,
 published by temp-file-then-rename, makes claim-exactly-once a plain rename.
 
 Cheap and fail-open by construction: a session without
-``APP_LAUNCHER_SESSION_ID`` (every human-started one) returns before any I/O;
+``APP_LAUNCHER_SESSION_ID`` (every human-started one), or a print-mode child
+that only inherited it (fleet-config#1281), returns before any I/O;
 the worker path is one small file write -- no subprocess, no network. An
 unreadable registry is logged as undetermined and writes nothing: "could not
 tell" is never folded into "not managed" (#835).
@@ -55,7 +56,7 @@ def inbox_dir() -> Path:
 
 def record(payload: Dict[str, Any], event: str, default_agent: str = "claude") -> Optional[Path]:
     """Write one inbox event for this session's ``event``; the file, or ``None``."""
-    sid = _lib.launcher_session_id()
+    sid = _lib.own_launcher_session_id()
     if not sid:
         return None
     import notify_on_idle  # deferred: only launcher-spawned sessions pay for it
