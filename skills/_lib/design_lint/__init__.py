@@ -15,7 +15,9 @@ Subcommands (all print JSON):
   contracts <root>   greppable design.md v2 component-contract checks
                      (focus ring, reduced motion, desktop measure, switch
                      on-color, native checkboxes, disclosure box, native
-                      <dialog>, nav rules, icon-size strays, PWA icon family).
+                      <dialog>, nav rules, icon-size strays, PWA icon family,
+                     tokens a declared vendored component reads but the app
+                     never defines).
                      A repo's `[[design.accepted]]` exceptions mark matching
                      findings ACCEPTED (fleet-config#836).
   vendored  <root>   byte-compare the app's _vendored/ copies against

@@ -357,6 +357,129 @@ for _label, _css in (
 check(run_contracts(".card { background: var(--card); }\n")["icon-button-unpainted"]["status"] == "NA",
       "icon-button-unpainted: no --close-bg declared or read -> NA")
 
+# vendored-tokens: a declared vendored component must not read a token the app never
+# defines (#1290). The fixture is the real failure: icon-button.css reads
+# --icon-inline with no fallback (the glyph collapses to 0) and --hit-min with one.
+_VT_DIR = "app/webapp/static/_vendored/icon-button"
+_VT_CSS = """.icon-button {
+  width: var(--icon-btn-box, 28px);
+  border-radius: var(--radius-sm, 8px);
+  color: var(--muted);
+}
+.icon-button::before { inset: min(0px, calc((var(--icon-btn-box, 28px) - var(--hit-min, 44px)) / 2)); }
+.icon-button .icon {
+  width: var(--icon-inline);
+}
+"""
+_VT_README = """# Icon button
+
+## Required design tokens
+
+| Token | Light value | Used for |
+| --- | --- | --- |
+| `--muted` | `#656d76` | glyph at rest |
+| `--icon-inline` | `16px` | glyph size |
+| `--radius-sm` (fallback `8px`) | `8px` | box corners |
+| `--hit-min` (fallback `44px`) | `44px` | target floor |
+
+`--icon-btn-box` (default `28px`) is a per-context knob, not a design token.
+"""
+_VT_TOML = (f'[vendored]\nicon-button = {{ src = "{_VT_DIR}", sha = "abc", dest = "{_VT_DIR}" }}\n'
+            'classify_e2e = { src = "scripts/classify_e2e.py", sha = "abc", dest = "scripts/classify_e2e.py" }\n')
+_VT_ALL = ":root { --muted: #656d76; --icon-inline: 16px; --radius-sm: 8px; --hit-min: 44px; }\n"
+
+
+def run_vendored_tokens(app_css: str, *, toml: str | None = _VT_TOML, comp_css: str = _VT_CSS,
+                        readme: str | None = _VT_README, markup: str = "", js: str = "") -> dict:
+    t = Path(tempfile.mkdtemp(prefix="dl-vt-"))
+    try:
+        files = {"app/webapp/static/styles.css": app_css, f"{_VT_DIR}/icon-button.css": comp_css,
+                 "scripts/classify_e2e.py": "pass\n"}
+        if toml is not None:
+            files[".fleet.toml"] = toml
+        if readme is not None:
+            files[f"{_VT_DIR}/README.md"] = readme
+        if markup:
+            files["app/webapp/static/index.html"] = markup
+        if js:
+            files["app/webapp/static/app.js"] = js
+        for name, body in files.items():
+            path = t / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(body, encoding="utf-8")
+        out = dl.contracts(t, sorted(t.rglob("*.css")), sorted(t.rglob("*.html")),
+                           sorted(t.rglob("*.js")), {"icons.size.inline": "16px"})
+        rows = [c for c in out if c["id"] == "vendored-tokens"]
+        check(len(rows) == 1, f"vendored-tokens: exactly one row -- {rows}")
+        return rows[0] if rows else {"status": None, "detail": "", "evidence": None}
+    finally:
+        shutil.rmtree(t, ignore_errors=True)
+
+
+_vt = run_vendored_tokens(_VT_ALL)
+check(_vt["status"] == "PASS", f"vendored-tokens: every token the component reads is defined -> PASS -- {_vt}")
+check("--icon-btn-box" not in _vt["detail"],
+      f"vendored-tokens: a README-documented per-context knob is never a gap -- {_vt}")
+
+# home-automation before #828: no --icon-inline anywhere -> FAIL naming it, at the read site
+_vt = run_vendored_tokens(_VT_ALL.replace(" --icon-inline: 16px;", ""))
+check(_vt["status"] == "FAIL" and "--icon-inline" in _vt["detail"]
+      and _vt["evidence"] == f"{_VT_DIR}/icon-button.css:8",
+      f"vendored-tokens: an undefined token with no fallback FAILs by name at its var() -- {_vt}")
+
+# app-launcher before #1417: no --hit-min, but the component falls back to 44px -> WARN
+_vt = run_vendored_tokens(_VT_ALL.replace(" --hit-min: 44px;", ""))
+check(_vt["status"] == "WARN" and "--hit-min" in _vt["detail"] and "44px" in _vt["detail"],
+      f"vendored-tokens: an undefined token the component falls back on only WARNs -- {_vt}")
+
+_vt = run_vendored_tokens(_VT_ALL.replace(" --icon-inline: 16px;", "").replace(" --hit-min: 44px;", ""))
+check(_vt["status"] == "FAIL" and "--icon-inline" in _vt["detail"] and "--hit-min" in _vt["detail"],
+      f"vendored-tokens: a FAIL still lists the fallback-only gaps beside it -- {_vt}")
+
+# a definition anywhere the app ships counts: another stylesheet, the component's own
+# CSS, an inline style attribute, or a JS setProperty
+_no_inline = _VT_ALL.replace(" --icon-inline: 16px;", "")
+for _label, _kwargs in (
+        ("the component's own CSS", {"comp_css": _VT_CSS + ".icon-button { --icon-inline: 16px; }\n"}),
+        ("an inline style attribute", {"markup": '<div style="--icon-inline: 16px"></div>\n'}),
+        ("a JS setProperty", {"js": "document.body.style.setProperty('--icon-inline', '16px');\n"})):
+    _vt = run_vendored_tokens(_no_inline, **_kwargs)
+    check(_vt["status"] == "PASS", f"vendored-tokens: a definition in {_label} counts -- {_vt}")
+
+# a nested fallback is only needed when the outer token is undefined
+_nested = ".x { width: var(--icon-inline, var(--icon-size)); }\n"
+_vt = run_vendored_tokens(_VT_ALL, comp_css=_nested, readme=None)
+check(_vt["status"] == "PASS", f"vendored-tokens: outer defined -> the nested fallback is never read -- {_vt}")
+_vt = run_vendored_tokens(":root { --x: 1; }\n", comp_css=_nested, readme=None)
+check(_vt["status"] == "FAIL" and "--icon-size" in _vt["detail"],
+      f"vendored-tokens: outer undefined -> the nested var() is read, and its own gap FAILs -- {_vt}")
+
+# the README table is a cross-check, never the source: drift is reported, and the
+# status still comes from the CSS
+_vt = run_vendored_tokens(_VT_ALL + ":root { --ink: #000; }\n",
+                          comp_css=_VT_CSS + ".icon-button:hover { color: var(--ink); }\n")
+check(_vt["status"] == "PASS" and "README" in _vt["detail"] and "--ink" in _vt["detail"],
+      f"vendored-tokens: a token the CSS reads but the README table omits is noted -- {_vt}")
+_vt = run_vendored_tokens(_VT_ALL, readme=_VT_README.replace("| `--muted` |", "| `--line` | x | y |\n| `--muted` |"))
+check(_vt["status"] == "PASS" and "README" not in _vt["detail"] and "---" not in _vt["detail"],
+      f"vendored-tokens: a README row the CSS never reads is not drift (a container's table lists "
+      f"its controls' tokens too), and the |---| separator row is no token -- {_vt}")
+
+# without the knob sentence, --icon-btn-box is an ordinary fallback-only gap
+_vt = run_vendored_tokens(_VT_ALL, readme=_VT_README.replace("per-context knob", "size"))
+check(_vt["status"] == "WARN" and "--icon-btn-box" in _vt["detail"],
+      f"vendored-tokens: only a README-documented knob is exempt -- {_vt}")
+
+for _label, _toml in (("no .fleet.toml", None),
+                      ("no [vendored] table", 'layer = "working-web"\n'),
+                      ("only non-component entries",
+                       '[vendored]\nclassify_e2e = { src = "scripts/classify_e2e.py", sha = "a", dest = "scripts/classify_e2e.py" }\n')):
+    _vt = run_vendored_tokens(_no_inline, toml=_toml)
+    check(_vt["status"] == "NA", f"vendored-tokens: {_label} -> NA -- {_vt}")
+_vt = run_vendored_tokens(_VT_ALL, toml="[vendored\n")
+check(_vt["status"] == "FAIL" and ".fleet.toml" in _vt["detail"],
+      f"vendored-tokens: an unreadable .fleet.toml is never a pass -- {_vt}")
+
 # --on is an app's own alias: judge the colour it resolves to, never the name (#1200)
 _on_acc = run_contracts(":root { --on: var(--accent); }\n.toggle.on { background: var(--on); }\n")["switch-on-accent"]
 check(_on_acc["status"] == "PASS", f"switch-on-accent: --on aliasing the accent PASSes -- {_on_acc}")

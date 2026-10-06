@@ -283,6 +283,21 @@ read.
     `rendered leg unmeasured` when it doesn't. A static `hit-target` PASS
     once sat beside 33–39px rendered heights, so the missing harness now
     shows in the contract counts, not only in this prose (#969).
+  - **vendored-tokens** — every CSS component the app declares in its
+    `.fleet.toml` `[vendored]` table reads only tokens the app defines
+    (#1290). The token list is the component's own `var(--x)` reads, so it
+    cannot drift from the code. A definition counts anywhere the app ships:
+    a stylesheet (the component's own included), an inline `style`, or a JS
+    `setProperty`. FAIL names an undefined token read with no fallback
+    (`--icon-inline` collapses the icon-button glyph to zero); WARN names
+    one the component falls back on, with the fallback value. A nested
+    `var()` inside a fallback counts only when the outer token is
+    undefined. A token the README calls a per-context knob
+    (`--icon-btn-box`) is exempt. The README's "Required design tokens"
+    table is a cross-check only: a token the CSS reads but the table omits
+    is noted in the detail for a fix upstream in project-scaffolding, and
+    never changes the status. NA when nothing is declared; an unreadable
+    `.fleet.toml` FAILs.
   - **`ACCEPTED`** — a WARN/FAIL a repo already examined and accepted, via a
     `[[design.accepted]]` entry in its own `.fleet.toml` (schema:
     `architecture/README.md`, fleet-config#836). The row keeps the original

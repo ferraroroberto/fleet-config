@@ -3,8 +3,9 @@
 `contracts()` is a thin orchestrator — it builds the shared `_ContractsCtx`
 once and runs `_CONTRACT_CHECKS` in numbered order. Each check lives in the
 per-concern module its subject belongs to (a11y, controls, modal, nav, icons,
-charts, states, typography), so adding a design.md rule means editing one small file and
-adding one row to the tuple below, not growing a single 1200-line section.
+charts, states, typography, vendored_tokens), so adding a design.md rule
+means editing one small file and adding one row to the tuple below, not
+growing a single 1200-line section.
 """
 from __future__ import annotations
 
@@ -41,6 +42,7 @@ from .modal import _check_editor_modal_contract, _check_native_dialog
 from .nav import _check_nav_contract, _check_viewport_lock
 from .states import _check_async_lifecycle
 from .typography import _check_break_all, _check_form_font_inherit, _check_uppercase_role
+from .vendored_tokens import _check_vendored_tokens
 
 
 _CONTRACT_CHECKS: Tuple[Callable[["_ContractsCtx"], List[dict]], ...] = (
@@ -74,6 +76,7 @@ _CONTRACT_CHECKS: Tuple[Callable[["_ContractsCtx"], List[dict]], ...] = (
     _check_break_all,
     _check_spec_contrast,
     _check_rendered_leg,
+    _check_vendored_tokens,
 )
 
 
