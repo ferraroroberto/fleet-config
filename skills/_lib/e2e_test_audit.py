@@ -85,7 +85,8 @@ Subcommands:
       unmeasured count is `freshness: unchecked` (fleet-config#1175). `routing` imports
       the repo's own `scripts/classify_e2e.py` read-only; `parallel` reads the
       test tree statically and projects serial durations. The logic lives in
-      `e2e_value.py` (see its docstring for the shapes); it never starts a gate.
+      the `e2e_value` package (see its `__init__` docstring for the shapes); it
+      never starts a gate.
 
 stdlib + the `git`/`gh`-free `git_run` helper + (best-effort) the target
 repo's own `.venv` pytest for the true node count.

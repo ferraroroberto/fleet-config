@@ -1,4 +1,4 @@
-"""Unit tests for skills/_lib/e2e_value.py, /e2e-audit's time and failure layer (fleet-config#1018).
+"""Unit tests for the skills/_lib/e2e_value/ package, /e2e-audit's time and failure layer (fleet-config#1018).
 
 Synthetic progress logs only, in the shape app-launcher's tests/_progress_log.py
 writes (#534, #943, #1231). No gate is started and no GitHub call is made.
