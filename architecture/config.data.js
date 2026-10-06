@@ -307,6 +307,7 @@ window.CONFIG = {
       "repo": "content-management",
       "items": [
         "check-ip",
+        "demo-video",
         "newsletter-triage",
         "podcast",
         "schedule-autoheal"
@@ -367,7 +368,7 @@ window.CONFIG = {
     },
     {
       "nm": "pre_commit_no_ai_trailer",
-      "ev": "PreToolUse · Bash",
+      "ev": "PreToolUse · Bash·PowerShell",
       "block": true,
       "reach": "Claude + Codex",
       "ds": "Block `git commit` with an AI attribution trailer."
@@ -543,6 +544,10 @@ window.CONFIG = {
     {
       "nm": "harness_wire",
       "ds": "The hooks' multi-harness wire protocol (split from `_lib.py`, fleet-config#931)."
+    },
+    {
+      "nm": "hook_dispatch",
+      "ds": "Run several hook modules in one process and answer once (fleet-config#1274)."
     },
     {
       "nm": "hub_client",

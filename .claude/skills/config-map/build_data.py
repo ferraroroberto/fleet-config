@@ -357,16 +357,26 @@ def hooks_inventory(residual: dict) -> tuple[list[dict], list[dict]]:
         m = matcher.replace("|", "·")
         return f"{event} · {m}" if m else event
 
+    # A hook keeps its first event, plus every matcher it is wired on under that
+    # event: since the dispatcher (fleet-config#1274) Bash and PowerShell are two
+    # entries naming the same hooks, so first-wins dropped PowerShell (#1296).
+    wired: dict[str, tuple[str, list[str]]] = {}
+    for name, event, matcher in claude_wiring:
+        first_event, matchers = wired.setdefault(name, (event, []))
+        if event != first_event:
+            continue
+        for m in matcher.split("|"):
+            if m and m not in matchers:
+                matchers.append(m)
+
     hooks: list[dict] = []
     seen: set[str] = set()
-    for name, event, matcher in claude_wiring:
-        if name in seen:
-            continue
+    for name, (event, matchers) in wired.items():
         seen.add(name)
         py = hooks_dir / f"{name}.py"
         hooks.append({
             "nm": name,
-            "ev": _event(event, matcher),
+            "ev": _event(event, "|".join(matchers)),
             "block": _module_blocks(py),
             "reach": "Claude + Codex" if name in codex_names else "Claude only",
             "ds": _esc(_docstring_first_line(py)),
