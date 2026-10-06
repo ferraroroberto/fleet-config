@@ -16,9 +16,18 @@ detail without changing the status, since the fix belongs upstream in
 project-scaffolding, not in the adopting app. Only one direction is checked —
 a token the CSS reads that the table omits. A table row the CSS never reads is
 normal: a container's table also lists what the controls inside it need
-(modal's lists the button and input tokens). A token the README calls a
-per-context knob (`--icon-btn-box`) is exempt: leaving it unset is the
-documented default.
+(modal's lists the button and input tokens).
+
+A token the README documents as optional is exempt: leaving it unset is the
+documented default. Two forms count, and nothing else does:
+- a token-table row whose text says "optional" (`| --x | 1px | ... optional,
+  falls back to 1px |`) exempts that row's tokens, so a README states it once,
+  in the table;
+- a prose line that calls a token a knob or knobs (`--icon-btn-box` is a
+  per-context knob) exempts the backticked tokens on it, for a per-context
+  setting that has no table row.
+A row that only names a fallback ("(fallback `8px`)") is not optional: the
+component works without the token, but the app is still expected to define it.
 """
 from __future__ import annotations
 
@@ -43,7 +52,8 @@ _TICKED_TOKEN_RE = re.compile(r"`(--[A-Za-z][A-Za-z0-9_-]*)`")
 # or a JS `style.setProperty('--x', ...)`.
 _DECL_RE = re.compile(r"(?<![\w-])(--[A-Za-z0-9_-]+)\s*:")
 _SET_PROPERTY_RE = re.compile(r"""setProperty\(\s*['"`](--[A-Za-z0-9_-]+)""")
-_KNOB_RE = re.compile(r"\bknob\b", re.I)
+_KNOB_RE = re.compile(r"\bknobs?\b", re.I)
+_OPTIONAL_RE = re.compile(r"\boptional\b", re.I)
 
 
 @dataclass
@@ -83,16 +93,17 @@ def _var_reads(text: str, lo: int = 0, hi: Optional[int] = None) -> List[_Read]:
 
 
 def _readme_tokens(readme: str) -> Tuple[Set[str], Set[str]]:
-    """`(table tokens, knobs)` from a component README.
+    """`(table tokens, optional tokens)` from a component README.
 
     The table is the "Required design tokens" section's rows (every backticked
     `--x` in the first cell, so `--a` / `--b` rows count both; the `| --- |`
-    separator holds none). A knob is a token named on a prose line that calls
-    it a knob — table rows are excluded so a token whose *name* contains the
-    word (`--toggle-knob`) is not mistaken for one.
+    separator holds none). A token is optional when its table row says
+    "optional", or when a prose line names it and calls it a knob — a row is
+    never read for "knob", so a token whose *name* contains the word
+    (`--toggle-knob`) is not mistaken for one.
     """
     table: Set[str] = set()
-    knobs: Set[str] = set()
+    optional: Set[str] = set()
     in_section = False
     for line in readme.splitlines():
         stripped = line.strip()
@@ -102,11 +113,14 @@ def _readme_tokens(readme: str) -> Tuple[Set[str], Set[str]]:
         if stripped.startswith("|"):
             if in_section:
                 first = stripped.strip("|").split("|", 1)[0]
-                table.update(_TICKED_TOKEN_RE.findall(first))
+                tokens = _TICKED_TOKEN_RE.findall(first)
+                table.update(tokens)
+                if _OPTIONAL_RE.search(stripped):
+                    optional.update(tokens)
             continue
         if _KNOB_RE.search(stripped):
-            knobs.update(_TICKED_TOKEN_RE.findall(stripped))
-    return table, knobs
+            optional.update(_TICKED_TOKEN_RE.findall(stripped))
+    return table, optional
 
 
 def _declared_components(root: Path) -> Tuple[Dict[str, Path], Optional[str]]:
@@ -138,7 +152,7 @@ def _all_names(reads: List[_Read]) -> Set[str]:
     return names
 
 
-def _gaps(reads: List[_Read], text: str, where: str, defined: Set[str], knobs: Set[str],
+def _gaps(reads: List[_Read], text: str, where: str, defined: Set[str], optional: Set[str],
           missing: Dict[str, str], fallback: Dict[str, str]) -> None:
     """Fill `missing` (token -> first no-fallback read site) and `fallback` (token -> the
     component's fallback) for the reads the app leaves undefined. A nested fallback is
@@ -147,13 +161,13 @@ def _gaps(reads: List[_Read], text: str, where: str, defined: Set[str], knobs: S
         if r.name in defined:
             continue
         if r.fallback is None:
-            if r.name not in knobs:
+            if r.name not in optional:
                 line = text.count("\n", 0, r.pos) + 1
                 missing.setdefault(r.name, f"{where}:{line}")
             continue
-        if r.name not in knobs:
+        if r.name not in optional:
             fallback.setdefault(r.name, r.fallback)
-        _gaps(r.inner, text, where, defined, knobs, missing, fallback)
+        _gaps(r.inner, text, where, defined, optional, missing, fallback)
 
 
 def _check_vendored_tokens(ctx: _ContractsCtx) -> List[dict]:
@@ -172,7 +186,7 @@ def _check_vendored_tokens(ctx: _ContractsCtx) -> List[dict]:
     evidence: Optional[str] = None
     for name, comp_dir in comps.items():
         readme_path = comp_dir / "README.md"
-        table, knobs = _readme_tokens(read_text(readme_path)) if readme_path.is_file() else (set(), set())
+        table, optional = _readme_tokens(read_text(readme_path)) if readme_path.is_file() else (set(), set())
         missing: Dict[str, str] = {}
         fallback: Dict[str, str] = {}
         read: Set[str] = set()
@@ -182,7 +196,7 @@ def _check_vendored_tokens(ctx: _ContractsCtx) -> List[dict]:
             reads = _var_reads(text)
             read |= _all_names(reads)
             own.update(_DECL_RE.findall(text))
-            _gaps(reads, text, rel(ctx.root, css_path), defined, knobs, missing, fallback)
+            _gaps(reads, text, rel(ctx.root, css_path), defined, optional, missing, fallback)
 
         fallback = {t: v for t, v in fallback.items() if t not in missing}
         if missing:
@@ -191,7 +205,7 @@ def _check_vendored_tokens(ctx: _ContractsCtx) -> List[dict]:
         if fallback:
             warns.append(f"{name} " + ", ".join(f"{t} ({v})" for t, v in sorted(fallback.items())))
         if table:  # no table, nothing to cross-check against
-            unlisted = sorted(read - table - knobs - own)
+            unlisted = sorted(read - table - optional - own)
             if unlisted:
                 notes.append(f"{name} reads {', '.join(unlisted)}")
 

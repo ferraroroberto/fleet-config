@@ -470,6 +470,23 @@ _vt = run_vendored_tokens(_VT_ALL, readme=_VT_README.replace("per-context knob",
 check(_vt["status"] == "WARN" and "--icon-btn-box" in _vt["detail"],
       f"vendored-tokens: only a README-documented knob is exempt -- {_vt}")
 
+# the prose rule takes the plural too: the nav README's paragraph says "knob settings" (#1301)
+_vt = run_vendored_tokens(_VT_ALL, readme=_VT_README.replace("per-context knob,", "per-context knobs,"))
+check(_vt["status"] == "PASS" and "--icon-btn-box" not in _vt["detail"],
+      f"vendored-tokens: 'knobs' exempts a token the same as 'knob' -- {_vt}")
+
+# a token-table row marked optional is exempt, no prose paragraph needed (#1301); the row's
+# own text is the signal, so only that row's tokens are exempt
+_no_hit = _VT_ALL.replace(" --hit-min: 44px;", "")
+_opt_row = "| `--hit-min` | `44px` | target floor — optional, falls back to `44px` |"
+_vt = run_vendored_tokens(_no_hit, readme=_VT_README.replace("| `--hit-min` (fallback `44px`) | `44px` | target floor |", _opt_row))
+check(_vt["status"] == "PASS",
+      f"vendored-tokens: a README table row marked optional exempts its token -- {_vt}")
+_vt = run_vendored_tokens(_no_hit.replace(" --radius-sm: 8px;", ""),
+                          readme=_VT_README.replace("| `--hit-min` (fallback `44px`) | `44px` | target floor |", _opt_row))
+check(_vt["status"] == "WARN" and "--radius-sm" in _vt["detail"] and "--hit-min" not in _vt["detail"],
+      f"vendored-tokens: an optional row never exempts the unmarked row beside it -- {_vt}")
+
 for _label, _toml in (("no .fleet.toml", None),
                       ("no [vendored] table", 'layer = "working-web"\n'),
                       ("only non-component entries",
