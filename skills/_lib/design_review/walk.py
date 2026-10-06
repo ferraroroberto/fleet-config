@@ -270,22 +270,215 @@ def _open_scope_details(page, shots: Path, sid: str,
     return _full_shot(page, shots, sid, after_full)
 
 
+def _failed(device: str, theme: str, view: str, kind: str, reason: str, exc: BaseException,
+            status: str = "error") -> Dict[str, object]:
+    """The record of a screen that could not be captured; the caller logs it, at the level its arm warrants."""
+    return _record(id=plan.screen_id(device, theme, view), device=device, theme=theme, view=view,
+                   kind=kind, status=status, reason=reason, error=str(exc)[:300])
+
+
+class _Leg:
+    """One device x theme leg: its page, the screens recorded so far, and the helpers every screen kind shares.
+
+    `find_tabs` must run once the base page is open; the tab and extra-step legs read what it found.
+    """
+
+    def __init__(self, page, device: str, theme: str, args: argparse.Namespace, script: str, params: dict,
+                 shots: Path, retouch: Optional[Callable[[], None]], tab_selector: str, no_go: List[str]) -> None:
+        self.page, self.device, self.theme, self.args = page, device, theme, args
+        self.script, self.params, self.shots, self.retouch = script, params, shots, retouch
+        self.tab_selector, self.no_go = tab_selector, no_go
+        self.screens: List[Dict[str, object]] = []
+        self.tabs: List[dict] = []
+        self.tablist = page
+
+    def sid(self, view: str) -> str:
+        return plan.screen_id(self.device, self.theme, view)
+
+    def failed(self, view: str, kind: str, reason: str, exc: BaseException, status: str = "error") -> None:
+        self.screens.append(_failed(self.device, self.theme, view, kind, reason, exc, status))
+
+    def stamp_theme(self) -> None:
+        self.page.evaluate("t => { document.documentElement.dataset.theme = t; }", self.theme)
+
+    def theme_fields(self) -> Dict[str, object]:
+        """Which theme this screen actually rendered (#1216); unknown when the page cannot be read.
+
+        The app owns its theme, so a mismatch is recorded and never fought: no re-stamping here.
+        """
+        try:
+            applied, seen = measure.theme_agreement(self.theme, self.page.evaluate(measure.RENDERED_THEME_JS))
+        except Exception as exc:  # noqa: BLE001 — an unreadable page is an unknown theme, not a failed screen
+            log.warning("could not read the rendered theme: %s", str(exc)[:200])
+            return {}
+        if applied is False:
+            log.warning("theme not applied: asked for %s, rendered %s", self.theme, (seen or {}).get("rendered"))
+        return {"theme_applied": applied, "theme_observed": seen}
+
+    def open_base(self) -> None:
+        self.page.goto(self.args.url, wait_until="domcontentloaded")
+        self.stamp_theme()
+        self.page.wait_for_timeout(SETTLE_MS)
+
+    def find_tabs(self) -> None:
+        """The primary tabs (a lone root screen when there are none) and the tablist they sit in."""
+        page = self.page
+        self.tabs = page.evaluate(_TABS_JS, self.tab_selector) or [{"index": None, "id": "root"}]
+        self.tablist = page.locator("[role=tablist]").first if page.locator("[role=tablist]").count() else page
+
+    def open_tab(self, index: object) -> None:
+        self.tablist.locator(self.tab_selector).nth(int(index)).click()
+        self.page.wait_for_timeout(TAB_SETTLE_MS)
+
+    def capture(self, sid: str, view: str, kind: str, before_record: Optional[Callable[[], None]] = None) -> None:
+        """Screenshot, open the scope's details, measure and record the screen in front of the walk.
+
+        `before_record` runs after the theme is read and before the record lands (a dialog closes there).
+        """
+        shot = _shot(self.page, self.shots, sid)
+        full, note = _open_scope_details(self.page, self.shots, sid, self.retouch)
+        metrics = self.page.evaluate(self.script, self.params)
+        observed = self.theme_fields()
+        if before_record:
+            before_record()
+        self.screens.append(_record(id=sid, device=self.device, theme=self.theme, view=view, kind=kind,
+                                    screenshot=shot, screenshot_full=full, note=note, metrics=metrics, **observed))
+        log.info("ok %s", sid)
+
+    def step_failed(self, sid: str, view: str, exc: Exception, absent: type, absent_reason: str) -> None:
+        """The Settings gear's and the extra steps' shared arms: target absent, refused by no_go, or failed."""
+        if isinstance(exc, absent):
+            self.failed(view, "step", absent_reason, exc, status="absent")
+            log.info("absent %s: %s", sid, exc)
+        elif isinstance(exc, NoGo):
+            self.failed(view, "step", "NO_GO", exc)
+            log.warning("NO_GO %s: %s", sid, exc)
+        else:
+            self.failed(view, "step", classify_error(exc), exc)
+            log.warning("FAIL %s: %s", sid, str(exc)[:200])
+
+    def refuse_no_go(self, loc, label: str):
+        """`loc` itself, refused when its element sits inside a no_go selector."""
+        if self.no_go and loc.evaluate(_NO_GO_JS, self.no_go):
+            raise NoGo(f"{label} sits inside a no_go selector")
+        return loc
+
+    def guarded(self, selector: str):
+        """The first match for `selector`: absent when it never attaches, refused inside a no_go selector."""
+        loc = self.page.locator(selector).first
+        try:
+            loc.wait_for(state="attached", timeout=STEP_TARGET_WAIT_MS)
+        except Exception as exc:  # noqa: BLE001 — Playwright's TimeoutError, the only way wait_for fails here
+            if classify_error(exc) != "TIMEOUT":
+                raise
+            raise TargetAbsent(f"{selector} never appeared within {STEP_TARGET_WAIT_MS} ms") from exc
+        return self.refuse_no_go(loc, selector)
+
+
+def _walk_tabs(leg: _Leg) -> None:
+    """Each primary tab: screenshot, open the pane's details, full screenshot, measure."""
+    page = leg.page
+    for tab in leg.tabs:
+        view = str(tab["id"] or f"tab{tab['index']}")
+        sid = leg.sid(view)
+        try:
+            if tab["index"] is not None:
+                leg.open_tab(tab["index"])
+            shot = _shot(page, leg.shots, sid)
+            page.evaluate(_OPEN_DETAILS_JS)
+            page.wait_for_timeout(DETAILS_SETTLE_MS)
+            full, note = _full_shot(page, leg.shots, sid, leg.retouch)
+            metrics = page.evaluate(leg.script, leg.params)
+            leg.screens.append(_record(id=sid, device=leg.device, theme=leg.theme, view=view, kind="tab",
+                                       screenshot=shot, screenshot_full=full, note=note, metrics=metrics,
+                                       **leg.theme_fields()))
+            log.info("ok %s", sid)
+        except Exception as exc:  # noqa: BLE001 — the walk must continue past one broken tab
+            reason = classify_error(exc)
+            leg.failed(view, "tab", "TAB_FAILED" if reason == "RENDER_FAILED" else reason, exc)
+            log.warning("FAIL %s: %s", sid, str(exc)[:200])
+
+
+def _walk_dialogs(leg: _Leg) -> None:
+    """Each `dialog[id]`, opened with `showModal()`, captured, then closed."""
+    page = leg.page
+    for did in page.evaluate(_DIALOG_IDS_JS) or []:
+        view = f"dialog-{did}"
+        sid = leg.sid(view)
+        try:
+            page.evaluate("id => document.getElementById(id).showModal()", did)
+            page.wait_for_timeout(DIALOG_SETTLE_MS)
+            leg.capture(sid, view, "dialog", lambda: page.evaluate("id => document.getElementById(id).close()", did))
+        except Exception as exc:  # noqa: BLE001
+            leg.failed(view, "dialog", "DIALOG_FAILED", exc)
+            log.warning("FAIL %s: %s", sid, str(exc)[:200])
+
+
+def _walk_settings_gear(leg: _Leg) -> None:
+    """The Settings pane behind the header gear: reviewed on every app, with no declaration (#1217)."""
+    page = leg.page
+    gear_view = plan.SETTINGS_GEAR_VIEW
+    gear_sid = leg.sid(gear_view)
+    try:
+        leg.open_base()
+        gear = page.get_by_role("button", name=_SETTINGS_NAME).locator("visible=true").first
+        try:
+            gear.wait_for(state="attached", timeout=GEAR_WAIT_MS)
+        except Exception as exc:  # noqa: BLE001 — Playwright's TimeoutError: no such button on this page
+            if classify_error(exc) != "TIMEOUT":
+                raise
+            raise GearAbsent("no visible button named Settings") from exc
+        leg.refuse_no_go(gear, "the Settings gear").click()
+        page.wait_for_timeout(STEP_SETTLE_MS)
+        leg.capture(gear_sid, gear_view, "step")
+    except Exception as exc:  # noqa: BLE001
+        leg.step_failed(gear_sid, gear_view, exc, GearAbsent, "SETTINGS_GEAR_ABSENT")
+
+
+def _walk_extra_steps(leg: _Leg, review: dict) -> None:
+    """Each declared `[design.review].extra_steps` entry, after a fresh `goto`."""
+    page = leg.page
+    for step in review.get("extra_steps", []) or []:
+        if not isinstance(step, dict) or not step.get("id"):
+            continue
+        if step.get("synthetic") and not leg.args.synthetic:
+            continue  # never against the live app: it may open a surface (a session) the walk must not attach to
+        clicks = step_clicks(step)
+        if not clicks and not step.get("open"):
+            continue
+        view = f"{step.get('tab', 'root')}-{step['id']}"
+        sid = leg.sid(view)
+        declared = [c for c in clicks if c in leg.no_go]
+        if declared:
+            leg.screens.append(_record(id=sid, device=leg.device, theme=leg.theme, view=view, kind="step",
+                                       status="error", reason="NO_GO", error=f"{declared[0]} is declared no_go"))
+            continue
+        try:
+            leg.open_base()
+            tab_id = step.get("tab")
+            if tab_id:
+                idx = next((t["index"] for t in leg.tabs if t["id"] == tab_id), None)
+                if idx is not None:
+                    leg.open_tab(idx)
+            if step.get("open"):
+                leg.guarded(str(step["open"])).evaluate("d => { d.open = true; }")
+                page.wait_for_timeout(DETAILS_SETTLE_MS)
+            for selector in clicks:
+                leg.guarded(selector).click()
+                page.wait_for_timeout(STEP_SETTLE_MS)
+            leg.capture(sid, view, "step")
+        except Exception as exc:  # noqa: BLE001
+            leg.step_failed(sid, view, exc, TargetAbsent, "STEP_TARGET_ABSENT")
+
+
 def walk_context(pw, device: str, theme: str, args: argparse.Namespace, script: str,
                  params: dict, review: dict, shots: Path) -> List[Dict[str, object]]:
-    """Every screen for one device x theme leg."""
+    """Every screen for one device x theme leg: the tabs, the dialogs, the Settings gear, the extra steps."""
     profile = plan.DEVICES[device]
-    screens: List[Dict[str, object]] = []
-
-    def failed(view: str, kind: str, reason: str, exc: BaseException, status: str = "error") -> None:
-        """Record a screen that could not be captured; the caller logs it, at the level its arm warrants."""
-        screens.append(_record(id=plan.screen_id(device, theme, view), device=device, theme=theme, view=view,
-                               kind=kind, status=status, reason=reason, error=str(exc)[:300]))
-
     try:
         browser = getattr(pw, profile["engine"]).launch()
     except Exception as exc:  # noqa: BLE001 — a missing engine is a per-device fact, not a crash
-        failed("root", "tab", "BROWSER_FAILED", exc)
-        return screens
+        return [_failed(device, theme, "root", "tab", "BROWSER_FAILED", exc)]
     ctx_args: dict = dict(pw.devices[profile["descriptor"]]) if "descriptor" in profile else {"viewport": dict(profile["viewport"])}
     ctx = browser.new_context(ignore_https_errors=True, color_scheme=theme, **ctx_args)
     key = review.get("theme_storage_key")
@@ -298,169 +491,25 @@ def walk_context(pw, device: str, theme: str, args: argparse.Namespace, script: 
     # A synthetic run (#995) walks a throwaway instance: its own no_go, when declared, replaces the live list.
     synth = review.get("synthetic") if isinstance(review.get("synthetic"), dict) else {}
     no_go_src = synth.get("no_go") if args.synthetic and isinstance(synth.get("no_go"), list) else review.get("no_go", [])
-    no_go = [str(s) for s in no_go_src]
-
-    def stamp_theme() -> None:
-        page.evaluate("t => { document.documentElement.dataset.theme = t; }", theme)
-
-    def theme_fields() -> Dict[str, object]:
-        """Which theme this screen actually rendered (#1216); unknown when the page cannot be read.
-
-        The app owns its theme, so a mismatch is recorded and never fought: no re-stamping here.
-        """
-        try:
-            applied, seen = measure.theme_agreement(theme, page.evaluate(measure.RENDERED_THEME_JS))
-        except Exception as exc:  # noqa: BLE001 — an unreadable page is an unknown theme, not a failed screen
-            log.warning("could not read the rendered theme: %s", str(exc)[:200])
-            return {}
-        if applied is False:
-            log.warning("theme not applied: asked for %s, rendered %s", theme, (seen or {}).get("rendered"))
-        return {"theme_applied": applied, "theme_observed": seen}
-
-    def open_base() -> None:
-        page.goto(args.url, wait_until="domcontentloaded")
-        stamp_theme()
-        page.wait_for_timeout(SETTLE_MS)
-
-    def capture(sid: str, view: str, kind: str, before_record: Optional[Callable[[], None]] = None) -> None:
-        """Screenshot, open the scope's details, measure and record the screen in front of the walk.
-
-        `before_record` runs after the theme is read and before the record lands (a dialog closes there).
-        """
-        shot = _shot(page, shots, sid)
-        full, note = _open_scope_details(page, shots, sid, retouch)
-        metrics = page.evaluate(script, params)
-        observed = theme_fields()
-        if before_record:
-            before_record()
-        screens.append(_record(id=sid, device=device, theme=theme, view=view, kind=kind,
-                               screenshot=shot, screenshot_full=full, note=note, metrics=metrics, **observed))
-        log.info("ok %s", sid)
-
-    def step_failed(sid: str, view: str, exc: Exception, absent: type, absent_reason: str) -> None:
-        """The Settings gear's and the extra steps' shared arms: target absent, refused by no_go, or failed."""
-        if isinstance(exc, absent):
-            failed(view, "step", absent_reason, exc, status="absent")
-            log.info("absent %s: %s", sid, exc)
-        elif isinstance(exc, NoGo):
-            failed(view, "step", "NO_GO", exc)
-            log.warning("NO_GO %s: %s", sid, exc)
-        else:
-            failed(view, "step", classify_error(exc), exc)
-            log.warning("FAIL %s: %s", sid, str(exc)[:200])
+    leg = _Leg(page, device, theme, args, script, params, shots, retouch, tab_selector, [str(s) for s in no_go_src])
 
     try:
-        open_base()
+        leg.open_base()
     except Exception as exc:  # noqa: BLE001
-        failed("root", "tab", classify_error(exc), exc)
+        leg.failed("root", "tab", classify_error(exc), exc)
         ctx.close()
         browser.close()
-        return screens
+        return leg.screens
 
-    tabs = page.evaluate(_TABS_JS, tab_selector) or [{"index": None, "id": "root"}]
-    tablist = page.locator("[role=tablist]").first if page.locator("[role=tablist]").count() else page
-    for tab in tabs:
-        view = str(tab["id"] or f"tab{tab['index']}")
-        sid = plan.screen_id(device, theme, view)
-        try:
-            if tab["index"] is not None:
-                tablist.locator(tab_selector).nth(int(tab["index"])).click()
-                page.wait_for_timeout(TAB_SETTLE_MS)
-            shot = _shot(page, shots, sid)
-            page.evaluate(_OPEN_DETAILS_JS)
-            page.wait_for_timeout(DETAILS_SETTLE_MS)
-            full, note = _full_shot(page, shots, sid, retouch)
-            metrics = page.evaluate(script, params)
-            screens.append(_record(id=sid, device=device, theme=theme, view=view, kind="tab",
-                                   screenshot=shot, screenshot_full=full, note=note, metrics=metrics, **theme_fields()))
-            log.info("ok %s", sid)
-        except Exception as exc:  # noqa: BLE001 — the walk must continue past one broken tab
-            reason = classify_error(exc)
-            failed(view, "tab", "TAB_FAILED" if reason == "RENDER_FAILED" else reason, exc)
-            log.warning("FAIL %s: %s", sid, str(exc)[:200])
-
-    for did in page.evaluate(_DIALOG_IDS_JS) or []:
-        view = f"dialog-{did}"
-        sid = plan.screen_id(device, theme, view)
-        try:
-            page.evaluate("id => document.getElementById(id).showModal()", did)
-            page.wait_for_timeout(DIALOG_SETTLE_MS)
-            capture(sid, view, "dialog", lambda: page.evaluate("id => document.getElementById(id).close()", did))
-        except Exception as exc:  # noqa: BLE001
-            failed(view, "dialog", "DIALOG_FAILED", exc)
-            log.warning("FAIL %s: %s", sid, str(exc)[:200])
-
-    def refuse_no_go(loc, label: str):
-        """`loc` itself, refused when its element sits inside a no_go selector."""
-        if no_go and loc.evaluate(_NO_GO_JS, no_go):
-            raise NoGo(f"{label} sits inside a no_go selector")
-        return loc
-
-    def guarded(selector: str):
-        """The first match for `selector`: absent when it never attaches, refused inside a no_go selector."""
-        loc = page.locator(selector).first
-        try:
-            loc.wait_for(state="attached", timeout=STEP_TARGET_WAIT_MS)
-        except Exception as exc:  # noqa: BLE001 — Playwright's TimeoutError, the only way wait_for fails here
-            if classify_error(exc) != "TIMEOUT":
-                raise
-            raise TargetAbsent(f"{selector} never appeared within {STEP_TARGET_WAIT_MS} ms") from exc
-        return refuse_no_go(loc, selector)
-
-    # The Settings pane behind the header gear: reviewed on every app, with no declaration (#1217).
-    gear_view = plan.SETTINGS_GEAR_VIEW
-    gear_sid = plan.screen_id(device, theme, gear_view)
-    try:
-        open_base()
-        gear = page.get_by_role("button", name=_SETTINGS_NAME).locator("visible=true").first
-        try:
-            gear.wait_for(state="attached", timeout=GEAR_WAIT_MS)
-        except Exception as exc:  # noqa: BLE001 — Playwright's TimeoutError: no such button on this page
-            if classify_error(exc) != "TIMEOUT":
-                raise
-            raise GearAbsent("no visible button named Settings") from exc
-        refuse_no_go(gear, "the Settings gear").click()
-        page.wait_for_timeout(STEP_SETTLE_MS)
-        capture(gear_sid, gear_view, "step")
-    except Exception as exc:  # noqa: BLE001
-        step_failed(gear_sid, gear_view, exc, GearAbsent, "SETTINGS_GEAR_ABSENT")
-
-    for step in review.get("extra_steps", []) or []:
-        if not isinstance(step, dict) or not step.get("id"):
-            continue
-        if step.get("synthetic") and not args.synthetic:
-            continue  # never against the live app: it may open a surface (a session) the walk must not attach to
-        clicks = step_clicks(step)
-        if not clicks and not step.get("open"):
-            continue
-        view = f"{step.get('tab', 'root')}-{step['id']}"
-        sid = plan.screen_id(device, theme, view)
-        declared = [c for c in clicks if c in no_go]
-        if declared:
-            screens.append(_record(id=sid, device=device, theme=theme, view=view, kind="step",
-                                   status="error", reason="NO_GO", error=f"{declared[0]} is declared no_go"))
-            continue
-        try:
-            open_base()
-            tab_id = step.get("tab")
-            if tab_id:
-                idx = next((t["index"] for t in tabs if t["id"] == tab_id), None)
-                if idx is not None:
-                    tablist.locator(tab_selector).nth(int(idx)).click()
-                    page.wait_for_timeout(TAB_SETTLE_MS)
-            if step.get("open"):
-                guarded(str(step["open"])).evaluate("d => { d.open = true; }")
-                page.wait_for_timeout(DETAILS_SETTLE_MS)
-            for selector in clicks:
-                guarded(selector).click()
-                page.wait_for_timeout(STEP_SETTLE_MS)
-            capture(sid, view, "step")
-        except Exception as exc:  # noqa: BLE001
-            step_failed(sid, view, exc, TargetAbsent, "STEP_TARGET_ABSENT")
+    leg.find_tabs()
+    _walk_tabs(leg)
+    _walk_dialogs(leg)
+    _walk_settings_gear(leg)
+    _walk_extra_steps(leg, review)
 
     ctx.close()
     browser.close()
-    return screens
+    return leg.screens
 
 
 def main(argv: Optional[List[str]] = None) -> int:
