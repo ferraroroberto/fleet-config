@@ -176,6 +176,35 @@ def _learning_log_unit_checks() -> Tuple[int, int]:
         check("learning_log: a failed repo is its own manifest state, named, not counted as zero",
               code == 0 and "FAILED_REPOS=bad" in out and "failed_repos=1" in out
               and "Incomplete: 1 of 2 repos" in out)
+
+        # ---- a gh list that fills its --limit is a possibly truncated window,
+        # said once on stderr; below the cap says nothing new (fleet-config#1295) ----
+        cap = ll.PER_REPO_LIST_LIMIT
+        old = {"number": 1, "title": "x", "mergedAt": "2020-01-01", "closedAt": "2020-01-01"}
+        ll._gh_json = lambda args: [old] * (cap if args[0] == "pr" else cap - 1)
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err):
+            ll.gather_repo("o", "r", "2026-01-01")
+        lines = [ln for ln in err.getvalue().splitlines() if ln.strip()]
+        check("learning_log: a PR list at PER_REPO_LIST_LIMIT warns once, naming repo, list and cap",
+              len(lines) == 1 and "o/r" in lines[0] and "merged PRs" in lines[0] and str(cap) in lines[0],
+              f"stderr: {err.getvalue()!r}")
+
+        ll._gh_json = lambda args: [old] * (cap - 1)
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err):
+            ll.gather_repo("o", "r", "2026-01-01")
+        check("learning_log: lists below the cap print nothing", err.getvalue() == "",
+              f"stderr: {err.getvalue()!r}")
+
+        ll._gh_json = lambda args: [{"name": f"r{n}"} for n in range(ll.REPO_LIST_LIMIT)]
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err):
+            ll.list_repos("o")
+        check("learning_log: a repo list at REPO_LIST_LIMIT warns, naming owner, list and cap",
+              "o" in err.getvalue() and "repo list" in err.getvalue()
+              and str(ll.REPO_LIST_LIMIT) in err.getvalue(),
+              f"stderr: {err.getvalue()!r}")
     finally:
         ll._gh_json, ll.read_ledger_body, ll.git_run.run_gh = saved
 
