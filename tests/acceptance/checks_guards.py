@@ -801,6 +801,22 @@ def _tier23_hooks_unit_checks() -> Tuple[int, int]:
         check("hub_bypass: subprocess but no claude -p -> silent",
               not nudged("hub_bypass_warn", tmp / "other.py",
                          'import subprocess\nsubprocess.run(["ls", "-la"])\n'))
+        # fleet-config#1289: prose about `claude -p` is not a spawn.
+        check("hub_bypass: claude -p only in comments and docstrings -> silent",
+              not nudged("hub_bypass_warn", tmp / "prose.py",
+                         '"""Never spawn claude -p here; go through the hub."""\n'
+                         'import subprocess  # was: subprocess.run(["claude", "-p", x])\n\n\n'
+                         'class Runner:\n    """Replaces the old claude -p wrapper."""\n\n'
+                         '    def run(self):\n        """Not `claude -p`."""\n'
+                         '        return subprocess.run(["ls"])\n\n\n'
+                         'def café(): "no claude -p either"\n'))
+        check("hub_bypass: claude -p in an ordinary string constant -> nudge",
+              nudged("hub_bypass_warn", tmp / "const.py",
+                     '"""Runner."""\nimport subprocess\nCMD = "claude -p hi"\n'
+                     'subprocess.run(CMD, shell=True)  # the real case\n'))
+        check("hub_bypass: unparseable file falls back to a whole-file match -> nudge",
+              nudged("hub_bypass_warn", tmp / "broken.py",
+                     'import subprocess\n# claude -p\ndef broken(:\n'))
         # Points hub_bypass_warn.py at a throwaway projects.toml (via
         # CLAUDE_HOOKS_PROJECTS_TOML) flagging tmp/local-llm-hub as `is_hub`,
         # so the exemption is exercised through the real cwd_prefix-match path

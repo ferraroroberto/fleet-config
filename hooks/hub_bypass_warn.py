@@ -12,13 +12,19 @@ through the hub at `http://127.0.0.1:8000` via the standard Anthropic/OpenAI
 SDKs, not re-roll a `claude -p` subprocess wrapper.
 
 Reads every surviving target from disk after a confirmed successful edit, matching
-`py_syntax_check.py`.
+`py_syntax_check.py`. Comments and docstrings are dropped before matching
+(fleet-config#1289): prose *about* `claude -p` is not a spawn, and a nudge that
+fires on prose trains lanes to ignore it. Ordinary string literals stay, since
+`"claude -p ..."` as a command string is exactly the real case.
 """
 
 from __future__ import annotations
 
+import ast
+import io
 import re
 import sys
+import tokenize
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -31,6 +37,42 @@ SUBPROCESS_RE = re.compile(r"\b(?:subprocess|Popen|os\.system|check_output|check
 # `claude -p` either as a command-string fragment (`"claude -p ..."`) or as
 # adjacent argv tokens (`["claude", "-p", ...]` / `('claude', '-p', ...)`).
 CLAUDE_P_RE = re.compile(r"claude\s+-p\b|['\"]claude['\"]\s*,\s*['\"]-p['\"]")
+
+_DOCSTRING_OWNERS = (ast.Module, ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)
+
+
+def _char_col(line: str, byte_col: int) -> int:
+    """`ast` columns count UTF-8 bytes; slicing `line` needs characters."""
+    return len(line.encode("utf-8")[:byte_col].decode("utf-8", "replace"))
+
+
+def code_without_prose(content: str) -> str:
+    """`content` with comments and docstrings blanked out. A file that fails to
+    tokenize or parse comes back unchanged, so the match falls back to the
+    whole file rather than the hook breaking an edit."""
+    try:
+        # The rows tokenize reads (split on `\n` only, unlike `str.splitlines`).
+        lines = io.StringIO(content).readlines()
+        # (start row, start col, end row, end col): 1-based rows, str columns.
+        spans = [(*tok.start, *tok.end)
+                 for tok in tokenize.generate_tokens(io.StringIO(content).readline)
+                 if tok.type == tokenize.COMMENT]
+        for node in ast.walk(ast.parse(content)):
+            body = node.body if isinstance(node, _DOCSTRING_OWNERS) else None
+            first = body[0] if body else None
+            if (isinstance(first, ast.Expr) and isinstance(first.value, ast.Constant)
+                    and isinstance(first.value.value, str)):
+                spans.append((first.lineno, _char_col(lines[first.lineno - 1], first.col_offset),
+                              first.end_lineno, _char_col(lines[first.end_lineno - 1], first.end_col_offset)))
+        # Bottom-up, so each cut leaves the rows and columns still to come intact.
+        for start_row, start_col, end_row, end_col in sorted(spans, reverse=True):
+            head, tail = lines[start_row - 1][:start_col], lines[end_row - 1][end_col:]
+            lines[start_row - 1:end_row] = [head + tail]
+    # IndexError: a lone-`\r` line ending, which `ast` counts as a row and
+    # `readlines` does not.
+    except (SyntaxError, ValueError, RecursionError, IndexError, tokenize.TokenError):
+        return content
+    return "".join(lines)
 
 
 def main() -> None:
@@ -51,7 +93,8 @@ def main() -> None:
             content = target.read_text(encoding="utf-8", errors="replace")
         except OSError:
             continue
-        if SUBPROCESS_RE.search(content) and CLAUDE_P_RE.search(content):
+        code = code_without_prose(content)
+        if SUBPROCESS_RE.search(code) and CLAUDE_P_RE.search(code):
             offenders.append(target)
 
     if offenders:
