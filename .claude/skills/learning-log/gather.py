@@ -59,7 +59,8 @@ ARCHIVE_CAP = 150
 # `gh ... list --limit` caps, stated bounds rather than measured ones. The
 # window is NOT uncapped: a repo with more merged PRs / closed issues than
 # PER_REPO_LIST_LIMIT, or an owner with more public repos than REPO_LIST_LIMIT,
-# is silently truncated by `gh`, so a `--since` backfill can under-count.
+# is truncated by `gh`, so a `--since` backfill can under-count; `gh` says
+# nothing, so `_warn_if_capped` prints one stderr line per full list (#1295).
 # 400 per repo is generous for one weekly window; 200 repos is well above the
 # fleet's size.
 PER_REPO_LIST_LIMIT = 400
@@ -286,12 +287,20 @@ def _gh_json(args: list[str]) -> list | dict | None:
         return None
 
 
+def _warn_if_capped(data: list | dict | None, cap: int, what: str) -> None:
+    """One stderr line when a ``gh ... --limit cap`` list came back full: ``gh``
+    truncates silently, so a full list means the counts may be short."""
+    if isinstance(data, list) and len(data) >= cap:
+        print(f"{what}: hit the --limit {cap} cap, counts may be short", file=sys.stderr)
+
+
 def list_repos(owner: str) -> list[str] | None:
     """Public repo names, or ``None`` when the enumeration itself failed."""
     # Public repos only — the learning log + its stats are published in a public
     # ledger issue, so private-repo activity (and its names) is never in scope.
     data = _gh_json(["repo", "list", owner, "--no-archived", "--source", "--visibility", "public",
                      "--limit", str(REPO_LIST_LIMIT), "--json", "name"])
+    _warn_if_capped(data, REPO_LIST_LIMIT, f"{owner} repo list")
     return [r["name"] for r in data] if isinstance(data, list) else None
 
 
@@ -302,6 +311,8 @@ def gather_repo(owner: str, repo: str, since: str) -> tuple[list[dict], list[dic
                         "--json", "number,title,additions,deletions,labels,mergedAt,url"])
     issues_raw = _gh_json(["issue", "list", "--repo", full, "--state", "closed", "--limit", str(PER_REPO_LIST_LIMIT),
                            "--json", "number,title,labels,closedAt,url"])
+    _warn_if_capped(prs_raw, PER_REPO_LIST_LIMIT, f"{full} merged PRs")
+    _warn_if_capped(issues_raw, PER_REPO_LIST_LIMIT, f"{full} closed issues")
     if not isinstance(prs_raw, list) or not isinstance(issues_raw, list):
         return None
     prs = []
