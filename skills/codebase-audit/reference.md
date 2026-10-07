@@ -155,3 +155,54 @@ findings from standing backlog. The `promotion candidates spotted:` block is
 the only place those surface (no issue, no writes) — `/audit-fleet` reads it
 for the practices ledger; omit when none.
 
+## Step 8 — re-verification tags on a merged item
+
+The four tags and the escalation rule step 8.2 applies when it merges this run's findings into the existing body ("Tag each item's re-verification status inline").
+
+  - **New this run** (no item for that file + problem existed before): append
+    as-is, no suffix.
+  - **Re-matched this run** (found again, same file + problem): silently bump
+    its hidden `last-seen` date, no visible tag — it reads as a normal,
+    currently-live finding.
+  - **Re-surfaced this run** (found again, and its box is `[x]`): the fix did
+    not hold or regressed. Un-tick it (`- [ ]`), bump `last-seen`, and append
+    inline `_(re-surfaced <date>)_`. Count it separately from new and carried
+    (the `resurfaced` column in step 10's table and the run-log bullet).
+  - **Not re-surfaced this run:** keep the line (never delete), append
+    *inline on the same line* (a bare HTML comment on its own line risks
+    GitHub treating it as breaking the list):
+    `_(carried — not re-verified since <date>)_<!-- last-seen: <date> -->`.
+  - **Escalation, free of new state:** fetch the ledger's *previous*
+    `last-audited-at` (`audit_issue.py get --repo <OWNER/REPO> --kind ledger`,
+    read before step 9 overwrites it this run). For an item not re-surfaced
+    this run, compare its existing `last-seen` against that previous date: if
+    equal, this is its first miss (use the plain tag above); if earlier, it
+    already missed last run too — escalate to
+    `_(carried — not re-verified since <date>; flag for pruning)_<!-- last-seen: <date> -->`.
+    Two audits on the same calendar day degrade to "no escalation" — a safe
+    default, not a bug. Pruning stays a human decision (never auto-tick);
+    this only makes staleness visible on the item itself.
+
+## Step 8 — quote-check statuses (2b)
+
+What each `audit_quote.py check` status means and why only `VERIFIED` findings are filed.
+
+Every finding line prints `VERIFIED`, `MISMATCH`, `NO_QUOTE` or `UNREADABLE`
+(ticked and `_(carried …)_` items are skipped). **Only `VERIFIED` findings are
+filed**: remove every other one from the body before step 3 and list it in
+step 10's report as `unverified: <file>:<line> (<status>)`. A `file:line` can
+be hallucinated and still look valid; a quote that exists in the file can't —
+that matters most in the unattended `/audit-fleet` run, where nobody reads the
+findings before they are filed.
+
+## Step 2 — the ledger issue
+
+What the per-repo ledger issue holds and what `evaluate_repo` compares.
+
+The ledger lives in **one issue per repo** — title `codebase-audit ledger`,
+label `audit-meta`, `--assignee @me`, never closed, with a hidden identity
+marker and a machine-readable `<!-- audit-ledger -->` block (`last-audited-sha`,
+`last-audited-at`, `rubric-sha` — sha256 of the project CLAUDE.md **alone**;
+the global `~/.claude/CLAUDE.md` is deliberately excluded so an edit to that
+shared file never busts every repo's cache at once). `evaluate_repo` computes
+and compares all of this internally.
