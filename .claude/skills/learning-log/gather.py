@@ -47,6 +47,11 @@ from utf8_stdio import ensure_utf8_stdio  # noqa: E402
 
 ensure_utf8_stdio()
 
+# `audit_issue.py get` is one `gh issue list` plus a body read for a single kind. A stated
+# guess, not a measured bound: a minute is ample for two small API calls, and it fails the
+# ledger read (which `gather` treats as best-effort) instead of stalling the weekly run.
+AUDIT_ISSUE_GET_TIMEOUT_S = 60
+
 ARCHIVE_HEADER = "## Decision / discovery archive"
 HORIZON_HEADER = "## Horizon → next week"
 # Bounds the archive so the ledger body never approaches GitHub's 65,536-char
@@ -273,7 +278,7 @@ def _gh_json(args: list[str]) -> list | dict | None:
     published "0 PRs" for a repo that was never read.
     """
     try:
-        proc = git_run.run_gh(args, timeout=120)
+        proc = git_run.run_gh(args, timeout=git_run.GH_LIST_TIMEOUT_S)
     except (OSError, subprocess.SubprocessError) as exc:
         print(f"gh {' '.join(args[:3])}… failed: {exc}", file=sys.stderr)
         return None
@@ -366,7 +371,7 @@ def read_ledger_body(repo: str, *, required: bool = False) -> str:
     replaces the durable archive with an empty one on a single flaky call
     (fleet-config#1061)."""
     try:
-        raw = run_audit_issue(HELPER, "get", "--repo", repo, "--kind", "learning", timeout=60)
+        raw = run_audit_issue(HELPER, "get", "--repo", repo, "--kind", "learning", timeout=AUDIT_ISSUE_GET_TIMEOUT_S)
         return json.loads(raw or "{}").get("body") or ""
     except (OSError, subprocess.SubprocessError, RuntimeError, ValueError) as exc:
         if required:

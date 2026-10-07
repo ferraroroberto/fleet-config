@@ -31,6 +31,13 @@ from typing import List, Mapping, Optional, Sequence
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from no_window import NO_WINDOW  # noqa: E402
 
+# Bound for a `gh ... list --json` read in an unattended weekly run, shared by the
+# scheduled skills that page a repo's PRs or issues. A stated guess, not a
+# measured one: a 200-400 item page normally returns in seconds, and 120 s
+# covers a slow GitHub API while still failing the call, rather than hanging
+# the whole `claude -p` run, if it never answers.
+GH_LIST_TIMEOUT_S = 120
+
 
 def git_env(base: Optional[dict] = None) -> dict:
     """`base` (default `os.environ`) plus `GIT_OPTIONAL_LOCKS=0`.
