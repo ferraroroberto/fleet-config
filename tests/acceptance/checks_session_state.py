@@ -214,29 +214,33 @@ def _chief_steer_convention_unit_checks() -> Tuple[int, int]:
     halves of one contract and must never drift apart: a worker told to expect
     an authority marker that never arrives is as stuck as one that meets an
     unexpected one (the 2026-07-30 `/cleanup-fleet-all` deadlock). Both halves
-    live in this one file, so both are asserted here.
+    live in the chief's skill text (`SKILL.md` plus `dispatch-brief.md`, where the
+    brief's wording moved to keep SKILL.md under its size cap, fleet-config#1308),
+    so both are asserted over the pair.
     """
     check = _Checker()
 
     skill = (REPO / ".claude" / "skills" / "chief" / "SKILL.md").read_text(encoding="utf-8")
+    brief = (REPO / ".claude" / "skills" / "chief" / "dispatch-brief.md").read_text(encoding="utf-8")
     ops = (REPO / "skills" / "_lib" / "chief_ops.py").read_text(encoding="utf-8")
     docs = (REPO / "docs" / "skills.md").read_text(encoding="utf-8")
     # The dispatch brief is a markdown blockquote, so strip the leading `> `
     # of every line before collapsing -- otherwise a sentence that wraps across
     # two quoted lines flattens with a stray `>` in the middle and no phrase
     # assertion below can ever match it.
-    _unquoted = "\n".join(re.sub(r"^\s*>\s?", "", ln) for ln in skill.splitlines())
+    _unquoted = "\n".join(re.sub(r"^\s*>\s?", "", ln) for ln in (skill + "\n" + brief).splitlines())
     flat = re.sub(r"\s+", " ", _unquoted.replace("**", "").replace("*", ""))
 
     # ---- the marker is gone, everywhere it was ever taught ----
-    for label, text in (("chief/SKILL.md", skill), ("chief_ops.py", ops),
-                        ("docs/skills.md", docs)):
+    for label, text in (("chief/SKILL.md", skill), ("chief/dispatch-brief.md", brief),
+                        ("chief_ops.py", ops), ("docs/skills.md", docs)):
         check(f"steer#622: no `CHIEF - ` marker in {label}",
               "CHIEF - " not in text and "CHIEF -\n" not in text)
 
     # ---- and so is the pre-authorization half of the same contract ----
-    check("steer#622: no steer pre-authorization paragraph in chief/SKILL.md",
-          "pre-authorization" not in skill.lower() and "pre-declared now" not in skill)
+    check("steer#622: no steer pre-authorization paragraph in chief/SKILL.md or dispatch-brief.md",
+          "pre-authorization" not in (skill + brief).lower()
+          and "pre-declared now" not in (skill + brief))
 
     # ---- what must survive the removal ----
     check("steer#622: brief still declares a channel, not a password",
