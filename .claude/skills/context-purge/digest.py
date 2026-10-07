@@ -51,6 +51,15 @@ stdlib only. CLI:
     digest.py render   <run.json> --html P --md P --chat-text P [--url U]
                        [--reconcile-json P]
     digest.py publish  <run.json> --md P [--delivery-state posted|failed|unknown]
+    digest.py merge-check <repo.json>   # exit 0 = may merge, 2 = blocked
+
+**The run merges its own validated rewrites** (fleet-config#1312), so the digest
+is the review surface: per file the token and line delta and who loads it
+(`blast_radius`), per repo the merged PR/SHA with its one-line `git revert`, and
+whether the live checkout was fast-forwarded. `merge_blockers` is the single
+go/no-go -- `merge-check` runs it before `gh pr merge` and `validate` re-applies
+it to every repo recorded as merged, so an unvalidated rewrite cannot be merged
+and still publish a clean digest.
 
 `--reconcile-json` (fleet-config#757) points at `gate.py reconcile --json`'s
 output -- a standing fact about open `chore/context-purge-*` PRs, not run
@@ -226,7 +235,180 @@ def untouched_files(run: dict) -> list[dict]:
     return out
 
 
+# ---- merge outcome: what the run applied, and whether it was allowed to ------
+
+MERGE_STATES = ("merged", "not-merged")
+PRIMARY_STATES = ("fast-forwarded", "left")
+
+
+def merge_record(repo: dict) -> Optional[dict]:
+    """The repo's merge record, or None when the run did not record one."""
+    merge = repo.get("merge")
+    return merge if isinstance(merge, dict) else None
+
+
+def merge_state(repo: dict) -> str:
+    """`merged` | `not-merged` | `unknown` -- an absent record is never `merged`."""
+    state = (merge_record(repo) or {}).get("state")
+    return state if state in MERGE_STATES else "unknown"
+
+
+def merge_blockers(repo: dict) -> list[str]:
+    """Why this repo's rewrite may NOT be merged. Empty = eligible.
+
+    The deterministic half of the auto-merge go/no-go (fleet-config#1312): a
+    worker runs it (`digest.py merge-check`) before `gh pr merge`, and
+    `validate` re-applies it to every repo recorded as merged, so a rewrite
+    that skipped the harness cannot reach `main` and still publish a clean
+    digest. Anything the run could not establish blocks -- unknown is not a pass.
+    """
+    blockers: list[str] = []
+    if not repo.get("pr"):
+        blockers.append("no PR recorded")
+    if (repo.get("risk") or {}).get("checked") is not True:
+        blockers.append("check.py, audit.py and the repo gate not confirmed passing "
+                        "(risk.checked is not true)")
+    rewritten = [f for f in repo.get("files", []) if f.get("action") == "rewritten"]
+    if not rewritten:
+        blockers.append("no rewritten files")
+    for f in rewritten:
+        path = f.get("path", "?")
+        items, done = _num(f.get("inventory_items")), _num(f.get("inventory_discharged"))
+        if items is None or done is None:
+            blockers.append(f"{path}: directive-inventory result not recorded")
+        elif done != items:
+            blockers.append(f"{path}: inventory {done}/{items} discharged")
+        state = probe_state(f)
+        if state == "unknown":
+            blockers.append(f"{path}: probe not recorded (ran=false is a decision, null is not)")
+        elif state == "probed":
+            verdict = probe_verdict(f)
+            if verdict is None:
+                blockers.append(f"{path}: probe scores not recorded")
+            elif verdict is False:
+                blockers.append(f"{path}: probe regression (compressed scored below control)")
+    return blockers
+
+
+def merged_repos(run: dict) -> list[dict]:
+    return [r for r in run.get("repos", []) if merge_state(r) == "merged"]
+
+
+def blast_radius(repo: str, path: str) -> str:
+    """Which agents and sessions load a context file, derived from its path.
+
+    Pure path logic so the digest states it the same way every week and cannot
+    drift from the layout (`install.ps1` junctions `skills/` into every agent).
+    """
+    name = path.rsplit("/", 1)[-1]
+    if repo == "fleet-config" and path == "global-CLAUDE.md":
+        return "every agent in every session, fleet-wide"
+    if name == "SKILL.md":
+        skill = path.rsplit("/", 2)[-2] if path.count("/") >= 1 else "?"
+        if repo == "fleet-config" and path.startswith("skills/"):
+            return (f"global skill: its description is always-on in every session "
+                    f"of every repo; the body loads when `/{skill}` runs")
+        return (f"`/{skill}` in `{repo}`: description always-on in `{repo}` sessions, "
+                f"body loads when it runs")
+    if name == "CLAUDE.md":
+        return f"every session started in `{repo}`"
+    return f"sessions that read `{path}` in `{repo}`"
+
+
+def _lines(f: dict) -> str:
+    before, after = _num(f.get("lines_before")), _num(f.get("lines_after"))
+    if before is None or after is None:
+        return "not recorded"
+    return f"{before:,} to {after:,} ({after - before:+,})"
+
+
+def _revert(repo: dict) -> str:
+    merge = merge_record(repo)
+    sha = (merge or {}).get("sha")
+    if merge_state(repo) != "merged" or not sha:
+        return "n/a"
+    return f"`git revert {str(sha)[:10]}` in `{repo.get('repo', '?')}`"
+
+
+def _merge_cell(repo: dict) -> str:
+    state = merge_state(repo)
+    merge = merge_record(repo) or {}
+    if state == "merged":
+        return "merged"
+    if state == "not-merged":
+        return f"NOT merged -- {merge.get('reason', 'reason not recorded')}"
+    return "not recorded"
+
+
+def _primary_cell(repo: dict) -> str:
+    primary = (merge_record(repo) or {}).get("primary")
+    if merge_state(repo) != "merged":
+        return "n/a"
+    if not isinstance(primary, dict) or primary.get("state") not in PRIMARY_STATES:
+        return "not recorded"
+    if primary["state"] == "fast-forwarded":
+        return "fast-forwarded"
+    return f"left -- {primary.get('reason', 'reason not recorded')}"
+
+
+def merge_summary(run: dict) -> dict:
+    """Counts the headline and chat need; unknown stays its own term."""
+    repos = [r for r in run.get("repos", []) if r.get("status") != "skipped"]
+    states = [merge_state(r) for r in repos]
+    primaries = [(merge_record(r) or {}).get("primary") for r in merged_repos(run)]
+    return {
+        "candidates": len(repos),
+        "merged": states.count("merged"),
+        "not_merged": states.count("not-merged"),
+        "unknown": states.count("unknown"),
+        "primaries_left": sum(1 for p in primaries
+                              if isinstance(p, dict) and p.get("state") == "left"),
+        "primaries_unknown": sum(1 for p in primaries
+                                 if not isinstance(p, dict)
+                                 or p.get("state") not in PRIMARY_STATES),
+    }
+
+
 # ---- validation -------------------------------------------------------------
+
+def _validate_merge(repo: dict, name: str) -> list[str]:
+    errors: list[str] = []
+    status = repo.get("status")
+    if status == "shipped" and "merge" not in repo:
+        errors.append(f"{name}: a shipped repo must carry a 'merge' key "
+                      f"(null is allowed and means 'not recorded')")
+    merge = repo.get("merge")
+    if merge is None:
+        return errors
+    if not isinstance(merge, dict):
+        return errors + [f"{name}: merge must be an object or null"]
+    state = merge.get("state")
+    if state not in MERGE_STATES:
+        errors.append(f"{name}: merge.state must be merged|not-merged, got {state!r}")
+    elif state == "merged":
+        if not merge.get("sha"):
+            errors.append(f"{name}: merged but no merge.sha -- the revert pointer is the "
+                          f"point of reporting a merge")
+        if status != "shipped":
+            errors.append(f"{name}: merge.state=merged but status is {status!r} -- "
+                          f"'shipped' means merged")
+        for why in merge_blockers(repo):
+            errors.append(f"{name}: merged without passing validation -- {why}")
+    else:
+        if not merge.get("reason"):
+            errors.append(f"{name}: not-merged must say why (merge.reason)")
+        if status == "shipped":
+            errors.append(f"{name}: status=shipped but merge.state=not-merged -- contradictory")
+    primary = merge.get("primary")
+    if primary is not None:
+        if state != "merged":
+            errors.append(f"{name}: merge.primary recorded for a repo that was not merged")
+        elif not isinstance(primary, dict) or primary.get("state") not in PRIMARY_STATES:
+            errors.append(f"{name}: merge.primary.state must be fast-forwarded|left")
+        elif primary["state"] == "left" and not primary.get("reason"):
+            errors.append(f"{name}: a primary left behind must say why (merge.primary.reason)")
+    return errors
+
 
 def validate(run: Any) -> list[str]:
     """Structural problems that would make the digest lie. Empty = usable."""
@@ -262,6 +444,7 @@ def validate(run: Any) -> list[str]:
             if f.get("action") == "rewritten" and "probe" not in f:
                 errors.append(f"{name}/{f.get('path')}: rewritten file must carry a "
                               f"'probe' key (null is allowed and means 'not recorded')")
+        errors.extend(_validate_merge(repo, name))
     return errors
 
 
@@ -302,6 +485,51 @@ def _probe_cell(f: dict) -> str:
         return f"probed ({questions or '?'} q, scores not recorded)"
     verdict = "pass" if compressed >= control else "REGRESSION"
     return f"{compressed}/{control} vs control, {questions or '?'} q -- {verdict}"
+
+
+def merge_line(s: dict) -> str:
+    """`9 of 10 repos` plus every term that is not a clean merge, spelled out."""
+    line = f"{s['merged']} of {s['candidates']} repo(s)"
+    if s["not_merged"]:
+        line += f", {s['not_merged']} NOT merged"
+    if s["unknown"]:
+        line += f", {s['unknown']} merge not recorded"
+    if s["primaries_left"]:
+        line += f"; {s['primaries_left']} live checkout(s) left unsynced"
+    if s["primaries_unknown"]:
+        line += f"; {s['primaries_unknown']} checkout sync not recorded"
+    return line
+
+
+def _applied_lines(run: dict) -> list[str]:
+    """What the run changed on `main`: per file, then per repo (fleet-config#1312).
+
+    The run merges its own validated rewrites, so nothing waits on a reviewer;
+    this section is what makes the after-the-fact review possible -- what
+    changed, how much, who loads it, and the one command that undoes it.
+    """
+    lines = ["### What changed", "",
+             "The run merges its own validated rewrites; review here, revert with one command.", ""]
+    lines.append("| Repo | File | Tokens | Lines | Blast radius |")
+    lines.append("|---|---|---|---|---|")
+    pairs = rewritten_files(run)
+    for repo, f in pairs:
+        name, path = repo.get("repo", "?"), f.get("path", "?")
+        lines.append(f"| `{name}` | `{path}` | {_delta(f)} | {_lines(f)} | "
+                     f"{blast_radius(name, path)} |")
+    if not pairs:
+        lines.append("| — | — | — | — | no files rewritten |")
+    lines.append("")
+    lines.append("| Repo | Merge | PR | Revert | Live checkout |")
+    lines.append("|---|---|---|---|---|")
+    for repo in ranked_repos(run):
+        if repo.get("status") == "skipped":
+            continue
+        pr = repo.get("pr") or "none"
+        lines.append(f"| `{repo.get('repo','?')}` | {_merge_cell(repo)} | {pr} | "
+                     f"{_revert(repo)} | {_primary_cell(repo)} |")
+    lines.append("")
+    return lines
 
 
 def _backlog_lines(backlog: "list[dict] | None") -> list[str]:
@@ -361,10 +589,12 @@ def render_markdown(run: dict, artifact_url: Optional[str] = None,
                  + (f" ({h['inventory_unknown']} file(s) not recorded)"
                     if h["inventory_unknown"] else ""))
     lines.append(f"- **Probe coverage:** {coverage_line(h)}")
+    lines.append(f"- **Merged to main:** {merge_line(merge_summary(run))}")
     if artifact_url:
         lines.append(f"- **Full page:** {artifact_url}")
     lines.append("")
 
+    lines.extend(_applied_lines(run))
     lines.extend(_backlog_lines(backlog))
 
     lines.append("### Probe coverage, per file")
@@ -463,7 +693,12 @@ def render_chat(run: dict, link: Optional[str] = None,
     lines = [f"{head} `/context-purge` run `{run.get('run_id','unknown')}` — "
              f"{h['tokens_removed']:,} est. tokens removed, "
              f"{h['files_rewritten']} file(s) rewritten across {h['repos']} repo(s)",
-             f"Probe coverage: {coverage_line(h)}"]
+             f"Probe coverage: {coverage_line(h)}",
+             f"Merged to main: {merge_line(merge_summary(run))}"]
+    not_merged = [f"{r.get('repo')} ({(merge_record(r) or {}).get('reason', 'no reason recorded')})"
+                  for r in run.get("repos", []) if merge_state(r) == "not-merged"]
+    if not_merged:
+        lines.append(f"❌ NOT merged: {'; '.join(not_merged)}")
     if partial:
         names = ", ".join(u.get("repo", "?") for u in run.get("unreached", []))
         lines.append(f"Not reached: {names}")
@@ -552,6 +787,28 @@ def render_html(run: dict, backlog: "list[dict] | None" = None) -> str:
     def bullets(items: list[dict], fmt) -> str:
         return "".join(f"<li>{fmt(i)}</li>" for i in items) or "<li>none</li>"
 
+    change_rows = "".join(
+        "<tr>" + cells([
+            f"<code>{esc(repo.get('repo','?'))}</code>",
+            f"<code>{esc(f.get('path','?'))}</code>",
+            esc(_delta(f)),
+            esc(_lines(f)),
+            esc(blast_radius(repo.get("repo", "?"), f.get("path", "?"))),
+        ]) + "</tr>"
+        for repo, f in rewritten_files(run)
+    ) or "<tr><td colspan='5'>no files rewritten</td></tr>"
+
+    merge_rows = "".join(
+        "<tr>" + cells([
+            f"<code>{esc(r.get('repo','?'))}</code>",
+            esc(_merge_cell(r)),
+            esc(str(r.get("pr") or "none")),
+            esc(_revert(r)),
+            esc(_primary_cell(r)),
+        ]) + "</tr>"
+        for r in ranked_repos(run) if r.get("status") != "skipped"
+    )
+
     banner = ""
     if partial:
         names = ", ".join(esc(u.get("repo", "?")) for u in run.get("unreached", []))
@@ -602,6 +859,17 @@ ul {{ padding-left:1.1rem; }}
   <div class="stat"><div class="n">{h['inventory_walked']:,}</div><div class="l">inventory items walked</div></div>
   <div class="stat"><div class="n">{h['probed']}/{h['files_rewritten']}</div><div class="l">probed{f" · {h['probe_unknown']} not recorded" if h['probe_unknown'] else ""}</div></div>
 </div>
+
+<h2>What changed</h2>
+<p>Merged to main: {esc(merge_line(merge_summary(run)))}</p>
+<div class="scroll"><table>
+<tr><th>Repo</th><th>File</th><th>Tokens</th><th>Lines</th><th>Blast radius</th></tr>
+{change_rows}
+</table></div>
+<div class="scroll"><table>
+<tr><th>Repo</th><th>Merge</th><th>PR</th><th>Revert</th><th>Live checkout</th></tr>
+{merge_rows}
+</table></div>
 
 <h2>Open purge PR backlog</h2>
 {backlog_html}
@@ -728,7 +996,28 @@ def main(argv: Optional[list[str]] = None) -> int:
     p.add_argument("--md", type=Path, required=True)
     p.add_argument("--delivery-state", choices=["posted", "failed", "unknown"], default="unknown")
 
+    m = sub.add_parser("merge-check",
+                       help="go/no-go before `gh pr merge`: may this repo's rewrite ship?")
+    m.add_argument("repo_json", type=Path,
+                   help="one repo entry (the worker's run/<repo>.json)")
+
     args = ap.parse_args(argv)
+
+    if args.cmd == "merge-check":
+        try:
+            repo = _load(args.repo_json)
+        except (OSError, ValueError) as exc:
+            print(f"MERGE=blocked: could not read repo data: {exc}", file=sys.stderr)
+            return 2
+        if not isinstance(repo, dict):
+            print("MERGE=blocked: repo data is not a JSON object", file=sys.stderr)
+            return 2
+        blockers = merge_blockers(repo)
+        if blockers:
+            print("MERGE=blocked: " + "; ".join(blockers), file=sys.stderr)
+            return 2
+        print(f"MERGE=ok repo={repo.get('repo', '?')}")
+        return 0
 
     try:
         run = _load(args.run)
