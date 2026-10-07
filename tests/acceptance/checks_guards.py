@@ -764,6 +764,55 @@ def _safe_kill_force_push_unit_checks() -> Tuple[int, int]:
     return check.failures, check.total
 
 
+def _safe_kill_git_bypass_unit_checks() -> Tuple[int, int]:
+    """The bypass-flag check reads real `git` arguments, not words on the line (fleet-config#1303).
+
+    The old line regex refused any command mentioning the flag after the word
+    `git` - including a read-only `rg` for that phrase over `docs/`. Command-
+    position parsing must keep refusing every real invocation, so the
+    protections are pinned beside the false positive.
+    """
+    sys.path.insert(0, str(HOOKS))
+    import safe_kill_guard as skg  # noqa: E402
+
+    check = _Checker()
+    nv = "--no-" + "verify"
+    gs = "--no-gpg-" + "sign"
+    gpg = "commit.gpg" + "sign=false"
+
+    def flagged(cmd: str) -> bool:
+        return skg.git_bypass_flag(cmd) is not None
+
+    check("bypass: plain commit with the flag -> blocked", flagged(f"git commit {nv} -m hi"))
+    check("bypass: flag after the message -> blocked", flagged(f'git commit -m "hi" {nv}'))
+    check("bypass: push with the flag -> blocked", flagged(f"git push {nv}"))
+    check("bypass: --no-gpg-sign -> blocked", flagged(f"git commit {gs} -m hi"))
+    check("bypass: -c gpgsign=false before the subcommand -> blocked", flagged(f"git -c {gpg} commit -m hi"))
+    check("bypass: global -C <dir> before the subcommand does not hide it", flagged(f"git -C /r commit {nv}"))
+    check("bypass: chained after another command -> blocked", flagged(f"git add -A && git commit {nv}"))
+    check("bypass: env assignment before git -> blocked", flagged(f"GIT_X=1 git commit {nv}"))
+    check("bypass: git.exe by path -> blocked", flagged(f'"C:/Program Files/Git/bin/git.exe" commit {nv}'))
+    check("bypass: PowerShell call operator -> blocked", flagged(f"& git commit {nv}"))
+    check("bypass: nested shell string -> blocked", flagged(f'bash -c "git commit {nv}"'))
+    check("bypass: nested shell with a quoted separator -> blocked", flagged(f'bash -c "git add .; git commit {nv}"'))
+    check("bypass: xargs prefix -> blocked", flagged(f"echo x | xargs git commit {nv}"))
+    check("bypass: flag in a nested shell string via env prefix -> blocked", flagged(f"env FOO=1 git commit {nv}"))
+
+    check("bypass: rg for the phrase over docs/ -> allowed (the #1303 false positive)",
+          not flagged(f'rg "git commit {nv}" docs/'))
+    check("bypass: grep for the flag after a pipe -> allowed",
+          not flagged(f"git log --oneline | grep -- {nv}"))
+    check("bypass: echo of the phrase -> allowed", not flagged(f"echo git commit {nv}"))
+    check("bypass: flag inside a commit message -> allowed", not flagged(f'git commit -m "document {nv}"'))
+    check("bypass: ordinary commit and push -> allowed",
+          not flagged("git commit -m hi") and not flagged("git push origin feat/x"))
+    check("bypass: a longer unrelated flag is not the bypass flag", not flagged(f"git commit {nv}-hooks"))
+    check("bypass: quoted string handed to a non-shell command -> allowed",
+          not flagged(f'python -c "print(1)" "git commit {nv}"'))
+
+    return check.failures, check.total
+
+
 def _tier23_hooks_unit_checks() -> Tuple[int, int]:
     """The three Tier 2/3 hooks (issue #158): docs-guard env override, plus the
     two warn-only hooks whose output is on STDOUT (exit always 0), so these

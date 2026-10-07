@@ -597,16 +597,22 @@ def _list_open(repo: str) -> list[dict]:
     return json.loads(out) if out else []
 
 
-def _list_closed(repo: str) -> list[dict]:
-    """Closed issues, for the one kind whose open/closed state carries meaning.
+def _list_closed(repo: str, kind: str) -> list[dict]:
+    """Closed issues carrying `kind`'s marker, for the one kind whose open/closed state carries meaning.
 
     `cleanup-deferred` is closed when a run ends with nothing deferred, so the
     *next* run that does have something to defer must find and reopen that same
     issue rather than filing a second one. Every other kind lives its whole life
     open and never consults this (fleet-config#642).
+
+    Filtered server-side on the marker rather than taking the N most recent
+    closed issues: a busy repo closes more than any fixed window within weeks, so
+    the unfiltered window slid past the managed issue and a duplicate was filed
+    instead of a reopen (fleet-config#1303). `plan` still re-checks each hit.
     """
     out = gh([
         "issue", "list", "--repo", repo, "--state", "closed",
+        "--search", f'"audit-managed: kind={kind}" in:body',
         "--limit", "100", "--json", "number,title,body",
     ])
     return json.loads(out) if out else []
@@ -659,7 +665,7 @@ def _upsert_issue(
     if keep is None and reopen:
         # Opt-in, never the default: `security`'s managed issue is *closed* on
         # fix-merge by design, so a blanket reopen would resurrect it.
-        keep, _closed_dupes = plan(_list_closed(repo), kind)
+        keep, _closed_dupes = plan(_list_closed(repo, kind), kind)
         if keep is not None:
             gh(["issue", "reopen", str(keep), "--repo", repo])
     tmp = _write_tmp(ensure_marker(body, kind))

@@ -79,6 +79,7 @@ from acceptance.checks_guards import (  # noqa: E402
     _branch_before_edit_guard_unit_checks,
     _gh_body_file_guard_unit_checks,
     _safe_kill_force_push_unit_checks,
+    _safe_kill_git_bypass_unit_checks,
     _secret_scan_gh_unit_checks,
     _tier23_hooks_unit_checks,
     _venv_cd_prefix_guard_unit_checks,
@@ -228,6 +229,7 @@ def main() -> int:
 
     # ---- safe_kill_guard: force-push blocks on the pushed ref (#562) ----
     run_unit(_safe_kill_force_push_unit_checks)
+    run_unit(_safe_kill_git_bypass_unit_checks)  # #1303
     run_unit(_venv_junction_guard_unit_checks)
 
     # ---- venv_discipline rule 5 + destructive-action audit trail ----

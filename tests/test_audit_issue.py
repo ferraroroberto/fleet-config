@@ -577,7 +577,7 @@ try:
 
     # No open managed issue, but a closed one exists -> reopen it, never create.
     ai._list_open = lambda repo: []
-    ai._list_closed = lambda repo: [
+    ai._list_closed = lambda repo, kind: [
         {"number": 7, "title": "cleanup-fleet-all deferred repos", "body": ""}
     ]
     with contextlib.redirect_stdout(io.StringIO()):
@@ -590,6 +590,17 @@ try:
           "upsert --reopen: no duplicate issue is filed when a closed one exists")
     check(any(c[:3] == ["issue", "edit", "7"] for c in _gh_calls),
           "upsert --reopen: the reopened issue is the one edited")
+
+    # The closed lookup is filtered server-side on the kind's marker, not an
+    # unfiltered recent window that slides past an old managed issue (#1303).
+    _gh_calls.clear()
+    _stub_gh = ai.gh
+    ai.gh = lambda args, _retried=False: (_gh_calls.append(list(args)), "[]")[1]
+    _orig_closed("ferraroroberto/fleet-config", "cleanup-deferred")
+    ai.gh = _stub_gh
+    check(_gh_calls and "--search" in _gh_calls[0]
+          and "audit-managed: kind=cleanup-deferred" in _gh_calls[0][_gh_calls[0].index("--search") + 1],
+          "_list_closed searches for the kind's marker instead of taking the newest N closed issues")
 
     # Without --reopen the closed issue is invisible -- `security` is closed on
     # fix-merge by design and must never be resurrected by an unrelated upsert.
