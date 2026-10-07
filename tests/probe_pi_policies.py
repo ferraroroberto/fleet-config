@@ -63,7 +63,7 @@ def main() -> None:
              'After the tool result, quote any Fleet policy message and stop.']
     cases = [
         ('allowed', 'Use powershell exactly once with command: Set-Content -LiteralPath allowed.txt -Value allowed'),
-        ('shell_block', "Use powershell exactly once with command: Write-Output 'git commit --no-verify'; Set-Content -LiteralPath shell_sentinel.txt -Value blocked"),
+        ('shell_block', "Use powershell exactly once with command: git commit --no-verify -m probe; Set-Content -LiteralPath shell_sentinel.txt -Value blocked"),
         ('edit_block', 'Use write exactly once with path docs/2026-09-06-sentinel.md and content sentinel'),
         ('post_edit', 'Use write exactly once with path invalid.py and content consisting of this exact line plus newline: def broken(:'),
     ]
@@ -73,7 +73,7 @@ def main() -> None:
     (repo / 'noisy.txt').write_text('synthetic row data repeated\n' * 5000, encoding='utf-8')
     calls = {
         'allowed': {'name': 'powershell', 'arguments': {'command': 'Set-Content -LiteralPath allowed.txt -Value allowed'}},
-        'shell_block': {'name': 'powershell', 'arguments': {'command': "Write-Output 'git commit --no-verify'; Set-Content -LiteralPath shell_sentinel.txt -Value blocked"}},
+        'shell_block': {'name': 'powershell', 'arguments': {'command': "git commit --no-verify -m probe; Set-Content -LiteralPath shell_sentinel.txt -Value blocked"}},
         'edit_block': {'name': 'write', 'arguments': {'path': 'docs/2026-09-06-sentinel.md', 'content': 'sentinel'}},
         'post_edit': {'name': 'write', 'arguments': {'path': 'invalid.py', 'content': 'def broken(:\n'}},
         'post_replace': {'name': 'edit', 'arguments': {'path': 'replace.py', 'edits': [{'oldText': 'VALUE = 1', 'newText': 'def broken(:'}]}},

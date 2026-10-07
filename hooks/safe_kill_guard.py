@@ -55,11 +55,11 @@ COMMON_BLANKET_KILL = (
 )
 
 # ----- git safety bypasses -----
-GIT_BYPASS_PATTERNS = (
-    r"\bgit\b[^\n]*\s--no-verify\b",
-    r"\bgit\b[^\n]*\s--no-gpg-sign\b",
-    r"\bgit\b[^\n]*\s-c\s+commit\.gpgsign=false\b",
-)
+# Flagged only as arguments of a real `git` invocation at command position, so a
+# read-only search that merely *mentions* a flag is not refused (fleet-config#1303).
+# The old check was a line regex that matched `git` and the flag anywhere on the line.
+GIT_BYPASS_FLAGS = ("--no-verify", "--no-gpg-sign")
+GIT_BYPASS_CONFIG = "commit.gpgsign=false"
 
 # ----- git force-push to main/master -----
 # The predicate is the *ref actually being pushed*, never a `main`/`master` word
@@ -82,6 +82,102 @@ FORCE_FLAG_RE = re.compile(
     re.IGNORECASE,
 )
 PROTECTED_BRANCHES = {"main", "master"}
+
+# Words that run another command (`env git …`, `xargs git …`, `time git …`) or
+# introduce one (`if git …`, `! git …`), so the command that follows them is
+# still in command position.
+_COMMAND_PREFIXES = {
+    "env", "sudo", "command", "exec", "time", "nohup", "nice", "xargs", "!",
+    "if", "then", "else", "elif", "do", "while", "until",
+}
+# Commands whose quoted argument is itself a command line (`bash -c "git …"`).
+_NESTED_SHELLS = {"bash", "sh", "zsh", "pwsh", "powershell", "cmd", "eval", "iex", "invoke-expression"}
+_ENV_ASSIGN_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
+
+
+def _split_segments(cmd: str) -> list[str]:
+    """Split on `; | & newline` outside quotes, so a quoted `;` stays in its string."""
+    segments: list[str] = []
+    buf: list[str] = []
+    quote = ""
+    for ch in cmd:
+        if quote:
+            buf.append(ch)
+            if ch == quote:
+                quote = ""
+        elif ch in "\"'":
+            quote = ch
+            buf.append(ch)
+        elif ch in ";|&\n":
+            segments.append("".join(buf))
+            buf = []
+        else:
+            buf.append(ch)
+    segments.append("".join(buf))
+    return [seg for seg in segments if seg.strip()]
+
+
+def _command_index(tokens: list[str]) -> Optional[int]:
+    """Index of the token that is the command word of a segment, skipping leading
+    `VAR=value` assignments, subshell/`$(` punctuation and `_COMMAND_PREFIXES`."""
+    skipping_options = False
+    for i, raw in enumerate(tokens):
+        token = raw.lstrip("({`$").strip("\"'")
+        if not token:
+            continue
+        if _ENV_ASSIGN_RE.match(token):
+            continue
+        if skipping_options and token.startswith("-"):
+            continue
+        if token.lower() in _COMMAND_PREFIXES:
+            skipping_options = True
+            continue
+        return i
+    return None
+
+
+def _git_bypass_in_tokens(tokens: list[str], start: int) -> Optional[str]:
+    """The bypass flag among the arguments of the `git` at `tokens[start]`, if any."""
+    i = start + 1
+    while i < len(tokens) and tokens[i].startswith("-"):
+        opt = tokens[i]
+        if opt == "-c" and i + 1 < len(tokens) and tokens[i + 1].lower() == GIT_BYPASS_CONFIG:
+            return "-c " + GIT_BYPASS_CONFIG
+        i += 2 if opt in _lib.GIT_GLOBAL_OPTS_WITH_VALUE else 1
+    for j in range(i + 1, len(tokens)):
+        low = tokens[j].lower()
+        if low in GIT_BYPASS_FLAGS:
+            return low
+        if low == "-c" and j + 1 < len(tokens) and tokens[j + 1].lower() == GIT_BYPASS_CONFIG:
+            return "-c " + GIT_BYPASS_CONFIG
+    return None
+
+
+def git_bypass_flag(cmd: str, _nested: bool = False) -> Optional[str]:
+    """The git safety-bypass flag `cmd` passes to a real `git` invocation, or ``None``.
+
+    Walks each shell segment like `_push_args` does — global options before the
+    subcommand don't hide it — but only a `git` in command position counts.
+    The one place a quoted string *is* a command is a nested shell
+    (`bash -c "git …"`), so those arguments are re-checked once.
+    """
+    for segment in _split_segments(cmd):
+        raw = _TOKEN_RE.findall(segment)
+        tokens = [t.strip("\"'") for t in raw]
+        at = _command_index(raw)
+        if at is None:
+            continue
+        word = tokens[at].lstrip("({`$")
+        if _lib.GIT_TOKEN_RE.search(word):
+            hit = _git_bypass_in_tokens(tokens, at)
+            if hit:
+                return hit
+        elif not _nested and Path(word).stem.lower() in _NESTED_SHELLS:
+            for r, t in zip(raw[at + 1:], tokens[at + 1:]):
+                if r[:1] in "\"'" and (hit := git_bypass_flag(t, _nested=True)):
+                    return hit
+    return None
+
 
 
 def destination_branch(refspec: str) -> str:
@@ -246,13 +342,13 @@ def main() -> None:
             )
 
     # 2) Git bypass flags
-    for pattern in GIT_BYPASS_PATTERNS:
-        if re.search(pattern, cmd, re.IGNORECASE):
-            _lib.block(
-                "Blocked: git safety bypass flag detected (matched: " + pattern + "). "
-                "The user has not authorized `--no-verify` / `--no-gpg-sign`. "
-                "Fix the underlying hook/signing problem instead of skipping it."
-            )
+    bypass = git_bypass_flag(cmd)
+    if bypass:
+        _lib.block(
+            "Blocked: git safety bypass flag detected (matched: " + bypass + "). "
+            "The user has not authorized `--no-verify` / `--no-gpg-sign`. "
+            "Fix the underlying hook/signing problem instead of skipping it."
+        )
 
     # 3) Force push to main/master
     if forced_push_hits_protected(cmd, _lib.cwd(payload)):

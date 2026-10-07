@@ -289,6 +289,21 @@ def _context_filter_unit_checks() -> Tuple[int, int, int]:
         oversized.compressed.splitlines()[-1] if oversized.compressed else "<empty>",
     )
 
+    # (b2) A diff is content too (fleet-config#1303): every hunk survives, where
+    # the generic head/signal/tail pick kept 33 of a 201-line diff.
+    diff_text = "\n".join(f"+added line {i}" for i in range(201))
+    for diff_cmd in ("git diff", "git -C /r diff HEAD~1", "git show abc123", "gh pr diff 12"):
+        diff_result = _cf837.compress_output(diff_cmd, diff_text)
+        check(
+            f"context_filter: `{diff_cmd}` output keeps every hunk line (fleet-config#1303)",
+            diff_result.compressed_line_count == 201 and "+added line 100" in diff_result.compressed,
+            f"lines={diff_result.line_count}->{diff_result.compressed_line_count}",
+        )
+    check(
+        "context_filter: a non-diff git subcommand is still summarised (fleet-config#1303)",
+        not _cf837.is_content_command("git status") and not _cf837.is_content_command("gh pr view 12"),
+    )
+
     # (c2) JSON is payload too (fleet-config#1269): a key list in place of the
     # values read as the whole result, and a single-line output never got the
     # retrieve footer because its line count could not drop.

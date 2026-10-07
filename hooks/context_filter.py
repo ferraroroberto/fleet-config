@@ -102,6 +102,9 @@ COMPOUND_RE = re.compile(r"(?<!\|)\|(?!\|)|&&|\|\||;|\n")
 # truncated at a byte limit is strictly more honest than a summary the agent
 # cannot tell from an empty result.
 CONTENT_COMMANDS = {"cat", "tail"}
+# A diff is file content on the same terms: every hunk is the payload, and the
+# generic head/signal/tail pick kept 33 of a 201-line `git diff` (fleet-config#1303).
+DIFF_SUBCOMMANDS = {"git": {"diff", "show"}, "gh": {"pr diff"}}
 
 # JSON output is payload on the same terms (fleet-config#1269). It used to come
 # back as `JSON object: 3 top-level keys; keys: body, number, title` -- the
@@ -501,6 +504,27 @@ def _git_log(lines: list[str]) -> Optional[list[str]]:
     ]
 
 
+def is_content_command(command: str) -> bool:
+    """True when `command`'s output is file content, so it is returned verbatim.
+
+    `cat`/`tail`, and the diff-shaped subcommands in `DIFF_SUBCOMMANDS` - found
+    past git's global options (`git -C <dir> diff`), which would otherwise hide
+    the subcommand.
+    """
+    base = command_base(command)
+    if base in CONTENT_COMMANDS:
+        return True
+    subcommands = DIFF_SUBCOMMANDS.get(base)
+    if not subcommands:
+        return False
+    tokens = command.strip().removeprefix("& ").split()[1:]
+    i = 0
+    while i < len(tokens) and tokens[i].startswith("-"):
+        i += 2 if base == "git" and tokens[i] in _lib.GIT_GLOBAL_OPTS_WITH_VALUE else 1
+    rest = [t.lower() for t in tokens[i:i + 2]]
+    return " ".join(rest) in subcommands or bool(rest) and rest[0] in subcommands
+
+
 def command_specific_lines(command: str, lines: list[str]) -> Optional[list[str]]:
     base = command_base(command)
     lower = command.lower()
@@ -512,7 +536,7 @@ def command_specific_lines(command: str, lines: list[str]) -> Optional[list[str]
         return _pytest(lines)
     if base in {"npm", "pnpm", "yarn", "bun"} and re.search(r"\b(test|run\s+test)\b", lower):
         return _npm(lines)
-    # `cat`/`tail` deliberately have no branch here — see CONTENT_COMMANDS.
+    # Content commands deliberately have no branch here — see CONTENT_COMMANDS.
     return None
 
 
@@ -566,7 +590,7 @@ def compress_output(
     # Compound output (a pipeline's last stage, or several statements) is
     # returned like content (fleet-config#1268): `git status && git log` read
     # through the status summariser would drop every log line.
-    if command_base(shaping) in CONTENT_COMMANDS or is_compound(command) or _is_json(safe_raw):
+    if is_content_command(shaping) or is_compound(command) or _is_json(safe_raw):
         compressed = _verbatim(safe_raw, len(lines), max_chars)
     else:
         if len(safe_raw) <= SMALL_OUTPUT_CHARS and len(lines) <= max_lines:
