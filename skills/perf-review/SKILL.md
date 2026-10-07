@@ -79,22 +79,18 @@ What it measures:
     taken three times, each in a fresh context, and scored by its median.
   - "Ready" is the target's declared `ready_selector` being visible, else
     first contentful paint. The page checks the selector on every animation
-    frame and reports that frame's page time, on the same clock as first
-    contentful paint. Before fleet-config#1236 it was Playwright's
-    `wait_for_selector`, which re-checks only every 500 ms after the first
-    270 ms. Readings landed on its ticks (~960, ~1460, ~1970 ms), 260–380 ms
-    late on facilitation-suite and parking-manager. Runs from before the fix
-    read high, so a drop across it is the harness, not the app. The budgets
-    are unchanged: `warm.ready_ms` 1000 now means the selector is on screen
-    within 1000 ms of navigation start.
+    frame and reports that frame's page time, on first contentful paint's
+    clock. Before fleet-config#1236 it was Playwright's `wait_for_selector`
+    (500 ms ticks), so readings ran 260–380 ms late: runs from before the fix
+    read high, and a drop across it is the harness, not the app. Budgets are
+    unchanged: `warm.ready_ms` 1000 means the selector is on screen within
+    1000 ms of navigation start.
   - A warm leg no faster than cold, with `from_cache` 0 and bodies of ~150 B,
     means every asset revalidates (`no-cache`) behind a serial module chain.
     That is the app's caching, not this harness: playbook P11.
   - "Boot data" is when the last `/api/` response of the boot landed. An API
     path is any path with an `/api/` segment, so an app mounted under
-    `/admin/api/` is measured too (local-llm-hub#644: with a leading-`/api/`
-    match, `warm.data_ms` and `endpoints.api_p95_ms` read unmeasured and the
-    `SPLIT` line `api=0 KB`). A boot-data check still `unmeasured` is a
+    `/admin/api/` is measured too (local-llm-hub#644). A boot-data check still `unmeasured` is a
     measurement gap, never a pass.
 - **HTTP leg** (stdlib):
   - `/` plus every query-less `/api/` GET the boot made, each at the poll
@@ -172,8 +168,8 @@ LOC, cheapest first.
   in place. home-automation already had P5–P7 when it was piloted.
 - **A cold-paint finding is a hypothesis until a trace confirms it.** Record
   a net log (or the DevTools network timeline) and see what the time sits in
-  front of. The first lead on home-automation's "3 s stall" was render-blocking
-  CSS; one trace showed it was the harness.
+  front of. home-automation's "3 s stall" looked like render-blocking
+  CSS; one trace showed the harness.
 - **Say what the helper cannot see.** It never checks that a streaming
   response survives compression, or that a 304 stays correct across builds
   (playbook P2 and P3 give the one-off check and the test).
@@ -186,7 +182,7 @@ Summarize to the user:
 - the verdict line and the over-budget checks, with measured vs budget;
 - the slowest endpoints;
 - the ranked fixes with their pattern ids and rough LOC;
-- what changed since the last run (`DIFF`): `fixed`, `regressed` (a status flip) and `slower_p95_ms`, an endpoint whose p95 rose 25% and 10 ms or more since the last run **even while it stays inside its budget**. Say it as a regression: parking-manager's `/` went 31 to 43 ms under a 50 ms budget after a per-request fingerprint, every status stayed `pass`, and `regressed=none` read clean.
+- what changed since the last run (`DIFF`): `fixed`, `regressed` (a status flip) and `slower_p95_ms`, an endpoint whose p95 rose 25% and 10 ms or more since the last run **even while it stays inside its budget**. Say it as a regression (parking-manager's `/` went 31 to 43 ms under a 50 ms budget, every status `pass`, `regressed=none`).
 
 Then do step 4: its dry run without `file`, its `--apply` with `file`. Then stop.
 Each fix ships through the target repo's own issue → branch → PR

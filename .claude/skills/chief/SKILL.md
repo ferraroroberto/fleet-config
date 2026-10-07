@@ -70,28 +70,24 @@ could hit by hand.
 
 ## Polling on a cadence — one-shot tasks, never a loop (fleet-config#637)
 
-A background task re-invokes you **when it exits** — not on each line it
+A background task re-invokes you **when it exits**, not on each line it
 prints. So a waiter is a **one-shot** task: wait for its trigger (a worker
 event, or a timeout), emit one digest, exit. You report on the wake-up, then
 relaunch the same script. Nothing re-arms it for you.
 
-- **Never a loop with an internal `sleep`.** It collects data faithfully and
-  reports it to nobody until it terminates — exactly when the reporting has
-  stopped being useful.
-- A long-lived loop is still fine for pure **data collection** into a file
-  something else reads. The defect is using one as the *reporting* mechanism.
-- Foreground `sleep` is blocked by the harness, so the interval has to live
-  inside the background task. Don't assume the schedule held either — stamp
-  each tick with its own wall-clock (`date +%H:%M:%S`) rather than reporting
-  the time you expected it to fire.
+- **Never a loop with an internal `sleep`** — it reports to nobody until it
+  terminates.
+- A long-lived loop is fine for pure **data collection** into a file something
+  else reads; the defect is using one as the *reporting* mechanism.
+- Foreground `sleep` is blocked by the harness, so the interval lives inside
+  the background task. Stamp each tick with its own wall-clock
+  (`date +%H:%M:%S`), not the time you expected it to fire.
 
-**This is the inverse of the worker rule you hand out at dispatch time** —
-"poll background work to completion inside your own turn; never end a turn
-waiting to be resumed" (standard dispatch brief point 1 below). One mechanic:
-only a task's *exit* wakes a session. A top-level worker gets no wake-up at
-all, so it must never end a turn waiting for one; you **do** get woken, so
-build your cadence out of short tasks that end. The rule you give workers is
-not the rule you follow.
+**Inverse of the worker rule you hand out at dispatch** ("poll background work
+to completion inside your own turn; never end a turn waiting to be resumed",
+brief point 1 below). One mechanic: only a task's *exit* wakes a session. A
+top-level worker gets no wake-up, so it must never end a turn waiting for one;
+you **do** get woken, so build your cadence out of short tasks that end.
 
 **Wake on events, not a timer (fleet-config#999).** A chief-managed worker's
 turn ending (`Stop`) or session exiting writes one event into the chief inbox
@@ -130,9 +126,8 @@ status, `wc -c` of its log); the shape stays the same: wait, one digest, exit.
 ## Managing your own context — self-compact at a quiet tick (fleet-config#1052)
 
 One chief session is meant to run indefinitely. Don't wait for Claude Code's
-own auto-compact near the limit, where attention is most diluted and nothing
-guarantees the handover was refreshed. Compact yourself earlier, on your own
-terms:
+own auto-compact near the limit (nothing guarantees the handover was
+refreshed); compact yourself earlier:
 
 1. On each wake, `chief_ops.py context` prints your context use
    (`percent=unknown` is never a trigger).
@@ -160,9 +155,7 @@ through at any percentage. Never refuse, delay or second-guess it.
 ## Telling a quiet lane from a hung one (fleet-config#638)
 
 A job log that stops growing is the most misread signal on a long unattended
-run — a false stall triggers intervention, a missed one wastes an unattended
-night. Before calling a silent lane stalled,
-work the four ordered checks in [lane-silence.md](lane-silence.md): read the
+run. Before calling a silent lane stalled, work the four ordered checks in [lane-silence.md](lane-silence.md): read the
 log's elapsed-not-wall-clock prefix, treat silence under the 45-minute
 watchdog as not a stall, suspect one slow tool call, then sample the
 `claude.exe` child's CPU — never the adapter's.
@@ -313,12 +306,11 @@ returned session so the user can find the card.
 ## Standard dispatch brief (fold into every worker brief, fleet-config#444)
 
 **Open every brief by naming the instruction channel (fleet-config#622).**
-Not to authenticate yourself — there is no marker and no authority claim — but
-because a worker that meets an unexplained mid-run instruction stalls just as
-hard as one that meets an unverifiable authority marker. What the brief
-declares is a **channel, not a password**: which input path carries further
-instructions, and what does not — and a channel, unlike a marker, is not a
-string an attacker can type. Adapt the wording, never the substance:
+Not to authenticate yourself (no marker, no authority claim) but because a
+worker meeting an unexplained mid-run instruction stalls as hard as one
+meeting an unverifiable authority marker. The brief declares a **channel, not
+a password**: which input path carries further instructions, and what does
+not. Adapt the wording, never the substance:
 
 > **Where further instructions come from.** This work was dispatched by the
 > fleet chief — a standing orchestrator session (cwd
@@ -384,9 +376,8 @@ with, adapted to its wording but never dropped:
    is needed.
 
 **A brief that asks for a red-under-load proof names the helper
-(fleet-config#1076).** Hand-rolled burners at normal priority saturate the
-whole box: 24 of them on the 16-core machine starved a scheduled life-os job
-until its watchdog killed it. Tell the worker to run every burn through
+(fleet-config#1076).** Hand-rolled normal-priority burners saturate the box
+(24 on 16 cores starved a scheduled life-os job). Tell the worker to run every burn through
 `tests/_lib/cpu_burn.py --burners N --runs K -- <test command>` (fleet-config's
 venv, from its repo root; a sister repo calls it by absolute path). It runs the
 burners and the test at below-normal priority, stops only the burners it
@@ -444,8 +435,8 @@ without firing any hook.
 
 ## Verify before you trust a worker's report
 
-**Never take a worker's self-reported "shipped ✅"/"built ✅" on trust** — a
-sub-agent once built/committed/pushed/merged a PR despite a read-only brief.
+**Never take a worker's self-reported "shipped ✅"/"built ✅" on trust** (a
+sub-agent once built/committed/pushed/merged despite a read-only brief).
 `chief_ops.py verify <repo> --expect merged|built [--branch <name>]` automates
 the check (wraps `skills/_lib/dirty_tree_check.py`, already trusted by
 `/issue-batch`, `/issue-finish-batch`, `/cleanup-fleet`, `/cleanup-fleet-all`)
@@ -472,13 +463,12 @@ checkout of the merged default branch** — never a feature branch, never one of
 the worktrees (whose `.venv` is a junction into the primary's real venv). That
 buys the guarantee that the merged tree is what ran.
 
-**It also costs coverage, and the cost is invisible unless you report it.** A
-fresh checkout lacks the repo's gitignored runtime files and host state, so
-tests needing either skip rather than fail — a skip is not a pass. A
-merge-verification report is only complete when it names that skip delta
-(`skills/_lib/skip_delta.py` capture/compare, relaying `STATUS` **and** `SET`),
-and never closes the gap by copying a live config into a scratch checkout. The
-procedure, its unknown states and the measured incident: [merge-verification.md](merge-verification.md).
+**It also costs coverage:** a fresh checkout lacks gitignored runtime files
+and host state, so tests needing either skip rather than fail — a skip is not
+a pass. A merge-verification report is complete only when it names that skip
+delta (`skills/_lib/skip_delta.py` capture/compare, relaying `STATUS` **and**
+`SET`), and never closes the gap by copying a live config into a scratch
+checkout. Procedure, unknown states, incident: [merge-verification.md](merge-verification.md).
 
 **Verify from outside; never arbitrate between two agents' conflicting
 accounts.** When one worker reports that another overstepped its brief, check
@@ -486,25 +476,23 @@ independently — the PR contents, `git log`, the working tree, and the repo's
 own gate — rather than refereeing which narrative is right. You are the one
 party in a position to check; use that instead of picking a side.
 
-**Correct a wrong hedge fast, once you have better information.** A soft
-guess ("likely a narration artifact") that a worker later contradicts with
-direct visibility must be corrected immediately — it changes whether Roberto
-acts on a real process gap.
+**Correct a wrong hedge fast.** A soft guess ("likely a narration artifact")
+that a worker later contradicts with direct visibility must be corrected
+immediately — it changes whether Roberto acts on a real process gap.
 
 **Never run a repo's gate, test suite, or any mutating command in a repo
 that currently has a live worker session — that repo's gate belongs to its
 worker.** Running `tests/run_acceptance.py` against fleet-config's tree while a
-worker was editing it gave two different failure counts on consecutive runs —
-not flake, a race with the worker's writes. This doesn't narrow what you can inspect — `git status`,
-`git log`, reading files, reading committed state, querying `gh` all stay fine
-and encouraged, including in a repo with a live worker. The line is running the
-repo's own tooling: a gate, a test suite, a byte-compile, anything that writes
-`__pycache__` or otherwise mutates a tree someone else is actively changing —
-that can neither be trusted (it reads a moving target) nor safely repeated.
+worker was editing it gave two different failure counts on consecutive runs
+(a race with the worker's writes, not flake). Inspection stays fine and
+encouraged, even in a repo with a live worker: `git status`, `git log`,
+reading files, reading committed state, querying `gh`. The line is running the
+repo's own tooling — a gate, a test suite, a byte-compile, anything that
+writes `__pycache__` or otherwise mutates a tree someone else is changing —
+which reads a moving target and can't be trusted or safely repeated.
 
-When you genuinely doubt a worker's report — and you should keep doubting;
-the failure here was the method, not the impulse — verify one of these ways
-instead:
+When you doubt a worker's report (keep doubting; the failure was the method),
+verify one of these ways instead:
 
 - Against `origin/main` or a specific commit, never the live working tree.
 - Against an artefact the change produced, rather than by re-running the
@@ -517,15 +505,14 @@ instead:
 
 **Doubt your own filings hardest — re-test the premise, not the conclusion
 (fleet-config#633).** A table-heavy defect you filed against
-`/cleanup-fleet-all`'s step-5 state gate — named root cause, derived hours
-wasted — rested entirely on one unchecked unit conversion: GitHub's UTC
-`closedAt` read as local time (the clock rule lives in `global-CLAUDE.md`'s
-recurring gotchas; elapsed-vs-wall-clock job logs are item 1 of
-[lane-silence.md](lane-silence.md)). That run's *own* lanes had closed both
-issues, hours **after** the gate ran. Every later check re-confirmed the
-**conclusion** and never the **premise**: re-running `issue_state_gate.py
-check` by hand returned `closed`, true *by then* and silent about what the
-gate could see *back then*. Before filing any defect against fleet tooling:
+`/cleanup-fleet-all`'s step-5 state gate rested entirely on one unchecked
+unit conversion: GitHub's UTC `closedAt` read as local time (clock rule in
+`global-CLAUDE.md`'s recurring gotchas; elapsed-vs-wall-clock job logs are
+item 1 of [lane-silence.md](lane-silence.md)). That run's *own* lanes had
+closed both issues **after** the gate ran. Every later check re-confirmed the
+**conclusion**, never the **premise**: re-running `issue_state_gate.py check`
+by hand returned `closed`, true *by then*, silent about what the gate could
+see *back then*. Before filing any defect against fleet tooling:
 
 - **Write the premise as one sentence and test that sentence alone.** Here it
   was "these two issues were already closed at `11:53Z`" — one `gh` query
@@ -533,10 +520,9 @@ gate could see *back then*. Before filing any defect against fleet tooling:
 - **Reconstruct what the tool could observe at time T**, not what it returns
   now. A tool re-run today is not a witness to yesterday.
 - **Treat a confident, table-heavy draft as a warning sign, not a finish
-  line.** Presentation quality is not evidence quality, least of all in your
-  own filings — #633 read as rigorous *precisely* while being wrong, and that
-  rigour carried it into the handover log and onward to Roberto as a real
-  defect.
+  line.** Presentation quality is not evidence quality — #633 read as rigorous
+  while being wrong, and carried into the handover log and on to Roberto as a
+  real defect.
 
 A claim that survives all three is a defect worth filing. One that cannot say
 what it re-tested is a hypothesis — file it as a question, or don't file it.

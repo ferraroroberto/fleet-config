@@ -5,68 +5,40 @@ description: Finish an issue — confirm acceptance, update docs/README, run the
 
 # issue-finish
 
-**Goal:** Take a finished feature branch all the way to merged-and-closed,
-neatly. Invoking this skill is explicit authorization to commit, push, and merge.
+**Goal:** Take a finished feature branch all the way to merged-and-closed, neatly. Invoking this skill is explicit authorization to commit, push, and merge.
 
 ## Pre-flight
 
 Run in parallel; stop on any failure:
 - `git rev-parse --is-inside-work-tree` — must be `true`.
-- `git branch --show-current` — must be a feature branch, not main. On main,
-  stop: "Not on a feature branch — nothing to finish."
-- Derive the **issue number** from the branch name (`feat/53-...` → `53`). No
-  number → ask which issue this closes.
-- Read the project's `CLAUDE.md` — verification gate command, docs discipline,
-  any tray/restart procedure.
+- `git branch --show-current` — must be a feature branch, not main. On main, stop: "Not on a feature branch — nothing to finish."
+- Derive the **issue number** from the branch name (`feat/53-...` → `53`). No number → ask which issue this closes.
+- Read the project's `CLAUDE.md` — verification gate command, docs discipline, any tray/restart procedure.
 - **Detect the checkout mode** (drives the merge-land + cleanup in step 5):
   ```
   E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/worktree_claim.py mode <repo>
   ```
-  prints `primary` (shared checkout) or `worktree` (a linked `<repo>-wt-<N>`
-  created by `/issue-start`'s concurrency path) — the two modes finish
-  differently. **Run it from the checkout you are finishing** — it answers
-  about the cwd, and `<repo>` only says which repo that cwd must belong to
-  (fleet-config#652). `UNKNOWN reason=<why>` (exit 2) → stop and fix the
-  cwd/argument, never guess a mode.
+  prints `primary` (shared checkout) or `worktree` (a linked `<repo>-wt-<N>` created by `/issue-start`'s concurrency path) — the two finish differently. **Run it from the checkout you are finishing** — it answers about the cwd; `<repo>` only says which repo that cwd must belong to (fleet-config#652). `UNKNOWN reason=<why>` (exit 2) → stop and fix the cwd/argument, never guess a mode.
 
 ## Steps
 
 ### 1. Finalize the work
 
-- `git status --porcelain` — uncommitted changes → commit now with a clear
-  `type: summary` message (Git section of `CLAUDE.md`; no AI-attribution
-  trailer).
-- **Audit acceptance per criterion** (fleet-config#958). Code that handles a
-  deliverable is not the deliverable.
-  1. `E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/acceptance_audit.py extract <N>`
-     prints a JSON template, one entry per checkbox criterion; save it to a
-     scratch file and fill every entry: `proof_location` — where the proof
-     lives: `DIFF` (branch diff / gate output), `CROSS-REPO` (another repo's
-     state), `EXTERNAL` (live process, device, schedule, machine-local file);
-     `verdict` — `DONE` / `NOT DONE` / `UNVERIFIABLE`; `evidence` — one line;
-     for `UNVERIFIABLE`, `verifier` (who/what can establish it) and
-     `post_merge` (true when it can only be checked after merge).
-  2. `… acceptance_audit.py tally <N> <file>` — add `--unattended` when this
-     finish was invoked with `unattended` (`/issue-finish-batch`,
-     `/cleanup-fleet-all`). Act on the printed `ACCEPTANCE=`:
+- `git status --porcelain` — uncommitted changes → commit now with a clear `type: summary` message (Git section of `CLAUDE.md`; no AI-attribution trailer).
+- **Audit acceptance per criterion** (fleet-config#958). Code that handles a deliverable is not the deliverable.
+  1. `E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/acceptance_audit.py extract <N>` prints a JSON template, one entry per checkbox criterion; save it to a scratch file and fill every entry: `proof_location` — where the proof lives: `DIFF` (branch diff / gate output), `CROSS-REPO` (another repo's state), `EXTERNAL` (live process, device, schedule, machine-local file); `verdict` — `DONE` / `NOT DONE` / `UNVERIFIABLE`; `evidence` — one line; for `UNVERIFIABLE`, `verifier` (who/what can establish it) and `post_merge` (true when it can only be checked after merge).
+  2. `… acceptance_audit.py tally <N> <file>` — add `--unattended` when this finish was invoked with `unattended` (`/issue-finish-batch`, `/cleanup-fleet-all`). Act on the printed `ACCEPTANCE=`:
      - `done` → proceed. `no_criteria` → judge the issue's prose; say so.
      - `not_done` → stop and say which; don't finish a partial issue.
-     - `incomplete` → a criterion has no valid verdict; fill it — a gap is
-       never read as met.
-     - `unverifiable` → interactive: ask about each listed item one by one;
-       unattended: proceed. Either way, carry each `PR_TEST_PLAN` line into
-       the step-4 PR body and the step-7 summary individually — never a
-       blanket "please confirm the rest".
-     - `blocked` (unattended only) → an unverifiable item is not `EXTERNAL`
-       and post-merge by nature; stop and report it as the blocker.
+     - `incomplete` → a criterion has no valid verdict; fill it — a gap is never read as met.
+     - `unverifiable` → interactive: ask about each listed item one by one; unattended: proceed. Either way, carry each `PR_TEST_PLAN` line into the step-4 PR body and the step-7 summary individually — never a blanket "please confirm the rest".
+     - `blocked` (unattended only) → an unverifiable item is not `EXTERNAL` and post-merge by nature; stop and report it as the blocker.
      - `unknown` → the issue could not be read; stop.
 
 ### 2. Documentation
 
 - Update `README.md` if usage, config, or output changed.
-- Do **not** create a dated `docs/YYYY-MM-DD-*.md` changelog — the PR body, the
-  closed issue, and `git log` already capture it. `docs/` is for durable *design
-  records*, not per-PR changelogs.
+- Do **not** create a dated `docs/YYYY-MM-DD-*.md` changelog — the PR body, the closed issue, and `git log` already capture it. `docs/` is for durable *design records*.
 - Commit any documentation changes.
 
 ### 2b. Visual docs (`/docs-shots` sub-step — repos with a screenshot manifest only)
@@ -77,417 +49,161 @@ Deterministic discovery + diff-intersection, no LLM re-derivation:
 E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/docs_shots_plan.py check <repo-root>
 ```
 
-`MANIFEST=absent` → **silent no-op**, skip straight to step 3.
-`MANIFEST=<path>` with an empty `STALE` → also a no-op (say so in the finish
-summary: `docs-shots: no visual-docs feature touched by this diff`). A
-non-empty `STALE` → run the full `/docs-shots` judgment + propose-then-capture
-flow (`skills/docs-shots/SKILL.md`) **inside this run**: show the stale set +
-reasons, wait for the user's explicit OK, and on approval invoke the repo's own
-doc-capture engine for just those features, fold the result into the finish
-summary. Also surface any `UNMAPPED` changed files for the user to add a
-manifest entry for — never guess one. On decline, note the refresh was skipped
-and continue to step 3 — never block the finish over it.
+`MANIFEST=absent` → **silent no-op**, skip to step 3. `MANIFEST=<path>` with an empty `STALE` → also a no-op (say so in the finish summary: `docs-shots: no visual-docs feature touched by this diff`). A non-empty `STALE` → run the full `/docs-shots` judgment + propose-then-capture flow (`skills/docs-shots/SKILL.md`) **inside this run**: show the stale set + reasons, wait for the user's explicit OK, and on approval invoke the repo's own doc-capture engine for just those features, fold the result into the finish summary. Also surface any `UNMAPPED` changed files for the user to add a manifest entry for — never guess one. On decline, note the refresh was skipped and continue to step 3 — never block the finish over it.
 
 ### 3. Verification gate
 
-Run the gate the project's `CLAUDE.md` specifies (e.g.
-`C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe -File scripts/verify-before-ship.ps1`)
-**through the evidence helper**, so its result is bound to the tree it ran
-against (fleet-config#957):
+Run the gate the project's `CLAUDE.md` specifies (e.g. `C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe -File scripts/verify-before-ship.ps1`) **through the evidence helper**, so its result is bound to the tree it ran against (fleet-config#957):
 
 ```
 E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/gate_evidence.py run --label gate -- <gate command argv>
 ```
 
-It exits with the gate's own code; must exit 0. Do not proceed on a red gate.
-No checker → say so explicitly, never claim tests passed when there are none.
-Every later "is the gate still green?" question — steps 3c and 5 — is
-answered by `gate_evidence.py check --label gate`, never by memory:
-`FRESH` (the recorded pass matches the current tree), `STALE` (the tree
-changed since — e.g. a 3b drift-fix commit, `/e2e` suite upkeep),
-`MISSING`, or `UNKNOWN` (hash not computable). Anything but `FRESH` → re-run
-the gate once through the helper; a last line `EVIDENCE=not_recorded` means
-the gate itself changed the tree (the paths are named) — watch CI rather than
-loop.
+It exits with the gate's own code; must exit 0. Do not proceed on a red gate. No checker → say so explicitly, never claim tests passed when there are none. Every later "is the gate still green?" question — steps 3c and 5 — is answered by `gate_evidence.py check --label gate`, never by memory: `FRESH` (the recorded pass matches the current tree), `STALE` (the tree changed since — e.g. a 3b drift-fix commit, `/e2e` suite upkeep), `MISSING`, or `UNKNOWN` (hash not computable). Anything but `FRESH` → re-run the gate once through the helper; a last line `EVIDENCE=not_recorded` means the gate itself changed the tree (the paths are named) — watch CI rather than loop.
 
 ### 3b. UX-conformance gate (web-app UX diffs only)
 
-When the diff touches the web app's UX, confirm it still conforms to the fleet
-design system **and** isn't visually broken — *before* the PR, so a drift-fix
-commit lands in it. Convention + contract: `project-scaffolding#83`. Trigger is
-deterministic, not a judgment call:
+When the diff touches the web app's UX, confirm it still conforms to the fleet design system **and** isn't visually broken — *before* the PR, so a drift-fix commit lands in it. Convention + contract: `project-scaffolding#83`. Trigger is deterministic, not a judgment call:
 
 ```
 E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/ux_surface.py check .
 ```
 
-- `SPEC_APPLIES=no` (non-web repo / Streamlit spike) **or** `TOUCHED=no` → gate
-  is a no-op. **State it** in the step-7 summary (`no UX surface touched`) and
-  go to step 4 — the common case, costs nothing.
-- `TOUCHED=unknown` → the diff itself could not be taken — **not** evidence the
-  surface was untouched (fleet-config#681). Treat as `yes`: run both legs
-  against every `KEY_VIEWS` entry, say `UX surface: unknown (diff failed) —
-  gate run in full` in the step-7 summary.
+- `SPEC_APPLIES=no` (non-web repo / Streamlit spike) **or** `TOUCHED=no` → gate is a no-op. **State it** in the step-7 summary (`no UX surface touched`) and go to step 4.
+- `TOUCHED=unknown` → the diff itself could not be taken — **not** evidence the surface was untouched (fleet-config#681). Treat as `yes`: run both legs against every `KEY_VIEWS` entry, say `UX surface: unknown (diff failed) — gate run in full` in the step-7 summary.
 - `TOUCHED=yes` → run both legs against the files in `MATCHED`:
-  - **Token check (fix-now).** Compare the touched CSS custom properties (light
-    **and** dark) and the nav contract to `~/.claude/design.md` +
-    `design.dark.md`, and **fix material drift in this branch now**, committing
-    it — do *not* file-and-defer a `design-drift` issue (that's `/design-sync`'s
-    periodic-sweep job; this gate's job is to not *introduce* drift).
-    Materiality bar: a wrong canvas color, missing dark theme, hand-rolled nav,
-    or broken layout is a blocker; a 1-unit radius nitpick is not.
-  - **Visual check (in-session only — never attach the image).** Launch the
-    feature-branch working tree, look at the touched view via the repo's own
-    launch skill (app-launcher's project `verify`), else Claude Code's built-in
-    `run` skill (with `ux-full`, every `KEY_VIEWS` entry, not just the touched one).
-    Inspect the render against the spec — nav pill, layout, palette. Save the
-    screenshot to a local scratch path, never commit it, and **never attach it
-    to the PR body, an issue, or a comment** — assume every repo is public; a
-    UI screenshot is an information breach. Text-only conformance line in the
-    PR instead (e.g. `Visual: touched view renders per spec — nav pill, layout,
-    palette conform`).
-    - **Browser-backend preflight (Codex — no live `iab`).** Pick the backend
-      deterministically: prefer the in-app Browser (`iab`) when
-      `agent.browsers.list()` includes it; `[]` → fall back to installed
-      Playwright with real Chrome — `iab` absence is **not** a reason to skip
-      the visual leg (fleet-config#351). Get the plan (backend, venv,
-      `channel="chrome"` launch kwargs honoring the browser-safety contract,
-      the `KEY_VIEWS` × {light, dark} capture list) from:
+  - **Token check (fix-now).** Compare the touched CSS custom properties (light **and** dark) and the nav contract to `~/.claude/design.md` + `design.dark.md`, and **fix material drift in this branch now**, committing it — do *not* file-and-defer a `design-drift` issue (that's `/design-sync`'s periodic-sweep job; this gate's job is to not *introduce* drift). Materiality bar: a wrong canvas color, missing dark theme, hand-rolled nav, or broken layout is a blocker; a 1-unit radius nitpick is not.
+  - **Visual check (in-session only — never attach the image).** Launch the feature-branch working tree, look at the touched view via the repo's own launch skill (app-launcher's project `verify`), else Claude Code's built-in `run` skill (with `ux-full`, every `KEY_VIEWS` entry, not just the touched one). Inspect the render against the spec — nav pill, layout, palette. Save the screenshot to a local scratch path, never commit it, and **never attach it to the PR body, an issue, or a comment** — assume every repo is public; a UI screenshot is an information breach. Text-only conformance line in the PR instead (e.g. `Visual: touched view renders per spec — nav pill, layout, palette conform`).
+    - **Browser-backend preflight (Codex — no live `iab`).** Pick the backend deterministically: prefer the in-app Browser (`iab`) when `agent.browsers.list()` includes it; `[]` → fall back to installed Playwright with real Chrome — `iab` absence is **not** a reason to skip the visual leg (fleet-config#351). Get the plan (backend, venv, `channel="chrome"` launch kwargs honoring the browser-safety contract, the `KEY_VIEWS` × {light, dark} capture list) from:
       ```
       E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/browser_verify.py plan . --base-url <app-root> --iab-available <yes|no>
       ```
-      Missing Playwright, missing Chrome, unreachable app, or exhausted
-      profile-lock each report distinctly (never one generic error) — report
-      only the one observed. Codes/background/recovery: `docs/codex-browser.md`.
-      Claude Code: the launch skill's MCP browser is the `iab`-equivalent path.
+      Missing Playwright, missing Chrome, unreachable app, or exhausted profile-lock each report distinctly (never one generic error) — report only the one observed. Codes/background/recovery: `docs/codex-browser.md`. Claude Code: the launch skill's MCP browser is the `iab`-equivalent path.
 
-**Overrides** (words in the finish invocation): `ux`/`design` forces the gate
-even if `TOUCHED=no`; `no-ux` skips it; `ux-full` checks every `KEY_VIEWS`
-entry. Always **state** the gate decision (ran / skipped / `ux-full`, plus any
-drift fixed) in the step-7 summary so the user can veto.
+**Overrides** (words in the finish invocation): `ux`/`design` forces the gate even if `TOUCHED=no`; `no-ux` skips it; `ux-full` checks every `KEY_VIEWS` entry. Always **state** the gate decision (ran / skipped / `ux-full`, plus any drift fixed) in the step-7 summary so the user can veto.
 
 ### 3c. E2e leg (delegated to `/e2e`)
 
-Run the **`/e2e` skill** (`skills/e2e/SKILL.md`) — evaluation is mandatory
-before any PR; execution is proportionate. It probes the repo, routes the
-branch diff through the repo's own `classify_e2e.py` (bootstrapping it on first
-contact), runs the routed slice (`skip` / `static` / `full` / `surface`), and applies its
-inline suite maintenance (delete-with-the-feature, qualifying additions, table
-upkeep) on this branch. Integration rules:
+Run the **`/e2e` skill** (`skills/e2e/SKILL.md`) — evaluation is mandatory before any PR; execution is proportionate. It probes the repo, routes the branch diff through the repo's own `classify_e2e.py` (bootstrapping it on first contact), runs the routed slice (`skip` / `static` / `full` / `surface`), and applies its inline suite maintenance (delete-with-the-feature, qualifying additions, table upkeep) on this branch. Integration rules:
 
-- If step 3's gate already executed the routed e2e slice (the
-  scaffold-shaped `verify-before-ship` gates route internally) **and**
-  `gate_evidence.py check --label gate` prints `FRESH`, `/e2e` carries that
-  result — no double run. Any other answer → run the slice.
+- If step 3's gate already executed the routed e2e slice (the scaffold-shaped `verify-before-ship` gates route internally) **and** `gate_evidence.py check --label gate` prints `FRESH`, `/e2e` carries that result — no double run. Any other answer → run the slice.
 - A **FAIL** from the slice stops the finish exactly like a red gate.
-- Echo `/e2e`'s report block into the step-7 summary — the tier + reason
-  always appear there, even when the outcome is `skip` or `n/a`.
+- Echo `/e2e`'s report block into the step-7 summary — the tier + reason always appear there, even when the outcome is `skip` or `n/a`.
 
 ### 4. Push and open the PR
 
 - `git push -u origin <branch>`.
-- `gh pr create` with a body containing: a short **Summary**, a **Validation**
-  line (what gate ran and its result), and `Closes #<N>` so the issue
-  auto-closes on merge. Step 1's `PR_TEST_PLAN` lines go in as unticked test-plan
-  boxes, one per unverifiable criterion, naming its verifier.
-  If the diff **untracks a file** (`git rm --cached`, a rename to `.sample`,
-  a `.gitignore` line over a tracked path), say so in the Summary, naming each
-  path: every checkout that pulls it loses its live copy unless its
-  fast-forward goes through `untrack_guard.py` (fleet-config#1086).
-  Match the PR-body style of recent merged PRs in the repo.
-  Do **not** include the `🤖 Generated with [Claude Code]` line at the bottom of the PR body.
+- `gh pr create` with a body containing: a short **Summary**, a **Validation** line (what gate ran and its result), and `Closes #<N>` so the issue auto-closes on merge. Step 1's `PR_TEST_PLAN` lines go in as unticked test-plan boxes, one per unverifiable criterion, naming its verifier. If the diff **untracks a file** (`git rm --cached`, a rename to `.sample`, a `.gitignore` line over a tracked path), say so in the Summary, naming each path: every checkout that pulls it loses its live copy unless its fast-forward goes through `untrack_guard.py` (fleet-config#1086). Match the PR-body style of recent merged PRs in the repo. Do **not** include the `🤖 Generated with [Claude Code]` line at the bottom of the PR body.
 
 ### 5. Merge (CI is advisory — skip the wait when it adds no signal)
 
-**CI is advisory, not a required gate.** The local verification gate (step 3)
-is the contract. CI's **only** signal beyond it is the **e2e suite** (when the
-local gate doesn't run it — needs browsers + a live webapp), also the
-known-flaky leg — waiting adds nothing once that signal exists locally.
-Decision below is driven by the project's `## CI expectations` block
-(convention: `ferraroroberto/project-scaffolding#52`).
+**CI is advisory, not a required gate.** The local verification gate (step 3) is the contract. CI's **only** signal beyond it is the **e2e suite** (when the local gate doesn't run it — needs browsers + a live webapp), also the known-flaky leg — waiting adds nothing once that signal exists locally. The decision below is driven by the project's `## CI expectations` block (convention: `ferraroroberto/project-scaffolding#52`).
 
-- **Read the project's `## CI expectations` block in `CLAUDE.md`.** It declares
-  the workflow/job, the typical-green duration + investigate/wedged thresholds,
-  the documented flaky leg, and the **e2e surface** paths. **Absent → fall back
-  to the conservative behavior: always `--watch` (skip nothing)**, subject to
-  the local-e2e-proof rule below. Do not invent thresholds or surface paths the
-  block doesn't state.
-- **Evidence first.** Every skip below requires
-  `gate_evidence.py check --label gate` to print `FRESH` *now*, just before
-  the merge. `STALE` / `MISSING` / `UNKNOWN` → re-run the gate once through
-  the helper, else watch; never skip the wait on remembered green.
-- **Skip-the-wait when step 3c's `/e2e` run already proved it.** If the gate
-  is `FRESH` **and** a passing `full`-tier e2e run is `FRESH` too — `check
-  --label e2e-full` (recorded by `/e2e`), or the gate itself ran the full
-  slice → skip the watch and merge immediately,
-  **regardless of whether the diff touches declared e2e-surface paths**.
-  **State it**, e.g. `CI not awaited — /e2e full slice FRESH for this tree`.
-- **Otherwise, skip-the-wait keyed on the `/e2e` routing.** If step 3c routed
-  `skip` (classifier or judgment fail-safe positively cleared every changed
-  path of browser impact) and the local gate is `FRESH` → skip the watch and
-  merge immediately. Same for a `static` or `surface` slice whose `e2e-<tier>` evidence is `FRESH`: the repo's
-  own `[e2e]` table declared that target sufficient for those paths. **State it**,
-  e.g. `CI not awaited — /e2e routed skip: docs-only diff`. Never re-derive the
-  surface match by eye — the routing decision is step 3c's.
-- **Otherwise watch — but proactively, not passively.** Run `gh pr checks <PR>
-  --watch`. The moment elapsed crosses the block's **investigate threshold**,
-  stop waiting passively: inspect the run (`gh run view <run-id> --job <job>`)
-  and classify **flake vs real failure**.
-  - **Real failure** (test assertion, compile/lint/type error, a leg that isn't
-    the documented flaky one) → stop and report. **Never rerun a real failure.**
-  - **Documented flaky leg wedged** (per the block — e.g. the Playwright
-    WebKit/PTY-input leg) → cancel + rerun **once** automatically, saying so
-    (`cancelled wedged <leg> run, rerunning once`). If it flakes a **second**
-    time → stop and surface it to the user; do not rerun again.
-- **Keep-control guardrails.** Always **state** the CI decision (skip vs wait,
-  plus any cancel/rerun) in the finish summary so the user can veto. Auto-rerun
-  is capped at **once** and only for the *documented* flaky leg. Nothing
-  force-merges: CI is advisory (no branch protection), so no `--admin` is ever
-  needed — but **if a repo later marks the `e2e` check *required*** in branch
-  protection, the skip-rule must **fall back to watching** (`--admin` is out of
-  scope). This skips only the *remote CI wait*; never the step-3 gate.
+- **Read the project's `## CI expectations` block in `CLAUDE.md`.** It declares the workflow/job, the typical-green duration + investigate/wedged thresholds, the documented flaky leg, and the **e2e surface** paths. **Absent → fall back to the conservative behavior: always `--watch` (skip nothing)**, subject to the local-e2e-proof rule below. Do not invent thresholds or surface paths the block doesn't state.
+- **Evidence first.** Every skip below requires `gate_evidence.py check --label gate` to print `FRESH` *now*, just before the merge. `STALE` / `MISSING` / `UNKNOWN` → re-run the gate once through the helper, else watch; never skip the wait on remembered green.
+- **Skip-the-wait when step 3c's `/e2e` run already proved it.** If the gate is `FRESH` **and** a passing `full`-tier e2e run is `FRESH` too — `check --label e2e-full` (recorded by `/e2e`), or the gate itself ran the full slice → skip the watch and merge immediately, **regardless of whether the diff touches declared e2e-surface paths**. **State it**, e.g. `CI not awaited — /e2e full slice FRESH for this tree`.
+- **Otherwise, skip-the-wait keyed on the `/e2e` routing.** If step 3c routed `skip` (classifier or judgment fail-safe positively cleared every changed path of browser impact) and the local gate is `FRESH` → skip the watch and merge immediately. Same for a `static` or `surface` slice whose `e2e-<tier>` evidence is `FRESH`: the repo's own `[e2e]` table declared that target sufficient for those paths. **State it**, e.g. `CI not awaited — /e2e routed skip: docs-only diff`. Never re-derive the surface match by eye — the routing decision is step 3c's.
+- **Otherwise watch — but proactively, not passively.** Run `gh pr checks <PR> --watch`. The moment elapsed crosses the block's **investigate threshold**, stop waiting passively: inspect the run (`gh run view <run-id> --job <job>`) and classify **flake vs real failure**.
+  - **Real failure** (test assertion, compile/lint/type error, a leg that isn't the documented flaky one) → stop and report. **Never rerun a real failure.**
+  - **Documented flaky leg wedged** (per the block — e.g. the Playwright WebKit/PTY-input leg) → cancel + rerun **once** automatically, saying so (`cancelled wedged <leg> run, rerunning once`). If it flakes a **second** time → stop and surface it to the user; do not rerun again.
+- **Keep-control guardrails.** Always **state** the CI decision (skip vs wait, plus any cancel/rerun) in the finish summary so the user can veto. Auto-rerun is capped at **once** and only for the *documented* flaky leg. Nothing force-merges: CI is advisory (no branch protection), so no `--admin` is ever needed — but **if a repo later marks the `e2e` check *required*** in branch protection, the skip-rule must **fall back to watching** (`--admin` is out of scope). This skips only the *remote CI wait*; never the step-3 gate.
 - **Merge — the flag depends on the checkout mode** (from pre-flight):
-  - **Primary checkout:** `gh pr merge <PR> --squash --delete-branch` — squash
-    merge (the fleet pipeline's rule); branch deleted on both remote and local.
-  - **Linked worktree:** `gh pr merge <PR> --squash` — **no `--delete-branch`**.
-    From inside a worktree that flag fails its *local* half every time
-    (`'main' is already used by worktree at <primary>`): `gh` tries to check out
-    the default branch to delete the ref, and the primary holds it. The remote
-    merge still succeeds, so the failure is cosmetic. Delete the refs
-    explicitly instead, after the landing step below:
+  - **Primary checkout:** `gh pr merge <PR> --squash --delete-branch` — squash merge (the fleet pipeline's rule); branch deleted on both remote and local.
+  - **Linked worktree:** `gh pr merge <PR> --squash` — **no `--delete-branch`**. From inside a worktree that flag fails its *local* half every time (`'main' is already used by worktree at <primary>`): `gh` tries to check out the default branch to delete the ref, and the primary holds it. The remote merge still succeeds, so the failure is cosmetic. Delete the refs explicitly instead, after the landing step below:
     ```
     git push origin --delete <branch>
     git -C <repo> branch -D <branch>
     ```
-    **Gate the local delete on a landed check** — confirm the tip's content is
-    already in the default branch: `git -C <repo> diff --quiet
-    origin/<default> <branch>` is clean. Not `git branch --merged`: the
-    squash merge rewrites the SHA, so the tip is never an ancestor of the
-    default branch and a genuinely-merged branch reads as unmerged
-    (fleet-config#567). The same rewrite is why it's `-D`, not `-d`. The landed
-    check is what makes `-D` safe — never skip it, never `-D` a tip you haven't
-    confirmed landed.
+    **Gate the local delete on a landed check** — confirm the tip's content is already in the default branch: `git -C <repo> diff --quiet origin/<default> <branch>` is clean. Not `git branch --merged`: the squash merge rewrites the SHA, so the tip is never an ancestor of the default branch and a genuinely-merged branch reads as unmerged (fleet-config#567). The same rewrite is why it's `-D`, not `-d`. The landed check is what makes `-D` safe — never skip it, never `-D` a tip you haven't confirmed landed.
 - **Land + clean up, by checkout mode** (from pre-flight):
-  - **Primary checkout:** before switching, guard against landing this merge on
-    a tree that isn't this session's to touch — the claim system routes a
-    *second* session into a worktree but never re-checks who holds the claim at
-    the moment something runs `git checkout <main>` here (fleet-config#473):
+  - **Primary checkout:** before switching, guard against landing this merge on a tree that isn't this session's to touch — the claim system routes a *second* session into a worktree but never re-checks who holds the claim when something runs `git checkout <main>` here (fleet-config#473):
     ```
     E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/worktree_claim.py assert-owner <repo> <N>
     ```
-    `ASSERT_OWNER=pass` (tree clean, claim free or owned by `<N>`) → proceed.
-    `ASSERT_OWNER=refuse: <reason>` (dirty tree, or another issue's claim live)
-    → **stop immediately, do not checkout or pull** — surface the refusal
-    reason rather than improvising a recovery. Only on a pass: `git checkout
-    <main>`, then fast-forward it through the untrack guard (never a bare
-    `git pull` — it deletes every live file the merge untracks,
-    fleet-config#1086):
+    `ASSERT_OWNER=pass` (tree clean, claim free or owned by `<N>`) → proceed. `ASSERT_OWNER=refuse: <reason>` (dirty tree, or another issue's claim live) → **stop immediately, do not checkout or pull** — surface the refusal reason rather than improvising a recovery. Only on a pass: `git checkout <main>`, then fast-forward it through the untrack guard (never a bare `git pull` — it deletes every live file the merge untracks, fleet-config#1086):
     ```
     E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/untrack_guard.py fast-forward .
     ```
-    `FF=done` → carry any `RESTORED_UNTRACKED=`/`KEPT_ASIDE=` line into the
-    step-7 summary; `FF=refused` → stop and report. Then release the claim so
-    the next session can own the primary:
+    `FF=done` → carry any `RESTORED_UNTRACKED=`/`KEPT_ASIDE=` line into the step-7 summary; `FF=refused` → stop and report. Then release the claim so the next session can own the primary:
     ```
     E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/worktree_claim.py release <repo>
     ```
-    **Verify the release** — a hard acceptance step. A finisher that is not the
-    acquiring session (build-and-stop → separate finisher, `/cleanup-fleet`,
-    `/issue-finish-batch`) or an abbreviated finish must not silently skip it
-    and leak the claim until the 8h TTL (fleet-config#174). Immediately run:
+    **Verify the release** — a hard acceptance step. A finisher that is not the acquiring session (build-and-stop → separate finisher, `/cleanup-fleet`, `/issue-finish-batch`) or an abbreviated finish must not silently skip it and leak the claim until the 8h TTL (fleet-config#174). Immediately run:
     ```
     E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/worktree_claim.py status <repo>
     ```
-    and confirm it prints `CLAIM=free`. Still shows `CLAIM=held` → release did
-    not take — re-run `release <repo>` and re-check before reporting the finish
-    done.
-  - **Linked worktree:** do **not** `git checkout <main>` — the primary checkout
-    may belong to another live session. That does **not** mean leaving it
-    behind: `cd` out to the primary repo path (`<repo>`), remove this worktree,
-    then **land the primary** (fleet-config#647).
-    1. Remove the worktree (the helper strips the `.venv` junction *before*
-       `git worktree remove`, so the primary's real venv is never touched):
+    and confirm it prints `CLAIM=free`. Still `CLAIM=held` → release did not take — re-run `release <repo>` and re-check before reporting the finish done.
+  - **Linked worktree:** do **not** `git checkout <main>` — the primary checkout may belong to another live session. That does **not** mean leaving it behind: `cd` out to the primary repo path (`<repo>`), remove this worktree, then **land the primary** (fleet-config#647).
+    1. Remove the worktree (the helper strips the `.venv` junction *before* `git worktree remove`, so the primary's real venv is never touched):
        ```
        E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/worktree_claim.py remove-worktree <repo>-wt-<N>
        ```
-    2. **Land the primary, or say plainly that you didn't.** A merged PR is not
-       a deployed fix: until the primary tree fast-forwards, the merged change
-       is not live for anyone working there — and in `fleet-config`
-       specifically, `hooks/` and `skills/` reach `~/.claude` through junctions
-       rooted at the primary, so the change does nothing *fleet-wide*:
+    2. **Land the primary, or say plainly that you didn't.** A merged PR is not a deployed fix: until the primary tree fast-forwards, the merged change is not live for anyone working there — and in `fleet-config`, `hooks/` and `skills/` reach `~/.claude` through junctions rooted at the primary, so the change does nothing *fleet-wide*:
        ```
        E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/worktree_claim.py land-primary <repo> <N>
        ```
-       It applies the same guard as `assert-owner` (clean tree, claim free or
-       owned by `<N>`) plus "already on the default branch", then a
-       fast-forward guarded by `untrack_guard.py` and a `rev-list --count
-       HEAD..origin/<default>` check. It prints exactly one `PRIMARY=` line
-       either way, plus a `RESTORED_UNTRACKED=`/`KEPT_ASIDE=` line for each
-       live file the merge untracked and the guard kept (fleet-config#1086) —
-       carry those into the summary too:
+       It applies the same guard as `assert-owner` (clean tree, claim free or owned by `<N>`) plus "already on the default branch", then a fast-forward guarded by `untrack_guard.py` and a `rev-list --count HEAD..origin/<default>` check. It prints exactly one `PRIMARY=` line either way, plus a `RESTORED_UNTRACKED=`/`KEPT_ASIDE=` line for each live file the merge untracked and the guard kept (fleet-config#1086) — carry those into the summary too:
        - `PRIMARY=live behind=0` — the merge is live locally.
-       - `PRIMARY=stale reason=<why>` — it could not establish that. **Do not
-         improvise, do not stash, do not force, do not `git checkout`.**
-         Reporting stale *is* the correct outcome; recovering a dirty or
-         claimed primary is never this lane's job. `reason=live process
-         serving this tree (…)` is correct by design (fleet-config#665): a repo
-         declaring `tray_cmd` serves out of its checkout, so fast-forwarding
-         would serve one UI out of two commits. The named restart is the
-         remedy — nothing here is broken.
-       **Put that line in the finish summary, verbatim, next to the merge
-       result** — never absent, never implied by silence. "Merged" and "live"
-       are two facts and the summary carries both.
-    3. **`fleet-config` only — prove the junction is serving the merge.** When
-       the diff touched `hooks/` or `skills/`, landing the primary is what
-       *deploys*. Read a changed file back through its `~/.claude/...` path
-       (e.g. `C:/Users/rober/.claude/skills/issue-finish/SKILL.md`) and confirm
-       it carries the edit — an artefact check, never inferred from the
-       junction's existence. Same class as the `#199`/`#459` deploy-coverage
-       gate.
+       - `PRIMARY=stale reason=<why>` — it could not establish that. **Do not improvise, do not stash, do not force, do not `git checkout`.** Reporting stale *is* the correct outcome; recovering a dirty or claimed primary is never this lane's job. `reason=live process serving this tree (…)` is correct by design (fleet-config#665): a repo declaring `tray_cmd` serves out of its checkout, so fast-forwarding would serve one UI out of two commits. The named restart is the remedy — nothing here is broken.
+       **Put that line in the finish summary, verbatim, next to the merge result** — never absent, never implied by silence. "Merged" and "live" are two facts and the summary carries both.
+    3. **`fleet-config` only — prove the junction is serving the merge.** When the diff touched `hooks/` or `skills/`, landing the primary is what *deploys*. Read a changed file back through its `~/.claude/...` path (e.g. `C:/Users/rober/.claude/skills/issue-finish/SKILL.md`) and confirm it carries the edit — an artefact check, never inferred from the junction's existence. Same class as the `#199`/`#459` deploy-coverage gate.
 
     A worktree session holds no primary claim, so there is nothing to release.
-- Confirm the issue closed (`gh issue view <N>` → `CLOSED`). If it didn't
-  auto-close, close it manually with a comment referencing the merge commit.
+- Confirm the issue closed (`gh issue view <N>` → `CLOSED`). If it didn't auto-close, close it manually with a comment referencing the merge commit.
 - Clear the issue's Fleet Board marker now that the merge is authoritative:
   ```
   E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/active_issue.py remove <repo> <N>
   ```
-  This runs **after** a successful merge, never when verification or CI stops
-  the finish early — a failed finish is still in flight and must remain marked.
-  The remove is idempotent (`ACTIVE_ISSUE=absent` is success), but a helper
-  error is not: retry once and stop if it still cannot update the shared file.
+  This runs **after** a successful merge, never when verification or CI stops the finish early — a failed finish is still in flight and must remain marked. The remove is idempotent (`ACTIVE_ISSUE=absent` is success), but a helper error is not: retry once and stop if it still cannot update the shared file.
 
 ### 6. Restart the tray (only if the project runs one)
 
-If the project's `CLAUDE.md` describes a tray or long-running local process,
-follow that procedure **exactly**. The non-negotiables:
-- **Prefer the deterministic restart.** If the project ships a `tray.bat` with
-  a `--restart` flag (canonical orphan-proof reclaim-then-start — every fleet
-  tray has one), run **`tray.bat --restart`** and nothing else: subtree kill +
-  per-`.venv` port reclaim + start atomically. **Do not** hand-roll a
-  `Get-NetTCPConnection`/`taskkill` kill — it catches only the listener it
-  finds, misses the orphan the reclaim sweep exists to kill, then re-runs a
-  start-only script.
-- **Invoke it through a real Windows shell — never Git Bash's nested `cmd /c`.**
-  Run via the harness PowerShell tool, or
-  `C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe -Command "& '<repo>/tray.bat' --restart"`
-  (forward-slash exe path, per the Git-Bash-strips-backslashes rule). Via the
-  Bash tool as `cmd /c "tray.bat --restart"`, Git Bash/MSYS rewrites `/c` to
-  `C:/`; `cmd.exe` opens an interactive prompt and the batch never runs — only
-  the `cmd` banner, no `Stopping previous…` echoes, old build untouched. Fire
-  the PowerShell invocation non-blocking (the tray holds its console — a
-  foreground launch never returns), then move to the bounded poll below.
-- **Safety caveat — linked children.** `tray.bat --restart` does a `/T` subtree
-  kill, safe only for a tray whose linked-but-independent children (a
-  session-host + its PTY-backed shells) are spawned **detached** and
-  re-adopted on start (scaffold `docs/windows-tray.md`). Read the target
-  repo's `CLAUDE.md` to know which case — don't assume by app name. A tray
-  declaring its linked children detach-compliant (e.g. `app-launcher`, per
-  `project-scaffolding#35`: its `:8446` session-host is spawned via `cmd /c
-  start` and re-adopted, so `--restart` preserves open Coding sessions, safe
-  even from inside one) is fine to restart. A tray still hosting such children
-  *in its subtree* — or silent on the point — is unsafe: `--restart` would kill
-  the user's open Coding sessions (and yours, if inside one) — **confirm with
-  the user first**, or use its non-destructive path (kill only the webapp
-  port, let the tray re-adopt).
-- **Fallback only** for a project with no `--restart`: kill **only** the
-  specific process listening on the project's port (`Get-NetTCPConnection
-  -LocalPort <port>`, stop that PID — **never** a blanket `python`/`pythonw`
-  kill), then relaunch via its start script.
-- Confirm the new build is live with a **bounded** poll of the project's
-  version endpoint (e.g. `GET /api/version`): a **hard timeout + attempt cap**
-  (≤30 s / fixed attempts), then **fail loud** — never an open-ended wait. The
-  git SHA must match `HEAD` (a `/healthz` 200 is not enough — a stale process
-  passes it) and the asset hash should have changed. Report that build line.
-- **On a `git_sha` ≠ `HEAD` mismatch (a silent adopt-stale), stop and surface it
-  to the user — do not improvise process kills.** A by-hand `taskkill`/
-  `Get-NetTCPConnection` kill during recovery is what the safe-restart rules
-  above warn against, and a mistimed single-PID kill can take the server fully
-  down. Robust reclaim is the tray's job (`project-scaffolding#54`); the
-  finisher's contract is to invoke it correctly and **report** a mismatch, not
-  hand-fix it.
+If the project's `CLAUDE.md` describes a tray or long-running local process, follow that procedure **exactly**. The non-negotiables:
+- **Prefer the deterministic restart.** If the project ships a `tray.bat` with a `--restart` flag (canonical orphan-proof reclaim-then-start — every fleet tray has one), run **`tray.bat --restart`** and nothing else: subtree kill + per-`.venv` port reclaim + start atomically. **Do not** hand-roll a `Get-NetTCPConnection`/`taskkill` kill — it catches only the listener it finds, misses the orphan the reclaim sweep exists to kill, then re-runs a start-only script.
+- **Invoke it through a real Windows shell — never Git Bash's nested `cmd /c`.** Run via the harness PowerShell tool, or `C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe -Command "& '<repo>/tray.bat' --restart"` (forward-slash exe path, per the Git-Bash-strips-backslashes rule). Via the Bash tool as `cmd /c "tray.bat --restart"`, Git Bash/MSYS rewrites `/c` to `C:/`; `cmd.exe` opens an interactive prompt and the batch never runs — only the `cmd` banner, no `Stopping previous…` echoes, old build untouched. Fire the PowerShell invocation non-blocking (the tray holds its console — a foreground launch never returns), then move to the bounded poll below.
+- **Safety caveat — linked children.** `tray.bat --restart` does a `/T` subtree kill, safe only for a tray whose linked-but-independent children (a session-host + its PTY-backed shells) are spawned **detached** and re-adopted on start (scaffold `docs/windows-tray.md`). Read the target repo's `CLAUDE.md` to know which case — don't assume by app name. A tray declaring its linked children detach-compliant (e.g. `app-launcher`, per `project-scaffolding#35`: its `:8446` session-host is spawned via `cmd /c start` and re-adopted, so `--restart` preserves open Coding sessions, safe even from inside one) is fine to restart. A tray still hosting such children *in its subtree* — or silent on the point — is unsafe: `--restart` would kill the user's open Coding sessions (and yours, if inside one) — **confirm with the user first**, or use its non-destructive path (kill only the webapp port, let the tray re-adopt).
+- **Fallback only** for a project with no `--restart`: kill **only** the specific process listening on the project's port (`Get-NetTCPConnection -LocalPort <port>`, stop that PID — **never** a blanket `python`/`pythonw` kill), then relaunch via its start script.
+- Confirm the new build is live with a **bounded** poll of the project's version endpoint (e.g. `GET /api/version`): a **hard timeout + attempt cap** (≤30 s / fixed attempts), then **fail loud** — never an open-ended wait. The git SHA must match `HEAD` (a `/healthz` 200 is not enough — a stale process passes it) and the asset hash should have changed. Report that build line.
+- **On a `git_sha` ≠ `HEAD` mismatch (a silent adopt-stale), stop and surface it to the user — do not improvise process kills.** A by-hand `taskkill`/`Get-NetTCPConnection` kill during recovery is what the safe-restart rules above warn against, and a mistimed single-PID kill can take the server fully down. Robust reclaim is the tray's job (`project-scaffolding#54`); the finisher's contract is to invoke it correctly and **report** a mismatch, not hand-fix it.
 
 If the project has no tray, skip this step.
 
 ### 6b. Deploy-coverage check (repos with declared not-fully-covered components only)
 
-A merged PR and a restarted process only prove the component the restart
-actually touched is live — not every runtime component the repo owns.
-Convention + declared shape: `project-scaffolding#199`/`#200`; reference
-implementation: `app-launcher#615`. Trigger is deterministic:
+A merged PR and a restarted process only prove the component the restart touched is live — not every runtime component the repo owns. Convention + declared shape: `project-scaffolding#199`/`#200`; reference implementation: `app-launcher#615`. Trigger is deterministic:
 
 ```
 E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/deploy_coverage.py check .
 ```
 
-- `DECLARED=no` → **no-op** (a repo with no `## <component>` block carrying a
-  `liveness signal:` bullet in its `CLAUDE.md`). Skip straight to step 7 and
-  say nothing — must never get slower or noisier for a repo that hasn't
-  declared anything.
-- `DECLARED=yes` with every component `TOUCHED=no` → still a no-op, but
-  **state it** in the step-7 summary (`deploy-coverage: N component(s)
-  declared, none touched by this diff`).
-- `DECLARED=yes` with a component `TOUCHED=yes` **or** `TOUCHED=unknown` (no
-  parseable path in its declaration — treat as touched, never as a silent
-  "no") → check that component's printed `LIVENESS` field against the actual
-  running target. Where step 6 already polled a build-identity endpoint (e.g.
-  `GET /api/version`) as part of the restart, read the matching sub-block out
-  of that same response — don't issue a second request. Three outcomes, only
-  wording changes; **never** block, hang, or prompt for confirmation, and
-  never skip closing the issue or merging over this check:
-  - **Live** (field confirms loaded build matches current `HEAD`) → step 7
-    states `confirmed live: <component>`.
-  - **Stale** (field says otherwise) → step 7 states **`merged but not yet
-    live: <component> — requires <UPDATE_CMD>`**, never "shipped".
-  - **Unresolvable** (endpoint unreachable, no matching field, or no local
-    restart happened at all to poll from) → step 7 states **`unknown:
-    <LIVENESS> could not be checked`** — never assume fine.
-- Do **not** invoke `UPDATE_CMD` yourself. Where the declaration says it's
-  confirmation-gated or destructive (e.g. a manual session-host restart that
-  would kill live PTYs), it is a human/operator action only — report what's
-  needed, don't attempt it.
+- `DECLARED=no` → **no-op** (a repo with no `## <component>` block carrying a `liveness signal:` bullet in its `CLAUDE.md`). Skip to step 7 and say nothing — must never get slower or noisier for a repo that hasn't declared anything.
+- `DECLARED=yes` with every component `TOUCHED=no` → still a no-op, but **state it** in the step-7 summary (`deploy-coverage: N component(s) declared, none touched by this diff`).
+- `DECLARED=yes` with a component `TOUCHED=yes` **or** `TOUCHED=unknown` (no parseable path in its declaration — treat as touched, never as a silent "no") → check that component's printed `LIVENESS` field against the actual running target. Where step 6 already polled a build-identity endpoint (e.g. `GET /api/version`) as part of the restart, read the matching sub-block out of that same response — don't issue a second request. Three outcomes, only wording changes; **never** block, hang, or prompt for confirmation, and never skip closing the issue or merging over this check:
+  - **Live** (field confirms loaded build matches current `HEAD`) → step 7 states `confirmed live: <component>`.
+  - **Stale** (field says otherwise) → step 7 states **`merged but not yet live: <component> — requires <UPDATE_CMD>`**, never "shipped".
+  - **Unresolvable** (endpoint unreachable, no matching field, or no local restart happened at all to poll from) → step 7 states **`unknown: <LIVENESS> could not be checked`** — never assume fine.
+- Do **not** invoke `UPDATE_CMD` yourself. Where the declaration says it's confirmation-gated or destructive (e.g. a manual session-host restart that would kill live PTYs), it is a human/operator action only — report what's needed, don't attempt it.
 
 ### 7. Report
 
-Summarize: issue closed, PR merged, branch deleted, docs updated (or why not),
-gate result with its evidence state at merge time (`gate: FRESH` / re-run /
-`STALE → CI watched`), the step-1 `ACCEPTANCE=` state with each unverifiable criterion
-listed individually (verifier named), the UX-conformance gate decision (ran / skipped / `ux-full`, plus
-any drift fixed — step 3b), the `/e2e` report block (source, tier + reason,
-result, maintenance — step 3c), the deploy-coverage decision (n/a / not
-touched / confirmed live / merged but not yet live / unknown — step 6b), and
-the live build line. **Worktree mode also carries step 5's `PRIMARY=` line
-verbatim** — `PRIMARY=live behind=0` or `PRIMARY=stale reason=<why>` — right
-next to the merge result, with any `RESTORED_UNTRACKED=`/`KEPT_ASIDE=` line
-(both modes; a `KEPT_ASIDE` file is only in its stash dir and needs a human). Merged and live are two facts; a summary reporting
-only the first is reporting a deploy it never established.
+Summarize: issue closed, PR merged, branch deleted, docs updated (or why not), gate result with its evidence state at merge time (`gate: FRESH` / re-run / `STALE → CI watched`), the step-1 `ACCEPTANCE=` state with each unverifiable criterion listed individually (verifier named), the UX-conformance gate decision (ran / skipped / `ux-full`, plus any drift fixed — step 3b), the `/e2e` report block (source, tier + reason, result, maintenance — step 3c), the deploy-coverage decision (n/a / not touched / confirmed live / merged but not yet live / unknown — step 6b), and the live build line. **Worktree mode also carries step 5's `PRIMARY=` line verbatim** — `PRIMARY=live behind=0` or `PRIMARY=stale reason=<why>` — right next to the merge result, with any `RESTORED_UNTRACKED=`/`KEPT_ASIDE=` line (both modes; a `KEPT_ASIDE` file is only in its stash dir and needs a human). Merged and live are two facts; a summary reporting only the first is reporting a deploy it never established.
 
-Then append the **work-summary** — the file/LOC shape of what shipped — by
-running the deterministic helper and echoing its output verbatim:
+Then append the **work-summary** — the file/LOC shape of what shipped — by running the deterministic helper and echoing its output verbatim:
 
 ```
 E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/hooks/work_summary.py --pr <PR_URL>
 ```
 
-It prints the roll-up (`📊 +N −M · K files` + new/changed/deleted buckets) and a
-churn-sorted per-file table (status · file · + · −). No LLM, all from `gh`; it
-prints nothing on any `gh` error, so skip the block if it comes back empty. The
-same roll-up rides the Telegram ping in step 8 — don't re-assemble it by hand.
+It prints the roll-up (`📊 +N −M · K files` + new/changed/deleted buckets) and a churn-sorted per-file table (status · file · + · −). No LLM, all from `gh`; it prints nothing on any `gh` error, so skip the block if it comes back empty. The same roll-up rides the Telegram ping in step 8 — don't re-assemble it by hand.
 
 ### 8. Telegram notification
 
-After the summary, fire the completion ping with the deterministic helper. It
-resolves the chat from `projects.toml` and emits the one canonical format. Run:
+After the summary, fire the completion ping with the deterministic helper. It resolves the chat from `projects.toml` and emits the one canonical format. Run:
 
 ```
 E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/hooks/notify_complete.py --kind finish --issue <N> --pr <PR> --pr-url <PR_URL>
 ```
 
-`<PR_URL>` is the full PR URL (e.g. `https://github.com/owner/repo/pull/31`) —
-pass the URL already on hand from `gh pr create`/`gh pr view`; keeps the
-title/URL lookup CWD-independent for subagent contexts where the shell's
-working directory may differ from the project root. No chat configured →
-silent no-op, always exits 0 — a notification failure can never block or
-delay anything.
+`<PR_URL>` is the full PR URL (e.g. `https://github.com/owner/repo/pull/31`) — pass the URL already on hand from `gh pr create`/`gh pr view`, keeping the lookup CWD-independent for subagent contexts where the shell's working directory may differ from the project root. No chat configured → silent no-op, always exits 0 — a notification failure can never block or delay anything.
 
 **`notify_complete.py` is the ONLY sanctioned way to send this ping — never use an MCP chat tool to find a chat or post it, and a silent no-op is correct, not a bug to route around.** Why: [notify-ping](../../docs/notify-ping.md).

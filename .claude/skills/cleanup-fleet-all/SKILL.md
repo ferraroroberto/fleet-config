@@ -7,7 +7,7 @@ description: Unattended, all-bucket sibling of /cleanup-fleet — builds, valida
 
 **Capability preflight:** read [workflow-capabilities](../../../docs/workflow-capabilities.md) and bind dispatch, results, waits, cancellation, model tiers and questions to this session’s actual tools before proceeding. Tool names below are conditional Claude examples; the contract governs adaptation. Keep this skill’s worktree, independent-review, human-review and shipping gates.
 
-**Goal:** the genuinely unattended sibling of `/cleanup-fleet` (one bucket, stops for human approval in its default `hard` mode). This walks **all nine queued** audit buckets, serially, and ships every issue with **no human review gate** — replaced by an independent validator agent, so no single agent both builds and ships its own work unchecked. (`security` is never queued — `/codebase-audit` self-heals it inline — and `cert-drift`, `/design-sync`'s other kind, is review-only, never auto-migrated; nothing here touches either.)
+**Goal:** the unattended sibling of `/cleanup-fleet` (one bucket, human approval in default `hard` mode). Walks **all nine queued** audit buckets serially and ships every issue with **no human review gate** — an independent validator agent replaces it, so no agent both builds and ships its own work unchecked. (`security` is never queued — `/codebase-audit` self-heals it inline — and `cert-drift`, `/design-sync`'s other kind, is review-only, never auto-migrated; nothing here touches either.)
 
 **Four agents per issue, never fewer:**
 
@@ -18,13 +18,13 @@ description: Unattended, all-bucket sibling of /cleanup-fleet — builds, valida
 
 A failed validation retries the build **once** (feeding it the validator's feedback verbatim), for a hard cap of **2 rounds**; a second failure escalates. **Escalation is not "leave the branch for a human"** — the open GitHub issue plus the teardown agent's comment on it is the durable record; branch and worktree are torn down like any other lane (fleet-config#518).
 
-**One bucket at a time, one repo at a time.** Lanes are strictly serial: the next repo does not start until the current lane has run all four agents and its repo is verified clean. At most one worktree exists at any instant. (Within-bucket parallelism + a teardown-free escalation path caused the incident in Notes.)
+**One bucket at a time, one repo at a time.** Lanes are strictly serial: the next repo does not start until the current lane has run all four agents and its repo is verified clean. At most one worktree exists at any instant. (Within-bucket parallelism + a teardown-free escalation path caused the Notes incident.)
 
-**Halt on residue.** If teardown cannot return a repo to a clean state, the run **stops there** — does not start the next lane. Lanes serial → exactly one repo affected, one command to recover. The rule guards against the run building on its **own** dirt. A worktree someone else created mid-run is not that. When it is clean and merged, the run reports it, defers that repo's remaining issues and continues. Anything the run created, or anything dirty or unmerged, still halts (fleet-config#1077).
+**Halt on residue.** If teardown cannot return a repo to a clean state, the run **stops there** — does not start the next lane. Lanes serial → exactly one repo affected, one command to recover. The rule guards against building on the run's **own** dirt; a clean, merged worktree someone else created mid-run is reported, defers that repo's remaining issues, and the run continues. Anything the run created, or dirty or unmerged, still halts (fleet-config#1077).
 
-**Never a primary checkout.** Every build/validate/execute agent forces worktree mode (`worktree_claim.py acquire … --force-worktree`) for every repo, no exceptions, no special-cased list — a running app or a live junction (e.g. `fleet-config`'s own `hooks/`+`skills/` into every `~/.claude`) is not a claim holder, so an unattended agent otherwise wins `MODE=primary` and edits files a live process is serving (fleet-config#515). Same briefs: a live-e2e guard refusal is a hard STOP — `E2E_LIVE=1` or any equivalent override is forbidden.
+**Never a primary checkout.** Every build/validate/execute agent forces worktree mode (`worktree_claim.py acquire … --force-worktree`) for every repo, no exceptions, no special-cased list — a running app or live junction (e.g. `fleet-config`'s `hooks/`+`skills/` into every `~/.claude`) is not a claim holder, so an unattended agent otherwise wins `MODE=primary` and edits files a live process serves (fleet-config#515). Same briefs: a live-e2e guard refusal is a hard STOP — `E2E_LIVE=1` or any equivalent override is forbidden.
 
-All retry/ship decision-making lives in **`.claude/workflows/cleanup-fleet-all.js`**, the fixed decision script — not this SKILL.md, not a fourth "orchestrator" agent. Retry vs. ship vs. escalate is a fixed lookup on each agent's own schema-validated verdict (`verification`, `retryable`, `pass`, retry-round count); judgment calls happen once, inside Build/Validate, never re-litigated by whatever reads the result. See the script's header comment and `docs/model-tiers.md`.
+All retry/ship decision-making lives in **`.claude/workflows/cleanup-fleet-all.js`**, the fixed decision script — not this SKILL.md, not a fourth "orchestrator" agent. Retry vs. ship vs. escalate is a fixed lookup on each agent's schema-validated verdict (`verification`, `retryable`, `pass`, retry-round count); judgment happens once, inside Build/Validate, never re-litigated. See the script's header comment and `docs/model-tiers.md`.
 
 ## Arguments
 
@@ -38,7 +38,7 @@ All retry/ship decision-making lives in **`.claude/workflows/cleanup-fleet-all.j
 - **Shell:** use the actual execution tool’s declared shell; translate examples without mixing Bash and PowerShell syntax.
 - **The orchestrator (this skill) only does cheap, safe work:** auth check, the issue fetch, grouping/dedupe (model-side, no jq/python), the rate-gate check, invoking the decision script through an available adapter, and post-flight reporting. **It never edits source, commits, pushes, or merges** — every write happens inside an agent spawned by the workflow script.
 - **Never disturb in-progress work.** A repo that is dirty or off its default branch is skipped and reported — never stashed, never force-switched. Skipped is not dropped: it is deferred, retried once after the last bucket, and recorded durably (steps 5, 7b, 8c).
-- **Never background a tool call in this skill — the rule that matters most here.** Runs headless via `run-weekly.bat`'s one-shot Claude process (streamed through `claude_progress.py`), no persistent turn loop, no human, **no wake-up mechanism**: launching a command and ending the turn to "wait for it" silently kills the run — CLI exits `exit_code: 0` (false success) while nothing past that point happens (fleet-config#314, the exact failure `/audit-fleet` hit twice). Applies to the `Workflow` call in step 7 exactly as much as a backgrounded `Agent` dispatch — `Workflow` also returns immediately and notifies later. Every long-running call, **including the rate-gate wait**, must run synchronously (foreground) or poll to completion **within the same turn** (`TaskOutput` with `block: true`, re-issued in a loop; or `Monitor`'s until-loop for the rate-gate wait) — never fire-and-forget.
+- **Never background a tool call in this skill — the rule that matters most here.** Runs headless via `run-weekly.bat`'s one-shot Claude process (streamed through `claude_progress.py`), no persistent turn loop, no human, **no wake-up mechanism**: ending the turn to "wait for" a launched command silently kills the run — CLI exits `exit_code: 0` (false success) with nothing after (fleet-config#314, hit twice by `/audit-fleet`). Applies to the step 7 `Workflow` call as much as a backgrounded `Agent` dispatch — `Workflow` also returns immediately and notifies later. Every long-running call, **including the rate-gate wait**, must run synchronously (foreground) or poll to completion **within the same turn** (`TaskOutput` with `block: true`, re-issued in a loop; or `Monitor`'s until-loop for the rate-gate wait) — never fire-and-forget.
 - **Degrade, don't block.** A per-repo failure is reported and skipped; only a pre-flight failure stops the whole run. Nothing here waits on an interactive prompt — there's nobody to answer one.
 
 ## Steps
@@ -58,7 +58,7 @@ Parse args through the synonym table (see "Arguments"). No args → all nine que
 E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/gh_issue_fetch.py fetch
 ```
 
-**Preferred primary fetch**, not `gh search issues --owner ferraroroberto` (Search-API-backed, eventually consistent — observed reporting issues open 5+ weeks after they closed, fleet-config#623). `gh_issue_fetch.py` uses the direct Issues API, one `gh issue list --repo <owner>/<name> --state open` per repo, aggregated into the same shape. Avoids a known-bad source; **not proven immune** — step 5 still re-checks each selected issue's state before dispatch.
+**Preferred primary fetch**, not `gh search issues --owner ferraroroberto` (Search-API, eventually consistent — reported issues open 5+ weeks after closing, fleet-config#623). `gh_issue_fetch.py` uses the direct Issues API, one `gh issue list --repo <owner>/<name> --state open` per repo, same shape. **Not proven immune** — step 5 still re-checks each selected issue's state before dispatch.
 
 Read the JSON directly (no jq/python/awk — group and select model-side, same convention as `/cleanup-fleet`). For each issue, collect every label matching one of this run's resolved bucket names — **drop any row carrying `audit-meta`** (the ledger issues, never actionable), and drop any row matching none of the resolved buckets. An issue carrying more than one bucket label legitimately appears in more than one bucket's list; buckets run serially, so it's never worked on twice at once.
 
@@ -76,7 +76,7 @@ Within each bucket, group surviving issues by `repository.name`:
 
 ### 5. Pre-flight per selected repo
 
-**Re-verify every selected issue's live state first, in one batch, before any per-repo check below.** Step 3's fetch isn't proven immune to every staleness source, and a run can sit for hours — an issue selected at step 4 can close for real while an earlier bucket is still running. Build one JSON array of every selected issue across every bucket (`[{"repo": ..., "number": ..., "bucket": ..., ...other fields...}, ...]` — `repo` a bare name like `"task-os"`, never `"owner/name"`: the helper prepends the owner itself, and a prefixed repo produces a doubled-owner `gh` argv that fails with a network-sounding error unrelated to the network, fleet-config#706) and pipe it through:
+**Re-verify every selected issue's live state first, in one batch, before any per-repo check below.** Step 3's fetch isn't proven immune to staleness, and a run spans hours — an issue selected at step 4 can close while an earlier bucket runs. Build one JSON array of every selected issue across every bucket (`[{"repo": ..., "number": ..., "bucket": ..., ...other fields...}, ...]` — `repo` a bare name like `"task-os"`, never `"owner/name"`: the helper prepends the owner itself, and a prefixed repo produces a doubled-owner `gh` argv that fails with a network-sounding error unrelated to the network, fleet-config#706) and pipe it through:
 
 ```
 E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/issue_state_gate.py partition
@@ -96,13 +96,13 @@ Only `dispatch` items proceed. **The `skipped` list is this run's deferred set**
 
 `unknown` (git unreadable) does not dispatch — an unreadable repo is not a repo proven safe to work in — but it is counted separately from a confirmed dirty tree, and the report keeps them apart. A failed `fetch origin` is recorded in the item's `note` and never changes the verdict: what makes a repo unsafe to work in is a dirty tree, a wrong branch, or someone else's worktree, not an unreachable network.
 
-The **skip criteria are unchanged** and never soften — never stash, never force-switch, never remove a worktree you did not create. This gate only changes what the run does with the knowledge that it skipped something.
+The **skip criteria are unchanged** and never soften — never stash, never force-switch, never remove a worktree you did not create. This gate only changes what the run does with what it skipped.
 
 **If candidates existed and `dispatch` is empty**, every one of them was skipped: no lane will run and there is nothing to retry later. Record the deferred set through step 8c, then stop and print in the final report the literal line `SCHEDULED-RUN-FAILED — every candidate repo was skipped (<N> repos, <M> issues unprocessed), no lane ran`. This is **not** step 3's empty-queue case: there the queue was genuinely empty, which is a success; here there was real work and the run touched none of it.
 
 **Worktrees always** — every build agent forces `MODE=worktree` and works `<repo>-wt-<N>`, never the primary checkout, for every repo (fleet-config#515). The primary is only ever read (pre-flight above) and, at teardown, checked back to clean. Lanes are serial, so a repo touched by two buckets is never touched by two agents at once, and at most one worktree exists fleet-wide at any moment.
 
-**A build agent's handoff is a committed branch, never a dirty tree** (fleet-config#641). The build brief's STOP step forbids exactly four actions — push, PR, merge, `/issue-finish` — committing is not one of them; validate agent's first act is `git status --porcelain` on the worktree, and a dirty tree is immediate `pass: false` regardless of the otherwise-lenient default — the one rejection reason that is not a judgement call. Asserted at the boundary because otherwise invisible (execute agent's `/issue-finish` commits pending work as a safety net, so an uncommitted handoff ships fine and recurs silently): uncommitted work has no SHA for the escalation comment's WIP SHA to point at, and an escalation/crash between build and execute loses the work instead of parking it reflog-recoverable ~90 days. A build that legitimately changed nothing still leaves a clean tree — assertion is on the tree, never the commit count.
+**A build agent's handoff is a committed branch, never a dirty tree** (fleet-config#641). The build brief's STOP step forbids exactly four actions — push, PR, merge, `/issue-finish` — committing is not one of them; validate agent's first act is `git status --porcelain` on the worktree, and a dirty tree is immediate `pass: false` regardless of the otherwise-lenient default — the one rejection reason that is not a judgement call. Asserted at the boundary because otherwise invisible (execute's `/issue-finish` commits pending work as a safety net, so an uncommitted handoff ships fine and recurs silently): uncommitted work has no WIP SHA for the escalation comment, and an escalation/crash between build and execute loses it instead of parking it reflog-recoverable ~90 days. A build that legitimately changed nothing still leaves a clean tree — assertion is on the tree, never the commit count.
 
 ### 6. Rate-gate check
 
@@ -132,7 +132,7 @@ This returns a task id immediately. **Do not stop and wait for a notification** 
 TaskOutput(task_id: <id>, block: true, timeout: 600000)
 ```
 
-Re-issue this call (each blocks up to 10 minutes) until the returned status is `completed`, as consecutive tool calls within this same turn — this may take many calls over several hours for a full run, and that's expected. Serial lanes make a full run slower in wall-clock than the old parallel shape; that is the trade being bought, not a regression to fix.
+Re-issue this call (each blocks up to 10 minutes) until the returned status is `completed`, as consecutive tool calls within this same turn — this may take many calls over several hours for a full run, and that's expected. Serial lanes are slower in wall-clock than the old parallel shape; that is the intended trade.
 
 The workflow's return value is `{ buckets: [{ bucket, results: [...], skipped? }, ...], halted, deferred }`:
 
@@ -144,7 +144,7 @@ The workflow's return value is `{ buckets: [{ bucket, results: [...], skipped? }
 
 ### 7b. Retry the deferred set — one pass, after the last bucket
 
-A repo that was dirty at pre-flight has usually been committed and pushed by the time the last bucket finishes: a full run spans many hours, so step 5's verdict is stale by now. The deferred set gets exactly one more chance, as late as possible.
+A repo dirty at pre-flight has usually been committed and pushed by the last bucket (a full run spans many hours), so step 5's verdict is stale. The deferred set gets exactly one more chance, as late as possible.
 
 **Skip this step entirely if step 7's `halted` is non-null.** A halted run has left residue and must not start another lane.
 
@@ -154,7 +154,7 @@ Re-run the *same* gate over the deferred set — the whole array step 5 skipped,
 E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/repo_preflight.py partition
 ```
 
-The helper holds no state between calls, so this necessarily re-establishes every fact from the live tree rather than trusting step 5's verdict — a repo that has since *become* dirty must not be dispatched on an hours-old "available".
+The helper holds no state, so this re-establishes every fact from the live tree — a repo that has since *become* dirty must not be dispatched on an hours-old "available".
 
 Anything now in `dispatch` gets one retry pass: rebuild `issuesByBucket` from those issues only, and invoke the workflow a second time exactly as step 7 describes — same selected adapter and terminal-result collection within this turn. The serial-lane invariant holds by construction: this invocation starts only after the first has fully completed, so there is still at most one worktree fleet-wide at any instant.
 
@@ -182,7 +182,7 @@ E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skill
 
 `STATUS=DIRTY` → append `⚠️ post-flight: <REASON>` next to the escalation line. `STATUS=UNKNOWN` → append `❓ post-flight unverified: <REASON>` — an escalation whose tree could not be read is not an escalation whose tree is fine.
 
-**8b. Fleet-wide residue enumeration — fail loud.** Checking only the primaries of touched repos is what let 11 worktrees slip through a run that reported `0 failed`. After all buckets finish, enumerate residue across **every repo the run touched** (Git Bash, read-only):
+**8b. Fleet-wide residue enumeration — fail loud.** Checking only touched primaries let 11 worktrees slip through a run reporting `0 failed`. After all buckets finish, enumerate residue across **every repo the run touched** (Git Bash, read-only):
 
 ```
 for r in <every touched repo>; do
@@ -207,7 +207,7 @@ E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skill
 
 A leftover `<repo>-wt-<N>` directory is **not** residue when all five hold, each proved by running the command: recursively empty; a real directory, not a reparse point (read the attribute bit via `powershell.exe -NoProfile -Command "(Get-Item -Force '<path>').Attributes"`); absent from `git worktree list`; `E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/dir_holders.py check '<path>'` prints `STATUS=CLEAR`; and `worktree_claim.py remove-worktree` was run against it and refused. (Windows keeps the process objects of exited WebKit e2e helpers alive while any handle remains — the empty shell they pin is undeletable until reboot.) Any one condition unestablished is residue: `STATUS=LIVE` (a running process names the path, printing pid + command line) and `STATUS=UNKNOWN` (probe couldn't run) are both residue. **Never ask which zombie pins which directory** — an exited process is simply absent from the process table; a `CLEAR` verdict is the whole requirement. Report qualifying shells as `🧟 zombie-pinned (not residue)` with path and probe verdict; several are expected on a host that hasn't rebooted, nothing keys on count.
 
-That probe is **repo-agnostic on purpose** — runs from fleet-config's own venv against the Windows process table, needs nothing from the target repo. Requiring each repo's own `tests/e2e/_browser_sweep.py` made the condition unprovable in every repo lacking one, so any leftover directory halted the run (fleet-config#571); where it exists, running it too is welcome, but its absence proves nothing. Probe reads command lines/executable paths, so a process merely `cd`-ed into the directory with nothing naming it is invisible — hence unrunnable probe is `UNKNOWN`, not `CLEAR`.
+That probe is **repo-agnostic on purpose** — runs from fleet-config's venv against the Windows process table, needing nothing from the target repo. Requiring each repo's own `tests/e2e/_browser_sweep.py` made the condition unprovable where absent, halting the run on any leftover directory (fleet-config#571); running it where it exists is welcome, its absence proves nothing. The probe reads command lines/executable paths, so a process merely `cd`-ed into the directory is invisible — hence an unrunnable probe is `UNKNOWN`, not `CLEAR`.
 
 Second exception: a **foreign branch** — a local branch belonging to no lane of this run (earlier day's lane, human session, abandoned experiment). Reported as `🌿 <repo> — foreign branch <name> (PR #N merged, diff vs default empty)`, never residue, never halts. Teardown's mandate is its own lane — no check may assert a repo-wide property teardown is forbidden to bring about (a lane once halted the run over an earlier lane's already-merged branch — fleet-config#572). Judging "safe to delete" needs an empty `git diff <default>..<branch>` or the PR's merge state — **not** `git branch --merged` (reports a squash-merged branch as unmerged since the original tip is no ancestor of default — fleet-config#567). Report them; do not delete them.
 
@@ -222,7 +222,7 @@ Residue is never folded into a `✅`/`📋` line: it gets its own `❌ RESIDUE` 
 
 ### 8c. Record whatever is still deferred — durably, outside this run's stdout
 
-A skip that exists only in one run's stdout is invisible by the following week. Whatever step 7b could not recover goes into the ledger. So do step 7's `deferred` items when a halt skipped 7b. All of it goes into one tracking issue in `ferraroroberto/fleet-config`, upserted through the same marker-keyed machinery as every other managed issue, so re-running can never file a duplicate.
+A skip only in one run's stdout is invisible by next week. Whatever step 7b could not recover goes into the ledger. So do step 7's `deferred` items when a halt skipped 7b. All of it goes into one tracking issue in `ferraroroberto/fleet-config`, upserted through the same marker-keyed machinery as every other managed issue, so re-running can never file a duplicate.
 
 **Still-deferred set non-empty** — write the body to a file, then:
 
@@ -232,7 +232,7 @@ E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skill
   --title "cleanup-fleet-all deferred repos" --body-file <file>
 ```
 
-`--reopen` is what makes the close-when-clear cycle idempotent: if the last run cleared the set and closed the issue, this reopens *that* issue rather than filing a second one. Creation already self-assigns (`--assignee @me`) and `chore` is the type label — maintenance, not an audit finding, which is also why `cleanup-deferred` is deliberately **not** one of `audit_issue.py`'s `BUCKET_KINDS`.
+`--reopen` makes the close-when-clear cycle idempotent: if the last run closed the issue, this reopens *that* one rather than filing a second. Creation already self-assigns (`--assignee @me`) and `chore` is the type label — maintenance, not an audit finding, which is also why `cleanup-deferred` is deliberately **not** one of `audit_issue.py`'s `BUCKET_KINDS`.
 
 Body: one row per still-deferred repo — repo · `repo_state` · `skip_reason` · the issue numbers that went unprocessed · this run's date. Replace the body wholesale each run; it is a current-state ledger, not an append log.
 
@@ -246,7 +246,7 @@ E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skill
 
 An **open** `cleanup-deferred` issue therefore always means *there is unprocessed work*, never *the last run had nothing to say*.
 
-This does **not** replace the report line: step 10's skipped counts are printed on every run including the zero case. The issue carries live work; the report carries the audit trail that the check ran at all. Never collapse the two.
+This does **not** replace the report line: step 10's skipped counts print on every run including zero. The issue carries live work; the report carries the audit trail that the check ran. Never collapse the two.
 
 ### 9. Notify
 

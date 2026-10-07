@@ -12,11 +12,10 @@ see — bundled into **at most 7 GitHub issues per run** for `/issue-start`.
 
 **Issues, not code edits — with exactly one exception.** For the seven finding
 buckets below, never edit files, commit, push, or restart anything — filing
-issues is the only side effect. The **sole** exception is a **security** finding:
-self-healed in place (redacted issue + auto-fix) — a security gap sitting in a
-public issue body until someone gets to it is itself a disclosure. That path is
-step 8b and its Hard Rule; it is scoped to security only and is never license
-to edit code for any other bucket.
+issues is the only side effect. The **sole** exception is a **security** finding,
+self-healed in place (redacted issue + auto-fix), since a security gap sitting in
+a public issue body is itself a disclosure. That path is step 8b and its Hard
+Rule; security only, never license to edit code for any other bucket.
 
 **The seven finding buckets.** Every non-security finding belongs to exactly one
 of (security is not a checklist bucket — see step 8b):
@@ -33,12 +32,11 @@ of (security is not a checklist bucket — see step 8b):
    abstraction beyond what the task required, dead error handling for
    scenarios that can't happen, planning-doc clutter, comments that explain
    *what* instead of *why*, long files that should be split, identifiers that
-   lie about what they hold. It also covers **unexplained magic constants**:
-   a bare numeric literal that sets a timeout, retry count, cap, threshold,
-   sleep or backoff, with neither a named constant nor an adjacent comment
-   saying why that value. The next reader cannot tell a measured value from a
-   guess, so nobody dares change it (Anthropic's skill-authoring guide calls
-   these "voodoo constants", fleet-config#1230). Example and counter-example:
+   lie about what they hold. Also **unexplained magic constants**: a bare
+   numeric literal that sets a timeout, retry count, cap, threshold, sleep or
+   backoff, with neither a named constant nor an adjacent comment saying why
+   that value — nobody can tell a measured value from a guess ("voodoo
+   constants", fleet-config#1230). Example and counter-example:
    [not-a-finding.md](not-a-finding.md), Maintainability.
 5. **Bugs** — actual correctness issues spotted while reading. Off-by-one,
    wrong default, race condition, missing await, wrong type, broken
@@ -71,16 +69,14 @@ of (security is not a checklist bucket — see step 8b):
    (naming, modularity, a god-module); bucket 7 asks *"did this much code need
    to exist at all?"* A finding that would shrink the line count with no loss
    of behavior is slop (7); one that would reorganize the same lines is
-   maintainability (4). Both apply → file once, in whichever is the dominant
-   fix. AI-assisted work on this fleet steadily accretes lines — be actively
-   critical of volume, not just structure.
+   maintainability (4). Both apply → file once, in the dominant fix. AI-assisted
+   work steadily accretes lines — be critical of volume, not just structure.
 
-One issue per non-empty bucket. **Hard cap: 7 issues per run** (one per finding
-bucket). Empty buckets are simply skipped. Findings inside an issue go on a
-checklist with `file:line` citations and a one-line fix shape. A **security**
-finding is *not* one of these seven — it never goes on a public checklist; it
-takes the self-heal path in step 8b, which may file one extra *redacted* issue
-that carries no finding detail.
+One issue per non-empty bucket. **Hard cap: 7 issues per run.** Empty buckets
+are skipped. Findings go on a checklist with `file:line` citations and a
+one-line fix shape. A **security** finding is *not* one of these seven — it
+never goes on a public checklist; it takes the self-heal path in step 8b, which
+may file one extra *redacted* issue carrying no finding detail.
 
 ## Arguments
 
@@ -126,10 +122,9 @@ It prints `{"decision": "SKIP"|"AUDIT"|"SKIP_SELF_FIX"|"SKIP_BELOW_THRESHOLD", "
 The ledger lives in **one issue per repo** — title `codebase-audit ledger`,
 label `audit-meta`, `--assignee @me`, never closed, with a hidden identity
 marker and a machine-readable `<!-- audit-ledger -->` block (`last-audited-sha`,
-`last-audited-at`, `rubric-sha` — sha256 of the project CLAUDE.md **alone**;
-the global `~/.claude/CLAUDE.md` is deliberately excluded so an edit to that
-shared file never busts every repo's cache at once). `evaluate_repo` computes
-and compares all of this internally.
+`last-audited-at`, `rubric-sha` — sha256 of the project CLAUDE.md **alone**, so
+a global `~/.claude/CLAUDE.md` edit never busts every repo's cache).
+`evaluate_repo` computes and compares all of it.
 
 Branch on the decision:
 
@@ -142,8 +137,7 @@ Branch on the decision:
   **already advanced the ledger** and posted the `<!-- audit-self-fix -->`
   comment. Stop immediately:
   `Skipped — commits since last audit only close this repo's own audit
-  findings (#N, #M); ledger advanced, no organic change.` This stops a repo
-  from being endlessly re-flagged for fixing its own findings.
+  findings (#N, #M); ledger advanced, no organic change.`
 - **`SKIP_BELOW_THRESHOLD`** — real organic commits exist, but their
   weighted-LOC significance (feature/refactor commits count fully,
   docs/test count nothing, fix/chore count partially — `audit_issue.py`'s
@@ -184,8 +178,7 @@ If the file list is large (>~150 files), prioritize:
 - Top-level modules of each package
 - Anything `CLAUDE.md` calls out by name
 
-State the prioritization in the final report so the user knows what was
-inspected.
+State the prioritization in the final report.
 
 ### 5. Read systematically and take notes by bucket
 
@@ -202,14 +195,13 @@ every finding capture:
 When you see the same pattern twice in two files, that's bucket 1
 (duplication), not two separate bucket-4 findings.
 
-**Security findings are captured on a *separate* private list — never in the
-per-bucket notes and never in a public checklist.** A security gap (an
-injection sink, a hardcoded secret, a path-traversal, a missing-authz check, an
-unsafe deserialization, credentials in a committed file, etc.) is held aside
-for the self-heal path (step 8b). Record only what the fix agent needs —
+**Security findings go on a *separate* private list — never in the per-bucket
+notes or a public checklist.** A security gap (injection sink, hardcoded
+secret, path-traversal, missing-authz check, unsafe deserialization,
+credentials in a committed file, etc.) is held aside for step 8b. Record only
 file:line and the concrete gap; it never leaves this run as public text. Hold
 it to the bug bar (would you bet money it's exploitable) — a false one wastes
-an auto-fix cycle and, worse, an unnecessary public fix commit.
+an auto-fix cycle and an unnecessary public fix commit.
 
 **Read `README.md` and `docs/` twice — once for context, once for bucket 6.**
 Pass one mines them for code-side staleness leads (bucket 2). Pass two judges
@@ -220,20 +212,18 @@ repeat themselves. A feature with no mention in `README`/`docs` is the
 canonical "missing crucial features" finding.
 
 **Apply the materiality bar (see Hard rules) to every finding as you take
-it.** When in doubt, leave it out — across all seven buckets. Bucket 5's bar is
-"I'd bet money on this"; buckets 1–4 and 7: "a senior developer would agree this
-is worth a future developer's time to fix." If you can imagine the user reading
-the finding and going "...so?", drop it.
+it.** When in doubt, leave it out. Bucket 5's bar is "I'd bet money on this";
+buckets 1–4 and 7: "a senior developer would agree this is worth a future
+developer's time to fix." If the user would read it and go "...so?", drop it.
 
 **Promotion candidates (a second lens on the same read — not a bucket).** Also
 jot anything *worth preserving fleet-wide* — the inverse of a finding: (a) a
 **fleet-worthy asset**, a hard-won reusable solution another repo would want to
 copy, noting *where it lives*; (b) a **generalizable-convention candidate** that
 ought to propagate up to `project-scaffolding` per the global CLAUDE.md rule.
-Same materiality bar, even higher. These are **never issues and never a write to
-another repo** — surfaced in the final report only (step 10), where
-`/audit-fleet` collects them into the cross-fleet practices ledger. Most runs
-have zero; that is fine.
+Higher materiality bar. **Never issues and never a write to another repo** —
+final report only (step 10), where `/audit-fleet` collects them into the
+cross-fleet practices ledger. Most runs have zero.
 
 ### 6. Dedupe against existing open issues
 
@@ -242,12 +232,11 @@ gh issue list --state open --limit 200 --json number,title,body
 ```
 
 This catches only **cross-issue** duplicates — a finding already tracked by a
-*hand-filed* issue or a *different* bucket. Do **not** drop a finding just
-because this bucket's own managed audit issue already lists it — that issue is
-the one step 8 merges into. If a finding's substance is covered by an issue
-that is **not** this bucket's managed issue (matched on title keywords + body
-content, not strict string match), **drop it** and record it as
-"skipped: dupe of #N" for the summary.
+*hand-filed* issue or a *different* bucket. Do **not** drop a finding because
+this bucket's own managed audit issue lists it — step 8 merges into that one.
+If a finding's substance is covered by an issue that is **not** this bucket's
+managed issue (matched on title keywords + body content, not strict string
+match), **drop it** and record "skipped: dupe of #N" for the summary.
 
 ### 7. Ensure labels exist
 
@@ -276,8 +265,7 @@ gh label create security          --color 'b60205' --description 'Self-healed se
 ### 8. Upsert one issue per non-empty bucket
 
 There is **exactly one** managed issue per (repo, bucket), reused across runs.
-You never `gh issue create` directly — the helper owns identity so a re-run can
-never spawn a duplicate. For each non-empty bucket (max 7 iterations —
+Never `gh issue create` directly — the helper owns identity. For each non-empty bucket (max 7 iterations —
 `security` is not iterated here; it takes step 8b):
 
 **1. Fetch the existing issue** for this bucket:
@@ -347,8 +335,7 @@ Every finding line prints `VERIFIED`, `MISMATCH`, `NO_QUOTE` or `UNREADABLE`
 filed**: remove every other one from the body before step 3 and list it in
 step 10's report as `unverified: <file>:<line> (<status>)`. A `file:line` can
 be hallucinated and still look valid; a quote that exists in the file can't —
-that matters most in the unattended `/audit-fleet` run, where nobody reads the
-findings before they are filed.
+that matters most in the unattended `/audit-fleet` run.
 
 **3. Upsert** (creates if absent, edits if present, collapses any strays):
 
@@ -364,11 +351,11 @@ unverified finding is still in the body.
 
 The helper stamps the `<!-- audit-managed: kind=<bucket> -->` marker, applies
 the label, prints the canonical issue URL. **Titles are stable** — no `(N
-items)` count (lives in the body), so the title never changes run to run.
+items)` count (lives in the body).
 
-**Body shape** for a fresh issue and the stable title style (`audit: <bucket>
-findings`, never a count) are in [reference.md](reference.md), step 8. No hard
-wraps in paragraphs; the helper prepends the marker, don't write it yourself.
+**Body shape** for a fresh issue and the title style (`audit: <bucket>
+findings`) are in [reference.md](reference.md), step 8. No hard wraps in
+paragraphs; the helper prepends the marker, don't write it yourself.
 
 Use a **repo-scoped, unique** temp file so multi-line markdown isn't mangled
 by shell escaping *and* concurrent audits never clobber each other's scratch:
@@ -379,9 +366,9 @@ hyphen; `<short-sha>` = `git rev-parse --short HEAD`). **Never** a fixed
 
 ### 8b. Security findings — redacted issue + immediate self-heal
 
-**Only runs when step 5 held aside one or more security findings.** No security
-findings → skip this entire step. This is the one place the skill writes code,
-scoped to security and gated on the rules below.
+**Only runs when step 5 held aside one or more security findings**; else skip
+this step. The one place the skill writes code, scoped to security and gated on
+the rules below.
 
 When it runs, open [security-self-heal.md](security-self-heal.md) and follow its
 six steps in order, **inline in your own agent context** — never a nested
@@ -396,9 +383,8 @@ blind. The invariants are restated under **Hard rules**.
 
 ### 9. Update the ledger
 
-**Whole-repo audits only** — skip if a scope path was passed. It runs on
-**every** non-skipped path, including a clean pass that filed zero issues, so an
-unchanged repo is correctly skipped next time.
+**Whole-repo audits only** — skip if a scope path was passed. Runs on **every**
+non-skipped path, including a clean pass that filed zero issues.
 
 One command does the whole write — **never hand-author the ledger block, and
 never record the working checkout's commit**:
@@ -431,7 +417,7 @@ findings. Codebase passes the audit.` — and stop.
   developer's time to fix?"* Hesitate more than a second → drop it. Empty
   buckets are the **right answer** when there's no material rot —
   `No actionable findings. Codebase passes the audit.` is a successful run.
-  **Do not file findings to look thorough**; bias toward *fewer*. Bucket 5
+  **Do not file findings to look thorough**; bias toward fewer. Bucket 5
   (bugs): only what you'd bet money on — false positives erode trust in the
   whole skill. Bucket 6 (documentation): only *headline, user-facing*
   surfaces — a shipped command, config knob, or setup step a new reader would
@@ -444,15 +430,13 @@ findings. Codebase passes the audit.` — and stop.
 - **Never edit files — except the security self-heal (step 8b)**, gated on its
   own rules (claim the repo, mandatory regression test, generic artifacts,
   auto-merge only on a green gate, escalate rather than merge blind). Never a
-  reason to patch a duplication, slop, bug, or any other bucket's finding.
-- **Promotion candidates never become issues or foreign-repo writes.** They are
-  the inverse of a finding (an asset to preserve, not rot to fix), surfaced in
-  the final report only. Filing or cataloguing them is `/audit-fleet`'s job.
-- **Cap is 7 issues per run, period** (one per finding bucket). Don't split a
-  bucket into multiple issues. A bucket with 30 findings → one issue with 30
-  checklist items; the user triages via `/issue-start`. The step-8b redacted
-  `security` issue is separate from this cap (it carries no findings and closes
-  as soon as its fix merges) and is rare.
+  reason to patch any other bucket's finding.
+- **Promotion candidates never become issues or foreign-repo writes** — final
+  report only; cataloguing them is `/audit-fleet`'s job.
+- **Cap is 7 issues per run, period** (one per finding bucket). Never split a
+  bucket: 30 findings → one issue with 30 checklist items. The step-8b redacted
+  `security` issue is separate from this cap (no findings; closes as soon as
+  its fix merges) and rare.
 - **Security is self-healed, never publicly detailed (step 8b).** A security
   finding never goes on a public checklist. Invariants: a redacted issue (no
   class, file, line, or description); one branch fixing every gap in the repo;
@@ -461,9 +445,9 @@ findings. Codebase passes the audit.` — and stop.
   escalation-not-blind-merge on any failure.
 - **One managed issue per (repo, bucket) — the helper owns identity.**
   Never `gh issue create` / `gh issue edit` a managed issue by hand; always go
-  through `skills/_lib/audit_issue.py` (`get` then `upsert`). It reuses the one
-  issue, merges into it, and collapses strays. Hand-rolling a create is what
-  spawned duplicates.
+  through `skills/_lib/audit_issue.py` (`get` then `upsert`), which reuses the
+  one issue, merges into it, and collapses strays. Hand-rolling a create spawned
+  duplicates.
 - **Never auto-tick an audit issue; close one only on proof.** It's a living
   backlog; multiple PRs may chip at it. Checking boxes stays the user's call.
   A lane **may** close an audit issue (Roberto's standing authorization,
@@ -476,13 +460,10 @@ findings. Codebase passes the audit.` — and stop.
   belongs to `audit_issue.py`; hand edits spawn duplicates).
 - **The ledger snapshot comment is counts-only telemetry.** Step 9's
   per-category *count* row (`<!-- audit-snapshot -->`) must **never** carry
-  finding text, file paths, or fix shapes — those live in the bucket issues, the
-  single source of truth for *what* was found. Counts are derived (recomputed
-  each run, append-only, never hand-edited), so the snapshot can't drift into a
-  second authoritative store. A comment-post failure is non-fatal.
-- **Cross-issue dedupe still applies.** Drop a finding already covered by a
-  *different* (hand-filed or other-bucket) open issue; record it as
-  "skipped: dupe of #N".
+  finding text, file paths, or fix shapes — the bucket issues are the single
+  source of truth for *what* was found. Counts are derived (recomputed each run,
+  append-only, never hand-edited). A comment-post failure is non-fatal.
+- **Cross-issue dedupe still applies** (step 6): "skipped: dupe of #N".
 - **Citations or it didn't happen.** Every finding must point at a real
   `file:line` **and quote the line(s) it is about**, verbatim, checked by
   `audit_quote.py` in step 8 (2b). A finding that cannot quote is reported as
@@ -500,13 +481,12 @@ findings. Codebase passes the audit.` — and stop.
 
 ## What's NOT a finding
 
-Concrete per-bucket anti-examples — a **no** and a **yes** for every bucket,
-security included — live in [not-a-finding.md](not-a-finding.md); read it
-before step 5's notes become findings. If a candidate finding looks like a
-**no**, **drop it** — don't try to find a way to make it count. The pattern
-across all seven: **scale and impact matter**. One-off cosmetic blemishes are
-not findings. Systematic problems, structural rot, or concrete failure modes
-are.
+Per-bucket anti-examples — a **no** and a **yes** for every bucket, security
+included — live in [not-a-finding.md](not-a-finding.md); read it before step
+5's notes become findings. A candidate that looks like a **no** → **drop it**,
+don't try to make it count. **Scale and impact matter**: one-off cosmetic
+blemishes are not findings; systematic problems, structural rot, or concrete
+failure modes are.
 
 ## Notes
 
@@ -520,8 +500,7 @@ are.
   secret, a missing authz check); anything found is self-healed via step 8b, not
   filed as a public finding. `/security-review` remains the diff-scoped
   reviewer; this is the whole-repo resting-state lens.
-- Step 2's four decisions plus step 6's dedupe are layered idempotency, all
-  decided by one Python function (`evaluate_repo`; unit-tested in
-  `tests/test_audit_issue.py`), never LLM judgment.
+- Step 2's four decisions are decided by one Python function (`evaluate_repo`;
+  unit-tested in `tests/test_audit_issue.py`), never LLM judgment.
 - The ledger is labelled `audit-meta` so it never shows up as actionable —
   `/issue-triage` and `/issue-start` filter it out.

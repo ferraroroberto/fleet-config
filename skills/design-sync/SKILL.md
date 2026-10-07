@@ -10,11 +10,11 @@ visual identity in `~/.claude/design.md` (light) + `~/.claude/design.dark.md`
 (dark). Run the **deterministic lint** (`skills/_lib/design_lint/`) — token
 mapping + drift (light **and** dark), per-family adoption ratios, component
 contracts (including the PWA app-icon family), vendored-component
-byte-verification, sibling duplicates — apply
-LLM judgment only where measurement can't reach, and file exactly one deduped
-`design-drift` issue per repo (the same audit→bucket→cleanup machinery as
-`/codebase-audit`, cleared later by `/cleanup-fleet design-drift`). With
-`apply`, also write the aligned token values into the working tree for review.
+byte-verification, sibling duplicates — apply LLM judgment only where
+measurement can't reach, and file exactly one deduped `design-drift` issue per
+repo (same machinery as `/codebase-audit`, cleared later by `/cleanup-fleet
+design-drift`). With `apply`, also write the aligned token values into the
+working tree for review.
 
 **Measure with the helper, never by eye.** Everything mechanically checkable
 comes from `design_lint` (pure, unit-tested); never re-derive a ratio,
@@ -61,9 +61,9 @@ In parallel, from the target repo root:
 
 ### 1b. Tailnet-cert conformance (independent of the CSS check)
 
-Run this **before** step 2's web-app gate, so a repo that short-circuits on
-"no token CSS" still gets cert-checked. Self-gating: a non-web, LAN-only, or
-already-migrated repo reports clean and files nothing.
+Run this **before** step 2's web-app gate, so a repo with "no token CSS" still
+gets cert-checked. Self-gating: a non-web, LAN-only, or already-migrated repo
+reports clean and files nothing.
 
 ```
 E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/cert_drift.py detect <repo-root>
@@ -116,24 +116,21 @@ The five sections it returns, and what each means:
   finding; `unmapped` is the list the LLM resolves (step 4a).
 - **`adoption`** — per family (color, font-size, radius, spacing):
   `tokenized / total` declaration ratio + up to 40 escapee `file:line`s + the
-  literal-value histogram. This is the "how much, where" lens (#234): a
-  correct-*valued* token used nowhere still scores low here. Ratios trend
-  across weekly sweeps (#180). Counts app-authored CSS only, the same
-  exclusion the contracts apply (#940) — a vendored library will never use
-  our tokens and we will never repaint it, and because the escapee list is
-  capped one bundled library otherwise crowds the real findings out of it.
+  literal-value histogram. The "how much, where" lens (#234): a correct-*valued*
+  token used nowhere still scores low. Ratios trend across weekly sweeps (#180).
+  Counts app-authored CSS only, the same exclusion the contracts apply (#940) —
+  a bundled library never uses our tokens, and would crowd the capped escapee
+  list.
 
 **Third-party vs `_vendored/` (#940).** A `vendor/` path segment marks a
 genuinely third-party library bundled for offline use (Leaflet, xterm.js):
 out of scope for every check that judges what the *app authored* — button
-tiers, hit targets, icon sets, native checkboxes, token adoption — because
-there is no fix available in the repo that vendored it. `_vendored/` is the
-opposite: those are `project-scaffolding`'s own components, and they stay
-fully in scope (the nav contract keys on them). The match is an exact path
-segment, never a substring, so `vendor` cannot read as a prefix of
-`_vendored`. The rule lives in one place, `design_lint/files.py`'s
-`is_third_party`, which also states which blob a newly added contract should
-read.
+tiers, hit targets, icon sets, native checkboxes, token adoption — since the
+repo that vendored it has no fix available. `_vendored/` is the opposite:
+`project-scaffolding`'s own components, fully in scope (the nav contract keys
+on them). The match is an exact path segment, never a substring. The rule
+lives in `design_lint/files.py`'s `is_third_party`, which also states which
+blob a newly added contract should read.
 - **`contracts`** — PASS/WARN/FAIL/NA (or ACCEPTED, below) per design.md-v2 component contract,
   one per line below:
   - **focus ring** — tokenized `:focus-visible` ring.
@@ -146,18 +143,17 @@ read.
     NA when the app has no toast CSS. Only a real error tints.
   - **icon button unpainted** — the app's `--close-bg` (the vendored header
     toggles' and modal close's fill) is `transparent` (or zero-alpha) in every
-    theme that sets it, or is unset, which takes the scaffold's transparent
-    default: PASS. Any fill FAILs, because an icon button is a glyph on nothing
-    (#1259). NA when the app neither sets nor reads `--close-bg`. This contract
-    owns `--close-bg`, so it is never an `unmapped` leftover for step 4a.
+    theme that sets it, or is unset (the scaffold's transparent default): PASS.
+    Any fill FAILs, since an icon button is a glyph on nothing (#1259). NA when
+    the app neither sets nor reads `--close-bg`. This contract owns
+    `--close-bg`, so it is never an `unmapped` leftover for step 4a.
   - **checkboxes** — a checkbox control must be skinned off the browser's
     own tick (`appearance: none`), per design.md's Checkbox -> shadcn
     `checkbox` mapping. A real `<input type=checkbox>` is the shadcn
     substrate, not the violation; a selector *string* in JS
-    (`input:not([type="checkbox"])`) is not a control at all (#843). WARN
-    when a skin exists but cannot be attributed to the checkbox. Whether a
-    given boolean should have been the switch instead is judgment — step 4,
-    not the grep.
+    (`input:not([type="checkbox"])`) is not a control (#843). WARN when a skin
+    exists but cannot be attributed to the checkbox. Whether a boolean should
+    have been the switch is judgment — step 4, not the grep.
   - **disclosure closed-box** — the closed-box trio (52px / `0 14px` /
     open divider).
   - **dialog** — native `<dialog>` vs hand-rolled overlay.
@@ -165,8 +161,8 @@ read.
     hide, `100dvh`, safe-area, and the standalone fixed-inset `.app`
     scroller — the home-automation#303 architecture that removes the iOS
     pill-drift cause; a nav missing it caps at WARN even when every grep
-    signal passes and even when `_vendored/nav/` is present, because the
-    shell lives app-side). Folds in **nav-nesting**: `<nav class="tabs">`
+    signal passes and `_vendored/nav/` is present, since the shell lives
+    app-side). Folds in **nav-nesting**: `<nav class="tabs">`
     found as a DOM descendant of `<main class="app">` instead of a `<body>`
     sibling always FAILs on its own (home-automation#232/app-launcher#369).
   - **icon sizes** — icon px sizes vs the spec's `icons.size` steps
@@ -192,9 +188,7 @@ read.
     strings: FAIL when no vendored Lucide sprite is adopted, WARN when
     emoji sit alongside an adopted sprite — one icon set, never
     hand-drawn/mixed (#284). Comments (#394), JS regex literals, and
-    third-party `vendor/` bundles are not rendered text and are excluded —
-    a char class matching glyphs coming *in* off a terminal draws none, and
-    a vendored bundle's glyph table isn't the adopting app's icon choice
+    third-party `vendor/` bundles are not rendered text and are excluded
     (#416).
   - **app-icon-family** — an installable PWA must adopt
     `project-scaffolding`'s `brand_gen.render_set`, commit the spec-named
@@ -207,17 +201,15 @@ read.
   - **row-height-scale** — fixed `height`/`min-height` literals on
     row/action-rail selectors outside the spec's `rows` 3-step scale
     (44px/52px/60px by default, spec-driven) WARN (#284/app-launcher#365).
-    Row **containers** only — the rule is about the repeating box, so the
-    rightmost compound has to be the row itself (`.trow`, `.link-row`,
-    `.rows`, `.action-rail`). A part *inside* a row (`.trow-status`,
-    `.trow-check`) carries its own size and is not a finding (#843). A
-    truncated stray list says how many values it left out.
+    Row **containers** only — the rightmost compound has to be the row itself
+    (`.trow`, `.link-row`, `.rows`, `.action-rail`). A part *inside* a row
+    (`.trow-status`, `.trow-check`) carries its own size and is not a finding
+    (#843). A truncated stray list says how many values it left out.
   - **editor-modal contract** — design.md `modal` component (#307),
     applied to every `<dialog>` that contains a real editable field
     (`input`/`select`/`textarea`); a `<form>` wrapper is **not** required
-    (#342: home-automation#409's JS-managed editors carry bare fields and
-    a plain `type="button"` Save; a field-less alert/results dialog stays
-    NA). Sub-checks:
+    (#342: JS-managed editors carry bare fields and a plain `type="button"`
+    Save; a field-less alert/results dialog stays NA). Sub-checks:
     - `modal-unstyled-rows` — a row class, e.g. `label.stacked`, used
       inside a dialog but only ever styled under some other, unrelated
       ancestor scope (the app-launcher#70 root cause, where `.stacked`
@@ -251,14 +243,11 @@ read.
       shadcn-style interaction states like `open`/`closed` are a
       different channel and exempt; non-canonical lifecycle synonyms
       WARN, and lifecycle states with no `role="status"` live region WARN
-      (the region counts whether it is declared in markup or set from JS
-      — `setAttribute('role', 'status')`, `el.role = 'status'` — since a
-      JS-rendered drawer is exactly the surface this contract is for and
-      the check already reads `dataset.state` the same way, #416); NA
-      when the app never uses `data-state`.
+      (the region counts whether declared in markup or set from JS —
+      `setAttribute('role', 'status')`, `el.role = 'status'`, #416); NA when
+      the app never uses `data-state`.
   - **audit-promoted checks** — five static views of the 2026-09-21
-    rendered audit (#969). Every one WARNs and never FAILs, because the
-    apps they flag fix them in their own lanes:
+    rendered audit (#969). Every one WARNs, never FAILs:
     - **form-font-inherit** — no global `font: inherit` (or
       `font-family: inherit`) on bare `button`, `input`, `select` and
       `textarea`, so controls render in the UA font (Arial on Windows
@@ -280,9 +269,7 @@ read.
       #963.
   - **rendered-leg** — PASS when the repo has the shared rendered-geometry
     helper (`tests/e2e/_geometry.py`, project-scaffolding#157), WARN
-    `rendered leg unmeasured` when it doesn't. A static `hit-target` PASS
-    once sat beside 33–39px rendered heights, so the missing harness now
-    shows in the contract counts, not only in this prose (#969).
+    `rendered leg unmeasured` when it doesn't (#969).
   - **vendored-tokens** — every CSS component the app declares in its
     `.fleet.toml` `[vendored]` table reads only tokens the app defines
     (#1290). The token list is the component's own `var(--x)` reads, so it
@@ -295,11 +282,10 @@ read.
     undefined. A token the README documents as optional is exempt: its
     "Required design tokens" row says "optional" (#1301), or a prose line
     calls it a per-context knob (`--icon-btn-box`). A row that only names a
-    fallback is not optional. The README's "Required design tokens"
-    table is a cross-check only: a token the CSS reads but the table omits
-    is noted in the detail for a fix upstream in project-scaffolding, and
-    never changes the status. NA when nothing is declared; an unreadable
-    `.fleet.toml` FAILs.
+    fallback is not optional. That table is a cross-check only: a token the
+    CSS reads but the table omits is noted in the detail for a fix upstream in
+    project-scaffolding, never changing the status. NA when nothing is
+    declared; an unreadable `.fleet.toml` FAILs.
   - **`ACCEPTED`** — a WARN/FAIL a repo already examined and accepted, via a
     `[[design.accepted]]` entry in its own `.fleet.toml` (schema:
     `architecture/README.md`, fleet-config#836). The row keeps the original
@@ -316,8 +302,8 @@ read.
   finding) / `NOT_ADOPTED` (informational; adoption is rollout work, not
   drift). `icons-sprite.html` is compared **per `<symbol id>`**, not
   whole-file — the icons component sanctions per-app trimming, so a subset
-  whose kept symbols are byte-identical reports `IDENTICAL (trimmed)`, never
-  a false `FORKED` (#284).
+  whose kept symbols are byte-identical reports `IDENTICAL (trimmed)`, not
+  `FORKED` (#284).
 - **`siblings`** — top-level JS definitions with the same name in ≥2 files
   (the 7×-duplicated `schedule(ms)` of home-automation#369). Detection is
   mechanical; *which variant is canonical* is step 4c.
@@ -326,15 +312,14 @@ read.
 facts — tokens, markup shape, component CSS, vendored bytes. Effective hit
 rectangles and their non-overlap, chart tick/label collision, canvas-driven
 page overflow, and behavior across the 320/390/430/772px × light/dark
-matrix are **rendered-DOM facts** that only a browser harness can prove
-(home-automation#409 verified them deterministically in Playwright;
-the canonical shared geometry helper is project-scaffolding#157). When the
-target repo ships that harness, run it and report its results alongside the
-static sections; when it doesn't, **report the rendered leg as `unmeasured`**
-in the findings and the final report — never let a clean static scan read as
-whole-UX conformance. home-automation#409/PR#427 is the reference pattern
-for what the rendered leg covers; consult it as a pattern, never hardcode
-its selectors or APIs into checks.
+matrix are **rendered-DOM facts** only a browser harness can prove
+(home-automation#409 did so in Playwright; shared geometry helper:
+project-scaffolding#157). When the target repo ships that harness, run it and
+report its results alongside the static sections; when it doesn't, **report
+the rendered leg as `unmeasured`** in the findings and the final report — never
+let a clean static scan read as whole-UX conformance. home-automation#409/PR#427
+is the reference pattern; consult it, never hardcode its selectors or APIs
+into checks.
 
 ### 4. LLM judgment layer (only where measurement can't reach)
 
@@ -349,16 +334,15 @@ its selectors or APIs into checks.
   radius/spacing nitpick or a shadow's `#000` is not a finding; a wrong canvas
   color, a missing dark theme, a `FORKED` vendored file, an accent-colored
   switch, or a FAILed contract is. An `ACCEPTED` contract is **never** a
-  finding and is never re-judged back into one. Its reasoning was recorded
-  where the lint re-checks it. The reverse holds too: judgment never marks a
-  finding accepted, because only the repo's own declaration can. Spacing adoption is expected to score low
-  fleet-wide (never unified — report the ratio, don't inflate findings from
+  finding and is never re-judged back into one (its reasoning is recorded where
+  the lint re-checks it). Likewise judgment never marks a finding accepted:
+  only the repo's own declaration can. Spacing adoption is expected to score
+  low fleet-wide (never unified — report the ratio, don't inflate findings from
   it); font-size/radius should be near 1.0 on a canon app.
 - **(c) Sibling arbitration.** For each `siblings` duplicate (and any repeated
   CSS component pattern you notice while reading), identify the app's
-  **dominant/correct variant** and flag the deviants — this is the technique
-  that found the missing busy-flag guard (home-automation#368: `vm.js` had the
-  pattern `security-alarm.js`/`plugs.js` lacked). A duplicate that is
+  **dominant/correct variant** and flag the deviants (home-automation#368: `vm.js`
+  had the busy-flag guard `security-alarm.js`/`plugs.js` lacked). A duplicate that is
   byte-identical everywhere is a dedup candidate; one that *diverges* is a
   consistency bug candidate — say which.
 - **(d) What the greps can't see.** The nav contract beyond its grep signals
@@ -371,27 +355,26 @@ its selectors or APIs into checks.
   — never re-author it. **A nav-contract WARN/FAIL is always a finding, never
   demoted by judgment** — in particular the missing standalone fixed-inset
   scroller (fleet-config#282): the scroll-up/down pill drift persists on any
-  app without it, and the settled conclusion (decision on fleet-config#279,
-  2026-07-06) is to adopt `_vendored/nav/` verbatim **plus** the app-side
-  fixed-inset `.app` shell as one piece. Do not re-litigate this per run.
+  app without it; settled (decision on fleet-config#279, 2026-07-06): adopt
+  `_vendored/nav/` verbatim **plus** the app-side fixed-inset `.app` shell as
+  one piece. Do not re-litigate per run.
   **The list-row nested-card anti-pattern** (fleet-config#293): a repeating
   list (history, activity, request log) built as per-entry `canvas-subtle`
   cards instead of flat `list-row` hairline rows. Cross-selector reasoning a
-  grep can't do reliably, so it's a judgment call when reading the CSS/markup
-  for a list-shaped view — flag it as a finding, fix is to adopt the
-  `list-row` contract from `design.md`. **The stack-track overflow class of
-  bug** (fleet-config#294): a single-column `display: grid` stack container
-  (a pane/pane-body/list wrapper) without an explicit `minmax(0, ...)` track
-  that has a no-wrap or `overflow-x` descendant — the same reasoning gap, so
-  it's a judgment call, not a lint check. The deterministic
-  `scrollWidth <= innerWidth` measurement itself needs a live app + real
-  browsers and belongs to the app's own e2e suite / the shared Playwright
-  canon in `project-scaffolding`, not this static lint.
+  grep can't do, so it's a judgment call when reading the CSS/markup for a
+  list-shaped view — flag it; fix is to adopt the `list-row` contract from
+  `design.md`. **The stack-track overflow class of bug** (fleet-config#294): a
+  single-column `display: grid` stack container (a pane/pane-body/list wrapper)
+  without an explicit `minmax(0, ...)` track that has a no-wrap or `overflow-x`
+  descendant — also a judgment call, not a lint check. The deterministic
+  `scrollWidth <= innerWidth` measurement needs a live app + real browsers and
+  belongs to the app's own e2e suite / the shared Playwright canon in
+  `project-scaffolding`, not this static lint.
 
 ### 5. Dedupe and upsert the `design-drift` issue
 
-Exactly one managed `design-drift` issue per repo, reused across runs — identical
-mechanics to `/codebase-audit`'s bucket issues. Never `gh issue create` by hand.
+Exactly one managed `design-drift` issue per repo, reused across runs — same
+mechanics as `/codebase-audit`'s bucket issues. Never `gh issue create` by hand.
 
 Same four-step upsert procedure as step 1b's `cert-drift` issue
 ([cert-conformance.md](cert-conformance.md): ensure label /
@@ -404,15 +387,14 @@ these parameters differ:
   (prints `{"number": N|null, "body": "...", "duplicates": [...]}`); upsert
   with `audit_issue.py upsert --repo <OWNER/REPO> --kind design-drift --label design-drift --title "audit: design-drift findings" --body-file <tmpfile>`.
 - **title:** `audit: design-drift findings` (stable, no count suffix).
-- **temp file:** `E:/tmp/design-sync-<owner>-<repo>-<short-sha>.md` — same
-  repo-scoped, unique-per-run convention as `cert-drift`'s, never a fixed
-  shared name.
+- **temp file:** `E:/tmp/design-sync-<owner>-<repo>-<short-sha>.md` — repo-scoped,
+  unique per run like `cert-drift`'s, never a fixed shared name.
 - **body merge — richer than `cert-drift`'s plain preserve-and-append:** fresh
   → the template below; existing → preserve every ticked `- [x]` verbatim,
   match findings by `file` + token role (update the moved line, keep the
   checkbox), keep items not re-surfaced (flag them in the run log). An
   unticked item the lint now reports `ACCEPTED` moves to the Contracts section
-  and the run log says so. It is not a finding to keep. Never tick
+  and the run log says so (not a finding to keep). Never tick
   or close anything yourself, never add `Closes #`. Append a dated bullet to
   `## Drift run log`.
 
@@ -502,14 +484,13 @@ Print one summary and stop:
   applied: <n files changed | not applied (report-only)>
 ```
 
-The `cert:` line always appears (the step-1b check runs on every target). If the
+The `cert:` line always appears (step 1b runs on every target). If the
 lint reports zero drift, zero contract FAILs (`ACCEPTED` rows don't count; they
 still print on the `contracts:` line), and no forked vendored files, say
 `In sync with design.md — no drift.` and still no-op the design-drift issue
 (don't file an empty one; if a prior issue exists with all boxes now
-satisfiable, leave it for the user to close) — the cert verdict and the
-adoption ratios are reported regardless (ratios are the trend signal for #180
-even on a clean app).
+satisfiable, leave it for the user to close) — the cert verdict and adoption
+ratios are reported regardless (the #180 trend signal, even on a clean app).
 
 ## Hard rules
 
@@ -523,11 +504,11 @@ even on a clean app).
 - **One managed issue per repo per kind — the helper owns identity.** Always go
   through `skills/_lib/audit_issue.py` (`get` then `upsert`) — `--kind design-drift`
   for CSS, `--kind cert-drift` for the step-1b cert finding. Never hand-roll a
-  `gh issue create` — that is what spawns duplicates.
+  `gh issue create` (spawns duplicates).
 - **Keep cert-drift out of design-drift.** The tailnet-cert finding is its own
-  bucket/issue (so `/cleanup-fleet cert-drift` targets it cleanly and it points at
-  `project-scaffolding#89`); never fold a cert finding into the CSS `design-drift`
-  issue, and never auto-apply the cert migration.
+  bucket/issue (so `/cleanup-fleet cert-drift` targets it and it points at
+  `project-scaffolding#89`); never fold it into the CSS `design-drift` issue,
+  and never auto-apply the cert migration.
 - **Skip Streamlit POC spikes** — never report or apply against them.
 - **Never re-author navigation/components.** Reuse the vendored snippets from
   `project-scaffolding` verbatim (the same model as `single_instance.py` /
@@ -544,10 +525,9 @@ even on a clean app).
 
 ## Notes
 
-- This is the per-repo detector; the fleet-wide weekly sweep that runs it across
-  every web app is `/design-sweep` (fleet-only tier), with the `design-drift`
-  bucket surfaced in the `/audit-fleet` digest (`fleet-config#180`). The step-1b
-  cert check rides that sweep. Run this skill directly for a single repo.
+- Per-repo detector; the fleet-wide weekly sweep is `/design-sweep` (fleet-only
+  tier), with the `design-drift` bucket surfaced in the `/audit-fleet` digest
+  (`fleet-config#180`). The step-1b cert check rides that sweep.
 - `design-drift` and `cert-drift` are both first-class audit buckets
   (`audit_issue.py` `KINDS`) — `/cleanup-fleet` fans out fixers for each, and
   `/issue-triage` treats both like any other issue.
@@ -555,8 +535,8 @@ even on a clean app).
   pure, unit-tested `skills/_lib/cert_drift.py`. The lint lenses live in
   `skills/_lib/design_lint/` (unit-tested, wired into `run_acceptance.py`);
   icon steps, contract targets, and the switch on-color are spec-driven, so a
-  spec change propagates without touching the helper. v2 provenance: #277 +
-  #278 + project-scaffolding#120.
+  spec change needs no helper edit. v2 provenance: #277 + #278 +
+  project-scaffolding#120.
 - The spec, not this skill, owns *what* the look should be — refine
   `design.md` / `design.dark.md` to change the identity; this skill only
   measures and (optionally) applies conformance.
