@@ -5,7 +5,7 @@ description: Compress the fleet's markdown context files — CLAUDE.md files and
 
 # context-purge
 
-**Goal:** cut the always-on context tax by rewriting the fleet's markdown context files — the *compression* counterpart to `/context-audit` (which only measures and flags). Contract is **lossless in directives**: nothing the LLM is told to do (or forbidden from doing) may disappear; only the prose around it does. Every purge run must pass the validation harness before it ships.
+**Goal:** cut the always-on context tax by rewriting the fleet's markdown context files — the *compression* counterpart to `/context-audit` (which only measures and flags). Contract is **lossless in directives**: nothing the LLM is told to do (or forbidden from doing) may disappear; only the prose around it does. Every purge run must pass the validation harness before it merges.
 
 Fleet-only tier by design: a global skill's description would load into every session of every repo — self-defeating for a skill shrinking that surface. One home, executed from fleet-config.
 
@@ -14,7 +14,7 @@ Fleet-only tier by design: a global skill's description would load into every se
 - **`/context-purge`** (default) — fleet-config-owned surface: `global-CLAUDE.md`, `fleet-config/CLAUDE.md`, and `SKILL.md` files in both tiers (`skills/`, `.claude/skills/`). One branch/PR in this repo.
 - **`/context-purge fleet`** — fleet-wide sweep: default surface **plus** every sister git repo under `E:\automation\` (skip linked worktrees — `.git` must be a directory): each repo's `CLAUDE.md` + any `.claude/skills/*/SKILL.md`. Compress only where real savings; skip clean/lean files. **One branch + PR per repo**, each with its own validation report. Respect the model-tier policy (`docs/model-tiers.md`) if fanning out sub-agents.
 
-Both modes ship to **review, not merge**: the PR carries the validation report; the user merges.
+Both modes **merge their own validated rewrites** (fleet-config#1312); nobody is waited on. A repo's PR is marked ready and squash-merged only when `digest.py merge-check` passes (Validation harness, item 5). A rewrite that fails validation is **never merged**: fix and re-probe it, or leave the PR a draft (or don't open one) and report it as `failed`. The owner reviews afterwards from the digest and reverts anything he dislikes with one `git revert`.
 
 ## Skip-unchanged ledger (reconcile, then gate — always, in that order)
 
@@ -40,7 +40,7 @@ E:/automation/fleet-config/.venv/Scripts/python.exe .claude/skills/context-purge
 
 `advance` merges over the existing ledger (entries outside the scanned surface are preserved) and upserts the issue. **Pass `--only` with the files you actually assessed.** A fleet run is normally partial (large surface, lean files skipped by design, per-repo failures reported and skipped), so a bare `advance` would record files nobody read and silently suppress them from every future run until edited. Bare `advance` (whole surface) is correct only when the run genuinely assessed every gated file. Unknown paths are a hard error, not a silent no-op.
 
-`advance` records a rewritten file's hash immediately — whether that PR will ever merge is unknowable then. The *next* run's `reconcile` corrects it, and the backlog section in every digest (below) makes a still-waiting PR visible before it goes stale.
+`advance` runs after the merge, so a rewritten file's hash is recorded only for content that landed. A draft left behind by a failed validation is not advanced; the *next* run's `reconcile` still corrects any stray entry, and the backlog section in every digest (below) makes a waiting PR visible before it goes stale.
 
 ## Priorities (highest value first)
 
@@ -69,7 +69,8 @@ E:/automation/fleet-config/.venv/Scripts/python.exe .claude/skills/context-purge
    must exit 0 (marked blocks byte-identical, quoted triggers preserved, frontmatter still parses as YAML) and prints the token delta. `check.py --base origin/main` runs the same check over every instruction file the branch changed (what a `prompt-drift` cleanup lane runs; exit 3 = the diff could not be taken, never a pass). Then re-run `audit.py`: totals down, no new over-cap descriptions, no new single-home leaks. Then the repo gate (`py_compile` + `tests/run_acceptance.py`).
 2. **Directive inventory** — walk each file's saved inventory item by item against the rewrite; every item must still be discharged (verbatim or semantically intact).
 3. **Agent-based before/after probe** — for each substantially rewritten file: derive ~10–20 behavioral questions from the *original* ("what must never appear in a commit message?", "which Python do you invoke?"). Spawn fresh **Haiku** sub-agents (weaker model = stricter clarity test, cheap; Sonnet acceptable) whose only context is the **compressed** file; same questions to a **control** agent reading the original. Grade both against original-derived expected answers. **Pass = compressed score ≥ control score.** Any question the compressed file fails but the control passes → restore that content and re-probe.
-4. **Report** — the PR body carries the per-file before/after token table, probe scores (compressed vs control), and the inventory result. No screenshots, no merge.
+4. **Report** — the PR body carries the per-file before/after token table, probe scores (compressed vs control), and the inventory result. No screenshots.
+5. **Merge gate** — write the repo's entry to `<scratch>/run/<repo>.json` (`risk.checked: true` only after items 1–3 passed), then run `E:/automation/fleet-config/.venv/Scripts/python.exe .claude/skills/context-purge/digest.py merge-check <scratch>/run/<repo>.json`. Exit 0 → may merge. Exit 2 (`MERGE=blocked: …`) → do not merge; anything unrecorded blocks (unknown is not a pass). `digest.py validate` re-applies the same rule to every repo recorded as merged, so the digest rejects a merge the gate would have blocked. fleet-config's own PR clears the identical bar — no weaker gate for the repo whose `hooks/` and `skills/` are junctioned live into `~/.claude`.
 
 ## Steps (default mode)
 
@@ -78,11 +79,13 @@ E:/automation/fleet-config/.venv/Scripts/python.exe .claude/skills/context-purge
 3. Snapshot originals + `audit.py --json` baseline to the scratchpad.
 4. Purge the gated files in priority order per the compression contract.
 5. Run the validation harness; restore-and-re-probe on any regression.
-6. **Advance the ledger** (`gate.py advance`) for every assessed file.
-7. Open the PR (draft) with the validation report. Stop — the user merges.
-8. **Publish the run digest** (below). Not optional, and not only on the happy path.
+6. Open the PR (draft) with the validation report. Run `merge-check`; on exit 0, `gh pr ready` then `gh pr merge --squash --delete-branch`, and record `merge` (below). Exit 2 → leave the draft, record `merge.state: not-merged` with the reason.
+7. **Advance the ledger** (`gate.py advance --only …`) for the merged rewrites and the files judged lean — never for a rewrite left unmerged, which must re-enter `to_purge`.
+8. **Sync the live checkout** (below), then **publish the run digest**. Not optional, and not only on the happy path.
 
-Fleet mode is the same loop with `--fleet` on both `reconcile`/gate/advance, grouping the to-purge files by repo (one branch + PR per repo). Designed to degrade, not block — a per-repo failure is reported and skipped so the scheduled run always finishes.
+Fleet mode is the same loop with `--fleet` on both `reconcile`/gate/advance, grouping the to-purge files by repo (one branch + PR per repo). Designed to degrade, not block — a per-repo failure is reported and skipped so the scheduled run always finishes. Merge fleet-config's own PR last.
+
+**Live checkout.** After a merge, fast-forward that repo's primary checkout only via `skills/_lib/untrack_guard.py fast-forward <repo-dir>` — never a bare `git pull` (fleet-config#1086) — and only when it is clean, on its default branch, has no `.git/index.lock` and no live session (`skills/_lib/chief_ops.py sessions`). Otherwise leave it and record why. fleet-config's primary is the live junction: same rules. No tray restarts (markdown only). Never force-push.
 
 ## Run data — what every worker reports back
 
@@ -94,9 +97,11 @@ Fleet mode is the same loop with `--fleet` on both `reconcile`/gate/advance, gro
   "unreached": [{"repo": "life-os", "reason": "gh auth failed"}],
   "repos": [{
     "repo": "project-scaffolding", "status": "shipped|skipped|failed", "pr": "<url>|null",
+    "merge": {"state": "merged|not-merged", "sha": "<squash sha>", "reason": "<why not>",
+              "primary": {"state": "fast-forwarded|left", "reason": "<why left>"}},
     "risk": {"always_on": true, "shape_change": "large|medium|small", "checked": true},
     "files": [{"path": "CLAUDE.md", "action": "rewritten|assessed-lean|untouched",
-               "tokens_before": 4210, "tokens_after": 3120,
+               "tokens_before": 4210, "tokens_after": 3120, "lines_before": 160, "lines_after": 118,
                "inventory_items": 57, "inventory_discharged": 57,
                "probe": {"ran": true, "questions": 14, "compressed": 13, "control": 13}}],
     "descriptions": [{"path": "…/SKILL.md", "words_before": 62, "words_after": 44,
@@ -108,11 +113,15 @@ Fleet mode is the same loop with `--fleet` on both `reconcile`/gate/advance, gro
 
 Token counts come straight from `check.py`'s `TOKENS:` line; `gate` from `gate.py gate`'s `SUMMARY:`.
 
+**`status: shipped` means merged.** A shipped repo carries `merge` (`null` = not recorded); `merged` needs `sha`, `not-merged` needs `reason`, a primary left behind needs `reason`. A rewrite that failed validation is `failed`, never `shipped`.
+
 **A figure the run could not establish is reported as unknown, never as zero.** `"probe": null` means *not recorded*; `"probe": {"ran": false}` means *deliberately not probed*; these are different facts and the digest renders them differently. Omit a token or inventory field you did not measure rather than writing `0`. Every **rewritten** file must carry a `probe` key — `null` is a valid answer, silence is not.
 
 **`action` is three-valued on purpose.** `assessed-lean` and `untouched` files are listed in the digest so "not in the diff" cannot read as "not looked at".
 
 ## Step 8 — publish the digest
+
+The digest is the review surface for what the run already merged: per file the **token and line delta**, the **blast radius** (global file → every agent fleet-wide; repo `CLAUDE.md` → that repo's sessions; `SKILL.md` → whoever invokes it), and per repo the merged **PR + SHA with its `git revert`** and whether the live checkout was fast-forwarded. The Telegram ping leads with merged/not-merged counts.
 
 Run from the fleet-config repo root. Validate first: run data that would make the digest lie is a hard stop, not something to render around.
 
@@ -145,5 +154,7 @@ Optionally publish `digest.html` as a **private** Artifact and re-render with `-
 An app-launcher Job (Windows Task Scheduler `\AppLauncher\`) runs the fleet sweep weekly — Saturdays 01:00, on Opus — via the co-located launcher `.claude/skills/context-purge/run-weekly.bat` (per this repo's scheduled-skill convention).
 
 The wrapper preserves `/context-purge fleet`, Opus, and bypass permissions while streaming filtered milestones through `claude_progress.py`, and passes `--delivery-check` so the job cannot exit 0 having published nothing (fleet-config#627).
+
+The scheduled run merges unattended (`--permission-mode bypassPermissions`); the owner reviews the digest afterwards.
 
 The ledger gate makes the scheduled run cheap: an unchanged week costs one `gh` read and stops. A `to_purge=0` run still publishes a digest — "surface unchanged since last run" is a result, and a silent week is indistinguishable from a job that never fired.

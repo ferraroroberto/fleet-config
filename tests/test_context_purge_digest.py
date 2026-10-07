@@ -63,9 +63,12 @@ RUN = {
     "repos": [
         {
             "repo": "life-os", "status": "shipped", "pr": "https://x/pull/1",
-            "risk": {"always_on": True, "shape_change": "large", "checked": False},
+            "merge": {"state": "merged", "sha": "abc1234def56",
+                      "primary": {"state": "left", "reason": "live session open"}},
+            "risk": {"always_on": True, "shape_change": "large", "checked": True},
             "files": [
                 _file("CLAUDE.md", tokens_before=4000, tokens_after=3000,
+                      lines_before=200, lines_after=150,
                       inventory_items=50, inventory_discharged=50,
                       probe={"ran": True, "questions": 14, "compressed": 13, "control": 13}),
                 _file(".claude/skills/recap/SKILL.md", tokens_before=2000, tokens_after=1500,
@@ -315,6 +318,136 @@ check("automation" in html_backlog and "#110" in html_backlog,
       "html: the backlog table renders the open PR")
 
 
+# ---- auto-merge: go/no-go, validation, and the change report (fleet-config#1312) ----
+
+life = RUN["repos"][0]
+check(digest.merge_blockers(life) == [],
+      "merge_blockers: a repo that passed the checks, discharged its inventory and did "
+      "not regress its probe is eligible")
+
+
+def _blockers(mutate) -> list[str]:
+    repo = json.loads(json.dumps(life))
+    mutate(repo)
+    return digest.merge_blockers(repo)
+
+
+check(any("risk.checked" in b for b in _blockers(lambda r: r["risk"].update(checked=False))),
+      "merge_blockers: checks not passed blocks the merge")
+check(any("risk.checked" in b for b in _blockers(lambda r: r["risk"].update(checked=None))),
+      "merge_blockers: checks not RECORDED blocks too -- unknown is not a pass")
+check(any("inventory 49/50" in b for b in
+          _blockers(lambda r: r["files"][0].update(inventory_discharged=49))),
+      "merge_blockers: a directive left undischarged blocks the merge")
+check(any("inventory result not recorded" in b for b in
+          _blockers(lambda r: r["files"][0].pop("inventory_items"))),
+      "merge_blockers: an unrecorded inventory blocks -- it is not zero")
+check(any("probe regression" in b for b in _blockers(
+          lambda r: r["files"][0].update(probe={"ran": True, "questions": 14,
+                                                "compressed": 9, "control": 13}))),
+      "merge_blockers: compressed scoring below the control blocks the merge")
+check(any("probe not recorded" in b for b in _blockers(lambda r: r["files"][0].update(probe=None))),
+      "merge_blockers: a null probe blocks (ran=false is a decision, null is not)")
+check(not any("probe" in b for b in _blockers(lambda r: r["files"][0].update(probe={"ran": False}))),
+      "merge_blockers: a deliberately unprobed file does not block on its own")
+check(any("no PR" in b for b in _blockers(lambda r: r.update(pr=None))),
+      "merge_blockers: nothing to merge without a PR")
+check(any("no rewritten files" in b for b in _blockers(
+          lambda r: [f.update(action="assessed-lean") for f in r["files"]])),
+      "merge_blockers: a run with nothing rewritten has nothing to merge")
+
+# validate() refuses a digest that claims a merge the gate would have blocked.
+_unvalidated_merge = _clone()
+_unvalidated_merge["repos"][0]["files"][0]["inventory_discharged"] = 40
+check(any("merged without passing validation" in e for e in digest.validate(_unvalidated_merge)),
+      "validate: a repo recorded as merged but failing the gate is rejected")
+_no_sha = _clone()
+del _no_sha["repos"][0]["merge"]["sha"]
+check(any("merge.sha" in e for e in digest.validate(_no_sha)),
+      "validate: a merge without its SHA is rejected -- the revert pointer is the point")
+_no_merge_key = _clone()
+del _no_merge_key["repos"][0]["merge"]
+check(any("'merge' key" in e for e in digest.validate(_no_merge_key)),
+      "validate: a shipped repo must say what happened to the merge (null allowed)")
+_null_merge = _clone()
+_null_merge["repos"][0]["merge"] = None
+check(digest.validate(_null_merge) == [],
+      "validate: merge=null is 'not recorded' and is allowed")
+_not_merged_shipped = _clone()
+_not_merged_shipped["repos"][0]["merge"] = {"state": "not-merged", "reason": "probe regression"}
+check(any("contradictory" in e for e in digest.validate(_not_merged_shipped)),
+      "validate: status=shipped with merge.state=not-merged is contradictory")
+_not_merged_ok = _clone()
+_not_merged_ok["repos"][0]["status"] = "failed"
+_not_merged_ok["repos"][0]["merge"] = {"state": "not-merged", "reason": "probe regression"}
+check(digest.validate(_not_merged_ok) == [],
+      "validate: a failed, unmerged repo with a reason is well-formed")
+_no_reason = _clone()
+_no_reason["repos"][0]["status"] = "failed"
+_no_reason["repos"][0]["merge"] = {"state": "not-merged"}
+check(any("merge.reason" in e for e in digest.validate(_no_reason)),
+      "validate: not-merged must say why")
+_left_no_reason = _clone()
+_left_no_reason["repos"][0]["merge"]["primary"] = {"state": "left"}
+check(any("primary.reason" in e for e in digest.validate(_left_no_reason)),
+      "validate: a live checkout left behind must say why")
+
+# Blast radius is derived from the path, never from memory.
+check("fleet-wide" in digest.blast_radius("fleet-config", "global-CLAUDE.md"),
+      "blast_radius: global-CLAUDE.md reaches every agent fleet-wide")
+check(digest.blast_radius("life-os", "CLAUDE.md") == "every session started in `life-os`",
+      "blast_radius: a repo CLAUDE.md reaches that repo only")
+check("every repo" in digest.blast_radius("fleet-config", "skills/issue-start/SKILL.md")
+      and "/issue-start" in digest.blast_radius("fleet-config", "skills/issue-start/SKILL.md"),
+      "blast_radius: a global-tier SKILL.md is always-on everywhere via its description")
+check("`/recap` in `life-os`" in digest.blast_radius("life-os", ".claude/skills/recap/SKILL.md"),
+      "blast_radius: a project SKILL.md reaches whoever invokes it in that repo")
+check("fleet-wide" not in digest.blast_radius("life-os", "global-CLAUDE.md"),
+      "blast_radius: only fleet-config's global-CLAUDE.md is the fleet-wide file")
+
+# The change report: magnitude, blast radius, revert, live checkout.
+md_applied = digest.render_markdown(RUN)
+check("### What changed" in md_applied, "markdown: the change report section is present")
+check("4,000 to 3,000 (-1,000, 25%)" in md_applied,
+      "markdown: token magnitude carries the delta and the percentage cut")
+check("200 to 150 (-50)" in md_applied, "markdown: the line delta is reported")
+check("every session started in `life-os`" in md_applied,
+      "markdown: the blast radius is stated per file")
+check("git revert abc1234def" in md_applied,
+      "markdown: the revert pointer names the merged SHA")
+check("left -- live session open" in md_applied,
+      "markdown: a live checkout left unsynced says why")
+check("**Merged to main:** 1 of 1 repo(s); 1 live checkout(s) left unsynced" in md_applied,
+      "markdown: the headline counts merges and unsynced checkouts")
+
+_unrec = _clone()
+_unrec["repos"][0]["merge"] = None
+md_unrec = digest.render_markdown(_unrec)
+check("| not recorded | https://x/pull/1 | n/a |" in md_unrec,
+      "markdown: an unrecorded merge is 'not recorded', never 'merged'")
+check("1 merge not recorded" in md_unrec, "markdown: the headline spells the unknown out")
+
+_failed = _clone()
+_failed["repos"][0]["status"] = "failed"
+_failed["repos"][0]["merge"] = {"state": "not-merged", "reason": "probe regression"}
+check("NOT merged -- probe regression" in digest.render_markdown(_failed),
+      "markdown: an unmerged repo says NOT merged and why")
+chat_failed = digest.render_chat(_failed)
+check("NOT merged: life-os (probe regression)" in chat_failed,
+      "chat: a rewrite that was not merged is a hard flag naming the reason")
+check("Merged to main: 0 of 1" in chat_failed, "chat: the merged count leads")
+check("Merged to main: 1 of 1" in chat and len(chat.splitlines()) <= 8,
+      "chat: the merged count is on the phone-readable message")
+html_applied = digest.render_html(RUN)
+check("What changed" in html_applied and "git revert abc1234def" in html_applied
+      and "every session started in" in html_applied,
+      "html: the change report renders blast radius and revert too")
+
+ms = digest.merge_summary(RUN)
+check(ms["merged"] == 1 and ms["candidates"] == 1 and ms["primaries_left"] == 1,
+      "merge_summary: skipped repos are not candidates; a left primary is counted")
+
+
 # ---- stamp -----------------------------------------------------------------
 
 stamp = digest.render_stamp(RUN, "posted")
@@ -366,6 +499,19 @@ try:
           "cli: an artifact URL is accepted")
     check("https://artifact/x" in md_out.read_text(encoding="utf-8"),
           "cli: the artifact URL is referenced from the durable copy")
+
+    repo_ok = _tmp / "repo_ok.json"
+    repo_ok.write_text(json.dumps(life), encoding="utf-8")
+    check(digest.main(["merge-check", str(repo_ok)]) == 0,
+          "cli: merge-check exits 0 for an eligible repo")
+    repo_bad = _tmp / "repo_bad.json"
+    bad_repo = json.loads(json.dumps(life))
+    bad_repo["risk"]["checked"] = False
+    repo_bad.write_text(json.dumps(bad_repo), encoding="utf-8")
+    check(digest.main(["merge-check", str(repo_bad)]) == 2,
+          "cli: merge-check exits 2 for a repo that must not merge")
+    check(digest.main(["merge-check", str(_tmp / "nope.json")]) == 2,
+          "cli: merge-check on unreadable data is blocked, never an implicit pass")
 
     reconcile_out = _tmp / "reconcile.json"
     reconcile_out.write_text(json.dumps({"updates": {}, "backlog": BACKLOG}), encoding="utf-8")
