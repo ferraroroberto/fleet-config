@@ -123,13 +123,7 @@ E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skill
 ```
 
 It prints `{"decision": "SKIP"|"AUDIT"|"SKIP_SELF_FIX"|"SKIP_BELOW_THRESHOLD", "reason": ..., ...}`.
-The ledger lives in **one issue per repo** — title `codebase-audit ledger`,
-label `audit-meta`, `--assignee @me`, never closed, with a hidden identity
-marker and a machine-readable `<!-- audit-ledger -->` block (`last-audited-sha`,
-`last-audited-at`, `rubric-sha` — sha256 of the project CLAUDE.md **alone**;
-the global `~/.claude/CLAUDE.md` is deliberately excluded so an edit to that
-shared file never busts every repo's cache at once). `evaluate_repo` computes
-and compares all of this internally.
+The ledger is one `audit-meta` issue per repo, never closed. Its layout and what `evaluate_repo` compares are in [reference.md](reference.md), step 2 ledger issue.
 
 Branch on the decision:
 
@@ -302,29 +296,8 @@ body — the issue is a *living backlog*, so:
 - **Tag each item's re-verification status inline — don't bury it in the run
   log.** A stale checklist item must not read identically to a freshly
   discovered one:
-  - **New this run** (no item for that file + problem existed before): append
-    as-is, no suffix.
-  - **Re-matched this run** (found again, same file + problem): silently bump
-    its hidden `last-seen` date, no visible tag — it reads as a normal,
-    currently-live finding.
-  - **Re-surfaced this run** (found again, and its box is `[x]`): the fix did
-    not hold or regressed. Un-tick it (`- [ ]`), bump `last-seen`, and append
-    inline `_(re-surfaced <date>)_`. Count it separately from new and carried
-    (the `resurfaced` column in step 10's table and the run-log bullet).
-  - **Not re-surfaced this run:** keep the line (never delete), append
-    *inline on the same line* (a bare HTML comment on its own line risks
-    GitHub treating it as breaking the list):
-    `_(carried — not re-verified since <date>)_<!-- last-seen: <date> -->`.
-  - **Escalation, free of new state:** fetch the ledger's *previous*
-    `last-audited-at` (`audit_issue.py get --repo <OWNER/REPO> --kind ledger`,
-    read before step 9 overwrites it this run). For an item not re-surfaced
-    this run, compare its existing `last-seen` against that previous date: if
-    equal, this is its first miss (use the plain tag above); if earlier, it
-    already missed last run too — escalate to
-    `_(carried — not re-verified since <date>; flag for pruning)_<!-- last-seen: <date> -->`.
-    Two audits on the same calendar day degrade to "no escalation" — a safe
-    default, not a bug. Pruning stays a human decision (never auto-tick);
-    this only makes staleness visible on the item itself.
+  The four states are new, re-matched, re-surfaced (its box was `[x]`, so un-tick it, bump `last-seen` and append `_(re-surfaced <date>)_`) and not re-surfaced (keep the line, append `_(carried — not re-verified since <date>)_<!-- last-seen: <date> -->` inline, escalating to `; flag for pruning` on a second consecutive miss). The exact wording and the escalation comparison are in [reference.md](reference.md), step 8 re-verification tags; read it before merging.
+
 - **Never tick anything yourself**, and never add `Closes #` — multiple PRs may
   chip at one audit issue without closing it. Closing is the user's call via
   `/issue-finish` once all boxes are checked; a lane may close it only under
@@ -342,13 +315,7 @@ E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skill
   --repo-path <repo root> --body-file <tmpfile>
 ```
 
-Every finding line prints `VERIFIED`, `MISMATCH`, `NO_QUOTE` or `UNREADABLE`
-(ticked and `_(carried …)_` items are skipped). **Only `VERIFIED` findings are
-filed**: remove every other one from the body before step 3 and list it in
-step 10's report as `unverified: <file>:<line> (<status>)`. A `file:line` can
-be hallucinated and still look valid; a quote that exists in the file can't —
-that matters most in the unattended `/audit-fleet` run, where nobody reads the
-findings before they are filed.
+Only `VERIFIED` findings are filed: remove every other one from the body before step 3 and list it in step 10's report as `unverified: <file>:<line> (<status>)`. The four statuses and the reason are in [reference.md](reference.md), step 8 quote-check statuses.
 
 **3. Upsert** (creates if absent, edits if present, collapses any strays):
 
