@@ -404,6 +404,46 @@ def strip_heredoc_bodies(command: str) -> str:
     return "\n".join(kept)
 
 
+# Whether a `git … commit` actually runs (fleet-config#1288). The old test was
+# `"git" in cmd and "commit" in cmd`, so a `gh issue create` whose body quoted a
+# trailer and said "git commit" was refused. Now `git` must sit at a command
+# position (statement start, after `&&`/`;`/`|`/`&`/`(`, env assignments or a
+# shell keyword), followed by git's global options and then `commit`. Quoted
+# strings are single words, and heredoc and PowerShell here-string bodies are
+# dropped first: their text is data, not commands. Callers that scan the
+# message (`pre_commit_no_ai_trailer`) still read the whole command for it,
+# since that is where a heredoc commit message lives. Shared by both commit
+# guards so the two cannot disagree about what a commit is (fleet-config#1304).
+_COMMIT_WORD = r"""(?:"(?:\\.|[^"\\])*"|'[^']*'|[^\s;&|(){}"'])+"""
+_COMMIT_TOKEN_RE = re.compile(r"&&|\|\||[;&|\n(){}]|" + _COMMIT_WORD)
+_COMMIT_SEPARATORS = {"&&", "||", ";", "&", "|", "\n", "(", ")", "{", "}"}
+_COMMIT_PREFIX_WORDS = {"then", "do", "else", "elif", "!", "time", "env", "command", "exec", "nohup"}
+_COMMIT_ENV_ASSIGN_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*=")
+_PS_HERE_STRING_RE = re.compile(r"@(['\"])\r?\n.*?\r?\n\1@", re.DOTALL)
+
+
+def runs_git_commit(cmd: str) -> bool:
+    """True when `cmd` runs `git [global options] commit` as a command."""
+    text = _PS_HERE_STRING_RE.sub("''", strip_heredoc_bodies(cmd))
+    tokens = _COMMIT_TOKEN_RE.findall(text)
+    at_start = True
+    for i, token in enumerate(tokens):
+        if token in _COMMIT_SEPARATORS:
+            at_start = True
+            continue
+        if not at_start or token in _COMMIT_PREFIX_WORDS or _COMMIT_ENV_ASSIGN_RE.match(token):
+            continue
+        at_start = False
+        if not GIT_TOKEN_RE.search(token.strip("\"'")):
+            continue
+        j = i + 1
+        while j < len(tokens) and tokens[j].startswith("-"):
+            j += 2 if tokens[j] in GIT_GLOBAL_OPTS_WITH_VALUE else 1
+        if j < len(tokens) and tokens[j].lower() == "commit":
+            return True
+    return False
+
+
 def run_git(
     args: Sequence[str], *, check: bool = False, timeout: Optional[float] = None
 ) -> subprocess.CompletedProcess:

@@ -1306,6 +1306,8 @@ def _venv_git_clean_guard_unit_checks() -> Tuple[int, int]:
             ("`git clean -xf -- .venv`", "git clean -xf -- .venv", repo, "Bash"),
             ("global options before the verb", "git --no-pager -c core.quotepath=off clean -dxf",
              repo, "Bash"),
+            ("`--attr-source <tree>` global option (the set that drifted from _lib, #1304)",
+             "git --attr-source HEAD clean -xfd", repo, "Bash"),
             ("an unrelated `-e` does not protect .venv", "git clean -xfd -e build", repo, "Bash"),
             ("`-X -e .venv` still deletes it", "git clean -Xfd -e .venv", repo, "Bash"),
             ("a trailing redirect is not a pathspec", "git clean -xfd 2>&1", repo, "Bash"),
