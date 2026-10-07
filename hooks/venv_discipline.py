@@ -371,9 +371,6 @@ GIT_CLEAN_VERB = "git clean -x"
 # *adds* an ignore rule, and ignored paths are exactly what `-X` removes.
 GIT_CLEAN_SPARING_VERB = "git clean -x -e .venv"
 
-# `git` global options that consume the next token (`-C <path>`, `-c <k=v>`).
-_GIT_GLOBAL_WITH_ARG = {"-c", "--git-dir", "--work-tree", "--namespace",
-                        "--config-env", "--super-prefix"}
 # `2>&1`, `>out.txt`, `2>` + a following file: redirections, never pathspecs.
 # A missed one would be read as a pathspec and silently narrow the operand away
 # from the checkout root — an allow on the exact command this rule exists for.
@@ -418,7 +415,7 @@ def git_clean_operands(tokens: List[str]) -> Tuple[Optional[str], List[str]]:
         elif option.startswith("--work-tree="):
             workdir = _join_operand(workdir, option.split("=", 1)[1])
             i += 1
-        elif option in _GIT_GLOBAL_WITH_ARG:
+        elif option in _lib.GIT_GLOBAL_OPTS_WITH_VALUE:
             if option == "--work-tree" and i + 1 < len(tokens):
                 workdir = _join_operand(workdir, tokens[i + 1])
             i += 2

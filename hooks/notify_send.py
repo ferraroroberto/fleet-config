@@ -341,10 +341,20 @@ def notify(text: str, chat: str, token: Optional[str] = None, *,
     return True
 
 
-def _multipart(fields: dict, filename: str, payload: bytes) -> Tuple[bytes, str]:
-    """Build a ``multipart/form-data`` body carrying one document.
+# Upload timeout, longer than a text message's because the body is the file
+# itself: sendDocument takes up to 50 MB, and a slow uplink must not cut a
+# legitimate upload off mid-body. The one bound for single and grouped uploads.
+UPLOAD_TIMEOUT_S = 120
 
-    Returns ``(body, content_type)``.
+MEDIA_GROUP_MIN = 2
+MEDIA_GROUP_MAX = 10
+
+
+def _encode_multipart(fields: dict, parts: List[Tuple[str, str, bytes]]) -> Tuple[bytes, str]:
+    """Build a ``multipart/form-data`` body: text ``fields`` plus file ``parts``.
+
+    Each part is ``(form field name, filename, payload)``. Returns
+    ``(body, content_type)``.
     """
     boundary = "----notifysend" + uuid.uuid4().hex
     chunks: List[bytes] = []
@@ -353,20 +363,23 @@ def _multipart(fields: dict, filename: str, payload: bytes) -> Tuple[bytes, str]
             boundary, key, value
         )
         chunks.append(header.encode("utf-8"))
-    ctype = mimetypes.guess_type(filename)[0] or "application/octet-stream"
-    doc_header = (
-        "--{0}\r\n"
-        "Content-Disposition: form-data; name=\"document\"; filename=\"{1}\"\r\n"
-        "Content-Type: {2}\r\n\r\n"
-    ).format(boundary, filename, ctype)
-    chunks.append(doc_header.encode("utf-8"))
-    chunks.append(payload)
-    chunks.append("\r\n--{0}--\r\n".format(boundary).encode("utf-8"))
+    for name, filename, payload in parts:
+        ctype = mimetypes.guess_type(filename)[0] or "application/octet-stream"
+        part_header = (
+            "--{0}\r\n"
+            "Content-Disposition: form-data; name=\"{1}\"; filename=\"{2}\"\r\n"
+            "Content-Type: {3}\r\n\r\n"
+        ).format(boundary, name, filename, ctype)
+        chunks.append(part_header.encode("utf-8"))
+        chunks.append(payload)
+        chunks.append(b"\r\n")
+    chunks.append("--{0}--\r\n".format(boundary).encode("utf-8"))
     return b"".join(chunks), "multipart/form-data; boundary=" + boundary
 
 
-MEDIA_GROUP_MIN = 2
-MEDIA_GROUP_MAX = 10
+def _multipart(fields: dict, filename: str, payload: bytes) -> Tuple[bytes, str]:
+    """Build a ``multipart/form-data`` body carrying one document."""
+    return _encode_multipart(fields, [("document", filename, payload)])
 
 
 def _multipart_media_group(fields: dict, files: List[Tuple[str, bytes]]) -> Tuple[bytes, str]:
@@ -376,25 +389,49 @@ def _multipart_media_group(fields: dict, files: List[Tuple[str, bytes]]) -> Tupl
     ``attach://file<i>`` references ``upload_files`` puts in the ``media``
     field. Returns ``(body, content_type)``.
     """
-    boundary = "----notifysend" + uuid.uuid4().hex
-    chunks: List[bytes] = []
-    for key, value in fields.items():
-        header = "--{0}\r\nContent-Disposition: form-data; name=\"{1}\"\r\n\r\n{2}\r\n".format(
-            boundary, key, value
-        )
-        chunks.append(header.encode("utf-8"))
-    for index, (filename, payload) in enumerate(files):
-        ctype = mimetypes.guess_type(filename)[0] or "application/octet-stream"
-        field_header = (
-            "--{0}\r\n"
-            "Content-Disposition: form-data; name=\"file{1}\"; filename=\"{2}\"\r\n"
-            "Content-Type: {3}\r\n\r\n"
-        ).format(boundary, index, filename, ctype)
-        chunks.append(field_header.encode("utf-8"))
-        chunks.append(payload)
-        chunks.append(b"\r\n")
-    chunks.append("--{0}--\r\n".format(boundary).encode("utf-8"))
-    return b"".join(chunks), "multipart/form-data; boundary=" + boundary
+    return _encode_multipart(
+        fields, [("file{0}".format(i), filename, payload) for i, (filename, payload) in enumerate(files)]
+    )
+
+
+def _upload_target(token: Optional[str], chat: str) -> Optional[Tuple[str, str]]:
+    """``(token, chat)`` ready for an upload, or ``None`` (already logged) when either is missing."""
+    token = _resolve_token(token)
+    if not token:
+        logger.error("[X] %s not set - cannot upload to Telegram.", TOKEN_ENV_VAR)
+        return None
+    chat = parse_chat(chat)
+    if not chat:
+        logger.error("[X] No Telegram chat given - cannot upload.")
+        return None
+    return token, chat
+
+
+def _post_multipart(token: str, method: str, body: Tuple[bytes, str], what: str) -> Optional[dict]:
+    """POST an encoded multipart ``body`` to ``method``; the parsed reply, or ``None``.
+
+    A rejection (``ok: false``) still returns the reply so the caller can log
+    it; ``None`` means the transport failed or the reply was unreadable, which
+    is logged here as ``what`` (``upload`` / ``media-group upload``).
+    """
+    data, content_type = body
+    request = urllib.request.Request(
+        TELEGRAM_API.format(token=token, method=method),
+        data=data,
+        method="POST",
+        headers={"Content-Type": content_type},
+    )
+    try:
+        try:
+            with _urlopen(request, UPLOAD_TIMEOUT_S) as response:
+                return json.loads(response.read().decode("utf-8"))
+        except urllib.error.HTTPError as exc:
+            return json.loads(exc.read().decode("utf-8", errors="replace"))
+    except urllib.error.URLError as exc:
+        logger.error("[X] Telegram %s request failed: %s", what, exc)
+    except (ValueError, OSError, KeyError) as exc:
+        logger.error("[X] Telegram %s response unreadable: %s", what, exc)
+    return None
 
 
 def upload_files(
@@ -415,14 +452,10 @@ def upload_files(
     Never raises - a missing token/file, a count outside 2-10, or any API
     error is logged and reported as ``False``.
     """
-    token = _resolve_token(token)
-    if not token:
-        logger.error("[X] %s not set - cannot upload to Telegram.", TOKEN_ENV_VAR)
+    target = _upload_target(token, chat)
+    if target is None:
         return False
-    chat = parse_chat(chat)
-    if not chat:
-        logger.error("[X] No Telegram chat given - cannot upload.")
-        return False
+    token, chat = target
     if not (MEDIA_GROUP_MIN <= len(paths) <= MEDIA_GROUP_MAX):
         logger.error("[X] Media group needs %d-%d files, got %d.",
                      MEDIA_GROUP_MIN, MEDIA_GROUP_MAX, len(paths))
@@ -445,26 +478,9 @@ def upload_files(
         media.append(item)
 
     fields = {"chat_id": chat, "media": json.dumps(media)}
-    try:
-        data, content_type = _multipart_media_group(fields, files)
-        request = urllib.request.Request(
-            TELEGRAM_API.format(token=token, method="sendMediaGroup"),
-            data=data,
-            method="POST",
-            headers={"Content-Type": content_type},
-        )
-        try:
-            with _urlopen(request, 120) as response:
-                done = json.loads(response.read().decode("utf-8"))
-        except urllib.error.HTTPError as exc:
-            done = json.loads(exc.read().decode("utf-8", errors="replace"))
-    except urllib.error.URLError as exc:
-        logger.error("[X] Telegram media-group upload failed: %s", exc)
+    done = _post_multipart(token, "sendMediaGroup", _multipart_media_group(fields, files), "media-group upload")
+    if done is None:
         return False
-    except (ValueError, OSError, KeyError) as exc:
-        logger.error("[X] Telegram media-group response unreadable: %s", exc)
-        return False
-
     if not done.get("ok"):
         _log_rejection("sendMediaGroup", done)
         return False
@@ -501,14 +517,10 @@ def upload_file(
     Never raises - a missing token/file or any API error is logged and reported
     as ``False`` so an unattended caller keeps running.
     """
-    token = _resolve_token(token)
-    if not token:
-        logger.error("[X] %s not set - cannot upload to Telegram.", TOKEN_ENV_VAR)
+    target = _upload_target(token, chat)
+    if target is None:
         return False
-    chat = parse_chat(chat)
-    if not chat:
-        logger.error("[X] No Telegram chat given - cannot upload.")
-        return False
+    token, chat = target
     file_path = Path(path)
     if not file_path.is_file():
         logger.error("[X] File not found: %s", path)
@@ -521,25 +533,13 @@ def upload_file(
     if caption:
         fields["caption"] = caption
     try:
-        data, content_type = _multipart(fields, file_path.name, file_path.read_bytes())
-        request = urllib.request.Request(
-            TELEGRAM_API.format(token=token, method="sendDocument"),
-            data=data,
-            method="POST",
-            headers={"Content-Type": content_type},
-        )
-        try:
-            with _urlopen(request, 120) as response:
-                done = json.loads(response.read().decode("utf-8"))
-        except urllib.error.HTTPError as exc:
-            done = json.loads(exc.read().decode("utf-8", errors="replace"))
-    except urllib.error.URLError as exc:
+        payload = file_path.read_bytes()
+    except OSError as exc:
         logger.error("[X] Telegram upload request failed: %s", exc)
         return False
-    except (ValueError, OSError, KeyError) as exc:
-        logger.error("[X] Telegram upload response unreadable: %s", exc)
+    done = _post_multipart(token, "sendDocument", _multipart(fields, file_path.name, payload), "upload")
+    if done is None:
         return False
-
     if not done.get("ok"):
         _log_rejection("sendDocument", done)
         return False

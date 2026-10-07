@@ -112,6 +112,13 @@ def matrix_cases() -> Tuple[List[Case], Path]:
         # The three families the guard was blind to until fleet-config#561 —
         # `context_filter`'s redactor already knew all four, the guard's own
         # copy knew only Slack, and the narrow copy was the one blocking commits.
+        # A search that merely says "commit" is not a commit (fleet-config#1304): the
+        # guard shares _lib.runs_git_commit with the trailer hook instead of a substring test.
+        ("secret_scan: a search that names commit and git is not a commit -> allow",
+         "secret_scan_guard",
+         {"tool_name": "Bash", "cwd": tempfile.gettempdir(),
+          "tool_input": {"command": f'rg "git" --glob "*commit*" -e "TOKEN = {FAKE_XOXB}"'}},
+         0),
         ("secret_scan: live GitHub token in commit one-liner -> block",
          "secret_scan_guard",
          {"tool_name": "Bash", "cwd": tempfile.gettempdir(),

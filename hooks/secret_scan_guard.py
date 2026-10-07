@@ -50,10 +50,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import _lib  # noqa: E402
 
 
-def _is_git_commit(cmd: str) -> bool:
-    return "git" in cmd and "commit" in cmd
-
-
 # Staged-diff timeout, a stated bound rather than a measured one: this runs on every commit in every
 # repo, so a hung `git diff --cached` may stall the commit by at most this long, after which `_staged_diff`
 # degrades to scanning just the command string.
@@ -249,7 +245,7 @@ def main() -> None:
         logging.basicConfig(level=logging.INFO, format="%(message)s", stream=sys.stderr)
         _guard_gh_publish(cmd, _lib.cwd(payload))
 
-    if not _is_git_commit(cmd):
+    if not _lib.runs_git_commit(cmd):
         _lib.allow()
 
     # Scan both the staged content and the command string itself (a secret could
