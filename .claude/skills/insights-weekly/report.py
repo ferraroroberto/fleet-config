@@ -45,6 +45,11 @@ ensure_utf8_stdio()
 USAGE_DIR = Path(os.environ.get("INSIGHTS_USAGE_DIR", Path.home() / ".claude" / "usage-data"))
 MODEL = os.environ.get("INSIGHTS_DIFF_MODEL", "claude_sonnet")
 HUB_URL = os.environ.get("INSIGHTS_HUB_URL", "http://127.0.0.1:8000/v1").rstrip("/")
+# One non-streaming completion of up to 1600 tokens over two report texts. A stated guess, not
+# a measured bound: it normally finishes in well under a minute, and the margin covers a hub
+# that is queueing behind other subscription sessions while still failing the call, rather than
+# hanging the weekly run, if the hub never answers.
+HUB_TIMEOUT_S = 180
 DIGEST_MARKER = "## TL;DR"
 
 
@@ -68,7 +73,7 @@ def call_hub(messages: list[dict]) -> str:
         headers={"Content-Type": "application/json", "Authorization": "Bearer local-dummy"},
         method="POST",
     )
-    with urllib.request.urlopen(req, timeout=180) as resp:
+    with urllib.request.urlopen(req, timeout=HUB_TIMEOUT_S) as resp:
         data = json.load(resp)
     return data["choices"][0]["message"]["content"].strip()
 

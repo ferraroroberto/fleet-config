@@ -916,7 +916,7 @@ def _audit_issue(*args: str) -> str:
 
 
 def _gh(args: list[str]) -> str:
-    res = git_run.run_gh(args, timeout=120)
+    res = git_run.run_gh(args, timeout=git_run.GH_LIST_TIMEOUT_S)
     if res.returncode != 0:
         raise RuntimeError(f"gh {' '.join(args)} failed: {(res.stderr or res.stdout).strip()}")
     return (res.stdout or "").strip()

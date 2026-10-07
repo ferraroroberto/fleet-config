@@ -72,6 +72,12 @@ from utf8_stdio import ensure_utf8_stdio  # noqa: E402
 # rather than the checkout this script itself lives in, so a run from one of
 # this repo's own <repo>-wt-N worktrees would silently use main's helper.
 AUDIT_ISSUE = REPO_ROOT / "skills" / "_lib" / "audit_issue.py"
+# `git worktree add`/`remove` checks out (or deletes) one whole commit of a repo to hash its
+# files as git itself would smudge them. Stated guesses, not measured: adding is the slow
+# half, so it gets triple the removal's bound; both fail the call rather than stall the
+# weekly run on a pathological checkout.
+WORKTREE_ADD_TIMEOUT_S = 180
+WORKTREE_REMOVE_TIMEOUT_S = 60
 LEDGER_REPO = "ferraroroberto/fleet-config"
 KIND = "context-purge"
 TITLE = "context-purge ledger"
@@ -330,7 +336,7 @@ def _commit_hashes(repo_dir: Path, commit_sha: str, relpaths: list[str]) -> dict
     tmp.rmdir()  # `worktree add` wants to create the leaf itself
     added = git_run.run_git(
         ["-C", str(repo_dir), "worktree", "add", "--detach", "--force", str(tmp), commit_sha],
-        timeout=180,
+        timeout=WORKTREE_ADD_TIMEOUT_S,
     )
     if added.returncode != 0:
         return out
@@ -340,7 +346,7 @@ def _commit_hashes(repo_dir: Path, commit_sha: str, relpaths: list[str]) -> dict
             if p.is_file():
                 out[relpath] = file_hash(p.read_bytes())
     finally:
-        git_run.run_git(["-C", str(repo_dir), "worktree", "remove", "--force", str(tmp)], timeout=60)
+        git_run.run_git(["-C", str(repo_dir), "worktree", "remove", "--force", str(tmp)], timeout=WORKTREE_REMOVE_TIMEOUT_S)
     return out
 
 
@@ -356,7 +362,7 @@ def _fetch_purge_prs(repo_name: str, repo_dir: Path) -> list[dict]:
         ["pr", "list", "--repo", f"ferraroroberto/{repo_name}", "--state", "all",
          "--json", "number,title,url,headRefName,state,mergedAt,createdAt,mergeCommit,files",
          "--limit", "200"],
-        timeout=120,
+        timeout=git_run.GH_LIST_TIMEOUT_S,
     )
     if res.returncode != 0:
         raise RuntimeError(f"gh pr list --repo ferraroroberto/{repo_name} failed: "

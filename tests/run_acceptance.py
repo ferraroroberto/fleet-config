@@ -113,6 +113,7 @@ from acceptance.checks_session_state import (  # noqa: E402
 from acceptance.checks_skill_helpers import (  # noqa: E402
     _learning_log_unit_checks,
     _restart_webapp_unit_checks,
+    _scheduled_skill_timeouts_named_check,
 )
 from acceptance.shared import _subprocess_unit_check  # noqa: E402
 from acceptance.spawn_scanner import (  # noqa: E402
@@ -226,6 +227,7 @@ def main() -> int:
 
     # ---- restart_and_verify_webapp restart-strategy + recovery hint ----
     run_unit(_restart_webapp_unit_checks)
+    run_unit(_scheduled_skill_timeouts_named_check)  # #1306
 
     # ---- safe_kill_guard: force-push blocks on the pushed ref (#562) ----
     run_unit(_safe_kill_force_push_unit_checks)
