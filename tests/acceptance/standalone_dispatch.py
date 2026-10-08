@@ -57,6 +57,10 @@ _STANDALONE_UNIT_CHECKS: Tuple[Tuple[str, str, str], ...] = (
      "the automation#144 config loss reproduced through land-primary against "
      "a fixture repo, plus the refusal and unknown-ignore paths that must "
      "never lose a file (fleet-config#1086)"),
+    ("shell_parse", "test_shell_parse.py",
+     "the shell guards' three tokeniser splits, pinned in tables to what "
+     "each guard read before they moved into one `_lib` home, so the move "
+     "provably changes nothing a guard refuses (fleet-config#1304)"),
     ("cleanup_fleet_all_flow", "test_cleanup_fleet_all_flow.py",
      "the cleanup-fleet-all workflow script's control flow -- strict lane "
      "seriality, teardown on every terminal path, and halt-on-residue -- is "

@@ -197,7 +197,7 @@ def _is_text_sink_line(line: str) -> bool:
     """True when this heredoc's body is written somewhere, never executed."""
     if _BODY_FILE_STDIN_RE.search(line):
         return True
-    tokens = _tokens(line)
+    tokens = _lib.shell_tokens(line, unquote=True)
     if not tokens:
         return False
     first = tokens[0].lower().rsplit("/", 1)[-1]
@@ -229,24 +229,6 @@ def strip_nonexecuted_heredoc_bodies(cmd: str) -> str:
 
 
 # ------------------------------------------------------ .venv junction guard
-
-_TOKEN_RE = re.compile(r"'([^']*)'|\"([^\"]*)\"|(\S+)")
-
-
-def _tokens(segment: str) -> List[str]:
-    """Shell-ish tokens, quotes stripped, backslashes left alone.
-
-    `shlex` is not usable here: POSIX mode eats the backslashes out of every
-    Windows path, and non-POSIX mode keeps the quotes.
-    """
-    out: List[str] = []
-    for match in _TOKEN_RE.finditer(segment):
-        for group in match.groups():
-            if group is not None:
-                out.append(group)
-                break
-    return out
-
 
 # A cmd.exe switch (`/s`, `/q`) vs. a Git Bash absolute path (`/e/automation/…`)
 # — both start with `/`, and treating the second as a flag would drop the
@@ -480,7 +462,7 @@ def destructive_operands(segment: str) -> Tuple[Optional[str], List[str]]:
     deliberately absent: it removes a reparse point without following it, and
     is the safe form `worktree_claim.py` itself uses.
     """
-    tokens = _tokens(segment)
+    tokens = _lib.shell_tokens(segment, unquote=True)
     if not tokens:
         return None, []
     lowered = [t.lower() for t in tokens]
@@ -672,7 +654,7 @@ def directory_change(segment: str, base: Path,
     Kind is `"cd"`, `"push"` or `"pop"`. None for anything else, including a
     change whose target cannot be known from the command string alone.
     """
-    tokens = _tokens(segment)
+    tokens = _lib.shell_tokens(segment, unquote=True)
     if not tokens:
         return None
     verb = tokens[0].lower()
