@@ -100,6 +100,23 @@ def matrix_cases() -> Tuple[List[Case], Path]:
          {"tool_name": "PowerShell", "tool_input": {"command": (
              "Set-Content body.md @'\ngit commit -m \"Co-Authored-By: Claude\" is what it's for\n'@")}},
          0),
+        # A nested shell's quoted argument is a command (fleet-config#1304): both
+        # commit guards re-read it through _lib.runs_git_commit.
+        ("pre_commit: commit inside bash -c with a trailer -> block",
+         "pre_commit_no_ai_trailer",
+         {"tool_name": "Bash", "tool_input": {"command": (
+             "bash -c \"git commit -m 'feat: x' -m 'Co-Authored-By: Claude <noreply@anthropic.com>'\"")}},
+         2),
+        ("pre_commit: commit inside powershell -Command with a trailer -> block",
+         "pre_commit_no_ai_trailer",
+         {"tool_name": "Bash", "tool_input": {"command": (
+             "powershell.exe -NoProfile -Command \"git commit -m 'Co-Authored-By: Claude'\"")}},
+         2),
+        ("pre_commit: echo quoting bash -c git commit with a trailer -> allow",
+         "pre_commit_no_ai_trailer",
+         {"tool_name": "Bash", "tool_input": {"command": (
+             "echo \"bash -c 'git commit -m Co-Authored-By: Claude'\"")}},
+         0),
 
         # ---- secret_scan_guard ----
         # cwd is a non-repo tempdir so `git diff --cached` is empty and only the
@@ -118,6 +135,18 @@ def matrix_cases() -> Tuple[List[Case], Path]:
          "secret_scan_guard",
          {"tool_name": "Bash", "cwd": tempfile.gettempdir(),
           "tool_input": {"command": f'rg "git" --glob "*commit*" -e "TOKEN = {FAKE_XOXB}"'}},
+         0),
+        # The substring test caught a commit hidden in a nested shell; the shared
+        # runs_git_commit re-reads the nested shell's quoted command (fleet-config#1304).
+        ("secret_scan: live token in a commit inside bash -c -> block",
+         "secret_scan_guard",
+         {"tool_name": "Bash", "cwd": tempfile.gettempdir(),
+          "tool_input": {"command": f"bash -c \"git commit -m 'wip: GH_TOKEN = {FAKE_GHP}'\""}},
+         2),
+        ("secret_scan: a search inside bash -c that names commit is not a commit -> allow",
+         "secret_scan_guard",
+         {"tool_name": "Bash", "cwd": tempfile.gettempdir(),
+          "tool_input": {"command": f"bash -c \"rg git --glob '*commit*' -e 'TOKEN = {FAKE_XOXB}'\""}},
          0),
         ("secret_scan: live GitHub token in commit one-liner -> block",
          "secret_scan_guard",
