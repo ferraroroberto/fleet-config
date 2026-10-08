@@ -183,7 +183,6 @@ _SEGMENT_SPLIT_RE = re.compile(r"[\n;|&]+")
 # its body — and `cat <<'EOF' | sh` is not either, which is why the redirect is
 # still required alongside `cat`.
 
-_HEREDOC_START_RE = re.compile(r"<<-?\s*(['\"]?)([A-Za-z_][A-Za-z0-9_]*)\1")
 # A `>` / `>>` that redirects to a path — not `2>&1`, not the `<<` itself.
 _FILE_REDIRECT_RE = re.compile(r"(?<![0-9<>])>>?\s*(?!&)")
 # Commands that copy stdin to a file or to stdout without ever running it.
@@ -216,9 +215,9 @@ def strip_nonexecuted_heredoc_bodies(cmd: str) -> str:
     while i < len(lines):
         line = lines[i]
         out.append(line)
-        match = _HEREDOC_START_RE.search(line)
+        match = _lib.HEREDOC_RE.search(line)
         if match and _is_text_sink_line(line):
-            delimiter = match.group(2)
+            delimiter = match.group("delim")
             i += 1
             while i < len(lines) and lines[i].strip() != delimiter:
                 i += 1

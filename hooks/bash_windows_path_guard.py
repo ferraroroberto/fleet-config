@@ -26,7 +26,9 @@ Detection:
 
 Known, accepted limitation: this is a heuristic quote/heredoc scanner, not a
 full shell parser (process substitution, arrays not modeled) — it fails open
-on anything missed, never fails closed on a legitimate command.
+on anything missed. The one fail-closed case: heredocs are found with the
+shared `_lib.HEREDOC_RE` (fleet-config#1304), which skips a delimiter that
+starts with a digit (`<<1`), so a backslash path in such a body is refused.
 
 Allow-listed (passes through silently): a forward-slash path, a double-quoted
 backslash path, a single-quoted backslash path, a backslash path inside a
@@ -46,11 +48,6 @@ import _lib  # noqa: E402
 
 # Drive-letter path token: `E:\automation`, `C:\Users\rober\file.txt`.
 DRIVE_PATH_RE = re.compile(r"[A-Za-z]:\\[^\s'\"]*")
-
-# Heredoc opener: `<<EOF`, `<<-EOF`, `<<'EOF'`, `<<"EOF"`.
-HEREDOC_TOKEN_RE = re.compile(
-    r"<<(?P<dash>-)?\s*(?:'(?P<d1>\w+)'|\"(?P<d2>\w+)\"|(?P<d3>\w+))"
-)
 
 
 def _safe_mask(cmd: str) -> list[bool]:
@@ -96,9 +93,9 @@ def _safe_mask(cmd: str) -> list[bool]:
             continue
 
         if ch == "<" and cmd[i:i + 2] == "<<":
-            m = HEREDOC_TOKEN_RE.match(cmd, i)
+            m = _lib.HEREDOC_RE.match(cmd, i)
             if m:
-                delim = m.group("d1") or m.group("d2") or m.group("d3")
+                delim = m.group("delim")
                 strip_tabs = m.group("dash") == "-"
                 nl = cmd.find("\n", m.end())
                 if nl == -1:
