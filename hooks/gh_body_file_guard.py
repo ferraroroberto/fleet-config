@@ -41,7 +41,6 @@ GH_WRITE_RE = re.compile(r"\bgh\s+(?:issue|pr)\s+(?:create|comment|edit)\b")
 # An inline body flag — `--body` / `-b` — but NOT `--body-file` (the fix we want).
 INLINE_BODY_RE = re.compile(r"(?:--body(?!-file)|-b)\b")
 
-HEREDOC_RE = re.compile(r"<<-?\s*['\"]?\w+")  # `<<EOF`, `<<'EOF'`, `<<-EOF`
 BACKTICK_RE = re.compile(r"`")
 
 # PowerShell here-string opener `@'` / `@"` and closer `'@` / `"@`.
@@ -62,7 +61,7 @@ def main() -> None:
     if (
         GH_WRITE_RE.search(cmd)
         and INLINE_BODY_RE.search(cmd)
-        and (BACKTICK_RE.search(cmd) or HEREDOC_RE.search(cmd))
+        and (BACKTICK_RE.search(cmd) or _lib.HEREDOC_RE.search(cmd))
     ):
         _lib.warn(
             "Nudge: this `gh` command builds the body inline with a heredoc/backticks, "

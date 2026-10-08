@@ -1,8 +1,9 @@
 """Table-driven tests for the hooks' shared shell parsing (fleet-config#1304).
 
 Standalone: the guards split a command three different ways, and each split is
-load-bearing for the guard that uses it. These tables pin every split, and the
-directory-change verbs and MSYS path translation two guards follow, to the
+load-bearing for the guard that uses it. These tables pin every split, the
+directory-change verbs and MSYS path translation two guards follow, and the
+heredoc openers four guards recognise, to the
 behaviour the per-hook copies had before they moved into `hooks/_lib.py`, so
 each move is proven to change nothing a guard refuses. `hooks/` is junctioned live
 into every `~/.claude/hooks`, so a silent split change would land fleet-wide on
@@ -15,6 +16,8 @@ Exit 0 = all pass.
 from __future__ import annotations
 
 import importlib.util
+import json
+import subprocess
 import sys
 import tempfile
 from pathlib import Path
@@ -194,5 +197,62 @@ for raw, expected in [("/e/x/.venv", "E:/x/.venv"), ("/e/x/*", "E:/x"), ("/ee/x"
                       ("'/c/a b/.venv'", "C:/a b/.venv")]:
     got = _rel(_venv._operand_path(raw, _BASE), _BASE)
     check(got == expected, f"venv operand {raw!r} is {expected!r} (got {got!r})")
+
+
+# Heredoc openers (fleet-config#1304), as each of the four callers read them.
+# Every case is `cat <opener> > f`, then an unquoted drive-path body line, then
+# the delimiter, so one command shows all four answers: whether `_lib` and
+# venv_discipline keep the body as shell text, which drive paths
+# bash_windows_path_guard refuses, and whether gh_body_file_guard nudges on the
+# same opener inside an inline `--body`.
+_bwp = _load("bash_windows_path_guard")
+_BODY = "E:\\x"
+
+
+def _gh_nudges(command: str) -> bool:
+    payload = json.dumps({"tool_name": "Bash", "tool_input": {"command": command}})
+    result = subprocess.run([sys.executable, str(REPO / "hooks" / "gh_body_file_guard.py")],
+                            input=payload, capture_output=True, text=True, timeout=30)
+    return bool(result.stdout.strip())
+
+
+# (opener, delimiter, lib keeps body, venv keeps body, bwp hits, gh nudges)
+HEREDOCS = [
+    ("<<EOF", "EOF", False, False, [], True),
+    ("<<'EOF'", "EOF", False, False, [], True),
+    ('<<"EOF"', "EOF", False, False, [], True),
+    ("<<-EOF", "EOF", False, False, [], True),
+    ("<< EOF", "EOF", False, False, [], True),
+    ("<<EOF1", "EOF1", False, False, [], True),
+    ("<<_x", "_x", False, False, [], True),
+    # The agreed standard (#1304) changed only these rows; the pre-#1304 answer
+    # is named per caller. Each change scans more text or nudges less, never
+    # skips text a guard used to read.
+    # A here-string has no body. Was: venv False, bwp [], gh True.
+    ("<<<EOF", "EOF", True, True, [_BODY], False),
+    # A digit delimiter. Was: bwp [], gh True.
+    ("<<1", "1", True, True, [_BODY], False),
+    ("<<'1'", "1", True, True, [_BODY], False),
+    # An unterminated quote; bwp's single-quote scan already covered the rest.
+    # Was: gh True.
+    ("<<'EOF", "EOF", True, True, [], False),
+    ("<<\\EOF", "EOF", True, True, [_BODY], False),
+]
+for opener, delim, lib_keeps, venv_keeps, bwp_hits, gh_nudge in HEREDOCS:
+    command = f"cat {opener} > f\n{_BODY}\n{delim}\necho done"
+    got = _BODY in _lib.strip_heredoc_bodies(command)
+    check(got == lib_keeps, f"_lib keeps the body after {opener!r}: {lib_keeps} (got {got})")
+    got = _BODY in _venv.strip_nonexecuted_heredoc_bodies(command)
+    check(got == venv_keeps, f"venv keeps the body after {opener!r}: {venv_keeps} (got {got})")
+    got = [m.group(0) for m in _bwp.find_unsafe_drive_paths(command)]
+    check(got == bwp_hits, f"bash_windows_path_guard hits after {opener!r}: {bwp_hits!r} (got {got!r})")
+    got = _gh_nudges(f'gh issue comment 5 --body "$(cat {opener}\nhi\n{delim}\n)"')
+    check(got == gh_nudge, f"gh_body_file_guard nudges on {opener!r}: {gh_nudge} (got {got})")
+
+# `<<-` lets the closing delimiter be tab-indented; bash_windows_path_guard
+# reads the dash to know the body ends there, not at the end of the command.
+command = f"cat <<-EOF > f\n\t{_BODY}\n\tEOF\nls {_BODY}"
+got = [m.group(0) for m in _bwp.find_unsafe_drive_paths(command)]
+check(got == [_BODY], f"bash_windows_path_guard ends a <<- body at a tab-indented delimiter (got {got!r})")
 
 _h.report_and_exit("test_shell_parse")

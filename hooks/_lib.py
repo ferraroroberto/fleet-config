@@ -445,7 +445,13 @@ def msys_to_drive(text: str) -> str:
     return f"{msys.group(1).upper()}:/{msys.group(2)}" if msys else text
 
 
-HEREDOC_RE = re.compile(r"""(?<!<)<<-?\s*(['"]?)([A-Za-z_][A-Za-z0-9_]*)\1""")
+# A heredoc opener: `<<EOF`, `<<'EOF'`, `<<"EOF"`, `<<-EOF`, `<< EOF`. Not a
+# `<<<word` here-string, which has no body, and not a delimiter that starts
+# with a digit or has an unclosed quote. Every heredoc-aware hook reads this one
+# pattern, so the guards agree on where a body is (fleet-config#1304).
+HEREDOC_RE = re.compile(
+    r"""(?<!<)<<(?P<dash>-)?\s*(?P<quote>['"]?)(?P<delim>[A-Za-z_][A-Za-z0-9_]*)(?P=quote)"""
+)
 
 
 def strip_heredoc_bodies(command: str) -> str:
@@ -458,7 +464,7 @@ def strip_heredoc_bodies(command: str) -> str:
                 pending.pop(0)
             continue
         kept.append(line)
-        pending.extend(match.group(2) for match in HEREDOC_RE.finditer(line))
+        pending.extend(match.group("delim") for match in HEREDOC_RE.finditer(line))
     return "\n".join(kept)
 
 
