@@ -26,7 +26,7 @@ present on a successful run:
               body_font_family, break_all [..], uppercase [..], glyph_icons [..]
     controls  total, font_family_mismatch [..], font_family_mismatch_count,
               boundary_low [..], boundary_low_count, ua_styled [..],
-              segmented_bad [..], segmented_bad_count, switch_count, switch_on_count, switches_on,
+              label_fit_bad [..], label_fit_bad_count, segmented_bad [..], segmented_bad_count, switch_count, switch_on_count, switches_on,
               icon_button_count, icon_buttons_painted [..], icon_buttons_painted_count,
               reference_pill_count, reference_pill_styles [..], reference_pill_variants
     targets   total, small [..], small_count, overlaps [..], overlap_count,
@@ -34,7 +34,7 @@ present on a successful run:
     icons     boxes {"WxH": n}, elements {"WxH": [{glyph, host, label}, ..]}
     nav       primary_count, pane_scroll_top, pane_header_visible, settings_tab_count
     feedback  toast_count, toasts_tinted [..], toasts_tinted_count
-    layout    overflow_x, scroll_w, inner_w, inner_h, pane_h, lists [..],
+    layout    control_overflow [..], control_overflow_count, overflow_x, scroll_w, inner_w, inner_h, pane_h, lists [..],
               rows_over_limit [..], danger_rows, content_w, content_span, radii {r: n}
     clearance bars [..], hidden_rows [..], hidden_row_count
     a11y      unnamed [..], unnamed_count, zoom_locked, text_size_control, text_size_stamped
@@ -77,6 +77,10 @@ BOUNDARY_CONTROL_SELECTOR = (
 GLYPH_ICON_RE = GLYPH_ICON_RENDERED_RE
 # A control's label is "short" up to this many characters; a glyph at either end of a longer run is punctuation (#1261).
 GLYPH_LABEL_MAX_CHARS = 24
+# A text run in a control is a label up to this many characters; a longer one is prose that may wrap (#1325).
+LABEL_FIT_MAX_CHARS = 40
+# Sub-pixel slack on label fit and container overflow: a 0.4px rounding spill is not a finding (#1325).
+FIT_TOLERANCE_PX = 1.5
 
 # `__GEOMETRY__` is replaced by `build_script`. The script is one arrow
 # function taking `params` so Playwright's `page.evaluate(script, params)`
@@ -227,13 +231,14 @@ _MEASURE_JS = r"""
     // absolutely/fixed positioned element (a badge, an sr-only label) is not part of the label's flow.
     const inFlow = (n, o) => { for (let e = n.parentElement; e && e !== o; e = e.parentElement) {
       const p = getComputedStyle(e).position; if (p === 'absolute' || p === 'fixed') return false; } return true; };
-    const lineCount = o => { const rs = []; const w = document.createTreeWalker(o, NodeFilter.SHOW_TEXT);
-      for (let n = w.nextNode(); n; n = w.nextNode()) { if (!n.textContent.trim() || !inFlow(n, o)) continue;
-        const r = document.createRange(); r.selectNodeContents(n);
-        [...r.getClientRects()].forEach(b => { if (b.width > 0 && b.height > 0) rs.push(b); }); }
-      rs.sort((a, b) => a.top - b.top); let lines = 0, bottom = -Infinity;
+    const linesOf = rs => { rs.sort((a, b) => a.top - b.top); let lines = 0, bottom = -Infinity;
       rs.forEach(b => { if (b.top >= bottom - 1) { lines++; bottom = b.bottom; } else bottom = Math.max(bottom, b.bottom); });
       return lines; };
+    const textRects = n => { const r = document.createRange(); r.selectNodeContents(n);
+      return [...r.getClientRects()].filter(b => b.width > 0 && b.height > 0); };
+    const lineCount = o => { const rs = []; const w = document.createTreeWalker(o, NodeFilter.SHOW_TEXT);
+      for (let n = w.nextNode(); n; n = w.nextNode()) { if (!n.textContent.trim() || !inFlow(n, o)) continue; rs.push(...textRects(n)); }
+      return linesOf(rs); };
     q('[role=tablist], [role=radiogroup], .segmented').filter(g => g !== primary).forEach(g => {
       const opts = [...g.querySelectorAll('[role=tab], [role=radio], button, label')].filter(visible);
       const wrapped = opts.some(o => lineCount(o) > 1);
@@ -280,11 +285,31 @@ _MEASURE_JS = r"""
         const key = [shape.h, shape.radius, shape.padding, shape.font].join('|');
         const v = pillStyles[key] || (pillStyles[key] = {...shape, count: 0, sel: sel(el), label: txt(el).slice(0,30)}); v.count++; });
     const pillVariants = Object.values(pillStyles).sort((a, b) => b.count - a.count);
+    // A control's label fits its box (#1325): a short label stays on one line, and its text and glyph stay inside the
+    // border box, side to side. A text run over labelFitMax characters is prose, not a label; text under an ellipsis on
+    // a clipped box is a deliberate truncation; segmented options are COMP-03's. Sideways only: a line box taller than a tight
+    // line-height reaches past the border box vertically on a healthy button.
+    const labelFit = [];
+    q('button, [role=button], a[href]').forEach(el => {
+      if (el.matches('[role=tab], [role=radio]') || el.closest('.segmented, [role=tablist], [role=radiogroup]')) return;
+      const st = getComputedStyle(el); if (el.tagName === 'A' && st.display === 'inline') return;
+      const box = el.getBoundingClientRect(); let lines = 1, left = Infinity, right = -Infinity;
+      const truncated = (n) => { for (let e = n.parentElement; e; e = e.parentElement) { const s = getComputedStyle(e);
+        if (s.textOverflow === 'ellipsis' && s.overflowX !== 'visible') return true; if (e === el) break; } return false; };
+      const w = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+      for (let n = w.nextNode(); n; n = w.nextNode()) { const t = n.textContent.trim(); if (!t || !inFlow(n, el)) continue;
+        const rs = textRects(n); if (!truncated(n)) rs.forEach(b => { left = Math.min(left, b.left); right = Math.max(right, b.right); });
+        if (t.length <= params.labelFitMax) lines = Math.max(lines, linesOf(rs)); }
+      el.querySelectorAll('svg, img').forEach(g => { const b = g.getBoundingClientRect(); if (b.width < 1 || !inFlow(g.firstChild || g, el)) return;
+        left = Math.min(left, b.left); right = Math.max(right, b.right); });
+      const spill = Math.max(box.left - left, right - box.right, 0);
+      if (lines > 1 || spill > params.fitTol) labelFit.push({sel: sel(el), label: txt(el).slice(0,30), lines, spill_px: Math.round(spill), w: Math.round(box.width)}); });
     return { total, font_family_mismatch: mism.slice(0,CAP), font_family_mismatch_count: mism.length,
       icon_button_count: iconButtons.length, icon_buttons_painted: painted.slice(0,CAP), icon_buttons_painted_count: painted.length,
       reference_pill_count: pillCount, reference_pill_styles: pillVariants.slice(0,CAP), reference_pill_variants: pillVariants.length,
       switch_count: switches.length, switch_on_count: switchesOn.length, switches_on: switchesOn.slice(0,CAP),
       boundary_low: lowB.slice(0,CAP), boundary_low_count: lowB.length, ua_styled: ua.slice(0,CAP), ua_styled_count: ua.length,
+      label_fit_bad: labelFit.slice(0,CAP), label_fit_bad_count: labelFit.length,
       segmented_bad: segs.slice(0,CAP), segmented_bad_count: segs.length };
   });
 
@@ -465,7 +490,26 @@ _MEASURE_JS = r"""
       const r = el.getBoundingClientRect();
       if (r.left >= content.right - 2 && r.height >= window.innerHeight * 0.5 && r.width >= window.innerWidth * 0.2)
         spanRight = Math.max(spanRight, r.right); });
-    return { overflow_x: de.scrollWidth > window.innerWidth + 1, scroll_w: de.scrollWidth, inner_w: window.innerWidth, inner_h: window.innerHeight,
+    // A control past the side of its own container (#1325): the nearest ancestor that clips, is a dialog or draws a
+    // box. The page need not scroll for it to be broken (a dialog card clips or scrolls its own overflow). A
+    // scroller that is none of those, or snaps, scrolls its controls on purpose; a control in a fixed layer inside the
+    // container is positioned against the viewport, not the container.
+    const drawsBox = (a, st) => rgba(st.backgroundColor)[3] > 0.02
+      || ['Left','Right'].some(k => (parseFloat(st['border'+k+'Width']) || 0) > 0 && !['none','hidden'].includes(st['border'+k+'Style']));
+    const containerOf = (el) => { for (let a = el.parentElement; a && a !== document.body && a !== document.documentElement; a = a.parentElement) {
+      const st = getComputedStyle(a); if (st.display === 'contents') continue;
+      const boxed = a.matches('dialog, [role=dialog]') || drawsBox(a, st);
+      if (st.overflowX === 'auto' || st.overflowX === 'scroll') { if (boxed && st.scrollSnapType === 'none') return a; return null; }
+      if (st.overflowX === 'hidden' || st.overflowX === 'clip' || boxed) return a; }
+      return null; };
+    const spilled = [];
+    q(params.interactive).filter(visible).forEach(el => {
+      const c = containerOf(el); if (!c) return;
+      const layer = layerOf(el); if (layer && layer !== c && c.contains(layer)) return;
+      const r = el.getBoundingClientRect(), cr = c.getBoundingClientRect(), left = cr.left + c.clientLeft, right = left + c.clientWidth;
+      const over = Math.max(left - r.left, r.right - right);
+      if (over > params.fitTol) spilled.push({sel: sel(el), label: txt(el).slice(0,30), container: sel(c), over_px: Math.round(over), side: r.right - right >= left - r.left ? 'right' : 'left'}); });
+    return { control_overflow: spilled.slice(0,CAP), control_overflow_count: spilled.length, overflow_x: de.scrollWidth > window.innerWidth + 1, scroll_w: de.scrollWidth, inner_w: window.innerWidth, inner_h: window.innerHeight,
       pane_h: pane.scrollHeight, lists: lists.slice(0,CAP), rows_over_limit: rowsOver.slice(0,CAP), rows_over_limit_count: rowsOver.length,
       danger_rows: dangerRows.size, content_w: Math.round(content.width), content_span: Math.round(spanRight - content.left), radii };
   });
@@ -601,6 +645,8 @@ def default_params(
         "boundaryControls": BOUNDARY_CONTROL_SELECTOR,
         "glyphRe": GLYPH_ICON_RE,
         "glyphLabelMax": GLYPH_LABEL_MAX_CHARS,
+        "labelFitMax": LABEL_FIT_MAX_CHARS,
+        "fitTol": FIT_TOLERANCE_PX,
         "excludeSelectors": [str(s) for s in exclude_selectors],
     }
 
@@ -643,15 +689,15 @@ def metric_paths() -> List[str]:
                  "low_contrast", "low_contrast_count", "body_font_family", "break_all",
                  "break_all_count", "uppercase", "uppercase_count", "glyph_icons", "glyph_icon_count"],
         "controls": ["total", "font_family_mismatch", "font_family_mismatch_count", "boundary_low",
-                     "boundary_low_count", "ua_styled", "ua_styled_count", "segmented_bad", "segmented_bad_count",
-                     "switch_count", "switch_on_count", "switches_on", "icon_button_count", "icon_buttons_painted",
+                     "boundary_low_count", "ua_styled", "ua_styled_count", "label_fit_bad", "label_fit_bad_count",
+                     "segmented_bad", "segmented_bad_count", "switch_count", "switch_on_count", "switches_on", "icon_button_count", "icon_buttons_painted",
                      "icon_buttons_painted_count", "reference_pill_count", "reference_pill_styles", "reference_pill_variants"],
         "targets": ["total", "small", "small_count", "overlaps", "overlap_count", "covered", "covered_count",
                     "primary", "primary_min_height", "in_summary"],
         "icons": ["boxes", "elements"],
         "nav": ["primary_count", "pane_scroll_top", "pane_header_visible", "settings_tab_count", "settings_tabs"],
         "feedback": ["toast_count", "toasts_tinted", "toasts_tinted_count"],
-        "layout": ["overflow_x", "scroll_w", "inner_w", "inner_h", "pane_h", "lists", "rows_over_limit",
+        "layout": ["control_overflow", "control_overflow_count", "overflow_x", "scroll_w", "inner_w", "inner_h", "pane_h", "lists", "rows_over_limit",
                    "rows_over_limit_count", "danger_rows", "content_w", "content_span", "radii"],
         "clearance": ["bars", "hidden_rows", "hidden_row_count"],
         "a11y": ["unnamed", "unnamed_count", "zoom_locked", "text_size_control", "text_size_stamped"],
