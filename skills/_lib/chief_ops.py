@@ -299,6 +299,10 @@ FLEET_JOB_PATTERNS = (
 FLEET_WIDE_BRIEF_RE = re.compile(r"/(?:propagate-vendored|cleanup-fleet)\b")
 # `/api/jobs` shells out to schtasks per job: ~4 s cold, well under 1 s warm.
 JOBS_TIMEOUT = 30.0
+# `POST /api/board/issues/start` spawns the PTY before answering: 12.5/15.8/22.5/
+# 41.2 s under load (fleet-config#1329). A client that gives up at the 10 s
+# default leaves the server spawning anyway, and a blind retry then double-spawns.
+DISPATCH_TIMEOUT = 120.0
 
 
 # ---- loopback guard (pure) -------------------------------------------------
@@ -1299,7 +1303,21 @@ def cmd_dispatch(args: argparse.Namespace) -> int:
         body["model"] = args.model
     if brief is not None:
         body["brief"] = brief
-    result = _request(args.base_url, "/api/board/issues/start", method="POST", body=body)
+    try:
+        result = _request(args.base_url, "/api/board/issues/start", method="POST", body=body,
+                          timeout=DISPATCH_TIMEOUT)
+    except (TimeoutError, urllib.error.URLError) as exc:
+        reason = exc.reason if isinstance(exc, urllib.error.URLError) else exc
+        if not isinstance(reason, TimeoutError):
+            raise  # refused/unreachable: nothing was spawned, a plain failure
+        # The server may still be spawning -- never a refusal, never a blind retry.
+        print(
+            f"DISPATCH=unconfirmed reason=timeout repo={args.repo} issue={args.number}\n"
+            f"The launcher may still be spawning this lane. Poll `chief_ops.py sessions` "
+            f"for up to a minute and do NOT dispatch again until it shows no {args.repo} "
+            f"session; a retry before then double-spawns."
+        )
+        return 1
     sid = (result.get("session") or {}).get("session_id")
     if sid:
         try:

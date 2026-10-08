@@ -565,9 +565,10 @@ check(
 # set exactly as a live session carries it.
 
 def _run_dispatch(cards, env_sid, repo="fleet-config", number=838, brief_file=None,
-                  jobs=None, allow_during_fleet_job=False):
+                  jobs=None, allow_during_fleet_job=False, start_exc=None):
     posted = []
     requested = []
+    _run_dispatch.start_timeout = None
 
     def _fake_request(base_url, path, method="GET", body=None, timeout=10.0):
         requested.append(path)
@@ -581,6 +582,9 @@ def _run_dispatch(cards, env_sid, repo="fleet-config", number=838, brief_file=No
             return {"settings": {"worker_cap": 3}}
         if path == "/api/board/issues/start":
             posted.append(body)
+            _run_dispatch.start_timeout = timeout
+            if start_exc is not None:
+                raise start_exc
             launched = f"/issue-{body['mode']} {body['number']}"
             if "brief" in body:
                 launched += " --brief E:/automation/app-launcher/webapp/briefs/0f.md"
@@ -669,6 +673,41 @@ try:
               f"cmd_dispatch --brief-file: {_name} is refused before any request")
 finally:
     shutil.rmtree(_brief_tmp, ignore_errors=True)
+
+
+# ---- cmd_dispatch timeout: an unconfirmed spawn is not a failure (#1329) ----
+#
+# The launcher spawns the lane even after a slow client gives up (22 s and 41 s
+# observed), so a timed-out dispatch must say "poll sessions before retrying"
+# instead of tracebacking -- the blind retry spawned a second lane. The POST
+# gets its own long timeout, like JOBS_TIMEOUT, well above the observed 41 s.
+
+_run_dispatch([_chief_card], _CHIEF_SID, repo="photo-ocr")
+check(getattr(co, "DISPATCH_TIMEOUT", 0) >= 90.0
+      and _run_dispatch.start_timeout == getattr(co, "DISPATCH_TIMEOUT", None),
+      "cmd_dispatch: the start POST uses DISPATCH_TIMEOUT (>= 90 s), not the 10 s default (#1329)")
+
+for _label, _exc in (
+    ("read timeout", TimeoutError("timed out")),
+    ("connect timeout (URLError wrapping one)", co.urllib.error.URLError(TimeoutError("timed out"))),
+):
+    try:
+        rc, posted = _run_dispatch([_chief_card], _CHIEF_SID, repo="photo-ocr", start_exc=_exc)
+    except Exception as _raised:  # noqa: BLE001 - the pre-fix traceback is what's under test
+        check(False, f"cmd_dispatch: {_label} must not raise ({type(_raised).__name__})")
+        continue
+    _out = _run_dispatch.last_output
+    check(rc == 1 and len(posted) == 1 and "DISPATCH=unconfirmed reason=timeout" in _out
+          and "sessions" in _out and "DISPATCHED" not in _out and "REFUSED" not in _out,
+          f"cmd_dispatch: {_label} -> DISPATCH=unconfirmed with poll-sessions guidance (#1329)")
+
+# A refused connection is a real failure, not an unconfirmed spawn: it still raises.
+try:
+    _run_dispatch([_chief_card], _CHIEF_SID, repo="photo-ocr",
+                  start_exc=co.urllib.error.URLError(ConnectionRefusedError("refused")))
+    check(False, "cmd_dispatch: a refused connection must still raise, not read as unconfirmed")
+except co.urllib.error.URLError:
+    check(True, "cmd_dispatch: a refused connection is not mislabelled unconfirmed (#1329)")
 
 
 # ---- fleet-wide jobs: warn on dispatch, refuse fleet-wide lanes (#1078) -----
