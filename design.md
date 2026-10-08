@@ -463,6 +463,13 @@ identically; treat every bullet as a hard requirement, not a suggestion.
   become the **left rail** of the wide layout (Layout): a vertical stack of
   icon-over-label tabs. The behavior (single active tab, `aria-selected`,
   persistence) is unchanged; only the placement differs.
+- **A tab may carry a count badge** when something on another tab needs the
+  user (a pending queue). It is `rounded.pill`, `caption` size, 16px minimum
+  height in px, `attention` fill with `card` text (4.5:1 in both themes), on
+  the icon's top-right corner in the pill, the inline tabs and the rail. 1–9
+  show the digit, 10 or more show "9+"; 0 removes it. It is never animated,
+  and the tab's accessible name carries the count ("Board, 2 waiting"). Use
+  the vendored `setBadge`, never a per-app badge (project-scaffolding#338).
 - **Focus is visible and identical everywhere.** One tokenized rule —
   `:focus-visible { outline: 2px solid {colors.accent}; outline-offset: 2px }` —
   covers *every* interactive element (button, input, switch, summary, tab)
