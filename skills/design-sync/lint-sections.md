@@ -200,7 +200,8 @@ read.
     `architecture/README.md`, fleet-config#836). The row keeps the original
     detail plus `accepted.raised_status`, `reason`, `record`, and `verified`
     (what the declared assertion proved this run). It matches only the exact
-    check + target + detail it accepted, and its assertion is re-run each
+    check + target + detail it accepted (an entry with no `target` matches
+    only a repo-level finding, and its detail only when it names one), and its assertion is re-run each
     time: if that fails or can't be established, the row comes back as
     WARN/FAIL with the reason appended. **`accepted-exception` WARN** rows
     report a declaration that is malformed or matched nothing. That is a real
