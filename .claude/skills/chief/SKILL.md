@@ -223,6 +223,11 @@ just the launcher call):
   while one runs and refuses a fleet-wide brief (`/propagate-vendored`,
   `/cleanup-fleet`) until it finishes. Prefer waiting for a fleet-wide job
   to finish over `--allow-during-fleet-job` (fleet-config#1078).
+  **`DISPATCH=unconfirmed reason=timeout` is not a failure and not a refusal**
+  (fleet-config#1329): the launcher may still be spawning. Poll
+  `chief_ops.py sessions` for up to a minute and never dispatch again blind
+  (a retry double-spawns). If the lane appears, mark it by hand:
+  `chief_managed.py mark <sid> <repo> <number>`.
   **The brief goes in `--brief-file`, at dispatch time, always**
   (fleet-config#944). Write it to a scratch file first. The launcher stores
   it and launches the lane as `/issue-<mode> <N> --brief <path>` (echoed back
