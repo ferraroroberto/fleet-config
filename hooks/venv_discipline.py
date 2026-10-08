@@ -235,12 +235,6 @@ def strip_nonexecuted_heredoc_bodies(cmd: str) -> str:
 # operand from the exact command that caused fleet-config#847.
 _CMD_SWITCH_RE = re.compile(r"^/[A-Za-z]{1,3}$")
 
-# Git Bash hands us MSYS paths; `Path("/e/automation/x")` has a root but no
-# drive on Windows, so it is not `is_absolute()` and would be joined onto the
-# payload cwd. Translate it back to the drive form first.
-_MSYS_DRIVE_RE = re.compile(r"^/([A-Za-z])/(.*)$")
-
-
 # PowerShell resolves any unambiguous prefix of a parameter name, so `-r`,
 # `-rec` and `-Recurse` are all the same switch.
 _PS_RECURSE_RE = re.compile(r"^-r(?:e(?:c(?:u(?:r(?:s(?:e)?)?)?)?)?)?$", re.IGNORECASE)
@@ -257,10 +251,7 @@ def _operand_path(raw: str, base: Path) -> Path:
     `rm -rf *` long after the hook has seen the command string, so the only
     honest question left is whether that directory holds the junction.
     """
-    text = raw.strip().strip("'\"")
-    msys = _MSYS_DRIVE_RE.match(text)
-    if msys:
-        text = f"{msys.group(1).upper()}:/{msys.group(2)}"
+    text = _lib.msys_to_drive(raw.strip().strip("'\""))
     if any(ch in text for ch in "*?["):
         text = text.replace("\\", "/").rsplit("/", 1)[0] if "/" in text.replace("\\", "/") else "."
     path = Path(text)
@@ -576,9 +567,6 @@ def _clauses_for(verb: str, operands: List[str], base: Path) -> List[Clause]:
 # subshells are out of scope and keep that conservative reading.
 
 _CHAIN_SPLIT_RE = re.compile("(" + _SEGMENT_SPLIT_RE.pattern + ")")
-_CD_VERBS = {"cd", "chdir", "set-location", "sl"}
-_PUSH_VERBS = {"pushd", "push-location"}
-_POP_VERBS = {"popd", "pop-location"}
 _UNKNOWN_DIR_RE = re.compile(r"[$`*?\[\](){}]|^~")
 
 
@@ -658,7 +646,7 @@ def directory_change(segment: str, base: Path,
     if not tokens:
         return None
     verb = tokens[0].lower()
-    if verb not in _CD_VERBS | _PUSH_VERBS | _POP_VERBS:
+    if verb not in _lib.CD_VERBS | _lib.PUSH_VERBS | _lib.POP_VERBS:
         return None
     args: List[str] = []
     rest = tokens[1:]
@@ -673,7 +661,7 @@ def directory_change(segment: str, base: Path,
                 j += 1
             continue
         args.append(token)
-    if verb in _POP_VERBS:
+    if verb in _lib.POP_VERBS:
         return ("pop", stack[-1]) if stack and not args else None
     operands = [t for t in args if not _is_flag(t)]
     if len(operands) != 1 or _UNKNOWN_DIR_RE.search(operands[0]):
@@ -684,7 +672,7 @@ def directory_change(segment: str, base: Path,
             return None
     except (OSError, ValueError):
         return None
-    return ("push" if verb in _PUSH_VERBS else "cd"), target
+    return ("push" if verb in _lib.PUSH_VERBS else "cd"), target
 
 
 def destructive_clauses(cmd: str, base: Path) -> List[Clause]:

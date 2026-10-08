@@ -89,14 +89,9 @@ MAX_BODY_BYTES = 1 << 20
 _CONTINUATION_RE = re.compile(r"[\\`]\r?\n")
 _SEGMENT_SPLIT_RE = re.compile(r"[\n;|&]+")
 
-# Git Bash hands us MSYS paths; `Path("/e/automation/x")` has no drive on
-# Windows, so translate it back to the drive form before resolving.
-_MSYS_DRIVE_RE = re.compile(r"^/([A-Za-z])/(.*)$")
-
 # Segment verbs that move the directory a later relative `--body-file` resolves
-# against (Bash and PowerShell spellings; PowerShell's are case-insensitive).
-_CD_VERBS = frozenset({"cd", "set-location", "sl", "chdir", "pushd", "push-location"})
-_POP_VERBS = frozenset({"popd", "pop-location"})
+# against. A push moves it like a cd; a pop makes the base unknown.
+_CD_VERBS = _lib.CD_VERBS | _lib.PUSH_VERBS
 
 
 def _cd_target(words: List[str]) -> Optional[str]:
@@ -132,7 +127,7 @@ def body_file_operands(cmd: str, base: Path) -> List[Tuple[str, Optional[Path]]]
             if verb in _CD_VERBS:
                 target = _cd_target(words)
                 current = _resolve(target, current) if target is not None else None
-            elif verb in _POP_VERBS:
+            elif verb in _lib.POP_VERBS:
                 current = None
             continue
         words = _lib.shell_words(segment[match.end():])
@@ -162,10 +157,7 @@ def _resolve(raw: str, base: Optional[Path]) -> Optional[Path]:
     text = raw.strip()
     if not text or text == "-" or "$" in text or "`" in text or text.startswith("("):
         return None
-    msys = _MSYS_DRIVE_RE.match(text)
-    if msys:
-        text = f"{msys.group(1).upper()}:/{msys.group(2)}"
-    path = Path(text).expanduser()
+    path = Path(_lib.msys_to_drive(text)).expanduser()
     if path.is_absolute():
         return path
     return base / path if base is not None else None

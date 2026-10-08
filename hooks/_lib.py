@@ -424,6 +424,27 @@ def shell_words(text: str) -> list[str]:
     ]
 
 
+# Directory-changing verbs, Bash and PowerShell spellings, compared lowercased
+# (fleet-config#1304). `secret_scan_guard` and `venv_discipline` each follow a
+# chain's `cd`s with their own tracker, since they differ on purpose about a
+# push and a pop, but they agree on which words move the directory.
+CD_VERBS = frozenset({"cd", "chdir", "set-location", "sl"})
+PUSH_VERBS = frozenset({"pushd", "push-location"})
+POP_VERBS = frozenset({"popd", "pop-location"})
+_MSYS_DRIVE_RE = re.compile(r"^/([A-Za-z])/(.*)$")
+
+
+def msys_to_drive(text: str) -> str:
+    """`/e/automation/x` as `E:/automation/x`; any other text unchanged.
+
+    Git Bash hands the hooks MSYS paths, and `Path("/e/x")` has a root but no
+    drive on Windows, so it is not `is_absolute()` and would be joined onto the
+    payload cwd.
+    """
+    msys = _MSYS_DRIVE_RE.match(text)
+    return f"{msys.group(1).upper()}:/{msys.group(2)}" if msys else text
+
+
 HEREDOC_RE = re.compile(r"""(?<!<)<<-?\s*(['"]?)([A-Za-z_][A-Za-z0-9_]*)\1""")
 
 
