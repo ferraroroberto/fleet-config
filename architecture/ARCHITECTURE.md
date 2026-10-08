@@ -130,7 +130,7 @@ The **work layer**, enabled by L2. Most mature ones are **web apps exposing an A
 | 💳 **accounting-quarterly** | Classifies Stripe payments by activity + region → quarterly reports. | pipeline | **Stripe** |
 | 📊 **social-media-analytics** | Analyse + predict social-content performance (2.5y of data). | pipeline | — |
 | 💡 **inspiration-system** | Paste an idea → 10 ranked illustration suggestions from the Notion archive. | pipeline | **Notion**, hub |
-| 📝 **content-management** | Four content pipelines in one repo. | pipeline | **Notion** |
+| 📝 **content-management** | Content surfaces: reporting, planning, newsletter, podcast, demo videos and more. | pipeline | **Notion** |
 | 📧 **email-archiver** | Index + archive Outlook emails into a structured OneDrive tree; its index (follow-up flags) and headless batch CLI (plan/apply/revert/renumber over the whole Inbox or targeted mail, plus draft/read/send verbs guarded by a live-fingerprint match, JSON I/O) feed task-os and life-os. | pipeline | **Outlook → OneDrive** |
 | 📄 **pdf-to-markdown** | PDF → clean, token-efficient Markdown for LLM consumption. | pipeline/lib | — |
 | 🧾 **mass-html-to-markdown** | Ingest HTML comparison pages → SQLite → Markdown. | pipeline | — |
