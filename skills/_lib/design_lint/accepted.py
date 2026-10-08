@@ -7,7 +7,16 @@ local-llm-hub's generated set and the fork refuses the generator dependency.
 With nowhere to record that verdict, `/design-sync` re-filed it four times
 (lite#1/#18/#21/#23, fleet-config#836).
 
-A repo declares the verdict once, in its own `.fleet.toml`:
+A repo declares the verdict once, in its own `.fleet.toml`. The minimal entry
+accepts a repo-level finding, one with no evidence file such as
+`rendered-leg` (fleet-config#1322):
+
+    [[design.accepted]]
+    check  = "rendered-leg"
+    reason = "no live instance on this host; the rendered leg runs in CI"
+
+Adding `detail` pins it to that exact detail. A finding with an evidence file
+needs `target` and `detail`:
 
     [[design.accepted]]
     check        = "app-icon-family"                # contracts id
@@ -20,8 +29,10 @@ A repo declares the verdict once, in its own `.fleet.toml`:
 
 Three rules keep an exception from becoming permanent blindness:
 
-- It matches only the exact `detail` it accepted. A new problem in the same
-  check changes the detail, so the finding is raised again.
+- It matches only the exact `detail` it accepted, when it names one. A new
+  problem in the same check changes the detail, so the finding is raised
+  again. An entry without `target` never matches a finding that has an
+  evidence file.
 - A declared assertion is re-verified every run: each path's committed blob
   must hash identical in both repos. A mismatch, or anything that stops the
   comparison being made at all (missing sibling repo, unreadable blob), keeps
@@ -53,7 +64,10 @@ import git_run  # noqa: E402
 
 
 ROW_ID = "accepted-exception"
-_REQUIRED = ("check", "target", "detail", "reason")
+_REQUIRED = ("check", "reason")
+# A `target` pins the entry to one evidence file, and then the exact `detail`
+# is required too, as it always was.
+_REQUIRED_WITH_TARGET = ("check", "target", "detail", "reason")
 _LINE_SUFFIX_RE = re.compile(r":\d+$")
 
 
@@ -95,7 +109,11 @@ def load_accepted(root: Path) -> Tuple[List[dict], List[dict]]:
             # read by `design_review.filing.load_accepted_rules`, not a
             # `design_lint` contract finding — neither a match nor a problem here.
             continue
-        missing = [k for k in _REQUIRED
+        if "target" in entry:
+            required = _REQUIRED_WITH_TARGET
+        else:
+            required = _REQUIRED + (("detail",) if "detail" in entry else ())
+        missing = [k for k in required
                    if not isinstance(entry.get(k), str) or not entry[k].strip()]
         if missing:
             problems.append(_row(f"{label} ignored: missing {', '.join(missing)}"))
@@ -145,11 +163,15 @@ def verify(root: Path, entry: dict) -> Tuple[str, str]:
 
 
 def _matches(entry: dict, finding: dict) -> bool:
+    """A targeted entry matches its file and exact detail. One without `target`
+    matches only a repo-level finding (no evidence file), and its detail only
+    when it gives one."""
+    if finding.get("status") not in ("WARN", "FAIL") or finding.get("id") != entry["check"]:
+        return False
     evidence = _LINE_SUFFIX_RE.sub("", finding.get("evidence") or "")
-    return (finding.get("status") in ("WARN", "FAIL")
-            and finding.get("id") == entry["check"]
-            and evidence == entry["target"]
-            and finding.get("detail") == entry["detail"])
+    if "target" not in entry:
+        return not evidence and finding.get("detail") == entry.get("detail", finding.get("detail"))
+    return evidence == entry["target"] and finding.get("detail") == entry["detail"]
 
 
 def apply_accepted(root: Path, checks: List[dict]) -> List[dict]:
@@ -191,7 +213,8 @@ def apply_accepted(root: Path, checks: List[dict]) -> List[dict]:
         })
     for entry in entries:
         if entry["_label"] not in used:
+            scope = f"on {entry['target']}" if "target" in entry else "repo-level"
             out_rows.append(_row(
-                f"{entry['_label']} ({entry['check']} on {entry['target']}) matched no "
+                f"{entry['_label']} ({entry['check']} {scope}) matched no "
                 "current WARN/FAIL finding with that exact detail; update or remove it"))
     return result + out_rows

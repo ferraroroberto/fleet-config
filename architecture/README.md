@@ -150,9 +150,24 @@ as `[vendored]` above — adding `[cert]` costs nothing on the map-build path.
 ### Optional per-repo `[[design.accepted]]` table (fleet-config#836)
 
 A repo that examined a `design_lint` contract finding and accepted it records
-that verdict here. The typical case is a fork whose divergence from upstream is
-deliberate. Without this, `/design-sync` files the same finding again on every
-sweep: local-llm-hub-lite's `app-icon-family` FAIL was filed four times.
+that verdict here. This table in the repo's own `.fleet.toml` is the **only**
+place a design exception lives: not `CLAUDE.md` prose, not TOML comments, which
+the lint never reads. Without an entry, `/design-sync` files the same finding
+again on every sweep: local-llm-hub-lite's `app-icon-family` FAIL was filed
+four times.
+
+The minimal entry is two lines. It accepts a repo-level finding, one with no
+evidence file (for example `rendered-leg`) (fleet-config#1322):
+
+```toml
+[[design.accepted]]
+check  = "rendered-leg"
+reason = "no live instance on this host; the rendered leg runs in CI"
+```
+
+A finding that names an evidence file also needs `target` and its exact
+`detail`. The typical case is a fork whose divergence from upstream is
+deliberate:
 
 ```toml
 [[design.accepted]]
@@ -167,10 +182,10 @@ paths        = ["app_web/static/icon-180.png", "app_web/static/manifest.webmanif
 
 | Field | Meaning |
 |---|---|
-| `check` | required; a `contracts` result id |
-| `target` | required; the finding's evidence file, repo-relative, line number dropped |
-| `detail` | required; the finding's exact detail string. When a new problem appears in the same check, the detail changes and the finding is raised again |
+| `check` | required; a `contracts` result id (the finding's `id`) |
 | `reason` | required; one line saying why the finding is accepted |
+| `target` | optional; the finding's evidence file, repo-relative, line number dropped. Without it, the entry matches only a finding with no evidence file |
+| `detail` | required with `target`, optional without; the finding's exact detail string. When a new problem appears in the same check, the detail changes and the finding is raised again. Without `detail`, a repo-level entry accepts that check whatever its detail says |
 | `record` | optional; link to where it was triaged |
 | `identical_to` + `paths` | optional, and only as a pair: a repo path, relative to this repo's root, plus the files whose **committed** blobs must hash identical in both repos |
 

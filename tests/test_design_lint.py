@@ -2071,5 +2071,40 @@ check(modal_accepted["rows"]["modal-header"]["status"] == "ACCEPTED"
       and not modal_accepted["warns"],
       "a modal-header FAIL is accepted via [[design.accepted]], no stray WARN")
 
+# A repo-level finding has no evidence file, so no `target` can name it. The
+# minimal two-line entry (`check` + `reason`) accepts it (fleet-config#1322).
+RENDERED_LEG = '[[design.accepted]]\ncheck = "rendered-leg"\nreason = "no live instance here"\n'
+leg_raised = baseline["rows"]["rendered-leg"]
+check(leg_raised["status"] == "WARN" and not leg_raised["evidence"],
+      "rendered-leg WARN is repo-level: it carries no evidence file")
+minimal = lint_accepted(RENDERED_LEG)
+leg = minimal["rows"]["rendered-leg"]
+check(leg["status"] == "ACCEPTED" and leg["detail"] == leg_raised["detail"]
+      and leg["accepted"]["raised_status"] == "WARN"
+      and leg["accepted"]["reason"] == "no live instance here"
+      and not minimal["warns"],
+      "check + reason alone accepts a repo-level finding, still listed, no stray WARN")
+pinned = lint_accepted(RENDERED_LEG + f"detail = {json.dumps(leg_raised['detail'])}\n")
+check(pinned["rows"]["rendered-leg"]["status"] == "ACCEPTED" and not pinned["warns"],
+      "a repo-level entry with the finding's exact detail accepts it")
+changed = lint_accepted(RENDERED_LEG + 'detail = "an older detail"\n')
+check(changed["rows"]["rendered-leg"]["status"] == "WARN"
+      and any("matched no current" in w for w in changed["warns"]),
+      "a repo-level entry whose detail changed re-raises the finding and reports the entry")
+untargeted = lint_accepted('[[design.accepted]]\ncheck = "app-icon-family"\nreason = "r"\n')
+check(untargeted["rows"]["app-icon-family"]["status"] == "FAIL"
+      and any("matched no current" in w for w in untargeted["warns"]),
+      "an entry without target never accepts a finding that has an evidence file")
+nothing = lint_accepted('[[design.accepted]]\ncheck = "no-such-check"\nreason = "r"\n')
+check(any("no-such-check" in w and "matched no current" in w for w in nothing["warns"]),
+      "a minimal entry whose check matches nothing is a stale-declaration WARN")
+no_detail = lint_accepted(accepted_toml(detail=None), upstream=UPSTREAM_SAME)
+check(no_detail["rows"]["app-icon-family"]["status"] == "FAIL"
+      and any("missing detail" in w for w in no_detail["warns"]),
+      "a targeted entry still needs its detail, exactly as before")
+no_check = lint_accepted('[[design.accepted]]\nreason = "r"\n')
+check(any("missing check" in w for w in no_check["warns"]),
+      "an entry without check is ignored and reported")
+
 
 _h.report_and_exit("design_lint")
