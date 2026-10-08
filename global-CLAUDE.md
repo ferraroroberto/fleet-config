@@ -140,13 +140,9 @@ Keep at most **3 background Opus sub-agents in flight** (sliding window: dispatc
 
 ## Project fleet
 
-### `project-scaffolding` is the canonical master
+### `project-scaffolding` is the canonical master — propagate conventions up to it
 
-`E:\automation\project-scaffolding` (`ferraroroberto/project-scaffolding`) is the scaffold repo whose `CLAUDE.md` sister projects derive theirs from; its `docs/playwright-ui-testing.md` is the shared e2e-testing reference. It follows the branch/PR pipeline and issue defaults above exactly.
-
-### Propagate generalizable conventions up to scaffolding
-
-Sister-project work producing a *generalizable convention* (testing pattern, CLAUDE.md rule, workflow) routes up to `project-scaffolding` — ad-hoc per-project divergence was explicitly rejected.
+`E:\automation\project-scaffolding` (`ferraroroberto/project-scaffolding`) is the scaffold repo whose `CLAUDE.md` sister projects derive theirs from; its `docs/playwright-ui-testing.md` is the shared e2e-testing reference. Sister-project work producing a *generalizable convention* (testing pattern, CLAUDE.md rule, workflow) routes up to `project-scaffolding` — ad-hoc per-project divergence was explicitly rejected.
 
 - Per-project *instances* (real script names, paths) stay in the project's own CLAUDE.md; the reusable *concept* goes to scaffolding.
 - Check for an existing `project-scaffolding` issue first; otherwise file one (master's template + label + `--assignee @me`).
