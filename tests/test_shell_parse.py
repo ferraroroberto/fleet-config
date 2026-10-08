@@ -1,9 +1,10 @@
-"""Table-driven tests for the hooks' shared shell tokenisers (fleet-config#1304).
+"""Table-driven tests for the hooks' shared shell parsing (fleet-config#1304).
 
 Standalone: the guards split a command three different ways, and each split is
-load-bearing for the guard that uses it. These tables pin every split to the
-behaviour the per-hook copies had before they moved into `hooks/_lib.py`, so the
-move is proven to change nothing a guard refuses. `hooks/` is junctioned live
+load-bearing for the guard that uses it. These tables pin every split, and the
+directory-change verbs and MSYS path translation two guards follow, to the
+behaviour the per-hook copies had before they moved into `hooks/_lib.py`, so
+each move is proven to change nothing a guard refuses. `hooks/` is junctioned live
 into every `~/.claude/hooks`, so a silent split change would land fleet-wide on
 merge.
 
@@ -13,7 +14,9 @@ Exit 0 = all pass.
 
 from __future__ import annotations
 
+import importlib.util
 import sys
+import tempfile
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
@@ -26,6 +29,18 @@ from check_harness import CheckHarness  # noqa: E402
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")
 
+
+
+
+def _load(name: str):
+    spec = importlib.util.spec_from_file_location(name, REPO / "hooks" / f"{name}.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+_secret_scan = _load("secret_scan_guard")
+_venv = _load("venv_discipline")
 
 _h = CheckHarness()
 check = _h.check
@@ -131,5 +146,53 @@ for command, expected in CASES:
     for split, tokens in expected.items():
         got = SPLITS[split](command)
         check(got == tokens, f"{split} split of {command!r}: {tokens!r} (got {got!r})")
+
+def _rel(path, base: Path):
+    """`path` as posix text with `base` shown as `<base>`, so tables stay portable."""
+    return None if path is None else path.as_posix().replace(base.as_posix(), "<base>")
+
+
+# Directory-change verbs (fleet-config#1304): every Bash and PowerShell spelling,
+# case-insensitive, as each tracker followed it before the verb sets moved to
+# `_lib`. secret_scan_guard reads a push like a cd and forgets the base on a pop;
+# venv_discipline keeps a push stack and only follows a directory that exists.
+_BASE = Path("C:/base")
+SECRET_SCAN_CD = [
+    ("cd sub", "<base>/sub"), ("chdir sub", "<base>/sub"), ("Set-Location sub", "<base>/sub"),
+    ("SL sub", "<base>/sub"), ("pushd sub", "<base>/sub"), ("Push-Location sub", "<base>/sub"),
+    ("CD sub", "<base>/sub"), ("popd", None), ("Pop-Location", None), ("cd -", None),
+    ("cd /e/automation", "E:/automation"), ("dir sub", "<base>"),
+]
+for verb, expected in SECRET_SCAN_CD:
+    got = [(op, _rel(b, _BASE)) for op, b in _secret_scan.body_file_operands(
+        f"{verb} && gh issue create --body-file b.md", _BASE)]
+    check(got == [("b.md", expected)], f"secret_scan cd tracking after {verb!r}: {expected!r} (got {got!r})")
+
+with tempfile.TemporaryDirectory() as tmp:
+    base = Path(tmp)
+    (base / "sub").mkdir()
+    VENV_CD = [
+        ("cd sub", [], ("cd", "<base>/sub")), ("chdir sub", [], ("cd", "<base>/sub")),
+        ("Set-Location sub", [], ("cd", "<base>/sub")), ("SL sub", [], ("cd", "<base>/sub")),
+        ("CD sub", [], ("cd", "<base>/sub")), ("pushd sub", [], ("push", "<base>/sub")),
+        ("Push-Location sub", [], ("push", "<base>/sub")),
+        ("popd", [base / "sub"], ("pop", "<base>/sub")),
+        ("Pop-Location", [base / "sub"], ("pop", "<base>/sub")),
+        ("popd", [], None), ("dir sub", [], None), ("cd missing", [], None),
+    ]
+    for segment, stack, expected in VENV_CD:
+        result = _venv.directory_change(segment, base, stack)
+        got = None if result is None else (result[0], _rel(result[1], base))
+        check(got == expected, f"venv directory_change({segment!r}, stack={len(stack)}): {expected!r} (got {got!r})")
+
+# MSYS drive paths (`/e/x` -> `E:/x`), as each guard resolved them.
+for raw, expected in [("/e/x/b.md", "E:/x/b.md"), ("/E/x", "E:/x"), ("/ee/x", None),
+                      ("e/x", None), ("C:/x", "C:/x")]:
+    got = _rel(_secret_scan._resolve(raw, None), _BASE)
+    check(got == expected, f"secret_scan resolves {raw!r} to {expected!r} (got {got!r})")
+for raw, expected in [("/e/x/.venv", "E:/x/.venv"), ("/e/x/*", "E:/x"), ("/ee/x", "C:/ee/x"),
+                      ("'/c/a b/.venv'", "C:/a b/.venv")]:
+    got = _rel(_venv._operand_path(raw, _BASE), _BASE)
+    check(got == expected, f"venv operand {raw!r} is {expected!r} (got {got!r})")
 
 _h.report_and_exit("test_shell_parse")
