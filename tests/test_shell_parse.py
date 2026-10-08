@@ -13,7 +13,6 @@ Exit 0 = all pass.
 
 from __future__ import annotations
 
-import importlib.util
 import sys
 from pathlib import Path
 
@@ -28,25 +27,14 @@ if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")
 
 
-def _load(name: str):
-    spec = importlib.util.spec_from_file_location(name, REPO / "hooks" / f"{name}.py")
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
-
-
-_safe_kill = _load("safe_kill_guard")
-_secret_scan = _load("secret_scan_guard")
-_venv = _load("venv_discipline")
-
 _h = CheckHarness()
 check = _h.check
 
 # The splits under test, by the name each table below is keyed on.
 SPLITS = {
-    "raw": _safe_kill._TOKEN_RE.findall,  # safe_kill_guard
-    "unquoted": _venv._tokens,  # venv_discipline
-    "words": _secret_scan._words,  # secret_scan_guard
+    "raw": _lib.shell_tokens,  # safe_kill_guard
+    "unquoted": lambda text: _lib.shell_tokens(text, unquote=True),  # venv_discipline
+    "words": _lib.shell_words,  # secret_scan_guard
     "commit": _lib._COMMIT_TOKEN_RE.findall,  # _lib.runs_git_commit
 }
 

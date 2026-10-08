@@ -89,12 +89,6 @@ MAX_BODY_BYTES = 1 << 20
 _CONTINUATION_RE = re.compile(r"[\\`]\r?\n")
 _SEGMENT_SPLIT_RE = re.compile(r"[\n;|&]+")
 
-# Shell-ish words, quotes stripped, backslashes left alone. `shlex` is not
-# usable: POSIX mode eats the backslashes out of every Windows path. A quoted
-# run inside a word (`--body-file="C:/a b/pr.md"`) stays part of that word.
-_WORD_RE = re.compile(r"""(?:[^\s'"]+|'[^']*'|"[^"]*")+""")
-_QUOTED_RE = re.compile(r"""'([^']*)'|"([^"]*)\"""")
-
 # Git Bash hands us MSYS paths; `Path("/e/automation/x")` has no drive on
 # Windows, so translate it back to the drive form before resolving.
 _MSYS_DRIVE_RE = re.compile(r"^/([A-Za-z])/(.*)$")
@@ -103,13 +97,6 @@ _MSYS_DRIVE_RE = re.compile(r"^/([A-Za-z])/(.*)$")
 # against (Bash and PowerShell spellings; PowerShell's are case-insensitive).
 _CD_VERBS = frozenset({"cd", "set-location", "sl", "chdir", "pushd", "push-location"})
 _POP_VERBS = frozenset({"popd", "pop-location"})
-
-
-def _words(text: str) -> List[str]:
-    return [
-        _QUOTED_RE.sub(lambda m: m.group(1) if m.group(1) is not None else m.group(2), word)
-        for word in _WORD_RE.findall(text)
-    ]
 
 
 def _cd_target(words: List[str]) -> Optional[str]:
@@ -140,7 +127,7 @@ def body_file_operands(cmd: str, base: Path) -> List[Tuple[str, Optional[Path]]]
     for segment in _SEGMENT_SPLIT_RE.split(_CONTINUATION_RE.sub(" ", cmd)):
         match = GH_PUBLISH_RE.search(segment)
         if not match:
-            words = _words(segment)
+            words = _lib.shell_words(segment)
             verb = words[0].lower() if words else ""
             if verb in _CD_VERBS:
                 target = _cd_target(words)
@@ -148,7 +135,7 @@ def body_file_operands(cmd: str, base: Path) -> List[Tuple[str, Optional[Path]]]
             elif verb in _POP_VERBS:
                 current = None
             continue
-        words = _words(segment[match.end():])
+        words = _lib.shell_words(segment[match.end():])
         i = 0
         while i < len(words):
             word = words[i]

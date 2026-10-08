@@ -73,8 +73,6 @@ GIT_BYPASS_CONFIG = "commit.gpgsign=false"
 # (`git -C <dir> push …`, fleet-config#1275), so a push is found by walking those
 # options token by token (`_lib.GIT_GLOBAL_OPTS_WITH_VALUE`), not by a
 # `git\s+push` adjacency regex.
-# Quote-aware split, so `-C "E:/my repo"` stays one token.
-_TOKEN_RE = re.compile(r"\"[^\"]*\"|'[^']*'|\S+")
 # `--force`, `--force-with-lease[=ref]`, and short-flag clusters carrying `f`
 # (`-f`, `-fu`, `-uf`). Anchored to a token start so `--foo` can't match.
 FORCE_FLAG_RE = re.compile(
@@ -162,7 +160,7 @@ def git_bypass_flag(cmd: str, _nested: bool = False) -> Optional[str]:
     (`bash -c "git …"`), so those arguments are re-checked once.
     """
     for segment in _split_segments(cmd):
-        raw = _TOKEN_RE.findall(segment)
+        raw = _lib.shell_tokens(segment)
         tokens = [t.strip("\"'") for t in raw]
         at = _command_index(raw)
         if at is None:
@@ -194,7 +192,7 @@ def _push_args(segment: str) -> Optional[tuple[list[str], Optional[str]]]:
     """For a `git [global options] push …` segment: the tokens after `push` and
     the `-C` directory (``None`` when absent; several `-C`s compose, as in git).
     ``None`` when the segment isn't a push."""
-    tokens = [t.strip("\"'") for t in _TOKEN_RE.findall(segment)]
+    tokens = [t.strip("\"'") for t in _lib.shell_tokens(segment)]
     for start, token in enumerate(tokens):
         if not _lib.GIT_TOKEN_RE.search(token):
             continue

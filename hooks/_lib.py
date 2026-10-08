@@ -387,6 +387,43 @@ GIT_GLOBAL_OPTS_WITH_VALUE = {
     "-c", "-C", "--git-dir", "--work-tree", "--namespace", "--exec-path",
     "--super-prefix", "--config-env", "--attr-source",
 }
+# Shell tokenisers (fleet-config#1304). The guards split a command three ways,
+# and each split is load-bearing for the guard reading it, so the splits live
+# here side by side instead of one private copy per hook:
+# - `shell_tokens`: every quoted string or bare non-space run is one token,
+#   quotes kept (`--x="a b"` -> `--x="a`, `b"`); `unquote=True` drops one
+#   enclosing quote pair. `safe_kill_guard`, `venv_discipline`.
+# - `shell_words`: a quoted run glues onto the word it touches and its quotes
+#   go (`--x="a b"` -> `--x=a b`). `secret_scan_guard`'s `--body-file` reader.
+# - `_COMMIT_TOKEN_RE` (below, `runs_git_commit`): shell separators are tokens
+#   of their own, and `\"` is escaped inside double quotes.
+# `shlex` fits none of them: POSIX mode eats the backslashes out of every
+# Windows path, and non-POSIX mode keeps the quotes.
+_SHELL_TOKEN_RE = re.compile(r"\"[^\"]*\"|'[^']*'|\S+")
+_SHELL_WORD_RE = re.compile(r"""(?:[^\s'"]+|'[^']*'|"[^"]*")+""")
+_QUOTED_RUN_RE = re.compile(r"""'([^']*)'|"([^"]*)\"""")
+
+
+def shell_tokens(text: str, *, unquote: bool = False) -> list[str]:
+    """`text` split into quoted strings and bare non-space runs.
+
+    With ``unquote``, a token that is one whole quoted string loses its quotes;
+    an unterminated quote stays part of its bare run either way.
+    """
+    tokens = _SHELL_TOKEN_RE.findall(text)
+    if not unquote:
+        return tokens
+    return [t[1:-1] if len(t) >= 2 and t[0] == t[-1] and t[0] in "'\"" else t for t in tokens]
+
+
+def shell_words(text: str) -> list[str]:
+    """`text` split into words, each quoted run glued to its word and unquoted."""
+    return [
+        _QUOTED_RUN_RE.sub(lambda m: m.group(1) if m.group(1) is not None else m.group(2), word)
+        for word in _SHELL_WORD_RE.findall(text)
+    ]
+
+
 HEREDOC_RE = re.compile(r"""(?<!<)<<-?\s*(['"]?)([A-Za-z_][A-Za-z0-9_]*)\1""")
 
 
