@@ -88,8 +88,6 @@ _COMMAND_PREFIXES = {
     "env", "sudo", "command", "exec", "time", "nohup", "nice", "xargs", "!",
     "if", "then", "else", "elif", "do", "while", "until",
 }
-# Commands whose quoted argument is itself a command line (`bash -c "git …"`).
-_NESTED_SHELLS = {"bash", "sh", "zsh", "pwsh", "powershell", "cmd", "eval", "iex", "invoke-expression"}
 _ENV_ASSIGN_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
 
 
@@ -170,7 +168,7 @@ def git_bypass_flag(cmd: str, _nested: bool = False) -> Optional[str]:
             hit = _git_bypass_in_tokens(tokens, at)
             if hit:
                 return hit
-        elif not _nested and Path(word).stem.lower() in _NESTED_SHELLS:
+        elif not _nested and Path(word).stem.lower() in _lib.NESTED_SHELLS:
             for r, t in zip(raw[at + 1:], tokens[at + 1:]):
                 if r[:1] in "\"'" and (hit := git_bypass_flag(t, _nested=True)):
                     return hit

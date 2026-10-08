@@ -451,15 +451,20 @@ def strip_heredoc_bodies(command: str) -> str:
 # message (`pre_commit_no_ai_trailer`) still read the whole command for it,
 # since that is where a heredoc commit message lives. Shared by both commit
 # guards so the two cannot disagree about what a commit is (fleet-config#1304).
+# The one place a quoted string *is* a command is a nested shell's argument
+# (`bash -c "git commit …"`, `powershell -Command "…"`), so those arguments are
+# re-read once, as `safe_kill_guard` does for its git checks.
 _COMMIT_WORD = r"""(?:"(?:\\.|[^"\\])*"|'[^']*'|[^\s;&|(){}"'])+"""
 _COMMIT_TOKEN_RE = re.compile(r"&&|\|\||[;&|\n(){}]|" + _COMMIT_WORD)
 _COMMIT_SEPARATORS = {"&&", "||", ";", "&", "|", "\n", "(", ")", "{", "}"}
 _COMMIT_PREFIX_WORDS = {"then", "do", "else", "elif", "!", "time", "env", "command", "exec", "nohup"}
 _COMMIT_ENV_ASSIGN_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*=")
 _PS_HERE_STRING_RE = re.compile(r"@(['\"])\r?\n.*?\r?\n\1@", re.DOTALL)
+# Commands whose quoted argument is itself a command line (`bash -c "git …"`).
+NESTED_SHELLS = {"bash", "sh", "zsh", "pwsh", "powershell", "cmd", "eval", "iex", "invoke-expression"}
 
 
-def runs_git_commit(cmd: str) -> bool:
+def runs_git_commit(cmd: str, _nested: bool = False) -> bool:
     """True when `cmd` runs `git [global options] commit` as a command."""
     text = _PS_HERE_STRING_RE.sub("''", strip_heredoc_bodies(cmd))
     tokens = _COMMIT_TOKEN_RE.findall(text)
@@ -471,7 +476,14 @@ def runs_git_commit(cmd: str) -> bool:
         if not at_start or token in _COMMIT_PREFIX_WORDS or _COMMIT_ENV_ASSIGN_RE.match(token):
             continue
         at_start = False
-        if not GIT_TOKEN_RE.search(token.strip("\"'")):
+        word = token.strip("\"'")
+        if not GIT_TOKEN_RE.search(word):
+            if not _nested and Path(word).stem.lower() in NESTED_SHELLS:
+                for arg in tokens[i + 1:]:
+                    if arg in _COMMIT_SEPARATORS:
+                        break
+                    if arg[:1] in "\"'" and runs_git_commit(arg.strip("\"'"), _nested=True):
+                        return True
             continue
         j = i + 1
         while j < len(tokens) and tokens[j].startswith("-"):
