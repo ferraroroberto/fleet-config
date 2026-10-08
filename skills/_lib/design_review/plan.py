@@ -78,7 +78,7 @@ LOOPBACK = "127.0.0.1"
 # viewport for the descriptor-less desktop). The names are part of every
 # screen id (`iphone-light-board`), so they are stable API for #972–#974.
 DEVICES: Dict[str, dict] = {
-    "iphone": {"engine": "webkit", "descriptor": "iPhone 15 Pro Max"},
+    "iphone": {"engine": "webkit", "descriptor": "iPhone 13"},
     "android": {"engine": "chromium", "descriptor": "Pixel 7"},
     "desktop": {"engine": "chromium", "viewport": {"width": 1440, "height": 900}},
 }

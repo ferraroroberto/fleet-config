@@ -1,0 +1,46 @@
+<!doctype html>
+<!-- Static fixture for COMP-07 and LAYOUT-08 (fleet-config#1325): the camera live-view dialog that /design-review graded
+     clean while it was broken on a 390px phone (home-automation#859). Walked at the iPhone leg (390px wide). Row one is
+     four labelled buttons squeezed into one flex row: "Zoom in" wraps onto two lines inside its pill and "Screenshot"
+     is overrun by the pill's own width (COMP-07). Row two never shrinks, so the Record button leaves the dialog card on
+     the right while the card clips it and the page does not scroll sideways (LAYOUT-08, with LAYOUT-01 green).
+     tests/fixtures/design_review/label_fit_fixed.html is the same dialog laid out properly. Asserted by
+     tests/test_design_review.py. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>design_review label fit fixture (broken)</title>
+<style>
+  html, body { margin: 0; background: #ffffff; color: #1f2328; font-family: system-ui, sans-serif; font-size: 16px; }
+  body { padding: 16px; }
+  .card { border: 1px solid #d1d9e0; border-radius: 12px; background: #f6f8fa; padding: 12px; overflow: hidden; }
+  .row { display: flex; gap: 6px; margin: 10px 0; }
+  .row.fixed { flex-wrap: nowrap; }
+  .btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 44px; min-width: 0;
+         padding: 0 12px; border: 1px solid #818b98; border-radius: 12px; background: #ffffff; color: #1f2328; font: inherit; font-size: 14px; }
+  .row.squeezed .btn { flex: 1 1 0; }
+  .row.squeezed .btn.nowrap { white-space: nowrap; }
+  .row.fixed .btn { flex: 0 0 auto; white-space: nowrap; }
+  .btn svg { width: 16px; height: 16px; flex: none; }
+</style>
+</head>
+<body>
+  <main>
+    <div class="card" role="dialog" aria-label="Live view">
+      <h2>Live view</h2>
+      <div class="row squeezed">
+        <button type="button" class="btn"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/></svg>Step</button>
+        <button type="button" class="btn"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/></svg>Zoom in</button>
+        <button type="button" class="btn nowrap"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/></svg>Screenshot</button>
+        <button type="button" class="btn"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/></svg>Record</button>
+      </div>
+      <div class="row fixed">
+        <button type="button" class="btn"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/></svg>Download clip</button>
+        <button type="button" class="btn"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/></svg>Full screen view</button>
+        <button type="button" class="btn"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/></svg>Record clip</button>
+      </div>
+    </div>
+  </main>
+</body>
+</html>

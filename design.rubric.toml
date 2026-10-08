@@ -33,7 +33,7 @@
 # metrics.json, every evaluate output and every filed finding.
 
 [meta]
-version = "1.17.0"   # per-bump history: git log -- design.rubric.toml, and the issues/PRs it cites
+version = "1.18.0"   # per-bump history: git log -- design.rubric.toml, and the issues/PRs it cites
 seeded_from = "app-launcher rendered audit, 2026-09-21 (fleet-config#962)"
 
 [weights]
@@ -410,6 +410,19 @@ screens = ["tab"]
 params = { min_viewport = 1100 }
 
 [[rules]]
+id = "LAYOUT-08"
+category = "layout"
+title = "A control extends past the side of its dialog, card or clipping container"
+metric = "layout.control_overflow_count"
+fail_when = "gt"
+threshold = 0
+severity = "P1"
+owner = "app"
+standard = "WCAG 2.2 SC 1.4.10 Reflow: content fits its container at 320 CSS px without two-dimensional scrolling (fleet-config#1325)"
+fix_template = "{count} controls on {screen} extend past their container's side ({sample}); wrap the row or stack it so every control sits inside the card."
+mockup = "none"
+
+[[rules]]
 id = "LAYOUT-07"
 category = "layout"
 title = "A list's last row stays under a fixed bottom bar at full scroll"
@@ -463,6 +476,19 @@ severity = "P2"
 owner = "app"
 standard = "Apple HIG Segmented controls: 2-5 segments, single-line labels"
 fix_template = "{count} segmented controls on {screen} exceed 5 options or wrap a label ({sample})."
+mockup = "none"
+
+[[rules]]
+id = "COMP-07"
+category = "components"
+title = "A control's label wraps onto a second line or spills out of its box"
+metric = "controls.label_fit_bad_count"
+fail_when = "gt"
+threshold = 0
+severity = "P1"
+owner = "app"
+standard = "Apple HIG Buttons: a short single-line label that fits its control; design.md Touch targets (fleet-config#1325)"
+fix_template = "{count} controls on {screen} wrap their label or let it spill past the box ({sample}); shorten the label, drop a column, or give the row room instead of squeezing it."
 mockup = "none"
 
 [[rules]]

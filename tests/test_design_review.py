@@ -60,8 +60,8 @@ def _doc(name: str) -> dict:
 # ---- rubric: the real file loads and names only metrics that exist ----------
 
 rubric = dr.load_rubric(RUBRIC)
-check(rubric.version == "1.17.0", "rubric meta.version stamped")
-check(len(rubric.rules) == 31, f"31 seed rules loaded (got {len(rubric.rules)})")
+check(rubric.version == "1.18.0", "rubric meta.version stamped")
+check(len(rubric.rules) == 33, f"33 seed rules loaded (got {len(rubric.rules)})")
 check(rubric.categories == ["typography", "color", "touch", "navigation", "layout", "components", "a11y"],
       "categories in rubric order")
 check(rb.check_metric_names(rubric, measure.metric_paths()) == [], "every rule metric is a script path or a derived metric")
@@ -437,6 +437,34 @@ for _rid, _keys in (("COMP-05", ("icon_button_count", "icon_buttons_painted", "i
     check(next(r for r in ev.evaluate(_old, rubric, _specs("compliant"))["rules"] if r["id"] == _rid)["status"] == "unmeasured",
           f"{_rid}: a run from before the metric existed is unmeasured, never a pass")
 
+# ---- COMP-07 / LAYOUT-08: a label fits its control, a control fits its container (#1325) ----
+def _layout(rule_id: str, layout_by_screen) -> dict:
+    d = _doc("compliant")
+    for s, patch in zip(d["screens"], layout_by_screen):
+        s["metrics"]["layout"].update(patch)
+    return next(r for r in ev.evaluate(d, rubric, _specs("compliant"))["rules"] if r["id"] == rule_id)
+
+
+_wrapped = {"label_fit_bad_count": 2, "label_fit_bad": [{"sel": "button.btn", "label": "Zoom in", "lines": 2, "spill_px": 0, "w": 79},
+                                                         {"sel": "button.btn.nowrap", "label": "Screenshot", "lines": 1, "spill_px": 7, "w": 79}]}
+_c07 = _comp("COMP-07", [_wrapped, {}, {}])
+check(_c07["status"] == "fail" and [i["label"] for i in _c07["evidence"][0]["items"]] == ["Zoom in", "Screenshot"],
+      f"COMP-07: a wrapped label and a spilled label fail and are listed -- {_c07['status']}")
+check(_comp("COMP-07", [{"label_fit_bad_count": 0, "label_fit_bad": []}, {}, {}])["status"] == "pass", "COMP-07: labels that fit pass")
+_spilled = {"control_overflow_count": 1, "control_overflow": [{"sel": "button.btn", "label": "Record clip", "container": "div.card", "over_px": 70, "side": "right"}]}
+_l08 = _layout("LAYOUT-08", [_spilled, {}, {}])
+check(_l08["status"] == "fail" and _l08["evidence"][0]["items"][0]["container"] == "div.card",
+      f"LAYOUT-08: a control past its card's side fails and names the container -- {_l08['status']}")
+check(_layout("LAYOUT-08", [{"control_overflow_count": 0, "control_overflow": []}, {}, {}])["status"] == "pass", "LAYOUT-08: controls inside their container pass")
+for _rid, _sect, _keys in (("COMP-07", "controls", ("label_fit_bad", "label_fit_bad_count")),
+                           ("LAYOUT-08", "layout", ("control_overflow", "control_overflow_count"))):
+    _old = _doc("compliant")
+    for _s in _old["screens"]:
+        for _k in _keys:
+            _s["metrics"][_sect].pop(_k, None)
+    check(next(r for r in ev.evaluate(_old, rubric, _specs("compliant"))["rules"] if r["id"] == _rid)["status"] == "unmeasured",
+          f"{_rid}: a run from before the metric existed is unmeasured, never a pass")
+
 # ---- evaluate: compliant fixture passes every rule ---------------------------
 
 out_c = ev.evaluate(_doc("compliant"), rubric, _specs("compliant"))
@@ -445,7 +473,7 @@ check(all(s == "pass" for s in statuses_c.values()), f"compliant: every rule pas
 check(all(v["score"] == 100.0 and v["grade"] == "A" and not v["unmeasured"] for v in out_c["categories"].values()),
       "compliant: every category 100/A, measured")
 check(out_c["overall"] == {"score": 100.0, "grade": "A", "unmeasured": False}, "compliant: overall A")
-check(out_c["schema_version"] == 1 and out_c["rubric_version"] == "1.17.0" and out_c["target"] == "fixture-app"
+check(out_c["schema_version"] == 1 and out_c["rubric_version"] == "1.18.0" and out_c["target"] == "fixture-app"
       and out_c["commit"].startswith("0000") and out_c["generated_at"].endswith("Z"), "evaluate envelope keys")
 check([s["id"] for s in out_c["screens"]] == ["desktop-light-home", "iphone-light-home", "desktop-light-dialog-edit"],
       "evaluate echoes the screen list")
@@ -894,7 +922,7 @@ class _FakePage:
         if js is walk._OPEN_DETAILS_JS:
             return 1
         if "devicePixelRatio" in js:
-            return {"dpr": 3, "width": 430, "height": 11338}
+            return {"dpr": 3, "width": 390, "height": 11338}
         return {"measured": True} if js == "MEASURE" else None
 
     def screenshot(self, path, full_page=False, clip=None):
@@ -907,7 +935,7 @@ def _walk_one(full: str):
     page = _FakePage(full)
     ctx = type("C", (), {"add_init_script": lambda *_: None, "new_page": lambda _s: page, "close": lambda _s: None})()
     browser = type("B", (), {"new_context": lambda _s, **_k: ctx, "close": lambda _s: None})()
-    pw = type("P", (), {"webkit": type("E", (), {"launch": lambda _s: browser})(), "devices": {"iPhone 15 Pro Max": {}}})()
+    pw = type("P", (), {"webkit": type("E", (), {"launch": lambda _s: browser})(), "devices": {"iPhone 13": {}}})()
     args = type("A", (), {"url": "https://127.0.0.1:1", "timeout_ms": 1000, "synthetic": False})()
     with tempfile.TemporaryDirectory() as tmp:
         screens = walk.walk_context(pw, "iphone", "light", args, "MEASURE", {}, {}, Path(tmp))
@@ -925,7 +953,7 @@ check(_scr_raise["screenshot_full"] is None and "skipped" in (_scr_raise.get("no
 _scr_clip, _pg_clip = _walk_one("clip")
 _scr_clip = _scr_clip[0]
 check(_scr_clip["screenshot_full"] == "iphone-light-root-full.png" and "clipped" in (_scr_clip.get("note") or "")
-      and _pg_clip.shots[-1]["clip"] == {"x": 0, "y": 0, "width": 430, "height": 32767 // 3},
+      and _pg_clip.shots[-1]["clip"] == {"x": 0, "y": 0, "width": 390, "height": 32767 // 3},
       f"a too-tall page is captured clipped to the limit's first device px, with a note -- {_scr_clip} {_pg_clip.shots}")
 _scr_ok = _walk_one("ok")[0][0]
 check(_scr_ok["status"] == "ok" and _scr_ok["screenshot_full"] == "iphone-light-root-full.png" and _scr_ok.get("note") is None,
@@ -1187,7 +1215,7 @@ class _TracePage:
         if name in ("_OPEN_DETAILS_JS", "_OPEN_SCOPE_DETAILS_JS"):
             return self.cfg.get("opened", 0)
         if name == "_PAGE_SIZE_JS":
-            return {"dpr": 3, "width": 430, "height": 40000}
+            return {"dpr": 3, "width": 390, "height": 40000}
         if name == "measure.RENDERED_THEME_JS":
             if self.cfg.get("theme_read") == "raise":
                 raise RuntimeError("page closed")
@@ -1231,7 +1259,7 @@ def _walk_traced(cfg: dict) -> dict:
             return _Browser()
 
     pw = type("P", (), {"webkit": _Engine("webkit"), "chromium": _Engine("chromium"),
-                        "devices": {"iPhone 15 Pro Max": {"viewport": {"width": 430, "height": 739}, "has_touch": True},
+                        "devices": {"iPhone 13": {"viewport": {"width": 390, "height": 664}, "has_touch": True},
                                     "Pixel 7": {"viewport": {"width": 412, "height": 839}, "has_touch": True}}})()
     args = type("A", (), {"url": "https://127.0.0.1:1", "timeout_ms": 1000, "synthetic": cfg.get("synthetic", False)})()
     tap, wlog = _LogTap(), logging.getLogger("design_review.walk")
@@ -1328,7 +1356,7 @@ else:
           f"measure CLI walks the fixture: 2 tabs + 1 dialog x light/dark, plus the absent Settings gear (#1217) ({proc.stdout[-300:]}{proc.stderr[-300:]})")
     check(lines.get("RUN_DIR") == str(run_dir) and Path(lines.get("METRICS", "")).is_file(), "RUN_DIR/METRICS lines point at the run dir")
     doc = json.loads(Path(lines["METRICS"]).read_text(encoding="utf-8"))
-    check(doc["interpreter"] == str(interp) and doc["schema_version"] == 1 and doc["rubric_version"] == "1.17.0", "metrics.json records the interpreter + versions")
+    check(doc["interpreter"] == str(interp) and doc["schema_version"] == 1 and doc["rubric_version"] == "1.18.0", "metrics.json records the interpreter + versions")
     if not (scaffold / "tests" / "e2e" / "_geometry.py").is_file():
         _h.skip("browser leg: project-scaffolding/tests/e2e/_geometry.py absent -- hit-target assertions NOT verified")
     check(doc["walk"]["info"]["geometry"] == ("loaded" if (scaffold / "tests" / "e2e" / "_geometry.py").is_file() else "GEOMETRY_MISSING"),
@@ -1589,6 +1617,33 @@ else:
           and [(v["radius"], v["count"]) for v in _ip.get("reference_pill_styles", [])] == [("pill", 3), ("12px", 1)],
           f"COMP-06: three link chips share one shape whatever their colour, the boxed one is a second shape; a plain link "
           f"and a status pill are not reference pills (#1259) -- {_ip.get('reference_pill_styles')}")
+
+    # label fit and container overflow at the 390px phone leg: the camera dialog that scored clean while broken (#1325)
+    lf = {}
+    for _kind in ("broken", "fixed"):
+        lf_dir = STATE / f"fixture-label-fit-{_kind}"
+        proc_lf = subprocess.run(
+            [str(interp), str(REPO / "skills" / "_lib" / "design_review" / "walk.py"), "--url", (FIX / f"label_fit_{_kind}.html").as_uri(),
+             "--out", str(lf_dir), "--devices", "iphone", "--scaffold", str(scaffold),
+             "--params", str(STATE / "steps-params.json")],
+            capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=600,
+        )
+        lf_screens = json.loads((lf_dir / "screens.json").read_text(encoding="utf-8")) if proc_lf.returncode == 0 else []
+        lf[_kind] = next((s for s in lf_screens if s["id"] == "iphone-light-root"), {})
+        lf[_kind + "_err"] = proc_lf.stderr[-300:]
+    _lf_b, _lf_f = (lf[k].get("metrics") or {} for k in ("broken", "fixed"))
+    check(_lf_b.get("layout", {}).get("inner_w") == 390 and _lf_f.get("layout", {}).get("inner_w") == 390,
+          f"the iphone leg is 390px wide (#1325) -- {_lf_b.get('layout', {}).get('inner_w')} ({lf['broken_err']})")
+    _lf_bad = _lf_b.get("controls", {}).get("label_fit_bad", [])
+    check([(b["label"], b["lines"] > 1, b["spill_px"] > 1.5) for b in _lf_bad] == [("Zoom in", True, False), ("Screenshot", False, True)],
+          f"COMP-07 before: the wrapped Zoom in and the overrun Screenshot are found -- {_lf_bad}")
+    _lf_over = _lf_b.get("layout", {}).get("control_overflow", [])
+    check([(o["label"], o["container"], o["side"]) for o in _lf_over] == [("Record clip", "div.card", "right")]
+          and _lf_b["layout"]["overflow_x"] is False,
+          f"LAYOUT-08 before: Record clip leaves the card on the right while the page does not scroll sideways (LAYOUT-01 green) -- {_lf_over}")
+    check(_lf_f.get("controls", {}).get("label_fit_bad_count") == 0 and _lf_f.get("layout", {}).get("control_overflow_count") == 0,
+          f"COMP-07 + LAYOUT-08 after: the fixed dialog passes, and a prose button, an ellipsis label and a self-scrolling chip strip are not findings "
+          f"-- {_lf_f.get('controls', {}).get('label_fit_bad')} {_lf_f.get('layout', {}).get('control_overflow')}")
 
     # stretched graphic: a chart SVG with preserveAspectRatio="none" is not an icon; a real off-step icon still is (#1211)
     sg_dir = STATE / "fixture-stretched-graphic"

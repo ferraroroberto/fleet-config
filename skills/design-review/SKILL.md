@@ -126,7 +126,7 @@ Prints `TARGET= BASE_URL= ROOT= CLAUDE_MD= PROBE= DETAIL=`. Read `PROBE=`:
 
 Runs the walk as a child of the **target repo's** `.venv` interpreter (that
 is where Playwright lives; this repo's venv is stdlib-only), over the fixed
-matrix `iphone` (WebKit) / `android` (Chromium) / `desktop` (Chromium) ×
+matrix `iphone` (WebKit, 390px) / `android` (Chromium) / `desktop` (Chromium) ×
 light / dark — every primary tab, every `<dialog>`, the Settings pane behind
 the header gear, and any `[design.review].extra_steps` the target's `.fleet.toml` opts into. A full
 app-launcher matrix takes about four minutes and leaves ~144 PNGs in the
