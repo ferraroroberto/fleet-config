@@ -255,6 +255,63 @@ try:
           and len(attempts) > 3 and probe_f.stalls == 0,
           f"an unreadable volume logs one disk-error and keeps retrying, without becoming a stall -- {errors} attempts={len(attempts)}")
 
+    # E: slow / C: slow / both slow are told apart by `also_slow`, not by hand-correlating two records
+    check(disk_recs[0]["also_slow"] == [] and disk_recs[0]["was_hung"] is False,
+          f"E: slow alone: also_slow is empty, so it reads as 'that disk', not the storage stack -- {disk_recs[0]}")
+    probe_b2, folder_b2, _ = disk_probe("both", {"E:": FakeReader(0.6, slow_first=1), "C:": FakeReader(0.6, slow_first=1)})
+    probe_b2.run(duration_s=1.5)
+    check(wait_for(lambda: sum(r["kind"] == "disk" for r in records(folder_b2)) == 2), f"both slow volumes are logged -- {records(folder_b2)}")
+    both = {r["volume"]: r for r in records(folder_b2) if r["kind"] == "disk"}
+    check(both["E:"]["also_slow"] == ["C:"] and both["C:"]["also_slow"] == ["E:"],
+          f"both slow: each record names the other volume, whichever finished first -- {both}")
+    probe_c2, folder_c2, _ = disk_probe("conly", {"E:": FakeReader(), "C:": FakeReader(0.6, slow_first=1)})
+    probe_c2.run(duration_s=1.5)
+    check(wait_for(lambda: any(r["kind"] == "disk" for r in records(folder_c2)))
+          and [(r["volume"], r["also_slow"]) for r in records(folder_c2) if r["kind"] == "disk"] == [("C:", [])],
+          f"C: slow alone is its own record with an empty also_slow -- {records(folder_c2)}")
+
+    # a read that does not return is its own state (`disk-hung`), logged while it is still stuck, with evidence
+    release = threading.Event()
+
+    class HangingReader(FakeReader):
+        def read(self) -> bytes:
+            self.reads += 1
+            if self.reads == 1:
+                release.wait(10)
+            return b"\0" * 4096
+    hung_reader = HangingReader()
+    probe_h, folder_h, hung_calls = disk_probe("h", {"E:": hung_reader, "C:": FakeReader()})
+    probe_h.disk_hung_s = 0.4
+    probe_h.run(duration_s=1.5)
+    check(wait_for(lambda: any(r["kind"] == "disk-hung" for r in records(folder_h)), 3), f"a read that has not returned is logged -- {records(folder_h)}")
+    hung = [r for r in records(folder_h) if r["kind"] == "disk-hung"]
+    check(len(hung) == 1 and hung[0]["volume"] == "E:" and hung[0]["in_flight_s"] >= 0.4 and hung[0]["also_slow"] == []
+          and UTC.fullmatch(hung[0]["start_utc"]) and hung[0]["evidence"] == {"fake": True} and "end_utc" not in hung[0],
+          f"one disk-hung record per stuck read: volume, UTC start, how long in flight, evidence captured during the stall -- {hung}")
+    check(not any(r["kind"] == "disk" for r in records(folder_h)) and probe_h.stalls == 0 and probe_h.disk_hung == 1,
+          f"the stuck read is not folded into 'fine' nor into a completed stall while it is in flight -- {records(folder_h)}")
+    release.set()
+    check(wait_for(lambda: any(r["kind"] == "disk" for r in records(folder_h))), f"...and when it finally returns it logs the full gap -- {records(folder_h)}")
+    done = next(r for r in records(folder_h) if r["kind"] == "disk")
+    check(done["was_hung"] is True and done["gap_s"] >= 0.4 and done["volume"] == "E:", f"the completed record says it was the hung read -- {done}")
+
+    # a hang that spanned a machine sleep is not reported as hung (the completed read logs a suspend)
+    release_z = threading.Event()
+    skipped_h = [0.0]
+
+    class SleepyHang(FakeReader):
+        def read(self) -> bytes:
+            skipped_h[0] += 0.8
+            release_z.wait(10)
+            return b"\0" * 4096
+    probe_y, folder_y, _ = disk_probe("y", {"E:": SleepyHang()}, unbiased=lambda: time.monotonic() - skipped_h[0])
+    probe_y.disk_hung_s = 0.4
+    probe_y.run(duration_s=1.2)
+    time.sleep(0.2)
+    check(not any(r["kind"] == "disk-hung" for r in records(folder_y)) and probe_y.disk_hung == 0,
+          f"a read stuck across a machine sleep is not a disk-hung -- {records(folder_y)}")
+    release_z.set()
+
     # the real unbuffered reader: sector-aligned 4 KB reads at random offsets of a prepared file
     disk_folder = tmp / "diskfile"
     one_mb = 1 << 20
