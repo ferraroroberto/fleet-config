@@ -103,6 +103,8 @@ components:
   page-header:    { minHeight: "{rows.md}", padding: "0 14px", title: "{typography.body}", titleWeight: 700, context: "{typography.body-sm}", contextColor: "{colors.fg-muted}", trailingActions: 2, actionSize: "{components.hit-target.min}" }   # every pane's first element — the vendored home-head: tab title, one context line, trailing theme toggle + Settings gear, always both, on every tab
   toast:          { backgroundColor: "{colors.card}", textColor: "{colors.fg}", borderColor: "{colors.border}", rounded: "{rounded.md}", padding: "12px 18px", typography: "{typography.label}", fontWeight: 700, maxWidth: 560px, offsetAboveNav: 8px }   # neutral frosted toast (fleet-config#1200) — the nav-bar glass, centred above the nav; only a real error tints (danger), success never does
   hit-target:     { min: 44px }   # minimum effective pointer-target square, app-wide — see Touch targets
+  avatar:         { size: 36px, rounded: "{rounded.md}", backgroundColor: "{colors.neutral-soft}", glyph: "{icons.size.nav-tab}", badgeSize: 12px, badgeRing: "{colors.card}", badgeAlive: "{colors.success}", badgeDown: "{colors.danger}" }   # a row's leading squircle; the corner badge means alive (up) or down (should be up), nothing else (fleet-config#1332)
+  meter:          { height: 6px, rounded: "{rounded.pill}", track: "{colors.neutral-soft}", fillUnderPace: "{colors.accent}", fillAheadOfPace: "{colors.attention}", fillCritical: "{colors.danger}", criticalAt: 90%, paceTick: 2px }   # a usage bar coloured by pace, not raw percent (fleet-config#1332)
 focus:            { outline: "2px solid {colors.accent}", offset: 2px }   # one tokenized :focus-visible ring app-wide (a control overrides only where it draws a custom ring)
 layout:                           # desktop placement (Layout) — theme-independent
   measure:     772px              # centered content column below the wide breakpoint
@@ -207,7 +209,9 @@ introduce ad-hoc sizes.
 
 - **Secondary lines use `body-sm`** (14px, regular): paths, status lines,
   "last run", the meta line under a row title. Helper copy is `body-sm` in
-  `fg-muted` at regular weight, never italic.
+  `fg-muted` at regular weight, never italic, and at most one line under its
+  group, shown only while it explains something on screen; a permanent note
+  shown on every visit becomes noise (fleet-config#1332).
 - **`caption` (12px) is for chips, badges and timestamps only**, never for a
   line people read.
 - **`label`** carries field and control labels and button text;
@@ -546,7 +550,13 @@ hand-picked per app.
   tab, see Navigation). Tab-specific toolbars sit **under** the
   header, never in place of it. The vendored `home-head` component
   (`project-scaffolding` `_vendored/home-head/`) is this shape; reuse it
-  verbatim on every pane, not just the home tab.
+  verbatim on every pane, not just the home tab. **The context line is live
+  and names only exceptions**: what needs the user, each part in its tone's
+  `*-text` ("1 needs you · 1 failing", the status chip tone map), at most
+  two parts so no ellipsis cuts the part that matters at 390px (~22
+  characters), falling back to the plain count in `fg-muted` ("7 jobs") when
+  nothing is wrong. Never a fixed slogan, and never a count another tab owns
+  (fleet-config#1332).
 - **card** (`card`) — the base content group: `rounded.lg` (16px) surface at
   `spacing.md` padding on a hairline border. Its **header** is one row: a
   leading `icons.size.title` glyph + a bold title (`label`/`body` weight 700),
@@ -565,6 +575,12 @@ hand-picked per app.
   A `<form>` wrapper is **optional** — a JS-managed editor whose Save reads
   bare `input`/`select`/`textarea` fields is equally canonical; what makes a
   dialog an *editor* is the presence of editable fields, not the wrapper.
+  The same dialog is the **detail sheet**: a glance card's or a row's detail
+  (usage, a job's runs, other listeners) opens full-height with the × and
+  its one primary, and becomes the detail pane at `layout.wide`. It
+  is also the **confirm and rename dialog**: never the browser's own
+  `confirm()`, `prompt()` or `alert()`, which ignore the theme, the type
+  scale and the button tiers (fleet-config#1332).
 - **list-row** (`list-row`) — how a card renders a **repeating list** of entries
   (history, activity, request log): flat full-bleed rows, `list-row.rowPadding`
   (`12px 0`, shared vocabulary with the modal), separated by a 1px `divider`
@@ -582,19 +598,66 @@ hand-picked per app.
   (launch, run, open). It follows the native list pattern (iOS, Material,
   GitHub Mobile): **tapping the row performs its primary action**, and every
   other action sits behind **one trailing accessory**, a 44px kebab (or a
-  chevron when the row only navigates). The row may add **at most one leading
-  toggle** (e.g. favorite) and **at most one other visible action**, and only
-  when that action is the row's dominant verb (Run on a job row), at real 44px
-  geometry. **Title:** `body` at weight 600, one line, truncated with an
-  ellipsis, never broken mid-word. **Context:** at most one `body-sm` line in
-  `fg-muted`. Height comes from the `rows` scale (`rows.md` minimum). **No
-  vertical rules** between controls inside a row; a list is not a
-  spreadsheet. **Destructive actions** (Kill, Stop, Delete) live in the row
+  chevron when the row only navigates). The row has **exactly one leading
+  slot**, either an `avatar`, the one leading toggle (e.g. favorite) or a
+  tabular time value, and **at most one other visible trailing item**: a
+  value (a `meter`, a sparkline), or the row's dominant verb (Run on a job
+  row) as a tint verb at real 44px geometry. **Title:** `body` at weight
+  600, one line, truncated with an ellipsis, never broken mid-word.
+  **Context:** at most one `body-sm` line in `fg-muted`, which a status chip
+  may close, for an exception only. Height comes from the `rows` scale
+  (`rows.md` minimum). **No vertical rules** between controls inside a row;
+  a list is not a spreadsheet. **Destructive actions** (Kill, Stop, Delete) live in the row
   menu as its last item, after a divider, in `danger-text`, behind a
   confirm. A row never shows a visible danger button. **Long lists:** a list
   that can exceed ~12 rows gets a filter field above it: 44px tall, a
-  `control-border` boundary on `card`, `rounded.md`. Reference impl:
-  app-launcher session rows (app-launcher#1025, tap the row + one kebab).
+  `control-border` boundary on `card`, `rounded.md`. **One renderer:** rows
+  of different tabs that show the same kind of thing share one renderer; a
+  tab that needs a variation adds an **optional field** that leaves every
+  other use byte-identical, never a per-tab fork. Reference impl:
+  app-launcher session rows (app-launcher#1025, tap the row + one kebab;
+  every tab on the one anatomy since app-launcher#1432).
+- **glance card** — the **first card under the page header** answers the
+  tab's main question without a tap ("can I launch?", "what runs next?",
+  "what is running?"). At most ~5 rows; its detail opens one tap away in the
+  detail sheet (`modal`). A tab with no such question has no glance card
+  rather than a decorative one, and a fact whose home is another tab is
+  never a glance card here (one home per fact).
+- **avatar** (`avatar`) — an action-row's leading squircle: `avatar.size`
+  (36px), `rounded.md`, `neutral-soft` fill, one `icons.size.nav-tab` glyph
+  (an agent, kind or job glyph). Its corner badge (`avatar.badgeSize`, ringed
+  in `card` so it reads cut out) means **alive and nothing else**:
+  `success` when the process is up, `danger` when it should be up and is
+  down, absent when not running. It replaces separate health dots, alive
+  dots, "running" pills and coloured meta text. An app may swap the dot for
+  one role glyph (a crown for a coordinating session) on the same corner.
+- **status chip** — the `chip` geometry in **one tone map,
+  for exceptions only**; a normal state gets no chip. **Neutral**
+  (`neutral-soft`, `fg`): a plain fact (detached, paused, stale). **Accent**
+  (`accent-soft`, `accent-text`): work in progress. **Attention** (16%
+  `attention` tint, `attention-text`): needs the user soon or ahead of plan
+  (needs you, due, not firing, uncommitted, ahead of pace). **Danger** (16%
+  `danger` tint, `danger-text`): broken (failed, down, stalled, ≥90%).
+  `success` is never a chip — it is the avatar badge and history marks only.
+  Sentence case. One class with a `data-tone`, never a chip style per
+  surface. A chip that opens something is the `reference-pill` instead.
+- **meter** (`meter`) — a usage bar: a `meter.height` (6px) `rounded.pill`
+  track in `neutral-soft` with a fill coloured **by pace, not raw
+  percent**: `accent` while usage ≤ the period's elapsed share,
+  `attention` ahead of it, `danger` at `meter.criticalAt` (90%) or more.
+  A `meter.paceTick` (2px) `fg` tick marks the elapsed share. The percent is
+  tabular figures in the fill's `*-text` (`fg` under pace). A stale reading
+  dims and adds a neutral "stale" status chip; unknown keeps its text. One
+  renderer in two sizes (a full card, a compact one-row line), both opening
+  the same detail sheet.
+- **settings group** — the Settings pane is **inset groups** under
+  `overline` headers: each row a lead `icons.size.title` glyph, a label, the
+  current value in `fg-muted` and a chevron opening a detail sheet. A setting
+  changed often stays inline (a `switch`, a segmented control). A setting
+  saves as it changes (text and numbers on blur), with a `toast`; an editor
+  for a saved item keeps the dense collection's staged Save. Launch-time
+  choices stay on the toolbar where the user launches, never only in
+  Settings.
 - **dense collection** — how a card renders **saved automation/settings
   items** (schedules, pairings, overrides): each item is a flat `list-row`
   **summary row** — a compact human-readable summary line + the entry's
@@ -727,7 +790,7 @@ byte-for-byte components.
 - **Do** model every interactive component on its shadcn component (structure + ARIA), then skin it with the fleet tokens.
 - **Do** draw every icon from **Lucide** — the shadcn-native set — vendored through `project-scaffolding`.
 - **Do** generate every installable app's Apple/PWA/favicon family from one Lucide master through `brand_gen`, with distinct regular and maskable assets.
-- **Do** cap primary navigation at five tabs, put Settings in the page header as the gear beside the theme toggle on every tab (never as a tab), and open every tab with the one `page-header` (the vendored `home-head`).
+- **Do** cap primary navigation at five tabs, put Settings in the page header as the gear beside the theme toggle on every tab (never as a tab), and open every tab with the one `page-header` (the vendored `home-head`), its context line naming only the exceptions, then a glance card that answers the tab's main question.
 - **Do** keep the bottom nav identical across apps — same radius, blur, and
   persistence behavior.
 - **Do** reserve bottom padding for the fixed nav so content is never occluded.
@@ -740,7 +803,8 @@ byte-for-byte components.
 - **Do** ship the user-selectable theme: pre-paint `data-theme` boot script + persisted sun/moon toggle on the main view — never dark-only or OS-only.
 - **Do** ship the persisted Small / Default / Large text-size setting (`<app>.textsize`, stamped pre-paint as `html[data-textsize]`) — it is what makes the zoom lock acceptable.
 - **Do** render a repeating list of entries (history, activity log) as flat full-bleed rows on a hairline divider — never nested cards per entry.
-- **Do** make a list row's primary action the row itself, with one trailing kebab for the rest and a filter field above any list that can exceed ~12 rows.
+- **Do** make a list row's primary action the row itself, with one leading slot (avatar, toggle or time), one trailing kebab for the rest, one shared renderer per kind of row (a variation is an optional field, never a fork), and a filter field above any list that can exceed ~12 rows.
+- **Do** give every fact one home: other tabs show the same component in a smaller form, or nothing.
 - **Do** pin every single-column stack grid's track to `minmax(0, 1fr)` — never a bare `1fr`/`auto`/implicit track behind a no-wrap or scrollable child.
 - **Do** give every non-navigation pointer target a ≥44×44px *effective* hit area — invisible expansion for isolated compact controls, real geometry for adjacent clusters; expanded rectangles never overlap.
 - **Do** preserve and label last-known data when a background refresh fails (`Last updated … · live data unavailable`) and disable freshness-sensitive actions — stale state is never actionable.
@@ -754,7 +818,8 @@ byte-for-byte components.
 - **Don't** put a solid accent fill on any button except the view's primary action — secondary emphasis is the tint, never a second solid.
 - **Don't** introduce a second accent or per-app navigation variants.
 - **Don't** stretch a single column full-bleed on desktop — keep the centered 772px measure below 1100px, and use the left rail + master-detail layout above it. Only a view whose content is two-dimensional (board lanes, a many-field table, a tree with attribute columns, calendar days) may span the window, and the app declares it in `wide_views`.
-- **Don't** use status colors decoratively — they signal state only.
+- **Don't** use status colors decoratively — they signal state only: chip only an exception, in the one status chip tone map (never a chip style per surface, never a `success` chip), and let the avatar badge alone say a process is alive.
+- **Don't** call the browser's `confirm()`, `prompt()` or `alert()` — confirm, rename and detail use the vendored dialog.
 - **Don't** make Settings a tab (or a gear-only tab), tint a success toast, or turn a switch green when on.
 - **Don't** put raw infrastructure detail (hostnames, URLs, exception text) in user-facing failure copy — sanitize it; logs keep the detail.
 - **Don't** apply this spec to Streamlit POC spikes.
