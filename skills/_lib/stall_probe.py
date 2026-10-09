@@ -12,7 +12,10 @@ gate is running red. This probe catches the next one with timestamps:
   the control) does a 4 KB `FILE_FLAG_NO_BUFFERING` read at a random offset of a 64 MB
   file once a second; a read slower than the threshold is `kind: disk` with the
   `volume` (the sleep and http legs never touch the SATA disk the fleet lives on, so
-  they were blind to a stall that only froze E: -- fleet-config#1106).
+  they were blind to a stall that only froze E: -- fleet-config#1106). Each `disk` record carries
+  `also_slow`, the other volumes slow over the same window (empty = this volume alone), and a read
+  still stuck after `DISK_HUNG_S` is logged while in flight as `kind: disk-hung`, with evidence from
+  during the stall -- a read that never returns is not a quiet log.
 
 A machine sleep looks like a stall to both legs (the monotonic clock runs through
 it) but is not one, so a gap that is mostly sleep is logged as `kind: suspend`
@@ -75,6 +78,8 @@ DISK_READ_BYTES = 4096                # one sector-aligned read; FILE_FLAG_NO_BU
 DISK_FILE_BYTES = 64 * 1024 * 1024
 DISK_DIR_NAME = ".fleet-stall-probe"  # at the volume root, outside the repos' tree walks
 DISK_FILE_NAME = "disk-probe.bin"
+DISK_HUNG_S = 5.0                     # a read still in flight after this long is logged while it is stuck (`disk-hung`)
+DISK_WATCH_EVERY_S = 1.0
 HEARTBEAT_S = 300.0
 EVIDENCE_COOLDOWN_S = 30.0
 # Evidence-call timeouts (seconds), stated bounds rather than measured ones: an always-on probe must
@@ -426,6 +431,10 @@ class Probe:
         self.evidence = evidence or (lambda: capture_evidence(sorted(self.disk_dirs)))
         self.open_disk, self.disk_every_s = open_disk_reader, DISK_EVERY_S  # a test swaps in a fake reader
         self.disk_reads: Dict[str, int] = {volume: 0 for volume in self.disk_dirs}
+        self.disk_hung, self.disk_hung_s = 0, DISK_HUNG_S
+        self._disk_lock = threading.Lock()
+        self._disk_inflight: Dict[str, Dict[str, Any]] = {}  # volume -> the read being waited on right now
+        self._disk_slow: Dict[str, tuple] = {}               # volume -> (start, end) monotonic of its last slow read
         self.sleep = time.sleep  # the timed wait; a test swaps in a late one
         self.unbiased, self.power_events = unbiased_s, power_events  # a test swaps in a fake clock and log
         self.power_settle_s = POWER_SETTLE_S
@@ -460,10 +469,16 @@ class Probe:
         `extra` fields (the disk leg's `volume`) ride along on the record."""
         record = {"kind": kind, "start_utc": utc(started_wall), "end_utc": utc(started_wall + gap_s),
                   "gap_s": round(gap_s, 2), "threshold_s": self.threshold, "suspended_s": suspended_s, **extra}
-        if suspended_s is not None and suspended_s >= self.threshold and suspended_s > SUSPEND_SHARE * gap_s:
+        if self._mostly_asleep(suspended_s, gap_s):
             self._suspend({**record, "kind": "suspend", "seen_by": kind}, started_wall)
             return
         self.stalls += 1
+        self._log_with_evidence(record)
+
+    def _mostly_asleep(self, suspended_s: Optional[float], gap_s: float) -> bool:
+        return suspended_s is not None and suspended_s >= self.threshold and suspended_s > SUSPEND_SHARE * gap_s
+
+    def _log_with_evidence(self, record: Dict[str, Any]) -> None:
         now = time.monotonic()
         if now - self._last_evidence < EVIDENCE_COOLDOWN_S:
             record["evidence"] = "skipped: captured for a stall under 30 s ago"
@@ -498,8 +513,13 @@ class Probe:
                     if reader is None:
                         reader = self.open_disk(volume, folder)
                     wall, started, unbiased_before = time.time(), time.monotonic(), self.unbiased()
+                    flight = {"wall": wall, "mono": started, "unbiased": unbiased_before, "reported": False}
+                    with self._disk_lock:
+                        self._disk_inflight[volume] = flight
                     reader.read()
                 except Exception as exc:  # noqa: BLE001 -- an unreadable volume is a finding, not a crash
+                    with self._disk_lock:
+                        self._disk_inflight.pop(volume, None)
                     if reader is not None:
                         reader.close()
                         reader = None
@@ -508,20 +528,65 @@ class Probe:
                         self.log.append({"kind": "disk-error", "volume": volume, "start_utc": utc(wall), "error": error})
                         last_error = error
                     continue
+                ended = time.monotonic()
+                with self._disk_lock:
+                    self._disk_inflight.pop(volume, None)
                 last_error = None
                 self.disk_reads[volume] += 1
-                took = time.monotonic() - started
+                took = ended - started
                 if took > self.threshold:
-                    self.stall("disk", wall, took, self.suspended(took, unbiased_before), volume=volume)
+                    also_slow = self._also_slow(volume, started, ended)
+                    with self._disk_lock:
+                        self._disk_slow[volume] = (started, ended)
+                    self.stall("disk", wall, took, self.suspended(took, unbiased_before), volume=volume,
+                               also_slow=also_slow, was_hung=flight["reported"])
         finally:
             if reader is not None:
                 reader.close()
+
+    def _also_slow(self, volume: str, start: float, end: float) -> List[str]:
+        """The other probed volumes slow over this read's window (monotonic `start`..`end`): a read still in
+        flight past the threshold, or a slow read that overlapped. Empty = this volume alone, which is what
+        tells 'the E: disk' from 'the whole storage stack' without hand-correlating two records."""
+        with self._disk_lock:
+            slow = []
+            for other in sorted(self.disk_dirs):
+                if other == volume:
+                    continue
+                flight, last = self._disk_inflight.get(other), self._disk_slow.get(other)
+                if (flight and end - flight["mono"] > self.threshold) or (last and last[0] < end and last[1] > start):
+                    slow.append(other)
+            return slow
+
+    def _disk_watch(self) -> None:
+        """A read that never returns logs nothing from its own thread, so this one watches the reads in
+        flight: past `disk_hung_s` it writes a `disk-hung` record while the read is still stuck (once per
+        read), with the evidence captured *during* the stall instead of after it. The completed read, if it
+        ever completes, still logs its own `disk` record with the full gap."""
+        while not self.stop.wait(DISK_WATCH_EVERY_S):
+            now = time.monotonic()
+            with self._disk_lock:
+                due = [(volume, flight) for volume, flight in self._disk_inflight.items()
+                       if not flight["reported"] and now - flight["mono"] > self.disk_hung_s]
+            for volume, flight in due:
+                age = now - flight["mono"]
+                suspended = self.suspended(age, flight["unbiased"])
+                if self._mostly_asleep(suspended, age):  # the machine slept under it: the completed read logs a suspend
+                    continue
+                flight["reported"] = True
+                self.disk_hung += 1
+                self._log_with_evidence({
+                    "kind": "disk-hung", "volume": volume, "start_utc": utc(flight["wall"]), "in_flight_s": round(age, 2),
+                    "threshold_s": self.threshold, "hung_after_s": self.disk_hung_s, "suspended_s": suspended,
+                    "also_slow": self._also_slow(volume, flight["mono"], now)})
 
     def run(self, duration_s: Optional[float] = None) -> None:
         threading.Thread(target=self._server.serve_forever, daemon=True).start()
         threading.Thread(target=self._http_loop, daemon=True).start()
         for volume, folder in self.disk_dirs.items():
             threading.Thread(target=self._disk_loop, args=(volume, folder), daemon=True).start()
+        if self.disk_dirs:
+            threading.Thread(target=self._disk_watch, daemon=True).start()
         began, next_beat = time.monotonic(), 0.0
         try:
             while not self.stop.is_set():
@@ -533,7 +598,8 @@ class Probe:
                 if time.monotonic() >= next_beat:
                     self.log.beat({"pid": os.getpid(), "heartbeat_utc": utc(), "started_utc": utc(time.time() - (time.monotonic() - began)),
                                    "stalls_logged": self.stalls, "suspends_logged": self.suspends, "threshold_s": self.threshold, "heartbeat_every_s": HEARTBEAT_S,
-                                   "disk_volumes": sorted(self.disk_dirs), "disk_reads": dict(self.disk_reads)})
+                                   "disk_volumes": sorted(self.disk_dirs), "disk_reads": dict(self.disk_reads),
+                                   "disk_hung_logged": self.disk_hung})
                     next_beat = time.monotonic() + HEARTBEAT_S
                 if duration_s is not None and time.monotonic() - began >= duration_s:
                     break
