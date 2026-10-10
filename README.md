@@ -138,6 +138,7 @@ fleet-config/
 │   ├── session_index.py            # SessionStart hook: lazily digests settled captures into conversations/index.md
 │   ├── conversation_index.py       # the indexer (lib + CLI) session_index runs; digests via the hub, writes index.md + index.json
 │   ├── conversation_search.py      # CLI: ranked FTS5 search over captures, returns each hit's resume command
+│   ├── conversation_title.py       # CLI: set/clear a conversation's user title (titles.json sidecar, survives re-indexing)
 │   ├── conversation_backfill.py    # CLI: capture a stored transcript a live Stop hook never captured (harness store scan, session-start filename stamping)
 │   ├── backup_private.py           # thin CLI shim (not a hook — a scheduled program, fleet-config#590) → hooks/backup/'s `main`
 │   ├── backup/                     # the daily fleet-private backup engine: config/select/snapshot/retention/report + a thin cli.py (fleet-config#731)

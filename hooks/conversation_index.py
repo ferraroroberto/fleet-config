@@ -44,8 +44,10 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import os
 import re
 import sys
+import tempfile
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -76,6 +78,16 @@ INDEX_NAME = "index.md"
 # skill-facing surface a SKILL.md reads; index.json is the API for the search
 # CLI and for app-launcher's Life OS conversation browser.
 INDEX_JSON_NAME = "index.json"
+# The owner's own name for a conversation, ``{capture filename: title}``
+# (fleet-config#1348). A sidecar rather than an ``<!-- idx -->`` attr or a
+# capture-header field because every one of those is rewritten by something:
+# the capture hook re-renders the whole capture on each turn of a resumed
+# conversation, a re-digest replaces the index entry, ``--force`` rebuilds
+# them all, and the consumer's decay step squashes old entries. Nothing in
+# this pipeline writes this file except ``conversation_title.set_title``, and
+# it is keyed on the filename the capture keeps for life (a resumed session is
+# matched by its sid and rewritten in place, never renamed).
+TITLES_NAME = "titles.json"
 # A capture younger than this is still "settling" (its session may not have fully
 # ended). Small on purpose: at SessionStart the previous conversation is over, so
 # this only guards the narrow race of a Stop write landing as a new session begins.
@@ -185,8 +197,49 @@ def _digest_fields(body: str) -> "dict[str, str]":
     return out
 
 
-def index_json_payload(label: str, entries: "dict[str, Entry]") -> "list[dict]":
-    """``index.json``'s entry list — newest first, same order as ``index.md``."""
+def read_titles(conv_dir: Path, *, strict: bool = False) -> "dict[str, str]":
+    """A conversations dir's user titles, ``{capture filename: title}``.
+
+    Readers are tolerant — a missing or unreadable sidecar means "no titles",
+    logged when it is corrupt, so a bad file can never break indexing or
+    search. The writer passes ``strict=True`` and gets a ``ValueError``
+    instead: rewriting a sidecar it could not read would erase every other
+    title in it.
+    """
+    path = conv_dir / TITLES_NAME
+    try:
+        raw = path.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        return {}
+    except OSError as exc:
+        if strict:
+            raise ValueError(f"cannot read {path}: {exc}") from exc
+        logger.warning("⚠️ titles unreadable, ignored: %s (%s)", path, exc)
+        return {}
+    try:
+        data = json.loads(raw)
+    except ValueError:
+        data = None
+    if not isinstance(data, dict) or not all(
+        isinstance(k, str) and isinstance(v, str) for k, v in data.items()
+    ):
+        if strict:
+            raise ValueError(f"{path} is not a {{file: title}} object — fix or remove it first")
+        logger.warning("⚠️ titles malformed, ignored: %s", path)
+        return {}
+    return data
+
+
+def index_json_payload(
+    label: str, entries: "dict[str, Entry]", titles: "Optional[dict[str, str]]" = None
+) -> "list[dict]":
+    """``index.json``'s entry list — newest first, same order as ``index.md``.
+
+    ``title`` is the owner's name for the conversation (``""`` when none); a
+    consumer shows ``title or topic``, so the digest topic keeps updating
+    underneath a title (fleet-config#1348).
+    """
+    titles = titles or {}
     rows = []
     for e in sorted(entries.values(), key=lambda e: e.file, reverse=True):
         date, slug = _split_name(e.file)
@@ -199,9 +252,40 @@ def index_json_payload(label: str, entries: "dict[str, Entry]") -> "list[dict]":
             "mtime": e.mtime,
             "sid": e.sid,
             "agent": e.agent,
+            "title": titles.get(e.file, ""),
             **_digest_fields(e.body),
         })
     return rows
+
+
+def write_index_json(conv_dir: Path, label: str, entries: "dict[str, Entry]") -> bool:
+    """Atomically (re)write ``index.json``, titles read at write time.
+
+    Shared by the indexer and the title writer so the two can't render the
+    file differently. Atomic because app-launcher reads it while either may be
+    writing. Returns ``False`` (logged) on failure.
+    """
+    path = conv_dir / INDEX_JSON_NAME
+    text = json.dumps(
+        index_json_payload(label, entries, read_titles(conv_dir)), indent=2, ensure_ascii=False
+    )
+    _lib.sweep_stale_atomic_temps(path)
+    temporary: Optional[str] = None
+    try:
+        fd, temporary = tempfile.mkstemp(
+            dir=str(conv_dir), prefix=_lib.atomic_tmp_prefix(path), suffix=".tmp")
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            handle.write(text)
+        os.replace(temporary, path)
+    except OSError as exc:
+        if temporary:
+            try:
+                os.unlink(temporary)
+            except OSError:
+                pass
+        logger.error("Could not write %s: %s", path, exc)
+        return False
+    return True
 
 
 def decay_tail(path: Path) -> str:
@@ -335,13 +419,7 @@ def index_dir(conv_dir: Path, label: str, *, force: bool = False) -> int:
             )
         except OSError as exc:
             logger.error("Could not write %s: %s", index_path, exc)
-        try:
-            json_path.write_text(
-                json.dumps(index_json_payload(label, entries), indent=2, ensure_ascii=False),
-                encoding="utf-8",
-            )
-        except OSError as exc:
-            logger.error("Could not write %s: %s", json_path, exc)
+        write_index_json(conv_dir, label, entries)
     return digested
 
 
