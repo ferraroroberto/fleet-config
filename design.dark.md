@@ -93,6 +93,10 @@ components:
   nav-tab-active: { backgroundColor: "{colors.accent-soft}", borderColor: "{colors.accent-border-soft}", textColor: "{colors.accent-text}" }   # accent-soft tint, not canvas-subtle — the inset surface (true black here) reads as a black hole (project-scaffolding#159)
   chip:           { backgroundColor: "{colors.neutral-soft}", textColor: "{colors.fg}", rounded: "{rounded.pill}", padding: "2px {spacing.sm}", typography: "{typography.caption}" }   # neutral chip / filter pill — structural, identical to Light (see design.md)
   reference-pill: { backgroundColor: "{colors.accent-soft}", textColor: "{colors.accent-text}", borderColor: "{colors.accent-border-soft}", rounded: "{rounded.pill}", padding: "{components.chip.padding}", typography: "{components.chip.typography}" }   # a link to something openable — structural, identical to Light (see design.md)
+  code-inline:    { backgroundColor: "{colors.neutral-soft}", textColor: "{colors.fg}", rounded: 6px, padding: "1px 6px", fontFamily: mono, fontSize: 0.875em }   # structural, identical to Light (see design.md)
+  file-chip:      { backgroundColor: "{colors.accent-soft}", textColor: "{colors.accent-text}", borderColor: "{colors.accent-border-soft}", rounded: "{components.code-inline.rounded}", padding: "0 5px", fontFamily: mono, fontSize: "{components.code-inline.fontSize}", glyph: file }   # structural, identical to Light (see design.md)
+  code-listing:   { backgroundColor: "{colors.card}", borderColor: "{colors.border}", rounded: "{rounded.md}", fontFamily: mono, fontSize: 13px, lineHeight: 1.5, header: "{typography.caption}", headerColor: "{colors.fg-muted}", headerMinHeight: 36px }   # structural, identical to Light (see design.md)
+  chat-turn:      { promptFill: "{colors.accent-soft}", promptBorder: "{colors.accent-border-soft}", promptText: "{colors.fg}", promptMaxWidth: "min(85%, 560px)", promptRounded: "{rounded.lg} {rounded.lg} 4px {rounded.lg}", headerMinHeight: "{rows.sm}", stepLineMinHeight: "{rows.sm}", stepLine: "{typography.body-sm}", stepLineColor: "{colors.fg-muted}", partsGap: 12px }   # structural, identical to Light (see design.md)
   disclosure:     { align: left, chevron: right, closedHeight: 52px, summaryPadding: "0 14px", bodyPadding: "12px 14px 14px" }   # collapsible details/summary header — structural, identical to Light (see design.md)
   modal:          { rounded: "{rounded.lg}", closeSize: 34px, rowPadding: "12px 0", primaryButton: "{components.button-primary}" }   # editor <dialog> — structural, identical to Light (see design.md)
   list-row:       { rowPadding: "{components.modal.rowPadding}", divider: "{colors.border-muted}" }   # repeating entries inside a card — structural, identical to Light (see design.md)
@@ -215,7 +219,7 @@ Structurally unchanged from the Light theme — the four button tiers
 shared `button-disabled` recipe; the accent derivatives are the same
 `color-mix` strings over the brighter dark accent), `card`,
 `control`, `switch`, `nav-bar`, `nav-tab`, `disclosure`, plus the `modal`,
-`page-header`, `list-row`, `action-row`, glance card, `avatar`, status chip, `meter`, settings group, `segmented`, `empty-state`, `icon-tile`, `icon-button`, `reference-pill` and `toast` **Component contracts** and the `icons.size` steps
+`page-header`, `list-row`, `action-row`, glance card, `avatar`, status chip, `meter`, settings group, `segmented`, `empty-state`, `icon-tile`, `icon-button`, `reference-pill`, `code-inline` / `file-chip`, `code-listing`, `chat-turn` and `toast` **Component contracts** and the `icons.size` steps
 defined in `design.md` — all with the vendored snippets from
 `project-scaffolding` reused verbatim. Only values change for dark: the `switch`
 on-track is the **accent (`accent-fill`)**, at the dark `accent-fill` value
@@ -226,6 +230,9 @@ the page-header's exceptions line and the `meter` fill take the dark
 `*-text` and base hues, with the same pace rule; Modes are not alarms holds
 unchanged in dark: a normal armed or heating state is the raised selected
 segment, never a `danger` tint;
+the black-hole rule holds for code in dark: the code chip sits on
+`neutral-soft` and every listing and diff on `card` with a hairline, never
+`canvas-subtle`, which is true black inside a dark card;
 the `modal` disabled recipe holds AA on the dark surface (~5.5:1); the
 `icon-tile` fills use the brighter dark `tile-*` values. The **Base UI — model
 components on shadcn** rule in `design.md` applies here unchanged: every

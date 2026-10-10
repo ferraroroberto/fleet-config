@@ -94,6 +94,10 @@ components:
   nav-tab-active: { backgroundColor: "{colors.accent-soft}", borderColor: "{colors.accent-border-soft}", textColor: "{colors.accent-text}" }   # accent-soft tint, not canvas-subtle — the inset surface reads as a black hole in dark mode (project-scaffolding#159)
   chip:           { backgroundColor: "{colors.neutral-soft}", textColor: "{colors.fg}", rounded: "{rounded.pill}", padding: "2px {spacing.sm}", typography: "{typography.caption}" }   # neutral chip / filter pill — never canvas-subtle inside a card (the dark black hole again)
   reference-pill: { backgroundColor: "{colors.accent-soft}", textColor: "{colors.accent-text}", borderColor: "{colors.accent-border-soft}", rounded: "{rounded.pill}", padding: "{components.chip.padding}", typography: "{components.chip.typography}" }   # a link to something openable (folder, AI conversation, issue, URL) — the chip geometry, never resized into a control box (fleet-config#1259)
+  code-inline:    { backgroundColor: "{colors.neutral-soft}", textColor: "{colors.fg}", rounded: 6px, padding: "1px 6px", fontFamily: mono, fontSize: 0.875em }   # inline code in rendered prose (a reply, a doc): mono at 0.875em of the text around it, never caption-sized; never canvas-subtle inside a card (the dark black hole)
+  file-chip:      { backgroundColor: "{colors.accent-soft}", textColor: "{colors.accent-text}", borderColor: "{colors.accent-border-soft}", rounded: "{components.code-inline.rounded}", padding: "0 5px", fontFamily: mono, fontSize: "{components.code-inline.fontSize}", glyph: file }   # code-inline that opens something (a file's diff): the reference-pill colours on the code chip's geometry; the 1px hairline replaces 1px of padding so both chips sit the same height in a line
+  code-listing:   { backgroundColor: "{colors.card}", borderColor: "{colors.border}", rounded: "{rounded.md}", fontFamily: mono, fontSize: 13px, lineHeight: 1.5, header: "{typography.caption}", headerColor: "{colors.fg-muted}", headerMinHeight: 36px }   # a fenced block or a diff: the card surface on a hairline, a small header (language, copy); 13px is the one sanctioned off-scale size, for mono listings only
+  chat-turn:      { promptFill: "{colors.accent-soft}", promptBorder: "{colors.accent-border-soft}", promptText: "{colors.fg}", promptMaxWidth: "min(85%, 560px)", promptRounded: "{rounded.lg} {rounded.lg} 4px {rounded.lg}", headerMinHeight: "{rows.sm}", stepLineMinHeight: "{rows.sm}", stepLine: "{typography.body-sm}", stepLineColor: "{colors.fg-muted}", partsGap: 12px }   # one exchange with an agent: prompt bubble, then the agent's turn as one block on the canvas (no card)
   disclosure:     { align: left, chevron: right, closedHeight: 52px, summaryPadding: "0 14px", bodyPadding: "12px 14px 14px" }   # collapsible details/summary header — the summary owns height+padding; the card's own padding is zeroed so cards align when closed
   modal:          { rounded: "{rounded.lg}", closeSize: 34px, rowPadding: "12px 0", primaryButton: "{components.button-primary}" }   # editor <dialog> — heading-lg title + × close, label/value rows on a top-border divider, one full-width primary
   list-row:       { rowPadding: "{components.modal.rowPadding}", divider: "{colors.border-muted}" }   # repeating entries inside a card — flat full-bleed rows on a top hairline, never nested canvas-subtle cards (photo-ocr .history-item, post-photo-ocr#73)
@@ -215,6 +219,14 @@ introduce ad-hoc sizes.
   shown on every visit becomes noise (fleet-config#1332).
 - **`caption` (12px) is for chips, badges and timestamps only**, never for a
   line people read.
+- **Code is mono at two sizes.** Inline code is the `code-inline` chip at
+  0.875em of the text around it (14px in body), never `caption`: a 12px chip
+  reads as a timestamp, not as code. A listing (a fenced block, a diff) is
+  13px / 1.5 on the `code-listing` frame. 13px is the one sanctioned size off
+  the 12 / 14 / 16 scale, and only for mono listings: mono glyphs are wider
+  than the system face, so 14px fits too few columns on a 390px phone and
+  12px is too small to read a diff on it. Use the stack `ui-monospace,
+  SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace`.
 - **`label`** carries field and control labels and button text;
   **`heading-md`** titles a section or group inside a view.
 - **Caps are legal in one place.** `text-transform: uppercase` goes through
@@ -753,6 +765,54 @@ hand-picked per app.
   nothing stays the neutral `chip`; a status pill keeps its status colours (a
   `*-text` on its tint, a muted closed state) on the same shape. Reference
   impl: task-os `.chip, .pill` (task-os#357).
+- **code chip** (`code-inline`, and its linked variant `file-chip`) — inline
+  code inside rendered prose: mono at 0.875em of the surrounding text, `fg`
+  on `neutral-soft`, `1px 6px` padding, a 6px radius. 6px is the chip's own
+  radius, below `rounded.sm`: a code span sits inside a line of text, and
+  8px on a 20px-tall chip reads as a pill. Never `canvas-subtle`, which is
+  true black inside a dark card. A code span that names something the app
+  can open (a file this session edited, opening its diff) is the **file
+  chip**: the `reference-pill` colours (`accent-text` on `accent-soft`, an
+  `accent-border-soft` hairline) on the code chip's geometry, a leading
+  `file` glyph, and the short name only (the full path on `title`). It links
+  only what the app can resolve without guessing; everything else stays the
+  plain code chip. Inline in prose, it is exempt from the 44px floor the way
+  a text link is ([WCAG 2.2 · Target Size (Minimum)](https://www.w3.org/WAI/WCAG22/Understanding/target-size-minimum)'s
+  inline exception), and
+  its name ellipsizes rather than push the text sideways at 390px. Copy and
+  read-aloud take the source text, so a chip changes neither. A listing (a
+  fenced block, a diff) sits in the `code-listing` frame: the `card` surface
+  on a hairline, a small `caption` header (language, copy). Reference impl:
+  app-launcher `.tr-md code`, `.tr-file-chip` (app-launcher#1474, #1478).
+- **chat turn** (`chat-turn`) — how an app renders an exchange with an
+  agent. **The prompt is a bubble:** right-aligned, `fg` on `accent-soft`
+  with an `accent-border-soft` hairline, at most `min(85%, 560px)` wide, the
+  corner nearest the column edge tightened to 4px. **The agent's turn is one
+  block on the canvas, not a card:** one header for the whole turn (the
+  agent's mark on a `neutral-soft` squircle, its name, the time, copy,
+  collapse), then its parts in order at a 12px rhythm. Never one card per
+  text fragment, each with its own "who · when" header. **Reply text follows
+  the type scale:** `##` is `heading-md`, `###` is body bold, so a heading
+  never renders smaller than the body around it. **Tool work is a quiet step
+  line:** one flat `rows.sm` row per run of tool calls, chevron, a
+  plain-words label in `body-sm` `fg-muted` ("Ran 2 commands, read 3
+  files"), then the parts an ellipsis must never cut (`+N −M`, `N failed`, a
+  duration) as non-shrinking trailing items; opened, the items hang off a
+  2px rail. **A turn that changed things closes with a summary card** once
+  the turn is over (the next prompt exists, or the app's activity line says
+  it stopped), never growing live: a header with the total, then one
+  `rows.md` row per item (status badge, name first with its folder as the
+  hint, its own counts), the first 3 then "Show N more" on every width; a
+  row opens the item's detail, focused on it. When the turn's start is not
+  loaded, the card says so ("Earlier steps not loaded · Load older") instead
+  of presenting a partial count as the whole. **No one-tap undo of agent
+  work from the summary.** The summary is folded from the conversation, not
+  from the source of truth, and later work may have changed the item since;
+  the card offers **Ask to undo**, a 44px trailing button that puts a plain
+  request in the composer ("Undo your edits to `path` from your last turn")
+  and sends nothing until the user taps Send, so the agent does it in the
+  open. Reference impl: app-launcher `session-transcript.js`,
+  `edited-card.js` (app-launcher#1475–#1479).
 - **toast** (`toast`) — the one transient message for a user-initiated command
   (feedback altitude, Async data & feedback). The **neutral frosted** recipe
   from app-launcher (`styles.css`, "Neutral frosted toast", ported from
@@ -862,6 +922,7 @@ byte-for-byte components.
 - **Don't** mix a second icon set or hand-draw a one-off glyph — use the matching Lucide icon.
 - **Don't** declare one manifest icon as both `any` and `maskable`, or redraw the app identity independently for the tray.
 - **Don't** set a line people read in `caption`, or uppercase anything but an `overline` group header — secondary lines are `body-sm`, and numbers and units are never transformed.
+- **Don't** draw inline code at `caption` size or on `canvas-subtle`, and don't give each fragment of one agent turn its own card and header.
 - **Don't** put a solid accent fill on any button except the view's primary action — secondary emphasis is the tint, never a second solid.
 - **Don't** introduce a second accent or per-app navigation variants.
 - **Don't** stretch a single column full-bleed on desktop — keep the centered 772px measure below 1100px, and use the left rail + master-detail layout above it. Only a view whose content is two-dimensional (board lanes, a many-field table, a tree with attribute columns, calendar days) may span the window, and the app declares it in `wide_views`.
