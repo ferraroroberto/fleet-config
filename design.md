@@ -105,6 +105,7 @@ components:
   hit-target:     { min: 44px }   # minimum effective pointer-target square, app-wide — see Touch targets
   avatar:         { size: 36px, rounded: "{rounded.md}", backgroundColor: "{colors.neutral-soft}", glyph: "{icons.size.nav-tab}", badgeSize: 12px, badgeRing: "{colors.card}", badgeAlive: "{colors.success}", badgeDown: "{colors.danger}" }   # a row's leading squircle; the corner badge means alive (up) or down (should be up), nothing else (fleet-config#1332)
   meter:          { height: 6px, rounded: "{rounded.pill}", track: "{colors.neutral-soft}", fillUnderPace: "{colors.accent}", fillAheadOfPace: "{colors.attention}", fillCritical: "{colors.danger}", criticalAt: 90%, paceTick: 2px }   # a usage bar coloured by pace, not raw percent (fleet-config#1332)
+  segmented:      { height: "{components.control.height}", target: 44px, inset: 3px, rounded: "{rounded.md}", track: "{colors.neutral-soft}", selectedFill: "{colors.card}", label: "{colors.fg}" }   # one choice among 2–5 peers; the raised selected segment IS the state, never a colour (fleet-config#1334)
 focus:            { outline: "2px solid {colors.accent}", offset: 2px }   # one tokenized :focus-visible ring app-wide (a control overrides only where it draws a custom ring)
 layout:                           # desktop placement (Layout) — theme-independent
   measure:     772px              # centered content column below the wide breakpoint
@@ -507,9 +508,11 @@ label** (state is read from thumb position + track color; `role="switch"` +
 track is the **accent (`accent-fill`) when on**, so a switch sits in the same
 palette as the buttons and tabs beside it; green reads as off-palette next to
 the rest of the app (fleet-config#1200 reversed the earlier green-on decision,
-rationale in `docs/design-system.md`). A **state** toggle (alarm armed, a
-destructive mode) may substitute a status color (`danger` / `attention`) where
-that state carries its own meaning; `success` is never a switch's on-colour.
+rationale in `docs/design-system.md`). A **state** toggle whose on-state is
+itself an exception (a destructive mode) may substitute a status color
+(`danger` / `attention`) where that state carries its own meaning; a normal
+chosen mode (alarm armed, heating) stays accent, since modes are not alarms
+(status chip). `success` is never a switch's on-colour.
 Collapsible `details/summary`
 headers (`disclosure`) left-align the icon + title with the chevron pinned right,
 and follow one fixed structural contract so a vertical stack of collapsible
@@ -556,7 +559,11 @@ hand-picked per app.
   two parts so no ellipsis cuts the part that matters at 390px (~22
   characters), falling back to the plain count in `fg-muted` ("7 jobs") when
   nothing is wrong. Never a fixed slogan, and never a count another tab owns
-  (fleet-config#1332).
+  (fleet-config#1332). A **dashboard tab** (one whose job is "is everything
+  OK?") may instead carry one plain live fact as its quiet line when nothing
+  is wrong, in `fg-muted` (home-automation's Home: the weather now and
+  today's range). It is still live, still at most ~22 characters, and still
+  yields to an exception.
 - **card** (`card`) — the base content group: `rounded.lg` (16px) surface at
   `spacing.md` padding on a hairline border. Its **header** is one row: a
   leading `icons.size.title` glyph + a bold title (`label`/`body` weight 700),
@@ -602,7 +609,11 @@ hand-picked per app.
   slot**, either an `avatar`, the one leading toggle (e.g. favorite) or a
   tabular time value, and **at most one other visible trailing item**: a
   value (a `meter`, a sparkline), or the row's dominant verb (Run on a job
-  row) as a tint verb at real 44px geometry. **Title:** `body` at weight
+  row) as a tint verb at real 44px geometry. A **segmented verb cluster**
+  (Up · Stop · Down on a blind, home-automation#884) counts as that one
+  trailing item: one control with one track, at real 44px geometry per
+  segment, outside the row's tap target so a press never opens the sheet.
+  **Title:** `body` at weight
   600, one line, truncated with an ellipsis, never broken mid-word.
   **Context:** at most one `body-sm` line in `fg-muted`, which a status chip
   may close, for an exception only. Height comes from the `rows` scale
@@ -628,7 +639,12 @@ hand-picked per app.
   (an agent, kind or job glyph). Its corner badge (`avatar.badgeSize`, ringed
   in `card` so it reads cut out) means **alive and nothing else**:
   `success` when the process is up, `danger` when it should be up and is
-  down, absent when not running. It replaces separate health dots, alive
+  down, absent when not running. For a **device** row, alive reads as
+  **connected and expected to be**: the badge is `success` when it answers
+  and `danger` only when it should and does not. A device that is
+  legitimately absent (an unplugged plug) gets no badge, and unreachable
+  items of one kind fold into a single **Offline** row at the end of their
+  group instead of a red mark on each. It replaces separate health dots, alive
   dots, "running" pills and coloured meta text. An app may swap the dot for
   one role glyph (a crown for a coordinating session) on the same corner.
 - **status chip** — the `chip` geometry in **one tone map,
@@ -641,6 +657,13 @@ hand-picked per app.
   `success` is never a chip — it is the avatar badge and history marks only.
   Sentence case. One class with a `data-tone`, never a chip style per
   surface. A chip that opens something is the `reference-pill` instead.
+  **Modes are not alarms.** A normal chosen state — armed, heating,
+  boosting, recording on a schedule — is drawn as the selected segment (or,
+  outside a segmented control, in `accent`), never `danger`. `danger` is
+  kept for the emergency (alarm triggered, battery critical, a host down),
+  and `attention` for "needs you soon" (detector trouble, on battery). An
+  app that paints its normal night-time state red teaches the user to
+  ignore red.
 - **meter** (`meter`) — a usage bar: a `meter.height` (6px) `rounded.pill`
   track in `neutral-soft` with a fill coloured **by pace, not raw
   percent**: `accent` while usage ≤ the period's elapsed share,
@@ -657,7 +680,31 @@ hand-picked per app.
   saves as it changes (text and numbers on blur), with a `toast`; an editor
   for a saved item keeps the dense collection's staged Save. Launch-time
   choices stay on the toolbar where the user launches, never only in
-  Settings.
+  Settings. The same row is the **link row inside a detail sheet** (a unit's
+  Vanes, Rule, Schedules, Name): lead glyph, label, muted value, chevron to a
+  page of the sheet. Settings sheets are `instant` (Done closes); a saved
+  item inside one keeps its staged editor stacked on top. A **compact
+  numeric field** (minutes, watts, a ratio, a coordinate) may keep its own
+  width instead of the modal's 55% value column when the 55% column would
+  wrap its label at 390px; text and select values keep the 55% rule.
+- **segmented control** (`segmented`) — one control for a choice among 2–5
+  peers that the user switches between in place: a mode (alarm off /
+  partial / full, AC mode, fan), a period (day / week / month), a view
+  (Energy / Money), a forecast day, the text size. It is one `rounded.md`
+  track on `neutral-soft` with a 3px inset, holding equal borderless
+  segments at `control` height, and the **selected segment is the state**:
+  raised on the `card` surface with a soft shadow, label in `fg`,
+  `aria-pressed="true"`. The state is never a colour, so an armed mode is
+  not red. It is never a sentence above controls that look disabled, and
+  never a row of faded buttons with the current one undrawn. Labels are one
+  word or one glyph plus an accessible name, every label `fg` on the track
+  (`fg-muted` there falls under 4.5:1). A segment that cannot apply now is
+  `disabled` and keeps its `fg` label (never opacity), saying why in its
+  title. Adjacent segments reach 44px with real height when they act on the
+  world (verbs) or a vertical-only target band (pickers), never overlapping
+  a neighbour. More than five options, or options that are not peers,
+  become a `select` in a settings row instead. Reference impl:
+  home-automation `.segmented` (home-automation#879).
 - **dense collection** — how a card renders **saved automation/settings
   items** (schedules, pairings, overrides): each item is a flat `list-row`
   **summary row** — a compact human-readable summary line + the entry's

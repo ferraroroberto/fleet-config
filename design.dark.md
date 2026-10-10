@@ -103,6 +103,7 @@ components:
   hit-target:     { min: 44px }   # minimum effective pointer-target square — structural, identical to Light (see design.md Touch targets)
   avatar:         { size: 36px, rounded: "{rounded.md}", backgroundColor: "{colors.neutral-soft}", glyph: "{icons.size.nav-tab}", badgeSize: 12px, badgeRing: "{colors.card}", badgeAlive: "{colors.success}", badgeDown: "{colors.danger}" }   # a row's leading squircle, alive/down badge — structural, identical to Light (see design.md)
   meter:          { height: 6px, rounded: "{rounded.pill}", track: "{colors.neutral-soft}", fillUnderPace: "{colors.accent}", fillAheadOfPace: "{colors.attention}", fillCritical: "{colors.danger}", criticalAt: 90%, paceTick: 2px }   # a usage bar coloured by pace — structural, identical to Light (see design.md)
+  segmented:      { height: "{components.control.height}", target: 44px, inset: 3px, rounded: "{rounded.md}", track: "{colors.neutral-soft}", selectedFill: "{colors.card}", label: "{colors.fg}" }   # structural, identical to Light (see design.md)
 focus:            { outline: "2px solid {colors.accent}", offset: 2px }   # one tokenized :focus-visible ring app-wide — identical behavior to Light, brighter accent value
 layout:                           # desktop placement (Layout) — theme-independent
   measure:     772px              # centered content column below the wide breakpoint
@@ -214,7 +215,7 @@ Structurally unchanged from the Light theme — the four button tiers
 shared `button-disabled` recipe; the accent derivatives are the same
 `color-mix` strings over the brighter dark accent), `card`,
 `control`, `switch`, `nav-bar`, `nav-tab`, `disclosure`, plus the `modal`,
-`page-header`, `list-row`, `action-row`, glance card, `avatar`, status chip, `meter`, settings group, `empty-state`, `icon-tile`, `icon-button`, `reference-pill` and `toast` **Component contracts** and the `icons.size` steps
+`page-header`, `list-row`, `action-row`, glance card, `avatar`, status chip, `meter`, settings group, `segmented`, `empty-state`, `icon-tile`, `icon-button`, `reference-pill` and `toast` **Component contracts** and the `icons.size` steps
 defined in `design.md` — all with the vendored snippets from
 `project-scaffolding` reused verbatim. Only values change for dark: the `switch`
 on-track is the **accent (`accent-fill`)**, at the dark `accent-fill` value
@@ -222,7 +223,9 @@ on-track is the **accent (`accent-fill`)**, at the dark `accent-fill` value
 nav-bar fill, and only a real error tints; the `avatar` badge is the dark
 `success` / `danger` ringed in the dark `card`, and the status chip tones,
 the page-header's exceptions line and the `meter` fill take the dark
-`*-text` and base hues, with the same pace rule;
+`*-text` and base hues, with the same pace rule; Modes are not alarms holds
+unchanged in dark: a normal armed or heating state is the raised selected
+segment, never a `danger` tint;
 the `modal` disabled recipe holds AA on the dark surface (~5.5:1); the
 `icon-tile` fills use the brighter dark `tile-*` values. The **Base UI — model
 components on shadcn** rule in `design.md` applies here unchanged: every
