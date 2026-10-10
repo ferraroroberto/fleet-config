@@ -249,6 +249,39 @@ try:
     cs.sync(cfg)
     check(cs.search(cfg, "headphones") == [],
           "search sync: prunes rows whose capture is gone")
+
+    # Archived captures (an index decay parks them in conversations/archive/) stay
+    # searchable and resumable, but are never digested (fleet-config#1346).
+    jd = skills / "journal-daily" / "conversations"
+    arch = jd / "archive"
+    arch.mkdir()
+    old = "2026-06-02-0900-journal-daily-old00001.md"
+    (arch / old).write_text(
+        cc.render_markdown("d", [("user", "remember the marmalade experiment")],
+                           header=cc.capture_header(OTHER_SID, "claude",
+                                                    "2026-06-02T09:00:00")),
+        encoding="utf-8")
+    (arch / "deeper").mkdir()
+    (arch / "deeper" / "2026-06-03-0900-nested-zzzz0001.md").write_text(
+        cc.render_markdown("d", [("user", "nested quokka note")]), encoding="utf-8")
+    (arch / "notes.txt").write_text("quokka", encoding="utf-8")
+    cs.sync(cfg)
+    hits = cs.search(cfg, "marmalade", skill="journal-daily")
+    check(len(hits) == 1 and hits[0]["file"] == old and hits[0]["date"] == "2026-06-02",
+          "search sync: archived capture is searchable, right skill and date")
+    check(hits[0]["resume"] == f"claude --resume {OTHER_SID}" and hits[0]["resumable"],
+          "search sync: archived capture still resumes from its header sid")
+    check(cs.search(cfg, "quokka") == [],
+          "search sync: nested dirs and non-.md files in archive/ are not scanned")
+    only_archive = tmp / "only-archive"
+    (only_archive / "archive").mkdir(parents=True)
+    (only_archive / "archive" / old).write_text("x", encoding="utf-8")
+    check(ci.index_dir(only_archive, "x") == 0 and not (only_archive / ci.INDEX_NAME).exists(),
+          "index_dir: archived captures are never digested or given an index entry")
+    (arch / old).unlink()
+    cs.sync(cfg)
+    check(cs.search(cfg, "marmalade") == [],
+          "search sync: archived capture deleted from disk is pruned like any other")
 finally:
     shutil.rmtree(tmp, ignore_errors=True)
 

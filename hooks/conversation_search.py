@@ -127,12 +127,29 @@ def connect(path: Path) -> sqlite3.Connection:
 # ------------------------------------------------------------------- sync
 
 
+def _capture_paths(conv_dir: Path) -> "list[Path]":
+    """The captures to search in one conversations dir: its own, plus ``archive/``.
+
+    ``archive/`` is where an index decay (life-os ``_recap``) parks old captures
+    so the indexer stops re-digesting them. They stay full-text searchable and
+    resumable — only ``conversation_index.index_dir`` skips them, which is what
+    keeps them out of the LLM digest (fleet-config#1346). One level only: no
+    deeper nesting is scanned.
+    """
+    paths = list(conv_dir.glob("*.md"))
+    archive = conv_dir / "archive"
+    if archive.is_dir():
+        paths.extend(archive.glob("*.md"))
+    return paths
+
+
 def sync(cfg: CaptureConfig, *, rebuild: bool = False) -> int:
     """Bring the search db in line with the captures on disk. Returns # upserted.
 
     Incremental: a conversation is re-read only when its mtime moved. Rows whose
     capture has disappeared are dropped, so the db can't accumulate ghosts of
-    deleted or archived conversations.
+    deleted conversations. Archived ones (``archive/``) are kept — see
+    :func:`_capture_paths`.
 
     Fail-open like the rest of this pipeline — a locked or corrupt db logs and
     returns 0 rather than breaking the indexer that called it (and since the db
@@ -164,7 +181,7 @@ def sync(cfg: CaptureConfig, *, rebuild: bool = False) -> int:
             if not conv_dir.is_dir():
                 continue
             entries = ci.parse_index(conv_dir / ci.INDEX_NAME)
-            for path in conv_dir.glob("*.md"):
+            for path in _capture_paths(conv_dir):
                 if path.name == ci.INDEX_NAME:
                     continue
                 key = str(path)
