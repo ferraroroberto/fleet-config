@@ -361,6 +361,12 @@ _STANDALONE_UNIT_CHECKS: Tuple[Tuple[str, str, str], ...] = (
      "content signature surviving a resume, the index.json twin, and FTS "
      "build/query/prune -- runs against synthetic captures in a temp tree "
      "(fleet-config#586)"),
+    ("conversation_title", "test_conversation_title.py",
+     "a user title surviving every re-index path (re-digest, a resumed "
+     "conversation's re-capture, --force, an index rebuilt from nothing), "
+     "clear-falls-back-to-topic, title search incl. title-only changes, and "
+     "the writer CLI's call shape and refusals -- invented fixtures in a "
+     "temp tree, digest model stubbed (fleet-config#1348)"),
     ("conversation_backfill", "test_conversation_backfill.py",
      "recovering a stored transcript no live Stop ever captured -- Codex "
      "transcript-inference routing with no marker, session-start filename "

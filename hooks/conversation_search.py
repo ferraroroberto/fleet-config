@@ -8,8 +8,9 @@ every skill"* — and hands back the identity needed to reopen it.
 
 Two layers are searched at different weights, because they fail differently:
 
-  * the **digest** (topic / decisions / open loops) — dense and abstracted, so a
-    match here is usually the conversation you meant; weighted high.
+  * the **digest** (the owner's title, topic / decisions / open loops) — dense
+    and abstracted, so a match here is usually the conversation you meant;
+    weighted high.
   * the **full capture text** — verbatim, so it finds the offhand detail no
     digest would ever mention ("the ferry booking reference"); weighted low so
     it ranks below a digest hit rather than drowning it.
@@ -101,6 +102,7 @@ CREATE TABLE IF NOT EXISTS conversations (
     slug       TEXT NOT NULL DEFAULT '',
     sid        TEXT NOT NULL DEFAULT '',
     agent      TEXT NOT NULL DEFAULT '',
+    title      TEXT NOT NULL DEFAULT '',
     topic      TEXT NOT NULL DEFAULT '',
     decisions  TEXT NOT NULL DEFAULT '',
     open_loops TEXT NOT NULL DEFAULT '',
@@ -121,6 +123,11 @@ def connect(path: Path) -> sqlite3.Connection:
     conn = sqlite3.connect(str(path), timeout=BUSY_TIMEOUT_MS / 1000)
     conn.execute(f"PRAGMA busy_timeout={BUSY_TIMEOUT_MS}")
     conn.executescript(_SCHEMA)
+    # A db built before the user-title column (fleet-config#1348) gains it here;
+    # its rows start at "" and `sync` re-reads any whose sidecar title differs.
+    columns = {row[1] for row in conn.execute("PRAGMA table_info(conversations)")}
+    if "title" not in columns:
+        conn.execute("ALTER TABLE conversations ADD COLUMN title TEXT NOT NULL DEFAULT ''")
     return conn
 
 
@@ -146,7 +153,8 @@ def _capture_paths(conv_dir: Path) -> "list[Path]":
 def sync(cfg: CaptureConfig, *, rebuild: bool = False) -> int:
     """Bring the search db in line with the captures on disk. Returns # upserted.
 
-    Incremental: a conversation is re-read only when its mtime moved. Rows whose
+    Incremental: a conversation is re-read only when its mtime moved or its user
+    title (``titles.json``, fleet-config#1348) changed. Rows whose
     capture has disappeared are dropped, so the db can't accumulate ghosts of
     deleted conversations. Archived ones (``archive/``) are kept — see
     :func:`_capture_paths`.
@@ -174,13 +182,19 @@ def sync(cfg: CaptureConfig, *, rebuild: bool = False) -> int:
             conn.executescript(
                 "DELETE FROM conversations; DELETE FROM conv_fts;"
             )
-        known = {row[0]: row[1] for row in conn.execute("SELECT path, mtime FROM conversations")}
+        known = {
+            row[0]: (row[1], row[2])
+            for row in conn.execute("SELECT path, mtime, title FROM conversations")
+        }
         seen: set[str] = set()
 
         for conv_dir, label in ci.conversations_dirs(cfg):
             if not conv_dir.is_dir():
                 continue
             entries = ci.parse_index(conv_dir / ci.INDEX_NAME)
+            # One sidecar per dir covers its archive/ too: archiving moves the
+            # capture but keeps its filename, so its title still applies.
+            titles = ci.read_titles(conv_dir)
             for path in _capture_paths(conv_dir):
                 if path.name == ci.INDEX_NAME:
                     continue
@@ -190,7 +204,9 @@ def sync(cfg: CaptureConfig, *, rebuild: bool = False) -> int:
                     mtime = path.stat().st_mtime
                 except OSError:
                     continue
-                if not rebuild and key in known and abs(known[key] - mtime) < 1:
+                title = titles.get(path.name, "")
+                if (not rebuild and key in known and abs(known[key][0] - mtime) < 1
+                        and known[key][1] == title):
                     continue
                 try:
                     text = path.read_text(encoding="utf-8", errors="ignore")
@@ -208,6 +224,7 @@ def sync(cfg: CaptureConfig, *, rebuild: bool = False) -> int:
                     "slug": slug,
                     "sid": (header.get("sid", "") if header else entry.sid if entry else ""),
                     "agent": (header.get("agent", "") if header else entry.agent if entry else ""),
+                    "title": title,
                     "topic": fields.get("topic", ""),
                     "decisions": fields.get("decisions", ""),
                     "open_loops": fields.get("open_loops", ""),
@@ -215,7 +232,7 @@ def sync(cfg: CaptureConfig, *, rebuild: bool = False) -> int:
                     "mtime": mtime,
                 }
                 digest_text = " ".join(
-                    v for v in (slug, row["topic"], row["decisions"], row["open_loops"]) if v
+                    v for v in (title, slug, row["topic"], row["decisions"], row["open_loops"]) if v
                 )
                 body_text = strip_capture_header(text)[:MAX_BODY_CHARS]
                 _upsert(conn, row, digest_text, body_text)
@@ -249,8 +266,9 @@ def _upsert(conn: sqlite3.Connection, row: dict, digest_text: str, body_text: st
     _delete(conn, row["path"])
     cur = conn.execute(
         """INSERT INTO conversations
-           (skill, file, path, date, slug, sid, agent, topic, decisions, open_loops, turns, mtime)
-           VALUES (:skill, :file, :path, :date, :slug, :sid, :agent, :topic,
+           (skill, file, path, date, slug, sid, agent, title, topic, decisions, open_loops,
+            turns, mtime)
+           VALUES (:skill, :file, :path, :date, :slug, :sid, :agent, :title, :topic,
                    :decisions, :open_loops, :turns, :mtime)""",
         row,
     )
@@ -353,7 +371,7 @@ def search(
         params.append(since)
     sql = (
         "SELECT c.skill, c.file, c.path, c.date, c.slug, c.sid, c.agent, "
-        "       c.topic, c.decisions, c.open_loops, c.turns, "
+        "       c.title, c.topic, c.decisions, c.open_loops, c.turns, "
         f"      {_BM25} AS rank "
         "FROM conv_fts JOIN conversations c ON c.id = conv_fts.rowid "
         f"WHERE {' AND '.join(where)} ORDER BY rank LIMIT ?"
@@ -380,7 +398,7 @@ def search(
         conn.close()
 
     cols = ["skill", "file", "path", "date", "slug", "sid", "agent",
-            "topic", "decisions", "open_loops", "turns", "rank"]
+            "title", "topic", "decisions", "open_loops", "turns", "rank"]
     out = []
     for row in rows:
         item = dict(zip(cols, row))
@@ -398,7 +416,7 @@ def _render(results: "list[dict]") -> str:
         return "no matches"
     lines = []
     for i, r in enumerate(results, 1):
-        lines.append(f"{i}. [{r['skill']}] {r['date']} · {r['topic'] or r['slug']}")
+        lines.append(f"{i}. [{r['skill']}] {r['date']} · {r['title'] or r['topic'] or r['slug']}")
         if r["decisions"] and r["decisions"].lower() != "none":
             lines.append(f"     decisions: {r['decisions']}")
         if r["open_loops"] and r["open_loops"].lower() != "none":
