@@ -571,7 +571,9 @@ hand-picked per app.
   two parts so no ellipsis cuts the part that matters at 390px (~22
   characters), falling back to the plain count in `fg-muted` ("7 jobs") when
   nothing is wrong. Never a fixed slogan, and never a count another tab owns
-  (fleet-config#1332). A **dashboard tab** (one whose job is "is everything
+  (fleet-config#1332). The line is computed from the **same counts the list
+  below draws**, so the header and the list can never disagree
+  (task-os#393). A **dashboard tab** (one whose job is "is everything
   OK?") may instead carry one plain live fact as its quiet line when nothing
   is wrong, in `fg-muted` (home-automation's Home: the weather now and
   today's range). It is still live, still at most ~22 characters, and still
@@ -596,7 +598,10 @@ hand-picked per app.
   dialog an *editor* is the presence of editable fields, not the wrapper.
   The same dialog is the **detail sheet**: a glance card's or a row's detail
   (usage, a job's runs, other listeners) opens full-height with the × and
-  its one primary, and becomes the detail pane at `layout.wide`. It
+  its one primary, and becomes the detail pane at `layout.wide`. There is
+  **one detail sheet per kind of thing**, opened from every row on every tab
+  that shows that thing, never a per-tab editor or a global Edit mode
+  (grocery-shopping-automation#255). It
   is also the **confirm and rename dialog**: never the browser's own
   `confirm()`, `prompt()` or `alert()`, which ignore the theme, the type
   scale and the button tiers (fleet-config#1332).
@@ -618,23 +623,43 @@ hand-picked per app.
   GitHub Mobile): **tapping the row performs its primary action**, and every
   other action sits behind **one trailing accessory**, a 44px kebab (or a
   chevron when the row only navigates). The row has **exactly one leading
-  slot**, either an `avatar`, the one leading toggle (e.g. favorite) or a
+  slot**, either an `avatar`, the one leading toggle (e.g. favorite, or a
+  done check that a second tap undoes, grocery-shopping-automation#254) or a
   tabular time value, and **at most one other visible trailing item**: a
-  value (a `meter`, a sparkline), or the row's dominant verb (Run on a job
-  row) as a tint verb at real 44px geometry. A **segmented verb cluster**
+  value (a `meter`, a sparkline), or the row's dominant verb. A text verb
+  (Run on a job row) is a tint verb at real 44px geometry; an **icon-only
+  verb** (Move on a task row) is an unpainted `icon-button` like the kebab,
+  under the icon-button rule like any glyph-only control (task-os#392;
+  project-scaffolding#347 brings the vendored tint in line). The verb is
+  the action the owner uses most, read from the app's own data
+  (task-os#392: most edits were re-dates). A **segmented verb cluster**
   (Up · Stop · Down on a blind, home-automation#884) counts as that one
   trailing item: one control with one track, at real 44px geometry per
   segment, outside the row's tap target so a press never opens the sheet.
   **Title:** `body` at weight
   600, one line, truncated with an ellipsis, never broken mid-word.
   **Context:** at most one `body-sm` line in `fg-muted`, which a status chip
-  may close, for an exception only. Height comes from the `rows` scale
+  may close, for an exception only. Its order is the date, then exception
+  chips, then one context name, then at most two counts; at 390px only the
+  context name may ellipsize, and links and people move to the menu and the
+  detail sheet (task-os#392). Height comes from the `rows` scale
   (`rows.md` minimum). **No vertical rules** between controls inside a row;
   a list is not a spreadsheet. **Destructive actions** (Kill, Stop, Delete) live in the row
   menu as its last item, after a divider, in `danger-text`, behind a
   confirm. A row never shows a visible danger button. **Long lists:** a list
   that can exceed ~12 rows gets a filter field above it: 44px tall, a
-  `control-border` boundary on `card`, `rounded.md`. **One renderer:** rows
+  `control-border` boundary on `card`, `rounded.md`. Its placeholder is the
+  list's count ("Filter 39 tasks…"), that count's one home (task-os#393).
+  Any filter beyond the text lives in a **filter sheet**, never a card
+  above the list: sort first, then the filters, each applying as it
+  changes, Clear beside Done, and on a phone a footer that ends the sheet in
+  the flow instead of pinned over its last rows. Its trigger is an
+  `icon-button` beside the field that shows the active count, with an
+  accessible name that spells the filters out (task-os#395). **Inside a
+  card** (a glance card's rows) the row drops its own inline padding so its
+  text lines up with the card's text edge, and a row that does nothing on
+  tap drops its pressed background (grocery-shopping-automation#257–#261
+  carry this as an app-side override). **One renderer:** rows
   of different tabs that show the same kind of thing share one renderer; a
   tab that needs a variation adds an **optional field** that leaves every
   other use byte-identical, never a per-tab fork. Reference impl:
@@ -643,7 +668,11 @@ hand-picked per app.
 - **glance card** — the **first card under the page header** answers the
   tab's main question without a tap ("can I launch?", "what runs next?",
   "what is running?"). At most ~5 rows; its detail opens one tap away in the
-  detail sheet (`modal`). A tab with no such question has no glance card
+  detail sheet (`modal`). It may hold the **tab's one primary** (Fill carts,
+  Record, Apply after a match), and an optional footer link row on a
+  hairline opens the rarer detail. It **never changes size** as late reads
+  land: every row is drawn at once, with a dash for a value still loading
+  (grocery-shopping-automation#257–#260). A tab with no such question has no glance card
   rather than a decorative one, and a fact whose home is another tab is
   never a glance card here (one home per fact).
 - **avatar** (`avatar`) — an action-row's leading squircle: `avatar.size`
@@ -675,7 +704,9 @@ hand-picked per app.
   kept for the emergency (alarm triggered, battery critical, a host down),
   and `attention` for "needs you soon" (detector trouble, on battery). An
   app that paints its normal night-time state red teaches the user to
-  ignore red.
+  ignore red. The same holds for plans: a high priority is one `neutral`
+  chip and an overdue or due-today date is `attention`, never a red edge or
+  `danger` on the row (task-os#392).
 - **meter** (`meter`) — a usage bar: a `meter.height` (6px) `rounded.pill`
   track in `neutral-soft` with a fill coloured **by pace, not raw
   percent**: `accent` while usage ≤ the period's elapsed share,
@@ -695,7 +726,15 @@ hand-picked per app.
   Settings. The same row is the **link row inside a detail sheet** (a unit's
   Vanes, Rule, Schedules, Name): lead glyph, label, muted value, chevron to a
   page of the sheet. Settings sheets are `instant` (Done closes); a saved
-  item inside one keeps its staged editor stacked on top. A **compact
+  item inside one keeps its staged editor stacked on top. A row's value
+  takes its tone's `*-text` when it is an exception (a failing login check,
+  mail that needs you), and a row that acts on tap carries no chevron. At
+  `layout.wide` the sheet is the detail pane beside the list with the
+  selected row tinted, and that row's secondary text moves to `accent-text`
+  (`fg-muted` on the tint measured 4.17:1); a sheet holding a
+  two-dimensional report (a many-column table) spans the window instead. A
+  feature the owner never uses stays a row that shows its state, never a
+  removed card (task-os#397, grocery-shopping-automation#261). A **compact
   numeric field** (minutes, watts, a ratio, a coordinate) may keep its own
   width instead of the modal's 55% value column when the 55% column would
   wrap its label at 390px; text and select values keep the 55% rule.
@@ -715,7 +754,10 @@ hand-picked per app.
   title. Adjacent segments reach 44px with real height when they act on the
   world (verbs) or a vertical-only target band (pickers), never overlapping
   a neighbour. More than five options, or options that are not peers,
-  become a `select` in a settings row instead. Reference impl:
+  become a `select` in a settings row or move into a sheet instead
+  (grocery-shopping-automation#256 cut five Items modes to two peers and
+  moved target editing into the item sheet). A list's scope (Mine · Issues ·
+  All) is a segmented control too (task-os#391). Reference impl:
   home-automation `.segmented` (home-automation#879).
 - **dense collection** — how a card renders **saved automation/settings
   items** (schedules, pairings, overrides): each item is a flat `list-row`
