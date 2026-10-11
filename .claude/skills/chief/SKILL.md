@@ -232,11 +232,22 @@ just the launcher call):
   (fleet-config#944). Write it to a scratch file first. The launcher stores
   it and launches the lane as `/issue-<mode> <N> --brief <path>` (echoed back
   as `LAUNCHED=`). That launch command is the one channel a lane trusts as
-  Roberto's, so the brief's scope and queue arrive with the launch's
-  authorization: `/issue-yolo` ships the whole briefed queue with no
-  hand-typed go, and `/issue-start` keeps its plan gate unless the brief
-  waives it. The lane reads the brief before any work, so it never starts on
-  the bare issue. Never dispatch bare and send the brief afterwards by `say`.
+  Roberto's, so the brief's scope arrives with the launch's authorization:
+  `/issue-yolo` ships the briefed issue with no hand-typed go, and
+  `/issue-start` keeps its plan gate unless the brief waives it. The lane
+  reads the brief before any work, so it never starts on the bare issue.
+  Never dispatch bare and send the brief afterwards by `say`.
+  **One issue per dispatch (fleet-config#1357).** A lane's brief names
+  exactly one issue. The ordered queue lives in your plan (`chief_ops.py
+  plan`), never in a lane brief: when a lane's issue is merged and verified,
+  stop that lane and dispatch the next step as a fresh session. A lane that
+  works a whole queue drags its context toward the window limit (one reached
+  about half on a 7-step queue), which dilutes attention, costs more and
+  strands more state on a late failure. Two exceptions: a lane that owns an
+  unmerged branch finishes that one issue (e.g. a gate re-run) before you
+  stop it, and a small side fix the lane needs to unblock its own step (a
+  flaky test it files and fixes) stays in that lane. `/issue-start --brief`
+  queue support stays for other callers; this is chief policy only.
 - Steer a running worker mid-run: `chief_ops.py say <sid> --file <path>`
   (write the text to a scratch file first — `say` is a pure pipe, it never
   composes the text; session ids come from `chief_ops.py board`/`sessions`).

@@ -73,6 +73,12 @@ with, adapted to its wording but never dropped:
    best judgment or wait — you relay a decision via `chief_ops.py say` if one
    is needed.
 
+**A brief names exactly one issue (fleet-config#1357).** Never a queue: the
+ordered queue lives in your plan, and each next step is a fresh session once
+the previous issue is merged and verified. Exceptions: a lane that owns an
+unmerged branch finishes that one issue first, and a small side fix the lane
+needs to unblock its own step stays in that lane.
+
 **A brief that asks for a red-under-load proof names the helper
 (fleet-config#1076).** Hand-rolled burners at normal priority saturate the
 whole box: 24 of them on the 16-core machine starved a scheduled life-os job
