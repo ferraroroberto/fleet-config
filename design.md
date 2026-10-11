@@ -273,7 +273,12 @@ and behavior stay the same:
   full-width app's one-dimensional views (settings, a form, a detail) still
   keep the measure. An app declares its wide views in its `.fleet.toml`
   (`[design] wide_views = ["board", "table"]`, the tab ids); an undeclared
-  view keeps the measure.
+  view keeps the measure. **A master-detail inside one pane is declared
+  too**: a month with its day pane beside it, both inside the same tab's
+  pane, is two-dimensional, but LAYOUT-06 only sees a detail pane docked
+  *outside* the tab's pane, so an undeclared one reads as a stretched
+  one-dimensional view (parking-manager#125; teaching the measure to see it
+  is tracked separately).
 
 Below 1100px, or on a coarse pointer at any width, nothing changes: the
 772px measure and the tab placement described in the Navigation contract
@@ -565,7 +570,10 @@ hand-picked per app.
   tab, see Navigation). Tab-specific toolbars sit **under** the
   header, never in place of it. The vendored `home-head` component
   (`project-scaffolding` `_vendored/home-head/`) is this shape; reuse it
-  verbatim on every pane, not just the home tab. **The context line is live
+  verbatim on every pane, not just the home tab. The title is the tab's
+  name on the home tab too, **never the app's name** (the app's name belongs
+  to the manifest and the install; parking-manager#114, the judge's J-04).
+  **The context line is live
   and names only exceptions**: what needs the user, each part in its tone's
   `*-text` ("1 needs you · 1 failing", the status chip tone map), at most
   two parts so no ellipsis cuts the part that matters at 390px (~22
@@ -577,7 +585,13 @@ hand-picked per app.
   OK?") may instead carry one plain live fact as its quiet line when nothing
   is wrong, in `fg-muted` (home-automation's Home: the weather now and
   today's range). It is still live, still at most ~22 characters, and still
-  yields to an exception.
+  yields to an exception. A **no-op mode** (practice or dry run, paused: the
+  whole app does nothing until it is changed) is an `attention` part of the
+  **home tab's** header line, and the home tab also carries a tinted banner
+  that explains it and, for paused, its one verb (Turn on). The control
+  itself stays in Settings, its one home. A mode seen only in Settings leaves
+  the user trusting an app that is doing nothing (parking-manager#114,
+  owner decisions 2 and 7 on parking-manager#112).
 - **card** (`card`) — the base content group: `rounded.lg` (16px) surface at
   `spacing.md` padding on a hairline border. Its **header** is one row: a
   leading `icons.size.title` glyph + a bold title (`label`/`body` weight 700),
@@ -624,8 +638,8 @@ hand-picked per app.
   other action sits behind **one trailing accessory**, a 44px kebab (or a
   chevron when the row only navigates). The row has **exactly one leading
   slot**, either an `avatar`, the one leading toggle (e.g. favorite, or a
-  done check that a second tap undoes, grocery-shopping-automation#254) or a
-  tabular time value, and **at most one other visible trailing item**: a
+  done check that a second tap undoes, grocery-shopping-automation#254), a
+  tabular time value, or, in a **date-keyed row**, a **date tile**, and **at most one other visible trailing item**: a
   value (a `meter`, a sparkline), or the row's dominant verb. A text verb
   (Run on a job row) is a tint verb at real 44px geometry; an **icon-only
   verb** (Move on a task row) is an unpainted `icon-button` like the kebab,
@@ -636,8 +650,15 @@ hand-picked per app.
   (Up · Stop · Down on a blind, home-automation#884) counts as that one
   trailing item: one control with one track, at real 44px geometry per
   segment, outside the row's tap target so a press never opens the sheet.
-  **Title:** `body` at weight
-  600, one line, truncated with an ellipsis, never broken mid-word.
+  The **date tile** is the weekday over the day number in a 44px square
+  (the floor), today tinted `accent-soft`, all text at least 14px; the
+  title then says what the day *is* ("Booked", "Holiday") and the one meta
+  line gives the reason (parking-manager#113, #114). **Title:** `body` at weight
+  600, one line, truncated with an ellipsis, never broken mid-word. **One
+  line on every width**, a kanban lane card included: the full title lives
+  in the detail view or drawer and in the `title` attribute, and a
+  two-line clamp counts as a wrap under COMP-07 (task-os#396; owner
+  decision on fleet-config#1350, 2026-10-11).
   **Context:** at most one `body-sm` line in `fg-muted`, which a status chip
   may close, for an exception only. Its order is the date, then exception
   chips, then one context name, then at most two counts; at 390px only the
@@ -672,7 +693,11 @@ hand-picked per app.
   Record, Apply after a match), and an optional footer link row on a
   hairline opens the rarer detail. It **never changes size** as late reads
   land: every row is drawn at once, with a dash for a value still loading
-  (grocery-shopping-automation#257–#260). A tab with no such question has no glance card
+  (grocery-shopping-automation#257–#260). The simplest way to keep that
+  promise is to render the loading state **from the card's own markup**,
+  the same function with no values (blank cells, a "Reading…" row), never
+  a separate skeleton; parking-manager's measured 239px loading and 239px
+  loaded (#114). A tab with no such question has no glance card
   rather than a decorative one, and a fact whose home is another tab is
   never a glance card here (one home per fact).
 - **avatar** (`avatar`) — an action-row's leading squircle: `avatar.size`
@@ -706,7 +731,26 @@ hand-picked per app.
   app that paints its normal night-time state red teaches the user to
   ignore red. The same holds for plans: a high priority is one `neutral`
   chip and an overdue or due-today date is `attention`, never a red edge or
-  `danger` on the row (task-os#392).
+  `danger` on the row (task-os#392). **"Needs a manual action elsewhere" is
+  `attention`, never `danger`**: a booking the user must cancel on another
+  website is a task, not a break; `danger` stays for the thing that is
+  actually broken (booked with no spot), and a mode that makes the whole
+  app a no-op is `attention` too (parking-manager#113, #114; owner
+  decision 6 on parking-manager#112). A holiday or day off is expected, so
+  it is neutral with no chip and no colour. The `neutral` entry's "paused"
+  above means one item paused, not the app.
+- **day marks** — a month or two-week strip of days (parking-manager#115)
+  draws each day as its number over **one small shape mark** for its state
+  (booked, will book, extra day, looking, not booked on purpose); **state is
+  a mark, never a fill**. Colour only **rings an exception**, in `danger`
+  (broken) or `attention` (needs the user), so a problem day is the one
+  ringed cell in the grid, and no cell is ever filled with a status colour.
+  An expected non-day (a holiday, a day off) gets the neutral "off" mark,
+  not amber. The **legend lists marks, not swatches**, and a ring is
+  explained by the day's own sheet, which keeps the legend short (eight
+  swatches, two of them the same fill, became five marks). Each mark is
+  distinct in shape alone, so no state is told by colour only. A day
+  opens the **detail sheet** (`modal`), the pane at `layout.wide`.
 - **meter** (`meter`) — a usage bar: a `meter.height` (6px) `rounded.pill`
   track in `neutral-soft` with a fill coloured **by pace, not raw
   percent**: `accent` while usage ≤ the period's elapsed share,
