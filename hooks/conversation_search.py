@@ -8,9 +8,9 @@ every skill"* — and hands back the identity needed to reopen it.
 
 Two layers are searched at different weights, because they fail differently:
 
-  * the **digest** (the owner's title, topic / decisions / open loops) — dense
-    and abstracted, so a match here is usually the conversation you meant;
-    weighted high.
+  * the **digest** (the owner's title, topic / summary — decisions / open loops
+    on older entries) — dense and abstracted, so a match here is usually the
+    conversation you meant; weighted high.
   * the **full capture text** — verbatim, so it finds the offhand detail no
     digest would ever mention ("the ferry booking reference"); weighted low so
     it ranks below a digest hit rather than drowning it.
@@ -104,6 +104,7 @@ CREATE TABLE IF NOT EXISTS conversations (
     agent      TEXT NOT NULL DEFAULT '',
     title      TEXT NOT NULL DEFAULT '',
     topic      TEXT NOT NULL DEFAULT '',
+    summary    TEXT NOT NULL DEFAULT '',
     decisions  TEXT NOT NULL DEFAULT '',
     open_loops TEXT NOT NULL DEFAULT '',
     turns      INTEGER NOT NULL DEFAULT 0,
@@ -128,6 +129,10 @@ def connect(path: Path) -> sqlite3.Connection:
     columns = {row[1] for row in conn.execute("PRAGMA table_info(conversations)")}
     if "title" not in columns:
         conn.execute("ALTER TABLE conversations ADD COLUMN title TEXT NOT NULL DEFAULT ''")
+    # Likewise the one-paragraph digest summary (fleet-config#1373); old rows
+    # keep their decisions / open_loops and read "" here.
+    if "summary" not in columns:
+        conn.execute("ALTER TABLE conversations ADD COLUMN summary TEXT NOT NULL DEFAULT ''")
     return conn
 
 
@@ -226,13 +231,15 @@ def sync(cfg: CaptureConfig, *, rebuild: bool = False) -> int:
                     "agent": (header.get("agent", "") if header else entry.agent if entry else ""),
                     "title": title,
                     "topic": fields.get("topic", ""),
+                    "summary": fields.get("summary", ""),
                     "decisions": fields.get("decisions", ""),
                     "open_loops": fields.get("open_loops", ""),
                     "turns": entry.turns if entry else 0,
                     "mtime": mtime,
                 }
                 digest_text = " ".join(
-                    v for v in (title, slug, row["topic"], row["decisions"], row["open_loops"]) if v
+                    v for v in (title, slug, row["topic"], row["summary"], row["decisions"],
+                              row["open_loops"]) if v
                 )
                 body_text = strip_capture_header(text)[:MAX_BODY_CHARS]
                 _upsert(conn, row, digest_text, body_text)
@@ -266,10 +273,10 @@ def _upsert(conn: sqlite3.Connection, row: dict, digest_text: str, body_text: st
     _delete(conn, row["path"])
     cur = conn.execute(
         """INSERT INTO conversations
-           (skill, file, path, date, slug, sid, agent, title, topic, decisions, open_loops,
-            turns, mtime)
+           (skill, file, path, date, slug, sid, agent, title, topic, summary, decisions,
+            open_loops, turns, mtime)
            VALUES (:skill, :file, :path, :date, :slug, :sid, :agent, :title, :topic,
-                   :decisions, :open_loops, :turns, :mtime)""",
+                   :summary, :decisions, :open_loops, :turns, :mtime)""",
         row,
     )
     conn.execute(
@@ -371,7 +378,7 @@ def search(
         params.append(since)
     sql = (
         "SELECT c.skill, c.file, c.path, c.date, c.slug, c.sid, c.agent, "
-        "       c.title, c.topic, c.decisions, c.open_loops, c.turns, "
+        "       c.title, c.topic, c.summary, c.decisions, c.open_loops, c.turns, "
         f"      {_BM25} AS rank "
         "FROM conv_fts JOIN conversations c ON c.id = conv_fts.rowid "
         f"WHERE {' AND '.join(where)} ORDER BY rank LIMIT ?"
@@ -398,7 +405,7 @@ def search(
         conn.close()
 
     cols = ["skill", "file", "path", "date", "slug", "sid", "agent",
-            "title", "topic", "decisions", "open_loops", "turns", "rank"]
+            "title", "topic", "summary", "decisions", "open_loops", "turns", "rank"]
     out = []
     for row in rows:
         item = dict(zip(cols, row))
@@ -417,6 +424,8 @@ def _render(results: "list[dict]") -> str:
     lines = []
     for i, r in enumerate(results, 1):
         lines.append(f"{i}. [{r['skill']}] {r['date']} · {r['title'] or r['topic'] or r['slug']}")
+        if r["summary"] and r["summary"].lower() != "none":
+            lines.append(f"     summary: {r['summary']}")
         if r["decisions"] and r["decisions"].lower() != "none":
             lines.append(f"     decisions: {r['decisions']}")
         if r["open_loops"] and r["open_loops"].lower() != "none":
