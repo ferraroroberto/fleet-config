@@ -591,7 +591,16 @@ hand-picked per app.
   that explains it and, for paused, its one verb (Turn on). The control
   itself stays in Settings, its one home. A mode seen only in Settings leaves
   the user trusting an app that is doing nothing (parking-manager#114,
-  owner decisions 2 and 7 on parking-manager#112).
+  owner decisions 2 and 7 on parking-manager#112). **The line's parts come
+  in severity order** (offline or failed first, then a transient state such
+  as an open passkey enrollment window, then a stale loaded shell, "New build,
+  reload"), and a part never claims more than it knows: a failed status poll
+  reads "Couldn't check services", never "up", and a count over a paged list
+  counts the loaded rows only, so it is empty in search mode (voice-transcriber
+  PR 273, photo-ocr PR 201, whatsapp-radar PR 383). The line's slot exists
+  from the first paint, so no value arriving later moves the row. A mode
+  line must still fit: "Incognito: this take won't be saved" ellipsized on a
+  phone and became "Incognito: not saved" (voice-transcriber#275).
 - **card** (`card`) — the base content group: `rounded.lg` (16px) surface at
   `spacing.md` padding on a hairline border. Its **header** is one row: a
   leading `icons.size.title` glyph + a bold title (`label`/`body` weight 700),
@@ -618,7 +627,19 @@ hand-picked per app.
   (grocery-shopping-automation#255). It
   is also the **confirm and rename dialog**: never the browser's own
   `confirm()`, `prompt()` or `alert()`, which ignore the theme, the type
-  scale and the button tiers (fleet-config#1332).
+  scale and the button tiers (fleet-config#1332). **A take or record
+  sheet** reads the thing whole (the full text in its own scrolling box,
+  reserved before the text arrives), puts one full-width Copy first, and
+  ends with Delete as plain `danger-text` with no fill, never the one filled
+  control. Delete is confirmed by a second tap ("Tap again to delete",
+  disarmed after 4 s or on close) or by a confirm sheet (voice-transcriber
+  #261, photo-ocr#196). **A confirm stacks over the sheet that asked**:
+  every open builds its own `<dialog>`, and a sheet has no pinned footer,
+  so nothing overlaps on a phone (photo-ocr#193). **At `layout.wide` the
+  same card is the detail pane**, moved between the dialog and the pane on
+  a `matchMedia` change so one renderer and one set of handlers serve
+  both. A non-modal `<dialog>` cannot host the pane, because the nav hides
+  whenever any dialog is open (voice-transcriber#266).
 - **list-row** (`list-row`) — how a card renders a **repeating list** of entries
   (history, activity, request log): flat full-bleed rows, `list-row.rowPadding`
   (`12px 0`, shared vocabulary with the modal), separated by a 1px `divider`
@@ -663,7 +684,14 @@ hand-picked per app.
   may close, for an exception only. Its order is the date, then exception
   chips, then one context name, then at most two counts; at 390px only the
   context name may ellipsize, and links and people move to the menu and the
-  detail sheet (task-os#392). Height comes from the `rows` scale
+  detail sheet (task-os#392). **A source names the sending app, never the
+  transport**: where a row says where an entry came from, it is plain text in
+  that line and appears only when it names an app. A bare transport label
+  (`api`) shows on no row and verbatim in the detail sheet, because on 88% of
+  one list it was a badge on every row (voice-transcriber#264, owner
+  decision 3 on #260). A chat or message row's second line is the relative
+  time (kept whole) plus a preview (cut); counts move to the sheet header
+  (whatsapp-radar#375, owner decision 6 on #370). Height comes from the `rows` scale
   (`rows.md` minimum). **No vertical rules** between controls inside a row;
   a list is not a spreadsheet. **Destructive actions** (Kill, Stop, Delete) live in the row
   menu as its last item, after a divider, in `danger-text`, behind a
@@ -683,7 +711,19 @@ hand-picked per app.
   carry this as an app-side override). **One renderer:** rows
   of different tabs that show the same kind of thing share one renderer; a
   tab that needs a variation adds an **optional field** that leaves every
-  other use byte-identical, never a per-tab fork. Reference impl:
+  other use byte-identical, never a per-tab fork. **Selection is a mode, not
+  a column**: a list whose rows are occasionally copied or acted on together
+  has no permanent checkbox column. A Select action (on the first group's
+  heading) turns row taps into ticks, the header line reads "N selected", a
+  bottom bar acts on the picked rows or cancels, and an action leaves the
+  mode (voice-transcriber#264, owner decision 4 on #260). **Repetitive
+  machine entries fold per day** into one row ("48 traffic checks") that
+  opens a sheet, so the entries a person wrote or an exception raised stay
+  visible; a default scope over a store dominated by one kind is filtered
+  in the query before the page limit, or it comes back nearly empty
+  (whatsapp-radar#373). A list's narrowing filter (a source, a status) is a
+  chip inside the filter field, never a second segmented row under the
+  scope control (whatsapp-radar#375). Reference impl:
   app-launcher session rows (app-launcher#1025, tap the row + one kebab;
   every tab on the one anatomy since app-launcher#1432).
 - **glance card** — the **first card under the page header** answers the
@@ -697,7 +737,14 @@ hand-picked per app.
   promise is to render the loading state **from the card's own markup**,
   the same function with no values (blank cells, a "Reading…" row), never
   a separate skeleton; parking-manager's measured 239px loading and 239px
-  loaded (#114). A tab with no such question has no glance card
+  loaded (#114). **A single-job tab's glance card follows the job's
+  state**: the take card that asks "what is in these photos?" becomes the
+  result card in the same slot after Extract, and the next verb takes the
+  primary (Copy text), with the inputs folded to one "3 photos ›" row
+  (photo-ocr#195, owner decision 3 on #192). **A self-running app's Home is
+  a health glance**: one row per source with a liveness avatar badge and its
+  last run, exceptions as chips, no "OK" badge on any row, and a follow-up
+  row only while one is pending (whatsapp-radar#374). A tab with no such question has no glance card
   rather than a decorative one, and a fact whose home is another tab is
   never a glance card here (one home per fact).
 - **avatar** (`avatar`) — an action-row's leading squircle: `avatar.size`
@@ -711,7 +758,9 @@ hand-picked per app.
   legitimately absent (an unplugged plug) gets no badge, and unreachable
   items of one kind fold into a single **Offline** row at the end of their
   group instead of a red mark on each. It replaces separate health dots, alive
-  dots, "running" pills and coloured meta text. An app may swap the dot for
+  dots, "running" pills and coloured meta text. A source whose state could
+  not be read (a failed poll) shows no badge and the word "Unknown", never
+  alive (voice-transcriber#265). An app may swap the dot for
   one role glyph (a crown for a coordinating session) on the same corner.
 - **status chip** — the `chip` geometry in **one tone map,
   for exceptions only**; a normal state gets no chip. **Neutral**
@@ -760,6 +809,15 @@ hand-picked per app.
   dims and adds a neutral "stale" status chip; unknown keeps its text. One
   renderer in two sizes (a full card, a compact one-row line), both opening
   the same detail sheet.
+- **capture control** — the one big button that starts a recording or a
+  capture is **`accent` at rest and `danger` only while it is live**
+  (the mic is open): "Record" in sentence case, then a danger "Stop" with
+  the timer and level meter, then the one disabled recipe while finishing.
+  The pulse animates only while live, and the meter is a `neutral-soft`
+  track with an `accent` fill, never a green-to-red gradient. Red at rest
+  is status colour as decoration ("modes are not alarms", the status chip).
+  Its mode toggles (Append, Incognito) are labelled pills beside or under
+  it, never glyph-only (voice-transcriber#262, owner decision 1 on #260).
 - **settings group** — the Settings pane is **inset groups** under
   `overline` headers: each row a lead `icons.size.title` glyph, a label, the
   current value in `fg-muted` and a chevron opening a detail sheet. A setting
@@ -767,7 +825,18 @@ hand-picked per app.
   saves as it changes (text and numbers on blur), with a `toast`; an editor
   for a saved item keeps the dense collection's staged Save. Launch-time
   choices stay on the toolbar where the user launches, never only in
-  Settings. The same row is the **link row inside a detail sheet** (a unit's
+  Settings: the per-take model and style are neutral chips on Capture that
+  open a picker, and Settings keeps only the default a new take starts from,
+  saved to the server, with no device-local copy that could shadow it
+  (photo-ocr#194, #197, owner decisions 1 and 7 on #192). A sheet that holds
+  several related fields (a week of people, a delivery channel) may keep one
+  draft and commit it on **Done** with a `toast`; **Close, the backdrop and
+  Esc then discard it**, and the sheet says so ("Done saves. Close discards
+  your changes."). A rejection keeps the sheet open with the server's
+  field-naming message (whatsapp-radar#376, #377; the discard rule was
+  chosen in the step PRs, owner decision 5 on #370 only said "save on
+  Done"). Labels carry no file path or config key; a read-only sheet names
+  its file on one "Where this lives" line. The same row is the **link row inside a detail sheet** (a unit's
   Vanes, Rule, Schedules, Name): lead glyph, label, muted value, chevron to a
   page of the sheet. Settings sheets are `instant` (Done closes); a saved
   item inside one keeps its staged editor stacked on top. A row's value
@@ -801,7 +870,9 @@ hand-picked per app.
   become a `select` in a settings row or move into a sheet instead
   (grocery-shopping-automation#256 cut five Items modes to two peers and
   moved target editing into the item sheet). A list's scope (Mine · Issues ·
-  All) is a segmented control too (task-os#391). Reference impl:
+  All) is a segmented control too (task-os#391). A mode that is not a peer
+  of its siblings is not a segment: Live against Dry run became a switch
+  (whatsapp-radar#373). Reference impl:
   home-automation `.segmented` (home-automation#879).
 - **dense collection** — how a card renders **saved automation/settings
   items** (schedules, pairings, overrides): each item is a flat `list-row`
@@ -819,7 +890,10 @@ hand-picked per app.
   render zero items: a centered column of a `icons.size.feature` (24px) muted
   glyph + a one-line reason (`body`, `fg-muted`) + an *optional* single action
   (`actionMinWidth` 96px). One canonical block — never a bare "—" or a silent
-  empty container.
+  empty container. An empty list the user can fill from this tab **names its
+  way forward in the block**: its one action is the verb that fills it
+  ("Capture a take"), and a search with no hits offers "Clear search"
+  (photo-ocr#196, the judge's J-09).
 - **icon tile** (`icon-tile`) — the Home-screen rounded-square (`rounded.md`
   squircle) filled with **one** of the five `tile-*` colors (the only saturated
   surfaces), a centered `icons.size.feature` Lucide glyph in `accent-fg`. The
