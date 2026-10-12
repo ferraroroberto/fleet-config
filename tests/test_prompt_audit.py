@@ -661,11 +661,13 @@ check(skill_hits(skill_text("".join(f"{i}. Do thing {i}.\n" for i in range(1, 6)
       "R-39 assist: a five-item numbered list is under the threshold")
 check(len(skill_hits(skill_text("".join(f"{i}. Do thing {i}.\n" for i in range(1, 8))), "R-39")) == 1,
       "R-39 assist: a seven-item top-level numbered list counts when there are no step headings")
-check(RULES["R-39"]["consider_only"] and RULES["R-41"]["consider_only"] and not RULES["R-38"]["consider_only"],
-      "R-39 and R-41 carry the consider-only first-cycle flag; the others do not")
-check(all(h.cap == "consider" for h in pa.lint_entry(entry_for(LONG_FLOW, kind="skill", audience="claude",
-                                                             key="x/.claude/skills/s/SKILL.md"), RULES, AUD).hits
-          if h.rule == "R-39"),
+check(not any(r["consider_only"] for r in RULES.values()),
+      "no rule carries the consider-only first-cycle flag (R-39 and R-41 became normal rules on 2026-10-12)")
+CONSIDER_RULES = {**RULES, "R-39": {**RULES["R-39"], "consider_only": True}}
+r39_hits = [h for h in pa.lint_entry(entry_for(LONG_FLOW, kind="skill", audience="claude",
+                                               key="x/.claude/skills/s/SKILL.md"), CONSIDER_RULES, AUD).hits
+            if h.rule == "R-39"]
+check(r39_hits and all(h.cap == "consider" for h in r39_hits),
       "a consider-only rule caps at consider even for a vendor-scoped reader")
 
 tmp3 = Path(tempfile.mkdtemp(prefix="prompt-audit-r43-"))
