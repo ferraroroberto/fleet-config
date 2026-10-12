@@ -159,7 +159,7 @@ Subcommands
                    advanced on a target that is demonstrably quiet, or the
                    endpoint said so outright (`not_ingested`/`dropped`, or
                    the watcher's `defer_timeout`/`defer_vanished`/
-                   `defer_unclear` on `last_input`). Never reached by
+                   `defer_unclear`/`defer_failed` on `last_input`). Never reached by
                    fallthrough: it always rests on positive evidence.
         UNKNOWN    the exchange could not be *read*. Genuinely unresolvable
                    — never merely "un-advanced", which is STRANDED.

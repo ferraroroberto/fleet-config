@@ -57,6 +57,7 @@ INPUT_NEGATIVE_REASONS = frozenset({
     "defer_timeout",    # never went quiet within the watcher's cap
     "defer_vanished",   # went quiet, but the payload had gone
     "defer_unclear",    # quiet with the payload present — and a dialog too
+    "defer_failed",     # the watcher raised before writing any CR (app-launcher#1548)
 })
 # The watcher's one terminal *success*: it pressed Enter and saw the submit
 # land, recorded as `reason: ok` with `submit_confirmed: true, deferred: true`.
@@ -203,7 +204,7 @@ def finalize_delivery(
        submitting CR is with a background watcher. Decided **only** by the
        watcher's record on `last_input` (`deferred_submit_outcome`,
        fleet-config#856): a confirmed submit → "delivered"; a terminal
-       failure (`defer_timeout`/`defer_vanished`/`defer_unclear`) →
+       failure (`defer_timeout`/`defer_vanished`/`defer_unclear`/`defer_failed`) →
        "stranded"; anything else, unreadable included → "pending", with no
        verdict reached. Exchange movement is not consulted — a send is
        deferred because the target is mid-turn, so its exchange advances
