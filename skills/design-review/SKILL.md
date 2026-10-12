@@ -453,7 +453,20 @@ the comment):
 1. **Inventory**: every fact and action on every tab, including drill-ins,
    menus, sheets and Settings. Give where each lives today and how often it
    is needed (`Many / day` · `Daily` · `Weekly` · `Rare` · `Once` ·
-   `Debugging`). Frequency is a hypothesis the owner corrects.
+   `Debugging`). Before tagging, read the app's usage log from the
+   `project-scaffolding` checkout, with its own `.venv`:
+   `scripts/usage_summary.py --app <slug> --days 30 --json`.
+   - **Exit 0**: derive each view's and tracked control's tag from its
+     `views` / `controls` count relative to `sessions` and the window, and
+     state the window, the session count and the phone/desktop split
+     (`devices`) in the inventory and the report header, because the split
+     decides which viewport the review weighs first. A fact or action with no
+     `data-track` id stays a hypothesis, marked as one. Report counts and
+     ids only.
+   - **Exit 2**: no usage data yet, which is not zero usage. Say "no usage
+     data yet" and keep frequency a hypothesis the owner corrects.
+   - **Any other failure**: report the usage data as **unknown**, never as
+     zero usage, and keep the hypothesis.
 2. **Diagnosis**: a numbered list of what makes each tab crowded or dated,
    each item tied to a contract or rubric rule id. Check at least: distinct
    treatments before the first useful row, status colour used as decoration,
