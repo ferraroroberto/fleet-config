@@ -288,7 +288,7 @@ CSS = """
 .mk-title{font-size:.92rem;font-weight:600}
 .mk-meta{font-size:.78rem;color:var(--fg-muted)}
 .mk-btn{display:inline-flex;align-items:center;justify-content:center;height:30px;padding:0 10px;border-radius:8px;font-size:.78rem;font-weight:600;border:1px solid var(--border);color:var(--fg-muted);white-space:nowrap}
-.mk-btn-surface{background:var(--canvas-subtle)}
+.mk-btn-surface{background:var(--control-fill)}
 .mk-btn-tint{background:var(--accent-soft);color:var(--accent);border-color:transparent}
 .mk-btn-danger{background:var(--danger);color:#fff;border-color:transparent}
 .mk-kebab{display:inline-flex;align-items:center;justify-content:center;width:44px;height:44px;border-radius:9999px;font-size:1.2rem;color:var(--fg-muted)}

@@ -13,7 +13,7 @@ colors:
   canvas-subtle: "#010409"   # inset / off-card surfaces (true black)
   card:          "#161b22"   # elevated card surface
   border:        "#30363d"   # default hairline
-  border-muted:  "#21262d"   # quieter hairline (dividers inside a card) AND the control fill: text input, select, textarea, composer, disabled button (fleet-config#1368)
+  border-muted:  "#21262d"   # quieter hairline (dividers inside a card) AND the control fill: text input, select, textarea, composer, labelled surface button, disabled button (fleet-config#1368, #1375)
   fg:            "#e6edf3"   # primary text
   fg-muted:      "#7d8590"   # secondary text
   accent:        "#2f81f7"   # links, focus ring, the base the accent derivatives mix from
@@ -83,7 +83,7 @@ components:
   button-primary: { backgroundColor: "{colors.accent-fill}", textColor: "{colors.accent-fg}", borderColor: "{colors.accent-border-strong}", rounded: "{rounded.md}", typography: "{typography.label}", height: 48px }
   button-tint:     { backgroundColor: "{colors.accent-soft}", textColor: "{colors.accent-text}", borderColor: "{colors.accent-border-soft}", rounded: "{rounded.md}", fontWeight: 700, height: 48px }   # secondary emphasis — structural, identical to Light (see design.md)
   button-ghost:    { backgroundColor: transparent, borderColor: "{colors.border}", textColor: "{colors.fg-muted}", rounded: "{rounded.md}" }   # ghost = TRANSPARENT fill on a hairline border — structural, identical to Light
-  button-surface:  { backgroundColor: "{colors.canvas-subtle}", borderColor: "{colors.border}", textColor: "{colors.fg-muted}", rounded: "{rounded.md}", height: "{components.control.height}" }   # LABELLED utility/toolbar button at the control height — a glyph-only control is the icon-button
+  button-surface:  { backgroundColor: "{colors.border-muted}", borderColor: "{colors.border}", textColor: "{colors.fg}", rounded: "{rounded.md}", height: "{components.control.height}" }   # LABELLED utility/toolbar button at the control height — a glyph-only control is the icon-button; dark fill is the control fill (border-muted #21262d), not true black, and the label is fg (12.88:1; fg-muted would be 4.08:1) (fleet-config#1375)
   button-disabled: { backgroundColor: "{colors.border-muted}", borderColor: "{colors.border}", textColor: "{colors.fg-muted}" }   # ONE disabled recipe for every tier, both themes (home-automation#362); dark fill is the control fill (border-muted #21262d), not true black (fleet-config#1368)
   icon-button:    { backgroundColor: transparent, borderColor: transparent, shadow: none, textColor: "{colors.fg-muted}", hoverColor: "{colors.fg}", pressedColor: "{colors.accent-text}", glyph: "{icons.size.inline}", target: "{components.hit-target.min}" }   # a glyph on nothing — structural, identical to Light (see design.md)
   control:        { height: 36px, rounded: "{rounded.md}", backgroundColor: "{colors.border-muted}", borderColor: "{colors.control-border}", textColor: "{colors.fg}" }   # shared height for inline select / input so a row of controls lines up; dark fill is border-muted (#21262d), the same value as the disabled button, never canvas-subtle (fleet-config#1368)
@@ -149,9 +149,9 @@ under the same token name — consume it behind `@media (color-gamut: p3)`.
 The fill-versus-text split in `design.md` (Colors) applies unchanged:
 `*-text` for text on a tint, `accent-fill` for the solid primary,
 `control-border` for input boundaries, `neutral-soft` + `fg` for chips. Dark
-needs it most. A chip, text field or disabled button on `canvas-subtle`
+needs it most. A chip, text field, surface button or disabled button on `canvas-subtle`
 (`#010409`) inside a `#161b22` card is the black hole this file already
-rejects for the active tab; fields and disabled buttons fill with
+rejects for the active tab; fields, surface buttons and disabled buttons fill with
 `border-muted` (`#21262d`) instead.
 The dark `tile-*` fills are GitHub's emphasis step, darker than the base hues,
 so a white glyph holds 4.6:1. The brighter base hues gave 2.5–3.4:1.
@@ -163,7 +163,7 @@ before proposing a new one.
   `canvas-subtle` `#010409` the true-black inset, for off-card wells only and
   never a field, chip or button inside a card; `card` `#161b22` every elevated
   surface; `border-muted` `#21262d` the divider and the **control fill**
-  (text input, select, textarea, composer, disabled button); `border`
+  (text input, select, textarea, composer, surface button, disabled button); `border`
   `#30363d` the card hairline; `control-border` `#6e7681` a field's boundary
   and the switch off-track; `fg-muted` `#7d8590` secondary text, placeholder
   and disabled text; `fg` `#e6edf3` primary text. `neutral-soft` is the one
@@ -179,7 +179,12 @@ which is **below 4.5:1**. That falls short for the placeholder. Disabled text is
 exempt under WCAG 1.4.3 (inactive component), so the disabled recipe makes no AA
 claim. The `border` hairline on the fill is 1.25:1 and decorative. The
 fill itself is 1.14:1 against `card`; a field's boundary is `control-border`,
-not the fill.
+not the fill. The labelled `button-surface` shares this fill (fleet-config#1375);
+its label is `fg` (12.88:1), not `fg-muted`, since a real label cannot take the
+placeholder's 4.08:1 shortfall. `border` against the fill is the same 1.25:1.
+The unselected choice of a range-tab row (the vendored `range-tab`) is the same
+kind of labelled surface on a card and takes the same fill and `fg` label, never
+`canvas-subtle`.
 
 The user-selectable theme-switching contract (pre-paint boot script, persisted
 sun/moon toggle, dual `theme-color` metas) is defined in the
@@ -276,7 +281,7 @@ they reference resolve to the dark values.
 - **Do** lean on surface lightness, not shadow, for elevation on the dark canvas.
 - **Do** reserve bottom padding for the fixed nav so content is never occluded.
 - **Do** use the authored disabled recipe for disabled controls, never the browser default (which drops sub-AA); its measured ratio is above, and disabled text is exempt from 1.4.3.
-- **Don't** fill a field, chip or disabled button with `canvas-subtle` inside a card, or invent a grey: the palette above is closed.
+- **Don't** fill a field, chip, surface button or disabled button with `canvas-subtle` inside a card, or invent a grey: the palette above is closed.
 - **Don't** introduce a second accent or per-app navigation variants.
 - **Don't** use status colors decoratively — they signal state only.
 - **Don't** apply this spec to Streamlit POC spikes.
