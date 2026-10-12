@@ -30,6 +30,15 @@ Instruction evidence is separate. A Claude Code 2.1.261 request assembled for a 
 
 Codex CLI 0.153.3 native `debug prompt-input` preserved EOF markers in a synthetic global file over 40 KB plus root/nested `AGENTS.md` files, including with `project_doc_max_bytes=32768`: the global file is outside that project-document byte cap. This does not prove a pointer was followed. A separate fresh GPT-6 Astra run with `codex exec --ephemeral --json --approve-for-me` did follow canonical root/nested `AGENTS.md` pointers, read only the two synthetic `CLAUDE.md` targets with one successful `Get-Content` call, and returned exactly `CLAUDE_ROOT_EOF_748,CLAUDE_NESTED_EOF_748`. The native CLI selected its installed PowerShell 7.6.5 executable despite the requested PowerShell 5.1 tool setting; the successful read is observed, not inferred from the requested shell. Approval-never mode could not establish that fact on this host because its shell policy blocked the read; it is not counted as passing evidence. The repeatable full helper subsequently passed with a 40,590-byte global fixture and a 40,589-byte root target. No installed size/fallback configuration was changed.
 
+### Sending a file to the owner's chat view
+
+| Harness | Mechanism | Verified |
+|---|---|---|
+| Claude Code | native `SendUserFile` tool | native |
+| Codex, Grok, Pi, Copilot | `skills/_lib/send_file.py` via the shell, wording in `global-CLAUDE.md` (fleet-config#1376) | script `SENT=` proven from a Claude launcher session; Codex session check pending (owner) |
+
+Any harness that can run a command can use the script; it needs only `APP_LAUNCHER_SESSION_ID`, which the launcher sets in every session it spawns.
+
 ### Command and edit policy coverage
 
 The table records observed delivery semantics rather than treating a registration as proof. **Blocks** means the target harness prevents the call; **advises** means the nudge reaches model context while the call proceeds; **not verified** means the compatibility path is wired but its user-visible delivery has not been established; **unsupported** means no adapter/wiring implements that policy on the harness; **not applicable** means the harness has no corresponding tool surface. Codex checks run under `--approve-for-me` in a trusted disposable repository, so approval mode cannot be mistaken for the hook's effect. `--ignore-user-config` suppresses project hooks and is only a negative control, never a coverage result.

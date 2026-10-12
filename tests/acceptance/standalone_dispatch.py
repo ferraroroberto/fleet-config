@@ -236,6 +236,12 @@ _STANDALONE_UNIT_CHECKS: Tuple[Tuple[str, str, str], ...] = (
      "wait-seconds computation from resets_at -- is testable on its own, "
      "with no real rate-limits.json touched. Replaces the retired "
      "audit_retry dead-man's-switch check. (fleet-config#261)"),
+    ("send_file", "test_send_file.py",
+     "the any-harness `send_file.py` result lines -- SENT only for an accepted "
+     "entry, each launcher refusal relayed under its own reason, and "
+     "no-session / launcher-down / endpoint-missing / session-host-down / "
+     "unreadable-reply each their own UNAVAILABLE -- against a loopback fake "
+     "launcher, with no real file sent (fleet-config#1376)"),
     ("chief_inbox", "test_chief_inbox.py",
      "the chief inbox's writer -- Claude/Codex/Pi turn-end and exit through "
      "the real adapter hooks, managed vs human-started vs undetermined -- "
