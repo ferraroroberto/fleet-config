@@ -164,6 +164,7 @@ for _theme, _tokens in src_specs.items():
         check((_p.get("ratio") or 0) >= _p.get("threshold", 4.5), f"{_theme} {_name} text clears AA (got {_p.get('ratio')})")
     _low = [f"{n} {p['ratio']}" for n, p in _pairs.items() if p["ratio"] is not None and p["ratio"] < p["threshold"]]
     check(not _low, f"{_theme}: no spec component pair below AA (got {_low})")
+    check("button-disabled" not in _pairs, f"{_theme}: the disabled recipe is exempt from the AA pair check (WCAG 1.4.3, #1368)")
     for _role in ("accent", "success", "danger", "attention"):
         _tok = dict(_tokens, **{"colors._tint": f"color-mix(in srgb, var(--{_role}) 16%, transparent)"})
         _r = _pair(_tok, f"colors.{_role}-text", "colors._tint")

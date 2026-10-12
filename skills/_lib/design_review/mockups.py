@@ -303,9 +303,9 @@ CSS = """
 .mk-tab{flex:1 1 0;min-width:0;text-align:center;font-size:.68rem;font-weight:600;color:var(--fg-muted);padding:10px 2px;border-radius:9999px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .mk-tab-active{background:var(--accent-soft);color:var(--accent)}
 .mk-list .mk-fade{position:absolute;left:0;right:0;bottom:24px;height:40px;background:linear-gradient(transparent,var(--card))}
-.mk-input{border:1px solid var(--border);border-radius:8px;height:36px;display:flex;align-items:center;padding:0 10px;font-size:.85rem;color:var(--fg-muted);background:var(--canvas-subtle)}
+.mk-input{border:1px solid var(--border);border-radius:8px;height:36px;display:flex;align-items:center;padding:0 10px;font-size:.85rem;color:var(--fg-muted);background:var(--control-fill)}
 .mk-form{gap:10px}
-.mk-field{border:1px solid;border-radius:8px;height:36px;display:flex;align-items:center;padding:0 10px;background:var(--canvas-subtle)}
+.mk-field{border:1px solid;border-radius:8px;height:36px;display:flex;align-items:center;padding:0 10px;background:var(--control-fill)}
 .mk-primary{display:flex;align-items:center;justify-content:center;background:var(--accent);color:#fff;border-radius:8px;font-weight:600;font-size:.92rem}
 .mk-swatch{display:flex;align-items:center;gap:10px;padding:6px 0;border-top:1px solid var(--border-muted)}
 .mk-swatch:first-child{border-top:0}
