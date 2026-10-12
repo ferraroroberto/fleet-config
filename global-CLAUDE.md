@@ -180,6 +180,10 @@ For unattended/automation workflows, prefer a thin Python script (standard SDK o
 - Keep the default connector set minimal; toggle one on per session that needs it.
 - A connector that becomes a recurring automation dependency is the signal to scriptify it and disable the connector by default.
 
+### Showing the owner a file (launcher sessions)
+
+To show the owner a screenshot, chart or report in their chat view instead of only naming a path: Claude uses `SendUserFile`; every other harness runs `E:/automation/fleet-config/.venv/Scripts/python.exe E:/automation/fleet-config/skills/_lib/send_file.py <path> [--caption "..."]` and reads its one line — `SENT=<id>`, `REFUSED=<reason>` (the launcher said no — relay it) or `UNAVAILABLE=<reason>` (not sent). Only files under the session's project folder or `%TEMP%\claude`. Never secrets, never anything bound for GitHub.
+
 ## Recurring gotchas
 
 Each entry is the rule; its diagnosis, examples, commands and incident history live under the same title in `fleet-config`'s `docs/recurring-gotchas.md` (`E:/automation/fleet-config/docs/recurring-gotchas.md`) — read that section before working in the area.
