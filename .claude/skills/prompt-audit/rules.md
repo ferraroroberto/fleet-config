@@ -260,7 +260,7 @@ Fix shape: pin the fragile step to an exact command or bundled script; loosen th
 Source: https://platform.claude.com/docs/en/agents-and-tools/agent-skills/best-practices (Set appropriate degrees of freedom)
 
 ### R-39 Long workflows give a copyable checklist        tags: [anthropic] [file: skill] [tier: hard]
-Detect: judgment, lint-assisted — lint counts top-level steps; a workflow of six or more steps with no checklist the agent can copy and tick is a candidate. Consider-only for its first weekly cycle (the run on or after 2026-10-05): it becomes a normal rule on 2026-10-12, when this sentence is deleted.
+Detect: judgment, lint-assisted — lint counts top-level steps; a workflow of six or more steps with no checklist the agent can copy and tick is a candidate.
 Why: "For particularly complex workflows, provide a checklist that [the model] can copy into its response and check off as it progresses."
 Fix shape: add a `- [ ]` checklist that mirrors the step headings.
 Source: https://platform.claude.com/docs/en/agents-and-tools/agent-skills/best-practices (Use workflows for complex tasks)
@@ -272,7 +272,7 @@ Fix shape: name the check and the loop ("run X; on failure fix and re-run until 
 Source: https://platform.claude.com/docs/en/agents-and-tools/agent-skills/best-practices (Implement feedback loops; Create verifiable intermediate outputs)
 
 ### R-41 One term per concept        tags: [anthropic] [file: skill] [tier: hard]
-Detect: judgment — the same concept named with several terms in one skill (gate / check / verification step used interchangeably). Consider-only for its first weekly cycle (the run on or after 2026-10-05): it becomes a normal rule on 2026-10-12, when this sentence is deleted.
+Detect: judgment — the same concept named with several terms in one skill (gate / check / verification step used interchangeably).
 Why: "Choose one term and use it throughout the Skill … Consistency helps [the model] parse and follow instructions."
 Fix shape: pick the term the skill's helpers print, and replace the synonyms.
 Source: https://platform.claude.com/docs/en/agents-and-tools/agent-skills/best-practices (Use consistent terminology)
