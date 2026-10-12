@@ -1156,6 +1156,19 @@ for _neg in sorted(sd.INPUT_NEGATIVE_REASONS):
         sd.finalize_delivery("pending", "working", last_input={"reason": _neg}) == "stranded",
         f"finalize_delivery: watcher verdict {_neg!r} on last_input -> stranded",
     )
+# Pinned by literal, not by the loop above: the loop covers whatever the set
+# holds, so it cannot notice a verdict that was never added (fleet-config#1380).
+check(
+    sd.finalize_delivery(
+        "pending", "working", post_reason="deferred",
+        last_input={"reason": "defer_failed"},
+    ) == "stranded",
+    "finalize_delivery: watcher's defer_failed (raised before any CR) -> stranded",
+)
+check(
+    sd.deferred_submit_outcome("deferred", {"reason": "defer_failed"}) == "failed",
+    "deferred_submit_outcome: defer_failed -> failed, not in_flight",
+)
 check(
     sd.finalize_delivery(
         "pending", "working", post_reason="deferred",

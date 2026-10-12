@@ -278,7 +278,7 @@ just the launcher call):
     on a target that is **demonstrably quiet** (measured silence, not merely a
     non-`working` label), or the endpoint said so outright
     (`not_ingested`/`dropped`, or the watcher's `defer_timeout` /
-    `defer_vanished` / `defer_unclear` landing on `last_input`). It is never
+    `defer_vanished` / `defer_unclear` / `defer_failed` landing on `last_input`). It is never
     reached by fallthrough — it always rests on positive evidence, because a
     false `STRANDED` is the verdict most likely to make you resend, and a
     resent steer can double-execute a shipping command. This is the one that
