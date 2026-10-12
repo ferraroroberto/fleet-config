@@ -13,7 +13,7 @@ colors:
   canvas-subtle: "#010409"   # inset / off-card surfaces (true black)
   card:          "#161b22"   # elevated card surface
   border:        "#30363d"   # default hairline
-  border-muted:  "#21262d"   # quieter hairline (dividers inside a card)
+  border-muted:  "#21262d"   # quieter hairline (dividers inside a card) AND the control fill: text input, select, textarea, composer, disabled button (fleet-config#1368)
   fg:            "#e6edf3"   # primary text
   fg-muted:      "#7d8590"   # secondary text
   accent:        "#2f81f7"   # links, focus ring, the base the accent derivatives mix from
@@ -84,9 +84,9 @@ components:
   button-tint:     { backgroundColor: "{colors.accent-soft}", textColor: "{colors.accent-text}", borderColor: "{colors.accent-border-soft}", rounded: "{rounded.md}", fontWeight: 700, height: 48px }   # secondary emphasis — structural, identical to Light (see design.md)
   button-ghost:    { backgroundColor: transparent, borderColor: "{colors.border}", textColor: "{colors.fg-muted}", rounded: "{rounded.md}" }   # ghost = TRANSPARENT fill on a hairline border — structural, identical to Light
   button-surface:  { backgroundColor: "{colors.canvas-subtle}", borderColor: "{colors.border}", textColor: "{colors.fg-muted}", rounded: "{rounded.md}", height: "{components.control.height}" }   # LABELLED utility/toolbar button at the control height — a glyph-only control is the icon-button
-  button-disabled: { backgroundColor: "{colors.canvas-subtle}", borderColor: "{colors.border}", textColor: "{colors.fg-muted}" }   # ONE disabled recipe for every tier, both themes (home-automation#362)
+  button-disabled: { backgroundColor: "{colors.border-muted}", borderColor: "{colors.border}", textColor: "{colors.fg-muted}" }   # ONE disabled recipe for every tier, both themes (home-automation#362); dark fill is the control fill (border-muted #21262d), not true black (fleet-config#1368)
   icon-button:    { backgroundColor: transparent, borderColor: transparent, shadow: none, textColor: "{colors.fg-muted}", hoverColor: "{colors.fg}", pressedColor: "{colors.accent-text}", glyph: "{icons.size.inline}", target: "{components.hit-target.min}" }   # a glyph on nothing — structural, identical to Light (see design.md)
-  control:        { height: 36px, rounded: "{rounded.md}", backgroundColor: "{colors.canvas-subtle}", borderColor: "{colors.control-border}", textColor: "{colors.fg}" }   # shared height for inline select / input so a row of controls lines up
+  control:        { height: 36px, rounded: "{rounded.md}", backgroundColor: "{colors.border-muted}", borderColor: "{colors.control-border}", textColor: "{colors.fg}" }   # shared height for inline select / input so a row of controls lines up; dark fill is border-muted (#21262d), the same value as the disabled button, never canvas-subtle (fleet-config#1368)
   switch:         { width: 44px, height: 26px, rounded: "{rounded.pill}", thumbSize: 20px, trackOff: "{colors.control-border}", trackOn: "{colors.accent-fill}", thumbColor: "{colors.accent-fg}" }   # shadcn Switch — no text label; on = the app's accent (fleet-config#1200), never green
   nav-bar:        { backgroundColor: "{colors.card}", rounded: "{rounded.nav}", height: 61px, margin: 21px, maxTabs: 5 }
   nav-tab:        { textColor: "{colors.fg-muted}", rounded: "{rounded.pill}", height: 53px }
@@ -149,10 +149,37 @@ under the same token name — consume it behind `@media (color-gamut: p3)`.
 The fill-versus-text split in `design.md` (Colors) applies unchanged:
 `*-text` for text on a tint, `accent-fill` for the solid primary,
 `control-border` for input boundaries, `neutral-soft` + `fg` for chips. Dark
-needs it most. A chip or search field on `canvas-subtle` (`#010409`) inside a
-`#161b22` card is the black hole this file already rejects for the active tab.
+needs it most. A chip, text field or disabled button on `canvas-subtle`
+(`#010409`) inside a `#161b22` card is the black hole this file already
+rejects for the active tab; fields and disabled buttons fill with
+`border-muted` (`#21262d`) instead.
 The dark `tile-*` fills are GitHub's emphasis step, darker than the base hues,
 so a white glyph holds 4.6:1. The brighter base hues gave 2.5–3.4:1.
+
+**The dark palette, in full.** Nothing outside this list exists; reuse a value
+before proposing a new one.
+
+- **Greys, one per role** (8 solids + 1 mix): `canvas` `#0d1117` page;
+  `canvas-subtle` `#010409` the true-black inset, for off-card wells only and
+  never a field, chip or button inside a card; `card` `#161b22` every elevated
+  surface; `border-muted` `#21262d` the divider and the **control fill**
+  (text input, select, textarea, composer, disabled button); `border`
+  `#30363d` the card hairline; `control-border` `#6e7681` a field's boundary
+  and the switch off-track; `fg-muted` `#7d8590` secondary text, placeholder
+  and disabled text; `fg` `#e6edf3` primary text. `neutral-soft` is the one
+  mix (`fg-muted` at 16%), the chip and filter-pill fill.
+- **Blues, one per role** (3 solids): `accent` `#2f81f7` links, focus ring and
+  icons; `accent-fill` `#1f6feb` the solid primary fill (also `tile-blue`);
+  `accent-text` `#58a6ff` text on an accent tint. `accent-soft`,
+  `accent-border-soft` and `accent-border-strong` are mixes of `accent`.
+
+Measured on the control fill `#21262d` (fleet-config#1368): `fg` 12.88:1 (clears
+4.5); `control-border` 3.31:1 (clears WCAG 1.4.11's 3:1); `fg-muted` 4.08:1,
+which is **below 4.5:1**. That falls short for the placeholder. Disabled text is
+exempt under WCAG 1.4.3 (inactive component), so the disabled recipe makes no AA
+claim. The `border` hairline on the fill is 1.25:1 and decorative. The
+fill itself is 1.14:1 against `card`; a field's boundary is `control-border`,
+not the fill.
 
 The user-selectable theme-switching contract (pre-paint boot script, persisted
 sun/moon toggle, dual `theme-color` metas) is defined in the
@@ -233,7 +260,7 @@ segment, never a `danger` tint;
 the black-hole rule holds for code in dark: the code chip sits on
 `neutral-soft` and every listing and diff on `card` with a hairline, never
 `canvas-subtle`, which is true black inside a dark card;
-the `modal` disabled recipe holds AA on the dark surface (~5.5:1); the
+the `modal` disabled recipe is `fg-muted` on `border-muted` (4.08:1; disabled text is exempt from 1.4.3, measured above); the
 `icon-tile` fills use the brighter dark `tile-*` values. The **Base UI — model
 components on shadcn** rule in `design.md` applies here unchanged: every
 interactive component is modelled on its shadcn component (structure + ARIA), then
@@ -248,7 +275,8 @@ they reference resolve to the dark values.
 - **Do** keep behavior byte-for-byte identical to the Light theme — only values change.
 - **Do** lean on surface lightness, not shadow, for elevation on the dark canvas.
 - **Do** reserve bottom padding for the fixed nav so content is never occluded.
-- **Do** hold AA contrast on the dark surface for disabled controls and muted text — use the authored disabled recipe, never the browser default (which drops sub-AA).
+- **Do** use the authored disabled recipe for disabled controls, never the browser default (which drops sub-AA); its measured ratio is above, and disabled text is exempt from 1.4.3.
+- **Don't** fill a field, chip or disabled button with `canvas-subtle` inside a card, or invent a grey: the palette above is closed.
 - **Don't** introduce a second accent or per-app navigation variants.
 - **Don't** use status colors decoratively — they signal state only.
 - **Don't** apply this spec to Streamlit POC spikes.

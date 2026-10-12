@@ -183,6 +183,25 @@ background and the pair drops under AA in both themes. So:
   on it falls under AA. A **reference pill** (a chip that links somewhere)
   is `accent-text` on `accent-soft`, the `button-tint` pairing.
 
+**The light palette, in full.** Nothing outside this list exists; reuse a value
+before proposing a new one (`design.dark.md` lists the dark twin).
+
+- **Greys, one per role** (8 solids + 1 mix): `canvas` `#ffffff` page;
+  `canvas-subtle` `#f6f8fa` the inset and the **control fill** (text input,
+  select, textarea, composer, disabled button); `card` `#ffffff` every
+  elevated surface; `border-muted` `#d8dee4` the divider; `border` `#d1d9e0`
+  the card hairline; `control-border` `#818b98` a field's boundary and the
+  switch off-track; `fg-muted` `#656d76` secondary text, placeholder and
+  disabled text; `fg` `#1f2328` primary text. `neutral-soft` is the one mix
+  (`fg-muted` at 16%), the chip and filter-pill fill.
+- **Blues, one per role** (3 solids): `accent` `#0969da` links, focus ring and
+  icons; `accent-fill` `#0969da` the solid primary fill (also `tile-blue`);
+  `accent-text` `#0550ae` text on an accent tint. `accent-soft`,
+  `accent-border-soft` and `accent-border-strong` are mixes of `accent`.
+
+Measured on the control fill `#f6f8fa`: `fg` 14.84:1, `fg-muted` 4.93:1 (both
+clear 4.5), `control-border` 3.24:1 (clears WCAG 1.4.11's 3:1).
+
 The `*-text`, `control-border` and `neutral-soft` roles are sRGB-only on
 purpose: each holds a verified ratio, and a wide-gamut variant would move it.
 `accent-fill` does ship a `-p3` twin, at the same lightness, so the fix holds
@@ -512,8 +531,10 @@ actions — *ghost means transparent* on a hairline border; a tinted fill is a
 height) for labelled toolbar and utility buttons. A glyph-only control is
 none of the four: it is the **icon button** (Component contracts), which
 draws no surface at all. Every tier shares the **one
-`button-disabled` recipe** (the flat `canvas-subtle` / `border` / `fg-muted`
-trio — AA in both themes, home-automation#362), never opacity on a solid fill.
+`button-disabled` recipe** (the flat control fill / `border` / `fg-muted`
+trio, home-automation#362): `canvas-subtle` in light (`fg-muted` 4.93:1), the
+`border-muted` value in dark (4.08:1, see `design.dark.md`; disabled text is
+exempt from WCAG 1.4.3). Never opacity on a solid fill.
 A destructive action may restate the tint recipe on `danger`
 (`danger` border and shade, `danger-text` text); status colors never fill a non-status button. `card` for
 every content group; `nav-bar` + `nav-tab` per the contract above. Inline form controls (`select`,

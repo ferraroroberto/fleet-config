@@ -536,12 +536,12 @@ def _owner_block(owner: str, rules: List[dict], doc: dict) -> str:
 CSS = """
 :root{--canvas:#ffffff;--canvas-subtle:#f6f8fa;--card:#ffffff;--border:#d1d9e0;--border-muted:#d8dee4;--fg:#1f2328;--fg-muted:#656d76;
 --accent:#0969da;--accent-soft:color-mix(in srgb,var(--accent) 16%,transparent);--success:#1a7f37;--danger:#cf222e;--attention:#9a6700;
---p0:#cf222e;--p1:#bc4c00;--p2:#9a6700;--p3:#656d76}
+--p0:#cf222e;--p1:#bc4c00;--p2:#9a6700;--p3:#656d76;--control-fill:var(--canvas-subtle)}
 @media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--canvas:#0d1117;--canvas-subtle:#010409;--card:#161b22;--border:#30363d;
 --border-muted:#21262d;--fg:#e6edf3;--fg-muted:#7d8590;--accent:#2f81f7;--success:#3fb950;--danger:#f85149;--attention:#d29922;
---p0:#f85149;--p1:#db6d28;--p2:#d29922;--p3:#7d8590}}
+--p0:#f85149;--p1:#db6d28;--p2:#d29922;--p3:#7d8590;--control-fill:var(--border-muted)}}
 :root[data-theme="dark"]{--canvas:#0d1117;--canvas-subtle:#010409;--card:#161b22;--border:#30363d;--border-muted:#21262d;--fg:#e6edf3;
---fg-muted:#7d8590;--accent:#2f81f7;--success:#3fb950;--danger:#f85149;--attention:#d29922;--p0:#f85149;--p1:#db6d28;--p2:#d29922;--p3:#7d8590}
+--fg-muted:#7d8590;--accent:#2f81f7;--success:#3fb950;--danger:#f85149;--attention:#d29922;--p0:#f85149;--p1:#db6d28;--p2:#d29922;--p3:#7d8590;--control-fill:var(--border-muted)}
 *{box-sizing:border-box}
 html{-webkit-text-size-adjust:100%}
 body{margin:0;background:var(--canvas);color:var(--fg);font:16px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif;padding:16px;max-width:900px;margin-inline:auto;overflow-wrap:anywhere}
