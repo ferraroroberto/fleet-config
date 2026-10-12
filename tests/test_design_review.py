@@ -1368,8 +1368,11 @@ else:
     home = by_id["desktop-light-home"]["metrics"]
     tx, ct, tg, ic, nv, ly, ay = (home[k] for k in ("text", "controls", "targets", "icons", "nav", "layout", "a11y"))
     check(tx["min_px"] == 10 and tx["under11_count"] == 1 and {"10", "12", "14", "16", "24"} <= set(tx["sizes"]), "text size histogram + 10px floor")
-    check(tx["low_contrast_count"] == 2 and {r["sel"] for r in tx["low_contrast"]} == {"p.faint", "pre.log.faint"} and all(r["ratio"] < 3 for r in tx["low_contrast"]),
+    check(tx["low_contrast_count"] == 3 and {r["sel"] for r in tx["low_contrast"]} == {"p.faint", "pre.log.faint", "button.faint-btn"}
+          and all(r["ratio"] < 3 for r in tx["low_contrast"]),
           f"low-contrast runs found, log text in <pre> still measured for contrast (#1119) -- {tx['low_contrast']}")
+    check({r["text"] for r in tx["low_contrast"] if r["sel"] == "button.faint-btn"} == {"On label"},
+          f"COLOR-02 exempts a :disabled / [aria-disabled=true] label (WCAG 2.2 SC 1.4.3); an enabled one in the same colours still fails (#1385) -- {tx['low_contrast']}")
     check(tx["glyph_icon_count"] == 3
           and {g["sel"] for g in tx["glyph_icons"]} == {"button.big.glyph-btn", "button.big.glyph-lone", "button.big.glyph-run"},
           f"glyph icons: a control label ending or starting with a glyph, or a lone one, counts; an arrow inside a sentence "

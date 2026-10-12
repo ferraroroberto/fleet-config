@@ -152,6 +152,7 @@ _MEASURE_JS = r"""
     // app drew, and it comes and goes with the data, not the build (#1261).
     const glyphEdge = new RegExp('^(?:' + params.glyphRe + ')|(?:' + params.glyphRe + ')$', 'u');
     const CONTROL = 'button, a, [role=button], [role=link], [role=tab], [role=menuitem]';
+    const INACTIVE = ':disabled, [aria-disabled=true]';
     const isGlyphIcon = (raw, el) => [...raw].length <= 2
       || (raw.length <= params.glyphLabelMax && !!el.closest(CONTROL) && glyphEdge.test(raw));
     while (walker.nextNode()) { const t = walker.currentNode; const raw = t.nodeValue.trim(); if (!raw) continue;
@@ -165,7 +166,9 @@ _MEASURE_JS = r"""
       if (px < 14) under14++; if (px < minPx) minPx = px;
       const fg = rgba(s.color); const bg = bgOf(el); const cr = ratio(over(fg,bg), bg);
       const large = px>=24 || (px>=18.66 && +s.fontWeight>=700);
-      if (cr < (large?3:4.5)) low.push({sel: sel(el), text: raw.slice(0,40), px, ratio: r2(cr), fg: hex(over(fg,bg)), bg: hex(bg), large});
+      // WCAG 2.2 SC 1.4.3 exempts text in an inactive UI component: a disabled control's label is still a
+      // run (size, weight) but never a contrast failure (#1385).
+      if (cr < (large?3:4.5) && !el.closest(INACTIVE)) low.push({sel: sel(el), text: raw.slice(0,40), px, ratio: r2(cr), fg: hex(over(fg,bg)), bg: hex(bg), large});
       if (px < 11) under11.push({sel: sel(el), text: raw.slice(0,40), px});
       if (s.wordBreak === 'break-all') breakAll.push({sel: sel(el), text: raw.slice(0,40)});
       if (s.textTransform === 'uppercase') upper.push({sel: sel(el), text: raw.slice(0,40)});
