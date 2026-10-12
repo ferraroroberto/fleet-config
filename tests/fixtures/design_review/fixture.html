@@ -19,6 +19,7 @@
   .tiny { font-size: 10px; }
   .caption { font-size: 12px; }
   .faint { color: #b0b0b0; }              /* ~2.2:1 on white -> low contrast */
+  .faint-btn { color: #b0b0b0; font: inherit; min-height: 44px; }
   .glyph { font-size: 14px; }
   .small-btn { width: 24px; height: 24px; padding: 0; border: 1px solid #d1d9e0; background: #f6f8fa; font: inherit; }
   .hit-target { position: relative; width: 34px; height: 34px; padding: 0; margin: 12px; font: inherit; }
@@ -90,6 +91,8 @@
       <!-- #1261: a lone arrow and a leading glyph in a control label are icons; an arrow inside a sentence or a user's own title (p.glyph above) is punctuation -->
       <div><button type="button" class="big glyph-lone" aria-label="Next">→</button></div>
       <div><button type="button" class="big glyph-run">▶ Run</button></div>
+      <!-- #1385: SC 1.4.3 exempts an inactive control's label from COLOR-02; the same colours on an enabled button still fail -->
+      <div><button type="button" class="faint-btn" disabled>Off label</button> <button type="button" class="faint-btn" aria-disabled="true">Aria off</button> <button type="button" class="faint-btn">On label</button></div>
       <pre class="log faint">log → faint</pre>
       <p><code>a → b</code> <samp>✓ ok</samp> <kbd>⏎ →</kbd></p>
       <!-- #995: an extra step (click #revealBtn) shows a section holding a folded field -->
