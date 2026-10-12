@@ -294,7 +294,7 @@ class CaptureTests(unittest.TestCase):
         unknown = directory / '2026-01-02-1200-unknown.md'
         unknown.write_text('lunar gardens\n\n' + cc.capture_header(OTHER, '', '') + '\n', encoding='utf-8')
         originals = {p: p.read_bytes() for p in directory.glob('*.md')}
-        with patch.object(ci.hub_client, 'complete', return_value='Topic: lunar gardens\nDecisions: none\nOpen loops: none'):
+        with patch.object(ci.hub_client, 'complete', return_value='Topic: lunar gardens\nSummary: none'):
             self.assertEqual(ci.index_dir(directory, 'probe', force=True), 3)
         indexed = ci.parse_index(directory / 'index.md')
         self.assertEqual(indexed[files[0].name].turns, 2)

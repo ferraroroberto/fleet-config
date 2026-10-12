@@ -3,7 +3,7 @@
 ``conversation_capture`` (the Stop hook) writes one verbatim markdown capture per
 conversation, rewriting it every turn-end (cheap, no LLM). This adds the *middle
 tier*: per conversations-dir, a ``index.md`` with one distilled entry per
-conversation — topic, decisions, open loops — pointing back at the raw capture.
+conversation — topic and a short summary — pointing back at the raw capture.
 A consumer (e.g. a life-os skill) loads the index at startup and only ``Read``s a
 full transcript when a specific past conversation is referenced.
 
@@ -111,17 +111,17 @@ _NAME_RE = re.compile(r"^(\d{4}-\d{2}-\d{2})-(\d{4})-(.+?)\.md$")
 # that opens the label, so the match silently never fires and every field lands
 # in index.json empty.
 _FIELD_RE = re.compile(
-    r"^[-*•\s]*\*\*(Topic|Decisions|Open loops):\*\*\s*(.*)$", re.IGNORECASE
+    r"^[-*•\s]*\*\*(Topic|Summary|Decisions|Open loops):\*\*\s*(.*)$", re.IGNORECASE
 )
 _TOKEN_SUFFIX_RE = re.compile(r"(?:-(?:[0-9a-f]{64}|[0-9a-f]{8}))+$")
 
 DIGEST_PROMPT = (
     "You are writing a compact index entry for a past assistant/user "
     "conversation so it can be found later without re-reading the whole "
-    "transcript. Output EXACTLY three lines, nothing else:\n"
+    "transcript. Output EXACTLY two lines, nothing else:\n"
     "Topic: <one line on what it was about>\n"
-    "Decisions: <concrete decisions or outcomes, or 'none'>\n"
-    "Open loops: <unresolved threads / follow-ups, or 'none'>\n\n"
+    "Summary: <one short plain-prose paragraph, at most two or three "
+    "sentences: the outcome, and anything still open>\n\n"
     "Transcript:\n\n"
 )
 
@@ -182,14 +182,18 @@ def parse_index(path: Path) -> "dict[str, Entry]":
 
 
 def _digest_fields(body: str) -> "dict[str, str]":
-    """Split a rendered entry body back into its three digest fields.
+    """Split a rendered entry body back into its digest fields.
+
+    New entries carry ``topic`` + ``summary``; entries written before
+    fleet-config#1373 carry ``decisions`` + ``open_loops`` instead, so all four
+    keys are always present and an entry only fills the ones it has.
 
     ``index.json`` carries them separately so a consumer can show just the topic
     or search the fields at different weights; ``index.md`` keeps the prose
     bullets. Parsing the body the writer produced keeps one source of truth for
     the digest rather than storing it twice.
     """
-    out = {"topic": "", "decisions": "", "open_loops": ""}
+    out = {"topic": "", "summary": "", "decisions": "", "open_loops": ""}
     for line in body.splitlines():
         m = _FIELD_RE.match(line)
         if m:
@@ -330,27 +334,21 @@ def render_index(label: str, entries: "dict[str, Entry]", tail: str = "") -> str
 
 
 def digest(text: str) -> "str | None":
-    """Distil a capture's markdown into a 3-line body, or ``None`` if hub down."""
+    """Distil a capture's markdown into a 2-line body, or ``None`` if hub down."""
     out = hub_client.complete(DIGEST_PROMPT + text[:MAX_DIGEST_CHARS], max_tokens=300)
     if not out:
         return None
-    topic = decisions = loops = ""
+    topic = summary = ""
     for raw in out.splitlines():
         line = raw.strip().lstrip("-*• ").strip()
         low = line.lower()
         if low.startswith("topic:"):
             topic = line[len("topic:"):].strip()
-        elif low.startswith("decisions:"):
-            decisions = line[len("decisions:"):].strip()
-        elif low.startswith("open loops:"):
-            loops = line[len("open loops:"):].strip()
+        elif low.startswith("summary:"):
+            summary = line[len("summary:"):].strip()
     if not topic:
         topic = out.strip().splitlines()[0][:200]
-    return (
-        f"- **Topic:** {topic or '—'}\n"
-        f"- **Decisions:** {decisions or 'none'}\n"
-        f"- **Open loops:** {loops or 'none'}"
-    )
+    return f"- **Topic:** {topic or '—'}\n- **Summary:** {summary or 'none'}"
 
 
 def index_dir(conv_dir: Path, label: str, *, force: bool = False) -> int:

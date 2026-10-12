@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import json
 import shutil
+import sqlite3
 import sys
 import tempfile
 from datetime import date
@@ -85,6 +86,38 @@ check(fields["decisions"] == "use thin CA glue", "_digest_fields: decisions pars
 check(fields["open_loops"] == "not yet attempted", "_digest_fields: open loops parsed")
 check(ci._digest_fields("nothing structured here")["topic"] == "",
       "_digest_fields: unstructured body -> empty fields, no crash")
+check(fields["summary"] == "",
+      "_digest_fields: an old-shape entry (decisions/open loops) has no summary")
+new_fields = ci._digest_fields("- **Topic:** repairing headphones\n"
+                               "- **Summary:** Glued the band; still untested.")
+check(new_fields["summary"] == "Glued the band; still untested."
+      and new_fields["decisions"] == "" and new_fields["open_loops"] == "",
+      "_digest_fields: a new-shape entry parses topic + summary only")
+
+# ---- the digest prompt + digest() (fleet-config#1373) ----
+check("Topic:" in ci.DIGEST_PROMPT and "Summary:" in ci.DIGEST_PROMPT
+      and "Decisions:" not in ci.DIGEST_PROMPT and "Open loops:" not in ci.DIGEST_PROMPT
+      and "EXACTLY two lines" in ci.DIGEST_PROMPT,
+      "DIGEST_PROMPT: asks for exactly Topic + Summary, no Decisions / Open loops")
+_saved_complete = ci.hub_client.complete
+try:
+    ci.hub_client.complete = lambda *a, **k: "Topic: glue job\nSummary: Repaired the band; check it holds."
+    check(ci.digest("t") == "- **Topic:** glue job\n- **Summary:** Repaired the band; check it holds.",
+          "digest: hub answer -> Topic + Summary bullets")
+    ci.hub_client.complete = lambda *a, **k: "- Topic: glue job\n- summary: bulleted and lowercase"
+    check(ci.digest("t").endswith("- **Summary:** bulleted and lowercase"),
+          "digest: bullet prefixes and label case tolerated")
+    # A legacy-shaped or malformed answer must fail safe: an entry, never an exception.
+    ci.hub_client.complete = lambda *a, **k: "Topic: t\nDecisions: d\nOpen loops: o"
+    check(ci.digest("t") == "- **Topic:** t\n- **Summary:** none",
+          "digest: old three-line answer -> topic kept, summary 'none', no crash")
+    ci.hub_client.complete = lambda *a, **k: "free prose with no labels at all"
+    check(ci.digest("t") == "- **Topic:** free prose with no labels at all\n- **Summary:** none",
+          "digest: unlabelled answer -> first line becomes the topic, no crash")
+    ci.hub_client.complete = lambda *a, **k: None
+    check(ci.digest("t") is None, "digest: hub down -> None (entry retried later)")
+finally:
+    ci.hub_client.complete = _saved_complete
 
 entries = {"2026-08-09-1826-a-b-c.md": ci.Entry(
     file="2026-08-09-1826-a-b-c.md", mtime=1786292799.0, turns=14,
@@ -169,7 +202,10 @@ try:
             encoding="utf-8")
         (cdir / "index.md").write_text(ci.render_index(skill, {name: ci.Entry(
             file=name, mtime=(cdir / name).stat().st_mtime, turns=2,
-            body=f"- **Topic:** {topic}\n- **Decisions:** none\n- **Open loops:** none",
+            # geek-out is a new-shape (#1373) entry, journal-daily a pre-existing old one.
+            body=(f"- **Topic:** {topic}\n- **Summary:** ferrule trimmed and band reglued"
+                  if skill == "geek-out" else
+                  f"- **Topic:** {topic}\n- **Decisions:** none\n- **Open loops:** none"),
             sid=SID if skill == "geek-out" else OTHER_SID, agent="claude")}),
             encoding="utf-8")
 
@@ -184,6 +220,11 @@ try:
           "search: digest hit found, right skill")
     check(hits[0]["resume"] == f"claude --resume {SID}" and hits[0]["resumable"],
           "search: result carries a ready-to-run resume command")
+    check(hits[0]["summary"] == "ferrule trimmed and band reglued"
+          and len(cs.search(cfg, "ferrule")) == 1,
+          "search: a new-shape entry's summary is stored, returned and searchable")
+    check(cs.search(cfg, "notion")[0]["summary"] == "",
+          "search: an old-shape entry still loads (summary empty)")
     # A body-only term proves the full transcript is searchable, not just digests.
     body_hits = cs.search(cfg, "cyanoacrylate")
     check(len(body_hits) == 1 and body_hits[0]["skill"] == "geek-out",
@@ -236,6 +277,18 @@ try:
           "search: punctuation-only query -> no crash")
     check(cs.search(cfg, "   ") == [],
           "search: whitespace-only query -> empty, never a SQL error")
+
+    # A db built before the summary column existed gains it on connect.
+    _legacy_db = tmp / "legacy.db"
+    _c = sqlite3.connect(str(_legacy_db))
+    _c.execute("CREATE TABLE conversations (id INTEGER PRIMARY KEY, skill TEXT, file TEXT,"
+               " path TEXT UNIQUE, title TEXT NOT NULL DEFAULT '', topic TEXT)")
+    _c.commit()
+    _c.close()
+    _c = cs.connect(_legacy_db)
+    check("summary" in {r[1] for r in _c.execute("PRAGMA table_info(conversations)")},
+          "connect: pre-summary db gains the summary column")
+    _c.close()
 
     # The db is a pure derivative: deleting it must always be recoverable.
     cs.db_path(cfg).unlink()

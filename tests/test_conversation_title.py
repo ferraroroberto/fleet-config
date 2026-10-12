@@ -51,8 +51,7 @@ TITLE = "Espalier sketchbook"
 
 
 def _digest_stub(topic: str):
-    return lambda _text: (f"- **Topic:** {topic}\n- **Decisions:** none\n"
-                          f"- **Open loops:** none")
+    return lambda _text: f"- **Topic:** {topic}\n- **Summary:** none"
 
 
 def _age(path: Path) -> None:

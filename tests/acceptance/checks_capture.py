@@ -148,7 +148,7 @@ def _conversation_index_unit_checks() -> Tuple[int, int]:
 
     # ---- index_dir: hermetic digest/upsert + decay-zone preservation ----
     saved = hub_client.complete
-    ci.hub_client.complete = lambda *a, **k: "Topic: t\nDecisions: none\nOpen loops: none"
+    ci.hub_client.complete = lambda *a, **k: "Topic: t\nSummary: none"
     tmp = Path(tempfile.mkdtemp(prefix="idx_unit_"))
     try:
         cap = tmp / "2026-06-10-1200-foo-aaaa1111.md"
