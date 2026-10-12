@@ -84,6 +84,8 @@ DETAILS_SETTLE_MS = 1200
 DIALOG_SETTLE_MS = 500
 STEP_SETTLE_MS = 1200
 STEP_TARGET_WAIT_MS = 5000   # a step target not attached by then is absent from this app state (#995)
+WAIT_MS_MAX = 30000          # the ceiling on a declared `wait_ms` / tab `ready` wait: a target may wait longer, never forever (#1385)
+READY_WAIT_MS = 15000        # how long a declared tab `ready` selector is waited for before the tab is captured as it stands
 GEAR_WAIT_MS = 1000          # the base page has settled (SETTLE_MS); a gear not visible this much later is not there (#1217)
 # The vendored home-head gear is an icon-only button named "Settings" (project-scaffolding#316): found by role and name.
 _SETTINGS_NAME = re.compile(r"^\s*settings\s*$", re.I)
@@ -141,6 +143,13 @@ class GearAbsent(Exception):
 
 class TargetAbsent(Exception):
     """A step's target never attached: the surface does not exist in this app state (an empty list)."""
+
+
+def bounded_wait_ms(value: object, default: int) -> int:
+    """A declared wait in ms: `default` when absent or not a positive integer, capped at WAIT_MS_MAX (#1385)."""
+    if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+        return default
+    return min(value, WAIT_MS_MAX)
 
 
 def step_clicks(step: dict) -> List[str]:
@@ -284,10 +293,12 @@ class _Leg:
     """
 
     def __init__(self, page, device: str, theme: str, args: argparse.Namespace, script: str, params: dict,
-                 shots: Path, retouch: Optional[Callable[[], None]], tab_selector: str, no_go: List[str]) -> None:
+                 shots: Path, retouch: Optional[Callable[[], None]], tab_selector: str, no_go: List[str],
+                 tab_ready: Optional[Dict[str, str]] = None) -> None:
         self.page, self.device, self.theme, self.args = page, device, theme, args
         self.script, self.params, self.shots, self.retouch = script, params, shots, retouch
         self.tab_selector, self.no_go = tab_selector, no_go
+        self.tab_ready = tab_ready or {}
         self.screens: List[Dict[str, object]] = []
         self.tabs: List[dict] = []
         self.tablist = page
@@ -326,11 +337,32 @@ class _Leg:
         self.tabs = page.evaluate(_TABS_JS, self.tab_selector) or [{"index": None, "id": "root"}]
         self.tablist = page.locator("[role=tablist]").first if page.locator("[role=tablist]").count() else page
 
-    def open_tab(self, index: object) -> None:
+    def open_tab(self, index: object) -> Dict[str, object]:
+        """Click one primary tab and let it settle; the record of its declared `ready` wait, `{}` when none is declared."""
         self.tablist.locator(self.tab_selector).nth(int(index)).click()
         self.page.wait_for_timeout(TAB_SETTLE_MS)
+        tab_id = next((t["id"] for t in self.tabs if t["index"] == index), None)
+        selector = self.tab_ready.get(str(tab_id)) if tab_id else None
+        return {"ready": self.wait_ready(selector)} if selector else {}
 
-    def capture(self, sid: str, view: str, kind: str, before_record: Optional[Callable[[], None]] = None) -> None:
+    def wait_ready(self, selector: str) -> Dict[str, object]:
+        """Wait up to READY_WAIT_MS for a tab's declared `ready` selector to attach; never clicks, never retries.
+
+        A selector that never attaches does not fail the screen: the tab is captured as it stands and the record
+        says `met: false`, so a loading state is named, not scored as the app (#1385).
+        """
+        try:
+            self.page.locator(selector).first.wait_for(state="attached", timeout=READY_WAIT_MS)
+            met = True
+        except Exception as exc:  # noqa: BLE001 — Playwright's TimeoutError, the only way wait_for fails here
+            if classify_error(exc) != "TIMEOUT":
+                raise
+            met = False
+            log.warning("tab ready selector %s not attached within %d ms", selector, READY_WAIT_MS)
+        return {"selector": selector, "wait_ms": READY_WAIT_MS, "met": met}
+
+    def capture(self, sid: str, view: str, kind: str, before_record: Optional[Callable[[], None]] = None,
+                **extra: object) -> None:
         """Screenshot, open the scope's details, measure and record the screen in front of the walk.
 
         `before_record` runs after the theme is read and before the record lands (a dialog closes there).
@@ -342,7 +374,7 @@ class _Leg:
         if before_record:
             before_record()
         self.screens.append(_record(id=sid, device=self.device, theme=self.theme, view=view, kind=kind,
-                                    screenshot=shot, screenshot_full=full, note=note, metrics=metrics, **observed))
+                                    screenshot=shot, screenshot_full=full, note=note, metrics=metrics, **observed, **extra))
         log.info("ok %s", sid)
 
     def step_failed(self, sid: str, view: str, exc: Exception, absent: type, absent_reason: str) -> None:
@@ -363,15 +395,18 @@ class _Leg:
             raise NoGo(f"{label} sits inside a no_go selector")
         return loc
 
-    def guarded(self, selector: str):
-        """The first match for `selector`: absent when it never attaches, refused inside a no_go selector."""
+    def guarded(self, selector: str, wait_ms: int = STEP_TARGET_WAIT_MS):
+        """The first match for `selector`: absent when it never attaches in `wait_ms`, refused inside a no_go selector.
+
+        The wait only polls for the element; the one click that follows is never retried (#1385).
+        """
         loc = self.page.locator(selector).first
         try:
-            loc.wait_for(state="attached", timeout=STEP_TARGET_WAIT_MS)
+            loc.wait_for(state="attached", timeout=wait_ms)
         except Exception as exc:  # noqa: BLE001 — Playwright's TimeoutError, the only way wait_for fails here
             if classify_error(exc) != "TIMEOUT":
                 raise
-            raise TargetAbsent(f"{selector} never appeared within {STEP_TARGET_WAIT_MS} ms") from exc
+            raise TargetAbsent(f"{selector} never appeared within {wait_ms} ms") from exc
         return self.refuse_no_go(loc, selector)
 
 
@@ -382,8 +417,7 @@ def _walk_tabs(leg: _Leg) -> None:
         view = str(tab["id"] or f"tab{tab['index']}")
         sid = leg.sid(view)
         try:
-            if tab["index"] is not None:
-                leg.open_tab(tab["index"])
+            ready: Dict[str, object] = leg.open_tab(tab["index"]) if tab["index"] is not None else {}
             shot = _shot(page, leg.shots, sid)
             page.evaluate(_OPEN_DETAILS_JS)
             page.wait_for_timeout(DETAILS_SETTLE_MS)
@@ -391,7 +425,7 @@ def _walk_tabs(leg: _Leg) -> None:
             metrics = page.evaluate(leg.script, leg.params)
             leg.screens.append(_record(id=sid, device=leg.device, theme=leg.theme, view=view, kind="tab",
                                        screenshot=shot, screenshot_full=full, note=note, metrics=metrics,
-                                       **leg.theme_fields()))
+                                       **leg.theme_fields(), **ready))
             log.info("ok %s", sid)
         except Exception as exc:  # noqa: BLE001 — the walk must continue past one broken tab
             reason = classify_error(exc)
@@ -453,6 +487,8 @@ def _walk_extra_steps(leg: _Leg, review: dict) -> None:
             leg.screens.append(_record(id=sid, device=leg.device, theme=leg.theme, view=view, kind="step",
                                        status="error", reason="NO_GO", error=f"{declared[0]} is declared no_go"))
             continue
+        wait_ms = bounded_wait_ms(step.get("wait_ms"), STEP_TARGET_WAIT_MS)
+        declared_wait = {"wait_ms": wait_ms} if "wait_ms" in step else {}
         try:
             leg.open_base()
             tab_id = step.get("tab")
@@ -461,12 +497,12 @@ def _walk_extra_steps(leg: _Leg, review: dict) -> None:
                 if idx is not None:
                     leg.open_tab(idx)
             if step.get("open"):
-                leg.guarded(str(step["open"])).evaluate("d => { d.open = true; }")
+                leg.guarded(str(step["open"]), wait_ms).evaluate("d => { d.open = true; }")
                 page.wait_for_timeout(DETAILS_SETTLE_MS)
             for selector in clicks:
-                leg.guarded(selector).click()
+                leg.guarded(selector, wait_ms).click()
                 page.wait_for_timeout(STEP_SETTLE_MS)
-            leg.capture(sid, view, "step")
+            leg.capture(sid, view, "step", **declared_wait)
         except Exception as exc:  # noqa: BLE001
             leg.step_failed(sid, view, exc, TargetAbsent, "STEP_TARGET_ABSENT")
 
@@ -491,7 +527,10 @@ def walk_context(pw, device: str, theme: str, args: argparse.Namespace, script: 
     # A synthetic run (#995) walks a throwaway instance: its own no_go, when declared, replaces the live list.
     synth = review.get("synthetic") if isinstance(review.get("synthetic"), dict) else {}
     no_go_src = synth.get("no_go") if args.synthetic and isinstance(synth.get("no_go"), list) else review.get("no_go", [])
-    leg = _Leg(page, device, theme, args, script, params, shots, retouch, tab_selector, [str(s) for s in no_go_src])
+    declared_ready = review.get("tab_ready") if isinstance(review.get("tab_ready"), dict) else {}
+    tab_ready = {str(k): str(v) for k, v in declared_ready.items() if k and v}
+    leg = _Leg(page, device, theme, args, script, params, shots, retouch, tab_selector,
+               [str(s) for s in no_go_src], tab_ready)
 
     try:
         leg.open_base()

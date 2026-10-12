@@ -140,7 +140,10 @@ Read the printed lines: `MODE=live|synthetic`, `RUN_DIR=`, `METRICS=`, `SCREENS=
 `ABSENT=<n>`, `UNMEASURED=<reason>|none`, `COMMIT=`. `ABSENT` counts extra
 steps whose target never appeared (`STEP_TARGET_ABSENT`, e.g. a row menu on
 an empty list): that surface does not exist in this app state, so it is
-named in the report but leaves unrelated rules alone. The run directory is
+named in the report but leaves unrelated rules alone. A slow target declares its own
+pace in `.fleet.toml`: a step's `wait_ms` (default 5000, capped at 30000) and a `[design.review.tab_ready]`
+selector per tab id (waited for up to 15 s after the tab opens; never met, the tab is still captured and its
+screen records `ready.met = false`). Neither retries a click, and a target still absent stays `absent`. The run directory is
 `~/.claude/hooks/state/design-review/<target>/<UTC stamp>/` — gitignored
 state, never a tracked tree. `UNMEASURED≠none` (`PLAYWRIGHT_MISSING`,
 `NOT_LISTENING` mid-run, `BROWSER_FAILED`, …) is a **result, not a crash**:
