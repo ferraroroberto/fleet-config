@@ -110,6 +110,8 @@ components:
   avatar:         { size: 36px, rounded: "{rounded.md}", backgroundColor: "{colors.neutral-soft}", glyph: "{icons.size.nav-tab}", badgeSize: 12px, badgeRing: "{colors.card}", badgeAlive: "{colors.success}", badgeDown: "{colors.danger}" }   # a row's leading squircle; the corner badge means alive (up) or down (should be up), nothing else (fleet-config#1332)
   meter:          { height: 6px, rounded: "{rounded.pill}", track: "{colors.neutral-soft}", fillUnderPace: "{colors.accent}", fillAheadOfPace: "{colors.attention}", fillCritical: "{colors.danger}", criticalAt: 90%, paceTick: 2px, allocationAttentionAt: 75% }   # a usage bar coloured by pace, not raw percent (fleet-config#1332); an allocation bar by headroom (fleet-config#1386)
   segmented:      { height: "{components.control.height}", target: 44px, inset: 3px, rounded: "{rounded.md}", track: "{colors.neutral-soft}", selectedFill: "{colors.card}", label: "{colors.fg}" }   # one choice among 2–5 peers; the raised selected segment IS the state, never a colour (fleet-config#1334)
+  history-mark:   { size: 6px, success: "{colors.fg-muted}", failure: "{colors.danger}", inFlight: "{colors.accent}", unconfirmed: "{colors.attention}", deferred: hollow, unknown: dash, dashHeight: 2px }   # a row's run/outcome strip: the healthy mark muted, colour only for the exception, unknown a dash (fleet-config#1392)
+  row-swipe:      { deadZone: 8px, axisRatio: 1.5, edgeGuard: 24px, paneWidth: 88px, restOpenAt: 44px, commitAt: 55%, flickVelocity: 0.5px/ms, flickDistance: 30%, leading: "{colors.accent}" }   # one swipe action per side, also the row menu's first item (fleet-config#1392)
 focus:            { outline: "2px solid {colors.accent}", offset: 2px }   # one tokenized :focus-visible ring app-wide (a control overrides only where it draws a custom ring)
 layout:                           # desktop placement (Layout) — theme-independent
   measure:     772px              # centered content column below the wide breakpoint
@@ -515,6 +517,14 @@ identically; treat every bullet as a hard requirement, not a suggestion.
   show the digit, 10 or more show "9+"; 0 removes it. It is never animated,
   and the tab's accessible name carries the count ("Board, 2 waiting"). Use
   the vendored `setBadge`, never a per-app badge (project-scaffolding#338).
+  **The count covers every kind of waiting item the tab owns** (questions
+  waiting for an answer plus items waiting for the user's turn, not one
+  kind alone), and **its feed runs on every tab**: while the owning tab is
+  up, the badge reads that tab's own payload; on every other tab it reads a
+  poll that already runs everywhere and carries the counts, so the owning
+  tab's endpoint is never polled off it. A part whose count cannot be read
+  adds nothing: the badge counts what it could read, never a made-up zero
+  (app-launcher#1502, owner decision 1 on #1500).
 - **Focus is visible and identical everywhere.** One tokenized rule —
   `:focus-visible { outline: 2px solid {colors.accent}; outline-offset: 2px }` —
   covers *every* interactive element (button, input, switch, summary, tab)
@@ -605,7 +615,12 @@ hand-picked per app.
   two parts so no ellipsis cuts the part that matters at 390px (~22
   characters), falling back to the plain count in `fg-muted` ("7 jobs") when
   nothing is wrong. Never a fixed slogan, and never a count another tab owns
-  (fleet-config#1332). The line is computed from the **same counts the list
+  (fleet-config#1332). A pane with **no count of its own** (Settings) shows
+  the running build when nothing is wrong ("Build a1b2c3d", its short id),
+  so a stale installed app shows from the header, and names only what the
+  pane itself shows as a problem ("Channels: 1 missing" in attention, an
+  unreadable source neutral), on the same two-part budget
+  (app-launcher#1506, owner decision 10 on #1500). The line is computed from the **same counts the list
   below draws**, so the header and the list can never disagree
   (task-os#393). A **dashboard tab** (one whose job is "is everything
   OK?") may instead carry one plain live fact as its quiet line when nothing
@@ -694,8 +709,10 @@ hand-picked per app.
   (`button-ghost`: transparent on a hairline border) at the same 44px, so the
   most prominent control on a list of running things is never the one that
   ends them (fleet-config#1386, owner decision 2026-10-13); an **icon-only
-  verb** (Move on a task row) is an unpainted `icon-button` like the kebab,
-  under the icon-button rule like any glyph-only control (task-os#392;
+  verb** (Move on a task row) is an unpainted `icon-button` like the kebab:
+  a `fg-muted` glyph on nothing at the real 44px square, still named, never
+  a tinted fill, under the icon-button rule like any glyph-only control
+  (task-os#392, app-launcher#1501 answering COMP-05;
   project-scaffolding#347 brings the vendored tint in line). The verb is
   the action the owner uses most, read from the app's own data
   (task-os#392: most edits were re-dates). A **segmented verb cluster**
@@ -754,9 +771,54 @@ hand-picked per app.
   in the query before the page limit, or it comes back nearly empty
   (whatsapp-radar#373). A list's narrowing filter (a source, a status) is a
   chip inside the filter field, never a second segmented row under the
-  scope control (whatsapp-radar#375). Reference impl:
+  scope control (whatsapp-radar#375). **A question is a row**: a prompt
+  waiting for the user's decision is an action-row (the question as its
+  one-line title, its reference as meta) with a trailing chevron to its
+  answer sheet, never a prose block with a status stripe. An answered
+  question not yet picked up stays as an inert row, with no chevron, whose
+  meta says it is waiting. A list of questions shows three, then one "N
+  more" row that unfolds in place (only when two or more are hidden), then
+  one "Answer N questions" action (app-launcher#1502, owner decision 2 on #1500).
+  **A launch pad's
+  row carries recency**: where rows are launched many times a day, the meta
+  says when the row was last used, in words ("used today", "used
+  yesterday", "used 3 days ago", "used last week", "used 2 weeks ago",
+  "used last month", "used 2 months ago", or that it was never used), and
+  the order follows it: pinned first, then most recent, then A–Z. Pinning
+  is **Pin to top** in the row's menu, never a favourite toggle, because a
+  toggle every row ends up wearing sorts nothing. Rows unused for 30 days
+  fold under one "N more" row (app-launcher#1503, owner decision 5 on #1500).
+  **A resume keeps the
+  conversation's model**: resuming sends no model of its own, so the
+  conversation continues on the one it ran on; where an agent's bare resume
+  would fall back to the configured default instead, the app passes the
+  conversation's last recorded model; when that cannot be read it falls
+  back to the default and the reply says so. The launch toolbar's model picker applies to new conversations,
+  and its hint says so (app-launcher#1503).
+  **Swipe actions** (`row-swipe`). A row may offer **one swipe action per
+  side**: the leading side (swipe right) holds the frequent,
+  non-destructive action in `accent` (Resume), the trailing side (swipe
+  left) the consequential one in neutral (New). A full swipe commits that
+  side's action. The thresholds are tokens: an 8px dead zone
+  (`row-swipe.deadZone`); horizontal wins at 1.5× the vertical
+  (`axisRatio`); the first 24px from the left edge stay with the system
+  back gesture (`edgeGuard`); an 88px pane (`paneWidth`) rests open once
+  dragged 44px (`restOpenAt`); commit at 55% of the row width
+  (`commitAt`), or on a same-direction flick of at least 0.5 px/ms
+  (`flickVelocity`) that covers 30% of it (`flickDistance`). A disabled
+  side never commits; its pane still opens and says why. **Every swipe
+  action is also the first item of the row's menu**, the single-pointer
+  alternative [WCAG 2.2 · Pointer Gestures](https://www.w3.org/WAI/WCAG22/Understanding/pointer-gestures)
+  asks for, and the panes are `aria-hidden`. Swipes take touch and pen
+  only (a `mouse` `pointerType` is ignored), the row sets
+  `touch-action: pan-y`, one row rests open at a time, a scroll or a tap
+  elsewhere closes it, and reduced motion snaps instead of sliding. A
+  swiping list may run **full-bleed on a phone** (under 520px: edge to
+  edge, no side border, radius 0, its text keeping its inset; shipped in
+  app-launcher#1503, its on-device check still open). Reference impl:
   app-launcher session rows (app-launcher#1025, tap the row + one kebab;
-  every tab on the one anatomy since app-launcher#1432).
+  every tab on the one anatomy since app-launcher#1432; swipe since
+  app-launcher#1503).
 - **glance card** — the **first card under the page header** answers the
   tab's main question without a tap ("can I launch?", "what runs next?",
   "what is running?"). At most ~5 rows; its detail opens one tap away in the
@@ -800,7 +862,8 @@ hand-picked per app.
   `attention` tint, `attention-text`): needs the user soon or ahead of plan
   (needs you, due, not firing, uncommitted, ahead of pace). **Danger** (16%
   `danger` tint, `danger-text`): broken (failed, down, stalled, ≥90%).
-  `success` is never a chip — it is the avatar badge and history marks only.
+  `success` is never a chip — it is the avatar badge only (a history mark's
+  healthy outcome is muted, see history marks).
   Sentence case. One class with a `data-tone`, never a chip style per
   surface. A chip that opens something is the `reference-pill` instead.
   **Modes are not alarms.** A normal chosen state — armed, heating,
@@ -831,6 +894,15 @@ hand-picked per app.
   swatches, two of them the same fill, became five marks). Each mark is
   distinct in shape alone, so no state is told by colour only. A day
   opens the **detail sheet** (`modal`), the pane at `layout.wide`.
+- **history marks** (`history-mark`) — a row's strip of its recent runs or outcomes is
+  **quiet for the healthy outcome and coloured only for the exception**:
+  each mark a 6px dot, success in `fg-muted`, failure in `danger`, in
+  flight in `accent`, unconfirmed in `attention`, deferred a muted hollow
+  ring. An **unknown** outcome (skipped, dry run, any status the app does
+  not map) differs from the healthy one **by shape, not only colour**: a
+  muted 2px dash, never a dot. Every mark's `title` names its exact
+  outcome, so no state is told by colour alone (app-launcher#1505, owner
+  decision 7 on #1500).
 - **meter** (`meter`) — a usage bar: a `meter.height` (6px) `rounded.pill`
   track in `neutral-soft` with a fill coloured **by pace, not raw
   percent**: `accent` while usage ≤ the period's elapsed share,
@@ -872,7 +944,15 @@ hand-picked per app.
   field-naming message (whatsapp-radar#376, #377; the discard rule was
   chosen in the step PRs, owner decision 5 on #370 only said "save on
   Done"). Labels carry no file path or config key; a read-only sheet names
-  its file on one "Where this lives" line. The same row is the **link row inside a detail sheet** (a unit's
+  its file on one "Where this lives" line. **A health check reads as a
+  plain value** in `fg` ("Found", "Installed", "Ready", "Active"); only an
+  exception wears a status chip ("Missing", "Needs setup" in attention, an
+  unreadable status neutral with its reason), and a config path appears
+  only inside a failing check's fix-it line. A row's summary is a plain
+  count ("3 profiles") that turns attention only while it is true ("1
+  needs setup"). A sheet's row-text rule never outranks a component's
+  muted class: a muted detail line inside a sheet stays muted
+  (app-launcher#1506). The same row is the **link row inside a detail sheet** (a unit's
   Vanes, Rule, Schedules, Name): lead glyph, label, muted value, chevron to a
   page of the sheet. Settings sheets are `instant` (Done closes); a saved
   item inside one keeps its staged editor stacked on top. A row's value
@@ -908,7 +988,11 @@ hand-picked per app.
   moved target editing into the item sheet). A list's scope (Mine · Issues ·
   All) is a segmented control too (task-os#391). A mode that is not a peer
   of its siblings is not a segment: Live against Dry run became a switch
-  (whatsapp-radar#373). Reference impl:
+  (whatsapp-radar#373). **A sort is a labelled segmented control**, never
+  an icon-only toggle: a "Sort" label over its orders ("Next run · A–Z")
+  as the first group of the list's filter sheet, and an order that only
+  applies in one state (Relevance, while a search is typed) shows only
+  then (app-launcher#1501, the judge's J-05 on #1500). Reference impl:
   home-automation `.segmented` (home-automation#879).
 - **dense collection** — how a card renders **saved automation/settings
   items** (schedules, pairings, overrides): each item is a flat `list-row`
