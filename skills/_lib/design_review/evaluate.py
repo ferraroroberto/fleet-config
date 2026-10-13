@@ -174,13 +174,15 @@ def _d_lists_tall(m: dict, rule: Rule, ctx: dict) -> Derived:
 def _d_content_share(m: dict, rule: Rule, ctx: dict) -> Derived:
     """design.md's width rule (#996, #1113): width follows the shape of the view.
 
-    A list-and-detail tab spans list + detail (`content_span`). A view the app
+    A list-and-detail tab spans list + detail (`content_span`); a pane that
+    holds two regions side by side itself (`pane_split`, #1361) is
+    two-dimensional the same way, declared or not. A view the app
     declares wide (`[design] wide_views`) must actually fill the window: its
     span is held to the same share floor, with no exemption for the centred
     measure. An undeclared view keeps the measure: a column holding it (less a
     gutter each side) is exempt, a column *wider* than it with no detail pane
-    docked beside it is a one-dimensional view stretched across the window
-    (value 0.0, `arm: stretched`), and anything narrower falls to the share
+    docked beside it, inside or outside the pane, is a one-dimensional view
+    stretched across the window (value 0.0, `arm: stretched`), and anything narrower falls to the share
     floor. Older metrics without `content_span` fall back to the pane width."""
     cw, iw = measure.metric_value(m, "layout.content_w"), measure.metric_value(m, "layout.inner_w")
     if cw is None or iw is None:
@@ -199,7 +201,7 @@ def _d_content_share(m: dict, rule: Rule, ctx: dict) -> Derived:
     if not declared_wide and isinstance(cw, (int, float)):
         if held - 1 <= cw <= measure_px + 1:
             return None, [], NOT_APPLICABLE
-        if cw > measure_px + 1 and span <= cw + 1:
+        if cw > measure_px + 1 and span <= cw + 1 and measure.metric_value(m, "layout.pane_split") is not True:
             return 0.0, [{"content_w": cw, "content_span": span, "inner_w": iw, "arm": "stretched"}], None
     return _share(span, iw), [{"content_w": cw, "content_span": span, "inner_w": iw}], None
 

@@ -243,10 +243,12 @@ check(any(x.startswith("input") for x in _bsel) and not any(x.startswith("button
       "COLOR-03 measures the controls the spec gives a boundary (input, select, textarea, switch), not text-labelled buttons")
 
 
-def _layout06(content_w, content_span, wide_views=None, wide_views_error=None):
+def _layout06(content_w, content_span, wide_views=None, wide_views_error=None, pane_split=None):
     doc = _doc("compliant")
     lay = doc["screens"][0]["metrics"]["layout"]
     lay["content_w"] = content_w
+    if pane_split is not None:
+        lay["pane_split"] = pane_split
     if content_span is None:
         lay.pop("content_span", None)
     else:
@@ -280,6 +282,21 @@ _dn = _layout06(748, 748, wide_views=["home"])
 check(_dn["status"] == "fail" and "desktop-light-home" in _dn["measured"],
       f"LAYOUT-06: a declared wide view still has to fill the window, so a lone measure column fails -- {_dn['status']}")
 check(_layout06(514, 1360)["status"] == "pass", "LAYOUT-06: an undeclared list + detail span is not a stretched column")
+
+# ---- #1361: a master-detail docked inside the tab's pane ------------------------
+check(_layout06(1400, 1400, pane_split=True)["status"] == "pass",
+      "LAYOUT-06: an undeclared in-pane master-detail is not a stretched column")
+check(_layout06(1400, 1400, pane_split=True, wide_views=["home"])["status"] == "pass",
+      "LAYOUT-06: a declared in-pane master-detail still passes")
+check(_layout06(1400, 1400, pane_split=False)["status"] == "fail",
+      "LAYOUT-06: an undeclared single stretched column (no split) still fails")
+check(_layout06(1400, 1400, pane_split="yes")["status"] == "fail",
+      "LAYOUT-06: only a boolean true counts as a split")
+_ps_narrow = _layout06(800, 800, pane_split=True)
+check(_ps_narrow["status"] == "fail" and not _ps_narrow["evidence"][0]["items"][0].get("arm"),
+      f"LAYOUT-06: an undeclared in-pane split narrower than the share floor still fails on share -- {_ps_narrow['status']}")
+check(_layout06(748, 748, wide_views=["home"], pane_split=True)["status"] == "fail",
+      "LAYOUT-06: a declared view with a split still has to fill the window")
 _bad = _layout06(1400, 1400, wide_views=["home"], wide_views_error="unparseable .fleet.toml: boom")
 check(_bad["status"] == "unmeasured" and "wide_views" in _bad["reason"],
       f"LAYOUT-06: a malformed declaration is unmeasured, never a pass or an exemption -- {_bad['status']} {_bad['reason']}")
@@ -1458,6 +1475,8 @@ else:
     check(lay_list["content_w"] <= 500 and lay_list.get("content_span", 0) >= 1400,
           f"LAYOUT-06: content_span runs from the list pane across the detail pane (#996) -- {lay_list['content_w']} / {lay_list.get("content_span")}")
     check(lay_home.get("content_span") == lay_home["content_w"], "LAYOUT-06: with no detail pane the span is the pane itself")
+    check(lay_home.get("pane_split") is False and lay_list.get("pane_split") is False,
+          f"LAYOUT-06: a detail pane docked outside the tab's pane is not a split inside it (#1361) -- {lay_home.get('pane_split')} / {lay_list.get('pane_split')}")
     check({b["sel"] for b in ct["boundary_low"]} == {"input.faint-border", "button.bare-switch", "input.inset-faint"},
           f"COLOR-03: a faint input, a faint inset-shadow field and a bare switch track fail; text-labelled buttons and switch pills are exempt; a wrapper-drawn boundary counts (#996) and so does a 3:1 inset-shadow boundary (#1185) -- {[b['sel'] for b in ct['boundary_low']]}")
     via = {b["sel"]: b["via"] for b in ct["boundary_low"]}
@@ -1762,6 +1781,20 @@ else:
     _sg_icons = ((sgs[0].get("metrics") or {}).get("icons") or {}) if sgs else {}
     check(_sg_icons.get("boxes") == {"22x22": 1, "20x20": 1},
           f"COMP-02: the two stretched 162x64 chart SVGs are not icons; the 22px and 20px icons still are (#1211) -- {_sg_icons} ({proc_sg.stderr[-300:]})")
+
+    # pane_split: two tall regions side by side inside one pane count; a lone column and a row of short cards do not (#1361)
+    ps_dir = STATE / "fixture-pane-split"
+    proc_ps = subprocess.run(
+        [str(interp), str(REPO / "skills" / "_lib" / "design_review" / "walk.py"), "--url", (FIX / "pane_split.html").as_uri(),
+         "--out", str(ps_dir), "--devices", "desktop", "--scaffold", str(scaffold),
+         "--params", str(STATE / "steps-params.json")],
+        capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=600,
+    )
+    pss = {s["id"]: s for s in json.loads((ps_dir / "screens.json").read_text(encoding="utf-8"))} if proc_ps.returncode == 0 else {}
+    _ps = {k: ((pss.get(f"desktop-light-{k}") or {}).get("metrics") or {}).get("layout", {}).get("pane_split") for k in ("split", "column", "cards")}
+    check(_ps == {"split": True, "column": False, "cards": False},
+          f"LAYOUT-06: pane_split is true for a month + day pane inside one pane, false for a lone column and for a row of short cards (#1361) "
+          f"-- {_ps} ({proc_ps.stderr[-300:]})")
 
     # UA-font nav tab: voice-transcriber's <button class="tab"> tabs had no `font: inherit` and read Arial under a system-ui body;
     # TYPE-02 reads them (a tab is a <button>), an inheriting button beside them is not reported (#1211)

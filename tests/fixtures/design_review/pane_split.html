@@ -1,0 +1,60 @@
+<!doctype html>
+<!-- Static fixture for LAYOUT-06's pane_split signal (fleet-config#1361). Three tabs walked at the desktop leg (1440x900):
+     "split" is a master-detail inside the tab's own pane -- a month grid with its day pane beside it, both
+     tall and wide -- so the pane is two-dimensional though nothing is docked outside it; "column" is one
+     stretched column; "cards" is a row of short cards, which is not a split. Asserted by tests/test_design_review.py. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>design_review pane split fixture</title>
+<style>
+  html, body { margin: 0; background: #ffffff; color: #1f2328; font-family: system-ui, sans-serif; font-size: 16px; }
+  body { padding: 16px; }
+  nav.tabs { display: flex; gap: 8px; }
+  nav.tabs button { min-width: 60px; min-height: 44px; font: inherit; }
+  section[hidden] { display: none; }
+  .master-detail { display: flex; gap: 16px; min-height: 600px; }
+  .master-detail .month { flex: 2; border: 1px solid #d1d9e0; }
+  .master-detail .day { flex: 1; border: 1px solid #d1d9e0; }
+  .cards { display: flex; gap: 16px; }
+  .cards .card { flex: 1; min-height: 120px; border: 1px solid #d1d9e0; }
+</style>
+<script>
+  addEventListener('DOMContentLoaded', () => {
+    document.querySelectorAll('[role=tab]').forEach(tab => tab.addEventListener('click', () => {
+      document.querySelectorAll('[role=tab]').forEach(t => t.setAttribute('aria-selected', String(t === tab)));
+      document.querySelectorAll('[role=tabpanel]').forEach(p => p.hidden = (p.id !== tab.getAttribute('aria-controls')));
+    }));
+  });
+</script>
+</head>
+<body>
+  <nav class="tabs" role="tablist" aria-label="Primary">
+    <button type="button" role="tab" data-tab="split" aria-controls="paneSplit" aria-selected="true">Split</button>
+    <button type="button" role="tab" data-tab="column" aria-controls="paneColumn" aria-selected="false">Column</button>
+    <button type="button" role="tab" data-tab="cards" aria-controls="paneCards" aria-selected="false">Cards</button>
+  </nav>
+  <main>
+    <section id="paneSplit" role="tabpanel">
+      <h2>Month</h2>
+      <div class="master-detail">
+        <div class="month"><p>Month grid</p></div>
+        <div class="day"><p>Day pane</p></div>
+      </div>
+    </section>
+    <section id="paneColumn" role="tabpanel" hidden>
+      <h2>Column</h2>
+      <div style="min-height: 600px; border: 1px solid #d1d9e0;"><p>One stretched column</p></div>
+    </section>
+    <section id="paneCards" role="tabpanel" hidden>
+      <h2>Cards</h2>
+      <div class="cards">
+        <div class="card"><p>One</p></div>
+        <div class="card"><p>Two</p></div>
+        <div class="card"><p>Three</p></div>
+      </div>
+    </section>
+  </main>
+</body>
+</html>
