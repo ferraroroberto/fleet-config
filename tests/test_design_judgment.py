@@ -51,7 +51,7 @@ SEED_IDS = [f"J-{i:02d}" for i in range(1, 11)]
 
 # ---- the checklist in the rubric ---------------------------------------------
 
-check(rubric.version == "1.20.0", "rubric at 1.20.0 (the [[judgment]] checklist arrived in 1.2.0)")
+check(rubric.version == "1.21.0", "rubric at 1.21.0 (the [[judgment]] checklist arrived in 1.2.0)")
 check([j.id for j in rubric.judgment] == SEED_IDS, f"the ten seed questions J-01..J-10 in order: {[j.id for j in rubric.judgment]}")
 rule_ids = {r.id for r in rubric.rules}
 for j in rubric.judgment:
@@ -296,7 +296,7 @@ check(before == after and report.report_summary(with_j)["score"] == out["overall
 check('id="judgment"' in page and "status: ok" in page and "outside the grade" in page and "Side-by-side cards at phone width" in page
       and "proposed rule: layout.side_by_side_blocks" in page and 'class="answer-no"' in page and "LAYOUT-04" in page,
       "the report renders the answers, the maps_to column, the uncatalogued finding and its proposed rule")
-check(f"{out['overall']['score']}" in page and '<span class="grade grade-F">F</span>' in page, "the page still prints the evaluate document's grade")
+check(f"{report._compact(out['overall']['score'])}" in page and '<span class="grade grade-F">F</span>' in page, "the page still prints the evaluate document's grade")
 with_j["judgment"] = part
 page_p = report.render_report(with_j)
 check("status: partial" in page_p and "<h3>Dropped</h3>" in page_p and "answer" in page_p and "maybe" in page_p and 'class="answer-yes"' in page_p,
@@ -342,7 +342,7 @@ stale = json.loads((run_dir / "evaluate.json").read_text(encoding="utf-8"))
 stale["rubric_version"] = "0.9.0"
 (run_dir / "evaluate.json").write_text(json.dumps(stale), encoding="utf-8")
 p2b = _run("judge-merge", str(run_dir), str(FIX / "judge_answers_ok.json"), "--rubric", str(RUBRIC))
-check(p2b.returncode == 0 and "RUBRIC_MISMATCH=evaluate:0.9.0 judgment:1.20.0" in p2b.stdout and _kv(p2b).get("JUDGMENT") == "ok",
+check(p2b.returncode == 0 and "RUBRIC_MISMATCH=evaluate:0.9.0 judgment:1.21.0" in p2b.stdout and _kv(p2b).get("JUDGMENT") == "ok",
       f"an evaluate.json scored under another rubric version is named, never silently reused ({p2b.stdout[-200:]})")
 (run_dir / "evaluate.json").write_text(json.dumps(ev_after), encoding="utf-8")
 check(all(ev_before[k] == ev_after[k] for k in ev_before) and set(ev_after) - set(ev_before) == {"judgment"},

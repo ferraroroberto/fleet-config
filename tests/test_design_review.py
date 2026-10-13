@@ -60,8 +60,8 @@ def _doc(name: str) -> dict:
 # ---- rubric: the real file loads and names only metrics that exist ----------
 
 rubric = dr.load_rubric(RUBRIC)
-check(rubric.version == "1.20.0", "rubric meta.version stamped")
-check(len(rubric.rules) == 34, f"34 seed rules loaded (got {len(rubric.rules)})")
+check(rubric.version == "1.21.0", "rubric meta.version stamped")
+check(len(rubric.rules) == 35, f"35 seed rules loaded (got {len(rubric.rules)})")
 check(rubric.categories == ["typography", "color", "touch", "navigation", "layout", "components", "a11y"],
       "categories in rubric order")
 check(rb.check_metric_names(rubric, measure.metric_paths()) == [], "every rule metric is a script path or a derived metric")
@@ -404,6 +404,37 @@ for _why, _home in (("a missing manifest", {**_HOME, "manifest": "absent", "app_
     check(_n4["status"] == "unmeasured", f"NAV-04: {_why} leaves the app's name unestablished -- unmeasured, never a pass -- {_n4['status']}")
 check(_nav04(None)["status"] == "unmeasured", "NAV-04: a run from before the metric existed is unmeasured, never a pass")
 
+# ---- COMP-08: a destructive control in a dialog or menu is unfilled and not the largest there (#1364) ----
+def _comp08(overlay) -> dict:
+    """COMP-08 on every screen of the compliant doc, each carrying `overlay` (a dict, or None to drop the section)."""
+    d = _doc("compliant")
+    for s in d["screens"]:
+        if overlay is None:
+            s["metrics"].pop("overlay", None)
+        else:
+            s["metrics"]["overlay"] = dict(overlay)
+    return next(r for r in ev.evaluate(d, rubric, _specs("compliant"))["rules"] if r["id"] == "COMP-08")
+
+
+_BAD_DEL = {"sel": "button.danger", "label": "Delete", "surface": "dialog#take", "filled": True, "largest": False,
+            "w": 120, "h": 44, "why": "filled"}
+_c8_fail = _comp08({"surfaces": 1, "destructive": [_BAD_DEL], "destructive_bad": [_BAD_DEL], "destructive_bad_count": 1})
+check(_c8_fail["status"] == "fail" and _c8_fail["severity"] == "P2" and _c8_fail["category"] == "components"
+      and _c8_fail["evidence"][0]["items"] == [_BAD_DEL],
+      f"COMP-08: a filled destructive control in a dialog fails and names it -- {_c8_fail['status']} {_c8_fail['evidence']}")
+_c8_doc = _doc("compliant")
+for _s in _c8_doc["screens"]:
+    _s["metrics"]["overlay"] = {"surfaces": 1, "destructive": [_BAD_DEL], "destructive_bad": [_BAD_DEL], "destructive_bad_count": 1}
+_c8_out = ev.evaluate(_c8_doc, rubric, _specs("compliant"))
+_c8_sentence = report_mod.finding_sentence(next(r for r in _c8_out["rules"] if r["id"] == "COMP-08"), _c8_out)
+check("button.danger" in _c8_sentence and "{" not in _c8_sentence, f"COMP-08: the fix sentence names the control and fills every placeholder -- {_c8_sentence}")
+check(_comp08({"surfaces": 1, "destructive": [], "destructive_bad": [], "destructive_bad_count": 0})["status"] == "pass",
+      "COMP-08: a menu or dialog whose destructive control is quiet passes")
+check(_comp08({"surfaces": 0, "destructive": [], "destructive_bad": [], "destructive_bad_count": 0})["status"] == "pass",
+      "COMP-08: a screen with no dialog or menu open has nothing to fail")
+check(_comp08(None)["status"] == "unmeasured", "COMP-08: a run from before the metric existed is unmeasured, never a pass")
+check(_comp08({"error": "boom"})["status"] == "unmeasured", "COMP-08: a failed overlay section is unmeasured, never a pass")
+
 # ---- COLOR-04: a switch is on in the accent, never another colour (#1200) ----
 def _col04(controls_by_screen) -> dict:
     d = _doc("compliant")
@@ -524,7 +555,7 @@ check(all(s == "pass" for s in statuses_c.values()), f"compliant: every rule pas
 check(all(v["score"] == 100.0 and v["grade"] == "A" and not v["unmeasured"] for v in out_c["categories"].values()),
       "compliant: every category 100/A, measured")
 check(out_c["overall"] == {"score": 100.0, "grade": "A", "unmeasured": False}, "compliant: overall A")
-check(out_c["schema_version"] == 1 and out_c["rubric_version"] == "1.20.0" and out_c["target"] == "fixture-app"
+check(out_c["schema_version"] == 1 and out_c["rubric_version"] == "1.21.0" and out_c["target"] == "fixture-app"
       and out_c["commit"].startswith("0000") and out_c["generated_at"].endswith("Z"), "evaluate envelope keys")
 check([s["id"] for s in out_c["screens"]] == ["desktop-light-home", "iphone-light-home", "desktop-light-dialog-edit"],
       "evaluate echoes the screen list")
@@ -1443,7 +1474,7 @@ else:
           f"measure CLI walks the fixture: 2 tabs + 1 dialog x light/dark, plus the absent Settings gear (#1217) ({proc.stdout[-300:]}{proc.stderr[-300:]})")
     check(lines.get("RUN_DIR") == str(run_dir) and Path(lines.get("METRICS", "")).is_file(), "RUN_DIR/METRICS lines point at the run dir")
     doc = json.loads(Path(lines["METRICS"]).read_text(encoding="utf-8"))
-    check(doc["interpreter"] == str(interp) and doc["schema_version"] == 1 and doc["rubric_version"] == "1.20.0", "metrics.json records the interpreter + versions")
+    check(doc["interpreter"] == str(interp) and doc["schema_version"] == 1 and doc["rubric_version"] == "1.21.0", "metrics.json records the interpreter + versions")
     if not (scaffold / "tests" / "e2e" / "_geometry.py").is_file():
         _h.skip("browser leg: project-scaffolding/tests/e2e/_geometry.py absent -- hit-target assertions NOT verified")
     check(doc["walk"]["info"]["geometry"] == ("loaded" if (scaffold / "tests" / "e2e" / "_geometry.py").is_file() else "GEOMETRY_MISSING"),
@@ -1795,6 +1826,29 @@ else:
     check(_ps == {"split": True, "column": False, "cards": False},
           f"LAYOUT-06: pane_split is true for a month + day pane inside one pane, false for a lone column and for a row of short cards (#1361) "
           f"-- {_ps} ({proc_ps.stderr[-300:]})")
+
+    # COMP-08: a destructive control in a dialog or menu is unfilled and not the largest labelled control there (#1364)
+    do_dir = STATE / "fixture-destructive-overlay"
+    proc_do = subprocess.run(
+        [str(interp), str(REPO / "skills" / "_lib" / "design_review" / "walk.py"), "--url", (FIX / "destructive_overlay.html").as_uri(),
+         "--out", str(do_dir), "--devices", "desktop", "--scaffold", str(scaffold),
+         "--params", str(STATE / "steps-params.json")],
+        capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=600,
+    )
+    dos = {s["id"]: s for s in json.loads((do_dir / "screens.json").read_text(encoding="utf-8"))} if proc_do.returncode == 0 else {}
+
+    def _overlay(view: str) -> dict:
+        return ((dos.get(f"desktop-light-{view}") or {}).get("metrics") or {}).get("overlay") or {}
+
+    _do_bad = {v: (_overlay(v).get("destructive_bad_count"), [d.get("why") for d in _overlay(v).get("destructive_bad", [])])
+               for v in ("menu", "menubad", "dialog-okdialog", "dialog-filldialog", "dialog-tintdialog", "dialog-bigdialog", "dialog-confirmdialog")}
+    check(_do_bad == {"menu": (0, []), "menubad": (1, ["filled"]), "dialog-okdialog": (0, []),
+                      "dialog-filldialog": (1, ["filled"]), "dialog-tintdialog": (1, ["filled"]), "dialog-bigdialog": (1, ["largest"]),
+                      "dialog-confirmdialog": (0, [])},
+          f"COMP-08: a filled Delete (solid or tinted) or one larger than Redo fails; an unfilled last menu Delete and an outlined one "
+          f"as wide as Copy pass, and so does the tinted Delete of a confirm dialog that holds only Cancel beside it (#1364) -- {_do_bad} ({proc_do.stderr[-300:]})")
+    check(all(_overlay(v).get("destructive") for v in ("menu", "dialog-okdialog")) and _overlay("menu").get("surfaces", 0) >= 1,
+          f"COMP-08: the passing menu and dialog still report the destructive control they measured -- {_overlay('menu')}")
 
     # UA-font nav tab: voice-transcriber's <button class="tab"> tabs had no `font: inherit` and read Arial under a system-ui body;
     # TYPE-02 reads them (a tab is a <button>), an inheriting button beside them is not reported (#1211)

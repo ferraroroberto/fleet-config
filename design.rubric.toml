@@ -33,7 +33,7 @@
 # metrics.json, every evaluate output and every filed finding.
 
 [meta]
-version = "1.20.0"   # per-bump history: git log -- design.rubric.toml, and the issues/PRs it cites
+version = "1.21.0"   # per-bump history: git log -- design.rubric.toml, and the issues/PRs it cites
 seeded_from = "app-launcher rendered audit, 2026-09-21 (fleet-config#962)"
 
 [weights]
@@ -544,6 +544,19 @@ standard = "design.md reference-pill: a reference to something openable is one p
 fix_template = "{value} different reference-pill shapes on {screen} ({sample}); draw every link chip with the one chip geometry."
 mockup = "none"
 
+[[rules]]
+id = "COMP-08"
+category = "components"
+title = "A destructive control in a dialog or menu is filled or the largest control there"
+metric = "overlay.destructive_bad_count"
+fail_when = "gt"
+threshold = 0
+severity = "P2"
+owner = "app"
+standard = "design.md action-row, modal and row-menu: a destructive action sits last in danger-text on the outlined recipe (transparent on a hairline), never filled and never the most prominent control; the J-02 / J-03 ratchet (fleet-config#1364)"
+fix_template = "{count} destructive controls in a dialog or menu on {screen} are filled or the largest control there ({sample}); draw them as plain danger-text or the outlined recipe, no larger than the primary control."
+mockup = "none"
+
 # ---------------------------------------------------------------------------
 # Accessibility
 
@@ -589,13 +602,13 @@ screens = "tabs"
 
 [[judgment]]
 id = "J-02"
-question = "On each screen, counting every control visible in the viewport or the full-page screenshot, is the most prominent control — the largest, or any filled button whatever its colour (accent and danger red alike) — the one that performs the screen's main task? Answer no if on any screen a secondary or destructive control is filled or larger while the main task's control is a plain, ghost, outlined or icon-only button. Answer na if no screen has more than one control."
+question = "On each screen, counting every control visible in the viewport or the full-page screenshot, is the most prominent control — the largest, or any filled button whatever its colour (accent and danger red alike) — the one that performs the screen's main task? Answer no if on any screen a secondary control is filled or larger while the main task's control is a plain, ghost, outlined or icon-only button; a destructive control inside a dialog or menu is measured as COMP-08 and is not raised here. Answer na if no screen has more than one control."
 maps_to = ["TOUCH-03"]
 screens = "all"
 
 [[judgment]]
 id = "J-03"
-question = "Counting every control visible in the viewport or the full-page screenshot (collapsed sections appear expanded there), are destructive actions (delete, remove, kill, stop, reset, clear) the least prominent controls on their screen: a plain, ghost, text or outlined button, red text at most, or placed inside a menu? Answer no if any screenshot shows a destructive action as a filled button (accent- or danger-filled), including inside an expanded section of a full-page screenshot, whatever the metrics count. Answer na if no screenshot shows a destructive action."
+question = "Counting every control visible in the viewport or the full-page screenshot (collapsed sections appear expanded there), are destructive actions (delete, remove, kill, stop, reset, clear) the least prominent controls on their screen: a plain, ghost, text or outlined button, red text at most, or placed inside a menu? Answer no if any screenshot shows a destructive action outside a dialog or menu as a filled button (accent- or danger-filled), including inside an expanded section of a full-page screenshot, whatever the metrics count; a filled or oversized destructive control inside a dialog or menu is measured as COMP-08 and is not raised here. Answer na if no screenshot shows a destructive action."
 maps_to = ["LAYOUT-04"]
 screens = "all"
 
