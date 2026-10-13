@@ -641,7 +641,11 @@ hand-picked per app.
   two parts so no ellipsis cuts the part that matters at 390px (~22
   characters), falling back to the plain count in `fg-muted` ("7 jobs") when
   nothing is wrong. Never a fixed slogan, and never a count another tab owns
-  (fleet-config#1332). A pane with **no count of its own** (Settings) shows
+  (fleet-config#1332). The measure reads the line in every state the walk
+  captures of a tab and fails one fixed sentence that carries no digit and no
+  build id and sits unwired in the served markup (`NAV-05`, fleet-config#1395);
+  a tab with fewer than two readings, or a constant line a script wrote, is
+  reported as not measured. A pane with **no count of its own** (Settings) shows
   the running build when nothing is wrong ("Build a1b2c3d", its short id),
   so a stale installed app shows from the header, and names only what the
   pane itself shows as a problem ("Channels: 1 missing" in attention, an

@@ -35,7 +35,7 @@ present on a successful run:
               covered [..], covered_count, primary [..], primary_min_height, in_summary
     icons     boxes {"WxH": n}, elements {"WxH": [{glyph, host, label}, ..]}
     nav       primary_count, pane_scroll_top, pane_header_visible, settings_tab_count,
-              home_title {is_home, manifest, app_names [..], tab, title}
+              home_title {is_home, manifest, app_names [..], tab, title}, header_context {header, tab, text, static}
     feedback  toast_count, toasts_tinted [..], toasts_tinted_count, empty_state_count, empty_states_no_action [{sel, text}]
     layout    control_overflow [..], control_overflow_count, overflow_x, scroll_w, inner_w, inner_h, pane_h, lists [..],
               rows_over_limit [..], danger_rows, content_w, content_span, pane_split, radii {r: n}
@@ -523,9 +523,28 @@ _MEASURE_JS = r"""
     const homeTitle = { is_home: isHome, manifest: manifest.state, app_names: manifest.names,
       tab: first ? ((first.textContent || '').replace(/\s+/g, ' ').trim() || first.getAttribute('aria-label') || first.getAttribute('data-tab') || '').slice(0, 40) : null,
       title: titleEl ? (titleEl.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 40) : null };
+    // The page header's context line (#1395): the `.status` slot of the visible `.home-head`, the pane's own first, else
+    // the first on the page. `header` says whether a header was found at all; `text` is the line as drawn (null when the
+    // header has no slot, '' when the slot is empty). `static` says whether that exact text is already in the page as
+    // served (markup nobody wired), as against written by script: one data state cannot tell a fixed line from a derived
+    // one that happens not to change, but a line sitting in the served markup is fixed. null = the source was unreadable.
+    // Judged across the screens of one tab in evaluate.py (NAV-05).
+    const heads = [...document.querySelectorAll('.home-head')].filter(visible);
+    const headEl = heads.find(h => pane.contains(h)) || heads[0] || null;
+    const statusEl = headEl ? headEl.querySelector('.status') : null;
+    const selected = tabs.find(t => t.getAttribute('aria-selected') === 'true') || null;
+    const lineText = statusEl ? (statusEl.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 80) : null;
+    const servedLines = !lineText ? null : (() => {
+      try { const x = new XMLHttpRequest(); x.open('GET', location.href, false); x.send();
+        if (x.status < 200 || x.status > 299) return null;
+        return [...new DOMParser().parseFromString(x.responseText, 'text/html').querySelectorAll('.home-head .status')]
+          .map(e => norm(e.textContent).slice(0, 80)); } catch (e) { return null; } })();
+    const headerContext = { header: !!headEl,
+      tab: selected ? ((selected.textContent || '').replace(/\s+/g, ' ').trim() || selected.getAttribute('aria-label') || selected.getAttribute('data-tab') || '').slice(0, 40) : null,
+      text: lineText, static: servedLines ? servedLines.includes(norm(lineText)) : null };
     return { primary_count: tabs.length, pane_scroll_top: pane.scrollTop || 0,
       pane_header_visible: heading ? (top >= 0 && top <= window.innerHeight) : null,
-      settings_tab_count: settingsTabs.length, settings_tabs: settingsTabs, home_title: homeTitle };
+      settings_tab_count: settingsTabs.length, settings_tabs: settingsTabs, home_title: homeTitle, header_context: headerContext };
   });
 
   // ---- feedback: a toast is neutral, only a real error tints (#1200). A toast is a visible fixed-position
@@ -860,7 +879,7 @@ def metric_paths() -> List[str]:
         "targets": ["total", "small", "small_count", "overlaps", "overlap_count", "covered", "covered_count",
                     "primary", "primary_min_height", "in_summary"],
         "icons": ["boxes", "elements"],
-        "nav": ["primary_count", "pane_scroll_top", "pane_header_visible", "settings_tab_count", "settings_tabs", "home_title"],
+        "nav": ["primary_count", "pane_scroll_top", "pane_header_visible", "settings_tab_count", "settings_tabs", "home_title", "header_context"],
         "feedback": ["toast_count", "toasts_tinted", "toasts_tinted_count", "empty_state_count", "empty_states_no_action"],
         "layout": ["control_overflow", "control_overflow_count", "overflow_x", "scroll_w", "inner_w", "inner_h", "pane_h", "lists", "rows_over_limit",
                    "rows_over_limit_count", "danger_rows", "content_w", "content_span", "pane_split", "radii"],
