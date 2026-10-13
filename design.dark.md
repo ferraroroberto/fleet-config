@@ -261,8 +261,10 @@ nav-bar fill, and only a real error tints; the `avatar` badge is the dark
 the page-header's exceptions line and the `meter` fill take the dark
 `*-text` and base hues, with the same pace rule (and the same headroom
 levels for an allocation bar); the header keeps its two actions and never a
-third, a standing footnote sits behind the ⓘ info sheet, and raw
-identifiers stay off the faces, all unchanged in dark; Modes are not alarms holds
+third, a standing footnote sits behind the ⓘ info sheet, raw
+identifiers stay off the faces, and a stopping or destructive row verb is
+never the tinted one but takes the outlined `button-ghost` recipe, all
+unchanged in dark; Modes are not alarms holds
 unchanged in dark: a normal armed or heating state is the raised selected
 segment, never a `danger` tint;
 the black-hole rule holds for code in dark: the code chip sits on
