@@ -153,7 +153,96 @@ def _filtered_count(m: dict, section: str, key: str, rule: Rule, default_allow: 
 
 
 def _d_uppercase(m: dict, rule: Rule, ctx: dict) -> Derived:
-    return _filtered_count(m, "text", "uppercase", rule, r"overline")
+    """TYPE-05: a run drawn in capitals outside the overline role, whether `text-transform` made it so or the
+    characters typed in the markup already are (#1365). A literal run is a button, tab, menu item or heading label
+    with no lowercase letter whose every word is not on the rule's `acronyms` allow-list (an API, a PDF, a language
+    chip). A run from before the `casing` section existed, or one whose section failed, is read as `text.uppercase` alone."""
+    value, items, why = _filtered_count(m, "text", "uppercase", rule, r"overline")
+    if why is not None:
+        return value, items, why
+    labels = measure.metric_value(m, "casing.labels")
+    if labels is None:
+        return value, items, None
+    acronyms = re.compile(str(rule.params.get("acronyms", "")))
+    seen = {(i.get("sel"), i.get("text")) for i in items if isinstance(i, dict)}  # type: ignore[union-attr]
+    for lab in labels:  # type: ignore[union-attr]
+        if not (lab.get("literal") and lab.get("style") == "upper") or (lab.get("sel"), lab.get("text")) in seen:
+            continue
+        if all(acronyms.fullmatch(re.sub(r"^\W+|\W+$", "", w)) for w in str(lab.get("text", "")).split() if re.search(r"[^\W\d_]", w)):
+            continue
+        items.append({"sel": lab.get("sel"), "text": lab.get("text"), "why": f"typed in capitals, {lab.get('cls')}"})
+    return float(len(items)), items, None
+
+
+# Two styles of one label class clash when the first letter's case differs, or a sentence-case label sits beside a
+# title-case one. `capitalised` (a single capitalised word) is both sentence and title case, so it clashes only
+# with `lower`; `upper` is TYPE-05's, never a style here.
+_CAP_FIRST = ("capitalised", "sentence", "title")
+_CASING_CLASHES = ((("lower",), _CAP_FIRST), (("sentence",), ("title",)))
+_CASING_WORD = re.compile(r"[^\W\d_]+(?:['’][^\W\d_]+)*")
+
+
+def _casing_vocab(labels: List[dict]) -> set:
+    """Every word the run's labels set in lowercase, so a capitalised word is known not to be a proper noun."""
+    return {w for lab in labels for w in _CASING_WORD.findall(str(lab.get("text", ""))) if w.islower()}
+
+
+def _casing_style(lab: dict, vocab: set) -> Optional[str]:
+    """A label's style for the TYPE-06 comparison: the measured one, except that a `title` label whose only capitalised
+    word after the first is one the run also sets in lowercase elsewhere is not shown to be title case (a language, a
+    brand or a place name is capitalised in a sentence). Two such words, or one the run also writes lowercase, confirm it."""
+    style = lab.get("style")
+    if style != "title":
+        return str(style) if style else None
+    rest = [w for w in _CASING_WORD.findall(str(lab.get("text", "")))[1:] if w[0].isupper()]
+    return "title" if len(rest) >= 2 or any(w.lower() in vocab for w in rest) else "sentence"
+
+
+def _casing_outliers(labels: List[dict]) -> Dict[str, Dict[str, str]]:
+    """Per label class, `{outlier style: the style(s) it clashes with}` across every label recorded in the run.
+
+    The side of a clash with fewer distinct labels is the outlier; a tie marks both sides."""
+    vocab = _casing_vocab(labels)
+    texts: Dict[str, Dict[str, set]] = {}
+    for lab in labels:
+        style, cls = _casing_style(lab, vocab), lab.get("cls")
+        if style and style != "upper" and cls:
+            texts.setdefault(str(cls), {}).setdefault(style, set()).add(str(lab.get("text")))
+    out: Dict[str, Dict[str, str]] = {}
+    for cls, styles in sorted(texts.items()):
+        distinct = lambda group: len({t for st in group for t in styles.get(st, ())})  # noqa: E731
+        outliers: Dict[str, str] = {}
+        for left, right in _CASING_CLASHES:
+            nl, nr = distinct(left), distinct(right)
+            if not nl or not nr:
+                continue
+            for group, mine, theirs, other in ((left, nl, nr, right), (right, nr, nl, left)):
+                if mine <= theirs:
+                    for st in group:
+                        if st in styles:
+                            outliers.setdefault(st, "/".join(o for o in other if o in styles))
+        if outliers:
+            out[cls] = outliers
+    return out
+
+
+def _d_casing_mixed(m: dict, rule: Rule, ctx: dict) -> Derived:
+    """TYPE-06: a label cased unlike the rest of its class anywhere in the run (#1365).
+
+    The class is a button, tab, menu item or heading, or a stat or label element named by one class. Casing is a
+    choice the app makes for the whole class, so the comparison runs across every screen of the run and each
+    screen is scored on the labels of it that are the minority."""
+    labels = measure.metric_value(m, "casing.labels")
+    if labels is None:
+        return None, [], _section_reason(m, "casing")
+    outliers, vocab = ctx.get("casing_outliers") or {}, ctx.get("casing_vocab") or set()
+    bad = []
+    for lab in labels:  # type: ignore[union-attr]
+        style = _casing_style(lab, vocab)
+        if style in (outliers.get(lab.get("cls")) or {}):
+            bad.append({"sel": lab.get("sel"), "text": lab.get("text"),
+                        "why": f"{style} case, the rest of {lab.get('cls')} is {outliers[lab['cls']][style]}"})
+    return float(len(bad)), bad, None
 
 
 def _d_break_all(m: dict, rule: Rule, ctx: dict) -> Derived:
@@ -334,6 +423,7 @@ DERIVED: Dict[str, Callable[[dict, Rule, dict], tuple]] = {
     "icons.off_step_count": _d_icons_off_step,
     "text.uppercase_outside_role": _d_uppercase,
     "text.break_all_non_path": _d_break_all,
+    "casing.mixed_labels": _d_casing_mixed,
     "layout.lists_unfiltered_tall": _d_lists_tall,
     "layout.content_share": _d_content_share,
     "a11y.no_text_size_control": _d_no_text_size_control,
@@ -581,6 +671,9 @@ def _settings_gear_state(screens: List[dict]) -> Optional[str]:
 def evaluate(doc: dict, rubric: Rubric, specs: Dict[str, Dict[str, str]],
              now: Optional[_dt.datetime] = None) -> Dict[str, object]:
     """The whole stage: one metrics document -> rule results + grades."""
+    casing_labels = [lab for s in doc.get("screens") or []
+                     if isinstance(s, dict) and s.get("status") == "ok" and isinstance(s.get("metrics"), dict)
+                     for lab in measure.metric_value(s["metrics"], "casing.labels") or [] if isinstance(lab, dict)]
     ctx = {"params": resolve_params(rubric, specs.get("light", {})),
            "wide_views": [str(v) for v in doc.get("wide_views") or []],
            "wide_views_error": doc.get("wide_views_error"),
@@ -588,6 +681,8 @@ def evaluate(doc: dict, rubric: Rubric, specs: Dict[str, Dict[str, str]],
                isinstance(s, dict) and s.get("status") == "ok" and isinstance(s.get("metrics"), dict)
                and bool(measure.metric_value(s["metrics"], "controls.switches_on"))
                for s in doc.get("screens") or []),
+           "casing_outliers": _casing_outliers(casing_labels),
+           "casing_vocab": _casing_vocab(casing_labels),
            "settings_gear": _settings_gear_state(doc.get("screens") or []),
            "text_size_control_seen": any(
                isinstance(s, dict) and s.get("status") == "ok" and isinstance(s.get("metrics"), dict)

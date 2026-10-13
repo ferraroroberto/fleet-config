@@ -33,7 +33,7 @@
 # metrics.json, every evaluate output and every filed finding.
 
 [meta]
-version = "1.21.0"   # per-bump history: git log -- design.rubric.toml, and the issues/PRs it cites
+version = "1.22.0"   # per-bump history: git log -- design.rubric.toml, and the issues/PRs it cites
 seeded_from = "app-launcher rendered audit, 2026-09-21 (fleet-config#962)"
 
 [weights]
@@ -155,16 +155,29 @@ params = { allow = "path|url|sha|hash|mono|code|token|uuid" }
 [[rules]]
 id = "TYPE-05"
 category = "typography"
-title = "text-transform: uppercase outside the overline role"
+title = "Capitals outside the overline role, by text-transform or typed in the markup"
 metric = "text.uppercase_outside_role"
 fail_when = "gt"
 threshold = 0
 severity = "P2"
 owner = "app"
-standard = "design.md typography: caps only through the overline role (list group headers); chips and badges are sentence case"
-fix_template = "{count} uppercase text runs on {screen} outside the overline role ({sample}); set chips and badges in sentence case."
+standard = "design.md typography: caps only through the overline role (list group headers); chips and badges are sentence case and no button, tab or heading label is set in capitals, whether the capitals come from text-transform or are typed in the markup (fleet-config#1365)"
+fix_template = "{count} text runs on {screen} are in capitals outside the overline role ({sample}); set chips, badges and labels in sentence case, no capitals."
 mockup = "none"
-params = { allow = "overline" }
+params = { allow = "overline", acronyms = "API|PDF|URL|ID|OCR|AI|PC|TTS|STT|CSV|JSON|HTML|CPU|GPU|RAM|USB|SSH|IP|MAC|UI|QR|PIN|SMS|VPN|DNS|SQL|LLM|MCP|PWA|PNG|JPG|JPEG|GIF|TXT|MD|ZIP|UTC|EN|ES|FR|DE|IT|PT|NL|CA|ZH|JA" }
+
+[[rules]]
+id = "TYPE-06"
+category = "typography"
+title = "One class of label is cased two ways across the app"
+metric = "casing.mixed_labels"
+fail_when = "gt"
+threshold = 0
+severity = "P2"
+owner = "app"
+standard = "design.md typography: every class of label (buttons, tabs, menu items, headings, stat labels) is cased one way across the whole app, sentence case throughout or title case throughout; the J-08 ratchet (fleet-config#1365)"
+fix_template = "{count} labels on {screen} are cased unlike the rest of their kind in the app ({sample}); set every label of that kind in one casing."
+mockup = "none"
 
 # ---------------------------------------------------------------------------
 # Color
@@ -638,8 +651,8 @@ screens = "all"
 
 [[judgment]]
 id = "J-08"
-question = "Is casing consistent within each class of element — every button label in one style, every heading in one style, every tab label in one style (sentence case throughout or Title Case throughout)? Answer no if one class of element mixes sentence case and Title Case across screens, or uses ALL CAPS outside a badge or tag."
-maps_to = ["TYPE-05"]
+question = "Is casing consistent within each class of element — every button label in one style, every heading in one style, every tab label in one style (sentence case throughout or Title Case throughout)? Answer no if one class of element mixes sentence case and Title Case across screens, or uses ALL CAPS outside a badge or tag. A button, tab or heading label typed in capitals, and a button, tab, menu item, heading or class-named stat label cased two ways across the app, are measured as TYPE-05 and TYPE-06 and are not raised here; answer no only for what those measures cannot see, such as another kind of label (a field label, a chip, a metric caption) cased unlike its kind."
+maps_to = ["TYPE-05", "TYPE-06"]
 screens = "all"
 
 [[judgment]]

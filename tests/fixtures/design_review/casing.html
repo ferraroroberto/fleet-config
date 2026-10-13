@@ -1,0 +1,62 @@
+<!doctype html>
+<!-- Static fixture for TYPE-05 (capitals typed in the markup) and TYPE-06 (one class of label cased two ways),
+     fleet-config#1365. Walked at the desktop leg (1440x900) three times, `?case=` picking the page; each has two tabs.
+       ok     sentence case throughout, a language chip ES and an acronym button PDF, a data heading in a list row
+              whose casing differs from its sibling (row content is data, never measured), a capitalised proper noun
+              (Translate to English), a row of a name and an action (Instructions + View) and a reading with a digit
+              (no transcript, 0 words)                                                              -> no caps, no clash
+       caps   RECORD and EXPORT PDF buttons and a SETTINGS heading typed in capitals; PDF, ES and the
+              identifier-shaped ACER-PC1 heading beside them are not                               -> three literal caps
+       mixed  stat labels: 'Running' on one tab, 'running' and 'failed' on the other; buttons: 'Open settings' and
+              'Save changes' beside 'Open Settings'                                                 -> clashes in two classes
+     Asserted by tests/test_design_review.py. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>design_review casing fixture</title>
+<style>
+  html, body { margin: 0; background: #ffffff; color: #1f2328; font-family: system-ui, sans-serif; font-size: 16px; }
+  body { padding: 16px; }
+  nav.tabs { display: flex; gap: 8px; }
+  nav.tabs button, main button { min-width: 60px; min-height: 44px; font: inherit; }
+  section[hidden] { display: none; }
+</style>
+<script>
+  const PAGES = {
+    ok: [
+      ['Recordings', '<h2>Recent takes</h2><button type="button">Start recording</button> <button type="button">PDF</button>'
+        + ' <button type="button">ES</button><span class="stat-label">Running jobs</span><ul><li><h3>Buy milk</h3></li><li><h3>call Anna</h3></li></ul>'],
+      ['Options', '<h2>Text size</h2><button type="button">Copy text</button><span class="stat-label">Failed jobs</span>'
+        + '<button type="button">Translate to English</button><button type="button"><span>Instructions</span> <span>View</span></button>'
+        + '<button type="button">(no transcript) 0 words</button>'],
+    ],
+    caps: [
+      ['Recordings', '<h2>Recent takes</h2><button type="button">RECORD</button> <button type="button">PDF</button> <button type="button">ES</button>'],
+      ['Options', '<h2>SETTINGS</h2><h3>ACER-PC1</h3><button type="button">EXPORT PDF</button>'],
+    ],
+    mixed: [
+      ['Recordings', '<h2>Recent takes</h2><span class="stat-label">Running</span><button type="button">Open settings</button>'],
+      ['Options', '<h2>Text size</h2><span class="stat-label">running</span><span class="stat-label">failed</span>'
+        + '<button type="button">Open Settings</button> <button type="button">Save changes</button>'],
+    ],
+  };
+  addEventListener('DOMContentLoaded', () => {
+    const pages = PAGES[new URLSearchParams(location.search).get('case') || 'ok'];
+    const tabs = document.querySelector('nav.tabs'), main = document.querySelector('main');
+    pages.forEach(([name, html], i) => {
+      tabs.insertAdjacentHTML('beforeend', `<button type="button" role="tab" data-tab="${name.toLowerCase()}" aria-controls="pane${i}" aria-selected="${i === 0}">${name}</button>`);
+      main.insertAdjacentHTML('beforeend', `<section id="pane${i}" role="tabpanel"${i ? ' hidden' : ''}>${html}</section>`);
+    });
+    tabs.querySelectorAll('[role=tab]').forEach(tab => tab.addEventListener('click', () => {
+      tabs.querySelectorAll('[role=tab]').forEach(t => t.setAttribute('aria-selected', String(t === tab)));
+      main.querySelectorAll('[role=tabpanel]').forEach(p => p.hidden = (p.id !== tab.getAttribute('aria-controls')));
+    }));
+  });
+</script>
+</head>
+<body>
+  <nav class="tabs" role="tablist" aria-label="Primary"></nav>
+  <main></main>
+</body>
+</html>

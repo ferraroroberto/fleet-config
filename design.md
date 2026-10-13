@@ -259,7 +259,14 @@ introduce ad-hoc sizes.
   the `overline` role only, and only for list group headers (e.g. date
   groups). Chips and badges are sentence case. Numbers and units are never
   transformed: "3M 33S" reads as mega, not minutes. Everywhere else, use
-  weight, not case, for hierarchy.
+  weight, not case, for hierarchy. The rule is about how the label reads,
+  not how it is made: a button, tab or heading whose characters are already
+  typed in capitals breaks it the same as `text-transform` does, and only an
+  acronym (an API, a PDF, a language chip such as ES) is exempt (measured as
+  `TYPE-05`, fleet-config#1365). And each kind of label (buttons, tabs, menu
+  items, headings, stat labels) is cased one way across the whole app, sentence
+  case throughout or title case throughout, never one tab's counters
+  capitalised and another's lowercase (measured as `TYPE-06`).
 
 ## Layout
 
