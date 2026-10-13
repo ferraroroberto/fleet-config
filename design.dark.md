@@ -107,7 +107,7 @@ components:
   hit-target:     { min: 44px }   # minimum effective pointer-target square — structural, identical to Light (see design.md Touch targets)
   avatar:         { size: 36px, rounded: "{rounded.md}", backgroundColor: "{colors.neutral-soft}", glyph: "{icons.size.nav-tab}", badgeSize: 12px, badgeRing: "{colors.card}", badgeAlive: "{colors.success}", badgeDown: "{colors.danger}" }   # a row's leading squircle, alive/down badge — structural, identical to Light (see design.md)
   meter:          { height: 6px, rounded: "{rounded.pill}", track: "{colors.neutral-soft}", fillUnderPace: "{colors.accent}", fillAheadOfPace: "{colors.attention}", fillCritical: "{colors.danger}", criticalAt: 90%, paceTick: 2px, allocationAttentionAt: 75% }   # a usage bar coloured by pace, an allocation bar by headroom — structural, identical to Light (see design.md)
-  segmented:      { height: "{components.control.height}", target: 44px, inset: 3px, rounded: "{rounded.md}", track: "{colors.neutral-soft}", selectedFill: "{colors.card}", label: "{colors.fg}" }   # structural, identical to Light (see design.md)
+  segmented:      { height: "{components.control.height}", target: 44px, inset: 3px, rounded: "{rounded.md}", track: "{colors.neutral-soft}", selectedFill: "color-mix(in srgb, var(--fg-muted) 30%, var(--card))", label: "{colors.fg}" }   # structure identical to Light (see design.md); the selected fill is NOT card here: over a card the track is #262c34 and card #161b22 is darker, so card reads pressed in. 30% fg-muted over card = #353b43, a step above the track, fg on it 9.6:1 (fleet-config#1396)
   history-mark:   { size: 6px, success: "{colors.fg-muted}", failure: "{colors.danger}", inFlight: "{colors.accent}", unconfirmed: "{colors.attention}", deferred: hollow, unknown: dash, dashHeight: 2px }   # structural, identical to Light (see design.md)
   row-swipe:      { deadZone: 8px, axisRatio: 1.5, edgeGuard: 24px, paneWidth: 88px, restOpenAt: 44px, commitAt: 55%, flickVelocity: 0.5px/ms, flickDistance: 30%, leading: "{colors.accent}" }   # structural, identical to Light (see design.md)
   row-menu:       { backgroundColor: "{colors.border-muted}", borderColor: "{colors.border}", rounded: "{rounded.md}", itemRounded: "{rounded.sm}", padding: "{spacing.xs}", minWidth: 200px, itemHeight: "{rows.sm}", itemTypography: "{typography.body}", itemWeight: 500, glyph: "{icons.size.inline}", textColor: "{colors.fg}", disabledColor: "{colors.fg-muted}", destructiveColor: "{colors.danger-text}", headerTypography: "{typography.body-sm}", viewportInset: "{spacing.sm}", aboveNavGap: "{spacing.sm}", anchorGap: 2px, zIndex: 200 }   # the surface is the one value that differs: `border-muted` (#21262d), a step above the `card`, where light uses `canvas-subtle`; everything else structural, identical to Light (see design.md)
@@ -272,6 +272,10 @@ dark `fg-muted` and colours only the exception in the dark base hues, its
 unknown mark a dash; the `row-menu` surface is the one value that changes, `border-muted` (a step
 above the dark `card`; light uses `canvas-subtle`), while its 44px rows, glyph,
 placement band, stacking and danger-last rule are structural and unchanged;
+the `segmented` selected fill is the other value that changes: 30% `fg-muted`
+over `card` (`#353b43`), a step above the `neutral-soft` track (`#262c34`),
+because `card` itself is darker than the track and would read pressed in, not
+raised (`fg` on it 9.6:1); the soft shadow and `aria-pressed` are unchanged;
 the `row-swipe` thresholds, the question row, the
 launch pad's recency order, the labelled segmented sort, the unpainted
 icon-only verb, the nav badge's every-tab feed, the build line of a pane
