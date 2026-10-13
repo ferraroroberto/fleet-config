@@ -674,7 +674,8 @@ hand-picked per app.
   sheet** reads the thing whole (the full text in its own scrolling box,
   reserved before the text arrives), puts one full-width Copy first, and
   ends with Delete as plain `danger-text` with no fill, never the one filled
-  control. Delete is confirmed by a second tap ("Tap again to delete",
+  control (a filled or largest destructive control in a dialog or menu is
+  measured as `COMP-08`, fleet-config#1364). Delete is confirmed by a second tap ("Tap again to delete",
   disarmed after 4 s or on close) or by a confirm sheet (voice-transcriber
   #261, photo-ocr#196). **A confirm stacks over the sheet that asked**:
   every open builds its own `<dialog>`, and a sheet has no pinned footer,
@@ -1132,7 +1133,7 @@ hand-picked per app.
   on a hairline, wrapping rather than widening the menu; never an item, never
   focusable. **Items are data the app passes in**, in order; none is hard-coded
   in the component. **Danger last:** a destructive item sits at the end after a
-  1px divider in `danger-text`, never a filled or tinted red row, and its
+  1px divider in `danger-text`, never a filled or tinted red row (measured as `COMP-08`), and its
   confirm is the app's (the `action-row` rule). **Disabled** stays visible and
   focusable with `aria-disabled`, flat `fg-muted` and no hover tint, never
   opacity, and its `title` says why. **Placement, one rule for every app:** the

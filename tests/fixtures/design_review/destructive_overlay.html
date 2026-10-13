@@ -1,0 +1,87 @@
+<!doctype html>
+<!-- Static fixture for COMP-08, a destructive control in a dialog or menu (fleet-config#1364). Walked at the desktop leg
+     (1440x900): two tabs each open one row menu (a <details> popover, opened by the walk) and four dialogs are opened
+     with showModal().
+       menu      Rename, then Delete last in danger-text with no fill            -> pass
+       menubad   the same menu, Delete a filled red row                          -> filled
+       okdialog  Copy and Delete full width and the same size, Delete outlined   -> pass (equal is not larger)
+       filldialog  Delete painted danger red beside an unfilled Redo             -> filled
+       tintdialog  Delete on the 16% danger tint (a fill, however pale)          -> filled
+       bigdialog   Delete outlined but wider and taller than Redo                -> largest
+       confirmdialog  a confirm: only Cancel beside a tinted Delete, the dialog's one action -> pass
+     A Clear button on the page, outside every dialog and menu, is filled on purpose: the rule reads overlay surfaces only.
+     Asserted by tests/test_design_review.py. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>design_review destructive overlay fixture</title>
+<style>
+  html, body { margin: 0; background: #ffffff; color: #1f2328; font-family: system-ui, sans-serif; font-size: 16px; }
+  body { padding: 16px; }
+  nav.tabs { display: flex; gap: 8px; }
+  nav.tabs button { min-width: 60px; min-height: 44px; font: inherit; }
+  section[hidden] { display: none; }
+  details { position: relative; }
+  summary { min-width: 44px; min-height: 44px; line-height: 44px; cursor: pointer; }
+  .pop { position: absolute; top: 44px; left: 0; z-index: 5; background: #ffffff; border: 1px solid #d1d9e0; width: 200px; }
+  .pop button { display: block; width: 100%; height: 44px; margin: 0; font: inherit; text-align: left; border: 0; background: transparent; color: #1f2328; }
+  .pop button.danger { color: #a40e26; }
+  .pop button.danger.fill { background: #cf222e; color: #ffffff; }
+  dialog { width: 360px; border: 1px solid #d1d9e0; padding: 16px; }
+  dialog .row { display: flex; gap: 8px; margin-top: 12px; }
+  dialog button { height: 44px; font: inherit; border: 1px solid #d1d9e0; background: transparent; color: #1f2328; }
+  dialog button.wide { flex: 1; }
+  dialog button.small { width: 120px; }
+  dialog button.big { width: 200px; height: 56px; }
+  dialog button.danger { color: #a40e26; border-color: #a40e26; }
+  dialog button.danger.fill { background: #cf222e; color: #ffffff; }
+  dialog button.danger.tint { background: rgba(207, 34, 46, 0.16); }
+  .page-clear { height: 44px; font: inherit; background: #cf222e; color: #ffffff; border: 0; }
+</style>
+<script>
+  addEventListener('DOMContentLoaded', () => {
+    document.querySelectorAll('[role=tab]').forEach(tab => tab.addEventListener('click', () => {
+      document.querySelectorAll('[role=tab]').forEach(t => t.setAttribute('aria-selected', String(t === tab)));
+      document.querySelectorAll('[role=tabpanel]').forEach(p => p.hidden = (p.id !== tab.getAttribute('aria-controls')));
+    }));
+  });
+</script>
+</head>
+<body>
+  <nav class="tabs" role="tablist" aria-label="Primary">
+    <button type="button" role="tab" data-tab="menu" aria-controls="paneMenu" aria-selected="true">Menu</button>
+    <button type="button" role="tab" data-tab="menubad" aria-controls="paneMenuBad" aria-selected="false">Menubad</button>
+  </nav>
+  <main>
+    <section id="paneMenu" role="tabpanel">
+      <h2>Menu</h2>
+      <details class="row-menu"><summary>Row menu</summary><div class="pop" role="menu" aria-label="Row">
+        <button type="button" role="menuitem">Rename</button>
+        <button type="button" role="menuitem" class="danger">Delete</button></div></details>
+      <button type="button" class="page-clear">Clear</button>
+    </section>
+    <section id="paneMenuBad" role="tabpanel" hidden>
+      <h2>Menubad</h2>
+      <details class="row-menu"><summary>Row menu</summary><div class="pop" role="menu" aria-label="Row">
+        <button type="button" role="menuitem">Rename</button>
+        <button type="button" role="menuitem" class="danger fill">Delete</button></div></details>
+    </section>
+  </main>
+  <dialog id="okdialog"><h3>Take</h3><div class="row">
+    <button type="button" class="wide">Copy</button></div><div class="row">
+    <button type="button" class="wide danger">Delete</button></div></dialog>
+  <dialog id="filldialog"><h3>Take</h3><div class="row">
+    <button type="button" class="small">Redo</button>
+    <button type="button" class="small danger fill">Delete</button></div></dialog>
+  <dialog id="tintdialog"><h3>Take</h3><div class="row">
+    <button type="button" class="small">Redo</button>
+    <button type="button" class="small danger tint">Delete</button></div></dialog>
+  <dialog id="confirmdialog"><h3>Delete all takes?</h3><div class="row">
+    <button type="button" class="wide">Cancel</button>
+    <button type="button" class="wide danger tint">Delete all takes</button></div></dialog>
+  <dialog id="bigdialog"><h3>Take</h3><div class="row">
+    <button type="button" class="small">Redo</button>
+    <button type="button" class="big danger">Delete</button></div></dialog>
+</body>
+</html>

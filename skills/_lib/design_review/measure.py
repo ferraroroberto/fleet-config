@@ -37,8 +37,9 @@ present on a successful run:
     feedback  toast_count, toasts_tinted [..], toasts_tinted_count
     layout    control_overflow [..], control_overflow_count, overflow_x, scroll_w, inner_w, inner_h, pane_h, lists [..],
               rows_over_limit [..], danger_rows, content_w, content_span, pane_split, radii {r: n}
+    overlay   surfaces, destructive [..], destructive_bad [..], destructive_bad_count
     clearance bars [..], hidden_rows [..], hidden_row_count
-    a11y      unnamed [..], unnamed_count, zoom_locked, text_size_control, text_size_stamped
+    a11y     unnamed [..], unnamed_count, zoom_locked, text_size_control, text_size_stamped
     headings  ["H2:Title@16px", ...]
 
 Lists are capped (`CAP`) so a screen with hundreds of small controls still
@@ -550,6 +551,46 @@ _MEASURE_JS = r"""
       danger_rows: dangerRows.size, content_w: Math.round(content.width), content_span: Math.round(spanRight - content.left), pane_split: paneSplit, radii };
   });
 
+  // ---- overlay: a destructive control in a dialog or menu is quiet (#1364). The surfaces the walk opens are a
+  // dialog, a role=menu and the body of an open popover disclosure (a row's kebab menu). Inside one, a control
+  // labelled delete / remove / clear / discard must draw no fill at rest (the outlined recipe: transparent on a
+  // hairline) and must not be the largest labelled control there. Fill is measured against the surface behind
+  // it, so a button painted the surface's own colour is not filled; hover and focus are not at rest. A confirm
+  // dialog (nothing in it but a dismiss control beside the destructive one) is the one exception: the destructive
+  // control is the dialog's single committing action, and design.md lets it wear the danger tint there.
+  section('overlay', () => {
+    const SURFACE = 'dialog[open], [role=dialog], [role=menu]';
+    const CONTROLS = 'button, a[href], [role=button], [role=menuitem]';
+    const DESTRUCTIVE = /\b(delete|remove|clear|discard)\b/i;
+    const DISMISS = /^(cancel|close|no|keep|back|dismiss|not now)\b/i;
+    const popoverBodies = [...document.querySelectorAll('details[open]')].flatMap(d => [...d.children]
+      .filter(c => c.tagName !== 'SUMMARY' && /^(absolute|fixed)$/.test(getComputedStyle(c).position)));
+    // With a dialog open only that dialog is measured, as in every section: a menu left open on the page behind it is not on this screen.
+    const surfaces = new Set([...document.querySelectorAll(SURFACE), ...popoverBodies].filter(visible).filter(inScope));
+    const surfaceOf = (el) => { for (let e = el.parentElement; e; e = e.parentElement) if (surfaces.has(e)) return e; return null; };
+    const labelOf = (el) => (el.getAttribute('aria-label') || el.textContent || '').replace(/\s+/g, ' ').trim();
+    const filled = (el) => { const own = rgba(getComputedStyle(el).backgroundColor); if (own[3] < 0.02) return false;
+      const behind = bgOf(el.parentElement || el), now = over(own, behind);
+      return [0,1,2].some(i => Math.abs(now[i] - behind[i]) > 6); };
+    const area = (el) => { const r = el.getBoundingClientRect(); return r.width * r.height; };
+    const byOwner = new Map();
+    [...document.querySelectorAll(CONTROLS)].filter(visible).forEach(c => { const s = surfaceOf(c); if (!s) return;
+      if (!byOwner.has(s)) byOwner.set(s, []); byOwner.get(s).push(c); });
+    const found = [];
+    byOwner.forEach((controls, surface) => {
+      const isDestructive = (c) => DESTRUCTIVE.test(labelOf(c));
+      // "Largest" is among controls that carry a visible text label, so a lone close glyph never makes Delete the biggest.
+      const others = controls.filter(c => !isDestructive(c) && (c.textContent || '').trim());
+      const biggest = others.reduce((m, c) => Math.max(m, area(c)), 0);
+      const confirm = surface.matches('dialog, [role=dialog]') && others.every(c => DISMISS.test(labelOf(c)));
+      controls.filter(isDestructive).forEach(c => {
+        const r = c.getBoundingClientRect(), fill = !confirm && filled(c), larger = !confirm && others.length > 0 && area(c) > biggest * 1.05;
+        found.push({sel: sel(c), label: labelOf(c).slice(0,30), surface: sel(surface), confirm, filled: fill, largest: larger,
+          w: Math.round(r.width), h: Math.round(r.height), why: [fill && 'filled', larger && 'largest'].filter(Boolean).join('+')}); }); });
+    const bad = found.filter(f => f.why);
+    return { surfaces: surfaces.size, destructive: found.slice(0,CAP), destructive_bad: bad.slice(0,CAP), destructive_bad_count: bad.length };
+  });
+
   // ---- clearance: a list's last row must scroll clear of a fixed bar anchored to the bottom (#1019).
   // Each scroller goes to its end (instant, whatever scroll-behavior says) and back; the walk runs
   // this after its screenshots, so nothing captured moves.
@@ -735,6 +776,7 @@ def metric_paths() -> List[str]:
         "feedback": ["toast_count", "toasts_tinted", "toasts_tinted_count"],
         "layout": ["control_overflow", "control_overflow_count", "overflow_x", "scroll_w", "inner_w", "inner_h", "pane_h", "lists", "rows_over_limit",
                    "rows_over_limit_count", "danger_rows", "content_w", "content_span", "pane_split", "radii"],
+        "overlay": ["surfaces", "destructive", "destructive_bad", "destructive_bad_count"],
         "clearance": ["bars", "hidden_rows", "hidden_row_count"],
         "a11y": ["unnamed", "unnamed_count", "zoom_locked", "text_size_control", "text_size_stamped"],
     }
