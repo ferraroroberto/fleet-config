@@ -13,7 +13,6 @@ import argparse
 import base64
 import json
 import os
-import shutil
 import subprocess
 import sys
 from datetime import datetime, timezone
@@ -99,7 +98,7 @@ def _run_command(tool: str, command: str, cwd: str | None) -> subprocess.Complet
     if tool.lower() == "powershell":
         args = [_lib.powershell_exe(), "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", command]
     elif tool.lower() == "bash":
-        bash = shutil.which("bash")
+        bash = _lib.git_bash_exe()
         # Non-login: the body inherits the harness shell's environment, as it
         # would unwrapped. A login shell re-sourced /etc/profile on every call
         # (~280 ms) and diverged from that environment, e.g. LANG=en_US.UTF-8
