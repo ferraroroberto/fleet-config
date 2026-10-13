@@ -110,6 +110,7 @@ components:
   segmented:      { height: "{components.control.height}", target: 44px, inset: 3px, rounded: "{rounded.md}", track: "{colors.neutral-soft}", selectedFill: "{colors.card}", label: "{colors.fg}" }   # structural, identical to Light (see design.md)
   history-mark:   { size: 6px, success: "{colors.fg-muted}", failure: "{colors.danger}", inFlight: "{colors.accent}", unconfirmed: "{colors.attention}", deferred: hollow, unknown: dash, dashHeight: 2px }   # structural, identical to Light (see design.md)
   row-swipe:      { deadZone: 8px, axisRatio: 1.5, edgeGuard: 24px, paneWidth: 88px, restOpenAt: 44px, commitAt: 55%, flickVelocity: 0.5px/ms, flickDistance: 30%, leading: "{colors.accent}" }   # structural, identical to Light (see design.md)
+  row-menu:       { backgroundColor: "{colors.border-muted}", borderColor: "{colors.border}", rounded: "{rounded.md}", itemRounded: "{rounded.sm}", padding: "{spacing.xs}", minWidth: 200px, itemHeight: "{rows.sm}", itemTypography: "{typography.body}", itemWeight: 500, glyph: "{icons.size.inline}", textColor: "{colors.fg}", disabledColor: "{colors.fg-muted}", destructiveColor: "{colors.danger-text}", headerTypography: "{typography.body-sm}", viewportInset: "{spacing.sm}", aboveNavGap: "{spacing.sm}", anchorGap: 2px, zIndex: 200 }   # the surface is the one value that differs: `border-muted` (#21262d), a step above the `card`, where light uses `canvas-subtle`; everything else structural, identical to Light (see design.md)
 focus:            { outline: "2px solid {colors.accent}", offset: 2px }   # one tokenized :focus-visible ring app-wide — identical behavior to Light, brighter accent value
 layout:                           # desktop placement (Layout) — theme-independent
   measure:     772px              # centered content column below the wide breakpoint
@@ -253,7 +254,7 @@ Structurally unchanged from the Light theme — the four button tiers
 shared `button-disabled` recipe; the accent derivatives are the same
 `color-mix` strings over the brighter dark accent), `card`,
 `control`, `switch`, `nav-bar`, `nav-tab`, `disclosure`, plus the `modal`,
-`page-header`, `list-row`, `action-row`, glance card, `avatar`, status chip, `meter`, settings group, `segmented`, `history-mark`, `row-swipe`, `empty-state`, `icon-tile`, `icon-button`, `reference-pill`, `code-inline` / `file-chip`, `code-listing`, `chat-turn` and `toast` **Component contracts** and the `icons.size` steps
+`page-header`, `list-row`, `action-row`, glance card, `avatar`, status chip, `meter`, settings group, `segmented`, `history-mark`, `row-swipe`, `empty-state`, `icon-tile`, `icon-button`, `reference-pill`, `code-inline` / `file-chip`, `code-listing`, `chat-turn`, `toast` and `row-menu` **Component contracts** and the `icons.size` steps
 defined in `design.md` — all with the vendored snippets from
 `project-scaffolding` reused verbatim. Only values change for dark: the `switch`
 on-track is the **accent (`accent-fill`)**, at the dark `accent-fill` value
@@ -268,7 +269,10 @@ identifiers stay off the faces, and a stopping or destructive row verb is
 never the tinted one but takes the outlined `button-ghost` recipe, all
 unchanged in dark; the `history-mark` strip keeps its healthy mark in the
 dark `fg-muted` and colours only the exception in the dark base hues, its
-unknown mark a dash; the `row-swipe` thresholds, the question row, the
+unknown mark a dash; the `row-menu` surface is the one value that changes, `border-muted` (a step
+above the dark `card`; light uses `canvas-subtle`), while its 44px rows, glyph,
+placement band, stacking and danger-last rule are structural and unchanged;
+the `row-swipe` thresholds, the question row, the
 launch pad's recency order, the labelled segmented sort, the unpainted
 icon-only verb, the nav badge's every-tab feed, the build line of a pane
 with no count and the plain-value health check are behavioural and
