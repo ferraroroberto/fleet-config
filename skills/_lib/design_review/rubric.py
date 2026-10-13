@@ -77,6 +77,7 @@ DERIVED_METRICS = (
     "layout.content_share",
     "a11y.no_text_size_control",
     "nav.pane_header_hidden",
+    "nav.home_title_is_app_name",
     "controls.switch_on_not_accent",
     "feedback.toast_tinted",
 )

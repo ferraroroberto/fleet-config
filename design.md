@@ -598,7 +598,7 @@ hand-picked per app.
   (`project-scaffolding` `_vendored/home-head/`) is this shape; reuse it
   verbatim on every pane, not just the home tab. The title is the tab's
   name on the home tab too, **never the app's name** (the app's name belongs
-  to the manifest and the install; parking-manager#114, the judge's J-04).
+  to the manifest and the install; parking-manager#114, the judge's J-04; measured as `NAV-04`, fleet-config#1360).
   **The context line is live
   and names only exceptions**: what needs the user, each part in its tone's
   `*-text` ("1 needs you · 1 failing", the status chip tone map), at most
