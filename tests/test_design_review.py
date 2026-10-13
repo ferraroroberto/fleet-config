@@ -330,8 +330,9 @@ for _theme, _s in src_specs.items():
     check(_s.get("components.nav-bar.maxTabs") == "5", f"{_theme}: primary nav is capped at five tabs")
     check(_s.get("components.page-header.minHeight") == _s.get("rows.md")
           and _s.get("components.page-header.actionSize") == _s.get("components.hit-target.min")
-          and _s.get("components.page-header.trailingActions") == "2",
-          f"{_theme}: page-header is a rows.md row with at most two 44px trailing actions")
+          and _s.get("components.page-header.trailingActions") == "2"
+          and _s.get("components.page-header.statusReadout") == "1",
+          f"{_theme}: page-header is a rows.md row with at most two 44px trailing actions plus one status readout")
 check(ev.parse_color("#fff", {}) == (255.0, 255.0, 255.0, 1.0), "short hex")
 check(ev.parse_color("color-mix(in srgb, var(--accent) 16%, transparent)", {"colors.accent": "#0969da"}) == (9.0, 105.0, 218.0, 0.16),
       "color-mix derivative -> accent at 16% alpha")
