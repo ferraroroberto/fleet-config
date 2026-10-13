@@ -356,6 +356,46 @@ def powershell_exe() -> str:
     return shutil.which("powershell") or "powershell"
 
 
+def _is_wsl_launcher(path: str) -> bool:
+    """True for the WSL ``bash.exe`` stubs in ``System32`` / ``WindowsApps``."""
+    parts = {p.lower() for p in Path(path).parts}
+    return "system32" in parts or "windowsapps" in parts
+
+
+def git_bash_exe() -> Optional[str]:
+    """Resolve the Git Bash executable, never the WSL launcher (fleet-config#1399).
+
+    A plain ``shutil.which("bash")`` answers with ``C:\\Windows\\System32\\bash.exe``
+    (WSL) wherever Git's ``usr\\bin`` is missing from PATH, as in a
+    launcher-spawned session, so a wrapped Bash body ran in WSL instead of the
+    Git Bash the harness uses (``execvpe(/bin/bash) failed``). Order:
+    ``CLAUDE_CODE_GIT_BASH_PATH`` -> ``usr\\bin\\bash.exe`` next to the
+    ``git --exec-path`` install -> the first PATH ``bash`` that isn't a WSL
+    launcher. ``None`` means no Git Bash could be established; callers report
+    that as its own state. Off Windows it is plain ``shutil.which``.
+    """
+    if sys.platform != "win32":
+        return shutil.which("bash")
+    override = os.environ.get("CLAUDE_CODE_GIT_BASH_PATH", "").strip()
+    if override and Path(override).is_file():
+        return override
+    try:
+        exec_path = run_git(["--exec-path"], timeout=10).stdout.strip()
+    except (OSError, subprocess.SubprocessError):
+        exec_path = ""
+    if exec_path:
+        # <root>/mingw64/libexec/git-core -> <root>/usr/bin/bash.exe
+        candidate = Path(exec_path).parents[2] / "usr" / "bin" / "bash.exe"
+        if candidate.is_file():
+            return str(candidate)
+    for directory in os.environ.get("PATH", "").split(os.pathsep):
+        found = shutil.which("bash", path=directory) if directory else None
+        if found and not _is_wsl_launcher(found):
+            return found
+    logger.info("ℹ️ no Git Bash found (CLAUDE_CODE_GIT_BASH_PATH, git --exec-path, PATH)")
+    return None
+
+
 # --------------------------------------------------------------------- git
 
 

@@ -566,8 +566,9 @@ def _context_filter_unit_checks() -> Tuple[int, int, int]:
 
     # The rewrite runs for real: the cd stays in the harness's shell and the
     # wrapper inherits its directory, from somewhere else entirely.
-    import shutil  # noqa: E402
+    import _lib  # noqa: E402
 
+    git_bash = _lib.git_bash_exe()
     probes = [("Bash", f'cd "{REPO.as_posix()}" && git rev-parse --show-toplevel')]
     probes.append(("PowerShell", f'cd "{REPO.as_posix()}"; git rev-parse --show-toplevel'))
     for tool, command in probes:
@@ -577,7 +578,7 @@ def _context_filter_unit_checks() -> Tuple[int, int, int]:
             {"FLEET_CONTEXT_FILTER_MODE": "rewrite"},
         )
         rewritten = json.loads(stdout)["hookSpecificOutput"]["updatedInput"]["command"] if code == 0 and stdout.strip() else ""
-        shell = shutil.which("bash") if tool == "Bash" else "C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe"
+        shell = git_bash if tool == "Bash" else "C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe"
         argv = [shell, "-c", rewritten] if tool == "Bash" else [shell, "-NoProfile", "-Command", rewritten]
         with tempfile.TemporaryDirectory() as tmp:
             res = subprocess.run(
@@ -585,7 +586,7 @@ def _context_filter_unit_checks() -> Tuple[int, int, int]:
                 env={**os.environ, "FLEET_CONTEXT_FILTER_DIR": tmp}, timeout=60,
             ) if rewritten and shell else None
         out = (res.stdout + res.stderr) if res else ""
-        check(
+        (check if shell else check.advisory)(
             f"context_filter_hook: {tool} cd prefix runs in the outer shell, the wrapper in its directory (fleet-config#1268)",
             rewritten.startswith(command.split("git rev-parse")[0].rstrip())
             and "--cwd" not in rewritten
@@ -634,7 +635,13 @@ def _context_filter_unit_checks() -> Tuple[int, int, int]:
     # replaced the harness's environment with the profile's: LANG came back as
     # en_US.UTF-8 where the harness has none, which changed `sort` and `wc -m`
     # output against the same command run unwrapped.
-    if shutil.which("bash"):
+    if not git_bash:
+        check.advisory(
+            "context_filter_cli: Bash body runs non-login in the caller's environment (fleet-config#1272)",
+            False,
+            "no Git Bash found (CLAUDE_CODE_GIT_BASH_PATH, git --exec-path, PATH): not established",
+        )
+    else:
         body = 'shopt -q login_shell && echo login || echo plain; echo "LANG=${LANG-unset}"'
         encoded = base64.b64encode(body.encode("utf-8")).decode("ascii")
         with tempfile.TemporaryDirectory() as tmp:
@@ -650,6 +657,25 @@ def _context_filter_unit_checks() -> Tuple[int, int, int]:
             res.returncode == 0 and res.stdout.split() == ["plain", "LANG=unset"],
             res.stdout.strip() + " | " + res.stderr.strip(),
         )
+
+        # fleet-config#1399: a launcher-spawned session's PATH lacks Git's usr\bin
+        # and puts the WSL launcher first. The body must still run in Git Bash.
+        if sys.platform == "win32":
+            kept = [d for d in os.environ.get("PATH", "").split(os.pathsep) if d and "git/usr/" not in d.lower().replace("\\", "/")]
+            wsl_first = os.pathsep.join([os.path.join(os.environ.get("SystemRoot", "C:/Windows"), "System32"), *kept])
+            uname = base64.b64encode(b"echo $OSTYPE").decode("ascii")
+            with tempfile.TemporaryDirectory() as tmp:
+                res = subprocess.run(
+                    [PYTHON, str(HOOKS / "context_filter_cli.py"), "run", "--tool", "Bash",
+                     "--mode", "rewrite", "--encoded", uname, "--cwd", tmp],
+                    capture_output=True, text=True, encoding="utf-8", errors="replace",
+                    env={**os.environ, "PATH": wsl_first, "FLEET_CONTEXT_FILTER_DIR": tmp}, timeout=60,
+                )
+            check(
+                "context_filter_cli: Bash body runs in Git Bash when PATH puts the WSL launcher first (fleet-config#1399)",
+                res.returncode == 0 and "msys" in res.stdout.lower(),
+                res.stdout.strip() + " | " + res.stderr.strip(),
+            )
 
     # The hook imports context_filter on every shell call and the wrapper adds
     # its own interpreter start, so modules only `eval` or a cached blob need
