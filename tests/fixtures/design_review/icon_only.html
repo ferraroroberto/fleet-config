@@ -1,0 +1,55 @@
+<!doctype html>
+<!-- Static fixture for COMP-09 (fleet-config#1366). Icon-only controls: a pencil, a close, a search and a
+     theme toggle are conventional names and pass whatever stands beside them; a glyph-only Incognito toggle
+     next to a labelled pill, a glyph-only Gallery button and a glyph-only Reset button have unconventional names
+     and no label beside them, so they fail; a glyph-only Incognito toggle with a text label next to it, one
+     inside a <label> with text, and one named only by an aria-labelledby that points at a visible label pass;
+     a control with no name is A11Y-01's and is not counted. Asserted by tests/test_design_review.py. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>design_review icon-only control fixture</title>
+<style>
+  html, body { margin: 0; background: #ffffff; color: #1f2328; font-family: system-ui, sans-serif; font-size: 16px; }
+  body { padding: 16px; }
+  .row { display: flex; gap: 12px; align-items: center; margin: 12px 0; }
+  .ib { width: 34px; height: 34px; padding: 0; border: 0; background: transparent; color: #656d76;
+        display: inline-flex; align-items: center; justify-content: center; }
+  .ib svg { width: 16px; height: 16px; }
+  .pill { height: 34px; padding: 0 14px; border: 1px solid #d1d9e0; border-radius: 9999px; background: #ffffff; color: #1f2328; font-size: 14px; }
+</style>
+</head>
+<body>
+  <main>
+    <h2>Conventional names</h2>
+    <div class="row">
+      <button type="button" class="ib" id="pencil" aria-label="Edit take"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/></svg></button>
+      <button type="button" class="ib" id="close" aria-label="Close"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/></svg></button>
+      <button type="button" class="ib" id="search" title="Search"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/></svg></button>
+      <button type="button" class="ib" id="theme" aria-label="Switch to dark"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/></svg></button>
+    </div>
+    <h2>Unconventional, nothing beside them</h2>
+    <div class="row">
+      <button type="button" class="pill" id="record">Record</button>
+      <button type="button" class="ib" id="incognito" aria-label="Incognito"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/></svg></button>
+      <button type="button" class="ib" id="gallery" aria-label="Gallery"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/></svg></button>
+      <button type="button" class="ib" id="reset" aria-label="Reset"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/></svg></button>
+    </div>
+    <h2>Unconventional, with a label beside them</h2>
+    <div class="row">
+      <button type="button" class="ib" id="incognito-sibling" aria-label="Incognito"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/></svg></button><span>Incognito</span>
+    </div>
+    <div class="row">
+      <label><button type="button" class="ib" id="incognito-wrapped" aria-label="Incognito"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/></svg></button> Keep nothing</label>
+    </div>
+    <div class="row">
+      <span id="gallery-label">Gallery</span><button type="button" class="ib" id="gallery-named" aria-labelledby="gallery-label"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/></svg></button>
+    </div>
+    <h2>No name at all</h2>
+    <div class="row">
+      <button type="button" class="ib" id="nameless"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/></svg></button>
+    </div>
+  </main>
+</body>
+</html>

@@ -371,6 +371,21 @@ def _accent_colors(tokens: Dict[str, str]) -> List[tuple]:
     return out
 
 
+def _d_icon_only_unconventional(m: dict, rule: Rule, ctx: dict) -> Derived:
+    """COMP-09: an icon-only control with no label beside it whose accessible name is not a conventional glyph's (#1366).
+
+    The conventional glyphs are the rule's `conventional` pattern, matched on the control's name; a control with no
+    name at all is A11Y-01's, not counted here. A run from before the metric existed is `unmeasured`.
+    """
+    items = measure.metric_value(m, "controls.icon_only_unlabelled")
+    if items is None:
+        return None, [], _section_reason(m, "controls")
+    conventional = re.compile(str(rule.params.get("conventional", "")), re.I)
+    bad = [it for it in items if str(it.get("name", "")).strip()  # type: ignore[union-attr]
+           and not conventional.search(str(it.get("name", "")))]
+    return float(len(bad)), bad, None
+
+
 def _d_switch_on_accent(m: dict, rule: Rule, ctx: dict) -> Derived:
     """Count of on switches whose track is not the theme's accent (#1200).
 
@@ -430,6 +445,7 @@ DERIVED: Dict[str, Callable[[dict, Rule, dict], tuple]] = {
     "nav.pane_header_hidden": _d_pane_header_hidden,
     "nav.home_title_is_app_name": _d_home_title_is_app_name,
     "controls.switch_on_not_accent": _d_switch_on_accent,
+    "controls.icon_only_unconventional": _d_icon_only_unconventional,
     "feedback.toast_tinted": _d_toast_tinted,
 }
 

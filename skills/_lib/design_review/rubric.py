@@ -74,6 +74,7 @@ DERIVED_METRICS = (
     "text.uppercase_outside_role",
     "text.break_all_non_path",
     "casing.mixed_labels",
+    "controls.icon_only_unconventional",
     "layout.lists_unfiltered_tall",
     "layout.content_share",
     "a11y.no_text_size_control",

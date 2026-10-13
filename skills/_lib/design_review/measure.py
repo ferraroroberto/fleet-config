@@ -29,6 +29,7 @@ present on a successful run:
               boundary_low [..], boundary_low_count, ua_styled [..],
               label_fit_bad [..], label_fit_bad_count, segmented_bad [..], segmented_bad_count, switch_count, switch_on_count, switches_on,
               icon_button_count, icon_buttons_painted [..], icon_buttons_painted_count,
+              icon_only_count, icon_only_unlabelled [{sel, name}],
               reference_pill_count, reference_pill_styles [..], reference_pill_variants
     targets   total, small [..], small_count, overlaps [..], overlap_count,
               covered [..], covered_count, primary [..], primary_min_height, in_summary
@@ -324,6 +325,25 @@ _MEASURE_JS = r"""
       const shadows = st.boxShadow && st.boxShadow !== 'none' ? (st.boxShadow.match(/rgba?\([^)]*\)/g) || ['#000']) : [];
       if (shadows.some(c => rgba(c)[3] > 0.02)) via.push('shadow');
       if (via.length) painted.push({sel: sel(el), label: txt(el).slice(0,30), via: via.join('+'), fill: hex(over(rgba(st.backgroundColor), surface))}); });
+    // Icon-only controls with no label beside them (#1366). An icon-only control is a button, role=button or link
+    // holding a glyph (svg or img) and no visible text; its accessible name is aria-label, aria-labelledby, title, an
+    // img alt or svg title, or screen-reader-only text. It has a label beside it when it sits in a <label> with text, or
+    // its previous or next sibling is a bare text node or a non-interactive element showing text: a neighbouring
+    // button or link is another control, not this one's label. Whether the name is a conventional glyph's is
+    // evaluate.py's call (COMP-09). A control with no name at all is A11Y-01's.
+    const ICON_ONLY = 'button, [role=button], a[href]';
+    const CONTROLS = ICON_ONLY + ', input, select, textarea';
+    const aloneText = (n) => !!n && (n.nodeType === 3 ? !!n.textContent.trim()
+      : n.nodeType === 1 && !n.matches('svg, img, script, style') && !n.matches(CONTROLS)
+        && !n.querySelector(CONTROLS) && textShown(n));
+    const nameOf = (el) => { const lb = (el.getAttribute('aria-labelledby') || '').split(/\s+/).map(id => { const t = id && document.getElementById(id); return t ? t.textContent : ''; }).join(' ');
+      const g = el.querySelector('img[alt], svg[aria-label], svg title');
+      return (el.getAttribute('aria-label') || lb || el.getAttribute('title') || (g && (g.getAttribute('alt') || g.getAttribute('aria-label') || g.textContent)) || el.textContent || '').replace(/\s+/g, ' ').trim(); };
+    const iconOnly = q(ICON_ONLY).filter(el => visible(el) && el.querySelector('svg, img') && !textShown(el));
+    const unlabelled = iconOnly.filter(el => { const lab = el.closest('label');
+      if (lab && [...lab.childNodes].some(n => n !== el && aloneText(n))) return false;
+      return !aloneText(el.previousSibling) && !aloneText(el.nextSibling); })
+      .map(el => ({sel: sel(el), name: nameOf(el).slice(0, 40)}));
     // Reference pills are one shape (#1259): every link drawn as a chip or pill on a screen shares its height,
     // radius, padding and font size. Colour is not compared: a status pill keeps its status colour on the same shape.
     const radiusPx = (v, r) => { const n = parseFloat(v) || 0; return /%$/.test(v) ? n / 100 * Math.min(r.width, r.height) : n; };
@@ -363,6 +383,7 @@ _MEASURE_JS = r"""
       if (lines > 1 || spill > params.fitTol) labelFit.push({sel: sel(el), label: txt(el).slice(0,30), lines, spill_px: Math.round(spill), w: Math.round(box.width)}); });
     return { total, font_family_mismatch: mism.slice(0,CAP), font_family_mismatch_count: mism.length,
       icon_button_count: iconButtons.length, icon_buttons_painted: painted.slice(0,CAP), icon_buttons_painted_count: painted.length,
+      icon_only_count: iconOnly.length, icon_only_unlabelled: unlabelled.slice(0,CAP),
       reference_pill_count: pillCount, reference_pill_styles: pillVariants.slice(0,CAP), reference_pill_variants: pillVariants.length,
       switch_count: switches.length, switch_on_count: switchesOn.length, switches_on: switchesOn.slice(0,CAP),
       boundary_low: lowB.slice(0,CAP), boundary_low_count: lowB.length, ua_styled: ua.slice(0,CAP), ua_styled_count: ua.length,
@@ -818,7 +839,7 @@ def metric_paths() -> List[str]:
         "controls": ["total", "font_family_mismatch", "font_family_mismatch_count", "boundary_low",
                      "boundary_low_count", "ua_styled", "ua_styled_count", "label_fit_bad", "label_fit_bad_count",
                      "segmented_bad", "segmented_bad_count", "switch_count", "switch_on_count", "switches_on", "icon_button_count", "icon_buttons_painted",
-                     "icon_buttons_painted_count", "reference_pill_count", "reference_pill_styles", "reference_pill_variants"],
+                     "icon_buttons_painted_count", "icon_only_count", "icon_only_unlabelled", "reference_pill_count", "reference_pill_styles", "reference_pill_variants"],
         "targets": ["total", "small", "small_count", "overlaps", "overlap_count", "covered", "covered_count",
                     "primary", "primary_min_height", "in_summary"],
         "icons": ["boxes", "elements"],

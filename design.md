@@ -1058,7 +1058,12 @@ hand-picked per app.
   kebab). Two side by side sit far enough apart that their targets touch and
   never overlap. Focus is the app-wide `:focus-visible` ring. A state may draw
   itself: a pressed, current, expanded, selected or checked control is not at
-  rest. The vendored header toggles and modal close are icon buttons through
+  rest. **A glyph alone must be one a reader already knows**: a close ×,
+  search, settings gear, plus, chevron, menu, pencil, trash, copy, refresh,
+  play or stop, named for what it does. Any other glyph-only control (an
+  Incognito toggle, a gallery, a reset) needs a visible text label beside it,
+  which in practice means the labelled pill, not an icon button (measured as
+  `COMP-09` on the accessible name; fleet-config#1366). The vendored header toggles and modal close are icon buttons through
   `--close-bg: transparent` (the scaffold default) and keep the
   `icons.size.title` glyph their components ship. Vendor `project-scaffolding`'s
   `_vendored/icon-button/`. Reference impl: task-os `.icon-btn` (task-os#357).
