@@ -60,8 +60,8 @@ def _doc(name: str) -> dict:
 # ---- rubric: the real file loads and names only metrics that exist ----------
 
 rubric = dr.load_rubric(RUBRIC)
-check(rubric.version == "1.21.0", "rubric meta.version stamped")
-check(len(rubric.rules) == 35, f"35 seed rules loaded (got {len(rubric.rules)})")
+check(rubric.version == "1.22.0", "rubric meta.version stamped")
+check(len(rubric.rules) == 36, f"36 seed rules loaded (got {len(rubric.rules)})")
 check(rubric.categories == ["typography", "color", "touch", "navigation", "layout", "components", "a11y"],
       "categories in rubric order")
 check(rb.check_metric_names(rubric, measure.metric_paths()) == [], "every rule metric is a script path or a derived metric")
@@ -555,7 +555,7 @@ check(all(s == "pass" for s in statuses_c.values()), f"compliant: every rule pas
 check(all(v["score"] == 100.0 and v["grade"] == "A" and not v["unmeasured"] for v in out_c["categories"].values()),
       "compliant: every category 100/A, measured")
 check(out_c["overall"] == {"score": 100.0, "grade": "A", "unmeasured": False}, "compliant: overall A")
-check(out_c["schema_version"] == 1 and out_c["rubric_version"] == "1.21.0" and out_c["target"] == "fixture-app"
+check(out_c["schema_version"] == 1 and out_c["rubric_version"] == "1.22.0" and out_c["target"] == "fixture-app"
       and out_c["commit"].startswith("0000") and out_c["generated_at"].endswith("Z"), "evaluate envelope keys")
 check([s["id"] for s in out_c["screens"]] == ["desktop-light-home", "iphone-light-home", "desktop-light-dialog-edit"],
       "evaluate echoes the screen list")
@@ -627,11 +627,11 @@ check(all(s == "fail" for s in statuses_v.values()), f"violating: every rule fai
 check(all(r["evidence"] and r["evidence"][0]["screen"] for r in out_v["rules"]), "every failing rule carries evidence with a screen id")
 check(all(r["measured"] for r in out_v["rules"]), "every failing rule carries measured values keyed by screen")
 cat_v = out_v["categories"]
-check(cat_v["typography"]["score"] == 100 - (12 + 25 + 12 + 12 + 6) and cat_v["typography"]["grade"] == "F",
-      "typography: penalties once per rule (P1+P0+P1+P1+P2)")
+check(cat_v["typography"]["score"] == 100 - (12 + 25 + 12 + 12 + 6 + 6) and cat_v["typography"]["grade"] == "F",
+      "typography: penalties once per rule (P1+P0+P1+P1+P2+P2)")
 check(cat_v["touch"]["score"] == 100 - (25 + 25 + 12) and cat_v["navigation"]["score"] == 100 - (12 + 6 + 12 + 2),
       "touch / navigation scores (navigation: NAV-01 P1 + NAV-02 P2 + NAV-03 P1 + NAV-04 P3)")
-check(cat_v["typography"]["failed"] == ["TYPE-01", "TYPE-02", "TYPE-03", "TYPE-04", "TYPE-05"], "failed ids listed in rule order")
+check(cat_v["typography"]["failed"] == ["TYPE-01", "TYPE-02", "TYPE-03", "TYPE-04", "TYPE-05", "TYPE-06"], "failed ids listed in rule order")
 check(out_v["overall"]["grade"] == "F" and not out_v["overall"]["unmeasured"], "violating: overall F, fully measured")
 c01v = next(r for r in out_v["rules"] if r["id"] == "COLOR-01")
 check(any(i["component"] == "button-tint" and i["ratio"] == 4.13 for e in c01v["evidence"] for i in e["items"]),
@@ -654,9 +654,62 @@ for s in caps["screens"]:
     s["metrics"]["text"]["uppercase"] = [{"sel": "span.badge", "text": "NEW"}, {"sel": "span.chip", "text": "3M"},
                                          {"sel": "div.list-overline", "text": "TODAY"}]
 t05 = next(r for r in ev.evaluate(caps, rubric, _specs("violating"))["rules"] if r["id"] == "TYPE-05")
-check(t05["measured"]["desktop-light-home"] == 2.0
-      and [i["sel"] for i in t05["evidence"][0]["items"]] == ["span.badge", "span.chip"],
-      f"TYPE-05 counts an uppercase badge and chip, not the overline (got {t05['measured']})")
+check(t05["measured"]["desktop-light-home"] == 3.0 and t05["measured"]["iphone-light-home"] == 2.0
+      and [i["sel"] for i in t05["evidence"][0]["items"]] == ["span.badge", "span.chip", "button.record"],
+      f"TYPE-05 counts an uppercase badge and chip and the typed-in-capitals button the fixture carries, not the overline (got {t05['measured']})")
+
+# TYPE-05 also reads capitals typed in the markup; TYPE-06 reads one class of label cased two ways across the run (#1365).
+def _lab(cls: str, text: str, style: str, literal: bool = False, sel: str = "button.btn") -> dict:
+    return {"sel": sel, "cls": cls, "text": text, "style": style, "literal": literal}
+
+
+def _casing(by_screen, rule_id: str, upper=None) -> dict:
+    d = _doc("compliant")
+    for sc, labels in zip(d["screens"], by_screen):
+        sc["metrics"]["casing"] = ({"labels": labels, "label_count": len(labels), "labels_seen": len(labels)} if labels is not None else {"error": "boom"})
+        if upper is not None:
+            sc["metrics"]["text"]["uppercase"] = upper
+    return next(r for r in ev.evaluate(d, rubric, _specs("compliant"))["rules"] if r["id"] == rule_id)
+
+
+_RECORD = _lab("button", "RECORD", "upper", True, "button.record")
+_t05 = _casing([[_RECORD, _lab("button", "PDF", "upper", True), _lab("button", "ES", "upper", True), _lab("button", "EXPORT PDF", "upper", True),
+                 _lab("button", "Save changes", "sentence")], [], []], "TYPE-05")
+check(_t05["status"] == "fail" and [i["text"] for i in _t05["evidence"][0]["items"]] == ["RECORD", "EXPORT PDF"]
+      and "typed in capitals" in _t05["evidence"][0]["items"][0]["why"],
+      f"TYPE-05: a button typed in capitals fails, an allow-listed PDF and ES chip and sentence case pass -- {_t05['measured']}")
+_t05b = _casing([[_RECORD], [], []], "TYPE-05", upper=[{"sel": "button.record", "text": "RECORD"}])
+check(_t05b["measured"]["desktop-light-home"] == 1.0, f"TYPE-05: a label that is both typed and transformed to capitals is counted once -- {_t05b['measured']}")
+check(_casing([[_lab("button", "SAVE", "upper", False)], [], []], "TYPE-05")["status"] == "pass",
+      "TYPE-05: a label shown in capitals by text-transform is the `uppercase` list's, not read twice from the casing section")
+_t05_old = _doc("compliant")
+for _s in _t05_old["screens"]:
+    _s["metrics"].pop("casing", None)
+check(next(r for r in ev.evaluate(_t05_old, rubric, _specs("compliant"))["rules"] if r["id"] == "TYPE-05")["status"] == "pass",
+      "TYPE-05: a run from before the casing section is read from `text.uppercase` alone")
+
+_t06 = _casing([[_lab("button", "Open settings", "sentence"), _lab("button", "Save changes", "sentence")],
+                [_lab("button", "Open Settings", "title")], []], "TYPE-06")
+check(_t06["status"] == "fail" and _t06["measured"] == {"desktop-light-home": 0.0, "iphone-light-home": 1.0, "desktop-light-dialog-edit": 0.0}
+      and "title case" in _t06["evidence"][0]["items"][0]["why"] and "sentence" in _t06["evidence"][0]["items"][0]["why"],
+      f"TYPE-06: the one Title Case button among sentence-case buttons on another tab is the outlier -- {_t06['measured']}")
+_t06s = _casing([[_lab("label:stat-label", "Running", "capitalised", sel="span.stat-label")],
+                 [_lab("label:stat-label", "running", "lower", sel="span.stat-label")], []], "TYPE-06")
+check(_t06s["status"] == "fail" and _t06s["measured"]["desktop-light-home"] == 1.0 and _t06s["measured"]["iphone-light-home"] == 1.0,
+      f"TYPE-06: counters capitalised on one tab and lowercase on another clash, and a tie marks both sides -- {_t06s['measured']}")
+for _why, _screens in (("a capitalised word beside sentence case", [[_lab("button", "Save", "capitalised"), _lab("button", "Open settings", "sentence")], [], []]),
+                       ("a capitalised word beside confirmed title case", [[_lab("button", "Save", "capitalised")], [_lab("button", "Open Account Settings", "title")], []]),
+                       ("an acronym chip beside sentence case", [[_lab("button", "ES", "upper", True), _lab("button", "Save changes", "sentence")], [], []]),
+                       ("a heading in sentence case beside a Title Case button", [[_lab("heading", "Recent takes", "sentence")], [_lab("button", "Open Settings", "title")], []]),
+                       ("sentence case throughout", [[_lab("button", "Save changes", "sentence")], [_lab("button", "Open settings", "sentence")], []]),
+                       ("a capitalised proper noun the run never sets in lowercase", [[_lab("button", "Translate to English", "title"), _lab("button", "Boost amount", "sentence")], [], []])):
+    check(_casing(_screens, "TYPE-06")["status"] == "pass", f"TYPE-06: {_why} is not a clash")
+_t06t = _casing([[_lab("button", "Save changes", "sentence"), _lab("button", "Open settings", "sentence")], [_lab("button", "Open Account Settings", "title")], []], "TYPE-06")
+check(_t06t["status"] == "fail" and _t06t["measured"]["iphone-light-home"] == 1.0,
+      f"TYPE-06: two capitalised words after the first confirm title case, which clashes with sentence case -- {_t06t['measured']}")
+check(_casing([None, [], []], "TYPE-06")["status"] == "unmeasured", "TYPE-06: a failed casing section is unmeasured, never a pass")
+check(next(r for r in ev.evaluate(_t05_old, rubric, _specs("compliant"))["rules"] if r["id"] == "TYPE-06")["status"] == "unmeasured",
+      "TYPE-06: a run from before the casing section is unmeasured, never a pass")
 
 # ---- determinism: same inputs, identical rule results ------------------------
 
@@ -1474,7 +1527,7 @@ else:
           f"measure CLI walks the fixture: 2 tabs + 1 dialog x light/dark, plus the absent Settings gear (#1217) ({proc.stdout[-300:]}{proc.stderr[-300:]})")
     check(lines.get("RUN_DIR") == str(run_dir) and Path(lines.get("METRICS", "")).is_file(), "RUN_DIR/METRICS lines point at the run dir")
     doc = json.loads(Path(lines["METRICS"]).read_text(encoding="utf-8"))
-    check(doc["interpreter"] == str(interp) and doc["schema_version"] == 1 and doc["rubric_version"] == "1.21.0", "metrics.json records the interpreter + versions")
+    check(doc["interpreter"] == str(interp) and doc["schema_version"] == 1 and doc["rubric_version"] == "1.22.0", "metrics.json records the interpreter + versions")
     if not (scaffold / "tests" / "e2e" / "_geometry.py").is_file():
         _h.skip("browser leg: project-scaffolding/tests/e2e/_geometry.py absent -- hit-target assertions NOT verified")
     check(doc["walk"]["info"]["geometry"] == ("loaded" if (scaffold / "tests" / "e2e" / "_geometry.py").is_file() else "GEOMETRY_MISSING"),
@@ -1849,6 +1902,44 @@ else:
           f"as wide as Copy pass, and so does the tinted Delete of a confirm dialog that holds only Cancel beside it (#1364) -- {_do_bad} ({proc_do.stderr[-300:]})")
     check(all(_overlay(v).get("destructive") for v in ("menu", "dialog-okdialog")) and _overlay("menu").get("surfaces", 0) >= 1,
           f"COMP-08: the passing menu and dialog still report the destructive control they measured -- {_overlay('menu')}")
+
+    # TYPE-05 / TYPE-06: capitals typed in the markup, and one class of label cased two ways across the tabs (#1365)
+    def _walk_casing(case: str) -> list:
+        out_dir = STATE / f"fixture-casing-{case}"
+        proc = subprocess.run(
+            [str(interp), str(REPO / "skills" / "_lib" / "design_review" / "walk.py"), "--url", (FIX / "casing.html").as_uri() + f"?case={case}",
+             "--out", str(out_dir), "--devices", "desktop", "--scaffold", str(scaffold), "--params", str(STATE / "steps-params.json")],
+            capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=600,
+        )
+        if proc.returncode != 0:
+            return [{"error": proc.stderr[-300:]}]
+        return [s for s in json.loads((out_dir / "screens.json").read_text(encoding="utf-8")) if s["id"].startswith("desktop-light-") and s.get("status") == "ok"]
+
+    def _casing_rules(screens: list) -> dict:
+        d = _doc("compliant")
+        d["screens"] = [dict(base, id=s["id"], view=s.get("view"), metrics=s["metrics"]) for base, s in zip(d["screens"], screens)]
+        return {r["id"]: r for r in ev.evaluate(d, rubric, _specs("compliant"))["rules"] if r["id"] in ("TYPE-05", "TYPE-06")}
+
+    cs_ok, cs_caps, cs_mixed = _walk_casing("ok"), _walk_casing("caps"), _walk_casing("mixed")
+    check(all("metrics" in s for s in cs_ok + cs_caps + cs_mixed) and len(cs_ok) == len(cs_caps) == len(cs_mixed) == 2,
+          f"casing: each case walks its two tabs -- {[s.get('id', s) for s in cs_ok + cs_caps + cs_mixed]}")
+    _lit = [lab["text"] for s in cs_caps for lab in s["metrics"]["casing"]["labels"] if lab["literal"]]
+    check(_lit == ["RECORD", "PDF", "ES", "EXPORT PDF", "SETTINGS"],
+          f"casing: every label typed in capitals is recorded as literal, the identifier-shaped ACER-PC1 heading is not -- {_lit}")
+    _r_caps, _r_ok, _r_mixed = _casing_rules(cs_caps), _casing_rules(cs_ok), _casing_rules(cs_mixed)
+    _ok_texts = {lab["text"] for s in cs_ok for lab in s["metrics"]["casing"]["labels"]}
+    check("Translate to English" in _ok_texts and not _ok_texts & {"Instructions View", "(no transcript) 0 words"},
+          f"casing: a proper noun is recorded, a name-and-action row and a reading with a digit are not -- {sorted(_ok_texts)}")
+    check(_r_caps["TYPE-05"]["status"] == "fail"
+          and [i["text"] for e in _r_caps["TYPE-05"]["evidence"] for i in e["items"]] == ["RECORD", "EXPORT PDF", "SETTINGS"]
+          and _r_caps["TYPE-06"]["status"] == "pass",
+          f"TYPE-05: RECORD, a SETTINGS heading and EXPORT PDF fail; PDF and the ES chip pass -- {_r_caps['TYPE-05']['evidence']}")
+    check(_r_ok["TYPE-05"]["status"] == "pass" and _r_ok["TYPE-06"]["status"] == "pass",
+          f"TYPE-05 / TYPE-06: sentence case, an acronym button, an ES chip and list-row data cased either way pass -- "
+          f"{ [(r['id'], r['status'], r['measured']) for r in _r_ok.values()] }")
+    _clash = sorted(i["text"] for e in _r_mixed["TYPE-06"]["evidence"] for i in e["items"])
+    check(_r_mixed["TYPE-06"]["status"] == "fail" and _clash == ["Open Settings", "Running"] and _r_mixed["TYPE-05"]["status"] == "pass",
+          f"TYPE-06: the capitalised stat label and the Title Case button are the minority of their classes across the two tabs -- {_clash}")
 
     # UA-font nav tab: voice-transcriber's <button class="tab"> tabs had no `font: inherit` and read Arial under a system-ui body;
     # TYPE-02 reads them (a tab is a <button>), an inheriting button beside them is not reported (#1211)

@@ -24,6 +24,7 @@ present on a successful run:
     text      sizes {px: runs}, weights {w: runs}, runs, under14, under11 [..],
               min_px, low_contrast [..], low_contrast_count,
               body_font_family, break_all [..], uppercase [..], glyph_icons [..]
+    casing    labels [{sel, cls, text, style, literal}], label_count, labels_seen
     controls  total, font_family_mismatch [..], font_family_mismatch_count,
               boundary_low [..], boundary_low_count, ua_styled [..],
               label_fit_bad [..], label_fit_bad_count, segmented_bad [..], segmented_bad_count, switch_count, switch_on_count, switches_on,
@@ -90,6 +91,7 @@ FIT_TOLERANCE_PX = 1.5
 _MEASURE_JS = r"""
 (params) => {
   const CAP = 80;
+  const LABEL_CAP = 160;
   // The pairwise overlap test is O(n^2) over hit targets, so it scans only the first OVERLAP_SCAN_MAX of
   // them: a stated cost bound (400 targets = ~80k pair checks), well above a normal screen. `targets.overlap_scan_truncated`
   // records when it bit, so targets past it are known to be unchecked rather than silently skipped.
@@ -181,6 +183,56 @@ _MEASURE_JS = r"""
       break_all: breakAll.slice(0,CAP), break_all_count: breakAll.length,
       uppercase: upper.slice(0,CAP), uppercase_count: upper.length,
       glyph_icons: glyphs.slice(0,CAP), glyph_icon_count: glyphs.length };
+  });
+
+  // ---- casing: how the app's labels are cased (#1365). Each button, tab, menu item and heading label, plus a
+  // short leaf element whose class names it a stat or label, is recorded once per text with its class and its
+  // style: upper (no lowercase letter), lower (starts lowercase), capitalised (one word, capital first), sentence
+  // or title (several words, capital first; title when every word after the first is capitalised). `literal` is
+  // set when the characters typed in the markup are already capitals, which text-transform cannot see (TYPE-05);
+  // the style is of the rendered text. Whether two styles of one class clash across the run is evaluate.py's call
+  // (TYPE-06). A label with a hyphen or other identifier character is data or a name, not a casing choice,
+  // and is not recorded, nor is a label with a digit or a control made of several text elements; a brand-cased word
+  // inside a label (iPhone, PDF) is skipped when judging the rest.
+  section('casing', () => {
+    const ROW = 'li, tr, [role=listitem], [role=row], [role=option], [role=gridcell]';
+    const STAT = /(?:^|[-_])(?:stat|stats|label|counter|count|metric|kpi|tally)(?:$|[-_])/i;
+    const MINOR = new Set(['a','an','and','as','at','but','by','for','in','nor','of','on','or','the','to','via','vs','with']);
+    const WORD = /^\p{L}[\p{L}'’]*$/u, PLAIN = /^\p{Lu}?\p{Ll}[\p{Ll}'’]*$/u;
+    const textOf = (el) => { const parts = []; const w = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+      while (w.nextNode()) { const n = w.currentNode, p = n.parentElement; if (!p || p.closest('svg, script, style, noscript')) continue;
+        const r = p.getBoundingClientRect(); if (r.width <= 1 && r.height <= 1) continue; parts.push(n.nodeValue); }
+      return parts.join(' ').replace(/\s+/g, ' ').trim(); };
+    const words = (text) => { const out = [];
+      for (const tok of text.split(' ')) { const t = tok.replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, ''); if (!/\p{L}/u.test(t)) continue;
+        if (!WORD.test(t)) return null; out.push(t); }
+      return out.length && out.length <= 5 ? out : null; };
+    const styleOf = (ws) => {
+      if (ws.join('').replace(/[^\p{L}]/gu, '').length < 2) return null;
+      if (!ws.some(w => /\p{Ll}/u.test(w))) return 'upper';
+      const plain = ws.filter(w => PLAIN.test(w)); if (!plain.length) return null;
+      if (/^\p{Ll}/u.test(plain[0])) return 'lower';
+      const rest = plain.slice(1).filter(w => !MINOR.has(w.toLowerCase()));
+      if (!rest.length) return 'capitalised';
+      return rest.every(w => /^\p{Lu}/u.test(w)) ? 'title' : 'sentence'; };
+    const rendered = (text, tt) => tt === 'uppercase' ? text.toUpperCase() : tt === 'lowercase' ? text.toLowerCase()
+      : tt === 'capitalize' ? text.replace(/(^|\s)(\p{L})/gu, (m, a, b) => a + b.toUpperCase()) : text;
+    const found = new Map(); let seen = 0;
+    // A label with a digit is a count or a reading, and a control holding two text-bearing children is a row of a
+    // name and an action: neither is one label's casing.
+    const add = (el, cls) => { const text = textOf(el); if (!text || text.length > 40 || /\d/.test(text)) return;
+      if ([...el.children].filter(c => (c.textContent || '').trim()).length > 1) return;
+      const src = words(text); if (!src) return;
+      const srcStyle = styleOf(src); if (!srcStyle) return;
+      const shown = rendered(text, getComputedStyle(el).textTransform), style = styleOf(words(shown) || src) || srcStyle;
+      seen++; const key = cls + '|' + text; if (found.has(key)) return;
+      found.set(key, {sel: sel(el), cls, text, style, literal: srcStyle === 'upper'}); };
+    q('button, [role=button], [role=tab], [role=menuitem]').forEach(el => add(el, el.matches('[role=tab]') ? 'tab' : el.matches('[role=menuitem]') ? 'menuitem' : 'button'));
+    q('h1, h2, h3, h4, h5, h6, [role=heading]').filter(el => !el.closest(ROW)).forEach(el => add(el, 'heading'));
+    q('[class]').filter(el => !el.children.length && !el.closest(ROW) && !el.matches('button, a, [role=button], [role=tab], [role=menuitem], h1, h2, h3, h4, h5, h6'))
+      .forEach(el => { const tok = (el.getAttribute('class') || '').split(/\s+/).find(c => STAT.test(c)); if (tok) add(el, 'label:' + tok); });
+    const labels = [...found.values()];
+    return { labels: labels.slice(0, LABEL_CAP), label_count: labels.length, labels_seen: seen };
   });
 
   // ---- form controls: font family vs body, boundary contrast, UA styling
@@ -765,6 +817,7 @@ def metric_paths() -> List[str]:
         "text": ["sizes", "weights", "runs", "under14", "under11", "under11_count", "min_px",
                  "low_contrast", "low_contrast_count", "body_font_family", "break_all",
                  "break_all_count", "uppercase", "uppercase_count", "glyph_icons", "glyph_icon_count"],
+        "casing": ["labels", "label_count", "labels_seen"],
         "controls": ["total", "font_family_mismatch", "font_family_mismatch_count", "boundary_low",
                      "boundary_low_count", "ua_styled", "ua_styled_count", "label_fit_bad", "label_fit_bad_count",
                      "segmented_bad", "segmented_bad_count", "switch_count", "switch_on_count", "switches_on", "icon_button_count", "icon_buttons_painted",

@@ -73,6 +73,7 @@ DERIVED_METRICS = (
     "spec.pairs_under_aa",
     "text.uppercase_outside_role",
     "text.break_all_non_path",
+    "casing.mixed_labels",
     "layout.lists_unfiltered_tall",
     "layout.content_share",
     "a11y.no_text_size_control",
