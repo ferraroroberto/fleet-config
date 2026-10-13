@@ -2107,4 +2107,57 @@ check(any("missing check" in w for w in no_check["warns"]),
       "an entry without check is ignored and reported")
 
 
+# ---- range-tab retired in favour of segmented (fleet-config#1407) ----
+
+def _contracts_range_tab(files: dict[str, str]) -> dict:
+    t = Path(tempfile.mkdtemp(prefix="dl-rt-"))
+    try:
+        for name, body in files.items():
+            path = t / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(body, encoding="utf-8")
+        return {c["id"]: c for c in dl.contracts(
+            t, sorted(t.rglob("*.css")), sorted(t.rglob("*.html")),
+            sorted(t.rglob("*.js")), HIT_SPEC_940)}
+    finally:
+        shutil.rmtree(t, ignore_errors=True)
+
+
+_RT_HTML = '<div class="range-tabs"><button class="range-tab active">Day</button></div>\n'
+_RT_JS = 'const row = `<div class="range-tabs">${opts}</div>`;\n'
+_RT_CSS = ".range-tabs { display: flex; }\n.range-tab.active { background: var(--accent-soft); }\n"
+_SEG_HTML = '<div class="segmented"><button aria-pressed="true">Day</button></div>\n'
+
+rt_app = _contracts_range_tab({"app/static/index.html": _RT_HTML,
+                               "app/static/view.js": _RT_JS,
+                               "app/static/style.css": _RT_CSS})["range-tab"]
+check(rt_app["status"] == "WARN" and "use segmented" in rt_app["detail"]
+      and "app/static/index.html:1" in rt_app["detail"]
+      and "app/static/view.js:1" in rt_app["detail"]
+      and "app/static/style.css:1" in rt_app["detail"],
+      "range-tab: app markup, JS and CSS are flagged with file:line and 'use segmented' (#1407)")
+
+rt_clean = _contracts_range_tab({"app/static/index.html": _SEG_HTML})["range-tab"]
+check(rt_clean["status"] == "PASS",
+      "range-tab: an app already on segmented passes (#1407)")
+
+rt_vendored = _contracts_range_tab({
+    "app/static/_vendored/range-tab/range-tab.css": _RT_CSS,
+    "app/static/_vendored/range-tab/range-tab.js": _RT_JS,
+    "app/static/index.html": _SEG_HTML})["range-tab"]
+check(rt_vendored["status"] == "PASS",
+      "range-tab: the scaffold's deprecated `_vendored/` copy is not an app-authored site (#1407)")
+
+rt_mixed = _contracts_range_tab({
+    "app/static/_vendored/range-tab/range-tab.css": _RT_CSS,
+    "app/static/index.html": _RT_HTML})["range-tab"]
+check(rt_mixed["status"] == "WARN" and "_vendored" not in rt_mixed["detail"].split(": ", 1)[-1],
+      "range-tab: an app's own use is flagged even beside the vendored copy, naming only its own file (#1407)")
+
+rt_names = _contracts_range_tab({
+    "app/static/style.css": ".time-range-tab { x: 1 }\n:root { --range-tab-bg: red; }\n/* .range-tab old */\n"})["range-tab"]
+check(rt_names["status"] == "PASS",
+      "range-tab: a longer class name, a custom property and a comment are not hits (#1407)")
+
+
 _h.report_and_exit("design_lint")

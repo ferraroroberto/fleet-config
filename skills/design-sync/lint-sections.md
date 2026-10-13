@@ -83,6 +83,11 @@ read.
     persisted control that writes it (a literal key or a named constant).
     Any part missing WARNs, never FAILs, while apps adopt it one by one
     (#967).
+  - **range-tab** — `range-tab` is retired for `segmented`: any
+    `.range-tab(s)` class in app-authored markup, JS or CSS WARNs with
+    `file:line` and "use segmented"; the `_vendored/` copy and comments are
+    not hits. WARN, never FAIL, while each app migrates in its own issue
+    (#1407).
   - **icon-set** — emoji glyphs in rendered markup text or JS UI-copy
     strings: FAIL when no vendored Lucide sprite is adopted, WARN when
     emoji sit alongside an adopted sprite — one icon set, never

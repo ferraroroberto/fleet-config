@@ -1016,7 +1016,10 @@ hand-picked per app.
   as the first group of the list's filter sheet, and an order that only
   applies in one state (Relevance, while a search is typed) shows only
   then (app-launcher#1501, the judge's J-05 on #1500). Reference impl:
-  home-automation `.segmented` (home-automation#879).
+  home-automation `.segmented` (home-automation#879). **`range-tab` is
+  retired in favour of `segmented`**: a tinted, accent-outlined selected
+  button is the one state shape the fleet no longer draws, and `design_lint`
+  flags any `.range-tab(s)` outside `_vendored/` (fleet-config#1407).
 - **dense collection** — how a card renders **saved automation/settings
   items** (schedules, pairings, overrides): each item is a flat `list-row`
   **summary row** — a compact human-readable summary line + the entry's
