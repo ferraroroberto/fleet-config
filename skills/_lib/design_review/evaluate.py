@@ -358,6 +358,50 @@ def _d_home_title_is_app_name(m: dict, rule: Rule, ctx: dict) -> Derived:
     return (1.0 if named else 0.0), [{"title": home.get("title"), "tab": home.get("tab"), "app_names": list(home.get("app_names") or [])}], None
 
 
+def _header_contexts(screens: List[dict]) -> Dict[str, List[dict]]:
+    """Per tab (`view`), the page-header context reading of every measured tab screen that carries one (#1395)."""
+    out: Dict[str, List[dict]] = {}
+    for s in screens:
+        if not (isinstance(s, dict) and s.get("kind") == "tab" and s.get("status") == "ok" and isinstance(s.get("metrics"), dict)):
+            continue
+        hc = measure.metric_value(s["metrics"], "nav.header_context")
+        if isinstance(hc, dict):
+            out.setdefault(str(s.get("view")), []).append({"screen": s.get("id"), "header": bool(hc.get("header")), "text": hc.get("text")})
+    return out
+
+
+def _d_header_context_static(m: dict, rule: Rule, ctx: dict) -> Derived:
+    """NAV-05: a tab's page-header context line is the same fixed sentence in every state the walk captured (#1395).
+
+    The line is judged across all measured screens of one tab (devices, themes, seeded states), since one screen cannot
+    show that a line never changes. A fixed line passes when it is a live shape (the rule's `live` pattern: a digit,
+    which covers a count and a time, or the word Build). Every screen of a run shows one data state, so a constant line
+    that a script wrote could be a derived value as well as a slogan: it fails only when its text is also in the page as
+    served (`static`, markup nobody wired). A header or line that is not found, fewer than two captured readings of the
+    tab, or a constant script-written line leaves it `unmeasured`: a line that has not changed yet is not shown to be fixed."""
+    if "nav" in measure.section_errors(m):
+        return None, [], _section_reason(m, "nav")
+    here = measure.metric_value(m, "nav.header_context")
+    if not isinstance(here, dict):
+        return None, [], "nav.header_context missing from this run (measured before NAV-05)"
+    if not here.get("header"):
+        return None, [], "no page header (.home-head) found on this tab"
+    if not _squash(here.get("text")):
+        return None, [], "the page header holds no context line (.status) to read"
+    readings = [r for r in (ctx.get("header_contexts") or {}).get(str(ctx.get("view")), []) if r["header"] and _squash(r["text"])]
+    if len(readings) < 2:
+        return None, [], f"only {len(readings)} captured state of this tab reads a context line; one reading cannot show it never changes"
+    distinct = {_squash(r["text"]) for r in readings}
+    if len(distinct) > 1 or re.search(str(rule.params.get("live", r"\d")), str(here.get("text")), re.I):
+        return 0.0, [], None
+    if here.get("static") is None:
+        return None, [], "the line is the same in every captured state, but the page source could not be read to tell markup from script"
+    if not here.get("static"):
+        return None, [], ("the line is the same in every captured state but is written by script: one data state cannot show "
+                          "a derived value that has not changed from a fixed sentence")
+    return 1.0, [{"tab": here.get("tab"), "text": here.get("text"), "states": len(readings)}], None
+
+
 # One rgb step per channel of slack: the measured track is composited and rounded, the spec token is a literal.
 SWITCH_ACCENT_TOLERANCE = 3.0
 
@@ -458,6 +502,7 @@ DERIVED: Dict[str, Callable[[dict, Rule, dict], tuple]] = {
     "a11y.no_text_size_control": _d_no_text_size_control,
     "nav.pane_header_hidden": _d_pane_header_hidden,
     "nav.home_title_is_app_name": _d_home_title_is_app_name,
+    "nav.header_context_static": _d_header_context_static,
     "controls.switch_on_not_accent": _d_switch_on_accent,
     "controls.icon_only_unconventional": _d_icon_only_unconventional,
     "feedback.toast_tinted": _d_toast_tinted,
@@ -712,6 +757,7 @@ def evaluate(doc: dict, rubric: Rubric, specs: Dict[str, Dict[str, str]],
                isinstance(s, dict) and s.get("status") == "ok" and isinstance(s.get("metrics"), dict)
                and bool(measure.metric_value(s["metrics"], "controls.switches_on"))
                for s in doc.get("screens") or []),
+           "header_contexts": _header_contexts(doc.get("screens") or []),
            "casing_outliers": _casing_outliers(casing_labels),
            "casing_vocab": _casing_vocab(casing_labels),
            "settings_gear": _settings_gear_state(doc.get("screens") or []),

@@ -33,7 +33,7 @@
 # metrics.json, every evaluate output and every filed finding.
 
 [meta]
-version = "1.25.0"   # per-bump history: git log -- design.rubric.toml, and the issues/PRs it cites
+version = "1.26.0"   # per-bump history: git log -- design.rubric.toml, and the issues/PRs it cites
 seeded_from = "app-launcher rendered audit, 2026-09-21 (fleet-config#962)"
 
 [weights]
@@ -350,6 +350,20 @@ standard = "design.md page-header: the title names the current tab, on the home 
 fix_template = "{screen}: {sample}, the app's own name; title the home tab with the tab's name (the manifest and the install own the app's name)."
 mockup = "none"
 screens = ["tab"]
+
+[[rules]]
+id = "NAV-05"
+category = "navigation"
+title = "A page-header context line that never changes"
+metric = "nav.header_context_static"
+fail_when = "nonzero"
+severity = "P3"
+owner = "app"
+screens = ["tab"]
+standard = "design.md page-header: the context line is live, never a fixed slogan (fleet-config#1332); the full-app review's ratchet (fleet-config#1395). A fixed line passes when it carries a digit (a count, a time) or a build id; only a line sitting unwired in the served markup fails, since a constant line a script wrote cannot be told from a derived value in one data state and is not measured"
+fix_template = "{screen}: the context line reads {sample} in every captured state; make it the live exceptions or the plain count (\"7 jobs\"), or the running build on a pane with no count of its own."
+mockup = "none"
+params = { live = "\\d|\\bbuild\\b" }
 
 # ---------------------------------------------------------------------------
 # Layout

@@ -80,6 +80,7 @@ DERIVED_METRICS = (
     "a11y.no_text_size_control",
     "nav.pane_header_hidden",
     "nav.home_title_is_app_name",
+    "nav.header_context_static",
     "controls.switch_on_not_accent",
     "feedback.toast_tinted",
     "feedback.empty_state_no_action",

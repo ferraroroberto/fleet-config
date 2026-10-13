@@ -60,8 +60,8 @@ def _doc(name: str) -> dict:
 # ---- rubric: the real file loads and names only metrics that exist ----------
 
 rubric = dr.load_rubric(RUBRIC)
-check(rubric.version == "1.25.0", "rubric meta.version stamped")
-check(len(rubric.rules) == 38, f"38 seed rules loaded (got {len(rubric.rules)})")
+check(rubric.version == "1.26.0", "rubric meta.version stamped")
+check(len(rubric.rules) == 39, f"39 seed rules loaded (got {len(rubric.rules)})")
 check(rubric.categories == ["typography", "color", "touch", "navigation", "layout", "components", "a11y"],
       "categories in rubric order")
 check(rb.check_metric_names(rubric, measure.metric_paths()) == [], "every rule metric is a script path or a derived metric")
@@ -405,6 +405,50 @@ for _why, _home in (("a missing manifest", {**_HOME, "manifest": "absent", "app_
     check(_n4["status"] == "unmeasured", f"NAV-04: {_why} leaves the app's name unestablished -- unmeasured, never a pass -- {_n4['status']}")
 check(_nav04(None)["status"] == "unmeasured", "NAV-04: a run from before the metric existed is unmeasured, never a pass")
 
+# ---- NAV-05: a tab's page-header context line is not one fixed sentence across its captured states (#1395) ----
+def _nav05(readings, *, keep=None) -> dict:
+    """NAV-05 on the compliant doc's tab screens (both the `home` tab), each carrying the matching reading from `readings`
+    (a dict, or None to drop the key). `keep` limits the doc to its first N screens."""
+    d = _doc("compliant")
+    if keep is not None:
+        d["screens"] = d["screens"][:keep]
+    for s, hc in zip(d["screens"], readings):
+        if hc is None:
+            s["metrics"]["nav"].pop("header_context", None)
+        else:
+            s["metrics"]["nav"]["header_context"] = dict(hc)
+    return next(r for r in ev.evaluate(d, rubric, _specs("compliant"))["rules"] if r["id"] == "NAV-05")
+
+
+def _hc(text, header=True, static=True):
+    return {"header": header, "tab": "Today", "text": text, "static": static}
+
+
+_n5_fail = _nav05([_hc("Manage your jobs."), _hc("manage  your jobs.")])
+check(_n5_fail["status"] == "fail" and _n5_fail["severity"] == "P3"
+      and _n5_fail["evidence"][0]["items"] == [{"tab": "Today", "text": "Manage your jobs.", "states": 2}],
+      f"NAV-05: one fixed sentence in every captured state fails and names the line -- {_n5_fail['status']} {_n5_fail['evidence']}")
+check(_nav05([_hc("3 running"), _hc("2 running")])["status"] == "pass", "NAV-05: a count that changes between two states passes")
+check(_nav05([_hc("7 jobs"), _hc("7 jobs")])["status"] == "pass", "NAV-05: a fixed line that carries a count is live, so it passes")
+check(_nav05([_hc("Build deadbee"), _hc("Build deadbee")])["status"] == "pass", "NAV-05: a build line passes")
+check(_nav05([_hc("Last run 06:00"), _hc("Last run 06:00")])["status"] == "pass", "NAV-05: a time passes")
+_n5_script = _nav05([_hc("English", static=False), _hc("English", static=False)])
+check(_n5_script["status"] == "unmeasured" and "written by script" in _n5_script["reason"],
+      f"NAV-05: a constant line a script wrote could be derived, so it is not measured, never a pass or a fail -- {_n5_script['status']} {_n5_script['reason']}")
+check(_nav05([_hc("English", static=None), _hc("English", static=None)])["status"] == "unmeasured",
+      "NAV-05: a constant line whose page source could not be read is not measured")
+_n5_one = _nav05([_hc("Manage your jobs.")], keep=1)
+check(_n5_one["status"] == "unmeasured" and "only 1 captured state" in _n5_one["reason"],
+      f"NAV-05: a tab with one captured state is not measured, never a pass -- {_n5_one['status']} {_n5_one['reason']}")
+_n5_blank = _nav05([_hc("Manage your jobs."), _hc("")])
+check(_n5_blank["status"] == "unmeasured", f"NAV-05: a state with no context line leaves the tab unmeasured -- {_n5_blank['status']} {_n5_blank['reason']}")
+_n5_nohead = _nav05([_hc(None, header=False), _hc(None, header=False)])
+check(_n5_nohead["status"] == "unmeasured" and "no page header" in _n5_nohead["reason"],
+      f"NAV-05: a tab with no page header is not measured -- {_n5_nohead['status']} {_n5_nohead['reason']}")
+check(_nav05([None, None])["status"] == "unmeasured", "NAV-05: a run from before the metric existed is unmeasured, never a pass")
+_n5_sentence = report_mod.finding_sentence(next(r for r in ev.evaluate(_doc("violating"), rubric, _specs("violating"))["rules"] if r["id"] == "NAV-05"), None)
+check("Manage your jobs." in _n5_sentence and "{" not in _n5_sentence, f"NAV-05: the fix sentence names the line and fills every placeholder -- {_n5_sentence}")
+
 # ---- COMP-08: a destructive control in a dialog or menu is unfilled and not the largest there (#1364) ----
 def _comp08(overlay) -> dict:
     """COMP-08 on every screen of the compliant doc, each carrying `overlay` (a dict, or None to drop the section)."""
@@ -601,7 +645,7 @@ check(all(s == "pass" for s in statuses_c.values()), f"compliant: every rule pas
 check(all(v["score"] == 100.0 and v["grade"] == "A" and not v["unmeasured"] for v in out_c["categories"].values()),
       "compliant: every category 100/A, measured")
 check(out_c["overall"] == {"score": 100.0, "grade": "A", "unmeasured": False}, "compliant: overall A")
-check(out_c["schema_version"] == 1 and out_c["rubric_version"] == "1.25.0" and out_c["target"] == "fixture-app"
+check(out_c["schema_version"] == 1 and out_c["rubric_version"] == "1.26.0" and out_c["target"] == "fixture-app"
       and out_c["commit"].startswith("0000") and out_c["generated_at"].endswith("Z"), "evaluate envelope keys")
 check([s["id"] for s in out_c["screens"]] == ["desktop-light-home", "iphone-light-home", "desktop-light-dialog-edit"],
       "evaluate echoes the screen list")
@@ -675,8 +719,8 @@ check(all(r["measured"] for r in out_v["rules"]), "every failing rule carries me
 cat_v = out_v["categories"]
 check(cat_v["typography"]["score"] == 100 - (12 + 25 + 12 + 12 + 6 + 6) and cat_v["typography"]["grade"] == "F",
       "typography: penalties once per rule (P1+P0+P1+P1+P2+P2)")
-check(cat_v["touch"]["score"] == 100 - (25 + 25 + 12) and cat_v["navigation"]["score"] == 100 - (12 + 6 + 12 + 2),
-      "touch / navigation scores (navigation: NAV-01 P1 + NAV-02 P2 + NAV-03 P1 + NAV-04 P3)")
+check(cat_v["touch"]["score"] == 100 - (25 + 25 + 12) and cat_v["navigation"]["score"] == 100 - (12 + 6 + 12 + 2 + 2),
+      "touch / navigation scores (navigation: NAV-01 P1 + NAV-02 P2 + NAV-03 P1 + NAV-04 P3 + NAV-05 P3)")
 check(cat_v["typography"]["failed"] == ["TYPE-01", "TYPE-02", "TYPE-03", "TYPE-04", "TYPE-05", "TYPE-06"], "failed ids listed in rule order")
 check(out_v["overall"]["grade"] == "F" and not out_v["overall"]["unmeasured"], "violating: overall F, fully measured")
 c01v = next(r for r in out_v["rules"] if r["id"] == "COLOR-01")
@@ -1573,7 +1617,7 @@ else:
           f"measure CLI walks the fixture: 2 tabs + 1 dialog x light/dark, plus the absent Settings gear (#1217) ({proc.stdout[-300:]}{proc.stderr[-300:]})")
     check(lines.get("RUN_DIR") == str(run_dir) and Path(lines.get("METRICS", "")).is_file(), "RUN_DIR/METRICS lines point at the run dir")
     doc = json.loads(Path(lines["METRICS"]).read_text(encoding="utf-8"))
-    check(doc["interpreter"] == str(interp) and doc["schema_version"] == 1 and doc["rubric_version"] == "1.25.0", "metrics.json records the interpreter + versions")
+    check(doc["interpreter"] == str(interp) and doc["schema_version"] == 1 and doc["rubric_version"] == "1.26.0", "metrics.json records the interpreter + versions")
     if not (scaffold / "tests" / "e2e" / "_geometry.py").is_file():
         _h.skip("browser leg: project-scaffolding/tests/e2e/_geometry.py absent -- hit-target assertions NOT verified")
     check(doc["walk"]["info"]["geometry"] == ("loaded" if (scaffold / "tests" / "e2e" / "_geometry.py").is_file() else "GEOMETRY_MISSING"),
@@ -1852,6 +1896,38 @@ else:
     check(ht["shared_rule"]["status"] == "pass" and ht["shared_rule"]["measured"] == {"desktop-light-home": 0.0, "desktop-dark-home": 0.0}
           and (ht["shared"].get("desktop-light-home", {}).get("metrics", {}).get("nav", {}).get("home_title") or {}).get("title") == "Today",
           f"NAV-04: one header shared above the panes is the home tab's title, found from outside the pane -- {ht['shared_rule']['status']} {ht['shared_err']}")
+
+    # header context line: a count that changes and a build line pass, one fixed sentence fails (#1395)
+    # Served over http: the measure reads the page source to tell served markup from script, which a file: page cannot be asked for.
+    import functools, http.server, threading
+    class _Quiet(http.server.SimpleHTTPRequestHandler):
+        def log_message(self, *a):  # noqa: D401 -- keep the test output clean
+            pass
+    _hc_srv = http.server.ThreadingHTTPServer(("127.0.0.1", 0), functools.partial(_Quiet, directory=str(FIX)))
+    threading.Thread(target=_hc_srv.serve_forever, daemon=True).start()
+    hc = {}
+    for _kind in ("pass", "fail", "script"):
+        hc_dir = STATE / f"fixture-header-context-{_kind}"
+        proc_hc = subprocess.run(
+            [str(interp), str(REPO / "skills" / "_lib" / "design_review" / "walk.py"), "--url", f"http://127.0.0.1:{_hc_srv.server_address[1]}/header_context_{_kind}.html",
+             "--out", str(hc_dir), "--devices", "desktop", "--scaffold", str(scaffold),
+             "--params", str(STATE / "steps-params.json")],
+            capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=600,
+        )
+        _hcs = json.loads((hc_dir / "screens.json").read_text(encoding="utf-8")) if proc_hc.returncode == 0 else []
+        hc[_kind + "_err"] = proc_hc.stderr[-300:]
+        hc[_kind] = next((r for r in ev.evaluate({"screens": _hcs, "wide_views": []}, rubric, _specs("compliant"))["rules"] if r["id"] == "NAV-05"), {}) if _hcs else {}
+        hc[_kind + "_lines"] = {s["id"]: ((s.get("metrics") or {}).get("nav") or {}).get("header_context", {}).get("text") for s in _hcs if s.get("kind") == "tab"}
+    check(hc["pass_lines"] == {"desktop-light-home": "3 running", "desktop-dark-home": "2 running",
+                               "desktop-light-history": "Build deadbee", "desktop-dark-history": "Build deadbee"},
+          f"NAV-05 pass fixture: each tab's header context line is read from its pane -- {hc['pass_lines']} ({hc['pass_err']})")
+    check(hc["pass"].get("status") == "pass", f"NAV-05 pass fixture: a count that changes and a build line pass -- {hc['pass'].get('status')} {hc['pass'].get('reason')}")
+    check(hc["fail"].get("status") == "fail" and sorted(hc["fail"].get("measured", {})) == ["desktop-dark-history", "desktop-dark-home", "desktop-light-history", "desktop-light-home"]
+          and "Manage your jobs." in report_mod.finding_sentence(hc["fail"], None),
+          f"NAV-05 fail fixture: the same sentence in every state fails on both tabs and the finding names it -- {hc['fail'].get('status')} {hc['fail'].get('measured')} ({hc['fail_err']})")
+    check(hc["script"].get("status") == "unmeasured" and "written by script" in hc["script"].get("reason", ""),
+          f"NAV-05 script fixture: the same sentence written by script is not measured, never a pass or a fail -- {hc['script'].get('status')} {hc['script'].get('reason')} ({hc['script_err']})")
+    _hc_srv.shutdown()
 
     # icon buttons and reference pills: what is painted at rest, and how many pill shapes a screen draws (#1259)
     ip_dir = STATE / "fixture-icon-pill"
