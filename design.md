@@ -104,7 +104,7 @@ components:
   action-row:     { minHeight: "{rows.md}", title: "{typography.body}", titleWeight: 600, meta: "{typography.body-sm}", metaColor: "{colors.fg-muted}", leadingToggles: 1, trailingAccessories: 1, extraVisibleActions: 1, accessorySize: "{components.hit-target.min}", destructiveColor: "{colors.danger-text}", filterAboveRows: 12, filterHeight: 44px, filterBorder: "{colors.control-border}" }   # a list row that does something: tap the row = primary action, one trailing kebab/chevron, destructive only in the menu
   empty-state:    { iconSize: "{icons.size.feature}", gap: "{spacing.sm}", padding: "{spacing.xl} {spacing.md}", actionMinWidth: 96px, textColor: "{colors.fg-muted}" }   # icon + one-line reason + optional action, centered
   icon-tile:      { rounded: "{rounded.md}", iconSize: "{icons.size.feature}", iconColor: "{colors.accent-fg}" }   # Home-screen rounded-square — one tile-* fill, centered Lucide glyph
-  page-header:    { minHeight: "{rows.md}", padding: "0 14px", title: "{typography.body}", titleWeight: 700, context: "{typography.body-sm}", contextColor: "{colors.fg-muted}", trailingActions: 2, actionSize: "{components.hit-target.min}" }   # every pane's first element — the vendored home-head: tab title, one context line, trailing theme toggle + Settings gear, always both, on every tab
+  page-header:    { minHeight: "{rows.md}", padding: "0 14px", title: "{typography.body}", titleWeight: 700, context: "{typography.body-sm}", contextColor: "{colors.fg-muted}", trailingActions: 2, statusReadout: 1, actionSize: "{components.hit-target.min}" }   # every pane's first element — the vendored home-head: tab title, one context line, trailing theme toggle + Settings gear, always both, on every tab, plus at most one status readout
   toast:          { backgroundColor: "{colors.card}", textColor: "{colors.fg}", borderColor: "{colors.border}", rounded: "{rounded.md}", padding: "12px 18px", typography: "{typography.label}", fontWeight: 700, maxWidth: 560px, offsetAboveNav: 8px }   # neutral frosted toast (fleet-config#1200) — the nav-bar glass, centred above the nav; only a real error tints (danger), success never does
   hit-target:     { min: 44px }   # minimum effective pointer-target square, app-wide — see Touch targets
   avatar:         { size: 36px, rounded: "{rounded.md}", backgroundColor: "{colors.neutral-soft}", glyph: "{icons.size.nav-tab}", badgeSize: 12px, badgeRing: "{colors.card}", badgeAlive: "{colors.success}", badgeDown: "{colors.danger}" }   # a row's leading squircle; the corner badge means alive (up) or down (should be up), nothing else (fleet-config#1332)
@@ -613,8 +613,19 @@ hand-picked per app.
   `fg-muted`; e.g. "3 running", "Last run 06:00"), and **at most two trailing
   icon buttons** at the 44px hit target: the theme toggle and the Settings
   gear, **always both, on every tab at every nav size** (Settings is never a
-  tab, see Navigation), and **never a third**: a header button that opens a
-  pane of its own hides a tab (fleet-config#1386). Tab-specific toolbars sit **under** the
+  tab, see Navigation), and **never a third icon button**: a header button that opens a
+  pane of its own hides a tab (fleet-config#1386). The one allowed addition is
+  **one optional status readout** (`statusReadout`, fleet-config#1404, owner
+  decision on app-launcher#1520), placed before the toggle: a short live value
+  (a CPU %, a queue depth) in `body-sm`, `fg-muted` at rest, with colour only
+  for a warning or critical state (the status tone's `*-text`, never colour
+  alone: the value is the text). It is a button at the 44px hit target that
+  **opens a sheet** on tap; it is never a navigation target, never a second
+  Settings entry, and never a second readout. On a phone it **yields first**:
+  it hides before the context line is cut when that line carries a
+  warning and needs the room. An occasional tool the readout's sheet leads to
+  (app-launcher's Screen view) opens **from that sheet**, never as another
+  header icon. Tab-specific toolbars sit **under** the
   header, never in place of it. The vendored `home-head` component
   (`project-scaffolding` `_vendored/home-head/`) is this shape; reuse it
   verbatim on every pane, not just the home tab. The title is the tab's
@@ -1268,6 +1279,6 @@ byte-for-byte components.
 - **Don't** use status colors decoratively — they signal state only: chip only an exception, in the one status chip tone map (never a chip style per surface, never a `success` chip), and let the avatar badge alone say a process is alive.
 - **Don't** call the browser's `confirm()`, `prompt()` or `alert()` — confirm, rename and detail use the vendored dialog.
 - **Don't** make Settings a tab (or a gear-only tab), tint a success toast, or turn a switch green when on.
-- **Don't** add a third header action, or open a pane reached only from a header button: a pane that has no nav tab is a tab in disguise, so it becomes a tab, a sheet or a Settings row.
+- **Don't** add a third header icon button (the one optional status readout is the only extra, and it opens a sheet), or open a pane reached only from a header button: a pane that has no nav tab is a tab in disguise, so it becomes a tab, a sheet or a Settings row.
 - **Don't** put raw identifiers (hostnames, URLs, exception text or class names, process ids, bare port numbers) in user-facing status or failure copy — sanitize it; a detail sheet or Settings › About may show them, and logs keep the detail.
 - **Don't** apply this spec to Streamlit POC spikes.
