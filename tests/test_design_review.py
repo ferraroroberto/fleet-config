@@ -60,8 +60,8 @@ def _doc(name: str) -> dict:
 # ---- rubric: the real file loads and names only metrics that exist ----------
 
 rubric = dr.load_rubric(RUBRIC)
-check(rubric.version == "1.24.0", "rubric meta.version stamped")
-check(len(rubric.rules) == 37, f"37 seed rules loaded (got {len(rubric.rules)})")
+check(rubric.version == "1.25.0", "rubric meta.version stamped")
+check(len(rubric.rules) == 38, f"38 seed rules loaded (got {len(rubric.rules)})")
 check(rubric.categories == ["typography", "color", "touch", "navigation", "layout", "components", "a11y"],
       "categories in rubric order")
 check(rb.check_metric_names(rubric, measure.metric_paths()) == [], "every rule metric is a script path or a derived metric")
@@ -539,6 +539,32 @@ check(next(r for r in ev.evaluate(_old09, rubric, _specs("compliant"))["rules"] 
 _c09_sentence = report_mod.finding_sentence(next(r for r in ev.evaluate(_doc("violating"), rubric, _specs("violating"))["rules"] if r["id"] == "COMP-09"), None)
 check("button.incognito" in _c09_sentence and "{" not in _c09_sentence, f"COMP-09: the fix sentence names the control and fills every placeholder -- {_c09_sentence}")
 
+# ---- COMP-10: an empty-state block holds a button or link; a populated screen is not measured, never a pass (#1367) ----
+def _feedback(patches) -> dict:
+    d = _doc("compliant")
+    for s, patch in zip(d["screens"], patches):
+        s["metrics"]["feedback"].update(patch)
+    return next(r for r in ev.evaluate(d, rubric, _specs("compliant"))["rules"] if r["id"] == "COMP-10")
+
+
+_bare = {"empty_state_count": 2, "empty_states_no_action": [{"sel": "div.empty-state", "text": "No history yet"}]}
+_c10 = _feedback([_bare, {"empty_state_count": 1, "empty_states_no_action": []}, {}])
+check(_c10["status"] == "fail" and [i["text"] for i in _c10["evidence"][0]["items"]] == ["No history yet"]
+      and _c10["severity"] == "P3", f"COMP-10: a block with a reason and no action fails -- {_c10['status']} {_c10['evidence']}")
+check(_feedback([{"empty_state_count": 1, "empty_states_no_action": []}] * 3)["status"] == "pass",
+      "COMP-10: blocks that each hold an action pass (the dialog screen is outside the rule)")
+_c10_pop = _feedback([{"empty_state_count": 0, "empty_states_no_action": []}, {"empty_state_count": 1, "empty_states_no_action": []}, {}])
+check(_c10_pop["status"] == "unmeasured" and "synthetic instance" in _c10_pop["reason"],
+      f"COMP-10: a populated tab screen with no empty block is not measured, never a pass -- {_c10_pop['status']} {_c10_pop['reason']}")
+_old10 = _doc("compliant")
+for _s in _old10["screens"]:
+    for _k in ("empty_state_count", "empty_states_no_action"):
+        _s["metrics"]["feedback"].pop(_k)
+check(next(r for r in ev.evaluate(_old10, rubric, _specs("compliant"))["rules"] if r["id"] == "COMP-10")["status"] == "unmeasured",
+      "COMP-10: a run from before the metric existed is unmeasured, never a pass")
+_c10_sentence = report_mod.finding_sentence(next(r for r in ev.evaluate(_doc("violating"), rubric, _specs("violating"))["rules"] if r["id"] == "COMP-10"), None)
+check("No history yet" in _c10_sentence and "{" not in _c10_sentence, f"COMP-10: the fix sentence names the block and fills every placeholder -- {_c10_sentence}")
+
 # ---- COMP-07 / LAYOUT-08: a label fits its control, a control fits its container (#1325) ----
 def _layout(rule_id: str, layout_by_screen) -> dict:
     d = _doc("compliant")
@@ -575,7 +601,7 @@ check(all(s == "pass" for s in statuses_c.values()), f"compliant: every rule pas
 check(all(v["score"] == 100.0 and v["grade"] == "A" and not v["unmeasured"] for v in out_c["categories"].values()),
       "compliant: every category 100/A, measured")
 check(out_c["overall"] == {"score": 100.0, "grade": "A", "unmeasured": False}, "compliant: overall A")
-check(out_c["schema_version"] == 1 and out_c["rubric_version"] == "1.24.0" and out_c["target"] == "fixture-app"
+check(out_c["schema_version"] == 1 and out_c["rubric_version"] == "1.25.0" and out_c["target"] == "fixture-app"
       and out_c["commit"].startswith("0000") and out_c["generated_at"].endswith("Z"), "evaluate envelope keys")
 check([s["id"] for s in out_c["screens"]] == ["desktop-light-home", "iphone-light-home", "desktop-light-dialog-edit"],
       "evaluate echoes the screen list")
@@ -1547,7 +1573,7 @@ else:
           f"measure CLI walks the fixture: 2 tabs + 1 dialog x light/dark, plus the absent Settings gear (#1217) ({proc.stdout[-300:]}{proc.stderr[-300:]})")
     check(lines.get("RUN_DIR") == str(run_dir) and Path(lines.get("METRICS", "")).is_file(), "RUN_DIR/METRICS lines point at the run dir")
     doc = json.loads(Path(lines["METRICS"]).read_text(encoding="utf-8"))
-    check(doc["interpreter"] == str(interp) and doc["schema_version"] == 1 and doc["rubric_version"] == "1.24.0", "metrics.json records the interpreter + versions")
+    check(doc["interpreter"] == str(interp) and doc["schema_version"] == 1 and doc["rubric_version"] == "1.25.0", "metrics.json records the interpreter + versions")
     if not (scaffold / "tests" / "e2e" / "_geometry.py").is_file():
         _h.skip("browser leg: project-scaffolding/tests/e2e/_geometry.py absent -- hit-target assertions NOT verified")
     check(doc["walk"]["info"]["geometry"] == ("loaded" if (scaffold / "tests" / "e2e" / "_geometry.py").is_file() else "GEOMETRY_MISSING"),
@@ -1866,6 +1892,24 @@ else:
     check(_io_rule.get("status") == "fail" and sorted(i["name"] for i in _io_rule["evidence"][0]["items"]) == ["Gallery", "Incognito", "Reset"],
           f"COMP-09: the unlabelled unconventional Incognito, Gallery and Reset fail; the conventional names and the nameless control do not -- "
           f"{_io_rule.get('status')} {_io_rule.get('evidence')}")
+
+    # empty-state blocks: which hold a way forward, and which are not empty states at all (#1367)
+    es_dir = STATE / "fixture-empty-state"
+    proc_es = subprocess.run(
+        [str(interp), str(REPO / "skills" / "_lib" / "design_review" / "walk.py"), "--url", (FIX / "empty_state.html").as_uri(),
+         "--out", str(es_dir), "--devices", "desktop", "--scaffold", str(scaffold),
+         "--params", str(STATE / "steps-params.json")],
+        capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=600,
+    )
+    ess = json.loads((es_dir / "screens.json").read_text(encoding="utf-8")) if proc_es.returncode == 0 else []
+    _es = ((ess[0].get("metrics") or {}).get("feedback") or {}) if ess else {}
+    check(_es.get("empty_state_count") == 5
+          and sorted(i["text"] for i in _es.get("empty_states_no_action", [])) == ["No devices", "No history yet", "Nothing scheduled"],
+          f"COMP-10: five empty-state blocks are found (a button, a link, a reason only, a disabled button, an action outside the block); "
+          f"a loading line, a trailing ellipsis, an error block and a hidden block are not -- {_es} ({proc_es.stderr[-300:]})")
+    _es_rule = next((r for r in ev.evaluate({"screens": ess, "wide_views": []}, rubric, _specs("compliant"))["rules"] if r["id"] == "COMP-10"), {}) if ess else {}
+    check(_es_rule.get("status") == "fail" and len(_es_rule["evidence"][0]["items"]) == 3,
+          f"COMP-10: the bare blocks fail, the ones holding a button or a link do not -- {_es_rule.get('status')} {_es_rule.get('reason')}")
 
     # label fit and container overflow at the 390px phone leg: the camera dialog that scored clean while broken (#1325)
     lf = {}

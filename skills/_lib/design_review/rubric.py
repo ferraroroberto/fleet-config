@@ -82,6 +82,7 @@ DERIVED_METRICS = (
     "nav.home_title_is_app_name",
     "controls.switch_on_not_accent",
     "feedback.toast_tinted",
+    "feedback.empty_state_no_action",
 )
 
 
