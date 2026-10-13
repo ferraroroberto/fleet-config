@@ -180,6 +180,8 @@ def item_label(item: object) -> str:
         return f"scrolls to {_compact(item['scroll_w'])}px in a {_compact(item['inner_w'])}px viewport"
     if "zoom_locked" in item:
         return f"zoom_locked={item['zoom_locked']}, text_size_control={item.get('text_size_control')}"
+    if "title" in item and "app_names" in item:
+        return f"the {item.get('tab')!r} tab's header reads {item['title']!r}"
     if "pane_header_visible" in item:
         return f"header visible={item['pane_header_visible']}, scroll top={item.get('pane_scroll_top')}"
     return ", ".join(f"{k}={_compact(v)}" for k, v in sorted(item.items()))

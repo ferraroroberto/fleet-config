@@ -32,7 +32,8 @@ present on a successful run:
     targets   total, small [..], small_count, overlaps [..], overlap_count,
               covered [..], covered_count, primary [..], primary_min_height, in_summary
     icons     boxes {"WxH": n}, elements {"WxH": [{glyph, host, label}, ..]}
-    nav       primary_count, pane_scroll_top, pane_header_visible, settings_tab_count
+    nav       primary_count, pane_scroll_top, pane_header_visible, settings_tab_count,
+              home_title {is_home, manifest, app_names [..], tab, title}
     feedback  toast_count, toasts_tinted [..], toasts_tinted_count
     layout    control_overflow [..], control_overflow_count, overflow_x, scroll_w, inner_w, inner_h, pane_h, lists [..],
               rows_over_limit [..], danger_rows, content_w, content_span, radii {r: n}
@@ -425,9 +426,32 @@ _MEASURE_JS = r"""
       const glyph = href.includes('#') ? href.slice(href.indexOf('#') + 1) : ((t.querySelector('svg') || t).getAttribute('data-icon') || '');
       return !visible && GEAR_GLYPH.test(glyph);
     }).map(t => ({ sel: sel(t), label: ((t.textContent || '').replace(/\s+/g, ' ').trim() || t.getAttribute('aria-label') || '').slice(0, 30) }));
+    // The home tab's page-header title against the app's name (#1360): the manifest `name` / `short_name` is the app's
+    // name, the first tab's own label is the tab's. Read here, judged in evaluate.py (NAV-04). The manifest is a
+    // same-origin static file, read once with a synchronous GET so the script stays synchronous; a missing, unreadable
+    // or nameless manifest is reported as such and never guessed at.
+    const norm = (s) => (s || '').replace(/\s+/g, ' ').trim().toLowerCase();
+    const manifest = (() => {
+      const link = document.querySelector('link[rel~=manifest]');
+      if (!link) return {state: 'absent', names: []};
+      try { const x = new XMLHttpRequest(); x.open('GET', link.href, false); x.send();
+        if (x.status !== 0 && (x.status < 200 || x.status > 299)) return {state: 'unreadable', names: []};
+        const j = JSON.parse(x.responseText);
+        const names = [j && j.name, j && j.short_name].filter(n => typeof n === 'string' && norm(n)).map(n => n.replace(/\s+/g, ' ').trim());
+        return {state: names.length ? 'ok' : 'unnamed', names};
+      } catch (e) { return {state: 'unreadable', names: []}; } })();
+    const first = tabs[0] || null;
+    const isHome = !!first && first.getAttribute('aria-selected') === 'true';
+    // The header sits in the pane (the vendored home-head per tab) or once above the panes (task-os): the pane's own
+    // title first, else the first visible one on the page.
+    const titles = [...document.querySelectorAll('.home-title')].filter(visible);
+    const titleEl = isHome ? titles.find(t => pane.contains(t)) || titles[0] || null : null;
+    const homeTitle = { is_home: isHome, manifest: manifest.state, app_names: manifest.names,
+      tab: first ? ((first.textContent || '').replace(/\s+/g, ' ').trim() || first.getAttribute('aria-label') || first.getAttribute('data-tab') || '').slice(0, 40) : null,
+      title: titleEl ? (titleEl.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 40) : null };
     return { primary_count: tabs.length, pane_scroll_top: pane.scrollTop || 0,
       pane_header_visible: heading ? (top >= 0 && top <= window.innerHeight) : null,
-      settings_tab_count: settingsTabs.length, settings_tabs: settingsTabs };
+      settings_tab_count: settingsTabs.length, settings_tabs: settingsTabs, home_title: homeTitle };
   });
 
   // ---- feedback: a toast is neutral, only a real error tints (#1200). A toast is a visible fixed-position
@@ -698,7 +722,7 @@ def metric_paths() -> List[str]:
         "targets": ["total", "small", "small_count", "overlaps", "overlap_count", "covered", "covered_count",
                     "primary", "primary_min_height", "in_summary"],
         "icons": ["boxes", "elements"],
-        "nav": ["primary_count", "pane_scroll_top", "pane_header_visible", "settings_tab_count", "settings_tabs"],
+        "nav": ["primary_count", "pane_scroll_top", "pane_header_visible", "settings_tab_count", "settings_tabs", "home_title"],
         "feedback": ["toast_count", "toasts_tinted", "toasts_tinted_count"],
         "layout": ["control_overflow", "control_overflow_count", "overflow_x", "scroll_w", "inner_w", "inner_h", "pane_h", "lists", "rows_over_limit",
                    "rows_over_limit_count", "danger_rows", "content_w", "content_span", "radii"],

@@ -239,6 +239,34 @@ def _d_pane_header_hidden(m: dict, rule: Rule, ctx: dict) -> Derived:
     return (1.0 if hidden else 0.0), [{"pane_header_visible": vis, "pane_scroll_top": top}], None
 
 
+def _squash(text: object) -> str:
+    return " ".join(str(text or "").split()).casefold()
+
+
+def _d_home_title_is_app_name(m: dict, rule: Rule, ctx: dict) -> Derived:
+    """NAV-04: the home tab's page-header title is the tab's name, never the app's (#1360).
+
+    Only the first tab's pane is judged; any other screen is n/a. The app's name is the web manifest `name` /
+    `short_name`: a manifest that is missing, unreadable or nameless, or a header with no `.home-title`, leaves the fact
+    unestablished (`unmeasured`, never a pass). A single-tab app whose one tab is genuinely called the app's name is exempt."""
+    if "nav" in measure.section_errors(m):
+        return None, [], _section_reason(m, "nav")
+    home = measure.metric_value(m, "nav.home_title")
+    if not isinstance(home, dict):
+        return None, [], "nav.home_title missing from this run (measured before NAV-04)"
+    if not home.get("is_home"):
+        return None, [], NOT_APPLICABLE
+    names = {_squash(n) for n in home.get("app_names") or [] if _squash(n)}
+    if home.get("manifest") != "ok" or not names:
+        return None, [], f"the app's name is not established: web manifest {home.get('manifest') or 'unread'}"
+    if not _squash(home.get("title")):
+        return None, [], "no .home-title found in the first tab's page header"
+    if _squash(home.get("tab")) in names:
+        return None, [], NOT_APPLICABLE
+    named = _squash(home.get("title")) in names
+    return (1.0 if named else 0.0), [{"title": home.get("title"), "tab": home.get("tab"), "app_names": list(home.get("app_names") or [])}], None
+
+
 # One rgb step per channel of slack: the measured track is composited and rounded, the spec token is a literal.
 SWITCH_ACCENT_TOLERANCE = 3.0
 
@@ -308,6 +336,7 @@ DERIVED: Dict[str, Callable[[dict, Rule, dict], tuple]] = {
     "layout.content_share": _d_content_share,
     "a11y.no_text_size_control": _d_no_text_size_control,
     "nav.pane_header_hidden": _d_pane_header_hidden,
+    "nav.home_title_is_app_name": _d_home_title_is_app_name,
     "controls.switch_on_not_accent": _d_switch_on_accent,
     "feedback.toast_tinted": _d_toast_tinted,
 }

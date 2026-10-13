@@ -33,7 +33,7 @@
 # metrics.json, every evaluate output and every filed finding.
 
 [meta]
-version = "1.19.0"   # per-bump history: git log -- design.rubric.toml, and the issues/PRs it cites
+version = "1.20.0"   # per-bump history: git log -- design.rubric.toml, and the issues/PRs it cites
 seeded_from = "app-launcher rendered audit, 2026-09-21 (fleet-config#962)"
 
 [weights]
@@ -325,6 +325,19 @@ fix_template = "{count} primary tab(s) open Settings ({sample}); remove the tab 
 mockup = "none"
 screens = ["tab"]
 
+[[rules]]
+id = "NAV-04"
+category = "navigation"
+title = "The home tab's page-header title is the app's name"
+metric = "nav.home_title_is_app_name"
+fail_when = "nonzero"
+severity = "P3"
+owner = "app"
+standard = "design.md page-header: the title names the current tab, on the home tab too, never the app (the manifest owns the app's name); the J-04 ratchet (fleet-config#1360)"
+fix_template = "{screen}: {sample}, the app's own name; title the home tab with the tab's name (the manifest and the install own the app's name)."
+mockup = "none"
+screens = ["tab"]
+
 # ---------------------------------------------------------------------------
 # Layout
 
@@ -588,7 +601,7 @@ screens = "all"
 
 [[judgment]]
 id = "J-04"
-question = "Does each screen read top to bottom in one column at phone width — a title or heading first, then content, then actions? Two separate checks, both must hold for a yes: (1) no iphone or android screenshot places two content blocks (cards, lists, panels) side by side — navigation tabs and a row's own inline controls do not count; (2) on every tab screen the first text read below the app's top bar is a title or section heading, not the label of a button, dropdown or input. The page header (the card or bar at the top of a tab's pane that carries the tab's title, a context line and the theme and Settings controls) is the tab's title, not the app's top bar, when its heading names the screen (Today, Board, Apps): check (2) is then met by that heading, and a filter or search field under it passes. Check (2) fails when a tab's header carries only the app's name, or there is no header naming the screen. Answer no if either check fails on any screen, and name that screen as evidence."
+question = "Does each screen read top to bottom in one column at phone width — a title or heading first, then content, then actions? Two separate checks, both must hold for a yes: (1) no iphone or android screenshot places two content blocks (cards, lists, panels) side by side — navigation tabs and a row's own inline controls do not count; (2) on every tab screen the first text read below the app's top bar is a title or section heading, not the label of a button, dropdown or input. The page header (the card or bar at the top of a tab's pane that carries the tab's title, a context line and the theme and Settings controls) is the tab's title, not the app's top bar, when its heading names the screen (Today, Board, Apps): check (2) is then met by that heading, and a filter or search field under it passes. Check (2) fails when a tab other than the home tab has a header that carries only the app's name, or there is no header naming the screen; a home tab titled with the app's name is measured as NAV-04 and is not raised here. Answer no if either check fails on any screen, and name that screen as evidence."
 maps_to = []
 screens = "all"
 
