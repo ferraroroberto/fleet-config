@@ -402,6 +402,39 @@ def _check_text_size(ctx: _ContractsCtx) -> List[dict]:
                      _evidence(markup_all, write_re, re.I))]
 
 
+# A `range-tab(s)` class token: not part of a longer name (`time-range-tab`,
+# `--range-tab-bg`), but `.range-tabs` / `.range-tab-btn` variants count.
+_RANGE_TAB_RE = re.compile(r"(?<![\w-])range-tabs?(?!\w)")
+
+
+def _check_range_tab(ctx: _ContractsCtx) -> List[dict]:
+    # 12c. range-tab retired — `segmented` is the one shape for a choice among
+    #      2-5 peers (design.md components.segmented; fleet-config#1334, #1407).
+    #      The tinted, accent-outlined `range-tab` row sat beside a `segmented`
+    #      theme toggle in one Settings dialog. Flags app-authored markup, JS
+    #      or CSS naming it, with file:line. Skips `_vendored/` (the scaffold's
+    #      deprecated copy, byte-compared by `vendored`, migrated by
+    #      project-scaffolding#353). WARN, never FAIL: each app migrates in its
+    #      own issue, and a contract row never blocks an app's own gate.
+    sites: List[str] = []
+    for blob in (ctx.css_own, ctx.markup_own):
+        for m in _RANGE_TAB_RE.finditer(blob):
+            loc = _loc_at(blob, m.start())
+            if "_vendored" in loc.rsplit(":", 1)[0].split("/"):
+                continue
+            sites.append(loc)
+    if not sites:
+        return [_result("range-tab", "PASS",
+                         "no app-authored range-tab choice group (segmented is the one shape)")]
+    sites = sorted(set(sites))
+    shown = ", ".join(sites[:6])
+    more = f" (showing 6 of {len(sites)})" if len(sites) > 6 else ""
+    return [_result("range-tab", "WARN",
+                     f"{len(sites)} range-tab site(s) outside _vendored/ — use segmented "
+                     f"(design.md components.segmented, fleet-config#1407): {shown}{more}",
+                     sites[0])]
+
+
 def _check_chevron_placement(ctx: _ContractsCtx) -> List[dict]:
     # 14. chevron placement — disclosure summaries pin the chevron right,
     #     never a leading arrow (design.md disclosure.chevron: right;
