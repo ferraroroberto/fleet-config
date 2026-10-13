@@ -36,7 +36,7 @@ present on a successful run:
               home_title {is_home, manifest, app_names [..], tab, title}
     feedback  toast_count, toasts_tinted [..], toasts_tinted_count
     layout    control_overflow [..], control_overflow_count, overflow_x, scroll_w, inner_w, inner_h, pane_h, lists [..],
-              rows_over_limit [..], danger_rows, content_w, content_span, radii {r: n}
+              rows_over_limit [..], danger_rows, content_w, content_span, pane_split, radii {r: n}
     clearance bars [..], hidden_rows [..], hidden_row_count
     a11y      unnamed [..], unnamed_count, zoom_locked, text_size_control, text_size_stamped
     headings  ["H2:Title@16px", ...]
@@ -517,6 +517,15 @@ _MEASURE_JS = r"""
       const r = el.getBoundingClientRect();
       if (r.left >= content.right - 2 && r.height >= window.innerHeight * 0.5 && r.width >= window.innerWidth * 0.2)
         spanRight = Math.max(spanRight, r.right); });
+    // pane_split: two regions side by side inside the pane itself (a month and its day pane, a list and its
+    // detail, #1361) -- the pane is two-dimensional though no detail pane is docked outside it. Same size floor
+    // as the docked pane (half the window tall, a fifth wide), so a row of short cards is not a split.
+    const splitIn = (host) => {
+      const boxes = [...host.children].filter(c => visible(c) && !['fixed', 'absolute'].includes(getComputedStyle(c).position))
+        .map(c => c.getBoundingClientRect()).filter(r => r.height >= window.innerHeight * 0.5 && r.width >= window.innerWidth * 0.2)
+        .sort((a, b) => a.left - b.left);
+      return boxes.some((a, i) => boxes.slice(i + 1).some(b => b.left >= a.right - 2 && b.top < a.bottom && a.top < b.bottom)); };
+    const paneSplit = splitIn(pane) || [...pane.querySelectorAll('*')].some(splitIn);
     // A control past the side of its own container (#1325): the nearest ancestor that clips, is a dialog or draws a
     // box. The page need not scroll for it to be broken (a dialog card clips or scrolls its own overflow). A
     // scroller that is none of those, or snaps, scrolls its controls on purpose; a control in a fixed layer inside the
@@ -538,7 +547,7 @@ _MEASURE_JS = r"""
       if (over > params.fitTol) spilled.push({sel: sel(el), label: txt(el).slice(0,30), container: sel(c), over_px: Math.round(over), side: r.right - right >= left - r.left ? 'right' : 'left'}); });
     return { control_overflow: spilled.slice(0,CAP), control_overflow_count: spilled.length, overflow_x: de.scrollWidth > window.innerWidth + 1, scroll_w: de.scrollWidth, inner_w: window.innerWidth, inner_h: window.innerHeight,
       pane_h: pane.scrollHeight, lists: lists.slice(0,CAP), rows_over_limit: rowsOver.slice(0,CAP), rows_over_limit_count: rowsOver.length,
-      danger_rows: dangerRows.size, content_w: Math.round(content.width), content_span: Math.round(spanRight - content.left), radii };
+      danger_rows: dangerRows.size, content_w: Math.round(content.width), content_span: Math.round(spanRight - content.left), pane_split: paneSplit, radii };
   });
 
   // ---- clearance: a list's last row must scroll clear of a fixed bar anchored to the bottom (#1019).
@@ -725,7 +734,7 @@ def metric_paths() -> List[str]:
         "nav": ["primary_count", "pane_scroll_top", "pane_header_visible", "settings_tab_count", "settings_tabs", "home_title"],
         "feedback": ["toast_count", "toasts_tinted", "toasts_tinted_count"],
         "layout": ["control_overflow", "control_overflow_count", "overflow_x", "scroll_w", "inner_w", "inner_h", "pane_h", "lists", "rows_over_limit",
-                   "rows_over_limit_count", "danger_rows", "content_w", "content_span", "radii"],
+                   "rows_over_limit_count", "danger_rows", "content_w", "content_span", "pane_split", "radii"],
         "clearance": ["bars", "hidden_rows", "hidden_row_count"],
         "a11y": ["unnamed", "unnamed_count", "zoom_locked", "text_size_control", "text_size_stamped"],
     }

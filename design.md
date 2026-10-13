@@ -298,12 +298,13 @@ and behavior stay the same:
   full-width app's one-dimensional views (settings, a form, a detail) still
   keep the measure. An app declares its wide views in its `.fleet.toml`
   (`[design] wide_views = ["board", "table"]`, the tab ids); an undeclared
-  view keeps the measure. **A master-detail inside one pane is declared
-  too**: a month with its day pane beside it, both inside the same tab's
-  pane, is two-dimensional, but LAYOUT-06 only sees a detail pane docked
-  *outside* the tab's pane, so an undeclared one reads as a stretched
-  one-dimensional view (parking-manager#125; teaching the measure to see it
-  is tracked separately).
+  view keeps the measure. A master-detail inside one pane is
+  two-dimensional too: a month with its day pane beside it, both inside the
+  same tab's pane. LAYOUT-06 sees it without a declaration, as it sees a
+  detail pane docked outside the pane: a pane holding two regions side by
+  side, each at least a fifth of the window wide and half of it tall, is not
+  read as a stretched column (fleet-config#1361). Declaring it in
+  `wide_views` stays right, and a declared view still has to fill the window.
 
 Below 1100px, or on a coarse pointer at any width, nothing changes: the
 772px measure and the tab placement described in the Navigation contract
