@@ -558,8 +558,10 @@ draws no surface at all. Every tier shares the **one
 trio, home-automation#362): `canvas-subtle` in light (`fg-muted` 4.93:1), the
 `border-muted` value in dark (4.08:1, see `design.dark.md`; disabled text is
 exempt from WCAG 1.4.3). Never opacity on a solid fill.
-A destructive action may restate the tint recipe on `danger`
-(`danger` border and shade, `danger-text` text); status colors never fill a non-status button. `card` for
+A destructive action takes the **outlined recipe** everywhere, the final
+Delete of a confirm dialog included (transparent on a hairline, `danger-text`
+text and a `danger` border, never a fill or tint; measured as `COMP-08`,
+fleet-config#1403); status colors never fill a non-status button. `card` for
 every content group; `nav-bar` + `nav-tab` per the contract above. Inline form controls (`select`,
 `input`) share the `control` height (36px) so they line up on a row, and draw
 their boundary in `control-border`. The on/off
@@ -684,7 +686,7 @@ hand-picked per app.
   control (a filled or largest destructive control in a dialog or menu is
   measured as `COMP-08`, fleet-config#1364). Delete is confirmed by a second tap ("Tap again to delete",
   disarmed after 4 s or on close) or by a confirm sheet (voice-transcriber
-  #261, photo-ocr#196). **A confirm stacks over the sheet that asked**:
+  #261, photo-ocr#196) whose Delete is outlined too, never tinted. **A confirm stacks over the sheet that asked**:
   every open builds its own `<dialog>`, and a sheet has no pinned footer,
   so nothing overlaps on a phone (photo-ocr#193). **At `layout.wide` the
   same card is the detail pane**, moved between the dialog and the pane on

@@ -608,13 +608,11 @@ _MEASURE_JS = r"""
   // labelled delete / remove / clear / discard must draw no fill at rest (the outlined recipe: transparent on a
   // hairline) and must not be the largest labelled control there. Fill is measured against the surface behind
   // it, so a button painted the surface's own colour is not filled; hover and focus are not at rest. A confirm
-  // dialog (nothing in it but a dismiss control beside the destructive one) is the one exception: the destructive
-  // control is the dialog's single committing action, and design.md lets it wear the danger tint there.
+  // dialog is measured like any other: its destructive verb is outlined too, never tinted (#1403).
   section('overlay', () => {
     const SURFACE = 'dialog[open], [role=dialog], [role=menu]';
     const CONTROLS = 'button, a[href], [role=button], [role=menuitem]';
     const DESTRUCTIVE = /\b(delete|remove|clear|discard)\b/i;
-    const DISMISS = /^(cancel|close|no|keep|back|dismiss|not now)\b/i;
     const popoverBodies = [...document.querySelectorAll('details[open]')].flatMap(d => [...d.children]
       .filter(c => c.tagName !== 'SUMMARY' && /^(absolute|fixed)$/.test(getComputedStyle(c).position)));
     // With a dialog open only that dialog is measured, as in every section: a menu left open on the page behind it is not on this screen.
@@ -634,10 +632,9 @@ _MEASURE_JS = r"""
       // "Largest" is among controls that carry a visible text label, so a lone close glyph never makes Delete the biggest.
       const others = controls.filter(c => !isDestructive(c) && (c.textContent || '').trim());
       const biggest = others.reduce((m, c) => Math.max(m, area(c)), 0);
-      const confirm = surface.matches('dialog, [role=dialog]') && others.every(c => DISMISS.test(labelOf(c)));
       controls.filter(isDestructive).forEach(c => {
-        const r = c.getBoundingClientRect(), fill = !confirm && filled(c), larger = !confirm && others.length > 0 && area(c) > biggest * 1.05;
-        found.push({sel: sel(c), label: labelOf(c).slice(0,30), surface: sel(surface), confirm, filled: fill, largest: larger,
+        const r = c.getBoundingClientRect(), fill = filled(c), larger = others.length > 0 && area(c) > biggest * 1.05;
+        found.push({sel: sel(c), label: labelOf(c).slice(0,30), surface: sel(surface), filled: fill, largest: larger,
           w: Math.round(r.width), h: Math.round(r.height), why: [fill && 'filled', larger && 'largest'].filter(Boolean).join('+')}); }); });
     const bad = found.filter(f => f.why);
     return { surfaces: surfaces.size, destructive: found.slice(0,CAP), destructive_bad: bad.slice(0,CAP), destructive_bad_count: bad.length };
