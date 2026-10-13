@@ -688,7 +688,12 @@ hand-picked per app.
   done check that a second tap undoes, grocery-shopping-automation#254), a
   tabular time value, or, in a **date-keyed row**, a **date tile**, and **at most one other visible trailing item**: a
   value (a `meter`, a sparkline), or the row's dominant verb. A text verb
-  (Run on a job row) is a tint verb at real 44px geometry; an **icon-only
+  (Run on a job row) is a tint verb at real 44px geometry, **unless it stops
+  or destroys something**: Stop, Delete or Remove is never the tinted verb,
+  even when it is the row's only visible one, and takes the outlined recipe
+  (`button-ghost`: transparent on a hairline border) at the same 44px, so the
+  most prominent control on a list of running things is never the one that
+  ends them (fleet-config#1386, owner decision 2026-10-13); an **icon-only
   verb** (Move on a task row) is an unpainted `icon-button` like the kebab,
   under the icon-button rule like any glyph-only control (task-os#392;
   project-scaffolding#347 brings the vendored tint in line). The verb is
