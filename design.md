@@ -112,6 +112,7 @@ components:
   segmented:      { height: "{components.control.height}", target: 44px, inset: 3px, rounded: "{rounded.md}", track: "{colors.neutral-soft}", selectedFill: "{colors.card}", label: "{colors.fg}" }   # one choice among 2–5 peers; the raised selected segment IS the state, never a colour (fleet-config#1334)
   history-mark:   { size: 6px, success: "{colors.fg-muted}", failure: "{colors.danger}", inFlight: "{colors.accent}", unconfirmed: "{colors.attention}", deferred: hollow, unknown: dash, dashHeight: 2px }   # a row's run/outcome strip: the healthy mark muted, colour only for the exception, unknown a dash (fleet-config#1392)
   row-swipe:      { deadZone: 8px, axisRatio: 1.5, edgeGuard: 24px, paneWidth: 88px, restOpenAt: 44px, commitAt: 55%, flickVelocity: 0.5px/ms, flickDistance: 30%, leading: "{colors.accent}" }   # one swipe action per side, also the row menu's first item (fleet-config#1392)
+  row-menu:       { backgroundColor: "{colors.canvas-subtle}", borderColor: "{colors.border}", rounded: "{rounded.md}", itemRounded: "{rounded.sm}", padding: "{spacing.xs}", minWidth: 200px, itemHeight: "{rows.sm}", itemTypography: "{typography.body}", itemWeight: 500, glyph: "{icons.size.inline}", textColor: "{colors.fg}", disabledColor: "{colors.fg-muted}", destructiveColor: "{colors.danger-text}", headerTypography: "{typography.body-sm}", viewportInset: "{spacing.sm}", aboveNavGap: "{spacing.sm}", anchorGap: 2px, zIndex: 200 }   # the kebab's floating action list (fleet-config#1393) — one raised surface a step above the card it opens over, 44px rows, danger last; the surface is the one value that differs in dark
 focus:            { outline: "2px solid {colors.accent}", offset: 2px }   # one tokenized :focus-visible ring app-wide (a control overrides only where it draws a custom ring)
 layout:                           # desktop placement (Layout) — theme-independent
   measure:     772px              # centered content column below the wide breakpoint
@@ -743,7 +744,7 @@ hand-picked per app.
   (whatsapp-radar#375, owner decision 6 on #370). Height comes from the `rows` scale
   (`rows.md` minimum). **No vertical rules** between controls inside a row;
   a list is not a spreadsheet. **Destructive actions** (Kill, Stop, Delete) live in the row
-  menu as its last item, after a divider, in `danger-text`, behind a
+  menu (`row-menu`) as its last item, after a divider, in `danger-text`, behind a
   confirm. A row never shows a visible danger button. **Long lists:** a list
   that can exceed ~12 rows gets a filter field above it: 44px tall, a
   `control-border` boundary on `card`, `rounded.md`. Its placeholder is the
@@ -1113,6 +1114,53 @@ hand-picked per app.
   happened, colour does not. Announce through a `role="status"` live region
   (`assertive` for the error). Vendor it from `project-scaffolding` rather than
   re-authoring it.
+- **row menu** (`row-menu`) — the floating list a row's trailing kebab opens,
+  the same in every app (fleet-config#1393; the owner asked for one ⋮ menu with
+  one font, one glyph size and one placement). **Rows:** `rows.sm` (44px) tall,
+  the `icons.size.inline` (16px) glyph then the label with a 10px gap and
+  `0 12px` padding, the label in `body` (1rem) at weight 500 in `fg`; no glyph
+  where an item names none, and a brand mark, where an item has one, is 18px.
+  **Surface:** a raised layer one step above the card it opens over —
+  `canvas-subtle` in light, `border-muted` in dark (the values the vendored CSS
+  reads from its `--card-2`, which falls back to `card` where an app defines
+  none) — on a `border` hairline, `rounded.md`, `4px` padding, `2px` between
+  rows, the theme shadow, at least 200px wide. Rows are `rounded.sm`; hover
+  tints with `accent-soft` only where a pointer exists, and the keyboard ring is
+  the app-wide 2px `accent` focus ring drawn inside the row so the menu's border
+  never clips it. **An optional header:** one muted `body-sm` line above the
+  items for a fact worth a glance (a pid, an app kind, "No conversation yet"),
+  on a hairline, wrapping rather than widening the menu; never an item, never
+  focusable. **Items are data the app passes in**, in order; none is hard-coded
+  in the component. **Danger last:** a destructive item sits at the end after a
+  1px divider in `danger-text`, never a filled or tinted red row, and its
+  confirm is the app's (the `action-row` rule). **Disabled** stays visible and
+  focusable with `aria-disabled`, flat `fg-muted` and no hover tint, never
+  opacity, and its `title` says why. **Placement, one rule for every app:** the
+  menu is `position: fixed`, mounted on `<body>` (or on the open `<dialog>`
+  that holds its anchor, whose top layer would hide a body child), so no
+  scrolling column or card clips it. It opens below its anchor with the right
+  edges aligned, `2px` off it, inside a **band**: the viewport inset `8px` from
+  each edge and ending `8px` above the floating nav pill while the pill shows,
+  so it never opens under the pill or off the screen. When it does not fit it
+  mirrors across the anchor (below to above); only when neither side fits is it
+  clamped to the band with its height capped and an internal scroll. The desktop
+  bar and the wide rail are not bottom pills, and a menu inside a `<dialog>`
+  keeps the whole viewport. It re-fits on resize, on any scroll and on the
+  visual viewport, so it follows an anchor in a sideways-scrolling column. **In
+  front of the nav:** `z-index` 200, above the pill (120) and a sticky header,
+  below the toast (400). **A list that polls rebuilds its rows:** an open menu
+  reopens on the new anchor and stays hidden, re-placing each frame for up to
+  about a second, until that anchor is back in the document, then appears
+  beside it, and closes if it never returns, so a refresh never parks it in the
+  corner (project-scaffolding#373). **Behaviour:** the menu-button pattern, an
+  anchor with `aria-haspopup="menu"` / `aria-expanded` / `aria-controls` over a
+  `role="menu"` of `role="menuitem"` buttons with a roving `tabindex`; Enter,
+  Space or a tap opens it on the first item, the arrow keys move (wrapping),
+  Home and End jump; it closes on a press outside, Escape (which does not also
+  close a surrounding dialog), a second tap of the anchor, choosing an item and
+  Tab, and focus returns to the anchor except after a press outside. Vendor it
+  from `project-scaffolding` (`row-menu`), never hand-roll a per-app menu or
+  add per-app placement CSS.
 
 ## Base UI — model components on shadcn
 
