@@ -108,7 +108,7 @@ components:
   toast:          { backgroundColor: "{colors.card}", textColor: "{colors.fg}", borderColor: "{colors.border}", rounded: "{rounded.md}", padding: "12px 18px", typography: "{typography.label}", fontWeight: 700, maxWidth: 560px, offsetAboveNav: 8px }   # neutral frosted toast (fleet-config#1200) — the nav-bar glass, centred above the nav; only a real error tints (danger), success never does
   hit-target:     { min: 44px }   # minimum effective pointer-target square, app-wide — see Touch targets
   avatar:         { size: 36px, rounded: "{rounded.md}", backgroundColor: "{colors.neutral-soft}", glyph: "{icons.size.nav-tab}", badgeSize: 12px, badgeRing: "{colors.card}", badgeAlive: "{colors.success}", badgeDown: "{colors.danger}" }   # a row's leading squircle; the corner badge means alive (up) or down (should be up), nothing else (fleet-config#1332)
-  meter:          { height: 6px, rounded: "{rounded.pill}", track: "{colors.neutral-soft}", fillUnderPace: "{colors.accent}", fillAheadOfPace: "{colors.attention}", fillCritical: "{colors.danger}", criticalAt: 90%, paceTick: 2px }   # a usage bar coloured by pace, not raw percent (fleet-config#1332)
+  meter:          { height: 6px, rounded: "{rounded.pill}", track: "{colors.neutral-soft}", fillUnderPace: "{colors.accent}", fillAheadOfPace: "{colors.attention}", fillCritical: "{colors.danger}", criticalAt: 90%, paceTick: 2px, allocationAttentionAt: 75% }   # a usage bar coloured by pace, not raw percent (fleet-config#1332); an allocation bar by headroom (fleet-config#1386)
   segmented:      { height: "{components.control.height}", target: 44px, inset: 3px, rounded: "{rounded.md}", track: "{colors.neutral-soft}", selectedFill: "{colors.card}", label: "{colors.fg}" }   # one choice among 2–5 peers; the raised selected segment IS the state, never a colour (fleet-config#1334)
 focus:            { outline: "2px solid {colors.accent}", offset: 2px }   # one tokenized :focus-visible ring app-wide (a control overrides only where it draws a custom ring)
 layout:                           # desktop placement (Layout) — theme-independent
@@ -235,7 +235,11 @@ introduce ad-hoc sizes.
   "last run", the meta line under a row title. Helper copy is `body-sm` in
   `fg-muted` at regular weight, never italic, and at most one line under its
   group, shown only while it explains something on screen; a permanent note
-  shown on every visit becomes noise (fleet-config#1332).
+  shown on every visit becomes noise (fleet-config#1332). A **footnote** (how
+  a value is computed, what a section means, a standing caveat) goes behind
+  an ⓘ `icon-button` beside the group's title that opens it in a sheet; only
+  a **live exception** (this value is stale, this host is unreachable) stays
+  visible as a line (fleet-config#1386).
 - **`caption` (12px) is for chips, badges and timestamps only**, never for a
   line people read.
 - **Code is mono at two sizes.** Inline code is the `code-inline` chip at
@@ -588,7 +592,8 @@ hand-picked per app.
   `fg-muted`; e.g. "3 running", "Last run 06:00"), and **at most two trailing
   icon buttons** at the 44px hit target: the theme toggle and the Settings
   gear, **always both, on every tab at every nav size** (Settings is never a
-  tab, see Navigation). Tab-specific toolbars sit **under** the
+  tab, see Navigation), and **never a third**: a header button that opens a
+  pane of its own hides a tab (fleet-config#1386). Tab-specific toolbars sit **under** the
   header, never in place of it. The vendored `home-head` component
   (`project-scaffolding` `_vendored/home-head/`) is this shape; reuse it
   verbatim on every pane, not just the home tab. The title is the tab's
@@ -829,7 +834,12 @@ hand-picked per app.
   tabular figures in the fill's `*-text` (`fg` under pace). A stale reading
   dims and adds a neutral "stale" status chip; unknown keeps its text. One
   renderer in two sizes (a full card, a compact one-row line), both opening
-  the same detail sheet.
+  the same detail sheet. Pace fits a **quota** that refills each period. An
+  **allocation** bar (memory on a host, disk, a share of a fixed capacity)
+  has no period, so it draws **no pace tick** and colours by headroom:
+  `accent` below `meter.allocationAttentionAt` (75%), `attention` from it,
+  `danger` at `meter.criticalAt` (90%) or more. A gauge for the same resource
+  uses the same two levels (fleet-config#1386).
 - **capture control** — the one big button that starts a recording or a
   capture is **`accent` at rest and `danger` only while it is live**
   (the mic is open): "Record" in sentence case, then a danger "Stop" with
@@ -1110,5 +1120,6 @@ byte-for-byte components.
 - **Don't** use status colors decoratively — they signal state only: chip only an exception, in the one status chip tone map (never a chip style per surface, never a `success` chip), and let the avatar badge alone say a process is alive.
 - **Don't** call the browser's `confirm()`, `prompt()` or `alert()` — confirm, rename and detail use the vendored dialog.
 - **Don't** make Settings a tab (or a gear-only tab), tint a success toast, or turn a switch green when on.
-- **Don't** put raw infrastructure detail (hostnames, URLs, exception text) in user-facing failure copy — sanitize it; logs keep the detail.
+- **Don't** add a third header action, or open a pane reached only from a header button: a pane that has no nav tab is a tab in disguise, so it becomes a tab, a sheet or a Settings row.
+- **Don't** put raw identifiers (hostnames, URLs, exception text or class names, process ids, bare port numbers) in user-facing status or failure copy — sanitize it; a detail sheet or Settings › About may show them, and logs keep the detail.
 - **Don't** apply this spec to Streamlit POC spikes.

@@ -470,6 +470,11 @@ the comment):
      data yet" and keep frequency a hypothesis the owner corrects.
    - **Any other failure**: report the usage data as **unknown**, never as
      zero usage, and keep the hypothesis.
+   - **Fallback when there is no usage data** (exit 2 or a failure): if
+     the app polls each tab's endpoint only while that tab is shown, its
+     request log is usage evidence. Count those polls per endpoint per day
+     to see which tab was on screen and how often, and say the tags come
+     from the request log. Report counts only (fleet-config#1386).
 2. **Diagnosis**: a numbered list of what makes each tab crowded or dated,
    each item tied to a contract or rubric rule id. Check at least: distinct
    treatments before the first useful row, status colour used as decoration,
@@ -544,7 +549,12 @@ no captured text.
    After each merge, run the repo's restart recipe; then the owner
    force-reloads the installed PWA and checks light and dark. The next step
    starts only after "looks right", because desktop projections are not
-   authoritative for the installed shell.
+   authoritative for the installed shell. A step that **removes a pane**
+   first gives every function it holds a new home. It then checks a
+   numbered table (function, new home, click path, ✓) one row at a time
+   against the live pane with invented data before the pane goes. A
+   retired route (a URL hash, a stored tab value) keeps working and lands on
+   the new home (fleet-config#1386).
 5. **Log every refinement.** When the owner refines a step, post a dated
    decision-log comment on that step's issue that names what it supersedes
    and restates the changed acceptance lines.
