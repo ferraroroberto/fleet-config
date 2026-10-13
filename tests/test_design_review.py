@@ -1311,6 +1311,20 @@ _TRACE_SCENARIOS = {
                              "extra_steps": [{"id": "s1", "click": "#synthdanger", "synthetic": True},
                                              {"id": "s2", "click": "#live", "synthetic": True},
                                              {"id": "s3", "click": "#ok"}]}},
+    # A slow target declares its readiness (#1385): a tab `ready` selector that attaches, one that never does
+    # (the tab is still captured, `met: false`), a tab with none; per-step `wait_ms` honoured, capped, or
+    # ignored when it is not a positive integer. The `gone` step stays absent after its longer bound.
+    "ready-and-wait": {"device": "desktop", "theme": "light",
+                       "tabs": [{"index": 0, "id": "machines"}, {"index": 1, "id": "slow"}, {"index": 2, "id": "plain"}],
+                       "fail": {("wait", "#gone"): TimeoutError("Timeout 12000ms exceeded"),
+                                ("wait", ".slow-ready"): TimeoutError("Timeout 15000ms exceeded")},
+                       "review": {"tab_ready": {"machines": ".row", "slow": ".slow-ready"},
+                                  "extra_steps": [{"id": "long", "tab": "machines", "click": "#sheet", "wait_ms": 12000},
+                                                  {"id": "gone", "click": "#gone", "wait_ms": 12000},
+                                                  {"id": "huge", "click": "#h", "wait_ms": 9999999},
+                                                  {"id": "neg", "click": "#n", "wait_ms": -5},
+                                                  {"id": "flag", "click": "#f", "wait_ms": True},
+                                                  {"id": "none", "click": "#z"}]}},
     # A live run skips synthetic steps and keeps the live no_go even when a synthetic one is declared.
     "live-with-synthetic-block": {"device": "desktop", "theme": "light",
                                   "review": {"no_go": ["#live"], "synthetic": {"no_go": ["#synthdanger"]},
@@ -1329,6 +1343,28 @@ for _name in _TRACE_SCENARIOS:
         _at = next((i for i, (g, w) in enumerate(zip(_got, _want or [])) if g != w), min(len(_got), len(_want or [])))
         check(_got == _want, f"walk_context {_name}: {_part} matches the golden (first difference at #{_at}: "
                              f"got {_got[_at:_at + 1]} want {(_want or [])[_at:_at + 1]})")
+
+# The readiness declarations (#1385), asserted directly so the golden is not the only witness.
+_rw = _walk_traces["ready-and-wait"]
+_rw_by = {sc["view"]: sc for sc in _rw["screens"]}
+_rw_waits = [e[2] for e in _rw["trace"] if e[0] == "wait_for" and e[1] in ("#sheet", "#gone", "#h", "#n", "#f", "#z")]
+_rw_clicks = [e[1] for e in _rw["trace"] if e[0] == "click" and not e[1].startswith("[role=tab]")]
+check(_rw_by["machines"]["ready"] == {"selector": ".row", "wait_ms": walk.READY_WAIT_MS, "met": True}
+      and _rw_by["slow"]["ready"] == {"selector": ".slow-ready", "wait_ms": walk.READY_WAIT_MS, "met": False}
+      and _rw_by["slow"]["status"] == "ok" and "ready" not in _rw_by["plain"],
+      f"a tab `ready` selector is recorded met or not met (the tab still captured), and absent when undeclared -- {[(v, sc.get('ready')) for v, sc in _rw_by.items()]}")
+check([w["timeout"] for w in _rw_waits] == [12000, 12000, walk.WAIT_MS_MAX, walk.STEP_TARGET_WAIT_MS, walk.STEP_TARGET_WAIT_MS, walk.STEP_TARGET_WAIT_MS]
+      and _rw_by["machines-long"]["wait_ms"] == 12000 and _rw_by["root-huge"]["wait_ms"] == walk.WAIT_MS_MAX
+      and "wait_ms" not in _rw_by["root-none"],
+      f"step `wait_ms` replaces the 5 s wait, is capped at WAIT_MS_MAX, is ignored unless a positive integer, and is recorded only when declared -- {_rw_waits}")
+check(_rw_by["root-gone"]["status"] == "absent" and _rw_by["root-gone"]["reason"] == "STEP_TARGET_ABSENT"
+      and "12000 ms" in _rw_by["root-gone"]["error"] and _rw_clicks.count("#gone") == 0,
+      f"a target absent after its longer bound stays absent, and its click is never made -- {_rw_by['root-gone']}")
+check(all(_rw_clicks.count(c) == 1 for c in ("#sheet", "#h", "#n", "#f", "#z")),
+      f"a longer wait never retries a click -- {_rw_clicks}")
+check([walk.bounded_wait_ms(v, 5000) for v in (None, 0, -1, "9", 1.5, False, 100, walk.WAIT_MS_MAX, walk.WAIT_MS_MAX + 1)]
+      == [5000, 5000, 5000, 5000, 5000, 5000, 100, walk.WAIT_MS_MAX, walk.WAIT_MS_MAX],
+      "bounded_wait_ms: defaults unless a positive int, caps at WAIT_MS_MAX")
 
 # ---- browser leg: the static fixture page through a sibling venv --------------
 

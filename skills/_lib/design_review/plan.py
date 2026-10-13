@@ -30,10 +30,16 @@ no `submit`, and every click is refused when its element sits inside a
     no_go             = ["#dangerZone"]          # never clicked, nor anything inside it
     exclude_selectors = [".preview-frame"]       # embedded content (not the app's own UI): nothing
                                                  # inside it is measured or scored (#1185)
+    tab_ready         = {machines = ".row"}      # tab id -> selector the walk waits for (attached, up to
+                                                 # 15 s) after opening that tab; never met -> the tab is
+                                                 # still captured and its record says `ready.met = false`
     [[design.review.extra_steps]]
     tab      = "board"            # which tab screen the step extends
     id       = "row-kebab"        # suffix on the screen id
     click    = ".row .kebab"      # one selector to click, then measure
+    wait_ms  = 12000              # optional: how long each target of this step may take to attach
+                                  # (default 5000, capped at 30000; recorded on the screen). A target
+                                  # still absent after it stays absent; a click is never retried
     [[design.review.extra_steps]]
     tab      = "claude"
     id       = "project-menu"

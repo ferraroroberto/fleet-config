@@ -5709,6 +5709,994 @@
    ]
   ]
  },
+ "ready-and-wait": {
+  "screens": [
+   {
+    "id": "desktop-light-machines",
+    "device": "desktop",
+    "theme": "light",
+    "view": "machines",
+    "kind": "tab",
+    "status": "ok",
+    "reason": null,
+    "error": null,
+    "screenshot": "desktop-light-machines.png",
+    "screenshot_full": "desktop-light-machines-full.png",
+    "note": null,
+    "metrics": {
+     "m": 1
+    },
+    "theme_applied": true,
+    "theme_observed": {
+     "attr": "light",
+     "luminance": 0.95,
+     "rendered": "light"
+    },
+    "ready": {
+     "selector": ".row",
+     "wait_ms": 15000,
+     "met": true
+    }
+   },
+   {
+    "id": "desktop-light-slow",
+    "device": "desktop",
+    "theme": "light",
+    "view": "slow",
+    "kind": "tab",
+    "status": "ok",
+    "reason": null,
+    "error": null,
+    "screenshot": "desktop-light-slow.png",
+    "screenshot_full": "desktop-light-slow-full.png",
+    "note": null,
+    "metrics": {
+     "m": 1
+    },
+    "theme_applied": true,
+    "theme_observed": {
+     "attr": "light",
+     "luminance": 0.95,
+     "rendered": "light"
+    },
+    "ready": {
+     "selector": ".slow-ready",
+     "wait_ms": 15000,
+     "met": false
+    }
+   },
+   {
+    "id": "desktop-light-plain",
+    "device": "desktop",
+    "theme": "light",
+    "view": "plain",
+    "kind": "tab",
+    "status": "ok",
+    "reason": null,
+    "error": null,
+    "screenshot": "desktop-light-plain.png",
+    "screenshot_full": "desktop-light-plain-full.png",
+    "note": null,
+    "metrics": {
+     "m": 1
+    },
+    "theme_applied": true,
+    "theme_observed": {
+     "attr": "light",
+     "luminance": 0.95,
+     "rendered": "light"
+    }
+   },
+   {
+    "id": "desktop-light-gear-settings",
+    "device": "desktop",
+    "theme": "light",
+    "view": "gear-settings",
+    "kind": "step",
+    "status": "ok",
+    "reason": null,
+    "error": null,
+    "screenshot": "desktop-light-gear-settings.png",
+    "screenshot_full": null,
+    "note": null,
+    "metrics": {
+     "m": 1
+    },
+    "theme_applied": true,
+    "theme_observed": {
+     "attr": "light",
+     "luminance": 0.95,
+     "rendered": "light"
+    }
+   },
+   {
+    "id": "desktop-light-machines-long",
+    "device": "desktop",
+    "theme": "light",
+    "view": "machines-long",
+    "kind": "step",
+    "status": "ok",
+    "reason": null,
+    "error": null,
+    "screenshot": "desktop-light-machines-long.png",
+    "screenshot_full": null,
+    "note": null,
+    "metrics": {
+     "m": 1
+    },
+    "theme_applied": true,
+    "theme_observed": {
+     "attr": "light",
+     "luminance": 0.95,
+     "rendered": "light"
+    },
+    "wait_ms": 12000
+   },
+   {
+    "id": "desktop-light-root-gone",
+    "device": "desktop",
+    "theme": "light",
+    "view": "root-gone",
+    "kind": "step",
+    "status": "absent",
+    "reason": "STEP_TARGET_ABSENT",
+    "error": "#gone never appeared within 12000 ms",
+    "screenshot": null,
+    "screenshot_full": null,
+    "note": null,
+    "metrics": null,
+    "theme_applied": null,
+    "theme_observed": null
+   },
+   {
+    "id": "desktop-light-root-huge",
+    "device": "desktop",
+    "theme": "light",
+    "view": "root-huge",
+    "kind": "step",
+    "status": "ok",
+    "reason": null,
+    "error": null,
+    "screenshot": "desktop-light-root-huge.png",
+    "screenshot_full": null,
+    "note": null,
+    "metrics": {
+     "m": 1
+    },
+    "theme_applied": true,
+    "theme_observed": {
+     "attr": "light",
+     "luminance": 0.95,
+     "rendered": "light"
+    },
+    "wait_ms": 30000
+   },
+   {
+    "id": "desktop-light-root-neg",
+    "device": "desktop",
+    "theme": "light",
+    "view": "root-neg",
+    "kind": "step",
+    "status": "ok",
+    "reason": null,
+    "error": null,
+    "screenshot": "desktop-light-root-neg.png",
+    "screenshot_full": null,
+    "note": null,
+    "metrics": {
+     "m": 1
+    },
+    "theme_applied": true,
+    "theme_observed": {
+     "attr": "light",
+     "luminance": 0.95,
+     "rendered": "light"
+    },
+    "wait_ms": 5000
+   },
+   {
+    "id": "desktop-light-root-flag",
+    "device": "desktop",
+    "theme": "light",
+    "view": "root-flag",
+    "kind": "step",
+    "status": "ok",
+    "reason": null,
+    "error": null,
+    "screenshot": "desktop-light-root-flag.png",
+    "screenshot_full": null,
+    "note": null,
+    "metrics": {
+     "m": 1
+    },
+    "theme_applied": true,
+    "theme_observed": {
+     "attr": "light",
+     "luminance": 0.95,
+     "rendered": "light"
+    },
+    "wait_ms": 5000
+   },
+   {
+    "id": "desktop-light-root-none",
+    "device": "desktop",
+    "theme": "light",
+    "view": "root-none",
+    "kind": "step",
+    "status": "ok",
+    "reason": null,
+    "error": null,
+    "screenshot": "desktop-light-root-none.png",
+    "screenshot_full": null,
+    "note": null,
+    "metrics": {
+     "m": 1
+    },
+    "theme_applied": true,
+    "theme_observed": {
+     "attr": "light",
+     "luminance": 0.95,
+     "rendered": "light"
+    }
+   }
+  ],
+  "log": [
+   "INFO ok desktop-light-machines",
+   "WARNING tab ready selector .slow-ready not attached within 15000 ms",
+   "INFO ok desktop-light-slow",
+   "INFO ok desktop-light-plain",
+   "INFO ok desktop-light-gear-settings",
+   "INFO ok desktop-light-machines-long",
+   "INFO absent desktop-light-root-gone: #gone never appeared within 12000 ms",
+   "INFO ok desktop-light-root-huge",
+   "INFO ok desktop-light-root-neg",
+   "INFO ok desktop-light-root-flag",
+   "INFO ok desktop-light-root-none"
+  ],
+  "trace": [
+   [
+    "launch",
+    "chromium"
+   ],
+   [
+    "browser.new_context",
+    {
+     "ignore_https_errors": true,
+     "color_scheme": "light",
+     "viewport": {
+      "width": 1440,
+      "height": 900
+     }
+    }
+   ],
+   [
+    "ctx.new_page"
+   ],
+   [
+    "set_default_timeout",
+    1000
+   ],
+   [
+    "goto",
+    "https://127.0.0.1:1",
+    {
+     "wait_until": "domcontentloaded"
+    }
+   ],
+   [
+    "evaluate",
+    "t => { document.documentElement.dataset.theme = t; }",
+    [
+     "light"
+    ]
+   ],
+   [
+    "wait_for_timeout",
+    2500
+   ],
+   [
+    "evaluate",
+    "_TABS_JS",
+    [
+     "[role=tab]"
+    ]
+   ],
+   [
+    "locator",
+    "[role=tablist]"
+   ],
+   [
+    "count",
+    "[role=tablist]"
+   ],
+   [
+    "locator",
+    "[role=tablist]"
+   ],
+   [
+    "first",
+    "[role=tablist]"
+   ],
+   [
+    "loc.locator",
+    "[role=tablist]",
+    "[role=tab]"
+   ],
+   [
+    "nth",
+    "[role=tab]",
+    0
+   ],
+   [
+    "click",
+    "[role=tab]#0"
+   ],
+   [
+    "wait_for_timeout",
+    2200
+   ],
+   [
+    "locator",
+    ".row"
+   ],
+   [
+    "first",
+    ".row"
+   ],
+   [
+    "wait_for",
+    ".row",
+    {
+     "state": "attached",
+     "timeout": 15000
+    }
+   ],
+   [
+    "screenshot",
+    "desktop-light-machines.png",
+    false,
+    null
+   ],
+   [
+    "evaluate",
+    "_OPEN_DETAILS_JS",
+    []
+   ],
+   [
+    "wait_for_timeout",
+    1200
+   ],
+   [
+    "screenshot",
+    "desktop-light-machines-full.png",
+    true,
+    null
+   ],
+   [
+    "evaluate",
+    "MEASURE",
+    [
+     {
+      "p": 1
+     }
+    ]
+   ],
+   [
+    "evaluate",
+    "measure.RENDERED_THEME_JS",
+    []
+   ],
+   [
+    "loc.locator",
+    "[role=tablist]",
+    "[role=tab]"
+   ],
+   [
+    "nth",
+    "[role=tab]",
+    1
+   ],
+   [
+    "click",
+    "[role=tab]#1"
+   ],
+   [
+    "wait_for_timeout",
+    2200
+   ],
+   [
+    "locator",
+    ".slow-ready"
+   ],
+   [
+    "first",
+    ".slow-ready"
+   ],
+   [
+    "wait_for",
+    ".slow-ready",
+    {
+     "state": "attached",
+     "timeout": 15000
+    }
+   ],
+   [
+    "screenshot",
+    "desktop-light-slow.png",
+    false,
+    null
+   ],
+   [
+    "evaluate",
+    "_OPEN_DETAILS_JS",
+    []
+   ],
+   [
+    "wait_for_timeout",
+    1200
+   ],
+   [
+    "screenshot",
+    "desktop-light-slow-full.png",
+    true,
+    null
+   ],
+   [
+    "evaluate",
+    "MEASURE",
+    [
+     {
+      "p": 1
+     }
+    ]
+   ],
+   [
+    "evaluate",
+    "measure.RENDERED_THEME_JS",
+    []
+   ],
+   [
+    "loc.locator",
+    "[role=tablist]",
+    "[role=tab]"
+   ],
+   [
+    "nth",
+    "[role=tab]",
+    2
+   ],
+   [
+    "click",
+    "[role=tab]#2"
+   ],
+   [
+    "wait_for_timeout",
+    2200
+   ],
+   [
+    "screenshot",
+    "desktop-light-plain.png",
+    false,
+    null
+   ],
+   [
+    "evaluate",
+    "_OPEN_DETAILS_JS",
+    []
+   ],
+   [
+    "wait_for_timeout",
+    1200
+   ],
+   [
+    "screenshot",
+    "desktop-light-plain-full.png",
+    true,
+    null
+   ],
+   [
+    "evaluate",
+    "MEASURE",
+    [
+     {
+      "p": 1
+     }
+    ]
+   ],
+   [
+    "evaluate",
+    "measure.RENDERED_THEME_JS",
+    []
+   ],
+   [
+    "evaluate",
+    "_DIALOG_IDS_JS",
+    []
+   ],
+   [
+    "goto",
+    "https://127.0.0.1:1",
+    {
+     "wait_until": "domcontentloaded"
+    }
+   ],
+   [
+    "evaluate",
+    "t => { document.documentElement.dataset.theme = t; }",
+    [
+     "light"
+    ]
+   ],
+   [
+    "wait_for_timeout",
+    2500
+   ],
+   [
+    "get_by_role",
+    "button",
+    "^\\s*settings\\s*$"
+   ],
+   [
+    "loc.locator",
+    "gear",
+    "visible=true"
+   ],
+   [
+    "first",
+    "gear"
+   ],
+   [
+    "wait_for",
+    "gear",
+    {
+     "state": "attached",
+     "timeout": 1000
+    }
+   ],
+   [
+    "click",
+    "gear"
+   ],
+   [
+    "wait_for_timeout",
+    1200
+   ],
+   [
+    "screenshot",
+    "desktop-light-gear-settings.png",
+    false,
+    null
+   ],
+   [
+    "evaluate",
+    "_OPEN_SCOPE_DETAILS_JS",
+    []
+   ],
+   [
+    "evaluate",
+    "MEASURE",
+    [
+     {
+      "p": 1
+     }
+    ]
+   ],
+   [
+    "evaluate",
+    "measure.RENDERED_THEME_JS",
+    []
+   ],
+   [
+    "goto",
+    "https://127.0.0.1:1",
+    {
+     "wait_until": "domcontentloaded"
+    }
+   ],
+   [
+    "evaluate",
+    "t => { document.documentElement.dataset.theme = t; }",
+    [
+     "light"
+    ]
+   ],
+   [
+    "wait_for_timeout",
+    2500
+   ],
+   [
+    "loc.locator",
+    "[role=tablist]",
+    "[role=tab]"
+   ],
+   [
+    "nth",
+    "[role=tab]",
+    0
+   ],
+   [
+    "click",
+    "[role=tab]#0"
+   ],
+   [
+    "wait_for_timeout",
+    2200
+   ],
+   [
+    "locator",
+    ".row"
+   ],
+   [
+    "first",
+    ".row"
+   ],
+   [
+    "wait_for",
+    ".row",
+    {
+     "state": "attached",
+     "timeout": 15000
+    }
+   ],
+   [
+    "locator",
+    "#sheet"
+   ],
+   [
+    "first",
+    "#sheet"
+   ],
+   [
+    "wait_for",
+    "#sheet",
+    {
+     "state": "attached",
+     "timeout": 12000
+    }
+   ],
+   [
+    "click",
+    "#sheet"
+   ],
+   [
+    "wait_for_timeout",
+    1200
+   ],
+   [
+    "screenshot",
+    "desktop-light-machines-long.png",
+    false,
+    null
+   ],
+   [
+    "evaluate",
+    "_OPEN_SCOPE_DETAILS_JS",
+    []
+   ],
+   [
+    "evaluate",
+    "MEASURE",
+    [
+     {
+      "p": 1
+     }
+    ]
+   ],
+   [
+    "evaluate",
+    "measure.RENDERED_THEME_JS",
+    []
+   ],
+   [
+    "goto",
+    "https://127.0.0.1:1",
+    {
+     "wait_until": "domcontentloaded"
+    }
+   ],
+   [
+    "evaluate",
+    "t => { document.documentElement.dataset.theme = t; }",
+    [
+     "light"
+    ]
+   ],
+   [
+    "wait_for_timeout",
+    2500
+   ],
+   [
+    "locator",
+    "#gone"
+   ],
+   [
+    "first",
+    "#gone"
+   ],
+   [
+    "wait_for",
+    "#gone",
+    {
+     "state": "attached",
+     "timeout": 12000
+    }
+   ],
+   [
+    "goto",
+    "https://127.0.0.1:1",
+    {
+     "wait_until": "domcontentloaded"
+    }
+   ],
+   [
+    "evaluate",
+    "t => { document.documentElement.dataset.theme = t; }",
+    [
+     "light"
+    ]
+   ],
+   [
+    "wait_for_timeout",
+    2500
+   ],
+   [
+    "locator",
+    "#h"
+   ],
+   [
+    "first",
+    "#h"
+   ],
+   [
+    "wait_for",
+    "#h",
+    {
+     "state": "attached",
+     "timeout": 30000
+    }
+   ],
+   [
+    "click",
+    "#h"
+   ],
+   [
+    "wait_for_timeout",
+    1200
+   ],
+   [
+    "screenshot",
+    "desktop-light-root-huge.png",
+    false,
+    null
+   ],
+   [
+    "evaluate",
+    "_OPEN_SCOPE_DETAILS_JS",
+    []
+   ],
+   [
+    "evaluate",
+    "MEASURE",
+    [
+     {
+      "p": 1
+     }
+    ]
+   ],
+   [
+    "evaluate",
+    "measure.RENDERED_THEME_JS",
+    []
+   ],
+   [
+    "goto",
+    "https://127.0.0.1:1",
+    {
+     "wait_until": "domcontentloaded"
+    }
+   ],
+   [
+    "evaluate",
+    "t => { document.documentElement.dataset.theme = t; }",
+    [
+     "light"
+    ]
+   ],
+   [
+    "wait_for_timeout",
+    2500
+   ],
+   [
+    "locator",
+    "#n"
+   ],
+   [
+    "first",
+    "#n"
+   ],
+   [
+    "wait_for",
+    "#n",
+    {
+     "state": "attached",
+     "timeout": 5000
+    }
+   ],
+   [
+    "click",
+    "#n"
+   ],
+   [
+    "wait_for_timeout",
+    1200
+   ],
+   [
+    "screenshot",
+    "desktop-light-root-neg.png",
+    false,
+    null
+   ],
+   [
+    "evaluate",
+    "_OPEN_SCOPE_DETAILS_JS",
+    []
+   ],
+   [
+    "evaluate",
+    "MEASURE",
+    [
+     {
+      "p": 1
+     }
+    ]
+   ],
+   [
+    "evaluate",
+    "measure.RENDERED_THEME_JS",
+    []
+   ],
+   [
+    "goto",
+    "https://127.0.0.1:1",
+    {
+     "wait_until": "domcontentloaded"
+    }
+   ],
+   [
+    "evaluate",
+    "t => { document.documentElement.dataset.theme = t; }",
+    [
+     "light"
+    ]
+   ],
+   [
+    "wait_for_timeout",
+    2500
+   ],
+   [
+    "locator",
+    "#f"
+   ],
+   [
+    "first",
+    "#f"
+   ],
+   [
+    "wait_for",
+    "#f",
+    {
+     "state": "attached",
+     "timeout": 5000
+    }
+   ],
+   [
+    "click",
+    "#f"
+   ],
+   [
+    "wait_for_timeout",
+    1200
+   ],
+   [
+    "screenshot",
+    "desktop-light-root-flag.png",
+    false,
+    null
+   ],
+   [
+    "evaluate",
+    "_OPEN_SCOPE_DETAILS_JS",
+    []
+   ],
+   [
+    "evaluate",
+    "MEASURE",
+    [
+     {
+      "p": 1
+     }
+    ]
+   ],
+   [
+    "evaluate",
+    "measure.RENDERED_THEME_JS",
+    []
+   ],
+   [
+    "goto",
+    "https://127.0.0.1:1",
+    {
+     "wait_until": "domcontentloaded"
+    }
+   ],
+   [
+    "evaluate",
+    "t => { document.documentElement.dataset.theme = t; }",
+    [
+     "light"
+    ]
+   ],
+   [
+    "wait_for_timeout",
+    2500
+   ],
+   [
+    "locator",
+    "#z"
+   ],
+   [
+    "first",
+    "#z"
+   ],
+   [
+    "wait_for",
+    "#z",
+    {
+     "state": "attached",
+     "timeout": 5000
+    }
+   ],
+   [
+    "click",
+    "#z"
+   ],
+   [
+    "wait_for_timeout",
+    1200
+   ],
+   [
+    "screenshot",
+    "desktop-light-root-none.png",
+    false,
+    null
+   ],
+   [
+    "evaluate",
+    "_OPEN_SCOPE_DETAILS_JS",
+    []
+   ],
+   [
+    "evaluate",
+    "MEASURE",
+    [
+     {
+      "p": 1
+     }
+    ]
+   ],
+   [
+    "evaluate",
+    "measure.RENDERED_THEME_JS",
+    []
+   ],
+   [
+    "ctx.close"
+   ],
+   [
+    "browser.close"
+   ]
+  ]
+ },
  "live-with-synthetic-block": {
   "screens": [
    {
