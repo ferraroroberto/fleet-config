@@ -33,7 +33,7 @@
 # metrics.json, every evaluate output and every filed finding.
 
 [meta]
-version = "1.23.0"   # per-bump history: git log -- design.rubric.toml, and the issues/PRs it cites
+version = "1.24.0"   # per-bump history: git log -- design.rubric.toml, and the issues/PRs it cites
 seeded_from = "app-launcher rendered audit, 2026-09-21 (fleet-config#962)"
 
 [weights]
@@ -570,6 +570,20 @@ standard = "design.md action-row, modal and row-menu: a destructive action sits 
 fix_template = "{count} destructive controls in a dialog or menu on {screen} are filled or the largest control there ({sample}); draw them as plain danger-text or the outlined recipe, no larger than the primary control."
 mockup = "none"
 
+[[rules]]
+id = "COMP-09"
+category = "components"
+title = "An icon-only control with no label beside it and no conventional name"
+metric = "controls.icon_only_unconventional"
+fail_when = "gt"
+threshold = 0
+severity = "P2"
+owner = "app"
+standard = "design.md icon-button and capture control: a glyph-only control is a conventional glyph (close, search, settings, add, chevron, menu, edit, delete, copy, refresh, play, stop) or sits beside a text label that names it, otherwise it is a labelled pill; the J-05 ratchet (fleet-config#1366)"
+fix_template = "{count} icon-only controls on {screen} have no label beside them and a name that is not a conventional glyph's ({sample}); give each a visible label (a labelled pill) or a conventional glyph."
+mockup = "none"
+params = { conventional = "\\b(?:close|dismiss|cancel|search|find|settings|preferences|gear|add|new|create|plus|chevron|back|next|previous|forward|up|down|left|right|raise|lower|increase|decrease|minus|zoom|expand|collapse|menu|more|options|actions|edit|rename|pencil|delete|remove|trash|clear|copy|refresh|reload|retry|play|pause|stop|send|share|download|upload|save|filter|help|info|mic|microphone|record|camera|calendar|home|theme|(?:dark|light) mode|to (?:dark|light))\\b" }
+
 # ---------------------------------------------------------------------------
 # Accessibility
 
@@ -633,8 +647,8 @@ screens = "all"
 
 [[judgment]]
 id = "J-05"
-question = "Is every icon-only control (a button showing no visible text) either a conventional glyph whose meaning is fixed by convention (close X, search magnifier, settings gear, plus, chevron, menu, pencil, trash, copy, refresh, play, stop) or placed directly beside a text label that names its object? Answer no if any icon-only control shows a non-conventional glyph with no adjacent label. Answer na if no screen has an icon-only control."
-maps_to = ["A11Y-01", "COMP-01"]
+question = "Is every icon-only control (a button showing no visible text) either a conventional glyph whose meaning is fixed by convention (close X, search magnifier, settings gear, plus, chevron, menu, pencil, trash, copy, refresh, play, stop) or placed directly beside a text label that names its object? Answer no if any icon-only control shows a non-conventional glyph with no adjacent label. A control whose accessible name is not a conventional glyph's and that has no text beside it is measured as COMP-09 and is not raised here; answer no only for what that cannot see, such as a control named like a conventional glyph (a Close button) that draws another glyph. Answer na if no screen has an icon-only control."
+maps_to = ["A11Y-01", "COMP-01", "COMP-09"]
 screens = "all"
 
 [[judgment]]
