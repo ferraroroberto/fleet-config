@@ -386,6 +386,20 @@ def _d_icon_only_unconventional(m: dict, rule: Rule, ctx: dict) -> Derived:
     return float(len(bad)), bad, None
 
 
+def _d_empty_state_no_action(m: dict, rule: Rule, ctx: dict) -> Derived:
+    """Count of empty-state blocks that hold no button or link (#1367).
+
+    A populated screen shows no block, and a block cannot be walked without a synthetic instance, so zero blocks is
+    `unmeasured` with that reason, never a pass: this rule is the one that cannot be vacuous.
+    """
+    total, bare = measure.metric_value(m, "feedback.empty_state_count"), measure.metric_value(m, "feedback.empty_states_no_action")
+    if total is None or bare is None:
+        return None, [], _section_reason(m, "feedback")
+    if not total:
+        return None, [], "no empty-state block on this screen (walking one needs a synthetic instance)"
+    return float(len(bare)), list(bare), None  # type: ignore[arg-type]
+
+
 def _d_switch_on_accent(m: dict, rule: Rule, ctx: dict) -> Derived:
     """Count of on switches whose track is not the theme's accent (#1200).
 
@@ -447,6 +461,7 @@ DERIVED: Dict[str, Callable[[dict, Rule, dict], tuple]] = {
     "controls.switch_on_not_accent": _d_switch_on_accent,
     "controls.icon_only_unconventional": _d_icon_only_unconventional,
     "feedback.toast_tinted": _d_toast_tinted,
+    "feedback.empty_state_no_action": _d_empty_state_no_action,
 }
 
 

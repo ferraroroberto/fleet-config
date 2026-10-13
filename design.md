@@ -1043,7 +1043,10 @@ hand-picked per app.
   empty container. An empty list the user can fill from this tab **names its
   way forward in the block**: its one action is the verb that fills it
   ("Capture a take"), and a search with no hits offers "Clear search"
-  (photo-ocr#196, the judge's J-09).
+  (photo-ocr#196, the judge's J-09). The measure checks the block holds a
+  button or link (`COMP-10`, fleet-config#1367); that the sentence names a
+  control elsewhere on the screen stays with the judge. A populated screen
+  shows no block, so a live run reports `COMP-10` as not measured.
 - **icon tile** (`icon-tile`) — the Home-screen rounded-square (`rounded.md`
   squircle) filled with **one** of the five `tile-*` colors (the only saturated
   surfaces), a centered `icons.size.feature` Lucide glyph in `accent-fg`. The

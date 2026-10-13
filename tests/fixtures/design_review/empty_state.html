@@ -1,0 +1,40 @@
+<!doctype html>
+<!-- Static fixture for COMP-10 (fleet-config#1367). Empty-state blocks: one holding a "Capture a take" button and one
+     holding a "Clear search" link pass; a reason sentence only, a block whose only button is disabled, and a
+     data-state=empty list whose action sits beside the block rather than in it fail; a loading line (data-state or
+     a trailing ellipsis), an error block and a hidden block are not empty states and are not counted. Asserted by
+     tests/test_design_review.py. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>design_review empty-state fixture</title>
+<style>
+  html, body { margin: 0; background: #ffffff; color: #1f2328; font-family: system-ui, sans-serif; font-size: 16px; }
+  body { padding: 16px; }
+  .empty-state { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 24px 16px; margin: 12px 0;
+                 border: 1px dashed #d1d9e0; color: #656d76; }
+  .empty-state-message { margin: 0; }
+  .empty-state-action { min-width: 96px; height: 34px; }
+</style>
+</head>
+<body>
+  <main>
+    <h2>Passes</h2>
+    <div class="empty-state" id="with-button"><p class="empty-state-message">No takes yet</p><button type="button" class="empty-state-action">Capture a take</button></div>
+    <div class="empty-state" id="with-link"><p class="empty-state-message">No takes match</p><a href="#clear" class="empty-state-action">Clear search</a></div>
+    <h2>Fails</h2>
+    <div class="empty-state" id="reason-only"><p class="empty-state-message">No history yet</p></div>
+    <div class="empty-state" id="disabled-only"><p class="empty-state-message">No devices</p><button type="button" class="empty-state-action" disabled>Add device</button></div>
+    <section data-state="empty" id="list-host">
+      <div class="empty-state" id="action-outside"><p class="empty-state-message">Nothing scheduled</p></div>
+      <button type="button" id="beside">Add schedule</button>
+    </section>
+    <h2>Not an empty state</h2>
+    <div class="empty-state" data-state="loading" id="loading-host"><p class="empty-state-message">Reading the history</p></div>
+    <div class="empty-state" id="ellipsis"><p class="empty-state-message">Reading security status…</p></div>
+    <div class="empty-state" data-state="error" id="error-host"><p class="empty-state-message">Couldn't load</p></div>
+    <div class="empty-state" id="hidden" hidden><p class="empty-state-message">Hidden block</p></div>
+  </main>
+</body>
+</html>

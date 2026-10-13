@@ -33,7 +33,7 @@
 # metrics.json, every evaluate output and every filed finding.
 
 [meta]
-version = "1.24.0"   # per-bump history: git log -- design.rubric.toml, and the issues/PRs it cites
+version = "1.25.0"   # per-bump history: git log -- design.rubric.toml, and the issues/PRs it cites
 seeded_from = "app-launcher rendered audit, 2026-09-21 (fleet-config#962)"
 
 [weights]
@@ -584,6 +584,20 @@ fix_template = "{count} icon-only controls on {screen} have no label beside them
 mockup = "none"
 params = { conventional = "\\b(?:close|dismiss|cancel|search|find|settings|preferences|gear|add|new|create|plus|chevron|back|next|previous|forward|up|down|left|right|raise|lower|increase|decrease|minus|zoom|expand|collapse|menu|more|options|actions|edit|rename|pencil|delete|remove|trash|clear|copy|refresh|reload|retry|play|pause|stop|send|share|download|upload|save|filter|help|info|mic|microphone|record|camera|calendar|home|theme|(?:dark|light) mode|to (?:dark|light))\\b" }
 
+[[rules]]
+id = "COMP-10"
+category = "components"
+title = "An empty-state block with no way forward"
+metric = "feedback.empty_state_no_action"
+fail_when = "gt"
+threshold = 0
+severity = "P3"
+owner = "app"
+screens = ["tab"]
+standard = "design.md empty-state block: an empty list the user can fill from this tab names its way forward in the block, one action that is the verb that fills it; the J-09 ratchet (fleet-config#1367). A sentence that names a control elsewhere on the screen stays with the judge"
+fix_template = "{count} empty-state blocks on {screen} hold no button or link ({sample}); add the one action that fills the list (a verb such as Capture a take) or, for a search with no hits, Clear search."
+mockup = "none"
+
 # ---------------------------------------------------------------------------
 # Accessibility
 
@@ -671,8 +685,8 @@ screens = "all"
 
 [[judgment]]
 id = "J-09"
-question = "Does every empty list or empty section visible in the screenshots show a sentence saying why it is empty, and either (a) hold a button or link inside the empty-state box itself — the dashed or bordered area that holds the sentence, not the surrounding card or section — or (b) name in that sentence the control elsewhere on the screen that fills it? Answer no if any empty list or section shows nothing, only a dash, or a bare sentence such as 'No items yet' that neither holds a control inside its own box nor names one; a form or button that sits below or beside the box in the same card does not count unless the sentence names it. Answer na if no screenshot shows an empty list or section."
-maps_to = []
+question = "Does every empty list or empty section visible in the screenshots show a sentence saying why it is empty, and either (a) hold a button or link inside the empty-state box itself — the dashed or bordered area that holds the sentence, not the surrounding card or section — or (b) name in that sentence the control elsewhere on the screen that fills it? Answer no if any empty list or section shows nothing, only a dash, or a bare sentence such as 'No items yet' that neither holds a control inside its own box nor names one; a form or button that sits below or beside the box in the same card does not count unless the sentence names it. A box that holds no button or link is measured as COMP-10 and is not raised here for that alone; answer no for what COMP-10 cannot see, such as an empty list or section that shows nothing or only a dash. Answer na if no screenshot shows an empty list or section."
+maps_to = ["COMP-10"]
 screens = "tabs"
 
 [[judgment]]

@@ -36,7 +36,7 @@ present on a successful run:
     icons     boxes {"WxH": n}, elements {"WxH": [{glyph, host, label}, ..]}
     nav       primary_count, pane_scroll_top, pane_header_visible, settings_tab_count,
               home_title {is_home, manifest, app_names [..], tab, title}
-    feedback  toast_count, toasts_tinted [..], toasts_tinted_count
+    feedback  toast_count, toasts_tinted [..], toasts_tinted_count, empty_state_count, empty_states_no_action [{sel, text}]
     layout    control_overflow [..], control_overflow_count, overflow_x, scroll_w, inner_w, inner_h, pane_h, lists [..],
               rows_over_limit [..], danger_rows, content_w, content_span, pane_split, radii {r: n}
     overlay   surfaces, destructive [..], destructive_bad [..], destructive_bad_count
@@ -544,7 +544,24 @@ _MEASURE_JS = r"""
       if (own[3] > 0.05 && isGreen(over(own, surface))) via.push('background');
       if ((parseFloat(st.borderTopWidth) || 0) > 0 && bc[3] > 0.05 && isGreen(over(bc, surface))) via.push('border');
       if (via.length) tinted.push({sel: sel(el), label: txt(el).slice(0,30), via: via.join('+')}); });
-    return { toast_count: toasts.length, toasts_tinted: tinted.slice(0,CAP), toasts_tinted_count: tinted.length };
+    // An empty-state block with no way forward (#1367). A block is a visible .empty-state or [data-state=empty]
+    // element, innermost when one holds another, whose lifecycle state is not loading, error or stale (the nearest
+    // [data-state] says; with none, a message that ends in an ellipsis or opens with a reading word is a loading
+    // line). It has a way forward when it holds an enabled button, link or role=button. Whether the sentence names a
+    // control elsewhere on the screen stays with the judge (J-09). Most screens are populated and show no block: the
+    // count says so, and evaluate.py reads zero as not measured, never as a pass.
+    const ACTION = 'button, a[href], [role=button], input[type=button], input[type=submit]';
+    const cands = q('.empty-state, [data-state="empty"]');
+    const msgOf = (el) => { let t = el.textContent || ''; el.querySelectorAll(ACTION).forEach(c => { t = t.replace(c.textContent || '', ''); });
+      return t.replace(/\s+/g, ' ').trim(); };
+    const emptyBlocks = cands.filter(el => !cands.some(o => o !== el && el.contains(o))).filter(el => {
+      const host = el.closest('[data-state]'); const state = host ? (host.getAttribute('data-state') || '').trim().toLowerCase() : '';
+      if (/^(loading|error|stale)$/.test(state)) return false;
+      const m = msgOf(el); return !(/(…|\.\.\.)$/.test(m) || /^(loading|reading|checking|connecting)\b/i.test(m)); });
+    const hasAction = (el) => [...el.querySelectorAll(ACTION)].some(c => visible(c) && !c.disabled && c.getAttribute('aria-disabled') !== 'true');
+    const noAction = emptyBlocks.filter(el => !hasAction(el)).map(el => ({sel: sel(el), text: msgOf(el).slice(0, 40)}));
+    return { toast_count: toasts.length, toasts_tinted: tinted.slice(0,CAP), toasts_tinted_count: tinted.length,
+      empty_state_count: emptyBlocks.length, empty_states_no_action: noAction.slice(0,CAP) };
   });
 
   // ---- layout
@@ -844,7 +861,7 @@ def metric_paths() -> List[str]:
                     "primary", "primary_min_height", "in_summary"],
         "icons": ["boxes", "elements"],
         "nav": ["primary_count", "pane_scroll_top", "pane_header_visible", "settings_tab_count", "settings_tabs", "home_title"],
-        "feedback": ["toast_count", "toasts_tinted", "toasts_tinted_count"],
+        "feedback": ["toast_count", "toasts_tinted", "toasts_tinted_count", "empty_state_count", "empty_states_no_action"],
         "layout": ["control_overflow", "control_overflow_count", "overflow_x", "scroll_w", "inner_w", "inner_h", "pane_h", "lists", "rows_over_limit",
                    "rows_over_limit_count", "danger_rows", "content_w", "content_span", "pane_split", "radii"],
         "overlay": ["surfaces", "destructive", "destructive_bad", "destructive_bad_count"],
