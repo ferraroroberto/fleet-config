@@ -128,6 +128,18 @@ entries = ledger.load("fixture-app")
 check(len(entries) == ledger.LEDGER_KEEP and entries[-1]["live_build"] == "abc123", "re-recording the same run_id replaces its entry (idempotent)")
 check(ledger.previous("fixture-app", "20260922T000023Z")["run_id"] == "20260922T000022Z", "previous(before_run_id) is the entry just before it")
 check(ledger.previous("fixture-app", "20260922T999999Z")["run_id"] == "20260922T000023Z", "an unrecorded run compares against the latest earlier entry")
+
+# The hub's build identity lives under /admin/, so live_build asks the path projects.toml declares for it (#1385).
+_hub_path = tomllib.loads((REPO / "hooks" / "projects.toml").read_text(encoding="utf-8"))["local-llm-hub"].get("api_version_path")
+_asked: list = []
+_real_running_sha = ledger.service_probe.running_sha
+ledger.service_probe.running_sha = lambda port, path: (_asked.append((port, path)), "445c838")[1]
+try:
+    _hub_live = ledger.live_build("http://127.0.0.1:8000", _hub_path)
+finally:
+    ledger.service_probe.running_sha = _real_running_sha
+check(_hub_path == "/admin/api/version" and _asked == [(8000, "/admin/api/version")] and _hub_live == "445c838",
+      f"[local-llm-hub] declares api_version_path, so live_build asks the hub for its sha instead of recording unknown -- {_hub_path} {_asked}")
 check(ledger.previous("fixture-app", "20260101T000000Z") is None, "a run older than every entry has no previous run — never a later one")
 check(ledger.previous("fixture-app", None)["run_id"] == "20260922T000023Z" and ledger.previous("never-seen") is None, "previous without a run id = latest; unknown target = None")
 check(not FORBIDDEN.search(ledger.ledger_path("fixture-app").read_text(encoding="utf-8")), "the ledger file carries nothing captured")

@@ -123,6 +123,8 @@ cwd_prefix          = "E:/automation/local-llm-hub"
 webapp_port         = 8000
 browser_scheme      = "http"
 whisper_port        = 8090
+# The hub answers its build identity under /admin/, not at the fleet's usual /api/version (#1385).
+api_version_path    = "/admin/api/version"
 gate_cmd            = "C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe -File scripts/verify-before-ship.ps1"
 tray_cmd            = "tray.bat"
 # Legitimately owns a `claude -p` subprocess wrapper — exempts it from
