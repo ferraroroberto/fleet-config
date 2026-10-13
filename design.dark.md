@@ -106,7 +106,7 @@ components:
   page-header:    { minHeight: "{rows.md}", padding: "0 14px", title: "{typography.body}", titleWeight: 700, context: "{typography.body-sm}", contextColor: "{colors.fg-muted}", trailingActions: 2, actionSize: "{components.hit-target.min}" }   # every pane's first element — structural, identical to Light (see design.md)
   hit-target:     { min: 44px }   # minimum effective pointer-target square — structural, identical to Light (see design.md Touch targets)
   avatar:         { size: 36px, rounded: "{rounded.md}", backgroundColor: "{colors.neutral-soft}", glyph: "{icons.size.nav-tab}", badgeSize: 12px, badgeRing: "{colors.card}", badgeAlive: "{colors.success}", badgeDown: "{colors.danger}" }   # a row's leading squircle, alive/down badge — structural, identical to Light (see design.md)
-  meter:          { height: 6px, rounded: "{rounded.pill}", track: "{colors.neutral-soft}", fillUnderPace: "{colors.accent}", fillAheadOfPace: "{colors.attention}", fillCritical: "{colors.danger}", criticalAt: 90%, paceTick: 2px }   # a usage bar coloured by pace — structural, identical to Light (see design.md)
+  meter:          { height: 6px, rounded: "{rounded.pill}", track: "{colors.neutral-soft}", fillUnderPace: "{colors.accent}", fillAheadOfPace: "{colors.attention}", fillCritical: "{colors.danger}", criticalAt: 90%, paceTick: 2px, allocationAttentionAt: 75% }   # a usage bar coloured by pace, an allocation bar by headroom — structural, identical to Light (see design.md)
   segmented:      { height: "{components.control.height}", target: 44px, inset: 3px, rounded: "{rounded.md}", track: "{colors.neutral-soft}", selectedFill: "{colors.card}", label: "{colors.fg}" }   # structural, identical to Light (see design.md)
 focus:            { outline: "2px solid {colors.accent}", offset: 2px }   # one tokenized :focus-visible ring app-wide — identical behavior to Light, brighter accent value
 layout:                           # desktop placement (Layout) — theme-independent
@@ -259,7 +259,10 @@ on-track is the **accent (`accent-fill`)**, at the dark `accent-fill` value
 nav-bar fill, and only a real error tints; the `avatar` badge is the dark
 `success` / `danger` ringed in the dark `card`, and the status chip tones,
 the page-header's exceptions line and the `meter` fill take the dark
-`*-text` and base hues, with the same pace rule; Modes are not alarms holds
+`*-text` and base hues, with the same pace rule (and the same headroom
+levels for an allocation bar); the header keeps its two actions and never a
+third, a standing footnote sits behind the ⓘ info sheet, and raw
+identifiers stay off the faces, all unchanged in dark; Modes are not alarms holds
 unchanged in dark: a normal armed or heating state is the raised selected
 segment, never a `danger` tint;
 the black-hole rule holds for code in dark: the code chip sits on
