@@ -33,7 +33,7 @@
 # metrics.json, every evaluate output and every filed finding.
 
 [meta]
-version = "1.28.0"   # per-bump history: git log -- design.rubric.toml, and the issues/PRs it cites
+version = "1.29.0"   # per-bump history: git log -- design.rubric.toml, and the issues/PRs it cites
 seeded_from = "app-launcher rendered audit, 2026-09-21 (fleet-config#962)"
 
 [weights]
@@ -638,6 +638,19 @@ standard = "design.md empty-state block and disclosure: an empty section is neve
 fix_template = "{count} expanded sections on {screen} show no text and hold no control ({sample}); give the body a sentence that says why it is empty (an empty-state block) or keep the section closed until it has content."
 mockup = "none"
 
+[[rules]]
+id = "COMP-13"
+category = "components"
+title = "A list row with more than one secondary line under its title"
+metric = "layout.multi_secondary_row_count"
+fail_when = "gt"
+threshold = 0
+severity = "P2"
+owner = "app"
+standard = "design.md action-row Context: at most one body-sm line in fg-muted under the title, which one line that wraps still is; the J-10 ratchet (fleet-config#1338). Whether the row leads with its name and shows its state as a badge stays with the judge"
+fix_template = "{count} list rows on {screen} carry more than one secondary line under the title ({sample}); keep one meta line and move the rest to the row's detail sheet or its menu."
+mockup = "none"
+
 # ---------------------------------------------------------------------------
 # Accessibility
 
@@ -731,6 +744,6 @@ screens = "tabs"
 
 [[judgment]]
 id = "J-10"
-question = "In every list, can a row's key fact be read at a glance: the row leads with its name as the row's largest text, its state is a badge or a short word, and the row carries at most one secondary line of text? Answer no if any list's rows lead with an icon, an id or a timestamp instead of the name, or pack more than two lines of text into a row. A list keyed by time or date (an activity log, a timeline, a list of days) is the one exception to the leading rule: its rows may lead with that time or a date tile, provided the row's title is still its largest text and the row carries at most one secondary line. Answer na if no tab screen lists rows."
-maps_to = ["TYPE-01", "LAYOUT-03"]
+question = "In every list, can a row's key fact be read at a glance: the row leads with its name as the row's largest text, and its state is a badge or a short word? Answer no if any list's rows lead with an icon, an id or a timestamp instead of the name, or spell the state out in a sentence instead of a badge or a short word. A list keyed by time or date (an activity log, a timeline, a list of days) is the one exception to the leading rule: its rows may lead with that time or a date tile, provided the row's title is still its largest text. The number of secondary lines under the title is measured as COMP-13 and is not raised here. Answer na if no tab screen lists rows."
+maps_to = ["TYPE-01", "LAYOUT-03", "COMP-13"]
 screens = "tabs"

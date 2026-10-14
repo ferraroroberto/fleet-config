@@ -1,0 +1,90 @@
+<!doctype html>
+<!-- Static fixture for COMP-13 (fleet-config#1338). A repeating list row carries at most one secondary line under its
+     title. Fails: a title with two meta blocks, with three, with a <br> inside one block, and with an avatar and a kebab
+     around two. Passes: a title with one meta line, with one long meta line that wraps (as plain text, as inline spans
+     and as a wrapping flex row of spans, at 390px and in a 240px column), with its spans on one flex line, in the vendored row's anatomy (a has-avatar tap target, an inline meta text and a chip closing the line), with a chip
+     on a line of its own, behind a date tile, behind a leading time, beside a trailing value with a caption, and a
+     title alone. Not judged: a lone row, a nav item, a menu item and the body of an open disclosure inside a row; a
+     nested list's rows are judged on their own text. Asserted by tests/test_design_review.py. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>design_review multi secondary fixture</title>
+<style>
+  html, body { margin: 0; background: #ffffff; color: #1f2328; font-family: system-ui, sans-serif; font-size: 16px; }
+  body { padding: 16px; }
+  h2 { font-size: 16px; margin: 16px 0 4px; }
+  ul { list-style: none; margin: 0 0 8px; padding: 0; }
+  li.row { display: flex; align-items: center; gap: 12px; min-height: 52px; padding: 12px 0; border-top: 1px solid #d1d9e0; }
+  .col { flex: 1; min-width: 0; }
+  .narrow .col { max-width: 240px; }
+  .title { font-size: 16px; font-weight: 600; }
+  .meta { font-size: 14px; color: #656d76; }
+  .wide { display: flex; flex-wrap: wrap; gap: 0 8px; }
+  .one-line { display: flex; flex-wrap: nowrap; gap: 8px; }
+  .av { width: 40px; height: 40px; border-radius: 50%; background: #ddf4ff; display: grid; place-items: center; font-weight: 600; }
+  .tile { width: 44px; height: 44px; border: 1px solid #d1d9e0; display: flex; flex-direction: column; align-items: center; justify-content: center; font-size: 14px; }
+  .when { font-size: 14px; font-variant-numeric: tabular-nums; width: 48px; }
+  .main { display: flex; align-items: center; gap: 12px; flex: 1; min-width: 0; }
+  .text, .t, .m { display: block; }
+  .t { font-size: 16px; font-weight: 600; }
+  .m { font-size: 14px; color: #656d76; }
+  .kebab { width: 44px; height: 44px; background: none; border: 0; font-size: 20px; }
+  .value { text-align: right; font-size: 14px; }
+  .value small { display: block; font-size: 12px; color: #656d76; }
+  .flag { display: inline-block; padding: 2px 8px; border: 1px solid #d1d9e0; border-radius: 12px; font-size: 12px; }
+  details { font-size: 14px; }
+</style>
+</head>
+<body>
+  <main>
+    <h2>Fails</h2>
+    <ul class="fails">
+      <li class="row" id="f-two"><div class="col"><div class="title">Kitchen light</div><div class="meta">Last on 09:12</div><div class="meta">Switched by the schedule</div></div></li>
+      <li class="row" id="f-three"><div class="col"><div class="title">Hall sensor</div><div class="meta">Battery 82%</div><div class="meta">Seen 2 min ago</div><div class="meta">Firmware 1.4.2</div></div></li>
+      <li class="row" id="f-br"><div class="col"><div class="title">Garage door</div><div class="meta">Closed at 07:40<br>Opened twice today</div></div></li>
+      <li class="row" id="f-slots"><div class="main has-avatar"><span class="av">GD</span><div class="col"><div class="title">Garden pump</div><div class="meta">Runs at 06:00</div><div class="meta">Next run tomorrow</div></div></div><button class="kebab" type="button" aria-label="Row menu">⋮</button></li>
+    </ul>
+
+    <h2>Passes</h2>
+    <ul class="passes">
+      <li class="row" id="p-one"><div class="col"><div class="title">Living room</div><div class="meta">21.5° · 3 devices</div></div></li>
+      <li class="row narrow" id="p-wrap"><div class="col"><div class="title">Boiler schedule</div><div class="meta">Heats the house on weekdays from six in the morning until eight, then again from five in the afternoon until ten at night</div></div></li>
+      <li class="row narrow" id="p-wrap-spans"><div class="col"><div class="title">Alarm log</div><div class="meta"><span>Armed by the night schedule</span> · <span>front door and back door were closed</span> · <span>no sensors were bypassed</span></div></div></li>
+      <li class="row narrow" id="p-wrap-flex"><div class="col"><div class="title">Garden zones</div><div class="meta wide"><span>Lawn front</span><span>Lawn back</span><span>Hedge line</span><span>Vegetable beds</span><span>Greenhouse</span></div></div></li>
+      <li class="row" id="p-flex-line"><div class="col"><div class="title">Weekend</div><div class="meta one-line"><span>Sat 12 Oct</span><span>Home</span><span>2 events</span></div></div></li>
+      <li class="row" id="p-chip"><div class="col"><div class="title">Smoke detector</div><div class="meta">Hall, first floor</div><span class="flag">Low battery</span></div></li>
+      <li class="row" id="p-vendored"><div class="main has-avatar"><span class="av">LR</span><span class="text"><span class="t">Hall light</span><span class="m"><span class="mt">On · 60%</span><span class="flag">Offline</span></span></span></div><button class="kebab" type="button" aria-label="Row menu">⋮</button></li>
+      <li class="row" id="p-tile"><div class="tile"><span>Mon</span><span>14</span></div><div class="col"><div class="title">Booked</div><div class="meta">Spot 12 on level two</div></div></li>
+      <li class="row" id="p-time"><span class="when">09:30</span><div class="col"><div class="title">Boiler on</div><div class="meta">By the weekday schedule</div></div></li>
+      <li class="row" id="p-value"><div class="col"><div class="title">Solar array</div><div class="meta">Roof, south side</div></div><div class="value">4.2 kW<small>Since 08:00</small></div></li>
+      <li class="row" id="p-title-only"><div class="col"><div class="title">Settings</div></div></li>
+    </ul>
+
+    <h2>Not judged</h2>
+    <ul class="alone">
+      <li class="row" id="n-alone"><div class="col"><div class="title">Only row</div><div class="meta">One</div><div class="meta">Two</div><div class="meta">Three</div></div></li>
+    </ul>
+    <nav>
+      <ul class="menu">
+        <li class="row" id="n-nav-a"><div class="col"><div class="title">Home</div><div class="meta">Overview</div><div class="meta">All rooms</div></div></li>
+        <li class="row" id="n-nav-b"><div class="col"><div class="title">Energy</div><div class="meta">Usage</div><div class="meta">Cost</div></div></li>
+      </ul>
+    </nav>
+    <ul class="disclosure">
+      <li class="row" id="n-details"><div class="col"><div class="title">Thermostat</div><div class="meta">Heating to 21°</div><details open><summary>History</summary><p>Yesterday 20°</p><p>Monday 19.5°</p></details></div></li>
+      <li class="row" id="n-details-b"><div class="col"><div class="title">Fan</div><div class="meta">Off</div></div></li>
+    </ul>
+    <ul class="nested">
+      <li id="n-outer"><div class="title">Floor one</div><div class="meta">Two rooms</div>
+        <ul>
+          <li class="row" id="n-inner-a"><div class="col"><div class="title">Kitchen</div><div class="meta">Light on</div></div></li>
+          <li class="row" id="n-inner-b"><div class="col"><div class="title">Hall</div><div class="meta">Light off</div></div></li>
+        </ul>
+      </li>
+      <li id="n-outer-b"><div class="title">Floor two</div><div class="meta">One room</div></li>
+    </ul>
+  </main>
+</body>
+</html>
