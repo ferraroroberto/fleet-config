@@ -373,6 +373,7 @@ def select_codex_sessions(cfg: BackupConfig, staging: Path) -> Selection:
 
     for source_db in sorted((*root.glob("state_*.sqlite"), *root.glob("thread_history_*.sqlite"))):
         target = staging / source_db.name
+        logger.info("   ⏳ snapshotting %s", source_db.name)
         try:
             snapshot_sqlite(source_db, target)
             sel.files.append((target, source_db.name, target.stat().st_size))
@@ -441,6 +442,7 @@ def select_runtime_data(cfg: BackupConfig, staging: Path) -> Selection:
             sel.files.append((abs_path, rel, size))
             continue
         staged = staging / rel
+        logger.info("   ⏳ snapshotting %s", rel)
         try:
             mode = snapshot_sqlite(abs_path, staged)
             staged_size = staged.stat().st_size

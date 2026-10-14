@@ -139,6 +139,8 @@ def run_leg(leg: str, groups: Dict[str, Selection], source: Path, dest_root: Pat
     prev_index = _index_manifest(prev_manifest)
     manifest["skipped_interrupted"] = skipped_interrupted
 
+    logger.info("▶️ %s: snapshotting %d files across %d groups", leg,
+                sum(len(selection.files) for selection in groups.values()), len(groups))
     linked = copied = 0
     for name, selection in sorted(groups.items()):
         errors = list(selection.errors)
@@ -186,6 +188,7 @@ def run_leg(leg: str, groups: Dict[str, Selection], source: Path, dest_root: Pat
         manifest["finished_at"] = datetime.now(timezone.utc).isoformat()
         return manifest
 
+    logger.info("⏳ %s: verifying the sample and reconciling the archive", leg)
     manifest["verification"] = verify_sample(snapshot_dir, manifest)
     manifest["regressions"] = check_zero_file_regressions(manifest, prev_manifest)
     failed_groups = [
@@ -207,6 +210,7 @@ def run_leg(leg: str, groups: Dict[str, Selection], source: Path, dest_root: Pat
     # The manifest now describes this directory (even a "failed" one) — the
     # marker's job, proving the tree is torn, is done (fleet-config#607).
     clear_run_marker(snapshot_dir)
+    logger.info("⏳ %s: updating latest/ and pruning old snapshots", leg)
     # A full rebuild is the only correct move with nothing to diff against — no
     # `latest/` yet, or no readable previous manifest — and is always available
     # as an explicit repair path via `force_rebuild_latest` (fleet-config#721).
@@ -234,10 +238,24 @@ def collect_repos(cfg: BackupConfig, only: Optional[str],
         if not overrides.enabled:
             skipped.append(repo_dir.name)
             continue
+        logger.info("   ⏳ selecting %s", repo_dir.name)
         selection = select_repo(repo_dir, cfg, overrides)
         if selection.files or selection.errors or selection.bulk_excluded:
             groups[repo_dir.name] = selection
     return groups, skipped
+
+
+def _selecting(leg: str) -> float:
+    """Log that `leg`'s selection is starting; return its start time."""
+    logger.info("⏳ %s: selecting files", leg)
+    return time.monotonic()
+
+
+def _selected(leg: str, groups: Dict[str, Selection], started: float) -> None:
+    """Log that `leg`'s selection finished, with what it found."""
+    logger.info("   %s: selected %d files across %d groups in %.1fs", leg,
+                sum(len(selection.files) for selection in groups.values()),
+                len(groups), time.monotonic() - started)
 
 
 def _worst(codes: Sequence[int]) -> int:
@@ -253,7 +271,15 @@ def run(cfg: BackupConfig, *, dry_run: bool = False, only: Optional[str] = None,
     codes: List[int] = []
     manifests: List[Dict[str, Any]] = []
 
+    # Breadcrumbs from the first second (fleet-config#1418): every leg is
+    # selected before the first one is written, so without these a healthy run
+    # printed nothing for ~5 minutes and a wedged one nothing at all until the
+    # launcher's no-output watchdog killed it. Each long wait names itself
+    # first, so a kill always leaves the step it reached in the log.
+    logger.info("▶️ backup started for %s%s", today, " (dry run)" if dry_run else "")
+    leg_started = _selecting("repos")
     repo_groups, skipped = collect_repos(cfg, only, toml_path)
+    _selected("repos", repo_groups, leg_started)
     if skipped:
         logger.info("ℹ️ opted out via projects.toml: %s", ", ".join(skipped))
 
@@ -264,12 +290,17 @@ def run(cfg: BackupConfig, *, dry_run: bool = False, only: Optional[str] = None,
     with contextlib.ExitStack() as stack:
         legs = [("repos", repo_groups, cfg.source_root, cfg.dest)]
         if not only:
-            legs.append((CLAUDE_SESSIONS_LEG, {"projects": select_transcripts(cfg)},
+            leg_started = _selecting(CLAUDE_SESSIONS_LEG)
+            transcript_groups = {"projects": select_transcripts(cfg)}
+            _selected(CLAUDE_SESSIONS_LEG, transcript_groups, leg_started)
+            legs.append((CLAUDE_SESSIONS_LEG, transcript_groups,
                          cfg.transcripts_src, cfg.transcripts_dest))
             if cfg.codex_sessions_src.is_dir():
                 codex_staging = stack.enter_context(runtime_data_staging())
-                legs.append((CODEX_SESSIONS_LEG,
-                             {CODEX_SESSIONS_GROUP: select_codex_sessions(cfg, codex_staging)},
+                leg_started = _selecting(CODEX_SESSIONS_LEG)
+                codex_groups = {CODEX_SESSIONS_GROUP: select_codex_sessions(cfg, codex_staging)}
+                _selected(CODEX_SESSIONS_LEG, codex_groups, leg_started)
+                legs.append((CODEX_SESSIONS_LEG, codex_groups,
                              cfg.codex_sessions_src, cfg.codex_sessions_dest))
             else:
                 logger.info("ℹ️ %s leg skipped: %s does not exist", CODEX_SESSIONS_LEG,
@@ -281,8 +312,10 @@ def run(cfg: BackupConfig, *, dry_run: bool = False, only: Optional[str] = None,
                 # leg exists to answer, and a report that assumed the answer
                 # would be worth nothing.
                 staging = stack.enter_context(runtime_data_staging())
-                legs.append((RUNTIME_DATA_LEG,
-                             {RUNTIME_DATA_GROUP: select_runtime_data(cfg, staging)},
+                leg_started = _selecting(RUNTIME_DATA_LEG)
+                runtime_groups = {RUNTIME_DATA_GROUP: select_runtime_data(cfg, staging)}
+                _selected(RUNTIME_DATA_LEG, runtime_groups, leg_started)
+                legs.append((RUNTIME_DATA_LEG, runtime_groups,
                              cfg.runtime_data_src, cfg.runtime_data_dest))
             else:
                 # A skip, not a failure: the fleet's move to this root

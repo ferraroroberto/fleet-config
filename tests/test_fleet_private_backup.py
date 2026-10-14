@@ -17,6 +17,8 @@ import sqlite3
 import subprocess
 import sys
 import tempfile
+import threading
+import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -1310,6 +1312,60 @@ try:
     check("stream=sys.stdout" in src, "log: logging is pinned to stdout, not the stderr default")
     check("line_buffering=True" in src,
           "log: stdout is line-buffered so a piped run shows progress before it exits")
+
+    # ---- a wedged run still leaves its last step in the log ----------------
+    # fleet-config#1418: the launcher's watchdog killed a run after an hour of
+    # a 0-byte log. Line buffering was already on (#605); the gap was that the
+    # first line was only written after every leg's selection *and* the whole
+    # repos leg. Reproduced here as a real wedge: a runtime-data database held
+    # under an exclusive lock blocks selection, and a breadcrumb naming the
+    # step it reached must reach the pipe while the process is still blocked.
+    wedge = tmp / "wedge-1418"
+    for name in ("fleet", "transcripts", "codex", "runtime-data-src"):
+        (wedge / name).mkdir(parents=True)
+    _write(wedge / "transcripts" / "proj" / "s.jsonl", "{}")
+    locked_db = wedge / "runtime-data-src" / "locked.sqlite3"
+    holder = sqlite3.connect(str(locked_db), isolation_level=None)
+    holder.execute("CREATE TABLE t (x)")
+    holder.execute("BEGIN EXCLUSIVE")
+    wedge_toml = _write(wedge / "projects.toml", "\n".join([
+        "[backup]",
+        *(f'{key} = "{(wedge / sub).as_posix()}"' for key, sub in (
+            ("source_root", "fleet"), ("dest", "dest"),
+            ("transcripts_src", "transcripts"), ("transcripts_dest", "tdest"),
+            ("codex_sessions_src", "codex"), ("codex_sessions_dest", "cdest"),
+            ("runtime_data_src", "runtime-data-src"), ("runtime_data_dest", "rdest"),
+        )),
+        "",
+    ]))
+    env = {k: v for k, v in os.environ.items() if k != "PYTHONUNBUFFERED"}
+    wedged = subprocess.Popen(
+        [sys.executable, str(ROOT / "hooks" / "backup_private.py"), "--dry-run",
+         "--no-notify", "--config", str(wedge_toml)],
+        stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, env=env,
+        creationflags=bp._lib.NO_WINDOW,
+    )
+    seen: list = []
+
+    def _drain() -> None:
+        for raw in wedged.stdout:
+            seen.append(raw.decode("utf-8", "replace").rstrip())
+
+    reader = threading.Thread(target=_drain, daemon=True)
+    reader.start()
+    deadline = time.monotonic() + 30
+    while time.monotonic() < deadline and not any("locked.sqlite3" in line for line in seen):
+        time.sleep(0.2)
+    still_running = wedged.poll() is None
+    try:
+        check(bool(seen) and still_running,
+              f"log: the first line reaches a pipe while the run is still going, got {seen!r}")
+        check(still_running and any("locked.sqlite3" in line for line in seen),
+              f"log: a wedged run's last line names the step it is blocked on, got {seen!r}")
+    finally:
+        wedged.kill()
+        wedged.wait(timeout=30)
+        holder.close()
 
     # ---- exit-code severity ordering --------------------------------------
     check(bp._worst([bp.EXIT_REPO_FAILURE, bp.EXIT_VERIFY_FAILED]) == bp.EXIT_VERIFY_FAILED,
