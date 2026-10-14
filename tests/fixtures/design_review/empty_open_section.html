@@ -1,0 +1,56 @@
+<!doctype html>
+<!-- Static fixture for COMP-12 (fleet-config#1337). Expanded sections: an open <details> holding only whitespace, only
+     an empty list or only hidden text, and the panel an expanded aria-controls trigger names when it holds nothing,
+     fail; a body with a sentence, a control, a graphic, a CSS-drawn glyph, a spinner, a busy region, a loading
+     data-state or an empty-state block passes (the last is COMP-10's); a <details> closed in the markup is opened by the
+     walk and measured like the rest; a collapsed trigger, a
+     trigger naming no panel in the page and a menu button naming its popup are not sections to judge. Asserted by
+     tests/test_design_review.py. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>design_review empty open section fixture</title>
+<style>
+  html, body { margin: 0; background: #ffffff; color: #1f2328; font-family: system-ui, sans-serif; font-size: 16px; }
+  body { padding: 16px; }
+  details, .region { margin: 8px 0; border: 1px solid #d1d9e0; padding: 8px 12px; }
+  summary { min-height: 44px; display: flex; align-items: center; cursor: pointer; }
+  .glyph::before { content: "+"; }
+  .spinner { width: 20px; height: 20px; border: 2px solid #d1d9e0; border-radius: 50%; }
+  .empty-state { padding: 16px; border: 1px dashed #d1d9e0; color: #656d76; }
+  button { min-height: 44px; }
+</style>
+</head>
+<body>
+  <main>
+    <h2>Fails</h2>
+    <details open id="whitespace"><summary>Whitespace only</summary>
+    </details>
+    <details open id="empty-list"><summary>Empty list</summary><ul class="history"></ul></details>
+    <details open id="hidden-text"><summary>Hidden text only</summary><p hidden>Not shown</p><div style="display:none">Nor this</div></details>
+    <button type="button" id="trigger-empty" aria-expanded="true" aria-controls="panel-empty">Advanced</button>
+    <div class="region" id="panel-empty"><div class="inner"></div></div>
+
+    <h2>Passes</h2>
+    <details open id="sentence"><summary>With a sentence</summary><p>Nothing recorded this week.</p></details>
+    <details open id="empty-block"><summary>With an empty-state block</summary><div class="empty-state"></div></details>
+    <details open id="with-control"><summary>With a control</summary><button type="button">Add entry</button></details>
+    <details open id="with-graphic"><summary>With a graphic</summary><svg width="24" height="24" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/></svg></details>
+    <details open id="with-glyph"><summary>With a glyph</summary><span class="glyph"></span></details>
+    <details open id="loading-spinner"><summary>Loading</summary><div class="spinner"></div></details>
+    <details open id="loading-busy"><summary>Busy</summary><div aria-busy="true"></div></details>
+    <details open id="loading-state" data-state="loading"><summary>Reading</summary><div></div></details>
+    <button type="button" id="trigger-text" aria-expanded="true" aria-controls="panel-text">Details</button>
+    <div class="region" id="panel-text"><p>Last checked a minute ago.</p></div>
+
+    <h2>Not a section to judge</h2>
+    <details id="closed"><summary>Closed in the markup</summary><p>Opened by the walk, then measured like any other.</p></details>
+    <button type="button" id="trigger-collapsed" aria-expanded="false" aria-controls="panel-collapsed">Collapsed</button>
+    <div class="region" id="panel-collapsed"><div class="inner"></div></div>
+    <button type="button" id="trigger-elsewhere" aria-expanded="true" aria-controls="panel-not-in-page">Elsewhere</button>
+    <button type="button" id="trigger-menu" aria-expanded="true" aria-haspopup="menu" aria-controls="menu-empty">Menu</button>
+    <div class="region" id="menu-empty"><div class="inner"></div></div>
+  </main>
+</body>
+</html>
