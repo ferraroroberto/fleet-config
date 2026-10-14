@@ -1050,7 +1050,11 @@ hand-picked per app.
   (photo-ocr#196, the judge's J-09). The measure checks the block holds a
   button or link (`COMP-10`, fleet-config#1367); that the sentence names a
   control elsewhere on the screen stays with the judge. A populated screen
-  shows no block, so a live run reports `COMP-10` as not measured.
+  shows no block, so a live run reports `COMP-10` as not measured. An
+  expanded section (an open `details`, or the panel an expanded trigger names
+  in `aria-controls`) that shows no text and holds no control is the silent
+  empty container this bullet forbids, measured as `COMP-12`
+  (fleet-config#1337); a spinner or skeleton is content in flight, not empty.
 - **icon tile** (`icon-tile`) — the Home-screen rounded-square (`rounded.md`
   squircle) filled with **one** of the five `tile-*` colors (the only saturated
   surfaces), a centered `icons.size.feature` Lucide glyph in `accent-fg`. The

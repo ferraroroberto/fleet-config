@@ -39,7 +39,8 @@ present on a successful run:
               home_title {is_home, manifest, app_names [..], tab, title}, header_context {header, tab, text, static}
     feedback  toast_count, toasts_tinted [..], toasts_tinted_count, empty_state_count, empty_states_no_action [{sel, text}]
     layout    control_overflow [..], control_overflow_count, overflow_x, scroll_w, inner_w, inner_h, pane_h, lists [..],
-              rows_over_limit [..], danger_rows, content_w, content_span, pane_split, radii {r: n}
+              rows_over_limit [..], danger_rows, content_w, content_span, pane_split, radii {r: n},
+              open_section_count, empty_open_sections [{sel, label}], empty_open_section_count
     overlay   surfaces, destructive [..], destructive_bad [..], destructive_bad_count
     clearance bars [..], hidden_rows [..], hidden_row_count
     a11y     unnamed [..], unnamed_count, zoom_locked, text_size_control, text_size_stamped
@@ -672,9 +673,42 @@ _MEASURE_JS = r"""
       const r = el.getBoundingClientRect(), cr = c.getBoundingClientRect(), left = cr.left + c.clientLeft, right = left + c.clientWidth;
       const over = Math.max(left - r.left, r.right - right);
       if (over > params.fitTol) spilled.push({sel: sel(el), label: txt(el).slice(0,30), container: sel(c), over_px: Math.round(over), side: r.right - right >= left - r.left ? 'right' : 'left'}); });
+    // An expanded section that shows nothing (#1337): an open <details> (its body is every child but the summary) or
+    // the panel an expanded trigger names in aria-controls (a trigger naming no panel in the page, or a menu, listbox
+    // or combobox popup, has no section to judge). Empty = no rendered text (a glyph from a pseudo-element counts), no
+    // graphic (image, svg, canvas, media, frame), no control and no sign the content is still on its way (a spinner,
+    // skeleton or busy/status region, or a loading/pending/error/stale data-state): content in flight is not empty.
+    // A body holding an empty-state block is that block's to answer (COMP-10), so it is skipped here.
+    const BUSY = '[aria-busy=true], [role=status], [role=alert], [role=progressbar], [aria-live]:not([aria-live=off]), [data-state=loading], '
+      + '[class*=spinner i], [class*=skeleton i], [class*=loading i], [class*=shimmer i]';
+    const SOMETHING = 'img, svg, canvas, video, audio, picture, iframe, object, embed, meter, progress, [role=img], button, a[href], '
+      + 'input:not([type=hidden]), select, textarea, summary, [role=button], [role=link], [role=switch], [role=checkbox], [contenteditable], [tabindex]:not([tabindex="-1"])';
+    const shows = (el) => {
+      if (el.matches('script, style, template, noscript')) return false;
+      if (getComputedStyle(el).display !== 'contents' && typeof el.checkVisibility === 'function' && !el.checkVisibility({visibilityProperty: true})) return false;
+      if (el.shadowRoot || el.matches(SOMETHING) || el.matches(BUSY)) return true;
+      if (['::before', '::after'].some(p => { const c = getComputedStyle(el, p).content; return c && !['none', 'normal', '""', "''"].includes(c); })) return true;
+      return [...el.childNodes].some(n => n.nodeType === 3 ? /[^\s​-‍⁠﻿]/.test(n.data) : n.nodeType === 1 && shows(n)); };
+    const inFlight = (el) => !!el.closest('[aria-busy=true]') || /^(loading|pending|error|stale)$/.test(((el.closest('[data-state]') || el).getAttribute('data-state') || '').trim().toLowerCase())
+      || el.matches(BUSY);
+    const emptyBlocks = q('.empty-state, [data-state="empty"]');
+    const openSections = new Map();
+    q('details[open]').forEach(d => { const s = d.querySelector(':scope > summary');
+      openSections.set(d, {kids: [...d.childNodes].filter(n => n !== s), label: s ? txt(s) : ''}); });
+    q('[aria-expanded="true"][aria-controls]').filter(t => !t.matches('[aria-haspopup]:not([aria-haspopup=false]), [role=combobox], [role=tab], [role=treeitem], [role=row], [role=menuitem]'))
+      .forEach(t => t.getAttribute('aria-controls').trim().split(/\s+/).map(id => document.getElementById(id)).filter(Boolean).forEach(p => {
+        if (p.hasAttribute('hidden') || !inScope(p) || p.contains(t) || openSections.has(p) || (EXCLUDE && p.closest(EXCLUDE))) return;
+        if (typeof p.checkVisibility === 'function' && !p.checkVisibility()) return;
+        openSections.set(p, {kids: [...p.childNodes], label: txt(t)}); }));
+    const emptyOpen = [];
+    openSections.forEach(({kids, label}, el) => {
+      if (inFlight(el) || emptyBlocks.some(b => el.contains(b))) return;
+      if (kids.some(n => n.nodeType === 3 ? /[^\s​-‍⁠﻿]/.test(n.data) : n.nodeType === 1 && shows(n))) return;
+      emptyOpen.push({sel: sel(el), label}); });
     return { control_overflow: spilled.slice(0,CAP), control_overflow_count: spilled.length, overflow_x: de.scrollWidth > window.innerWidth + 1, scroll_w: de.scrollWidth, inner_w: window.innerWidth, inner_h: window.innerHeight,
       pane_h: pane.scrollHeight, lists: lists.slice(0,CAP), rows_over_limit: rowsOver.slice(0,CAP), rows_over_limit_count: rowsOver.length,
-      danger_rows: dangerRows.size, content_w: Math.round(content.width), content_span: Math.round(spanRight - content.left), pane_split: paneSplit, radii };
+      danger_rows: dangerRows.size, content_w: Math.round(content.width), content_span: Math.round(spanRight - content.left), pane_split: paneSplit, radii,
+      open_section_count: openSections.size, empty_open_sections: emptyOpen.slice(0,CAP), empty_open_section_count: emptyOpen.length };
   });
 
   // ---- overlay: a destructive control in a dialog or menu is quiet (#1364). The surfaces the walk opens are a
@@ -900,7 +934,8 @@ def metric_paths() -> List[str]:
         "nav": ["primary_count", "pane_scroll_top", "pane_header_visible", "settings_tab_count", "settings_tabs", "home_title", "header_context"],
         "feedback": ["toast_count", "toasts_tinted", "toasts_tinted_count", "empty_state_count", "empty_states_no_action"],
         "layout": ["control_overflow", "control_overflow_count", "overflow_x", "scroll_w", "inner_w", "inner_h", "pane_h", "lists", "rows_over_limit",
-                   "rows_over_limit_count", "danger_rows", "content_w", "content_span", "pane_split", "radii"],
+                   "rows_over_limit_count", "danger_rows", "content_w", "content_span", "pane_split", "radii", "open_section_count",
+                   "empty_open_sections", "empty_open_section_count"],
         "overlay": ["surfaces", "destructive", "destructive_bad", "destructive_bad_count"],
         "clearance": ["bars", "hidden_rows", "hidden_row_count"],
         "a11y": ["unnamed", "unnamed_count", "zoom_locked", "text_size_control", "text_size_stamped"],

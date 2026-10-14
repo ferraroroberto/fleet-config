@@ -60,8 +60,8 @@ def _doc(name: str) -> dict:
 # ---- rubric: the real file loads and names only metrics that exist ----------
 
 rubric = dr.load_rubric(RUBRIC)
-check(rubric.version == "1.27.0", "rubric meta.version stamped")
-check(len(rubric.rules) == 40, f"40 seed rules loaded (got {len(rubric.rules)})")
+check(rubric.version == "1.28.0", "rubric meta.version stamped")
+check(len(rubric.rules) == 41, f"41 seed rules loaded (got {len(rubric.rules)})")
 check(rubric.categories == ["typography", "color", "touch", "navigation", "layout", "components", "a11y"],
       "categories in rubric order")
 check(rb.check_metric_names(rubric, measure.metric_paths()) == [], "every rule metric is a script path or a derived metric")
@@ -634,6 +634,31 @@ check("192.0.2.14" in _c11_sentence and "{" not in _c11_sentence, f"COMP-11: the
 check("COMP-11" in next(j for j in rubric.judgment if j.id == "J-07").maps_to and "COMP-11" in next(j for j in rubric.judgment if j.id == "J-07").question,
       "J-07 names COMP-11 and maps to it, so a `no` and the rule never double-count")
 
+# ---- COMP-12: an expanded section with no text and no control (#1337) ----
+def _layout_rule(patches) -> dict:
+    d = _doc("compliant")
+    for s, patch in zip(d["screens"], patches):
+        s["metrics"]["layout"].update(patch)
+    return next(r for r in ev.evaluate(d, rubric, _specs("compliant"))["rules"] if r["id"] == "COMP-12")
+
+
+_c12 = _layout_rule([{"empty_open_section_count": 2, "empty_open_sections": [{"sel": "details#advanced", "label": "Advanced"},
+                                                                              {"sel": "div#panel", "label": "More"}]}, {}, {}])
+check(_c12["status"] == "fail" and [i["label"] for i in _c12["evidence"][0]["items"]] == ["Advanced", "More"] and _c12["severity"] == "P2",
+      f"COMP-12: an open section with nothing in it fails and is listed -- {_c12['status']} {_c12['evidence']}")
+check(_layout_rule([{}, {}, {}])["status"] == "pass", "COMP-12: a screen whose open sections all show something passes")
+_old12 = _doc("compliant")
+for _s in _old12["screens"]:
+    for _k in ("open_section_count", "empty_open_sections", "empty_open_section_count"):
+        _s["metrics"]["layout"].pop(_k)
+check(next(r for r in ev.evaluate(_old12, rubric, _specs("compliant"))["rules"] if r["id"] == "COMP-12")["status"] == "unmeasured",
+      "COMP-12: a run from before the metric existed is unmeasured, never a pass")
+_c12_sentence = report_mod.finding_sentence(next(r for r in ev.evaluate(_doc("violating"), rubric, _specs("violating"))["rules"] if r["id"] == "COMP-12"), None)
+check("Filters" in _c12_sentence and "{" not in _c12_sentence, f"COMP-12: the fix sentence names the section and fills every placeholder -- {_c12_sentence}")
+_j09 = next(j for j in rubric.judgment if j.id == "J-09")
+check("COMP-12" in _j09.maps_to and "COMP-12" in _j09.question and "COMP-10" in _j09.maps_to,
+      "J-09 names COMP-12 and maps to it, so a `no` and the rule never double-count")
+
 # ---- COMP-07 / LAYOUT-08: a label fits its control, a control fits its container (#1325) ----
 def _layout(rule_id: str, layout_by_screen) -> dict:
     d = _doc("compliant")
@@ -670,7 +695,7 @@ check(all(s == "pass" for s in statuses_c.values()), f"compliant: every rule pas
 check(all(v["score"] == 100.0 and v["grade"] == "A" and not v["unmeasured"] for v in out_c["categories"].values()),
       "compliant: every category 100/A, measured")
 check(out_c["overall"] == {"score": 100.0, "grade": "A", "unmeasured": False}, "compliant: overall A")
-check(out_c["schema_version"] == 1 and out_c["rubric_version"] == "1.27.0" and out_c["target"] == "fixture-app"
+check(out_c["schema_version"] == 1 and out_c["rubric_version"] == "1.28.0" and out_c["target"] == "fixture-app"
       and out_c["commit"].startswith("0000") and out_c["generated_at"].endswith("Z"), "evaluate envelope keys")
 check([s["id"] for s in out_c["screens"]] == ["desktop-light-home", "iphone-light-home", "desktop-light-dialog-edit"],
       "evaluate echoes the screen list")
@@ -1642,7 +1667,7 @@ else:
           f"measure CLI walks the fixture: 2 tabs + 1 dialog x light/dark, plus the absent Settings gear (#1217) ({proc.stdout[-300:]}{proc.stderr[-300:]})")
     check(lines.get("RUN_DIR") == str(run_dir) and Path(lines.get("METRICS", "")).is_file(), "RUN_DIR/METRICS lines point at the run dir")
     doc = json.loads(Path(lines["METRICS"]).read_text(encoding="utf-8"))
-    check(doc["interpreter"] == str(interp) and doc["schema_version"] == 1 and doc["rubric_version"] == "1.27.0", "metrics.json records the interpreter + versions")
+    check(doc["interpreter"] == str(interp) and doc["schema_version"] == 1 and doc["rubric_version"] == "1.28.0", "metrics.json records the interpreter + versions")
     if not (scaffold / "tests" / "e2e" / "_geometry.py").is_file():
         _h.skip("browser leg: project-scaffolding/tests/e2e/_geometry.py absent -- hit-target assertions NOT verified")
     check(doc["walk"]["info"]["geometry"] == ("loaded" if (scaffold / "tests" / "e2e" / "_geometry.py").is_file() else "GEOMETRY_MISSING"),
@@ -2011,6 +2036,25 @@ else:
     _es_rule = next((r for r in ev.evaluate({"screens": ess, "wide_views": []}, rubric, _specs("compliant"))["rules"] if r["id"] == "COMP-10"), {}) if ess else {}
     check(_es_rule.get("status") == "fail" and len(_es_rule["evidence"][0]["items"]) == 3,
           f"COMP-10: the bare blocks fail, the ones holding a button or a link do not -- {_es_rule.get('status')} {_es_rule.get('reason')}")
+
+    # expanded sections that show nothing, and the ones that only look empty (#1337)
+    eo_dir = STATE / "fixture-empty-open-section"
+    proc_eo = subprocess.run(
+        [str(interp), str(REPO / "skills" / "_lib" / "design_review" / "walk.py"), "--url", (FIX / "empty_open_section.html").as_uri(),
+         "--out", str(eo_dir), "--devices", "desktop", "--scaffold", str(scaffold),
+         "--params", str(STATE / "steps-params.json")],
+        capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=600,
+    )
+    eos = json.loads((eo_dir / "screens.json").read_text(encoding="utf-8")) if proc_eo.returncode == 0 else []
+    _eo = ((eos[0].get("metrics") or {}).get("layout") or {}) if eos else {}
+    check(_eo.get("open_section_count") == 14
+          and sorted(i["sel"].split(".")[0] for i in _eo.get("empty_open_sections", [])) == ["details#empty-list", "details#hidden-text", "details#whitespace", "div#panel-empty"],
+          f"COMP-12: whitespace, an empty list, hidden text and an empty aria-controls panel are empty; a sentence, a control, a graphic, a glyph, a spinner, "
+          f"a busy region, a loading data-state, an empty-state block, a details closed in the markup (the walk opens it), a collapsed trigger and a trigger naming a menu or no panel are not "
+          f"-- {_eo} ({proc_eo.stderr[-300:]})")
+    _eo_rule = next((r for r in ev.evaluate({"screens": eos, "wide_views": []}, rubric, _specs("compliant"))["rules"] if r["id"] == "COMP-12"), {}) if eos else {}
+    check(_eo_rule.get("status") == "fail" and len(_eo_rule["evidence"][0]["items"]) == 4,
+          f"COMP-12: the four empty sections fail, the rest do not -- {_eo_rule.get('status')} {_eo_rule.get('reason')}")
 
     # raw identifiers: which text counts, and which only looks like one (#1336)
     ri_dir = STATE / "fixture-raw-identifier"
