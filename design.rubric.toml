@@ -33,7 +33,7 @@
 # metrics.json, every evaluate output and every filed finding.
 
 [meta]
-version = "1.32.0"   # per-bump history: git log -- design.rubric.toml, and the issues/PRs it cites
+version = "1.33.0"   # per-bump history: git log -- design.rubric.toml, and the issues/PRs it cites
 seeded_from = "app-launcher rendered audit, 2026-09-21 (fleet-config#962)"
 
 [weights]
@@ -678,6 +678,19 @@ standard = "design.md action-row: Delete and Remove are never a visible control 
 fix_template = "{count} delete or remove controls are visible on list rows on {screen} ({sample}); move each into the row's menu as its last item, after a divider, or behind an edit mode."
 mockup = "none"
 
+[[rules]]
+id = "COMP-16"
+category = "components"
+title = "A dialog's commit is quieter than another control in its footer"
+metric = "dialogs.quiet_commit_count"
+fail_when = "gt"
+threshold = 0
+severity = "P2"
+owner = "app"
+standard = "design.md modal: the footer holds exactly one full-width `button-primary`, the most prominent control in the dialog; a destructive Delete belongs in the body, never a filled or larger footer control beside Save (fleet-config#1339). The J-02 ratchet narrowed: J-02 keeps every screen that is not a dialog footer"
+fix_template = "{count} dialogs on {screen} have a commit that is quieter than another footer control ({sample}); draw Save as the one full-width button-primary and move the rival into the dialog body or drop its fill."
+mockup = "none"
+
 # ---------------------------------------------------------------------------
 # Accessibility
 
@@ -723,7 +736,7 @@ screens = "tabs"
 
 [[judgment]]
 id = "J-02"
-question = "On each screen, counting every control visible in the viewport or the full-page screenshot, is the most prominent control — the largest, or any filled button whatever its colour (accent and danger red alike) — the one that performs the screen's main task? Answer no if on any screen a secondary control is filled or larger while the main task's control is a plain, ghost, outlined or icon-only button; a destructive control inside a dialog or menu is measured as COMP-08 and is not raised here. Answer na if no screen has more than one control."
+question = "On each screen, counting every control visible in the viewport or the full-page screenshot, is the most prominent control — the largest, or any filled button whatever its colour (accent and danger red alike) — the one that performs the screen's main task? Answer no if on any screen a secondary control is filled or larger while the main task's control is a plain, ghost, outlined or icon-only button; a destructive control inside a dialog or menu is measured as COMP-08, and a dialog whose commit button is quieter than another control on its footer row or below is measured as COMP-16; neither is raised here. Answer no only for what those cannot see, such as a dialog body or a screen that is not a dialog. Answer na if no screen has more than one control."
 maps_to = ["TOUCH-03"]
 screens = "all"
 

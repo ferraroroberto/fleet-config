@@ -1,0 +1,57 @@
+<!doctype html>
+<!-- Static fixture for COMP-16, a dialog whose commit is quieter than another footer control (fleet-config#1339).
+     Walked at the desktop leg (1440x900); every dialog is opened with showModal(). The commit is the dialog's
+     `type=submit` button (or a `primary`-classed one); its rivals are the labelled controls on its row and below.
+       okdialog      a filled full-width Save alone                                   -> pass
+       ghostdialog   a ghost Save beside a filled Delete                              -> quiet (filled)
+       filledpair    a filled Save beside an outlined Delete                          -> pass
+       equaldialog   a ghost Save beside an equally sized ghost Cancel                -> pass (equal is not larger)
+       smalldialog   a narrow ghost Save beside a wider ghost Cancel                  -> quiet (larger)
+       bodydialog    a Delete in the body above a filled Save in the footer           -> pass (the body is not the footer)
+       nocommitdialog  Cancel and Delete, no submit and no primary                    -> pass (no commit to measure)
+     A ghost Save on the page, outside every dialog, is left in on purpose: the rule reads dialogs only.
+     Asserted by tests/test_design_review.py. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>design_review quiet commit fixture</title>
+<style>
+  html, body { margin: 0; background: #ffffff; color: #1f2328; font-family: system-ui, sans-serif; font-size: 16px; }
+  body { padding: 16px; }
+  dialog { width: 360px; border: 1px solid #d1d9e0; padding: 16px; }
+  dialog .row { display: flex; gap: 8px; margin-top: 12px; }
+  dialog button { height: 44px; font: inherit; border: 1px solid #d1d9e0; background: transparent; color: #1f2328; }
+  dialog button.wide { flex: 1; }
+  dialog button.small { width: 80px; }
+  dialog button.mid { width: 140px; }
+  dialog button.fill { background: #0969da; border-color: #0969da; color: #ffffff; }
+  dialog button.danger { color: #a40e26; border-color: #a40e26; }
+  dialog button.danger.fill { background: #cf222e; color: #ffffff; }
+  .page-save { height: 44px; font: inherit; background: transparent; border: 1px solid #d1d9e0; }
+</style>
+</head>
+<body>
+  <main><h2>Quiet commit</h2><button type="submit" class="page-save">Save</button></main>
+  <dialog id="okdialog"><h3>Take</h3><div class="row">
+    <button type="submit" class="wide fill">Save</button></div></dialog>
+  <dialog id="ghostdialog"><h3>Take</h3><div class="row">
+    <button type="submit" class="mid">Save</button>
+    <button type="button" class="mid danger fill">Delete</button></div></dialog>
+  <dialog id="filledpair"><h3>Take</h3><div class="row">
+    <button type="submit" class="mid fill">Save</button>
+    <button type="button" class="mid danger">Delete</button></div></dialog>
+  <dialog id="equaldialog"><h3>Take</h3><div class="row">
+    <button type="submit" class="mid">Save</button>
+    <button type="button" class="mid">Cancel</button></div></dialog>
+  <dialog id="smalldialog"><h3>Take</h3><div class="row">
+    <button type="submit" class="small">Save</button>
+    <button type="button" class="mid">Cancel</button></div></dialog>
+  <dialog id="bodydialog"><h3>Take</h3><div class="row">
+    <button type="button" class="wide danger fill">Delete</button></div><div class="row">
+    <button type="submit" class="wide fill">Save</button></div></dialog>
+  <dialog id="nocommitdialog"><h3>Take</h3><div class="row">
+    <button type="button" class="mid">Cancel</button>
+    <button type="button" class="mid danger">Delete</button></div></dialog>
+</body>
+</html>

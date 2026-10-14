@@ -45,6 +45,7 @@ present on a successful run:
               painted_row_verbs [{sel, label, via, row}], painted_row_verb_count,
               delete_row_verbs [{sel, label, row}], delete_row_verb_count
     overlay   surfaces, destructive [..], destructive_bad [..], destructive_bad_count
+    dialogs   count, with_commit, quiet_commit [{dialog, commit, label, filled, w, h, rival, rival_label, why}], quiet_commit_count
     clearance bars [..], hidden_rows [..], hidden_row_count
     a11y     unnamed [..], unnamed_count, zoom_locked, text_size_control, text_size_stamped
     headings  ["H2:Title@16px", ...]
@@ -136,6 +137,13 @@ _MEASURE_JS = r"""
   const sel = (el) => { let s = el.tagName.toLowerCase(); if (el.id) s += '#'+el.id;
     const c = (el.getAttribute('class')||'').trim().split(/\s+/).filter(Boolean).slice(0,3).join('.'); if (c) s += '.'+c; return s; };
   const txt = (el) => (el.getAttribute('aria-label')||el.textContent||'').trim().replace(/\s+/g,' ').slice(0,40);
+  // A control's full label (aria-label, else its text), whitespace-collapsed; filled = it draws a background that differs
+  // from the surface behind it at rest (a button painted the surface's own colour is not filled); area = its box.
+  const labelOf = (el) => (el.getAttribute('aria-label') || el.textContent || '').replace(/\s+/g, ' ').trim();
+  const filled = (el) => { const own = rgba(getComputedStyle(el).backgroundColor); if (own[3] < 0.02) return false;
+    const behind = bgOf(el.parentElement || el), now = over(own, behind);
+    return [0,1,2].some(i => Math.abs(now[i] - behind[i]) > 6); };
+  const area = (el) => { const r = el.getBoundingClientRect(); return r.width * r.height; };
   // An open popup: a menu, listbox or dialog. Absolutely positioned, it paints over the flow like a fixed layer (#1029).
   const POPUP = '[role=menu], [role=listbox], [role=dialog], dialog';
   // The layer an element paints in (itself or its nearest such ancestor): a fixed or sticky box, or an
@@ -809,11 +817,6 @@ _MEASURE_JS = r"""
     // With a dialog open only that dialog is measured, as in every section: a menu left open on the page behind it is not on this screen.
     const surfaces = new Set([...document.querySelectorAll(SURFACE), ...popoverBodies].filter(visible).filter(inScope));
     const surfaceOf = (el) => { for (let e = el.parentElement; e; e = e.parentElement) if (surfaces.has(e)) return e; return null; };
-    const labelOf = (el) => (el.getAttribute('aria-label') || el.textContent || '').replace(/\s+/g, ' ').trim();
-    const filled = (el) => { const own = rgba(getComputedStyle(el).backgroundColor); if (own[3] < 0.02) return false;
-      const behind = bgOf(el.parentElement || el), now = over(own, behind);
-      return [0,1,2].some(i => Math.abs(now[i] - behind[i]) > 6); };
-    const area = (el) => { const r = el.getBoundingClientRect(); return r.width * r.height; };
     const byOwner = new Map();
     [...document.querySelectorAll(CONTROLS)].filter(visible).forEach(c => { const s = surfaceOf(c); if (!s) return;
       if (!byOwner.has(s)) byOwner.set(s, []); byOwner.get(s).push(c); });
@@ -829,6 +832,33 @@ _MEASURE_JS = r"""
           w: Math.round(r.width), h: Math.round(r.height), why: [fill && 'filled', larger && 'largest'].filter(Boolean).join('+')}); }); });
     const bad = found.filter(f => f.why);
     return { surfaces: surfaces.size, destructive: found.slice(0,CAP), destructive_bad: bad.slice(0,CAP), destructive_bad_count: bad.length };
+  });
+
+  // ---- dialogs: the commit is the most prominent control in its footer (#1339). Per open dialog, the commit is its
+  // `type=submit` button, else a control `params.primarySelector` matches (the last one, as the footer sits last). Its
+  // rivals are the other labelled controls on its row or below it -- the footer; a control above it is the body, where
+  // the modal contract puts a Delete. The commit is quieter when a rival is filled and it is not, or when the two are
+  // alike in fill and the rival's box is more than 5% larger. A dialog with no commit is not measured (`with_commit`).
+  section('dialogs', () => {
+    const CONTROLS = 'button, input[type=submit], input[type=button], [role=button]';
+    const dialogs = [...document.querySelectorAll('dialog[open], [role=dialog]')].filter(visible).filter(inScope);
+    const quiet = []; let withCommit = 0;
+    dialogs.forEach(d => {
+      const labelled = [...d.querySelectorAll(CONTROLS)].filter(visible).filter(c => !c.closest('[role=menu]') && (labelOf(c) || c.value));
+      const commits = labelled.filter(c => c.matches('[type=submit]') || c.matches(params.primarySelector));
+      const commit = commits[commits.length - 1]; if (!commit) return;
+      withCommit++;
+      const top = commit.getBoundingClientRect().top - 2, cf = filled(commit), ca = area(commit);
+      const rival = labelled.filter(c => c !== commit && c.getBoundingClientRect().top >= top)
+        .map(c => ({c, f: filled(c), a: area(c)}))
+        .filter(x => (x.f && !cf) || (x.f === cf && x.a > ca * 1.05))
+        .sort((x, y) => (y.f - x.f) || (y.a - x.a))[0];
+      if (!rival) return;
+      const r = commit.getBoundingClientRect();
+      quiet.push({dialog: sel(d), commit: sel(commit), label: labelOf(commit).slice(0,30) || commit.value, filled: cf, w: Math.round(r.width), h: Math.round(r.height),
+        rival: sel(rival.c), rival_label: labelOf(rival.c).slice(0,30), why: rival.f && !cf ? 'filled' : 'larger'});
+    });
+    return { count: dialogs.length, with_commit: withCommit, quiet_commit: quiet.slice(0,CAP), quiet_commit_count: quiet.length };
   });
 
   // ---- clearance: a list's last row must scroll clear of a fixed bar anchored to the bottom (#1019).
@@ -1021,6 +1051,7 @@ def metric_paths() -> List[str]:
                    "empty_open_sections", "empty_open_section_count", "multi_secondary_rows", "multi_secondary_row_count",
                    "painted_row_verbs", "painted_row_verb_count", "delete_row_verbs", "delete_row_verb_count"],
         "overlay": ["surfaces", "destructive", "destructive_bad", "destructive_bad_count"],
+        "dialogs": ["count", "with_commit", "quiet_commit", "quiet_commit_count"],
         "clearance": ["bars", "hidden_rows", "hidden_row_count"],
         "a11y": ["unnamed", "unnamed_count", "zoom_locked", "text_size_control", "text_size_stamped"],
     }
