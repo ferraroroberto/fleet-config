@@ -40,7 +40,8 @@ present on a successful run:
     feedback  toast_count, toasts_tinted [..], toasts_tinted_count, empty_state_count, empty_states_no_action [{sel, text}]
     layout    control_overflow [..], control_overflow_count, overflow_x, scroll_w, inner_w, inner_h, pane_h, lists [..],
               rows_over_limit [..], danger_rows, content_w, content_span, pane_split, radii {r: n},
-              open_section_count, empty_open_sections [{sel, label}], empty_open_section_count
+              open_section_count, empty_open_sections [{sel, label}], empty_open_section_count,
+              multi_secondary_rows [{sel, label, lines}], multi_secondary_row_count
     overlay   surfaces, destructive [..], destructive_bad [..], destructive_bad_count
     clearance bars [..], hidden_rows [..], hidden_row_count
     a11y     unnamed [..], unnamed_count, zoom_locked, text_size_control, text_size_stamped
@@ -613,7 +614,54 @@ _MEASURE_JS = r"""
           filter = !!e.querySelector('input[type=search], input[placeholder*="filter" i], input[placeholder*="search" i], [role=searchbox]');
           if (e === pane || e.matches('[role=tabpanel], main, body')) break; }
         lists.push({sel: sel(l), rows, has_filter: filter}); } });
-    q('li, tr, [role=listitem], [role=row]').forEach(row => {
+    // Secondary lines under a repeating row's title (#1338). A "line" is a text block, not a rendered line: the units
+    // are the block containers holding the row's text (a <br> splits one), so one long meta line that wraps stays one
+    // unit however many line boxes it takes, and the spans of one meta line (a flex row, wrapping or not) are one.
+    // Left out: chips and badges (by class or by a small painted inline box), the row's trailing controls and anything in a box up to 64px square (the avatar,
+    // the date tile), a nested row, an open disclosure's body. The title is the largest unit (then the heaviest, then
+    // the topmost); a secondary line is a unit below it, left-aligned with it and no larger, and units on the same
+    // visual band are one line. Only a row of a list (two or more siblings), outside a nav, menu or popup, is judged.
+    const ROWISH = 'li, tr, [role=listitem], [role=row]';
+    const CHIP_CLASS = /(^|[-_\s])(chip|badge|pill|kebab|accessory)($|[-_\s])/i;
+    const secondaryLines = (row, extras, disclosed) => {
+      if (!row.parentElement || [...row.parentElement.children].filter(c => c.tagName === row.tagName).length < 2) return null;
+      if (row.closest('nav, [role=navigation], [role=menu], [role=menubar], [role=listbox], [role=tablist], [role=tree], ' + POPUP)) return null;
+      const units = [];
+      const walker = document.createTreeWalker(row, NodeFilter.SHOW_TEXT);
+      for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+        const host = n.parentElement; if (!host || !/\S/.test(n.data)) continue;
+        if (host.closest('script, style, template, noscript, svg, summary') || host.closest(ROWISH) !== row || !visible(host)) continue;
+        if (disclosed(host) || extras.some(c => c.contains(host))) continue;
+        let skip = false;
+        for (let e = host; e && e !== row && !skip; e = e.parentElement) {
+          const st = getComputedStyle(e), r = e.getBoundingClientRect();
+          skip = (typeof e.className === 'string' && CHIP_CLASS.test(e.className)) || e.matches('[role=status]')
+            || (st.display.startsWith('inline') && r.height <= 32 && (rgba(st.backgroundColor)[3] > 0.05 || (parseFloat(st.borderTopWidth) || 0) > 0))
+            || (e !== host && r.width > 0 && r.width <= 64 && r.height <= 64); }
+        if (skip) continue;
+        const range = document.createRange(); range.selectNodeContents(n);
+        const rects = [...range.getClientRects()].filter(r => r.width > 0 && r.height > 0); if (!rects.length) continue;
+        let cont = host; while (cont !== row && /^(inline|contents)$/.test(getComputedStyle(cont).display)) cont = cont.parentElement;
+        const par = cont !== row ? cont.parentElement : null, ps = par ? getComputedStyle(par) : null;
+        if (ps && ps.display.includes('flex') && ps.flexDirection.startsWith('row') && ps.flexWrap !== 'nowrap') cont = par;
+        let br = 0; cont.querySelectorAll('br').forEach(b => { if (n.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_PRECEDING) br++; });
+        const hs = getComputedStyle(host), fs = parseFloat(hs.fontSize) || 0, fw = parseInt(hs.fontWeight, 10) || 400;
+        let u = units.find(x => x.cont === cont && x.br === br);
+        if (!u) { u = {cont, br, top: Infinity, bottom: -Infinity, left: Infinity, fs: 0, fw: 0, text: ''}; units.push(u); }
+        rects.forEach(r => { u.top = Math.min(u.top, r.top); u.bottom = Math.max(u.bottom, r.bottom); u.left = Math.min(u.left, r.left); });
+        u.fs = Math.max(u.fs, fs); u.fw = Math.max(u.fw, fw); u.text += n.data; }
+      if (!units.length) return null;
+      const title = [...units].sort((a, b) => b.fs - a.fs || b.fw - a.fw || a.top - b.top || a.left - b.left)[0];
+      const below = units.filter(u => u !== title && u.top >= title.bottom - 2 && Math.abs(u.left - title.left) <= 6 && u.fs <= title.fs + 0.5)
+        .sort((a, b) => a.top - b.top);
+      const bands = [];
+      below.forEach(u => { const b = bands[bands.length - 1];
+        const lap = b ? Math.min(u.bottom, b.bottom) - Math.max(u.top, b.top) : 0;
+        if (b && lap >= 0.5 * Math.min(u.bottom - u.top, b.bottom - b.top)) b.bottom = Math.max(b.bottom, u.bottom);
+        else bands.push({top: u.top, bottom: u.bottom}); });
+      return {lines: bands.length, title: title.text.replace(/\s+/g, ' ').trim().slice(0, 30)}; };
+    const multiSecondary = [];
+    q(ROWISH).forEach(row => {
       // A week of a month grid is not an action row: the WAI-ARIA grid pattern's rows (#1017).
       if ((row.tagName === 'TR' || row.getAttribute('role') === 'row') && row.closest('[role=grid], [role=treegrid]')) return;
       // An open disclosure inside the row holds the actions the row would otherwise show, so its
@@ -634,6 +682,8 @@ _MEASURE_JS = r"""
       const main = ctl.reduce((a, c) => (!a || c.getBoundingClientRect().width > a.getBoundingClientRect().width) ? c : a, null);
       const extras = main && main.getBoundingClientRect().width >= rw * 0.5 ? ctl.filter(c => c !== main) : ctl;
       if (extras.length > params.rowControlsMax) rowsOver.push({sel: sel(row), controls: extras.length});
+      const sec = secondaryLines(row, extras, disclosed);
+      if (sec && sec.lines > 1) multiSecondary.push({sel: sel(row), label: sec.title, lines: sec.lines});
       if (ctl.some(c => /danger|destructive|delete|remove/i.test(c.className || ''))) dangerRows.add(row); });
     const all = q('*');
     all.forEach(el => { const r = getComputedStyle(el).borderTopLeftRadius; if (r && r !== '0px') radii[r] = (radii[r]||0)+1; });
@@ -707,6 +757,7 @@ _MEASURE_JS = r"""
       emptyOpen.push({sel: sel(el), label}); });
     return { control_overflow: spilled.slice(0,CAP), control_overflow_count: spilled.length, overflow_x: de.scrollWidth > window.innerWidth + 1, scroll_w: de.scrollWidth, inner_w: window.innerWidth, inner_h: window.innerHeight,
       pane_h: pane.scrollHeight, lists: lists.slice(0,CAP), rows_over_limit: rowsOver.slice(0,CAP), rows_over_limit_count: rowsOver.length,
+      multi_secondary_rows: multiSecondary.slice(0,CAP), multi_secondary_row_count: multiSecondary.length,
       danger_rows: dangerRows.size, content_w: Math.round(content.width), content_span: Math.round(spanRight - content.left), pane_split: paneSplit, radii,
       open_section_count: openSections.size, empty_open_sections: emptyOpen.slice(0,CAP), empty_open_section_count: emptyOpen.length };
   });
@@ -935,7 +986,7 @@ def metric_paths() -> List[str]:
         "feedback": ["toast_count", "toasts_tinted", "toasts_tinted_count", "empty_state_count", "empty_states_no_action"],
         "layout": ["control_overflow", "control_overflow_count", "overflow_x", "scroll_w", "inner_w", "inner_h", "pane_h", "lists", "rows_over_limit",
                    "rows_over_limit_count", "danger_rows", "content_w", "content_span", "pane_split", "radii", "open_section_count",
-                   "empty_open_sections", "empty_open_section_count"],
+                   "empty_open_sections", "empty_open_section_count", "multi_secondary_rows", "multi_secondary_row_count"],
         "overlay": ["surfaces", "destructive", "destructive_bad", "destructive_bad_count"],
         "clearance": ["bars", "hidden_rows", "hidden_row_count"],
         "a11y": ["unnamed", "unnamed_count", "zoom_locked", "text_size_control", "text_size_stamped"],

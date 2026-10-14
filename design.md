@@ -760,7 +760,10 @@ hand-picked per app.
   two-line clamp counts as a wrap under COMP-07 (task-os#396; owner
   decision on fleet-config#1350, 2026-10-11).
   **Context:** at most one `body-sm` line in `fg-muted`, which a status chip
-  may close, for an exception only. Its order is the date, then exception
+  may close, for an exception only. A second block of text under the title is
+  measured as `COMP-13` (fleet-config#1338): it counts text blocks, so one
+  meta line that wraps is one, and chips, the trailing accessory and a leading
+  tile or avatar are not lines. Its order is the date, then exception
   chips, then one context name, then at most two counts; at 390px only the
   context name may ellipsize, and links and people move to the menu and the
   detail sheet (task-os#392). **A source names the sending app, never the

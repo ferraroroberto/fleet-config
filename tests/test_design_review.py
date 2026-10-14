@@ -60,8 +60,8 @@ def _doc(name: str) -> dict:
 # ---- rubric: the real file loads and names only metrics that exist ----------
 
 rubric = dr.load_rubric(RUBRIC)
-check(rubric.version == "1.28.0", "rubric meta.version stamped")
-check(len(rubric.rules) == 41, f"41 seed rules loaded (got {len(rubric.rules)})")
+check(rubric.version == "1.29.0", "rubric meta.version stamped")
+check(len(rubric.rules) == 42, f"42 seed rules loaded (got {len(rubric.rules)})")
 check(rubric.categories == ["typography", "color", "touch", "navigation", "layout", "components", "a11y"],
       "categories in rubric order")
 check(rb.check_metric_names(rubric, measure.metric_paths()) == [], "every rule metric is a script path or a derived metric")
@@ -635,11 +635,11 @@ check("COMP-11" in next(j for j in rubric.judgment if j.id == "J-07").maps_to an
       "J-07 names COMP-11 and maps to it, so a `no` and the rule never double-count")
 
 # ---- COMP-12: an expanded section with no text and no control (#1337) ----
-def _layout_rule(patches) -> dict:
+def _layout_rule(patches, rule_id: str = "COMP-12") -> dict:
     d = _doc("compliant")
     for s, patch in zip(d["screens"], patches):
         s["metrics"]["layout"].update(patch)
-    return next(r for r in ev.evaluate(d, rubric, _specs("compliant"))["rules"] if r["id"] == "COMP-12")
+    return next(r for r in ev.evaluate(d, rubric, _specs("compliant"))["rules"] if r["id"] == rule_id)
 
 
 _c12 = _layout_rule([{"empty_open_section_count": 2, "empty_open_sections": [{"sel": "details#advanced", "label": "Advanced"},
@@ -658,6 +658,25 @@ check("Filters" in _c12_sentence and "{" not in _c12_sentence, f"COMP-12: the fi
 _j09 = next(j for j in rubric.judgment if j.id == "J-09")
 check("COMP-12" in _j09.maps_to and "COMP-12" in _j09.question and "COMP-10" in _j09.maps_to,
       "J-09 names COMP-12 and maps to it, so a `no` and the rule never double-count")
+
+# ---- COMP-13: a list row with more than one secondary line (#1338) ----
+_c13 = _layout_rule([{"multi_secondary_row_count": 2, "multi_secondary_rows": [{"sel": "li#a", "label": "Kitchen light", "lines": 2},
+                                                                              {"sel": "li#b", "label": "Hall sensor", "lines": 3}]}, {}, {}], "COMP-13")
+check(_c13["status"] == "fail" and [i["label"] for i in _c13["evidence"][0]["items"]] == ["Kitchen light", "Hall sensor"] and _c13["severity"] == "P2",
+      f"COMP-13: rows with more than one secondary line fail and are listed -- {_c13['status']} {_c13['evidence']}")
+check(_layout_rule([{}, {}, {}], "COMP-13")["status"] == "pass", "COMP-13: a screen whose rows carry one secondary line at most passes")
+_old13 = _doc("compliant")
+for _s in _old13["screens"]:
+    for _k in ("multi_secondary_rows", "multi_secondary_row_count"):
+        _s["metrics"]["layout"].pop(_k)
+check(next(r for r in ev.evaluate(_old13, rubric, _specs("compliant"))["rules"] if r["id"] == "COMP-13")["status"] == "unmeasured",
+      "COMP-13: a run from before the metric existed is unmeasured, never a pass")
+_c13_sentence = report_mod.finding_sentence(next(r for r in ev.evaluate(_doc("violating"), rubric, _specs("violating"))["rules"] if r["id"] == "COMP-13"), None)
+check("Kitchen light" in _c13_sentence and "{" not in _c13_sentence, f"COMP-13: the fix sentence names the row and fills every placeholder -- {_c13_sentence}")
+_j10 = next(j for j in rubric.judgment if j.id == "J-10")
+check("COMP-13" in _j10.maps_to and "COMP-13" in _j10.question and "at most one secondary line" not in _j10.question
+      and "more than two lines" not in _j10.question,
+      "J-10 names COMP-13, maps to it and no longer asks the secondary-line count, so a `no` and the rule never double-count")
 
 # ---- COMP-07 / LAYOUT-08: a label fits its control, a control fits its container (#1325) ----
 def _layout(rule_id: str, layout_by_screen) -> dict:
@@ -695,7 +714,7 @@ check(all(s == "pass" for s in statuses_c.values()), f"compliant: every rule pas
 check(all(v["score"] == 100.0 and v["grade"] == "A" and not v["unmeasured"] for v in out_c["categories"].values()),
       "compliant: every category 100/A, measured")
 check(out_c["overall"] == {"score": 100.0, "grade": "A", "unmeasured": False}, "compliant: overall A")
-check(out_c["schema_version"] == 1 and out_c["rubric_version"] == "1.28.0" and out_c["target"] == "fixture-app"
+check(out_c["schema_version"] == 1 and out_c["rubric_version"] == "1.29.0" and out_c["target"] == "fixture-app"
       and out_c["commit"].startswith("0000") and out_c["generated_at"].endswith("Z"), "evaluate envelope keys")
 check([s["id"] for s in out_c["screens"]] == ["desktop-light-home", "iphone-light-home", "desktop-light-dialog-edit"],
       "evaluate echoes the screen list")
@@ -1667,7 +1686,7 @@ else:
           f"measure CLI walks the fixture: 2 tabs + 1 dialog x light/dark, plus the absent Settings gear (#1217) ({proc.stdout[-300:]}{proc.stderr[-300:]})")
     check(lines.get("RUN_DIR") == str(run_dir) and Path(lines.get("METRICS", "")).is_file(), "RUN_DIR/METRICS lines point at the run dir")
     doc = json.loads(Path(lines["METRICS"]).read_text(encoding="utf-8"))
-    check(doc["interpreter"] == str(interp) and doc["schema_version"] == 1 and doc["rubric_version"] == "1.28.0", "metrics.json records the interpreter + versions")
+    check(doc["interpreter"] == str(interp) and doc["schema_version"] == 1 and doc["rubric_version"] == "1.29.0", "metrics.json records the interpreter + versions")
     if not (scaffold / "tests" / "e2e" / "_geometry.py").is_file():
         _h.skip("browser leg: project-scaffolding/tests/e2e/_geometry.py absent -- hit-target assertions NOT verified")
     check(doc["walk"]["info"]["geometry"] == ("loaded" if (scaffold / "tests" / "e2e" / "_geometry.py").is_file() else "GEOMETRY_MISSING"),
@@ -2055,6 +2074,28 @@ else:
     _eo_rule = next((r for r in ev.evaluate({"screens": eos, "wide_views": []}, rubric, _specs("compliant"))["rules"] if r["id"] == "COMP-12"), {}) if eos else {}
     check(_eo_rule.get("status") == "fail" and len(_eo_rule["evidence"][0]["items"]) == 4,
           f"COMP-12: the four empty sections fail, the rest do not -- {_eo_rule.get('status')} {_eo_rule.get('reason')}")
+
+    # list rows with more than one secondary line, and the rows that only look like it (#1338): at 1440px and at 390px,
+    # where the wrapping meta lines take two to four rendered lines and must still count as one
+    ms_dir = STATE / "fixture-multi-secondary"
+    proc_ms = subprocess.run(
+        [str(interp), str(REPO / "skills" / "_lib" / "design_review" / "walk.py"), "--url", (FIX / "multi_secondary.html").as_uri(),
+         "--out", str(ms_dir), "--devices", "desktop,iphone", "--scaffold", str(scaffold),
+         "--params", str(STATE / "steps-params.json")],
+        capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=600,
+    )
+    mss = json.loads((ms_dir / "screens.json").read_text(encoding="utf-8")) if proc_ms.returncode == 0 else []
+    for _dev in ("desktop", "iphone"):
+        _ms_scr = next((s for s in mss if s.get("device") == _dev), None)
+        _ms = ((_ms_scr or {}).get("metrics") or {}).get("layout") or {}
+        check(sorted((i["sel"].split(".")[0], i["lines"]) for i in _ms.get("multi_secondary_rows", []))
+              == [("li#f-br", 2), ("li#f-slots", 2), ("li#f-three", 3), ("li#f-two", 2)],
+              f"COMP-13 ({_dev}): a title with two meta blocks, three, a <br> inside one and an avatar and kebab around two fail; one meta line, "
+              f"one that wraps (text, inline spans, a wrapping flex row), spans on one flex line, a chip, a date tile, a leading time, a trailing "
+              f"value with a caption, a title alone, a lone row, a nav item, an open disclosure's body and a nested list do not -- {_ms} ({proc_ms.stderr[-300:]})")
+    _ms_rule = next((r for r in ev.evaluate({"screens": mss, "wide_views": []}, rubric, _specs("compliant"))["rules"] if r["id"] == "COMP-13"), {}) if mss else {}
+    check(_ms_rule.get("status") == "fail" and len(_ms_rule["evidence"][0]["items"]) == 4,
+          f"COMP-13: the four rows fail, the rest do not -- {_ms_rule.get('status')} {_ms_rule.get('reason')}")
 
     # raw identifiers: which text counts, and which only looks like one (#1336)
     ri_dir = STATE / "fixture-raw-identifier"
