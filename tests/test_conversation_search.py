@@ -338,4 +338,78 @@ try:
 finally:
     shutil.rmtree(tmp, ignore_errors=True)
 
+
+# ---- the owner's title outranks digest and body matches (fleet-config#1419) ----
+# Nine conversations mention the word in their digest (and body); one has it as
+# its whole owner title and says almost nothing else. Before the title had its own
+# FTS column it sat at digest weight inside a long digest and ranked behind them.
+WORD = "kestrel"
+tmp = Path(tempfile.mkdtemp(prefix="conv_title_"))
+try:
+    root = tmp / "life-os"
+    cdir = root / ".claude" / "skills" / "journal-daily" / "conversations"
+    cdir.mkdir(parents=True)
+    titled = "2026-09-01-0900-journal-daily-title000.md"
+    names = [titled] + [f"2026-08-{d:02d}-0900-journal-daily-other{d:03d}.md" for d in range(1, 10)]
+    idx_entries, titles_map = {}, {titled: WORD}
+    for name in names:
+        is_titled = name == titled
+        (cdir / name).write_text(
+            cc.render_markdown("d", [("user", f"we looked at the {WORD} again today" * (1 if is_titled else 3))]),
+            encoding="utf-8")
+        body = ("- **Topic:** an unrelated afternoon of errands and planning\n"
+                "- **Summary:** talked through the week and the shopping list at length, "
+                "with nothing else of note to record" if is_titled else
+                f"- **Topic:** the {WORD} {WORD} migration notes\n"
+                f"- **Summary:** the {WORD} came up again; more {WORD} detail followed")
+        idx_entries[name] = ci.Entry(file=name, mtime=(cdir / name).stat().st_mtime,
+                                     turns=2, body=body, sid="", agent="claude")
+    (cdir / "index.md").write_text(ci.render_index("journal-daily", idx_entries), encoding="utf-8")
+    (cdir / ci.TITLES_NAME).write_text(json.dumps(titles_map), encoding="utf-8")
+    cfg = cc.CaptureConfig(root=root, routing="skills", conversations_dir="conversations",
+                           skills_dir=".claude/skills", active_marker=".active-skill")
+    check(cs.sync(cfg) == 10, "title rank: synced the fixture conversations")
+    hits = cs.search(cfg, WORD)
+    check(len(hits) == 10 and hits[0]["file"] == titled,
+          "title rank: a full-title match ranks first, ahead of digest and body matches")
+    check(cs.search(cfg, WORD[:-2])[0]["file"] == titled,
+          "title rank: the still-typing prefix of the title also ranks it first")
+    check(set(hits[0]) == {"skill", "file", "path", "date", "slug", "sid", "agent", "title",
+                           "topic", "summary", "decisions", "open_loops", "turns", "rank",
+                           "resume", "resumable"},
+          "title rank: the result shape (the app-launcher --json contract) is unchanged")
+    # Untitled conversations rank exactly as before: no title column content to add.
+    check(len(cs.search(cfg, "migration")) == 9
+          and all(h["file"] != titled for h in cs.search(cfg, "migration")),
+          "title rank: a digest-only query is unaffected by the title column")
+
+    # A db built before the title column existed (digest, body) upgrades in place on
+    # connect, keeps answering queries, and `sync` re-reads every row to settle it.
+    cs.db_path(cfg).unlink()
+    _old = sqlite3.connect(str(cs.db_path(cfg)))
+    _old.executescript(
+        "CREATE TABLE conversations (id INTEGER PRIMARY KEY, skill TEXT NOT NULL, file TEXT NOT NULL,"
+        " path TEXT NOT NULL UNIQUE, date TEXT NOT NULL DEFAULT '', slug TEXT NOT NULL DEFAULT '',"
+        " sid TEXT NOT NULL DEFAULT '', agent TEXT NOT NULL DEFAULT '', title TEXT NOT NULL DEFAULT '',"
+        " topic TEXT NOT NULL DEFAULT '', summary TEXT NOT NULL DEFAULT '',"
+        " decisions TEXT NOT NULL DEFAULT '', open_loops TEXT NOT NULL DEFAULT '',"
+        " turns INTEGER NOT NULL DEFAULT 0, mtime REAL NOT NULL DEFAULT 0);"
+        "CREATE VIRTUAL TABLE conv_fts USING fts5(digest, body);"
+        f"INSERT INTO conversations (id, skill, file, path, title, mtime)"
+        f" VALUES (1, 'journal-daily', 'legacy.md', 'legacy-path', '{WORD}', 1);"
+        f"INSERT INTO conv_fts (rowid, digest, body) VALUES (1, '{WORD} legacy digest', 'legacy body');")
+    _old.commit()
+    _old.close()
+    _c = cs.connect(cs.db_path(cfg))
+    check([r[1] for r in _c.execute("PRAGMA table_info(conv_fts)")] == ["title", "digest", "body"],
+          "title rank: a pre-title index gains the title column in place")
+    _c.close()
+    check([h["file"] for h in cs.search(cfg, "legacy")] == ["legacy.md"],
+          "title rank: the upgraded index still answers before any re-sync")
+    check(cs.sync(cfg) == 10 and cs.search(cfg, WORD)[0]["file"] == titled,
+          "title rank: the next sync settles the upgraded index, title first")
+    check(not cs.search(cfg, "legacy"), "title rank: the upgrade's stale row is pruned by sync")
+finally:
+    shutil.rmtree(tmp, ignore_errors=True)
+
 _h.report_and_exit("test_conversation_search")

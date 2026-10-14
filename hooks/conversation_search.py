@@ -6,10 +6,13 @@ answer *"what happened recently"* for one skill. This answers the other
 question — *"which conversation was the one about X, out of everything, across
 every skill"* — and hands back the identity needed to reopen it.
 
-Two layers are searched at different weights, because they fail differently:
+Three layers are searched at different weights, because they fail differently:
 
-  * the **digest** (the owner's title, topic / summary — decisions / open loops
-    on older entries) — dense and abstracted, so a match here is usually the
+  * the owner's **title** — the strongest statement of what a conversation is
+    about, and short, so it is its own column rather than a phrase lost inside
+    a long digest (fleet-config#1419); weighted highest.
+  * the **digest** (slug, topic / summary — decisions / open loops on older
+    entries) — dense and abstracted, so a match here is usually the
     conversation you meant; weighted high.
   * the **full capture text** — verbatim, so it finds the offhand detail no
     digest would ever mention ("the ferry booking reference"); weighted low so
@@ -110,7 +113,7 @@ CREATE TABLE IF NOT EXISTS conversations (
     turns      INTEGER NOT NULL DEFAULT 0,
     mtime      REAL NOT NULL DEFAULT 0
 );
-CREATE VIRTUAL TABLE IF NOT EXISTS conv_fts USING fts5(digest, body);
+CREATE VIRTUAL TABLE IF NOT EXISTS conv_fts USING fts5(title, digest, body);
 """
 
 
@@ -133,7 +136,42 @@ def connect(path: Path) -> sqlite3.Connection:
     # keep their decisions / open_loops and read "" here.
     if "summary" not in columns:
         conn.execute("ALTER TABLE conversations ADD COLUMN summary TEXT NOT NULL DEFAULT ''")
+    _migrate_fts_title(conn)
     return conn
+
+
+def _migrate_fts_title(conn: sqlite3.Connection) -> None:
+    """Upgrade a ``conv_fts(digest, body)`` index to ``(title, digest, body)`` in place.
+
+    fleet-config#1419 gave the owner's title its own column. An old index is
+    copied across — its digest text still carries the title, which only
+    double-counts it — so queries keep working the instant it is opened, and
+    every row's ``mtime`` is zeroed so the next ``sync`` re-reads each capture
+    and writes it in the new shape. ``BEGIN IMMEDIATE`` plus the re-check makes a
+    search and a sync that open it together migrate it exactly once.
+    """
+    def has_title() -> bool:
+        return "title" in {row[1] for row in conn.execute("PRAGMA table_info(conv_fts)")}
+
+    if has_title():
+        return
+    conn.execute("BEGIN IMMEDIATE")
+    try:
+        if not has_title():
+            conn.execute("CREATE VIRTUAL TABLE conv_fts_new USING fts5(title, digest, body)")
+            conn.execute(
+                "INSERT INTO conv_fts_new (rowid, title, digest, body) "
+                "SELECT f.rowid, COALESCE(c.title, ''), f.digest, f.body "
+                "FROM conv_fts f LEFT JOIN conversations c ON c.id = f.rowid"
+            )
+            conn.execute("DROP TABLE conv_fts")
+            conn.execute("ALTER TABLE conv_fts_new RENAME TO conv_fts")
+            conn.execute("UPDATE conversations SET mtime = 0")
+            logger.info("ℹ️ search index upgraded in place: owner title is now its own column")
+        conn.commit()
+    except sqlite3.Error:
+        conn.rollback()
+        raise
 
 
 # ------------------------------------------------------------------- sync
@@ -238,7 +276,7 @@ def sync(cfg: CaptureConfig, *, rebuild: bool = False) -> int:
                     "mtime": mtime,
                 }
                 digest_text = " ".join(
-                    v for v in (title, slug, row["topic"], row["summary"], row["decisions"],
+                    v for v in (slug, row["topic"], row["summary"], row["decisions"],
                               row["open_loops"]) if v
                 )
                 body_text = strip_capture_header(text)[:MAX_BODY_CHARS]
@@ -280,15 +318,16 @@ def _upsert(conn: sqlite3.Connection, row: dict, digest_text: str, body_text: st
         row,
     )
     conn.execute(
-        "INSERT INTO conv_fts (rowid, digest, body) VALUES (?, ?, ?)",
-        (cur.lastrowid, digest_text, body_text),
+        "INSERT INTO conv_fts (rowid, title, digest, body) VALUES (?, ?, ?, ?)",
+        (cur.lastrowid, row["title"], digest_text, body_text),
     )
 
 
 # ------------------------------------------------------------------ query
 
-# Digest matches outrank body matches 10:1 — see the module docstring.
-_BM25 = "bm25(conv_fts, 10.0, 1.0)"
+# Title outranks digest, digest outranks body — see the module docstring. Column
+# order matches the ``conv_fts`` schema: title, digest, body.
+_BM25 = "bm25(conv_fts, 100.0, 10.0, 1.0)"
 
 
 # Syntax FTS5 acts on. The operators are matched **uppercase only, and that is
