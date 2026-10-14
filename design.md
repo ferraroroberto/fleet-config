@@ -765,7 +765,7 @@ hand-picked per app.
   row's tap target so a press never opens the sheet. A choice with a selected
   state (an AC mode) is a `segmented` control and keeps its track; verbs that
   only fire are never one. A painted or bordered verb inside a list row is
-  measured as `COMP-14`, a glyph-only button in general as `COMP-05`.
+  measured as `COMP-14`, a glyph-only button in general as `COMP-05`. A **count chip** is not a verb: a button whose whole visible label is a plus and a number ("+3", "+3 more") discloses more of the same row and acts on nothing, so `COMP-14` skips it and it may keep its tag-like pill (fleet-config#1429, owner decision 2026-10-14). The exemption is the label, never the paint or the position: a painted "Archive", "+ Add" or any other word on the same row still fails.
   The **date tile** is the weekday over the day number in a 44px square
   (the floor), today tinted `accent-soft`, all text at least 14px; the
   title then says what the day *is* ("Booked", "Holiday") and the one meta

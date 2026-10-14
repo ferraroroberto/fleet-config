@@ -6,7 +6,10 @@
      painted button OUTSIDE a list row (a page action), and a painted button in a menu or nav list. COMP-15
      (fleet-config#1420, owner decision 2026-10-14): a visible Delete or Remove control on a row fails, in a page list or in a
      sheet's editing list (the dialog the walk opens as its own screen): an icon button named Remove, a trash glyph, a text Delete, two rows of a dialog's list. A
-     kebab, an Edit verb, a page-level Delete all and a Delete menu item do not. Asserted by
+     kebab, an Edit verb, a page-level Delete all and a Delete menu item do not. COMP-14 exempts a disclosure
+     (fleet-config#1429, owner decision 2026-10-14): a painted chip whose whole label is a count ("+3 more", "+12")
+     reveals more of the same row and acts on nothing, so it passes (p-more, p-count); a painted verb chip on the same
+     row still fails (f-more-verb), and so does a painted chip that merely starts with a plus (f-plus-verb). Asserted by
      tests/test_design_review.py. -->
 <html lang="en">
 <head>
@@ -28,6 +31,7 @@
   .tint { background: #ddf4ff; border: 1px solid #54aeff66; color: #0969da; height: 44px; padding: 0 12px; border-radius: 8px; font: inherit; }
   .outl { background: transparent; border: 1px solid #d1d9e0; color: #656d76; height: 44px; padding: 0 12px; border-radius: 8px; font: inherit; }
   .shadowed { background: none; border: 0; box-shadow: 0 2px 6px rgba(0,0,0,.35); width: 44px; height: 44px; border-radius: 8px; }
+  .chip { background: #ddf4ff; border: 1px solid #54aeff66; color: #0969da; height: 24px; padding: 0 8px; border-radius: 12px; font: inherit; font-size: 14px; }
   .page { background: #0969da; color: #fff; border: 0; padding: 8px 16px; border-radius: 8px; font: inherit; }
   [role=switch] { width: 44px; height: 24px; border-radius: 12px; border: 0; background: #1f6feb; }
   [aria-pressed=true] { background: #ddf4ff; }
@@ -49,11 +53,18 @@
   <li class="row" id="f-lone"><button class="main"><span class="t">Hub F</span><span class="m">Stopped</span></button><button class="tint">Wake</button></li>
 </ul>
 
+<ul>
+  <li class="row" id="f-more-verb"><button class="main"><span class="t">Report A</span><span class="m">3 files</span></button><button class="chip">Archive</button><button class="chip">+3 more</button></li>
+  <li class="row" id="f-plus-verb"><button class="main"><span class="t">Report B</span><span class="m">3 files</span></button><button class="chip">+ Add</button></li>
+</ul>
+
 <h2>Passes</h2>
 <ul>
   <li class="row" id="p-plain"><button class="main"><span class="t">Cam A</span><span class="m">Idle</span></button><button class="ib" aria-label="Live"><svg><use href="#g"/></svg></button><button class="ib" aria-label="More actions" aria-haspopup="menu" aria-expanded="false"><svg><use href="#g"/></svg></button></li>
   <li class="row" id="p-group"><button class="main"><span class="t">Blind A</span><span class="m">Open</span></button><span class="group" role="group" aria-label="Blind"><button class="ib" aria-label="Up"><svg><use href="#g"/></svg></button><button class="ib" aria-label="Stop"><svg><use href="#g"/></svg></button><button class="ib" aria-label="Down"><svg><use href="#g"/></svg></button></span></li>
   <li class="row" id="p-fav"><button class="ib" aria-pressed="true" aria-label="Favorite"><svg><use href="#g"/></svg></button><button class="main"><span class="t">Job A</span><span class="m">Yesterday</span></button><button class="ib" aria-label="Run"><svg><use href="#g"/></svg></button></li>
+  <li class="row" id="p-more"><button class="main"><span class="t">Report C</span><span class="m">5 files</span></button><button class="chip" title="3 more file(s)">+3 more</button></li>
+  <li class="row" id="p-count"><button class="main"><span class="t">Report D</span><span class="m">5 files</span></button><button class="chip">+12</button></li>
   <li class="row" id="p-switch"><button class="main"><span class="t">Plug A</span><span class="m">On</span></button><button role="switch" aria-checked="true" aria-label="Plug A"></button></li>
 </ul>
 

@@ -675,6 +675,10 @@ _MEASURE_JS = r"""
     const multiSecondary = [], paintedVerbs = [], deleteVerbs = [];
     const DELETE_NAME = /\b(?:delete|remove|trash|discard|erase)\b/i;
     const paintShows = (c, surface) => c[3] > 0.02 && Math.max(...[0,1,2].map(i => Math.abs(over(c, surface)[i] - surface[i]))) > 2;
+    // A count chip is a disclosure, not a verb (#1429, owner decision 2026-10-14): a button whose whole visible label is
+    // a plus and a number, optionally followed by "more" ("+3", "+3 more"), reveals more of the same row and acts on
+    // nothing. Structural and narrow: the label is the entire text, so "+ Add" or "Archive +3" is still a verb.
+    const COUNT_CHIP = /^\+\s*\d+(?:\s+more)?$/i;
     const ROW_VERB_NOT = '[role=tab], [role=switch], [role=checkbox], [role=radio], [role=menuitem], [role=option], summary, '
       + '[aria-pressed=true], [aria-current]:not([aria-current=false]), [aria-expanded=true], [aria-selected=true], [aria-checked=true]';
     q(ROWISH).forEach(row => {
@@ -702,11 +706,12 @@ _MEASURE_JS = r"""
       if (sec && sec.lines > 1) multiSecondary.push({sel: sel(row), label: sec.title, lines: sec.lines});
       // A row verb draws nothing at rest (#1420): a visible button in a row's own controls with a fill, border or
       // shadow that shows against the row's surface is painted, text or glyph alike. The row's tap-target control
-      // (`main`), a switch, tab, checkbox, radio or menu item and a control in a pressed, current, expanded,
-      // selected or checked state are not verbs; a state may draw itself.
+      // (`main`), a switch, tab, checkbox, radio or menu item, a count chip ("+3 more", #1429) and a control in a
+      // pressed, current, expanded, selected or checked state are not verbs; a state may draw itself.
       const verbHost = !row.closest('nav, [role=navigation], [role=menu], [role=menubar], [role=listbox], [role=tablist], [role=tree]');
       if (verbHost) extras.forEach(c => {
         if (!c.matches('button, [role=button]') || c.matches(ROW_VERB_NOT) || c.closest(ROWISH) !== row) return;
+        if (COUNT_CHIP.test(txt(c).trim())) return;
         const st = getComputedStyle(c), surface = bgOf(c.parentElement || row), via = [];
         if (paintShows(rgba(st.backgroundColor), surface) || st.backgroundImage !== 'none') via.push('fill');
         if (['Top','Right','Bottom','Left'].some(k => (parseFloat(st['border'+k+'Width']) || 0) > 0

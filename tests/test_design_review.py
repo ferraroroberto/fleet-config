@@ -60,7 +60,7 @@ def _doc(name: str) -> dict:
 # ---- rubric: the real file loads and names only metrics that exist ----------
 
 rubric = dr.load_rubric(RUBRIC)
-check(rubric.version == "1.33.0", "rubric meta.version stamped")
+check(rubric.version == "1.34.0", "rubric meta.version stamped")
 check(len(rubric.rules) == 45, f"45 seed rules loaded (got {len(rubric.rules)})")
 check(rubric.categories == ["typography", "color", "touch", "navigation", "layout", "components", "a11y"],
       "categories in rubric order")
@@ -796,7 +796,7 @@ check(all(s == "pass" for s in statuses_c.values()), f"compliant: every rule pas
 check(all(v["score"] == 100.0 and v["grade"] == "A" and not v["unmeasured"] for v in out_c["categories"].values()),
       "compliant: every category 100/A, measured")
 check(out_c["overall"] == {"score": 100.0, "grade": "A", "unmeasured": False}, "compliant: overall A")
-check(out_c["schema_version"] == 1 and out_c["rubric_version"] == "1.33.0" and out_c["target"] == "fixture-app"
+check(out_c["schema_version"] == 1 and out_c["rubric_version"] == "1.34.0" and out_c["target"] == "fixture-app"
       and out_c["commit"].startswith("0000") and out_c["generated_at"].endswith("Z"), "evaluate envelope keys")
 check([s["id"] for s in out_c["screens"]] == ["desktop-light-home", "iphone-light-home", "desktop-light-dialog-edit"],
       "evaluate echoes the screen list")
@@ -1768,7 +1768,7 @@ else:
           f"measure CLI walks the fixture: 2 tabs + 1 dialog x light/dark, plus the absent Settings gear (#1217) ({proc.stdout[-300:]}{proc.stderr[-300:]})")
     check(lines.get("RUN_DIR") == str(run_dir) and Path(lines.get("METRICS", "")).is_file(), "RUN_DIR/METRICS lines point at the run dir")
     doc = json.loads(Path(lines["METRICS"]).read_text(encoding="utf-8"))
-    check(doc["interpreter"] == str(interp) and doc["schema_version"] == 1 and doc["rubric_version"] == "1.33.0", "metrics.json records the interpreter + versions")
+    check(doc["interpreter"] == str(interp) and doc["schema_version"] == 1 and doc["rubric_version"] == "1.34.0", "metrics.json records the interpreter + versions")
     if not (scaffold / "tests" / "e2e" / "_geometry.py").is_file():
         _h.skip("browser leg: project-scaffolding/tests/e2e/_geometry.py absent -- hit-target assertions NOT verified")
     check(doc["walk"]["info"]["geometry"] == ("loaded" if (scaffold / "tests" / "e2e" / "_geometry.py").is_file() else "GEOMETRY_MISSING"),
@@ -2194,10 +2194,11 @@ else:
         _rv_scr = next((s for s in rvs if s.get("device") == _dev), None)
         _rv = ((_rv_scr or {}).get("metrics") or {}).get("layout") or {}
         check(sorted((i["row"].split(".")[0], i["via"]) for i in _rv.get("painted_row_verbs", []))
-              == [("li#f-lone", "fill+border"), ("li#f-outl-glyph", "border"), ("li#f-outl-text", "border"), ("li#f-shadow", "shadow"),
+              == [("li#f-lone", "fill+border"), ("li#f-more-verb", "fill+border"), ("li#f-outl-glyph", "border"), ("li#f-outl-text", "border"),
+                  ("li#f-plus-verb", "fill+border"), ("li#f-shadow", "shadow"),
                   ("li#f-tint-glyph", "fill"), ("li#f-tint-text", "fill+border")],
-              f"COMP-14 ({_dev}): a tint text verb, an outlined text verb, a tint glyph verb, an outlined glyph verb, a shadowed verb and a lone row's tint verb fail; "
-              f"a plain glyph verb, a plain cluster, a kebab, a pressed favourite, a switch, the row's own tap target, a page button and buttons in a menu or nav list do not "
+              f"COMP-14 ({_dev}): a tint text verb, an outlined text verb, a tint glyph verb, an outlined glyph verb, a shadowed verb, a lone row's tint verb, a painted verb chip beside a +3 more chip and a painted + Add chip fail; "
+              f"a painted +3 more or +12 count chip (a disclosure, #1429), a plain glyph verb, a plain cluster, a kebab, a pressed favourite, a switch, the row's own tap target, a page button and buttons in a menu or nav list do not "
               f"-- {_rv} ({proc_rv.stderr[-300:]})")
     for _dev in ("desktop", "iphone"):
         _rv_page = next((s for s in rvs if s.get("device") == _dev and s.get("id", "").endswith("-root")), None)
@@ -2213,8 +2214,8 @@ else:
     check(_rv15.get("status") == "fail" and _rv15_rows == ["li#d-glyph", "li#d-icon", "li#d-sheet-a", "li#d-sheet-b", "li#d-text"],
           f"COMP-15: the page's three and the dialog's two delete or remove controls fail across the screens, the rest do not -- {_rv15.get('status')} {_rv15_rows}")
     _rv_rule = next((r for r in ev.evaluate({"screens": rvs, "wide_views": []}, rubric, _specs("compliant"))["rules"] if r["id"] == "COMP-14"), {}) if rvs else {}
-    check(_rv_rule.get("status") == "fail" and len(_rv_rule["evidence"][0]["items"]) == 6,
-          f"COMP-14: the six painted verbs fail, the rest do not -- {_rv_rule.get('status')} {_rv_rule.get('reason')}")
+    check(_rv_rule.get("status") == "fail" and len(_rv_rule["evidence"][0]["items"]) == 8,
+          f"COMP-14: the eight painted verbs fail, a disclosure chip does not, the rest do not -- {_rv_rule.get('status')} {_rv_rule.get('reason')}")
 
     # raw identifiers: which text counts, and which only looks like one (#1336)
     ri_dir = STATE / "fixture-raw-identifier"
