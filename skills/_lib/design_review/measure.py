@@ -42,7 +42,8 @@ present on a successful run:
               rows_over_limit [..], danger_rows, content_w, content_span, pane_split, radii {r: n},
               open_section_count, empty_open_sections [{sel, label}], empty_open_section_count,
               multi_secondary_rows [{sel, label, lines}], multi_secondary_row_count,
-              painted_row_verbs [{sel, label, via, row}], painted_row_verb_count
+              painted_row_verbs [{sel, label, via, row}], painted_row_verb_count,
+              delete_row_verbs [{sel, label, row}], delete_row_verb_count
     overlay   surfaces, destructive [..], destructive_bad [..], destructive_bad_count
     clearance bars [..], hidden_rows [..], hidden_row_count
     a11y     unnamed [..], unnamed_count, zoom_locked, text_size_control, text_size_stamped
@@ -661,7 +662,8 @@ _MEASURE_JS = r"""
         if (b && lap >= 0.5 * Math.min(u.bottom - u.top, b.bottom - b.top)) b.bottom = Math.max(b.bottom, u.bottom);
         else bands.push({top: u.top, bottom: u.bottom}); });
       return {lines: bands.length, title: title.text.replace(/\s+/g, ' ').trim().slice(0, 30)}; };
-    const multiSecondary = [], paintedVerbs = [];
+    const multiSecondary = [], paintedVerbs = [], deleteVerbs = [];
+    const DELETE_NAME = /\b(?:delete|remove|trash|discard|erase)\b/i;
     const paintShows = (c, surface) => c[3] > 0.02 && Math.max(...[0,1,2].map(i => Math.abs(over(c, surface)[i] - surface[i]))) > 2;
     const ROW_VERB_NOT = '[role=tab], [role=switch], [role=checkbox], [role=radio], [role=menuitem], [role=option], summary, '
       + '[aria-pressed=true], [aria-current]:not([aria-current=false]), [aria-expanded=true], [aria-selected=true], [aria-checked=true]';
@@ -702,6 +704,14 @@ _MEASURE_JS = r"""
         const sh = st.boxShadow && st.boxShadow !== 'none' ? (st.boxShadow.match(/rgba?\([^)]*\)/g) || ['#000']) : [];
         if (sh.some(s => rgba(s)[3] > 0.02)) via.push('shadow');
         if (via.length) paintedVerbs.push({sel: sel(c), label: txt(c).slice(0, 30) || c.getAttribute('title') || 'icon', via: via.join('+'), row: sel(row)}); });
+      // Delete and Remove are never a visible control on a row, a sheet's editing list included (#1420, owner decision
+      // 2026-10-14): a visible button in the row's own controls named delete, remove, trash, discard or erase (its
+      // accessible name, title or visible text, a class or a glyph reference) belongs in the row menu or an edit mode.
+      if (verbHost) extras.forEach(c => {
+        if (!c.matches('button, [role=button]') || c.matches('[role=tab], [role=switch], [role=checkbox], [role=radio], [role=menuitem], [role=option], summary') || c.closest(ROWISH) !== row) return;
+        const glyph = [...c.querySelectorAll('use')].map(u => u.getAttribute('href') || u.getAttribute('xlink:href') || '').join(' ');
+        const named = [c.getAttribute('aria-label'), c.getAttribute('title'), c.textContent, typeof c.className === 'string' ? c.className : '', glyph].filter(Boolean).join(' ').replace(/[_-]+/g, ' ');
+        if (DELETE_NAME.test(named)) deleteVerbs.push({sel: sel(c), label: txt(c).slice(0, 30) || c.getAttribute('title') || 'icon', row: sel(row)}); });
       if (ctl.some(c => /danger|destructive|delete|remove/i.test(c.className || ''))) dangerRows.add(row); });
     const all = q('*');
     all.forEach(el => { const r = getComputedStyle(el).borderTopLeftRadius; if (r && r !== '0px') radii[r] = (radii[r]||0)+1; });
@@ -777,6 +787,7 @@ _MEASURE_JS = r"""
       pane_h: pane.scrollHeight, lists: lists.slice(0,CAP), rows_over_limit: rowsOver.slice(0,CAP), rows_over_limit_count: rowsOver.length,
       multi_secondary_rows: multiSecondary.slice(0,CAP), multi_secondary_row_count: multiSecondary.length,
       painted_row_verbs: paintedVerbs.slice(0,CAP), painted_row_verb_count: paintedVerbs.length,
+      delete_row_verbs: deleteVerbs.slice(0,CAP), delete_row_verb_count: deleteVerbs.length,
       danger_rows: dangerRows.size, content_w: Math.round(content.width), content_span: Math.round(spanRight - content.left), pane_split: paneSplit, radii,
       open_section_count: openSections.size, empty_open_sections: emptyOpen.slice(0,CAP), empty_open_section_count: emptyOpen.length };
   });
@@ -1006,7 +1017,7 @@ def metric_paths() -> List[str]:
         "layout": ["control_overflow", "control_overflow_count", "overflow_x", "scroll_w", "inner_w", "inner_h", "pane_h", "lists", "rows_over_limit",
                    "rows_over_limit_count", "danger_rows", "content_w", "content_span", "pane_split", "radii", "open_section_count",
                    "empty_open_sections", "empty_open_section_count", "multi_secondary_rows", "multi_secondary_row_count",
-                   "painted_row_verbs", "painted_row_verb_count"],
+                   "painted_row_verbs", "painted_row_verb_count", "delete_row_verbs", "delete_row_verb_count"],
         "overlay": ["surfaces", "destructive", "destructive_bad", "destructive_bad_count"],
         "clearance": ["bars", "hidden_rows", "hidden_row_count"],
         "a11y": ["unnamed", "unnamed_count", "zoom_locked", "text_size_control", "text_size_stamped"],

@@ -3,7 +3,10 @@
      text verb, an outlined text verb (the retired Stop), a tint-filled glyph verb, an outlined glyph verb, a verb with
      a drop shadow, and a lone row's tint verb (a row is a row, whatever its siblings). Passes: a plain glyph verb, a
      plain cluster, a kebab, a leading favourite in its pressed state, a switch, the row's own tap-target button, a
-     painted button OUTSIDE a list row (a page action), and a painted button in a menu or nav list. Asserted by
+     painted button OUTSIDE a list row (a page action), and a painted button in a menu or nav list. COMP-15
+     (fleet-config#1420, owner decision 2026-10-14): a visible Delete or Remove control on a row fails, in a page list or in a
+     sheet's editing list (the dialog the walk opens as its own screen): an icon button named Remove, a trash glyph, a text Delete, two rows of a dialog's list. A
+     kebab, an Edit verb, a page-level Delete all and a Delete menu item do not. Asserted by
      tests/test_design_review.py. -->
 <html lang="en">
 <head>
@@ -54,7 +57,26 @@
   <li class="row" id="p-switch"><button class="main"><span class="t">Plug A</span><span class="m">On</span></button><button role="switch" aria-checked="true" aria-label="Plug A"></button></li>
 </ul>
 
+<h2>Delete and Remove on a row (COMP-15)</h2>
+<ul>
+  <li class="row" id="d-icon"><button class="main"><span class="t">Milk</span><span class="m">Dairy</span></button><button class="ib" aria-label="Remove Milk"><svg><use href="#g"/></svg></button></li>
+  <li class="row" id="d-glyph"><button class="main"><span class="t">Eggs</span><span class="m">Dairy</span></button><button class="ib" aria-label="Item"><svg><use href="#i-trash"/></svg></button></li>
+  <li class="row" id="d-text"><button class="main"><span class="t">Rice</span><span class="m">Dry</span></button><button class="ib" style="width:auto;padding:0 8px">Delete</button></li>
+</ul>
+<dialog id="sheet" aria-label="Quick add" style="border:1px solid #d1d9e0;padding:8px">
+  <ul>
+    <li class="row" id="d-sheet-a"><span class="t">Apples</span><button class="ib" title="Remove"><svg><use href="#g"/></svg></button></li>
+    <li class="row" id="d-sheet-b"><span class="t">Pears</span><button class="ib" aria-label="Remove"><svg><use href="#g"/></svg></button></li>
+  </ul>
+</dialog>
+<ul>
+  <li class="row" id="p-kebab-only"><button class="main"><span class="t">Beans</span><span class="m">Dry</span></button><button class="ib" aria-label="More actions" aria-haspopup="menu" aria-expanded="false"><svg><use href="#g"/></svg></button></li>
+  <li class="row" id="p-edit"><button class="main"><span class="t">Salt</span><span class="m">Dry</span></button><button class="ib" aria-label="Edit"><svg><use href="#g"/></svg></button></li>
+</ul>
+
 <h2>Not rows</h2>
+<p><button class="page" id="n-delete-all">Delete all</button></p>
+<ul role="menu" id="n-menu-delete"><li><button role="menuitem" class="ib" style="width:auto">Delete</button></li><li><button role="menuitem" class="ib" style="width:auto">Rename</button></li></ul>
 <p><button class="page" id="n-page">Add task</button></p>
 <ul role="menu" id="n-menu"><li><button class="tint">Delete</button></li><li><button class="tint">Rename</button></li></ul>
 <nav id="n-nav"><ul><li><button class="tint">Home</button></li><li><button class="tint">Jobs</button></li></ul></nav>
