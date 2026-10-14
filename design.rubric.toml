@@ -33,7 +33,7 @@
 # metrics.json, every evaluate output and every filed finding.
 
 [meta]
-version = "1.34.0"   # per-bump history: git log -- design.rubric.toml, and the issues/PRs it cites
+version = "1.35.0"   # per-bump history: git log -- design.rubric.toml, and the issues/PRs it cites
 seeded_from = "app-launcher rendered audit, 2026-09-21 (fleet-config#962)"
 
 [weights]
@@ -596,7 +596,7 @@ owner = "app"
 standard = "design.md icon-button and capture control: a glyph-only control is a conventional glyph (close, search, settings, add, chevron, menu, edit, delete, copy, refresh, play, stop), is a row verb drawn with its one glyph from the action-row glyph map (`verb_glyphs`: the verb's name and the sprite glyph it carries; fleet-config#1428), or sits beside a text label that names it, otherwise it is a labelled pill; the J-05 ratchet (fleet-config#1366)"
 fix_template = "{count} icon-only controls on {screen} have no label beside them and a name that is not a conventional glyph's ({sample}); give each a visible label (a labelled pill) or a conventional glyph."
 mockup = "none"
-params = { conventional = "\\b(?:close|dismiss|cancel|search|find|settings|preferences|gear|add|new|create|plus|chevron|back|next|previous|forward|up|down|left|right|raise|lower|increase|decrease|minus|zoom|expand|collapse|menu|more|options|actions|edit|rename|pencil|delete|remove|trash|clear|copy|refresh|reload|retry|play|pause|stop|send|share|download|upload|save|filter|help|info|mic|microphone|record|camera|calendar|home|theme|(?:dark|light) mode|to (?:dark|light))\\b", verb_glyphs = { live = "video", wake = "power", start = "play", run = "play", stop = "square", find = "search", move = "calendar", complete = ["circle", "check"] } }
+params = { conventional = "\\b(?:close|dismiss|cancel|search|find|settings|preferences|gear|add|new|create|plus|chevron|back|next|previous|forward|up|down|left|right|raise|lower|increase|decrease|minus|zoom|expand|collapse|menu|more|options|actions|edit|rename|pencil|delete|remove|trash|clear|copy|refresh|reload|retry|play|pause|stop|send|share|download|upload|save|filter|help|info|mic|microphone|record|camera|calendar|home|theme|(?:dark|light) mode|to (?:dark|light))\\b", verb_glyphs = { live = "video", wake = "power", start = "play", run = "play", stop = "square", find = "search", move = "calendar", complete = ["circle", "check"], launch = "rocket", attach = "paperclip", about = "info", open = "external", dictate = "mic" } }
 
 [[rules]]
 id = "COMP-10"

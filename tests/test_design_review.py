@@ -60,7 +60,7 @@ def _doc(name: str) -> dict:
 # ---- rubric: the real file loads and names only metrics that exist ----------
 
 rubric = dr.load_rubric(RUBRIC)
-check(rubric.version == "1.34.0", "rubric meta.version stamped")
+check(rubric.version == "1.35.0", "rubric meta.version stamped")
 check(len(rubric.rules) == 45, f"45 seed rules loaded (got {len(rubric.rules)})")
 check(rubric.categories == ["typography", "color", "touch", "navigation", "layout", "components", "a11y"],
       "categories in rubric order")
@@ -626,6 +626,25 @@ _c09_mix = _comp("COMP-09", [{"icon_only_unlabelled": [
     {"sel": "button.gal", "name": "Gallery", "glyph": "i-ghost"}]}, {}, {}])
 check(_c09_mix["status"] == "fail" and sorted(i["sel"] for i in _c09_mix["evidence"][0]["items"]) == ["button.gal", "button.incog", "button.start2"],
       f"COMP-09: a verb with another glyph and an unknown name with any glyph still fail; an unread glyph leaves a mapped name to speak -- {_c09_mix['status']} {_c09_mix['evidence']}")
+# ---- COMP-09: the conventional leftovers join the map: Launch, Attach, About, Open, Dictate (#1431) ----
+_verbs09b = [("Launch weekly review", "i-rocket"), ("Attach", "i-paperclip"), ("About these figures", "i-info"),
+             ("Open buy link for dorada", "i-external-link"), ("Dictate a product", "i-mic")]
+_c09_new = _comp("COMP-09", [{"icon_only_unlabelled": [{"sel": f"button.n{i}", "name": n, "glyph": g} for i, (n, g) in enumerate(_verbs09b)]}, {}, {}])
+check(_c09_new["status"] == "pass",
+      f"COMP-09: Launch, Attach, About, Open and Dictate drawn with their mapped glyphs pass -- {_c09_new['status']} {_c09_new['evidence']}")
+_c09_new_bad = _comp("COMP-09", [{"icon_only_unlabelled": [
+    {"sel": "button.launch", "name": "Launch weekly review", "glyph": "i-play"}, {"sel": "button.attach", "name": "Attach", "glyph": "i-link"},
+    {"sel": "button.about", "name": "About activity", "glyph": "i-star"}, {"sel": "button.open", "name": "Open", "glyph": "i-circle"},
+    {"sel": "button.dict", "name": "Dictate", "glyph": "i-search"}, {"sel": "button.buy", "name": "Buy dorada", "glyph": "i-external-link"},
+    {"sel": "button.got", "name": "Got dorada", "glyph": "i-circle"}]}, {}, {}])
+check(_c09_new_bad["status"] == "fail" and sorted(i["sel"] for i in _c09_new_bad["evidence"][0]["items"])
+      == ["button.about", "button.attach", "button.buy", "button.dict", "button.got", "button.launch", "button.open"],
+      f"COMP-09: a new mapped name with any other glyph, and Buy and Got (not conventional), still fail -- {_c09_new_bad['status']} {_c09_new_bad['evidence']}")
+_c09_two = _comp("COMP-09", [{"icon_only_unlabelled": [
+    {"sel": "button.ok", "name": "Dictate (click to start)", "glyph": "i-mic"}, {"sel": "button.ok2", "name": "Dictate (click to start)", "glyph": "i-play"},
+    {"sel": "button.bad", "name": "Dictate (click to start)", "glyph": "i-search"}]}, {}, {}])
+check(_c09_two["status"] == "fail" and [i["sel"] for i in _c09_two["evidence"][0]["items"]] == ["button.bad"],
+      f"COMP-09: a name carrying two mapped verbs passes with the glyph of either, and fails with neither -- {_c09_two['status']} {_c09_two['evidence']}")
 _dm = re.sub(r"\s+", " ", (REPO / "design.md").read_text(encoding="utf-8"))
 _dm_map = _dm[_dm.index("One glyph per verb"):_dm.index("Delete and Remove are never")]
 _vg09 = next(r for r in rubric.rules if r.id == "COMP-09").params["verb_glyphs"]
@@ -796,7 +815,7 @@ check(all(s == "pass" for s in statuses_c.values()), f"compliant: every rule pas
 check(all(v["score"] == 100.0 and v["grade"] == "A" and not v["unmeasured"] for v in out_c["categories"].values()),
       "compliant: every category 100/A, measured")
 check(out_c["overall"] == {"score": 100.0, "grade": "A", "unmeasured": False}, "compliant: overall A")
-check(out_c["schema_version"] == 1 and out_c["rubric_version"] == "1.34.0" and out_c["target"] == "fixture-app"
+check(out_c["schema_version"] == 1 and out_c["rubric_version"] == "1.35.0" and out_c["target"] == "fixture-app"
       and out_c["commit"].startswith("0000") and out_c["generated_at"].endswith("Z"), "evaluate envelope keys")
 check([s["id"] for s in out_c["screens"]] == ["desktop-light-home", "iphone-light-home", "desktop-light-dialog-edit"],
       "evaluate echoes the screen list")
@@ -1768,7 +1787,7 @@ else:
           f"measure CLI walks the fixture: 2 tabs + 1 dialog x light/dark, plus the absent Settings gear (#1217) ({proc.stdout[-300:]}{proc.stderr[-300:]})")
     check(lines.get("RUN_DIR") == str(run_dir) and Path(lines.get("METRICS", "")).is_file(), "RUN_DIR/METRICS lines point at the run dir")
     doc = json.loads(Path(lines["METRICS"]).read_text(encoding="utf-8"))
-    check(doc["interpreter"] == str(interp) and doc["schema_version"] == 1 and doc["rubric_version"] == "1.34.0", "metrics.json records the interpreter + versions")
+    check(doc["interpreter"] == str(interp) and doc["schema_version"] == 1 and doc["rubric_version"] == "1.35.0", "metrics.json records the interpreter + versions")
     if not (scaffold / "tests" / "e2e" / "_geometry.py").is_file():
         _h.skip("browser leg: project-scaffolding/tests/e2e/_geometry.py absent -- hit-target assertions NOT verified")
     check(doc["walk"]["info"]["geometry"] == ("loaded" if (scaffold / "tests" / "e2e" / "_geometry.py").is_file() else "GEOMETRY_MISSING"),
