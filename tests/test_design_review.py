@@ -2157,8 +2157,9 @@ else:
               f"COMP-15 ({_dev}): a Remove icon button, a trash glyph and a text Delete on the page and both rows of a dialog's editing list fail; a kebab, an Edit verb, "
               f"a page-level Delete all and a Delete menu item do not -- {_rvp.get('delete_row_verbs')} {_rvs.get('delete_row_verbs')} ({proc_rv.stderr[-300:]})")
     _rv15 = next((r for r in ev.evaluate({"screens": rvs, "wide_views": []}, rubric, _specs("compliant"))["rules"] if r["id"] == "COMP-15"), {}) if rvs else {}
-    check(_rv15.get("status") == "fail" and len(_rv15["evidence"][0]["items"]) == 5,
-          f"COMP-15: the five delete or remove controls fail, the rest do not -- {_rv15.get('status')} {_rv15.get('reason')}")
+    _rv15_rows = sorted({i["row"].split(".")[0] for e in _rv15.get("evidence", []) for i in e["items"]})
+    check(_rv15.get("status") == "fail" and _rv15_rows == ["li#d-glyph", "li#d-icon", "li#d-sheet-a", "li#d-sheet-b", "li#d-text"],
+          f"COMP-15: the page's three and the dialog's two delete or remove controls fail across the screens, the rest do not -- {_rv15.get('status')} {_rv15_rows}")
     _rv_rule = next((r for r in ev.evaluate({"screens": rvs, "wide_views": []}, rubric, _specs("compliant"))["rules"] if r["id"] == "COMP-14"), {}) if rvs else {}
     check(_rv_rule.get("status") == "fail" and len(_rv_rule["evidence"][0]["items"]) == 6,
           f"COMP-14: the six painted verbs fail, the rest do not -- {_rv_rule.get('status')} {_rv_rule.get('reason')}")
