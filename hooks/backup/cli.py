@@ -341,6 +341,11 @@ def run(cfg: BackupConfig, *, dry_run: bool = False, only: Optional[str] = None,
             manifests.append(manifest)
             report(manifest)
             if dry_run:
+                # A dry run takes the real SQLite snapshots (see above), so a
+                # database it could not snapshot must not exit green
+                # (fleet-config#1422).
+                if any(payload["status"] == "failed" for payload in manifest["groups"].values()):
+                    codes.append(EXIT_REPO_FAILURE)
                 continue
             if manifest["verification"]["status"] == "fail":
                 codes.append(EXIT_VERIFY_FAILED)

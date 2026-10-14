@@ -18,12 +18,26 @@ import random
 import shutil
 import sqlite3
 import tempfile
+import time
 from pathlib import Path
 from typing import Any, Dict, Iterator, List, Optional, Sequence, Tuple
 
 from .config import DB_LOCK_TIMEOUT_SECONDS, DB_SIDECAR_MARKERS, DB_SUFFIXES
 
 logger = logging.getLogger("backup_private")
+
+#: Pages copied per `Connection.backup` step (4 MB at SQLite's default page size).
+#: A single unbounded step cannot be interrupted, so a writer holding the lock
+#: would block it forever (fleet-config#1422); big enough steps keep the read
+#: window long enough that a live writer rarely forces a restart.
+_BACKUP_PAGES_PER_STEP = 1024
+#: Longest a single step waits inside SQLite's busy handler. The stall deadline
+#: is only checked between steps, so this caps how far past it a call can run.
+_BACKUP_BUSY_SLICE_SECONDS = 1.0
+
+
+class _BackupStalled(Exception):
+    """Raised from the backup progress callback to abort a copy that stopped moving."""
 
 
 def sha256_file(path: Path, chunk: int = 1024 * 1024) -> str:
@@ -73,29 +87,56 @@ def snapshot_sqlite(src: Path, dst: Path,
     itself still only reads the source. Returns which mode succeeded, so the
     fallback is reported rather than silent.
 
-    Raises `OSError` when neither attempt works — locked, corrupt, or not a
-    database — leaving no half-written file at `dst`. The caller records that as
+    The copy runs in bounded steps and is abandoned once it has made no forward
+    progress for `timeout` seconds — a held lock (every step returns BUSY) or a
+    writer that keeps restarting the copy. `Connection.backup` alone retries
+    BUSY forever and ignores the connect timeout (fleet-config#1422). A large
+    database that keeps advancing is never cut off; only a stalled one is.
+
+    Raises `OSError` when neither attempt works — locked, corrupt, stalled, or
+    not a database — leaving no half-written file at `dst`. The caller records that as
     its own failure state; a database that could not be snapshotted must never
     look like one that simply was not there.
     """
     dst.parent.mkdir(parents=True, exist_ok=True)
     base = src.resolve().as_uri()
+    busy = min(timeout, _BACKUP_BUSY_SLICE_SECONDS)
     last: Optional[BaseException] = None
+    best_remaining = float("inf")
+    last_advance = time.monotonic()
+
+    def on_step(status: int, remaining: int, total: int) -> None:
+        nonlocal best_remaining, last_advance
+        now = time.monotonic()
+        if status in (sqlite3.SQLITE_OK, sqlite3.SQLITE_DONE) and remaining < best_remaining:
+            best_remaining, last_advance = remaining, now
+        elif now - last_advance >= timeout:
+            raise _BackupStalled(
+                f"no progress for {now - last_advance:.0f}s "
+                f"(status {status}, {remaining}/{total} pages left)"
+            )
+
     for uri, mode in ((f"{base}?mode=ro", "read-only"), (base, "read-write")):
         with contextlib.suppress(OSError):
             dst.unlink()
         try:
-            source = sqlite3.connect(uri, uri=True, timeout=timeout)
+            source = sqlite3.connect(uri, uri=True, timeout=busy)
         except sqlite3.Error as exc:
             last = exc
             continue
         try:
-            target = sqlite3.connect(str(dst), timeout=timeout)
+            target = sqlite3.connect(str(dst), timeout=busy)
             try:
-                source.backup(target)
+                source.backup(target, pages=_BACKUP_PAGES_PER_STEP, progress=on_step)
             finally:
                 target.close()
             return mode
+        except _BackupStalled as exc:
+            # A stall is the database's state, not the open mode's: retrying
+            # read-write would only wait out the same lock a second time.
+            logger.warning("   ⚠️ snapshot of %s abandoned: %s", src.name, exc)
+            last = exc
+            break
         except sqlite3.Error as exc:
             last = exc
         finally:
