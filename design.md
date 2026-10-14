@@ -685,7 +685,9 @@ hand-picked per app.
   on the right whose invisible box is `modal.closeSize` (34px), an
   `icons.size.title` glyph in `fg-muted` on no fill. **Body:** stacked label/value rows, each `modal.rowPadding` (`12px 0`)
   on a `border-muted` top divider, the value control filling ≥55% of the row.
-  **Footer:** exactly one full-width `button-primary`. Its **disabled** state
+  **Footer:** exactly one full-width `button-primary`, the most prominent control
+  in the dialog: no other footer control is filled or larger than Save, and a
+  destructive Delete sits in the body (measured as `COMP-16`; fleet-config#1339). Its **disabled** state
   must clear AA contrast in *both* themes (never the browser default, which
   drops sub-AA). The nav hides while it is open (`body:has(dialog[open])`), and
   on mobile the dialog is top-anchored so it never jumps on open/close.

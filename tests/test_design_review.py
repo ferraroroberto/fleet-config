@@ -60,8 +60,8 @@ def _doc(name: str) -> dict:
 # ---- rubric: the real file loads and names only metrics that exist ----------
 
 rubric = dr.load_rubric(RUBRIC)
-check(rubric.version == "1.32.0", "rubric meta.version stamped")
-check(len(rubric.rules) == 44, f"44 seed rules loaded (got {len(rubric.rules)})")
+check(rubric.version == "1.33.0", "rubric meta.version stamped")
+check(len(rubric.rules) == 45, f"45 seed rules loaded (got {len(rubric.rules)})")
 check(rubric.categories == ["typography", "color", "touch", "navigation", "layout", "components", "a11y"],
       "categories in rubric order")
 check(rb.check_metric_names(rubric, measure.metric_paths()) == [], "every rule metric is a script path or a derived metric")
@@ -480,6 +480,37 @@ check(_comp08({"surfaces": 0, "destructive": [], "destructive_bad": [], "destruc
 check(_comp08(None)["status"] == "unmeasured", "COMP-08: a run from before the metric existed is unmeasured, never a pass")
 check(_comp08({"error": "boom"})["status"] == "unmeasured", "COMP-08: a failed overlay section is unmeasured, never a pass")
 
+# ---- COMP-16: a dialog's commit is not quieter than another footer control (#1339) ----
+def _comp16(dialogs) -> dict:
+    """COMP-16 on every screen of the compliant doc, each carrying `dialogs` (a dict, or None to drop the section)."""
+    d = _doc("compliant")
+    for s in d["screens"]:
+        if dialogs is None:
+            s["metrics"].pop("dialogs", None)
+        else:
+            s["metrics"]["dialogs"] = dict(dialogs)
+    return next(r for r in ev.evaluate(d, rubric, _specs("compliant"))["rules"] if r["id"] == "COMP-16")
+
+
+_QUIET = {"dialog": "dialog#take", "commit": "button.save", "label": "Save", "filled": False, "w": 120, "h": 44,
+          "rival": "button.danger", "rival_label": "Delete", "why": "filled"}
+_c16_fail = _comp16({"count": 1, "with_commit": 1, "quiet_commit": [_QUIET], "quiet_commit_count": 1})
+check(_c16_fail["status"] == "fail" and _c16_fail["severity"] == "P2" and _c16_fail["category"] == "components"
+      and _c16_fail["evidence"][0]["items"] == [_QUIET],
+      f"COMP-16: a dialog whose Save is quieter than another footer control fails and names it -- {_c16_fail['status']} {_c16_fail['evidence']}")
+_c16_doc = _doc("compliant")
+for _s in _c16_doc["screens"]:
+    _s["metrics"]["dialogs"] = {"count": 1, "with_commit": 1, "quiet_commit": [_QUIET], "quiet_commit_count": 1}
+_c16_out = ev.evaluate(_c16_doc, rubric, _specs("compliant"))
+_c16_sentence = report_mod.finding_sentence(next(r for r in _c16_out["rules"] if r["id"] == "COMP-16"), _c16_out)
+check("button.save" in _c16_sentence and "{" not in _c16_sentence, f"COMP-16: the fix sentence names the commit and fills every placeholder -- {_c16_sentence}")
+check(_comp16({"count": 1, "with_commit": 1, "quiet_commit": [], "quiet_commit_count": 0})["status"] == "pass",
+      "COMP-16: a dialog whose commit is the most prominent footer control passes")
+check(_comp16({"count": 0, "with_commit": 0, "quiet_commit": [], "quiet_commit_count": 0})["status"] == "pass",
+      "COMP-16: a screen with no dialog open has nothing to fail")
+check(_comp16(None)["status"] == "unmeasured", "COMP-16: a run from before the metric existed is unmeasured, never a pass")
+check(_comp16({"error": "boom"})["status"] == "unmeasured", "COMP-16: a failed dialogs section is unmeasured, never a pass")
+
 # ---- COLOR-04: a switch is on in the accent, never another colour (#1200) ----
 def _col04(controls_by_screen) -> dict:
     d = _doc("compliant")
@@ -765,7 +796,7 @@ check(all(s == "pass" for s in statuses_c.values()), f"compliant: every rule pas
 check(all(v["score"] == 100.0 and v["grade"] == "A" and not v["unmeasured"] for v in out_c["categories"].values()),
       "compliant: every category 100/A, measured")
 check(out_c["overall"] == {"score": 100.0, "grade": "A", "unmeasured": False}, "compliant: overall A")
-check(out_c["schema_version"] == 1 and out_c["rubric_version"] == "1.32.0" and out_c["target"] == "fixture-app"
+check(out_c["schema_version"] == 1 and out_c["rubric_version"] == "1.33.0" and out_c["target"] == "fixture-app"
       and out_c["commit"].startswith("0000") and out_c["generated_at"].endswith("Z"), "evaluate envelope keys")
 check([s["id"] for s in out_c["screens"]] == ["desktop-light-home", "iphone-light-home", "desktop-light-dialog-edit"],
       "evaluate echoes the screen list")
@@ -1737,7 +1768,7 @@ else:
           f"measure CLI walks the fixture: 2 tabs + 1 dialog x light/dark, plus the absent Settings gear (#1217) ({proc.stdout[-300:]}{proc.stderr[-300:]})")
     check(lines.get("RUN_DIR") == str(run_dir) and Path(lines.get("METRICS", "")).is_file(), "RUN_DIR/METRICS lines point at the run dir")
     doc = json.loads(Path(lines["METRICS"]).read_text(encoding="utf-8"))
-    check(doc["interpreter"] == str(interp) and doc["schema_version"] == 1 and doc["rubric_version"] == "1.32.0", "metrics.json records the interpreter + versions")
+    check(doc["interpreter"] == str(interp) and doc["schema_version"] == 1 and doc["rubric_version"] == "1.33.0", "metrics.json records the interpreter + versions")
     if not (scaffold / "tests" / "e2e" / "_geometry.py").is_file():
         _h.skip("browser leg: project-scaffolding/tests/e2e/_geometry.py absent -- hit-target assertions NOT verified")
     check(doc["walk"]["info"]["geometry"] == ("loaded" if (scaffold / "tests" / "e2e" / "_geometry.py").is_file() else "GEOMETRY_MISSING"),
@@ -2282,6 +2313,30 @@ else:
           f"as wide as Copy pass, and the tinted Delete of a confirm dialog that holds only Cancel beside it fails like any other (#1403) -- {_do_bad} ({proc_do.stderr[-300:]})")
     check(all(_overlay(v).get("destructive") for v in ("menu", "dialog-okdialog")) and _overlay("menu").get("surfaces", 0) >= 1,
           f"COMP-08: the passing menu and dialog still report the destructive control they measured -- {_overlay('menu')}")
+
+    # COMP-16: a dialog's commit (its submit or primary button) is not quieter than another control on its row or below (#1339)
+    qc_dir = STATE / "fixture-quiet-commit"
+    proc_qc = subprocess.run(
+        [str(interp), str(REPO / "skills" / "_lib" / "design_review" / "walk.py"), "--url", (FIX / "quiet_commit.html").as_uri(),
+         "--out", str(qc_dir), "--devices", "desktop", "--scaffold", str(scaffold),
+         "--params", str(STATE / "steps-params.json")],
+        capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=600,
+    )
+    qcs = {s["id"]: s for s in json.loads((qc_dir / "screens.json").read_text(encoding="utf-8"))} if proc_qc.returncode == 0 else {}
+
+    def _dialogs(view: str) -> dict:
+        return ((qcs.get(f"desktop-light-{view}") or {}).get("metrics") or {}).get("dialogs") or {}
+
+    _qc_views = ("okdialog", "ghostdialog", "filledpair", "equaldialog", "smalldialog", "bodydialog", "nocommitdialog")
+    _qc = {v: (_dialogs(f"dialog-{v}").get("quiet_commit_count"), [q.get("why") for q in _dialogs(f"dialog-{v}").get("quiet_commit", [])])
+           for v in _qc_views}
+    check(_qc == {"okdialog": (0, []), "ghostdialog": (1, ["filled"]), "filledpair": (0, []), "equaldialog": (0, []),
+                  "smalldialog": (1, ["larger"]), "bodydialog": (0, []), "nocommitdialog": (0, [])},
+          f"COMP-16: a ghost Save beside a filled Delete, and a narrow ghost Save beside a wider Cancel, fail; a filled full-width Save alone, "
+          f"a filled Save beside an outlined Delete, equal ghosts, a Delete in the body above Save and a dialog with no commit pass -- {_qc} ({proc_qc.stderr[-300:]})")
+    check(_dialogs("dialog-okdialog").get("with_commit") == 1 and _dialogs("dialog-nocommitdialog").get("with_commit") == 0
+          and _dialogs("dialog-ghostdialog").get("count") == 1,
+          f"COMP-16: a dialog with a commit is counted as measured, one without is not -- {_dialogs('dialog-okdialog')} {_dialogs('dialog-nocommitdialog')}")
 
     # TYPE-05 / TYPE-06: capitals typed in the markup, and one class of label cased two ways across the tabs (#1365)
     def _walk_casing(case: str) -> list:
