@@ -1299,5 +1299,5 @@ byte-for-byte components.
 - **Don't** call the browser's `confirm()`, `prompt()` or `alert()` — confirm, rename and detail use the vendored dialog.
 - **Don't** make Settings a tab (or a gear-only tab), tint a success toast, or turn a switch green when on.
 - **Don't** add a third header icon button (the one optional status readout is the only extra, and it opens a sheet), or open a pane reached only from a header button: a pane that has no nav tab is a tab in disguise, so it becomes a tab, a sheet or a Settings row.
-- **Don't** put raw identifiers (hostnames, URLs, exception text or class names, process ids, bare port numbers) in user-facing status or failure copy — sanitize it; a detail sheet or Settings › About may show them, and logs keep the detail.
+- **Don't** put raw identifiers (hostnames, URLs, exception text or class names, process ids, bare port numbers) in user-facing status or failure copy — sanitize it; a detail sheet or Settings › About may show them, and logs keep the detail. The measure checks the pattern-shaped ones: an IPv4 address, a MAC address or a snake_case token rendered as text outside a `code`, `pre`, `kbd` or `samp` element (`COMP-11`, fleet-config#1336); the rest stays with the judge (J-07).
 - **Don't** apply this spec to Streamlit POC spikes.

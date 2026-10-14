@@ -33,7 +33,7 @@
 # metrics.json, every evaluate output and every filed finding.
 
 [meta]
-version = "1.26.0"   # per-bump history: git log -- design.rubric.toml, and the issues/PRs it cites
+version = "1.27.0"   # per-bump history: git log -- design.rubric.toml, and the issues/PRs it cites
 seeded_from = "app-launcher rendered audit, 2026-09-21 (fleet-config#962)"
 
 [weights]
@@ -612,6 +612,19 @@ standard = "design.md empty-state block: an empty list the user can fill from th
 fix_template = "{count} empty-state blocks on {screen} hold no button or link ({sample}); add the one action that fills the list (a verb such as Capture a take) or, for a search with no hits, Clear search."
 mockup = "none"
 
+[[rules]]
+id = "COMP-11"
+category = "components"
+title = "A raw identifier rendered as ordinary text"
+metric = "text.raw_identifier_count"
+fail_when = "gt"
+threshold = 0
+severity = "P2"
+owner = "app"
+standard = "design.md Don't list, raw identifiers in user-facing copy: a face speaks the user's words (an IP address, a MAC address or a snake_case key is the system's), and a detail sheet or Settings › About may show them, in a code element; Nielsen's second heuristic, match between the system and the real world; the J-07 ratchet (fleet-config#1336)"
+fix_template = "{count} raw identifiers on {screen} are rendered as ordinary text ({sample}); say it in plain words, or keep the identifier in a sheet or Settings › About inside a code element."
+mockup = "none"
+
 # ---------------------------------------------------------------------------
 # Accessibility
 
@@ -687,8 +700,8 @@ screens = "tabs"
 
 [[judgment]]
 id = "J-07"
-question = "Is every visible label plain words a user of the app would say (Apps, Jobs, Settings, Rename, Delete, Run) rather than an internal name? Labels means all of: button labels, tab labels, section headings, and the labels of form fields, dropdowns and toggles — in tab screens and dialogs alike. Answer no if any such label contains an identifier (UPPER_SNAKE_CASE, a key=value pair), a file path, a code term or an abbreviation not in common use, even inside a parenthesis or helper clause of the label. User-entered content (app names, session names, job names, row metadata) does not count."
-maps_to = []
+question = "Is every visible label plain words a user of the app would say (Apps, Jobs, Settings, Rename, Delete, Run) rather than an internal name? Labels means all of: button labels, tab labels, section headings, and the labels of form fields, dropdowns and toggles — in tab screens and dialogs alike. Answer no if any such label contains a key=value pair, a file path, a code term or an abbreviation not in common use, even inside a parenthesis or helper clause of the label. An IP address, a MAC address or a snake_case or UPPER_SNAKE_CASE token shown as text is measured as COMP-11 and is not raised here for that alone; answer no only for what COMP-11 cannot see. User-entered content (app names, session names, job names, row metadata) does not count."
+maps_to = ["COMP-11"]
 screens = "all"
 
 [[judgment]]

@@ -23,7 +23,8 @@ present on a successful run:
 
     text      sizes {px: runs}, weights {w: runs}, runs, under14, under11 [..],
               min_px, low_contrast [..], low_contrast_count,
-              body_font_family, break_all [..], uppercase [..], glyph_icons [..]
+              body_font_family, break_all [..], uppercase [..], glyph_icons [..],
+              raw_identifier_count, raw_identifiers [{sel, kind, text}]
     casing    labels [{sel, cls, text, style, literal}], label_count, labels_seen
     controls  total, font_family_mismatch [..], font_family_mismatch_count,
               boundary_low [..], boundary_low_count, ua_styled [..],
@@ -158,11 +159,26 @@ _MEASURE_JS = r"""
     const glyphEdge = new RegExp('^(?:' + params.glyphRe + ')|(?:' + params.glyphRe + ')$', 'u');
     const CONTROL = 'button, a, [role=button], [role=link], [role=tab], [role=menuitem]';
     const INACTIVE = ':disabled, [aria-disabled=true]';
+    // A raw identifier rendered as ordinary text (#1336): an IPv4 address, a MAC address or a snake_case token of two
+    // or more parts (lower or UPPER). Code the app prints on purpose (code, pre, kbd, samp, a terminal), a form field's
+    // value and a select's options are not ordinary text. The boundaries are what keep it narrow: an address needs four
+    // octets of 0-255 (so a version `1.2.3`, a date and a time are not one), a MAC needs six pairs, and a token that sits
+    // in a path, a URL, a file name (`my_file.txt`), a handle or a hyphenated word is part of something larger. A name the
+    // user typed (a job called `nightly_backup`) cannot be told from one the app printed, so it counts: that is a finding
+    // for the app to word, not a pattern to allow-list.
+    const IDENT_SKIP = 'code, pre, kbd, samp, textarea, select, option, [contenteditable=true], script, style, noscript, .xterm, .xterm-rows';
+    const IDENT_RES = [
+      ['ip', /(?<![\w.])(?:(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\.){3}(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(?![\w]|\.\d)/g],
+      ['mac', /(?<![\w:-])[0-9A-Fa-f]{2}(?:[:-][0-9A-Fa-f]{2}){5}(?![\w:-])/g],
+      ['snake', /(?<![\w.\/\\@#$%-])(?:[a-z][a-z0-9]*(?:_[a-z0-9]+)+|[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+)(?![\w@\/\\-]|\.\w)/g],
+    ];
+    const idents = [];
     const isGlyphIcon = (raw, el) => [...raw].length <= 2
       || (raw.length <= params.glyphLabelMax && !!el.closest(CONTROL) && glyphEdge.test(raw));
     while (walker.nextNode()) { const t = walker.currentNode; const raw = t.nodeValue.trim(); if (!raw) continue;
       const el = t.parentElement; if (!el || !visible(el) || !inScope(el)) continue;
       if (el.closest('svg, script, style, noscript, .xterm, .xterm-rows')) continue;
+      if (!el.closest(IDENT_SKIP)) for (const [kind, re] of IDENT_RES) for (const m of raw.matchAll(re)) idents.push({sel: sel(el), kind, text: m[0].slice(0, 40)});
       // Preformatted text is content the app prints (a log, a code sample), not an icon it authors (#1119).
       if (glyphRe.test(raw) && !seen.has(el) && !el.closest('pre, code, samp, kbd') && isGlyphIcon(raw, el)) glyphs.push({sel: sel(el), text: raw.slice(0, 40)});
       if (seen.has(el)) continue; seen.add(el);
@@ -183,7 +199,8 @@ _MEASURE_JS = r"""
       body_font_family: getComputedStyle(document.body).fontFamily,
       break_all: breakAll.slice(0,CAP), break_all_count: breakAll.length,
       uppercase: upper.slice(0,CAP), uppercase_count: upper.length,
-      glyph_icons: glyphs.slice(0,CAP), glyph_icon_count: glyphs.length };
+      glyph_icons: glyphs.slice(0,CAP), glyph_icon_count: glyphs.length,
+      raw_identifiers: idents.slice(0,CAP), raw_identifier_count: idents.length };
   });
 
   // ---- casing: how the app's labels are cased (#1365). Each button, tab, menu item and heading label, plus a
@@ -870,7 +887,8 @@ def metric_paths() -> List[str]:
     keys = {
         "text": ["sizes", "weights", "runs", "under14", "under11", "under11_count", "min_px",
                  "low_contrast", "low_contrast_count", "body_font_family", "break_all",
-                 "break_all_count", "uppercase", "uppercase_count", "glyph_icons", "glyph_icon_count"],
+                 "break_all_count", "uppercase", "uppercase_count", "glyph_icons", "glyph_icon_count",
+                 "raw_identifiers", "raw_identifier_count"],
         "casing": ["labels", "label_count", "labels_seen"],
         "controls": ["total", "font_family_mismatch", "font_family_mismatch_count", "boundary_low",
                      "boundary_low_count", "ua_styled", "ua_styled_count", "label_fit_bad", "label_fit_bad_count",

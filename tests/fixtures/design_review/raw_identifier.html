@@ -1,0 +1,55 @@
+<!doctype html>
+<!-- Static fixture for COMP-11 (fleet-config#1336). Raw identifiers rendered as ordinary text fail: an IPv4 address in a
+     row label, a MAC address in a detail line, a snake_case and an UPPER_SNAKE token in a label. The same text inside
+     code, pre, kbd or samp, in a form field's value or a select's option, and text that only looks like an identifier
+     (a version, a date, a time, a file name, a path, a URL, a hyphenated word, a camelCase name, a five-octet
+     number) pass. Addresses use the documentation range 192.0.2.0/24 and the MACs are made up. Asserted by
+     tests/test_design_review.py. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>design_review raw-identifier fixture</title>
+<style>
+  html, body { margin: 0; background: #ffffff; color: #1f2328; font-family: system-ui, sans-serif; font-size: 16px; }
+  body { padding: 16px; }
+  .row { display: flex; gap: 12px; padding: 8px 0; border-bottom: 1px solid #d1d9e0; }
+  code, pre, kbd, samp { font-family: ui-monospace, monospace; }
+</style>
+</head>
+<body>
+  <main>
+    <h2>Fails</h2>
+    <div class="row"><span id="ip-label">Plug at 192.0.2.14</span></div>
+    <div class="row"><span id="ip-port">Hub 192.0.2.7:8080 is up</span></div>
+    <div class="row"><span id="mac-detail">Adapter 02:00:5E:10:00:2A</span></div>
+    <div class="row"><span id="mac-dash">Adapter 02-00-5e-10-00-2b</span></div>
+    <div class="row"><span id="snake-label">quiet_hours_start</span></div>
+    <div class="row"><span id="upper-snake">Mode: ECO_BOOST</span></div>
+    <h2>Passes: the same text where code belongs</h2>
+    <div class="row"><code id="in-code">192.0.2.15</code></div>
+    <div class="row"><pre id="in-pre">02:00:5E:10:00:2C</pre></div>
+    <div class="row"><kbd id="in-kbd">quiet_hours_end</kbd></div>
+    <div class="row"><samp id="in-samp">ECO_BOOST</samp></div>
+    <div class="row"><span><code>nested</code> <code id="in-code-2">mode_name</code></span></div>
+    <h2>Passes: form fields</h2>
+    <div class="row">
+      <input type="text" id="field" value="quiet_hours_start">
+      <textarea id="area">192.0.2.16</textarea>
+      <select id="pick"><option>eco_boost</option><option>192.0.2.17</option></select>
+    </div>
+    <h2>Passes: only looks like one</h2>
+    <div class="row"><span id="version">Version 1.26.0 (build 1.2.3)</span></div>
+    <div class="row"><span id="date">Updated 2026.10.14 at 12:30:45</span></div>
+    <div class="row"><span id="octet">Range 999.0.2.1 and 1.2.3.4.5</span></div>
+    <div class="row"><span id="file">Export my_report.csv</span></div>
+    <div class="row"><span id="path">Saved to C:\data\quiet_hours_start and /var/lib/app_data</span></div>
+    <div class="row"><span id="url">See https://example.com/quiet_hours_start</span></div>
+    <div class="row"><span id="handle">Sent by @quiet_hours</span></div>
+    <div class="row"><span id="hyphen">Mode eco-boost_mode</span></div>
+    <div class="row"><span id="camel">quietHoursStart and Quiet_Hours</span></div>
+    <div class="row"><span id="word">Plain words only</span></div>
+    <div class="row" hidden><span id="hidden">192.0.2.18</span></div>
+  </main>
+</body>
+</html>
