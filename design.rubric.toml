@@ -33,7 +33,7 @@
 # metrics.json, every evaluate output and every filed finding.
 
 [meta]
-version = "1.33.0"   # per-bump history: git log -- design.rubric.toml, and the issues/PRs it cites
+version = "1.34.0"   # per-bump history: git log -- design.rubric.toml, and the issues/PRs it cites
 seeded_from = "app-launcher rendered audit, 2026-09-21 (fleet-config#962)"
 
 [weights]
@@ -661,7 +661,7 @@ threshold = 0
 severity = "P2"
 owner = "scaffold"
 adopt = "vendor the scaffold's `_vendored/action-row` (verbs unpainted, a cluster in a trackless `.icon-button-group`) and draw the verb as a glyph-only `icon-button` named by `aria-label` and a tooltip"
-standard = "design.md action-row: every visible verb on a row is a plain, unpainted icon-button next to the kebab, glyph colour changing on hover and press and nothing else; text-label buttons belong to page and section actions and dialogs, not rows; supersedes the row clause of #1386 (fleet-config#1420). The destructive recipe in a dialog or menu stays COMP-08's"
+standard = "design.md action-row: every visible verb on a row is a plain, unpainted icon-button next to the kebab, glyph colour changing on hover and press and nothing else; text-label buttons belong to page and section actions and dialogs, not rows; a count chip (\"+3 more\") discloses more of the row and is not a verb (fleet-config#1429); supersedes the row clause of #1386 (fleet-config#1420). The destructive recipe in a dialog or menu stays COMP-08's"
 fix_template = "{count} verbs inside list rows on {screen} draw a fill, border or shadow at rest ({sample}); draw each as a glyph-only icon-button with no paint, named by aria-label and a tooltip, or move it into the row menu."
 mockup = "none"
 
