@@ -196,7 +196,7 @@ doc_d = _flip(violating, "TOUCH-02", "unmeasured")
 doc_d["diff"] = ledger.diff(doc_d, older)
 page = report.render_report(doc_d)
 check('id="diff"' in page and "compared against run prev" in page and "unmeasured (1)" in page and "TOUCH-02" in page
-      and "rubric changed from v1.0.0 to v1.29.0" in page, "the report renders the unmeasured bucket and the rubric-change note")
+      and "rubric changed from v1.0.0 to v1.30.0" in page, "the report renders the unmeasured bucket and the rubric-change note")
 doc_f = _clone(violating)
 doc_f["diff"] = ledger.diff(doc_f, None)
 check("first recorded run for this target" in report.render_report(doc_f), "a first run says so instead of 'compared against unknown'")
@@ -242,8 +242,9 @@ check(filing.route(violating, {"TOUCH-01": {"reason": "r", "record": None}}, pro
 # ships (`_vendored/base`, `_vendored/text-size`, the `control-border` token), so the app can adopt it today. They
 # stay on the spec/scaffold lists (the fleet digest reads those) and are also routed to the app as adoptable.
 # COMP-05 (#1259) joins them: the vendored icon button and the transparent `--close-bg` default already ship.
+# So does COMP-14 (#1420): the vendored action-row ships its verbs unpainted (project-scaffolding#386).
 adopt_ids = [s["id"] for s in routed["adopt"]]
-check(sorted(adopt_ids) == ["A11Y-02", "COLOR-03", "COMP-05", "TYPE-02"],
+check(sorted(adopt_ids) == ["A11Y-02", "COLOR-03", "COMP-05", "COMP-14", "TYPE-02"],
       f"a failing spec/scaffold rule whose fix already ships is routed to the app as adoptable -- {adopt_ids}")
 check({"A11Y-02", "COLOR-03"} <= {s["id"] for s in routed["spec"]}
       and {"TYPE-02", "COMP-05"} <= {s["id"] for s in routed["scaffold"]},

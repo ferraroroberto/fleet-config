@@ -41,7 +41,8 @@ present on a successful run:
     layout    control_overflow [..], control_overflow_count, overflow_x, scroll_w, inner_w, inner_h, pane_h, lists [..],
               rows_over_limit [..], danger_rows, content_w, content_span, pane_split, radii {r: n},
               open_section_count, empty_open_sections [{sel, label}], empty_open_section_count,
-              multi_secondary_rows [{sel, label, lines}], multi_secondary_row_count
+              multi_secondary_rows [{sel, label, lines}], multi_secondary_row_count,
+              painted_row_verbs [{sel, label, via, row}], painted_row_verb_count
     overlay   surfaces, destructive [..], destructive_bad [..], destructive_bad_count
     clearance bars [..], hidden_rows [..], hidden_row_count
     a11y     unnamed [..], unnamed_count, zoom_locked, text_size_control, text_size_stamped
@@ -660,7 +661,10 @@ _MEASURE_JS = r"""
         if (b && lap >= 0.5 * Math.min(u.bottom - u.top, b.bottom - b.top)) b.bottom = Math.max(b.bottom, u.bottom);
         else bands.push({top: u.top, bottom: u.bottom}); });
       return {lines: bands.length, title: title.text.replace(/\s+/g, ' ').trim().slice(0, 30)}; };
-    const multiSecondary = [];
+    const multiSecondary = [], paintedVerbs = [];
+    const paintShows = (c, surface) => c[3] > 0.02 && Math.max(...[0,1,2].map(i => Math.abs(over(c, surface)[i] - surface[i]))) > 2;
+    const ROW_VERB_NOT = '[role=tab], [role=switch], [role=checkbox], [role=radio], [role=menuitem], [role=option], summary, '
+      + '[aria-pressed=true], [aria-current]:not([aria-current=false]), [aria-expanded=true], [aria-selected=true], [aria-checked=true]';
     q(ROWISH).forEach(row => {
       // A week of a month grid is not an action row: the WAI-ARIA grid pattern's rows (#1017).
       if ((row.tagName === 'TR' || row.getAttribute('role') === 'row') && row.closest('[role=grid], [role=treegrid]')) return;
@@ -684,6 +688,20 @@ _MEASURE_JS = r"""
       if (extras.length > params.rowControlsMax) rowsOver.push({sel: sel(row), controls: extras.length});
       const sec = secondaryLines(row, extras, disclosed);
       if (sec && sec.lines > 1) multiSecondary.push({sel: sel(row), label: sec.title, lines: sec.lines});
+      // A row verb draws nothing at rest (#1420): a visible button in a row's own controls with a fill, border or
+      // shadow that shows against the row's surface is painted, text or glyph alike. The row's tap-target control
+      // (`main`), a switch, tab, checkbox, radio or menu item and a control in a pressed, current, expanded,
+      // selected or checked state are not verbs; a state may draw itself.
+      const verbHost = !row.closest('nav, [role=navigation], [role=menu], [role=menubar], [role=listbox], [role=tablist], [role=tree]');
+      if (verbHost) extras.forEach(c => {
+        if (!c.matches('button, [role=button]') || c.matches(ROW_VERB_NOT) || c.closest(ROWISH) !== row) return;
+        const st = getComputedStyle(c), surface = bgOf(c.parentElement || row), via = [];
+        if (paintShows(rgba(st.backgroundColor), surface) || st.backgroundImage !== 'none') via.push('fill');
+        if (['Top','Right','Bottom','Left'].some(k => (parseFloat(st['border'+k+'Width']) || 0) > 0
+            && !['none','hidden'].includes(st['border'+k+'Style']) && paintShows(rgba(st['border'+k+'Color']), surface))) via.push('border');
+        const sh = st.boxShadow && st.boxShadow !== 'none' ? (st.boxShadow.match(/rgba?\([^)]*\)/g) || ['#000']) : [];
+        if (sh.some(s => rgba(s)[3] > 0.02)) via.push('shadow');
+        if (via.length) paintedVerbs.push({sel: sel(c), label: txt(c).slice(0, 30) || c.getAttribute('title') || 'icon', via: via.join('+'), row: sel(row)}); });
       if (ctl.some(c => /danger|destructive|delete|remove/i.test(c.className || ''))) dangerRows.add(row); });
     const all = q('*');
     all.forEach(el => { const r = getComputedStyle(el).borderTopLeftRadius; if (r && r !== '0px') radii[r] = (radii[r]||0)+1; });
@@ -758,6 +776,7 @@ _MEASURE_JS = r"""
     return { control_overflow: spilled.slice(0,CAP), control_overflow_count: spilled.length, overflow_x: de.scrollWidth > window.innerWidth + 1, scroll_w: de.scrollWidth, inner_w: window.innerWidth, inner_h: window.innerHeight,
       pane_h: pane.scrollHeight, lists: lists.slice(0,CAP), rows_over_limit: rowsOver.slice(0,CAP), rows_over_limit_count: rowsOver.length,
       multi_secondary_rows: multiSecondary.slice(0,CAP), multi_secondary_row_count: multiSecondary.length,
+      painted_row_verbs: paintedVerbs.slice(0,CAP), painted_row_verb_count: paintedVerbs.length,
       danger_rows: dangerRows.size, content_w: Math.round(content.width), content_span: Math.round(spanRight - content.left), pane_split: paneSplit, radii,
       open_section_count: openSections.size, empty_open_sections: emptyOpen.slice(0,CAP), empty_open_section_count: emptyOpen.length };
   });
@@ -986,7 +1005,8 @@ def metric_paths() -> List[str]:
         "feedback": ["toast_count", "toasts_tinted", "toasts_tinted_count", "empty_state_count", "empty_states_no_action"],
         "layout": ["control_overflow", "control_overflow_count", "overflow_x", "scroll_w", "inner_w", "inner_h", "pane_h", "lists", "rows_over_limit",
                    "rows_over_limit_count", "danger_rows", "content_w", "content_span", "pane_split", "radii", "open_section_count",
-                   "empty_open_sections", "empty_open_section_count", "multi_secondary_rows", "multi_secondary_row_count"],
+                   "empty_open_sections", "empty_open_section_count", "multi_secondary_rows", "multi_secondary_row_count",
+                   "painted_row_verbs", "painted_row_verb_count"],
         "overlay": ["surfaces", "destructive", "destructive_bad", "destructive_bad_count"],
         "clearance": ["bars", "hidden_rows", "hidden_row_count"],
         "a11y": ["unnamed", "unnamed_count", "zoom_locked", "text_size_control", "text_size_stamped"],
