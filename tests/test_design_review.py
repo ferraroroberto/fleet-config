@@ -60,8 +60,8 @@ def _doc(name: str) -> dict:
 # ---- rubric: the real file loads and names only metrics that exist ----------
 
 rubric = dr.load_rubric(RUBRIC)
-check(rubric.version == "1.29.0", "rubric meta.version stamped")
-check(len(rubric.rules) == 42, f"42 seed rules loaded (got {len(rubric.rules)})")
+check(rubric.version == "1.30.0", "rubric meta.version stamped")
+check(len(rubric.rules) == 43, f"43 seed rules loaded (got {len(rubric.rules)})")
 check(rubric.categories == ["typography", "color", "touch", "navigation", "layout", "components", "a11y"],
       "categories in rubric order")
 check(rb.check_metric_names(rubric, measure.metric_paths()) == [], "every rule metric is a script path or a derived metric")
@@ -678,6 +678,24 @@ check("COMP-13" in _j10.maps_to and "COMP-13" in _j10.question and "at most one 
       and "more than two lines" not in _j10.question,
       "J-10 names COMP-13, maps to it and no longer asks the secondary-line count, so a `no` and the rule never double-count")
 
+# ---- COMP-14: a verb inside a list row draws a fill, border or shadow at rest (#1420) ----
+_c14 = _layout_rule([{"painted_row_verb_count": 2, "painted_row_verbs": [{"sel": "button.tint", "label": "Start", "via": "fill+border", "row": "li#a"},
+                                                                          {"sel": "button.outl", "label": "Stop", "via": "border", "row": "li#b"}]}, {}, {}], "COMP-14")
+check(_c14["status"] == "fail" and [i["label"] for i in _c14["evidence"][0]["items"]] == ["Start", "Stop"] and _c14["severity"] == "P2",
+      f"COMP-14: painted or bordered row verbs fail and are listed -- {_c14['status']} {_c14['evidence']}")
+check(_layout_rule([{}, {}, {}], "COMP-14")["status"] == "pass", "COMP-14: a screen whose row verbs are plain icon-buttons passes")
+_old14 = _doc("compliant")
+for _s in _old14["screens"]:
+    for _k in ("painted_row_verbs", "painted_row_verb_count"):
+        _s["metrics"]["layout"].pop(_k, None)
+check(next(r for r in ev.evaluate(_old14, rubric, _specs("compliant"))["rules"] if r["id"] == "COMP-14")["status"] == "unmeasured",
+      "COMP-14: a run from before the metric existed is unmeasured, never a pass")
+_c14_sentence = report_mod.finding_sentence(next(r for r in ev.evaluate(_doc("violating"), rubric, _specs("violating"))["rules"] if r["id"] == "COMP-14"), None)
+check("Stop" in _c14_sentence and "{" not in _c14_sentence, f"COMP-14: the fix sentence names the verb and fills every placeholder -- {_c14_sentence}")
+_l04 = next(r for r in rubric.rules if r.id == "LAYOUT-04")
+check("#1420" in _l04.standard and "COMP-14" in _l04.standard and "outlined" in _l04.standard,
+      "LAYOUT-04 names COMP-14 as the gate on a row verb's paint, so the outlined Stop it used to contradict is retired by the rubric too")
+
 # ---- COMP-07 / LAYOUT-08: a label fits its control, a control fits its container (#1325) ----
 def _layout(rule_id: str, layout_by_screen) -> dict:
     d = _doc("compliant")
@@ -714,7 +732,7 @@ check(all(s == "pass" for s in statuses_c.values()), f"compliant: every rule pas
 check(all(v["score"] == 100.0 and v["grade"] == "A" and not v["unmeasured"] for v in out_c["categories"].values()),
       "compliant: every category 100/A, measured")
 check(out_c["overall"] == {"score": 100.0, "grade": "A", "unmeasured": False}, "compliant: overall A")
-check(out_c["schema_version"] == 1 and out_c["rubric_version"] == "1.29.0" and out_c["target"] == "fixture-app"
+check(out_c["schema_version"] == 1 and out_c["rubric_version"] == "1.30.0" and out_c["target"] == "fixture-app"
       and out_c["commit"].startswith("0000") and out_c["generated_at"].endswith("Z"), "evaluate envelope keys")
 check([s["id"] for s in out_c["screens"]] == ["desktop-light-home", "iphone-light-home", "desktop-light-dialog-edit"],
       "evaluate echoes the screen list")
@@ -1686,7 +1704,7 @@ else:
           f"measure CLI walks the fixture: 2 tabs + 1 dialog x light/dark, plus the absent Settings gear (#1217) ({proc.stdout[-300:]}{proc.stderr[-300:]})")
     check(lines.get("RUN_DIR") == str(run_dir) and Path(lines.get("METRICS", "")).is_file(), "RUN_DIR/METRICS lines point at the run dir")
     doc = json.loads(Path(lines["METRICS"]).read_text(encoding="utf-8"))
-    check(doc["interpreter"] == str(interp) and doc["schema_version"] == 1 and doc["rubric_version"] == "1.29.0", "metrics.json records the interpreter + versions")
+    check(doc["interpreter"] == str(interp) and doc["schema_version"] == 1 and doc["rubric_version"] == "1.30.0", "metrics.json records the interpreter + versions")
     if not (scaffold / "tests" / "e2e" / "_geometry.py").is_file():
         _h.skip("browser leg: project-scaffolding/tests/e2e/_geometry.py absent -- hit-target assertions NOT verified")
     check(doc["walk"]["info"]["geometry"] == ("loaded" if (scaffold / "tests" / "e2e" / "_geometry.py").is_file() else "GEOMETRY_MISSING"),
@@ -2096,6 +2114,28 @@ else:
     _ms_rule = next((r for r in ev.evaluate({"screens": mss, "wide_views": []}, rubric, _specs("compliant"))["rules"] if r["id"] == "COMP-13"), {}) if mss else {}
     check(_ms_rule.get("status") == "fail" and len(_ms_rule["evidence"][0]["items"]) == 4,
           f"COMP-13: the four rows fail, the rest do not -- {_ms_rule.get('status')} {_ms_rule.get('reason')}")
+
+    # row verbs that draw paint at rest, and the plain ones beside them (#1420)
+    rv_dir = STATE / "fixture-row-verb"
+    proc_rv = subprocess.run(
+        [str(interp), str(REPO / "skills" / "_lib" / "design_review" / "walk.py"), "--url", (FIX / "row_verb.html").as_uri(),
+         "--out", str(rv_dir), "--devices", "desktop,iphone", "--scaffold", str(scaffold),
+         "--params", str(STATE / "steps-params.json")],
+        capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=600,
+    )
+    rvs = json.loads((rv_dir / "screens.json").read_text(encoding="utf-8")) if proc_rv.returncode == 0 else []
+    for _dev in ("desktop", "iphone"):
+        _rv_scr = next((s for s in rvs if s.get("device") == _dev), None)
+        _rv = ((_rv_scr or {}).get("metrics") or {}).get("layout") or {}
+        check(sorted((i["row"].split(".")[0], i["via"]) for i in _rv.get("painted_row_verbs", []))
+              == [("li#f-lone", "fill+border"), ("li#f-outl-glyph", "border"), ("li#f-outl-text", "border"), ("li#f-shadow", "shadow"),
+                  ("li#f-tint-glyph", "fill"), ("li#f-tint-text", "fill+border")],
+              f"COMP-14 ({_dev}): a tint text verb, an outlined text verb, a tint glyph verb, an outlined glyph verb, a shadowed verb and a lone row's tint verb fail; "
+              f"a plain glyph verb, a plain cluster, a kebab, a pressed favourite, a switch, the row's own tap target, a page button and buttons in a menu or nav list do not "
+              f"-- {_rv} ({proc_rv.stderr[-300:]})")
+    _rv_rule = next((r for r in ev.evaluate({"screens": rvs, "wide_views": []}, rubric, _specs("compliant"))["rules"] if r["id"] == "COMP-14"), {}) if rvs else {}
+    check(_rv_rule.get("status") == "fail" and len(_rv_rule["evidence"][0]["items"]) == 6,
+          f"COMP-14: the six painted verbs fail, the rest do not -- {_rv_rule.get('status')} {_rv_rule.get('reason')}")
 
     # raw identifiers: which text counts, and which only looks like one (#1336)
     ri_dir = STATE / "fixture-raw-identifier"

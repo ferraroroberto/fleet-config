@@ -1,0 +1,62 @@
+<!doctype html>
+<!-- Static fixture for COMP-14 (fleet-config#1420). A verb inside a list row draws nothing at rest. Fails: a tint-filled
+     text verb, an outlined text verb (the retired Stop), a tint-filled glyph verb, an outlined glyph verb, a verb with
+     a drop shadow, and a lone row's tint verb (a row is a row, whatever its siblings). Passes: a plain glyph verb, a
+     plain cluster, a kebab, a leading favourite in its pressed state, a switch, the row's own tap-target button, a
+     painted button OUTSIDE a list row (a page action), and a painted button in a menu or nav list. Asserted by
+     tests/test_design_review.py. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>design_review row verb fixture</title>
+<style>
+  html, body { margin: 0; background: #ffffff; color: #1f2328; font-family: system-ui, sans-serif; font-size: 16px; }
+  body { padding: 16px; }
+  h2 { font-size: 16px; margin: 16px 0 4px; }
+  ul { list-style: none; margin: 0 0 8px; padding: 0; }
+  li.row { display: flex; align-items: center; gap: 8px; min-height: 52px; padding: 4px 0; border-top: 1px solid #d1d9e0; }
+  .main { flex: 1; min-width: 0; text-align: left; background: none; border: 0; font: inherit; padding: 8px 0; }
+  .t { display: block; font-weight: 600; }
+  .m { display: block; font-size: 14px; color: #656d76; }
+  button.ib { width: 44px; height: 44px; background: none; border: 0; color: #656d76; padding: 0; display: grid; place-items: center; }
+  button.ib svg { width: 16px; height: 16px; }
+  .group { display: flex; gap: 0; }
+  .tint { background: #ddf4ff; border: 1px solid #54aeff66; color: #0969da; height: 44px; padding: 0 12px; border-radius: 8px; font: inherit; }
+  .outl { background: transparent; border: 1px solid #d1d9e0; color: #656d76; height: 44px; padding: 0 12px; border-radius: 8px; font: inherit; }
+  .shadowed { background: none; border: 0; box-shadow: 0 2px 6px rgba(0,0,0,.35); width: 44px; height: 44px; border-radius: 8px; }
+  .page { background: #0969da; color: #fff; border: 0; padding: 8px 16px; border-radius: 8px; font: inherit; }
+  [role=switch] { width: 44px; height: 24px; border-radius: 12px; border: 0; background: #1f6feb; }
+  [aria-pressed=true] { background: #ddf4ff; }
+  [role=menu] { border: 1px solid #d1d9e0; padding: 4px; }
+</style>
+</head>
+<body>
+<svg style="display:none" xmlns="http://www.w3.org/2000/svg"><symbol id="g" viewBox="0 0 16 16"><path d="M4 2l10 6-10 6z" fill="currentColor"/></symbol></svg>
+
+<h2>Fails</h2>
+<ul>
+  <li class="row" id="f-tint-text"><button class="main"><span class="t">Hub A</span><span class="m">Stopped</span></button><button class="tint">Start</button></li>
+  <li class="row" id="f-outl-text"><button class="main"><span class="t">Hub B</span><span class="m">Running</span></button><button class="outl">Stop</button></li>
+  <li class="row" id="f-tint-glyph"><button class="main"><span class="t">Hub C</span><span class="m">Stopped</span></button><button class="ib" style="background:#ddf4ff" aria-label="Start"><svg><use href="#g"/></svg></button></li>
+  <li class="row" id="f-outl-glyph"><button class="main"><span class="t">Hub D</span><span class="m">Running</span></button><button class="ib" style="border:1px solid #d1d9e0;border-radius:8px" aria-label="Stop"><svg><use href="#g"/></svg></button></li>
+  <li class="row" id="f-shadow"><button class="main"><span class="t">Hub E</span><span class="m">Running</span></button><button class="shadowed" aria-label="Wake"><svg width="16" height="16"><use href="#g"/></svg></button></li>
+</ul>
+<ul>
+  <li class="row" id="f-lone"><button class="main"><span class="t">Hub F</span><span class="m">Stopped</span></button><button class="tint">Wake</button></li>
+</ul>
+
+<h2>Passes</h2>
+<ul>
+  <li class="row" id="p-plain"><button class="main"><span class="t">Cam A</span><span class="m">Idle</span></button><button class="ib" aria-label="Live"><svg><use href="#g"/></svg></button><button class="ib" aria-label="More actions" aria-haspopup="menu" aria-expanded="false"><svg><use href="#g"/></svg></button></li>
+  <li class="row" id="p-group"><button class="main"><span class="t">Blind A</span><span class="m">Open</span></button><span class="group" role="group" aria-label="Blind"><button class="ib" aria-label="Up"><svg><use href="#g"/></svg></button><button class="ib" aria-label="Stop"><svg><use href="#g"/></svg></button><button class="ib" aria-label="Down"><svg><use href="#g"/></svg></button></span></li>
+  <li class="row" id="p-fav"><button class="ib" aria-pressed="true" aria-label="Favorite"><svg><use href="#g"/></svg></button><button class="main"><span class="t">Job A</span><span class="m">Yesterday</span></button><button class="ib" aria-label="Run"><svg><use href="#g"/></svg></button></li>
+  <li class="row" id="p-switch"><button class="main"><span class="t">Plug A</span><span class="m">On</span></button><button role="switch" aria-checked="true" aria-label="Plug A"></button></li>
+</ul>
+
+<h2>Not rows</h2>
+<p><button class="page" id="n-page">Add task</button></p>
+<ul role="menu" id="n-menu"><li><button class="tint">Delete</button></li><li><button class="tint">Rename</button></li></ul>
+<nav id="n-nav"><ul><li><button class="tint">Home</button></li><li><button class="tint">Jobs</button></li></ul></nav>
+</body>
+</html>

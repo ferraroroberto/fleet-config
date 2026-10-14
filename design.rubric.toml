@@ -33,7 +33,7 @@
 # metrics.json, every evaluate output and every filed finding.
 
 [meta]
-version = "1.29.0"   # per-bump history: git log -- design.rubric.toml, and the issues/PRs it cites
+version = "1.30.0"   # per-bump history: git log -- design.rubric.toml, and the issues/PRs it cites
 seeded_from = "app-launcher rendered audit, 2026-09-21 (fleet-config#962)"
 
 [weights]
@@ -416,7 +416,7 @@ fail_when = "gte"
 threshold = 3
 severity = "P1"
 owner = "app"
-standard = "design.md Colors: danger is state, never decoration"
+standard = "design.md action-row: a row never shows a visible danger button, Delete and Remove sit last in the row menu after a divider; a row verb that stops is a plain icon-button like any other, so the paint is COMP-14's (fleet-config#1420, superseding the outlined Stop of #1386)"
 fix_template = "{value} rows on {screen} each show a danger button; move delete into the row menu or a bulk action."
 mockup = "destructive-in-menu"
 
@@ -554,7 +554,7 @@ threshold = 0
 severity = "P2"
 owner = "scaffold"
 adopt = "vendor the scaffold's `_vendored/icon-button` for glyph-only controls and set `--close-bg: transparent` (or drop it) so the vendored header toggles and modal close draw no fill"
-standard = "design.md icon-button: a glyph on nothing, no fill, border or shadow at rest; a pressed, current, expanded, selected or checked state may draw itself (fleet-config#1259)"
+standard = "design.md icon-button: a glyph on nothing, no fill, border or shadow at rest; a pressed, current, expanded, selected or checked state may draw itself (fleet-config#1259); a verb inside a list row is held to the same rule by COMP-14, text label or glyph (fleet-config#1420)"
 fix_template = "{count} icon-only buttons on {screen} are painted at rest ({sample}); an icon button is a glyph on nothing, its 44px target invisible."
 mockup = "none"
 
@@ -649,6 +649,20 @@ severity = "P2"
 owner = "app"
 standard = "design.md action-row Context: at most one body-sm line in fg-muted under the title, which one line that wraps still is; the J-10 ratchet (fleet-config#1338). Whether the row leads with its name and shows its state as a badge stays with the judge"
 fix_template = "{count} list rows on {screen} carry more than one secondary line under the title ({sample}); keep one meta line and move the rest to the row's detail sheet or its menu."
+mockup = "none"
+
+[[rules]]
+id = "COMP-14"
+category = "components"
+title = "A verb inside a list row draws a fill, border or shadow at rest"
+metric = "layout.painted_row_verb_count"
+fail_when = "gt"
+threshold = 0
+severity = "P2"
+owner = "scaffold"
+adopt = "vendor the scaffold's `_vendored/action-row` (verbs unpainted, a cluster in a trackless `.icon-button-group`) and draw the verb as a glyph-only `icon-button` named by `aria-label` and a tooltip"
+standard = "design.md action-row: every visible verb on a row is a plain, unpainted icon-button next to the kebab, glyph colour changing on hover and press and nothing else; text-label buttons belong to page and section actions and dialogs, not rows; supersedes the row clause of #1386 (fleet-config#1420). The destructive recipe in a dialog or menu stays COMP-08's"
+fix_template = "{count} verbs inside list rows on {screen} draw a fill, border or shadow at rest ({sample}); draw each as a glyph-only icon-button with no paint, named by aria-label and a tooltip, or move it into the row menu."
 mockup = "none"
 
 # ---------------------------------------------------------------------------

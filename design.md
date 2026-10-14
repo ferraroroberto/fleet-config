@@ -562,10 +562,12 @@ draws no surface at all. Every tier shares the **one
 trio, home-automation#362): `canvas-subtle` in light (`fg-muted` 4.93:1), the
 `border-muted` value in dark (4.08:1, see `design.dark.md`; disabled text is
 exempt from WCAG 1.4.3). Never opacity on a solid fill.
-A destructive action takes the **outlined recipe** everywhere, the final
-Delete of a confirm dialog included (transparent on a hairline, `danger-text`
-text and a `danger` border, never a fill or tint; measured as `COMP-08`,
-fleet-config#1403); status colors never fill a non-status button. `card` for
+A destructive action **in a dialog or a menu** takes the **outlined
+recipe**, the final Delete of a confirm dialog included (transparent on a
+hairline, `danger-text` text and a `danger` border, never a fill or tint;
+measured as `COMP-08`, fleet-config#1403). A list row shows no button tier at
+all: its verbs are plain icon buttons (action-row, fleet-config#1420). Status
+colors never fill a non-status button. `card` for
 every content group; `nav-bar` + `nav-tab` per the contract above. Inline form controls (`select`,
 `input`) share the `control` height (36px) so they line up on a row, and draw
 their boundary in `control-border`. The on/off
@@ -733,23 +735,31 @@ hand-picked per app.
   slot**, either an `avatar`, the one leading toggle (e.g. favorite, or a
   done check that a second tap undoes, grocery-shopping-automation#254), a
   tabular time value, or, in a **date-keyed row**, a **date tile**, and **at most one other visible trailing item**: a
-  value (a `meter`, a sparkline), or the row's dominant verb. A text verb
-  (Run on a job row) is a tint verb at real 44px geometry, **unless it stops
-  or destroys something**: Stop, Delete or Remove is never the tinted verb,
-  even when it is the row's only visible one, and takes the outlined recipe
-  (`button-ghost`: transparent on a hairline border) at the same 44px, so the
-  most prominent control on a list of running things is never the one that
-  ends them (fleet-config#1386, owner decision 2026-10-13); an **icon-only
-  verb** (Move on a task row) is an unpainted `icon-button` like the kebab:
-  a `fg-muted` glyph on nothing at the real 44px square, still named, never
-  a tinted fill, under the icon-button rule like any glyph-only control
-  (task-os#392, app-launcher#1501 answering COMP-05;
-  project-scaffolding#347 brings the vendored tint in line). The verb is
-  the action the owner uses most, read from the app's own data
-  (task-os#392: most edits were re-dates). A **segmented verb cluster**
-  (Up · Stop · Down on a blind, home-automation#884) counts as that one
-  trailing item: one control with one track, at real 44px geometry per
-  segment, outside the row's tap target so a press never opens the sheet.
+  value (a `meter`, a sparkline), or the row's dominant verb. **Every
+  visible verb is a plain icon button** (`icon-button`, owner decision
+  2026-10-14, fleet-config#1420, which supersedes the row clause of
+  fleet-config#1386): glyph only, like the kebab, at the real 44px square, with
+  no fill, border or shadow at rest. Hover and press change the glyph colour
+  and nothing else; the accessible name and the tooltip carry the verb, never a
+  painted label. Stop is no exception: the outlined Stop is retired, and a verb
+  that halts a process is the same unpainted square as one that starts it. One
+  glyph per verb, so a verb looks the same in every app: Live `i-video`, Wake
+  `i-power`, Start and Run `i-play`, Stop `i-square`, Find `i-search`, Open the
+  arrow-out, Move the calendar. **Delete and Remove are never a visible verb on
+  a row**, with no exception: they sit last in the row menu after a divider (see
+  Destructive actions below). A verb whose glyph a reader would not know
+  (`COMP-09`) goes into the row menu, or becomes the row tap, instead of
+  growing a painted label. Text-label buttons (`button-primary`, `button-tint`,
+  `button-ghost`, `button-surface`) are for page and section actions and
+  dialogs, not rows. The verb is the action the owner uses most, read from the
+  app's own data (task-os#392: most edits were re-dates). A **verb cluster**
+  (Up · Stop · Down on a blind, Live · Wake) is an `icon-button-group` of such
+  buttons, with no track and no fill, each at real 44px geometry with the
+  group's gap at 0; it counts as that one trailing item and sits outside the
+  row's tap target so a press never opens the sheet. A choice with a selected
+  state (an AC mode) is a `segmented` control and keeps its track; verbs that
+  only fire are never one. A painted or bordered verb inside a list row is
+  measured as `COMP-14`, a glyph-only button in general as `COMP-05`.
   The **date tile** is the weekday over the day number in a 44px square
   (the floor), today tinted `accent-soft`, all text at least 14px; the
   title then says what the day *is* ("Booked", "Holiday") and the one meta
@@ -775,9 +785,10 @@ hand-picked per app.
   time (kept whole) plus a preview (cut); counts move to the sheet header
   (whatsapp-radar#375, owner decision 6 on #370). Height comes from the `rows` scale
   (`rows.md` minimum). **No vertical rules** between controls inside a row;
-  a list is not a spreadsheet. **Destructive actions** (Kill, Stop, Delete) live in the row
+  a list is not a spreadsheet. **Destructive actions** (Kill, Delete, Remove) live in the row
   menu (`row-menu`) as its last item, after a divider, in `danger-text`, behind a
-  confirm. A row never shows a visible danger button. **Long lists:** a list
+  confirm. A row never shows a visible danger button, and its visible Stop is
+  the plain square above, which halts and can be started again. **Long lists:** a list
   that can exceed ~12 rows gets a filter field above it: 44px tall, a
   `control-border` boundary on `card`, `rounded.md`. Its placeholder is the
   list's count ("Filter 39 tasks…"), that count's one home (task-os#393).
@@ -1292,7 +1303,7 @@ byte-for-byte components.
 - **Do** give every non-navigation pointer target a ≥44×44px *effective* hit area — invisible expansion for isolated compact controls, real geometry for adjacent clusters; expanded rectangles never overlap.
 - **Do** preserve and label last-known data when a background refresh fails (`Last updated … · live data unavailable`) and disable freshness-sensitive actions — stale state is never actionable.
 - **Do** pair every colour-distinguished chart series with a non-colour cue (dash / point style / fill) and a viewport-aware tick budget.
-- **Don't** paint an icon-only button (a fill, border or shadow at rest), or resize a reference pill into a control box.
+- **Don't** paint an icon-only button (a fill, border or shadow at rest), paint a verb on a list row, or resize a reference pill into a control box.
 - **Don't** hand-roll a primitive (switch, select, dialog, tabs…) that shadcn already defines.
 - **Don't** show a destructive action as a visible per-row button, split a row into icon columns with vertical rules, or put controls inside a disclosure `summary`.
 - **Don't** mix a second icon set or hand-draw a one-off glyph — use the matching Lucide icon.

@@ -265,9 +265,9 @@ the page-header's exceptions line and the `meter` fill take the dark
 `*-text` and base hues, with the same pace rule (and the same headroom
 levels for an allocation bar); the header keeps its two actions and never a
 third, a standing footnote sits behind the ⓘ info sheet, raw
-identifiers stay off the faces, and a stopping or destructive row verb is
-never the tinted one but takes the outlined `button-ghost` recipe, all
-unchanged in dark; the `history-mark` strip keeps its healthy mark in the
+identifiers stay off the faces, and every visible row verb is a plain
+unpainted `icon-button` (no fill, border or shadow at rest, the glyph colour
+the only state), all unchanged in dark; the `history-mark` strip keeps its healthy mark in the
 dark `fg-muted` and colours only the exception in the dark base hues, its
 unknown mark a dash; the `row-menu` surface is the one value that changes, `border-muted` (a step
 above the dark `card`; light uses `canvas-subtle`), while its 44px rows, glyph,
