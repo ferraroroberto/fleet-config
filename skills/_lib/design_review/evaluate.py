@@ -423,7 +423,7 @@ def _d_icon_only_unconventional(m: dict, rule: Rule, ctx: dict) -> Derived:
 
     A row verb from the action-row glyph map (the rule's `verb_glyphs`: verb name -> glyph word, the one constant
     design.md's map is tested against, #1428) is conventional when it carries its mapped glyph. A verb name whose
-    sprite glyph was read and is another glyph still fails; a glyph that could not be read (an inline svg, an img)
+    sprite glyph was read and is not a glyph of any verb the name carries still fails; a glyph that could not be read (an inline svg, an img)
     leaves the name to speak for it.
     """
     items = measure.metric_value(m, "controls.icon_only_unlabelled")
@@ -435,8 +435,8 @@ def _d_icon_only_unconventional(m: dict, rule: Rule, ctx: dict) -> Derived:
 
     def mapped_verb(it: dict) -> bool:
         name, glyph = str(it.get("name", "")), str(it.get("glyph") or "").lower()
-        want = next((g for v, g in verb_glyphs.items() if re.search(rf"\b{re.escape(v)}\b", name, re.I)), None)
-        return want is not None and (not glyph or bool(set(want) & set(re.split(r"[^a-z0-9]+", glyph))))
+        wants = [g for v, g in verb_glyphs.items() if re.search(rf"\b{re.escape(v)}\b", name, re.I)]  # "Dictate (click to start)" names two
+        return bool(wants) and (not glyph or any(set(w) & set(re.split(r"[^a-z0-9]+", glyph)) for w in wants))
 
     bad = [it for it in items if str(it.get("name", "")).strip()  # type: ignore[union-attr]
            and not conventional.search(str(it.get("name", ""))) and not mapped_verb(it)]  # type: ignore[arg-type]
