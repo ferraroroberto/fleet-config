@@ -34,6 +34,8 @@ check = _h.check
 skip = _h.skip
 
 NOW = datetime(2026, 8, 11, 3, 0, 0, tzinfo=timezone.utc)
+#: The wedged-run test waits out the real lock deadline plus the rest of the run.
+DB_LOCK_WAIT_LIMIT = bp.DB_LOCK_TIMEOUT_SECONDS + 60
 
 
 def _write(path: Path, content: str = "x") -> Path:
@@ -708,6 +710,83 @@ try:
     check(not (tmp / "snap-out" / "corrupt.sqlite3").exists(),
           "runtime: a failed snapshot leaves no half-written file behind")
 
+    # ---- a lock held past the deadline is a bounded failure, not a hang ----
+    # fleet-config#1422: Connection.backup() with the default pages=-1 retries
+    # BUSY forever and ignores the connect timeout, so one database held under
+    # an exclusive lock blocked selection until something killed the process.
+    # Driven on a daemon thread so the pre-fix hang fails this check instead of
+    # hanging the suite.
+    def _snapshot_bounded(src_db: Path, out: Path, timeout: float, limit: float) -> dict:
+        outcome: dict = {}
+
+        def _run() -> None:
+            began = time.monotonic()
+            try:
+                outcome["mode"] = bp.snapshot_sqlite(src_db, out, timeout=timeout)
+            except OSError as exc:
+                outcome["error"] = str(exc)
+            outcome["seconds"] = time.monotonic() - began
+
+        worker = threading.Thread(target=_run, daemon=True)
+        worker.start()
+        worker.join(limit)
+        outcome["finished"] = not worker.is_alive()
+        return outcome
+
+    held_db = tmp / "runtime-held" / "held.sqlite3"
+    held_db.parent.mkdir(parents=True, exist_ok=True)
+    held = sqlite3.connect(str(held_db), isolation_level=None)
+    held.execute("CREATE TABLE t (x)")
+    held.execute("BEGIN EXCLUSIVE")
+    try:
+        held_out = _snapshot_bounded(held_db, tmp / "snap-out" / "held.sqlite3", 2.0, 20.0)
+    finally:
+        held.close()
+    check(held_out["finished"] and "sqlite backup failed" in held_out.get("error", ""),
+          f"runtime: a database locked past the deadline raises OSError, got {held_out!r}")
+    check(held_out.get("seconds", 99) < 8.0,
+          f"runtime: ...and within the deadline plus a small margin, got {held_out.get('seconds')}")
+    check(not (tmp / "snap-out" / "held.sqlite3").exists(),
+          "runtime: a stalled snapshot leaves no half-written file behind")
+
+    # A writer that commits between every step restarts the copy each time; the
+    # stall clock has to cover restarts too, not only lock waits. One page per
+    # step makes the restarts deterministic on a database this small.
+    churn_db = tmp / "runtime-churn" / "churn.sqlite3"
+    churn_db.parent.mkdir(parents=True, exist_ok=True)
+    churner = sqlite3.connect(str(churn_db), isolation_level=None, check_same_thread=False)
+    churner.execute("CREATE TABLE t (x BLOB)")
+    churner.execute("BEGIN")
+    for _ in range(20000):
+        churner.execute("INSERT INTO t VALUES (randomblob(1000))")
+    churner.execute("COMMIT")
+    churn_stop = threading.Event()
+
+    def _churn() -> None:
+        while not churn_stop.is_set():
+            churner.execute("INSERT INTO t VALUES (randomblob(100))")
+            time.sleep(0.005)
+
+    churn_thread = threading.Thread(target=_churn, daemon=True)
+    snapshot_mod = sys.modules["backup.snapshot"]
+    saved_pages = getattr(snapshot_mod, "_BACKUP_PAGES_PER_STEP", 1024)
+    snapshot_mod._BACKUP_PAGES_PER_STEP = 1
+    churn_thread.start()
+    try:
+        churn_out = _snapshot_bounded(churn_db, tmp / "snap-out" / "churn.sqlite3", 2.0, 20.0)
+    finally:
+        snapshot_mod._BACKUP_PAGES_PER_STEP = saved_pages
+        churn_stop.set()
+        churn_thread.join(10)
+        churner.close()
+    check(churn_out["finished"] and "no progress" in churn_out.get("error", ""),
+          f"runtime: a copy restarted by a live writer is abandoned too, got {churn_out!r}")
+
+    # A quiet database is untouched by any of this: it still snapshots whole.
+    quiet_out = _snapshot_bounded(live_db, tmp / "snap-out" / "quiet.sqlite3", 2.0, 20.0)
+    check(quiet_out["finished"] and quiet_out.get("mode") in {"read-only", "read-write"},
+          f"runtime: an unlocked database still snapshots after the change, got {quiet_out!r}")
+
     # ---- selection: no size cap, no sidecars, plain files pass through ------
     _write(rd_src / "home-automation" / "notes.txt", "small")
     _write(rd_src / "home-automation" / "big.blob", "b" * 5000)   # ~5x the 1 KB cap
@@ -1362,8 +1441,22 @@ try:
               f"log: the first line reaches a pipe while the run is still going, got {seen!r}")
         check(still_running and any("locked.sqlite3" in line for line in seen),
               f"log: a wedged run's last line names the step it is blocked on, got {seen!r}")
+        # fleet-config#1422: the lock used to hold this run forever and the
+        # test could only end it with a kill. Now the database is reported as a
+        # failed snapshot after the lock deadline and the run carries on to the
+        # end and exits non-zero on its own.
+        try:
+            wedged_exit = wedged.wait(timeout=DB_LOCK_WAIT_LIMIT)
+        except subprocess.TimeoutExpired:
+            wedged_exit = None
+        reader.join(10)
+        check(wedged_exit not in (None, 0),
+              f"log: a run blocked by a locked database finishes and exits non-zero, got {wedged_exit!r}")
+        check(any("sqlite-snapshot" in line and "locked.sqlite3" in line for line in seen),
+              f"log: ...and reports that database as a failed snapshot, got {seen!r}")
     finally:
-        wedged.kill()
+        if wedged.poll() is None:
+            wedged.kill()
         wedged.wait(timeout=30)
         holder.close()
 
