@@ -746,8 +746,10 @@ hand-picked per app.
   glyph per verb, so a verb looks the same in every app: Live `i-video`, Wake
   `i-power`, Start and Run `i-play`, Stop `i-square`, Find `i-search`, Open the
   arrow-out, Move the calendar. **Delete and Remove are never a visible verb on
-  a row**, with no exception: they sit last in the row menu after a divider (see
-  Destructive actions below). A verb whose glyph a reader would not know
+  a row**, with no exception: a sheet's editing list (a quick-add list) is a list
+  of rows too. They sit last in the row menu after a divider (see Destructive
+  actions below) or behind an explicit edit mode (owner decision 2026-10-14,
+  fleet-config#1420; measured as `COMP-15`). A verb whose glyph a reader would not know
   (`COMP-09`) goes into the row menu, or becomes the row tap, instead of
   growing a painted label. Text-label buttons (`button-primary`, `button-tint`,
   `button-ghost`, `button-surface`) are for page and section actions and

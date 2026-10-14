@@ -33,7 +33,7 @@
 # metrics.json, every evaluate output and every filed finding.
 
 [meta]
-version = "1.30.0"   # per-bump history: git log -- design.rubric.toml, and the issues/PRs it cites
+version = "1.31.0"   # per-bump history: git log -- design.rubric.toml, and the issues/PRs it cites
 seeded_from = "app-launcher rendered audit, 2026-09-21 (fleet-config#962)"
 
 [weights]
@@ -663,6 +663,19 @@ owner = "scaffold"
 adopt = "vendor the scaffold's `_vendored/action-row` (verbs unpainted, a cluster in a trackless `.icon-button-group`) and draw the verb as a glyph-only `icon-button` named by `aria-label` and a tooltip"
 standard = "design.md action-row: every visible verb on a row is a plain, unpainted icon-button next to the kebab, glyph colour changing on hover and press and nothing else; text-label buttons belong to page and section actions and dialogs, not rows; supersedes the row clause of #1386 (fleet-config#1420). The destructive recipe in a dialog or menu stays COMP-08's"
 fix_template = "{count} verbs inside list rows on {screen} draw a fill, border or shadow at rest ({sample}); draw each as a glyph-only icon-button with no paint, named by aria-label and a tooltip, or move it into the row menu."
+mockup = "none"
+
+[[rules]]
+id = "COMP-15"
+category = "components"
+title = "A delete or remove control is visible on a list row"
+metric = "layout.delete_row_verb_count"
+fail_when = "gt"
+threshold = 0
+severity = "P2"
+owner = "app"
+standard = "design.md action-row: Delete and Remove are never a visible control on a row, a sheet's editing list included; they sit last in the row's kebab menu after a divider, or behind an explicit edit mode (fleet-config#1420, owner decision 2026-10-14). Paint is COMP-14's"
+fix_template = "{count} delete or remove controls are visible on list rows on {screen} ({sample}); move each into the row's menu as its last item, after a divider, or behind an edit mode."
 mockup = "none"
 
 # ---------------------------------------------------------------------------

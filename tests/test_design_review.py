@@ -60,8 +60,8 @@ def _doc(name: str) -> dict:
 # ---- rubric: the real file loads and names only metrics that exist ----------
 
 rubric = dr.load_rubric(RUBRIC)
-check(rubric.version == "1.30.0", "rubric meta.version stamped")
-check(len(rubric.rules) == 43, f"43 seed rules loaded (got {len(rubric.rules)})")
+check(rubric.version == "1.31.0", "rubric meta.version stamped")
+check(len(rubric.rules) == 44, f"44 seed rules loaded (got {len(rubric.rules)})")
 check(rubric.categories == ["typography", "color", "touch", "navigation", "layout", "components", "a11y"],
       "categories in rubric order")
 check(rb.check_metric_names(rubric, measure.metric_paths()) == [], "every rule metric is a script path or a derived metric")
@@ -692,6 +692,20 @@ check(next(r for r in ev.evaluate(_old14, rubric, _specs("compliant"))["rules"] 
       "COMP-14: a run from before the metric existed is unmeasured, never a pass")
 _c14_sentence = report_mod.finding_sentence(next(r for r in ev.evaluate(_doc("violating"), rubric, _specs("violating"))["rules"] if r["id"] == "COMP-14"), None)
 check("Stop" in _c14_sentence and "{" not in _c14_sentence, f"COMP-14: the fix sentence names the verb and fills every placeholder -- {_c14_sentence}")
+# ---- COMP-15: a delete or remove control is visible on a list row (#1420, owner decision 2026-10-14) ----
+_c15 = _layout_rule([{"delete_row_verb_count": 2, "delete_row_verbs": [{"sel": "button.ib", "label": "Remove Milk", "row": "li#a"},
+                                                                       {"sel": "button.ib", "label": "Delete", "row": "li#b"}]}, {}, {}], "COMP-15")
+check(_c15["status"] == "fail" and [i["label"] for i in _c15["evidence"][0]["items"]] == ["Remove Milk", "Delete"] and _c15["severity"] == "P2",
+      f"COMP-15: visible delete or remove controls on rows fail and are listed -- {_c15['status']} {_c15['evidence']}")
+check(_layout_rule([{}, {}, {}], "COMP-15")["status"] == "pass", "COMP-15: rows with no visible delete or remove control pass")
+_old15 = _doc("compliant")
+for _s in _old15["screens"]:
+    for _k in ("delete_row_verbs", "delete_row_verb_count"):
+        _s["metrics"]["layout"].pop(_k, None)
+check(next(r for r in ev.evaluate(_old15, rubric, _specs("compliant"))["rules"] if r["id"] == "COMP-15")["status"] == "unmeasured",
+      "COMP-15: a run from before the metric existed is unmeasured, never a pass")
+_c15_sentence = report_mod.finding_sentence(next(r for r in ev.evaluate(_doc("violating"), rubric, _specs("violating"))["rules"] if r["id"] == "COMP-15"), None)
+check("Remove Milk" in _c15_sentence and "{" not in _c15_sentence, f"COMP-15: the fix sentence names the control and fills every placeholder -- {_c15_sentence}")
 _l04 = next(r for r in rubric.rules if r.id == "LAYOUT-04")
 check("#1420" in _l04.standard and "COMP-14" in _l04.standard and "outlined" in _l04.standard,
       "LAYOUT-04 names COMP-14 as the gate on a row verb's paint, so the outlined Stop it used to contradict is retired by the rubric too")
@@ -732,7 +746,7 @@ check(all(s == "pass" for s in statuses_c.values()), f"compliant: every rule pas
 check(all(v["score"] == 100.0 and v["grade"] == "A" and not v["unmeasured"] for v in out_c["categories"].values()),
       "compliant: every category 100/A, measured")
 check(out_c["overall"] == {"score": 100.0, "grade": "A", "unmeasured": False}, "compliant: overall A")
-check(out_c["schema_version"] == 1 and out_c["rubric_version"] == "1.30.0" and out_c["target"] == "fixture-app"
+check(out_c["schema_version"] == 1 and out_c["rubric_version"] == "1.31.0" and out_c["target"] == "fixture-app"
       and out_c["commit"].startswith("0000") and out_c["generated_at"].endswith("Z"), "evaluate envelope keys")
 check([s["id"] for s in out_c["screens"]] == ["desktop-light-home", "iphone-light-home", "desktop-light-dialog-edit"],
       "evaluate echoes the screen list")
@@ -1704,7 +1718,7 @@ else:
           f"measure CLI walks the fixture: 2 tabs + 1 dialog x light/dark, plus the absent Settings gear (#1217) ({proc.stdout[-300:]}{proc.stderr[-300:]})")
     check(lines.get("RUN_DIR") == str(run_dir) and Path(lines.get("METRICS", "")).is_file(), "RUN_DIR/METRICS lines point at the run dir")
     doc = json.loads(Path(lines["METRICS"]).read_text(encoding="utf-8"))
-    check(doc["interpreter"] == str(interp) and doc["schema_version"] == 1 and doc["rubric_version"] == "1.30.0", "metrics.json records the interpreter + versions")
+    check(doc["interpreter"] == str(interp) and doc["schema_version"] == 1 and doc["rubric_version"] == "1.31.0", "metrics.json records the interpreter + versions")
     if not (scaffold / "tests" / "e2e" / "_geometry.py").is_file():
         _h.skip("browser leg: project-scaffolding/tests/e2e/_geometry.py absent -- hit-target assertions NOT verified")
     check(doc["walk"]["info"]["geometry"] == ("loaded" if (scaffold / "tests" / "e2e" / "_geometry.py").is_file() else "GEOMETRY_MISSING"),
@@ -2133,6 +2147,19 @@ else:
               f"COMP-14 ({_dev}): a tint text verb, an outlined text verb, a tint glyph verb, an outlined glyph verb, a shadowed verb and a lone row's tint verb fail; "
               f"a plain glyph verb, a plain cluster, a kebab, a pressed favourite, a switch, the row's own tap target, a page button and buttons in a menu or nav list do not "
               f"-- {_rv} ({proc_rv.stderr[-300:]})")
+    for _dev in ("desktop", "iphone"):
+        _rv_page = next((s for s in rvs if s.get("device") == _dev and s.get("id", "").endswith("-root")), None)
+        _rv_sheet = next((s for s in rvs if s.get("device") == _dev and s.get("id", "").endswith("-dialog-sheet")), None)
+        _rvp = ((_rv_page or {}).get("metrics") or {}).get("layout") or {}
+        _rvs = ((_rv_sheet or {}).get("metrics") or {}).get("layout") or {}
+        check(sorted(i["row"].split(".")[0] for i in _rvp.get("delete_row_verbs", [])) == ["li#d-glyph", "li#d-icon", "li#d-text"]
+              and sorted(i["row"].split(".")[0] for i in _rvs.get("delete_row_verbs", [])) == ["li#d-sheet-a", "li#d-sheet-b"],
+              f"COMP-15 ({_dev}): a Remove icon button, a trash glyph and a text Delete on the page and both rows of a dialog's editing list fail; a kebab, an Edit verb, "
+              f"a page-level Delete all and a Delete menu item do not -- {_rvp.get('delete_row_verbs')} {_rvs.get('delete_row_verbs')} ({proc_rv.stderr[-300:]})")
+    _rv15 = next((r for r in ev.evaluate({"screens": rvs, "wide_views": []}, rubric, _specs("compliant"))["rules"] if r["id"] == "COMP-15"), {}) if rvs else {}
+    _rv15_rows = sorted({i["row"].split(".")[0] for e in _rv15.get("evidence", []) for i in e["items"]})
+    check(_rv15.get("status") == "fail" and _rv15_rows == ["li#d-glyph", "li#d-icon", "li#d-sheet-a", "li#d-sheet-b", "li#d-text"],
+          f"COMP-15: the page's three and the dialog's two delete or remove controls fail across the screens, the rest do not -- {_rv15.get('status')} {_rv15_rows}")
     _rv_rule = next((r for r in ev.evaluate({"screens": rvs, "wide_views": []}, rubric, _specs("compliant"))["rules"] if r["id"] == "COMP-14"), {}) if rvs else {}
     check(_rv_rule.get("status") == "fail" and len(_rv_rule["evidence"][0]["items"]) == 6,
           f"COMP-14: the six painted verbs fail, the rest do not -- {_rv_rule.get('status')} {_rv_rule.get('reason')}")
