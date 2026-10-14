@@ -4,7 +4,8 @@
      next to a labelled pill, a glyph-only Gallery button and a glyph-only Reset button have unconventional names
      and no label beside them, so they fail; a glyph-only Incognito toggle with a text label next to it, one
      inside a <label> with text, and one named only by an aria-labelledby that points at a visible label pass;
-     a control with no name is A11Y-01's and is not counted. Asserted by tests/test_design_review.py. -->
+     a control with no name is A11Y-01's and is not counted. A Start drawn with the play glyph is a mapped row verb
+     and passes; a Wake drawn with another glyph fails (#1428). Asserted by tests/test_design_review.py. -->
 <html lang="en">
 <head>
 <meta charset="utf-8">
@@ -45,6 +46,13 @@
     </div>
     <div class="row">
       <span id="gallery-label">Gallery</span><button type="button" class="ib" id="gallery-named" aria-labelledby="gallery-label"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/></svg></button>
+    </div>
+    <h2>Row verbs from the glyph map (#1428)</h2>
+    <div class="row">
+      <button type="button" class="ib" id="verb-start" aria-label="Start"><svg viewBox="0 0 24 24"><use href="#i-play"/></svg></button>
+    </div>
+    <div class="row">
+      <button type="button" class="ib" id="verb-wake-wrong" aria-label="Wake"><svg viewBox="0 0 24 24"><use href="#i-ghost"/></svg></button>
     </div>
     <h2>No name at all</h2>
     <div class="row">

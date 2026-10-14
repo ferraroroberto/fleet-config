@@ -745,7 +745,9 @@ hand-picked per app.
   that halts a process is the same unpainted square as one that starts it. One
   glyph per verb, so a verb looks the same in every app: Live `i-video`, Wake
   `i-power`, Start and Run `i-play`, Stop `i-square`, Find `i-search`, Open the
-  arrow-out, Move the calendar. **Delete and Remove are never a visible verb on
+  arrow-out, Move the calendar, Complete the check (the done-check lead: the circle until done, then the circle-check) (`COMP-09` reads this map from
+  its `verb_glyphs` constant: a control named for one of these verbs and drawn with
+  its glyph is a glyph a reader knows; fleet-config#1428). **Delete and Remove are never a visible verb on
   a row**, with no exception: a sheet's editing list (a quick-add list) is a list
   of rows too. They sit last in the row menu after a divider (see Destructive
   actions below) or behind an explicit edit mode (owner decision 2026-10-14,

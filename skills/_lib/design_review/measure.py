@@ -30,7 +30,7 @@ present on a successful run:
               boundary_low [..], boundary_low_count, ua_styled [..],
               label_fit_bad [..], label_fit_bad_count, segmented_bad [..], segmented_bad_count, switch_count, switch_on_count, switches_on,
               icon_button_count, icon_buttons_painted [..], icon_buttons_painted_count,
-              icon_only_count, icon_only_unlabelled [{sel, name}],
+              icon_only_count, icon_only_unlabelled [{sel, name, glyph}],
               reference_pill_count, reference_pill_styles [..], reference_pill_variants
     targets   total, small [..], small_count, overlaps [..], overlap_count,
               covered [..], covered_count, primary [..], primary_min_height, in_summary
@@ -351,7 +351,8 @@ _MEASURE_JS = r"""
     // img alt or svg title, or screen-reader-only text. It has a label beside it when it sits in a <label> with text, or
     // its previous or next sibling is a bare text node or a non-interactive element showing text: a neighbouring
     // button or link is another control, not this one's label. Whether the name is a conventional glyph's is
-    // evaluate.py's call (COMP-09). A control with no name at all is A11Y-01's.
+    // evaluate.py's call (COMP-09), which also reads the sprite glyph (the <use> id) a mapped row verb must carry (#1428).
+    // A control with no name at all is A11Y-01's.
     const ICON_ONLY = 'button, [role=button], a[href]';
     const CONTROLS = ICON_ONLY + ', input, select, textarea';
     const aloneText = (n) => !!n && (n.nodeType === 3 ? !!n.textContent.trim()
@@ -364,7 +365,8 @@ _MEASURE_JS = r"""
     const unlabelled = iconOnly.filter(el => { const lab = el.closest('label');
       if (lab && [...lab.childNodes].some(n => n !== el && aloneText(n))) return false;
       return !aloneText(el.previousSibling) && !aloneText(el.nextSibling); })
-      .map(el => ({sel: sel(el), name: nameOf(el).slice(0, 40)}));
+      .map(el => { const u = el.querySelector('svg use'); const ref = u ? (u.getAttribute('href') || u.getAttribute('xlink:href') || '') : '';
+        return {sel: sel(el), name: nameOf(el).slice(0, 40), glyph: ref.replace(/^[^#]*#/, '').slice(0, 40)}; });
     // Reference pills are one shape (#1259): every link drawn as a chip or pill on a screen shares its height,
     // radius, padding and font size. Colour is not compared: a status pill keeps its status colour on the same shape.
     const radiusPx = (v, r) => { const n = parseFloat(v) || 0; return /%$/.test(v) ? n / 100 * Math.min(r.width, r.height) : n; };

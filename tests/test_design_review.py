@@ -60,7 +60,7 @@ def _doc(name: str) -> dict:
 # ---- rubric: the real file loads and names only metrics that exist ----------
 
 rubric = dr.load_rubric(RUBRIC)
-check(rubric.version == "1.31.0", "rubric meta.version stamped")
+check(rubric.version == "1.32.0", "rubric meta.version stamped")
 check(len(rubric.rules) == 44, f"44 seed rules loaded (got {len(rubric.rules)})")
 check(rubric.categories == ["typography", "color", "touch", "navigation", "layout", "components", "a11y"],
       "categories in rubric order")
@@ -583,6 +583,25 @@ check(next(r for r in ev.evaluate(_old09, rubric, _specs("compliant"))["rules"] 
 _c09_sentence = report_mod.finding_sentence(next(r for r in ev.evaluate(_doc("violating"), rubric, _specs("violating"))["rules"] if r["id"] == "COMP-09"), None)
 check("button.incognito" in _c09_sentence and "{" not in _c09_sentence, f"COMP-09: the fix sentence names the control and fills every placeholder -- {_c09_sentence}")
 
+# ---- COMP-09: a row verb from the action-row glyph map is conventional with its glyph (#1428) ----
+_verbs09 = [("Start", "i-play"), ("Live view", "i-video"), ("Wake", "i-power"), ("Move", "i-calendar-days"), ("Complete", "i-circle-check"),
+            ("Complete task", "i-circle")]
+_c09_map = _comp("COMP-09", [{"icon_only_unlabelled": [{"sel": f"button.{n[:4].lower()}", "name": n, "glyph": g} for n, g in _verbs09]}, {}, {}])
+check(_c09_map["status"] == "pass",
+      f"COMP-09: Start, Live view, Wake, Move and Complete drawn with their mapped glyphs pass -- {_c09_map['status']} {_c09_map['evidence']}")
+_c09_mix = _comp("COMP-09", [{"icon_only_unlabelled": [
+    {"sel": "button.start", "name": "Start", "glyph": "i-play"}, {"sel": "button.start2", "name": "Start", "glyph": "i-ghost"},
+    {"sel": "button.inline", "name": "Wake"}, {"sel": "button.incog", "name": "Incognito", "glyph": "i-play"},
+    {"sel": "button.gal", "name": "Gallery", "glyph": "i-ghost"}]}, {}, {}])
+check(_c09_mix["status"] == "fail" and sorted(i["sel"] for i in _c09_mix["evidence"][0]["items"]) == ["button.gal", "button.incog", "button.start2"],
+      f"COMP-09: a verb with another glyph and an unknown name with any glyph still fail; an unread glyph leaves a mapped name to speak -- {_c09_mix['status']} {_c09_mix['evidence']}")
+_dm = re.sub(r"\s+", " ", (REPO / "design.md").read_text(encoding="utf-8"))
+_dm_map = _dm[_dm.index("One glyph per verb"):_dm.index("Delete and Remove are never")]
+_vg09 = next(r for r in rubric.rules if r.id == "COMP-09").params["verb_glyphs"]
+check(all(re.search(rf"\b{v.title()}\b", _dm_map) and all(re.search(rf"\b{w}\b", _dm_map) for w in ([g] if isinstance(g, str) else g))
+          for v, g in _vg09.items()),
+      f"design.md's row-verb glyph map names every verb and glyph of COMP-09's verb_glyphs constant, so the two cannot drift -- {_vg09}")
+
 # ---- COMP-10: an empty-state block holds a button or link; a populated screen is not measured, never a pass (#1367) ----
 def _feedback(patches) -> dict:
     d = _doc("compliant")
@@ -746,7 +765,7 @@ check(all(s == "pass" for s in statuses_c.values()), f"compliant: every rule pas
 check(all(v["score"] == 100.0 and v["grade"] == "A" and not v["unmeasured"] for v in out_c["categories"].values()),
       "compliant: every category 100/A, measured")
 check(out_c["overall"] == {"score": 100.0, "grade": "A", "unmeasured": False}, "compliant: overall A")
-check(out_c["schema_version"] == 1 and out_c["rubric_version"] == "1.31.0" and out_c["target"] == "fixture-app"
+check(out_c["schema_version"] == 1 and out_c["rubric_version"] == "1.32.0" and out_c["target"] == "fixture-app"
       and out_c["commit"].startswith("0000") and out_c["generated_at"].endswith("Z"), "evaluate envelope keys")
 check([s["id"] for s in out_c["screens"]] == ["desktop-light-home", "iphone-light-home", "desktop-light-dialog-edit"],
       "evaluate echoes the screen list")
@@ -1718,7 +1737,7 @@ else:
           f"measure CLI walks the fixture: 2 tabs + 1 dialog x light/dark, plus the absent Settings gear (#1217) ({proc.stdout[-300:]}{proc.stderr[-300:]})")
     check(lines.get("RUN_DIR") == str(run_dir) and Path(lines.get("METRICS", "")).is_file(), "RUN_DIR/METRICS lines point at the run dir")
     doc = json.loads(Path(lines["METRICS"]).read_text(encoding="utf-8"))
-    check(doc["interpreter"] == str(interp) and doc["schema_version"] == 1 and doc["rubric_version"] == "1.31.0", "metrics.json records the interpreter + versions")
+    check(doc["interpreter"] == str(interp) and doc["schema_version"] == 1 and doc["rubric_version"] == "1.32.0", "metrics.json records the interpreter + versions")
     if not (scaffold / "tests" / "e2e" / "_geometry.py").is_file():
         _h.skip("browser leg: project-scaffolding/tests/e2e/_geometry.py absent -- hit-target assertions NOT verified")
     check(doc["walk"]["info"]["geometry"] == ("loaded" if (scaffold / "tests" / "e2e" / "_geometry.py").is_file() else "GEOMETRY_MISSING"),
@@ -2059,15 +2078,17 @@ else:
     )
     ios = json.loads((io_dir / "screens.json").read_text(encoding="utf-8")) if proc_io.returncode == 0 else []
     _io = ((ios[0].get("metrics") or {}).get("controls") or {}) if ios else {}
-    check(_io.get("icon_only_count") == 11
+    check(_io.get("icon_only_count") == 13
           and sorted(i["name"] for i in _io.get("icon_only_unlabelled", [])) == sorted(
-              ["Edit take", "Close", "Search", "Switch to dark", "Incognito", "Gallery", "Reset", ""]),
+              ["Edit take", "Close", "Search", "Switch to dark", "Incognito", "Gallery", "Reset", "Start", "Wake", ""])
+          and {i["name"]: i["glyph"] for i in _io["icon_only_unlabelled"] if i["name"] in ("Start", "Wake")} == {"Start": "i-play", "Wake": "i-ghost"},
           f"COMP-09: a label sibling, a wrapping <label> text and an aria-labelledby label take a control out; a neighbouring pill does not "
           f"(#1366) -- {_io.get('icon_only_count')} {_io.get('icon_only_unlabelled')} ({proc_io.stderr[-300:]})")
     _io_rule = next((r for r in ev.evaluate({"screens": ios, "wide_views": []},
                                             rubric, _specs("compliant"))["rules"] if r["id"] == "COMP-09"), {}) if ios else {}
-    check(_io_rule.get("status") == "fail" and sorted(i["name"] for i in _io_rule["evidence"][0]["items"]) == ["Gallery", "Incognito", "Reset"],
-          f"COMP-09: the unlabelled unconventional Incognito, Gallery and Reset fail; the conventional names and the nameless control do not -- "
+    check(_io_rule.get("status") == "fail" and sorted(i["name"] for i in _io_rule["evidence"][0]["items"]) == ["Gallery", "Incognito", "Reset", "Wake"],
+          f"COMP-09: the unlabelled unconventional Incognito, Gallery and Reset and a Wake with the wrong glyph fail; the conventional names, "
+          f"a Start with its play glyph and the nameless control do not -- "
           f"{_io_rule.get('status')} {_io_rule.get('evidence')}")
 
     # empty-state blocks: which hold a way forward, and which are not empty states at all (#1367)
