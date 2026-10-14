@@ -420,13 +420,26 @@ def _d_icon_only_unconventional(m: dict, rule: Rule, ctx: dict) -> Derived:
 
     The conventional glyphs are the rule's `conventional` pattern, matched on the control's name; a control with no
     name at all is A11Y-01's, not counted here. A run from before the metric existed is `unmeasured`.
+
+    A row verb from the action-row glyph map (the rule's `verb_glyphs`: verb name -> glyph word, the one constant
+    design.md's map is tested against, #1428) is conventional when it carries its mapped glyph. A verb name whose
+    sprite glyph was read and is another glyph still fails; a glyph that could not be read (an inline svg, an img)
+    leaves the name to speak for it.
     """
     items = measure.metric_value(m, "controls.icon_only_unlabelled")
     if items is None:
         return None, [], _section_reason(m, "controls")
     conventional = re.compile(str(rule.params.get("conventional", "")), re.I)
+    verb_glyphs = {str(v).lower(): [str(w).lower() for w in ([g] if isinstance(g, str) else g)]
+                   for v, g in dict(rule.params.get("verb_glyphs") or {}).items()}  # type: ignore[call-overload]
+
+    def mapped_verb(it: dict) -> bool:
+        name, glyph = str(it.get("name", "")), str(it.get("glyph") or "").lower()
+        want = next((g for v, g in verb_glyphs.items() if re.search(rf"\b{re.escape(v)}\b", name, re.I)), None)
+        return want is not None and (not glyph or bool(set(want) & set(re.split(r"[^a-z0-9]+", glyph))))
+
     bad = [it for it in items if str(it.get("name", "")).strip()  # type: ignore[union-attr]
-           and not conventional.search(str(it.get("name", "")))]
+           and not conventional.search(str(it.get("name", ""))) and not mapped_verb(it)]  # type: ignore[arg-type]
     return float(len(bad)), bad, None
 
 
