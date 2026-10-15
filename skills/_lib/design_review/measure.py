@@ -46,7 +46,8 @@ present on a successful run:
               multi_secondary_rows [{sel, label, lines}], multi_secondary_row_count,
               painted_row_verbs [{sel, label, via, row}], painted_row_verb_count,
               delete_row_verbs [{sel, label, row}], delete_row_verb_count,
-              clipped_trailing [{sel, text, why, over_px}], clipped_trailing_count
+              clipped_trailing [{sel, text, why, over_px}], clipped_trailing_count,
+              turn_headers [{who, count}], repeated_headers [{sel, text, who, blocks}], repeated_header_count
     overlay   surfaces, destructive [..], destructive_bad [..], destructive_bad_count
     dialogs   count, with_commit, quiet_commit [{dialog, commit, label, filled, w, h, rival, rival_label, why}], quiet_commit_count
     clearance bars [..], hidden_rows [..], hidden_row_count
@@ -875,7 +876,52 @@ _MEASURE_JS = r"""
       const figures = toks.filter((k, i) => k.cut && (NUMLIKE.test(k.t) || (STATUSWORD.test(k.t) && i > 0 && NUMLIKE.test(toks[i - 1].t)))).map(k => k.t);
       if (figures.length) { clippedEls.push(el);
         clippedTrailing.push({sel: sel(el), text: txt(el), why: 'cuts ' + figures.slice(0, 4).join(' '), over_px: Math.round(el.scrollWidth - el.clientWidth)}); } });
+    // A who-when header repeated inside one turn (#1344). design.md's chat-turn contract gives an agent's turn ONE header
+    // (mark, name, time, copy, collapse) and never one card per text fragment, each with its own "who - when". To stay on that
+    // structure and off ordinary lists that repeat a label, a block counts only when ALL of these hold: its header (the
+    // <summary> of a <details>, else its first visible element child, looking through at most two single-child wrappers such as
+    // li > details) carries a control (a button, a link or the summary's own disclosure: the contract's copy and collapse);
+    // the header holds no body element (a paragraph, list, heading or table: a wrapper whose first child is a whole card is not a header);
+    // that header's visible text outside controls and icons reads "<who> <clock time> [<short hint>]", the who being one to
+    // three words with no digits and a chat speaker (agent, assistant, you, a named coding agent: SPEAKER), so a bare "Today",
+    // a date, a title or an event list that reads "Standup 09:00" on every card never qualifies; and the block holds more than
+    // its header. A run is two or more CONSECUTIVE visible siblings whose headers are identical once the clock time becomes a
+    // placeholder, so "Agent 10:42" and "Agent 10:43" are the same header, and a different who or hint breaks the run.
+    // `turn_headers` lists every qualifying who: how the rule knows the walk reached a rendered transcript at all.
+    const WHOWHEN = /^([A-Za-z\u00c0-\u024f][^\d\n]{0,31}?)[\s\u00b7\u2022|,\u2013\u2014-]*(\d{1,2}:\d{2}(?::\d{2})?(?:\s?[AaPp]\.?[Mm]\.?)?)(?!\d)(.{0,30})$/;
+    const SPEAKER = /^(?:agent|assistant|claude|codex|gemini|pi|copilot|grok|antigravity|chief|you|user|me|bot|ai)\b/i;
+    const kidsOf = (n) => [...n.children].filter(visible);
+    const headerOf = (b) => { let n = b;
+      for (let d = 0; d < 3; d++) {
+        if (n.tagName === 'DETAILS') return n.querySelector(':scope > summary');
+        const k = kidsOf(n); if (!k.length) return null;
+        if (k.length === 1 && d < 2) { n = k[0]; continue; }
+        return k[0]; }
+      return null; };
+    const headerText = (h) => { const out = [], tw = document.createTreeWalker(h, NodeFilter.SHOW_TEXT);
+      for (let n = tw.nextNode(); n; n = tw.nextNode()) { const pe = n.parentElement;
+        const ctl = pe && pe.closest('button, a, svg, [aria-hidden=true]');
+        if (!pe || (ctl && h.contains(ctl))) continue;
+        if (n.data.trim() && visible(pe)) out.push(n.data.trim()); }
+      return out.join(' ').replace(/\s+/g, ' ').trim(); };
+    const turnHeader = (b) => { const h = headerOf(b); if (!h || !visible(h)) return null;
+      if (!(h.tagName === 'SUMMARY' || h.querySelector('button, [role=button], a[href], summary'))) return null;
+      if (h.querySelector('p, ul, ol, li, pre, blockquote, table, details, section, article, h1, h2, h3, h4, h5, h6')) return null;
+      const m = WHOWHEN.exec(headerText(h)); if (!m) return null;
+      const who = m[1].replace(/[\s\u00b7\u2022|,\u2013\u2014-]+$/, '').trim(); if (!who || who.split(/\s+/).length > 3 || !SPEAKER.test(who)) return null;
+      if ((b.textContent || '').trim().length <= (h.textContent || '').trim().length) return null;
+      const hint = m[3].trim();
+      return { who, key: who.toLowerCase() + '|' + hint.toLowerCase(), shown: who + ' \u00b7 <time>' + (hint ? ' ' + hint : '') }; };
+    const turnWhos = new Map(), repeatedHeaders = [];
+    new Set(all.filter(e => e.children.length > 1)).forEach(parent => {
+      const blocks = kidsOf(parent).map(b => ({ b, th: turnHeader(b) }));
+      blocks.forEach(x => { if (x.th) turnWhos.set(x.th.who, (turnWhos.get(x.th.who) || 0) + 1); });
+      for (let i = 0; i < blocks.length;) {
+        let j = i + 1; while (blocks[i].th && j < blocks.length && blocks[j].th && blocks[j].th.key === blocks[i].th.key) j++;
+        if (blocks[i].th && j - i >= 2) repeatedHeaders.push({ sel: sel(parent), text: blocks[i].th.shown, who: blocks[i].th.who, blocks: j - i });
+        i = j; } });
     return { control_overflow: spilled.slice(0,CAP), control_overflow_count: spilled.length,
+      turn_headers: [...turnWhos].map(([who, count]) => ({who, count})).slice(0,CAP), repeated_headers: repeatedHeaders.slice(0,CAP), repeated_header_count: repeatedHeaders.length,
       clipped_trailing: clippedTrailing.slice(0,CAP), clipped_trailing_count: clippedTrailing.length, overflow_x: de.scrollWidth > window.innerWidth + 1, scroll_w: de.scrollWidth, inner_w: window.innerWidth, inner_h: window.innerHeight,
       pane_h: pane.scrollHeight, lists: lists.slice(0,CAP), rows_over_limit: rowsOver.slice(0,CAP), rows_over_limit_count: rowsOver.length,
       multi_secondary_rows: multiSecondary.slice(0,CAP), multi_secondary_row_count: multiSecondary.length,
@@ -1130,7 +1176,7 @@ def metric_paths() -> List[str]:
         "icons": ["boxes", "elements"],
         "nav": ["primary_count", "pane_scroll_top", "pane_header_visible", "settings_tab_count", "settings_tabs", "home_title", "header_context"],
         "feedback": ["toast_count", "toasts_tinted", "toasts_tinted_count", "empty_state_count", "empty_states_no_action"],
-        "layout": ["control_overflow", "control_overflow_count", "clipped_trailing", "clipped_trailing_count", "overflow_x", "scroll_w", "inner_w", "inner_h", "pane_h", "lists", "rows_over_limit",
+        "layout": ["control_overflow", "control_overflow_count", "clipped_trailing", "clipped_trailing_count", "turn_headers", "repeated_headers", "repeated_header_count", "overflow_x", "scroll_w", "inner_w", "inner_h", "pane_h", "lists", "rows_over_limit",
                    "rows_over_limit_count", "danger_rows", "content_w", "content_span", "pane_split", "radii", "open_section_count",
                    "empty_open_sections", "empty_open_section_count", "multi_secondary_rows", "multi_secondary_row_count",
                    "painted_row_verbs", "painted_row_verb_count", "delete_row_verbs", "delete_row_verb_count"],

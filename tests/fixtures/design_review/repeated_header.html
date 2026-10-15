@@ -1,0 +1,81 @@
+<!doctype html>
+<!-- Static fixture for COMP-18, a who-when header repeated inside one turn (fleet-config#1344): the app-launcher Chat review found
+     one agent turn drawn as two or three bordered cards, each with its own "Agent · 10:42" header, copy button and chevron.
+     design.md's chat-turn contract gives a turn ONE header. Walked at the desktop leg, `?case=` picking the page.
+       fail   three consecutive <details> turns headed "Agent · 10:42", "Agent · 10:42" and "Agent · 10:43" (the time is
+              normalised, so the third is the same header), and, as plain cards rather than disclosures, two consecutive
+              "Claude · 9:05 AM" cards -> two runs
+       pass   one turn: a single "Agent · 10:42" header over three parts (text, a step line, text), after a prompt bubble
+              -> a transcript is reached, no run
+       list   ordinary lists that legitimately repeat a label: rows that each start "Today" (no clock time), and event cards
+              that each read "Standup · 09:00" with a menu button and a body (a clock time and a control, but not a chat
+              speaker) -> no run, and not a transcript either
+       edge   alternating You / Agent cards; two Agent cards whose hints differ ("Working" on one); Agent cards with no
+              control in the header; Agent cards that are only a header; an Agent card, a step line, then another Agent card;
+              a second Agent card that is hidden -> a transcript is reached, no run
+       none   a page with no transcript at all -> neither a run nor a transcript
+     Asserted by tests/test_design_review.py. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>design_review repeated header fixture</title>
+<style>
+  :root { --canvas: #ffffff; --card: #ffffff; --fg: #1f2328; --muted: #59636e; }
+  @media (prefers-color-scheme: dark) { :root { --canvas: #0d1117; --card: #161b22; --fg: #f0f6fc; --muted: #9198a1; } }
+  html, body { margin: 0; background: var(--canvas); color: var(--fg); font-family: system-ui, sans-serif; font-size: 16px; }
+  body { padding: 16px; max-width: 640px; }
+  ol, ul { list-style: none; margin: 0; padding: 0; }
+  .turn, .card { background: var(--card); border: 1px solid #8b949e; border-radius: 8px; padding: 12px; margin-top: 12px; }
+  .head, summary { display: flex; align-items: center; gap: 8px; font-size: 14px; color: var(--muted); cursor: pointer; list-style: none; }
+  .mark { flex: none; width: 20px; height: 20px; }
+  .who { font-weight: 600; color: var(--fg); }
+  .time { margin-right: auto; }
+  button { min-width: 44px; min-height: 44px; background: transparent; border: 0; color: var(--muted); font: inherit; }
+  .bubble { margin: 12px 0 0 auto; max-width: 85%; padding: 8px 12px; border-radius: 12px; background: #ddf4ff; color: #1f2328; }
+  .step { font-size: 14px; color: var(--muted); padding: 8px 0; }
+  .row { display: flex; align-items: center; gap: 8px; min-height: 44px; border-bottom: 1px solid #8b949e; }
+</style>
+<script>
+  const MARK = '<svg class="mark" viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="9" fill="#8b949e"/></svg>';
+  const CTL = '<button type="button" aria-label="Copy">Copy</button>';
+  const details = (who, time, body) => '<li><details class="turn" open><summary>' + MARK + '<span class="who">' + who + '</span><span class="time">' + time + '</span>' + CTL + '</summary><p>' + body + '</p></details></li>';
+  const card = (who, time, body) => '<div class="card"><div class="head">' + MARK + '<span class="who">' + who + '</span><span class="time">' + time + '</span>' + CTL + '</div><p>' + body + '</p></div>';
+  const PAGES = {
+    fail: [
+      '<ol>' + details('Agent', '10:42', 'First fragment of the reply.') + details('Agent', '10:42', 'Second fragment of the same reply.') + details('Agent', '10:43', 'Third fragment of the same reply.') + '</ol>',
+      '<section>' + card('Claude', '9:05 AM', 'One fragment.') + card('Claude', '9:05 AM', 'Another fragment.') + '</section>',
+    ],
+    pass: [
+      '<div class="bubble">Please fix the failing test.</div>',
+      '<div class="turn"><div class="head">' + MARK + '<span class="who">Agent</span><span class="time">10:42</span>' + CTL + '</div>' +
+        '<p>I looked at the failing test.</p><div class="step">Ran 2 commands, read 3 files</div><p>The fix is in place and the suite passes.</p></div>',
+    ],
+    list: [
+      '<ul>' + ['Today', 'Today', 'Today'].map((t, i) => '<li class="row"><span class="who">' + t + '</span><span class="time">Water the plants ' + (i + 1) + '</span>' + CTL + '</li>').join('') + '</ul>',
+      '<section>' + card('Standup', '09:00', 'Daily sync, room 4.') + card('Standup', '10:00', 'Daily sync, room 4.') + card('Standup', '11:00', 'Daily sync, room 4.') + '</section>',
+    ],
+    edge: [
+      '<section>' + card('You', '10:41', 'Run the tests.') + card('Agent', '10:42', 'Running them.') + card('You', '10:43', 'And the linter.') + card('Agent', '10:44', 'Done.') + '</section>',
+      '<section>' + card('Agent', '10:50', 'First.') + card('Agent <span style="font-weight:400">· Working</span>', '10:51', 'Second, with a different hint.') + '</section>',
+      '<section><div class="card"><div class="head"><span class="who">Agent</span><span class="time">11:00</span></div><p>No control in this header.</p></div>' +
+        '<div class="card"><div class="head"><span class="who">Agent</span><span class="time">11:01</span></div><p>Nor in this one.</p></div></section>',
+      '<section><div class="card"><div class="head"><span class="who">Agent</span><span class="time">11:10</span>' + CTL + '</div></div>' +
+        '<div class="card"><div class="head"><span class="who">Agent</span><span class="time">11:11</span>' + CTL + '</div></div></section>',
+      '<section>' + card('Agent', '11:20', 'Before the step.') + '<div class="step">Ran 1 command</div>' + card('Agent', '11:21', 'After the step.') + '</section>',
+      '<section>' + card('Agent', '11:30', 'Visible.') + card('Agent', '11:31', 'Hidden.').replace('class="card"', 'class="card" hidden') + '</section>',
+    ],
+    none: [
+      '<ul>' + ['Kitchen light', 'Hall light'].map(n => '<li class="row"><span class="who">' + n + '</span><span class="time">on</span>' + CTL + '</li>').join('') + '</ul>',
+    ],
+  };
+  addEventListener('DOMContentLoaded', () => {
+    document.querySelector('main').innerHTML = PAGES[new URLSearchParams(location.search).get('case') || 'pass'].join('');
+  });
+</script>
+</head>
+<body>
+  <main></main>
+</body>
+</html>

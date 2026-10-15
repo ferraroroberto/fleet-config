@@ -60,8 +60,8 @@ def _doc(name: str) -> dict:
 # ---- rubric: the real file loads and names only metrics that exist ----------
 
 rubric = dr.load_rubric(RUBRIC)
-check(rubric.version == "1.38.0", "rubric meta.version stamped")
-check(len(rubric.rules) == 48, f"48 seed rules loaded (got {len(rubric.rules)})")
+check(rubric.version == "1.39.0", "rubric meta.version stamped")
+check(len(rubric.rules) == 49, f"49 seed rules loaded (got {len(rubric.rules)})")
 check(rubric.categories == ["typography", "color", "touch", "navigation", "layout", "components", "a11y"],
       "categories in rubric order")
 check(rb.check_metric_names(rubric, measure.metric_paths()) == [], "every rule metric is a script path or a derived metric")
@@ -852,6 +852,53 @@ check("span.lbl" in _l09_sentence and "cuts failed 1m30s" in _l09_sentence and "
 check(next(r for r in rubric.rules if r.id == "LAYOUT-09").devices == ["iphone"], "LAYOUT-09 is limited to the iphone leg")
 check(not any("ellipsis" in j.question.lower() for j in rubric.judgment), "no [[judgment]] question covers a figure cut by an ellipsis, so none double-counts LAYOUT-09")
 
+# ---- COMP-18: one who-when header per chat turn, never one card per text fragment (#1344) ----
+_MISSING = {"status": "missing", "severity": None, "category": None, "owner": None, "evidence": [{"items": None}], "measured": None, "reason": "rule COMP-18 not in the rubric"}
+
+
+def _c18_of(doc: dict) -> dict:
+    return next((r for r in ev.evaluate(doc, rubric, _specs("compliant"))["rules"] if r["id"] == "COMP-18"), _MISSING)
+
+
+def _c18_layout(layout_by_screen) -> dict:
+    d = _doc("compliant")
+    for s, patch in zip(d["screens"], layout_by_screen):
+        s["metrics"]["layout"].update(patch)
+    return _c18_of(d)
+
+
+_run = {"sel": "ol.parts", "text": "Agent · <time>", "who": "Agent", "blocks": 3}
+_none_seen = {"turn_headers": [], "repeated_headers": [], "repeated_header_count": 0}
+_c18 = _c18_layout([{"turn_headers": [{"who": "Agent", "count": 3}], "repeated_headers": [_run], "repeated_header_count": 1}, {}, {}])
+check(_c18["status"] == "fail" and _c18["severity"] == "P2" and _c18["category"] == "components" and _c18["owner"] == "app"
+      and _c18["evidence"][0]["items"] == [_run] and _c18["measured"].get("desktop-light-home") == 1.0,
+      f"COMP-18: a run of consecutive blocks repeating one header fails, names the parent and the header -- {_c18['status']} {_c18['evidence']}")
+_c18_one = _c18_layout([{"turn_headers": [{"who": "Agent", "count": 1}]}, {}, {}])
+check(_c18_one["status"] == "pass", f"COMP-18: one header over a turn's parts passes -- {_c18_one['status']} {_c18_one['reason']}")
+_c18_unm = _c18_layout([_none_seen, _none_seen, _none_seen])
+check(_c18_unm["status"] == "unmeasured" and "no rendered chat transcript" in _c18_unm["reason"],
+      f"COMP-18: a run that never reaches a transcript is unmeasured, never a pass -- {_c18_unm['status']} {_c18_unm['reason']}")
+_c18_na = _c18_layout([{"turn_headers": [{"who": "Agent", "count": 1}]}, _none_seen, _none_seen])
+check(_c18_na["status"] == "pass" and "n/a on 2" in _c18_na["reason"],
+      f"COMP-18: once one screen showed a transcript the others are n/a, not unmeasured -- {_c18_na['status']} {_c18_na['reason']}")
+_c18_doc = _doc("compliant")
+for _s in _c18_doc["screens"]:
+    _s["metrics"]["layout"].update({"turn_headers": [{"who": "Agent", "count": 3}], "repeated_headers": [_run], "repeated_header_count": 1})
+_c18_out = ev.evaluate(_c18_doc, rubric, _specs("compliant"))
+_c18_sentence = report_mod.finding_sentence(next((r for r in _c18_out["rules"] if r["id"] == "COMP-18"), _MISSING), _c18_out)
+check("ol.parts" in _c18_sentence and "{" not in _c18_sentence, f"COMP-18: the fix sentence names the parent of the run -- {_c18_sentence}")
+check(not any("header" in j.question.lower() and "turn" in j.question.lower() for j in rubric.judgment),
+      "no [[judgment]] question covers a header repeated inside a turn, so none double-counts COMP-18")
+check(getattr(next((r for r in rubric.rules if r.id == "COMP-18"), None), "metric", None) == "layout.repeated_turn_header"
+      and all(k in measure.metric_paths() for k in ("layout.turn_headers", "layout.repeated_headers", "layout.repeated_header_count")),
+      "COMP-18: the capped sample, the count and the transcript-reached list are all in metric_paths()")
+_c18_old = _doc("compliant")
+for _s in _c18_old["screens"]:
+    for _k in ("turn_headers", "repeated_headers", "repeated_header_count"):
+        _s["metrics"]["layout"].pop(_k, None)
+check(_c18_of(_c18_old)["status"] == "unmeasured",
+      "COMP-18: a run from before the metric existed is unmeasured, never a pass")
+
 for _rid, _sect, _keys in (("COMP-07", "controls", ("label_fit_bad", "label_fit_bad_count")),
                            ("LAYOUT-08", "layout", ("control_overflow", "control_overflow_count")),
                            ("LAYOUT-09", "layout", ("clipped_trailing", "clipped_trailing_count"))):
@@ -870,7 +917,7 @@ check(all(s == "pass" for s in statuses_c.values()), f"compliant: every rule pas
 check(all(v["score"] == 100.0 and v["grade"] == "A" and not v["unmeasured"] for v in out_c["categories"].values()),
       "compliant: every category 100/A, measured")
 check(out_c["overall"] == {"score": 100.0, "grade": "A", "unmeasured": False}, "compliant: overall A")
-check(out_c["schema_version"] == 1 and out_c["rubric_version"] == "1.38.0" and out_c["target"] == "fixture-app"
+check(out_c["schema_version"] == 1 and out_c["rubric_version"] == "1.39.0" and out_c["target"] == "fixture-app"
       and out_c["commit"].startswith("0000") and out_c["generated_at"].endswith("Z"), "evaluate envelope keys")
 check([s["id"] for s in out_c["screens"]] == ["desktop-light-home", "iphone-light-home", "desktop-light-dialog-edit"],
       "evaluate echoes the screen list")
@@ -1842,7 +1889,7 @@ else:
           f"measure CLI walks the fixture: 2 tabs + 1 dialog x light/dark, plus the absent Settings gear (#1217) ({proc.stdout[-300:]}{proc.stderr[-300:]})")
     check(lines.get("RUN_DIR") == str(run_dir) and Path(lines.get("METRICS", "")).is_file(), "RUN_DIR/METRICS lines point at the run dir")
     doc = json.loads(Path(lines["METRICS"]).read_text(encoding="utf-8"))
-    check(doc["interpreter"] == str(interp) and doc["schema_version"] == 1 and doc["rubric_version"] == "1.38.0", "metrics.json records the interpreter + versions")
+    check(doc["interpreter"] == str(interp) and doc["schema_version"] == 1 and doc["rubric_version"] == "1.39.0", "metrics.json records the interpreter + versions")
     if not (scaffold / "tests" / "e2e" / "_geometry.py").is_file():
         _h.skip("browser leg: project-scaffolding/tests/e2e/_geometry.py absent -- hit-target assertions NOT verified")
     check(doc["walk"]["info"]["geometry"] == ("loaded" if (scaffold / "tests" / "e2e" / "_geometry.py").is_file() else "GEOMETRY_MISSING"),
@@ -2365,6 +2412,38 @@ else:
           f"LAYOUT-09: the same counts as non-shrinking trailing items pass, a label clipped on words only passes, a fitting label passes -- {_ct_hits(ct['pass'])}")
     check(_ct_hits(ct["edge"]) == [] and _l09_status(ct["edge"]) == "pass",
           f"LAYOUT-09: a cut file name and date, a cut 'failed' with no number before it, a cut tail of words, a wrapping line, a line clamp and a hidden row are not cut figures -- {_ct_hits(ct['edge'])}")
+
+    # COMP-18: a turn is one block under one header (#1344)
+    def _walk_turn(case: str) -> dict:
+        out_dir = STATE / f"fixture-repeated-header-{case}"
+        proc = subprocess.run(
+            [str(interp), str(REPO / "skills" / "_lib" / "design_review" / "walk.py"), "--url", (FIX / "repeated_header.html").as_uri() + f"?case={case}",
+             "--out", str(out_dir), "--devices", "desktop", "--scaffold", str(scaffold), "--params", str(STATE / "steps-params.json")],
+            capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=600,
+        )
+        if proc.returncode != 0:
+            return {"error": proc.stderr[-300:]}
+        return next((s for s in json.loads((out_dir / "screens.json").read_text(encoding="utf-8")) if s["id"].endswith("-light-root")), {})
+
+    def _c18_status(screen: dict) -> str:
+        d = _doc("compliant")
+        d["screens"] = [dict(d["screens"][0], id=screen["id"], view=screen.get("view"), metrics=screen["metrics"])]
+        return _c18_of(d)["status"]
+
+    tn = {case: _walk_turn(case) for case in ("fail", "pass", "list", "edge", "none")}
+    check(all("metrics" in s for s in tn.values()), f"repeated header: each case walks the desktop leg -- {[s.get('error') for s in tn.values()]}")
+    _tn_runs = lambda s: [(h["who"], h["blocks"], h["text"]) for h in (s["metrics"]["layout"].get("repeated_headers") or [])]
+    _tn_whos = lambda s: sorted((h["who"], h["count"]) for h in (s["metrics"]["layout"].get("turn_headers") or []))
+    check(_tn_runs(tn["fail"]) == [("Agent", 3, "Agent · <time>"), ("Claude", 2, "Claude · <time>")] and _c18_status(tn["fail"]) == "fail",
+          f"COMP-18: three consecutive 'Agent 10:42/10:42/10:43' disclosures and two plain 'Claude 9:05 AM' cards each fail as one run -- {_tn_runs(tn['fail'])}")
+    check(_tn_runs(tn["pass"]) == [] and _tn_whos(tn["pass"]) == [("Agent", 1)] and _c18_status(tn["pass"]) == "pass",
+          f"COMP-18: one 'Agent 10:42' header over three parts passes and counts as a transcript reached -- {_tn_runs(tn['pass'])} {_tn_whos(tn['pass'])}")
+    check(_tn_runs(tn["list"]) == [] and _tn_whos(tn["list"]) == [],
+          f"COMP-18: a list of rows that each start 'Today' and event cards that each read 'Standup 09:00' are not turns -- {_tn_runs(tn['list'])} {_tn_whos(tn['list'])}")
+    check(_tn_runs(tn["edge"]) == [] and _c18_status(tn["edge"]) == "pass" and ("You", 2) in _tn_whos(tn["edge"]),
+          f"COMP-18: alternating speakers, a differing hint, a header with no control, a header-only card, a step line between two cards and a hidden twin are not runs -- {_tn_runs(tn['edge'])} {_tn_whos(tn['edge'])}")
+    check(_tn_runs(tn["none"]) == [] and _tn_whos(tn["none"]) == [] and _c18_status(tn["none"]) == "unmeasured",
+          f"COMP-18: a page with no transcript is unmeasured, not a pass -- {_tn_whos(tn['none'])}")
 
     # stretched graphic: a chart SVG with preserveAspectRatio="none" is not an icon; a real off-step icon still is (#1211)
     sg_dir = STATE / "fixture-stretched-graphic"
