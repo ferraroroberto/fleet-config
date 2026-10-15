@@ -47,6 +47,7 @@ present on a successful run:
               painted_row_verbs [{sel, label, via, row}], painted_row_verb_count,
               delete_row_verbs [{sel, label, row}], delete_row_verb_count,
               clipped_trailing [{sel, text, why, over_px}], clipped_trailing_count,
+              clipped_trailing_excluded [{sel, text, why, over_px}] (sample of 8), clipped_trailing_excluded_count,
               turn_headers [{who, count}], repeated_headers [{sel, text, who, blocks}], repeated_header_count
     overlay   surfaces, destructive [..], destructive_bad [..], destructive_bad_count
     dialogs   count, with_commit, quiet_commit [{dialog, commit, label, filled, w, h, rival, rival_label, why}], quiet_commit_count
@@ -848,21 +849,35 @@ _MEASURE_JS = r"""
       if (inFlight(el) || emptyBlocks.some(b => el.contains(b))) return;
       if (kids.some(n => n.nodeType === 3 ? /[^\s​-‍⁠﻿]/.test(n.data) : n.nodeType === 1 && shows(n))) return;
       emptyOpen.push({sel: sel(el), label}); });
-    // Trailing figures cut by an element's own ellipsis (#1343). design.md keeps the parts a step line must never lose (`+N -M`,
-    // `N failed`, a duration) as non-shrinking trailing items outside the ellipsis; a single-line element that truncates them
-    // is measurable from geometry. A candidate is a visible element with `text-overflow: ellipsis` on a clipping box
-    // (`overflow-x` not visible) that keeps its text on one line (`white-space` nowrap or pre) and really overflows
-    // (`scrollWidth` over `clientWidth`). Its hidden text is found per word: each whitespace-delimited word's last character
-    // is a Range, and a word is cut when that character's box is collapsed to zero width (the engine lays out nothing the
-    // ellipsis replaces, which is how WebKit reports it) or ends past the element's content edge (a word cut in half counts;
-    // one that lies whole beside the ellipsis glyph is still read in full). The hidden part holds a count-like token only when a cut word is a number
-    // (digits, a `+N` / `-N` / minus-sign figure, a percentage, a decimal, a clock time or a duration such as 2.4s, 1m30s, 3:45)
-    // or a status word (failed, errors, warnings, passed, skipped, pending) straight after a number. A cut word that is only
-    // words, a file name or a date does not count, and neither does text that wraps, a line clamp, or a box that fits. An
-    // element inside one already counted is the same cut line.
-    const NUMLIKE = /^[+\-\u2212\u2013\u00b1]?\d[\d.,:]*(?:%|ms|min|[smhdkMxB])?(?:\d+(?:[.,]\d+)?(?:ms|[smhd]))*$/;
+    // Trailing figures cut by an element's own ellipsis (#1343), narrowed to status and meta text (#1438). design.md keeps the
+    // parts a step line must never lose (`+N -M`, `N failed`, a duration) as non-shrinking trailing items outside the ellipsis; a
+    // single-line element that truncates them is measurable from geometry. A candidate is a visible element with
+    // `text-overflow: ellipsis` on a clipping box (`overflow-x` not visible) that keeps its text on one line (`white-space`
+    // nowrap or pre) and really overflows (`scrollWidth` over `clientWidth`). Its hidden text is found per word: each
+    // whitespace-delimited word's last character is a Range, and a word is cut when that character's box is collapsed to zero
+    // width (the engine lays out nothing the ellipsis replaces, which is how WebKit reports it) or ends past the element's
+    // content edge (a word cut in half counts; one that lies whole beside the ellipsis glyph is still read in full). A cut word
+    // is a figure when it is a number (digits, a `+N` / `-N` / minus-sign figure, a percentage, a decimal, a clock time or a
+    // duration such as 2.4s, 1m30s, 3:45) or a status word (failed, errors, warnings, passed, skipped, pending) straight after
+    // a number. A cut word that is only words, a file name or a date is no figure, and neither is text that wraps, a line
+    // clamp or a box that fits. A cut figure COUNTS only in status or meta text, never as a lone number inside a run of words
+    // (a house number in an address, a version string, a phone number or a clock time in a title a person typed), when ANY of:
+    //   slot   the element is a `<time>`, a `[role=status]` or a `[data-state]` element, or it or its parent carries a class
+    //          with a `meta`, `status`, `count(s)`, `badge`, `chip`, `duration`, `stats`, `time` or `timestamp` part when
+    //          split at `-` and `_` (`action-row-meta`, `release-row .meta`, `status-row`, never `task-title`);
+    //   pair   the figure is one half of a `+N -M` pair, or sits right beside a number-and-status-word pair (`2 failed 1m30s`,
+    //          `failed 8%`: a number next to a status word on either side);
+    //   line   the text is a status line, a `·` / `•` / `|` separated list, and the figure's own part is at most three words
+    //          with at least half of them a number or a status word (`· 3 conversations`, `· took 2m10s`, never `Via Roma 14`).
+    // What the narrowing drops is kept, not lost: `clipped_trailing_excluded` is a sample of the cut-figure rows it let pass
+    // (the same shape as `clipped_trailing`), `clipped_trailing_excluded_count` the true total, so the exclusion can be reviewed.
+    // An element inside one already counted is the same cut line.
+    const NUMLIKE = /^[+\-−–±]?\d[\d.,:]*(?:%|ms|min|[smhdkMxB])?(?:\d+(?:[.,]\d+)?(?:ms|[smhd]))*$/;
     const STATUSWORD = /^(?:failed|failures?|errors?|warnings?|passed|skipped|pending)$/i;
-    const clippedEls = [], clippedTrailing = [];
+    const SIGNED = /^[+\-−–±]\d/, LISTSEP = /^[·•|]$/;
+    const SLOTPART = /^(?:meta|status|counts?|badge|chip|duration|stats|time|timestamp)$/i;
+    const slotClass = (e) => !!e && [...e.classList].some(c => c.split(/[-_]/).some(w => SLOTPART.test(w)));
+    const clippedEls = [], clippedTrailing = [], clippedExcluded = [];
     all.forEach(el => {
       const st = getComputedStyle(el);
       if (st.textOverflow !== 'ellipsis' || st.overflowX === 'visible' || !/^(?:nowrap|pre)$/.test(st.whiteSpace)) return;
@@ -873,9 +888,22 @@ _MEASURE_JS = r"""
         const end = m.index + m[0].length, rg = document.createRange(); rg.setStart(n, end - 1); rg.setEnd(n, end);
         const b = rg.getBoundingClientRect();
         toks.push({t: m[0].replace(/^[(\[]+|[)\],;.]+$/g, ''), cut: b.width === 0 || b.right > edge + 0.5}); }
-      const figures = toks.filter((k, i) => k.cut && (NUMLIKE.test(k.t) || (STATUSWORD.test(k.t) && i > 0 && NUMLIKE.test(toks[i - 1].t)))).map(k => k.t);
+      const num = (i) => i >= 0 && i < toks.length && NUMLIKE.test(toks[i].t), stat = (i) => i >= 0 && i < toks.length && STATUSWORD.test(toks[i].t);
+      const found = toks.map((k, i) => i).filter(i => toks[i].cut && (num(i) || (stat(i) && num(i - 1))));
+      if (!found.length) return;
+      const slot = el.matches('time, [role=status], [data-state]') || slotClass(el) || slotClass(el.parentElement);
+      const seg = []; let at = 0;
+      toks.forEach((k, i) => { if (LISTSEP.test(k.t)) at++; seg[i] = at; });
+      const isList = toks.some(k => LISTSEP.test(k.t));
+      const counts = (i) => slot
+        || (SIGNED.test(toks[i].t) && (i > 0 && SIGNED.test(toks[i - 1].t) || i + 1 < toks.length && SIGNED.test(toks[i + 1].t)))
+        || (num(i) && (stat(i - 1) || stat(i + 1))) || (stat(i) && (num(i - 1) || num(i + 1)))
+        || (isList && (() => { const own = toks.filter((k, j) => seg[j] === seg[i] && !LISTSEP.test(k.t));
+             return own.length <= 3 && own.filter(k => NUMLIKE.test(k.t) || STATUSWORD.test(k.t)).length * 2 >= own.length; })());
+      const figures = found.filter(counts).map(i => toks[i].t), dropped = found.filter(i => !counts(i)).map(i => toks[i].t);
       if (figures.length) { clippedEls.push(el);
-        clippedTrailing.push({sel: sel(el), text: txt(el), why: 'cuts ' + figures.slice(0, 4).join(' '), over_px: Math.round(el.scrollWidth - el.clientWidth)}); } });
+        clippedTrailing.push({sel: sel(el), text: txt(el), why: 'cuts ' + figures.slice(0, 4).join(' '), over_px: Math.round(el.scrollWidth - el.clientWidth)}); }
+      else clippedExcluded.push({sel: sel(el), text: txt(el), why: 'cuts ' + dropped.slice(0, 4).join(' ') + ' in prose', over_px: Math.round(el.scrollWidth - el.clientWidth)}); });
     // A who-when header repeated inside one turn (#1344). design.md's chat-turn contract gives an agent's turn ONE header
     // (mark, name, time, copy, collapse) and never one card per text fragment, each with its own "who - when". To stay on that
     // structure and off ordinary lists that repeat a label, a block counts only when ALL of these hold: its header (the
@@ -922,7 +950,8 @@ _MEASURE_JS = r"""
         i = j; } });
     return { control_overflow: spilled.slice(0,CAP), control_overflow_count: spilled.length,
       turn_headers: [...turnWhos].map(([who, count]) => ({who, count})).slice(0,CAP), repeated_headers: repeatedHeaders.slice(0,CAP), repeated_header_count: repeatedHeaders.length,
-      clipped_trailing: clippedTrailing.slice(0,CAP), clipped_trailing_count: clippedTrailing.length, overflow_x: de.scrollWidth > window.innerWidth + 1, scroll_w: de.scrollWidth, inner_w: window.innerWidth, inner_h: window.innerHeight,
+      clipped_trailing: clippedTrailing.slice(0,CAP), clipped_trailing_count: clippedTrailing.length,
+      clipped_trailing_excluded: clippedExcluded.slice(0,8), clipped_trailing_excluded_count: clippedExcluded.length, overflow_x: de.scrollWidth > window.innerWidth + 1, scroll_w: de.scrollWidth, inner_w: window.innerWidth, inner_h: window.innerHeight,
       pane_h: pane.scrollHeight, lists: lists.slice(0,CAP), rows_over_limit: rowsOver.slice(0,CAP), rows_over_limit_count: rowsOver.length,
       multi_secondary_rows: multiSecondary.slice(0,CAP), multi_secondary_row_count: multiSecondary.length,
       painted_row_verbs: paintedVerbs.slice(0,CAP), painted_row_verb_count: paintedVerbs.length,
@@ -1176,7 +1205,7 @@ def metric_paths() -> List[str]:
         "icons": ["boxes", "elements"],
         "nav": ["primary_count", "pane_scroll_top", "pane_header_visible", "settings_tab_count", "settings_tabs", "home_title", "header_context"],
         "feedback": ["toast_count", "toasts_tinted", "toasts_tinted_count", "empty_state_count", "empty_states_no_action"],
-        "layout": ["control_overflow", "control_overflow_count", "clipped_trailing", "clipped_trailing_count", "turn_headers", "repeated_headers", "repeated_header_count", "overflow_x", "scroll_w", "inner_w", "inner_h", "pane_h", "lists", "rows_over_limit",
+        "layout": ["control_overflow", "control_overflow_count", "clipped_trailing", "clipped_trailing_count", "clipped_trailing_excluded", "clipped_trailing_excluded_count", "turn_headers", "repeated_headers", "repeated_header_count", "overflow_x", "scroll_w", "inner_w", "inner_h", "pane_h", "lists", "rows_over_limit",
                    "rows_over_limit_count", "danger_rows", "content_w", "content_span", "pane_split", "radii", "open_section_count",
                    "empty_open_sections", "empty_open_section_count", "multi_secondary_rows", "multi_secondary_row_count",
                    "painted_row_verbs", "painted_row_verb_count", "delete_row_verbs", "delete_row_verb_count"],

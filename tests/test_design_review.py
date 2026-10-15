@@ -60,7 +60,7 @@ def _doc(name: str) -> dict:
 # ---- rubric: the real file loads and names only metrics that exist ----------
 
 rubric = dr.load_rubric(RUBRIC)
-check(rubric.version == "1.39.0", "rubric meta.version stamped")
+check(rubric.version == "1.40.0", "rubric meta.version stamped")
 check(len(rubric.rules) == 49, f"49 seed rules loaded (got {len(rubric.rules)})")
 check(rubric.categories == ["typography", "color", "touch", "navigation", "layout", "components", "a11y"],
       "categories in rubric order")
@@ -917,7 +917,7 @@ check(all(s == "pass" for s in statuses_c.values()), f"compliant: every rule pas
 check(all(v["score"] == 100.0 and v["grade"] == "A" and not v["unmeasured"] for v in out_c["categories"].values()),
       "compliant: every category 100/A, measured")
 check(out_c["overall"] == {"score": 100.0, "grade": "A", "unmeasured": False}, "compliant: overall A")
-check(out_c["schema_version"] == 1 and out_c["rubric_version"] == "1.39.0" and out_c["target"] == "fixture-app"
+check(out_c["schema_version"] == 1 and out_c["rubric_version"] == "1.40.0" and out_c["target"] == "fixture-app"
       and out_c["commit"].startswith("0000") and out_c["generated_at"].endswith("Z"), "evaluate envelope keys")
 check([s["id"] for s in out_c["screens"]] == ["desktop-light-home", "iphone-light-home", "desktop-light-dialog-edit"],
       "evaluate echoes the screen list")
@@ -1889,7 +1889,7 @@ else:
           f"measure CLI walks the fixture: 2 tabs + 1 dialog x light/dark, plus the absent Settings gear (#1217) ({proc.stdout[-300:]}{proc.stderr[-300:]})")
     check(lines.get("RUN_DIR") == str(run_dir) and Path(lines.get("METRICS", "")).is_file(), "RUN_DIR/METRICS lines point at the run dir")
     doc = json.loads(Path(lines["METRICS"]).read_text(encoding="utf-8"))
-    check(doc["interpreter"] == str(interp) and doc["schema_version"] == 1 and doc["rubric_version"] == "1.39.0", "metrics.json records the interpreter + versions")
+    check(doc["interpreter"] == str(interp) and doc["schema_version"] == 1 and doc["rubric_version"] == "1.40.0", "metrics.json records the interpreter + versions")
     if not (scaffold / "tests" / "e2e" / "_geometry.py").is_file():
         _h.skip("browser leg: project-scaffolding/tests/e2e/_geometry.py absent -- hit-target assertions NOT verified")
     check(doc["walk"]["info"]["geometry"] == ("loaded" if (scaffold / "tests" / "e2e" / "_geometry.py").is_file() else "GEOMETRY_MISSING"),
@@ -2403,7 +2403,7 @@ else:
         d["screens"] = [dict(d["screens"][1], id=screen["id"], view=screen.get("view"), metrics=screen["metrics"])]
         return next(r for r in ev.evaluate(d, rubric, _specs("compliant"))["rules"] if r["id"] == "LAYOUT-09")["status"]
 
-    ct = {case: _walk_clipped(case) for case in ("fail", "pass", "edge")}
+    ct = {case: _walk_clipped(case) for case in ("fail", "pass", "edge", "prose", "status")}
     check(all("metrics" in s for s in ct.values()), f"clipped trailing: each case walks the 390px leg -- {[s.get('error') for s in ct.values()]}")
     _ct_hits = lambda s: [(h["text"][:12], h["why"]) for h in (s["metrics"]["layout"].get("clipped_trailing") or [])]
     check(_ct_hits(ct["fail"]) == [("Ran 2 comman", "cuts failed 1m30s"), ("Ran 2 comman", "cuts 1m30s")] and _l09_status(ct["fail"]) == "fail",
@@ -2412,6 +2412,21 @@ else:
           f"LAYOUT-09: the same counts as non-shrinking trailing items pass, a label clipped on words only passes, a fitting label passes -- {_ct_hits(ct['pass'])}")
     check(_ct_hits(ct["edge"]) == [] and _l09_status(ct["edge"]) == "pass",
           f"LAYOUT-09: a cut file name and date, a cut 'failed' with no number before it, a cut tail of words, a wrapping line, a line clamp and a hidden row are not cut figures -- {_ct_hits(ct['edge'])}")
+    # narrowed to status and meta text (#1438): a figure inside a run of words a person typed is not a finding, and what is let
+    # pass is kept as a capped sample so the exclusion can be reviewed
+    _ct_lay = lambda s: (s.get("metrics") or {}).get("layout") or {}
+    _ct_excl = lambda s: _ct_lay(s).get("clipped_trailing_excluded") or []
+    check(_ct_hits(ct["prose"]) == [] and _l09_status(ct["prose"]) == "pass",
+          f"LAYOUT-09: a house number cut from an address line, a version string and a clock time cut from a free-text title pass -- {_ct_hits(ct['prose'])}")
+    check(_ct_lay(ct["prose"]).get("clipped_trailing_excluded_count") == 3 and len(_ct_excl(ct["prose"])) == 3
+          and [fig in e["why"] for fig, e in zip(("14", "1.38.0", "14:30"), _ct_excl(ct["prose"]))] == [True] * 3
+          and all(e["why"].endswith("in prose") and e["sel"] and e["text"] for e in _ct_excl(ct["prose"])),
+          f"LAYOUT-09: the three prose rows are kept in the excluded sample with the figure each cut -- {_ct_excl(ct['prose'])}")
+    check(len(_ct_hits(ct["status"])) == 3 and _l09_status(ct["status"]) == "fail"
+          and "16:00" in _ct_hits(ct["status"])[0][1] and all("2m10s" in h[1] for h in _ct_hits(ct["status"])[1:]),
+          f"LAYOUT-09: a .meta slot, a status-row dd and an unmarked status line still fail on the figure they cut -- {_ct_hits(ct['status'])}")
+    check(all(_ct_excl(ct[c]) == [] and _ct_lay(ct[c]).get("clipped_trailing_excluded_count") == 0 for c in ("fail", "status")),
+          "LAYOUT-09: a row that counts is never also listed as excluded")
 
     # COMP-18: a turn is one block under one header (#1344)
     def _walk_turn(case: str) -> dict:
