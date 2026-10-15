@@ -182,6 +182,10 @@ def _print_summary(doc: Dict[str, object]) -> None:
     print(f"UNMEASURED={s['unmeasured_rules'] or 'none'}")
     print("CATEGORIES=" + ",".join(f"{c}:{g}" for c, g in s["categories"].items()))
     print("MOCKUPS=" + (",".join(s["mockups"]) or "none"))
+    cov = doc.get("overlay_coverage") if isinstance(doc.get("overlay_coverage"), dict) else {}
+    # Overlay surfaces no walked screen opened (#1353): coverage, never part of the grade above.
+    print(f"NOT_WALKED={cov['not_walked_count'] if cov.get('status') == 'measured' else 'unknown'}"
+          + (f" ({','.join(cov.get('not_walked') or [])})" if cov.get("not_walked") else ""))
     j = doc.get("judgment")
     print(f"JUDGMENT={(j.get('status') or 'unknown') if isinstance(j, dict) else 'none'}")
 

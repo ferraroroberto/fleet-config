@@ -167,7 +167,12 @@ Pure stdlib: `metrics.json` + `design.rubric.toml` + `~/.claude/design.md`
 `pass | fail | unmeasured`, evidence, measured values, and the category and
 overall grades (each category starts at 100, minus the rubric's penalty once
 per failing rule). Prints `EVALUATE=`, `GRADE=`, `SCORE=`,
-`FAILED=<n>/<total>`, `UNMEASURED=`, `CATEGORIES=`, `MOCKUPS=`. Keep
+`FAILED=<n>/<total>`, `UNMEASURED=`, `CATEGORIES=`, `MOCKUPS=`,
+`NOT_WALKED=<n> (<keys>)|unknown` — the overlay surfaces (`dialog`,
+`[popover]`, `[role=dialog]`) present in the DOM that no walked screen
+showed open, read from the DOM only. Coverage, never graded: the report's
+method list names them and asks for an `extra_steps` entry; carry the line
+into the summary (fleet-config#1353). Keep
 `evaluate.json` in the run directory — #974 diffs runs from it.
 
 ### 4. Judge — the bounded checklist (skip with `--no-judgment`)

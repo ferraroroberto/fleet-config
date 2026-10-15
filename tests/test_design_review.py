@@ -1315,6 +1315,51 @@ check("did not render the requested theme" in _html_t and _light_sid in _html_t,
 check("did not render the requested theme" not in report_mod._method(ev.evaluate(_doc("compliant"), rubric, _specs("compliant"))),
       "no caveat when every screen rendered what was asked")
 
+# ---- #1353: overlay surfaces no walked screen opened are listed as coverage, never graded ----
+
+def _with_overlays(per_screen: dict) -> dict:
+    doc = _doc("compliant")
+    for s in doc["screens"]:
+        listed = per_screen.get(s["id"], [])
+        s["metrics"]["coverage"] = {"overlays": [{"key": k, "kind": kind, "open": op} for k, kind, op in listed],
+                                    "overlay_count": len(listed)}
+    return doc
+
+_ov_doc = _with_overlays({
+    "desktop-light-home": [("aside#taskDrawer", "role-dialog", False), ("aside#itemSheet", "role-dialog", False),
+                           ("dialog#edit", "dialog", False)],
+    "iphone-light-home": [("aside#taskDrawer", "role-dialog", True), ("aside#itemSheet", "role-dialog", False),
+                          ("div#tipPop", "popover", False), ("dialog#edit", "dialog", False)],
+    "desktop-light-dialog-edit": [("dialog#edit", "dialog", True)],
+})
+_ov_out = ev.evaluate(_ov_doc, rubric, _specs("compliant"))
+check(_ov_out.get("overlay_coverage") == {"status": "measured", "present": 4, "walked": 2,
+                                          "not_walked": ["aside#itemSheet", "div#tipPop"], "not_walked_count": 2},
+      f"evaluate lists the overlay surfaces present on a walked screen that none showed open (#1353) -- {_ov_out.get('overlay_coverage')}")
+check([{k: r[k] for k in ("id", "status", "measured")} for r in _ov_out["rules"]]
+      == [{k: r[k] for k in ("id", "status", "measured")} for r in out_c["rules"]]
+      and _ov_out["categories"] == out_c["categories"] and _ov_out["overall"] == out_c["overall"],
+      "the coverage line never moves a rule, a category or the grade (#1353)")
+check(ev.evaluate(_doc("compliant"), rubric, _specs("compliant")).get("overlay_coverage")
+      == {"status": "unknown", "present": None, "walked": None, "not_walked": [], "not_walked_count": None},
+      "metrics with no surface listing (an older run) leave overlay coverage unknown, never 'nothing missed' (#1353)")
+_ov_many = _with_overlays({"desktop-light-home": [(f"dialog#d{i:02d}", "dialog", False) for i in range(12)]})
+_ov_many_out = ev.evaluate(_ov_many, rubric, _specs("compliant")).get("overlay_coverage") or {}
+check(_ov_many_out.get("not_walked_count") == 12 and len(_ov_many_out.get("not_walked") or []) == getattr(ev, "OVERLAY_SAMPLE", None),
+      f"the not-walked sample is capped and the count stays true (#1353) -- {_ov_many_out}")
+_ov_html = report_mod._method(_ov_out)
+check("not walked: 2 overlay surfaces (aside#itemSheet, div#tipPop)" in _ov_html and "extra_steps" in _ov_html
+      and "does not count" in _ov_html,
+      "the report's method list carries the not-walked line, the extra_steps hint, and says it is outside the grade (#1353)")
+check("+4 more" in report_mod._method(ev.evaluate(_ov_many, rubric, _specs("compliant"))),
+      "the report says how many more surfaces the capped sample left out (#1353)")
+_ov_all = _with_overlays({"desktop-light-home": [("dialog#edit", "dialog", False)],
+                          "desktop-light-dialog-edit": [("dialog#edit", "dialog", True)]})
+check("not walked:" not in report_mod._method(ev.evaluate(_ov_all, rubric, _specs("compliant"))),
+      "no not-walked line when every present surface was open on some walked screen (#1353)")
+check("overlay coverage not established" in report_mod._method(out_c),
+      "an unknown overlay coverage is said, never left silent (#1353)")
+
 # ---- #995: the synthetic instance: contract, validation, lifecycle ------------
 
 import shutil  # noqa: E402
@@ -2755,6 +2800,40 @@ else:
     check(g_ns.get("status") == "absent" and g_ns.get("reason") == "SETTINGS_GEAR_ABSENT" and g_none_a11y["status"] == "unmeasured"
           and "no Settings gear" in g_none_a11y["reason"],
           f"an app with no header gear reports SETTINGS_GEAR_ABSENT as its own state and A11Y-02 unmeasured (#1217) -- {g_ns.get('status')} {g_ns.get('reason')} {g_none_a11y['reason']}")
+
+    # overlay coverage: a surface present in the DOM that no walked screen opened is listed, never graded (#1353)
+    def _overlay_walk(variant: str, review: dict) -> tuple:
+        out = STATE / f"fixture-overlay-{variant or 'default'}-{len(review)}"
+        rv = STATE / f"overlay-review-{variant or 'default'}-{len(review)}.json"
+        rv.write_text(json.dumps(review), encoding="utf-8")
+        pr = subprocess.run(
+            [str(interp), str(REPO / "skills" / "_lib" / "design_review" / "walk.py"),
+             "--url", (FIX / "overlay_coverage.html").as_uri() + (f"?{variant}" if variant else ""),
+             "--out", str(out), "--devices", "desktop", "--scaffold", str(scaffold),
+             "--review", str(rv), "--params", str(STATE / "steps-params.json")],
+            capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=600,
+        )
+        scr = json.loads((out / "screens.json").read_text(encoding="utf-8")) if pr.returncode == 0 else []
+        return scr, ev.evaluate({"screens": scr, "target": "overlay-fixture", "wide_views": []}, rubric, _specs("compliant")), pr.stderr[-300:]
+
+    _drawer_step = {"extra_steps": [{"tab": "home", "id": "task-drawer", "click": "#openDrawer"}]}
+    ov_scr, ov_res, ov_err = _overlay_walk("", _drawer_step)
+    ov_cov = ov_res.get("overlay_coverage") or {}
+    check(ov_cov.get("not_walked") == ["aside#itemSheet"] and ov_cov.get("not_walked_count") == 1 and ov_cov.get("present") == 3,
+          f"of a declared drawer, an auto-walked dialog[id] and an undeclared sheet, only the sheet is not walked (#1353) -- "
+          f"{ov_cov} {ov_err}")
+    _no_cov = [{**s, "metrics": {k: v for k, v in (s.get("metrics") or {}).items() if k != "coverage"} if s.get("metrics") else s.get("metrics")}
+               for s in ov_scr]
+    _no_cov_res = ev.evaluate({"screens": _no_cov, "target": "overlay-fixture", "wide_views": []}, rubric, _specs("compliant"))
+    check(bool(ov_scr) and [(r["id"], r["status"]) for r in _no_cov_res["rules"]] == [(r["id"], r["status"]) for r in ov_res["rules"]]
+          and _no_cov_res["overall"] == ov_res["overall"] and (_no_cov_res.get("overlay_coverage") or {}).get("status") == "unknown",
+          f"the same walk scores the same grade with and without the surface listing (#1353) -- {ov_res['overall']} vs {_no_cov_res['overall']}")
+    _, ov_bare, _ = _overlay_walk("", {})
+    check((ov_bare.get("overlay_coverage") or {}).get("not_walked") == ["aside#itemSheet", "aside#taskDrawer"],
+          f"with no extra_steps entry the drawer is not walked either: the walk opens nothing it was not told to (#1353) -- {ov_bare.get('overlay_coverage')}")
+    _, ov_more, _ = _overlay_walk("more", _drawer_step)
+    check((ov_more.get("overlay_coverage") or {}).get("not_walked") == ["aside#itemSheet", "dialog.item-editor", "div#tipPop"],
+          f"an id-less <dialog> and a [popover] nothing opens are listed too (#1353) -- {ov_more.get('overlay_coverage')}")
 
     # fold: a popup over a chip far below the fold is covered there too; the walk puts the scroll back (#1155)
     fold_dir = STATE / "fixture-fold"
