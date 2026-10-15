@@ -33,7 +33,7 @@
 # metrics.json, every evaluate output and every filed finding.
 
 [meta]
-version = "1.37.0"   # per-bump history: git log -- design.rubric.toml, and the issues/PRs it cites
+version = "1.38.0"   # per-bump history: git log -- design.rubric.toml, and the issues/PRs it cites
 seeded_from = "app-launcher rendered audit, 2026-09-21 (fleet-config#962)"
 
 [weights]
@@ -474,6 +474,20 @@ owner = "app"
 standard = "WCAG 2.2 SC 1.4.10 Reflow: content fits its container at 320 CSS px without two-dimensional scrolling (fleet-config#1325)"
 fix_template = "{count} controls on {screen} extend past their container's side ({sample}); wrap the row or stack it so every control sits inside the card."
 mockup = "none"
+
+[[rules]]
+id = "LAYOUT-09"
+category = "layout"
+title = "A single-line row's own ellipsis cuts a count, a status or a duration at phone width"
+metric = "layout.clipped_trailing_count"
+fail_when = "gt"
+threshold = 0
+severity = "P2"
+owner = "app"
+standard = "design.md chat-turn and action-row: the parts an ellipsis must never cut (`+N -M`, `N failed`, a duration, a count) are non-shrinking trailing items beside the truncated label, never inside it (fleet-config#1343, found in the app-launcher Chat review). Measured at the 390px phone width per visible element that keeps one line under `text-overflow: ellipsis` and really overflows: it fails when a cut word is a number (a digit figure, `+N`, `-N`, a percentage, a clock time or a duration) or a status word (failed, errors, warnings, passed, skipped, pending) straight after one. A row that clips only words, a file name or a date does not fail"
+fix_template = "{count} single-line rows on {screen} cut a figure with their own ellipsis ({sample}); keep the counts, status and duration as non-shrinking trailing items (flex: none) beside the ellipsis label."
+mockup = "none"
+devices = ["iphone"]
 
 [[rules]]
 id = "LAYOUT-07"
