@@ -60,8 +60,8 @@ def _doc(name: str) -> dict:
 # ---- rubric: the real file loads and names only metrics that exist ----------
 
 rubric = dr.load_rubric(RUBRIC)
-check(rubric.version == "1.36.0", "rubric meta.version stamped")
-check(len(rubric.rules) == 46, f"46 seed rules loaded (got {len(rubric.rules)})")
+check(rubric.version == "1.37.0", "rubric meta.version stamped")
+check(len(rubric.rules) == 47, f"47 seed rules loaded (got {len(rubric.rules)})")
 check(rubric.categories == ["typography", "color", "touch", "navigation", "layout", "components", "a11y"],
       "categories in rubric order")
 check(rb.check_metric_names(rubric, measure.metric_paths()) == [], "every rule metric is a script path or a derived metric")
@@ -703,6 +703,20 @@ check("192.0.2.14" in _c11_sentence and "{" not in _c11_sentence, f"COMP-11: the
 check("COMP-11" in next(j for j in rubric.judgment if j.id == "J-07").maps_to and "COMP-11" in next(j for j in rubric.judgment if j.id == "J-07").question,
       "J-07 names COMP-11 and maps to it, so a `no` and the rule never double-count")
 
+# ---- COMP-17: code is at its size and never on a surface darker than its card (#1342) ----
+_bad_code = {"sel": "code.c12", "text": "git status", "px": 12, "why": "inline at caption size"}
+_c17 = _text_rule("COMP-17", [{"code_off_spec_count": 1, "code_off_spec": [_bad_code]}, {}, {}])
+check(_c17["status"] == "fail" and _c17["severity"] == "P2" and _c17["category"] == "components" and _c17["owner"] == "app"
+      and _c17["evidence"][0]["items"] == [_bad_code],
+      f"COMP-17: a 12px inline code fails and names the element and why -- {_c17['status']} {_c17['evidence']}")
+check(_text_rule("COMP-17", [{"code_off_spec_count": 0, "code_off_spec": []}] * 3)["status"] == "pass", "COMP-17: a screen with no off-spec code passes")
+_c17_doc = _doc("compliant")
+for _s in _c17_doc["screens"]:
+    _s["metrics"]["text"].update({"code_off_spec_count": 1, "code_off_spec": [_bad_code]})
+_c17_out = ev.evaluate(_c17_doc, rubric, _specs("compliant"))
+_c17_sentence = report_mod.finding_sentence(next(r for r in _c17_out["rules"] if r["id"] == "COMP-17"), _c17_out)
+check("code.c12" in _c17_sentence and "caption size" in _c17_sentence and "{" not in _c17_sentence, f"COMP-17: the fix sentence names the code and why -- {_c17_sentence}")
+
 # ---- TYPE-07: a heading is never rendered smaller than the body text it introduces (#1341) ----
 _small_h = {"sel": "h2.title", "text": "Recent takes", "px": 14, "body_sel": "p.lede", "body_px": 16}
 _t07 = _text_rule("TYPE-07", [{"heading_smaller_than_body_count": 1, "heading_smaller_than_body": [_small_h]}, {}, {}])
@@ -836,7 +850,7 @@ check(all(s == "pass" for s in statuses_c.values()), f"compliant: every rule pas
 check(all(v["score"] == 100.0 and v["grade"] == "A" and not v["unmeasured"] for v in out_c["categories"].values()),
       "compliant: every category 100/A, measured")
 check(out_c["overall"] == {"score": 100.0, "grade": "A", "unmeasured": False}, "compliant: overall A")
-check(out_c["schema_version"] == 1 and out_c["rubric_version"] == "1.36.0" and out_c["target"] == "fixture-app"
+check(out_c["schema_version"] == 1 and out_c["rubric_version"] == "1.37.0" and out_c["target"] == "fixture-app"
       and out_c["commit"].startswith("0000") and out_c["generated_at"].endswith("Z"), "evaluate envelope keys")
 check([s["id"] for s in out_c["screens"]] == ["desktop-light-home", "iphone-light-home", "desktop-light-dialog-edit"],
       "evaluate echoes the screen list")
@@ -1808,7 +1822,7 @@ else:
           f"measure CLI walks the fixture: 2 tabs + 1 dialog x light/dark, plus the absent Settings gear (#1217) ({proc.stdout[-300:]}{proc.stderr[-300:]})")
     check(lines.get("RUN_DIR") == str(run_dir) and Path(lines.get("METRICS", "")).is_file(), "RUN_DIR/METRICS lines point at the run dir")
     doc = json.loads(Path(lines["METRICS"]).read_text(encoding="utf-8"))
-    check(doc["interpreter"] == str(interp) and doc["schema_version"] == 1 and doc["rubric_version"] == "1.36.0", "metrics.json records the interpreter + versions")
+    check(doc["interpreter"] == str(interp) and doc["schema_version"] == 1 and doc["rubric_version"] == "1.37.0", "metrics.json records the interpreter + versions")
     if not (scaffold / "tests" / "e2e" / "_geometry.py").is_file():
         _h.skip("browser leg: project-scaffolding/tests/e2e/_geometry.py absent -- hit-target assertions NOT verified")
     check(doc["walk"]["info"]["geometry"] == ("loaded" if (scaffold / "tests" / "e2e" / "_geometry.py").is_file() else "GEOMETRY_MISSING"),
@@ -2446,6 +2460,43 @@ else:
           f"TYPE-07: a 20px h2 above 16px body, a 14px h3 above equal 14px body and a 14px h2 above a 12px caption pass -- {_t07_hits(hb_pass)}")
     check(_t07_hits(hb_edge) == [] and _t07_status(hb_edge) == "pass",
           f"TYPE-07: a stat value, a header row, a heading before a heading, a hidden paragraph, a paragraph four siblings away and a short badge are not body text -- {_t07_hits(hb_edge)}")
+
+    # COMP-17: code at its size, off the dark hole (#1342)
+    def _walk_code(case: str) -> list:
+        out_dir = STATE / f"fixture-code-{case}"
+        proc = subprocess.run(
+            [str(interp), str(REPO / "skills" / "_lib" / "design_review" / "walk.py"), "--url", (FIX / "code_spec.html").as_uri() + f"?case={case}",
+             "--out", str(out_dir), "--devices", "desktop", "--scaffold", str(scaffold), "--params", str(STATE / "steps-params.json")],
+            capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=600,
+        )
+        if proc.returncode != 0:
+            return [{"error": proc.stderr[-300:]}]
+        return [s for s in json.loads((out_dir / "screens.json").read_text(encoding="utf-8")) if s.get("status") == "ok"]
+
+    def _c17_hits(screens: list, theme: str) -> list:
+        return [(h.get("text"), h.get("px"), h.get("why")) for s in screens if s["id"].startswith(f"desktop-{theme}-")
+                for h in (s["metrics"]["text"].get("code_off_spec") or [])]
+
+    def _c17_status(screens: list, theme: str) -> str:
+        d = _doc("compliant")
+        sc = [s for s in screens if s["id"].startswith(f"desktop-{theme}-")]
+        d["screens"] = [dict(base, id=s["id"], view=s.get("view"), metrics=s["metrics"]) for base, s in zip(d["screens"], sc)]
+        return next(r for r in ev.evaluate(d, rubric, _specs("compliant"))["rules"] if r["id"] == "COMP-17")["status"]
+
+    cd_fail, cd_pass, cd_edge = _walk_code("fail"), _walk_code("pass"), _walk_code("edge")
+    check(all("metrics" in s for s in cd_fail + cd_pass + cd_edge) and len(cd_fail) == len(cd_pass) == len(cd_edge) == 6,
+          f"code: each case walks its three tabs in light and dark -- {[s.get('id', s) for s in cd_fail + cd_pass + cd_edge]}")
+    _c17_light = [("git status", 12, "inline at caption size"), ("git diff", 10.5, "inline under 0.875em"), ("$ git log --oneline", 12, "listing under 13px")]
+    check(_c17_hits(cd_fail, "light") == _c17_light and _c17_status(cd_fail, "light") == "fail",
+          f"COMP-17: a 12px code in 16px text, a 10.5px code in 14px text and a 12px pre fail in light; the inset-filled code does not -- {_c17_hits(cd_fail, 'light')}")
+    check(_c17_hits(cd_fail, "dark") == _c17_light + [("server.py", 14, "darker than its card")] and _c17_status(cd_fail, "dark") == "fail",
+          f"COMP-17: in dark the same three fail and a code filled true black on a dark card fails too -- {_c17_hits(cd_fail, 'dark')}")
+    check(all(_c17_hits(cd_pass, t) == [] and _c17_status(cd_pass, t) == "pass" for t in ("light", "dark")),
+          f"COMP-17: 14px code in 16px text, 12.25px in 14px, a 14px kbd, a 13px pre, the neutral-soft chip and a lighter fill pass in both themes -- "
+          f"{_c17_hits(cd_pass, 'light')} {_c17_hits(cd_pass, 'dark')}")
+    check(all(_c17_hits(cd_edge, t) == [] and _c17_status(cd_edge, t) == "pass" for t in ("light", "dark")),
+          f"COMP-17: hidden code, a terminal, a pre filled with its card's own colour and a code inside a 13px pre are not off-spec -- "
+          f"{_c17_hits(cd_edge, 'light')} {_c17_hits(cd_edge, 'dark')}")
 
     # UA-font nav tab: voice-transcriber's <button class="tab"> tabs had no `font: inherit` and read Arial under a system-ui body;
     # TYPE-02 reads them (a tab is a <button>), an inheriting button beside them is not reported (#1211)

@@ -1,0 +1,86 @@
+<!doctype html>
+<!-- Static fixture for COMP-17, code drawn off the spec (fleet-config#1342): inline code under its size, a listing under
+     13px, and code on a surface darker than its card in dark. Walked at the desktop leg (1440x900) in light and in dark,
+     three times, `?case=` picking the page; each has three tabs. The page follows the walk's colour scheme the way the
+     fleet apps do, with the fleet tokens: a card, the neutral-soft chip fill and the true-black canvas-subtle inset.
+       fail   tab Replies: a 12px `code` in 16px text (caption size) and a 10.5px `code` in 14px text (under 0.875em)
+              tab Diff:    a 12px `pre`
+              tab Chat:    a 14px `code` filled with the inset colour (light: #f6f8fa on a white card; dark: true black on a
+                           dark card)
+              -> light: "git status", "git diff", the 12px listing.  dark: the same three plus "server.py"
+       pass   tab Replies: a 14px `code` in 16px text, a 12.25px `code` in 14px text (0.875em, not caption) and a 14px `kbd`
+              tab Diff:    a 13px `pre`, and a `pre` holding a `code` that inherits its 13px
+              tab Chat:    a 14px `code` on the neutral-soft chip fill, one with no fill and one on a fill lighter than the card
+              -> no hit in either theme
+       edge   a hidden 12px `code`, a 10px `code` inside a terminal (.xterm), a 13px `pre` whose fill is the card's own colour,
+              and a 12px `code` inside a 13px `pre` (the listing's size governs it)
+              -> no hit in either theme
+     Asserted by tests/test_design_review.py. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>design_review code fixture</title>
+<style>
+  :root { --canvas: #ffffff; --card: #ffffff; --fg: #1f2328; --sunk: #f6f8fa; --soft: color-mix(in srgb, #59636e 16%, transparent); --lift: #eaeef2; }
+  @media (prefers-color-scheme: dark) {
+    :root { --canvas: #0d1117; --card: #161b22; --fg: #f0f6fc; --sunk: #010409; --soft: color-mix(in srgb, #9198a1 16%, transparent); --lift: #30363d; }
+  }
+  html, body { margin: 0; background: var(--canvas); color: var(--fg); font-family: system-ui, sans-serif; font-size: 16px; }
+  body { padding: 16px; }
+  nav.tabs { display: flex; gap: 8px; }
+  nav.tabs button { min-width: 60px; min-height: 44px; font: inherit; }
+  section[hidden] { display: none; }
+  .card { background: var(--card); border: 1px solid #8b949e; border-radius: 8px; padding: 12px; margin-top: 12px; }
+  p { margin: 4px 0 12px; }
+  .t14 { font-size: 14px; }
+  code, kbd, pre { font-family: ui-monospace, Menlo, Consolas, monospace; }
+  .c14 { font-size: 14px; } .c12 { font-size: 12px; } .c1225 { font-size: 12.25px; } .c105 { font-size: 10.5px; } .c10 { font-size: 10px; }
+  .l13 { font-size: 13px; } .l12 { font-size: 12px; }
+  pre { margin: 4px 0 12px; padding: 8px; }
+  .sunk { background: var(--sunk); } .soft { background: var(--soft); } .lift { background: var(--lift); } .own { background: var(--card); }
+  [hidden] { display: none; }
+</style>
+<script>
+  const PAGES = {
+    fail: [
+      ['Replies', '<div class="card"><p>Run <code class="c12">git status</code> to see what changed in the tree.</p>'
+        + '<p class="t14">Then <code class="c105">git diff</code> shows the hunks of the file.</p></div>'],
+      ['Diff', '<div class="card"><pre class="l12">$ git log --oneline</pre></div>'],
+      ['Chat', '<div class="card"><p>Open <code class="c14 sunk">server.py</code> in the editor.</p></div>'],
+    ],
+    pass: [
+      ['Replies', '<div class="card"><p>Run <code class="c14">git status</code> to see what changed in the tree.</p>'
+        + '<p class="t14">Then <code class="c1225">git diff</code> shows the hunks of the file.</p>'
+        + '<p>Press <kbd class="c14">Ctrl</kbd> to continue with the next step.</p></div>'],
+      ['Diff', '<div class="card"><pre class="l13">$ git log --oneline</pre><pre class="l13"><code>git status</code></pre></div>'],
+      ['Chat', '<div class="card"><p>Open <code class="c14 soft">server.py</code> in the editor, <code class="c14">app.py</code> too, '
+        + 'and <code class="c14 lift">main.py</code>.</p></div>'],
+    ],
+    edge: [
+      ['Replies', '<div class="card"><p>Nothing to see: <code class="c12" hidden>hidden</code> stays out of the count.</p>'
+        + '<div class="xterm"><code class="c10 sunk">terminal text</code></div></div>'],
+      ['Diff', '<div class="card"><pre class="l13 own">$ git log --oneline</pre></div>'],
+      ['Chat', '<div class="card"><pre class="l13"><code class="c12">git status</code></pre></div>'],
+    ],
+  };
+  addEventListener('DOMContentLoaded', () => {
+    const pages = PAGES[new URLSearchParams(location.search).get('case') || 'pass'];
+    const tabs = document.querySelector('nav.tabs'), main = document.querySelector('main');
+    pages.forEach(([name, html], i) => {
+      tabs.insertAdjacentHTML('beforeend', `<button type="button" role="tab" data-tab="${name.toLowerCase()}" aria-controls="pane${i}" aria-selected="${i === 0}">${name}</button>`);
+      main.insertAdjacentHTML('beforeend', `<section id="pane${i}" role="tabpanel"${i ? ' hidden' : ''}>${html}</section>`);
+    });
+    tabs.querySelectorAll('[role=tab]').forEach(tab => tab.addEventListener('click', () => {
+      tabs.querySelectorAll('[role=tab]').forEach(t => t.setAttribute('aria-selected', String(t === tab)));
+      main.querySelectorAll('[role=tabpanel]').forEach(p => p.hidden = (p.id !== tab.getAttribute('aria-controls')));
+    }));
+  });
+</script>
+</head>
+<body>
+  <nav class="tabs" role="tablist" aria-label="Primary"></nav>
+  <main></main>
+</body>
+</html>
