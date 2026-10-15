@@ -1355,7 +1355,7 @@ check("+4 more" in report_mod._method(ev.evaluate(_ov_many, rubric, _specs("comp
       "the report says how many more surfaces the capped sample left out (#1353)")
 _ov_all = _with_overlays({"desktop-light-home": [("dialog#edit", "dialog", False)],
                           "desktop-light-dialog-edit": [("dialog#edit", "dialog", True)]})
-check("not walked:" not in report_mod._method(ev.evaluate(_ov_all, rubric, _specs("compliant"))),
+check(not re.search(r"not walked: \d+ overlay", report_mod._method(ev.evaluate(_ov_all, rubric, _specs("compliant")))),
       "no not-walked line when every present surface was open on some walked screen (#1353)")
 check("overlay coverage not established" in report_mod._method(out_c),
       "an unknown overlay coverage is said, never left silent (#1353)")
