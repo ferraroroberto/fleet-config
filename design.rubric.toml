@@ -33,7 +33,7 @@
 # metrics.json, every evaluate output and every filed finding.
 
 [meta]
-version = "1.40.0"   # per-bump history: git log -- design.rubric.toml, and the issues/PRs it cites
+version = "1.41.0"   # per-bump history: git log -- design.rubric.toml, and the issues/PRs it cites
 seeded_from = "app-launcher rendered audit, 2026-09-21 (fleet-config#962)"
 
 [weights]
@@ -743,7 +743,7 @@ fail_when = "gt"
 threshold = 0
 severity = "P2"
 owner = "app"
-standard = "design.md chat-turn: an agent's turn is one block with one header (mark, name, time, copy, collapse) and its parts below, never one card per text fragment each repeating its own `who - when` header (fleet-config#1344, found in the app-launcher Chat review). Measured on the contract's structure only: two or more consecutive visible sibling blocks whose headers (a `summary`, else the first child, with a control) read the same `<speaker> <clock time>` once the time is replaced by a placeholder, each block holding more than its header, the speaker being agent, assistant, you or a named coding agent. A list of rows that each start `Today`, or event cards that each read `Standup 09:00`, are not turns and do not fail. A walk that never reaches a rendered transcript is unmeasured, not a pass; the judge does not re-ask this"
+standard = "design.md chat-turn: an agent's turn is one block with one header (mark, name, time, copy, collapse) and its parts below, never one card per text fragment each repeating its own `who - when` header (fleet-config#1344, found in the app-launcher Chat review). Measured on the contract's structure only: two or more consecutive visible sibling blocks whose headers (a `summary`, else the first child, with a control) read the same `<speaker> <clock time>` once the time is replaced by a placeholder, each block holding more than its header, the speaker being agent, assistant, you or a named coding agent. A list of rows that each start `Today`, or event cards that each read `Standup 09:00`, are not turns and do not fail. A walk that never reaches a rendered transcript is unmeasured, not a pass, unless the app declares `[design] no_chat_surface = true` in its `.fleet.toml` (it renders no chat transcript at all): then every screen without a turn is n/a, with that reason stated. A declared app whose walk does reach a turn is still measured and the report says the declaration conflicts; the judge does not re-ask this"
 fix_template = "{count} runs of consecutive blocks on {screen} repeat the same who-when header ({sample}); render the turn as one block with one header and put the fragments below it as its parts."
 mockup = "none"
 

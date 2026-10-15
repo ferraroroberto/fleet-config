@@ -104,6 +104,10 @@ class Target:
     # a malformed declaration, which the evaluation reports rather than guesses around.
     wide_views: List[str] = field(default_factory=list)
     wide_views_error: Optional[str] = None
+    # `[design] no_chat_surface` (#1443): the app renders no chat transcript, so COMP-18 is n/a; the error is a
+    # malformed declaration, which the evaluation reports rather than reads as an opt-out.
+    no_chat_surface: bool = False
+    no_chat_surface_error: Optional[str] = None
 
 
 class PlanError(Exception):
@@ -178,6 +182,30 @@ def load_review_block(root: Optional[Path]) -> Dict[str, object]:
     return dict(review) if isinstance(review, dict) else {}
 
 
+def load_no_chat_surface(root: Optional[Path]) -> tuple:
+    """`(declared, error)` for `[design] no_chat_surface` in the target's `.fleet.toml` (#1443).
+
+    Absent file, table or key is the normal case: `(False, None)`. Anything but a TOML boolean, or an unparseable
+    file, is `(False, reason)` -- a typo must not turn COMP-18 into an opt-out.
+    """
+    if root is None:
+        return False, None
+    path = Path(root) / ".fleet.toml"
+    if not path.is_file():
+        return False, None
+    try:
+        data = tomllib.loads(path.read_text(encoding="utf-8", errors="replace"))
+    except tomllib.TOMLDecodeError as exc:
+        return False, f"unparseable .fleet.toml: {exc}"
+    design = data.get("design")
+    if not isinstance(design, dict) or "no_chat_surface" not in design:
+        return False, None
+    raw = design["no_chat_surface"]
+    if not isinstance(raw, bool):
+        return False, "[design] no_chat_surface must be true or false"
+    return raw, None
+
+
 def declared_port(root: Optional[Path]) -> Optional[int]:
     """The loopback port a repo's own `.fleet.toml` declares (`port = ":8449"`, `8449` or `"127.0.0.1:8449"`), else None."""
     data = fleet_toml.parse(fleet_toml.read_text(root)) if root else None
@@ -240,9 +268,11 @@ def resolve_target(
 
     review = load_review_block(root)
     wide, wide_error = wide_views.load_wide_views(root)
+    no_chat, no_chat_error = load_no_chat_surface(root)
     if url_override:
         return Target(name=name, root=root, base_url=url_override.rstrip("/"), review=review,
-                      wide_views=wide, wide_views_error=wide_error)
+                      wide_views=wide, wide_views_error=wide_error,
+                      no_chat_surface=no_chat, no_chat_surface_error=no_chat_error)
 
     table = tables.get(name, {})
     port = table.get("webapp_port")
@@ -256,7 +286,8 @@ def resolve_target(
             "pass --url for a non-fleet target"
         )
     return Target(name=name, root=root, base_url=f"{scheme}://{LOOPBACK}:{int(port)}", review=review,
-                  wide_views=wide, wide_views_error=wide_error)
+                  wide_views=wide, wide_views_error=wide_error,
+                  no_chat_surface=no_chat, no_chat_surface_error=no_chat_error)
 
 
 # The view name of the built-in Settings-gear screen (#1217): never a tab's id, so a Settings tab cannot collide with it.

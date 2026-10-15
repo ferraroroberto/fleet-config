@@ -457,18 +457,32 @@ def _d_empty_state_no_action(m: dict, rule: Rule, ctx: dict) -> Derived:
     return float(len(bare)), list(bare), None  # type: ignore[arg-type]
 
 
-def _d_repeated_turn_header(m: dict, rule: Rule, ctx: dict) -> Derived:
+_NO_CHAT_CONFLICT = "app declares no chat surface, yet a chat transcript was reached (measured, not silenced)"
+
+
+def _d_repeated_turn_header(m: dict, rule: Rule, ctx: dict) -> DerivedWithFacts:
     """COMP-18: count of runs of consecutive sibling blocks that repeat one speaker's who-when header (#1344).
 
     The metric only reads blocks shaped like the chat-turn contract's header (see `measure.py`), so a screen that shows
     none says nothing. A walk that never reaches a rendered transcript on any screen is `unmeasured`, never a pass: the
-    rule cannot be vacuous. Once any screen in the run showed one, the screens without a turn are n/a.
+    rule cannot be vacuous. Once any screen in the run showed one, the screens without a turn are n/a. An app that
+    declares `[design] no_chat_surface` (#1443) reads n/a on every screen without a turn, with the reason stated; a
+    declared app whose walk does reach a turn is still measured, and the rule says the declaration conflicts.
     """
     runs, count, heads = (measure.metric_value(m, "layout." + k) for k in ("repeated_headers", "repeated_header_count", "turn_headers"))
     if runs is None or count is None or heads is None:
         return None, [], _section_reason(m, "layout")
     if not heads:
-        return (None, [], NOT_APPLICABLE) if ctx.get("turn_seen") else (None, [], "no rendered chat transcript reached on this screen")
+        if ctx.get("turn_seen"):
+            conflict = f": {_NO_CHAT_CONFLICT}" if ctx.get("no_chat_surface") else ""
+            return None, [], NOT_APPLICABLE + conflict
+        if ctx.get("no_chat_surface_error"):
+            return None, [], f"no_chat_surface: {ctx['no_chat_surface_error']}"
+        if ctx.get("no_chat_surface"):
+            return None, [], f"{NOT_APPLICABLE}: app declares no chat surface"
+        return None, [], "no rendered chat transcript reached on this screen"
+    if ctx.get("no_chat_surface"):
+        return float(count), list(runs), None, {"declaration": _NO_CHAT_CONFLICT}  # type: ignore[arg-type]
     return float(count), list(runs), None  # type: ignore[arg-type]
 
 
@@ -666,6 +680,7 @@ def evaluate_rule(rule: Rule, doc: dict, specs: Dict[str, Dict[str, str]], ctx: 
             _fold(result, tally, sid, value, items, why, rule, thr, facts)
 
     na = f"; n/a on {tally.not_applicable}" if tally.not_applicable else ""
+    na += f" ({'; '.join(tally.na_reasons)})" if tally.na_reasons else ""
     na += f"; step target absent on {tally.absent}" if tally.absent else ""
     if tally.failed:
         result["status"] = "fail"
@@ -681,7 +696,8 @@ def evaluate_rule(rule: Rule, doc: dict, specs: Dict[str, Dict[str, str]], ctx: 
         result["reason"] = f"{tally.passed} screen(s) measured, none over threshold{na}"
     elif tally.not_applicable:
         result["status"] = "pass"
-        result["reason"] = f"not applicable on any of {tally.not_applicable} screen(s) (vacuous pass)"
+        why_na = f": {'; '.join(tally.na_reasons)}" if tally.na_reasons else ""
+        result["reason"] = f"not applicable on any of {tally.not_applicable} screen(s) (vacuous pass{why_na})"
     else:
         result["status"] = "unmeasured"
         result["reason"] = "no applicable screen in this run" + na
@@ -710,13 +726,17 @@ class _Tally:
         self.unmeasured: List[str] = []
         self.passed = 0
         self.not_applicable = 0
+        self.na_reasons: List[str] = []  # stated reasons behind n/a screens (a bare `n/a` has none)
         self.absent = 0  # step screens whose target never appeared (#995): neither measured nor unmeasured
 
 
 def _fold(result: dict, tally: _Tally, sid: str, value: Optional[float], items: List[object],
           why: Optional[str], rule: Rule, thr: Optional[float], facts: Dict[str, object]) -> None:
-    if why == NOT_APPLICABLE:
+    if why is not None and why.startswith(NOT_APPLICABLE):
         tally.not_applicable += 1
+        stated = why[len(NOT_APPLICABLE):].lstrip(": ")
+        if stated and stated not in tally.na_reasons:
+            tally.na_reasons.append(stated)
         return
     if why is not None or value is None:
         tally.unmeasured.append(f"{sid}: {why or 'no value'}")
@@ -782,6 +802,8 @@ def evaluate(doc: dict, rubric: Rubric, specs: Dict[str, Dict[str, str]],
     ctx = {"params": resolve_params(rubric, specs.get("light", {})),
            "wide_views": [str(v) for v in doc.get("wide_views") or []],
            "wide_views_error": doc.get("wide_views_error"),
+           "no_chat_surface": doc.get("no_chat_surface") is True,
+           "no_chat_surface_error": doc.get("no_chat_surface_error"),
            "switch_on_seen": any(
                isinstance(s, dict) and s.get("status") == "ok" and isinstance(s.get("metrics"), dict)
                and bool(measure.metric_value(s["metrics"], "controls.switches_on"))
