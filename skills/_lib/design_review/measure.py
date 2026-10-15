@@ -45,7 +45,8 @@ present on a successful run:
               open_section_count, empty_open_sections [{sel, label}], empty_open_section_count,
               multi_secondary_rows [{sel, label, lines}], multi_secondary_row_count,
               painted_row_verbs [{sel, label, via, row}], painted_row_verb_count,
-              delete_row_verbs [{sel, label, row}], delete_row_verb_count
+              delete_row_verbs [{sel, label, row}], delete_row_verb_count,
+              clipped_trailing [{sel, text, why, over_px}], clipped_trailing_count
     overlay   surfaces, destructive [..], destructive_bad [..], destructive_bad_count
     dialogs   count, with_commit, quiet_commit [{dialog, commit, label, filled, w, h, rival, rival_label, why}], quiet_commit_count
     clearance bars [..], hidden_rows [..], hidden_row_count
@@ -846,7 +847,36 @@ _MEASURE_JS = r"""
       if (inFlight(el) || emptyBlocks.some(b => el.contains(b))) return;
       if (kids.some(n => n.nodeType === 3 ? /[^\s​-‍⁠﻿]/.test(n.data) : n.nodeType === 1 && shows(n))) return;
       emptyOpen.push({sel: sel(el), label}); });
-    return { control_overflow: spilled.slice(0,CAP), control_overflow_count: spilled.length, overflow_x: de.scrollWidth > window.innerWidth + 1, scroll_w: de.scrollWidth, inner_w: window.innerWidth, inner_h: window.innerHeight,
+    // Trailing figures cut by an element's own ellipsis (#1343). design.md keeps the parts a step line must never lose (`+N -M`,
+    // `N failed`, a duration) as non-shrinking trailing items outside the ellipsis; a single-line element that truncates them
+    // is measurable from geometry. A candidate is a visible element with `text-overflow: ellipsis` on a clipping box
+    // (`overflow-x` not visible) that keeps its text on one line (`white-space` nowrap or pre) and really overflows
+    // (`scrollWidth` over `clientWidth`). Its hidden text is found per word: each whitespace-delimited word's last character
+    // is a Range, and a word is cut when that character's box is collapsed to zero width (the engine lays out nothing the
+    // ellipsis replaces, which is how WebKit reports it) or ends past the element's content edge (a word cut in half counts;
+    // one that lies whole beside the ellipsis glyph is still read in full). The hidden part holds a count-like token only when a cut word is a number
+    // (digits, a `+N` / `-N` / minus-sign figure, a percentage, a decimal, a clock time or a duration such as 2.4s, 1m30s, 3:45)
+    // or a status word (failed, errors, warnings, passed, skipped, pending) straight after a number. A cut word that is only
+    // words, a file name or a date does not count, and neither does text that wraps, a line clamp, or a box that fits. An
+    // element inside one already counted is the same cut line.
+    const NUMLIKE = /^[+\-\u2212\u2013\u00b1]?\d[\d.,:]*(?:%|ms|min|[smhdkMxB])?(?:\d+(?:[.,]\d+)?(?:ms|[smhd]))*$/;
+    const STATUSWORD = /^(?:failed|failures?|errors?|warnings?|passed|skipped|pending)$/i;
+    const clippedEls = [], clippedTrailing = [];
+    all.forEach(el => {
+      const st = getComputedStyle(el);
+      if (st.textOverflow !== 'ellipsis' || st.overflowX === 'visible' || !/^(?:nowrap|pre)$/.test(st.whiteSpace)) return;
+      if (el.scrollWidth <= el.clientWidth + 1 || clippedEls.some(c => c.contains(el))) return;
+      const edge = el.getBoundingClientRect().left + el.clientLeft + el.clientWidth - (parseFloat(st.paddingRight) || 0), toks = [];
+      const tw = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+      for (let n = tw.nextNode(); n; n = tw.nextNode()) for (const m of n.textContent.matchAll(/\S+/g)) {
+        const end = m.index + m[0].length, rg = document.createRange(); rg.setStart(n, end - 1); rg.setEnd(n, end);
+        const b = rg.getBoundingClientRect();
+        toks.push({t: m[0].replace(/^[(\[]+|[)\],;.]+$/g, ''), cut: b.width === 0 || b.right > edge + 0.5}); }
+      const figures = toks.filter((k, i) => k.cut && (NUMLIKE.test(k.t) || (STATUSWORD.test(k.t) && i > 0 && NUMLIKE.test(toks[i - 1].t)))).map(k => k.t);
+      if (figures.length) { clippedEls.push(el);
+        clippedTrailing.push({sel: sel(el), text: txt(el), why: 'cuts ' + figures.slice(0, 4).join(' '), over_px: Math.round(el.scrollWidth - el.clientWidth)}); } });
+    return { control_overflow: spilled.slice(0,CAP), control_overflow_count: spilled.length,
+      clipped_trailing: clippedTrailing.slice(0,CAP), clipped_trailing_count: clippedTrailing.length, overflow_x: de.scrollWidth > window.innerWidth + 1, scroll_w: de.scrollWidth, inner_w: window.innerWidth, inner_h: window.innerHeight,
       pane_h: pane.scrollHeight, lists: lists.slice(0,CAP), rows_over_limit: rowsOver.slice(0,CAP), rows_over_limit_count: rowsOver.length,
       multi_secondary_rows: multiSecondary.slice(0,CAP), multi_secondary_row_count: multiSecondary.length,
       painted_row_verbs: paintedVerbs.slice(0,CAP), painted_row_verb_count: paintedVerbs.length,
@@ -1100,7 +1130,7 @@ def metric_paths() -> List[str]:
         "icons": ["boxes", "elements"],
         "nav": ["primary_count", "pane_scroll_top", "pane_header_visible", "settings_tab_count", "settings_tabs", "home_title", "header_context"],
         "feedback": ["toast_count", "toasts_tinted", "toasts_tinted_count", "empty_state_count", "empty_states_no_action"],
-        "layout": ["control_overflow", "control_overflow_count", "overflow_x", "scroll_w", "inner_w", "inner_h", "pane_h", "lists", "rows_over_limit",
+        "layout": ["control_overflow", "control_overflow_count", "clipped_trailing", "clipped_trailing_count", "overflow_x", "scroll_w", "inner_w", "inner_h", "pane_h", "lists", "rows_over_limit",
                    "rows_over_limit_count", "danger_rows", "content_w", "content_span", "pane_split", "radii", "open_section_count",
                    "empty_open_sections", "empty_open_section_count", "multi_secondary_rows", "multi_secondary_row_count",
                    "painted_row_verbs", "painted_row_verb_count", "delete_row_verbs", "delete_row_verb_count"],

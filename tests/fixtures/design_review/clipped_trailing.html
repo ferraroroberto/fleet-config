@@ -1,0 +1,65 @@
+<!doctype html>
+<!-- Static fixture for LAYOUT-09, trailing figures cut by an element's own ellipsis (fleet-config#1343): the app-launcher chat
+     step line at 390px, where an ellipsis cut exactly the counts that mattered (`+N -M`, `N failed`, a duration). Walked at
+     the iphone leg (390x844), `?case=` picking the page. The page follows the walk's colour scheme with the fleet tokens.
+       fail   a step line whose label, counts and duration share ONE shrinking ellipsis element ("Ran 2 commands, read 3 files
+              +128 -46 2 failed 1m30s"), and a second step line whose label alone ends in a duration under the ellipsis
+              -> two hits, each hiding a number or duration
+       pass   the same step line with the counts as non-shrinking trailing items beside the ellipsis label; a step line whose
+              label is clipped but hides words only (its counts sit outside it); a label that ends in the counts yet fits
+              -> no hit
+       edge   a clipped row hiding only a file name and a date; a clipped row whose hidden tail is words ("... failed" with no
+              number before it); the digits visible and everything hidden being words; a wrapping line (no nowrap) full of
+              figures; a line-clamped block; a hidden row; a row with an ellipsis that fits
+              -> no hit
+     Asserted by tests/test_design_review.py. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>design_review clipped trailing fixture</title>
+<style>
+  :root { --canvas: #ffffff; --card: #ffffff; --fg: #1f2328; --muted: #59636e; }
+  @media (prefers-color-scheme: dark) { :root { --canvas: #0d1117; --card: #161b22; --fg: #f0f6fc; --muted: #9198a1; } }
+  html, body { margin: 0; background: var(--canvas); color: var(--fg); font-family: system-ui, sans-serif; font-size: 16px; }
+  body { padding: 16px; }
+  .card { background: var(--card); border: 1px solid #8b949e; border-radius: 8px; padding: 12px; margin-top: 12px; }
+  .step { display: flex; align-items: center; gap: 8px; min-height: 40px; font-size: 14px; color: var(--muted); }
+  .chev { flex: none; width: 24px; text-align: center; }
+  .lbl { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .fig { flex: none; white-space: nowrap; }
+  .wrap { font-size: 14px; }
+  .clamp { font-size: 14px; display: -webkit-box; -webkit-line-clamp: 1; -webkit-box-orient: vertical; overflow: hidden; text-overflow: ellipsis; }
+</style>
+<script>
+  const PAGES = {
+    fail: [
+      '<div class="step"><span class="chev">&rsaquo;</span><span class="lbl">Ran 2 commands, read 3 files +128 −46 2 failed 1m30s</span></div>',
+      '<div class="step"><span class="chev">&rsaquo;</span><span class="lbl">Ran 2 commands and then read every changed file across the whole tree · 1m30s</span></div>',
+    ],
+    pass: [
+      '<div class="step"><span class="chev">&rsaquo;</span><span class="lbl">Ran 2 commands, read 3 files</span><span class="fig">+12</span><span class="fig">−4</span></div>',
+      '<div class="step"><span class="chev">&rsaquo;</span><span class="lbl">Ran 2 commands</span><span class="fig">+128</span><span class="fig">−46</span><span class="fig">2 failed</span><span class="fig">1m30s</span></div>',
+      '<div class="step"><span class="chev">&rsaquo;</span><span class="lbl">Ran 2 commands and then read every changed file across the whole working tree before answering</span><span class="fig">+128</span><span class="fig">−46</span></div>',
+      '<div class="step"><span class="chev">&rsaquo;</span><span class="lbl">Ran 2 commands +12 −4</span></div>',
+    ],
+    edge: [
+      '<div class="step"><span class="chev">&rsaquo;</span><span class="lbl">Exported the quarterly planning archive for the whole team to quarterly-report-2026-10-15.csv</span></div>',
+      '<div class="step"><span class="chev">&rsaquo;</span><span class="lbl">Ran 2 commands and then waited for the long running build step to finish and report that it failed</span></div>',
+      '<div class="step"><span class="chev">&rsaquo;</span><span class="lbl">Ran 2 commands and then read every changed file across the whole working tree and summarised them</span></div>',
+      '<div class="step wrap" style="display:block">Ran 2 commands, read 3 files, edited 5 files, searched 4 times +128 −46 2 failed 1m30s</div>',
+      '<div class="clamp">Ran 2 commands, read 3 files, edited 5 files, searched 4 times, then read every changed file again and again +128 −46 2 failed 1m30s</div>',
+      '<div class="step" hidden><span class="chev">&rsaquo;</span><span class="lbl">Ran 2 commands, read 3 files, edited 5 files, searched 4 times +128 −46 2 failed 1m30s</span></div>',
+    ],
+  };
+  addEventListener('DOMContentLoaded', () => {
+    const rows = PAGES[new URLSearchParams(location.search).get('case') || 'pass'];
+    document.querySelector('main').innerHTML = '<div class="card">' + rows.join('') + '</div>';
+  });
+</script>
+</head>
+<body>
+  <main></main>
+</body>
+</html>

@@ -60,8 +60,8 @@ def _doc(name: str) -> dict:
 # ---- rubric: the real file loads and names only metrics that exist ----------
 
 rubric = dr.load_rubric(RUBRIC)
-check(rubric.version == "1.37.0", "rubric meta.version stamped")
-check(len(rubric.rules) == 47, f"47 seed rules loaded (got {len(rubric.rules)})")
+check(rubric.version == "1.38.0", "rubric meta.version stamped")
+check(len(rubric.rules) == 48, f"48 seed rules loaded (got {len(rubric.rules)})")
 check(rubric.categories == ["typography", "color", "touch", "navigation", "layout", "components", "a11y"],
       "categories in rubric order")
 check(rb.check_metric_names(rubric, measure.metric_paths()) == [], "every rule metric is a script path or a derived metric")
@@ -833,8 +833,28 @@ _l08 = _layout("LAYOUT-08", [_spilled, {}, {}])
 check(_l08["status"] == "fail" and _l08["evidence"][0]["items"][0]["container"] == "div.card",
       f"LAYOUT-08: a control past its card's side fails and names the container -- {_l08['status']}")
 check(_layout("LAYOUT-08", [{"control_overflow_count": 0, "control_overflow": []}, {}, {}])["status"] == "pass", "LAYOUT-08: controls inside their container pass")
+# ---- LAYOUT-09: a single-line row's own ellipsis never cuts a count, a status or a duration at phone width (#1343) ----
+_cut = {"sel": "span.lbl", "text": "Ran 2 commands, read 3 files +128", "why": "cuts failed 1m30s", "over_px": 44}
+_l09 = _layout("LAYOUT-09", [{}, {"clipped_trailing_count": 1, "clipped_trailing": [_cut]}, {}])
+check(_l09["status"] == "fail" and _l09["severity"] == "P2" and _l09["category"] == "layout" and _l09["owner"] == "app"
+      and _l09["evidence"][0]["items"] == [_cut] and _l09["measured"] == {"iphone-light-home": 1.0},
+      f"LAYOUT-09: a phone-width row whose ellipsis cuts a figure fails, names the row and what it cuts -- {_l09['status']} {_l09['evidence']}")
+check(_layout("LAYOUT-09", [{}, {"clipped_trailing_count": 0, "clipped_trailing": []}, {}])["status"] == "pass", "LAYOUT-09: a phone with no cut figure passes")
+check(_layout("LAYOUT-09", [{"clipped_trailing_count": 3, "clipped_trailing": [_cut]}, {"clipped_trailing_count": 0, "clipped_trailing": []}, {}])["status"] == "pass",
+      "LAYOUT-09: a desktop hit is not read, the rule is the phone width's")
+_l09_doc = _doc("compliant")
+for _s in _l09_doc["screens"]:
+    _s["metrics"]["layout"].update({"clipped_trailing_count": 1, "clipped_trailing": [_cut]})
+_l09_out = ev.evaluate(_l09_doc, rubric, _specs("compliant"))
+_l09_sentence = report_mod.finding_sentence(next(r for r in _l09_out["rules"] if r["id"] == "LAYOUT-09"), _l09_out)
+check("span.lbl" in _l09_sentence and "cuts failed 1m30s" in _l09_sentence and "{" not in _l09_sentence,
+      f"LAYOUT-09: the fix sentence names the row and the figure it cuts -- {_l09_sentence}")
+check(next(r for r in rubric.rules if r.id == "LAYOUT-09").devices == ["iphone"], "LAYOUT-09 is limited to the iphone leg")
+check(not any("ellipsis" in j.question.lower() for j in rubric.judgment), "no [[judgment]] question covers a figure cut by an ellipsis, so none double-counts LAYOUT-09")
+
 for _rid, _sect, _keys in (("COMP-07", "controls", ("label_fit_bad", "label_fit_bad_count")),
-                           ("LAYOUT-08", "layout", ("control_overflow", "control_overflow_count"))):
+                           ("LAYOUT-08", "layout", ("control_overflow", "control_overflow_count")),
+                           ("LAYOUT-09", "layout", ("clipped_trailing", "clipped_trailing_count"))):
     _old = _doc("compliant")
     for _s in _old["screens"]:
         for _k in _keys:
@@ -850,7 +870,7 @@ check(all(s == "pass" for s in statuses_c.values()), f"compliant: every rule pas
 check(all(v["score"] == 100.0 and v["grade"] == "A" and not v["unmeasured"] for v in out_c["categories"].values()),
       "compliant: every category 100/A, measured")
 check(out_c["overall"] == {"score": 100.0, "grade": "A", "unmeasured": False}, "compliant: overall A")
-check(out_c["schema_version"] == 1 and out_c["rubric_version"] == "1.37.0" and out_c["target"] == "fixture-app"
+check(out_c["schema_version"] == 1 and out_c["rubric_version"] == "1.38.0" and out_c["target"] == "fixture-app"
       and out_c["commit"].startswith("0000") and out_c["generated_at"].endswith("Z"), "evaluate envelope keys")
 check([s["id"] for s in out_c["screens"]] == ["desktop-light-home", "iphone-light-home", "desktop-light-dialog-edit"],
       "evaluate echoes the screen list")
@@ -1822,7 +1842,7 @@ else:
           f"measure CLI walks the fixture: 2 tabs + 1 dialog x light/dark, plus the absent Settings gear (#1217) ({proc.stdout[-300:]}{proc.stderr[-300:]})")
     check(lines.get("RUN_DIR") == str(run_dir) and Path(lines.get("METRICS", "")).is_file(), "RUN_DIR/METRICS lines point at the run dir")
     doc = json.loads(Path(lines["METRICS"]).read_text(encoding="utf-8"))
-    check(doc["interpreter"] == str(interp) and doc["schema_version"] == 1 and doc["rubric_version"] == "1.37.0", "metrics.json records the interpreter + versions")
+    check(doc["interpreter"] == str(interp) and doc["schema_version"] == 1 and doc["rubric_version"] == "1.38.0", "metrics.json records the interpreter + versions")
     if not (scaffold / "tests" / "e2e" / "_geometry.py").is_file():
         _h.skip("browser leg: project-scaffolding/tests/e2e/_geometry.py absent -- hit-target assertions NOT verified")
     check(doc["walk"]["info"]["geometry"] == ("loaded" if (scaffold / "tests" / "e2e" / "_geometry.py").is_file() else "GEOMETRY_MISSING"),
@@ -2318,6 +2338,33 @@ else:
     check(_lf_f.get("controls", {}).get("label_fit_bad_count") == 0 and _lf_f.get("layout", {}).get("control_overflow_count") == 0,
           f"COMP-07 + LAYOUT-08 after: the fixed dialog passes, and a prose button, an ellipsis label and a self-scrolling chip strip are not findings "
           f"-- {_lf_f.get('controls', {}).get('label_fit_bad')} {_lf_f.get('layout', {}).get('control_overflow')}")
+
+    # LAYOUT-09: a step line's ellipsis must not cut its counts at the 390px leg (#1343)
+    def _walk_clipped(case: str) -> dict:
+        out_dir = STATE / f"fixture-clipped-trailing-{case}"
+        proc = subprocess.run(
+            [str(interp), str(REPO / "skills" / "_lib" / "design_review" / "walk.py"), "--url", (FIX / "clipped_trailing.html").as_uri() + f"?case={case}",
+             "--out", str(out_dir), "--devices", "iphone", "--scaffold", str(scaffold), "--params", str(STATE / "steps-params.json")],
+            capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=600,
+        )
+        if proc.returncode != 0:
+            return {"error": proc.stderr[-300:]}
+        return next((s for s in json.loads((out_dir / "screens.json").read_text(encoding="utf-8")) if s["id"] == "iphone-light-root"), {})
+
+    def _l09_status(screen: dict) -> str:
+        d = _doc("compliant")
+        d["screens"] = [dict(d["screens"][1], id=screen["id"], view=screen.get("view"), metrics=screen["metrics"])]
+        return next(r for r in ev.evaluate(d, rubric, _specs("compliant"))["rules"] if r["id"] == "LAYOUT-09")["status"]
+
+    ct = {case: _walk_clipped(case) for case in ("fail", "pass", "edge")}
+    check(all("metrics" in s for s in ct.values()), f"clipped trailing: each case walks the 390px leg -- {[s.get('error') for s in ct.values()]}")
+    _ct_hits = lambda s: [(h["text"][:12], h["why"]) for h in (s["metrics"]["layout"].get("clipped_trailing") or [])]
+    check(_ct_hits(ct["fail"]) == [("Ran 2 comman", "cuts failed 1m30s"), ("Ran 2 comman", "cuts 1m30s")] and _l09_status(ct["fail"]) == "fail",
+          f"LAYOUT-09: 'Ran 2 commands, read 3 files +128 -46 2 failed 1m30s' in one ellipsis element, and a label ending in a duration, fail -- {_ct_hits(ct['fail'])}")
+    check(_ct_hits(ct["pass"]) == [] and _l09_status(ct["pass"]) == "pass",
+          f"LAYOUT-09: the same counts as non-shrinking trailing items pass, a label clipped on words only passes, a fitting label passes -- {_ct_hits(ct['pass'])}")
+    check(_ct_hits(ct["edge"]) == [] and _l09_status(ct["edge"]) == "pass",
+          f"LAYOUT-09: a cut file name and date, a cut 'failed' with no number before it, a cut tail of words, a wrapping line, a line clamp and a hidden row are not cut figures -- {_ct_hits(ct['edge'])}")
 
     # stretched graphic: a chart SVG with preserveAspectRatio="none" is not an icon; a real off-step icon still is (#1211)
     sg_dir = STATE / "fixture-stretched-graphic"
