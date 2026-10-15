@@ -1074,7 +1074,8 @@ _MEASURE_JS = r"""
       const role = el.getAttribute('role'); return role ? tag + '[role=' + role + ']' : el.hasAttribute('popover') ? tag + '[popover]' : tag; };
     const kindOf = (el) => el.tagName === 'DIALOG' ? 'dialog' : el.hasAttribute('popover') ? 'popover' : 'role-dialog';
     // Open = shown on this screen: a <dialog> with `open`, a popover matching :popover-open, and in every case visible,
-    // inside the viewport (an off-canvas drawer is closed) and not under aria-hidden or inert.
+    // inside the viewport (an off-canvas drawer is closed) and not under aria-hidden or inert. A dialog shell the walk's
+    // showModal() pass opened before the app filled it renders no box, so it stays closed: nothing in it was measured.
     const isOpen = (el) => { if (el.closest('[aria-hidden=true], [inert]')) return false;
       if (el.tagName === 'DIALOG' && !el.open) return false;
       if (el.hasAttribute('popover')) { try { if (!el.matches(':popover-open')) return false; } catch (e) { /* no popover API: visibility decides */ } }

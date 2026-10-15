@@ -379,8 +379,9 @@ def _method(doc: dict) -> str:
         n, sample = int(cov["not_walked_count"]), [str(k) for k in cov.get("not_walked") or []]
         more = f" +{n - len(sample)} more" if n > len(sample) else ""
         items.append(f"not walked: {n} overlay surface{'s' if n != 1 else ''} ({', '.join(sample)}{more}) — present in the page "
-                     "but never open on a walked screen, so no rule measured them; declare a [design.review] extra_steps "
-                     "entry that opens each one. Coverage only: the grade does not count it")
+                     "but never shown on a walked screen (a dialog the walk opened while it was still an empty shell "
+                     "counts as not shown), so no rule measured them; declare a [design.review] extra_steps entry that "
+                     "opens each one the way the app does. Coverage only: the grade does not count it")
     elif cov.get("status") == "unknown" and ok:
         items.append("overlay coverage not established: no measured screen listed its overlay surfaces (metrics captured "
                      "before the listing existed, or the listing failed), so surfaces the walk never opened are unknown, not none")
