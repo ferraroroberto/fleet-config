@@ -1,0 +1,79 @@
+<!doctype html>
+<!-- Static fixture for TYPE-07, a heading rendered smaller than the body text it introduces (fleet-config#1341).
+     Walked at the desktop leg (1440x900) three times, `?case=` picking the page; each has two tabs. Body text is 16px.
+       fail   an h2 at 14px above a 16px paragraph, and a role=heading div at 14px above a 16px paragraph
+              (on the other tab)                                                              -> two hits
+       pass   an h2 at 20px above a 16px paragraph; an h3 at 14px above a 14px paragraph (equal is not smaller);
+              an h2 at 14px above a 12px caption paragraph                                   -> no hit
+       edge   what is not "the body text a heading introduces", each beside a small heading:
+              a stat tile (12px h3, then a 28px value of two characters), a header row (a 14px h2 with only a
+              button beside it), a heading whose next sibling is another heading, a hidden paragraph, a
+              paragraph four siblings away, a 14px h3 above a short 18px badge, and a 12px uppercase h3 (the
+              overline group-header role) above 14px helper text                                  -> no hit
+     The next visible body-text sibling: among the next three visible sibling elements of the heading, the first
+     one that is a prose block (p, blockquote, li, dd, or a div/span with its own text) of at least three words and
+     twenty characters; the scan stops at another heading, and a control never counts.
+     Asserted by tests/test_design_review.py. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>design_review heading and body fixture</title>
+<style>
+  html, body { margin: 0; background: #ffffff; color: #1f2328; font-family: system-ui, sans-serif; font-size: 16px; }
+  body { padding: 16px; }
+  nav.tabs { display: flex; gap: 8px; }
+  nav.tabs button, main button { min-width: 60px; min-height: 44px; font: inherit; }
+  section[hidden] { display: none; }
+  p { margin: 4px 0 12px; font-size: 16px; }
+  h2, h3, [role=heading] { margin: 8px 0 4px; font-weight: 600; }
+  .s14 { font-size: 14px; }
+  .s12 { font-size: 12px; }
+  .s20 { font-size: 20px; }
+  .cap { font-size: 12px; }
+  .stat { margin-bottom: 12px; }
+  .stat .value { font-size: 28px; font-weight: 700; display: block; }
+  .row { display: flex; align-items: center; gap: 8px; }
+  .badge { display: block; font-size: 18px; }
+  .over { text-transform: uppercase; letter-spacing: 0.06em; }
+  [hidden] { display: none; }
+</style>
+<script>
+  const PAGES = {
+    fail: [
+      ['Recordings', '<h2 class="s14">Recent takes</h2><p>Your latest recordings appear here once they finish uploading.</p>'],
+      ['Options', '<div role="heading" aria-level="2" class="s14">Text size</div><p>Pick the size that reads comfortably on this screen.</p>'],
+    ],
+    pass: [
+      ['Recordings', '<h2 class="s20">Recent takes</h2><p>Your latest recordings appear here once they finish uploading.</p>'
+        + '<h3 class="s14">Older takes</h3><p class="s14">Recordings from earlier weeks stay in the archive for a year.</p>'],
+      ['Options', '<h2 class="s14">Text size</h2><p class="cap">Applies to every tab and is saved on this device.</p>'],
+    ],
+    edge: [
+      ['Recordings', '<div class="stat"><h3 class="s12">Running jobs</h3><span class="value">42</span></div>'
+        + '<div class="row"><h2 class="s14">Recent takes</h2><button type="button">Refresh</button></div>'
+        + '<h2 class="s14">Archive</h2><h3 class="s14">Older takes</h3><p hidden>This paragraph is hidden from view entirely.</p>'],
+      ['Options', '<h3 class="s14">Far away</h3><div class="cap">One</div><div class="cap">Two</div><div class="cap">Three</div><p>This paragraph is four siblings away from its heading.</p>'
+        + '<h3 class="s14">Status</h3><span class="badge">Beta</span>'
+        + '<h3 class="s12 over">Group header</h3><p class="s14">An overline group header sits at 12px above 14px helper text.</p>'],
+    ],
+  };
+  addEventListener('DOMContentLoaded', () => {
+    const pages = PAGES[new URLSearchParams(location.search).get('case') || 'pass'];
+    const tabs = document.querySelector('nav.tabs'), main = document.querySelector('main');
+    pages.forEach(([name, html], i) => {
+      tabs.insertAdjacentHTML('beforeend', `<button type="button" role="tab" data-tab="${name.toLowerCase()}" aria-controls="pane${i}" aria-selected="${i === 0}">${name}</button>`);
+      main.insertAdjacentHTML('beforeend', `<section id="pane${i}" role="tabpanel"${i ? ' hidden' : ''}>${html}</section>`);
+    });
+    tabs.querySelectorAll('[role=tab]').forEach(tab => tab.addEventListener('click', () => {
+      tabs.querySelectorAll('[role=tab]').forEach(t => t.setAttribute('aria-selected', String(t === tab)));
+      main.querySelectorAll('[role=tabpanel]').forEach(p => p.hidden = (p.id !== tab.getAttribute('aria-controls')));
+    }));
+  });
+</script>
+</head>
+<body>
+  <nav class="tabs" role="tablist" aria-label="Primary"></nav>
+  <main></main>
+</body>
+</html>

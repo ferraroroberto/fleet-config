@@ -33,7 +33,7 @@
 # metrics.json, every evaluate output and every filed finding.
 
 [meta]
-version = "1.35.0"   # per-bump history: git log -- design.rubric.toml, and the issues/PRs it cites
+version = "1.36.0"   # per-bump history: git log -- design.rubric.toml, and the issues/PRs it cites
 seeded_from = "app-launcher rendered audit, 2026-09-21 (fleet-config#962)"
 
 [weights]
@@ -177,6 +177,19 @@ severity = "P2"
 owner = "app"
 standard = "design.md typography: every class of label (buttons, tabs, menu items, headings, stat labels) is cased one way across the whole app, sentence case throughout or title case throughout; the J-08 ratchet (fleet-config#1365)"
 fix_template = "{count} labels on {screen} are cased unlike the rest of their kind in the app ({sample}); set every label of that kind in one casing."
+mockup = "none"
+
+[[rules]]
+id = "TYPE-07"
+category = "typography"
+title = "A heading renders smaller than the body text it introduces"
+metric = "text.heading_smaller_than_body_count"
+fail_when = "gt"
+threshold = 0
+severity = "P2"
+owner = "app"
+standard = "design.md typography: a heading is never rendered smaller than the body text it introduces; `heading-md` (20px) titles a section and `label` is for controls, never for a heading (fleet-config#1341, found in the app-launcher Chat review). The body text is the next prose sibling within three visible siblings; a stat value, a control, a short badge and another heading are not body text, and an uppercase `overline` group header is the one role drawn below body size"
+fix_template = "{count} headings on {screen} render smaller than the body text under them ({sample}); set a section heading in `heading-md`, a sub-heading in body bold, never below the body size."
 mockup = "none"
 
 # ---------------------------------------------------------------------------
