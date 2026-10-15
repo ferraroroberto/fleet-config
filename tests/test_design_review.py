@@ -1949,6 +1949,31 @@ check([walk.bounded_wait_ms(v, 5000) for v in (None, 0, -1, "9", 1.5, False, 100
 # ---- browser leg: the static fixture page through a sibling venv --------------
 
 FLEET = REPO.parent
+
+
+def _walk_failure(screen: object) -> str | None:
+    """Why a fixture walk's screen cannot be read, or None when it carries metrics (fleet-config#1447).
+
+    A walk that failed or timed out hands back no screen, an `{"error": ...}` stub, or a screen whose
+    `metrics` is None. A leg that indexed `screen["metrics"]` raised TypeError there; it names the walk's
+    error in one FAIL line instead, and never reads a missing walk as a pass."""
+    if not isinstance(screen, dict) or not screen:
+        return "no screen came back from the walk"
+    if "error" in screen and "metrics" not in screen:
+        return f"walk error: {screen['error']}"
+    if not isinstance(screen.get("metrics"), dict):
+        return f"no metrics (status={screen.get('status')} reason={screen.get('reason')} error={screen.get('error')})"
+    return None
+
+
+def _walk_run(argv: list, **kw) -> "subprocess.CompletedProcess":
+    """`subprocess.run` for a fixture walk, where a timeout is a failed walk (rc 124 + stderr), not a raised TimeoutExpired (fleet-config#1447)."""
+    try:
+        return subprocess.run(argv, **kw)
+    except subprocess.TimeoutExpired:
+        return subprocess.CompletedProcess(argv, 124, stdout="", stderr=f"walk timed out after {kw.get('timeout')}s")
+
+
 interp = None
 for sibling in ("project-scaffolding", "app-launcher"):
     cand = capture.resolve_interpreter(plan.Target(name=sibling, root=FLEET / sibling, base_url="file:///"))
@@ -2085,7 +2110,7 @@ else:
         tgt = STATE / f"embedded-{label}"
         tgt.mkdir(parents=True, exist_ok=True)
         (tgt / ".fleet.toml").write_text(fleet_toml, encoding="utf-8")
-        p = subprocess.run(
+        p = _walk_run(
             [sys.executable, str(REPO / "skills" / "_lib" / "design_review"), "measure", str(tgt),
              "--url", (FIX / "embedded.html").as_uri(), "--devices", "desktop", "--python", str(interp),
              "--scaffold", str(scaffold), "--run-dir", str(STATE / f"embedded-run-{label}"), "--rubric", str(RUBRIC),
@@ -2097,8 +2122,10 @@ else:
 
     emb_all = _embedded_walk("all", '[design]\nwide_views = []\n')
     emb_ex = _embedded_walk("excluded", '[design.review]\nexclude_selectors = [".preview-frame"]\n')
-    if "error" in emb_all or "error" in emb_ex:
-        check(False, f"embedded fixture walk produced metrics -- {emb_all.get('error')} {emb_ex.get('error')}")
+    _emb_bad = {label: ("measure run: " + str(d["error"])) if "error" in d else _walk_failure((d.get("screens") or [None])[0])
+                for label, d in (("all", emb_all), ("excluded", emb_ex))}
+    if any(_emb_bad.values()):
+        check(False, f"embedded.html: both walks produced metrics -- {_emb_bad}")
     else:
         m_all, m_ex = emb_all["screens"][0]["metrics"], emb_ex["screens"][0]["metrics"]
         check(m_all["text"]["under11_count"] == 2 and m_all["text"]["uppercase_count"] == 1 and m_all["targets"]["small_count"] >= 1 and "excluded" not in m_all,
@@ -2473,7 +2500,7 @@ else:
     # LAYOUT-09: a step line's ellipsis must not cut its counts at the 390px leg (#1343)
     def _walk_clipped(case: str) -> dict:
         out_dir = STATE / f"fixture-clipped-trailing-{case}"
-        proc = subprocess.run(
+        proc = _walk_run(
             [str(interp), str(REPO / "skills" / "_lib" / "design_review" / "walk.py"), "--url", (FIX / "clipped_trailing.html").as_uri() + f"?case={case}",
              "--out", str(out_dir), "--devices", "iphone", "--scaffold", str(scaffold), "--params", str(STATE / "steps-params.json")],
             capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=600,
@@ -2488,34 +2515,36 @@ else:
         return next(r for r in ev.evaluate(d, rubric, _specs("compliant"))["rules"] if r["id"] == "LAYOUT-09")["status"]
 
     ct = {case: _walk_clipped(case) for case in ("fail", "pass", "edge", "prose", "status")}
-    check(all("metrics" in s for s in ct.values()), f"clipped trailing: each case walks the 390px leg -- {[s.get('error') for s in ct.values()]}")
-    _ct_hits = lambda s: [(h["text"][:12], h["why"]) for h in (s["metrics"]["layout"].get("clipped_trailing") or [])]
-    check(_ct_hits(ct["fail"]) == [("Ran 2 comman", "cuts failed 1m30s"), ("Ran 2 comman", "cuts 1m30s")] and _l09_status(ct["fail"]) == "fail",
-          f"LAYOUT-09: 'Ran 2 commands, read 3 files +128 -46 2 failed 1m30s' in one ellipsis element, and a label ending in a duration, fail -- {_ct_hits(ct['fail'])}")
-    check(_ct_hits(ct["pass"]) == [] and _l09_status(ct["pass"]) == "pass",
-          f"LAYOUT-09: the same counts as non-shrinking trailing items pass, a label clipped on words only passes, a fitting label passes -- {_ct_hits(ct['pass'])}")
-    check(_ct_hits(ct["edge"]) == [] and _l09_status(ct["edge"]) == "pass",
-          f"LAYOUT-09: a cut file name and date, a cut 'failed' with no number before it, a cut tail of words, a wrapping line, a line clamp and a hidden row are not cut figures -- {_ct_hits(ct['edge'])}")
-    # narrowed to status and meta text (#1438): a figure inside a run of words a person typed is not a finding, and what is let
-    # pass is kept as a capped sample so the exclusion can be reviewed
-    _ct_lay = lambda s: (s.get("metrics") or {}).get("layout") or {}
-    _ct_excl = lambda s: _ct_lay(s).get("clipped_trailing_excluded") or []
-    check(_ct_hits(ct["prose"]) == [] and _l09_status(ct["prose"]) == "pass",
-          f"LAYOUT-09: a house number cut from an address line, a version string and a clock time cut from a free-text title pass -- {_ct_hits(ct['prose'])}")
-    check(_ct_lay(ct["prose"]).get("clipped_trailing_excluded_count") == 3 and len(_ct_excl(ct["prose"])) == 3
-          and [fig in e["why"] for fig, e in zip(("14", "1.38.0", "14:30"), _ct_excl(ct["prose"]))] == [True] * 3
-          and all(e["why"].endswith("in prose") and e["sel"] and e["text"] for e in _ct_excl(ct["prose"])),
-          f"LAYOUT-09: the three prose rows are kept in the excluded sample with the figure each cut -- {_ct_excl(ct['prose'])}")
-    check(len(_ct_hits(ct["status"])) == 3 and _l09_status(ct["status"]) == "fail"
-          and "16:00" in _ct_hits(ct["status"])[0][1] and all("2m10s" in h[1] for h in _ct_hits(ct["status"])[1:]),
-          f"LAYOUT-09: a .meta slot, a status-row dd and an unmarked status line still fail on the figure they cut -- {_ct_hits(ct['status'])}")
-    check(all(_ct_excl(ct[c]) == [] and _ct_lay(ct[c]).get("clipped_trailing_excluded_count") == 0 for c in ("fail", "status")),
-          "LAYOUT-09: a row that counts is never also listed as excluded")
+    _ct_bad = {case: _walk_failure(s) for case, s in ct.items() if _walk_failure(s)}
+    check(not _ct_bad, f"clipped_trailing.html: every case walks the 390px leg with metrics -- {_ct_bad}")
+    if not _ct_bad:
+        _ct_hits = lambda s: [(h["text"][:12], h["why"]) for h in (s["metrics"]["layout"].get("clipped_trailing") or [])]
+        check(_ct_hits(ct["fail"]) == [("Ran 2 comman", "cuts failed 1m30s"), ("Ran 2 comman", "cuts 1m30s")] and _l09_status(ct["fail"]) == "fail",
+              f"LAYOUT-09: 'Ran 2 commands, read 3 files +128 -46 2 failed 1m30s' in one ellipsis element, and a label ending in a duration, fail -- {_ct_hits(ct['fail'])}")
+        check(_ct_hits(ct["pass"]) == [] and _l09_status(ct["pass"]) == "pass",
+              f"LAYOUT-09: the same counts as non-shrinking trailing items pass, a label clipped on words only passes, a fitting label passes -- {_ct_hits(ct['pass'])}")
+        check(_ct_hits(ct["edge"]) == [] and _l09_status(ct["edge"]) == "pass",
+              f"LAYOUT-09: a cut file name and date, a cut 'failed' with no number before it, a cut tail of words, a wrapping line, a line clamp and a hidden row are not cut figures -- {_ct_hits(ct['edge'])}")
+        # narrowed to status and meta text (#1438): a figure inside a run of words a person typed is not a finding, and what is let
+        # pass is kept as a capped sample so the exclusion can be reviewed
+        _ct_lay = lambda s: (s.get("metrics") or {}).get("layout") or {}
+        _ct_excl = lambda s: _ct_lay(s).get("clipped_trailing_excluded") or []
+        check(_ct_hits(ct["prose"]) == [] and _l09_status(ct["prose"]) == "pass",
+              f"LAYOUT-09: a house number cut from an address line, a version string and a clock time cut from a free-text title pass -- {_ct_hits(ct['prose'])}")
+        check(_ct_lay(ct["prose"]).get("clipped_trailing_excluded_count") == 3 and len(_ct_excl(ct["prose"])) == 3
+              and [fig in e["why"] for fig, e in zip(("14", "1.38.0", "14:30"), _ct_excl(ct["prose"]))] == [True] * 3
+              and all(e["why"].endswith("in prose") and e["sel"] and e["text"] for e in _ct_excl(ct["prose"])),
+              f"LAYOUT-09: the three prose rows are kept in the excluded sample with the figure each cut -- {_ct_excl(ct['prose'])}")
+        check(len(_ct_hits(ct["status"])) == 3 and _l09_status(ct["status"]) == "fail"
+              and "16:00" in _ct_hits(ct["status"])[0][1] and all("2m10s" in h[1] for h in _ct_hits(ct["status"])[1:]),
+              f"LAYOUT-09: a .meta slot, a status-row dd and an unmarked status line still fail on the figure they cut -- {_ct_hits(ct['status'])}")
+        check(all(_ct_excl(ct[c]) == [] and _ct_lay(ct[c]).get("clipped_trailing_excluded_count") == 0 for c in ("fail", "status")),
+              "LAYOUT-09: a row that counts is never also listed as excluded")
 
     # COMP-18: a turn is one block under one header (#1344)
     def _walk_turn(case: str) -> dict:
         out_dir = STATE / f"fixture-repeated-header-{case}"
-        proc = subprocess.run(
+        proc = _walk_run(
             [str(interp), str(REPO / "skills" / "_lib" / "design_review" / "walk.py"), "--url", (FIX / "repeated_header.html").as_uri() + f"?case={case}",
              "--out", str(out_dir), "--devices", "desktop", "--scaffold", str(scaffold), "--params", str(STATE / "steps-params.json")],
             capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=600,
@@ -2530,19 +2559,21 @@ else:
         return _c18_of(d)["status"]
 
     tn = {case: _walk_turn(case) for case in ("fail", "pass", "list", "edge", "none")}
-    check(all("metrics" in s for s in tn.values()), f"repeated header: each case walks the desktop leg -- {[s.get('error') for s in tn.values()]}")
-    _tn_runs = lambda s: [(h["who"], h["blocks"], h["text"]) for h in (s["metrics"]["layout"].get("repeated_headers") or [])]
-    _tn_whos = lambda s: sorted((h["who"], h["count"]) for h in (s["metrics"]["layout"].get("turn_headers") or []))
-    check(_tn_runs(tn["fail"]) == [("Agent", 3, "Agent · <time>"), ("Claude", 2, "Claude · <time>")] and _c18_status(tn["fail"]) == "fail",
-          f"COMP-18: three consecutive 'Agent 10:42/10:42/10:43' disclosures and two plain 'Claude 9:05 AM' cards each fail as one run -- {_tn_runs(tn['fail'])}")
-    check(_tn_runs(tn["pass"]) == [] and _tn_whos(tn["pass"]) == [("Agent", 1)] and _c18_status(tn["pass"]) == "pass",
-          f"COMP-18: one 'Agent 10:42' header over three parts passes and counts as a transcript reached -- {_tn_runs(tn['pass'])} {_tn_whos(tn['pass'])}")
-    check(_tn_runs(tn["list"]) == [] and _tn_whos(tn["list"]) == [],
-          f"COMP-18: a list of rows that each start 'Today' and event cards that each read 'Standup 09:00' are not turns -- {_tn_runs(tn['list'])} {_tn_whos(tn['list'])}")
-    check(_tn_runs(tn["edge"]) == [] and _c18_status(tn["edge"]) == "pass" and ("You", 2) in _tn_whos(tn["edge"]),
-          f"COMP-18: alternating speakers, a differing hint, a header with no control, a header-only card, a step line between two cards and a hidden twin are not runs -- {_tn_runs(tn['edge'])} {_tn_whos(tn['edge'])}")
-    check(_tn_runs(tn["none"]) == [] and _tn_whos(tn["none"]) == [] and _c18_status(tn["none"]) == "unmeasured",
-          f"COMP-18: a page with no transcript is unmeasured, not a pass -- {_tn_whos(tn['none'])}")
+    _tn_bad = {case: _walk_failure(s) for case, s in tn.items() if _walk_failure(s)}
+    check(not _tn_bad, f"repeated_header.html: every case walks the desktop leg with metrics -- {_tn_bad}")
+    if not _tn_bad:
+        _tn_runs = lambda s: [(h["who"], h["blocks"], h["text"]) for h in (s["metrics"]["layout"].get("repeated_headers") or [])]
+        _tn_whos = lambda s: sorted((h["who"], h["count"]) for h in (s["metrics"]["layout"].get("turn_headers") or []))
+        check(_tn_runs(tn["fail"]) == [("Agent", 3, "Agent · <time>"), ("Claude", 2, "Claude · <time>")] and _c18_status(tn["fail"]) == "fail",
+              f"COMP-18: three consecutive 'Agent 10:42/10:42/10:43' disclosures and two plain 'Claude 9:05 AM' cards each fail as one run -- {_tn_runs(tn['fail'])}")
+        check(_tn_runs(tn["pass"]) == [] and _tn_whos(tn["pass"]) == [("Agent", 1)] and _c18_status(tn["pass"]) == "pass",
+              f"COMP-18: one 'Agent 10:42' header over three parts passes and counts as a transcript reached -- {_tn_runs(tn['pass'])} {_tn_whos(tn['pass'])}")
+        check(_tn_runs(tn["list"]) == [] and _tn_whos(tn["list"]) == [],
+              f"COMP-18: a list of rows that each start 'Today' and event cards that each read 'Standup 09:00' are not turns -- {_tn_runs(tn['list'])} {_tn_whos(tn['list'])}")
+        check(_tn_runs(tn["edge"]) == [] and _c18_status(tn["edge"]) == "pass" and ("You", 2) in _tn_whos(tn["edge"]),
+              f"COMP-18: alternating speakers, a differing hint, a header with no control, a header-only card, a step line between two cards and a hidden twin are not runs -- {_tn_runs(tn['edge'])} {_tn_whos(tn['edge'])}")
+        check(_tn_runs(tn["none"]) == [] and _tn_whos(tn["none"]) == [] and _c18_status(tn["none"]) == "unmeasured",
+              f"COMP-18: a page with no transcript is unmeasured, not a pass -- {_tn_whos(tn['none'])}")
 
     # stretched graphic: a chart SVG with preserveAspectRatio="none" is not an icon; a real off-step icon still is (#1211)
     sg_dir = STATE / "fixture-stretched-graphic"
@@ -2621,14 +2652,15 @@ else:
     # TYPE-05 / TYPE-06: capitals typed in the markup, and one class of label cased two ways across the tabs (#1365)
     def _walk_casing(case: str) -> list:
         out_dir = STATE / f"fixture-casing-{case}"
-        proc = subprocess.run(
+        proc = _walk_run(
             [str(interp), str(REPO / "skills" / "_lib" / "design_review" / "walk.py"), "--url", (FIX / "casing.html").as_uri() + f"?case={case}",
              "--out", str(out_dir), "--devices", "desktop", "--scaffold", str(scaffold), "--params", str(STATE / "steps-params.json")],
             capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=600,
         )
         if proc.returncode != 0:
             return [{"error": proc.stderr[-300:]}]
-        return [s for s in json.loads((out_dir / "screens.json").read_text(encoding="utf-8")) if s["id"].startswith("desktop-light-") and s.get("status") == "ok"]
+        walked = json.loads((out_dir / "screens.json").read_text(encoding="utf-8"))
+        return [s for s in walked if s["id"].startswith("desktop-light-") and s.get("status") == "ok"] or [{"error": f"no screen walked ok -- {[(s.get('id'), s.get('status'), s.get('error')) for s in walked]}"}]
 
     def _casing_rules(screens: list) -> dict:
         d = _doc("compliant")
@@ -2636,37 +2668,40 @@ else:
         return {r["id"]: r for r in ev.evaluate(d, rubric, _specs("compliant"))["rules"] if r["id"] in ("TYPE-05", "TYPE-06")}
 
     cs_ok, cs_caps, cs_mixed = _walk_casing("ok"), _walk_casing("caps"), _walk_casing("mixed")
-    check(all("metrics" in s for s in cs_ok + cs_caps + cs_mixed) and len(cs_ok) == len(cs_caps) == len(cs_mixed) == 2,
-          f"casing: each case walks its two tabs -- {[s.get('id', s) for s in cs_ok + cs_caps + cs_mixed]}")
-    _lit = [lab["text"] for s in cs_caps for lab in s["metrics"]["casing"]["labels"] if lab["literal"]]
-    check(_lit == ["RECORD", "PDF", "ES", "EXPORT PDF", "SETTINGS"],
-          f"casing: every label typed in capitals is recorded as literal, the identifier-shaped ACER-PC1 heading is not -- {_lit}")
-    _r_caps, _r_ok, _r_mixed = _casing_rules(cs_caps), _casing_rules(cs_ok), _casing_rules(cs_mixed)
-    _ok_texts = {lab["text"] for s in cs_ok for lab in s["metrics"]["casing"]["labels"]}
-    check("Translate to English" in _ok_texts and not _ok_texts & {"Instructions View", "(no transcript) 0 words"},
-          f"casing: a proper noun is recorded, a name-and-action row and a reading with a digit are not -- {sorted(_ok_texts)}")
-    check(_r_caps["TYPE-05"]["status"] == "fail"
-          and [i["text"] for e in _r_caps["TYPE-05"]["evidence"] for i in e["items"]] == ["RECORD", "EXPORT PDF", "SETTINGS"]
-          and _r_caps["TYPE-06"]["status"] == "pass",
-          f"TYPE-05: RECORD, a SETTINGS heading and EXPORT PDF fail; PDF and the ES chip pass -- {_r_caps['TYPE-05']['evidence']}")
-    check(_r_ok["TYPE-05"]["status"] == "pass" and _r_ok["TYPE-06"]["status"] == "pass",
-          f"TYPE-05 / TYPE-06: sentence case, an acronym button, an ES chip and list-row data cased either way pass -- "
-          f"{ [(r['id'], r['status'], r['measured']) for r in _r_ok.values()] }")
-    _clash = sorted(i["text"] for e in _r_mixed["TYPE-06"]["evidence"] for i in e["items"])
-    check(_r_mixed["TYPE-06"]["status"] == "fail" and _clash == ["Open Settings", "Running"] and _r_mixed["TYPE-05"]["status"] == "pass",
-          f"TYPE-06: the capitalised stat label and the Title Case button are the minority of their classes across the two tabs -- {_clash}")
+    _cs_all = cs_ok + cs_caps + cs_mixed
+    _cs_good = all(_walk_failure(s) is None for s in _cs_all) and len(cs_ok) == len(cs_caps) == len(cs_mixed) == 2
+    check(_cs_good, f"casing: each case walks its tabs with metrics -- {[_walk_failure(s) or s['id'] for s in _cs_all]}")
+    if _cs_good:
+        _lit = [lab["text"] for s in cs_caps for lab in s["metrics"]["casing"]["labels"] if lab["literal"]]
+        check(_lit == ["RECORD", "PDF", "ES", "EXPORT PDF", "SETTINGS"],
+              f"casing: every label typed in capitals is recorded as literal, the identifier-shaped ACER-PC1 heading is not -- {_lit}")
+        _r_caps, _r_ok, _r_mixed = _casing_rules(cs_caps), _casing_rules(cs_ok), _casing_rules(cs_mixed)
+        _ok_texts = {lab["text"] for s in cs_ok for lab in s["metrics"]["casing"]["labels"]}
+        check("Translate to English" in _ok_texts and not _ok_texts & {"Instructions View", "(no transcript) 0 words"},
+              f"casing: a proper noun is recorded, a name-and-action row and a reading with a digit are not -- {sorted(_ok_texts)}")
+        check(_r_caps["TYPE-05"]["status"] == "fail"
+              and [i["text"] for e in _r_caps["TYPE-05"]["evidence"] for i in e["items"]] == ["RECORD", "EXPORT PDF", "SETTINGS"]
+              and _r_caps["TYPE-06"]["status"] == "pass",
+              f"TYPE-05: RECORD, a SETTINGS heading and EXPORT PDF fail; PDF and the ES chip pass -- {_r_caps['TYPE-05']['evidence']}")
+        check(_r_ok["TYPE-05"]["status"] == "pass" and _r_ok["TYPE-06"]["status"] == "pass",
+              f"TYPE-05 / TYPE-06: sentence case, an acronym button, an ES chip and list-row data cased either way pass -- "
+              f"{ [(r['id'], r['status'], r['measured']) for r in _r_ok.values()] }")
+        _clash = sorted(i["text"] for e in _r_mixed["TYPE-06"]["evidence"] for i in e["items"])
+        check(_r_mixed["TYPE-06"]["status"] == "fail" and _clash == ["Open Settings", "Running"] and _r_mixed["TYPE-05"]["status"] == "pass",
+              f"TYPE-06: the capitalised stat label and the Title Case button are the minority of their classes across the two tabs -- {_clash}")
 
     # TYPE-07: a heading rendered smaller than the body text under it (#1341)
     def _walk_heading_body(case: str) -> list:
         out_dir = STATE / f"fixture-heading-body-{case}"
-        proc = subprocess.run(
+        proc = _walk_run(
             [str(interp), str(REPO / "skills" / "_lib" / "design_review" / "walk.py"), "--url", (FIX / "heading_body.html").as_uri() + f"?case={case}",
              "--out", str(out_dir), "--devices", "desktop", "--scaffold", str(scaffold), "--params", str(STATE / "steps-params.json")],
             capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=600,
         )
         if proc.returncode != 0:
             return [{"error": proc.stderr[-300:]}]
-        return [s for s in json.loads((out_dir / "screens.json").read_text(encoding="utf-8")) if s["id"].startswith("desktop-light-") and s.get("status") == "ok"]
+        walked = json.loads((out_dir / "screens.json").read_text(encoding="utf-8"))
+        return [s for s in walked if s["id"].startswith("desktop-light-") and s.get("status") == "ok"] or [{"error": f"no screen walked ok -- {[(s.get('id'), s.get('status'), s.get('error')) for s in walked]}"}]
 
     def _t07_hits(screens: list) -> list:
         return [(h.get("text"), h.get("px"), h.get("body_px")) for s in screens for h in (s["metrics"]["text"].get("heading_smaller_than_body") or [])]
@@ -2677,26 +2712,29 @@ else:
         return next(r for r in ev.evaluate(d, rubric, _specs("compliant"))["rules"] if r["id"] == "TYPE-07")["status"]
 
     hb_fail, hb_pass, hb_edge = _walk_heading_body("fail"), _walk_heading_body("pass"), _walk_heading_body("edge")
-    check(all("metrics" in s for s in hb_fail + hb_pass + hb_edge) and len(hb_fail) == len(hb_pass) == len(hb_edge) == 2,
-          f"heading-body: each case walks its two tabs -- {[s.get('id', s) for s in hb_fail + hb_pass + hb_edge]}")
-    check(_t07_hits(hb_fail) == [("Recent takes", 14, 16), ("Text size", 14, 16)] and _t07_status(hb_fail) == "fail",
-          f"TYPE-07: a 14px h2 and a 14px role=heading above 16px paragraphs fail -- {_t07_hits(hb_fail)}")
-    check(_t07_hits(hb_pass) == [] and _t07_status(hb_pass) == "pass",
-          f"TYPE-07: a 20px h2 above 16px body, a 14px h3 above equal 14px body and a 14px h2 above a 12px caption pass -- {_t07_hits(hb_pass)}")
-    check(_t07_hits(hb_edge) == [] and _t07_status(hb_edge) == "pass",
-          f"TYPE-07: a stat value, a header row, a heading before a heading, a hidden paragraph, a paragraph four siblings away and a short badge are not body text -- {_t07_hits(hb_edge)}")
+    _hb_all = hb_fail + hb_pass + hb_edge
+    _hb_good = all(_walk_failure(s) is None for s in _hb_all) and len(hb_fail) == len(hb_pass) == len(hb_edge) == 2
+    check(_hb_good, f"heading-body: each case walks its tabs with metrics -- {[_walk_failure(s) or s['id'] for s in _hb_all]}")
+    if _hb_good:
+        check(_t07_hits(hb_fail) == [("Recent takes", 14, 16), ("Text size", 14, 16)] and _t07_status(hb_fail) == "fail",
+              f"TYPE-07: a 14px h2 and a 14px role=heading above 16px paragraphs fail -- {_t07_hits(hb_fail)}")
+        check(_t07_hits(hb_pass) == [] and _t07_status(hb_pass) == "pass",
+              f"TYPE-07: a 20px h2 above 16px body, a 14px h3 above equal 14px body and a 14px h2 above a 12px caption pass -- {_t07_hits(hb_pass)}")
+        check(_t07_hits(hb_edge) == [] and _t07_status(hb_edge) == "pass",
+              f"TYPE-07: a stat value, a header row, a heading before a heading, a hidden paragraph, a paragraph four siblings away and a short badge are not body text -- {_t07_hits(hb_edge)}")
 
     # COMP-17: code at its size, off the dark hole (#1342)
     def _walk_code(case: str) -> list:
         out_dir = STATE / f"fixture-code-{case}"
-        proc = subprocess.run(
+        proc = _walk_run(
             [str(interp), str(REPO / "skills" / "_lib" / "design_review" / "walk.py"), "--url", (FIX / "code_spec.html").as_uri() + f"?case={case}",
              "--out", str(out_dir), "--devices", "desktop", "--scaffold", str(scaffold), "--params", str(STATE / "steps-params.json")],
             capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=600,
         )
         if proc.returncode != 0:
             return [{"error": proc.stderr[-300:]}]
-        return [s for s in json.loads((out_dir / "screens.json").read_text(encoding="utf-8")) if s.get("status") == "ok"]
+        walked = json.loads((out_dir / "screens.json").read_text(encoding="utf-8"))
+        return [s for s in walked if s.get("status") == "ok"] or [{"error": f"no screen walked ok -- {[(s.get('id'), s.get('status'), s.get('error')) for s in walked]}"}]
 
     def _c17_hits(screens: list, theme: str) -> list:
         return [(h.get("text"), h.get("px"), h.get("why")) for s in screens if s["id"].startswith(f"desktop-{theme}-")
@@ -2709,19 +2747,21 @@ else:
         return next(r for r in ev.evaluate(d, rubric, _specs("compliant"))["rules"] if r["id"] == "COMP-17")["status"]
 
     cd_fail, cd_pass, cd_edge = _walk_code("fail"), _walk_code("pass"), _walk_code("edge")
-    check(all("metrics" in s for s in cd_fail + cd_pass + cd_edge) and len(cd_fail) == len(cd_pass) == len(cd_edge) == 6,
-          f"code: each case walks its three tabs in light and dark -- {[s.get('id', s) for s in cd_fail + cd_pass + cd_edge]}")
-    _c17_light = [("git status", 12, "inline at caption size"), ("git diff", 10.5, "inline under 0.875em"), ("$ git log --oneline", 12, "listing under 13px")]
-    check(_c17_hits(cd_fail, "light") == _c17_light and _c17_status(cd_fail, "light") == "fail",
-          f"COMP-17: a 12px code in 16px text, a 10.5px code in 14px text and a 12px pre fail in light; the inset-filled code does not -- {_c17_hits(cd_fail, 'light')}")
-    check(_c17_hits(cd_fail, "dark") == _c17_light + [("server.py", 14, "darker than its card")] and _c17_status(cd_fail, "dark") == "fail",
-          f"COMP-17: in dark the same three fail and a code filled true black on a dark card fails too -- {_c17_hits(cd_fail, 'dark')}")
-    check(all(_c17_hits(cd_pass, t) == [] and _c17_status(cd_pass, t) == "pass" for t in ("light", "dark")),
-          f"COMP-17: 14px code in 16px text, 12.25px in 14px, a 14px kbd, a 13px pre, the neutral-soft chip and a lighter fill pass in both themes -- "
-          f"{_c17_hits(cd_pass, 'light')} {_c17_hits(cd_pass, 'dark')}")
-    check(all(_c17_hits(cd_edge, t) == [] and _c17_status(cd_edge, t) == "pass" for t in ("light", "dark")),
-          f"COMP-17: hidden code, a terminal, a pre filled with its card's own colour and a code inside a 13px pre are not off-spec -- "
-          f"{_c17_hits(cd_edge, 'light')} {_c17_hits(cd_edge, 'dark')}")
+    _cd_all = cd_fail + cd_pass + cd_edge
+    _cd_good = all(_walk_failure(s) is None for s in _cd_all) and len(cd_fail) == len(cd_pass) == len(cd_edge) == 6
+    check(_cd_good, f"code: each case walks its tabs with metrics -- {[_walk_failure(s) or s['id'] for s in _cd_all]}")
+    if _cd_good:
+        _c17_light = [("git status", 12, "inline at caption size"), ("git diff", 10.5, "inline under 0.875em"), ("$ git log --oneline", 12, "listing under 13px")]
+        check(_c17_hits(cd_fail, "light") == _c17_light and _c17_status(cd_fail, "light") == "fail",
+              f"COMP-17: a 12px code in 16px text, a 10.5px code in 14px text and a 12px pre fail in light; the inset-filled code does not -- {_c17_hits(cd_fail, 'light')}")
+        check(_c17_hits(cd_fail, "dark") == _c17_light + [("server.py", 14, "darker than its card")] and _c17_status(cd_fail, "dark") == "fail",
+              f"COMP-17: in dark the same three fail and a code filled true black on a dark card fails too -- {_c17_hits(cd_fail, 'dark')}")
+        check(all(_c17_hits(cd_pass, t) == [] and _c17_status(cd_pass, t) == "pass" for t in ("light", "dark")),
+              f"COMP-17: 14px code in 16px text, 12.25px in 14px, a 14px kbd, a 13px pre, the neutral-soft chip and a lighter fill pass in both themes -- "
+              f"{_c17_hits(cd_pass, 'light')} {_c17_hits(cd_pass, 'dark')}")
+        check(all(_c17_hits(cd_edge, t) == [] and _c17_status(cd_edge, t) == "pass" for t in ("light", "dark")),
+              f"COMP-17: hidden code, a terminal, a pre filled with its card's own colour and a code inside a 13px pre are not off-spec -- "
+              f"{_c17_hits(cd_edge, 'light')} {_c17_hits(cd_edge, 'dark')}")
 
     # UA-font nav tab: voice-transcriber's <button class="tab"> tabs had no `font: inherit` and read Arial under a system-ui body;
     # TYPE-02 reads them (a tab is a <button>), an inheriting button beside them is not reported (#1211)
