@@ -7,7 +7,7 @@ description: Regenerate the fleet architecture map (crawl every repo under E:\au
 
 **Goal:** keep one always-current, shareable picture of the whole personal fleet. Crawl the fleet, reconcile it against the written architecture, render the visual, commit when it changed, drop the fresh image in Telegram — every run, on-demand or scheduled.
 
-**The map is self-describing:** each repo declares its own card in a root `.fleet.toml`, and `.claude/skills/system-map/build_data.py` aggregates those (plus the hand-maintained `architecture/fleet.residual.json`) into the *generated* `architecture/fleet.data.js` that both renderers read — `architecture/system-map.html` (the PNG) and `.claude/skills/system-map/render_mermaid.py` (the text-native `.mmd` fleet-map doc `global-CLAUDE.md` points at). `architecture/ARCHITECTURE.md` is the human-readable narrative that must agree with it; `tests/run_acceptance.py` fails loud if the fleet, the data file, and the doc ever drift apart — enforced, not hoped for. Per-repo `.fleet.toml` aggregation is the one exception: its inputs live in sibling checkouts, so it reports drift as `SKIP` rather than failing fleet-config's gate, and **this skill owns fixing it** (step 2).
+**The map is self-describing:** each repo declares its own card in a root `.fleet.toml`, and `.claude/skills/system-map/build_data.py` aggregates those (plus the hand-maintained `architecture/fleet.residual.json`) into the *generated* `architecture/fleet.data.js` that both renderers read — `architecture/system-map.html` (the PNG) and `.claude/skills/system-map/render_mermaid.py` (the text-native `.mmd` fleet-map doc `global-CLAUDE.md` points at). `architecture/ARCHITECTURE.md` is the human-readable narrative that must agree with it; `tests/run_acceptance.py` fails if the fleet, the data file, and the doc drift apart. Per-repo `.fleet.toml` aggregation is the exception: its inputs live in sibling checkouts, so drift reports as `SKIP` and **this skill owns fixing it** (step 2).
 
 ## Execution rules (read first)
 
@@ -33,7 +33,7 @@ Run in order. A failure on one step prints a short error and stops.
 
 Compute the difference between the fleet set (step 1) and the projects currently represented in the map:
 
-- **New repo** (in the fleet, absent from the map): prefer its own `<cwd_prefix>/.fleet.toml` — if present, the card comes from there automatically. If it has none, read its `README.md` (first paragraph) and `CLAUDE.md`, write **one concise sentence** in the existing card voice, assign a layer (default **working — pipelines** unless plainly a *shared* enabling tool used by more than one app), and add a fallback card to `architecture/fleet.residual.json` (matching array: `enabling` / `web` / `pipe`; set `"repo"` when the display `nm` differs). Also add it to `ARCHITECTURE.md`. (Ideally the repo then adopts a `.fleet.toml` via the standard fan-out so the central fallback can be dropped.)
+- **New repo** (in the fleet, absent from the map): prefer its own `<cwd_prefix>/.fleet.toml` — if present, the card comes from there automatically. If it has none, read its `README.md` (first paragraph) and `CLAUDE.md`, write **one concise sentence** in the existing card voice, assign a layer (default **working — pipelines** unless plainly a *shared* enabling tool used by more than one app), and add a fallback card to `architecture/fleet.residual.json` (matching array: `enabling` / `web` / `pipe`; set `"repo"` when the display `nm` differs). Also add it to `ARCHITECTURE.md`. 
 - **Departed repo** (in the map, no longer in the fleet, or newly in `architecture_ignore`): remove it from `fleet.residual.json`, `ARCHITECTURE.md`, and its `_adopted` entry if any.
 - **Otherwise**: no content change — proceed to regenerate (specs/date may still refresh).
 
@@ -48,9 +48,9 @@ E:/automation/fleet-config/.venv/Scripts/python.exe tests/run_acceptance.py
 
 A `build_data: REFUSED <repo>: …` line means that repo's `.fleet.toml` description is longer than its card shows in two lines (per-layer cap: `architecture/README.md`, fleet-config#1250). The file is still regenerated with the repo's residual fallback card, but the run exits 1. Name every refused repo in the step-7 report; the fix is a shorter description in the owning repo, never a raised cap.
 
-The `system_map:` checks fail loud if the fleet, `fleet.data.js`, and `ARCHITECTURE.md` disagree (a forgotten repo, a stale entry, or a doc that omits a mapped repo). Fix any failure before rendering.
+The `system_map:` checks fail if the fleet, `fleet.data.js`, and `ARCHITECTURE.md` disagree. Fix any failure before rendering.
 
-**This skill owns fleet-wide `.fleet.toml` freshness** (fleet-config#562). The `fleet_toml:` aggregate checks read *sibling repos'* live checkouts, so a `.fleet.toml` commit in any other repo would otherwise turn fleet-config's own gate red — blocking every `/issue-finish`, `/quick`, and `/issue-yolo` here for a reason no commit in this repo can fix. They therefore report as `SKIP` in `tests/run_acceptance.py` (advisory: drift is named, run not failed) and only fleet-config's own card is gated hard there. Here they are load-bearing: **any `SKIP  fleet_toml:` line in this step is a failure of this run** — the regeneration above resolves it, so re-run `build_data.py`, and if a line survives, fix it in the owning repo (or drop it from `_adopted`) before rendering. Never leave the step with drift outstanding: the weekly run is the only thing that clears it.
+**This skill owns fleet-wide `.fleet.toml` freshness** (fleet-config#562). The `fleet_toml:` aggregate checks read *sibling repos'* live checkouts, so they report as `SKIP` in `tests/run_acceptance.py` (advisory) — otherwise another repo's `.fleet.toml` commit would block every `/issue-finish`, `/quick`, and `/issue-yolo` here; only fleet-config's own card is gated hard. Here they are load-bearing: **any `SKIP  fleet_toml:` line in this step is a failure of this run** — the regeneration above resolves it, so re-run `build_data.py`, and if a line survives, fix it in the owning repo (or drop it from `_adopted`) before rendering. Never leave this step with drift outstanding: the weekly run is the only thing that clears it.
 
 ### 3. Render the visual
 
@@ -95,7 +95,7 @@ If the current branch is `main` (the scheduled unattended case), also `git push`
 
 ### 6. Post the image to Telegram (every run)
 
-Post the refreshed map, folding in the change line from step 4 so the recurring run reads as alive. This is **activity-log** traffic, so route it with `--category log` (the helper resolves the `coding log` chat from `hooks/projects.toml` — never hardcode a channel id):
+Post the refreshed map with the step-4 change line, on-demand *and* scheduled. This is **activity-log** traffic, so route it with `--category log` (the helper resolves the `coding log` chat from `hooks/projects.toml` — never hardcode a channel id):
 
 ```
 E:/automation/fleet-config/.venv/Scripts/python.exe hooks/notify_send.py --category log \
@@ -104,7 +104,7 @@ E:/automation/fleet-config/.venv/Scripts/python.exe hooks/notify_send.py --categ
    --text "🛠️ Fleet architecture map - refreshed <YYYY-MM-DD>. <change line from step 4>."
 ```
 
-Always post — on-demand *and* scheduled — so the fresh picture lands on the phone. The helper never raises; a missing token just logs and exits non-zero.
+The helper never raises; a missing token just logs and exits non-zero.
 
 ### 7. Report
 
@@ -112,6 +112,6 @@ Print: the change line from step 4, projects added/removed (if any), whether a c
 
 ## Wiring the weekly schedule
 
-Add an **app-launcher Jobs** entry (Windows Task Scheduler under `\AppLauncher\`) that runs weekly, targeting the co-located `.claude/skills/system-map/run-weekly.bat`; it preserves `/system-map` plus bypass permissions and streams filtered milestones through the shared `claude_progress.py` adapter.
+An **app-launcher Jobs** entry (Windows Task Scheduler under `\AppLauncher\`) that runs weekly, targeting the co-located `.claude/skills/system-map/run-weekly.bat`; it preserves `/system-map` plus bypass permissions and streams filtered milestones through the shared `claude_progress.py` adapter.
 
 cwd = `E:/automation/fleet-config`. Same executor as every other scheduled job; the skill handles render + commit-if-changed + Telegram itself. (Alternatively a scheduled cloud agent invoking the same skill.)

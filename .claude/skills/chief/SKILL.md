@@ -75,23 +75,10 @@ prints. So a waiter is a **one-shot** task: wait for its trigger (a worker
 event, or a timeout), emit one digest, exit. You report on the wake-up, then
 relaunch the same script. Nothing re-arms it for you.
 
-- **Never a loop with an internal `sleep`.** It collects data faithfully and
-  reports it to nobody until it terminates — exactly when the reporting has
-  stopped being useful.
-- A long-lived loop is still fine for pure **data collection** into a file
-  something else reads. The defect is using one as the *reporting* mechanism.
-- Foreground `sleep` is blocked by the harness, so the interval has to live
-  inside the background task. Don't assume the schedule held either — stamp
-  each tick with its own wall-clock (`date +%H:%M:%S`) rather than reporting
-  the time you expected it to fire.
+- **Never a loop with an internal `sleep`** as the *reporting* mechanism: it reports to nobody until it terminates. A long-lived loop is fine for pure **data collection** into a file something else reads.
+- Foreground `sleep` is blocked by the harness, so the interval lives inside the background task; stamp each tick with its own wall-clock (`date +%H:%M:%S`), don't assume the schedule held.
 
-**This is the inverse of the worker rule you hand out at dispatch time** —
-"poll background work to completion inside your own turn; never end a turn
-waiting to be resumed" (standard dispatch brief point 1 below). One mechanic:
-only a task's *exit* wakes a session. A top-level worker gets no wake-up at
-all, so it must never end a turn waiting for one; you **do** get woken, so
-build your cadence out of short tasks that end. The rule you give workers is
-not the rule you follow.
+**This is the inverse of the worker rule you hand out at dispatch** ("poll background work to completion inside your own turn; never end a turn waiting to be resumed", standard dispatch brief point 1): only a task's *exit* wakes a session. A top-level worker gets no wake-up, so it must never end a turn waiting for one; you **do** get woken, so build your cadence out of short tasks that end.
 
 **Wake on events, not a timer (fleet-config#999).** A chief-managed worker's
 turn ending (`Stop`) or session exiting writes one event into the chief inbox
@@ -153,16 +140,11 @@ log or plan older than 10 minutes, and whenever the caller isn't you, the live
 chief. Treat a refusal as information: fix the stale refresh, or wait for the
 next tick. Never retry past it.
 
-**Those refusals gate only this automatic trigger.** A `/compact` that
-Roberto types in your terminal or sends from the Board chat goes straight
-through at any percentage. Never refuse, delay or second-guess it.
+**Those refusals gate only this automatic trigger.** A `/compact` Roberto types in your terminal or sends from the Board chat goes straight through at any percentage; never refuse, delay or second-guess it.
 
 ## Telling a quiet lane from a hung one (fleet-config#638)
 
-A job log that stops growing is the most misread signal on a long unattended
-run — a false stall triggers intervention, a missed one wastes an unattended
-night. Before calling a silent lane stalled,
-work the four ordered checks in [lane-silence.md](lane-silence.md): read the
+A false stall triggers intervention; a missed one wastes an unattended night. Before calling a silent lane stalled, work the four ordered checks in [lane-silence.md](lane-silence.md): read the
 log's elapsed-not-wall-clock prefix, treat silence under the 45-minute
 watchdog as not a stall, suspect one slow tool call, then sample the
 `claude.exe` child's CPU — never the adapter's.
@@ -197,7 +179,7 @@ every poll:
   also checks it, but read it yourself when deciding what to say to the user.
 - `chief_ops.py exchange <sid> [--tail N]` — last assistant text for a live
   session (default tail 2000 chars).
-- `chief_ops.py issues <repo>#<n> [<repo>#<n> ...]` — one state-table row per ref via `gh issue view`; use this instead of hand-rolling a multi-repo loop. For an open-ended search across all repos (not a known list of refs), use `E:/automation/fleet-config/.venv/Scripts/python.exe skills/_lib/gh_issue_fetch.py fetch [--label <label>]` — **not** `gh search issues --owner ferraroroberto --state open ...`. That call is backed by GitHub's Search API, documented as eventually consistent and observed reporting issues as open for five-plus weeks after they had closed; a chief run using it reported inflated backlog numbers to Roberto (fleet-config#623). `gh_issue_fetch.py` reads the same information through the direct Issues API, one call per repo, aggregated into the same shape.
+- `chief_ops.py issues <repo>#<n> [<repo>#<n> ...]` — one state-table row per ref via `gh issue view`; use this instead of hand-rolling a multi-repo loop. For an open-ended search across all repos use `E:/automation/fleet-config/.venv/Scripts/python.exe skills/_lib/gh_issue_fetch.py fetch [--label <label>]` (direct Issues API, one call per repo) — **not** `gh search issues --owner ferraroroberto --state open ...`: the Search API is eventually consistent, reported issues open five-plus weeks after they closed, and inflated the backlog numbers a chief run gave Roberto (fleet-config#623).
 - Stale GitHub cache (old `github.fetched_at`)? Refresh once:
   `curl -sk -X POST https://127.0.0.1:8445/api/board/github/refresh`
   (not covered by the helper — a one-off action, not a recurring read).
@@ -237,17 +219,7 @@ just the launcher call):
   `/issue-start` keeps its plan gate unless the brief waives it. The lane
   reads the brief before any work, so it never starts on the bare issue.
   Never dispatch bare and send the brief afterwards by `say`.
-  **One issue per dispatch (fleet-config#1357).** A lane's brief names
-  exactly one issue. The ordered queue lives in your plan (`chief_ops.py
-  plan`), never in a lane brief: when a lane's issue is merged and verified,
-  stop that lane and dispatch the next step as a fresh session. A lane that
-  works a whole queue drags its context toward the window limit (one reached
-  about half on a 7-step queue), which dilutes attention, costs more and
-  strands more state on a late failure. Two exceptions: a lane that owns an
-  unmerged branch finishes that one issue (e.g. a gate re-run) before you
-  stop it, and a small side fix the lane needs to unblock its own step (a
-  flaky test it files and fixes) stays in that lane. `/issue-start --brief`
-  queue support stays for other callers; this is chief policy only.
+  **One issue per dispatch (fleet-config#1357).** A lane's brief names exactly one issue. The ordered queue lives in your plan (`chief_ops.py plan`), never in a lane brief: when a lane's issue is merged and verified, stop that lane and dispatch the next step as a fresh session (a lane working a whole queue drags its context toward the window limit, dilutes attention and strands more state on a late failure). Two exceptions: a lane that owns an unmerged branch finishes that one issue (e.g. a gate re-run) before you stop it, and a small side fix the lane needs to unblock its own step stays in that lane. `/issue-start --brief` queue support stays for other callers; this is chief policy only.
 - Steer a running worker mid-run: `chief_ops.py say <sid> --file <path>`
   (write the text to a scratch file first — `say` is a pure pipe, it never
   composes the text; session ids come from `chief_ops.py board`/`sessions`).
@@ -264,28 +236,9 @@ just the launcher call):
   `last_input` confirming the submit (a deferred target is mid-turn, so its
   exchange moves regardless — fleet-config#856). The other three each exit 1
   and each mean something different:
-  - `PENDING` — delivery is *likely*, unconfirmed only because the worker is
-    still talking: the board shows it mid-turn, **or it emitted output in the
-    last few seconds even though the board says otherwise** (fleet-config#662
-    — `status` reads `awaiting-input` for sessions that are demonstrably
-    mid-turn, so recent output overrides the label), or its output age could
-    not be read at all. Benign. Read the exchange again in a minute; do not
-    resend. A `deferred` PENDING is different: the watcher (up to ~120s,
-    app-launcher#763) had not reported when `--verify` gave up, so **no
-    verdict was reached** — re-read the session's `last_input` before relying
-    on the steer; `defer_timeout` there means it is sitting unsent.
-  - `STRANDED` — positively not delivered. Either the exchange never advanced
-    on a target that is **demonstrably quiet** (measured silence, not merely a
-    non-`working` label), or the endpoint said so outright
-    (`not_ingested`/`dropped`, or the watcher's `defer_timeout` /
-    `defer_vanished` / `defer_unclear` / `defer_failed` landing on `last_input`). It is never
-    reached by fallthrough — it always rests on positive evidence, because a
-    false `STRANDED` is the verdict most likely to make you resend, and a
-    resent steer can double-execute a shipping command. This is the one that
-    needs you.
-  - `UNKNOWN` — the exchange could not be *read*. Genuinely unresolvable, and
-    now narrow: a readable-but-un-advanced exchange is `STRANDED`, never
-    this.
+  - `PENDING` — delivery *likely*, unconfirmed only because the worker is still talking: the board shows it mid-turn, **or it emitted output in the last few seconds even though the board says otherwise** (fleet-config#662: recent output overrides the label), or its output age could not be read. Benign: read the exchange again in a minute; do not resend. A `deferred` PENDING is different: the watcher (up to ~120s, app-launcher#763) had not reported, so **no verdict was reached** — re-read the session's `last_input` before relying on the steer; `defer_timeout` there means it is sitting unsent.
+  - `STRANDED` — positively not delivered: the exchange never advanced on a target that is **demonstrably quiet** (measured silence, not merely a non-`working` label), or the endpoint said so (`not_ingested`/`dropped`, or the watcher's `defer_timeout` / `defer_vanished` / `defer_unclear` / `defer_failed` on `last_input`). Never reached by fallthrough — a false `STRANDED` makes you resend, and a resent steer can double-execute a shipping command. This is the one that needs you.
+  - `UNKNOWN` — the exchange could not be *read* (a readable-but-un-advanced exchange is `STRANDED`, never this).
 
   Every non-`DELIVERED` line carries the target's `status=` and
   `last_output=` age, so you can judge without a second round of calls. It
@@ -332,10 +285,7 @@ Every `--brief-file` you dispatch a worker with carries the standard brief. It o
 
 ## Managing the backlog and parked work
 
-- **Decomposition makes "backlog zero" recede — say so, don't treat it as
-  failure.** A dispatched spike can legitimately generate several child
-  issues: real scope surfacing, not work going badly. When reporting backlog
-  counts, note this rather than letting a rising number read as a bad sign.
+- **Decomposition makes "backlog zero" recede — say so, don't treat it as failure.** A dispatched spike can legitimately generate child issues (real scope surfacing); when reporting backlog counts, note this rather than letting a rising number read as a bad sign.
 - **Parked work needs a durable, machine-visible reason.** When an issue is
   blocked on hardware, a physical dependency, or a deliberate "not now,"
   leave an explicit comment saying so and why — this is what stops the same
@@ -407,13 +357,7 @@ checkout of the merged default branch** — never a feature branch, never one of
 the worktrees (whose `.venv` is a junction into the primary's real venv). That
 buys the guarantee that the merged tree is what ran.
 
-**It also costs coverage, and the cost is invisible unless you report it.** A
-fresh checkout lacks the repo's gitignored runtime files and host state, so
-tests needing either skip rather than fail — a skip is not a pass. A
-merge-verification report is only complete when it names that skip delta
-(`skills/_lib/skip_delta.py` capture/compare, relaying `STATUS` **and** `SET`),
-and never closes the gap by copying a live config into a scratch checkout. The
-procedure, its unknown states and the measured incident: [merge-verification.md](merge-verification.md).
+**It also costs coverage, invisibly unless reported.** A fresh checkout lacks the repo's gitignored runtime files and host state, so tests needing either skip rather than fail, and a skip is not a pass. A merge-verification report is complete only when it names that skip delta (`skills/_lib/skip_delta.py` capture/compare, relaying `STATUS` **and** `SET`), and never closes the gap by copying a live config into a scratch checkout. Procedure, unknown states and the measured incident: [merge-verification.md](merge-verification.md).
 
 **Verify from outside; never arbitrate between two agents' conflicting
 accounts.** When one worker reports that another overstepped its brief, check
@@ -426,28 +370,14 @@ guess ("likely a narration artifact") that a worker later contradicts with
 direct visibility must be corrected immediately — it changes whether Roberto
 acts on a real process gap.
 
-**Never run a repo's gate, test suite, or any mutating command in a repo
-that currently has a live worker session — that repo's gate belongs to its
-worker.** Running `tests/run_acceptance.py` against fleet-config's tree while a
-worker was editing it gave two different failure counts on consecutive runs —
-not flake, a race with the worker's writes. This doesn't narrow what you can inspect — `git status`,
-`git log`, reading files, reading committed state, querying `gh` all stay fine
-and encouraged, including in a repo with a live worker. The line is running the
-repo's own tooling: a gate, a test suite, a byte-compile, anything that writes
-`__pycache__` or otherwise mutates a tree someone else is actively changing —
-that can neither be trusted (it reads a moving target) nor safely repeated.
+**Never run a repo's gate, test suite, or any mutating command in a repo that currently has a live worker session — that repo's gate belongs to its worker.** Running `tests/run_acceptance.py` against fleet-config's tree while a worker was editing it gave two different failure counts on consecutive runs: a race with the worker's writes, not flake. Inspecting stays fine and encouraged, live worker or not: `git status`, `git log`, reading files and committed state, querying `gh`. The line is running the repo's own tooling (a gate, a test suite, a byte-compile, anything that writes `__pycache__` or otherwise mutates a tree someone else is changing) — it can neither be trusted nor safely repeated.
 
 When you genuinely doubt a worker's report — and you should keep doubting;
 the failure here was the method, not the impulse — verify one of these ways
 instead:
 
 - Against `origin/main` or a specific commit, never the live working tree.
-- Against an artefact the change produced, rather than by re-running the
-  process that produced it. A live `settings.json` edit was validated exactly
-  this way: parsing the file, listing its hook events, scanning for backslash
-  paths in command strings, and running `chief_ops.py chief-sid` to confirm
-  the mechanism actually resolved — all read-only, all independent of the
-  worker, all conclusive.
+- Against an artefact the change produced, rather than by re-running the process that produced it (e.g. a live `settings.json` edit validated read-only by parsing the file, listing its hook events, scanning command strings for backslash paths, and running `chief_ops.py chief-sid` to confirm the mechanism resolved).
 - Ask the worker to re-run its own gate and report back.
 
 **Doubt your own filings hardest — re-test the premise, not the conclusion (fleet-config#633).** Before filing any defect against fleet tooling, write the premise as one sentence and test that sentence alone; reconstruct what the tool could observe at time T, not what it returns now; and treat a confident, table-heavy draft as a warning sign, not a finish line. A claim that cannot say what it re-tested is a hypothesis: file it as a question, or don't file it. The incident and the full checklist: [filing-discipline.md](filing-discipline.md).
@@ -475,9 +405,7 @@ instead:
    The standing `telegram:*` channel sessions (label prefix) are skipped by
    both counts too: they are not workers and never hold a checkout
    (fleet-config#1212).
-   This is a hard refusal, not a rule to remember; on `REFUSED=...`, tell the
-   user what's running and queue the request in-conversation, revisiting
-   when they confirm or a worker finishes.
+   This is a hard refusal, not a rule to remember; on `REFUSED=...`, tell the user what's running and queue the request in-conversation until they confirm or a worker finishes.
 4. **Same-repo work stays isolated for free**: dispatches route through the
    `/issue-*` skills, which own worktree claiming — never try to manage
    branches or worktrees yourself.
@@ -499,9 +427,7 @@ instead:
    ping — and expect the worker to hold out for a human echo in its own
    terminal even after you've relayed it. Identity was never the thing standing
    between a steer and irreversible loss. A worker that pushes back on an
-   instruction is behaving correctly: answer the objection with
-   something checkable, never argue it out of the suspicion, and never
-   re-send the same steer harder.
+   instruction is behaving correctly: answer the objection with something checkable, never argue it out of the suspicion, never re-send the same steer harder.
 
 ## Reply shape (drawer contract)
 
