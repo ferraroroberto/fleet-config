@@ -321,30 +321,15 @@ No follow-up actions and no auto-launch of anything — including no retry of a 
 
 ## Hard rules
 
-Recap of the binding constraints above — see the referenced step for full detail:
+Recap of binding constraints not fully restated in the steps above:
 
-- Four agents per issue: build, validate, execute, teardown. Gate between them is deterministic workflow-script code, never another LLM call re-interpreting an already-decided verdict.
-- One bucket at a time, one repo at a time. No `parallel(...)` over issues, ever. Next lane starts only after current lane's teardown reports `CLEAN`.
-- Teardown runs on every lane — merged, escalated, or failed. No lane may end leaving a worktree, a branch, or a primary off its clean default branch.
-- A lane that can't be returned to clean halts the run. Loud, named, with a recovery command. Never stack a second worktree on the first.
-- Every agent works a forced worktree, never a primary checkout (`worktree_claim.py acquire … --force-worktree`) — a live app or live junction is not a claim holder.
-- A live-e2e guard refusal is a hard STOP for every agent. `E2E_LIVE=1` or any equivalent override is forbidden.
-- This skill never edits source, commits, pushes, or merges. Every write happens inside a spawned agent.
-- Never disturb in-progress work. Dirty/off-default-branch repos, and repos already holding a worktree at run start, are skipped and reported — never stashed, force-switched, or torn down. Criteria never soften.
-- A skipped repo is deferred, never dropped (fleet-config#642) — step 7b retry, step 8c ledger, step 10 report line. Retry re-runs the full pre-flight, never a cached verdict. One retry pass, never a loop, never when halted.
-- An open `cleanup-deferred` issue always means unprocessed work; a clean run closes it with a comment (`audit_issue.py upsert --reopen` on the other path). The always-printed report line is a separate fact, never collapsed into the issue.
-- A run that skipped every candidate repo prints `SCHEDULED-RUN-FAILED` — real work found and none touched, a delivery failure not a clean sweep.
+- Gates between the four agents are deterministic workflow-script code, never another LLM call re-interpreting a decided verdict. No `parallel(...)` over issues, ever; the next lane starts only after the current lane's teardown reports `CLEAN`; never stack a second worktree on the first.
+- A skipped repo is deferred, never dropped (fleet-config#642) — step 7b retry, step 8c ledger, step 10 report line. Retry re-runs the full pre-flight, never a cached verdict. One retry pass, never a loop, never when halted. An open `cleanup-deferred` issue always means unprocessed work; a clean run closes it with a comment (`audit_issue.py upsert --reopen` on the other path). The always-printed report line is a separate fact, never collapsed into the issue.
 - `design-drift` fixes obey `/design-sync`'s structural rule: auto-fix token/palette/spacing, **never re-author navigation or components** (reuse the vendored `project-scaffolding` snippet verbatim); an unresolvable structural finding fails validation and escalates, never auto-merges a hand-rolled rewrite. `cert-drift` is not a bucket here — never auto-applied.
 - `prompt-drift` lanes obey `/cleanup-fleet`'s prompt-drift tier rule (its step 5 is the one home — not restated here): this run ships every lane with no human gate, so a `prompt-drift` issue whose body states **hard** tier is not dispatched — list it under deferred as `hard-tier prompt-drift — needs an attended /cleanup-fleet run`. Every `prompt-drift` lane's **validate** stage runs `.claude/skills/context-purge/check.py --base origin/<default>` and walks the directive inventory of each edited instruction file; a FAIL or UNKNOWN is `pass: false` (retry once, then escalate), never a warning. The decision script owns that brief (`validatePrompt`).
-- Never background a tool call and end the turn expecting a resume — including the `Workflow` call. Poll `TaskOutput` to completion within the same turn.
 - Post-flight dirty-tree check runs here, in this skill, never inside a spawned agent, right before a repo's status is trusted.
-- Max 2 build/validate rounds per issue. Second failure escalates — never force-merges, never silently drops the issue from the final report. Escalation means commented + torn down, not parked for later.
-- Post-flight residue enumeration (step 8b) covers every touched repo, not just merged ones, fails loud. A check that can't establish a fact reports `unknown`, never clean.
-- The leftover-directory glob is per repo, in both the teardown prompt and step 8b — never fleet-wide (concurrent sweeps otherwise report another repo's live worktree as this lane's residue).
-- A leftover worktree directory is judged by condition, never path or count (all five hold → zombie-pinned per step 8b; any one unestablished → RESIDUE). No rule may require attributing a zombie process to a directory — `CLEAR` is the whole requirement. No condition may depend on a tool the repo might not ship — the live-holder proof (`skills/_lib/dir_holders.py`) is repo-agnostic on purpose (fleet-config#571).
-- Teardown judges its own lane's mess, never the repo's — its own branch/worktree/dirty tree halts the run; foreign branches join `indexLock`/`behindOrigin`/`zombieShells` in the reported-only tier (fleet-config#572).
-- A foreign worktree (matching none of the run's own paths or branches) that is clean and provably merged is reported in `foreignWorktrees`, never removed. It defers the rest of that repo's issues to 7b/8c instead of halting. The run's own worktree, and a dirty, unmerged or unclassifiable foreign one, still halt. `worktree_residue.py` decides this, and the script supplies the "own" set (fleet-config#1077).
-- A stale `index.lock` and a behind-origin primary are reported, never halting, never silently repaired — an index.lock is never deleted by the run, live-held or stale (a human clears it); behind-origin fast-forwarded `--ff-only` only, never merge/rebase/reset/`--force`; a refused fast-forward is `unknown`, not a pass.
+- Second validation failure escalates — never force-merges, never silently drops the issue from the final report.
+- Step 8b's residue enumeration covers every touched repo, not just merged ones, fails loud; a check that can't establish a fact reports `unknown`, never clean. Teardown judges its own lane's mess, never the repo's (fleet-config#572); a stale `index.lock` and a behind-origin primary are reported, never halting, never silently repaired.
 - A run that stops with lanes unprocessed must print the literal `SCHEDULED-RUN-FAILED` marker — pre-flight failure (step 1), every-candidate-repo-skipped stop (step 5), session-limit skip (step 6), or residue halt (step 10, non-null `halted`) — so `claude_progress.py` maps the run to exit 123 instead of exit 0 (fleet-config#612). The step 3 empty-queue stop is exempt — legitimate success, never prints the marker.
 - No AI attribution; no hard-wrapped issue/PR-body paragraphs (per global CLAUDE.md).
 

@@ -16,15 +16,15 @@ the only thing between a fresh idea and a merge commit on a protected branch —
 do not weaken it. Validation fails at any point → **stop and report**; do not
 push.
 
-Use when: the approach is already thought through; the change is bounded
-enough for one validation pass to credibly cover it; you accept the next
-eyeball on the work is `main`'s.
+Use when: the approach is already thought through, the change is bounded
+enough for one validation pass to cover it, and you accept the next eyeball on
+the work is `main`'s.
 
 **Do not** use for: architectural changes / cross-cutting refactors / anything
 where design is the hard part — use `/issue-start … plan` instead; work with
 hard-to-reverse blast radius beyond the local app (production data, external
 API state, shared infrastructure) — YOLO covers the local repo + its CI + the
-local tray, nothing more.
+local tray only.
 
 ## Argument
 
@@ -40,12 +40,11 @@ local tray, nothing more.
   as the first thing Phase 2 does after the step-0 claim, before any other
   work. This skill's ship authorization then covers **every issue in the
   brief's queue**: work them one after another, each through Phases 2–5 as its
-  own branch and PR, and ship each on a green Phase 3 without asking for
-  confirmation. There is no plan gate to waive here. The brief may narrow,
-  order and constrain the queue, but it never widens destructive scope or
-  weakens Phase 3. A failure on one issue stops the run there, as with a
-  single issue. Items already shipped stay shipped; report what was left
-  unworked.
+  own branch and PR, shipping each on a green Phase 3 without asking. There is
+  no plan gate to waive here. The brief may narrow, order and constrain the
+  queue, but never widens destructive scope or weakens Phase 3. A failure on
+  one issue stops the run there; items already shipped stay shipped; report
+  what was left unworked.
 
 ## Steps
 
@@ -75,9 +74,9 @@ turn. Do **not** stop.
 ### Phase 2 — Branch + build (`/issue-start now` flow)
 
 Open [issue-start](../issue-start/SKILL.md) and run its steps **0 through 6** as
-`/issue-start <N> now` — from that file, never from memory or a summary. A
-paraphrase of those steps dropped step 0 and put a launcher lane's branch in
-the live primary checkout (fleet-config#894); delegate, don't restate.
+`/issue-start <N> now` — from that file, never from memory or a summary (a
+paraphrase dropped step 0 and put a launcher lane's branch in the live primary
+checkout, fleet-config#894); delegate, don't restate.
 
 - **Step 0 is the first action, and a hard gate:**
   `worktree_claim.py acquire . --issue <N>`, plus `--force-worktree` whenever
@@ -98,7 +97,7 @@ this project; each is a hard gate.
 "While fixing" section: a bug fix needs an artefact that *demonstrates* the
 fix — a failing test that now passes, a recorded console transcript (old error
 → new clean run), or a documented repro sequence exercised before and after.
-"I think this fixes it" is not enough — there is no review to catch a non-fix.
+"I think this fixes it" is not enough.
 
 **3b. Syntax / type / lint gate.** Whatever the project specifies in its
 `CLAUDE.md` Verification section. Typically:
@@ -108,14 +107,13 @@ fix — a failing test that now passes, a recorded console transcript (old error
 - TS / JS projects: their type-check and lint commands.
 
 **3c. Unit + integration tests.** Project's `pytest` / `jest` / `go test` etc.
-**Zero allowed failures and zero allowed skips that hide the change** — a
-green-with-skips run is not green if the skip masks the area you touched.
+**Zero failures and zero skips that hide the change** — green-with-skips is
+not green if a skip masks the area you touched.
 
 **3d. E2e leg — delegated to the `/e2e` skill.** Run `/e2e`
-(`skills/e2e/SKILL.md`): routes the branch diff through the repo's own
-`classify_e2e.py` (bootstrapping it on first contact), runs the proportionate
-slice (`skip` / `static` / `full` / `surface`), applies its inline suite maintenance on
-this branch. If the project has a `scripts/verify-before-ship.*` gate, run
+(`skills/e2e/SKILL.md`): it routes the branch diff through the repo's own
+`classify_e2e.py`, runs the proportionate slice (`skip` / `static` / `full` /
+`surface`), and applies its inline suite maintenance on this branch. If the project has a `scripts/verify-before-ship.*` gate, run
 **that** first (one command, exit-0 only) — `/e2e` carries the gate's e2e
 result instead of re-running the same slice. Boot failure is a hard failure —
 never `pytest.skip` (a suite that skips when the app isn't up reports green on
@@ -125,15 +123,12 @@ a build it never tested). A FAIL from the routed slice stops the run.
 Pick the smallest mode that genuinely covers the change:
 - **UI change** (Streamlit, FastAPI/Flask + browser, Electron, phone webapp):
   use the repo's launch skill (below) to launch the app and drive the feature in a real
-  browser. Headed Playwright (or Playwright MCP) so the actual feature is
-  exercised, not a mock. **Inspect the screenshot in-session only** — save to a
+  browser (headed Playwright or Playwright MCP), not a mock. **Inspect the screenshot in-session only** — save to a
   local scratch path; **never attach it to the PR body, an issue, or a
   comment** (assume every repo is public — a screenshot is an information
   breach). Text-only result line in the PR instead.
   **Browser-backend preflight (Codex — no live `iab`):** same preflight as
-  `/issue-finish` step 3b (backend selection between `iab` and installed
-  Playwright, the `browser_verify.py plan` invocation, its four distinct
-  failure codes) — see that step, don't restate here.
+  `/issue-finish` step 3b — see that step, don't restate here.
   When this is a **web-app UX diff**, also run the **design-conformance gate**
   (`project-scaffolding#83`):
 
@@ -151,8 +146,7 @@ Pick the smallest mode that genuinely covers the change:
   Overrides: `ux`/`design` force it, `no-ux` skips it, `ux-full` checks every
   `KEY_VIEWS`. `SPEC_APPLIES=no` / `TOUCHED=no` → nothing to do here.
 - **CLI change:** invoke the CLI with realistic arguments against realistic
-  input. Show the actual output. Don't trust that "the function returns X" —
-  show the binary printing X.
+  input and show the actual output, not "the function returns X".
 - **Library change:** add a probe call from the project root (`-m
   scratch.foo`) that exercises the new surface against real inputs, not
   fixtures. Print the result.
@@ -163,9 +157,8 @@ If the project has its own launch skill (e.g. app-launcher's project `verify`),
 prefer that — it knows how to launch the app. Fall back to Claude Code's
 built-in `run` skill otherwise; there is no user-scope `verify` skill.
 
-**3f. Sanity sweep for unintended damage.** `git diff main...HEAD`, read it.
-Anything outside the change's stated scope is a red flag — revert that hunk or
-stop and ask. Watch for: unintended dependency bumps, removed tests, weakened
+**3f. Sanity sweep for unintended damage.** Read `git diff main...HEAD`.
+Anything outside the change's stated scope — revert that hunk or stop and ask. Watch for: unintended dependency bumps, removed tests, weakened
 assertions, suppressed warnings, silently-broadened exception handlers,
 `.gitignore` edits.
 
@@ -174,18 +167,17 @@ reviewer reject?" (scaffolding `CLAUDE.md` Senior-dev check). Fix anything
 obvious *now* — the reviewer in this run is you.
 
 **If anything in 3a–3g fails — stop.** Report the failure, leave the branch
-in place, let the user inspect. Do **not** continue to 3h or Phase 4. Do
-**not** soft-pass with caveats. A YOLO run that ships a half-broken change
-defeats the whole structure.
+in place, let the user inspect. Do **not** continue to 3h or Phase 4; do
+**not** soft-pass with caveats.
 
 **3h. Independent review — a fresh agent with no memory of the build.** Only
-reached once 3a–3g are all green. Self-review (3a–3g) is done by the same
-context that wrote the code — it cannot be the last checkpoint before a merge
-with no human in the loop. Per the fleet's
+reached once 3a–3g are all green. Self-review (3a–3g) is the same context that
+wrote the code and cannot be the last checkpoint before a merge with no human
+in the loop. Per the fleet's
 [independent-review-gate convention](../../docs/independent-review-gate.md)
 (fleet-config#408), with **stop-and-report** failure handling (not
-`cleanup-fleet-all.js`'s retry-then-escalate — this run is interactive, a human
-is already present to decide on a retry).
+`cleanup-fleet-all.js`'s retry-then-escalate — a human is present to decide on
+a retry).
 
 Spawn a genuinely fresh independent context through the capability contract. Claude: fresh `Agent`/`Task` type, never fork; Codex native collaboration: `fork_turns: "none"`. If no fresh spawn exists, stop at review-ready and request an independent human or separately launched reviewer; serial self-review does not satisfy this gate. Brief it with only the issue number, branch name and repo path, plus these review duties; collect and validate its terminal verdict before shipping:
 
@@ -224,10 +216,8 @@ review's `pass: true`). Once there, run the full **`/issue-finish` skill**
 re-confirmation, README + `/docs-shots` visual-docs (step 2b), the
 consolidated verification gate, `/e2e` (step 3c), push + PR, the
 CI-advisory/checkout-mode-aware merge and land, the tray restart, and the
-deploy-coverage liveness check (step 6b). Delegate rather than restate: a
-prior duplicated copy drifted stale, silently skipping steps 2b and 6b on
-every YOLO run touching either surface (fleet-config#728) — delegating means
-every future `/issue-finish` step reaches this flow for free.
+deploy-coverage liveness check (step 6b). Delegate rather than restate: a duplicated copy drifted stale and skipped
+steps 2b and 6b on every YOLO run touching either surface (fleet-config#728).
 
 Three YOLO-specific deltas on top of the delegated steps:
 
@@ -258,8 +248,8 @@ Single concise summary:
 - **Work-summary** — run `E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/hooks/work_summary.py --pr
   <PR_URL>` and echo its output verbatim: the roll-up (`📊 +N −M · K files` +
   new/changed/deleted buckets) and the churn-sorted per-file table. Deterministic
-  from `gh`, no LLM; prints nothing on a `gh` error, so skip it if empty. The
-  same roll-up rides the Phase 5 ping below — don't hand-assemble it.
+  from `gh`; prints nothing on a `gh` error, so skip it if empty. The same
+  roll-up rides the Phase 5 ping below — don't hand-assemble it.
 
 Then fire the single completion ping with the deterministic helper — canonical
 format, real PR title + URL from `gh`:
@@ -269,11 +259,9 @@ E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/hooks
 ```
 
 `<PR_URL>` is the full PR URL (e.g. `https://github.com/owner/repo/pull/31`) —
-pass the URL already on hand from `gh pr create`/`gh pr view`; keeps the
-title/URL lookup CWD-independent for subagent contexts.
-
-Silent no-op if no chat is configured; always exits 0 — never blocks or delays
-the finish.
+pass the one already on hand from `gh pr create`/`gh pr view` (keeps the
+lookup CWD-independent for subagents). Silent no-op if no chat is configured;
+always exits 0 — never blocks or delays the finish.
 
 **`notify_complete.py` is the ONLY sanctioned way to send this ping — never use an MCP chat tool to find a chat or post it, and a silent no-op is correct, not a bug to route around.** Why: [notify-ping](../../docs/notify-ping.md).
 

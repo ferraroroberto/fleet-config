@@ -5,18 +5,18 @@ description: Weekly hardware health checkup of every fleet machine — capture e
 
 # fleet-health
 
-**Goal:** answer the question a one-off capture cannot — **"what crept in?"** A snapshot says what is running now; a *ledger* says what changed, keeping a powerful box from silently degrading. Each run captures every reachable machine through its own hub, analyses the numbers against what was written last time, and appends one entry per machine to a single incremental ledger.
+**Goal:** answer **"what crept in?"** — a snapshot says what is running now, a *ledger* says what changed. Each run captures every reachable machine through its own hub, analyses the numbers against what was written last time, and appends one entry per machine to a single incremental ledger.
 
-**The previous entry is loaded before anything is analysed** — load-bearing, not a nicety. A run that analyses without reading the prior entry has produced a snapshot, not a checkup.
+**Load the previous entry before analysing anything.** A run that skips it has produced a snapshot, not a checkup.
 
-**No machine name appears anywhere in this skill.** The fleet is read from the hub's own inventory each run and each machine is routed by what it *answers*, never by what it is called — a newly enrolled box appears in the next checkup with zero edits here. Grepping this directory for a machine id is the test.
+**No machine name appears anywhere in this skill.** The fleet is read from the hub's inventory each run and each machine is routed by what it *answers*, never its name — a new box appears with zero edits here. Test: grep this directory for a machine id.
 
 ## Execution rules (read first)
 
 - **Run from the `fleet-config` repo root** (`E:/automation/fleet-config`) so helper paths resolve.
-- **Never commit health data.** Everything lands under `~/.claude/fleet-health/`, entirely outside this repo — the skill and its runner are the only public artefacts. Don't copy results in, don't paste machine inventories into issues or PRs.
-- **Every machine is accounted for, every run.** A machine is either captured or listed as **not covered with a reason**. Silently omitting an unreachable box is the one failure mode that makes the ledger lie.
-- **Poll synchronously; never background-and-wait.** Per fleet-config#314, a scheduled headless `claude -p` that ends its turn expecting to be resumed exits `0` having done nothing, and the job reports false success. `capture.py` blocks in bounded chunks and returns only when the captures are done — let it.
+- **Never commit health data.** Everything lands under `~/.claude/fleet-health/`, outside this repo. Don't copy results in or paste machine inventories into issues or PRs.
+- **Every machine is accounted for, every run.** A machine is either captured or listed as **not covered with a reason**. Silently omitting an unreachable box makes the ledger lie.
+- **Poll synchronously; never background-and-wait.** Per fleet-config#314, a scheduled headless `claude -p` that ends its turn expecting to be resumed exits `0` having done nothing. `capture.py` blocks in bounded chunks and returns only when captures are done — let it.
 - **Partial failure degrades one entry, never the run.** One unreachable machine is a "not covered" line; it does not abort the other captures.
 - **A `409` is "busy", not "broken".** The hub refuses a second concurrent capture with `{"detail": "a capture is already running"}`; `capture.py` adopts the in-flight run instead of failing.
 - **Degrade gracefully, never block on a prompt** (unattended): hub down → report it and skip the ping rather than hang; first run → write a baseline entry and say so.
@@ -31,7 +31,7 @@ Run in order. A failure on one step prints a short error and stops.
 E:/automation/fleet-config/.venv/Scripts/python.exe .claude/skills/fleet-health/ledger.py previous
 ```
 
-Prints the most recent run's entries (or `NO_PRIOR_ENTRY` on a first run). **Read this into context before step 2** — every recommendation still open here must be explicitly carried forward in step 4, marked as *still open*, never silently re-derived as if newly discovered.
+Prints the most recent run's entries (or `NO_PRIOR_ENTRY` on a first run). **Read this into context before step 2** — every recommendation still open must be carried forward in step 4, marked *still open*, never re-derived as newly discovered.
 
 ### 2. Capture every reachable machine
 
@@ -49,7 +49,7 @@ Then poll — **repeatedly, in the same turn**, until a call prints `DONE=yes`:
 E:/automation/fleet-config/.venv/Scripts/python.exe .claude/skills/fleet-health/capture.py poll
 ```
 
-Each call blocks for up to nine minutes then returns, printing per-machine `samples=` progress and `DONE=yes|no`. A status probe that cannot answer is `capturing=unknown`, never finished: the machine stays pending (`DONE=no`) until the capture's deadline plus a ten-minute grace, then settles as `MACHINE=<id>|status=unconfirmed` (`UNCONFIRMED=<ids>`). Report an unconfirmed machine as such in the ledger entry — completion was not established. **fleet-config#314 discipline made concrete:** the blocking happens *inside* a tool call that returns, so the turn stays alive. Never background this and never end the turn waiting to be resumed — a scheduled headless `claude -p` that does so exits `0` having captured nothing while the job reports success.
+Each call blocks for up to nine minutes then returns, printing per-machine `samples=` progress and `DONE=yes|no`. A status probe that cannot answer is `capturing=unknown`, never finished: the machine stays pending (`DONE=no`) until the capture's deadline plus a ten-minute grace, then settles as `MACHINE=<id>|status=unconfirmed` (`UNCONFIRMED=<ids>`). Report an unconfirmed machine as such in the ledger entry — completion was not established. The blocking happens *inside* a tool call that returns, so the turn stays alive (fleet-config#314). Never background this or end the turn waiting to be resumed.
 
 Finally:
 
@@ -70,7 +70,7 @@ Exit `3` (start) = inventory unreachable, the local hub is down — report and s
 
 Read each machine's `report=` markdown (the generated health report: verdict, findings, resource envelope, load by app, heaviest processes, listening ports, drift vs baseline) and its `drift=` json. Pull from `export=` json only when a number the report doesn't carry is needed.
 
-**Cross-check the numbers rather than transcribing them** — a dry run surfaced two engine bugs precisely because the reading was adversarial (per-process CPU contradicting the system-wide figure; a `hostname` disagreeing with the `machine_id`). An analysis that repeats the report back without sanity-checking it is decorative. Always ask:
+**Cross-check the numbers rather than transcribing them** — a dry run found two engine bugs this way (per-process CPU contradicting the system-wide figure; a `hostname` disagreeing with the `machine_id`). Always ask:
 
 - Do the per-app CPU figures sum to something compatible with the system-wide average, or do they contradict it?
 - Is peak RSS per app plausible against total RAM, and does the sum overshoot the machine?
@@ -124,11 +124,11 @@ Print: how many machines were captured, how many not covered and why, each machi
 
 ## Notes
 
-- **Why each machine's own hub, not one central capture:** the diagnostics engine is deliberately local-only — `local-llm-hub`'s `docs/diagnostics.md` states triggering a capture on a peer is not offered, each host's hub owns its own sampler. No `machine_id` parameter on any route to abuse.
-- **Why addresses come from the inventory:** each machine's row carries its own `ip`, so a peer's hub is dialled straight from the same payload the ids came from — one source, zero hardcoded names, nothing to keep in step. Parsing them out of the hub's `config/models.yaml` instead silently stranded every peer as `no-address` once they moved to a gitignored `machines.local.yaml` (`local-llm-hub#525`, fleet-config#812). A peer the inventory gives no address for is reported `no-address`, never dialled at a guessed hostname.
-- **Why one hour at 30 s, not the dry run's two hours:** a weekly unattended job wants the idle-resident picture (what is *always* loaded), which settles well inside an hour. Override per-run when investigating something specific.
+- **Why each machine's own hub:** the diagnostics engine is local-only — `local-llm-hub`'s `docs/diagnostics.md` offers no peer-triggered capture; each host's hub owns its sampler.
+- **Why addresses come from the inventory:** each machine's row carries its own `ip`, one source with zero hardcoded names. Parsing the hub's `config/models.yaml` instead stranded every peer as `no-address` once they moved to a gitignored `machines.local.yaml` (`local-llm-hub#525`, fleet-config#812). A peer the inventory gives no address for is reported `no-address`, never dialled at a guessed hostname.
+- **Why one hour at 30 s:** the weekly job wants the idle-resident picture (what is *always* loaded), which settles inside an hour. Override per-run when investigating.
 - **Known coverage gaps**, reported as not-covered rather than hidden: a peer hub that answers but 404s on the diagnostics API is on an older build and needs a host sync (engine landed in `ferraroroberto/local-llm-hub#315`); an SSH-only machine with no hub at all needs the portable sampler from `ferraroroberto/local-llm-hub#316`.
-- **A `healthy` verdict on a lightly-attributed platform means "unmeasured", not "fine".** The rules lean on app attribution and listening ports; where those are thin, the verdict is weak evidence. Say so in the entry rather than reporting a clean bill of health — a cross-platform run found macOS 99% unattributed with zero ports collected.
+- **A `healthy` verdict on a lightly-attributed platform means "unmeasured", not "fine".** The rules lean on app attribution and listening ports; where those are thin, the verdict is weak evidence. Say so in the entry rather than reporting a clean bill of health (a macOS run was 99% unattributed with zero ports).
 - **This skill reports; a human decides.** It never acts on its own recommendations — no killing processes, no uninstalling, no config changes.
 - **No hand-applied workaround is needed, and none should be re-derived from the previous ledger entry.** The three that runs once leaned on — a `PYTHONUTF8` wrapper, an address overlay, a pinned `--date` — are fixed in the helpers (fleet-config#812) and covered by `tests/test_fleet_health.py`. If a run looks like it needs one again, that is a regression to file, not a step to repeat.
 

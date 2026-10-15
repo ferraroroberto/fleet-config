@@ -68,7 +68,7 @@ waiting.
   timed path, a `DIFF` line against the previous run, a `BUILD` line and `PERF=pass|over-budget|unmeasured`.
   Exit is 0, 1 or 3 respectively. The run dir (`RUN_DIR=`) holds
   `load.json`, `probe.json`, `verdict.json` and a preview `issue-body.md`.
-  `BUILD state=` compares the build the app serves (its `api_version_path` `git_sha`) with the checkout's HEAD: `live`, `behind` (`behind_by=N` commits), `differs` or `unknown` (no build id: never read as live). On `behind` or `differs` a `BUILD_WARNING` follows: a fix merged since is **not live in this run** (facilitation-suite#164: a session held the app, so no restart, and a re-run measured the old build). Say so first in the report, give the repo's own restart instruction, and never read the `DIFF` as "not fixed"; this skill restarts nothing.
+  `BUILD state=` compares the build the app serves (its `api_version_path` `git_sha`) with the checkout's HEAD: `live`, `behind` (`behind_by=N` commits), `differs` or `unknown` (no build id: never read as live). On `behind` or `differs` a `BUILD_WARNING` follows: a fix merged since is **not live in this run** (facilitation-suite#164). Say so first in the report, give the repo's own restart instruction, and never read the `DIFF` as "not fixed"; this skill restarts nothing.
 
 What it measures:
 
@@ -81,9 +81,8 @@ What it measures:
     first contentful paint. The page checks the selector on every animation
     frame and reports that frame's page time, on the same clock as first
     contentful paint. Before fleet-config#1236 it was Playwright's
-    `wait_for_selector`, which re-checks only every 500 ms after the first
-    270 ms. Readings landed on its ticks (~960, ~1460, ~1970 ms), 260–380 ms
-    late on facilitation-suite and parking-manager. Runs from before the fix
+    `wait_for_selector` (re-checks every 500 ms after the first 270 ms), so
+    readings landed on its ticks, 260–380 ms late. Runs from before the fix
     read high, so a drop across it is the harness, not the app. The budgets
     are unchanged: `warm.ready_ms` 1000 now means the selector is on screen
     within 1000 ms of navigation start.
@@ -92,10 +91,8 @@ What it measures:
     That is the app's caching, not this harness: playbook P11.
   - "Boot data" is when the last `/api/` response of the boot landed. An API
     path is any path with an `/api/` segment, so an app mounted under
-    `/admin/api/` is measured too (local-llm-hub#644: with a leading-`/api/`
-    match, `warm.data_ms` and `endpoints.api_p95_ms` read unmeasured and the
-    `SPLIT` line `api=0 KB`). A boot-data check still `unmeasured` is a
-    measurement gap, never a pass.
+    `/admin/api/` is measured too (local-llm-hub#644). A boot-data check still
+    `unmeasured` is a measurement gap, never a pass.
 - **HTTP leg** (stdlib):
   - `/` plus every query-less `/api/` GET the boot made, each at the poll
     interval the page was seen using.
@@ -111,8 +108,8 @@ What it measures:
 - A failing `warm.bytes_kb` also prints a `SPLIT` line: KB of `/api/` data
   re-fetched vs KB of other responses that missed the cache (assets, entry
   document). The 100 KB budget is reachable when the bytes are cached assets
-  but not for an app whose boot legitimately re-fetches live data (task-os:
-  256 KB warm, nearly all `/api/`). Mostly `/api/` is a payload problem
+  but not for an app whose boot legitimately re-fetches live data (task-os).
+  Mostly `/api/` is a payload problem
   (P12, P8); never propose a cache fix for it. Mostly other is a cache
   problem (P3, P11).
 - Periodic polls are not boot traffic: a GET to an `/api/` path starting more
@@ -141,15 +138,14 @@ Reading the cold numbers (fleet-config#1139):
 - The load profile is a **coarse-pointer phone**, so a desktop-first app can
   land on a different tab than a human sees on the PC (task-os: Today, not
   Board). Declare the selector for the tab the phone lands on.
-- **A landing view with no data-dependent card** (a capture surface whose
-  config and history fill other tabs) has nothing honest to wait for.
-  Declare its **primary action**, the control the user needs to start the
+- **A landing view with no data-dependent card** has nothing honest to wait
+  for. Declare its **primary action**, the control the user needs to start the
   task (photo-ocr: the Add photo button, `ready.selector` visible). Say in
   the report that ready then barely moves from first contentful paint, so a
-  green ready check on such an app says less than one on a data card.
+  green ready check says less than one on a data card.
 - **Declaring or changing `ready_selector` moves the baseline.** "Ready"
   goes from a painted shell (first contentful paint) to data visible, so the
-  number rises with no code change (task-os cold ready: 516 to 1967 ms). The
+  number rises with no code change (task-os: 516 to 1967 ms). The
   `DIFF` line says `ready_by=fcp->selector (baselines do not compare)` and
   the report repeats it. Say so; it is the stricter definition, not a
   regression. A previous run from before `ready_by` was recorded leaves the
@@ -169,11 +165,11 @@ For each `fail`, name the playbook pattern (`verdict.json` and the seed
 LOC, cheapest first.
 
 - **Check the target's code before proposing a pattern.** It may already be
-  in place. home-automation already had P5–P7 when it was piloted.
+  in place (home-automation already had P5–P7).
 - **A cold-paint finding is a hypothesis until a trace confirms it.** Record
   a net log (or the DevTools network timeline) and see what the time sits in
-  front of. The first lead on home-automation's "3 s stall" was render-blocking
-  CSS; one trace showed it was the harness.
+  front of (home-automation's "3 s stall" looked like render-blocking CSS; a
+  trace showed it was the harness).
 - **Say what the helper cannot see.** It never checks that a streaming
   response survives compression, or that a 304 stays correct across builds
   (playbook P2 and P3 give the one-off check and the test).
@@ -186,7 +182,7 @@ Summarize to the user:
 - the verdict line and the over-budget checks, with measured vs budget;
 - the slowest endpoints;
 - the ranked fixes with their pattern ids and rough LOC;
-- what changed since the last run (`DIFF`): `fixed`, `regressed` (a status flip) and `slower_p95_ms`, an endpoint whose p95 rose 25% and 10 ms or more since the last run **even while it stays inside its budget**. Say it as a regression: parking-manager's `/` went 31 to 43 ms under a 50 ms budget after a per-request fingerprint, every status stayed `pass`, and `regressed=none` read clean.
+- what changed since the last run (`DIFF`): `fixed`, `regressed` (a status flip) and `slower_p95_ms`, an endpoint whose p95 rose 25% and 10 ms or more since the last run **even while it stays inside its budget**. Say it as a regression (parking-manager's `/` went 31 to 43 ms under a 50 ms budget, every status `pass`, `regressed=none`).
 
 Then do step 4: its dry run without `file`, its `--apply` with `file`. Then stop.
 Each fix ships through the target repo's own issue → branch → PR

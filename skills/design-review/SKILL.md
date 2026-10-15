@@ -1,6 +1,6 @@
 ---
 name: design-review
-description: Review a running fleet web app's rendered design — measure the live app in real browsers (iPhone/Android/desktop × light/dark), score it against the versioned design rubric, have a fresh-context judge answer the rubric's bounded checklist from the local screenshots, diff the run against the last one from a local ledger, and render one self-contained HTML report with now-vs-proposed mock-ups; `file` upserts the findings into the repo's one managed issue, `fleet` sweeps every declared web app serially; `full-app` runs the whole-app redesign review (inventory, one shared system, Step N/M builds, write-back into the design system). Never starts, restarts or kills the app. E.g. "/design-review app-launcher", "/design-review app-launcher file", "/design-review fleet", "/design-review app-launcher --judges 2", "/design-review app-launcher full-app", "redesign the whole app", "review the rendered design", "how does the app score against the rubric".
+description: Review a running fleet web app's rendered design — live measurement in real browsers (phone/desktop × light/dark), rubric score, fresh-context judge, ledger diff, one HTML report with now-vs-proposed mock-ups. `file` upserts findings into the repo's managed issue; `fleet` sweeps every declared web app; `full-app` runs the whole-app redesign review. Never starts, restarts or kills the app. E.g. "/design-review app-launcher", "/design-review app-launcher file", "/design-review fleet", "/design-review app-launcher --judges 2", "/design-review app-launcher full-app", "redesign the whole app", "review the rendered design", "how does the app score against the rubric".
 ---
 
 # design-review
@@ -9,31 +9,30 @@ description: Review a running fleet web app's rendered design — measure the li
 sizes, WCAG contrast against the composited background, effective hit
 rectangles, icon boxes, overflow, accessible names, controls per row — the
 facts `/design-sync`'s static lint cannot see. Measure a **running** app in
-real browsers, score every rule of `design.rubric.toml` from the numbers,
-have a fresh-context judge answer the rubric's bounded `[[judgment]]`
-checklist from the run's own screenshots, record the run in a local ledger
-and diff it against the previous one by rule id, and hand back one HTML
-report a person reads: verdict and grade, scorecard, what changed since
-the last run, findings by category with the standard each cites, the
-checklist answers with anything uncatalogued (outside the grade),
-now-vs-proposed mock-ups, and where each fix lands (spec / scaffold / app).
-On request (`file`) the app-owned findings become one managed GitHub
-issue per repo; `fleet` runs the same review over every declared web app.
+real browsers, score every rule of `design.rubric.toml`, have a fresh-context
+judge answer the rubric's bounded `[[judgment]]` checklist from the run's
+screenshots, record the run in a local ledger and diff it by rule id, and
+hand back one HTML report: grade, scorecard, diff since the last run,
+findings by category with the standard each cites, checklist answers and
+uncatalogued findings (outside the grade), now-vs-proposed mock-ups, and where
+each fix lands (spec / scaffold / app). `file` turns app-owned findings into
+one managed GitHub issue per repo; `fleet` runs the review over every
+declared web app.
 
 **Measure with the helper, never by eye.** Every number, status, grade and
 finding sentence comes from `skills/_lib/design_review/` (deterministic,
-unit-tested); the report's sentences are the rubric's own `fix_template` +
-`standard` with the measured values substituted. This skill orchestrates
-the commands and prints a summary — it authors no finding, assigns no
-grade, and composes no issue body. The one judgment it applies is **bounded**: a fixed checklist, a
-fresh agent that sees only this run's screenshots and `metrics.json`,
-yes / no / na per question, schema-validated, never a grade input.
+unit-tested); report sentences are the rubric's `fix_template` + `standard`
+with measured values substituted. This skill orchestrates the commands and
+prints a summary — it authors no finding, assigns no grade, composes no issue
+body. Its one judgment is **bounded**: a fixed checklist, a fresh agent that
+sees only this run's screenshots and `metrics.json`, yes / no / na per
+question, schema-validated, never a grade input.
 
 **Read-only, always.** The walk clicks primary tabs and the header Settings
-gear, opens `<details>` and `<dialog>`s, screenshots, measures, and leaves. It never starts, restarts
-or kills the app or anything else, never writes into the target repo,
-never commits run output, and never attaches a screenshot or captured page
-text to an issue, PR or comment.
+gear, opens `<details>` and `<dialog>`s, screenshots, measures, and leaves. It
+never starts, restarts or kills the app or anything else, never writes into the
+target repo, never commits run output, never attaches a screenshot or captured
+page text to an issue, PR or comment.
 
 ## Arguments
 
@@ -53,11 +52,10 @@ text to an issue, PR or comment.
   never prints its URL, `SYNTHETIC_FAILED`. Synthetic runs are diffed only
   against earlier synthetic runs. A **live** run measures only what the app
   held at capture time, so the report's method list says `states not walked`
-  (rows, per-item controls and populated overlays an empty app never shows;
-  photo-ocr#129: sub-44px per-photo controls beside a fixed TOUCH-01) and, with
-  a synthetic instance declared, points at `--synthetic`; carry that line into
-  the summary, and when a rule reads as fixed, say that only the walked states
-  were measured (fleet-config#1163).
+  (rows, per-item controls, populated overlays an empty app never shows;
+  photo-ocr#129) and, with a synthetic instance declared, points at
+  `--synthetic`; carry that line into the summary, and when a rule reads as
+  fixed, say only the walked states were measured (fleet-config#1163).
 - `--no-judgment` → skip step 4 (no judge agent spawned); the report has no
   judgment section and the summary says `judgment: skipped (--no-judgment)`.
 - `--judges N` → `N` independent fresh-context judges in step 4 (default
@@ -128,13 +126,12 @@ Prints `TARGET= BASE_URL= ROOT= CLAUDE_MD= PROBE= DETAIL=`. Read `PROBE=`:
 ... design_review measure <repo>
 ```
 
-Runs the walk as a child of the **target repo's** `.venv` interpreter (that
-is where Playwright lives; this repo's venv is stdlib-only), over the fixed
-matrix `iphone` (WebKit, 390px) / `android` (Chromium) / `desktop` (Chromium) ×
+Runs the walk as a child of the **target repo's** `.venv` interpreter (Playwright
+lives there; this repo's venv is stdlib-only), over the fixed matrix `iphone` (WebKit, 390px) / `android` (Chromium) / `desktop` (Chromium) ×
 light / dark — every primary tab, every `<dialog>`, the Settings pane behind
 the header gear, and any `[design.review].extra_steps` the target's `.fleet.toml` opts into. A full
-app-launcher matrix takes about four minutes and leaves ~144 PNGs in the
-run directory; run it once per review, never in a loop.
+app-launcher matrix takes ~4 minutes and leaves ~144 PNGs; run it once per
+review, never in a loop.
 
 Read the printed lines: `MODE=live|synthetic`, `RUN_DIR=`, `METRICS=`, `SCREENS=<ok>/<total>`,
 `ABSENT=<n>`, `UNMEASURED=<reason>|none`, `COMMIT=`. `ABSENT` counts extra
@@ -168,8 +165,8 @@ it when you summarise: a light grade from such a run is not a light grade.
 Pure stdlib: `metrics.json` + `design.rubric.toml` + `~/.claude/design.md`
 / `design.dark.md` tokens → one JSON document with every rule's
 `pass | fail | unmeasured`, evidence, measured values, and the category and
-overall grades (each category starts at 100 and loses the rubric's penalty
-once per failing rule). Prints `EVALUATE=`, `GRADE=`, `SCORE=`,
+overall grades (each category starts at 100, minus the rubric's penalty once
+per failing rule). Prints `EVALUATE=`, `GRADE=`, `SCORE=`,
 `FAILED=<n>/<total>`, `UNMEASURED=`, `CATEGORIES=`, `MOCKUPS=`. Keep
 `evaluate.json` in the run directory — #974 diffs runs from it.
 
@@ -208,8 +205,8 @@ Keep at most the host's concurrent hard-tier cap in flight (`docs/model-tiers.md
 Claude: three) and **collect every judge's terminal reply within this
 turn** — poll a background worker to completion, never end the turn
 expecting a wake-up. Save each reply verbatim as `<RUN_DIR>/judge-<n>.json`
-(a stray ```` ```json ```` fence is tolerated by the validator; anything
-else that is not one JSON object is not). Then:
+(a stray ```` ```json ```` fence is tolerated; anything else that is not one
+JSON object is not). Then:
 
 ```
 ... design_review judge-merge <RUN_DIR> <RUN_DIR>/judge-1.json [<RUN_DIR>/judge-2.json ...]
@@ -225,9 +222,8 @@ entry with a proposed metric + threshold), merges the judges, writes the
 envelope violation, one `DROPPED_DETAIL=<why>` per dropped answer — name each
 in the summary, one
 `NOT_CONFIRMED=<id>:<votes>` per disagreement, one `NORMALIZED=<id>:<from>-><to>` per
-`<screen id>-full` evidence read as its screen (the full-page PNG's stem; five of
-seven recorded `unmeasured` judgments were only this, fleet-config#1158; say how
-many in the summary), and `RUBRIC_MISMATCH=` when
+`<screen id>-full` evidence read as its screen (the full-page PNG's stem,
+fleet-config#1158; say how many in the summary), and `RUBRIC_MISMATCH=` when
 `evaluate.json` was scored under another rubric version than the checklist
 — carry that line into the summary). **The checklist is partial**
 (fleet-config#1185): a malformed answer (an answer outside `yes | no | na`
@@ -241,8 +237,8 @@ its JSON, never hand-edit a reply, never answer a question yourself.
 Grades cannot move here: `judge-merge` adds one key and touches nothing
 else, and the tests assert it.
 
-A dead port, a missing run directory or a judge that could not be spawned
-is never a reason to start, restart or kill the app.
+A dead port, missing run directory or unspawnable judge is never a reason to
+start, restart or kill the app.
 
 ### 4b. Ledger — record the run, diff it against the last one
 
@@ -275,12 +271,11 @@ The ledger never carries a screenshot path or captured text.
 
 Writes `<RUN_DIR>/report.html` (`REPORT=`) — self-contained, inline CSS,
 no external request, follows the viewer's theme, works at phone width.
-The page opens with the scorecard and the "since the previous run" diff
-from step 4b. Findings are ordered by severity then rule id within each
-category, every finding carries its rule id, the header prints the rubric
-version, grades are printed from the JSON, and mock-ups are redrawn with
-placeholder names only. A rule whose mock-up template needs a value the run did not measure
-renders without one and says which value was missing. The judgment section
+The page opens with the scorecard and the step-4b diff. Findings are ordered
+by severity then rule id within each category, each carries its rule id, the
+header prints the rubric version, grades come from the JSON, and mock-ups are
+redrawn with placeholder names only. A mock-up template needing a value the
+run did not measure renders without one and says which value was missing. The judgment section
 (answers, evidence, mapped rule ids, the uncatalogued list with each
 proposed rule) renders from the same JSON, outside the grade, and prints
 `JUDGMENT=<status>|none`. The page never embeds or links a screenshot.
@@ -358,9 +353,9 @@ Print one block and stop:
 
 Every line comes from the `measure` / `evaluate` / `judge-merge` /
 `ledger` / `render` / `file` output, never from reading the page, a judge's
-reply or the issue body. An uncatalogued finding is reported as a title in
-this block and in the report — never re-typed into an issue or PR with the
-judge's evidence text (it quotes the page).
+reply or the issue body. An uncatalogued finding is reported as a title only —
+never re-typed into an issue or PR with the judge's evidence text (it quotes
+the page).
 
 ## Fleet mode (`/design-review fleet [--devices ...] [file]`)
 
@@ -372,13 +367,13 @@ One command replaces steps 1–5 and 6b for every declared web app:
 
 It walks every `hooks/projects.toml` table with a `webapp_port` in file
 order, **one app at a time** — probe, measure, evaluate, ledger + diff,
-render — so there is never more than one browser open. An app whose port
-is `NOT_LISTENING` or `TIMEOUT` gets an `unmeasured` run and an `unmeasured`
-ledger entry and is **never started, restarted or killed**; the sweep goes
-on. The judgment stage is **skipped** in fleet mode (the checklist is a
-per-app, on-demand step) and the digest says so. Budget: about four
-minutes and ~144 PNGs per listening app, serially — run it once, never in
-a loop, and never in a session that cannot stay for the whole sweep.
+render — so never more than one browser is open. An app whose port is
+`NOT_LISTENING` or `TIMEOUT` gets an `unmeasured` run and ledger entry and is
+**never started, restarted or killed**; the sweep goes on. The judgment stage
+is **skipped** (the checklist is a per-app, on-demand step) and the digest
+says so. Budget: ~4 minutes and ~144 PNGs per listening app, serially — run it
+once, never in a loop, never in a session that cannot stay for the whole
+sweep.
 
 Read `FLEET_DIR=`, `APPS=`, one `APP=<name> probe= unmeasured= grade= score=
 failed= fixed= regressed= new= run=` line per app, `MEASURED=`,
@@ -418,22 +413,20 @@ checklist), else a `[[judgment]]` question. Nothing automates that step.
 ## Full-app mode (`/design-review <repo> full-app`)
 
 The whole-app redesign review. It investigates every tab of one app,
-proposes **one shared component system** for the whole app, keeps
-**everything reachable**, ships the result as **Step N/M issues** one PR at
-a time with a **phone check after each**, and ends by **writing what it
-learned back into the design system**. Each round starts from the standard
-and leaves it better, so every app stays on one system and none forks a
-look of its own. The principles it applies are `design.md`'s contracts
+proposes **one shared component system**, keeps **everything reachable**,
+ships the result as **Step N/M issues** one PR at a time with a **phone check
+after each**, and ends by **writing what it learned back into the design
+system**, so every app stays on one system and none forks its own look. The
+principles it applies are `design.md`'s contracts
 (page-header, glance card, action-row, avatar, status chip, meter, modal,
 settings group); their rationale is `docs/design-system.md` › Round 8.
 Worked example: app-launcher#1432 (two rounds, steps #1433–#1439).
 
 Run it when an app reads as crowded or dated on the phone although the
 measured review and `/design-sync` are mostly green (composition, not
-tokens), or when it is the app's turn in the fleet rollout. Review one app
-at a time, because each round starts from the previous round's write-back.
-Unlike steps 3–6, this mode **authors** its investigation, which is its
-purpose. The rest of the hard rules still bind it.
+tokens), or when it is the app's turn in the fleet rollout. One app at a
+time: each round starts from the previous round's write-back. Unlike steps
+3–6, this mode **authors** its investigation; the other hard rules still bind.
 
 **A. Load the standard and the facts.** Read `docs/design-system.md` (the
 latest Round entries) and `design.md` / `design.dark.md`. The review applies
@@ -610,10 +603,10 @@ learnings reach the standard.
   something by judgment during a run, and never put a failing region of the
   app's own UI on the list: that hides a defect instead of fixing it.
 - **Nothing is authored here** (steps 1–7 and fleet mode; full-app mode
-  authors its investigation, never a finding or a grade). Sentences are `fix_template` + `standard`;
-  grades are the rubric's arithmetic; mock-ups are library templates filled
-  from measurements. Where a value is missing the report says so — no
-  improvised number, no improvised mock-up.
+  authors its investigation, never a finding or a grade). Sentences are
+  `fix_template` + `standard`; grades are the rubric's arithmetic; mock-ups
+  are library templates filled from measurements. A missing value is said so
+  in the report — no improvised number or mock-up.
 - **Judgment is bounded and never a grade input.** The checklist is rubric
   data; the judge is a fresh context that sees only this run's screenshots
   and `metrics.json` (never `evaluate.json`, `report.html`, a previous run
@@ -642,11 +635,10 @@ learnings reach the standard.
   such; a category flagged `unmeasured` is never read as passing, and an
   `unmeasured` or `not_confirmed` judgment is printed as such, never as
   "no findings".
-- **One run per review.** The matrix is minutes and hundreds of files; the
-  determinism contract (same build → identical findings, severities, grades
-  and mock-up set) is proven in the package tests, not by re-running here.
-  Judges are spawned once per review (`--judges N`), never re-run to get a
-  different answer.
+- **One run per review.** The determinism contract (same build → identical
+  findings, severities, grades and mock-up set) is proven in the package
+  tests, not by re-running here. Judges are spawned once per review
+  (`--judges N`), never re-run to get a different answer.
 
 ## Notes
 

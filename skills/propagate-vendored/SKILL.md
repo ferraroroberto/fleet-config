@@ -20,9 +20,9 @@ writeup). Schema reference: `architecture/README.md`'s "Optional per-repo
 ## Cadence — explicit or batched, never reflex-fired
 
 Invoke **by hand**, or as a periodic batch (e.g. weekly), never automatically
-per scaffold commit. Four propagation waves in one day is the anti-pattern
-however cheap each wave is — collect scaffold changes, propagate once. Nothing
-here schedules itself; there is no `run-weekly.bat` by design.
+per scaffold commit. Four waves in one day is the anti-pattern — collect
+scaffold changes, propagate once. Nothing here schedules itself; there is no
+`run-weekly.bat` by design.
 
 ## Arguments
 
@@ -31,8 +31,7 @@ here schedules itself; there is no `run-weekly.bat` by design.
 - **`<component>`** — required. The manifest key (`nav`, `tray_lifecycle`, …)
   — same name adopters use in their `[vendored].<component>` entry.
 - **`[scaffold-sha]`** — optional. The scaffold commit to propagate to.
-  Default: `project-scaffolding`'s current `origin/HEAD` (its default branch
-  tip) — i.e. "bring every adopter to what's on scaffold `main` right now."
+  Default: `project-scaffolding`'s current `origin/HEAD` (default branch tip).
 - **`--dry-run`** (or the bare word `check`) — report-only. Runs the drift
   scan, prints who's behind, touches nothing: no branch, no clone, no PR. Safe
   to run any time.
@@ -43,9 +42,8 @@ No component argument → stop: "Pass a component name, e.g.
 ## Rules (read before running anything)
 
 - **Model tier: `easy`** (per `docs/model-tiers.md`) — narrow, mechanical,
-  zero design decisions; full-autonomy execution shape. On Claude Code today
-  that's Sonnet at high effort, fanned out **all at once** (Sonnet is exempt
-  from the Opus concurrency cap — see `~/.claude/CLAUDE.md`).
+  zero design decisions. On Claude Code that's Sonnet at high effort, fanned
+  out **all at once** (Sonnet is exempt from the Opus concurrency cap).
 - **One sub-agent per adopter repo**, never two against the same checkout.
   Respect `skills/_lib/worktree_claim.py` exactly as `/issue-batch` does — a
   repo another session is actively working gets `MODE=worktree`, never a
@@ -53,10 +51,8 @@ No component argument → stop: "Pass a component name, e.g.
 - **No per-repo issues, ever.** The scaffold issue/PR is the single record;
   see the README's "Why this skill never files a per-repo issue."
 - **`Part of …`, never `Closes …`** in a generated PR body — GitHub's
-  closing-keyword parser matches substrings anywhere in the text, so a
-  literal `Closes #N` in a distribution PR risks closing the scaffold issue
-  on the very first adopter merge (the substring-match gotcha in
-  `~/.claude/CLAUDE.md`).
+  closing-keyword parser matches substrings, so a literal `Closes #N` risks
+  closing the scaffold issue on the first adopter merge.
 - **Adopt before re-vendor.** A repo with no `[vendored].<component>` entry
   yet is not skipped — see step 4, item 2a (ADOPT). This is how the manifest
   grows to cover the real nav + tray consumers.
@@ -72,11 +68,10 @@ No component argument → stop: "Pass a component name, e.g.
   first, not in the adopter's copy (`_vendored/README.md`'s rule).
 - **Vendoring standardizes whatever you vendor, including mistakes — review
   the component's user-facing wording as carefully as its mechanism before
-  propagating it fleet-wide.** Byte-identical + hash-verified means a
-  locally-softened copy registers as *drift*, so a bad default reads as the
-  safe choice everywhere it lands. Before a real (non-`--dry-run`) wave,
-  confirm the scaffold source's wording actually matches its own cited
-  reference implementation, not just that the bytes hash-match.
+  propagating it fleet-wide.** A locally-softened copy registers as *drift*,
+  so a bad default reads as the safe choice everywhere it lands. Before a real
+  (non-`--dry-run`) wave, confirm the scaffold source's wording matches its own
+  cited reference implementation, not just that the bytes hash-match.
 - **Hash-verify before bumping the manifest sha.** A copy that doesn't
   byte-match the scaffold source is a bug in this skill, not something to
   paper over by writing the sha anyway.
@@ -154,9 +149,9 @@ A repo appearing in neither list carries nothing catalogued and is genuinely
 not an adopter — skip it, it is out of scope for this component.
 
 **`classify_e2e` only — check each adopter's consumer.** Re-vendoring the
-classifier never checked the gates that read it: a new classifier joined a
-surface's targets with spaces, and one repo's gate passed them to pytest as one
-argument, so every branch touching two e2e modules failed (home-automation#784,
+classifier never checked the gates that read it (a new classifier joined a
+surface's targets with spaces; one gate passed them to pytest as one argument,
+failing every branch touching two e2e modules: home-automation#784,
 fleet-config#1134). For every adopter and carrier, run
 `E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/e2e_route.py probe E:/automation/<repo>`
 and carry its `GATE_ROUTING` into the step-3 report and the step-6 summary:
@@ -321,11 +316,11 @@ As each agent returns, surface its report with a status mark (`✅ merged` /
 ```
 
 **The coverage block is not decoration — it is the finding.** A wave that
-re-vendors every declared adopter and prints nothing else reads as complete
-whether it covered seven repos or one — how `#228`'s fix reached `task-os` and
-left six repos on the leaked-hostname copy (project-scaffolding#230). Print it
-even when every number is zero, and never compress "found no carriers" and
-"could not look for carriers" into the same line.
+prints only the re-vendored adopters reads as complete whether it covered
+seven repos or one (`#228`'s fix reached `task-os` and left six repos on the
+leaked-hostname copy, project-scaffolding#230). Print it even when every
+number is zero, and never compress "found no carriers" and "could not look for
+carriers" into the same line.
 
 ## Notes
 
@@ -336,14 +331,11 @@ even when every number is zero, and never compress "found no carriers" and
   ("ADOPT") the first time this skill actually runs against them.
 - **Quality gate is upstream, not here.** `project-scaffolding#152` (source
   behavioral tests + a same-day-second-bug freeze rule) keeps a defective
-  component from reaching this skill's fan-out — propagation distributes
-  whatever quality ships, including defects, so it deliberately does not
+  component from reaching the fan-out; this skill deliberately does not
   re-review the component's correctness.
 - **If `project-scaffolding#153` (de-vendor the tray) lands,** tray components
   drop out of this skill's scope — a shared junctioned call replaces
   per-repo vendoring for machine-local infrastructure. The UI components
   (`_vendored/`) remain vendored + propagated exactly as here.
 - **Drift-history lens is not built here:** `vendored_drift.py scan` is invoked
-  per component, on demand; a future `/audit-fleet`-style weekly sweep with no
-  `--component` filter (whole-fleet drift in one digest) is a possible
-  follow-up.
+  per component, on demand.
