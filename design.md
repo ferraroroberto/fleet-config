@@ -254,7 +254,9 @@ introduce ad-hoc sizes.
   12px is too small to read a diff on it. Use the stack `ui-monospace,
   SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace`.
 - **`label`** carries field and control labels and button text;
-  **`heading-md`** titles a section or group inside a view.
+  **`heading-md`** titles a section or group inside a view. A heading is never
+  rendered smaller than the body text it introduces (measured as `TYPE-07`,
+  fleet-config#1341).
 - **Caps are legal in one place.** `text-transform: uppercase` goes through
   the `overline` role only, and only for list group headers (e.g. date
   groups). Chips and badges are sentence case. Numbers and units are never

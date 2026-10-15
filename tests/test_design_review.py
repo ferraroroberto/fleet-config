@@ -60,8 +60,8 @@ def _doc(name: str) -> dict:
 # ---- rubric: the real file loads and names only metrics that exist ----------
 
 rubric = dr.load_rubric(RUBRIC)
-check(rubric.version == "1.35.0", "rubric meta.version stamped")
-check(len(rubric.rules) == 45, f"45 seed rules loaded (got {len(rubric.rules)})")
+check(rubric.version == "1.36.0", "rubric meta.version stamped")
+check(len(rubric.rules) == 46, f"46 seed rules loaded (got {len(rubric.rules)})")
 check(rubric.categories == ["typography", "color", "touch", "navigation", "layout", "components", "a11y"],
       "categories in rubric order")
 check(rb.check_metric_names(rubric, measure.metric_paths()) == [], "every rule metric is a script path or a derived metric")
@@ -703,6 +703,27 @@ check("192.0.2.14" in _c11_sentence and "{" not in _c11_sentence, f"COMP-11: the
 check("COMP-11" in next(j for j in rubric.judgment if j.id == "J-07").maps_to and "COMP-11" in next(j for j in rubric.judgment if j.id == "J-07").question,
       "J-07 names COMP-11 and maps to it, so a `no` and the rule never double-count")
 
+# ---- TYPE-07: a heading is never rendered smaller than the body text it introduces (#1341) ----
+_small_h = {"sel": "h2.title", "text": "Recent takes", "px": 14, "body_sel": "p.lede", "body_px": 16}
+_t07 = _text_rule("TYPE-07", [{"heading_smaller_than_body_count": 1, "heading_smaller_than_body": [_small_h]}, {}, {}])
+_t07_ok = {"heading_smaller_than_body_count": 0, "heading_smaller_than_body": []}
+check(_t07["status"] == "fail" and _t07["severity"] == "P2" and _t07["category"] == "typography" and _t07["owner"] == "app"
+      and _t07["evidence"][0]["items"] == [_small_h],
+      f"TYPE-07: a 14px heading above 16px body text fails and names both sizes -- {_t07['status']} {_t07['evidence']}")
+check(_text_rule("TYPE-07", [_t07_ok, _t07_ok, _t07_ok])["status"] == "pass", "TYPE-07: a screen with no inverted heading passes")
+_t07_doc = _doc("compliant")
+for _s in _t07_doc["screens"]:
+    _s["metrics"]["text"].update({"heading_smaller_than_body_count": 1, "heading_smaller_than_body": [_small_h]})
+_t07_out = ev.evaluate(_t07_doc, rubric, _specs("compliant"))
+_t07_sentence = report_mod.finding_sentence(next(r for r in _t07_out["rules"] if r["id"] == "TYPE-07"), _t07_out)
+check("h2.title" in _t07_sentence and "{" not in _t07_sentence, f"TYPE-07: the fix sentence names the heading and fills every placeholder -- {_t07_sentence}")
+_old07 = _doc("compliant")
+for _s in _old07["screens"]:
+    for _k in ("heading_smaller_than_body_count", "heading_smaller_than_body"):
+        _s["metrics"]["text"].pop(_k, None)
+check(next(r for r in ev.evaluate(_old07, rubric, _specs("compliant"))["rules"] if r["id"] == "TYPE-07")["status"] == "unmeasured",
+      "TYPE-07: a run from before the metric existed is unmeasured, never a pass")
+
 # ---- COMP-12: an expanded section with no text and no control (#1337) ----
 def _layout_rule(patches, rule_id: str = "COMP-12") -> dict:
     d = _doc("compliant")
@@ -815,7 +836,7 @@ check(all(s == "pass" for s in statuses_c.values()), f"compliant: every rule pas
 check(all(v["score"] == 100.0 and v["grade"] == "A" and not v["unmeasured"] for v in out_c["categories"].values()),
       "compliant: every category 100/A, measured")
 check(out_c["overall"] == {"score": 100.0, "grade": "A", "unmeasured": False}, "compliant: overall A")
-check(out_c["schema_version"] == 1 and out_c["rubric_version"] == "1.35.0" and out_c["target"] == "fixture-app"
+check(out_c["schema_version"] == 1 and out_c["rubric_version"] == "1.36.0" and out_c["target"] == "fixture-app"
       and out_c["commit"].startswith("0000") and out_c["generated_at"].endswith("Z"), "evaluate envelope keys")
 check([s["id"] for s in out_c["screens"]] == ["desktop-light-home", "iphone-light-home", "desktop-light-dialog-edit"],
       "evaluate echoes the screen list")
@@ -887,11 +908,11 @@ check(all(s == "fail" for s in statuses_v.values()), f"violating: every rule fai
 check(all(r["evidence"] and r["evidence"][0]["screen"] for r in out_v["rules"]), "every failing rule carries evidence with a screen id")
 check(all(r["measured"] for r in out_v["rules"]), "every failing rule carries measured values keyed by screen")
 cat_v = out_v["categories"]
-check(cat_v["typography"]["score"] == 100 - (12 + 25 + 12 + 12 + 6 + 6) and cat_v["typography"]["grade"] == "F",
-      "typography: penalties once per rule (P1+P0+P1+P1+P2+P2)")
+check(cat_v["typography"]["score"] == 100 - (12 + 25 + 12 + 12 + 6 + 6 + 6) and cat_v["typography"]["grade"] == "F",
+      "typography: penalties once per rule (P1+P0+P1+P1+P2+P2+P2)")
 check(cat_v["touch"]["score"] == 100 - (25 + 25 + 12) and cat_v["navigation"]["score"] == 100 - (12 + 6 + 12 + 2 + 2),
       "touch / navigation scores (navigation: NAV-01 P1 + NAV-02 P2 + NAV-03 P1 + NAV-04 P3 + NAV-05 P3)")
-check(cat_v["typography"]["failed"] == ["TYPE-01", "TYPE-02", "TYPE-03", "TYPE-04", "TYPE-05", "TYPE-06"], "failed ids listed in rule order")
+check(cat_v["typography"]["failed"] == ["TYPE-01", "TYPE-02", "TYPE-03", "TYPE-04", "TYPE-05", "TYPE-06", "TYPE-07"], "failed ids listed in rule order")
 check(out_v["overall"]["grade"] == "F" and not out_v["overall"]["unmeasured"], "violating: overall F, fully measured")
 c01v = next(r for r in out_v["rules"] if r["id"] == "COLOR-01")
 check(any(i["component"] == "button-tint" and i["ratio"] == 4.13 for e in c01v["evidence"] for i in e["items"]),
@@ -1787,7 +1808,7 @@ else:
           f"measure CLI walks the fixture: 2 tabs + 1 dialog x light/dark, plus the absent Settings gear (#1217) ({proc.stdout[-300:]}{proc.stderr[-300:]})")
     check(lines.get("RUN_DIR") == str(run_dir) and Path(lines.get("METRICS", "")).is_file(), "RUN_DIR/METRICS lines point at the run dir")
     doc = json.loads(Path(lines["METRICS"]).read_text(encoding="utf-8"))
-    check(doc["interpreter"] == str(interp) and doc["schema_version"] == 1 and doc["rubric_version"] == "1.35.0", "metrics.json records the interpreter + versions")
+    check(doc["interpreter"] == str(interp) and doc["schema_version"] == 1 and doc["rubric_version"] == "1.36.0", "metrics.json records the interpreter + versions")
     if not (scaffold / "tests" / "e2e" / "_geometry.py").is_file():
         _h.skip("browser leg: project-scaffolding/tests/e2e/_geometry.py absent -- hit-target assertions NOT verified")
     check(doc["walk"]["info"]["geometry"] == ("loaded" if (scaffold / "tests" / "e2e" / "_geometry.py").is_file() else "GEOMETRY_MISSING"),
@@ -2395,6 +2416,36 @@ else:
     _clash = sorted(i["text"] for e in _r_mixed["TYPE-06"]["evidence"] for i in e["items"])
     check(_r_mixed["TYPE-06"]["status"] == "fail" and _clash == ["Open Settings", "Running"] and _r_mixed["TYPE-05"]["status"] == "pass",
           f"TYPE-06: the capitalised stat label and the Title Case button are the minority of their classes across the two tabs -- {_clash}")
+
+    # TYPE-07: a heading rendered smaller than the body text under it (#1341)
+    def _walk_heading_body(case: str) -> list:
+        out_dir = STATE / f"fixture-heading-body-{case}"
+        proc = subprocess.run(
+            [str(interp), str(REPO / "skills" / "_lib" / "design_review" / "walk.py"), "--url", (FIX / "heading_body.html").as_uri() + f"?case={case}",
+             "--out", str(out_dir), "--devices", "desktop", "--scaffold", str(scaffold), "--params", str(STATE / "steps-params.json")],
+            capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=600,
+        )
+        if proc.returncode != 0:
+            return [{"error": proc.stderr[-300:]}]
+        return [s for s in json.loads((out_dir / "screens.json").read_text(encoding="utf-8")) if s["id"].startswith("desktop-light-") and s.get("status") == "ok"]
+
+    def _t07_hits(screens: list) -> list:
+        return [(h.get("text"), h.get("px"), h.get("body_px")) for s in screens for h in (s["metrics"]["text"].get("heading_smaller_than_body") or [])]
+
+    def _t07_status(screens: list) -> str:
+        d = _doc("compliant")
+        d["screens"] = [dict(base, id=s["id"], view=s.get("view"), metrics=s["metrics"]) for base, s in zip(d["screens"], screens)]
+        return next(r for r in ev.evaluate(d, rubric, _specs("compliant"))["rules"] if r["id"] == "TYPE-07")["status"]
+
+    hb_fail, hb_pass, hb_edge = _walk_heading_body("fail"), _walk_heading_body("pass"), _walk_heading_body("edge")
+    check(all("metrics" in s for s in hb_fail + hb_pass + hb_edge) and len(hb_fail) == len(hb_pass) == len(hb_edge) == 2,
+          f"heading-body: each case walks its two tabs -- {[s.get('id', s) for s in hb_fail + hb_pass + hb_edge]}")
+    check(_t07_hits(hb_fail) == [("Recent takes", 14, 16), ("Text size", 14, 16)] and _t07_status(hb_fail) == "fail",
+          f"TYPE-07: a 14px h2 and a 14px role=heading above 16px paragraphs fail -- {_t07_hits(hb_fail)}")
+    check(_t07_hits(hb_pass) == [] and _t07_status(hb_pass) == "pass",
+          f"TYPE-07: a 20px h2 above 16px body, a 14px h3 above equal 14px body and a 14px h2 above a 12px caption pass -- {_t07_hits(hb_pass)}")
+    check(_t07_hits(hb_edge) == [] and _t07_status(hb_edge) == "pass",
+          f"TYPE-07: a stat value, a header row, a heading before a heading, a hidden paragraph, a paragraph four siblings away and a short badge are not body text -- {_t07_hits(hb_edge)}")
 
     # UA-font nav tab: voice-transcriber's <button class="tab"> tabs had no `font: inherit` and read Arial under a system-ui body;
     # TYPE-02 reads them (a tab is a <button>), an inheriting button beside them is not reported (#1211)

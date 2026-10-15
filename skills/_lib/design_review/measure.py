@@ -24,7 +24,8 @@ present on a successful run:
     text      sizes {px: runs}, weights {w: runs}, runs, under14, under11 [..],
               min_px, low_contrast [..], low_contrast_count,
               body_font_family, break_all [..], uppercase [..], glyph_icons [..],
-              raw_identifier_count, raw_identifiers [{sel, kind, text}]
+              raw_identifier_count, raw_identifiers [{sel, kind, text}],
+              heading_smaller_than_body_count, heading_smaller_than_body [{sel, text, px, body_sel, body_px}]
     casing    labels [{sel, cls, text, style, literal}], label_count, labels_seen
     controls  total, font_family_mismatch [..], font_family_mismatch_count,
               boundary_low [..], boundary_low_count, ua_styled [..],
@@ -206,7 +207,32 @@ _MEASURE_JS = r"""
       if (s.wordBreak === 'break-all') breakAll.push({sel: sel(el), text: raw.slice(0,40)});
       if (s.textTransform === 'uppercase') upper.push({sel: sel(el), text: raw.slice(0,40)});
     }
+    // A heading drawn smaller than the body text it introduces (#1341). The body text is the first prose sibling among
+    // the heading's next three visible siblings; the scan stops at another heading. Prose is a block of at least three
+    // words and twenty characters of its own text (a p, blockquote, li or dd by its whole text), never a control, so a
+    // stat value, a badge, a button, a list or an empty spacer is not body text and a heading with none is not measured.
+    // Equal is not smaller, and 0.5px of rounding is not either. A heading drawn in capitals is the `overline` role, a 12px
+    // group header: the one place design.md allows caps (TYPE-05 polices the rest), so its small size is the role, not a
+    // heading below its body.
+    const HEADING = 'h1, h2, h3, h4, h5, h6, [role=heading]';
+    const NOT_PROSE = 'button, a, input, select, textarea, summary, label, [role=button], [role=tab], [role=link], [role=menuitem]';
+    const BLOCK_PROSE = new Set(['P', 'BLOCKQUOTE', 'LI', 'DD']);
+    const proseText = (el) => (BLOCK_PROSE.has(el.tagName) ? (el.textContent || '')
+      : [...el.childNodes].filter(n => n.nodeType === 3).map(n => n.nodeValue).join(' ')).replace(/\s+/g, ' ').trim();
+    const isProse = (el) => { if (el.matches(HEADING) || el.matches(NOT_PROSE) || el.closest(NOT_PROSE) || el.querySelector(HEADING)) return false;
+      const t = proseText(el); return t.length >= 20 && t.split(' ').length >= 3; };
+    const inverted = [];
+    q(HEADING).forEach(h => { let seenSib = 0;
+      if (getComputedStyle(h).textTransform === 'uppercase') return;
+      for (let sib = h.nextElementSibling; sib && seenSib < 3; sib = sib.nextElementSibling) {
+        if (!visible(sib)) continue; seenSib++;
+        if (sib.matches(HEADING)) break;
+        if (!isProse(sib)) continue;
+        const hp = parseFloat(getComputedStyle(h).fontSize), bp = parseFloat(getComputedStyle(sib).fontSize);
+        if (hp + 0.5 < bp) inverted.push({sel: sel(h), text: txt(h), px: r2(hp), body_sel: sel(sib), body_px: r2(bp)});
+        break; } });
     return { sizes, weights, runs, under14, under11: under11.slice(0,CAP), under11_count: under11.length,
+      heading_smaller_than_body: inverted.slice(0,CAP), heading_smaller_than_body_count: inverted.length,
       min_px: runs ? minPx : null, low_contrast: low.slice(0,CAP), low_contrast_count: low.length,
       body_font_family: getComputedStyle(document.body).fontFamily,
       break_all: breakAll.slice(0,CAP), break_all_count: breakAll.length,
@@ -1040,7 +1066,7 @@ def metric_paths() -> List[str]:
         "text": ["sizes", "weights", "runs", "under14", "under11", "under11_count", "min_px",
                  "low_contrast", "low_contrast_count", "body_font_family", "break_all",
                  "break_all_count", "uppercase", "uppercase_count", "glyph_icons", "glyph_icon_count",
-                 "raw_identifiers", "raw_identifier_count"],
+                 "raw_identifiers", "raw_identifier_count", "heading_smaller_than_body", "heading_smaller_than_body_count"],
         "casing": ["labels", "label_count", "labels_seen"],
         "controls": ["total", "font_family_mismatch", "font_family_mismatch_count", "boundary_low",
                      "boundary_low_count", "ua_styled", "ua_styled_count", "label_fit_bad", "label_fit_bad_count",
