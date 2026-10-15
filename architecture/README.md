@@ -241,6 +241,21 @@ wide_views = ["board", "table", "today"]
 
 `skills/_lib/wide_views.py` is the one reader. `/design-review` records the list in `metrics.json`, and LAYOUT-06 fails a declared view that does not fill the window and an undeclared one-dimensional column wider than the measure. An undeclared master-detail does not fail as a stretched column, whether its detail pane is docked outside the tab's pane or sits beside the list inside it (`layout.pane_split`, fleet-config#1361); a declared entry stays authoritative and still has to fill the window. `design_lint`'s `desktop-measure` cannot see views, so with wide views declared and no 772px cap in the CSS it returns WARN, not FAIL, and leaves the other views to LAYOUT-06. A malformed key is never read as empty or as an exemption: LAYOUT-06 reports it as unmeasured, and `desktop-measure` keeps its FAIL with the reason. Same silent-if-unrecognized parsing as the other `[design]` keys.
 
+### Optional per-repo `[design] no_chat_surface` key (fleet-config#1443)
+
+COMP-18 (a who-when header repeated inside one chat turn) can only be measured where the walk reaches a rendered chat transcript. An app with no chat surface at all never will, so the rule would stay `unmeasured` for it forever. Such an app declares that once:
+
+```toml
+[design]
+no_chat_surface = true
+```
+
+| Field | Meaning |
+|---|---|
+| `no_chat_surface` | optional; `true` or `false`. `true` means the app renders no chat transcript, so COMP-18 reads `n/a` on every screen without a turn, with the reason "app declares no chat surface" stated in the report. Undeclared keeps today's behaviour: `unmeasured` when no transcript is reached, measured when one is |
+
+`skills/_lib/design_review/plan.py` (`load_no_chat_surface`) is the one reader. `/design-review` records the value in `metrics.json` and COMP-18 alone consumes it. A declared app whose walk does reach a turn header is still measured, never silenced: the screens without a turn say the declaration conflicts, and a failing run carries it in the evidence. A non-boolean value or an unparseable file is reported as `unmeasured` with the reason, never read as an opt-out. This is not a general per-rule n/a switch: COMP-18 is the one rule whose subject is structurally absent from some apps. An app opts in from its own repo; none is declared centrally.
+
 ### Optional per-repo `[worktree]` table (fleet-config#620)
 
 `skills/_lib/worktree_claim.py` junctions a repo's `.venv` into every fresh

@@ -60,7 +60,7 @@ def _doc(name: str) -> dict:
 # ---- rubric: the real file loads and names only metrics that exist ----------
 
 rubric = dr.load_rubric(RUBRIC)
-check(rubric.version == "1.40.0", "rubric meta.version stamped")
+check(rubric.version == "1.41.0", "rubric meta.version stamped")
 check(len(rubric.rules) == 49, f"49 seed rules loaded (got {len(rubric.rules)})")
 check(rubric.categories == ["typography", "color", "touch", "navigation", "layout", "components", "a11y"],
       "categories in rubric order")
@@ -323,6 +323,21 @@ check("unparseable" in (wv.load_wide_views(_wv_dir)[1] or ""), "wide_views: an u
 (_wv_dir / ".fleet.toml").write_text('[design]\nwide_views = ["board"]\n', encoding="utf-8")
 _tgt = plan.resolve_target(str(_wv_dir), url_override="https://127.0.0.1:1")
 check(_tgt.wide_views == ["board"] and _tgt.wide_views_error is None, "plan.resolve_target carries the declaration")
+
+# `[design] no_chat_surface` is validated like the other [design] keys (#1443)
+_nc_dir = Path(tempfile.mkdtemp(prefix="nc-"))
+check(plan.load_no_chat_surface(None) == (False, None) and plan.load_no_chat_surface(_nc_dir) == (False, None), "no_chat_surface: no root / no file is the normal, undeclared case")
+(_nc_dir / ".fleet.toml").write_text('layer = "working-web"\n[design]\nwide_views = ["board"]\n', encoding="utf-8")
+check(plan.load_no_chat_surface(_nc_dir) == (False, None), "no_chat_surface: a [design] table without the key is undeclared")
+(_nc_dir / ".fleet.toml").write_text('[design]\nno_chat_surface = true\n', encoding="utf-8")
+check(plan.load_no_chat_surface(_nc_dir) == (True, None), "no_chat_surface: true declares it")
+for _bad_toml, _what in (('[design]\nno_chat_surface = "yes"\n', "a string"), ('[design]\nno_chat_surface = 1\n', "an integer"), ('[design]\nno_chat_surface = [\n', "an unparseable file")):
+    (_nc_dir / ".fleet.toml").write_text(_bad_toml, encoding="utf-8")
+    _nc = plan.load_no_chat_surface(_nc_dir)
+    check(_nc[0] is False and _nc[1] and ("must be true or false" in _nc[1] or "unparseable" in _nc[1]), f"no_chat_surface: {_what} is an error, never an opt-out -- {_nc}")
+(_nc_dir / ".fleet.toml").write_text('[design]\nno_chat_surface = true\n', encoding="utf-8")
+_nc_tgt = plan.resolve_target(str(_nc_dir), url_override="https://127.0.0.1:1")
+check(_nc_tgt.no_chat_surface is True and _nc_tgt.no_chat_surface_error is None, "plan.resolve_target carries the no_chat_surface declaration")
 
 # ---- nav cap + page header (#966) ----
 
@@ -881,6 +896,30 @@ check(_c18_unm["status"] == "unmeasured" and "no rendered chat transcript" in _c
 _c18_na = _c18_layout([{"turn_headers": [{"who": "Agent", "count": 1}]}, _none_seen, _none_seen])
 check(_c18_na["status"] == "pass" and "n/a on 2" in _c18_na["reason"],
       f"COMP-18: once one screen showed a transcript the others are n/a, not unmeasured -- {_c18_na['status']} {_c18_na['reason']}")
+
+# `[design] no_chat_surface` (#1443): an app that renders no chat transcript reads COMP-18 as n/a, with the reason stated
+def _c18_declared(layout_by_screen, **doc_keys) -> dict:
+    d = _doc("compliant")
+    d.update(doc_keys)
+    for s, patch in zip(d["screens"], layout_by_screen):
+        s["metrics"]["layout"].update(patch)
+    return _c18_of(d)
+
+
+_c18_decl = _c18_declared([_none_seen, _none_seen, _none_seen], no_chat_surface=True)
+check(_c18_decl["status"] == "pass" and "no chat surface" in _c18_decl["reason"] and "not applicable" in _c18_decl["reason"],
+      f"COMP-18: a declared no-chat app is n/a on every screen with the reason stated, not unmeasured -- {_c18_decl['status']} {_c18_decl['reason']}")
+_c18_undecl = _c18_declared([_none_seen, _none_seen, _none_seen], no_chat_surface=False)
+check(_c18_undecl["status"] == "unmeasured" and "no rendered chat transcript" in _c18_undecl["reason"],
+      f"COMP-18: an app that declares nothing keeps unmeasured -- {_c18_undecl['status']} {_c18_undecl['reason']}")
+_c18_conflict = _c18_declared([{"turn_headers": [{"who": "Agent", "count": 3}], "repeated_headers": [_run], "repeated_header_count": 1}, _none_seen, _none_seen],
+                              no_chat_surface=True)
+check(_c18_conflict["status"] == "fail" and _c18_conflict["measured"].get("desktop-light-home") == 1.0
+      and "no chat surface" in _c18_conflict["reason"],
+      f"COMP-18: a declared app whose walk reaches a turn is still measured, and the report names the conflict -- {_c18_conflict['status']} {_c18_conflict['reason']}")
+_c18_bad = _c18_declared([_none_seen, _none_seen, _none_seen], no_chat_surface=False, no_chat_surface_error="[design] no_chat_surface must be true or false")
+check(_c18_bad["status"] == "unmeasured" and "no_chat_surface" in _c18_bad["reason"],
+      f"COMP-18: a malformed declaration is unmeasured with its reason, never read as an opt-out -- {_c18_bad['status']} {_c18_bad['reason']}")
 _c18_doc = _doc("compliant")
 for _s in _c18_doc["screens"]:
     _s["metrics"]["layout"].update({"turn_headers": [{"who": "Agent", "count": 3}], "repeated_headers": [_run], "repeated_header_count": 1})
@@ -917,7 +956,7 @@ check(all(s == "pass" for s in statuses_c.values()), f"compliant: every rule pas
 check(all(v["score"] == 100.0 and v["grade"] == "A" and not v["unmeasured"] for v in out_c["categories"].values()),
       "compliant: every category 100/A, measured")
 check(out_c["overall"] == {"score": 100.0, "grade": "A", "unmeasured": False}, "compliant: overall A")
-check(out_c["schema_version"] == 1 and out_c["rubric_version"] == "1.40.0" and out_c["target"] == "fixture-app"
+check(out_c["schema_version"] == 1 and out_c["rubric_version"] == "1.41.0" and out_c["target"] == "fixture-app"
       and out_c["commit"].startswith("0000") and out_c["generated_at"].endswith("Z"), "evaluate envelope keys")
 check([s["id"] for s in out_c["screens"]] == ["desktop-light-home", "iphone-light-home", "desktop-light-dialog-edit"],
       "evaluate echoes the screen list")
@@ -1889,7 +1928,7 @@ else:
           f"measure CLI walks the fixture: 2 tabs + 1 dialog x light/dark, plus the absent Settings gear (#1217) ({proc.stdout[-300:]}{proc.stderr[-300:]})")
     check(lines.get("RUN_DIR") == str(run_dir) and Path(lines.get("METRICS", "")).is_file(), "RUN_DIR/METRICS lines point at the run dir")
     doc = json.loads(Path(lines["METRICS"]).read_text(encoding="utf-8"))
-    check(doc["interpreter"] == str(interp) and doc["schema_version"] == 1 and doc["rubric_version"] == "1.40.0", "metrics.json records the interpreter + versions")
+    check(doc["interpreter"] == str(interp) and doc["schema_version"] == 1 and doc["rubric_version"] == "1.41.0", "metrics.json records the interpreter + versions")
     if not (scaffold / "tests" / "e2e" / "_geometry.py").is_file():
         _h.skip("browser leg: project-scaffolding/tests/e2e/_geometry.py absent -- hit-target assertions NOT verified")
     check(doc["walk"]["info"]["geometry"] == ("loaded" if (scaffold / "tests" / "e2e" / "_geometry.py").is_file() else "GEOMETRY_MISSING"),
