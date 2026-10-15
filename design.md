@@ -252,7 +252,8 @@ introduce ad-hoc sizes.
   the 12 / 14 / 16 scale, and only for mono listings: mono glyphs are wider
   than the system face, so 14px fits too few columns on a 390px phone and
   12px is too small to read a diff on it. Use the stack `ui-monospace,
-  SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace`.
+  SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace`. Both sizes
+  and the dark fill are measured as `COMP-17` (fleet-config#1342).
 - **`label`** carries field and control labels and button text;
   **`heading-md`** titles a section or group inside a view. A heading is never
   rendered smaller than the body text it introduces (measured as `TYPE-07`,

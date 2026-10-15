@@ -33,7 +33,7 @@
 # metrics.json, every evaluate output and every filed finding.
 
 [meta]
-version = "1.36.0"   # per-bump history: git log -- design.rubric.toml, and the issues/PRs it cites
+version = "1.37.0"   # per-bump history: git log -- design.rubric.toml, and the issues/PRs it cites
 seeded_from = "app-launcher rendered audit, 2026-09-21 (fleet-config#962)"
 
 [weights]
@@ -702,6 +702,19 @@ severity = "P2"
 owner = "app"
 standard = "design.md modal: the footer holds exactly one full-width `button-primary`, the most prominent control in the dialog; a destructive Delete belongs in the body, never a filled or larger footer control beside Save (fleet-config#1339). The J-02 ratchet narrowed: J-02 keeps every screen that is not a dialog footer"
 fix_template = "{count} dialogs on {screen} have a commit that is quieter than another footer control ({sample}); draw Save as the one full-width button-primary and move the rival into the dialog body or drop its fill."
+mockup = "none"
+
+[[rules]]
+id = "COMP-17"
+category = "components"
+title = "Code is drawn under its size or on a surface darker than its card"
+metric = "text.code_off_spec_count"
+fail_when = "gt"
+threshold = 0
+severity = "P2"
+owner = "app"
+standard = "design.md typography and the code chip: inline code is the `code-inline` chip at 0.875em of the text around it, never `caption` (12px), and a listing (a `pre`, a fenced block, a diff) is 13px on the `code-listing` frame; code never sits on `canvas-subtle`, which is true black inside a dark card (fleet-config#1342, found in the app-launcher Chat review). Measured per visible `pre`, `code` and `kbd`: a `pre` under 13px; an inline `code` or `kbd` at 12px or a quarter pixel under 0.875em of its parent (12.25px in 14px text passes); and, when the card behind it is dark, a fill darker than that card"
+fix_template = "{count} code elements on {screen} are off the code spec ({sample}); set inline code at 0.875em of its text, a listing at 13px, and fill code with `neutral-soft` (dark) or the card colour, never `canvas-subtle` inside a card."
 mockup = "none"
 
 # ---------------------------------------------------------------------------

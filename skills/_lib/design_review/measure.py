@@ -25,7 +25,8 @@ present on a successful run:
               min_px, low_contrast [..], low_contrast_count,
               body_font_family, break_all [..], uppercase [..], glyph_icons [..],
               raw_identifier_count, raw_identifiers [{sel, kind, text}],
-              heading_smaller_than_body_count, heading_smaller_than_body [{sel, text, px, body_sel, body_px}]
+              heading_smaller_than_body_count, heading_smaller_than_body [{sel, text, px, body_sel, body_px}],
+              code_off_spec_count, code_off_spec [{sel, text, px, why}]
     casing    labels [{sel, cls, text, style, literal}], label_count, labels_seen
     controls  total, font_family_mismatch [..], font_family_mismatch_count,
               boundary_low [..], boundary_low_count, ua_styled [..],
@@ -231,8 +232,29 @@ _MEASURE_JS = r"""
         const hp = parseFloat(getComputedStyle(h).fontSize), bp = parseFloat(getComputedStyle(sib).fontSize);
         if (hp + 0.5 < bp) inverted.push({sel: sel(h), text: txt(h), px: r2(hp), body_sel: sel(sib), body_px: r2(bp)});
         break; } });
+    // Code drawn off the spec (#1342). design.md fixes code at two sizes: an inline code chip is 0.875em of the text around
+    // it, never `caption` (12px), and a listing (a `pre`, a fenced block or a diff) is 13px; code never sits on a surface
+    // darker than the card holding it, which is the true-black `canvas-subtle` hole in dark. So each visible `pre`, `code`
+    // and `kbd` is read three ways. A `pre` under 13px (a quarter pixel of rounding excused) is a small listing. A `code` or
+    // `kbd` that is not inside a `pre` is inline: it fails at caption size (12px, the one size the spec names) or more than
+    // a quarter pixel under 0.875em of its parent (so 12.25px in 14px text passes and 12px in 14px text still fails as caption).
+    // Any of the three whose own fill, composited over the surface behind it, is darker than that surface fails, but only
+    // when the surface is itself dark (luminance under 0.2, the RENDERED_THEME dark band): in light the neutral-soft chip
+    // is a shade darker than its card by design. Code with no fill, a terminal (`.xterm`) and a `code` inside a `pre`
+    // (its size is the listing's) are not read for size.
+    const codeOff = [];
+    q('pre, code, kbd').forEach(el => { if (el.closest('.xterm, .xterm-rows, svg')) return;
+      const s = getComputedStyle(el), px = parseFloat(s.fontSize), host = el.parentElement || el, why = [];
+      if (el.tagName === 'PRE') { if (px + 0.25 < 13) why.push('listing under 13px'); }
+      else if (!host.closest('pre')) { const pp = parseFloat(getComputedStyle(host).fontSize);
+        if (Math.abs(px - 12) < 0.1) why.push('inline at caption size'); else if (px + 0.25 < 0.875 * pp) why.push('inline under 0.875em'); }
+      const own = rgba(s.backgroundColor);
+      if (own[3] >= 0.02) { const behind = bgOf(host), now = over(own, behind);
+        if (lum(behind) < 0.2 && lum(now) + 0.005 < lum(behind)) why.push('darker than its card'); }
+      if (why.length) codeOff.push({sel: sel(el), text: txt(el), px: r2(px), why: why.join(', ')}); });
     return { sizes, weights, runs, under14, under11: under11.slice(0,CAP), under11_count: under11.length,
       heading_smaller_than_body: inverted.slice(0,CAP), heading_smaller_than_body_count: inverted.length,
+      code_off_spec: codeOff.slice(0,CAP), code_off_spec_count: codeOff.length,
       min_px: runs ? minPx : null, low_contrast: low.slice(0,CAP), low_contrast_count: low.length,
       body_font_family: getComputedStyle(document.body).fontFamily,
       break_all: breakAll.slice(0,CAP), break_all_count: breakAll.length,
@@ -1066,7 +1088,8 @@ def metric_paths() -> List[str]:
         "text": ["sizes", "weights", "runs", "under14", "under11", "under11_count", "min_px",
                  "low_contrast", "low_contrast_count", "body_font_family", "break_all",
                  "break_all_count", "uppercase", "uppercase_count", "glyph_icons", "glyph_icon_count",
-                 "raw_identifiers", "raw_identifier_count", "heading_smaller_than_body", "heading_smaller_than_body_count"],
+                 "raw_identifiers", "raw_identifier_count", "heading_smaller_than_body", "heading_smaller_than_body_count",
+                 "code_off_spec", "code_off_spec_count"],
         "casing": ["labels", "label_count", "labels_seen"],
         "controls": ["total", "font_family_mismatch", "font_family_mismatch_count", "boundary_low",
                      "boundary_low_count", "ua_styled", "ua_styled_count", "label_fit_bad", "label_fit_bad_count",
