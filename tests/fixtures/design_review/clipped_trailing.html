@@ -12,6 +12,11 @@
               number before it); the digits visible and everything hidden being words; a wrapping line (no nowrap) full of
               figures; a line-clamped block; a hidden row; a row with an ellipsis that fits
               -> no hit
+     Narrowed to status and meta text (fleet-config#1438):
+       prose  a house number cut from an address line, a version string cut from a title, a clock time cut from a free-text
+              title -> no hit, each kept in the capped `clipped_trailing_excluded` sample
+       status a `.meta` slot whose clock time is cut, a `.status-row` dd, and an unmarked `·`-separated status line whose
+              duration is cut -> three hits
      Asserted by tests/test_design_review.py. -->
 <html lang="en">
 <head>
@@ -30,6 +35,8 @@
   .lbl { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .fig { flex: none; white-space: nowrap; }
   .wrap { font-size: 14px; }
+  .ell { display: block; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; color: var(--muted); }
+  .status-row { display: flex; gap: 8px; margin: 0; } .status-row dt { flex: none; } .status-row dd { flex: 1 1 auto; min-width: 0; margin: 0; }
   .clamp { font-size: 14px; display: -webkit-box; -webkit-line-clamp: 1; -webkit-box-orient: vertical; overflow: hidden; text-overflow: ellipsis; }
 </style>
 <script>
@@ -51,6 +58,16 @@
       '<div class="step wrap" style="display:block">Ran 2 commands, read 3 files, edited 5 files, searched 4 times +128 −46 2 failed 1m30s</div>',
       '<div class="clamp">Ran 2 commands, read 3 files, edited 5 files, searched 4 times, then read every changed file again and again +128 −46 2 failed 1m30s</div>',
       '<div class="step" hidden><span class="chev">&rsaquo;</span><span class="lbl">Ran 2 commands, read 3 files, edited 5 files, searched 4 times +128 −46 2 failed 1m30s</span></div>',
+    ],
+    prose: [
+      '<div class="ell">Deliver the parcel to the Rossi family at the old farmhouse on Via Giuseppe Garibaldi 14</div>',
+      '<div class="ell">Release notes for the desktop client rebuilt and republished from the long running branch as 1.38.0</div>',
+      '<div class="ell">Call the plumber about the leaking tap in the upstairs bathroom and agree a visit before 14:30</div>',
+    ],
+    status: [
+      '<div class="release-row"><span class="meta ell">Resting after the long burst of checks until Thursday 1 October 2026, 16:00</span></div>',
+      '<dl class="status-row"><dt class="ell">Last run</dt><dd class="ell">Finished with warnings · 14 filed · 3 need you · 2 failed · took 2m10s</dd></dl>',
+      '<div class="line ell">Archive finished with warnings, then ran again · 14 filed · 3 need you · took 2m10s</div>',
     ],
   };
   addEventListener('DOMContentLoaded', () => {

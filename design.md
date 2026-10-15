@@ -1148,8 +1148,8 @@ hand-picked per app.
   line:** one flat `rows.sm` row per run of tool calls, chevron, a
   plain-words label in `body-sm` `fg-muted` ("Ran 2 commands, read 3
   files"), then the parts an ellipsis must never cut (`+N −M`, `N failed`, a
-  duration) as non-shrinking trailing items (measured at 390px as `LAYOUT-09`,
-  fleet-config#1343); opened, the items hang off a
+  duration) as non-shrinking trailing items (measured at 390px as `LAYOUT-09`
+  in status and meta text, never in prose, fleet-config#1343, #1438); opened, the items hang off a
   2px rail. **A turn that changed things closes with a summary card** once
   the turn is over (the next prompt exists, or the app's activity line says
   it stopped), never growing live: a header with the total, then one

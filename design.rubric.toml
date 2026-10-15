@@ -33,7 +33,7 @@
 # metrics.json, every evaluate output and every filed finding.
 
 [meta]
-version = "1.39.0"   # per-bump history: git log -- design.rubric.toml, and the issues/PRs it cites
+version = "1.40.0"   # per-bump history: git log -- design.rubric.toml, and the issues/PRs it cites
 seeded_from = "app-launcher rendered audit, 2026-09-21 (fleet-config#962)"
 
 [weights]
@@ -478,13 +478,13 @@ mockup = "none"
 [[rules]]
 id = "LAYOUT-09"
 category = "layout"
-title = "A single-line row's own ellipsis cuts a count, a status or a duration at phone width"
+title = "A single-line row's own ellipsis cuts a count, a status or a duration in status or meta text at phone width"
 metric = "layout.clipped_trailing_count"
 fail_when = "gt"
 threshold = 0
 severity = "P2"
 owner = "app"
-standard = "design.md chat-turn and action-row: the parts an ellipsis must never cut (`+N -M`, `N failed`, a duration, a count) are non-shrinking trailing items beside the truncated label, never inside it (fleet-config#1343, found in the app-launcher Chat review). Measured at the 390px phone width per visible element that keeps one line under `text-overflow: ellipsis` and really overflows: it fails when a cut word is a number (a digit figure, `+N`, `-N`, a percentage, a clock time or a duration) or a status word (failed, errors, warnings, passed, skipped, pending) straight after one. A row that clips only words, a file name or a date does not fail"
+standard = "design.md chat-turn and action-row: the parts an ellipsis must never cut (`+N -M`, `N failed`, a duration, a count) are non-shrinking trailing items beside the truncated label, never inside it (fleet-config#1343, found in the app-launcher Chat review). Measured at the 390px phone width per visible element that keeps one line under `text-overflow: ellipsis` and really overflows: it fails when a cut word is a number (a digit figure, `+N`, `-N`, a percentage, a clock time or a duration) or a status word (failed, errors, warnings, passed, skipped, pending) straight after one, AND the cut figure sits in status or meta text (fleet-config#1438): the element is a `<time>`, `[role=status]`, `[data-state]` or carries a `meta`/`status`/`count`/`badge`/`chip`/`duration`/`stats`/`time` class part on itself or its parent; or the figure is half of a `+N -M` pair or beside a number-and-status-word pair (`2 failed`); or the text is a `·`-separated status line and the figure's own part is at most three words, mostly figures. A lone number inside a run of words (a house number in an address, a version string, a phone number or a clock time in a title a person typed) does not fail, and neither does a row that clips only words, a file name or a date. What the narrowing lets pass is kept as a capped sample (`layout.clipped_trailing_excluded`) so it can be reviewed"
 fix_template = "{count} single-line rows on {screen} cut a figure with their own ellipsis ({sample}); keep the counts, status and duration as non-shrinking trailing items (flex: none) beside the ellipsis label."
 mockup = "none"
 devices = ["iphone"]
