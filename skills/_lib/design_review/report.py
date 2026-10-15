@@ -372,6 +372,19 @@ def _method(doc: dict) -> str:
                      "stamped one, so the legs labelled that way did not measure it. Their colour rules (COLOR-02 to COLOR-05) are "
                      "unmeasured, never pass or fail; touch, layout, navigation and type still scored them. The fix is the app's: "
                      "follow the stamped theme, or declare [design.review] theme_storage_key")
+    cov = doc.get("overlay_coverage") if isinstance(doc.get("overlay_coverage"), dict) else {}
+    if cov.get("status") == "measured" and cov.get("not_walked_count"):
+        # fleet-config#1353: a drawer or sheet the walk never opened is invisible to every rule, so the grade can read
+        # as complete when it is not. Coverage, not a finding: nothing here moves the grade.
+        n, sample = int(cov["not_walked_count"]), [str(k) for k in cov.get("not_walked") or []]
+        more = f" +{n - len(sample)} more" if n > len(sample) else ""
+        items.append(f"not walked: {n} overlay surface{'s' if n != 1 else ''} ({', '.join(sample)}{more}) — present in the page "
+                     "but never shown on a walked screen (a dialog the walk opened while it was still an empty shell "
+                     "counts as not shown), so no rule measured them; declare a [design.review] extra_steps entry that "
+                     "opens each one the way the app does. Coverage only: the grade does not count it")
+    elif cov.get("status") == "unknown" and ok:
+        items.append("overlay coverage not established: no measured screen listed its overlay surfaces (metrics captured "
+                     "before the listing existed, or the listing failed), so surfaces the walk never opened are unknown, not none")
     for s in bad:
         items.append(f"screen {s.get('id')} not measured: {s.get('reason') or 'walk error'} — its rules report unmeasured, never pass")
     for s in absent:

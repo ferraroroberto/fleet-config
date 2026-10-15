@@ -793,6 +793,36 @@ def _settings_gear_state(screens: List[dict]) -> Optional[str]:
     return None
 
 
+OVERLAY_SAMPLE = 8  # not-walked surfaces named in the report; `not_walked_count` keeps the true total
+
+
+def overlay_coverage(screens: List[dict]) -> Dict[str, object]:
+    """The overlay surfaces no walked screen showed open (#1353): walk coverage for the report, never a rule input.
+
+    `present` is every surface key a measured screen listed, `walked` those open on at least one screen. `unknown`
+    when no measured screen carries the listing (metrics captured before it existed, or the section errored), so a
+    missing listing never reads as "nothing missed".
+    """
+    opened: Dict[str, bool] = {}
+    listed = False
+    for s in screens:
+        if not isinstance(s, dict) or s.get("status") != "ok" or not isinstance(s.get("metrics"), dict):
+            continue
+        items = measure.metric_value(s["metrics"], "coverage.overlays")
+        if not isinstance(items, list):
+            continue
+        listed = True
+        for item in items:
+            if isinstance(item, dict) and item.get("key"):
+                key = str(item["key"])
+                opened[key] = opened.get(key, False) or item.get("open") is True
+    if not listed:
+        return {"status": "unknown", "present": None, "walked": None, "not_walked": [], "not_walked_count": None}
+    missed = sorted(k for k, was_open in opened.items() if not was_open)
+    return {"status": "measured", "present": len(opened), "walked": len(opened) - len(missed),
+            "not_walked": missed[:OVERLAY_SAMPLE], "not_walked_count": len(missed)}
+
+
 def evaluate(doc: dict, rubric: Rubric, specs: Dict[str, Dict[str, str]],
              now: Optional[_dt.datetime] = None) -> Dict[str, object]:
     """The whole stage: one metrics document -> rule results + grades."""
@@ -842,6 +872,7 @@ def evaluate(doc: dict, rubric: Rubric, specs: Dict[str, Dict[str, str]],
                     for s in doc.get("screens", [])],
         "absent_screens": [str(s.get("id")) for s in doc.get("screens", []) if s.get("status") == ABSENT],
         "theme_mismatch_screens": theme_mismatches(doc.get("screens", [])),
+        "overlay_coverage": overlay_coverage(doc.get("screens") or []),
         "rules": rules,
         "categories": categories,
         "overall": score_overall(categories, rubric),

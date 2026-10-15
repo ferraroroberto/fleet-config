@@ -53,6 +53,8 @@ present on a successful run:
     dialogs   count, with_commit, quiet_commit [{dialog, commit, label, filled, w, h, rival, rival_label, why}], quiet_commit_count
     clearance bars [..], hidden_rows [..], hidden_row_count
     a11y     unnamed [..], unnamed_count, zoom_locked, text_size_control, text_size_stamped
+    coverage  overlays [{key, kind, open}], overlay_count -- every dialog / [popover] / [role=dialog] in the
+              DOM, open or not; walk coverage for the report, never a rule input (#1353)
     headings  ["H2:Title@16px", ...]
 
 Lists are capped (`CAP`) so a screen with hundreds of small controls still
@@ -1062,6 +1064,31 @@ _MEASURE_JS = r"""
     return { unnamed: unnamed.slice(0,CAP), unnamed_count: unnamed.length, zoom_locked: locked, text_size_control: tsc, text_size_stamped: stamped };
   });
 
+  // ---- coverage: every overlay surface in the DOM and whether it is open on this screen (#1353). Read only: listing a
+  // surface never opens, focuses or clicks it. Not a rule input -- evaluate.py folds the screens into the report's
+  // "not walked" line. A key is `tag#id`, else `tag.firstClass`, so a state class (`.is-open`) never splits a surface.
+  section('coverage', () => {
+    const OVERLAYS = 'dialog, [popover], [role=dialog], [role=alertdialog]';
+    const keyOf = (el) => { const tag = el.tagName.toLowerCase(); if (el.id) return tag + '#' + el.id;
+      const cls = (el.getAttribute('class') || '').trim().split(/\s+/).filter(Boolean)[0]; if (cls) return tag + '.' + cls;
+      const role = el.getAttribute('role'); return role ? tag + '[role=' + role + ']' : el.hasAttribute('popover') ? tag + '[popover]' : tag; };
+    const kindOf = (el) => el.tagName === 'DIALOG' ? 'dialog' : el.hasAttribute('popover') ? 'popover' : 'role-dialog';
+    // Open = shown on this screen: a <dialog> with `open`, a popover matching :popover-open, and in every case visible,
+    // inside the viewport (an off-canvas drawer is closed) and not under aria-hidden or inert. A dialog shell the walk's
+    // showModal() pass opened before the app filled it renders no box, so it stays closed: nothing in it was measured.
+    const isOpen = (el) => { if (el.closest('[aria-hidden=true], [inert]')) return false;
+      if (el.tagName === 'DIALOG' && !el.open) return false;
+      if (el.hasAttribute('popover')) { try { if (!el.matches(':popover-open')) return false; } catch (e) { /* no popover API: visibility decides */ } }
+      if (!visible(el)) return false;
+      const r = el.getBoundingClientRect(); return r.right > 0 && r.bottom > 0 && r.left < innerWidth && r.top < innerHeight; };
+    const byKey = new Map();
+    document.querySelectorAll(OVERLAYS).forEach(el => { if (EXCLUDE && el.closest(EXCLUDE)) return;
+      const key = keyOf(el), open = isOpen(el), seen = byKey.get(key);
+      if (seen) seen.open = seen.open || open; else byKey.set(key, {key, kind: kindOf(el), open}); });
+    const all = [...byKey.values()].sort((a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0));
+    return { overlays: all.slice(0, CAP), overlay_count: all.length };
+  });
+
   if (EXCLUDE) section('excluded', () => ({ selectors: params.excludeSelectors, elements: scope.querySelectorAll(EXCLUDE).length }));
   section('headings', () => q('h1,h2,h3,h4').map(h => h.tagName+':'+h.textContent.trim().slice(0,30)+'@'+getComputedStyle(h).fontSize).slice(0, CAP));
   return out;
@@ -1213,5 +1240,6 @@ def metric_paths() -> List[str]:
         "dialogs": ["count", "with_commit", "quiet_commit", "quiet_commit_count"],
         "clearance": ["bars", "hidden_rows", "hidden_row_count"],
         "a11y": ["unnamed", "unnamed_count", "zoom_locked", "text_size_control", "text_size_stamped"],
+        "coverage": ["overlays", "overlay_count"],
     }
     return [f"{s}.{k}" for s, ks in keys.items() for k in ks]
