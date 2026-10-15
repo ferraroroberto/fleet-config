@@ -457,6 +457,21 @@ def _d_empty_state_no_action(m: dict, rule: Rule, ctx: dict) -> Derived:
     return float(len(bare)), list(bare), None  # type: ignore[arg-type]
 
 
+def _d_repeated_turn_header(m: dict, rule: Rule, ctx: dict) -> Derived:
+    """COMP-18: count of runs of consecutive sibling blocks that repeat one speaker's who-when header (#1344).
+
+    The metric only reads blocks shaped like the chat-turn contract's header (see `measure.py`), so a screen that shows
+    none says nothing. A walk that never reaches a rendered transcript on any screen is `unmeasured`, never a pass: the
+    rule cannot be vacuous. Once any screen in the run showed one, the screens without a turn are n/a.
+    """
+    runs, count, heads = (measure.metric_value(m, "layout." + k) for k in ("repeated_headers", "repeated_header_count", "turn_headers"))
+    if runs is None or count is None or heads is None:
+        return None, [], _section_reason(m, "layout")
+    if not heads:
+        return (None, [], NOT_APPLICABLE) if ctx.get("turn_seen") else (None, [], "no rendered chat transcript reached on this screen")
+    return float(count), list(runs), None  # type: ignore[arg-type]
+
+
 def _d_switch_on_accent(m: dict, rule: Rule, ctx: dict) -> Derived:
     """Count of on switches whose track is not the theme's accent (#1200).
 
@@ -520,6 +535,7 @@ DERIVED: Dict[str, Callable[[dict, Rule, dict], tuple]] = {
     "controls.icon_only_unconventional": _d_icon_only_unconventional,
     "feedback.toast_tinted": _d_toast_tinted,
     "feedback.empty_state_no_action": _d_empty_state_no_action,
+    "layout.repeated_turn_header": _d_repeated_turn_header,
 }
 
 
@@ -769,6 +785,10 @@ def evaluate(doc: dict, rubric: Rubric, specs: Dict[str, Dict[str, str]],
            "switch_on_seen": any(
                isinstance(s, dict) and s.get("status") == "ok" and isinstance(s.get("metrics"), dict)
                and bool(measure.metric_value(s["metrics"], "controls.switches_on"))
+               for s in doc.get("screens") or []),
+           "turn_seen": any(
+               isinstance(s, dict) and s.get("status") == "ok" and isinstance(s.get("metrics"), dict)
+               and bool(measure.metric_value(s["metrics"], "layout.turn_headers"))
                for s in doc.get("screens") or []),
            "header_contexts": _header_contexts(doc.get("screens") or []),
            "casing_outliers": _casing_outliers(casing_labels),

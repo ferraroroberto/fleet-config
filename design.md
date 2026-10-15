@@ -1141,7 +1141,8 @@ hand-picked per app.
   block on the canvas, not a card:** one header for the whole turn (the
   agent's mark on a `neutral-soft` squircle, its name, the time, copy,
   collapse), then its parts in order at a 12px rhythm. Never one card per
-  text fragment, each with its own "who · when" header. **Reply text follows
+  text fragment, each with its own "who · when" header (measured as `COMP-18`,
+  fleet-config#1344). **Reply text follows
   the type scale:** `##` is `heading-md`, `###` is body bold, so a heading
   never renders smaller than the body around it. **Tool work is a quiet step
   line:** one flat `rows.sm` row per run of tool calls, chevron, a

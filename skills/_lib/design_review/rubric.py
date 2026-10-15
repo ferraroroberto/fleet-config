@@ -84,6 +84,7 @@ DERIVED_METRICS = (
     "controls.switch_on_not_accent",
     "feedback.toast_tinted",
     "feedback.empty_state_no_action",
+    "layout.repeated_turn_header",
 )
 
 
