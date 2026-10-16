@@ -15,9 +15,7 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 from pathlib import Path
-import tempfile
 from typing import Any, Optional
 
 import _lib
@@ -142,20 +140,9 @@ def _record_once(payload: dict[str, Any]) -> bool:
     if key in keys:
         return False
     keys = [*keys[-(_MAX_DEDUP_KEYS - 1):], key]
-    _lib.sweep_stale_atomic_temps(path)
-    temporary: Optional[str] = None
     try:
-        fd, temporary = tempfile.mkstemp(
-            dir=str(path.parent), prefix=_lib.atomic_tmp_prefix(path), suffix=".tmp")
-        with os.fdopen(fd, "w", encoding="utf-8") as handle:
-            json.dump(keys, handle)
-        os.replace(temporary, path)
+        _lib.atomic_write_text(path, json.dumps(keys))
     except OSError as exc:
-        if temporary:
-            try:
-                os.unlink(temporary)
-            except OSError:
-                pass
         logger.info("Codex attention delivery not confirmed: dedup write failed (%s)", exc)
         return False
     return True

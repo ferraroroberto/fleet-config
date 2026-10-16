@@ -32,9 +32,7 @@ from __future__ import annotations
 import argparse
 import json
 import logging
-import os
 import sys
-import tempfile
 from pathlib import Path
 from typing import Optional
 
@@ -83,22 +81,8 @@ def normalise_title(title: str) -> str:
 
 def _write_titles(conv_dir: Path, titles: "dict[str, str]") -> None:
     """Atomically replace the sidecar. Raises ``OSError`` on failure."""
-    path = conv_dir / ci.TITLES_NAME
-    _lib.sweep_stale_atomic_temps(path)
-    temporary: Optional[str] = None
-    try:
-        fd, temporary = tempfile.mkstemp(
-            dir=str(conv_dir), prefix=_lib.atomic_tmp_prefix(path), suffix=".tmp")
-        with os.fdopen(fd, "w", encoding="utf-8") as handle:
-            json.dump(dict(sorted(titles.items())), handle, indent=2, ensure_ascii=False)
-        os.replace(temporary, path)
-    except OSError:
-        if temporary:
-            try:
-                os.unlink(temporary)
-            except OSError:
-                pass
-        raise
+    _lib.atomic_write_text(
+        conv_dir / ci.TITLES_NAME, json.dumps(dict(sorted(titles.items())), indent=2, ensure_ascii=False))
 
 
 def set_title(conv_dir: Path, label: str, file: str, title: str) -> str:

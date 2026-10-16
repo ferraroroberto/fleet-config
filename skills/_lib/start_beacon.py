@@ -50,7 +50,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from hooks_state import atomic_tmp_prefix, state_dir  # noqa: E402
+from hooks_state import atomic_write_text, state_dir  # noqa: E402
 
 PTH_NAME = "fleet_start_beacon.pth"
 LEDGER_NAME = "starts.tsv"
@@ -158,10 +158,7 @@ def install(repo: Path, venv: Path) -> Dict[str, Any]:
     wrote = first or target.read_text(encoding="utf-8") != text
     if wrote:
         ledger.parent.mkdir(parents=True, exist_ok=True)
-        fd, tmp = tempfile.mkstemp(prefix=atomic_tmp_prefix(target), suffix=".tmp", dir=target.parent)
-        with os.fdopen(fd, "w", encoding="utf-8") as f:  # a starting interpreter never reads a half-written .pth
-            f.write(text)
-        os.replace(tmp, target)
+        atomic_write_text(target, text)  # a starting interpreter never reads a half-written .pth
     if first:
         _append_header(ledger, INSTALLED, f"venv={venv}")
     return {"pth": str(target), "ledger": str(ledger), "first_install": first, "written": wrote}

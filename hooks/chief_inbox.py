@@ -44,7 +44,6 @@ import json
 import logging
 import os
 import sys
-import tempfile
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -188,19 +187,7 @@ def record(payload: Dict[str, Any], event: str, default_agent: str = "claude", *
     target = directory / f"{int(now.timestamp() * 1000)}-{event_id}.json"
     # Every event shares one temp stem, so the next writer's age sweep can
     # find a hard-killed writer's orphan (each target name is unique).
-    stem = directory / "event"
-    _lib.sweep_stale_atomic_temps(stem)
-    fd, tmp_name = tempfile.mkstemp(prefix=_lib.atomic_tmp_prefix(stem), suffix=".tmp", dir=directory)
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8") as handle:
-            json.dump(entry, handle)
-        os.replace(tmp_name, target)
-    except OSError:
-        try:
-            os.unlink(tmp_name)
-        except OSError:
-            pass
-        raise
+    _lib.atomic_write_text(target, json.dumps(entry), temp_stem=directory / "event")
     return target
 
 

@@ -71,7 +71,6 @@ import json
 import logging
 import os
 import sys
-import tempfile
 import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -196,23 +195,12 @@ def _write_rows(path: Path, rows: Dict[str, Any]) -> bool:
     ``global-CLAUDE.md`` forbids — a write acknowledged is not an outcome
     confirmed — so the failure is now both logged and returned.
     """
-    _lib.sweep_stale_atomic_temps(path)
     payload = json.dumps(rows, indent=2, sort_keys=True)
     for attempt in range(_REPLACE_ATTEMPTS):
-        tmp_name: Optional[str] = None
         try:
-            fd, tmp_name = tempfile.mkstemp(
-                dir=str(path.parent), prefix=_lib.atomic_tmp_prefix(path), suffix=".tmp")
-            with os.fdopen(fd, "w", encoding="utf-8") as handle:
-                handle.write(payload)
-            os.replace(tmp_name, path)
+            _lib.atomic_write_text(path, payload)
             return True
         except OSError:
-            if tmp_name:
-                try:
-                    os.unlink(tmp_name)
-                except OSError:
-                    pass
             time.sleep(0.05 * (attempt + 1))
     _lib.logger.warning(
         "session-state write not confirmed: %s unchanged after %d attempts",

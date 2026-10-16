@@ -23,6 +23,7 @@ import shutil
 import stat
 import subprocess
 import sys
+import tempfile
 import time
 from pathlib import Path
 from typing import Any, Dict, Optional, Sequence
@@ -103,6 +104,38 @@ def sweep_stale_atomic_temps(path: Path) -> None:
                 stale.unlink()
         except OSError:
             continue
+
+
+def atomic_write_text(
+    path: Path, text: str, *, newline: Optional[str] = None, temp_stem: Optional[Path] = None,
+) -> None:
+    """Replace ``path`` with ``text`` (UTF-8) so a reader never sees half a file.
+
+    The one body every state writer shares (fleet-config#1441): sweep the
+    stem's stale orphans, ``mkstemp`` a sibling named by
+    :func:`atomic_tmp_prefix`, write, ``os.replace``, and unlink the temp when
+    any of that raises ``OSError`` -- then re-raise, so each caller keeps its
+    own failure policy (log and return, retry, propagate). ``newline`` goes to
+    ``open()`` unchanged (``None`` = platform line endings), so every file
+    keeps its bytes. ``temp_stem`` (a sibling of ``path``) names and sweeps the temps
+    instead of ``path`` itself, for a writer whose every target is unique.
+    Mirrored in ``skills/_lib/hooks_state.py``.
+    """
+    stem = temp_stem or path
+    sweep_stale_atomic_temps(stem)
+    temporary: Optional[str] = None
+    try:
+        fd, temporary = tempfile.mkstemp(dir=str(path.parent), prefix=atomic_tmp_prefix(stem), suffix=".tmp")
+        with os.fdopen(fd, "w", encoding="utf-8", newline=newline) as handle:
+            handle.write(text)
+        os.replace(temporary, path)
+    except OSError:
+        if temporary:
+            try:
+                os.unlink(temporary)
+            except OSError:
+                pass
+        raise
 
 
 def launcher_session_id() -> str:

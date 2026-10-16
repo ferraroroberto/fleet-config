@@ -53,9 +53,7 @@ stdlib only.
 from __future__ import annotations
 
 import json
-import os
 import sys
-import tempfile
 from pathlib import Path
 from typing import Dict, List, Optional
 from urllib.parse import urlsplit
@@ -133,18 +131,8 @@ def run_id_of(run_dir: Path, doc: Optional[dict] = None) -> str:
 
 def _write(path: Path, entries: List[dict]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    hooks_state.sweep_stale_atomic_temps(path)
-    fd, tmp = tempfile.mkstemp(prefix=hooks_state.atomic_tmp_prefix(path), suffix=".tmp", dir=str(path.parent))
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as fh:
-            json.dump({"schema_version": 1, "keep": LEDGER_KEEP, "entries": entries}, fh, indent=1, ensure_ascii=True)
-        os.replace(tmp, path)
-    except BaseException:
-        try:
-            os.unlink(tmp)
-        except OSError:
-            pass
-        raise
+    text = json.dumps({"schema_version": 1, "keep": LEDGER_KEEP, "entries": entries}, indent=1, ensure_ascii=True)
+    hooks_state.atomic_write_text(path, text, newline="\n")
 
 
 def record(run_dir: Path, doc: Optional[dict] = None, live: Optional[str] = None) -> dict:

@@ -10,8 +10,9 @@ the env var being honoured everywhere, so a ninth caller that re-derives it
 by hand risks getting it wrong and writing into live fleet state during a
 test run.
 
-Also owns the atomic-write temp naming + age sweep for writers into that
-directory (fleet-config#864), mirroring `hooks/_lib.py`'s copy -- the tree
+Also owns the atomic-write temp naming + age sweep (fleet-config#864) and the
+shared write body around them (fleet-config#1441) for writers into that
+directory, mirroring `hooks/_lib.py`'s copy -- the tree
 boundary forbids either tier importing the other's.
 
 stdlib only.
@@ -21,8 +22,10 @@ from __future__ import annotations
 
 import os
 import re
+import tempfile
 import time
 from pathlib import Path
+from typing import Optional
 
 STATE_DIR_ENV_VAR = "CLAUDE_HOOKS_STATE_DIR"
 
@@ -75,3 +78,33 @@ def sweep_stale_atomic_temps(path: Path) -> None:
                 stale.unlink()
         except OSError:
             continue
+
+
+def atomic_write_text(
+    path: Path, text: str, *, newline: Optional[str] = None, temp_stem: Optional[Path] = None,
+) -> None:
+    """Replace `path` with `text` (UTF-8) so a reader never sees half a file.
+
+    Mirror of `hooks/_lib.py`'s copy (fleet-config#1441): sweep the stem's
+    stale orphans, `mkstemp` a sibling named by `atomic_tmp_prefix`, write,
+    `os.replace`, and unlink the temp when any of that raises `OSError` --
+    then re-raise, so each caller keeps its own failure policy. `newline` goes
+    to `open()` unchanged (`None` = platform line endings).
+    `temp_stem` (a sibling of `path`) names and sweeps the temps instead of
+    `path` itself, for a writer whose every target is unique.
+    """
+    stem = temp_stem or path
+    sweep_stale_atomic_temps(stem)
+    temporary: Optional[str] = None
+    try:
+        fd, temporary = tempfile.mkstemp(dir=str(path.parent), prefix=atomic_tmp_prefix(stem), suffix=".tmp")
+        with os.fdopen(fd, "w", encoding="utf-8", newline=newline) as handle:
+            handle.write(text)
+        os.replace(temporary, path)
+    except OSError:
+        if temporary:
+            try:
+                os.unlink(temporary)
+            except OSError:
+                pass
+        raise
