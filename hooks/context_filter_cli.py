@@ -400,8 +400,12 @@ def run_compress(args: argparse.Namespace) -> int:
     object: ``{"mode", "wrap"}`` plus ``"text"`` when wrap is true. Telemetry
     rows are appended in both shadow and rewrite, same as ``run``.
     """
+    # Decode the raw bytes as UTF-8: a piped stdin's text layer defaults to the
+    # locale codec (cp1252) on Windows, and Pi spawns this without PYTHONUTF8, so
+    # any non-ASCII output came back mojibaked (fleet-config#1440, same fix as
+    # `harness_wire.read_stdin_json`, #912). `utf-8-sig` drops a leading BOM.
     try:
-        data = json.load(sys.stdin)
+        data = json.loads(sys.stdin.buffer.read().decode("utf-8-sig"))
     except (json.JSONDecodeError, UnicodeDecodeError):
         print(json.dumps({"mode": "off", "wrap": False}))
         return 0
