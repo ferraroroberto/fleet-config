@@ -188,14 +188,15 @@ def _casing_vocab(labels: List[dict]) -> set:
 
 
 def _casing_style(lab: dict, vocab: set) -> Optional[str]:
-    """A label's style for the TYPE-06 comparison: the measured one, except that a `title` label whose only capitalised
-    word after the first is one the run also sets in lowercase elsewhere is not shown to be title case (a language, a
-    brand or a place name is capitalised in a sentence). Two such words, or one the run also writes lowercase, confirm it."""
+    """A label's style for the TYPE-06 comparison: the measured one, except that a `title` label resting on two or fewer
+    capitalised words after the first is ambiguous (`None`, not compared): a language, a brand or a product name is
+    capitalised in a sentence ("Launch Docker + Langfuse", #1463). Three such words, or any word the run also writes in
+    lowercase elsewhere, confirm title case."""
     style = lab.get("style")
     if style != "title":
         return str(style) if style else None
     rest = [w for w in _CASING_WORD.findall(str(lab.get("text", "")))[1:] if w[0].isupper()]
-    return "title" if len(rest) >= 2 or any(w.lower() in vocab for w in rest) else "sentence"
+    return "title" if len(rest) >= 3 or any(w.lower() in vocab for w in rest) else None
 
 
 def _casing_outliers(labels: List[dict]) -> Dict[str, Dict[str, str]]:

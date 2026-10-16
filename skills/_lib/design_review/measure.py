@@ -275,7 +275,7 @@ _MEASURE_JS = r"""
   // ---- casing: how the app's labels are cased (#1365). Each button, tab, menu item and heading label, plus a
   // short leaf element whose class names it a stat or label, is recorded once per text with its class and its
   // style: upper (no lowercase letter), lower (starts lowercase), capitalised (one word, capital first), sentence
-  // or title (several words, capital first; title when every word after the first is capitalised). `literal` is
+  // or title (several words, capital first; title when every word after the first is capitalised; evaluate.py reads a title resting on two or fewer such words as ambiguous (#1463)). `literal` is
   // set when the characters typed in the markup are already capitals, which text-transform cannot see (TYPE-05);
   // the style is of the rendered text. Whether two styles of one class clash across the run is evaluate.py's call
   // (TYPE-06). A label with a hyphen or other identifier character is data or a name, not a casing choice,

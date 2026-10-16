@@ -1156,9 +1156,17 @@ for _why, _screens in (("a capitalised word beside sentence case", [[_lab("butto
                        ("sentence case throughout", [[_lab("button", "Save changes", "sentence")], [_lab("button", "Open settings", "sentence")], []]),
                        ("a capitalised proper noun the run never sets in lowercase", [[_lab("button", "Translate to English", "title"), _lab("button", "Boost amount", "sentence")], [], []])):
     check(_casing(_screens, "TYPE-06")["status"] == "pass", f"TYPE-06: {_why} is not a clash")
-_t06t = _casing([[_lab("button", "Save changes", "sentence"), _lab("button", "Open settings", "sentence")], [_lab("button", "Open Account Settings", "title")], []], "TYPE-06")
+_t06t = _casing([[_lab("button", "Save changes", "sentence"), _lab("button", "Open settings", "sentence")], [_lab("button", "Save All Changes Now", "title")], []], "TYPE-06")
 check(_t06t["status"] == "fail" and _t06t["measured"]["iphone-light-home"] == 1.0,
-      f"TYPE-06: two capitalised words after the first confirm title case, which clashes with sentence case -- {_t06t['measured']}")
+      f"TYPE-06: three capitalised words after the first confirm title case, which clashes with sentence case -- {_t06t['measured']}")
+# #1463: a label whose capitals rest on two or fewer words after the first (a product name among sentence-case
+# buttons) is ambiguous, never counted as a casing choice.
+_t06p = _casing([[_lab("button", "Save changes", "sentence"), _lab("button", "Open settings", "sentence"), _lab("button", "Launch Docker + Langfuse", "title")], [], []], "TYPE-06")
+check(_t06p["status"] == "pass", f"TYPE-06: product names in a sentence-case label are ambiguous, not title case -- {_t06p['measured']}")
+_t06q = _casing([[_lab("button", "Save changes", "sentence"), _lab("button", "Open settings", "sentence"), _lab("button", "Launch Docker + Langfuse", "title")],
+                 [_lab("button", "Save All Changes Now", "title")], []], "TYPE-06")
+check(_t06q["status"] == "fail" and [i["text"] for e in _t06q["evidence"] for i in e["items"]] == ["Save All Changes Now"],
+      f"TYPE-06: an ambiguous product-name label does not hide a real Title Case button beside it -- {_t06q['measured']}")
 check(_casing([None, [], []], "TYPE-06")["status"] == "unmeasured", "TYPE-06: a failed casing section is unmeasured, never a pass")
 check(next(r for r in ev.evaluate(_t05_old, rubric, _specs("compliant"))["rules"] if r["id"] == "TYPE-06")["status"] == "unmeasured",
       "TYPE-06: a run from before the casing section is unmeasured, never a pass")
