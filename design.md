@@ -112,7 +112,7 @@ components:
   segmented:      { height: "{components.control.height}", target: 44px, inset: 3px, rounded: "{rounded.md}", track: "{colors.neutral-soft}", selectedFill: "{colors.card}", label: "{colors.fg}" }   # one choice among 2–5 peers; the raised selected segment IS the state, never a colour (fleet-config#1334)
   history-mark:   { size: 6px, success: "{colors.fg-muted}", failure: "{colors.danger}", inFlight: "{colors.accent}", unconfirmed: "{colors.attention}", deferred: hollow, unknown: dash, dashHeight: 2px }   # a row's run/outcome strip: the healthy mark muted, colour only for the exception, unknown a dash (fleet-config#1392)
   row-swipe:      { deadZone: 8px, axisRatio: 1.5, edgeGuard: 24px, paneWidth: 88px, restOpenAt: 44px, commitAt: 55%, flickVelocity: 0.5px/ms, flickDistance: 30%, leading: "{colors.accent}" }   # one swipe action per side, also the row menu's first item (fleet-config#1392)
-  row-menu:       { backgroundColor: "{colors.canvas-subtle}", borderColor: "{colors.border}", rounded: "{rounded.md}", itemRounded: "{rounded.sm}", padding: "{spacing.xs}", minWidth: 200px, itemHeight: "{rows.sm}", itemTypography: "{typography.body}", itemWeight: 500, glyph: "{icons.size.inline}", textColor: "{colors.fg}", disabledColor: "{colors.fg-muted}", destructiveColor: "{colors.danger-text}", headerTypography: "{typography.body-sm}", viewportInset: "{spacing.sm}", aboveNavGap: "{spacing.sm}", anchorGap: 2px, zIndex: 200 }   # the kebab's floating action list (fleet-config#1393) — one raised surface a step above the card it opens over, 44px rows, danger last; the surface is the one value that differs in dark
+  row-menu:       { backgroundColor: "{colors.canvas-subtle}", borderColor: "{colors.border}", rounded: "{rounded.md}", itemRounded: "{rounded.sm}", padding: "{spacing.xs}", minWidth: 200px, itemHeight: "{rows.sm}", itemTypography: "{typography.body}", itemWeight: 500, glyph: "{icons.size.inline}", textColor: "{colors.fg}", disabledColor: "{colors.fg-muted}", destructiveColor: "{colors.danger-text}", headerTypography: "{typography.body-sm}", headerColor: "{colors.fg}", viewportInset: "{spacing.sm}", aboveNavGap: "{spacing.sm}", anchorGap: 2px, zIndex: 200 }   # the kebab's floating action list (fleet-config#1393) — one raised surface a step above the card it opens over, 44px rows, danger last; the surface is the one value that differs in dark
 focus:            { outline: "2px solid {colors.accent}", offset: 2px }   # one tokenized :focus-visible ring app-wide (a control overrides only where it draws a custom ring)
 layout:                           # desktop placement (Layout) — theme-independent
   measure:     772px              # centered content column below the wide breakpoint
@@ -1197,10 +1197,14 @@ hand-picked per app.
   rows, the theme shadow, at least 200px wide. Rows are `rounded.sm`; hover
   tints with `accent-soft` only where a pointer exists, and the keyboard ring is
   the app-wide 2px `accent` focus ring drawn inside the row so the menu's border
-  never clips it. **An optional header:** one muted `body-sm` line above the
+  never clips it. **An optional header:** one `body-sm` line above the
   items for a fact worth a glance (a pid, an app kind, "No conversation yet"),
   on a hairline, wrapping rather than widening the menu; never an item, never
-  focusable. **Items are data the app passes in**, in order; none is hard-coded
+  focusable. Its colour is `fg` (`headerColor`), not `fg-muted`, at regular
+  weight against the items' 500: it reads quieter by weight and the hairline
+  under it, since `fg-muted` on the dark menu surface is 4.08:1, under the 4.5:1
+  floor for `body-sm` text (`fg` there is 12.88:1; light `fg` on `canvas-subtle`
+  is 14.84:1; project-scaffolding#398). **Items are data the app passes in**, in order; none is hard-coded
   in the component. **Danger last:** a destructive item sits at the end after a
   1px divider in `danger-text`, never a filled or tinted red row (measured as `COMP-08`), and its
   confirm is the app's (the `action-row` rule). **Disabled** stays visible and

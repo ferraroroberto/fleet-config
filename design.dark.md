@@ -110,7 +110,7 @@ components:
   segmented:      { height: "{components.control.height}", target: 44px, inset: 3px, rounded: "{rounded.md}", track: "{colors.neutral-soft}", selectedFill: "color-mix(in srgb, var(--fg-muted) 30%, var(--card))", label: "{colors.fg}" }   # structure identical to Light (see design.md); the selected fill is NOT card here: over a card the track is #262c34 and card #161b22 is darker, so card reads pressed in. 30% fg-muted over card = #353b43, a step above the track, fg on it 9.6:1 (fleet-config#1396)
   history-mark:   { size: 6px, success: "{colors.fg-muted}", failure: "{colors.danger}", inFlight: "{colors.accent}", unconfirmed: "{colors.attention}", deferred: hollow, unknown: dash, dashHeight: 2px }   # structural, identical to Light (see design.md)
   row-swipe:      { deadZone: 8px, axisRatio: 1.5, edgeGuard: 24px, paneWidth: 88px, restOpenAt: 44px, commitAt: 55%, flickVelocity: 0.5px/ms, flickDistance: 30%, leading: "{colors.accent}" }   # structural, identical to Light (see design.md)
-  row-menu:       { backgroundColor: "{colors.border-muted}", borderColor: "{colors.border}", rounded: "{rounded.md}", itemRounded: "{rounded.sm}", padding: "{spacing.xs}", minWidth: 200px, itemHeight: "{rows.sm}", itemTypography: "{typography.body}", itemWeight: 500, glyph: "{icons.size.inline}", textColor: "{colors.fg}", disabledColor: "{colors.fg-muted}", destructiveColor: "{colors.danger-text}", headerTypography: "{typography.body-sm}", viewportInset: "{spacing.sm}", aboveNavGap: "{spacing.sm}", anchorGap: 2px, zIndex: 200 }   # the surface is the one value that differs: `border-muted` (#21262d), a step above the `card`, where light uses `canvas-subtle`; everything else structural, identical to Light (see design.md)
+  row-menu:       { backgroundColor: "{colors.border-muted}", borderColor: "{colors.border}", rounded: "{rounded.md}", itemRounded: "{rounded.sm}", padding: "{spacing.xs}", minWidth: 200px, itemHeight: "{rows.sm}", itemTypography: "{typography.body}", itemWeight: 500, glyph: "{icons.size.inline}", textColor: "{colors.fg}", disabledColor: "{colors.fg-muted}", destructiveColor: "{colors.danger-text}", headerTypography: "{typography.body-sm}", headerColor: "{colors.fg}", viewportInset: "{spacing.sm}", aboveNavGap: "{spacing.sm}", anchorGap: 2px, zIndex: 200 }   # the surface is the one value that differs: `border-muted` (#21262d), a step above the `card`, where light uses `canvas-subtle`; everything else structural, identical to Light (see design.md)
 focus:            { outline: "2px solid {colors.accent}", offset: 2px }   # one tokenized :focus-visible ring app-wide — identical behavior to Light, brighter accent value
 layout:                           # desktop placement (Layout) — theme-independent
   measure:     772px              # centered content column below the wide breakpoint
@@ -270,7 +270,8 @@ unpainted `icon-button` (no fill, border or shadow at rest, the glyph colour
 the only state), all unchanged in dark; the `history-mark` strip keeps its healthy mark in the
 dark `fg-muted` and colours only the exception in the dark base hues, its
 unknown mark a dash; the `row-menu` surface is the one value that changes, `border-muted` (a step
-above the dark `card`; light uses `canvas-subtle`), while its 44px rows, glyph,
+above the dark `card`; light uses `canvas-subtle`), its header line is `fg`
+(`headerColor`, 12.88:1 on `#21262d`; `fg-muted` would be 4.08:1), while its 44px rows, glyph,
 placement band, stacking and danger-last rule are structural and unchanged;
 the `segmented` selected fill is the other value that changes: 30% `fg-muted`
 over `card` (`#353b43`), a step above the `neutral-soft` track (`#262c34`),
