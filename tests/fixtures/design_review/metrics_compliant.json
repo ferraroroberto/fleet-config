@@ -27,6 +27,7 @@
     "dialogs": {"count": 1, "with_commit": 1, "quiet_commit": [], "quiet_commit_count": 0},
     "casing": {"labels": [{"sel": "button.btn", "cls": "button", "text": "Save changes", "style": "sentence", "literal": false}, {"sel": "button.chip", "cls": "button", "text": "ES", "style": "upper", "literal": true}, {"sel": "h2", "cls": "heading", "text": "Home", "style": "capitalised", "literal": false}], "label_count": 3, "labels_seen": 3},
     "clearance": {"bars": ["nav.pill"], "hidden_rows": [], "hidden_row_count": 0},
+    "glance": {"state": "measured", "card": "section.card.glance", "first_px": 176, "settled_px": 176, "grew_px": 0, "below": true, "changes": [], "change_count": 0, "idle": true, "idle_ms": 400},
     "a11y": {"unnamed": [], "unnamed_count": 0, "zoom_locked": false, "text_size_control": true},
     "headings": ["H2:Home@24px"]
    }
@@ -45,6 +46,7 @@
     "dialogs": {"count": 1, "with_commit": 1, "quiet_commit": [], "quiet_commit_count": 0},
     "casing": {"labels": [{"sel": "button.btn", "cls": "button", "text": "Save changes", "style": "sentence", "literal": false}, {"sel": "button.chip", "cls": "button", "text": "ES", "style": "upper", "literal": true}, {"sel": "h2", "cls": "heading", "text": "Home", "style": "capitalised", "literal": false}], "label_count": 3, "labels_seen": 3},
     "clearance": {"bars": ["nav.pill"], "hidden_rows": [], "hidden_row_count": 0},
+    "glance": {"state": "measured", "card": "section.card.glance", "first_px": 176, "settled_px": 176, "grew_px": 0, "below": true, "changes": [], "change_count": 0, "idle": true, "idle_ms": 400},
     "a11y": {"unnamed": [], "unnamed_count": 0, "zoom_locked": false, "text_size_control": true},
     "headings": ["H2:Home@24px"]
    }

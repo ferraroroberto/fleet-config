@@ -237,6 +237,21 @@ def _t_wide_desktop(rule: dict, v: Values) -> Mockup:
     return {"now": now, "proposed": proposed, "caption": "Desktop measure: the content column fills the width the spec reserves for it."}
 
 
+def _t_glance_steady(rule: dict, v: Values) -> Mockup:
+    grew = max(1, _int(v.get("value"), 132))
+    title = '<span class="mk-title">Glance card</span>'
+    row = lambda value: (f'<div class="mk-row"><div class="mk-row-text"><span class="mk-title">Item name</span></div>'
+                         f'<span class="mk-meta">{value}</span></div>')
+    now = (f'<div class="mk-card">{title}<span class="mk-note">first paint: the title alone</span></div>'
+           f'<div class="mk-card">{title}{row("3 items")}{row("2 items")}{row("5 items")}'
+           f'<span class="mk-note">{grew}px taller once the reads land; what sat below moves down</span></div>')
+    proposed = (f'<div class="mk-card">{title}{row("&ndash;")}{row("&ndash;")}{row("&ndash;")}'
+                f'<span class="mk-note">first paint: every row drawn, a dash for each value still loading</span></div>'
+                f'<div class="mk-card">{title}{row("3 items")}{row("2 items")}{row("5 items")}'
+                f'<span class="mk-note">the reads fill each row in place: same height</span></div>')
+    return {"now": now, "proposed": proposed, "caption": "Glance card: every row at first paint, filled in place, so the card never changes size."}
+
+
 @dataclass(frozen=True)
 class Template:
     id: str
@@ -254,6 +269,7 @@ LIBRARY: Dict[str, Template] = {t.id: t for t in (
     Template("form-primary", ("value", "threshold"), _t_form_primary),
     Template("contrast-swatches", ("items",), _t_contrast_swatches),
     Template("wide-desktop", ("share", "inner_w", "threshold"), _t_wide_desktop),
+    Template("glance-steady", ("value",), _t_glance_steady),
 )}
 
 MOCKUP_IDS = frozenset(LIBRARY)

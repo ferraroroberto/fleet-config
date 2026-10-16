@@ -532,6 +532,38 @@ def _d_toast_tinted(m: dict, rule: Rule, ctx: dict) -> Derived:
     return float(len(tinted)), list(tinted), None  # type: ignore[arg-type]
 
 
+def _d_glance_card_growth(m: dict, rule: Rule, ctx: dict) -> Derived:
+    """LAYOUT-10: px the tab's first card grew from its first paint to its height once the late reads landed (#1354).
+
+    Negative when it only got shorter. A tab with no card under its header, a card with nothing under it in its column
+    for a size change to move (a list that is the pane's last content fills without moving anything) and a card no
+    longer in the pane are n/a, each with its reason. A tab whose requests never went quiet within the walk's bound, a
+    tracker that could not run, and a run from before the tracker existed are `unmeasured`, never a pass.
+    """
+    g = m.get("glance")
+    if not isinstance(g, dict):
+        return None, [], "glance card not tracked on this screen"
+    state = g.get("state")
+    if state == "no_card":
+        return None, [], f"{NOT_APPLICABLE}: no card under the page header"
+    if state == "card_gone":
+        return None, [], f"{NOT_APPLICABLE}: the card first drawn left the pane"
+    if state == "measured" and g.get("below") is False:
+        return None, [], f"{NOT_APPLICABLE}: nothing under the card for its size to move"
+    if state == "not_idle":
+        pending = ", ".join(str(x) for x in g.get("pending") or [])
+        what = f"{pending} in flight" if pending else "the last one finished too close to the bound"
+        return None, [], f"requests never went quiet within {g.get('idle_ms')} ms ({what}): late reads may still be landing"
+    grew = g.get("grew_px")
+    if state != "measured" or isinstance(grew, bool) or not isinstance(grew, (int, float)):
+        detail = f" ({g['error']})" if g.get("error") else ""
+        return None, [], f"glance card tracker {state or 'returned no state'}{detail}"
+    items: List[object] = [{"sel": g.get("card"), "why": f"{g.get('first_px')}px at first paint, {g.get('settled_px')}px settled"}]
+    items += [{"sel": c.get("sel"), "why": f"{c.get('from_px')} to {c.get('to_px')}px at {c.get('ms')} ms"}
+              for c in g.get("changes") or [] if isinstance(c, dict)]
+    return float(grew), items, None
+
+
 DERIVED: Dict[str, Callable[[dict, Rule, dict], tuple]] = {
     "targets.small_share": _d_small_share,
     "text.under14_share": _d_under14_share,
@@ -550,6 +582,7 @@ DERIVED: Dict[str, Callable[[dict, Rule, dict], tuple]] = {
     "feedback.toast_tinted": _d_toast_tinted,
     "feedback.empty_state_no_action": _d_empty_state_no_action,
     "layout.repeated_turn_header": _d_repeated_turn_header,
+    "glance.card_growth_px": _d_glance_card_growth,
 }
 
 

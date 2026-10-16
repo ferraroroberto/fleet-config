@@ -27,6 +27,7 @@
     "dialogs": {"count": 1, "with_commit": 1, "quiet_commit": [{"dialog": "dialog#take", "commit": "button.save", "label": "Save", "filled": false, "w": 120, "h": 44, "rival": "button.danger", "rival_label": "Delete", "why": "filled"}], "quiet_commit_count": 1},
     "casing": {"labels": [{"sel": "button.record", "cls": "button", "text": "RECORD", "style": "upper", "literal": true}, {"sel": "button.btn", "cls": "button", "text": "Open settings", "style": "sentence", "literal": false}, {"sel": "span.stat-label", "cls": "label:stat-label", "text": "running", "style": "lower", "literal": false}], "label_count": 3, "labels_seen": 3},
     "clearance": {"bars": ["nav.pill"], "hidden_rows": [{"sel": "ul.sessions", "row": "li.row", "bar": "nav.pill", "under_px": 30}], "hidden_row_count": 1},
+    "glance": {"state": "measured", "card": "section.card.glance", "first_px": 44, "settled_px": 176, "grew_px": 132, "below": true, "changes": [{"ms": 412, "from_px": 44, "to_px": 88, "sel": "section.card.glance"}, {"ms": 905, "from_px": 88, "to_px": 176, "sel": "section.card.glance"}], "change_count": 2, "idle": true, "idle_ms": 400},
     "a11y": {"unnamed": ["button.icon"], "unnamed_count": 1, "zoom_locked": true, "text_size_control": false},
     "headings": ["H2:Home@24px"]
    }
@@ -45,6 +46,7 @@
     "dialogs": {"count": 1, "with_commit": 1, "quiet_commit": [{"dialog": "dialog#take", "commit": "button.save", "label": "Save", "filled": false, "w": 120, "h": 44, "rival": "button.danger", "rival_label": "Delete", "why": "filled"}], "quiet_commit_count": 1},
     "casing": {"labels": [{"sel": "button.btn", "cls": "button", "text": "Open Settings", "style": "title", "literal": false}, {"sel": "button.btn", "cls": "button", "text": "Save changes", "style": "sentence", "literal": false}, {"sel": "span.stat-label", "cls": "label:stat-label", "text": "Running", "style": "capitalised", "literal": false}, {"sel": "span.stat-label", "cls": "label:stat-label", "text": "Failed", "style": "capitalised", "literal": false}], "label_count": 4, "labels_seen": 4},
     "clearance": {"bars": ["nav.pill"], "hidden_rows": [{"sel": "ul.sessions", "row": "li.row", "bar": "nav.pill", "under_px": 30}], "hidden_row_count": 1},
+    "glance": {"state": "measured", "card": "section.card.glance", "first_px": 44, "settled_px": 176, "grew_px": 132, "below": true, "changes": [{"ms": 412, "from_px": 44, "to_px": 88, "sel": "section.card.glance"}, {"ms": 905, "from_px": 88, "to_px": 176, "sel": "section.card.glance"}], "change_count": 2, "idle": true, "idle_ms": 400},
     "a11y": {"unnamed": ["button.icon"], "unnamed_count": 1, "zoom_locked": true, "text_size_control": false},
     "headings": ["H2:Home@24px"]
    }

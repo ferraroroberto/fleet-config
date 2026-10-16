@@ -55,6 +55,9 @@ present on a successful run:
     a11y     unnamed [..], unnamed_count, zoom_locked, text_size_control, text_size_stamped
     coverage  overlays [{key, kind, open}], overlay_count -- every dialog / [popover] / [role=dialog] in the
               DOM, open or not; walk coverage for the report, never a rule input (#1353)
+    glance    (tab screens only, added by walk.py from GLANCE_READ_JS, #1354) state (measured | no_card | not_idle |
+              card_gone | stopped | unavailable | error), card, first_px, settled_px, grew_px, below,
+              changes [{ms, from_px, to_px, sel}] (sample of GLANCE_CHANGE_CAP), change_count, idle, idle_ms, pending [path]
     headings  ["H2:Title@16px", ...]
 
 Lists are capped (`CAP`) so a screen with hundreds of small controls still
@@ -65,6 +68,7 @@ repo's interpreter (this repo's venv stays stdlib-only).
 """
 from __future__ import annotations
 
+import json
 import sys
 from pathlib import Path
 from typing import Dict, List, Optional, Sequence
@@ -1119,6 +1123,132 @@ RENDERED_THEME_JS = """
 }
 """
 
+# The glance card's height across its late reads (fleet-config#1354). design.md's glance card contract: the first card
+# under the page header never changes size as late reads land. One snapshot after a fixed settle cannot see that, so an
+# init script (`walk.py` adds it to every page) samples the card every frame from the first one of the load, and
+# `GLANCE_READ_JS` reads it once the tab's requests have gone quiet. It only reads: no click, scroll, focus or write.
+#
+# A track is one tab's pane (the visible tabpanel and the selected tab, so one pane redrawn per tab is a track per tab),
+# opened on the first frame that shows it: the page load for the tab already selected, the click for any other. The
+# card is the first visible element under the header that paints a surface of its own (a fill that differs from what
+# is behind it, a border or a shadow), at least GLANCE_CARD_MIN_PX tall, GLANCE_CARD_MIN_SHARE of its parent wide (it
+# fills its column: on a wide desktop view the card sits in one of two) and GLANCE_CARD_MIN_PANE_SHARE of the pane, and
+# is not a control, a disclosure's summary, a form, a segmented control or a layer (fixed, sticky, absolute). A surface
+# too narrow to be the card is a tile or a lane, and nothing inside it is the card either. Until a card is drawn the pane is
+# re-scanned every GLANCE_SCAN_MS; a tab whose card appears late is baselined when it appears.
+#
+# `first_px` is the card's layout height (`offsetHeight`, which a transform does not change) on the first frame it is
+# drawn and done entering: while a finite animation or transition runs on the card, an ancestor or a descendant, the
+# baseline waits, at most GLANCE_ENTRY_MAX_MS, so a deliberate entrance is not growth. An endless one (a spinner in a
+# "Reading..." row) never holds it. From then on the track follows that card, or the card redrawn in its place (the
+# same tag, id and classes): a banner drawn above it, or a hidden card revealed above it, is a different card and
+# never compared with it. Every frame until GLANCE_TRACK_MAX_MS after the load, then the tracker stops (`stopped`).
+GLANCE_CARD_MIN_PX = 48
+GLANCE_CARD_MIN_SHARE = 0.6
+GLANCE_CARD_MIN_PANE_SHARE = 0.3
+GLANCE_ENTRY_MAX_MS = 1500
+GLANCE_SCAN_MS = 100
+GLANCE_TRACK_MAX_MS = 180000
+GLANCE_CHANGE_CAP = 8
+_GLANCE_JS_PARAMS = {"MIN_PX": GLANCE_CARD_MIN_PX, "MIN_SHARE": GLANCE_CARD_MIN_SHARE, "MIN_PANE_SHARE": GLANCE_CARD_MIN_PANE_SHARE,
+                     "ENTRY_MAX_MS": GLANCE_ENTRY_MAX_MS,
+                     "SCAN_MS": GLANCE_SCAN_MS, "TRACK_MAX_MS": GLANCE_TRACK_MAX_MS, "CHANGE_CAP": GLANCE_CHANGE_CAP}
+GLANCE_TRACK_JS = r"""
+(() => {
+  if (window.top !== window || window.__designReviewGlance) return;
+  const P = __PARAMS__;
+  const st = window.__designReviewGlance = { tracks: [], stopped: false, error: null };
+  const HEADER = '.home-head, header, [role=banner]';
+  const SKIP = 'nav, [role=tablist], [role=navigation], dialog, [popover], [role=dialog], button, a, input, select, textarea, label, form, summary, '
+    + '[role=search], [role=button], [role=radiogroup], [role=toolbar], .segmented';
+  const shown = (el) => { const r = el.getBoundingClientRect(); if (r.width < 1 || r.height < 1) return false;
+    const s = getComputedStyle(el); return s.display !== 'none' && s.visibility !== 'hidden' && !el.closest('[hidden]'); };
+  const alpha = (c) => { const m = /rgba?\(([^)]*)\)/.exec(c); if (!m) return 0; const p = m[1].split(/[ ,\/]+/).filter(Boolean); return p.length > 3 ? +p[3] : 1; };
+  const behind = (el) => { for (let e = el.parentElement; e; e = e.parentElement) { const c = getComputedStyle(e).backgroundColor; if (alpha(c) > 0.02) return c; }
+    return getComputedStyle(document.documentElement).backgroundColor; };
+  const surface = (el, s) => (alpha(s.backgroundColor) > 0.02 && s.backgroundColor !== behind(el))
+    || ['Top', 'Right', 'Bottom', 'Left'].some(k => (parseFloat(s['border' + k + 'Width']) || 0) > 0 && s['border' + k + 'Style'] !== 'none' && alpha(s['border' + k + 'Color']) > 0.02)
+    || (!!s.boxShadow && s.boxShadow !== 'none');
+  const layer = (s) => /^(fixed|sticky|absolute)$/.test(s.position);
+  const paneOf = () => document.querySelector('[role=tabpanel]:not([hidden])') || document.querySelector('section.pane:not([hidden])') || document.querySelector('main') || document.body;
+  const tabOf = () => { const l = document.querySelector('[role=tablist]'); return l ? l.querySelector('[role=tab][aria-selected=true]') : null; };
+  const sel = (el) => { let s = el.tagName.toLowerCase(); if (el.id) s += '#' + CSS.escape(el.id);
+    const c = (el.getAttribute('class') || '').trim().split(/\s+/).filter(Boolean).slice(0, 3).map(x => CSS.escape(x)).join('.'); if (c) s += '.' + c; return s; };
+  const nextOut = (w) => { while (w.parentNode()) { const n = w.nextSibling(); if (n) return n; } return null; };
+  // The first card under the page header: the pane's own header, else the one visible on the page (a header above the panes).
+  const firstCard = (pane) => {
+    const head = [...pane.querySelectorAll(HEADER)].find(shown) || [...document.querySelectorAll(HEADER)].find(shown);
+    const floor = head ? head.getBoundingClientRect().bottom - 1 : -Infinity, paneW = pane.getBoundingClientRect().width * P.MIN_PANE_SHARE;
+    const wide = (el, r) => r.width >= paneW && r.width >= (el.parentElement ? el.parentElement.getBoundingClientRect().width : 0) * P.MIN_SHARE;
+    const walker = document.createTreeWalker(pane, NodeFilter.SHOW_ELEMENT);
+    for (let el = walker.nextNode(), n = 0; el && n < 2000; n++) {
+      const s = getComputedStyle(el);
+      if (el.matches(HEADER) || el.matches(SKIP) || s.display === 'none' || layer(s)) { el = walker.nextSibling() || nextOut(walker); continue; }
+      const r = el.getBoundingClientRect(), painted = surface(el, s) && shown(el);
+      if (painted && !wide(el, r)) { el = walker.nextSibling() || nextOut(walker); continue; }
+      if (painted && r.top >= floor && el.offsetHeight >= P.MIN_PX) return el;
+      el = walker.nextNode(); }
+    return null; };
+  // The card first drawn, or the card redrawn in its place (same tag, id and classes); null once neither is in the pane.
+  const follow = (tr) => { if (tr.card && tr.card.isConnected && tr.pane.contains(tr.card) && shown(tr.card)) return tr.card;
+    try { return [...tr.pane.querySelectorAll(tr.sel)].find(shown) || null; } catch (e) { return null; } };
+  // Running finite animations on the card, inside it or on an ancestor: an entrance still playing.
+  const entering = (card) => document.getAnimations().some(a => { const t = a.effect && a.effect.target;
+    if (a.playState !== 'running' || !t || !(t.contains(card) || card.contains(t))) return false;
+    return Number.isFinite(a.effect.getComputedTiming().iterations); });
+  const sample = () => {
+    const pane = paneOf(), tab = tabOf(), now = performance.now();
+    let tr = st.tracks.find(t => t.pane === pane && t.tab === tab);
+    if (!tr) { tr = { pane, tab, t0: now, seen: null, first: null, last: null, sel: null, card: null, scan: -Infinity, changes: [], change_count: 0 };
+      st.tracks.push(tr); if (st.tracks.length > 24) st.tracks.shift(); }
+    if (tr.first === null) {
+      if (!(tr.card && tr.card.isConnected && shown(tr.card)) && now - tr.scan >= P.SCAN_MS) { tr.card = firstCard(pane); tr.scan = now; }
+      if (!tr.card) return;
+      if (tr.seen === null) tr.seen = now;
+      if (entering(tr.card) && now - tr.seen < P.ENTRY_MAX_MS) return;
+      tr.first = tr.last = tr.card.offsetHeight; tr.sel = sel(tr.card); return; }
+    const card = follow(tr); if (!card) return;
+    tr.card = card;
+    const h = card.offsetHeight;
+    if (h !== tr.last) { tr.change_count++;
+      if (tr.changes.length < P.CHANGE_CAP) tr.changes.push({ ms: Math.round(now - tr.t0), from_px: tr.last, to_px: h, sel: tr.sel });
+      tr.last = h; }
+  };
+  st.current = () => { const pane = paneOf(), tab = tabOf(); return st.tracks.find(t => t.pane === pane && t.tab === tab) || null; };
+  st.follow = follow; st.shown = shown; st.layer = layer;
+  const tick = () => {
+    if (performance.now() > P.TRACK_MAX_MS) { st.stopped = true; return; }
+    if (document.body) { try { sample(); } catch (e) { st.error = String(e && e.message || e).slice(0, 200); return; } }
+    requestAnimationFrame(tick); };
+  requestAnimationFrame(tick);
+})();
+""".replace("__PARAMS__", json.dumps(_GLANCE_JS_PARAMS))
+# The read: the current tab's track. `grew_px` is the card's height now (read afresh, not the last sample) less its
+# height at first paint; a card that only got shorter is negative. `below` says whether anything visible sits under the
+# card in its column, in the page's flow, for its growth to move (web.dev CLS counts a shift of what was already there,
+# never content added at the end): a list card that is the last thing in its pane moves nothing as it fills.
+GLANCE_READ_JS = r"""
+() => {
+  const st = window.__designReviewGlance;
+  if (!st) return { state: 'unavailable' };
+  if (st.error) return { state: 'error', error: st.error };
+  if (st.stopped) return { state: 'stopped' };
+  const tr = st.current();
+  if (!tr || tr.first === null) return { state: 'no_card' };
+  const card = st.follow(tr);
+  if (!card) return { state: 'card_gone', card: tr.sel, first_px: tr.first, changes: tr.changes, change_count: tr.change_count };
+  const box = card.getBoundingClientRect(), now = card.offsetHeight;
+  const flows = (el) => { for (let e = el; e && e !== tr.pane; e = e.parentElement) if (st.layer(getComputedStyle(e))) return false; return true; };
+  let below = false, n = 0;
+  for (const el of tr.pane.querySelectorAll('*')) { if (++n > 3000) break;
+    if (card.contains(el) || el.contains(card) || !(card.compareDocumentPosition(el) & Node.DOCUMENT_POSITION_FOLLOWING)) continue;
+    const r = el.getBoundingClientRect();
+    if (r.top >= box.bottom - 1 && r.left < box.right && r.right > box.left && st.shown(el) && flows(el)) { below = true; break; } }
+  return { state: 'measured', card: tr.sel, first_px: tr.first, settled_px: now, grew_px: now - tr.first, below,
+    changes: tr.changes, change_count: tr.change_count };
+}
+"""
+
 # A canvas this dark or this light is unambiguous; the band between is a mid-grey page that says nothing either way.
 DARK_BELOW, LIGHT_ABOVE = 0.2, 0.5
 
@@ -1241,5 +1371,6 @@ def metric_paths() -> List[str]:
         "clearance": ["bars", "hidden_rows", "hidden_row_count"],
         "a11y": ["unnamed", "unnamed_count", "zoom_locked", "text_size_control", "text_size_stamped"],
         "coverage": ["overlays", "overlay_count"],
+        "glance": ["state", "card", "first_px", "settled_px", "grew_px", "below", "changes", "change_count", "idle", "idle_ms", "pending"],
     }
     return [f"{s}.{k}" for s, ks in keys.items() for k in ks]

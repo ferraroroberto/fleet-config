@@ -33,7 +33,7 @@
 # metrics.json, every evaluate output and every filed finding.
 
 [meta]
-version = "1.41.0"   # per-bump history: git log -- design.rubric.toml, and the issues/PRs it cites
+version = "1.42.0"   # per-bump history: git log -- design.rubric.toml, and the issues/PRs it cites
 seeded_from = "app-launcher rendered audit, 2026-09-21 (fleet-config#962)"
 
 [weights]
@@ -501,6 +501,20 @@ owner = "app"
 standard = "Apple HIG Tab bars: scrolling content clears the bar; design.md navigation contract (floating bottom-tab pill)"
 fix_template = "{count} lists on {screen} end under a fixed bottom bar at full scroll ({sample}); pad the scroller's end by the bar's height."
 mockup = "none"
+
+[[rules]]
+id = "LAYOUT-10"
+category = "layout"
+title = "A tab's glance card changes height as its late reads land"
+metric = "glance.card_growth_px"
+fail_when = "gt"
+threshold = 8
+severity = "P2"
+owner = "app"
+standard = "design.md glance card: it never changes size as late reads land; every row is drawn at once, with a dash for a value still loading (fleet-config#1354, from grocery-shopping-automation#260, where the Home card grew row by row and pushed the list down under the thumb). Measured per tab: the layout height of the first card under the page header on the first frame it is drawn (after the page load for the tab selected at load, after the click for the others), against its height once the tab's requests have been quiet for 500 ms, waited at most 10 s. A card that grows more than 8 px fails: half the smallest line the system draws (a 12px caption on a 16px line), so an inserted row or a value that wraps to a new line fails while sub-pixel rounding and a font's metric swap pass. A card that only gets shorter passes, and a deliberate entrance does not count: the first-paint height waits, at most 1.5 s, for a finite animation or transition on the card, inside it or on an ancestor to finish (an endless spinner never holds it), and is the layout height, which a transform does not change. From its first paint the card is followed, or the card redrawn in its place (the same tag, id and classes), so a banner or a revealed card drawn above it is never compared with it. A tab with no card under its header, and a card with nothing under it in its column for its size to move (a list that is the pane's last content fills without moving anything), are n/a; a tab whose requests (EventSource and WebSocket streams aside) never go quiet within the bound is unmeasured, never a pass. Web.dev Cumulative Layout Shift is the cited measure of the same harm"
+fix_template = "The first card on {screen} grows {value}px after its first paint as its late reads land ({sample}); draw every row at first paint from the card's own markup, a dash for a value still loading, and fill each in place."
+mockup = "glance-steady"
+screens = ["tab"]
 
 # ---------------------------------------------------------------------------
 # Components
