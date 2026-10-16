@@ -239,6 +239,7 @@ from __future__ import annotations
 import argparse
 import fnmatch
 import json
+import logging
 import os
 import re
 import ssl
@@ -283,6 +284,8 @@ from steer_delivery import (  # noqa: E402
 from utf8_stdio import ensure_utf8_stdio  # noqa: E402
 
 ensure_utf8_stdio()
+
+LOGGER = logging.getLogger(__name__)
 
 DEFAULT_BASE_URL = "https://127.0.0.1:8445"
 DEFAULT_OWNER = "ferraroroberto"
@@ -808,6 +811,11 @@ CLAIMED_DIRNAME = ".claimed"
 # not handed its own batch twice.
 CLAIM_STALE_SECONDS = 900.0
 EVENT_KIND_TEXT = {"turn-end": "turn ended", "session-end": "session ended", "needs-input": "needs input"}
+# Reading a just-claimed file retries a sharing violation this many times,
+# backing off from this delay and doubling (10+20+40+80 ms): the concurrent
+# claimer holding it finishes its rename in well under that (fleet-config#1465).
+CLAIM_READ_ATTEMPTS = 5
+CLAIM_READ_BACKOFF_SECONDS = 0.01
 
 
 def chief_inbox_dir() -> Path:
@@ -877,6 +885,43 @@ def reoffer_stale_claims(inbox: Path, now_ms: int, stale_after: float = CLAIM_ST
     return reoffered
 
 
+def _read_claimed(held: Path) -> Tuple[str, Optional[Any]]:
+    """Read a file this reader just renamed into a claim: `(outcome, event)`.
+
+    Outcomes: `"read"` (event parsed), `"junk"` (read but not JSON), `"gone"`
+    (another claimer holds it now) and `"locked"` (still unreadable after the
+    retries). On Windows both of two racing renames can succeed: the rename
+    opens the source by name and then moves it through that handle, so a
+    claimer that opened it before our rename landed moves it again, out of our
+    claim. Until it does, our read is a sharing violation; after, the file is
+    gone from our path and that claimer reads it (fleet-config#1465). So a
+    failed read is never junk, and the caller must never delete the file.
+    """
+    delay = CLAIM_READ_BACKOFF_SECONDS
+    for attempt in range(1, CLAIM_READ_ATTEMPTS + 1):
+        try:
+            text = held.read_text(encoding="utf-8")
+        except FileNotFoundError:
+            LOGGER.info("ℹ️ claim: %s moved to a concurrent claimer (attempt %d); it delivers it",
+                        held.name, attempt)
+            return "gone", None
+        except OSError as exc:
+            if attempt == CLAIM_READ_ATTEMPTS:
+                LOGGER.warning("⚠️ claim: %s still unreadable after %d attempts (%s: %s)",
+                               held.name, attempt, type(exc).__name__, exc)
+                return "locked", None
+            LOGGER.info("ℹ️ claim: %s not readable yet (attempt %d, %s); retrying in %.0f ms",
+                        held.name, attempt, type(exc).__name__, delay * 1000)
+            time.sleep(delay)
+            delay *= 2
+            continue
+        try:
+            return "read", json.loads(text)
+        except ValueError:
+            return "junk", None
+    return "locked", None  # unreachable: the last attempt always returns
+
+
 def claim_mailbox(inbox: Path, now_ms: Optional[int] = None,
                   stale_after: float = CLAIM_STALE_SECONDS) -> Tuple[List[Dict[str, Any]], List[str], int]:
     """`(events, reoffered_ids, dropped)`: claim every pending event, oldest first.
@@ -902,10 +947,11 @@ def claim_mailbox(inbox: Path, now_ms: Optional[int] = None,
             os.replace(path, held)
         except OSError:
             continue  # another reader took it first
-        try:
-            event = json.loads(held.read_text(encoding="utf-8"))
-        except (OSError, ValueError):
-            event = None
+        outcome, event = _read_claimed(held)
+        if outcome in ("gone", "locked"):
+            # Never delete an unread claim: a "locked" one stays in `.claimed/`
+            # and is re-offered once stale; a "gone" one is another reader's.
+            continue
         age = _event_age_seconds(event, now_dt) if isinstance(event, dict) else None
         if not isinstance(event, dict) or (age is not None and age > INBOX_EVENT_TTL_SECONDS):
             try:
@@ -950,7 +996,10 @@ def claim_batch(inbox: Path, now: Optional[datetime] = None) -> List[Dict[str, A
     Each ``*.json`` is renamed into a private claim folder before it is read:
     a concurrent claimer loses the rename race and skips the file, and an
     event published during the claim is simply not in this listing -- it lands
-    in the next batch. Events past the TTL, or unparseable, are dropped.
+    in the next batch. Events past the TTL, or unparseable, are dropped. A
+    claimed file that cannot be read is never deleted (`_read_claimed`): one
+    that moved on belongs to the other claimer, and one still locked is put
+    back in the inbox for the next batch.
     """
     if not inbox.is_dir():
         return []
@@ -965,15 +1014,23 @@ def claim_batch(inbox: Path, now: Optional[datetime] = None) -> List[Dict[str, A
                 os.replace(path, held)
             except OSError:
                 continue  # another claimer took it first
-            try:
-                event = json.loads(held.read_text(encoding="utf-8"))
-            except (OSError, ValueError):
-                event = None
+            outcome, event = _read_claimed(held)
+            if outcome == "gone":
+                continue
+            if outcome == "locked":
+                try:
+                    os.replace(held, path)
+                    LOGGER.info("ℹ️ claim: %s put back in the inbox for the next batch", path.name)
+                except OSError as exc:
+                    LOGGER.warning("⚠️ claim: %s left unread in %s (%s: %s)",
+                                   path.name, claim, type(exc).__name__, exc)
+                continue
             try:
                 held.unlink()
             except OSError:
                 pass
             if not isinstance(event, dict):
+                LOGGER.info("ℹ️ claim: dropped %s, not a JSON event", path.name)
                 continue
             age = _event_age_seconds(event, moment)
             if age is not None and age > INBOX_EVENT_TTL_SECONDS:
@@ -1854,6 +1911,8 @@ def main(argv: Optional[List[str]] = None) -> int:
     chief_plan.add_cli(pl)
 
     args = p.parse_args(argv)
+    # Breadcrumbs go to stderr, so every command's stdout format is unchanged.
+    logging.basicConfig(level=logging.INFO, format="%(message)s")
     try:
         return args.func(args)
     except (ValueError, urllib.error.URLError) as exc:

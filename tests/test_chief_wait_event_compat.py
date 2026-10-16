@@ -123,7 +123,8 @@ try:
         thread.join()
     numbers = [e["number"] for e in batches[0] + batches[1]]
     check(sorted(numbers) == list(range(60)),
-          f"claim_batch: two concurrent claimers split 60 events with none lost or doubled ({len(numbers)} seen)")
+          f"claim_batch: two concurrent claimers split 60 events with none lost or doubled ({len(numbers)} seen, "
+          f"lost {sorted(set(range(60)) - set(numbers))})")
     check(all(b == sorted(b, key=lambda e: e["number"]) for b in batches),
           "claim_batch: each claimer's batch is oldest first")
 finally:

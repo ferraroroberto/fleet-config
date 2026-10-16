@@ -5,6 +5,9 @@ an unacked claim is re-offered after the stale window -- driven with an
 injected millisecond clock, never a sleep. `inbox --count` is the file-name
 pending rule docs/chief-mailbox.md defines for a second implementation, so
 its cases here are the doc's cases. `cmd_dispatch` records a `dispatch_id`.
+A claimed file that cannot be read yet is never dropped by either reader
+(fleet-config#1465), driven with injected read failures; the real race is
+the opt-in `tests/probe_claim_race.py`.
 
 Run: `E:/automation/fleet-config/.venv/Scripts/python.exe tests/test_chief_mailbox.py`  (also invoked by tests/run_acceptance.py)
 """
@@ -14,6 +17,7 @@ from __future__ import annotations
 import contextlib
 import io
 import json
+import logging
 import shutil
 import sys
 import tempfile
@@ -171,6 +175,88 @@ try:
           f"coexistence: wait-event and inbox racing split 60 events with none lost or doubled "
           f"({len(seen[0])} + {len(seen[1])})")
     check(co.claim_batch(inbox) == [], "coexistence: wait-event never reads a v2 claim")
+
+    # ---- a claimed file that can't be read yet is never dropped (#1465) ----
+    # Injected read failures stand in for the Windows race: another claimer's
+    # rename handle still open on the file ("lock": a sharing violation), then
+    # that claimer moving it out of this reader's claim ("move": not found).
+    elsewhere = tmp / "other-claimer"
+    elsewhere.mkdir()
+    real_read, real_backoff = Path.read_text, co.CLAIM_READ_BACKOFF_SECONDS
+    plan: "dict[str, list]" = {}
+
+    def injected_read(self, *args, **kwargs):
+        steps = plan.get(self.stem.partition("-")[2])
+        if self.parent.name.startswith(".claim") and steps:
+            step = steps.pop(0)
+            if step == "move":
+                shutil.move(str(self), str(elsewhere / self.name))
+                raise FileNotFoundError(2, "No such file or directory", str(self))
+            raise PermissionError(13, "The process cannot access the file", str(self))
+        return real_read(self, *args, **kwargs)
+
+    breadcrumbs: "list[str]" = []
+
+    class Collect(logging.Handler):
+        def emit(self, record: logging.LogRecord) -> None:
+            breadcrumbs.append(record.getMessage())
+
+    collector, old_level = Collect(), co.LOGGER.level
+    co.LOGGER.addHandler(collector)
+    co.LOGGER.propagate = False  # collected here, not printed into the gate's output
+    co.LOGGER.setLevel(logging.INFO)
+    ids = {n: f"{1465:028x}{n:04x}" for n in range(4)}
+
+    def arm(inbox: Path) -> None:
+        for n, event_id in ids.items():
+            # Stamped by the real clock: wait-event filters its 24 h TTL by it.
+            publish(inbox, f"{T0 + n}-{event_id}.json", number=n, ts=iso(co._now_ms()))
+        plan.clear()
+        plan.update({ids[0]: ["lock", "lock"], ids[1]: ["move"],
+                     ids[2]: ["lock"] * co.CLAIM_READ_ATTEMPTS})
+
+    co.CLAIM_READ_BACKOFF_SECONDS = 0.0
+    Path.read_text = injected_read
+    try:
+        inbox = tmp / "h" / "chief-inbox"
+        arm(inbox)
+        batch = [e["number"] for e in co.claim_batch(inbox)]
+        check(batch == [0, 3], f"read retry: wait-event delivers an event locked twice, then readable (got {batch})")
+        check((elsewhere / f"{T0 + 1}-{ids[1]}.json").exists(),
+              "read retry: wait-event never deletes a claim that moved to a concurrent claimer")
+        check(sorted(p.name for p in inbox.iterdir()) == [f"{T0 + 2}-{ids[2]}.json"],
+              "read retry: wait-event puts a still-locked claim back in the inbox, and leaves no claim folder")
+        Path.read_text = real_read
+        again = [e["number"] for e in co.claim_batch(inbox)]
+        check(again == [2], f"read retry: the put-back event is delivered by the next batch (got {again})")
+        check(any("retrying" in line for line in breadcrumbs)
+              and any("concurrent claimer" in line for line in breadcrumbs)
+              and any("put back in the inbox" in line for line in breadcrumbs),
+              f"read retry: wait-event logs the retry, the skip and the put-back ({breadcrumbs})")
+
+        breadcrumbs.clear()
+        Path.read_text = injected_read
+        inbox = tmp / "i" / "chief-inbox"
+        arm(inbox)
+        events, _, dropped = co.claim_mailbox(inbox, T0)
+        numbers = [e["number"] for e in events]
+        check(numbers == [0, 3] and dropped == 0,
+              f"read retry: inbox delivers the twice-locked event and drops nothing (got {numbers}, dropped={dropped})")
+        check((elsewhere / f"{T0}-{ids[1]}.json").exists(),
+              "read retry: inbox never deletes a claim that moved to a concurrent claimer")
+        check((inbox / co.CLAIMED_DIRNAME / f"{T0}-{ids[2]}.json").exists(),
+              "read retry: inbox leaves a still-locked claim in .claimed/")
+        Path.read_text = real_read
+        events, reoffered, _ = co.claim_mailbox(inbox, T0 + STALE_MS)
+        check([e["number"] for e in events if e["id"] == ids[2]] == [2] and ids[2] in reoffered,
+              "read retry: inbox re-offers the still-locked claim once stale")
+        check(any("unreadable after" in line for line in breadcrumbs),
+              f"read retry: inbox logs the claim it left unread ({breadcrumbs})")
+    finally:
+        Path.read_text, co.CLAIM_READ_BACKOFF_SECONDS = real_read, real_backoff
+        co.LOGGER.removeHandler(collector)
+        co.LOGGER.propagate = True
+        co.LOGGER.setLevel(old_level)
 
     # ---- CLI: empty inbox, ack exit codes, an unlistable directory --------
     code, out = cli(tmp / "f" / "chief-inbox", "inbox")

@@ -103,12 +103,22 @@ Two readers coexist until the doorbell switch-over (#1457). After that, `wait-ev
 
 1. **Re-offer.** Every stale claim in `.claimed/` (same staleness test as the counting rule) is moved back to the root under its same basename. `<claimed_at_ms>-<id>.json` is already a valid root name.
 2. **Claim.** Each root event file, oldest name first, is renamed to `.claimed/<now_ms>-<id>.json`. The rename *is* the claim: a concurrent reader that loses the race skips the file.
-3. **Read.** Unparseable files and events past the 24 h TTL are deleted (`dropped=`). The rest are printed with their `id` and excerpt, followed by an `ACK=chief_ops.py ack <ids>` line. Ids that came back through step 1 are marked `re-offered`.
+3. **Read.** Unparseable files and events past the 24 h TTL are deleted (`dropped=`). A claimed file that cannot be *read* is never deleted (see [A failed read is not junk](#a-failed-read-is-not-junk)). The rest are printed with their `id` and excerpt, followed by an `ACK=chief_ops.py ack <ids>` line. Ids that came back through step 1 are marked `re-offered`.
 4. **Ack.** After handling, `ack` deletes each id's file, from `.claimed/` or (if it was re-offered meanwhile) from the root. An id with no file prints `ACK_MISSING=<id>` and exits 1.
 
 A chief that dies between claim and ack leaves stale claims behind. They count as pending again after 15 minutes, so a doorbell rings and the next `inbox` re-offers the same ids. The chief dedupes by `id`.
 
-**v1: `chief_ops.py wait-event`** (exactly once, unchanged): it renames each root `*.json` into its private `.claim-<pid>-<ns>/` folder, reads it, deletes it, and exits on the first batch. It never looks in `.claimed/`. For v2 events its digest line gains ` kind=<kind>` and indented excerpt lines; the header, v1 lines and closing `Next:` line are unchanged. While both readers run, each event is read by exactly one of them, because both claim by rename.
+**v1: `chief_ops.py wait-event`** (exactly once, unchanged): it renames each root `*.json` into its private `.claim-<pid>-<ns>/` folder, reads it, deletes it, and exits on the first batch. It never looks in `.claimed/`. For v2 events its digest line gains ` kind=<kind>` and indented excerpt lines; the header, v1 lines and closing `Next:` line are unchanged. While both readers run, each event is read by exactly one of them, because both claim by rename and neither deletes a file it could not read.
+
+### A failed read is not junk
+
+On Windows, two racing renames of the same file can **both** succeed. The rename opens the source by name, then moves it through that handle, so a reader that opened it just before another's rename landed moves it again, out of the first reader's claim. Until that second move finishes, the first reader's read fails with a sharing violation; after it, the file is gone from the first reader's path. So a reader must never treat a failed read of a just-claimed file as junk and delete it (fleet-config#1465):
+
+- **Sharing violation / access denied:** retry briefly (five attempts, 10 ms doubling).
+- **File not found:** the other reader holds it now and delivers it. Skip it and delete nothing.
+- **Still unreadable after the retries:** `inbox` leaves it in `.claimed/`, so it is re-offered once stale. `wait-event` moves it back to the root for its next batch.
+
+Each of these paths logs a line to stderr. Stdout is unchanged.
 
 ## Doorbell line
 
@@ -122,7 +132,8 @@ Everything the chief acts on comes from `inbox`, never from the ring.
 
 ## Conformance
 
-- `tests/test_chief_mailbox.py`: the counting rule case by case (temps, dot-files, non-`.json`, directories, `wait-event`'s claim folder, fresh vs stale vs unstamped claims, the exact stale boundary, an unlistable directory being unknown), claim, ack, re-offer with an injected clock, and the two readers racing.
+- `tests/test_chief_mailbox.py`: the counting rule case by case (temps, dot-files, non-`.json`, directories, `wait-event`'s claim folder, fresh vs stale vs unstamped claims, the exact stale boundary, an unlistable directory being unknown), claim, ack, re-offer with an injected clock, the two readers racing, and a claimed file that cannot be read yet (an injected read failure) never being dropped by either reader.
+- `tests/probe_claim_race.py` (opt-in, not in the gate): the real two-claimer race, 60 events × 400 iterations, for both reader pairs. Before #1465 it lost events on Windows.
 - `tests/test_chief_wait_event_compat.py`: `wait-event`'s output and exactly-once claim on v1 and v2 events. It passes unchanged on the pre-v2 tree.
 - `tests/test_chief_inbox.py`: the v2 writer through the real Claude, Codex and Pi adapter hooks, including every excerpt source and the `null`-with-reason case.
 - `tests/test_chief_needs_input.py`: the `needs-input` writer through Claude's and Codex's attention hooks (one event, no typed message, Telegram on no chief or a failed write), and the real `wait-event` digest line for it.
