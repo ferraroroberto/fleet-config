@@ -117,6 +117,18 @@ def matrix_cases() -> Tuple[List[Case], Path]:
          {"tool_name": "Bash", "tool_input": {"command": (
              "echo \"bash -c 'git commit -m Co-Authored-By: Claude'\"")}},
          0),
+        # Shell keywords and wrappers that keep the next word in command position
+        # (fleet-config#1440): both commit guards read one shared prefix vocabulary.
+        ("pre_commit: `if git commit` with a trailer -> block",
+         "pre_commit_no_ai_trailer",
+         {"tool_name": "Bash", "tool_input": {"command": (
+             "if git commit -m 'feat: x' -m 'Co-Authored-By: Claude <noreply@anthropic.com>'; then echo ok; fi")}},
+         2),
+        ("pre_commit: `sudo git commit` with a trailer -> block",
+         "pre_commit_no_ai_trailer",
+         {"tool_name": "Bash", "tool_input": {"command": (
+             "sudo git commit -m 'feat: x' -m 'Co-Authored-By: Claude <noreply@anthropic.com>'")}},
+         2),
 
         # ---- secret_scan_guard ----
         # cwd is a non-repo tempdir so `git diff --cached` is empty and only the
