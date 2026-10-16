@@ -267,7 +267,7 @@ just the launcher call):
   only the `dispatch` does.
 - Escalate to Roberto specifically: `chief_ops.py escalate --file <path>`
   (fleet-config#443) — a visibly distinct, higher-priority Telegram ping
-  (forced `@mention`), for a genuine blocker only: a plan gate holding a
+  (🚨 banner, `attention` chat), for a genuine blocker only: a plan gate holding a
   whole repo chain, a decision about a destructive action, anything where
   routine drawer traffic would bury it. Not for routine status.
 
@@ -402,7 +402,7 @@ instead:
    yolo` outright unless `--yolo-confirmed` is also passed, so only pass
    that flag when you've confirmed the literal word.
 2. **Deterministic issue lists only.** Pick issue numbers exclusively from
-   the board payload's backlog or your one `gh search` result. Never invent,
+   the board payload's backlog or `chief_ops.py issues` / `gh_issue_fetch.py fetch` output. Never invent,
    guess, or "remember" a number; if the user's reference doesn't match a
    listed issue, say so and show the closest matches.
 3. **Worker cap and repo occupancy.** `chief_ops.py dispatch` reads
