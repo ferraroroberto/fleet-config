@@ -34,10 +34,8 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 import subprocess
 import sys
-import tempfile
 from pathlib import Path
 from typing import Optional, Tuple
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
@@ -235,18 +233,16 @@ def parse_chief_sid(stdout: str) -> str:
     return "" if chief_sid == "none" else chief_sid
 
 
-def notify_chief(text: str) -> bool:
-    """Push `text` into the live standing chief's session via `chief_ops.py`.
+def chief_live() -> bool:
+    """Is a standing chief live to read the mailbox? One `chief-sid` lookup.
 
-    Returns True only on confirmed delivery. The caller must fall back to
-    the normal human ping on False -- never retry (fleet-config#443's
-    cross-repo constraint note: a retry here would mask a real app-launcher
-    delivery defect rather than surface it). Two short subprocess calls,
-    each bounded and never inheriting stdin, reusing `chief_ops.py`'s own
-    vetted transport (`chief-sid` then `say`) rather than hand-rolling a
-    second HTTP client here.
+    The mailbox is only worth writing when a chief will read it; on False the
+    caller pings the human instead. One short subprocess call, bounded and
+    never inheriting stdin, reusing `chief_ops.py`'s own lookup rather than
+    hand-rolling a second HTTP client here.
     """
     if not CHIEF_OPS_PYTHON.is_file() or not CHIEF_OPS.is_file():
+        logger.warning("chief_live: chief_ops.py or its venv is missing -- falling back to the human ping")
         return False
     try:
         sid_proc = subprocess.run(
@@ -258,7 +254,7 @@ def notify_chief(text: str) -> bool:
     except (OSError, subprocess.TimeoutExpired) as exc:
         # Couldn't even invoke chief_ops.py -- distinct from "no chief found"
         # below, since the board was never reached to check (fleet-config#456).
-        logger.warning("notify_chief: chief-sid lookup failed to run (%s) -- falling back to the human ping", exc)
+        logger.warning("chief_live: chief-sid lookup failed to run (%s) -- falling back to the human ping", exc)
         return False
     if sid_proc.returncode == 1:
         # cmd_chief_sid's own "board reachable, no live chief-labeled session"
@@ -268,7 +264,7 @@ def notify_chief(text: str) -> bool:
         # the rc==2 branch below (couldn't even query the board) and from
         # ordinary silence (this line only appears when the fallback fires,
         # not on every ping).
-        logger.info("notify_chief: chief-sid found no live chief session -- falling back to the human ping")
+        logger.info("chief_live: chief-sid found no live chief session -- falling back to the human ping")
         return False
     if sid_proc.returncode != 0:
         # rc==2 is chief_ops.py's own ValueError/URLError catch (app-launcher
@@ -276,7 +272,7 @@ def notify_chief(text: str) -> bool:
         # chief running", so it gets its own message.
         stderr_tail = (sid_proc.stderr or "").strip()
         logger.warning(
-            "notify_chief: chief-sid query errored (rc=%d): %s -- falling back to the human ping",
+            "chief_live: chief-sid query errored (rc=%d): %s -- falling back to the human ping",
             sid_proc.returncode, stderr_tail,
         )
         return False
@@ -285,27 +281,43 @@ def notify_chief(text: str) -> bool:
         # Defense in depth: cmd_chief_sid's contract is exit 0 only when sid
         # is truthy, so this would be a parse/contract mismatch, not the
         # routing-miss above.
-        logger.warning("notify_chief: chief-sid exited 0 but printed no sid -- falling back to the human ping")
+        logger.warning("chief_live: chief-sid exited 0 but printed no sid -- falling back to the human ping")
         return False
+    return True
 
-    fd, tmp_name = tempfile.mkstemp(prefix="chief-ping-", suffix=".txt")
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8") as handle:
-            handle.write(text)
-        say_proc = subprocess.run(
-            [str(CHIEF_OPS_PYTHON), str(CHIEF_OPS), "say", chief_sid, "--file", tmp_name],
-            capture_output=True, text=True, encoding="utf-8", errors="replace",
-            stdin=subprocess.DEVNULL, creationflags=_lib.NO_WINDOW,
-            cwd=str(FLEET_CONFIG_ROOT), timeout=_CHIEF_OPS_TIMEOUT_S, check=False,
-        )
-    except (OSError, subprocess.TimeoutExpired):
+
+def chief_needs_input(payload: dict, text: str, default_agent: str = "claude") -> bool:
+    """Hand a chief-managed worker's "blocked, needs input" to the chief's mailbox.
+
+    Writes one `needs-input` event (fleet-config#1456) whose excerpt is
+    `text`, the classified one-line prompt. Nothing is typed into the chief's
+    terminal: that is the human's input channel, and worker-derived text in it
+    was the injection surface #622 is about. The chief's `wait-event` waiter
+    claims it like any other event, so it never interrupts a busy chief turn.
+
+    True only when a chief is live and the event file was published. On False
+    the caller pings the human instead -- never retry (fleet-config#443: a
+    retry would mask a real delivery defect rather than surface it).
+    """
+    if not chief_live():
         return False
-    finally:
-        try:
-            os.unlink(tmp_name)
-        except OSError:
-            pass
-    return say_proc.returncode == 0
+    import chief_inbox  # deferred: only a managed worker's permission gate pays for it
+
+    event = str(payload.get("hook_event_name") or "Notification")
+    try:
+        written = chief_inbox.record(payload, event, default_agent,
+                                     kind=chief_inbox.NEEDS_INPUT, prompt=" ".join(text.split()))
+    except Exception as exc:  # noqa: BLE001 -- a failed write falls back, never fails the hook
+        logger.warning("chief_needs_input: mailbox write failed (%s) -- falling back to the human ping", exc)
+        return False
+    if written is None:
+        # record() re-reads the registry; a session that stopped being managed
+        # in between gets the human ping rather than nothing.
+        logger.warning("chief_needs_input: no event written (not managed on re-read) "
+                       "-- falling back to the human ping")
+        return False
+    logger.info("ℹ️ chief_needs_input: needs-input event %s published for the chief", written.name)
+    return True
 
 
 def main() -> None:
@@ -342,12 +354,12 @@ def main() -> None:
 
     # A chief-dispatched worker's "come look, I'm blocked" is chief's problem
     # first, not the human's (fleet-config#443) — chief wrote the brief and
-    # can usually unblock it without paging Roberto. Tried *before* the
-    # chat-configured check below, since this path doesn't need Telegram at
-    # all. Falls through to the normal human ping on any failure (session not
-    # found, delivery failed) — never silently drops a real blocked-worker
-    # notification, and never retries (a retry here would mask a real #607
-    # delivery defect rather than surface it).
+    # can usually unblock it without paging Roberto. It goes to the chief's
+    # mailbox as a needs-input event (fleet-config#1456), never typed into the
+    # chief's terminal. Tried *before* the chat-configured check below, since
+    # this path doesn't need Telegram at all. Falls through to the normal human
+    # ping on any failure (no live chief, mailbox write failed) — never
+    # silently drops a real blocked-worker notification, and never retries.
     #
     # Keyed on the launcher session id from the environment, not the payload's
     # `session_id` — those are different id spaces, and the payload spelling
@@ -367,11 +379,9 @@ def main() -> None:
                 _lib.launcher_session_id(),
             )
         if managed:
-            icon, text = classify(payload)
-            chief_message = f"{icon} chief-managed worker needs input: {text}"
-            chief_message = chief_message.replace("\n", " ")[:300]
-            if notify_chief(chief_message):
-                _lib.allow()  # delivered to chief -- no human ping for this one
+            _icon, text = classify(payload)
+            if chief_needs_input(payload, text):
+                _lib.allow()  # in the chief's mailbox -- no human ping for this one
 
     # A "come look, I'm blocked" prompt is action-needed → the attention chat.
     chat, name = _lib.resolve_notify_target(_lib.cwd(payload), category="attention")

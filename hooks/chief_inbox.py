@@ -9,7 +9,9 @@ chief tells them apart by reading the exchange.
 
 `record()` is called from the three Board adapters' turn-end/exit paths
 (`session_state`, `session_state_codex`, `session_state_pi`), each already
-wired on its harness, so no hook registration changes. It writes one small
+wired on its harness, so no hook registration changes. A worker blocked on a
+permission gate writes a ``needs-input`` event the same way, through
+``notify_on_idle.chief_needs_input`` (fleet-config#1456). It writes one small
 event file per event into ``state_dir()/chief-inbox/``; the chief's
 ``chief_ops.py wait-event`` claims them by rename and exits, and that exit is
 what wakes the chief (a background task's exit is the one wake it trusts).
@@ -57,9 +59,14 @@ INBOX_DIRNAME = "chief-inbox"
 TURN_END = "Stop"
 SESSION_END = "SessionEnd"
 SCHEMA_VERSION = 2
-# v1 `event` -> v2 `kind`. `needs-input` is reserved for step 3/7 (#1456).
+# v1 `event` -> v2 `kind`. A needs-input event keeps its harness's own `event`
+# (`Notification` / `PermissionRequest`) and passes `kind=NEEDS_INPUT` (#1456).
 KINDS = {TURN_END: "turn-end", SESSION_END: "session-end"}
+NEEDS_INPUT = "needs-input"
 EXCERPT_CHARS = 1500
+# A needs-input excerpt is the hook's classified prompt line, bounded as the
+# typed `say` message it replaces was.
+NEEDS_INPUT_EXCERPT_CHARS = 300
 # A transcript tail read on the worker's Stop stays bounded however long the
 # session ran; an assistant record larger than this is reported unavailable.
 TRANSCRIPT_TAIL_BYTES = 256 * 1024
@@ -137,8 +144,13 @@ def excerpt_fields(payload: Dict[str, Any]) -> Dict[str, Any]:
     return {"excerpt": None, "excerpt_source": None, "excerpt_unavailable": reason}
 
 
-def record(payload: Dict[str, Any], event: str, default_agent: str = "claude") -> Optional[Path]:
-    """Write one inbox event for this session's ``event``; the file, or ``None``."""
+def record(payload: Dict[str, Any], event: str, default_agent: str = "claude", *,
+           kind: Optional[str] = None, prompt: Optional[str] = None) -> Optional[Path]:
+    """Write one inbox event for this session's ``event``; the file, or ``None``.
+
+    ``kind`` overrides the ``KINDS`` mapping; ``prompt`` is a needs-input
+    event's excerpt (``excerpt_source: prompt``) in place of the final reply.
+    """
     sid = _lib.own_launcher_session_id()
     if not sid:
         return None
@@ -158,7 +170,7 @@ def record(payload: Dict[str, Any], event: str, default_agent: str = "claude") -
     entry = {
         "v": SCHEMA_VERSION,
         "id": event_id,
-        "kind": KINDS.get(event, event),
+        "kind": kind or KINDS.get(event, event),
         "event": event,
         "launcher_sid": sid,
         "repo": row.get("repo"),
@@ -166,7 +178,8 @@ def record(payload: Dict[str, Any], event: str, default_agent: str = "claude") -
         "agent": agent,
         "ts": now.strftime("%Y-%m-%dT%H:%M:%SZ"),
         "dispatch_id": row.get("dispatch_id"),
-        **excerpt_fields(payload),
+        **(excerpt_fields(payload) if prompt is None else
+           {"excerpt": prompt[:NEEDS_INPUT_EXCERPT_CHARS], "excerpt_source": "prompt"}),
     }
     directory = inbox_dir()
     directory.mkdir(parents=True, exist_ok=True)

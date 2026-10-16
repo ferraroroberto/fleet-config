@@ -474,6 +474,8 @@ def _codex_attention_unit_checks() -> Tuple[int, int]:
 def _codex_attention_chief_unit_checks() -> Tuple[int, int]:
     """A chief-managed Codex worker's PermissionRequest reaches the chief first,
     falling back to Telegram when delivery is not confirmed (fleet-config#999).
+    The mailbox write itself is pinned by tests/test_chief_needs_input.py
+    (#1456); this covers the routing decision around it.
     Every managed-path case here sent Telegram only on pre-#999 code, and the
     no-chat case sent nothing at all."""
     sys.path.insert(0, str(HOOKS))
@@ -490,7 +492,7 @@ def _codex_attention_chief_unit_checks() -> Tuple[int, int]:
     registry.write_text(f'[probe]\ncwd_prefix = "{chat_dir.as_posix()}"\ntelegram_chat_attention = "CHAT"\n',
                         encoding="utf-8")
     saved_env = {k: os.environ.get(k) for k in ("CLAUDE_HOOKS_PROJECTS_TOML", "CLAUDE_HOOKS_STATE_DIR")}
-    saved = (noi.chief_managed_state, noi.notify_chief, codex_attention.notify_send.notify,
+    saved = (noi.chief_managed_state, noi.chief_needs_input, codex_attention.notify_send.notify,
              codex_attention.hub_client.complete)
     telegram: list[str] = []
     chief: list[str] = []
@@ -504,13 +506,14 @@ def _codex_attention_chief_unit_checks() -> Tuple[int, int]:
         os.environ["CLAUDE_HOOKS_PROJECTS_TOML"] = str(registry)
         os.environ["CLAUDE_HOOKS_STATE_DIR"] = str(tmp / "state")
         noi.chief_managed_state = lambda path=None: state["managed"]
-        noi.notify_chief = lambda text: chief.append(text) or state["delivered"]
+        noi.chief_needs_input = lambda payload, text, default_agent="claude": (
+            chief.append(text) or state["delivered"])
         codex_attention.notify_send.notify = lambda message, chat, token=None: telegram.append(message) or True
 
         check("codex chief: managed + delivered -> the chief gets it, Telegram does not",
               codex_attention.handle(payload(chat_dir, "t1")) and len(chief) == 1 and telegram == [])
         check("codex chief: the chief message names the worker and what it awaits",
-              chief and "chief-managed worker needs input" in chief[0] and "approval to edit files" in chief[0])
+              chief and chief[0].startswith("Codex in ") and "approval to edit files" in chief[0])
         check("codex chief: the same turn is not re-delivered",
               not codex_attention.handle(payload(chat_dir, "t1")) and len(chief) == 1)
         check("codex chief: works with no Telegram chat configured for the project",
@@ -531,10 +534,10 @@ def _codex_attention_chief_unit_checks() -> Tuple[int, int]:
         state["managed"] = (True, noi.CHIEF_MANAGED)
         codex_attention.hub_client.complete = lambda *a, **k: '{"verdict":"finished","confidence":0.99}'
         codex_attention.handle({**payload(chat_dir, "t6", event="Stop"), "last_assistant_message": "Done."})
-        check("codex chief: a Stop never goes through the paste channel (the inbox owns turn-end)",
+        check("codex chief: a Stop never writes a needs-input (the inbox turn-end owns it)",
               len(chief) == 3)
     finally:
-        (noi.chief_managed_state, noi.notify_chief, codex_attention.notify_send.notify,
+        (noi.chief_managed_state, noi.chief_needs_input, codex_attention.notify_send.notify,
          codex_attention.hub_client.complete) = saved
         for key, value in saved_env.items():
             if value is None:
@@ -824,16 +827,12 @@ def _notify_chief_routing_unit_checks() -> Tuple[int, int]:
     routing a chief-dispatched worker's blocked-on-input notification to
     chief instead of the human ping (fleet-config#443, fleet-config#835).
 
-    Deliberately does NOT exercise `notify_chief`'s live subprocess/network
-    call here (or via a `run()` end-to-end hook invocation with a genuinely
-    chief-managed sid): doing so would require a real `chief-managed.json`
-    entry and could actually shell out to `chief_ops.py chief-sid`/`say`
-    against whatever launcher happens to be listening on 127.0.0.1:8445 on
-    the machine running this suite — risking a real post into a real live
-    chief session as a side effect of a unit test. The two pure functions
-    below are the entire decision surface; the I/O wrapper composing them is
-    exercised by hand against a real launcher, the same way `chief_ops.py`'s
-    own network-touching CLI commands are.
+    Deliberately does NOT exercise `chief_live`'s real `chief-sid` lookup
+    here (or via a `run()` end-to-end hook invocation with a genuinely
+    chief-managed sid): that would query whatever launcher happens to be
+    listening on 127.0.0.1:8445 on the machine running this suite. The
+    managed path end to end -- lookup stubbed, mailbox write real -- is
+    tests/test_chief_needs_input.py (fleet-config#1456).
     """
     sys.path.insert(0, str(HOOKS))
     import notify_on_idle  # noqa: E402

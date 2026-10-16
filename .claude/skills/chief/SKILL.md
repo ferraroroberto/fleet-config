@@ -297,12 +297,21 @@ Every `--brief-file` you dispatch a worker with carries the standard brief. It o
   empty: `chief_ops.py stop <sid>`, then `skills/_lib/worktree_claim.py
   remove-worktree <path>`, not `rm -rf`. Dirty, open, or not yours → ask.
 
-## Incoming worker notifications (fleet-config#443)
+## Incoming worker notifications (fleet-config#443, #1456)
 
 When a **chief-dispatched** worker hits a real "blocked, needs input"
 moment (a permission gate or an `AskUserQuestion` — not the routine 💤 idle
-nag, which stays silent), it arrives as a message typed straight into
-*your* session, shaped like: `🔔 chief-managed worker needs input: <text>`.
+nag, which stays silent), it arrives as a `kind=needs-input` line in your
+`wait-event` digest, never as text typed into your session:
+
+```
+- <repo>#<n>: needs input (<agent>) sid=<8> age=<age> kind=needs-input
+  excerpt (prompt, <n> chars):
+  | Codex in <project> awaits approval to edit files
+```
+
+The excerpt is the hook's one-line classification, not the worker's words;
+`exchange` has the detail. Like every event it waits until your turn ends.
 A session the user started manually still pings the user directly — this
 only reroutes your own dispatches.
 
@@ -316,14 +325,15 @@ On one of these:
   asking something only he can decide — don't relay every absorbed nudge
   upward, and don't let a genuine "I need Roberto" blend in with routine
   status (that's exactly the distinct-priority ping `escalate` exists for).
-- If delivery to you ever fails silently (you never received a ping you'd
-  expect), the notification falls back to the human Telegram chat rather
-  than being dropped — that fallback is not a bug to route around.
+- With no live chief, or if the mailbox write fails, the notification goes
+  to the human Telegram chat instead of being dropped — that fallback is not
+  a bug to route around.
 
 A worker's turn ending — finished, a question asked in plain text (its
-`AskUserQuestion` is blocked), or gave up — reaches you separately, as a
-`wait-event` wake (see "Polling on a cadence"), not as a typed message, so it
-never collides with Roberto typing through the same input channel. The
+`AskUserQuestion` is blocked), or gave up — reaches you the same way, as a
+`wait-event` wake (see "Polling on a cadence"). No worker event is a typed
+message, so none collides with Roberto typing through the same input
+channel. The
 `wait-event` timeout's board digest is the safety net for a session that dies
 without firing any hook.
 

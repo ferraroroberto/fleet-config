@@ -1,6 +1,6 @@
 # Chief mailbox
 
-The durable channel from chief-managed workers to the fleet chief. Every worker turn-end and session exit becomes one small JSON file in a directory. The chief reads those files; nothing else carries the data. A doorbell (app-launcher#1645, step 5/7 of #1372) may later tell the chief to read. It carries no data.
+The durable channel from chief-managed workers to the fleet chief. Every worker turn-end, session exit and permission gate becomes one small JSON file in a directory. The chief reads those files; nothing else carries the data. A doorbell (app-launcher#1645, step 5/7 of #1372) may later tell the chief to read. It carries no data.
 
 This document is the cross-repo contract. A second implementation (app-launcher counts pending events every ~3 s, #1645) follows this file alone. The reference implementation is `hooks/chief_inbox.py` (writer) and `skills/_lib/chief_ops.py` (readers: `count_pending`, `claim_mailbox`, `ack_events`, `claim_batch`). The tests named under [Conformance](#conformance) pin every rule below.
 
@@ -49,12 +49,12 @@ This document is the cross-repo contract. A second implementation (app-launcher 
 |---|---|
 | `v` | Schema version, `2`. Absent on v1 events. |
 | `id` | Equals the file name's id. The dedupe key: a re-offered event keeps its `id`. |
-| `kind` | `turn-end`, `session-end` or `needs-input`. `needs-input` is reserved now and written from step 3/7 (#1456). |
-| `event` | v1 compatibility: `Stop` or `SessionEnd`. Kept so the v1 reader (`wait-event`) still names the event. |
+| `kind` | `turn-end`, `session-end` or `needs-input`. A `needs-input` is a worker blocked on a permission gate (Claude `permission_prompt`, Codex `PermissionRequest`), written only while a chief is live (#1456). |
+| `event` | v1 compatibility: `Stop` or `SessionEnd`. Kept so the v1 reader (`wait-event`) still names the event. A `needs-input` event carries its harness's own event name (`Notification` or `PermissionRequest`); readers name it by `kind`. |
 | `launcher_sid`, `repo`, `number`, `agent`, `ts` | Unchanged from v1. `ts` is UTC, second precision, `Z` suffix. |
 | `dispatch_id` | The per-dispatch handle `chief_ops.py dispatch` prints as `DISPATCH_ID=` and stores in the `chief-managed.json` row. `null` for a worker dispatched without one (for example straight from the launcher). |
-| `excerpt` | The last 1,500 characters of the worker's final reply. It is never an empty string: no readable reply means `null`. |
-| `excerpt_source` | `payload` (the harness's own last-assistant field), `transcript` (the tail of `transcript_path`), or `null`. |
+| `excerpt` | The last 1,500 characters of the worker's final reply. For `needs-input`, the hook's one-line classified prompt instead (at most 300 characters, e.g. `Codex in fleet-config awaits approval to edit files`). It is never an empty string: no readable reply means `null`. |
+| `excerpt_source` | `payload` (the harness's own last-assistant field), `transcript` (the tail of `transcript_path`), `prompt` (a `needs-input` event's classified prompt), or `null`. |
 | `excerpt_unavailable` | Why `excerpt` is `null`. Present only then. |
 
 Excerpt sources per harness, verified live for #1455:
@@ -125,3 +125,4 @@ Everything the chief acts on comes from `inbox`, never from the ring.
 - `tests/test_chief_mailbox.py`: the counting rule case by case (temps, dot-files, non-`.json`, directories, `wait-event`'s claim folder, fresh vs stale vs unstamped claims, the exact stale boundary, an unlistable directory being unknown), claim, ack, re-offer with an injected clock, and the two readers racing.
 - `tests/test_chief_wait_event_compat.py`: `wait-event`'s output and exactly-once claim on v1 and v2 events. It passes unchanged on the pre-v2 tree.
 - `tests/test_chief_inbox.py`: the v2 writer through the real Claude, Codex and Pi adapter hooks, including every excerpt source and the `null`-with-reason case.
+- `tests/test_chief_needs_input.py`: the `needs-input` writer through Claude's and Codex's attention hooks (one event, no typed message, Telegram on no chief or a failed write), and the real `wait-event` digest line for it.
