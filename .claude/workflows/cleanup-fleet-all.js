@@ -261,7 +261,7 @@ ${commentStep}
    \`E:/automation/fleet-config/.venv/Scripts/python.exe C:/Users/rober/.claude/skills/_lib/worktree_residue.py classify E:/automation/${issue.repo} ${ownArgs}\`
    It prints one \`WORKTREE=… BRANCH=… CLASS=… REASON=…\` line per extra worktree, then \`VERDICT=\`. Take its verdict as given; do not re-judge a CLASS by your own reading.
    - \`VERDICT=clean\` → the primary only. Passes.
-   - \`VERDICT=foreign-deferred\` → passes check 1. Every extra worktree is someone else's (it matches none of this run's paths or branches), clean, and its HEAD is proven merged into the default branch. Pre-flight defers any repo already holding a worktree, so this one appeared mid-run. On 2026-09-27 a chief-dispatched lane created one about ten minutes into the run; the old "primary only" rule read it as this run's residue, and the run halted with 41 issues unstarted (fleet-config#1077). Copy every \`WORKTREE=\` line into \`foreignWorktrees\` verbatim; the decision script defers this repo's remaining issues to the retry pass. **Never remove, prune or otherwise touch it**: it is not this run's.
+   - \`VERDICT=foreign-deferred\` → passes check 1. Every extra worktree is someone else's (it matches none of this run's paths or branches), clean, and its HEAD is proven merged into the default branch. Pre-flight defers any repo already holding a worktree, so this one appeared mid-run. On 2026-09-27 a chief-dispatched lane created one about ten minutes into the run; the old "primary only" rule read it as this run's residue, and the run halted with 41 issues unstarted (fleet-config#1077). Copy every \`WORKTREE=\` line into \`foreignWorktrees\` verbatim and write nothing else there -- leave it empty when there is none, never "None" or a check summary (the script defers only on a \`WORKTREE=\` line, fleet-config#1453); the decision script defers this repo's remaining issues to the retry pass. **Never remove, prune or otherwise touch it**: it is not this run's.
    - \`VERDICT=residue\` → RESIDUE: your own leftover (\`CLASS=own\`), or a foreign worktree that is dirty (\`foreign-dirty\`) or not proven merged (\`foreign-unmerged\`). Quote the \`WORKTREE=\` lines in \`detail\`. Leave foreign ones exactly as they are.
    - \`VERDICT=unknown\`, or the command could not run → RESIDUE, never a pass. Quote its output in \`detail\`.
 
@@ -508,8 +508,11 @@ for (const bucket of bucketNames) {
     // fleet-config#1077: a foreign, clean, merged worktree is not this run's
     // mess and never halts, but the repo is no longer the one pre-flight
     // cleared -- defer the rest of its work instead of building beside it.
-    if (r.foreignWorktrees && r.foreignWorktrees.trim()) {
-      deferredRepos[issue.repo] = r.foreignWorktrees.trim()
+    // fleet-config#1453: the field is free text and agents write prose in it
+    // ("None -- VERDICT=clean ..."). Only a real `WORKTREE=` line is evidence.
+    const foreignLines = String(r.foreignWorktrees || '').split(/\r?\n/).map(s => s.trim()).filter(s => s.startsWith('WORKTREE='))
+    if (foreignLines.length) {
+      deferredRepos[issue.repo] = foreignLines.join('; ')
       log(`  foreign worktree (not residue) — deferring the rest of ${issue.repo}: ${deferredRepos[issue.repo]}`)
     }
   }
