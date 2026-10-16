@@ -483,15 +483,16 @@ def matrix_cases() -> Tuple[List[Case], Path]:
     ))
     # fleet-config#443: a permission_prompt that is NOT chief-managed must fall
     # straight through to the existing human-ping path without ever invoking
-    # notify_chief's subprocess/network call. `shared.hook_env` drops
+    # chief_live's `chief-sid` lookup. `shared.hook_env` drops
     # APP_LAUNCHER_SESSION_ID from every hook subprocess, so this runs as an
     # ordinary non-launcher session no matter how the suite itself was started
     # (fleet-config#835) — zero risk of reaching a real live chief session. The
     # payload session_id below is deliberately kept and deliberately ignored:
     # it is the id space that used to key this decision. The genuinely
     # chief-managed branch is covered by direct unit tests on
-    # chief_managed_state/parse_chief_sid below instead — never end-to-end
-    # here, since that would let notify_chief actually shell out.
+    # chief_managed_state/parse_chief_sid below and by
+    # tests/test_chief_needs_input.py (lookup stubbed) — never end-to-end
+    # here, since that would let chief_live query a real launcher.
     cases.append((
         "notify_on_idle: permission_prompt in a non-launcher session -> allow (falls through to human ping)",
         "notify_on_idle",

@@ -246,6 +246,12 @@ _STANDALONE_UNIT_CHECKS: Tuple[Tuple[str, str, str], ...] = (
      "the chief inbox's writer -- Claude/Codex/Pi turn-end and exit through "
      "the real adapter hooks, managed vs human-started vs undetermined -- "
      "against a temp state dir (fleet-config#999)"),
+    ("chief_needs_input", "test_chief_needs_input.py",
+     "a chief-managed worker's needs-input through the mailbox -- Claude's "
+     "permission_prompt and Codex's PermissionRequest each write one "
+     "needs-input event and type nothing into the chief; no live chief or a "
+     "failed write pings Telegram as before, unretried; the real wait-event "
+     "digest line the chief sees (fleet-config#1456)"),
     ("chief_mailbox", "test_chief_mailbox.py",
      "the chief mailbox v2 reader -- claim into .claimed/, ack, re-offer of "
      "an unacked claim after the stale window (injected clock), the "

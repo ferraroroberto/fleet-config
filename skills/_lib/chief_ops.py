@@ -58,8 +58,9 @@ Subcommands
       `dispatch` asks — see `dispatch` below.
 
   wait-event [--timeout 1800] [--interval 5] [--base-url URL]
-      Block until a chief-managed worker's turn ends or its session exits
-      (`hooks/chief_inbox.py` publishes one event file per event), claim every
+      Block until a chief-managed worker's turn ends, its session exits or it
+      hits a permission gate (`hooks/chief_inbox.py` publishes one event file
+      per event; a gate is `kind=needs-input`, fleet-config#1456), claim every
       pending event exactly once, print them (`WAIT_EVENT=events n=N` plus one
       line each) and exit 0 -- launched as a one-shot background task, its exit
       is what wakes the chief (fleet-config#999). A burst settles for ~3s into

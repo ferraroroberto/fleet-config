@@ -6,8 +6,9 @@ a strict, high-confidence ``awaiting_input`` result.  Every failure is
 fail-open and logged as ``not confirmed``.
 
 A chief-managed worker's ``PermissionRequest`` goes to the standing chief
-first (``route_to_chief``, fleet-config#999), falling back to the Telegram
-ping when delivery is not confirmed. Its turn-end reaches the chief through
+first (``route_to_chief``, fleet-config#999) as a ``needs-input`` mailbox
+event (#1456), falling back to the Telegram ping when no chief is live or the
+write fails. Its turn-end reaches the chief through
 ``chief_inbox`` instead, via ``session_state_codex``.
 """
 from __future__ import annotations
@@ -165,9 +166,10 @@ def route_to_chief(payload: dict[str, Any]) -> bool:
 
     The Codex twin of `notify_on_idle`'s `permission_prompt` routing
     (fleet-config#443, #999): the chief wrote the brief and can usually
-    unblock the worker without paging Roberto. True only on confirmed
-    delivery; on any other outcome the caller falls back to the Telegram ping,
-    never retries. Needs no Telegram chat, so it runs before that check.
+    unblock the worker without paging Roberto. It lands as a `needs-input`
+    event in the chief's mailbox (#1456). True only when that event was
+    published; on any other outcome the caller falls back to the Telegram
+    ping, never retries. Needs no Telegram chat, so it runs before that check.
     """
     managed, reason = notify_on_idle.chief_managed_state()
     if reason == notify_on_idle.CHIEF_UNDETERMINED:
@@ -179,9 +181,8 @@ def route_to_chief(payload: dict[str, Any]) -> bool:
     cwd = _lib.cwd(payload)
     project = _lib.detect_project(cwd)
     context = permission_context(payload) or "a permission decision"
-    text = (f"{BELL} chief-managed worker needs input: Codex in "
-            f"{project.name if project else cwd.name} awaits {context}")
-    if notify_on_idle.notify_chief(text[:300]):
+    text = f"Codex in {project.name if project else cwd.name} awaits {context}"
+    if notify_on_idle.chief_needs_input(payload, text, default_agent="codex"):
         return True
     logger.info("Codex attention: chief delivery not confirmed -- falling back to the human ping")
     return False
