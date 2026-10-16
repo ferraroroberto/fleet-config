@@ -123,7 +123,7 @@ window.CONFIG = {
     },
     {
       "nm": "design-review",
-      "ds": "Review a running fleet web app's rendered design — measure the live app in real browsers (iPhone/Android/desktop × light/dark), s…",
+      "ds": "Review a running fleet web app's rendered design — live measurement in real browsers (phone/desktop × light/dark), rubric score,…",
       "scope": "repo"
     },
     {
@@ -333,6 +333,7 @@ window.CONFIG = {
         "house",
         "ip-check",
         "is-this-ai",
+        "job",
         "journal-daily",
         "journal-weekly",
         "meeting-prep",
@@ -536,6 +537,10 @@ window.CONFIG = {
     {
       "nm": "conversation_search",
       "ds": "Ranked full-text search over captured conversations (fleet-config#586)."
+    },
+    {
+      "nm": "conversation_title",
+      "ds": "Set or clear the owner's title on one captured conversation (fleet-config#1348)."
     },
     {
       "nm": "edit_events",
