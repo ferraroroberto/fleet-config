@@ -50,10 +50,16 @@ def mark(
     repo: str,
     number: int,
     *,
+    dispatch_id: Optional[str] = None,
     now: Optional[datetime] = None,
     path: Optional[Path] = None,
 ) -> Dict[str, Any]:
-    """Record `sid` as chief-managed. Returns the row written."""
+    """Record `sid` as chief-managed. Returns the row written.
+
+    `dispatch_id` (fleet-config#1455) is the per-dispatch handle
+    `hooks/chief_inbox.py` copies into every mailbox event; a row without
+    one (a launcher-direct dispatch) yields `dispatch_id: null` events.
+    """
     if not sid.strip():
         raise ValueError("sid must not be empty")
     target = path or state_file()
@@ -63,6 +69,8 @@ def mark(
         "number": number,
         "dispatched_at": _iso_z(moment),
     }
+    if dispatch_id:
+        row["dispatch_id"] = dispatch_id
     with state_lock(target):
         rows = prune_rows(read_rows(target), now=moment)
         rows[sid] = row

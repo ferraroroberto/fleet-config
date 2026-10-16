@@ -12,13 +12,37 @@ import { PYTHON, ROOT } from "./policy_hooks.ts";
 // derives them from this file's own realpath (no hardcoded user paths).
 const SCRIPT = join(ROOT, "hooks", "session_state_pi.py");
 
-function report(event: string, sessionId: string | undefined, cwd: string | undefined) {
+// fleet-config#1455 — Pi's settle event carries no reply text, so the
+// chief-inbox excerpt comes from the session's own branch: the newest
+// assistant message's text blocks. null when there is none; the Python side
+// then records why the excerpt is unavailable.
+function lastAssistantText(ctx: any): string | null {
+	try {
+		const branch = ctx.sessionManager.getBranch() ?? [];
+		for (let i = branch.length - 1; i >= 0; i--) {
+			const message = branch[i]?.type === "message" ? branch[i].message : undefined;
+			if (message?.role !== "assistant" || !Array.isArray(message.content)) continue;
+			const text = message.content
+				.filter((block: any) => block?.type === "text" && typeof block.text === "string")
+				.map((block: any) => block.text)
+				.join("\n")
+				.trim();
+			if (text) return text;
+		}
+	} catch {
+		// advisory-only: an unreadable branch is an unavailable excerpt
+	}
+	return null;
+}
+
+function report(event: string, sessionId: string | undefined, cwd: string | undefined, lastAssistantMessage: string | null = null) {
 	if (!sessionId) return;
 	const payload = JSON.stringify({
 		event,
 		session_id: sessionId,
 		cwd: cwd ?? null,
 		transcript_path: null,
+		last_assistant_message: lastAssistantMessage,
 	});
 	try {
 		// Advisory-only, fire-and-forget: a reporting failure must never
@@ -38,10 +62,10 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	pi.on("agent_settled", (_event, ctx) => {
-		report("agent_settled", ctx.sessionManager.getSessionId(), ctx.cwd);
+		report("agent_settled", ctx.sessionManager.getSessionId(), ctx.cwd, lastAssistantText(ctx));
 	});
 
 	pi.on("session_shutdown", (_event, ctx) => {
-		report("session_shutdown", ctx.sessionManager.getSessionId(), ctx.cwd);
+		report("session_shutdown", ctx.sessionManager.getSessionId(), ctx.cwd, lastAssistantText(ctx));
 	});
 }

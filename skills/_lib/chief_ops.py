@@ -64,7 +64,26 @@ Subcommands
       line each) and exit 0 -- launched as a one-shot background task, its exit
       is what wakes the chief (fleet-config#999). A burst settles for ~3s into
       one wake. On timeout: `WAIT_EVENT=timeout` plus the board digest, the
-      safety net for a worker killed too hard to fire a hook.
+      safety net for a worker killed too hard to fire a hook. v2 events add
+      ` kind=<kind>` to their line and indented excerpt lines below it; the
+      header, the v1 lines and the closing `Next:` line are unchanged
+      (pinned by tests/test_chief_wait_event_compat.py, fleet-config#1455).
+
+  inbox [--count] [--stale-after SECS]
+      Mailbox v2 reader (fleet-config#1455; contract: docs/chief-mailbox.md).
+      Moves stale claims (unacked for `--stale-after`, default 900 s) back to
+      the inbox root, then claims every pending event into
+      `chief-inbox/.claimed/<claimed_at_ms>-<id>.json` and prints the batch
+      (`INBOX=events n=N reoffered=R dropped=D`, one line per event with its
+      `id`, the excerpt below, then `ACK=`). Nothing is deleted until `ack`,
+      so a chief that dies mid-turn is re-offered the same ids: at-least-once,
+      deduped by `id`. `INBOX=empty` when there is nothing. `--count` claims
+      nothing and prints `PENDING=<n>` by the doc's file-name rule
+      (`PENDING=unknown` + exit 1 when the directory can't be listed).
+
+  ack <id> [<id> ...]
+      Retires handled events: deletes each id's claimed (or re-offered) file.
+      `ACKED=<n>`, plus `ACK_MISSING=<id>` and exit 1 for an id with no file.
 
   context [<sid>] [--base-url URL]
       Context-window use from the launcher (`/api/claude-code/sessions/<sid>/
@@ -108,7 +127,9 @@ Subcommands
       `/cleanup-fleet`) is refused while one runs, or while that is unknown,
       unless `--allow-during-fleet-job` (fleet-config#1078). Otherwise POSTs
       `/api/board/issues/start` and marks the new session chief-managed
-      (`skills/_lib/chief_managed.py`, fleet-config#443) so
+      (`skills/_lib/chief_managed.py`, fleet-config#443) with a fresh
+      `dispatch_id`, printed as `DISPATCH_ID=` and carried by every
+      mailbox event that worker writes (fleet-config#1455), so
       `hooks/notify_on_idle.py` can route its blocked-on-input
       notifications to chief instead of the human ping.
 
@@ -226,6 +247,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional, Tuple
@@ -776,8 +798,141 @@ DEFAULT_WAIT_EVENT_INTERVAL = 5.0
 WAIT_EVENT_SETTLE_SECONDS = 3.0
 
 
+# Mailbox v2 (fleet-config#1455; contract: docs/chief-mailbox.md). A v2 claim
+# lives under `.claimed/`, where `wait-event` never looks, so both readers
+# coexist until the doorbell switch-over (#1457).
+CLAIMED_DIRNAME = ".claimed"
+# A claim unacked this long is re-offered: the reader that took it is assumed
+# dead. Longer than any chief turn that handles a batch, so a live chief is
+# not handed its own batch twice.
+CLAIM_STALE_SECONDS = 900.0
+EVENT_KIND_TEXT = {"turn-end": "turn ended", "session-end": "session ended", "needs-input": "needs input"}
+
+
 def chief_inbox_dir() -> Path:
     return hooks_state.state_dir() / CHIEF_INBOX_DIRNAME
+
+
+def _now_ms() -> int:
+    return time.time_ns() // 1_000_000
+
+
+def _split_event_name(name: str) -> Tuple[Optional[int], str]:
+    """`<ms>-<id>.json` -> `(ms, id)`; a name without that shape -> `(None, stem)`."""
+    stem = name[:-len(".json")] if name.endswith(".json") else name
+    prefix, dash, rest = stem.partition("-")
+    if dash and prefix.isdigit() and rest:
+        return int(prefix), rest
+    return None, stem
+
+
+def _event_files(directory: Path) -> List[Path]:
+    """Published event files directly in `directory`: non-dot `*.json` regular files."""
+    try:
+        entries = list(os.scandir(directory))
+    except FileNotFoundError:
+        return []
+    return sorted(
+        (Path(entry.path) for entry in entries
+         if entry.name.endswith(".json") and not entry.name.startswith(".") and entry.is_file()),
+        key=lambda path: path.name,
+    )
+
+
+def count_pending(inbox: Path, now_ms: Optional[int] = None,
+                  stale_after: float = CLAIM_STALE_SECONDS) -> int:
+    """Pending events by file name alone -- the reference for docs/chief-mailbox.md.
+
+    Every root event file, plus every `.claimed/` file whose claim is at
+    least `stale_after` old (or whose name carries no readable claim time).
+    No file is opened or parsed. Raises `OSError` when a directory exists but
+    cannot be listed: that is "unknown", never zero.
+    """
+    moment = _now_ms() if now_ms is None else now_ms
+    pending = len(_event_files(inbox))
+    for path in _event_files(inbox / CLAIMED_DIRNAME):
+        claimed_at, _ = _split_event_name(path.name)
+        if claimed_at is None or moment - claimed_at >= stale_after * 1000:
+            pending += 1
+    return pending
+
+
+def reoffer_stale_claims(inbox: Path, now_ms: int, stale_after: float = CLAIM_STALE_SECONDS) -> List[str]:
+    """Move each stale `.claimed/` file back to the inbox root; the re-offered ids.
+
+    The basename is kept: `<claimed_at_ms>-<id>.json` is already a valid root
+    event name. A rename lost to a concurrent reader is skipped.
+    """
+    reoffered = []
+    for path in _event_files(inbox / CLAIMED_DIRNAME):
+        claimed_at, event_id = _split_event_name(path.name)
+        if claimed_at is not None and now_ms - claimed_at < stale_after * 1000:
+            continue
+        try:
+            os.replace(path, inbox / path.name)
+        except OSError:
+            continue
+        reoffered.append(event_id)
+    return reoffered
+
+
+def claim_mailbox(inbox: Path, now_ms: Optional[int] = None,
+                  stale_after: float = CLAIM_STALE_SECONDS) -> Tuple[List[Dict[str, Any]], List[str], int]:
+    """`(events, reoffered_ids, dropped)`: claim every pending event, oldest first.
+
+    Stale claims are re-offered first, then each root event file is renamed to
+    `.claimed/<now_ms>-<id>.json` before it is read -- the rename is the
+    claim, so a concurrent reader (this one or `wait-event`) that loses the
+    race skips the file. Nothing is deleted here except junk and events past
+    the TTL; a handled event is retired by `ack_events`. Each returned event
+    carries `id` from its file name, the handle `ack` takes.
+    """
+    moment = _now_ms() if now_ms is None else now_ms
+    reoffered = reoffer_stale_claims(inbox, moment, stale_after)
+    claimed = inbox / CLAIMED_DIRNAME
+    now_dt = datetime.fromtimestamp(moment / 1000, tz=timezone.utc)
+    events: List[Dict[str, Any]] = []
+    dropped = 0
+    for path in _event_files(inbox):
+        _, event_id = _split_event_name(path.name)
+        claimed.mkdir(exist_ok=True)
+        held = claimed / f"{moment}-{event_id}.json"
+        try:
+            os.replace(path, held)
+        except OSError:
+            continue  # another reader took it first
+        try:
+            event = json.loads(held.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            event = None
+        age = _event_age_seconds(event, now_dt) if isinstance(event, dict) else None
+        if not isinstance(event, dict) or (age is not None and age > INBOX_EVENT_TTL_SECONDS):
+            try:
+                held.unlink()
+            except OSError:
+                pass
+            dropped += 1
+            continue
+        events.append({**event, "id": event_id})
+    return events, reoffered, dropped
+
+
+def ack_events(inbox: Path, ids: List[str]) -> Tuple[List[str], List[str]]:
+    """`(acked, missing)`: delete each id's file, claimed or already re-offered."""
+    acked, missing = [], []
+    for event_id in ids:
+        found = False
+        for path in _event_files(inbox / CLAIMED_DIRNAME) + _event_files(inbox):
+            stamp, name_id = _split_event_name(path.name)
+            if stamp is None or name_id != event_id:
+                continue
+            try:
+                path.unlink()
+                found = True
+            except FileNotFoundError:
+                pass  # a concurrent ack or reader got there first
+        (acked if found else missing).append(event_id)
+    return acked, missing
 
 
 def _event_age_seconds(event: Dict[str, Any], now: datetime) -> Optional[float]:
@@ -831,20 +986,59 @@ def claim_batch(inbox: Path, now: Optional[datetime] = None) -> List[Dict[str, A
     return events
 
 
+def _event_line(event: Dict[str, Any], moment: datetime) -> str:
+    """`- <repo>#<n>: <what> (<agent>) sid=<8> age=<age>` -- the v1 line, unchanged."""
+    kind = event.get("kind")
+    what = EVENT_KIND_TEXT.get(kind) if kind else None
+    if what is None:
+        what = "turn ended" if event.get("event") == "Stop" else "session ended" \
+            if event.get("event") == "SessionEnd" else str(kind or event.get("event"))
+    age = _event_age_seconds(event, moment)
+    issue = f"{event.get('repo')}#{event.get('number')}"
+    return (
+        f"- {issue}: {what} ({event.get('agent') or '?'}) "
+        f"sid={str(event.get('launcher_sid') or '')[:8]} "
+        f"{'age=' + _fmt_age(age) if age is not None else 'age=?'}"
+    )
+
+
+def _excerpt_lines(event: Dict[str, Any]) -> List[str]:
+    """Indented excerpt lines for a v2 event; none for a v1 event."""
+    if "excerpt" not in event:
+        return []
+    text = event.get("excerpt")
+    if not isinstance(text, str) or not text:
+        return [f"  excerpt: unavailable ({event.get('excerpt_unavailable') or 'no reason recorded'})"]
+    return [f"  excerpt ({event.get('excerpt_source') or '?'}, {len(text)} chars):"] + \
+        [f"  | {line}" for line in text.splitlines()]
+
+
 def format_inbox_digest(events: List[Dict[str, Any]], now: Optional[datetime] = None) -> str:
     moment = now or datetime.now(timezone.utc)
     lines = [f"WAIT_EVENT=events n={len(events)}"]
     for event in events:
-        what = "turn ended" if event.get("event") == "Stop" else "session ended" \
-            if event.get("event") == "SessionEnd" else str(event.get("event"))
-        age = _event_age_seconds(event, moment)
-        issue = f"{event.get('repo')}#{event.get('number')}"
-        lines.append(
-            f"- {issue}: {what} ({event.get('agent') or '?'}) "
-            f"sid={str(event.get('launcher_sid') or '')[:8]} "
-            f"{'age=' + _fmt_age(age) if age is not None else 'age=?'}"
-        )
+        kind = f" kind={event['kind']}" if event.get("kind") else ""
+        lines.append(_event_line(event, moment) + kind)
+        lines.extend(_excerpt_lines(event))
     lines.append("Next: `exchange <sid>` for each, `verify` any completion claim, then absorb or escalate.")
+    return "\n".join(lines)
+
+
+def format_mailbox_batch(events: List[Dict[str, Any]], reoffered: List[str], dropped: int,
+                         now: Optional[datetime] = None, stale_after: float = CLAIM_STALE_SECONDS) -> str:
+    """The `inbox` command's batch: every event with its `id`, then the `ack` line."""
+    if not events:
+        return f"INBOX=empty dropped={dropped}" if dropped else "INBOX=empty"
+    moment = now or datetime.now(timezone.utc)
+    again = set(reoffered)
+    lines = [f"INBOX=events n={len(events)} reoffered={len(reoffered)} dropped={dropped}"]
+    for event in events:
+        tail = f" kind={event.get('kind') or '?'} id={event['id']} dispatch={event.get('dispatch_id') or '-'}"
+        lines.append(_event_line(event, moment) + tail + (" re-offered" if event["id"] in again else ""))
+        lines.extend(_excerpt_lines(event))
+    lines.append("ACK=chief_ops.py ack " + " ".join(event["id"] for event in events))
+    lines.append(f"Next: handle each (a re-offered id may already be handled), then run the ACK line; "
+                 f"an unacked batch is re-offered after {int(stale_after // 60)}m.")
     return "\n".join(lines)
 
 
@@ -1148,6 +1342,29 @@ def cmd_wait_event(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_inbox(args: argparse.Namespace) -> int:
+    """Mailbox v2: claim the pending batch for handling, or just count it."""
+    inbox = chief_inbox_dir()
+    if args.count:
+        try:
+            print(f"PENDING={count_pending(inbox, stale_after=args.stale_after)}")
+        except OSError as exc:
+            print(f"PENDING=unknown reason={type(exc).__name__}: {exc}")
+            return 1
+        return 0
+    events, reoffered, dropped = claim_mailbox(inbox, stale_after=args.stale_after)
+    print(format_mailbox_batch(events, reoffered, dropped, stale_after=args.stale_after))
+    return 0
+
+
+def cmd_ack(args: argparse.Namespace) -> int:
+    acked, missing = ack_events(chief_inbox_dir(), args.ids)
+    print(f"ACKED={len(acked)}")
+    for event_id in missing:
+        print(f"ACK_MISSING={event_id}")
+    return 1 if missing else 0
+
+
 def cmd_context(args: argparse.Namespace) -> int:
     """Context-window use of `sid` (default: the live chief). Exit 1 when unknown."""
     sid = args.sid
@@ -1319,12 +1536,16 @@ def cmd_dispatch(args: argparse.Namespace) -> int:
         )
         return 1
     sid = (result.get("session") or {}).get("session_id")
+    # One handle per dispatch, carried by every mailbox event the worker
+    # writes, so a re-dispatch of the same issue is told apart (#1455).
+    dispatch_id = uuid.uuid4().hex
     if sid:
         try:
-            chief_managed.mark(str(sid), args.repo, args.number)
+            chief_managed.mark(str(sid), args.repo, args.number, dispatch_id=dispatch_id)
         except OSError:
             pass  # best-effort -- a marking failure must never undo a real dispatch
     print(f"DISPATCHED session={sid} repo={args.repo} issue={args.number}")
+    print(f"DISPATCH_ID={dispatch_id}")
     if result.get("launched"):
         print(f"LAUNCHED={result['launched']}")
     return 0
@@ -1566,6 +1787,16 @@ def main(argv: Optional[List[str]] = None) -> int:
     we.add_argument("--interval", type=float, default=DEFAULT_WAIT_EVENT_INTERVAL)
     we.add_argument("--base-url", default=DEFAULT_BASE_URL)
     we.set_defaults(func=cmd_wait_event)
+
+    ib = sub.add_parser("inbox", help="mailbox v2: claim the pending batch, or --count it (fleet-config#1455)")
+    ib.add_argument("--count", action="store_true", help="print PENDING=<n> and claim nothing")
+    ib.add_argument("--stale-after", type=float, default=CLAIM_STALE_SECONDS,
+                    help="seconds before an unacked claim is re-offered")
+    ib.set_defaults(func=cmd_inbox)
+
+    ak = sub.add_parser("ack", help="mailbox v2: retire handled events by id (fleet-config#1455)")
+    ak.add_argument("ids", nargs="+")
+    ak.set_defaults(func=cmd_ack)
 
     ctx = sub.add_parser("context", help="a session's context-window use (default: the chief)")
     ctx.add_argument("sid", nargs="?", default=None)
