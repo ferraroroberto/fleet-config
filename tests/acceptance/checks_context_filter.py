@@ -1066,6 +1066,33 @@ def _context_filter_unit_checks() -> Tuple[int, int, int]:
         f"rc={res.returncode} reply={reply} | {res.stderr.strip()}",
     )
 
+    # Non-ASCII output survives the pipe (fleet-config#1440): Pi writes UTF-8 JSON
+    # and spawns this entry point without PYTHONUTF8, so a text-layer stdin read
+    # on Windows decoded it as cp1252 and handed back `cafÃ© â€”`. Raw UTF-8 bytes
+    # in, the interpreter's UTF-8 mode off, and `ensure_ascii=False` so the
+    # payload really carries the multi-byte characters.
+    utf8_output = "\n".join(f"PASS café — test_case_{i:03d} ok" for i in range(400))
+    with tempfile.TemporaryDirectory() as tmp:
+        (Path(tmp) / "mode.json").write_text(json.dumps({"mode": "rewrite"}), encoding="utf-8")
+        env = {k: v for k, v in os.environ.items() if k not in {"PYTHONUTF8", "PYTHONIOENCODING"}}
+        env.update({"FLEET_CONTEXT_FILTER_MODE": "", "FLEET_CONTEXT_FILTER_DIR": tmp})
+        res = subprocess.run(
+            [PYTHON, str(HOOKS / "context_filter_cli.py"), "compress", "--agent", "pi"],
+            input=json.dumps(
+                {"command": "git status --short", "output": utf8_output}, ensure_ascii=False
+            ).encode("utf-8"),
+            capture_output=True,
+            env=env,
+            timeout=30,
+        )
+        reply = json.loads(res.stdout.decode("utf-8")) if res.returncode == 0 and res.stdout.strip() else {}
+        text = reply.get("text", "")
+        check(
+            "context_filter_cli: compress keeps non-ASCII output intact (fleet-config#1440)",
+            reply.get("wrap") is True and "café —" in text and "cafÃ©" not in text,
+            f"rc={res.returncode} wrap={reply.get('wrap')} text[:120]={text[:120]!r} | {res.stderr.decode('utf-8', 'replace').strip()}",
+        )
+
     # ---- shadow.jsonl rotates at the size cap, keeping one generation (#549) ----
     with tempfile.TemporaryDirectory() as tmp:
         sys.path.insert(0, str(HOOKS))
