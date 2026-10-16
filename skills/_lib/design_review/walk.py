@@ -12,8 +12,9 @@ What it does, per device x theme, and nothing else:
 
   1. `goto` the base URL (loopback, certificate errors ignored);
   2. click each primary tab (`[role=tablist] [role=tab]`, first tablist),
-     screenshot, set every `details.open` in the visible pane, full-page
-     screenshot, run the measurement script;
+     wait for its requests to go quiet (bounded) and read the glance card
+     tracker (#1354), screenshot, set every `details.open` in the visible
+     pane, full-page screenshot, run the measurement script;
   3. `showModal()` each `dialog[id]`, screenshot, set every `details.open`
      in the dialog, measure, `close()`;
   4. the Settings gear (#1217): after a fresh `goto`, click the header button named "Settings" -- the vendored
@@ -33,6 +34,8 @@ closes its siblings -- stays excluded by `measure.py`'s `checkVisibility()`
 (#998). A popover-shaped disclosure (its body positioned over the page) opens
 only as the first of its family -- the row menus of a list never coexist in the
 app (#1155). A screen that opened any also gets a full screenshot of that state.
+
+The glance tracker is an init script that only reads the first card's height every frame, and the idle wait only listens to request events (#1354).
 
 No submit, no fill, no session attach, no navigation away from the base URL. The only click beyond the
 primary tabs that needs no declaration is the Settings gear (#1217).
@@ -87,6 +90,13 @@ STEP_TARGET_WAIT_MS = 5000   # a step target not attached by then is absent from
 WAIT_MS_MAX = 30000          # the ceiling on a declared `wait_ms` / tab `ready` wait: a target may wait longer, never forever (#1385)
 READY_WAIT_MS = 15000        # how long a declared tab `ready` selector is waited for before the tab is captured as it stands
 GEAR_WAIT_MS = 1000          # the base page has settled (SETTLE_MS); a gear not visible this much later is not there (#1217)
+# The glance card's late reads (#1354): after the tab settles, wait for no request in flight for IDLE_QUIET_MS, at
+# most IDLE_WAIT_MS. A page that never goes quiet is read as unmeasured, never as settled. Streams never finish, so
+# an EventSource or WebSocket is not a read in flight.
+IDLE_WAIT_MS = 10000
+IDLE_QUIET_MS = 500
+IDLE_POLL_MS = 100
+_STREAM_TYPES = frozenset({"eventsource", "websocket"})
 # The vendored home-head gear is an icon-only button named "Settings" (project-scaffolding#316): found by role and name.
 _SETTINGS_NAME = re.compile(r"^\s*settings\s*$", re.I)
 DEFAULT_TIMEOUT_MS = 15000
@@ -204,6 +214,36 @@ def classify_error(exc: BaseException) -> str:
     return "RENDER_FAILED"
 
 
+class _Inflight:
+    """The page's requests still in flight, counted from Playwright's request events: it listens, never intercepts."""
+
+    def __init__(self, page) -> None:
+        self.pending: Dict[object, str] = {}
+        page.on("request", self._start)
+        page.on("requestfinished", self._end)
+        page.on("requestfailed", self._end)
+
+    def _start(self, request) -> None:
+        if request.resource_type not in _STREAM_TYPES:
+            self.pending[request] = request.url
+
+    def _end(self, request) -> None:
+        self.pending.pop(request, None)
+
+    def wait_quiet(self, page) -> Dict[str, object]:
+        """Wait until nothing has been in flight for IDLE_QUIET_MS, at most IDLE_WAIT_MS; never clicks, never reloads."""
+        waited = quiet = 0
+        while waited < IDLE_WAIT_MS:
+            quiet = quiet + IDLE_POLL_MS if not self.pending else 0
+            if quiet >= IDLE_QUIET_MS:
+                return {"idle": True, "idle_ms": waited}
+            page.wait_for_timeout(IDLE_POLL_MS)
+            waited += IDLE_POLL_MS
+        # Only the path: the walk's base URL is loopback, and a query string may carry data.
+        paths = sorted({re.sub(r"^[a-z]+://[^/]*", "", url).split("?")[0] or "/" for url in self.pending.values()})
+        return {"idle": False, "idle_ms": waited, "pending": paths[:5]}
+
+
 def _record(**fields: object) -> Dict[str, object]:
     base: Dict[str, object] = {
         "id": None, "device": None, "theme": None, "view": None, "kind": None,
@@ -294,11 +334,12 @@ class _Leg:
 
     def __init__(self, page, device: str, theme: str, args: argparse.Namespace, script: str, params: dict,
                  shots: Path, retouch: Optional[Callable[[], None]], tab_selector: str, no_go: List[str],
-                 tab_ready: Optional[Dict[str, str]] = None) -> None:
+                 inflight: _Inflight, tab_ready: Optional[Dict[str, str]] = None) -> None:
         self.page, self.device, self.theme, self.args = page, device, theme, args
         self.script, self.params, self.shots, self.retouch = script, params, shots, retouch
         self.tab_selector, self.no_go = tab_selector, no_go
         self.tab_ready = tab_ready or {}
+        self.inflight = inflight
         self.screens: List[Dict[str, object]] = []
         self.tabs: List[dict] = []
         self.tablist = page
@@ -361,6 +402,24 @@ class _Leg:
             log.warning("tab ready selector %s not attached within %d ms", selector, READY_WAIT_MS)
         return {"selector": selector, "wait_ms": READY_WAIT_MS, "met": met}
 
+    def read_glance(self) -> Dict[str, object]:
+        """The tab's first card at first paint against now, once the late reads have landed (#1354).
+
+        Read before anything opens a disclosure, which would change the card itself. A page whose requests never go
+        quiet within the bound is `not_idle` whatever the card showed: its reads may still be landing.
+        """
+        idle = self.inflight.wait_quiet(self.page)
+        try:
+            seen = self.page.evaluate(measure.GLANCE_READ_JS)
+        except Exception as exc:  # noqa: BLE001 -- an unreadable tracker is an unmeasured card, not a failed tab
+            log.warning("could not read the glance card tracker: %s", str(exc)[:200])
+            return {"state": "error", "error": str(exc)[:200], **idle}
+        glance = dict(seen) if isinstance(seen, dict) else {"state": "unavailable"}
+        if not idle["idle"]:
+            glance["state"] = "not_idle"
+        glance.update(idle)
+        return glance
+
     def capture(self, sid: str, view: str, kind: str, before_record: Optional[Callable[[], None]] = None,
                 **extra: object) -> None:
         """Screenshot, open the scope's details, measure and record the screen in front of the walk.
@@ -418,11 +477,14 @@ def _walk_tabs(leg: _Leg) -> None:
         sid = leg.sid(view)
         try:
             ready: Dict[str, object] = leg.open_tab(tab["index"]) if tab["index"] is not None else {}
+            glance = leg.read_glance()
             shot = _shot(page, leg.shots, sid)
             page.evaluate(_OPEN_DETAILS_JS)
             page.wait_for_timeout(DETAILS_SETTLE_MS)
             full, note = _full_shot(page, leg.shots, sid, leg.retouch)
             metrics = page.evaluate(leg.script, leg.params)
+            if isinstance(metrics, dict):
+                metrics["glance"] = glance
             leg.screens.append(_record(id=sid, device=leg.device, theme=leg.theme, view=view, kind="tab",
                                        screenshot=shot, screenshot_full=full, note=note, metrics=metrics,
                                        **leg.theme_fields(), **ready))
@@ -520,8 +582,11 @@ def walk_context(pw, device: str, theme: str, args: argparse.Namespace, script: 
     key = review.get("theme_storage_key")
     if key:
         ctx.add_init_script(f"try{{localStorage.setItem({json.dumps(str(key))},{json.dumps(theme)})}}catch(e){{}}")
+    # The glance tracker (#1354) watches the first card under the header from the first frame of every load; it only reads.
+    ctx.add_init_script(measure.GLANCE_TRACK_JS)
     page = ctx.new_page()
     page.set_default_timeout(args.timeout_ms)
+    inflight = _Inflight(page)
     retouch = touch_restorer(ctx, page, profile["engine"], ctx_args)
     tab_selector = str(review.get("tab_selector") or "[role=tab]")
     # A synthetic run (#995) walks a throwaway instance: its own no_go, when declared, replaces the live list.
@@ -530,7 +595,7 @@ def walk_context(pw, device: str, theme: str, args: argparse.Namespace, script: 
     declared_ready = review.get("tab_ready") if isinstance(review.get("tab_ready"), dict) else {}
     tab_ready = {str(k): str(v) for k, v in declared_ready.items() if k and v}
     leg = _Leg(page, device, theme, args, script, params, shots, retouch, tab_selector,
-               [str(s) for s in no_go_src], tab_ready)
+               [str(s) for s in no_go_src], inflight, tab_ready)
 
     try:
         leg.open_base()

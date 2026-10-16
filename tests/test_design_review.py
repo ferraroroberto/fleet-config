@@ -60,8 +60,8 @@ def _doc(name: str) -> dict:
 # ---- rubric: the real file loads and names only metrics that exist ----------
 
 rubric = dr.load_rubric(RUBRIC)
-check(rubric.version == "1.41.0", "rubric meta.version stamped")
-check(len(rubric.rules) == 49, f"49 seed rules loaded (got {len(rubric.rules)})")
+check(rubric.version == "1.42.0", "rubric meta.version stamped")
+check(len(rubric.rules) == 50, f"50 seed rules loaded (got {len(rubric.rules)})")
 check(rubric.categories == ["typography", "color", "touch", "navigation", "layout", "components", "a11y"],
       "categories in rubric order")
 check(rb.check_metric_names(rubric, measure.metric_paths()) == [], "every rule metric is a script path or a derived metric")
@@ -938,6 +938,57 @@ for _s in _c18_old["screens"]:
 check(_c18_of(_c18_old)["status"] == "unmeasured",
       "COMP-18: a run from before the metric existed is unmeasured, never a pass")
 
+# ---- LAYOUT-10: a glance card that changes height as its late reads land (fleet-config#1354) --------------------------
+
+
+_L10_MISSING = dict(_MISSING, reason="rule LAYOUT-10 not in the rubric")
+
+
+def _l10_of(mutate) -> dict:
+    """LAYOUT-10 on the compliant doc with each tab screen's `glance` section changed by `mutate`."""
+    d = _doc("compliant")
+    for s in d["screens"]:
+        if s["kind"] == "tab":
+            mutate(s["metrics"])
+    return next((r for r in ev.evaluate(d, rubric, _specs("compliant"))["rules"] if r["id"] == "LAYOUT-10"), _L10_MISSING)
+
+
+_l10_rule = next((r for r in rubric.rules if r.id == "LAYOUT-10"), None)
+check(_l10_rule is not None and _l10_rule.metric == "glance.card_growth_px" and _l10_rule.fail_when == "gt" and _l10_rule.threshold == 8
+      and _l10_rule.owner == "app" and _l10_rule.screens == ["tab"] and _l10_rule.mockup in mockups_mod.MOCKUP_IDS
+      and "glance card" in _l10_rule.standard,
+      f"LAYOUT-10: reads glance.card_growth_px, fails over 8px, app-owned, tab screens only, cites the glance card contract -- {_l10_rule}")
+check(all(f"glance.{k}" in measure.metric_paths() for k in ("state", "grew_px", "below", "changes", "change_count", "idle", "pending")),
+      "LAYOUT-10: the state, the growth, the capped change sample and the idle facts are all in metric_paths()")
+_l10_grow = lambda px: (lambda m: m["glance"].update(grew_px=px, settled_px=176 + px))
+check(_l10_of(_l10_grow(8))["status"] == "pass" and _l10_of(_l10_grow(9))["status"] == "fail",
+      "LAYOUT-10: 8px of growth passes (rounding, a font's metric swap), 9px fails")
+check(_l10_of(_l10_grow(-120))["status"] == "pass", "LAYOUT-10: a card that only got shorter is never a finding")
+_l10_last = _l10_of(lambda m: m["glance"].update(grew_px=132, below=False))
+check(_l10_last["status"] == "pass" and "nothing under the card" in _l10_last["reason"] and not _l10_last["evidence"],
+      f"LAYOUT-10: a card with nothing under it moves nothing as it grows: n/a with the reason -- {_l10_last['reason']}")
+_l10_none = _l10_of(lambda m: m.update(glance={"state": "no_card", "idle": True, "idle_ms": 400}))
+check(_l10_none["status"] == "pass" and "no card under the page header" in _l10_none["reason"],
+      f"LAYOUT-10: a tab with no card under its header is n/a -- {_l10_none['reason']}")
+_l10_busy = _l10_of(lambda m: m.update(glance={"state": "not_idle", "first_px": 44, "idle": False, "idle_ms": 10000, "pending": ["/api/late"]}))
+check(_l10_busy["status"] == "unmeasured" and "never went quiet" in _l10_busy["reason"] and "/api/late" in _l10_busy["reason"],
+      f"LAYOUT-10: requests that never go quiet are unmeasured, naming what was in flight, never a pass -- {_l10_busy['reason']}")
+_l10_old = _l10_of(lambda m: m.pop("glance"))
+check(_l10_old["status"] == "unmeasured", "LAYOUT-10: a run from before the tracker existed is unmeasured, never a pass")
+_l10_dead = _l10_of(lambda m: m.update(glance={"state": "unavailable", "idle": True, "idle_ms": 400}))
+check(_l10_dead["status"] == "unmeasured" and "unavailable" in _l10_dead["reason"],
+      f"LAYOUT-10: a page where the tracker never ran is unmeasured -- {_l10_dead['reason']}")
+_l10_bad = next((r for r in ev.evaluate(_doc("violating"), rubric, _specs("violating"))["rules"] if r["id"] == "LAYOUT-10"), None)
+check(_l10_bad is not None, "LAYOUT-10: the violating fixture reaches the rule")
+if _l10_bad is not None:
+    _l10_sentence = report_mod.finding_sentence(_l10_bad, None)
+    check(_l10_bad["status"] == "fail" and _l10_bad["measured"] == {"desktop-light-home": 132.0, "iphone-light-home": 132.0}
+          and "section.card.glance" in _l10_sentence and "132px" in _l10_sentence and "{" not in _l10_sentence,
+          f"LAYOUT-10: the violating card grew 132px; the fix sentence names the card and its growth -- {_l10_sentence}")
+    _l10_mock, _l10_note = mockups_mod.render_mockup({"id": "LAYOUT-10", "mockup": "glance-steady"}, report_mod.finding_values(_l10_bad))
+    check(_l10_mock is not None and "&ndash;" in _l10_mock["proposed"] and "132px" in _l10_mock["now"],
+          f"LAYOUT-10: the glance-steady mock-up draws the dash rows against the 132px growth -- {_l10_note}")
+
 for _rid, _sect, _keys in (("COMP-07", "controls", ("label_fit_bad", "label_fit_bad_count")),
                            ("LAYOUT-08", "layout", ("control_overflow", "control_overflow_count")),
                            ("LAYOUT-09", "layout", ("clipped_trailing", "clipped_trailing_count"))):
@@ -956,7 +1007,7 @@ check(all(s == "pass" for s in statuses_c.values()), f"compliant: every rule pas
 check(all(v["score"] == 100.0 and v["grade"] == "A" and not v["unmeasured"] for v in out_c["categories"].values()),
       "compliant: every category 100/A, measured")
 check(out_c["overall"] == {"score": 100.0, "grade": "A", "unmeasured": False}, "compliant: overall A")
-check(out_c["schema_version"] == 1 and out_c["rubric_version"] == "1.41.0" and out_c["target"] == "fixture-app"
+check(out_c["schema_version"] == 1 and out_c["rubric_version"] == "1.42.0" and out_c["target"] == "fixture-app"
       and out_c["commit"].startswith("0000") and out_c["generated_at"].endswith("Z"), "evaluate envelope keys")
 check([s["id"] for s in out_c["screens"]] == ["desktop-light-home", "iphone-light-home", "desktop-light-dialog-edit"],
       "evaluate echoes the screen list")
@@ -1495,6 +1546,7 @@ class _FakePage:
     def set_default_timeout(self, _ms): pass
     def goto(self, *_a, **_k): pass
     def wait_for_timeout(self, _ms): pass
+    def on(self, *_a): pass
     def locator(self, _sel): return type("L", (), {"count": lambda _self: 0})()
 
     def evaluate(self, js, *_args):
@@ -1526,7 +1578,7 @@ def _walk_one(full: str):
 
 for _mode in ("raise", "clip"):
     (_scr,), _pg = _walk_one(_mode)
-    check(_scr["status"] == "ok" and _scr["metrics"] == {"measured": True},
+    check(_scr["status"] == "ok" and {k: v for k, v in _scr["metrics"].items() if k != "glance"} == {"measured": True},
           f"a full-page capture over the 32767px limit ({_mode}) keeps the screen ok with its metrics -- {_scr}")
 _scr_raise = _walk_one("raise")[0][0]
 check(_scr_raise["screenshot_full"] is None and "skipped" in (_scr_raise.get("note") or ""),
@@ -1572,6 +1624,7 @@ class _ArmPage:
 
     def set_default_timeout(self, _ms): pass
     def wait_for_timeout(self, _ms): pass
+    def on(self, *_a): pass
     def screenshot(self, **_k): pass
     def locator(self, sel): return _ArmLoc(self, sel)
     def get_by_role(self, *_a, **_k): return _ArmLoc(self, "gear")
@@ -1654,7 +1707,7 @@ def _walk_arms(gear: str = "ok", launch_error=None, goto_error=None):
 
 _arm_screens, _arm_log = _walk_arms("ok")
 check(_arm_screens == [
-    ("desktop-light-home", "tab", "ok", None, None, {"m": 1}, True),
+    ("desktop-light-home", "tab", "ok", None, None, {"m": 1, "glance": {"state": "unavailable", "idle": True, "idle_ms": 400}}, True),
     ("desktop-light-broken", "tab", "error", "TAB_FAILED", "Element is not visible", None, None),
     ("desktop-light-slow", "tab", "error", "TIMEOUT", "Timeout 1000ms exceeded", None, None),
     ("desktop-light-dialog-fine", "dialog", "ok", None, None, {"m": 1}, True),
@@ -1710,6 +1763,9 @@ check(_walk_arms(goto_error=RuntimeError("net::ERR_CONNECTION_REFUSED")) == (
 WALK_GOLDEN = FIX / "walk_trace.json"
 _TRACE_JS = {value: name for name, value in vars(walk).items() if name.endswith("_JS") and isinstance(value, str)}
 _TRACE_JS[walk.measure.RENDERED_THEME_JS] = "measure.RENDERED_THEME_JS"
+for _gl_name in ("GLANCE_TRACK_JS", "GLANCE_READ_JS"):  # the glance tracker (#1354); a source without it fails the golden, never crashes here
+    if hasattr(walk.measure, _gl_name):
+        _TRACE_JS[getattr(walk.measure, _gl_name)] = f"measure.{_gl_name}"
 
 
 class _TraceLoc:
@@ -1766,6 +1822,7 @@ class _TracePage:
 
     def set_default_timeout(self, ms): self.log("set_default_timeout", ms)
     def wait_for_timeout(self, ms): self.log("wait_for_timeout", ms)
+    def on(self, event, _handler): self.log("on", event)
 
     def locator(self, sel):
         self.log("locator", sel)
@@ -1797,6 +1854,8 @@ class _TracePage:
             return self.cfg.get("opened", 0)
         if name == "_PAGE_SIZE_JS":
             return {"dpr": 3, "width": 390, "height": 40000}
+        if name == "measure.GLANCE_READ_JS":
+            return self.cfg.get("glance")
         if name == "measure.RENDERED_THEME_JS":
             if self.cfg.get("theme_read") == "raise":
                 raise RuntimeError("page closed")
@@ -1811,7 +1870,7 @@ def _walk_traced(cfg: dict) -> dict:
     page = _TracePage(trace, cfg)
 
     class _Ctx:
-        def add_init_script(self, script): trace.append(["ctx.add_init_script", script])
+        def add_init_script(self, script): trace.append(["ctx.add_init_script", _TRACE_JS.get(script, script)])
         def close(self): trace.append(["ctx.close"])
 
         def new_page(self):
@@ -1946,6 +2005,39 @@ check([walk.bounded_wait_ms(v, 5000) for v in (None, 0, -1, "9", 1.5, False, 100
       == [5000, 5000, 5000, 5000, 5000, 5000, 100, walk.WAIT_MS_MAX, walk.WAIT_MS_MAX],
       "bounded_wait_ms: defaults unless a positive int, caps at WAIT_MS_MAX")
 
+# ---- walk: the glance card's late reads wait for a quiet network, bounded (#1354) ----------------------------------
+
+
+class _IdlePage:
+    """Records the waits and the request listeners; never a real browser."""
+
+    def __init__(self) -> None:
+        self.handlers, self.waited = {}, 0
+
+    def on(self, event, handler): self.handlers[event] = handler
+    def wait_for_timeout(self, ms): self.waited += ms
+
+
+_idle_req = lambda url, kind="fetch": type("Req", (), {"url": url, "resource_type": kind})()
+check(hasattr(walk, "_Inflight"), "walk counts the requests in flight for the glance read (#1354)")
+if hasattr(walk, "_Inflight"):
+    _ip = _IdlePage()
+    _inflight = walk._Inflight(_ip)
+    _ip_read = _idle_req("https://127.0.0.1:9/api/late?token=x")
+    _ip.handlers["request"](_idle_req("https://127.0.0.1:9/api/stream", "eventsource"))
+    _ip.handlers["request"](_idle_req("wss://127.0.0.1:9/ws", "websocket"))
+    _ip.handlers["request"](_ip_read)
+    check(_inflight.wait_quiet(_ip) == {"idle": False, "idle_ms": walk.IDLE_WAIT_MS, "pending": ["/api/late"]} and _ip.waited == walk.IDLE_WAIT_MS,
+          f"a read still in flight holds the glance read for IDLE_WAIT_MS and no longer, naming its path without host or query -- waited {_ip.waited}")
+    _ip.handlers["requestfinished"](_ip_read)
+    _ip.waited = 0
+    _ip_quiet = _inflight.wait_quiet(_ip)
+    check(_ip_quiet["idle"] is True and _ip_quiet["idle_ms"] < walk.IDLE_QUIET_MS and _ip.waited < walk.IDLE_QUIET_MS,
+          f"an open EventSource or WebSocket is not a read in flight: quiet after IDLE_QUIET_MS -- {_ip_quiet}")
+    _ip.handlers["request"](_ip_read)
+    _ip.handlers["requestfailed"](_ip_read)
+    check(_inflight.wait_quiet(_ip)["idle"] is True, "a failed request is no longer in flight")
+
 # ---- browser leg: the static fixture page through a sibling venv --------------
 
 FLEET = REPO.parent
@@ -1998,7 +2090,7 @@ else:
           f"measure CLI walks the fixture: 2 tabs + 1 dialog x light/dark, plus the absent Settings gear (#1217) ({proc.stdout[-300:]}{proc.stderr[-300:]})")
     check(lines.get("RUN_DIR") == str(run_dir) and Path(lines.get("METRICS", "")).is_file(), "RUN_DIR/METRICS lines point at the run dir")
     doc = json.loads(Path(lines["METRICS"]).read_text(encoding="utf-8"))
-    check(doc["interpreter"] == str(interp) and doc["schema_version"] == 1 and doc["rubric_version"] == "1.41.0", "metrics.json records the interpreter + versions")
+    check(doc["interpreter"] == str(interp) and doc["schema_version"] == 1 and doc["rubric_version"] == "1.42.0", "metrics.json records the interpreter + versions")
     if not (scaffold / "tests" / "e2e" / "_geometry.py").is_file():
         _h.skip("browser leg: project-scaffolding/tests/e2e/_geometry.py absent -- hit-target assertions NOT verified")
     check(doc["walk"]["info"]["geometry"] == ("loaded" if (scaffold / "tests" / "e2e" / "_geometry.py").is_file() else "GEOMETRY_MISSING"),
@@ -2574,6 +2666,96 @@ else:
               f"COMP-18: alternating speakers, a differing hint, a header with no control, a header-only card, a step line between two cards and a hidden twin are not runs -- {_tn_runs(tn['edge'])} {_tn_whos(tn['edge'])}")
         check(_tn_runs(tn["none"]) == [] and _tn_whos(tn["none"]) == [] and _c18_status(tn["none"]) == "unmeasured",
               f"COMP-18: a page with no transcript is unmeasured, not a pass -- {_tn_whos(tn['none'])}")
+
+    # LAYOUT-10: a glance card that grows as its late reads land (#1354). Served over loopback: `/late?ms=N` answers after N ms
+    # (capped at 120 s, past every bound the walk has), so the page's reads are real requests the walk's idle wait can see.
+    import functools as _gl_functools, http.server as _gl_http, threading as _gl_threading, time as _gl_time, urllib.parse as _gl_parse
+
+    class _LateReads(_gl_http.SimpleHTTPRequestHandler):
+        def log_message(self, *a):  # noqa: D401 -- keep the test output clean
+            pass
+
+        def do_GET(self):  # noqa: N802 -- http.server's name
+            url = _gl_parse.urlparse(self.path)
+            if url.path != "/late":
+                return super().do_GET()
+            _gl_time.sleep(min(int((_gl_parse.parse_qs(url.query).get("ms") or ["0"])[0]), 120000) / 1000)
+            try:
+                body = b'{"ok": true}'
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+            except OSError:  # the walk closed the page mid-read (the hang case)
+                pass
+
+    _gl_srv = _gl_http.ThreadingHTTPServer(("127.0.0.1", 0), _gl_functools.partial(_LateReads, directory=str(FIX)))
+    _gl_threading.Thread(target=_gl_srv.serve_forever, daemon=True).start()
+
+    def _walk_glance(case: str, device: str = "desktop") -> dict:
+        out_dir = STATE / f"fixture-glance-{case}-{device}"
+        t0 = _gl_time.time()
+        proc = _walk_run(
+            [str(interp), str(REPO / "skills" / "_lib" / "design_review" / "walk.py"),
+             "--url", f"http://127.0.0.1:{_gl_srv.server_address[1]}/glance_shift.html?case={case}",
+             "--out", str(out_dir), "--devices", device, "--scaffold", str(scaffold), "--params", str(STATE / "steps-params.json")],
+            capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=600,
+        )
+        if proc.returncode != 0:
+            return {"error": proc.stderr[-300:]}
+        tabs = [s for s in json.loads((out_dir / "screens.json").read_text(encoding="utf-8")) if s.get("kind") == "tab"]
+        return {"tabs": tabs, "seconds": round(_gl_time.time() - t0, 1)}
+
+    def _l10_on(walked: dict) -> dict:
+        return next((r for r in ev.evaluate({"screens": walked["tabs"], "wide_views": []}, rubric, _specs("compliant"))["rules"]
+                     if r["id"] == "LAYOUT-10"), _L10_MISSING)
+
+    gl = {case: _walk_glance(case) for case in ("fail", "pass", "shrink", "animate", "cols", "last", "none", "hang")}
+    gl["fail-iphone"] = _walk_glance("fail", "iphone")
+    _gl_srv.shutdown()
+    _gl_bad = {case: (w["error"] if "error" in w else _walk_failure((w["tabs"] or [None])[0]) if len(w["tabs"]) != 4
+                      else next((f for f in map(_walk_failure, w["tabs"]) if f), None))
+               for case, w in gl.items()}
+    _gl_bad = {case: why for case, why in _gl_bad.items() if why}
+    check(not _gl_bad, f"glance_shift.html: every case walks both tabs in light and dark with metrics -- {_gl_bad}")
+    if not _gl_bad:
+        _gl = lambda case: {s["id"]: s["metrics"].get("glance") or {} for s in gl[case]["tabs"]}
+        _gl_grew = lambda case: {sid: g.get("grew_px") for sid, g in _gl(case).items()}
+        _gl_fail = _gl("fail")
+        check(all(g.get("state") == "measured" and g.get("below") is True and g.get("grew_px", 0) >= 132 for g in _gl_fail.values())
+              and _l10_on(gl["fail"])["status"] == "fail" and len(_l10_on(gl["fail"])["measured"]) == 4,
+              f"LAYOUT-10: three rows appended after the read fail on both tabs, light and dark -- {_gl_grew('fail')}")
+        _gl_today = _gl_fail.get("desktop-light-today") or {}
+        check(_gl_today.get("first_px", 999) < 100 and _gl_today.get("change_count", 0) >= 1
+              and all(c.get("ms", 0) >= 4500 for c in _gl_today.get("changes") or [{}]),
+              f"LAYOUT-10: Today's 5 s read lands after the walk's fixed settle; only the idle wait sees the card grow at ~5 s -- {_gl_today}")
+        check(all(g.get("grew_px", 0) >= 132 for g in _gl("fail-iphone").values()) and _l10_on(gl["fail-iphone"])["status"] == "fail",
+              f"LAYOUT-10: the same growth is read in WebKit at the phone width -- {_gl_grew('fail-iphone')}")
+        check(all(g.get("state") == "measured" and g.get("grew_px") == 0 for g in _gl("pass").values()) and _l10_on(gl["pass"])["status"] == "pass",
+              f"LAYOUT-10: every row drawn at first paint with a dash and a spinning glyph, filled in place, passes -- {_gl_grew('pass')}")
+        check(all(g.get("grew_px", 0) < 0 for g in _gl("shrink").values()) and _l10_on(gl["shrink"])["status"] == "pass",
+              f"LAYOUT-10: a 'Reading...' block replaced by one shorter row only gets shorter and passes -- {_gl_grew('shrink')}")
+        check(all(g.get("state") == "measured" and g.get("grew_px") == 0 and g.get("first_px", 0) > 100 for g in _gl("animate").values())
+              and _l10_on(gl["animate"])["status"] == "pass",
+              f"LAYOUT-10: a max-height entrance and a scale-in entrance are not growth: the baseline waits for them -- {_gl('animate')}")
+        check(all(g.get("state") == "measured" and g.get("grew_px", 0) >= 132 for g in _gl("cols").values()) and _l10_on(gl["cols"])["status"] == "fail",
+              f"LAYOUT-10: a card in the left column of a two-column pane is still the first card, and its growth fails -- {_gl('cols')}")
+        _gl_last = _l10_on(gl["last"])
+        check(all(g.get("below") is False and g.get("grew_px", 0) >= 132 for g in _gl("last").values())
+              and _gl_last["status"] == "pass" and "nothing under the card" in _gl_last["reason"],
+              f"LAYOUT-10: the same growth with nothing under the card moves nothing: n/a -- {_gl_last['reason']}")
+        _gl_none = _l10_on(gl["none"])
+        check(all(g.get("state") == "no_card" for g in _gl("none").values()) and _gl_none["status"] == "pass"
+              and "no card under the page header" in _gl_none["reason"],
+              f"LAYOUT-10: a tab with only a paragraph under its header is n/a -- {_gl_none['reason']}")
+        _gl_hang = _l10_on(gl["hang"])
+        check(all(g.get("state") == "not_idle" and g.get("idle") is False and g.get("pending") == ["/late"] for g in _gl("hang").values())
+              and _gl_hang["status"] == "unmeasured" and "never went quiet" in _gl_hang["reason"],
+              f"LAYOUT-10: a read that never lands is unmeasured, naming the request, never a pass -- {_gl_hang['reason']}")
+        check(gl["hang"]["seconds"] < gl["pass"]["seconds"] + 4 * getattr(walk, "IDLE_WAIT_MS", 10000) / 1000 + 30,
+              f"LAYOUT-10: the idle wait is bounded, so a page that never goes quiet does not hang the walk -- "
+              f"{gl['hang']['seconds']}s against {gl['pass']['seconds']}s")
 
     # stretched graphic: a chart SVG with preserveAspectRatio="none" is not an icon; a real off-step icon still is (#1211)
     sg_dir = STATE / "fixture-stretched-graphic"

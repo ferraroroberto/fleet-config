@@ -14,7 +14,12 @@
     "screenshot_full": "desktop-light-home-full.png",
     "note": null,
     "metrics": {
-     "m": 1
+     "m": 1,
+     "glance": {
+      "state": "unavailable",
+      "idle": true,
+      "idle_ms": 400
+     }
     },
     "theme_applied": true,
     "theme_observed": {
@@ -248,11 +253,27 @@
     }
    ],
    [
+    "ctx.add_init_script",
+    "measure.GLANCE_TRACK_JS"
+   ],
+   [
     "ctx.new_page"
    ],
    [
     "set_default_timeout",
     1000
+   ],
+   [
+    "on",
+    "request"
+   ],
+   [
+    "on",
+    "requestfinished"
+   ],
+   [
+    "on",
+    "requestfailed"
    ],
    [
     "goto",
@@ -312,6 +333,27 @@
    [
     "wait_for_timeout",
     2200
+   ],
+   [
+    "wait_for_timeout",
+    100
+   ],
+   [
+    "wait_for_timeout",
+    100
+   ],
+   [
+    "wait_for_timeout",
+    100
+   ],
+   [
+    "wait_for_timeout",
+    100
+   ],
+   [
+    "evaluate",
+    "measure.GLANCE_READ_JS",
+    []
    ],
    [
     "screenshot",
@@ -862,7 +904,12 @@
     "screenshot_full": "desktop-light-home-full.png",
     "note": null,
     "metrics": {
-     "m": 1
+     "m": 1,
+     "glance": {
+      "state": "unavailable",
+      "idle": true,
+      "idle_ms": 400
+     }
     },
     "theme_applied": true,
     "theme_observed": {
@@ -1090,11 +1137,27 @@
     }
    ],
    [
+    "ctx.add_init_script",
+    "measure.GLANCE_TRACK_JS"
+   ],
+   [
     "ctx.new_page"
    ],
    [
     "set_default_timeout",
     1000
+   ],
+   [
+    "on",
+    "request"
+   ],
+   [
+    "on",
+    "requestfinished"
+   ],
+   [
+    "on",
+    "requestfailed"
    ],
    [
     "goto",
@@ -1154,6 +1217,27 @@
    [
     "wait_for_timeout",
     2200
+   ],
+   [
+    "wait_for_timeout",
+    100
+   ],
+   [
+    "wait_for_timeout",
+    100
+   ],
+   [
+    "wait_for_timeout",
+    100
+   ],
+   [
+    "wait_for_timeout",
+    100
+   ],
+   [
+    "evaluate",
+    "measure.GLANCE_READ_JS",
+    []
    ],
    [
     "screenshot",
@@ -1661,7 +1745,12 @@
     "screenshot_full": "desktop-light-home-full.png",
     "note": null,
     "metrics": {
-     "m": 1
+     "m": 1,
+     "glance": {
+      "state": "unavailable",
+      "idle": true,
+      "idle_ms": 400
+     }
     },
     "theme_applied": true,
     "theme_observed": {
@@ -1889,11 +1978,27 @@
     }
    ],
    [
+    "ctx.add_init_script",
+    "measure.GLANCE_TRACK_JS"
+   ],
+   [
     "ctx.new_page"
    ],
    [
     "set_default_timeout",
     1000
+   ],
+   [
+    "on",
+    "request"
+   ],
+   [
+    "on",
+    "requestfinished"
+   ],
+   [
+    "on",
+    "requestfailed"
    ],
    [
     "goto",
@@ -1953,6 +2058,27 @@
    [
     "wait_for_timeout",
     2200
+   ],
+   [
+    "wait_for_timeout",
+    100
+   ],
+   [
+    "wait_for_timeout",
+    100
+   ],
+   [
+    "wait_for_timeout",
+    100
+   ],
+   [
+    "wait_for_timeout",
+    100
+   ],
+   [
+    "evaluate",
+    "measure.GLANCE_READ_JS",
+    []
    ],
    [
     "screenshot",
@@ -2470,7 +2596,12 @@
     "screenshot_full": "desktop-light-home-full.png",
     "note": null,
     "metrics": {
-     "m": 1
+     "m": 1,
+     "glance": {
+      "state": "unavailable",
+      "idle": true,
+      "idle_ms": 400
+     }
     },
     "theme_applied": true,
     "theme_observed": {
@@ -2698,11 +2829,27 @@
     }
    ],
    [
+    "ctx.add_init_script",
+    "measure.GLANCE_TRACK_JS"
+   ],
+   [
     "ctx.new_page"
    ],
    [
     "set_default_timeout",
     1000
+   ],
+   [
+    "on",
+    "request"
+   ],
+   [
+    "on",
+    "requestfinished"
+   ],
+   [
+    "on",
+    "requestfailed"
    ],
    [
     "goto",
@@ -2762,6 +2909,27 @@
    [
     "wait_for_timeout",
     2200
+   ],
+   [
+    "wait_for_timeout",
+    100
+   ],
+   [
+    "wait_for_timeout",
+    100
+   ],
+   [
+    "wait_for_timeout",
+    100
+   ],
+   [
+    "wait_for_timeout",
+    100
+   ],
+   [
+    "evaluate",
+    "measure.GLANCE_READ_JS",
+    []
    ],
    [
     "screenshot",
@@ -3283,7 +3451,12 @@
     "screenshot_full": "desktop-light-home-full.png",
     "note": null,
     "metrics": {
-     "m": 1
+     "m": 1,
+     "glance": {
+      "state": "unavailable",
+      "idle": true,
+      "idle_ms": 400
+     }
     },
     "theme_applied": true,
     "theme_observed": {
@@ -3511,11 +3684,27 @@
     }
    ],
    [
+    "ctx.add_init_script",
+    "measure.GLANCE_TRACK_JS"
+   ],
+   [
     "ctx.new_page"
    ],
    [
     "set_default_timeout",
     1000
+   ],
+   [
+    "on",
+    "request"
+   ],
+   [
+    "on",
+    "requestfinished"
+   ],
+   [
+    "on",
+    "requestfailed"
    ],
    [
     "goto",
@@ -3575,6 +3764,27 @@
    [
     "wait_for_timeout",
     2200
+   ],
+   [
+    "wait_for_timeout",
+    100
+   ],
+   [
+    "wait_for_timeout",
+    100
+   ],
+   [
+    "wait_for_timeout",
+    100
+   ],
+   [
+    "wait_for_timeout",
+    100
+   ],
+   [
+    "evaluate",
+    "measure.GLANCE_READ_JS",
+    []
    ],
    [
     "screenshot",
@@ -4132,11 +4342,27 @@
     }
    ],
    [
+    "ctx.add_init_script",
+    "measure.GLANCE_TRACK_JS"
+   ],
+   [
     "ctx.new_page"
    ],
    [
     "set_default_timeout",
     1000
+   ],
+   [
+    "on",
+    "request"
+   ],
+   [
+    "on",
+    "requestfinished"
+   ],
+   [
+    "on",
+    "requestfailed"
    ],
    [
     "goto",
@@ -4168,7 +4394,12 @@
     "screenshot_full": "android-dark-board-full.png",
     "note": "full-page capture clipped to the first 10922 of 40000 CSS px (engine limit 32767 device px)",
     "metrics": {
-     "m": 1
+     "m": 1,
+     "glance": {
+      "state": "unavailable",
+      "idle": true,
+      "idle_ms": 400
+     }
     },
     "theme_applied": false,
     "theme_observed": {
@@ -4190,7 +4421,12 @@
     "screenshot_full": "android-dark-tab1-full.png",
     "note": "full-page capture clipped to the first 10922 of 40000 CSS px (engine limit 32767 device px)",
     "metrics": {
-     "m": 1
+     "m": 1,
+     "glance": {
+      "state": "unavailable",
+      "idle": true,
+      "idle_ms": 400
+     }
     },
     "theme_applied": false,
     "theme_observed": {
@@ -4334,11 +4570,27 @@
     "try{localStorage.setItem(\"app-theme\",\"dark\")}catch(e){}"
    ],
    [
+    "ctx.add_init_script",
+    "measure.GLANCE_TRACK_JS"
+   ],
+   [
     "ctx.new_page"
    ],
    [
     "set_default_timeout",
     1000
+   ],
+   [
+    "on",
+    "request"
+   ],
+   [
+    "on",
+    "requestfinished"
+   ],
+   [
+    "on",
+    "requestfailed"
    ],
    [
     "ctx.new_cdp_session"
@@ -4401,6 +4653,27 @@
    [
     "wait_for_timeout",
     2200
+   ],
+   [
+    "wait_for_timeout",
+    100
+   ],
+   [
+    "wait_for_timeout",
+    100
+   ],
+   [
+    "wait_for_timeout",
+    100
+   ],
+   [
+    "wait_for_timeout",
+    100
+   ],
+   [
+    "evaluate",
+    "measure.GLANCE_READ_JS",
+    []
    ],
    [
     "screenshot",
@@ -4478,6 +4751,27 @@
    [
     "wait_for_timeout",
     2200
+   ],
+   [
+    "wait_for_timeout",
+    100
+   ],
+   [
+    "wait_for_timeout",
+    100
+   ],
+   [
+    "wait_for_timeout",
+    100
+   ],
+   [
+    "wait_for_timeout",
+    100
+   ],
+   [
+    "evaluate",
+    "measure.GLANCE_READ_JS",
+    []
    ],
    [
     "screenshot",
@@ -4972,7 +5266,12 @@
     "screenshot_full": null,
     "note": "full-page capture skipped: Page.screenshot: Cannot take screenshot larger than 32767 pixels on any dimension",
     "metrics": {
-     "m": 1
+     "m": 1,
+     "glance": {
+      "state": "unavailable",
+      "idle": true,
+      "idle_ms": 400
+     }
     },
     "theme_applied": null,
     "theme_observed": null
@@ -5023,11 +5322,27 @@
     }
    ],
    [
+    "ctx.add_init_script",
+    "measure.GLANCE_TRACK_JS"
+   ],
+   [
     "ctx.new_page"
    ],
    [
     "set_default_timeout",
     1000
+   ],
+   [
+    "on",
+    "request"
+   ],
+   [
+    "on",
+    "requestfinished"
+   ],
+   [
+    "on",
+    "requestfailed"
    ],
    [
     "goto",
@@ -5061,6 +5376,27 @@
    [
     "count",
     "[role=tablist]"
+   ],
+   [
+    "wait_for_timeout",
+    100
+   ],
+   [
+    "wait_for_timeout",
+    100
+   ],
+   [
+    "wait_for_timeout",
+    100
+   ],
+   [
+    "wait_for_timeout",
+    100
+   ],
+   [
+    "evaluate",
+    "measure.GLANCE_READ_JS",
+    []
    ],
    [
     "screenshot",
@@ -5240,7 +5576,12 @@
     "screenshot_full": "desktop-dark-home-full.png",
     "note": null,
     "metrics": {
-     "m": 1
+     "m": 1,
+     "glance": {
+      "state": "unavailable",
+      "idle": true,
+      "idle_ms": 400
+     }
     },
     "theme_applied": false,
     "theme_observed": {
@@ -5359,11 +5700,27 @@
     }
    ],
    [
+    "ctx.add_init_script",
+    "measure.GLANCE_TRACK_JS"
+   ],
+   [
     "ctx.new_page"
    ],
    [
     "set_default_timeout",
     1000
+   ],
+   [
+    "on",
+    "request"
+   ],
+   [
+    "on",
+    "requestfinished"
+   ],
+   [
+    "on",
+    "requestfailed"
    ],
    [
     "goto",
@@ -5423,6 +5780,27 @@
    [
     "wait_for_timeout",
     2200
+   ],
+   [
+    "wait_for_timeout",
+    100
+   ],
+   [
+    "wait_for_timeout",
+    100
+   ],
+   [
+    "wait_for_timeout",
+    100
+   ],
+   [
+    "wait_for_timeout",
+    100
+   ],
+   [
+    "evaluate",
+    "measure.GLANCE_READ_JS",
+    []
    ],
    [
     "screenshot",
@@ -5724,7 +6102,12 @@
     "screenshot_full": "desktop-light-machines-full.png",
     "note": null,
     "metrics": {
-     "m": 1
+     "m": 1,
+     "glance": {
+      "state": "unavailable",
+      "idle": true,
+      "idle_ms": 400
+     }
     },
     "theme_applied": true,
     "theme_observed": {
@@ -5751,7 +6134,12 @@
     "screenshot_full": "desktop-light-slow-full.png",
     "note": null,
     "metrics": {
-     "m": 1
+     "m": 1,
+     "glance": {
+      "state": "unavailable",
+      "idle": true,
+      "idle_ms": 400
+     }
     },
     "theme_applied": true,
     "theme_observed": {
@@ -5778,7 +6166,12 @@
     "screenshot_full": "desktop-light-plain-full.png",
     "note": null,
     "metrics": {
-     "m": 1
+     "m": 1,
+     "glance": {
+      "state": "unavailable",
+      "idle": true,
+      "idle_ms": 400
+     }
     },
     "theme_applied": true,
     "theme_observed": {
@@ -5970,11 +6363,27 @@
     }
    ],
    [
+    "ctx.add_init_script",
+    "measure.GLANCE_TRACK_JS"
+   ],
+   [
     "ctx.new_page"
    ],
    [
     "set_default_timeout",
     1000
+   ],
+   [
+    "on",
+    "request"
+   ],
+   [
+    "on",
+    "requestfinished"
+   ],
+   [
+    "on",
+    "requestfailed"
    ],
    [
     "goto",
@@ -6052,6 +6461,27 @@
     }
    ],
    [
+    "wait_for_timeout",
+    100
+   ],
+   [
+    "wait_for_timeout",
+    100
+   ],
+   [
+    "wait_for_timeout",
+    100
+   ],
+   [
+    "wait_for_timeout",
+    100
+   ],
+   [
+    "evaluate",
+    "measure.GLANCE_READ_JS",
+    []
+   ],
+   [
     "screenshot",
     "desktop-light-machines.png",
     false,
@@ -6121,6 +6551,27 @@
     }
    ],
    [
+    "wait_for_timeout",
+    100
+   ],
+   [
+    "wait_for_timeout",
+    100
+   ],
+   [
+    "wait_for_timeout",
+    100
+   ],
+   [
+    "wait_for_timeout",
+    100
+   ],
+   [
+    "evaluate",
+    "measure.GLANCE_READ_JS",
+    []
+   ],
+   [
     "screenshot",
     "desktop-light-slow.png",
     false,
@@ -6172,6 +6623,27 @@
    [
     "wait_for_timeout",
     2200
+   ],
+   [
+    "wait_for_timeout",
+    100
+   ],
+   [
+    "wait_for_timeout",
+    100
+   ],
+   [
+    "wait_for_timeout",
+    100
+   ],
+   [
+    "wait_for_timeout",
+    100
+   ],
+   [
+    "evaluate",
+    "measure.GLANCE_READ_JS",
+    []
    ],
    [
     "screenshot",
@@ -6712,7 +7184,12 @@
     "screenshot_full": "desktop-light-root-full.png",
     "note": null,
     "metrics": {
-     "m": 1
+     "m": 1,
+     "glance": {
+      "state": "unavailable",
+      "idle": true,
+      "idle_ms": 400
+     }
     },
     "theme_applied": true,
     "theme_observed": {
@@ -6781,11 +7258,27 @@
     }
    ],
    [
+    "ctx.add_init_script",
+    "measure.GLANCE_TRACK_JS"
+   ],
+   [
     "ctx.new_page"
    ],
    [
     "set_default_timeout",
     1000
+   ],
+   [
+    "on",
+    "request"
+   ],
+   [
+    "on",
+    "requestfinished"
+   ],
+   [
+    "on",
+    "requestfailed"
    ],
    [
     "goto",
@@ -6827,6 +7320,27 @@
    [
     "first",
     "[role=tablist]"
+   ],
+   [
+    "wait_for_timeout",
+    100
+   ],
+   [
+    "wait_for_timeout",
+    100
+   ],
+   [
+    "wait_for_timeout",
+    100
+   ],
+   [
+    "wait_for_timeout",
+    100
+   ],
+   [
+    "evaluate",
+    "measure.GLANCE_READ_JS",
+    []
    ],
    [
     "screenshot",

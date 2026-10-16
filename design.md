@@ -881,7 +881,7 @@ hand-picked per app.
   Record, Apply after a match), and an optional footer link row on a
   hairline opens the rarer detail. It **never changes size** as late reads
   land: every row is drawn at once, with a dash for a value still loading
-  (grocery-shopping-automation#257–#260). The simplest way to keep that
+  (grocery-shopping-automation#257–#260; measured per tab as `LAYOUT-10`). The simplest way to keep that
   promise is to render the loading state **from the card's own markup**,
   the same function with no values (blank cells, a "Reading…" row), never
   a separate skeleton; parking-manager's measured 239px loading and 239px

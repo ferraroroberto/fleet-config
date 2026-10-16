@@ -85,6 +85,7 @@ DERIVED_METRICS = (
     "feedback.toast_tinted",
     "feedback.empty_state_no_action",
     "layout.repeated_turn_header",
+    "glance.card_growth_px",
 )
 
 
