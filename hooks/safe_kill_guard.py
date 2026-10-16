@@ -81,13 +81,6 @@ FORCE_FLAG_RE = re.compile(
 )
 PROTECTED_BRANCHES = {"main", "master"}
 
-# Words that run another command (`env git …`, `xargs git …`, `time git …`) or
-# introduce one (`if git …`, `! git …`), so the command that follows them is
-# still in command position.
-_COMMAND_PREFIXES = {
-    "env", "sudo", "command", "exec", "time", "nohup", "nice", "xargs", "!",
-    "if", "then", "else", "elif", "do", "while", "until",
-}
 _ENV_ASSIGN_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
 
 
@@ -115,7 +108,7 @@ def _split_segments(cmd: str) -> list[str]:
 
 def _command_index(tokens: list[str]) -> Optional[int]:
     """Index of the token that is the command word of a segment, skipping leading
-    `VAR=value` assignments, subshell/`$(` punctuation and `_COMMAND_PREFIXES`."""
+    `VAR=value` assignments, subshell/`$(` punctuation and `_lib.COMMAND_PREFIX_WORDS`."""
     skipping_options = False
     for i, raw in enumerate(tokens):
         token = raw.lstrip("({`$").strip("\"'")
@@ -125,7 +118,7 @@ def _command_index(tokens: list[str]) -> Optional[int]:
             continue
         if skipping_options and token.startswith("-"):
             continue
-        if token.lower() in _COMMAND_PREFIXES:
+        if token.lower() in _lib.COMMAND_PREFIX_WORDS:
             skipping_options = True
             continue
         return i

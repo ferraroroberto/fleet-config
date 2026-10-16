@@ -524,9 +524,17 @@ def strip_heredoc_bodies(command: str) -> str:
 _COMMIT_WORD = r"""(?:"(?:\\.|[^"\\])*"|'[^']*'|[^\s;&|(){}"'])+"""
 _COMMIT_TOKEN_RE = re.compile(r"&&|\|\||[;&|\n(){}]|" + _COMMIT_WORD)
 _COMMIT_SEPARATORS = {"&&", "||", ";", "&", "|", "\n", "(", ")", "{", "}"}
-_COMMIT_PREFIX_WORDS = {"then", "do", "else", "elif", "!", "time", "env", "command", "exec", "nohup"}
 _COMMIT_ENV_ASSIGN_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*=")
 _PS_HERE_STRING_RE = re.compile(r"@(['\"])\r?\n.*?\r?\n\1@", re.DOTALL)
+# Words that run another command (`env git …`, `sudo git …`, `xargs git …`) or
+# introduce one (`if git …`, `! git …`), so the command that follows them is still
+# in command position. The one vocabulary behind both `runs_git_commit` and
+# `safe_kill_guard._command_index` (fleet-config#1440): they were two lists, and
+# the shorter one let `if git commit -m "…Co-Authored-By…"` slip past the trailer guard.
+COMMAND_PREFIX_WORDS = {
+    "env", "sudo", "command", "exec", "time", "nohup", "nice", "xargs", "!",
+    "if", "then", "else", "elif", "do", "while", "until",
+}
 # Commands whose quoted argument is itself a command line (`bash -c "git …"`).
 NESTED_SHELLS = {"bash", "sh", "zsh", "pwsh", "powershell", "cmd", "eval", "iex", "invoke-expression"}
 
@@ -540,7 +548,7 @@ def runs_git_commit(cmd: str, _nested: bool = False) -> bool:
         if token in _COMMIT_SEPARATORS:
             at_start = True
             continue
-        if not at_start or token in _COMMIT_PREFIX_WORDS or _COMMIT_ENV_ASSIGN_RE.match(token):
+        if not at_start or token in COMMAND_PREFIX_WORDS or _COMMIT_ENV_ASSIGN_RE.match(token):
             continue
         at_start = False
         word = token.strip("\"'")
