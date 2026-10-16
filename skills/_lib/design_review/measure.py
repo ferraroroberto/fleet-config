@@ -28,7 +28,7 @@ present on a successful run:
               heading_smaller_than_body_count, heading_smaller_than_body [{sel, text, px, body_sel, body_px}],
               code_off_spec_count, code_off_spec [{sel, text, px, why}]
     casing    labels [{sel, cls, text, style, literal}], label_count, labels_seen
-    controls  total, font_family_mismatch [..], font_family_mismatch_count,
+    controls  total, font_family_mismatch [..], font_family_mismatch_count, mono_code_field [..], mono_code_field_count,
               boundary_low [..], boundary_low_count, ua_styled [..],
               label_fit_bad [..], label_fit_bad_count, segmented_bad [..], segmented_bad_count, switch_count, switch_on_count, switches_on,
               icon_button_count, icon_buttons_painted [..], icon_buttons_painted_count,
@@ -325,10 +325,16 @@ _MEASURE_JS = r"""
   // ---- form controls: font family vs body, boundary contrast, UA styling
   section('controls', () => {
     const bodyFam = getComputedStyle(document.body).fontFamily;
-    const mism = [], lowB = [], ua = []; let total = 0;
+    const mism = [], monoFields = [], lowB = [], ua = []; let total = 0;
+    // A text-entry control in the spec's mono stack is a code field (design.md: code is mono), not a control that
+    // missed `font: inherit`; buttons, selects and any non-mono mismatch still count (#1462).
+    const isMono = (fam) => /^\s*ui-monospace(,|\s*$)/i.test(fam) || /(^|[\s,])monospace\s*$/i.test(fam);
+    const isTextEntry = (el) => el.matches('textarea, input[type=text], input:not([type])');
     q(params.formControls).forEach(el => { total++;
       const s = getComputedStyle(el);
-      if (s.fontFamily !== bodyFam) mism.push({sel: sel(el), family: s.fontFamily.slice(0,60)}); });
+      if (s.fontFamily === bodyFam) return;
+      const rec = {sel: sel(el), family: s.fontFamily.slice(0,60)};
+      (isTextEntry(el) && isMono(s.fontFamily) ? monoFields : mism).push(rec); });
     const drawsBorder = (st) => (parseFloat(st.borderTopWidth) || 0) > 0 && rgba(st.borderTopColor)[3] > 0;
     // An inset box-shadow with no offset and no blur is a drawn edge too: the 44px-field recipe keeps the visible
     // control inside a transparent border band and draws its 1px boundary as `inset 0 0 0 1px` (#1185). Its colours.
@@ -470,6 +476,7 @@ _MEASURE_JS = r"""
       const spill = Math.max(box.left - left, right - box.right, 0);
       if (lines > 1 || spill > params.fitTol) labelFit.push({sel: sel(el), label: txt(el).slice(0,30), lines, spill_px: Math.round(spill), w: Math.round(box.width)}); });
     return { total, font_family_mismatch: mism.slice(0,CAP), font_family_mismatch_count: mism.length,
+      mono_code_field: monoFields.slice(0,CAP), mono_code_field_count: monoFields.length,
       icon_button_count: iconButtons.length, icon_buttons_painted: painted.slice(0,CAP), icon_buttons_painted_count: painted.length,
       icon_only_count: iconOnly.length, icon_only_unlabelled: unlabelled.slice(0,CAP),
       reference_pill_count: pillCount, reference_pill_styles: pillVariants.slice(0,CAP), reference_pill_variants: pillVariants.length,
@@ -1353,7 +1360,8 @@ def metric_paths() -> List[str]:
                  "raw_identifiers", "raw_identifier_count", "heading_smaller_than_body", "heading_smaller_than_body_count",
                  "code_off_spec", "code_off_spec_count"],
         "casing": ["labels", "label_count", "labels_seen"],
-        "controls": ["total", "font_family_mismatch", "font_family_mismatch_count", "boundary_low",
+        "controls": ["total", "font_family_mismatch", "font_family_mismatch_count", "mono_code_field",
+                     "mono_code_field_count", "boundary_low",
                      "boundary_low_count", "ua_styled", "ua_styled_count", "label_fit_bad", "label_fit_bad_count",
                      "segmented_bad", "segmented_bad_count", "switch_count", "switch_on_count", "switches_on", "icon_button_count", "icon_buttons_painted",
                      "icon_buttons_painted_count", "icon_only_count", "icon_only_unlabelled", "reference_pill_count", "reference_pill_styles", "reference_pill_variants"],
