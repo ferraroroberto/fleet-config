@@ -412,6 +412,31 @@ const FOREIGN_LINE = 'WORKTREE=E:/automation/alpha-wt-nav-41af40a BRANCH=chore/r
     'the foreign worktree and the deferral both surface in the run log')
 }
 
+// --- Case 12a: prose in foreignWorktrees never defers (#1453) ---------------
+// Teardown agents write "None -- VERDICT=clean ..." into the free-text field.
+// Only a real WORKTREE= line is evidence of a foreign worktree.
+{
+  const PROSE = 'None -- Check 1: VERDICT=clean, no extra worktrees registered.'
+  const { sink, agentImpl } = tracker(l => reply(l, l === 'documentation:teardown:alpha#1' ? { foreignWorktrees: PROSE } : {}))
+  sink.args = { issuesByBucket: ISSUES_1077 }
+  const res = await makeRunner(agentImpl, sink)
+  check(res.halted === null, 'prose in foreignWorktrees never halts the run (#1453)')
+  check(sink.order.some(l => l.includes('alpha#5')), 'prose in foreignWorktrees does not stop the rest of the repo (#1453)')
+  check(Array.isArray(res.deferred) && res.deferred.length === 0, 'prose in foreignWorktrees defers nothing (#1453)')
+  check(!/foreign worktree \(not residue\)/.test(sink.logs.join('\n')), 'prose is not logged as a foreign worktree (#1453)')
+}
+{
+  // A real line surrounded by prose still defers, and only the WORKTREE= line is named.
+  const MIXED = `Check 1 found one extra worktree:\n${FOREIGN_LINE}\nNothing else.`
+  const { sink, agentImpl } = tracker(l => reply(l, l === 'documentation:teardown:alpha#1' ? { foreignWorktrees: MIXED } : {}))
+  sink.args = { issuesByBucket: ISSUES_1077 }
+  const res = await makeRunner(agentImpl, sink)
+  const d = res.deferred || []
+  check(d.length === 1 && d[0].repo === 'alpha' && d[0].skip_reason.includes('alpha-wt-nav-41af40a'),
+    'a WORKTREE= line amid prose still defers the repo (#1077 kept)')
+  check(d.length === 1 && !d[0].skip_reason.includes('Nothing else'), 'the deferral names the WORKTREE= line, not the prose around it')
+}
+
 // --- Case 12b: anything else still halts (#1077) ---------------------------
 // The classifier calls the run's own leftover, a dirty foreign worktree and an
 // unmerged one residue; teardown then reports RESIDUE. That halts exactly as
