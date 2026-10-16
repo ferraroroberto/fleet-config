@@ -22,7 +22,6 @@ import re
 import shutil
 import socket
 import sys
-import tempfile
 import time
 import uuid
 from contextlib import contextmanager
@@ -32,7 +31,7 @@ from typing import AbstractSet, Any, Callable, Dict, Iterator, Mapping, Optional
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import git_run  # noqa: E402
-from hooks_state import atomic_tmp_prefix, state_dir, sweep_stale_atomic_temps  # noqa: E402
+from hooks_state import atomic_write_text, state_dir  # noqa: E402
 
 STATE_FILENAME = "active-issues.json"
 PRUNE_AFTER = timedelta(hours=24)
@@ -233,25 +232,14 @@ def prune_rows(
 
 def write_rows(path: Path, rows: Dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    sweep_stale_atomic_temps(path)
     payload = json.dumps(rows, indent=2, sort_keys=True) + "\n"
     last_error: Optional[OSError] = None
     for attempt in range(_REPLACE_ATTEMPTS):
-        tmp_name: Optional[str] = None
         try:
-            fd, tmp_name = tempfile.mkstemp(
-                dir=str(path.parent), prefix=atomic_tmp_prefix(path), suffix=".tmp")
-            with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as handle:
-                handle.write(payload)
-            os.replace(tmp_name, path)
+            atomic_write_text(path, payload, newline="\n")
             return
         except OSError as exc:
             last_error = exc
-            if tmp_name:
-                try:
-                    os.unlink(tmp_name)
-                except OSError:
-                    pass
             time.sleep(0.05 * (attempt + 1))
     assert last_error is not None
     raise last_error

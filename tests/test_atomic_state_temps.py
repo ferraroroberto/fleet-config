@@ -85,12 +85,12 @@ class _StateDirCase(unittest.TestCase):
     def write_sessions(self) -> None:
         session_state._write_rows(self.dir / SESSIONS, {"sid": {"status": "working"}})
 
-    def writers(self) -> dict[str, tuple[Callable[[], None], object]]:
-        """target filename -> (writer, module whose ``os.replace`` it calls)."""
+    def writers(self) -> dict[str, Callable[[], None]]:
+        """target filename -> writer (each reaches ``os.replace`` via ``atomic_write_text``)."""
         return {
-            DEDUP: (self.write_codex, codex_attention),
-            ACTIVE: (self.write_active, active_issue),
-            SESSIONS: (self.write_sessions, session_state),
+            DEDUP: self.write_codex,
+            ACTIVE: self.write_active,
+            SESSIONS: self.write_sessions,
         }
 
 
@@ -98,10 +98,10 @@ class HardKillNamingTests(_StateDirCase):
     """The temp a killed writer strands must name the file it was replacing."""
 
     def test_every_writer_strands_a_target_named_temp(self) -> None:
-        for target, (write, module) in self.writers().items():
+        for target, write in self.writers().items():
             with self.subTest(target=target):
                 before = set(_temps(self.dir))
-                with unittest.mock.patch.object(module.os, "replace", _hard_killed_replace):
+                with unittest.mock.patch("os.replace", _hard_killed_replace):
                     with self.assertRaises(_HardKill):
                         write()
                 stranded = sorted(set(_temps(self.dir)) - before)
@@ -116,7 +116,7 @@ class SweepTests(_StateDirCase):
     """The next write expires a dead writer's orphan and nothing else."""
 
     def test_each_writer_sweeps_its_own_stale_orphan_but_not_its_live_temp(self) -> None:
-        for target, (write, _module) in self.writers().items():
+        for target, write in self.writers().items():
             with self.subTest(target=target):
                 stale = self.dir / f".{target}.deadbeef.tmp"
                 live = self.dir / f".{target}.livewrit.tmp"
@@ -132,7 +132,7 @@ class SweepTests(_StateDirCase):
 
     def test_sweep_never_touches_another_writers_temps_live_or_stale(self) -> None:
         """Prefix scoping, not age, is what protects siblings in the shared dir."""
-        for target, (write, _module) in self.writers().items():
+        for target, write in self.writers().items():
             with self.subTest(target=target):
                 siblings = [
                     self.dir / f".{other}.{kind}.tmp"
@@ -168,6 +168,68 @@ class SweepTests(_StateDirCase):
         self.assertEqual(len(json.loads((self.dir / DEDUP).read_text(encoding="utf-8"))), 1)
         self.assertIn("fleet-config#864",
                       json.loads((self.dir / ACTIVE).read_text(encoding="utf-8")))
+
+
+class AtomicWriteTextTests(unittest.TestCase):
+    """The one atomic-replace body both trees' writers share (fleet-config#1441)."""
+
+    TWINS = (("hooks", hooks_lib), ("skills", hooks_state))
+
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        self.dir = Path(self._tmp.name)
+        self.target = self.dir / "state.json"
+
+    def test_success_lands_the_text_and_leaves_no_temporary(self) -> None:
+        for tree, module in self.TWINS:
+            with self.subTest(tree=tree):
+                module.atomic_write_text(self.target, "a\nb")
+                self.assertEqual(self.target.read_bytes(), f"a{os.linesep}b".encode())
+                module.atomic_write_text(self.target, "é\nb", newline="\n")
+                self.assertEqual(self.target.read_bytes(), "é\nb".encode("utf-8"))
+                self.assertEqual(_temps(self.dir), [])
+
+    def test_failed_replace_raises_keeps_original_and_leaves_no_temporary(self) -> None:
+        for tree, module in self.TWINS:
+            with self.subTest(tree=tree):
+                self.target.write_text("original", encoding="utf-8")
+                with unittest.mock.patch("os.replace", side_effect=PermissionError("held")):
+                    with self.assertRaises(PermissionError):
+                        module.atomic_write_text(self.target, "new")
+                self.assertEqual(self.target.read_text(encoding="utf-8"), "original")
+                self.assertEqual(_temps(self.dir), [])
+
+    def test_temporary_is_named_after_its_target_or_explicit_stem(self) -> None:
+        for tree, module in self.TWINS:
+            with self.subTest(tree=tree):
+                seen: list[str] = []
+                real_replace = os.replace
+
+                def spy(src, dst, *args, **kwargs):  # type: ignore[no-untyped-def]
+                    seen.append(os.path.basename(src))
+                    return real_replace(src, dst, *args, **kwargs)
+
+                with unittest.mock.patch("os.replace", spy):
+                    module.atomic_write_text(self.target, "x")
+                    module.atomic_write_text(self.dir / "1-abc.json", "x", temp_stem=self.dir / "event")
+                self.assertTrue(seen[0].startswith(".state.json.") and seen[0].endswith(".tmp"), seen[0])
+                self.assertTrue(seen[1].startswith(".event.") and seen[1].endswith(".tmp"), seen[1])
+
+    def test_sweeps_the_stems_stale_orphan_but_not_a_live_temp(self) -> None:
+        for tree, module in self.TWINS:
+            with self.subTest(tree=tree):
+                for stem, target in ((self.target, self.target),
+                                     (self.dir / "event", self.dir / "2-def.json")):
+                    stale = self.dir / f".{stem.name}.deadbeef.tmp"
+                    live = self.dir / f".{stem.name}.livewrit.tmp"
+                    stale.write_text("{}", encoding="utf-8")
+                    live.write_text("{}", encoding="utf-8")
+                    _age(stale, STALE_AGE_SECONDS)
+                    module.atomic_write_text(target, "x", temp_stem=None if stem == target else stem)
+                    self.assertFalse(stale.exists(), f"{stem.name}: stale orphan survived")
+                    self.assertTrue(live.exists(), f"{stem.name}: sweep ate a live temp")
+                    live.unlink()
 
 
 class TreeMirrorTests(unittest.TestCase):

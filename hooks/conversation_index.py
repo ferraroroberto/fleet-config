@@ -44,10 +44,8 @@ from __future__ import annotations
 import argparse
 import json
 import logging
-import os
 import re
 import sys
-import tempfile
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -273,20 +271,9 @@ def write_index_json(conv_dir: Path, label: str, entries: "dict[str, Entry]") ->
     text = json.dumps(
         index_json_payload(label, entries, read_titles(conv_dir)), indent=2, ensure_ascii=False
     )
-    _lib.sweep_stale_atomic_temps(path)
-    temporary: Optional[str] = None
     try:
-        fd, temporary = tempfile.mkstemp(
-            dir=str(conv_dir), prefix=_lib.atomic_tmp_prefix(path), suffix=".tmp")
-        with os.fdopen(fd, "w", encoding="utf-8") as handle:
-            handle.write(text)
-        os.replace(temporary, path)
+        _lib.atomic_write_text(path, text)
     except OSError as exc:
-        if temporary:
-            try:
-                os.unlink(temporary)
-            except OSError:
-                pass
         logger.error("Could not write %s: %s", path, exc)
         return False
     return True
