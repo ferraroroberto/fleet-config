@@ -2960,6 +2960,25 @@ else:
           and [m["sel"] for m in _uf_ctl.get("font_family_mismatch", [])] == ["button#tabRecord.tab", "button#tabHistory.tab"],
           f"TYPE-02: the two UA-font nav tabs are reported, the inheriting button is not (#1211) -- {_uf_ctl} ({proc_uf.stderr[-300:]})")
 
+    # mono code field: a text-entry control in the spec's mono stack is a code field, not a missed `font: inherit`;
+    # a UA-font button, a mono button, a mono select and a non-mono textarea still count (#1462)
+    mf_dir = STATE / "fixture-mono-code-field"
+    proc_mf = subprocess.run(
+        [str(interp), str(REPO / "skills" / "_lib" / "design_review" / "walk.py"), "--url", (FIX / "mono_code_field.html").as_uri(),
+         "--out", str(mf_dir), "--devices", "desktop", "--scaffold", str(scaffold),
+         "--params", str(STATE / "steps-params.json")],
+        capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=600,
+    )
+    mfs = json.loads((mf_dir / "screens.json").read_text(encoding="utf-8")) if proc_mf.returncode == 0 else []
+    _mf_ctl = ((mfs[0].get("metrics") or {}).get("controls") or {}) if mfs else {}
+    _mf_sels = [m["sel"] for m in _mf_ctl.get("font_family_mismatch", [])]
+    check(bool(mfs) and not any(x in _mf_sels for x in ("textarea#jsonEditor.mono", "input#codeInput.mono")),
+          f"TYPE-02: a mono textarea and a mono text input are code fields and not reported (#1462) -- {_mf_ctl} ({proc_mf.stderr[-300:]})")
+    check(bool(mfs) and _mf_sels == ["textarea#proseSerif.serif", "button#uaButton.btn-ua", "button#monoButton.btn-mono", "select#monoSelect.mono"],
+          f"TYPE-02: a non-mono textarea, a UA-font button, a mono button and a mono select still count (#1462) -- {_mf_ctl}")
+    check(_mf_ctl.get("mono_code_field_count") == 2,
+          f"TYPE-02: the two exempted code fields are recorded under their own key (#1462) -- {_mf_ctl}")
+
     # switch on-state: the track colour of each switch that is on is read, an off switch is counted only (#1200)
     sw_dir = STATE / "fixture-switch"
     proc_sw = subprocess.run(

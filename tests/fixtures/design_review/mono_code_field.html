@@ -1,0 +1,32 @@
+<!doctype html>
+<!-- Static fixture for TYPE-02 (fleet-config#1462): a text-entry control set in the spec's mono stack is a code field
+     (design.md: code is mono), not a control that missed `font: inherit`. The textarea and the text input here are
+     mono on purpose and must not be reported. The UA-font button, the mono button, the mono select and the
+     non-mono textarea still count. Asserted by tests/test_design_review.py. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>design_review mono-code-field fixture</title>
+<style>
+  html, body { margin: 0; background: #ffffff; color: #1f2328; font-family: system-ui, -apple-system, "Segoe UI", sans-serif; font-size: 16px; }
+  body { padding: 16px; }
+  .row { margin-bottom: 12px; }
+  .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace; font-size: 14px; }
+  .serif { font-family: Georgia, serif; }
+  .btn-ua { min-width: 60px; min-height: 44px; }          /* no `font: inherit`: the UA font */
+  .btn-mono { min-width: 60px; min-height: 44px; font-family: ui-monospace, Menlo, Consolas, monospace; }
+  select { min-height: 44px; }
+</style>
+</head>
+<body>
+  <main>
+    <div class="row"><textarea id="jsonEditor" class="mono" rows="3" aria-label="JSON questions"></textarea></div>
+    <div class="row"><input id="codeInput" type="text" class="mono" aria-label="Command"></div>
+    <div class="row"><textarea id="proseSerif" class="serif" rows="2" aria-label="Notes"></textarea></div>
+    <div class="row"><button type="button" id="uaButton" class="btn-ua">Run</button></div>
+    <div class="row"><button type="button" id="monoButton" class="btn-mono">Mono button</button></div>
+    <div class="row"><select id="monoSelect" class="mono" aria-label="Model"><option>one</option></select></div>
+  </main>
+</body>
+</html>
