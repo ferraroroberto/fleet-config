@@ -9,7 +9,7 @@ TypeScript.
 Reads a single JSON object from stdin shaped like::
 
     {"event": "input"|"agent_settled"|"session_shutdown", "session_id": "...",
-     "cwd": "...", "transcript_path": null}
+     "cwd": "...", "transcript_path": null, "last_assistant_message": "..."|null}
 
 Pi's extension API events (pi.dev/docs/latest/extensions) map onto Claude
 Code's three wired hooks: ``input`` (user submits a prompt) ↔
@@ -45,6 +45,8 @@ def _payload_from_event(event: Dict[str, Any]) -> Dict[str, Any]:
         "session_id": event.get("session_id"),
         "cwd": event.get("cwd"),
         "transcript_path": event.get("transcript_path"),
+        # The final reply text, for the chief-inbox excerpt (fleet-config#1455).
+        "last_assistant_message": event.get("last_assistant_message"),
     }
 
 

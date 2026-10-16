@@ -129,7 +129,7 @@ fleet-config/
 │   ├── session_state.py             # UserPromptSubmit|Stop|SessionEnd: the Fleet-Board session-row engine (hooks/state/sessions-state.json)
 │   ├── session_state_codex.py       # Codex working/needs-you/SessionEnd adapter → shared state
 │   ├── session_state_pi.py          # thin Pi adapter → session_state (shelled out to by pi/extensions/session_state.ts)
-│   ├── chief_inbox.py               # a chief-managed worker's Stop/SessionEnd → one event file the chief's `wait-event` claims (fleet-config#999)
+│   ├── chief_inbox.py               # a chief-managed worker's Stop/SessionEnd → one event file the chief's `wait-event` / `inbox` claims (fleet-config#999, v2 #1455: docs/chief-mailbox.md)
 │   ├── notify_send.py               # shared Telegram transport (importable + CLI, stdlib-only)
 │   ├── notify_complete.py           # deterministic skill-completion ping (issue-* skills call this); finish/yolo carry a work-summary roll-up
 │   ├── work_summary.py              # deterministic PR work-summary (file/LOC roll-up + per-file table) from `gh`, no LLM; importable + CLI

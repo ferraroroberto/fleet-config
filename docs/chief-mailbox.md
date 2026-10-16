@@ -1,0 +1,127 @@
+# Chief mailbox
+
+The durable channel from chief-managed workers to the fleet chief. Every worker turn-end and session exit becomes one small JSON file in a directory. The chief reads those files; nothing else carries the data. A doorbell (app-launcher#1645, step 5/7 of #1372) may later tell the chief to read. It carries no data.
+
+This document is the cross-repo contract. A second implementation (app-launcher counts pending events every ~3 s, #1645) follows this file alone. The reference implementation is `hooks/chief_inbox.py` (writer) and `skills/_lib/chief_ops.py` (readers: `count_pending`, `claim_mailbox`, `ack_events`, `claim_batch`). The tests named under [Conformance](#conformance) pin every rule below.
+
+## Directory layout
+
+```
+<state_dir>/chief-inbox/
+    <published_ms>-<id>.json          published, unclaimed events   (pending)
+    .claimed/<claimed_at_ms>-<id>.json  v2 claims awaiting ack        (pending once stale)
+    .event.<random>.tmp               a writer's temp file            (ignore)
+    .claim-<pid>-<ns>/                wait-event's private claim folder (ignore)
+```
+
+- `<state_dir>` is `CLAUDE_HOOKS_STATE_DIR` when set, else `~/.claude/hooks/state` (`hooks/_lib.state_dir()`).
+- `<published_ms>` and `<claimed_at_ms>` are Unix epoch **milliseconds**, decimal digits, no padding.
+- `<id>` is the event id. A v2 writer uses `uuid4().hex`: 32 lowercase hex characters. A v1 file (written before #1455) has an 8-hex suffix instead; readers take whatever follows the first `-` as its id.
+
+## Publishing (writers)
+
+- **One file per event.** Never append to a shared file: on Windows a file another process holds open cannot be renamed, so a shared log would make atomic claims impossible.
+- **Atomic publish.** Write the JSON to a temp file in the same directory whose name starts with `.` and ends with `.tmp`, then `os.replace` it to `<published_ms>-<id>.json`. A reader therefore never sees a partially written `.json`.
+- **A writer in another repo publishes into the directory. It never imports from `hooks/`.** The file format below is the whole interface.
+- Writers never touch `.claimed/`.
+
+## Event schema (v2)
+
+```json
+{
+  "v": 2,
+  "id": "16cb7df4e6f54b578c56885b936cee25",
+  "kind": "turn-end",
+  "event": "Stop",
+  "launcher_sid": "<APP_LAUNCHER_SESSION_ID of the worker>",
+  "repo": "fleet-config",
+  "number": 1455,
+  "agent": "claude",
+  "ts": "2026-10-16T07:47:58Z",
+  "dispatch_id": "<uuid hex from chief_ops.py dispatch, or null>",
+  "excerpt": "<last ≤1500 chars of the worker's final reply, or null>",
+  "excerpt_source": "payload",
+  "excerpt_unavailable": "<reason; present only when excerpt is null>"
+}
+```
+
+| Field | Meaning |
+|---|---|
+| `v` | Schema version, `2`. Absent on v1 events. |
+| `id` | Equals the file name's id. The dedupe key: a re-offered event keeps its `id`. |
+| `kind` | `turn-end`, `session-end` or `needs-input`. `needs-input` is reserved now and written from step 3/7 (#1456). |
+| `event` | v1 compatibility: `Stop` or `SessionEnd`. Kept so the v1 reader (`wait-event`) still names the event. |
+| `launcher_sid`, `repo`, `number`, `agent`, `ts` | Unchanged from v1. `ts` is UTC, second precision, `Z` suffix. |
+| `dispatch_id` | The per-dispatch handle `chief_ops.py dispatch` prints as `DISPATCH_ID=` and stores in the `chief-managed.json` row. `null` for a worker dispatched without one (for example straight from the launcher). |
+| `excerpt` | The last 1,500 characters of the worker's final reply. It is never an empty string: no readable reply means `null`. |
+| `excerpt_source` | `payload` (the harness's own last-assistant field), `transcript` (the tail of `transcript_path`), or `null`. |
+| `excerpt_unavailable` | Why `excerpt` is `null`. Present only then. |
+
+Excerpt sources per harness, verified live for #1455:
+
+| Harness | Source |
+|---|---|
+| Claude Code (2.1.301) | `Stop` payload `last_assistant_message`; fallback: the last assistant record in the bounded tail (256 KiB) of `transcript_path` |
+| Codex (0.154.0) | `Stop` payload `last_assistant_message`; same transcript fallback (rollout `response_item` records) |
+| Pi (0.84.4) | The `pi/extensions/session_state.ts` extension reads the session branch's newest assistant text and sends it as `last_assistant_message`; Pi sends no `transcript_path` |
+
+Readers must ignore fields they do not know, and must accept v1 events (no `v`, `id`, `kind`, `dispatch_id` or excerpt fields).
+
+## Pending: the counting rule
+
+A reader that only needs to know *whether there is work* (the doorbell) counts by **file name alone**. It never opens, parses or locks a file.
+
+`pending = R + S`, where:
+
+- **R**: entries directly in `chief-inbox/` that are regular files, whose name ends in `.json` and does **not** start with `.`.
+- **S**: entries directly in `chief-inbox/.claimed/` that are regular files, whose name ends in `.json` and does not start with `.`, **and** whose claim is stale. A claim is stale when its name matches `^(\d+)-(.+)\.json$` and `now_ms - int(group 1) >= CLAIM_STALE_MS`, **or** when the name does not match that pattern at all (a claim with no readable time counts as stale, erring toward waking the chief).
+- `CLAIM_STALE_MS` = **900,000** (15 minutes, `chief_ops.CLAIM_STALE_SECONDS`).
+
+Never counted:
+
+- anything whose name starts with `.` in either directory (temp files `.event.<random>.tmp`, and `.claimed` itself);
+- names not ending in `.json` (`*.tmp`, notes);
+- directories, including `wait-event`'s `.claim-<pid>-<ns>/` folders and anything inside them;
+- subdirectories of `.claimed/`;
+- a `.claimed/` claim younger than `CLAIM_STALE_MS`: a live reader holds it.
+
+Edge cases, decided:
+
+- **A `.json` that does not parse still counts.** The name rule cannot see content, and publishing is atomic, so this is junk rather than a half-written file. The next `inbox` run drops it, and the count falls by one.
+- **An event older than the 24 h TTL still counts by name.** `inbox` drops it on the next claim, so the count self-heals after one ring.
+- **`chief-inbox/` missing** means `pending = 0`; it is created by the first event.
+- **`chief-inbox/` or `.claimed/` present but not listable** (permissions, or a file where the directory should be) means pending is **unknown**, never `0`. `chief_ops.py inbox --count` prints `PENDING=unknown reason=…` and exits 1.
+- A file can move between the two listings mid-count (claimed, re-offered or acked). The count is advisory: it decides whether to ring, and the reader re-establishes the facts. A one-off miscount at that instant is harmless.
+
+`chief_ops.py inbox --count` implements exactly this rule and prints `PENDING=<n>`.
+
+## Reading (the chief)
+
+Two readers coexist until the doorbell switch-over (#1457). After that, `wait-event` is retired (#1458).
+
+**v2: `chief_ops.py inbox`, then `chief_ops.py ack <id…>`** (at-least-once):
+
+1. **Re-offer.** Every stale claim in `.claimed/` (same staleness test as the counting rule) is moved back to the root under its same basename. `<claimed_at_ms>-<id>.json` is already a valid root name.
+2. **Claim.** Each root event file, oldest name first, is renamed to `.claimed/<now_ms>-<id>.json`. The rename *is* the claim: a concurrent reader that loses the race skips the file.
+3. **Read.** Unparseable files and events past the 24 h TTL are deleted (`dropped=`). The rest are printed with their `id` and excerpt, followed by an `ACK=chief_ops.py ack <ids>` line. Ids that came back through step 1 are marked `re-offered`.
+4. **Ack.** After handling, `ack` deletes each id's file, from `.claimed/` or (if it was re-offered meanwhile) from the root. An id with no file prints `ACK_MISSING=<id>` and exits 1.
+
+A chief that dies between claim and ack leaves stale claims behind. They count as pending again after 15 minutes, so a doorbell rings and the next `inbox` re-offers the same ids. The chief dedupes by `id`.
+
+**v1: `chief_ops.py wait-event`** (exactly once, unchanged): it renames each root `*.json` into its private `.claim-<pid>-<ns>/` folder, reads it, deletes it, and exits on the first batch. It never looks in `.claimed/`. For v2 events its digest line gains ` kind=<kind>` and indented excerpt lines; the header, v1 lines and closing `Next:` line are unchanged. While both readers run, each event is read by exactly one of them, because both claim by rename.
+
+## Doorbell line
+
+When it ships (#1645), the doorbell types this fixed line, which carries no count and no data:
+
+```
+⟳ chief-inbox: pending — run chief_ops.py inbox
+```
+
+Everything the chief acts on comes from `inbox`, never from the ring.
+
+## Conformance
+
+- `tests/test_chief_mailbox.py`: the counting rule case by case (temps, dot-files, non-`.json`, directories, `wait-event`'s claim folder, fresh vs stale vs unstamped claims, the exact stale boundary, an unlistable directory being unknown), claim, ack, re-offer with an injected clock, and the two readers racing.
+- `tests/test_chief_wait_event_compat.py`: `wait-event`'s output and exactly-once claim on v1 and v2 events. It passes unchanged on the pre-v2 tree.
+- `tests/test_chief_inbox.py`: the v2 writer through the real Claude, Codex and Pi adapter hooks, including every excerpt source and the `null`-with-reason case.

@@ -177,4 +177,105 @@ try:
 finally:
     shutil.rmtree(state, ignore_errors=True)
 
+# ---- mailbox v2 fields (fleet-config#1455), through the same real adapters ----
+
+import re  # noqa: E402
+
+import chief_inbox  # noqa: E402
+
+DISPATCHED = json.dumps({WORKER_SID: {"repo": "fleet-config", "number": 1455,
+                                      "dispatched_at": "2026-10-16T10:00:00Z", "dispatch_id": "d" * 32}})
+REPLY = "Built it.\nPR #1 is open; review, then /issue-finish."
+
+
+def files(state: Path) -> list:
+    inbox = state / "chief-inbox"
+    return sorted(p.name for p in inbox.glob("*.json")) if inbox.is_dir() else []
+
+
+V2_CASES = (
+    # label, hook, turn-end payload carrying the harness's own reply field
+    ("Claude", "session_state", {**claude("Stop"), "last_assistant_message": REPLY}),
+    ("Codex", "session_state_codex", {**claude("Stop"), "last_assistant_message": REPLY}),
+    ("Pi", "session_state_pi", {**pi("agent_settled"), "last_assistant_message": REPLY}),
+)
+for label, hook, payload in V2_CASES:
+    state = fresh_state(DISPATCHED)
+    try:
+        drive(hook, payload, state, launcher_sid=WORKER_SID)
+        rows, names = events(state), files(state)
+        row = rows[0] if rows else {}
+        check(len(names) == 1 and re.fullmatch(r"\d{13}-[0-9a-f]{32}\.json", names[0])
+              and names[0][14:-5] == row.get("id"),
+              f"{label} v2: the file is <published_ms>-<id>.json and the id matches ({names})")
+        check(row.get("v") == 2 and row.get("kind") == "turn-end" and row.get("event") == "Stop"
+              and row.get("dispatch_id") == "d" * 32,
+              f"{label} v2: v, kind, the v1 event and the dispatch's dispatch_id ({row})")
+        check(row.get("excerpt") == REPLY.strip() and row.get("excerpt_source") == "payload"
+              and "excerpt_unavailable" not in row,
+              f"{label} v2: the excerpt is the harness's own final-reply field ({row.get('excerpt')!r})")
+    finally:
+        shutil.rmtree(state, ignore_errors=True)
+
+# Session end, a row with no dispatch_id, and no reply source at all.
+for label, hook, payload in (("Claude", "session_state", claude("SessionEnd")),
+                             ("Pi", "session_state_pi", pi("session_shutdown"))):
+    state = fresh_state(MANAGED)
+    try:
+        drive(hook, payload, state, launcher_sid=WORKER_SID)
+        row = (events(state) or [{}])[0]
+        check(row.get("kind") == "session-end" and row.get("dispatch_id") is None
+              and row.get("excerpt") is None and row.get("excerpt_unavailable"),
+              f"{label} v2 exit: kind session-end, dispatch_id null, excerpt null with a reason ({row})")
+    finally:
+        shutil.rmtree(state, ignore_errors=True)
+
+# Transcript fallback: Claude/Pi/Codex on-disk shapes, an empty reply field,
+# truncation, an unreadable path and a tail with no reply -- never "".
+tmp = Path(tempfile.mkdtemp(prefix="chief_inbox_tx_"))
+try:
+    long_reply = "x" * 1000 + "END" + "y" * 1000
+    shapes = {
+        "claude": [{"type": "user", "message": {"role": "user", "content": "go"}},
+                   {"type": "assistant", "message": {"role": "assistant", "content": [
+                       {"type": "text", "text": "Claude final"}, {"type": "tool_use", "name": "x"}]}},
+                   {"type": "system", "subtype": "stop"}],
+        "pi": [{"type": "message", "message": {"role": "assistant", "content": [
+                   {"type": "thinking", "thinking": "hm"}, {"type": "text", "text": "Pi final"}]}},
+               {"type": "message", "message": {"role": "toolResult", "content": []}}],
+        "codex": [{"type": "response_item", "payload": {"type": "message", "role": "assistant",
+                                                        "content": [{"type": "output_text", "text": "Codex final"}]}},
+                  {"type": "event_msg", "payload": {"type": "token_count"}}],
+        "long": [{"type": "assistant", "message": {"role": "assistant", "content": long_reply}}],
+        "none": [{"type": "user", "message": {"role": "user", "content": "only a prompt"}}],
+    }
+    paths = {}
+    for name, lines in shapes.items():
+        paths[name] = tmp / f"{name}.jsonl"
+        paths[name].write_text("\n".join(json.dumps(line) for line in lines) + "\n", encoding="utf-8")
+    for name, expected in (("claude", "Claude final"), ("pi", "Pi final"), ("codex", "Codex final")):
+        got = chief_inbox.excerpt_fields({"last_assistant_message": "  ", "transcript_path": str(paths[name])})
+        check(got == {"excerpt": expected, "excerpt_source": "transcript"},
+              f"excerpt: a blank reply field falls back to the {name} transcript's last reply ({got})")
+    got = chief_inbox.excerpt_fields({"transcript_path": str(paths["long"])})
+    check(len(got["excerpt"]) == chief_inbox.EXCERPT_CHARS and got["excerpt"].endswith("y" * 1000),
+          "excerpt: bounded to the last EXCERPT_CHARS characters of the reply")
+    for case, payload in (("no transcript reply", {"transcript_path": str(paths["none"])}),
+                          ("unreadable transcript", {"transcript_path": str(tmp / "missing.jsonl")}),
+                          ("no source at all", {})):
+        got = chief_inbox.excerpt_fields(payload)
+        check(got.get("excerpt") is None and isinstance(got.get("excerpt_unavailable"), str)
+              and got["excerpt_unavailable"],
+              f"excerpt, {case}: null with a reason, never an empty string ({got})")
+    # The tail read is bounded: a reply older than the window is not found.
+    big = tmp / "big.jsonl"
+    big.write_text(json.dumps(shapes["claude"][1]) + "\n"
+                   + json.dumps({"type": "user", "message": {"role": "user", "content": "p" * chief_inbox.TRANSCRIPT_TAIL_BYTES}})
+                   + "\n", encoding="utf-8")
+    got = chief_inbox.excerpt_fields({"transcript_path": str(big)})
+    check(got.get("excerpt") is None and "KiB" in got.get("excerpt_unavailable", ""),
+          f"excerpt: only the last TRANSCRIPT_TAIL_BYTES are read ({got.get('excerpt_unavailable')})")
+finally:
+    shutil.rmtree(tmp, ignore_errors=True)
+
 _h.report_and_exit("test_chief_inbox")

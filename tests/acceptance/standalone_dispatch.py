@@ -246,6 +246,16 @@ _STANDALONE_UNIT_CHECKS: Tuple[Tuple[str, str, str], ...] = (
      "the chief inbox's writer -- Claude/Codex/Pi turn-end and exit through "
      "the real adapter hooks, managed vs human-started vs undetermined -- "
      "against a temp state dir (fleet-config#999)"),
+    ("chief_mailbox", "test_chief_mailbox.py",
+     "the chief mailbox v2 reader -- claim into .claimed/, ack, re-offer of "
+     "an unacked claim after the stale window (injected clock), the "
+     "file-name pending count docs/chief-mailbox.md defines, coexistence "
+     "with wait-event, and the dispatch_id row field (fleet-config#1455)"),
+    ("chief_wait_event_compat", "test_chief_wait_event_compat.py",
+     "wait-event's contract across mailbox v2 -- exact v1 output lines, "
+     "claim exactly once (also under two concurrent claimers), old-format "
+     "events still read, .claimed/ and temps untouched; passes unchanged on "
+     "the pre-v2 tree (fleet-config#1455)"),
     ("chief_ops", "test_chief_ops.py",
      "the fleet chief's deterministic ops helper -- repo occupancy, the "
      "alive-worker count, the three dispatch refusals (occupied repo, "
