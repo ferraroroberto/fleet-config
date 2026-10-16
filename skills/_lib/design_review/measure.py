@@ -1034,9 +1034,12 @@ _MEASURE_JS = r"""
 
   // ---- clearance: a list's last row must scroll clear of a fixed bar anchored to the bottom (#1019).
   // Each scroller goes to its end (instant, whatever scroll-behavior says) and back; the walk runs
-  // this after its screenshots, so nothing captured moves.
+  // this after its screenshots, so nothing captured moves. A transient overlay (an open menu, listbox, dialog, popover,
+  // toast) covers rows by design and closes on a tap outside it, so it is not a bar to clear (#1464).
   section('clearance', () => {
-    const bars = [...document.querySelectorAll('body *')].filter(el => { if (getComputedStyle(el).position !== 'fixed' || !visible(el)) return false;
+    const TRANSIENT = '[role=menu], [role=listbox], [role=dialog], [role=alertdialog], .row-menu, .toast';
+    const transient = (el) => !!el.closest(TRANSIENT) || el.hasAttribute('popover');  // a closed popover is not visible, so any left here is open
+    const bars = [...document.querySelectorAll('body *')].filter(el => { if (getComputedStyle(el).position !== 'fixed' || !visible(el) || transient(el)) return false;
       const r = el.getBoundingClientRect(); return r.bottom >= innerHeight * 0.75 && r.bottom <= innerHeight + 1 && r.height <= innerHeight * 0.3; })
       .filter((el, _, all) => !all.some(o => o !== el && o.contains(el)));
     const rows = [];

@@ -2299,7 +2299,7 @@ else:
     check(cov.get("clearance", {}).get("hidden_row_count") == 1 and cov["clearance"]["hidden_rows"][0]["bar"].startswith("nav.pill"),
           f"LAYOUT-07: a list ending under the pill at full scroll is hidden -- {cov.get('clearance')}")
     check(clr.get("clearance", {}).get("hidden_row_count") == 0 and clr["clearance"]["bars"] == ["nav.pill"],
-          f"LAYOUT-07: a list padded clear of the pill passes -- {clr.get('clearance')}")
+          f"LAYOUT-07: a list padded clear of the pill passes, and an open row-menu over its last row is no bar (#1464) -- {clr.get('clearance')}")
     check(by_id["desktop-light-home"]["metrics"]["clearance"] == {"bars": [], "hidden_rows": [], "hidden_row_count": 0},
           "LAYOUT-07: a page with no fixed bottom bar has nothing to clear")
 
