@@ -27,6 +27,10 @@
   /* a content control painted over the pill's second tab: it wins taps inside the tab, so the pair counts */
   #overPill { position: absolute; z-index: 20; left: 150px; top: calc(100vh - 60px); width: 60px; height: 30px; font: inherit; }
   #paneClear .rows { padding-bottom: 96px; }
+  /* an open row-menu, as the vendored one: fixed, near the bottom, role=menu. It covers the list's last row by
+     design and closes on any tap outside, so it is not a bar the list has to clear (#1464) */
+  .row-menu { position: fixed; left: 400px; bottom: 110px; width: 200px; height: 80px; z-index: 15; background: #ffffff;
+              border: 1px solid #d1d9e0; border-radius: 8px; padding: 8px; box-sizing: border-box; }
 </style>
 <script>
   addEventListener('DOMContentLoaded', () => {
@@ -52,12 +56,14 @@
     </section>
     <!-- clear: #abovePill's expansion reaches into the first tab while its own box clears the bar, and
          the pill takes every tap where they meet (covered, #1094); #overPill paints over the second tab
-         and takes taps there (an overlap); the list is padded clear of the pill -->
+         and takes taps there (an overlap); the list is padded clear of the pill; an open row-menu sits over
+         the list's last row and is no bar (#1464) -->
     <section id="paneClear" role="tabpanel" hidden>
       <h2>Clear</h2>
       <ul class="rows"></ul>
       <button type="button" id="abovePill">Above</button>
       <button type="button" id="overPill">Over</button>
+      <div class="row-menu" role="menu"><div role="presentation">Open menu</div></div>
     </section>
   </main>
   <nav class="pill" role="tablist" aria-label="Primary">
