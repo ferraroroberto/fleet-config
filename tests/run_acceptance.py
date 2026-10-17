@@ -115,6 +115,7 @@ from acceptance.checks_skill_helpers import (  # noqa: E402
     _restart_webapp_unit_checks,
     _scheduled_skill_timeouts_named_check,
 )
+from acceptance import gate_routing  # noqa: E402
 from acceptance.shared import _subprocess_unit_check  # noqa: E402
 from acceptance.spawn_scanner import (  # noqa: E402
     _git_wrapper_unit_check,
@@ -264,7 +265,7 @@ def main() -> int:
         # Three-state like run_unit3: a suite that exits shared.SKIP_EXIT could
         # not establish its facts (missing toolchain) and lands in Skipped, not
         # in a bare `OK` that verified nothing (fleet-config#679).
-        f, t, s = _subprocess_unit_check(_label, _test_file)
+        f, t, s = _subprocess_unit_check(_label, _test_file, routed_out=gate_routing.routed_out(_label))
         failures += f
         total_checks += t
         skipped_checks += s

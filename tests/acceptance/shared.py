@@ -188,7 +188,7 @@ class _Checker:
             print(f"        | {line}")
 
 
-def _subprocess_unit_check(label: str, test_file: str) -> Tuple[int, int, int]:
+def _subprocess_unit_check(label: str, test_file: str, routed_out: str | None = None) -> Tuple[int, int, int]:
     """Run a standalone pure-logic test file as a subprocess and report it as
     one pass/fail/skip check -- the shared body every row of
     `standalone_dispatch._STANDALONE_UNIT_CHECKS` points at one focused file
@@ -202,7 +202,14 @@ def _subprocess_unit_check(label: str, test_file: str) -> Tuple[int, int, int]:
     (fleet-config#679). A skipped suite counts toward neither Total nor
     Failed, exactly like `_Checker.advisory`, and its stdout is echoed so the
     reason is visible.
+
+    `routed_out` is a reason the gate chose not to run the suite for this diff
+    (`gate_routing.routed_out`, fleet-config#1481): reported as SKIP, its own
+    state, never as a pass.
     """
+    if routed_out:
+        print(f"SKIP  {label}: NOT run -- {routed_out}")
+        return 0, 0, 1
     proc = subprocess.run(
         [PYTHON, str(REPO / "tests" / test_file)],
         capture_output=True, text=True, encoding="utf-8", errors="replace",
