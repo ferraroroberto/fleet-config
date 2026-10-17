@@ -25,7 +25,6 @@ import re
 import shutil
 import subprocess
 import sys
-import tempfile
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
@@ -34,6 +33,7 @@ sys.path.insert(0, str(REPO / "tests" / "_lib"))
 sys.path.insert(0, str(REPO / "tests"))
 
 from check_harness import CheckHarness  # noqa: E402
+from throwaway_dir import throwaway_dir  # noqa: E402
 from acceptance.shared import SKIP_EXIT  # noqa: E402
 
 import audit_issue as ai  # noqa: E402
@@ -47,9 +47,9 @@ FIX = REPO / "tests" / "fixtures" / "design_review"
 RUBRIC = REPO / "design.rubric.toml"
 PKG = REPO / "skills" / "_lib" / "design_review"
 PY = sys.executable
-STATE = Path(tempfile.mkdtemp(prefix="design-ledger-test-state-"))
+STATE = Path(throwaway_dir("design-ledger-test-state-"))
 os.environ["CLAUDE_HOOKS_STATE_DIR"] = str(STATE)
-WORK = Path(tempfile.mkdtemp(prefix="design-ledger-test-work-"))
+WORK = Path(throwaway_dir("design-ledger-test-work-"))
 
 
 def _specs(name: str) -> dict:
