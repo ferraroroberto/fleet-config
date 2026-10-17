@@ -1,4 +1,4 @@
-"""The lint engine (R-01..R-17, R-30, R-34..R-37, assists for R-39 and R-43): exact hit counts per instruction file.
+"""The lint engine (R-01..R-17, R-30, R-34..R-37, R-45, assists for R-39 and R-43): exact hit counts per instruction file.
 
 Part of the `prompt_audit` package (fleet-config#931); see `__init__.py`.
 """
@@ -45,6 +45,8 @@ PATTERNS: Dict[str, List[re.Pattern]] = {
     "R-30": [re.compile(r"\b(?:explain|show|write out) (?:your|its) reasoning in (?:the|your) (?:response|answer|reply|output)\b"
                         r"|\bwrite out (?:your|its) reasoning\b|\bshow your work\b"
                         r"|\bthink out loud in (?:the|your) (?:response|answer|reply|output)\b", re.I)],
+    "R-45": [re.compile(r"\bonly use tools when strictly necessary\b|\bminimi[sz]e tool calls\b"
+                        r"|\bavoid (?:using|calling) tools unless\b", re.I)],
 }
 # Line-level detectors: one hit per matching line, not per occurrence.
 LINE_PATTERNS: Dict[str, re.Pattern] = {

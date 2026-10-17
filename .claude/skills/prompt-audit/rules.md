@@ -36,22 +36,22 @@ Fix shape: rewrite as the concrete condition under which the tool helps, or dele
 Source: https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/claude-prompting-best-practices (Overthinking and excessive thoroughness)
 
 ### R-03 No forced verification or re-check lines        tags: [shared] [file: any] [tier: easy]
-Detect: lint — "double-check", "re-verify", "verify your answer/work/output/response/changes", "final verification step", "subagent to verify", "re-check your".
-Why: current models verify their own work unprompted; explicit verification instructions "cause over-verification … and removing them reduces wasted tokens with no loss in quality". Self-correction prompts like "double-check your answer" "compound with the model's own behavior and add cost without improving results". The other vendor's flagship guide makes the same point for coding: calibrate testing, because the model "tends to be thorough in testing" and over-tests small changes.
-Fix shape: delete the line. If one specific check is genuinely required (a named gate command), name that check once, without "double-check".
-Source: https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/prompting-claude-opus-5 (Task scope and over-verification; Self-correction) · https://developers.openai.com/api/docs/guides/latest-model (Testing and verification)
+Detect: lint — "double-check", "re-verify", "verify your answer/work/output/response/changes", "final verification step", "subagent to verify", "re-check your". Judgment clears a candidate that names a real check to run (the project's tests, type-checker or build, or the changed command) rather than asking for a generic re-check.
+Why: current models verify their own work unprompted; explicit verification instructions "cause over-verification … and removing them reduces wasted tokens with no loss in quality". Self-correction prompts like "double-check your answer" "compound with the model's own behavior and add cost without improving results". The other vendor's flagship guide makes the same point for coding: calibrate testing, because the model "tends to be thorough in testing" and over-tests small changes. The exception the guides carve out is a named real check: at low effort a smaller model "sometimes reports a change as done without running a check that exercises it", and the suggested text is "run a real check that exercises the change before reporting it done: the project's tests, type-checker, or build, or the changed command itself. A syntax-only check, or a check command that failed to start, does not count".
+Fix shape: delete the generic line. If one specific check is genuinely required (a named gate command), name that check once, without "double-check"; an instruction to run the real check before reporting done is compliant.
+Source: https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/prompting-claude-opus-5 (Task scope and over-verification; Self-correction) · https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/prompting-claude-sonnet-5-5 (Verification on coding tasks) · https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/prompting-claude-haiku-5-5 (Tell coding agents to verify their changes) · https://developers.openai.com/api/docs/guides/latest-model (Testing and verification)
 
 ### R-04 No periodic progress-summary scaffolding        tags: [shared] [file: any] [tier: easy]
 Detect: lint — "every N tool calls", "every few tool calls", "after every N steps".
-Why: "If you've added scaffolding to force interim status messages ('After every 3 tool calls, summarize progress'), try removing it." The coding-model guide agrees: "remove all prompting for the model to communicate an upfront plan, preambles, or other status updates during the rollout, as this can cause the model to stop abruptly before the rollout is complete."
+Why: "If you've added scaffolding to force interim status messages ('After every 3 tool calls, summarize progress'), try removing it." The coding-model guide agrees: "remove all prompting for the model to communicate an upfront plan, preambles, or other status updates during the rollout, as this can cause the model to stop abruptly before the rollout is complete." What the guides endorse instead is a harness-injected reminder: "After several in a row (five, for example), append a reminder", sent as a turn-scoped system message and dropped "after the second or third".
 Fix shape: delete; if updates matter to a human reader, say what an update should contain, not how often. A harness-injected reminder that fires after N silent steps is a turn-scoped mechanism, not instruction-file prose — R-04 still applies to a static "every N tool calls" line.
-Source: https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/prompting-claude-sonnet-5 (User-facing progress updates) · https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/prompting-claude-opus-5-5 (User-facing progress updates) · https://developers.openai.com/cookbook/examples/gpt-5/codex_prompting_guide (Getting Started)
+Source: https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/prompting-claude-sonnet-5 (User-facing progress updates) · https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/prompting-claude-sonnet-5-5 (User-facing progress updates) · https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/prompting-claude-opus-5-5 (User-facing progress updates) · https://developers.openai.com/cookbook/examples/gpt-5/codex_prompting_guide (Getting Started)
 
 ### R-05 No narration suppression        tags: [anthropic] [file: any] [tier: easy]
 Detect: lint — "hold (all) findings/results/updates/output for/until the final …".
 Why: "Some earlier models were eager to give updates while working, which led to system prompt lines such as 'hold all findings for the final response.' Remove lines like that before adding anything."
 Fix shape: delete the line.
-Source: https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/prompting-claude-fable-5-1 (Ask for user-facing progress updates)
+Source: https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/prompting-claude-fable-5-1 (Ask for user-facing progress updates) · https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/prompting-claude-sonnet-5-5 (User-facing progress updates)
 
 ### R-06 No blanket anti-formatting blocks        tags: [anthropic] [file: any] [tier: easy]
 Detect: lint — lines that forbid markdown, bullets, headers, headings, bold, lists or formatting ("do not use markdown", "never use bullet points", "no headers").
@@ -61,15 +61,15 @@ Source: https://platform.claude.com/docs/en/build-with-claude/prompt-engineering
 
 ### R-07 No hand-written reasoning plans        tags: [anthropic] [file: any] [tier: hard]
 Detect: lint — "think step by step", "step-by-step reasoning/thinking", "reason step by step", and numbered list items that open with think / reason / reflect.
-Why: "A prompt like 'think thoroughly' often produces better reasoning than a hand-written step-by-step plan. [The model]'s reasoning frequently exceeds what a human would prescribe."
-Fix shape: replace the plan with a one-line goal plus "think thoroughly"; keep numbered steps only where they are an operational procedure (commands in order), not a reasoning script.
-Source: https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/claude-prompting-best-practices (Leverage thinking & interleaved thinking capabilities)
+Why: "A prompt like 'think thoroughly' often produces better reasoning than a hand-written step-by-step plan. [The model]'s reasoning frequently exceeds what a human would prescribe." Depth is an effort setting, not a prose setting: "Asking it in the system prompt to think less doesn't reliably reduce its thinking", and for chat prompts "The model determines how much to think, and effort is the main control." A short think-first line is a measured per-model patch, not a default: on structured-output reasoning tasks at `high` effort "Think the problem through before you answer." "brings accuracy close to what the model reaches at `xhigh`".
+Fix shape: replace the plan with a one-line goal and leave depth to effort. A single think-first line is acceptable only where the file names the model and task it was measured on (structured-output reasoning); in a chat system prompt or an agent-neutral file, delete rather than rewrite it. Keep numbered steps only where they are an operational procedure (commands in order), not a reasoning script.
+Source: https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/claude-prompting-best-practices (Leverage thinking & interleaved thinking capabilities) · https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/prompting-claude-opus-5-5 (Thinking instructions in chat system prompts) · https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/prompting-claude-sonnet-5-5 (Calibrate effort; Reasoning tasks with JSON output)
 
 ### R-08 No "do not think" rules        tags: [anthropic] [file: any] [tier: easy]
 Detect: lint — "do not / don't / never think" or "… reason" (not followed by about / of / that).
-Why: "If your system prompt contains a rule instructing the model not to think or not to reason, remove it; that kind of instruction increases tag leakage."
-Fix shape: delete; control depth through effort, not prose. Thinking is always on for the newest models, so a "do not think" line is dead text there too.
-Source: https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/prompting-claude-opus-5 (Running with thinking disabled) · https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/claude-prompting-best-practices (Leverage thinking & interleaved thinking capabilities)
+Why: "If your system prompt contains a rule instructing the model not to think or not to reason, remove it; that kind of instruction increases tag leakage." The same holds when thinking is minimised rather than off: "remove any instruction that tells the model not to think. Such instructions make it more likely that the model writes internal XML tags in its visible output."
+Fix shape: delete; control depth through effort, not prose. Where thinking is always on, or can only be minimised, a "do not think" line is dead text that still raises tag leakage.
+Source: https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/prompting-claude-opus-5 (Running with thinking disabled) · https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/prompting-claude-sonnet-5-5 (Running without up-front thinking) · https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/prompting-claude-haiku-5-5 (Use effort to control thinking) · https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/claude-prompting-best-practices (Leverage thinking & interleaved thinking capabilities)
 
 ### R-09 No recall-suppressing review instructions        tags: [anthropic] [file: any] [tier: easy]
 Detect: lint — "only report high-/critical-severity", "be conservative", "don't nitpick".
@@ -81,7 +81,7 @@ Source: https://platform.claude.com/docs/en/build-with-claude/prompt-engineering
 Detect: lint — "prefill" (any form), "budget_tokens".
 Why: prefilled last assistant turns "are no longer supported" and return a 400 error on current models; `budget_tokens` "is deprecated" and returns a 400 on newer models — "move budget control to `effort`".
 Fix shape: delete the instruction or replace with the effort-based equivalent.
-Source: https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/claude-prompting-best-practices (Migrating away from prefilled responses; Leverage thinking)
+Source: https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/claude-prompting-best-practices (Migrating away from prefilled responses; Overthinking and excessive thoroughness; Leverage thinking & interleaved thinking capabilities; Migrating to Claude Sonnet 5.5)
 
 ### R-11 No time-sensitive phrasing        tags: [anthropic] [file: any] [tier: easy]
 Detect: lint — "before / after / until / since / as of / by <Month> <year>".
@@ -117,9 +117,9 @@ Source: https://platform.claude.com/docs/en/agents-and-tools/agent-skills/best-p
 
 ### R-16 No contradictory rules        tags: [shared] [file: any] [tier: hard]
 Detect: lint — within one file, the same action phrase under both an always/must and a never/do-not modal ("always commit to X" vs "never commit to X"). Judgment adds contradictions the pattern cannot see, including across the global file and a project file.
-Why: "if two rules contradict each other, [the model] may pick one arbitrarily. Review your CLAUDE.md files … periodically to remove outdated or conflicting instructions." The other vendor: "unclear or conflicting guidance in a skill file may cause the model to pause and block work early."
+Why: "if two instructions contradict each other, [the model] may pick one arbitrarily. Review your CLAUDE.md files, nested CLAUDE.md files in subdirectories, and `.claude/rules/` periodically to remove outdated or conflicting instructions." Across scopes too: "Neither set overrides the other: if a user rule and a project rule conflict, [the model] may follow either one, so keep the two consistent." The other vendor: "unclear or conflicting guidance in a skill file may cause the model to pause and block work early."
 Fix shape: resolve to one rule with its scope stated ("in a worktree …"); record which one won in the owning issue's decision log.
-Source: https://code.claude.com/docs/en/memory (Write effective instructions) · https://developers.openai.com/api/docs/guides/latest-model (Instruction following)
+Source: https://code.claude.com/docs/en/memory (Write effective instructions; User-level rules) · https://developers.openai.com/api/docs/guides/latest-model (Instruction following)
 
 ### R-17 Vendor-specific guidance carries a neutrality marker        tags: [shared] [file: any] [tier: easy]
 Detect: lint — in an agent-neutral file or section, a paragraph that names one audience's product terms (`sources.toml` `terms`) and none of the other's, without any audience marker.
@@ -137,7 +137,7 @@ Source: https://platform.claude.com/docs/en/build-with-claude/prompt-engineering
 Detect: judgment — a task-shaped instruction (a skill, a workflow section) with no statement of what is in and out of scope.
 Why: current models "can also expand the scope of a task, adding steps that weren't requested"; "Deliver what was asked, at the scope intended." The other vendor: "infer the user's intent and task scope from the instructions and prior conversation context." And the scope is the deliverable: "The user's request — or the plan they approved — sets the scope, and the scope is the deliverable: don't quietly narrow, widen, or swap it."
 Fix shape: one sentence naming the deliverable and what is explicitly out of scope.
-Source: https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/prompting-claude-opus-5 (Task scope and over-verification) · https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/prompting-claude-fable-5-1 (Finish the whole task) · https://developers.openai.com/api/docs/guides/latest-model (Initiative and follow-through)
+Source: https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/prompting-claude-opus-5 (Task scope and over-verification) · https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/prompting-claude-fable-5-1 (Finish the whole task) · https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/prompting-claude-sonnet-5-5 (Steer initiative and scope) · https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/prompting-claude-haiku-5-5 (Prevent early stopping in long agent prompts) · https://developers.openai.com/api/docs/guides/latest-model (Initiative and follow-through)
 
 ### R-20 Explicit length calibration        tags: [shared] [file: any] [tier: hard]
 Detect: judgment — an instruction that produces a written artefact (report, issue body, digest, summary) with no length or density guidance.
@@ -149,7 +149,7 @@ Source: https://platform.claude.com/docs/en/build-with-claude/prompt-engineering
 Detect: judgment — an unattended or long-running workflow that does not say to carry reversible work through without asking, or that has such a block without the "a question is answered with an assessment, not a fix" exception.
 Why: the autonomy block — "The user is not watching in real time … For reversible actions that follow from the original request, proceed without asking" — is paired with "when the user is describing a problem, asking a question, or thinking out loud … the deliverable is your assessment." The other vendor: "bias towards action and carry the user's intended task to completion" unless "clearly destructive or irreversible". When a question comes up partway, the workflow does everything that doesn't depend on the answer first, then states the assumption made — or asks at the end of a turn that also delivers progress.
 Fix shape: add the missing half; keep the opening sentence as written.
-Source: https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/prompting-claude-fable-5-1 (Finish the whole task) · https://developers.openai.com/api/docs/guides/latest-model (Initiative and follow-through)
+Source: https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/prompting-claude-fable-5-1 (Finish the whole task) · https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/prompting-claude-sonnet-5-5 (Steer initiative and scope) · https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/prompting-claude-haiku-5-5 (Prevent early stopping in long agent prompts) · https://developers.openai.com/api/docs/guides/latest-model (Initiative and follow-through)
 
 ### R-22 Reversibility gate names the destructive actions        tags: [shared] [file: any] [tier: hard]
 Detect: judgment — a "confirm before destructive actions" rule that does not enumerate what counts as destructive in this context.
@@ -171,7 +171,7 @@ Source: https://platform.claude.com/docs/en/build-with-claude/prompt-engineering
 
 ### R-25 Structure mixed content        tags: [anthropic] [file: any] [tier: hard]
 Detect: judgment — instructions, reference data and examples interleaved in one undifferentiated block.
-Why: "XML tags help [the model] parse complex prompts unambiguously, especially when your prompt mixes instructions, context, examples, and variable inputs." For instruction files: "use markdown headers and bullets to group related instructions" — "organized sections are easier to follow than dense paragraphs".
+Why: "XML tags help [the model] parse complex prompts unambiguously, especially when your prompt mixes instructions, context, examples, and variable inputs." For instruction files: "group related instructions under markdown headers and bullets" — "Organized sections are easier for [the model] to follow than dense paragraphs".
 Fix shape: separate the kinds under headings or tags.
 Source: https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/claude-prompting-best-practices (Structure prompts with XML tags) · https://code.claude.com/docs/en/memory (Write effective instructions)
 
@@ -187,7 +187,7 @@ Source: https://code.claude.com/docs/en/memory · https://developers.openai.com/
 Detect: judgment — an always-on rule stated as an absolute guarantee ("this can never happen") that no hook, test or CI check actually enforces.
 Why: instruction files are "context, not enforced configuration" — "there's no guarantee of strict compliance". "If the instruction is something that must run at a specific point … write it as a hook instead." A guarantee that nothing enforces teaches readers to trust it.
 Fix shape: name the enforcing hook/check, or reword as guidance and file the enforcement gap.
-Source: https://code.claude.com/docs/en/memory (Write effective instructions; Troubleshoot memory issues → Claude isn't following my CLAUDE.md) · https://developers.openai.com/codex/guides/agents-md
+Source: https://code.claude.com/docs/en/memory (CLAUDE.md vs auto memory; Write effective instructions; Troubleshoot memory issues → Claude isn't following my CLAUDE.md) · https://developers.openai.com/codex/guides/agents-md
 
 ### R-28 Subagent delegation stance stays scoped        tags: [conflict] [file: any] [tier: hard]
 Detect: judgment — an agent-neutral file that tells the reader to delegate more, or less, without a vendor scope marker.
@@ -203,9 +203,9 @@ Source: https://developers.openai.com/api/docs/guides/latest-model (Instruction 
 
 ### R-30 No reasoning-in-the-answer instructions        tags: [anthropic] [file: any] [tier: easy]
 Detect: lint — "explain/show your reasoning in the response", "write out your reasoning", "show your work", "think out loud in your answer".
-Why: "Remove instructions that stood in for thinking. If your prompt asked the model to write out its reasoning in the response as a substitute for thinking, remove that instruction … a prompt that pushes the model to reproduce its reasoning in the response text can be declined with the `reasoning_extraction` refusal category."
+Why: "Remove instructions that stood in for thinking. If your prompt asked the model to write out its reasoning in the response as a substitute for thinking, remove that instruction … a prompt that pushes the model to reproduce its reasoning in the response text may be declined with the `reasoning_extraction` refusal category."
 Fix shape: delete the line; if the reasoning is needed downstream, read the summarized thinking instead.
-Source: https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/prompting-claude-opus-5-5 (Prompts written for thinking disabled; Safeguard refusals)
+Source: https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/prompting-claude-opus-5-5 (Prompts written for thinking disabled; Safeguard refusals) · https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/prompting-claude-sonnet-5-5 (Safeguard refusals)
 
 ### R-31 A text-only stop is a report, not completion        tags: [anthropic] [file: any] [tier: hard]
 Detect: judgment — an unattended or scheduled workflow that treats the agent's turn ending as proof the task finished, with no completion condition or open-items checklist, or that re-prompts a stalled run without a cap.
@@ -295,6 +295,16 @@ Why: "Skills act as additions to models, so effectiveness depends on the underly
 Fix shape: read the failing case's transcript, then tighten the step the model got wrong; for an advisory-tier-only failure, add the missing guidance without over-explaining for the larger tiers.
 Source: https://platform.claude.com/docs/en/agents-and-tools/agent-skills/best-practices (Test with all models you plan to use; Build evaluations first; Testing)
 
+## Tool use
+
+When the reader reaches for a tool. R-02 owns the blanket default to a tool; R-45 its mirror, a blanket limit on one.
+
+### R-45 No blanket tool-use discouragement        tags: [anthropic] [file: any] [tier: easy]
+Detect: lint — "only use tools when strictly necessary", "minimize tool calls", "minimise tool calls", "avoid (using|calling) tools unless". Consider-only for its first weekly cycle (the run on or after 2026-10-22), because a phrase can be a real cost cap on a scheduled job rather than a blanket default: it becomes a normal rule on 2026-10-29, when this sentence is deleted.
+Why: on chat and knowledge-work tasks the model "sometimes answers from its training knowledge when a web search would catch details that have changed"; the first fix is to "check your prompt for language that discourages tool use, such as 'only use tools when strictly necessary' or 'minimize tool calls', and remove it." The mirror is also wrong: a blanket "search for any present-day factual question, regardless of how confident you are" made the model "search on half of the prompts that needed no search" with no more correct answers.
+Fix shape: replace with the concrete condition under which the tool is worth its cost (details that may have changed since training, a named expensive call), or delete; a hard cost cap on a scheduled job states the cap and its reason (R-18).
+Source: https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/prompting-claude-sonnet-5-5 (Tool use in chat and knowledge work) · https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/prompting-claude-haiku-5-5 (Accurate search results)
+
 ## Covered elsewhere
 
 Guidance on a tracked page that another owner already measures, so no rule here duplicates it.
@@ -311,7 +321,7 @@ Source: https://platform.claude.com/docs/en/agents-and-tools/agent-skills/best-p
 
 Recorded so a cold reader has the reasoning; none of these are scanned. Tags name whose guidance each is.
 
-- `[shared]` **Effort is the primary depth control** on current models; prompt prose is the fallback. Tuning effort per tier is `docs/model-tiers.md`'s job, not this skill's.
+- `[shared]` **Effort is the primary depth control** on current models; prompt prose is the fallback, and it is the weaker lever: "Asking it in the system prompt to think less doesn't reliably reduce its thinking" — lower the effort level instead. Tuning effort per tier is `docs/model-tiers.md`'s job, not this skill's.
 - `[anthropic]` **Keep conversation history append-only** and put per-turn reminders in turn-scoped system messages — a harness concern (prompt cache and thinking-block validity), not an instruction-file one.
 - `[anthropic]` **Put long-form data at the top of a prompt, the query at the bottom** — queries at the end "can improve response quality by up to 30 percent" on multi-document inputs. Instruction files are not long-context prompts; applies to skills that assemble prompts for the local hub.
 - `[shared]` **Sampling parameters** (`temperature`, `top_p`, `top_k`) are rejected by the newest models — an API concern.
@@ -323,19 +333,31 @@ Recorded so a cold reader has the reasoning; none of these are scanned. Tags nam
 - `[anthropic]` **Mark pasted text** with `<pasted_content>` tags plus a system-prompt note — a harness concern; skills that ingest transcripts (`/issue-add`) may adopt it.
 - `[anthropic]` **Parallel-calls instruction as a turn-scoped system message** in long loops — a harness concern.
 - `[anthropic]` **HTML block comments are stripped** from `CLAUDE.md` before injection, so they are a token-free place for maintainer notes.
-- `[anthropic]` **`CLAUDE.md` shadows `AGENTS.md`**: when any `CLAUDE.md` exists, the agent reads only that unless `claude-md-and-agents-md` is set. A fact for the fleet's `AGENTS.md` interop, not a file defect.
+- `[anthropic]` **`CLAUDE.md` shadows `AGENTS.md`**: under the default `claude-md-or-agents-md` setting the agent reads `AGENTS.md` only when no `CLAUDE.md`, `.claude/CLAUDE.md` or local-override instruction file exists in the working directory or above; `~/.claude/CLAUDE.md`, the managed `CLAUDE.md` and `.claude/rules/` do not count, and `claude-md-and-agents-md` loads both. Reading `AGENTS.md` directly needs agent CLI v2.1.277 or later. A fact for the fleet's `AGENTS.md` interop, not a file defect.
 - `[anthropic]` **Conditional workflow pattern** — "Guide [the model] through decision points" with a branch per case. Fleet skills already branch by argument and label (`/issue-start`'s mode table); R-38 judges whether a branch is pinned tightly enough.
 - `[anthropic]` **Visual analysis** — render inputs as images for the model to read. A technique for skills whose inputs are visual (`/design-review` already screenshots); no instruction-file signal.
 - `[anthropic]` **Runtime environment and package availability** — the vendor-hosted app and API code-execution sandboxes (what is preinstalled, no network). The fleet runs its skills locally in the coding-agent CLI, so only the forward-slash consequence (R-36) and the "list your packages" consequence (R-43) apply.
 - `[anthropic]` **Next steps** — links to the quickstart and the other skill guides; navigation, not guidance.
-- `[shared]` **Effort names aren't comparable across models** — "Effort level names don't correspond to the same amount of thinking across models". The owner is `docs/model-tiers.md`.
+- `[shared]` **Effort names aren't comparable across models** — "Effort level names don't correspond to the same amount of thinking across models" (the per-model page, not the hub, now carries it), and a new model's levels are recalibrated: "a level doesn't produce the same amount of thinking as the same level on" its predecessor. The owner is `docs/model-tiers.md`.
+- `[anthropic]` **Mid-turn user input and harness notices** — user text goes in a user turn, never inside a `tool_result` block; reminders go in a separate system message. A harness concern.
+- `[anthropic]` **JSON output on reasoning tasks** — use structured outputs, add "Think the problem through before you answer.", prefer adaptive thinking over `between_tools`, parse the last JSON value; with thinking off and structured outputs the model can skip a needed tool call. API and harness concerns; skills that call the hub with JSON schemas may adopt them. R-07 bounds the think-first line.
+- `[anthropic]` **Tolerant tool-call handling** — accept an unambiguous case-different tool name, or return `is_error: true` with the exact expected name. A harness concern.
+- `[anthropic]` **Give the current date next to a search tool** — render it once at conversation start and keep `system` and `tools` identical on later requests. Applies to research skills that assemble prompts for the hub.
+- `[anthropic]` **Prompt edits can break resumed conversations** — a request that sends thinking blocks back after `system` changed can return a 400, so suggested text goes into new conversations only. A harness concern.
+- `[anthropic]` **Per-message effort change** (beta) — keeps the prompt cache where a top-level `effort` change invalidates it. Owned by `docs/model-tiers.md`.
+- `[anthropic]` **Reasoning-like text in user-visible replies** — more common with thinking off or at `low`; switch to adaptive thinking at `medium`. A model-selection fact, not a file defect.
+- `[anthropic]` **The vendor's built-in audit** — `/doctor prompt-audit` (agent CLI v2.1.283 or later) flags instructions written for older models, references to files or commands that don't exist, and files that contradict each other. It overlaps R-01 to R-11 and R-16 but has no ledger or fleet-wide scope, so it does not replace this skill. A dead-reference check is the one item with no rule here; deferred, not adopted.
 
-Source: https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/claude-prompting-best-practices (Long context prompting; Optimize parallel tool calling) · https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/prompting-claude-fable-5-1 (Keep the conversation history append-only; Search triggering at low effort; Ask for user-facing progress updates; Writing density) · https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/prompting-claude-opus-5-5 (Calibrate effort; Mark pasted text in user messages) · https://platform.claude.com/docs/en/agents-and-tools/agent-skills/best-practices (Naming conventions; Conditional workflow pattern; Use visual analysis; Runtime environment; Package dependencies; Next steps) · https://code.claude.com/docs/en/memory (Import additional files) · https://developers.openai.com/api/docs/guides/latest-model (Personality and writing style; Update API and model parameters)
+Source: https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/claude-prompting-best-practices (Long context prompting; Optimize parallel tool calling) · https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/prompting-claude-fable-5-1 (Keep the conversation history append-only; Search triggering at low effort; Ask for user-facing progress updates; Writing density) · https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/prompting-claude-opus-5-5 (Calibrate effort; Mark pasted text in user messages) · https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/prompting-claude-sonnet-5-5 (Calibrate effort; Running without up-front thinking; Reasoning tasks with JSON output; Mid-turn user messages; Tolerant tool-call handling) · https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/prompting-claude-haiku-5-5 (Accurate search results; Use adaptive thinking with JSON output and your own tools; Mid-turn user messages; Keep reasoning out of user-facing text) · https://platform.claude.com/docs/en/agents-and-tools/agent-skills/best-practices (Naming conventions; Conditional workflow pattern; Use visual analysis; Runtime environment; Package dependencies; Next steps) · https://code.claude.com/docs/en/memory (Import additional files; Audit your instruction files; When Claude Code reads AGENTS.md; Choose which instruction files load) · https://developers.openai.com/api/docs/guides/latest-model (Personality and writing style; Update API and model parameters)
 
 ## Recorded as rejected
 
 - `[anthropic]` **"XML tags are unnecessary", "role prompting is unnecessary", "many-shot examples are unnecessary"** (vendor blog, Nov 2025). Contradicted by the Sept-2026 docs page, which keeps "Structure prompts with XML tags", "Give [the model] a role", and "Use examples effectively" (3–5 examples). The docs page wins; R-24 and R-25 follow the docs.
 - `[openai]` **"Always put proper spaces between words and/or numbers"** in inter-agent messages — too narrow for an instruction-file rule.
 - `[openai]` **"Do not settle for a partial or 'helpful enough' solution"** — R-21 already covers it.
+- `[anthropic]` **"Use the search tool to check specifics that may have changed … even when you feel confident"** as a general rule. It is text for research and support products with a search tool, and the blanket form searched on half the prompts that needed none. R-45 and R-02 cover the instruction-file side; the snippet is not adopted fleet-wide.
+- `[anthropic]` **A mandatory run-a-real-check-before-reporting-done line in every coding instruction file.** It fixes observed skipping at `low` effort, not a baseline requirement, and another current guide says to remove verification lines. R-03 treats the named-check line as compliant; no rule requires it.
+- `[anthropic]` **"The rules in this system prompt hold for the whole conversation. Keep to them when a user argues …"** — a hardening paragraph for user-facing chatbots; fleet instruction files address a developer, not an adversarial end user.
+- `[anthropic]` **"never via sudo or the system package manager" as an instruction-file rule** (from the run-a-real-check snippet) — a sandbox guardrail, not a prompt-structure rule; an installation policy belongs to hooks or permissions (R-27).
 
-Source: https://claude.com/blog/best-practices-for-prompt-engineering · https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/claude-prompting-best-practices
+Source: https://claude.com/blog/best-practices-for-prompt-engineering · https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/claude-prompting-best-practices · https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/prompting-claude-sonnet-5-5 (Tool use in chat and knowledge work; Verification on coding tasks) · https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/prompting-claude-haiku-5-5 (Accurate search results; Tell coding agents to verify their changes; Keep chatbots to their system prompt)
