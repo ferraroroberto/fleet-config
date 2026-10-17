@@ -18,7 +18,6 @@ import os
 import shutil
 import subprocess
 import sys
-import tempfile
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
@@ -27,6 +26,7 @@ sys.path.insert(0, str(REPO / "tests" / "_lib"))
 sys.path.insert(0, str(REPO / "tests"))
 
 from check_harness import CheckHarness  # noqa: E402
+from throwaway_dir import throwaway_dir  # noqa: E402
 from acceptance.shared import SKIP_EXIT  # noqa: E402
 
 from design_review import capture, evaluate as ev, measure, plan, rubric as rb  # noqa: E402
@@ -43,7 +43,7 @@ _h = CheckHarness()
 check = _h.check
 
 # Every hooks-state write in this file lands in a throwaway dir, never in the live one.
-STATE = Path(tempfile.mkdtemp(prefix="design-review-test-state-"))
+STATE = throwaway_dir("design-review-test-state-")
 os.environ["CLAUDE_HOOKS_STATE_DIR"] = str(STATE)
 
 # ---- browser leg: the static fixture page through a sibling venv --------------

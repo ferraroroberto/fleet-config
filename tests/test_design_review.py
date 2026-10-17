@@ -26,6 +26,7 @@ sys.path.insert(0, str(REPO / "tests" / "_lib"))
 sys.path.insert(0, str(REPO / "tests"))
 
 from check_harness import CheckHarness  # noqa: E402
+from throwaway_dir import throwaway_dir  # noqa: E402
 
 import design_review as dr  # noqa: E402
 from design_review import capture, evaluate as ev, measure, plan, rubric as rb  # noqa: E402
@@ -43,7 +44,7 @@ check(dr.evaluate is ev and callable(ev.evaluate), "the package exports the eval
 
 
 # Every hooks-state write in this file lands in a throwaway dir, never in the live one.
-STATE = Path(tempfile.mkdtemp(prefix="design-review-test-state-"))
+STATE = throwaway_dir("design-review-test-state-")
 os.environ["CLAUDE_HOOKS_STATE_DIR"] = str(STATE)
 
 

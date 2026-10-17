@@ -199,6 +199,11 @@ _STANDALONE_UNIT_CHECKS: Tuple[Tuple[str, str, str], ...] = (
      "exactly or under a directory, an empty or unreadable diff never narrows "
      "past what it can prove, GATE_FULL=1 forces it -- is testable on its own "
      "against a stubbed diff (fleet-config#1481)"),
+    ("throwaway_dir", "test_throwaway_dir.py",
+     "the design-review suites' temp state dir -- removed when the process "
+     "exits on a pass, a failed check and an uncaught exception alike, and "
+     "both suites take it from the helper rather than a bare mkdtemp -- is "
+     "testable on its own (fleet-config#1484)"),
     ("design_report", "test_design_report.py",
      "/design-review's report renderer + mock-up library -- placeholder "
      "filling that never raises, the rubric <-> library agreement in both "
