@@ -67,6 +67,15 @@
         ]
       },
       {
+        "matcher": "mcp__plugin_telegram_telegram__reply",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File C:/Users/rober/.claude/hooks/run-hook.ps1 -Hook telegram_file_reply_guard"
+          }
+        ]
+      },
+      {
         "matcher": "Edit|Write|MultiEdit",
         "hooks": [
           {

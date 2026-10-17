@@ -81,6 +81,7 @@ from acceptance.checks_guards import (  # noqa: E402
     _safe_kill_force_push_unit_checks,
     _safe_kill_git_bypass_unit_checks,
     _secret_scan_gh_unit_checks,
+    _telegram_file_reply_guard_unit_checks,
     _tier23_hooks_unit_checks,
     _venv_cd_prefix_guard_unit_checks,
     _venv_git_clean_guard_unit_checks,
@@ -192,6 +193,9 @@ def main() -> int:
 
     # ---- block_askuserquestion_chief: enforce, don't just discourage (fleet-config#463) ----
     run_unit(_block_askuserquestion_chief_unit_checks)
+
+    # ---- telegram_file_reply_guard: files only to the sender's private chat (fleet-config#1478) ----
+    run_unit(_telegram_file_reply_guard_unit_checks)
 
     # ---- _lib.detect_project: worktree-sibling cwd resolution (fleet-config#471) ----
     run_unit(_lib_detect_project_unit_checks)
