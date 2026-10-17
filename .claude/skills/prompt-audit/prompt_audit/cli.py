@@ -56,6 +56,7 @@ def cmd_drift(args: argparse.Namespace, cfg: dict) -> int:
     provisional = provisional_rules(rules, cfg.get("sources", {}), run.get("sources", []))
     per_repo = drift_items(all_findings, rules, entries, master, lite, provisional)
     judged = set(parts["judged"])
+    shas = {p["PLAN"]: p.get("sha", "") for p in parts["plan"] if p.get("sha", "") != "unmeasured"}
     unmeasured = {(f["path"], f["rule"]) for f in parts["unmeasured_rules"]}
     date = args.date or dt.date.today().isoformat()
     rubric = run.get("rubric") or rules_rubric()
@@ -73,11 +74,11 @@ def cmd_drift(args: argparse.Namespace, cfg: dict) -> int:
         fresh = per_repo.get(repo, [])
         if not fresh and not existing:
             continue
-        body, c = merge_drift(existing, fresh, judged, unmeasured, rules, date, rubric)
-        if not (c["new"] or c["matched"] or c["not_resurfaced"]):
+        body, c = merge_drift(existing, fresh, judged, unmeasured, rules, date, rubric, shas)
+        if not (c["new"] or c["matched"] or c["not_resurfaced"] or c["rule_changed"]):
             continue  # nothing this run could say about the repo: leave the issue untouched
         line = (f"|tier={c['tier']}|open={c['open']}|new={c['new']}|matched={c['matched']}"
-                f"|kept={c['kept']}|not_resurfaced={c['not_resurfaced']}")
+                f"|kept={c['kept']}|not_resurfaced={c['not_resurfaced']}|rule_changed={c['rule_changed']}")
         if args.dry_run:
             print(f"DRIFT={repo}|issue={'#' + str(got['number']) if got.get('number') else 'new'}{line}|dry-run")
             print(body)
