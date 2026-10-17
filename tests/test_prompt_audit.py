@@ -551,6 +551,33 @@ check(c5["not_resurfaced"] == 1 and "- [ ] " in body5 and "not re-surfaced 2026-
 body6, c6 = pa.merge_drift(body1, [], {"alpha/CLAUDE.md"}, {("alpha/CLAUDE.md", "R-17")}, RULES, "2026-09-20", rub12)
 check(c6["kept"] == 1 and "not re-surfaced 2026" not in body6, "an item whose rule was unmeasured this run is kept, not tagged")
 
+# #1477: a finding that vanished because the rubric changed (file bytes unchanged) is not "gone".
+rub_old, rub_new = "c" * 64, "d" * 64
+sha_a, sha_b = "a" * 12, "b" * 12
+filed, _ = pa.merge_drift("", per_repo["alpha"], {"alpha/CLAUDE.md"}, set(), RULES, "2026-10-07", rub_old,
+                          {"alpha/CLAUDE.md": sha_a})
+rc_body, rc = pa.merge_drift(filed, [], {"alpha/CLAUDE.md"}, set(), RULES, "2026-10-15", rub_new,
+                             {"alpha/CLAUDE.md": sha_a})
+check(rc["rule_changed"] == 1 and rc["not_resurfaced"] == 0 and "rule changed 2026-10-15" in rc_body
+      and "not re-surfaced 2026" not in rc_body and "tick it" not in rc_body and "- [ ] " in rc_body,
+      f"rubric changed + file unchanged reads 'rule changed', never gone or tickable (got {rc})")
+gone_body, gone = pa.merge_drift(filed, [], {"alpha/CLAUDE.md"}, set(), RULES, "2026-10-15", rub_new,
+                                 {"alpha/CLAUDE.md": sha_b})
+check(gone["not_resurfaced"] == 1 and gone["rule_changed"] == 0 and "not re-surfaced 2026-10-15" in gone_body,
+      f"rubric changed + file changed and the finding is absent still reads gone (got {gone})")
+legacy = re.sub(r" rubric=\S+ sha=\S+", "", filed)  # a pre-#1477 item: only the run log knows the old rubric
+check("rubric=" not in legacy.split("## Audit run log")[0] and "rubric `cccccccccccc`" in legacy,
+      "fixture: the legacy body has no per-item rubric, only the run-log line")
+lg_body, lg = pa.merge_drift(legacy, [], {"alpha/CLAUDE.md"}, set(), RULES, "2026-10-15", rub_new)
+check(lg["rule_changed"] == 1 and lg["not_resurfaced"] == 0 and "not re-surfaced 2026" not in lg_body,
+      f"a legacy item whose run-log rubric differs and whose file sha is unknown reads 'rule changed' (got {lg})")
+again, ag = pa.merge_drift(rc_body, [], {"alpha/CLAUDE.md"}, set(), RULES, "2026-10-22", "e" * 64,
+                           {"alpha/CLAUDE.md": sha_a})
+check(ag["rule_changed"] == 1 and again.count("_(rule changed") == 1, "a second rule change replaces the tag, never stacks it")
+rematch, rm = pa.merge_drift(rc_body, per_repo["alpha"], {"alpha/CLAUDE.md"}, set(), RULES, "2026-10-22", rub_new,
+                             {"alpha/CLAUDE.md": sha_a})
+check(rm["matched"] == 1 and "_(rule changed" not in rematch, "a re-raised finding drops the rule-changed tag")
+
 prov_repo = pa.drift_items(drift_findings, RULES, texts, MASTER, "", provisional={"R-15"})
 gamma_items = {i["rule"]: i for i in prov_repo["gamma"]}
 check(gamma_items["R-15"]["provisional"] and not gamma_items["R-17"]["provisional"]

@@ -32,8 +32,11 @@ ALWAYS_HARD_FILES = (f"{HOME_REPO}/global-CLAUDE.md", f"{MASTER_REPO}/CLAUDE.md"
 DESCRIPTION_PROSE_RULES = ("R-15",)
 _DRIFT_ITEM = re.compile(
     r"^- \[(?P<box>[ xX])\] (?P<content>.*?)<!-- prompt-drift: id=(?P<id>[0-9a-f]{12}) tier=(?P<tier>easy|hard)"
-    r" path=(?P<path>\S+) rule=(?P<rule>R-\d{2}) propagate=(?P<propagate>\S*) last-seen=(?P<seen>\S+) -->[ \t]*$")
+    r" path=(?P<path>\S+) rule=(?P<rule>R-\d{2}) propagate=(?P<propagate>\S*) last-seen=(?P<seen>\S+)"
+    r"(?: rubric=(?P<rubric>[0-9a-f]{12}))?(?: sha=(?P<sha>[0-9a-f]{12}))? -->[ \t]*$")
 _NOT_RESURFACED = re.compile(r" _\(not re-surfaced[^)]*\)_$")
+_RULE_CHANGED = re.compile(r" _\(rule changed[^)]*\)_$")
+_LOGGED_RUBRIC = re.compile(r"@ rubric `([0-9a-f]{12})`")
 # The same block shape `/context-purge`'s check.py preserves byte-identical; keep the two in step.
 _MARKED_BLOCK = re.compile(r"<!--\s*([\w-]+:[\w-]+):start\s*-->.*?<!--\s*\1:end\s*-->", re.S)
 
@@ -95,7 +98,8 @@ def drift_items(findings: List[dict], rules: Dict[str, dict], texts: Dict[str, s
     return out
 
 
-def render_drift_item(item: dict, rules: Dict[str, dict], date: str, box: str = " ") -> str:
+def render_drift_item(item: dict, rules: Dict[str, dict], date: str, box: str = " ",
+                      rubric: str = "", sha: str = "") -> str:
     rel = item["path"].split("/", 1)[1]
     where = f"{rel}:{item['line']}" if item.get("line") else rel
     rule = rules.get(item["rule"], {})
@@ -110,13 +114,16 @@ def render_drift_item(item: dict, rules: Dict[str, dict], date: str, box: str = 
         parts.append(f"Provisional: {item['rule']} cites a vendor guide that changed on {date}; "
                      "check it against the pending rule-set update before fixing.")
     comment = _drift_comment(item["id"], item["tier"], item["path"], item["rule"],
-                             ",".join(item.get("propagate", [])), date)
+                             ",".join(item.get("propagate", [])), date, rubric, sha)
     return f"- [{box}] {' '.join(parts)}{comment}"
 
 
-def _drift_comment(item_id: str, tier: str, path: str, rule: str, propagate: str, seen: str) -> str:
+def _drift_comment(item_id: str, tier: str, path: str, rule: str, propagate: str, seen: str,
+                   rubric: Optional[str] = None, sha: Optional[str] = None) -> str:
+    """`rubric`/`sha` stamp what the item was last checked against (fleet-config#1477); legacy items lack them."""
+    stamp = (f" rubric={rubric}" if rubric else "") + (f" sha={sha}" if sha else "")
     return (f"<!-- prompt-drift: id={item_id} tier={tier} path={path} rule={rule} "
-            f"propagate={propagate} last-seen={seen} -->")
+            f"propagate={propagate} last-seen={seen}{stamp} -->")
 
 
 def parse_drift_body(body: str) -> Tuple[List[dict], List[str]]:
@@ -132,17 +139,21 @@ def parse_drift_body(body: str) -> Tuple[List[dict], List[str]]:
 
 
 def merge_drift(existing: str, fresh: List[dict], judged: set, unmeasured: set, rules: Dict[str, dict],
-                date: str, rubric: str) -> Tuple[str, dict]:
+                date: str, rubric: str, shas: Optional[Dict[str, str]] = None) -> Tuple[str, dict]:
     """The living-backlog merge: ticks survive, re-matched items refresh, gone items are tagged.
 
     `judged`: paths judged this run (a finding absent from a judged file is gone);
     `unmeasured`: (path, rule) pairs not established this run (their items are kept as-is).
     Items for files not judged this run (unchanged, so their verdicts still stand) are kept verbatim.
+    `shas`: path -> the sha12 of the bytes judged this run. A gone item filed under another rubric whose file
+    is not known to have changed is tagged `rule changed`, not gone: the rule set moved, no fix landed (#1477).
     """
     old, runs = parse_drift_body(existing)
     fresh_by_id = {i["id"]: i for i in fresh}
     judged_repos = {p.split("/", 1)[0] for p in judged}
-    counts = {"new": 0, "matched": 0, "kept": 0, "not_resurfaced": 0}
+    counts = {"new": 0, "matched": 0, "kept": 0, "not_resurfaced": 0, "rule_changed": 0}
+    rub12, shas = rubric[:12], shas or {}
+    logged = _LOGGED_RUBRIC.findall("\n".join(runs))
     lines, seen = [], set()
     for o in old:
         seen.add(o["id"])
@@ -154,27 +165,39 @@ def merge_drift(existing: str, fresh: List[dict], judged: set, unmeasured: set, 
         if f:
             # A shared line keeps the sisters this run did not rescan: their copies still stand.
             keep = {p for p in o["propagate"].split(",") if p and p not in judged_repos}
-            lines.append(render_drift_item({**f, "propagate": sorted(set(f["propagate"]) | keep)}, rules, date))
+            lines.append(render_drift_item({**f, "propagate": sorted(set(f["propagate"]) | keep)}, rules, date,
+                                           rubric=rub12, sha=shas.get(o["path"], "")))
             counts["matched"] += 1
         elif o["path"] in judged and (o["path"], o["rule"]) not in unmeasured:
-            tag = f" _(not re-surfaced {date}: the file was rescanned and this finding is gone — tick it once confirmed)_"
-            content = _NOT_RESURFACED.sub("", o["content"].rstrip())
-            lines.append(f"- [ ] {content}{tag}{_drift_comment(o['id'], o['tier'], o['path'], o['rule'], o['propagate'], o['seen'])}")
-            counts["not_resurfaced"] += 1
+            filed_under = o["rubric"] or (logged[-1] if logged else None)
+            rubric_moved = bool(filed_under) and filed_under != rub12
+            file_moved = bool(o["sha"]) and bool(shas.get(o["path"])) and o["sha"] != shas[o["path"]]
+            if rubric_moved and not file_moved:
+                tag = (f" _(rule changed {date}: file unchanged and the new rubric no longer raises this — "
+                       "a rule change, not a fix; do not tick)_")
+                counts["rule_changed"] += 1
+            else:
+                tag = f" _(not re-surfaced {date}: the file was rescanned and this finding is gone — tick it once confirmed)_"
+                counts["not_resurfaced"] += 1
+            content = _RULE_CHANGED.sub("", _NOT_RESURFACED.sub("", o["content"].rstrip()))
+            lines.append(f"- [ ] {content}{tag}"
+                         f"{_drift_comment(o['id'], o['tier'], o['path'], o['rule'], o['propagate'], o['seen'], o['rubric'], o['sha'])}")
         else:
             lines.append(o["raw"])
             counts["kept"] += 1
     for f in fresh:
         if f["id"] not in seen:
-            lines.append(render_drift_item(f, rules, date))
+            lines.append(render_drift_item(f, rules, date, rubric=rub12, sha=shas.get(f["path"], "")))
             counts["new"] += 1
     open_tiers = [m.group("tier") for m in map(_DRIFT_ITEM.match, lines)
-                  if m and m.group("box") == " " and not _NOT_RESURFACED.search(m.group("content").rstrip())]
+                  if m and m.group("box") == " " and not (_NOT_RESURFACED.search(m.group("content").rstrip())
+                                                          or _RULE_CHANGED.search(m.group("content").rstrip()))]
     counts["open"] = len(open_tiers)
     counts["tier"] = "none" if not open_tiers else ("hard" if "hard" in open_tiers else "easy")
     hard = open_tiers.count("hard")
     runs.append(f"- {date} @ rubric `{rubric[:12]}`: +{counts['new']} new, {counts['matched']} re-matched, "
-                f"{counts['kept']} kept (file not rescanned), {counts['not_resurfaced']} not re-surfaced")
+                f"{counts['kept']} kept (file not rescanned), {counts['not_resurfaced']} not re-surfaced"
+                + (f", {counts['rule_changed']} rule changed" if counts["rule_changed"] else ""))
     body = "\n".join([
         "Surfaced by `/prompt-audit` (fleet-config#831), kept up to date across runs. Only `violation` verdicts are "
         "filed here; `consider` verdicts stay advisory in the prompt-audit ledger digest. Rules, reasons and fix "
