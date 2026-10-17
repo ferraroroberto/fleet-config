@@ -1199,6 +1199,4 @@ else:
     check(proc6.returncode == 0 and "UNMEASURED=SYNTHETIC_FAILED" in proc6.stdout and "MODE=synthetic" in proc6.stdout,
           f"a launcher that never prints a URL makes the run SYNTHETIC_FAILED, not a crash -- {proc6.stdout[-300:]}")
 
-_h.report_and_exit("test_design_review", skip_code=SKIP_EXIT)
-
 _h.report_and_exit("test_design_review_browser", skip_code=SKIP_EXIT)
