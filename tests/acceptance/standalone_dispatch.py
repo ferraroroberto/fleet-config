@@ -187,9 +187,18 @@ _STANDALONE_UNIT_CHECKS: Tuple[Tuple[str, str, str], ...] = (
      "threshold + measurement-floor resolution, the scoring formula on one "
      "compliant and one violating fixture metrics.json, run-to-run determinism, "
      "the unmeasured lattice (dead target, failed tab, failed section never "
-     "read as a pass), the NOT_LISTENING-vs-TIMEOUT probe, and the browser leg "
-     "against a static fixture page through a sibling venv's Playwright, "
-     "skipped honestly when none has it -- is testable on its own (fleet-config#971)"),
+     "read as a pass), and the NOT_LISTENING-vs-TIMEOUT probe -- is testable "
+     "on its own (fleet-config#971)"),
+    ("design_review_browser", "test_design_review_browser.py",
+     "/design-review's browser leg -- the measure and walk CLIs against the "
+     "static fixture pages through a sibling venv's Playwright, skipped honestly "
+     "when none has it. ~34 min, so the gate routes it by diff "
+     "(`gate_routing.ROUTED_SURFACES`; GATE_FULL=1 forces it) (fleet-config#1481)"),
+    ("gate_routing", "test_gate_routing.py",
+     "which diffs run the slow browser suite -- a path matches a routed prefix "
+     "exactly or under a directory, an empty or unreadable diff never narrows "
+     "past what it can prove, GATE_FULL=1 forces it -- is testable on its own "
+     "against a stubbed diff (fleet-config#1481)"),
     ("design_report", "test_design_report.py",
      "/design-review's report renderer + mock-up library -- placeholder "
      "filling that never raises, the rubric <-> library agreement in both "
