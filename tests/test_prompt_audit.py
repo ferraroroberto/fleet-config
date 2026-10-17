@@ -708,8 +708,8 @@ check(skill_hits(skill_text("".join(f"{i}. Do thing {i}.\n" for i in range(1, 6)
       "R-39 assist: a five-item numbered list is under the threshold")
 check(len(skill_hits(skill_text("".join(f"{i}. Do thing {i}.\n" for i in range(1, 8))), "R-39")) == 1,
       "R-39 assist: a seven-item top-level numbered list counts when there are no step headings")
-check(sorted(r for r, v in RULES.items() if v["consider_only"]) == ["R-45"],
-      "only R-45 carries the consider-only first-cycle flag (R-39 and R-41 became normal rules on 2026-10-12)")
+check(sorted(r for r, v in RULES.items() if v["consider_only"]) == ["R-45", "R-46", "R-47", "R-48"],
+      "only R-45..R-48 carry the consider-only first-cycle flag (R-39 and R-41 became normal rules on 2026-10-12)")
 CONSIDER_RULES = {**RULES, "R-39": {**RULES["R-39"], "consider_only": True}}
 r39_hits = [h for h in pa.lint_entry(entry_for(LONG_FLOW, kind="skill", audience="claude",
                                                key="x/.claude/skills/s/SKILL.md"), CONSIDER_RULES, AUD).hits
@@ -786,6 +786,9 @@ check(nc["status"] == "not-checked" and pa.digest_line(nc) == "coverage: guide n
       "coverage: an unreadable page is not-checked, never uncovered 0")
 check(pa.coverage("idx", {"role": "index"}, "## A\n", COV_RULES)["status"] == "not-applicable",
       "coverage: an index page is not applicable")
+paren = pa.coverage("guide", COV_SRC, "## Personality (Friendly vs Pragmatic)\n\n## Tail\n",
+                    "Source: https://example.test/guide (Tail; Personality (Friendly vs Pragmatic))\n")
+check(paren["uncovered"] == [], f"coverage: a cited section title holding parentheses counts as cited (got {paren['uncovered']})")
 
 posted = pa.coverage_comment([cov])
 check(posted is not None and posted.count("prompt-audit-coverage: id=") == 2, "coverage: new sections make one comment")
