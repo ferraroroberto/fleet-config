@@ -29,10 +29,12 @@ needs `target` and `detail`:
 
 Three rules keep an exception from becoming permanent blindness:
 
-- It matches only the exact `detail` it accepted, when it names one. A new
-  problem in the same check changes the detail, so the finding is raised
-  again. An entry without `target` never matches a finding that has an
-  evidence file.
+- It matches only the exact `detail` it accepted, when it names one, apart
+  from the line number after the target path: a contract detail embeds
+  `<target>:<line>`, and an edit above the flagged element would otherwise
+  strand the entry (fleet-config#1475). A new problem in the same check
+  changes the message, so the finding is raised again. An entry without
+  `target` never matches a finding that has an evidence file.
 - A declared assertion is re-verified every run: each path's committed blob
   must hash identical in both repos. A mismatch, or anything that stops the
   comparison being made at all (missing sibling repo, unreadable blob), keeps
@@ -162,8 +164,15 @@ def verify(root: Path, entry: dict) -> Tuple[str, str]:
                     f"{len(entry['paths'])} path(s)")
 
 
+def _without_line(detail: str, target: str) -> str:
+    """`detail` with the line number after each `target:` path blanked, so an
+    entry pins the message and the file but not where in it the element sits."""
+    return re.sub(rf"{re.escape(target)}:\d+", f"{target}:", detail)
+
+
 def _matches(entry: dict, finding: dict) -> bool:
-    """A targeted entry matches its file and exact detail. One without `target`
+    """A targeted entry matches its file and its detail, line number aside
+    (fleet-config#1475), exact otherwise. One without `target`
     matches only a repo-level finding (no evidence file), and its detail only
     when it gives one."""
     if finding.get("status") not in ("WARN", "FAIL") or finding.get("id") != entry["check"]:
@@ -171,7 +180,10 @@ def _matches(entry: dict, finding: dict) -> bool:
     evidence = _LINE_SUFFIX_RE.sub("", finding.get("evidence") or "")
     if "target" not in entry:
         return not evidence and finding.get("detail") == entry.get("detail", finding.get("detail"))
-    return evidence == entry["target"] and finding.get("detail") == entry["detail"]
+    target = entry["target"]
+    return (evidence == target
+            and _without_line(finding.get("detail") or "", target)
+            == _without_line(entry["detail"], target))
 
 
 def apply_accepted(root: Path, checks: List[dict]) -> List[dict]:
@@ -216,5 +228,5 @@ def apply_accepted(root: Path, checks: List[dict]) -> List[dict]:
             scope = f"on {entry['target']}" if "target" in entry else "repo-level"
             out_rows.append(_row(
                 f"{entry['_label']} ({entry['check']} {scope}) matched no "
-                "current WARN/FAIL finding with that exact detail; update or remove it"))
+                "current WARN/FAIL finding with that detail; update or remove it"))
     return result + out_rows

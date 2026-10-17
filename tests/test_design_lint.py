@@ -2071,6 +2071,27 @@ check(modal_accepted["rows"]["modal-header"]["status"] == "ACCEPTED"
       and not modal_accepted["warns"],
       "a modal-header FAIL is accepted via [[design.accepted]], no stray WARN")
 
+# The detail embeds `<target>:<line>`, so an edit above the dialog shifts it. An
+# entry pins the check, the file and the message, not the line (fleet-config#1475).
+check(re.search(r"index\.html:\d+", modal_raised["detail"]) is not None,
+      "modal-header detail embeds the evidence line the entry used to pin")
+modal_shifted = lint_accepted(
+    accepted_toml(check="modal-header", target="index.html",
+                  detail=modal_raised["detail"], identical_to=None, paths=None),
+    index="\n\n\n\n" + PRE_MODAL_HTML)
+shifted_row = modal_shifted["rows"]["modal-header"]
+check(shifted_row["evidence"] != modal_raised["evidence"]
+      and shifted_row["status"] == "ACCEPTED" and not modal_shifted["warns"],
+      "an entry still matches when only the line number after the target moved")
+modal_other = lint_accepted(
+    accepted_toml(check="modal-header", target="index.html",
+                  detail=re.sub(r"(index\.html:\d+).*", r"\1 a different problem", modal_raised["detail"]),
+                  identical_to=None, paths=None),
+    index="\n\n\n\n" + PRE_MODAL_HTML)
+check(modal_other["rows"]["modal-header"]["status"] == "FAIL"
+      and any("matched no current" in w for w in modal_other["warns"]),
+      "a different message in the same check and file is still raised after the line shifts")
+
 # A repo-level finding has no evidence file, so no `target` can name it. The
 # minimal two-line entry (`check` + `reason`) accepts it (fleet-config#1322).
 RENDERED_LEG = '[[design.accepted]]\ncheck = "rendered-leg"\nreason = "no live instance here"\n'

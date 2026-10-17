@@ -185,7 +185,7 @@ paths        = ["app_web/static/icon-180.png", "app_web/static/manifest.webmanif
 | `check` | required; a `contracts` result id (the finding's `id`) |
 | `reason` | required; one line saying why the finding is accepted |
 | `target` | optional; the finding's evidence file, repo-relative, line number dropped. Without it, the entry matches only a finding with no evidence file |
-| `detail` | required with `target`, optional without; the finding's exact detail string. When a new problem appears in the same check, the detail changes and the finding is raised again. Without `detail`, a repo-level entry accepts that check whatever its detail says |
+| `detail` | required with `target`, optional without; the finding's detail string. The `<target>:<line>` location inside it is compared with the line number dropped, so an edit above the flagged element doesn't strand the entry (fleet-config#1475); the rest is an exact match. When a new problem appears in the same check, the message changes and the finding is raised again. Without `detail`, a repo-level entry accepts that check whatever its detail says |
 | `record` | optional; link to where it was triaged |
 | `identical_to` + `paths` | optional, and only as a pair: a repo path, relative to this repo's root, plus the files whose **committed** blobs must hash identical in both repos |
 
