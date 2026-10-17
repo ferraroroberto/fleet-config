@@ -26,6 +26,8 @@ sys.path.insert(0, str(REPO / "tests" / "_lib"))
 sys.path.insert(0, str(REPO / "tests"))
 
 from check_harness import CheckHarness  # noqa: E402
+from throwaway_dir import throwaway_dir  # noqa: E402
+from throwaway_dir import throwaway_dir  # noqa: E402
 
 import design_review as dr  # noqa: E402
 from design_review import capture, evaluate as ev, measure, plan, rubric as rb  # noqa: E402
@@ -43,7 +45,7 @@ check(dr.evaluate is ev and callable(ev.evaluate), "the package exports the eval
 
 
 # Every hooks-state write in this file lands in a throwaway dir, never in the live one.
-STATE = Path(tempfile.mkdtemp(prefix="design-review-test-state-"))
+STATE = throwaway_dir("design-review-test-state-")
 os.environ["CLAUDE_HOOKS_STATE_DIR"] = str(STATE)
 
 
@@ -301,7 +303,7 @@ check("1400px" in report_mod.finding_sentence(_st, {"params": {"measure": 772}})
 # `[design] wide_views` loads through one shared reader (#1113)
 import wide_views as wv  # noqa: E402
 
-_wv_dir = Path(tempfile.mkdtemp(prefix="wv-"))
+_wv_dir = Path(throwaway_dir("wv-"))
 check(wv.load_wide_views(None) == ([], None) and wv.load_wide_views(_wv_dir) == ([], None), "wide_views: no root / no file is the normal, empty case")
 (_wv_dir / ".fleet.toml").write_text('layer = "working-web"\n[design]\nwide_views = ["board", " table "]\n', encoding="utf-8")
 check(wv.load_wide_views(_wv_dir) == (["board", "table"], None), "wide_views: a declared list loads, ids stripped")
@@ -314,7 +316,7 @@ _tgt = plan.resolve_target(str(_wv_dir), url_override="https://127.0.0.1:1")
 check(_tgt.wide_views == ["board"] and _tgt.wide_views_error is None, "plan.resolve_target carries the declaration")
 
 # `[design] no_chat_surface` is validated like the other [design] keys (#1443)
-_nc_dir = Path(tempfile.mkdtemp(prefix="nc-"))
+_nc_dir = Path(throwaway_dir("nc-"))
 check(plan.load_no_chat_surface(None) == (False, None) and plan.load_no_chat_surface(_nc_dir) == (False, None), "no_chat_surface: no root / no file is the normal, undeclared case")
 (_nc_dir / ".fleet.toml").write_text('layer = "working-web"\n[design]\nwide_views = ["board"]\n', encoding="utf-8")
 check(plan.load_no_chat_surface(_nc_dir) == (False, None), "no_chat_surface: a [design] table without the key is undeclared")
@@ -1206,7 +1208,7 @@ check(measure.default_params()["hitMin"] == 44.0 and measure.default_params(hit_
 
 # ---- plan: target resolution from projects.toml + .fleet.toml ----------------
 
-tmp = Path(tempfile.mkdtemp(prefix="design-review-plan-"))
+tmp = Path(throwaway_dir("design-review-plan-"))
 repo_dir = tmp / "demo-app"
 repo_dir.mkdir()
 (repo_dir / ".fleet.toml").write_text(

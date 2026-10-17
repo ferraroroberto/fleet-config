@@ -18,7 +18,6 @@ import os
 import re
 import subprocess
 import sys
-import tempfile
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
@@ -27,6 +26,7 @@ sys.path.insert(0, str(REPO / "tests" / "_lib"))
 sys.path.insert(0, str(REPO / "tests"))
 
 from check_harness import CheckHarness  # noqa: E402
+from throwaway_dir import throwaway_dir  # noqa: E402
 from acceptance.shared import SKIP_EXIT  # noqa: E402
 
 from design_review import evaluate as ev, mockups, report, rubric as rb  # noqa: E402
@@ -36,7 +36,7 @@ check = _h.check
 
 FIX = REPO / "tests" / "fixtures" / "design_review"
 RUBRIC = REPO / "design.rubric.toml"
-STATE = Path(tempfile.mkdtemp(prefix="design-report-test-state-"))
+STATE = Path(throwaway_dir("design-report-test-state-"))
 os.environ["CLAUDE_HOOKS_STATE_DIR"] = str(STATE)
 PKG = REPO / "skills" / "_lib" / "design_review"
 
@@ -225,7 +225,7 @@ summ = report.report_summary(out_v)
 check(summ["grade"] == "F" and summ["failed"] == len(rubric.rules) and summ["total"] == len(rubric.rules) and summ["unmeasured_rules"] == 0
       and set(summ["mockups"]) == set(mockups.MOCKUP_IDS), f"summary: grade, counts and the drawn mock-up set ({summ})")
 
-tmp = Path(tempfile.mkdtemp(prefix="design-report-cli-"))
+tmp = Path(throwaway_dir("design-report-cli-"))
 PY = sys.executable
 common = ["--rubric", str(RUBRIC), "--spec", str(FIX / "spec_violating.md"), "--spec-dark", str(FIX / "spec_violating.md")]
 env = {**os.environ, "CLAUDE_HOOKS_STATE_DIR": str(STATE)}
