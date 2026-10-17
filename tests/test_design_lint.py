@@ -27,7 +27,7 @@ import design_lint as dl  # noqa: E402
 
 sys.path.insert(0, str(Path(__file__).resolve().parent / "_lib"))
 from check_harness import CheckHarness  # noqa: E402
-from throwaway_dir import throwaway_dir  # noqa: E402
+from throwaway_dir import remove_dir, throwaway_dir  # noqa: E402
 
 _h = CheckHarness()
 check = _h.check
@@ -1972,7 +1972,7 @@ def lint_accepted(fleet_toml: str | None, index: str = APP_ICON_INDEX,
         return {"rows": {c["id"]: c for c in out if c["id"] != "accepted-exception"},
                 "warns": [c["detail"] for c in out if c["id"] == "accepted-exception"]}
     finally:
-        shutil.rmtree(base, ignore_errors=True)
+        remove_dir(base)
 
 
 def accepted_toml(**overrides: object) -> str:
