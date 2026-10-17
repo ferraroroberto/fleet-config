@@ -61,9 +61,9 @@ for name in ("test_design_review.py", "test_design_review_browser.py"):
     check("mkdtemp(prefix=\"design-review-test-state-\"" not in src, f"{name}: no bare mkdtemp for the state dir")
 
 # The other design suites hold the same contract (fleet-config#1487), and the browser suite exits under its own name only.
-for name in ("test_design_judgment.py", "test_design_ledger.py", "test_design_lint.py", "test_design_report.py", "test_design_review.py"):
-    src = (REPO / "tests" / name).read_text(encoding="utf-8")
-    check("mkdtemp" not in src, f"{name}: no bare mkdtemp")
+# Globbed, so a new design suite (and test_design_sweep_scan.py, #1489) is covered without editing this list.
+for path in sorted((REPO / "tests").glob("test_design_*.py")):
+    check("mkdtemp" not in path.read_text(encoding="utf-8"), f"{path.name}: no bare mkdtemp")
 
 browser_src = (REPO / "tests" / "test_design_review_browser.py").read_text(encoding="utf-8")
 check(browser_src.count("report_and_exit(") == 1 and 'report_and_exit("test_design_review_browser"' in browser_src,

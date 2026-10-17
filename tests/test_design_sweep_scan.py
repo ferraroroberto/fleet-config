@@ -12,9 +12,7 @@ Run: `E:/automation/fleet-config/.venv/Scripts/python.exe tests/test_design_swee
 
 from __future__ import annotations
 
-import shutil
 import sys
-import tempfile
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "skills" / "_lib"))
@@ -22,13 +20,14 @@ import design_sweep_scan as dss  # noqa: E402
 
 sys.path.insert(0, str(Path(__file__).resolve().parent / "_lib"))
 from check_harness import CheckHarness  # noqa: E402
+from throwaway_dir import throwaway_dir  # noqa: E402
 
 _h = CheckHarness()
 check = _h.check
 
 
 def make_tree(files: dict[str, str]) -> Path:
-    root = Path(tempfile.mkdtemp(prefix="design_sweep_"))
+    root = throwaway_dir("design_sweep_")
     for rel, body in files.items():
         p = root / rel
         p.parent.mkdir(parents=True, exist_ok=True)
@@ -70,40 +69,35 @@ spike_only_css_tree = make_tree({
     "spike/streamlit_app.py": "import streamlit as st\n",
 })
 
-try:
-    check(dss.classify_web_app(web_tree)[0] == "web",
-          "token-styled FastAPI PWA -> web (sweep it)")
-    check(dss.classify_web_app(streamlit_tree)[0] == "streamlit",
-          "streamlit_app.py + no FastAPI -> streamlit (skip)")
-    check(dss.classify_web_app(non_web_tree)[0] == "non_web",
-          "no stylesheet -> non_web (skip)")
-    check(dss.classify_web_app(plain_css_tree)[0] == "non_web",
-          "CSS with no :root custom props -> non_web (design-sync's own gate)")
-    check(dss.classify_web_app(web_plus_spike_tree)[0] == "web",
-          "FastAPI PWA with a streamlit spike -> web, not misfiled as streamlit-only")
-    check(dss.classify_web_app(spike_only_css_tree)[0] == "non_web",
-          "token CSS only under spike/ -> non_web (SKIP_DIR_PARTS excludes it)")
+check(dss.classify_web_app(web_tree)[0] == "web",
+      "token-styled FastAPI PWA -> web (sweep it)")
+check(dss.classify_web_app(streamlit_tree)[0] == "streamlit",
+      "streamlit_app.py + no FastAPI -> streamlit (skip)")
+check(dss.classify_web_app(non_web_tree)[0] == "non_web",
+      "no stylesheet -> non_web (skip)")
+check(dss.classify_web_app(plain_css_tree)[0] == "non_web",
+      "CSS with no :root custom props -> non_web (design-sync's own gate)")
+check(dss.classify_web_app(web_plus_spike_tree)[0] == "web",
+      "FastAPI PWA with a streamlit spike -> web, not misfiled as streamlit-only")
+check(dss.classify_web_app(spike_only_css_tree)[0] == "non_web",
+      "token CSS only under spike/ -> non_web (SKIP_DIR_PARTS excludes it)")
 
-    # The reason strings distinguish the three categories (distinct messages).
-    reasons = {
-        dss.classify_web_app(web_tree)[1].split()[0],
-        dss.classify_web_app(streamlit_tree)[1].split()[0],
-        dss.classify_web_app(non_web_tree)[1].split()[0],
-    }
-    check(len(reasons) == 3, "each category returns a distinct reason lead-word")
+# The reason strings distinguish the three categories (distinct messages).
+reasons = {
+    dss.classify_web_app(web_tree)[1].split()[0],
+    dss.classify_web_app(streamlit_tree)[1].split()[0],
+    dss.classify_web_app(non_web_tree)[1].split()[0],
+}
+check(len(reasons) == 3, "each category returns a distinct reason lead-word")
 
-    # Helper predicates.
-    check(dss._has_fastapi_signal(web_tree), "_has_fastapi_signal: FastAPI import -> True")
-    check(dss._has_fastapi_signal(web_plus_spike_tree), "_has_fastapi_signal: uvicorn -> True")
-    check(not dss._has_fastapi_signal(streamlit_tree), "_has_fastapi_signal: streamlit-only -> False")
-    check(not dss._is_streamlit_only(web_plus_spike_tree),
-          "_is_streamlit_only: FastAPI co-present -> False (not streamlit-only)")
-    check(dss._is_streamlit_only(streamlit_tree),
-          "_is_streamlit_only: streamlit_app.py, no FastAPI -> True")
-finally:
-    for t in (web_tree, streamlit_tree, non_web_tree, plain_css_tree,
-              web_plus_spike_tree, spike_only_css_tree):
-        shutil.rmtree(t, ignore_errors=True)
+# Helper predicates.
+check(dss._has_fastapi_signal(web_tree), "_has_fastapi_signal: FastAPI import -> True")
+check(dss._has_fastapi_signal(web_plus_spike_tree), "_has_fastapi_signal: uvicorn -> True")
+check(not dss._has_fastapi_signal(streamlit_tree), "_has_fastapi_signal: streamlit-only -> False")
+check(not dss._is_streamlit_only(web_plus_spike_tree),
+      "_is_streamlit_only: FastAPI co-present -> False (not streamlit-only)")
+check(dss._is_streamlit_only(streamlit_tree),
+      "_is_streamlit_only: streamlit_app.py, no FastAPI -> True")
 
 
 _h.report_and_exit("design_sweep_scan")
