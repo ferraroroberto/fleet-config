@@ -222,6 +222,9 @@ skills_dir      = ".claude/skills"
 # Its channel sessions send household documents without a per-send prompt
 # (life-os#265); the guard keeps those files in the requester's private chat.
 telegram_file_guard = true
+# Every skill's private context/memory/conversations live under .claude/, so the
+# bulk-dir guard must never drop it whole (fleet-config#1493).
+backup_include  = [".claude"]
 active_marker   = ".active-skill"
 # What every skill's bootstrap auto-loads (`_shared/bootstrap.md` §B, §D, §E),
 # measured by /context-audit's bootstrap-loads table (fleet-config#1014).
