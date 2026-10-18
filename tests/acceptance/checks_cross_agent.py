@@ -52,6 +52,8 @@ _CODEX_POLICY_COVERAGE = (
      "Edit|Write|MultiEdit", "advises"),
     ("Chief question suppression", "block_askuserquestion_chief", None, None,
      "not applicable"),
+    ("Telegram file replies", "telegram_file_reply_guard", None, None,
+     "not applicable"),
 )
 
 # Every function below inserts its own sys.path entry (HOOKS or skills/_lib)

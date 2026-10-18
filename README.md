@@ -115,6 +115,7 @@ fleet-config/
 │   ├── py_syntax_check.py
 │   ├── docs_dated_filename_guard.py   # PreToolUse on Write: block dated YYYY-MM-DD- filenames under docs/
 │   ├── block_askuserquestion_chief.py # PreToolUse on AskUserQuestion: block for chief-managed sessions — enforce, don't just discourage
+│   ├── telegram_file_reply_guard.py   # PreToolUse on the Telegram reply tool: files only to the sender's private chat (opt-in per project)
 │   ├── branch_before_edit_guard.py    # PreToolUse on Edit|Write|MultiEdit: block launcher-dispatched edits on the default branch, resolved from the target path (gitignored targets exempt)
 │   ├── hub_bypass_warn.py             # PostToolUse on *.py: nudge inline `claude -p` → route through the local hub
 │   ├── browser_stealth_lint.py        # PostToolUse: nudge a browser-launch file missing the anti-bot stealth kwargs

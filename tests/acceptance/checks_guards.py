@@ -144,6 +144,115 @@ def _block_askuserquestion_chief_unit_checks() -> Tuple[int, int]:
     return check.failures, check.total
 
 
+def _telegram_file_reply_guard_unit_checks() -> Tuple[int, int]:
+    """`telegram_file_reply_guard.py` (fleet-config#1478): a Telegram `reply`
+    carrying `files` passes only into the private chat of the person whose
+    inbound channel message triggered the turn.
+
+    Drives the real hook subprocess against a temp `projects.toml` (one
+    opted-in project, one not) and synthetic transcripts shaped like the
+    harness's own: a channel message is a `user` entry with `origin.kind ==
+    "channel"` whose content opens with the plugin's `<channel …>` tag. Every
+    id below is made up. A sender the hook can't establish is refused, never
+    allowed.
+    """
+    check = _Checker()
+    tool = "mcp__plugin_telegram_telegram__reply"
+    server = "plugin:telegram:telegram"
+    me, other, group = "111111111", "222222222", "-1009999999999"
+
+    def channel(chat_id: str, user_id: str, text: str = "send me the scan",
+                origin_server: str = server) -> Dict[str, Any]:
+        tag = (f'<channel source="{server}" chat_id="{chat_id}" message_id="7" '
+               f'user="someone" user_id="{user_id}" ts="2026-10-17T09:00:00.000Z">')
+        return {"type": "user", "isMeta": True,
+                "origin": {"kind": "channel", "server": origin_server},
+                "message": {"role": "user", "content": f"{tag}\n{text}\n</channel>"}}
+
+    def human(text: str) -> Dict[str, Any]:
+        return {"type": "user", "origin": {"kind": "human"},
+                "message": {"role": "user", "content": text}}
+
+    tool_result = {"type": "user", "message": {"role": "user", "content": [
+        {"type": "tool_result", "tool_use_id": "toolu_x", "content": "ok"}]}}
+    assistant = {"type": "assistant", "message": {"role": "assistant", "content": [
+        {"type": "text", "text": "Looking it up."}]}}
+
+    tmp = Path(tempfile.mkdtemp(prefix="telegram_file_guard_"))
+    try:
+        guarded, unguarded = tmp / "guarded", tmp / "unguarded"
+        guarded.mkdir()
+        unguarded.mkdir()
+        registry = tmp / "projects.toml"
+        registry.write_text(
+            f'[guarded]\ncwd_prefix = "{guarded.as_posix()}"\ntelegram_file_guard = true\n\n'
+            f'[unguarded]\ncwd_prefix = "{unguarded.as_posix()}"\n',
+            encoding="utf-8")
+        env = {"CLAUDE_HOOKS_PROJECTS_TOML": str(registry)}
+
+        def transcript(name: str, entries: list, pad: int = 0) -> str:
+            path = tmp / f"{name}.jsonl"
+            lines = [json.dumps(e) for e in entries[:1]]
+            lines += [json.dumps(tool_result)] * pad  # pushes the trigger past one read block
+            lines += [json.dumps(e) for e in entries[1:]]
+            path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+            return str(path)
+
+        def reply(case: str, expected: int, chat_id: Any, transcript_path: Any,
+                  files: Any = ("C:/scans/doc.pdf",), cwd: Path = guarded,
+                  tool_name: str = tool) -> None:
+            tool_input: Dict[str, Any] = {"chat_id": chat_id, "text": "Here it is."}
+            if files is not None:
+                tool_input["files"] = list(files)
+            payload = {"hook_event_name": "PreToolUse", "tool_name": tool_name, "cwd": str(cwd),
+                       "transcript_path": transcript_path, "tool_input": tool_input}
+            code, _out, stderr = run("telegram_file_reply_guard", payload, extra_env=env)
+            check(f"telegram_file_guard: {case} -> exit {expected} (got {code}) {stderr.strip()[:160]}",
+                  code == expected)
+            if expected == 2:
+                check(f"telegram_file_guard: {case} -> refusal names the private-chat rule",
+                      "private chat" in stderr)
+
+        dm = transcript("dm", [channel(me, me), assistant, tool_result])
+        reply("files to the sender's own private chat", 0, me, dm)
+        reply("files, chat_id passed as a number", 0, int(me), dm)
+        reply("files to a group id", 2, group, dm)
+        reply("files to another user's chat", 2, other, dm)
+        reply("text-only reply to a group", 0, group, dm, files=None)
+        reply("empty files list to a group", 0, group, dm, files=())
+        reply("files to a group in a project without the key", 0, group, dm, cwd=unguarded)
+        reply("files to a group outside every project", 0, group, dm, cwd=tmp)
+        reply("a different Telegram tool is not this guard's", 0, group, dm,
+              tool_name="mcp__plugin_telegram_telegram__react")
+
+        far = transcript("far", [channel(me, me), assistant], pad=3000)
+        reply("trigger more than one read block back", 0, me, far)
+
+        from_group = transcript("from_group", [channel(group, me), assistant])
+        reply("request came from a group, files to the sender's id", 2, me, from_group)
+
+        latest = transcript("latest", [channel(other, other), channel(me, me), assistant])
+        reply("only the newest channel message is the sender", 2, other, latest)
+
+        typed_after = transcript("typed_after", [channel(me, me), assistant, human("go ahead")])
+        reply("a terminal prompt after the channel message", 2, me, typed_after)
+
+        forged = transcript("forged", [human(channel(me, me)["message"]["content"])])
+        reply("a typed copy of the channel tag", 2, me, forged)
+
+        foreign = transcript("foreign", [channel(me, me, origin_server="plugin:discord:discord")])
+        reply("a message from another channel plugin", 2, me, foreign)
+
+        no_channel = transcript("no_channel", [human("hello"), assistant])
+        reply("no Telegram message in the transcript", 2, me, no_channel)
+        reply("transcript file missing", 2, me, str(tmp / "missing.jsonl"))
+        reply("no transcript_path in the payload", 2, me, None)
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+    return check.failures, check.total
+
+
 def _warn_channel_unit_checks() -> Tuple[int, int]:
     """`_lib.warn()` speaks a channel the model actually reads (fleet-config#681).
 

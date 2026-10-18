@@ -52,6 +52,7 @@ The table records observed delivery semantics rather than treating a registratio
 | Downstream inline `claude -p` (`hub_bypass_warn`) | advises | advises | not verified | not verified | unsupported | unsupported |
 | Browser launch stealth (`browser_stealth_lint`) | advises | advises | not verified | not verified | unsupported | unsupported |
 | Chief-managed question suppression (`block_askuserquestion_chief`) | blocks | not applicable | not applicable | unsupported | unsupported | unsupported |
+| Telegram file replies only to the sender's private chat (`telegram_file_reply_guard`) | not verified | not applicable | not applicable | not applicable | not applicable | not applicable |
 
 Pi's `advises` and `blocks` entries are native observations from the [deterministic-provider conformance run](adding-a-coding-harness.md#pi-policy-conformance): it retained the GitHub-body advisory and refused the dated-document write. The branch, hub, and browser adapter paths are wired, but their matching conditions have not been demonstrated in a native Pi run, so they remain `not verified`. This evidence uses simulated model responses; Pi subscription authentication remains unconfirmed and the table does not imply otherwise. Chief-managed question suppression has no Pi adapter mapping and remains unsupported.
 
