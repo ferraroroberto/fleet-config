@@ -12,7 +12,7 @@ Layout, in dependency order (no module imports a later one):
   sources.py    vendor-guide freshness gate
   inventory.py  audiences, skill references + the scan-surface inventory
   rules.py      `rules.md` parsing and per-audience verdicts
-  lint.py       the lint engine (R-01..R-17, R-30, R-34..R-37; assists for R-39, R-43)
+  lint.py       the lint engine (R-01..R-17, R-30, R-34..R-37, R-45; assists for R-39, R-43)
   dedup.py      findings shared with the scaffolding master / lite global
   state.py      cadence state
   coverage.py   tracked-guide sections no `Source:` line cites (+ the page cache)

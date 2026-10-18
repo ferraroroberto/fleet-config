@@ -20,7 +20,6 @@ import os
 import re
 import subprocess
 import sys
-import tempfile
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
@@ -29,6 +28,7 @@ sys.path.insert(0, str(REPO / "tests" / "_lib"))
 sys.path.insert(0, str(REPO / "tests"))
 
 from check_harness import CheckHarness  # noqa: E402
+from throwaway_dir import throwaway_dir  # noqa: E402
 from acceptance.shared import SKIP_EXIT  # noqa: E402
 
 from design_review import evaluate as ev, judgment as jm, report, rubric as rb  # noqa: E402
@@ -38,7 +38,7 @@ check = _h.check
 
 FIX = REPO / "tests" / "fixtures" / "design_review"
 RUBRIC = REPO / "design.rubric.toml"
-STATE = Path(tempfile.mkdtemp(prefix="design-judgment-test-state-"))
+STATE = Path(throwaway_dir("design-judgment-test-state-"))
 os.environ["CLAUDE_HOOKS_STATE_DIR"] = str(STATE)
 PKG = REPO / "skills" / "_lib" / "design_review"
 
@@ -104,7 +104,7 @@ check(rb.validate_rubric(_base).judgment == [], "a rubric without [[judgment]] l
 
 # ---- the prompt: deterministic, bounded to the run's own inputs --------------
 
-run_dir = Path(tempfile.mkdtemp(prefix="design-judgment-run-")) / "20260922T000001Z"
+run_dir = Path(throwaway_dir("design-judgment-run-")) / "20260922T000001Z"
 run_dir.mkdir(parents=True)
 (run_dir / "metrics.json").write_text(json.dumps(metrics), encoding="utf-8")
 prompt = jm.judge_prompt(metrics, run_dir, rubric)

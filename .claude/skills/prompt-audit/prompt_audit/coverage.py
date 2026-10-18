@@ -24,7 +24,8 @@ COVERAGE_ROLES = ("hub", "per-model", "instruction-files")
 _HEADING = re.compile(r"^(#{2,4})\s+(.+?)\s*#*\s*$")
 _ANCHOR = re.compile(r"\s*\{#[^}]*\}$")
 _CHECKLIST = re.compile(r"^\s*[-*]\s+\[[ xX]\]\s+(.+)$")
-_SOURCE_PART = re.compile(r"(https?://[^\s()·]+)(?:\s*\(([^)]*)\))?")
+# A section list may hold a title with one level of parentheses ("Personality (Friendly vs Pragmatic)").
+_SOURCE_PART = re.compile(r"(https?://[^\s()·]+)(?:\s*\(((?:[^()]|\([^()]*\))*)\))?")
 ITEM_MARKER = "prompt-audit-coverage"
 
 

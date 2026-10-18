@@ -20,7 +20,6 @@ import re
 import shutil
 import subprocess
 import sys
-import tempfile
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "skills" / "_lib"))
@@ -28,6 +27,7 @@ import design_lint as dl  # noqa: E402
 
 sys.path.insert(0, str(Path(__file__).resolve().parent / "_lib"))
 from check_harness import CheckHarness  # noqa: E402
+from throwaway_dir import remove_dir, throwaway_dir  # noqa: E402
 
 _h = CheckHarness()
 check = _h.check
@@ -171,7 +171,7 @@ ADOPT_CSS = """
 .c { font-size: var(--font-body); border-radius: 50%; gap: var(--gap); }
 .d { background: transparent; color: currentColor; }
 """
-tree = Path(tempfile.mkdtemp(prefix="dl-adopt-"))
+tree = Path(throwaway_dir("dl-adopt-"))
 try:
     (tree / "s.css").write_text(ADOPT_CSS, encoding="utf-8")
     fam = dl.adoption(tree, [tree / "s.css"])
@@ -195,7 +195,7 @@ finally:
 def run_contracts(css: str, markup: str = "", spec_light: dict | None = None,
                   html_name: str = "i.html", spec_dark: dict | None = None,
                   js: str = "", files: dict[str, str] | None = None) -> dict:
-    t = Path(tempfile.mkdtemp(prefix="dl-con-"))
+    t = Path(throwaway_dir("dl-con-"))
     try:
         (t / "s.css").write_text(css, encoding="utf-8")
         html: list[Path] = []
@@ -254,7 +254,7 @@ check("standalone fixed-inset scroller" in noshell["nav-contract"]["detail"],
 
 # vendored nav present but the app-side shell missing -> still WARN (the shell
 # lives in the consuming app's CSS, so vendored presence alone can't PASS).
-t = Path(tempfile.mkdtemp(prefix="dl-nav-"))
+t = Path(throwaway_dir("dl-nav-"))
 try:
     (t / "s.css").write_text(NO_SHELL_CSS, encoding="utf-8")
     vend = t / "app/webapp/static/_vendored/nav"
@@ -391,7 +391,7 @@ _VT_ALL = ":root { --muted: #656d76; --icon-inline: 16px; --radius-sm: 8px; --hi
 
 def run_vendored_tokens(app_css: str, *, toml: str | None = _VT_TOML, comp_css: str = _VT_CSS,
                         readme: str | None = _VT_README, markup: str = "", js: str = "") -> dict:
-    t = Path(tempfile.mkdtemp(prefix="dl-vt-"))
+    t = Path(throwaway_dir("dl-vt-"))
     try:
         files = {"app/webapp/static/styles.css": app_css, f"{_VT_DIR}/icon-button.css": comp_css,
                  "scripts/classify_e2e.py": "pass\n"}
@@ -796,7 +796,7 @@ check(good["rendered-leg"]["status"] == "NA", "no index.html -> rendered-leg NA"
 
 # ---- icon-set: emoji vs Lucide (design.md Icons, fleet-config#284) ----
 
-_ic = Path(tempfile.mkdtemp(prefix="dl-icon-"))
+_ic = Path(throwaway_dir("dl-icon-"))
 try:
     (_ic / "s.css").write_text("", encoding="utf-8")
     (_ic / "i.html").write_text(
@@ -823,7 +823,7 @@ finally:
 
 # emoji baked into a JS string literal (app-launcher#368), not markup — the
 # scan target is rendered text content generally, not just tag positions.
-_icjs = Path(tempfile.mkdtemp(prefix="dl-iconjs-"))
+_icjs = Path(throwaway_dir("dl-iconjs-"))
 try:
     (_icjs / "s.css").write_text("", encoding="utf-8")
     (_icjs / "app.js").write_text(
@@ -846,7 +846,7 @@ check("\U0001F389" in dl.strip_comments(
     "// see https://example.com\nconst s = 'hi \U0001F389';", "js"),
     "strip_comments(js): a // comment's URL doesn't over-strip a later string literal")
 
-_ic394 = Path(tempfile.mkdtemp(prefix="dl-iconjs394-"))
+_ic394 = Path(throwaway_dir("dl-iconjs394-"))
 try:
     (_ic394 / "s.css").write_text("", encoding="utf-8")
     (_ic394 / "app.js").write_text(
@@ -879,7 +879,7 @@ check(dl.strip_comments(
 # permanent regression guard).
 _html394 = ('<!-- attach flow, same as the outer-bar \U0001F5BC button --><button>x</button>'
             '<!-- dismiss (or ✕) --><span>ok</span>')
-_htree394 = Path(tempfile.mkdtemp(prefix="dl-html394-"))
+_htree394 = Path(throwaway_dir("dl-html394-"))
 try:
     (_htree394 / "i.html").write_text(_html394, encoding="utf-8")
     sites394 = dl.find_emoji_sites(_htree394, [_htree394 / "i.html"], [])
@@ -906,7 +906,7 @@ check("●" in dl.strip_comments(_RB_JS, "js"),
       "strip_comments(js): regex literals still preserved by default — every "
       "other contract reads pattern text as source (#416)")
 
-_rb = Path(tempfile.mkdtemp(prefix="dl-regex416-"))
+_rb = Path(throwaway_dir("dl-regex416-"))
 try:
     (_rb / "s.css").write_text("", encoding="utf-8")
     (_rb / "readback.js").write_text(_RB_JS, encoding="utf-8")
@@ -934,7 +934,7 @@ finally:
 # xterm.js ships the VT100 DEC Special Graphics scan-line table (U+23BA-U+23BD)
 # inside its minified bundle. Not authored UI copy, and unfixable in the repo
 # that vendored it. The fleet's own `_vendored/` family stays in scope.
-_vend = Path(tempfile.mkdtemp(prefix="dl-vendor416-"))
+_vend = Path(throwaway_dir("dl-vendor416-"))
 try:
     (_vend / "s.css").write_text("", encoding="utf-8")
     third = _vend / "app/webapp/static/vendor"
@@ -988,7 +988,7 @@ HIT_SPEC_940 = {"icons.size.inline": "16px", "components.hit-target.min": "44px"
 
 
 def _contracts_940(files: dict[str, str]) -> dict:
-    t = Path(tempfile.mkdtemp(prefix="dl-940-"))
+    t = Path(throwaway_dir("dl-940-"))
     try:
         for name, body in files.items():
             path = t / name
@@ -1019,7 +1019,7 @@ check(nav940["nav-contract"]["status"] == "PASS",
       "the regression the #940 exclusion must not cause")
 
 # the escapee accounting follows the same rule, so the two cannot diverge
-_ad940 = Path(tempfile.mkdtemp(prefix="dl-ad940-"))
+_ad940 = Path(throwaway_dir("dl-ad940-"))
 try:
     for name, body in (("app/webapp/static/vendor/leaflet/leaflet.css", LEAFLET_CSS),
                        ("app/webapp/static/_vendored/btn/btn.css", FLEET_COMPONENT_CSS)):
@@ -1137,7 +1137,7 @@ check(_none["chevron-placement"]["status"] == "NA",
 # ---- nav-nesting: nav.tabs must be a <body> sibling of main.app, never
 #      nested inside it (_vendored/nav/README.md; app-launcher#369, #284) ----
 
-_nn = Path(tempfile.mkdtemp(prefix="dl-navnest-"))
+_nn = Path(throwaway_dir("dl-navnest-"))
 try:
     (_nn / "s.css").write_text(GOOD_CSS, encoding="utf-8")
     (_nn / "index.html").write_text(
@@ -1235,7 +1235,7 @@ check("showing" not in rh_few["row-height-scale"]["detail"],
 # `_BLOCK_RE` group 1 runs from the previous `}`, so it also carries the
 # marker `contracts()` injects — a *path* with "row" or "icon" in it must not
 # make that file's first rule a row or an icon rule.
-_fm = Path(tempfile.mkdtemp(prefix="dl-marker-"))
+_fm = Path(throwaway_dir("dl-marker-"))
 try:
     for name in ("_vendored/row/row.css", "_vendored/icons/icons.css"):
         path = _fm / name
@@ -1270,7 +1270,7 @@ check(_evidence("x\ny needle", r"needle") == "?:2"
       and _loc_at("needle", 0) == "?:1",
       "bare blob with no marker keeps counting from line 1 (#858)")
 
-_fl = Path(tempfile.mkdtemp(prefix="dl-evline-"))
+_fl = Path(throwaway_dir("dl-evline-"))
 try:
     (_fl / "a.css").write_text(".x { color: red; }\n.y { margin: 0; }\n"
                                "*:focus-visible { outline: 2px solid; }\n",
@@ -1362,7 +1362,7 @@ check(cb_html["no-native-checkbox"]["status"] == "PASS",
 
 # a bundled third-party library's own control is not the app's design choice
 # (the same `vendor/` exclusion find_emoji_sites applies, #416/#843)
-_cbv = Path(tempfile.mkdtemp(prefix="dl-cbv-"))
+_cbv = Path(throwaway_dir("dl-cbv-"))
 try:
     (_cbv / "s.css").write_text(GOOD_CSS, encoding="utf-8")
     lib = _cbv / "static/vendor/leaflet"
@@ -1714,8 +1714,8 @@ check(run_contracts(GOOD_CSS, js="pane.dataset.state = 'loading';\n"
 
 # ---- vendored byte-compare ----
 
-scaffold = Path(tempfile.mkdtemp(prefix="dl-scaf-"))
-approot = Path(tempfile.mkdtemp(prefix="dl-app-"))
+scaffold = Path(throwaway_dir("dl-scaf-"))
+approot = Path(throwaway_dir("dl-app-"))
 try:
     ref = scaffold / "app/webapp/static/_vendored/switch"
     ref.mkdir(parents=True)
@@ -1743,8 +1743,8 @@ finally:
 
 # ---- vendored icons-sprite: per-symbol compare, not whole-file (#284 finding 4) ----
 
-_spr_scaf = Path(tempfile.mkdtemp(prefix="dl-sprscaf-"))
-_spr_app = Path(tempfile.mkdtemp(prefix="dl-sprapp-"))
+_spr_scaf = Path(throwaway_dir("dl-sprscaf-"))
+_spr_app = Path(throwaway_dir("dl-sprapp-"))
 try:
     _sref = _spr_scaf / "app/webapp/static/_vendored/icons"
     _sref.mkdir(parents=True)
@@ -1813,8 +1813,8 @@ finally:
 
 for _layout_name, _static_prefix in (("app_web/static", "app_web/static"),  # local-llm-hub (#291)
                                        ("app/static", "app/static")):        # grocery (#292)
-    _scaf = Path(tempfile.mkdtemp(prefix="dl-scaf2-"))
-    _app = Path(tempfile.mkdtemp(prefix="dl-app2-"))
+    _scaf = Path(throwaway_dir("dl-scaf2-"))
+    _app = Path(throwaway_dir("dl-app2-"))
     try:
         _ref = _scaf / "app/webapp/static/_vendored/switch"
         _ref.mkdir(parents=True)
@@ -1838,7 +1838,7 @@ for _layout_name, _static_prefix in (("app_web/static", "app_web/static"),  # lo
 for _case, _dirs, _want in (
         ("scaffold layout over app/player", {"app/player/static": False, "app/webapp/static": False}, "app/webapp/static"),
         ("the shell's static dir over a bare one", {"web/a/static": False, "web/b/static": True}, "web/b/static")):
-    _app = Path(tempfile.mkdtemp(prefix="dl-app3-"))
+    _app = Path(throwaway_dir("dl-app3-"))
     try:
         for _d, _shell in _dirs.items():
             (_app / _d / "_vendored/switch").mkdir(parents=True)
@@ -1851,7 +1851,7 @@ for _case, _dirs, _want in (
         shutil.rmtree(_app, ignore_errors=True)
 
 # nav-contract provenance follows the same discovery, not just the vendored lens (#291)
-_t = Path(tempfile.mkdtemp(prefix="dl-nav2-"))
+_t = Path(throwaway_dir("dl-nav2-"))
 try:
     (_t / "s.css").write_text(GOOD_CSS, encoding="utf-8")
     _vend = _t / "app_web/static/_vendored/nav"
@@ -1867,7 +1867,7 @@ finally:
 
 # ---- sibling duplicate detection ----
 
-sib = Path(tempfile.mkdtemp(prefix="dl-sib-"))
+sib = Path(throwaway_dir("dl-sib-"))
 try:
     (sib / "a.js").write_text(
         "function schedule(ms) {}\nexport function unique1() {}\n", encoding="utf-8")
@@ -1953,7 +1953,7 @@ def lint_accepted(fleet_toml: str | None, index: str = APP_ICON_INDEX,
                   upstream: dict[str, str] | None = None) -> dict:
     """Run the real `contracts` CLI on a legacy-generator app repo; return
     `{"rows": {id: row}, "warns": [accepted-exception details]}`."""
-    base = Path(tempfile.mkdtemp(prefix="dl-acc-"))
+    base = Path(throwaway_dir("dl-acc-"))
     try:
         app_files = {"index.html": index, **legacy_files}
         if fleet_toml is not None:
@@ -1972,7 +1972,7 @@ def lint_accepted(fleet_toml: str | None, index: str = APP_ICON_INDEX,
         return {"rows": {c["id"]: c for c in out if c["id"] != "accepted-exception"},
                 "warns": [c["detail"] for c in out if c["id"] == "accepted-exception"]}
     finally:
-        shutil.rmtree(base, ignore_errors=True)
+        remove_dir(base)
 
 
 def accepted_toml(**overrides: object) -> str:
@@ -2131,7 +2131,7 @@ check(any("missing check" in w for w in no_check["warns"]),
 # ---- range-tab retired in favour of segmented (fleet-config#1407) ----
 
 def _contracts_range_tab(files: dict[str, str]) -> dict:
-    t = Path(tempfile.mkdtemp(prefix="dl-rt-"))
+    t = Path(throwaway_dir("dl-rt-"))
     try:
         for name, body in files.items():
             path = t / name
