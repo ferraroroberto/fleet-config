@@ -1,6 +1,8 @@
 # Using the local LLM hub from downstream code
 
-Examples and limitations behind `global-CLAUDE.md`'s "`local-llm-hub` local LLM hub" entry, which keeps the endpoints and routing rule. Live model ids and ports: the `local-llm-hub` README + `docs/model-comparison.md`, or `GET /v1/models`.
+Audio endpoints, examples and limitations behind `global-CLAUDE.md`'s "`local-llm-hub` local LLM hub" entry, which keeps the endpoints and routing rule. Live model ids and ports: the `local-llm-hub` README + `docs/model-comparison.md`, or `GET /v1/models`.
+
+**Audio:** Whisper-server at `127.0.0.1:8090` (`ggml-large-v3-turbo.bin`, OpenAI-compatible `/v1/audio/transcriptions`). The hub also proxies audio on `:8000` (`/v1/audio/transcriptions` + `/v1/audio/translations`) so requests land in the observability ring; direct `:8090` POSTs are lower-overhead but invisible to the admin UI. Port 8090 is mutex-shared with `automation/audio/transcribe_voice`.
 
 ```python
 from anthropic import Anthropic

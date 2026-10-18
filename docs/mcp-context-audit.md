@@ -60,6 +60,13 @@ End state: **zero account connectors enabled by default**, the journal running o
 
 This mirrors the existing fleet rules ("don't duplicate hub functionality" / Slack-via-Python-helper) and is routed up to `project-scaffolding` so the whole fleet inherits it: [project-scaffolding#65](https://github.com/ferraroroberto/project-scaffolding/issues/65).
 
+## Working rules (behind `global-CLAUDE.md`)
+
+`global-CLAUDE.md`'s "Prefer scripts over session-injected MCP connectors" entry keeps the rule; the two corollaries live here:
+
+- Keep the default connector set minimal; toggle one on per session that needs it.
+- A connector that becomes a recurring automation dependency is the signal to scriptify it and disable the connector by default.
+
 ## Method (reproducible)
 
 ```bash

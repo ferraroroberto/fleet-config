@@ -89,13 +89,11 @@ Never auto-commit or push, and never stage files, without being asked — prepar
 
 `main` is always shippable. One issue → one branch → one PR → merge → branch deleted, issue closed. Branch naming: `<type>/<issue-N>-<short-slug>` — e.g. `fix/28-terminal-reconnect`, `feat/30-osc-title`; type matches the commit prefix.
 
-**Lifecycle:** branch off latest `main` → first push opens the PR as **draft** with the issue's acceptance checklist → promote to ready when checks pass → squash-merge + auto-delete branch → `git checkout main && git pull && git branch -d <branch>`, `git fetch --prune`, confirm the issue auto-closed. (Some sister projects use a local-merge flow — follow the project's own pipeline where it differs.)
+**Lifecycle:** branch off latest `main` → first push opens the PR as **draft** with the issue's acceptance checklist → promote to ready when checks pass → squash-merge + auto-delete branch → `git checkout main && git pull && git branch -d <branch>`, `git fetch --prune`, confirm the issue auto-closed. (Some sister projects use a local-merge flow — follow the project's own pipeline where it differs.) **Concurrent same-repo work:** first come, first owns `main` — later sessions build in an isolated `git worktree` (`<repo>-wt-<N>`, venv junctioned) on their own branch; the `issue-*` skills automate it via `fleet-config`'s `skills/_lib/worktree_claim.py`, mechanics + the junction-teardown footgun in that repo's `docs/skills.md` ("Concurrent same-repo work").
 
 **Hard rules:** never commit to `main` directly — the sanctioned exceptions are the **`/quick` skill** (explicit invocation is the authorization; its SKILL.md owns the size caps, mandatory verification, and escalate-to-issue rule) and a **scheduled skill's own generated `architecture/` artifact refresh** (e.g. `/config-map`, `/system-map` committing `docs: refresh config/system map (<date>)` directly to `main` when already running there unattended) — idempotent, deterministic, re-derivable output with no reviewable judgment call, so the normal branch/PR gate adds ceremony without a safety benefit; never force-push a branch someone else or CI might have pulled; never stack a second feature branch on an unmerged first; one feature/fix per branch — an unrelated mid-branch bug gets its own issue and branch. **Never stack hotfixes on hotfixes** — if a fix exposes a new bug, revert before adding a third change; if three same-day PRs interact badly, roll back to last known-good and re-introduce one at a time.
 
 **PR body:** single-commit PR → `Summary` + `Test plan` checklist + `Closes #N`. Multi-commit → per-commit table (`SHA | What | Why`) + `Closed in this PR` + `Still open`. A **cumulative branch** is the exception, allowed only for rapid verified-per-commit rounds — document the policy in the PR body and default back to one-issue-one-branch when the round closes.
-
-**Concurrent same-repo work:** first come, first owns `main` — later sessions build in an isolated `git worktree` (`<repo>-wt-<N>`, venv junctioned) on their own branch. The `issue-*` skills automate this via `fleet-config`'s `skills/_lib/worktree_claim.py`; mechanics + the junction-teardown footgun are in that repo's `docs/skills.md` ("Concurrent same-repo work").
 
 ### Planning & documentation
 
@@ -158,11 +156,7 @@ Each fleet repo declares its architecture-map card in a root `.fleet.toml` (`lay
 
 ### `local-llm-hub` local LLM hub
 
-`E:\automation\local-llm-hub` runs a FastAPI hub on `127.0.0.1:8000` exposing Anthropic-shape `POST /v1/messages` and OpenAI-shape `POST /v1/chat/completions`, routed by `model` name: Claude/Gemini ids reach the local CLI on the user's subscription, open-weight ids reach llama-server backends on their own ports. **Live model ids and ports: that repo's README + `docs/model-comparison.md`, or `GET /v1/models`** — a latest-only policy replaces entries when newer models ship, so never trust a copied list.
-
-Whisper-server at `127.0.0.1:8090` (`ggml-large-v3-turbo.bin`, OpenAI-compatible `/v1/audio/transcriptions`). The hub also proxies audio on `:8000` (`/v1/audio/transcriptions` + `/v1/audio/translations`) so requests land in the observability ring; direct `:8090` POSTs are lower-overhead but invisible to the admin UI. Port 8090 is mutex-shared with `automation/audio/transcribe_voice`.
-
-SDK and `curl` examples, plus the shape limitations (image/document blocks, dropped `image_url` parts and thinking blocks, no `/v1/messages` streaming, open-weight tool-use): `fleet-config`'s `docs/local-llm-hub-usage.md` — read it before building against the hub.
+`E:\automation\local-llm-hub` runs a FastAPI hub on `127.0.0.1:8000` exposing Anthropic-shape `POST /v1/messages` and OpenAI-shape `POST /v1/chat/completions`, routed by `model` name: Claude/Gemini ids reach the local CLI on the user's subscription, open-weight ids reach llama-server backends on their own ports. **Live model ids and ports: that repo's README + `docs/model-comparison.md`, or `GET /v1/models`** — a latest-only policy replaces entries when newer models ship, so never trust a copied list. Whisper-server (`:8090`) and the hub's audio proxy, SDK and `curl` examples, and the shape limitations (image/document blocks, dropped `image_url` parts and thinking blocks, no `/v1/messages` streaming, open-weight tool-use): `fleet-config`'s `docs/local-llm-hub-usage.md` — read it before building against the hub.
 
 ### Don't duplicate hub functionality in downstream apps
 
@@ -174,11 +168,7 @@ Route downstream LLM access — Anthropic- or OpenAI-shape, subscription or open
 
 ### Prefer scripts over session-injected MCP connectors for automation
 
-For unattended/automation workflows, prefer a thin Python script (standard SDK or REST) over a session-injected MCP connector — a fleet audit (`ferraroroberto/fleet-config#128`, 945 transcripts) found 97% of injected tool surface unused, and every enabled connector is a fleet-wide, every-session context cost.
-
-- New automation → script via SDK/REST first; connectors only for genuinely interactive, exploratory, one-off use.
-- Keep the default connector set minimal; toggle one on per session that needs it.
-- A connector that becomes a recurring automation dependency is the signal to scriptify it and disable the connector by default.
+For unattended/automation workflows, prefer a thin Python script (standard SDK or REST) over a session-injected MCP connector — a fleet audit (`ferraroroberto/fleet-config#128`, 945 transcripts) found 97% of injected tool surface unused, and every enabled connector is a fleet-wide, every-session context cost. New automation → script via SDK/REST first; connectors only for genuinely interactive, exploratory, one-off use. Keep the default connector set minimal and toggle one on per session that needs it; a connector that becomes a recurring automation dependency is the signal to scriptify it and disable it by default (`docs/mcp-context-audit.md`).
 
 ### Showing the owner a file (launcher sessions)
 
