@@ -1255,4 +1255,60 @@ else:
               f"inventory with no catalog: unmeasured says why and every control reads unknown, never bespoke -- "
               f"{_inv_none.get('unmeasured')} {_inv_none.get('components')} ({_inv_out['none_err']})")
 
+    # measure --e2e (#1498): a throwaway copy of the fixture target, project-scaffolding's vendored surface() hook
+    # copied in as an adopter vendors it; its own pytest suite captures two surfaces (one on a Pixel 7 context).
+    _e2e_hook = scaffold / "tests" / "e2e" / "_surface.py"
+    _e2e_pytest = _walk_run([str(interp), "-c", "import pytest"], capture_output=True, timeout=60).returncode == 0
+    if not _e2e_hook.is_file() or not _e2e_pytest:
+        _h.skip("browser leg: no tests/e2e/_surface.py in project-scaffolding, or no pytest in the sibling venv -- measure --e2e NOT verified")
+    else:
+        _e2e_root = STATE / "e2e-target"
+        shutil.copytree(FIX / "e2e_target", _e2e_root)
+        shutil.copy(_e2e_hook, _e2e_root / "tests" / "e2e" / "_surface.py")
+
+        def _measure_e2e(run_name: str, *extra: str):
+            p = _walk_run([sys.executable, str(REPO / "skills" / "_lib" / "design_review"), "measure", str(_e2e_root),
+                           "--url", (_e2e_root / "page.html").as_uri(), "--devices", "desktop", "--python", str(interp),
+                           "--scaffold", str(scaffold), "--run-dir", str(STATE / run_name), "--rubric", str(RUBRIC),
+                           "--spec", str(FIX / "spec_compliant.md"), *extra],
+                          capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=900,
+                          env={**os.environ, "CLAUDE_HOOKS_STATE_DIR": str(STATE)})
+            lines = dict(l.split("=", 1) for l in p.stdout.splitlines() if "=" in l)
+            mpath = Path(lines.get("METRICS", ""))
+            return p, lines, (json.loads(mpath.read_text(encoding="utf-8")) if lines.get("METRICS") and mpath.is_file() else {})
+
+        _pe, _le, _de = _measure_e2e("e2e-run-a", "--e2e")
+        _e2e_by = {s["id"]: s for s in _de.get("screens", []) if s.get("source") == "e2e"}
+        check(_pe.returncode == 0 and _le.get("UNMEASURED") == "none" and _le.get("E2E") == "ok"
+              and _le.get("E2E_SURFACES") == "2" and _le.get("E2E_SCREENS") == "4",
+              f"measure --e2e runs the target's own suite after the walk and reports its outcome (#1498) -- {_pe.stdout[-500:]}{_pe.stderr[-300:]}")
+        check(set(_e2e_by) == {f"{d}-{t}-e2e-{v}" for d, v in (("desktop", "items-sheet"), ("android", "home-root")) for t in ("light", "dark")}
+              and all(s["kind"] == "step" and s["engine"] == "chromium" for s in _e2e_by.values())
+              and (_e2e_by.get("android-light-e2e-home-root") or {}).get("viewport", {}).get("width") == 412,
+              f"two surface() calls -> four e2e screens, each on the device its test's context was (Pixel 7 -> android) -- {sorted(_e2e_by)}")
+        check(len(_e2e_by) == 4 and all(s["status"] == "ok" and not measure.section_errors(s["metrics"])
+                                        and isinstance(s["metrics"].get("inventory"), dict) and "error" not in s["metrics"]["inventory"]
+                                        and s["metrics"]["inventory"]["controls_count"] > 0 and s["theme_applied"] is True
+                                        and (STATE / "e2e-run-a" / "shots" / str(s["screenshot"])).is_file()
+                                        for s in _e2e_by.values()),
+              "every e2e screen carries full metrics, its inventory included, the theme it asked for, and its screenshot in shots/")
+        check("1 deselected" in (STATE / "e2e-run-a" / "e2e.log").read_text(encoding="utf-8"),
+              "in capture mode the hook deselects the suite's test that never calls surface(")
+        _ev_e = ev.evaluate(_de, rubric, _specs("compliant"))
+        _pp, _lp, _dp = _measure_e2e("e2e-run-plain")
+        _ev_p = ev.evaluate(_dp, rubric, _specs("compliant"))
+        check(_ev_p["overlay_coverage"].get("not_walked") == ["aside#itemSheet"] and _ev_e["overlay_coverage"].get("not_walked_count") == 0,
+              f"overlay coverage counts the sheet only the e2e suite opened as walked -- plain {_ev_p['overlay_coverage']} e2e {_ev_e['overlay_coverage']}")
+        _walk_ids = [s["id"] for s in _de.get("screens", []) if s.get("source") != "e2e"]
+        check(_pp.returncode == 0 and "e2e" not in _dp and "E2E" not in _lp and not (STATE / "e2e-run-plain" / "e2e").exists()
+              and _walk_ids == [s["id"] for s in _dp.get("screens", [])]
+              and all((a.get("metrics") or {}).get("inventory") == (b.get("metrics") or {}).get("inventory")
+                      for a, b in zip([s for s in _de["screens"] if s.get("source") != "e2e"], _dp["screens"])),
+              "without --e2e, measure runs no suite and writes no e2e key or line; the walk's own screens are the same either way")
+        _pe2, _le2, _de2 = _measure_e2e("e2e-run-b", "--e2e")
+        _e2e_by2 = {s["id"]: s for s in _de2.get("screens", []) if s.get("source") == "e2e"}
+        check(_le2.get("E2E") == "ok" and set(_e2e_by2) == set(_e2e_by)
+              and all(_e2e_by2[k]["metrics"]["inventory"] == _e2e_by[k]["metrics"]["inventory"] for k in _e2e_by),
+              "a second --e2e run over the same tree gives an identical inventory for every e2e screen")
+
 _h.report_and_exit("test_design_review_browser", skip_code=SKIP_EXIT)

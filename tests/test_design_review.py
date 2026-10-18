@@ -1504,6 +1504,145 @@ _out_s = ev.evaluate(_doc_s, rubric, _specs("compliant"))
 check(_out_s["mode"] == "synthetic" and ev.evaluate(_doc("compliant"), rubric, _specs("compliant"))["mode"] == "live",
       "evaluate carries the run's mode; a document without one is live")
 
+# ---- #1498: measure --e2e: the block, the capture directory, one word per suite outcome ------------
+
+import time  # noqa: E402
+
+
+def _e2e_target(review=None, hook=True, name="e2e-target"):
+    root = STATE / name
+    if root.exists():
+        shutil.rmtree(root)
+    (root / "tests" / "e2e").mkdir(parents=True)
+    if hook:
+        (root / "tests" / "e2e" / "_surface.py").write_text("# stand-in: these suites never import it\n", encoding="utf-8")
+    return plan.Target(name=name, root=root, base_url="file:///x.html", review=review or {})
+
+
+def _e2e_run(command, timeout_s=60, run_name="e2e-run", doc=None, review_extra=None, **target_kw):
+    target = _e2e_target({"e2e": {"command": command, "timeout_s": timeout_s}, **(review_extra or {})}, **target_kw)
+    run = STATE / run_name
+    run.mkdir(parents=True, exist_ok=True)
+    doc = doc or {"interpreter": sys.executable, "unmeasured": None, "screens": [],
+                  "params": {"script": measure.default_params()}}
+    return doc, capture.measure_e2e(doc, target, run, str(STATE / "no-scaffold")), run
+
+
+# Stands in for a suite whose tests call surface(): writes the hook's two files per theme, then exits with argv[1].
+_E2E_WRITES = (
+    "import json, os, pathlib, sys\n"
+    "d = pathlib.Path(os.environ['DESIGN_SURFACE_CAPTURE'])\n"
+    "for t in ('dark', 'light'):\n"
+    "    m = None if len(sys.argv) > 2 else {'text': {'sizes': {}}}\n"
+    "    (d / f'jobs.sort-sheet.{t}.json').write_text(json.dumps({'surface': 'jobs.sort-sheet', 'theme': t, "
+    "'engine': 'webkit', 'phone': True, 'viewport': {'width': 390, 'height': 664}, "
+    "'observed': {'attr': None, 'dark': t == 'dark'}, 'error': 'boom' if m is None else None, 'metrics': m}))\n"
+    "    (d / f'jobs.sort-sheet.{t}.png').write_bytes(b'png')\n"
+    "sys.exit(int(sys.argv[1]))\n")
+
+_eb = plan.e2e_block(_e2e_target())
+check(_eb == {"command": ["-m", "pytest", "tests/e2e"], "timeout_s": 900.0},
+      f"no [design.review.e2e] block is the default suite, never an error (#1498) -- {_eb}")
+
+
+def _e2e_block_error(block):
+    try:
+        plan.e2e_block(_e2e_target({"e2e": block}))
+    except plan.PlanError as exc:
+        return str(exc)
+    return None
+
+
+check("must be a table" in (_e2e_block_error("pytest") or "")
+      and "non-empty list of strings" in (_e2e_block_error({"command": "-m pytest"}) or "")
+      and "non-empty list of strings" in (_e2e_block_error({"command": []}) or "")
+      and "positive number" in (_e2e_block_error({"timeout_s": 0}) or "")
+      and "positive number" in (_e2e_block_error({"timeout_s": True}) or ""),
+      "a malformed [design.review.e2e] block is a named PlanError, never a guessed command")
+
+check([capture.e2e_device(c) for c in ({"phone": False, "engine": "webkit"}, {"phone": True, "engine": "webkit"},
+                                       {"phone": True, "engine": "chromium"}, {})] == ["desktop", "iphone", "android", "desktop"],
+      "a capture's device comes from the test's own context: phone UA + engine, else desktop")
+
+_, _e_skip, _ = _e2e_run(["-c", "pass"], doc={"interpreter": sys.executable, "unmeasured": {"reason": "NOT_LISTENING"},
+                                               "screens": [], "params": {"script": {}}})
+check((_e_skip["unmeasured"] or {}).get("reason") == "E2E_SKIPPED" and "NOT_LISTENING" in _e_skip["unmeasured"]["detail"],
+      f"a walk that measured nothing runs no suite: E2E_SKIPPED, naming the walk's reason -- {_e_skip['unmeasured']}")
+_e_bad_t = _e2e_target({"e2e": {"command": "x"}})
+_e_bad = capture.measure_e2e({"interpreter": sys.executable, "unmeasured": None, "screens": [], "params": {"script": {}}},
+                             _e_bad_t, STATE / "e2e-run", str(STATE / "no-scaffold"))
+check((_e_bad["unmeasured"] or {}).get("reason") == "E2E_BAD_CONFIG", f"a malformed block is E2E_BAD_CONFIG -- {_e_bad['unmeasured']}")
+_, _e_hook, _ = _e2e_run(["-c", "pass"], hook=False)
+check((_e_hook["unmeasured"] or {}).get("reason") == "E2E_HOOK_MISSING" and "_surface.py" in _e_hook["unmeasured"]["detail"],
+      f"no vendored tests/e2e/_surface.py is E2E_HOOK_MISSING -- {_e_hook['unmeasured']}")
+_, _e_fail, _e_fail_run = _e2e_run(["-c", "import sys; print('suite went red'); sys.exit(3)"])
+check((_e_fail["unmeasured"] or {}).get("reason") == "E2E_FAILED" and "exit 3" in _e_fail["unmeasured"]["detail"]
+      and "suite went red" in _e_fail["unmeasured"]["detail"] and "suite went red" in (_e_fail_run / "e2e.log").read_text(encoding="utf-8"),
+      f"a non-zero exit before any capture is E2E_FAILED, with the output tail, and the output lands in e2e.log -- {_e_fail['unmeasured']}")
+_t0 = time.monotonic()
+_, _e_slow, _ = _e2e_run(["-c", "import time; time.sleep(60)"], timeout_s=2)
+check((_e_slow["unmeasured"] or {}).get("reason") == "E2E_TIMEOUT" and _e_slow["timed_out"] is True and time.monotonic() - _t0 < 30,
+      f"a suite past its timeout_s is killed and reported as E2E_TIMEOUT -- {_e_slow['unmeasured']}")
+_, _e_none, _ = _e2e_run(["-c", "pass"])
+_, _e_none5, _ = _e2e_run(["-c", "import sys; sys.exit(5)"])
+check((_e_none["unmeasured"] or {}).get("reason") == "E2E_NO_SURFACES" and (_e_none5["unmeasured"] or {}).get("reason") == "E2E_NO_SURFACES",
+      f"a suite that runs (exit 0, or pytest's 5: nothing collected) and captures nothing is E2E_NO_SURFACES -- {_e_none['unmeasured']} {_e_none5['unmeasured']}")
+check(len({str((r["unmeasured"] or {}).get("reason")) for r in (_e_skip, _e_bad, _e_hook, _e_fail, _e_slow, _e_none)}) == 6,
+      "every suite outcome is its own word")
+
+_e_doc, _e_ok, _e_ok_run = _e2e_run(["-c", _E2E_WRITES, "0"])
+_e_cap = Path(str(_e_ok["capture_dir"]))
+_e_ids = [s["id"] for s in _e_doc["screens"]]
+check(_e_ok["unmeasured"] is None and _e_ok["note"] is None and _e_ok["surfaces"] == ["jobs.sort-sheet"] and _e_ok["screens"] == 2
+      and _e_ids == ["iphone-light-e2e-jobs-sort-sheet", "iphone-dark-e2e-jobs-sort-sheet"],
+      f"each capture becomes a screen <device>-<theme>-e2e-<surface>, light before dark (#1498) -- {_e_ids}")
+_e_s = _e_doc["screens"][0]
+check(_e_s["status"] == "ok" and _e_s["kind"] == "step" and _e_s["source"] == "e2e" and _e_s["surface"] == "jobs.sort-sheet"
+      and _e_s["engine"] == "webkit" and _e_s["viewport"] == {"width": 390, "height": 664} and _e_s["metrics"] == {"text": {"sizes": {}}}
+      and _e_s["theme_applied"] is True and _e_s["theme_observed"]["rendered"] == "light",
+      f"an e2e screen carries its metrics, source, surface, engine, viewport and the theme it rendered -- {_e_s}")
+check(_e_s["screenshot"] == "iphone-light-e2e-jobs-sort-sheet.png" and (_e_ok_run / "shots" / _e_s["screenshot"]).is_file()
+      and not list(_e_cap.glob("*.png")),
+      "each capture's PNG moves into shots/ under its screen id, beside the walk's")
+check((_e_cap / "script.js").is_file() and "__GEOMETRY__" not in (_e_cap / "script.js").read_text(encoding="utf-8")
+      and json.loads((_e_cap / "params.json").read_text(encoding="utf-8")) == measure.default_params()
+      and not (_e_cap / "capture.json").exists() and _e_ok["geometry"] == "GEOMETRY_MISSING",
+      f"the capture dir holds the walk's own page script and params, no capture.json without a theme key -- geometry {_e_ok['geometry']}")
+_e_doc_p, _e_part, _ = _e2e_run(["-c", _E2E_WRITES, "1"], run_name="e2e-run-partial")
+check(_e_part["unmeasured"] is None and len(_e_doc_p["screens"]) == 2 and "exited 1 after capturing" in str(_e_part["note"]),
+      f"a suite that fails after capturing keeps its screens, with a note -- {_e_part['note']}")
+_e_doc_x, _e_err, _ = _e2e_run(["-c", _E2E_WRITES, "0", "throw"], run_name="e2e-run-throw",
+                                review_extra={"theme_storage_key": "app.theme"})
+check(all(s["status"] == "error" and s["reason"] == "E2E_MEASURE_FAILED" and s["error"] == "boom" and s["metrics"] is None
+          for s in _e_doc_x["screens"]) and len(_e_doc_x["screens"]) == 2,
+      "a capture whose page script threw is a screen in error (E2E_MEASURE_FAILED), never an empty success")
+check(json.loads((Path(str(_e_err["capture_dir"])) / "capture.json").read_text(encoding="utf-8")) == {"theme_storage_key": "app.theme"},
+      "a declared theme_storage_key reaches the hook through capture.json")
+_e_doc_r, _e_rerun, _ = _e2e_run(["-c", "import sys; sys.exit(3)"])  # same run dir as the success above
+check((_e_rerun["unmeasured"] or {}).get("reason") == "E2E_FAILED" and not _e_doc_r["screens"],
+      "a capture left in the run dir by an earlier run never reads as this run's")
+check(capture.e2e_theme("dark", {"attr": None, "dark": False}) == (False, {"attr": "", "luminance": None, "rendered": "light"})
+      and capture.e2e_theme("light", {"attr": "dark", "dark": False})[0] is False and capture.e2e_theme("light", None) == (None, None),
+      "an e2e screen whose page kept the other theme is theme_applied false; nothing recorded is unknown")
+
+_cov_screens = [{"id": "w", "status": "ok", "metrics": {"coverage": {"overlays": [{"key": "aside#sheet", "open": False}]}}},
+                {"id": "e", "status": "ok", "source": "e2e", "metrics": {"coverage": {"overlays": [{"key": "aside#sheet", "open": True}]}}}]
+check(ev.overlay_coverage(_cov_screens)["not_walked_count"] == 0 and ev.overlay_coverage(_cov_screens[:1])["not_walked_count"] == 1,
+      "overlay coverage is the union over walk and e2e screens: a surface only the e2e suite opened counts as walked")
+
+_ev_plain = ev.evaluate(_doc("compliant"), rubric, _specs("compliant"))
+_doc_e = _doc("compliant")
+_doc_e["e2e"] = dict(_e_fail)
+_ev_e = ev.evaluate(_doc_e, rubric, _specs("compliant"))
+check("e2e" not in _ev_plain and _ev_e["e2e"]["unmeasured"]["reason"] == "E2E_FAILED"
+      and [r["status"] for r in _ev_e["rules"]] == [r["status"] for r in _ev_plain["rules"]],
+      "evaluate carries the e2e record through only on an --e2e run; a failed suite never moves the walk's rules")
+check("e2e suite not captured: E2E_FAILED" in report_mod._method(_ev_e) and "e2e suite" not in report_mod._method(_ev_plain),
+      "the report's method section names the suite's own outcome, and says nothing on a plain run")
+_doc_e["e2e"] = dict(_e_ok)
+check("1 surface captured by the app&#x27;s own e2e suite" in report_mod._method(ev.evaluate(_doc_e, rubric, _specs("compliant"))),
+      "the report counts the surfaces the e2e suite captured")
+
 # ---- capture: liveness probe, interpreter, run dir ---------------------------
 
 check(capture.probe_listening("file:///x.html")["status"] == "listening", "file:// is always listening")

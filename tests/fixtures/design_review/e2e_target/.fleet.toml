@@ -1,0 +1,4 @@
+# Fixture target for `measure --e2e` (fleet-config#1498): its own tiny e2e suite, run in surface-capture mode.
+[design.review.e2e]
+command = ["-m", "pytest", "tests/e2e", "-q", "-p", "no:cacheprovider"]
+timeout_s = 300

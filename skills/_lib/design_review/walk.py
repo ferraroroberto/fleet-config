@@ -62,6 +62,7 @@ Usage (normally via capture.py):
     <target-venv-python> walk.py --url URL --out DIR --devices iphone,desktop
         [--scaffold E:/automation/project-scaffolding] [--params params.json]
         [--review review.json]
+    <target-venv-python> walk.py --emit-script DIR/script.js [--scaffold E:/automation/project-scaffolding]
 """
 from __future__ import annotations
 
@@ -618,8 +619,11 @@ def walk_context(pw, device: str, theme: str, args: argparse.Namespace, script: 
 
 def main(argv: Optional[List[str]] = None) -> int:
     ap = argparse.ArgumentParser(description="design-review read-only browser walk (target-venv child)")
-    ap.add_argument("--url", required=True)
-    ap.add_argument("--out", required=True, help="run directory (screens.json, walk.json, shots/)")
+    ap.add_argument("--url")
+    ap.add_argument("--out", help="run directory (screens.json, walk.json, shots/)")
+    ap.add_argument("--emit-script", default=None,
+                    help="write the page script (scaffold geometry spliced in) to this file, print GEOMETRY=, and exit: "
+                         "no browser starts (`measure --e2e` hands it to the e2e suite's capture hook, #1498)")
     ap.add_argument("--devices", default=",".join(plan.DEFAULT_DEVICES))
     ap.add_argument("--scaffold", default=None, help="project-scaffolding root for tests/e2e/_geometry.py")
     ap.add_argument("--params", default=None, help="JSON file with the measurement params")
@@ -630,6 +634,13 @@ def main(argv: Optional[List[str]] = None) -> int:
     args = ap.parse_args(argv)
 
     logging.basicConfig(level=logging.INFO, format="%(message)s", stream=sys.stderr)
+    if args.emit_script:
+        geometry = load_geometry_js(args.scaffold)
+        Path(args.emit_script).write_text(measure.build_script(geometry), encoding="utf-8")
+        print(f"GEOMETRY={'loaded' if geometry else 'GEOMETRY_MISSING'}")
+        return 0
+    if not args.url or not args.out:
+        ap.error("--url and --out are required unless --emit-script is given")
     out = Path(args.out)
     shots = out / "shots"
     shots.mkdir(parents=True, exist_ok=True)

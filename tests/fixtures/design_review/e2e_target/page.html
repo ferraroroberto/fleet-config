@@ -1,0 +1,40 @@
+<!doctype html>
+<!-- Static page of the `measure --e2e` fixture target (fleet-config#1498). The walk sees one tab with `#itemSheet`
+     closed; only the fixture's e2e suite opens it, so overlay coverage counts it as walked only on an --e2e run.
+     The suite's tests (tests/e2e/test_surfaces.py) capture two surfaces: the sheet on a desktop context and the
+     home page on a Pixel 7 context. Copied into a throwaway dir by tests/test_design_review_browser.py. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>design_review e2e fixture</title>
+<style>
+  :root { --bg: #ffffff; --fg: #1f2328; }
+  @media (prefers-color-scheme: dark) { :root { --bg: #0d1117; --fg: #e6edf3; } }
+  html, body { margin: 0; background: var(--bg); color: var(--fg); font-family: system-ui, sans-serif; font-size: 16px; }
+  body { padding: 16px; }
+  [role=tablist] { display: flex; gap: 8px; }
+  [role=tab], button { min-height: 44px; min-width: 44px; font: inherit; }
+  .drawer { position: fixed; top: 0; right: 0; bottom: 0; width: 320px; padding: 16px; background: var(--bg);
+            border-left: 1px solid #d0d7de; }
+  .drawer[hidden] { display: none; }
+</style>
+</head>
+<body>
+  <div role="tablist"><button type="button" role="tab" aria-selected="true" data-tab="home">Home</button></div>
+  <main id="home">
+    <h2>Home</h2>
+    <p>Page content.</p>
+    <button type="button" id="openSheet">Open item</button>
+  </main>
+  <aside id="itemSheet" class="drawer" role="dialog" aria-label="Item" hidden>
+    <h2>Item</h2>
+    <p>Sheet body.</p>
+    <button type="button" id="closeSheet">Close</button>
+  </aside>
+<script>
+  document.getElementById("openSheet").addEventListener("click", () => { document.getElementById("itemSheet").hidden = false; });
+  document.getElementById("closeSheet").addEventListener("click", () => { document.getElementById("itemSheet").hidden = true; });
+</script>
+</body>
+</html>
