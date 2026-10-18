@@ -107,6 +107,10 @@ else:
     check(set(by_id) == {f"desktop-{t}-{v}" for t in ("light", "dark") for v in ("home", "list", "dialog-editdialog", "gear-settings")}
       and by_id["desktop-light-gear-settings"]["reason"] == "SETTINGS_GEAR_ABSENT", "screen ids from tabs + dialog + the Settings gear step (absent here)")
     home = by_id["desktop-light-home"]["metrics"]
+    _cat_ok = capture.vendored_components(str(scaffold))["components"] is not None
+    check(isinstance(home.get("inventory"), dict) and "error" not in home["inventory"]
+          and (home["inventory"]["unmeasured"] is None) == _cat_ok == (doc["params"]["script"]["components"] is not None),
+          f"measure passes the scaffold's component catalog in, and every screen carries an inventory (#1497) -- {str(home.get('inventory'))[:300]}")
     tx, ct, tg, ic, nv, ly, ay = (home[k] for k in ("text", "controls", "targets", "icons", "nav", "layout", "a11y"))
     check(tx["min_px"] == 10 and tx["under11_count"] == 1 and {"10", "12", "14", "16", "24"} <= set(tx["sizes"]), "text size histogram + 10px floor")
     check(tx["low_contrast_count"] == 3 and {r["sel"] for r in tx["low_contrast"]} == {"p.faint", "pre.log.faint", "button.faint-btn"}
@@ -1198,5 +1202,57 @@ else:
     )
     check(proc6.returncode == 0 and "UNMEASURED=SYNTHETIC_FAILED" in proc6.stdout and "MODE=synthetic" in proc6.stdout,
           f"a launcher that never prints a URL makes the run SYNTHETIC_FAILED, not a crash -- {proc6.stdout[-300:]}")
+
+    # inventory over the scaffold's own component gallery, served read-only from its checkout (#1497)
+    _demo_dir = scaffold / "app" / "webapp" / "static" / "_vendored"
+    _inv_cat = capture.vendored_components(str(scaffold))
+    if not (_demo_dir / "demo.html").is_file() or _inv_cat["components"] is None:
+        _h.skip(f"browser leg: no project-scaffolding demo.html or component catalog ({_inv_cat['error']}) -- inventory NOT verified")
+    else:
+        import functools, http.server, threading
+        class _InvQuiet(http.server.SimpleHTTPRequestHandler):
+            def log_message(self, *a):  # noqa: D401 -- keep the test output clean
+                pass
+        _inv_srv = http.server.ThreadingHTTPServer(("127.0.0.1", 0), functools.partial(_InvQuiet, directory=str(_demo_dir)))
+        threading.Thread(target=_inv_srv.serve_forever, daemon=True).start()
+        _inv_url = f"http://127.0.0.1:{_inv_srv.server_address[1]}/demo.html"
+        (STATE / "inv-params.json").write_text(json.dumps(measure.default_params(components=_inv_cat["components"])), encoding="utf-8")
+        (STATE / "inv-params-none.json").write_text(json.dumps(measure.default_params(components_error="no scaffold checkout")), encoding="utf-8")
+        _inv_out = {}
+        for _run, _p in (("a", "inv-params.json"), ("b", "inv-params.json"), ("none", "inv-params-none.json")):
+            _proc = _walk_run([str(interp), str(FIX / "inventory_driver.py"), _inv_url, str(STATE / _p)],
+                              capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=300)
+            _inv_out[_run] = _proc.stdout if _proc.returncode == 0 else ""
+            _inv_out[_run + "_err"] = _proc.stderr[-300:]
+        _inv_srv.shutdown()
+        _inv = json.loads(_inv_out["a"]) if _inv_out["a"] else {}
+        _inv_by_key = {c["key"]: c for c in _inv.get("controls", [])}
+        _inv_owner = {cls: name for name, c in _inv_cat["components"].items() for cls in c["roots"]}
+        _inv_expect = {"button#demoSwitchOn": ("switch", "vendored:switch"), "button#demoButtonPrimary": ("button", "vendored:button"),
+                       "button#demoIconButton": ("icon-button", "vendored:icon-button"), "button#demoRangeDay": ("range-tab", "vendored:range-tab"),
+                       "button#demoSegMine": ("segmented", "vendored:segmented"), "select#demoSelectNative": ("select", "vendored:select-native"),
+                       "input#demoActionFilterInput": ("input", "vendored:action-row"), "button#bespokeButton": ("button", "bespoke")}
+        check(_inv.get("unmeasured") is None and all((_inv_by_key.get(k, {}).get("kind"), _inv_by_key.get(k, {}).get("component")) == v
+                                                     for k, v in _inv_expect.items())
+              and _inv_by_key["button#bespokeButton"]["label"] == "Bespoke #",
+              f"inventory on demo.html: each vendored control reads vendored:<its component> with its kind, the filter field through its "
+              f"wrapping label; the hand-added button reads bespoke, its digits masked -- "
+              f"{ {k: (_inv_by_key.get(k, {}).get('kind'), _inv_by_key.get(k, {}).get('component')) for k in _inv_expect} } ({_inv_out['a_err']})")
+        _inv_bespoke = sorted(c["key"] for c in _inv.get("controls", []) if c["component"] == "bespoke")
+        check(_inv_bespoke == ["button#bespokeButton", "button#demoBaseButton", "input#demoBaseInput", "select#demoBaseSelect", "textarea#demoBaseTextarea"]
+              and not any(c["component"] == "bespoke" and _inv_owner.get(c["key"].split(".", 1)[-1]) for c in _inv.get("controls", [])),
+              f"inventory on demo.html: bespoke is only the added button and base's four bare elements (base styles elements, never a class); "
+              f"no control carrying a component's root class reads bespoke -- {_inv_bespoke}")
+        check(_inv.get("controls_count") == sum(c["n"] for c in _inv.get("controls", [])) == sum(_inv.get("kinds", {}).values())
+              == sum(_inv.get("components", {}).values()) and _inv.get("text_count") == len(_inv.get("text", [])) > 0
+              and all(t["runs"] == sum(v["runs"] for v in t["variants"]) for t in _inv.get("text", [])),
+              f"inventory: the counts agree with the entries, and every text role carries its variants' runs -- {_inv.get('kinds')} {_inv.get('components')}")
+        check(bool(_inv_out["a"]) and _inv_out["a"] == _inv_out["b"],
+              f"inventory: two runs over the same page are byte-identical ({len(_inv_out['a'])} vs {len(_inv_out['b'])} bytes) ({_inv_out['b_err']})")
+        _inv_none = json.loads(_inv_out["none"]) if _inv_out["none"] else {}
+        check(_inv_none.get("unmeasured") == "no scaffold checkout" and _inv_none.get("controls_count") == _inv.get("controls_count")
+              and set(_inv_none.get("components", {})) == {"unknown"} and not any(c["component"] == "bespoke" for c in _inv_none.get("controls", [])),
+              f"inventory with no catalog: unmeasured says why and every control reads unknown, never bespoke -- "
+              f"{_inv_none.get('unmeasured')} {_inv_none.get('components')} ({_inv_out['none_err']})")
 
 _h.report_and_exit("test_design_review_browser", skip_code=SKIP_EXIT)

@@ -1008,6 +1008,41 @@ check(measure.default_params()["excludeSelectors"] == [] and measure.default_par
       "the declaration rides into the script's params; none declared is an empty list")
 check("el.closest(EXCLUDE)" in measure._MEASURE_JS, "every measure's visibility test refuses an element inside an excluded selector")
 
+# ---- inventory: the vendored-component catalog and the read-only section (fleet-config#1497) -----------------------------
+check(capture._css_class_uses("/* .commented {} */ html[data-theme=dark] .toggle.on .knob, .x:not(.y) [href$='.css'] { a: b; }"
+                              " @media (max-width: 1px) { .toggle { c: d; } }")
+      == {"toggle": True, "knob": False, "x": True},
+      "CSS class uses: the first class of a selector leads (a classless html[...] does not), a nested one is a part, a chained "
+      "state class, a :not() argument, an attribute value and a comment name nothing")
+_inv_scaffold = STATE / "inv-scaffold"
+for _name, _css in (("switch", ".toggle { } .toggle .knob { } .icon { }"), ("icon-button", ".icon-button { } .icon { }"),
+                    ("modal", ".detail-card .icon-button { } .detail-card .row { } .icon { }"), ("base", "button { font: inherit; }")):
+    (_inv_scaffold / "app/webapp/static/_vendored" / _name).mkdir(parents=True)
+    (_inv_scaffold / "app/webapp/static/_vendored" / _name / f"{_name}.css").write_text(_css, encoding="utf-8")
+(_inv_scaffold / ".fleet.toml").write_text(
+    "[components]\n" + "".join(f'{n} = {{ src = "app/webapp/static/_vendored/{n}" }}\n' for n in ("switch", "icon-button", "modal", "base"))
+    + 'geometry = { src = "tests/e2e/_geometry.py" }\n', encoding="utf-8")
+_inv_cat = capture.vendored_components(str(_inv_scaffold))
+check(_inv_cat == {"error": None, "components": {
+          "icon-button": {"roots": ["icon-button"], "parts": []},
+          "modal": {"roots": ["detail-card"], "parts": ["row"]},
+          "switch": {"roots": ["toggle"], "parts": ["knob"]}}},
+      f"vendored_components: a class goes to the component that leads a selector with it (icon-button, not modal), one used "
+      f"nowhere else stays its definer's part, one several lead (.icon) goes to nobody, and a classless or non-web entry is "
+      f"left out -- {_inv_cat}")
+_inv_missing = capture.vendored_components(str(_inv_scaffold / "nope"))
+check(capture.vendored_components(None) == {"components": None, "error": "no scaffold checkout"}
+      and _inv_missing["components"] is None and "no catalog at" in _inv_missing["error"],
+      f"vendored_components: no scaffold, or no .fleet.toml, is its own error, never an empty catalog -- {_inv_missing}")
+_inv_params = capture.script_params(rubric, src_specs["light"], None, _inv_cat)["script"]
+check(_inv_params["components"] == _inv_cat["components"] and _inv_params["componentsError"] is None
+      and measure.default_params()["components"] is None and measure.default_params()["componentsError"] is None,
+      "the catalog rides into the script's params like exclude_selectors; none passed is None, which the section reports as unmeasured")
+check(all(f"inventory.{k}" in measure.metric_paths() for k in ("unmeasured", "controls", "controls_count", "kinds", "components", "text", "text_count"))
+      and "section('inventory'" in measure._MEASURE_JS and "inventory" not in measure.SECTIONS
+      and not any(str(r.metric).startswith("inventory.") for r in rubric.rules),
+      "inventory: every key is in metric_paths(), the section is in the page script, and it is no rule's input yet")
+
 # ---- A11Y-02 and the vendored text-size control (fleet-config#1185) -------------
 # parking-manager#58 / facilitation-suite#164: the control lives in Settings, which is in the DOM only while open, so a per-screen
 # probe fails every other screen by construction. The vendored markers are #textSizeControl + data-textsize buttons (the probe
