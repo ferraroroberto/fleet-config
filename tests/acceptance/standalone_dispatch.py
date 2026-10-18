@@ -234,6 +234,15 @@ _STANDALONE_UNIT_CHECKS: Tuple[Tuple[str, str, str], ...] = (
      "(a rule failing in two apps promoted once, an accepted app excluded) "
      "and the ledger / file / fleet CLI legs on dead-port fixtures -- is "
      "testable on its own, with no real issue touched (fleet-config#974)"),
+    ("design_inventory", "test_design_inventory.py",
+     "/design-review fleet's cross-app inventory comparator -- three "
+     "invented fixture apps give exactly the expected INV-01..INV-04 "
+     "findings with counts and scopes, byte-identical in any input order; "
+     "single-app lines on the app body and cross-app lines on "
+     "fleet-config's through filing.py on a dry run; no label, key or "
+     "screenshot path in any line; and with no inventory the digest, "
+     "bodies and scores unchanged -- is testable on its own, with no real "
+     "issue touched (fleet-config#1500)"),
     ("perf_review", "test_perf_review.py",
      "/perf-review's probe self-test against a local fixture server (slow vs "
      "fast endpoint at short spacing, cold request kept apart, GET only; a "

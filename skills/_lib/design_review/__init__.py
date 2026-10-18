@@ -52,6 +52,7 @@ Modules:
   ledger.py    the per-target ledger.json, `previous`, `diff` (#974)
   filing.py    accepted rules, routing by owner, issue-body merge, the upsert (#974)
   fleet.py     the serial fleet sweep, promotion, fleet-digest.json/.html (#974)
+  inventory.py the cross-app comparison of each app's newest inventory, INV-01..04 (#1500)
   cli.py       argparse: `probe <repo>` / `measure <repo>` / `evaluate <metrics.json>` /
                `judge-prompt <run_dir>` / `judge-merge <run_dir> <answers.json>...` /
                `ledger <run_dir>` / `render <evaluate.json|metrics.json>` /

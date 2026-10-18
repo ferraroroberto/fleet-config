@@ -1,0 +1,43 @@
+{
+  "schema_version": 1,
+  "target": "app-north",
+  "screens": [
+    {"id": "desktop-light-home", "metrics": {"inventory": {
+      "unmeasured": null,
+      "controls": [
+        {"key": "button.btn", "kind": "button", "component": "vendored:button", "role": "button", "label": "Delete", "family": "system-ui", "px": 14, "weight": "600", "n": 1},
+        {"key": "button.btn", "kind": "button", "component": "vendored:button", "role": "button", "label": "Save", "family": "system-ui", "px": 14, "weight": "600", "n": 1},
+        {"key": "button.btn", "kind": "button", "component": "vendored:button", "role": "button", "label": "Cancel", "family": "system-ui", "px": 14, "weight": "600", "n": 1},
+        {"key": "button.btn", "kind": "button", "component": "vendored:button", "role": "button", "label": "Frobnicate", "family": "system-ui", "px": 14, "weight": "600", "n": 1},
+        {"key": "button.icon-button", "kind": "icon-button", "component": "vendored:icon-button", "role": "button", "label": "More actions", "family": "system-ui", "px": 16, "weight": "400", "n": 2},
+        {"key": "button.row-menu-item", "kind": "menuitem", "component": "vendored:row-menu", "role": "menuitem", "label": "Remove", "family": "system-ui", "px": 16, "weight": "500", "n": 1},
+        {"key": "button.seg", "kind": "segmented", "component": "vendored:segmented", "role": "button", "label": "Day", "family": "system-ui", "px": 14, "weight": "600", "n": 1},
+        {"key": "button.seg", "kind": "segmented", "component": "vendored:segmented", "role": "button", "label": "Month", "family": "system-ui", "px": 14, "weight": "600", "n": 1},
+        {"key": "button.seg", "kind": "segmented", "component": "vendored:segmented", "role": "button", "label": "Week", "family": "system-ui", "px": 14, "weight": "600", "n": 1},
+        {"key": "div.toggle", "kind": "switch", "component": "bespoke", "role": "switch", "label": "Notifications", "family": "system-ui", "px": 14, "weight": "400", "n": 1},
+        {"key": "select.sort", "kind": "select", "component": "vendored:select-native", "role": "combobox", "label": "Sort by", "family": "system-ui", "px": 14, "weight": "400", "n": 1, "options": 8}
+      ],
+      "controls_count": 12,
+      "kinds": {"button": 4, "icon-button": 2, "menuitem": 1, "segmented": 3, "select": 1, "switch": 1},
+      "components": {"bespoke": 1, "vendored:button": 4, "vendored:icon-button": 2, "vendored:row-menu": 1, "vendored:segmented": 3, "vendored:select-native": 1},
+      "text": [
+        {"role": "body", "runs": 9, "variants": [{"family": "system-ui", "px": 16, "weight": "400", "runs": 9}]},
+        {"role": "caption", "runs": 2, "variants": [{"family": "system-ui", "px": 12, "weight": "600", "runs": 2}]},
+        {"role": "heading-2", "runs": 1, "variants": [{"family": "system-ui", "px": 24, "weight": "700", "runs": 1}]},
+        {"role": "heading-4", "runs": 1, "variants": [{"family": "system-ui", "px": 15, "weight": "700", "runs": 1}]},
+        {"role": "row-title", "runs": 4, "variants": [{"family": "system-ui", "px": 16, "weight": "600", "runs": 4}]},
+        {"role": "secondary", "runs": 5, "variants": [{"family": "system-ui", "px": 14, "weight": "400", "runs": 5}]}
+      ],
+      "text_count": 6}}},
+    {"id": "iphone-dark-home", "metrics": {"inventory": {
+      "unmeasured": "no component catalog passed in",
+      "controls": [
+        {"key": "button.btn", "kind": "button", "component": "unknown", "role": "button", "label": "Delete", "family": "system-ui", "px": 15, "weight": "500", "n": 1}
+      ],
+      "controls_count": 1, "kinds": {"button": 1}, "components": {"unknown": 1},
+      "text": [{"role": "body", "runs": 3, "variants": [{"family": "system-ui", "px": 16, "weight": "400", "runs": 3}]}],
+      "text_count": 1}}},
+    {"id": "desktop-light-broken", "metrics": {"inventory": {"error": "TypeError: section failed"}}},
+    {"id": "desktop-light-old", "metrics": {}}
+  ]
+}

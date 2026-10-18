@@ -1,0 +1,36 @@
+{
+  "schema_version": 1,
+  "target": "app-south",
+  "screens": [
+    {"id": "desktop-light-home", "metrics": {"inventory": {
+      "unmeasured": null,
+      "controls": [
+        {"key": "button.btn", "kind": "button", "component": "vendored:button", "role": "button", "label": "Delete", "family": "system-ui", "px": 14, "weight": "600", "n": 1},
+        {"key": "button.save", "kind": "button", "component": "bespoke", "role": "button", "label": "Save", "family": "system-ui", "px": 15, "weight": "500", "n": 1},
+        {"key": "button.btn", "kind": "button", "component": "vendored:button", "role": "button", "label": "Cancel", "family": "system-ui", "px": 14, "weight": "600", "n": 1},
+        {"key": "button.icon-button", "kind": "icon-button", "component": "vendored:icon-button", "role": "button", "label": "More actions", "family": "system-ui", "px": 16, "weight": "400", "n": 3},
+        {"key": "button.row-menu-item", "kind": "menuitem", "component": "vendored:row-menu", "role": "menuitem", "label": "Remove", "family": "system-ui", "px": 16, "weight": "500", "n": 1},
+        {"key": "button.job-row", "kind": "button", "component": "bespoke", "role": "button", "label": "Morning backup job # runs today ok", "family": "system-ui", "px": 16, "weight": "400", "n": 1},
+        {"key": "button.range-tab", "kind": "range-tab", "component": "vendored:range-tab", "role": "button", "label": "#d", "family": "system-ui", "px": 14, "weight": "600", "n": 3},
+        {"key": "button.seg", "kind": "segmented", "component": "vendored:segmented", "role": "button", "label": "Alpha", "family": "system-ui", "px": 14, "weight": "600", "n": 1},
+        {"key": "button.seg", "kind": "segmented", "component": "vendored:segmented", "role": "button", "label": "Bravo", "family": "system-ui", "px": 14, "weight": "600", "n": 1},
+        {"key": "button.seg", "kind": "segmented", "component": "vendored:segmented", "role": "button", "label": "Charlie", "family": "system-ui", "px": 14, "weight": "600", "n": 1},
+        {"key": "button.seg", "kind": "segmented", "component": "vendored:segmented", "role": "button", "label": "Delta", "family": "system-ui", "px": 14, "weight": "600", "n": 1},
+        {"key": "button.seg", "kind": "segmented", "component": "vendored:segmented", "role": "button", "label": "Echo", "family": "system-ui", "px": 14, "weight": "600", "n": 1},
+        {"key": "button.seg", "kind": "segmented", "component": "vendored:segmented", "role": "button", "label": "Foxtrot", "family": "system-ui", "px": 14, "weight": "600", "n": 1},
+        {"key": "button.seg", "kind": "segmented", "component": "vendored:segmented", "role": "button", "label": "Golf", "family": "system-ui", "px": 14, "weight": "600", "n": 1}
+      ],
+      "controls_count": 18,
+      "kinds": {"button": 4, "icon-button": 3, "menuitem": 1, "range-tab": 3, "segmented": 7},
+      "components": {"bespoke": 2, "vendored:button": 2, "vendored:icon-button": 3, "vendored:range-tab": 3, "vendored:row-menu": 1, "vendored:segmented": 7},
+      "text": [
+        {"role": "body", "runs": 7, "variants": [{"family": "system-ui", "px": 16, "weight": "400", "runs": 7}]},
+        {"role": "caption", "runs": 3, "variants": [{"family": "system-ui", "px": 12, "weight": "600", "runs": 3}]},
+        {"role": "heading-2", "runs": 1, "variants": [{"family": "system-ui", "px": 24, "weight": "700", "runs": 1}]},
+        {"role": "heading-4", "runs": 2, "variants": [{"family": "system-ui", "px": 16, "weight": "700", "runs": 2}]},
+        {"role": "row-title", "runs": 3, "variants": [{"family": "system-ui", "px": 16, "weight": "600", "runs": 3}]},
+        {"role": "secondary", "runs": 6, "variants": [{"family": "system-ui", "px": 13, "weight": "400", "runs": 6}]}
+      ],
+      "text_count": 6}}}
+  ]
+}
