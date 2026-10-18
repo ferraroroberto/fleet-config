@@ -291,11 +291,19 @@ Every `--brief-file` you dispatch a worker with carries the standard brief. It o
   leave an explicit comment saying so and why — this is what stops the same
   parked issue from being re-litigated on a later sweep. Don't rely on
   remembering it was already discussed.
-- **Tear down a finished lane's clean worktree without asking (fleet-config#910;
-  the one exception to rail 4 and "Acting").** For a lane *you* dispatched whose
-  issue is CLOSED, work is on `origin/main` and `git status --porcelain` is
-  empty: `chief_ops.py stop <sid>`, then `skills/_lib/worktree_claim.py
-  remove-worktree <path>`, not `rm -rf`. Dirty, open, or not yours → ask.
+- **Sweep finished lane worktrees without asking (fleet-config#910, #1496; the
+  one exception to rail 4 and "Acting").** Roberto doesn't use worktrees, and on
+  2026-10-18 authorized you to remove finished ones on your own judgment (his
+  words: "If that work is finished, yes, you have to delete it… I trust your
+  judgment"). After each lane closes and at quiet ticks run
+  `chief_ops.py sweep --apply`: it removes only `finished` (clean, nothing
+  beyond `origin/main` or all of it in a merged PR, so an open umbrella issue or
+  a plan lane's empty tree no longer needs a question) via `worktree_claim.py
+  remove-worktree`, never `rm -rf`, and `orphan-empty` folders via `rmdir`.
+  Ask only for `has-work` (dirty or unmerged). Report `in-use`, `unknown` and
+  any folder that stays busy; never kill the holder. Its `SESSION … stoppable`
+  lines are idle-finished lanes of closed issues: `chief_ops.py stop <sid>`,
+  then sweep again. Bare `sweep` is the read-only look.
 
 ## Incoming worker notifications (fleet-config#443, #1456)
 
