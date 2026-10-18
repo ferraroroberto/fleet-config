@@ -8,6 +8,7 @@ if it only ever meets mocks are exactly junction traversal, `st_nlink`, and what
 
 from __future__ import annotations
 
+import dataclasses
 import io
 import json
 import logging
@@ -1374,6 +1375,17 @@ try:
           "projects.toml: the real [backup] table is populated")
     check(bp.load_backup_config(real_toml).bulk_dir_bytes > 0,
           "projects.toml: the real config loads")
+    # fleet-config#1493: life-os's .claude/ sits just under bulk_dir_mb; the real
+    # table must keep it past the guard however large it grows.
+    life_os_ov = bp.load_repo_overrides(Path("E:/automation/life-os"), real_toml)
+    real_cfg_tiny = dataclasses.replace(bp.load_backup_config(real_toml), bulk_dir_bytes=1)
+    life_os_items = [(Path("x"), ".claude/skills/a/context/c.md", 4096),
+                     (Path("y"), "conversations/c.md", 4096)]
+    life_os_kept, life_os_dropped = bp._apply_bulk_guard(life_os_items, real_cfg_tiny, life_os_ov)
+    check(".claude" in life_os_ov.include
+          and ".claude/skills/a/context/c.md" in {rel for _, rel, _ in life_os_kept}
+          and [d["path"] for d in life_os_dropped] == ["conversations/"],
+          "projects.toml: life-os keeps .claude/ past the bulk-dir guard")
 
     # ---- the unattended log reaches stdout, line-buffered ------------------
     # fleet-config#605: logging.basicConfig defaults to stderr, so the
