@@ -28,6 +28,13 @@ and owns everything that is *not* browser code:
     `inventory` section can tell a vendored control from a bespoke one. No
     scaffold or no catalog → `componentsError`, and every control reads
     `unknown`, never `bespoke`;
+  * the **e2e leg** (`measure --e2e`, #1498): after the walk, the target's
+    own e2e suite runs in the foreground under the same interpreter with
+    project-scaffolding's vendored `surface()` hook armed, and every surface
+    it captured is appended to `screens` as `<device>-<theme>-e2e-<surface>`
+    (`source: "e2e"`), graded by the same rubric and counted by the same
+    overlay-coverage line. Its outcome is the `e2e` record (`measure_e2e`),
+    present only on an `--e2e` run;
   * the **envelope**: `schema_version`, `rubric_version`, `target`, `commit`
     (target HEAD via `git_run.run_git`), `generated_at` (UTC ISO),
     `base_url`, `run_dir`, `devices`, `params` (the floors the script
@@ -44,6 +51,7 @@ from __future__ import annotations
 import dataclasses
 import datetime as _dt
 import json
+import os
 import queue
 import re
 import socket
@@ -63,7 +71,9 @@ import hooks_state  # noqa: E402
 from no_window import NO_WINDOW  # noqa: E402
 
 from . import measure  # noqa: E402
-from .plan import PlanError, Target, exclude_selectors, synthetic_block  # noqa: E402
+from .plan import (  # noqa: E402
+    E2E_HOOK, THEMES, PlanError, Target, e2e_block, exclude_selectors, screen_id, synthetic_block,
+)
 from .rubric import Rubric, resolve_params  # noqa: E402
 
 WALK_PY = Path(__file__).resolve().parent / "walk.py"
@@ -302,6 +312,15 @@ def spawn_walk(python: str, target: Target, run_dir: Path, devices: List[str], p
     return {"returncode": proc.returncode, "stderr_tail": (proc.stderr or "")[-2000:], "timed_out": False}
 
 
+def kill_tree(proc: subprocess.Popen) -> None:
+    """Kill a child this module started and every process it started in turn (`taskkill /T` on Windows)."""
+    if sys.platform == "win32":
+        subprocess.run(["taskkill", "/PID", str(proc.pid), "/T", "/F"], capture_output=True,
+                       creationflags=NO_WINDOW)
+    else:
+        proc.kill()
+
+
 class SyntheticInstance:
     """A target's declared synthetic launcher (#995), run under the target interpreter.
 
@@ -365,11 +384,7 @@ class SyntheticInstance:
                 return "stopped"
             except subprocess.TimeoutExpired:
                 pass
-            if sys.platform == "win32":
-                subprocess.run(["taskkill", "/PID", str(proc.pid), "/T", "/F"], capture_output=True,
-                               creationflags=NO_WINDOW)
-            else:
-                proc.kill()
+            kill_tree(proc)
             try:
                 proc.wait(timeout=10)
                 return "killed"
@@ -382,14 +397,29 @@ class SyntheticInstance:
 def measure_target(target: Target, rubric: Rubric, spec_light: Dict[str, str], devices: List[str],
                    python_override: Optional[str] = None, scaffold: str = DEFAULT_SCAFFOLD,
                    run_dir: Optional[Path] = None, walk_timeout: float = WALK_TIMEOUT_S,
-                   synthetic: bool = False) -> Dict[str, object]:
+                   synthetic: bool = False, e2e: bool = False) -> Dict[str, object]:
     """The whole measure leg; returns the `metrics.json` document (also written to the run dir).
 
     `synthetic` walks the target's declared throwaway instance instead of the
     live app (#995): the live port is never probed, the launcher is always
     stopped, and how it stopped is recorded under `synthetic.stop`.
+
+    `e2e` then runs the target's e2e suite in surface-capture mode and appends
+    its screens (#1498, `measure_e2e`). Without it the document carries no
+    `e2e` key at all, so a plain run's output is unchanged.
     """
     run_dir = run_dir or run_dir_for(target.name)
+    doc = _measure_walk(target, rubric, spec_light, devices, python_override, scaffold, run_dir, walk_timeout, synthetic)
+    if e2e:
+        doc["e2e"] = measure_e2e(doc, target, run_dir, scaffold)
+        _write(doc, run_dir)
+    return doc
+
+
+def _measure_walk(target: Target, rubric: Rubric, spec_light: Dict[str, str], devices: List[str],
+                  python_override: Optional[str], scaffold: str, run_dir: Path, walk_timeout: float,
+                  synthetic: bool) -> Dict[str, object]:
+    """The walk, live or on the synthetic instance: the document `measure_target` returns without `e2e`."""
     params = script_params(rubric, spec_light, target.review, vendored_components(scaffold))
     doc = envelope(target, rubric, run_dir, devices, params, target_commit(target))
     if not synthetic:
@@ -451,6 +481,212 @@ def _measure(doc: Dict[str, object], target: Target, run_dir: Path, devices: Lis
         if walk["returncode"] not in (0, None):
             doc["walk"]["note"] = "walk exited non-zero after writing screens; see walk.log"
     return _write(doc, run_dir)
+
+
+# ---- measure --e2e: the target's own e2e suite in surface-capture mode (#1498, #1383 Step 3/6) ----------------
+#
+# The walk opens tabs, the Settings gear, details and declared extra steps; overlays nothing opens stay invisible
+# (#1353). The target's e2e suite already opens most of them on its own disposable server, and project-scaffolding's
+# vendored `tests/e2e/_surface.py` hook captures each one a test names with `surface(page, name)` once
+# `DESIGN_SURFACE_CAPTURE=<dir>` is set. The directory is the whole contract (the hook imports nothing from here):
+# `script.js` -- the walk's own page script, emitted by `walk.py --emit-script` under the target interpreter
+# because the scaffold's `_geometry.py` imports Playwright -- plus `params.json`, the walk's params, and an
+# optional `capture.json` carrying the target's `theme_storage_key`. Each capture becomes a screen record.
+
+E2E_DIR = "e2e"
+E2E_LOG = "e2e.log"
+E2E_CAPTURE_ENV = "DESIGN_SURFACE_CAPTURE"
+E2E_SCRIPT_TIMEOUT_S = 120.0
+E2E_DRAIN_S = 10.0       # a killed suite gets this long to release its output pipe
+PYTEST_NO_TESTS = 5      # pytest's exit code when collection selected nothing: no test calls surface(
+
+
+def e2e_device(capture: Dict[str, object]) -> str:
+    """The device name a capture was taken on, from the test's own context: no phone user agent is `desktop`,
+    a phone on WebKit `iphone`, any other phone `android`. The engine and viewport ride on the screen too."""
+    if not capture.get("phone"):
+        return "desktop"
+    return "iphone" if capture.get("engine") == "webkit" else "android"
+
+
+def e2e_theme(theme: str, observed: object) -> "tuple[Optional[bool], Optional[dict]]":
+    """`(applied, observed)` from what the hook read after its flip: the page's `data-theme` and the media query.
+
+    `applied` is False when either names the other theme, None when the hook recorded nothing. The hook reads no
+    canvas luminance, so an app that ignores both and paints its own theme is not caught here as the walk catches it.
+    """
+    if not isinstance(observed, dict):
+        return None, None
+    applied, seen = measure.theme_agreement(theme, {"attr": observed.get("attr"), "luminance": None})
+    dark = observed.get("dark")
+    if isinstance(dark, bool) and seen is not None:
+        media = "dark" if dark else "light"
+        applied = applied and media == theme
+        seen["rendered"] = seen.get("rendered") or media
+    return applied, seen
+
+
+def e2e_screens(capture_dir: Path, shots: Path) -> Dict[str, List]:
+    """Every `<surface>.<theme>.json` the hook wrote, as screen records `<device>-<theme>-e2e-<surface>`.
+
+    Returns `{screens, duplicates, unreadable}`. Each capture's PNG moves into `shots/` under its screen id, so the
+    judge and the report find it beside the walk's. A capture whose script threw is a screen in error
+    (`E2E_MEASURE_FAILED`), never an empty success; two surface names that slug to one id keep the first.
+    """
+    out: Dict[str, List] = {"screens": [], "duplicates": [], "unreadable": []}
+    seen: set = set()
+    shots.mkdir(parents=True, exist_ok=True)
+    found = []
+    for path in capture_dir.glob("*.json"):
+        name, _, theme = path.name[:-len(".json")].rpartition(".")
+        if name and theme in THEMES:  # never params.json or capture.json
+            found.append((name, THEMES.index(theme), theme, path))
+    for name, _, theme, path in sorted(found):
+        try:
+            cap = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError) as exc:
+            out["unreadable"].append(f"{path.name}: {exc}")
+            continue
+        if not isinstance(cap, dict):
+            out["unreadable"].append(f"{path.name}: not a JSON object")
+            continue
+        device, view = e2e_device(cap), f"e2e-{name}"
+        sid = screen_id(device, theme, view)
+        if sid in seen:
+            out["duplicates"].append(f"{name} ({sid})")
+            continue
+        seen.add(sid)
+        png, shot = capture_dir / f"{name}.{theme}.png", None
+        if png.is_file():
+            os.replace(png, shots / f"{sid}.png")
+            shot = f"{sid}.png"
+        metrics = cap.get("metrics")
+        ok = cap.get("error") is None and isinstance(metrics, dict)
+        applied, observed = e2e_theme(theme, cap.get("observed"))
+        out["screens"].append({
+            "id": sid, "device": device, "theme": theme, "view": view, "kind": "step",
+            "status": "ok" if ok else "error", "reason": None if ok else "E2E_MEASURE_FAILED",
+            "error": None if ok else str(cap.get("error") or "the capture carries no metrics")[:300],
+            "screenshot": shot, "screenshot_full": None, "note": None, "metrics": metrics if ok else None,
+            "theme_applied": applied, "theme_observed": observed,
+            "source": "e2e", "surface": name, "engine": cap.get("engine"), "viewport": cap.get("viewport"),
+        })
+    return out
+
+
+def prepare_e2e_dir(python: str, run_dir: Path, params: Dict[str, object], review: Dict[str, object],
+                    scaffold: str) -> Dict[str, Optional[str]]:
+    """Build `<run_dir>/e2e/` for the hook: `{dir, geometry, error}`. Files left by an earlier run there are removed
+    first, so a stale capture can never read as this run's."""
+    cap = run_dir / E2E_DIR
+    cap.mkdir(parents=True, exist_ok=True)
+    for stale in cap.iterdir():
+        if stale.is_file():
+            stale.unlink()
+    try:
+        proc = subprocess.run([python, str(WALK_PY), "--emit-script", str(cap / "script.js"), "--scaffold", scaffold],
+                              capture_output=True, text=True, encoding="utf-8", errors="replace",
+                              timeout=E2E_SCRIPT_TIMEOUT_S, creationflags=NO_WINDOW)
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        return {"dir": str(cap), "geometry": None, "error": f"walk.py --emit-script did not run: {exc}"}
+    if proc.returncode != 0 or not (cap / "script.js").is_file():
+        return {"dir": str(cap), "geometry": None,
+                "error": f"walk.py --emit-script exit {proc.returncode}: {(proc.stderr or '').strip()[-300:]}"}
+    geometry = next((l[len("GEOMETRY="):] for l in proc.stdout.splitlines() if l.startswith("GEOMETRY=")), None)
+    (cap / "params.json").write_text(json.dumps(params["script"]), encoding="utf-8")
+    key = review.get("theme_storage_key") if isinstance(review, dict) else None
+    if isinstance(key, str) and key:
+        (cap / "capture.json").write_text(json.dumps({"theme_storage_key": key}), encoding="utf-8")
+    return {"dir": str(cap), "geometry": geometry, "error": None}
+
+
+def run_e2e_suite(python: str, root: Path, command: List[str], capture_dir: Path, log_path: Path,
+                  timeout: float) -> Dict[str, object]:
+    """Run the suite in the foreground from the target root with the hook armed: `{returncode, timed_out, tail}`.
+
+    Its output goes to `log_path`. Past `timeout` its process tree is killed (a pytest run owns browsers)."""
+    env = {**os.environ, E2E_CAPTURE_ENV: str(capture_dir), "PYTHONUTF8": "1", "PYTHONUNBUFFERED": "1"}
+    try:
+        proc = subprocess.Popen([python] + list(command), cwd=str(root), stdin=subprocess.DEVNULL,
+                                stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, encoding="utf-8",
+                                errors="replace", env=env, creationflags=NO_WINDOW)
+    except OSError as exc:
+        log_path.write_text(f"could not start {python}: {exc}\n", encoding="utf-8")
+        return {"returncode": None, "timed_out": False, "tail": f"could not start {python}: {exc}"}
+    timed_out = False
+    try:
+        output, _ = proc.communicate(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        timed_out = True
+        kill_tree(proc)
+        try:
+            output, _ = proc.communicate(timeout=E2E_DRAIN_S)
+        except subprocess.TimeoutExpired:
+            output = ""
+    log_path.write_text(output or "", encoding="utf-8")
+    return {"returncode": proc.returncode, "timed_out": timed_out, "tail": (output or "")[-2000:]}
+
+
+def measure_e2e(doc: Dict[str, object], target: Target, run_dir: Path, scaffold: str) -> Dict[str, object]:
+    """Run the target's e2e suite in capture mode and append its screens to `doc["screens"]`; return the `e2e` record.
+
+    The record's `unmeasured` is null or `{reason, detail}`, one word per condition, and never touches the walk's own
+    result: `E2E_SKIPPED` (the walk measured nothing, so no suite ran), `E2E_BAD_CONFIG`, `E2E_HOOK_MISSING` (no
+    vendored `tests/e2e/_surface.py`), `E2E_SCRIPT_FAILED` (the page script could not be emitted), `E2E_TIMEOUT` /
+    `E2E_FAILED` (past the timeout / a non-zero exit, before any capture) and `E2E_NO_SURFACES` (it ran and captured
+    nothing). A suite that fails or times out after capturing keeps its screens, with a `note`, as the walk does.
+    """
+    rec: Dict[str, object] = {"command": None, "timeout_s": None, "capture_dir": None, "log": None, "geometry": None,
+                              "returncode": None, "timed_out": False, "surfaces": [], "screens": 0,
+                              "duplicates": [], "unreadable": [], "unmeasured": None, "note": None}
+
+    def unmeasured(reason: str, detail: str) -> Dict[str, object]:
+        rec["unmeasured"] = {"reason": reason, "detail": detail}
+        return rec
+
+    walk_unmeasured = doc.get("unmeasured")
+    if walk_unmeasured:
+        why = walk_unmeasured.get("reason") if isinstance(walk_unmeasured, dict) else walk_unmeasured
+        return unmeasured("E2E_SKIPPED", f"the walk did not measure ({why}), so the e2e suite was not run")
+    try:
+        block = e2e_block(target)
+    except PlanError as exc:
+        return unmeasured("E2E_BAD_CONFIG", str(exc))
+    rec["command"], rec["timeout_s"] = block["command"], block["timeout_s"]
+    hook = Path(target.root).joinpath(*E2E_HOOK) if target.root else None
+    if hook is None or not hook.is_file():
+        return unmeasured("E2E_HOOK_MISSING", f"no vendored surface() hook at {hook or '(no repo root)'}: copy "
+                          "project-scaffolding's tests/e2e/_surface.py in and track it as `surface_capture`")
+    python = str(doc["interpreter"])
+    prep = prepare_e2e_dir(python, run_dir, doc["params"], target.review, scaffold)  # type: ignore[arg-type]
+    rec["capture_dir"], rec["geometry"] = prep["dir"], prep["geometry"]
+    if prep["error"]:
+        return unmeasured("E2E_SCRIPT_FAILED", str(prep["error"]))
+    log_path = run_dir / E2E_LOG
+    rec["log"] = str(log_path)
+    run = run_e2e_suite(python, Path(target.root), list(block["command"]), Path(str(prep["dir"])), log_path,  # type: ignore[arg-type]
+                        float(block["timeout_s"]))  # type: ignore[arg-type]
+    rec["returncode"], rec["timed_out"] = run["returncode"], run["timed_out"]
+    got = e2e_screens(Path(str(prep["dir"])), run_dir / "shots")
+    screens = got["screens"]
+    rec["surfaces"] = sorted({str(s["surface"]) for s in screens})
+    rec["screens"], rec["duplicates"], rec["unreadable"] = len(screens), got["duplicates"], got["unreadable"]
+    rc, timeout = run["returncode"], float(block["timeout_s"])  # type: ignore[arg-type]
+    if not screens:
+        unread = f"; unreadable captures: {'; '.join(got['unreadable'][:3])}" if got["unreadable"] else ""
+        if run["timed_out"]:
+            return unmeasured("E2E_TIMEOUT", f"the suite exceeded {timeout:g}s before any capture; its process tree "
+                              f"was killed{unread}")
+        if rc in (0, PYTEST_NO_TESTS):
+            return unmeasured("E2E_NO_SURFACES", f"the suite ran (exit {rc}) but captured no surface: no test it ran "
+                              f"calls surface(page, name){unread}")
+        return unmeasured("E2E_FAILED", f"exit {rc} before any capture{unread}: {str(run['tail'])[-500:]}")
+    doc["screens"].extend(screens)  # type: ignore[union-attr]
+    if run["timed_out"]:
+        rec["note"] = f"the suite exceeded {timeout:g}s after capturing and was killed; its captures are kept, see {E2E_LOG}"
+    elif rc != 0:
+        rec["note"] = f"the suite exited {rc} after capturing; its captures are kept, see {E2E_LOG}"
+    return rec
 
 
 def _write(doc: Dict[str, object], run_dir: Path) -> Dict[str, object]:

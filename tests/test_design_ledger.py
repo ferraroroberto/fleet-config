@@ -160,6 +160,22 @@ check(ledger.previous("modes-app", "20260923T999999Z", "synthetic")["run_id"] ==
       "a synthetic run's previous run is the latest earlier synthetic one (#995)")
 check(ledger.previous("modes-app", "20260923T000002Z") is None, "no earlier live run -> nothing to compare, never a synthetic one")
 
+# ---- #1498: a `measure --e2e` run (more screens) only ever compares with --e2e runs ----
+
+for rid, e2e in (("20260924T000001Z", False), ("20260924T000002Z", True), ("20260924T000003Z", False)):
+    d = _clone(violating)
+    d["run_dir"] = str(STATE / "design-review" / "e2e-app" / rid)
+    d["target"] = "e2e-app"
+    if e2e:
+        d["e2e"] = {"unmeasured": None, "surfaces": ["jobs.sort-sheet"]}
+    ledger.record(Path(d["run_dir"]), d)
+check(ledger.previous("e2e-app", "20260924T999999Z")["run_id"] == "20260924T000003Z"
+      and ledger.previous("e2e-app", "20260924T999999Z", e2e=True)["run_id"] == "20260924T000002Z"
+      and ledger.previous("e2e-app", "20260924T000002Z", e2e=True) is None,
+      "an --e2e run's previous run is the latest earlier --e2e one, and a plain run skips --e2e entries (#1498)")
+check("e2e" not in ledger.load("e2e-app")[0] and ledger.load("e2e-app")[1]["e2e"] is True,
+      "only an --e2e run's ledger entry carries the flag")
+
 # ---- diff semantics --------------------------------------------------------------
 
 base = ledger.entry_from_doc(violating, "prev")

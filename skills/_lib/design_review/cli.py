@@ -5,7 +5,7 @@
     <python> C:/Users/rober/.claude/skills/_lib/design_review measure <repo>
         [--url URL] [--devices iphone,desktop,android] [--python PATH]
         [--scaffold DIR] [--rubric FILE] [--spec FILE] [--projects-toml FILE]
-        [--run-dir DIR] [--walk-timeout S]
+        [--run-dir DIR] [--walk-timeout S] [--synthetic] [--e2e]
     <python> C:/Users/rober/.claude/skills/_lib/design_review evaluate <metrics.json>
         [--out FILE] [--rubric FILE] [--spec FILE] [--spec-dark FILE]
     <python> C:/Users/rober/.claude/skills/_lib/design_review judge-prompt <run_dir>
@@ -27,6 +27,7 @@ skill can read the result back without parsing JSON:
 
     probe         TARGET= BASE_URL= ROOT= CLAUDE_MD= PROBE=listening|NOT_LISTENING|TIMEOUT|BAD_URL DETAIL=
     measure       TARGET= MODE=live|synthetic BASE_URL= COMMIT= INTERPRETER= RUN_DIR= METRICS= SCREENS=<ok>/<total> ABSENT=<n> UNMEASURED=<reason>|none
+                  with --e2e also: E2E=ok|E2E_<reason> E2E_SURFACES=<n> E2E_SCREENS=<n> [E2E_DETAIL=] [E2E_NOTE=]
     judge-prompt  PROMPT=<run_dir>/judge-prompt.md SCREENS=<n> QUESTIONS=<n>
     judge-merge   JUDGMENT=ok|partial|unmeasured|not_confirmed ANSWERS=<yes>/<no>/<na> UNCATALOGUED=<n> ERRORS=<n> DROPPED=<n>  [DROPPED_DETAIL=<why>] [NORMALIZED=<id>:<from>-><to>]
                   [RUBRIC_MISMATCH=evaluate:<v> judgment:<v>] EVALUATE=
@@ -129,7 +130,7 @@ def cmd_measure(args: argparse.Namespace) -> int:
         run_dir.mkdir(parents=True, exist_ok=True)
     doc = capture.measure_target(target, rb, specs["light"], devices, python_override=args.python,
                                  scaffold=args.scaffold, run_dir=run_dir, walk_timeout=args.walk_timeout,
-                                 synthetic=args.synthetic)
+                                 synthetic=args.synthetic, e2e=args.e2e)
     screens = doc.get("screens") or []
     ok = sum(1 for s in screens if s.get("status") == "ok")
     print(f"TARGET={doc['target']}")
@@ -145,6 +146,16 @@ def cmd_measure(args: argparse.Namespace) -> int:
     print(f"UNMEASURED={unm['reason'] if unm else 'none'}")
     if unm and unm.get("detail"):
         print(f"UNMEASURED_DETAIL={unm['detail']}")
+    e2e = doc.get("e2e")
+    if isinstance(e2e, dict):
+        e_unm = e2e.get("unmeasured")
+        print(f"E2E={e_unm['reason'] if e_unm else 'ok'}")
+        print(f"E2E_SURFACES={len(e2e.get('surfaces') or [])}")
+        print(f"E2E_SCREENS={e2e.get('screens') or 0}")
+        if e_unm and e_unm.get("detail"):
+            print(f"E2E_DETAIL={e_unm['detail']}")
+        if e2e.get("note"):
+            print(f"E2E_NOTE={e2e['note']}")
     return 0
 
 
@@ -353,7 +364,7 @@ def cmd_ledger(args: argparse.Namespace) -> int:
         return 2
     target = str(doc.get("target") or run_dir.parent.name)
     run_id = ledger.run_id_of(run_dir, doc)
-    prev = ledger.previous(target, run_id, str(doc.get("mode") or "live"))
+    prev = ledger.previous(target, run_id, str(doc.get("mode") or "live"), e2e=doc.get("e2e") is not None)
     d = ledger.diff(doc, prev)
     doc["diff"] = d
     try:
@@ -488,6 +499,9 @@ def main(argv: Optional[List[str]] = None) -> int:
     m.add_argument("--walk-timeout", type=float, default=capture.WALK_TIMEOUT_S)
     m.add_argument("--synthetic", action="store_true",
                    help="boot the target's [design.review.synthetic] launcher and walk that throwaway instance, not the live app")
+    m.add_argument("--e2e", action="store_true",
+                   help="after the walk, run the target's e2e suite with its surface() hook armed and add every captured "
+                        "surface as a screen ([design.review.e2e], default `-m pytest tests/e2e`)")
     m.set_defaults(fn=cmd_measure)
 
     e = sub.add_parser("evaluate", help="rule results + category grades from a metrics.json, as JSON")

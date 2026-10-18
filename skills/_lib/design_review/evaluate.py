@@ -898,6 +898,8 @@ def evaluate(doc: dict, rubric: Rubric, specs: Dict[str, Dict[str, str]],
         "metrics_rubric_version": doc.get("rubric_version"),
         "base_url": doc.get("base_url"),
         "mode": doc.get("mode") or "live",
+        # `measure --e2e` (#1498): the suite's outcome rides through to the report and the ledger; a plain run has none.
+        **({"e2e": doc["e2e"]} if doc.get("e2e") is not None else {}),
         "synthetic_declared": isinstance((doc.get("review") or {}).get("synthetic"), dict),
         "run_dir": doc.get("run_dir"),
         "params": ctx["params"],

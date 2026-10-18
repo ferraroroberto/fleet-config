@@ -363,6 +363,20 @@ def _method(doc: dict) -> str:
     if doc.get("unmeasured"):
         u = doc["unmeasured"] if isinstance(doc["unmeasured"], dict) else {"reason": doc["unmeasured"]}
         items.append(f"the whole run is unmeasured: {u.get('reason')} — {u.get('detail') or ''}".rstrip(" —"))
+    e2e = doc.get("e2e") if isinstance(doc.get("e2e"), dict) else None
+    if e2e:
+        # fleet-config#1498: `measure --e2e` adds the surfaces the app's own e2e suite opened; its failure is its own
+        # word and never the walk's, so the walk's screens still stand when the suite could not capture.
+        eu = e2e.get("unmeasured") if isinstance(e2e.get("unmeasured"), dict) else None
+        if eu:
+            items.append(f"e2e suite not captured: {eu.get('reason')} — {eu.get('detail') or ''}".rstrip(" —")
+                         + "; only the walk's screens were measured")
+        else:
+            n = len(e2e.get("surfaces") or [])
+            items.append(f"{n} surface{'s' if n != 1 else ''} captured by the app's own e2e suite on its disposable server "
+                         f"({e2e.get('screens') or 0} screens, ids <device>-<theme>-e2e-<surface>): graded with the walk's "
+                         "screens and counted as walked by the overlay coverage"
+                         + (f"; {e2e['note']}" if e2e.get("note") else ""))
     mismatched = [s for s in doc.get("theme_mismatch_screens") or [] if isinstance(s, dict)]
     if mismatched:
         # fleet-config#1216: the app owns its theme and re-applied its own after the walk stamped one, so a leg
@@ -380,8 +394,9 @@ def _method(doc: dict) -> str:
         more = f" +{n - len(sample)} more" if n > len(sample) else ""
         items.append(f"not walked: {n} overlay surface{'s' if n != 1 else ''} ({', '.join(sample)}{more}) — present in the page "
                      "but never shown on a walked screen (a dialog the walk opened while it was still an empty shell "
-                     "counts as not shown), so no rule measured them; declare a [design.review] extra_steps entry that "
-                     "opens each one the way the app does. Coverage only: the grade does not count it")
+                     "counts as not shown), so no rule measured them; call surface(page, name) in the e2e test that opens "
+                     "each one and run measure --e2e, or declare a [design.review] extra_steps entry that opens it the way "
+                     "the app does. Coverage only: the grade does not count it")
     elif cov.get("status") == "unknown" and ok:
         items.append("overlay coverage not established: no measured screen listed its overlay surfaces (metrics captured "
                      "before the listing existed, or the listing failed), so surfaces the walk never opened are unknown, not none")

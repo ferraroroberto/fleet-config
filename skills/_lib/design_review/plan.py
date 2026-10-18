@@ -52,6 +52,14 @@ no `submit`, and every click is refused when its element sits inside a
                                   # `URL=<base>` once ready, exits when stdin closes
     no_go    = [".session-open"]  # replaces the live no_go for that run only
     startup_timeout_s = 120
+    [design.review.e2e]           # optional: how `measure --e2e` runs the app's e2e suite
+    command   = ["-m", "pytest", "tests/e2e", "-q"]  # argv after the target's venv python,
+                                  # run from the target root (default `-m pytest tests/e2e`)
+    timeout_s = 900               # the suite's process tree is killed past it (default 900)
+
+`measure <repo> --e2e` also runs that suite with `DESIGN_SURFACE_CAPTURE` set, so
+every `surface(page, name)` call in it (project-scaffolding's vendored
+`tests/e2e/_surface.py`) becomes a screen of the same run (#1498, `capture.py`).
 
 `measure <repo> --synthetic` boots the declared command instead of probing
 the live app, walks the URL it prints (steps marked `synthetic = true`
@@ -148,6 +156,31 @@ def synthetic_block(target: "Target") -> Dict[str, object]:
         "no_go": [str(s) for s in no_go] if isinstance(no_go, list) else None,
         "startup_timeout_s": float(block.get("startup_timeout_s") or SYNTHETIC_STARTUP_S),
     }
+
+
+# `measure --e2e` (#1498): the suite's argv after the target's venv python, its bound, and the vendored hook it needs.
+E2E_DEFAULT_COMMAND = ("-m", "pytest", "tests/e2e")
+E2E_TIMEOUT_S = 900.0
+E2E_HOOK = ("tests", "e2e", "_surface.py")
+
+
+def e2e_block(target: "Target") -> Dict[str, object]:
+    """The `[design.review.e2e]` block with its defaults filled: `{command: [argv], timeout_s}`.
+
+    An absent block is the default suite, never an error. Raises `PlanError`
+    naming what is wrong with a declared one: not a table, a `command` that is
+    not a non-empty list of strings, or a `timeout_s` that is not a positive number.
+    """
+    block = target.review.get("e2e", {}) if isinstance(target.review, dict) else {}
+    if not isinstance(block, dict):
+        raise PlanError("[design.review.e2e] must be a table")
+    command = block.get("command", list(E2E_DEFAULT_COMMAND))
+    if not isinstance(command, list) or not command or not all(isinstance(c, str) and c for c in command):
+        raise PlanError("[design.review.e2e].command must be a non-empty list of strings")
+    timeout = block.get("timeout_s", E2E_TIMEOUT_S)
+    if isinstance(timeout, bool) or not isinstance(timeout, (int, float)) or timeout <= 0:
+        raise PlanError("[design.review.e2e].timeout_s must be a positive number of seconds")
+    return {"command": [str(c) for c in command], "timeout_s": float(timeout)}
 
 
 def exclude_selectors(review: Dict[str, object]) -> List[str]:
